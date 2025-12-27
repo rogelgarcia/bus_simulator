@@ -1,7 +1,15 @@
 // graphics/assets3d/generators/RoadGenerator.js
 import * as THREE from 'three';
 import { TILE, AXIS, DIR } from '../../../src/city/CityMap.js';
-import { ROAD_DEFAULTS, GROUND_DEFAULTS, CORNER_COLOR_PALETTE } from './GeneratorParams.js';
+import {
+    ROAD_DEFAULTS,
+    GROUND_DEFAULTS,
+    CORNER_COLOR_PALETTE,
+    ASPHALT_COLOR_PALETTE,
+    DEBUG_ASPHALT,
+    DEBUG_HIDE_CURBS_AND_SIDEWALKS,
+    DEBUG_DISABLE_MARKINGS_IN_ASPHALT_DEBUG
+} from './GeneratorParams.js';
 import { clamp, deepMerge } from './internal_road/RoadMath.js';
 import { createAsphaltBuilder } from './internal_road/AsphaltBuilder.js';
 import { createSidewalkBuilder } from './internal_road/SidewalkBuilder.js';
@@ -57,9 +65,12 @@ export function generateRoads({ map, config, materials } = {}) {
     const laneWhiteMat = materials?.laneWhite ?? new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.35 });
     const laneYellowMat = materials?.laneYellow ?? new THREE.MeshStandardMaterial({ color: 0xf2d34f, roughness: 0.35 });
 
-    const roadMat = roadMatBase;
-    const sidewalkMatInst = CORNER_COLOR_PALETTE.instancedMaterial(sidewalkMatBase, 'sidewalk');
-    const curbMatInst = CORNER_COLOR_PALETTE.instancedMaterial(curbMatBase, 'curb');
+    const asphaltDebug = DEBUG_ASPHALT && ASPHALT_COLOR_PALETTE?.kind === 'debug';
+    const asphaltMat = asphaltDebug
+        ? new THREE.MeshBasicMaterial({ vertexColors: true })
+        : roadMatBase;
+
+    if (asphaltDebug && asphaltMat) asphaltMat.toneMapped = false;
 
     const planeGeo = new THREE.PlaneGeometry(1, 1, 1, 1);
     planeGeo.rotateX(-Math.PI / 2);
@@ -70,39 +81,49 @@ export function generateRoads({ map, config, materials } = {}) {
 
     const asphalt = createAsphaltBuilder({
         planeGeo,
-        material: roadMat,
-        capacity: Math.max(1, roadCount * 4),
+        material: asphaltMat,
+        palette: ASPHALT_COLOR_PALETTE,
+        capacity: Math.max(1, roadCount * 8),
         name: 'Asphalt'
     });
 
-    const sidewalk = createSidewalkBuilder({
-        planeGeo,
-        instancedMaterial: sidewalkMatInst,
-        baseMaterial: sidewalkMatBase,
-        palette: CORNER_COLOR_PALETTE,
-        capacity: Math.max(1, roadCount * 12),
-        name: 'Sidewalk'
-    });
+    const hideCurbSidewalk = asphaltDebug && DEBUG_HIDE_CURBS_AND_SIDEWALKS;
+    const disableMarkings = asphaltDebug && DEBUG_DISABLE_MARKINGS_IN_ASPHALT_DEBUG;
 
-    const curb = createCurbBuilder({
-        boxGeo,
-        instancedMaterial: curbMatInst,
-        baseMaterial: curbMatBase,
-        palette: CORNER_COLOR_PALETTE,
-        capacity: Math.max(1, roadCount * 84),
-        curbT,
-        curbH,
-        curbBottom,
-        name: 'CurbBlocks'
-    });
+    const sidewalk = hideCurbSidewalk
+        ? null
+        : createSidewalkBuilder({
+            planeGeo,
+            instancedMaterial: CORNER_COLOR_PALETTE.instancedMaterial(sidewalkMatBase, 'sidewalk'),
+            baseMaterial: sidewalkMatBase,
+            palette: CORNER_COLOR_PALETTE,
+            capacity: Math.max(1, roadCount * 12),
+            name: 'Sidewalk'
+        });
 
-    const markings = createMarkingsBuilder({
-        planeGeo,
-        whiteMaterial: laneWhiteMat,
-        yellowMaterial: laneYellowMat,
-        whiteCapacity: Math.max(1, roadCount * 10),
-        yellowCapacity: Math.max(1, roadCount * 8)
-    });
+    const curb = hideCurbSidewalk
+        ? null
+        : createCurbBuilder({
+            boxGeo,
+            instancedMaterial: CORNER_COLOR_PALETTE.instancedMaterial(curbMatBase, 'curb'),
+            baseMaterial: curbMatBase,
+            palette: CORNER_COLOR_PALETTE,
+            capacity: Math.max(1, roadCount * 84),
+            curbT,
+            curbH,
+            curbBottom,
+            name: 'CurbBlocks'
+        });
+
+    const markings = disableMarkings
+        ? null
+        : createMarkingsBuilder({
+            planeGeo,
+            whiteMaterial: laneWhiteMat,
+            yellowMaterial: laneYellowMat,
+            whiteCapacity: Math.max(1, roadCount * 10),
+            yellowCapacity: Math.max(1, roadCount * 8)
+        });
 
     const ctx = {
         ts,
@@ -113,6 +134,8 @@ export function generateRoads({ map, config, materials } = {}) {
         curb,
         markings,
         palette: CORNER_COLOR_PALETTE,
+        asphaltPalette: ASPHALT_COLOR_PALETTE,
+        debugAsphaltOnly: hideCurbSidewalk,
         roadY,
         laneWidth,
         shoulder,
@@ -149,28 +172,35 @@ export function generateRoads({ map, config, materials } = {}) {
     }
 
     asphalt.finalize();
-    sidewalk.finalize();
-    curb.finalize();
-    const { markingsWhite, markingsYellow } = markings;
-    markings.finalize();
-
     group.add(asphalt.mesh);
-    group.add(sidewalk.mesh);
-    group.add(curb.mesh);
-    group.add(markingsWhite);
-    group.add(markingsYellow);
 
-    const asphaltCurves = asphalt.buildCurveMesh({ name: 'AsphaltCurves' });
-    if (asphaltCurves) group.add(asphaltCurves);
+    if (sidewalk) {
+        sidewalk.finalize();
+        group.add(sidewalk.mesh);
+        for (const m of sidewalk.buildCurveMeshes()) group.add(m);
+    }
 
-    for (const m of sidewalk.buildCurveMeshes()) group.add(m);
-    for (const m of curb.buildCurveMeshes()) group.add(m);
+    if (curb) {
+        curb.finalize();
+        group.add(curb.mesh);
+        for (const m of curb.buildCurveMeshes()) group.add(m);
+    }
+
+    let markingsWhite = null;
+    let markingsYellow = null;
+
+    if (markings) {
+        ({ markingsWhite, markingsYellow } = markings);
+        markings.finalize();
+        group.add(markingsWhite);
+        group.add(markingsYellow);
+    }
 
     return {
         group,
         asphalt: asphalt.mesh,
-        sidewalk: sidewalk.mesh,
-        curbBlocks: curb.mesh,
+        sidewalk: sidewalk?.mesh ?? null,
+        curbBlocks: curb?.mesh ?? null,
         markingsWhite,
         markingsYellow
     };

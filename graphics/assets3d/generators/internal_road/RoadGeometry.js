@@ -15,14 +15,17 @@ export function mergeBufferGeometries(geoms) {
     if (!geoms || geoms.length === 0) return null;
 
     let totalVerts = 0;
+    let hasColor = false;
     for (const g0 of geoms) {
         const g = ensureNonIndexedWithUV(g0);
         totalVerts += g.attributes.position.count;
+        if (g.attributes.color) hasColor = true;
     }
 
     const outPos = new Float32Array(totalVerts * 3);
     const outNor = new Float32Array(totalVerts * 3);
     const outUv = new Float32Array(totalVerts * 2);
+    const outColor = hasColor ? new Float32Array(totalVerts * 3) : null;
 
     let v = 0;
     for (const g0 of geoms) {
@@ -30,6 +33,13 @@ export function mergeBufferGeometries(geoms) {
         outPos.set(g.attributes.position.array, v * 3);
         outNor.set(g.attributes.normal.array, v * 3);
         outUv.set(g.attributes.uv.array, v * 2);
+        if (outColor) {
+            if (g.attributes.color) {
+                outColor.set(g.attributes.color.array, v * 3);
+            } else {
+                outColor.fill(1, v * 3, (v + g.attributes.position.count) * 3);
+            }
+        }
         v += g.attributes.position.count;
     }
 
@@ -37,6 +47,7 @@ export function mergeBufferGeometries(geoms) {
     out.setAttribute('position', new THREE.BufferAttribute(outPos, 3));
     out.setAttribute('normal', new THREE.BufferAttribute(outNor, 3));
     out.setAttribute('uv', new THREE.BufferAttribute(outUv, 2));
+    if (outColor) out.setAttribute('color', new THREE.BufferAttribute(outColor, 3));
     out.computeBoundingSphere?.();
     return out;
 }

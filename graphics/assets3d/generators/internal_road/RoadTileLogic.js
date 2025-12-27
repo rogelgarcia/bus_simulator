@@ -25,6 +25,8 @@ export function processRoadTile({ pos, lanes, axis, connMask, ctx }) {
         curb,
         markings,
         palette,
+        asphaltPalette,
+        debugAsphaltOnly,
         roadY,
         laneWidth,
         shoulder,
@@ -50,6 +52,78 @@ export function processRoadTile({ pos, lanes, axis, connMask, ctx }) {
 
     const wNS = clamp(widthNS, 1, ts);
     const wEW = clamp(widthEW, 1, ts);
+
+    const asphaltColor = (type, orient) => asphaltPalette?.instanceColor?.('asphalt', type, orient) ?? 0xffffff;
+    const asphaltKey = (type, orient) => asphaltPalette?.key ? asphaltPalette.key(type, orient) : `${type ?? 'unknown'}|${orient ?? 'unknown'}`;
+
+    if (debugAsphaltOnly) {
+        if (axis === AXIS.EW) {
+            asphalt.addPlane(pos.x, roadY, pos.z, ts, wEW, 0, asphaltColor('straight', 'EW'));
+            return;
+        }
+
+        if (axis === AXIS.NS) {
+            asphalt.addPlane(pos.x, roadY, pos.z, wNS, ts, 0, asphaltColor('straight', 'NS'));
+            return;
+        }
+
+        if (axis === AXIS.CORNER) {
+            const corner = connToCornerSigns(connMask, DIR);
+            if (!corner) {
+                asphalt.addPlane(pos.x, roadY, pos.z, ts, ts, 0, asphaltColor('turn', 'NE'));
+                return;
+            }
+
+            const orient = corner.dirs;
+            const cTurn = asphaltColor('turn', orient);
+            const kTurn = asphaltKey('turn', orient);
+
+            const wTurn = clamp(Math.min(wNS, wEW), 1.0, ts);
+            const halfW = wTurn * 0.5;
+
+            const eps = 0.02;
+            const rMax = Math.max(0.05, (ts * 0.5) - halfW - (curbT * 0.5) - eps);
+            const rTurn = clamp(turnRadiusPref, 0.05, rMax);
+
+            const cxLocal = corner.signX * rTurn;
+            const czLocal = corner.signZ * rTurn;
+
+            const legLen = Math.max(0.0, ts * 0.5 - rTurn);
+
+            if (legLen > 0.001) {
+                if (hasConn(connMask, DIR.N) || hasConn(connMask, DIR.S)) {
+                    const zCenter = corner.signZ * (rTurn + ts * 0.5) * 0.5;
+                    asphalt.addPlane(pos.x, roadY, pos.z + zCenter, wTurn, legLen, 0, cTurn);
+                }
+
+                if (hasConn(connMask, DIR.E) || hasConn(connMask, DIR.W)) {
+                    const xCenter = corner.signX * (rTurn + ts * 0.5) * 0.5;
+                    asphalt.addPlane(pos.x + xCenter, roadY, pos.z, legLen, wTurn, 0, cTurn);
+                }
+            }
+
+            const start = turnStartAngle(corner.signX, corner.signZ);
+
+            asphalt.addRingSectorKey({
+                key: kTurn,
+                centerX: pos.x + cxLocal,
+                centerZ: pos.z + czLocal,
+                y: roadY + 0.00015,
+                innerR: Math.max(0.01, rTurn - halfW),
+                outerR: rTurn + halfW,
+                startAng: start,
+                spanAng: Math.PI * 0.5,
+                segs: asphaltArcSegs
+            });
+
+            return;
+        }
+
+        const degree = bitCount4(connMask);
+        const junctionType = classifyJunctionType(degree);
+        asphalt.addPlane(pos.x, roadY, pos.z, ts, ts, 0, asphaltColor(junctionType, 'all'));
+        return;
+    }
 
     const neutralSidewalk = palette.instanceColor('sidewalk');
     const neutralCurb = palette.instanceColor('curb');
@@ -155,11 +229,12 @@ export function processRoadTile({ pos, lanes, axis, connMask, ctx }) {
     function addCornerTileCurvedTurn() {
         const corner = connToCornerSigns(connMask, DIR);
         if (!corner) {
-            asphalt.addPlane(pos.x, roadY, pos.z, ts, ts, 0);
+            asphalt.addPlane(pos.x, roadY, pos.z, ts, ts, 0, asphaltColor('turn', 'NE'));
             return;
         }
 
         const orient = corner.dirs;
+        const cTurn = asphaltColor('turn', orient);
         const wTurn = clamp(Math.min(wNS, wEW), 1.0, ts);
         const halfW = wTurn * 0.5;
 
@@ -175,12 +250,12 @@ export function processRoadTile({ pos, lanes, axis, connMask, ctx }) {
         if (legLen > 0.001) {
             if (hasConn(connMask, DIR.N) || hasConn(connMask, DIR.S)) {
                 const zCenter = corner.signZ * (rTurn + ts * 0.5) * 0.5;
-                asphalt.addPlane(pos.x, roadY, pos.z + zCenter, wTurn, legLen, 0);
+                asphalt.addPlane(pos.x, roadY, pos.z + zCenter, wTurn, legLen, 0, cTurn);
             }
 
             if (hasConn(connMask, DIR.E) || hasConn(connMask, DIR.W)) {
                 const xCenter = corner.signX * (rTurn + ts * 0.5) * 0.5;
-                asphalt.addPlane(pos.x + xCenter, roadY, pos.z, legLen, wTurn, 0);
+                asphalt.addPlane(pos.x + xCenter, roadY, pos.z, legLen, wTurn, 0, cTurn);
             }
         }
 
@@ -194,7 +269,8 @@ export function processRoadTile({ pos, lanes, axis, connMask, ctx }) {
             outerR: rTurn + halfW,
             startAng: start,
             spanAng: Math.PI * 0.5,
-            segs: asphaltArcSegs
+            segs: asphaltArcSegs,
+            colorHex: cTurn
         });
 
         const outerCurbCenterR = rTurn + halfW + curbT * 0.5;
@@ -287,7 +363,7 @@ export function processRoadTile({ pos, lanes, axis, connMask, ctx }) {
     }
 
     if (axis === AXIS.EW) {
-        asphalt.addPlane(pos.x, roadY, pos.z, ts, wEW, 0);
+        asphalt.addPlane(pos.x, roadY, pos.z, ts, wEW, 0, asphaltColor('straight', 'EW'));
 
         const tBase = (ts - wEW) * 0.5;
         const t = Math.max(0, tBase + sidewalkExtra - curbT);
@@ -300,22 +376,24 @@ export function processRoadTile({ pos, lanes, axis, connMask, ctx }) {
             curb.addBox(pos.x, curbY, pos.z - (wEW * 0.5 + curbT * 0.5), ts, curbH, curbT, 0, neutralCurb);
         }
 
-        const half = wEW * 0.5;
-        const edge = half - markEdgeInset;
-        if (edge > markLineW * 0.6) {
-            markings.addWhite(pos.x, markY, pos.z + edge, ts, markLineW, 0);
-            markings.addWhite(pos.x, markY, pos.z - edge, ts, markLineW, 0);
-        }
+        if (markings) {
+            const half = wEW * 0.5;
+            const edge = half - markEdgeInset;
+            if (edge > markLineW * 0.6) {
+                markings.addWhite(pos.x, markY, pos.z + edge, ts, markLineW, 0);
+                markings.addWhite(pos.x, markY, pos.z - edge, ts, markLineW, 0);
+            }
 
-        const twoWay = (lanes.e ?? 0) > 0 && (lanes.w ?? 0) > 0;
-        if (twoWay) markings.addYellow(pos.x, markY, pos.z, ts, markLineW, 0);
-        else markings.addWhite(pos.x, markY, pos.z, ts, markLineW, 0);
+            const twoWay = (lanes.e ?? 0) > 0 && (lanes.w ?? 0) > 0;
+            if (twoWay) markings.addYellow(pos.x, markY, pos.z, ts, markLineW, 0);
+            else markings.addWhite(pos.x, markY, pos.z, ts, markLineW, 0);
+        }
 
         return;
     }
 
     if (axis === AXIS.NS) {
-        asphalt.addPlane(pos.x, roadY, pos.z, wNS, ts, 0);
+        asphalt.addPlane(pos.x, roadY, pos.z, wNS, ts, 0, asphaltColor('straight', 'NS'));
 
         const tBase = (ts - wNS) * 0.5;
         const t = Math.max(0, tBase + sidewalkExtra - curbT);
@@ -328,16 +406,18 @@ export function processRoadTile({ pos, lanes, axis, connMask, ctx }) {
             curb.addBox(pos.x - (wNS * 0.5 + curbT * 0.5), curbY, pos.z, curbT, curbH, ts, 0, neutralCurb);
         }
 
-        const half = wNS * 0.5;
-        const edge = half - markEdgeInset;
-        if (edge > markLineW * 0.6) {
-            markings.addWhite(pos.x + edge, markY, pos.z, ts, markLineW, Math.PI * 0.5);
-            markings.addWhite(pos.x - edge, markY, pos.z, ts, markLineW, Math.PI * 0.5);
-        }
+        if (markings) {
+            const half = wNS * 0.5;
+            const edge = half - markEdgeInset;
+            if (edge > markLineW * 0.6) {
+                markings.addWhite(pos.x + edge, markY, pos.z, ts, markLineW, Math.PI * 0.5);
+                markings.addWhite(pos.x - edge, markY, pos.z, ts, markLineW, Math.PI * 0.5);
+            }
 
-        const twoWay = (lanes.n ?? 0) > 0 && (lanes.s ?? 0) > 0;
-        if (twoWay) markings.addYellow(pos.x, markY, pos.z, ts, markLineW, Math.PI * 0.5);
-        else markings.addWhite(pos.x, markY, pos.z, ts, markLineW, Math.PI * 0.5);
+            const twoWay = (lanes.n ?? 0) > 0 && (lanes.s ?? 0) > 0;
+            if (twoWay) markings.addYellow(pos.x, markY, pos.z, ts, markLineW, Math.PI * 0.5);
+            else markings.addWhite(pos.x, markY, pos.z, ts, markLineW, Math.PI * 0.5);
+        }
 
         return;
     }
@@ -347,7 +427,9 @@ export function processRoadTile({ pos, lanes, axis, connMask, ctx }) {
         return;
     }
 
-    asphalt.addPlane(pos.x, roadY, pos.z, ts, ts, 0);
+    const degree = bitCount4(connMask);
+    const junctionType = classifyJunctionType(degree);
+    asphalt.addPlane(pos.x, roadY, pos.z, ts, ts, 0, asphaltColor(junctionType, 'all'));
 
     const xInner = wNS * 0.5;
     const zInner = wEW * 0.5;
@@ -360,8 +442,6 @@ export function processRoadTile({ pos, lanes, axis, connMask, ctx }) {
     const cornerXeff = cornerX + sidewalkExtra;
     const cornerZeff = cornerZ + sidewalkExtra;
 
-    const degree = bitCount4(connMask);
-    const junctionType = classifyJunctionType(degree);
     const doRounded = (degree >= 2);
 
     if (doRounded) {

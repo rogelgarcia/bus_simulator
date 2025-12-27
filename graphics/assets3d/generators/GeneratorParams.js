@@ -40,6 +40,14 @@ function parseKey(key) {
 }
 
 const DEBUG_COLORS = {
+    asphalt: {
+        straight: { EW: 0xff6b6b, NS: 0x34c759 },
+        turn: { NE: 0x0a84ff, NW: 0xffd60a, SE: 0xbf5af2, SW: 0xff9f0a },
+        cross: { all: 0x64d2ff },
+        t: { all: 0xff375f },
+        junction2: { all: 0xd0fd3e },
+        junction1: { all: 0xac8e68 }
+    },
     curb: {
         cross: { NE: 0xff3b30, NW: 0x34c759, SE: 0x0a84ff, SW: 0xffd60a },
         t: { NE: 0xbf5af2, NW: 0xff9f0a, SE: 0x64d2ff, SW: 0xff2d55 },
@@ -143,8 +151,75 @@ function createCornerPalette(kind) {
     return (kind === 'debug') ? debug : regular;
 }
 
-export const CORNER_COLOR_PALETTE_KIND = 'regular';
+function createAsphaltPalette(kind) {
+    const pick = (type, orient) => {
+        if (!type || !orient) return undefined;
+        const row = DEBUG_COLORS?.asphalt?.[type];
+        if (!row) return undefined;
+        if (Number.isFinite(row[orient])) return row[orient];
+        if (Number.isFinite(row.all)) return row.all;
+        return undefined;
+    };
+
+    const regular = {
+        kind: 'regular',
+        key(type, orient) {
+            return makeKey('all', 'all');
+        },
+        parseKey(key) {
+            return parseKey(key);
+        },
+        instanceColor(part, type, orient) {
+            return 0xffffff;
+        },
+        instancedMaterial(baseMat, part) {
+            return baseMat;
+        },
+        curvedMaterial(baseMat, part, type, orient) {
+            return baseMat;
+        },
+        meshName(part, type, orient) {
+            return 'AsphaltCurves';
+        }
+    };
+
+    const debug = {
+        kind: 'debug',
+        key(type, orient) {
+            return makeKey(type ?? 'unknown', orient ?? 'unknown');
+        },
+        parseKey(key) {
+            return parseKey(key);
+        },
+        instanceColor(part, type, orient) {
+            const c = pick(type, orient);
+            if (Number.isFinite(c)) return c;
+            return hashColor(`asphalt:${type}:${orient}`);
+        },
+        instancedMaterial(baseMat, part) {
+            return baseMat;
+        },
+        curvedMaterial(baseMat, part, type, orient) {
+            return baseMat;
+        },
+        meshName(part, type, orient) {
+            return `Asphalt_${type}_${orient}`;
+        }
+    };
+
+    return (kind === 'debug') ? debug : regular;
+}
+
+export const DEBUG_CORNERS = true;
+export const DEBUG_ASPHALT = true;
+export const DEBUG_HIDE_CURBS_AND_SIDEWALKS = false;
+export const DEBUG_DISABLE_MARKINGS_IN_ASPHALT_DEBUG = true;
+
+export const CORNER_COLOR_PALETTE_KIND = DEBUG_CORNERS ? 'debug' : 'regular';
 export const CORNER_COLOR_PALETTE = createCornerPalette(CORNER_COLOR_PALETTE_KIND);
+
+export const ASPHALT_COLOR_PALETTE_KIND = DEBUG_ASPHALT ? 'debug' : 'regular';
+export const ASPHALT_COLOR_PALETTE = createAsphaltPalette(ASPHALT_COLOR_PALETTE_KIND);
 
 export const ROAD_DEFAULTS = {
     surfaceY: 0.02,
