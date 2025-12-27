@@ -5,6 +5,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { BUS_CATALOG } from '../graphics/assets3d/factories/BusCatalog.js';
 import { createBus } from '../graphics/assets3d/factories/BusFactory.js';
 import { tuneBusMaterials } from '../graphics/assets3d/factories/tuneBusMaterials.js';
+import { makeCheckerTexture } from '../graphics/assets3d/textures/CityTextures.js';
 
 import { PhysicsLoop } from '../src/physics/PhysicsLoop.js';
 import { SuspensionSim } from '../src/physics/SuspensionSim.js';
@@ -49,41 +50,6 @@ function disposeObject3D(obj) {
         if (Array.isArray(o.material)) o.material.forEach(disposeMaterial);
         else disposeMaterial(o.material);
     });
-}
-
-function makeCheckerTexture({ size = 256, squares = 8, colorA = '#ffffff', colorB = '#d01818' } = {}) {
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
-
-    const ctx = canvas.getContext('2d');
-    const cell = size / squares;
-
-    for (let y = 0; y < squares; y++) {
-        for (let x = 0; x < squares; x++) {
-            ctx.fillStyle = ((x + y) % 2 === 0) ? colorA : colorB;
-            ctx.fillRect(x * cell, y * cell, cell, cell);
-        }
-    }
-
-    // subtle grain
-    const img = ctx.getImageData(0, 0, size, size);
-    const d = img.data;
-    for (let i = 0; i < d.length; i += 4) {
-        const n = (Math.random() - 0.5) * 10;
-        d[i] = Math.min(255, Math.max(0, d[i] + n));
-        d[i + 1] = Math.min(255, Math.max(0, d[i + 1] + n));
-        d[i + 2] = Math.min(255, Math.max(0, d[i + 2] + n));
-    }
-    ctx.putImageData(img, 0, 0);
-
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.wrapT = THREE.RepeatWrapping;
-    tex.anisotropy = 8;
-    tex.needsUpdate = true;
-    return tex;
 }
 
 function createSkyline({ spanX = 160, baseZ = -85, depth = 10, minH = 10, maxH = 42, step = 3.2 } = {}) {

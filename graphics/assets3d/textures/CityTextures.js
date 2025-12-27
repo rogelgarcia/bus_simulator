@@ -113,6 +113,50 @@ function generateGrass({ size = 512, repeat = 200 } = {}) {
     return { map, roughnessMap };
 }
 
+/**
+ * Generate a checkerboard texture with optional grain effect
+ * @param {Object} options - Configuration options
+ * @param {number} options.size - Canvas size in pixels (default: 256)
+ * @param {number} options.squares - Number of squares per side (default: 8)
+ * @param {string} options.colorA - First color (default: '#ffffff')
+ * @param {string} options.colorB - Second color (default: '#d01818')
+ * @returns {THREE.CanvasTexture} The generated checkerboard texture
+ */
+export function makeCheckerTexture({ size = 256, squares = 8, colorA = '#ffffff', colorB = '#d01818' } = {}) {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+
+    const ctx = canvas.getContext('2d');
+    const cell = size / squares;
+
+    for (let y = 0; y < squares; y++) {
+        for (let x = 0; x < squares; x++) {
+            ctx.fillStyle = ((x + y) % 2 === 0) ? colorA : colorB;
+            ctx.fillRect(x * cell, y * cell, cell, cell);
+        }
+    }
+
+    // subtle grain
+    const img = ctx.getImageData(0, 0, size, size);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+        const n = (Math.random() - 0.5) * 10;
+        d[i] = Math.min(255, Math.max(0, d[i] + n));
+        d[i + 1] = Math.min(255, Math.max(0, d[i + 1] + n));
+        d[i + 2] = Math.min(255, Math.max(0, d[i + 2] + n));
+    }
+    ctx.putImageData(img, 0, 0);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.anisotropy = 8;
+    tex.needsUpdate = true;
+    return tex;
+}
+
 export function getCityTextures() {
     if (_cached) return _cached;
 
@@ -120,4 +164,3 @@ export function getCityTextures() {
     _cached = { grass };
     return _cached;
 }
-// src/city/materials/CityTextures.js
