@@ -147,8 +147,9 @@ export class GameplayState {
         // Compute camera params
         this._chase = computeChaseParams(this.vehicle);
 
-        // Register vehicle with physics
-        sim.physics.addVehicle(this.vehicle.id, this.vehicle.config, {}, {});
+        // ✅ Ensure physics systems have the real anchor/api so locomotion can use rear-axle kinematics.
+        sim.physics?.setEnvironment?.(this.city);
+        sim.physics?.addVehicle?.(this.vehicle.id, this.vehicle.config, this.vehicle.anchor, this.vehicle.api);
 
         // Create vehicle controller
         this.vehicleController = new VehicleController(this.vehicle.id, sim.physics, sim.events);
@@ -258,4 +259,3 @@ export class GameplayState {
         }
     }
 }
-

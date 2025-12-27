@@ -1,4 +1,7 @@
 // src/physics/systems/LocomotionSystem.js
+
+import { computeWheelRigGeometry, RearAxleBicycleModel } from '../shared/RearAxleBicycleModel.js';
+
 function clamp(v, a, b) {
     return Math.max(a, Math.min(b, v));
 }
@@ -50,14 +53,15 @@ const DEFAULT_CONFIG = {
     steerRateDegPerSec: 140,     // Steering slew rate
     steerEffect: 1.0,            // Steering effectiveness multiplier
 
-    // Understeer
-    understeerK: 0.0028,         // Understeer saturation coefficient
-
-    // Curvature inertia
+    // Curvature inertia (shared with DriveSim)
     curvatureTau: 0.28,          // Time constant for curvature lag
     curvatureMaxRate: 0.22,      // Max curvature change rate (1/m per sec)
 
-    // Geometry (defaults, overridden by vehicle)
+    // Suspension curvature response (faster than motion curvature)
+    curvatureSuspTau: 0.10,
+    curvatureSuspMaxRate: 1.2,
+
+    // Geometry (defaults, overridden by vehicle/rig)
     wheelbase: 5.5,              // Distance between axles (m)
     wheelRadius: 0.55            // Wheel radius (m)
 };
@@ -67,7 +71,7 @@ const DEFAULT_CONFIG = {
  *
  * Responsibilities:
  * - Speed control (acceleration, braking, coasting)
- * - Steering (rear-axle bicycle model)
+ * - Steering + turning using a REAR-AXLE bicycle model (no center-pivot)
  * - Position/yaw integration
  * - Wheel spin calculation
  * - Longitudinal acceleration output (for suspension)
@@ -83,17 +87,52 @@ export class LocomotionSystem {
 
     /**
      * Register a vehicle with this system.
-     * @param {object} vehicle - Vehicle instance with { id, api, anchor }
+     * @param {object} vehicleData - Vehicle registration object (expects { id, vehicle, api, anchor })
      */
-    addVehicle(vehicle) {
-        if (!vehicle?.id) return;
+    addVehicle(vehicleData) {
+        if (!vehicleData?.id) return;
 
         const c = this.config;
 
-        this.vehicles.set(vehicle.id, {
-            vehicle,
-            api: vehicle.api ?? null,
-            anchor: vehicle.anchor ?? null,
+        const vehicleCfg = vehicleData.vehicle ?? null;
+        const api = vehicleData.api ?? null;
+        const anchor = vehicleData.anchor ?? null;
+
+        // Start transform (so we don't "snap" on first frame)
+        const startX = anchor?.position?.x ?? 0;
+        const startY = anchor?.position?.y ?? 0;
+        const startZ = anchor?.position?.z ?? 0;
+        const startYaw = anchor?.rotation?.y ?? 0;
+
+        // Base geometry from config (if provided)
+        let wheelbase = c.wheelbase;
+        let wheelRadius = c.wheelRadius;
+
+        if (vehicleCfg && typeof vehicleCfg === 'object') {
+            if (typeof vehicleCfg.wheelbase === 'number' && isFinite(vehicleCfg.wheelbase)) {
+                wheelbase = clamp(vehicleCfg.wheelbase, 2.5, 10.0);
+            }
+            if (typeof vehicleCfg.wheelRadius === 'number' && isFinite(vehicleCfg.wheelRadius)) {
+                wheelRadius = Math.max(0.05, vehicleCfg.wheelRadius);
+            }
+        }
+
+        // Prefer wheel-rig-derived geometry when possible (matches DriveSim/TestMode)
+        const geom = computeWheelRigGeometry(api, anchor, { wheelbase, wheelRadius });
+
+        const kin = new RearAxleBicycleModel({
+            wheelbase: geom.wheelbase,
+            wheelRadius: geom.wheelRadius,
+            forwardSign: geom.forwardSign,
+            rearAxleLocal: geom.rearAxleLocal,
+            yaw: startYaw,
+            anchorPos: { x: startX, z: startZ }
+        });
+
+        this.vehicles.set(vehicleData.id, {
+            vehicle: vehicleData,
+            api,
+            anchor,
 
             // Speed state
             speed: 0,              // Current speed (m/s)
@@ -103,16 +142,22 @@ export class LocomotionSystem {
             // Steering state
             steerCmd: 0,           // Commanded steer angle (rad)
             steerAngle: 0,         // Actual steer angle (rad)
-            curvature: 0,          // Current path curvature (1/m)
 
-            // Position state
-            yaw: 0,                // Heading angle (rad)
-            position: { x: 0, y: 0, z: 0 },
+            // Kinematic outputs (anchor pose)
+            yaw: startYaw,
+            position: { x: startX, y: startY, z: startZ },
 
-            // Geometry (from vehicle or defaults)
-            wheelbase: c.wheelbase,
-            wheelRadius: c.wheelRadius,
-            forwardSign: 1,        // +1 if front is +Z, -1 if front is -Z
+            // Curvatures (for debug + suspension)
+            curvature: 0,
+            curvatureSusp: 0,
+
+            // Geometry
+            wheelbase: geom.wheelbase,
+            wheelRadius: geom.wheelRadius,
+            forwardSign: geom.forwardSign,
+
+            // Shared rear-axle model (the important part)
+            _kin: kin,
 
             // Input
             input: { throttle: 0, brake: 0, steering: 0 },
@@ -241,16 +286,42 @@ export class LocomotionSystem {
         s.speed = v1;
         s.longAccel = dt > 0 ? (v1 - v0) / dt : 0;
 
-        // Steering
         const vAvg = (v0 + v1) * 0.5;
+
+        // Steering (compute actual steer angle only)
         this._updateSteering(s, vAvg, maxSpeed, dt);
 
-        // Position/yaw integration
-        this._updatePosition(s, vAvg, dt);
+        // ✅ Rear-axle bicycle kinematics (shared with DriveSim)
+        const kinOut = s._kin.step({
+            dt,
+            speedMps: vAvg,
+            steerAngleRad: s.steerAngle,
+            steerEffect: c.steerEffect,
+            curvatureTau: c.curvatureTau,
+            curvatureMaxRate: c.curvatureMaxRate,
+            curvatureSuspTau: c.curvatureSuspTau,
+            curvatureSuspMaxRate: c.curvatureSuspMaxRate
+        });
+
+        s.yaw = kinOut.yaw;
+        s.curvature = kinOut.curvature;
+        s.curvatureSusp = kinOut.curvatureSusp;
+
+        // Position is the anchor/worldRoot position (NOT rear axle position)
+        s.position.x = kinOut.anchorPosX;
+        s.position.z = kinOut.anchorPosZ;
+        // Keep Y stable here; suspension system handles body heave separately.
+        // If an anchor existed at registration, we preserve that baseline Y.
+        // (If Y is driven elsewhere, VehicleController can choose how to apply it.)
+        // We do not integrate Y in locomotion.
+        // s.position.y remains whatever was set at registration (or updated externally).
+
+        // Wheel spin
+        s.wheelSpinAccum += kinOut.wheelSpinDelta;
     }
 
     /**
-     * Update steering for a vehicle.
+     * Update steering for a vehicle (no curvature/understeer here).
      * @param {object} s - Vehicle state
      * @param {number} vAvg - Average speed this frame
      * @param {number} maxSpeed - Maximum speed
@@ -266,53 +337,12 @@ export class LocomotionSystem {
         const maxSteerDyn = degToRad(maxSteerDynDeg);
 
         // Commanded steer angle from input
-        // Negate because input convention is +1=right, but yaw convention is +angle=left
+        // NOTE: Keep this convention unchanged; it matches existing gameplay input mapping.
         s.steerCmd = -s.input.steering * maxSteerDyn;
 
         // Slew-limited actual steer angle
         const steerRate = degToRad(c.steerRateDegPerSec);
         s.steerAngle = moveTowards(s.steerAngle, s.steerCmd, steerRate * dt);
-
-        // Calculate curvature from steering (bicycle model)
-        const L = Math.max(1e-3, s.wheelbase);
-        let curvCmd = (Math.tan(s.steerAngle) * c.steerEffect) / L;
-
-        // Understeer saturation at high speed
-        const understeerSat = 1 / (1 + c.understeerK * vAvg * vAvg);
-        curvCmd *= understeerSat;
-
-        // Curvature inertia (lag)
-        const maxRate = Math.max(1e-4, c.curvatureMaxRate);
-        s.curvature = moveTowards(s.curvature, curvCmd, maxRate * dt);
-    }
-
-    /**
-     * Update position and yaw for a vehicle.
-     * @param {object} s - Vehicle state
-     * @param {number} vAvg - Average speed this frame
-     * @param {number} dt - Delta time
-     */
-    _updatePosition(s, vAvg, dt) {
-        const ds = vAvg * dt;
-
-        // Yaw rate from curvature
-        const yawRate = vAvg * s.curvature;
-        s.yaw += yawRate * dt;
-
-        // Normalize yaw to [-PI, PI]
-        while (s.yaw > Math.PI) s.yaw -= 2 * Math.PI;
-        while (s.yaw < -Math.PI) s.yaw += 2 * Math.PI;
-
-        // Move forward in heading direction
-        const cosYaw = Math.cos(s.yaw);
-        const sinYaw = Math.sin(s.yaw);
-
-        s.position.x += sinYaw * ds * s.forwardSign;
-        s.position.z += cosYaw * ds * s.forwardSign;
-
-        // Wheel spin
-        const r = Math.max(1e-3, s.wheelRadius);
-        s.wheelSpinAccum += (ds * s.forwardSign) / r;
     }
 
     /**
@@ -346,7 +376,8 @@ export class LocomotionSystem {
         if (!state) return 0;
 
         // a_lat = v² * curvature
-        return state.speed * state.speed * state.curvature;
+        // Use the faster "suspension curvature" channel to match DriveSim feel.
+        const curv = (typeof state.curvatureSusp === 'number') ? state.curvatureSusp : state.curvature;
+        return state.speed * state.speed * curv;
     }
 }
-

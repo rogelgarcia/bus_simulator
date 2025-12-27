@@ -5,6 +5,7 @@
  * This file is kept for TestModeState (debug tool).
  */
 import * as THREE from 'three';
+import { computeWheelRigGeometry, RearAxleBicycleModel } from './shared/RearAxleBicycleModel.js';
 
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 function avg(list) {
@@ -22,8 +23,6 @@ function moveTowards(cur, target, maxDelta) {
     return cur + d;
 }
 
-const Y_AXIS = new THREE.Vector3(0, 1, 0);
-
 export class DriveSim {
     constructor(tuning = {}) {
         this.api = null;
@@ -32,14 +31,9 @@ export class DriveSim {
 
         this._baseY = 0;
 
-        this._curvSusp = 0;
-
         // wheel/ground speed
         this.speed = 0;            // m/s
         this.targetSpeed = 0;      // m/s
-
-        // yaw of the whole bus in world (applied to worldRoot)
-        this.yaw = 0;
 
         // model forward: +1 means front axle is +Z of worldRoot local, -1 means front is -Z
         this.forwardSign = 1;
@@ -52,18 +46,19 @@ export class DriveSim {
         this._steerCmd = 0;
         this._steer = 0;           // actual applied steer (rad)
 
-        // actual curvature (lags command)
-        this._curv = 0;            // 1/m
-
         // accel from wheel speed, and accel fed to suspension (held/filtered)
         this.longAccel = 0;        // m/s^2 (wheel kinematics)
         this._aLongSusp = 0;       // m/s^2 (body inertia)
 
         this.releaseMode = false;
 
-        // rear axle pivot tracking
-        this._rearAxleLocal = new THREE.Vector3(0, 0, -2.6); // in worldRoot local space
-        this._rearPosWorld = new THREE.Vector3();            // desired rear axle world position
+        // shared rear-axle bicycle model (turning behavior)
+        this._kin = new RearAxleBicycleModel();
+
+        // expose for debug parity (not required, but keeps old fields meaningful)
+        this.yaw = 0;
+        this._curv = 0;
+        this._curvSusp = 0;
 
         // stop inertia hold / release bump
         this._stopHoldT = 0;
@@ -86,15 +81,13 @@ export class DriveSim {
             // steering slew
             steerRateDegPerSec: 140,
 
-            // understeer saturation
-            understeerK: 0.0028,
-
-            // curvature inertia
+            // curvature inertia (shared with LocomotionSystem)
             curvatureTau: 0.28,
             curvatureMaxRate: 0.22, // 1/m per sec
 
-            urvatureSuspTau: 0.10,        // faster than curvatureTau
-            curvatureSuspMaxRate: 1.2,     // faster than curvatureMaxRate
+            // suspension curvature response (faster than motion curvature)
+            curvatureSuspTau: 0.10,
+            curvatureSuspMaxRate: 1.2,
 
             // acceleration curve (fast at start, tapers)
             maxAccel0: 2.2,
@@ -132,7 +125,6 @@ export class DriveSim {
     }
 
     bind(api, worldRoot, suspension = null) {
-        this._curvSusp = 0;
         this.api = api ?? null;
         this.worldRoot = worldRoot ?? null;
         this.suspension = suspension ?? null;
@@ -142,17 +134,33 @@ export class DriveSim {
         this.worldRoot.updateMatrixWorld(true);
 
         this._baseY = this.worldRoot.position.y;
-        this.yaw = this.worldRoot.rotation.y ?? 0;
 
         this.wheelRadius = Math.max(0.05, this.api?.wheelRig?.wheelRadius ?? this.wheelRadius);
 
         this._configureFromBus();
-        this._computeAxlesFromRig(); // rear axle local + wheelbase + forwardSign
 
-        // init rear axle world pos
-        this._rearPosWorld.copy(this._rearAxleLocal);
-        this._rearPosWorld.applyAxisAngle(Y_AXIS, this.yaw);
-        this._rearPosWorld.add(this.worldRoot.position);
+        // shared geometry from wheel rig (rear axle local + wheelbase + forwardSign)
+        const geom = computeWheelRigGeometry(this.api, this.worldRoot, {
+            wheelRadius: this.wheelRadius,
+            wheelbase: this.wheelbase
+        });
+
+        this.wheelRadius = geom.wheelRadius;
+        this.wheelbase = geom.wheelbase;
+        this.forwardSign = geom.forwardSign;
+
+        this._kin.setGeometry({
+            wheelRadius: this.wheelRadius,
+            wheelbase: this.wheelbase,
+            forwardSign: this.forwardSign,
+            rearAxleLocal: geom.rearAxleLocal
+        });
+
+        // init kinematics from current anchor transform
+        this._kin.resetFromWorldRoot(this.worldRoot);
+        this.yaw = this._kin.yaw;
+        this._curv = this._kin.curvature;
+        this._curvSusp = this._kin.curvatureSusp;
 
         // reset dynamics
         this.speed = 0;
@@ -161,8 +169,6 @@ export class DriveSim {
 
         this._steerCmd = 0;
         this._steer = 0;
-
-        this._curv = 0;
 
         this.longAccel = 0;
         this._aLongSusp = 0;
@@ -195,60 +201,6 @@ export class DriveSim {
         if (overrides && typeof overrides === 'object') {
             this.tuning = { ...this.tuning, ...overrides };
         }
-    }
-
-    _computeAxlesFromRig() {
-        const rig = this.api?.wheelRig;
-        if (!rig || (!rig.front?.length && !rig.rear?.length)) return;
-
-        this.worldRoot.updateMatrixWorld(true);
-
-        const tmp = new THREE.Vector3();
-        const pts = [];
-
-        const readLocal = (w) => {
-            const pivot = w?.rollPivot ?? w?.steerPivot;
-            if (!pivot) return null;
-            pivot.getWorldPosition(tmp);
-            return this.worldRoot.worldToLocal(tmp.clone());
-        };
-
-        for (const w of rig.front ?? []) {
-            const p = readLocal(w);
-            if (p) pts.push(p);
-        }
-        for (const w of rig.rear ?? []) {
-            const p = readLocal(w);
-            if (p) pts.push(p);
-        }
-
-        if (pts.length < 2) return;
-
-        const minZ = Math.min(...pts.map((p) => p.z));
-        const maxZ = Math.max(...pts.map((p) => p.z));
-        const midZ = (minZ + maxZ) / 2;
-
-        const front = pts.filter((p) => p.z > midZ);
-        const rear = pts.filter((p) => p.z <= midZ);
-
-        if (front.length < 1 || rear.length < 1) return;
-
-        const centerOf = (arr) => {
-            const c = new THREE.Vector3();
-            for (const p of arr) c.add(p);
-            c.multiplyScalar(1 / arr.length);
-            return c;
-        };
-
-        const frontC = centerOf(front);
-        const rearC = centerOf(rear);
-
-        this.forwardSign = (frontC.z >= rearC.z) ? 1 : -1;
-
-        const wb = Math.abs(frontC.z - rearC.z);
-        this.wheelbase = clamp(wb || this.wheelbase, 2.5, 10.0);
-
-        this._rearAxleLocal.copy(rearC);
     }
 
     fixedUpdate(dtRaw) {
@@ -345,7 +297,6 @@ export class DriveSim {
         this._aLongSusp = expLerp(this._aLongSusp, aLongTarget, dt, this.tuning.aLongSuspTau ?? 0.06);
 
         const vAvg = (v0 + v1) * 0.5;
-        const ds = vAvg * dt;
 
         // ----------------------------
         // steering: speed-dependent max + slew rate
@@ -355,9 +306,9 @@ export class DriveSim {
 
         const s01 = maxSpeed > 1e-3 ? clamp(vAvg / maxSpeed, 0, 1) : 0;
         const pow = this.tuning.steerSpeedCurve ?? 1.3;
-        const t = Math.pow(s01, pow);
+        const tt = Math.pow(s01, pow);
 
-        const maxSteerDynDeg = THREE.MathUtils.lerp(maxSteerDeg, minSteerDeg, t);
+        const maxSteerDynDeg = THREE.MathUtils.lerp(maxSteerDeg, minSteerDeg, tt);
         const maxSteerDyn = THREE.MathUtils.degToRad(maxSteerDynDeg);
 
         const steerInput = (this.tuning.invertSteer ? -this._steerCmd : this._steerCmd);
@@ -370,62 +321,35 @@ export class DriveSim {
         this.api?.setSteerAngle?.(this._steer);
 
         // ----------------------------
-        // ✅ REAR-AXLE bicycle kinematics (NO rear slip)
+        // ✅ Shared REAR-AXLE bicycle kinematics (NO center-pivot rotation)
+        // ✅ Understeer logic removed (no v^2 curvature suppression)
         // ----------------------------
-        const L = Math.max(1e-3, this.wheelbase);
+        const kinOut = this._kin.step({
+            dt,
+            speedMps: vAvg,
+            steerAngleRad: this._steer,
+            steerEffect: this.tuning.steerEffect ?? 1.0,
+            curvatureTau: this.tuning.curvatureTau ?? 0.28,
+            curvatureMaxRate: this.tuning.curvatureMaxRate ?? 0.22,
+            curvatureSuspTau: this.tuning.curvatureSuspTau ?? 0.10,
+            curvatureSuspMaxRate: this.tuning.curvatureSuspMaxRate ?? 1.2
+        });
 
-        // ✅ FIX: DO NOT negate by forwardSign — it was flipping the turn direction
-        const steerEff = (this.tuning.steerEffect ?? 1.0);
-        let curvCmd = (Math.tan(this._steer) * steerEff) / L;
+        this.yaw = kinOut.yaw;
+        this._curv = kinOut.curvature;
+        this._curvSusp = kinOut.curvatureSusp;
 
-        // understeer: reduce curvature with v^2
-        const K = this.tuning.understeerK ?? 0.0028;
-        curvCmd = curvCmd / (1 + K * vAvg * vAvg);
-
-        // --- suspension curvature (faster response than motion curvature) ---
-        const curvSuspTau = this.tuning.curvatureSuspTau ?? 0.10;
-        const curvSuspWanted = expLerp(this._curvSusp, curvCmd, dt, curvSuspTau);
-
-        const curvSuspMaxRate = Math.max(1e-4, this.tuning.curvatureSuspMaxRate ?? 1.2);
-        this._curvSusp = moveTowards(this._curvSusp, curvSuspWanted, curvSuspMaxRate * dt);
-
-        // inertia + rate limit
-        const curvTau = this.tuning.curvatureTau ?? 0.28;
-        const curvWanted = expLerp(this._curv, curvCmd, dt, curvTau);
-
-        const maxRate = Math.max(1e-4, this.tuning.curvatureMaxRate ?? 0.22);
-        this._curv = moveTowards(this._curv, curvWanted, maxRate * dt);
-
-        // yaw update
-        const yawRate = vAvg * this._curv;
-        this.yaw += yawRate * dt;
-
-        // rear axle moves along bus heading (no lateral slip at rear)
-        const forwardLocal = new THREE.Vector3(0, 0, this.forwardSign);
-        const forwardWorld = forwardLocal.applyAxisAngle(Y_AXIS, this.yaw);
-        forwardWorld.y = 0;
-        forwardWorld.normalize();
-
-        this._rearPosWorld.addScaledVector(forwardWorld, ds);
-
-        // set worldRoot rotation
+        // set worldRoot transform so rear axle stays on the path
         this.worldRoot.rotation.y = this.yaw;
-
-        // position worldRoot so rear axle point lands on _rearPosWorld
-        const rearOffsetWorld = this._rearAxleLocal.clone().applyAxisAngle(Y_AXIS, this.yaw);
-
-        this.worldRoot.position.x = this._rearPosWorld.x - rearOffsetWorld.x;
-        this.worldRoot.position.z = this._rearPosWorld.z - rearOffsetWorld.z;
+        this.worldRoot.position.x = kinOut.anchorPosX;
+        this.worldRoot.position.z = kinOut.anchorPosZ;
         this.worldRoot.position.y = this._baseY;
 
         // wheel spin from travel
-        const r = Math.max(1e-3, this.wheelRadius);
-        const dSpin = (ds * this.forwardSign) / r;
-        this.api?.addWheelSpin?.(dSpin);
+        this.api?.addWheelSpin?.(kinOut.wheelSpinDelta);
 
-        // lateral accel for suspension
+        // lateral accel for suspension (use faster curvature channel)
         const aLat = (vAvg * vAvg) * this._curvSusp;
-
 
         this.suspension?.setChassisAccel?.({
             aLat,
