@@ -290,7 +290,7 @@ export class BusSelectState {
         this.engine.context.selectedBus = bus;
 
         // Go directly to new gameplay state
-        this.sm.go('gameplay');
+        this.sm.go('game_mode');
     }
 
     _moveActive(delta) {

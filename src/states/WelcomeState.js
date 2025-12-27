@@ -45,7 +45,7 @@ export class WelcomeState {
 
     _gameplay() {
         // Go directly to new GameplayState (for testing new architecture)
-        this.sm.go('gameplay');
+        this.sm.go('game_mode');
     }
 
     _handleKeyDown(e) {
