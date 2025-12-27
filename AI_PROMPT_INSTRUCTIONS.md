@@ -24,6 +24,7 @@ All prompts should include the following default requirements:
 - **All outputs must be the entire file (modified or created)**
 - Do not provide partial files or snippets
 - Include complete file contents for both new and modified files
+- Inform if it is a new file or a modified file
 
 #### Refactoring
 - **If a refactoring is needed, that can be done**
