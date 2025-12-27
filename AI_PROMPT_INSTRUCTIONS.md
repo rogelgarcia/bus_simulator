@@ -44,7 +44,7 @@ For the attached files section:
 - Consider dependencies and related components
 - Include configuration files if applicable
 - **When in doubt, add the file** - This is for an expensive AI processor that can leverage extra context effectively
-- Include a list of the files that were attached (if all files in a folder are attached, only add the folder name)
+- Include a list of the files that were attached (if all files in a folder are attached, only add the folder name with /* suffix)
 
 #### Step 2: Add Project Directory Tree
 - **Execute a command to output the project structure**
@@ -55,13 +55,11 @@ Example commands:
 ```bash
 # Unix/Linux/macOS
 find . -type f \( -name "*.js" -o -name "*.css" \) | grep -v node_modules | sort >> prompt_request.txt
-
-# Windows PowerShell
-Get-ChildItem -Path . -Include *.js,*.css -Recurse | Where-Object { $_.FullName -notmatch 'node_modules' } | Select-Object -ExpandProperty FullName | Sort-Object | Add-Content -Path prompt_request.txt
 ```
 
 #### Step 3: Execute Batch Command to Output Files
 - **Do not manually copy file contents**
+- If more than 50% of the files in a folder are needed, attach all files in that folder instead
 - Use a batch command to output all relevant files to the request file
 - This ensures accuracy and completeness
 - **Note**: The filename is already included in each file, so when attaching files, it is not needed to also put the file name in the output
@@ -78,6 +76,7 @@ Get-ChildItem -Path . -Include *.js,*.css -Recurse | Where-Object { $_.FullName 
 - All outputs must be the entire file (modified or created)
 - If a refactoring is needed, that can be done
 - If there is a convention but it seems wrong, that can be changed
+- In the beggining of the response, include the list of files that were changed, include also a separator between the contents  
 - If a crucial file is missing, request the file prior to making any changes
 
 ## Project Structure
