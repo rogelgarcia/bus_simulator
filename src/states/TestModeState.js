@@ -2,9 +2,9 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-import { BUS_CATALOG } from '../assets3d/factories/BusCatalog.js';
-import { createBus } from '../assets3d/factories/BusFactory.js';
-import { tuneBusMaterials } from '../assets3d/factories/tuneBusMaterials.js';
+import { BUS_CATALOG } from '../../graphics/assets3d/factories/BusCatalog.js';
+import { createBus } from '../../graphics/assets3d/factories/BusFactory.js';
+import { tuneBusMaterials } from '../../graphics/assets3d/factories/tuneBusMaterials.js';
 
 import { PhysicsLoop } from '../physics/PhysicsLoop.js';
 import { SuspensionSim } from '../physics/SuspensionSim.js';

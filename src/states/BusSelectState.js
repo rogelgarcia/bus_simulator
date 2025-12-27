@@ -2,12 +2,12 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-import { BUS_CATALOG } from '../assets3d/factories/BusCatalog.js';
-import { createBus } from '../assets3d/factories/BusFactory.js';
+import { BUS_CATALOG } from '../../graphics/assets3d/factories/BusCatalog.js';
+import { createBus } from '../../graphics/assets3d/factories/BusFactory.js';
 import { tween, easeInOutCubic } from '../utils/animate.js';
-import { createGarageModel } from '../assets3d/environment.js';
-import { tuneBusMaterials } from '../assets3d/factories/tuneBusMaterials.js';
-import { fadeOut } from '../gui/utils/screenFade.js';
+import { createGarageModel } from '../../graphics/assets3d/environment.js';
+import { tuneBusMaterials } from '../../graphics/assets3d/factories/tuneBusMaterials.js';
+import { fadeOut } from '../../graphics/gui/utils/screenFade.js';
 
 const TRANSITION = {
     shuffleSec: 1.4,   // was 0.85

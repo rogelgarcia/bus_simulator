@@ -4,9 +4,9 @@ import { createCityWorld } from './CityWorld.js';
 import { createCityConfig } from './CityConfig.js';
 import { CityMap } from './CityMap.js';
 import { CityRNG } from './CityRNG.js';
-import { getCityMaterials } from '../assets3d/textures/CityMaterials.js';
-import { generateRoads } from '../assets3d/generators/RoadGenerator.js';
-import { createGradientSkyDome } from '../assets3d/generators/SkyGenerator.js';
+import { getCityMaterials } from '../../graphics/assets3d/textures/CityMaterials.js';
+import { generateRoads } from '../../graphics/assets3d/generators/RoadGenerator.js';
+import { createGradientSkyDome } from '../../graphics/assets3d/generators/SkyGenerator.js';
 
 export class City {
     constructor(options = {}) {

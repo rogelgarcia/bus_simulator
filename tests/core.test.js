@@ -703,7 +703,7 @@ async function runTests() {
 
     // ========== GameEngine Integration Tests (added in Task 6) ==========
     try {
-        const { GameEngine } = await import('/src/engine/GameEngine.js');
+        const { GameEngine } = await import('/src/core/GameEngine.js');
 
         // Create a mock canvas for testing
         const mockCanvas = document.createElement('canvas');
@@ -743,7 +743,7 @@ async function runTests() {
 
     // ========== InputManager Tests (added in Task 13) ==========
     try {
-        const { InputManager } = await import('/src/ui/input/InputManager.js');
+        const { InputManager } = await import('/src/input/InputManager.js');
 
         test('InputManager: instantiates with EventBus', () => {
             const bus = new EventBus();
