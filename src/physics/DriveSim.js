@@ -5,7 +5,7 @@
  * This file is kept for TestModeState (debug tool).
  */
 import * as THREE from 'three';
-import { computeWheelRigGeometry, RearAxleBicycleModel } from './shared/RearAxleBicycleModel.js';
+import { computeWheelRigGeometry, RearAxleBicycleModelSystem } from './systems/RearAxleBicycleModelSystem.js';
 
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 function avg(list) {
@@ -53,7 +53,7 @@ export class DriveSim {
         this.releaseMode = false;
 
         // shared rear-axle bicycle model (turning behavior)
-        this._kin = new RearAxleBicycleModel();
+        this._kin = new RearAxleBicycleModelSystem();
 
         // expose for debug parity (not required, but keeps old fields meaningful)
         this.yaw = 0;

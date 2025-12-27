@@ -1,4 +1,4 @@
-// src/physics/shared/RearAxleBicycleModel.js
+// src/physics/systems/RearAxleBicycleModelSystem.js
 /**
  * Rear-axle bicycle kinematics shared by both:
  * - legacy DriveSim (TestModeState)
@@ -8,7 +8,7 @@
  * - Front wheels (steer angle) determine curvature.
  * - Motion is integrated at the REAR axle (rear wheels follow).
  * - The rendered worldRoot/anchor is positioned so the rear axle stays on the
- *   kinematic path (prevents “center pivot” turning).
+ *   kinematic path (prevents "center pivot" turning).
  *
  * NOTE: This is purely kinematic (no tire slip model).
  */
@@ -137,7 +137,7 @@ export function computeWheelRigGeometry(busApi, worldRoot, fallback = {}) {
  * Stores the kinematic state (rear axle position + yaw + curvature),
  * and returns the derived worldRoot (anchor) transform each step.
  */
-export class RearAxleBicycleModel {
+export class RearAxleBicycleModelSystem {
     constructor({
                     wheelbase = 5.5,
                     wheelRadius = 0.55,
@@ -306,3 +306,4 @@ export class RearAxleBicycleModel {
         };
     }
 }
+

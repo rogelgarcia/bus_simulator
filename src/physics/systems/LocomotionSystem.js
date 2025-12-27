@@ -1,6 +1,6 @@
 // src/physics/systems/LocomotionSystem.js
 
-import { computeWheelRigGeometry, RearAxleBicycleModel } from '../shared/RearAxleBicycleModel.js';
+import { computeWheelRigGeometry, RearAxleBicycleModelSystem } from './RearAxleBicycleModelSystem.js';
 
 function clamp(v, a, b) {
     return Math.max(a, Math.min(b, v));
@@ -120,7 +120,7 @@ export class LocomotionSystem {
         // Prefer wheel-rig-derived geometry when possible (matches DriveSim/TestMode)
         const geom = computeWheelRigGeometry(api, anchor, { wheelbase, wheelRadius });
 
-        const kin = new RearAxleBicycleModel({
+        const kin = new RearAxleBicycleModelSystem({
             wheelbase: geom.wheelbase,
             wheelRadius: geom.wheelRadius,
             forwardSign: geom.forwardSign,
