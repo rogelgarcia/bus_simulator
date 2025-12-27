@@ -9,3 +9,9 @@
 
 **Principle:** Keep rendering/visual code separate from business logic in `/src`
 
+## Code Style
+
+**Comments:**
+- No comments in code files
+- Exception: First line must be a comment with the file path (e.g., `// graphics/assets3d/generators/RoadGenerator.js`)
+
