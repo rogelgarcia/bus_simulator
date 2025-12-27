@@ -30,6 +30,7 @@ export function createCityWorld({ size = 800, tileMeters = 2, map = null, config
 
     let groundTiles = null;
     let tilesMat = null;
+    let gridLines = null;
 
     if (map) {
         const tileGeo = new THREE.PlaneGeometry(map.tileSize, map.tileSize, 1, 1);
@@ -69,6 +70,38 @@ export function createCityWorld({ size = 800, tileMeters = 2, map = null, config
         group.add(groundTiles);
     }
 
+    if (map) {
+        const half = map.tileSize * 0.5;
+        const minX = map.origin.x - half;
+        const minZ = map.origin.z - half;
+        const maxX = minX + map.width * map.tileSize;
+        const maxZ = minZ + map.height * map.tileSize;
+        const y = computedGroundY + 0.002;
+
+        const verts = [];
+        for (let x = 0; x <= map.width; x++) {
+            const xPos = minX + x * map.tileSize;
+            verts.push(xPos, y, minZ, xPos, y, maxZ);
+        }
+        for (let z = 0; z <= map.height; z++) {
+            const zPos = minZ + z * map.tileSize;
+            verts.push(minX, y, zPos, maxX, y, zPos);
+        }
+
+        const gridGeo = new THREE.BufferGeometry();
+        gridGeo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+
+        const gridMat = new THREE.LineBasicMaterial({
+            color: 0x2f2f2f,
+            transparent: true,
+            opacity: 0.45
+        });
+
+        gridLines = new THREE.LineSegments(gridGeo, gridMat);
+        gridLines.name = 'TileGrid';
+        group.add(gridLines);
+    }
+
     const grassUrl = new URL('../../../assets/grass.png', import.meta.url);
     const loader = new THREE.TextureLoader();
 
@@ -103,5 +136,5 @@ export function createCityWorld({ size = 800, tileMeters = 2, map = null, config
         (err) => console.warn('[CityWorld] Failed to load grass texture:', grassUrl.href, err)
     );
 
-    return { group, floor, groundTiles };
+    return { group, floor, groundTiles, gridLines };
 }
