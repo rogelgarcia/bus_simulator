@@ -32,6 +32,9 @@ Note: `index.html` uses CDN imports for `three`, so a network connection is requ
 
 ## Commit & Pull Request Guidelines
 - Commit messages in history are short, imperative, and sentence case (e.g., “Add AI prompt for RoadGenerator refactoring”).
+- Stage changes with `git add -A` before committing.
+- Use a one-line commit message.
+- Never commit AI prompt files named `AI_#_title`.
 - PRs should include a clear description of behavior changes, testing notes (what was run), and screenshots for UI/visual changes.
 - Link related issues or tasks when applicable.
 
