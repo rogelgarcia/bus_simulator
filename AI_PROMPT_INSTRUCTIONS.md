@@ -4,14 +4,19 @@ This file contains guidelines for creating effective AI prompts for code modific
 
 ## Prompt Structure
 
-Every AI prompt request should consist of **3 main parts**:
+Every AI prompt request should consist of the follwing parts:
 
 ### 1. The Request Itself
 - Clearly state what you want to accomplish
 - Be specific about the desired outcome
 - Include any constraints or requirements
 
-### 2. Default Requirements
+### 2. Project Rules
+- **Always include the complete contents of PROJECT_RULES.md**
+- This ensures the AI follows project conventions and organizational structure
+- The rules file contains critical information about directory structure and coding standards
+
+### 3. Default Requirements
 
 All prompts should include the following default requirements:
 
@@ -35,7 +40,7 @@ All prompts should include the following default requirements:
 - Don't assume file contents
 - Ask for necessary context before proceeding
 
-### 3. Attached Files
+### 4. Attached Files
 
 For the attached files section:
 
@@ -71,12 +76,16 @@ find . -type f \( -name "*.js" -o -name "*.css" \) | grep -v node_modules | sort
 
 [Your specific request here]
 
+## Project Rules
+
+[Use batch command to append PROJECT_RULES.md contents here]
+
 ## Requirements
 
 - All outputs must be the entire file (modified or created)
 - If a refactoring is needed, that can be done
 - If there is a convention but it seems wrong, that can be changed
-- In the beggining of the response, include the list of files that were changed, include also a separator between the contents  
+- In the beggining of the response, include the list of files that were changed, include also a separator between the contents
 - If a crucial file is missing, request the file prior to making any changes
 
 ## Project Structure
