@@ -7,7 +7,7 @@ import { createBus } from '../assets3d/factories/BusFactory.js';
 import { tween, easeInOutCubic } from '../utils/animate.js';
 import { createGarageModel } from '../assets3d/environment.js';
 import { tuneBusMaterials } from '../assets3d/factories/tuneBusMaterials.js';
-import { fadeOut } from '../assets3d/utils/screenFade.js';
+import { fadeOut } from '../gui/utils/screenFade.js';
 
 const TRANSITION = {
     shuffleSec: 1.4,   // was 0.85

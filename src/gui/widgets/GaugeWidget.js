@@ -1,4 +1,4 @@
-// src/ui/widgets/GaugeWidget.js
+// src/gui/widgets/GaugeWidget.js
 
 function clamp(v, a, b) {
     return Math.max(a, Math.min(b, v));

@@ -1,4 +1,4 @@
-// src/ui/widgets/PedalWidget.js
+// src/gui/widgets/PedalWidget.js
 
 function clamp01(v) {
     return Math.max(0, Math.min(1, v));

@@ -1,4 +1,4 @@
-// src/ui/input/InputManager.js
+// src/input/InputManager.js
 
 import { RampedControl } from './RampedControl.js';
 

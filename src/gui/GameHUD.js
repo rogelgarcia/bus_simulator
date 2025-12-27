@@ -1,7 +1,7 @@
-// src/ui/GameHUD.js
+// src/gui/GameHUD.js
 
 import { injectHudStyles } from "./HUDStyles.js";
-import { RampedControl } from "./input/RampedControl.js";
+import { RampedControl } from "../input/RampedControl.js";
 import { SteeringWheelWidget } from "./widgets/SteeringWheelWidget.js";
 import { PedalWidget } from "./widgets/PedalWidget.js";
 import { GaugeWidget } from "./widgets/GaugeWidget.js";

@@ -1,3 +1,3 @@
-// src/ui/index.js
+// src/gui/index.js
 
 export { GameHUD } from "./GameHUD.js";

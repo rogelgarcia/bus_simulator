@@ -1,4 +1,4 @@
-// src/assets3d/utils/screenFade.js
+// src/gui/utils/screenFade.js
 import { tween } from '../../utils/animate.js';
 
 let _el = null;
