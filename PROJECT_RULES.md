@@ -14,4 +14,5 @@
 **Comments:**
 - No comments in code files
 - Exception: First line must be a comment with the file path (e.g., `// graphics/assets3d/generators/RoadGenerator.js`)
+- Exception: Design decisions (do not explain the code, but why it is written a certain way)
 
