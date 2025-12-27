@@ -19,6 +19,7 @@ All prompts should include the following default requirements:
 - **All outputs must be the entire file (modified or created)**
 - Do not provide partial files or snippets
 - Include complete file contents for both new and modified files
+- Use an specific file name AI_#_title
 
 #### Refactoring
 - **If a refactoring is needed, that can be done**
@@ -44,6 +45,7 @@ For the attached files section:
 - Consider dependencies and related components
 - Include configuration files if applicable
 - **When in doubt, add the file** - This is for an expensive AI processor that can leverage extra context effectively
+- Include a list of the files that were attached (if all files in a folder are attached, only add the folder name)
 
 #### Step 2: Add Project Directory Tree
 - **Execute a command to output the project structure**
