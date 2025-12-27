@@ -4,6 +4,11 @@ import { createBusWheel } from './components/BusWheel.js';
 import { WheelRig } from './components/WheelRig.js';
 import { attachBusSkeleton } from '../../../../src/skeletons/buses/BusSkeleton.js';
 
+// Transparency configuration
+const TRANSPARENT_BUS = true;
+const BUS_BODY_OPACITY = 0.4;
+const BUS_LINER_OPACITY = 0.1;
+
 function applyShadows(group) {
     group.traverse((o) => {
         if (o.isMesh) {
@@ -273,7 +278,9 @@ function makeMaterials({ textureUrl }) {
         map: atlas,
         color: 0xffffff,
         roughness: 0.72,
-        metalness: 0.04
+        metalness: 0.04,
+        transparent: TRANSPARENT_BUS,
+        opacity: TRANSPARENT_BUS ? BUS_BODY_OPACITY : 1.0
     });
 
     // Roof MUST be plain (no AC/vents texture)
@@ -281,14 +288,18 @@ function makeMaterials({ textureUrl }) {
         map: null,
         color: 0xf6f6f6,
         roughness: 0.72,
-        metalness: 0.04
+        metalness: 0.04,
+        transparent: TRANSPARENT_BUS,
+        opacity: TRANSPARENT_BUS ? BUS_BODY_OPACITY : 1.0
     });
 
     // Interior liner: dark bluish/metal (blocks seeing through the arch)
     const interior = new THREE.MeshStandardMaterial({
         color: 0x1b2634,     // dark bluish gray
         roughness: 0.55,
-        metalness: 0.45
+        metalness: 0.45,
+        transparent: TRANSPARENT_BUS,
+        opacity: TRANSPARENT_BUS ? BUS_LINER_OPACITY : 1.0
     });
 
     // lights default OFF (emissiveIntensity 0). Skeleton toggles them.
