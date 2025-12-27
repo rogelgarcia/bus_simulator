@@ -8,7 +8,8 @@ import {
     CURB_COLOR_PALETTE,
     ASPHALT_COLOR_PALETTE,
     DEBUG_ASPHALT,
-    DEBUG_HIDE_CURBS_AND_SIDEWALKS,
+    DEBUG_HIDE_SIDEWALKS,
+    DEBUG_HIDE_CURBS,
     DEBUG_DISABLE_MARKINGS_IN_ASPHALT_DEBUG
 } from './GeneratorParams.js';
 import { clamp, deepMerge } from './internal_road/RoadMath.js';
@@ -88,10 +89,12 @@ export function generateRoads({ map, config, materials } = {}) {
         name: 'Asphalt'
     });
 
-    const hideCurbSidewalk = asphaltDebug && DEBUG_HIDE_CURBS_AND_SIDEWALKS;
+    const hideSidewalk = asphaltDebug && DEBUG_HIDE_SIDEWALKS;
+    const hideCurb = asphaltDebug && DEBUG_HIDE_CURBS;
+    const hideCurbSidewalk = hideSidewalk && hideCurb;
     const disableMarkings = asphaltDebug && DEBUG_DISABLE_MARKINGS_IN_ASPHALT_DEBUG;
 
-    const sidewalk = hideCurbSidewalk
+    const sidewalk = hideSidewalk
         ? null
         : createSidewalkBuilder({
             planeGeo,
@@ -102,7 +105,7 @@ export function generateRoads({ map, config, materials } = {}) {
             name: 'Sidewalk'
         });
 
-    const curb = hideCurbSidewalk
+    const curb = hideCurb
         ? null
         : createCurbBuilder({
             boxGeo,
@@ -174,7 +177,14 @@ export function generateRoads({ map, config, materials } = {}) {
             const axis = map.axis[idx];
             const connMask = map.conn[idx] ?? 0;
 
-            processRoadTile({ pos, lanes, axis, connMask, ctx });
+            const neighborAxis = {
+                n: (y + 1 < map.height) ? map.axis[idx + map.width] : AXIS.NONE,
+                e: (x + 1 < map.width) ? map.axis[idx + 1] : AXIS.NONE,
+                s: (y - 1 >= 0) ? map.axis[idx - map.width] : AXIS.NONE,
+                w: (x - 1 >= 0) ? map.axis[idx - 1] : AXIS.NONE
+            };
+
+            processRoadTile({ pos, lanes, axis, connMask, neighborAxis, ctx });
         }
     }
 

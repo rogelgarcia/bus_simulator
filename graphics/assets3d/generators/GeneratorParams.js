@@ -212,7 +212,8 @@ function createAsphaltPalette(kind) {
 
 export const DEBUG_CORNERS = false;
 export const DEBUG_ASPHALT = true;
-export const DEBUG_HIDE_CURBS_AND_SIDEWALKS = false;
+export const DEBUG_HIDE_SIDEWALKS = true;
+export const DEBUG_HIDE_CURBS = false;
 export const DEBUG_DISABLE_MARKINGS_IN_ASPHALT_DEBUG = true;
 
 export const CORNER_COLOR_PALETTE_KIND = DEBUG_CORNERS ? 'debug' : 'regular';

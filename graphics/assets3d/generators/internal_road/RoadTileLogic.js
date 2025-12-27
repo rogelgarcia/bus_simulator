@@ -15,14 +15,25 @@ function hasConn(connMask, bit) {
     return (connMask & bit) !== 0;
 }
 
-export function processRoadTile({ pos, lanes, axis, connMask, ctx }) {
+const NULL_SIDEWALK = {
+    addPlane() {},
+    addGeometryKey() {},
+    addRingSectorKey() {}
+};
+
+const NULL_CURB = {
+    addBox() {},
+    addArcSolidKey() {}
+};
+
+export function processRoadTile({ pos, lanes, axis, connMask, neighborAxis, ctx }) {
     const {
         ts,
         AXIS,
         DIR,
         asphalt,
-        sidewalk,
-        curb,
+        sidewalk: sidewalkBuilder,
+        curb: curbBuilder,
         markings,
         palette,
         curbPalette,
@@ -49,6 +60,16 @@ export function processRoadTile({ pos, lanes, axis, connMask, ctx }) {
         asphaltArcSegs,
         curbArcSegs
     } = ctx;
+
+    const sidewalk = sidewalkBuilder ?? NULL_SIDEWALK;
+    const curb = curbBuilder ?? NULL_CURB;
+
+    const neighborAxisLocal = neighborAxis ?? {};
+    const curbTrim = curbJoinOverlap * 2.0;
+    const isCornerNeighbor = (dir) => {
+        const nAxis = neighborAxisLocal[dir];
+        return nAxis === AXIS.CORNER || nAxis === AXIS.INTERSECTION;
+    };
 
     const widthNS = laneWidth * ((lanes.n ?? 0) + (lanes.s ?? 0)) + 2 * shoulder;
     const widthEW = laneWidth * ((lanes.e ?? 0) + (lanes.w ?? 0)) + 2 * shoulder;
@@ -432,8 +453,13 @@ export function processRoadTile({ pos, lanes, axis, connMask, ctx }) {
             sidewalk.addPlane(pos.x, groundY + sidewalkLift, pos.z + zOut, ts, t, 0, neutralSidewalk);
             sidewalk.addPlane(pos.x, groundY + sidewalkLift, pos.z - zOut, ts, t, 0, neutralSidewalk);
 
-            curb.addBox(pos.x, curbY, pos.z + (wEW * 0.5 + curbT * 0.5), ts, curbH, curbT, 0, neutralCurb);
-            curb.addBox(pos.x, curbY, pos.z - (wEW * 0.5 + curbT * 0.5), ts, curbH, curbT, 0, neutralCurb);
+            const trimW = (hasConn(connMask, DIR.W) && isCornerNeighbor('w')) ? curbTrim : 0;
+            const trimE = (hasConn(connMask, DIR.E) && isCornerNeighbor('e')) ? curbTrim : 0;
+            const curbLen = Math.max(0.05, ts - (trimW + trimE));
+            const curbOffset = (trimW - trimE) * 0.5;
+
+            curb.addBox(pos.x + curbOffset, curbY, pos.z + (wEW * 0.5 + curbT * 0.5), curbLen, curbH, curbT, 0, neutralCurb);
+            curb.addBox(pos.x + curbOffset, curbY, pos.z - (wEW * 0.5 + curbT * 0.5), curbLen, curbH, curbT, 0, neutralCurb);
         }
 
         if (markings) {
@@ -462,8 +488,13 @@ export function processRoadTile({ pos, lanes, axis, connMask, ctx }) {
             sidewalk.addPlane(pos.x + xOut, groundY + sidewalkLift, pos.z, t, ts, 0, neutralSidewalk);
             sidewalk.addPlane(pos.x - xOut, groundY + sidewalkLift, pos.z, t, ts, 0, neutralSidewalk);
 
-            curb.addBox(pos.x + (wNS * 0.5 + curbT * 0.5), curbY, pos.z, curbT, curbH, ts, 0, neutralCurb);
-            curb.addBox(pos.x - (wNS * 0.5 + curbT * 0.5), curbY, pos.z, curbT, curbH, ts, 0, neutralCurb);
+            const trimS = (hasConn(connMask, DIR.S) && isCornerNeighbor('s')) ? curbTrim : 0;
+            const trimN = (hasConn(connMask, DIR.N) && isCornerNeighbor('n')) ? curbTrim : 0;
+            const curbLen = Math.max(0.05, ts - (trimS + trimN));
+            const curbOffset = (trimS - trimN) * 0.5;
+
+            curb.addBox(pos.x + (wNS * 0.5 + curbT * 0.5), curbY, pos.z + curbOffset, curbT, curbH, curbLen, 0, neutralCurb);
+            curb.addBox(pos.x - (wNS * 0.5 + curbT * 0.5), curbY, pos.z + curbOffset, curbT, curbH, curbLen, 0, neutralCurb);
         }
 
         if (markings) {
