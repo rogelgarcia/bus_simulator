@@ -1,4 +1,3 @@
-// src/city/CityConfig.js
 export function createCityConfig({
                                      size = 800,
                                      tileMeters = 2,
@@ -38,7 +37,10 @@ export function createCityConfig({
             sidewalk: {
                 extraWidth: 1.25,
                 cornerRadius: 1.8,
-                lift: 0.001
+                lift: 0.001,
+
+                // Small overlap to ensure sidewalks meet curbs at corners (prevents tiny grass wedges).
+                inset: 0.06
             },
 
             // Smooth street turns (visual-only)

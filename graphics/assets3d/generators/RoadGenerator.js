@@ -1,6 +1,7 @@
 // graphics/assets3d/generators/RoadGenerator.js
 import * as THREE from 'three';
 import { TILE, AXIS, DIR } from '../../../src/city/CityMap.js';
+import { ROAD_DEFAULTS, GROUND_DEFAULTS } from './GeneratorParams.js';
 
 function clamp(v, lo, hi) {
     return Math.max(lo, Math.min(hi, v));
@@ -12,6 +13,24 @@ function bitCount4(m) {
     m = (m & 0x05) + ((m >> 1) & 0x05);
     m = (m & 0x03) + ((m >> 2) & 0x03);
     return m;
+}
+
+function isObj(v) {
+    return v !== null && typeof v === 'object' && !Array.isArray(v);
+}
+
+function deepMerge(base, over) {
+    if (!isObj(base)) return over;
+    const out = { ...base };
+    if (!isObj(over)) return out;
+
+    for (const k of Object.keys(over)) {
+        const bv = base[k];
+        const ov = over[k];
+        if (isObj(bv) && isObj(ov)) out[k] = deepMerge(bv, ov);
+        else out[k] = ov;
+    }
+    return out;
 }
 
 /**
@@ -108,33 +127,102 @@ function mergeBufferGeometries(geoms) {
     return out;
 }
 
+/**
+ * Mirrors a (non-indexed) geometry across X/Z by scale(signX, 1, signZ),
+ * but fixes triangle winding for odd reflections so faces stay front-facing.
+ */
+function applyQuadrantMirrorNonIndexed(geom, signX, signZ) {
+    const g = geom.index ? geom.toNonIndexed() : geom;
+
+    const m = new THREE.Matrix4().makeScale(signX, 1, signZ);
+    g.applyMatrix4(m);
+
+    // Odd number of axis flips (determinant < 0) => reverse winding
+    if (signX * signZ < 0) {
+        const pos = g.attributes.position.array;
+        const nor = g.attributes.normal?.array;
+        const uv = g.attributes.uv?.array;
+
+        // Each tri: 3 verts => pos stride 9, uv stride 6, nor stride 9
+        for (let i = 0; i < pos.length; i += 9) {
+            // swap v1 and v2
+            for (let k = 0; k < 3; k++) {
+                const a = i + 3 + k;
+                const b = i + 6 + k;
+                const tmp = pos[a];
+                pos[a] = pos[b];
+                pos[b] = tmp;
+            }
+
+            if (nor) {
+                for (let k = 0; k < 3; k++) {
+                    const a = i + 3 + k;
+                    const b = i + 6 + k;
+                    const tmp = nor[a];
+                    nor[a] = nor[b];
+                    nor[b] = tmp;
+                }
+            }
+
+            if (uv) {
+                const tri = (i / 9) | 0;
+                const u = tri * 6;
+
+                // swap uv1 and uv2 (2 floats each)
+                for (let k = 0; k < 2; k++) {
+                    const a = u + 2 + k;
+                    const b = u + 4 + k;
+                    const tmp = uv[a];
+                    uv[a] = uv[b];
+                    uv[b] = tmp;
+                }
+            }
+        }
+
+        g.attributes.position.needsUpdate = true;
+        if (g.attributes.normal) g.attributes.normal.needsUpdate = true;
+        if (g.attributes.uv) g.attributes.uv.needsUpdate = true;
+
+        // Ensure lighting normals are sane after reflection/winding fix
+        g.computeVertexNormals?.();
+    }
+
+    return g;
+}
+
 export function generateRoads({ map, config, materials } = {}) {
     const group = new THREE.Group();
     group.name = 'Roads';
 
     const ts = map.tileSize;
 
-    const roadY = config.road?.surfaceY ?? 0.02;
-    const laneWidth = config.road?.laneWidth ?? 3.2;
-    const shoulder = config.road?.shoulder ?? 0.35;
+    // Generators own sizing defaults; config may optionally override (but CityConfig should not author these).
+    const roadCfg = deepMerge(ROAD_DEFAULTS, config?.road ?? {});
+    const groundCfg = deepMerge(GROUND_DEFAULTS, config?.ground ?? {});
+
+    const roadY = roadCfg.surfaceY ?? 0.02;
+    const laneWidth = roadCfg.laneWidth ?? 3.2;
+    const shoulder = roadCfg.shoulder ?? 0.35;
 
     // Sidewalk / curb tuning
-    const sidewalkExtra = config.road?.sidewalk?.extraWidth ?? 0.0;
-    const sidewalkLift = config.road?.sidewalk?.lift ?? 0.001;
+    const sidewalkExtra = roadCfg.sidewalk?.extraWidth ?? 0.0;
+    const sidewalkLift = roadCfg.sidewalk?.lift ?? 0.001;
 
-    // ✅ small intersection-only “snug” to eliminate the tiny grass wedge between curb + sidewalk
-    // (does NOT affect L-shaped turns; those are handled by AXIS.CORNER path).
-    const sidewalkInset = config.road?.sidewalk?.inset ?? 0.06;
+    // small intersection-only “snug” to eliminate tiny grass wedges between curb + sidewalk
+    const sidewalkInset = roadCfg.sidewalk?.inset ?? 0.06;
 
-    const curbCornerRadius = config.road?.sidewalk?.cornerRadius ?? 1.4;
+    const curbCornerRadius = roadCfg.sidewalk?.cornerRadius ?? 1.4;
 
-    const curbT = config.road?.curb?.thickness ?? 0.32;
-    const curbHeight = config.road?.curb?.height ?? 0.17;
-    const curbExtra = config.road?.curb?.extraHeight ?? 0.0;
-    const curbSink = config.road?.curb?.sink ?? 0.03;
+    const curbT = roadCfg.curb?.thickness ?? 0.32;
+    const curbHeight = roadCfg.curb?.height ?? 0.17;
+    const curbExtra = roadCfg.curb?.extraHeight ?? 0.0;
+    const curbSink = roadCfg.curb?.sink ?? 0.03;
+
+    // Overlap straight curb segments into curved arcs to hide seam/miter artifacts.
+    const curbJoinOverlap = clamp(roadCfg.curb?.joinOverlap ?? curbT * 0.75, 0.0, curbT * 2.5);
 
     // Ground (sidewalk/grass) sits at curb top
-    const groundY = config.ground?.surfaceY ?? (roadY + curbHeight);
+    const groundY = groundCfg.surfaceY ?? (roadY + curbHeight);
 
     const curbTop = groundY + curbExtra;
     const curbBottom = roadY - curbSink;
@@ -142,15 +230,15 @@ export function generateRoads({ map, config, materials } = {}) {
     const curbY = (curbTop + curbBottom) * 0.5;
 
     // Markings
-    const markLineW = config.road?.markings?.lineWidth ?? 0.12;
-    const markEdgeInset = config.road?.markings?.edgeInset ?? 0.22;
-    const markLift = config.road?.markings?.lift ?? 0.003;
+    const markLineW = roadCfg.markings?.lineWidth ?? 0.12;
+    const markEdgeInset = roadCfg.markings?.edgeInset ?? 0.22;
+    const markLift = roadCfg.markings?.lift ?? 0.003;
     const markY = roadY + markLift;
 
     // Curves config
-    const turnRadiusPref = config.road?.curves?.turnRadius ?? 4.2;
-    const asphaltArcSegs = clamp(config.road?.curves?.asphaltArcSegments ?? 32, 12, 96) | 0;
-    const curbArcSegs = clamp(config.road?.curves?.curbArcSegments ?? 18, 8, 96) | 0;
+    const turnRadiusPref = roadCfg.curves?.turnRadius ?? 4.2;
+    const asphaltArcSegs = clamp(roadCfg.curves?.asphaltArcSegments ?? 32, 12, 96) | 0;
+    const curbArcSegs = clamp(roadCfg.curves?.curbArcSegments ?? 18, 8, 96) | 0;
 
     const roadMat = materials?.road ?? new THREE.MeshStandardMaterial({ color: 0x2b2b2b, roughness: 0.95 });
     const sidewalkMat = materials?.sidewalk ?? new THREE.MeshStandardMaterial({ color: 0x8b8b8b, roughness: 1.0 });
@@ -281,7 +369,7 @@ export function generateRoads({ map, config, materials } = {}) {
 
     function addCurvedCornerCurbsAndSidewalk({ pos, xInner, zInner, cornerXeff, cornerZeff, signX, signZ }) {
         // Sidewalk shape in this quadrant, avoiding curb overlap.
-        // ✅ small inset to snug sidewalk into curb for intersections (prevents grass wedge)
+        // small inset to snug sidewalk into curb for intersections (prevents grass wedge)
         const xMin = xInner + curbT - sidewalkInset;
         const zMin = zInner + curbT - sidewalkInset;
 
@@ -292,67 +380,81 @@ export function generateRoads({ map, config, materials } = {}) {
         const dz = zMax - zMin;
         if (dx <= 0.02 || dz <= 0.02) return;
 
-        // ✅ Reduce the sidewalk “bite” radius slightly so it doesn't retreat too far from the curb
-        // (this is the minor distance fix you’re asking for).
-        const rEdge = clamp(curbCornerRadius - curbT, 0.15, Math.min(dx, dz));
-
-        const shape = new THREE.Shape();
-        shape.moveTo(xMin + rEdge, zMin);
-        shape.lineTo(xMax, zMin);
-        shape.lineTo(xMax, zMax);
-        shape.lineTo(xMin, zMax);
-        shape.lineTo(xMin, zMin + rEdge);
-        shape.absarc(xMin, zMin, rEdge, Math.PI * 0.5, 0, true);
-
-        const gSide = new THREE.ShapeGeometry(shape, Math.max(18, curbArcSegs));
-        gSide.rotateX(-Math.PI / 2);
-
-        const m = new THREE.Matrix4().makeScale(signX, 1, signZ);
-        gSide.applyMatrix4(m);
-        gSide.translate(pos.x, groundY + sidewalkLift, pos.z);
-        sidewalkCurves.push(gSide);
-
-        // ✅ FILLETED curb corner (tangent), not "centered at the corner point"
-        // The two straight curb centerlines intersect at:
-        //   x0 = xInner + curbT/2
-        //   z0 = zInner + curbT/2
-        // A fillet of radius r has its circle center at:
-        //   (x0 + r, z0 + r) in the quadrant.
+        // Fillet radius r is used for the curb centerline.
         const r = clamp(curbCornerRadius, 0.35, Math.min(cornerXeff, cornerZeff));
         if (r < 0.35) return;
 
-        const x0 = xInner + curbT * 0.5;
+        const x0 = xInner + curbT * 0.5; // straight curb centerline intersection (local quadrant)
         const z0 = zInner + curbT * 0.5;
 
-        // Straight segments shortened by r (so they meet the arc tangentially)
-        const segZLen = Math.max(0.05, cornerZeff - r);
-        const segZCenter = z0 + (cornerZeff + r) * 0.5;
+        // Fillet center (offset outward by r in both axes)
+        const cxLocal = x0 + r;
+        const czLocal = z0 + r;
+
+        // Sidewalk inner boundary should follow the *sidewalk-facing* curb face:
+        // - For this intersection fillet (center sits in the corner), sidewalk is toward the circle center.
+        // - Therefore sidewalk boundary matches the curb's INNER radius at the arc:
+        //   rr = r - curbT/2 (plus inset overlap).
+        // Ensure rr matches our chosen xMin/zMin so the arc meets the straight edges without a "chord" gap.
+        const rrWanted = (r - curbT * 0.5) + sidewalkInset;
+        const rrMaxX = cxLocal - xMin;
+        const rrMaxZ = czLocal - zMin;
+        const rr = clamp(rrWanted, 0.05, Math.min(rrMaxX, rrMaxZ));
+
+        // Build the shape in +X/+Z quadrant then mirror, with winding fix (no backface holes).
+        const shape = new THREE.Shape();
+        shape.moveTo(xMin, zMax);
+        shape.lineTo(xMax, zMax);
+        shape.lineTo(xMax, zMin);
+        shape.lineTo(cxLocal, zMin);
+        shape.absarc(cxLocal, czLocal, rr, Math.PI * 1.5, Math.PI, true);
+        shape.lineTo(xMin, zMax);
+
+        let gSide = new THREE.ShapeGeometry(shape, Math.max(18, curbArcSegs));
+        gSide.rotateX(-Math.PI / 2);
+        gSide = applyQuadrantMirrorNonIndexed(gSide, signX, signZ);
+        gSide.translate(pos.x, groundY + sidewalkLift, pos.z);
+        sidewalkCurves.push(gSide);
+
+        // ---- Curbs (straight segments + arc) ----
+        // Straight segments shortened by r, but overlapped into the arc to hide the end-face mismatch.
+        const segZBase = Math.max(0.05, cornerZeff - r);
+        const segXBase = Math.max(0.05, cornerXeff - r);
+
+        const segZLen = Math.max(0.05, segZBase + curbJoinOverlap);
+        const segXLen = Math.max(0.05, segXBase + curbJoinOverlap);
+
+        const segZStart = z0 + Math.max(0.0, r - curbJoinOverlap);
+        const segZEnd = z0 + cornerZeff;
+        const segZCenter = (segZStart + segZEnd) * 0.5;
+
         addCurbBox(
             pos.x + signX * x0,
             curbY,
             pos.z + signZ * segZCenter,
             curbT,
             curbH,
-            segZLen,
+            Math.max(0.05, segZEnd - segZStart),
             0
         );
 
-        const segXLen = Math.max(0.05, cornerXeff - r);
-        const segXCenter = x0 + (cornerXeff + r) * 0.5;
+        const segXStart = x0 + Math.max(0.0, r - curbJoinOverlap);
+        const segXEnd = x0 + cornerXeff;
+        const segXCenter = (segXStart + segXEnd) * 0.5;
+
         addCurbBox(
             pos.x + signX * segXCenter,
             curbY,
             pos.z + signZ * z0,
-            segXLen,
+            Math.max(0.05, segXEnd - segXStart),
             curbH,
             curbT,
             0
         );
 
-        // Fillet arc center (offset outward by r in both axes)
-        const cx = pos.x + signX * (x0 + r);
-        const cz = pos.z + signZ * (z0 + r);
-
+        // Arc itself (curb centerline radius = r)
+        const cx = pos.x + signX * cxLocal;
+        const cz = pos.z + signZ * czLocal;
         const start = intersectionCornerStartAngle(signX, signZ);
 
         pushCurbArcSolid({
@@ -456,7 +558,7 @@ export function generateRoads({ map, config, materials } = {}) {
             }
         }
 
-        // Sidewalk pads: conservative
+        // Sidewalk pads: conservative (non-road quadrants)
         const xMin = halfW + curbT;
         const zMin = halfW + curbT;
         const xMax = ts * 0.5 + sidewalkExtra;
@@ -480,6 +582,23 @@ export function generateRoads({ map, config, materials } = {}) {
             const cz = pos.z + q.signZ * (zMin + sz * 0.5);
             addSidewalkPlane(cx, groundY + sidewalkLift, cz, sx, sz, 0);
         }
+
+        // ✅ OUTER CORNER SIDEWALK (the previously-missing “crescent” along the curved curb)
+        // This follows the curved curb closely by using a ring sector just outside the outer curb's outer face.
+        const sidewalkInnerR = (outerCurbCenterR + curbT * 0.5) - sidewalkInset; // outside curb face
+        const sidewalkOuterR = Math.max(sidewalkInnerR + 0.05, ts * 0.5 + sidewalkExtra);
+
+        pushRingSectorXZ({
+            centerX: pos.x + cxLocal,
+            centerZ: pos.z + czLocal,
+            y: groundY + sidewalkLift,
+            innerR: sidewalkInnerR,
+            outerR: sidewalkOuterR,
+            startAng: start,
+            spanAng: Math.PI * 0.5,
+            segs: Math.max(18, curbArcSegs * 2),
+            outArray: sidewalkCurves
+        });
     }
 
     for (let y = 0; y < map.height; y++) {
