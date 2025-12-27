@@ -11,7 +11,7 @@
 import * as THREE from 'three';
 import { getSharedCity } from '../city/City.js';
 import { fadeIn } from '../assets3d/utils/screenFade.js';
-import { GameHUD } from '../hud/GameHUD.js';
+import { GameHUD } from '../ui/GameHUD.js';
 import { GameLoop } from '../core/GameLoop.js';
 import { VehicleController } from '../vehicle/VehicleController.js';
 import { InputManager } from '../ui/input/InputManager.js';

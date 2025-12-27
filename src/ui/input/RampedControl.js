@@ -1,4 +1,4 @@
-// src/hud/input/RampedControl.js
+// src/ui/input/RampedControl.js
 
 function clamp(v, a, b) {
     return Math.max(a, Math.min(b, v));

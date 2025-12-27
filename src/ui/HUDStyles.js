@@ -1,4 +1,4 @@
-// src/hud/HUDStyles.js
+// src/ui/HUDStyles.js
 
 export function injectHudStyles() {
     // Avoid double-inject

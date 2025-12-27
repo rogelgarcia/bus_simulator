@@ -1,4 +1,4 @@
-// src/hud/sim/DemoDrivetrainSim.js
+// src/physics/systems/DemoDrivetrainSim.js
 /**
  * Demo drivetrain simulation for HUD demo mode.
  * Used by GameHUD when mode='demo' (no real physics connected).

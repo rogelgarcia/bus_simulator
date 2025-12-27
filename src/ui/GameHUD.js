@@ -1,11 +1,11 @@
-// src/hud/GameHUD.js
+// src/ui/GameHUD.js
 
 import { injectHudStyles } from "./HUDStyles.js";
 import { RampedControl } from "./input/RampedControl.js";
 import { SteeringWheelWidget } from "./widgets/SteeringWheelWidget.js";
 import { PedalWidget } from "./widgets/PedalWidget.js";
 import { GaugeWidget } from "./widgets/GaugeWidget.js";
-import { DemoDrivetrainSim } from "./sim/DemoDrivetrainSim.js";
+import { DemoDrivetrainSim } from "../physics/systems/DemoDrivetrainSim.js";
 
 function clamp(v, a, b) {
     return Math.max(a, Math.min(b, v));

@@ -1,6 +1,6 @@
 // src/ui/input/InputManager.js
 
-import { RampedControl } from '../../hud/input/RampedControl.js';
+import { RampedControl } from './RampedControl.js';
 
 /**
  * Default input configuration.
