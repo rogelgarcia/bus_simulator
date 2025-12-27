@@ -188,13 +188,19 @@ export function injectHudStyles() {
 
 /* ===== Gauges ===== */
 .gauge-widget {
-  width: 320px;
+  width: 360px; /* room on the right for the integrated gear indicator */
   padding: 12px;
 }
 
 .gauge-row {
   display: flex;
   gap: 12px;
+  position: relative; /* anchor for the gear indicator */
+
+  /* IMPORTANT: this element is a flex-item inside .hud-cluster (which is display:flex).
+     Force it to span the full panel width so "right: 0" means the panel's right edge. */
+  flex: 1 1 auto;
+  width: 100%;
 }
 
 .gauge {
@@ -267,37 +273,51 @@ export function injectHudStyles() {
   letter-spacing: 0.02em;
 }
 
-/* ===== Gear indicator ===== */
-.gear-strip {
-  margin-top: 10px;
-  display: flex;
-  justify-content: flex-end;
-}
+/* ===== Gear indicator (bottom-right, right of both gauges) ===== */
+.gear-indicator {
+  position: absolute;
 
-.gear-chip {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 10px;
-  padding: 8px 12px;
+  /* bottom-right placement: above the gauge captions, to the right of both gauges */
+  right: 0;
+  bottom: 24px;
+
+  width: 56px;
+  height: 56px;
   border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.14);
-  background: rgba(0,0,0,0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+
+  background:
+    radial-gradient(circle at 50% 35%,
+      rgba(255,255,255,0.14) 0%,
+      rgba(0,0,0,0.16) 52%,
+      rgba(0,0,0,0.28) 100%);
+  border: 1px solid rgba(255,255,255,0.20);
+  box-shadow:
+    0 16px 44px rgba(0,0,0,0.40),
+    inset 0 0 0 2px rgba(0,0,0,0.16);
+  backdrop-filter: blur(8px);
 }
 
-.gear-label {
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--hud-muted);
+.gear-indicator::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 204, 0, 0.22);
+  box-shadow: 0 0 18px rgba(255, 204, 0, 0.16);
+  pointer-events: none;
 }
 
-.gear-value {
-  font-size: 18px;
-  font-weight: 900;
-  letter-spacing: 0.06em;
-  color: rgba(255,255,255,0.92);
-  min-width: 20px;
-  text-align: center;
+.gear-indicator .gear-value {
+  font-size: 34px;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: rgba(255,255,255,0.94);
+  text-shadow: 0 2px 0 rgba(0,0,0,0.28);
 }
 `;
     document.head.appendChild(style);

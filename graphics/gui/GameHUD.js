@@ -42,27 +42,19 @@ export class GameHUD {
         gaugeRow.className = "gauge-row";
         gaugeRow.appendChild(this.speedGauge.getElement());
         gaugeRow.appendChild(this.rpmGauge.getElement());
-        this.clusterTelemetry.appendChild(gaugeRow);
 
-        // Gear chip
-        this.gearStrip = document.createElement("div");
-        this.gearStrip.className = "gear-strip";
-
-        this.gearChip = document.createElement("div");
-        this.gearChip.className = "gear-chip";
-
-        this.gearLabelEl = document.createElement("div");
-        this.gearLabelEl.className = "gear-label";
-        this.gearLabelEl.textContent = "Gear";
+        // Gear indicator (integrated inside gauge-row)
+        this.gearIndicator = document.createElement("div");
+        this.gearIndicator.className = "gear-indicator";
 
         this.gearValueEl = document.createElement("div");
         this.gearValueEl.className = "gear-value";
         this.gearValueEl.textContent = "1";
 
-        this.gearChip.appendChild(this.gearLabelEl);
-        this.gearChip.appendChild(this.gearValueEl);
-        this.gearStrip.appendChild(this.gearChip);
-        this.clusterTelemetry.appendChild(this.gearStrip);
+        this.gearIndicator.appendChild(this.gearValueEl);
+        gaugeRow.appendChild(this.gearIndicator);
+
+        this.clusterTelemetry.appendChild(gaugeRow);
 
         this.clusterControls.appendChild(this.wheelWidget.getElement());
         this.clusterControls.appendChild(this.pedalsWidget.getElement());
