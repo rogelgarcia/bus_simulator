@@ -210,13 +210,14 @@ function createAsphaltPalette(kind) {
     return (kind === 'debug') ? debug : regular;
 }
 
-export const DEBUG_CORNERS = true;
+export const DEBUG_CORNERS = false;
 export const DEBUG_ASPHALT = true;
 export const DEBUG_HIDE_CURBS_AND_SIDEWALKS = false;
 export const DEBUG_DISABLE_MARKINGS_IN_ASPHALT_DEBUG = true;
 
 export const CORNER_COLOR_PALETTE_KIND = DEBUG_CORNERS ? 'debug' : 'regular';
 export const CORNER_COLOR_PALETTE = createCornerPalette(CORNER_COLOR_PALETTE_KIND);
+export const CURB_COLOR_PALETTE = createCornerPalette(CORNER_COLOR_PALETTE_KIND);
 
 export const ASPHALT_COLOR_PALETTE_KIND = DEBUG_ASPHALT ? 'debug' : 'regular';
 export const ASPHALT_COLOR_PALETTE = createAsphaltPalette(ASPHALT_COLOR_PALETTE_KIND);

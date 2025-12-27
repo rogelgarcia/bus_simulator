@@ -25,8 +25,11 @@ export function processRoadTile({ pos, lanes, axis, connMask, ctx }) {
         curb,
         markings,
         palette,
+        curbPalette,
         asphaltPalette,
         debugAsphaltOnly,
+        neutralSidewalkColor,
+        neutralCurbColor,
         roadY,
         laneWidth,
         shoulder,
@@ -82,7 +85,7 @@ export function processRoadTile({ pos, lanes, axis, connMask, ctx }) {
             const halfW = wTurn * 0.5;
 
             const eps = 0.02;
-            const rMax = Math.max(0.05, (ts * 0.5) - halfW - (curbT * 0.5) - eps);
+            const rMax = Math.max(0.05, (ts * 0.5) - halfW - curbT - eps);
             const rTurn = clamp(turnRadiusPref, 0.05, rMax);
 
             const cxLocal = corner.signX * rTurn;
@@ -125,21 +128,24 @@ export function processRoadTile({ pos, lanes, axis, connMask, ctx }) {
         return;
     }
 
-    const neutralSidewalk = palette.instanceColor('sidewalk');
-    const neutralCurb = palette.instanceColor('curb');
+    const curbPaletteLocal = curbPalette ?? palette;
+    const neutralSidewalk = neutralSidewalkColor ?? palette.instanceColor('sidewalk');
+    const neutralCurb = neutralCurbColor ?? curbPaletteLocal.instanceColor('curb');
 
     function addCurvedCornerCurbsAndSidewalk({ xInner, zInner, cornerXeff, cornerZeff, signX, signZ, junctionType }) {
         const orient = orientFromSigns(signX, signZ);
-        const key = palette.key(junctionType, orient);
+        const sidewalkKey = palette.key(junctionType, orient);
+        const curbKey = curbPaletteLocal.key(junctionType, orient);
 
-        const curbColor = palette.instanceColor('curb', junctionType, orient);
+        const curbColor = curbPaletteLocal.instanceColor('curb', junctionType, orient);
         const sidewalkColor = palette.instanceColor('sidewalk', junctionType, orient);
 
         const xMin = xInner + curbT - sidewalkInset;
         const zMin = zInner + curbT - sidewalkInset;
 
-        const xMax = ts * 0.5 + sidewalkExtra;
-        const zMax = ts * 0.5 + sidewalkExtra;
+        const sidewalkEdge = ts * 0.5;
+        const xMax = sidewalkEdge;
+        const zMax = sidewalkEdge;
 
         const dx = xMax - xMin;
         const dz = zMax - zMin;
@@ -171,7 +177,7 @@ export function processRoadTile({ pos, lanes, axis, connMask, ctx }) {
         gSide.rotateX(-Math.PI / 2);
         gSide = applyQuadrantMirrorNonIndexed(gSide, signX, signZ);
         gSide.translate(pos.x, groundY + sidewalkLift, pos.z);
-        sidewalk.addGeometryKey(key, gSide);
+        sidewalk.addGeometryKey(sidewalkKey, gSide);
 
         const segZStart = z0 + Math.max(0.0, r - curbJoinOverlap);
         const segZEnd = z0 + cornerZeff;
@@ -208,7 +214,7 @@ export function processRoadTile({ pos, lanes, axis, connMask, ctx }) {
         const start = intersectionCornerStartAngle(signX, signZ);
 
         curb.addArcSolidKey({
-            key,
+            key: curbKey,
             centerX: cx,
             centerZ: cz,
             radiusCenter: r,
@@ -237,9 +243,12 @@ export function processRoadTile({ pos, lanes, axis, connMask, ctx }) {
         const cTurn = asphaltColor('turn', orient);
         const wTurn = clamp(Math.min(wNS, wEW), 1.0, ts);
         const halfW = wTurn * 0.5;
+        const halfWNS = wNS * 0.5;
+        const halfWEW = wEW * 0.5;
+        const sidewalkEdge = ts * 0.5;
 
         const eps = 0.02;
-        const rMax = Math.max(0.05, (ts * 0.5) - halfW - (curbT * 0.5) - eps);
+        const rMax = Math.max(0.05, (ts * 0.5) - halfW - curbT - eps);
         const rTurn = clamp(turnRadiusPref, 0.05, rMax);
 
         const cxLocal = corner.signX * rTurn;
@@ -250,12 +259,12 @@ export function processRoadTile({ pos, lanes, axis, connMask, ctx }) {
         if (legLen > 0.001) {
             if (hasConn(connMask, DIR.N) || hasConn(connMask, DIR.S)) {
                 const zCenter = corner.signZ * (rTurn + ts * 0.5) * 0.5;
-                asphalt.addPlane(pos.x, roadY, pos.z + zCenter, wTurn, legLen, 0, cTurn);
+                asphalt.addPlane(pos.x, roadY, pos.z + zCenter, wNS, legLen, 0, cTurn);
             }
 
             if (hasConn(connMask, DIR.E) || hasConn(connMask, DIR.W)) {
                 const xCenter = corner.signX * (rTurn + ts * 0.5) * 0.5;
-                asphalt.addPlane(pos.x + xCenter, roadY, pos.z, legLen, wTurn, 0, cTurn);
+                asphalt.addPlane(pos.x + xCenter, roadY, pos.z, legLen, wEW, 0, cTurn);
             }
         }
 
@@ -279,8 +288,9 @@ export function processRoadTile({ pos, lanes, axis, connMask, ctx }) {
         const outerType = 'turn_outer';
         const innerType = 'turn_inner';
 
-        const outerKey = palette.key(outerType, orient);
-        const innerKey = palette.key(innerType, orient);
+        const outerKey = curbPaletteLocal.key(outerType, orient);
+        const innerKey = curbPaletteLocal.key(innerType, orient);
+        const sidewalkOuterKey = palette.key(outerType, orient);
 
         curb.addArcSolidKey({
             key: outerKey,
@@ -304,29 +314,79 @@ export function processRoadTile({ pos, lanes, axis, connMask, ctx }) {
             });
         }
 
-        const curbOuterColor = palette.instanceColor('curb', outerType, orient);
-        const curbInnerColor = palette.instanceColor('curb', innerType, orient);
+        const curbOuterColor = curbPaletteLocal.instanceColor('curb', outerType, orient);
+        const curbInnerColor = curbPaletteLocal.instanceColor('curb', innerType, orient);
+
+        const curbHalfNS = halfWNS + curbT * 0.5;
+        const curbHalfEW = halfWEW + curbT * 0.5;
+        const xInner = corner.signX * curbHalfNS;
+        const xOuter = -corner.signX * curbHalfNS;
+        const zInner = corner.signZ * curbHalfEW;
+        const zOuter = -corner.signZ * curbHalfEW;
+
+        const zEdge = corner.signZ * (ts * 0.5);
+        const xEdge = corner.signX * (ts * 0.5);
+
+        const getZAtX = (xLine, radiusCenter) => {
+            const dx = xLine - cxLocal;
+            const disc = radiusCenter * radiusCenter - dx * dx;
+            if (disc < 0) return null;
+            return czLocal + corner.signZ * Math.sqrt(Math.max(0, disc));
+        };
+
+        const getXAtZ = (zLine, radiusCenter) => {
+            const dz = zLine - czLocal;
+            const disc = radiusCenter * radiusCenter - dz * dz;
+            if (disc < 0) return null;
+            return cxLocal + corner.signX * Math.sqrt(Math.max(0, disc));
+        };
 
         if (legLen > 0.001) {
             if (hasConn(connMask, DIR.N) || hasConn(connMask, DIR.S)) {
-                const zCenter = corner.signZ * (rTurn + ts * 0.5) * 0.5;
-                const zLen = legLen;
-                curb.addBox(pos.x + (halfW + curbT * 0.5), curbY, pos.z + zCenter, curbT, curbH, zLen, 0, curbOuterColor);
-                curb.addBox(pos.x - (halfW + curbT * 0.5), curbY, pos.z + zCenter, curbT, curbH, zLen, 0, curbInnerColor);
+                const zStartOuter = getZAtX(xOuter, outerCurbCenterR);
+                if (zStartOuter !== null) {
+                    const zStartOuterClamped = (corner.signZ > 0) ? Math.min(zStartOuter, zEdge) : Math.max(zStartOuter, zEdge);
+                    const zLenOuter = Math.max(0.05, Math.abs(zEdge - zStartOuterClamped));
+                    const zCenterOuter = (zEdge + zStartOuterClamped) * 0.5;
+                    curb.addBox(pos.x + xOuter, curbY, pos.z + zCenterOuter, curbT, curbH, zLenOuter, 0, curbOuterColor);
+                }
+
+                if (innerCurbCenterR > 0.20) {
+                    const zStartInner = getZAtX(xInner, innerCurbCenterR);
+                    if (zStartInner !== null) {
+                        const zStartInnerClamped = (corner.signZ > 0) ? Math.min(zStartInner, zEdge) : Math.max(zStartInner, zEdge);
+                        const zLenInner = Math.max(0.05, Math.abs(zEdge - zStartInnerClamped));
+                        const zCenterInner = (zEdge + zStartInnerClamped) * 0.5;
+                        curb.addBox(pos.x + xInner, curbY, pos.z + zCenterInner, curbT, curbH, zLenInner, 0, curbInnerColor);
+                    }
+                }
             }
 
             if (hasConn(connMask, DIR.E) || hasConn(connMask, DIR.W)) {
-                const xCenter = corner.signX * (rTurn + ts * 0.5) * 0.5;
-                const xLen = legLen;
-                curb.addBox(pos.x + xCenter, curbY, pos.z + (halfW + curbT * 0.5), xLen, curbH, curbT, 0, curbOuterColor);
-                curb.addBox(pos.x + xCenter, curbY, pos.z - (halfW + curbT * 0.5), xLen, curbH, curbT, 0, curbInnerColor);
+                const xStartOuter = getXAtZ(zOuter, outerCurbCenterR);
+                if (xStartOuter !== null) {
+                    const xStartOuterClamped = (corner.signX > 0) ? Math.min(xStartOuter, xEdge) : Math.max(xStartOuter, xEdge);
+                    const xLenOuter = Math.max(0.05, Math.abs(xEdge - xStartOuterClamped));
+                    const xCenterOuter = (xEdge + xStartOuterClamped) * 0.5;
+                    curb.addBox(pos.x + xCenterOuter, curbY, pos.z + zOuter, xLenOuter, curbH, curbT, 0, curbOuterColor);
+                }
+
+                if (innerCurbCenterR > 0.20) {
+                    const xStartInner = getXAtZ(zInner, innerCurbCenterR);
+                    if (xStartInner !== null) {
+                        const xStartInnerClamped = (corner.signX > 0) ? Math.min(xStartInner, xEdge) : Math.max(xStartInner, xEdge);
+                        const xLenInner = Math.max(0.05, Math.abs(xEdge - xStartInnerClamped));
+                        const xCenterInner = (xEdge + xStartInnerClamped) * 0.5;
+                        curb.addBox(pos.x + xCenterInner, curbY, pos.z + zInner, xLenInner, curbH, curbT, 0, curbInnerColor);
+                    }
+                }
             }
         }
 
-        const xMin = halfW + curbT;
-        const zMin = halfW + curbT;
-        const xMax = ts * 0.5 + sidewalkExtra;
-        const zMax = ts * 0.5 + sidewalkExtra;
+        const xMin = wNS * 0.5 + curbT + sidewalkInset;
+        const zMin = wEW * 0.5 + curbT + sidewalkInset;
+        const xMax = sidewalkEdge;
+        const zMax = sidewalkEdge;
 
         const sx = Math.max(0.05, xMax - xMin);
         const sz = Math.max(0.05, zMax - zMin);
@@ -346,11 +406,11 @@ export function processRoadTile({ pos, lanes, axis, connMask, ctx }) {
             sidewalk.addPlane(cx, groundY + sidewalkLift, cz, sx, sz, 0, c);
         }
 
-        const sidewalkInnerR = (outerCurbCenterR + curbT * 0.5) - sidewalkInset;
-        const sidewalkOuterR = Math.max(sidewalkInnerR + 0.05, ts * 0.5 + sidewalkExtra);
+        const sidewalkInnerR = (outerCurbCenterR + curbT * 0.5) + sidewalkInset;
+        const sidewalkOuterR = Math.max(sidewalkInnerR + 0.05, sidewalkEdge);
 
         sidewalk.addRingSectorKey({
-            key: outerKey,
+            key: sidewalkOuterKey,
             centerX: pos.x + cxLocal,
             centerZ: pos.z + czLocal,
             y: groundY + sidewalkLift,
@@ -463,10 +523,10 @@ export function processRoadTile({ pos, lanes, axis, connMask, ctx }) {
     const xOff = xMin2 + sx2 * 0.5;
     const zOff = zMin2 + sz2 * 0.5;
 
-    const cNEc = palette.instanceColor('curb', junctionType, 'NE');
-    const cNWc = palette.instanceColor('curb', junctionType, 'NW');
-    const cSEc = palette.instanceColor('curb', junctionType, 'SE');
-    const cSWc = palette.instanceColor('curb', junctionType, 'SW');
+    const cNEc = curbPaletteLocal.instanceColor('curb', junctionType, 'NE');
+    const cNWc = curbPaletteLocal.instanceColor('curb', junctionType, 'NW');
+    const cSEc = curbPaletteLocal.instanceColor('curb', junctionType, 'SE');
+    const cSWc = curbPaletteLocal.instanceColor('curb', junctionType, 'SW');
 
     const cNEs = palette.instanceColor('sidewalk', junctionType, 'NE');
     const cNWs = palette.instanceColor('sidewalk', junctionType, 'NW');

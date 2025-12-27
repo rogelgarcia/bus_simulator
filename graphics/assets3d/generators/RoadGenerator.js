@@ -5,6 +5,7 @@ import {
     ROAD_DEFAULTS,
     GROUND_DEFAULTS,
     CORNER_COLOR_PALETTE,
+    CURB_COLOR_PALETTE,
     ASPHALT_COLOR_PALETTE,
     DEBUG_ASPHALT,
     DEBUG_HIDE_CURBS_AND_SIDEWALKS,
@@ -105,9 +106,9 @@ export function generateRoads({ map, config, materials } = {}) {
         ? null
         : createCurbBuilder({
             boxGeo,
-            instancedMaterial: CORNER_COLOR_PALETTE.instancedMaterial(curbMatBase, 'curb'),
+            instancedMaterial: CURB_COLOR_PALETTE.instancedMaterial(curbMatBase, 'curb'),
             baseMaterial: curbMatBase,
-            palette: CORNER_COLOR_PALETTE,
+            palette: CURB_COLOR_PALETTE,
             capacity: Math.max(1, roadCount * 84),
             curbT,
             curbH,
@@ -125,6 +126,9 @@ export function generateRoads({ map, config, materials } = {}) {
             yellowCapacity: Math.max(1, roadCount * 8)
         });
 
+    const neutralSidewalkColor = sidewalkMatBase?.color?.getHex?.() ?? 0x8b8b8b;
+    const neutralCurbColor = CURB_COLOR_PALETTE.instanceColor('curb') ?? 0xffffff;
+
     const ctx = {
         ts,
         AXIS,
@@ -134,8 +138,11 @@ export function generateRoads({ map, config, materials } = {}) {
         curb,
         markings,
         palette: CORNER_COLOR_PALETTE,
+        curbPalette: CURB_COLOR_PALETTE,
         asphaltPalette: ASPHALT_COLOR_PALETTE,
         debugAsphaltOnly: hideCurbSidewalk,
+        neutralSidewalkColor,
+        neutralCurbColor,
         roadY,
         laneWidth,
         shoulder,
