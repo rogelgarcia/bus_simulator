@@ -19,7 +19,6 @@ All prompts should include the following default requirements:
 - **All outputs must be the entire file (modified or created)**
 - Do not provide partial files or snippets
 - Include complete file contents for both new and modified files
-- Use an specific file name AI_#_title
 
 #### Refactoring
 - **If a refactoring is needed, that can be done**
@@ -97,5 +96,5 @@ Get-ChildItem -Path . -Include *.js,*.css -Recurse | Where-Object { $_.FullName 
 3. **Use Automation**: Always use batch commands for file contents
 4. **Complete Information**: Don't leave out important files or context
 5. **When in Doubt, Include It**: The AI processor is expensive and can effectively leverage extra context
-6. **Save the Request**: Store the complete request in a file for reference
+6. **Save the Request**: Store the complete request in a file for reference (Use an specific file name AI_#_title)
 
