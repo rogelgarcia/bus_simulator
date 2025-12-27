@@ -1,6 +1,6 @@
-// src/city/generators/RoadGenerator.js
+// src/assets3d/generators/RoadGenerator.js
 import * as THREE from 'three';
-import { TILE, AXIS } from '../CityMap.js';
+import { TILE, AXIS } from '../../city/CityMap.js';
 
 function clamp(v, lo, hi) {
     return Math.max(lo, Math.min(hi, v));

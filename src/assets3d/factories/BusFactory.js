@@ -1,9 +1,9 @@
-// src/buses/BusFactory.js
-import { createCityBus } from './models/CityBus.js';
-import { createCoachBus } from './models/CoachBus.js';
-import { createDoubleDeckerBus } from './models/DoubleDeckerBus.js';
+// src/assets3d/factories/BusFactory.js
+import { createCityBus } from '../models/buses/CityBus.js';
+import { createCoachBus } from '../models/buses/CoachBus.js';
+import { createDoubleDeckerBus } from '../models/buses/DoubleDeckerBus.js';
 
-import { attachBusSkeleton } from './BusSkeleton.js';
+import { attachBusSkeleton } from '../../skeletons/buses/BusSkeleton.js';
 
 export function createBus(spec) {
     let bus;

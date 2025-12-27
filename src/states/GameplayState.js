@@ -10,7 +10,7 @@
  */
 import * as THREE from 'three';
 import { getSharedCity } from '../city/City.js';
-import { fadeIn } from '../utils/screenFade.js';
+import { fadeIn } from '../assets3d/utils/screenFade.js';
 import { GameHUD } from '../hud/GameHUD.js';
 import { GameLoop } from '../core/GameLoop.js';
 import { VehicleController } from '../vehicle/VehicleController.js';

@@ -1,8 +1,8 @@
-// src/buses/models/CityBus.js
+// src/assets3d/models/buses/CityBus.js
 import * as THREE from 'three';
 import { createBusWheel } from './components/BusWheel.js';
 import { WheelRig } from './components/WheelRig.js';
-import { attachBusSkeleton } from '../BusSkeleton.js';
+import { attachBusSkeleton } from '../../../skeletons/buses/BusSkeleton.js';
 
 function applyShadows(group) {
     group.traverse((o) => {
@@ -247,7 +247,7 @@ function shapeFrontOnly(geo, { height, length }) {
     geo.computeVertexNormals();
 }
 
-const DEFAULT_CITYBUS_TEXTURE_URL = new URL('../../../assets/citybus.webp', import.meta.url).toString();
+const DEFAULT_CITYBUS_TEXTURE_URL = new URL('../../../../../assets/citybus.webp', import.meta.url).toString();
 const _textureCache = new Map();
 
 function getAtlasTexture(url) {

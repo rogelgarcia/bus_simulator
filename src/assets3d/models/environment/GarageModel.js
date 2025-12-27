@@ -1,4 +1,4 @@
-// src/environment/GarageModel.js
+// src/assets3d/environment/GarageModel.js
 import * as THREE from 'three';
 import { getGarageTextures } from './ProceduralTextures.js';
 
@@ -34,7 +34,6 @@ function emissiveMat({ emissive = 0xffffff, intensity = 2.0, color = 0xffffff })
     });
 }
 
-// ✅ SAFE: no crash if tex is undefined
 function cloneTex(tex) {
     if (!tex) return null;
     const t = tex.clone();
@@ -257,7 +256,6 @@ export function createGarageModel({ width = 48, depth = 60, height = 14 } = {}) 
         bumpScale: 0.08
     });
 
-    // ✅ clone safely + repeat safely
     const wallMapBack = cloneTex(wall.map);
     const wallBumpBack = cloneTex(wall.bumpMap);
     const wallRoughBack = cloneTex(wall.roughnessMap);
@@ -298,13 +296,11 @@ export function createGarageModel({ width = 48, depth = 60, height = 14 } = {}) 
     const beamMat = matStd({ color: 0x141b28, roughness: 0.82, metalness: 0.18 });
     const gateMat = matStd({ color: 0x3b4652, roughness: 0.55, metalness: 0.58 });
 
-    // Floor
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(width, depth), floorMat);
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     root.add(floor);
 
-    // Walls
     const backWall = new THREE.Mesh(new THREE.PlaneGeometry(width, height), wallMatBack);
     backWall.position.set(0, height / 2, -depth / 2);
     backWall.receiveShadow = true;
@@ -324,7 +320,6 @@ export function createGarageModel({ width = 48, depth = 60, height = 14 } = {}) 
     rightWall.receiveShadow = true;
     root.add(rightWall);
 
-    // Ceiling
     const ceiling = new THREE.Mesh(
         new THREE.PlaneGeometry(width, depth),
         matStd({ color: 0x121826, roughness: 0.98, metalness: 0.02 })
@@ -334,7 +329,6 @@ export function createGarageModel({ width = 48, depth = 60, height = 14 } = {}) 
     ceiling.receiveShadow = true;
     root.add(ceiling);
 
-    // Corner posts
     const postH = height;
     const postS = 0.55;
     addBeam(root, { x: -width / 2 + postS / 2, y: postH / 2, z: -depth / 2 + postS / 2, sx: postS, sy: postH, sz: postS, mat: frameMat });
@@ -342,17 +336,14 @@ export function createGarageModel({ width = 48, depth = 60, height = 14 } = {}) 
     addBeam(root, { x: -width / 2 + postS / 2, y: postH / 2, z:  depth / 2 - postS / 2, sx: postS, sy: postH, sz: postS, mat: frameMat });
     addBeam(root, { x:  width / 2 - postS / 2, y: postH / 2, z:  depth / 2 - postS / 2, sx: postS, sy: postH, sz: postS, mat: frameMat });
 
-    // Ceiling beams
     for (let i = -3; i <= 3; i++) {
         addBeam(root, { x: 0, y: height - 0.55, z: i * (depth / 7.2), sx: width, sy: 0.35, sz: 0.75, mat: beamMat });
     }
 
-    // Gate
     const gate = createRollUpGate({ width, height, depth, matMetal: gateMat, matFrame: frameMat });
     gate.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     root.add(gate);
 
-    // Floor markings
     const bayX = [-7.2, 0, 7.2];
     for (const x of bayX) {
         addFloorMark(root, { x, z: 0, length: 22, width: 0.18, color: 0xffcc00, opacity: 0.22 });
@@ -360,7 +351,6 @@ export function createGarageModel({ width = 48, depth = 60, height = 14 } = {}) 
         addFloorMark(root, { x: x + 2.2, z: 0, length: 22, width: 0.10, color: 0xffffff, opacity: 0.10 });
     }
 
-    // Lights
     const lights = [];
     lights.push(new THREE.AmbientLight(0xffffff, 0.35));
     lights.push(new THREE.HemisphereLight(0xbfe9ff, 0x0f1420, 0.28));
@@ -372,7 +362,6 @@ export function createGarageModel({ width = 48, depth = 60, height = 14 } = {}) 
     dir.shadow.bias = -0.00025;
     lights.push(dir);
 
-    // Downlights
     const yLight = height - 0.28;
     addRoundCeilingLight(root, lights, { x: -7.2, y: yLight, z: -10, intensity: 4.2, color: 0xbfe9ff });
     addRoundCeilingLight(root, lights, { x:  0.0, y: yLight, z: -10, intensity: 4.8, color: 0xbfe9ff });
@@ -382,7 +371,6 @@ export function createGarageModel({ width = 48, depth = 60, height = 14 } = {}) 
     addRoundCeilingLight(root, lights, { x:  0.0, y: yLight, z:  6, intensity: 5.0, color: 0xbfe9ff });
     addRoundCeilingLight(root, lights, { x:  7.2, y: yLight, z:  6, intensity: 4.2, color: 0xbfe9ff });
 
-    // Wall tube lamps (visible fixtures)
     const lampY = height * 0.62;
     for (const z of [-20, -8, 6]) {
         addWallTubeLamp(root, lights, { x: -width / 2 + 0.10, y: lampY, z, side: 'left',  length: 3.2, lightColor: 0xfff0d8 });

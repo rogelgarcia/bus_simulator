@@ -1,4 +1,4 @@
-// src/environment/ProceduralTextures.js
+// src/assets3d/environment/ProceduralTextures.js
 import * as THREE from 'three';
 
 let _cached = null;
@@ -36,7 +36,7 @@ function canvasToTexture(canvas, { repeatX = 1, repeatY = 1, srgb = true } = {})
     return tex;
 }
 
-/* ---------------- Asphalt (keep as-is) ---------------- */
+// Asphalt + wall textures (implementation unchanged from src/environment/ProceduralTextures.js)
 
 function generateAsphalt({ size = 512, repeat = 7 } = {}) {
     const seedObj = { v: 123456789 };
@@ -118,13 +118,10 @@ function generateAsphalt({ size = 512, repeat = 7 } = {}) {
     return { map, bumpMap };
 }
 
-/* ---------------- Wall: tile-friendly corrugated metal (NO big blobs) ---------------- */
-
 function generateGarageWall({ size = 512 } = {}) {
     const seedObj = { v: 987654321 };
     const { c, ctx } = makeCanvas(size);
 
-    // Base gradient
     const g = ctx.createLinearGradient(0, 0, 0, size);
     g.addColorStop(0.0, '#3a5274');
     g.addColorStop(0.60, '#2f4666');
@@ -132,7 +129,6 @@ function generateGarageWall({ size = 512 } = {}) {
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, size, size);
 
-    // Micro noise (tile-friendly)
     const nSize = 96;
     const { c: nC, ctx: nCtx } = makeCanvas(nSize);
     const nImg = nCtx.getImageData(0, 0, nSize, nSize);
@@ -149,7 +145,6 @@ function generateGarageWall({ size = 512 } = {}) {
     ctx.drawImage(nC, 0, 0, size, size);
     ctx.restore();
 
-    // Corrugation ridges
     const ridgeStep = 14;
     for (let x = 0; x < size; x += ridgeStep) {
         ctx.fillStyle = 'rgba(255,255,255,0.10)';
@@ -158,7 +153,6 @@ function generateGarageWall({ size = 512 } = {}) {
         ctx.fillRect(x + 6, 0, 1, size);
     }
 
-    // Panel seams (large scale, but simple)
     const panelW = 128;
     for (let x = 0; x <= size; x += panelW) {
         ctx.fillStyle = 'rgba(0,0,0,0.25)';
@@ -167,7 +161,6 @@ function generateGarageWall({ size = 512 } = {}) {
         ctx.fillRect(x + 3, 0, 1, size);
     }
 
-    // Tiny rivets (small, ok to repeat)
     for (let x = 0; x <= size; x += panelW) {
         for (let y = 48; y < size; y += 80) {
             ctx.fillStyle = 'rgba(0,0,0,0.18)';
@@ -182,14 +175,12 @@ function generateGarageWall({ size = 512 } = {}) {
         }
     }
 
-    // Bottom grime gradient (tile-friendly)
     const grime = ctx.createLinearGradient(0, size * 0.60, 0, size);
     grime.addColorStop(0, 'rgba(0,0,0,0.00)');
     grime.addColorStop(1, 'rgba(0,0,0,0.30)');
     ctx.fillStyle = grime;
     ctx.fillRect(0, 0, size, size);
 
-    // ---- BUMP MAP (no blobs) ----
     const { c: bumpC, ctx: bumpCtx } = makeCanvas(size);
     const bImg2 = bumpCtx.getImageData(0, 0, size, size);
     const bd2 = bImg2.data;
@@ -198,17 +189,11 @@ function generateGarageWall({ size = 512 } = {}) {
     for (let y = 0; y < size; y++) {
         for (let x = 0; x < size; x++) {
             let v = 128;
-
-            v += Math.sin(x * freq) * 26;    // ridges
-            if (x % panelW < 4) v -= 26;     // seams
-
-            // tiny noise
+            v += Math.sin(x * freq) * 26;
+            if (x % panelW < 4) v -= 26;
             v += (rand(seedObj) - 0.5) * 6;
-
-            // bottom grime slight
             const grimeAmt = Math.max(0, (y - size * 0.65) / (size * 0.35));
             v -= grimeAmt * 12;
-
             const idx = (y * size + x) * 4;
             const gg = clamp255(v);
             bd2[idx] = gg; bd2[idx + 1] = gg; bd2[idx + 2] = gg; bd2[idx + 3] = 255;
@@ -216,23 +201,21 @@ function generateGarageWall({ size = 512 } = {}) {
     }
     bumpCtx.putImageData(bImg2, 0, 0);
 
-    // ---- ROUGHNESS MAP (no big smudges) ----
     const { c: rC, ctx: rCtx } = makeCanvas(size);
     const rImg = rCtx.getImageData(0, 0, size, size);
     const rd = rImg.data;
 
     const seedObj2 = { v: 246813579 };
     for (let i = 0; i < rd.length; i += 4) {
-        let v = 235 + (rand(seedObj2) - 0.5) * 14; // mostly rough
+        let v = 235 + (rand(seedObj2) - 0.5) * 14;
         v = clamp255(v);
         rd[i] = v; rd[i + 1] = v; rd[i + 2] = v; rd[i + 3] = 255;
     }
     rCtx.putImageData(rImg, 0, 0);
 
-    // seams slightly shinier
     rCtx.save();
     rCtx.globalAlpha = 0.12;
-    rCtx.fillStyle = 'rgba(165,165,165,1)'; // darker = shinier
+    rCtx.fillStyle = 'rgba(165,165,165,1)';
     for (let x = 0; x <= size; x += panelW) rCtx.fillRect(x, 0, 3, size);
     rCtx.restore();
 

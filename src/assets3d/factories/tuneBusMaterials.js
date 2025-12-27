@@ -1,4 +1,4 @@
-// src/buses/tuneBusMaterials.js
+// src/assets3d/factories/tuneBusMaterials.js
 import * as THREE from 'three';
 
 function isNonBlack(c) {

@@ -1,5 +1,5 @@
-// src/utils/screenFade.js
-import { tween } from './animate.js';
+// src/assets3d/utils/screenFade.js
+import { tween } from '../../utils/animate.js';
 
 let _el = null;
 let _stop = null;

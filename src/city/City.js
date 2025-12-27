@@ -4,8 +4,8 @@ import { createCityWorld } from './CityWorld.js';
 import { createCityConfig } from './CityConfig.js';
 import { CityMap } from './CityMap.js';
 import { CityRNG } from './CityRNG.js';
-import { getCityMaterials } from './materials/CityMaterials.js';
-import { generateRoads } from './generators/RoadGenerator.js';
+import { getCityMaterials } from '../assets3d/textures/CityMaterials.js';
+import { generateRoads } from '../assets3d/generators/RoadGenerator.js';
 
 function srgbToLinearColor(hex) {
     const c = new THREE.Color(hex);

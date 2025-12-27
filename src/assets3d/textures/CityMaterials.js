@@ -1,4 +1,4 @@
-// src/city/materials/CityMaterials.js
+// src/assets3d/textures/CityMaterials.js
 import * as THREE from 'three';
 
 let _cached = null;

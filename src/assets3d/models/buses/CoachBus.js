@@ -1,8 +1,8 @@
-// src/buses/models/DoubleDeckerBus.js
+// src/assets3d/models/buses/CoachBus.js
 import * as THREE from 'three';
 import { createBusWheel } from './components/BusWheel.js';
 import { WheelRig } from './components/WheelRig.js';
-import { attachBusSkeleton } from '../BusSkeleton.js';
+import { attachBusSkeleton } from '../../../skeletons/buses/BusSkeleton.js';
 
 function applyShadows(group) {
     group.traverse((o) => {
@@ -16,37 +16,39 @@ function applyShadows(group) {
 function makeMaterials(baseColor) {
     const body = new THREE.MeshStandardMaterial({
         color: baseColor,
-        roughness: 0.45,
-        metalness: 0.12
+        roughness: 0.42,
+        metalness: 0.14
     });
 
     const trim = new THREE.MeshStandardMaterial({
         color: 0x101010,
         roughness: 0.85,
-        metalness: 0.10
+        metalness: 0.1
     });
 
+    // clearer glass vs old (still simple)
     const glass = new THREE.MeshPhysicalMaterial({
         color: 0x7ecbff,
-        roughness: 0.12,
+        roughness: 0.10,
         metalness: 0.0,
-        transmission: 0.82,
+        transmission: 0.85,
         thickness: 0.03,
         ior: 1.45,
         transparent: true,
         opacity: 1.0,
         clearcoat: 1.0,
-        clearcoatRoughness: 0.30
+        clearcoatRoughness: 0.28
     });
     glass.depthWrite = false;
     glass.envMapIntensity = 0.8;
 
-    // Lights default OFF; BusSkeleton toggles emissiveIntensity.
+    // IMPORTANT: lights start OFF (emissiveIntensity 0),
+    // BusSkeleton turns them on/off.
     const headLightMat = new THREE.MeshStandardMaterial({
         color: 0xffffff,
         emissive: 0xffffff,
         emissiveIntensity: 0.0,
-        roughness: 0.20,
+        roughness: 0.2,
         metalness: 0.0
     });
 
@@ -61,20 +63,20 @@ function makeMaterials(baseColor) {
     return { body, trim, glass, headLightMat, brakeLightMat };
 }
 
-export function createDoubleDeckerBus(spec) {
+export function createCoachBus(spec) {
     const mats = makeMaterials(spec.color);
 
     const width = 2.7;
-    const height = 3.0;
-    const length = 8.8;
+    const height = 3.2;
+    const length = 9.4;
 
     const wheelR = 0.55;
     const wheelW = 0.30;
 
-    const axleFront = length * 0.28;
-    const axleRear = -length * 0.28;
+    const axleFront = length * 0.30;
+    const axleRear = -length * 0.30;
 
-    // Tuck wheels slightly into body
+    // tucked slightly inside
     const wheelX = width / 2 - (wheelW / 2) + 0.02;
 
     const bus = new THREE.Group();
@@ -82,56 +84,46 @@ export function createDoubleDeckerBus(spec) {
     bus.userData.id = spec.id;
     bus.name = `bus_${spec.id}`;
 
-    // Lower body
-    const lowerBody = new THREE.Mesh(new THREE.BoxGeometry(width, height, length), mats.body);
-    lowerBody.position.y = wheelR + height / 2;
-    bus.add(lowerBody);
+    // Body (box)
+    const body = new THREE.Mesh(new THREE.BoxGeometry(width, height, length), mats.body);
+    body.position.y = wheelR + height / 2;
+    bus.add(body);
 
-    // Lower windows
-    const winH = height * 0.38;
-    const lowerWindows = new THREE.Mesh(
-        new THREE.BoxGeometry(width * 0.92, winH, length * 0.72),
+    // Big coach windows
+    const winH = height * 0.50;
+    const windows = new THREE.Mesh(
+        new THREE.BoxGeometry(width * 0.92, winH, length * 0.78),
         mats.glass
     );
-    lowerWindows.position.y = wheelR + height * 0.58;
-    lowerWindows.position.z = -length * 0.02;
-    bus.add(lowerWindows);
+    windows.position.y = wheelR + height * 0.63;
+    windows.position.z = -length * 0.04;
+    bus.add(windows);
 
-    // Upper body
-    const upperH = 1.7;
-    const upper = new THREE.Mesh(
-        new THREE.BoxGeometry(width * 0.94, upperH, length * 0.82),
-        mats.body
-    );
-    upper.position.y = wheelR + height + upperH / 2 - 0.05;
-    bus.add(upper);
-
-    // Upper windows
-    const upperWin = new THREE.Mesh(
-        new THREE.BoxGeometry(width * 0.88, upperH * 0.55, length * 0.72),
-        mats.glass
-    );
-    upperWin.position.y = wheelR + height + upperH * 0.62;
-    upperWin.position.z = -length * 0.02;
-    bus.add(upperWin);
-
-    // Front windshield (lower)
+    // Front windshield
     const frontGlass = new THREE.Mesh(
         new THREE.BoxGeometry(width * 0.86, winH * 0.95, 0.10),
         mats.glass
     );
-    frontGlass.position.set(0, wheelR + height * 0.58, length / 2 - 0.05);
+    frontGlass.position.set(0, wheelR + height * 0.63, length / 2 - 0.05);
     bus.add(frontGlass);
 
-    // Skirt
-    const skirt = new THREE.Mesh(
-        new THREE.BoxGeometry(width * 0.98, 0.22, length * 0.90),
+    // Lower trim / luggage bay vibe
+    const lowerTrim = new THREE.Mesh(
+        new THREE.BoxGeometry(width * 0.98, height * 0.26, length * 0.94),
         mats.trim
     );
-    skirt.position.y = wheelR + 0.2;
-    bus.add(skirt);
+    lowerTrim.position.y = wheelR + height * 0.16;
+    bus.add(lowerTrim);
 
-    // Headlight housings + lens (lens is what skeleton toggles)
+    // Roof AC unit
+    const ac = new THREE.Mesh(
+        new THREE.BoxGeometry(width * 0.50, 0.22, length * 0.28),
+        mats.trim
+    );
+    ac.position.set(0, wheelR + height + 0.14, -length * 0.10);
+    bus.add(ac);
+
+    // Headlight housings (trim) + lens (emissive controlled by skeleton)
     const headHousingGeo = new THREE.BoxGeometry(0.26, 0.16, 0.10);
     const headLensGeo = new THREE.BoxGeometry(0.20, 0.12, 0.06);
 
@@ -166,7 +158,7 @@ export function createDoubleDeckerBus(spec) {
 
     bus.add(brakeL, brakeR);
 
-    // Wheels + rig
+    // Wheels (modular) + WheelRig (steer/spin control)
     const rig = new WheelRig({ wheelRadius: wheelR });
 
     const wFR = createBusWheel({ radius: wheelR, width: wheelW });
@@ -198,7 +190,7 @@ export function createDoubleDeckerBus(spec) {
         brakeLights: [brakeL, brakeR]
     };
 
-    // Attach engine-facing interface
+    // Attach the interface the engine talks to
     attachBusSkeleton(bus, { wheelRig: rig, parts: bus.userData.parts });
 
     applyShadows(bus);
