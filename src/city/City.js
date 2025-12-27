@@ -7,6 +7,7 @@ import { CityRNG } from './CityRNG.js';
 import { getCityMaterials } from '../../graphics/assets3d/textures/CityMaterials.js';
 import { generateRoads } from '../../graphics/assets3d/generators/RoadGenerator.js';
 import { createGradientSkyDome } from '../../graphics/assets3d/generators/SkyGenerator.js';
+import { createGeneratorConfig } from '../../graphics/assets3d/generators/GeneratorParams.js';
 
 export class City {
     constructor(options = {}) {
@@ -15,7 +16,8 @@ export class City {
             tileMeters = 2,
             mapTileSize = 16,
             seed = 'demo-001',
-            mapSpec = null
+            mapSpec = null,
+            generatorConfig = null
         } = options;
 
         this.config = {
@@ -30,7 +32,6 @@ export class City {
         this.group = new THREE.Group();
         this.group.name = 'City';
 
-        // Lights
         this.hemi = new THREE.HemisphereLight(0xffffff, 0x2a3b1f, 0.85);
         this.hemi.position.set(0, 100, 0);
         this.group.add(this.hemi);
@@ -47,7 +48,6 @@ export class City {
         this.sun.shadow.camera.bottom = -220;
         this.group.add(this.sun);
 
-        // Sky
         this.sky = createGradientSkyDome({
             top: '#2f7fe8',
             horizon: '#eaf7ff',
@@ -56,26 +56,24 @@ export class City {
         });
         this.group.add(this.sky);
 
-        // Generation config + deterministic RNG
         this.genConfig = createCityConfig({ size, tileMeters, mapTileSize, seed });
+        this.generatorConfig = createGeneratorConfig(generatorConfig ?? {});
+
         this.rng = new CityRNG(this.genConfig.seed);
 
-        // Map
         const spec = mapSpec ?? CityMap.demoSpec(this.genConfig);
         this.map = CityMap.fromSpec(spec, this.genConfig);
 
-        // World (raised ground tiles using map)
         this.world = createCityWorld({
             size,
             tileMeters,
             map: this.map,
-            groundY: this.genConfig.ground.surfaceY
+            config: this.generatorConfig
         });
         this.group.add(this.world.group);
 
-        // Roads + sidewalks + curbs
         this.materials = getCityMaterials();
-        this.roads = generateRoads({ map: this.map, config: this.genConfig, materials: this.materials });
+        this.roads = generateRoads({ map: this.map, config: this.generatorConfig, materials: this.materials });
         this.group.add(this.roads.group);
 
         this._attached = false;

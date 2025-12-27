@@ -1,14 +1,9 @@
 // src/physics/systems/CollisionSystem.js
 import { CurbCollisionDetector, SURFACE } from '../CurbCollisionDetector.js';
+import { ROAD_DEFAULTS, GROUND_DEFAULTS } from '../../../graphics/assets3d/generators/GeneratorParams.js';
 
-/**
- * Surface type constants (re-exported for convenience).
- */
 export { SURFACE };
 
-/**
- * Surface name lookup.
- */
 const SURFACE_NAMES = {
     [SURFACE.UNKNOWN]: 'unknown',
     [SURFACE.ASPHALT]: 'asphalt',
@@ -16,51 +11,24 @@ const SURFACE_NAMES = {
     [SURFACE.GRASS]: 'grass'
 };
 
-/**
- * Default collision configuration.
- */
 const DEFAULT_CONFIG = {
-    // Default surface heights (meters)
-    roadY: 0.02,
-    groundY: 0.08,
-
-    // Curb impact parameters
-    curbImpactVelocity: 0.15,  // m/s impulse on curb hit
-    curbDamping: 0.7           // Damping factor for curb impacts
+    roadY: ROAD_DEFAULTS.surfaceY ?? 0.02,
+    groundY: GROUND_DEFAULTS.surfaceY ?? 0.08,
+    curbImpactVelocity: 0.15,
+    curbDamping: 0.7
 };
 
-/**
- * CollisionSystem handles ground/curb collision detection and response.
- *
- * Responsibilities:
- * - Detect wheel surface types (asphalt, curb, grass)
- * - Track surface transitions
- * - Provide wheel height offsets for suspension
- * - Detect curb impacts for suspension response
- */
 export class CollisionSystem {
     constructor(config = {}) {
-        /** @type {Map<string, object>} */
         this.vehicles = new Map();
-
-        /** @type {object} */
         this.config = { ...DEFAULT_CONFIG, ...config };
-
-        /** @type {object|null} */
         this.environment = null;
-
-        /** @type {CurbCollisionDetector|null} */
         this._detector = null;
     }
 
-    /**
-     * Set the environment (city with map and config) for collision detection.
-     * @param {object} env - City object with { map, config/genConfig }
-     */
     setEnvironment(env) {
         this.environment = env ?? null;
 
-        // Create detector if we have a valid environment
         if (this.environment?.map) {
             this._detector = new CurbCollisionDetector(this.environment);
         } else {
@@ -68,10 +36,6 @@ export class CollisionSystem {
         }
     }
 
-    /**
-     * Register a vehicle with this system.
-     * @param {object} vehicle - Vehicle instance with { id, api, anchor }
-     */
     addVehicle(vehicle) {
         if (!vehicle?.id) return;
 
@@ -80,7 +44,6 @@ export class CollisionSystem {
             api: vehicle.api ?? null,
             anchor: vehicle.anchor ?? null,
 
-            // Surface state per wheel
             wheelSurfaces: {
                 fl: SURFACE.UNKNOWN,
                 fr: SURFACE.UNKNOWN,
@@ -88,7 +51,6 @@ export class CollisionSystem {
                 rr: SURFACE.UNKNOWN
             },
 
-            // Height offset per wheel (for suspension)
             wheelHeights: {
                 fl: this.config.roadY,
                 fr: this.config.roadY,
@@ -96,7 +58,6 @@ export class CollisionSystem {
                 rr: this.config.roadY
             },
 
-            // Previous frame surfaces (for transition detection)
             prevSurfaces: {
                 fl: SURFACE.UNKNOWN,
                 fr: SURFACE.UNKNOWN,
@@ -104,28 +65,18 @@ export class CollisionSystem {
                 rr: SURFACE.UNKNOWN
             },
 
-            // Transitions this frame
             transitions: [],
 
-            // Aggregate state
             onCurb: false,
             onGrass: false,
             allOnAsphalt: true
         });
     }
 
-    /**
-     * Unregister a vehicle from this system.
-     * @param {string} vehicleId
-     */
     removeVehicle(vehicleId) {
         this.vehicles.delete(vehicleId);
     }
 
-    /**
-     * Fixed timestep update.
-     * @param {number} dt - Delta time in seconds
-     */
     fixedUpdate(dt) {
         if (dt <= 0) return;
 
@@ -134,21 +85,14 @@ export class CollisionSystem {
         }
     }
 
-    /**
-     * Update collision state for a single vehicle.
-     * @param {object} s - Vehicle state
-     */
     _updateCollisions(s) {
-        // Clear transitions from previous frame
         s.transitions.length = 0;
 
-        // Store previous surfaces
         s.prevSurfaces.fl = s.wheelSurfaces.fl;
         s.prevSurfaces.fr = s.wheelSurfaces.fr;
         s.prevSurfaces.rl = s.wheelSurfaces.rl;
         s.prevSurfaces.rr = s.wheelSurfaces.rr;
 
-        // Use detector if available
         if (this._detector && s.api && s.anchor) {
             this._detector.update(s.api, s.anchor);
 
@@ -156,7 +100,6 @@ export class CollisionSystem {
             const heights = this._detector.getWheelHeights();
             const transitions = this._detector.getTransitions();
 
-            // Copy surfaces and heights
             s.wheelSurfaces.fl = surfaces.fl;
             s.wheelSurfaces.fr = surfaces.fr;
             s.wheelSurfaces.rl = surfaces.rl;
@@ -167,7 +110,6 @@ export class CollisionSystem {
             s.wheelHeights.rl = heights.rl;
             s.wheelHeights.rr = heights.rr;
 
-            // Copy transitions
             for (const t of transitions) {
                 s.transitions.push({
                     wheel: t.wheel,
@@ -181,7 +123,6 @@ export class CollisionSystem {
             }
         }
 
-        // Update aggregate state
         const wheels = ['fl', 'fr', 'rl', 'rr'];
         s.onCurb = wheels.some(w => s.wheelSurfaces[w] === SURFACE.CURB);
         s.onGrass = wheels.some(w => s.wheelSurfaces[w] === SURFACE.GRASS);
@@ -191,11 +132,6 @@ export class CollisionSystem {
         );
     }
 
-    /**
-     * Get the current state for a vehicle.
-     * @param {string} vehicleId
-     * @returns {object|null}
-     */
     getState(vehicleId) {
         const state = this.vehicles.get(vehicleId);
         if (!state) return null;
@@ -216,22 +152,11 @@ export class CollisionSystem {
         };
     }
 
-    /**
-     * Get transitions that occurred this frame.
-     * @param {string} vehicleId
-     * @returns {Array}
-     */
     getTransitions(vehicleId) {
         const state = this.vehicles.get(vehicleId);
         return state?.transitions ?? [];
     }
 
-    /**
-     * Check if any wheel is on a specific surface.
-     * @param {string} vehicleId
-     * @param {number} surfaceType - SURFACE constant
-     * @returns {boolean}
-     */
     isOnSurface(vehicleId, surfaceType) {
         const state = this.vehicles.get(vehicleId);
         if (!state) return false;
@@ -239,11 +164,6 @@ export class CollisionSystem {
         return Object.values(state.wheelSurfaces).some(s => s === surfaceType);
     }
 
-    /**
-     * Get the dominant surface (most wheels on).
-     * @param {string} vehicleId
-     * @returns {number} SURFACE constant
-     */
     getDominantSurface(vehicleId) {
         const state = this.vehicles.get(vehicleId);
         if (!state) return SURFACE.UNKNOWN;
@@ -266,4 +186,3 @@ export class CollisionSystem {
         return dominant;
     }
 }
-

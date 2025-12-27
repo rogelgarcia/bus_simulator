@@ -1,17 +1,19 @@
 // graphics/assets3d/generators/TerrainGenerator.js
 import * as THREE from 'three';
 import { TILE } from '../../../src/city/CityMap.js';
+import { GROUND_DEFAULTS } from './GeneratorParams.js';
 
 function applyTextureColorSpace(tex, { srgb = true } = {}) {
     if ('colorSpace' in tex) tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
     if ('encoding' in tex) tex.encoding = srgb ? THREE.sRGBEncoding : THREE.LinearEncoding;
 }
 
-export function createCityWorld({ size = 800, tileMeters = 2, map = null, groundY = 0 } = {}) {
+export function createCityWorld({ size = 800, tileMeters = 2, map = null, config = null, groundY = null } = {}) {
     const group = new THREE.Group();
     group.name = 'CityWorld';
 
-    // Base floor at y=0 (background)
+    const computedGroundY = (groundY ?? config?.ground?.surfaceY ?? GROUND_DEFAULTS.surfaceY ?? 0);
+
     const floorGeo = new THREE.PlaneGeometry(size, size, 1, 1);
     floorGeo.rotateX(-Math.PI / 2);
 
@@ -26,7 +28,6 @@ export function createCityWorld({ size = 800, tileMeters = 2, map = null, ground
     floor.receiveShadow = true;
     group.add(floor);
 
-    // Raised ground tiles (skip ROAD tiles)
     let groundTiles = null;
     let tilesMat = null;
 
@@ -53,7 +54,7 @@ export function createCityWorld({ size = 800, tileMeters = 2, map = null, ground
                 if (map.kind[idx] === TILE.ROAD) continue;
 
                 const p = map.tileToWorldCenter(x, y);
-                dummy.position.set(p.x, groundY, p.z);
+                dummy.position.set(p.x, computedGroundY, p.z);
                 dummy.rotation.set(0, 0, 0);
                 dummy.scale.set(1, 1, 1);
                 dummy.updateMatrix();
@@ -68,7 +69,6 @@ export function createCityWorld({ size = 800, tileMeters = 2, map = null, ground
         group.add(groundTiles);
     }
 
-    // Grass texture
     const grassUrl = new URL('../../../assets/grass.png', import.meta.url);
     const loader = new THREE.TextureLoader();
 

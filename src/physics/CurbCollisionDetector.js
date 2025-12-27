@@ -1,10 +1,6 @@
 // src/physics/CurbCollisionDetector.js
-/**
- * Core curb/surface collision detection implementation.
- * Used by CollisionSystem and TestModeState.
- * This is the shared implementation - do not remove.
- */
 import * as THREE from 'three';
+import { ROAD_DEFAULTS, GROUND_DEFAULTS } from '../../graphics/assets3d/generators/GeneratorParams.js';
 
 export const SURFACE = {
     UNKNOWN: 0,
@@ -15,7 +11,6 @@ export const SURFACE = {
 
 const WHEELS = ['fl', 'fr', 'rl', 'rr'];
 
-// Assumptions consistent with your docs
 const TILE_ROAD = 1;
 const AXIS_NONE = 0;
 const AXIS_EW = 1;
@@ -26,17 +21,24 @@ export class CurbCollisionDetector {
     constructor(city, opts = {}) {
         this.city = city;
         this.map = city?.map ?? null;
-        this.config = city?.genConfig ?? city?.cityConfig ?? city?.config ?? null;
 
-        this.roadY = this.config?.road?.surfaceY ?? 0.02;
-        this.groundY = this.config?.ground?.surfaceY ?? 0.08;
+        const generatorConfig = city?.generatorConfig ?? null;
+        const legacyConfig = city?.genConfig ?? city?.cityConfig ?? city?.config ?? null;
 
-        this.curbThickness = this.config?.road?.curb?.thickness ?? 0.25;
-        this.laneWidth = this.config?.road?.laneWidth ?? 3.2;
-        this.shoulder = this.config?.road?.shoulder ?? 0.35;
+        const roadCfg = generatorConfig?.road ?? legacyConfig?.road ?? ROAD_DEFAULTS;
+        const groundCfg = generatorConfig?.ground ?? legacyConfig?.ground ?? GROUND_DEFAULTS;
 
-        // hysteresis to prevent rapid toggling near the edge
-        this.hysteresis = opts.hysteresis ?? 0.04; // meters
+        const roadY = roadCfg?.surfaceY ?? ROAD_DEFAULTS.surfaceY ?? 0.02;
+        const curbHeight = roadCfg?.curb?.height ?? ROAD_DEFAULTS.curb.height ?? 0.17;
+
+        this.roadY = roadY;
+        this.groundY = groundCfg?.surfaceY ?? (roadY + curbHeight);
+
+        this.curbThickness = roadCfg?.curb?.thickness ?? ROAD_DEFAULTS.curb.thickness ?? 0.25;
+        this.laneWidth = roadCfg?.laneWidth ?? ROAD_DEFAULTS.laneWidth ?? 3.2;
+        this.shoulder = roadCfg?.shoulder ?? ROAD_DEFAULTS.shoulder ?? 0.35;
+
+        this.hysteresis = opts.hysteresis ?? 0.04;
 
         this.prevSurfaces = { fl: SURFACE.UNKNOWN, fr: SURFACE.UNKNOWN, rl: SURFACE.UNKNOWN, rr: SURFACE.UNKNOWN };
         this.surfaces = { fl: SURFACE.UNKNOWN, fr: SURFACE.UNKNOWN, rl: SURFACE.UNKNOWN, rr: SURFACE.UNKNOWN };
@@ -83,8 +85,6 @@ export class CurbCollisionDetector {
     getWheelSurfaces() { return this.surfaces; }
     getWheelHeights() { return this.heights; }
     getTransitions() { return this.transitions; }
-
-    // ----- internals -----
 
     _heightForSurface(surface) {
         if (surface === SURFACE.ASPHALT) return this.roadY;
@@ -146,7 +146,7 @@ export class CurbCollisionDetector {
         const dx = Math.abs(worldX - center.x);
         const dz = Math.abs(worldZ - center.z);
 
-        let distOut = 0; // >0 means outside asphalt band
+        let distOut = 0;
 
         if (axis === AXIS_EW) {
             distOut = dz - widthEW * 0.5;
@@ -157,21 +157,15 @@ export class CurbCollisionDetector {
             const outZ = dz - widthEW * 0.5;
             distOut = Math.max(outX, outZ);
         } else {
-            // If axis is NONE but kind is ROAD, assume asphalt.
             return SURFACE.ASPHALT;
         }
 
         const h = this.hysteresis;
 
-        // Definitely asphalt
         if (distOut <= -h) return SURFACE.ASPHALT;
-
-        // Definitely grass (beyond curb thickness)
         if (distOut >= this.curbThickness + h) return SURFACE.GRASS;
 
-        // In edge bands, prefer previous to avoid rapid toggling
         if (distOut < +h) return (prevSurface === SURFACE.ASPHALT) ? SURFACE.ASPHALT : SURFACE.CURB;
-
         if (distOut <= this.curbThickness - h) return SURFACE.CURB;
 
         return (prevSurface === SURFACE.GRASS) ? SURFACE.GRASS : SURFACE.CURB;
