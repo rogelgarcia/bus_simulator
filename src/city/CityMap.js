@@ -1,10 +1,36 @@
 // src/city/CityMap.js
 export const DIR = { N: 1, E: 2, S: 4, W: 8 };
 export const TILE = { EMPTY: 0, ROAD: 1 };
-export const AXIS = { NONE: 0, EW: 1, NS: 2, INTERSECTION: 3 };
+
+// Axis / topology classification for rendering
+export const AXIS = {
+    NONE: 0,
+    EW: 1,
+    NS: 2,
+    INTERSECTION: 3,
+    CORNER: 4 // ✅ NEW: 90-degree turn (exactly two neighbors, not opposite)
+};
 
 function clampInt(v, lo, hi) {
     return Math.max(lo, Math.min(hi, v | 0));
+}
+
+function bitCount4(m) {
+    // DIR is {N:1,E:2,S:4,W:8} -> only 4 bits
+    m = m & 0x0f;
+    m = (m & 0x05) + ((m >> 1) & 0x05);
+    m = (m & 0x03) + ((m >> 2) & 0x03);
+    return m;
+}
+
+function isCornerConn(m) {
+    // Exactly two neighbors and they are perpendicular:
+    // NE, NW, SE, SW
+    const ne = (m & (DIR.N | DIR.E)) === (DIR.N | DIR.E);
+    const nw = (m & (DIR.N | DIR.W)) === (DIR.N | DIR.W);
+    const se = (m & (DIR.S | DIR.E)) === (DIR.S | DIR.E);
+    const sw = (m & (DIR.S | DIR.W)) === (DIR.S | DIR.W);
+    return ne || nw || se || sw;
 }
 
 export class CityMap {
@@ -124,14 +150,29 @@ export class CityMap {
                 const hasNS = (m & (DIR.N | DIR.S)) !== 0;
                 const hasEW = (m & (DIR.E | DIR.W)) !== 0;
 
-                if (hasNS && hasEW) this.axis[idx] = AXIS.INTERSECTION;
-                else if (hasEW) this.axis[idx] = AXIS.EW;
-                else if (hasNS) this.axis[idx] = AXIS.NS;
-                else {
-                    const ew = this.lanesE[idx] + this.lanesW[idx];
-                    const ns = this.lanesN[idx] + this.lanesS[idx];
-                    this.axis[idx] = ew >= ns ? AXIS.EW : AXIS.NS;
+                const degree = bitCount4(m);
+
+                // ✅ NEW: Distinguish true intersections from simple L-corners
+                if (hasNS && hasEW) {
+                    if (degree === 2 && isCornerConn(m)) this.axis[idx] = AXIS.CORNER;
+                    else this.axis[idx] = AXIS.INTERSECTION;
+                    continue;
                 }
+
+                if (hasEW) {
+                    this.axis[idx] = AXIS.EW;
+                    continue;
+                }
+
+                if (hasNS) {
+                    this.axis[idx] = AXIS.NS;
+                    continue;
+                }
+
+                // isolated tile: pick axis based on lanes
+                const ew = this.lanesE[idx] + this.lanesW[idx];
+                const ns = this.lanesN[idx] + this.lanesS[idx];
+                this.axis[idx] = ew >= ns ? AXIS.EW : AXIS.NS;
             }
         }
     }

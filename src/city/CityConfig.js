@@ -11,6 +11,14 @@ export function createCityConfig({
     const originX = -size / 2 + mapTileSize / 2;
     const originZ = -size / 2 + mapTileSize / 2;
 
+    // Scale references:
+    // - Typical bus wheel radius knowing this project’s conventions is ~0.55m
+    // - Good visible curb height is ~0.15–0.18m => pick 0.17m (~31% of wheel radius)
+    const curbHeight = 0.17;
+
+    const roadSurfaceY = 0.02;
+    const groundSurfaceY = roadSurfaceY + curbHeight;
+
     return {
         size,
         tileMeters,
@@ -22,18 +30,44 @@ export function createCityConfig({
             origin: { x: originX, z: originZ }
         },
 
-        // Asphalt lower, everything else higher
         road: {
-            surfaceY: 0.02,
+            surfaceY: roadSurfaceY,
             laneWidth: 3.2,
             shoulder: 0.35,
+
+            sidewalk: {
+                extraWidth: 1.25,
+                cornerRadius: 1.8,
+                lift: 0.001
+            },
+
+            // Smooth street turns (visual-only)
+            curves: {
+                // IMPORTANT: For tileSize=16, max usable is ~8. We intentionally allow large radius.
+                // Big radius makes corner connections read like proper curved streets.
+                turnRadius: 6.8,
+
+                // Smoothness
+                asphaltArcSegments: 40,
+                curbArcSegments: 24
+            },
+
+            markings: {
+                lineWidth: 0.12,
+                edgeInset: 0.22,
+                lift: 0.003
+            },
+
             curb: {
-                thickness: 0.25,
-                extraHeight: 0.0 // ✅ keep curb top flush with sidewalk/grass
+                thickness: 0.32,
+                height: curbHeight,
+                extraHeight: 0.0,
+                sink: 0.03
             }
         },
+
         ground: {
-            surfaceY: 0.08 // ✅ sidewalk + grass height
+            surfaceY: groundSurfaceY
         }
     };
 }
