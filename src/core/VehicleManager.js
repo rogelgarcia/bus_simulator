@@ -1,5 +1,4 @@
 // src/core/VehicleManager.js
-
 /**
  * VehicleManager is the central registry for all vehicles in the simulation.
  * 

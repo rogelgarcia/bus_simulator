@@ -1,5 +1,4 @@
 // src/core/SimulationContext.js
-
 import { EventBus } from './EventBus.js';
 import { VehicleManager } from './VehicleManager.js';
 import { PhysicsController } from '../physics/PhysicsController.js';

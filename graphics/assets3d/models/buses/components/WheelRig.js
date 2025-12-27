@@ -1,5 +1,4 @@
-// src/buses/models/components/WheelRig.js
-
+// graphics/assets3d/models/buses/components/WheelRig.js
 export class WheelRig {
     constructor({ wheelRadius = 0.55 } = {}) {
         this.wheelRadius = wheelRadius;

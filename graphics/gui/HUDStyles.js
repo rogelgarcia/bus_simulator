@@ -1,5 +1,4 @@
 // graphics/gui/HUDStyles.js
-
 export function injectHudStyles() {
     // Avoid double-inject
     const existing = document.getElementById("hud-styles");

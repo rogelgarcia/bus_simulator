@@ -1,4 +1,4 @@
-// src/buses/models/components/BusWheel.js
+// graphics/assets3d/models/buses/components/BusWheel.js
 import * as THREE from 'three';
 
 // Re-export the canonical WheelRig implementation (avoid duplicate classes,

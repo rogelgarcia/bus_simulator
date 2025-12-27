@@ -1,4 +1,4 @@
-// src/buses/BusSkeleton.js
+// src/skeletons/buses/BusSkeleton.js
 import * as THREE from 'three';
 
 /**

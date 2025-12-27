@@ -1,4 +1,4 @@
-// graphics/assets3d/environment/ProceduralTextures.js
+// graphics/assets3d/models/environment/ProceduralTextures.js
 import * as THREE from 'three';
 
 let _cached = null;

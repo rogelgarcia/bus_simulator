@@ -1,5 +1,4 @@
 // src/vehicle/VehicleController.js
-
 /**
  * VehicleController provides high-level control for a single vehicle.
  * 

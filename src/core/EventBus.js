@@ -1,5 +1,4 @@
 // src/core/EventBus.js
-
 /**
  * Simple pub/sub event bus for loose coupling between systems.
  * 

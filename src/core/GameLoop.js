@@ -1,5 +1,4 @@
 // src/core/GameLoop.js
-
 /**
  * GameLoop is the main coordinator for gameplay.
  * 

@@ -1,5 +1,4 @@
 // src/physics/PhysicsController.js
-
 import { PhysicsLoop } from './PhysicsLoop.js';
 import { LocomotionSystem } from './systems/LocomotionSystem.js';
 import { SuspensionSystem } from './systems/SuspensionSystem.js';

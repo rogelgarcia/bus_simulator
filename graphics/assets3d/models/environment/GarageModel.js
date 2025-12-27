@@ -1,4 +1,4 @@
-// graphics/assets3d/environment/GarageModel.js
+// graphics/assets3d/models/environment/GarageModel.js
 import * as THREE from 'three';
 import { getGarageTextures } from './ProceduralTextures.js';
 

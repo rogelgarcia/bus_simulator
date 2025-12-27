@@ -1,5 +1,4 @@
 // src/city/CityMap.js
-
 export const DIR = { N: 1, E: 2, S: 4, W: 8 };
 export const TILE = { EMPTY: 0, ROAD: 1 };
 export const AXIS = { NONE: 0, EW: 1, NS: 2, INTERSECTION: 3 };

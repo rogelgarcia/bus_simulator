@@ -1,5 +1,4 @@
 // src/physics/systems/CollisionSystem.js
-
 import { CurbCollisionDetector, SURFACE } from '../CurbCollisionDetector.js';
 
 /**
