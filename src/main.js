@@ -2,11 +2,11 @@
 import { GameEngine } from './core/GameEngine.js';
 import { StateMachine } from './core/StateMachine.js';
 
-import { WelcomeState } from './states/WelcomeState.js';
-import { BusSelectState } from './states/BusSelectState.js';
-import { TestModeState } from './states/TestModeState.js';
-import { CityState } from './states/CityState.js';
-import { GameplayState } from './states/GameplayState.js';
+import { WelcomeState } from '../states/WelcomeState.js';
+import { BusSelectState } from '../states/BusSelectState.js';
+import { TestModeState } from '../states/TestModeState.js';
+import { CityState } from '../states/CityState.js';
+import { GameplayState } from '../states/GameplayState.js';
 
 const canvas = document.getElementById('game-canvas');
 

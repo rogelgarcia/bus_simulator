@@ -1,6 +1,6 @@
-// src/states/CityState.js
+// states/CityState.js
 import * as THREE from 'three';
-import { getSharedCity } from '../city/City.js';
+import { getSharedCity } from '../src/city/City.js';
 
 function clamp(v, a, b) {
     return Math.max(a, Math.min(b, v));

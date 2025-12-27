@@ -1,4 +1,4 @@
-// src/states/GameplayState.js
+// states/GameplayState.js
 /**
  * GameplayState - Main gameplay state using the modular architecture.
  *
@@ -9,13 +9,13 @@
  * - PhysicsController via SimulationContext
  */
 import * as THREE from 'three';
-import { getSharedCity } from '../city/City.js';
-import { fadeIn } from '../../graphics/gui/utils/screenFade.js';
-import { GameHUD } from '../../graphics/gui/GameHUD.js';
-import { GameLoop } from '../core/GameLoop.js';
-import { VehicleController } from '../vehicle/VehicleController.js';
-import { InputManager } from '../input/InputManager.js';
-import { createVehicleFromBus } from '../vehicle/createVehicle.js';
+import { getSharedCity } from '../src/city/City.js';
+import { fadeIn } from '../graphics/gui/utils/screenFade.js';
+import { GameHUD } from '../graphics/gui/GameHUD.js';
+import { GameLoop } from '../src/core/GameLoop.js';
+import { VehicleController } from '../src/vehicle/VehicleController.js';
+import { InputManager } from '../src/input/InputManager.js';
+import { createVehicleFromBus } from '../src/vehicle/createVehicle.js';
 
 // Camera tuning
 const CAMERA_TUNE = {

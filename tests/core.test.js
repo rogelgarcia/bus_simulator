@@ -1039,7 +1039,7 @@ async function runTests() {
 
     // ========== GameplayState Tests (added in Task 16) ==========
     try {
-        const { GameplayState } = await import('/src/states/GameplayState.js');
+        const { GameplayState } = await import('/states/GameplayState.js');
         const { PhysicsController } = await import('/src/physics/PhysicsController.js');
 
         test('GameplayState: class exists and can be imported', () => {

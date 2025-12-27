@@ -1,4 +1,4 @@
-// src/states/WelcomeState.js
+// states/WelcomeState.js
 export class WelcomeState {
     constructor(engine, sm) {
         this.engine = engine;

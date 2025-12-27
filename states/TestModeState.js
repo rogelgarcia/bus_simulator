@@ -1,14 +1,14 @@
-// src/states/TestModeState.js
+// states/TestModeState.js
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-import { BUS_CATALOG } from '../../graphics/assets3d/factories/BusCatalog.js';
-import { createBus } from '../../graphics/assets3d/factories/BusFactory.js';
-import { tuneBusMaterials } from '../../graphics/assets3d/factories/tuneBusMaterials.js';
+import { BUS_CATALOG } from '../graphics/assets3d/factories/BusCatalog.js';
+import { createBus } from '../graphics/assets3d/factories/BusFactory.js';
+import { tuneBusMaterials } from '../graphics/assets3d/factories/tuneBusMaterials.js';
 
-import { PhysicsLoop } from '../physics/PhysicsLoop.js';
-import { SuspensionSim } from '../physics/SuspensionSim.js';
-import { DriveSim } from '../physics/DriveSim.js';
+import { PhysicsLoop } from '../src/physics/PhysicsLoop.js';
+import { SuspensionSim } from '../src/physics/SuspensionSim.js';
+import { DriveSim } from '../src/physics/DriveSim.js';
 
 function degToRad(d) { return (d * Math.PI) / 180; }
 
