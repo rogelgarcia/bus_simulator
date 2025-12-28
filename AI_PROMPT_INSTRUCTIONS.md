@@ -50,13 +50,9 @@ Tasks:
 - [Task 3]
 - [etc.]
 
-## Overriding Rules
+## Overriding Project Rules
 
-### Library Source Code Imports
-- **If importing library source code into the project, preserve all original comments**
-- This overrides the project's no-comments rule
-- Keep library code as-is to maintain compatibility and ease of updates
-- Only apply the no-comments rule to project-specific code
+- **If importing library source code into the project, preserve all original comments** (This overrides the project's no-comments rule)
 
 ## Context (Optional)
 
