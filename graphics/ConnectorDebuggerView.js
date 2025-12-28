@@ -26,11 +26,13 @@ function wrapAngleLocal(a) {
 }
 
 function curbArcSpan(arc) {
-    const start = wrapAngleLocal(arc.startAngle);
     const dir = arc.turnDir === 'L' ? 1 : -1;
-    const end = wrapAngleLocal(start + dir * arc.deltaAngle);
-    if (arc.turnDir === 'L') return { startAng: start, spanAng: arc.deltaAngle };
-    return { startAng: end, spanAng: arc.deltaAngle };
+    const worldStart = arc.startAngle;
+    const worldEnd = worldStart + dir * arc.deltaAngle;
+    const start = wrapAngleLocal(-worldStart);
+    const end = wrapAngleLocal(-worldEnd);
+    if (arc.turnDir === 'L') return { startAng: end, spanAng: arc.deltaAngle };
+    return { startAng: start, spanAng: arc.deltaAngle };
 }
 
 function createDebugCitySpec(config) {
@@ -140,6 +142,7 @@ export class ConnectorDebuggerView {
         this._manualLineVisibility = { ...this._lineVisibility };
         this._displayDebug = true;
         this._connectorMesh = null;
+        this._createdCurbGroup = null;
         this._connector = null;
         this._minStraight = 0.05;
         this._enableConnectorMesh = false;
@@ -171,6 +174,7 @@ export class ConnectorDebuggerView {
         if (this.group) this.group.removeFromParent();
         this.group = null;
         this._connectorMesh = null;
+        this._createdCurbGroup = null;
         this.curbs = [];
         this._curbMeshes = [];
         this._hoveredCurb = null;
@@ -279,7 +283,8 @@ export class ConnectorDebuggerView {
         const curbExtra = roadCfg.curb?.extraHeight ?? 0.0;
         const curbSink = roadCfg.curb?.sink ?? 0.03;
         const groundY = groundCfg.surfaceY ?? (roadY + curbHeight);
-        const curbTop = groundY + curbExtra;
+        const curbLift = Math.max(curbExtra, Math.min(0.06, curbHeight * 0.25));
+        const curbTop = groundY + curbLift;
         const curbBottom = roadY - curbSink;
         const curbH = Math.max(0.04, curbTop - curbBottom);
         const curbY = (curbTop + curbBottom) * 0.5;
@@ -493,7 +498,9 @@ export class ConnectorDebuggerView {
                 this._markInteraction();
                 this._requestHardReset();
             },
-            onCopy: () => this._copyPayload()
+            onCopy: () => this._copyPayload(),
+            onCreateCurbs: () => this._createCurbs(),
+            onRemoveCurbs: () => this._removeCreatedCurbs()
         });
         this.panel.show();
     }
@@ -882,6 +889,7 @@ export class ConnectorDebuggerView {
             const data = this._buildDebugData(inputs, connector, error);
             this.panel?.setData(data);
             this._lastPayload = this._buildPayload(inputs, connector);
+            this._updateCurbButtonState();
             return;
         }
         this._updateTurnCircles(inputs, connector);
@@ -917,6 +925,13 @@ export class ConnectorDebuggerView {
         const data = this._buildDebugData(inputs, connector, error);
         this.panel?.setData(data);
         this._lastPayload = this._buildPayload(inputs, connector);
+        this._updateCurbButtonState();
+    }
+
+    _updateCurbButtonState() {
+        const canCreate = !!(this._connector && this._connector.ok);
+        const canRemove = !!this._createdCurbGroup;
+        this.panel?.setCurbActions({ canCreate, canRemove });
     }
 
     _updateLine(points, visible) {
@@ -1301,6 +1316,28 @@ export class ConnectorDebuggerView {
         this._connectorMesh = null;
     }
 
+    _clearCreatedCurbs() {
+        if (!this._createdCurbGroup) return;
+        this._createdCurbGroup.removeFromParent();
+        this._createdCurbGroup = null;
+    }
+
+    _createCurbs() {
+        if (!this._connector || !this._connector.ok) return;
+        if (!Array.isArray(this._connector.segments) || this._connector.segments.length === 0) return;
+        this._clearCreatedCurbs();
+        const group = this._buildCurbGroup(this._connector, 'ConnectorCurbs');
+        if (!group) return;
+        this._createdCurbGroup = group;
+        this.group.add(group);
+        this._updateCurbButtonState();
+    }
+
+    _removeCreatedCurbs() {
+        this._clearCreatedCurbs();
+        this._updateCurbButtonState();
+    }
+
     _addCurbConnector({ curb, key, color, connector, curveSegs }) {
         if (!connector) return;
         const eps = 1e-4;
@@ -1326,7 +1363,7 @@ export class ConnectorDebuggerView {
                 const len = s.length();
                 if (len > eps) {
                     const mid = start.clone().add(end).multiplyScalar(0.5);
-                    const dir = s.multiplyScalar(1 / len);
+                    const dir = segment.direction ? segment.direction.clone() : s.multiplyScalar(1 / len);
                     const ry = Math.atan2(dir.y, dir.x);
                     curb.addBox(mid.x, this._curbY, mid.y, len, this._curbH, this._curbT, ry, color);
                 }
@@ -1334,9 +1371,8 @@ export class ConnectorDebuggerView {
         }
     }
 
-    _buildConnectorMesh(connector) {
-        if (!connector) return;
-        this._clearConnectorMesh();
+    _buildCurbGroup(connector, name) {
+        if (!connector) return null;
         const baseMat = this._materials?.curb ?? new THREE.MeshStandardMaterial({ color: 0x7a7a7a, roughness: 0.9, metalness: 0.0 });
         const instancedMat = CURB_COLOR_PALETTE.instancedMaterial(baseMat, 'curb');
         this._connectorBoxGeo ??= new THREE.BoxGeometry(1, 1, 1);
@@ -1349,7 +1385,7 @@ export class ConnectorDebuggerView {
             curbT: this._curbT,
             curbH: this._curbH,
             curbBottom: this._curbBottom,
-            name: 'ConnectorCurb'
+            name: `${name}Blocks`
         });
         const key = CURB_COLOR_PALETTE.key('connector', 'all');
         const color = CURB_COLOR_PALETTE.instanceColor('curb') ?? 0xffffff;
@@ -1357,9 +1393,17 @@ export class ConnectorDebuggerView {
         this._addCurbConnector({ curb, key, color, connector, curveSegs });
         curb.finalize();
         const group = new THREE.Group();
-        group.name = 'ConnectorCurb';
+        group.name = name;
         group.add(curb.mesh);
         for (const m of curb.buildCurveMeshes()) group.add(m);
+        return group;
+    }
+
+    _buildConnectorMesh(connector) {
+        if (!connector) return;
+        this._clearConnectorMesh();
+        const group = this._buildCurbGroup(connector, 'ConnectorCurb');
+        if (!group) return;
         this._connectorMesh = group;
         this.group.add(group);
     }

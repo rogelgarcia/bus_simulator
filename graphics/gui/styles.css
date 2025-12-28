@@ -577,12 +577,19 @@ body.setup-bg #game-canvas {
     opacity: 0.72;
 }
 
-.connector-debug-panel {
+.connector-debug-stack {
     position: fixed;
     left: 12px;
     bottom: 12px;
     z-index: 4;
     pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    --connector-debug-label-width: 90px;
+}
+
+.connector-debug-panel {
     background: rgba(10, 14, 20, 0.9);
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 12px;
@@ -594,6 +601,19 @@ body.setup-bg #game-canvas {
     flex-direction: column;
     gap: 8px;
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+}
+
+.connector-curb-panel {
+    background: rgba(10, 14, 20, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    padding: 8px 12px 12px;
+    color: #f5f7fb;
+    width: min(520px, calc(100vw - 24px));
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
 }
 
 .connector-debug-header {
@@ -609,6 +629,7 @@ body.setup-bg #game-canvas {
     text-transform: uppercase;
     font-weight: 700;
     opacity: 0.85;
+    padding-bottom: 4px;
 }
 
 .connector-debug-controls {
@@ -634,7 +655,7 @@ body.setup-bg #game-canvas {
 
 .connector-debug-lines {
     display: grid;
-    grid-template-columns: auto 1fr;
+    grid-template-columns: var(--connector-debug-label-width) 1fr;
     grid-template-rows: auto auto;
     column-gap: 8px;
     row-gap: 4px;
@@ -642,13 +663,19 @@ body.setup-bg #game-canvas {
 }
 
 .connector-debug-lines-title {
+    grid-row: 1 / span 2;
+    grid-column: 1;
+    align-self: start;
+}
+
+.connector-debug-label {
     font-size: 10px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     opacity: 0.7;
-    grid-row: 1 / span 2;
-    grid-column: 1;
-    align-self: start;
+    text-align: left;
+    width: var(--connector-debug-label-width);
+    font-weight: 700;
 }
 
 .connector-debug-lines-auto {
@@ -667,6 +694,56 @@ body.setup-bg #game-canvas {
     gap: 6px;
 }
 
+.connector-debug-curbs {
+    display: grid;
+    grid-template-columns: var(--connector-debug-label-width) 1fr;
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 4px;
+}
+
+.connector-debug-curbs-title {
+    align-self: start;
+}
+
+.connector-debug-curbs-buttons {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.connector-debug-action {
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.08);
+    color: #f5f7fb;
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+}
+
+.connector-debug-action:hover {
+    background: rgba(255, 255, 255, 0.16);
+}
+
+.connector-debug-action:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.connector-debug-curb-create {
+    background: rgba(16, 185, 129, 0.18);
+    border-color: rgba(16, 185, 129, 0.45);
+}
+
+.connector-debug-curb-remove {
+    background: rgba(248, 113, 113, 0.18);
+    border-color: rgba(248, 113, 113, 0.45);
+}
+
 .connector-debug-info-wrap {
     max-height: 48vh;
     overflow: auto;
@@ -680,14 +757,9 @@ body.setup-bg #game-canvas {
 }
 
 .connector-debug-section-title {
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    opacity: 0.7;
-    text-align: left;
     vertical-align: top;
-    width: 90px;
     padding: 2px 8px 8px 0;
+    font-weight: 700;
 }
 
 .connector-debug-section-body {
@@ -738,6 +810,7 @@ body.setup-bg #game-canvas {
 
 .connector-debug-subhead-label {
     width: 72px;
+    font-weight: 700;
 }
 
 .connector-debug-subhead-empty {

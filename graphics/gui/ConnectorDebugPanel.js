@@ -44,10 +44,27 @@ export class ConnectorDebugPanel {
         onDisplayChange = null,
         onAutoSelectChange = null,
         onRadiusChange = null,
-        onCopy = null
+        onCopy = null,
+        onCreateCurbs = null,
+        onRemoveCurbs = null
     } = {}) {
         this.root = document.createElement('div');
-        this.root.className = 'connector-debug-panel hidden';
+        this.root.className = 'connector-debug-stack hidden';
+
+        this.curbsPanel = document.createElement('div');
+        this.curbsPanel.className = 'connector-curb-panel';
+
+        this.curbsHeader = document.createElement('div');
+        this.curbsHeader.className = 'connector-debug-header';
+
+        this.curbsPanelTitle = document.createElement('div');
+        this.curbsPanelTitle.className = 'connector-debug-title';
+        this.curbsPanelTitle.textContent = 'Curbs debugger';
+
+        this.curbsHeader.appendChild(this.curbsPanelTitle);
+
+        this.debugPanel = document.createElement('div');
+        this.debugPanel.className = 'connector-debug-panel';
 
         this.title = document.createElement('div');
         this.title.className = 'connector-debug-title';
@@ -98,7 +115,7 @@ export class ConnectorDebugPanel {
         this.linesGroup.className = 'connector-debug-lines';
 
         this.linesTitle = document.createElement('span');
-        this.linesTitle.className = 'connector-debug-lines-title';
+        this.linesTitle.className = 'connector-debug-lines-title connector-debug-label';
         this.linesTitle.textContent = 'Lines';
 
         this.linesAutoRow = document.createElement('div');
@@ -110,6 +127,31 @@ export class ConnectorDebugPanel {
         this.linesGroup.appendChild(this.linesTitle);
         this.linesGroup.appendChild(this.linesAutoRow);
         this.linesGroup.appendChild(this.linesPathsRow);
+
+        this.curbsGroup = document.createElement('div');
+        this.curbsGroup.className = 'connector-debug-curbs';
+
+        this.curbsTitle = document.createElement('span');
+        this.curbsTitle.className = 'connector-debug-curbs-title connector-debug-label';
+        this.curbsTitle.textContent = 'Curbs';
+
+        this.curbsButtons = document.createElement('div');
+        this.curbsButtons.className = 'connector-debug-curbs-buttons';
+
+        this.createCurbsButton = document.createElement('button');
+        this.createCurbsButton.type = 'button';
+        this.createCurbsButton.className = 'connector-debug-action connector-debug-curb-create';
+        this.createCurbsButton.textContent = 'Create curbs';
+
+        this.removeCurbsButton = document.createElement('button');
+        this.removeCurbsButton.type = 'button';
+        this.removeCurbsButton.className = 'connector-debug-action connector-debug-curb-remove';
+        this.removeCurbsButton.textContent = 'Remove curbs';
+
+        this.curbsButtons.appendChild(this.createCurbsButton);
+        this.curbsButtons.appendChild(this.removeCurbsButton);
+        this.curbsGroup.appendChild(this.curbsTitle);
+        this.curbsGroup.appendChild(this.curbsButtons);
 
         this.displayLabel = document.createElement('label');
         this.displayLabel.className = 'connector-debug-toggle-switch connector-debug-line-display';
@@ -199,7 +241,7 @@ export class ConnectorDebugPanel {
 
         const addSectionRow = (label, body) => {
             const row = document.createElement('tr');
-            const titleCell = makeCell('th', 'connector-debug-section-title', label);
+            const titleCell = makeCell('th', 'connector-debug-section-title connector-debug-label', label);
             const bodyCell = makeCell('td', 'connector-debug-section-body');
             bodyCell.appendChild(body);
             row.appendChild(titleCell);
@@ -291,9 +333,13 @@ export class ConnectorDebugPanel {
         addSectionRow('Segments', this.segmentsTable);
         addSectionRow('Info', this.metaTable);
 
-        this.root.appendChild(this.header);
-        this.root.appendChild(this.controls);
-        this.root.appendChild(this.infoWrap);
+        this.curbsPanel.appendChild(this.curbsHeader);
+        this.curbsPanel.appendChild(this.curbsGroup);
+        this.debugPanel.appendChild(this.header);
+        this.debugPanel.appendChild(this.controls);
+        this.debugPanel.appendChild(this.infoWrap);
+        this.root.appendChild(this.curbsPanel);
+        this.root.appendChild(this.debugPanel);
 
         this._onHoldRotateChange = onHoldRotateChange;
         this._onLineVisibilityChange = onLineVisibilityChange;
@@ -301,6 +347,8 @@ export class ConnectorDebugPanel {
         this._onAutoSelectChange = onAutoSelectChange;
         this._onRadiusChange = onRadiusChange;
         this._onCopy = onCopy;
+        this._onCreateCurbs = onCreateCurbs;
+        this._onRemoveCurbs = onRemoveCurbs;
         this._selectedType = null;
         this._autoSelect = false;
 
@@ -327,6 +375,14 @@ export class ConnectorDebugPanel {
 
         this.copyButton.addEventListener('click', () => {
             if (this._onCopy) this._onCopy();
+        });
+
+        this.createCurbsButton.addEventListener('click', () => {
+            if (this._onCreateCurbs) this._onCreateCurbs();
+        });
+
+        this.removeCurbsButton.addEventListener('click', () => {
+            if (this._onRemoveCurbs) this._onRemoveCurbs();
         });
     }
 
@@ -403,6 +459,11 @@ export class ConnectorDebugPanel {
 
     setAutoSelect(autoSelect) {
         this._setAutoSelectState(!!autoSelect);
+    }
+
+    setCurbActions({ canCreate = true, canRemove = true } = {}) {
+        if (this.createCurbsButton) this.createCurbsButton.disabled = !canCreate;
+        if (this.removeCurbsButton) this.removeCurbsButton.disabled = !canRemove;
     }
 
     _setAutoSelectState(autoSelect) {
