@@ -1,5 +1,4 @@
 // graphics/gui/ConnectorDebugPanel.js
-// graphics/gui/ConnectorDebugPanel.js
 function fmtNum(v, digits = 3) {
     if (!Number.isFinite(v)) return 'n/a';
     return Number(v).toFixed(digits);
@@ -38,8 +37,10 @@ export class ConnectorDebugPanel {
         holdRotate = true,
         pathTypes = null,
         lineVisibility = null,
+        autoSelect = false,
         onHoldRotateChange = null,
         onLineVisibilityChange = null,
+        onAutoSelectChange = null,
         onRadiusChange = null,
         onCopy = null
     } = {}) {
@@ -90,6 +91,21 @@ export class ConnectorDebugPanel {
 
         this.linesGroup.appendChild(this.linesTitle);
 
+        this.autoSelectLabel = document.createElement('label');
+        this.autoSelectLabel.className = 'connector-debug-toggle-switch connector-debug-line-auto';
+        this.autoSelectLabel.title = 'Show only selected path';
+
+        this.autoSelectInput = document.createElement('input');
+        this.autoSelectInput.type = 'checkbox';
+        this.autoSelectInput.checked = !!autoSelect;
+
+        this.autoSelectText = document.createElement('span');
+        this.autoSelectText.textContent = 'Auto';
+
+        this.autoSelectLabel.appendChild(this.autoSelectInput);
+        this.autoSelectLabel.appendChild(this.autoSelectText);
+        this.linesGroup.appendChild(this.autoSelectLabel);
+
         const types = (Array.isArray(pathTypes) && pathTypes.length)
             ? pathTypes.slice()
             : ['LSL', 'RSR', 'LSR', 'RSL', 'RLR', 'LRL'];
@@ -101,6 +117,7 @@ export class ConnectorDebugPanel {
             }
         }
         this._lineInputs = new Map();
+        this._lineLabels = new Map();
         for (const type of types) {
             const label = document.createElement('label');
             label.className = 'connector-debug-line-toggle';
@@ -116,6 +133,7 @@ export class ConnectorDebugPanel {
             label.appendChild(text);
             this.linesGroup.appendChild(label);
             this._lineInputs.set(type, input);
+            this._lineLabels.set(type, label);
 
             input.addEventListener('change', () => {
                 this._lineVisibility[type] = input.checked;
@@ -144,8 +162,13 @@ export class ConnectorDebugPanel {
 
         this._onHoldRotateChange = onHoldRotateChange;
         this._onLineVisibilityChange = onLineVisibilityChange;
+        this._onAutoSelectChange = onAutoSelectChange;
         this._onRadiusChange = onRadiusChange;
         this._onCopy = onCopy;
+        this._selectedType = null;
+        this._autoSelect = false;
+
+        this._setAutoSelectState(!!autoSelect);
 
         this.holdRotateInput.addEventListener('change', () => {
             if (this._onHoldRotateChange) this._onHoldRotateChange(this.holdRotateInput.checked);
@@ -157,6 +180,11 @@ export class ConnectorDebugPanel {
             if (Number.isFinite(next)) this._onRadiusChange(next);
         });
 
+        this.autoSelectInput.addEventListener('change', () => {
+            this._setAutoSelectState(this.autoSelectInput.checked);
+            if (this._onAutoSelectChange) this._onAutoSelectChange(this.autoSelectInput.checked);
+        });
+
         this.copyButton.addEventListener('click', () => {
             if (this._onCopy) this._onCopy();
         });
@@ -165,6 +193,8 @@ export class ConnectorDebugPanel {
     setData(data = {}) {
         const segments = Array.isArray(data.segments) ? data.segments : [];
         const metrics = data.metrics ?? {};
+        const selectedType = (data.type && data.type !== 'none') ? data.type : null;
+        this.setSelectedType(selectedType);
         const lines = [
             `p0: ${fmtVec2(data.p0)}`,
             `dir0: ${fmtVec2(data.dir0)}`,
@@ -182,6 +212,39 @@ export class ConnectorDebugPanel {
             `error: ${data.error ?? 'none'}`
         ];
         this.readout.textContent = lines.join('\n');
+    }
+
+    setLineVisibility(visibility = {}) {
+        for (const [type, input] of this._lineInputs.entries()) {
+            if (type in visibility) {
+                const isVisible = !!visibility[type];
+                input.checked = isVisible;
+                this._lineVisibility[type] = isVisible;
+            }
+        }
+    }
+
+    setSelectedType(type) {
+        if (this._selectedType === type) return;
+        if (this._selectedType && this._lineLabels.has(this._selectedType)) {
+            this._lineLabels.get(this._selectedType).classList.remove('is-selected');
+        }
+        this._selectedType = type;
+        if (type && this._lineLabels.has(type)) {
+            this._lineLabels.get(type).classList.add('is-selected');
+        }
+    }
+
+    setAutoSelect(autoSelect) {
+        this._setAutoSelectState(!!autoSelect);
+    }
+
+    _setAutoSelectState(autoSelect) {
+        this._autoSelect = !!autoSelect;
+        if (this.autoSelectInput) this.autoSelectInput.checked = this._autoSelect;
+        for (const input of this._lineInputs.values()) {
+            input.disabled = this._autoSelect;
+        }
     }
 
     setRadius(radius) {

@@ -67,6 +67,12 @@ export class ConnectorDebuggerView {
         this._dragOffset = new THREE.Vector3();
         this._isDragging = false;
         this._isRotating = false;
+        this._wasDragging = false;
+        this._wasRotating = false;
+        this._lastDragMoveTime = 0;
+        this._dragIdleMs = 120;
+        this._dragIdleReset = false;
+        this._pendingHardReset = false;
 
         this._keys = {
             ArrowUp: false,
@@ -128,6 +134,8 @@ export class ConnectorDebuggerView {
         this._candidateTypes = CANDIDATE_TYPES.slice();
         this._lineVisibility = {};
         for (const type of this._candidateTypes) this._lineVisibility[type] = true;
+        this._autoSelectLine = false;
+        this._manualLineVisibility = { ...this._lineVisibility };
         this._connectorMesh = null;
         this._connector = null;
         this._minStraight = 0.05;
@@ -175,18 +183,34 @@ export class ConnectorDebuggerView {
     update(dt) {
         this.city?.update(this.engine);
         this._updateCamera(dt);
+        const now = performance.now();
+        const wasRotating = this._wasRotating;
         this._updateRotation(dt);
+        if (wasRotating && !this._isRotating) {
+            this._requestHardReset();
+        }
+        if (this._isDragging) {
+            if (!this._dragIdleReset && now - this._lastDragMoveTime > this._dragIdleMs) {
+                this._requestHardReset();
+                this._dragIdleReset = true;
+            }
+        }
+        if (this._pendingHardReset) {
+            this._hardResetDebugLines();
+            this._pendingHardReset = false;
+        }
         this._updateConnector();
         this._updateMarkers();
         this._syncLineResolution();
         const interacting = this._isDragging || this._isRotating;
         if (interacting && this._connectorMesh) this._clearConnectorMesh();
-        const now = performance.now();
         if (!interacting && now - this._lastInteractionTime >= this._buildDelayMs) {
             if (!this._connectorMesh && this._connector && this._enableConnectorMesh) {
                 this._buildConnectorMesh(this._connector);
             }
         }
+        this._wasRotating = this._isRotating;
+        this._wasDragging = this._isDragging;
     }
 
     _setupCity() {
@@ -274,7 +298,7 @@ export class ConnectorDebuggerView {
         curbA.receiveShadow = true;
 
         const curbB = new THREE.Mesh(this._curbGeo, curbMat);
-        curbB.position.set(this._tileSize * 0.6, curbY, this._tileSize * 0.25);
+        curbB.position.set(this._tileSize * 0.85, curbY, this._tileSize * 0.45);
         curbB.rotation.set(0, 0, 0);
         curbB.castShadow = true;
         curbB.receiveShadow = true;
@@ -332,14 +356,18 @@ export class ConnectorDebuggerView {
         this._lineMaterial = new LineMaterial({
             color: 0x3b82f6,
             linewidth: lineWidth,
-            worldUnits: false
+            worldUnits: false,
+            transparent: true,
+            opacity: 1,
+            depthTest: false,
+            depthWrite: false
         });
         this._syncLineResolution();
         this._line = new Line2(this._lineGeometry, this._lineMaterial);
         this._line.computeLineDistances();
         this._line.visible = false;
         this._line.frustumCulled = false;
-        this._line.renderOrder = 5;
+        this._line.renderOrder = 7;
         this.group.add(this._line);
 
         const candidateLineWidth = Math.max(1, lineWidth * 0.35);
@@ -351,15 +379,17 @@ export class ConnectorDebuggerView {
                 color: 0xef4444,
                 linewidth: candidateLineWidth,
                 worldUnits: false,
-                transparent: false,
-                opacity: 1
+                transparent: true,
+                opacity: 1,
+                depthTest: false,
+                depthWrite: false
             });
             mat.resolution.set(this._lineResolution.x, this._lineResolution.y);
             const line = new Line2(geo, mat);
             line.computeLineDistances();
             line.visible = false;
             line.frustumCulled = false;
-            line.renderOrder = 4;
+            line.renderOrder = 6;
             this.group.add(line);
             this._candidateLines.push({ line, geo, mat });
             this._candidateMaterials.push(mat);
@@ -399,14 +429,16 @@ export class ConnectorDebuggerView {
                 linewidth: arrowLineWidth,
                 worldUnits: false,
                 transparent: true,
-                opacity: 0.95
+                opacity: 0.95,
+                depthTest: false,
+                depthWrite: false
             });
             mat.resolution.set(this._lineResolution.x, this._lineResolution.y);
             const line = new Line2(geo, mat);
             line.computeLineDistances();
             line.visible = false;
             line.frustumCulled = false;
-            line.renderOrder = 6;
+            line.renderOrder = 8;
             const coneMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
             const cone = new THREE.Mesh(this._arrowConeGeo, coneMat);
             cone.visible = false;
@@ -423,13 +455,19 @@ export class ConnectorDebuggerView {
             radius: this._radius,
             holdRotate: this._rotationModeHold,
             lineVisibility: { ...this._lineVisibility },
+            autoSelect: this._autoSelectLine,
             pathTypes: this._candidateTypes.slice(),
             onHoldRotateChange: (holdRotate) => {
                 this._rotationModeHold = !!holdRotate;
                 this._markInteraction();
             },
             onLineVisibilityChange: (visibility) => {
+                if (this._autoSelectLine) return;
                 this._lineVisibility = { ...this._lineVisibility, ...visibility };
+                this._manualLineVisibility = { ...this._lineVisibility };
+            },
+            onAutoSelectChange: (autoSelect) => {
+                this._setAutoSelectLine(autoSelect);
             },
             onRadiusChange: (radius) => {
                 if (!Number.isFinite(radius)) return;
@@ -468,8 +506,13 @@ export class ConnectorDebuggerView {
             if (hit) {
                 const nextX = hit.x + this._dragOffset.x;
                 const nextZ = hit.z + this._dragOffset.z;
-                this._activeCurb.mesh.position.set(nextX, this._curbY, nextZ);
-                this._markInteraction();
+                const pos = this._activeCurb.mesh.position;
+                if (Math.abs(pos.x - nextX) > 1e-6 || Math.abs(pos.z - nextZ) > 1e-6) {
+                    this._activeCurb.mesh.position.set(nextX, this._curbY, nextZ);
+                    this._lastDragMoveTime = performance.now();
+                    this._dragIdleReset = false;
+                    this._markInteraction();
+                }
             }
         }
         this._updateHover();
@@ -483,6 +526,8 @@ export class ConnectorDebuggerView {
         if (!pick) return;
         this._activeCurb = pick;
         this._isDragging = true;
+        this._lastDragMoveTime = performance.now();
+        this._dragIdleReset = false;
         const hit = this._intersectGround();
         if (hit) {
             this._dragOffset.set(
@@ -500,6 +545,96 @@ export class ConnectorDebuggerView {
         this._activeCurb = null;
         this._dragOffset.set(0, 0, 0);
         this._lastInteractionTime = performance.now();
+        this._requestHardReset();
+    }
+
+    _setAutoSelectLine(autoSelect) {
+        this._autoSelectLine = !!autoSelect;
+        if (this._autoSelectLine) {
+            this._manualLineVisibility = { ...this._lineVisibility };
+            this._applyAutoSelectLine(this._connector?.type ?? null);
+            return;
+        }
+        if (this._manualLineVisibility) {
+            this._lineVisibility = { ...this._manualLineVisibility };
+            this.panel?.setLineVisibility(this._lineVisibility);
+        }
+    }
+
+    _applyAutoSelectLine(selectedType) {
+        if (!this._autoSelectLine) return;
+        const visibility = {};
+        for (const type of this._candidateTypes) {
+            visibility[type] = type === selectedType;
+        }
+        if (!this._lineVisibilityEquals(visibility)) {
+            this._lineVisibility = visibility;
+            this.panel?.setLineVisibility(this._lineVisibility);
+        }
+    }
+
+    _lineVisibilityEquals(next) {
+        for (const type of this._candidateTypes) {
+            if (!!next[type] !== !!this._lineVisibility[type]) return false;
+        }
+        return true;
+    }
+
+    _ensureLineVisibilityKeys() {
+        let changed = false;
+        for (const type of this._candidateTypes) {
+            if (!(type in this._lineVisibility)) {
+                this._lineVisibility[type] = true;
+                changed = true;
+            }
+            if (!this._manualLineVisibility || !(type in this._manualLineVisibility)) {
+                this._manualLineVisibility = { ...(this._manualLineVisibility ?? {}) };
+                this._manualLineVisibility[type] = true;
+            }
+        }
+        if (changed && !this._autoSelectLine) {
+            this.panel?.setLineVisibility(this._lineVisibility);
+        }
+    }
+
+    _hardResetDebugLines() {
+        if (this._line) {
+            if (this._lineGeometry) this._lineGeometry.dispose();
+            const geo = new LineGeometry();
+            geo.setPositions([0, this._lineY, 0, 0, this._lineY, 0]);
+            this._line.geometry = geo;
+            this._lineGeometry = geo;
+            this._line.computeLineDistances();
+        }
+        for (const entry of this._candidateLines) {
+            if (entry.geo) entry.geo.dispose();
+            const geo = new LineGeometry();
+            geo.setPositions([0, this._lineY, 0, 0, this._lineY, 0]);
+            entry.line.geometry = geo;
+            entry.geo = geo;
+            entry.line.computeLineDistances();
+        }
+        for (const entry of this._circleLines) {
+            if (entry.geo) entry.geo.dispose();
+            const geo = new LineGeometry();
+            geo.setPositions([0, this._markerY, 0, 0, this._markerY, 0]);
+            entry.line.geometry = geo;
+            entry.geo = geo;
+            entry.line.computeLineDistances();
+        }
+        for (const entry of this._arrowLines) {
+            if (entry.geo) entry.geo.dispose();
+            const geo = new LineGeometry();
+            geo.setPositions([0, this._markerY, 0, 0, this._markerY, 0]);
+            entry.line.geometry = geo;
+            entry.geo = geo;
+            entry.line.computeLineDistances();
+        }
+        this._syncLineResolution();
+    }
+
+    _requestHardReset() {
+        this._pendingHardReset = true;
     }
 
     _handleKeyDown(e) {
@@ -515,6 +650,7 @@ export class ConnectorDebuggerView {
             const dir = code === 'KeyQ' ? 1 : -1;
             this._hoveredCurb.mesh.rotation.y += dir * this._rotationStep;
             this._markInteraction();
+            this._requestHardReset();
         }
     }
 
@@ -528,6 +664,9 @@ export class ConnectorDebuggerView {
         }
         if (this._rotationModeHold && (code === 'KeyQ' || code === 'KeyW')) {
             this._lastInteractionTime = performance.now();
+        }
+        if (code === 'KeyQ' || code === 'KeyW') {
+            this._requestHardReset();
         }
     }
 
@@ -687,9 +826,7 @@ export class ConnectorDebuggerView {
         if (Array.isArray(solver.candidateTypes) && solver.candidateTypes.length === this._candidateTypes.length) {
             this._candidateTypes = solver.candidateTypes.slice();
         }
-        for (const type of this._candidateTypes) {
-            if (!(type in this._lineVisibility)) this._lineVisibility[type] = true;
-        }
+        this._ensureLineVisibilityKeys();
         return {
             valid: solver.ok,
             error: solver.ok ? null : (solver.failure?.code ?? 'no-solution'),
@@ -710,6 +847,7 @@ export class ConnectorDebuggerView {
         const candidatesByType = inputs.candidatesByType ?? [];
         const error = inputs.error ?? null;
         this._connector = connector;
+        this._applyAutoSelectLine(connector?.type ?? null);
         this._updateTurnCircles(inputs, connector);
         this._updateArrows(inputs);
         const sample = sampleConnector(connector, this._sampleStep);
@@ -752,14 +890,14 @@ export class ConnectorDebuggerView {
             positions.push(p.x, this._lineY, p.y);
         }
         if (!visible) {
-            this._lineGeometry.setPositions([0, this._lineY, 0, 0, this._lineY, 0]);
+            this._setLinePositions(this._lineGeometry, [0, this._lineY, 0, 0, this._lineY, 0]);
             this._line.visible = false;
         } else if (positions.length >= 6) {
-            this._lineGeometry.setPositions(positions);
+            this._setLinePositions(this._lineGeometry, positions);
             this._line.computeLineDistances();
             this._line.visible = true;
         } else {
-            this._lineGeometry.setPositions([0, this._lineY, 0, 0, this._lineY, 0]);
+            this._setLinePositions(this._lineGeometry, [0, this._lineY, 0, 0, this._lineY, 0]);
             this._line.visible = false;
         }
     }
@@ -774,7 +912,7 @@ export class ConnectorDebuggerView {
             const isChosen = type && chosenType === type;
             const candidate = candidatesByType[i] ?? null;
             if (!candidate || !isVisible || isChosen) {
-                entry.geo.setPositions([0, this._lineY, 0, 0, this._lineY, 0]);
+                this._setLinePositions(entry.geo, [0, this._lineY, 0, 0, this._lineY, 0]);
                 entry.line.visible = false;
                 continue;
             }
@@ -808,11 +946,11 @@ export class ConnectorDebuggerView {
                 positions.push(p.x, this._lineY, p.y);
             }
             if (positions.length >= 6) {
-                entry.geo.setPositions(positions);
+                this._setLinePositions(entry.geo, positions);
                 entry.line.computeLineDistances();
                 entry.line.visible = true;
             } else {
-                entry.geo.setPositions([0, this._lineY, 0, 0, this._lineY, 0]);
+                this._setLinePositions(entry.geo, [0, this._lineY, 0, 0, this._lineY, 0]);
                 entry.line.visible = false;
             }
             entry.mat.color.setHex(redColor);
@@ -871,7 +1009,7 @@ export class ConnectorDebuggerView {
                 const t = (k / segs) * TAU;
                 positions.push(center.x + Math.cos(t) * r, center.y, center.z + Math.sin(t) * r);
             }
-            entry.geo.setPositions(positions);
+            this._setLinePositions(entry.geo, positions);
             entry.line.computeLineDistances();
             const isChosen = chosen.has(i);
             entry.mat.dashed = !isChosen;
@@ -914,7 +1052,7 @@ export class ConnectorDebuggerView {
             dir.normalize();
             const start = new THREE.Vector3(item.p.x, arrowY, item.p.y);
             const end = start.clone().add(new THREE.Vector3(dir.x, 0, dir.y).multiplyScalar(arrowLen));
-            entry.geo.setPositions([start.x, start.y, start.z, end.x, end.y, end.z]);
+            this._setLinePositions(entry.geo, [start.x, start.y, start.z, end.x, end.y, end.z]);
             entry.line.computeLineDistances();
             entry.line.visible = true;
             entry.cone.position.set(end.x, arrowY, end.z);
@@ -923,6 +1061,16 @@ export class ConnectorDebuggerView {
             entry.cone.quaternion.copy(q);
             entry.cone.visible = true;
         }
+    }
+
+    _setLinePositions(geo, positions) {
+        if (!geo) return;
+        geo.setPositions(positions);
+        const start = geo.attributes?.instanceStart ?? null;
+        const end = geo.attributes?.instanceEnd ?? null;
+        if (start) start.needsUpdate = true;
+        if (end) end.needsUpdate = true;
+        if (start?.count !== undefined) geo.instanceCount = start.count;
     }
 
     _buildDebugData(inputs, connector, error) {
