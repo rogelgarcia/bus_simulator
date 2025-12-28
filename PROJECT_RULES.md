@@ -16,3 +16,8 @@
 - Exception: First line must be a comment with the file path (e.g., `// graphics/assets3d/generators/RoadGenerator.js`)
 - Exception: Design decisions (do not explain the code, but why it is written a certain way)
 
+## AI Guidance
+
+**Commits:**
+- Only commit when explicitly asked by the user
+- Never commit automatically after making changes
