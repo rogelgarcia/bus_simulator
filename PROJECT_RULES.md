@@ -15,9 +15,11 @@
 - No comments in code files
 - Exception: First line must be a comment with the file path (e.g., `// graphics/assets3d/generators/RoadGenerator.js`)
 - Exception: Design decisions (do not explain the code, but why it is written a certain way)
+- Exception: Library source code (preserve all original comments)
 
 ## AI Guidance
 
 **Commits:**
 - Only commit when explicitly asked by the user
 - Never commit automatically after making changes
+- Never commit AI prompt files named `AI_#_title`
