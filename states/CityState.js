@@ -4,6 +4,7 @@ import { getSharedCity } from '../src/city/City.js';
 import { createCityConfig } from '../src/city/CityConfig.js';
 import { CityMap } from '../src/city/CityMap.js';
 import { CityDebugPanel } from '../graphics/gui/CityDebugPanel.js';
+import { CityShortcutsPanel } from '../graphics/gui/CityShortcutsPanel.js';
 
 function clamp(v, a, b) {
     return Math.max(a, Math.min(b, v));
@@ -46,6 +47,7 @@ export class CityState {
 
         this._baseSpec = null;
         this.debugPanel = null;
+        this.shortcutsPanel = null;
         this._highlightMesh = null;
         this._highlightGeo = null;
         this._highlightMat = null;
@@ -76,6 +78,9 @@ export class CityState {
         });
         this.debugPanel.show();
 
+        this.shortcutsPanel = new CityShortcutsPanel();
+        this.shortcutsPanel.show();
+
         this._setCity(this._baseSpec);
 
         const cam = this.engine.camera;
@@ -84,7 +89,7 @@ export class CityState {
         const aspect = cam.aspect || 1;
         const hFov = 2 * Math.atan(Math.tan(fovRad * 0.5) * aspect);
         const viewHalf = size * 0.45;
-        this._zoomMin = Math.max(8, size * 0.12);
+        this._zoomMin = Math.max(3, size * 0.03);
         this._zoomMax = size * 1.25;
         const zoomV = viewHalf / Math.tan(fovRad * 0.5);
         const zoomH = viewHalf / Math.tan(hFov * 0.5);
@@ -106,6 +111,8 @@ export class CityState {
 
         this.debugPanel?.destroy();
         this.debugPanel = null;
+        this.shortcutsPanel?.destroy();
+        this.shortcutsPanel = null;
         this._baseSpec = null;
         this._clearHighlight();
 
