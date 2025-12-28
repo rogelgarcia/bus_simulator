@@ -73,6 +73,8 @@ export class ConnectorDebuggerView {
         this._dragIdleMs = 120;
         this._dragIdleReset = false;
         this._pendingHardReset = false;
+        this._hardResetFrame = 0;
+        this._hardResetStride = 3;
 
         this._keys = {
             ArrowUp: false,
@@ -186,7 +188,9 @@ export class ConnectorDebuggerView {
         this._updateCamera(dt);
         const now = performance.now();
         const wasRotating = this._wasRotating;
+        const wasInteracting = this._wasDragging || this._wasRotating;
         this._updateRotation(dt);
+        const interacting = this._isDragging || this._isRotating;
         if (wasRotating && !this._isRotating) {
             this._requestHardReset();
         }
@@ -196,14 +200,22 @@ export class ConnectorDebuggerView {
                 this._dragIdleReset = true;
             }
         }
-        if (this._pendingHardReset) {
+        if (interacting && !wasInteracting) {
+            this._hardResetFrame = 0;
+        }
+        if (interacting) {
+            this._hardResetFrame += 1;
+            if (this._hardResetFrame % this._hardResetStride === 0) {
+                this._hardResetDebugLines();
+                this._pendingHardReset = false;
+            }
+        } else if (this._pendingHardReset) {
             this._hardResetDebugLines();
             this._pendingHardReset = false;
         }
         this._updateConnector();
         this._updateMarkers();
         this._syncLineResolution();
-        const interacting = this._isDragging || this._isRotating;
         if (interacting && this._connectorMesh) this._clearConnectorMesh();
         if (!interacting && now - this._lastInteractionTime >= this._buildDelayMs) {
             if (!this._connectorMesh && this._connector && this._enableConnectorMesh) {
