@@ -1364,7 +1364,7 @@ export class ConnectorDebuggerView {
                 if (len > eps) {
                     const mid = start.clone().add(end).multiplyScalar(0.5);
                     const dir = segment.direction ? segment.direction.clone() : s.multiplyScalar(1 / len);
-                    const ry = Math.atan2(dir.y, dir.x);
+                    const ry = Math.atan2(-dir.y, dir.x);
                     curb.addBox(mid.x, this._curbY, mid.y, len, this._curbH, this._curbT, ry, color);
                 }
             }
