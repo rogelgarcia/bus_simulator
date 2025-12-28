@@ -15,6 +15,15 @@ function hasConn(connMask, bit) {
     return (connMask & bit) !== 0;
 }
 
+function laneCountForAxis(a, b) {
+    const la = a ?? 0;
+    const lb = b ?? 0;
+    const total = la + lb;
+    if (total <= 0) return 0;
+    if (la === 0 || lb === 0) return Math.max(2, total);
+    return total;
+}
+
 const NULL_SIDEWALK = {
     addPlane() {},
     addGeometryKey() {},
@@ -71,8 +80,8 @@ export function processRoadTile({ pos, lanes, axis, connMask, neighborAxis, ctx 
         return nAxis === AXIS.CORNER || nAxis === AXIS.INTERSECTION;
     };
 
-    const widthNS = laneWidth * ((lanes.n ?? 0) + (lanes.s ?? 0)) + 2 * shoulder;
-    const widthEW = laneWidth * ((lanes.e ?? 0) + (lanes.w ?? 0)) + 2 * shoulder;
+    const widthNS = laneWidth * laneCountForAxis(lanes.n, lanes.s) + 2 * shoulder;
+    const widthEW = laneWidth * laneCountForAxis(lanes.e, lanes.w) + 2 * shoulder;
 
     const wNS = clamp(widthNS, 1, ts);
     const wEW = clamp(widthEW, 1, ts);

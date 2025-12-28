@@ -20,6 +20,7 @@ import { buildRoadGraph } from './internal_road/RoadGraph.js';
 
 const DIR_KEYS = ['N', 'E', 'S', 'W'];
 const OPP = { N: 'S', S: 'N', E: 'W', W: 'E' };
+const TWO_PI = Math.PI * 2;
 const CORNERS = [
     { key: 'NE', dirA: 'N', dirB: 'E', signX: 1, signZ: 1 },
     { key: 'NW', dirA: 'N', dirB: 'W', signX: -1, signZ: 1 },
@@ -51,6 +52,26 @@ function addDashedLine({ markings, axis, midX, midZ, len, offset, lineW, markY, 
             markings.addWhite(midX + offset, markY, midZ + t, dashLen, lineW, Math.PI * 0.5);
         }
     }
+}
+
+function wrapAngleLocal(a) {
+    a = a % TWO_PI;
+    if (a < 0) a += TWO_PI;
+    return a;
+}
+
+function arcSpan(start, end) {
+    const s = wrapAngleLocal(start);
+    const e = wrapAngleLocal(end);
+    let span = e - s;
+    if (span < 0) span += TWO_PI;
+    return { start: s, span };
+}
+
+function rotatePoint(x, z, ang) {
+    const c = Math.cos(ang);
+    const s = Math.sin(ang);
+    return { x: x * c - z * s, z: x * s + z * c };
 }
 
 export function generateRoads({ map, config, materials } = {}) {
@@ -332,30 +353,50 @@ export function generateRoads({ map, config, materials } = {}) {
         if (degree === 1) {
             const deadDir = DIR_KEYS.find((dir) => has[dir]);
             if (deadDir) {
+                const edgeId = node.edges[deadDir];
+                const edge = edgeId !== undefined ? graph.edges[edgeId] : null;
+                const otherId = edge ? (edge.start === node.id ? edge.end : edge.start) : -1;
+                const other = otherId >= 0 ? graph.nodes[otherId] : null;
+                const dirAngle = other ? Math.atan2(other.z - node.z, other.x - node.x) : 0;
                 const roadWidth = widths[deadDir];
                 const roadHalf = roadWidth * 0.5;
-                const minR = roadHalf + curbT;
+                const offset = roadHalf + curbT * 0.5;
+                const minR = offset + curbT * 0.5;
                 const maxR = Math.max(minR, ts * 0.5 - curbT);
                 const radius = clamp(roadHalf * 1.35, minR, maxR);
                 const curbRadius = radius + curbT * 0.5;
-                const cap = Math.sqrt(Math.max(0, (radius * radius) - (roadHalf * roadHalf)));
-                const curbOffset = roadHalf + curbT * 0.5;
-                const trim = Math.sqrt(Math.max(0, (curbRadius * curbRadius) - (curbOffset * curbOffset)));
+                const blendGap = Math.max(0.05, curbRadius - offset);
+                const blendMin = curbT * 1.1;
+                const blendTarget = Math.max(blendGap * 0.25, curbRadius * 0.15);
+                const blendMax = Math.max(blendMin, curbRadius * 0.35);
+                const blendRadius = clamp(blendTarget, blendMin, blendMax);
+                const blendZ = offset + blendRadius;
+                const blendX = Math.sqrt(Math.max(0, (curbRadius + blendRadius) * (curbRadius + blendRadius) - (blendZ * blendZ)));
+                const phi = Math.atan2(blendZ, blendX);
+                const cap = Math.max(0, blendX);
                 caps[deadDir] = Math.max(caps[deadDir] ?? 0, cap);
                 if (deadDir === 'N') {
-                    curbTrim.N.E = trim;
-                    curbTrim.N.W = trim;
+                    curbTrim.N.E = cap;
+                    curbTrim.N.W = cap;
                 } else if (deadDir === 'S') {
-                    curbTrim.S.E = trim;
-                    curbTrim.S.W = trim;
+                    curbTrim.S.E = cap;
+                    curbTrim.S.W = cap;
                 } else if (deadDir === 'E') {
-                    curbTrim.E.N = trim;
-                    curbTrim.E.S = trim;
+                    curbTrim.E.N = cap;
+                    curbTrim.E.S = cap;
                 } else if (deadDir === 'W') {
-                    curbTrim.W.N = trim;
-                    curbTrim.W.S = trim;
+                    curbTrim.W.N = cap;
+                    curbTrim.W.S = cap;
                 }
-                roundabout = { radius, curbRadius };
+                roundabout = {
+                    radius,
+                    curbRadius,
+                    dirAngle,
+                    phi,
+                    blendRadius,
+                    blendX,
+                    blendZ
+                };
             }
         }
 
@@ -587,15 +628,44 @@ export function generateRoads({ map, config, materials } = {}) {
             }
             if (info.roundabout) {
                 const roundKey = CURB_COLOR_PALETTE.key('turn_outer', 'NE');
+                const round = info.roundabout;
+                const roundStart = wrapAngleLocal(round.dirAngle + round.phi);
+                const roundSpan = Math.max(0.01, TWO_PI - round.phi * 2);
                 curb.addArcSolidKey({
                     key: roundKey,
                     centerX: node.x,
                     centerZ: node.z,
-                    radiusCenter: info.roundabout.curbRadius,
-                    startAng: 0,
-                    spanAng: Math.PI * 2,
+                    radiusCenter: round.curbRadius,
+                    startAng: roundStart,
+                    spanAng: roundSpan,
                     curveSegs: curbArcSegs * 2
                 });
+                if (round.blendRadius > 0.05 && round.blendX > 0.01) {
+                    const addBlend = (sign) => {
+                        const localX = round.blendX;
+                        const localZ = sign * round.blendZ;
+                        const center = rotatePoint(localX, localZ, round.dirAngle);
+                        const angleLine = -sign * Math.PI * 0.5;
+                        const angleRound = Math.atan2(-localZ, -localX);
+                        const arcLineToRound = arcSpan(angleLine, angleRound);
+                        const arcRoundToLine = arcSpan(angleRound, angleLine);
+                        const lineStart = arcLineToRound.span <= arcRoundToLine.span;
+                        const baseArc = lineStart ? arcLineToRound : arcRoundToLine;
+                        const span = baseArc.span;
+                        const start = baseArc.start;
+                        curb.addArcSolidKey({
+                            key: roundKey,
+                            centerX: node.x + center.x,
+                            centerZ: node.z + center.z,
+                            radiusCenter: round.blendRadius,
+                            startAng: wrapAngleLocal(start + round.dirAngle),
+                            spanAng: span,
+                            curveSegs: curbArcSegs * 2
+                        });
+                    };
+                    addBlend(1);
+                    addBlend(-1);
+                }
             }
             if (!info.isJunction) continue;
             const junctionType = info.junctionType;

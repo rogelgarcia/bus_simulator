@@ -9,9 +9,18 @@ const DIRS = [
     { key: 'W', bit: DIR.W, dx: -1, dy: 0, axis: 'EW', opp: 'E' }
 ];
 
+function laneCountForAxis(a, b) {
+    const la = a ?? 0;
+    const lb = b ?? 0;
+    const total = la + lb;
+    if (total <= 0) return 0;
+    if (la === 0 || lb === 0) return Math.max(2, total);
+    return total;
+}
+
 function widthForAxis(lanes, axis, laneWidth, shoulder, ts) {
-    const lanesNS = (lanes.n ?? 0) + (lanes.s ?? 0);
-    const lanesEW = (lanes.e ?? 0) + (lanes.w ?? 0);
+    const lanesNS = laneCountForAxis(lanes.n, lanes.s);
+    const lanesEW = laneCountForAxis(lanes.e, lanes.w);
     const raw = axis === 'NS'
         ? laneWidth * lanesNS + 2 * shoulder
         : laneWidth * lanesEW + 2 * shoulder;
