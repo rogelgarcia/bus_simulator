@@ -625,6 +625,33 @@ body.setup-bg #game-canvas {
     accent-color: #3bc9ff;
 }
 
+.connector-debug-lines {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.connector-debug-lines-title {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.7;
+}
+
+.connector-debug-line-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.connector-debug-line-toggle input {
+    accent-color: #ef4444;
+}
+
 .connector-debug-radius input {
     width: 80px;
     background: rgba(255, 255, 255, 0.08);

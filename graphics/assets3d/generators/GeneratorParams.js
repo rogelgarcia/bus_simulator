@@ -236,7 +236,7 @@ export const ROAD_DEFAULTS = {
         inset: 0.06 * ROAD_SCALE
     },
     curves: {
-        turnRadius: 6.8 * ROAD_SCALE,
+        turnRadius: 3 * ROAD_SCALE,
         asphaltArcSegments: 40,
         curbArcSegments: 24
     },

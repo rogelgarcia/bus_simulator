@@ -4,7 +4,7 @@ import { City } from '../src/city/City.js';
 import { createCityConfig } from '../src/city/CityConfig.js';
 import { getCityMaterials } from './assets3d/textures/CityMaterials.js';
 import { createCurbBuilder } from './assets3d/generators/internal_road/CurbBuilder.js';
-import { solveArcStraightArcConnector, sampleConnector } from './assets3d/generators/internal_road/ArcConnector.js';
+import { sampleConnector, leftNormal, arcDelta, circleTangents, travelTangent } from './assets3d/generators/internal_road/ArcConnector.js';
 import { CURB_COLOR_PALETTE } from './assets3d/generators/GeneratorParams.js';
 import { ConnectorDebugPanel } from './gui/ConnectorDebugPanel.js';
 import { Line2 } from 'three/addons/lines/Line2.js';
@@ -12,6 +12,8 @@ import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 
 const TAU = Math.PI * 2;
+const EPS = 1e-8;
+const CANDIDATE_TYPES = ['LSL', 'RSR', 'LSR', 'RSL'];
 
 function clamp(v, a, b) {
     return Math.max(a, Math.min(b, v));
@@ -29,6 +31,15 @@ function curbArcSpan(arc) {
     const end = wrapAngleLocal(start + dir * arc.deltaAngle);
     if (arc.turnDir === 'L') return { startAng: start, spanAng: arc.deltaAngle };
     return { startAng: end, spanAng: arc.deltaAngle };
+}
+
+function pointSegDistSq(p, a, b) {
+    const ab = b.clone().sub(a);
+    const abLenSq = ab.lengthSq();
+    if (abLenSq < EPS) return p.distanceToSquared(a);
+    const t = Math.max(0, Math.min(1, p.clone().sub(a).dot(ab) / abLenSq));
+    const proj = a.clone().add(ab.multiplyScalar(t));
+    return p.distanceToSquared(proj);
 }
 
 function createDebugCitySpec(config) {
@@ -72,7 +83,8 @@ export class ConnectorDebuggerView {
             ArrowLeft: false,
             ArrowRight: false,
             KeyA: false,
-            KeyS: false,
+            KeyQ: false,
+            KeyW: false,
             KeyZ: false
         };
 
@@ -97,6 +109,7 @@ export class ConnectorDebuggerView {
         this._curbBottom = 0;
         this._curbTop = 0;
         this._lineY = 0;
+        this._markerY = 0;
         this._curbArcSegs = 24;
         this._turnRadius = 0;
         this._radius = 0;
@@ -106,15 +119,33 @@ export class ConnectorDebuggerView {
         this._curbGeo = null;
         this._markerGeo = null;
         this._markerMat = null;
+        this._markerRingGeo = null;
+        this._markerRingMat = null;
+        this._markerDotGeo = null;
+        this._markerDotMat = null;
         this._line = null;
         this._lineGeometry = null;
         this._lineMaterial = null;
         this._lineResolution = new THREE.Vector2();
+        this._candidateLines = [];
+        this._candidateMaterials = [];
+        this._circleLines = [];
+        this._circleMaterials = [];
+        this._arrowLines = [];
+        this._arrowMaterials = [];
+        this._arrowConeGeo = null;
+        this._lineVisibility = {
+            LSL: true,
+            RSR: true,
+            LSR: true,
+            RSL: true
+        };
         this._connectorMesh = null;
         this._connector = null;
+        this._candidatesByType = [];
+        this._enableConnectorMesh = false;
         this._lastPayload = null;
         this._connectorBoxGeo = null;
-        this._selectedDirSigns = null;
 
         this._onPointerMove = (e) => this._handlePointerMove(e);
         this._onPointerDown = (e) => this._handlePointerDown(e);
@@ -164,7 +195,9 @@ export class ConnectorDebuggerView {
         if (interacting && this._connectorMesh) this._clearConnectorMesh();
         const now = performance.now();
         if (!interacting && now - this._lastInteractionTime >= this._buildDelayMs) {
-            if (!this._connectorMesh && this._connector) this._buildConnectorMesh(this._connector);
+            if (!this._connectorMesh && this._connector && this._enableConnectorMesh) {
+                this._buildConnectorMesh(this._connector);
+            }
         }
     }
 
@@ -237,6 +270,7 @@ export class ConnectorDebuggerView {
         this._turnRadius = roadCfg.curves?.turnRadius ?? 6.8;
         this._radius = this._turnRadius;
         this._lineY = curbTop + 0.04;
+        this._markerY = groundY + 0.003;
 
         this.dragPlane.set(new THREE.Vector3(0, 1, 0), -this._groundY);
 
@@ -258,28 +292,41 @@ export class ConnectorDebuggerView {
         curbB.receiveShadow = true;
 
         const markerRadius = Math.max(0.35, this._tileSize * 0.07);
+        const markerTexture = this._createMarkerTexture(128, {
+            center: 'rgba(45, 123, 232, 0.95)',
+            mid: 'rgba(120, 200, 255, 0.7)',
+            edge: 'rgba(120, 200, 255, 0.0)'
+        });
         this._markerGeo = new THREE.CircleGeometry(markerRadius, 40);
         this._markerMat = new THREE.MeshBasicMaterial({
-            color: 0x3bc9ff,
+            map: markerTexture,
+            transparent: true,
+            opacity: 1,
+            side: THREE.DoubleSide,
+            depthWrite: false
+        });
+        this._markerRingGeo = new THREE.RingGeometry(markerRadius * 0.9, markerRadius * 1.06, 48);
+        this._markerRingMat = new THREE.MeshBasicMaterial({
+            color: 0x1d4d8f,
             transparent: true,
             opacity: 0.9,
-            blending: THREE.AdditiveBlending,
+            side: THREE.DoubleSide,
+            depthWrite: false
+        });
+        this._markerDotGeo = new THREE.CircleGeometry(markerRadius * 0.16, 24);
+        this._markerDotMat = new THREE.MeshBasicMaterial({
+            color: 0x1d4d8f,
+            transparent: true,
+            opacity: 0.95,
             side: THREE.DoubleSide,
             depthWrite: false
         });
 
-        const markerA = new THREE.Mesh(this._markerGeo, this._markerMat);
-        markerA.rotation.x = -Math.PI / 2;
-        markerA.position.y = this._groundY + 0.01;
-        markerA.renderOrder = 6;
+        const markerA = this._buildMarkerGroup();
+        const markerB = this._buildMarkerGroup();
 
-        const markerB = new THREE.Mesh(this._markerGeo, this._markerMat);
-        markerB.rotation.x = -Math.PI / 2;
-        markerB.position.y = this._groundY + 0.01;
-        markerB.renderOrder = 6;
-
-        const curbDataA = { id: 'A', mesh: curbA, marker: markerA, endSign: 1, length };
-        const curbDataB = { id: 'B', mesh: curbB, marker: markerB, endSign: -1, length };
+        const curbDataA = { id: 'A', mesh: curbA, marker: markerA, endSign: 1, dirSign: 1, length };
+        const curbDataB = { id: 'B', mesh: curbB, marker: markerB, endSign: -1, dirSign: 1, length };
         curbA.userData.debugCurb = curbDataA;
         curbB.userData.debugCurb = curbDataB;
 
@@ -293,9 +340,10 @@ export class ConnectorDebuggerView {
 
         this._lineGeometry = new LineGeometry();
         this._lineGeometry.setPositions([0, this._lineY, 0, 0, this._lineY, 0]);
+        const lineWidth = 6;
         this._lineMaterial = new LineMaterial({
             color: 0x3b82f6,
-            linewidth: 6,
+            linewidth: lineWidth,
             worldUnits: false
         });
         this._syncLineResolution();
@@ -305,15 +353,94 @@ export class ConnectorDebuggerView {
         this._line.frustumCulled = false;
         this._line.renderOrder = 5;
         this.group.add(this._line);
+
+        const candidateLineWidth = Math.max(1, lineWidth * 0.35);
+        const candidateCount = 4;
+        for (let i = 0; i < candidateCount; i++) {
+            const geo = new LineGeometry();
+            geo.setPositions([0, this._lineY, 0, 0, this._lineY, 0]);
+            const mat = new LineMaterial({
+                color: 0xef4444,
+                linewidth: candidateLineWidth,
+                worldUnits: false,
+                transparent: false,
+                opacity: 1
+            });
+            mat.resolution.set(this._lineResolution.x, this._lineResolution.y);
+            const line = new Line2(geo, mat);
+            line.computeLineDistances();
+            line.visible = false;
+            line.frustumCulled = false;
+            line.renderOrder = 4;
+            this.group.add(line);
+            this._candidateLines.push({ line, geo, mat });
+            this._candidateMaterials.push(mat);
+        }
+
+        const circleWidth = Math.max(1, lineWidth * 0.45);
+        const circleCount = 4;
+        for (let i = 0; i < circleCount; i++) {
+            const geo = new LineGeometry();
+            geo.setPositions([0, this._markerY, 0, 0, this._markerY, 0]);
+            const baseColor = i < 2 ? 0x15803d : 0x8b5cf6;
+            const mat = new LineMaterial({
+                color: baseColor,
+                linewidth: circleWidth,
+                worldUnits: false,
+                transparent: true,
+                opacity: 0.55
+            });
+            mat.resolution.set(this._lineResolution.x, this._lineResolution.y);
+            const line = new Line2(geo, mat);
+            line.computeLineDistances();
+            line.visible = false;
+            line.frustumCulled = false;
+            line.renderOrder = 2;
+            this.group.add(line);
+            this._circleLines.push({ line, geo, mat, baseColor });
+            this._circleMaterials.push(mat);
+        }
+
+        const arrowLineWidth = Math.max(1, lineWidth * 0.3);
+        this._arrowConeGeo = new THREE.ConeGeometry(markerRadius * 0.16, markerRadius * 0.4, 16, 1);
+        for (let i = 0; i < 2; i++) {
+            const geo = new LineGeometry();
+            geo.setPositions([0, this._markerY, 0, 0, this._markerY, 0]);
+            const mat = new LineMaterial({
+                color: 0x000000,
+                linewidth: arrowLineWidth,
+                worldUnits: false,
+                transparent: true,
+                opacity: 0.95
+            });
+            mat.resolution.set(this._lineResolution.x, this._lineResolution.y);
+            const line = new Line2(geo, mat);
+            line.computeLineDistances();
+            line.visible = false;
+            line.frustumCulled = false;
+            line.renderOrder = 6;
+            const coneMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+            const cone = new THREE.Mesh(this._arrowConeGeo, coneMat);
+            cone.visible = false;
+            cone.renderOrder = 6;
+            this.group.add(line);
+            this.group.add(cone);
+            this._arrowLines.push({ line, geo, cone });
+            this._arrowMaterials.push(mat);
+        }
     }
 
     _setupPanel() {
         this.panel = new ConnectorDebugPanel({
             radius: this._radius,
             holdRotate: this._rotationModeHold,
+            lineVisibility: { ...this._lineVisibility },
             onHoldRotateChange: (holdRotate) => {
                 this._rotationModeHold = !!holdRotate;
                 this._markInteraction();
+            },
+            onLineVisibilityChange: (visibility) => {
+                this._lineVisibility = { ...this._lineVisibility, ...visibility };
             },
             onRadiusChange: (radius) => {
                 if (!Number.isFinite(radius)) return;
@@ -394,9 +521,9 @@ export class ConnectorDebuggerView {
             e.preventDefault();
             this._keys[code] = true;
         }
-        if (!this._rotationModeHold && this._hoveredCurb && (code === 'KeyA' || code === 'KeyS')) {
+        if (!this._rotationModeHold && this._hoveredCurb && (code === 'KeyQ' || code === 'KeyW')) {
             e.preventDefault();
-            const dir = code === 'KeyA' ? -1 : 1;
+            const dir = code === 'KeyQ' ? 1 : -1;
             this._hoveredCurb.mesh.rotation.y += dir * this._rotationStep;
             this._markInteraction();
         }
@@ -410,7 +537,7 @@ export class ConnectorDebuggerView {
             e.preventDefault();
             this._keys[code] = false;
         }
-        if (this._rotationModeHold && (code === 'KeyA' || code === 'KeyS')) {
+        if (this._rotationModeHold && (code === 'KeyQ' || code === 'KeyW')) {
             this._lastInteractionTime = performance.now();
         }
     }
@@ -460,8 +587,8 @@ export class ConnectorDebuggerView {
             cam.position.add(move);
         }
         let zoomDir = 0;
-        if (this._keys.KeyZ) zoomDir += 1;
         if (this._keys.KeyA && !this._hoveredCurb && !this._isDragging) zoomDir -= 1;
+        if (this._keys.KeyZ) zoomDir += 1;
         if (zoomDir !== 0) {
             this._zoom = clamp(this._zoom + zoomDir * this._zoomSpeed * dt, this._zoomMin, this._zoomMax);
         }
@@ -473,14 +600,200 @@ export class ConnectorDebuggerView {
     _updateRotation(dt) {
         let dir = 0;
         if (this._rotationModeHold && this._hoveredCurb) {
-            if (this._keys.KeyA) dir -= 1;
-            if (this._keys.KeyS) dir += 1;
+            if (this._keys.KeyQ) dir += 1;
+            if (this._keys.KeyW) dir -= 1;
             if (dir !== 0) {
                 this._hoveredCurb.mesh.rotation.y += dir * this._rotationSpeed * dt;
                 this._markInteraction();
             }
         }
         this._isRotating = this._rotationModeHold && this._hoveredCurb && dir !== 0;
+    }
+
+    _buildCandidatesForRadius({ p0, dir0, p1, dir1, R, preferS, minStraight }) {
+        const d0 = dir0.clone().normalize();
+        const d1 = dir1.clone().normalize();
+        if (d0.lengthSq() < EPS || d1.lengthSq() < EPS || !(R > EPS)) return [];
+        const n0 = leftNormal(d0);
+        const n1 = leftNormal(d1);
+        const types = preferS ? ['LSR', 'RSL', 'LSL', 'RSR'] : ['LSL', 'RSR', 'LSR', 'RSL'];
+        const candidates = [];
+        for (const type of types) {
+            const turn0 = type[0];
+            const turn1 = type[2];
+            const c0 = p0.clone().add(n0.clone().multiplyScalar(turn0 === 'L' ? R : -R));
+            const c1 = p1.clone().add(n1.clone().multiplyScalar(turn1 === 'L' ? R : -R));
+            const internal = turn0 !== turn1;
+            const sols = internal ? circleTangents(c0, R, c1, -R) : circleTangents(c0, R, c1, R);
+            if (!sols.length) continue;
+            for (const { t0, t1 } of sols) {
+                const s = t1.clone().sub(t0);
+                const lenS = s.length();
+                if (!Number.isFinite(lenS) || lenS < EPS) continue;
+                const sdir = s.clone().multiplyScalar(1 / lenS);
+                const tan0 = travelTangent(c0, t0, turn0);
+                const tan1 = travelTangent(c1, t1, turn1);
+                const dot0 = tan0.dot(sdir);
+                const dot1 = tan1.dot(sdir);
+                if (dot0 < 0.1 || dot1 < 0.1) continue;
+                const a0s = Math.atan2(p0.y - c0.y, p0.x - c0.x);
+                const a0e = Math.atan2(t0.y - c0.y, t0.x - c0.x);
+                const a1s = Math.atan2(t1.y - c1.y, t1.x - c1.x);
+                const a1e = Math.atan2(p1.y - c1.y, p1.x - c1.x);
+                const da0 = arcDelta(a0s, a0e, turn0);
+                const da1 = arcDelta(a1s, a1e, turn1);
+                const totalLength = da0 * R + lenS + da1 * R;
+                const selfIntersecting = (pointSegDistSq(c0, t0, t1) < (R * R * 0.999))
+                    || (pointSegDistSq(c1, t0, t1) < (R * R * 0.999));
+                let score = -totalLength + (dot0 + dot1) * 0.25;
+                if (preferS && internal) score += 0.5;
+                if (minStraight > 0 && lenS < minStraight) score -= (minStraight - lenS) / minStraight;
+                if (selfIntersecting) score -= 1.0;
+                candidates.push({
+                    type,
+                    R,
+                    arc0: {
+                        center: c0.clone(),
+                        radius: R,
+                        startAngle: a0s,
+                        deltaAngle: da0,
+                        turnDir: turn0,
+                        startPoint: p0.clone(),
+                        endPoint: t0.clone()
+                    },
+                    straight: {
+                        start: t0.clone(),
+                        end: t1.clone(),
+                        length: lenS,
+                        dir: sdir.clone()
+                    },
+                    arc1: {
+                        center: c1.clone(),
+                        radius: R,
+                        startAngle: a1s,
+                        deltaAngle: da1,
+                        turnDir: turn1,
+                        startPoint: t1.clone(),
+                        endPoint: p1.clone()
+                    },
+                    totalLength,
+                    score,
+                    quality: {
+                        tangentDot0: dot0,
+                        tangentDot1: dot1,
+                        straightLength: lenS,
+                        selfIntersecting
+                    }
+                });
+            }
+        }
+        return candidates;
+    }
+
+    _generateConnectorCandidates({ p0, dir0, p1, dir1, R, preferS, allowFallback, minStraight }) {
+        const radii = [R];
+        if (allowFallback && Number.isFinite(R)) {
+            radii.push(R * 0.85, R * 0.7, R * 0.55);
+        }
+        const candidates = [];
+        for (const r of radii) {
+            const batch = this._buildCandidatesForRadius({ p0, dir0, p1, dir1, R: r, preferS, minStraight });
+            for (const cand of batch) candidates.push(cand);
+        }
+        return candidates;
+    }
+
+    _pickBestCandidate(candidates, p0, p1, dir0, dir1) {
+        if (!candidates.length) return null;
+        const toB = p1.clone().sub(p0);
+        const toA = p0.clone().sub(p1);
+        const cross0 = dir0.x * toB.y - dir0.y * toB.x;
+        const cross1 = dir1.x * toA.y - dir1.y * toA.x;
+        const exp0 = Math.abs(cross0) < 1e-6 ? null : (cross0 > 0 ? 'L' : 'R');
+        const exp1 = Math.abs(cross1) < 1e-6 ? null : (cross1 > 0 ? 'L' : 'R');
+        const matches0 = [];
+        const matches1 = [];
+        const matchesBoth = [];
+        for (const cand of candidates) {
+            const m0 = !exp0 || cand.arc0?.turnDir === exp0;
+            const m1 = !exp1 || cand.arc1?.turnDir === exp1;
+            if (m0 && m1) matchesBoth.push(cand);
+            else if (m0) matches0.push(cand);
+            else if (m1) matches1.push(cand);
+        }
+        let pool = null;
+        if (matchesBoth.length) {
+            pool = matchesBoth;
+        } else {
+            const abs0 = Math.abs(cross0);
+            const abs1 = Math.abs(cross1);
+            const preferEnd1 = abs1 >= abs0 - 1e-6;
+            if (preferEnd1 && matches1.length) pool = matches1;
+            else if (!preferEnd1 && matches0.length) pool = matches0;
+            else if (matches1.length) pool = matches1;
+            else if (matches0.length) pool = matches0;
+        }
+        const list = pool ?? candidates;
+        let best = null;
+        let bestScore = -Infinity;
+        for (const cand of list) {
+            const score = cand.score ?? -cand.totalLength;
+            if (score > bestScore) {
+                bestScore = score;
+                best = cand;
+            }
+        }
+        return best;
+    }
+
+    _pickBestByType(candidates) {
+        const byType = new Map();
+        for (const cand of candidates) {
+            const score = cand.score ?? -cand.totalLength;
+            const current = byType.get(cand.type);
+            const currentScore = current ? (current.score ?? -current.totalLength) : -Infinity;
+            if (!current || score > currentScore) byType.set(cand.type, cand);
+        }
+        return CANDIDATE_TYPES.map((type) => byType.get(type) ?? null);
+    }
+
+    _createMarkerTexture(size, colors) {
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+        const c = size * 0.5;
+        const grad = ctx.createRadialGradient(c, c, 0, c, c, c);
+        grad.addColorStop(0, colors.center);
+        grad.addColorStop(0.5, colors.mid);
+        grad.addColorStop(1, colors.edge);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(c, c, c, 0, TAU);
+        ctx.fill();
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.wrapS = THREE.ClampToEdgeWrapping;
+        tex.wrapT = THREE.ClampToEdgeWrapping;
+        tex.needsUpdate = true;
+        return tex;
+    }
+
+    _buildMarkerGroup() {
+        const g = new THREE.Group();
+        const disc = new THREE.Mesh(this._markerGeo, this._markerMat);
+        const ring = new THREE.Mesh(this._markerRingGeo, this._markerRingMat);
+        const dot = new THREE.Mesh(this._markerDotGeo, this._markerDotMat);
+        disc.rotation.x = -Math.PI / 2;
+        ring.rotation.x = -Math.PI / 2;
+        dot.rotation.x = -Math.PI / 2;
+        disc.renderOrder = 3;
+        ring.renderOrder = 4;
+        dot.renderOrder = 5;
+        g.add(disc);
+        g.add(ring);
+        g.add(dot);
+        return g;
     }
 
     _getCurbEndPosition(curb) {
@@ -495,22 +808,11 @@ export class ConnectorDebuggerView {
         return { position: worldPos, axis: axis2 };
     }
 
-    _getCurbTangentOptions(curb) {
-        const end = this._getCurbEndPosition(curb);
-        if (!end) return [];
-        const options = [];
-        for (const sign of [1, -1]) {
-            const dir = end.axis.clone().multiplyScalar(sign);
-            options.push({ sign, position: end.position, direction: dir });
-        }
-        return options;
-    }
-
     _updateMarkers() {
         for (const curb of this.curbs) {
             const end = this._getCurbEndPosition(curb);
             if (!end) continue;
-            curb.marker.position.set(end.position.x, this._groundY + 0.01, end.position.z);
+            curb.marker.position.set(end.position.x, this._markerY, end.position.z);
         }
     }
 
@@ -518,50 +820,53 @@ export class ConnectorDebuggerView {
         const endA = this._getCurbEndPosition(this.curbs[0]);
         const endB = this._getCurbEndPosition(this.curbs[1]);
         if (!endA || !endB) return { valid: false, error: 'missing-curb' };
-        const optionsA = this._getCurbTangentOptions(this.curbs[0]);
-        const optionsB = this._getCurbTangentOptions(this.curbs[1]);
-        if (!optionsA.length || !optionsB.length) return { valid: false, error: 'missing-curb' };
-        let best = null;
-        let bestScore = -Infinity;
-        for (const a of optionsA) {
-            for (const b of optionsB) {
-                if (a.direction.lengthSq() < 1e-6 || b.direction.lengthSq() < 1e-6) continue;
-                const p0 = new THREE.Vector2(a.position.x, a.position.z);
-                const p1 = new THREE.Vector2(b.position.x, b.position.z);
-                const dir0 = a.direction.clone();
-                const dir1 = b.direction.clone();
-                const connector = solveArcStraightArcConnector({
-                    p0,
-                    dir0,
-                    p1,
-                    dir1,
-                    R: this._radius,
-                    preferS: true,
-                    allowFallback: true
-                });
-                if (!connector) continue;
-                const score = connector.score ?? -connector.totalLength;
-                if (score > bestScore) {
-                    bestScore = score;
-                    best = { connector, p0, p1, dir0, dir1, dirSigns: [a.sign, b.sign] };
-                }
-            }
+        if (endA.axis.lengthSq() < 1e-6 || endB.axis.lengthSq() < 1e-6) {
+            return { valid: false, error: 'invalid-direction' };
         }
-        if (best) return { valid: true, error: null, ...best };
-        const toB = new THREE.Vector2(endB.position.x - endA.position.x, endB.position.z - endA.position.z);
-        const toA = new THREE.Vector2(endA.position.x - endB.position.x, endA.position.z - endB.position.z);
-        const signA = endA.axis.lengthSq() > 1e-6 ? (endA.axis.dot(toB) >= 0 ? 1 : -1) : 1;
-        const signB = endB.axis.lengthSq() > 1e-6 ? (endB.axis.dot(toA) >= 0 ? 1 : -1) : 1;
-        const dirA = endA.axis.clone().multiplyScalar(signA);
-        const dirB = endB.axis.clone().multiplyScalar(signB);
+        const p0 = new THREE.Vector2(endA.position.x, endA.position.z);
+        const p1 = new THREE.Vector2(endB.position.x, endB.position.z);
+        const axisA = endA.axis.clone().normalize();
+        const axisB = endB.axis.clone().normalize();
+        const endSignA = this.curbs[0]?.endSign ?? 1;
+        const endSignB = this.curbs[1]?.endSign ?? 1;
+        const signA = endSignA;
+        const signB = -endSignB;
+        const dir0 = axisA.clone().multiplyScalar(signA);
+        const dir1 = axisB.clone().multiplyScalar(signB);
+        const candidates = this._generateConnectorCandidates({
+            p0,
+            dir0,
+            p1,
+            dir1,
+            R: this._radius,
+            preferS: true,
+            allowFallback: false,
+            minStraight: 0.05
+        });
+        const connector = this._pickBestCandidate(candidates, p0, p1, dir0, dir1);
+        const candidatesByType = this._pickBestByType(candidates);
+        if (connector) {
+            return {
+                valid: true,
+                error: null,
+                connector,
+                candidatesByType,
+                p0,
+                p1,
+                dir0,
+                dir1,
+                dirSigns: [signA, signB]
+            };
+        }
         return {
             valid: false,
             error: 'no-solution',
             connector: null,
-            p0: new THREE.Vector2(endA.position.x, endA.position.z),
-            p1: new THREE.Vector2(endB.position.x, endB.position.z),
-            dir0: dirA,
-            dir1: dirB,
+            candidatesByType: [],
+            p0,
+            p1,
+            dir0,
+            dir1,
             dirSigns: [signA, signB]
         };
     }
@@ -569,23 +874,49 @@ export class ConnectorDebuggerView {
     _updateConnector() {
         const inputs = this._selectConnectorInputs();
         const connector = inputs.connector ?? null;
+        const candidatesByType = inputs.candidatesByType ?? [];
         const error = inputs.error ?? null;
         this._connector = connector;
-        this._selectedDirSigns = inputs.dirSigns ?? null;
-        const { points } = sampleConnector(connector, this._sampleStep);
-        this._updateLine(points);
+        this._candidatesByType = candidatesByType;
+        this._updateTurnCircles(inputs, connector);
+        this._updateArrows(inputs);
+        const sample = sampleConnector(connector, this._sampleStep);
+        let points = sample.points;
+        if (points.length >= 2) {
+            points = points.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+        }
+        if (connector && points.length < 2) {
+            const fallback = [];
+            if (connector.arc0?.startPoint) fallback.push(connector.arc0.startPoint.clone());
+            else if (inputs.p0) fallback.push(inputs.p0.clone());
+            if (connector.arc1?.endPoint) fallback.push(connector.arc1.endPoint.clone());
+            else if (inputs.p1) fallback.push(inputs.p1.clone());
+            points = fallback.filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+        }
+        if (connector && points.length >= 2) {
+            if (connector.arc0?.startPoint) points[0] = connector.arc0.startPoint.clone();
+            else if (inputs.p0) points[0] = inputs.p0.clone();
+            if (connector.arc1?.endPoint) points[points.length - 1] = connector.arc1.endPoint.clone();
+            else if (inputs.p1) points[points.length - 1] = inputs.p1.clone();
+        }
+        const typeVisible = connector?.type ? this._lineVisibility[connector.type] !== false : true;
+        this._updateLine(points, typeVisible);
+        this._updateCandidateLines(inputs, connector, candidatesByType);
         const data = this._buildDebugData(inputs, connector, error);
         this.panel?.setData(data);
         this._lastPayload = this._buildPayload(inputs, connector, data, error);
     }
 
-    _updateLine(points) {
+    _updateLine(points, visible) {
         if (!this._line) return;
         const positions = [];
         for (const p of points) {
             positions.push(p.x, this._lineY, p.y);
         }
-        if (positions.length >= 6) {
+        if (!visible) {
+            this._lineGeometry.setPositions([0, this._lineY, 0, 0, this._lineY, 0]);
+            this._line.visible = false;
+        } else if (positions.length >= 6) {
             this._lineGeometry.setPositions(positions);
             this._line.computeLineDistances();
             this._line.visible = true;
@@ -595,10 +926,156 @@ export class ConnectorDebuggerView {
         }
     }
 
+    _updateCandidateLines(inputs, connector, candidatesByType) {
+        const chosenType = connector?.type ?? null;
+        const redColor = 0xef4444;
+        for (let i = 0; i < this._candidateLines.length; i++) {
+            const entry = this._candidateLines[i];
+            const type = CANDIDATE_TYPES[i];
+            const isVisible = this._lineVisibility[type] !== false;
+            const isChosen = type && chosenType === type;
+            const candidate = candidatesByType[i] ?? null;
+            if (!candidate || !isVisible || isChosen) {
+                entry.geo.setPositions([0, this._lineY, 0, 0, this._lineY, 0]);
+                entry.line.visible = false;
+                continue;
+            }
+            const sample = sampleConnector(candidate, this._sampleStep);
+            let points = sample.points;
+            if (points.length >= 2) {
+                points = points.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+            }
+            if (points.length < 2) {
+                const fallback = [];
+                if (candidate.arc0?.startPoint) fallback.push(candidate.arc0.startPoint.clone());
+                else if (inputs.p0) fallback.push(inputs.p0.clone());
+                if (candidate.arc1?.endPoint) fallback.push(candidate.arc1.endPoint.clone());
+                else if (inputs.p1) fallback.push(inputs.p1.clone());
+                points = fallback.filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+            }
+            if (points.length >= 2) {
+                if (candidate.arc0?.startPoint) points[0] = candidate.arc0.startPoint.clone();
+                else if (inputs.p0) points[0] = inputs.p0.clone();
+                if (candidate.arc1?.endPoint) points[points.length - 1] = candidate.arc1.endPoint.clone();
+                else if (inputs.p1) points[points.length - 1] = inputs.p1.clone();
+            }
+            const positions = [];
+            for (const p of points) {
+                positions.push(p.x, this._lineY, p.y);
+            }
+            if (positions.length >= 6) {
+                entry.geo.setPositions(positions);
+                entry.line.computeLineDistances();
+                entry.line.visible = true;
+            } else {
+                entry.geo.setPositions([0, this._lineY, 0, 0, this._lineY, 0]);
+                entry.line.visible = false;
+            }
+            entry.mat.color.setHex(redColor);
+            entry.mat.opacity = 1;
+        }
+    }
+
     _syncLineResolution() {
         if (!this._lineMaterial) return;
         const size = this.engine.renderer.getSize(this._lineResolution);
         this._lineMaterial.resolution.set(size.x, size.y);
+        for (const mat of this._candidateMaterials) {
+            mat.resolution.set(size.x, size.y);
+        }
+        for (const mat of this._circleMaterials) {
+            mat.resolution.set(size.x, size.y);
+        }
+        for (const mat of this._arrowMaterials) {
+            mat.resolution.set(size.x, size.y);
+        }
+    }
+
+    _updateTurnCircles(inputs, connector) {
+        if (!this._circleLines.length) return;
+        const p0 = inputs?.p0;
+        const p1 = inputs?.p1;
+        const dir0 = inputs?.dir0;
+        const dir1 = inputs?.dir1;
+        if (!p0 || !p1 || !dir0 || !dir1) {
+            for (const entry of this._circleLines) entry.line.visible = false;
+            return;
+        }
+        const r = Math.max(0.01, this._radius);
+        const n0 = leftNormal(dir0.clone().normalize());
+        const n1 = leftNormal(dir1.clone().normalize());
+        const centers = [
+            new THREE.Vector3(p0.x + n0.x * r, this._markerY, p0.y + n0.y * r),
+            new THREE.Vector3(p0.x - n0.x * r, this._markerY, p0.y - n0.y * r),
+            new THREE.Vector3(p1.x + n1.x * r, this._markerY, p1.y + n1.y * r),
+            new THREE.Vector3(p1.x - n1.x * r, this._markerY, p1.y - n1.y * r)
+        ];
+        const chosen = new Set();
+        if (connector?.arc0?.turnDir) chosen.add(connector.arc0.turnDir === 'L' ? 0 : 1);
+        if (connector?.arc1?.turnDir) chosen.add(connector.arc1.turnDir === 'L' ? 2 : 3);
+        const dashSize = Math.max(0.2, r * 0.08);
+        const gapSize = Math.max(0.15, r * 0.06);
+        const segs = 64;
+        for (let i = 0; i < this._circleLines.length; i++) {
+            const entry = this._circleLines[i];
+            const center = centers[i];
+            const positions = [];
+            for (let k = 0; k <= segs; k++) {
+                const t = (k / segs) * TAU;
+                positions.push(center.x + Math.cos(t) * r, center.y, center.z + Math.sin(t) * r);
+            }
+            entry.geo.setPositions(positions);
+            entry.line.computeLineDistances();
+            const isChosen = chosen.has(i);
+            entry.mat.dashed = !isChosen;
+            entry.mat.dashSize = dashSize;
+            entry.mat.gapSize = gapSize;
+            entry.mat.needsUpdate = true;
+            entry.line.visible = true;
+        }
+    }
+
+    _updateArrows(inputs) {
+        if (!this._arrowLines.length) return;
+        const p0 = inputs?.p0;
+        const p1 = inputs?.p1;
+        const dir0 = inputs?.dir0;
+        const dir1 = inputs?.dir1;
+        if (!p0 || !p1 || !dir0 || !dir1) {
+            for (const entry of this._arrowLines) {
+                entry.line.visible = false;
+                entry.cone.visible = false;
+            }
+            return;
+        }
+        const arrowY = this._markerY + 0.01;
+        const arrowLen = Math.max(0.5, this._radius * 0.35);
+        const data = [
+            { p: p0, dir: dir0 },
+            { p: p1, dir: dir1 }
+        ];
+        for (let i = 0; i < this._arrowLines.length; i++) {
+            const entry = this._arrowLines[i];
+            const item = data[i];
+            if (!item) continue;
+            const dir = item.dir.clone();
+            if (dir.lengthSq() < 1e-6) {
+                entry.line.visible = false;
+                entry.cone.visible = false;
+                continue;
+            }
+            dir.normalize();
+            const start = new THREE.Vector3(item.p.x, arrowY, item.p.y);
+            const end = start.clone().add(new THREE.Vector3(dir.x, 0, dir.y).multiplyScalar(arrowLen));
+            entry.geo.setPositions([start.x, start.y, start.z, end.x, end.y, end.z]);
+            entry.line.computeLineDistances();
+            entry.line.visible = true;
+            entry.cone.position.set(end.x, arrowY, end.z);
+            const dir3 = new THREE.Vector3(dir.x, 0, dir.y).normalize();
+            const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir3);
+            entry.cone.quaternion.copy(q);
+            entry.cone.visible = true;
+        }
     }
 
     _buildDebugData(inputs, connector, error) {
@@ -652,7 +1129,7 @@ export class ConnectorDebuggerView {
 
     _buildPayload(inputs, connector, data, error) {
         const endSigns = this.curbs.map((curb) => curb.endSign);
-        const dirSigns = this._selectedDirSigns ?? [];
+        const dirSigns = inputs?.dirSigns ?? this.curbs.map((curb) => curb.dirSign ?? 1);
         const curbTransforms = this.curbs.map((curb, index) => ({
             id: curb.id,
             position: {
@@ -667,7 +1144,7 @@ export class ConnectorDebuggerView {
             },
             length: curb.length,
             endSign: endSigns[index],
-            dirSign: dirSigns[index] ?? null
+            dirSign: dirSigns[index] ?? 1
         }));
 
         return {

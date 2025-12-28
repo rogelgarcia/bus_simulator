@@ -14,8 +14,21 @@ function fmtVec2Pair(a, b, digits = 3) {
     return `${fmtVec2(a, digits)} -> ${fmtVec2(b, digits)}`;
 }
 
+function radToDeg(rad) {
+    if (!Number.isFinite(rad)) return NaN;
+    return rad * (180 / Math.PI);
+}
+
 export class ConnectorDebugPanel {
-    constructor({ radius = 0, holdRotate = true, onHoldRotateChange = null, onRadiusChange = null, onCopy = null } = {}) {
+    constructor({
+        radius = 0,
+        holdRotate = true,
+        lineVisibility = null,
+        onHoldRotateChange = null,
+        onLineVisibilityChange = null,
+        onRadiusChange = null,
+        onCopy = null
+    } = {}) {
         this.root = document.createElement('div');
         this.root.className = 'connector-debug-panel hidden';
 
@@ -54,6 +67,48 @@ export class ConnectorDebugPanel {
         this.radiusLabel.appendChild(this.radiusText);
         this.radiusLabel.appendChild(this.radiusInput);
 
+        this.linesGroup = document.createElement('div');
+        this.linesGroup.className = 'connector-debug-lines';
+
+        this.linesTitle = document.createElement('span');
+        this.linesTitle.className = 'connector-debug-lines-title';
+        this.linesTitle.textContent = 'Lines';
+
+        this.linesGroup.appendChild(this.linesTitle);
+
+        this._lineVisibility = {
+            LSL: true,
+            RSR: true,
+            LSR: true,
+            RSL: true,
+            ...(lineVisibility ?? {})
+        };
+        this._lineInputs = new Map();
+        const types = ['LSL', 'RSR', 'LSR', 'RSL'];
+        for (const type of types) {
+            const label = document.createElement('label');
+            label.className = 'connector-debug-line-toggle';
+
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.checked = !!this._lineVisibility[type];
+
+            const text = document.createElement('span');
+            text.textContent = type;
+
+            label.appendChild(input);
+            label.appendChild(text);
+            this.linesGroup.appendChild(label);
+            this._lineInputs.set(type, input);
+
+            input.addEventListener('change', () => {
+                this._lineVisibility[type] = input.checked;
+                if (this._onLineVisibilityChange) {
+                    this._onLineVisibilityChange({ ...this._lineVisibility });
+                }
+            });
+        }
+
         this.copyButton = document.createElement('button');
         this.copyButton.type = 'button';
         this.copyButton.className = 'connector-debug-copy';
@@ -61,6 +116,7 @@ export class ConnectorDebugPanel {
 
         this.controls.appendChild(this.holdRotateLabel);
         this.controls.appendChild(this.radiusLabel);
+        this.controls.appendChild(this.linesGroup);
         this.controls.appendChild(this.copyButton);
 
         this.readout = document.createElement('pre');
@@ -71,6 +127,7 @@ export class ConnectorDebugPanel {
         this.root.appendChild(this.readout);
 
         this._onHoldRotateChange = onHoldRotateChange;
+        this._onLineVisibilityChange = onLineVisibilityChange;
         this._onRadiusChange = onRadiusChange;
         this._onCopy = onCopy;
 
@@ -103,11 +160,13 @@ export class ConnectorDebugPanel {
             `R: ${fmtNum(data.radius)}`,
             `arc0 center: ${fmtVec2(arc0.center)}`,
             `arc0 angles: ${fmtNum(arc0.startAngle)} , ${fmtNum(arc0.deltaAngle)}`,
+            `arc0 delta deg: ${fmtNum(radToDeg(arc0.deltaAngle))}`,
             `arc0 length: ${fmtNum(arc0.length)}`,
             `straight: ${fmtVec2Pair(straight.start, straight.end)}`,
             `straight length: ${fmtNum(straight.length)}`,
             `arc1 center: ${fmtVec2(arc1.center)}`,
             `arc1 angles: ${fmtNum(arc1.startAngle)} , ${fmtNum(arc1.deltaAngle)}`,
+            `arc1 delta deg: ${fmtNum(radToDeg(arc1.deltaAngle))}`,
             `arc1 length: ${fmtNum(arc1.length)}`,
             `total length: ${fmtNum(data.totalLength)}`,
             `tangent dot0: ${fmtNum(quality.tangentDot0)}`,
