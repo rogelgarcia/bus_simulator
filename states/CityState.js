@@ -212,7 +212,10 @@ export class CityState {
         this._highlightMesh.renderOrder = 5;
         this._highlightMesh.frustumCulled = false;
         this._highlightDummy = new THREE.Object3D();
-        this._highlightY = (this.city?.generatorConfig?.road?.surfaceY ?? 0.02) + 0.01;
+        const roadY = this.city?.generatorConfig?.road?.surfaceY ?? 0.02;
+        const curbHeight = this.city?.generatorConfig?.road?.curb?.height ?? 0.17;
+        const groundY = this.city?.generatorConfig?.ground?.surfaceY ?? (roadY + curbHeight);
+        this._highlightY = Math.max(roadY, groundY) + 0.01;
         this._highlightCapacity = capacity;
         this.city.group.add(this._highlightMesh);
     }

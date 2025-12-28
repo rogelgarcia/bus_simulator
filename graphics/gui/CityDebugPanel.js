@@ -30,26 +30,13 @@ export class CityDebugPanel {
         this.table.appendChild(this.tbody);
         this.tableWrap.appendChild(this.table);
 
-        this.actions = document.createElement('div');
-        this.actions.className = 'city-debug-actions';
-
-        this.reloadBtn = document.createElement('button');
-        this.reloadBtn.className = 'city-debug-btn';
-        this.reloadBtn.type = 'button';
-        this.reloadBtn.textContent = 'Reload';
-
-        this.actions.appendChild(this.reloadBtn);
         this.root.appendChild(this.title);
         this.root.appendChild(this.tableWrap);
-        this.root.appendChild(this.actions);
 
         this._items = [];
         this._onReload = onReload;
         this._onHover = onHover;
-        this._handleReload = () => {
-            if (this._onReload) this._onReload();
-        };
-        this.reloadBtn.addEventListener('click', this._handleReload);
+        this._hoverRow = null;
 
         this.setRoads(roads);
     }
@@ -94,10 +81,25 @@ export class CityDebugPanel {
 
             this.tbody.appendChild(row);
 
+            row.addEventListener('click', (e) => {
+                if (e.target instanceof HTMLElement && e.target.closest('input[type="checkbox"]')) return;
+                checkbox.checked = !checkbox.checked;
+                if (this._onReload) this._onReload();
+            });
+            checkbox.addEventListener('change', () => {
+                if (this._onReload) this._onReload();
+            });
             row.addEventListener('mouseenter', () => {
+                if (this._hoverRow && this._hoverRow !== row) {
+                    this._hoverRow.classList.remove('city-debug-row-hover');
+                }
+                this._hoverRow = row;
+                row.classList.add('city-debug-row-hover');
                 if (this._onHover) this._onHover(road, index);
             });
             row.addEventListener('mouseleave', () => {
+                row.classList.remove('city-debug-row-hover');
+                if (this._hoverRow === row) this._hoverRow = null;
                 if (this._onHover) this._onHover(null, index);
             });
 
@@ -131,7 +133,6 @@ export class CityDebugPanel {
     }
 
     destroy() {
-        this.reloadBtn.removeEventListener('click', this._handleReload);
         if (this.root.isConnected) this.root.remove();
     }
 }

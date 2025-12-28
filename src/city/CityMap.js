@@ -218,8 +218,8 @@ export class CityMap {
                 { a: [4, 11], b: [11, 11], lanesF: 1, lanesB: 1, tag: 'collector' },
                 { a: [11, 4], b: [11, 11], lanesF: 1, lanesB: 1, tag: 'collector' },
 
-                { a: [5, 11], b: [6, 11], lanesF: 2, lanesB: 0, tag: 'oneway-east' },
-                { a: [6, 11], b: [6, 11], lanesF: 2, lanesB: 0, tag: 'oneway-north' }
+                { a: [5, 10], b: [6, 10], lanesF: 2, lanesB: 0, tag: 'oneway-east' },
+                { a: [6, 10], b: [6, 11], lanesF: 2, lanesB: 0, tag: 'oneway-north' }
             ]
         };
     }
