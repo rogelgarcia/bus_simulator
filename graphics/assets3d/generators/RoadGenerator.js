@@ -59,6 +59,7 @@ export function generateRoads({ map, config, materials } = {}) {
 
     const roadCfg = deepMerge(ROAD_DEFAULTS, config?.road ?? {});
     const groundCfg = deepMerge(GROUND_DEFAULTS, config?.ground ?? {});
+    const ts = map.tileSize;
 
     const roadY = roadCfg.surfaceY ?? 0.02;
     const laneWidth = roadCfg.laneWidth ?? 3.2;
@@ -68,6 +69,7 @@ export function generateRoads({ map, config, materials } = {}) {
     const sidewalkLift = roadCfg.sidewalk?.lift ?? 0.001;
     const sidewalkInset = roadCfg.sidewalk?.inset ?? 0.06;
     const curbCornerRadius = roadCfg.sidewalk?.cornerRadius ?? 1.4;
+    const sidewalkWidth = Math.max(0, sidewalkExtra + sidewalkInset);
 
     const curbT = roadCfg.curb?.thickness ?? 0.32;
     const curbHeight = roadCfg.curb?.height ?? 0.17;
@@ -88,6 +90,7 @@ export function generateRoads({ map, config, materials } = {}) {
 
     const turnRadiusPref = roadCfg.curves?.turnRadius ?? 4.2;
     const curbArcSegs = clamp(roadCfg.curves?.curbArcSegments ?? 18, 8, 96) | 0;
+    const asphaltArcSegs = clamp(roadCfg.curves?.asphaltArcSegments ?? 24, 8, 128) | 0;
 
     const roadMatBase = materials?.road ?? new THREE.MeshStandardMaterial({ color: 0x2b2b2b, roughness: 0.95 });
     const sidewalkMatBase = materials?.sidewalk ?? new THREE.MeshStandardMaterial({ color: 0x8b8b8b, roughness: 1.0 });
@@ -197,6 +200,7 @@ export function generateRoads({ map, config, materials } = {}) {
             W: { N: 0, S: 0 }
         };
         let turn = null;
+        let roundabout = null;
 
         if (isJunction) {
             caps.N = widthEW * 0.5;
@@ -325,6 +329,35 @@ export function generateRoads({ map, config, materials } = {}) {
                 };
             }
         }
+        if (degree === 1) {
+            const deadDir = DIR_KEYS.find((dir) => has[dir]);
+            if (deadDir) {
+                const roadWidth = widths[deadDir];
+                const roadHalf = roadWidth * 0.5;
+                const minR = roadHalf + curbT;
+                const maxR = Math.max(minR, ts * 0.5 - curbT);
+                const radius = clamp(roadHalf * 1.35, minR, maxR);
+                const curbRadius = radius + curbT * 0.5;
+                const cap = Math.sqrt(Math.max(0, (radius * radius) - (roadHalf * roadHalf)));
+                const curbOffset = roadHalf + curbT * 0.5;
+                const trim = Math.sqrt(Math.max(0, (curbRadius * curbRadius) - (curbOffset * curbOffset)));
+                caps[deadDir] = Math.max(caps[deadDir] ?? 0, cap);
+                if (deadDir === 'N') {
+                    curbTrim.N.E = trim;
+                    curbTrim.N.W = trim;
+                } else if (deadDir === 'S') {
+                    curbTrim.S.E = trim;
+                    curbTrim.S.W = trim;
+                } else if (deadDir === 'E') {
+                    curbTrim.E.N = trim;
+                    curbTrim.E.S = trim;
+                } else if (deadDir === 'W') {
+                    curbTrim.W.N = trim;
+                    curbTrim.W.S = trim;
+                }
+                roundabout = { radius, curbRadius };
+            }
+        }
 
         return {
             has,
@@ -341,7 +374,8 @@ export function generateRoads({ map, config, materials } = {}) {
             widthEW,
             isCorner,
             isJunction,
-            turn
+            turn,
+            roundabout
         };
     });
 
@@ -411,6 +445,25 @@ export function generateRoads({ map, config, materials } = {}) {
                 colorHex: asphaltColor('turn', info.turn.orient)
             });
         }
+    }
+
+    for (let i = 0; i < graph.nodes.length; i++) {
+        const node = graph.nodes[i];
+        const info = nodeInfo[i];
+        if (!info.roundabout) continue;
+        const radius = info.roundabout.radius;
+        if (radius <= 0.05) continue;
+        asphalt.addRingSectorXZ({
+            centerX: node.x,
+            centerZ: node.z,
+            y: roadY + 0.00015,
+            innerR: 0.01,
+            outerR: radius,
+            startAng: 0,
+            spanAng: Math.PI * 2,
+            segs: Math.max(24, asphaltArcSegs),
+            colorHex: asphaltColor('junction1', 'all')
+        });
     }
 
     if (markings) {
@@ -532,6 +585,18 @@ export function generateRoads({ map, config, materials } = {}) {
                     });
                 }
             }
+            if (info.roundabout) {
+                const roundKey = CURB_COLOR_PALETTE.key('turn_outer', 'NE');
+                curb.addArcSolidKey({
+                    key: roundKey,
+                    centerX: node.x,
+                    centerZ: node.z,
+                    radiusCenter: info.roundabout.curbRadius,
+                    startAng: 0,
+                    spanAng: Math.PI * 2,
+                    curveSegs: curbArcSegs * 2
+                });
+            }
             if (!info.isJunction) continue;
             const junctionType = info.junctionType;
             for (const [cornerKey, data] of Object.entries(info.corners)) {
@@ -551,8 +616,6 @@ export function generateRoads({ map, config, materials } = {}) {
             }
         }
     }
-
-    const sidewalkWidth = Math.max(0, sidewalkExtra + sidewalkInset);
 
     if (sidewalk && sidewalkWidth > 0.001) {
         for (let i = 0; i < graph.nodes.length; i++) {

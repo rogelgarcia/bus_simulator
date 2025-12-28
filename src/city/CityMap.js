@@ -46,6 +46,9 @@ export class CityMap {
         this.lanesE = new Uint8Array(n);
         this.lanesS = new Uint8Array(n);
         this.lanesW = new Uint8Array(n);
+
+        this.roadIds = new Array(n);
+        this._roadCounter = 0;
     }
 
     index(x, y) { return (x | 0) + (y | 0) * this.width; }
@@ -61,10 +64,18 @@ export class CityMap {
         return { x: tx, y: ty };
     }
 
-    _markRoad(x, y) {
+    _markRoad(x, y, roadId = null) {
         if (!this.inBounds(x, y)) return -1;
         const idx = this.index(x, y);
         this.kind[idx] = TILE.ROAD;
+        if (roadId !== null && roadId !== undefined) {
+            let bucket = this.roadIds[idx];
+            if (!bucket) {
+                bucket = new Set();
+                this.roadIds[idx] = bucket;
+            }
+            bucket.add(roadId);
+        }
         return idx;
     }
 
@@ -73,8 +84,16 @@ export class CityMap {
         if (nv > arr[idx]) arr[idx] = nv;
     }
 
-    addRoadSegment({ a, b, lanesF = 1, lanesB = 1 } = {}) {
+    addRoadSegment({ a, b, lanesF = 1, lanesB = 1, id = null } = {}) {
         if (!a || !b) return;
+
+        let roadId = id;
+        if (roadId === null || roadId === undefined) {
+            roadId = this._roadCounter;
+            this._roadCounter += 1;
+        } else if (roadId >= this._roadCounter) {
+            this._roadCounter = roadId + 1;
+        }
 
         const x0 = a[0] | 0, y0 = a[1] | 0;
         const x1 = b[0] | 0, y1 = b[1] | 0;
@@ -91,7 +110,7 @@ export class CityMap {
             const steps = Math.abs(x1 - x0);
             for (let i = 0; i <= steps; i++) {
                 const x = x0 + dx * i;
-                const idx = this._markRoad(x, y0);
+                const idx = this._markRoad(x, y0, roadId);
                 if (idx < 0) continue;
 
                 if (dx >= 0) {
@@ -109,7 +128,7 @@ export class CityMap {
             const steps = Math.abs(y1 - y0);
             for (let i = 0; i <= steps; i++) {
                 const y = y0 + dy * i;
-                const idx = this._markRoad(x0, y);
+                const idx = this._markRoad(x0, y, roadId);
                 if (idx < 0) continue;
 
                 if (dy >= 0) {
@@ -125,6 +144,18 @@ export class CityMap {
 
     finalize() {
         const w = this.width, h = this.height;
+        const sharesRoad = (aIdx, bIdx) => {
+            let aSet = this.roadIds[aIdx];
+            let bSet = this.roadIds[bIdx];
+            if (!aSet || !bSet) return false;
+            if (aSet.size > bSet.size) {
+                const tmp = aSet;
+                aSet = bSet;
+                bSet = tmp;
+            }
+            for (const id of aSet) if (bSet.has(id)) return true;
+            return false;
+        };
 
         for (let y = 0; y < h; y++) {
             for (let x = 0; x < w; x++) {
@@ -136,10 +167,10 @@ export class CityMap {
                 }
 
                 let m = 0;
-                if (y + 1 < h && this.kind[idx + w] === TILE.ROAD) m |= DIR.N;
-                if (x + 1 < w && this.kind[idx + 1] === TILE.ROAD) m |= DIR.E;
-                if (y - 1 >= 0 && this.kind[idx - w] === TILE.ROAD) m |= DIR.S;
-                if (x - 1 >= 0 && this.kind[idx - 1] === TILE.ROAD) m |= DIR.W;
+                if (y + 1 < h && sharesRoad(idx, idx + w)) m |= DIR.N;
+                if (x + 1 < w && sharesRoad(idx, idx + 1)) m |= DIR.E;
+                if (y - 1 >= 0 && sharesRoad(idx, idx - w)) m |= DIR.S;
+                if (x - 1 >= 0 && sharesRoad(idx, idx - 1)) m |= DIR.W;
 
                 this.conn[idx] = m;
 
@@ -196,7 +227,9 @@ export class CityMap {
 
         const map = new CityMap({ width, height, tileSize, origin });
 
-        for (const seg of (spec.roads ?? [])) map.addRoadSegment(seg);
+        (spec.roads ?? []).forEach((seg, index) => {
+            map.addRoadSegment({ ...seg, id: index });
+        });
         map.finalize();
         return map;
     }
