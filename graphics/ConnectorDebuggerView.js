@@ -136,6 +136,7 @@ export class ConnectorDebuggerView {
         for (const type of this._candidateTypes) this._lineVisibility[type] = true;
         this._autoSelectLine = false;
         this._manualLineVisibility = { ...this._lineVisibility };
+        this._displayDebug = true;
         this._connectorMesh = null;
         this._connector = null;
         this._minStraight = 0.05;
@@ -455,6 +456,7 @@ export class ConnectorDebuggerView {
             radius: this._radius,
             holdRotate: this._rotationModeHold,
             lineVisibility: { ...this._lineVisibility },
+            displayEnabled: this._displayDebug,
             autoSelect: this._autoSelectLine,
             pathTypes: this._candidateTypes.slice(),
             onHoldRotateChange: (holdRotate) => {
@@ -469,10 +471,15 @@ export class ConnectorDebuggerView {
             onAutoSelectChange: (autoSelect) => {
                 this._setAutoSelectLine(autoSelect);
             },
+            onDisplayChange: (enabled) => {
+                this._displayDebug = !!enabled;
+                if (!this._displayDebug) this._hideDebugLines();
+            },
             onRadiusChange: (radius) => {
                 if (!Number.isFinite(radius)) return;
                 this._radius = Math.max(0.1, radius);
                 this._markInteraction();
+                this._requestHardReset();
             },
             onCopy: () => this._copyPayload()
         });
@@ -633,6 +640,16 @@ export class ConnectorDebuggerView {
         this._syncLineResolution();
     }
 
+    _hideDebugLines() {
+        if (this._line) this._line.visible = false;
+        for (const entry of this._candidateLines) entry.line.visible = false;
+        for (const entry of this._circleLines) entry.line.visible = false;
+        for (const entry of this._arrowLines) {
+            entry.line.visible = false;
+            entry.cone.visible = false;
+        }
+    }
+
     _requestHardReset() {
         this._pendingHardReset = true;
     }
@@ -715,7 +732,7 @@ export class ConnectorDebuggerView {
             cam.position.add(move);
         }
         let zoomDir = 0;
-        if (this._keys.KeyA && !this._hoveredCurb && !this._isDragging) zoomDir -= 1;
+        if (this._keys.KeyA && !this._isDragging) zoomDir -= 1;
         if (this._keys.KeyZ) zoomDir += 1;
         if (zoomDir !== 0) {
             this._zoom = clamp(this._zoom + zoomDir * this._zoomSpeed * dt, this._zoomMin, this._zoomMax);
@@ -848,6 +865,13 @@ export class ConnectorDebuggerView {
         const error = inputs.error ?? null;
         this._connector = connector;
         this._applyAutoSelectLine(connector?.type ?? null);
+        if (!this._displayDebug) {
+            this._hideDebugLines();
+            const data = this._buildDebugData(inputs, connector, error);
+            this.panel?.setData(data);
+            this._lastPayload = this._buildPayload(inputs, connector);
+            return;
+        }
         this._updateTurnCircles(inputs, connector);
         this._updateArrows(inputs);
         const sample = sampleConnector(connector, this._sampleStep);
@@ -885,6 +909,10 @@ export class ConnectorDebuggerView {
 
     _updateLine(points, visible) {
         if (!this._line) return;
+        if (!this._displayDebug) {
+            this._line.visible = false;
+            return;
+        }
         const positions = [];
         for (const p of points) {
             positions.push(p.x, this._lineY, p.y);
@@ -903,6 +931,12 @@ export class ConnectorDebuggerView {
     }
 
     _updateCandidateLines(inputs, connector, candidatesByType) {
+        if (!this._displayDebug) {
+            for (const entry of this._candidateLines) {
+                entry.line.visible = false;
+            }
+            return;
+        }
         const chosenType = connector?.type ?? null;
         const redColor = 0xef4444;
         for (let i = 0; i < this._candidateLines.length; i++) {
@@ -975,6 +1009,10 @@ export class ConnectorDebuggerView {
 
     _updateTurnCircles(inputs, connector) {
         if (!this._circleLines.length) return;
+        if (!this._displayDebug) {
+            for (const entry of this._circleLines) entry.line.visible = false;
+            return;
+        }
         const startLeft = connector?.startLeftCircle ?? null;
         const startRight = connector?.startRightCircle ?? null;
         const endLeft = connector?.endLeftCircle ?? null;
@@ -1022,6 +1060,13 @@ export class ConnectorDebuggerView {
 
     _updateArrows(inputs) {
         if (!this._arrowLines.length) return;
+        if (!this._displayDebug) {
+            for (const entry of this._arrowLines) {
+                entry.line.visible = false;
+                entry.cone.visible = false;
+            }
+            return;
+        }
         const p0 = inputs?.p0;
         const p1 = inputs?.p1;
         const dir0 = inputs?.dir0;

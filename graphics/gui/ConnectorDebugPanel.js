@@ -37,9 +37,11 @@ export class ConnectorDebugPanel {
         holdRotate = true,
         pathTypes = null,
         lineVisibility = null,
+        displayEnabled = true,
         autoSelect = false,
         onHoldRotateChange = null,
         onLineVisibilityChange = null,
+        onDisplayChange = null,
         onAutoSelectChange = null,
         onRadiusChange = null,
         onCopy = null
@@ -50,6 +52,16 @@ export class ConnectorDebugPanel {
         this.title = document.createElement('div');
         this.title.className = 'connector-debug-title';
         this.title.textContent = 'Connector Debugger';
+
+        this.copyButton = document.createElement('button');
+        this.copyButton.type = 'button';
+        this.copyButton.className = 'connector-debug-copy';
+        this.copyButton.textContent = 'Copy';
+
+        this.header = document.createElement('div');
+        this.header.className = 'connector-debug-header';
+        this.header.appendChild(this.title);
+        this.header.appendChild(this.copyButton);
 
         this.controls = document.createElement('div');
         this.controls.className = 'connector-debug-controls';
@@ -89,7 +101,29 @@ export class ConnectorDebugPanel {
         this.linesTitle.className = 'connector-debug-lines-title';
         this.linesTitle.textContent = 'Lines';
 
+        this.linesAutoRow = document.createElement('div');
+        this.linesAutoRow.className = 'connector-debug-lines-auto';
+
+        this.linesPathsRow = document.createElement('div');
+        this.linesPathsRow.className = 'connector-debug-lines-paths';
+
         this.linesGroup.appendChild(this.linesTitle);
+        this.linesGroup.appendChild(this.linesAutoRow);
+        this.linesGroup.appendChild(this.linesPathsRow);
+
+        this.displayLabel = document.createElement('label');
+        this.displayLabel.className = 'connector-debug-toggle-switch connector-debug-line-display';
+        this.displayLabel.title = 'Show debug paths';
+
+        this.displayInput = document.createElement('input');
+        this.displayInput.type = 'checkbox';
+        this.displayInput.checked = !!displayEnabled;
+
+        this.displayText = document.createElement('span');
+        this.displayText.textContent = 'Display';
+
+        this.displayLabel.appendChild(this.displayInput);
+        this.displayLabel.appendChild(this.displayText);
 
         this.autoSelectLabel = document.createElement('label');
         this.autoSelectLabel.className = 'connector-debug-toggle-switch connector-debug-line-auto';
@@ -104,7 +138,8 @@ export class ConnectorDebugPanel {
 
         this.autoSelectLabel.appendChild(this.autoSelectInput);
         this.autoSelectLabel.appendChild(this.autoSelectText);
-        this.linesGroup.appendChild(this.autoSelectLabel);
+        this.linesAutoRow.appendChild(this.displayLabel);
+        this.linesAutoRow.appendChild(this.autoSelectLabel);
 
         const types = (Array.isArray(pathTypes) && pathTypes.length)
             ? pathTypes.slice()
@@ -131,7 +166,7 @@ export class ConnectorDebugPanel {
 
             label.appendChild(input);
             label.appendChild(text);
-            this.linesGroup.appendChild(label);
+            this.linesPathsRow.appendChild(label);
             this._lineInputs.set(type, input);
             this._lineLabels.set(type, label);
 
@@ -143,25 +178,20 @@ export class ConnectorDebugPanel {
             });
         }
 
-        this.copyButton = document.createElement('button');
-        this.copyButton.type = 'button';
-        this.copyButton.className = 'connector-debug-copy';
-        this.copyButton.textContent = 'Copy';
-
         this.controls.appendChild(this.holdRotateLabel);
         this.controls.appendChild(this.radiusLabel);
         this.controls.appendChild(this.linesGroup);
-        this.controls.appendChild(this.copyButton);
 
         this.readout = document.createElement('pre');
         this.readout.className = 'connector-debug-readout';
 
-        this.root.appendChild(this.title);
+        this.root.appendChild(this.header);
         this.root.appendChild(this.controls);
         this.root.appendChild(this.readout);
 
         this._onHoldRotateChange = onHoldRotateChange;
         this._onLineVisibilityChange = onLineVisibilityChange;
+        this._onDisplayChange = onDisplayChange;
         this._onAutoSelectChange = onAutoSelectChange;
         this._onRadiusChange = onRadiusChange;
         this._onCopy = onCopy;
@@ -183,6 +213,10 @@ export class ConnectorDebugPanel {
         this.autoSelectInput.addEventListener('change', () => {
             this._setAutoSelectState(this.autoSelectInput.checked);
             if (this._onAutoSelectChange) this._onAutoSelectChange(this.autoSelectInput.checked);
+        });
+
+        this.displayInput.addEventListener('change', () => {
+            if (this._onDisplayChange) this._onDisplayChange(this.displayInput.checked);
         });
 
         this.copyButton.addEventListener('click', () => {
