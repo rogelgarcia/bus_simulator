@@ -46,6 +46,12 @@ export class CityState {
 
         this._baseSpec = null;
         this.debugPanel = null;
+        this._highlightMesh = null;
+        this._highlightGeo = null;
+        this._highlightMat = null;
+        this._highlightDummy = null;
+        this._highlightY = 0.03;
+        this._highlightCapacity = 0;
 
         this._onKeyDown = (e) => this._handleKeyDown(e);
         this._onKeyUp = (e) => this._handleKeyUp(e);
@@ -65,7 +71,8 @@ export class CityState {
 
         this.debugPanel = new CityDebugPanel({
             roads: this._baseSpec.roads,
-            onReload: () => this._reloadCity()
+            onReload: () => this._reloadCity(),
+            onHover: (road) => this._updateHighlight(road)
         });
         this.debugPanel.show();
 
@@ -100,6 +107,7 @@ export class CityState {
         this.debugPanel?.destroy();
         this.debugPanel = null;
         this._baseSpec = null;
+        this._clearHighlight();
 
         this.city?.detach(this.engine);
         this.engine.clearScene();
@@ -164,6 +172,7 @@ export class CityState {
         this.engine.context.city = null;
         this.city = getSharedCity(this.engine, { ...this._cityOptions, mapSpec });
         this.city.attach(this.engine);
+        this._setupHighlight();
     }
 
     _reloadCity() {
@@ -186,5 +195,70 @@ export class CityState {
             roads
         };
         this._setCity(mapSpec);
+    }
+
+    _setupHighlight() {
+        this._clearHighlight();
+        const map = this.city?.map;
+        if (!map) return;
+        const tileSize = map.tileSize;
+        this._highlightGeo = new THREE.PlaneGeometry(tileSize * 0.92, tileSize * 0.92, 1, 1);
+        this._highlightGeo.rotateX(-Math.PI / 2);
+        this._highlightMat = new THREE.MeshBasicMaterial({ color: 0xfff3a3, transparent: true, opacity: 0.45, depthWrite: false });
+        const capacity = Math.max(map.width, map.height) + 1;
+        this._highlightMesh = new THREE.InstancedMesh(this._highlightGeo, this._highlightMat, capacity);
+        this._highlightMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        this._highlightMesh.count = 0;
+        this._highlightMesh.renderOrder = 5;
+        this._highlightMesh.frustumCulled = false;
+        this._highlightDummy = new THREE.Object3D();
+        this._highlightY = (this.city?.generatorConfig?.road?.surfaceY ?? 0.02) + 0.01;
+        this._highlightCapacity = capacity;
+        this.city.group.add(this._highlightMesh);
+    }
+
+    _clearHighlight() {
+        if (this._highlightMesh) this._highlightMesh.removeFromParent();
+        this._highlightMesh = null;
+        this._highlightGeo = null;
+        this._highlightMat = null;
+        this._highlightDummy = null;
+        this._highlightCapacity = 0;
+    }
+
+    _updateHighlight(road) {
+        const map = this.city?.map;
+        const mesh = this._highlightMesh;
+        const dummy = this._highlightDummy;
+        if (!map || !mesh || !dummy) return;
+        if (!road) {
+            mesh.count = 0;
+            mesh.instanceMatrix.needsUpdate = true;
+            return;
+        }
+        const a = road.a ?? [0, 0];
+        const b = road.b ?? [0, 0];
+        const x0 = a[0] | 0;
+        const y0 = a[1] | 0;
+        const x1 = b[0] | 0;
+        const y1 = b[1] | 0;
+        const dx = Math.sign(x1 - x0);
+        const dy = Math.sign(y1 - y0);
+        const steps = Math.abs(x1 - x0) + Math.abs(y1 - y0);
+        let k = 0;
+        const capacity = this._highlightCapacity || 0;
+        for (let i = 0; i <= steps && k < capacity; i++) {
+            const x = x0 + dx * i;
+            const y = y0 + dy * i;
+            if (!map.inBounds(x, y)) continue;
+            const p = map.tileToWorldCenter(x, y);
+            dummy.position.set(p.x, this._highlightY, p.z);
+            dummy.rotation.set(0, 0, 0);
+            dummy.scale.set(1, 1, 1);
+            dummy.updateMatrix();
+            mesh.setMatrixAt(k++, dummy.matrix);
+        }
+        mesh.count = k;
+        mesh.instanceMatrix.needsUpdate = true;
     }
 }

@@ -1,6 +1,6 @@
 // graphics/gui/CityDebugPanel.js
 export class CityDebugPanel {
-    constructor({ roads = [], onReload = null } = {}) {
+    constructor({ roads = [], onReload = null, onHover = null } = {}) {
         this.root = document.createElement('div');
         this.root.className = 'city-debug-panel hidden';
 
@@ -8,12 +8,27 @@ export class CityDebugPanel {
         this.title.className = 'city-debug-title';
         this.title.textContent = 'City Roads';
 
-        this.header = document.createElement('div');
-        this.header.className = 'city-debug-header';
-        this.header.textContent = 'index; lanesF; lanesB; type';
+        this.tableWrap = document.createElement('div');
+        this.tableWrap.className = 'city-debug-list';
 
-        this.list = document.createElement('div');
-        this.list.className = 'city-debug-list';
+        this.table = document.createElement('table');
+        this.table.className = 'city-debug-table';
+
+        this.thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+        const headers = ['on', 'index', 'lanesF', 'lanesB', 'type', 'xStart:yStart', 'xEnd:yEnd'];
+        headers.forEach((label) => {
+            const th = document.createElement('th');
+            th.textContent = label;
+            headerRow.appendChild(th);
+        });
+        this.thead.appendChild(headerRow);
+
+        this.tbody = document.createElement('tbody');
+
+        this.table.appendChild(this.thead);
+        this.table.appendChild(this.tbody);
+        this.tableWrap.appendChild(this.table);
 
         this.actions = document.createElement('div');
         this.actions.className = 'city-debug-actions';
@@ -25,12 +40,12 @@ export class CityDebugPanel {
 
         this.actions.appendChild(this.reloadBtn);
         this.root.appendChild(this.title);
-        this.root.appendChild(this.header);
-        this.root.appendChild(this.list);
+        this.root.appendChild(this.tableWrap);
         this.root.appendChild(this.actions);
 
         this._items = [];
         this._onReload = onReload;
+        this._onHover = onHover;
         this._handleReload = () => {
             if (this._onReload) this._onReload();
         };
@@ -41,25 +56,52 @@ export class CityDebugPanel {
 
     setRoads(roads = []) {
         this._items = [];
-        this.list.textContent = '';
+        this.tbody.textContent = '';
 
         roads.forEach((road, index) => {
-            const row = document.createElement('label');
-            row.className = 'city-debug-row';
+            const row = document.createElement('tr');
 
+            const checkboxCell = document.createElement('td');
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
             checkbox.checked = true;
+            checkboxCell.appendChild(checkbox);
 
-            const meta = document.createElement('span');
-            meta.className = 'city-debug-meta';
-            meta.textContent = `${index}; ${road.lanesF ?? 0}; ${road.lanesB ?? 0}; ${road.tag ?? 'road'}`;
+            const startX = road?.a?.[0] ?? 0;
+            const startY = road?.a?.[1] ?? 0;
+            const endX = road?.b?.[0] ?? 0;
+            const endY = road?.b?.[1] ?? 0;
 
-            row.appendChild(checkbox);
-            row.appendChild(meta);
-            this.list.appendChild(row);
+            const cells = [
+                checkboxCell,
+                String(index),
+                String(road.lanesF ?? 0),
+                String(road.lanesB ?? 0),
+                String(road.tag ?? 'road'),
+                `${startX}:${startY}`,
+                `${endX}:${endY}`
+            ];
 
-            this._items.push({ road, checkbox });
+            cells.forEach((cell) => {
+                if (cell instanceof HTMLElement) {
+                    row.appendChild(cell);
+                    return;
+                }
+                const td = document.createElement('td');
+                td.textContent = cell;
+                row.appendChild(td);
+            });
+
+            this.tbody.appendChild(row);
+
+            row.addEventListener('mouseenter', () => {
+                if (this._onHover) this._onHover(road, index);
+            });
+            row.addEventListener('mouseleave', () => {
+                if (this._onHover) this._onHover(null, index);
+            });
+
+            this._items.push({ road, checkbox, row });
         });
     }
 
@@ -69,6 +111,10 @@ export class CityDebugPanel {
 
     setOnReload(fn) {
         this._onReload = fn;
+    }
+
+    setOnHover(fn) {
+        this._onHover = fn;
     }
 
     attach(parent = document.body) {

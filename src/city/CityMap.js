@@ -202,45 +202,24 @@ export class CityMap {
     }
 
     static demoSpec(config) {
-        const w = config.map.width;
-        const h = config.map.height;
-        const cx = Math.floor(w / 2);
-        const cy = Math.floor(h / 2);
-        const minDim = Math.min(w, h);
-        const edgeInset = Math.max(2, Math.floor(minDim * 0.08));
-        const ringInset = Math.max(edgeInset + 2, Math.floor(minDim * 0.16));
-        const branchOffset = Math.max(3, Math.floor(minDim * 0.12));
-        const branchPad = Math.max(2, Math.floor(minDim * 0.08));
-        const branchRise = Math.max(2, Math.floor(minDim * 0.06));
-
-        const xOuter = CityMap._insetRange(edgeInset, 0, w - 1);
-        const zOuter = CityMap._insetRange(edgeInset, 0, h - 1);
-        const xInner = CityMap._insetRange(ringInset, 0, w - 1);
-        const zInner = CityMap._insetRange(ringInset, 0, h - 1);
-
-        const branchY = Math.min(zOuter.b - 1, cy + branchOffset);
-        const branchXStart = Math.min(xOuter.b - 1, xOuter.a + branchOffset);
-        const branchXEnd = Math.min(xOuter.b - 1, Math.max(branchXStart, cx - branchPad));
-        const branchYEnd = Math.max(branchY, zOuter.b - branchRise);
-
         return {
             version: 1,
             seed: config.seed,
-            width: w,
-            height: h,
+            width: config.map.width,
+            height: config.map.height,
             tileSize: config.map.tileSize,
             origin: config.map.origin,
             roads: [
-                { a: [xOuter.a, cy], b: [xOuter.b, cy], lanesF: 2, lanesB: 2, tag: 'arterial' },
-                { a: [cx, zOuter.a], b: [cx, zOuter.b], lanesF: 2, lanesB: 2, tag: 'arterial' },
+                { a: [2, 8], b: [13, 8], lanesF: 2, lanesB: 2, tag: 'arterial' },
+                { a: [8, 2], b: [8, 13], lanesF: 2, lanesB: 2, tag: 'arterial' },
 
-                { a: [xInner.a, zInner.a], b: [xInner.b, zInner.a], lanesF: 1, lanesB: 1, tag: 'collector' },
-                { a: [xInner.a, zInner.a], b: [xInner.a, zInner.b], lanesF: 1, lanesB: 1, tag: 'collector' },
-                { a: [xInner.a, zInner.b], b: [xInner.b, zInner.b], lanesF: 1, lanesB: 1, tag: 'collector' },
-                { a: [xInner.b, zInner.a], b: [xInner.b, zInner.b], lanesF: 1, lanesB: 1, tag: 'collector' },
+                { a: [4, 4], b: [11, 4], lanesF: 1, lanesB: 1, tag: 'collector' },
+                { a: [4, 4], b: [4, 11], lanesF: 1, lanesB: 1, tag: 'collector' },
+                { a: [4, 11], b: [11, 11], lanesF: 1, lanesB: 1, tag: 'collector' },
+                { a: [11, 4], b: [11, 11], lanesF: 1, lanesB: 1, tag: 'collector' },
 
-                { a: [branchXStart, branchY], b: [branchXEnd, branchY], lanesF: 2, lanesB: 0, tag: 'oneway-east' },
-                { a: [branchXEnd, branchY], b: [branchXEnd, branchYEnd], lanesF: 2, lanesB: 0, tag: 'oneway-north' }
+                { a: [5, 11], b: [6, 11], lanesF: 2, lanesB: 0, tag: 'oneway-east' },
+                { a: [6, 11], b: [6, 11], lanesF: 2, lanesB: 0, tag: 'oneway-north' }
             ]
         };
     }

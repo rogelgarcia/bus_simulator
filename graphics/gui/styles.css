@@ -209,7 +209,7 @@ body.splash-bg #game-canvas {
     border-radius: 12px;
     padding: 10px 12px;
     color: #f5f7fb;
-    width: min(360px, calc(100vw - 24px));
+    width: min(540px, calc(100vw - 24px));
     max-height: 80vh;
     display: flex;
     flex-direction: column;
@@ -235,26 +235,42 @@ body.splash-bg #game-canvas {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    overflow: auto;
+    overflow-x: auto;
+    overflow-y: auto;
     padding-right: 4px;
+    max-width: 100%;
 }
 
-.city-debug-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 12px;
-    cursor: pointer;
-    user-select: none;
-}
-
-.city-debug-row input {
-    cursor: pointer;
-}
-
-.city-debug-meta {
+.city-debug-table {
+    width: max-content;
+    min-width: 100%;
+    border-collapse: collapse;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     font-size: 11px;
+    white-space: nowrap;
+}
+
+.city-debug-table th,
+.city-debug-table td {
+    padding: 4px 6px;
+    text-align: left;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.city-debug-table th {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.7);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.city-debug-table td:first-child,
+.city-debug-table th:first-child {
+    width: 24px;
+}
+
+.city-debug-table input {
+    cursor: pointer;
 }
 
 .city-debug-actions {
