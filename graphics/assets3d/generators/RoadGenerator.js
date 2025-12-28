@@ -17,6 +17,7 @@ import { createSidewalkBuilder } from './internal_road/SidewalkBuilder.js';
 import { createCurbBuilder } from './internal_road/CurbBuilder.js';
 import { createMarkingsBuilder } from './internal_road/MarkingsBuilder.js';
 import { buildRoadGraph } from './internal_road/RoadGraph.js';
+import { solveArcStraightArcConnector, solveFilletConnector, leftNormal } from './internal_road/ArcConnector.js';
 
 const DIR_KEYS = ['N', 'E', 'S', 'W'];
 const OPP = { N: 'S', S: 'N', E: 'W', W: 'E' };
@@ -60,18 +61,67 @@ function wrapAngleLocal(a) {
     return a;
 }
 
-function arcSpan(start, end) {
-    const s = wrapAngleLocal(start);
-    const e = wrapAngleLocal(end);
-    let span = e - s;
-    if (span < 0) span += TWO_PI;
-    return { start: s, span };
+function curbArcSpan(arc) {
+    const start = wrapAngleLocal(arc.startAngle);
+    const dir = arc.turnDir === 'L' ? 1 : -1;
+    const end = wrapAngleLocal(start + dir * arc.deltaAngle);
+    if (arc.turnDir === 'L') return { startAng: start, spanAng: arc.deltaAngle };
+    return { startAng: end, spanAng: arc.deltaAngle };
 }
 
-function rotatePoint(x, z, ang) {
-    const c = Math.cos(ang);
-    const s = Math.sin(ang);
-    return { x: x * c - z * s, z: x * s + z * c };
+function addCurbConnector({ curb, key, color, connector, curveSegs, curbY, curbH, curbT }) {
+    if (!connector) return;
+    const eps = 1e-4;
+    const arc0 = connector.arc0;
+    const arc1 = connector.arc1;
+    const straight = connector.straight;
+    if (arc0 && arc0.deltaAngle > eps) {
+        const span = curbArcSpan(arc0);
+        curb.addArcSolidKey({
+            key,
+            centerX: arc0.center.x,
+            centerZ: arc0.center.y,
+            radiusCenter: arc0.radius,
+            startAng: span.startAng,
+            spanAng: span.spanAng,
+            curveSegs
+        });
+    }
+    if (straight?.start && straight?.end) {
+        const s = straight.end.clone().sub(straight.start);
+        const len = s.length();
+        if (len > eps) {
+            const mid = straight.start.clone().add(straight.end).multiplyScalar(0.5);
+            const dir = s.multiplyScalar(1 / len);
+            const ry = Math.atan2(dir.y, dir.x);
+            curb.addBox(mid.x, curbY, mid.y, len, curbH, curbT, ry, color);
+        }
+    }
+    if (arc1 && arc1.deltaAngle > eps) {
+        const span = curbArcSpan(arc1);
+        curb.addArcSolidKey({
+            key,
+            centerX: arc1.center.x,
+            centerZ: arc1.center.y,
+            radiusCenter: arc1.radius,
+            startAng: span.startAng,
+            spanAng: span.spanAng,
+            curveSegs
+        });
+    }
+}
+
+function chooseBestConnector(connectors) {
+    let best = null;
+    let bestScore = -Infinity;
+    for (const connector of connectors) {
+        const score = connector.score ?? -connector.totalLength;
+        if (score > bestScore) {
+            best = connector;
+            bestScore = score;
+        }
+    }
+    return best;
 }
 
 export function generateRoads({ map, config, materials } = {}) {
@@ -395,7 +445,11 @@ export function generateRoads({ map, config, materials } = {}) {
                     phi,
                     blendRadius,
                     blendX,
-                    blendZ
+                    blendZ,
+                    cap,
+                    deadDir,
+                    roadWidth,
+                    curbOffset: offset
                 };
             }
         }
@@ -600,30 +654,71 @@ export function generateRoads({ map, config, materials } = {}) {
                 const halfW = info.turn.halfW;
                 const outerR = rTurn + halfW + curbT * 0.5;
                 const innerR = rTurn - halfW - curbT * 0.5;
-                const cx = node.x + info.turn.signX * rTurn;
-                const cz = node.z + info.turn.signZ * rTurn;
-                const startAng = intersectionCornerStartAngle(info.turn.signX, info.turn.signZ);
+                const center = new THREE.Vector2(
+                    node.x + info.turn.signX * rTurn,
+                    node.z + info.turn.signZ * rTurn
+                );
+                const dirA = new THREE.Vector2(0, info.turn.signZ);
+                const dirB = new THREE.Vector2(info.turn.signX, 0);
                 const outerKey = CURB_COLOR_PALETTE.key('turn_outer', info.turn.orient);
-                curb.addArcSolidKey({
-                    key: outerKey,
-                    centerX: cx,
-                    centerZ: cz,
-                    radiusCenter: outerR,
-                    startAng,
-                    spanAng: Math.PI * 0.5,
-                    curveSegs: curbArcSegs * 2
+                const outerColor = CURB_COLOR_PALETTE.instanceColor('curb', 'turn_outer', info.turn.orient) ?? neutralCurbColor;
+                const outerConnector = solveFilletConnector({
+                    p0: new THREE.Vector2(center.x - info.turn.signX * outerR, center.y),
+                    dir0: dirA,
+                    p1: new THREE.Vector2(center.x, center.y - info.turn.signZ * outerR),
+                    dir1: dirB,
+                    R: outerR
+                }) ?? solveArcStraightArcConnector({
+                    p0: new THREE.Vector2(center.x - info.turn.signX * outerR, center.y),
+                    dir0: dirA,
+                    p1: new THREE.Vector2(center.x, center.y - info.turn.signZ * outerR),
+                    dir1: dirB,
+                    R: outerR,
+                    preferS: false,
+                    allowFallback: true
                 });
+                if (outerConnector) {
+                    addCurbConnector({
+                        curb,
+                        key: outerKey,
+                        color: outerColor,
+                        connector: outerConnector,
+                        curveSegs: curbArcSegs * 2,
+                        curbY,
+                        curbH,
+                        curbT
+                    });
+                }
                 if (innerR > 0.2) {
                     const innerKey = CURB_COLOR_PALETTE.key('turn_inner', info.turn.orient);
-                    curb.addArcSolidKey({
-                        key: innerKey,
-                        centerX: cx,
-                        centerZ: cz,
-                        radiusCenter: innerR,
-                        startAng,
-                        spanAng: Math.PI * 0.5,
-                        curveSegs: curbArcSegs * 2
+                    const innerColor = CURB_COLOR_PALETTE.instanceColor('curb', 'turn_inner', info.turn.orient) ?? neutralCurbColor;
+                    const innerConnector = solveFilletConnector({
+                        p0: new THREE.Vector2(center.x - info.turn.signX * innerR, center.y),
+                        dir0: dirA,
+                        p1: new THREE.Vector2(center.x, center.y - info.turn.signZ * innerR),
+                        dir1: dirB,
+                        R: innerR
+                    }) ?? solveArcStraightArcConnector({
+                        p0: new THREE.Vector2(center.x - info.turn.signX * innerR, center.y),
+                        dir0: dirA,
+                        p1: new THREE.Vector2(center.x, center.y - info.turn.signZ * innerR),
+                        dir1: dirB,
+                        R: innerR,
+                        preferS: false,
+                        allowFallback: true
                     });
+                    if (innerConnector) {
+                        addCurbConnector({
+                            curb,
+                            key: innerKey,
+                            color: innerColor,
+                            connector: innerConnector,
+                            curveSegs: curbArcSegs * 2,
+                            curbY,
+                            curbH,
+                            curbT
+                        });
+                    }
                 }
             }
             if (info.roundabout) {
@@ -640,49 +735,114 @@ export function generateRoads({ map, config, materials } = {}) {
                     spanAng: roundSpan,
                     curveSegs: curbArcSegs * 2
                 });
-                if (round.blendRadius > 0.05 && round.blendX > 0.01) {
-                    const addBlend = (sign) => {
-                        const localX = round.blendX;
-                        const localZ = sign * round.blendZ;
-                        const center = rotatePoint(localX, localZ, round.dirAngle);
-                        const angleLine = -sign * Math.PI * 0.5;
-                        const angleRound = Math.atan2(-localZ, -localX);
-                        const arcLineToRound = arcSpan(angleLine, angleRound);
-                        const arcRoundToLine = arcSpan(angleRound, angleLine);
-                        const lineStart = arcLineToRound.span <= arcRoundToLine.span;
-                        const baseArc = lineStart ? arcLineToRound : arcRoundToLine;
-                        const span = baseArc.span;
-                        const start = baseArc.start;
-                        curb.addArcSolidKey({
+                if (round.blendRadius > 0.05 && round.cap > 0.01) {
+                    const roadDir = new THREE.Vector2(Math.cos(round.dirAngle), Math.sin(round.dirAngle));
+                    const sideBase = leftNormal(roadDir).normalize();
+                    const basePoint = new THREE.Vector2(node.x, node.z).add(roadDir.clone().multiplyScalar(round.cap));
+                    const roundColor = CURB_COLOR_PALETTE.instanceColor('curb', 'turn_outer', 'NE') ?? neutralCurbColor;
+                    for (const side of [1, -1]) {
+                        const offset = sideBase.clone().multiplyScalar(round.curbOffset * side);
+                        const p0 = basePoint.clone().add(offset);
+                        const ang = round.dirAngle + round.phi * side;
+                        const p1 = new THREE.Vector2(
+                            node.x + Math.cos(ang) * round.curbRadius,
+                            node.z + Math.sin(ang) * round.curbRadius
+                        );
+                        const radial = new THREE.Vector2(Math.cos(ang), Math.sin(ang));
+                        const tangent = leftNormal(radial).normalize();
+                        const candidates = [];
+                        for (const d0 of [roadDir, roadDir.clone().multiplyScalar(-1)]) {
+                            for (const d1 of [tangent, tangent.clone().multiplyScalar(-1)]) {
+                                const cand = solveArcStraightArcConnector({
+                                    p0,
+                                    dir0: d0,
+                                    p1,
+                                    dir1: d1,
+                                    R: round.blendRadius,
+                                    preferS: true,
+                                    allowFallback: true
+                                });
+                                if (cand) candidates.push(cand);
+                            }
+                        }
+                        let connector = chooseBestConnector(candidates);
+                        if (!connector) {
+                            connector = solveFilletConnector({
+                                p0,
+                                dir0: roadDir,
+                                p1,
+                                dir1: tangent,
+                                R: round.blendRadius
+                            });
+                        }
+                        addCurbConnector({
+                            curb,
                             key: roundKey,
-                            centerX: node.x + center.x,
-                            centerZ: node.z + center.z,
-                            radiusCenter: round.blendRadius,
-                            startAng: wrapAngleLocal(start + round.dirAngle),
-                            spanAng: span,
-                            curveSegs: curbArcSegs * 2
+                            color: roundColor,
+                            connector,
+                            curveSegs: curbArcSegs * 2,
+                            curbY,
+                            curbH,
+                            curbT
                         });
-                    };
-                    addBlend(1);
-                    addBlend(-1);
+                    }
                 }
             }
             if (!info.isJunction) continue;
             const junctionType = info.junctionType;
             for (const [cornerKey, data] of Object.entries(info.corners)) {
-                const cx = node.x + data.signX * (data.x0 + data.rC);
-                const cz = node.z + data.signZ * (data.z0 + data.rC);
-                const startAng = intersectionCornerStartAngle(data.signX, data.signZ);
                 const curbKey = CURB_COLOR_PALETTE.key(junctionType, cornerKey);
-                curb.addArcSolidKey({
-                    key: curbKey,
-                    centerX: cx,
-                    centerZ: cz,
-                    radiusCenter: data.rC,
-                    startAng,
-                    spanAng: Math.PI * 0.5,
-                    curveSegs: curbArcSegs * 2
+                const cornerColor = CURB_COLOR_PALETTE.instanceColor('curb', junctionType, cornerKey) ?? neutralCurbColor;
+                const dirA = new THREE.Vector2(0, data.signZ);
+                const dirB = new THREE.Vector2(data.signX, 0);
+                const p0 = new THREE.Vector2(
+                    node.x + data.signX * data.x0,
+                    node.z + data.signZ * (data.z0 + data.rC)
+                );
+                const p1 = new THREE.Vector2(
+                    node.x + data.signX * (data.x0 + data.rC),
+                    node.z + data.signZ * data.z0
+                );
+                const connector = solveFilletConnector({
+                    p0,
+                    dir0: dirA,
+                    p1,
+                    dir1: dirB,
+                    R: data.rC
+                }) ?? solveArcStraightArcConnector({
+                    p0,
+                    dir0: dirA,
+                    p1,
+                    dir1: dirB,
+                    R: data.rC,
+                    preferS: false,
+                    allowFallback: true
                 });
+                if (connector) {
+                    addCurbConnector({
+                        curb,
+                        key: curbKey,
+                        color: cornerColor,
+                        connector,
+                        curveSegs: curbArcSegs * 2,
+                        curbY,
+                        curbH,
+                        curbT
+                    });
+                } else {
+                    const cx = node.x + data.signX * (data.x0 + data.rC);
+                    const cz = node.z + data.signZ * (data.z0 + data.rC);
+                    const startAng = intersectionCornerStartAngle(data.signX, data.signZ);
+                    curb.addArcSolidKey({
+                        key: curbKey,
+                        centerX: cx,
+                        centerZ: cz,
+                        radiusCenter: data.rC,
+                        startAng,
+                        spanAng: Math.PI * 0.5,
+                        curveSegs: curbArcSegs * 2
+                    });
+                }
             }
         }
     }

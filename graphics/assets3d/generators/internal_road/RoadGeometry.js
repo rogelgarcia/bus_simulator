@@ -105,3 +105,17 @@ export function applyQuadrantMirrorNonIndexed(geom, signX, signZ) {
 
     return g;
 }
+
+export function applyWorldSpaceUV_XZ(geometry, metersPerRepeat = 4.0) {
+    if (!geometry?.attributes?.position) return geometry;
+    const pos = geometry.attributes.position;
+    const scale = 1 / Math.max(0.0001, metersPerRepeat);
+    const uv = new Float32Array(pos.count * 2);
+    for (let i = 0; i < pos.count; i++) {
+        uv[i * 2] = pos.getX(i) * scale;
+        uv[i * 2 + 1] = pos.getZ(i) * scale;
+    }
+    geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geometry.attributes.uv.needsUpdate = true;
+    return geometry;
+}
