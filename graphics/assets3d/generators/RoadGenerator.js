@@ -40,6 +40,19 @@ function cornerFromHas(has) {
     return null;
 }
 
+function addDashedLine({ markings, axis, midX, midZ, len, offset, lineW, markY, dashLen, dashGap }) {
+    const step = dashLen + dashGap;
+    const start = -len * 0.5 + dashLen * 0.5;
+    const end = len * 0.5 - dashLen * 0.5 + 0.001;
+    for (let t = start; t <= end; t += step) {
+        if (axis === 'EW') {
+            markings.addWhite(midX + t, markY, midZ + offset, dashLen, lineW, 0);
+        } else {
+            markings.addWhite(midX + offset, markY, midZ + t, dashLen, lineW, Math.PI * 0.5);
+        }
+    }
+}
+
 export function generateRoads({ map, config, materials } = {}) {
     const group = new THREE.Group();
     group.name = 'Roads';
@@ -421,16 +434,65 @@ export function generateRoads({ map, config, materials } = {}) {
             const edgeOffset = half - markEdgeInset;
             if (edgeOffset <= markLineW * 0.6) continue;
             const twoWay = edge.lanesF > 0 && edge.lanesB > 0;
+            const dashLen = Math.max(1.2, laneWidth * 0.6);
+            const dashGap = Math.max(0.8, laneWidth * 0.35);
             if (edge.axis === 'EW') {
                 markings.addWhite(midX, markY, midZ + edgeOffset, len, markLineW, 0);
                 markings.addWhite(midX, markY, midZ - edgeOffset, len, markLineW, 0);
                 if (twoWay) markings.addYellow(midX, markY, midZ, len, markLineW, 0);
-                else markings.addWhite(midX, markY, midZ, len, markLineW, 0);
             } else {
                 markings.addWhite(midX + edgeOffset, markY, midZ, len, markLineW, Math.PI * 0.5);
                 markings.addWhite(midX - edgeOffset, markY, midZ, len, markLineW, Math.PI * 0.5);
                 if (twoWay) markings.addYellow(midX, markY, midZ, len, markLineW, Math.PI * 0.5);
-                else markings.addWhite(midX, markY, midZ, len, markLineW, Math.PI * 0.5);
+            }
+            if (twoWay) {
+                for (let i = 1; i < edge.lanesF; i++) {
+                    addDashedLine({
+                        markings,
+                        axis: edge.axis,
+                        midX,
+                        midZ,
+                        len,
+                        offset: laneWidth * i,
+                        lineW: markLineW,
+                        markY,
+                        dashLen,
+                        dashGap
+                    });
+                }
+                for (let i = 1; i < edge.lanesB; i++) {
+                    addDashedLine({
+                        markings,
+                        axis: edge.axis,
+                        midX,
+                        midZ,
+                        len,
+                        offset: -laneWidth * i,
+                        lineW: markLineW,
+                        markY,
+                        dashLen,
+                        dashGap
+                    });
+                }
+            } else {
+                const totalLanes = edge.lanesF + edge.lanesB;
+                if (totalLanes > 1) {
+                    for (let i = 1; i < totalLanes; i++) {
+                        const offset = (i - totalLanes * 0.5) * laneWidth;
+                        addDashedLine({
+                            markings,
+                            axis: edge.axis,
+                            midX,
+                            midZ,
+                            len,
+                            offset,
+                            lineW: markLineW,
+                            markY,
+                            dashLen,
+                            dashGap
+                        });
+                    }
+                }
             }
         }
     }

@@ -214,7 +214,7 @@ export const DEBUG_CORNERS = false;
 export const DEBUG_ASPHALT = true;
 export const DEBUG_HIDE_SIDEWALKS = true;
 export const DEBUG_HIDE_CURBS = false;
-export const DEBUG_DISABLE_MARKINGS_IN_ASPHALT_DEBUG = true;
+export const DEBUG_DISABLE_MARKINGS_IN_ASPHALT_DEBUG = false;
 
 export const CORNER_COLOR_PALETTE_KIND = DEBUG_CORNERS ? 'debug' : 'regular';
 export const CORNER_COLOR_PALETTE = createCornerPalette(CORNER_COLOR_PALETTE_KIND);
