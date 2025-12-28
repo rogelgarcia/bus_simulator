@@ -1,6 +1,9 @@
 // states/CityState.js
 import * as THREE from 'three';
 import { getSharedCity } from '../src/city/City.js';
+import { createCityConfig } from '../src/city/CityConfig.js';
+import { CityMap } from '../src/city/CityMap.js';
+import { CityDebugPanel } from '../graphics/gui/CityDebugPanel.js';
 
 function clamp(v, a, b) {
     return Math.max(a, Math.min(b, v));
@@ -34,6 +37,16 @@ export class CityState {
         this._zoomMin = 0;
         this._zoomMax = 0;
 
+        this._cityOptions = {
+            size: 400,
+            tileMeters: 2,
+            mapTileSize: 24,
+            seed: 'x'
+        };
+
+        this._baseSpec = null;
+        this.debugPanel = null;
+
         this._onKeyDown = (e) => this._handleKeyDown(e);
         this._onKeyUp = (e) => this._handleKeyUp(e);
 
@@ -47,17 +60,19 @@ export class CityState {
 
         this.engine.clearScene();
 
-        this.city = getSharedCity(this.engine, {
-            size: 400,
-            tileMeters: 2,
-            mapTileSize: 24,
-            seed: 'x'
-        });
+        const config = createCityConfig(this._cityOptions);
+        this._baseSpec = CityMap.demoSpec(config);
 
-        this.city.attach(this.engine);
+        this.debugPanel = new CityDebugPanel({
+            roads: this._baseSpec.roads,
+            onReload: () => this._reloadCity()
+        });
+        this.debugPanel.show();
+
+        this._setCity(this._baseSpec);
 
         const cam = this.engine.camera;
-        const size = this.city?.config?.size ?? 400;
+        const size = this.city?.config?.size ?? this._cityOptions.size;
         const fovRad = cam.fov * Math.PI / 180;
         const aspect = cam.aspect || 1;
         const hFov = 2 * Math.atan(Math.tan(fovRad * 0.5) * aspect);
@@ -81,6 +96,10 @@ export class CityState {
     exit() {
         window.removeEventListener('keydown', this._onKeyDown);
         window.removeEventListener('keyup', this._onKeyUp);
+
+        this.debugPanel?.destroy();
+        this.debugPanel = null;
+        this._baseSpec = null;
 
         this.city?.detach(this.engine);
         this.engine.clearScene();
@@ -137,5 +156,35 @@ export class CityState {
             e.preventDefault();
             this._keys[code] = false;
         }
+    }
+
+    _setCity(mapSpec) {
+        this.city?.detach(this.engine);
+        this.engine.clearScene();
+        this.engine.context.city = null;
+        this.city = getSharedCity(this.engine, { ...this._cityOptions, mapSpec });
+        this.city.attach(this.engine);
+    }
+
+    _reloadCity() {
+        if (!this._baseSpec || !this.debugPanel) return;
+        const selected = this.debugPanel.getSelectedRoads();
+        const roads = selected.map((road) => ({
+            a: [road.a[0], road.a[1]],
+            b: [road.b[0], road.b[1]],
+            lanesF: road.lanesF,
+            lanesB: road.lanesB,
+            tag: road.tag
+        }));
+        const mapSpec = {
+            version: this._baseSpec.version,
+            seed: this._baseSpec.seed,
+            width: this._baseSpec.width,
+            height: this._baseSpec.height,
+            tileSize: this._baseSpec.tileSize,
+            origin: this._baseSpec.origin,
+            roads
+        };
+        this._setCity(mapSpec);
     }
 }
