@@ -48,16 +48,16 @@ export class CityState {
         this.engine.clearScene();
 
         this.city = getSharedCity(this.engine, {
-            size: 800,
+            size: 400,
             tileMeters: 2,
-            mapTileSize: 16,
+            mapTileSize: 24,
             seed: 'x'
         });
 
         this.city.attach(this.engine);
 
         const cam = this.engine.camera;
-        const size = this.city?.config?.size ?? 800;
+        const size = this.city?.config?.size ?? 400;
         const fovRad = cam.fov * Math.PI / 180;
         const aspect = cam.aspect || 1;
         const hFov = 2 * Math.atan(Math.tan(fovRad * 0.5) * aspect);

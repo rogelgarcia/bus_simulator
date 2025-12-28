@@ -1,8 +1,8 @@
 // src/city/CityConfig.js
 export function createCityConfig({
-                                     size = 800,
+                                     size = 400,
                                      tileMeters = 2,
-                                     mapTileSize = 16,
+                                     mapTileSize = 24,
                                      seed = 'city-demo'
                                  } = {}) {
     const gridW = Math.max(1, Math.floor(size / mapTileSize));

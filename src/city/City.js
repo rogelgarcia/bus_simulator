@@ -12,9 +12,9 @@ import { createGeneratorConfig } from '../../graphics/assets3d/generators/Genera
 export class City {
     constructor(options = {}) {
         const {
-            size = 800,
+            size = 400,
             tileMeters = 2,
-            mapTileSize = 16,
+            mapTileSize = 24,
             seed = 'demo-001',
             mapSpec = null,
             generatorConfig = null

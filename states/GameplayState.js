@@ -97,9 +97,9 @@ export class GameplayState {
 
         // Setup city
         this.city = getSharedCity(this.engine, {
-            size: 800,
+            size: 400,
             tileMeters: 2,
-            mapTileSize: 16,
+            mapTileSize: 24,
             seed: 'x'
         });
         this.city.attach(this.engine);
