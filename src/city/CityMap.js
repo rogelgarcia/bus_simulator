@@ -2,13 +2,12 @@
 export const DIR = { N: 1, E: 2, S: 4, W: 8 };
 export const TILE = { EMPTY: 0, ROAD: 1 };
 
-// Axis / topology classification for rendering
 export const AXIS = {
     NONE: 0,
     EW: 1,
     NS: 2,
     INTERSECTION: 3,
-    CORNER: 4 // ✅ NEW: 90-degree turn (exactly two neighbors, not opposite)
+    CORNER: 4
 };
 
 function clampInt(v, lo, hi) {
@@ -16,7 +15,6 @@ function clampInt(v, lo, hi) {
 }
 
 function bitCount4(m) {
-    // DIR is {N:1,E:2,S:4,W:8} -> only 4 bits
     m = m & 0x0f;
     m = (m & 0x05) + ((m >> 1) & 0x05);
     m = (m & 0x03) + ((m >> 2) & 0x03);
@@ -24,8 +22,6 @@ function bitCount4(m) {
 }
 
 function isCornerConn(m) {
-    // Exactly two neighbors and they are perpendicular:
-    // NE, NW, SE, SW
     const ne = (m & (DIR.N | DIR.E)) === (DIR.N | DIR.E);
     const nw = (m & (DIR.N | DIR.W)) === (DIR.N | DIR.W);
     const se = (m & (DIR.S | DIR.E)) === (DIR.S | DIR.E);
@@ -152,7 +148,6 @@ export class CityMap {
 
                 const degree = bitCount4(m);
 
-                // ✅ NEW: Distinguish true intersections from simple L-corners
                 if (hasNS && hasEW) {
                     if (degree === 2 && isCornerConn(m)) this.axis[idx] = AXIS.CORNER;
                     else this.axis[idx] = AXIS.INTERSECTION;
@@ -169,7 +164,6 @@ export class CityMap {
                     continue;
                 }
 
-                // isolated tile: pick axis based on lanes
                 const ew = this.lanesE[idx] + this.lanesW[idx];
                 const ns = this.lanesN[idx] + this.lanesS[idx];
                 this.axis[idx] = ew >= ns ? AXIS.EW : AXIS.NS;
@@ -185,6 +179,13 @@ export class CityMap {
 
     getLanesAtIndex(idx) {
         return { n: this.lanesN[idx], e: this.lanesE[idx], s: this.lanesS[idx], w: this.lanesW[idx] };
+    }
+
+    static _insetRange(inset, min, max) {
+        const a = min + inset;
+        const b = max - inset;
+        if (b <= a) return { a: min, b: max };
+        return { a, b };
     }
 
     static fromSpec(spec = {}, config) {
@@ -205,6 +206,22 @@ export class CityMap {
         const h = config.map.height;
         const cx = Math.floor(w / 2);
         const cy = Math.floor(h / 2);
+        const minDim = Math.min(w, h);
+        const edgeInset = Math.max(2, Math.floor(minDim * 0.08));
+        const ringInset = Math.max(edgeInset + 2, Math.floor(minDim * 0.16));
+        const branchOffset = Math.max(3, Math.floor(minDim * 0.12));
+        const branchPad = Math.max(2, Math.floor(minDim * 0.08));
+        const branchRise = Math.max(2, Math.floor(minDim * 0.06));
+
+        const xOuter = CityMap._insetRange(edgeInset, 0, w - 1);
+        const zOuter = CityMap._insetRange(edgeInset, 0, h - 1);
+        const xInner = CityMap._insetRange(ringInset, 0, w - 1);
+        const zInner = CityMap._insetRange(ringInset, 0, h - 1);
+
+        const branchY = Math.min(zOuter.b - 1, cy + branchOffset);
+        const branchXStart = Math.min(xOuter.b - 1, xOuter.a + branchOffset);
+        const branchXEnd = Math.min(xOuter.b - 1, Math.max(branchXStart, cx - branchPad));
+        const branchYEnd = Math.max(branchY, zOuter.b - branchRise);
 
         return {
             version: 1,
@@ -214,16 +231,16 @@ export class CityMap {
             tileSize: config.map.tileSize,
             origin: config.map.origin,
             roads: [
-                { a: [0, cy], b: [w - 1, cy], lanesF: 2, lanesB: 2, tag: 'arterial' },
-                { a: [cx, 0], b: [cx, h - 1], lanesF: 2, lanesB: 2, tag: 'arterial' },
+                { a: [xOuter.a, cy], b: [xOuter.b, cy], lanesF: 2, lanesB: 2, tag: 'arterial' },
+                { a: [cx, zOuter.a], b: [cx, zOuter.b], lanesF: 2, lanesB: 2, tag: 'arterial' },
 
-                { a: [8, 8], b: [w - 9, 8], lanesF: 1, lanesB: 1, tag: 'collector' },
-                { a: [8, 8], b: [8, h - 9], lanesF: 1, lanesB: 1, tag: 'collector' },
-                { a: [8, h - 9], b: [w - 9, h - 9], lanesF: 1, lanesB: 1, tag: 'collector' },
-                { a: [w - 9, 8], b: [w - 9, h - 9], lanesF: 1, lanesB: 1, tag: 'collector' },
+                { a: [xInner.a, zInner.a], b: [xInner.b, zInner.a], lanesF: 1, lanesB: 1, tag: 'collector' },
+                { a: [xInner.a, zInner.a], b: [xInner.a, zInner.b], lanesF: 1, lanesB: 1, tag: 'collector' },
+                { a: [xInner.a, zInner.b], b: [xInner.b, zInner.b], lanesF: 1, lanesB: 1, tag: 'collector' },
+                { a: [xInner.b, zInner.a], b: [xInner.b, zInner.b], lanesF: 1, lanesB: 1, tag: 'collector' },
 
-                { a: [5, cy + 6], b: [cx - 4, cy + 6], lanesF: 2, lanesB: 0, tag: 'oneway-east' },
-                { a: [cx - 4, cy + 6], b: [cx - 4, h - 6], lanesF: 2, lanesB: 0, tag: 'oneway-north' }
+                { a: [branchXStart, branchY], b: [branchXEnd, branchY], lanesF: 2, lanesB: 0, tag: 'oneway-east' },
+                { a: [branchXEnd, branchY], b: [branchXEnd, branchYEnd], lanesF: 2, lanesB: 0, tag: 'oneway-north' }
             ]
         };
     }
