@@ -318,3 +318,197 @@ body.splash-bg #game-canvas {
         inset 0 1px 0 rgba(63, 212, 110, 0.9),
         inset 0 -1px 0 rgba(63, 212, 110, 0.9);
 }
+
+body.setup-bg {
+    background: #0b2a8f;
+}
+
+body.setup-bg::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.22;
+    background-image: linear-gradient(0deg, rgba(255,255,255,0.05) 1px, rgba(255,255,255,0.00) 1px);
+    background-size: 100% 3px;
+}
+
+body.setup-bg #game-canvas {
+    opacity: 0;
+    transition: opacity 200ms ease;
+}
+
+.setup-layer {
+    pointer-events: auto;
+    z-index: 3;
+}
+
+.setup-frame {
+    pointer-events: auto;
+    color: #f7fbff;
+    font-family: ui-serif, Georgia, "Times New Roman", Times, serif;
+    font-size: clamp(14px, 1.4vw, 18px);
+    line-height: 1.25;
+    letter-spacing: 0.02em;
+    width: min(92vw, 90ch);
+    height: min(80svh, 620px);
+    max-height: calc(100svh - 32px);
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    grid-template-rows: auto 1fr auto;
+    align-items: stretch;
+    box-sizing: border-box;
+}
+
+.setup-border {
+    white-space: pre;
+    font-weight: 700;
+    opacity: 0.95;
+    align-self: stretch;
+    justify-self: stretch;
+    text-align: center;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    letter-spacing: 0;
+    line-height: 1;
+}
+
+.setup-border-top,
+.setup-border-bottom {
+    grid-column: 1 / -1;
+    text-align: left;
+}
+
+.setup-border-left {
+    grid-column: 1 / 2;
+    grid-row: 2 / 3;
+}
+
+.setup-border-right {
+    grid-column: 3 / 4;
+    grid-row: 2 / 3;
+}
+
+.setup-panel {
+    grid-column: 2 / 3;
+    grid-row: 2 / 3;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    min-height: 0;
+    padding: 18px 24px;
+    box-sizing: border-box;
+}
+
+.setup-title {
+    text-align: center;
+    font-size: 1.2em;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    text-shadow: 0 0 18px rgba(255,255,255,0.28);
+}
+
+.setup-subtitle {
+    text-align: center;
+    font-size: 0.86em;
+    opacity: 0.78;
+}
+
+.setup-menu {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 20px;
+    align-content: start;
+    overflow: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding-right: 6px;
+}
+
+.setup-menu.two-col {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.setup-menu-back {
+    flex: 0 0 auto;
+    overflow: visible;
+    padding-right: 0;
+    margin-top: auto;
+    padding-top: 24px;
+}
+
+.setup-option-row {
+    display: grid;
+    grid-template-columns: 3ch 1fr;
+    column-gap: 18px;
+    align-items: center;
+    justify-items: stretch;
+    min-width: 0;
+}
+
+.setup-option-indicator {
+    display: inline-block;
+    width: 3ch;
+    text-align: center;
+    color: #ffffff;
+    opacity: 0.85;
+}
+
+.setup-option-row.is-selected .setup-option-indicator {
+    opacity: 1;
+}
+
+.setup-option {
+    background: transparent;
+    border: 2px solid rgba(255,255,255,0.9);
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    display: block;
+    padding: 10px 12px;
+    cursor: pointer;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.setup-option-box {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    padding: 8px 16px;
+    background: #153a9c;
+    color: inherit;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.setup-option:hover .setup-option-box {
+    background: #1c43b0;
+}
+
+.setup-option:focus-visible {
+    outline: none;
+}
+
+.setup-option.is-selected .setup-option-box {
+    background: #2f56c9;
+    color: #ffffff;
+}
+
+.setup-option-num {
+    font-weight: 700;
+    min-width: 4ch;
+}
+
+.setup-option-label {
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.setup-footer {
+    text-align: center;
+    font-size: 0.8em;
+    opacity: 0.72;
+}

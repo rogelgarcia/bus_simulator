@@ -8,15 +8,18 @@ export class WelcomeState {
 
         this.uiWelcome = document.getElementById('ui-welcome');
         this.uiSelect = document.getElementById('ui-select');
+        this.uiSetup = document.getElementById('ui-setup');
 
         this._onKeyDown = (e) => this._handleKeyDown(e);
         this._onPointerDown = () => this._start(); // optional click-to-start
     }
 
     enter() {
+        document.body.classList.remove('setup-bg');
         document.body.classList.add('splash-bg');
 
         if (this.uiSelect) this.uiSelect.classList.add('hidden');
+        if (this.uiSetup) this.uiSetup.classList.add('hidden');
         if (this.uiWelcome) this.uiWelcome.classList.remove('hidden');
 
         // keep scene clean behind splash
@@ -35,17 +38,8 @@ export class WelcomeState {
         this.sm.go('bus_select');
     }
 
-    _test() {
-        this.sm.go('test_mode');
-    }
-
-    _city() {
-        this.sm.go('city');
-    }
-
-    _gameplay() {
-        // Go directly to new GameplayState (for testing new architecture)
-        this.sm.go('game_mode');
+    _setup() {
+        this.sm.go('setup');
     }
 
     _handleKeyDown(e) {
@@ -54,15 +48,11 @@ export class WelcomeState {
 
         const isEnter = code === 'Enter' || key === 'Enter';
         const isSpace = code === 'Space' || key === ' ' || key === 'Spacebar';
-        const isT = code === 'KeyT' || key === 't' || key === 'T';
-        const isC = code === 'KeyC' || key === 'c' || key === 'C';
-        const isG = code === 'KeyG' || key === 'g' || key === 'G';
+        const isQ = code === 'KeyQ' || key === 'q' || key === 'Q';
 
-        if (isEnter || isSpace || isT || isC || isG) e.preventDefault();
+        if (isEnter || isSpace || isQ) e.preventDefault();
 
-        if (isG) return this._gameplay();
-        if (isC) return this._city();
-        if (isT) return this._test();
+        if (isQ) return this._setup();
         if (isEnter || isSpace) return this._start();
     }
 }
