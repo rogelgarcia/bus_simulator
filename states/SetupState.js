@@ -20,6 +20,7 @@ export class SetupState {
         this.options = [
             { key: '1', label: 'City Mode', state: 'city' },
             { key: '2', label: 'Test Mode', state: 'test_mode' },
+            { key: '3', label: 'Connector Debugger', state: 'connector_debugger' },
             { key: 'Q', label: 'Back', state: 'welcome' }
         ];
 

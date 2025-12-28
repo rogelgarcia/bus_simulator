@@ -8,6 +8,7 @@ import { BusSelectState } from '../states/BusSelectState.js';
 import { TestModeState } from '../states/TestModeState.js';
 import { CityState } from '../states/CityState.js';
 import { GameplayState } from '../states/GameplayState.js';
+import { ConnectorDebuggerState } from '../states/ConnectorDebuggerState.js';
 
 const canvas = document.getElementById('game-canvas');
 
@@ -20,6 +21,7 @@ sm.register('bus_select', new BusSelectState(engine, sm));
 sm.register('test_mode', new TestModeState(engine, sm));
 sm.register('city', new CityState(engine, sm));
 sm.register('game_mode', new GameplayState(engine, sm));
+sm.register('connector_debugger', new ConnectorDebuggerState(engine, sm));
 
 engine.setStateMachine(sm);
 engine.start();
