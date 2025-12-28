@@ -667,6 +667,105 @@ body.setup-bg #game-canvas {
     gap: 6px;
 }
 
+.connector-debug-info-wrap {
+    max-height: 48vh;
+    overflow: auto;
+    padding-right: 4px;
+}
+
+.connector-debug-info-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.connector-debug-section-title {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.7;
+    text-align: left;
+    vertical-align: top;
+    width: 90px;
+    padding: 2px 8px 8px 0;
+}
+
+.connector-debug-section-body {
+    padding: 2px 0 8px 0;
+    width: 100%;
+    max-width: 100%;
+}
+
+.connector-debug-subtable {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    max-width: 100%;
+}
+
+.connector-debug-subtable th,
+.connector-debug-subtable td {
+    box-sizing: border-box;
+}
+
+.connector-debug-poles-table {
+    table-layout: fixed;
+}
+
+.connector-debug-segments-table {
+    width: 320px;
+    max-width: 320px;
+    table-layout: fixed;
+}
+
+.connector-debug-segments-table .connector-debug-subhead-label {
+    width: 72px;
+}
+
+.connector-debug-meta-table {
+    table-layout: fixed;
+}
+
+.connector-debug-subhead {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    opacity: 0.7;
+    text-align: left;
+    padding: 2px 6px 2px 0;
+    vertical-align: top;
+}
+
+.connector-debug-subhead-label {
+    width: 72px;
+}
+
+.connector-debug-subhead-empty {
+    opacity: 0;
+}
+
+.connector-debug-cell-value {
+    font-size: 11px;
+    line-height: 1.35;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    padding: 2px 6px 2px 0;
+    vertical-align: top;
+    white-space: pre-line;
+}
+
+.connector-debug-segment-type {
+    text-align: center;
+}
+
+.connector-debug-segments-table td.connector-debug-cell-value {
+    text-align: right;
+    padding-left: 24px;
+}
+
+.connector-debug-segments-table td.connector-debug-segment-type {
+    text-align: center;
+}
+
 .connector-debug-line-toggle {
     display: inline-flex;
     align-items: center;
@@ -753,15 +852,4 @@ body.setup-bg #game-canvas {
 
 .connector-debug-copy:hover {
     background: rgba(59, 201, 255, 0.26);
-}
-
-.connector-debug-readout {
-    margin: 0;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-    font-size: 11px;
-    line-height: 1.4;
-    white-space: pre-wrap;
-    max-height: 48vh;
-    overflow: auto;
-    padding-right: 4px;
 }

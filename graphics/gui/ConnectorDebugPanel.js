@@ -182,12 +182,118 @@ export class ConnectorDebugPanel {
         this.controls.appendChild(this.radiusLabel);
         this.controls.appendChild(this.linesGroup);
 
-        this.readout = document.createElement('pre');
-        this.readout.className = 'connector-debug-readout';
+        const makeCell = (tag, className, text = '') => {
+            const cell = document.createElement(tag);
+            cell.className = className;
+            if (text) cell.textContent = text;
+            return cell;
+        };
+
+        this.infoTable = document.createElement('table');
+        this.infoTable.className = 'connector-debug-info-table';
+        this.infoBody = document.createElement('tbody');
+        this.infoTable.appendChild(this.infoBody);
+        this.infoWrap = document.createElement('div');
+        this.infoWrap.className = 'connector-debug-info-wrap';
+        this.infoWrap.appendChild(this.infoTable);
+
+        const addSectionRow = (label, body) => {
+            const row = document.createElement('tr');
+            const titleCell = makeCell('th', 'connector-debug-section-title', label);
+            const bodyCell = makeCell('td', 'connector-debug-section-body');
+            bodyCell.appendChild(body);
+            row.appendChild(titleCell);
+            row.appendChild(bodyCell);
+            this.infoBody.appendChild(row);
+        };
+
+        this.polesTable = document.createElement('table');
+        this.polesTable.className = 'connector-debug-subtable connector-debug-poles-table';
+        const polesBody = document.createElement('tbody');
+        this.polesTable.appendChild(polesBody);
+        const polesHeader = document.createElement('tr');
+        polesHeader.appendChild(makeCell('th', 'connector-debug-subhead connector-debug-subhead-label', ''));
+        polesHeader.appendChild(makeCell('th', 'connector-debug-subhead', 'Pole 0'));
+        polesHeader.appendChild(makeCell('th', 'connector-debug-subhead', 'Pole 1'));
+        polesBody.appendChild(polesHeader);
+        const polePosRow = document.createElement('tr');
+        polePosRow.appendChild(makeCell('th', 'connector-debug-subhead connector-debug-subhead-label', 'Pos'));
+        this.pole0PosCell = makeCell('td', 'connector-debug-cell-value');
+        this.pole1PosCell = makeCell('td', 'connector-debug-cell-value');
+        polePosRow.appendChild(this.pole0PosCell);
+        polePosRow.appendChild(this.pole1PosCell);
+        polesBody.appendChild(polePosRow);
+        const poleDirRow = document.createElement('tr');
+        poleDirRow.appendChild(makeCell('th', 'connector-debug-subhead connector-debug-subhead-label', 'Dir'));
+        this.pole0DirCell = makeCell('td', 'connector-debug-cell-value');
+        this.pole1DirCell = makeCell('td', 'connector-debug-cell-value');
+        poleDirRow.appendChild(this.pole0DirCell);
+        poleDirRow.appendChild(this.pole1DirCell);
+        polesBody.appendChild(poleDirRow);
+
+        this.segmentsTable = document.createElement('table');
+        this.segmentsTable.className = 'connector-debug-subtable connector-debug-segments-table';
+        const segmentsBody = document.createElement('tbody');
+        this.segmentsTable.appendChild(segmentsBody);
+        const makeSegmentRow = (label, targetCells) => {
+            const row = document.createElement('tr');
+            row.appendChild(makeCell('th', 'connector-debug-subhead connector-debug-subhead-label', label));
+            for (const cell of targetCells) row.appendChild(cell);
+            segmentsBody.appendChild(row);
+        };
+        this.segmentTypeCells = [
+            makeCell('td', 'connector-debug-cell-value connector-debug-segment-type'),
+            makeCell('td', 'connector-debug-cell-value connector-debug-segment-type'),
+            makeCell('td', 'connector-debug-cell-value connector-debug-segment-type')
+        ];
+        this.segmentLengthCells = [
+            makeCell('td', 'connector-debug-cell-value'),
+            makeCell('td', 'connector-debug-cell-value'),
+            makeCell('td', 'connector-debug-cell-value')
+        ];
+        this.segmentAngleCells = [
+            makeCell('td', 'connector-debug-cell-value'),
+            makeCell('td', 'connector-debug-cell-value'),
+            makeCell('td', 'connector-debug-cell-value')
+        ];
+        const segmentTypeRow = document.createElement('tr');
+        segmentTypeRow.appendChild(makeCell('th', 'connector-debug-subhead connector-debug-subhead-label', ''));
+        for (const cell of this.segmentTypeCells) segmentTypeRow.appendChild(cell);
+        segmentsBody.appendChild(segmentTypeRow);
+        makeSegmentRow('Len', this.segmentLengthCells);
+        makeSegmentRow('dAng', this.segmentAngleCells);
+
+        this.metaTable = document.createElement('table');
+        this.metaTable.className = 'connector-debug-subtable connector-debug-meta-table';
+        const metaBody = document.createElement('tbody');
+        this.metaTable.appendChild(metaBody);
+        this.metaValues = {};
+        const addMetaRowPair = (labelA, keyA, labelB = '', keyB = null) => {
+            const row = document.createElement('tr');
+            row.appendChild(makeCell('th', 'connector-debug-subhead connector-debug-subhead-label', labelA));
+            const valueA = makeCell('td', 'connector-debug-cell-value');
+            row.appendChild(valueA);
+            this.metaValues[keyA] = valueA;
+            const labelCellB = makeCell('th', 'connector-debug-subhead connector-debug-subhead-label', labelB);
+            if (!labelB) labelCellB.classList.add('connector-debug-subhead-empty');
+            row.appendChild(labelCellB);
+            const valueB = makeCell('td', 'connector-debug-cell-value');
+            if (keyB) this.metaValues[keyB] = valueB;
+            row.appendChild(valueB);
+            metaBody.appendChild(row);
+        };
+        addMetaRowPair('Type', 'type', 'Pos err', 'endPosError');
+        addMetaRowPair('Radius', 'radius', 'Dir err', 'endDirError');
+        addMetaRowPair('Length', 'totalLength', 'Feasible', 'feasible');
+        addMetaRowPair('', 'errorSpacer', 'Error', 'error');
+
+        addSectionRow('Poles', this.polesTable);
+        addSectionRow('Segments', this.segmentsTable);
+        addSectionRow('Info', this.metaTable);
 
         this.root.appendChild(this.header);
         this.root.appendChild(this.controls);
-        this.root.appendChild(this.readout);
+        this.root.appendChild(this.infoWrap);
 
         this._onHoldRotateChange = onHoldRotateChange;
         this._onLineVisibilityChange = onLineVisibilityChange;
@@ -229,23 +335,49 @@ export class ConnectorDebugPanel {
         const metrics = data.metrics ?? {};
         const selectedType = (data.type && data.type !== 'none') ? data.type : null;
         this.setSelectedType(selectedType);
-        const lines = [
-            `p0: ${fmtVec2(data.p0)}`,
-            `dir0: ${fmtVec2(data.dir0)}`,
-            `p1: ${fmtVec2(data.p1)}`,
-            `dir1: ${fmtVec2(data.dir1)}`,
-            `type: ${data.type ?? 'none'}`,
-            `R: ${fmtNum(data.radius)}`,
-            `segments: ${segments.length ? segments.map(fmtSegment).join(' | ') : 'n/a'}`,
-            `total length: ${fmtNum(data.totalLength)}`,
-            `end pos error: ${fmtNum(metrics.endPoseErrorPos)}`,
-            `end dir error: ${fmtNum(metrics.endPoseErrorDir)}`,
-            `tangency dot0: ${fmtNum(metrics.tangencyDotAtJoin0)}`,
-            `tangency dot1: ${fmtNum(metrics.tangencyDotAtJoin1)}`,
-            `feasible: ${data.feasible ? 'true' : 'false'}`,
-            `error: ${data.error ?? 'none'}`
-        ];
-        this.readout.textContent = lines.join('\n');
+        if (this.pole0PosCell) this.pole0PosCell.textContent = fmtVec2(data.p0);
+        if (this.pole1PosCell) this.pole1PosCell.textContent = fmtVec2(data.p1);
+        if (this.pole0DirCell) this.pole0DirCell.textContent = fmtVec2(data.dir0);
+        if (this.pole1DirCell) this.pole1DirCell.textContent = fmtVec2(data.dir1);
+
+        const typeChars = (selectedType && selectedType.length === 3)
+            ? selectedType.split('')
+            : segments.map((seg) => {
+                if (!seg) return '?';
+                if (seg.type === 'STRAIGHT') return 'S';
+                if (seg.type === 'ARC') return seg.turnDir ?? '?';
+                return '?';
+            });
+        for (let i = 0; i < this.segmentTypeCells.length; i++) {
+            this.segmentTypeCells[i].textContent = typeChars[i] ?? 'n/a';
+        }
+        for (let i = 0; i < this.segmentLengthCells.length; i++) {
+            const seg = segments[i];
+            this.segmentLengthCells[i].textContent = seg ? fmtNum(seg.length) : 'n/a';
+        }
+        for (let i = 0; i < this.segmentAngleCells.length; i++) {
+            const seg = segments[i];
+            if (!seg) {
+                this.segmentAngleCells[i].textContent = 'n/a';
+                continue;
+            }
+            if (seg.type === 'ARC') {
+                this.segmentAngleCells[i].textContent = fmtNum(radToDeg(seg.deltaAngle));
+            } else {
+                this.segmentAngleCells[i].textContent = '-';
+            }
+        }
+
+        if (this.metaValues) {
+            this.metaValues.type.textContent = data.type ?? 'none';
+            this.metaValues.radius.textContent = fmtNum(data.radius);
+            this.metaValues.totalLength.textContent = fmtNum(data.totalLength);
+            this.metaValues.endPosError.textContent = fmtNum(metrics.endPoseErrorPos);
+            this.metaValues.endDirError.textContent = fmtNum(metrics.endPoseErrorDir);
+            this.metaValues.feasible.textContent = data.feasible ? 'true' : 'false';
+            this.metaValues.error.textContent = data.error ?? 'none';
+            if (this.metaValues.errorSpacer) this.metaValues.errorSpacer.textContent = '';
+        }
     }
 
     setLineVisibility(visibility = {}) {
