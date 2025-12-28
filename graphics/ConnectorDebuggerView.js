@@ -4,7 +4,8 @@ import { City } from '../src/city/City.js';
 import { createCityConfig } from '../src/city/CityConfig.js';
 import { getCityMaterials } from './assets3d/textures/CityMaterials.js';
 import { createCurbBuilder } from './assets3d/generators/internal_road/CurbBuilder.js';
-import { sampleConnector, leftNormal, arcDelta, circleTangents, travelTangent } from './assets3d/generators/internal_road/ArcConnector.js';
+import { sampleConnector } from './assets3d/generators/internal_road/ArcConnector.js';
+import { solveConnectorPath, CONNECTOR_PATH_TYPES } from '../src/geometry/ConnectorPathSolver.js';
 import { CURB_COLOR_PALETTE } from './assets3d/generators/GeneratorParams.js';
 import { ConnectorDebugPanel } from './gui/ConnectorDebugPanel.js';
 import { Line2 } from 'three/addons/lines/Line2.js';
@@ -12,8 +13,7 @@ import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 
 const TAU = Math.PI * 2;
-const EPS = 1e-8;
-const CANDIDATE_TYPES = ['LSL', 'RSR', 'LSR', 'RSL'];
+const CANDIDATE_TYPES = CONNECTOR_PATH_TYPES;
 
 function clamp(v, a, b) {
     return Math.max(a, Math.min(b, v));
@@ -31,15 +31,6 @@ function curbArcSpan(arc) {
     const end = wrapAngleLocal(start + dir * arc.deltaAngle);
     if (arc.turnDir === 'L') return { startAng: start, spanAng: arc.deltaAngle };
     return { startAng: end, spanAng: arc.deltaAngle };
-}
-
-function pointSegDistSq(p, a, b) {
-    const ab = b.clone().sub(a);
-    const abLenSq = ab.lengthSq();
-    if (abLenSq < EPS) return p.distanceToSquared(a);
-    const t = Math.max(0, Math.min(1, p.clone().sub(a).dot(ab) / abLenSq));
-    const proj = a.clone().add(ab.multiplyScalar(t));
-    return p.distanceToSquared(proj);
 }
 
 function createDebugCitySpec(config) {
@@ -134,15 +125,12 @@ export class ConnectorDebuggerView {
         this._arrowLines = [];
         this._arrowMaterials = [];
         this._arrowConeGeo = null;
-        this._lineVisibility = {
-            LSL: true,
-            RSR: true,
-            LSR: true,
-            RSL: true
-        };
+        this._candidateTypes = CANDIDATE_TYPES.slice();
+        this._lineVisibility = {};
+        for (const type of this._candidateTypes) this._lineVisibility[type] = true;
         this._connectorMesh = null;
         this._connector = null;
-        this._candidatesByType = [];
+        this._minStraight = 0.05;
         this._enableConnectorMesh = false;
         this._lastPayload = null;
         this._connectorBoxGeo = null;
@@ -355,7 +343,7 @@ export class ConnectorDebuggerView {
         this.group.add(this._line);
 
         const candidateLineWidth = Math.max(1, lineWidth * 0.35);
-        const candidateCount = 4;
+        const candidateCount = this._candidateTypes.length;
         for (let i = 0; i < candidateCount; i++) {
             const geo = new LineGeometry();
             geo.setPositions([0, this._lineY, 0, 0, this._lineY, 0]);
@@ -435,6 +423,7 @@ export class ConnectorDebuggerView {
             radius: this._radius,
             holdRotate: this._rotationModeHold,
             lineVisibility: { ...this._lineVisibility },
+            pathTypes: this._candidateTypes.slice(),
             onHoldRotateChange: (holdRotate) => {
                 this._rotationModeHold = !!holdRotate;
                 this._markInteraction();
@@ -610,153 +599,6 @@ export class ConnectorDebuggerView {
         this._isRotating = this._rotationModeHold && this._hoveredCurb && dir !== 0;
     }
 
-    _buildCandidatesForRadius({ p0, dir0, p1, dir1, R, preferS, minStraight }) {
-        const d0 = dir0.clone().normalize();
-        const d1 = dir1.clone().normalize();
-        if (d0.lengthSq() < EPS || d1.lengthSq() < EPS || !(R > EPS)) return [];
-        const n0 = leftNormal(d0);
-        const n1 = leftNormal(d1);
-        const types = preferS ? ['LSR', 'RSL', 'LSL', 'RSR'] : ['LSL', 'RSR', 'LSR', 'RSL'];
-        const candidates = [];
-        for (const type of types) {
-            const turn0 = type[0];
-            const turn1 = type[2];
-            const c0 = p0.clone().add(n0.clone().multiplyScalar(turn0 === 'L' ? R : -R));
-            const c1 = p1.clone().add(n1.clone().multiplyScalar(turn1 === 'L' ? R : -R));
-            const internal = turn0 !== turn1;
-            const sols = internal ? circleTangents(c0, R, c1, -R) : circleTangents(c0, R, c1, R);
-            if (!sols.length) continue;
-            for (const { t0, t1 } of sols) {
-                const s = t1.clone().sub(t0);
-                const lenS = s.length();
-                if (!Number.isFinite(lenS) || lenS < EPS) continue;
-                const sdir = s.clone().multiplyScalar(1 / lenS);
-                const tan0 = travelTangent(c0, t0, turn0);
-                const tan1 = travelTangent(c1, t1, turn1);
-                const dot0 = tan0.dot(sdir);
-                const dot1 = tan1.dot(sdir);
-                if (dot0 < 0.1 || dot1 < 0.1) continue;
-                const a0s = Math.atan2(p0.y - c0.y, p0.x - c0.x);
-                const a0e = Math.atan2(t0.y - c0.y, t0.x - c0.x);
-                const a1s = Math.atan2(t1.y - c1.y, t1.x - c1.x);
-                const a1e = Math.atan2(p1.y - c1.y, p1.x - c1.x);
-                const da0 = arcDelta(a0s, a0e, turn0);
-                const da1 = arcDelta(a1s, a1e, turn1);
-                const totalLength = da0 * R + lenS + da1 * R;
-                const selfIntersecting = (pointSegDistSq(c0, t0, t1) < (R * R * 0.999))
-                    || (pointSegDistSq(c1, t0, t1) < (R * R * 0.999));
-                let score = -totalLength + (dot0 + dot1) * 0.25;
-                if (preferS && internal) score += 0.5;
-                if (minStraight > 0 && lenS < minStraight) score -= (minStraight - lenS) / minStraight;
-                if (selfIntersecting) score -= 1.0;
-                candidates.push({
-                    type,
-                    R,
-                    arc0: {
-                        center: c0.clone(),
-                        radius: R,
-                        startAngle: a0s,
-                        deltaAngle: da0,
-                        turnDir: turn0,
-                        startPoint: p0.clone(),
-                        endPoint: t0.clone()
-                    },
-                    straight: {
-                        start: t0.clone(),
-                        end: t1.clone(),
-                        length: lenS,
-                        dir: sdir.clone()
-                    },
-                    arc1: {
-                        center: c1.clone(),
-                        radius: R,
-                        startAngle: a1s,
-                        deltaAngle: da1,
-                        turnDir: turn1,
-                        startPoint: t1.clone(),
-                        endPoint: p1.clone()
-                    },
-                    totalLength,
-                    score,
-                    quality: {
-                        tangentDot0: dot0,
-                        tangentDot1: dot1,
-                        straightLength: lenS,
-                        selfIntersecting
-                    }
-                });
-            }
-        }
-        return candidates;
-    }
-
-    _generateConnectorCandidates({ p0, dir0, p1, dir1, R, preferS, allowFallback, minStraight }) {
-        const radii = [R];
-        if (allowFallback && Number.isFinite(R)) {
-            radii.push(R * 0.85, R * 0.7, R * 0.55);
-        }
-        const candidates = [];
-        for (const r of radii) {
-            const batch = this._buildCandidatesForRadius({ p0, dir0, p1, dir1, R: r, preferS, minStraight });
-            for (const cand of batch) candidates.push(cand);
-        }
-        return candidates;
-    }
-
-    _pickBestCandidate(candidates, p0, p1, dir0, dir1) {
-        if (!candidates.length) return null;
-        const toB = p1.clone().sub(p0);
-        const toA = p0.clone().sub(p1);
-        const cross0 = dir0.x * toB.y - dir0.y * toB.x;
-        const cross1 = dir1.x * toA.y - dir1.y * toA.x;
-        const exp0 = Math.abs(cross0) < 1e-6 ? null : (cross0 > 0 ? 'L' : 'R');
-        const exp1 = Math.abs(cross1) < 1e-6 ? null : (cross1 > 0 ? 'L' : 'R');
-        const matches0 = [];
-        const matches1 = [];
-        const matchesBoth = [];
-        for (const cand of candidates) {
-            const m0 = !exp0 || cand.arc0?.turnDir === exp0;
-            const m1 = !exp1 || cand.arc1?.turnDir === exp1;
-            if (m0 && m1) matchesBoth.push(cand);
-            else if (m0) matches0.push(cand);
-            else if (m1) matches1.push(cand);
-        }
-        let pool = null;
-        if (matchesBoth.length) {
-            pool = matchesBoth;
-        } else {
-            const abs0 = Math.abs(cross0);
-            const abs1 = Math.abs(cross1);
-            const preferEnd1 = abs1 >= abs0 - 1e-6;
-            if (preferEnd1 && matches1.length) pool = matches1;
-            else if (!preferEnd1 && matches0.length) pool = matches0;
-            else if (matches1.length) pool = matches1;
-            else if (matches0.length) pool = matches0;
-        }
-        const list = pool ?? candidates;
-        let best = null;
-        let bestScore = -Infinity;
-        for (const cand of list) {
-            const score = cand.score ?? -cand.totalLength;
-            if (score > bestScore) {
-                bestScore = score;
-                best = cand;
-            }
-        }
-        return best;
-    }
-
-    _pickBestByType(candidates) {
-        const byType = new Map();
-        for (const cand of candidates) {
-            const score = cand.score ?? -cand.totalLength;
-            const current = byType.get(cand.type);
-            const currentScore = current ? (current.score ?? -current.totalLength) : -Infinity;
-            if (!current || score > currentScore) byType.set(cand.type, cand);
-        }
-        return CANDIDATE_TYPES.map((type) => byType.get(type) ?? null);
-    }
-
     _createMarkerTexture(size, colors) {
         const canvas = document.createElement('canvas');
         canvas.width = size;
@@ -833,36 +675,27 @@ export class ConnectorDebuggerView {
         const signB = -endSignB;
         const dir0 = axisA.clone().multiplyScalar(signA);
         const dir1 = axisB.clone().multiplyScalar(signB);
-        const candidates = this._generateConnectorCandidates({
-            p0,
-            dir0,
-            p1,
-            dir1,
-            R: this._radius,
-            preferS: true,
+        const solver = solveConnectorPath({
+            start: { position: p0, direction: dir0 },
+            end: { position: p1, direction: dir1 },
+            radius: this._radius,
             allowFallback: false,
-            minStraight: 0.05
+            minStraight: this._minStraight,
+            preferS: true,
+            includeCandidates: true
         });
-        const connector = this._pickBestCandidate(candidates, p0, p1, dir0, dir1);
-        const candidatesByType = this._pickBestByType(candidates);
-        if (connector) {
-            return {
-                valid: true,
-                error: null,
-                connector,
-                candidatesByType,
-                p0,
-                p1,
-                dir0,
-                dir1,
-                dirSigns: [signA, signB]
-            };
+        if (Array.isArray(solver.candidateTypes) && solver.candidateTypes.length === this._candidateTypes.length) {
+            this._candidateTypes = solver.candidateTypes.slice();
+        }
+        for (const type of this._candidateTypes) {
+            if (!(type in this._lineVisibility)) this._lineVisibility[type] = true;
         }
         return {
-            valid: false,
-            error: 'no-solution',
-            connector: null,
-            candidatesByType: [],
+            valid: solver.ok,
+            error: solver.ok ? null : (solver.failure?.code ?? 'no-solution'),
+            connector: solver,
+            candidatesByType: solver.candidatesByType ?? [],
+            candidateTypes: this._candidateTypes,
             p0,
             p1,
             dir0,
@@ -877,7 +710,6 @@ export class ConnectorDebuggerView {
         const candidatesByType = inputs.candidatesByType ?? [];
         const error = inputs.error ?? null;
         this._connector = connector;
-        this._candidatesByType = candidatesByType;
         this._updateTurnCircles(inputs, connector);
         this._updateArrows(inputs);
         const sample = sampleConnector(connector, this._sampleStep);
@@ -887,16 +719,22 @@ export class ConnectorDebuggerView {
         }
         if (connector && points.length < 2) {
             const fallback = [];
-            if (connector.arc0?.startPoint) fallback.push(connector.arc0.startPoint.clone());
+            const segments = connector.segments ?? [];
+            const startPoint = segments[0]?.startPoint;
+            const endPoint = segments[segments.length - 1]?.endPoint;
+            if (startPoint) fallback.push(startPoint.clone());
             else if (inputs.p0) fallback.push(inputs.p0.clone());
-            if (connector.arc1?.endPoint) fallback.push(connector.arc1.endPoint.clone());
+            if (endPoint) fallback.push(endPoint.clone());
             else if (inputs.p1) fallback.push(inputs.p1.clone());
             points = fallback.filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
         }
         if (connector && points.length >= 2) {
-            if (connector.arc0?.startPoint) points[0] = connector.arc0.startPoint.clone();
+            const segments = connector.segments ?? [];
+            const startPoint = segments[0]?.startPoint;
+            const endPoint = segments[segments.length - 1]?.endPoint;
+            if (startPoint) points[0] = startPoint.clone();
             else if (inputs.p0) points[0] = inputs.p0.clone();
-            if (connector.arc1?.endPoint) points[points.length - 1] = connector.arc1.endPoint.clone();
+            if (endPoint) points[points.length - 1] = endPoint.clone();
             else if (inputs.p1) points[points.length - 1] = inputs.p1.clone();
         }
         const typeVisible = connector?.type ? this._lineVisibility[connector.type] !== false : true;
@@ -904,7 +742,7 @@ export class ConnectorDebuggerView {
         this._updateCandidateLines(inputs, connector, candidatesByType);
         const data = this._buildDebugData(inputs, connector, error);
         this.panel?.setData(data);
-        this._lastPayload = this._buildPayload(inputs, connector, data, error);
+        this._lastPayload = this._buildPayload(inputs, connector);
     }
 
     _updateLine(points, visible) {
@@ -931,7 +769,7 @@ export class ConnectorDebuggerView {
         const redColor = 0xef4444;
         for (let i = 0; i < this._candidateLines.length; i++) {
             const entry = this._candidateLines[i];
-            const type = CANDIDATE_TYPES[i];
+            const type = this._candidateTypes[i];
             const isVisible = this._lineVisibility[type] !== false;
             const isChosen = type && chosenType === type;
             const candidate = candidatesByType[i] ?? null;
@@ -947,16 +785,22 @@ export class ConnectorDebuggerView {
             }
             if (points.length < 2) {
                 const fallback = [];
-                if (candidate.arc0?.startPoint) fallback.push(candidate.arc0.startPoint.clone());
+                const segments = candidate.segments ?? [];
+                const startPoint = segments[0]?.startPoint;
+                const endPoint = segments[segments.length - 1]?.endPoint;
+                if (startPoint) fallback.push(startPoint.clone());
                 else if (inputs.p0) fallback.push(inputs.p0.clone());
-                if (candidate.arc1?.endPoint) fallback.push(candidate.arc1.endPoint.clone());
+                if (endPoint) fallback.push(endPoint.clone());
                 else if (inputs.p1) fallback.push(inputs.p1.clone());
                 points = fallback.filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
             }
             if (points.length >= 2) {
-                if (candidate.arc0?.startPoint) points[0] = candidate.arc0.startPoint.clone();
+                const segments = candidate.segments ?? [];
+                const startPoint = segments[0]?.startPoint;
+                const endPoint = segments[segments.length - 1]?.endPoint;
+                if (startPoint) points[0] = startPoint.clone();
                 else if (inputs.p0) points[0] = inputs.p0.clone();
-                if (candidate.arc1?.endPoint) points[points.length - 1] = candidate.arc1.endPoint.clone();
+                if (endPoint) points[points.length - 1] = endPoint.clone();
                 else if (inputs.p1) points[points.length - 1] = inputs.p1.clone();
             }
             const positions = [];
@@ -993,26 +837,29 @@ export class ConnectorDebuggerView {
 
     _updateTurnCircles(inputs, connector) {
         if (!this._circleLines.length) return;
-        const p0 = inputs?.p0;
-        const p1 = inputs?.p1;
-        const dir0 = inputs?.dir0;
-        const dir1 = inputs?.dir1;
-        if (!p0 || !p1 || !dir0 || !dir1) {
+        const startLeft = connector?.startLeftCircle ?? null;
+        const startRight = connector?.startRightCircle ?? null;
+        const endLeft = connector?.endLeftCircle ?? null;
+        const endRight = connector?.endRightCircle ?? null;
+        if (!startLeft || !startRight || !endLeft || !endRight) {
             for (const entry of this._circleLines) entry.line.visible = false;
             return;
         }
-        const r = Math.max(0.01, this._radius);
-        const n0 = leftNormal(dir0.clone().normalize());
-        const n1 = leftNormal(dir1.clone().normalize());
+        const r = Math.max(0.01, connector?.radius ?? this._radius);
         const centers = [
-            new THREE.Vector3(p0.x + n0.x * r, this._markerY, p0.y + n0.y * r),
-            new THREE.Vector3(p0.x - n0.x * r, this._markerY, p0.y - n0.y * r),
-            new THREE.Vector3(p1.x + n1.x * r, this._markerY, p1.y + n1.y * r),
-            new THREE.Vector3(p1.x - n1.x * r, this._markerY, p1.y - n1.y * r)
+            new THREE.Vector3(startLeft.center.x, this._markerY, startLeft.center.y),
+            new THREE.Vector3(startRight.center.x, this._markerY, startRight.center.y),
+            new THREE.Vector3(endLeft.center.x, this._markerY, endLeft.center.y),
+            new THREE.Vector3(endRight.center.x, this._markerY, endRight.center.y)
         ];
         const chosen = new Set();
-        if (connector?.arc0?.turnDir) chosen.add(connector.arc0.turnDir === 'L' ? 0 : 1);
-        if (connector?.arc1?.turnDir) chosen.add(connector.arc1.turnDir === 'L' ? 2 : 3);
+        const segments = connector?.segments ?? [];
+        const startTurn = segments[0]?.turnDir ?? null;
+        const endTurn = segments[segments.length - 1]?.turnDir ?? null;
+        if (startTurn === 'L') chosen.add(0);
+        if (startTurn === 'R') chosen.add(1);
+        if (endTurn === 'L') chosen.add(2);
+        if (endTurn === 'R') chosen.add(3);
         const dashSize = Math.max(0.2, r * 0.08);
         const gapSize = Math.max(0.15, r * 0.06);
         const segs = 64;
@@ -1084,31 +931,29 @@ export class ConnectorDebuggerView {
         const dir0 = inputs?.dir0 ? { x: inputs.dir0.x, z: inputs.dir0.y } : null;
         const dir1 = inputs?.dir1 ? { x: inputs.dir1.x, z: inputs.dir1.y } : null;
 
-        const arc0 = connector?.arc0;
-        const arc1 = connector?.arc1;
-        const straight = connector?.straight;
+        const segments = (connector?.segments ?? []).map((segment) => {
+            if (segment.type === 'ARC') {
+                return {
+                    type: 'ARC',
+                    center: { x: segment.center.x, z: segment.center.y },
+                    startAngle: segment.startAngle,
+                    deltaAngle: segment.deltaAngle,
+                    turnDir: segment.turnDir,
+                    length: segment.length
+                };
+            }
+            if (segment.type === 'STRAIGHT') {
+                return {
+                    type: 'STRAIGHT',
+                    start: segment.startPoint ? { x: segment.startPoint.x, z: segment.startPoint.y } : null,
+                    end: segment.endPoint ? { x: segment.endPoint.x, z: segment.endPoint.y } : null,
+                    length: segment.length
+                };
+            }
+            return null;
+        }).filter(Boolean);
 
-        const arc0Data = arc0 ? {
-            center: { x: arc0.center.x, z: arc0.center.y },
-            startAngle: arc0.startAngle,
-            deltaAngle: arc0.deltaAngle,
-            length: arc0.deltaAngle * arc0.radius
-        } : {};
-
-        const arc1Data = arc1 ? {
-            center: { x: arc1.center.x, z: arc1.center.y },
-            startAngle: arc1.startAngle,
-            deltaAngle: arc1.deltaAngle,
-            length: arc1.deltaAngle * arc1.radius
-        } : {};
-
-        const straightData = straight ? {
-            start: straight.start ? { x: straight.start.x, z: straight.start.y } : null,
-            end: straight.end ? { x: straight.end.x, z: straight.end.y } : null,
-            length: straight.length ?? 0
-        } : {};
-
-        const quality = connector?.quality ?? {};
+        const metrics = connector?.metrics ?? {};
 
         return {
             p0,
@@ -1116,18 +961,16 @@ export class ConnectorDebuggerView {
             p1,
             dir1,
             type: connector?.type ?? 'none',
-            radius: this._radius,
-            arc0: arc0Data,
-            straight: straightData,
-            arc1: arc1Data,
+            radius: connector?.radius ?? this._radius,
+            segments,
             totalLength: connector?.totalLength ?? 0,
-            quality,
-            feasible: !!connector,
-            error
+            metrics,
+            feasible: !!connector?.ok,
+            error: error ?? connector?.failure?.code ?? null
         };
     }
 
-    _buildPayload(inputs, connector, data, error) {
+    _buildPayload(inputs, connector) {
         const endSigns = this.curbs.map((curb) => curb.endSign);
         const dirSigns = inputs?.dirSigns ?? this.curbs.map((curb) => curb.dirSign ?? 1);
         const curbTransforms = this.curbs.map((curb, index) => ({
@@ -1147,30 +990,80 @@ export class ConnectorDebuggerView {
             dirSign: dirSigns[index] ?? 1
         }));
 
+        const vec2 = (v) => (v ? { x: v.x, z: v.y } : null);
+        const pose = (p) => (p ? { position: vec2(p.position), direction: vec2(p.direction), heading: p.heading } : null);
+        const circle = (c) => (c ? { center: vec2(c.center), radius: c.radius } : null);
+        const segment = (s) => {
+            if (!s) return null;
+            if (s.type === 'ARC') {
+                return {
+                    type: 'ARC',
+                    center: vec2(s.center),
+                    startPoint: vec2(s.startPoint),
+                    endPoint: vec2(s.endPoint),
+                    startAngle: s.startAngle,
+                    deltaAngle: s.deltaAngle,
+                    turnDir: s.turnDir,
+                    length: s.length,
+                    radius: s.radius
+                };
+            }
+            if (s.type === 'STRAIGHT') {
+                return {
+                    type: 'STRAIGHT',
+                    startPoint: vec2(s.startPoint),
+                    endPoint: vec2(s.endPoint),
+                    direction: vec2(s.direction),
+                    length: s.length
+                };
+            }
+            return null;
+        };
+        const segments = (list) => (Array.isArray(list) ? list.map(segment).filter(Boolean) : []);
+        const candidate = (cand) => cand ? ({
+            type: cand.type,
+            radius: cand.radius,
+            totalLength: cand.totalLength,
+            segments: segments(cand.segments)
+        }) : null;
+
+        const solverResult = connector ? {
+            ok: connector.ok,
+            type: connector.type,
+            radius: connector.radius,
+            totalLength: connector.totalLength,
+            segments: segments(connector.segments),
+            startLeftCircle: circle(connector.startLeftCircle),
+            startRightCircle: circle(connector.startRightCircle),
+            endLeftCircle: circle(connector.endLeftCircle),
+            endRightCircle: circle(connector.endRightCircle),
+            metrics: connector.metrics ?? null,
+            failure: connector.failure ?? null,
+            radiusPolicy: connector.radiusPolicy ?? null,
+            startPose: pose(connector.startPose),
+            endPose: pose(connector.endPose),
+            endPoseComputed: pose(connector.endPoseComputed),
+            candidateTypes: connector.candidateTypes ?? null,
+            candidatesByType: Array.isArray(connector.candidatesByType)
+                ? connector.candidatesByType.map(candidate)
+                : null
+        } : null;
+
         return {
-            inputs: {
-                p0: data.p0,
-                dir0: data.dir0,
-                p1: data.p1,
-                dir1: data.dir1,
-                radius: this._radius
-            },
-            connector: connector ? {
-                type: connector.type,
-                arc0: data.arc0,
-                straight: data.straight,
-                arc1: data.arc1,
-                totalLength: connector.totalLength,
-                quality: connector.quality ?? null
-            } : null,
-            feasible: data.feasible,
-            error,
+            solverResult,
             curbs: curbTransforms,
-            endSigns,
-            dirSigns,
-            tileSize: this._tileSize,
-            radius: this._radius,
-            rotationMode: this._rotationModeHold ? 'hold' : 'step'
+            engineConfig: {
+                tileSize: this._tileSize,
+                road: this.city?.generatorConfig?.road ?? null,
+                ground: this.city?.generatorConfig?.ground ?? null,
+                solver: {
+                    radius: this._radius,
+                    minStraight: this._minStraight,
+                    allowFallback: false,
+                    preferS: true
+                },
+                rotationMode: this._rotationModeHold ? 'hold' : 'step'
+            }
         };
     }
 
@@ -1206,42 +1099,33 @@ export class ConnectorDebuggerView {
     _addCurbConnector({ curb, key, color, connector, curveSegs }) {
         if (!connector) return;
         const eps = 1e-4;
-        const arc0 = connector.arc0;
-        const arc1 = connector.arc1;
-        const straight = connector.straight;
-        if (arc0 && arc0.deltaAngle > eps) {
-            const span = curbArcSpan(arc0);
-            curb.addArcSolidKey({
-                key,
-                centerX: arc0.center.x,
-                centerZ: arc0.center.y,
-                radiusCenter: arc0.radius,
-                startAng: span.startAng,
-                spanAng: span.spanAng,
-                curveSegs
-            });
-        }
-        if (straight?.start && straight?.end) {
-            const s = straight.end.clone().sub(straight.start);
-            const len = s.length();
-            if (len > eps) {
-                const mid = straight.start.clone().add(straight.end).multiplyScalar(0.5);
-                const dir = s.multiplyScalar(1 / len);
-                const ry = Math.atan2(dir.y, dir.x);
-                curb.addBox(mid.x, this._curbY, mid.y, len, this._curbH, this._curbT, ry, color);
+        const segments = Array.isArray(connector) ? connector : (connector.segments ?? []);
+        if (!segments.length) return;
+        for (const segment of segments) {
+            if (segment.type === 'ARC' && segment.deltaAngle > eps) {
+                const span = curbArcSpan(segment);
+                curb.addArcSolidKey({
+                    key,
+                    centerX: segment.center.x,
+                    centerZ: segment.center.y,
+                    radiusCenter: segment.radius,
+                    startAng: span.startAng,
+                    spanAng: span.spanAng,
+                    curveSegs
+                });
+            } else if (segment.type === 'STRAIGHT') {
+                const start = segment.startPoint;
+                const end = segment.endPoint;
+                if (!start || !end) continue;
+                const s = end.clone().sub(start);
+                const len = s.length();
+                if (len > eps) {
+                    const mid = start.clone().add(end).multiplyScalar(0.5);
+                    const dir = s.multiplyScalar(1 / len);
+                    const ry = Math.atan2(dir.y, dir.x);
+                    curb.addBox(mid.x, this._curbY, mid.y, len, this._curbH, this._curbT, ry, color);
+                }
             }
-        }
-        if (arc1 && arc1.deltaAngle > eps) {
-            const span = curbArcSpan(arc1);
-            curb.addArcSolidKey({
-                key,
-                centerX: arc1.center.x,
-                centerZ: arc1.center.y,
-                radiusCenter: arc1.radius,
-                startAng: span.startAng,
-                spanAng: span.spanAng,
-                curveSegs
-            });
         }
     }
 

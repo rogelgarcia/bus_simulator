@@ -17,7 +17,8 @@ import { createSidewalkBuilder } from './internal_road/SidewalkBuilder.js';
 import { createCurbBuilder } from './internal_road/CurbBuilder.js';
 import { createMarkingsBuilder } from './internal_road/MarkingsBuilder.js';
 import { buildRoadGraph } from './internal_road/RoadGraph.js';
-import { solveArcStraightArcConnector, solveFilletConnector, leftNormal } from './internal_road/ArcConnector.js';
+import { leftNormal } from './internal_road/ArcConnector.js';
+import { solveConnectorPath } from '../../../src/geometry/ConnectorPathSolver.js';
 
 const DIR_KEYS = ['N', 'E', 'S', 'W'];
 const OPP = { N: 'S', S: 'N', E: 'W', W: 'E' };
@@ -72,53 +73,45 @@ function curbArcSpan(arc) {
 function addCurbConnector({ curb, key, color, connector, curveSegs, curbY, curbH, curbT }) {
     if (!connector) return;
     const eps = 1e-4;
-    const arc0 = connector.arc0;
-    const arc1 = connector.arc1;
-    const straight = connector.straight;
-    if (arc0 && arc0.deltaAngle > eps) {
-        const span = curbArcSpan(arc0);
-        curb.addArcSolidKey({
-            key,
-            centerX: arc0.center.x,
-            centerZ: arc0.center.y,
-            radiusCenter: arc0.radius,
-            startAng: span.startAng,
-            spanAng: span.spanAng,
-            curveSegs
-        });
-    }
-    if (straight?.start && straight?.end) {
-        const s = straight.end.clone().sub(straight.start);
-        const len = s.length();
-        if (len > eps) {
-            const mid = straight.start.clone().add(straight.end).multiplyScalar(0.5);
-            const dir = s.multiplyScalar(1 / len);
-            const ry = Math.atan2(dir.y, dir.x);
-            curb.addBox(mid.x, curbY, mid.y, len, curbH, curbT, ry, color);
+    const segments = Array.isArray(connector) ? connector : (connector.segments ?? []);
+    if (!segments.length) return;
+    for (const segment of segments) {
+        if (segment.type === 'ARC' && segment.deltaAngle > eps) {
+            const span = curbArcSpan(segment);
+            curb.addArcSolidKey({
+                key,
+                centerX: segment.center.x,
+                centerZ: segment.center.y,
+                radiusCenter: segment.radius,
+                startAng: span.startAng,
+                spanAng: span.spanAng,
+                curveSegs
+            });
+        } else if (segment.type === 'STRAIGHT') {
+            const start = segment.startPoint;
+            const end = segment.endPoint;
+            if (!start || !end) continue;
+            const s = end.clone().sub(start);
+            const len = s.length();
+            if (len > eps) {
+                const mid = start.clone().add(end).multiplyScalar(0.5);
+                const dir = s.multiplyScalar(1 / len);
+                const ry = Math.atan2(dir.y, dir.x);
+                curb.addBox(mid.x, curbY, mid.y, len, curbH, curbT, ry, color);
+            }
         }
-    }
-    if (arc1 && arc1.deltaAngle > eps) {
-        const span = curbArcSpan(arc1);
-        curb.addArcSolidKey({
-            key,
-            centerX: arc1.center.x,
-            centerZ: arc1.center.y,
-            radiusCenter: arc1.radius,
-            startAng: span.startAng,
-            spanAng: span.spanAng,
-            curveSegs
-        });
     }
 }
 
 function chooseBestConnector(connectors) {
     let best = null;
-    let bestScore = -Infinity;
+    let bestLength = Number.POSITIVE_INFINITY;
     for (const connector of connectors) {
-        const score = connector.score ?? -connector.totalLength;
-        if (score > bestScore) {
+        if (!connector || connector.ok === false) continue;
+        const length = connector.totalLength ?? Number.POSITIVE_INFINITY;
+        if (length < bestLength) {
             best = connector;
-            bestScore = score;
+            bestLength = length;
         }
     }
     return best;
@@ -162,6 +155,7 @@ export function generateRoads({ map, config, materials } = {}) {
     const turnRadiusPref = roadCfg.curves?.turnRadius ?? 4.2;
     const curbArcSegs = clamp(roadCfg.curves?.curbArcSegments ?? 18, 8, 96) | 0;
     const asphaltArcSegs = clamp(roadCfg.curves?.asphaltArcSegments ?? 24, 8, 128) | 0;
+    const minConnectorStraight = 0.05;
 
     const roadMatBase = materials?.road ?? new THREE.MeshStandardMaterial({ color: 0x2b2b2b, roughness: 0.95 });
     const sidewalkMatBase = materials?.sidewalk ?? new THREE.MeshStandardMaterial({ color: 0x8b8b8b, roughness: 1.0 });
@@ -662,20 +656,13 @@ export function generateRoads({ map, config, materials } = {}) {
                 const dirB = new THREE.Vector2(info.turn.signX, 0);
                 const outerKey = CURB_COLOR_PALETTE.key('turn_outer', info.turn.orient);
                 const outerColor = CURB_COLOR_PALETTE.instanceColor('curb', 'turn_outer', info.turn.orient) ?? neutralCurbColor;
-                const outerConnector = solveFilletConnector({
-                    p0: new THREE.Vector2(center.x - info.turn.signX * outerR, center.y),
-                    dir0: dirA,
-                    p1: new THREE.Vector2(center.x, center.y - info.turn.signZ * outerR),
-                    dir1: dirB,
-                    R: outerR
-                }) ?? solveArcStraightArcConnector({
-                    p0: new THREE.Vector2(center.x - info.turn.signX * outerR, center.y),
-                    dir0: dirA,
-                    p1: new THREE.Vector2(center.x, center.y - info.turn.signZ * outerR),
-                    dir1: dirB,
-                    R: outerR,
-                    preferS: false,
-                    allowFallback: true
+                const outerConnector = solveConnectorPath({
+                    start: { position: new THREE.Vector2(center.x - info.turn.signX * outerR, center.y), direction: dirA },
+                    end: { position: new THREE.Vector2(center.x, center.y - info.turn.signZ * outerR), direction: dirB },
+                    radius: outerR,
+                    allowFallback: true,
+                    minStraight: minConnectorStraight,
+                    preferS: false
                 });
                 if (outerConnector) {
                     addCurbConnector({
@@ -692,20 +679,13 @@ export function generateRoads({ map, config, materials } = {}) {
                 if (innerR > 0.2) {
                     const innerKey = CURB_COLOR_PALETTE.key('turn_inner', info.turn.orient);
                     const innerColor = CURB_COLOR_PALETTE.instanceColor('curb', 'turn_inner', info.turn.orient) ?? neutralCurbColor;
-                    const innerConnector = solveFilletConnector({
-                        p0: new THREE.Vector2(center.x - info.turn.signX * innerR, center.y),
-                        dir0: dirA,
-                        p1: new THREE.Vector2(center.x, center.y - info.turn.signZ * innerR),
-                        dir1: dirB,
-                        R: innerR
-                    }) ?? solveArcStraightArcConnector({
-                        p0: new THREE.Vector2(center.x - info.turn.signX * innerR, center.y),
-                        dir0: dirA,
-                        p1: new THREE.Vector2(center.x, center.y - info.turn.signZ * innerR),
-                        dir1: dirB,
-                        R: innerR,
-                        preferS: false,
-                        allowFallback: true
+                    const innerConnector = solveConnectorPath({
+                        start: { position: new THREE.Vector2(center.x - info.turn.signX * innerR, center.y), direction: dirA },
+                        end: { position: new THREE.Vector2(center.x, center.y - info.turn.signZ * innerR), direction: dirB },
+                        radius: innerR,
+                        allowFallback: true,
+                        minStraight: minConnectorStraight,
+                        preferS: false
                     });
                     if (innerConnector) {
                         addCurbConnector({
@@ -753,28 +733,18 @@ export function generateRoads({ map, config, materials } = {}) {
                         const candidates = [];
                         for (const d0 of [roadDir, roadDir.clone().multiplyScalar(-1)]) {
                             for (const d1 of [tangent, tangent.clone().multiplyScalar(-1)]) {
-                                const cand = solveArcStraightArcConnector({
-                                    p0,
-                                    dir0: d0,
-                                    p1,
-                                    dir1: d1,
-                                    R: round.blendRadius,
-                                    preferS: true,
-                                    allowFallback: true
+                                const cand = solveConnectorPath({
+                                    start: { position: p0, direction: d0 },
+                                    end: { position: p1, direction: d1 },
+                                    radius: round.blendRadius,
+                                    allowFallback: true,
+                                    minStraight: minConnectorStraight,
+                                    preferS: true
                                 });
-                                if (cand) candidates.push(cand);
+                                if (cand?.ok !== false) candidates.push(cand);
                             }
                         }
                         let connector = chooseBestConnector(candidates);
-                        if (!connector) {
-                            connector = solveFilletConnector({
-                                p0,
-                                dir0: roadDir,
-                                p1,
-                                dir1: tangent,
-                                R: round.blendRadius
-                            });
-                        }
                         addCurbConnector({
                             curb,
                             key: roundKey,
@@ -803,20 +773,13 @@ export function generateRoads({ map, config, materials } = {}) {
                     node.x + data.signX * (data.x0 + data.rC),
                     node.z + data.signZ * data.z0
                 );
-                const connector = solveFilletConnector({
-                    p0,
-                    dir0: dirA,
-                    p1,
-                    dir1: dirB,
-                    R: data.rC
-                }) ?? solveArcStraightArcConnector({
-                    p0,
-                    dir0: dirA,
-                    p1,
-                    dir1: dirB,
-                    R: data.rC,
-                    preferS: false,
-                    allowFallback: true
+                const connector = solveConnectorPath({
+                    start: { position: p0, direction: dirA },
+                    end: { position: p1, direction: dirB },
+                    radius: data.rC,
+                    allowFallback: true,
+                    minStraight: minConnectorStraight,
+                    preferS: false
                 });
                 if (connector) {
                     addCurbConnector({

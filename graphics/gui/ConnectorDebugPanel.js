@@ -1,4 +1,5 @@
 // graphics/gui/ConnectorDebugPanel.js
+// graphics/gui/ConnectorDebugPanel.js
 function fmtNum(v, digits = 3) {
     if (!Number.isFinite(v)) return 'n/a';
     return Number(v).toFixed(digits);
@@ -19,10 +20,23 @@ function radToDeg(rad) {
     return rad * (180 / Math.PI);
 }
 
+function fmtSegment(segment) {
+    if (!segment || !segment.type) return 'n/a';
+    if (segment.type === 'ARC') {
+        const turn = segment.turnDir ? ` ${segment.turnDir}` : '';
+        return `ARC${turn} len ${fmtNum(segment.length)} dAng ${fmtNum(radToDeg(segment.deltaAngle))}`;
+    }
+    if (segment.type === 'STRAIGHT') {
+        return `S len ${fmtNum(segment.length)}`;
+    }
+    return segment.type;
+}
+
 export class ConnectorDebugPanel {
     constructor({
         radius = 0,
         holdRotate = true,
+        pathTypes = null,
         lineVisibility = null,
         onHoldRotateChange = null,
         onLineVisibilityChange = null,
@@ -76,15 +90,17 @@ export class ConnectorDebugPanel {
 
         this.linesGroup.appendChild(this.linesTitle);
 
-        this._lineVisibility = {
-            LSL: true,
-            RSR: true,
-            LSR: true,
-            RSL: true,
-            ...(lineVisibility ?? {})
-        };
+        const types = (Array.isArray(pathTypes) && pathTypes.length)
+            ? pathTypes.slice()
+            : ['LSL', 'RSR', 'LSR', 'RSL', 'RLR', 'LRL'];
+        this._lineVisibility = {};
+        for (const type of types) this._lineVisibility[type] = true;
+        if (lineVisibility) {
+            for (const [key, value] of Object.entries(lineVisibility)) {
+                this._lineVisibility[key] = value;
+            }
+        }
         this._lineInputs = new Map();
-        const types = ['LSL', 'RSR', 'LSR', 'RSL'];
         for (const type of types) {
             const label = document.createElement('label');
             label.className = 'connector-debug-line-toggle';
@@ -147,10 +163,8 @@ export class ConnectorDebugPanel {
     }
 
     setData(data = {}) {
-        const arc0 = data.arc0 ?? {};
-        const arc1 = data.arc1 ?? {};
-        const straight = data.straight ?? {};
-        const quality = data.quality ?? {};
+        const segments = Array.isArray(data.segments) ? data.segments : [];
+        const metrics = data.metrics ?? {};
         const lines = [
             `p0: ${fmtVec2(data.p0)}`,
             `dir0: ${fmtVec2(data.dir0)}`,
@@ -158,19 +172,12 @@ export class ConnectorDebugPanel {
             `dir1: ${fmtVec2(data.dir1)}`,
             `type: ${data.type ?? 'none'}`,
             `R: ${fmtNum(data.radius)}`,
-            `arc0 center: ${fmtVec2(arc0.center)}`,
-            `arc0 angles: ${fmtNum(arc0.startAngle)} , ${fmtNum(arc0.deltaAngle)}`,
-            `arc0 delta deg: ${fmtNum(radToDeg(arc0.deltaAngle))}`,
-            `arc0 length: ${fmtNum(arc0.length)}`,
-            `straight: ${fmtVec2Pair(straight.start, straight.end)}`,
-            `straight length: ${fmtNum(straight.length)}`,
-            `arc1 center: ${fmtVec2(arc1.center)}`,
-            `arc1 angles: ${fmtNum(arc1.startAngle)} , ${fmtNum(arc1.deltaAngle)}`,
-            `arc1 delta deg: ${fmtNum(radToDeg(arc1.deltaAngle))}`,
-            `arc1 length: ${fmtNum(arc1.length)}`,
+            `segments: ${segments.length ? segments.map(fmtSegment).join(' | ') : 'n/a'}`,
             `total length: ${fmtNum(data.totalLength)}`,
-            `tangent dot0: ${fmtNum(quality.tangentDot0)}`,
-            `tangent dot1: ${fmtNum(quality.tangentDot1)}`,
+            `end pos error: ${fmtNum(metrics.endPoseErrorPos)}`,
+            `end dir error: ${fmtNum(metrics.endPoseErrorDir)}`,
+            `tangency dot0: ${fmtNum(metrics.tangencyDotAtJoin0)}`,
+            `tangency dot1: ${fmtNum(metrics.tangencyDotAtJoin1)}`,
             `feasible: ${data.feasible ? 'true' : 'false'}`,
             `error: ${data.error ?? 'none'}`
         ];

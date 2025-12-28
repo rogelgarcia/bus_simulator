@@ -1149,6 +1149,46 @@ async function runTests() {
         console.log('⏭️  createVehicleFromBus tests skipped:', e.message);
     }
 
+    const { solveConnectorPath } = await import('/src/geometry/ConnectorPathSolver.js');
+    const { createGeneratorConfig } = await import('/graphics/assets3d/generators/GeneratorParams.js');
+    const { createCityConfig } = await import('/src/city/CityConfig.js');
+    const THREE = await import('three');
+
+    test('ConnectorPathSolver: reaches end pose within epsilon', () => {
+        const genConfig = createGeneratorConfig();
+        const cityConfig = createCityConfig();
+        const tileSize = cityConfig.map.tileSize;
+        const radius = genConfig.road?.curves?.turnRadius ?? 4.2;
+        const posEps = tileSize * 1e-3;
+        const dirEps = 1e-3;
+        const cases = 64;
+
+        for (let i = 0; i < cases; i++) {
+            const p0 = new THREE.Vector2(
+                (Math.random() - 0.5) * tileSize * 2,
+                (Math.random() - 0.5) * tileSize * 2
+            );
+            const p1 = new THREE.Vector2(
+                (Math.random() - 0.5) * tileSize * 2,
+                (Math.random() - 0.5) * tileSize * 2
+            );
+            const h0 = Math.random() * Math.PI * 2;
+            const h1 = Math.random() * Math.PI * 2;
+            const dir0 = new THREE.Vector2(Math.cos(h0), Math.sin(h0));
+            const dir1 = new THREE.Vector2(Math.cos(h1), Math.sin(h1));
+            const result = solveConnectorPath({
+                start: { position: p0, direction: dir0 },
+                end: { position: p1, direction: dir1 },
+                radius,
+                allowFallback: false,
+                minStraight: 0
+            });
+            assertTrue(result.ok, 'Solver should return a path.');
+            assertTrue(result.metrics.endPoseErrorPos <= posEps, 'End position error too large.');
+            assertTrue(result.metrics.endPoseErrorDir <= dirEps, 'End direction error too large.');
+        }
+    });
+
     // ========== Summary ==========
     console.log('\n' + '='.repeat(50));
     if (errors.length === 0) {
@@ -1169,4 +1209,3 @@ async function runTests() {
 runTests().catch(err => {
     console.error('Test runner failed:', err);
 });
-

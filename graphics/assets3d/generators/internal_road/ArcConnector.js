@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { wrapAngle } from './RoadMath.js';
 import { mergeBufferGeometries, applyWorldSpaceUV_XZ } from './RoadGeometry.js';
+import { solveConnectorPath } from '../../../../src/geometry/ConnectorPathSolver.js';
 
 const EPS = 1e-8;
 const TAU = Math.PI * 2;
@@ -278,19 +279,30 @@ export function sampleConnector(connector, stepMeters = 0.5) {
     };
     const sampleStraight = (straight) => {
         if (!straight) return;
-        const len = straight.length ?? straight.end.clone().sub(straight.start).length();
+        const start = straight.startPoint ?? straight.start ?? null;
+        const end = straight.endPoint ?? straight.end ?? null;
+        if (!start || !end) return;
+        const len = straight.length ?? end.clone().sub(start).length();
         if (len < EPS) return;
         const steps = Math.max(1, Math.ceil(len / step));
-        const dir = straight.dir ?? straight.end.clone().sub(straight.start).normalize();
+        const dir = straight.direction ?? straight.dir ?? end.clone().sub(start).normalize();
         for (let i = 0; i <= steps; i++) {
             const t = i / steps;
-            const p = straight.start.clone().lerp(straight.end, t);
+            const p = start.clone().lerp(end, t);
             appendSamplePoint(points, tangents, p, dir.clone());
         }
     };
-    sampleArc(connector.arc0);
-    sampleStraight(connector.straight);
-    sampleArc(connector.arc1);
+    const segments = Array.isArray(connector) ? connector : (connector.segments ?? null);
+    if (segments && segments.length) {
+        for (const seg of segments) {
+            if (seg.type === 'ARC') sampleArc(seg);
+            else if (seg.type === 'STRAIGHT') sampleStraight(seg);
+        }
+    } else {
+        sampleArc(connector.arc0);
+        sampleStraight(connector.straight);
+        sampleArc(connector.arc1);
+    }
     return { points, tangents };
 }
 
@@ -351,13 +363,10 @@ export function buildConnectorDemoGroup() {
     const dir0 = new THREE.Vector2(1, 0);
     const p1 = new THREE.Vector2(8, 10);
     const dir1 = new THREE.Vector2(0, -1);
-    const connector = solveArcStraightArcConnector({
-        p0,
-        dir0,
-        p1,
-        dir1,
-        R: 4.5,
-        preferS: true,
+    const connector = solveConnectorPath({
+        start: { position: p0, direction: dir0 },
+        end: { position: p1, direction: dir1 },
+        radius: 4.5,
         allowFallback: true
     });
     const { points, tangents } = sampleConnector(connector, 0.5);
