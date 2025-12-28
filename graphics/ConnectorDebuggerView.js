@@ -143,6 +143,7 @@ export class ConnectorDebuggerView {
         this._displayDebug = true;
         this._connectorMesh = null;
         this._createdCurbGroup = null;
+        this._curbAutoCreate = false;
         this._connector = null;
         this._minStraight = 0.05;
         this._enableConnectorMesh = false;
@@ -175,6 +176,7 @@ export class ConnectorDebuggerView {
         this.group = null;
         this._connectorMesh = null;
         this._createdCurbGroup = null;
+        this._curbAutoCreate = false;
         this.curbs = [];
         this._curbMeshes = [];
         this._hoveredCurb = null;
@@ -218,6 +220,7 @@ export class ConnectorDebuggerView {
             this._pendingHardReset = false;
         }
         this._updateConnector();
+        if (!interacting) this._rebuildCurbsIfEnabled();
         this._updateMarkers();
         this._syncLineResolution();
         if (interacting && this._connectorMesh) this._clearConnectorMesh();
@@ -499,8 +502,8 @@ export class ConnectorDebuggerView {
                 this._requestHardReset();
             },
             onCopy: () => this._copyPayload(),
-            onCreateCurbs: () => this._createCurbs(),
-            onRemoveCurbs: () => this._removeCreatedCurbs()
+            curbsEnabled: this._curbAutoCreate,
+            onCurbsToggleChange: (enabled) => this._setCurbAutoCreate(enabled)
         });
         this.panel.show();
     }
@@ -889,7 +892,6 @@ export class ConnectorDebuggerView {
             const data = this._buildDebugData(inputs, connector, error);
             this.panel?.setData(data);
             this._lastPayload = this._buildPayload(inputs, connector);
-            this._updateCurbButtonState();
             return;
         }
         this._updateTurnCircles(inputs, connector);
@@ -925,13 +927,6 @@ export class ConnectorDebuggerView {
         const data = this._buildDebugData(inputs, connector, error);
         this.panel?.setData(data);
         this._lastPayload = this._buildPayload(inputs, connector);
-        this._updateCurbButtonState();
-    }
-
-    _updateCurbButtonState() {
-        const canCreate = !!(this._connector && this._connector.ok);
-        const canRemove = !!this._createdCurbGroup;
-        this.panel?.setCurbActions({ canCreate, canRemove });
     }
 
     _updateLine(points, visible) {
@@ -1308,6 +1303,7 @@ export class ConnectorDebuggerView {
     _markInteraction() {
         this._lastInteractionTime = performance.now();
         if (this._connectorMesh) this._clearConnectorMesh();
+        if (this._curbAutoCreate && this._createdCurbGroup) this._clearCreatedCurbs();
     }
 
     _clearConnectorMesh() {
@@ -1322,20 +1318,28 @@ export class ConnectorDebuggerView {
         this._createdCurbGroup = null;
     }
 
-    _createCurbs() {
-        if (!this._connector || !this._connector.ok) return;
+    _setCurbAutoCreate(enabled) {
+        this._curbAutoCreate = !!enabled;
+        this.panel?.setCurbsEnabled(this._curbAutoCreate);
+        if (!this._curbAutoCreate) {
+            this._clearCreatedCurbs();
+            return;
+        }
+        this._rebuildCurbsIfEnabled();
+    }
+
+    _rebuildCurbsIfEnabled() {
+        if (!this._curbAutoCreate) return;
+        if (!this._connector || !this._connector.ok) {
+            if (this._createdCurbGroup) this._clearCreatedCurbs();
+            return;
+        }
+        if (this._createdCurbGroup) return;
         if (!Array.isArray(this._connector.segments) || this._connector.segments.length === 0) return;
-        this._clearCreatedCurbs();
         const group = this._buildCurbGroup(this._connector, 'ConnectorCurbs');
         if (!group) return;
         this._createdCurbGroup = group;
         this.group.add(group);
-        this._updateCurbButtonState();
-    }
-
-    _removeCreatedCurbs() {
-        this._clearCreatedCurbs();
-        this._updateCurbButtonState();
     }
 
     _addCurbConnector({ curb, key, color, connector, curveSegs }) {

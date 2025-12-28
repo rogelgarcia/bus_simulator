@@ -45,8 +45,8 @@ export class ConnectorDebugPanel {
         onAutoSelectChange = null,
         onRadiusChange = null,
         onCopy = null,
-        onCreateCurbs = null,
-        onRemoveCurbs = null
+        curbsEnabled = false,
+        onCurbsToggleChange = null
     } = {}) {
         this.root = document.createElement('div');
         this.root.className = 'connector-debug-stack hidden';
@@ -135,23 +135,21 @@ export class ConnectorDebugPanel {
         this.curbsTitle.className = 'connector-debug-curbs-title connector-debug-label';
         this.curbsTitle.textContent = 'Curbs';
 
-        this.curbsButtons = document.createElement('div');
-        this.curbsButtons.className = 'connector-debug-curbs-buttons';
+        this.curbsToggleLabel = document.createElement('label');
+        this.curbsToggleLabel.className = 'connector-debug-toggle-switch connector-debug-curbs-toggle';
+        this.curbsToggleLabel.title = 'Auto build curbs';
 
-        this.createCurbsButton = document.createElement('button');
-        this.createCurbsButton.type = 'button';
-        this.createCurbsButton.className = 'connector-debug-action connector-debug-curb-create';
-        this.createCurbsButton.textContent = 'Create curbs';
+        this.curbsToggleInput = document.createElement('input');
+        this.curbsToggleInput.type = 'checkbox';
+        this.curbsToggleInput.checked = !!curbsEnabled;
 
-        this.removeCurbsButton = document.createElement('button');
-        this.removeCurbsButton.type = 'button';
-        this.removeCurbsButton.className = 'connector-debug-action connector-debug-curb-remove';
-        this.removeCurbsButton.textContent = 'Remove curbs';
+        this.curbsToggleText = document.createElement('span');
+        this.curbsToggleText.textContent = 'Enabled';
 
-        this.curbsButtons.appendChild(this.createCurbsButton);
-        this.curbsButtons.appendChild(this.removeCurbsButton);
+        this.curbsToggleLabel.appendChild(this.curbsToggleInput);
+        this.curbsToggleLabel.appendChild(this.curbsToggleText);
         this.curbsGroup.appendChild(this.curbsTitle);
-        this.curbsGroup.appendChild(this.curbsButtons);
+        this.curbsGroup.appendChild(this.curbsToggleLabel);
 
         this.displayLabel = document.createElement('label');
         this.displayLabel.className = 'connector-debug-toggle-switch connector-debug-line-display';
@@ -347,8 +345,7 @@ export class ConnectorDebugPanel {
         this._onAutoSelectChange = onAutoSelectChange;
         this._onRadiusChange = onRadiusChange;
         this._onCopy = onCopy;
-        this._onCreateCurbs = onCreateCurbs;
-        this._onRemoveCurbs = onRemoveCurbs;
+        this._onCurbsToggleChange = onCurbsToggleChange;
         this._selectedType = null;
         this._autoSelect = false;
 
@@ -377,12 +374,8 @@ export class ConnectorDebugPanel {
             if (this._onCopy) this._onCopy();
         });
 
-        this.createCurbsButton.addEventListener('click', () => {
-            if (this._onCreateCurbs) this._onCreateCurbs();
-        });
-
-        this.removeCurbsButton.addEventListener('click', () => {
-            if (this._onRemoveCurbs) this._onRemoveCurbs();
+        this.curbsToggleInput.addEventListener('change', () => {
+            if (this._onCurbsToggleChange) this._onCurbsToggleChange(this.curbsToggleInput.checked);
         });
     }
 
@@ -461,9 +454,8 @@ export class ConnectorDebugPanel {
         this._setAutoSelectState(!!autoSelect);
     }
 
-    setCurbActions({ canCreate = true, canRemove = true } = {}) {
-        if (this.createCurbsButton) this.createCurbsButton.disabled = !canCreate;
-        if (this.removeCurbsButton) this.removeCurbsButton.disabled = !canRemove;
+    setCurbsEnabled(enabled) {
+        if (this.curbsToggleInput) this.curbsToggleInput.checked = !!enabled;
     }
 
     _setAutoSelectState(autoSelect) {
