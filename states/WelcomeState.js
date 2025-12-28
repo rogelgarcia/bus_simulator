@@ -38,6 +38,18 @@ export class WelcomeState {
         this.sm.go('bus_select');
     }
 
+    _garage() {
+        this.sm.go('bus_select');
+    }
+
+    _city() {
+        this.sm.go('city');
+    }
+
+    _test() {
+        this.sm.go('test_mode');
+    }
+
     _setup() {
         this.sm.go('setup');
     }
@@ -48,10 +60,16 @@ export class WelcomeState {
 
         const isEnter = code === 'Enter' || key === 'Enter';
         const isSpace = code === 'Space' || key === ' ' || key === 'Spacebar';
+        const is1 = code === 'Digit1' || code === 'Numpad1' || key === '1';
+        const is2 = code === 'Digit2' || code === 'Numpad2' || key === '2';
+        const isG = code === 'KeyG' || key === 'g' || key === 'G';
         const isQ = code === 'KeyQ' || key === 'q' || key === 'Q';
 
-        if (isEnter || isSpace || isQ) e.preventDefault();
+        if (isEnter || isSpace || is1 || is2 || isG || isQ) e.preventDefault();
 
+        if (is1) return this._city();
+        if (is2) return this._test();
+        if (isG) return this._garage();
         if (isQ) return this._setup();
         if (isEnter || isSpace) return this._start();
     }
