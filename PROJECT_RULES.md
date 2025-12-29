@@ -11,6 +11,9 @@
 
 ## Code Style
 
+**Logic:**
+- Don't create fallback logics with IF statements as a hacky way to solve a problem. Adjust formulas so the problem is solved in a more elegant way.
+
 **Comments:**
 - No comments in code files
 - Exception: First line must be a comment with the file path (e.g., `// graphics/assets3d/generators/RoadGenerator.js`)
