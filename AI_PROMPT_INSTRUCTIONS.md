@@ -55,6 +55,7 @@ Tasks:
 
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line
+  - Also rename the AI file to AI_#_title_DONE
 - Provide a summary of the changes made in the AI document (very high level, one liner)
 ```
 
