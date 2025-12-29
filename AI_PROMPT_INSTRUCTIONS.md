@@ -67,5 +67,6 @@ Tasks:
 5. **Keep It Simple**: The AI has repository access - just describe what you need
 6. **Trust the AI**: It will retrieve necessary files, determine implementation details, and follow project conventions automatically
 7. **Save the Request**: Store the complete request in a file for reference (Use an specific file name AI_#_title)
+8. **New file**: Always create a new file for each request. Unless expecitely stated in the last message that it is to update an existing request.
 
 

@@ -23,3 +23,6 @@
 - Only commit when explicitly asked by the user
 - Never commit automatically after making changes
 - Never commit AI prompt files named `AI_#_title`
+
+**Tasks:**
+- Even if explicitely requested, never start DONE prompts without double confirming with the user. 
