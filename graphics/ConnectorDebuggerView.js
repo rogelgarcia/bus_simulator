@@ -4,6 +4,7 @@ import { City } from '../src/city/City.js';
 import { createCityConfig } from '../src/city/CityConfig.js';
 import { getCityMaterials } from './assets3d/textures/CityMaterials.js';
 import { createCurbBuilder } from './assets3d/generators/internal_road/CurbBuilder.js';
+import { addConnectorCurbSegments } from './assets3d/generators/internal_road/ConnectorCurbUtils.js';
 import { sampleConnector } from './assets3d/generators/internal_road/ArcConnector.js';
 import { solveConnectorPath, CONNECTOR_PATH_TYPES } from '../src/geometry/ConnectorPathSolver.js';
 import { CURB_COLOR_PALETTE } from './assets3d/generators/GeneratorParams.js';
@@ -19,22 +20,6 @@ const CANDIDATE_TYPES = CONNECTOR_PATH_TYPES;
 
 function clamp(v, a, b) {
     return Math.max(a, Math.min(b, v));
-}
-
-function wrapAngleLocal(a) {
-    a = a % TAU;
-    if (a < 0) a += TAU;
-    return a;
-}
-
-function curbArcSpan(arc) {
-    const dir = arc.turnDir === 'L' ? 1 : -1;
-    const worldStart = arc.startAngle;
-    const worldEnd = worldStart + dir * arc.deltaAngle;
-    const start = wrapAngleLocal(-worldStart);
-    const end = wrapAngleLocal(-worldEnd);
-    if (arc.turnDir === 'L') return { startAng: end, spanAng: arc.deltaAngle };
-    return { startAng: start, spanAng: arc.deltaAngle };
 }
 
 function createDebugCitySpec(config) {
@@ -1423,36 +1408,16 @@ export class ConnectorDebuggerView {
     }
 
     _addCurbConnector({ curb, key, color, connector, curveSegs }) {
-        if (!connector) return;
-        const eps = 1e-4;
-        const segments = Array.isArray(connector) ? connector : (connector.segments ?? []);
-        if (!segments.length) return;
-        for (const segment of segments) {
-            if (segment.type === 'ARC' && segment.deltaAngle > eps) {
-                const span = curbArcSpan(segment);
-                curb.addArcSolidKey({
-                    key,
-                    centerX: segment.center.x,
-                    centerZ: segment.center.y,
-                    radiusCenter: segment.radius,
-                    startAng: span.startAng,
-                    spanAng: span.spanAng,
-                    curveSegs
-                });
-            } else if (segment.type === 'STRAIGHT') {
-                const start = segment.startPoint;
-                const end = segment.endPoint;
-                if (!start || !end) continue;
-                const s = end.clone().sub(start);
-                const len = s.length();
-                if (len > eps) {
-                    const mid = start.clone().add(end).multiplyScalar(0.5);
-                    const dir = segment.direction ? segment.direction.clone() : s.multiplyScalar(1 / len);
-                    const ry = Math.atan2(-dir.y, dir.x);
-                    curb.addBox(mid.x, this._curbY, mid.y, len, this._curbH, this._curbT, ry, color);
-                }
-            }
-        }
+        addConnectorCurbSegments({
+            curb,
+            key,
+            color,
+            connector,
+            curveSegs,
+            curbY: this._curbY,
+            curbH: this._curbH,
+            curbT: this._curbT
+        });
     }
 
     _buildCurbGroup(connector, name) {

@@ -27,9 +27,12 @@ export function mergeBufferGeometries(geoms) {
     const outUv = new Float32Array(totalVerts * 2);
     const outColor = hasColor ? new Float32Array(totalVerts * 3) : null;
 
+    const ranges = [];
     let v = 0;
     for (const g0 of geoms) {
         const g = ensureNonIndexedWithUV(g0);
+        const count = g.attributes.position.count;
+        ranges.push({ start: v, count });
         outPos.set(g.attributes.position.array, v * 3);
         outNor.set(g.attributes.normal.array, v * 3);
         outUv.set(g.attributes.uv.array, v * 2);
@@ -37,10 +40,10 @@ export function mergeBufferGeometries(geoms) {
             if (g.attributes.color) {
                 outColor.set(g.attributes.color.array, v * 3);
             } else {
-                outColor.fill(1, v * 3, (v + g.attributes.position.count) * 3);
+                outColor.fill(1, v * 3, (v + count) * 3);
             }
         }
-        v += g.attributes.position.count;
+        v += count;
     }
 
     const out = new THREE.BufferGeometry();
@@ -48,6 +51,7 @@ export function mergeBufferGeometries(geoms) {
     out.setAttribute('normal', new THREE.BufferAttribute(outNor, 3));
     out.setAttribute('uv', new THREE.BufferAttribute(outUv, 2));
     if (outColor) out.setAttribute('color', new THREE.BufferAttribute(outColor, 3));
+    out.userData.mergeRanges = ranges;
     out.computeBoundingSphere?.();
     return out;
 }

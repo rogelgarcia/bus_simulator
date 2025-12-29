@@ -15,6 +15,7 @@ import { clamp, deepMerge, classifyJunctionType, intersectionCornerStartAngle } 
 import { createAsphaltBuilder } from './internal_road/AsphaltBuilder.js';
 import { createSidewalkBuilder } from './internal_road/SidewalkBuilder.js';
 import { createCurbBuilder } from './internal_road/CurbBuilder.js';
+import { addConnectorCurbSegments } from './internal_road/ConnectorCurbUtils.js';
 import { createMarkingsBuilder } from './internal_road/MarkingsBuilder.js';
 import { buildRoadGraph } from './internal_road/RoadGraph.js';
 import { leftNormal } from './internal_road/ArcConnector.js';
@@ -62,47 +63,6 @@ function wrapAngleLocal(a) {
     return a;
 }
 
-function curbArcSpan(arc) {
-    const start = wrapAngleLocal(arc.startAngle);
-    const dir = arc.turnDir === 'L' ? 1 : -1;
-    const end = wrapAngleLocal(start + dir * arc.deltaAngle);
-    if (arc.turnDir === 'L') return { startAng: start, spanAng: arc.deltaAngle };
-    return { startAng: end, spanAng: arc.deltaAngle };
-}
-
-function addCurbConnector({ curb, key, color, connector, curveSegs, curbY, curbH, curbT }) {
-    if (!connector) return;
-    const eps = 1e-4;
-    const segments = Array.isArray(connector) ? connector : (connector.segments ?? []);
-    if (!segments.length) return;
-    for (const segment of segments) {
-        if (segment.type === 'ARC' && segment.deltaAngle > eps) {
-            const span = curbArcSpan(segment);
-            curb.addArcSolidKey({
-                key,
-                centerX: segment.center.x,
-                centerZ: segment.center.y,
-                radiusCenter: segment.radius,
-                startAng: span.startAng,
-                spanAng: span.spanAng,
-                curveSegs
-            });
-        } else if (segment.type === 'STRAIGHT') {
-            const start = segment.startPoint;
-            const end = segment.endPoint;
-            if (!start || !end) continue;
-            const s = end.clone().sub(start);
-            const len = s.length();
-            if (len > eps) {
-                const mid = start.clone().add(end).multiplyScalar(0.5);
-                const dir = s.multiplyScalar(1 / len);
-                const ry = Math.atan2(dir.y, dir.x);
-                curb.addBox(mid.x, curbY, mid.y, len, curbH, curbT, ry, color);
-            }
-        }
-    }
-}
-
 function chooseBestConnector(connectors) {
     let best = null;
     let bestLength = Number.POSITIVE_INFINITY;
@@ -120,6 +80,23 @@ function chooseBestConnector(connectors) {
 export function generateRoads({ map, config, materials } = {}) {
     const group = new THREE.Group();
     group.name = 'Roads';
+    const curbConnectors = [];
+    const recordConnector = (p0, dir0, p1, dir1, tag = null, connector = null) => {
+        if (!p0 || !p1 || !dir0 || !dir1) return;
+        if (connector && connector.ok === false) return;
+        const d0 = dir0.clone();
+        const d1 = dir1.clone();
+        if (d0.lengthSq() > 1e-6) d0.normalize();
+        if (d1.lengthSq() > 1e-6) d1.normalize();
+        curbConnectors.push({
+            tag,
+            p0: { x: p0.x, z: p0.y },
+            p1: { x: p1.x, z: p1.y },
+            dir0: { x: d0.x, z: d0.y },
+            dir1: { x: d1.x, z: d1.y },
+            connector
+        });
+    };
 
     const roadCfg = deepMerge(ROAD_DEFAULTS, config?.road ?? {});
     const groundCfg = deepMerge(GROUND_DEFAULTS, config?.ground ?? {});
@@ -652,20 +629,22 @@ export function generateRoads({ map, config, materials } = {}) {
                     node.x + info.turn.signX * rTurn,
                     node.z + info.turn.signZ * rTurn
                 );
-                const dirA = new THREE.Vector2(0, info.turn.signZ);
+                const dirA = new THREE.Vector2(0, -info.turn.signZ);
                 const dirB = new THREE.Vector2(info.turn.signX, 0);
                 const outerKey = CURB_COLOR_PALETTE.key('turn_outer', info.turn.orient);
                 const outerColor = CURB_COLOR_PALETTE.instanceColor('curb', 'turn_outer', info.turn.orient) ?? neutralCurbColor;
+                const outerStart = new THREE.Vector2(center.x - info.turn.signX * outerR, center.y);
+                const outerEnd = new THREE.Vector2(center.x, center.y - info.turn.signZ * outerR);
                 const outerConnector = solveConnectorPath({
-                    start: { position: new THREE.Vector2(center.x - info.turn.signX * outerR, center.y), direction: dirA },
-                    end: { position: new THREE.Vector2(center.x, center.y - info.turn.signZ * outerR), direction: dirB },
+                    start: { position: outerStart, direction: dirA },
+                    end: { position: outerEnd, direction: dirB },
                     radius: outerR,
                     allowFallback: true,
                     minStraight: minConnectorStraight,
                     preferS: false
                 });
                 if (outerConnector) {
-                    addCurbConnector({
+                    addConnectorCurbSegments({
                         curb,
                         key: outerKey,
                         color: outerColor,
@@ -675,20 +654,23 @@ export function generateRoads({ map, config, materials } = {}) {
                         curbH,
                         curbT
                     });
+                    recordConnector(outerStart, dirA, outerEnd, dirB, 'turn_outer', outerConnector);
                 }
                 if (innerR > 0.2) {
                     const innerKey = CURB_COLOR_PALETTE.key('turn_inner', info.turn.orient);
                     const innerColor = CURB_COLOR_PALETTE.instanceColor('curb', 'turn_inner', info.turn.orient) ?? neutralCurbColor;
+                    const innerStart = new THREE.Vector2(center.x - info.turn.signX * innerR, center.y);
+                    const innerEnd = new THREE.Vector2(center.x, center.y - info.turn.signZ * innerR);
                     const innerConnector = solveConnectorPath({
-                        start: { position: new THREE.Vector2(center.x - info.turn.signX * innerR, center.y), direction: dirA },
-                        end: { position: new THREE.Vector2(center.x, center.y - info.turn.signZ * innerR), direction: dirB },
+                        start: { position: innerStart, direction: dirA },
+                        end: { position: innerEnd, direction: dirB },
                         radius: innerR,
                         allowFallback: true,
                         minStraight: minConnectorStraight,
                         preferS: false
                     });
                     if (innerConnector) {
-                        addCurbConnector({
+                        addConnectorCurbSegments({
                             curb,
                             key: innerKey,
                             color: innerColor,
@@ -698,6 +680,7 @@ export function generateRoads({ map, config, materials } = {}) {
                             curbH,
                             curbT
                         });
+                        recordConnector(innerStart, dirA, innerEnd, dirB, 'turn_inner', innerConnector);
                     }
                 }
             }
@@ -731,6 +714,7 @@ export function generateRoads({ map, config, materials } = {}) {
                         const radial = new THREE.Vector2(Math.cos(ang), Math.sin(ang));
                         const tangent = leftNormal(radial).normalize();
                         const candidates = [];
+                        const candidateMeta = new Map();
                         for (const d0 of [roadDir, roadDir.clone().multiplyScalar(-1)]) {
                             for (const d1 of [tangent, tangent.clone().multiplyScalar(-1)]) {
                                 const cand = solveConnectorPath({
@@ -741,11 +725,15 @@ export function generateRoads({ map, config, materials } = {}) {
                                     minStraight: minConnectorStraight,
                                     preferS: true
                                 });
-                                if (cand?.ok !== false) candidates.push(cand);
+                                if (cand?.ok !== false) {
+                                    candidates.push(cand);
+                                    candidateMeta.set(cand, { dir0: d0.clone(), dir1: d1.clone() });
+                                }
                             }
                         }
                         let connector = chooseBestConnector(candidates);
-                        addCurbConnector({
+                        const meta = connector ? candidateMeta.get(connector) : null;
+                        addConnectorCurbSegments({
                             curb,
                             key: roundKey,
                             color: roundColor,
@@ -755,6 +743,9 @@ export function generateRoads({ map, config, materials } = {}) {
                             curbH,
                             curbT
                         });
+                        if (connector && meta) {
+                            recordConnector(p0, meta.dir0, p1, meta.dir1, 'roundabout', connector);
+                        }
                     }
                 }
             }
@@ -763,7 +754,7 @@ export function generateRoads({ map, config, materials } = {}) {
             for (const [cornerKey, data] of Object.entries(info.corners)) {
                 const curbKey = CURB_COLOR_PALETTE.key(junctionType, cornerKey);
                 const cornerColor = CURB_COLOR_PALETTE.instanceColor('curb', junctionType, cornerKey) ?? neutralCurbColor;
-                const dirA = new THREE.Vector2(0, data.signZ);
+                const dirA = new THREE.Vector2(0, -data.signZ);
                 const dirB = new THREE.Vector2(data.signX, 0);
                 const p0 = new THREE.Vector2(
                     node.x + data.signX * data.x0,
@@ -782,7 +773,7 @@ export function generateRoads({ map, config, materials } = {}) {
                     preferS: false
                 });
                 if (connector) {
-                    addCurbConnector({
+                    addConnectorCurbSegments({
                         curb,
                         key: curbKey,
                         color: cornerColor,
@@ -792,6 +783,7 @@ export function generateRoads({ map, config, materials } = {}) {
                         curbH,
                         curbT
                     });
+                    recordConnector(p0, dirA, p1, dirB, `junction_${cornerKey}`, connector);
                 } else {
                     const cx = node.x + data.signX * (data.x0 + data.rC);
                     const cz = node.z + data.signZ * (data.z0 + data.rC);
@@ -973,6 +965,7 @@ export function generateRoads({ map, config, materials } = {}) {
         sidewalk: sidewalk?.mesh ?? null,
         curbBlocks: curb?.mesh ?? null,
         markingsWhite,
-        markingsYellow
+        markingsYellow,
+        curbConnectors
     };
 }
