@@ -15,9 +15,10 @@
 - Don't create fallback logics with IF statements as a hacky way to solve a problem. Adjust formulas so the problem is solved in a more elegant way.
 
 **Comments:**
-- No comments in code files
+- No comments in code files (see exceptions bellow)
 - Exception: First line must be a comment with the file path (e.g., `// graphics/assets3d/generators/RoadGenerator.js`)
 - Exception: Design decisions (do not explain the code, but why it is written a certain way)
+  - Always write design decisions as a high level comment on top of the file (try to be concise)
 - Exception: Library source code (preserve all original comments)
 - Exception: Hackish solutions (explain what you did and why it's necessary)
 
