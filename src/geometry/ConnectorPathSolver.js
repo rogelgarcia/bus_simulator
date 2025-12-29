@@ -169,28 +169,16 @@ function candidateStraightLength(segmentTypes, segmentLengths, radius) {
 function selectBestCandidate(candidates, options) {
     if (!candidates.length) return null;
     const {
-        minStraight = 0,
-        maxStraight = null,
         lengthEps = 1e-6,
         preferTypes = [],
         baseRadius = null
     } = options ?? {};
-
+    let pool = candidates.slice();
     let minLength = Number.POSITIVE_INFINITY;
-    for (const cand of candidates) {
+    for (const cand of pool) {
         if (cand.totalLength < minLength) minLength = cand.totalLength;
     }
-
-    let pool = candidates.filter((cand) => cand.totalLength <= minLength + lengthEps);
-    if (minStraight > 0) {
-        const withStraight = pool.filter((cand) => cand.straightLength >= minStraight - 1e-6);
-        if (withStraight.length) pool = withStraight;
-    }
-
-    if (Number.isFinite(maxStraight)) {
-        const withMaxStraight = pool.filter((cand) => cand.straightLength <= maxStraight + 1e-6);
-        if (withMaxStraight.length) pool = withMaxStraight;
-    }
+    pool = pool.filter((cand) => cand.totalLength <= minLength + lengthEps);
 
     if (preferTypes.length) {
         let best = null;
@@ -256,13 +244,10 @@ function metricsForPath({ segmentHeadings, endPose, targetPose }) {
     };
 }
 
-function summarizeRadiusChoice({ chosen, candidates, baseRadius, preferTypes, minStraight }) {
+function summarizeRadiusChoice({ chosen, candidates, baseRadius, preferTypes }) {
     if (!chosen) return 'no-solution';
     if (candidates.length === 1) return 'only-candidate';
     const baseMatch = Number.isFinite(baseRadius) && Math.abs(chosen.radius - baseRadius) <= 1e-6;
-    if (minStraight > 0 && chosen.straightLength >= minStraight - 1e-6) {
-        return baseMatch ? 'shortest-with-min-straight' : 'shortest-with-min-straight-fallback-radius';
-    }
     if (preferTypes?.length && preferTypes.includes(chosen.type)) {
         return baseMatch ? 'shortest-with-preferred-type' : 'shortest-with-preferred-type-fallback-radius';
     }
@@ -312,8 +297,6 @@ export function solveConnectorPath(config = {}) {
     const preferTypes = Array.isArray(config.preferPathTypes) && config.preferPathTypes.length
         ? config.preferPathTypes.slice()
         : (config.preferS ? PREFER_S_TYPES.slice() : DEFAULT_PATH_TYPES.slice());
-    const minStraight = Number.isFinite(config.minStraight) ? config.minStraight : 0;
-    const maxStraight = Number.isFinite(config.maxStraight) ? config.maxStraight : null;
     const baseRadius = radiusPolicy.baseRadius ?? (radiusCandidates[0] ?? null);
 
     const candidates = [];
@@ -362,8 +345,6 @@ export function solveConnectorPath(config = {}) {
     }
 
     const chosen = selectBestCandidate(candidates, {
-        minStraight,
-        maxStraight,
         lengthEps: Number.isFinite(config.lengthEps) ? config.lengthEps : 1e-6,
         preferTypes,
         baseRadius
@@ -404,8 +385,7 @@ export function solveConnectorPath(config = {}) {
         chosen,
         candidates,
         baseRadius,
-        preferTypes,
-        minStraight
+        preferTypes
     });
 
     const result = {

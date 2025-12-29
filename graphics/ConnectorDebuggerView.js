@@ -133,7 +133,6 @@ export class ConnectorDebuggerView {
         this._createdCurbGroup = null;
         this._curbAutoCreate = false;
         this._connector = null;
-        this._minStraight = 0.05;
         this._enableConnectorMesh = false;
         this._lastPayload = null;
         this._connectorBoxGeo = null;
@@ -906,7 +905,6 @@ export class ConnectorDebuggerView {
             end: { position: p1, direction: dir1 },
             radius: this._radius,
             allowFallback: false,
-            minStraight: this._minStraight,
             preferS: true,
             includeCandidates: true
         });
@@ -1321,7 +1319,6 @@ export class ConnectorDebuggerView {
                 ground: this.city?.generatorConfig?.ground ?? null,
                 solver: {
                     radius: this._radius,
-                    minStraight: this._minStraight,
                     allowFallback: false,
                     preferS: true
                 },

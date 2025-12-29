@@ -106,10 +106,10 @@ export function generateRoads({ map, config, materials } = {}) {
     const laneWidth = roadCfg.laneWidth ?? 3.2;
     const shoulder = roadCfg.shoulder ?? 0.35;
 
-    const sidewalkExtra = roadCfg.sidewalk?.extraWidth ?? 0.0;
-    const sidewalkLift = roadCfg.sidewalk?.lift ?? 0.001;
-    const sidewalkInset = roadCfg.sidewalk?.inset ?? 0.06;
-    const curbCornerRadius = roadCfg.sidewalk?.cornerRadius ?? 1.4;
+    const sidewalkExtra = roadCfg.sidewalk.extraWidth;
+    const sidewalkLift = roadCfg.sidewalk.lift;
+    const sidewalkInset = roadCfg.sidewalk.inset;
+    const curbCornerRadius = roadCfg.curves.junctionRadius;
     const sidewalkWidth = Math.max(0, sidewalkExtra + sidewalkInset);
 
     const curbT = roadCfg.curb?.thickness ?? 0.32;
@@ -129,11 +129,9 @@ export function generateRoads({ map, config, materials } = {}) {
     const markLift = roadCfg.markings?.lift ?? 0.003;
     const markY = roadY + markLift;
 
-    const turnRadiusPref = roadCfg.curves?.turnRadius ?? 4.2;
+    const turnRadiusPref = roadCfg.curves.turnRadius;
     const curbArcSegs = clamp(roadCfg.curves?.curbArcSegments ?? 18, 8, 96) | 0;
     const asphaltArcSegs = clamp(roadCfg.curves?.asphaltArcSegments ?? 24, 8, 128) | 0;
-    const minConnectorStraight = 0.05;
-
     const roadMatBase = materials?.road ?? new THREE.MeshStandardMaterial({ color: 0x2b2b2b, roughness: 0.95 });
     const sidewalkMatBase = materials?.sidewalk ?? new THREE.MeshStandardMaterial({ color: 0x8b8b8b, roughness: 1.0 });
     const curbMatBase = materials?.curb ?? new THREE.MeshStandardMaterial({ color: 0x6f6f6f, roughness: 1.0 });
@@ -278,12 +276,7 @@ export function generateRoads({ map, config, materials } = {}) {
                 const rC = clamp(curbCornerRadius, 0.35, Math.min(cornerXeff, cornerZeff));
                 const x0 = xInner + curbT * 0.5;
                 const z0 = zInner + curbT * 0.5;
-                const poleInset = Math.max(x0, z0);
-                const maxRadius = Math.min(
-                    xInner + cornerXeff - poleInset,
-                    zInner + cornerZeff - poleInset
-                );
-                const cornerRadius = clamp(rC, 0.05, maxRadius);
+                const cornerRadius = clamp(rC - curbT * 0.3, 0.05, rC);
                 corners[corner.key] = {
                     rC,
                     xInner,
@@ -292,13 +285,10 @@ export function generateRoads({ map, config, materials } = {}) {
                     z0,
                     signX: corner.signX,
                     signZ: corner.signZ,
-                    cornerXeff,
-                    cornerZeff,
-                    poleInset,
                     cornerRadius
                 };
-                const tA = poleInset + cornerRadius;
-                const tB = tA;
+                const tA = z0 + cornerRadius;
+                const tB = x0 + cornerRadius;
                 if (corner.dirA === 'N') curbTrim.N[corner.dirB] = Math.max(curbTrim.N[corner.dirB], tA);
                 if (corner.dirA === 'S') curbTrim.S[corner.dirB] = Math.max(curbTrim.S[corner.dirB], tA);
                 if (corner.dirB === 'E') curbTrim.E[corner.dirA] = Math.max(curbTrim.E[corner.dirA], tB);
@@ -657,7 +647,6 @@ export function generateRoads({ map, config, materials } = {}) {
                     end: { position: outerEnd, direction: dirB },
                     radius: outerR,
                     allowFallback: true,
-                    minStraight: minConnectorStraight,
                     preferS: false
                 });
                 if (outerConnector) {
@@ -683,7 +672,6 @@ export function generateRoads({ map, config, materials } = {}) {
                         end: { position: innerEnd, direction: dirB },
                         radius: innerR,
                         allowFallback: true,
-                        minStraight: minConnectorStraight,
                         preferS: false
                     });
                     if (innerConnector) {
@@ -741,7 +729,6 @@ export function generateRoads({ map, config, materials } = {}) {
                                     end: { position: p1, direction: d1 },
                                     radius: round.blendRadius,
                                     allowFallback: true,
-                                    minStraight: minConnectorStraight,
                                     preferS: true
                                 });
                                 if (cand?.ok !== false) {
@@ -773,25 +760,22 @@ export function generateRoads({ map, config, materials } = {}) {
             for (const [cornerKey, data] of Object.entries(info.corners)) {
                 const curbKey = CURB_COLOR_PALETTE.key(junctionType, cornerKey);
                 const cornerColor = CURB_COLOR_PALETTE.instanceColor('curb', junctionType, cornerKey) ?? neutralCurbColor;
-                const poleInset = data.poleInset ?? Math.max(data.x0, data.z0);
                 const cornerRadius = data.cornerRadius ?? data.rC;
                 const dirA = new THREE.Vector2(0, -data.signZ);
                 const dirB = new THREE.Vector2(data.signX, 0);
                 const p0 = new THREE.Vector2(
-                    node.x + data.signX * poleInset,
-                    node.z + data.signZ * (poleInset + cornerRadius)
+                    node.x + data.signX * data.x0,
+                    node.z + data.signZ * (data.z0 + cornerRadius)
                 );
                 const p1 = new THREE.Vector2(
-                    node.x + data.signX * (poleInset + cornerRadius),
-                    node.z + data.signZ * poleInset
+                    node.x + data.signX * (data.x0 + cornerRadius),
+                    node.z + data.signZ * data.z0
                 );
                 const connector = solveConnectorPath({
                     start: { position: p0, direction: dirA },
                     end: { position: p1, direction: dirB },
                     radius: cornerRadius,
                     allowFallback: true,
-                    minStraight: 0,
-                    maxStraight: 0.5,
                     preferS: false
                 });
                 if (connector) {
@@ -807,8 +791,8 @@ export function generateRoads({ map, config, materials } = {}) {
                     });
                     recordConnector(p0, dirA, p1, dirB, `junction_${cornerKey}`, connector);
                 } else {
-                    const cx = node.x + data.signX * (poleInset + cornerRadius);
-                    const cz = node.z + data.signZ * (poleInset + cornerRadius);
+                    const cx = node.x + data.signX * (data.x0 + cornerRadius);
+                    const cz = node.z + data.signZ * (data.z0 + cornerRadius);
                     const startAng = intersectionCornerStartAngle(data.signX, data.signZ);
                     curb.addArcSolidKey({
                         key: curbKey,
@@ -854,10 +838,9 @@ export function generateRoads({ map, config, materials } = {}) {
             if (!info.isJunction) continue;
             const junctionType = info.junctionType;
             for (const [cornerKey, data] of Object.entries(info.corners)) {
-                const poleInset = data.poleInset ?? Math.max(data.x0, data.z0);
                 const cornerRadius = data.cornerRadius ?? data.rC;
-                const cx = node.x + data.signX * (poleInset + cornerRadius);
-                const cz = node.z + data.signZ * (poleInset + cornerRadius);
+                const cx = node.x + data.signX * (data.x0 + cornerRadius);
+                const cz = node.z + data.signZ * (data.z0 + cornerRadius);
                 const innerR = Math.max(0.05, cornerRadius - curbT * 0.5 + sidewalkInset);
                 const outerR = innerR + sidewalkWidth;
                 if (outerR <= innerR + 0.01) continue;

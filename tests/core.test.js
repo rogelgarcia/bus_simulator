@@ -1180,8 +1180,7 @@ async function runTests() {
                 start: { position: p0, direction: dir0 },
                 end: { position: p1, direction: dir1 },
                 radius,
-                allowFallback: false,
-                minStraight: 0
+                allowFallback: false
             });
             assertTrue(result.ok, 'Solver should return a path.');
             assertTrue(result.metrics.endPoseErrorPos <= posEps, 'End position error too large.');

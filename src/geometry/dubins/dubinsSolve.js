@@ -1,3 +1,4 @@
+// AI RULE: DO NOT EDIT
 // src/geometry/dubins/dubinsSolve.js
 import { DubinsPath, DubinsPathType } from './DubinsCurves.js';
 

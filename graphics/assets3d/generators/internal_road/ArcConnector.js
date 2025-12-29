@@ -76,7 +76,7 @@ function bestCandidate(candidates) {
     return best;
 }
 
-function solveForRadius({ p0, dir0, p1, dir1, R, preferS, minStraight }) {
+function solveForRadius({ p0, dir0, p1, dir1, R, preferS }) {
     const d0 = dir0.clone().normalize();
     const d1 = dir1.clone().normalize();
     if (d0.lengthSq() < EPS || d1.lengthSq() < EPS || !(R > EPS)) return null;
@@ -115,7 +115,6 @@ function solveForRadius({ p0, dir0, p1, dir1, R, preferS, minStraight }) {
                 || (pointSegDistSq(c1, t0, t1) < (R * R * 0.999));
             let score = -totalLength + (dot0 + dot1) * 0.25;
             if (preferS && internal) score += 0.5;
-            if (minStraight > 0 && lenS < minStraight) score -= (minStraight - lenS) / minStraight;
             if (selfIntersecting) score -= 1.0;
             candidates.push({
                 type,
@@ -165,8 +164,7 @@ export function solveArcStraightArcConnector({
     dir1,
     R,
     preferS = true,
-    allowFallback = true,
-    minStraight = 0.05
+    allowFallback = true
 } = {}) {
     const radii = [R];
     if (allowFallback && Number.isFinite(R)) {
@@ -174,7 +172,7 @@ export function solveArcStraightArcConnector({
     }
     const candidates = [];
     for (const r of radii) {
-        const cand = solveForRadius({ p0, dir0, p1, dir1, R: r, preferS, minStraight });
+        const cand = solveForRadius({ p0, dir0, p1, dir1, R: r, preferS });
         if (cand) candidates.push(cand);
     }
     return bestCandidate(candidates);

@@ -223,34 +223,32 @@ export const CURB_COLOR_PALETTE = createCornerPalette(CORNER_COLOR_PALETTE_KIND)
 export const ASPHALT_COLOR_PALETTE_KIND = DEBUG_ASPHALT ? 'debug' : 'regular';
 export const ASPHALT_COLOR_PALETTE = createAsphaltPalette(ASPHALT_COLOR_PALETTE_KIND);
 
-const ROAD_SCALE = 1.5;
-
 export const ROAD_DEFAULTS = {
     surfaceY: 0.02,
-    laneWidth: 3.2 * ROAD_SCALE,
-    shoulder: 0.35 * ROAD_SCALE,
+    laneWidth: 4.8,
+    shoulder: 0.525,
     sidewalk: {
-        extraWidth: 1.25 * ROAD_SCALE,
-        cornerRadius: 1.8 * ROAD_SCALE,
+        extraWidth: 1.875,
         lift: 0.001,
-        inset: 0.06 * ROAD_SCALE
+        inset: 0.09
     },
     curves: {
-        turnRadius: 3 * ROAD_SCALE,
+        turnRadius: 4.5,
+        junctionRadius: 2.25,
         asphaltArcSegments: 40,
         curbArcSegments: 24
     },
     markings: {
-        lineWidth: 0.12 * ROAD_SCALE,
-        edgeInset: 0.22 * ROAD_SCALE,
+        lineWidth: 0.18,
+        edgeInset: 0.33,
         lift: 0.003
     },
     curb: {
-        thickness: 0.32 * ROAD_SCALE,
+        thickness: 0.48,
         height: 0.17,
         extraHeight: 0.0,
         sink: 0.03,
-        joinOverlap: 0.24 * ROAD_SCALE
+        joinOverlap: 0.36
     }
 };
 

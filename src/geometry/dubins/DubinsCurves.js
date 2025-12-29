@@ -1,3 +1,4 @@
+// AI RULE: DO NOT EDIT
 const EDUBOK = 0;
 const EDUBCOCONFIGS = 1;
 const EDUBPARAM = 2;
