@@ -401,6 +401,33 @@ body.splash-bg #game-canvas {
     white-space: nowrap;
 }
 
+.city-debugs-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    align-items: center;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.75);
+}
+
+.city-debugs-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.city-debugs-legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2);
+}
+
+.city-debugs-legend-text {
+    white-space: nowrap;
+}
+
 .city-shortcuts-item {
     display: flex;
     align-items: center;

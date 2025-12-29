@@ -15,6 +15,62 @@ function clamp(v, a, b) {
     return Math.max(a, Math.min(b, v));
 }
 
+const EPS = 1e-6;
+const HALF = 0.5;
+const DOUBLE = 2;
+const MIN_LANES_ONEWAY = 2;
+const ROAD_SURFACE_LIFT = 0.004;
+const HIGHLIGHT_OPACITY = 0.25;
+const HIGHLIGHT_LIFT = 0.04;
+const HIGHLIGHT_PAD_TILE_FRACTION = 0.18;
+const HIGHLIGHT_PAD_LANE_FACTOR = 0.6;
+const HIGHLIGHT_PAD_CURB_FACTOR = 2.4;
+const HIGHLIGHT_PAD_MIN = 1.2;
+const POLE_DOT_SCALE = 1.5;
+const POLE_DOT_RADIUS_FACTOR = 0.25;
+const POLE_DOT_RADIUS_MIN = 0.04;
+const COLLISION_POLE_SCALE = 2;
+const DEFAULT_CURB_THICKNESS = 0.48;
+const COLLISION_MARKER_COLOR_HEX = 0xff3b30;
+const COLLISION_MARKER_OPACITY = 0.7;
+const CONNECTION_MARKER_COLOR_HEX = 0x34c759;
+const CONNECTION_MARKER_OPACITY = 0.7;
+const ADJUSTED_END_RING_COLOR_HEX = 0x34c759;
+const ADJUSTED_END_RING_OPACITY = 0.85;
+const ADJUSTED_END_ORIGIN_COLOR_HEX = 0xff3b30;
+const ADJUSTED_END_ORIGIN_OPACITY = 0.45;
+const COLLISION_MARKER_LIFT = 0.002;
+const COLLISION_MARKER_SEGMENTS = 32;
+
+function normalizeDir(x, y) {
+    const len = Math.hypot(x, y);
+    if (!(len > EPS)) return null;
+    const inv = 1 / len;
+    return { x: x * inv, y: y * inv };
+}
+
+function laneCount(lanesF, lanesB) {
+    const f = lanesF ?? 0;
+    const b = lanesB ?? 0;
+    const total = f + b;
+    if (total <= 0) return 0;
+    if (f === 0 || b === 0) return Math.max(MIN_LANES_ONEWAY, total);
+    return total;
+}
+
+function roadWidth(lanesF, lanesB, laneWidth, shoulder, tileSize) {
+    const lanes = laneCount(lanesF, lanesB);
+    const raw = lanes * laneWidth + shoulder * DOUBLE;
+    return clamp(raw, laneWidth, tileSize);
+}
+
+function offsetEndpoints(p0, p1, normal, offset) {
+    return {
+        start: { x: p0.x + normal.x * offset, y: p0.y + normal.y * offset },
+        end: { x: p1.x + normal.x * offset, y: p1.y + normal.y * offset }
+    };
+}
+
 export class CityState {
     constructor(engine, sm) {
         this.engine = engine;
@@ -57,11 +113,23 @@ export class CityState {
         this._highlightMesh = null;
         this._highlightGeo = null;
         this._highlightMat = null;
-        this._highlightDummy = null;
+        this._highlightPos = null;
         this._highlightY = 0.03;
-        this._highlightCapacity = 0;
+        this._collisionMarkerMesh = null;
+        this._collisionMarkerGeo = null;
+        this._collisionMarkerMat = null;
+        this._connectionMarkerMesh = null;
+        this._connectionMarkerGeo = null;
+        this._connectionMarkerMat = null;
+        this._adjustedEndRingMesh = null;
+        this._adjustedEndRingGeo = null;
+        this._adjustedEndRingMat = null;
+        this._adjustedEndOriginMesh = null;
+        this._adjustedEndOriginGeo = null;
+        this._adjustedEndOriginMat = null;
         this._connectorOverlay = null;
         this._connectorDebugEnabled = true;
+        this._collisionDebugEnabled = true;
         this._hoverOutlineEnabled = true;
         this._outlineLine = null;
         this._outlineMaterial = null;
@@ -104,8 +172,10 @@ export class CityState {
         this.debugsPanel = new CityDebugsPanel({
             connectorDebugEnabled: this._connectorDebugEnabled,
             hoverOutlineEnabled: this._hoverOutlineEnabled,
+            collisionDebugEnabled: this._collisionDebugEnabled,
             onConnectorDebugToggle: (enabled) => this._setConnectorDebugEnabled(enabled),
-            onHoverOutlineToggle: (enabled) => this._setHoverOutlineEnabled(enabled)
+            onHoverOutlineToggle: (enabled) => this._setHoverOutlineEnabled(enabled),
+            onCollisionDebugToggle: (enabled) => this._setCollisionDebugEnabled(enabled)
         });
         this.debugsPanel.show();
 
@@ -152,6 +222,7 @@ export class CityState {
         this.shortcutsPanel = null;
         this._baseSpec = null;
         this._clearHighlight();
+        this._clearCollisionMarkers();
         this._clearConnectorOverlay();
         this._destroyHoverOutline();
 
@@ -215,12 +286,14 @@ export class CityState {
     _setCity(mapSpec) {
         this.city?.detach(this.engine);
         this._clearConnectorOverlay();
+        this._clearCollisionMarkers();
         this.engine.clearScene();
         this.engine.context.city = null;
         this.city = getSharedCity(this.engine, { ...this._cityOptions, mapSpec });
         this.city.attach(this.engine);
         this._setupHighlight();
         this._setupConnectorOverlay();
+        this._setupCollisionMarkers();
         this._setupHoverOutline();
     }
 
@@ -250,32 +323,240 @@ export class CityState {
         this._clearHighlight();
         const map = this.city?.map;
         if (!map) return;
-        const tileSize = map.tileSize;
-        this._highlightGeo = new THREE.PlaneGeometry(tileSize * 0.92, tileSize * 0.92, 1, 1);
-        this._highlightGeo.rotateX(-Math.PI / 2);
-        this._highlightMat = new THREE.MeshBasicMaterial({ color: 0xfff3a3, transparent: true, opacity: 0.45, depthWrite: false });
-        const capacity = Math.max(map.width, map.height) + 1;
-        this._highlightMesh = new THREE.InstancedMesh(this._highlightGeo, this._highlightMat, capacity);
-        this._highlightMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-        this._highlightMesh.count = 0;
-        this._highlightMesh.renderOrder = 5;
+        this._highlightGeo = new THREE.BufferGeometry();
+        this._highlightPos = new Float32Array(18);
+        const posAttr = new THREE.BufferAttribute(this._highlightPos, 3);
+        posAttr.setUsage(THREE.DynamicDrawUsage);
+        this._highlightGeo.setAttribute('position', posAttr);
+        this._highlightMat = new THREE.MeshBasicMaterial({
+            color: 0xfff3a3,
+            transparent: true,
+            opacity: HIGHLIGHT_OPACITY,
+            depthWrite: false,
+            depthTest: false,
+            side: THREE.DoubleSide
+        });
+        this._highlightMesh = new THREE.Mesh(this._highlightGeo, this._highlightMat);
+        this._highlightMesh.renderOrder = 20;
         this._highlightMesh.frustumCulled = false;
-        this._highlightDummy = new THREE.Object3D();
-        const roadY = this.city?.generatorConfig?.road?.surfaceY ?? 0.02;
-        const curbHeight = this.city?.generatorConfig?.road?.curb?.height ?? 0.17;
-        const groundY = this.city?.generatorConfig?.ground?.surfaceY ?? (roadY + curbHeight);
-        this._highlightY = Math.max(roadY, groundY) + 0.01;
-        this._highlightCapacity = capacity;
+        this._highlightMesh.visible = false;
+        const roadCfg = this.city?.generatorConfig?.road ?? {};
+        const groundCfg = this.city?.generatorConfig?.ground ?? {};
+        const baseRoadY = roadCfg.surfaceY ?? 0.02;
+        const curbHeight = roadCfg.curb?.height ?? 0.17;
+        const groundY = groundCfg.surfaceY ?? (baseRoadY + curbHeight);
+        const roadY = Math.max(baseRoadY, groundY + ROAD_SURFACE_LIFT);
+        this._highlightY = roadY + HIGHLIGHT_LIFT;
         this.city.group.add(this._highlightMesh);
     }
 
     _clearHighlight() {
         if (this._highlightMesh) this._highlightMesh.removeFromParent();
+        if (this._highlightGeo) this._highlightGeo.dispose();
+        if (this._highlightMat) this._highlightMat.dispose();
         this._highlightMesh = null;
         this._highlightGeo = null;
         this._highlightMat = null;
-        this._highlightDummy = null;
-        this._highlightCapacity = 0;
+        this._highlightPos = null;
+    }
+
+    _setupCollisionMarkers() {
+        this._clearCollisionMarkers();
+        const city = this.city;
+        const map = city?.map ?? null;
+        if (!map) return;
+        const collisionMarkers = [];
+        const connectionMarkers = [];
+        const adjustedEndRings = [];
+        const adjustedEndOrigins = [];
+        const roads = Array.isArray(map.roadSegments) ? map.roadSegments : [];
+        for (const road of roads) {
+            const collisionPoles = road?.poles?.collision;
+            if (Array.isArray(collisionPoles)) {
+                for (const pole of collisionPoles) {
+                    if (!pole || !Number.isFinite(pole.x) || !Number.isFinite(pole.z)) continue;
+                    collisionMarkers.push(pole);
+                }
+            }
+            const connectionPoles = road?.poles?.connection;
+            if (Array.isArray(connectionPoles)) {
+                for (const pole of connectionPoles) {
+                    if (!pole || !Number.isFinite(pole.x) || !Number.isFinite(pole.z)) continue;
+                    connectionMarkers.push(pole);
+                }
+            }
+            const adjustedEndPoles = road?.poles?.adjustedEnd;
+            if (Array.isArray(adjustedEndPoles)) {
+                for (const entry of adjustedEndPoles) {
+                    const adjusted = entry?.adjusted;
+                    if (adjusted && Number.isFinite(adjusted.x) && Number.isFinite(adjusted.z)) {
+                        adjustedEndRings.push(adjusted);
+                    }
+                    const original = entry?.original;
+                    if (original && Number.isFinite(original.x) && Number.isFinite(original.z)) {
+                        adjustedEndOrigins.push(original);
+                    }
+                }
+            }
+        }
+        if (!collisionMarkers.length && !connectionMarkers.length && !adjustedEndRings.length && !adjustedEndOrigins.length) return;
+        const roadCfg = city?.generatorConfig?.road ?? {};
+        const groundCfg = city?.generatorConfig?.ground ?? {};
+        const baseRoadY = roadCfg.surfaceY ?? 0.02;
+        const curbHeight = roadCfg.curb?.height ?? 0.17;
+        const groundY = groundCfg.surfaceY ?? (baseRoadY + curbHeight);
+        const roadY = Math.max(baseRoadY, groundY + ROAD_SURFACE_LIFT);
+        const markerY = roadY + COLLISION_MARKER_LIFT;
+        const curbT = roadCfg.curb?.thickness ?? DEFAULT_CURB_THICKNESS;
+        const endPoleRadius = Math.max(POLE_DOT_RADIUS_MIN, curbT * POLE_DOT_RADIUS_FACTOR * POLE_DOT_SCALE);
+        const radius = endPoleRadius * COLLISION_POLE_SCALE;
+        const ringInner = endPoleRadius * 1.2;
+        const ringOuter = endPoleRadius * 1.7;
+        const originRadius = Math.max(POLE_DOT_RADIUS_MIN * 0.6, endPoleRadius * 0.6);
+        const dummy = new THREE.Object3D();
+        if (collisionMarkers.length) {
+            this._collisionMarkerGeo = new THREE.CircleGeometry(radius, COLLISION_MARKER_SEGMENTS);
+            this._collisionMarkerGeo.rotateX(-Math.PI / 2);
+            this._collisionMarkerMat = new THREE.MeshBasicMaterial({
+                color: COLLISION_MARKER_COLOR_HEX,
+                transparent: true,
+                opacity: COLLISION_MARKER_OPACITY,
+                depthWrite: false,
+                depthTest: false
+            });
+            this._collisionMarkerMesh = new THREE.InstancedMesh(this._collisionMarkerGeo, this._collisionMarkerMat, collisionMarkers.length);
+            this._collisionMarkerMesh.renderOrder = 25;
+            this._collisionMarkerMesh.frustumCulled = false;
+            let k = 0;
+            for (let i = 0; i < collisionMarkers.length; i++) {
+                const p = collisionMarkers[i];
+                if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.z)) continue;
+                dummy.position.set(p.x, markerY, p.z);
+                dummy.rotation.set(0, 0, 0);
+                dummy.scale.set(1, 1, 1);
+                dummy.updateMatrix();
+                this._collisionMarkerMesh.setMatrixAt(k, dummy.matrix);
+                k += 1;
+            }
+            this._collisionMarkerMesh.count = k;
+            this._collisionMarkerMesh.instanceMatrix.needsUpdate = true;
+            this._collisionMarkerMesh.visible = this._collisionDebugEnabled;
+            city.group.add(this._collisionMarkerMesh);
+        }
+        if (connectionMarkers.length) {
+            this._connectionMarkerGeo = new THREE.CircleGeometry(radius, COLLISION_MARKER_SEGMENTS);
+            this._connectionMarkerGeo.rotateX(-Math.PI / 2);
+            this._connectionMarkerMat = new THREE.MeshBasicMaterial({
+                color: CONNECTION_MARKER_COLOR_HEX,
+                transparent: true,
+                opacity: CONNECTION_MARKER_OPACITY,
+                depthWrite: false,
+                depthTest: false
+            });
+            this._connectionMarkerMesh = new THREE.InstancedMesh(this._connectionMarkerGeo, this._connectionMarkerMat, connectionMarkers.length);
+            this._connectionMarkerMesh.renderOrder = 24;
+            this._connectionMarkerMesh.frustumCulled = false;
+            let k = 0;
+            for (let i = 0; i < connectionMarkers.length; i++) {
+                const p = connectionMarkers[i];
+                if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.z)) continue;
+                dummy.position.set(p.x, markerY, p.z);
+                dummy.rotation.set(0, 0, 0);
+                dummy.scale.set(1, 1, 1);
+                dummy.updateMatrix();
+                this._connectionMarkerMesh.setMatrixAt(k, dummy.matrix);
+                k += 1;
+            }
+            this._connectionMarkerMesh.count = k;
+            this._connectionMarkerMesh.instanceMatrix.needsUpdate = true;
+            this._connectionMarkerMesh.visible = this._collisionDebugEnabled;
+            city.group.add(this._connectionMarkerMesh);
+        }
+        if (adjustedEndRings.length) {
+            this._adjustedEndRingGeo = new THREE.RingGeometry(ringInner, ringOuter, COLLISION_MARKER_SEGMENTS);
+            this._adjustedEndRingGeo.rotateX(-Math.PI / 2);
+            this._adjustedEndRingMat = new THREE.MeshBasicMaterial({
+                color: ADJUSTED_END_RING_COLOR_HEX,
+                transparent: true,
+                opacity: ADJUSTED_END_RING_OPACITY,
+                depthWrite: false,
+                depthTest: false
+            });
+            this._adjustedEndRingMesh = new THREE.InstancedMesh(this._adjustedEndRingGeo, this._adjustedEndRingMat, adjustedEndRings.length);
+            this._adjustedEndRingMesh.renderOrder = 26;
+            this._adjustedEndRingMesh.frustumCulled = false;
+            let k = 0;
+            for (let i = 0; i < adjustedEndRings.length; i++) {
+                const p = adjustedEndRings[i];
+                if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.z)) continue;
+                dummy.position.set(p.x, markerY, p.z);
+                dummy.rotation.set(0, 0, 0);
+                dummy.scale.set(1, 1, 1);
+                dummy.updateMatrix();
+                this._adjustedEndRingMesh.setMatrixAt(k, dummy.matrix);
+                k += 1;
+            }
+            this._adjustedEndRingMesh.count = k;
+            this._adjustedEndRingMesh.instanceMatrix.needsUpdate = true;
+            this._adjustedEndRingMesh.visible = this._collisionDebugEnabled;
+            city.group.add(this._adjustedEndRingMesh);
+        }
+        if (adjustedEndOrigins.length) {
+            this._adjustedEndOriginGeo = new THREE.CircleGeometry(originRadius, COLLISION_MARKER_SEGMENTS);
+            this._adjustedEndOriginGeo.rotateX(-Math.PI / 2);
+            this._adjustedEndOriginMat = new THREE.MeshBasicMaterial({
+                color: ADJUSTED_END_ORIGIN_COLOR_HEX,
+                transparent: true,
+                opacity: ADJUSTED_END_ORIGIN_OPACITY,
+                depthWrite: false,
+                depthTest: false
+            });
+            this._adjustedEndOriginMesh = new THREE.InstancedMesh(this._adjustedEndOriginGeo, this._adjustedEndOriginMat, adjustedEndOrigins.length);
+            this._adjustedEndOriginMesh.renderOrder = 23;
+            this._adjustedEndOriginMesh.frustumCulled = false;
+            let k = 0;
+            for (let i = 0; i < adjustedEndOrigins.length; i++) {
+                const p = adjustedEndOrigins[i];
+                if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.z)) continue;
+                dummy.position.set(p.x, markerY, p.z);
+                dummy.rotation.set(0, 0, 0);
+                dummy.scale.set(1, 1, 1);
+                dummy.updateMatrix();
+                this._adjustedEndOriginMesh.setMatrixAt(k, dummy.matrix);
+                k += 1;
+            }
+            this._adjustedEndOriginMesh.count = k;
+            this._adjustedEndOriginMesh.instanceMatrix.needsUpdate = true;
+            this._adjustedEndOriginMesh.visible = this._collisionDebugEnabled;
+            city.group.add(this._adjustedEndOriginMesh);
+        }
+    }
+
+    _clearCollisionMarkers() {
+        if (this._collisionMarkerMesh) this._collisionMarkerMesh.removeFromParent();
+        if (this._collisionMarkerGeo) this._collisionMarkerGeo.dispose();
+        if (this._collisionMarkerMat) this._collisionMarkerMat.dispose();
+        if (this._connectionMarkerMesh) this._connectionMarkerMesh.removeFromParent();
+        if (this._connectionMarkerGeo) this._connectionMarkerGeo.dispose();
+        if (this._connectionMarkerMat) this._connectionMarkerMat.dispose();
+        if (this._adjustedEndRingMesh) this._adjustedEndRingMesh.removeFromParent();
+        if (this._adjustedEndRingGeo) this._adjustedEndRingGeo.dispose();
+        if (this._adjustedEndRingMat) this._adjustedEndRingMat.dispose();
+        if (this._adjustedEndOriginMesh) this._adjustedEndOriginMesh.removeFromParent();
+        if (this._adjustedEndOriginGeo) this._adjustedEndOriginGeo.dispose();
+        if (this._adjustedEndOriginMat) this._adjustedEndOriginMat.dispose();
+        this._collisionMarkerMesh = null;
+        this._collisionMarkerGeo = null;
+        this._collisionMarkerMat = null;
+        this._connectionMarkerMesh = null;
+        this._connectionMarkerGeo = null;
+        this._connectionMarkerMat = null;
+        this._adjustedEndRingMesh = null;
+        this._adjustedEndRingGeo = null;
+        this._adjustedEndRingMat = null;
+        this._adjustedEndOriginMesh = null;
+        this._adjustedEndOriginGeo = null;
+        this._adjustedEndOriginMat = null;
     }
 
     _setupConnectorOverlay() {
@@ -325,6 +606,26 @@ export class CityState {
         if (!this._connectorDebugEnabled) this._clearConnectorHover();
     }
 
+    _setCollisionDebugEnabled(enabled) {
+        this._collisionDebugEnabled = !!enabled;
+        this.debugsPanel?.setCollisionDebugEnabled(this._collisionDebugEnabled);
+        if (this._collisionMarkerMesh) {
+            this._collisionMarkerMesh.visible = this._collisionDebugEnabled;
+        }
+        if (this._connectionMarkerMesh) {
+            this._connectionMarkerMesh.visible = this._collisionDebugEnabled;
+        }
+        if (this._adjustedEndRingMesh) {
+            this._adjustedEndRingMesh.visible = this._collisionDebugEnabled;
+        }
+        if (this._adjustedEndOriginMesh) {
+            this._adjustedEndOriginMesh.visible = this._collisionDebugEnabled;
+        }
+        if (!this._collisionMarkerMesh && !this._connectionMarkerMesh && !this._adjustedEndRingMesh && !this._adjustedEndOriginMesh && this._collisionDebugEnabled) {
+            this._setupCollisionMarkers();
+        }
+    }
+
     _setHoverOutlineEnabled(enabled) {
         this._hoverOutlineEnabled = !!enabled;
         this.debugsPanel?.setHoverOutlineEnabled(this._hoverOutlineEnabled);
@@ -356,7 +657,6 @@ export class CityState {
                     for (let i = 0; i < connectors.length; i++) {
                         const item = connectors[i];
                         const p0 = item?.p0;
-                        const p1 = item?.p1;
                         if (p0) {
                             const dx = p0.x - hit.x;
                             const dz = p0.z - hit.z;
@@ -367,6 +667,7 @@ export class CityState {
                                 bestPole = 0;
                             }
                         }
+                        const p1 = item?.p1;
                         if (p1) {
                             const dx = p1.x - hit.x;
                             const dz = p1.z - hit.z;
@@ -592,11 +893,11 @@ export class CityState {
     _updateHighlight(road) {
         const map = this.city?.map;
         const mesh = this._highlightMesh;
-        const dummy = this._highlightDummy;
-        if (!map || !mesh || !dummy) return;
+        const geo = this._highlightGeo;
+        const pos = this._highlightPos;
+        if (!map || !mesh || !geo || !pos) return;
         if (!road) {
-            mesh.count = 0;
-            mesh.instanceMatrix.needsUpdate = true;
+            mesh.visible = false;
             return;
         }
         const a = road.a ?? [0, 0];
@@ -605,23 +906,72 @@ export class CityState {
         const y0 = a[1] | 0;
         const x1 = b[0] | 0;
         const y1 = b[1] | 0;
-        const dx = Math.sign(x1 - x0);
-        const dy = Math.sign(y1 - y0);
-        const steps = Math.abs(x1 - x0) + Math.abs(y1 - y0);
-        let k = 0;
-        const capacity = this._highlightCapacity || 0;
-        for (let i = 0; i <= steps && k < capacity; i++) {
-            const x = x0 + dx * i;
-            const y = y0 + dy * i;
-            if (!map.inBounds(x, y)) continue;
-            const p = map.tileToWorldCenter(x, y);
-            dummy.position.set(p.x, this._highlightY, p.z);
-            dummy.rotation.set(0, 0, 0);
-            dummy.scale.set(1, 1, 1);
-            dummy.updateMatrix();
-            mesh.setMatrixAt(k++, dummy.matrix);
+        const rawDir = normalizeDir(x1 - x0, y1 - y0);
+        if (!rawDir) {
+            mesh.visible = false;
+            return;
         }
-        mesh.count = k;
-        mesh.instanceMatrix.needsUpdate = true;
+        const dir = rawDir;
+        const normal = { x: -dir.y, y: dir.x };
+
+        const startCenter = map.tileToWorldCenter(x0, y0);
+        const endCenter = map.tileToWorldCenter(x1, y1);
+        const halfTile = map.tileSize * HALF;
+        const centerlineStart = {
+            x: startCenter.x - dir.x * halfTile,
+            y: startCenter.z - dir.y * halfTile
+        };
+        const centerlineEnd = {
+            x: endCenter.x + dir.x * halfTile,
+            y: endCenter.z + dir.y * halfTile
+        };
+
+        const roadCfg = this.city?.generatorConfig?.road ?? {};
+        const laneWidth = roadCfg.laneWidth ?? 4.8;
+        const shoulder = roadCfg.shoulder ?? 0.525;
+        const curbT = roadCfg.curb?.thickness ?? 0.48;
+        const width = roadWidth(road.lanesF, road.lanesB, laneWidth, shoulder, map.tileSize);
+        const halfWidth = width * HALF;
+        const pad = Math.max(
+            map.tileSize * HIGHLIGHT_PAD_TILE_FRACTION,
+            curbT * HIGHLIGHT_PAD_CURB_FACTOR,
+            laneWidth * HIGHLIGHT_PAD_LANE_FACTOR,
+            HIGHLIGHT_PAD_MIN
+        );
+        const expandedStart = {
+            x: centerlineStart.x - dir.x * pad,
+            y: centerlineStart.y - dir.y * pad
+        };
+        const expandedEnd = {
+            x: centerlineEnd.x + dir.x * pad,
+            y: centerlineEnd.y + dir.y * pad
+        };
+
+        const leftEdge = offsetEndpoints(expandedStart, expandedEnd, normal, halfWidth + pad);
+        const rightEdge = offsetEndpoints(expandedStart, expandedEnd, normal, -(halfWidth + pad));
+        const y = this._highlightY;
+
+        pos[0] = leftEdge.start.x;
+        pos[1] = y;
+        pos[2] = leftEdge.start.y;
+        pos[3] = leftEdge.end.x;
+        pos[4] = y;
+        pos[5] = leftEdge.end.y;
+        pos[6] = rightEdge.end.x;
+        pos[7] = y;
+        pos[8] = rightEdge.end.y;
+        pos[9] = leftEdge.start.x;
+        pos[10] = y;
+        pos[11] = leftEdge.start.y;
+        pos[12] = rightEdge.end.x;
+        pos[13] = y;
+        pos[14] = rightEdge.end.y;
+        pos[15] = rightEdge.start.x;
+        pos[16] = y;
+        pos[17] = rightEdge.start.y;
+
+        geo.attributes.position.needsUpdate = true;
+        geo.computeBoundingSphere?.();
+        mesh.visible = true;
     }
 }

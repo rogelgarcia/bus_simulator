@@ -26,6 +26,8 @@ export function createAsphaltBuilder({ planeGeo, material, palette, capacity, na
     const dummy = new THREE.Object3D();
 
     const geoms = [];
+    const TRI_VERTS = 6;
+    const POS_STRIDE = 3;
 
     function addPlane(x, y, z, sx, sz, ry = 0, colorHex = 0xffffff) {
         const base = planeGeo.clone();
@@ -51,6 +53,49 @@ export function createAsphaltBuilder({ planeGeo, material, palette, capacity, na
         addRingSectorXZ({ centerX, centerZ, y, innerR, outerR, startAng, spanAng, segs, colorHex: c });
     }
 
+    function addQuadXZ({ a, b, c, d, y, colorHex = 0xffffff }) {
+        if (!a || !b || !c || !d) return;
+        const positions = new Float32Array(TRI_VERTS * POS_STRIDE);
+        let i = 0;
+        positions[i++] = a.x;
+        positions[i++] = y;
+        positions[i++] = a.y;
+        positions[i++] = b.x;
+        positions[i++] = y;
+        positions[i++] = b.y;
+        positions[i++] = c.x;
+        positions[i++] = y;
+        positions[i++] = c.y;
+        positions[i++] = a.x;
+        positions[i++] = y;
+        positions[i++] = a.y;
+        positions[i++] = c.x;
+        positions[i++] = y;
+        positions[i++] = c.y;
+        positions[i++] = d.x;
+        positions[i++] = y;
+        positions[i++] = d.y;
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(positions, POS_STRIDE));
+        g.computeVertexNormals();
+        geoms.push(colorizeGeometry(g, colorHex));
+    }
+
+    function addPolygonXZ({ points, y, colorHex = 0xffffff }) {
+        if (!Array.isArray(points) || points.length < 3) return;
+        const shape = new THREE.Shape();
+        shape.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) {
+            shape.lineTo(points[i].x, points[i].y);
+        }
+        shape.closePath();
+        const g = new THREE.ShapeGeometry(shape);
+        g.rotateX(-Math.PI / 2);
+        g.translate(0, y, 0);
+        g.computeVertexNormals();
+        geoms.push(colorizeGeometry(g, colorHex));
+    }
+
     function finalize() {
         const geo = mergeBufferGeometries(geoms);
         if (geo) {
@@ -64,5 +109,5 @@ export function createAsphaltBuilder({ planeGeo, material, palette, capacity, na
         return [];
     }
 
-    return { mesh, addPlane, addRingSectorXZ, addRingSectorKey, finalize, buildCurveMeshes };
+    return { mesh, addPlane, addRingSectorXZ, addRingSectorKey, addQuadXZ, addPolygonXZ, finalize, buildCurveMeshes };
 }

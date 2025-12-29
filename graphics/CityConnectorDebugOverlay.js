@@ -138,10 +138,12 @@ export class CityConnectorDebugOverlay {
             const masterIndex = i * 2;
             const slaveIndex = masterIndex + 1;
 
-            const masterMarker = this._getMarker(masterIndex, true);
-            this._setMarker(masterMarker, p0);
-            const slaveMarker = this._getMarker(slaveIndex, false);
-            this._setMarker(slaveMarker, p1);
+            const p0Positive = this._poleIsPositive(p0);
+            const p1Positive = this._poleIsPositive(p1);
+            const masterMarker = this._getMarker(masterIndex, p0Positive !== false);
+            this._setMarker(masterMarker, p0Positive == null ? null : p0);
+            const slaveMarker = this._getMarker(slaveIndex, p1Positive !== false);
+            this._setMarker(slaveMarker, p1Positive == null ? null : p1);
 
         }
 
@@ -171,8 +173,8 @@ export class CityConnectorDebugOverlay {
         this._syncLineResolution();
         const { connectorIndex, poleIndex } = selection;
         const record = this._connectors[connectorIndex];
-        const connector = record?.connector ?? null;
-        if (!record || !connector) {
+        const connector = record?.connector ?? record?.p0?.connector ?? null;
+        if (!record) {
             this._activeConnectorIndex = -1;
             this._activePoleIndex = -1;
             this._setAllMarkersVisible(false);
@@ -186,8 +188,17 @@ export class CityConnectorDebugOverlay {
             this._activePoleIndex = poleIndex;
             this._setOnlyMarkersVisible(connectorIndex);
             this._showArrowsForConnector(record);
-            this._updatePathLine(record, connector);
-            this._updateCircles(connector);
+            if (connector) {
+                const activePole = poleIndex === 1 ? record?.p1 : record?.p0;
+                const isPositive = this._poleIsPositive(activePole);
+                const color = isPositive === false ? this._slaveColor : this._masterColor;
+                if (this._pathMat?.color) this._pathMat.color.setHex(color);
+                this._updatePathLine(record, connector);
+                this._updateCircles(connector);
+            } else {
+                this._pathLine.visible = false;
+                this._setCirclesVisible(false);
+            }
         }
     }
 
@@ -369,13 +380,25 @@ export class CityConnectorDebugOverlay {
         return marker;
     }
 
+    _poleIsPositive(pole) {
+        if (!pole) return null;
+        if (pole.arrowRole === 'p0') return true;
+        if (pole.arrowRole === 'p1') return false;
+        if (Number.isFinite(pole.arrowSign)) return pole.arrowSign >= 0;
+        return null;
+    }
+
     _setMarker(marker, pos) {
         if (!marker || !pos) {
-            if (marker) marker.visible = false;
+            if (marker) {
+                marker.visible = false;
+                marker.userData.hasPos = false;
+            }
             return;
         }
         marker.position.set(pos.x, this._markerY, pos.z);
         marker.visible = true;
+        marker.userData.hasPos = true;
     }
 
     _updatePathLine(record, connector) {
@@ -469,7 +492,7 @@ export class CityConnectorDebugOverlay {
         const visibleIndices = new Set([baseIndex, baseIndex + 1]);
         for (let i = 0; i < this._markers.length; i++) {
             const marker = this._markers[i];
-            if (marker) marker.visible = visibleIndices.has(i);
+            if (marker) marker.visible = visibleIndices.has(i) && marker.userData?.hasPos;
         }
     }
 
@@ -483,15 +506,29 @@ export class CityConnectorDebugOverlay {
 
     _showArrowsForConnector(record) {
         this._hideAllArrows();
+        const p0 = record?.p0;
+        const p1 = record?.p1;
+        const dir0 = p0?.arrowDir ?? record?.dir0 ?? null;
+        const dir1 = p1?.arrowDir ?? record?.dir1 ?? null;
+        if (!p0 || !p1 || !dir0 || !dir1) return;
         const data = [
-            { p: record?.p0, dir: record?.dir0 },
-            { p: record?.p1, dir: record?.dir1 }
+            { p: p0, dir: dir0 },
+            { p: p1, dir: dir1 }
         ];
         const arrowLen = this._arrowLen;
         for (let i = 0; i < this._arrowLines.length; i++) {
             const entry = this._arrowLines[i];
             const item = data[i];
             if (!entry || !item?.p || !item?.dir) continue;
+            const isPositive = this._poleIsPositive(item.p);
+            if (isPositive == null) {
+                entry.line.visible = false;
+                entry.cone.visible = false;
+                continue;
+            }
+            const color = isPositive === false ? this._slaveColor : this._masterColor;
+            if (entry.mat?.color) entry.mat.color.setHex(color);
+            if (entry.cone?.material?.color) entry.cone.material.color.setHex(color);
             this._tmpDir.set(item.dir.x, 0, item.dir.z);
             if (this._tmpDir.lengthSq() < 1e-6) {
                 entry.line.visible = false;

@@ -10,6 +10,12 @@ export const AXIS = {
     CORNER: 4
 };
 
+const DEG_TO_RAD = Math.PI / 180;
+const HALF_TURN_RAD = Math.PI;
+const ANGLE_SNAP_DEG = 15;
+const ANGLE_SNAP_RAD = ANGLE_SNAP_DEG * DEG_TO_RAD;
+const ANGLE_SNAP_EPS = 1e-6;
+
 function clampInt(v, lo, hi) {
     return Math.max(lo, Math.min(hi, v | 0));
 }
@@ -27,6 +33,46 @@ function isCornerConn(m) {
     const se = (m & (DIR.S | DIR.E)) === (DIR.S | DIR.E);
     const sw = (m & (DIR.S | DIR.W)) === (DIR.S | DIR.W);
     return ne || nw || se || sw;
+}
+
+function normalizeHalfTurn(angle) {
+    let a = angle % HALF_TURN_RAD;
+    if (a < 0) a += HALF_TURN_RAD;
+    if (Math.abs(a - HALF_TURN_RAD) <= ANGLE_SNAP_EPS) return 0;
+    return a;
+}
+
+function snapAngle(angle) {
+    const base = normalizeHalfTurn(angle);
+    const snapped = Math.round(base / ANGLE_SNAP_RAD) * ANGLE_SNAP_RAD;
+    return normalizeHalfTurn(snapped);
+}
+
+function rasterizeLine(x0, y0, x1, y1) {
+    const tiles = [];
+    let x = x0;
+    let y = y0;
+    const dx = Math.abs(x1 - x0);
+    const dy = Math.abs(y1 - y0);
+    const sx = x0 < x1 ? 1 : -1;
+    const sy = y0 < y1 ? 1 : -1;
+    let err = dx - dy;
+
+    while (true) {
+        tiles.push({ x, y });
+        if (x === x1 && y === y1) break;
+        const e2 = err * 2;
+        if (e2 > -dy) {
+            err -= dy;
+            x += sx;
+        }
+        if (e2 < dx) {
+            err += dx;
+            y += sy;
+        }
+    }
+
+    return tiles;
 }
 
 export class CityMap {
@@ -49,6 +95,13 @@ export class CityMap {
 
         this.roadIds = new Array(n);
         this._roadCounter = 0;
+
+        this.roadSegments = [];
+        this.roadAngles = new Float32Array(n);
+        this.roadAngles.fill(Number.NaN);
+        this.roadPrimary = new Int32Array(n);
+        this.roadPrimary.fill(-1);
+        this.roadIntersections = new Uint8Array(n);
     }
 
     index(x, y) { return (x | 0) + (y | 0) * this.width; }
@@ -98,21 +151,32 @@ export class CityMap {
         const x0 = a[0] | 0, y0 = a[1] | 0;
         const x1 = b[0] | 0, y1 = b[1] | 0;
 
-        const dx = Math.sign(x1 - x0);
-        const dy = Math.sign(y1 - y0);
+        const dxRaw = x1 - x0;
+        const dyRaw = y1 - y0;
+        const angle = snapAngle(Math.atan2(dyRaw, dxRaw));
+        const tiles = rasterizeLine(x0, y0, x1, y1);
+        const meta = {
+            id: roadId,
+            a: { x: x0, y: y0 },
+            b: { x: x1, y: y1 },
+            lanesF,
+            lanesB,
+            angle,
+            tiles: []
+        };
 
-        if (dx !== 0 && dy !== 0) {
-            console.warn('[CityMap] RoadSegment must be axis-aligned:', { a, b });
-            return;
-        }
+        const axisAligned = dxRaw === 0 || dyRaw === 0;
+        const dx = Math.sign(dxRaw);
+        const dy = Math.sign(dyRaw);
 
-        if (dy === 0) {
-            const steps = Math.abs(x1 - x0);
-            for (let i = 0; i <= steps; i++) {
-                const x = x0 + dx * i;
-                const idx = this._markRoad(x, y0, roadId);
-                if (idx < 0) continue;
+        for (const tile of tiles) {
+            const idx = this._markRoad(tile.x, tile.y, roadId);
+            if (idx < 0) continue;
+            meta.tiles.push({ x: tile.x, y: tile.y, idx });
 
+            if (!axisAligned) continue;
+
+            if (dyRaw === 0) {
                 if (dx >= 0) {
                     this._maxLane(this.lanesE, idx, lanesF);
                     this._maxLane(this.lanesW, idx, lanesB);
@@ -120,17 +184,7 @@ export class CityMap {
                     this._maxLane(this.lanesW, idx, lanesF);
                     this._maxLane(this.lanesE, idx, lanesB);
                 }
-            }
-            return;
-        }
-
-        if (dx === 0) {
-            const steps = Math.abs(y1 - y0);
-            for (let i = 0; i <= steps; i++) {
-                const y = y0 + dy * i;
-                const idx = this._markRoad(x0, y, roadId);
-                if (idx < 0) continue;
-
+            } else if (dxRaw === 0) {
                 if (dy >= 0) {
                     this._maxLane(this.lanesN, idx, lanesF);
                     this._maxLane(this.lanesS, idx, lanesB);
@@ -140,6 +194,8 @@ export class CityMap {
                 }
             }
         }
+
+        this.roadSegments[roadId] = meta;
     }
 
     finalize() {
@@ -157,6 +213,10 @@ export class CityMap {
             return false;
         };
 
+        this.roadAngles.fill(Number.NaN);
+        this.roadPrimary.fill(-1);
+        this.roadIntersections.fill(0);
+
         for (let y = 0; y < h; y++) {
             for (let x = 0; x < w; x++) {
                 const idx = this.index(x, y);
@@ -164,6 +224,16 @@ export class CityMap {
                     this.conn[idx] = 0;
                     this.axis[idx] = AXIS.NONE;
                     continue;
+                }
+
+                const ids = this.roadIds[idx];
+                if (ids && ids.size > 1) {
+                    this.roadIntersections[idx] = 1;
+                } else if (ids && ids.size === 1) {
+                    const id = ids.values().next().value;
+                    this.roadPrimary[idx] = id ?? -1;
+                    const meta = (id !== undefined && id !== null) ? this.roadSegments[id] : null;
+                    if (meta) this.roadAngles[idx] = meta.angle;
                 }
 
                 let m = 0;
@@ -243,6 +313,8 @@ export class CityMap {
             tileSize: config.map.tileSize,
             origin: config.map.origin,
             roads: [
+                { a: [0, 0], b: [2, 2], lanesF: 1, lanesB: 1, tag: 'diag-test' },
+                { a: [1, 0], b: [5, 1], lanesF: 2, lanesB: 2, tag: 'diag-shallow' },
                 { a: [2, 8], b: [13, 8], lanesF: 2, lanesB: 2, tag: 'arterial' },
                 { a: [8, 2], b: [8, 13], lanesF: 2, lanesB: 2, tag: 'arterial' },
 
@@ -252,7 +324,9 @@ export class CityMap {
                 { a: [11, 4], b: [11, 11], lanesF: 1, lanesB: 1, tag: 'collector' },
 
                 { a: [5, 10], b: [6, 10], lanesF: 2, lanesB: 0, tag: 'oneway-east' },
-                { a: [6, 10], b: [6, 11], lanesF: 2, lanesB: 0, tag: 'oneway-north' }
+                { a: [6, 10], b: [6, 11], lanesF: 2, lanesB: 0, tag: 'oneway-north' },
+                { a: [12, 0], b: [14, 0], lanesF: 1, lanesB: 1, tag: 'test-east-0' },
+                { a: [14, 1], b: [12, 1], lanesF: 1, lanesB: 1, tag: 'test-west-1' }
             ]
         };
     }
