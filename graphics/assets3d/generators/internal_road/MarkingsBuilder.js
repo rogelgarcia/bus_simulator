@@ -8,10 +8,12 @@ export function createMarkingsBuilder({
                                           whiteCapacity,
                                           yellowCapacity
                                       } = {}) {
-    const markingsWhite = new THREE.InstancedMesh(planeGeo, whiteMaterial, Math.max(1, whiteCapacity | 0));
+    const maxWhite = Math.max(1, whiteCapacity | 0);
+    const maxYellow = Math.max(1, yellowCapacity | 0);
+    const markingsWhite = new THREE.InstancedMesh(planeGeo, whiteMaterial, maxWhite);
     markingsWhite.name = 'MarkingsWhite';
 
-    const markingsYellow = new THREE.InstancedMesh(planeGeo, yellowMaterial, Math.max(1, yellowCapacity | 0));
+    const markingsYellow = new THREE.InstancedMesh(planeGeo, yellowMaterial, maxYellow);
     markingsYellow.name = 'MarkingsYellow';
 
     const dummy = new THREE.Object3D();
@@ -19,6 +21,7 @@ export function createMarkingsBuilder({
     let my = 0;
 
     function addWhite(x, y, z, sx, sz, ry = 0) {
+        if (mw >= maxWhite) return;
         dummy.position.set(x, y, z);
         dummy.rotation.set(0, ry, 0);
         dummy.scale.set(sx, 1, sz);
@@ -27,6 +30,7 @@ export function createMarkingsBuilder({
     }
 
     function addYellow(x, y, z, sx, sz, ry = 0) {
+        if (my >= maxYellow) return;
         dummy.position.set(x, y, z);
         dummy.rotation.set(0, ry, 0);
         dummy.scale.set(sx, 1, sz);
@@ -35,8 +39,8 @@ export function createMarkingsBuilder({
     }
 
     function finalize() {
-        markingsWhite.count = mw;
-        markingsYellow.count = my;
+        markingsWhite.count = Math.min(mw, maxWhite);
+        markingsYellow.count = Math.min(my, maxYellow);
         markingsWhite.instanceMatrix.needsUpdate = true;
         markingsYellow.instanceMatrix.needsUpdate = true;
         return { mw, my };

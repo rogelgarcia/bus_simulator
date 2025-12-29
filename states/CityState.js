@@ -9,6 +9,7 @@ import { CityMap } from '../src/city/CityMap.js';
 import { CityDebugPanel } from '../graphics/gui/CityDebugPanel.js';
 import { CityDebugsPanel } from '../graphics/gui/CityDebugsPanel.js';
 import { CityShortcutsPanel } from '../graphics/gui/CityShortcutsPanel.js';
+import { CityPoleInfoPanel } from '../graphics/gui/CityPoleInfoPanel.js';
 import { CityConnectorDebugOverlay } from '../graphics/CityConnectorDebugOverlay.js';
 
 function clamp(v, a, b) {
@@ -110,6 +111,7 @@ export class CityState {
         this.debugPanel = null;
         this.debugsPanel = null;
         this.shortcutsPanel = null;
+        this.poleInfoPanel = null;
         this._highlightMesh = null;
         this._highlightGeo = null;
         this._highlightMat = null;
@@ -182,6 +184,9 @@ export class CityState {
         this.shortcutsPanel = new CityShortcutsPanel();
         this.shortcutsPanel.show();
 
+        this.poleInfoPanel = new CityPoleInfoPanel();
+        this.poleInfoPanel.show();
+
         this._setCity(this._baseSpec);
 
         const cam = this.engine.camera;
@@ -220,6 +225,8 @@ export class CityState {
         this.debugsPanel = null;
         this.shortcutsPanel?.destroy();
         this.shortcutsPanel = null;
+        this.poleInfoPanel?.destroy();
+        this.poleInfoPanel = null;
         this._baseSpec = null;
         this._clearHighlight();
         this._clearCollisionMarkers();
@@ -295,6 +302,7 @@ export class CityState {
         this._setupConnectorOverlay();
         this._setupCollisionMarkers();
         this._setupHoverOutline();
+        this._setPoleInfoData(null);
     }
 
     _reloadCity() {
@@ -685,6 +693,7 @@ export class CityState {
                         this._hoverConnectorIndex = bestIndex;
                         this._hoverPoleIndex = bestPole;
                         this._connectorOverlay.setHoverSelection({ connectorIndex: bestIndex, poleIndex: bestPole });
+                        this._updatePoleInfoFromHover(bestIndex, bestPole);
                     }
                 }
             }
@@ -700,6 +709,7 @@ export class CityState {
         this._hoverConnectorIndex = -1;
         this._hoverPoleIndex = -1;
         this._connectorOverlay?.setHoverSelection(null);
+        this._setPoleInfoData(null);
     }
 
     _handlePointerLeave() {
@@ -719,6 +729,95 @@ export class CityState {
         const hit = new THREE.Vector3();
         const ok = this._raycaster.ray.intersectPlane(this._hoverPlane, hit);
         return ok ? hit : null;
+    }
+
+    _setPoleInfoData(data) {
+        if (this.poleInfoPanel) this.poleInfoPanel.setData(data);
+    }
+
+    _updatePoleInfoFromHover(connectorIndex, poleIndex) {
+        const panel = this.poleInfoPanel;
+        if (!panel) return;
+        const connectors = this.city?.roads?.curbConnectors ?? [];
+        const record = connectors[connectorIndex];
+        if (!record) {
+            panel.setData(null);
+            return;
+        }
+        const pole = poleIndex === 1 ? record?.p1 : record?.p0;
+        const connector = record?.connector ?? pole?.connector ?? record?.p0?.connector ?? record?.p1?.connector ?? null;
+        const radius = connector?.radius ?? null;
+        let poleType = null;
+        if (pole) {
+            const rawType = typeof pole.type === 'string' ? pole.type.trim() : '';
+            if (rawType) {
+                poleType = rawType;
+            } else if (pole.end) {
+                poleType = 'end pole';
+            } else if (pole.collisionId != null || pole.cut != null) {
+                poleType = 'connection pole';
+            } else if (pole.id != null && pole.along != null) {
+                poleType = 'collision pole';
+            } else {
+                poleType = 'pole';
+            }
+        }
+        let collisionDistance = null;
+        const collision = pole?.collision ?? null;
+        const px = pole?.x;
+        const pz = Number.isFinite(pole?.z) ? pole.z : pole?.y;
+        const cx = collision?.x;
+        const cz = Number.isFinite(collision?.z) ? collision.z : collision?.y;
+        if (Number.isFinite(px) && Number.isFinite(pz) && Number.isFinite(cx) && Number.isFinite(cz)) {
+            collisionDistance = Math.hypot(cx - px, cz - pz);
+        }
+        let endDistance = null;
+        let endDx = null;
+        let endDz = null;
+        let lIntersection = null;
+        const p0 = record?.p0;
+        const p1 = record?.p1;
+        const isEndConnector = record?.tag === 'end' || (p0?.end && p1?.end);
+        if (isEndConnector && p0 && p1) {
+            const p0x = p0.x;
+            const p0z = Number.isFinite(p0.z) ? p0.z : p0.y;
+            const p1x = p1.x;
+            const p1z = Number.isFinite(p1.z) ? p1.z : p1.y;
+            if (Number.isFinite(p0x) && Number.isFinite(p0z) && Number.isFinite(p1x) && Number.isFinite(p1z)) {
+                const dx = p1x - p0x;
+                const dz = p1z - p0z;
+                endDistance = Math.hypot(dx, dz);
+                endDx = Math.abs(dx);
+                endDz = Math.abs(dz);
+            }
+            let lValue = pole?.lIntersection ?? pole?.lIntersectionSide ?? pole?.intersectionSide ?? pole?.lShape ?? pole?.lShapeSide ?? pole?.cornerSide ?? null;
+            if (lValue == null && typeof pole?.insideL === 'boolean') lValue = pole.insideL ? 'inside' : 'outside';
+            if (lValue == null && typeof pole?.outsideL === 'boolean') lValue = pole.outsideL ? 'outside' : 'inside';
+            if (typeof lValue === 'boolean') lValue = lValue ? 'inside' : 'outside';
+            if (typeof lValue === 'string') {
+                const normalized = lValue.trim().toLowerCase();
+                if (normalized === 'inside' || normalized === 'inner' || normalized === 'in') lIntersection = 'inside';
+                else if (normalized === 'outside' || normalized === 'outer' || normalized === 'out') lIntersection = 'outside';
+                else lIntersection = lValue;
+            }
+        }
+        const fields = [];
+        if (Number.isFinite(radius)) fields.push({ label: 'Radius', value: radius.toFixed(2) });
+        if (Number.isFinite(collisionDistance)) fields.push({ label: 'Collision dist', value: collisionDistance.toFixed(2) });
+        if (Number.isFinite(endDistance) && Number.isFinite(endDx) && Number.isFinite(endDz)) {
+            fields.push({ label: 'End dist', value: endDistance.toFixed(2) });
+            fields.push({ label: 'End dx', value: endDx.toFixed(2) });
+            fields.push({ label: 'End dz', value: endDz.toFixed(2) });
+        }
+        if (typeof pole?.curveSide === 'string' && pole.curveSide.length > 0) {
+            const normalized = pole.curveSide.trim().toLowerCase();
+            const curveLabel = normalized === 'internal' ? 'Inner curve' : (normalized === 'external' ? 'Outer curve' : pole.curveSide);
+            fields.push({ label: 'Curve', value: curveLabel });
+        }
+        if (typeof lIntersection === 'string' && lIntersection.length > 0) {
+            fields.push({ label: 'L side', value: lIntersection });
+        }
+        panel.setData({ type: poleType, fields });
     }
 
     _setupHoverOutline() {

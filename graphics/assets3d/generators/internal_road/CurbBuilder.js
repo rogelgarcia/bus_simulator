@@ -14,7 +14,8 @@ export function createCurbBuilder({
                                       curbBottom,
                                       name = 'CurbBlocks'
                                   } = {}) {
-    const mesh = new THREE.InstancedMesh(boxGeo, instancedMaterial, Math.max(1, capacity | 0));
+    const maxCount = Math.max(1, capacity | 0);
+    const mesh = new THREE.InstancedMesh(boxGeo, instancedMaterial, maxCount);
     mesh.name = name;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -26,14 +27,17 @@ export function createCurbBuilder({
     const curvesByKey = new Map();
 
     function addBox(x, y, z, sx, sy, sz, ry = 0, colorHex = 0xffffff) {
+        if (count >= maxCount) return;
         const i = count;
         dummy.position.set(x, y, z);
         dummy.rotation.set(0, ry, 0);
         dummy.scale.set(sx, sy, sz);
         dummy.updateMatrix();
         mesh.setMatrixAt(i, dummy.matrix);
-        tmpColor.setHex(colorHex);
-        mesh.setColorAt(i, tmpColor);
+        if (mesh.material?.vertexColors) {
+            tmpColor.setHex(colorHex);
+            mesh.setColorAt(i, tmpColor);
+        }
         count++;
     }
 
@@ -62,7 +66,7 @@ export function createCurbBuilder({
     }
 
     function finalize() {
-        mesh.count = count;
+        mesh.count = Math.min(count, maxCount);
         mesh.instanceMatrix.needsUpdate = true;
         if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
         return count;

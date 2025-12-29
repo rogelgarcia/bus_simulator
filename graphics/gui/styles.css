@@ -428,6 +428,58 @@ body.splash-bg #game-canvas {
     white-space: nowrap;
 }
 
+.city-pole-info-panel {
+    position: fixed;
+    right: 12px;
+    bottom: 12px;
+    z-index: 4;
+    pointer-events: none;
+    background: rgba(10, 14, 20, 0.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    padding: 10px 12px;
+    color: #fff;
+    min-width: 160px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+}
+
+.city-pole-info-title {
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-weight: 700;
+    opacity: 0.85;
+}
+
+.city-pole-info-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.city-pole-info-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    gap: 12px;
+}
+
+.city-pole-info-label {
+    color: rgba(255, 255, 255, 0.7);
+    white-space: nowrap;
+}
+
+.city-pole-info-value {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.92);
+}
+
 .city-shortcuts-item {
     display: flex;
     align-items: center;

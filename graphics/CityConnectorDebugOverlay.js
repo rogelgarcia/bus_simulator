@@ -41,6 +41,7 @@ export class CityConnectorDebugOverlay {
         this._connectors = [];
         this._activeConnectorIndex = -1;
         this._activePoleIndex = -1;
+        this._collisionArrow = null;
         this._tmpDir = new THREE.Vector3();
 
         this._pathGeo = new LineGeometry();
@@ -124,6 +125,62 @@ export class CityConnectorDebugOverlay {
             this.group.add(cone);
             this._arrowLines.push({ line, geo, mat, cone });
         }
+
+        const collisionColor = Number.isFinite(options.collisionArrowColor) ? options.collisionArrowColor : 0x000000;
+        const collisionOpacity = Number.isFinite(options.collisionArrowOpacity) ? options.collisionArrowOpacity : 0.5;
+        const collisionGeo = new LineGeometry();
+        collisionGeo.setPositions([0, this._markerY, 0, 0, this._markerY, 0]);
+        const collisionMat = new LineMaterial({
+            color: collisionColor,
+            linewidth: this._arrowLineWidth,
+            worldUnits: false,
+            transparent: true,
+            opacity: collisionOpacity,
+            depthTest: false,
+            depthWrite: false
+        });
+        collisionMat.resolution.set(this._lineResolution.x, this._lineResolution.y);
+        const collisionLine = new Line2(collisionGeo, collisionMat);
+        collisionLine.computeLineDistances();
+        collisionLine.visible = false;
+        collisionLine.frustumCulled = false;
+        collisionLine.renderOrder = 14;
+        const collisionConeMat = new THREE.MeshBasicMaterial({
+            color: collisionColor,
+            transparent: true,
+            opacity: collisionOpacity,
+            side: THREE.DoubleSide,
+            depthTest: false,
+            depthWrite: false
+        });
+        const collisionHeadLen = Number.isFinite(options.collisionArrowHeadLen)
+            ? options.collisionArrowHeadLen
+            : markerRadius * 0.85;
+        const collisionHeadWidth = Number.isFinite(options.collisionArrowHeadWidth)
+            ? options.collisionArrowHeadWidth
+            : markerRadius * 0.6;
+        const collisionHeadGeo = new THREE.BufferGeometry();
+        const collisionHeadHalf = collisionHeadWidth * 0.5;
+        collisionHeadGeo.setAttribute(
+            'position',
+            new THREE.BufferAttribute(
+                new Float32Array([
+                    0, 0, 0,
+                    -collisionHeadLen, 0, collisionHeadHalf,
+                    -collisionHeadLen, 0, -collisionHeadHalf
+                ]),
+                3
+            )
+        );
+        collisionHeadGeo.setIndex([0, 1, 2]);
+        collisionHeadGeo.computeVertexNormals();
+        collisionHeadGeo.computeBoundingSphere();
+        const collisionHead = new THREE.Mesh(collisionHeadGeo, collisionConeMat);
+        collisionHead.visible = false;
+        collisionHead.renderOrder = 15;
+        this.group.add(collisionLine);
+        this.group.add(collisionHead);
+        this._collisionArrow = { line: collisionLine, geo: collisionGeo, mat: collisionMat, head: collisionHead };
     }
 
     setConnectors(connectors = []) {
@@ -166,6 +223,7 @@ export class CityConnectorDebugOverlay {
             this._activePoleIndex = -1;
             this._setAllMarkersVisible(false);
             this._hideAllArrows();
+            this._hideCollisionArrow();
             this._pathLine.visible = false;
             this._setCirclesVisible(false);
             return;
@@ -179,6 +237,7 @@ export class CityConnectorDebugOverlay {
             this._activePoleIndex = -1;
             this._setAllMarkersVisible(false);
             this._hideAllArrows();
+            this._hideCollisionArrow();
             this._pathLine.visible = false;
             this._setCirclesVisible(false);
             return;
@@ -188,11 +247,8 @@ export class CityConnectorDebugOverlay {
             this._activePoleIndex = poleIndex;
             this._setOnlyMarkersVisible(connectorIndex);
             this._showArrowsForConnector(record);
+            this._updateCollisionArrow(record, poleIndex);
             if (connector) {
-                const activePole = poleIndex === 1 ? record?.p1 : record?.p0;
-                const isPositive = this._poleIsPositive(activePole);
-                const color = isPositive === false ? this._slaveColor : this._masterColor;
-                if (this._pathMat?.color) this._pathMat.color.setHex(color);
                 this._updatePathLine(record, connector);
                 this._updateCircles(connector);
             } else {
@@ -228,8 +284,15 @@ export class CityConnectorDebugOverlay {
             arrow.cone?.geometry?.dispose?.();
             arrow.cone?.material?.dispose?.();
         }
+        if (this._collisionArrow) {
+            this._collisionArrow.geo?.dispose?.();
+            this._collisionArrow.mat?.dispose?.();
+            this._collisionArrow.head?.geometry?.dispose?.();
+            this._collisionArrow.head?.material?.dispose?.();
+        }
         this._markers = [];
         this._arrowLines = [];
+        this._collisionArrow = null;
         this.group = null;
     }
 
@@ -246,6 +309,9 @@ export class CityConnectorDebugOverlay {
             for (const entry of this._arrowLines) {
                 entry.mat.resolution.set(size.x, size.y);
             }
+        }
+        if (this._collisionArrow?.mat) {
+            this._collisionArrow.mat.resolution.set(size.x, size.y);
         }
     }
 
@@ -430,6 +496,7 @@ export class CityConnectorDebugOverlay {
             positions.push(p.x, this._lineY, p.y);
         }
         this._pathGeo.setPositions(positions);
+        this._pathGeo.instanceCount = Math.max(0, points.length - 1);
         this._pathLine.computeLineDistances();
         this._pathLine.visible = true;
     }
@@ -470,6 +537,7 @@ export class CityConnectorDebugOverlay {
                 );
             }
             entry.geo.setPositions(positions);
+            entry.geo.instanceCount = Math.max(0, segs);
             const dashSize = Math.max(0.2, r * 0.08);
             const gapSize = Math.max(0.15, r * 0.06);
             entry.mat.dashed = !data.chosen;
@@ -502,6 +570,12 @@ export class CityConnectorDebugOverlay {
             arrow.line.visible = false;
             arrow.cone.visible = false;
         }
+    }
+
+    _hideCollisionArrow() {
+        if (!this._collisionArrow) return;
+        this._collisionArrow.line.visible = false;
+        this._collisionArrow.head.visible = false;
     }
 
     _showArrowsForConnector(record) {
@@ -539,6 +613,7 @@ export class CityConnectorDebugOverlay {
             const start = new THREE.Vector3(item.p.x, this._arrowY, item.p.z);
             const end = start.clone().add(this._tmpDir.clone().multiplyScalar(arrowLen));
             entry.geo.setPositions([start.x, start.y, start.z, end.x, end.y, end.z]);
+            entry.geo.instanceCount = 1;
             entry.line.computeLineDistances();
             entry.line.visible = true;
             entry.cone.position.set(end.x, this._arrowY, end.z);
@@ -546,6 +621,36 @@ export class CityConnectorDebugOverlay {
             entry.cone.quaternion.copy(q);
             entry.cone.visible = true;
         }
+    }
+
+    _updateCollisionArrow(record, poleIndex) {
+        if (!this._collisionArrow) return;
+        const pole = poleIndex === 1 ? record?.p1 : record?.p0;
+        const collision = pole?.collision ?? null;
+        const px = pole?.x;
+        const pz = Number.isFinite(pole?.z) ? pole.z : pole?.y;
+        const cx = collision?.x;
+        const cz = Number.isFinite(collision?.z) ? collision.z : collision?.y;
+        if (!Number.isFinite(px) || !Number.isFinite(pz) || !Number.isFinite(cx) || !Number.isFinite(cz)) {
+            this._hideCollisionArrow();
+            return;
+        }
+        const dx = cx - px;
+        const dz = cz - pz;
+        const len = Math.hypot(dx, dz);
+        if (!(len > 1e-6)) {
+            this._hideCollisionArrow();
+            return;
+        }
+        this._collisionArrow.geo.setPositions([px, this._arrowY, pz, cx, this._arrowY, cz]);
+        this._collisionArrow.geo.instanceCount = 1;
+        this._collisionArrow.line.computeLineDistances();
+        this._collisionArrow.line.visible = true;
+        this._tmpDir.set(dx / len, 0, dz / len);
+        this._collisionArrow.head.position.set(cx, this._arrowY, cz);
+        const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), this._tmpDir);
+        this._collisionArrow.head.quaternion.copy(q);
+        this._collisionArrow.head.visible = true;
     }
 
     _setCirclesVisible(visible) {

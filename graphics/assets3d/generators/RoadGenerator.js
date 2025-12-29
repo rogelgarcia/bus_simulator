@@ -185,6 +185,15 @@ function distanceSq(a, b) {
     return dx * dx + dy * dy;
 }
 
+function distanceBetween(a, b) {
+    const ax = a?.x;
+    const bx = b?.x;
+    const az = Number.isFinite(a?.z) ? a.z : a?.y;
+    const bz = Number.isFinite(b?.z) ? b.z : b?.y;
+    if (!Number.isFinite(ax) || !Number.isFinite(bx) || !Number.isFinite(az) || !Number.isFinite(bz)) return null;
+    return Math.hypot(bx - ax, bz - az);
+}
+
 function alongForData(data, point) {
     if (!data || !point) return 0;
     const base = data.centerlineStart ?? data.rawStart;
@@ -461,35 +470,6 @@ export function generateRoads({ map, config, materials } = {}) {
             if (!road?.collisionById || pole?.collisionId == null) return null;
             return road.collisionById.get(pole.collisionId) ?? null;
         };
-        const axisDistsToCollision = (pole) => {
-            const col = resolveCollision(pole);
-            if (!col) return [];
-            const ax = pole.x;
-            const az = Number.isFinite(pole.z) ? pole.z : pole.y;
-            const bx = col.x;
-            const bz = Number.isFinite(col.z) ? col.z : col.y;
-            if (!Number.isFinite(ax) || !Number.isFinite(az) || !Number.isFinite(bx) || !Number.isFinite(bz)) return [];
-            let values = [Math.abs(bx - ax), Math.abs(bz - az)];
-            const road = pole?.roadId != null ? roadById.get(pole.roadId) : null;
-            const curbOffset = road?.curbOffset ?? null;
-            const halfWidth = road?.halfWidth ?? null;
-            if (Number.isFinite(curbOffset) && Number.isFinite(halfWidth)) {
-                const perp = Math.abs(curbOffset - halfWidth);
-                if (perp > EPS) {
-                    const filtered = values.filter((v) => v > perp + EPS);
-                    if (filtered.length) values = filtered;
-                }
-            }
-            return values;
-        };
-        const values = [];
-        for (const value of axisDistsToCollision(p0)) {
-            if (Number.isFinite(value) && value > EPS) values.push(value);
-        }
-        for (const value of axisDistsToCollision(p1)) {
-            if (Number.isFinite(value) && value > EPS) values.push(value);
-        }
-        if (values.length) return Math.min(...values);
         const distToCollision = (pole) => {
             const col = resolveCollision(pole);
             if (!col) return null;
@@ -504,9 +484,8 @@ export function generateRoads({ map, config, materials } = {}) {
             return dist > EPS ? dist : null;
         };
         const d0 = distToCollision(p0);
-        const d1 = distToCollision(p1);
-        if (Number.isFinite(d0) && Number.isFinite(d1)) return Math.min(d0, d1);
         if (Number.isFinite(d0)) return d0;
+        const d1 = distToCollision(p1);
         if (Number.isFinite(d1)) return d1;
         const ax = p0.x;
         const bx = p1.x;
@@ -704,9 +683,29 @@ export function generateRoads({ map, config, materials } = {}) {
         const poles = roadPoles.get(data?.roadId);
         if (!poles) return null;
         const list = poles.collision;
+        const base = data?.centerlineStart ?? data?.rawStart ?? null;
+        const dir = data?.dir ?? null;
+        const normal = data?.normal ?? null;
+        const offset = Number.isFinite(data?.curbOffset) ? data.curbOffset : (data?.halfWidth ?? 0);
+        const hitX = hit?.x;
+        const hitY = hit?.y;
+        let poleX = Number.isFinite(hitX) ? hitX : 0;
+        let poleZ = Number.isFinite(hitY) ? hitY : 0;
+        let alongValue = Number.isFinite(along) ? along : null;
+        if (!Number.isFinite(alongValue) && hit && data) alongValue = alongForData(data, hit);
+        if (base && dir && normal && Number.isFinite(alongValue)) {
+            const cx = base.x + dir.x * alongValue;
+            const cy = base.y + dir.y * alongValue;
+            const dx = poleX - cx;
+            const dz = poleZ - cy;
+            const dot = dx * normal.x + dz * normal.y;
+            const sideSign = dot >= 0 ? 1 : -1;
+            poleX = cx + normal.x * sideSign * offset;
+            poleZ = cy + normal.y * sideSign * offset;
+        }
         for (const existing of list) {
-            const dx = existing.x - hit.x;
-            const dz = existing.z - hit.y;
+            const dx = existing.x - poleX;
+            const dz = existing.z - poleZ;
             if (dx * dx + dz * dz <= dedupDistSq) {
                 if (!existing.otherRoadIds) existing.otherRoadIds = [];
                 if (otherRoadId != null && !existing.otherRoadIds.includes(otherRoadId)) {
@@ -719,11 +718,11 @@ export function generateRoads({ map, config, materials } = {}) {
         const pole = {
             id: collisionId,
             roadId: data?.roadId ?? null,
-            x: hit.x,
-            z: hit.y,
+            x: poleX,
+            z: poleZ,
             otherRoadIds: otherRoadId != null ? [otherRoadId] : [],
             otherRoadId: otherRoadId != null ? otherRoadId : null,
-            along: Number.isFinite(along) ? along : null
+            along: Number.isFinite(alongValue) ? alongValue : null
         };
         list.push(pole);
         if (data?.collisionById) data.collisionById.set(collisionId, pole);
@@ -773,7 +772,8 @@ export function generateRoads({ map, config, materials } = {}) {
         if (!(maxT > EPS)) return;
         const base = data.centerlineStart ?? data.rawStart;
         if (!base) return;
-        let minHalfWidth = data.halfWidth ?? 0;
+        const baseHalfWidth = data.halfWidth ?? 0;
+        let minHalfWidth = baseHalfWidth;
         let minAlong = Infinity;
         let maxAlong = -Infinity;
         let minHit = null;
@@ -784,11 +784,14 @@ export function generateRoads({ map, config, materials } = {}) {
             const along = hit?.along ?? null;
             if (!Number.isFinite(along)) continue;
             const otherRoadId = hit?.otherRoadId ?? null;
+            let hitHalfWidth = baseHalfWidth;
             if (otherRoadId != null) {
                 const other = roadById.get(otherRoadId);
                 const otherHalf = other?.halfWidth ?? null;
-                if (Number.isFinite(otherHalf)) minHalfWidth = Math.min(minHalfWidth, otherHalf);
+                if (Number.isFinite(otherHalf)) hitHalfWidth = Math.min(baseHalfWidth, otherHalf);
             }
+            hit.halfWidth = hitHalfWidth;
+            if (Number.isFinite(hitHalfWidth)) minHalfWidth = Math.min(minHalfWidth, hitHalfWidth);
             if (along < minAlong) {
                 minAlong = along;
                 minHit = hit;
@@ -844,8 +847,10 @@ export function generateRoads({ map, config, materials } = {}) {
         const collisionEnd = clamp(maxAlong, 0, maxT);
         if (!data.collisionIntervals) data.collisionIntervals = [];
         data.collisionIntervals.push({ start: collisionStart, end: collisionEnd });
-        const cutStart = clamp(minAlong - minHalfWidth, 0, maxT);
-        const cutEnd = clamp(maxAlong + minHalfWidth, 0, maxT);
+        const startHalfWidth = Number.isFinite(minHit?.halfWidth) ? minHit.halfWidth : minHalfWidth;
+        const endHalfWidth = Number.isFinite(maxHit?.halfWidth) ? maxHit.halfWidth : minHalfWidth;
+        const cutStart = clamp(minAlong - startHalfWidth, 0, maxT);
+        const cutEnd = clamp(maxAlong + endHalfWidth, 0, maxT);
         if (!data.connectionCuts) data.connectionCuts = [];
         if (!data.connectionGaps) data.connectionGaps = [];
         data.connectionCuts.push(cutStart);
@@ -1434,6 +1439,49 @@ export function generateRoads({ map, config, materials } = {}) {
                 }
             }
         }
+    }
+
+    const markCurveAtEnd = (data, endLabel) => {
+        const endPoles = data?.endPoles;
+        if (!endPoles) return;
+        const poleSet = endLabel === 'start' ? endPoles.start : endPoles.end;
+        const leftPole = poleSet?.left ?? null;
+        const rightPole = poleSet?.right ?? null;
+        if (!leftPole || !rightPole) return;
+        const leftLink = leftPole.linkedTarget ?? null;
+        const rightLink = rightPole.linkedTarget ?? null;
+        if (!leftLink || !rightLink) return;
+        const otherRoadId = leftLink.roadId;
+        if (otherRoadId == null || otherRoadId !== rightLink.roadId) return;
+        const leftTarget = leftLink.pole ?? null;
+        const rightTarget = rightLink.pole ?? null;
+        if (!leftTarget || !rightTarget) return;
+        if (leftTarget === rightTarget) return;
+        if (!leftTarget.end || !rightTarget.end) return;
+        if (leftTarget.end !== rightTarget.end) return;
+        const other = roadById.get(otherRoadId);
+        if (!other?.endPoles) return;
+        const otherPoleSet = leftTarget.end === 'start' ? other.endPoles.start : other.endPoles.end;
+        if (!otherPoleSet) return;
+        const distLeft = distanceBetween(leftPole, leftTarget);
+        const distRight = distanceBetween(rightPole, rightTarget);
+        if (!Number.isFinite(distLeft) || !Number.isFinite(distRight)) return;
+        leftPole.curveConnection = true;
+        rightPole.curveConnection = true;
+        leftTarget.curveConnection = true;
+        rightTarget.curveConnection = true;
+        if (Math.abs(distLeft - distRight) > EPS) {
+            const leftInner = distLeft < distRight;
+            leftPole.curveSide = leftInner ? 'internal' : 'external';
+            rightPole.curveSide = leftInner ? 'external' : 'internal';
+            leftTarget.curveSide = leftInner ? 'internal' : 'external';
+            rightTarget.curveSide = leftInner ? 'external' : 'internal';
+        }
+    };
+
+    for (const data of roadData) {
+        markCurveAtEnd(data, 'start');
+        markCurveAtEnd(data, 'end');
     }
 
     const pickSharedRoadOnSide = (data, endKey, side) => {
