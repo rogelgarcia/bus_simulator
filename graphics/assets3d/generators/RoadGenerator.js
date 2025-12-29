@@ -393,8 +393,11 @@ export function generateRoads({ map, config, materials } = {}) {
                 const blendRadius = clamp(blendTarget, blendMin, blendMax);
                 const blendZ = offset + blendRadius;
                 const blendX = Math.sqrt(Math.max(0, (curbRadius + blendRadius) * (curbRadius + blendRadius) - (blendZ * blendZ)));
-                const phi = Math.atan2(blendZ, blendX);
                 const cap = Math.max(0, blendX);
+                const centerX = node.x + Math.cos(dirAngle) * cap;
+                const centerZ = node.z + Math.sin(dirAngle) * cap;
+                const arcStart = dirAngle + Math.PI * 0.5;
+                const arcSpan = Math.PI;
                 caps[deadDir] = Math.max(caps[deadDir] ?? 0, cap);
                 if (deadDir === 'N') {
                     curbTrim.N.E = cap;
@@ -413,14 +416,17 @@ export function generateRoads({ map, config, materials } = {}) {
                     radius,
                     curbRadius,
                     dirAngle,
-                    phi,
                     blendRadius,
                     blendX,
                     blendZ,
                     cap,
                     deadDir,
                     roadWidth,
-                    curbOffset: offset
+                    curbOffset: offset,
+                    centerX,
+                    centerZ,
+                    arcStart,
+                    arcSpan
                 };
             }
         }
@@ -517,16 +523,17 @@ export function generateRoads({ map, config, materials } = {}) {
         const node = graph.nodes[i];
         const info = nodeInfo[i];
         if (!info.roundabout) continue;
-        const radius = info.roundabout.radius;
+        const round = info.roundabout;
+        const radius = round.radius;
         if (radius <= 0.05) continue;
         asphalt.addRingSectorXZ({
-            centerX: node.x,
-            centerZ: node.z,
+            centerX: round.centerX,
+            centerZ: round.centerZ,
             y: roadY + 0.00015,
             innerR: 0.01,
             outerR: radius,
-            startAng: 0,
-            spanAng: Math.PI * 2,
+            startAng: wrapAngleLocal(round.arcStart),
+            spanAng: round.arcSpan,
             segs: Math.max(24, asphaltArcSegs),
             colorHex: asphaltColor('junction1', 'all')
         });
@@ -687,12 +694,12 @@ export function generateRoads({ map, config, materials } = {}) {
             if (info.roundabout) {
                 const roundKey = CURB_COLOR_PALETTE.key('turn_outer', 'NE');
                 const round = info.roundabout;
-                const roundStart = wrapAngleLocal(round.dirAngle + round.phi);
-                const roundSpan = Math.max(0.01, TWO_PI - round.phi * 2);
+                const roundStart = wrapAngleLocal(round.arcStart);
+                const roundSpan = round.arcSpan;
                 curb.addArcSolidKey({
                     key: roundKey,
-                    centerX: node.x,
-                    centerZ: node.z,
+                    centerX: round.centerX,
+                    centerZ: round.centerZ,
                     radiusCenter: round.curbRadius,
                     startAng: roundStart,
                     spanAng: roundSpan,
@@ -701,15 +708,17 @@ export function generateRoads({ map, config, materials } = {}) {
                 if (round.blendRadius > 0.05 && round.cap > 0.01) {
                     const roadDir = new THREE.Vector2(Math.cos(round.dirAngle), Math.sin(round.dirAngle));
                     const sideBase = leftNormal(roadDir).normalize();
-                    const basePoint = new THREE.Vector2(node.x, node.z).add(roadDir.clone().multiplyScalar(round.cap));
+                    const basePoint = new THREE.Vector2(round.centerX, round.centerZ);
                     const roundColor = CURB_COLOR_PALETTE.instanceColor('curb', 'turn_outer', 'NE') ?? neutralCurbColor;
+                    const arcStart = round.arcStart;
+                    const arcEnd = round.arcStart + round.arcSpan;
                     for (const side of [1, -1]) {
                         const offset = sideBase.clone().multiplyScalar(round.curbOffset * side);
                         const p0 = basePoint.clone().add(offset);
-                        const ang = round.dirAngle + round.phi * side;
+                        const ang = side === 1 ? arcStart : arcEnd;
                         const p1 = new THREE.Vector2(
-                            node.x + Math.cos(ang) * round.curbRadius,
-                            node.z + Math.sin(ang) * round.curbRadius
+                            round.centerX + Math.cos(ang) * round.curbRadius,
+                            round.centerZ + Math.sin(ang) * round.curbRadius
                         );
                         const radial = new THREE.Vector2(Math.cos(ang), Math.sin(ang));
                         const tangent = leftNormal(radial).normalize();
