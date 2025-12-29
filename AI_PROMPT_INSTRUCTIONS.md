@@ -36,8 +36,6 @@ Implement user authentication system:
 
 [State the overall goal in high-level terms - describe WHAT, not HOW]
 
-When the work is finished, update the prompt file to add "DONE" at the beginning of the first line.
-
 Tasks:
 - [Describe desired behavior or outcome 1]
 - [Describe desired behavior or outcome 2]
@@ -55,7 +53,7 @@ Tasks:
 
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line
-  - Also rename the AI file to AI_#_title_DONE
+- Also rename the AI file to AI_#_title_DONE
 - Provide a summary of the changes made in the AI document (very high level, one liner)
 ```
 
