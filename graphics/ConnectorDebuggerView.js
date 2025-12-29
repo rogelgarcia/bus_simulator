@@ -8,6 +8,8 @@ import { sampleConnector } from './assets3d/generators/internal_road/ArcConnecto
 import { solveConnectorPath, CONNECTOR_PATH_TYPES } from '../src/geometry/ConnectorPathSolver.js';
 import { CURB_COLOR_PALETTE } from './assets3d/generators/GeneratorParams.js';
 import { ConnectorDebugPanel } from './gui/ConnectorDebugPanel.js';
+import { ConnectorShortcutsPanel } from './gui/ConnectorShortcutsPanel.js';
+import { ConnectorCameraTour } from './ConnectorCameraTour.js';
 import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
@@ -57,6 +59,7 @@ export class ConnectorDebuggerView {
         this.city = null;
         this.group = null;
         this.panel = null;
+        this.shortcutsPanel = null;
 
         this.pointer = new THREE.Vector2();
         this.raycaster = new THREE.Raycaster();
@@ -149,6 +152,9 @@ export class ConnectorDebuggerView {
         this._enableConnectorMesh = false;
         this._lastPayload = null;
         this._connectorBoxGeo = null;
+        this._inputEnabled = true;
+        this._tourActive = false;
+        this._tour = null;
 
         this._onPointerMove = (e) => this._handlePointerMove(e);
         this._onPointerDown = (e) => this._handlePointerDown(e);
@@ -162,6 +168,8 @@ export class ConnectorDebuggerView {
         this._setupCamera();
         this._setupSceneObjects();
         this._setupPanel();
+        this._setupShortcutsPanel();
+        this._setupTour();
         this._attachEvents();
         this._lastInteractionTime = performance.now();
         this._updateMarkers();
@@ -172,11 +180,17 @@ export class ConnectorDebuggerView {
         this._detachEvents();
         this.panel?.destroy();
         this.panel = null;
+        this.shortcutsPanel?.destroy();
+        this.shortcutsPanel = null;
+        this._tour?.stop();
+        this._tour = null;
         if (this.group) this.group.removeFromParent();
         this.group = null;
         this._connectorMesh = null;
         this._createdCurbGroup = null;
         this._curbAutoCreate = false;
+        this._tourActive = false;
+        this._inputEnabled = true;
         this.curbs = [];
         this._curbMeshes = [];
         this._hoveredCurb = null;
@@ -190,9 +204,13 @@ export class ConnectorDebuggerView {
     }
 
     update(dt) {
+        if (this._tourActive) {
+            this._tour?.update(dt);
+            return;
+        }
+        const now = performance.now();
         this.city?.update(this.engine);
         this._updateCamera(dt);
-        const now = performance.now();
         const wasRotating = this._wasRotating;
         const wasInteracting = this._wasDragging || this._wasRotating;
         this._updateRotation(dt);
@@ -508,6 +526,29 @@ export class ConnectorDebuggerView {
         this.panel.show();
     }
 
+    _setupShortcutsPanel() {
+        this.shortcutsPanel = new ConnectorShortcutsPanel();
+        this.shortcutsPanel.show();
+    }
+
+    _setupTour() {
+        this._tour = new ConnectorCameraTour({
+            engine: this.engine,
+            getCurbs: () => this.curbs,
+            getCurbEndPosition: (curb) => this._getCurbEndPosition(curb),
+            getCenter: () => this._getMapCenter(),
+            getGroundY: () => this._groundY,
+            getZoom: () => this._zoom,
+            setZoom: (value) => {
+                this._zoom = value;
+            },
+            onActiveChange: (active) => this._setTourActive(active),
+            onFinish: () => {
+                this._lastInteractionTime = performance.now();
+            }
+        });
+    }
+
     _attachEvents() {
         this.canvas?.addEventListener('pointerdown', this._onPointerDown);
         window.addEventListener('pointermove', this._onPointerMove, { passive: true });
@@ -525,7 +566,8 @@ export class ConnectorDebuggerView {
     }
 
     _handlePointerMove(e) {
-        if (this.panel?.root?.contains(e.target)) {
+        if (!this._inputEnabled) return;
+        if (this.panel?.root?.contains(e.target) || this.shortcutsPanel?.root?.contains(e.target)) {
             this._hoveredCurb = null;
             return;
         }
@@ -548,8 +590,9 @@ export class ConnectorDebuggerView {
     }
 
     _handlePointerDown(e) {
+        if (!this._inputEnabled) return;
         if (e.button !== 0) return;
-        if (this.panel?.root?.contains(e.target)) return;
+        if (this.panel?.root?.contains(e.target) || this.shortcutsPanel?.root?.contains(e.target)) return;
         this._setPointerFromEvent(e);
         const pick = this._pickCurb();
         if (!pick) return;
@@ -569,6 +612,7 @@ export class ConnectorDebuggerView {
     }
 
     _handlePointerUp() {
+        if (!this._inputEnabled) return;
         if (!this._isDragging) return;
         this._isDragging = false;
         this._activeCurb = null;
@@ -680,6 +724,12 @@ export class ConnectorDebuggerView {
         const tag = e.target?.tagName?.toLowerCase?.();
         if (tag === 'input' || tag === 'textarea') return;
         const code = e.code;
+        if (code === 'KeyT') {
+            e.preventDefault();
+            if (!this._tourActive) this._startTour();
+            return;
+        }
+        if (!this._inputEnabled) return;
         if (code in this._keys) {
             e.preventDefault();
             this._keys[code] = true;
@@ -696,6 +746,7 @@ export class ConnectorDebuggerView {
     _handleKeyUp(e) {
         const tag = e.target?.tagName?.toLowerCase?.();
         if (tag === 'input' || tag === 'textarea') return;
+        if (!this._inputEnabled) return;
         const code = e.code;
         if (code in this._keys) {
             e.preventDefault();
@@ -826,6 +877,18 @@ export class ConnectorDebuggerView {
         const axis2 = new THREE.Vector2(axis3.x, axis3.z);
         if (axis2.lengthSq() > 0) axis2.normalize();
         return { position: worldPos, axis: axis2 };
+    }
+
+    _getMapCenter() {
+        const map = this.city?.config?.map;
+        if (!map) return new THREE.Vector3(0, this._groundY, 0);
+        const tileSize = map.tileSize ?? this._tileSize ?? 1;
+        const width = Math.max(1, map.width ?? 1);
+        const height = Math.max(1, map.height ?? 1);
+        const origin = map.origin ?? { x: 0, z: 0 };
+        const x = origin.x + (width - 1) * tileSize * 0.5;
+        const z = origin.z + (height - 1) * tileSize * 0.5;
+        return new THREE.Vector3(x, this._groundY, z);
     }
 
     _updateMarkers() {
@@ -1304,6 +1367,23 @@ export class ConnectorDebuggerView {
         this._lastInteractionTime = performance.now();
         if (this._connectorMesh) this._clearConnectorMesh();
         if (this._curbAutoCreate && this._createdCurbGroup) this._clearCreatedCurbs();
+    }
+
+    _setTourActive(active) {
+        this._tourActive = !!active;
+        this._inputEnabled = !this._tourActive;
+        this.panel?.setTourActive(this._tourActive);
+        this.shortcutsPanel?.setTourActive(this._tourActive);
+    }
+
+    _startTour() {
+        if (this._tourActive || !this._tour) return;
+        if (!this._tour.start()) return;
+        this._isDragging = false;
+        this._isRotating = false;
+        this._hoveredCurb = null;
+        this._activeCurb = null;
+        for (const key of Object.keys(this._keys)) this._keys[key] = false;
     }
 
     _clearConnectorMesh() {

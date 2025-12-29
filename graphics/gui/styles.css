@@ -337,6 +337,12 @@ body.splash-bg #game-canvas {
     flex-direction: column;
     gap: 10px;
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+    transition: opacity 0.35s ease;
+}
+
+.city-shortcuts-panel.is-tour {
+    opacity: 0.25;
+    pointer-events: none;
 }
 
 .city-shortcuts-title {
@@ -587,6 +593,12 @@ body.setup-bg #game-canvas {
     flex-direction: column;
     gap: 8px;
     --connector-debug-label-width: 90px;
+    transition: opacity 0.35s ease;
+}
+
+.connector-debug-stack.is-tour {
+    opacity: 0.25;
+    pointer-events: none;
 }
 
 .connector-debug-panel {

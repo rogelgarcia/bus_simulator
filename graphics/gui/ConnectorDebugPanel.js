@@ -458,6 +458,10 @@ export class ConnectorDebugPanel {
         if (this.curbsToggleInput) this.curbsToggleInput.checked = !!enabled;
     }
 
+    setTourActive(active) {
+        this.root.classList.toggle('is-tour', !!active);
+    }
+
     _setAutoSelectState(autoSelect) {
         this._autoSelect = !!autoSelect;
         if (this.autoSelectInput) this.autoSelectInput.checked = this._autoSelect;
