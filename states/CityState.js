@@ -804,11 +804,22 @@ export class CityState {
         const fields = [];
         if (Number.isFinite(radius)) fields.push({ label: 'Radius', value: radius.toFixed(2) });
         if (Number.isFinite(collisionDistance)) fields.push({ label: 'Collision dist', value: collisionDistance.toFixed(2) });
+        const dubinsType = typeof connector?.type === 'string' ? connector.type : null;
+        if (dubinsType) fields.push({ label: 'Dubins type', value: dubinsType });
+        const segmentLengths = Array.isArray(connector?.segments)
+            ? connector.segments.map((segment) => segment?.length).filter((len) => Number.isFinite(len))
+            : [];
+        if (segmentLengths.length) {
+            const segmentLine = segmentLengths.map((len) => len.toFixed(2)).join(', ');
+            fields.push({ label: 'Segment lengths', value: segmentLine });
+        }
         if (Number.isFinite(endDistance) && Number.isFinite(endDx) && Number.isFinite(endDz)) {
             fields.push({ label: 'End dist', value: endDistance.toFixed(2) });
             fields.push({ label: 'End dx', value: endDx.toFixed(2) });
             fields.push({ label: 'End dz', value: endDz.toFixed(2) });
         }
+        if (pole?.arrowRole === 'p0') fields.push({ label: 'Pole role', value: 'P0' });
+        if (pole?.arrowRole === 'p1') fields.push({ label: 'Pole role', value: 'P1' });
         if (typeof pole?.curveSide === 'string' && pole.curveSide.length > 0) {
             const normalized = pole.curveSide.trim().toLowerCase();
             const curveLabel = normalized === 'internal' ? 'Inner curve' : (normalized === 'external' ? 'Outer curve' : pole.curveSide);

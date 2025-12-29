@@ -463,6 +463,25 @@ export function generateRoads({ map, config, materials } = {}) {
 
     const computeConnectorRadius = (p0, p1) => {
         if (!p0 || !p1) return null;
+        const curbReduce = Number.isFinite(curbT) ? curbT : 0;
+        const curveConnector = !!(p0?.curveConnection || p1?.curveConnection);
+        if (curveConnector) {
+            const ax = p0.x;
+            const bx = p1.x;
+            const az = Number.isFinite(p0.z) ? p0.z : p0.y;
+            const bz = Number.isFinite(p1.z) ? p1.z : p1.y;
+            if (!Number.isFinite(ax) || !Number.isFinite(bx) || !Number.isFinite(az) || !Number.isFinite(bz)) return null;
+            const dx = Math.abs(bx - ax);
+            const dz = Math.abs(bz - az);
+            const minAxis = Math.min(dx, dz);
+            if (minAxis > EPS) {
+                const reduced = minAxis - curbReduce;
+                return reduced > EPS ? reduced : null;
+            }
+            const dist = Math.hypot(dx, dz);
+            const reduced = dist - curbReduce;
+            return reduced > EPS ? reduced : null;
+        }
         const resolveCollision = (pole) => {
             const col = pole?.collision ?? null;
             if (col && Number.isFinite(col.x) && (Number.isFinite(col.z) || Number.isFinite(col.y))) return col;
@@ -481,7 +500,8 @@ export function generateRoads({ map, config, materials } = {}) {
             const dx = bx - ax;
             const dz = bz - az;
             const dist = Math.hypot(dx, dz);
-            return dist > EPS ? dist : null;
+            const reduced = dist - curbReduce;
+            return reduced > EPS ? reduced : null;
         };
         const d0 = distToCollision(p0);
         if (Number.isFinite(d0)) return d0;
@@ -498,17 +518,20 @@ export function generateRoads({ map, config, materials } = {}) {
         const dist = Math.hypot(dx, dz);
         const base = minAxis > EPS ? minAxis : dist;
         if (!(base > EPS)) return null;
-        return base;
+        const reduced = base - curbReduce;
+        return reduced > EPS ? reduced : null;
     };
     const solveCurbConnector = (p0, p1, dir0, dir1) => {
         if (!p0 || !p1 || !dir0 || !dir1) return null;
         const radius = computeConnectorRadius(p0, p1);
         if (!Number.isFinite(radius) || radius <= EPS) return null;
+        const isConnection = (p0?.collisionId != null || p1?.collisionId != null || p0?.cut != null || p1?.cut != null);
+        const isCurve = !!(p0?.curveConnection || p1?.curveConnection);
         const connector = solveConnectorPath({
             start: { position: { x: p0.x, y: p0.z }, direction: { x: dir0.x, y: dir0.z } },
             end: { position: { x: p1.x, y: p1.z }, direction: { x: dir1.x, y: dir1.z } },
             radius,
-            allowFallback: true,
+            allowFallback: !(isConnection || isCurve),
             preferS: true
         });
         if (connector && connector.ok) return connector;
