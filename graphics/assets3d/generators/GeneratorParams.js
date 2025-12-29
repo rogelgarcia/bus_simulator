@@ -151,7 +151,7 @@ function createCornerPalette(kind) {
     return (kind === 'debug') ? debug : regular;
 }
 
-function createAsphaltPalette(kind) {
+export function createAsphaltPalette(kind) {
     const pick = (type, orient) => {
         if (!type || !orient) return undefined;
         const row = DEBUG_COLORS?.asphalt?.[type];

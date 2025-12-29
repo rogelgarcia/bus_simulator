@@ -83,6 +83,7 @@ export class GameplayState {
 
         // Clear previous scene
         this.engine.clearScene();
+        this.engine.context.city = null;
 
         // Get simulation context
         const sim = this.engine.simulation;
@@ -100,7 +101,8 @@ export class GameplayState {
             size: 400,
             tileMeters: 2,
             mapTileSize: 24,
-            seed: 'x'
+            seed: 'x',
+            generatorConfig: { render: { roadMode: 'normal' } }
         });
         this.city.attach(this.engine);
         this.gameLoop.setWorld(this.city);

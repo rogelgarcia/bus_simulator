@@ -106,6 +106,8 @@ export class CityState {
             mapTileSize: 24,
             seed: 'x'
         };
+        this._roadRenderMode = 'debug';
+        this._cityOptions.generatorConfig = { render: { roadMode: this._roadRenderMode } };
 
         this._baseSpec = null;
         this.debugPanel = null;
@@ -161,6 +163,13 @@ export class CityState {
 
         this.engine.clearScene();
 
+        this._roadRenderMode = 'debug';
+        const currentGen = this._cityOptions.generatorConfig ?? {};
+        this._cityOptions.generatorConfig = {
+            ...currentGen,
+            render: { ...(currentGen.render ?? {}), roadMode: this._roadRenderMode }
+        };
+
         const config = createCityConfig(this._cityOptions);
         this._baseSpec = CityMap.demoSpec(config);
 
@@ -175,9 +184,11 @@ export class CityState {
             connectorDebugEnabled: this._connectorDebugEnabled,
             hoverOutlineEnabled: this._hoverOutlineEnabled,
             collisionDebugEnabled: this._collisionDebugEnabled,
+            roadRenderMode: this._roadRenderMode,
             onConnectorDebugToggle: (enabled) => this._setConnectorDebugEnabled(enabled),
             onHoverOutlineToggle: (enabled) => this._setHoverOutlineEnabled(enabled),
-            onCollisionDebugToggle: (enabled) => this._setCollisionDebugEnabled(enabled)
+            onCollisionDebugToggle: (enabled) => this._setCollisionDebugEnabled(enabled),
+            onRoadRenderModeChange: (mode) => this._setRoadRenderMode(mode)
         });
         this.debugsPanel.show();
 
@@ -632,6 +643,17 @@ export class CityState {
         if (!this._collisionMarkerMesh && !this._connectionMarkerMesh && !this._adjustedEndRingMesh && !this._adjustedEndOriginMesh && this._collisionDebugEnabled) {
             this._setupCollisionMarkers();
         }
+    }
+
+    _setRoadRenderMode(mode) {
+        const next = mode === 'normal' ? 'normal' : 'debug';
+        if (next === this._roadRenderMode) return;
+        this._roadRenderMode = next;
+        const current = this._cityOptions.generatorConfig ?? {};
+        const render = { ...(current.render ?? {}), roadMode: next };
+        this._cityOptions.generatorConfig = { ...current, render };
+        this.debugsPanel?.setRoadRenderMode(this._roadRenderMode);
+        this._reloadCity();
     }
 
     _setHoverOutlineEnabled(enabled) {

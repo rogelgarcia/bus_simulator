@@ -4,9 +4,11 @@ export class CityDebugsPanel {
         connectorDebugEnabled = true,
         hoverOutlineEnabled = true,
         collisionDebugEnabled = true,
+        roadRenderMode = 'debug',
         onConnectorDebugToggle = null,
         onHoverOutlineToggle = null,
-        onCollisionDebugToggle = null
+        onCollisionDebugToggle = null,
+        onRoadRenderModeChange = null
     } = {}) {
         this.root = document.createElement('div');
         this.root.className = 'city-debugs-panel hidden';
@@ -50,37 +52,50 @@ export class CityDebugsPanel {
         this.collisionToggle.appendChild(this.collisionToggleLabel);
         this.controls.appendChild(this.collisionToggle);
 
-        this.legend = document.createElement('div');
-        this.legend.className = 'city-debugs-legend';
-        const makeLegendItem = (label, color, opts = null) => {
-            const item = document.createElement('div');
-            item.className = 'city-debugs-legend-item';
-            const dot = document.createElement('span');
-            dot.className = 'city-debugs-legend-dot';
-            const style = opts ?? {};
-            dot.style.backgroundColor = style.hollow ? 'transparent' : color;
-            dot.style.borderColor = color;
-            if (style.borderWidth) dot.style.borderWidth = `${style.borderWidth}px`;
-            if (style.opacity !== undefined) dot.style.opacity = `${style.opacity}`;
-            const text = document.createElement('span');
-            text.className = 'city-debugs-legend-text';
-            text.textContent = label;
-            item.appendChild(dot);
-            item.appendChild(text);
-            return item;
-        };
-        this.legend.appendChild(makeLegendItem('Collision pole', '#ff3b30'));
-        this.legend.appendChild(makeLegendItem('Connection pole', '#34c759'));
-        this.legend.appendChild(makeLegendItem('Adjusted end pole', '#34c759', { hollow: true, borderWidth: 2 }));
-        this.legend.appendChild(makeLegendItem('Original end pole', '#ff3b30', { opacity: 0.45 }));
+        this.displaySection = document.createElement('div');
+        this.displaySection.className = 'city-debugs-section';
+        this.displayTitle = document.createElement('div');
+        this.displayTitle.className = 'city-debugs-section-title';
+        this.displayTitle.textContent = 'Display';
+        this.displayRow = document.createElement('div');
+        this.displayRow.className = 'city-debugs-mode-row';
+        this.displayLabel = document.createElement('span');
+        this.displayLabel.className = 'city-debugs-mode-label';
+        this.displayLabel.textContent = 'Road rendering mode:';
+        this.modeSelector = document.createElement('div');
+        this.modeSelector.className = 'city-debugs-mode-selector';
+        this.modeNormal = document.createElement('button');
+        this.modeNormal.type = 'button';
+        this.modeNormal.className = 'city-debugs-mode-text';
+        this.modeNormal.textContent = 'Normal';
+        this.modeToggle = document.createElement('button');
+        this.modeToggle.type = 'button';
+        this.modeToggle.className = 'city-debugs-mode-toggle';
+        this.modeToggleThumb = document.createElement('span');
+        this.modeToggleThumb.className = 'city-debugs-mode-thumb';
+        this.modeToggle.appendChild(this.modeToggleThumb);
+        this.modeDebug = document.createElement('button');
+        this.modeDebug.type = 'button';
+        this.modeDebug.className = 'city-debugs-mode-text';
+        this.modeDebug.textContent = 'Debug';
+        this.modeSelector.appendChild(this.modeNormal);
+        this.modeSelector.appendChild(this.modeToggle);
+        this.modeSelector.appendChild(this.modeDebug);
+        this.displayRow.appendChild(this.displayLabel);
+        this.displayRow.appendChild(this.modeSelector);
+        this.displaySection.appendChild(this.displayTitle);
+        this.displaySection.appendChild(this.displayRow);
 
         this.root.appendChild(this.title);
         this.root.appendChild(this.controls);
-        this.root.appendChild(this.legend);
+        this.root.appendChild(this.displaySection);
 
         this._onConnectorDebugToggle = onConnectorDebugToggle;
         this._onHoverOutlineToggle = onHoverOutlineToggle;
         this._onCollisionDebugToggle = onCollisionDebugToggle;
+        this._onRoadRenderModeChange = onRoadRenderModeChange;
+
+        this._setRoadRenderMode(roadRenderMode);
 
         this.connectorToggleInput.addEventListener('change', () => {
             if (this._onConnectorDebugToggle) this._onConnectorDebugToggle(this.connectorToggleInput.checked);
@@ -92,6 +107,24 @@ export class CityDebugsPanel {
 
         this.collisionToggleInput.addEventListener('change', () => {
             if (this._onCollisionDebugToggle) this._onCollisionDebugToggle(this.collisionToggleInput.checked);
+        });
+
+        this.modeToggle.addEventListener('click', () => {
+            const next = this._roadRenderMode === 'debug' ? 'normal' : 'debug';
+            this._setRoadRenderMode(next);
+            if (this._onRoadRenderModeChange) this._onRoadRenderModeChange(this._roadRenderMode);
+        });
+
+        this.modeNormal.addEventListener('click', () => {
+            if (this._roadRenderMode === 'normal') return;
+            this._setRoadRenderMode('normal');
+            if (this._onRoadRenderModeChange) this._onRoadRenderModeChange(this._roadRenderMode);
+        });
+
+        this.modeDebug.addEventListener('click', () => {
+            if (this._roadRenderMode === 'debug') return;
+            this._setRoadRenderMode('debug');
+            if (this._onRoadRenderModeChange) this._onRoadRenderModeChange(this._roadRenderMode);
         });
     }
 
@@ -107,6 +140,10 @@ export class CityDebugsPanel {
         if (this.collisionToggleInput) this.collisionToggleInput.checked = !!enabled;
     }
 
+    setRoadRenderMode(mode) {
+        this._setRoadRenderMode(mode);
+    }
+
     setOnConnectorDebugToggle(fn) {
         this._onConnectorDebugToggle = fn;
     }
@@ -117,6 +154,10 @@ export class CityDebugsPanel {
 
     setOnCollisionDebugToggle(fn) {
         this._onCollisionDebugToggle = fn;
+    }
+
+    setOnRoadRenderModeChange(fn) {
+        this._onRoadRenderModeChange = fn;
     }
 
     attach(parent = document.body) {
@@ -134,5 +175,15 @@ export class CityDebugsPanel {
 
     destroy() {
         if (this.root.isConnected) this.root.remove();
+    }
+
+    _setRoadRenderMode(mode) {
+        const next = mode === 'normal' ? 'normal' : 'debug';
+        this._roadRenderMode = next;
+        if (this.modeToggle) {
+            this.modeToggle.classList.toggle('is-debug', next === 'debug');
+        }
+        if (this.modeNormal) this.modeNormal.classList.toggle('is-active', next === 'normal');
+        if (this.modeDebug) this.modeDebug.classList.toggle('is-active', next === 'debug');
     }
 }

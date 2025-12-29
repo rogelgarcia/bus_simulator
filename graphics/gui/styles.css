@@ -396,6 +396,79 @@ body.splash-bg #game-canvas {
     align-items: start;
 }
 
+.city-debugs-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 0;
+}
+
+.city-debugs-section-title {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-weight: 700;
+    opacity: 0.7;
+}
+
+.city-debugs-mode-row {
+    display: grid;
+    grid-template-columns: max-content max-content;
+    column-gap: 12px;
+    align-items: center;
+    font-size: 12px;
+}
+
+.city-debugs-mode-label {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.city-debugs-mode-selector {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.city-debugs-mode-text {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.city-debugs-mode-text.is-active {
+    color: rgba(255, 255, 255, 0.95);
+    font-weight: 600;
+}
+
+.city-debugs-mode-toggle {
+    position: relative;
+    width: 44px;
+    height: 22px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.08);
+    cursor: pointer;
+    padding: 0;
+}
+
+.city-debugs-mode-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.9);
+    transition: transform 0.2s ease;
+}
+
+.city-debugs-mode-toggle.is-debug .city-debugs-mode-thumb {
+    transform: translateX(20px);
+}
+
 .city-debugs-toggle-switch {
     color: rgba(255, 255, 255, 0.8);
     white-space: nowrap;

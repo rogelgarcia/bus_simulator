@@ -1,6 +1,6 @@
 // graphics/assets3d/generators/RoadGenerator.js
 import * as THREE from 'three';
-import { ROAD_DEFAULTS, ASPHALT_COLOR_PALETTE, DEBUG_ASPHALT, CURB_COLOR_PALETTE } from './GeneratorParams.js';
+import { ROAD_DEFAULTS, DEBUG_ASPHALT, CURB_COLOR_PALETTE, createAsphaltPalette } from './GeneratorParams.js';
 import { clamp, deepMerge } from './internal_road/RoadMath.js';
 import { createAsphaltBuilder } from './internal_road/AsphaltBuilder.js';
 import { createCurbBuilder } from './internal_road/CurbBuilder.js';
@@ -401,7 +401,10 @@ export function generateRoads({ map, config, materials } = {}) {
     const curbMatBase = materials?.curb ?? new THREE.MeshStandardMaterial({ color: DEFAULT_CURB_COLOR_HEX, roughness: DEFAULT_CURB_ROUGHNESS });
     const laneWhiteMat = materials?.laneWhite ?? new THREE.MeshStandardMaterial({ color: LANE_WHITE_COLOR_HEX, roughness: LANE_MARK_ROUGHNESS });
     const laneYellowMat = materials?.laneYellow ?? new THREE.MeshStandardMaterial({ color: LANE_YELLOW_COLOR_HEX, roughness: LANE_MARK_ROUGHNESS });
-    const asphaltDebug = DEBUG_ASPHALT && ASPHALT_COLOR_PALETTE?.kind === 'debug';
+    const modeSetting = config?.render?.roadMode ?? null;
+    const debugEnabled = modeSetting ? modeSetting === 'debug' : DEBUG_ASPHALT;
+    const asphaltPalette = createAsphaltPalette(debugEnabled ? 'debug' : 'regular');
+    const asphaltDebug = debugEnabled && asphaltPalette?.kind === 'debug';
     const asphaltMat = asphaltDebug
         ? new THREE.MeshBasicMaterial({ vertexColors: true })
         : roadMatBase;
@@ -417,7 +420,7 @@ export function generateRoads({ map, config, materials } = {}) {
     const asphalt = createAsphaltBuilder({
         planeGeo,
         material: asphaltMat,
-        palette: ASPHALT_COLOR_PALETTE,
+        palette: asphaltPalette,
         capacity: Math.max(MIN_CAPACITY, roadCount * ASPHALT_CAPACITY_PER_TILE),
         name: 'Asphalt'
     });
