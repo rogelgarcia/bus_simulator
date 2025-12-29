@@ -19,3 +19,5 @@ Thumbs.db
 dist/
 build/
 
+# AI Prompts
+AI_[0-9]*
