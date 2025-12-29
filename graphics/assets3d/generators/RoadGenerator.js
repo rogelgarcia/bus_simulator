@@ -452,13 +452,29 @@ export function generateRoads({ map, config, materials } = {}) {
     let poleId = 0;
     let collisionId = 0;
 
+    const computeConnectorRadius = (p0, p1) => {
+        if (!p0 || !p1) return null;
+        const ax = p0.x;
+        const bx = p1.x;
+        const az = Number.isFinite(p0.z) ? p0.z : p0.y;
+        const bz = Number.isFinite(p1.z) ? p1.z : p1.y;
+        if (!Number.isFinite(ax) || !Number.isFinite(bx) || !Number.isFinite(az) || !Number.isFinite(bz)) return null;
+        const dx = Math.abs(bx - ax);
+        const dz = Math.abs(bz - az);
+        const minAxis = Math.min(dx, dz);
+        const dist = Math.hypot(dx, dz);
+        const base = minAxis > EPS ? minAxis : dist;
+        if (!(base > EPS)) return null;
+        return base;
+    };
     const solveCurbConnector = (p0, p1, dir0, dir1) => {
         if (!p0 || !p1 || !dir0 || !dir1) return null;
-        if (!Number.isFinite(turnRadius) || turnRadius <= EPS) return null;
+        const radius = computeConnectorRadius(p0, p1);
+        if (!Number.isFinite(radius) || radius <= EPS) return null;
         const connector = solveConnectorPath({
             start: { position: { x: p0.x, y: p0.z }, direction: { x: dir0.x, y: dir0.z } },
             end: { position: { x: p1.x, y: p1.z }, direction: { x: dir1.x, y: dir1.z } },
-            radius: turnRadius,
+            radius,
             allowFallback: true,
             preferS: true
         });
@@ -1144,14 +1160,35 @@ export function generateRoads({ map, config, materials } = {}) {
         const length = renderData.length ?? 0;
         const gaps = renderData.gaps ?? [];
         if (!(length > EPS)) continue;
-        const probe = Math.max(EPS * 10, Math.min(0.05, data.halfWidth * 0.1));
+        const boundaryTol = Math.max(EPS * 100, Math.min(0.05, data.halfWidth * 0.2));
         for (const pole of connectionPoles) {
             const cutT = pole?.cut;
             if (!Number.isFinite(cutT)) continue;
-            const beforeT = cutT - probe;
-            const afterT = cutT + probe;
-            const hasBefore = beforeT > EPS && !isInGaps(beforeT, gaps);
-            const hasAfter = afterT < length - EPS && !isInGaps(afterT, gaps);
+            let hasBefore = false;
+            let hasAfter = false;
+            let matchedBoundary = false;
+            for (const gap of gaps) {
+                const start = gap?.start;
+                const end = gap?.end;
+                if (Number.isFinite(start) && Math.abs(cutT - start) <= boundaryTol) {
+                    hasBefore = true;
+                    hasAfter = false;
+                    matchedBoundary = true;
+                    break;
+                }
+                if (Number.isFinite(end) && Math.abs(cutT - end) <= boundaryTol) {
+                    hasBefore = false;
+                    hasAfter = true;
+                    matchedBoundary = true;
+                    break;
+                }
+            }
+            if (!matchedBoundary) {
+                const beforeT = cutT - boundaryTol;
+                const afterT = cutT + boundaryTol;
+                hasBefore = beforeT > EPS && !isInGaps(beforeT, gaps);
+                hasAfter = afterT < length - EPS && !isInGaps(afterT, gaps);
+            }
             pole.renderBefore = hasBefore;
             pole.renderAfter = hasAfter;
             pole.flow = (hasBefore && !hasAfter) ? 'exit' : (!hasBefore && hasAfter ? 'enter' : null);
