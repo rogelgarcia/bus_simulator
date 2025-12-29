@@ -52,6 +52,10 @@ Tasks:
 
 [Add any additional context, examples, or constraints here]
 [Avoid specifying implementation details - focus on requirements and behavior]
+
+## On completion
+- When complete mark the AI document as DONE by adding a marker in the first line
+- Provide a summary of the changes made in the AI document (very high level, one liner)
 ```
 
 ## Best Practices
