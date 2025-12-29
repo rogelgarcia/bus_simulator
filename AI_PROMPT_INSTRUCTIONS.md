@@ -11,7 +11,7 @@ Every AI prompt request should consist of the following parts:
 - Break down the desired outcome as an itemized list of **what** needs to be accomplished, not **how**
 - Focus on behavior, features, and outcomes rather than specific code implementations
 - Include any constraints or requirements
-- **Avoid specifying implementation details** - let the AI determine the best approach
+- **Avoid specifying implementation details!!** - let the AI determine the best approach
 
 Example:
 ```
@@ -21,15 +21,6 @@ Implement user authentication system:
 - Maintain user session across page refreshes
 - Allow users to log out
 ```
-
-### 2. Context (Optional)
-
-If additional context is needed:
-
-- Provide specific examples or use cases
-- Include relevant documentation or references
-- Describe edge cases or special considerations
-- Add any constraints or limitations
 
 ## Notes
 
@@ -44,6 +35,8 @@ If additional context is needed:
 # Request
 
 [State the overall goal in high-level terms - describe WHAT, not HOW]
+
+When the work is finished, update the prompt file to add "DONE" at the beginning of the first line.
 
 Tasks:
 - [Describe desired behavior or outcome 1]
@@ -70,4 +63,5 @@ Tasks:
 5. **Keep It Simple**: The AI has repository access - just describe what you need
 6. **Trust the AI**: It will retrieve necessary files, determine implementation details, and follow project conventions automatically
 7. **Save the Request**: Store the complete request in a file for reference (Use an specific file name AI_#_title)
+
 
