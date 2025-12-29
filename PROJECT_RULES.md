@@ -16,6 +16,7 @@
 - Exception: First line must be a comment with the file path (e.g., `// graphics/assets3d/generators/RoadGenerator.js`)
 - Exception: Design decisions (do not explain the code, but why it is written a certain way)
 - Exception: Library source code (preserve all original comments)
+- Exception: Hackish solutions (explain what you did and why it's necessary)
 
 ## AI Guidance
 
