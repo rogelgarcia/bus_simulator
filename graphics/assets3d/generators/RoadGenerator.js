@@ -454,6 +454,60 @@ export function generateRoads({ map, config, materials } = {}) {
 
     const computeConnectorRadius = (p0, p1) => {
         if (!p0 || !p1) return null;
+        const resolveCollision = (pole) => {
+            const col = pole?.collision ?? null;
+            if (col && Number.isFinite(col.x) && (Number.isFinite(col.z) || Number.isFinite(col.y))) return col;
+            const road = pole?.roadId != null ? roadById.get(pole.roadId) : null;
+            if (!road?.collisionById || pole?.collisionId == null) return null;
+            return road.collisionById.get(pole.collisionId) ?? null;
+        };
+        const axisDistsToCollision = (pole) => {
+            const col = resolveCollision(pole);
+            if (!col) return [];
+            const ax = pole.x;
+            const az = Number.isFinite(pole.z) ? pole.z : pole.y;
+            const bx = col.x;
+            const bz = Number.isFinite(col.z) ? col.z : col.y;
+            if (!Number.isFinite(ax) || !Number.isFinite(az) || !Number.isFinite(bx) || !Number.isFinite(bz)) return [];
+            let values = [Math.abs(bx - ax), Math.abs(bz - az)];
+            const road = pole?.roadId != null ? roadById.get(pole.roadId) : null;
+            const curbOffset = road?.curbOffset ?? null;
+            const halfWidth = road?.halfWidth ?? null;
+            if (Number.isFinite(curbOffset) && Number.isFinite(halfWidth)) {
+                const perp = Math.abs(curbOffset - halfWidth);
+                if (perp > EPS) {
+                    const filtered = values.filter((v) => v > perp + EPS);
+                    if (filtered.length) values = filtered;
+                }
+            }
+            return values;
+        };
+        const values = [];
+        for (const value of axisDistsToCollision(p0)) {
+            if (Number.isFinite(value) && value > EPS) values.push(value);
+        }
+        for (const value of axisDistsToCollision(p1)) {
+            if (Number.isFinite(value) && value > EPS) values.push(value);
+        }
+        if (values.length) return Math.min(...values);
+        const distToCollision = (pole) => {
+            const col = resolveCollision(pole);
+            if (!col) return null;
+            const ax = pole.x;
+            const az = Number.isFinite(pole.z) ? pole.z : pole.y;
+            const bx = col.x;
+            const bz = Number.isFinite(col.z) ? col.z : col.y;
+            if (!Number.isFinite(ax) || !Number.isFinite(az) || !Number.isFinite(bx) || !Number.isFinite(bz)) return null;
+            const dx = bx - ax;
+            const dz = bz - az;
+            const dist = Math.hypot(dx, dz);
+            return dist > EPS ? dist : null;
+        };
+        const d0 = distToCollision(p0);
+        const d1 = distToCollision(p1);
+        if (Number.isFinite(d0) && Number.isFinite(d1)) return Math.min(d0, d1);
+        if (Number.isFinite(d0)) return d0;
+        if (Number.isFinite(d1)) return d1;
         const ax = p0.x;
         const bx = p1.x;
         const az = Number.isFinite(p0.z) ? p0.z : p0.y;
