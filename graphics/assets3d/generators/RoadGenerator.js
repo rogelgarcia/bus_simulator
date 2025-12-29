@@ -278,6 +278,12 @@ export function generateRoads({ map, config, materials } = {}) {
                 const rC = clamp(curbCornerRadius, 0.35, Math.min(cornerXeff, cornerZeff));
                 const x0 = xInner + curbT * 0.5;
                 const z0 = zInner + curbT * 0.5;
+                const poleInset = Math.max(x0, z0);
+                const maxRadius = Math.min(
+                    xInner + cornerXeff - poleInset,
+                    zInner + cornerZeff - poleInset
+                );
+                const cornerRadius = clamp(rC, 0.05, maxRadius);
                 corners[corner.key] = {
                     rC,
                     xInner,
@@ -285,10 +291,14 @@ export function generateRoads({ map, config, materials } = {}) {
                     x0,
                     z0,
                     signX: corner.signX,
-                    signZ: corner.signZ
+                    signZ: corner.signZ,
+                    cornerXeff,
+                    cornerZeff,
+                    poleInset,
+                    cornerRadius
                 };
-                const tA = z0 + rC;
-                const tB = x0 + rC;
+                const tA = poleInset + cornerRadius;
+                const tB = tA;
                 if (corner.dirA === 'N') curbTrim.N[corner.dirB] = Math.max(curbTrim.N[corner.dirB], tA);
                 if (corner.dirA === 'S') curbTrim.S[corner.dirB] = Math.max(curbTrim.S[corner.dirB], tA);
                 if (corner.dirB === 'E') curbTrim.E[corner.dirA] = Math.max(curbTrim.E[corner.dirA], tB);
@@ -763,22 +773,25 @@ export function generateRoads({ map, config, materials } = {}) {
             for (const [cornerKey, data] of Object.entries(info.corners)) {
                 const curbKey = CURB_COLOR_PALETTE.key(junctionType, cornerKey);
                 const cornerColor = CURB_COLOR_PALETTE.instanceColor('curb', junctionType, cornerKey) ?? neutralCurbColor;
+                const poleInset = data.poleInset ?? Math.max(data.x0, data.z0);
+                const cornerRadius = data.cornerRadius ?? data.rC;
                 const dirA = new THREE.Vector2(0, -data.signZ);
                 const dirB = new THREE.Vector2(data.signX, 0);
                 const p0 = new THREE.Vector2(
-                    node.x + data.signX * data.x0,
-                    node.z + data.signZ * (data.z0 + data.rC)
+                    node.x + data.signX * poleInset,
+                    node.z + data.signZ * (poleInset + cornerRadius)
                 );
                 const p1 = new THREE.Vector2(
-                    node.x + data.signX * (data.x0 + data.rC),
-                    node.z + data.signZ * data.z0
+                    node.x + data.signX * (poleInset + cornerRadius),
+                    node.z + data.signZ * poleInset
                 );
                 const connector = solveConnectorPath({
                     start: { position: p0, direction: dirA },
                     end: { position: p1, direction: dirB },
-                    radius: data.rC,
+                    radius: cornerRadius,
                     allowFallback: true,
-                    minStraight: minConnectorStraight,
+                    minStraight: 0,
+                    maxStraight: 0.5,
                     preferS: false
                 });
                 if (connector) {
@@ -794,14 +807,14 @@ export function generateRoads({ map, config, materials } = {}) {
                     });
                     recordConnector(p0, dirA, p1, dirB, `junction_${cornerKey}`, connector);
                 } else {
-                    const cx = node.x + data.signX * (data.x0 + data.rC);
-                    const cz = node.z + data.signZ * (data.z0 + data.rC);
+                    const cx = node.x + data.signX * (poleInset + cornerRadius);
+                    const cz = node.z + data.signZ * (poleInset + cornerRadius);
                     const startAng = intersectionCornerStartAngle(data.signX, data.signZ);
                     curb.addArcSolidKey({
                         key: curbKey,
                         centerX: cx,
                         centerZ: cz,
-                        radiusCenter: data.rC,
+                        radiusCenter: cornerRadius,
                         startAng,
                         spanAng: Math.PI * 0.5,
                         curveSegs: curbArcSegs * 2
@@ -841,9 +854,11 @@ export function generateRoads({ map, config, materials } = {}) {
             if (!info.isJunction) continue;
             const junctionType = info.junctionType;
             for (const [cornerKey, data] of Object.entries(info.corners)) {
-                const cx = node.x + data.signX * (data.x0 + data.rC);
-                const cz = node.z + data.signZ * (data.z0 + data.rC);
-                const innerR = Math.max(0.05, data.rC - curbT * 0.5 + sidewalkInset);
+                const poleInset = data.poleInset ?? Math.max(data.x0, data.z0);
+                const cornerRadius = data.cornerRadius ?? data.rC;
+                const cx = node.x + data.signX * (poleInset + cornerRadius);
+                const cz = node.z + data.signZ * (poleInset + cornerRadius);
+                const innerR = Math.max(0.05, cornerRadius - curbT * 0.5 + sidewalkInset);
                 const outerR = innerR + sidewalkWidth;
                 if (outerR <= innerR + 0.01) continue;
                 const startAng = intersectionCornerStartAngle(data.signX, data.signZ);

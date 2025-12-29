@@ -170,6 +170,7 @@ function selectBestCandidate(candidates, options) {
     if (!candidates.length) return null;
     const {
         minStraight = 0,
+        maxStraight = null,
         lengthEps = 1e-6,
         preferTypes = [],
         baseRadius = null
@@ -184,6 +185,11 @@ function selectBestCandidate(candidates, options) {
     if (minStraight > 0) {
         const withStraight = pool.filter((cand) => cand.straightLength >= minStraight - 1e-6);
         if (withStraight.length) pool = withStraight;
+    }
+
+    if (Number.isFinite(maxStraight)) {
+        const withMaxStraight = pool.filter((cand) => cand.straightLength <= maxStraight + 1e-6);
+        if (withMaxStraight.length) pool = withMaxStraight;
     }
 
     if (preferTypes.length) {
@@ -307,6 +313,7 @@ export function solveConnectorPath(config = {}) {
         ? config.preferPathTypes.slice()
         : (config.preferS ? PREFER_S_TYPES.slice() : DEFAULT_PATH_TYPES.slice());
     const minStraight = Number.isFinite(config.minStraight) ? config.minStraight : 0;
+    const maxStraight = Number.isFinite(config.maxStraight) ? config.maxStraight : null;
     const baseRadius = radiusPolicy.baseRadius ?? (radiusCandidates[0] ?? null);
 
     const candidates = [];
@@ -356,6 +363,7 @@ export function solveConnectorPath(config = {}) {
 
     const chosen = selectBestCandidate(candidates, {
         minStraight,
+        maxStraight,
         lengthEps: Number.isFinite(config.lengthEps) ? config.lengthEps : 1e-6,
         preferTypes,
         baseRadius
