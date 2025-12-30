@@ -1,4 +1,5 @@
-// graphics/gui/CityShortcutsPanel.js
+// graphics/gui/city/CityShortcutsPanel.js
+// Shows keyboard shortcuts for the city debug screen.
 export class CityShortcutsPanel {
     constructor() {
         this.root = document.createElement('div');
@@ -59,4 +60,3 @@ export class CityShortcutsPanel {
         if (this.root.isConnected) this.root.remove();
     }
 }
-

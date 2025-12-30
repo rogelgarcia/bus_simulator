@@ -1,4 +1,5 @@
-// graphics/ConnectorCameraTour.js
+// graphics/gui/connector_debugger/ConnectorCameraTour.js
+// Animates camera orbits for the connector debugger tour mode.
 import * as THREE from 'three';
 
 const TAU = Math.PI * 2;

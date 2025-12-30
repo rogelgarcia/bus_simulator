@@ -1,9 +1,12 @@
-// graphics/CityConnectorDebugOverlay.js
+// graphics/visuals/city/CityConnectorDebugOverlay.js
+// Manages connector debug visuals and hover highlights for the city state.
 import * as THREE from 'three';
-import { Line2 } from 'three/addons/lines/Line2.js';
-import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
-import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
-import { sampleConnector } from './assets3d/generators/road/connectors/ArcConnector.js';
+import { sampleConnector } from '../../assets3d/generators/road/connectors/ArcConnector.js';
+import { createPoleMarkerAssets, createPoleMarkerGroup } from '../shared/PoleMarkerGroup.js';
+import { createConnectorPathLine } from '../shared/ConnectorPathLine.js';
+import { createConnectorTurnCircleLines } from '../shared/ConnectorTurnCircleLines.js';
+import { createConnectorArrowLines } from '../shared/ConnectorArrowLines.js';
+import { createConnectorCollisionArrow } from './ConnectorCollisionArrow.js';
 
 const TAU = Math.PI * 2;
 
@@ -28,12 +31,9 @@ export class CityConnectorDebugOverlay {
             : Math.max(1, this._pathLineWidth * 0.45);
 
         const markerRadius = Number.isFinite(options.markerRadius) ? options.markerRadius : 0.35;
-        this._markerGeo = new THREE.CircleGeometry(markerRadius, 40);
-        this._markerRingGeo = new THREE.RingGeometry(markerRadius * 0.9, markerRadius * 1.06, 48);
-        this._markerDotGeo = new THREE.CircleGeometry(markerRadius * 0.16, 24);
-        this._markerMats = {
-            master: this._buildMarkerMaterials(this._masterColor),
-            slave: this._buildMarkerMaterials(this._slaveColor)
+        this._markerAssets = {
+            master: createPoleMarkerAssets({ radius: markerRadius, colorHex: this._masterColor, depthTest: true }),
+            slave: createPoleMarkerAssets({ radius: markerRadius, colorHex: this._slaveColor, depthTest: true })
         };
 
         this._markers = [];
@@ -44,143 +44,69 @@ export class CityConnectorDebugOverlay {
         this._collisionArrow = null;
         this._tmpDir = new THREE.Vector3();
 
-        this._pathGeo = new LineGeometry();
-        this._pathGeo.setPositions([0, this._lineY, 0, 0, this._lineY, 0]);
-        this._pathMat = new LineMaterial({
+        const { line: pathLine, geo: pathGeo, mat: pathMat } = createConnectorPathLine({
+            y: this._lineY,
             color: 0x3b82f6,
-            linewidth: this._pathLineWidth,
-            worldUnits: false,
-            transparent: true,
+            lineWidth: this._pathLineWidth,
             opacity: 1,
+            renderOrder: 8,
             depthTest: false,
             depthWrite: false
         });
-        this._syncLineResolution();
-        this._pathLine = new Line2(this._pathGeo, this._pathMat);
-        this._pathLine.computeLineDistances();
-        this._pathLine.visible = false;
-        this._pathLine.renderOrder = 8;
-        this._pathLine.frustumCulled = false;
+        this._pathLine = pathLine;
+        this._pathGeo = pathGeo;
+        this._pathMat = pathMat;
         this.group.add(this._pathLine);
 
-        this._circleLines = [];
-        const circleColors = [0x15803d, 0x15803d, 0x8b5cf6, 0x8b5cf6];
-        for (let i = 0; i < circleColors.length; i++) {
-            const baseColor = circleColors[i];
-            const geo = new LineGeometry();
-            geo.setPositions([0, this._markerY, 0, 0, this._markerY, 0]);
-            const mat = new LineMaterial({
-                color: baseColor,
-                linewidth: this._circleLineWidth,
-                worldUnits: false,
-                transparent: true,
-                opacity: 0.7,
-                depthTest: false,
-                depthWrite: false
-            });
-            mat.resolution.set(this._lineResolution.x, this._lineResolution.y);
-            const line = new Line2(geo, mat);
-            line.computeLineDistances();
-            line.visible = false;
-            line.renderOrder = 7;
-            line.frustumCulled = false;
-            this.group.add(line);
-            this._circleLines.push({ line, geo, mat, baseColor });
-        }
+        this._circleLines = createConnectorTurnCircleLines({
+            y: this._markerY,
+            lineWidth: this._circleLineWidth,
+            opacity: 0.7,
+            renderOrder: 7,
+            depthTest: false,
+            depthWrite: false
+        });
+        for (const entry of this._circleLines) this.group.add(entry.line);
 
         this._arrowLineWidth = Number.isFinite(options.arrowLineWidth)
             ? options.arrowLineWidth
             : Math.max(2, this._pathLineWidth * 0.45);
-        this._arrowConeGeo = new THREE.ConeGeometry(markerRadius * 0.16, markerRadius * 0.4, 16, 1);
-        const arrowColors = [this._masterColor, this._slaveColor];
-        for (let i = 0; i < arrowColors.length; i++) {
-            const geo = new LineGeometry();
-            geo.setPositions([0, this._markerY, 0, 0, this._markerY, 0]);
-            const mat = new LineMaterial({
-                color: arrowColors[i],
-                linewidth: this._arrowLineWidth,
-                worldUnits: false,
-                transparent: true,
-                opacity: 0.95,
-                depthTest: false,
-                depthWrite: false
-            });
-            mat.resolution.set(this._lineResolution.x, this._lineResolution.y);
-            const line = new Line2(geo, mat);
-            line.computeLineDistances();
-            line.visible = false;
-            line.frustumCulled = false;
-            line.renderOrder = 12;
-            const coneMat = new THREE.MeshBasicMaterial({
-                color: arrowColors[i],
-                transparent: true,
-                opacity: 0.95,
-                depthTest: false,
-                depthWrite: false
-            });
-            const cone = new THREE.Mesh(this._arrowConeGeo, coneMat);
-            cone.visible = false;
-            cone.renderOrder = 13;
-            this.group.add(line);
-            this.group.add(cone);
-            this._arrowLines.push({ line, geo, mat, cone });
+        const arrowVisuals = createConnectorArrowLines({
+            y: this._markerY,
+            colors: [this._masterColor, this._slaveColor],
+            lineWidth: this._arrowLineWidth,
+            opacity: 0.95,
+            renderOrderLine: 12,
+            renderOrderCone: 13,
+            depthTest: false,
+            depthWrite: false,
+            markerRadius
+        });
+        this._arrowLines = arrowVisuals.arrows;
+        this._arrowConeGeo = arrowVisuals.coneGeometry;
+        for (const entry of this._arrowLines) {
+            this.group.add(entry.line);
+            this.group.add(entry.cone);
         }
 
         const collisionColor = Number.isFinite(options.collisionArrowColor) ? options.collisionArrowColor : 0x000000;
         const collisionOpacity = Number.isFinite(options.collisionArrowOpacity) ? options.collisionArrowOpacity : 0.5;
-        const collisionGeo = new LineGeometry();
-        collisionGeo.setPositions([0, this._markerY, 0, 0, this._markerY, 0]);
-        const collisionMat = new LineMaterial({
+        this._collisionArrow = createConnectorCollisionArrow({
+            y: this._markerY,
             color: collisionColor,
-            linewidth: this._arrowLineWidth,
-            worldUnits: false,
-            transparent: true,
             opacity: collisionOpacity,
+            lineWidth: this._arrowLineWidth,
+            markerRadius,
+            headLength: options.collisionArrowHeadLen,
+            headWidth: options.collisionArrowHeadWidth,
+            renderOrderLine: 14,
+            renderOrderHead: 15,
             depthTest: false,
             depthWrite: false
         });
-        collisionMat.resolution.set(this._lineResolution.x, this._lineResolution.y);
-        const collisionLine = new Line2(collisionGeo, collisionMat);
-        collisionLine.computeLineDistances();
-        collisionLine.visible = false;
-        collisionLine.frustumCulled = false;
-        collisionLine.renderOrder = 14;
-        const collisionConeMat = new THREE.MeshBasicMaterial({
-            color: collisionColor,
-            transparent: true,
-            opacity: collisionOpacity,
-            side: THREE.DoubleSide,
-            depthTest: false,
-            depthWrite: false
-        });
-        const collisionHeadLen = Number.isFinite(options.collisionArrowHeadLen)
-            ? options.collisionArrowHeadLen
-            : markerRadius * 0.85;
-        const collisionHeadWidth = Number.isFinite(options.collisionArrowHeadWidth)
-            ? options.collisionArrowHeadWidth
-            : markerRadius * 0.6;
-        const collisionHeadGeo = new THREE.BufferGeometry();
-        const collisionHeadHalf = collisionHeadWidth * 0.5;
-        collisionHeadGeo.setAttribute(
-            'position',
-            new THREE.BufferAttribute(
-                new Float32Array([
-                    0, 0, 0,
-                    -collisionHeadLen, 0, collisionHeadHalf,
-                    -collisionHeadLen, 0, -collisionHeadHalf
-                ]),
-                3
-            )
-        );
-        collisionHeadGeo.setIndex([0, 1, 2]);
-        collisionHeadGeo.computeVertexNormals();
-        collisionHeadGeo.computeBoundingSphere();
-        const collisionHead = new THREE.Mesh(collisionHeadGeo, collisionConeMat);
-        collisionHead.visible = false;
-        collisionHead.renderOrder = 15;
-        this.group.add(collisionLine);
-        this.group.add(collisionHead);
-        this._collisionArrow = { line: collisionLine, geo: collisionGeo, mat: collisionMat, head: collisionHead };
+        this.group.add(this._collisionArrow.line);
+        this.group.add(this._collisionArrow.head);
+        this._syncLineResolution();
     }
 
     setConnectors(connectors = []) {
@@ -260,15 +186,9 @@ export class CityConnectorDebugOverlay {
 
     destroy() {
         if (this.group) this.group.removeFromParent();
-        if (this._markerGeo) this._markerGeo.dispose();
-        if (this._markerRingGeo) this._markerRingGeo.dispose();
-        if (this._markerDotGeo) this._markerDotGeo.dispose();
-        if (this._markerMats) {
-            for (const mats of Object.values(this._markerMats)) {
-                mats?.discMat?.dispose?.();
-                mats?.ringMat?.dispose?.();
-                mats?.dotMat?.dispose?.();
-                mats?.texture?.dispose?.();
+        if (this._markerAssets) {
+            for (const assets of Object.values(this._markerAssets)) {
+                assets?.dispose?.();
             }
         }
         if (this._pathGeo) this._pathGeo.dispose();
@@ -281,18 +201,18 @@ export class CityConnectorDebugOverlay {
         for (const arrow of this._arrowLines) {
             arrow.geo?.dispose?.();
             arrow.mat?.dispose?.();
-            arrow.cone?.geometry?.dispose?.();
             arrow.cone?.material?.dispose?.();
         }
         if (this._collisionArrow) {
             this._collisionArrow.geo?.dispose?.();
             this._collisionArrow.mat?.dispose?.();
-            this._collisionArrow.head?.geometry?.dispose?.();
-            this._collisionArrow.head?.material?.dispose?.();
+            this._collisionArrow.headGeo?.dispose?.();
+            this._collisionArrow.headMat?.dispose?.();
         }
         this._markers = [];
         this._arrowLines = [];
         this._collisionArrow = null;
+        this._markerAssets = null;
         this.group = null;
     }
 
@@ -315,97 +235,15 @@ export class CityConnectorDebugOverlay {
         }
     }
 
-    _rgbaFromColor(color, alpha) {
-        const r = Math.round(color.r * 255);
-        const g = Math.round(color.g * 255);
-        const b = Math.round(color.b * 255);
-        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-    }
-
-    _createMarkerTexture(size, colors) {
-        const canvas = document.createElement('canvas');
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return null;
-        const c = size * 0.5;
-        const grad = ctx.createRadialGradient(c, c, 0, c, c, c);
-        grad.addColorStop(0, colors.center);
-        grad.addColorStop(0.5, colors.mid);
-        grad.addColorStop(1, colors.edge);
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(c, c, c, 0, TAU);
-        ctx.fill();
-        const tex = new THREE.CanvasTexture(canvas);
-        tex.wrapS = THREE.ClampToEdgeWrapping;
-        tex.wrapT = THREE.ClampToEdgeWrapping;
-        tex.needsUpdate = true;
-        return tex;
-    }
-
-    _buildMarkerMaterials(colorHex) {
-        const base = new THREE.Color(colorHex);
-        const texture = this._createMarkerTexture(128, {
-            center: this._rgbaFromColor(base, 0.95),
-            mid: this._rgbaFromColor(base, 0.7),
-            edge: this._rgbaFromColor(base, 0)
-        });
-        const discMat = new THREE.MeshBasicMaterial({
-            map: texture,
-            transparent: true,
-            opacity: 1,
-            side: THREE.DoubleSide,
-            depthWrite: false,
-            depthTest: true
-        });
-        const ringMat = new THREE.MeshBasicMaterial({
-            color: colorHex,
-            transparent: true,
-            opacity: 0.9,
-            side: THREE.DoubleSide,
-            depthWrite: false,
-            depthTest: true
-        });
-        const dotMat = new THREE.MeshBasicMaterial({
-            color: colorHex,
-            transparent: true,
-            opacity: 0.95,
-            side: THREE.DoubleSide,
-            depthWrite: false,
-            depthTest: true
-        });
-        return { texture, discMat, ringMat, dotMat };
-    }
-
-    _buildMarkerGroup(type) {
-        const mats = this._markerMats[type];
-        const g = new THREE.Group();
-        const disc = new THREE.Mesh(this._markerGeo, mats.discMat);
-        const ring = new THREE.Mesh(this._markerRingGeo, mats.ringMat);
-        const dot = new THREE.Mesh(this._markerDotGeo, mats.dotMat);
-        disc.rotation.x = -Math.PI / 2;
-        ring.rotation.x = -Math.PI / 2;
-        dot.rotation.x = -Math.PI / 2;
-        disc.renderOrder = 3;
-        ring.renderOrder = 4;
-        dot.renderOrder = 5;
-        g.add(disc);
-        g.add(ring);
-        g.add(dot);
-        g.userData.markerType = type;
-        g.userData.markerParts = { disc, ring, dot };
-        return g;
-    }
-
-    _setMarkerMaterials(marker, type) {
-        const mats = this._markerMats[type];
+    _setMarkerAssets(marker, type) {
+        const assets = this._markerAssets?.[type] ?? null;
         const parts = marker?.userData?.markerParts;
-        if (!parts || !mats) return;
-        parts.disc.material = mats.discMat;
-        parts.ring.material = mats.ringMat;
-        parts.dot.material = mats.dotMat;
+        if (!parts || !assets) return;
+        parts.disc.material = assets.discMat;
+        parts.ring.material = assets.ringMat;
+        parts.dot.material = assets.dotMat;
         marker.userData.markerType = type;
+        marker.userData.markerAssets = assets;
     }
 
     _buildCirclesFromPose(pose, radius) {
@@ -436,13 +274,16 @@ export class CityConnectorDebugOverlay {
         let marker = this._markers[index];
         const type = isMaster ? 'master' : 'slave';
         if (!marker) {
-            marker = this._buildMarkerGroup(type);
+            const assets = this._markerAssets?.[type] ?? null;
+            const { group } = createPoleMarkerGroup({ assets });
+            marker = group;
             marker.visible = false;
+            marker.userData.markerType = type;
             this.group.add(marker);
             this._markers[index] = marker;
             return marker;
         }
-        if (marker.userData?.markerType !== type) this._setMarkerMaterials(marker, type);
+        if (marker.userData?.markerType !== type) this._setMarkerAssets(marker, type);
         return marker;
     }
 

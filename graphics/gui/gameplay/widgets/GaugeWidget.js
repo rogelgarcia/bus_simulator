@@ -1,4 +1,5 @@
-// graphics/gui/widgets/GaugeWidget.js
+// graphics/gui/gameplay/widgets/GaugeWidget.js
+// Renders circular gauge widgets for HUD telemetry.
 function clamp(v, a, b) {
     return Math.max(a, Math.min(b, v));
 }

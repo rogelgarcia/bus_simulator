@@ -1,16 +1,21 @@
 // states/CityState.js
+// Manages the interactive city debug state and visual overlays.
 import * as THREE from 'three';
-import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
-import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { getSharedCity } from '../src/city/City.js';
 import { createCityConfig } from '../src/city/CityConfig.js';
 import { CityMap } from '../src/city/CityMap.js';
-import { CityDebugPanel } from '../graphics/gui/CityDebugPanel.js';
-import { CityDebugsPanel } from '../graphics/gui/CityDebugsPanel.js';
-import { CityShortcutsPanel } from '../graphics/gui/CityShortcutsPanel.js';
-import { CityPoleInfoPanel } from '../graphics/gui/CityPoleInfoPanel.js';
-import { CityConnectorDebugOverlay } from '../graphics/CityConnectorDebugOverlay.js';
+import { CityDebugPanel } from '../graphics/gui/city/CityDebugPanel.js';
+import { CityDebugTogglesPanel } from '../graphics/gui/city/CityDebugTogglesPanel.js';
+import { CityShortcutsPanel } from '../graphics/gui/city/CityShortcutsPanel.js';
+import { CityPoleInfoPanel } from '../graphics/gui/city/CityPoleInfoPanel.js';
+import { CityConnectorDebugOverlay } from '../graphics/visuals/city/CityConnectorDebugOverlay.js';
+import { createRoadHighlightMesh } from '../graphics/visuals/city/RoadHighlightMesh.js';
+import { createCollisionPoleMarkers } from '../graphics/visuals/city/CollisionPoleMarkers.js';
+import { createConnectionPoleMarkers } from '../graphics/visuals/city/ConnectionPoleMarkers.js';
+import { createAdjustedEndRingMarkers } from '../graphics/visuals/city/AdjustedEndRingMarkers.js';
+import { createAdjustedEndOriginMarkers } from '../graphics/visuals/city/AdjustedEndOriginMarkers.js';
+import { createHoverOutlineLine } from '../graphics/visuals/city/HoverOutlineLine.js';
 
 function clamp(v, a, b) {
     return Math.max(a, Math.min(b, v));
@@ -180,7 +185,7 @@ export class CityState {
         });
         this.debugPanel.show();
 
-        this.debugsPanel = new CityDebugsPanel({
+        this.debugsPanel = new CityDebugTogglesPanel({
             connectorDebugEnabled: this._connectorDebugEnabled,
             hoverOutlineEnabled: this._hoverOutlineEnabled,
             collisionDebugEnabled: this._collisionDebugEnabled,
@@ -342,23 +347,17 @@ export class CityState {
         this._clearHighlight();
         const map = this.city?.map;
         if (!map) return;
-        this._highlightGeo = new THREE.BufferGeometry();
-        this._highlightPos = new Float32Array(18);
-        const posAttr = new THREE.BufferAttribute(this._highlightPos, 3);
-        posAttr.setUsage(THREE.DynamicDrawUsage);
-        this._highlightGeo.setAttribute('position', posAttr);
-        this._highlightMat = new THREE.MeshBasicMaterial({
+        const highlight = createRoadHighlightMesh({
             color: 0xfff3a3,
-            transparent: true,
             opacity: HIGHLIGHT_OPACITY,
-            depthWrite: false,
+            renderOrder: 20,
             depthTest: false,
-            side: THREE.DoubleSide
+            depthWrite: false
         });
-        this._highlightMesh = new THREE.Mesh(this._highlightGeo, this._highlightMat);
-        this._highlightMesh.renderOrder = 20;
-        this._highlightMesh.frustumCulled = false;
-        this._highlightMesh.visible = false;
+        this._highlightGeo = highlight.geo;
+        this._highlightPos = highlight.positions;
+        this._highlightMat = highlight.mat;
+        this._highlightMesh = highlight.mesh;
         const roadCfg = this.city?.generatorConfig?.road ?? {};
         const groundCfg = this.city?.generatorConfig?.ground ?? {};
         const baseRoadY = roadCfg.surfaceY ?? 0.02;
@@ -432,122 +431,78 @@ export class CityState {
         const ringInner = endPoleRadius * 1.2;
         const ringOuter = endPoleRadius * 1.7;
         const originRadius = Math.max(POLE_DOT_RADIUS_MIN * 0.6, endPoleRadius * 0.6);
-        const dummy = new THREE.Object3D();
         if (collisionMarkers.length) {
-            this._collisionMarkerGeo = new THREE.CircleGeometry(radius, COLLISION_MARKER_SEGMENTS);
-            this._collisionMarkerGeo.rotateX(-Math.PI / 2);
-            this._collisionMarkerMat = new THREE.MeshBasicMaterial({
+            const result = createCollisionPoleMarkers({
+                points: collisionMarkers,
+                radius,
+                y: markerY,
                 color: COLLISION_MARKER_COLOR_HEX,
-                transparent: true,
                 opacity: COLLISION_MARKER_OPACITY,
-                depthWrite: false,
-                depthTest: false
+                segments: COLLISION_MARKER_SEGMENTS,
+                renderOrder: 25,
+                visible: this._collisionDebugEnabled
             });
-            this._collisionMarkerMesh = new THREE.InstancedMesh(this._collisionMarkerGeo, this._collisionMarkerMat, collisionMarkers.length);
-            this._collisionMarkerMesh.renderOrder = 25;
-            this._collisionMarkerMesh.frustumCulled = false;
-            let k = 0;
-            for (let i = 0; i < collisionMarkers.length; i++) {
-                const p = collisionMarkers[i];
-                if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.z)) continue;
-                dummy.position.set(p.x, markerY, p.z);
-                dummy.rotation.set(0, 0, 0);
-                dummy.scale.set(1, 1, 1);
-                dummy.updateMatrix();
-                this._collisionMarkerMesh.setMatrixAt(k, dummy.matrix);
-                k += 1;
+            if (result) {
+                this._collisionMarkerGeo = result.geo;
+                this._collisionMarkerMat = result.mat;
+                this._collisionMarkerMesh = result.mesh;
+                city.group.add(this._collisionMarkerMesh);
             }
-            this._collisionMarkerMesh.count = k;
-            this._collisionMarkerMesh.instanceMatrix.needsUpdate = true;
-            this._collisionMarkerMesh.visible = this._collisionDebugEnabled;
-            city.group.add(this._collisionMarkerMesh);
         }
         if (connectionMarkers.length) {
-            this._connectionMarkerGeo = new THREE.CircleGeometry(radius, COLLISION_MARKER_SEGMENTS);
-            this._connectionMarkerGeo.rotateX(-Math.PI / 2);
-            this._connectionMarkerMat = new THREE.MeshBasicMaterial({
+            const result = createConnectionPoleMarkers({
+                points: connectionMarkers,
+                radius,
+                y: markerY,
                 color: CONNECTION_MARKER_COLOR_HEX,
-                transparent: true,
                 opacity: CONNECTION_MARKER_OPACITY,
-                depthWrite: false,
-                depthTest: false
+                segments: COLLISION_MARKER_SEGMENTS,
+                renderOrder: 24,
+                visible: this._collisionDebugEnabled
             });
-            this._connectionMarkerMesh = new THREE.InstancedMesh(this._connectionMarkerGeo, this._connectionMarkerMat, connectionMarkers.length);
-            this._connectionMarkerMesh.renderOrder = 24;
-            this._connectionMarkerMesh.frustumCulled = false;
-            let k = 0;
-            for (let i = 0; i < connectionMarkers.length; i++) {
-                const p = connectionMarkers[i];
-                if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.z)) continue;
-                dummy.position.set(p.x, markerY, p.z);
-                dummy.rotation.set(0, 0, 0);
-                dummy.scale.set(1, 1, 1);
-                dummy.updateMatrix();
-                this._connectionMarkerMesh.setMatrixAt(k, dummy.matrix);
-                k += 1;
+            if (result) {
+                this._connectionMarkerGeo = result.geo;
+                this._connectionMarkerMat = result.mat;
+                this._connectionMarkerMesh = result.mesh;
+                city.group.add(this._connectionMarkerMesh);
             }
-            this._connectionMarkerMesh.count = k;
-            this._connectionMarkerMesh.instanceMatrix.needsUpdate = true;
-            this._connectionMarkerMesh.visible = this._collisionDebugEnabled;
-            city.group.add(this._connectionMarkerMesh);
         }
         if (adjustedEndRings.length) {
-            this._adjustedEndRingGeo = new THREE.RingGeometry(ringInner, ringOuter, COLLISION_MARKER_SEGMENTS);
-            this._adjustedEndRingGeo.rotateX(-Math.PI / 2);
-            this._adjustedEndRingMat = new THREE.MeshBasicMaterial({
+            const result = createAdjustedEndRingMarkers({
+                points: adjustedEndRings,
+                innerRadius: ringInner,
+                outerRadius: ringOuter,
+                y: markerY,
                 color: ADJUSTED_END_RING_COLOR_HEX,
-                transparent: true,
                 opacity: ADJUSTED_END_RING_OPACITY,
-                depthWrite: false,
-                depthTest: false
+                segments: COLLISION_MARKER_SEGMENTS,
+                renderOrder: 26,
+                visible: this._collisionDebugEnabled
             });
-            this._adjustedEndRingMesh = new THREE.InstancedMesh(this._adjustedEndRingGeo, this._adjustedEndRingMat, adjustedEndRings.length);
-            this._adjustedEndRingMesh.renderOrder = 26;
-            this._adjustedEndRingMesh.frustumCulled = false;
-            let k = 0;
-            for (let i = 0; i < adjustedEndRings.length; i++) {
-                const p = adjustedEndRings[i];
-                if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.z)) continue;
-                dummy.position.set(p.x, markerY, p.z);
-                dummy.rotation.set(0, 0, 0);
-                dummy.scale.set(1, 1, 1);
-                dummy.updateMatrix();
-                this._adjustedEndRingMesh.setMatrixAt(k, dummy.matrix);
-                k += 1;
+            if (result) {
+                this._adjustedEndRingGeo = result.geo;
+                this._adjustedEndRingMat = result.mat;
+                this._adjustedEndRingMesh = result.mesh;
+                city.group.add(this._adjustedEndRingMesh);
             }
-            this._adjustedEndRingMesh.count = k;
-            this._adjustedEndRingMesh.instanceMatrix.needsUpdate = true;
-            this._adjustedEndRingMesh.visible = this._collisionDebugEnabled;
-            city.group.add(this._adjustedEndRingMesh);
         }
         if (adjustedEndOrigins.length) {
-            this._adjustedEndOriginGeo = new THREE.CircleGeometry(originRadius, COLLISION_MARKER_SEGMENTS);
-            this._adjustedEndOriginGeo.rotateX(-Math.PI / 2);
-            this._adjustedEndOriginMat = new THREE.MeshBasicMaterial({
+            const result = createAdjustedEndOriginMarkers({
+                points: adjustedEndOrigins,
+                radius: originRadius,
+                y: markerY,
                 color: ADJUSTED_END_ORIGIN_COLOR_HEX,
-                transparent: true,
                 opacity: ADJUSTED_END_ORIGIN_OPACITY,
-                depthWrite: false,
-                depthTest: false
+                segments: COLLISION_MARKER_SEGMENTS,
+                renderOrder: 23,
+                visible: this._collisionDebugEnabled
             });
-            this._adjustedEndOriginMesh = new THREE.InstancedMesh(this._adjustedEndOriginGeo, this._adjustedEndOriginMat, adjustedEndOrigins.length);
-            this._adjustedEndOriginMesh.renderOrder = 23;
-            this._adjustedEndOriginMesh.frustumCulled = false;
-            let k = 0;
-            for (let i = 0; i < adjustedEndOrigins.length; i++) {
-                const p = adjustedEndOrigins[i];
-                if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.z)) continue;
-                dummy.position.set(p.x, markerY, p.z);
-                dummy.rotation.set(0, 0, 0);
-                dummy.scale.set(1, 1, 1);
-                dummy.updateMatrix();
-                this._adjustedEndOriginMesh.setMatrixAt(k, dummy.matrix);
-                k += 1;
+            if (result) {
+                this._adjustedEndOriginGeo = result.geo;
+                this._adjustedEndOriginMat = result.mat;
+                this._adjustedEndOriginMesh = result.mesh;
+                city.group.add(this._adjustedEndOriginMesh);
             }
-            this._adjustedEndOriginMesh.count = k;
-            this._adjustedEndOriginMesh.instanceMatrix.needsUpdate = true;
-            this._adjustedEndOriginMesh.visible = this._collisionDebugEnabled;
-            city.group.add(this._adjustedEndOriginMesh);
         }
     }
 
@@ -870,21 +825,17 @@ export class CityState {
             this._setupHoverOutline();
             return;
         }
-        this._outlineMaterial = new LineMaterial({
+        const outline = createHoverOutlineLine({
+            renderer: this.engine.renderer,
             color: 0xff0000,
-            linewidth: 4,
-            worldUnits: false,
-            transparent: true,
+            lineWidth: 4,
             opacity: 0.9,
+            renderOrder: 12,
             depthTest: false,
             depthWrite: false
         });
-        const size = this.engine.renderer.getSize(new THREE.Vector2());
-        this._outlineMaterial.resolution.set(size.x, size.y);
-        this._outlineLine = new LineSegments2(new LineSegmentsGeometry(), this._outlineMaterial);
-        this._outlineLine.visible = false;
-        this._outlineLine.renderOrder = 12;
-        this._outlineLine.frustumCulled = false;
+        this._outlineLine = outline.line;
+        this._outlineMaterial = outline.material;
         this._setupHoverOutline();
     }
 

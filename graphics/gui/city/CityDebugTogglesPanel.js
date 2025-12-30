@@ -1,5 +1,6 @@
-// graphics/gui/CityDebugsPanel.js
-export class CityDebugsPanel {
+// graphics/gui/city/CityDebugTogglesPanel.js
+// Controls city debug toggles and render mode switches.
+export class CityDebugTogglesPanel {
     constructor({
         connectorDebugEnabled = true,
         hoverOutlineEnabled = true,

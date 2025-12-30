@@ -1,10 +1,11 @@
-// graphics/gui/GameHUD.js
+// graphics/gui/gameplay/GameHUD.js
+// Orchestrates gameplay HUD widgets and live telemetry updates.
 import { injectHudStyles } from "./HUDStyles.js";
-import { RampedControl } from "../../src/input/RampedControl.js";
+import { RampedControl } from "../../../src/input/RampedControl.js";
 import { SteeringWheelWidget } from "./widgets/SteeringWheelWidget.js";
 import { PedalWidget } from "./widgets/PedalWidget.js";
 import { GaugeWidget } from "./widgets/GaugeWidget.js";
-import { DemoDrivetrainSim } from "../../src/physics/systems/DemoDrivetrainSim.js";
+import { DemoDrivetrainSim } from "../../../src/physics/systems/DemoDrivetrainSim.js";
 
 function clamp(v, a, b) {
     return Math.max(a, Math.min(b, v));

@@ -1,4 +1,5 @@
-// graphics/gui/ConnectorShortcutsPanel.js
+// graphics/gui/connector_debugger/ConnectorShortcutsPanel.js
+// Shows keyboard shortcuts for the connector debugger screen.
 export class ConnectorShortcutsPanel {
     constructor() {
         this.root = document.createElement('div');

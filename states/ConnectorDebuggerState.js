@@ -1,5 +1,6 @@
 // states/ConnectorDebuggerState.js
-import { ConnectorDebuggerView } from '../graphics/ConnectorDebuggerView.js';
+// Wires the connector debugger view into the state machine.
+import { ConnectorDebuggerView } from '../graphics/gui/connector_debugger/ConnectorDebuggerView.js';
 
 export class ConnectorDebuggerState {
     constructor(engine, sm) {

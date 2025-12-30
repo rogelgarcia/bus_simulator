@@ -1,4 +1,5 @@
-// graphics/gui/HUDStyles.js
+// graphics/gui/gameplay/HUDStyles.js
+// Injects gameplay HUD CSS styles into the document.
 export function injectHudStyles() {
     // Avoid double-inject
     const existing = document.getElementById("hud-styles");

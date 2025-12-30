@@ -1,5 +1,6 @@
-// graphics/gui/utils/screenFade.js
-import { tween } from '../../../src/utils/animate.js';
+// graphics/gui/shared/utils/screenFade.js
+// Provides full-screen fade transitions for state changes.
+import { tween } from '../../../../src/utils/animate.js';
 
 let _el = null;
 let _stop = null;

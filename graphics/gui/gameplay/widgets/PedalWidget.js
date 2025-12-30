@@ -1,4 +1,5 @@
-// graphics/gui/widgets/PedalWidget.js
+// graphics/gui/gameplay/widgets/PedalWidget.js
+// Renders throttle and brake pedal widgets for the HUD.
 function clamp01(v) {
     return Math.max(0, Math.min(1, v));
 }

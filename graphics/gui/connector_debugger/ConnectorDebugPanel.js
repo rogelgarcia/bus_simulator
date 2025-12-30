@@ -1,4 +1,5 @@
-// graphics/gui/ConnectorDebugPanel.js
+// graphics/gui/connector_debugger/ConnectorDebugPanel.js
+// Renders the connector debugger controls and data readouts.
 function fmtNum(v, digits = 3) {
     if (!Number.isFinite(v)) return 'n/a';
     return Number(v).toFixed(digits);

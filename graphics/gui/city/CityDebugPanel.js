@@ -1,4 +1,5 @@
-// graphics/gui/CityDebugPanel.js
+// graphics/gui/city/CityDebugPanel.js
+// Renders the road list and reload controls for the city debug view.
 export class CityDebugPanel {
     constructor({ roads = [], onReload = null, onHover = null } = {}) {
         this.root = document.createElement('div');

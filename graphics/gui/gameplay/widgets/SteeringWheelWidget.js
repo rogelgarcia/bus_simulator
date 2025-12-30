@@ -1,4 +1,5 @@
-// graphics/gui/widgets/SteeringWheelWidget.js
+// graphics/gui/gameplay/widgets/SteeringWheelWidget.js
+// Renders the steering wheel widget for the HUD.
 function clamp(v, a, b) {
     return Math.max(a, Math.min(b, v));
 }

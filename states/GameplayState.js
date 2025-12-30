@@ -1,4 +1,5 @@
 // states/GameplayState.js
+// Runs the main gameplay loop and HUD interactions.
 /**
  * GameplayState - Main gameplay state using the modular architecture.
  *
@@ -10,8 +11,8 @@
  */
 import * as THREE from 'three';
 import { getSharedCity } from '../src/city/City.js';
-import { fadeIn } from '../graphics/gui/utils/screenFade.js';
-import { GameHUD } from '../graphics/gui/GameHUD.js';
+import { fadeIn } from '../graphics/gui/shared/utils/screenFade.js';
+import { GameHUD } from '../graphics/gui/gameplay/GameHUD.js';
 import { GameLoop } from '../src/core/GameLoop.js';
 import { VehicleController } from '../src/vehicle/VehicleController.js';
 import { InputManager } from '../src/input/InputManager.js';

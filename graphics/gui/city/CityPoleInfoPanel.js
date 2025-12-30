@@ -1,4 +1,5 @@
-// graphics/gui/CityPoleInfoPanel.js
+// graphics/gui/city/CityPoleInfoPanel.js
+// Displays hover details for road poles in the city view.
 export class CityPoleInfoPanel {
     constructor() {
         this.root = document.createElement('div');

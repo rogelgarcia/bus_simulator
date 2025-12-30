@@ -1,2 +1,3 @@
 // graphics/gui/index.js
-export { GameHUD } from "./GameHUD.js";
+// Provides top-level exports for GUI entry points.
+export { GameHUD } from "./gameplay/GameHUD.js";
