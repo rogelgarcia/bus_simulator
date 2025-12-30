@@ -17,6 +17,7 @@
 **Comments:**
 - No comments in code files (see exceptions bellow)
 - Exception: First line must be a comment with the file path (e.g., `// graphics/assets3d/generators/RoadGenerator.js`)
+- Exception: Second line must be a comment with the file description (e.g., `// Generates roads from city data`)
 - Exception: Design decisions (do not explain the code, but why it is written a certain way)
   - Always write design decisions as a high level comment on top of the file (try to be concise)
 - Exception: Library source code (preserve all original comments)
