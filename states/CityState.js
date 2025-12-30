@@ -825,6 +825,12 @@ export class CityState {
         }
         const fields = [];
         if (Number.isFinite(radius)) fields.push({ label: 'Radius', value: radius.toFixed(2) });
+        const loopIndex = Number.isFinite(pole?.loopIndex) ? pole.loopIndex : null;
+        const loopCount = Number.isFinite(pole?.loopCount) ? pole.loopCount : null;
+        if (loopIndex != null) {
+            const loopLabel = loopCount != null ? `${loopIndex + 1}/${loopCount}` : `${loopIndex + 1}`;
+            fields.push({ label: 'Loop idx', value: loopLabel });
+        }
         if (Number.isFinite(collisionDistance)) fields.push({ label: 'Collision dist', value: collisionDistance.toFixed(2) });
         const dubinsType = typeof connector?.type === 'string' ? connector.type : null;
         if (dubinsType) fields.push({ label: 'Dubins type', value: dubinsType });

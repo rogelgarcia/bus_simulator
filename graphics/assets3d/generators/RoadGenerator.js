@@ -1332,63 +1332,6 @@ export function generateRoads({ map, config, materials } = {}) {
         }
     }
 
-    for (const [collisionId, entry] of connectionPolesByCollision.entries()) {
-        const items = [];
-        for (const [roadId, poles] of entry.entries()) {
-            if (!Array.isArray(poles)) continue;
-            for (const pole of poles) {
-                if (!pole) continue;
-                items.push({ roadId, pole });
-            }
-        }
-        if (items.length < 2) continue;
-        if (items.length === 2) {
-            const a = items[0];
-            const b = items[1];
-            const flowA = a?.pole?.flow;
-            const flowB = b?.pole?.flow;
-            if (a?.pole && b?.pole && ((flowA === 'exit' && flowB === 'enter') || (flowA === 'enter' && flowB === 'exit'))) {
-                a.pole.linkedTarget = { roadId: b.roadId, pole: b.pole, collisionId };
-                b.pole.linkedTarget = { roadId: a.roadId, pole: a.pole, collisionId };
-                continue;
-            }
-        }
-        for (const item of items) {
-            let best = null;
-            let bestDist = Infinity;
-            let bestAny = null;
-            let bestAnyDist = Infinity;
-            const flow = item?.pole?.flow ?? null;
-            for (const candidate of items) {
-                if (candidate.roadId === item.roadId) continue;
-                const flowOther = candidate?.pole?.flow ?? null;
-                if (!((flow === 'exit' && flowOther === 'enter') || (flow === 'enter' && flowOther === 'exit'))) continue;
-                const d2 = distanceSq(item.pole, candidate.pole);
-                if (d2 < bestAnyDist - EPS) {
-                    bestAnyDist = d2;
-                    bestAny = candidate;
-                }
-                const other = roadById.get(candidate.roadId);
-                const collision = item.pole.collision;
-                if (other && collision && candidate.pole?.side) {
-                    const dx = item.pole.x - collision.x;
-                    const dz = item.pole.z - collision.z;
-                    const dot = dx * other.normal.x + dz * other.normal.y;
-                    const desiredSide = dot >= 0 ? 'left' : 'right';
-                    if (candidate.pole.side !== desiredSide) continue;
-                }
-                if (d2 < bestDist - EPS) {
-                    bestDist = d2;
-                    best = candidate;
-                }
-            }
-            const chosen = best ?? bestAny;
-            if (chosen) {
-                item.pole.linkedTarget = { roadId: chosen.roadId, pole: chosen.pole, collisionId };
-            }
-        }
-    }
-
     const endKeyEntries = new Map();
     const registerEndEntry = (data, endKey, endLabel) => {
         if (!data || !endKey) return;
@@ -1420,103 +1363,161 @@ export function generateRoads({ map, config, materials } = {}) {
         registerEndEntry(data, data.startKey, 'start');
         registerEndEntry(data, data.endKey, 'end');
     }
-    const pickPoleForSideOut = (entry, sideOut) => {
-        const poles = entry?.poles;
-        if (!poles) return null;
-        const leftPole = poles.left;
-        const rightPole = poles.right;
-        if (!leftPole) return rightPole ?? null;
-        if (!rightPole) return leftPole ?? null;
-        const base = entry.base;
-        const dirOut = entry.dirOut;
-        if (!base || !dirOut) return sideOut === 'left' ? leftPole : rightPole;
-        const normal = { x: -dirOut.y, y: dirOut.x };
-        const leftDot = (leftPole.x - base.x) * normal.x + (leftPole.z - base.y) * normal.y;
-        const rightDot = (rightPole.x - base.x) * normal.x + (rightPole.z - base.y) * normal.y;
-        const leftIsLeft = leftDot >= rightDot;
-        if (sideOut === 'left') return leftIsLeft ? leftPole : rightPole;
-        return leftIsLeft ? rightPole : leftPole;
+    const polePointXY = (pole) => {
+        if (!pole) return null;
+        const x = pole.x;
+        const y = Number.isFinite(pole.z) ? pole.z : pole.y;
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+        return { x, y };
     };
+    const averagePointXY = (points) => {
+        if (!Array.isArray(points) || !points.length) return null;
+        let sx = 0;
+        let sy = 0;
+        let count = 0;
+        for (const p of points) {
+            if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+            sx += p.x;
+            sy += p.y;
+            count += 1;
+        }
+        if (count === 0) return null;
+        return { x: sx / count, y: sy / count };
+    };
+    const pickPolePair = (poles) => {
+        if (!Array.isArray(poles) || poles.length < 2) return null;
+        let best = null;
+        let bestDist = -Infinity;
+        for (let i = 0; i < poles.length; i++) {
+            const a = poles[i];
+            if (!a) continue;
+            for (let j = i + 1; j < poles.length; j++) {
+                const b = poles[j];
+                if (!b) continue;
+                const d2 = distanceSq(a, b);
+                if (d2 > bestDist) {
+                    bestDist = d2;
+                    best = { a, b };
+                }
+            }
+        }
+        return best;
+    };
+    const resolveLoopConnections = (edges, loopKey, centerOverride = null) => {
+        if (!Array.isArray(edges) || edges.length < 2) return;
+        const prepared = [];
+        const centers = [];
+        for (const edge of edges) {
+            const pair = pickPolePair(edge?.poles);
+            if (!pair) continue;
+            const pa = polePointXY(pair.a);
+            const pb = polePointXY(pair.b);
+            if (!pa || !pb) continue;
+            const center = { x: (pa.x + pb.x) * HALF, y: (pa.y + pb.y) * HALF };
+            centers.push(center);
+            prepared.push({
+                roadId: edge.roadId,
+                poles: pair,
+                center,
+                dirOut: edge.dirOut ?? null
+            });
+        }
+        if (prepared.length < 2) return;
+        const center = centerOverride ?? averagePointXY(centers);
+        if (!center) return;
+        const ordered = [];
+        for (const edge of prepared) {
+            let dir = normalizeDir(edge.center.x - center.x, edge.center.y - center.y);
+            if (!dir && edge.dirOut) dir = normalizeDir(edge.dirOut.x, edge.dirOut.y);
+            if (!dir) continue;
+            const pa = polePointXY(edge.poles.a);
+            const pb = polePointXY(edge.poles.b);
+            if (!pa || !pb) continue;
+            const normal = { x: -dir.y, y: dir.x };
+            const dotA = (pa.x - edge.center.x) * normal.x + (pa.y - edge.center.y) * normal.y;
+            const dotB = (pb.x - edge.center.x) * normal.x + (pb.y - edge.center.y) * normal.y;
+            const leftPole = dotA >= dotB ? edge.poles.a : edge.poles.b;
+            const rightPole = leftPole === edge.poles.a ? edge.poles.b : edge.poles.a;
+            ordered.push({
+                roadId: edge.roadId,
+                center: edge.center,
+                dir,
+                angle: Math.atan2(dir.y, dir.x),
+                leftPole,
+                rightPole
+            });
+        }
+        if (ordered.length < 2) return;
+        ordered.sort((a, b) => b.angle - a.angle);
+        const total = ordered.length;
+        for (let i = 0; i < total; i++) {
+            const edge = ordered[i];
+            if (edge.leftPole) {
+                edge.leftPole.loopIndex = i;
+                edge.leftPole.loopCount = total;
+                edge.leftPole.loopKey = loopKey;
+            }
+            if (edge.rightPole) {
+                edge.rightPole.loopIndex = i;
+                edge.rightPole.loopCount = total;
+                edge.rightPole.loopKey = loopKey;
+            }
+        }
+        for (let i = 0; i < total; i++) {
+            const curr = ordered[i];
+            const next = ordered[(i + 1) % total];
+            const rightPole = curr.rightPole;
+            const leftPole = next.leftPole;
+            if (!rightPole || !leftPole) continue;
+            rightPole.linkedTarget = { roadId: next.roadId, pole: leftPole, loopKey };
+            leftPole.linkedTarget = { roadId: curr.roadId, pole: rightPole, loopKey };
+        }
+    };
+    const collisionCenterForEntry = (entry) => {
+        if (!entry) return null;
+        for (const poles of entry.values()) {
+            if (!Array.isArray(poles)) continue;
+            for (const pole of poles) {
+                const collision = pole?.collision ?? null;
+                const cx = collision?.x;
+                const cy = Number.isFinite(collision?.z) ? collision.z : collision?.y;
+                if (Number.isFinite(cx) && Number.isFinite(cy)) return { x: cx, y: cy };
+            }
+        }
+        return null;
+    };
+    const buildCollisionEdges = (entry) => {
+        const groups = new Map();
+        for (const [roadId, poles] of entry.entries()) {
+            if (!Array.isArray(poles)) continue;
+            for (const pole of poles) {
+                if (!pole || !Number.isFinite(pole.cut)) continue;
+                const key = `${roadId}:${pole.cut.toFixed(4)}`;
+                let group = groups.get(key);
+                if (!group) {
+                    group = { roadId, poles: [] };
+                    groups.set(key, group);
+                }
+                group.poles.push(pole);
+            }
+        }
+        return Array.from(groups.values());
+    };
+    for (const [collisionId, entry] of connectionPolesByCollision.entries()) {
+        const edges = buildCollisionEdges(entry);
+        if (edges.length < 2) continue;
+        const center = collisionCenterForEntry(entry);
+        resolveLoopConnections(edges, `collision:${collisionId}`, center);
+    }
     for (const [endKey, entries] of endKeyEntries.entries()) {
         if (!Array.isArray(entries) || entries.length < 2) continue;
-        if (entries.length === 2) {
-            const a = entries[0];
-            const b = entries[1];
-            const dirA = a?.dirOut;
-            const dirB = b?.dirOut;
-            const cross = dirA && dirB ? cross2(dirA, dirB) : 0;
-            if (Math.abs(cross) > EPS) {
-                const internalA = cross > 0 ? 'left' : 'right';
-                const internalB = cross > 0 ? 'right' : 'left';
-                const aInternal = pickPoleForSideOut(a, internalA);
-                const aExternal = aInternal === a?.poles?.left ? a?.poles?.right : a?.poles?.left;
-                const bInternal = pickPoleForSideOut(b, internalB);
-                const bExternal = bInternal === b?.poles?.left ? b?.poles?.right : b?.poles?.left;
-                if (aInternal && bInternal) {
-                    aInternal.linkedTarget = { roadId: b.roadId, pole: bInternal, endKey };
-                    bInternal.linkedTarget = { roadId: a.roadId, pole: aInternal, endKey };
-                }
-                if (aExternal && bExternal) {
-                    aExternal.linkedTarget = { roadId: b.roadId, pole: bExternal, endKey };
-                    bExternal.linkedTarget = { roadId: a.roadId, pole: aExternal, endKey };
-                }
-            } else {
-                const aLeft = pickPoleForSideOut(a, 'left');
-                const aRight = aLeft === a?.poles?.left ? a?.poles?.right : a?.poles?.left;
-                const bLeft = pickPoleForSideOut(b, 'left');
-                const bRight = bLeft === b?.poles?.left ? b?.poles?.right : b?.poles?.left;
-                if (aLeft && bLeft) {
-                    aLeft.linkedTarget = { roadId: b.roadId, pole: bLeft, endKey };
-                    bLeft.linkedTarget = { roadId: a.roadId, pole: aLeft, endKey };
-                }
-                if (aRight && bRight) {
-                    aRight.linkedTarget = { roadId: b.roadId, pole: bRight, endKey };
-                    bRight.linkedTarget = { roadId: a.roadId, pole: aRight, endKey };
-                }
-            }
-            continue;
-        }
-        const endPoleLinksByTile = { left: [], right: [] };
+        const edges = [];
         for (const entry of entries) {
             const poles = entry?.poles;
-            if (!poles) continue;
-            for (const pole of [poles.left, poles.right]) {
-                if (!pole) continue;
-                if (!pole.adjusted) continue;
-                const side = pole.side === 'right' ? 'right' : 'left';
-                endPoleLinksByTile[side].push({ roadId: entry.roadId, pole });
-            }
+            if (!poles || !poles.left || !poles.right) continue;
+            edges.push({ roadId: entry.roadId, poles: [poles.left, poles.right], dirOut: entry.dirOut });
         }
-        for (const side of ['left', 'right']) {
-            const list = endPoleLinksByTile[side];
-            if (!Array.isArray(list) || list.length < 2) continue;
-            if (list.length === 2) {
-                const a = list[0];
-                const b = list[1];
-                if (a?.pole && b?.pole) {
-                    if (!a.pole.linkedTarget) a.pole.linkedTarget = { roadId: b.roadId, pole: b.pole, endKey };
-                    if (!b.pole.linkedTarget) b.pole.linkedTarget = { roadId: a.roadId, pole: a.pole, endKey };
-                }
-                continue;
-            }
-            for (const item of list) {
-                if (!item?.pole || item.pole.linkedTarget) continue;
-                let best = null;
-                let bestDist = Infinity;
-                for (const candidate of list) {
-                    if (!candidate?.pole) continue;
-                    if (candidate.roadId === item.roadId) continue;
-                    const d2 = distanceSq(item.pole, candidate.pole);
-                    if (d2 < bestDist - EPS) {
-                        bestDist = d2;
-                        best = candidate;
-                    }
-                }
-                if (best) {
-                    item.pole.linkedTarget = { roadId: best.roadId, pole: best.pole, endKey };
-                }
-            }
-        }
+        resolveLoopConnections(edges, `end:${endKey}`, null);
     }
 
     const markCurveAtEnd = (data, endLabel) => {
