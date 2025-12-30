@@ -1153,6 +1153,7 @@ async function runTests() {
     const { createGeneratorConfig } = await import('/graphics/assets3d/generators/GeneratorParams.js');
     const { createCityConfig } = await import('/src/city/CityConfig.js');
     const THREE = await import('three');
+    const { runRoadConnectionDebuggerTests } = await import('/tests/road_connection_debugger.test.js');
 
     test('ConnectorPathSolver: reaches end pose within epsilon', () => {
         const genConfig = createGeneratorConfig();
@@ -1187,6 +1188,8 @@ async function runTests() {
             assertTrue(result.metrics.endPoseErrorDir <= dirEps, 'End direction error too large.');
         }
     });
+
+    runRoadConnectionDebuggerTests({ test, assertTrue });
 
     // ========== Summary ==========
     console.log('\n' + '='.repeat(50));
