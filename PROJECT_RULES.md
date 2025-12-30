@@ -31,4 +31,6 @@
 - Never commit AI prompt files named `AI_#_title`
 
 **Tasks:**
-- Even if explicitely requested, never start DONE prompts without double confirming with the user. 
+These are the ones from files AI_#_title
+- Even if explicitly requested, never start DONE prompts without double confirming with the user.
+- Before starting any AI prompt, if there are modifications/additions to be commited, confirm if can proceed. 
