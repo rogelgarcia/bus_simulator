@@ -380,13 +380,18 @@ function trimForRoad(data, others) {
         const otherStart = other.sharedOriginalStart ?? other.rawStart;
         const otherEnd = other.sharedOriginalEnd ?? other.rawEnd;
         if (!otherStart || !otherEnd) continue;
+        const extraBack = (Number.isFinite(data?.halfWidth) && Number.isFinite(other?.halfWidth))
+            ? Math.min(data.halfWidth, other.halfWidth)
+            : 0;
         for (const p of startPoles) {
             let t = exitDistanceFromRect(p, moveStart, otherStart, otherEnd, rectHalf);
+            if (t > 0 && extraBack > 0) t += extraBack;
             if (!Number.isFinite(t)) t = data.length;
             if (t > trimStart) trimStart = t;
         }
         for (const p of endPoles) {
             let t = exitDistanceFromRect(p, moveEnd, otherStart, otherEnd, rectHalf);
+            if (t > 0 && extraBack > 0) t += extraBack;
             if (!Number.isFinite(t)) t = data.length;
             if (t > trimEnd) trimEnd = t;
         }

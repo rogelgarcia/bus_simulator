@@ -314,7 +314,7 @@ export class CityMap {
             origin: config.map.origin,
             roads: [
                 { a: [0, 0], b: [4, 4], lanesF: 1, lanesB: 1, tag: 'diag-test' },
-                { a: [1, 0], b: [5, 1], lanesF: 2, lanesB: 2, tag: 'diag-shallow' },
+                { a: [0, 0], b: [8, 2], lanesF: 2, lanesB: 2, tag: 'diag-shallow' },
                 { a: [2, 8], b: [13, 8], lanesF: 2, lanesB: 2, tag: 'arterial' },
                 { a: [8, 2], b: [8, 13], lanesF: 2, lanesB: 2, tag: 'arterial' },
 
