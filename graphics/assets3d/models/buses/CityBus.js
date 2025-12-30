@@ -5,7 +5,7 @@ import { WheelRig } from './components/WheelRig.js';
 import { attachBusSkeleton } from '../../../../src/skeletons/buses/BusSkeleton.js';
 
 // Transparency configuration
-const TRANSPARENT_BUS = false;
+const TRANSPARENT_BUS = true;
 const BUS_BODY_OPACITY = 0.4;
 const BUS_LINER_OPACITY = 0.1;
 
