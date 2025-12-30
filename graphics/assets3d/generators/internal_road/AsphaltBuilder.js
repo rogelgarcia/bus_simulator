@@ -96,6 +96,11 @@ export function createAsphaltBuilder({ planeGeo, material, palette, capacity, na
         geoms.push(colorizeGeometry(g, colorHex));
     }
 
+    function addGeometry(geom, colorHex = 0xffffff) {
+        if (!geom) return;
+        geoms.push(colorizeGeometry(geom, colorHex));
+    }
+
     function finalize() {
         const geo = mergeBufferGeometries(geoms);
         if (geo) {
@@ -109,5 +114,5 @@ export function createAsphaltBuilder({ planeGeo, material, palette, capacity, na
         return [];
     }
 
-    return { mesh, addPlane, addRingSectorXZ, addRingSectorKey, addQuadXZ, addPolygonXZ, finalize, buildCurveMeshes };
+    return { mesh, addPlane, addRingSectorXZ, addRingSectorKey, addQuadXZ, addPolygonXZ, addGeometry, finalize, buildCurveMeshes };
 }
