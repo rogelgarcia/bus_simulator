@@ -5,7 +5,7 @@ import { WheelRig } from './components/WheelRig.js';
 import { attachBusSkeleton } from '../../../../src/skeletons/buses/BusSkeleton.js';
 
 // Transparency configuration
-const TRANSPARENT_BUS = true;
+const TRANSPARENT_BUS = false;
 const BUS_BODY_OPACITY = 0.4;
 const BUS_LINER_OPACITY = 0.1;
 
@@ -22,11 +22,11 @@ function applyShadows(group) {
  * UV rects (normalized) for the coach-style template (side/front/rear/roof).
  */
 const COACH_TEMPLATE_UV = {
-    sideTop: { u0: 0.0466666667, v0: 0.5021311475, u1: 0.7366666667, v1: 0.9831615925 },
-    front:   { u0: 0.7833333333, v0: 0.6021311475, u1: 0.9550000000, v1: 0.9331615925 },
-    sideBot: { u0: 0.0676666667, v0: 0.2659203747, u1: 0.7483333333, v1: 0.6109508197 },
-    rear:    { u0: 0.7833333333, v0: 0.2919203747, u1: 0.9550000000, v1: 0.6029508197 },
-    roof:    { u0: 0.1483333333, v0: 0.0268384075, u1: 0.8383333333, v1: 0.2057142857 }
+    sideTop: { u0: 0.3500000000, v0: 0.6821428571, u1: 0.9573333333, v1: 0.9419642857 },
+    front:   { u0: 0.0400666667, v0: 0.6011428571, u1: 0.2093333333, v1: 0.9219642857 },
+    sideBot: { u0: 0.2630000000, v0: 0.3183928571, u1: 0.9513333333, v1: 0.6428642857 },
+    rear:    { u0: 0.0400000000, v0: 0.3183928571, u1: 0.213333333, v1: 0.631071429 },
+    roof:    { u0: 0.1720000000, v0: 0.1321428571, u1: 0.8560000000, v1: 0.3625000000 }
 };
 
 function cropRectBottom(rect, crop) {
@@ -114,9 +114,8 @@ function applyCoachTemplateUVs(geo, { width, height, length }) {
         let U = 0, V = 0;
 
         if (Math.abs(nx) > 0.5) {
-            // SIDES (fix: flip strip direction so front/rear match the atlas)
-            // u: front->rear (reversed), v: bottom->top
-            U = THREE.MathUtils.lerp(sideRect.u1, sideRect.u0, tZ);
+            // SIDES (front on the right side of the atlas strip)
+            U = THREE.MathUtils.lerp(sideRect.u0, sideRect.u1, tZ);
             V = THREE.MathUtils.lerp(sideRect.v0, sideRect.v1, tY);
         } else if (Math.abs(nz) > 0.5) {
             // FRONT / REAR
@@ -252,7 +251,7 @@ function shapeFrontOnly(geo, { height, length }) {
     geo.computeVertexNormals();
 }
 
-const DEFAULT_CITYBUS_TEXTURE_URL = new URL('../../../../../assets/citybus.webp', import.meta.url).toString();
+const DEFAULT_CITYBUS_TEXTURE_URL = new URL('../../../../../assets/coach_bus_high_res.jpg', import.meta.url).toString();
 const _textureCache = new Map();
 
 function getAtlasTexture(url) {
@@ -341,7 +340,7 @@ export function createCityBus(spec) {
     const wheelR = 0.55;
     const wheelW = 0.32;
 
-    const axleFront = length * 0.31;
+    const axleFront = length * 0.29;
     const axleRear  = -length * 0.225;
 
     const wheelX = (width / 2) + (wheelW / 2) - 0.30;
