@@ -1,7 +1,6 @@
-// graphics/assets3d/generators/road_generator_utils/RoadGeometryCalc.js - Road geometry calculations.
-// Computes lane widths and basic segment geometry values.
-import { clamp } from '../internal_road/RoadMath.js';
-import { DOUBLE, EPS, HALF, MIN_LANES_ONEWAY } from './RoadConstants.js';
+// graphics/assets3d/generators/road/geometry/RoadGeometryCalc.js
+import { clamp } from '../math/RoadMath.js';
+import { DOUBLE, EPS, HALF, MIN_LANES_ONEWAY } from '../RoadConstants.js';
 
 export function laneCount(lanesF, lanesB) {
     const f = lanesF ?? 0;

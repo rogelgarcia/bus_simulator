@@ -1,7 +1,7 @@
-// graphics/assets3d/generators/internal_road/SidewalkBuilder.js
+// graphics/assets3d/generators/road/builders/SidewalkBuilder.js
 import * as THREE from 'three';
-import { clamp, pushToMap } from './RoadMath.js';
-import { mergeBufferGeometries } from './RoadGeometry.js';
+import { clamp, pushToMap } from '../math/RoadMath.js';
+import { mergeBufferGeometries } from '../geometry/RoadGeometry.js';
 
 export function createSidewalkBuilder({
                                           planeGeo,

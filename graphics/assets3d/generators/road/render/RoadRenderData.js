@@ -1,10 +1,9 @@
-// graphics/assets3d/generators/road_generator_utils/RoadRenderData.js - Render cuts, gaps, and straight segments.
-// Builds cut/gap data and renders straight road meshes.
-import { clamp } from '../internal_road/RoadMath.js';
-import { angleColorHex } from './RoadAngleUtils.js';
-import { offsetEndpoints, segmentDataFromEndpoints } from './RoadGeometryCalc.js';
+// graphics/assets3d/generators/road/render/RoadRenderData.js
+import { clamp } from '../math/RoadMath.js';
+import { angleColorHex } from '../math/RoadAngleUtils.js';
+import { offsetEndpoints, segmentDataFromEndpoints } from '../geometry/RoadGeometryCalc.js';
 import { addCurbSegment, addDashedMark, addSolidMark } from './RoadMarkingUtils.js';
-import { DEFAULT_COLOR_HEX, EDGE_MARK_MIN_SCALE, EPS, HALF } from './RoadConstants.js';
+import { DEFAULT_COLOR_HEX, EDGE_MARK_MIN_SCALE, EPS, HALF } from '../RoadConstants.js';
 
 export function buildRenderData(data) {
     const length = data.length ?? 0;

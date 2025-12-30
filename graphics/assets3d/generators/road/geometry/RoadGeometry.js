@@ -1,4 +1,4 @@
-// graphics/assets3d/generators/internal_road/RoadGeometry.js
+// graphics/assets3d/generators/road/geometry/RoadGeometry.js
 import * as THREE from 'three';
 
 export function ensureNonIndexedWithUV(g) {

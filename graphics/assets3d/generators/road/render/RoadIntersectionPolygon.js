@@ -1,12 +1,11 @@
-// graphics/assets3d/generators/road_generator_utils/RoadIntersectionPolygon.js - Intersection polygon rendering.
-// Builds and renders intersection fill polygons.
+// graphics/assets3d/generators/road/render/RoadIntersectionPolygon.js
 import * as THREE from 'three';
-import { sampleConnector } from '../internal_road/ArcConnector.js';
-import { applyWorldSpaceUV_XZ } from '../internal_road/RoadGeometry.js';
-import { angleColorHex } from './RoadAngleUtils.js';
-import { DEFAULT_COLOR_HEX } from './RoadConstants.js';
+import { applyWorldSpaceUV_XZ } from '../geometry/RoadGeometry.js';
+import { getConnectorPoints } from '../connectors/ConnectorSampling.js';
+import { angleColorHex } from '../math/RoadAngleUtils.js';
+import { DEFAULT_COLOR_HEX } from '../RoadConstants.js';
 import { pickLineRoad } from './RoadCurveRenderer.js';
-import { distanceSq } from './RoadIntersection.js';
+import { distanceSq } from '../math/RoadIntersection.js';
 
 export function renderIntersectionPolygons({
     roadData,
@@ -86,21 +85,6 @@ export function renderIntersectionPolygons({
 
     const connectorByPole = new Map();
     const connectorPoints = new Map();
-    const getConnectorPoints = (record) => {
-        if (!record) return null;
-        let points = connectorPoints.get(record);
-        if (!points) {
-            const sample = sampleConnector(record.connector, curveSampleStep);
-            if (!sample?.points || sample.points.length < 2) return null;
-            points = new Array(sample.points.length);
-            for (let i = 0; i < sample.points.length; i++) {
-                const p = sample.points[i];
-                points[i] = { x: p.x, y: p.y };
-            }
-            connectorPoints.set(record, points);
-        }
-        return points;
-    };
 
     for (const record of curbConnectors) {
         const tag = record?.tag ?? null;
@@ -166,7 +150,7 @@ export function renderIntersectionPolygons({
                 ok = false;
                 break;
             }
-            let curvePoints = getConnectorPoints(record);
+            let curvePoints = getConnectorPoints(record, curveSampleStep, connectorPoints);
             if (!curvePoints || curvePoints.length < 2) {
                 ok = false;
                 break;

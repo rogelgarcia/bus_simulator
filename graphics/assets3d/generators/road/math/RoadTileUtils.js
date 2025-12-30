@@ -1,7 +1,6 @@
-// graphics/assets3d/generators/road_generator_utils/RoadTileUtils.js - Tile and trimming helpers.
-// Computes tile bounds, trims, and centerline extents.
-import { EPS, POLE_CLEARANCE } from './RoadConstants.js';
-import { dot2, offsetEndpoints } from './RoadGeometryCalc.js';
+// graphics/assets3d/generators/road/math/RoadTileUtils.js
+import { EPS, POLE_CLEARANCE } from '../RoadConstants.js';
+import { dot2, offsetEndpoints } from '../geometry/RoadGeometryCalc.js';
 
 export function exitDistanceFromRect(p0, moveDir, rectStart, rectEnd, rectHalf) {
     if (!p0 || !moveDir || !rectStart || !rectEnd) return 0;

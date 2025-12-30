@@ -1,4 +1,4 @@
-// graphics/assets3d/generators/internal_road/RoadMath.js
+// graphics/assets3d/generators/road/math/RoadMath.js
 export function clamp(v, lo, hi) {
     return Math.max(lo, Math.min(hi, v));
 }

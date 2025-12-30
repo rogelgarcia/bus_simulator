@@ -1,8 +1,7 @@
-// graphics/assets3d/generators/road_generator_utils/RoadIntersection.js - Intersection and distance utilities.
-// Handles segment intersections and polyline distance queries.
-import { clamp } from '../internal_road/RoadMath.js';
-import { EPS } from './RoadConstants.js';
-import { cross2 } from './RoadGeometryCalc.js';
+// graphics/assets3d/generators/road/math/RoadIntersection.js
+import { clamp } from './RoadMath.js';
+import { EPS } from '../RoadConstants.js';
+import { cross2 } from '../geometry/RoadGeometryCalc.js';
 
 export function segmentIntersection(p0, p1, p2, p3) {
     if (!p0 || !p1 || !p2 || !p3) return null;

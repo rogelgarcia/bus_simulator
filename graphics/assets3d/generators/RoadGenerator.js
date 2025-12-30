@@ -1,12 +1,11 @@
 // graphics/assets3d/generators/RoadGenerator.js
-// Orchestrates road generation and delegates to helper modules.
 import * as THREE from 'three';
 import { ROAD_DEFAULTS, DEBUG_ASPHALT, CURB_COLOR_PALETTE, createAsphaltPalette } from './GeneratorParams.js';
-import { deepMerge } from './internal_road/RoadMath.js';
-import { createAsphaltBuilder } from './internal_road/AsphaltBuilder.js';
-import { createCurbBuilder } from './internal_road/CurbBuilder.js';
-import { createMarkingsBuilder } from './internal_road/MarkingsBuilder.js';
-import { addConnectorCurbSegments } from './internal_road/ConnectorCurbUtils.js';
+import { deepMerge } from './road/math/RoadMath.js';
+import { createAsphaltBuilder } from './road/builders/AsphaltBuilder.js';
+import { createCurbBuilder } from './road/builders/CurbBuilder.js';
+import { createMarkingsBuilder } from './road/builders/MarkingsBuilder.js';
+import { addConnectorCurbSegments } from './road/connectors/ConnectorCurbUtils.js';
 import {
     ASPHALT_CAPACITY_PER_TILE,
     COLLISION_DEDUP_EPS,
@@ -38,21 +37,21 @@ import {
     POLE_DOT_SCALE,
     POLE_DOT_SEGMENTS,
     ROAD_SURFACE_LIFT
-} from './road_generator_utils/RoadConstants.js';
-import { angleIndex, normalizeDir } from './road_generator_utils/RoadAngleUtils.js';
-import { roadWidth } from './road_generator_utils/RoadGeometryCalc.js';
-import { centerlineExtent, endPoleTrimForTile, tileKey, trimForRoad } from './road_generator_utils/RoadTileUtils.js';
+} from './road/RoadConstants.js';
+import { angleIndex, normalizeDir } from './road/math/RoadAngleUtils.js';
+import { roadWidth } from './road/geometry/RoadGeometryCalc.js';
+import { centerlineExtent, endPoleTrimForTile, tileKey, trimForRoad } from './road/math/RoadTileUtils.js';
 import {
     assignConnectionPoleFlows,
     createPoleManager,
     detectCollisionPoles,
     initializeRoadPoles
-} from './road_generator_utils/RoadPoleManager.js';
-import { buildCurbConnectors, createConnectorSolver } from './road_generator_utils/RoadConnectorSolver.js';
-import { linkRoadPoles } from './road_generator_utils/RoadPoleLinking.js';
-import { renderStraightRoads } from './road_generator_utils/RoadRenderData.js';
-import { renderCurveConnectors } from './road_generator_utils/RoadCurveRenderer.js';
-import { renderIntersectionPolygons } from './road_generator_utils/RoadIntersectionPolygon.js';
+} from './road/poles/RoadPoleManager.js';
+import { buildCurbConnectors, createConnectorSolver } from './road/connectors/RoadConnectorSolver.js';
+import { linkRoadPoles } from './road/poles/RoadPoleLinking.js';
+import { renderStraightRoads } from './road/render/RoadRenderData.js';
+import { renderCurveConnectors } from './road/render/RoadCurveRenderer.js';
+import { renderIntersectionPolygons } from './road/render/RoadIntersectionPolygon.js';
 
 export function generateRoads({ map, config, materials } = {}) {
     const group = new THREE.Group();

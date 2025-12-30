@@ -1,8 +1,8 @@
-// graphics/assets3d/generators/internal_road/ArcConnector.js
+// graphics/assets3d/generators/road/connectors/ArcConnector.js
 import * as THREE from 'three';
-import { wrapAngle } from './RoadMath.js';
-import { mergeBufferGeometries, applyWorldSpaceUV_XZ } from './RoadGeometry.js';
-import { solveConnectorPath } from '../../../../src/geometry/ConnectorPathSolver.js';
+import { wrapAngle } from '../math/RoadMath.js';
+import { mergeBufferGeometries, applyWorldSpaceUV_XZ } from '../geometry/RoadGeometry.js';
+import { solveConnectorPath } from '../../../../../src/geometry/ConnectorPathSolver.js';
 
 const EPS = 1e-8;
 const TAU = Math.PI * 2;

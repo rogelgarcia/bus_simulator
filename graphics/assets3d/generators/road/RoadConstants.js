@@ -1,5 +1,4 @@
-// graphics/assets3d/generators/road_generator_utils/RoadConstants.js - Road generator constants.
-// Defines shared constants used across road generation helpers.
+// graphics/assets3d/generators/road/RoadConstants.js
 export const DEG_TO_RAD = Math.PI / 180;
 export const HALF_TURN_RAD = Math.PI;
 export const ANGLE_SNAP_DEG = 15;

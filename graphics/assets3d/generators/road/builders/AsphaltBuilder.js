@@ -1,7 +1,7 @@
-// graphics/assets3d/generators/internal_road/AsphaltBuilder.js
+// graphics/assets3d/generators/road/builders/AsphaltBuilder.js
 import * as THREE from 'three';
-import { clamp } from './RoadMath.js';
-import { mergeBufferGeometries } from './RoadGeometry.js';
+import { clamp } from '../math/RoadMath.js';
+import { mergeBufferGeometries } from '../geometry/RoadGeometry.js';
 
 function colorizeGeometry(geom, colorHex) {
     const g = geom.index ? geom.toNonIndexed() : geom;

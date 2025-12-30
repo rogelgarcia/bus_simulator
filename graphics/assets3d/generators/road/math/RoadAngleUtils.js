@@ -1,5 +1,4 @@
-// graphics/assets3d/generators/road_generator_utils/RoadAngleUtils.js - Angle and direction helpers.
-// Provides angle snapping and direction normalization helpers.
+// graphics/assets3d/generators/road/math/RoadAngleUtils.js
 import {
     ANGLE_BUCKETS,
     ANGLE_SNAP_RAD,
@@ -7,7 +6,7 @@ import {
     COLOR_SATURATION,
     EPS,
     HALF_TURN_RAD
-} from './RoadConstants.js';
+} from '../RoadConstants.js';
 
 export function normalizeHalfTurn(angle) {
     let a = angle % HALF_TURN_RAD;

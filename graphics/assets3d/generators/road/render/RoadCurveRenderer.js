@@ -1,16 +1,15 @@
-// graphics/assets3d/generators/road_generator_utils/RoadCurveRenderer.js - Curve rendering for road connectors.
-// Renders curved connector asphalt and lane markings.
+// graphics/assets3d/generators/road/render/RoadCurveRenderer.js
 import * as THREE from 'three';
-import { sampleConnector } from '../internal_road/ArcConnector.js';
-import { applyWorldSpaceUV_XZ } from '../internal_road/RoadGeometry.js';
-import { angleColorHex } from './RoadAngleUtils.js';
-import { DEFAULT_COLOR_HEX, DASH_END_EPS, EDGE_MARK_MIN_SCALE, EPS, HALF } from './RoadConstants.js';
+import { applyWorldSpaceUV_XZ } from '../geometry/RoadGeometry.js';
+import { sampleConnectorPoints } from '../connectors/ConnectorSampling.js';
+import { angleColorHex } from '../math/RoadAngleUtils.js';
+import { DEFAULT_COLOR_HEX, DASH_END_EPS, EDGE_MARK_MIN_SCALE, EPS, HALF } from '../RoadConstants.js';
 import {
     directionFromPolyline,
     distanceSq,
     pointAlongPolyline,
     polylineDistances
-} from './RoadIntersection.js';
+} from '../math/RoadIntersection.js';
 
 export function pickLineRoad(a, b) {
     if (!a) return b ?? null;
@@ -62,15 +61,7 @@ export function renderCurveConnectors({
 
     const sampleCurvePoints = (record) => {
         const connector = record?.connector ?? record?.p0?.connector ?? null;
-        if (!connector || !connector.ok) return null;
-        const { points } = sampleConnector(connector, curveSampleStep);
-        if (!points || points.length < 2) return null;
-        const out = new Array(points.length);
-        for (let i = 0; i < points.length; i++) {
-            const p = points[i];
-            out[i] = { x: p.x, y: p.y };
-        }
-        return out;
+        return sampleConnectorPoints(connector, curveSampleStep);
     };
 
     const orientCurvePoints = (points, record, startRoadId) => {

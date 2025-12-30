@@ -1,4 +1,4 @@
-// graphics/assets3d/generators/internal_road/RoadTileLogic.js
+// graphics/assets3d/generators/road/data/RoadTileLogic.js
 import * as THREE from 'three';
 import {
     clamp,
@@ -8,8 +8,8 @@ import {
     intersectionCornerStartAngle,
     orientFromSigns,
     turnStartAngle
-} from './RoadMath.js';
-import { applyQuadrantMirrorNonIndexed } from './RoadGeometry.js';
+} from '../math/RoadMath.js';
+import { applyQuadrantMirrorNonIndexed } from '../geometry/RoadGeometry.js';
 
 function hasConn(connMask, bit) {
     return (connMask & bit) !== 0;

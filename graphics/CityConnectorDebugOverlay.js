@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
-import { sampleConnector } from './assets3d/generators/internal_road/ArcConnector.js';
+import { sampleConnector } from './assets3d/generators/road/connectors/ArcConnector.js';
 
 const TAU = Math.PI * 2;
 

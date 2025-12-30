@@ -1,4 +1,4 @@
-// graphics/assets3d/generators/internal_road/MarkingsBuilder.js
+// graphics/assets3d/generators/road/builders/MarkingsBuilder.js
 import * as THREE from 'three';
 
 export function createMarkingsBuilder({

@@ -1,4 +1,4 @@
-// graphics/assets3d/generators/internal_road/ConnectorCurbUtils.js
+// graphics/assets3d/generators/road/connectors/ConnectorCurbUtils.js
 const TAU = Math.PI * 2;
 
 function wrapAngleLocal(a) {

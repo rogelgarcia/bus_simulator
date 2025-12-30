@@ -1,10 +1,9 @@
-// graphics/assets3d/generators/road_generator_utils/RoadPoleManager.js - Pole setup and collision helpers.
-// Manages pole creation, collisions, and flow assignments.
-import { clamp } from '../internal_road/RoadMath.js';
-import { buildRenderData, isInGaps } from './RoadRenderData.js';
-import { EPS, HALF } from './RoadConstants.js';
-import { offsetEndpoints } from './RoadGeometryCalc.js';
-import { alongForData, segmentIntersection } from './RoadIntersection.js';
+// graphics/assets3d/generators/road/poles/RoadPoleManager.js
+import { clamp } from '../math/RoadMath.js';
+import { buildRenderData, isInGaps } from '../render/RoadRenderData.js';
+import { EPS, HALF } from '../RoadConstants.js';
+import { offsetEndpoints } from '../geometry/RoadGeometryCalc.js';
+import { alongForData, segmentIntersection } from '../math/RoadIntersection.js';
 
 export function createPoleManager({
     roadPoles,

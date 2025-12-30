@@ -1,6 +1,5 @@
-// graphics/assets3d/generators/road_generator_utils/RoadMarkingUtils.js - Marking and curb segment helpers.
-// Adds curb segments and lane markings to builders.
-import { DASH_END_EPS, EPS, HALF } from './RoadConstants.js';
+// graphics/assets3d/generators/road/render/RoadMarkingUtils.js
+import { DASH_END_EPS, EPS, HALF } from '../RoadConstants.js';
 
 export function addCurbSegment(curb, p0, p1, curbY, curbH, curbT, colorHex) {
     if (!curb || !p0 || !p1) return;

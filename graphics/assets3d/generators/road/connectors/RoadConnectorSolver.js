@@ -1,9 +1,8 @@
-// graphics/assets3d/generators/road_generator_utils/RoadConnectorSolver.js - Connector path solving helpers.
-// Solves curb connector paths and assigns connector metadata.
-import { solveConnectorPath } from '../../../../src/geometry/ConnectorPathSolver.js';
-import { EPS } from './RoadConstants.js';
-import { distanceSq } from './RoadIntersection.js';
-import { pickClosestEndPole, pickEndPole, pickSharedRoadOnSide } from './RoadPoleLinking.js';
+// graphics/assets3d/generators/road/connectors/RoadConnectorSolver.js
+import { solveConnectorPath } from '../../../../../src/geometry/ConnectorPathSolver.js';
+import { EPS } from '../RoadConstants.js';
+import { distanceSq } from '../math/RoadIntersection.js';
+import { pickClosestEndPole, pickEndPole, pickSharedRoadOnSide } from '../poles/RoadPoleLinking.js';
 
 export function createConnectorSolver({ curbT, roadById, connectorPairs }) {
     const computeConnectorRadius = (p0, p1) => {

@@ -1,6 +1,6 @@
-// graphics/assets3d/generators/internal_road/RoadGraph.js
-import { TILE, DIR } from '../../../../src/city/CityMap.js';
-import { bitCount4, clamp } from './RoadMath.js';
+// graphics/assets3d/generators/road/data/RoadGraph.js
+import { TILE, DIR } from '../../../../../src/city/CityMap.js';
+import { bitCount4, clamp } from '../math/RoadMath.js';
 
 const DIRS = [
     { key: 'N', bit: DIR.N, dx: 0, dy: 1, axis: 'NS', opp: 'S' },

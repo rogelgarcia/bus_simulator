@@ -1,8 +1,7 @@
-// graphics/assets3d/generators/road_generator_utils/RoadPoleLinking.js - Pole linking and matching helpers.
-// Links poles across roads and marks curve connections.
-import { normalizeDir } from './RoadAngleUtils.js';
-import { EPS, HALF } from './RoadConstants.js';
-import { distanceBetween, distanceSq } from './RoadIntersection.js';
+// graphics/assets3d/generators/road/poles/RoadPoleLinking.js
+import { normalizeDir } from '../math/RoadAngleUtils.js';
+import { EPS, HALF } from '../RoadConstants.js';
+import { distanceBetween, distanceSq } from '../math/RoadIntersection.js';
 
 export function linkRoadPoles({ roadData, roadById, connectionPolesByCollision }) {
     const endKeyEntries = new Map();
