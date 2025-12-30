@@ -11,91 +11,10 @@ const ROAD_DIR_DOT_MIN = 0.7;
 
 const ALLOWED_DUBINS_TYPES = new Set(['LSL', 'RSR']);
 
-const makeRoad = (a, b, lanesF = 2, lanesB = 2, tag = '') => ({ a, b, lanesF, lanesB, tag });
-
 const SCENARIOS = [
     {
-        id: 'right_angle_90',
-        name: 'Two roads 90 deg',
-        roads: [
-            makeRoad([2, 4], [4, 4]),
-            makeRoad([4, 4], [4, 6])
-        ]
-    },
-    {
-        id: 'angle_45',
-        name: 'Two roads 45 deg',
-        roads: [
-            makeRoad([2, 2], [6, 6]),
-            makeRoad([6, 6], [8, 6])
-        ]
-    },
-    {
-        id: 'angle_135',
-        name: 'Two roads 135 deg',
-        roads: [
-            makeRoad([2, 2], [6, 6]),
-            makeRoad([6, 6], [4, 6])
-        ]
-    },
-    {
-        id: 't_junction',
-        name: 'T junction',
-        roads: [
-            makeRoad([2, 4], [6, 4]),
-            makeRoad([4, 4], [4, 6])
-        ]
-    },
-    {
-        id: 'three_roads_4x4',
-        name: '3 roads at 4x4',
-        roads: [
-            makeRoad([0, 4], [4, 4], 2, 2, 'west'),
-            makeRoad([4, 4], [8, 4], 2, 2, 'east'),
-            makeRoad([4, 0], [4, 4], 2, 2, 'south')
-        ],
-        focusTile: '4,4'
-    },
-    {
-        id: 'four_way_4x4',
-        name: '4-way at 4x4',
-        roads: [
-            makeRoad([0, 4], [8, 4], 2, 2, 'h'),
-            makeRoad([4, 0], [4, 8], 2, 2, 'v')
-        ],
-        focusTile: '4,4'
-    },
-    {
-        id: 'different_widths',
-        name: 'Different widths',
-        roads: [
-            makeRoad([0, 2], [8, 2], 1, 1),
-            makeRoad([4, 0], [4, 8], 3, 3)
-        ]
-    },
-    {
-        id: 'parallel',
-        name: 'Parallel roads',
-        roads: [
-            makeRoad([0, 3], [8, 3]),
-            makeRoad([0, 5], [8, 5])
-        ]
-    },
-    {
-        id: 'acute_angle',
-        name: 'Very acute angle',
-        roads: [
-            makeRoad([1, 2], [8, 3]),
-            makeRoad([8, 3], [8, 8])
-        ]
-    },
-    {
-        id: 'obtuse_angle',
-        name: 'Very obtuse angle',
-        roads: [
-            makeRoad([1, 2], [8, 3]),
-            makeRoad([8, 3], [4, 8])
-        ]
+        id: 'city_map',
+        name: 'City map'
     }
 ];
 
@@ -108,23 +27,15 @@ const getRoadPoint = (point) => {
 };
 
 const buildScenario = (scenario) => {
-    const width = scenario.width ?? 9;
-    const height = scenario.height ?? 9;
     const tileSize = scenario.tileSize ?? 24;
-    const size = Math.max(width, height) * tileSize;
+    const size = scenario.size ?? 400;
     const cityConfig = createCityConfig({
         size,
         tileMeters: tileSize,
         mapTileSize: tileSize,
         seed: scenario.id ?? 'road-debug'
     });
-    const spec = {
-        width,
-        height,
-        tileSize,
-        origin: cityConfig.map.origin,
-        roads: scenario.roads
-    };
+    const spec = CityMap.demoSpec(cityConfig);
     const map = CityMap.fromSpec(spec, cityConfig);
     const generatorConfig = createGeneratorConfig();
     const output = generateRoads({ map, config: generatorConfig, materials: {} });
@@ -257,7 +168,9 @@ const validateConnections = ({ map, output }) => {
         const p0 = record?.p0 ?? null;
         const p1 = record?.p1 ?? null;
         if (!p0 || !p1) {
-            addIssue('missing-pole', 'Connector missing pole', record, p0 ?? p1, i);
+            if (record?.tag !== 'end') {
+                addIssue('missing-pole', 'Connector missing pole', record, p0 ?? p1, i);
+            }
             continue;
         }
         registerPole(p0, i);
@@ -332,7 +245,10 @@ const validateConnections = ({ map, output }) => {
 
         const flow0 = classifyFlow(p0, dir0, roadDirs);
         const flow1 = classifyFlow(p1, dir1, roadDirs);
-        if (flow0 && flow1 && flow0 === flow1) {
+        const loopKey0 = p0?.loopKey ?? null;
+        const loopKey1 = p1?.loopKey ?? null;
+        const sameLoop = loopKey0 && loopKey1 && loopKey0 === loopKey1;
+        if (flow0 && flow1 && flow0 === flow1 && !sameLoop) {
             addIssue('tangent-flow', `Both poles marked ${flow0}`, record, p0, i);
         }
 

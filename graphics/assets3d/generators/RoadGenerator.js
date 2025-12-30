@@ -377,13 +377,16 @@ function trimForRoad(data, others) {
     for (const other of others) {
         if (!other || other.roadId === data.roadId) continue;
         const rectHalf = (other.boundaryHalf ?? 0) + POLE_CLEARANCE;
+        const otherStart = other.sharedOriginalStart ?? other.rawStart;
+        const otherEnd = other.sharedOriginalEnd ?? other.rawEnd;
+        if (!otherStart || !otherEnd) continue;
         for (const p of startPoles) {
-            let t = exitDistanceFromRect(p, moveStart, other.rawStart, other.rawEnd, rectHalf);
+            let t = exitDistanceFromRect(p, moveStart, otherStart, otherEnd, rectHalf);
             if (!Number.isFinite(t)) t = data.length;
             if (t > trimStart) trimStart = t;
         }
         for (const p of endPoles) {
-            let t = exitDistanceFromRect(p, moveEnd, other.rawStart, other.rawEnd, rectHalf);
+            let t = exitDistanceFromRect(p, moveEnd, otherStart, otherEnd, rectHalf);
             if (!Number.isFinite(t)) t = data.length;
             if (t > trimEnd) trimEnd = t;
         }
@@ -523,6 +526,7 @@ export function generateRoads({ map, config, materials } = {}) {
     const computeConnectorRadius = (p0, p1) => {
         if (!p0 || !p1) return null;
         const curbReduce = Number.isFinite(curbT) ? curbT : 0;
+        const curbWidth = Number.isFinite(curbT) ? curbT : 1;
         const curveConnector = !!(p0?.curveConnection || p1?.curveConnection);
         if (curveConnector) {
             const ax = p0.x;
@@ -562,10 +566,32 @@ export function generateRoads({ map, config, materials } = {}) {
             const reduced = dist - curbReduce;
             return reduced > EPS ? reduced : null;
         };
+        const collisionLimit = (pole) => {
+            const col = resolveCollision(pole);
+            if (!col) return null;
+            const ax = pole.x;
+            const az = Number.isFinite(pole.z) ? pole.z : pole.y;
+            const bx = col.x;
+            const bz = Number.isFinite(col.z) ? col.z : col.y;
+            if (!Number.isFinite(ax) || !Number.isFinite(az) || !Number.isFinite(bx) || !Number.isFinite(bz)) return null;
+            const dx = bx - ax;
+            const dz = bz - az;
+            const dist = Math.hypot(dx, dz);
+            const reduced = dist - curbWidth;
+            return reduced > EPS ? reduced : 1;
+        };
+        const limit0 = collisionLimit(p0);
+        const limit1 = collisionLimit(p1);
+        let limit = null;
+        if (Number.isFinite(limit0) && Number.isFinite(limit1)) limit = Math.min(limit0, limit1);
+        else if (Number.isFinite(limit0)) limit = limit0;
+        else if (Number.isFinite(limit1)) limit = limit1;
         const d0 = distToCollision(p0);
-        if (Number.isFinite(d0)) return d0;
         const d1 = distToCollision(p1);
-        if (Number.isFinite(d1)) return d1;
+        if (Number.isFinite(d0) || Number.isFinite(d1)) {
+            const dist = Number.isFinite(d0) && Number.isFinite(d1) ? Math.min(d0, d1) : (Number.isFinite(d0) ? d0 : d1);
+            return Number.isFinite(limit) ? Math.min(dist, limit) : dist;
+        }
         const ax = p0.x;
         const bx = p1.x;
         const az = Number.isFinite(p0.z) ? p0.z : p0.y;
@@ -578,7 +604,8 @@ export function generateRoads({ map, config, materials } = {}) {
         const base = minAxis > EPS ? minAxis : dist;
         if (!(base > EPS)) return null;
         const reduced = base - curbReduce;
-        return reduced > EPS ? reduced : null;
+        if (!(reduced > EPS)) return null;
+        return Number.isFinite(limit) ? Math.min(reduced, limit) : reduced;
     };
     const solveCurbConnector = (p0, p1, dir0, dir1) => {
         if (!p0 || !p1 || !dir0 || !dir1) return null;
@@ -2280,6 +2307,22 @@ export function generateRoads({ map, config, materials } = {}) {
         siblingMap.set(pair[0], pair[1]);
         siblingMap.set(pair[1], pair[0]);
     }
+    for (const data of roadData) {
+        const endPoles = data.endPoles;
+        if (!endPoles) continue;
+        const startLeft = endPoles.start?.left ?? null;
+        const startRight = endPoles.start?.right ?? null;
+        if (startLeft && startRight) {
+            siblingMap.set(startLeft, startRight);
+            siblingMap.set(startRight, startLeft);
+        }
+        const endLeft = endPoles.end?.left ?? null;
+        const endRight = endPoles.end?.right ?? null;
+        if (endLeft && endRight) {
+            siblingMap.set(endLeft, endRight);
+            siblingMap.set(endRight, endLeft);
+        }
+    }
 
     const connectorByPole = new Map();
     const connectorPoints = new Map();
@@ -2300,13 +2343,14 @@ export function generateRoads({ map, config, materials } = {}) {
     };
 
     for (const record of curbConnectors) {
-        if (record?.tag !== 'connection') continue;
+        const tag = record?.tag ?? null;
+        if (tag !== 'connection' && tag !== 'end') continue;
         const connector = record?.connector;
         if (!connector || !connector.ok) continue;
         const p0 = record.p0;
         const p1 = record.p1;
         if (!p0 || !p1) continue;
-        if (!Number.isFinite(p0.cut) || !Number.isFinite(p1.cut)) continue;
+        if (tag === 'connection' && (!Number.isFinite(p0.cut) || !Number.isFinite(p1.cut))) continue;
         if (!connectorByPole.has(p0)) connectorByPole.set(p0, { record, other: p1 });
         if (!connectorByPole.has(p1)) connectorByPole.set(p1, { record, other: p0 });
     }
