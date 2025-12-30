@@ -501,6 +501,7 @@ export function generateRoads({ map, config, materials } = {}) {
     });
 
     const roads = Array.isArray(map.roadSegments) ? map.roadSegments.filter(Boolean) : [];
+    let minRoadHalfWidth = Infinity;
     const tmpColor = new THREE.Color();
     const neutralCurbColor = curbMatBase?.color?.getHex?.() ?? DEFAULT_CURB_COLOR_HEX;
     const poleDotRadius = Math.max(POLE_DOT_RADIUS_MIN, curbT * POLE_DOT_RADIUS_FACTOR * POLE_DOT_SCALE);
@@ -854,7 +855,8 @@ export function generateRoads({ map, config, materials } = {}) {
         const base = data.centerlineStart ?? data.rawStart;
         if (!base) return;
         const baseHalfWidth = data.halfWidth ?? 0;
-        let minHalfWidth = baseHalfWidth;
+        const uniformHalfWidth = Number.isFinite(minRoadHalfWidth) ? minRoadHalfWidth : baseHalfWidth;
+        let minHalfWidth = uniformHalfWidth;
         let minAlong = Infinity;
         let maxAlong = -Infinity;
         let minHit = null;
@@ -864,13 +866,7 @@ export function generateRoads({ map, config, materials } = {}) {
         for (const hit of hits) {
             const along = hit?.along ?? null;
             if (!Number.isFinite(along)) continue;
-            const otherRoadId = hit?.otherRoadId ?? null;
-            let hitHalfWidth = baseHalfWidth;
-            if (otherRoadId != null) {
-                const other = roadById.get(otherRoadId);
-                const otherHalf = other?.halfWidth ?? null;
-                if (Number.isFinite(otherHalf)) hitHalfWidth = Math.min(baseHalfWidth, otherHalf);
-            }
+            const hitHalfWidth = uniformHalfWidth;
             hit.halfWidth = hitHalfWidth;
             if (Number.isFinite(hitHalfWidth)) minHalfWidth = Math.min(minHalfWidth, hitHalfWidth);
             if (along < minAlong) {
@@ -1000,6 +996,7 @@ export function generateRoads({ map, config, materials } = {}) {
         const angleIdx = angleIndex(angleForColor);
         const width = roadWidth(road.lanesF, road.lanesB, laneWidth, shoulder, ts);
         const halfWidth = width * HALF;
+        if (Number.isFinite(halfWidth) && halfWidth < minRoadHalfWidth) minRoadHalfWidth = halfWidth;
 
         const dir = rawDir;
         const normal = { x: -dir.y, y: dir.x };
