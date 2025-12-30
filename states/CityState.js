@@ -619,7 +619,6 @@ export class CityState {
     }
 
     _handlePointerMove(e) {
-        if (!this._connectorDebugEnabled && !this._hoverOutlineEnabled) return;
         if (this.debugPanel?.root?.contains(e.target) || this.debugsPanel?.root?.contains(e.target) || this.shortcutsPanel?.root?.contains(e.target)) {
             this._clearConnectorHover();
             this._clearHoverOutline();
@@ -678,8 +677,10 @@ export class CityState {
             this._clearConnectorHover();
         }
 
-        if (this._hoverOutlineEnabled) this._updateHoverOutline();
+        const hoverHit = this._pickHoverMesh();
+        if (this._hoverOutlineEnabled) this._updateHoverOutline(hoverHit);
         else this._clearHoverOutline();
+        this._updateHoverInfo(hoverHit);
     }
 
     _clearConnectorHover() {
@@ -710,6 +711,78 @@ export class CityState {
 
     _setPoleInfoData(data) {
         if (this.poleInfoPanel) this.poleInfoPanel.setData(data);
+    }
+
+    _updateHoverInfo(hit) {
+        if (this._hoverConnectorIndex >= 0) return;
+        const data = this._getHoverInfoData(hit);
+        this._setPoleInfoData(data);
+    }
+
+    _getHoverInfoData(hit) {
+        const obj = hit?.object ?? null;
+        if (!obj) return null;
+        const info = this._describeHoverObject(obj);
+        if (!info?.type) return null;
+        const fields = [];
+        if (info.part) fields.push({ label: 'Part', value: info.part });
+        if (info.isTile && hit?.point && this.city?.map) {
+            const tile = this.city.map.worldToTile(hit.point.x, hit.point.z);
+            if (Number.isFinite(tile?.x) && Number.isFinite(tile?.y) && this.city.map.inBounds(tile.x, tile.y)) {
+                fields.push({ label: 'Tile', value: `${tile.x}:${tile.y}` });
+            }
+        }
+        return { type: info.type, fields };
+    }
+
+    _describeHoverObject(obj) {
+        const userType = this._findUserDataType(obj);
+        if (userType) return { type: this._formatTypeLabel(userType) };
+        const names = this._getNameChain(obj);
+        const lowers = names.map((name) => name.toLowerCase());
+        const has = (token) => lowers.some((name) => name.includes(token));
+        if (has('groundtiles')) return { type: 'Tile', isTile: true };
+        if (has('tilegrid')) return { type: 'Tile grid' };
+        if (has('asphalt')) return { type: 'Road', part: 'Asphalt' };
+        if (has('markings')) return { type: 'Road', part: 'Markings' };
+        if (has('curb')) return { type: 'Road', part: 'Curb' };
+        if (has('sidewalk')) return { type: 'Road', part: 'Sidewalk' };
+        if (has('roadpoledots') || has('poledot')) return { type: 'Road', part: 'Poles' };
+        if (has('roads')) return { type: 'Road' };
+        if (has('building')) return { type: 'Building' };
+        if (has('bus')) return { type: 'Vehicle' };
+        if (has('cityfloor') || has('cityworld')) return { type: 'Ground' };
+        if (has('skydome') || has('sky')) return { type: 'Sky' };
+        return { type: 'Object' };
+    }
+
+    _getNameChain(obj) {
+        const names = [];
+        let cur = obj;
+        while (cur) {
+            const name = typeof cur.name === 'string' ? cur.name.trim() : '';
+            if (name) names.push(name);
+            cur = cur.parent;
+        }
+        return names;
+    }
+
+    _findUserDataType(obj) {
+        let cur = obj;
+        while (cur) {
+            const raw = typeof cur.userData?.type === 'string' ? cur.userData.type.trim() : '';
+            if (raw) return raw;
+            cur = cur.parent;
+        }
+        return '';
+    }
+
+    _formatTypeLabel(raw) {
+        const cleaned = raw.trim();
+        if (!cleaned) return '';
+        const lower = cleaned.toLowerCase();
+        if (lower === 'bus' || lower === 'vehicle' || lower === 'car') return 'Vehicle';
+        return cleaned[0].toUpperCase() + cleaned.slice(1);
     }
 
     _updatePoleInfoFromHover(connectorIndex, poleIndex) {
@@ -859,23 +932,23 @@ export class CityState {
         }
     }
 
-    _updateHoverOutline() {
+    _updateHoverOutline(hit) {
         if (!this._outlineLine) this._ensureHoverOutline();
         if (!this._outlineLine) return;
-        const hit = this._pickHoverMesh();
-        if (!hit) {
+        const hover = (hit !== undefined) ? hit : this._pickHoverMesh();
+        if (!hover) {
             this._clearHoverOutline();
             return;
         }
-        const obj = hit.object;
-        const instanceId = hit.instanceId;
+        const obj = hover.object;
+        const instanceId = hover.instanceId;
         const baseGeo = obj.geometry;
         if (!baseGeo) {
             this._clearHoverOutline();
             return;
         }
         const ranges = baseGeo.userData?.mergeRanges;
-        const rangeIndex = this._getHoverRangeIndex(ranges, hit.faceIndex);
+        const rangeIndex = this._getHoverRangeIndex(ranges, hover.faceIndex);
         if (this._outlineTarget && this._outlineTarget.obj === obj && this._outlineTarget.instanceId === instanceId && this._outlineTarget.rangeIndex === rangeIndex) {
             return;
         }
