@@ -1,13 +1,31 @@
 // graphics/assets3d/models/buses/CityBus.js
+// Loads the city bus OBJ model and attaches the wheel rig
 import * as THREE from 'three';
-import { createBusWheel } from './components/BusWheel.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 import { WheelRig } from './components/WheelRig.js';
 import { attachBusSkeleton } from '../../../../src/skeletons/buses/BusSkeleton.js';
 
-// Transparency configuration
-const TRANSPARENT_BUS = true;
+const TRANSPARENT_BUS = false;
 const BUS_BODY_OPACITY = 0.4;
 const BUS_LINER_OPACITY = 0.1;
+const MODEL_SCALE = 1.15;
+
+const OBJ_URL = new URL(
+    '../../../../../assets/city_bus/obj/Obj/Bus.obj',
+    import.meta.url
+).toString();
+const MTL_URL = new URL(
+    '../../../../../assets/city_bus/obj/Obj/Bus.mtl',
+    import.meta.url
+).toString();
+const RESOURCE_PATH = new URL(
+    '../../../../../assets/city_bus/obj/Obj/',
+    import.meta.url
+).toString();
+
+let modelPromise = null;
+let modelTemplate = null;
 
 function applyShadows(group) {
     group.traverse((o) => {
@@ -18,290 +36,98 @@ function applyShadows(group) {
     });
 }
 
-/**
- * UV rects (normalized) for the coach-style template (side/front/rear/roof).
- */
-const COACH_TEMPLATE_UV = {
-    sideTop: { u0: 0.3500000000, v0: 0.6821428571, u1: 0.9573333333, v1: 0.9419642857 },
-    front:   { u0: 0.0400666667, v0: 0.6011428571, u1: 0.2093333333, v1: 0.9219642857 },
-    sideBot: { u0: 0.2630000000, v0: 0.3183928571, u1: 0.9513333333, v1: 0.6428642857 },
-    rear:    { u0: 0.0400000000, v0: 0.3183928571, u1: 0.213333333, v1: 0.631071429 },
-    roof:    { u0: 0.1720000000, v0: 0.1321428571, u1: 0.8560000000, v1: 0.3625000000 }
-};
-
-function cropRectBottom(rect, crop) {
-    const c = THREE.MathUtils.clamp(crop, 0, 0.95);
-    const v0 = rect.v0 + (rect.v1 - rect.v0) * c;
-    return { ...rect, v0 };
+function loadBusModel() {
+    if (modelTemplate) return Promise.resolve(modelTemplate);
+    if (!modelPromise) {
+        const mtlLoader = new MTLLoader();
+        mtlLoader.setResourcePath(RESOURCE_PATH);
+        modelPromise = mtlLoader.loadAsync(MTL_URL).then((materials) => {
+            materials.preload();
+            const objLoader = new OBJLoader();
+            objLoader.setMaterials(materials);
+            return objLoader.loadAsync(OBJ_URL);
+        }).then((model) => {
+            modelTemplate = model;
+            return modelTemplate;
+        }).catch((err) => {
+            console.error('Failed to load city bus OBJ', err);
+            modelPromise = null;
+            modelTemplate = null;
+            return null;
+        });
+    }
+    return modelPromise;
 }
 
-function cropRectLR(rect, cropL = 0, cropR = 0) {
-    const l = THREE.MathUtils.clamp(cropL, 0, 0.45);
-    const r = THREE.MathUtils.clamp(cropR, 0, 0.45);
-    const du = rect.u1 - rect.u0;
-    return {
-        ...rect,
-        u0: rect.u0 + du * l,
-        u1: rect.u1 - du * r,
-    };
-}
-
-function smoothstep(edge0, edge1, x) {
-    const t = THREE.MathUtils.clamp((x - edge0) / (edge1 - edge0), 0, 1);
-    return t * t * (3 - 2 * t);
-}
-
-/**
- * UV mapping for a segmented BoxGeometry (safe with later deforms).
- * IMPORTANT CHANGE: left side is NOT flipped anymore (matches right side).
- */
-function applyCoachTemplateUVs(geo, { width, height, length }) {
-    const SIDE_WHEEL_CROP  = 0.30;
-    const FRONT_WHEEL_CROP = 0.34;
-    const REAR_WHEEL_CROP  = 0.34;
-
-    // Trim baked-in mirrors (ok to cut)
-    const SIDE_MIRROR_CROP  = 0.03;
-    const FRONT_MIRROR_CROP = 0.08;
-    const REAR_MIRROR_CROP  = 0.08;
-
-    // Use the same side strip for both sides (and do NOT flip left).
-    const sideRect = cropRectLR(
-        cropRectBottom(COACH_TEMPLATE_UV.sideBot, SIDE_WHEEL_CROP),
-        SIDE_MIRROR_CROP,
-        SIDE_MIRROR_CROP
-    );
-
-    const frontRect = cropRectLR(
-        cropRectBottom(COACH_TEMPLATE_UV.front, FRONT_WHEEL_CROP),
-        FRONT_MIRROR_CROP,
-        FRONT_MIRROR_CROP
-    );
-
-    const rearRect = cropRectLR(
-        cropRectBottom(COACH_TEMPLATE_UV.rear, REAR_WHEEL_CROP),
-        REAR_MIRROR_CROP,
-        REAR_MIRROR_CROP
-    );
-
-    const roofRect = COACH_TEMPLATE_UV.roof;
-
-    const pos = geo.attributes.position;
-    const nrm = geo.attributes.normal;
-    const uv  = geo.attributes.uv;
-
-    const x0 = -width / 2,  x1 =  width / 2;
-    const y0 = -height / 2, y1 =  height / 2;
-    const z0 = -length / 2, z1 =  length / 2;
-
-    const invW = 1 / Math.max(1e-6, (x1 - x0));
-    const invH = 1 / Math.max(1e-6, (y1 - y0));
-    const invL = 1 / Math.max(1e-6, (z1 - z0));
-
-    for (let i = 0; i < pos.count; i++) {
-        const x = pos.getX(i);
-        const y = pos.getY(i);
-        const z = pos.getZ(i);
-
-        const nx = nrm.getX(i);
-        const ny = nrm.getY(i);
-        const nz = nrm.getZ(i);
-
-        const tX = (x - x0) * invW; // 0 left -> 1 right
-        const tY = (y - y0) * invH; // 0 bottom -> 1 top
-        const tZ = (z - z0) * invL; // 0 rear -> 1 front
-
-        let U = 0, V = 0;
-
-        if (Math.abs(nx) > 0.5) {
-            // SIDES (front on the right side of the atlas strip)
-            U = THREE.MathUtils.lerp(sideRect.u0, sideRect.u1, tZ);
-            V = THREE.MathUtils.lerp(sideRect.v0, sideRect.v1, tY);
-        } else if (Math.abs(nz) > 0.5) {
-            // FRONT / REAR
-            const rect = (nz > 0) ? frontRect : rearRect;
-
-            // u: left->right, v: bottom->top
-            // Rear keeps a flip so it matches the atlas orientation.
-            if (nz > 0) U = THREE.MathUtils.lerp(rect.u0, rect.u1, tX);
-            else        U = THREE.MathUtils.lerp(rect.u1, rect.u0, tX);
-
-            V = THREE.MathUtils.lerp(rect.v0, rect.v1, tY);
-        } else if (Math.abs(ny) > 0.5) {
-            // ROOF / UNDERSIDE (roof won’t show the atlas anyway; we use a plain roof material)
-            if (ny > 0) {
-                U = THREE.MathUtils.lerp(roofRect.u1, roofRect.u0, tZ);
-                V = THREE.MathUtils.lerp(roofRect.v1, roofRect.v0, tX);
-            } else {
-                U = THREE.MathUtils.lerp(roofRect.u0, roofRect.u1, tZ);
-                V = THREE.MathUtils.lerp(roofRect.v1, roofRect.v0, tX);
+function applyMaterialSettings(root) {
+    root.traverse((o) => {
+        if (!o.isMesh) return;
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const mat of mats) {
+            if (!mat) continue;
+            if (mat.map) {
+                mat.map.colorSpace = THREE.SRGBColorSpace;
+                mat.map.needsUpdate = true;
             }
+            if (!TRANSPARENT_BUS) {
+                mat.transparent = false;
+                mat.opacity = 1.0;
+            } else {
+                const name = (mat.name || '').toLowerCase();
+                const isGlass = name.includes('glass') || name.includes('window');
+                mat.transparent = true;
+                mat.opacity = isGlass ? BUS_LINER_OPACITY : BUS_BODY_OPACITY;
+            }
+            mat.needsUpdate = true;
         }
-
-        uv.setXY(i, U, V);
-    }
-
-    uv.needsUpdate = true;
-}
-
-function carveWheelArchesSmooth(
-    geo,
-    { width, height, wheelRadius, rideHeight, axleZs, clearance = 0.10, soften = 0.18 }
-) {
-    const pos = geo.attributes.position;
-
-    const xSide = width / 2;
-    const xEps = 1e-4;
-
-    const yBottom = -height / 2;
-
-    // wheel center in BODY local space
-    const wheelCenterY = yBottom + (wheelRadius - rideHeight);
-
-    const r = wheelRadius + clearance;
-    const soft = Math.max(1e-4, r * soften);
-
-    for (let i = 0; i < pos.count; i++) {
-        const x = pos.getX(i);
-        const y = pos.getY(i);
-        const z = pos.getZ(i);
-
-        // only outer side walls
-        if (Math.abs(Math.abs(x) - xSide) > xEps) continue;
-
-        let yNew = y;
-
-        for (const axleZ of axleZs) {
-            const dz = Math.abs(z - axleZ);
-
-            // outside influence band
-            if (dz > r + soft) continue;
-
-            const dzClamped = Math.min(dz, r);
-            const yArc = wheelCenterY + Math.sqrt(Math.max(0, r * r - dzClamped * dzClamped));
-
-            // blend near the boundary so it doesn’t make a sharp “V”
-            const t = THREE.MathUtils.clamp((dz - r) / soft, 0, 1); // 0 inside, 1 outside
-            const w = 1 - (t * t * (3 - 2 * t)); // smoothstep, inverted
-
-            const yTarget = THREE.MathUtils.lerp(y, yArc, w);
-            if (yTarget > yNew) yNew = yTarget;
-        }
-
-        if (yNew !== y) pos.setXYZ(i, x, yNew, z);
-    }
-
-    pos.needsUpdate = true;
-    geo.computeVertexNormals();
-}
-
-/**
- * Make silhouette less boxy:
- * - ONLY shape the FRONT
- * - keep TOP perfectly flat (no roof arch)
- * - keep BACK perfectly flat (no rear rounding)
- */
-function shapeFrontOnly(geo, { height, length }) {
-    const pos = geo.attributes.position;
-
-    const yHalf = height / 2;
-    const zHalf = length / 2;
-
-    // Make the front shaping longer so it doesn’t kink
-    const noseLen = length * 0.18;
-
-    // Tunables
-    const windshieldInset = 0.42; // main front slope (upper body)
-    const roofRoundInset  = 0.28; // extra rounding only at the very top edge
-    const bumperInset     = 0.08; // subtle bottom rounding
-
-    for (let i = 0; i < pos.count; i++) {
-        const x = pos.getX(i);
-        const y = pos.getY(i);
-        const z = pos.getZ(i);
-
-        // 0..1 from rear->front inside the "noseLen" region
-        let f = smoothstep(zHalf - noseLen, zHalf, z);
-        if (f <= 1e-6) continue;
-
-        // Make the falloff a bit smoother (reduces “strange” wedges)
-        f = Math.pow(f, 0.85);
-
-        // 0 bottom -> 1 top
-        const tY = THREE.MathUtils.clamp((y + yHalf) / height, 0, 1);
-
-        // Broad slope (mostly upper front, but not the very bottom)
-        const windMask = smoothstep(0.25, 0.98, tY);
-
-        // Only the very top edge gets extra "round back"
-        const roofMask = smoothstep(0.80, 1.00, tY);
-
-        // Only the very bottom gets bumper softening
-        const bumperMask = 1.0 - smoothstep(0.0, 0.22, tY);
-
-        let z2 = z;
-        z2 -= windshieldInset * f * windMask;
-        z2 -= roofRoundInset  * f * roofMask;
-        z2 -= bumperInset     * f * bumperMask;
-
-        pos.setXYZ(i, x, y, z2);
-    }
-
-    pos.needsUpdate = true;
-    geo.computeVertexNormals();
-}
-
-const DEFAULT_CITYBUS_TEXTURE_URL = new URL('../../../../../assets/coach_bus_high_res.jpg', import.meta.url).toString();
-const _textureCache = new Map();
-
-function getAtlasTexture(url) {
-    const key = String(url);
-    if (_textureCache.has(key)) return _textureCache.get(key);
-
-    const tex = new THREE.TextureLoader().load(key);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.wrapS = THREE.ClampToEdgeWrapping;
-    tex.wrapT = THREE.ClampToEdgeWrapping;
-    tex.minFilter = THREE.LinearMipmapLinearFilter;
-    tex.magFilter = THREE.LinearFilter;
-
-    _textureCache.set(key, tex);
-    return tex;
-}
-
-function makeMaterials({ textureUrl }) {
-    const atlas = getAtlasTexture(textureUrl);
-
-    // Body uses atlas
-    const body = new THREE.MeshStandardMaterial({
-        map: atlas,
-        color: 0xffffff,
-        roughness: 0.72,
-        metalness: 0.04,
-        transparent: TRANSPARENT_BUS,
-        opacity: TRANSPARENT_BUS ? BUS_BODY_OPACITY : 1.0
     });
+}
 
-    // Roof MUST be plain (no AC/vents texture)
-    const roof = new THREE.MeshStandardMaterial({
-        map: null,
-        color: 0xf6f6f6,
-        roughness: 0.72,
-        metalness: 0.04,
-        transparent: TRANSPARENT_BUS,
-        opacity: TRANSPARENT_BUS ? BUS_BODY_OPACITY : 1.0
-    });
+function normalizeModel(root, { targetLength, rideHeight }) {
+    root.updateMatrixWorld(true);
+    let box = new THREE.Box3().setFromObject(root);
+    if (box.isEmpty()) return;
+    const size = box.getSize(new THREE.Vector3());
+    if (size.x > size.z) {
+        root.rotation.y = Math.PI / 2;
+        root.updateMatrixWorld(true);
+        box = new THREE.Box3().setFromObject(root);
+    }
+    const size2 = box.getSize(new THREE.Vector3());
+    const scale = targetLength / Math.max(0.001, size2.z || 1);
+    root.scale.setScalar(scale);
+    root.updateMatrixWorld(true);
+    box = new THREE.Box3().setFromObject(root);
+    const center = box.getCenter(new THREE.Vector3());
+    root.position.x -= center.x;
+    root.position.z -= center.z;
+    root.position.y += rideHeight - box.min.y;
+}
 
-    // Interior liner: dark bluish/metal (blocks seeing through the arch)
-    const interior = new THREE.MeshStandardMaterial({
-        color: 0x1b2634,     // dark bluish gray
-        roughness: 0.55,
-        metalness: 0.45,
-        transparent: TRANSPARENT_BUS,
-        opacity: TRANSPARENT_BUS ? BUS_LINER_OPACITY : 1.0
-    });
+function recenterBody(bus) {
+    const skeleton = bus.userData?.bus;
+    if (!skeleton?.bodyRoot || !skeleton?.bodyTiltPivot) return;
+    const bodyRoot = skeleton.bodyRoot;
+    bodyRoot.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(bodyRoot);
+    if (box.isEmpty()) return;
+    const center = box.getCenter(new THREE.Vector3());
+    skeleton.bodyTiltPivot.position.copy(center);
+    bodyRoot.position.sub(center);
+    skeleton._bodyPivotBase.copy(skeleton.bodyTiltPivot.position);
+    skeleton.bodyPivotBase.copy(skeleton._bodyPivotBase);
+}
 
-    // lights default OFF (emissiveIntensity 0). Skeleton toggles them.
+function alignAnchoredBus(bus) {
+    const parent = bus.parent;
+    if (!parent || parent.userData?.model !== bus) return;
+    bus.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(bus);
+    if (box.isEmpty()) return;
+    bus.position.y -= box.min.y;
+}
+
+function makeLightMaterials() {
     const headLightMat = new THREE.MeshStandardMaterial({
         color: 0xffffff,
         emissive: 0xffffff,
@@ -318,104 +144,93 @@ function makeMaterials({ textureUrl }) {
         metalness: 0.0
     });
 
-    return { body, roof, interior, headLightMat, brakeLightMat };
+    return { headLightMat, brakeLightMat };
 }
 
-function assignRoofMaterial(geo) {
-    // BoxGeometry group indices: 0 +X, 1 -X, 2 +Y, 3 -Y, 4 +Z, 5 -Z
-    // We want: roof (+Y) -> material index 1, all other faces -> material index 0
-    for (const g of geo.groups) {
-        g.materialIndex = (g.materialIndex === 2) ? 1 : 0;
+function makeWheelNode(name) {
+    const root = new THREE.Group();
+    root.name = `${name}_root`;
+    const steerPivot = new THREE.Group();
+    steerPivot.name = `${name}_steer`;
+    const rollPivot = new THREE.Group();
+    rollPivot.name = `${name}_roll`;
+    root.add(steerPivot);
+    steerPivot.add(rollPivot);
+    return { root, steerPivot, rollPivot };
+}
+
+function collectWheelMeshes(root) {
+    const map = { fl: [], fr: [], rl: [], rr: [] };
+    root.traverse((o) => {
+        if (!o.isMesh) return;
+        const name = (o.name || '').toLowerCase();
+        const match = name.match(/^(fl|fr|rl|rr)/);
+        if (!match) return;
+        map[match[1]].push(o);
+    });
+    return map;
+}
+
+function attachWheelMeshes(bus, wheelNodes, wheelMeshes, rig) {
+    const info = {};
+    bus.updateMatrixWorld(true);
+
+    for (const key of Object.keys(wheelNodes)) {
+        const meshes = wheelMeshes[key] ?? [];
+        if (!meshes.length) continue;
+        const box = new THREE.Box3();
+        for (const mesh of meshes) box.expandByObject(mesh);
+        if (box.isEmpty()) continue;
+        const centerWorld = box.getCenter(new THREE.Vector3());
+        const centerLocal = bus.worldToLocal(centerWorld.clone());
+        wheelNodes[key].root.position.copy(centerLocal);
+        info[key] = { meshes, box };
+    }
+
+    bus.updateMatrixWorld(true);
+
+    const radii = [];
+    for (const key of Object.keys(info)) {
+        const node = wheelNodes[key];
+        const { meshes, box } = info[key];
+        for (const mesh of meshes) node.rollPivot.attach(mesh);
+        const size = box.getSize(new THREE.Vector3());
+        const radius = Math.max(size.y, size.z) * 0.5;
+        if (Number.isFinite(radius) && radius > 0) radii.push(radius);
+    }
+
+    if (radii.length) {
+        rig.wheelRadius = radii.reduce((a, b) => a + b, 0) / radii.length;
     }
 }
 
 export function createCityBus(spec) {
-    const textureUrl = spec.textureUrl ?? DEFAULT_CITYBUS_TEXTURE_URL;
-    const mats = makeMaterials({ textureUrl });
+    const width = 2.60 * MODEL_SCALE;
+    const height = 3.20 * MODEL_SCALE;
+    const length = 12.00 * MODEL_SCALE;
 
-    const width  = 2.60;
-    const height = 3.20;
-    const length = 12.00;
-
-    const wheelR = 0.55;
-    const wheelW = 0.32;
+    const wheelR = 0.55 * MODEL_SCALE;
+    const wheelW = 0.32 * MODEL_SCALE;
 
     const axleFront = length * 0.29;
-    const axleRear  = -length * 0.225;
+    const axleRear = -length * 0.225;
 
-    const wheelX = (width / 2) + (wheelW / 2) - 0.30;
+    const wheelX = (width / 2) + (wheelW / 2) - (0.30 * MODEL_SCALE);
 
-    const rideHeight = wheelR * 0.7;
+    const rideHeight = wheelR * 1.15;
 
     const bus = new THREE.Group();
     bus.userData.type = 'bus';
     bus.userData.id = spec.id;
     bus.name = `bus_${spec.id}`;
 
-    // Segmented so we can shape the FRONT (top/back stay flat)
-    const bodyGeo = new THREE.BoxGeometry(width, height, length, 1, 18, 64).toNonIndexed();
+    const mats = makeLightMaterials();
 
-    // shape first
-    shapeFrontOnly(bodyGeo, { height, length });
-
-    // carve arches
-    carveWheelArchesSmooth(bodyGeo, {
-        width,
-        height,
-        wheelRadius: wheelR,
-        rideHeight,
-        axleZs: [axleFront, axleRear],
-        clearance: 0.10,
-        soften: 0.20
-    });
-
-    // UVs last
-    applyCoachTemplateUVs(bodyGeo, { width, height, length });
-
-    // Multi-material: [0] atlas body, [1] plain roof
-    assignRoofMaterial(bodyGeo);
-
-    const body = new THREE.Mesh(bodyGeo, [mats.body, mats.roof]);
-    body.position.y = rideHeight + height / 2;
-    bus.add(body);
-
-    // ---- Interior liner box (blocks "see-through" after wheel arch carve) ----
-    // Keep it inset so it never z-fights the outer shell, and:
-    // - inset X enough to clear wheels (since wheels are tucked into the body)
-    // - keep bottom aligned with outer bottom (so holes near ground are blocked)
-    {
-        const insetY = 0.06;
-        const insetZ = 0.06;
-
-        // Clear wheels: inner half-width must be <= (wheelX - wheelW/2 - margin)
-        const wheelClearMargin = 0.05;
-        const innerHalfW = Math.max(0.10, (wheelX - wheelW / 2) - wheelClearMargin);
-        const insetX = Math.max(0.06, (width / 2) - innerHalfW);
-
-        const innerW = Math.max(0.2, width  - insetX * 2);
-        const innerH = Math.max(0.2, height * 0.55); // e.g. only 55% of bus height
-        const innerL = Math.max(0.2, (length - insetZ * 2)*0.8);
-
-        const linerGeo = new THREE.BoxGeometry(innerW, innerH, innerL);
-        const liner = new THREE.Mesh(linerGeo, mats.interior);
-        liner.name = 'bus_interior_liner';
-
-        const wheelBaseY = wheelR;
-        const startY = wheelBaseY + 0.02;
-        liner.position.set(0, startY + innerH / 2, 0);
-
-        liner.castShadow = false;
-        liner.receiveShadow = true;
-
-        bus.add(liner);
-    }
-
-    // Headlights
-    const headGeo = new THREE.BoxGeometry(0.22, 0.14, 0.08);
+    const headGeo = new THREE.BoxGeometry(0.22 * MODEL_SCALE, 0.14 * MODEL_SCALE, 0.08 * MODEL_SCALE);
 
     const hl = new THREE.Mesh(headGeo, mats.headLightMat);
     hl.name = 'headlight_L';
-    hl.position.set(-width * 0.28, rideHeight + 0.22, length / 2 - 0.04);
+    hl.position.set(-width * 0.28, rideHeight + (0.22 * MODEL_SCALE), length / 2 - (0.04 * MODEL_SCALE));
 
     const hr = hl.clone();
     hr.name = 'headlight_R';
@@ -423,12 +238,11 @@ export function createCityBus(spec) {
 
     bus.add(hl, hr);
 
-    // Brake lights
-    const brakeGeo = new THREE.BoxGeometry(0.20, 0.12, 0.06);
+    const brakeGeo = new THREE.BoxGeometry(0.20 * MODEL_SCALE, 0.12 * MODEL_SCALE, 0.06 * MODEL_SCALE);
 
     const bl = new THREE.Mesh(brakeGeo, mats.brakeLightMat);
     bl.name = 'brakelight_L';
-    bl.position.set(-width * 0.30, rideHeight + 0.32, -length / 2 + 0.05);
+    bl.position.set(-width * 0.30, rideHeight + (0.32 * MODEL_SCALE), -length / 2 + (0.05 * MODEL_SCALE));
 
     const br = bl.clone();
     br.name = 'brakelight_R';
@@ -436,30 +250,24 @@ export function createCityBus(spec) {
 
     bus.add(bl, br);
 
-    // Wheels + rig
     const rig = new WheelRig({ wheelRadius: wheelR });
 
-    const wFR = createBusWheel({ radius: wheelR, width: wheelW });
-    wFR.root.position.set(wheelX, wheelR, axleFront);
-    bus.add(wFR.root);
-    rig.addWheel({ rollPivot: wFR.rollPivot, steerPivot: wFR.steerPivot, isFront: true });
+    const nodes = {
+        fr: makeWheelNode('wheel_fr'),
+        rr: makeWheelNode('wheel_rr'),
+        fl: makeWheelNode('wheel_fl'),
+        rl: makeWheelNode('wheel_rl')
+    };
 
-    const wRR = createBusWheel({ radius: wheelR, width: wheelW });
-    wRR.root.position.set(wheelX, wheelR, axleRear);
-    bus.add(wRR.root);
-    rig.addWheel({ rollPivot: wRR.rollPivot, isFront: false });
+    nodes.fl.root.rotation.y = Math.PI;
+    nodes.rl.root.rotation.y = Math.PI;
 
-    const wFL = createBusWheel({ radius: wheelR, width: wheelW });
-    wFL.root.position.set(-wheelX, wheelR, axleFront);
-    wFL.root.rotation.y = Math.PI;
-    bus.add(wFL.root);
-    rig.addWheel({ rollPivot: wFL.rollPivot, steerPivot: wFL.steerPivot, isFront: true });
+    bus.add(nodes.fr.root, nodes.rr.root, nodes.fl.root, nodes.rl.root);
 
-    const wRL = createBusWheel({ radius: wheelR, width: wheelW });
-    wRL.root.position.set(-wheelX, wheelR, axleRear);
-    wRL.root.rotation.y = Math.PI;
-    bus.add(wRL.root);
-    rig.addWheel({ rollPivot: wRL.rollPivot, isFront: false });
+    rig.addWheel({ rollPivot: nodes.fr.rollPivot, steerPivot: nodes.fr.steerPivot, isFront: true });
+    rig.addWheel({ rollPivot: nodes.rr.rollPivot, isFront: false });
+    rig.addWheel({ rollPivot: nodes.fl.rollPivot, steerPivot: nodes.fl.steerPivot, isFront: true });
+    rig.addWheel({ rollPivot: nodes.rl.rollPivot, isFront: false });
 
     bus.userData.wheelRig = rig;
     bus.userData.parts = {
@@ -468,6 +276,22 @@ export function createCityBus(spec) {
     };
 
     attachBusSkeleton(bus, { wheelRig: rig, parts: bus.userData.parts });
+
+    loadBusModel().then((template) => {
+        if (!template) return;
+        const model = template.clone(true);
+        applyMaterialSettings(model);
+        normalizeModel(model, { targetLength: length, rideHeight });
+        applyShadows(model);
+        const skeleton = bus.userData?.bus;
+        const bodyRoot = skeleton?.bodyRoot ?? bus;
+        bodyRoot.add(model);
+        recenterBody(bus);
+        bus.updateMatrixWorld(true);
+        const wheelMeshes = collectWheelMeshes(model);
+        attachWheelMeshes(bus, nodes, wheelMeshes, rig);
+        alignAnchoredBus(bus);
+    });
 
     applyShadows(bus);
     return bus;
