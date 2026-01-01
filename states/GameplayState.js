@@ -13,6 +13,7 @@ import * as THREE from 'three';
 import { getSharedCity } from '../src/city/City.js';
 import { fadeIn } from '../graphics/gui/shared/utils/screenFade.js';
 import { GameHUD } from '../graphics/gui/gameplay/GameHUD.js';
+import { GameplayCameraTour } from '../graphics/gui/gameplay/GameplayCameraTour.js';
 import { GameLoop } from '../src/core/GameLoop.js';
 import { VehicleController } from '../src/vehicle/VehicleController.js';
 import { InputManager } from '../src/input/InputManager.js';
@@ -70,6 +71,9 @@ export class GameplayState {
         this._tmpForward = new THREE.Vector3();
         this._tmpDesired = new THREE.Vector3();
         this._tmpTarget = new THREE.Vector3();
+        this._busCenterBox = new THREE.Box3();
+        this._busCenter = new THREE.Vector3();
+        this._cameraTour = null;
 
         // Event handlers
         this._onKeyDown = (e) => this._handleKeyDown(e);
@@ -149,6 +153,10 @@ export class GameplayState {
 
         // Compute camera params
         this._chase = computeChaseParams(this.vehicle);
+        this._cameraTour = new GameplayCameraTour({
+            engine: this.engine,
+            getTarget: () => this._getBusCenter()
+        });
 
         // ✅ Ensure physics systems have the real anchor/api so locomotion can use rear-axle kinematics.
         sim.physics?.setEnvironment?.(this.city);
@@ -192,6 +200,8 @@ export class GameplayState {
         this.busAnchor = null;
         this.busModel = null;
         this.busApi = null;
+        this._cameraTour?.stop(true);
+        this._cameraTour = null;
 
         // Detach city
         this.city?.detach(this.engine);
@@ -205,7 +215,8 @@ export class GameplayState {
         this.gameLoop?.update(dt);
 
         // Update chase camera
-        this._updateChaseCamera(dt);
+        const touring = this._cameraTour?.update(dt) ?? false;
+        if (!touring) this._updateChaseCamera(dt);
     }
 
     _updateTelemetry() {
@@ -219,6 +230,20 @@ export class GameplayState {
                 gear: telemetry.gear
             });
         }
+    }
+
+    _getBusCenter() {
+        if (!this.busModel) return null;
+        this._busCenterBox.setFromObject(this.busModel);
+        if (this._busCenterBox.isEmpty()) {
+            this.busModel.getWorldPosition(this._busCenter);
+        } else {
+            this._busCenterBox.getCenter(this._busCenter);
+        }
+        if (this.busAnchor) {
+            this._busCenter.y = this.busAnchor.position.y + this._chase.lookY;
+        }
+        return this._busCenter;
     }
 
     _updateChaseCamera(dt) {
@@ -259,6 +284,11 @@ export class GameplayState {
         if (e.code === 'KeyP') {
             e.preventDefault();
             this.gameLoop?.togglePause();
+        }
+
+        if (e.code === 'KeyT') {
+            e.preventDefault();
+            this._cameraTour?.start();
         }
     }
 }

@@ -51,6 +51,9 @@ function resolveBusApi(busModel) {
 function makeFloorAnchor(model) {
     const anchor = new THREE.Group();
     anchor.name = `${model.name || 'vehicle'}_anchor`;
+    anchor.userData.type = model.userData?.type;
+    anchor.userData.id = model.userData?.id;
+    anchor.userData.model = model;
     anchor.add(model);
 
     // Reset model transforms
@@ -161,4 +164,3 @@ export function createVehicleFromBus(selected, options = {}) {
         config
     };
 }
-
