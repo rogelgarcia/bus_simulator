@@ -22,6 +22,7 @@
   - Always write design decisions as a high level comment on top of the file (try to be concise)
 - Exception: Library source code (preserve all original comments)
 - Exception: Hackish solutions (explain what you did and why it's necessary)
+- Exception: Extremely high level logic blocks inside functions (e.g. `// render curbs`, `// compute asphalt`)
 
 ## AI Guidance
 
