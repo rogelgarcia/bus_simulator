@@ -3,9 +3,10 @@
 import * as THREE from 'three';
 
 const TAU = Math.PI * 2;
-const ORBIT_DURATION = 6;
-const TILT_DURATION = 2;
-const RETURN_START = ORBIT_DURATION - TILT_DURATION;
+const ORBIT_DURATION = 8;
+const TILT_IN_DURATION = 3.6;
+const TILT_OUT_DURATION = 2;
+const TILT_IN_BIAS = 1.0;
 const ELEVATION = Math.PI * 40 / 180;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
@@ -13,12 +14,40 @@ function clamp(x, min, max) {
     return Math.max(min, Math.min(max, x));
 }
 
-function easeInOutCubic(x) {
-    return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+function smootherstep(x) {
+    return x * x * x * (x * (x * 6 - 15) + 10);
 }
 
-function rotateVector(vec, axis, angle) {
-    vec.applyAxisAngle(axis, angle);
+function lerp(a, b, t) {
+    return a + (b - a) * t;
+}
+
+function buildPose({
+    center,
+    startRadius,
+    targetRadius,
+    startPhi,
+    targetPhi,
+    startTheta,
+    t
+}) {
+    const tiltInFrac = clamp(TILT_IN_DURATION / ORBIT_DURATION, 0.001, 0.9);
+    const tiltOutFrac = clamp(TILT_OUT_DURATION / ORBIT_DURATION, 0.001, 0.9);
+    const tiltOutStart = clamp(1 - tiltOutFrac, tiltInFrac, 1);
+    const tiltInRaw = clamp(t / tiltInFrac, 0, 1);
+    const tiltIn = Math.pow(tiltInRaw, TILT_IN_BIAS);
+    const tiltOutRaw = clamp((t - tiltOutStart) / tiltOutFrac, 0, 1);
+    const tiltOut = tiltOutRaw;
+    let tilt = lerp(0, 1, tiltIn);
+    tilt = lerp(tilt, 0, tiltOut);
+
+    const phi = lerp(startPhi, targetPhi, tilt);
+    const radius = lerp(startRadius, targetRadius, tilt);
+    const theta = startTheta + TAU * t;
+
+    const position = new THREE.Vector3().setFromSphericalCoords(radius, phi, theta);
+    position.add(center);
+    return { position, theta };
 }
 
 export class ConnectorCameraTour {
@@ -52,10 +81,10 @@ export class ConnectorCameraTour {
 
     start() {
         if (this._tour) return false;
-        const center = this._getTourCenter();
-        if (!center) return false;
         const cam = this.engine?.camera;
         if (!cam) return false;
+        const center = this._getCameraTarget(cam) ?? this._getTourCenter();
+        if (!center) return false;
 
         const savedPos = cam.position.clone();
         const savedRot = cam.rotation.clone();
@@ -64,29 +93,36 @@ export class ConnectorCameraTour {
 
         const offset = savedPos.clone().sub(center);
         const spherical = new THREE.Spherical().setFromVector3(offset);
-        const startPhi = spherical.phi;
-        const targetPhi = Math.max(0.01, ELEVATION);
-        const tiltAngle = targetPhi - startPhi;
-
-        const azimuth = new THREE.Vector3(offset.x, 0, offset.z);
-        if (azimuth.lengthSq() < 1e-6) {
-            azimuth.set(1, 0, 0);
-        } else {
-            azimuth.normalize();
+        const startRadius = Math.max(0.001, spherical.radius);
+        const startPhi = clamp(spherical.phi, 0.001, Math.PI - 0.001);
+        let startTheta = spherical.theta;
+        const upGuide = new THREE.Vector3(0, 1, 0).applyQuaternion(savedQuat).normalize();
+        const rightGuide = new THREE.Vector3(1, 0, 0).applyQuaternion(savedQuat).normalize();
+        if (Math.abs(offset.x) < 1e-4 && Math.abs(offset.z) < 1e-4) {
+            const groundDir = new THREE.Vector3(-upGuide.x, 0, -upGuide.z);
+            if (groundDir.lengthSq() < 1e-6) {
+                groundDir.set(0, 0, 1);
+            } else {
+                groundDir.normalize();
+            }
+            startTheta = Math.atan2(groundDir.x, groundDir.z);
         }
-        const tiltAxis = azimuth.clone().cross(WORLD_UP).normalize();
-
-        const up = new THREE.Vector3(0, 1, 0).applyQuaternion(savedQuat).normalize();
+        const targetPhi = Math.max(0.01, ELEVATION);
+        const baseHeight = Math.max(0.001, offset.y);
+        const targetRadius = Math.max(
+            startRadius,
+            baseHeight / Math.max(Math.cos(targetPhi), 0.1)
+        );
 
         this._tour = {
             elapsed: 0,
-            orbitElapsed: 0,
             center,
-            offset,
-            tiltAxis,
-            tiltAngle,
-            tiltValue: 0,
-            up,
+            startRadius,
+            targetRadius,
+            startPhi,
+            targetPhi,
+            startTheta,
+            right: rightGuide,
             savedPos,
             savedRot,
             savedQuat,
@@ -102,38 +138,26 @@ export class ConnectorCameraTour {
         if (!tour) return false;
         const dtSec = Math.max(0, dt || 0);
         tour.elapsed = Math.min(ORBIT_DURATION, tour.elapsed + dtSec);
-
-        const orbitStep = Math.min(dtSec, Math.max(0, ORBIT_DURATION - tour.orbitElapsed));
-        if (orbitStep > 0) {
-            const deltaOrbit = TAU * (orbitStep / ORBIT_DURATION);
-            rotateVector(tour.offset, WORLD_UP, deltaOrbit);
-            rotateVector(tour.tiltAxis, WORLD_UP, deltaOrbit);
-            tour.orbitElapsed += orbitStep;
-        }
-
-        const tiltValue = this._getTiltValue(tour.elapsed);
-        const deltaTiltValue = tiltValue - tour.tiltValue;
-        if (deltaTiltValue !== 0 && tour.tiltAngle !== 0) {
-            const deltaTilt = deltaTiltValue * tour.tiltAngle;
-            rotateVector(tour.offset, tour.tiltAxis, deltaTilt);
-        }
-        tour.tiltValue = tiltValue;
+        const tLinear = clamp(tour.elapsed / ORBIT_DURATION, 0, 1);
+        const t = smootherstep(tLinear);
 
         const cam = this.engine.camera;
-        cam.position.copy(tour.center).add(tour.offset);
+        const pose = buildPose({ ...tour, t });
+        cam.position.copy(pose.position);
         const forward = new THREE.Vector3().subVectors(tour.center, cam.position).normalize();
-        let right = new THREE.Vector3().crossVectors(forward, tour.up);
-        if (right.lengthSq() < 1e-8) {
-            right = new THREE.Vector3().crossVectors(forward, WORLD_UP);
+        const rightCandidate = new THREE.Vector3().crossVectors(forward, WORLD_UP);
+        if (rightCandidate.lengthSq() < 1e-6) {
+            rightCandidate.copy(tour.right);
+        } else {
+            rightCandidate.normalize();
+            if (rightCandidate.dot(tour.right) < 0) rightCandidate.negate();
+            const blend = smootherstep(clamp(rightCandidate.length() / 0.35, 0, 1));
+            rightCandidate.lerp(tour.right, 1 - blend).normalize();
         }
-        if (right.lengthSq() < 1e-8) {
-            right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(1, 0, 0));
-        }
-        right.normalize();
-        const up = new THREE.Vector3().crossVectors(right, forward).normalize();
-        tour.up.copy(up);
+        tour.right.copy(rightCandidate);
+        const correctedUp = new THREE.Vector3().crossVectors(rightCandidate, forward).normalize();
         const zAxis = forward.clone().negate();
-        const m = new THREE.Matrix4().makeBasis(right, up, zAxis);
+        const m = new THREE.Matrix4().makeBasis(rightCandidate, correctedUp, zAxis);
         cam.quaternion.setFromRotationMatrix(m);
 
         if (tour.elapsed >= ORBIT_DURATION) {
@@ -186,14 +210,16 @@ export class ConnectorCameraTour {
         return null;
     }
 
-    _getTiltValue(elapsed) {
-        if (elapsed <= TILT_DURATION) {
-            return easeInOutCubic(clamp(elapsed / TILT_DURATION, 0, 1));
-        }
-        if (elapsed >= RETURN_START) {
-            return 1 - easeInOutCubic(clamp((elapsed - RETURN_START) / TILT_DURATION, 0, 1));
-        }
-        return 1;
+    _getCameraTarget(cam) {
+        const groundY = this.getGroundY?.() ?? 0;
+        const plane = new THREE.Plane(WORLD_UP, -groundY);
+        const origin = new THREE.Vector3();
+        const dir = new THREE.Vector3();
+        cam.getWorldPosition(origin);
+        cam.getWorldDirection(dir);
+        const hit = new THREE.Vector3();
+        const ok = new THREE.Ray(origin, dir).intersectPlane(plane, hit);
+        return ok ? hit : null;
     }
 
 }
