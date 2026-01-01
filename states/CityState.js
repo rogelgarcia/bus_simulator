@@ -140,6 +140,7 @@ export class CityState {
         this._connectorDebugEnabled = true;
         this._collisionDebugEnabled = true;
         this._hoverOutlineEnabled = true;
+        this._treesEnabled = true;
         this._outlineLine = null;
         this._outlineMaterial = null;
         this._outlineGeoCache = new WeakMap();
@@ -189,10 +190,12 @@ export class CityState {
             connectorDebugEnabled: this._connectorDebugEnabled,
             hoverOutlineEnabled: this._hoverOutlineEnabled,
             collisionDebugEnabled: this._collisionDebugEnabled,
+            treesEnabled: this._treesEnabled,
             roadRenderMode: this._roadRenderMode,
             onConnectorDebugToggle: (enabled) => this._setConnectorDebugEnabled(enabled),
             onHoverOutlineToggle: (enabled) => this._setHoverOutlineEnabled(enabled),
             onCollisionDebugToggle: (enabled) => this._setCollisionDebugEnabled(enabled),
+            onTreesToggle: (enabled) => this._setTreesEnabled(enabled),
             onRoadRenderModeChange: (mode) => this._setRoadRenderMode(mode)
         });
         this.debugsPanel.show();
@@ -318,6 +321,7 @@ export class CityState {
         this._setupConnectorOverlay();
         this._setupCollisionMarkers();
         this._setupHoverOutline();
+        this._setTreesEnabled(this._treesEnabled);
         this._setPoleInfoData(null);
     }
 
@@ -598,6 +602,13 @@ export class CityState {
         if (!this._collisionMarkerMesh && !this._connectionMarkerMesh && !this._adjustedEndRingMesh && !this._adjustedEndOriginMesh && this._collisionDebugEnabled) {
             this._setupCollisionMarkers();
         }
+    }
+
+    _setTreesEnabled(enabled) {
+        this._treesEnabled = !!enabled;
+        this.debugsPanel?.setTreesEnabled(this._treesEnabled);
+        const treesGroup = this.city?.world?.trees?.group ?? null;
+        if (treesGroup) treesGroup.visible = this._treesEnabled;
     }
 
     _setRoadRenderMode(mode) {

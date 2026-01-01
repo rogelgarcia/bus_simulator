@@ -5,10 +5,12 @@ export class CityDebugTogglesPanel {
         connectorDebugEnabled = true,
         hoverOutlineEnabled = true,
         collisionDebugEnabled = true,
+        treesEnabled = true,
         roadRenderMode = 'debug',
         onConnectorDebugToggle = null,
         onHoverOutlineToggle = null,
         onCollisionDebugToggle = null,
+        onTreesToggle = null,
         onRoadRenderModeChange = null
     } = {}) {
         this.root = document.createElement('div');
@@ -53,6 +55,17 @@ export class CityDebugTogglesPanel {
         this.collisionToggle.appendChild(this.collisionToggleLabel);
         this.controls.appendChild(this.collisionToggle);
 
+        this.treesToggle = document.createElement('label');
+        this.treesToggle.className = 'connector-debug-toggle-switch city-debugs-toggle-switch';
+        this.treesToggleInput = document.createElement('input');
+        this.treesToggleInput.type = 'checkbox';
+        this.treesToggleInput.checked = !!treesEnabled;
+        this.treesToggleLabel = document.createElement('span');
+        this.treesToggleLabel.textContent = 'Trees';
+        this.treesToggle.appendChild(this.treesToggleInput);
+        this.treesToggle.appendChild(this.treesToggleLabel);
+        this.controls.appendChild(this.treesToggle);
+
         this.displaySection = document.createElement('div');
         this.displaySection.className = 'city-debugs-section';
         this.displayTitle = document.createElement('div');
@@ -94,6 +107,7 @@ export class CityDebugTogglesPanel {
         this._onConnectorDebugToggle = onConnectorDebugToggle;
         this._onHoverOutlineToggle = onHoverOutlineToggle;
         this._onCollisionDebugToggle = onCollisionDebugToggle;
+        this._onTreesToggle = onTreesToggle;
         this._onRoadRenderModeChange = onRoadRenderModeChange;
 
         this._setRoadRenderMode(roadRenderMode);
@@ -108,6 +122,10 @@ export class CityDebugTogglesPanel {
 
         this.collisionToggleInput.addEventListener('change', () => {
             if (this._onCollisionDebugToggle) this._onCollisionDebugToggle(this.collisionToggleInput.checked);
+        });
+
+        this.treesToggleInput.addEventListener('change', () => {
+            if (this._onTreesToggle) this._onTreesToggle(this.treesToggleInput.checked);
         });
 
         this.modeToggle.addEventListener('click', () => {
@@ -141,6 +159,10 @@ export class CityDebugTogglesPanel {
         if (this.collisionToggleInput) this.collisionToggleInput.checked = !!enabled;
     }
 
+    setTreesEnabled(enabled) {
+        if (this.treesToggleInput) this.treesToggleInput.checked = !!enabled;
+    }
+
     setRoadRenderMode(mode) {
         this._setRoadRenderMode(mode);
     }
@@ -155,6 +177,10 @@ export class CityDebugTogglesPanel {
 
     setOnCollisionDebugToggle(fn) {
         this._onCollisionDebugToggle = fn;
+    }
+
+    setOnTreesToggle(fn) {
+        this._onTreesToggle = fn;
     }
 
     setOnRoadRenderModeChange(fn) {

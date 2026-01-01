@@ -1,4 +1,5 @@
 // src/city/City.js
+// Builds and manages the city scene
 import * as THREE from 'three';
 import { createCityWorld } from './CityWorld.js';
 import { createCityConfig } from './CityConfig.js';
@@ -68,7 +69,8 @@ export class City {
             size,
             tileMeters,
             map: this.map,
-            config: this.generatorConfig
+            config: this.generatorConfig,
+            rng: this.rng
         });
         this.group.add(this.world.group);
 

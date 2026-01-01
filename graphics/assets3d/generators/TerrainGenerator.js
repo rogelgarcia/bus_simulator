@@ -1,14 +1,23 @@
 // graphics/assets3d/generators/TerrainGenerator.js
+// Builds the city ground and world tiles
 import * as THREE from 'three';
 import { TILE } from '../../../src/city/CityMap.js';
 import { GROUND_DEFAULTS } from './GeneratorParams.js';
+import { createTreeField } from './TreeGenerator.js';
 
 function applyTextureColorSpace(tex, { srgb = true } = {}) {
     if ('colorSpace' in tex) tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
     if ('encoding' in tex) tex.encoding = srgb ? THREE.sRGBEncoding : THREE.LinearEncoding;
 }
 
-export function createCityWorld({ size = 800, tileMeters = 2, map = null, config = null, groundY = null } = {}) {
+export function createCityWorld({
+    size = 800,
+    tileMeters = 2,
+    map = null,
+    config = null,
+    groundY = null,
+    rng = null
+} = {}) {
     const group = new THREE.Group();
     group.name = 'CityWorld';
 
@@ -68,6 +77,12 @@ export function createCityWorld({ size = 800, tileMeters = 2, map = null, config
         groundTiles.instanceMatrix.needsUpdate = true;
 
         group.add(groundTiles);
+    }
+
+    let trees = null;
+    if (map && rng) {
+        trees = createTreeField({ map, rng, groundY: computedGroundY, config });
+        group.add(trees.group);
     }
 
     if (map) {
@@ -136,5 +151,5 @@ export function createCityWorld({ size = 800, tileMeters = 2, map = null, config
         (err) => console.warn('[CityWorld] Failed to load grass texture:', grassUrl.href, err)
     );
 
-    return { group, floor, groundTiles, gridLines };
+    return { group, floor, groundTiles, gridLines, trees };
 }
