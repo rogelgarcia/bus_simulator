@@ -7,6 +7,8 @@ export class WheelRig {
         this.rear  = []; // { rollPivot, spinSign }
 
         this._steerAngle = 0;
+        this._steerAngleLeft = 0;
+        this._steerAngleRight = 0;
         this._spinAngle = 0;
 
         // Global steering invert (applies to BOTH wheels)
@@ -43,19 +45,23 @@ export class WheelRig {
     }
 
     addWheel({ rollPivot, steerPivot = null, isFront = false }) {
+        const wheelRoot = this._getWheelRoot(rollPivot, steerPivot);
+        const isLeft = this._isYawFlipped(wheelRoot);
         const spinSign = this._inferSpinSign(rollPivot, steerPivot);
 
         if (isFront) {
             const w = {
                 rollPivot,
                 steerPivot: steerPivot ?? null,
-                spinSign
+                spinSign,
+                isLeft
             };
             this.front.push(w);
 
             // Apply current state to newly-added wheel
             if (w.steerPivot) {
-                w.steerPivot.rotation.y = this._steerAngle * this.STEER_GLOBAL_SIGN;
+                const steer = w.isLeft ? this._steerAngleLeft : this._steerAngleRight;
+                w.steerPivot.rotation.y = steer * this.STEER_GLOBAL_SIGN;
             }
             w.rollPivot.rotation.x = this._spinAngle * w.spinSign;
             return;
@@ -70,6 +76,8 @@ export class WheelRig {
 
     setSteerAngle(rad) {
         this._steerAngle = rad ?? 0;
+        this._steerAngleLeft = this._steerAngle;
+        this._steerAngleRight = this._steerAngle;
 
         // ✅ Steering is the same sign for both sides.
         // Per-side steering inversion causes wheels to toe opposite directions.
@@ -77,6 +85,18 @@ export class WheelRig {
             if (w.steerPivot) {
                 w.steerPivot.rotation.y = this._steerAngle * this.STEER_GLOBAL_SIGN;
             }
+        }
+    }
+
+    setSteerAngles(leftRad, rightRad) {
+        this._steerAngleLeft = leftRad ?? 0;
+        this._steerAngleRight = rightRad ?? 0;
+        this._steerAngle = (this._steerAngleLeft + this._steerAngleRight) * 0.5;
+
+        for (const w of this.front) {
+            if (!w.steerPivot) continue;
+            const steer = w.isLeft ? this._steerAngleLeft : this._steerAngleRight;
+            w.steerPivot.rotation.y = steer * this.STEER_GLOBAL_SIGN;
         }
     }
 

@@ -7,9 +7,8 @@ import { createBus } from '../graphics/assets3d/factories/BusFactory.js';
 import { tuneBusMaterials } from '../graphics/assets3d/factories/tuneBusMaterials.js';
 import { makeCheckerTexture } from '../graphics/assets3d/textures/CityTextures.js';
 
-import { PhysicsLoop } from '../app/physics/PhysicsLoop.js';
-import { SuspensionSim } from '../app/physics/SuspensionSim.js';
-import { DriveSim } from '../app/physics/DriveSim.js';
+import { createVehicleFromBus } from '../app/vehicle/createVehicle.js';
+import { VehicleController } from '../app/vehicle/VehicleController.js';
 
 function degToRad(d) { return (d * Math.PI) / 180; }
 
@@ -33,22 +32,25 @@ function makeFloorAnchor(model) {
     return anchor;
 }
 
-function disposeMaterial(mat) {
+function disposeMaterial(mat, { disposeTextures = true } = {}) {
     if (!mat) return;
-    for (const k of Object.keys(mat)) {
-        const v = mat[k];
-        if (v && v.isTexture) v.dispose();
+    if (disposeTextures) {
+        for (const k of Object.keys(mat)) {
+            const v = mat[k];
+            if (v && v.isTexture) v.dispose();
+        }
     }
     mat.dispose?.();
 }
 
-function disposeObject3D(obj) {
+function disposeObject3D(obj, { disposeGeometry = true, disposeMaterials = true, disposeTextures = true } = {}) {
     if (!obj) return;
     obj.traverse((o) => {
         if (!o.isMesh) return;
-        o.geometry?.dispose?.();
-        if (Array.isArray(o.material)) o.material.forEach(disposeMaterial);
-        else disposeMaterial(o.material);
+        if (disposeGeometry) o.geometry?.dispose?.();
+        if (!disposeMaterials) return;
+        if (Array.isArray(o.material)) o.material.forEach((mat) => disposeMaterial(mat, { disposeTextures }));
+        else disposeMaterial(o.material, { disposeTextures });
     });
 }
 
@@ -398,9 +400,14 @@ export class TestModeState {
 
         this.controls = null;
 
+        this.sim = this.engine.simulation;
+        this.vehicle = null;
+        this.vehicleController = null;
+
         this.scene = null;
         this.busAnchor = null;
         this.busModel = null;
+        this.busApi = null;
         this.busIndex = 0;
 
         // Infinite floor tiling
@@ -411,16 +418,6 @@ export class TestModeState {
 
         // Camera follow state
         this._prevBusPos = new THREE.Vector3();
-
-        // Fixed-step physics loop
-        this.physics = new PhysicsLoop({ fixedDt: 1 / 60, maxSubSteps: 10 });
-
-        // ✅ ORDER matters: drive first, suspension second (susp sees latest aLat/aLong)
-        this.drive = new DriveSim();
-        this.susp = new SuspensionSim();
-
-        this.physics.add(this.drive);
-        this.physics.add(this.susp);
 
         this.busState = {
             steerDeg: 0,              // UI: + = LEFT
@@ -526,9 +523,19 @@ export class TestModeState {
         this.controls?.dispose?.();
         this.controls = null;
 
+        if (this.vehicleController) {
+            this.vehicleController.dispose();
+            this.vehicleController = null;
+        }
+
+        if (this.vehicle) {
+            this.sim?.physics?.removeVehicle?.(this.vehicle.id);
+            this.vehicle = null;
+        }
+
         if (this.busAnchor && this.scene) {
             this.scene.remove(this.busAnchor);
-            disposeObject3D(this.busAnchor);
+            disposeObject3D(this.busAnchor, { disposeGeometry: false, disposeMaterials: false });
         }
 
         if (this.floorGroup && this.scene) {
@@ -541,6 +548,7 @@ export class TestModeState {
 
         this.busAnchor = null;
         this.busModel = null;
+        this.busApi = null;
         this.scene = null;
 
         this._unmountHud();
@@ -551,40 +559,38 @@ export class TestModeState {
 
     update(dt) {
         const api = this._getBusApi();
-        if (!api || !this.busAnchor) return;
+        if (!api || !this.busAnchor || !this.vehicle) return;
 
-        // UI: + is left => invert for our wheel yaw convention
-        const steerRad = -degToRad(this.busState.steerDeg);
+        const maxSteer = this.vehicle.config?.maxSteerDeg ?? 55;
+        const maxSpeed = this.vehicle.config?.maxSpeedKph ?? 80;
+
+        const steerInput = THREE.MathUtils.clamp(-this.busState.steerDeg / maxSteer, -1, 1);
+        const throttleInput = this.busState.coastRelease
+            ? 0
+            : THREE.MathUtils.clamp(this.busState.targetSpeedKph / maxSpeed, 0, 1);
+
+        this.vehicleController?.setInput({
+            throttle: throttleInput,
+            steering: steerInput,
+            brake: 0,
+            handbrake: 0
+        });
 
         // base controls (stateful)
-        api.setSteerAngle(steerRad);
         api.setTilt(degToRad(this.busState.pitchDeg), degToRad(this.busState.rollDeg));
         api.setHeadlights(!!this.busState.headlights);
         api.setBrake(this.busState.taillights ? 0.12 : 0.0);
 
-        // drive inputs
-        this.drive.setSteerAngleRad(steerRad);
-        this.drive.setTargetSpeedKph(this.busState.targetSpeedKph);
-        this.drive.setReleaseMode(this.busState.coastRelease);
-
-        // suspension inputs (manual cmd)
-        this.susp.setTargetsCm(this.busState.suspTargetsCm);
-
         // fixed step
-        this.physics.update(dt);
+        this.sim?.physics?.update?.(dt);
+        this.vehicleController?.update(dt);
 
-        // apply suspension pose + manual offsets
+        // apply manual offsets
         const manualPitch = degToRad(this.busState.bodyPitchDeg);
         const manualRoll = degToRad(this.busState.bodyRollDeg);
 
-        if (this.busState.suspensionEnabled) {
-            const sus = this.susp.pose;
-            api.setBodyHeave(sus.heave);
-            api.setBodyTilt(sus.pitch + manualPitch, sus.roll + manualRoll);
-        } else {
-            api.setBodyHeave(0);
-            api.setBodyTilt(manualPitch, manualRoll);
-        }
+        api.setBodyHeave(0);
+        api.setBodyTilt(manualPitch, manualRoll);
 
         // infinite floor reposition
         this._updateInfiniteFloor(this.busAnchor.position);
@@ -593,23 +599,13 @@ export class TestModeState {
         this._updateCameraFollow();
 
         // speedometer
-        if (this.opsSpeed) this.opsSpeed.textContent = `${this.drive.speedKph.toFixed(1)} km/h`;
+        const state = this.sim?.physics?.getVehicleState?.(this.vehicle.id);
+        const speedKph = state?.locomotion?.speedKph ?? 0;
+        if (this.opsSpeed) this.opsSpeed.textContent = `${speedKph.toFixed(1)} km/h`;
 
         // auto-exit coastRelease once stopped
-        if (this.busState.coastRelease && this.drive.speedKph < 0.05) {
+        if (this.busState.coastRelease && speedKph < 0.05) {
             this.busState.coastRelease = false;
-        }
-
-        // spring output bars (actual compression)
-        if (this.suspOutBars && this.susp?.debug?.xActualCm) {
-            const a = this.susp.debug.xActualCm;
-            for (const k of ['fl', 'fr', 'rl', 'rr']) {
-                const ctrl = this.suspOutBars[k];
-                if (!ctrl) continue;
-                const v = a[k] ?? 0;
-                ctrl.input.value = String(v);
-                ctrl.valEl.textContent = ctrl.fmt(v);
-            }
         }
 
         this.controls?.update();
@@ -915,11 +911,22 @@ export class TestModeState {
     _setBus(index) {
         if (!this.scene) return;
 
+        if (this.vehicleController) {
+            this.vehicleController.dispose();
+            this.vehicleController = null;
+        }
+
+        if (this.vehicle) {
+            this.sim?.physics?.removeVehicle?.(this.vehicle.id);
+            this.vehicle = null;
+        }
+
         if (this.busAnchor) {
             this.scene.remove(this.busAnchor);
-            disposeObject3D(this.busAnchor);
+            disposeObject3D(this.busAnchor, { disposeGeometry: false, disposeMaterials: false });
             this.busAnchor = null;
             this.busModel = null;
+            this.busApi = null;
         }
 
         const spec = BUS_CATALOG[index] ?? BUS_CATALOG[0];
@@ -934,25 +941,25 @@ export class TestModeState {
             }
         });
 
-        const anchor = makeFloorAnchor(busModel);
+        const vehicle = createVehicleFromBus(busModel, { id: 'test_bus' });
+        const anchor = vehicle?.anchor ?? makeFloorAnchor(busModel);
         anchor.position.set(0, 0, -10);
         anchor.rotation.set(0, 0, 0);
 
         this.scene.add(anchor);
 
+        this.vehicle = vehicle;
         this.busAnchor = anchor;
-        this.busModel = busModel;
+        this.busModel = vehicle?.model ?? busModel;
+        this.busApi = vehicle?.api ?? this._getBusApi();
 
-        const api = this._getBusApi();
-        if (api) {
-            // layout so load transfer scales properly with real wheel positions
-            this.susp.setLayoutFromBus(api);
-
-            // wire suspension into drive (drive publishes aLat/aLong)
-            this.drive.bind(api, anchor, this.susp);
-
-            this._prevBusPos.copy(anchor.position);
+        if (this.vehicle?.id) {
+            this.sim?.physics?.addVehicle?.(this.vehicle.id, this.vehicle.config, anchor, this.vehicle.api);
+            this.vehicleController = new VehicleController(this.vehicle.id, this.sim.physics, this.sim.events);
+            this.vehicleController.setVehicleApi(this.vehicle.api, anchor);
         }
+
+        this._prevBusPos.copy(anchor.position);
 
         if (this.controls) {
             this.controls.target.set(anchor.position.x, 1.8, anchor.position.z);

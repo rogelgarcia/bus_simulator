@@ -328,37 +328,39 @@ function makeWheelNode(name) {
 function attachWheelGroups(bus, wheelGroups, rig) {
     if (!wheelGroups.length) return null;
     bus.updateMatrixWorld(true);
+
+    const wheelsRoot = bus.userData?.bus?.wheelsRoot ?? bus;
+    wheelsRoot.updateMatrixWorld(true);
+
     const data = [];
     const box = new THREE.Box3();
     for (const group of wheelGroups) {
         box.setFromObject(group);
         if (box.isEmpty()) continue;
-        const center = box.getCenter(new THREE.Vector3());
+        const centerWorld = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
-        data.push({ group, center, size });
+        const centerLocal = wheelsRoot.worldToLocal(centerWorld.clone());
+        data.push({ group, centerLocal, size });
     }
     if (!data.length) return null;
 
     const radii = data.map((d) => Math.max(d.size.x, d.size.y, d.size.z) * 0.5);
     const avgRadius = radii.reduce((a, b) => a + b, 0) / radii.length;
-    const maxZ = Math.max(...data.map((d) => d.center.z));
-    const minZ = Math.min(...data.map((d) => d.center.z));
+    const maxZ = Math.max(...data.map((d) => d.centerLocal.z));
+    const minZ = Math.min(...data.map((d) => d.centerLocal.z));
     const zTol = Math.max(0.01, avgRadius * 0.6);
 
-    const frontSet = new Set(data.filter((d) => Math.abs(d.center.z - maxZ) <= zTol));
-    const rearSet = new Set(data.filter((d) => Math.abs(d.center.z - minZ) <= zTol));
-
-    const wheelsRoot = bus.userData?.bus?.wheelsRoot ?? bus;
+    const frontSet = new Set(data.filter((d) => Math.abs(d.centerLocal.z - maxZ) <= zTol));
+    const rearSet = new Set(data.filter((d) => Math.abs(d.centerLocal.z - minZ) <= zTol));
 
     for (const item of data) {
-        const side = item.center.x >= 0 ? 'r' : 'l';
+        const side = item.centerLocal.x >= 0 ? 'r' : 'l';
         const isFront = frontSet.has(item);
         const axle = isFront ? 'front' : (rearSet.has(item) ? 'rear' : 'mid');
         const node = makeWheelNode(`wheel_${axle}_${side}`);
         if (side === 'l') node.root.rotation.y = Math.PI;
         wheelsRoot.add(node.root);
-        const local = bus.worldToLocal(item.center.clone());
-        node.root.position.copy(local);
+        node.root.position.copy(item.centerLocal);
         node.rollPivot.attach(item.group);
         rig.addWheel({
             rollPivot: node.rollPivot,

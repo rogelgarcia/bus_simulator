@@ -315,6 +315,15 @@ export class BusSkeleton {
         if (this.wheelRig?.setSteerAngle) this.wheelRig.setSteerAngle(angleRad);
     }
 
+    setSteerAngles(leftRad, rightRad) {
+        this._steer = (leftRad + rightRad) * 0.5;
+        if (this.wheelRig?.setSteerAngles) {
+            this.wheelRig.setSteerAngles(leftRad, rightRad);
+        } else if (this.wheelRig?.setSteerAngle) {
+            this.wheelRig.setSteerAngle(this._steer);
+        }
+    }
+
     setWheelSpin(spinRad) {
         this._spin = spinRad;
         if (this.wheelRig?.setSpinAngle) this.wheelRig.setSpinAngle(spinRad);

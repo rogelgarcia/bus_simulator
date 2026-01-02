@@ -52,6 +52,7 @@ export class VehicleController {
         // Reference to vehicle API (set via setVehicleApi)
         this._api = options.api ?? null;
         this._anchor = options.anchor ?? null;
+        this._lastWheelSpin = 0;
 
         // Subscribe to input events
         this._unsubInput = this.eventBus.on('input:controls', (e) => {
@@ -71,6 +72,7 @@ export class VehicleController {
     setVehicleApi(api, anchor) {
         this._api = api;
         this._anchor = anchor;
+        this._lastWheelSpin = 0;
     }
 
     /**
@@ -179,13 +181,29 @@ export class VehicleController {
             }
 
             // Steering angle (visual wheel turn)
-            if (this._api && typeof this._api.setSteerAngle === 'function') {
-                this._api.setSteerAngle(loco.steerAngle ?? 0);
+            if (this._api) {
+                const steerLeft = loco.steerAngleLeft;
+                const steerRight = loco.steerAngleRight;
+                if (typeof this._api.setSteerAngles === 'function'
+                    && typeof steerLeft === 'number'
+                    && typeof steerRight === 'number') {
+                    this._api.setSteerAngles(steerLeft, steerRight);
+                } else if (typeof this._api.setSteerAngle === 'function') {
+                    this._api.setSteerAngle(loco.steerAngle ?? 0);
+                }
             }
 
             // Wheel spin
-            if (this._api && typeof this._api.setSpinAngle === 'function' && loco.wheelSpinAccum !== undefined) {
-                this._api.setSpinAngle(loco.wheelSpinAccum);
+            if (this._api && loco.wheelSpinAccum !== undefined) {
+                if (typeof this._api.setWheelSpin === 'function') {
+                    this._api.setWheelSpin(loco.wheelSpinAccum);
+                } else if (typeof this._api.setSpinAngle === 'function') {
+                    this._api.setSpinAngle(loco.wheelSpinAccum);
+                } else if (typeof this._api.addWheelSpin === 'function') {
+                    const delta = loco.wheelSpinAccum - this._lastWheelSpin;
+                    this._api.addWheelSpin(delta);
+                }
+                this._lastWheelSpin = loco.wheelSpinAccum;
             }
         }
 
@@ -255,4 +273,3 @@ export class VehicleController {
         this._anchor = null;
     }
 }
-
