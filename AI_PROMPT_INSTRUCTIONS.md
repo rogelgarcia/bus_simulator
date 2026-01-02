@@ -7,6 +7,7 @@ This file contains guidelines for creating effective AI prompts for code modific
 Every AI prompt request should consist of the following parts:
 
 ### 1. The Request Itself
+- State the problem
 - State the overall goal or objective in high-level terms
 - Break down the desired outcome as an itemized list of **what** needs to be accomplished, not **how**
 - Focus on behavior, features, and outcomes rather than specific code implementations
@@ -32,6 +33,10 @@ Implement user authentication system:
 ## Template
 
 ```markdown
+#Problem
+
+[State the problem related by the user]
+
 # Request
 
 [State the overall goal in high-level terms - describe WHAT, not HOW]

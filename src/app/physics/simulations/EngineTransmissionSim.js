@@ -1,4 +1,5 @@
-// src/app/physics/DrivetrainSim.js
+// src/app/physics/simulations/EngineTransmissionSim.js
+// Powertrain math only; does not move vehicles or apply forces.
 const DEFAULT_ENGINE_GEARS = [
     { label: 'R', ratio: -3.1 },
     { label: 'N', ratio: 0 },

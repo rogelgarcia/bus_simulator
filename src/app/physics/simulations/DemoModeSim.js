@@ -1,9 +1,10 @@
-// src/app/physics/systems/DemoDrivetrainSim.js
+// src/app/physics/simulations/DemoModeSim.js
+// HUD demo-only powertrain simulation; does not drive real vehicle physics.
 /**
  * Demo drivetrain simulation for HUD demo mode.
  * Used by GameHUD when mode='demo' (no real physics connected).
  *
- * For gameplay, use DrivetrainSystem from src/physics/systems/DrivetrainSystem.js
+ * For gameplay, use RapierVehicleSim via src/app/physics/PhysicsController.js.
  */
 
 function clamp(v, a, b) {
@@ -48,7 +49,7 @@ const DEFAULT_GEAR_SPECS = [
 const DEFAULT_GEAR_PULL = [null, 1.00, 0.78, 0.60, 0.46, 0.38];
 const DEFAULT_SLIP_RPM = [null, 650, 520, 420, 320, 260];
 
-export class DemoDrivetrainSim {
+export class DemoModeSim {
     constructor({
                     config = {},
                     gearSpecs = DEFAULT_GEAR_SPECS,

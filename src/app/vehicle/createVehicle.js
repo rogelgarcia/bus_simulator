@@ -12,12 +12,18 @@
  */
 import * as THREE from 'three';
 
+const FALLBACK_DIMENSIONS = { width: 2.5, height: 3.0, length: 10.0 };
+
 /**
  * Generate a unique vehicle ID.
  * @returns {string}
  */
 function generateVehicleId() {
     return `vehicle_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function isSizeUsable(size) {
+    return size && size.x > 0.5 && size.y > 0.5 && size.z > 0.5;
 }
 
 /**
@@ -77,6 +83,9 @@ function makeFloorAnchor(model) {
 function extractVehicleConfig(busModel, api) {
     const box = new THREE.Box3().setFromObject(busModel);
     const size = box.getSize(new THREE.Vector3());
+    const dimensions = isSizeUsable(size)
+        ? { width: size.x, height: size.y, length: size.z }
+        : { ...FALLBACK_DIMENSIONS };
 
     // Get wheel rig info
     const wheelRig = api?.wheelRig ?? busModel.userData?.wheelRig ?? null;
@@ -111,7 +120,7 @@ function extractVehicleConfig(busModel, api) {
     return {
         type: 'bus',
         name: busModel.name || busModel.userData?.id || 'Unknown Bus',
-        dimensions: { width: size.x, height: size.y, length: size.z },
+        dimensions,
         wheelbase,
         wheelRadius,
         suspensionTuning,

@@ -5,7 +5,7 @@ import { RampedControl } from "../../../app/input/RampedControl.js";
 import { SteeringWheelWidget } from "./widgets/SteeringWheelWidget.js";
 import { PedalWidget } from "./widgets/PedalWidget.js";
 import { GaugeWidget } from "./widgets/GaugeWidget.js";
-import { DemoDrivetrainSim } from "../../../app/physics/systems/DemoDrivetrainSim.js";
+import { DemoModeSim } from "../../../app/physics/simulations/DemoModeSim.js";
 
 function clamp(v, a, b) {
     return Math.max(a, Math.min(b, v));
@@ -103,7 +103,7 @@ export class GameHUD {
         });
 
         // Demo drivetrain (physics-ish)
-        this.driveSim = new DemoDrivetrainSim();
+        this.driveSim = new DemoModeSim();
 
         // RPM display inertia:
         // actualRpm = physics value, displayRpm = what we show on the gauge needle.
