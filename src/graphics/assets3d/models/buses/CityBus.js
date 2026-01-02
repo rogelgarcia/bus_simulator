@@ -68,11 +68,15 @@ function applyMaterialSettings(root) {
             if (mat.map) {
                 mat.map.colorSpace = THREE.SRGBColorSpace;
                 mat.map.needsUpdate = true;
+                if (mat.color) {
+                    const max = Math.max(mat.color.r, mat.color.g, mat.color.b);
+                    if (max < 0.05) mat.color.set(0xffffff);
+                }
             }
-            if (name.includes('frontlight') || name === 'lights') {
+            if (name.includes('frontlight') || name === 'lights' || name.includes('sign')) {
                 if (mat.color) mat.color.set(0xffffff);
                 if (mat.emissive) mat.emissive.set(0xffffff);
-                if ('emissiveIntensity' in mat) mat.emissiveIntensity = 0.25;
+                if ('emissiveIntensity' in mat) mat.emissiveIntensity = name.includes('frontlight') ? 0.6 : 0.15;
                 if (!mat.userData) mat.userData = {};
                 mat.userData.noTune = true;
             }

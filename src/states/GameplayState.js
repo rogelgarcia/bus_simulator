@@ -30,7 +30,31 @@ const CAMERA_TUNE = {
     followSharpness: 7.0
 };
 
+const CAMERA_DRAG = {
+    rotateSpeed: 0.0045,
+    tiltSpeed: 0.0035,
+    minPhi: 0.28,
+    maxPhi: Math.PI - 0.28,
+    idleReturnSec: 10,
+    returnDurationSec: 2,
+    returnEaseSec: 0.5
+};
+
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
+function easeWithHold(t, edge) {
+    const x = clamp(t, 0, 1);
+    const e = clamp(edge, 0.001, 0.49);
+    if (x <= e) {
+        const k = x / e;
+        return e * (k * k);
+    }
+    if (x >= 1 - e) {
+        const k = (x - (1 - e)) / e;
+        return (1 - e) + e * (1 - (1 - k) * (1 - k));
+    }
+    return x;
+}
 
 function computeChaseParams(vehicle) {
     const model = vehicle?.model ?? vehicle;
@@ -74,9 +98,26 @@ export class GameplayState {
         this._busCenterBox = new THREE.Box3();
         this._busCenter = new THREE.Vector3();
         this._cameraTour = null;
+        this._dragSpherical = new THREE.Spherical();
+        this._cameraDrag = {
+            active: false,
+            pointerId: null,
+            lastX: 0,
+            lastY: 0,
+            hasOverride: false,
+            idleTime: 0,
+            returning: false,
+            returnElapsed: 0,
+            offset: new THREE.Vector3(),
+            originalOffset: new THREE.Vector3(),
+            returnStart: new THREE.Vector3()
+        };
 
         // Event handlers
         this._onKeyDown = (e) => this._handleKeyDown(e);
+        this._onPointerDown = (e) => this._handlePointerDown(e);
+        this._onPointerMove = (e) => this._handlePointerMove(e);
+        this._onPointerUp = (e) => this._handlePointerUp(e);
     }
 
     enter() {
@@ -173,11 +214,25 @@ export class GameplayState {
         });
 
         window.addEventListener('keydown', this._onKeyDown, { passive: false });
+        const canvas = this.engine?.renderer?.domElement;
+        if (canvas) {
+            canvas.addEventListener('pointerdown', this._onPointerDown, { passive: false });
+        }
+        window.addEventListener('pointermove', this._onPointerMove, { passive: false });
+        window.addEventListener('pointerup', this._onPointerUp, { passive: false });
+        window.addEventListener('pointercancel', this._onPointerUp, { passive: false });
         fadeIn({ duration: 1.2 });
     }
 
     exit() {
         window.removeEventListener('keydown', this._onKeyDown);
+        const canvas = this.engine?.renderer?.domElement;
+        if (canvas) {
+            canvas.removeEventListener('pointerdown', this._onPointerDown);
+        }
+        window.removeEventListener('pointermove', this._onPointerMove);
+        window.removeEventListener('pointerup', this._onPointerUp);
+        window.removeEventListener('pointercancel', this._onPointerUp);
 
         // Unsubscribe from events
         this._unsubFrame?.();
@@ -216,7 +271,10 @@ export class GameplayState {
 
         // Update chase camera
         const touring = this._cameraTour?.update(dt) ?? false;
-        if (!touring) this._updateChaseCamera(dt);
+        if (!touring) {
+            const manual = this._updateManualCamera(dt);
+            if (!manual) this._updateChaseCamera(dt);
+        }
     }
 
     _updateTelemetry() {
@@ -246,6 +304,47 @@ export class GameplayState {
         return this._busCenter;
     }
 
+    _applyManualCamera() {
+        const cam = this.engine.camera;
+        const target = this._getBusCenter();
+        if (!target) return;
+        cam.position.copy(target).add(this._cameraDrag.offset);
+        cam.lookAt(target);
+    }
+
+    _updateManualCamera(dt) {
+        const drag = this._cameraDrag;
+        if (!drag.hasOverride || !this.busModel) return false;
+        if (drag.active) {
+            this._applyManualCamera();
+            return true;
+        }
+
+        drag.idleTime += Math.max(0, dt || 0);
+
+        if (!drag.returning && drag.idleTime >= CAMERA_DRAG.idleReturnSec) {
+            drag.returning = true;
+            drag.returnElapsed = 0;
+            drag.returnStart.copy(drag.offset);
+        }
+
+        if (drag.returning) {
+            drag.returnElapsed = Math.min(CAMERA_DRAG.returnDurationSec, drag.returnElapsed + (dt || 0));
+            const t = drag.returnElapsed / CAMERA_DRAG.returnDurationSec;
+            const eased = easeWithHold(t, CAMERA_DRAG.returnEaseSec / CAMERA_DRAG.returnDurationSec);
+            drag.offset.lerpVectors(drag.returnStart, drag.originalOffset, eased);
+            this._applyManualCamera();
+            if (drag.returnElapsed >= CAMERA_DRAG.returnDurationSec) {
+                drag.returning = false;
+                drag.hasOverride = false;
+            }
+            return true;
+        }
+
+        this._applyManualCamera();
+        return true;
+    }
+
     _updateChaseCamera(dt) {
         const cam = this.engine.camera;
         if (!this.busAnchor) return;
@@ -272,6 +371,71 @@ export class GameplayState {
         }
 
         cam.lookAt(this._tmpTarget);
+    }
+
+    _handlePointerDown(e) {
+        if (e.button !== 0 || this._cameraTour?.active) return;
+        const target = this._getBusCenter();
+        if (!target) return;
+        const cam = this.engine.camera;
+        const drag = this._cameraDrag;
+        drag.active = true;
+        drag.pointerId = e.pointerId;
+        drag.lastX = e.clientX;
+        drag.lastY = e.clientY;
+        drag.idleTime = 0;
+        drag.returning = false;
+        drag.returnElapsed = 0;
+        drag.hasOverride = true;
+        drag.offset.copy(cam.position).sub(target);
+        drag.originalOffset.copy(drag.offset);
+        const canvas = this.engine?.renderer?.domElement;
+        if (canvas?.setPointerCapture) {
+            try {
+                canvas.setPointerCapture(e.pointerId);
+            } catch {
+            }
+        }
+        e.preventDefault();
+    }
+
+    _handlePointerMove(e) {
+        const drag = this._cameraDrag;
+        if (!drag.active || (drag.pointerId !== null && e.pointerId !== drag.pointerId)) return;
+        const dx = e.clientX - drag.lastX;
+        const dy = e.clientY - drag.lastY;
+        drag.lastX = e.clientX;
+        drag.lastY = e.clientY;
+        this._dragSpherical.setFromVector3(drag.offset);
+        this._dragSpherical.theta -= dx * CAMERA_DRAG.rotateSpeed;
+        this._dragSpherical.phi = clamp(
+            this._dragSpherical.phi + dy * CAMERA_DRAG.tiltSpeed,
+            CAMERA_DRAG.minPhi,
+            CAMERA_DRAG.maxPhi
+        );
+        drag.offset.setFromSpherical(this._dragSpherical);
+        drag.idleTime = 0;
+        drag.returning = false;
+        drag.returnElapsed = 0;
+        drag.hasOverride = true;
+        this._applyManualCamera();
+        e.preventDefault();
+    }
+
+    _handlePointerUp(e) {
+        const drag = this._cameraDrag;
+        if (!drag.active || (drag.pointerId !== null && e.pointerId !== drag.pointerId)) return;
+        drag.active = false;
+        drag.pointerId = null;
+        drag.idleTime = 0;
+        const canvas = this.engine?.renderer?.domElement;
+        if (canvas?.releasePointerCapture) {
+            try {
+                canvas.releasePointerCapture(e.pointerId);
+            } catch {
+            }
+        }
+        e.preventDefault();
     }
 
     _handleKeyDown(e) {

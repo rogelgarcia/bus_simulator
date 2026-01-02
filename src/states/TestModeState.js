@@ -10,8 +10,6 @@ import { makeCheckerTexture } from '../graphics/assets3d/textures/CityTextures.j
 import { createVehicleFromBus } from '../app/vehicle/createVehicle.js';
 import { VehicleController } from '../app/vehicle/VehicleController.js';
 
-function degToRad(d) { return (d * Math.PI) / 180; }
-
 function makeFloorAnchor(model) {
     const anchor = new THREE.Group();
     anchor.name = `${model.name || 'bus'}_anchor`;
@@ -293,124 +291,239 @@ function makeToggleControl({ title, checked }) {
     return { row, input };
 }
 
-function makeButton(text) {
-    const b = document.createElement('button');
-    b.textContent = text;
-    b.style.width = '100%';
-    b.style.marginTop = '10px';
-    b.style.padding = '9px 10px';
-    b.style.borderRadius = '12px';
-    b.style.border = '1px solid rgba(255,255,255,0.16)';
-    b.style.background = 'rgba(255,255,255,0.08)';
-    b.style.color = '#e9f2ff';
-    b.style.fontWeight = '800';
-    b.style.cursor = 'pointer';
-    b.style.pointerEvents = 'auto';
-    return b;
+function makeSelectControl({ title, options = [], value = '' }) {
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.justifyContent = 'space-between';
+    row.style.gap = '12px';
+    row.style.margin = '10px 0';
+
+    const label = document.createElement('div');
+    label.textContent = title;
+    label.style.fontSize = '13px';
+    label.style.fontWeight = '700';
+    label.style.opacity = '0.95';
+
+    const select = document.createElement('select');
+    select.style.flex = '0 0 120px';
+    select.style.padding = '6px 8px';
+    select.style.borderRadius = '10px';
+    select.style.border = '1px solid rgba(255,255,255,0.16)';
+    select.style.background = 'rgba(10, 14, 20, 0.75)';
+    select.style.color = '#e9f2ff';
+    select.style.fontWeight = '700';
+    select.style.cursor = 'pointer';
+
+    const updateOptions = () => {
+        select.innerHTML = '';
+        for (const opt of options) {
+            const option = document.createElement('option');
+            option.value = String(opt.value);
+            option.textContent = opt.label;
+            select.appendChild(option);
+        }
+        if (value !== '' && value !== null && value !== undefined) {
+            select.value = String(value);
+        }
+    };
+
+    updateOptions();
+
+    row.appendChild(label);
+    row.appendChild(select);
+
+    return { row, select, updateOptions };
 }
 
-function makeVerticalRangeControl({
-                                      title,
-                                      min,
-                                      max,
-                                      step,
-                                      value,
-                                      fmt = (v) => String(v),
-                                      disabled = false
-                                  }) {
+function makeStatTile({ label, value = '—', unit = '' }) {
     const wrap = document.createElement('div');
+    wrap.style.padding = '10px 12px';
+    wrap.style.borderRadius = '12px';
+    wrap.style.background = 'rgba(255,255,255,0.08)';
+    wrap.style.border = '1px solid rgba(255,255,255,0.12)';
     wrap.style.display = 'flex';
     wrap.style.flexDirection = 'column';
+    wrap.style.gap = '4px';
+
+    const title = document.createElement('div');
+    title.textContent = label;
+    title.style.fontSize = '11px';
+    title.style.fontWeight = '800';
+    title.style.textTransform = 'uppercase';
+    title.style.opacity = '0.7';
+    title.style.letterSpacing = '0.4px';
+
+    const val = document.createElement('div');
+    val.textContent = value;
+    val.style.fontSize = '20px';
+    val.style.fontWeight = '900';
+    val.style.letterSpacing = '0.4px';
+
+    const unitEl = document.createElement('div');
+    unitEl.textContent = unit;
+    unitEl.style.fontSize = '11px';
+    unitEl.style.fontWeight = '700';
+    unitEl.style.opacity = '0.65';
+
+    wrap.appendChild(title);
+    wrap.appendChild(val);
+    wrap.appendChild(unitEl);
+
+    return { wrap, valueEl: val, unitEl };
+}
+
+function makeSteerWidget() {
+    const wrap = document.createElement('div');
+    wrap.style.width = '72px';
+    wrap.style.height = '72px';
+    wrap.style.borderRadius = '50%';
+    wrap.style.border = '2px solid rgba(255,255,255,0.25)';
+    wrap.style.position = 'relative';
+    wrap.style.display = 'flex';
+    wrap.style.alignItems = 'center';
+    wrap.style.justifyContent = 'center';
+    wrap.style.background = 'rgba(255,255,255,0.04)';
+
+    const needle = document.createElement('div');
+    needle.style.position = 'absolute';
+    needle.style.width = '3px';
+    needle.style.height = '28px';
+    needle.style.borderRadius = '4px';
+    needle.style.background = 'linear-gradient(180deg, #f6d87a, #f2b84e)';
+    needle.style.transformOrigin = '50% 80%';
+    needle.style.transform = 'rotate(0deg)';
+
+    const dot = document.createElement('div');
+    dot.style.width = '8px';
+    dot.style.height = '8px';
+    dot.style.borderRadius = '50%';
+    dot.style.background = '#f6d87a';
+
+    wrap.appendChild(needle);
+    wrap.appendChild(dot);
+
+    return { wrap, needle };
+}
+
+function makeWheelBox() {
+    const wrap = document.createElement('div');
+    wrap.style.width = '66px';
+    wrap.style.height = '42px';
+    wrap.style.borderRadius = '12px';
+    wrap.style.border = '1px solid rgba(255,255,255,0.18)';
+    wrap.style.background = 'rgba(255,255,255,0.06)';
+    wrap.style.position = 'relative';
+    wrap.style.display = 'flex';
+    wrap.style.alignItems = 'center';
+    wrap.style.justifyContent = 'center';
+
+    const spin = document.createElement('div');
+    spin.style.width = '46px';
+    spin.style.height = '2px';
+    spin.style.borderRadius = '2px';
+    spin.style.background = 'rgba(255,255,255,0.9)';
+    spin.style.transformOrigin = '50% 50%';
+
+    const contact = document.createElement('div');
+    contact.style.position = 'absolute';
+    contact.style.right = '6px';
+    contact.style.bottom = '6px';
+    contact.style.width = '8px';
+    contact.style.height = '8px';
+    contact.style.borderRadius = '50%';
+    contact.style.background = 'rgba(255,255,255,0.35)';
+
+    wrap.appendChild(spin);
+    wrap.appendChild(contact);
+
+    return { wrap, spin, contact };
+}
+
+function makeSuspensionBar() {
+    const wrap = document.createElement('div');
+    wrap.style.display = 'flex';
     wrap.style.alignItems = 'center';
     wrap.style.gap = '6px';
 
-    const t = document.createElement('div');
-    t.textContent = title;
-    t.style.fontSize = '12px';
-    t.style.fontWeight = '800';
-    t.style.opacity = '0.86';
+    const track = document.createElement('div');
+    track.style.width = '16px';
+    track.style.height = '70px';
+    track.style.borderRadius = '10px';
+    track.style.background = 'rgba(255,255,255,0.08)';
+    track.style.border = '1px solid rgba(255,255,255,0.12)';
+    track.style.position = 'relative';
 
-    const val = document.createElement('div');
-    val.style.fontSize = '12px';
-    val.style.opacity = '0.75';
-    val.textContent = fmt(value);
+    const center = document.createElement('div');
+    center.style.position = 'absolute';
+    center.style.left = '2px';
+    center.style.right = '2px';
+    center.style.top = '50%';
+    center.style.height = '1px';
+    center.style.background = 'rgba(255,255,255,0.45)';
 
-    const input = document.createElement('input');
-    input.type = 'range';
-    input.min = String(min);
-    input.max = String(max);
-    input.step = String(step);
-    input.value = String(value);
+    const bar = document.createElement('div');
+    bar.style.position = 'absolute';
+    bar.style.left = '50%';
+    bar.style.top = '50%';
+    bar.style.width = '6px';
+    bar.style.height = '20px';
+    bar.style.borderRadius = '6px';
+    bar.style.background = 'linear-gradient(180deg, #8dd6ff, #4ea0ff)';
+    bar.style.transform = 'translate(-50%, -50%)';
 
-    input.style.writingMode = 'bt-lr';
-    input.style.webkitAppearance = 'slider-vertical';
-    input.style.appearance = 'slider-vertical';
-    input.style.width = '18px';
-    input.style.height = '140px';
+    track.appendChild(center);
+    track.appendChild(bar);
 
-    if (disabled) {
-        input.disabled = true;
-        input.style.pointerEvents = 'none';
-        input.style.opacity = '0.75';
-    }
+    const value = document.createElement('div');
+    value.style.fontSize = '11px';
+    value.style.fontWeight = '800';
+    value.style.minWidth = '46px';
+    value.style.textAlign = 'left';
+    value.textContent = '0.0 cm';
 
-    wrap.appendChild(t);
-    wrap.appendChild(val);
-    wrap.appendChild(input);
+    wrap.appendChild(track);
+    wrap.appendChild(value);
 
-    return { wrap, input, valEl: val, fmt };
+    const range = (70 - 20) / 2;
+    return { wrap, bar, valueEl: value, range };
 }
 
-function makeWheelSpringBlock({ key, label, minCm, maxCm, stepCm, initialTargetCm }) {
-    const card = document.createElement('div');
-    card.style.borderRadius = '12px';
-    card.style.padding = '10px';
-    card.style.background = 'rgba(255,255,255,0.06)';
-    card.style.border = '1px solid rgba(255,255,255,0.12)';
-    card.style.display = 'flex';
-    card.style.flexDirection = 'column';
-    card.style.gap = '10px';
+function makeWheelVizCell({ label, wheelFirst }) {
+    const wrap = document.createElement('div');
+    wrap.style.display = 'flex';
+    wrap.style.flexDirection = 'column';
+    wrap.style.gap = '4px';
+    wrap.style.flex = '1';
 
-    const head = document.createElement('div');
-    head.textContent = label;
-    head.style.fontSize = '12px';
-    head.style.fontWeight = '900';
-    head.style.letterSpacing = '0.5px';
-    head.style.textTransform = 'uppercase';
-    head.style.opacity = '0.9';
+    const title = document.createElement('div');
+    title.textContent = label;
+    title.style.fontSize = '10px';
+    title.style.fontWeight = '800';
+    title.style.opacity = '0.7';
+    title.style.textTransform = 'uppercase';
+    title.style.letterSpacing = '0.4px';
 
     const row = document.createElement('div');
     row.style.display = 'flex';
-    row.style.justifyContent = 'space-around';
-    row.style.gap = '14px';
+    row.style.alignItems = 'center';
+    row.style.gap = '8px';
 
-    const target = makeVerticalRangeControl({
-        title: 'Target',
-        min: minCm,
-        max: maxCm,
-        step: stepCm,
-        value: initialTargetCm,
-        fmt: (v) => `${Number(v).toFixed(0)} cm`,
-        disabled: false
-    });
+    const wheel = makeWheelBox();
+    const suspension = makeSuspensionBar();
 
-    const actual = makeVerticalRangeControl({
-        title: 'Actual',
-        min: minCm,
-        max: maxCm,
-        step: 0.1,
-        value: 0,
-        fmt: (v) => `${Number(v).toFixed(1)} cm`,
-        disabled: true
-    });
+    if (wheelFirst) {
+        row.appendChild(wheel.wrap);
+        row.appendChild(suspension.wrap);
+    } else {
+        row.appendChild(suspension.wrap);
+        row.appendChild(wheel.wrap);
+    }
 
-    row.appendChild(target.wrap);
-    row.appendChild(actual.wrap);
+    wrap.appendChild(title);
+    wrap.appendChild(row);
 
-    card.appendChild(head);
-    card.appendChild(row);
-
-    return { key, card, target, actual };
+    return { wrap, wheel, suspension };
 }
 
 /* ---------------- State ---------------- */
@@ -447,33 +560,25 @@ export class TestModeState {
         this._busReadyToken = 0;
 
         this.busState = {
-            steerDeg: 0,              // UI: + = LEFT
-            pitchDeg: 0,
-            rollDeg: 0,
+            steerDeg: 0,
+            throttle: 0,
+            brake: 0,
             headlights: false,
-            taillights: false,
-            targetSpeedKph: 0,
-            coastRelease: false,      // coast to stop
-
-            bodyPitchDeg: 0,
-            bodyRollDeg: 0,
-
-            suspensionEnabled: true,
-            suspTargetsCm: { fl: 0, fr: 0, rl: 0, rr: 0 }
+            gearIndex: null
         };
 
         // HUD refs
         this.hudRoot = null;
         this.opsBusName = null;
-        this.opsSpeed = null;
 
-        // UI refs for spring blocks
-        this.suspTargetCtrls = null; // {fl,fr,rl,rr}
-        this.suspOutBars = null;     // {fl,fr,rl,rr}
+        this.telemetryPanel = null;
+        this.telemetryFields = null;
+        this.steerWidget = null;
+        this.wheelViz = null;
 
         this.rapierPanel = null;
         this.rapierFields = null;
-        this.rapierWheelFields = null;
+        this.gearControl = null;
 
         this._prevChipDisplay = null;
         this._onKeyDown = (e) => this._handleKeyDown(e);
@@ -593,51 +698,30 @@ export class TestModeState {
         if (!api || !this.busAnchor || !this.vehicle) return;
 
         const maxSteer = this.vehicle.config?.maxSteerDeg ?? 55;
-        const maxSpeed = this.vehicle.config?.maxSpeedKph ?? 80;
 
         const steerInput = THREE.MathUtils.clamp(-this.busState.steerDeg / maxSteer, -1, 1);
-        const throttleInput = this.busState.coastRelease
-            ? 0
-            : THREE.MathUtils.clamp(this.busState.targetSpeedKph / maxSpeed, 0, 1);
+        const throttleInput = THREE.MathUtils.clamp(this.busState.throttle, 0, 1);
+        const brakeInput = THREE.MathUtils.clamp(this.busState.brake, 0, 1);
 
         this.vehicleController?.setInput({
             throttle: throttleInput,
             steering: steerInput,
-            brake: 0,
+            brake: brakeInput,
             handbrake: 0
         });
 
         // base controls (stateful)
-        api.setTilt(degToRad(this.busState.pitchDeg), degToRad(this.busState.rollDeg));
         api.setHeadlights(!!this.busState.headlights);
-        api.setBrake(this.busState.taillights ? 0.12 : 0.0);
 
         // fixed step
         this.sim?.physics?.update?.(dt);
         this.vehicleController?.update(dt);
-
-        // apply manual offsets
-        const manualPitch = degToRad(this.busState.bodyPitchDeg);
-        const manualRoll = degToRad(this.busState.bodyRollDeg);
-
-        api.setBodyHeave(0);
-        api.setBodyTilt(manualPitch, manualRoll);
 
         // infinite floor reposition
         this._updateInfiniteFloor(this.busAnchor.position);
 
         // camera follow
         this._updateCameraFollow();
-
-        // speedometer
-        const state = this.sim?.physics?.getVehicleState?.(this.vehicle.id);
-        const speedKph = state?.locomotion?.speedKph ?? 0;
-        if (this.opsSpeed) this.opsSpeed.textContent = `${speedKph.toFixed(1)} km/h`;
-
-        // auto-exit coastRelease once stopped
-        if (this.busState.coastRelease && speedKph < 0.05) {
-            this.busState.coastRelease = false;
-        }
 
         this._updateRapierDebug();
         this.controls?.update();
@@ -737,57 +821,10 @@ export class TestModeState {
         hint.style.opacity = '0.72';
         shortcuts.appendChild(hint);
 
-        const debugPanel = document.createElement('div');
-        stylePanel(debugPanel, { interactive: false });
-        debugPanel.style.position = 'absolute';
-        debugPanel.style.left = '16px';
-        debugPanel.style.bottom = '16px';
-        debugPanel.style.minWidth = '260px';
-        debugPanel.style.maxWidth = '320px';
-        debugPanel.appendChild(makeTitle('Rapier Debug'));
-
-        debugPanel.appendChild(makeLabel('Input'));
-        const inputThrottle = makeValueRow('Throttle');
-        const inputSteer = makeValueRow('Steer');
-        const inputBrake = makeValueRow('Brake');
-        const inputHandbrake = makeValueRow('Handbrake');
-        debugPanel.appendChild(inputThrottle.row);
-        debugPanel.appendChild(inputSteer.row);
-        debugPanel.appendChild(inputBrake.row);
-        debugPanel.appendChild(inputHandbrake.row);
-
-        debugPanel.appendChild(makeLabel('Output'));
-        const outSpeed = makeValueRow('Speed');
-        const outYaw = makeValueRow('Yaw');
-        const outSteer = makeValueRow('Steer L/R');
-        const outContacts = makeValueRow('Contacts');
-        const outSusp = makeValueRow('Susp Len');
-        const outForces = makeValueRow('Drive/Brake');
-        debugPanel.appendChild(outSpeed.row);
-        debugPanel.appendChild(outYaw.row);
-        debugPanel.appendChild(outSteer.row);
-        debugPanel.appendChild(outContacts.row);
-        debugPanel.appendChild(outSusp.row);
-        debugPanel.appendChild(outForces.row);
-
-        const wheelLabel = makeLabel('Wheels');
-        wheelLabel.style.marginTop = '8px';
-        debugPanel.appendChild(wheelLabel);
-        const wheelRows = {
-            FL: makeValueRow('FL'),
-            FR: makeValueRow('FR'),
-            RL: makeValueRow('RL'),
-            RR: makeValueRow('RR')
-        };
-        debugPanel.appendChild(wheelRows.FL.row);
-        debugPanel.appendChild(wheelRows.FR.row);
-        debugPanel.appendChild(wheelRows.RL.row);
-        debugPanel.appendChild(wheelRows.RR.row);
-
         // Ops
         const ops = document.createElement('div');
         stylePanel(ops, { interactive: true });
-        ops.appendChild(makeTitle('Bus Operations'));
+        ops.appendChild(makeTitle('Bus Controls'));
 
         // ✅ scrollable
         ops.style.maxHeight = 'calc(100vh - 32px)';
@@ -804,36 +841,45 @@ export class TestModeState {
         this.opsBusName = busName;
 
         ops.appendChild(makeLabel('Drive'));
-        const targetSpeed = makeRangeControl({
-            title: 'Target Speed (km/h)',
+        const throttle = makeRangeControl({
+            title: 'Throttle',
             min: 0,
-            max: 80,
-            step: 1,
-            value: this.busState.targetSpeedKph,
-            fmt: (v) => `${v} km/h`
+            max: 1,
+            step: 0.01,
+            value: this.busState.throttle,
+            fmt: (v) => `${Math.round(Number(v) * 100)}%`
         });
-        ops.appendChild(targetSpeed.wrap);
+        ops.appendChild(throttle.wrap);
 
-        const releaseBtn = makeButton('Release Speed (coast to stop)');
-        ops.appendChild(releaseBtn);
+        const brake = makeRangeControl({
+            title: 'Brake',
+            min: 0,
+            max: 1,
+            step: 0.01,
+            value: this.busState.brake,
+            fmt: (v) => `${Math.round(Number(v) * 100)}%`
+        });
+        ops.appendChild(brake.wrap);
 
-        const speedNowLabel = document.createElement('div');
-        speedNowLabel.style.fontSize = '12px';
-        speedNowLabel.style.fontWeight = '800';
-        speedNowLabel.style.opacity = '0.85';
-        speedNowLabel.style.marginTop = '6px';
-        speedNowLabel.textContent = 'Speed';
-        ops.appendChild(speedNowLabel);
+        const gearOptions = (this.sim?.physics?.getGearOptions?.(this.vehicle?.id) ?? [
+            { index: 0, label: 'R' },
+            { index: 1, label: 'N' },
+            { index: 2, label: '1' },
+            { index: 3, label: '2' },
+            { index: 4, label: '3' },
+            { index: 5, label: '4' },
+            { index: 6, label: '5' }
+        ]).map((gear) => ({ label: gear.label, value: gear.index }));
 
-        const speedNow = document.createElement('div');
-        speedNow.style.fontSize = '22px';
-        speedNow.style.fontWeight = '900';
-        speedNow.style.letterSpacing = '0.2px';
-        speedNow.style.marginTop = '2px';
-        speedNow.style.marginBottom = '6px';
-        speedNow.textContent = '0.0 km/h';
-        ops.appendChild(speedNow);
-        this.opsSpeed = speedNow;
+        const currentGear = this.sim?.physics?.getGearIndex?.(this.vehicle?.id);
+        const fallbackGear = gearOptions.find((gear) => gear.label === '1')?.value ?? gearOptions[0]?.value;
+        const gearControl = makeSelectControl({
+            title: 'Gear',
+            options: gearOptions,
+            value: Number.isFinite(currentGear) ? currentGear : fallbackGear
+        });
+        ops.appendChild(gearControl.row);
+        this.gearControl = gearControl;
 
         ops.appendChild(makeLabel('Steering'));
         const steer = makeRangeControl({
@@ -850,75 +896,23 @@ export class TestModeState {
         const headlights = makeToggleControl({ title: 'Headlights', checked: this.busState.headlights });
         ops.appendChild(headlights.row);
 
-        const taillights = makeToggleControl({ title: 'Taillights', checked: this.busState.taillights });
-        ops.appendChild(taillights.row);
-
-        ops.appendChild(makeLabel('Vehicle Tilt (debug)'));
-        const pitch = makeRangeControl({ title: 'Pitch (deg)', min: -10, max: 10, step: 0.5, value: this.busState.pitchDeg, fmt: (v) => `${Number(v).toFixed(1)}°` });
-        ops.appendChild(pitch.wrap);
-
-        const roll = makeRangeControl({ title: 'Roll (deg)', min: -10, max: 10, step: 0.5, value: this.busState.rollDeg, fmt: (v) => `${Number(v).toFixed(1)}°` });
-        ops.appendChild(roll.wrap);
-
-        ops.appendChild(makeLabel('Suspension'));
-        const suspEnabled = makeToggleControl({ title: 'Enable Suspension', checked: this.busState.suspensionEnabled });
-        ops.appendChild(suspEnabled.row);
-
-        // ✅ 2 columns, wheel blocks (Target + Actual vertical)
-        const grid = document.createElement('div');
-        grid.style.display = 'grid';
-        grid.style.gridTemplateColumns = '1fr 1fr';
-        grid.style.gap = '10px';
-        grid.style.marginTop = '8px';
-
-        const minCm = -35;
-        const maxCm = 35;
-
-        const blocks = [
-            makeWheelSpringBlock({ key: 'fl', label: 'Front Left', minCm, maxCm, stepCm: 1, initialTargetCm: this.busState.suspTargetsCm.fl }),
-            makeWheelSpringBlock({ key: 'fr', label: 'Front Right', minCm, maxCm, stepCm: 1, initialTargetCm: this.busState.suspTargetsCm.fr }),
-            makeWheelSpringBlock({ key: 'rl', label: 'Rear Left', minCm, maxCm, stepCm: 1, initialTargetCm: this.busState.suspTargetsCm.rl }),
-            makeWheelSpringBlock({ key: 'rr', label: 'Rear Right', minCm, maxCm, stepCm: 1, initialTargetCm: this.busState.suspTargetsCm.rr })
-        ];
-
-        this.suspTargetCtrls = {};
-        this.suspOutBars = {};
-
-        for (const b of blocks) {
-            grid.appendChild(b.card);
-            this.suspTargetCtrls[b.key] = b.target;
-            this.suspOutBars[b.key] = b.actual;
-
-            b.target.input.addEventListener('input', () => {
-                this.busState.suspTargetsCm[b.key] = parseFloat(b.target.input.value);
-                b.target.valEl.textContent = b.target.fmt(this.busState.suspTargetsCm[b.key]);
-            });
-        }
-
-        ops.appendChild(grid);
-
-        const resetBtn = makeButton('Release Springs (bounce)');
-        ops.appendChild(resetBtn);
-
-        ops.appendChild(makeLabel('Body Tilt Offset (wheels planted)'));
-        const bodyPitch = makeRangeControl({ title: 'Body Pitch (deg)', min: -10, max: 10, step: 0.5, value: this.busState.bodyPitchDeg, fmt: (v) => `${Number(v).toFixed(1)}°` });
-        ops.appendChild(bodyPitch.wrap);
-
-        const bodyRoll = makeRangeControl({ title: 'Body Roll (deg)', min: -10, max: 10, step: 0.5, value: this.busState.bodyRollDeg, fmt: (v) => `${Number(v).toFixed(1)}°` });
-        ops.appendChild(bodyRoll.wrap);
-
         // Events
-        targetSpeed.input.addEventListener('input', () => {
-            this.busState.coastRelease = false;
-            this.busState.targetSpeedKph = parseFloat(targetSpeed.input.value);
-            targetSpeed.valEl.textContent = targetSpeed.fmt(this.busState.targetSpeedKph);
+        throttle.input.addEventListener('input', () => {
+            this.busState.throttle = parseFloat(throttle.input.value);
+            throttle.valEl.textContent = throttle.fmt(this.busState.throttle);
         });
 
-        releaseBtn.addEventListener('click', () => {
-            this.busState.coastRelease = true;
-            this.busState.targetSpeedKph = 0;
-            targetSpeed.input.value = '0';
-            targetSpeed.valEl.textContent = targetSpeed.fmt(0);
+        brake.input.addEventListener('input', () => {
+            this.busState.brake = parseFloat(brake.input.value);
+            brake.valEl.textContent = brake.fmt(this.busState.brake);
+        });
+
+        gearControl.select.addEventListener('change', () => {
+            const value = Number.parseInt(gearControl.select.value, 10);
+            if (Number.isFinite(value) && this.vehicle?.id) {
+                this.busState.gearIndex = value;
+                this.sim?.physics?.setGear?.(this.vehicle.id, value);
+            }
         });
 
         steer.input.addEventListener('input', () => {
@@ -927,50 +921,165 @@ export class TestModeState {
         });
 
         headlights.input.addEventListener('change', () => { this.busState.headlights = !!headlights.input.checked; });
-        taillights.input.addEventListener('change', () => { this.busState.taillights = !!taillights.input.checked; });
+        const telemetryPanel = document.createElement('div');
+        stylePanel(telemetryPanel, { interactive: false });
+        telemetryPanel.style.position = 'absolute';
+        telemetryPanel.style.left = '16px';
+        telemetryPanel.style.bottom = '16px';
+        telemetryPanel.style.minWidth = '320px';
+        telemetryPanel.style.maxWidth = '440px';
+        telemetryPanel.appendChild(makeTitle('Simulation Output'));
 
-        pitch.input.addEventListener('input', () => {
-            this.busState.pitchDeg = parseFloat(pitch.input.value);
-            pitch.valEl.textContent = pitch.fmt(this.busState.pitchDeg);
-        });
+        const topRow = document.createElement('div');
+        topRow.style.display = 'flex';
+        topRow.style.alignItems = 'flex-start';
+        topRow.style.gap = '12px';
 
-        roll.input.addEventListener('input', () => {
-            this.busState.rollDeg = parseFloat(roll.input.value);
-            roll.valEl.textContent = roll.fmt(this.busState.rollDeg);
-        });
+        const statGrid = document.createElement('div');
+        statGrid.style.display = 'grid';
+        statGrid.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
+        statGrid.style.gap = '10px';
+        statGrid.style.flex = '1';
 
-        suspEnabled.input.addEventListener('change', () => { this.busState.suspensionEnabled = !!suspEnabled.input.checked; });
+        const speedTile = makeStatTile({ label: 'Speed', unit: 'km/h' });
+        const gearTile = makeStatTile({ label: 'Gear' });
+        gearTile.unitEl.textContent = '';
+        const rpmTile = makeStatTile({ label: 'RPM', unit: 'rpm' });
+        const torqueTile = makeStatTile({ label: 'Torque', unit: 'Nm' });
 
-        resetBtn.addEventListener('click', () => {
-            for (const k of ['fl', 'fr', 'rl', 'rr']) {
-                this.busState.suspTargetsCm[k] = 0;
-                const ctrl = this.suspTargetCtrls?.[k];
-                if (ctrl) {
-                    ctrl.input.value = '0';
-                    ctrl.valEl.textContent = ctrl.fmt(0);
-                }
-            }
-        });
+        statGrid.appendChild(speedTile.wrap);
+        statGrid.appendChild(gearTile.wrap);
+        statGrid.appendChild(rpmTile.wrap);
+        statGrid.appendChild(torqueTile.wrap);
 
-        bodyPitch.input.addEventListener('input', () => {
-            this.busState.bodyPitchDeg = parseFloat(bodyPitch.input.value);
-            bodyPitch.valEl.textContent = bodyPitch.fmt(this.busState.bodyPitchDeg);
-        });
+        const steerWrap = document.createElement('div');
+        steerWrap.style.display = 'flex';
+        steerWrap.style.flexDirection = 'column';
+        steerWrap.style.alignItems = 'center';
+        steerWrap.style.gap = '6px';
 
-        bodyRoll.input.addEventListener('input', () => {
-            this.busState.bodyRollDeg = parseFloat(bodyRoll.input.value);
-            bodyRoll.valEl.textContent = bodyRoll.fmt(this.busState.bodyRollDeg);
-        });
+        const steerLabel = document.createElement('div');
+        steerLabel.textContent = 'Steer Input';
+        steerLabel.style.fontSize = '11px';
+        steerLabel.style.fontWeight = '800';
+        steerLabel.style.textTransform = 'uppercase';
+        steerLabel.style.letterSpacing = '0.4px';
+        steerLabel.style.opacity = '0.7';
+
+        const steerWidget = makeSteerWidget();
+        steerWrap.appendChild(steerLabel);
+        steerWrap.appendChild(steerWidget.wrap);
+
+        topRow.appendChild(statGrid);
+        topRow.appendChild(steerWrap);
+        telemetryPanel.appendChild(topRow);
+
+        telemetryPanel.appendChild(makeLabel('Wheels + Suspension'));
+
+        const wheelGrid = document.createElement('div');
+        wheelGrid.style.display = 'flex';
+        wheelGrid.style.flexDirection = 'column';
+        wheelGrid.style.gap = '12px';
+
+        const makeAxleRow = () => {
+            const row = document.createElement('div');
+            row.style.position = 'relative';
+            row.style.display = 'flex';
+            row.style.alignItems = 'center';
+            row.style.gap = '12px';
+
+            const line = document.createElement('div');
+            line.style.position = 'absolute';
+            line.style.left = '8px';
+            line.style.right = '8px';
+            line.style.top = '50%';
+            line.style.height = '1px';
+            line.style.background = 'rgba(255,255,255,0.2)';
+            line.style.zIndex = '0';
+
+            row.appendChild(line);
+            return row;
+        };
+
+        const frontRow = makeAxleRow();
+        const rearRow = makeAxleRow();
+
+        const fl = makeWheelVizCell({ label: 'Front Left', wheelFirst: true });
+        const fr = makeWheelVizCell({ label: 'Front Right', wheelFirst: false });
+        const rl = makeWheelVizCell({ label: 'Rear Left', wheelFirst: true });
+        const rr = makeWheelVizCell({ label: 'Rear Right', wheelFirst: false });
+
+        fl.wrap.style.zIndex = '1';
+        fr.wrap.style.zIndex = '1';
+        rl.wrap.style.zIndex = '1';
+        rr.wrap.style.zIndex = '1';
+
+        frontRow.appendChild(fl.wrap);
+        frontRow.appendChild(fr.wrap);
+        rearRow.appendChild(rl.wrap);
+        rearRow.appendChild(rr.wrap);
+
+        wheelGrid.appendChild(frontRow);
+        wheelGrid.appendChild(rearRow);
+
+        telemetryPanel.appendChild(wheelGrid);
+
+        const rapierPanel = document.createElement('div');
+        stylePanel(rapierPanel, { interactive: false });
+        rapierPanel.style.position = 'absolute';
+        rapierPanel.style.right = '16px';
+        rapierPanel.style.bottom = '16px';
+        rapierPanel.style.minWidth = '260px';
+        rapierPanel.style.maxWidth = '320px';
+        rapierPanel.appendChild(makeTitle('Rapier'));
+
+        rapierPanel.appendChild(makeLabel('Input'));
+        const inputThrottle = makeValueRow('Throttle');
+        const inputSteer = makeValueRow('Steer');
+        const inputBrake = makeValueRow('Brake');
+        const inputHandbrake = makeValueRow('Handbrake');
+        rapierPanel.appendChild(inputThrottle.row);
+        rapierPanel.appendChild(inputSteer.row);
+        rapierPanel.appendChild(inputBrake.row);
+        rapierPanel.appendChild(inputHandbrake.row);
+
+        rapierPanel.appendChild(makeLabel('Output'));
+        const outSpeed = makeValueRow('Speed');
+        const outYaw = makeValueRow('Yaw');
+        const outSteer = makeValueRow('Steer L/R');
+        const outContacts = makeValueRow('Contacts');
+        const outForces = makeValueRow('Drive/Brake');
+        rapierPanel.appendChild(outSpeed.row);
+        rapierPanel.appendChild(outYaw.row);
+        rapierPanel.appendChild(outSteer.row);
+        rapierPanel.appendChild(outContacts.row);
+        rapierPanel.appendChild(outForces.row);
 
         root.appendChild(shortcuts);
         root.appendChild(ops);
-        root.appendChild(debugPanel);
+        root.appendChild(telemetryPanel);
+        root.appendChild(rapierPanel);
         document.body.appendChild(root);
 
         this.hudRoot = root;
         this._updateHudBusName();
 
-        this.rapierPanel = debugPanel;
+        this.telemetryPanel = telemetryPanel;
+        this.telemetryFields = {
+            speed: speedTile.valueEl,
+            gear: gearTile.valueEl,
+            rpm: rpmTile.valueEl,
+            torque: torqueTile.valueEl
+        };
+        this.steerWidget = steerWidget;
+        this.wheelViz = {
+            FL: fl,
+            FR: fr,
+            RL: rl,
+            RR: rr
+        };
+
+        this.rapierPanel = rapierPanel;
         this.rapierFields = {
             inputThrottle: inputThrottle.valueEl,
             inputSteer: inputSteer.valueEl,
@@ -980,14 +1089,7 @@ export class TestModeState {
             outYaw: outYaw.valueEl,
             outSteer: outSteer.valueEl,
             outContacts: outContacts.valueEl,
-            outSusp: outSusp.valueEl,
             outForces: outForces.valueEl
-        };
-        this.rapierWheelFields = {
-            FL: wheelRows.FL.valueEl,
-            FR: wheelRows.FR.valueEl,
-            RL: wheelRows.RL.valueEl,
-            RR: wheelRows.RR.valueEl
         };
     }
 
@@ -996,14 +1098,15 @@ export class TestModeState {
         this.hudRoot = null;
 
         this.opsBusName = null;
-        this.opsSpeed = null;
 
-        this.suspTargetCtrls = null;
-        this.suspOutBars = null;
+        this.telemetryPanel = null;
+        this.telemetryFields = null;
+        this.steerWidget = null;
+        this.wheelViz = null;
 
         this.rapierPanel = null;
         this.rapierFields = null;
-        this.rapierWheelFields = null;
+        this.gearControl = null;
     }
 
     _updateHudBusName() {
@@ -1012,8 +1115,26 @@ export class TestModeState {
         this.opsBusName.textContent = `Selected: ${name}`;
     }
 
+    _syncGearOptions() {
+        if (!this.gearControl?.select || !this.vehicle?.id) return;
+        const gears = this.sim?.physics?.getGearOptions?.(this.vehicle.id) ?? [];
+        if (!gears.length) return;
+        this.gearControl.select.innerHTML = '';
+        for (const gear of gears) {
+            const option = document.createElement('option');
+            option.value = String(gear.index);
+            option.textContent = gear.label;
+            this.gearControl.select.appendChild(option);
+        }
+        const current = this.sim?.physics?.getGearIndex?.(this.vehicle.id);
+        if (Number.isFinite(current)) {
+            this.gearControl.select.value = String(current);
+            this.busState.gearIndex = current;
+        }
+    }
+
     _updateRapierDebug() {
-        if (!this.rapierFields || !this.rapierWheelFields || !this.vehicle?.id) return;
+        if (!this.rapierFields || !this.vehicle?.id) return;
 
         const fmt = (v, digits = 2) => (Number.isFinite(v) ? v.toFixed(digits) : '—');
         const fmtDeg = (v) => (Number.isFinite(v) ? `${THREE.MathUtils.radToDeg(v).toFixed(1)}°` : '—');
@@ -1021,7 +1142,24 @@ export class TestModeState {
         const debug = this.sim?.physics?.getVehicleDebug?.(this.vehicle.id);
         if (!debug) {
             for (const key of Object.keys(this.rapierFields)) this.rapierFields[key].textContent = '—';
-            for (const key of Object.keys(this.rapierWheelFields)) this.rapierWheelFields[key].textContent = '—';
+            if (this.telemetryFields) {
+                this.telemetryFields.speed.textContent = '—';
+                this.telemetryFields.gear.textContent = '—';
+                this.telemetryFields.rpm.textContent = '—';
+                this.telemetryFields.torque.textContent = '—';
+            }
+            if (this.steerWidget?.needle) {
+                this.steerWidget.needle.style.transform = 'rotate(0deg)';
+            }
+            if (this.wheelViz) {
+                for (const key of Object.keys(this.wheelViz)) {
+                    const wheel = this.wheelViz[key];
+                    wheel.wheel.spin.style.transform = 'rotate(0deg)';
+                    wheel.wheel.contact.style.background = 'rgba(255,255,255,0.35)';
+                    wheel.suspension.bar.style.transform = 'translate(-50%, -50%)';
+                    wheel.suspension.valueEl.textContent = '0.0 cm';
+                }
+            }
             return;
         }
 
@@ -1042,27 +1180,57 @@ export class TestModeState {
         const contactCount = wheels.filter((w) => w.inContact).length;
         this.rapierFields.outContacts.textContent = wheels.length ? `${contactCount}/${wheels.length}` : '—';
 
-        const suspAvg = wheels.length
-            ? wheels.reduce((sum, w) => sum + (Number.isFinite(w.suspensionLength) ? w.suspensionLength : 0), 0) / wheels.length
-            : null;
-        this.rapierFields.outSusp.textContent = Number.isFinite(suspAvg) ? `${suspAvg.toFixed(2)} m` : '—';
-
         const driveForce = debug.forces?.driveForce;
         const brakeForce = debug.forces?.brakeForce;
         this.rapierFields.outForces.textContent = `${fmt(driveForce, 0)} / ${fmt(brakeForce, 0)}`;
 
-        for (const key of Object.keys(this.rapierWheelFields)) {
-            this.rapierWheelFields[key].textContent = '—';
+        const drivetrain = debug.drivetrain ?? {};
+        const gearLabel = drivetrain.gearLabel ?? null;
+        const gearNum = Number.isFinite(drivetrain.gear) ? drivetrain.gear : null;
+
+        if (this.telemetryFields) {
+            this.telemetryFields.speed.textContent = Number.isFinite(loco.speedKph) ? loco.speedKph.toFixed(1) : '—';
+            if (gearLabel) this.telemetryFields.gear.textContent = gearLabel;
+            else if (gearNum !== null) this.telemetryFields.gear.textContent = String(gearNum);
+            else this.telemetryFields.gear.textContent = '—';
+            this.telemetryFields.rpm.textContent = Number.isFinite(drivetrain.rpm) ? Math.round(drivetrain.rpm).toString() : '—';
+            this.telemetryFields.torque.textContent = Number.isFinite(drivetrain.torque) ? Math.round(drivetrain.torque).toString() : '—';
         }
 
-        for (const wheel of wheels) {
-            const slot = this.rapierWheelFields[wheel.label];
-            if (!slot) continue;
-            const contact = wheel.inContact ? 1 : 0;
-            const len = fmt(wheel.suspensionLength, 2);
-            const fwd = fmt(wheel.forwardImpulse, 1);
-            const side = fmt(wheel.sideImpulse, 1);
-            slot.textContent = `c:${contact} len:${len} f:${fwd} s:${side}`;
+        if (this.gearControl?.select && drivetrain.gearIndex !== undefined && drivetrain.gearIndex !== null) {
+            this.gearControl.select.value = String(drivetrain.gearIndex);
+        }
+
+        if (this.steerWidget?.needle) {
+            const steer = THREE.MathUtils.clamp(input.steering ?? 0, -1, 1);
+            const steerDeg = steer * 135;
+            this.steerWidget.needle.style.transform = `rotate(${steerDeg.toFixed(1)}deg)`;
+        }
+
+        const restLen = debug.suspension?.restLength;
+        const travel = debug.suspension?.travel ?? restLen;
+        const wheelSpin = loco.wheelSpinAccum ?? 0;
+        const spinDeg = Number.isFinite(wheelSpin) ? (wheelSpin * 180 / Math.PI) : 0;
+
+        if (this.wheelViz) {
+            for (const wheel of wheels) {
+                const slot = this.wheelViz[wheel.label];
+                if (!slot) continue;
+                slot.wheel.spin.style.transform = `rotate(${spinDeg.toFixed(1)}deg)`;
+                slot.wheel.contact.style.background = wheel.inContact ? '#7cff9a' : 'rgba(255,255,255,0.35)';
+
+                if (Number.isFinite(restLen) && Number.isFinite(travel) && Number.isFinite(wheel.suspensionLength)) {
+                    const compression = restLen - wheel.suspensionLength;
+                    const norm = THREE.MathUtils.clamp(compression / Math.max(1e-3, travel), -1, 1);
+                    const offset = -norm * slot.suspension.range;
+                    slot.suspension.bar.style.transform = `translate(-50%, -50%) translateY(${offset.toFixed(1)}px)`;
+                    const cm = compression * 100;
+                    slot.suspension.valueEl.textContent = `${cm >= 0 ? '+' : ''}${cm.toFixed(1)} cm`;
+                } else {
+                    slot.suspension.bar.style.transform = 'translate(-50%, -50%)';
+                    slot.suspension.valueEl.textContent = '0.0 cm';
+                }
+            }
         }
     }
 
@@ -1115,6 +1283,7 @@ export class TestModeState {
             this.sim?.physics?.addVehicle?.(this.vehicle.id, this.vehicle.config, anchor, this.vehicle.api);
             this.vehicleController = new VehicleController(this.vehicle.id, this.sim.physics, this.sim.events);
             this.vehicleController.setVehicleApi(this.vehicle.api, anchor);
+            this.sim?.physics?.setAutoShift?.(this.vehicle.id, false);
         }
 
         this._prevBusPos.copy(anchor.position);
@@ -1124,6 +1293,7 @@ export class TestModeState {
         }
 
         this._updateHudBusName();
+        this._syncGearOptions();
         this._scheduleBusPhysicsRefresh();
     }
 
@@ -1150,10 +1320,12 @@ export class TestModeState {
         this.sim?.physics?.removeVehicle?.(this.vehicle.id);
         this.sim?.physics?.addVehicle?.(this.vehicle.id, this.vehicle.config, this.busAnchor, this.vehicle.api);
         this.vehicleController?.setVehicleApi?.(this.vehicle.api, this.busAnchor);
+        this.sim?.physics?.setAutoShift?.(this.vehicle.id, false);
         this._prevBusPos.copy(this.busAnchor.position);
         if (this.controls) {
             this.controls.target.set(this.busAnchor.position.x, 1.8, this.busAnchor.position.z);
         }
+        this._syncGearOptions();
     }
 
     _handleKeyDown(e) {

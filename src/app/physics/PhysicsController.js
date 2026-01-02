@@ -2,6 +2,13 @@
 import * as THREE from 'three';
 import { PhysicsLoop } from './PhysicsLoop.js';
 import { loadRapier } from './rapier/RapierLoader.js';
+import {
+    DEFAULT_ENGINE_GEARS,
+    buildEngineConfig,
+    computeEngineOutput,
+    createEngineState,
+    gearLabelToNumber
+} from './DrivetrainSim.js';
 
 const DEFAULT_CONFIG = {
     fixedDt: 1 / 60,
@@ -67,7 +74,11 @@ const BUS_TUNING = {
             maxForce: 95000
         },
         frictionSlip: 8.2,
-        sideFrictionStiffness: 1.45
+        sideFrictionStiffness: 1.45,
+        engine: {
+            maxTorque: 1300,
+            finalDrive: 4.4
+        }
     },
     coach: {
         mass: 11800,
@@ -88,7 +99,11 @@ const BUS_TUNING = {
             maxForce: 85000
         },
         frictionSlip: 7.4,
-        sideFrictionStiffness: 1.22
+        sideFrictionStiffness: 1.22,
+        engine: {
+            maxTorque: 1500,
+            finalDrive: 4.1
+        }
     },
     double: {
         mass: 13500,
@@ -109,7 +124,11 @@ const BUS_TUNING = {
             maxForce: 110000
         },
         frictionSlip: 8.6,
-        sideFrictionStiffness: 1.35
+        sideFrictionStiffness: 1.35,
+        engine: {
+            maxTorque: 1650,
+            finalDrive: 4.6
+        }
     }
 };
 
@@ -174,6 +193,7 @@ function resolveBusTuning(entry, model) {
         ...DEFAULT_TUNING.suspension,
         ...(base.suspension ?? {})
     };
+    const engine = buildEngineConfig(base.engine ?? null, lengthScale);
 
     return {
         ...base,
@@ -181,7 +201,8 @@ function resolveBusTuning(entry, model) {
         engineForce: base.engineForce * lengthScale,
         brakeForce: base.brakeForce * lengthScale,
         handbrakeForce: base.handbrakeForce * lengthScale,
-        suspension
+        suspension,
+        engine
     };
 }
 
@@ -509,8 +530,26 @@ export class PhysicsController {
     _applyVehicleInput(entry) {
         const input = entry.input;
         const steering = -input.steering * entry.maxSteerRad;
-        const driveForceTotal = input.throttle * entry.engineForce * (entry.forwardSign ?? 1);
+        let driveForceTotal = input.throttle * entry.engineForce * (entry.forwardSign ?? 1);
         const brakeForceTotal = (input.brake * entry.brakeForce) + (input.handbrake * entry.handbrakeForce);
+        let drivetrain = entry.state.drivetrain;
+
+        if (entry.engineConfig && entry.engine && entry.controller?.currentVehicleSpeed) {
+            const speed = entry.controller.currentVehicleSpeed();
+            const wheelRadius = Math.max(1e-3, entry.wheelRadius ?? DEFAULT_CONFIG.wheelRadius);
+            const output = computeEngineOutput(entry.engineConfig, entry.engine, speed, wheelRadius, input.throttle);
+            entry.engine.gearIndex = output.gearIndex;
+            entry.engine.rpm = output.rpm;
+            entry.engine.torque = output.torque;
+            driveForceTotal = output.driveForce * (entry.forwardSign ?? 1);
+            drivetrain = entry.state.drivetrain;
+            drivetrain.rpm = output.rpm;
+            drivetrain.gear = output.gearNumber;
+            drivetrain.torque = output.torque;
+        }
+
+        entry._driveForce = driveForceTotal;
+        entry._brakeForce = brakeForceTotal;
 
         if (entry.body && (Math.abs(steering) > 1e-4 || input.throttle > 0.01 || input.brake > 0.01 || input.handbrake > 0.01)) {
             entry.body.wakeUp();
@@ -793,6 +832,14 @@ export class PhysicsController {
         entry.suspensionTravel = suspension.travel ?? entry.suspensionTravel;
         entry.bodyTiltScale = tuning.bodyTiltScale ?? entry.bodyTiltScale;
         entry.maxBodyAngle = degToRad(tuning.maxBodyAngleDeg ?? 8);
+        entry.engineConfig = tuning.engine ?? null;
+        entry.engine = entry.engineConfig ? createEngineState(entry.engineConfig) : null;
+        if (entry.engine) {
+            entry.state.drivetrain.rpm = entry.engine.rpm;
+            const gear = entry.engine.gears[entry.engine.gearIndex];
+            entry.state.drivetrain.gear = gear ? gearLabelToNumber(gear.label) : 1;
+            entry.state.drivetrain.torque = entry.engine.torque;
+        }
 
         return true;
     }
@@ -838,7 +885,8 @@ export class PhysicsController {
                 },
                 drivetrain: {
                     rpm: 0,
-                    gear: 1
+                    gear: 1,
+                    torque: 0
                 },
                 collision: null,
                 brake: null
@@ -862,7 +910,11 @@ export class PhysicsController {
             suspensionRestLength: DEFAULT_TUNING.suspension.restLength,
             suspensionTravel: DEFAULT_TUNING.suspension.travel,
             bodyTiltScale: DEFAULT_TUNING.bodyTiltScale,
-            maxBodyAngle: degToRad(DEFAULT_TUNING.maxBodyAngleDeg)
+            maxBodyAngle: degToRad(DEFAULT_TUNING.maxBodyAngleDeg),
+            engineConfig: null,
+            engine: null,
+            _driveForce: null,
+            _brakeForce: null
         };
 
         this._vehicles.set(vehicleId, entry);
@@ -901,17 +953,22 @@ export class PhysicsController {
         const entry = this._vehicles.get(vehicleId) ?? this._pendingVehicles.get(vehicleId);
         if (!entry) return;
 
+        let driveDirty = false;
+        let brakeDirty = false;
         if (typeof input.throttle === 'number') {
             entry.input.throttle = clamp(input.throttle, 0, 1);
+            driveDirty = true;
         }
         if (typeof input.brake === 'number') {
             entry.input.brake = clamp(input.brake, 0, 1);
+            brakeDirty = true;
         }
         if (typeof input.steering === 'number') {
             entry.input.steering = clamp(input.steering, -1, 1);
         }
         if (typeof input.handbrake === 'number') {
             entry.input.handbrake = clamp(input.handbrake, 0, 1);
+            brakeDirty = true;
         }
 
         if (typeof input.steering === 'number') {
@@ -925,6 +982,44 @@ export class PhysicsController {
             loco.steerAngleLeft = entry._steerAngleLeft ?? entry._steerAngle ?? 0;
             loco.steerAngleRight = entry._steerAngleRight ?? entry._steerAngle ?? 0;
         }
+
+        if (driveDirty) entry._driveForce = null;
+        if (brakeDirty) entry._brakeForce = null;
+    }
+
+    setGear(vehicleId, gear) {
+        const entry = this._vehicles.get(vehicleId) ?? this._pendingVehicles.get(vehicleId);
+        if (!entry?.engine) return;
+        const gears = entry.engine.gears ?? [];
+        let index = null;
+        if (typeof gear === 'number' && Number.isFinite(gear)) {
+            index = Math.round(gear);
+        } else if (typeof gear === 'string') {
+            const target = gear.toUpperCase();
+            index = gears.findIndex((g) => String(g.label ?? '').toUpperCase() === target);
+        }
+        if (index == null || index < 0 || index >= gears.length) return;
+        entry.engine.gearIndex = index;
+        entry.engine.manual = true;
+        const label = gears[index]?.label;
+        entry.state.drivetrain.gear = gearLabelToNumber(label);
+    }
+
+    setAutoShift(vehicleId, enabled) {
+        const entry = this._vehicles.get(vehicleId) ?? this._pendingVehicles.get(vehicleId);
+        if (!entry?.engine) return;
+        entry.engine.manual = !enabled;
+    }
+
+    getGearOptions(vehicleId) {
+        const entry = this._vehicles.get(vehicleId) ?? this._pendingVehicles.get(vehicleId);
+        const gears = entry?.engine?.gears ?? entry?.engineConfig?.gears ?? DEFAULT_ENGINE_GEARS;
+        return gears.map((gear, index) => ({ index, label: gear.label }));
+    }
+
+    getGearIndex(vehicleId) {
+        const entry = this._vehicles.get(vehicleId) ?? this._pendingVehicles.get(vehicleId);
+        return entry?.engine?.gearIndex ?? null;
     }
 
     update(dt) {
@@ -993,15 +1088,28 @@ export class PhysicsController {
         });
 
         const input = { ...entry.input };
-        const driveForce = input.throttle * (entry.engineForce ?? 0) * (entry.forwardSign ?? 1);
-        const brakeForce = (input.brake * (entry.brakeForce ?? 0)) + (input.handbrake * (entry.handbrakeForce ?? 0));
+        const driveForce = Number.isFinite(entry._driveForce)
+            ? entry._driveForce
+            : (input.throttle * (entry.engineForce ?? 0) * (entry.forwardSign ?? 1));
+        const brakeForce = Number.isFinite(entry._brakeForce)
+            ? entry._brakeForce
+            : ((input.brake * (entry.brakeForce ?? 0)) + (input.handbrake * (entry.handbrakeForce ?? 0)));
+        const engine = entry.engine;
+        const gearIndex = engine?.gearIndex ?? null;
+        const gearLabel = gearIndex != null ? (engine?.gears?.[gearIndex]?.label ?? null) : null;
 
         return {
             ready: !!controller,
             input,
             forces: { driveForce, brakeForce },
             locomotion: { ...entry.state.locomotion },
-            suspension: { ...entry.state.suspension },
+            suspension: { ...entry.state.suspension, restLength: entry.suspensionRestLength, travel: entry.suspensionTravel },
+            drivetrain: {
+                ...entry.state.drivetrain,
+                gearIndex,
+                gearLabel,
+                gears: engine?.gears ? engine.gears.map((gear, index) => ({ index, label: gear.label, ratio: gear.ratio })) : null
+            },
             wheels
         };
     }

@@ -11,6 +11,10 @@
 - Application logic → `/src/app` (city, core, geometry, input, physics, skeletons, utils, vehicle)
 - Gameplay states → `/src/states`
 
+**Physics:**
+- This project uses the Rapier physics library
+- Documentation can be found in `/docs/`
+
 **Principle:** Keep rendering/visual code in `/src/graphics` and app logic in `/src/app`
 
 ## Code Style
