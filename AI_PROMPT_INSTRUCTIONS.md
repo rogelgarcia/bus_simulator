@@ -68,6 +68,5 @@ Tasks:
 7. **Save the Request**: Store the complete request in a file for reference (Use an specific file name AI_#_title)
 8. **New file**: Always create a new file for each request. Unless expecitely stated in the last message that it is to update an existing request.
 9. **Text width**: Keep the text width to a maximum of 80 characters.
-10. **Implement if repo is clean**: If the repository is clean (no uncommitted changes), you can go ahead and implement a prompt that was asked already
 
 

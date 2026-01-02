@@ -3,11 +3,15 @@
 ## Directory Structure
 
 **Graphics Organization:**
-- All graphics-related code → `/graphics`
-  - 3D assets (models, geometries, generators, Three.js code) → `/graphics/assets3d/`
-  - GUI/Visual (CSS, widgets, HUD, UI components) → `/graphics/gui/`
+- All graphics-related code → `/src/graphics`
+  - 3D assets (models, geometries, generators, Three.js code) → `/src/graphics/assets3d/`
+  - GUI/Visual (CSS, widgets, HUD, UI components) → `/src/graphics/gui/`
 
-**Principle:** Keep rendering/visual code separate from business logic in `/src`
+**App Organization:**
+- Application logic → `/src/app` (city, core, geometry, input, physics, skeletons, utils, vehicle)
+- Gameplay states → `/src/states`
+
+**Principle:** Keep rendering/visual code in `/src/graphics` and app logic in `/src/app`
 
 ## Code Style
 
@@ -16,7 +20,6 @@
 
 **Comments:**
 - No comments in code files (see exceptions bellow)
-- Exception: First line must be a comment with the file path (e.g., `// graphics/assets3d/generators/RoadGenerator.js`)
 - Exception: Second line must be a comment with the file description (e.g., `// Generates roads from city data`)
 - Exception: Design decisions (do not explain the code, but why it is written a certain way)
   - Always write design decisions as a high level comment on top of the file (try to be concise)
@@ -35,6 +38,7 @@
 These are the ones from files AI_#_title
 - Even if explicitly requested, never start DONE prompts without double confirming with the user.
 - Before starting any AI prompt, if there are modifications/additions to be commited, confirm if can proceed.
+  - if the repo is clean, you can proceed
 
 **3P libraries, assets, models**
 If using resources from downloads/ folder, always copy to the application.
