@@ -42,15 +42,6 @@ Tasks:
 - [Describe desired behavior or outcome 3]
 - [etc.]
 
-## Overriding Project Rules
-
-- **If importing library source code into the project, preserve all original comments** (This overrides the project's no-comments rule)
-
-## Context (Optional)
-
-[Add any additional context, examples, or constraints here]
-[Avoid specifying implementation details - focus on requirements and behavior]
-
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line
 - Also rename the AI file to AI_#_title_DONE
@@ -62,11 +53,10 @@ Tasks:
 1. **Be Specific About Outcomes**: Clearly articulate what you want to achieve, not how to achieve it
 2. **Avoid Implementation Details**: Don't specify class names, function signatures, or code structure - let the AI determine the best approach
 3. **Focus on Behavior**: Describe what the system should do, not how it should be coded
-4. **Provide Context**: Add relevant examples, constraints, or edge cases when needed
-5. **Keep It Simple**: The AI has repository access - just describe what you need
-6. **Trust the AI**: It will retrieve necessary files, determine implementation details, and follow project conventions automatically
-7. **Save the Request**: Store the complete request in a file for reference (Use an specific file name AI_#_title)
-8. **New file**: Always create a new file for each request. Unless expecitely stated in the last message that it is to update an existing request.
-9. **Text width**: Keep the text width to a maximum of 80 characters.
+4. **Keep It Simple**: The AI has repository access - just describe what you need
+5. **Trust the AI**: It will retrieve necessary files, determine implementation details, and follow project conventions automatically
+6. **Save the Request**: Store the complete request in a file for reference (Use an specific file name AI_#_title)
+7. **New file**: Always create a new file for each request. Unless expecitely stated in the last message that it is to update an existing request.
+8. **Text width**: Keep the text width to a maximum of 80 characters.
 
 
