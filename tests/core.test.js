@@ -540,34 +540,26 @@ async function runTests() {
             assertTrue(ctrl.loop !== null, 'Loop should exist.');
         });
 
-        test('PhysicsController: has all 5 systems', () => {
+        test('PhysicsController: stores vehicle state after addVehicle', () => {
             const bus = new EventBus();
             const ctrl = new PhysicsController(bus);
-            assertTrue(ctrl.systems.locomotion !== undefined, 'locomotion');
-            assertTrue(ctrl.systems.suspension !== undefined, 'suspension');
-            assertTrue(ctrl.systems.drivetrain !== undefined, 'drivetrain');
-            assertTrue(ctrl.systems.collision !== undefined, 'collision');
-            assertTrue(ctrl.systems.brake !== undefined, 'brake');
+            const anchor = { position: { x: 1, y: 2, z: 3 }, rotation: { y: 0.5 } };
+            ctrl.addVehicle('v1', { id: 'v1' }, anchor, {});
+            assertTrue(ctrl.hasVehicle('v1'), 'Should register vehicle.');
+            const state = ctrl.getVehicleState('v1');
+            assertTrue(state !== null, 'State should exist.');
+            assertEqual(state.locomotion.position.x, 1, 'Position x should match anchor.');
+            assertEqual(state.locomotion.position.y, 2, 'Position y should match anchor.');
+            assertEqual(state.locomotion.position.z, 3, 'Position z should match anchor.');
         });
 
-        test('PhysicsController: addVehicle registers with all systems', () => {
-            const bus = new EventBus();
-            const ctrl = new PhysicsController(bus);
-            ctrl.addVehicle('v1', { id: 'v1' }, {}, {});
-            assertTrue(ctrl.systems.locomotion.getState('v1') !== null, 'locomotion');
-            assertTrue(ctrl.systems.suspension.getState('v1') !== null, 'suspension');
-            assertTrue(ctrl.systems.drivetrain.getState('v1') !== null, 'drivetrain');
-            assertTrue(ctrl.systems.collision.getState('v1') !== null, 'collision');
-            assertTrue(ctrl.systems.brake.getState('v1') !== null, 'brake');
-        });
-
-        test('PhysicsController: removeVehicle unregisters from all systems', () => {
+        test('PhysicsController: removeVehicle unregisters vehicles', () => {
             const bus = new EventBus();
             const ctrl = new PhysicsController(bus);
             ctrl.addVehicle('v1', { id: 'v1' }, {}, {});
             ctrl.removeVehicle('v1');
-            assertEqual(ctrl.systems.locomotion.getState('v1'), null, 'locomotion');
-            assertEqual(ctrl.systems.suspension.getState('v1'), null, 'suspension');
+            assertFalse(ctrl.hasVehicle('v1'), 'Vehicle should be removed.');
+            assertEqual(ctrl.getVehicleState('v1'), null, 'State should be cleared.');
         });
 
         test('PhysicsController: update calls loop.update', () => {
@@ -578,48 +570,24 @@ async function runTests() {
             assertTrue(true, 'Update should not throw.');
         });
 
-        test('PhysicsController: inter-system sync wires brake to locomotion', () => {
+        test('PhysicsController: setInput updates debug snapshot', () => {
             const bus = new EventBus();
             const ctrl = new PhysicsController(bus);
             ctrl.addVehicle('v1', { id: 'v1' }, {}, {});
-
-            // Apply brake input
-            ctrl.setInput('v1', { brake: 1.0 });
-
-            // Run update to trigger sync
-            for (let i = 0; i < 10; i++) {
-                ctrl.update(1 / 60);
-            }
-
-            // Brake system should have brake force
-            const brakeState = ctrl.systems.brake.getState('v1');
-            assertTrue(brakeState.brakeForce > 0, 'Brake force should be positive.');
+            ctrl.setInput('v1', { throttle: 0.8, steering: -0.5, brake: 0.2, handbrake: 0.1 });
+            const debug = ctrl.getVehicleDebug('v1');
+            assertTrue(debug !== null, 'Debug should exist.');
+            assertEqual(debug.input.throttle, 0.8, 'Throttle should match input.');
+            assertEqual(debug.input.steering, -0.5, 'Steering should match input.');
+            assertEqual(debug.input.brake, 0.2, 'Brake should match input.');
+            assertEqual(debug.input.handbrake, 0.1, 'Handbrake should match input.');
+            assertTrue(debug.forces.driveForce !== 0, 'Drive force should be non-zero.');
         });
 
-        test('PhysicsController: inter-system sync wires locomotion to suspension', () => {
+        test('PhysicsController: getSystem returns null', () => {
             const bus = new EventBus();
             const ctrl = new PhysicsController(bus);
-            ctrl.addVehicle('v1', { id: 'v1' }, {}, {});
-
-            // Apply throttle and steering to generate acceleration
-            ctrl.setInput('v1', { throttle: 1.0, steering: 0.5 });
-
-            // Run updates
-            for (let i = 0; i < 60; i++) {
-                ctrl.update(1 / 60);
-            }
-
-            // Suspension should have received chassis acceleration
-            const suspState = ctrl.systems.suspension.getState('v1');
-            assertTrue(suspState !== null, 'Suspension state should exist.');
-        });
-
-        test('PhysicsController: getSystem returns correct system', () => {
-            const bus = new EventBus();
-            const ctrl = new PhysicsController(bus);
-            assertEqual(ctrl.getSystem('locomotion'), ctrl.systems.locomotion, 'Should return locomotion.');
-            assertEqual(ctrl.getSystem('suspension'), ctrl.systems.suspension, 'Should return suspension.');
-            assertEqual(ctrl.getSystem('invalid'), null, 'Should return null for invalid.');
+            assertEqual(ctrl.getSystem('locomotion'), null, 'Should return null for legacy systems.');
         });
 
         test('PhysicsController: getVehicleIds returns registered vehicles', () => {

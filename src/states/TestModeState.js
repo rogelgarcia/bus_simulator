@@ -181,6 +181,32 @@ function makeRow(key, label) {
     return row;
 }
 
+function makeValueRow(label) {
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.justifyContent = 'space-between';
+    row.style.gap = '10px';
+    row.style.margin = '6px 0';
+
+    const k = document.createElement('div');
+    k.textContent = label;
+    k.style.fontSize = '12px';
+    k.style.fontWeight = '800';
+    k.style.opacity = '0.85';
+
+    const v = document.createElement('div');
+    v.textContent = '—';
+    v.style.fontSize = '12px';
+    v.style.fontWeight = '700';
+    v.style.opacity = '0.9';
+    v.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+
+    row.appendChild(k);
+    row.appendChild(v);
+    return { row, valueEl: v };
+}
+
 function makeSeparator() {
     const hr = document.createElement('div');
     hr.style.height = '1px';
@@ -444,6 +470,10 @@ export class TestModeState {
         this.suspTargetCtrls = null; // {fl,fr,rl,rr}
         this.suspOutBars = null;     // {fl,fr,rl,rr}
 
+        this.rapierPanel = null;
+        this.rapierFields = null;
+        this.rapierWheelFields = null;
+
         this._prevChipDisplay = null;
         this._onKeyDown = (e) => this._handleKeyDown(e);
     }
@@ -608,6 +638,7 @@ export class TestModeState {
             this.busState.coastRelease = false;
         }
 
+        this._updateRapierDebug();
         this.controls?.update();
     }
 
@@ -704,6 +735,53 @@ export class TestModeState {
         hint.style.fontSize = '12px';
         hint.style.opacity = '0.72';
         shortcuts.appendChild(hint);
+
+        const debugPanel = document.createElement('div');
+        stylePanel(debugPanel, { interactive: false });
+        debugPanel.style.position = 'absolute';
+        debugPanel.style.left = '16px';
+        debugPanel.style.bottom = '16px';
+        debugPanel.style.minWidth = '260px';
+        debugPanel.style.maxWidth = '320px';
+        debugPanel.appendChild(makeTitle('Rapier Debug'));
+
+        debugPanel.appendChild(makeLabel('Input'));
+        const inputThrottle = makeValueRow('Throttle');
+        const inputSteer = makeValueRow('Steer');
+        const inputBrake = makeValueRow('Brake');
+        const inputHandbrake = makeValueRow('Handbrake');
+        debugPanel.appendChild(inputThrottle.row);
+        debugPanel.appendChild(inputSteer.row);
+        debugPanel.appendChild(inputBrake.row);
+        debugPanel.appendChild(inputHandbrake.row);
+
+        debugPanel.appendChild(makeLabel('Output'));
+        const outSpeed = makeValueRow('Speed');
+        const outYaw = makeValueRow('Yaw');
+        const outSteer = makeValueRow('Steer L/R');
+        const outContacts = makeValueRow('Contacts');
+        const outSusp = makeValueRow('Susp Len');
+        const outForces = makeValueRow('Drive/Brake');
+        debugPanel.appendChild(outSpeed.row);
+        debugPanel.appendChild(outYaw.row);
+        debugPanel.appendChild(outSteer.row);
+        debugPanel.appendChild(outContacts.row);
+        debugPanel.appendChild(outSusp.row);
+        debugPanel.appendChild(outForces.row);
+
+        const wheelLabel = makeLabel('Wheels');
+        wheelLabel.style.marginTop = '8px';
+        debugPanel.appendChild(wheelLabel);
+        const wheelRows = {
+            FL: makeValueRow('FL'),
+            FR: makeValueRow('FR'),
+            RL: makeValueRow('RL'),
+            RR: makeValueRow('RR')
+        };
+        debugPanel.appendChild(wheelRows.FL.row);
+        debugPanel.appendChild(wheelRows.FR.row);
+        debugPanel.appendChild(wheelRows.RL.row);
+        debugPanel.appendChild(wheelRows.RR.row);
 
         // Ops
         const ops = document.createElement('div');
@@ -885,10 +963,31 @@ export class TestModeState {
 
         root.appendChild(shortcuts);
         root.appendChild(ops);
+        root.appendChild(debugPanel);
         document.body.appendChild(root);
 
         this.hudRoot = root;
         this._updateHudBusName();
+
+        this.rapierPanel = debugPanel;
+        this.rapierFields = {
+            inputThrottle: inputThrottle.valueEl,
+            inputSteer: inputSteer.valueEl,
+            inputBrake: inputBrake.valueEl,
+            inputHandbrake: inputHandbrake.valueEl,
+            outSpeed: outSpeed.valueEl,
+            outYaw: outYaw.valueEl,
+            outSteer: outSteer.valueEl,
+            outContacts: outContacts.valueEl,
+            outSusp: outSusp.valueEl,
+            outForces: outForces.valueEl
+        };
+        this.rapierWheelFields = {
+            FL: wheelRows.FL.valueEl,
+            FR: wheelRows.FR.valueEl,
+            RL: wheelRows.RL.valueEl,
+            RR: wheelRows.RR.valueEl
+        };
     }
 
     _unmountHud() {
@@ -900,12 +999,70 @@ export class TestModeState {
 
         this.suspTargetCtrls = null;
         this.suspOutBars = null;
+
+        this.rapierPanel = null;
+        this.rapierFields = null;
+        this.rapierWheelFields = null;
     }
 
     _updateHudBusName() {
         if (!this.opsBusName) return;
         const name = BUS_CATALOG[this.busIndex]?.name ?? 'Bus';
         this.opsBusName.textContent = `Selected: ${name}`;
+    }
+
+    _updateRapierDebug() {
+        if (!this.rapierFields || !this.rapierWheelFields || !this.vehicle?.id) return;
+
+        const fmt = (v, digits = 2) => (Number.isFinite(v) ? v.toFixed(digits) : '—');
+        const fmtDeg = (v) => (Number.isFinite(v) ? `${THREE.MathUtils.radToDeg(v).toFixed(1)}°` : '—');
+
+        const debug = this.sim?.physics?.getVehicleDebug?.(this.vehicle.id);
+        if (!debug) {
+            for (const key of Object.keys(this.rapierFields)) this.rapierFields[key].textContent = '—';
+            for (const key of Object.keys(this.rapierWheelFields)) this.rapierWheelFields[key].textContent = '—';
+            return;
+        }
+
+        const input = debug.input ?? {};
+        this.rapierFields.inputThrottle.textContent = fmt(input.throttle);
+        this.rapierFields.inputSteer.textContent = fmt(input.steering);
+        this.rapierFields.inputBrake.textContent = fmt(input.brake);
+        this.rapierFields.inputHandbrake.textContent = fmt(input.handbrake);
+
+        const loco = debug.locomotion ?? {};
+        this.rapierFields.outSpeed.textContent = Number.isFinite(loco.speedKph)
+            ? `${loco.speedKph.toFixed(1)} km/h`
+            : '—';
+        this.rapierFields.outYaw.textContent = fmtDeg(loco.yaw);
+        this.rapierFields.outSteer.textContent = `${fmtDeg(loco.steerAngleLeft)} / ${fmtDeg(loco.steerAngleRight)}`;
+
+        const wheels = debug.wheels ?? [];
+        const contactCount = wheels.filter((w) => w.inContact).length;
+        this.rapierFields.outContacts.textContent = wheels.length ? `${contactCount}/${wheels.length}` : '—';
+
+        const suspAvg = wheels.length
+            ? wheels.reduce((sum, w) => sum + (Number.isFinite(w.suspensionLength) ? w.suspensionLength : 0), 0) / wheels.length
+            : null;
+        this.rapierFields.outSusp.textContent = Number.isFinite(suspAvg) ? `${suspAvg.toFixed(2)} m` : '—';
+
+        const driveForce = debug.forces?.driveForce;
+        const brakeForce = debug.forces?.brakeForce;
+        this.rapierFields.outForces.textContent = `${fmt(driveForce, 0)} / ${fmt(brakeForce, 0)}`;
+
+        for (const key of Object.keys(this.rapierWheelFields)) {
+            this.rapierWheelFields[key].textContent = '—';
+        }
+
+        for (const wheel of wheels) {
+            const slot = this.rapierWheelFields[wheel.label];
+            if (!slot) continue;
+            const contact = wheel.inContact ? 1 : 0;
+            const len = fmt(wheel.suspensionLength, 2);
+            const fwd = fmt(wheel.forwardImpulse, 1);
+            const side = fmt(wheel.sideImpulse, 1);
+            slot.textContent = `c:${contact} len:${len} f:${fwd} s:${side}`;
+        }
     }
 
     _setBus(index) {

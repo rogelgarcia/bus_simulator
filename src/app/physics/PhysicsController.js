@@ -23,6 +23,96 @@ const FALLBACK_DIMENSIONS = {
     length: 10.0
 };
 
+const DEFAULT_TUNING = {
+    mass: 10500,
+    engineForce: 19000,
+    brakeForce: 14000,
+    handbrakeForce: 16000,
+    maxSteerDeg: 35,
+    linearDamping: 0.28,
+    angularDamping: 0.9,
+    brakeBias: 0.6,
+    chassisFriction: 0.2,
+    bodyTiltScale: 0.9,
+    maxBodyAngleDeg: 7,
+    suspension: {
+        restLength: 0.35,
+        stiffness: 30000,
+        compression: 3600,
+        relaxation: 4200,
+        travel: 0.2,
+        maxForce: 90000
+    },
+    frictionSlip: 7.8,
+    sideFrictionStiffness: 1.3
+};
+
+const BUS_TUNING = {
+    city: {
+        mass: 10000,
+        engineForce: 20000,
+        brakeForce: 15000,
+        handbrakeForce: 17000,
+        maxSteerDeg: 38,
+        linearDamping: 0.32,
+        angularDamping: 1.0,
+        bodyTiltScale: 0.8,
+        maxBodyAngleDeg: 6,
+        suspension: {
+            restLength: 0.32,
+            stiffness: 34000,
+            compression: 4000,
+            relaxation: 4600,
+            travel: 0.18,
+            maxForce: 95000
+        },
+        frictionSlip: 8.2,
+        sideFrictionStiffness: 1.45
+    },
+    coach: {
+        mass: 11800,
+        engineForce: 21000,
+        brakeForce: 15500,
+        handbrakeForce: 17500,
+        maxSteerDeg: 36,
+        linearDamping: 0.26,
+        angularDamping: 0.85,
+        bodyTiltScale: 1.0,
+        maxBodyAngleDeg: 8,
+        suspension: {
+            restLength: 0.38,
+            stiffness: 26000,
+            compression: 3200,
+            relaxation: 3800,
+            travel: 0.22,
+            maxForce: 85000
+        },
+        frictionSlip: 7.4,
+        sideFrictionStiffness: 1.22
+    },
+    double: {
+        mass: 13500,
+        engineForce: 22000,
+        brakeForce: 16500,
+        handbrakeForce: 18500,
+        maxSteerDeg: 32,
+        linearDamping: 0.34,
+        angularDamping: 1.15,
+        bodyTiltScale: 0.75,
+        maxBodyAngleDeg: 5,
+        suspension: {
+            restLength: 0.36,
+            stiffness: 36000,
+            compression: 4300,
+            relaxation: 5200,
+            travel: 0.2,
+            maxForce: 110000
+        },
+        frictionSlip: 8.6,
+        sideFrictionStiffness: 1.35
+    }
+};
+
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
 }
@@ -38,8 +128,76 @@ function yawFromQuat(q) {
     return Math.atan2(siny, cosy);
 }
 
+function resolveBusId(entry, model) {
+    const raw = model?.userData?.id
+        ?? entry?.api?.root?.userData?.id
+        ?? entry?.anchor?.userData?.id
+        ?? entry?.vehicle?.id
+        ?? entry?.config?.name;
+    if (!raw || typeof raw !== 'string') return null;
+    const id = raw.toLowerCase();
+    if (id.includes('city')) return 'city';
+    if (id.includes('coach')) return 'coach';
+    if (id.includes('double')) return 'double';
+    return id;
+}
+
+function resolveBusTuning(entry, model) {
+    const busId = resolveBusId(entry, model);
+    const base = {
+        ...DEFAULT_TUNING,
+        ...(busId && BUS_TUNING[busId] ? BUS_TUNING[busId] : {})
+    };
+
+    const length = entry?.config?.dimensions?.length ?? model?.userData?.length ?? FALLBACK_DIMENSIONS.length;
+    const lengthScale = clamp(length / FALLBACK_DIMENSIONS.length, 0.85, 1.35);
+
+    const suspension = {
+        ...DEFAULT_TUNING.suspension,
+        ...(base.suspension ?? {})
+    };
+
+    return {
+        ...base,
+        mass: base.mass * lengthScale,
+        engineForce: base.engineForce * lengthScale,
+        brakeForce: base.brakeForce * lengthScale,
+        handbrakeForce: base.handbrakeForce * lengthScale,
+        suspension
+    };
+}
+
+function averageWheelValue(controller, indices, getter) {
+    if (!controller || !indices?.length) return null;
+    let sum = 0;
+    let count = 0;
+    for (const i of indices) {
+        const value = getter(i);
+        if (typeof value === 'number') {
+            sum += value;
+            count += 1;
+        }
+    }
+    return count ? sum / count : null;
+}
+
+const TMP_QUAT = new THREE.Quaternion();
+const TMP_EULER = new THREE.Euler();
+
 function resolveModel(entry) {
     return entry.anchor?.userData?.model ?? entry.api?.root ?? (entry.vehicle?.isObject3D ? entry.vehicle : null);
+}
+
+function resolveBoundsTarget(model, api) {
+    if (api?.bodyRoot?.isObject3D) return api.bodyRoot;
+    if (api?.root?.isObject3D) return api.root;
+    return model;
+}
+
+function isBoxUsable(box) {
+    if (!box || box.isEmpty()) return false;
+    const size = box.getSize(new THREE.Vector3());
+    return size.x > 0.5 && size.y > 0.5 && size.z > 0.5;
 }
 
 function resolveVehicleConfig(vehicle, api, model) {
@@ -47,10 +205,14 @@ function resolveVehicleConfig(vehicle, api, model) {
 
     let dimensions = base.dimensions ?? null;
     if (!dimensions && model) {
-        const box = new THREE.Box3().setFromObject(model);
-        if (!box.isEmpty()) {
-            const size = box.getSize(new THREE.Vector3());
-            dimensions = { width: size.x, height: size.y, length: size.z };
+        const boundsTarget = resolveBoundsTarget(model, api);
+        if (boundsTarget) {
+            boundsTarget.updateMatrixWorld(true);
+            const box = new THREE.Box3().setFromObject(boundsTarget);
+            if (isBoxUsable(box)) {
+                const size = box.getSize(new THREE.Vector3());
+                dimensions = { width: size.x, height: size.y, length: size.z };
+            }
         }
     }
 
@@ -70,7 +232,7 @@ function resolveVehicleConfig(vehicle, api, model) {
     };
 }
 
-function computeBoundsLocal(anchor, model, dimensions) {
+function computeBoundsLocal(anchor, model, api, dimensions) {
     const fallbackSize = new THREE.Vector3(
         dimensions?.width ?? FALLBACK_DIMENSIONS.width,
         dimensions?.height ?? FALLBACK_DIMENSIONS.height,
@@ -78,15 +240,16 @@ function computeBoundsLocal(anchor, model, dimensions) {
     );
     const fallbackCenter = new THREE.Vector3(0, fallbackSize.y * 0.5, 0);
 
-    if (!anchor || !model) {
+    const target = resolveBoundsTarget(model, api);
+    if (!anchor || !target) {
         return { centerLocal: fallbackCenter, size: fallbackSize };
     }
 
     anchor.updateMatrixWorld(true);
-    model.updateMatrixWorld(true);
+    target.updateMatrixWorld(true);
 
-    const box = new THREE.Box3().setFromObject(model);
-    if (box.isEmpty()) {
+    const box = new THREE.Box3().setFromObject(target);
+    if (!isBoxUsable(box)) {
         return { centerLocal: fallbackCenter, size: fallbackSize };
     }
 
@@ -300,8 +463,8 @@ export class PhysicsController {
     _applyVehicleInput(entry) {
         const input = entry.input;
         const steering = -input.steering * entry.maxSteerRad;
-        const driveForce = input.throttle * entry.engineForce * (entry.forwardSign ?? 1);
-        const brakeForce = (input.brake * entry.brakeForce) + (input.handbrake * entry.handbrakeForce);
+        const driveForceTotal = input.throttle * entry.engineForce * (entry.forwardSign ?? 1);
+        const brakeForceTotal = (input.brake * entry.brakeForce) + (input.handbrake * entry.handbrakeForce);
 
         if (entry.body && (Math.abs(steering) > 1e-4 || input.throttle > 0.01 || input.brake > 0.01 || input.handbrake > 0.01)) {
             entry.body.wakeUp();
@@ -312,13 +475,37 @@ export class PhysicsController {
         const driveWheels = entry.wheelIndices.rear.length ? entry.wheelIndices.rear : allWheels;
         const steerLeftWheels = entry.wheelIndices.frontLeft?.length ? entry.wheelIndices.frontLeft : [];
         const steerRightWheels = entry.wheelIndices.frontRight?.length ? entry.wheelIndices.frontRight : [];
+        const frontWheels = entry.wheelIndices.front ?? [];
+        const rearWheels = entry.wheelIndices.rear ?? [];
 
         const steerAngles = this._computeSteerAngles(entry, steering);
 
         for (const i of allWheels) {
             entry.controller.setWheelSteering(i, 0);
             entry.controller.setWheelEngineForce(i, 0);
-            entry.controller.setWheelBrake(i, brakeForce);
+        }
+
+        if (brakeForceTotal > 0 && allWheels.length) {
+            const frontCount = frontWheels.length;
+            const rearCount = rearWheels.length;
+            const totalCount = allWheels.length;
+            const bias = Number.isFinite(entry.brakeBias) ? clamp(entry.brakeBias, 0, 1) : 0.6;
+            let frontBrake = brakeForceTotal;
+            let rearBrake = brakeForceTotal;
+            if (frontCount && rearCount) {
+                frontBrake = brakeForceTotal * bias;
+                rearBrake = brakeForceTotal * (1 - bias);
+            }
+            const frontPerWheel = frontCount ? frontBrake / frontCount : brakeForceTotal / totalCount;
+            const rearPerWheel = rearCount ? rearBrake / rearCount : brakeForceTotal / totalCount;
+            for (const i of allWheels) {
+                const isFront = frontCount ? frontWheels.includes(i) : false;
+                entry.controller.setWheelBrake(i, isFront ? frontPerWheel : rearPerWheel);
+            }
+        } else {
+            for (const i of allWheels) {
+                entry.controller.setWheelBrake(i, 0);
+            }
         }
 
         if (steerLeftWheels.length || steerRightWheels.length) {
@@ -334,6 +521,7 @@ export class PhysicsController {
             }
         }
 
+        const driveForce = driveForceTotal;
         for (const i of driveWheels) {
             entry.controller.setWheelEngineForce(i, driveForce);
         }
@@ -371,9 +559,28 @@ export class PhysicsController {
         loco.wheelSpinAccum = entry.wheelSpinAccum;
 
         const susp = entry.state.suspension;
-        susp.bodyPitch = 0;
-        susp.bodyRoll = 0;
-        susp.bodyHeave = 0;
+        let bodyPitch = 0;
+        let bodyRoll = 0;
+        if (rot) {
+            TMP_QUAT.set(rot.x, rot.y, rot.z, rot.w);
+            TMP_EULER.setFromQuaternion(TMP_QUAT, 'YXZ');
+            bodyPitch = TMP_EULER.x * (entry.bodyTiltScale ?? 1);
+            bodyRoll = TMP_EULER.z * (entry.bodyTiltScale ?? 1);
+        }
+
+        const maxAngle = entry.maxBodyAngle ?? degToRad(8);
+        susp.bodyPitch = clamp(bodyPitch, -maxAngle, maxAngle);
+        susp.bodyRoll = clamp(bodyRoll, -maxAngle, maxAngle);
+
+        let heave = 0;
+        if (entry.controller && entry.suspensionRestLength) {
+            const avgLen = averageWheelValue(entry.controller, entry.wheelIndices.all, (i) => entry.controller.wheelSuspensionLength(i));
+            if (typeof avgLen === 'number') {
+                const travel = entry.suspensionTravel ?? entry.suspensionRestLength;
+                heave = clamp(avgLen - entry.suspensionRestLength, -travel, travel);
+            }
+        }
+        susp.bodyHeave = heave;
     }
 
     _computeSteerAngles(entry, steering) {
@@ -411,7 +618,7 @@ export class PhysicsController {
         const model = resolveModel(entry);
         entry.config = resolveVehicleConfig(entry.vehicle, entry.api, model);
 
-        const { centerLocal, size } = computeBoundsLocal(entry.anchor, model, entry.config.dimensions);
+        const { centerLocal, size } = computeBoundsLocal(entry.anchor, model, entry.api, entry.config.dimensions);
         const safeSize = new THREE.Vector3(
             Math.max(0.5, size.x || entry.config.dimensions.width || FALLBACK_DIMENSIONS.width),
             Math.max(0.5, size.y || entry.config.dimensions.height || FALLBACK_DIMENSIONS.height),
@@ -421,15 +628,20 @@ export class PhysicsController {
         const layout = computeWheelLayout(entry.anchor, entry.api, entry.config, centerLocal);
         if (!layout || !layout.wheels.length) return false;
 
+        const tuning = resolveBusTuning(entry, model);
+        const suspension = tuning.suspension ?? {};
+        const restLength = Number.isFinite(suspension.restLength) ? suspension.restLength : layout.restLength;
+
         const startX = entry.anchor.position?.x ?? 0;
         const startY = entry.anchor.position?.y ?? 0;
         const startZ = entry.anchor.position?.z ?? 0;
 
         const bodyDesc = this._rapier.RigidBodyDesc.dynamic()
             .setTranslation(startX + centerLocal.x, startY + centerLocal.y, startZ + centerLocal.z)
-            .enabledRotations(false, true, false)
-            .setLinearDamping(0.2)
-            .setAngularDamping(0.6);
+            .enabledRotations(true, true, true)
+            .setLinearDamping(tuning.linearDamping ?? 0.2)
+            .setAngularDamping(tuning.angularDamping ?? 0.6)
+            .setAdditionalMass(tuning.mass ?? 0);
 
         const body = this._world.createRigidBody(bodyDesc);
 
@@ -438,13 +650,17 @@ export class PhysicsController {
             safeSize.y * 0.5,
             safeSize.z * 0.5
         );
-        colliderDesc.setFriction(1.0);
+        colliderDesc.setFriction(tuning.chassisFriction ?? DEFAULT_TUNING.chassisFriction);
         colliderDesc.setRestitution(0.0);
         this._world.createCollider(colliderDesc, body);
 
         const controller = this._world.createVehicleController(body);
         controller.indexUpAxis = 1;
-        controller.setIndexForwardAxis = 2;
+        if (typeof controller.setIndexForwardAxis === 'function') {
+            controller.setIndexForwardAxis(2);
+        } else {
+            controller.setIndexForwardAxis = 2;
+        }
 
         const direction = { x: 0, y: -1, z: 0 };
         const axle = { x: 1, y: 0, z: 0 };
@@ -453,16 +669,21 @@ export class PhysicsController {
         const rearIndices = [];
         const frontLeftIndices = [];
         const frontRightIndices = [];
+        const rearLeftIndices = [];
+        const rearRightIndices = [];
         const frontXs = [];
 
         for (const wheel of layout.wheels) {
             const connection = {
                 x: wheel.position.x,
-                y: wheel.position.y + layout.restLength,
+                y: wheel.position.y + restLength,
                 z: wheel.position.z
             };
-            controller.addWheel(connection, direction, axle, layout.restLength, layout.wheelRadius);
+            controller.addWheel(connection, direction, axle, restLength, layout.wheelRadius);
             const idx = controller.numWheels() - 1;
+
+            controller.setWheelSuspensionRestLength(idx, restLength);
+            controller.setWheelRadius(idx, layout.wheelRadius);
 
             if (wheel.isFront) {
                 frontIndices.push(idx);
@@ -471,6 +692,30 @@ export class PhysicsController {
                 else frontRightIndices.push(idx);
             } else {
                 rearIndices.push(idx);
+                if (wheel.position.x < 0) rearLeftIndices.push(idx);
+                else rearRightIndices.push(idx);
+            }
+
+            if (Number.isFinite(suspension.travel)) {
+                controller.setWheelMaxSuspensionTravel(idx, suspension.travel);
+            }
+            if (Number.isFinite(suspension.stiffness)) {
+                controller.setWheelSuspensionStiffness(idx, suspension.stiffness);
+            }
+            if (Number.isFinite(suspension.compression)) {
+                controller.setWheelSuspensionCompression(idx, suspension.compression);
+            }
+            if (Number.isFinite(suspension.relaxation)) {
+                controller.setWheelSuspensionRelaxation(idx, suspension.relaxation);
+            }
+            if (Number.isFinite(suspension.maxForce)) {
+                controller.setWheelMaxSuspensionForce(idx, suspension.maxForce);
+            }
+            if (Number.isFinite(tuning.frictionSlip)) {
+                controller.setWheelFrictionSlip(idx, tuning.frictionSlip);
+            }
+            if (Number.isFinite(tuning.sideFrictionStiffness)) {
+                controller.setWheelSideFrictionStiffness(idx, tuning.sideFrictionStiffness);
             }
         }
 
@@ -485,6 +730,8 @@ export class PhysicsController {
             rear: rearIndices,
             frontLeft: frontLeftIndices,
             frontRight: frontRightIndices,
+            rearLeft: rearLeftIndices,
+            rearRight: rearRightIndices,
             all: [...frontIndices, ...rearIndices]
         };
         if (frontXs.length >= 2) {
@@ -495,10 +742,15 @@ export class PhysicsController {
             entry.frontTrack = 0;
         }
         entry.wheelbase = entry.config.wheelbase ?? 0;
-        entry.maxSteerRad = degToRad(entry.config.maxSteerDeg ?? DEFAULT_CONFIG.maxSteerDeg);
-        entry.engineForce = this.config.engineForce ?? DEFAULT_CONFIG.engineForce;
-        entry.brakeForce = this.config.brakeForce ?? DEFAULT_CONFIG.brakeForce;
-        entry.handbrakeForce = this.config.handbrakeForce ?? DEFAULT_CONFIG.handbrakeForce;
+        entry.maxSteerRad = degToRad(tuning.maxSteerDeg ?? entry.config.maxSteerDeg ?? DEFAULT_CONFIG.maxSteerDeg);
+        entry.engineForce = tuning.engineForce ?? this.config.engineForce ?? DEFAULT_CONFIG.engineForce;
+        entry.brakeForce = tuning.brakeForce ?? this.config.brakeForce ?? DEFAULT_CONFIG.brakeForce;
+        entry.handbrakeForce = tuning.handbrakeForce ?? this.config.handbrakeForce ?? DEFAULT_CONFIG.handbrakeForce;
+        entry.brakeBias = tuning.brakeBias ?? entry.brakeBias;
+        entry.suspensionRestLength = restLength;
+        entry.suspensionTravel = suspension.travel ?? entry.suspensionTravel;
+        entry.bodyTiltScale = tuning.bodyTiltScale ?? entry.bodyTiltScale;
+        entry.maxBodyAngle = degToRad(tuning.maxBodyAngleDeg ?? 8);
 
         return true;
     }
@@ -555,7 +807,7 @@ export class PhysicsController {
             wheelRadius: DEFAULT_CONFIG.wheelRadius,
             wheelSpinAccum: 0,
             forwardSign: 1,
-            wheelIndices: { front: [], rear: [], frontLeft: [], frontRight: [], all: [] },
+            wheelIndices: { front: [], rear: [], frontLeft: [], frontRight: [], rearLeft: [], rearRight: [], all: [] },
             frontTrack: 0,
             wheelbase: 0,
             maxSteerRad: degToRad(DEFAULT_CONFIG.maxSteerDeg),
@@ -563,7 +815,12 @@ export class PhysicsController {
             _steerAngleRight: 0,
             engineForce: this.config.engineForce ?? DEFAULT_CONFIG.engineForce,
             brakeForce: this.config.brakeForce ?? DEFAULT_CONFIG.brakeForce,
-            handbrakeForce: this.config.handbrakeForce ?? DEFAULT_CONFIG.handbrakeForce
+            handbrakeForce: this.config.handbrakeForce ?? DEFAULT_CONFIG.handbrakeForce,
+            brakeBias: DEFAULT_TUNING.brakeBias,
+            suspensionRestLength: DEFAULT_TUNING.suspension.restLength,
+            suspensionTravel: DEFAULT_TUNING.suspension.travel,
+            bodyTiltScale: DEFAULT_TUNING.bodyTiltScale,
+            maxBodyAngle: degToRad(DEFAULT_TUNING.maxBodyAngleDeg)
         };
 
         this._vehicles.set(vehicleId, entry);
@@ -635,6 +892,76 @@ export class PhysicsController {
     getVehicleState(vehicleId) {
         const entry = this._vehicles.get(vehicleId);
         return entry ? entry.state : null;
+    }
+
+    getVehicleDebug(vehicleId) {
+        const entry = this._vehicles.get(vehicleId) ?? this._pendingVehicles.get(vehicleId);
+        if (!entry) return null;
+
+        const controller = entry.controller ?? null;
+        const indices = entry.wheelIndices?.all ?? [];
+        const ordered = [];
+        const seen = new Set();
+        const orderLists = [
+            entry.wheelIndices?.frontLeft ?? [],
+            entry.wheelIndices?.frontRight ?? [],
+            entry.wheelIndices?.rearLeft ?? [],
+            entry.wheelIndices?.rearRight ?? []
+        ];
+
+        for (const list of orderLists) {
+            for (const i of list) {
+                if (!seen.has(i)) {
+                    seen.add(i);
+                    ordered.push(i);
+                }
+            }
+        }
+
+        for (const i of indices) {
+            if (!seen.has(i)) {
+                seen.add(i);
+                ordered.push(i);
+            }
+        }
+
+        const frontLeft = new Set(entry.wheelIndices?.frontLeft ?? []);
+        const frontRight = new Set(entry.wheelIndices?.frontRight ?? []);
+        const rearLeft = new Set(entry.wheelIndices?.rearLeft ?? []);
+        const rearRight = new Set(entry.wheelIndices?.rearRight ?? []);
+
+        const wheels = ordered.map((i) => {
+            let label = `W${i}`;
+            if (frontLeft.has(i)) label = 'FL';
+            else if (frontRight.has(i)) label = 'FR';
+            else if (rearLeft.has(i)) label = 'RL';
+            else if (rearRight.has(i)) label = 'RR';
+
+            return {
+                index: i,
+                label,
+                inContact: controller?.wheelIsInContact ? controller.wheelIsInContact(i) : null,
+                suspensionLength: controller?.wheelSuspensionLength ? controller.wheelSuspensionLength(i) : null,
+                suspensionForce: controller?.wheelSuspensionForce ? controller.wheelSuspensionForce(i) : null,
+                forwardImpulse: controller?.wheelForwardImpulse ? controller.wheelForwardImpulse(i) : null,
+                sideImpulse: controller?.wheelSideImpulse ? controller.wheelSideImpulse(i) : null,
+                engineForce: controller?.wheelEngineForce ? controller.wheelEngineForce(i) : null,
+                brakeForce: controller?.wheelBrake ? controller.wheelBrake(i) : null
+            };
+        });
+
+        const input = { ...entry.input };
+        const driveForce = input.throttle * (entry.engineForce ?? 0) * (entry.forwardSign ?? 1);
+        const brakeForce = (input.brake * (entry.brakeForce ?? 0)) + (input.handbrake * (entry.handbrakeForce ?? 0));
+
+        return {
+            ready: !!controller,
+            input,
+            forces: { driveForce, brakeForce },
+            locomotion: { ...entry.state.locomotion },
+            suspension: { ...entry.state.suspension },
+            wheels
+        };
     }
 
     getSystem(name) {
