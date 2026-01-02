@@ -1,5 +1,4 @@
 // src/graphics/assets3d/models/buses/CityBus.js
-// Loads the city bus OBJ model and attaches the wheel rig
 import * as THREE from 'three';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
@@ -178,6 +177,37 @@ function collectWheelMeshes(root) {
     return map;
 }
 
+function transformBox(box, matrix) {
+    if (box.isEmpty()) return new THREE.Box3();
+    const out = new THREE.Box3();
+    const points = [
+        new THREE.Vector3(box.min.x, box.min.y, box.min.z),
+        new THREE.Vector3(box.min.x, box.min.y, box.max.z),
+        new THREE.Vector3(box.min.x, box.max.y, box.min.z),
+        new THREE.Vector3(box.min.x, box.max.y, box.max.z),
+        new THREE.Vector3(box.max.x, box.min.y, box.min.z),
+        new THREE.Vector3(box.max.x, box.min.y, box.max.z),
+        new THREE.Vector3(box.max.x, box.max.y, box.min.z),
+        new THREE.Vector3(box.max.x, box.max.y, box.max.z)
+    ];
+    for (const p of points) {
+        p.applyMatrix4(matrix);
+        out.expandByPoint(p);
+    }
+    return out;
+}
+
+function getMeshBoundsLocal(root, mesh) {
+    if (!mesh.geometry) return new THREE.Box3();
+    if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+    const localBox = mesh.geometry.boundingBox;
+    if (!localBox) return new THREE.Box3();
+    root.updateMatrixWorld(true);
+    mesh.updateMatrixWorld(true);
+    const toRoot = new THREE.Matrix4().copy(root.matrixWorld).invert().multiply(mesh.matrixWorld);
+    return transformBox(localBox, toRoot);
+}
+
 function attachWheelMeshes(bus, wheelNodes, wheelMeshes, rig) {
     const info = {};
     bus.updateMatrixWorld(true);
@@ -186,11 +216,13 @@ function attachWheelMeshes(bus, wheelNodes, wheelMeshes, rig) {
         const meshes = wheelMeshes[key] ?? [];
         if (!meshes.length) continue;
         const box = new THREE.Box3();
-        for (const mesh of meshes) box.expandByObject(mesh);
+        for (const mesh of meshes) {
+            const localBox = getMeshBoundsLocal(bus, mesh);
+            if (!localBox.isEmpty()) box.union(localBox);
+        }
         if (box.isEmpty()) continue;
-        const centerWorld = box.getCenter(new THREE.Vector3());
-        const centerLocal = bus.worldToLocal(centerWorld.clone());
-        wheelNodes[key].root.position.copy(centerLocal);
+        const center = box.getCenter(new THREE.Vector3());
+        wheelNodes[key].root.position.copy(center);
         info[key] = { meshes, box };
     }
 
