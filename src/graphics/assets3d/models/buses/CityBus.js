@@ -294,8 +294,6 @@ export function createCityBus(spec) {
     hr.name = 'headlight_R';
     hr.position.x = width * 0.28;
 
-    bus.add(hl, hr);
-
     const brakeGeo = new THREE.BoxGeometry(0.20 * MODEL_SCALE, 0.12 * MODEL_SCALE, 0.06 * MODEL_SCALE);
 
     const bl = new THREE.Mesh(brakeGeo, mats.brakeLightMat);
@@ -306,7 +304,11 @@ export function createCityBus(spec) {
     br.name = 'brakelight_R';
     br.position.x = width * 0.30;
 
-    bus.add(bl, br);
+    hl.visible = false;
+    hr.visible = false;
+    bl.visible = false;
+    br.visible = false;
+    bus.add(hl, hr, bl, br);
 
     const rig = new WheelRig({ wheelRadius: wheelR });
 

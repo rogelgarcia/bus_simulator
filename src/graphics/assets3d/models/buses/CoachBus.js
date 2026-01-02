@@ -479,6 +479,10 @@ export function createCoachBus(spec) {
         mats
     );
 
+    lights.hl.visible = false;
+    lights.hr.visible = false;
+    lights.bl.visible = false;
+    lights.br.visible = false;
     bus.add(lights.hl, lights.hr, lights.bl, lights.br);
 
     bus.userData.parts = {
