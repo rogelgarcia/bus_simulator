@@ -128,6 +128,24 @@ function yawFromQuat(q) {
     return Math.atan2(siny, cosy);
 }
 
+function setControllerAxis(controller, propName, setterName, value) {
+    if (!controller) return;
+    const setter = controller[setterName];
+    if (typeof setter === 'function') {
+        setter.call(controller, value);
+        return;
+    }
+    const desc = Object.getOwnPropertyDescriptor(controller, propName)
+        ?? Object.getOwnPropertyDescriptor(Object.getPrototypeOf(controller), propName);
+    if (desc?.set) {
+        desc.set.call(controller, value);
+        return;
+    }
+    if (desc?.writable) {
+        controller[propName] = value;
+    }
+}
+
 function resolveBusId(entry, model) {
     const raw = model?.userData?.id
         ?? entry?.api?.root?.userData?.id
@@ -683,15 +701,11 @@ export class PhysicsController {
         this._world.createCollider(colliderDesc, body);
 
         const controller = this._world.createVehicleController(body);
-        controller.indexUpAxis = 1;
-        if (typeof controller.setIndexForwardAxis === 'function') {
-            controller.setIndexForwardAxis(2);
-        } else {
-            controller.setIndexForwardAxis = 2;
-        }
+        setControllerAxis(controller, 'indexUpAxis', 'setIndexUpAxis', 1);
+        setControllerAxis(controller, 'indexForwardAxis', 'setIndexForwardAxis', 2);
 
         const direction = { x: 0, y: -1, z: 0 };
-        const axle = { x: 1, y: 0, z: 0 };
+        const axle = { x: -1, y: 0, z: 0 };
 
         const frontIndices = [];
         const rearIndices = [];

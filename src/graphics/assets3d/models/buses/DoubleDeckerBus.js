@@ -81,6 +81,8 @@ export function createDoubleDeckerBus(spec) {
     bus.userData.type = 'bus';
     bus.userData.id = spec.id;
     bus.name = `bus_${spec.id}`;
+    bus.userData.ready = true;
+    bus.userData.readyPromise = Promise.resolve(bus);
 
     // Lower body
     const lowerBody = new THREE.Mesh(new THREE.BoxGeometry(width, height, length), mats.body);

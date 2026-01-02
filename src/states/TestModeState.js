@@ -444,6 +444,7 @@ export class TestModeState {
 
         // Camera follow state
         this._prevBusPos = new THREE.Vector3();
+        this._busReadyToken = 0;
 
         this.busState = {
             steerDeg: 0,              // UI: + = LEFT
@@ -1123,12 +1124,36 @@ export class TestModeState {
         }
 
         this._updateHudBusName();
+        this._scheduleBusPhysicsRefresh();
     }
 
     _nextBus() {
         if (!BUS_CATALOG.length) return;
         this.busIndex = (this.busIndex + 1) % BUS_CATALOG.length;
         this._setBus(this.busIndex);
+    }
+
+    _scheduleBusPhysicsRefresh() {
+        const readyPromise = this.busModel?.userData?.readyPromise;
+        if (!readyPromise || typeof readyPromise.then !== 'function') return;
+        this._busReadyToken += 1;
+        const token = this._busReadyToken;
+        readyPromise.then(() => {
+            if (this._busReadyToken !== token) return;
+            if (!this.vehicle || !this.busAnchor) return;
+            this._refreshVehiclePhysics();
+        });
+    }
+
+    _refreshVehiclePhysics() {
+        if (!this.vehicle || !this.busAnchor) return;
+        this.sim?.physics?.removeVehicle?.(this.vehicle.id);
+        this.sim?.physics?.addVehicle?.(this.vehicle.id, this.vehicle.config, this.busAnchor, this.vehicle.api);
+        this.vehicleController?.setVehicleApi?.(this.vehicle.api, this.busAnchor);
+        this._prevBusPos.copy(this.busAnchor.position);
+        if (this.controls) {
+            this.controls.target.set(this.busAnchor.position.x, 1.8, this.busAnchor.position.z);
+        }
     }
 
     _handleKeyDown(e) {

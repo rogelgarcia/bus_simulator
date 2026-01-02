@@ -464,6 +464,11 @@ export function createCoachBus(spec) {
     bus.userData.type = 'bus';
     bus.userData.id = spec.id;
     bus.name = `bus_${spec.id}`;
+    let resolveReady = null;
+    bus.userData.ready = false;
+    bus.userData.readyPromise = new Promise((resolve) => {
+        resolveReady = resolve;
+    });
 
     const rig = new WheelRig({ wheelRadius: DEFAULT_WHEEL_RADIUS });
     bus.userData.wheelRig = rig;
@@ -548,6 +553,9 @@ export function createCoachBus(spec) {
 
         alignAnchoredBus(bus);
         offsetBusPivot(bus, MODEL_Z_OFFSET);
+    }).finally(() => {
+        bus.userData.ready = true;
+        if (resolveReady) resolveReady(bus);
     });
 
     applyShadows(bus);

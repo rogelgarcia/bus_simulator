@@ -272,6 +272,11 @@ export function createCityBus(spec) {
     bus.userData.type = 'bus';
     bus.userData.id = spec.id;
     bus.name = `bus_${spec.id}`;
+    let resolveReady = null;
+    bus.userData.ready = false;
+    bus.userData.readyPromise = new Promise((resolve) => {
+        resolveReady = resolve;
+    });
 
     const mats = makeLightMaterials();
 
@@ -310,6 +315,10 @@ export function createCityBus(spec) {
 
     nodes.fl.root.rotation.y = Math.PI;
     nodes.rl.root.rotation.y = Math.PI;
+    nodes.fr.root.position.set(wheelX, wheelR, axleFront);
+    nodes.rr.root.position.set(wheelX, wheelR, axleRear);
+    nodes.fl.root.position.set(-wheelX, wheelR, axleFront);
+    nodes.rl.root.position.set(-wheelX, wheelR, axleRear);
 
     bus.add(nodes.fr.root, nodes.rr.root, nodes.fl.root, nodes.rl.root);
 
@@ -340,6 +349,9 @@ export function createCityBus(spec) {
         const wheelMeshes = collectWheelMeshes(model);
         attachWheelMeshes(bus, nodes, wheelMeshes, rig);
         alignAnchoredBus(bus);
+    }).finally(() => {
+        bus.userData.ready = true;
+        if (resolveReady) resolveReady(bus);
     });
 
     applyShadows(bus);
