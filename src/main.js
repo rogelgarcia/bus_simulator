@@ -1,14 +1,14 @@
 // src/main.js
-import { GameEngine } from './core/GameEngine.js';
-import { StateMachine } from './core/StateMachine.js';
+import { GameEngine } from './app/core/GameEngine.js';
+import { StateMachine } from './app/core/StateMachine.js';
 
-import { WelcomeState } from '../states/WelcomeState.js';
-import { SetupState } from '../states/SetupState.js';
-import { BusSelectState } from '../states/BusSelectState.js';
-import { TestModeState } from '../states/TestModeState.js';
-import { CityState } from '../states/CityState.js';
-import { GameplayState } from '../states/GameplayState.js';
-import { ConnectorDebuggerState } from '../states/ConnectorDebuggerState.js';
+import { WelcomeState } from './states/WelcomeState.js';
+import { SetupState } from './states/SetupState.js';
+import { BusSelectState } from './states/BusSelectState.js';
+import { TestModeState } from './states/TestModeState.js';
+import { CityState } from './states/CityState.js';
+import { GameplayState } from './states/GameplayState.js';
+import { ConnectorDebuggerState } from './states/ConnectorDebuggerState.js';
 
 const canvas = document.getElementById('game-canvas');
 

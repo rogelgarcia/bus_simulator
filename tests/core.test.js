@@ -36,7 +36,7 @@ async function runTests() {
     console.log('\n🧪 Running Core Tests...\n');
 
     // ========== EventBus Tests ==========
-    const { EventBus } = await import('/src/core/EventBus.js');
+    const { EventBus } = await import('/src/app/core/EventBus.js');
 
     test('EventBus: on/emit works', () => {
         const bus = new EventBus();
@@ -83,7 +83,7 @@ async function runTests() {
     });
 
     // ========== VehicleManager Tests ==========
-    const { VehicleManager } = await import('/src/core/VehicleManager.js');
+    const { VehicleManager } = await import('/src/app/core/VehicleManager.js');
 
     test('VehicleManager: addVehicle returns ID', () => {
         const bus = new EventBus();
@@ -128,11 +128,11 @@ async function runTests() {
     });
 
     // ========== Physics Systems Stub Tests ==========
-    const { LocomotionSystem } = await import('/src/physics/systems/LocomotionSystem.js');
-    const { SuspensionSystem } = await import('/src/physics/systems/SuspensionSystem.js');
-    const { DrivetrainSystem } = await import('/src/physics/systems/DrivetrainSystem.js');
-    const { CollisionSystem } = await import('/src/physics/systems/CollisionSystem.js');
-    const { BrakeSystem } = await import('/src/physics/systems/BrakeSystem.js');
+    const { LocomotionSystem } = await import('/src/app/physics/systems/LocomotionSystem.js');
+    const { SuspensionSystem } = await import('/src/app/physics/systems/SuspensionSystem.js');
+    const { DrivetrainSystem } = await import('/src/app/physics/systems/DrivetrainSystem.js');
+    const { CollisionSystem } = await import('/src/app/physics/systems/CollisionSystem.js');
+    const { BrakeSystem } = await import('/src/app/physics/systems/BrakeSystem.js');
 
     test('LocomotionSystem: addVehicle/getState works', () => {
         const sys = new LocomotionSystem();
@@ -531,7 +531,7 @@ async function runTests() {
 
     // ========== PhysicsController Tests (added in Task 4) ==========
     try {
-        const { PhysicsController } = await import('/src/physics/PhysicsController.js');
+        const { PhysicsController } = await import('/src/app/physics/PhysicsController.js');
 
         test('PhysicsController: instantiates with EventBus', () => {
             const bus = new EventBus();
@@ -647,7 +647,7 @@ async function runTests() {
 
     // ========== SimulationContext Tests (added in Task 5) ==========
     try {
-        const { SimulationContext } = await import('/src/core/SimulationContext.js');
+        const { SimulationContext } = await import('/src/app/core/SimulationContext.js');
 
         test('SimulationContext: instantiates with all systems', () => {
             const ctx = new SimulationContext();
@@ -703,7 +703,7 @@ async function runTests() {
 
     // ========== GameEngine Integration Tests (added in Task 6) ==========
     try {
-        const { GameEngine } = await import('/src/core/GameEngine.js');
+        const { GameEngine } = await import('/src/app/core/GameEngine.js');
 
         // Create a mock canvas for testing
         const mockCanvas = document.createElement('canvas');
@@ -743,7 +743,7 @@ async function runTests() {
 
     // ========== InputManager Tests (added in Task 13) ==========
     try {
-        const { InputManager } = await import('/src/input/InputManager.js');
+        const { InputManager } = await import('/src/app/input/InputManager.js');
 
         test('InputManager: instantiates with EventBus', () => {
             const bus = new EventBus();
@@ -829,8 +829,8 @@ async function runTests() {
 
     // ========== VehicleController Tests (added in Task 14) ==========
     try {
-        const { VehicleController } = await import('/src/vehicle/VehicleController.js');
-        const { PhysicsController } = await import('/src/physics/PhysicsController.js');
+        const { VehicleController } = await import('/src/app/vehicle/VehicleController.js');
+        const { PhysicsController } = await import('/src/app/physics/PhysicsController.js');
 
         test('VehicleController: instantiates with required params', () => {
             const bus = new EventBus();
@@ -930,9 +930,9 @@ async function runTests() {
 
     // ========== GameLoop Tests (added in Task 15) ==========
     try {
-        const { GameLoop } = await import('/src/core/GameLoop.js');
-        const { SimulationContext } = await import('/src/core/SimulationContext.js');
-        const { VehicleController } = await import('/src/vehicle/VehicleController.js');
+        const { GameLoop } = await import('/src/app/core/GameLoop.js');
+        const { SimulationContext } = await import('/src/app/core/SimulationContext.js');
+        const { VehicleController } = await import('/src/app/vehicle/VehicleController.js');
 
         test('GameLoop: instantiates with SimulationContext', () => {
             const sim = new SimulationContext();
@@ -1040,7 +1040,7 @@ async function runTests() {
     // ========== GameplayState Tests (added in Task 16) ==========
     try {
         const { GameplayState } = await import('/states/GameplayState.js');
-        const { PhysicsController } = await import('/src/physics/PhysicsController.js');
+        const { PhysicsController } = await import('/src/app/physics/PhysicsController.js');
 
         test('GameplayState: class exists and can be imported', () => {
             assertTrue(typeof GameplayState === 'function', 'GameplayState should be a class.');
@@ -1070,7 +1070,7 @@ async function runTests() {
 
     // ========== createVehicleFromBus Tests ==========
     try {
-        const { createVehicleFromBus } = await import('/src/vehicle/createVehicle.js');
+        const { createVehicleFromBus } = await import('/src/app/vehicle/createVehicle.js');
         const THREE = await import('three');
 
         test('createVehicleFromBus: function exists', () => {
@@ -1149,9 +1149,9 @@ async function runTests() {
         console.log('⏭️  createVehicleFromBus tests skipped:', e.message);
     }
 
-    const { solveConnectorPath } = await import('/src/geometry/ConnectorPathSolver.js');
-    const { createGeneratorConfig } = await import('/graphics/assets3d/generators/GeneratorParams.js');
-    const { createCityConfig } = await import('/src/city/CityConfig.js');
+    const { solveConnectorPath } = await import('/src/app/geometry/ConnectorPathSolver.js');
+    const { createGeneratorConfig } = await import('/src/graphics/assets3d/generators/GeneratorParams.js');
+    const { createCityConfig } = await import('/src/app/city/CityConfig.js');
     const THREE = await import('three');
     const { runRoadConnectionDebuggerTests } = await import('/tests/road_connection_debugger.test.js');
 

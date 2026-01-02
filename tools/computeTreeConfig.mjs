@@ -11,7 +11,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const root = path.resolve(__dirname, '..');
 const modelsRoot = path.join(root, 'assets', 'trees', 'Models');
-const outputPath = path.join(root, 'graphics', 'assets3d', 'generators', 'TreeConfig.js');
+const outputPath = path.join(root, 'src', 'graphics', 'assets3d', 'generators', 'TreeConfig.js');
 const variants = 15;
 
 const qualities = [
@@ -217,7 +217,7 @@ for (const quality of qualities) {
     config[quality.key] = entries;
 }
 
-const output = `// graphics/assets3d/generators/TreeConfig.js
+const output = `// src/graphics/assets3d/generators/TreeConfig.js
 // Precomputed tree orientation and size data
 export const TREE_CONFIG = ${JSON.stringify(config, null, 4)};
 `;

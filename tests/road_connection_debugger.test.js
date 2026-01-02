@@ -1,8 +1,8 @@
 // tests/road_connection_debugger.test.js
-import { CityMap } from '../src/city/CityMap.js';
-import { createCityConfig } from '../src/city/CityConfig.js';
-import { createGeneratorConfig } from '../graphics/assets3d/generators/GeneratorParams.js';
-import { generateRoads } from '../graphics/assets3d/generators/RoadGenerator.js';
+import { CityMap } from '../src/app/city/CityMap.js';
+import { createCityConfig } from '../src/app/city/CityConfig.js';
+import { createGeneratorConfig } from '../src/graphics/assets3d/generators/GeneratorParams.js';
+import { generateRoads } from '../src/graphics/assets3d/generators/RoadGenerator.js';
 
 const MAX_RADIUS = 270;
 const TANGENT_DOT_MIN = 0.92;
