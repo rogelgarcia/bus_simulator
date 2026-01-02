@@ -65,15 +65,22 @@ function applyMaterialSettings(root) {
         const mats = Array.isArray(o.material) ? o.material : [o.material];
         for (const mat of mats) {
             if (!mat) continue;
+            const name = (mat.name || '').toLowerCase();
             if (mat.map) {
                 mat.map.colorSpace = THREE.SRGBColorSpace;
                 mat.map.needsUpdate = true;
+            }
+            if (name.includes('frontlight') || name === 'lights') {
+                if (mat.color) mat.color.set(0xffffff);
+                if (mat.emissive) mat.emissive.set(0xffffff);
+                if ('emissiveIntensity' in mat) mat.emissiveIntensity = 0.25;
+                if (!mat.userData) mat.userData = {};
+                mat.userData.noTune = true;
             }
             if (!TRANSPARENT_BUS) {
                 mat.transparent = false;
                 mat.opacity = 1.0;
             } else {
-                const name = (mat.name || '').toLowerCase();
                 const isGlass = name.includes('glass') || name.includes('window');
                 mat.transparent = true;
                 mat.opacity = isGlass ? BUS_LINER_OPACITY : BUS_BODY_OPACITY;
