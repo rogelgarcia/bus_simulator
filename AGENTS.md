@@ -38,8 +38,7 @@ Note: `index.html` uses CDN imports for `three`, so a network connection is requ
 - Use a one-line commit message.
 - When committing, choose a concise one-line message yourself; do not ask the user for it.
 - Never commit AI prompt files named `AI_#_title`.
-- PRs should include a clear description of behavior changes, testing notes (what was run), and screenshots for UI/visual changes.
-- Link related issues or tasks when applicable.
+- Commit whatever is pending (but follow the above rules)
 
 ## Project Rules & AI Prompting
 - Follow `PROJECT_RULES.md` for directory and comment policies
