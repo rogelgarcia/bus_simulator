@@ -354,6 +354,10 @@ export class PhysicsController {
         this._rapier = null;
         this._world = null;
         this._ready = false;
+        this._initError = null;
+        this._initStartMs = Date.now();
+        this._fatalTimer = null;
+        this._fatalReported = false;
 
         this._initPromise = this._initRapier();
 
@@ -379,7 +383,31 @@ export class PhysicsController {
             this._refreshGround();
             this._flushPendingVehicles();
         } catch (err) {
+            this._initError = err;
+            this._queueFatal('Rapier', err);
             console.error('[PhysicsController] Failed to initialize Rapier.', err);
+        }
+    }
+
+    _queueFatal(label, err) {
+        if (this._fatalReported) return;
+        const elapsed = Date.now() - this._initStartMs;
+        const delay = Math.max(0, 1000 - elapsed);
+        const report = () => {
+            if (this._fatalReported) return;
+            this._fatalReported = true;
+            if (typeof window === 'undefined') return;
+            if (!Array.isArray(window.__testFatals)) window.__testFatals = [];
+            const message = err?.message ?? String(err);
+            window.__testFatals.push({ name: label, message });
+        };
+        if (delay > 0) {
+            if (this._fatalTimer) {
+                clearTimeout(this._fatalTimer);
+            }
+            this._fatalTimer = setTimeout(report, delay);
+        } else {
+            report();
         }
     }
 
@@ -989,6 +1017,11 @@ export class PhysicsController {
         if (this._world) {
             this._world.free();
             this._world = null;
+        }
+
+        if (this._fatalTimer) {
+            clearTimeout(this._fatalTimer);
+            this._fatalTimer = null;
         }
 
         this._rapier = null;

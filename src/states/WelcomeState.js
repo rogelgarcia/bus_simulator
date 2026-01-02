@@ -9,9 +9,11 @@ export class WelcomeState {
         this.uiWelcome = document.getElementById('ui-welcome');
         this.uiSelect = document.getElementById('ui-select');
         this.uiSetup = document.getElementById('ui-setup');
+        this.testErrorWidget = document.getElementById('ui-test-errors');
 
         this._onKeyDown = (e) => this._handleKeyDown(e);
         this._onPointerDown = () => this._start(); // optional click-to-start
+        this._testErrorInterval = null;
     }
 
     enter() {
@@ -27,11 +29,13 @@ export class WelcomeState {
 
         window.addEventListener('keydown', this._onKeyDown, { passive: false });
         this.canvas?.addEventListener?.('pointerdown', this._onPointerDown);
+        this._startTestErrorWidget();
     }
 
     exit() {
         window.removeEventListener('keydown', this._onKeyDown);
         this.canvas?.removeEventListener?.('pointerdown', this._onPointerDown);
+        this._stopTestErrorWidget();
     }
 
     _start() {
@@ -56,6 +60,34 @@ export class WelcomeState {
 
     _setup() {
         this.sm.go('setup');
+    }
+
+    _startTestErrorWidget() {
+        if (!this.testErrorWidget) return;
+        this._refreshTestErrorWidget();
+        if (this._testErrorInterval) return;
+        this._testErrorInterval = window.setInterval(() => this._refreshTestErrorWidget(), 250);
+    }
+
+    _stopTestErrorWidget() {
+        if (!this._testErrorInterval) return;
+        window.clearInterval(this._testErrorInterval);
+        this._testErrorInterval = null;
+    }
+
+    _refreshTestErrorWidget() {
+        if (!this.testErrorWidget || typeof window === 'undefined') return;
+        const errors = Array.isArray(window.__testErrors) ? window.__testErrors : [];
+        const fatals = Array.isArray(window.__testFatals) ? window.__testFatals : [];
+        const errorCount = errors.length;
+        const fatalCount = fatals.length;
+        if (errorCount === 0 && fatalCount === 0) {
+            this.testErrorWidget.textContent = 'All tests passed';
+            this.testErrorWidget.classList.add('hidden');
+            return;
+        }
+        this.testErrorWidget.textContent = `${errorCount} errors, ${fatalCount} fatals found`;
+        this.testErrorWidget.classList.remove('hidden');
     }
 
     _handleKeyDown(e) {
