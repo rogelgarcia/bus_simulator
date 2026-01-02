@@ -1,15 +1,18 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `src/` holds simulation logic (core, physics, input, city, vehicle, skeletons).
-- `graphics/` is strictly rendering/UI code.
-  - `graphics/assets3d/` for Three.js models, generators, textures, and factories.
-  - `graphics/gui/` for HUD, widgets, and CSS.
-- `states/` contains high-level gameplay state modules.
-- `tests/` contains browser-run test modules.
-- `assets/` stores non-code artifacts (images, notes, etc.).
+- `src/app/` holds application logic (city, core, geometry, input, physics, skeletons, utils, vehicle)
+- `src/graphics/` is strictly rendering/UI code
+  - `src/graphics/assets3d/` for Three.js models, generators, textures, and factories
+  - `src/graphics/gui/` for HUD, widgets, and CSS
+  - `src/graphics/visuals/` for visual effects and rendering utilities
+- `src/states/` contains high-level gameplay state modules
+- `tests/` contains browser-run test modules
+- `assets/` stores non-code artifacts (images, textures, 3D models, etc.)
+- `downloads/` stores third-party resources before integration
+- `tools/` contains utility scripts
 
-Keep visual/rendering concerns in `graphics/` and game/physics logic in `src/`.
+Keep visual/rendering concerns in `src/graphics/` and game/physics logic in `src/app/`.
 
 ## Build, Test, and Development Commands
 This repo runs as a static web app (no bundler).
@@ -20,10 +23,9 @@ This repo runs as a static web app (no bundler).
 Note: `index.html` uses CDN imports for `three`, so a network connection is required when running locally.
 
 ## Coding Style & Naming Conventions
-- JavaScript modules use ES module syntax and file-level exports.
-- Indentation uses 4 spaces (see existing `src/` files).
-- **Comment rule:** code files should have no comments except the first line, which must be a comment containing the file path (e.g., `// src/core/GameLoop.js`).
-- Keep rendering/UI work under `graphics/` and avoid mixing it with core logic.
+- JavaScript modules use ES module syntax and file-level exports
+- Indentation uses 4 spaces (see existing `src/` files)
+- Follow comment policies defined in `PROJECT_RULES.md`
 
 ## Testing Guidelines
 - Tests live in `tests/core.test.js` and run in the browser on page load.
@@ -40,5 +42,12 @@ Note: `index.html` uses CDN imports for `three`, so a network connection is requ
 - Link related issues or tasks when applicable.
 
 ## Project Rules & AI Prompting
-- Follow `PROJECT_RULES.md` for directory and comment policies.
-- When preparing AI prompt requests, see `AI_PROMPT_INSTRUCTIONS.md` for the required structure and attachment steps.
+- Follow `PROJECT_RULES.md` for directory and comment policies
+- When preparing AI prompt requests, see `AI_PROMPT_INSTRUCTIONS.md` for the required structure and attachment steps
+
+## Debug suggestion
+- If a problem doesn't resolve after multiple prompts, it might be another issue
+  - Add a test to validate some assumptions 
+    - Did the resources loaded?
+    - Quick unit test the APIs
+    - Other kinds of tests you find suitable to verify
