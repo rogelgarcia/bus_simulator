@@ -1,4 +1,5 @@
 // src/app/physics/systems/SuspensionSystem.js
+import * as THREE from 'three';
 function clamp(v, a, b) {
     return Math.max(a, Math.min(b, v));
 }
@@ -11,6 +12,109 @@ function expLerp(cur, target, dt, tau) {
 function moveTowards(cur, target, maxDelta) {
     const d = clamp(target - cur, -maxDelta, maxDelta);
     return cur + d;
+}
+
+function deriveDampingFromRatio({ stiffness, mass, dampingRatio }) {
+    const k = Math.max(1e-6, stiffness ?? 0);
+    const m = Math.max(1e-6, mass ?? 0);
+    const z = Math.max(0, dampingRatio ?? 0);
+    return 2 * z * Math.sqrt(k * m);
+}
+
+function isFiniteNumber(value) {
+    return typeof value === 'number' && Number.isFinite(value);
+}
+
+function resolveTravel(baseTravel, tuning) {
+    if (isFiniteNumber(tuning?.travel)) return Math.abs(tuning.travel);
+
+    const bump = isFiniteNumber(tuning?.bumpTravel) ? Math.abs(tuning.bumpTravel) : null;
+    const droop = isFiniteNumber(tuning?.droopTravel) ? Math.abs(tuning.droopTravel) : null;
+
+    if (bump != null && droop != null) return Math.min(bump, droop);
+    if (bump != null) return bump;
+    if (droop != null) return droop;
+    return baseTravel;
+}
+
+function applyTuning(base, tuning) {
+    if (!tuning || typeof tuning !== 'object') return base;
+
+    const out = { ...base };
+
+    if (isFiniteNumber(tuning.stiffness)) out.stiffness = tuning.stiffness;
+    if (isFiniteNumber(tuning.mass)) out.mass = tuning.mass;
+
+    const damping = isFiniteNumber(tuning.damping)
+        ? tuning.damping
+        : (isFiniteNumber(tuning.dampingRatio)
+            ? deriveDampingFromRatio({
+                stiffness: out.stiffness,
+                mass: out.mass,
+                dampingRatio: tuning.dampingRatio
+            })
+            : null);
+
+    if (isFiniteNumber(damping)) out.damping = damping;
+
+    out.travel = resolveTravel(out.travel, tuning);
+
+    if (isFiniteNumber(tuning.maxAngleDeg)) out.maxAngleDeg = tuning.maxAngleDeg;
+    if (isFiniteNumber(tuning.springNonlinear)) out.springNonlinear = tuning.springNonlinear;
+    if (isFiniteNumber(tuning.springNonlinearPow)) out.springNonlinearPow = tuning.springNonlinearPow;
+
+    return out;
+}
+
+function applyLayoutFromBus(state, busApi) {
+    const rig = busApi?.wheelRig ?? null;
+    const root = busApi?.root ?? null;
+    if (!rig || !root) return;
+
+    const wheels = [];
+    const tmp = new THREE.Vector3();
+
+    root.updateMatrixWorld(true);
+
+    const all = [...(rig.front ?? []), ...(rig.rear ?? [])];
+    for (const w of all) {
+        const pivot = w?.rollPivot ?? w?.steerPivot ?? null;
+        if (!pivot?.getWorldPosition) continue;
+        pivot.getWorldPosition(tmp);
+        const local = root.worldToLocal(tmp.clone());
+        wheels.push(local);
+    }
+
+    if (wheels.length < 4) return;
+
+    const minZ = Math.min(...wheels.map((w) => w.z));
+    const maxZ = Math.max(...wheels.map((w) => w.z));
+    const midZ = (minZ + maxZ) * 0.5;
+
+    const front = wheels.filter((w) => w.z > midZ);
+    const rear = wheels.filter((w) => w.z <= midZ);
+    if (front.length < 2 || rear.length < 2) return;
+
+    const fl = front.find((w) => w.x < 0) ?? front[0];
+    const fr = front.find((w) => w.x >= 0) ?? front[1] ?? front[0];
+    const rl = rear.find((w) => w.x < 0) ?? rear[0];
+    const rr = rear.find((w) => w.x >= 0) ?? rear[1] ?? rear[0];
+
+    state.wheelPos.fl = { x: fl.x, z: fl.z };
+    state.wheelPos.fr = { x: fr.x, z: fr.z };
+    state.wheelPos.rl = { x: rl.x, z: rl.z };
+    state.wheelPos.rr = { x: rr.x, z: rr.z };
+
+    const trackFront = Math.abs(fr.x - fl.x);
+    const trackRear = Math.abs(rr.x - rl.x);
+    const track = (trackFront + trackRear) * 0.5;
+
+    const frontZ = (fl.z + fr.z) * 0.5;
+    const rearZ = (rl.z + rr.z) * 0.5;
+    const wheelbase = Math.abs(frontZ - rearZ);
+
+    state.track = clamp(track || state.track, 1.4, 3.8);
+    state.wheelbase = clamp(wheelbase || state.wheelbase, 2.8, 10.0);
 }
 
 /**
@@ -102,9 +206,12 @@ export class SuspensionSystem {
     addVehicle(vehicle) {
         if (!vehicle?.id) return;
 
-        const c = this.config;
+        const tuning = applyTuning(
+            { ...this.config },
+            vehicle?.vehicle?.suspensionTuning ?? vehicle?.api?.root?.userData?.suspensionTuning ?? null
+        );
 
-        this.vehicles.set(vehicle.id, {
+        const state = {
             vehicle,
             api: vehicle.api ?? null,
             anchor: vehicle.anchor ?? null,
@@ -136,9 +243,15 @@ export class SuspensionSystem {
             longBias: 0,
 
             // Geometry
-            track: c.track,
-            wheelbase: c.wheelbase
-        });
+            track: tuning.track,
+            wheelbase: tuning.wheelbase,
+
+            tuning
+        };
+
+        applyLayoutFromBus(state, state.api);
+
+        this.vehicles.set(vehicle.id, state);
     }
 
     /**
@@ -193,7 +306,7 @@ export class SuspensionSystem {
 
         const impactKick = options.impactKick ?? 10.0;
         const maxVelocity = options.maxVelocity ?? 3.0;
-        const c = this.config;
+        const c = state.tuning ?? this.config;
 
         const sp = state.springs[wheel];
 
@@ -228,7 +341,7 @@ export class SuspensionSystem {
      * @param {number} dt - Delta time
      */
     _updateSuspension(s, dt) {
-        const c = this.config;
+        const c = s.tuning ?? this.config;
         const g = 9.81;
 
         // Calculate load transfer biases
@@ -372,4 +485,3 @@ export class SuspensionSystem {
         };
     }
 }
-

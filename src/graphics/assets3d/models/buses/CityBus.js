@@ -114,12 +114,11 @@ function recenterBody(bus) {
     const skeleton = bus.userData?.bus;
     if (!skeleton?.bodyRoot || !skeleton?.bodyTiltPivot) return;
     const bodyRoot = skeleton.bodyRoot;
-    bodyRoot.updateMatrixWorld(true);
-    const box = new THREE.Box3().setFromObject(bodyRoot);
+    const box = getObjectBoundsLocal(bodyRoot, bodyRoot);
     if (box.isEmpty()) return;
     const center = box.getCenter(new THREE.Vector3());
     skeleton.bodyTiltPivot.position.copy(center);
-    bodyRoot.position.sub(center);
+    bodyRoot.position.set(-center.x, -center.y, -center.z);
     skeleton._bodyPivotBase.copy(skeleton.bodyTiltPivot.position);
     skeleton.bodyPivotBase.copy(skeleton._bodyPivotBase);
 }
@@ -208,8 +207,19 @@ function getMeshBoundsLocal(root, mesh) {
     return transformBox(localBox, toRoot);
 }
 
+function getObjectBoundsLocal(root, object) {
+    const box = new THREE.Box3();
+    object.traverse((o) => {
+        if (!o.isMesh) return;
+        const localBox = getMeshBoundsLocal(root, o);
+        if (!localBox.isEmpty()) box.union(localBox);
+    });
+    return box;
+}
+
 function attachWheelMeshes(bus, wheelNodes, wheelMeshes, rig) {
     const info = {};
+    const wheelSpaceRoot = bus.userData?.bus?.wheelsRoot ?? bus;
     bus.updateMatrixWorld(true);
 
     for (const key of Object.keys(wheelNodes)) {
@@ -217,7 +227,7 @@ function attachWheelMeshes(bus, wheelNodes, wheelMeshes, rig) {
         if (!meshes.length) continue;
         const box = new THREE.Box3();
         for (const mesh of meshes) {
-            const localBox = getMeshBoundsLocal(bus, mesh);
+            const localBox = getMeshBoundsLocal(wheelSpaceRoot, mesh);
             if (!localBox.isEmpty()) box.union(localBox);
         }
         if (box.isEmpty()) continue;
