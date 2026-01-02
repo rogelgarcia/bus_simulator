@@ -34,4 +34,10 @@
 **Tasks:**
 These are the ones from files AI_#_title
 - Even if explicitly requested, never start DONE prompts without double confirming with the user.
-- Before starting any AI prompt, if there are modifications/additions to be commited, confirm if can proceed. 
+- Before starting any AI prompt, if there are modifications/additions to be commited, confirm if can proceed.
+
+**3P libraries, assets, models**
+If using resources from downloads/ folder, always copy to the application.
+- if 3d meshes, put in assets
+- if libraries, copy the source to src/lib 
+- always organize subfolders accordingly

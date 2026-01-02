@@ -3,6 +3,8 @@ assets/
 
 downloads/
 
+*.zip
+
 # Node modules
 node_modules/
 
