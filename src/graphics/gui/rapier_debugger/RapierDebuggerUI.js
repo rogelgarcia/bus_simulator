@@ -127,6 +127,14 @@ function vecNonZero(v, eps = 1e-4) {
     return (Math.abs(v.x) > eps) || (Math.abs(v.y) > eps) || (Math.abs(v.z) > eps);
 }
 
+function crossVec3(a, b) {
+    return {
+        x: (a?.y ?? 0) * (b?.z ?? 0) - (a?.z ?? 0) * (b?.y ?? 0),
+        y: (a?.z ?? 0) * (b?.x ?? 0) - (a?.x ?? 0) * (b?.z ?? 0),
+        z: (a?.x ?? 0) * (b?.y ?? 0) - (a?.y ?? 0) * (b?.x ?? 0)
+    };
+}
+
 function makeHudRoot() {
     const root = document.createElement('div');
     root.style.position = 'fixed';
@@ -1286,6 +1294,7 @@ export class RapierDebuggerUI {
         this._forceActionLog = [];
         this._forceActionMax = 12;
         this._forceActionSeq = 0;
+        this._forceApplyAtPoint = true;
         this._testsPopup = null;
         this._testsPopupHandlers = null;
         this._testPopup = null;
@@ -1513,6 +1522,7 @@ export class RapierDebuggerUI {
         this._forcesPopupLogEl = null;
         this._forceActionLog = [];
         this._forceActionSeq = 0;
+        this._forceApplyAtPoint = true;
         this._testsPopup = null;
         this._testsPopupHandlers = null;
         this._testPopup = null;
@@ -2010,6 +2020,16 @@ export class RapierDebuggerUI {
         wrap.appendChild(table);
 
         const applyValues = ({ reset = false, close = false } = {}) => {
+            const resolveVelocityInput = (cell) => {
+                const raw = parseFloat(cell.input.value);
+                const min = Number.parseFloat(cell.slider.min);
+                const max = Number.parseFloat(cell.slider.max);
+                const next = Number.isFinite(raw) ? raw : 0;
+                const clamped = Math.min(max, Math.max(min, next));
+                cell.input.value = String(clamped);
+                cell.slider.value = String(clamped);
+                return clamped;
+            };
             const px = parseFloat(posInputs.x.input.value);
             const py = parseFloat(posInputs.y.input.value);
             const pz = parseFloat(posInputs.z.input.value);
@@ -2024,18 +2044,18 @@ export class RapierDebuggerUI {
             if (Number.isFinite(rx)) this._setInputValue('rotationX', rx);
             if (Number.isFinite(ry)) this._setInputValue('rotationY', ry);
             if (Number.isFinite(rz)) this._setInputValue('rotationZ', rz);
-            const lvx = parseFloat(linvelInputs.x.input.value);
-            const lvy = parseFloat(linvelInputs.y.input.value);
-            const lvz = parseFloat(linvelInputs.z.input.value);
-            if (Number.isFinite(lvx)) this._setInputValue('linvelX', lvx);
-            if (Number.isFinite(lvy)) this._setInputValue('linvelY', lvy);
-            if (Number.isFinite(lvz)) this._setInputValue('linvelZ', lvz);
-            const avx = parseFloat(angvelInputs.x.input.value);
-            const avy = parseFloat(angvelInputs.y.input.value);
-            const avz = parseFloat(angvelInputs.z.input.value);
-            if (Number.isFinite(avx)) this._setInputValue('angvelX', avx);
-            if (Number.isFinite(avy)) this._setInputValue('angvelY', avy);
-            if (Number.isFinite(avz)) this._setInputValue('angvelZ', avz);
+            const lvx = resolveVelocityInput(linvelInputs.x);
+            const lvy = resolveVelocityInput(linvelInputs.y);
+            const lvz = resolveVelocityInput(linvelInputs.z);
+            this._setInputValue('linvelX', lvx);
+            this._setInputValue('linvelY', lvy);
+            this._setInputValue('linvelZ', lvz);
+            const avx = resolveVelocityInput(angvelInputs.x);
+            const avy = resolveVelocityInput(angvelInputs.y);
+            const avz = resolveVelocityInput(angvelInputs.z);
+            this._setInputValue('angvelX', avx);
+            this._setInputValue('angvelY', avy);
+            this._setInputValue('angvelZ', avz);
             if (reset) this._resetInitialPosition();
             if (close) this._closePositionPopup();
         };
@@ -2086,17 +2106,12 @@ export class RapierDebuggerUI {
 
         const liveIntervalMs = this._liveResetIntervalMs;
         const liveIntervalSeconds = formatNum(liveIntervalMs / 1000, liveIntervalMs % 1000 === 0 ? 0 : 1);
-        const backgroundIntervalMs = liveIntervalMs * 3;
-        const backgroundIntervalSeconds = formatNum(
-            backgroundIntervalMs / 1000,
-            backgroundIntervalMs % 1000 === 0 ? 0 : 1
-        );
 
         const liveLabel = document.createElement('span');
         liveLabel.textContent = 'Live';
         appendHelp(
             liveLabel,
-            `Auto-reset the vehicle using the current reset configuration every ${liveIntervalSeconds}s while this panel is open, and every ${backgroundIntervalSeconds}s after closing it. Live stays active after closing this panel; the Reset button shows a green border and blinks before each reset.`,
+            `Auto-reset the vehicle using the current reset configuration every ${liveIntervalSeconds}s. Live stays active after closing this panel; the Reset button shows a green border while active.`,
             this._helpSystem
         );
 
@@ -2129,24 +2144,63 @@ export class RapierDebuggerUI {
         const liveStatusFill = document.createElement('span');
         liveStatusFill.style.display = 'block';
         liveStatusFill.style.height = '100%';
-        liveStatusFill.style.width = '0%';
+        liveStatusFill.style.width = '100%';
         liveStatusFill.style.borderRadius = '999px';
-        liveStatusFill.style.background = 'linear-gradient(90deg, rgba(210,210,210,0.10), rgba(235,235,235,0.55), rgba(210,210,210,0.10))';
+        liveStatusFill.style.background = 'linear-gradient(270deg, rgba(210,210,210,0.10), rgba(235,235,235,0.55), rgba(210,210,210,0.10))';
         liveStatusFill.style.backgroundSize = '200% 100%';
-        liveStatusFill.style.backgroundPosition = '0% 50%';
+        liveStatusFill.style.backgroundPosition = '100% 50%';
         liveStatusFill.style.opacity = '0.95';
         liveStatusFill.style.willChange = 'width, background-position';
-        liveStatusFill.style.transition = 'width 120ms steps(10, end)';
+        liveStatusFill.style.transition = 'width 120ms linear';
         liveStatus.appendChild(liveStatusFill);
 
         this._positionPopupLiveStatus = liveStatus;
         this._positionPopupLiveProgressFill = liveStatusFill;
 
+        const intervalWrap = document.createElement('div');
+        intervalWrap.style.display = 'inline-flex';
+        intervalWrap.style.alignItems = 'center';
+        intervalWrap.style.gap = '6px';
+        intervalWrap.style.fontSize = '11px';
+        intervalWrap.style.fontWeight = '700';
+        intervalWrap.style.opacity = '0.85';
+
+        const intervalLabel = document.createElement('span');
+        intervalLabel.textContent = 'Interval';
+
+        const intervalSlider = document.createElement('input');
+        intervalSlider.type = 'range';
+        intervalSlider.min = '1';
+        intervalSlider.max = '30';
+        intervalSlider.step = '1';
+        intervalSlider.value = String(Math.min(30, Math.max(1, Math.round(liveIntervalMs / 1000))));
+        intervalSlider.style.width = '120px';
+        intervalSlider.style.cursor = 'pointer';
+
+        const intervalValue = document.createElement('span');
+        intervalValue.textContent = `${intervalSlider.value}s`;
+
+        intervalSlider.addEventListener('input', () => {
+            const seconds = parseFloat(intervalSlider.value);
+            if (!Number.isFinite(seconds)) return;
+            this._liveResetIntervalMs = Math.max(1, seconds) * 1000;
+            intervalValue.textContent = `${intervalSlider.value}s`;
+            if (this._positionPopupLiveEnabled) {
+                this._rescheduleLiveReset();
+            }
+        });
+
+        intervalWrap.appendChild(intervalLabel);
+        intervalWrap.appendChild(intervalSlider);
+        intervalWrap.appendChild(intervalValue);
+
         const liveGroup = document.createElement('div');
-        liveGroup.style.display = 'inline-flex';
+        liveGroup.style.display = 'flex';
+        liveGroup.style.flexWrap = 'wrap';
         liveGroup.style.alignItems = 'center';
-        liveGroup.style.gap = '8px';
+        liveGroup.style.gap = '10px';
         liveGroup.appendChild(liveWrap);
+        liveGroup.appendChild(intervalWrap);
         liveGroup.appendChild(liveStatus);
 
         liveCheckbox.addEventListener('change', () => {
@@ -2164,7 +2218,7 @@ export class RapierDebuggerUI {
                 this._startLiveReset(applyValues);
             } else {
                 this._setResetLiveActive(true);
-                this._rescheduleLiveReset();
+                this._startLiveProgressTicker();
             }
         }
 
@@ -2255,16 +2309,10 @@ export class RapierDebuggerUI {
         this._positionPopupHandlers = null;
         this._positionPopupLiveStatus = null;
         this._positionPopupLiveProgressFill = null;
-
-        if (this._positionPopupLiveEnabled) {
-            this._rescheduleLiveReset();
-        }
     }
 
-    _getLiveResetIntervalMs({ panelOpen = null } = {}) {
-        const baseIntervalMs = this._liveResetIntervalMs ?? 3000;
-        const open = panelOpen === null ? !!this._positionPopup : !!panelOpen;
-        return open ? baseIntervalMs : baseIntervalMs * 3;
+    _getLiveResetIntervalMs() {
+        return this._liveResetIntervalMs ?? 3000;
     }
 
     _rescheduleLiveReset({ showToast = false } = {}) {
@@ -2287,8 +2335,9 @@ export class RapierDebuggerUI {
 
         this._positionPopupLiveIntervalMs = intervalMs;
         this._positionPopupLiveNextAt = performance.now() + intervalMs;
-        this._scheduleLiveStatus(this._positionPopupLiveNextAt);
-        this._startResetLiveIndicator(this._positionPopupLiveNextAt);
+        this._startLiveProgressTicker();
+        this._updateLiveProgress();
+        this._startResetLiveIndicator();
 
         if (showToast) {
             const seconds = formatNum(intervalMs / 1000, intervalMs % 1000 === 0 ? 0 : 1);
@@ -2303,8 +2352,8 @@ export class RapierDebuggerUI {
                 return;
             }
             this._positionPopupLiveNextAt = performance.now() + nextIntervalMs;
-            this._scheduleLiveStatus(this._positionPopupLiveNextAt);
-            this._startResetLiveIndicator(this._positionPopupLiveNextAt);
+            this._updateLiveProgress();
+            this._startResetLiveIndicator();
         }, intervalMs);
     }
 
@@ -2345,69 +2394,45 @@ export class RapierDebuggerUI {
         if (this._positionPopupLiveStatus) {
             this._positionPopupLiveStatus.style.display = 'none';
         }
+        if (this._positionPopupLiveProgressFill) {
+            this._positionPopupLiveProgressFill.style.width = '0%';
+            this._positionPopupLiveProgressFill.style.backgroundPosition = '100% 50%';
+        }
         this._stopResetLiveIndicator();
     }
 
-    _scheduleLiveStatus(nextAt) {
-        if (this._positionPopupLiveShowTimer) {
-            clearTimeout(this._positionPopupLiveShowTimer);
-            this._positionPopupLiveShowTimer = null;
-        }
-        if (this._positionPopupLiveHideTimer) {
-            clearTimeout(this._positionPopupLiveHideTimer);
-            this._positionPopupLiveHideTimer = null;
-        }
+    _startLiveProgressTicker() {
         if (this._positionPopupLiveProgressInterval) {
             clearInterval(this._positionPopupLiveProgressInterval);
             this._positionPopupLiveProgressInterval = null;
         }
-        if (!this._positionPopupLiveStatus) return;
-        const now = performance.now();
-        const showDelay = Math.max(0, nextAt - 1000 - now);
-        const hideDelay = Math.max(0, nextAt + 500 - now);
-        this._positionPopupLiveShowTimer = window.setTimeout(() => {
-            if (this._positionPopupLiveStatus) {
-                this._positionPopupLiveStatus.style.display = 'inline-flex';
-            }
-            if (this._positionPopupLiveProgressFill) {
-                const steps = 10;
-                this._positionPopupLiveProgressFill.style.width = '0%';
-                let phase = 0;
-                this._positionPopupLiveProgressInterval = window.setInterval(() => {
-                    const remaining = nextAt - performance.now();
-                    const t = Math.max(0, Math.min(1, 1 - (remaining / 1000)));
-                    const quant = Math.round(t * steps) / steps;
-                    phase = (phase + 1) % 200;
-                    if (this._positionPopupLiveProgressFill) {
-                        this._positionPopupLiveProgressFill.style.width = `${quant * 100}%`;
-                        this._positionPopupLiveProgressFill.style.backgroundPosition = `${phase}% 50%`;
-                    }
-                    if (t >= 1) {
-                        if (this._positionPopupLiveProgressInterval) {
-                            clearInterval(this._positionPopupLiveProgressInterval);
-                            this._positionPopupLiveProgressInterval = null;
-                        }
-                    }
-                }, 80);
-            }
-        }, showDelay);
-        this._positionPopupLiveHideTimer = window.setTimeout(() => {
-            if (this._positionPopupLiveStatus) {
-                this._positionPopupLiveStatus.style.display = 'none';
-            }
-            if (this._positionPopupLiveProgressInterval) {
-                clearInterval(this._positionPopupLiveProgressInterval);
-                this._positionPopupLiveProgressInterval = null;
-            }
-            if (this._positionPopupLiveProgressFill) {
-                this._positionPopupLiveProgressFill.style.width = '0%';
-                this._positionPopupLiveProgressFill.style.backgroundPosition = '0% 50%';
-            }
-        }, hideDelay);
+        if (!this._positionPopupLiveStatus || !this._positionPopupLiveProgressFill) return;
+        this._positionPopupLiveStatus.style.display = 'inline-flex';
+        this._updateLiveProgress();
+        this._positionPopupLiveProgressInterval = window.setInterval(() => {
+            if (!this._positionPopupLiveEnabled) return;
+            this._updateLiveProgress();
+        }, 80);
     }
 
-    _startResetLiveIndicator(nextAt) {
-        if (!this._resetLiveDot || !Number.isFinite(nextAt)) return;
+    _updateLiveProgress() {
+        if (!this._positionPopupLiveProgressFill) return;
+        const intervalMs = this._positionPopupLiveIntervalMs || this._getLiveResetIntervalMs();
+        const now = performance.now();
+        if (!Number.isFinite(intervalMs) || intervalMs <= 0 || !Number.isFinite(this._positionPopupLiveNextAt)) {
+            this._positionPopupLiveProgressFill.style.width = '0%';
+            return;
+        }
+        const remaining = Math.max(0, this._positionPopupLiveNextAt - now);
+        const t = Math.max(0, Math.min(1, remaining / intervalMs));
+        const percent = Math.round(t * 100);
+        this._positionPopupLiveProgressFill.style.width = `${percent}%`;
+        const phase = Math.round(now / 40) % 200;
+        this._positionPopupLiveProgressFill.style.backgroundPosition = `${100 - phase}% 50%`;
+    }
+
+    _startResetLiveIndicator() {
+        if (!this._resetLiveDot) return;
         this._resetLiveDot.style.visibility = 'visible';
         if (this._resetLiveBlinkTimer) {
             clearTimeout(this._resetLiveBlinkTimer);
@@ -2417,25 +2442,6 @@ export class RapierDebuggerUI {
             clearInterval(this._resetLiveBlinkInterval);
             this._resetLiveBlinkInterval = null;
         }
-        const now = performance.now();
-        const blinkDelay = Math.max(0, nextAt - 1000 - now);
-        this._resetLiveBlinkTimer = window.setTimeout(() => {
-            let toggles = 0;
-            const maxToggles = 8;
-            this._resetLiveBlinkInterval = window.setInterval(() => {
-                if (!this._resetLiveDot) return;
-                this._resetLiveDot.style.visibility =
-                    this._resetLiveDot.style.visibility === 'hidden' ? 'visible' : 'hidden';
-                toggles += 1;
-                if (toggles >= maxToggles) {
-                    clearInterval(this._resetLiveBlinkInterval);
-                    this._resetLiveBlinkInterval = null;
-                    if (this._resetLiveDot) {
-                        this._resetLiveDot.style.visibility = 'visible';
-                    }
-                }
-            }, 125);
-        }, blinkDelay);
     }
 
     _setResetLiveActive(active) {
@@ -3010,6 +3016,64 @@ export class RapierDebuggerUI {
         topSeparator.style.margin = '6px 0 4px';
         wrap.appendChild(topSeparator);
 
+        const applyModeRow = document.createElement('div');
+        applyModeRow.style.display = 'flex';
+        applyModeRow.style.alignItems = 'center';
+        applyModeRow.style.justifyContent = 'space-between';
+        applyModeRow.style.gap = '12px';
+
+        const applyModeLabel = document.createElement('div');
+        applyModeLabel.textContent = 'Apply at point';
+        applyModeLabel.style.fontSize = '12px';
+        applyModeLabel.style.fontWeight = '700';
+        applyModeLabel.style.opacity = '0.85';
+
+        const applyModeWrap = document.createElement('label');
+        applyModeWrap.style.display = 'inline-flex';
+        applyModeWrap.style.alignItems = 'center';
+        applyModeWrap.style.gap = '6px';
+        applyModeWrap.style.cursor = 'pointer';
+
+        const applyModeToggle = document.createElement('input');
+        applyModeToggle.type = 'checkbox';
+        applyModeToggle.style.position = 'absolute';
+        applyModeToggle.style.opacity = '0';
+        applyModeToggle.style.width = '0';
+        applyModeToggle.style.height = '0';
+
+        const applyModeTrack = document.createElement('span');
+        applyModeTrack.style.width = '34px';
+        applyModeTrack.style.height = '18px';
+        applyModeTrack.style.borderRadius = '999px';
+        applyModeTrack.style.background = 'rgba(255,255,255,0.2)';
+        applyModeTrack.style.boxShadow = 'inset 0 0 0 1px rgba(255,255,255,0.2)';
+        applyModeTrack.style.position = 'relative';
+        applyModeTrack.style.transition = 'background 150ms ease';
+
+        const applyModeKnob = document.createElement('span');
+        applyModeKnob.style.position = 'absolute';
+        applyModeKnob.style.top = '2px';
+        applyModeKnob.style.left = '2px';
+        applyModeKnob.style.width = '14px';
+        applyModeKnob.style.height = '14px';
+        applyModeKnob.style.borderRadius = '999px';
+        applyModeKnob.style.background = '#e9f2ff';
+        applyModeKnob.style.boxShadow = '0 0 6px rgba(0,0,0,0.25)';
+        applyModeKnob.style.transition = 'transform 150ms ease';
+
+        applyModeTrack.appendChild(applyModeKnob);
+
+        applyModeWrap.appendChild(applyModeToggle);
+        applyModeWrap.appendChild(applyModeTrack);
+
+        applyModeRow.appendChild(applyModeLabel);
+        applyModeRow.appendChild(applyModeWrap);
+        wrap.appendChild(applyModeRow);
+
+        const modeSeparator = makeSeparator();
+        modeSeparator.style.margin = '6px 0 2px';
+        wrap.appendChild(modeSeparator);
+
         const grid = document.createElement('div');
         grid.style.display = 'grid';
         grid.style.gridTemplateColumns = 'minmax(170px, 1fr) minmax(170px, 1fr) minmax(170px, 1fr)';
@@ -3157,6 +3221,47 @@ export class RapierDebuggerUI {
             velocityRow.appendChild(resetVel);
         }
         wrap.appendChild(velocityRow);
+
+        const updateApplyMode = (enabled) => {
+            this._forceApplyAtPoint = !!enabled;
+            if (this._forceApplyAtPoint) {
+                applyModeTrack.style.background = 'rgba(76,255,122,0.45)';
+                applyModeKnob.style.transform = 'translateX(16px)';
+            } else {
+                applyModeTrack.style.background = 'rgba(255,255,255,0.2)';
+                applyModeKnob.style.transform = 'translateX(0)';
+            }
+            const pointControls = [
+                controls.forcePointX,
+                controls.forcePointY,
+                controls.forcePointZ,
+                controls.impulsePointX,
+                controls.impulsePointY,
+                controls.impulsePointZ
+            ];
+            for (const ctrl of pointControls) {
+                if (!ctrl) continue;
+                ctrl.style.display = this._forceApplyAtPoint ? '' : 'none';
+            }
+            if (buttons.applyForce) {
+                buttons.applyForce.style.display = this._forceApplyAtPoint ? 'none' : '';
+            }
+            if (buttons.applyForceAtPoint) {
+                buttons.applyForceAtPoint.style.display = this._forceApplyAtPoint ? '' : 'none';
+            }
+            if (buttons.applyImpulse) {
+                buttons.applyImpulse.style.display = this._forceApplyAtPoint ? 'none' : '';
+            }
+            if (buttons.applyImpulseAtPoint) {
+                buttons.applyImpulseAtPoint.style.display = this._forceApplyAtPoint ? '' : 'none';
+            }
+        };
+
+        applyModeToggle.checked = this._forceApplyAtPoint;
+        updateApplyMode(this._forceApplyAtPoint);
+        applyModeToggle.addEventListener('change', () => {
+            updateApplyMode(applyModeToggle.checked);
+        });
 
         const rect = anchor.getBoundingClientRect();
         const pad = 8;
@@ -3562,6 +3667,29 @@ export class RapierDebuggerUI {
         };
     }
 
+    getForcePreview() {
+        if (!this._forcesPopup) return null;
+        const com = this._tuning?.chassis?.additionalMassProperties?.com ?? {};
+        return {
+            atPoint: !!this._forceApplyAtPoint,
+            force: {
+                x: this._forces.force?.x ?? 0,
+                y: this._forces.force?.y ?? 0,
+                z: this._forces.force?.z ?? 0
+            },
+            point: {
+                x: this._forces.forcePoint?.x ?? 0,
+                y: this._forces.forcePoint?.y ?? 0,
+                z: this._forces.forcePoint?.z ?? 0
+            },
+            com: {
+                x: com.x ?? 0,
+                y: com.y ?? 0,
+                z: com.z ?? 0
+            }
+        };
+    }
+
     update(dt, snapshot) {
         const clampedDt = Math.min(Math.max(dt ?? 0, 0), 0.05);
         if (this._activeTest) {
@@ -3944,6 +4072,8 @@ export class RapierDebuggerUI {
             if (this.onAddForceAtPoint) {
                 this.onAddForceAtPoint(this._forces.force, this._forces.forcePoint);
                 this._recordForceEvent('Force', this._forces.force, this._forces.forcePoint);
+                const induced = crossVec3(this._forces.forcePoint, this._forces.force);
+                this._recordForceEvent('Torque (from force @ point)', induced);
             }
         });
         this._actionButtons.push(addForcePointButton);

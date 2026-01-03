@@ -29,6 +29,12 @@ export class RapierDebuggerScene {
         this._comLocal = new THREE.Vector3();
         this._comVisible = false;
         this._wheelIndexByLabel = {};
+        this._forcePreviewGroup = null;
+        this._forcePreviewArrow = null;
+        this._forcePreviewAxes = null;
+        this._forcePreviewSphere = null;
+        this._forcePreviewScale = 0.002;
+        this._forcePreviewMaxLength = 6;
 
         this._tmpQuat = new THREE.Quaternion();
         this._tmpQuatB = new THREE.Quaternion();
@@ -96,6 +102,7 @@ export class RapierDebuggerScene {
         this._buildCamera();
         this._syncViewOffset();
         this._buildOriginAxes();
+        this._buildForcePreview();
         this._buildChassis();
         this._buildWheels();
         this._buildDebugRender();
@@ -126,6 +133,13 @@ export class RapierDebuggerScene {
         }
         this._comMarker = null;
         this._comVisible = false;
+        if (this._forcePreviewGroup?.parent) {
+            this._forcePreviewGroup.parent.remove(this._forcePreviewGroup);
+        }
+        this._forcePreviewGroup = null;
+        this._forcePreviewArrow = null;
+        this._forcePreviewAxes = null;
+        this._forcePreviewSphere = null;
         if (this.camera?.clearViewOffset) {
             this.camera.clearViewOffset();
         }
@@ -446,6 +460,97 @@ export class RapierDebuggerScene {
         axesGroup.renderOrder = 800;
         this.root.add(axesGroup);
         this._originAxes = axesGroup;
+    }
+
+    _buildForcePreview() {
+        const group = new THREE.Group();
+        group.visible = false;
+        group.renderOrder = 3000;
+
+        const axisLen = 0.45;
+        const makeAxisLine = (x, y, z, color) => {
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.Float32BufferAttribute([
+                0, 0, 0,
+                x, y, z
+            ], 3));
+            const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9 });
+            const line = new THREE.Line(geo, mat);
+            line.renderOrder = 3000;
+            return line;
+        };
+
+        const axes = new THREE.Group();
+        axes.add(makeAxisLine(axisLen, 0, 0, 0xff3a3a));
+        axes.add(makeAxisLine(0, axisLen, 0, 0x3aff6a));
+        axes.add(makeAxisLine(0, 0, axisLen, 0x3a7bff));
+        group.add(axes);
+
+        const markerGeo = new THREE.SphereGeometry(0.06, 12, 12);
+        const markerMat = new THREE.MeshBasicMaterial({ color: 0xe9f2ff });
+        const marker = new THREE.Mesh(markerGeo, markerMat);
+        marker.renderOrder = 3001;
+        group.add(marker);
+
+        const arrow = new THREE.ArrowHelper(
+            new THREE.Vector3(1, 0, 0),
+            new THREE.Vector3(0, 0, 0),
+            1,
+            0xffd24a,
+            0.3,
+            0.14
+        );
+        arrow.line.material.transparent = true;
+        arrow.line.material.opacity = 0.9;
+        arrow.cone.material.transparent = true;
+        arrow.cone.material.opacity = 0.9;
+        arrow.renderOrder = 3002;
+        group.add(arrow);
+
+        this.root.add(group);
+        this._forcePreviewGroup = group;
+        this._forcePreviewAxes = axes;
+        this._forcePreviewSphere = marker;
+        this._forcePreviewArrow = arrow;
+    }
+
+    setForcePreview(preview) {
+        if (!this._forcePreviewGroup || !this._chassisMesh) return;
+        if (!preview) {
+            this._forcePreviewGroup.visible = false;
+            return;
+        }
+
+        const force = preview.force ?? {};
+        const origin = (preview.atPoint ? preview.point : preview.com) ?? {};
+        const chassisPos = this._chassisMesh.position;
+        const chassisQuat = this._chassisMesh.quaternion;
+
+        const worldOrigin = this._tmpVecA
+            .set(origin.x ?? 0, origin.y ?? 0, origin.z ?? 0)
+            .applyQuaternion(chassisQuat)
+            .add(chassisPos);
+        this._forcePreviewGroup.position.copy(worldOrigin);
+        this._forcePreviewGroup.visible = true;
+
+        if (!this._forcePreviewArrow) return;
+        const worldForce = this._tmpVecB
+            .set(force.x ?? 0, force.y ?? 0, force.z ?? 0)
+            .applyQuaternion(chassisQuat);
+        const magnitude = worldForce.length();
+        const length = Math.min(this._forcePreviewMaxLength, magnitude * this._forcePreviewScale);
+
+        if (!Number.isFinite(length) || length < 0.01) {
+            this._forcePreviewArrow.visible = false;
+            return;
+        }
+
+        const dir = worldForce.normalize();
+        const headLength = Math.max(0.15, Math.min(0.6, length * 0.25));
+        const headWidth = Math.max(0.08, Math.min(0.4, length * 0.2));
+        this._forcePreviewArrow.setDirection(dir);
+        this._forcePreviewArrow.setLength(length, headLength, headWidth);
+        this._forcePreviewArrow.visible = true;
     }
 
     _createChassisMesh() {

@@ -22,7 +22,10 @@ export class RapierDebuggerView {
     enter() {
         this.scene.enter();
         this.ui.mount();
-        this.ui.onReset = () => this.sim.resetPose();
+        this.ui.onReset = () => {
+            this.sim.setTuning(this.ui.getTuning());
+            this.sim.resetPose();
+        };
         this.ui.onResetCamera = () => this.scene.resetCamera();
         this.ui.onWheelHover = (idx) => this.scene.setHighlightedWheel(idx);
         this.ui.onAddForce = (force) => this.sim.addForce(force);
@@ -79,6 +82,7 @@ export class RapierDebuggerView {
         const debugRender = this.sim.getDebugRenderBuffers();
 
         this.scene.sync(snapshot, debugRender);
+        this.scene.setForcePreview(this.ui.getForcePreview());
         this.scene.update(dt);
         this.ui.setOutputs(snapshot);
         this.ui.update(0, snapshot);
