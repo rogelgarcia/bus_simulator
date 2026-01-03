@@ -1051,6 +1051,8 @@ export class RapierDebuggerUI {
         this._gravityDisplay = null;
         this._cameraPopup = null;
         this._cameraPopupHandlers = null;
+        this._resetButton = null;
+        this._resetButtonBorder = null;
         this._sleepMarker = null;
         this._wakeButton = null;
         this._sleepingState = null;
@@ -1058,6 +1060,11 @@ export class RapierDebuggerUI {
         this._gravityPopupHandlers = null;
         this._positionPopup = null;
         this._positionPopupHandlers = null;
+        this._comPopup = null;
+        this._comPopupHandlers = null;
+        this._positionPopupLiveEnabled = false;
+        this._positionPopupLiveApply = null;
+        this._positionPopupLiveNextAt = 0;
         this._positionPopupLiveInterval = null;
         this._positionPopupLiveShowTimer = null;
         this._positionPopupLiveHideTimer = null;
@@ -1088,6 +1095,16 @@ export class RapierDebuggerUI {
         this._testPopupDot = null;
         this._testPopupCloseTimer = null;
         this._testPopupEllipsisTimer = null;
+        this._liveResetIntervalMs = 3000;
+        this._resetLiveDot = null;
+        this._resetLiveInterval = null;
+        this._resetLiveShowTimer = null;
+        this._resetLiveHideTimer = null;
+        this._resetLiveNextAt = 0;
+        this._resetLiveBlinkTimer = null;
+        this._resetLiveBlinkInterval = null;
+        this._resetLiveBlinkTimer = null;
+        this._resetLiveBlinkInterval = null;
 
         this._enabled = false;
         this._inputs = {
@@ -1221,6 +1238,7 @@ export class RapierDebuggerUI {
         this.onApplyTorqueImpulse = null;
         this.onWakeUp = null;
         this.onSleep = null;
+        this.onComPreview = null;
 
         this._activeTest = null;
         this._testElapsed = 0;
@@ -1272,10 +1290,14 @@ export class RapierDebuggerUI {
             clearTimeout(this._recordDotTimer);
             this._recordDotTimer = null;
         }
+        this._resetButton = null;
+        this._resetButtonBorder = null;
         this._gravityDisplay = null;
         this._closeGravityPopup();
         this._closePositionPopup();
         this._closeCameraPopup();
+        this._closeComPopup();
+        this._stopLiveReset();
         this._closeInertiaPopup();
         this._closeInertiaFramePopup();
         this._closeLockingPopup();
@@ -1302,10 +1324,20 @@ export class RapierDebuggerUI {
         this._sleepMarker = null;
         this._wakeButton = null;
         this._sleepingState = null;
+        this._comPopup = null;
+        this._comPopupHandlers = null;
+        this._positionPopupLiveEnabled = false;
+        this._positionPopupLiveApply = null;
+        this._positionPopupLiveNextAt = 0;
         this._positionPopupLiveInterval = null;
         this._positionPopupLiveShowTimer = null;
         this._positionPopupLiveHideTimer = null;
         this._positionPopupLiveStatus = null;
+        this._resetLiveDot = null;
+        this._resetLiveInterval = null;
+        this._resetLiveShowTimer = null;
+        this._resetLiveHideTimer = null;
+        this._resetLiveNextAt = 0;
         this._activeTest = null;
         this._telemetry = null;
         this._telemetryMeta = null;
@@ -1505,6 +1537,10 @@ export class RapierDebuggerUI {
         actions.style.display = 'flex';
         actions.style.justifyContent = 'flex-end';
         actions.style.gap = '8px';
+
+        const separator = makeSeparator();
+        separator.style.margin = '6px 0 4px';
+        wrap.appendChild(separator);
 
         const reset = makeButton('Reset');
         reset.style.padding = '6px 10px';
@@ -1819,14 +1855,19 @@ export class RapierDebuggerUI {
 
         liveTrack.appendChild(liveKnob);
 
-        const liveIntervalMs = 3000;
+        const liveIntervalMs = this._liveResetIntervalMs;
         const liveIntervalSeconds = formatNum(liveIntervalMs / 1000, liveIntervalMs % 1000 === 0 ? 0 : 1);
+        const resetIntervalMs = liveIntervalMs * 3;
+        const resetIntervalSeconds = formatNum(
+            resetIntervalMs / 1000,
+            resetIntervalMs % 1000 === 0 ? 0 : 1
+        );
 
         const liveLabel = document.createElement('span');
         liveLabel.textContent = 'Live';
         appendHelp(
             liveLabel,
-            `Auto-reset the vehicle using the current reset configuration every ${liveIntervalSeconds} seconds.`,
+            `Auto-reset the vehicle using the current reset configuration every ${resetIntervalSeconds} seconds (3× the panel interval). Live stays active after closing this panel; the Reset button shows a green border and blinks before each reset.`,
             this._helpSystem
         );
 
@@ -1840,6 +1881,7 @@ export class RapierDebuggerUI {
             }
         };
 
+        liveCheckbox.checked = this._positionPopupLiveEnabled;
         syncLiveToggle();
         liveWrap.appendChild(liveCheckbox);
         liveWrap.appendChild(liveTrack);
@@ -1860,65 +1902,36 @@ export class RapierDebuggerUI {
         liveGroup.appendChild(liveWrap);
         liveGroup.appendChild(liveStatus);
 
-        const clearLiveTimers = () => {
-            if (this._positionPopupLiveInterval) {
-                clearInterval(this._positionPopupLiveInterval);
-                this._positionPopupLiveInterval = null;
-            }
-            if (this._positionPopupLiveShowTimer) {
-                clearTimeout(this._positionPopupLiveShowTimer);
-                this._positionPopupLiveShowTimer = null;
-            }
-            if (this._positionPopupLiveHideTimer) {
-                clearTimeout(this._positionPopupLiveHideTimer);
-                this._positionPopupLiveHideTimer = null;
-            }
-            if (this._positionPopupLiveStatus) {
-                this._positionPopupLiveStatus.style.display = 'none';
-            }
-        };
-
-        const liveLeadMs = Math.max(0, liveIntervalMs - 1000);
-        const scheduleLiveShow = () => {
-            if (this._positionPopupLiveShowTimer) {
-                clearTimeout(this._positionPopupLiveShowTimer);
-            }
-            this._positionPopupLiveShowTimer = window.setTimeout(() => {
-                if (this._positionPopupLiveStatus) {
-                    this._positionPopupLiveStatus.style.display = 'inline-flex';
-                }
-            }, liveLeadMs);
-        };
-        const scheduleLiveHide = () => {
-            if (this._positionPopupLiveHideTimer) {
-                clearTimeout(this._positionPopupLiveHideTimer);
-            }
-            this._positionPopupLiveHideTimer = window.setTimeout(() => {
-                if (this._positionPopupLiveStatus) {
-                    this._positionPopupLiveStatus.style.display = 'none';
-                }
-            }, 500);
-        };
-
         liveCheckbox.addEventListener('change', () => {
             syncLiveToggle();
-            clearLiveTimers();
             if (liveCheckbox.checked) {
-                scheduleLiveShow();
-                this._positionPopupLiveInterval = window.setInterval(() => {
-                    applyValues({ reset: true, close: false });
-                    scheduleLiveHide();
-                    scheduleLiveShow();
-                }, liveIntervalMs);
+                this._startLiveReset(applyValues);
+            } else {
+                this._stopLiveReset();
             }
         });
+
+        if (this._positionPopupLiveEnabled) {
+            this._positionPopupLiveApply = applyValues;
+            if (!this._positionPopupLiveInterval) {
+                this._startLiveReset(applyValues);
+            } else if (this._positionPopupLiveNextAt > 0) {
+                this._scheduleLiveStatus(this._positionPopupLiveNextAt);
+                this._setResetLiveActive(true);
+            }
+        }
 
         const cancel = makeButton('Cancel');
         cancel.style.padding = '6px 10px';
         cancel.style.fontSize = '11px';
         cancel.style.borderRadius = '8px';
         cancel.style.marginRight = '0';
-        cancel.addEventListener('click', () => this._closePositionPopup());
+        cancel.addEventListener('click', () => {
+            liveCheckbox.checked = false;
+            syncLiveToggle();
+            this._stopLiveReset();
+            this._closePositionPopup();
+        });
 
         const apply = makeButton('Apply');
         apply.style.padding = '6px 10px';
@@ -1928,6 +1941,10 @@ export class RapierDebuggerUI {
         apply.addEventListener('click', () => {
             applyValues({ reset: resetOnApply, close: true });
         });
+
+        const buttonsSeparator = makeSeparator();
+        buttonsSeparator.style.margin = '6px 0 4px';
+        wrap.appendChild(buttonsSeparator);
 
         const buttons = document.createElement('div');
         buttons.style.display = 'flex';
@@ -1969,6 +1986,65 @@ export class RapierDebuggerUI {
             document.removeEventListener('pointerdown', this._positionPopupHandlers.onPointerDown);
             window.removeEventListener('keydown', this._positionPopupHandlers.onKeyDown);
         }
+        if (this._positionPopupLiveShowTimer) {
+            clearTimeout(this._positionPopupLiveShowTimer);
+            this._positionPopupLiveShowTimer = null;
+        }
+        if (this._positionPopupLiveHideTimer) {
+            clearTimeout(this._positionPopupLiveHideTimer);
+            this._positionPopupLiveHideTimer = null;
+        }
+        if (this._positionPopupLiveStatus) {
+            this._positionPopupLiveStatus.style.display = 'none';
+        }
+        if (!this._positionPopupLiveEnabled) {
+            this._stopLiveReset();
+        }
+        this._positionPopup = null;
+        this._positionPopupHandlers = null;
+        this._positionPopupLiveStatus = null;
+    }
+
+    _startLiveReset(applyValues) {
+        const baseIntervalMs = this._liveResetIntervalMs ?? 3000;
+        const intervalMs = baseIntervalMs * 3;
+        this._positionPopupLiveEnabled = true;
+        this._positionPopupLiveApply = applyValues ?? this._positionPopupLiveApply;
+
+        this._setResetLiveActive(true);
+        if (this._resetLiveDot) {
+            this._resetLiveDot.style.visibility = 'visible';
+        }
+
+        if (this._positionPopupLiveInterval) {
+            clearInterval(this._positionPopupLiveInterval);
+        }
+        if (this._positionPopupLiveShowTimer) {
+            clearTimeout(this._positionPopupLiveShowTimer);
+            this._positionPopupLiveShowTimer = null;
+        }
+        if (this._positionPopupLiveHideTimer) {
+            clearTimeout(this._positionPopupLiveHideTimer);
+            this._positionPopupLiveHideTimer = null;
+        }
+
+        this._positionPopupLiveNextAt = performance.now() + intervalMs;
+        this._scheduleLiveStatus(this._positionPopupLiveNextAt);
+        this._startResetLiveIndicator(this._positionPopupLiveNextAt);
+
+        this._positionPopupLiveInterval = window.setInterval(() => {
+            this._positionPopupLiveApply?.({ reset: true, close: false });
+            this._positionPopupLiveNextAt = performance.now() + intervalMs;
+            this._scheduleLiveStatus(this._positionPopupLiveNextAt);
+            this._startResetLiveIndicator(this._positionPopupLiveNextAt);
+        }, intervalMs);
+    }
+
+    _stopLiveReset() {
+        this._positionPopupLiveEnabled = false;
+        this._positionPopupLiveApply = null;
+        this._positionPopupLiveNextAt = 0;
+        this._setResetLiveActive(false);
         if (this._positionPopupLiveInterval) {
             clearInterval(this._positionPopupLiveInterval);
             this._positionPopupLiveInterval = null;
@@ -1984,9 +2060,207 @@ export class RapierDebuggerUI {
         if (this._positionPopupLiveStatus) {
             this._positionPopupLiveStatus.style.display = 'none';
         }
-        this._positionPopup = null;
-        this._positionPopupHandlers = null;
-        this._positionPopupLiveStatus = null;
+        this._stopResetLiveIndicator();
+    }
+
+    _scheduleLiveStatus(nextAt) {
+        if (this._positionPopupLiveShowTimer) {
+            clearTimeout(this._positionPopupLiveShowTimer);
+            this._positionPopupLiveShowTimer = null;
+        }
+        if (this._positionPopupLiveHideTimer) {
+            clearTimeout(this._positionPopupLiveHideTimer);
+            this._positionPopupLiveHideTimer = null;
+        }
+        if (!this._positionPopupLiveStatus) return;
+        const now = performance.now();
+        const showDelay = Math.max(0, nextAt - 1000 - now);
+        const hideDelay = Math.max(0, nextAt + 500 - now);
+        this._positionPopupLiveShowTimer = window.setTimeout(() => {
+            if (this._positionPopupLiveStatus) {
+                this._positionPopupLiveStatus.style.display = 'inline-flex';
+            }
+        }, showDelay);
+        this._positionPopupLiveHideTimer = window.setTimeout(() => {
+            if (this._positionPopupLiveStatus) {
+                this._positionPopupLiveStatus.style.display = 'none';
+            }
+        }, hideDelay);
+    }
+
+    _startResetLiveIndicator(nextAt) {
+        if (!this._resetLiveDot || !Number.isFinite(nextAt)) return;
+        this._resetLiveDot.style.visibility = 'visible';
+        if (this._resetLiveBlinkTimer) {
+            clearTimeout(this._resetLiveBlinkTimer);
+            this._resetLiveBlinkTimer = null;
+        }
+        if (this._resetLiveBlinkInterval) {
+            clearInterval(this._resetLiveBlinkInterval);
+            this._resetLiveBlinkInterval = null;
+        }
+        const now = performance.now();
+        const blinkDelay = Math.max(0, nextAt - 1000 - now);
+        this._resetLiveBlinkTimer = window.setTimeout(() => {
+            let toggles = 0;
+            const maxToggles = 8;
+            this._resetLiveBlinkInterval = window.setInterval(() => {
+                if (!this._resetLiveDot) return;
+                this._resetLiveDot.style.visibility =
+                    this._resetLiveDot.style.visibility === 'hidden' ? 'visible' : 'hidden';
+                toggles += 1;
+                if (toggles >= maxToggles) {
+                    clearInterval(this._resetLiveBlinkInterval);
+                    this._resetLiveBlinkInterval = null;
+                    if (this._resetLiveDot) {
+                        this._resetLiveDot.style.visibility = 'visible';
+                    }
+                }
+            }, 125);
+        }, blinkDelay);
+    }
+
+    _setResetLiveActive(active) {
+        if (!this._resetButton) return;
+        if (active) {
+            this._resetButton.style.border = '1px solid rgba(76,255,122,0.9)';
+            this._resetButton.style.boxShadow = '0 0 0 1px rgba(76,255,122,0.25)';
+        } else {
+            this._resetButton.style.border = this._resetButtonBorder ?? '1px solid rgba(255,255,255,0.16)';
+            this._resetButton.style.boxShadow = '';
+        }
+    }
+
+    _stopResetLiveIndicator() {
+        if (this._resetLiveInterval) {
+            clearInterval(this._resetLiveInterval);
+            this._resetLiveInterval = null;
+        }
+        if (this._resetLiveShowTimer) {
+            clearTimeout(this._resetLiveShowTimer);
+            this._resetLiveShowTimer = null;
+        }
+        if (this._resetLiveHideTimer) {
+            clearTimeout(this._resetLiveHideTimer);
+            this._resetLiveHideTimer = null;
+        }
+        if (this._resetLiveBlinkTimer) {
+            clearTimeout(this._resetLiveBlinkTimer);
+            this._resetLiveBlinkTimer = null;
+        }
+        if (this._resetLiveBlinkInterval) {
+            clearInterval(this._resetLiveBlinkInterval);
+            this._resetLiveBlinkInterval = null;
+        }
+        if (this._resetLiveDot) {
+            this._resetLiveDot.style.visibility = 'hidden';
+        }
+        this._resetLiveNextAt = 0;
+    }
+
+    _openComPopup(anchor) {
+        this._closeComPopup();
+        if (!this._hudRoot || !anchor) return;
+
+        const wrap = document.createElement('div');
+        wrap.style.position = 'fixed';
+        wrap.style.zIndex = '90';
+        wrap.style.padding = '10px';
+        wrap.style.borderRadius = '10px';
+        wrap.style.background = 'rgba(10, 14, 20, 0.92)';
+        wrap.style.border = '1px solid rgba(255,255,255,0.18)';
+        wrap.style.color = '#e9f2ff';
+        wrap.style.boxShadow = '0 10px 28px rgba(0,0,0,0.35)';
+        wrap.style.backdropFilter = 'blur(8px)';
+        wrap.style.display = 'flex';
+        wrap.style.flexDirection = 'column';
+        wrap.style.gap = '8px';
+        wrap.style.minWidth = '210px';
+
+        const makeField = (axis, value, key) => {
+            const row = document.createElement('div');
+            row.style.display = 'flex';
+            row.style.alignItems = 'center';
+            row.style.justifyContent = 'space-between';
+            row.style.gap = '10px';
+
+            const label = document.createElement('div');
+            label.textContent = axis;
+            label.style.fontSize = '11px';
+            label.style.fontWeight = '700';
+            label.style.opacity = '0.85';
+            label.style.width = '18px';
+            appendHelp(label, INPUT_HELP[key], this._helpSystem);
+
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.inputMode = 'decimal';
+            input.step = '0.01';
+            input.value = Number.isFinite(value) ? String(value) : '';
+            input.style.width = '80px';
+            input.style.padding = '3px 4px';
+            input.style.borderRadius = '8px';
+            input.style.border = '1px solid rgba(255,255,255,0.16)';
+            input.style.background = 'rgba(8, 12, 18, 0.6)';
+            input.style.color = '#e9f2ff';
+            input.style.fontWeight = '600';
+            input.style.fontSize = '11px';
+            input.addEventListener('input', () => {
+                const next = parseFloat(input.value);
+                if (!Number.isFinite(next)) return;
+                this._setInputValue(key, next);
+            });
+
+            row.appendChild(label);
+            row.appendChild(input);
+            wrap.appendChild(row);
+        };
+
+        const com = this._tuning?.chassis?.additionalMassProperties?.com ?? {};
+        makeField('X', com.x, 'massPropsComX');
+        makeField('Y', com.y, 'massPropsComY');
+        makeField('Z', com.z, 'massPropsComZ');
+
+        const rect = anchor.getBoundingClientRect();
+        const pad = 8;
+        const left = Math.min(window.innerWidth - 230, Math.max(pad, rect.right + pad));
+        const top = Math.min(window.innerHeight - 200, Math.max(pad, rect.top - 8));
+        wrap.style.left = `${left}px`;
+        wrap.style.top = `${top}px`;
+
+        const onPointerDown = (event) => {
+            if (wrap.contains(event.target) || anchor.contains(event.target)) return;
+            this._closeComPopup();
+        };
+        const onKeyDown = (event) => {
+            if (event.key === 'Escape') this._closeComPopup();
+        };
+
+        document.body.appendChild(wrap);
+        document.addEventListener('pointerdown', onPointerDown);
+        window.addEventListener('keydown', onKeyDown);
+        this._comPopup = wrap;
+        this._comPopupHandlers = { onPointerDown, onKeyDown };
+        this._emitComPreview();
+    }
+
+    _closeComPopup() {
+        if (this._comPopup?.parentElement) {
+            this._comPopup.parentElement.removeChild(this._comPopup);
+        }
+        if (this._comPopupHandlers) {
+            document.removeEventListener('pointerdown', this._comPopupHandlers.onPointerDown);
+            window.removeEventListener('keydown', this._comPopupHandlers.onKeyDown);
+        }
+        this._comPopup = null;
+        this._comPopupHandlers = null;
+        this.onComPreview?.(false, null);
+    }
+
+    _emitComPreview() {
+        if (!this._comPopup) return;
+        const com = this._tuning?.chassis?.additionalMassProperties?.com ?? {};
+        this.onComPreview?.(true, { x: com.x ?? 0, y: com.y ?? 0, z: com.z ?? 0 });
     }
 
     _openInertiaPopup(anchor) {
@@ -2044,12 +2318,46 @@ export class RapierDebuggerUI {
             row.appendChild(label);
             row.appendChild(input);
             wrap.appendChild(row);
+            return input;
         };
 
         const inertia = this._tuning?.chassis?.additionalMassProperties?.inertia ?? {};
-        makeField('Inertia X', inertia.x, 'massPropsInertiaX');
-        makeField('Inertia Y', inertia.y, 'massPropsInertiaY');
-        makeField('Inertia Z', inertia.z, 'massPropsInertiaZ');
+        const initial = {
+            x: inertia.x ?? 0,
+            y: inertia.y ?? 0,
+            z: inertia.z ?? 0
+        };
+        const inputs = {
+            x: makeField('Inertia X', initial.x, 'massPropsInertiaX'),
+            y: makeField('Inertia Y', initial.y, 'massPropsInertiaY'),
+            z: makeField('Inertia Z', initial.z, 'massPropsInertiaZ')
+        };
+
+        const separator = makeSeparator();
+        separator.style.margin = '6px 0 4px';
+        wrap.appendChild(separator);
+
+        const actions = document.createElement('div');
+        actions.style.display = 'flex';
+        actions.style.justifyContent = 'flex-end';
+        actions.style.gap = '8px';
+
+        const reset = makeButton('Reset');
+        reset.style.padding = '6px 10px';
+        reset.style.fontSize = '11px';
+        reset.style.borderRadius = '8px';
+        reset.style.marginRight = '0';
+        reset.addEventListener('click', () => {
+            inputs.x.value = String(initial.x);
+            inputs.y.value = String(initial.y);
+            inputs.z.value = String(initial.z);
+            this._setInputValue('massPropsInertiaX', initial.x);
+            this._setInputValue('massPropsInertiaY', initial.y);
+            this._setInputValue('massPropsInertiaZ', initial.z);
+        });
+
+        actions.appendChild(reset);
+        wrap.appendChild(actions);
 
         const rect = anchor.getBoundingClientRect();
         const pad = 8;
@@ -2140,13 +2448,50 @@ export class RapierDebuggerUI {
             row.appendChild(label);
             row.appendChild(input);
             wrap.appendChild(row);
+            return input;
         };
 
         const frame = this._tuning?.chassis?.additionalMassProperties?.inertiaFrame ?? {};
-        makeField('Frame W', frame.w, 'massPropsFrameW');
-        makeField('Frame X', frame.x, 'massPropsFrameX');
-        makeField('Frame Y', frame.y, 'massPropsFrameY');
-        makeField('Frame Z', frame.z, 'massPropsFrameZ');
+        const initial = {
+            w: frame.w ?? 1,
+            x: frame.x ?? 0,
+            y: frame.y ?? 0,
+            z: frame.z ?? 0
+        };
+        const inputs = {
+            w: makeField('Frame W', initial.w, 'massPropsFrameW'),
+            x: makeField('Frame X', initial.x, 'massPropsFrameX'),
+            y: makeField('Frame Y', initial.y, 'massPropsFrameY'),
+            z: makeField('Frame Z', initial.z, 'massPropsFrameZ')
+        };
+
+        const separator = makeSeparator();
+        separator.style.margin = '6px 0 4px';
+        wrap.appendChild(separator);
+
+        const actions = document.createElement('div');
+        actions.style.display = 'flex';
+        actions.style.justifyContent = 'flex-end';
+        actions.style.gap = '8px';
+
+        const reset = makeButton('Reset');
+        reset.style.padding = '6px 10px';
+        reset.style.fontSize = '11px';
+        reset.style.borderRadius = '8px';
+        reset.style.marginRight = '0';
+        reset.addEventListener('click', () => {
+            inputs.w.value = String(initial.w);
+            inputs.x.value = String(initial.x);
+            inputs.y.value = String(initial.y);
+            inputs.z.value = String(initial.z);
+            this._setInputValue('massPropsFrameW', initial.w);
+            this._setInputValue('massPropsFrameX', initial.x);
+            this._setInputValue('massPropsFrameY', initial.y);
+            this._setInputValue('massPropsFrameZ', initial.z);
+        });
+
+        actions.appendChild(reset);
+        wrap.appendChild(actions);
 
         const rect = anchor.getBoundingClientRect();
         const pad = 8;
@@ -2210,11 +2555,44 @@ export class RapierDebuggerUI {
             wrap.appendChild(control.wrap);
         };
 
+        const initial = {
+            lockTranslations: !!this._tuning?.chassis?.lockTranslations,
+            lockRotations: !!this._tuning?.chassis?.lockRotations,
+            enabledRotX: !!this._tuning?.chassis?.enabledRotations?.x,
+            enabledRotY: !!this._tuning?.chassis?.enabledRotations?.y,
+            enabledRotZ: !!this._tuning?.chassis?.enabledRotations?.z
+        };
+
         attach(this._inputControls.lockTranslations);
         attach(this._inputControls.lockRotations);
         attach(this._inputControls.enabledRotX);
         attach(this._inputControls.enabledRotY);
         attach(this._inputControls.enabledRotZ);
+
+        const separator = makeSeparator();
+        separator.style.margin = '6px 0 4px';
+        wrap.appendChild(separator);
+
+        const actions = document.createElement('div');
+        actions.style.display = 'flex';
+        actions.style.justifyContent = 'flex-end';
+        actions.style.gap = '8px';
+
+        const reset = makeButton('Reset');
+        reset.style.padding = '6px 10px';
+        reset.style.fontSize = '11px';
+        reset.style.borderRadius = '8px';
+        reset.style.marginRight = '0';
+        reset.addEventListener('click', () => {
+            this._setInputValue('lockTranslations', initial.lockTranslations);
+            this._setInputValue('lockRotations', initial.lockRotations);
+            this._setInputValue('enabledRotX', initial.enabledRotX);
+            this._setInputValue('enabledRotY', initial.enabledRotY);
+            this._setInputValue('enabledRotZ', initial.enabledRotZ);
+        });
+
+        actions.appendChild(reset);
+        wrap.appendChild(actions);
 
         const rect = anchor.getBoundingClientRect();
         const pad = 8;
@@ -2305,6 +2683,10 @@ export class RapierDebuggerUI {
             col.appendChild(label);
 
             attachWraps(wraps, col);
+
+            const divider = makeSeparator();
+            divider.style.margin = '6px 0 4px';
+            col.appendChild(divider);
 
             const buttonRow = document.createElement('div');
             buttonRow.style.display = 'flex';
@@ -2966,8 +3348,8 @@ export class RapierDebuggerUI {
 
         inputHeader.style.marginBottom = '10px';
         inputPanel.appendChild(inputHeader);
-        inputPanel.style.flex = '4 1 900px';
-        inputPanel.style.minWidth = '780px';
+        inputPanel.style.flex = '4 1 972px';
+        inputPanel.style.minWidth = '842px';
         inputPanel.style.width = 'auto';
         inputPanel.style.maxHeight = 'calc(100vh - 32px)';
         inputPanel.style.overflowY = 'auto';
@@ -2975,7 +3357,7 @@ export class RapierDebuggerUI {
 
         const columns = document.createElement('div');
         columns.style.display = 'grid';
-        columns.style.gridTemplateColumns = 'minmax(240px, 1fr) minmax(240px, 1fr) minmax(240px, 1fr)';
+        columns.style.gridTemplateColumns = 'minmax(240px, 1fr) minmax(240px, 1fr)';
         columns.style.gap = '10px 16px';
 
         const leftCol = document.createElement('div');
@@ -2988,10 +3370,6 @@ export class RapierDebuggerUI {
         middleCol.style.flexDirection = 'column';
         middleCol.style.minWidth = '240px';
 
-        const rightCol = document.createElement('div');
-        rightCol.style.display = 'flex';
-        rightCol.style.flexDirection = 'column';
-        rightCol.style.minWidth = '240px';
 
         const internalGroups = {
             vehicle: makeGroup('Vehicle', { tightTop: true }),
@@ -3010,12 +3388,10 @@ export class RapierDebuggerUI {
         middleCol.appendChild(internalGroups.tires.wrap);
 
         middleCol.appendChild(internalGroups.mass.wrap);
-        middleCol.appendChild(internalGroups.dominance.wrap);
-        rightCol.appendChild(internalGroups.damping.wrap);
+        middleCol.appendChild(internalGroups.damping.wrap);
 
         columns.appendChild(leftCol);
         columns.appendChild(middleCol);
-        columns.appendChild(rightCol);
         inputPanel.appendChild(columns);
 
         this._inputControls.bodyType = makeSelectControl({
@@ -3318,35 +3694,36 @@ export class RapierDebuggerUI {
         });
         internalGroups.mass.body.appendChild(this._inputControls.massPropsMass.wrap);
 
-        this._inputControls.massPropsComX = makeNumberControl({
-            title: 'Center of mass X',
-            value: this._tuning.chassis.additionalMassProperties.com.x,
-            help: INPUT_HELP.massPropsComX,
-            helpSystem,
-            step: 0.01,
-            width: '110px'
-        });
-        internalGroups.mass.body.appendChild(this._inputControls.massPropsComX.wrap);
+        this._inputControls.massPropsComX = { input: null, valEl: null };
+        this._inputControls.massPropsComY = { input: null, valEl: null };
+        this._inputControls.massPropsComZ = { input: null, valEl: null };
 
-        this._inputControls.massPropsComY = makeNumberControl({
-            title: 'Center of mass Y',
-            value: this._tuning.chassis.additionalMassProperties.com.y,
-            help: INPUT_HELP.massPropsComY,
-            helpSystem,
-            step: 0.01,
-            width: '110px'
-        });
-        internalGroups.mass.body.appendChild(this._inputControls.massPropsComY.wrap);
+        const comRow = document.createElement('div');
+        comRow.style.display = 'flex';
+        comRow.style.alignItems = 'center';
+        comRow.style.justifyContent = 'space-between';
+        comRow.style.gap = '10px';
+        comRow.style.margin = '8px 0 10px';
 
-        this._inputControls.massPropsComZ = makeNumberControl({
-            title: 'Center of mass Z',
-            value: this._tuning.chassis.additionalMassProperties.com.z,
-            help: INPUT_HELP.massPropsComZ,
-            helpSystem,
-            step: 0.01,
-            width: '110px'
+        const comLabel = document.createElement('div');
+        comLabel.textContent = 'Center of mass';
+        comLabel.style.fontSize = '13px';
+        comLabel.style.fontWeight = '700';
+        comLabel.style.opacity = '0.95';
+
+        const comButton = makeButton('...');
+        comButton.style.padding = '4px 8px';
+        comButton.style.fontSize = '11px';
+        comButton.style.borderRadius = '8px';
+        comButton.style.marginRight = '0';
+        comButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            this._openComPopup(comButton);
         });
-        internalGroups.mass.body.appendChild(this._inputControls.massPropsComZ.wrap);
+
+        comRow.appendChild(comLabel);
+        comRow.appendChild(comButton);
+        internalGroups.mass.body.appendChild(comRow);
 
         const inertiaRow = document.createElement('div');
         inertiaRow.style.display = 'flex';
@@ -3374,7 +3751,6 @@ export class RapierDebuggerUI {
 
         inertiaRow.appendChild(inertiaLabel);
         inertiaRow.appendChild(inertiaButton);
-        internalGroups.mass.body.appendChild(inertiaRow);
 
         const inertiaFrameRow = document.createElement('div');
         inertiaFrameRow.style.display = 'flex';
@@ -3402,7 +3778,6 @@ export class RapierDebuggerUI {
 
         inertiaFrameRow.appendChild(inertiaFrameLabel);
         inertiaFrameRow.appendChild(inertiaFrameButton);
-        internalGroups.mass.body.appendChild(inertiaFrameRow);
 
         this._inputControls.lockTranslations = makeToggleControl({
             title: 'Lock translations',
@@ -3465,7 +3840,6 @@ export class RapierDebuggerUI {
 
         lockingRow.appendChild(lockingLabel);
         lockingRow.appendChild(lockingButton);
-        internalGroups.mass.body.appendChild(lockingRow);
 
         this._inputControls.linearDamping = makeNumberControl({
             title: 'Linear damping',
@@ -3510,7 +3884,7 @@ export class RapierDebuggerUI {
         const sleepRow = document.createElement('div');
         sleepRow.style.display = 'flex';
         sleepRow.style.alignItems = 'center';
-        sleepRow.style.justifyContent = 'space-between';
+        sleepRow.style.justifyContent = 'flex-start';
         sleepRow.style.gap = '10px';
         sleepRow.style.margin = '8px 0 10px';
 
@@ -3550,8 +3924,8 @@ export class RapierDebuggerUI {
         this._sleepMarker = sleepMarker;
 
         const wakeButton = makeButton('Wake up');
-        wakeButton.style.padding = '6px 10px';
-        wakeButton.style.fontSize = '11px';
+        wakeButton.style.padding = '7px 12px';
+        wakeButton.style.fontSize = '12px';
         wakeButton.style.borderRadius = '8px';
         wakeButton.style.marginRight = '0';
         wakeButton.style.minWidth = '72px';
@@ -3565,10 +3939,17 @@ export class RapierDebuggerUI {
         this._actionButtons.push(wakeButton);
         this._wakeButton = wakeButton;
 
+        const sleepControls = document.createElement('div');
+        sleepControls.style.display = 'inline-flex';
+        sleepControls.style.alignItems = 'center';
+        sleepControls.style.gap = '8px';
+        sleepControls.style.marginLeft = 'auto';
+        sleepControls.appendChild(sleepToggle);
+        sleepControls.appendChild(sleepMarker);
+        sleepControls.appendChild(wakeButton);
+
         sleepRow.appendChild(sleepLabel);
-        sleepRow.appendChild(sleepToggle);
-        sleepRow.appendChild(sleepMarker);
-        sleepRow.appendChild(wakeButton);
+        sleepRow.appendChild(sleepControls);
         internalGroups.sleeping.body.appendChild(sleepRow);
         this._inputControls.canSleep = { input: sleepToggle, valEl: null, wrap: sleepRow };
 
@@ -3743,14 +4124,31 @@ export class RapierDebuggerUI {
             event.preventDefault();
             this._openPositionPopup(resetButton, { resetOnApply: true });
         });
-        resetButton.style.padding = '6px 10px';
-        resetButton.style.fontSize = '13px';
+        resetButton.style.padding = '8px 12px';
+        resetButton.style.fontSize = '14px';
         resetButton.style.borderRadius = '8px';
         resetButton.style.marginRight = '0';
         resetButton.style.width = '100%';
+        resetButton.style.position = 'relative';
+        this._resetButton = resetButton;
+        this._resetButtonBorder = resetButton.style.border;
+
+        const resetDot = document.createElement('span');
+        resetDot.style.position = 'absolute';
+        resetDot.style.right = '12px';
+        resetDot.style.top = '50%';
+        resetDot.style.transform = 'translateY(-50%)';
+        resetDot.style.width = '9px';
+        resetDot.style.height = '9px';
+        resetDot.style.borderRadius = '999px';
+        resetDot.style.background = 'rgba(76,255,122,0.95)';
+        resetDot.style.boxShadow = '0 0 10px rgba(76,255,122,0.55), 0 0 0 1px rgba(76,255,122,0.85)';
+        resetDot.style.visibility = 'hidden';
+        resetButton.appendChild(resetDot);
+        this._resetLiveDot = resetDot;
         const forcesManageButton = makeButton('Forces and Impulses');
-        forcesManageButton.style.padding = '6px 10px';
-        forcesManageButton.style.fontSize = '13px';
+        forcesManageButton.style.padding = '8px 12px';
+        forcesManageButton.style.fontSize = '14px';
         forcesManageButton.style.borderRadius = '8px';
         forcesManageButton.style.marginRight = '0';
         forcesManageButton.style.width = '100%';
@@ -3821,11 +4219,19 @@ export class RapierDebuggerUI {
         leftCol.appendChild(internalGroups.sleeping.wrap);
 
         leftCol.appendChild(internalGroups.bodyType.wrap);
+        leftCol.appendChild(inertiaRow);
+        leftCol.appendChild(inertiaFrameRow);
+        leftCol.appendChild(lockingRow);
+        leftCol.appendChild(internalGroups.dominance.wrap);
 
         const bottomActions = document.createElement('div');
         bottomActions.style.display = 'flex';
         bottomActions.style.flexDirection = 'column';
         bottomActions.style.gap = '8px';
+
+        const forcesSeparator = makeSeparator();
+        forcesSeparator.style.margin = '6px 0 4px';
+        bottomActions.appendChild(forcesSeparator);
         bottomActions.appendChild(forcesManageButton);
         bottomActions.appendChild(resetButton);
         leftCol.appendChild(bottomActions);
@@ -3834,8 +4240,8 @@ export class RapierDebuggerUI {
 
         const testsButton = makeButton('Run Automated Tests');
         testsButton.style.width = '100%';
-        testsButton.style.padding = '6px 10px';
-        testsButton.style.fontSize = '13px';
+        testsButton.style.padding = '8px 12px';
+        testsButton.style.fontSize = '14px';
         testsButton.style.borderRadius = '8px';
         testsButton.style.marginRight = '0';
         testsButton.style.marginBottom = '10px';
@@ -3855,8 +4261,8 @@ export class RapierDebuggerUI {
         const recordButton = makeButton('Record sample');
         recordButton.style.width = '100%';
         recordButton.style.flex = '1 1 100%';
-        recordButton.style.padding = '6px 10px';
-        recordButton.style.fontSize = '13px';
+        recordButton.style.padding = '8px 12px';
+        recordButton.style.fontSize = '14px';
         recordButton.style.borderRadius = '8px';
         recordButton.style.marginRight = '0';
         recordButton.textContent = '';
@@ -3918,8 +4324,8 @@ export class RapierDebuggerUI {
 
         const copyButton = makeButton('Copy Telemetry');
         copyButton.style.display = 'none';
-        copyButton.style.padding = '6px 10px';
-        copyButton.style.fontSize = '13px';
+        copyButton.style.padding = '8px 12px';
+        copyButton.style.fontSize = '14px';
         copyButton.style.borderRadius = '8px';
         copyButton.style.marginRight = '0';
         copyButton.addEventListener('click', () => {
@@ -4355,10 +4761,13 @@ export class RapierDebuggerUI {
             this._tuning.chassis.additionalMassProperties.mass = next;
         } else if (key === 'massPropsComX') {
             this._tuning.chassis.additionalMassProperties.com.x = next;
+            this._emitComPreview();
         } else if (key === 'massPropsComY') {
             this._tuning.chassis.additionalMassProperties.com.y = next;
+            this._emitComPreview();
         } else if (key === 'massPropsComZ') {
             this._tuning.chassis.additionalMassProperties.com.z = next;
+            this._emitComPreview();
         } else if (key === 'massPropsInertiaX') {
             this._tuning.chassis.additionalMassProperties.inertia.x = next;
         } else if (key === 'massPropsInertiaY') {

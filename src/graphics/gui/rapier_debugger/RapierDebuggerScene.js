@@ -25,6 +25,9 @@ export class RapierDebuggerScene {
         this._debugRender = null;
         this._debugColorBuffer = null;
         this._originAxes = null;
+        this._comMarker = null;
+        this._comLocal = new THREE.Vector3();
+        this._comVisible = false;
         this._wheelIndexByLabel = {};
 
         this._tmpQuat = new THREE.Quaternion();
@@ -118,6 +121,11 @@ export class RapierDebuggerScene {
         this._debugColorBuffer = null;
         this._wheelIndexByLabel = {};
         this._originAxes = null;
+        if (this._comMarker?.parent) {
+            this._comMarker.parent.remove(this._comMarker);
+        }
+        this._comMarker = null;
+        this._comVisible = false;
         if (this.camera?.clearViewOffset) {
             this.camera.clearViewOffset();
         }
@@ -263,6 +271,7 @@ export class RapierDebuggerScene {
 
         this._chassisMesh.position.set(pos.x, pos.y, pos.z);
         this._chassisMesh.quaternion.set(rot.x, rot.y, rot.z, rot.w);
+        this._syncComMarker();
 
         if (this.controls) {
             if (!this._cameraFollowReady) {
@@ -279,6 +288,45 @@ export class RapierDebuggerScene {
 
         this._syncWheels(snapshot);
         this._syncDebugRender(debugRenderBuffers);
+    }
+
+    setComPreview(visible, comLocal) {
+        this._comVisible = !!visible;
+        if (comLocal && Number.isFinite(comLocal.x) && Number.isFinite(comLocal.y) && Number.isFinite(comLocal.z)) {
+            this._comLocal.set(comLocal.x, comLocal.y, comLocal.z);
+        }
+        if (this._comVisible) {
+            if (!this._comMarker) {
+                const geo = new THREE.SphereGeometry(0.12, 16, 16);
+                const mat = new THREE.MeshStandardMaterial({
+                    color: 0x2b2f36,
+                    roughness: 0.65,
+                    metalness: 0.15,
+                    emissive: 0x111317,
+                    emissiveIntensity: 0.35,
+                    depthTest: false,
+                    depthWrite: false
+                });
+                const marker = new THREE.Mesh(geo, mat);
+                marker.renderOrder = 4002;
+                this._comMarker = marker;
+            }
+            if (this._comMarker && !this._comMarker.parent) {
+                this.root?.add(this._comMarker);
+            }
+            this._syncComMarker();
+        } else if (this._comMarker) {
+            this._comMarker.visible = false;
+        }
+    }
+
+    _syncComMarker() {
+        if (!this._comVisible || !this._comMarker || !this._chassisMesh) return;
+        const worldPos = this._tmpVecA.copy(this._comLocal);
+        worldPos.applyQuaternion(this._chassisMesh.quaternion);
+        worldPos.add(this._chassisMesh.position);
+        this._comMarker.position.copy(worldPos);
+        this._comMarker.visible = true;
     }
 
     _buildGround() {

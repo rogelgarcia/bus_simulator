@@ -35,6 +35,7 @@ export class RapierDebuggerView {
         this.ui.onApplyTorqueImpulse = (torque) => this.sim.applyTorqueImpulse(torque);
         this.ui.onWakeUp = () => this.sim.wakeUp();
         this.ui.onSleep = () => this.sim.sleep();
+        this.ui.onComPreview = (visible, com) => this.scene.setComPreview(visible, com);
         this._ensureInit();
     }
 
@@ -52,6 +53,7 @@ export class RapierDebuggerView {
         this.ui.onApplyTorqueImpulse = null;
         this.ui.onWakeUp = null;
         this.ui.onSleep = null;
+        this.ui.onComPreview = null;
         this.ui.unmount();
         this.scene.dispose();
         this.sim.dispose();
