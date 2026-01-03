@@ -40,7 +40,7 @@ export const RAPIER_DEBUGGER_TUNING = {
         rotation: { x: 0, y: 0, z: 0, w: 1 },
         linvel: { x: 0, y: 0, z: 0 },
         angvel: { x: 0, y: 0, z: 0 },
-        additionalMass: 10500,
+        additionalMass: 0,
         linearDamping: 0.32,
         angularDamping: 1.0,
         gravityScale: 1.0,
@@ -51,10 +51,10 @@ export const RAPIER_DEBUGGER_TUNING = {
         lockRotations: false,
         enabledRotations: { x: true, y: true, z: true },
         additionalMassProperties: {
-            mass: 10500,
+            mass: 1500,
             com: { x: 0, y: -0.6, z: 0 },
             inertia: computeBoxInertia(
-                10500,
+                1500,
                 RAPIER_DEBUGGER_VEHICLE_CONFIG.width,
                 RAPIER_DEBUGGER_VEHICLE_CONFIG.height,
                 RAPIER_DEBUGGER_VEHICLE_CONFIG.length
@@ -64,10 +64,10 @@ export const RAPIER_DEBUGGER_TUNING = {
     },
     suspension: {
         maxTravel: 0.18,
-        stiffness: 34000,
-        compression: 4000,
-        relaxation: 4600,
-        maxForce: 95000
+        stiffness: 500,
+        compression: 1.0,
+        relaxation: 1.0,
+        maxForce: 10000
     },
     tires: {
         frictionSlip: 8.2,

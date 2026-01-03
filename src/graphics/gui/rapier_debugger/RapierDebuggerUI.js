@@ -31,7 +31,7 @@ const INPUT_HELP = {
     wheelSideInset: 'Wheel side offset from chassis side. Positive widens track. Zero keeps wheel outer face flush; typical 0-0.2x wheel width.',
     restLength: 'Sets the rest length of the wheel suspension spring. Often 0.3-0.6 of wheel radius.',
     wheelbaseRatio: 'Wheel Z position as a fraction of chassis length. Typical 0.6-0.75.',
-    additionalMass: 'Additional mass before collider contributions. Use tens of percent steps.',
+    additionalMass: 'Additional mass before collider contributions. Typical 0-100000 kg (start at 0).',
     linearDamping: 'Linear damping coefficient. Typical 0 to 1.',
     angularDamping: 'Angular damping coefficient. Typical 0 to 2.',
     massPropsMass: 'Overrides additional mass when full mass properties are set.',
@@ -49,10 +49,10 @@ const INPUT_HELP = {
     inertiaFrame: 'Quaternion that orients the inertia tensor in body space.',
     locking: 'Locks translations or rotations for this rigid body.',
     suspMaxTravel: 'Sets the maximum distance the suspension can travel before and after its resting length. Typical 0.1-0.3.',
-    suspStiffness: 'Sets the wheel suspension stiffness. Higher is firmer. 20000-60000 typical here.',
-    suspCompression: 'Wheel suspension damping when being compressed. 2000-6000 typical here.',
-    suspRelaxation: 'Wheel suspension damping when being released. 2000-6000 typical here.',
-    suspMaxForce: 'Sets the maximum force applied by the wheel suspension. 60000-120000 typical here.',
+    suspStiffness: 'Sets the wheel suspension stiffness. Typical 0-10000 N/m (start around 500).',
+    suspCompression: 'Wheel suspension compression damping. Typical 0.0-5.0 (start around 1.0).',
+    suspRelaxation: 'Wheel suspension relaxation damping. Typical 0.0-5.0 (start around 1.0).',
+    suspMaxForce: 'Sets the maximum force applied by the wheel suspension. Typical 0-50000 N (start around 10000).',
     tireFrictionSlip: 'Sets the parameter controlling how much traction the tire has. Typical 6-10.',
     tireSideStiffness: 'Multiplier of friction between the tire and the collider it is on top of. Typical 1-2.'
 };
@@ -521,6 +521,8 @@ function makeNumberControl({
     const hasMin = min !== null && min !== undefined && Number.isFinite(Number(min));
     const hasMax = max !== null && max !== undefined && Number.isFinite(Number(max));
     const hasStep = step !== null && step !== undefined && Number.isFinite(Number(step));
+    const minValue = hasMin ? Number(min) : null;
+    const maxValue = hasMax ? Number(max) : null;
     const stepValue = hasStep ? Math.abs(Number(step)) : 1;
     const valueNum = Number.isFinite(value) ? Number(value) : 0;
     const isForceLike = /\(n/i.test(String(title ?? ''));
@@ -596,6 +598,8 @@ function makeNumberControl({
 
     const setBoth = (next, { from = null } = {}) => {
         if (!Number.isFinite(next)) return;
+        if (hasMin && next < minValue) next = minValue;
+        if (hasMax && next > maxValue) next = maxValue;
         if (autoRange) {
             const currentMin = Number(slider.min);
             const currentMax = Number(slider.max);
@@ -1375,7 +1379,7 @@ export class RapierDebuggerUI {
                     y: Number.isFinite(baseAngvel.y) ? baseAngvel.y : 0,
                     z: Number.isFinite(baseAngvel.z) ? baseAngvel.z : 0
                 },
-                additionalMass: Number.isFinite(baseChassis.additionalMass) ? baseChassis.additionalMass : 6500,
+                additionalMass: Number.isFinite(baseChassis.additionalMass) ? baseChassis.additionalMass : 0,
                 linearDamping: Number.isFinite(baseChassis.linearDamping) ? baseChassis.linearDamping : 0.32,
                 angularDamping: Number.isFinite(baseChassis.angularDamping) ? baseChassis.angularDamping : 1.0,
                 gravityScale: Number.isFinite(baseChassis.gravityScale) ? baseChassis.gravityScale : 1.0,
@@ -1411,10 +1415,10 @@ export class RapierDebuggerUI {
             },
             suspension: {
                 maxTravel: Number.isFinite(baseTuning.suspension?.maxTravel) ? baseTuning.suspension.maxTravel : 0.2,
-                stiffness: Number.isFinite(baseTuning.suspension?.stiffness) ? baseTuning.suspension.stiffness : 34000,
-                compression: Number.isFinite(baseTuning.suspension?.compression) ? baseTuning.suspension.compression : 4000,
-                relaxation: Number.isFinite(baseTuning.suspension?.relaxation) ? baseTuning.suspension.relaxation : 4600,
-                maxForce: Number.isFinite(baseTuning.suspension?.maxForce) ? baseTuning.suspension.maxForce : 95000
+                stiffness: Number.isFinite(baseTuning.suspension?.stiffness) ? baseTuning.suspension.stiffness : 500,
+                compression: Number.isFinite(baseTuning.suspension?.compression) ? baseTuning.suspension.compression : 1.0,
+                relaxation: Number.isFinite(baseTuning.suspension?.relaxation) ? baseTuning.suspension.relaxation : 1.0,
+                maxForce: Number.isFinite(baseTuning.suspension?.maxForce) ? baseTuning.suspension.maxForce : 10000
             },
             tires: {
                 frictionSlip: Number.isFinite(baseTuning.tires?.frictionSlip) ? baseTuning.tires.frictionSlip : 8.2,
@@ -4139,6 +4143,8 @@ export class RapierDebuggerUI {
             value: this._tuning.chassis.additionalMass,
             help: INPUT_HELP.additionalMass,
             helpSystem,
+            min: 0,
+            max: 100000,
             step: 10,
             width: '110px',
             sliderWidth: '140px',
@@ -4151,7 +4157,9 @@ export class RapierDebuggerUI {
             value: this._tuning.chassis.additionalMassProperties.mass,
             help: INPUT_HELP.massPropsMass,
             helpSystem,
-            step: 1,
+            min: 0,
+            max: 100000,
+            step: 10,
             width: '110px',
             sliderWidth: '140px',
             controlsAlignRight: true
@@ -4542,7 +4550,9 @@ export class RapierDebuggerUI {
             value: this._tuning.suspension.stiffness,
             help: INPUT_HELP.suspStiffness,
             helpSystem,
-            step: 500,
+            min: 0,
+            max: 10000,
+            step: 10,
             width: '110px',
             sliderWidth: '140px',
             controlsAlignRight: true
@@ -4554,7 +4564,9 @@ export class RapierDebuggerUI {
             value: this._tuning.suspension.compression,
             help: INPUT_HELP.suspCompression,
             helpSystem,
-            step: 200,
+            min: 0,
+            max: 5,
+            step: 0.1,
             width: '110px',
             sliderWidth: '140px',
             controlsAlignRight: true
@@ -4566,7 +4578,9 @@ export class RapierDebuggerUI {
             value: this._tuning.suspension.relaxation,
             help: INPUT_HELP.suspRelaxation,
             helpSystem,
-            step: 200,
+            min: 0,
+            max: 5,
+            step: 0.1,
             width: '110px',
             sliderWidth: '140px',
             controlsAlignRight: true
@@ -4578,7 +4592,9 @@ export class RapierDebuggerUI {
             value: this._tuning.suspension.maxForce,
             help: INPUT_HELP.suspMaxForce,
             helpSystem,
-            step: 500,
+            min: 0,
+            max: 50000,
+            step: 100,
             width: '110px',
             sliderWidth: '140px',
             controlsAlignRight: true
