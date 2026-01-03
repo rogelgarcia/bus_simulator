@@ -21,3 +21,9 @@ Open `index.html` in a modern browser.
 > If your assets (like `.glb`) don’t load when opened via `file://`, serve the folder as a static site (any simple static server works).
 
 ---
+
+## Assets (not included)
+
+This repository does **not** include any 3D models, textures, audio, or other art assets due to licensing.
+
+You can vibe code your own assets tough. 
