@@ -804,7 +804,10 @@ export class RapierDebuggerSim {
         }
 
         const colliderDesc = this._rapier.ColliderDesc.cuboid(halfW, halfH, halfL);
-        colliderDesc.setFriction(0.9);
+        if (typeof colliderDesc.setDensity === 'function') {
+            colliderDesc.setDensity(0);
+        }
+        colliderDesc.setFriction(0.2);
         colliderDesc.setRestitution(0.0);
         this._chassisCollider = this._world.createCollider(colliderDesc, body);
 
