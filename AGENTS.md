@@ -39,6 +39,7 @@ Note: `index.html` uses CDN imports for `three`, so a network connection is requ
 - When committing, choose a concise one-line message yourself; do not ask the user for it.
 - Never commit AI prompt files named `AI_#_title`.
 - Commit whatever is pending (but follow the above rules)
+- Check PROJECT_RULES.md for more details
 
 ## Project Rules & AI Prompting
 - Follow `PROJECT_RULES.md` for directory and comment policies
