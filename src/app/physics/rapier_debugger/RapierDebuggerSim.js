@@ -606,38 +606,60 @@ export class RapierDebuggerSim {
 
     addForce(force) {
         if (!this._body?.addForce || !vec3Finite(force)) return;
-        this._body.addForce({ x: force.x, y: force.y, z: force.z }, true);
+        const rot = this._body.rotation?.();
+        const worldForce = rot ? rotateVecByQuat(force, rot) : force;
+        this._body.addForce({ x: worldForce.x, y: worldForce.y, z: worldForce.z }, true);
     }
 
     addTorque(torque) {
         if (!this._body?.addTorque || !vec3Finite(torque)) return;
-        this._body.addTorque({ x: torque.x, y: torque.y, z: torque.z }, true);
+        const rot = this._body.rotation?.();
+        const worldTorque = rot ? rotateVecByQuat(torque, rot) : torque;
+        this._body.addTorque({ x: worldTorque.x, y: worldTorque.y, z: worldTorque.z }, true);
     }
 
     addForceAtPoint(force, point) {
         if (!this._body?.addForceAtPoint || !vec3Finite(force) || !vec3Finite(point)) return;
+        const pos = this._body.translation?.();
+        const rot = this._body.rotation?.();
+        const worldForce = rot ? rotateVecByQuat(force, rot) : force;
+        const rotatedPoint = (pos && rot) ? rotateVecByQuat(point, rot) : point;
+        const worldPoint = pos
+            ? { x: pos.x + rotatedPoint.x, y: pos.y + rotatedPoint.y, z: pos.z + rotatedPoint.z }
+            : rotatedPoint;
         this._body.addForceAtPoint(
-            { x: force.x, y: force.y, z: force.z },
-            { x: point.x, y: point.y, z: point.z },
+            { x: worldForce.x, y: worldForce.y, z: worldForce.z },
+            { x: worldPoint.x, y: worldPoint.y, z: worldPoint.z },
             true
         );
     }
 
     applyImpulse(impulse) {
         if (!this._body?.applyImpulse || !vec3Finite(impulse)) return;
-        this._body.applyImpulse({ x: impulse.x, y: impulse.y, z: impulse.z }, true);
+        const rot = this._body.rotation?.();
+        const worldImpulse = rot ? rotateVecByQuat(impulse, rot) : impulse;
+        this._body.applyImpulse({ x: worldImpulse.x, y: worldImpulse.y, z: worldImpulse.z }, true);
     }
 
     applyTorqueImpulse(torque) {
         if (!this._body?.applyTorqueImpulse || !vec3Finite(torque)) return;
-        this._body.applyTorqueImpulse({ x: torque.x, y: torque.y, z: torque.z }, true);
+        const rot = this._body.rotation?.();
+        const worldTorque = rot ? rotateVecByQuat(torque, rot) : torque;
+        this._body.applyTorqueImpulse({ x: worldTorque.x, y: worldTorque.y, z: worldTorque.z }, true);
     }
 
     applyImpulseAtPoint(impulse, point) {
         if (!this._body?.applyImpulseAtPoint || !vec3Finite(impulse) || !vec3Finite(point)) return;
+        const pos = this._body.translation?.();
+        const rot = this._body.rotation?.();
+        const worldImpulse = rot ? rotateVecByQuat(impulse, rot) : impulse;
+        const rotatedPoint = (pos && rot) ? rotateVecByQuat(point, rot) : point;
+        const worldPoint = pos
+            ? { x: pos.x + rotatedPoint.x, y: pos.y + rotatedPoint.y, z: pos.z + rotatedPoint.z }
+            : rotatedPoint;
         this._body.applyImpulseAtPoint(
-            { x: impulse.x, y: impulse.y, z: impulse.z },
-            { x: point.x, y: point.y, z: point.z },
+            { x: worldImpulse.x, y: worldImpulse.y, z: worldImpulse.z },
+            { x: worldPoint.x, y: worldPoint.y, z: worldPoint.z },
             true
         );
     }

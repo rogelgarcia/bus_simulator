@@ -69,6 +69,19 @@ function computeChaseParams(vehicle) {
     };
 }
 
+function snapToGroundY(object3d, groundY) {
+    if (!object3d) return;
+    const y = Number.isFinite(groundY) ? groundY : 0;
+    object3d.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(object3d);
+    if (box.isEmpty()) return;
+    const delta = y - box.min.y;
+    if (Number.isFinite(delta) && Math.abs(delta) > 1e-5) {
+        object3d.position.y += delta;
+        object3d.updateMatrixWorld(true);
+    }
+}
+
 export class GameplayState {
     constructor(engine, sm) {
         this.engine = engine;
@@ -182,6 +195,7 @@ export class GameplayState {
         const roadY = this.city?.genConfig?.road?.surfaceY ?? 0;
         this.busAnchor.position.set(0, roadY, 0);
         this.busAnchor.rotation.set(0, 0, 0);
+        snapToGroundY(this.busAnchor, roadY);
         this.engine.scene.add(this.busAnchor);
 
         // Enable shadows
@@ -207,6 +221,15 @@ export class GameplayState {
         this.vehicleController = new VehicleController(this.vehicle.id, sim.physics, sim.events);
         this.vehicleController.setVehicleApi(this.vehicle.api, this.vehicle.anchor);
         this.gameLoop.addVehicleController(this.vehicleController);
+
+        const readyPromise = this.busModel?.userData?.readyPromise;
+        readyPromise?.then?.(() => {
+            if (!this.busAnchor || !this.vehicle?.id) return;
+            snapToGroundY(this.busAnchor, roadY);
+            sim.physics?.removeVehicle?.(this.vehicle.id);
+            sim.physics?.addVehicle?.(this.vehicle.id, this.vehicle.config, this.busAnchor, this.vehicle.api);
+            this.vehicleController?.setVehicleApi?.(this.vehicle.api, this.busAnchor);
+        });
 
         // Subscribe to frame events for telemetry
         this._unsubFrame = sim.events.on('gameloop:frame', () => {

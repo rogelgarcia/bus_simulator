@@ -443,10 +443,17 @@ function recenterBody(bus, bounds = null) {
 function alignAnchoredBus(bus) {
     const parent = bus.parent;
     if (!parent || parent.userData?.model !== bus) return;
-    bus.updateMatrixWorld(true);
-    const box = new THREE.Box3().setFromObject(bus);
+    const origin = parent.userData?.origin ?? 'floor';
+    const skeleton = bus.userData?.bus ?? null;
+    const target = origin === 'center' ? (skeleton?.bodyRoot ?? bus) : bus;
+    const box = getObjectBoundsLocal(parent, target);
     if (box.isEmpty()) return;
-    bus.position.y -= box.min.y;
+    if (origin === 'center') {
+        const center = box.getCenter(new THREE.Vector3());
+        bus.position.sub(center);
+    } else {
+        bus.position.y -= box.min.y;
+    }
 }
 
 export function createDoubleDeckerBus(spec) {

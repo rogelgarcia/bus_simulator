@@ -51,17 +51,20 @@ const CAROUSEL = (() => {
     return { center, radius, stepAngle, enterAngle };
 })();
 
-/**
- * Wrap a bus model in a parent Group whose origin is on the floor (y=0).
- * This makes scaling/rotation safe without the bus “floating” above/below the floor.
- */
-function makeFloorAnchor(model) {
+function resolveBoundsTarget(model) {
+    const api = model?.userData?.bus ?? model?.userData?.api ?? null;
+    if (api?.bodyRoot?.isObject3D) return api.bodyRoot;
+    return model;
+}
+
+function makeVehicleAnchor(model) {
     const anchor = new THREE.Group();
     anchor.name = `${model.name || 'bus'}_anchor`;
 
     // Preserve metadata on the anchor (what the rest of the game uses)
     anchor.userData = { ...model.userData };
     anchor.userData.model = model;
+    anchor.userData.origin = 'center';
 
     // Put model inside anchor
     anchor.add(model);
@@ -71,9 +74,13 @@ function makeFloorAnchor(model) {
     model.rotation.set(0, 0, 0);
     model.scale.set(1, 1, 1);
 
-    // Compute bounds and lift model so its lowest point touches y=0
-    const box = new THREE.Box3().setFromObject(model);
-    model.position.y -= box.min.y; // ✅ floor at y=0
+    // Center model so its bounds center aligns with the anchor origin.
+    const boundsTarget = resolveBoundsTarget(model);
+    const box = new THREE.Box3().setFromObject(boundsTarget);
+    if (!box.isEmpty()) {
+        const center = box.getCenter(new THREE.Vector3());
+        model.position.sub(center);
+    }
 
     return anchor;
 }
@@ -533,7 +540,7 @@ export class BusSelectState {
         group.add(platform);
 
         const busModel = createBus(spec);
-        const bus = makeFloorAnchor(busModel);
+        const bus = makeVehicleAnchor(busModel);
         bus.userData.id = spec?.id ?? null;
         bus.userData.spec = spec;
         tuneBusMaterials(bus, { colorScale: 0.78, roughness: 0.92, metalness: 0.0 });

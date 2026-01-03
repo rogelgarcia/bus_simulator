@@ -48,18 +48,25 @@ function resolveBusApi(busModel) {
     return busModel.userData?.bus ?? busModel.userData?.api ?? null;
 }
 
+function resolveBoundsTarget(model) {
+    const api = model?.userData?.bus ?? model?.userData?.api ?? null;
+    if (api?.bodyRoot?.isObject3D) return api.bodyRoot;
+    return model;
+}
+
 /**
- * Create a floor anchor for the bus model.
- * The anchor is positioned so the bus sits on the ground (Y=0).
+ * Create a vehicle anchor for the model.
+ * The anchor origin is at the vehicle's visual center (bounds center).
  * @param {THREE.Object3D} model
  * @returns {THREE.Group}
  */
-function makeFloorAnchor(model) {
+function makeVehicleAnchor(model) {
     const anchor = new THREE.Group();
     anchor.name = `${model.name || 'vehicle'}_anchor`;
     anchor.userData.type = model.userData?.type;
     anchor.userData.id = model.userData?.id;
     anchor.userData.model = model;
+    anchor.userData.origin = 'center';
     anchor.add(model);
 
     // Reset model transforms
@@ -67,9 +74,13 @@ function makeFloorAnchor(model) {
     model.rotation.set(0, 0, 0);
     model.scale.set(1, 1, 1);
 
-    // Adjust Y so bottom of model sits at Y=0
-    const box = new THREE.Box3().setFromObject(model);
-    model.position.y -= box.min.y;
+    // Center model so its bounds center aligns with the anchor origin.
+    const boundsTarget = resolveBoundsTarget(model);
+    const box = new THREE.Box3().setFromObject(boundsTarget);
+    if (!box.isEmpty()) {
+        const center = box.getCenter(new THREE.Vector3());
+        model.position.sub(center);
+    }
 
     return anchor;
 }
@@ -156,8 +167,7 @@ export function createVehicleFromBus(selected, options = {}) {
         console.warn('[createVehicleFromBus] Bus model has no BusSkeleton API');
     }
 
-    // Create floor anchor
-    const anchor = makeFloorAnchor(model);
+    const anchor = makeVehicleAnchor(model);
 
     // Extract configuration
     const config = extractVehicleConfig(model, api);

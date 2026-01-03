@@ -10,13 +10,20 @@ import { makeCheckerTexture } from '../graphics/assets3d/textures/CityTextures.j
 import { createVehicleFromBus } from '../app/vehicle/createVehicle.js';
 import { VehicleController } from '../app/vehicle/VehicleController.js';
 
-function makeFloorAnchor(model) {
+function resolveBoundsTarget(model) {
+    const api = model?.userData?.bus ?? model?.userData?.api ?? null;
+    if (api?.bodyRoot?.isObject3D) return api.bodyRoot;
+    return model;
+}
+
+function makeVehicleAnchor(model) {
     const anchor = new THREE.Group();
     anchor.name = `${model.name || 'bus'}_anchor`;
 
     anchor.userData.type = model.userData?.type;
     anchor.userData.id = model.userData?.id;
     anchor.userData.model = model;
+    anchor.userData.origin = 'center';
 
     anchor.add(model);
 
@@ -24,10 +31,27 @@ function makeFloorAnchor(model) {
     model.rotation.set(0, 0, 0);
     model.scale.set(1, 1, 1);
 
-    const box = new THREE.Box3().setFromObject(model);
-    model.position.y -= box.min.y;
+    const boundsTarget = resolveBoundsTarget(model);
+    const box = new THREE.Box3().setFromObject(boundsTarget);
+    if (!box.isEmpty()) {
+        const center = box.getCenter(new THREE.Vector3());
+        model.position.sub(center);
+    }
 
     return anchor;
+}
+
+function snapToGroundY(object3d, groundY) {
+    if (!object3d) return;
+    const y = Number.isFinite(groundY) ? groundY : 0;
+    object3d.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(object3d);
+    if (box.isEmpty()) return;
+    const delta = y - box.min.y;
+    if (Number.isFinite(delta) && Math.abs(delta) > 1e-5) {
+        object3d.position.y += delta;
+        object3d.updateMatrixWorld(true);
+    }
 }
 
 function disposeMaterial(mat, { disposeTextures = true } = {}) {
@@ -1415,9 +1439,10 @@ export class TestModeState {
         });
 
         const vehicle = createVehicleFromBus(busModel, { id: 'test_bus' });
-        const anchor = vehicle?.anchor ?? makeFloorAnchor(busModel);
+        const anchor = vehicle?.anchor ?? makeVehicleAnchor(busModel);
         anchor.position.set(0, 0, -10);
         anchor.rotation.set(0, 0, 0);
+        snapToGroundY(anchor, 0);
 
         this.scene.add(anchor);
 
@@ -1465,6 +1490,7 @@ export class TestModeState {
 
     _refreshVehiclePhysics() {
         if (!this.vehicle || !this.busAnchor) return;
+        snapToGroundY(this.busAnchor, 0);
         this.sim?.physics?.removeVehicle?.(this.vehicle.id);
         this.sim?.physics?.addVehicle?.(this.vehicle.id, this.vehicle.config, this.busAnchor, this.vehicle.api);
         this.vehicleController?.setVehicleApi?.(this.vehicle.api, this.busAnchor);
