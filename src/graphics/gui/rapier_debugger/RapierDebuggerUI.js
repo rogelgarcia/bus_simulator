@@ -405,10 +405,16 @@ function makeKnobControl({ title, min, max, step, value, fmt, help, helpSystem, 
     return { wrap, input, valEl: inlineVal ?? val, fmt, update };
 }
 
-function makeNumberControl({ title, value, help, helpSystem, width = '120px', min = null, max = null, step = null }) {
+function makeNumberControl({ title, value, help, helpSystem, width = '120px', min = null, max = null, step = null, sliderWidth = null }) {
     const wrap = document.createElement('div');
     wrap.style.margin = '8px 0 10px';
     const scaledWidth = scalePx(width, 0.5);
+    const hasMin = min !== null && min !== undefined && Number.isFinite(Number(min));
+    const hasMax = max !== null && max !== undefined && Number.isFinite(Number(max));
+    const hasStep = step !== null && step !== undefined && Number.isFinite(Number(step));
+    const stepValue = hasStep ? Math.abs(Number(step)) : 1;
+    const valueNum = Number.isFinite(value) ? Number(value) : 0;
+    const isForceLike = /\(n/i.test(String(title ?? ''));
 
     const row = document.createElement('div');
     row.style.display = 'flex';
@@ -424,6 +430,44 @@ function makeNumberControl({ title, value, help, helpSystem, width = '120px', mi
     label.style.display = 'flex';
     label.style.alignItems = 'center';
     appendHelp(label, help, helpSystem);
+
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    if (sliderWidth) {
+        slider.style.flex = `0 0 ${sliderWidth}`;
+        slider.style.width = sliderWidth;
+    } else {
+        slider.style.flex = '1';
+        slider.style.minWidth = '90px';
+    }
+    slider.style.height = '18px';
+    slider.style.margin = '0';
+    slider.style.cursor = 'pointer';
+    slider.style.opacity = '0.95';
+    slider.step = String(stepValue);
+
+    const autoRange = !(hasMin && hasMax);
+    const computeAutoRange = (v) => {
+        const base = Math.abs(Number.isFinite(v) ? v : 0);
+        const span = isForceLike
+            ? Math.max(stepValue * 10000, base * 1.5, 1000)
+            : Math.max(stepValue * 200, base * 1.5, stepValue * 10, 1);
+        const lo = hasMin ? Number(min) : (base === 0 ? -span : v - span);
+        const hi = hasMax ? Number(max) : (base === 0 ? span : v + span);
+        return { lo: Math.min(lo, hi), hi: Math.max(lo, hi) };
+    };
+
+    const syncSliderRange = (v) => {
+        const range = computeAutoRange(v);
+        slider.min = String(range.lo);
+        slider.max = String(range.hi);
+    };
+
+    if (autoRange) syncSliderRange(valueNum);
+    else {
+        slider.min = String(min);
+        slider.max = String(max);
+    }
 
     const input = document.createElement('input');
     input.type = 'number';
@@ -441,12 +485,40 @@ function makeNumberControl({ title, value, help, helpSystem, width = '120px', mi
     input.style.fontWeight = '600';
     input.style.fontSize = '11px';
 
+    const setBoth = (next, { from = null } = {}) => {
+        if (!Number.isFinite(next)) return;
+        if (autoRange) {
+            const currentMin = Number(slider.min);
+            const currentMax = Number(slider.max);
+            if (!Number.isFinite(currentMin) || !Number.isFinite(currentMax) || next < currentMin || next > currentMax) {
+                syncSliderRange(next);
+            }
+        }
+        if (from !== 'slider') slider.value = String(next);
+        if (from !== 'input') input.value = String(next);
+    };
+
+    setBoth(valueNum);
+
+    slider.addEventListener('input', () => {
+        const next = parseFloat(slider.value);
+        setBoth(next, { from: 'slider' });
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    input.addEventListener('input', () => {
+        const next = parseFloat(input.value);
+        if (!Number.isFinite(next)) return;
+        setBoth(next, { from: 'input' });
+    });
+
     row.appendChild(label);
+    row.appendChild(slider);
     row.appendChild(input);
 
     wrap.appendChild(row);
 
-    return { wrap, input, valEl: null };
+    return { wrap, input, slider, valEl: null };
 }
 
 function makeInlineVector3Control({
@@ -1066,9 +1138,12 @@ export class RapierDebuggerUI {
         this._positionPopupLiveApply = null;
         this._positionPopupLiveNextAt = 0;
         this._positionPopupLiveInterval = null;
+        this._positionPopupLiveIntervalMs = 0;
         this._positionPopupLiveShowTimer = null;
         this._positionPopupLiveHideTimer = null;
         this._positionPopupLiveStatus = null;
+        this._positionPopupLiveProgressFill = null;
+        this._positionPopupLiveProgressInterval = null;
         this._inertiaPopup = null;
         this._inertiaPopupHandlers = null;
         this._inertiaFramePopup = null;
@@ -1330,9 +1405,12 @@ export class RapierDebuggerUI {
         this._positionPopupLiveApply = null;
         this._positionPopupLiveNextAt = 0;
         this._positionPopupLiveInterval = null;
+        this._positionPopupLiveIntervalMs = 0;
         this._positionPopupLiveShowTimer = null;
         this._positionPopupLiveHideTimer = null;
         this._positionPopupLiveStatus = null;
+        this._positionPopupLiveProgressFill = null;
+        this._positionPopupLiveProgressInterval = null;
         this._resetLiveDot = null;
         this._resetLiveInterval = null;
         this._resetLiveShowTimer = null;
@@ -1412,6 +1490,14 @@ export class RapierDebuggerUI {
         wrap.style.flexDirection = 'column';
         wrap.style.gap = '8px';
 
+        const title = makeTitle('Camera');
+        title.style.marginBottom = '0';
+        wrap.appendChild(title);
+
+        const topSeparator = makeSeparator();
+        topSeparator.style.margin = '6px 0 4px';
+        wrap.appendChild(topSeparator);
+
         const resetCameraButton = makeButton('Reset camera');
         resetCameraButton.style.padding = '6px 10px';
         resetCameraButton.style.fontSize = '11px';
@@ -1476,6 +1562,14 @@ export class RapierDebuggerUI {
         wrap.style.gap = '8px';
         wrap.style.minWidth = '210px';
         wrap.style.maxWidth = '210px';
+
+        const title = makeTitle('Gravity');
+        title.style.marginBottom = '0';
+        wrap.appendChild(title);
+
+        const topSeparator = makeSeparator();
+        topSeparator.style.margin = '6px 0 4px';
+        wrap.appendChild(topSeparator);
 
         const makeField = (axis, value) => {
             const row = document.createElement('div');
@@ -1621,6 +1715,14 @@ export class RapierDebuggerUI {
         wrap.style.flexDirection = 'column';
         wrap.style.gap = '8px';
         wrap.style.minWidth = '520px';
+
+        const title = makeTitle('Reset');
+        title.style.marginBottom = '0';
+        wrap.appendChild(title);
+
+        const topSeparator = makeSeparator();
+        topSeparator.style.margin = '6px 0 4px';
+        wrap.appendChild(topSeparator);
 
         const helpSystem = this._helpSystem;
 
@@ -1857,17 +1959,17 @@ export class RapierDebuggerUI {
 
         const liveIntervalMs = this._liveResetIntervalMs;
         const liveIntervalSeconds = formatNum(liveIntervalMs / 1000, liveIntervalMs % 1000 === 0 ? 0 : 1);
-        const resetIntervalMs = liveIntervalMs * 3;
-        const resetIntervalSeconds = formatNum(
-            resetIntervalMs / 1000,
-            resetIntervalMs % 1000 === 0 ? 0 : 1
+        const backgroundIntervalMs = liveIntervalMs * 3;
+        const backgroundIntervalSeconds = formatNum(
+            backgroundIntervalMs / 1000,
+            backgroundIntervalMs % 1000 === 0 ? 0 : 1
         );
 
         const liveLabel = document.createElement('span');
         liveLabel.textContent = 'Live';
         appendHelp(
             liveLabel,
-            `Auto-reset the vehicle using the current reset configuration every ${resetIntervalSeconds} seconds (3× the panel interval). Live stays active after closing this panel; the Reset button shows a green border and blinks before each reset.`,
+            `Auto-reset the vehicle using the current reset configuration every ${liveIntervalSeconds}s while this panel is open, and every ${backgroundIntervalSeconds}s after closing it. Live stays active after closing this panel; the Reset button shows a green border and blinks before each reset.`,
             this._helpSystem
         );
 
@@ -1888,12 +1990,30 @@ export class RapierDebuggerUI {
         liveWrap.appendChild(liveLabel);
 
         const liveStatus = document.createElement('span');
-        liveStatus.textContent = 'Reseting';
-        liveStatus.style.fontSize = '11px';
-        liveStatus.style.fontWeight = '700';
-        liveStatus.style.opacity = '0.7';
         liveStatus.style.display = 'none';
+        liveStatus.style.width = '84px';
+        liveStatus.style.height = '10px';
+        liveStatus.style.borderRadius = '999px';
+        liveStatus.style.border = '1px solid rgba(255,255,255,0.16)';
+        liveStatus.style.background = 'rgba(255,255,255,0.10)';
+        liveStatus.style.overflow = 'hidden';
+        liveStatus.style.boxSizing = 'border-box';
+
+        const liveStatusFill = document.createElement('span');
+        liveStatusFill.style.display = 'block';
+        liveStatusFill.style.height = '100%';
+        liveStatusFill.style.width = '0%';
+        liveStatusFill.style.borderRadius = '999px';
+        liveStatusFill.style.background = 'linear-gradient(90deg, rgba(210,210,210,0.10), rgba(235,235,235,0.55), rgba(210,210,210,0.10))';
+        liveStatusFill.style.backgroundSize = '200% 100%';
+        liveStatusFill.style.backgroundPosition = '0% 50%';
+        liveStatusFill.style.opacity = '0.95';
+        liveStatusFill.style.willChange = 'width, background-position';
+        liveStatusFill.style.transition = 'width 120ms steps(10, end)';
+        liveStatus.appendChild(liveStatusFill);
+
         this._positionPopupLiveStatus = liveStatus;
+        this._positionPopupLiveProgressFill = liveStatusFill;
 
         const liveGroup = document.createElement('div');
         liveGroup.style.display = 'inline-flex';
@@ -1905,7 +2025,7 @@ export class RapierDebuggerUI {
         liveCheckbox.addEventListener('change', () => {
             syncLiveToggle();
             if (liveCheckbox.checked) {
-                this._startLiveReset(applyValues);
+                this._startLiveReset(applyValues, { showToast: true });
             } else {
                 this._stopLiveReset();
             }
@@ -1915,9 +2035,9 @@ export class RapierDebuggerUI {
             this._positionPopupLiveApply = applyValues;
             if (!this._positionPopupLiveInterval) {
                 this._startLiveReset(applyValues);
-            } else if (this._positionPopupLiveNextAt > 0) {
-                this._scheduleLiveStatus(this._positionPopupLiveNextAt);
+            } else {
                 this._setResetLiveActive(true);
+                this._rescheduleLiveReset();
             }
         }
 
@@ -1994,6 +2114,10 @@ export class RapierDebuggerUI {
             clearTimeout(this._positionPopupLiveHideTimer);
             this._positionPopupLiveHideTimer = null;
         }
+        if (this._positionPopupLiveProgressInterval) {
+            clearInterval(this._positionPopupLiveProgressInterval);
+            this._positionPopupLiveProgressInterval = null;
+        }
         if (this._positionPopupLiveStatus) {
             this._positionPopupLiveStatus.style.display = 'none';
         }
@@ -2003,21 +2127,27 @@ export class RapierDebuggerUI {
         this._positionPopup = null;
         this._positionPopupHandlers = null;
         this._positionPopupLiveStatus = null;
+        this._positionPopupLiveProgressFill = null;
+
+        if (this._positionPopupLiveEnabled) {
+            this._rescheduleLiveReset();
+        }
     }
 
-    _startLiveReset(applyValues) {
+    _getLiveResetIntervalMs({ panelOpen = null } = {}) {
         const baseIntervalMs = this._liveResetIntervalMs ?? 3000;
-        const intervalMs = baseIntervalMs * 3;
-        this._positionPopupLiveEnabled = true;
-        this._positionPopupLiveApply = applyValues ?? this._positionPopupLiveApply;
+        const open = panelOpen === null ? !!this._positionPopup : !!panelOpen;
+        return open ? baseIntervalMs : baseIntervalMs * 3;
+    }
 
-        this._setResetLiveActive(true);
-        if (this._resetLiveDot) {
-            this._resetLiveDot.style.visibility = 'visible';
-        }
+    _rescheduleLiveReset({ showToast = false } = {}) {
+        if (!this._positionPopupLiveEnabled || !this._positionPopupLiveApply) return;
+        const intervalMs = this._getLiveResetIntervalMs();
+        if (intervalMs <= 0) return;
 
         if (this._positionPopupLiveInterval) {
             clearInterval(this._positionPopupLiveInterval);
+            this._positionPopupLiveInterval = null;
         }
         if (this._positionPopupLiveShowTimer) {
             clearTimeout(this._positionPopupLiveShowTimer);
@@ -2028,22 +2158,46 @@ export class RapierDebuggerUI {
             this._positionPopupLiveHideTimer = null;
         }
 
+        this._positionPopupLiveIntervalMs = intervalMs;
         this._positionPopupLiveNextAt = performance.now() + intervalMs;
         this._scheduleLiveStatus(this._positionPopupLiveNextAt);
         this._startResetLiveIndicator(this._positionPopupLiveNextAt);
 
+        if (showToast) {
+            const seconds = formatNum(intervalMs / 1000, intervalMs % 1000 === 0 ? 0 : 1);
+            this._showAxisToast(`Live reset enabled: reset in ${seconds}s`);
+        }
+
         this._positionPopupLiveInterval = window.setInterval(() => {
             this._positionPopupLiveApply?.({ reset: true, close: false });
-            this._positionPopupLiveNextAt = performance.now() + intervalMs;
+            const nextIntervalMs = this._getLiveResetIntervalMs();
+            if (nextIntervalMs !== this._positionPopupLiveIntervalMs) {
+                this._rescheduleLiveReset();
+                return;
+            }
+            this._positionPopupLiveNextAt = performance.now() + nextIntervalMs;
             this._scheduleLiveStatus(this._positionPopupLiveNextAt);
             this._startResetLiveIndicator(this._positionPopupLiveNextAt);
         }, intervalMs);
+    }
+
+    _startLiveReset(applyValues, { showToast = false } = {}) {
+        this._positionPopupLiveEnabled = true;
+        this._positionPopupLiveApply = applyValues ?? this._positionPopupLiveApply;
+
+        this._setResetLiveActive(true);
+        if (this._resetLiveDot) {
+            this._resetLiveDot.style.visibility = 'visible';
+        }
+
+        this._rescheduleLiveReset({ showToast });
     }
 
     _stopLiveReset() {
         this._positionPopupLiveEnabled = false;
         this._positionPopupLiveApply = null;
         this._positionPopupLiveNextAt = 0;
+        this._positionPopupLiveIntervalMs = 0;
         this._setResetLiveActive(false);
         if (this._positionPopupLiveInterval) {
             clearInterval(this._positionPopupLiveInterval);
@@ -2056,6 +2210,10 @@ export class RapierDebuggerUI {
         if (this._positionPopupLiveHideTimer) {
             clearTimeout(this._positionPopupLiveHideTimer);
             this._positionPopupLiveHideTimer = null;
+        }
+        if (this._positionPopupLiveProgressInterval) {
+            clearInterval(this._positionPopupLiveProgressInterval);
+            this._positionPopupLiveProgressInterval = null;
         }
         if (this._positionPopupLiveStatus) {
             this._positionPopupLiveStatus.style.display = 'none';
@@ -2072,6 +2230,10 @@ export class RapierDebuggerUI {
             clearTimeout(this._positionPopupLiveHideTimer);
             this._positionPopupLiveHideTimer = null;
         }
+        if (this._positionPopupLiveProgressInterval) {
+            clearInterval(this._positionPopupLiveProgressInterval);
+            this._positionPopupLiveProgressInterval = null;
+        }
         if (!this._positionPopupLiveStatus) return;
         const now = performance.now();
         const showDelay = Math.max(0, nextAt - 1000 - now);
@@ -2080,10 +2242,39 @@ export class RapierDebuggerUI {
             if (this._positionPopupLiveStatus) {
                 this._positionPopupLiveStatus.style.display = 'inline-flex';
             }
+            if (this._positionPopupLiveProgressFill) {
+                const steps = 10;
+                this._positionPopupLiveProgressFill.style.width = '0%';
+                let phase = 0;
+                this._positionPopupLiveProgressInterval = window.setInterval(() => {
+                    const remaining = nextAt - performance.now();
+                    const t = Math.max(0, Math.min(1, 1 - (remaining / 1000)));
+                    const quant = Math.round(t * steps) / steps;
+                    phase = (phase + 1) % 200;
+                    if (this._positionPopupLiveProgressFill) {
+                        this._positionPopupLiveProgressFill.style.width = `${quant * 100}%`;
+                        this._positionPopupLiveProgressFill.style.backgroundPosition = `${phase}% 50%`;
+                    }
+                    if (t >= 1) {
+                        if (this._positionPopupLiveProgressInterval) {
+                            clearInterval(this._positionPopupLiveProgressInterval);
+                            this._positionPopupLiveProgressInterval = null;
+                        }
+                    }
+                }, 80);
+            }
         }, showDelay);
         this._positionPopupLiveHideTimer = window.setTimeout(() => {
             if (this._positionPopupLiveStatus) {
                 this._positionPopupLiveStatus.style.display = 'none';
+            }
+            if (this._positionPopupLiveProgressInterval) {
+                clearInterval(this._positionPopupLiveProgressInterval);
+                this._positionPopupLiveProgressInterval = null;
+            }
+            if (this._positionPopupLiveProgressFill) {
+                this._positionPopupLiveProgressFill.style.width = '0%';
+                this._positionPopupLiveProgressFill.style.backgroundPosition = '0% 50%';
             }
         }, hideDelay);
     }
@@ -2176,6 +2367,14 @@ export class RapierDebuggerUI {
         wrap.style.flexDirection = 'column';
         wrap.style.gap = '8px';
         wrap.style.minWidth = '210px';
+
+        const title = makeTitle('Center of mass');
+        title.style.marginBottom = '0';
+        wrap.appendChild(title);
+
+        const topSeparator = makeSeparator();
+        topSeparator.style.margin = '6px 0 4px';
+        wrap.appendChild(topSeparator);
 
         const makeField = (axis, value, key) => {
             const row = document.createElement('div');
@@ -2281,6 +2480,14 @@ export class RapierDebuggerUI {
         wrap.style.flexDirection = 'column';
         wrap.style.gap = '8px';
         wrap.style.minWidth = '220px';
+
+        const title = makeTitle('Inertia');
+        title.style.marginBottom = '0';
+        wrap.appendChild(title);
+
+        const topSeparator = makeSeparator();
+        topSeparator.style.margin = '6px 0 4px';
+        wrap.appendChild(topSeparator);
 
         const makeField = (title, value, key) => {
             const row = document.createElement('div');
@@ -2411,6 +2618,14 @@ export class RapierDebuggerUI {
         wrap.style.flexDirection = 'column';
         wrap.style.gap = '8px';
         wrap.style.minWidth = '220px';
+
+        const title = makeTitle('Inertia frame');
+        title.style.marginBottom = '0';
+        wrap.appendChild(title);
+
+        const topSeparator = makeSeparator();
+        topSeparator.style.margin = '6px 0 4px';
+        wrap.appendChild(topSeparator);
 
         const makeField = (title, value, key) => {
             const row = document.createElement('div');
@@ -2546,6 +2761,14 @@ export class RapierDebuggerUI {
         wrap.style.gap = '8px';
         wrap.style.minWidth = '220px';
 
+        const title = makeTitle('Locking');
+        title.style.marginBottom = '0';
+        wrap.appendChild(title);
+
+        const topSeparator = makeSeparator();
+        topSeparator.style.margin = '6px 0 4px';
+        wrap.appendChild(topSeparator);
+
         const attach = (control) => {
             if (!control?.wrap) return;
             if (control.wrap.parentElement) {
@@ -2650,6 +2873,14 @@ export class RapierDebuggerUI {
         wrap.style.gap = '10px';
         wrap.style.minWidth = '600px';
 
+        const title = makeTitle('Forces and impulses');
+        title.style.marginBottom = '0';
+        wrap.appendChild(title);
+
+        const topSeparator = makeSeparator();
+        topSeparator.style.margin = '6px 0 4px';
+        wrap.appendChild(topSeparator);
+
         const grid = document.createElement('div');
         grid.style.display = 'grid';
         grid.style.gridTemplateColumns = 'minmax(170px, 1fr) minmax(170px, 1fr) minmax(170px, 1fr)';
@@ -2719,22 +2950,6 @@ export class RapierDebuggerUI {
             ]
         );
 
-        const impulseCol = makeColumn(
-            'Impulse',
-            [
-                controls.impulseX,
-                controls.impulseY,
-                controls.impulseZ,
-                controls.impulsePointX,
-                controls.impulsePointY,
-                controls.impulsePointZ
-            ],
-            [
-                buttons.applyImpulse,
-                buttons.applyImpulseAtPoint
-            ]
-        );
-
         const torqueCol = makeColumn(
             'Torque',
             [
@@ -2752,9 +2967,25 @@ export class RapierDebuggerUI {
             ]
         );
 
+        const impulseCol = makeColumn(
+            'Impulse',
+            [
+                controls.impulseX,
+                controls.impulseY,
+                controls.impulseZ,
+                controls.impulsePointX,
+                controls.impulsePointY,
+                controls.impulsePointZ
+            ],
+            [
+                buttons.applyImpulse,
+                buttons.applyImpulseAtPoint
+            ]
+        );
+
         grid.appendChild(forceCol);
-        grid.appendChild(impulseCol);
         grid.appendChild(torqueCol);
+        grid.appendChild(impulseCol);
 
         const logCol = document.createElement('div');
         logCol.style.display = 'flex';
@@ -2838,6 +3069,14 @@ export class RapierDebuggerUI {
         wrap.style.gap = '8px';
         wrap.style.minWidth = '220px';
 
+        const title = makeTitle('Automated tests');
+        title.style.marginBottom = '0';
+        wrap.appendChild(title);
+
+        const topSeparator = makeSeparator();
+        topSeparator.style.margin = '6px 0 4px';
+        wrap.appendChild(topSeparator);
+
         for (const test of PRESET_TESTS) {
             const btn = makeButton(test.label);
             btn.style.padding = '6px 10px';
@@ -2908,6 +3147,10 @@ export class RapierDebuggerUI {
         title.style.fontWeight = '800';
         title.style.letterSpacing = '0.2px';
         wrap.appendChild(title);
+
+        const topSeparator = makeSeparator();
+        topSeparator.style.margin = '-2px 0 0';
+        wrap.appendChild(topSeparator);
 
         const button = makeButton('Recording');
         button.style.padding = '6px 10px';
@@ -3036,8 +3279,26 @@ export class RapierDebuggerUI {
         const fmt = (v) => `${formatNum(v?.x, 2)}, ${formatNum(v?.y, 2)}, ${formatNum(v?.z, 2)}`;
         let text = `${label}: ${fmt(vec)}`;
         if (point) text += ` @ ${fmt(point)}`;
-        const key = `event-${now}-${this._forceActionSeq++}`;
-        this._setForceLogEntry(key, text, now + 4000);
+        const lower = String(label ?? '').toLowerCase();
+        const category = lower.includes('torque') ? 'torque'
+            : lower.includes('force') ? 'force'
+                : lower.includes('impulse') ? 'impulse'
+                    : 'other';
+        const persistent = (lower === 'force' || lower === 'torque');
+        const expiresAt = persistent ? null : (now + 4000);
+        const key = `event-${category}-${now}-${this._forceActionSeq++}`;
+        this._setForceLogEntry(key, text, expiresAt);
+    }
+
+    _clearForceEventLog({ category = null, keepConstants = true } = {}) {
+        if (!this._forceActionLog?.length) return;
+        const prefix = category ? `event-${category}-` : 'event-';
+        this._forceActionLog = this._forceActionLog.filter((entry) => {
+            const key = entry?.key ?? '';
+            if (keepConstants && String(key).startsWith('const-')) return true;
+            return !String(key).startsWith(prefix);
+        });
+        this._refreshForcesPopupLog();
     }
 
     _setForceLogEntry(key, text, expiresAt = null) {
@@ -3424,7 +3685,8 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.force,
             helpSystem,
             step: 10,
-            width: '100px'
+            width: '100px',
+            sliderWidth: '140px'
         });
 
         this._inputControls.forceY = makeNumberControl({
@@ -3433,7 +3695,8 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.force,
             helpSystem,
             step: 10,
-            width: '100px'
+            width: '100px',
+            sliderWidth: '140px'
         });
 
         this._inputControls.forceZ = makeNumberControl({
@@ -3442,7 +3705,8 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.force,
             helpSystem,
             step: 10,
-            width: '100px'
+            width: '100px',
+            sliderWidth: '140px'
         });
 
         this._inputControls.forcePointX = makeNumberControl({
@@ -3451,7 +3715,8 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.forcePoint,
             helpSystem,
             step: 0.1,
-            width: '100px'
+            width: '100px',
+            sliderWidth: '140px'
         });
 
         this._inputControls.forcePointY = makeNumberControl({
@@ -3460,7 +3725,8 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.forcePoint,
             helpSystem,
             step: 0.1,
-            width: '100px'
+            width: '100px',
+            sliderWidth: '140px'
         });
 
         this._inputControls.forcePointZ = makeNumberControl({
@@ -3469,7 +3735,8 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.forcePoint,
             helpSystem,
             step: 0.1,
-            width: '100px'
+            width: '100px',
+            sliderWidth: '140px'
         });
 
         this._inputControls.torqueX = makeNumberControl({
@@ -3478,7 +3745,8 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.torque,
             helpSystem,
             step: 10,
-            width: '100px'
+            width: '100px',
+            sliderWidth: '140px'
         });
 
         this._inputControls.torqueY = makeNumberControl({
@@ -3487,7 +3755,8 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.torque,
             helpSystem,
             step: 10,
-            width: '100px'
+            width: '100px',
+            sliderWidth: '140px'
         });
 
         this._inputControls.torqueZ = makeNumberControl({
@@ -3496,7 +3765,8 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.torque,
             helpSystem,
             step: 10,
-            width: '100px'
+            width: '100px',
+            sliderWidth: '140px'
         });
 
         const addForceButton = makeButton('Add force');
@@ -3527,11 +3797,19 @@ export class RapierDebuggerUI {
         this._actionButtons.push(addTorqueButton);
 
         const resetForcesButton = makeButton('Reset forces');
-        resetForcesButton.addEventListener('click', () => this.onResetForces?.());
+        resetForcesButton.addEventListener('click', () => {
+            this.onResetForces?.();
+            this._setForceLogEntry('const-force', null);
+            this._clearForceEventLog({ category: 'force', keepConstants: true });
+        });
         this._actionButtons.push(resetForcesButton);
 
         const resetTorquesButton = makeButton('Reset torques');
-        resetTorquesButton.addEventListener('click', () => this.onResetTorques?.());
+        resetTorquesButton.addEventListener('click', () => {
+            this.onResetTorques?.();
+            this._setForceLogEntry('const-torque', null);
+            this._clearForceEventLog({ category: 'torque', keepConstants: true });
+        });
         this._actionButtons.push(resetTorquesButton);
 
         this._inputControls.impulseX = makeNumberControl({
@@ -3540,7 +3818,8 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.impulse,
             helpSystem,
             step: 10,
-            width: '100px'
+            width: '100px',
+            sliderWidth: '140px'
         });
 
         this._inputControls.impulseY = makeNumberControl({
@@ -3549,7 +3828,8 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.impulse,
             helpSystem,
             step: 10,
-            width: '100px'
+            width: '100px',
+            sliderWidth: '140px'
         });
 
         this._inputControls.impulseZ = makeNumberControl({
@@ -3558,7 +3838,8 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.impulse,
             helpSystem,
             step: 10,
-            width: '100px'
+            width: '100px',
+            sliderWidth: '140px'
         });
 
         this._inputControls.impulsePointX = makeNumberControl({
@@ -3567,7 +3848,8 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.impulsePoint,
             helpSystem,
             step: 0.1,
-            width: '100px'
+            width: '100px',
+            sliderWidth: '140px'
         });
 
         this._inputControls.impulsePointY = makeNumberControl({
@@ -3576,7 +3858,8 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.impulsePoint,
             helpSystem,
             step: 0.1,
-            width: '100px'
+            width: '100px',
+            sliderWidth: '140px'
         });
 
         this._inputControls.impulsePointZ = makeNumberControl({
@@ -3585,7 +3868,8 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.impulsePoint,
             helpSystem,
             step: 0.1,
-            width: '100px'
+            width: '100px',
+            sliderWidth: '140px'
         });
 
         this._inputControls.torqueImpulseX = makeNumberControl({
@@ -3594,7 +3878,8 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.torqueImpulse,
             helpSystem,
             step: 10,
-            width: '100px'
+            width: '100px',
+            sliderWidth: '140px'
         });
 
         this._inputControls.torqueImpulseY = makeNumberControl({
@@ -3603,7 +3888,8 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.torqueImpulse,
             helpSystem,
             step: 10,
-            width: '100px'
+            width: '100px',
+            sliderWidth: '140px'
         });
 
         this._inputControls.torqueImpulseZ = makeNumberControl({
@@ -3612,7 +3898,8 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.torqueImpulse,
             helpSystem,
             step: 10,
-            width: '100px'
+            width: '100px',
+            sliderWidth: '140px'
         });
 
         const applyImpulseButton = makeButton('Apply impulse');
@@ -4120,6 +4407,11 @@ export class RapierDebuggerUI {
         internalGroups.tires.body.appendChild(this._inputControls.tireSideStiffness.wrap);
 
         const resetButton = makeButton('Reset');
+        resetButton.title = [
+            'Reset: configure and apply a reset to the vehicle body.',
+            'Options include position/rotation, linear/angular velocity, plus Live auto-reset scheduling.',
+            'Use Apply to reset once; enable Live to repeat the reset automatically.'
+        ].join('\n');
         resetButton.addEventListener('click', (event) => {
             event.preventDefault();
             this._openPositionPopup(resetButton, { resetOnApply: true });
@@ -4147,6 +4439,12 @@ export class RapierDebuggerUI {
         resetButton.appendChild(resetDot);
         this._resetLiveDot = resetDot;
         const forcesManageButton = makeButton('Forces and Impulses');
+        forcesManageButton.title = [
+            'Forces and Impulses: apply external inputs to the vehicle body.',
+            'Force/Torque are persistent (until reset); Impulse/Torque impulse are instantaneous.',
+            '“@ point” applies at a world-space point and can induce rotation.',
+            'Use Reset forces/torques to clear persistent effects and the applied log.'
+        ].join('\n');
         forcesManageButton.style.padding = '8px 12px';
         forcesManageButton.style.fontSize = '14px';
         forcesManageButton.style.borderRadius = '8px';
