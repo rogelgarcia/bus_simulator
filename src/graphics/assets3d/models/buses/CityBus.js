@@ -9,6 +9,8 @@ const TRANSPARENT_BUS = false;
 const BUS_BODY_OPACITY = 0.4;
 const BUS_LINER_OPACITY = 0.1;
 const MODEL_SCALE = 1.15;
+const BUS_PAINT_COLOR = 0x2d7dff;
+const BUS_GLASS_COLOR = 0x0b0f1a;
 
 const OBJ_URL = new URL(
     '../../../../../assets/city_bus/obj/Obj/Bus.obj',
@@ -65,6 +67,15 @@ function applyMaterialSettings(root) {
         for (const mat of mats) {
             if (!mat) continue;
             const name = (mat.name || '').toLowerCase();
+            const isGlass = name.includes('glass') || name.includes('window');
+            const isFrontGlass = name.includes('frontglass');
+            const isHead = name.includes('frontlight') || name === 'lights' || name.includes('sign');
+            const isBrake = name.includes('rearlight') || name.includes('brakelight') || name.includes('brake');
+            const isReverse = name.includes('revese') || name.includes('reverse');
+            const isTurn = name.includes('turnsignal') || name.includes('turn');
+            const isPaint = name === 'paint' || name.includes('paint');
+            const isHeadLens = name.includes('frontlights');
+
             if (mat.map) {
                 mat.map.colorSpace = THREE.SRGBColorSpace;
                 mat.map.needsUpdate = true;
@@ -73,18 +84,62 @@ function applyMaterialSettings(root) {
                     if (max < 0.05) mat.color.set(0xffffff);
                 }
             }
-            if (name.includes('frontlight') || name === 'lights' || name.includes('sign')) {
-                if (mat.color) mat.color.set(0xffffff);
-                if (mat.emissive) mat.emissive.set(0xffffff);
-                if ('emissiveIntensity' in mat) mat.emissiveIntensity = name.includes('frontlight') ? 0.6 : 0.15;
+            if (mat.emissiveMap) {
+                mat.emissiveMap.colorSpace = THREE.SRGBColorSpace;
+                mat.emissiveMap.needsUpdate = true;
+            }
+
+            if (isPaint && mat.color) {
+                mat.color.setHex(BUS_PAINT_COLOR);
+            }
+
+            if (isHead || isBrake || isReverse || isTurn) {
+                const color = isBrake ? 0xff2222 : isTurn ? 0xffaa22 : 0xffffff;
+                if (mat.color) mat.color.setHex(color);
+                if (mat.emissive) mat.emissive.setHex(color);
+                if ('emissiveIntensity' in mat) mat.emissiveIntensity = 0.0;
+                if ('toneMapped' in mat) mat.toneMapped = false;
                 if (!mat.userData) mat.userData = {};
                 mat.userData.noTune = true;
             }
             if (!TRANSPARENT_BUS) {
-                mat.transparent = false;
-                mat.opacity = 1.0;
+                if (isHeadLens) {
+                    mat.transparent = true;
+                    mat.opacity = 0.85;
+                    mat.depthWrite = false;
+                    if (mat.color) mat.color.setHex(0xffffff);
+                    if (mat.emissive) mat.emissive.setHex(0xffffff);
+                    if ('roughness' in mat) mat.roughness = 0.08;
+                    if ('metalness' in mat) mat.metalness = 0.0;
+                    if ('shininess' in mat) mat.shininess = 120;
+                    if ('specular' in mat && mat.specular?.setHex) mat.specular.setHex(0xb8c7de);
+                } else if (isGlass) {
+                    if (isFrontGlass) {
+                        mat.transparent = true;
+                        mat.opacity = 0.22;
+                        mat.depthWrite = false;
+                        if (mat.color) mat.color.setHex(BUS_GLASS_COLOR);
+                        if (mat.emissive) mat.emissive.set(0x000000);
+                        if ('roughness' in mat) mat.roughness = 0.55;
+                        if ('metalness' in mat) mat.metalness = 0.0;
+                        if ('shininess' in mat) mat.shininess = 70;
+                        if ('specular' in mat && mat.specular?.setHex) mat.specular.setHex(0x2b3342);
+                    } else {
+                        mat.transparent = false;
+                        mat.opacity = 1.0;
+                        mat.depthWrite = true;
+                        if (mat.color) mat.color.setHex(BUS_GLASS_COLOR);
+                        if (mat.emissive) mat.emissive.set(0x000000);
+                        if ('roughness' in mat) mat.roughness = 0.35;
+                        if ('metalness' in mat) mat.metalness = 0.0;
+                        if ('shininess' in mat) mat.shininess = 40;
+                        if ('specular' in mat && mat.specular?.setHex) mat.specular.setHex(0x222833);
+                    }
+                } else {
+                    mat.transparent = false;
+                    mat.opacity = 1.0;
+                }
             } else {
-                const isGlass = name.includes('glass') || name.includes('window');
                 mat.transparent = true;
                 mat.opacity = isGlass ? BUS_LINER_OPACITY : BUS_BODY_OPACITY;
             }
@@ -178,6 +233,41 @@ function collectWheelMeshes(root) {
         map[match[1]].push(o);
     });
     return map;
+}
+
+function collectMeshesByMaterial(root, token) {
+    const out = [];
+    const seen = new Set();
+    const needle = String(token ?? '').toLowerCase();
+    if (!needle) return out;
+    root.traverse((o) => {
+        if (!o.isMesh || seen.has(o)) return;
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const mat of mats) {
+            const name = String(mat?.name ?? '').toLowerCase();
+            if (!name) continue;
+            if (name === needle || name.includes(needle)) {
+                out.push(o);
+                seen.add(o);
+                break;
+            }
+        }
+    });
+    return out;
+}
+
+function setEmissive(list, colorHex) {
+    for (const mesh of list) {
+        if (!mesh?.isMesh) continue;
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        for (const mat of mats) {
+            if (!mat || mat.emissive === undefined) continue;
+            mat.emissive.setHex(colorHex);
+            mat.emissiveIntensity = 0.0;
+            if ('toneMapped' in mat) mat.toneMapped = false;
+            mat.needsUpdate = true;
+        }
+    }
 }
 
 function transformBox(box, matrix) {
@@ -354,6 +444,40 @@ export function createCityBus(spec) {
         bus.updateMatrixWorld(true);
         const wheelMeshes = collectWheelMeshes(model);
         attachWheelMeshes(bus, nodes, wheelMeshes, rig);
+
+        const headMeshes = collectMeshesByMaterial(model, 'frontlights');
+        const brakeMeshes = collectMeshesByMaterial(model, 'rearlights');
+        const reverseMeshes = collectMeshesByMaterial(model, 'revese');
+        const turnMeshes = collectMeshesByMaterial(model, 'turnsignal');
+        setEmissive(headMeshes, 0xffffff);
+        setEmissive(brakeMeshes, 0xff2222);
+        setEmissive(reverseMeshes, 0xffffff);
+        setEmissive(turnMeshes, 0xffaa22);
+        const parts = bus.userData?.parts;
+        if (parts) {
+            if (headMeshes.length) {
+                parts.headlights.length = 0;
+                parts.headlights.push(...headMeshes);
+            }
+            if (brakeMeshes.length) {
+                parts.brakeLights.length = 0;
+                parts.brakeLights.push(...brakeMeshes);
+            }
+            if (reverseMeshes.length) {
+                parts.reverseLights ??= [];
+                parts.reverseLights.length = 0;
+                parts.reverseLights.push(...reverseMeshes);
+            }
+            if (turnMeshes.length) {
+                parts.turnLeft ??= [];
+                parts.turnRight ??= [];
+                parts.turnLeft.length = 0;
+                parts.turnRight.length = 0;
+                parts.turnLeft.push(...turnMeshes);
+                parts.turnRight.push(...turnMeshes);
+            }
+        }
+
         alignAnchoredBus(bus);
     }).finally(() => {
         bus.userData.ready = true;

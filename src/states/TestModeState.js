@@ -336,6 +336,137 @@ function makeSelectControl({ title, options = [], value = '' }) {
     return { row, select, updateOptions };
 }
 
+function makeGearShiftControl({ title, options = [], value = null }) {
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.justifyContent = 'space-between';
+    row.style.gap = '12px';
+    row.style.margin = '10px 0';
+
+    const label = document.createElement('div');
+    label.textContent = title;
+    label.style.fontSize = '13px';
+    label.style.fontWeight = '700';
+    label.style.opacity = '0.95';
+
+    const controls = document.createElement('div');
+    controls.style.display = 'flex';
+    controls.style.alignItems = 'center';
+    controls.style.gap = '8px';
+
+    const makeBtn = (text) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = text;
+        btn.style.width = '34px';
+        btn.style.height = '32px';
+        btn.style.borderRadius = '10px';
+        btn.style.border = '1px solid rgba(255,255,255,0.16)';
+        btn.style.background = 'rgba(10, 14, 20, 0.75)';
+        btn.style.color = '#e9f2ff';
+        btn.style.fontWeight = '900';
+        btn.style.cursor = 'pointer';
+        btn.style.display = 'grid';
+        btn.style.placeItems = 'center';
+        return btn;
+    };
+
+    const downBtn = makeBtn('−');
+    const upBtn = makeBtn('+');
+
+    const pill = document.createElement('div');
+    pill.style.minWidth = '44px';
+    pill.style.height = '32px';
+    pill.style.display = 'grid';
+    pill.style.placeItems = 'center';
+    pill.style.padding = '0 10px';
+    pill.style.borderRadius = '999px';
+    pill.style.border = '1px solid rgba(255,255,255,0.16)';
+    pill.style.background = 'rgba(255,255,255,0.08)';
+    pill.style.fontWeight = '900';
+    pill.style.letterSpacing = '0.2px';
+
+    let flashTimer = null;
+    let current = Number.isFinite(value) ? value : null;
+    let opts = Array.isArray(options) ? [...options] : [];
+
+    const sortOptions = (list) => list.slice().sort((a, b) => (a.value ?? 0) - (b.value ?? 0));
+
+    const getLabel = (val) => {
+        const hit = opts.find((o) => o?.value === val);
+        return hit?.label ?? '—';
+    };
+
+    const update = ({ flash = false } = {}) => {
+        pill.textContent = getLabel(current);
+
+        const sorted = sortOptions(opts);
+        const idx = sorted.findIndex((o) => o?.value === current);
+        downBtn.disabled = idx <= 0;
+        upBtn.disabled = idx < 0 || idx >= sorted.length - 1;
+        downBtn.style.opacity = downBtn.disabled ? '0.45' : '1';
+        upBtn.style.opacity = upBtn.disabled ? '0.45' : '1';
+
+        if (flash && current !== null) {
+            if (flashTimer) clearTimeout(flashTimer);
+            pill.style.boxShadow = '0 0 0 2px rgba(255,204,0,0.55), 0 10px 24px rgba(0,0,0,0.22)';
+            pill.style.borderColor = 'rgba(255,204,0,0.6)';
+            flashTimer = setTimeout(() => {
+                pill.style.boxShadow = '';
+                pill.style.borderColor = 'rgba(255,255,255,0.16)';
+                flashTimer = null;
+            }, 220);
+        }
+    };
+
+    const setOptions = (next) => {
+        opts = Array.isArray(next) ? [...next] : [];
+        update({ flash: false });
+    };
+
+    const setValue = (val, { flash = true } = {}) => {
+        if (!Number.isFinite(val)) return;
+        const prev = current;
+        current = val;
+        update({ flash: flash && prev !== val });
+    };
+
+    const step = (dir) => {
+        const sorted = sortOptions(opts);
+        if (!sorted.length) return current;
+
+        let idx = sorted.findIndex((o) => o?.value === current);
+        if (idx < 0) idx = 0;
+
+        const nextIdx = THREE.MathUtils.clamp(idx + (dir >= 0 ? 1 : -1), 0, sorted.length - 1);
+        const next = sorted[nextIdx]?.value;
+        if (!Number.isFinite(next) || next === current) return current;
+        current = next;
+        update({ flash: true });
+        return current;
+    };
+
+    controls.appendChild(downBtn);
+    controls.appendChild(pill);
+    controls.appendChild(upBtn);
+    row.appendChild(label);
+    row.appendChild(controls);
+
+    update({ flash: false });
+
+    return {
+        row,
+        downBtn,
+        upBtn,
+        valueEl: pill,
+        setOptions,
+        setValue,
+        step,
+        getValue: () => current
+    };
+}
+
 function makeStatTile({ label, value = '—', unit = '' }) {
     const wrap = document.createElement('div');
     wrap.style.padding = '10px 12px';
@@ -883,7 +1014,7 @@ export class TestModeState {
 
         const currentGear = this.sim?.physics?.getGearIndex?.(this.vehicle?.id);
         const fallbackGear = gearOptions.find((gear) => gear.label === '1')?.value ?? gearOptions[0]?.value;
-        const gearControl = makeSelectControl({
+        const gearControl = makeGearShiftControl({
             title: 'Gear',
             options: gearOptions,
             value: Number.isFinite(currentGear) ? currentGear : fallbackGear
@@ -917,12 +1048,24 @@ export class TestModeState {
             brake.valEl.textContent = brake.fmt(this.busState.brake);
         });
 
-        gearControl.select.addEventListener('change', () => {
-            const value = Number.parseInt(gearControl.select.value, 10);
-            if (Number.isFinite(value) && this.vehicle?.id) {
-                this.busState.gearIndex = value;
-                this.sim?.physics?.setGear?.(this.vehicle.id, value);
-            }
+        const applyGear = (value) => {
+            if (!Number.isFinite(value) || !this.vehicle?.id) return;
+            this.busState.gearIndex = value;
+            this.sim?.physics?.setGear?.(this.vehicle.id, value);
+        };
+
+        gearControl.downBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const prev = gearControl.getValue();
+            const next = gearControl.step(-1);
+            if (next !== prev) applyGear(next);
+        });
+
+        gearControl.upBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const prev = gearControl.getValue();
+            const next = gearControl.step(1);
+            if (next !== prev) applyGear(next);
         });
 
         steer.input.addEventListener('input', () => {
@@ -1126,19 +1269,13 @@ export class TestModeState {
     }
 
     _syncGearOptions() {
-        if (!this.gearControl?.select || !this.vehicle?.id) return;
+        if (!this.gearControl || !this.vehicle?.id) return;
         const gears = this.sim?.physics?.getGearOptions?.(this.vehicle.id) ?? [];
         if (!gears.length) return;
-        this.gearControl.select.innerHTML = '';
-        for (const gear of gears) {
-            const option = document.createElement('option');
-            option.value = String(gear.index);
-            option.textContent = gear.label;
-            this.gearControl.select.appendChild(option);
-        }
+        this.gearControl.setOptions(gears.map((gear) => ({ label: gear.label, value: gear.index })));
         const current = this.sim?.physics?.getGearIndex?.(this.vehicle.id);
         if (Number.isFinite(current)) {
-            this.gearControl.select.value = String(current);
+            this.gearControl.setValue(current, { flash: false });
             this.busState.gearIndex = current;
         }
     }
@@ -1207,8 +1344,8 @@ export class TestModeState {
             this.telemetryFields.torque.textContent = Number.isFinite(drivetrain.torque) ? Math.round(drivetrain.torque).toString() : '—';
         }
 
-        if (this.gearControl?.select && drivetrain.gearIndex !== undefined && drivetrain.gearIndex !== null) {
-            this.gearControl.select.value = String(drivetrain.gearIndex);
+        if (this.gearControl && drivetrain.gearIndex !== undefined && drivetrain.gearIndex !== null) {
+            this.gearControl.setValue(drivetrain.gearIndex, { flash: false });
         }
 
         if (this.steerWidget?.needle) {

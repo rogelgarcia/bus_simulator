@@ -2,7 +2,7 @@
 // Builds the city ground and world tiles
 import * as THREE from 'three';
 import { TILE } from '../../../app/city/CityMap.js';
-import { GROUND_DEFAULTS } from './GeneratorParams.js';
+import { GROUND_DEFAULTS, ROAD_DEFAULTS } from './GeneratorParams.js';
 import { createTreeField } from './TreeGenerator.js';
 
 function applyTextureColorSpace(tex, { srgb = true } = {}) {
@@ -22,6 +22,7 @@ export function createCityWorld({
     group.name = 'CityWorld';
 
     const computedGroundY = (groundY ?? config?.ground?.surfaceY ?? GROUND_DEFAULTS.surfaceY ?? 0);
+    const roadSurfaceY = (config?.road?.surfaceY ?? ROAD_DEFAULTS.surfaceY ?? 0);
 
     const floorGeo = new THREE.PlaneGeometry(size, size, 1, 1);
     floorGeo.rotateX(-Math.PI / 2);
@@ -64,7 +65,7 @@ export function createCityWorld({
                 if (map.kind[idx] === TILE.ROAD) continue;
 
                 const p = map.tileToWorldCenter(x, y);
-                dummy.position.set(p.x, computedGroundY, p.z);
+                dummy.position.set(p.x, roadSurfaceY, p.z);
                 dummy.rotation.set(0, 0, 0);
                 dummy.scale.set(1, 1, 1);
                 dummy.updateMatrix();
@@ -81,7 +82,7 @@ export function createCityWorld({
 
     let trees = null;
     if (map && rng) {
-        trees = createTreeField({ map, rng, groundY: computedGroundY, config });
+        trees = createTreeField({ map, rng, groundY: roadSurfaceY, config });
         group.add(trees.group);
     }
 
@@ -91,7 +92,7 @@ export function createCityWorld({
         const minZ = map.origin.z - half;
         const maxX = minX + map.width * map.tileSize;
         const maxZ = minZ + map.height * map.tileSize;
-        const y = computedGroundY + 0.002;
+        const y = roadSurfaceY + 0.002;
 
         const verts = [];
         for (let x = 0; x <= map.width; x++) {

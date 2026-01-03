@@ -17,6 +17,40 @@ const TRANSITION = {
     fadeTimeoutMs: 3000 // was 1200 (safety timeout)
 };
 
+const GARAGE = {
+    width: 48,
+    depth: 60,
+    height: 14
+};
+
+// GarageModel places the roll-up gate near the back wall:
+// `backZ = -depth/2 + 0.35` and gate slats are offset by +0.2.
+const GARAGE_DOOR_Z = -GARAGE.depth * 0.5 + 0.55;
+
+// Coach bus is normalized to ~13.2m long in `src/graphics/assets3d/models/buses/CoachBus.js`.
+// Use that as the platform diameter target so the base matches the coach footprint.
+const COACH_BUS_LENGTH_M = 13.2;
+const PLATFORM_SCALE = 0.95;
+
+const PLATFORM = {
+    radius: COACH_BUS_LENGTH_M * 0.5 * PLATFORM_SCALE,
+    height: 0.12,
+    lift: 0.03,
+    spinRadPerSec: 0.14,
+    transitionSec: 0.9,
+    stripeRingTube: 0.09,
+    stripeRingLift: 0.006
+};
+
+const CAROUSEL = (() => {
+    const center = new THREE.Vector3(0, 0, GARAGE_DOOR_Z);
+    const radius = Math.max(1, -GARAGE_DOOR_Z);
+    const desiredChord = COACH_BUS_LENGTH_M * 1.15;
+    const stepAngle = Math.asin(Math.min(0.95, desiredChord / radius));
+    const enterAngle = stepAngle * 2.15;
+    return { center, radius, stepAngle, enterAngle };
+})();
+
 /**
  * Wrap a bus model in a parent Group whose origin is on the floor (y=0).
  * This makes scaling/rotation safe without the bus “floating” above/below the floor.
@@ -60,6 +94,125 @@ function tweenPromise(opts) {
     });
 }
 
+function makeWarningStripeTexture() {
+    const size = 256;
+    const stripe = 28;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    ctx.fillStyle = '#0b0d10';
+    ctx.fillRect(0, 0, size, size);
+
+    ctx.save();
+    ctx.translate(size * 0.5, size * 0.5);
+    ctx.rotate(-Math.PI / 4);
+    ctx.translate(-size * 0.5, -size * 0.5);
+
+    ctx.fillStyle = '#f7c843';
+    for (let x = -size; x < size * 2; x += stripe * 2) {
+        ctx.fillRect(x, -size, stripe, size * 3);
+    }
+
+    ctx.restore();
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(10, 1);
+    tex.anisotropy = 8;
+    return tex;
+}
+
+function createPlatformMesh() {
+    const group = new THREE.Group();
+    group.name = 'GaragePlatform';
+
+    const geo = new THREE.CylinderGeometry(PLATFORM.radius, PLATFORM.radius, PLATFORM.height, 72, 1, false);
+    const topMat = new THREE.MeshStandardMaterial({
+        color: 0x121722,
+        roughness: 0.58,
+        metalness: 0.65
+    });
+    const bottomMat = topMat.clone();
+
+    const sideMat = new THREE.MeshStandardMaterial({
+        color: 0x0f141d,
+        roughness: 0.78,
+        metalness: 0.18
+    });
+
+    const base = new THREE.Mesh(geo, [sideMat, topMat, bottomMat]);
+    base.position.y = PLATFORM.lift + PLATFORM.height * 0.5;
+    base.receiveShadow = true;
+    base.castShadow = false;
+    group.add(base);
+
+    const stripeTex = makeWarningStripeTexture();
+    const stripeMat = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        map: stripeTex,
+        roughness: 0.55,
+        metalness: 0.05
+    });
+
+    const ringRadius = Math.max(0.001, PLATFORM.radius - PLATFORM.stripeRingTube * 0.55);
+    const ringGeo = new THREE.TorusGeometry(ringRadius, PLATFORM.stripeRingTube, 16, 120);
+    const ring = new THREE.Mesh(ringGeo, stripeMat);
+    ring.position.y = PLATFORM.lift + PLATFORM.height + PLATFORM.stripeRingLift;
+    ring.rotation.x = Math.PI / 2;
+    ring.castShadow = false;
+    ring.receiveShadow = true;
+    group.add(ring);
+
+    return group;
+}
+
+function applyFade(group, alpha) {
+    const a = THREE.MathUtils.clamp(alpha ?? 1, 0, 1);
+    group.traverse((o) => {
+        if (!o.isMesh) return;
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const mat of mats) {
+            if (!mat) continue;
+            if (!mat.userData) mat.userData = {};
+            if (mat.userData._fadeBaseOpacity === undefined) {
+                mat.userData._fadeBaseOpacity = Number.isFinite(mat.opacity) ? mat.opacity : 1.0;
+            }
+            if (mat.userData._fadeBaseTransparent === undefined) {
+                mat.userData._fadeBaseTransparent = !!mat.transparent;
+            }
+            const baseOpacity = mat.userData._fadeBaseOpacity;
+            mat.transparent = (a < 0.999) ? true : mat.userData._fadeBaseTransparent;
+            mat.opacity = baseOpacity * a;
+            mat.needsUpdate = true;
+        }
+    });
+}
+
+function setCarouselAngle(group, angleRad) {
+    if (!group) return;
+    const a = Number.isFinite(angleRad) ? angleRad : 0;
+    group.position.x = CAROUSEL.center.x + CAROUSEL.radius * Math.sin(a);
+    group.position.z = CAROUSEL.center.z + CAROUSEL.radius * Math.cos(a);
+}
+
+function snapBusToPlatformTop(busAnchor, platformTopY) {
+    if (!busAnchor) return;
+    const y = Number.isFinite(platformTopY) ? platformTopY : 0;
+    busAnchor.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(busAnchor);
+    if (box.isEmpty()) return;
+    const delta = y - box.min.y;
+    if (Number.isFinite(delta) && Math.abs(delta) > 1e-5) {
+        busAnchor.position.y += delta;
+        busAnchor.updateMatrixWorld(true);
+    }
+}
+
 export class BusSelectState {
     constructor(engine, sm) {
         this.engine = engine;
@@ -74,7 +227,7 @@ export class BusSelectState {
 
         this.controls = null;
 
-        this.buses = [];
+        this.showcase = null; // { group, bus }
         this.hoveredBus = null;
         this.selectedBus = null;
         this._isSelecting = false;
@@ -85,7 +238,7 @@ export class BusSelectState {
         this.pointer = new THREE.Vector2();
         this.raycaster = new THREE.Raycaster();
 
-        this.selectorRing = null;
+        this._uiNav = null;
 
         this._onMove = (e) => this._handlePointerMove(e);
         this._onDown = (e) => this._handlePointerDown(e);
@@ -105,7 +258,6 @@ export class BusSelectState {
 
         this.selectedBus = null;
         this.hoveredBus = null;
-        this.buses = [];
         this.activeIndex = 0;
 
         const scene = this.engine.scene;
@@ -114,9 +266,9 @@ export class BusSelectState {
 
         // Garage environment
         const { root: garageRoot, lights: garageLights } = createGarageModel({
-            width: 48,
-            depth: 60,
-            height: 14
+            width: GARAGE.width,
+            depth: GARAGE.depth,
+            height: GARAGE.height
         });
 
         garageRoot.traverse((o) => {
@@ -128,23 +280,6 @@ export class BusSelectState {
 
         scene.add(garageRoot);
         for (const l of garageLights) scene.add(l);
-
-        // Selector ring
-        this.selectorRing = new THREE.Mesh(
-            new THREE.RingGeometry(1.15, 1.55, 56),
-            new THREE.MeshStandardMaterial({
-                color: 0xffcc00,
-                roughness: 0.35,
-                metalness: 0.1,
-                transparent: true,
-                opacity: 0.65,
-                side: THREE.DoubleSide
-            })
-        );
-        this.selectorRing.rotation.x = -Math.PI / 2;
-        this.selectorRing.position.y = 0.02;
-        this.selectorRing.receiveShadow = true;
-        scene.add(this.selectorRing);
 
         // Camera
         const camera = this.engine.camera;
@@ -160,41 +295,16 @@ export class BusSelectState {
         this.controls.maxPolarAngle = Math.PI * 0.47;
         this.controls.target.set(0, 1.7, 0);
 
-        // Buses
-        const spacing = 7.2;
-        const startX = -spacing * (BUS_CATALOG.length - 1) / 2;
+        // UI
+        this._mountNavUI();
+        this.hudChip.style.padding = '10px 14px';
+        this.hudChip.style.fontSize = '14px';
 
-        BUS_CATALOG.forEach((spec, i) => {
-            const busModel = createBus(spec);
-
-            // ✅ wrap in a floor-anchored parent
-            const bus = makeFloorAnchor(busModel);
-
-            // ✅ ensure stable selection info lives on the anchor
-            bus.userData.id = spec.id;
-            bus.userData.spec = spec;
-
-            tuneBusMaterials(bus, { colorScale: 0.75, roughness: 0.92, metalness: 0.0 });
-
-            bus.traverse((o) => {
-                if (o.isMesh) {
-                    o.castShadow = true;
-                    o.receiveShadow = true;
-                }
-            });
-
-            bus.position.set(startX + i * spacing, 0, 0);
-            bus.rotation.y = (i - (BUS_CATALOG.length - 1) / 2) * 0.14;
-
-            bus.userData.baseX = bus.position.x;
-            bus.userData.baseY = 0;
-            bus.userData.baseRotY = bus.rotation.y;
-
-            scene.add(bus);
-            this.buses.push(bus);
-        });
-
-        this._setActiveIndex(0);
+        // Showcase
+        this.activeIndex = 0;
+        this.showcase = this._createShowcase(this.activeIndex);
+        scene.add(this.showcase.group);
+        this._setActiveIndex(this.activeIndex);
 
         // Input
         this.canvas.addEventListener('pointermove', this._onMove);
@@ -214,35 +324,16 @@ export class BusSelectState {
         this.controls?.dispose?.();
         this.controls = null;
 
+        this._unmountNavUI();
+
         this.uiSelect.classList.add('hidden');
     }
 
     update(dt) {
         this.controls?.update();
 
-        const t = performance.now() * 0.001;
-
-        if (this.selectorRing) {
-            this.selectorRing.visible = !this._isSelecting && !!this.hoveredBus;
-            if (this.hoveredBus && !this._isSelecting) {
-                this.selectorRing.position.x = this.hoveredBus.position.x;
-                this.selectorRing.position.z = this.hoveredBus.position.z;
-                const pulse = 1 + Math.sin(t * 3.2) * 0.03;
-                this.selectorRing.scale.setScalar(pulse);
-            }
-        }
-
-        for (const bus of this.buses) {
-            if (!bus.visible) continue;
-
-            bus.position.y = 0;
-
-            const isHovered = bus === this.hoveredBus && !this._isSelecting;
-            const isSelected = bus === this.selectedBus;
-
-            const targetScale = isSelected ? 1.14 : isHovered ? 1.06 : 1.0;
-            const s = bus.scale.x + (targetScale - bus.scale.x) * Math.min(1, dt * 10);
-            bus.scale.setScalar(s);
+        if (this.showcase?.group) {
+            this.showcase.group.rotation.y += (dt ?? 0) * PLATFORM.spinRadPerSec;
         }
     }
 
@@ -268,13 +359,13 @@ export class BusSelectState {
 
         // G = select and go to new GameplayState (for testing new architecture)
         if (isG) {
-            const bus = this.hoveredBus ?? this.buses[this.activeIndex];
+            const bus = this.hoveredBus ?? this.showcase?.bus ?? null;
             if (bus) this._selectBusToGameplay(bus);
             return;
         }
 
         if (isEnter || isSpace) {
-            const bus = this.hoveredBus ?? this.buses[this.activeIndex];
+            const bus = this.hoveredBus ?? this.showcase?.bus ?? null;
             if (bus) this._selectBus(bus);
         }
     }
@@ -295,19 +386,21 @@ export class BusSelectState {
     }
 
     _moveActive(delta) {
-        const n = this.buses.length;
+        if (this._transitioning) return;
+        const n = BUS_CATALOG.length;
         if (!n) return;
         const next = (this.activeIndex + delta + n) % n;
-        this._setActiveIndex(next);
+        if (next === this.activeIndex) return;
+        this._transitionToIndex(next, Math.sign(delta) || 1);
     }
 
     _setActiveIndex(index) {
-        this.activeIndex = Math.max(0, Math.min(index, this.buses.length - 1));
-        this.hoveredBus = this.buses[this.activeIndex] ?? null;
+        this.activeIndex = Math.max(0, Math.min(index, BUS_CATALOG.length - 1));
+        this.hoveredBus = this.showcase?.bus ?? null;
 
         const spec = BUS_CATALOG[this.activeIndex];
         const label = spec?.name ?? 'Bus';
-        this.hudChip.textContent = `Garage: Use ←/→ then Enter — ${label} (or click)`;
+        this._setChip(label, `${this.activeIndex + 1} / ${BUS_CATALOG.length}`);
     }
 
     _handlePointerMove(event) {
@@ -315,19 +408,17 @@ export class BusSelectState {
 
         const bus = this._pickBus(event);
         if (bus) {
-            const idx = this.buses.indexOf(bus);
-            if (idx >= 0 && idx !== this.activeIndex) this.activeIndex = idx;
             this.hoveredBus = bus;
 
             const label = BUS_CATALOG[this.activeIndex]?.name ?? 'Bus';
-            this.hudChip.textContent = `Garage: Use ←/→ then Enter — ${label} (or click)`;
+            this._setChip(label, `${this.activeIndex + 1} / ${BUS_CATALOG.length}`);
             this.canvas.style.cursor = 'pointer';
             return;
         }
 
-        this.hoveredBus = this.buses[this.activeIndex] ?? null;
+        this.hoveredBus = this.showcase?.bus ?? null;
         const label = BUS_CATALOG[this.activeIndex]?.name ?? 'Bus';
-        this.hudChip.textContent = `Garage: Use ←/→ then Enter — ${label} (or click)`;
+        this._setChip(label, `${this.activeIndex + 1} / ${BUS_CATALOG.length}`);
         this.canvas.style.cursor = 'default';
     }
 
@@ -339,6 +430,7 @@ export class BusSelectState {
     }
 
     _pickBus(event) {
+        if (!this.showcase?.bus) return null;
         const rect = this.canvas.getBoundingClientRect();
         const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         const y = 1 - ((event.clientY - rect.top) / rect.height) * 2;
@@ -346,15 +438,10 @@ export class BusSelectState {
 
         this.raycaster.setFromCamera(this.pointer, this.engine.camera);
 
-        const hits = this.raycaster.intersectObjects(this.buses, true);
+        const hits = this.raycaster.intersectObject(this.showcase.bus, true);
         if (!hits.length) return null;
 
-        let obj = hits[0].object;
-        while (obj) {
-            if (this.buses.includes(obj)) return obj;
-            obj = obj.parent;
-        }
-        return null;
+        return this.showcase.bus;
     }
 
     _selectBus(bus) {
@@ -368,13 +455,12 @@ export class BusSelectState {
         this.canvas.style.cursor = 'default';
 
         // Save selection for GameMode
-        const selectedSpec = bus.userData.spec ?? BUS_CATALOG[this.buses.indexOf(bus)];
+        const selectedSpec = bus.userData.spec ?? BUS_CATALOG[this.activeIndex];
         this.engine.context.selectedBusId = selectedSpec?.id ?? null;
         this.engine.context.selectedBus = bus;
 
-        const selectedIndex = this.buses.indexOf(bus);
-        const selectedLabel = BUS_CATALOG[selectedIndex]?.name ?? selectedSpec?.name ?? 'Bus';
-        this.hudChip.textContent = `Selected: ${selectedLabel}`;
+        const selectedLabel = BUS_CATALOG[this.activeIndex]?.name ?? selectedSpec?.name ?? 'Bus';
+        this._setChip(selectedLabel, 'Selected');
 
         this._blink();
         if (this.controls) this.controls.enabled = false;
@@ -388,35 +474,10 @@ export class BusSelectState {
     }
 
     async _runSelectionSequence(bus) {
-        const others = this.buses.filter((b) => b !== bus);
-        const busStartX = bus.position.x;
-
-        // 1) Bus shuffle animation
-        await tweenPromise({
-            duration: TRANSITION.shuffleSec,
-            easing: easeInOutCubic,
-            onUpdate: (k) => {
-                bus.position.x = THREE.MathUtils.lerp(busStartX, 0, k);
-                bus.position.y = 0;
-                bus.rotation.y = THREE.MathUtils.lerp(bus.userData.baseRotY, 0, k);
-
-                for (const other of others) {
-                    const dir = Math.sign(other.userData.baseX - busStartX) || 1;
-                    other.position.x = THREE.MathUtils.lerp(other.userData.baseX, other.userData.baseX + dir * 10, k);
-                    other.position.y = 0;
-                    other.position.z = THREE.MathUtils.lerp(0, -6, k);
-                    other.scale.setScalar(THREE.MathUtils.lerp(1, 0.001, k));
-                }
-            }
-        });
-
-        for (const other of others) other.visible = false;
-        if (this.selectorRing) this.selectorRing.visible = false;
-
-        // 2) Camera focus animation
+        // 1) Camera focus animation
         await this._focusCameraOn(bus);
 
-        // 3) Fade out, then go to game_mode
+        // 2) Fade out, then go to game_mode
         // (Race with a timeout so we NEVER get stuck here)
         await Promise.race([
             fadeOut({ duration: TRANSITION.fadeOutSec }),
@@ -461,5 +522,169 @@ export class BusSelectState {
         this.blinkEl.classList.remove('blink');
         void this.blinkEl.offsetWidth;
         this.blinkEl.classList.add('blink');
+    }
+
+    _createShowcase(index) {
+        const spec = BUS_CATALOG[index];
+        const group = new THREE.Group();
+        group.name = `GarageShowcase_${spec?.id ?? index}`;
+
+        const platform = createPlatformMesh();
+        group.add(platform);
+
+        const busModel = createBus(spec);
+        const bus = makeFloorAnchor(busModel);
+        bus.userData.id = spec?.id ?? null;
+        bus.userData.spec = spec;
+        tuneBusMaterials(bus, { colorScale: 0.78, roughness: 0.92, metalness: 0.0 });
+        bus.traverse((o) => {
+            if (o.isMesh) {
+                o.castShadow = true;
+                o.receiveShadow = true;
+            }
+        });
+
+        const platformTopY = PLATFORM.lift + PLATFORM.height;
+        bus.position.set(0, platformTopY, 0);
+        bus.rotation.set(0, 0, 0);
+        group.add(bus);
+
+        snapBusToPlatformTop(bus, platformTopY);
+        bus.userData?.readyPromise?.then?.(() => snapBusToPlatformTop(bus, platformTopY));
+
+        applyFade(group, 1);
+        setCarouselAngle(group, 0);
+        return { group, bus, platform };
+    }
+
+    async _transitionToIndex(nextIndex, dir) {
+        if (this._transitioning) return;
+        this._transitioning = true;
+
+        const scene = this.engine.scene;
+        const from = this.showcase;
+        const to = this._createShowcase(nextIndex);
+
+        const enterA = (dir >= 0 ? 1 : -1) * CAROUSEL.enterAngle;
+        const exitA = -enterA;
+
+        setCarouselAngle(to.group, enterA);
+        applyFade(to.group, 0);
+        scene.add(to.group);
+
+        await tweenPromise({
+            duration: PLATFORM.transitionSec,
+            easing: easeInOutCubic,
+            onUpdate: (k) => {
+                const kk = THREE.MathUtils.clamp(k, 0, 1);
+                if (from?.group) {
+                    setCarouselAngle(from.group, THREE.MathUtils.lerp(0, exitA, kk));
+                    applyFade(from.group, 1 - kk);
+                }
+                setCarouselAngle(to.group, THREE.MathUtils.lerp(enterA, 0, kk));
+                applyFade(to.group, kk);
+            }
+        });
+
+        if (from?.group) scene.remove(from.group);
+        this.showcase = to;
+        this.selectedBus = null;
+        this.hoveredBus = to.bus;
+        this._setActiveIndex(nextIndex);
+        this._transitioning = false;
+    }
+
+    _setChip(title, meta) {
+        if (!this.hudChip) return;
+        this.hudChip.innerHTML = '';
+
+        const t = document.createElement('div');
+        t.textContent = title;
+        t.style.fontSize = '18px';
+        t.style.fontWeight = '900';
+        t.style.letterSpacing = '0.2px';
+
+        const m = document.createElement('div');
+        m.textContent = meta;
+        m.style.fontSize = '12px';
+        m.style.fontWeight = '800';
+        m.style.opacity = '0.72';
+        m.style.marginTop = '2px';
+
+        this.hudChip.appendChild(t);
+        this.hudChip.appendChild(m);
+    }
+
+    _mountNavUI() {
+        if (this._uiNav?.root) return;
+        const root = document.createElement('div');
+        root.style.position = 'fixed';
+        root.style.left = '0';
+        root.style.right = '0';
+        root.style.top = '0';
+        root.style.bottom = '0';
+        root.style.pointerEvents = 'none';
+        root.style.zIndex = '3';
+
+        const makeBtn = (text) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = text;
+            btn.style.pointerEvents = 'auto';
+            btn.style.width = '56px';
+            btn.style.height = '56px';
+            btn.style.borderRadius = '16px';
+            btn.style.border = '1px solid rgba(255,255,255,0.18)';
+            btn.style.background = 'rgba(10, 14, 20, 0.55)';
+            btn.style.color = '#f5f7fb';
+            btn.style.fontSize = '30px';
+            btn.style.fontWeight = '900';
+            btn.style.cursor = 'pointer';
+            btn.style.boxShadow = '0 14px 34px rgba(0,0,0,0.38)';
+            btn.addEventListener('mouseenter', () => { btn.style.background = 'rgba(20, 26, 38, 0.65)'; });
+            btn.addEventListener('mouseleave', () => { btn.style.background = 'rgba(10, 14, 20, 0.55)'; });
+            return btn;
+        };
+
+        const left = makeBtn('←');
+        left.style.position = 'absolute';
+        left.style.left = '18px';
+        left.style.top = '50%';
+        left.style.transform = 'translateY(-50%)';
+
+        const right = makeBtn('→');
+        right.style.position = 'absolute';
+        right.style.right = '18px';
+        right.style.top = '50%';
+        right.style.transform = 'translateY(-50%)';
+
+        const onLeft = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this._moveActive(-1);
+        };
+        const onRight = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this._moveActive(1);
+        };
+
+        left.addEventListener('click', onLeft);
+        right.addEventListener('click', onRight);
+
+        root.appendChild(left);
+        root.appendChild(right);
+        document.body.appendChild(root);
+
+        this._uiNav = { root, left, right, onLeft, onRight };
+    }
+
+    _unmountNavUI() {
+        const nav = this._uiNav;
+        if (!nav) return;
+        nav.left?.removeEventListener?.('click', nav.onLeft);
+        nav.right?.removeEventListener?.('click', nav.onRight);
+        nav.root?.parentNode?.removeChild?.(nav.root);
+        this._uiNav = null;
     }
 }

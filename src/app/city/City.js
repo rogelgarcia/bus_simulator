@@ -33,6 +33,11 @@ export class City {
         this.group = new THREE.Group();
         this.group.name = 'City';
 
+        const originAxes = new THREE.AxesHelper(8);
+        originAxes.name = 'OriginAxes';
+        originAxes.position.set(0, 0, 0);
+        this.group.add(originAxes);
+
         this.hemi = new THREE.HemisphereLight(0xffffff, 0x2a3b1f, 0.85);
         this.hemi.position.set(0, 100, 0);
         this.group.add(this.hemi);
