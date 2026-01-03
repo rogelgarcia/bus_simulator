@@ -162,6 +162,29 @@ export class RapierDebuggerScene {
         this.controls?.update?.();
     }
 
+    resetCamera() {
+        if (!this.controls || !this.camera) return;
+        this.camera.position.copy(this._defaultCameraPos);
+        this.controls.target.copy(this._defaultCameraTarget);
+        this.controls.update();
+        this._cameraFollowPending.set(0, 0, 0);
+        this._cameraFollowVelocity.set(0, 0, 0);
+        this._cameraFollowEngaged = false;
+        this._cameraFollowReady = false;
+    }
+
+    _panCamera(dx, dz) {
+        if (!this.controls || !this.camera) return;
+        this._tmpVecA.set(dx, 0, dz);
+        this.camera.position.add(this._tmpVecA);
+        this.controls.target.add(this._tmpVecA);
+        this.controls.update();
+        this._cameraFollowPending.set(0, 0, 0);
+        this._cameraFollowVelocity.set(0, 0, 0);
+        this._cameraFollowEngaged = false;
+        this._cameraFollowReady = false;
+    }
+
     _syncViewOffset() {
         const renderer = this.engine?.renderer;
         if (!renderer || !this.camera) return;
@@ -169,18 +192,31 @@ export class RapierDebuggerScene {
         const w = Math.round(size.x);
         const h = Math.round(size.y);
         const maxOffset = Math.round(w * 0.25);
-        const offset = w >= this._viewOffsetMinWidth ? Math.min(this._viewOffsetX, maxOffset) : 0;
+        const clamped = Math.max(-maxOffset, Math.min(maxOffset, this._viewOffsetX));
+        const offset = w >= this._viewOffsetMinWidth ? clamped : 0;
 
         if (this._viewOffsetState.w === w && this._viewOffsetState.h === h && this._viewOffsetState.x === offset) {
             return;
         }
         this._viewOffsetState = { w, h, x: offset };
 
-        if (offset > 0 && typeof this.camera.setViewOffset === 'function') {
+        if (offset !== 0 && typeof this.camera.setViewOffset === 'function') {
             this.camera.setViewOffset(w, h, offset, 0, w, h);
         } else if (typeof this.camera.clearViewOffset === 'function') {
             this.camera.clearViewOffset();
         }
+    }
+
+    _bindKeyboard() {
+        if (this._keyboardBound) return;
+        window.addEventListener('keydown', this._onKeyDown, { passive: false });
+        this._keyboardBound = true;
+    }
+
+    _unbindKeyboard() {
+        if (!this._keyboardBound) return;
+        window.removeEventListener('keydown', this._onKeyDown);
+        this._keyboardBound = false;
     }
 
     setHighlightedWheel(target) {
@@ -493,7 +529,6 @@ export class RapierDebuggerScene {
                 wheel.position.set(hardPoint.x, hardPoint.y, hardPoint.z);
             }
 
-            const label = state.label ?? '';
             const sideSign = label.includes('L') ? -1 : 1;
             wheel.position.addScaledVector(
                 this._tmpVecA.set(sideSign, 0, 0).applyQuaternion(chassisQuat),

@@ -23,6 +23,7 @@ export class RapierDebuggerView {
         this.scene.enter();
         this.ui.mount();
         this.ui.onReset = () => this.sim.resetPose();
+        this.ui.onResetCamera = () => this.scene.resetCamera();
         this.ui.onWheelHover = (idx) => this.scene.setHighlightedWheel(idx);
         this.ui.onAddForce = (force) => this.sim.addForce(force);
         this.ui.onAddForceAtPoint = (force, point) => this.sim.addForceAtPoint(force, point);
@@ -38,6 +39,7 @@ export class RapierDebuggerView {
 
     exit() {
         this.ui.onReset = null;
+        this.ui.onResetCamera = null;
         this.ui.onWheelHover = null;
         this.ui.onAddForce = null;
         this.ui.onAddForceAtPoint = null;

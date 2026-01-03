@@ -834,6 +834,7 @@ export class RapierDebuggerUI {
         };
 
         this.onReset = null;
+        this.onResetCamera = null;
         this.onWheelHover = null;
         this.onAddForce = null;
         this.onAddForceAtPoint = null;
@@ -1781,7 +1782,7 @@ export class RapierDebuggerUI {
         leftCol.appendChild(makeLabel('Wheel Forces'));
 
         this._inputControls.engineForce = makeRangeControl({
-            title: 'setWheelEngineForce (N)',
+            title: 'Engine force (N)',
             min: 0,
             max: 25000,
             step: 100,
@@ -1793,7 +1794,7 @@ export class RapierDebuggerUI {
         leftCol.appendChild(this._inputControls.engineForce.wrap);
 
         this._inputControls.brakeForce = makeRangeControl({
-            title: 'setWheelBrake (N)',
+            title: 'Brake force (N)',
             min: 0,
             max: 25000,
             step: 100,
@@ -1805,7 +1806,7 @@ export class RapierDebuggerUI {
         leftCol.appendChild(this._inputControls.brakeForce.wrap);
 
         this._inputControls.handbrakeForce = makeRangeControl({
-            title: 'Rear handbrake (N)',
+            title: 'Handbrake (N)',
             min: 0,
             max: 25000,
             step: 100,
@@ -1819,7 +1820,7 @@ export class RapierDebuggerUI {
         leftCol.appendChild(makeLabel('Steering'));
 
         this._inputControls.steerAngle = makeKnobControl({
-            title: 'setWheelSteering (rad)',
+            title: 'Steering ->',
             min: -0.8,
             max: 0.8,
             step: 0.01,
@@ -1953,6 +1954,11 @@ export class RapierDebuggerUI {
         const resetInitialButton = makeButton('Reset initial position');
         resetInitialButton.addEventListener('click', () => this._resetInitialPosition());
         leftCol.appendChild(resetInitialButton);
+
+        const resetCameraButton = makeButton('Reset camera');
+        resetCameraButton.addEventListener('click', () => this.onResetCamera?.());
+        leftCol.appendChild(resetCameraButton);
+        this._actionButtons.push(resetCameraButton);
 
         leftCol.appendChild(makeSeparator());
         leftCol.appendChild(makeLabel('World'));
