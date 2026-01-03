@@ -307,6 +307,101 @@ function makeRangeControl({
     return { wrap, input, valEl: showLabel || sliderFirst ? val : null, fmt };
 }
 
+function makeInlineRangeNumberControl({
+    title,
+    min,
+    max,
+    step,
+    value,
+    fmt,
+    help,
+    helpSystem,
+    sliderWidth = '140px',
+    inputWidth = '110px'
+}) {
+    const wrap = document.createElement('div');
+    wrap.style.margin = '8px 0 10px';
+
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.gap = '10px';
+
+    const label = document.createElement('div');
+    label.textContent = title;
+    label.style.fontSize = '13px';
+    label.style.fontWeight = '700';
+    label.style.opacity = '0.95';
+    label.style.display = 'flex';
+    label.style.alignItems = 'center';
+    label.style.flex = '1 1 auto';
+    label.style.minWidth = '0';
+    appendHelp(label, help, helpSystem);
+
+    const controls = document.createElement('div');
+    controls.style.display = 'flex';
+    controls.style.alignItems = 'center';
+    controls.style.justifyContent = 'flex-end';
+    controls.style.gap = '10px';
+    controls.style.marginLeft = 'auto';
+
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = String(min);
+    slider.max = String(max);
+    slider.step = String(step);
+    slider.value = String(value);
+    slider.style.flex = `0 0 ${sliderWidth}`;
+    slider.style.width = sliderWidth;
+    slider.style.cursor = 'pointer';
+
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.value = Number.isFinite(value) ? String(value) : '';
+    input.inputMode = 'decimal';
+    input.min = String(min);
+    input.max = String(max);
+    input.step = String(step);
+    input.style.width = scalePx(inputWidth, 0.5);
+    input.style.padding = '3px 4px';
+    input.style.borderRadius = '8px';
+    input.style.border = '1px solid rgba(255,255,255,0.16)';
+    input.style.background = 'rgba(8, 12, 18, 0.6)';
+    input.style.color = '#e9f2ff';
+    input.style.fontWeight = '600';
+    input.style.fontSize = '11px';
+
+    const clampNum = (v) => Math.min(max, Math.max(min, v));
+    const setBoth = (next, { from = null } = {}) => {
+        if (!Number.isFinite(next)) return;
+        const clamped = clampNum(next);
+        if (from !== 'slider') slider.value = String(clamped);
+        if (from !== 'input') input.value = String(clamped);
+    };
+
+    setBoth(Number(value));
+
+    slider.addEventListener('input', () => {
+        const next = parseFloat(slider.value);
+        setBoth(next, { from: 'slider' });
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    input.addEventListener('input', () => {
+        const next = parseFloat(input.value);
+        if (!Number.isFinite(next)) return;
+        setBoth(next, { from: 'input' });
+    });
+
+    controls.appendChild(slider);
+    controls.appendChild(input);
+    row.appendChild(label);
+    row.appendChild(controls);
+    wrap.appendChild(row);
+
+    return { wrap, input, slider, valEl: null, fmt };
+}
+
 function makeKnobControl({ title, min, max, step, value, fmt, help, helpSystem, inlineValue = false }) {
     const wrap = document.createElement('div');
     wrap.style.margin = '8px 0 10px';
@@ -405,7 +500,18 @@ function makeKnobControl({ title, min, max, step, value, fmt, help, helpSystem, 
     return { wrap, input, valEl: inlineVal ?? val, fmt, update };
 }
 
-function makeNumberControl({ title, value, help, helpSystem, width = '120px', min = null, max = null, step = null, sliderWidth = null }) {
+function makeNumberControl({
+    title,
+    value,
+    help,
+    helpSystem,
+    width = '120px',
+    min = null,
+    max = null,
+    step = null,
+    sliderWidth = null,
+    controlsAlignRight = false
+}) {
     const wrap = document.createElement('div');
     wrap.style.margin = '8px 0 10px';
     const scaledWidth = scalePx(width, 0.5);
@@ -419,7 +525,7 @@ function makeNumberControl({ title, value, help, helpSystem, width = '120px', mi
     const row = document.createElement('div');
     row.style.display = 'flex';
     row.style.alignItems = 'center';
-    row.style.justifyContent = 'space-between';
+    row.style.justifyContent = controlsAlignRight ? 'flex-start' : 'space-between';
     row.style.gap = '10px';
 
     const label = document.createElement('div');
@@ -513,8 +619,21 @@ function makeNumberControl({ title, value, help, helpSystem, width = '120px', mi
     });
 
     row.appendChild(label);
-    row.appendChild(slider);
-    row.appendChild(input);
+
+    if (controlsAlignRight) {
+        const controls = document.createElement('div');
+        controls.style.display = 'flex';
+        controls.style.alignItems = 'center';
+        controls.style.justifyContent = 'flex-end';
+        controls.style.gap = '10px';
+        controls.style.marginLeft = 'auto';
+        controls.appendChild(slider);
+        controls.appendChild(input);
+        row.appendChild(controls);
+    } else {
+        row.appendChild(slider);
+        row.appendChild(input);
+    }
 
     wrap.appendChild(row);
 
@@ -3579,7 +3698,7 @@ export class RapierDebuggerUI {
                     const len = Number.isFinite(wheel?.suspensionLength) ? wheel.suspensionLength : suspRest;
                     const span = Math.max(1e-6, suspMax - suspMin);
                     const t = Math.min(1, Math.max(0, (len - suspMin) / span));
-                    cell.barEl.style.width = `${Math.round(t * 100)}%`;
+                    cell.barEl.style.height = `${Math.round(t * 100)}%`;
                 }
             };
 
@@ -3686,7 +3805,8 @@ export class RapierDebuggerUI {
             helpSystem,
             step: 10,
             width: '100px',
-            sliderWidth: '140px'
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
 
         this._inputControls.forceY = makeNumberControl({
@@ -3696,7 +3816,8 @@ export class RapierDebuggerUI {
             helpSystem,
             step: 10,
             width: '100px',
-            sliderWidth: '140px'
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
 
         this._inputControls.forceZ = makeNumberControl({
@@ -3706,7 +3827,8 @@ export class RapierDebuggerUI {
             helpSystem,
             step: 10,
             width: '100px',
-            sliderWidth: '140px'
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
 
         this._inputControls.forcePointX = makeNumberControl({
@@ -3716,7 +3838,8 @@ export class RapierDebuggerUI {
             helpSystem,
             step: 0.1,
             width: '100px',
-            sliderWidth: '140px'
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
 
         this._inputControls.forcePointY = makeNumberControl({
@@ -3726,7 +3849,8 @@ export class RapierDebuggerUI {
             helpSystem,
             step: 0.1,
             width: '100px',
-            sliderWidth: '140px'
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
 
         this._inputControls.forcePointZ = makeNumberControl({
@@ -3736,7 +3860,8 @@ export class RapierDebuggerUI {
             helpSystem,
             step: 0.1,
             width: '100px',
-            sliderWidth: '140px'
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
 
         this._inputControls.torqueX = makeNumberControl({
@@ -3746,7 +3871,8 @@ export class RapierDebuggerUI {
             helpSystem,
             step: 10,
             width: '100px',
-            sliderWidth: '140px'
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
 
         this._inputControls.torqueY = makeNumberControl({
@@ -3756,7 +3882,8 @@ export class RapierDebuggerUI {
             helpSystem,
             step: 10,
             width: '100px',
-            sliderWidth: '140px'
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
 
         this._inputControls.torqueZ = makeNumberControl({
@@ -3766,7 +3893,8 @@ export class RapierDebuggerUI {
             helpSystem,
             step: 10,
             width: '100px',
-            sliderWidth: '140px'
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
 
         const addForceButton = makeButton('Add force');
@@ -3819,7 +3947,8 @@ export class RapierDebuggerUI {
             helpSystem,
             step: 10,
             width: '100px',
-            sliderWidth: '140px'
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
 
         this._inputControls.impulseY = makeNumberControl({
@@ -3829,7 +3958,8 @@ export class RapierDebuggerUI {
             helpSystem,
             step: 10,
             width: '100px',
-            sliderWidth: '140px'
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
 
         this._inputControls.impulseZ = makeNumberControl({
@@ -3839,7 +3969,8 @@ export class RapierDebuggerUI {
             helpSystem,
             step: 10,
             width: '100px',
-            sliderWidth: '140px'
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
 
         this._inputControls.impulsePointX = makeNumberControl({
@@ -3849,7 +3980,8 @@ export class RapierDebuggerUI {
             helpSystem,
             step: 0.1,
             width: '100px',
-            sliderWidth: '140px'
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
 
         this._inputControls.impulsePointY = makeNumberControl({
@@ -3859,7 +3991,8 @@ export class RapierDebuggerUI {
             helpSystem,
             step: 0.1,
             width: '100px',
-            sliderWidth: '140px'
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
 
         this._inputControls.impulsePointZ = makeNumberControl({
@@ -3869,7 +4002,8 @@ export class RapierDebuggerUI {
             helpSystem,
             step: 0.1,
             width: '100px',
-            sliderWidth: '140px'
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
 
         this._inputControls.torqueImpulseX = makeNumberControl({
@@ -3879,7 +4013,8 @@ export class RapierDebuggerUI {
             helpSystem,
             step: 10,
             width: '100px',
-            sliderWidth: '140px'
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
 
         this._inputControls.torqueImpulseY = makeNumberControl({
@@ -3889,7 +4024,8 @@ export class RapierDebuggerUI {
             helpSystem,
             step: 10,
             width: '100px',
-            sliderWidth: '140px'
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
 
         this._inputControls.torqueImpulseZ = makeNumberControl({
@@ -3899,7 +4035,8 @@ export class RapierDebuggerUI {
             helpSystem,
             step: 10,
             width: '100px',
-            sliderWidth: '140px'
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
 
         const applyImpulseButton = makeButton('Apply impulse');
@@ -3967,7 +4104,9 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.additionalMass,
             helpSystem,
             step: 10,
-            width: '110px'
+            width: '110px',
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
         internalGroups.mass.body.appendChild(this._inputControls.additionalMass.wrap);
 
@@ -3977,7 +4116,9 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.massPropsMass,
             helpSystem,
             step: 1,
-            width: '110px'
+            width: '110px',
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
         internalGroups.mass.body.appendChild(this._inputControls.massPropsMass.wrap);
 
@@ -4134,7 +4275,9 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.linearDamping,
             helpSystem,
             step: 0.01,
-            width: '100px'
+            width: '100px',
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
         internalGroups.damping.body.appendChild(this._inputControls.linearDamping.wrap);
 
@@ -4144,7 +4287,9 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.angularDamping,
             helpSystem,
             step: 0.01,
-            width: '100px'
+            width: '100px',
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
         internalGroups.damping.body.appendChild(this._inputControls.angularDamping.wrap);
 
@@ -4296,33 +4441,39 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.groundClearance,
             helpSystem,
             step: 0.01,
-            width: '110px'
+            width: '110px',
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
         internalGroups.vehicle.body.appendChild(this._inputControls.groundClearance.wrap);
 
         internalGroups.vehicle.body.appendChild(makeLabel('Wheel placement'));
 
-        this._inputControls.wheelSideInset = makeRangeControl({
+        this._inputControls.wheelSideInset = makeInlineRangeNumberControl({
             title: 'Side offset (m)',
-            min: 0,
-            max: 0.4,
+            min: -0.5,
+            max: 0.66,
             step: 0.01,
             value: this._vehicleConfig.wheelSideInset,
             fmt: (v) => formatNum(v, 2),
             help: INPUT_HELP.wheelSideInset,
-            helpSystem
+            helpSystem,
+            sliderWidth: '140px',
+            inputWidth: '110px'
         });
         internalGroups.vehicle.body.appendChild(this._inputControls.wheelSideInset.wrap);
 
-        this._inputControls.wheelbaseRatio = makeRangeControl({
+        this._inputControls.wheelbaseRatio = makeInlineRangeNumberControl({
             title: 'Base ratio',
-            min: 0.4,
-            max: 0.9,
+            min: 0.0,
+            max: 1.3,
             step: 0.01,
             value: this._vehicleConfig.wheelbaseRatio,
             fmt: (v) => formatNum(v, 2),
             help: INPUT_HELP.wheelbaseRatio,
-            helpSystem
+            helpSystem,
+            sliderWidth: '140px',
+            inputWidth: '110px'
         });
         internalGroups.vehicle.body.appendChild(this._inputControls.wheelbaseRatio.wrap);
 
@@ -4332,7 +4483,9 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.restLength,
             helpSystem,
             step: 0.01,
-            width: '110px'
+            width: '110px',
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
         internalGroups.suspension.body.appendChild(this._inputControls.restLength.wrap);
 
@@ -4342,7 +4495,9 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.suspMaxTravel,
             helpSystem,
             step: 0.01,
-            width: '110px'
+            width: '110px',
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
         internalGroups.suspension.body.appendChild(this._inputControls.suspMaxTravel.wrap);
 
@@ -4352,7 +4507,9 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.suspStiffness,
             helpSystem,
             step: 500,
-            width: '110px'
+            width: '110px',
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
         internalGroups.suspension.body.appendChild(this._inputControls.suspStiffness.wrap);
 
@@ -4362,7 +4519,9 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.suspCompression,
             helpSystem,
             step: 200,
-            width: '110px'
+            width: '110px',
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
         internalGroups.suspension.body.appendChild(this._inputControls.suspCompression.wrap);
 
@@ -4372,7 +4531,9 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.suspRelaxation,
             helpSystem,
             step: 200,
-            width: '110px'
+            width: '110px',
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
         internalGroups.suspension.body.appendChild(this._inputControls.suspRelaxation.wrap);
 
@@ -4382,7 +4543,9 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.suspMaxForce,
             helpSystem,
             step: 500,
-            width: '110px'
+            width: '110px',
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
         internalGroups.suspension.body.appendChild(this._inputControls.suspMaxForce.wrap);
 
@@ -4392,7 +4555,9 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.tireFrictionSlip,
             helpSystem,
             step: 0.1,
-            width: '110px'
+            width: '110px',
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
         internalGroups.tires.body.appendChild(this._inputControls.tireFrictionSlip.wrap);
 
@@ -4402,7 +4567,9 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.tireSideStiffness,
             helpSystem,
             step: 0.05,
-            width: '110px'
+            width: '110px',
+            sliderWidth: '140px',
+            controlsAlignRight: true
         });
         internalGroups.tires.body.appendChild(this._inputControls.tireSideStiffness.wrap);
 
@@ -4486,6 +4653,16 @@ export class RapierDebuggerUI {
         gravityScale.style.width = '100%';
         gravityScale.style.cursor = 'pointer';
 
+        const gravityScaleOut = document.createElement('div');
+        gravityScaleOut.style.fontSize = '11px';
+        gravityScaleOut.style.fontWeight = '700';
+        gravityScaleOut.style.opacity = '0.75';
+        gravityScaleOut.style.whiteSpace = 'nowrap';
+        gravityScaleOut.style.flex = '0 0 auto';
+        gravityScaleOut.style.textAlign = 'right';
+        gravityScaleOut.style.minWidth = '72px';
+        gravityScaleOut.textContent = `${formatNum(parseFloat(gravityScale.value), 2)}`;
+
         const gravityButton = document.createElement('button');
         gravityButton.type = 'button';
         gravityButton.textContent = '...';
@@ -4500,14 +4677,24 @@ export class RapierDebuggerUI {
 
         gravityRow.appendChild(gravityLabel);
         gravityRow.appendChild(gravityScale);
+        gravityRow.appendChild(gravityScaleOut);
         gravityRow.appendChild(gravityButton);
         leftCol.appendChild(gravityRow);
 
         this._inputControls.worldGravityX = { input: null, valEl: null };
         this._inputControls.worldGravityY = { input: null, valEl: null };
         this._inputControls.worldGravityZ = { input: null, valEl: null };
-        this._inputControls.gravityScale = { input: gravityScale, valEl: null, wrap: gravityRow };
+        this._inputControls.gravityScale = {
+            input: gravityScale,
+            valEl: gravityScaleOut,
+            wrap: gravityRow,
+            fmt: (v) => `${formatNum(v, 2)}`
+        };
         this._gravityDisplay = null;
+        gravityScale.addEventListener('input', () => {
+            const v = parseFloat(gravityScale.value);
+            gravityScaleOut.textContent = `${formatNum(v, 2)}`;
+        });
         gravityButton.addEventListener('click', (event) => {
             event.preventDefault();
             this._openGravityPopup(gravityButton);
@@ -4735,21 +4922,26 @@ export class RapierDebuggerUI {
             text.style.fontVariantNumeric = 'tabular-nums';
             text.style.whiteSpace = 'pre';
             text.style.lineHeight = '1.25';
-            text.style.paddingLeft = '18px';
+            text.style.paddingLeft = '28px';
             text.textContent = '—';
             cell.appendChild(text);
 
             const barWrap = document.createElement('div');
-            barWrap.style.marginTop = '6px';
-            barWrap.style.width = '100%';
-            barWrap.style.height = '6px';
+            barWrap.style.position = 'absolute';
+            barWrap.style.left = '10px';
+            barWrap.style.top = '32px';
+            barWrap.style.width = '8px';
+            barWrap.style.height = '96px';
             barWrap.style.borderRadius = '999px';
             barWrap.style.background = 'rgba(255,255,255,0.12)';
             barWrap.style.overflow = 'hidden';
 
             const barFill = document.createElement('div');
-            barFill.style.height = '100%';
-            barFill.style.width = '0%';
+            barFill.style.position = 'absolute';
+            barFill.style.left = '0';
+            barFill.style.bottom = '0';
+            barFill.style.width = '100%';
+            barFill.style.height = '0%';
             barFill.style.background = 'rgba(76,255,122,0.85)';
             barWrap.appendChild(barFill);
             cell.appendChild(barWrap);
