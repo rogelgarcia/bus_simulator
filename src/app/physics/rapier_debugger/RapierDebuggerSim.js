@@ -664,6 +664,12 @@ export class RapierDebuggerSim {
         );
     }
 
+    resetVelocities() {
+        if (!this._body?.setLinvel || !this._body?.setAngvel) return;
+        this._body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        this._body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    }
+
     wakeUp() {
         this._body?.wakeUp?.();
     }

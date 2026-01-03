@@ -30,6 +30,7 @@ export class RapierDebuggerView {
         this.ui.onAddTorque = (torque) => this.sim.addTorque(torque);
         this.ui.onResetForces = () => this.sim.resetForces();
         this.ui.onResetTorques = () => this.sim.resetTorques();
+        this.ui.onResetVelocities = () => this.sim.resetVelocities();
         this.ui.onApplyImpulse = (impulse) => this.sim.applyImpulse(impulse);
         this.ui.onApplyImpulseAtPoint = (impulse, point) => this.sim.applyImpulseAtPoint(impulse, point);
         this.ui.onApplyTorqueImpulse = (torque) => this.sim.applyTorqueImpulse(torque);
@@ -48,6 +49,7 @@ export class RapierDebuggerView {
         this.ui.onAddTorque = null;
         this.ui.onResetForces = null;
         this.ui.onResetTorques = null;
+        this.ui.onResetVelocities = null;
         this.ui.onApplyImpulse = null;
         this.ui.onApplyImpulseAtPoint = null;
         this.ui.onApplyTorqueImpulse = null;
