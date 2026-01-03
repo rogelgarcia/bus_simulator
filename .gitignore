@@ -27,3 +27,5 @@ build/
 # AI Prompts
 AI_[0-9]*
 prompts/
+
+PROJECT_RULES.local.md

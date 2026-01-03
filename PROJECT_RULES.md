@@ -2,6 +2,9 @@
 
 ## Directory Structure
 
+** Local Rules **
+- MUST READ PROJECT_RULES.local.md
+
 **Graphics Organization:**
 - All graphics-related code → `/src/graphics`
   - 3D assets (models, geometries, generators, Three.js code) → `/src/graphics/assets3d/`
@@ -37,7 +40,7 @@
 - Only commit when explicitly asked by the user
 - Never commit automatically after making changes
 - Never commit AI prompt files named `AI_#_title`
-- MUST USE '-c user.name="rogelgarcia" -c user.email="idrogelgarcia@gmail.com"' on commits
+
 
 **Tasks:**
 These are the ones from files AI_#_title
