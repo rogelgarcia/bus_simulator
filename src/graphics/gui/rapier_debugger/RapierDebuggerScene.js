@@ -66,7 +66,17 @@ export class RapierDebuggerScene {
             if (key === 'ArrowRight') dx = step;
             if (key === 'ArrowUp') dz = step;
             if (key === 'ArrowDown') dz = -step;
-            this._panCamera(dx, dz);
+            const forward = this._tmpVecA.set(0, 0, 0);
+            this.camera.getWorldDirection(forward);
+            forward.y = 0;
+            if (forward.lengthSq() < 1e-8) return;
+            forward.normalize();
+            const up = this._tmpVecC.set(0, 1, 0);
+            const right = this._tmpVecB.crossVectors(forward, up).normalize();
+            const delta = this._tmpVecD.set(0, 0, 0)
+                .addScaledVector(right, dx)
+                .addScaledVector(forward, dz);
+            this._panCamera(delta);
         };
     }
 
@@ -173,11 +183,10 @@ export class RapierDebuggerScene {
         this._cameraFollowReady = false;
     }
 
-    _panCamera(dx, dz) {
+    _panCamera(delta) {
         if (!this.controls || !this.camera) return;
-        this._tmpVecA.set(dx, 0, dz);
-        this.camera.position.add(this._tmpVecA);
-        this.controls.target.add(this._tmpVecA);
+        this.camera.position.add(delta);
+        this.controls.target.add(delta);
         this.controls.update();
         this._cameraFollowPending.set(0, 0, 0);
         this._cameraFollowVelocity.set(0, 0, 0);
@@ -239,6 +248,11 @@ export class RapierDebuggerScene {
                 mat.emissive?.setHex?.(0x000000);
             }
         }
+    }
+
+    getCameraPosition() {
+        if (!this.camera) return null;
+        return { x: this.camera.position.x, y: this.camera.position.y, z: this.camera.position.z };
     }
 
     sync(snapshot, debugRenderBuffers) {

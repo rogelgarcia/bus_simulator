@@ -9,9 +9,9 @@ const INPUT_HELP = {
     rotation: 'Rigid-body rotation as a unit quaternion.',
     linvel: 'Initial linear velocity (m/s).',
     angvel: 'Initial angular velocity (axis times rad/s).',
-    worldGravity: 'World gravity vector (m/s^2). Default is 0, -9.81, 0.',
+    worldGravity: 'World gravity vector (m/s^2). Slider controls gravity scale for this body.',
     gravityScale: 'Scales gravity for this body (0 disables, negative flips). Typical 0.5 to 2.',
-    canSleep: 'Allow this body to sleep when it becomes idle.',
+    canSleep: 'Allow this body to sleep when it becomes idle. Marker: green=awake, red=sleeping.',
     ccdEnabled: 'Enable continuous collision detection to reduce tunneling.',
     dominanceGroup: 'Dominance group [-127, 127]. Keep small values like -1, 0, 1.',
     lockTranslations: 'Lock translations along all axes.',
@@ -42,6 +42,9 @@ const INPUT_HELP = {
     massPropsFrameX: 'Inertia frame X. Keep quaternion normalized.',
     massPropsFrameY: 'Inertia frame Y. Keep quaternion normalized.',
     massPropsFrameZ: 'Inertia frame Z. Keep quaternion normalized.',
+    inertia: 'Principal inertia values override how rotational mass is distributed.',
+    inertiaFrame: 'Quaternion that orients the inertia tensor in body space.',
+    locking: 'Locks translations or rotations for this rigid body.',
     suspMaxTravel: 'Sets the maximum distance the suspension can travel before and after its resting length. Typical 0.1-0.3.',
     suspStiffness: 'Sets the wheel suspension stiffness. Higher is firmer. 20000-60000 typical here.',
     suspCompression: 'Wheel suspension damping when being compressed. 2000-6000 typical here.',
@@ -79,6 +82,15 @@ function padLeft(str, width) {
     return `${' '.repeat(width - str.length)}${str}`;
 }
 
+function scalePx(value, factor) {
+    if (typeof value === 'number' && Number.isFinite(value)) return `${value * factor}px`;
+    if (typeof value === 'string' && value.endsWith('px')) {
+        const num = parseFloat(value);
+        if (Number.isFinite(num)) return `${num * factor}px`;
+    }
+    return value;
+}
+
 function outNum(value, digits = 2, width = 8) {
     if (!Number.isFinite(value)) return padLeft('n/a', width);
     const normalized = Math.abs(value) < 1e-9 ? 0 : value;
@@ -105,6 +117,11 @@ function packQuat(q, digits = 4) {
 function formatVec3(v, digits = 2) {
     if (!v) return 'n/a';
     return `${formatNum(v.x, digits)}, ${formatNum(v.y, digits)}, ${formatNum(v.z, digits)}`;
+}
+
+function vecNonZero(v, eps = 1e-4) {
+    if (!v) return false;
+    return (Math.abs(v.x) > eps) || (Math.abs(v.y) > eps) || (Math.abs(v.z) > eps);
 }
 
 function makeHudRoot() {
@@ -172,14 +189,16 @@ function makeSeparator() {
     return hr;
 }
 
-function makeGroup(title, { tightTop = false } = {}) {
+function makeGroup(title, { tightTop = false, showLabel = true } = {}) {
     const wrap = document.createElement('div');
-    const label = makeLabel(title);
-    if (tightTop) {
-        label.style.marginTop = '0';
-    }
     const body = document.createElement('div');
-    wrap.appendChild(label);
+    if (showLabel) {
+        const label = makeLabel(title);
+        if (tightTop) {
+            label.style.marginTop = '0';
+        }
+        wrap.appendChild(label);
+    }
     wrap.appendChild(body);
     return { wrap, body };
 }
@@ -207,7 +226,19 @@ function appendHelp(labelEl, helpText, helpSystem) {
     labelEl.appendChild(help);
 }
 
-function makeRangeControl({ title, min, max, step, value, fmt, help, helpSystem }) {
+function makeRangeControl({
+    title,
+    min,
+    max,
+    step,
+    value,
+    fmt,
+    help,
+    helpSystem,
+    showLabel = true,
+    sliderFirst = false,
+    showHelp = true
+}) {
     const wrap = document.createElement('div');
     wrap.style.margin = '8px 0 10px';
 
@@ -231,8 +262,10 @@ function makeRangeControl({ title, min, max, step, value, fmt, help, helpSystem 
     val.style.opacity = '0.75';
     val.textContent = fmt(value);
 
-    head.appendChild(label);
-    head.appendChild(val);
+    if (showLabel && !sliderFirst) {
+        head.appendChild(label);
+        head.appendChild(val);
+    }
 
     const input = document.createElement('input');
     input.type = 'range';
@@ -241,22 +274,47 @@ function makeRangeControl({ title, min, max, step, value, fmt, help, helpSystem 
     input.step = String(step);
     input.value = String(value);
     input.style.width = '100%';
-    input.style.marginTop = '6px';
+    input.style.marginTop = showLabel && !sliderFirst ? '6px' : '0';
 
-    wrap.appendChild(head);
-    wrap.appendChild(input);
+    if (sliderFirst) {
+        const row = document.createElement('div');
+        row.style.display = 'flex';
+        row.style.alignItems = 'center';
+        row.style.gap = '8px';
+        input.style.flex = '1 1 auto';
 
-    return { wrap, input, valEl: val, fmt };
+        const helpWrap = document.createElement('div');
+        helpWrap.style.display = 'inline-flex';
+        helpWrap.style.alignItems = 'center';
+        helpWrap.style.justifyContent = 'center';
+        if (showHelp) {
+            appendHelp(helpWrap, help, helpSystem);
+        }
+
+        row.appendChild(input);
+        if (showHelp) {
+            row.appendChild(helpWrap);
+        }
+        row.appendChild(val);
+        wrap.appendChild(row);
+    } else {
+        if (showLabel) {
+            wrap.appendChild(head);
+        }
+        wrap.appendChild(input);
+    }
+
+    return { wrap, input, valEl: showLabel || sliderFirst ? val : null, fmt };
 }
 
-function makeKnobControl({ title, min, max, step, value, fmt, help, helpSystem }) {
+function makeKnobControl({ title, min, max, step, value, fmt, help, helpSystem, inlineValue = false }) {
     const wrap = document.createElement('div');
     wrap.style.margin = '8px 0 10px';
 
     const head = document.createElement('div');
     head.style.display = 'flex';
     head.style.alignItems = 'baseline';
-    head.style.justifyContent = 'space-between';
+    head.style.justifyContent = inlineValue ? 'flex-start' : 'space-between';
     head.style.gap = '10px';
 
     const label = document.createElement('div');
@@ -266,6 +324,15 @@ function makeKnobControl({ title, min, max, step, value, fmt, help, helpSystem }
     label.style.opacity = '0.95';
     label.style.display = 'flex';
     label.style.alignItems = 'center';
+    let inlineVal = null;
+    if (inlineValue) {
+        inlineVal = document.createElement('span');
+        inlineVal.style.marginLeft = '6px';
+        inlineVal.style.fontSize = '12px';
+        inlineVal.style.opacity = '0.75';
+        inlineVal.textContent = fmt(value);
+        label.appendChild(inlineVal);
+    }
     appendHelp(label, help, helpSystem);
 
     const val = document.createElement('div');
@@ -274,7 +341,9 @@ function makeKnobControl({ title, min, max, step, value, fmt, help, helpSystem }
     val.textContent = fmt(value);
 
     head.appendChild(label);
-    head.appendChild(val);
+    if (!inlineValue) {
+        head.appendChild(val);
+    }
 
     const track = document.createElement('div');
     track.style.position = 'relative';
@@ -321,7 +390,11 @@ function makeKnobControl({ title, min, max, step, value, fmt, help, helpSystem }
         const t = span !== 0 ? (next - min) / span : 0;
         const clamped = Math.min(1, Math.max(0, t));
         knob.style.left = `${clamped * 100}%`;
-        val.textContent = fmt(next);
+        if (inlineVal) {
+            inlineVal.textContent = fmt(next);
+        } else {
+            val.textContent = fmt(next);
+        }
     };
 
     update(value);
@@ -329,12 +402,13 @@ function makeKnobControl({ title, min, max, step, value, fmt, help, helpSystem }
     wrap.appendChild(head);
     wrap.appendChild(track);
 
-    return { wrap, input, valEl: val, fmt, update };
+    return { wrap, input, valEl: inlineVal ?? val, fmt, update };
 }
 
 function makeNumberControl({ title, value, help, helpSystem, width = '120px', min = null, max = null, step = null }) {
     const wrap = document.createElement('div');
     wrap.style.margin = '8px 0 10px';
+    const scaledWidth = scalePx(width, 0.5);
 
     const row = document.createElement('div');
     row.style.display = 'flex';
@@ -358,13 +432,14 @@ function makeNumberControl({ title, value, help, helpSystem, width = '120px', mi
     if (min !== null) input.min = String(min);
     if (max !== null) input.max = String(max);
     if (step !== null) input.step = String(step);
-    input.style.width = width;
-    input.style.padding = '4px 6px';
+    input.style.width = scaledWidth;
+    input.style.padding = '3px 4px';
     input.style.borderRadius = '8px';
     input.style.border = '1px solid rgba(255,255,255,0.16)';
     input.style.background = 'rgba(8, 12, 18, 0.6)';
     input.style.color = '#e9f2ff';
     input.style.fontWeight = '600';
+    input.style.fontSize = '11px';
 
     row.appendChild(label);
     row.appendChild(input);
@@ -386,6 +461,7 @@ function makeInlineVector3Control({
 }) {
     const wrap = document.createElement('div');
     wrap.style.margin = '8px 0 10px';
+    const scaledWidth = scalePx(width, 0.5);
 
     const label = document.createElement('div');
     label.textContent = title;
@@ -422,13 +498,14 @@ function makeInlineVector3Control({
         if (min !== null) input.min = String(min);
         if (max !== null) input.max = String(max);
         if (step !== null) input.step = String(step);
-        input.style.width = width;
-        input.style.padding = '4px 6px';
+        input.style.width = scaledWidth;
+        input.style.padding = '3px 4px';
         input.style.borderRadius = '8px';
         input.style.border = '1px solid rgba(255,255,255,0.16)';
         input.style.background = 'rgba(8, 12, 18, 0.6)';
         input.style.color = '#e9f2ff';
         input.style.fontWeight = '600';
+        input.style.fontSize = '11px';
 
         axisWrap.appendChild(axisLabel);
         axisWrap.appendChild(input);
@@ -442,6 +519,136 @@ function makeInlineVector3Control({
 
     wrap.appendChild(row);
     return { wrap, inputs: { x: inputX, y: inputY, z: inputZ } };
+}
+
+function makeInlineVector3Row({
+    title,
+    values,
+    help,
+    helpSystem,
+    width = '76px',
+    min = null,
+    max = null,
+    step = null
+}) {
+    const wrap = document.createElement('div');
+    wrap.style.margin = '8px 0 10px';
+    const scaledWidth = scalePx(width, 0.5);
+
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.justifyContent = 'space-between';
+    row.style.gap = '10px';
+
+    const label = document.createElement('div');
+    label.textContent = title;
+    label.style.fontSize = '13px';
+    label.style.fontWeight = '700';
+    label.style.opacity = '0.95';
+    label.style.display = 'flex';
+    label.style.alignItems = 'center';
+    appendHelp(label, help, helpSystem);
+
+    const inputsRow = document.createElement('div');
+    inputsRow.style.display = 'flex';
+    inputsRow.style.alignItems = 'center';
+    inputsRow.style.gap = '10px';
+
+    const makeAxis = (axis) => {
+        const axisWrap = document.createElement('div');
+        axisWrap.style.display = 'flex';
+        axisWrap.style.alignItems = 'center';
+        axisWrap.style.gap = '6px';
+
+        const axisLabel = document.createElement('div');
+        axisLabel.textContent = axis.toUpperCase();
+        axisLabel.style.fontSize = '11px';
+        axisLabel.style.fontWeight = '700';
+        axisLabel.style.opacity = '0.8';
+
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.value = Number.isFinite(values?.[axis]) ? String(values[axis]) : '';
+        input.inputMode = 'decimal';
+        if (min !== null) input.min = String(min);
+        if (max !== null) input.max = String(max);
+        if (step !== null) input.step = String(step);
+        input.style.width = scaledWidth;
+        input.style.padding = '3px 4px';
+        input.style.borderRadius = '8px';
+        input.style.border = '1px solid rgba(255,255,255,0.16)';
+        input.style.background = 'rgba(8, 12, 18, 0.6)';
+        input.style.color = '#e9f2ff';
+        input.style.fontWeight = '600';
+        input.style.fontSize = '11px';
+
+        axisWrap.appendChild(axisLabel);
+        axisWrap.appendChild(input);
+        inputsRow.appendChild(axisWrap);
+        return input;
+    };
+
+    const inputX = makeAxis('x');
+    const inputY = makeAxis('y');
+    const inputZ = makeAxis('z');
+
+    row.appendChild(label);
+    row.appendChild(inputsRow);
+    wrap.appendChild(row);
+
+    return { wrap, inputs: { x: inputX, y: inputY, z: inputZ } };
+}
+
+function makeInlineValueRowWithButton({
+    title,
+    valueText,
+    help,
+    helpSystem,
+    buttonLabel = '...'
+}) {
+    const wrap = document.createElement('div');
+    wrap.style.margin = '8px 0 10px';
+
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.gap = '10px';
+
+    const label = document.createElement('div');
+    label.textContent = title;
+    label.style.fontSize = '13px';
+    label.style.fontWeight = '700';
+    label.style.opacity = '0.95';
+    label.style.display = 'flex';
+    label.style.alignItems = 'center';
+    appendHelp(label, help, helpSystem);
+
+    const value = document.createElement('div');
+    value.textContent = valueText;
+    value.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+    value.style.fontVariantNumeric = 'tabular-nums';
+    value.style.fontSize = '11px';
+    value.style.opacity = '0.9';
+    value.style.flex = '1 1 auto';
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = buttonLabel;
+    button.style.padding = '4px 8px';
+    button.style.borderRadius = '8px';
+    button.style.border = '1px solid rgba(255,255,255,0.16)';
+    button.style.background = 'rgba(12, 16, 24, 0.9)';
+    button.style.color = '#e9f2ff';
+    button.style.fontWeight = '700';
+    button.style.cursor = 'pointer';
+
+    row.appendChild(label);
+    row.appendChild(value);
+    row.appendChild(button);
+    wrap.appendChild(row);
+
+    return { wrap, valueEl: value, button };
 }
 
 function makeToggleControl({ title, value, help, helpSystem }) {
@@ -664,6 +871,124 @@ function makeButton(label) {
     return btn;
 }
 
+function makeAxisLegend() {
+    const wrap = document.createElement('div');
+    wrap.style.position = 'absolute';
+    wrap.style.left = '50%';
+    wrap.style.bottom = '12px';
+    wrap.style.transform = 'translateX(-50%)';
+    wrap.style.overflow = 'visible';
+    wrap.style.display = 'flex';
+    wrap.style.alignItems = 'center';
+    wrap.style.gap = '12px';
+    wrap.style.padding = '6px 10px';
+    wrap.style.borderRadius = '999px';
+    wrap.style.background = 'rgba(10, 14, 20, 0.6)';
+    wrap.style.border = '1px solid rgba(255,255,255,0.12)';
+    wrap.style.backdropFilter = 'blur(6px)';
+    wrap.style.color = '#e9f2ff';
+    wrap.style.fontSize = '11px';
+    wrap.style.fontWeight = '700';
+    wrap.style.letterSpacing = '0.4px';
+    wrap.style.textTransform = 'uppercase';
+
+    const addItem = (label, color) => {
+        const row = document.createElement('div');
+        row.style.display = 'inline-flex';
+        row.style.alignItems = 'center';
+        row.style.gap = '6px';
+
+        const dot = document.createElement('span');
+        dot.style.width = '8px';
+        dot.style.height = '8px';
+        dot.style.borderRadius = '999px';
+        dot.style.background = color;
+        dot.style.boxShadow = `0 0 0 1px ${color}`;
+
+        const text = document.createElement('span');
+        text.textContent = label;
+
+        row.appendChild(dot);
+        row.appendChild(text);
+        wrap.appendChild(row);
+    };
+
+    addItem('X', '#ff2d2d');
+    addItem('Y', '#2fe75c');
+    addItem('Z', '#2d7dff');
+
+    const camWrap = document.createElement('div');
+    camWrap.style.display = 'inline-flex';
+    camWrap.style.alignItems = 'center';
+    camWrap.style.gap = '8px';
+    camWrap.style.marginLeft = '6px';
+
+    const camIcon = document.createElement('div');
+    camIcon.style.width = '16px';
+    camIcon.style.height = '11px';
+    camIcon.style.borderRadius = '3px';
+    camIcon.style.border = '1px solid rgba(233, 242, 255, 0.75)';
+    camIcon.style.position = 'relative';
+    camIcon.style.boxSizing = 'border-box';
+    camIcon.style.cursor = 'pointer';
+
+    const camTop = document.createElement('div');
+    camTop.style.position = 'absolute';
+    camTop.style.left = '2px';
+    camTop.style.top = '-4px';
+    camTop.style.width = '6px';
+    camTop.style.height = '4px';
+    camTop.style.border = '1px solid rgba(233, 242, 255, 0.75)';
+    camTop.style.borderBottom = 'none';
+    camTop.style.borderRadius = '2px 2px 0 0';
+    camTop.style.boxSizing = 'border-box';
+
+    const camLens = document.createElement('div');
+    camLens.style.position = 'absolute';
+    camLens.style.left = '50%';
+    camLens.style.top = '50%';
+    camLens.style.width = '6px';
+    camLens.style.height = '6px';
+    camLens.style.borderRadius = '999px';
+    camLens.style.border = '1px solid rgba(233, 242, 255, 0.85)';
+    camLens.style.transform = 'translate(-50%, -50%)';
+    camLens.style.boxSizing = 'border-box';
+
+    camIcon.appendChild(camTop);
+    camIcon.appendChild(camLens);
+
+    const coords = document.createElement('div');
+    coords.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+    coords.style.fontVariantNumeric = 'tabular-nums';
+    coords.style.fontSize = '11px';
+    coords.style.opacity = '0.9';
+    coords.textContent = 'X:0.00  Y:0.00  Z:0.00';
+
+    camWrap.appendChild(camIcon);
+    camWrap.appendChild(coords);
+    wrap.appendChild(camWrap);
+
+    const toast = document.createElement('div');
+    toast.style.position = 'absolute';
+    toast.style.left = '50%';
+    toast.style.bottom = '100%';
+    toast.style.transform = 'translate(-50%, -8px)';
+    toast.style.padding = '6px 10px';
+    toast.style.borderRadius = '10px';
+    toast.style.background = 'rgba(10, 14, 20, 0.92)';
+    toast.style.border = '1px solid rgba(255,255,255,0.18)';
+    toast.style.color = '#e9f2ff';
+    toast.style.fontSize = '11px';
+    toast.style.fontWeight = '700';
+    toast.style.boxShadow = '0 8px 20px rgba(0,0,0,0.35)';
+    toast.style.whiteSpace = 'nowrap';
+    toast.style.display = 'none';
+    toast.style.zIndex = '90';
+    wrap.appendChild(toast);
+
+    return { wrap, coordsEl: coords, camIcon, toastEl: toast };
+}
+
 const PRESET_TESTS = [
     {
         id: 'straight_brake',
@@ -702,6 +1027,9 @@ export class RapierDebuggerUI {
         this._hudRoot = null;
         this._inputPanel = null;
         this._outputPanel = null;
+        if (this._helpTooltip?.parentElement) {
+            this._helpTooltip.parentElement.removeChild(this._helpTooltip);
+        }
         this._helpTooltip = null;
         this._helpSystem = null;
 
@@ -713,6 +1041,53 @@ export class RapierDebuggerUI {
         this._statusText = null;
         this._copyButton = null;
         this._recordButton = null;
+        this._recordLabel = null;
+        this._axisLegendCoords = null;
+        this._axisLegendCamIcon = null;
+        this._axisLegendToast = null;
+        this._axisToastTimer = null;
+        this._recordDot = null;
+        this._recordDotTimer = null;
+        this._gravityDisplay = null;
+        this._cameraPopup = null;
+        this._cameraPopupHandlers = null;
+        this._sleepMarker = null;
+        this._wakeButton = null;
+        this._sleepingState = null;
+        this._gravityPopup = null;
+        this._gravityPopupHandlers = null;
+        this._positionPopup = null;
+        this._positionPopupHandlers = null;
+        this._positionPopupLiveInterval = null;
+        this._positionPopupLiveShowTimer = null;
+        this._positionPopupLiveHideTimer = null;
+        this._positionPopupLiveStatus = null;
+        this._inertiaPopup = null;
+        this._inertiaPopupHandlers = null;
+        this._inertiaFramePopup = null;
+        this._inertiaFramePopupHandlers = null;
+        this._lockingPopup = null;
+        this._lockingPopupHandlers = null;
+        this._forcesPopup = null;
+        this._forcesPopupHandlers = null;
+        this._forcePopupControls = null;
+        this._forcePopupButtons = null;
+        this._forcesPopupGrid = null;
+        this._forcesPopupLogCol = null;
+        this._forcesPopupLogEl = null;
+        this._forceActionLog = [];
+        this._forceActionMax = 12;
+        this._forceActionSeq = 0;
+        this._testsPopup = null;
+        this._testsPopupHandlers = null;
+        this._testPopup = null;
+        this._testPopupHandlers = null;
+        this._testPopupTitle = null;
+        this._testPopupButton = null;
+        this._testPopupLabel = null;
+        this._testPopupDot = null;
+        this._testPopupCloseTimer = null;
+        this._testPopupEllipsisTimer = null;
 
         this._enabled = false;
         this._inputs = {
@@ -845,6 +1220,7 @@ export class RapierDebuggerUI {
         this.onApplyImpulseAtPoint = null;
         this.onApplyTorqueImpulse = null;
         this.onWakeUp = null;
+        this.onSleep = null;
 
         this._activeTest = null;
         this._testElapsed = 0;
@@ -879,8 +1255,57 @@ export class RapierDebuggerUI {
         this._statusText = null;
         this._copyButton = null;
         this._recordButton = null;
+        this._recordLabel = null;
+        if (this._helpTooltip?.parentElement) {
+            this._helpTooltip.parentElement.removeChild(this._helpTooltip);
+        }
         this._helpTooltip = null;
         this._helpSystem = null;
+        this._axisLegendCoords = null;
+        this._axisLegendToast = null;
+        if (this._axisToastTimer) {
+            clearTimeout(this._axisToastTimer);
+            this._axisToastTimer = null;
+        }
+        this._recordDot = null;
+        if (this._recordDotTimer) {
+            clearTimeout(this._recordDotTimer);
+            this._recordDotTimer = null;
+        }
+        this._gravityDisplay = null;
+        this._closeGravityPopup();
+        this._closePositionPopup();
+        this._closeCameraPopup();
+        this._closeInertiaPopup();
+        this._closeInertiaFramePopup();
+        this._closeLockingPopup();
+        this._closeForcesPopup();
+        this._closeTestsPopup();
+        this._closeTestPopup();
+        this._forcePopupControls = null;
+        this._forcePopupButtons = null;
+        this._forcesPopupGrid = null;
+        this._forcesPopupLogCol = null;
+        this._forcesPopupLogEl = null;
+        this._forceActionLog = [];
+        this._forceActionSeq = 0;
+        this._testsPopup = null;
+        this._testsPopupHandlers = null;
+        this._testPopup = null;
+        this._testPopupHandlers = null;
+        this._testPopupTitle = null;
+        this._testPopupButton = null;
+        this._testPopupLabel = null;
+        this._testPopupDot = null;
+        this._testPopupCloseTimer = null;
+        this._testPopupEllipsisTimer = null;
+        this._sleepMarker = null;
+        this._wakeButton = null;
+        this._sleepingState = null;
+        this._positionPopupLiveInterval = null;
+        this._positionPopupLiveShowTimer = null;
+        this._positionPopupLiveHideTimer = null;
+        this._positionPopupLiveStatus = null;
         this._activeTest = null;
         this._telemetry = null;
         this._telemetryMeta = null;
@@ -893,19 +1318,1413 @@ export class RapierDebuggerUI {
     setEnabled(enabled) {
         this._enabled = !!enabled;
         for (const control of Object.values(this._inputControls)) {
-            control.input.disabled = !this._enabled || !!this._activeTest;
+            if (control?.input) {
+                control.input.disabled = !this._enabled || !!this._activeTest;
+            }
         }
         for (const btn of this._testButtons) {
+            if (!btn) continue;
             btn.disabled = !this._enabled || !!this._activeTest;
         }
         for (const btn of this._actionButtons) {
+            if (!btn) continue;
             btn.disabled = !this._enabled || !!this._activeTest;
         }
         if (this._recordButton) {
             this._recordButton.disabled = !this._enabled || !!this._activeTest || this._sampleRecording;
         }
         if (this._statusText && !this._activeTest) {
-            this._statusText.textContent = enabled ? 'Ready' : 'Loading…';
+            this._statusText.textContent = '';
+        }
+    }
+
+    setCameraCoords(pos) {
+        if (!this._axisLegendCoords) return;
+        if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y) || !Number.isFinite(pos.z)) {
+            this._axisLegendCoords.textContent = 'X:n/a  Y:n/a  Z:n/a';
+            return;
+        }
+        this._axisLegendCoords.textContent = `X:${formatNum(pos.x, 2)}  Y:${formatNum(pos.y, 2)}  Z:${formatNum(pos.z, 2)}`;
+    }
+
+    _showAxisToast(message, duration = 2000) {
+        if (!this._axisLegendToast) return;
+        this._axisLegendToast.textContent = message;
+        this._axisLegendToast.style.display = 'block';
+        if (this._axisToastTimer) {
+            clearTimeout(this._axisToastTimer);
+        }
+        this._axisToastTimer = window.setTimeout(() => {
+            if (this._axisLegendToast) {
+                this._axisLegendToast.style.display = 'none';
+            }
+            this._axisToastTimer = null;
+        }, duration);
+    }
+
+    _openCameraPopup(anchor) {
+        this._closeCameraPopup();
+        if (!this._hudRoot || !anchor) return;
+
+        const wrap = document.createElement('div');
+        wrap.style.position = 'fixed';
+        wrap.style.zIndex = '90';
+        wrap.style.padding = '10px';
+        wrap.style.borderRadius = '10px';
+        wrap.style.background = 'rgba(10, 14, 20, 0.92)';
+        wrap.style.border = '1px solid rgba(255,255,255,0.18)';
+        wrap.style.color = '#e9f2ff';
+        wrap.style.boxShadow = '0 10px 28px rgba(0,0,0,0.35)';
+        wrap.style.backdropFilter = 'blur(8px)';
+        wrap.style.display = 'flex';
+        wrap.style.flexDirection = 'column';
+        wrap.style.gap = '8px';
+
+        const resetCameraButton = makeButton('Reset camera');
+        resetCameraButton.style.padding = '6px 10px';
+        resetCameraButton.style.fontSize = '11px';
+        resetCameraButton.style.borderRadius = '8px';
+        resetCameraButton.style.marginRight = '0';
+        resetCameraButton.addEventListener('click', () => {
+            this.onResetCamera?.();
+            this._closeCameraPopup();
+        });
+        wrap.appendChild(resetCameraButton);
+
+        const rect = anchor.getBoundingClientRect();
+        const pad = 8;
+        const left = Math.min(window.innerWidth - 200, Math.max(pad, rect.left - 80));
+        const top = Math.min(window.innerHeight - 120, Math.max(pad, rect.top - 50));
+        wrap.style.left = `${left}px`;
+        wrap.style.top = `${top}px`;
+
+        const onPointerDown = (event) => {
+            if (wrap.contains(event.target) || anchor.contains(event.target)) return;
+            this._closeCameraPopup();
+        };
+        const onKeyDown = (event) => {
+            if (event.key === 'Escape') this._closeCameraPopup();
+        };
+
+        document.body.appendChild(wrap);
+        document.addEventListener('pointerdown', onPointerDown);
+        window.addEventListener('keydown', onKeyDown);
+        this._cameraPopup = wrap;
+        this._cameraPopupHandlers = { onPointerDown, onKeyDown };
+    }
+
+    _closeCameraPopup() {
+        if (this._cameraPopup?.parentElement) {
+            this._cameraPopup.parentElement.removeChild(this._cameraPopup);
+        }
+        if (this._cameraPopupHandlers) {
+            document.removeEventListener('pointerdown', this._cameraPopupHandlers.onPointerDown);
+            window.removeEventListener('keydown', this._cameraPopupHandlers.onKeyDown);
+        }
+        this._cameraPopup = null;
+        this._cameraPopupHandlers = null;
+    }
+
+    _openGravityPopup(anchor) {
+        this._closeGravityPopup();
+        if (!this._hudRoot || !anchor) return;
+
+        const wrap = document.createElement('div');
+        wrap.style.position = 'fixed';
+        wrap.style.zIndex = '90';
+        wrap.style.padding = '10px';
+        wrap.style.borderRadius = '10px';
+        wrap.style.background = 'rgba(10, 14, 20, 0.92)';
+        wrap.style.border = '1px solid rgba(255,255,255,0.18)';
+        wrap.style.color = '#e9f2ff';
+        wrap.style.boxShadow = '0 10px 28px rgba(0,0,0,0.35)';
+        wrap.style.backdropFilter = 'blur(8px)';
+        wrap.style.display = 'flex';
+        wrap.style.flexDirection = 'column';
+        wrap.style.gap = '8px';
+        wrap.style.minWidth = '210px';
+        wrap.style.maxWidth = '210px';
+
+        const makeField = (axis, value) => {
+            const row = document.createElement('div');
+            row.style.display = 'flex';
+            row.style.alignItems = 'center';
+            row.style.justifyContent = 'space-between';
+            row.style.gap = '10px';
+
+            const label = document.createElement('div');
+            label.textContent = axis;
+            label.style.fontSize = '11px';
+            label.style.fontWeight = '700';
+            label.style.opacity = '0.8';
+            label.style.width = '18px';
+
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.inputMode = 'decimal';
+            input.step = '0.1';
+            input.value = Number.isFinite(value) ? String(value) : '';
+            input.style.width = '80px';
+            input.style.padding = '3px 4px';
+            input.style.borderRadius = '8px';
+            input.style.border = '1px solid rgba(255,255,255,0.16)';
+            input.style.background = 'rgba(8, 12, 18, 0.6)';
+            input.style.color = '#e9f2ff';
+            input.style.fontWeight = '600';
+            input.style.fontSize = '11px';
+
+            row.appendChild(label);
+            row.appendChild(input);
+            wrap.appendChild(row);
+            return input;
+        };
+
+        const initialGravity = {
+            x: this._worldConfig.gravity?.x ?? 0,
+            y: this._worldConfig.gravity?.y ?? -9.81,
+            z: this._worldConfig.gravity?.z ?? 0
+        };
+
+        const inputs = {
+            x: makeField('X', initialGravity.x),
+            y: makeField('Y', initialGravity.y),
+            z: makeField('Z', initialGravity.z)
+        };
+
+        const wireLive = (inputEl, key) => {
+            inputEl.addEventListener('input', () => {
+                const value = parseFloat(inputEl.value);
+                if (Number.isFinite(value)) this._setInputValue(key, value);
+            });
+        };
+        wireLive(inputs.x, 'worldGravityX');
+        wireLive(inputs.y, 'worldGravityY');
+        wireLive(inputs.z, 'worldGravityZ');
+
+        const actions = document.createElement('div');
+        actions.style.display = 'flex';
+        actions.style.justifyContent = 'flex-end';
+        actions.style.gap = '8px';
+
+        const reset = makeButton('Reset');
+        reset.style.padding = '6px 10px';
+        reset.style.fontSize = '11px';
+        reset.style.borderRadius = '8px';
+        reset.style.marginRight = '0';
+        reset.addEventListener('click', () => {
+            inputs.x.value = String(initialGravity.x);
+            inputs.y.value = String(initialGravity.y);
+            inputs.z.value = String(initialGravity.z);
+            this._setInputValue('worldGravityX', initialGravity.x);
+            this._setInputValue('worldGravityY', initialGravity.y);
+            this._setInputValue('worldGravityZ', initialGravity.z);
+        });
+
+        actions.appendChild(reset);
+        wrap.appendChild(actions);
+
+        const rect = anchor.getBoundingClientRect();
+        const pad = 8;
+        const popupWidth = 210;
+        const left = Math.min(window.innerWidth - popupWidth - pad, Math.max(pad, rect.right + pad));
+        const top = Math.min(window.innerHeight - 180, Math.max(pad, rect.top - 8));
+        wrap.style.left = `${left}px`;
+        wrap.style.top = `${top}px`;
+
+        const onPointerDown = (event) => {
+            if (wrap.contains(event.target) || anchor.contains(event.target)) return;
+            this._closeGravityPopup();
+        };
+        const onKeyDown = (event) => {
+            if (event.key === 'Escape') this._closeGravityPopup();
+        };
+
+        document.body.appendChild(wrap);
+        document.addEventListener('pointerdown', onPointerDown);
+        window.addEventListener('keydown', onKeyDown);
+        this._gravityPopup = wrap;
+        this._gravityPopupHandlers = { onPointerDown, onKeyDown };
+    }
+
+    _closeGravityPopup() {
+        if (this._gravityPopup?.parentElement) {
+            this._gravityPopup.parentElement.removeChild(this._gravityPopup);
+        }
+        if (this._gravityPopupHandlers) {
+            document.removeEventListener('pointerdown', this._gravityPopupHandlers.onPointerDown);
+            window.removeEventListener('keydown', this._gravityPopupHandlers.onKeyDown);
+        }
+        this._gravityPopup = null;
+        this._gravityPopupHandlers = null;
+    }
+
+    _updateGravityDisplay() {
+        if (!this._gravityDisplay) return;
+        const g = this._worldConfig.gravity ?? {};
+        const gx = Number.isFinite(g.x) ? formatNum(g.x, 2) : 'n/a';
+        const gy = Number.isFinite(g.y) ? formatNum(g.y, 2) : 'n/a';
+        const gz = Number.isFinite(g.z) ? formatNum(g.z, 2) : 'n/a';
+        this._gravityDisplay.textContent = `${gx}  ${gy}  ${gz}`;
+    }
+
+    _openPositionPopup(anchor, { resetOnApply = false } = {}) {
+        this._closePositionPopup();
+        if (!this._hudRoot || !anchor) return;
+
+        const wrap = document.createElement('div');
+        wrap.style.position = 'fixed';
+        wrap.style.zIndex = '90';
+        wrap.style.padding = '10px';
+        wrap.style.borderRadius = '10px';
+        wrap.style.background = 'rgba(10, 14, 20, 0.92)';
+        wrap.style.border = '1px solid rgba(255,255,255,0.18)';
+        wrap.style.color = '#e9f2ff';
+        wrap.style.boxShadow = '0 10px 28px rgba(0,0,0,0.35)';
+        wrap.style.backdropFilter = 'blur(8px)';
+        wrap.style.display = 'flex';
+        wrap.style.flexDirection = 'column';
+        wrap.style.gap = '8px';
+        wrap.style.minWidth = '520px';
+
+        const helpSystem = this._helpSystem;
+
+        const makeTableInput = (value, step = 0.1) => {
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.inputMode = 'decimal';
+            input.step = String(step);
+            input.value = Number.isFinite(value) ? String(value) : '';
+            input.style.width = '70px';
+            input.style.padding = '3px 4px';
+            input.style.borderRadius = '8px';
+            input.style.border = '1px solid rgba(255,255,255,0.16)';
+            input.style.background = 'rgba(8, 12, 18, 0.6)';
+            input.style.color = '#e9f2ff';
+            input.style.fontWeight = '600';
+            input.style.fontSize = '11px';
+            return input;
+        };
+
+        const makeTableSlider = (value, { min, max, step }) => {
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.min = String(min);
+            slider.max = String(max);
+            slider.step = String(step);
+            const startValue = Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : 0;
+            slider.value = String(startValue);
+            slider.style.width = '70px';
+            slider.style.cursor = 'pointer';
+            return slider;
+        };
+
+        const makeHeaderCell = (text) => {
+            const cell = document.createElement('div');
+            cell.textContent = text;
+            cell.style.fontSize = '11px';
+            cell.style.fontWeight = '700';
+            cell.style.opacity = '0.75';
+            cell.style.textAlign = 'center';
+            return cell;
+        };
+
+        const makeLabelCell = (text, help) => {
+            const cell = document.createElement('div');
+            cell.style.display = 'grid';
+            cell.style.gridTemplateColumns = '1fr auto';
+            cell.style.alignItems = 'center';
+            cell.style.columnGap = '8px';
+            cell.style.fontSize = '11px';
+            cell.style.fontWeight = '700';
+            cell.style.opacity = '0.85';
+            const textSpan = document.createElement('div');
+            textSpan.textContent = text;
+            textSpan.style.whiteSpace = 'nowrap';
+            cell.appendChild(textSpan);
+            if (help && helpSystem) {
+                appendHelp(cell, help, helpSystem);
+                const helpEl = cell.lastElementChild;
+                if (helpEl) {
+                    helpEl.style.marginLeft = '0';
+                    helpEl.style.justifySelf = 'end';
+                }
+            }
+            return cell;
+        };
+
+        const makeEmptyCell = () => {
+            const cell = document.createElement('div');
+            cell.style.minHeight = '22px';
+            return cell;
+        };
+
+        const makeInputCell = (value, { min, max, step }) => {
+            const cell = document.createElement('div');
+            cell.style.display = 'flex';
+            cell.style.flexDirection = 'column';
+            cell.style.alignItems = 'center';
+            cell.style.gap = '6px';
+            cell.style.justifyContent = 'center';
+            const input = makeTableInput(value, step);
+            const slider = makeTableSlider(value, { min, max, step });
+            input.addEventListener('input', () => {
+                const next = parseFloat(input.value);
+                if (!Number.isFinite(next)) return;
+                const clamped = Math.min(max, Math.max(min, next));
+                slider.value = String(clamped);
+            });
+            slider.addEventListener('input', () => {
+                input.value = slider.value;
+            });
+            cell.appendChild(input);
+            cell.appendChild(slider);
+            return { cell, input, slider };
+        };
+
+        const table = document.createElement('div');
+        table.style.display = 'grid';
+        table.style.gridTemplateColumns = '200px repeat(4, minmax(0, 1fr))';
+        table.style.gap = '8px 10px';
+        table.style.alignItems = 'start';
+
+        table.appendChild(makeHeaderCell(''));
+        table.appendChild(makeHeaderCell('W'));
+        table.appendChild(makeHeaderCell('X'));
+        table.appendChild(makeHeaderCell('Y'));
+        table.appendChild(makeHeaderCell('Z'));
+
+        const rot = this._tuning?.chassis?.rotation ?? {};
+        const rotInputs = {
+            w: makeInputCell(rot.w, { min: -1, max: 1, step: 0.01 }),
+            x: makeInputCell(rot.x, { min: -1, max: 1, step: 0.01 }),
+            y: makeInputCell(rot.y, { min: -1, max: 1, step: 0.01 }),
+            z: makeInputCell(rot.z, { min: -1, max: 1, step: 0.01 })
+        };
+        table.appendChild(makeLabelCell('Rotation', INPUT_HELP.rotation));
+        table.appendChild(rotInputs.w.cell);
+        table.appendChild(rotInputs.x.cell);
+        table.appendChild(rotInputs.y.cell);
+        table.appendChild(rotInputs.z.cell);
+
+        const pos = this._tuning?.chassis?.translation ?? {};
+        const posInputs = {
+            x: makeInputCell(pos.x, { min: -50, max: 50, step: 0.1 }),
+            y: makeInputCell(pos.y, { min: -50, max: 50, step: 0.1 }),
+            z: makeInputCell(pos.z, { min: -50, max: 50, step: 0.1 })
+        };
+        table.appendChild(makeLabelCell('Position', INPUT_HELP.translation));
+        table.appendChild(makeEmptyCell());
+        table.appendChild(posInputs.x.cell);
+        table.appendChild(posInputs.y.cell);
+        table.appendChild(posInputs.z.cell);
+
+        const linvel = this._tuning?.chassis?.linvel ?? {};
+        const linvelInputs = {
+            x: makeInputCell(linvel.x, { min: -50, max: 50, step: 0.1 }),
+            y: makeInputCell(linvel.y, { min: -50, max: 50, step: 0.1 }),
+            z: makeInputCell(linvel.z, { min: -50, max: 50, step: 0.1 })
+        };
+        table.appendChild(makeLabelCell('Linear velocity (m/s)', INPUT_HELP.linvel));
+        table.appendChild(makeEmptyCell());
+        table.appendChild(linvelInputs.x.cell);
+        table.appendChild(linvelInputs.y.cell);
+        table.appendChild(linvelInputs.z.cell);
+
+        const angvel = this._tuning?.chassis?.angvel ?? {};
+        const angvelInputs = {
+            x: makeInputCell(angvel.x, { min: -20, max: 20, step: 0.1 }),
+            y: makeInputCell(angvel.y, { min: -20, max: 20, step: 0.1 }),
+            z: makeInputCell(angvel.z, { min: -20, max: 20, step: 0.1 })
+        };
+        table.appendChild(makeLabelCell('Angular velocity (rad/s)', INPUT_HELP.angvel));
+        table.appendChild(makeEmptyCell());
+        table.appendChild(angvelInputs.x.cell);
+        table.appendChild(angvelInputs.y.cell);
+        table.appendChild(angvelInputs.z.cell);
+
+        wrap.appendChild(table);
+
+        const applyValues = ({ reset = false, close = false } = {}) => {
+            const px = parseFloat(posInputs.x.input.value);
+            const py = parseFloat(posInputs.y.input.value);
+            const pz = parseFloat(posInputs.z.input.value);
+            if (Number.isFinite(px)) this._setInputValue('translationX', px);
+            if (Number.isFinite(py)) this._setInputValue('spawnHeight', py);
+            if (Number.isFinite(pz)) this._setInputValue('translationZ', pz);
+            const rw = parseFloat(rotInputs.w.input.value);
+            const rx = parseFloat(rotInputs.x.input.value);
+            const ry = parseFloat(rotInputs.y.input.value);
+            const rz = parseFloat(rotInputs.z.input.value);
+            if (Number.isFinite(rw)) this._setInputValue('rotationW', rw);
+            if (Number.isFinite(rx)) this._setInputValue('rotationX', rx);
+            if (Number.isFinite(ry)) this._setInputValue('rotationY', ry);
+            if (Number.isFinite(rz)) this._setInputValue('rotationZ', rz);
+            const lvx = parseFloat(linvelInputs.x.input.value);
+            const lvy = parseFloat(linvelInputs.y.input.value);
+            const lvz = parseFloat(linvelInputs.z.input.value);
+            if (Number.isFinite(lvx)) this._setInputValue('linvelX', lvx);
+            if (Number.isFinite(lvy)) this._setInputValue('linvelY', lvy);
+            if (Number.isFinite(lvz)) this._setInputValue('linvelZ', lvz);
+            const avx = parseFloat(angvelInputs.x.input.value);
+            const avy = parseFloat(angvelInputs.y.input.value);
+            const avz = parseFloat(angvelInputs.z.input.value);
+            if (Number.isFinite(avx)) this._setInputValue('angvelX', avx);
+            if (Number.isFinite(avy)) this._setInputValue('angvelY', avy);
+            if (Number.isFinite(avz)) this._setInputValue('angvelZ', avz);
+            if (reset) this._resetInitialPosition();
+            if (close) this._closePositionPopup();
+        };
+
+        const actions = document.createElement('div');
+        actions.style.display = 'flex';
+        actions.style.alignItems = 'center';
+        actions.style.justifyContent = 'space-between';
+        actions.style.gap = '8px';
+
+        const liveWrap = document.createElement('label');
+        liveWrap.style.display = 'inline-flex';
+        liveWrap.style.alignItems = 'center';
+        liveWrap.style.gap = '6px';
+        liveWrap.style.fontSize = '11px';
+        liveWrap.style.fontWeight = '700';
+        liveWrap.style.opacity = '0.85';
+        liveWrap.style.cursor = 'pointer';
+
+        const liveCheckbox = document.createElement('input');
+        liveCheckbox.type = 'checkbox';
+        liveCheckbox.style.position = 'absolute';
+        liveCheckbox.style.opacity = '0';
+        liveCheckbox.style.width = '0';
+        liveCheckbox.style.height = '0';
+
+        const liveTrack = document.createElement('span');
+        liveTrack.style.width = '30px';
+        liveTrack.style.height = '16px';
+        liveTrack.style.borderRadius = '999px';
+        liveTrack.style.background = 'rgba(255,255,255,0.2)';
+        liveTrack.style.boxShadow = 'inset 0 0 0 1px rgba(255,255,255,0.2)';
+        liveTrack.style.position = 'relative';
+        liveTrack.style.transition = 'background 150ms ease';
+
+        const liveKnob = document.createElement('span');
+        liveKnob.style.position = 'absolute';
+        liveKnob.style.top = '2px';
+        liveKnob.style.left = '2px';
+        liveKnob.style.width = '12px';
+        liveKnob.style.height = '12px';
+        liveKnob.style.borderRadius = '999px';
+        liveKnob.style.background = '#e9f2ff';
+        liveKnob.style.boxShadow = '0 0 6px rgba(0,0,0,0.25)';
+        liveKnob.style.transition = 'transform 150ms ease';
+
+        liveTrack.appendChild(liveKnob);
+
+        const liveIntervalMs = 3000;
+        const liveIntervalSeconds = formatNum(liveIntervalMs / 1000, liveIntervalMs % 1000 === 0 ? 0 : 1);
+
+        const liveLabel = document.createElement('span');
+        liveLabel.textContent = 'Live';
+        appendHelp(
+            liveLabel,
+            `Auto-reset the vehicle using the current reset configuration every ${liveIntervalSeconds} seconds.`,
+            this._helpSystem
+        );
+
+        const syncLiveToggle = () => {
+            if (liveCheckbox.checked) {
+                liveTrack.style.background = 'rgba(76,255,122,0.45)';
+                liveKnob.style.transform = 'translateX(14px)';
+            } else {
+                liveTrack.style.background = 'rgba(255,255,255,0.2)';
+                liveKnob.style.transform = 'translateX(0)';
+            }
+        };
+
+        syncLiveToggle();
+        liveWrap.appendChild(liveCheckbox);
+        liveWrap.appendChild(liveTrack);
+        liveWrap.appendChild(liveLabel);
+
+        const liveStatus = document.createElement('span');
+        liveStatus.textContent = 'Reseting';
+        liveStatus.style.fontSize = '11px';
+        liveStatus.style.fontWeight = '700';
+        liveStatus.style.opacity = '0.7';
+        liveStatus.style.display = 'none';
+        this._positionPopupLiveStatus = liveStatus;
+
+        const liveGroup = document.createElement('div');
+        liveGroup.style.display = 'inline-flex';
+        liveGroup.style.alignItems = 'center';
+        liveGroup.style.gap = '8px';
+        liveGroup.appendChild(liveWrap);
+        liveGroup.appendChild(liveStatus);
+
+        const clearLiveTimers = () => {
+            if (this._positionPopupLiveInterval) {
+                clearInterval(this._positionPopupLiveInterval);
+                this._positionPopupLiveInterval = null;
+            }
+            if (this._positionPopupLiveShowTimer) {
+                clearTimeout(this._positionPopupLiveShowTimer);
+                this._positionPopupLiveShowTimer = null;
+            }
+            if (this._positionPopupLiveHideTimer) {
+                clearTimeout(this._positionPopupLiveHideTimer);
+                this._positionPopupLiveHideTimer = null;
+            }
+            if (this._positionPopupLiveStatus) {
+                this._positionPopupLiveStatus.style.display = 'none';
+            }
+        };
+
+        const liveLeadMs = Math.max(0, liveIntervalMs - 1000);
+        const scheduleLiveShow = () => {
+            if (this._positionPopupLiveShowTimer) {
+                clearTimeout(this._positionPopupLiveShowTimer);
+            }
+            this._positionPopupLiveShowTimer = window.setTimeout(() => {
+                if (this._positionPopupLiveStatus) {
+                    this._positionPopupLiveStatus.style.display = 'inline-flex';
+                }
+            }, liveLeadMs);
+        };
+        const scheduleLiveHide = () => {
+            if (this._positionPopupLiveHideTimer) {
+                clearTimeout(this._positionPopupLiveHideTimer);
+            }
+            this._positionPopupLiveHideTimer = window.setTimeout(() => {
+                if (this._positionPopupLiveStatus) {
+                    this._positionPopupLiveStatus.style.display = 'none';
+                }
+            }, 500);
+        };
+
+        liveCheckbox.addEventListener('change', () => {
+            syncLiveToggle();
+            clearLiveTimers();
+            if (liveCheckbox.checked) {
+                scheduleLiveShow();
+                this._positionPopupLiveInterval = window.setInterval(() => {
+                    applyValues({ reset: true, close: false });
+                    scheduleLiveHide();
+                    scheduleLiveShow();
+                }, liveIntervalMs);
+            }
+        });
+
+        const cancel = makeButton('Cancel');
+        cancel.style.padding = '6px 10px';
+        cancel.style.fontSize = '11px';
+        cancel.style.borderRadius = '8px';
+        cancel.style.marginRight = '0';
+        cancel.addEventListener('click', () => this._closePositionPopup());
+
+        const apply = makeButton('Apply');
+        apply.style.padding = '6px 10px';
+        apply.style.fontSize = '11px';
+        apply.style.borderRadius = '8px';
+        apply.style.marginRight = '0';
+        apply.addEventListener('click', () => {
+            applyValues({ reset: resetOnApply, close: true });
+        });
+
+        const buttons = document.createElement('div');
+        buttons.style.display = 'flex';
+        buttons.style.gap = '8px';
+        buttons.appendChild(cancel);
+        buttons.appendChild(apply);
+
+        actions.appendChild(liveGroup);
+        actions.appendChild(buttons);
+        wrap.appendChild(actions);
+
+        const rect = anchor.getBoundingClientRect();
+        const pad = 8;
+        const left = Math.min(window.innerWidth - 560, Math.max(pad, rect.right + pad));
+        const top = Math.min(window.innerHeight - 360, Math.max(pad, rect.top - 8));
+        wrap.style.left = `${left}px`;
+        wrap.style.top = `${top}px`;
+
+        const onPointerDown = (event) => {
+            if (wrap.contains(event.target) || anchor.contains(event.target)) return;
+            this._closePositionPopup();
+        };
+        const onKeyDown = (event) => {
+            if (event.key === 'Escape') this._closePositionPopup();
+        };
+
+        document.body.appendChild(wrap);
+        document.addEventListener('pointerdown', onPointerDown);
+        window.addEventListener('keydown', onKeyDown);
+        this._positionPopup = wrap;
+        this._positionPopupHandlers = { onPointerDown, onKeyDown };
+    }
+
+    _closePositionPopup() {
+        if (this._positionPopup?.parentElement) {
+            this._positionPopup.parentElement.removeChild(this._positionPopup);
+        }
+        if (this._positionPopupHandlers) {
+            document.removeEventListener('pointerdown', this._positionPopupHandlers.onPointerDown);
+            window.removeEventListener('keydown', this._positionPopupHandlers.onKeyDown);
+        }
+        if (this._positionPopupLiveInterval) {
+            clearInterval(this._positionPopupLiveInterval);
+            this._positionPopupLiveInterval = null;
+        }
+        if (this._positionPopupLiveShowTimer) {
+            clearTimeout(this._positionPopupLiveShowTimer);
+            this._positionPopupLiveShowTimer = null;
+        }
+        if (this._positionPopupLiveHideTimer) {
+            clearTimeout(this._positionPopupLiveHideTimer);
+            this._positionPopupLiveHideTimer = null;
+        }
+        if (this._positionPopupLiveStatus) {
+            this._positionPopupLiveStatus.style.display = 'none';
+        }
+        this._positionPopup = null;
+        this._positionPopupHandlers = null;
+        this._positionPopupLiveStatus = null;
+    }
+
+    _openInertiaPopup(anchor) {
+        this._closeInertiaPopup();
+        if (!this._hudRoot || !anchor) return;
+
+        const wrap = document.createElement('div');
+        wrap.style.position = 'fixed';
+        wrap.style.zIndex = '90';
+        wrap.style.padding = '10px';
+        wrap.style.borderRadius = '10px';
+        wrap.style.background = 'rgba(10, 14, 20, 0.92)';
+        wrap.style.border = '1px solid rgba(255,255,255,0.18)';
+        wrap.style.color = '#e9f2ff';
+        wrap.style.boxShadow = '0 10px 28px rgba(0,0,0,0.35)';
+        wrap.style.backdropFilter = 'blur(8px)';
+        wrap.style.display = 'flex';
+        wrap.style.flexDirection = 'column';
+        wrap.style.gap = '8px';
+        wrap.style.minWidth = '220px';
+
+        const makeField = (title, value, key) => {
+            const row = document.createElement('div');
+            row.style.display = 'flex';
+            row.style.alignItems = 'center';
+            row.style.justifyContent = 'space-between';
+            row.style.gap = '10px';
+
+            const label = document.createElement('div');
+            label.textContent = title;
+            label.style.fontSize = '11px';
+            label.style.fontWeight = '700';
+            label.style.opacity = '0.85';
+            appendHelp(label, INPUT_HELP[key], this._helpSystem);
+
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.inputMode = 'decimal';
+            input.step = '0.01';
+            input.value = Number.isFinite(value) ? String(value) : '';
+            input.style.width = '90px';
+            input.style.padding = '3px 4px';
+            input.style.borderRadius = '8px';
+            input.style.border = '1px solid rgba(255,255,255,0.16)';
+            input.style.background = 'rgba(8, 12, 18, 0.6)';
+            input.style.color = '#e9f2ff';
+            input.style.fontWeight = '600';
+            input.style.fontSize = '11px';
+            input.addEventListener('input', () => {
+                const next = parseFloat(input.value);
+                if (!Number.isFinite(next)) return;
+                this._setInputValue(key, next);
+            });
+
+            row.appendChild(label);
+            row.appendChild(input);
+            wrap.appendChild(row);
+        };
+
+        const inertia = this._tuning?.chassis?.additionalMassProperties?.inertia ?? {};
+        makeField('Inertia X', inertia.x, 'massPropsInertiaX');
+        makeField('Inertia Y', inertia.y, 'massPropsInertiaY');
+        makeField('Inertia Z', inertia.z, 'massPropsInertiaZ');
+
+        const rect = anchor.getBoundingClientRect();
+        const pad = 8;
+        const left = Math.min(window.innerWidth - 260, Math.max(pad, rect.right + pad));
+        const top = Math.min(window.innerHeight - 220, Math.max(pad, rect.top - 8));
+        wrap.style.left = `${left}px`;
+        wrap.style.top = `${top}px`;
+
+        const onPointerDown = (event) => {
+            if (wrap.contains(event.target) || anchor.contains(event.target)) return;
+            this._closeInertiaPopup();
+        };
+        const onKeyDown = (event) => {
+            if (event.key === 'Escape') this._closeInertiaPopup();
+        };
+
+        document.body.appendChild(wrap);
+        document.addEventListener('pointerdown', onPointerDown);
+        window.addEventListener('keydown', onKeyDown);
+        this._inertiaPopup = wrap;
+        this._inertiaPopupHandlers = { onPointerDown, onKeyDown };
+    }
+
+    _closeInertiaPopup() {
+        if (this._inertiaPopup?.parentElement) {
+            this._inertiaPopup.parentElement.removeChild(this._inertiaPopup);
+        }
+        if (this._inertiaPopupHandlers) {
+            document.removeEventListener('pointerdown', this._inertiaPopupHandlers.onPointerDown);
+            window.removeEventListener('keydown', this._inertiaPopupHandlers.onKeyDown);
+        }
+        this._inertiaPopup = null;
+        this._inertiaPopupHandlers = null;
+    }
+
+    _openInertiaFramePopup(anchor) {
+        this._closeInertiaFramePopup();
+        if (!this._hudRoot || !anchor) return;
+
+        const wrap = document.createElement('div');
+        wrap.style.position = 'fixed';
+        wrap.style.zIndex = '90';
+        wrap.style.padding = '10px';
+        wrap.style.borderRadius = '10px';
+        wrap.style.background = 'rgba(10, 14, 20, 0.92)';
+        wrap.style.border = '1px solid rgba(255,255,255,0.18)';
+        wrap.style.color = '#e9f2ff';
+        wrap.style.boxShadow = '0 10px 28px rgba(0,0,0,0.35)';
+        wrap.style.backdropFilter = 'blur(8px)';
+        wrap.style.display = 'flex';
+        wrap.style.flexDirection = 'column';
+        wrap.style.gap = '8px';
+        wrap.style.minWidth = '220px';
+
+        const makeField = (title, value, key) => {
+            const row = document.createElement('div');
+            row.style.display = 'flex';
+            row.style.alignItems = 'center';
+            row.style.justifyContent = 'space-between';
+            row.style.gap = '10px';
+
+            const label = document.createElement('div');
+            label.textContent = title;
+            label.style.fontSize = '11px';
+            label.style.fontWeight = '700';
+            label.style.opacity = '0.85';
+            appendHelp(label, INPUT_HELP[key], this._helpSystem);
+
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.inputMode = 'decimal';
+            input.step = '0.01';
+            input.value = Number.isFinite(value) ? String(value) : '';
+            input.style.width = '90px';
+            input.style.padding = '3px 4px';
+            input.style.borderRadius = '8px';
+            input.style.border = '1px solid rgba(255,255,255,0.16)';
+            input.style.background = 'rgba(8, 12, 18, 0.6)';
+            input.style.color = '#e9f2ff';
+            input.style.fontWeight = '600';
+            input.style.fontSize = '11px';
+            input.addEventListener('input', () => {
+                const next = parseFloat(input.value);
+                if (!Number.isFinite(next)) return;
+                this._setInputValue(key, next);
+            });
+
+            row.appendChild(label);
+            row.appendChild(input);
+            wrap.appendChild(row);
+        };
+
+        const frame = this._tuning?.chassis?.additionalMassProperties?.inertiaFrame ?? {};
+        makeField('Frame W', frame.w, 'massPropsFrameW');
+        makeField('Frame X', frame.x, 'massPropsFrameX');
+        makeField('Frame Y', frame.y, 'massPropsFrameY');
+        makeField('Frame Z', frame.z, 'massPropsFrameZ');
+
+        const rect = anchor.getBoundingClientRect();
+        const pad = 8;
+        const left = Math.min(window.innerWidth - 260, Math.max(pad, rect.right + pad));
+        const top = Math.min(window.innerHeight - 240, Math.max(pad, rect.top - 8));
+        wrap.style.left = `${left}px`;
+        wrap.style.top = `${top}px`;
+
+        const onPointerDown = (event) => {
+            if (wrap.contains(event.target) || anchor.contains(event.target)) return;
+            this._closeInertiaFramePopup();
+        };
+        const onKeyDown = (event) => {
+            if (event.key === 'Escape') this._closeInertiaFramePopup();
+        };
+
+        document.body.appendChild(wrap);
+        document.addEventListener('pointerdown', onPointerDown);
+        window.addEventListener('keydown', onKeyDown);
+        this._inertiaFramePopup = wrap;
+        this._inertiaFramePopupHandlers = { onPointerDown, onKeyDown };
+    }
+
+    _closeInertiaFramePopup() {
+        if (this._inertiaFramePopup?.parentElement) {
+            this._inertiaFramePopup.parentElement.removeChild(this._inertiaFramePopup);
+        }
+        if (this._inertiaFramePopupHandlers) {
+            document.removeEventListener('pointerdown', this._inertiaFramePopupHandlers.onPointerDown);
+            window.removeEventListener('keydown', this._inertiaFramePopupHandlers.onKeyDown);
+        }
+        this._inertiaFramePopup = null;
+        this._inertiaFramePopupHandlers = null;
+    }
+
+    _openLockingPopup(anchor) {
+        this._closeLockingPopup();
+        if (!this._hudRoot || !anchor) return;
+
+        const wrap = document.createElement('div');
+        wrap.style.position = 'fixed';
+        wrap.style.zIndex = '90';
+        wrap.style.padding = '10px';
+        wrap.style.borderRadius = '10px';
+        wrap.style.background = 'rgba(10, 14, 20, 0.92)';
+        wrap.style.border = '1px solid rgba(255,255,255,0.18)';
+        wrap.style.color = '#e9f2ff';
+        wrap.style.boxShadow = '0 10px 28px rgba(0,0,0,0.35)';
+        wrap.style.backdropFilter = 'blur(8px)';
+        wrap.style.display = 'flex';
+        wrap.style.flexDirection = 'column';
+        wrap.style.gap = '8px';
+        wrap.style.minWidth = '220px';
+
+        const attach = (control) => {
+            if (!control?.wrap) return;
+            if (control.wrap.parentElement) {
+                control.wrap.parentElement.removeChild(control.wrap);
+            }
+            control.wrap.style.margin = '6px 0';
+            wrap.appendChild(control.wrap);
+        };
+
+        attach(this._inputControls.lockTranslations);
+        attach(this._inputControls.lockRotations);
+        attach(this._inputControls.enabledRotX);
+        attach(this._inputControls.enabledRotY);
+        attach(this._inputControls.enabledRotZ);
+
+        const rect = anchor.getBoundingClientRect();
+        const pad = 8;
+        const left = Math.min(window.innerWidth - 260, Math.max(pad, rect.right + pad));
+        const top = Math.min(window.innerHeight - 240, Math.max(pad, rect.top - 8));
+        wrap.style.left = `${left}px`;
+        wrap.style.top = `${top}px`;
+
+        const onPointerDown = (event) => {
+            if (wrap.contains(event.target) || anchor.contains(event.target)) return;
+            this._closeLockingPopup();
+        };
+        const onKeyDown = (event) => {
+            if (event.key === 'Escape') this._closeLockingPopup();
+        };
+
+        document.body.appendChild(wrap);
+        document.addEventListener('pointerdown', onPointerDown);
+        window.addEventListener('keydown', onKeyDown);
+        this._lockingPopup = wrap;
+        this._lockingPopupHandlers = { onPointerDown, onKeyDown };
+    }
+
+    _closeLockingPopup() {
+        if (this._lockingPopup?.parentElement) {
+            this._lockingPopup.parentElement.removeChild(this._lockingPopup);
+        }
+        if (this._lockingPopupHandlers) {
+            document.removeEventListener('pointerdown', this._lockingPopupHandlers.onPointerDown);
+            window.removeEventListener('keydown', this._lockingPopupHandlers.onKeyDown);
+        }
+        this._lockingPopup = null;
+        this._lockingPopupHandlers = null;
+    }
+
+    _openForcesPopup(anchor) {
+        if (this._forcesPopup) {
+            this._closeForcesPopup();
+            return;
+        }
+        if (!this._hudRoot || !anchor) return;
+
+        const wrap = document.createElement('div');
+        wrap.style.position = 'fixed';
+        wrap.style.zIndex = '90';
+        wrap.style.padding = '12px';
+        wrap.style.borderRadius = '12px';
+        wrap.style.background = 'rgba(10, 14, 20, 0.92)';
+        wrap.style.border = '1px solid rgba(255,255,255,0.18)';
+        wrap.style.color = '#e9f2ff';
+        wrap.style.boxShadow = '0 10px 28px rgba(0,0,0,0.35)';
+        wrap.style.backdropFilter = 'blur(8px)';
+        wrap.style.display = 'flex';
+        wrap.style.flexDirection = 'column';
+        wrap.style.gap = '10px';
+        wrap.style.minWidth = '600px';
+
+        const grid = document.createElement('div');
+        grid.style.display = 'grid';
+        grid.style.gridTemplateColumns = 'minmax(170px, 1fr) minmax(170px, 1fr) minmax(170px, 1fr)';
+        grid.style.gap = '14px';
+
+        const attachWraps = (wraps, container) => {
+            for (const item of wraps) {
+                if (!item) continue;
+                if (item.parentElement) item.parentElement.removeChild(item);
+                container.appendChild(item);
+            }
+        };
+
+        const attachButtons = (buttons, container) => {
+            for (const btn of buttons) {
+                if (!btn) continue;
+                if (btn.parentElement) btn.parentElement.removeChild(btn);
+                btn.style.marginRight = '0';
+                container.appendChild(btn);
+            }
+        };
+
+        const makeColumn = (title, wraps, buttons) => {
+            const col = document.createElement('div');
+            col.style.display = 'flex';
+            col.style.flexDirection = 'column';
+            col.style.gap = '6px';
+
+            const label = makeLabel(title);
+            label.style.marginBottom = '4px';
+            col.appendChild(label);
+
+            attachWraps(wraps, col);
+
+            const buttonRow = document.createElement('div');
+            buttonRow.style.display = 'flex';
+            buttonRow.style.flexWrap = 'wrap';
+            buttonRow.style.gap = '8px';
+            buttonRow.style.marginTop = '6px';
+            attachButtons(buttons, buttonRow);
+            col.appendChild(buttonRow);
+
+            return col;
+        };
+
+        const controls = this._forcePopupControls ?? {};
+        const buttons = this._forcePopupButtons ?? {};
+
+        const forceCol = makeColumn(
+            'Force',
+            [
+                controls.forceX,
+                controls.forceY,
+                controls.forceZ,
+                controls.forcePointX,
+                controls.forcePointY,
+                controls.forcePointZ
+            ],
+            [
+                buttons.applyForce,
+                buttons.applyForceAtPoint,
+                buttons.resetForces
+            ]
+        );
+
+        const impulseCol = makeColumn(
+            'Impulse',
+            [
+                controls.impulseX,
+                controls.impulseY,
+                controls.impulseZ,
+                controls.impulsePointX,
+                controls.impulsePointY,
+                controls.impulsePointZ
+            ],
+            [
+                buttons.applyImpulse,
+                buttons.applyImpulseAtPoint
+            ]
+        );
+
+        const torqueCol = makeColumn(
+            'Torque',
+            [
+                controls.torqueX,
+                controls.torqueY,
+                controls.torqueZ,
+                controls.torqueImpulseX,
+                controls.torqueImpulseY,
+                controls.torqueImpulseZ
+            ],
+            [
+                buttons.applyTorque,
+                buttons.applyTorqueImpulse,
+                buttons.resetTorques
+            ]
+        );
+
+        grid.appendChild(forceCol);
+        grid.appendChild(impulseCol);
+        grid.appendChild(torqueCol);
+
+        const logCol = document.createElement('div');
+        logCol.style.display = 'flex';
+        logCol.style.flexDirection = 'column';
+        logCol.style.gap = '6px';
+        logCol.style.display = 'none';
+
+        const logLabel = makeLabel('Applied');
+        logLabel.style.marginBottom = '4px';
+        logCol.appendChild(logLabel);
+
+        const logList = document.createElement('div');
+        logList.style.display = 'flex';
+        logList.style.flexDirection = 'column';
+        logList.style.gap = '6px';
+        logCol.appendChild(logList);
+
+        grid.appendChild(logCol);
+        wrap.appendChild(grid);
+
+        const rect = anchor.getBoundingClientRect();
+        const pad = 8;
+        const left = Math.min(window.innerWidth - 640, Math.max(pad, rect.right + pad));
+        const top = Math.min(window.innerHeight - 520, Math.max(pad, rect.top - 8));
+        wrap.style.left = `${left}px`;
+        wrap.style.top = `${top}px`;
+
+        const onPointerDown = (event) => {
+            if (wrap.contains(event.target) || anchor.contains(event.target)) return;
+            this._closeForcesPopup();
+        };
+        const onKeyDown = (event) => {
+            if (event.key === 'Escape') this._closeForcesPopup();
+        };
+
+        document.body.appendChild(wrap);
+        document.addEventListener('pointerdown', onPointerDown);
+        window.addEventListener('keydown', onKeyDown);
+        this._forcesPopup = wrap;
+        this._forcesPopupHandlers = { onPointerDown, onKeyDown };
+        this._forcesPopupGrid = grid;
+        this._forcesPopupLogCol = logCol;
+        this._forcesPopupLogEl = logList;
+        this._refreshForcesPopupLog();
+    }
+
+    _closeForcesPopup() {
+        if (this._forcesPopup?.parentElement) {
+            this._forcesPopup.parentElement.removeChild(this._forcesPopup);
+        }
+        if (this._forcesPopupHandlers) {
+            document.removeEventListener('pointerdown', this._forcesPopupHandlers.onPointerDown);
+            window.removeEventListener('keydown', this._forcesPopupHandlers.onKeyDown);
+        }
+        this._forcesPopup = null;
+        this._forcesPopupHandlers = null;
+        this._forcesPopupGrid = null;
+        this._forcesPopupLogCol = null;
+        this._forcesPopupLogEl = null;
+    }
+
+    _openTestsPopup(anchor) {
+        if (this._testsPopup) {
+            this._closeTestsPopup();
+            return;
+        }
+        if (!this._hudRoot || !anchor) return;
+
+        const wrap = document.createElement('div');
+        wrap.style.position = 'fixed';
+        wrap.style.zIndex = '90';
+        wrap.style.padding = '12px';
+        wrap.style.borderRadius = '12px';
+        wrap.style.background = 'rgba(10, 14, 20, 0.92)';
+        wrap.style.border = '1px solid rgba(255,255,255,0.18)';
+        wrap.style.color = '#e9f2ff';
+        wrap.style.boxShadow = '0 10px 28px rgba(0,0,0,0.35)';
+        wrap.style.backdropFilter = 'blur(8px)';
+        wrap.style.display = 'flex';
+        wrap.style.flexDirection = 'column';
+        wrap.style.gap = '8px';
+        wrap.style.minWidth = '220px';
+
+        for (const test of PRESET_TESTS) {
+            const btn = makeButton(test.label);
+            btn.style.padding = '6px 10px';
+            btn.style.fontSize = '13px';
+            btn.style.borderRadius = '8px';
+            btn.style.marginRight = '0';
+            btn.style.width = '200px';
+            btn.addEventListener('click', () => {
+                this._startTest(test);
+                this._closeTestsPopup();
+            });
+            wrap.appendChild(btn);
+        }
+
+        const rect = anchor.getBoundingClientRect();
+        const pad = 8;
+        const left = Math.min(window.innerWidth - 260, Math.max(pad, rect.right + pad));
+        const top = Math.min(window.innerHeight - 220, Math.max(pad, rect.top - 8));
+        wrap.style.left = `${left}px`;
+        wrap.style.top = `${top}px`;
+
+        const onPointerDown = (event) => {
+            if (wrap.contains(event.target) || anchor.contains(event.target)) return;
+            this._closeTestsPopup();
+        };
+        const onKeyDown = (event) => {
+            if (event.key === 'Escape') this._closeTestsPopup();
+        };
+
+        document.body.appendChild(wrap);
+        document.addEventListener('pointerdown', onPointerDown);
+        window.addEventListener('keydown', onKeyDown);
+        this._testsPopup = wrap;
+        this._testsPopupHandlers = { onPointerDown, onKeyDown };
+    }
+
+    _closeTestsPopup() {
+        if (this._testsPopup?.parentElement) {
+            this._testsPopup.parentElement.removeChild(this._testsPopup);
+        }
+        if (this._testsPopupHandlers) {
+            document.removeEventListener('pointerdown', this._testsPopupHandlers.onPointerDown);
+            window.removeEventListener('keydown', this._testsPopupHandlers.onKeyDown);
+        }
+        this._testsPopup = null;
+        this._testsPopupHandlers = null;
+    }
+
+    _openTestPopup(test) {
+        this._closeTestPopup();
+        if (!this._outputPanel) return;
+
+        const wrap = document.createElement('div');
+        stylePanel(wrap, { interactive: true });
+        wrap.style.position = 'fixed';
+        wrap.style.zIndex = '70';
+        wrap.style.minWidth = '220px';
+        wrap.style.maxWidth = '260px';
+        wrap.style.padding = '12px';
+        wrap.style.minHeight = '120px';
+        wrap.style.display = 'flex';
+        wrap.style.flexDirection = 'column';
+        wrap.style.gap = '14px';
+
+        const title = document.createElement('div');
+        title.textContent = test?.label ?? 'Automated Test';
+        title.style.fontSize = '13px';
+        title.style.fontWeight = '800';
+        title.style.letterSpacing = '0.2px';
+        wrap.appendChild(title);
+
+        const button = makeButton('Recording');
+        button.style.padding = '6px 10px';
+        button.style.fontSize = '13px';
+        button.style.borderRadius = '8px';
+        button.style.marginRight = '0';
+        button.style.width = '100%';
+        button.textContent = '';
+        button.disabled = true;
+        button.style.position = 'relative';
+
+        const label = document.createElement('span');
+        label.textContent = 'Recording';
+        label.style.display = 'block';
+        label.style.width = '100%';
+        label.style.textAlign = 'center';
+        button.appendChild(label);
+
+        const dot = document.createElement('span');
+        dot.style.position = 'absolute';
+        dot.style.right = '12px';
+        dot.style.top = '50%';
+        dot.style.transform = 'translateY(-50%)';
+        dot.style.width = '9px';
+        dot.style.height = '9px';
+        dot.style.borderRadius = '999px';
+        dot.style.background = 'rgba(255,45,45,0.95)';
+        dot.style.boxShadow = '0 0 10px rgba(255,45,45,0.6), 0 0 0 1px rgba(255,45,45,0.9)';
+        dot.style.visibility = 'visible';
+        button.appendChild(dot);
+
+        wrap.appendChild(button);
+
+        const rect = this._outputPanel.getBoundingClientRect();
+        const pad = 10;
+        const left = Math.max(pad, rect.left - 260 - pad);
+        wrap.style.left = `${left}px`;
+        wrap.style.bottom = `${pad}px`;
+
+        const onPointerDown = (event) => {
+            if (wrap.contains(event.target)) return;
+            this._closeTestPopup();
+        };
+        const onKeyDown = (event) => {
+            if (event.key === 'Escape') this._closeTestPopup();
+        };
+
+        document.body.appendChild(wrap);
+        document.addEventListener('pointerdown', onPointerDown);
+        window.addEventListener('keydown', onKeyDown);
+        this._testPopup = wrap;
+        this._testPopupHandlers = { onPointerDown, onKeyDown };
+        this._testPopupTitle = title;
+        this._testPopupButton = button;
+        this._testPopupLabel = label;
+        this._testPopupDot = dot;
+        this._setTestPopupState('recording');
+    }
+
+    _setTestPopupState(state) {
+        if (!this._testPopupButton || !this._testPopupLabel || !this._testPopupDot) return;
+        if (this._testPopupCloseTimer) {
+            clearTimeout(this._testPopupCloseTimer);
+            this._testPopupCloseTimer = null;
+        }
+        if (this._testPopupEllipsisTimer) {
+            clearInterval(this._testPopupEllipsisTimer);
+            this._testPopupEllipsisTimer = null;
+        }
+        if (state === 'recording') {
+            const dots = ['.', '..', '...'];
+            let idx = 0;
+            this._testPopupLabel.textContent = `Recording${dots[idx]}`;
+            this._testPopupDot.style.visibility = 'visible';
+            this._testPopupButton.disabled = true;
+            this._testPopupButton.onclick = null;
+            this._testPopupEllipsisTimer = window.setInterval(() => {
+                idx = (idx + 1) % dots.length;
+                if (this._testPopupLabel) {
+                    this._testPopupLabel.textContent = `Recording${dots[idx]}`;
+                }
+            }, 400);
+        } else if (state === 'done') {
+            this._testPopupLabel.textContent = 'Copy telemetry';
+            this._testPopupDot.style.visibility = 'hidden';
+            this._testPopupButton.disabled = false;
+            this._testPopupButton.onclick = () => {
+                this._copyTelemetry().then(() => {
+                    this._showAxisToast('Telemetry copied to clipboard');
+                    this._closeTestPopup();
+                });
+            };
+            this._testPopupCloseTimer = window.setTimeout(() => {
+                this._closeTestPopup();
+            }, 5000);
+        }
+    }
+
+    _closeTestPopup() {
+        if (this._testPopup?.parentElement) {
+            this._testPopup.parentElement.removeChild(this._testPopup);
+        }
+        if (this._testPopupHandlers) {
+            document.removeEventListener('pointerdown', this._testPopupHandlers.onPointerDown);
+            window.removeEventListener('keydown', this._testPopupHandlers.onKeyDown);
+        }
+        if (this._testPopupCloseTimer) {
+            clearTimeout(this._testPopupCloseTimer);
+        }
+        if (this._testPopupEllipsisTimer) {
+            clearInterval(this._testPopupEllipsisTimer);
+        }
+        this._testPopup = null;
+        this._testPopupHandlers = null;
+        this._testPopupTitle = null;
+        this._testPopupButton = null;
+        this._testPopupLabel = null;
+        this._testPopupDot = null;
+        this._testPopupCloseTimer = null;
+        this._testPopupEllipsisTimer = null;
+        this._testPopupEllipsisTimer = null;
+    }
+
+    _recordForceEvent(label, vec, point = null) {
+        const now = Date.now();
+        const fmt = (v) => `${formatNum(v?.x, 2)}, ${formatNum(v?.y, 2)}, ${formatNum(v?.z, 2)}`;
+        let text = `${label}: ${fmt(vec)}`;
+        if (point) text += ` @ ${fmt(point)}`;
+        const key = `event-${now}-${this._forceActionSeq++}`;
+        this._setForceLogEntry(key, text, now + 4000);
+    }
+
+    _setForceLogEntry(key, text, expiresAt = null) {
+        if (!this._forceActionLog) this._forceActionLog = [];
+        const idx = this._forceActionLog.findIndex((entry) => entry.key === key);
+        const isConstant = key.startsWith('const-');
+        if (!text) {
+            if (idx >= 0) this._forceActionLog.splice(idx, 1);
+        } else if (idx >= 0) {
+            const entry = { key, text, expiresAt };
+            if (isConstant && idx > 0) {
+                this._forceActionLog.splice(idx, 1);
+                this._forceActionLog.unshift(entry);
+            } else {
+                this._forceActionLog[idx] = entry;
+            }
+        } else {
+            this._forceActionLog.unshift({ key, text, expiresAt });
+        }
+        this._pruneForceEvents();
+        if (this._forceActionLog.length > this._forceActionMax) {
+            this._forceActionLog.length = this._forceActionMax;
+        }
+        this._refreshForcesPopupLog();
+    }
+
+    _pruneForceEvents(now = Date.now()) {
+        if (!this._forceActionLog?.length) return;
+        const next = this._forceActionLog.filter((entry) => !entry.expiresAt || entry.expiresAt > now);
+        if (next.length !== this._forceActionLog.length) {
+            this._forceActionLog = next;
+        }
+    }
+
+    _updateForceLogFromSnapshot(snapshot) {
+        const force = snapshot?.body?.force;
+        const torque = snapshot?.body?.torque;
+        if (vecNonZero(force)) {
+            this._setForceLogEntry('const-force', `Force: ${formatVec3(force, 2)}`, null);
+        } else {
+            this._setForceLogEntry('const-force', null);
+        }
+        if (vecNonZero(torque)) {
+            this._setForceLogEntry('const-torque', `Torque: ${formatVec3(torque, 2)}`, null);
+        } else {
+            this._setForceLogEntry('const-torque', null);
+        }
+    }
+
+    _refreshForcesPopupLog() {
+        if (!this._forcesPopupLogEl || !this._forcesPopupGrid || !this._forcesPopupLogCol) return;
+        const log = this._forceActionLog ?? [];
+        const show = log.length > 0;
+        this._forcesPopupLogCol.style.display = show ? 'flex' : 'none';
+        this._forcesPopupGrid.style.gridTemplateColumns = show
+            ? 'minmax(170px, 1fr) minmax(170px, 1fr) minmax(170px, 1fr) minmax(170px, 1fr)'
+            : 'minmax(170px, 1fr) minmax(170px, 1fr) minmax(170px, 1fr)';
+        if (this._forcesPopup) {
+            this._forcesPopup.style.minWidth = show ? '760px' : '600px';
+        }
+        this._forcesPopupLogEl.textContent = '';
+        if (!show) return;
+        for (const entry of log) {
+            const row = document.createElement('div');
+            row.textContent = entry.text;
+            row.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+            row.style.fontSize = '11px';
+            row.style.opacity = '0.9';
+            this._forcesPopupLogEl.appendChild(row);
         }
     }
 
@@ -1009,6 +2828,9 @@ export class RapierDebuggerUI {
         this._outputRows.angvel.valueEl.textContent = outVec3(angvel, 2, 8);
         this._outputRows.rotation.valueEl.textContent = rot ? `${outNum(rot.x, 3, 8)}, ${outNum(rot.y, 3, 8)}, ${outNum(rot.z, 3, 8)}` : outVec3(null, 3, 8);
 
+        this._pruneForceEvents();
+        this._updateForceLogFromSnapshot(snapshot);
+
         const contacts = snapshot.contacts ?? { count: 0, total: 0 };
         this._outputRows.contacts.valueEl.textContent = `${padLeft(String(contacts.count ?? 0), 2)}/${padLeft(String(contacts.total ?? 0), 2)}`;
         if (this._outputRows.contacts.dotEls) {
@@ -1036,6 +2858,34 @@ export class RapierDebuggerUI {
         if (this._outputRows.counts) {
             const world = snapshot.world ?? {};
             this._outputRows.counts.valueEl.textContent = `bodies:${padLeft(String(world.bodies ?? '—'), 4)}  coll:${padLeft(String(world.colliders ?? '—'), 4)}`;
+        }
+
+        const sleeping = snapshot.body?.sleeping;
+        const canForceSleep = snapshot.body?.canForceSleep;
+        this._sleepingState = sleeping;
+        if (this._sleepMarker) {
+            if (sleeping === true) {
+                this._sleepMarker.style.background = 'rgba(255,76,76,0.95)';
+                this._sleepMarker.style.boxShadow = '0 0 0 1px rgba(255,76,76,0.6), 0 0 10px rgba(255,76,76,0.35)';
+            } else if (sleeping === false) {
+                this._sleepMarker.style.background = 'rgba(76,255,122,0.95)';
+                this._sleepMarker.style.boxShadow = '0 0 0 1px rgba(76,255,122,0.6), 0 0 10px rgba(76,255,122,0.35)';
+            } else {
+                this._sleepMarker.style.background = 'rgba(255,255,255,0.2)';
+                this._sleepMarker.style.boxShadow = '0 0 0 1px rgba(255,255,255,0.2)';
+            }
+        }
+        if (this._wakeButton) {
+            if (canForceSleep) {
+                this._wakeButton.style.display = '';
+                if (sleeping === false) {
+                    this._wakeButton.textContent = 'Sleep';
+                } else {
+                    this._wakeButton.textContent = 'Wake up';
+                }
+            } else {
+                this._wakeButton.style.display = 'none';
+            }
         }
 
         const wheelCells = this._wheelCells;
@@ -1116,59 +2966,52 @@ export class RapierDebuggerUI {
 
         inputHeader.style.marginBottom = '10px';
         inputPanel.appendChild(inputHeader);
-        inputPanel.style.flex = '2 1 520px';
-        inputPanel.style.minWidth = '320px';
+        inputPanel.style.flex = '4 1 900px';
+        inputPanel.style.minWidth = '780px';
         inputPanel.style.width = 'auto';
         inputPanel.style.maxHeight = 'calc(100vh - 32px)';
         inputPanel.style.overflowY = 'auto';
-        inputPanel.style.overflowX = 'hidden';
+        inputPanel.style.overflowX = 'auto';
 
         const columns = document.createElement('div');
-        columns.style.display = 'flex';
-        columns.style.flexWrap = 'wrap';
-        columns.style.alignItems = 'flex-start';
+        columns.style.display = 'grid';
+        columns.style.gridTemplateColumns = 'minmax(240px, 1fr) minmax(240px, 1fr) minmax(240px, 1fr)';
         columns.style.gap = '10px 16px';
 
         const leftCol = document.createElement('div');
         leftCol.style.display = 'flex';
         leftCol.style.flexDirection = 'column';
-        leftCol.style.flex = '1.3 1 320px';
+        leftCol.style.minWidth = '240px';
 
         const middleCol = document.createElement('div');
         middleCol.style.display = 'flex';
         middleCol.style.flexDirection = 'column';
-        middleCol.style.flex = '1 1 280px';
+        middleCol.style.minWidth = '240px';
 
         const rightCol = document.createElement('div');
         rightCol.style.display = 'flex';
         rightCol.style.flexDirection = 'column';
-        rightCol.style.flex = '1 1 280px';
+        rightCol.style.minWidth = '240px';
 
         const internalGroups = {
-            vehicle: makeGroup('Vehicle (Live)', { tightTop: true }),
-            suspension: makeGroup('Suspension (Live)'),
-            tires: makeGroup('Tires (Live)'),
-            bodyType: makeGroup('Rigid-body Type', { tightTop: true }),
-            position: makeGroup('Position'),
-            velocity: makeGroup('Velocity'),
+            vehicle: makeGroup('Vehicle', { tightTop: true }),
+            suspension: makeGroup('Suspension'),
+            tires: makeGroup('Tires'),
+            bodyType: makeGroup('Rigid-body Type', { tightTop: true, showLabel: false }),
             mass: makeGroup('Mass Properties'),
             damping: makeGroup('Damping'),
-            locks: makeGroup('Locking Translations/Rotations'),
-            dominance: makeGroup('Dominance'),
-            ccd: makeGroup('Continuous Collision Detection'),
-            sleeping: makeGroup('Sleeping')
+            dominance: makeGroup('Dominance', { showLabel: false }),
+            ccd: makeGroup('Continuous Collision Detection', { showLabel: false }),
+            sleeping: makeGroup('Sleeping', { showLabel: false })
         };
 
         middleCol.appendChild(internalGroups.vehicle.wrap);
         middleCol.appendChild(internalGroups.suspension.wrap);
         middleCol.appendChild(internalGroups.tires.wrap);
 
-        rightCol.appendChild(internalGroups.position.wrap);
-        rightCol.appendChild(internalGroups.velocity.wrap);
-        rightCol.appendChild(internalGroups.mass.wrap);
+        middleCol.appendChild(internalGroups.mass.wrap);
+        middleCol.appendChild(internalGroups.dominance.wrap);
         rightCol.appendChild(internalGroups.damping.wrap);
-        rightCol.appendChild(internalGroups.locks.wrap);
-        rightCol.appendChild(internalGroups.dominance.wrap);
 
         columns.appendChild(leftCol);
         columns.appendChild(middleCol);
@@ -1176,7 +3019,7 @@ export class RapierDebuggerUI {
         inputPanel.appendChild(columns);
 
         this._inputControls.bodyType = makeSelectControl({
-            title: 'RigidBodyType',
+            title: 'Type',
             value: this._tuning.chassis.bodyType,
             options: [
                 { value: 'dynamic', label: 'Dynamic' },
@@ -1189,140 +3032,15 @@ export class RapierDebuggerUI {
         });
         internalGroups.bodyType.body.appendChild(this._inputControls.bodyType.wrap);
 
-        this._inputControls.translationX = makeNumberControl({
-            title: 'Translation X (m)',
-            value: this._tuning.chassis.translation.x,
-            help: INPUT_HELP.translation,
-            helpSystem,
-            step: 0.1,
-            width: '100px'
-        });
-        internalGroups.position.body.appendChild(this._inputControls.translationX.wrap);
-
-        this._inputControls.spawnHeight = makeRangeControl({
-            title: 'Translation Y (m)',
-            min: 0,
-            max: 20,
-            step: 0.1,
-            value: this._tuning.chassis.translation.y,
-            fmt: (v) => formatNum(v, 1),
-            help: INPUT_HELP.translation,
-            helpSystem
-        });
-        internalGroups.position.body.appendChild(this._inputControls.spawnHeight.wrap);
-
-        this._inputControls.translationZ = makeNumberControl({
-            title: 'Translation Z (m)',
-            value: this._tuning.chassis.translation.z,
-            help: INPUT_HELP.translation,
-            helpSystem,
-            step: 0.1,
-            width: '100px'
-        });
-        internalGroups.position.body.appendChild(this._inputControls.translationZ.wrap);
-
-        this._inputControls.rotationW = makeNumberControl({
-            title: 'Rotation W',
-            value: this._tuning.chassis.rotation.w,
-            help: INPUT_HELP.rotation,
-            helpSystem,
-            step: 0.01,
-            width: '90px'
-        });
-        internalGroups.position.body.appendChild(this._inputControls.rotationW.wrap);
-
-        this._inputControls.rotationX = makeNumberControl({
-            title: 'Rotation X',
-            value: this._tuning.chassis.rotation.x,
-            help: INPUT_HELP.rotation,
-            helpSystem,
-            step: 0.01,
-            width: '90px'
-        });
-        internalGroups.position.body.appendChild(this._inputControls.rotationX.wrap);
-
-        this._inputControls.rotationY = makeNumberControl({
-            title: 'Rotation Y',
-            value: this._tuning.chassis.rotation.y,
-            help: INPUT_HELP.rotation,
-            helpSystem,
-            step: 0.01,
-            width: '90px'
-        });
-        internalGroups.position.body.appendChild(this._inputControls.rotationY.wrap);
-
-        this._inputControls.rotationZ = makeNumberControl({
-            title: 'Rotation Z',
-            value: this._tuning.chassis.rotation.z,
-            help: INPUT_HELP.rotation,
-            helpSystem,
-            step: 0.01,
-            width: '90px'
-        });
-        internalGroups.position.body.appendChild(this._inputControls.rotationZ.wrap);
-
-        this._inputControls.linvelX = makeNumberControl({
-            title: 'Linvel X (m/s)',
-            value: this._tuning.chassis.linvel.x,
-            help: INPUT_HELP.linvel,
-            helpSystem,
-            step: 0.1,
-            width: '100px'
-        });
-        internalGroups.velocity.body.appendChild(this._inputControls.linvelX.wrap);
-
-        this._inputControls.linvelY = makeNumberControl({
-            title: 'Linvel Y (m/s)',
-            value: this._tuning.chassis.linvel.y,
-            help: INPUT_HELP.linvel,
-            helpSystem,
-            step: 0.1,
-            width: '100px'
-        });
-        internalGroups.velocity.body.appendChild(this._inputControls.linvelY.wrap);
-
-        this._inputControls.linvelZ = makeNumberControl({
-            title: 'Linvel Z (m/s)',
-            value: this._tuning.chassis.linvel.z,
-            help: INPUT_HELP.linvel,
-            helpSystem,
-            step: 0.1,
-            width: '100px'
-        });
-        internalGroups.velocity.body.appendChild(this._inputControls.linvelZ.wrap);
-
-        this._inputControls.angvelX = makeNumberControl({
-            title: 'Angvel X (rad/s)',
-            value: this._tuning.chassis.angvel.x,
-            help: INPUT_HELP.angvel,
-            helpSystem,
-            step: 0.1,
-            width: '100px'
-        });
-        internalGroups.velocity.body.appendChild(this._inputControls.angvelX.wrap);
-
-        this._inputControls.angvelY = makeNumberControl({
-            title: 'Angvel Y (rad/s)',
-            value: this._tuning.chassis.angvel.y,
-            help: INPUT_HELP.angvel,
-            helpSystem,
-            step: 0.1,
-            width: '100px'
-        });
-        internalGroups.velocity.body.appendChild(this._inputControls.angvelY.wrap);
-
-        this._inputControls.angvelZ = makeNumberControl({
-            title: 'Angvel Z (rad/s)',
-            value: this._tuning.chassis.angvel.z,
-            help: INPUT_HELP.angvel,
-            helpSystem,
-            step: 0.1,
-            width: '100px'
-        });
-        internalGroups.velocity.body.appendChild(this._inputControls.angvelZ.wrap);
-
-        rightCol.appendChild(makeSeparator());
-        rightCol.appendChild(makeLabel('Forces and Impulses'));
+        this._inputControls.translationX = { input: null, valEl: null };
+        this._inputControls.spawnHeight = { input: null, valEl: null };
+        this._inputControls.translationZ = { input: null, valEl: null };
+        this._inputControls.linvelX = { input: null, valEl: null };
+        this._inputControls.linvelY = { input: null, valEl: null };
+        this._inputControls.linvelZ = { input: null, valEl: null };
+        this._inputControls.angvelX = { input: null, valEl: null };
+        this._inputControls.angvelY = { input: null, valEl: null };
+        this._inputControls.angvelZ = { input: null, valEl: null };
 
         this._inputControls.forceX = makeNumberControl({
             title: 'Force X (N)',
@@ -1332,7 +3050,6 @@ export class RapierDebuggerUI {
             step: 10,
             width: '100px'
         });
-        rightCol.appendChild(this._inputControls.forceX.wrap);
 
         this._inputControls.forceY = makeNumberControl({
             title: 'Force Y (N)',
@@ -1342,7 +3059,6 @@ export class RapierDebuggerUI {
             step: 10,
             width: '100px'
         });
-        rightCol.appendChild(this._inputControls.forceY.wrap);
 
         this._inputControls.forceZ = makeNumberControl({
             title: 'Force Z (N)',
@@ -1352,7 +3068,6 @@ export class RapierDebuggerUI {
             step: 10,
             width: '100px'
         });
-        rightCol.appendChild(this._inputControls.forceZ.wrap);
 
         this._inputControls.forcePointX = makeNumberControl({
             title: 'Force point X (m)',
@@ -1362,7 +3077,6 @@ export class RapierDebuggerUI {
             step: 0.1,
             width: '100px'
         });
-        rightCol.appendChild(this._inputControls.forcePointX.wrap);
 
         this._inputControls.forcePointY = makeNumberControl({
             title: 'Force point Y (m)',
@@ -1372,7 +3086,6 @@ export class RapierDebuggerUI {
             step: 0.1,
             width: '100px'
         });
-        rightCol.appendChild(this._inputControls.forcePointY.wrap);
 
         this._inputControls.forcePointZ = makeNumberControl({
             title: 'Force point Z (m)',
@@ -1382,7 +3095,6 @@ export class RapierDebuggerUI {
             step: 0.1,
             width: '100px'
         });
-        rightCol.appendChild(this._inputControls.forcePointZ.wrap);
 
         this._inputControls.torqueX = makeNumberControl({
             title: 'Torque X (N*m)',
@@ -1392,7 +3104,6 @@ export class RapierDebuggerUI {
             step: 10,
             width: '100px'
         });
-        rightCol.appendChild(this._inputControls.torqueX.wrap);
 
         this._inputControls.torqueY = makeNumberControl({
             title: 'Torque Y (N*m)',
@@ -1402,7 +3113,6 @@ export class RapierDebuggerUI {
             step: 10,
             width: '100px'
         });
-        rightCol.appendChild(this._inputControls.torqueY.wrap);
 
         this._inputControls.torqueZ = makeNumberControl({
             title: 'Torque Z (N*m)',
@@ -1412,40 +3122,41 @@ export class RapierDebuggerUI {
             step: 10,
             width: '100px'
         });
-        rightCol.appendChild(this._inputControls.torqueZ.wrap);
-
-        const forceActions = document.createElement('div');
-        forceActions.style.display = 'flex';
-        forceActions.style.flexWrap = 'wrap';
-        forceActions.style.gap = '8px';
-        forceActions.style.marginBottom = '10px';
 
         const addForceButton = makeButton('Add force');
-        addForceButton.addEventListener('click', () => this.onAddForce?.(this._forces.force));
-        forceActions.appendChild(addForceButton);
+        addForceButton.addEventListener('click', () => {
+            if (this.onAddForce) {
+                this.onAddForce(this._forces.force);
+                this._recordForceEvent('Force', this._forces.force);
+            }
+        });
         this._actionButtons.push(addForceButton);
 
         const addForcePointButton = makeButton('Add force @ point');
-        addForcePointButton.addEventListener('click', () => this.onAddForceAtPoint?.(this._forces.force, this._forces.forcePoint));
-        forceActions.appendChild(addForcePointButton);
+        addForcePointButton.addEventListener('click', () => {
+            if (this.onAddForceAtPoint) {
+                this.onAddForceAtPoint(this._forces.force, this._forces.forcePoint);
+                this._recordForceEvent('Force', this._forces.force, this._forces.forcePoint);
+            }
+        });
         this._actionButtons.push(addForcePointButton);
 
         const addTorqueButton = makeButton('Add torque');
-        addTorqueButton.addEventListener('click', () => this.onAddTorque?.(this._forces.torque));
-        forceActions.appendChild(addTorqueButton);
+        addTorqueButton.addEventListener('click', () => {
+            if (this.onAddTorque) {
+                this.onAddTorque(this._forces.torque);
+                this._recordForceEvent('Torque', this._forces.torque);
+            }
+        });
         this._actionButtons.push(addTorqueButton);
 
         const resetForcesButton = makeButton('Reset forces');
         resetForcesButton.addEventListener('click', () => this.onResetForces?.());
-        forceActions.appendChild(resetForcesButton);
         this._actionButtons.push(resetForcesButton);
 
         const resetTorquesButton = makeButton('Reset torques');
         resetTorquesButton.addEventListener('click', () => this.onResetTorques?.());
-        forceActions.appendChild(resetTorquesButton);
         this._actionButtons.push(resetTorquesButton);
-
-        rightCol.appendChild(forceActions);
 
         this._inputControls.impulseX = makeNumberControl({
             title: 'Impulse X (N*s)',
@@ -1455,7 +3166,6 @@ export class RapierDebuggerUI {
             step: 10,
             width: '100px'
         });
-        rightCol.appendChild(this._inputControls.impulseX.wrap);
 
         this._inputControls.impulseY = makeNumberControl({
             title: 'Impulse Y (N*s)',
@@ -1465,7 +3175,6 @@ export class RapierDebuggerUI {
             step: 10,
             width: '100px'
         });
-        rightCol.appendChild(this._inputControls.impulseY.wrap);
 
         this._inputControls.impulseZ = makeNumberControl({
             title: 'Impulse Z (N*s)',
@@ -1475,7 +3184,6 @@ export class RapierDebuggerUI {
             step: 10,
             width: '100px'
         });
-        rightCol.appendChild(this._inputControls.impulseZ.wrap);
 
         this._inputControls.impulsePointX = makeNumberControl({
             title: 'Impulse point X (m)',
@@ -1485,7 +3193,6 @@ export class RapierDebuggerUI {
             step: 0.1,
             width: '100px'
         });
-        rightCol.appendChild(this._inputControls.impulsePointX.wrap);
 
         this._inputControls.impulsePointY = makeNumberControl({
             title: 'Impulse point Y (m)',
@@ -1495,7 +3202,6 @@ export class RapierDebuggerUI {
             step: 0.1,
             width: '100px'
         });
-        rightCol.appendChild(this._inputControls.impulsePointY.wrap);
 
         this._inputControls.impulsePointZ = makeNumberControl({
             title: 'Impulse point Z (m)',
@@ -1505,7 +3211,6 @@ export class RapierDebuggerUI {
             step: 0.1,
             width: '100px'
         });
-        rightCol.appendChild(this._inputControls.impulsePointZ.wrap);
 
         this._inputControls.torqueImpulseX = makeNumberControl({
             title: 'Torque impulse X (N*m*s)',
@@ -1515,7 +3220,6 @@ export class RapierDebuggerUI {
             step: 10,
             width: '100px'
         });
-        rightCol.appendChild(this._inputControls.torqueImpulseX.wrap);
 
         this._inputControls.torqueImpulseY = makeNumberControl({
             title: 'Torque impulse Y (N*m*s)',
@@ -1525,7 +3229,6 @@ export class RapierDebuggerUI {
             step: 10,
             width: '100px'
         });
-        rightCol.appendChild(this._inputControls.torqueImpulseY.wrap);
 
         this._inputControls.torqueImpulseZ = makeNumberControl({
             title: 'Torque impulse Z (N*m*s)',
@@ -1535,30 +3238,65 @@ export class RapierDebuggerUI {
             step: 10,
             width: '100px'
         });
-        rightCol.appendChild(this._inputControls.torqueImpulseZ.wrap);
-
-        const impulseActions = document.createElement('div');
-        impulseActions.style.display = 'flex';
-        impulseActions.style.flexWrap = 'wrap';
-        impulseActions.style.gap = '8px';
-        impulseActions.style.marginBottom = '10px';
 
         const applyImpulseButton = makeButton('Apply impulse');
-        applyImpulseButton.addEventListener('click', () => this.onApplyImpulse?.(this._forces.impulse));
-        impulseActions.appendChild(applyImpulseButton);
+        applyImpulseButton.addEventListener('click', () => {
+            if (this.onApplyImpulse) {
+                this.onApplyImpulse(this._forces.impulse);
+                this._recordForceEvent('Impulse', this._forces.impulse);
+            }
+        });
         this._actionButtons.push(applyImpulseButton);
 
         const applyImpulsePointButton = makeButton('Apply impulse @ point');
-        applyImpulsePointButton.addEventListener('click', () => this.onApplyImpulseAtPoint?.(this._forces.impulse, this._forces.impulsePoint));
-        impulseActions.appendChild(applyImpulsePointButton);
+        applyImpulsePointButton.addEventListener('click', () => {
+            if (this.onApplyImpulseAtPoint) {
+                this.onApplyImpulseAtPoint(this._forces.impulse, this._forces.impulsePoint);
+                this._recordForceEvent('Impulse', this._forces.impulse, this._forces.impulsePoint);
+            }
+        });
         this._actionButtons.push(applyImpulsePointButton);
 
         const applyTorqueImpulseButton = makeButton('Apply torque impulse');
-        applyTorqueImpulseButton.addEventListener('click', () => this.onApplyTorqueImpulse?.(this._forces.torqueImpulse));
-        impulseActions.appendChild(applyTorqueImpulseButton);
+        applyTorqueImpulseButton.addEventListener('click', () => {
+            if (this.onApplyTorqueImpulse) {
+                this.onApplyTorqueImpulse(this._forces.torqueImpulse);
+                this._recordForceEvent('Torque impulse', this._forces.torqueImpulse);
+            }
+        });
         this._actionButtons.push(applyTorqueImpulseButton);
 
-        rightCol.appendChild(impulseActions);
+        this._forcePopupControls = {
+            forceX: this._inputControls.forceX.wrap,
+            forceY: this._inputControls.forceY.wrap,
+            forceZ: this._inputControls.forceZ.wrap,
+            forcePointX: this._inputControls.forcePointX.wrap,
+            forcePointY: this._inputControls.forcePointY.wrap,
+            forcePointZ: this._inputControls.forcePointZ.wrap,
+            torqueX: this._inputControls.torqueX.wrap,
+            torqueY: this._inputControls.torqueY.wrap,
+            torqueZ: this._inputControls.torqueZ.wrap,
+            impulseX: this._inputControls.impulseX.wrap,
+            impulseY: this._inputControls.impulseY.wrap,
+            impulseZ: this._inputControls.impulseZ.wrap,
+            impulsePointX: this._inputControls.impulsePointX.wrap,
+            impulsePointY: this._inputControls.impulsePointY.wrap,
+            impulsePointZ: this._inputControls.impulsePointZ.wrap,
+            torqueImpulseX: this._inputControls.torqueImpulseX.wrap,
+            torqueImpulseY: this._inputControls.torqueImpulseY.wrap,
+            torqueImpulseZ: this._inputControls.torqueImpulseZ.wrap
+        };
+
+        this._forcePopupButtons = {
+            applyForce: addForceButton,
+            applyForceAtPoint: addForcePointButton,
+            resetForces: resetForcesButton,
+            applyImpulse: applyImpulseButton,
+            applyImpulseAtPoint: applyImpulsePointButton,
+            applyTorque: addTorqueButton,
+            applyTorqueImpulse: applyTorqueImpulseButton,
+            resetTorques: resetTorquesButton
+        };
 
         this._inputControls.additionalMass = makeNumberControl({
             title: 'Additional mass (kg)',
@@ -1610,79 +3348,61 @@ export class RapierDebuggerUI {
         });
         internalGroups.mass.body.appendChild(this._inputControls.massPropsComZ.wrap);
 
-        internalGroups.mass.body.appendChild(makeLabel('Inertia (Principal)'));
+        const inertiaRow = document.createElement('div');
+        inertiaRow.style.display = 'flex';
+        inertiaRow.style.alignItems = 'center';
+        inertiaRow.style.justifyContent = 'space-between';
+        inertiaRow.style.gap = '10px';
+        inertiaRow.style.margin = '8px 0 10px';
 
-        this._inputControls.massPropsInertiaX = makeNumberControl({
-            title: 'Inertia X',
-            value: this._tuning.chassis.additionalMassProperties.inertia.x,
-            help: INPUT_HELP.massPropsInertiaX,
-            helpSystem,
-            step: 0.01,
-            width: '110px'
+        const inertiaLabel = document.createElement('div');
+        inertiaLabel.textContent = 'Inertia (Principal)';
+        inertiaLabel.style.fontSize = '13px';
+        inertiaLabel.style.fontWeight = '700';
+        inertiaLabel.style.opacity = '0.95';
+        appendHelp(inertiaLabel, INPUT_HELP.inertia, helpSystem);
+
+        const inertiaButton = makeButton('...');
+        inertiaButton.style.padding = '4px 8px';
+        inertiaButton.style.fontSize = '11px';
+        inertiaButton.style.borderRadius = '8px';
+        inertiaButton.style.marginRight = '0';
+        inertiaButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            this._openInertiaPopup(inertiaButton);
         });
-        internalGroups.mass.body.appendChild(this._inputControls.massPropsInertiaX.wrap);
 
-        this._inputControls.massPropsInertiaY = makeNumberControl({
-            title: 'Inertia Y',
-            value: this._tuning.chassis.additionalMassProperties.inertia.y,
-            help: INPUT_HELP.massPropsInertiaY,
-            helpSystem,
-            step: 0.01,
-            width: '110px'
+        inertiaRow.appendChild(inertiaLabel);
+        inertiaRow.appendChild(inertiaButton);
+        internalGroups.mass.body.appendChild(inertiaRow);
+
+        const inertiaFrameRow = document.createElement('div');
+        inertiaFrameRow.style.display = 'flex';
+        inertiaFrameRow.style.alignItems = 'center';
+        inertiaFrameRow.style.justifyContent = 'space-between';
+        inertiaFrameRow.style.gap = '10px';
+        inertiaFrameRow.style.margin = '8px 0 10px';
+
+        const inertiaFrameLabel = document.createElement('div');
+        inertiaFrameLabel.textContent = 'Inertia Frame (Quat)';
+        inertiaFrameLabel.style.fontSize = '13px';
+        inertiaFrameLabel.style.fontWeight = '700';
+        inertiaFrameLabel.style.opacity = '0.95';
+        appendHelp(inertiaFrameLabel, INPUT_HELP.inertiaFrame, helpSystem);
+
+        const inertiaFrameButton = makeButton('...');
+        inertiaFrameButton.style.padding = '4px 8px';
+        inertiaFrameButton.style.fontSize = '11px';
+        inertiaFrameButton.style.borderRadius = '8px';
+        inertiaFrameButton.style.marginRight = '0';
+        inertiaFrameButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            this._openInertiaFramePopup(inertiaFrameButton);
         });
-        internalGroups.mass.body.appendChild(this._inputControls.massPropsInertiaY.wrap);
 
-        this._inputControls.massPropsInertiaZ = makeNumberControl({
-            title: 'Inertia Z',
-            value: this._tuning.chassis.additionalMassProperties.inertia.z,
-            help: INPUT_HELP.massPropsInertiaZ,
-            helpSystem,
-            step: 0.01,
-            width: '110px'
-        });
-        internalGroups.mass.body.appendChild(this._inputControls.massPropsInertiaZ.wrap);
-
-        internalGroups.mass.body.appendChild(makeLabel('Inertia Frame (Quat)'));
-
-        this._inputControls.massPropsFrameW = makeNumberControl({
-            title: 'Inertia frame W',
-            value: this._tuning.chassis.additionalMassProperties.inertiaFrame.w,
-            help: INPUT_HELP.massPropsFrameW,
-            helpSystem,
-            step: 0.01,
-            width: '110px'
-        });
-        internalGroups.mass.body.appendChild(this._inputControls.massPropsFrameW.wrap);
-
-        this._inputControls.massPropsFrameX = makeNumberControl({
-            title: 'Inertia frame X',
-            value: this._tuning.chassis.additionalMassProperties.inertiaFrame.x,
-            help: INPUT_HELP.massPropsFrameX,
-            helpSystem,
-            step: 0.01,
-            width: '110px'
-        });
-        internalGroups.mass.body.appendChild(this._inputControls.massPropsFrameX.wrap);
-
-        this._inputControls.massPropsFrameY = makeNumberControl({
-            title: 'Inertia frame Y',
-            value: this._tuning.chassis.additionalMassProperties.inertiaFrame.y,
-            help: INPUT_HELP.massPropsFrameY,
-            helpSystem,
-            step: 0.01,
-            width: '110px'
-        });
-        internalGroups.mass.body.appendChild(this._inputControls.massPropsFrameY.wrap);
-
-        this._inputControls.massPropsFrameZ = makeNumberControl({
-            title: 'Inertia frame Z',
-            value: this._tuning.chassis.additionalMassProperties.inertiaFrame.z,
-            help: INPUT_HELP.massPropsFrameZ,
-            helpSystem,
-            step: 0.01,
-            width: '110px'
-        });
-        internalGroups.mass.body.appendChild(this._inputControls.massPropsFrameZ.wrap);
+        inertiaFrameRow.appendChild(inertiaFrameLabel);
+        inertiaFrameRow.appendChild(inertiaFrameButton);
+        internalGroups.mass.body.appendChild(inertiaFrameRow);
 
         this._inputControls.lockTranslations = makeToggleControl({
             title: 'Lock translations',
@@ -1690,7 +3410,6 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.lockTranslations,
             helpSystem
         });
-        internalGroups.locks.body.appendChild(this._inputControls.lockTranslations.wrap);
 
         this._inputControls.lockRotations = makeToggleControl({
             title: 'Lock rotations',
@@ -1698,7 +3417,6 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.lockRotations,
             helpSystem
         });
-        internalGroups.locks.body.appendChild(this._inputControls.lockRotations.wrap);
 
         this._inputControls.enabledRotX = makeToggleControl({
             title: 'Enable rotation X',
@@ -1706,7 +3424,6 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.enabledRotations,
             helpSystem
         });
-        internalGroups.locks.body.appendChild(this._inputControls.enabledRotX.wrap);
 
         this._inputControls.enabledRotY = makeToggleControl({
             title: 'Enable rotation Y',
@@ -1714,7 +3431,6 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.enabledRotations,
             helpSystem
         });
-        internalGroups.locks.body.appendChild(this._inputControls.enabledRotY.wrap);
 
         this._inputControls.enabledRotZ = makeToggleControl({
             title: 'Enable rotation Z',
@@ -1722,7 +3438,34 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.enabledRotations,
             helpSystem
         });
-        internalGroups.locks.body.appendChild(this._inputControls.enabledRotZ.wrap);
+
+        const lockingRow = document.createElement('div');
+        lockingRow.style.display = 'flex';
+        lockingRow.style.alignItems = 'center';
+        lockingRow.style.justifyContent = 'space-between';
+        lockingRow.style.gap = '10px';
+        lockingRow.style.margin = '8px 0 10px';
+
+        const lockingLabel = document.createElement('div');
+        lockingLabel.textContent = 'Locking';
+        lockingLabel.style.fontSize = '13px';
+        lockingLabel.style.fontWeight = '700';
+        lockingLabel.style.opacity = '0.95';
+        appendHelp(lockingLabel, INPUT_HELP.locking, helpSystem);
+
+        const lockingButton = makeButton('...');
+        lockingButton.style.padding = '4px 8px';
+        lockingButton.style.fontSize = '11px';
+        lockingButton.style.borderRadius = '8px';
+        lockingButton.style.marginRight = '0';
+        lockingButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            this._openLockingPopup(lockingButton);
+        });
+
+        lockingRow.appendChild(lockingLabel);
+        lockingRow.appendChild(lockingButton);
+        internalGroups.mass.body.appendChild(lockingRow);
 
         this._inputControls.linearDamping = makeNumberControl({
             title: 'Linear damping',
@@ -1764,25 +3507,75 @@ export class RapierDebuggerUI {
         });
         internalGroups.ccd.body.appendChild(this._inputControls.ccdEnabled.wrap);
 
-        this._inputControls.canSleep = makeToggleControl({
-            title: 'Can sleep',
-            value: this._tuning.chassis.canSleep,
-            help: INPUT_HELP.canSleep,
-            helpSystem
-        });
-        internalGroups.sleeping.body.appendChild(this._inputControls.canSleep.wrap);
+        const sleepRow = document.createElement('div');
+        sleepRow.style.display = 'flex';
+        sleepRow.style.alignItems = 'center';
+        sleepRow.style.justifyContent = 'space-between';
+        sleepRow.style.gap = '10px';
+        sleepRow.style.margin = '8px 0 10px';
+
+        const sleepLabel = document.createElement('div');
+        sleepLabel.textContent = 'Can sleep';
+        sleepLabel.style.fontSize = '13px';
+        sleepLabel.style.fontWeight = '700';
+        sleepLabel.style.opacity = '0.95';
+        sleepLabel.style.display = 'flex';
+        sleepLabel.style.alignItems = 'center';
+        appendHelp(sleepLabel, INPUT_HELP.canSleep, helpSystem);
+
+        const sleepToggle = document.createElement('input');
+        sleepToggle.type = 'checkbox';
+        sleepToggle.checked = !!this._tuning.chassis.canSleep;
+        sleepToggle.style.width = '16px';
+        sleepToggle.style.height = '16px';
+        sleepToggle.style.cursor = 'pointer';
+
+        const sleepMarker = document.createElement('div');
+        sleepMarker.style.width = '10px';
+        sleepMarker.style.height = '10px';
+        sleepMarker.style.borderRadius = '999px';
+        sleepMarker.style.background = 'rgba(255,255,255,0.2)';
+        sleepMarker.style.boxShadow = '0 0 0 1px rgba(255,255,255,0.2)';
+        sleepMarker.style.cursor = 'default';
+        if (helpSystem) {
+            const statusText = () => {
+                if (this._sleepingState === true) return 'Sleeping';
+                if (this._sleepingState === false) return 'Awake';
+                return 'Sleep status: n/a';
+            };
+            sleepMarker.addEventListener('mouseenter', (e) => helpSystem.show(statusText(), e));
+            sleepMarker.addEventListener('mousemove', (e) => helpSystem.move(e));
+            sleepMarker.addEventListener('mouseleave', () => helpSystem.hide());
+        }
+        this._sleepMarker = sleepMarker;
 
         const wakeButton = makeButton('Wake up');
-        wakeButton.addEventListener('click', () => this.onWakeUp?.());
+        wakeButton.style.padding = '6px 10px';
+        wakeButton.style.fontSize = '11px';
+        wakeButton.style.borderRadius = '8px';
+        wakeButton.style.marginRight = '0';
+        wakeButton.style.minWidth = '72px';
+        wakeButton.addEventListener('click', () => {
+            if (this._sleepingState === false) {
+                this.onSleep?.();
+            } else {
+                this.onWakeUp?.();
+            }
+        });
         this._actionButtons.push(wakeButton);
-        rightCol.appendChild(makeSeparator());
-        rightCol.appendChild(makeLabel('Body Actions'));
-        rightCol.appendChild(wakeButton);
+        this._wakeButton = wakeButton;
+
+        sleepRow.appendChild(sleepLabel);
+        sleepRow.appendChild(sleepToggle);
+        sleepRow.appendChild(sleepMarker);
+        sleepRow.appendChild(wakeButton);
+        internalGroups.sleeping.body.appendChild(sleepRow);
+        this._inputControls.canSleep = { input: sleepToggle, valEl: null, wrap: sleepRow };
 
         leftCol.appendChild(makeLabel('Wheel Forces'));
 
         this._inputControls.engineForce = makeRangeControl({
-            title: 'Engine force (N)',
+            title: 'Engine (N)',
             min: 0,
             max: 25000,
             step: 100,
@@ -1794,7 +3587,7 @@ export class RapierDebuggerUI {
         leftCol.appendChild(this._inputControls.engineForce.wrap);
 
         this._inputControls.brakeForce = makeRangeControl({
-            title: 'Brake force (N)',
+            title: 'Brake (N)',
             min: 0,
             max: 25000,
             step: 100,
@@ -1817,10 +3610,8 @@ export class RapierDebuggerUI {
         });
         leftCol.appendChild(this._inputControls.handbrakeForce.wrap);
 
-        leftCol.appendChild(makeLabel('Steering'));
-
         this._inputControls.steerAngle = makeKnobControl({
-            title: 'Steering ->',
+            title: 'Steering',
             min: -0.8,
             max: 0.8,
             step: 0.01,
@@ -1844,7 +3635,7 @@ export class RapierDebuggerUI {
         internalGroups.vehicle.body.appendChild(makeLabel('Wheel placement'));
 
         this._inputControls.wheelSideInset = makeRangeControl({
-            title: 'Wheel side offset (m)',
+            title: 'Side offset (m)',
             min: 0,
             max: 0.4,
             step: 0.01,
@@ -1856,7 +3647,7 @@ export class RapierDebuggerUI {
         internalGroups.vehicle.body.appendChild(this._inputControls.wheelSideInset.wrap);
 
         this._inputControls.wheelbaseRatio = makeRangeControl({
-            title: 'Wheelbase ratio',
+            title: 'Base ratio',
             min: 0.4,
             max: 0.9,
             step: 0.01,
@@ -1947,71 +3738,113 @@ export class RapierDebuggerUI {
         });
         internalGroups.tires.body.appendChild(this._inputControls.tireSideStiffness.wrap);
 
-        const resetButton = makeButton('Reset vehicle');
-        resetButton.addEventListener('click', () => this.onReset?.());
-        leftCol.appendChild(resetButton);
-
-        const resetInitialButton = makeButton('Reset initial position');
-        resetInitialButton.addEventListener('click', () => this._resetInitialPosition());
-        leftCol.appendChild(resetInitialButton);
-
-        const resetCameraButton = makeButton('Reset camera');
-        resetCameraButton.addEventListener('click', () => this.onResetCamera?.());
-        leftCol.appendChild(resetCameraButton);
-        this._actionButtons.push(resetCameraButton);
+        const resetButton = makeButton('Reset');
+        resetButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            this._openPositionPopup(resetButton, { resetOnApply: true });
+        });
+        resetButton.style.padding = '6px 10px';
+        resetButton.style.fontSize = '13px';
+        resetButton.style.borderRadius = '8px';
+        resetButton.style.marginRight = '0';
+        resetButton.style.width = '100%';
+        const forcesManageButton = makeButton('Forces and Impulses');
+        forcesManageButton.style.padding = '6px 10px';
+        forcesManageButton.style.fontSize = '13px';
+        forcesManageButton.style.borderRadius = '8px';
+        forcesManageButton.style.marginRight = '0';
+        forcesManageButton.style.width = '100%';
+        forcesManageButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            this._openForcesPopup(forcesManageButton);
+        });
 
         leftCol.appendChild(makeSeparator());
-        leftCol.appendChild(makeLabel('World'));
 
-        const gravityRow = makeInlineVector3Control({
-            title: 'Gravity (m/s^2)',
-            values: this._worldConfig.gravity,
-            help: INPUT_HELP.worldGravity,
-            helpSystem,
-            step: 0.1,
-            width: '76px'
-        });
-        this._inputControls.worldGravityX = { input: gravityRow.inputs.x, valEl: null };
-        this._inputControls.worldGravityY = { input: gravityRow.inputs.y, valEl: null };
-        this._inputControls.worldGravityZ = { input: gravityRow.inputs.z, valEl: null };
-        leftCol.appendChild(gravityRow.wrap);
+        const gravityRow = document.createElement('div');
+        gravityRow.style.display = 'flex';
+        gravityRow.style.alignItems = 'center';
+        gravityRow.style.gap = '10px';
+        gravityRow.style.margin = '8px 0 10px';
+        gravityRow.style.width = '100%';
+        gravityRow.style.boxSizing = 'border-box';
 
-        this._inputControls.gravityScale = makeRangeControl({
-            title: 'Gravity scale',
-            min: 0,
-            max: 3,
-            step: 0.05,
-            value: this._tuning.chassis.gravityScale,
-            fmt: (v) => formatNum(v, 2),
-            help: INPUT_HELP.gravityScale,
-            helpSystem
+        const gravityLabel = document.createElement('div');
+        gravityLabel.textContent = 'Gravity';
+        gravityLabel.style.fontSize = '13px';
+        gravityLabel.style.fontWeight = '700';
+        gravityLabel.style.opacity = '0.95';
+        gravityLabel.style.display = 'flex';
+        gravityLabel.style.alignItems = 'center';
+        gravityLabel.style.flex = '0 0 auto';
+        appendHelp(gravityLabel, INPUT_HELP.worldGravity, helpSystem);
+
+        const gravityScale = document.createElement('input');
+        gravityScale.type = 'range';
+        gravityScale.min = '0';
+        gravityScale.max = '3';
+        gravityScale.step = '0.05';
+        gravityScale.value = String(this._tuning.chassis.gravityScale ?? 1);
+        gravityScale.style.flex = '1 1 0';
+        gravityScale.style.minWidth = '0';
+        gravityScale.style.width = '100%';
+        gravityScale.style.cursor = 'pointer';
+
+        const gravityButton = document.createElement('button');
+        gravityButton.type = 'button';
+        gravityButton.textContent = '...';
+        gravityButton.style.padding = '4px 8px';
+        gravityButton.style.borderRadius = '8px';
+        gravityButton.style.border = '1px solid rgba(255,255,255,0.16)';
+        gravityButton.style.background = 'rgba(12, 16, 24, 0.9)';
+        gravityButton.style.color = '#e9f2ff';
+        gravityButton.style.fontWeight = '700';
+        gravityButton.style.cursor = 'pointer';
+        gravityButton.style.flexShrink = '0';
+
+        gravityRow.appendChild(gravityLabel);
+        gravityRow.appendChild(gravityScale);
+        gravityRow.appendChild(gravityButton);
+        leftCol.appendChild(gravityRow);
+
+        this._inputControls.worldGravityX = { input: null, valEl: null };
+        this._inputControls.worldGravityY = { input: null, valEl: null };
+        this._inputControls.worldGravityZ = { input: null, valEl: null };
+        this._inputControls.gravityScale = { input: gravityScale, valEl: null, wrap: gravityRow };
+        this._gravityDisplay = null;
+        gravityButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            this._openGravityPopup(gravityButton);
         });
-        leftCol.appendChild(this._inputControls.gravityScale.wrap);
 
         leftCol.appendChild(internalGroups.ccd.wrap);
         leftCol.appendChild(internalGroups.sleeping.wrap);
 
         leftCol.appendChild(internalGroups.bodyType.wrap);
 
+        const bottomActions = document.createElement('div');
+        bottomActions.style.display = 'flex';
+        bottomActions.style.flexDirection = 'column';
+        bottomActions.style.gap = '8px';
+        bottomActions.appendChild(forcesManageButton);
+        bottomActions.appendChild(resetButton);
+        leftCol.appendChild(bottomActions);
+
         leftCol.appendChild(makeSeparator());
-        leftCol.appendChild(makeLabel('Automated Tests'));
 
-        const testsWrap = document.createElement('div');
-        testsWrap.style.display = 'flex';
-        testsWrap.style.flexWrap = 'wrap';
-        testsWrap.style.gap = '8px';
-        testsWrap.style.marginBottom = '10px';
-
-        for (const test of PRESET_TESTS) {
-            const btn = makeButton(test.label);
-            btn.style.width = '180px';
-            btn.style.flex = '0 0 180px';
-            btn.addEventListener('click', () => this._startTest(test));
-            testsWrap.appendChild(btn);
-            this._testButtons.push(btn);
-        }
-
-        leftCol.appendChild(testsWrap);
+        const testsButton = makeButton('Run Automated Tests');
+        testsButton.style.width = '100%';
+        testsButton.style.padding = '6px 10px';
+        testsButton.style.fontSize = '13px';
+        testsButton.style.borderRadius = '8px';
+        testsButton.style.marginRight = '0';
+        testsButton.style.marginBottom = '10px';
+        testsButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            this._openTestsPopup(testsButton);
+        });
+        leftCol.appendChild(testsButton);
+        this._testButtons.push(testsButton);
 
         const sampleWrap = document.createElement('div');
         sampleWrap.style.display = 'flex';
@@ -2020,9 +3853,57 @@ export class RapierDebuggerUI {
         sampleWrap.style.marginBottom = '10px';
 
         const recordButton = makeButton('Record sample');
-        recordButton.style.width = '180px';
-        recordButton.style.flex = '0 0 180px';
-        recordButton.addEventListener('click', () => this._startSampleRecord());
+        recordButton.style.width = '100%';
+        recordButton.style.flex = '1 1 100%';
+        recordButton.style.padding = '6px 10px';
+        recordButton.style.fontSize = '13px';
+        recordButton.style.borderRadius = '8px';
+        recordButton.style.marginRight = '0';
+        recordButton.textContent = '';
+        recordButton.style.position = 'relative';
+
+        const recordLabel = document.createElement('span');
+        recordLabel.textContent = 'Record sample';
+        recordLabel.style.display = 'block';
+        recordLabel.style.width = '100%';
+        recordLabel.style.textAlign = 'center';
+        recordButton.appendChild(recordLabel);
+        this._recordLabel = recordLabel;
+
+        const recordDot = document.createElement('span');
+        recordDot.style.position = 'absolute';
+        recordDot.style.right = '12px';
+        recordDot.style.top = '50%';
+        recordDot.style.transform = 'translateY(-50%)';
+        recordDot.style.width = '9px';
+        recordDot.style.height = '9px';
+        recordDot.style.borderRadius = '999px';
+        recordDot.style.background = 'rgba(255,45,45,0.95)';
+        recordDot.style.boxShadow = '0 0 10px rgba(255,45,45,0.6), 0 0 0 1px rgba(255,45,45,0.9)';
+        recordDot.style.visibility = 'hidden';
+        recordButton.appendChild(recordDot);
+        this._recordDot = recordDot;
+
+        recordButton.addEventListener('click', () => {
+            if (!this._enabled || this._activeTest || this._sampleRecording) return;
+            if (this._recordDot) {
+                this._recordDot.style.visibility = 'visible';
+            }
+            if (this._recordDotTimer) {
+                clearTimeout(this._recordDotTimer);
+            }
+            this._recordDotTimer = window.setTimeout(() => {
+                if (this._recordDot) {
+                    this._recordDot.style.visibility = 'hidden';
+                }
+                if (this._recordLabel) {
+                    this._recordLabel.textContent = 'Record sample';
+                }
+                this._showAxisToast('Sample copied to clipboard');
+                this._recordDotTimer = null;
+            }, 1000);
+            this._startSampleRecord();
+        });
         sampleWrap.appendChild(recordButton);
         this._recordButton = recordButton;
 
@@ -2031,20 +3912,28 @@ export class RapierDebuggerUI {
         const status = document.createElement('div');
         status.style.fontSize = '12px';
         status.style.opacity = '0.8';
-        status.textContent = 'Loading…';
+        status.textContent = '';
         leftCol.appendChild(status);
         this._statusText = status;
 
         const copyButton = makeButton('Copy Telemetry');
         copyButton.style.display = 'none';
-        copyButton.addEventListener('click', () => this._copyTelemetry());
+        copyButton.style.padding = '6px 10px';
+        copyButton.style.fontSize = '13px';
+        copyButton.style.borderRadius = '8px';
+        copyButton.style.marginRight = '0';
+        copyButton.addEventListener('click', () => {
+            this._copyTelemetry().then(() => {
+                this._showAxisToast('Telemetry copied to clipboard');
+            });
+        });
         leftCol.appendChild(copyButton);
         this._copyButton = copyButton;
 
         const outputPanel = document.createElement('div');
         stylePanel(outputPanel, { interactive: true });
-        outputPanel.style.flex = '1 1 320px';
-        outputPanel.style.minWidth = '280px';
+        outputPanel.style.flex = '1 1 260px';
+        outputPanel.style.minWidth = '240px';
         outputPanel.style.width = 'auto';
         outputPanel.style.overflowX = 'hidden';
         outputPanel.appendChild(makeTitle('Rapier Output'));
@@ -2194,13 +4083,24 @@ export class RapierDebuggerUI {
 
         outputPanel.appendChild(wheelTable);
 
+        const axisLegend = makeAxisLegend();
         root.appendChild(inputPanel);
         root.appendChild(outputPanel);
+        root.appendChild(axisLegend.wrap);
         document.body.appendChild(root);
 
         this._hudRoot = root;
         this._inputPanel = inputPanel;
         this._outputPanel = outputPanel;
+        this._axisLegendCoords = axisLegend.coordsEl;
+        this._axisLegendCamIcon = axisLegend.camIcon;
+        this._axisLegendToast = axisLegend.toastEl;
+
+        if (this._axisLegendCamIcon) {
+            this._axisLegendCamIcon.addEventListener('mouseenter', () => {
+                this._openCameraPopup(this._axisLegendCamIcon);
+            });
+        }
 
         this._wireControls();
     }
@@ -2218,9 +4118,9 @@ export class RapierDebuggerUI {
         tooltip.style.lineHeight = '1.3';
         tooltip.style.boxShadow = '0 8px 24px rgba(0,0,0,0.45)';
         tooltip.style.pointerEvents = 'none';
-        tooltip.style.zIndex = '80';
+        tooltip.style.zIndex = '120';
         tooltip.style.display = 'none';
-        root.appendChild(tooltip);
+        document.body.appendChild(tooltip);
         this._helpTooltip = tooltip;
 
         const move = (event) => {
@@ -2496,7 +4396,7 @@ export class RapierDebuggerUI {
         }
 
         const control = this._inputControls[key];
-        if (control) {
+        if (control?.input) {
             if (control.input.type === 'checkbox') {
                 control.input.checked = !!next;
             } else {
@@ -2508,6 +4408,9 @@ export class RapierDebuggerUI {
                 control.valEl.textContent = control.fmt(next);
             }
         }
+        if (key === 'worldGravityX' || key === 'worldGravityY' || key === 'worldGravityZ') {
+            this._updateGravityDisplay();
+        }
     }
 
     _startSampleRecord() {
@@ -2516,8 +4419,9 @@ export class RapierDebuggerUI {
         this._sampleElapsed = 0;
         this._sampleFrames = [];
         this._sampleConfig = this._buildSampleConfig();
-        if (this._statusText) this._statusText.textContent = 'Recording sample…';
+        if (this._statusText) this._statusText.textContent = '';
         if (this._recordButton) this._recordButton.disabled = true;
+        if (this._recordLabel) this._recordLabel.textContent = 'Recording';
     }
 
     _recordSampleFrame(snapshot) {
@@ -2530,12 +4434,15 @@ export class RapierDebuggerUI {
         this._sampleRecording = false;
         const payload = JSON.stringify({ c: this._sampleConfig ?? null, f: this._sampleFrames ?? [] });
         const done = (ok) => {
-            if (this._statusText) this._statusText.textContent = ok ? 'Sample copied' : 'Clipboard blocked';
+            if (this._statusText) this._statusText.textContent = '';
             this._sampleFrames = null;
             this._sampleConfig = null;
             this._sampleElapsed = 0;
             if (this._recordButton) {
                 this._recordButton.disabled = !this._enabled || !!this._activeTest || this._sampleRecording;
+            }
+            if (this._recordLabel && !this._recordDotTimer) {
+                this._recordLabel.textContent = 'Record sample';
             }
         };
         try {
@@ -2652,8 +4559,9 @@ export class RapierDebuggerUI {
         this._testElapsed = 0;
         this._stepElapsed = 0;
         this._testStepIndex = 0;
-        this._copyButton.style.display = 'none';
-        this._statusText.textContent = `Running ${test.label}…`;
+        if (this._copyButton) this._copyButton.style.display = 'none';
+        if (this._statusText) this._statusText.textContent = '';
+        this._openTestPopup(test);
 
         this.setEnabled(this._enabled);
     }
@@ -2689,10 +4597,10 @@ export class RapierDebuggerUI {
     }
 
     _finishTest() {
-        const label = this._activeTest?.label ?? 'Test';
         this._activeTest = null;
-        this._statusText.textContent = `${label} complete`;
-        if (this._copyButton) this._copyButton.style.display = this._telemetry?.length ? '' : 'none';
+        if (this._statusText) this._statusText.textContent = '';
+        if (this._copyButton) this._copyButton.style.display = 'none';
+        this._setTestPopupState('done');
         this.setEnabled(this._enabled);
     }
 
@@ -2706,13 +4614,15 @@ export class RapierDebuggerUI {
     }
 
     async _copyTelemetry() {
-        if (!this._telemetry || !this._telemetryMeta) return;
+        if (!this._telemetry || !this._telemetryMeta) return false;
         const payload = JSON.stringify({ meta: this._telemetryMeta, frames: this._telemetry }, null, 2);
         try {
             await navigator.clipboard.writeText(payload);
-            if (this._statusText) this._statusText.textContent = 'Telemetry copied';
+            if (this._statusText) this._statusText.textContent = '';
+            return true;
         } catch {
-            if (this._statusText) this._statusText.textContent = 'Clipboard blocked';
+            if (this._statusText) this._statusText.textContent = '';
+            return false;
         }
     }
 
@@ -2737,7 +4647,7 @@ export class RapierDebuggerUI {
         this._setInputValue('handbrakeForce', 0);
         this._setInputValue('steerAngle', 0);
 
-        if (this._statusText) this._statusText.textContent = this._enabled ? 'Ready' : 'Loading…';
+        if (this._statusText) this._statusText.textContent = '';
         this.setEnabled(this._enabled);
         this.onReset?.();
     }

@@ -209,6 +209,15 @@ function vec3Finite(v) {
     return !!v && Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z);
 }
 
+function readVec3(v) {
+    if (!v) return null;
+    const x = typeof v.x === 'function' ? v.x() : v.x;
+    const y = typeof v.y === 'function' ? v.y() : v.y;
+    const z = typeof v.z === 'function' ? v.z() : v.z;
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
+    return { x, y, z };
+}
+
 function resolveMassProps(props) {
     if (!props) return null;
     const com = props.com ?? {};
@@ -637,6 +646,16 @@ export class RapierDebuggerSim {
         this._body?.wakeUp?.();
     }
 
+    sleep() {
+        if (this._body?.sleep) {
+            this._body.sleep();
+            return;
+        }
+        if (this._body?.setSleeping) {
+            this._body.setSleeping(true);
+        }
+    }
+
     step(dt) {
         if (!this._ready || !this._world || !this._controller || !this._body) return this.getSnapshot();
 
@@ -997,7 +1016,13 @@ export class RapierDebuggerSim {
         const rot = this._body.rotation();
         const linvel = this._body.linvel();
         const angvel = this._body.angvel();
+        const sleepingRaw = safeCall(this._body, 'isSleeping') ?? safeGet(this._body, 'isSleeping');
+        const sleeping = typeof sleepingRaw === 'boolean' ? sleepingRaw : null;
+        const canForceSleep = typeof safeGet(this._body, 'sleep') === 'function'
+            || typeof safeGet(this._body, 'setSleeping') === 'function';
         const speed = this._controller.currentVehicleSpeed ? this._controller.currentVehicleSpeed() : 0;
+        const force = readVec3(safeCall(this._body, 'force') ?? safeGet(this._body, 'force'));
+        const torque = readVec3(safeCall(this._body, 'torque') ?? safeGet(this._body, 'torque'));
         const upAxis = safeGet(this._controller, 'indexUpAxis');
         const forwardAxis = safeGet(this._controller, 'indexForwardAxis');
         const forwardIndex = Number.isFinite(forwardAxis) ? forwardAxis : 2;
@@ -1149,7 +1174,11 @@ export class RapierDebuggerSim {
                 position: { x: pos.x, y: pos.y, z: pos.z },
                 rotation: { x: rot.x, y: rot.y, z: rot.z, w: rot.w },
                 linvel: { x: linvel.x, y: linvel.y, z: linvel.z },
-                angvel: { x: angvel.x, y: angvel.y, z: angvel.z }
+                angvel: { x: angvel.x, y: angvel.y, z: angvel.z },
+                sleeping,
+                force,
+                torque,
+                canForceSleep
             },
             speedMps: safeSpeed,
             speedProjMps: safeSpeedProj,
