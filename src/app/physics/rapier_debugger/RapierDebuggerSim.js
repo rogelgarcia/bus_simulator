@@ -324,6 +324,8 @@ export class RapierDebuggerSim {
 
     resetPose() {
         if (!this._ready || !this._body) return;
+        this.resetForces();
+        this.resetTorques();
         const cfg = this.vehicleConfig;
         const chassisCfg = this.tuning?.chassis ?? {};
         const translation = chassisCfg.translation ?? {};

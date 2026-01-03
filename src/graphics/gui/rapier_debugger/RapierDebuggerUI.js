@@ -5729,6 +5729,13 @@ export class RapierDebuggerUI {
         this._setInputValue('handbrakeForce', 0);
         this._setInputValue('steerAngle', 0);
 
+        this.onResetForces?.();
+        this._setForceLogEntry('const-force', null);
+        this._clearForceEventLog({ category: 'force', keepConstants: true });
+        this.onResetTorques?.();
+        this._setForceLogEntry('const-torque', null);
+        this._clearForceEventLog({ category: 'torque', keepConstants: true });
+
         if (this._statusText) this._statusText.textContent = '';
         this.setEnabled(this._enabled);
         this.onReset?.();

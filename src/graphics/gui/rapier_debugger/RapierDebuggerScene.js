@@ -31,6 +31,10 @@ export class RapierDebuggerScene {
         this._wheelIndexByLabel = {};
         this._forcePreviewGroup = null;
         this._forcePreviewArrow = null;
+        this._forcePreviewArrowShaft = null;
+        this._forcePreviewArrowHead = null;
+        this._forcePreviewArrowMaterial = null;
+        this._forcePreviewArrowDir = new THREE.Vector3(1, 0, 0);
         this._forcePreviewAxes = null;
         this._forcePreviewSphere = null;
         this._forcePreviewScale = 0.002;
@@ -138,6 +142,9 @@ export class RapierDebuggerScene {
         }
         this._forcePreviewGroup = null;
         this._forcePreviewArrow = null;
+        this._forcePreviewArrowShaft = null;
+        this._forcePreviewArrowHead = null;
+        this._forcePreviewArrowMaterial = null;
         this._forcePreviewAxes = null;
         this._forcePreviewSphere = null;
         if (this.camera?.clearViewOffset) {
@@ -463,11 +470,16 @@ export class RapierDebuggerScene {
     }
 
     _buildForcePreview() {
+        if (this.engine?.renderer) {
+            this.engine.renderer.localClippingEnabled = true;
+        }
+
+        const clipPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
         const group = new THREE.Group();
         group.visible = false;
         group.renderOrder = 3000;
 
-        const axisLen = 0.45;
+        const axisLen = 1.8;
         const makeAxisLine = (x, y, z, color) => {
             const geo = new THREE.BufferGeometry();
             geo.setAttribute('position', new THREE.Float32BufferAttribute([
@@ -475,6 +487,9 @@ export class RapierDebuggerScene {
                 x, y, z
             ], 3));
             const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9 });
+            mat.depthTest = false;
+            mat.depthWrite = false;
+            mat.clippingPlanes = [clipPlane];
             const line = new THREE.Line(geo, mat);
             line.renderOrder = 3000;
             return line;
@@ -486,32 +501,43 @@ export class RapierDebuggerScene {
         axes.add(makeAxisLine(0, 0, axisLen, 0x3a7bff));
         group.add(axes);
 
-        const markerGeo = new THREE.SphereGeometry(0.06, 12, 12);
-        const markerMat = new THREE.MeshBasicMaterial({ color: 0xe9f2ff });
+        const markerGeo = new THREE.SphereGeometry(0.12, 12, 12);
+        const markerMat = new THREE.MeshBasicMaterial({ color: 0x9aa0a6 });
+        markerMat.depthTest = false;
+        markerMat.depthWrite = false;
+        markerMat.clippingPlanes = [clipPlane];
         const marker = new THREE.Mesh(markerGeo, markerMat);
         marker.renderOrder = 3001;
         group.add(marker);
 
-        const arrow = new THREE.ArrowHelper(
-            new THREE.Vector3(1, 0, 0),
-            new THREE.Vector3(0, 0, 0),
-            1,
-            0xffd24a,
-            0.3,
-            0.14
-        );
-        arrow.line.material.transparent = true;
-        arrow.line.material.opacity = 0.9;
-        arrow.cone.material.transparent = true;
-        arrow.cone.material.opacity = 0.9;
-        arrow.renderOrder = 3002;
-        group.add(arrow);
+        const arrowGroup = new THREE.Group();
+        arrowGroup.renderOrder = 3002;
+
+        const arrowMat = new THREE.MeshBasicMaterial({ color: 0x7a4cff });
+        arrowMat.depthTest = false;
+        arrowMat.depthWrite = false;
+        arrowMat.clippingPlanes = [clipPlane];
+
+        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 10, 1, true), arrowMat);
+        shaft.rotation.z = -Math.PI / 2;
+        shaft.renderOrder = 3003;
+        arrowGroup.add(shaft);
+
+        const head = new THREE.Mesh(new THREE.ConeGeometry(1, 1, 12, 1), arrowMat);
+        head.rotation.z = -Math.PI / 2;
+        head.renderOrder = 3003;
+        arrowGroup.add(head);
+
+        group.add(arrowGroup);
 
         this.root.add(group);
         this._forcePreviewGroup = group;
         this._forcePreviewAxes = axes;
         this._forcePreviewSphere = marker;
-        this._forcePreviewArrow = arrow;
+        this._forcePreviewArrow = arrowGroup;
+        this._forcePreviewArrowShaft = shaft;
+        this._forcePreviewArrowHead = head;
+        this._forcePreviewArrowMaterial = arrowMat;
     }
 
     setForcePreview(preview) {
@@ -533,7 +559,7 @@ export class RapierDebuggerScene {
         this._forcePreviewGroup.position.copy(worldOrigin);
         this._forcePreviewGroup.visible = true;
 
-        if (!this._forcePreviewArrow) return;
+        if (!this._forcePreviewArrow || !this._forcePreviewArrowShaft || !this._forcePreviewArrowHead) return;
         const worldForce = this._tmpVecB
             .set(force.x ?? 0, force.y ?? 0, force.z ?? 0)
             .applyQuaternion(chassisQuat);
@@ -546,10 +572,18 @@ export class RapierDebuggerScene {
         }
 
         const dir = worldForce.normalize();
-        const headLength = Math.max(0.15, Math.min(0.6, length * 0.25));
-        const headWidth = Math.max(0.08, Math.min(0.4, length * 0.2));
-        this._forcePreviewArrow.setDirection(dir);
-        this._forcePreviewArrow.setLength(length, headLength, headWidth);
+        const headLength = Math.max(0.18, Math.min(0.7, length * 0.35));
+        const shaftLength = Math.max(0.02, length - headLength);
+        const shaftRadius = 0.045;
+        const headRadius = Math.max(0.12, shaftRadius * 2.4);
+
+        this._forcePreviewArrowDir.copy(dir);
+        this._forcePreviewArrow.quaternion.setFromUnitVectors(this._tmpVecC.set(1, 0, 0), this._forcePreviewArrowDir);
+
+        this._forcePreviewArrowShaft.scale.set(shaftRadius, shaftLength, shaftRadius);
+        this._forcePreviewArrowShaft.position.set(shaftLength * 0.5, 0, 0);
+        this._forcePreviewArrowHead.scale.set(headRadius, headLength, headRadius);
+        this._forcePreviewArrowHead.position.set(shaftLength + headLength * 0.5, 0, 0);
         this._forcePreviewArrow.visible = true;
     }
 
