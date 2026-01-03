@@ -2,18 +2,6 @@
 import { loadRapier } from '../rapier/RapierLoader.js';
 import { RAPIER_DEBUGGER_TUNING, RAPIER_DEBUGGER_VEHICLE_CONFIG, RAPIER_DEBUGGER_WORLD_CONFIG } from './RapierDebuggerConstants.js';
 
-function yawFromQuat(q) {
-    if (!q) return 0;
-    const x = q.x ?? 0;
-    const y = q.y ?? 0;
-    const z = q.z ?? 0;
-    const w = q.w ?? 1;
-
-    const fwdX = 2 * (x * z + y * w);
-    const fwdZ = 1 - 2 * (x * x + y * y);
-    return Math.atan2(fwdX, fwdZ);
-}
-
 function rotateVecByQuat(v, q) {
     const x = v.x ?? 0;
     const y = v.y ?? 0;
@@ -38,6 +26,41 @@ function rotateVecByQuat(v, q) {
 
 function rotateVecByQuatConjugate(v, q) {
     return rotateVecByQuat(v, { x: -(q.x ?? 0), y: -(q.y ?? 0), z: -(q.z ?? 0), w: q.w ?? 1 });
+}
+
+function axisFromIndex(index) {
+    if (index === 0) return { x: 1, y: 0, z: 0 };
+    if (index === 1) return { x: 0, y: 1, z: 0 };
+    return { x: 0, y: 0, z: 1 };
+}
+
+function dotVec3(a, b) {
+    return (a?.x ?? 0) * (b?.x ?? 0) + (a?.y ?? 0) * (b?.y ?? 0) + (a?.z ?? 0) * (b?.z ?? 0);
+}
+
+function crossVec3(a, b) {
+    return {
+        x: (a?.y ?? 0) * (b?.z ?? 0) - (a?.z ?? 0) * (b?.y ?? 0),
+        y: (a?.z ?? 0) * (b?.x ?? 0) - (a?.x ?? 0) * (b?.z ?? 0),
+        z: (a?.x ?? 0) * (b?.y ?? 0) - (a?.y ?? 0) * (b?.x ?? 0)
+    };
+}
+
+function normalizeVec3(v) {
+    if (!v) return { x: 0, y: 0, z: 0 };
+    const len = Math.hypot(v.x ?? 0, v.y ?? 0, v.z ?? 0);
+    if (!Number.isFinite(len) || len < 1e-8) return { x: 0, y: 0, z: 0 };
+    return { x: (v.x ?? 0) / len, y: (v.y ?? 0) / len, z: (v.z ?? 0) / len };
+}
+
+function labelFromLocal(point, forward, right, fallback) {
+    if (!point || !forward || !right) return fallback;
+    const f = dotVec3(point, forward);
+    const r = dotVec3(point, right);
+    if (!Number.isFinite(f) || !Number.isFinite(r)) return fallback;
+    const front = f >= 0 ? 'F' : 'R';
+    const side = r >= 0 ? 'R' : 'L';
+    return `${front}${side}`;
 }
 
 function safeGet(obj, prop) {
@@ -93,6 +116,116 @@ function setControllerAxis(controller, propName, setterName, value) {
     }
 }
 
+function numChanged(prev, next, eps = 1e-6) {
+    if (!Number.isFinite(next)) return false;
+    if (!Number.isFinite(prev)) return true;
+    return Math.abs(prev - next) > eps;
+}
+
+function boolChanged(prev, next) {
+    if (typeof next !== 'boolean') return false;
+    return prev !== next;
+}
+
+function updateVec3(target, next, eps = 1e-6) {
+    if (!next) return false;
+    if (!target) return false;
+    let changed = false;
+    if (Number.isFinite(next.x) && numChanged(target.x, next.x, eps)) {
+        target.x = next.x;
+        changed = true;
+    }
+    if (Number.isFinite(next.y) && numChanged(target.y, next.y, eps)) {
+        target.y = next.y;
+        changed = true;
+    }
+    if (Number.isFinite(next.z) && numChanged(target.z, next.z, eps)) {
+        target.z = next.z;
+        changed = true;
+    }
+    return changed;
+}
+
+function updateQuat(target, next, eps = 1e-6) {
+    if (!next) return false;
+    if (!target) return false;
+    let changed = false;
+    if (Number.isFinite(next.w) && numChanged(target.w, next.w, eps)) {
+        target.w = next.w;
+        changed = true;
+    }
+    if (Number.isFinite(next.x) && numChanged(target.x, next.x, eps)) {
+        target.x = next.x;
+        changed = true;
+    }
+    if (Number.isFinite(next.y) && numChanged(target.y, next.y, eps)) {
+        target.y = next.y;
+        changed = true;
+    }
+    if (Number.isFinite(next.z) && numChanged(target.z, next.z, eps)) {
+        target.z = next.z;
+        changed = true;
+    }
+    return changed;
+}
+
+function updateBoolVec3(target, next) {
+    if (!next) return false;
+    if (!target) return false;
+    let changed = false;
+    if (typeof next.x === 'boolean' && boolChanged(target.x, next.x)) {
+        target.x = next.x;
+        changed = true;
+    }
+    if (typeof next.y === 'boolean' && boolChanged(target.y, next.y)) {
+        target.y = next.y;
+        changed = true;
+    }
+    if (typeof next.z === 'boolean' && boolChanged(target.z, next.z)) {
+        target.z = next.z;
+        changed = true;
+    }
+    return changed;
+}
+
+function resolveBodyTypeEnum(rapier, type) {
+    const types = rapier?.RigidBodyType;
+    if (!types) return null;
+    if (type === 'fixed') return types.Fixed;
+    if (type === 'kinematicPositionBased') return types.KinematicPositionBased;
+    if (type === 'kinematicVelocityBased') return types.KinematicVelocityBased;
+    return types.Dynamic;
+}
+
+function makeBodyDesc(rapier, type) {
+    if (!rapier?.RigidBodyDesc) return null;
+    if (type === 'fixed') return rapier.RigidBodyDesc.fixed();
+    if (type === 'kinematicPositionBased') return rapier.RigidBodyDesc.kinematicPositionBased();
+    if (type === 'kinematicVelocityBased') return rapier.RigidBodyDesc.kinematicVelocityBased();
+    return rapier.RigidBodyDesc.dynamic();
+}
+
+function vec3Finite(v) {
+    return !!v && Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z);
+}
+
+function resolveMassProps(props) {
+    if (!props) return null;
+    const com = props.com ?? {};
+    const inertia = props.inertia ?? {};
+    const frame = props.inertiaFrame ?? {};
+    if (!Number.isFinite(props.mass)) return null;
+    if (!Number.isFinite(com.x) || !Number.isFinite(com.y) || !Number.isFinite(com.z)) return null;
+    if (!Number.isFinite(inertia.x) || !Number.isFinite(inertia.y) || !Number.isFinite(inertia.z)) return null;
+    if (!Number.isFinite(frame.w) || !Number.isFinite(frame.x) || !Number.isFinite(frame.y) || !Number.isFinite(frame.z)) return null;
+    return {
+        mass: props.mass,
+        com: { x: com.x, y: com.y, z: com.z },
+        inertia: { x: inertia.x, y: inertia.y, z: inertia.z },
+        frame: { w: frame.w, x: frame.x, y: frame.y, z: frame.z }
+    };
+}
+
 export class RapierDebuggerSim {
     constructor({
         worldConfig = RAPIER_DEBUGGER_WORLD_CONFIG,
@@ -123,10 +256,23 @@ export class RapierDebuggerSim {
             steerAngle: 0
         };
 
+        if (this.tuning?.chassis?.translation && Number.isFinite(this.vehicleConfig.spawnHeight)) {
+            this.tuning.chassis.translation.y = this.vehicleConfig.spawnHeight;
+        }
+
         this._wheelIndices = { front: [], rear: [], all: [] };
         this._wheelLabels = [];
 
         this._snapshot = null;
+
+        this._dirty = {
+            chassis: true,
+            pose: false,
+            bodyType: false,
+            wheels: true,
+            suspension: true,
+            tires: true
+        };
     }
 
     get ready() {
@@ -170,28 +316,261 @@ export class RapierDebuggerSim {
     resetPose() {
         if (!this._ready || !this._body) return;
         const cfg = this.vehicleConfig;
-        const spawnY = Number.isFinite(cfg.spawnHeight) ? cfg.spawnHeight : 3;
-        this._body.setTranslation({ x: 0, y: spawnY, z: 0 }, true);
-        this._body.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
-        this._body.setLinvel({ x: 0, y: 0, z: 0 }, true);
-        this._body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+        const chassisCfg = this.tuning?.chassis ?? {};
+        const translation = chassisCfg.translation ?? {};
+        const rotation = chassisCfg.rotation ?? {};
+        const linvel = chassisCfg.linvel ?? {};
+        const angvel = chassisCfg.angvel ?? {};
+        const spawnY = Number.isFinite(translation.y)
+            ? translation.y
+            : (Number.isFinite(cfg.spawnHeight) ? cfg.spawnHeight : 3);
+        const spawnX = Number.isFinite(translation.x) ? translation.x : 0;
+        const spawnZ = Number.isFinite(translation.z) ? translation.z : 0;
+        this._body.setTranslation({ x: spawnX, y: spawnY, z: spawnZ }, true);
+        this._body.setRotation({
+            x: Number.isFinite(rotation.x) ? rotation.x : 0,
+            y: Number.isFinite(rotation.y) ? rotation.y : 0,
+            z: Number.isFinite(rotation.z) ? rotation.z : 0,
+            w: Number.isFinite(rotation.w) ? rotation.w : 1
+        }, true);
+        this._body.setLinvel({
+            x: Number.isFinite(linvel.x) ? linvel.x : 0,
+            y: Number.isFinite(linvel.y) ? linvel.y : 0,
+            z: Number.isFinite(linvel.z) ? linvel.z : 0
+        }, true);
+        this._body.setAngvel({
+            x: Number.isFinite(angvel.x) ? angvel.x : 0,
+            y: Number.isFinite(angvel.y) ? angvel.y : 0,
+            z: Number.isFinite(angvel.z) ? angvel.z : 0
+        }, true);
         this._body.wakeUp();
     }
 
     setVehicleConfig(next) {
         if (!next) return;
-        Object.assign(this.vehicleConfig, next);
+        let changed = false;
+        let wheelLayoutChanged = false;
+        let spawnHeightChanged = false;
+
+        for (const [key, value] of Object.entries(next)) {
+            if (!Object.prototype.hasOwnProperty.call(this.vehicleConfig, key)) {
+                this.vehicleConfig[key] = value;
+                changed = true;
+                if (key !== 'spawnHeight') wheelLayoutChanged = true;
+                continue;
+            }
+
+            const prev = this.vehicleConfig[key];
+            if (typeof value === 'number' && numChanged(prev, value)) {
+                this.vehicleConfig[key] = value;
+                changed = true;
+                if (key !== 'spawnHeight') wheelLayoutChanged = true;
+                else spawnHeightChanged = true;
+                continue;
+            }
+            if (typeof value === 'boolean' && boolChanged(prev, value)) {
+                this.vehicleConfig[key] = value;
+                changed = true;
+                wheelLayoutChanged = true;
+            }
+        }
+
+        if (!changed) return;
+
+        if (wheelLayoutChanged) {
+            this._dirty.wheels = true;
+        }
+        if (spawnHeightChanged && this.tuning?.chassis?.translation) {
+            this.tuning.chassis.translation.y = this.vehicleConfig.spawnHeight;
+            this._dirty.pose = true;
+        }
         this._snapshot = null;
         this._body?.wakeUp?.();
     }
 
     setTuning(next) {
         if (!next) return;
-        if (next.chassis) Object.assign(this.tuning.chassis, next.chassis);
-        if (next.suspension) Object.assign(this.tuning.suspension, next.suspension);
-        if (next.tires) Object.assign(this.tuning.tires, next.tires);
+        let changed = false;
+
+        if (next.chassis) {
+            const chassis = this.tuning.chassis ?? (this.tuning.chassis = {});
+            if (typeof next.chassis.bodyType === 'string' && next.chassis.bodyType !== chassis.bodyType) {
+                chassis.bodyType = next.chassis.bodyType;
+                this._dirty.bodyType = true;
+                changed = true;
+            }
+
+            const translation = chassis.translation ?? (chassis.translation = { x: 0, y: 0, z: 0 });
+            if (updateVec3(translation, next.chassis.translation)) {
+                this._dirty.pose = true;
+                changed = true;
+            }
+
+            const rotation = chassis.rotation ?? (chassis.rotation = { x: 0, y: 0, z: 0, w: 1 });
+            if (updateQuat(rotation, next.chassis.rotation)) {
+                this._dirty.pose = true;
+                changed = true;
+            }
+
+            const linvel = chassis.linvel ?? (chassis.linvel = { x: 0, y: 0, z: 0 });
+            if (updateVec3(linvel, next.chassis.linvel)) {
+                this._dirty.pose = true;
+                changed = true;
+            }
+
+            const angvel = chassis.angvel ?? (chassis.angvel = { x: 0, y: 0, z: 0 });
+            if (updateVec3(angvel, next.chassis.angvel)) {
+                this._dirty.pose = true;
+                changed = true;
+            }
+
+            const enabledRotations = chassis.enabledRotations ?? (chassis.enabledRotations = { x: true, y: true, z: true });
+            if (updateBoolVec3(enabledRotations, next.chassis.enabledRotations)) {
+                this._dirty.chassis = true;
+                changed = true;
+            }
+
+            for (const [key, value] of Object.entries(next.chassis)) {
+                if (key === 'additionalMassProperties') continue;
+                const prev = this.tuning.chassis[key];
+                if (typeof value === 'number' && numChanged(prev, value)) {
+                    this.tuning.chassis[key] = value;
+                    this._dirty.chassis = true;
+                    changed = true;
+                    continue;
+                }
+                if (typeof value === 'boolean' && boolChanged(prev, value)) {
+                    this.tuning.chassis[key] = value;
+                    this._dirty.chassis = true;
+                    changed = true;
+                }
+            }
+
+            if (next.chassis.additionalMassProperties) {
+                const props = next.chassis.additionalMassProperties;
+                const target = this.tuning.chassis.additionalMassProperties ?? {
+                    mass: NaN,
+                    com: { x: 0, y: 0, z: 0 },
+                    inertia: { x: 0, y: 0, z: 0 },
+                    inertiaFrame: { w: 1, x: 0, y: 0, z: 0 }
+                };
+                const targetCom = target.com ?? (target.com = { x: 0, y: 0, z: 0 });
+                const targetInertia = target.inertia ?? (target.inertia = { x: 0, y: 0, z: 0 });
+                const targetFrame = target.inertiaFrame ?? (target.inertiaFrame = { w: 1, x: 0, y: 0, z: 0 });
+                let propsChanged = false;
+
+                if (Number.isFinite(props.mass) && numChanged(target.mass, props.mass)) {
+                    target.mass = props.mass;
+                    propsChanged = true;
+                }
+
+                if (props.com) {
+                    if (Number.isFinite(props.com.x) && numChanged(targetCom.x, props.com.x)) {
+                        targetCom.x = props.com.x;
+                        propsChanged = true;
+                    }
+                    if (Number.isFinite(props.com.y) && numChanged(targetCom.y, props.com.y)) {
+                        targetCom.y = props.com.y;
+                        propsChanged = true;
+                    }
+                    if (Number.isFinite(props.com.z) && numChanged(targetCom.z, props.com.z)) {
+                        targetCom.z = props.com.z;
+                        propsChanged = true;
+                    }
+                }
+
+                if (props.inertia) {
+                    if (Number.isFinite(props.inertia.x) && numChanged(targetInertia.x, props.inertia.x)) {
+                        targetInertia.x = props.inertia.x;
+                        propsChanged = true;
+                    }
+                    if (Number.isFinite(props.inertia.y) && numChanged(targetInertia.y, props.inertia.y)) {
+                        targetInertia.y = props.inertia.y;
+                        propsChanged = true;
+                    }
+                    if (Number.isFinite(props.inertia.z) && numChanged(targetInertia.z, props.inertia.z)) {
+                        targetInertia.z = props.inertia.z;
+                        propsChanged = true;
+                    }
+                }
+
+                if (props.inertiaFrame) {
+                    if (Number.isFinite(props.inertiaFrame.w) && numChanged(targetFrame.w, props.inertiaFrame.w)) {
+                        targetFrame.w = props.inertiaFrame.w;
+                        propsChanged = true;
+                    }
+                    if (Number.isFinite(props.inertiaFrame.x) && numChanged(targetFrame.x, props.inertiaFrame.x)) {
+                        targetFrame.x = props.inertiaFrame.x;
+                        propsChanged = true;
+                    }
+                    if (Number.isFinite(props.inertiaFrame.y) && numChanged(targetFrame.y, props.inertiaFrame.y)) {
+                        targetFrame.y = props.inertiaFrame.y;
+                        propsChanged = true;
+                    }
+                    if (Number.isFinite(props.inertiaFrame.z) && numChanged(targetFrame.z, props.inertiaFrame.z)) {
+                        targetFrame.z = props.inertiaFrame.z;
+                        propsChanged = true;
+                    }
+                }
+
+                this.tuning.chassis.additionalMassProperties = target;
+                if (propsChanged) {
+                    this._dirty.chassis = true;
+                    changed = true;
+                }
+            }
+        }
+
+        if (next.suspension) {
+            for (const [key, value] of Object.entries(next.suspension)) {
+                const prev = this.tuning.suspension[key];
+                if (typeof value === 'number' && numChanged(prev, value)) {
+                    this.tuning.suspension[key] = value;
+                    this._dirty.suspension = true;
+                    changed = true;
+                }
+            }
+        }
+
+        if (next.tires) {
+            for (const [key, value] of Object.entries(next.tires)) {
+                const prev = this.tuning.tires[key];
+                if (typeof value === 'number' && numChanged(prev, value)) {
+                    this.tuning.tires[key] = value;
+                    this._dirty.tires = true;
+                    changed = true;
+                }
+            }
+        }
+
+        if (!changed) return;
         this._snapshot = null;
         this._body?.wakeUp?.();
+    }
+
+    setWorldConfig(next) {
+        if (!next) return;
+        let gravityChanged = false;
+        if (next.gravity) {
+            const gravity = this.worldConfig.gravity ?? (this.worldConfig.gravity = { x: 0, y: -9.81, z: 0 });
+            if (Number.isFinite(next.gravity.x) && numChanged(gravity.x, next.gravity.x)) {
+                gravity.x = next.gravity.x;
+                gravityChanged = true;
+            }
+            if (Number.isFinite(next.gravity.y) && numChanged(gravity.y, next.gravity.y)) {
+                gravity.y = next.gravity.y;
+                gravityChanged = true;
+            }
+            if (Number.isFinite(next.gravity.z) && numChanged(gravity.z, next.gravity.z)) {
+                gravity.z = next.gravity.z;
+                gravityChanged = true;
+            }
+        }
+        if (gravityChanged && this._world) {
+            const gravity = this.worldConfig.gravity ?? { x: 0, y: -9.81, z: 0 };
+            this._world.gravity = { x: gravity.x, y: gravity.y, z: gravity.z };
+            this._body?.wakeUp?.();
+        }
     }
 
     setInputs(next) {
@@ -204,6 +583,58 @@ export class RapierDebuggerSim {
 
     getInputs() {
         return { ...this._inputs };
+    }
+
+    resetForces() {
+        if (!this._body?.resetForces) return;
+        this._body.resetForces(true);
+    }
+
+    resetTorques() {
+        if (!this._body?.resetTorques) return;
+        this._body.resetTorques(true);
+    }
+
+    addForce(force) {
+        if (!this._body?.addForce || !vec3Finite(force)) return;
+        this._body.addForce({ x: force.x, y: force.y, z: force.z }, true);
+    }
+
+    addTorque(torque) {
+        if (!this._body?.addTorque || !vec3Finite(torque)) return;
+        this._body.addTorque({ x: torque.x, y: torque.y, z: torque.z }, true);
+    }
+
+    addForceAtPoint(force, point) {
+        if (!this._body?.addForceAtPoint || !vec3Finite(force) || !vec3Finite(point)) return;
+        this._body.addForceAtPoint(
+            { x: force.x, y: force.y, z: force.z },
+            { x: point.x, y: point.y, z: point.z },
+            true
+        );
+    }
+
+    applyImpulse(impulse) {
+        if (!this._body?.applyImpulse || !vec3Finite(impulse)) return;
+        this._body.applyImpulse({ x: impulse.x, y: impulse.y, z: impulse.z }, true);
+    }
+
+    applyTorqueImpulse(torque) {
+        if (!this._body?.applyTorqueImpulse || !vec3Finite(torque)) return;
+        this._body.applyTorqueImpulse({ x: torque.x, y: torque.y, z: torque.z }, true);
+    }
+
+    applyImpulseAtPoint(impulse, point) {
+        if (!this._body?.applyImpulseAtPoint || !vec3Finite(impulse) || !vec3Finite(point)) return;
+        this._body.applyImpulseAtPoint(
+            { x: impulse.x, y: impulse.y, z: impulse.z },
+            { x: point.x, y: point.y, z: point.z },
+            true
+        );
+    }
+
+    wakeUp() {
+        this._body?.wakeUp?.();
     }
 
     step(dt) {
@@ -287,22 +718,69 @@ export class RapierDebuggerSim {
         const halfL = cfg.length * 0.5;
 
         const wheelY = -halfH - (cfg.groundClearance ?? 0) + cfg.wheelRadius;
-        const wheelX = halfW - (cfg.wheelWidth * 0.5) - (cfg.wheelSideInset ?? 0);
+        const wheelX = halfW - (cfg.wheelWidth * 0.5) + (cfg.wheelSideInset ?? 0);
         const wheelZ = halfL * cfg.wheelbaseRatio;
 
-        const startY = Number.isFinite(cfg.spawnHeight) ? cfg.spawnHeight : (halfH + cfg.restLength);
-
         const chassisCfg = this.tuning.chassis ?? {};
-        const bodyDesc = this._rapier.RigidBodyDesc.dynamic()
-            .setTranslation(0, startY, 0)
-            .setLinearDamping(chassisCfg.linearDamping ?? 0.3)
-            .setAngularDamping(chassisCfg.angularDamping ?? 0.8)
-            .setCcdEnabled(!!(chassisCfg.ccdEnabled ?? true));
+        const bodyType = chassisCfg.bodyType ?? 'dynamic';
+        const bodyDesc = makeBodyDesc(this._rapier, bodyType) ?? this._rapier.RigidBodyDesc.dynamic();
+        const translation = chassisCfg.translation ?? {};
+        const startY = Number.isFinite(translation.y)
+            ? translation.y
+            : (Number.isFinite(cfg.spawnHeight) ? cfg.spawnHeight : (halfH + cfg.restLength));
+        const startX = Number.isFinite(translation.x) ? translation.x : 0;
+        const startZ = Number.isFinite(translation.z) ? translation.z : 0;
+        bodyDesc.setTranslation(startX, startY, startZ);
+        const rotation = chassisCfg.rotation ?? {};
+        bodyDesc.setRotation({
+            w: Number.isFinite(rotation.w) ? rotation.w : 1,
+            x: Number.isFinite(rotation.x) ? rotation.x : 0,
+            y: Number.isFinite(rotation.y) ? rotation.y : 0,
+            z: Number.isFinite(rotation.z) ? rotation.z : 0
+        });
+        const linvel = chassisCfg.linvel ?? null;
+        if (vec3Finite(linvel)) bodyDesc.setLinvel(linvel.x, linvel.y, linvel.z);
+        const angvel = chassisCfg.angvel ?? null;
+        if (vec3Finite(angvel)) bodyDesc.setAngvel({ x: angvel.x, y: angvel.y, z: angvel.z });
+        if (Number.isFinite(chassisCfg.linearDamping)) bodyDesc.setLinearDamping(chassisCfg.linearDamping);
+        if (Number.isFinite(chassisCfg.angularDamping)) bodyDesc.setAngularDamping(chassisCfg.angularDamping);
+        if (Number.isFinite(chassisCfg.gravityScale) && typeof bodyDesc.setGravityScale === 'function') {
+            bodyDesc.setGravityScale(chassisCfg.gravityScale);
+        }
+        if (typeof chassisCfg.canSleep === 'boolean' && typeof bodyDesc.setCanSleep === 'function') {
+            bodyDesc.setCanSleep(chassisCfg.canSleep);
+        }
+        if (typeof chassisCfg.ccdEnabled === 'boolean' && typeof bodyDesc.setCcdEnabled === 'function') {
+            bodyDesc.setCcdEnabled(chassisCfg.ccdEnabled);
+        }
+        if (Number.isFinite(chassisCfg.dominanceGroup) && typeof bodyDesc.setDominanceGroup === 'function') {
+            bodyDesc.setDominanceGroup(chassisCfg.dominanceGroup);
+        }
+        if (typeof chassisCfg.lockTranslations === 'boolean' && chassisCfg.lockTranslations && typeof bodyDesc.lockTranslations === 'function') {
+            bodyDesc.lockTranslations();
+        }
+        if (typeof chassisCfg.lockRotations === 'boolean' && chassisCfg.lockRotations && typeof bodyDesc.lockRotations === 'function') {
+            bodyDesc.lockRotations();
+        }
+        const enabledRotations = chassisCfg.enabledRotations ?? null;
+        if (enabledRotations && typeof bodyDesc.enabledRotations === 'function') {
+            bodyDesc.enabledRotations(
+                typeof enabledRotations.x === 'boolean' ? enabledRotations.x : true,
+                typeof enabledRotations.y === 'boolean' ? enabledRotations.y : true,
+                typeof enabledRotations.z === 'boolean' ? enabledRotations.z : true
+            );
+        }
+        const massProps = resolveMassProps(chassisCfg.additionalMassProperties);
+        if (massProps && typeof bodyDesc.setAdditionalMassProperties === 'function') {
+            bodyDesc.setAdditionalMassProperties(massProps.mass, massProps.com, massProps.inertia, massProps.frame);
+        } else if (Number.isFinite(chassisCfg.additionalMass)) {
+            bodyDesc.setAdditionalMass(chassisCfg.additionalMass);
+        }
         const body = this._world.createRigidBody(bodyDesc);
         if (Number.isFinite(chassisCfg.gravityScale)) {
             body.setGravityScale(chassisCfg.gravityScale, true);
         }
-        if (Number.isFinite(chassisCfg.additionalMass)) {
+        if (!massProps && Number.isFinite(chassisCfg.additionalMass)) {
             body.setAdditionalMass(chassisCfg.additionalMass, true);
         }
 
@@ -358,47 +836,121 @@ export class RapierDebuggerSim {
     _applyTuning() {
         if (!this._body || !this._controller) return;
 
+        if (!this._dirty.chassis && !this._dirty.wheels && !this._dirty.suspension && !this._dirty.tires && !this._dirty.pose && !this._dirty.bodyType) return;
+
         const chassisCfg = this.tuning.chassis ?? {};
-        if (Number.isFinite(chassisCfg.linearDamping)) this._body.setLinearDamping(chassisCfg.linearDamping);
-        if (Number.isFinite(chassisCfg.angularDamping)) this._body.setAngularDamping(chassisCfg.angularDamping);
-        if (Number.isFinite(chassisCfg.gravityScale)) this._body.setGravityScale(chassisCfg.gravityScale, false);
-        if (Number.isFinite(chassisCfg.additionalMass)) this._body.setAdditionalMass(chassisCfg.additionalMass, false);
-        if (typeof chassisCfg.ccdEnabled === 'boolean') this._body.enableCcd(chassisCfg.ccdEnabled);
+        if (this._dirty.bodyType) {
+            const nextType = resolveBodyTypeEnum(this._rapier, chassisCfg.bodyType);
+            if (nextType !== null && typeof this._body.setBodyType === 'function') {
+                this._body.setBodyType(nextType, true);
+            }
+            this._dirty.bodyType = false;
+        }
+        if (this._dirty.chassis) {
+            if (Number.isFinite(chassisCfg.linearDamping)) this._body.setLinearDamping(chassisCfg.linearDamping);
+            if (Number.isFinite(chassisCfg.angularDamping)) this._body.setAngularDamping(chassisCfg.angularDamping);
+            if (Number.isFinite(chassisCfg.gravityScale)) this._body.setGravityScale(chassisCfg.gravityScale, false);
+            const massProps = resolveMassProps(chassisCfg.additionalMassProperties);
+            if (massProps && typeof this._body.setAdditionalMassProperties === 'function') {
+                this._body.setAdditionalMassProperties(massProps.mass, massProps.com, massProps.inertia, massProps.frame, false);
+            } else if (Number.isFinite(chassisCfg.additionalMass)) {
+                this._body.setAdditionalMass(chassisCfg.additionalMass, false);
+            }
+            if (typeof chassisCfg.canSleep === 'boolean' && typeof this._body.setCanSleep === 'function') {
+                this._body.setCanSleep(chassisCfg.canSleep);
+            }
+            if (typeof chassisCfg.ccdEnabled === 'boolean') this._body.enableCcd(chassisCfg.ccdEnabled);
+            if (Number.isFinite(chassisCfg.dominanceGroup) && typeof this._body.setDominanceGroup === 'function') {
+                this._body.setDominanceGroup(chassisCfg.dominanceGroup);
+            }
+            if (typeof chassisCfg.lockTranslations === 'boolean' && typeof this._body.lockTranslations === 'function') {
+                this._body.lockTranslations(chassisCfg.lockTranslations, true);
+            }
+            if (typeof chassisCfg.lockRotations === 'boolean' && typeof this._body.lockRotations === 'function') {
+                this._body.lockRotations(chassisCfg.lockRotations, true);
+            }
+            const enabledRotations = chassisCfg.enabledRotations ?? null;
+            if (enabledRotations && typeof this._body.setEnabledRotations === 'function') {
+                this._body.setEnabledRotations(
+                    typeof enabledRotations.x === 'boolean' ? enabledRotations.x : true,
+                    typeof enabledRotations.y === 'boolean' ? enabledRotations.y : true,
+                    typeof enabledRotations.z === 'boolean' ? enabledRotations.z : true,
+                    true
+                );
+            }
+            this._dirty.chassis = false;
+        }
 
-        const cfg = this.vehicleConfig;
-        const halfW = cfg.width * 0.5;
-        const halfH = cfg.height * 0.5;
-        const halfL = cfg.length * 0.5;
-        const wheelY = -halfH - (cfg.groundClearance ?? 0) + cfg.wheelRadius;
-        const wheelX = halfW - (cfg.wheelWidth * 0.5) - (cfg.wheelSideInset ?? 0);
-        const wheelZ = halfL * cfg.wheelbaseRatio;
+        const wheelsDirty = this._dirty.wheels;
+        const suspensionDirty = this._dirty.suspension;
+        const tiresDirty = this._dirty.tires;
+        if (wheelsDirty || suspensionDirty || tiresDirty) {
+            const cfg = this.vehicleConfig;
+            const halfW = cfg.width * 0.5;
+            const halfH = cfg.height * 0.5;
+            const halfL = cfg.length * 0.5;
+            const wheelY = -halfH - (cfg.groundClearance ?? 0) + cfg.wheelRadius;
+            const wheelX = halfW - (cfg.wheelWidth * 0.5) + (cfg.wheelSideInset ?? 0);
+            const wheelZ = halfL * cfg.wheelbaseRatio;
 
-        const hardpoints = [
-            { x: -wheelX, y: wheelY + cfg.restLength, z: wheelZ },
-            { x: wheelX, y: wheelY + cfg.restLength, z: wheelZ },
-            { x: -wheelX, y: wheelY + cfg.restLength, z: -wheelZ },
-            { x: wheelX, y: wheelY + cfg.restLength, z: -wheelZ }
-        ];
+            const hardpoints = wheelsDirty
+                ? [
+                    { x: -wheelX, y: wheelY + cfg.restLength, z: wheelZ },
+                    { x: wheelX, y: wheelY + cfg.restLength, z: wheelZ },
+                    { x: -wheelX, y: wheelY + cfg.restLength, z: -wheelZ },
+                    { x: wheelX, y: wheelY + cfg.restLength, z: -wheelZ }
+                ]
+                : null;
 
-        const susp = this.tuning.suspension ?? {};
-        const tires = this.tuning.tires ?? {};
+            const susp = this.tuning.suspension ?? {};
+            const tires = this.tuning.tires ?? {};
 
-        for (let i = 0; i < this._wheelIndices.all.length; i++) {
-            const idx = this._wheelIndices.all[i];
-            const hp = hardpoints[i];
-            if (hp) this._controller.setWheelChassisConnectionPointCs?.(idx, hp);
+            for (let i = 0; i < this._wheelIndices.all.length; i++) {
+                const idx = this._wheelIndices.all[i];
 
-            if (Number.isFinite(cfg.restLength)) this._controller.setWheelSuspensionRestLength(idx, cfg.restLength);
-            if (Number.isFinite(cfg.wheelRadius)) this._controller.setWheelRadius(idx, cfg.wheelRadius);
+                if (wheelsDirty && hardpoints?.[i]) {
+                    this._controller.setWheelChassisConnectionPointCs?.(idx, hardpoints[i]);
+                    if (Number.isFinite(cfg.restLength)) this._controller.setWheelSuspensionRestLength(idx, cfg.restLength);
+                    if (Number.isFinite(cfg.wheelRadius)) this._controller.setWheelRadius(idx, cfg.wheelRadius);
+                }
 
-            if (Number.isFinite(susp.maxTravel)) this._controller.setWheelMaxSuspensionTravel(idx, susp.maxTravel);
-            if (Number.isFinite(susp.stiffness)) this._controller.setWheelSuspensionStiffness(idx, susp.stiffness);
-            if (Number.isFinite(susp.compression)) this._controller.setWheelSuspensionCompression(idx, susp.compression);
-            if (Number.isFinite(susp.relaxation)) this._controller.setWheelSuspensionRelaxation(idx, susp.relaxation);
-            if (Number.isFinite(susp.maxForce)) this._controller.setWheelMaxSuspensionForce(idx, susp.maxForce);
+                if (suspensionDirty) {
+                    if (Number.isFinite(susp.maxTravel)) this._controller.setWheelMaxSuspensionTravel(idx, susp.maxTravel);
+                    if (Number.isFinite(susp.stiffness)) this._controller.setWheelSuspensionStiffness(idx, susp.stiffness);
+                    if (Number.isFinite(susp.compression)) this._controller.setWheelSuspensionCompression(idx, susp.compression);
+                    if (Number.isFinite(susp.relaxation)) this._controller.setWheelSuspensionRelaxation(idx, susp.relaxation);
+                    if (Number.isFinite(susp.maxForce)) this._controller.setWheelMaxSuspensionForce(idx, susp.maxForce);
+                }
 
-            if (Number.isFinite(tires.frictionSlip)) this._controller.setWheelFrictionSlip(idx, tires.frictionSlip);
-            if (Number.isFinite(tires.sideFrictionStiffness)) this._controller.setWheelSideFrictionStiffness(idx, tires.sideFrictionStiffness);
+                if (tiresDirty) {
+                    if (Number.isFinite(tires.frictionSlip)) this._controller.setWheelFrictionSlip(idx, tires.frictionSlip);
+                    if (Number.isFinite(tires.sideFrictionStiffness)) this._controller.setWheelSideFrictionStiffness(idx, tires.sideFrictionStiffness);
+                }
+            }
+
+            this._dirty.wheels = false;
+            this._dirty.suspension = false;
+            this._dirty.tires = false;
+        }
+
+        if (this._dirty.pose) {
+            const translation = chassisCfg.translation ?? null;
+            if (vec3Finite(translation)) {
+                this._body.setTranslation({ x: translation.x, y: translation.y, z: translation.z }, true);
+            }
+            const rotation = chassisCfg.rotation ?? null;
+            if (rotation && Number.isFinite(rotation.x) && Number.isFinite(rotation.y) && Number.isFinite(rotation.z) && Number.isFinite(rotation.w)) {
+                this._body.setRotation({ x: rotation.x, y: rotation.y, z: rotation.z, w: rotation.w }, true);
+            }
+            const linvel = chassisCfg.linvel ?? null;
+            if (vec3Finite(linvel)) {
+                this._body.setLinvel({ x: linvel.x, y: linvel.y, z: linvel.z }, true);
+            }
+            const angvel = chassisCfg.angvel ?? null;
+            if (vec3Finite(angvel)) {
+                this._body.setAngvel({ x: angvel.x, y: angvel.y, z: angvel.z }, true);
+            }
+            this._dirty.pose = false;
         }
     }
 
@@ -446,18 +998,16 @@ export class RapierDebuggerSim {
         const linvel = this._body.linvel();
         const angvel = this._body.angvel();
         const speed = this._controller.currentVehicleSpeed ? this._controller.currentVehicleSpeed() : 0;
-        const yaw = yawFromQuat(rot);
-
         const upAxis = safeGet(this._controller, 'indexUpAxis');
         const forwardAxis = safeGet(this._controller, 'indexForwardAxis');
         const forwardIndex = Number.isFinite(forwardAxis) ? forwardAxis : 2;
-        const localForward = forwardIndex === 0
-            ? { x: 1, y: 0, z: 0 }
-            : forwardIndex === 1
-                ? { x: 0, y: 1, z: 0 }
-                : { x: 0, y: 0, z: 1 };
+        const localForward = axisFromIndex(forwardIndex);
+        const upIndex = Number.isFinite(upAxis) ? upAxis : 1;
+        const localUp = axisFromIndex(upIndex);
+        const localRight = normalizeVec3(crossVec3(localUp, localForward));
         const worldForward = rotateVecByQuat(localForward, rot);
         const speedProj = (linvel.x * worldForward.x) + (linvel.y * worldForward.y) + (linvel.z * worldForward.z);
+        const yaw = Math.atan2(worldForward.x ?? 0, worldForward.z ?? 0);
 
         const invMass = safeCall(this._body, 'invMass') ?? safeGet(this._body, 'invMass');
         const massKg = (Number.isFinite(invMass) && invMass > 0) ? (1 / invMass) : null;
@@ -473,7 +1023,7 @@ export class RapierDebuggerSim {
         const halfH = cfg.height * 0.5;
         const halfL = cfg.length * 0.5;
         const wheelY = -halfH - (cfg.groundClearance ?? 0) + cfg.wheelRadius;
-        const wheelX = halfW - (cfg.wheelWidth * 0.5) - (cfg.wheelSideInset ?? 0);
+        const wheelX = halfW - (cfg.wheelWidth * 0.5) + (cfg.wheelSideInset ?? 0);
         const wheelZ = halfL * cfg.wheelbaseRatio;
         const expectedCenters = [
             { x: -wheelX, y: wheelY, z: wheelZ },
@@ -487,7 +1037,7 @@ export class RapierDebuggerSim {
 
         for (let i = 0; i < this._wheelIndices.all.length; i++) {
             const idx = this._wheelIndices.all[i];
-            const label = this._wheelLabels[idx] ?? `W${idx}`;
+            const fallbackLabel = this._wheelLabels[idx] ?? `W${idx}`;
             const inContact = !!this._controller.wheelIsInContact?.(idx);
             const suspLenRaw = this._controller.wheelSuspensionLength?.(idx);
             const suspLen = Number.isFinite(suspLenRaw) ? Math.max(minSuspLen, Math.min(maxSuspLen, suspLenRaw)) : suspLenRaw;
@@ -540,6 +1090,9 @@ export class RapierDebuggerSim {
                     z: connectionPointLocal.z - expectedConnectionLocal.z
                 };
             }
+
+            const labelSource = connectionPointLocal ?? centerLocal ?? expectedLocal;
+            const label = labelFromLocal(labelSource, localForward, localRight, fallbackLabel);
 
             wheelStates.push({
                 index: idx,

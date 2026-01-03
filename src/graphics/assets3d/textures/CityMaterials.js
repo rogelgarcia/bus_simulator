@@ -13,17 +13,17 @@ function applyPolygonOffset(mat, { factor = -2, units = -2 } = {}) {
 export function getCityMaterials() {
     if (_cached) return _cached;
 
-    const road = new THREE.MeshStandardMaterial({
+    const road = applyPolygonOffset(new THREE.MeshStandardMaterial({
         color: 0x2b2b2b,
         roughness: 0.95,
         metalness: 0.0
-    });
+    }), { factor: -2, units: -2 });
 
     const sidewalk = applyPolygonOffset(new THREE.MeshStandardMaterial({
         color: 0x8f8f8f,
         roughness: 1.0,
         metalness: 0.0
-    }), { factor: -1, units: -1 });
+    }), { factor: -3, units: -3 });
 
     // ✅ Slightly brighter curb for visibility + thicker in geometry
     const curb = new THREE.MeshStandardMaterial({
@@ -37,13 +37,13 @@ export function getCityMaterials() {
         color: 0xf2f2f2,
         roughness: 0.35,
         metalness: 0.0
-    }), { factor: -4, units: -4 });
+    }), { factor: -6, units: -6 });
 
     const laneYellow = applyPolygonOffset(new THREE.MeshStandardMaterial({
         color: 0xf2d34f,
         roughness: 0.35,
         metalness: 0.0
-    }), { factor: -4, units: -4 });
+    }), { factor: -6, units: -6 });
 
     _cached = { road, sidewalk, curb, laneWhite, laneYellow };
     return _cached;

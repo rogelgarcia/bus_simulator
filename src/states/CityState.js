@@ -367,7 +367,7 @@ export class CityState {
         const baseRoadY = roadCfg.surfaceY ?? 0.02;
         const curbHeight = roadCfg.curb?.height ?? 0.17;
         const groundY = groundCfg.surfaceY ?? (baseRoadY + curbHeight);
-        const roadY = Math.max(baseRoadY, groundY + ROAD_SURFACE_LIFT);
+        const roadY = groundY;
         this._highlightY = roadY + HIGHLIGHT_LIFT;
         this.city.group.add(this._highlightMesh);
     }
@@ -427,7 +427,7 @@ export class CityState {
         const baseRoadY = roadCfg.surfaceY ?? 0.02;
         const curbHeight = roadCfg.curb?.height ?? 0.17;
         const groundY = groundCfg.surfaceY ?? (baseRoadY + curbHeight);
-        const roadY = Math.max(baseRoadY, groundY + ROAD_SURFACE_LIFT);
+        const roadY = groundY;
         const markerY = roadY + COLLISION_MARKER_LIFT;
         const curbT = roadCfg.curb?.thickness ?? DEFAULT_CURB_THICKNESS;
         const endPoleRadius = Math.max(POLE_DOT_RADIUS_MIN, curbT * POLE_DOT_RADIUS_FACTOR * POLE_DOT_SCALE);

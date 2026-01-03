@@ -24,6 +24,8 @@ export class RapierDebuggerScene {
         this._wheelTires = [];
         this._debugRender = null;
         this._debugColorBuffer = null;
+        this._originAxes = null;
+        this._wheelIndexByLabel = {};
 
         this._tmpQuat = new THREE.Quaternion();
         this._tmpQuatB = new THREE.Quaternion();
@@ -32,8 +34,40 @@ export class RapierDebuggerScene {
         this._tmpVecB = new THREE.Vector3();
         this._tmpVecC = new THREE.Vector3();
         this._tmpVecD = new THREE.Vector3();
+        this._tmpSize = new THREE.Vector2();
         this._prevChassisPos = new THREE.Vector3();
         this._cameraFollowReady = false;
+        this._cameraFollowPending = new THREE.Vector3();
+        this._cameraFollowVelocity = new THREE.Vector3();
+        this._cameraFollowTau = 0.22;
+        this._cameraFollowTauMin = 0.08;
+        this._cameraFollowDeadZoneRatio = 0.08;
+        this._cameraFollowCatchupRatio = 0.35;
+        this._cameraFollowEngaged = false;
+        this._viewOffsetX = -200;
+        this._viewOffsetMinWidth = 720;
+        this._viewOffsetState = { w: 0, h: 0, x: 0 };
+        this._defaultCameraPos = new THREE.Vector3();
+        this._defaultCameraTarget = new THREE.Vector3();
+        this._arrowPanStep = 0.6;
+        this._arrowPanFast = 2.4;
+        this._keyboardBound = false;
+        this._onKeyDown = (event) => {
+            if (!this.controls) return;
+            const key = event.key;
+            if (key !== 'ArrowLeft' && key !== 'ArrowRight' && key !== 'ArrowUp' && key !== 'ArrowDown') return;
+            const tag = event.target?.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || event.target?.isContentEditable) return;
+            event.preventDefault();
+            const step = event.shiftKey ? this._arrowPanFast : this._arrowPanStep;
+            let dx = 0;
+            let dz = 0;
+            if (key === 'ArrowLeft') dx = -step;
+            if (key === 'ArrowRight') dx = step;
+            if (key === 'ArrowUp') dz = step;
+            if (key === 'ArrowDown') dz = -step;
+            this._panCamera(dx, dz);
+        };
     }
 
     enter() {
@@ -47,10 +81,13 @@ export class RapierDebuggerScene {
         this._buildGround();
         this._buildLights();
         this._buildCamera();
+        this._syncViewOffset();
+        this._buildOriginAxes();
         this._buildChassis();
         this._buildWheels();
         this._buildDebugRender();
         this._applyInitialPose();
+        this._bindKeyboard();
     }
 
     dispose() {
@@ -69,19 +106,96 @@ export class RapierDebuggerScene {
         this._wheelTires.length = 0;
         this._debugRender = null;
         this._debugColorBuffer = null;
+        this._wheelIndexByLabel = {};
+        this._originAxes = null;
+        if (this.camera?.clearViewOffset) {
+            this.camera.clearViewOffset();
+        }
+        this._unbindKeyboard();
         this._cameraFollowReady = false;
+        this._cameraFollowPending.set(0, 0, 0);
+        this._cameraFollowVelocity.set(0, 0, 0);
+        this._cameraFollowEngaged = false;
     }
 
     update(dt) {
+        this._syncViewOffset();
+        if (this.controls && this._cameraFollowReady) {
+            const clampedDt = Math.min(Math.max(dt ?? 0, 0), 0.05);
+            const lagLen = this._cameraFollowPending.length();
+            const followDistance = this.camera.position.distanceTo(this.controls.target);
+            const deadZone = followDistance * this._cameraFollowDeadZoneRatio;
+
+            if (!this._cameraFollowEngaged && lagLen > deadZone) {
+                this._cameraFollowEngaged = true;
+            }
+
+            if (this._cameraFollowEngaged) {
+                if (lagLen <= deadZone) {
+                    this._cameraFollowEngaged = false;
+                    this._cameraFollowVelocity.set(0, 0, 0);
+                } else {
+                    const catchupSpan = Math.max(0.01, followDistance * this._cameraFollowCatchupRatio);
+                    const t = Math.min(1, Math.max(0, (lagLen - deadZone) / catchupSpan));
+                    const eased = t * t * (3 - 2 * t);
+                    const tau = this._cameraFollowTau - (this._cameraFollowTau - this._cameraFollowTauMin) * eased;
+                    const smoothed = this._smoothDampVec3(
+                        this._cameraFollowPending,
+                        this._tmpVecD.set(0, 0, 0),
+                        this._cameraFollowVelocity,
+                        tau,
+                        clampedDt
+                    );
+                    const step = this._tmpVecB.copy(this._cameraFollowPending).sub(smoothed);
+                    this.camera.position.add(step);
+                    this.controls.target.add(step);
+                    this._cameraFollowPending.copy(smoothed);
+
+                    if (this._cameraFollowPending.lengthSq() < 1e-10) {
+                        this._cameraFollowPending.set(0, 0, 0);
+                        this._cameraFollowVelocity.set(0, 0, 0);
+                        this._cameraFollowEngaged = false;
+                    }
+                }
+            }
+        }
         this.controls?.update?.();
     }
 
-    setHighlightedWheel(index) {
+    _syncViewOffset() {
+        const renderer = this.engine?.renderer;
+        if (!renderer || !this.camera) return;
+        const size = renderer.getSize(this._tmpSize);
+        const w = Math.round(size.x);
+        const h = Math.round(size.y);
+        const maxOffset = Math.round(w * 0.25);
+        const offset = w >= this._viewOffsetMinWidth ? Math.min(this._viewOffsetX, maxOffset) : 0;
+
+        if (this._viewOffsetState.w === w && this._viewOffsetState.h === h && this._viewOffsetState.x === offset) {
+            return;
+        }
+        this._viewOffsetState = { w, h, x: offset };
+
+        if (offset > 0 && typeof this.camera.setViewOffset === 'function') {
+            this.camera.setViewOffset(w, h, offset, 0, w, h);
+        } else if (typeof this.camera.clearViewOffset === 'function') {
+            this.camera.clearViewOffset();
+        }
+    }
+
+    setHighlightedWheel(target) {
+        let targetIndex = null;
+        if (typeof target === 'number' && Number.isFinite(target)) {
+            targetIndex = target;
+        } else if (typeof target === 'string') {
+            const mapped = this._wheelIndexByLabel?.[target];
+            if (Number.isFinite(mapped)) targetIndex = mapped;
+        }
         for (let i = 0; i < this._wheelTires.length; i++) {
             const tire = this._wheelTires[i];
             const mat = tire?.material;
             if (!mat) continue;
-            if (i === index) {
+            if (targetIndex !== null && i === targetIndex) {
                 mat.color.setHex(0x4cff7a);
                 mat.emissive?.setHex?.(0x102810);
             } else {
@@ -107,8 +221,7 @@ export class RapierDebuggerScene {
             } else {
                 const delta = this._tmpVecD.set(pos.x, pos.y, pos.z).sub(this._prevChassisPos);
                 if (Number.isFinite(delta.x) && Number.isFinite(delta.y) && Number.isFinite(delta.z)) {
-                    this.camera.position.add(delta);
-                    this.controls.target.add(delta);
+                    this._cameraFollowPending.add(delta);
                 }
                 this._prevChassisPos.set(pos.x, pos.y, pos.z);
             }
@@ -154,10 +267,14 @@ export class RapierDebuggerScene {
 
         this.controls = new OrbitControls(this.camera, this.engine.renderer.domElement);
         this.controls.enableDamping = true;
-        this.controls.dampingFactor = 0.08;
+        this.controls.dampingFactor = 0.05;
         this.controls.minDistance = 4;
         this.controls.maxDistance = 50;
         this.controls.maxPolarAngle = Math.PI * 0.48;
+        this.controls.target.set(0, 1, 0);
+        this.controls.update();
+        this._defaultCameraPos.copy(this.camera.position);
+        this._defaultCameraTarget.copy(this.controls.target);
     }
 
     _buildChassis() {
@@ -179,7 +296,7 @@ export class RapierDebuggerScene {
         const halfL = cfg.length * 0.5;
 
         const wheelY = -halfH - (cfg.groundClearance ?? 0) + cfg.wheelRadius;
-        const wheelX = halfW - (cfg.wheelWidth * 0.5) - (cfg.wheelSideInset ?? 0);
+        const wheelX = halfW - (cfg.wheelWidth * 0.5) + (cfg.wheelSideInset ?? 0);
         const wheelZ = halfL * cfg.wheelbaseRatio;
         const startY = Number.isFinite(cfg.spawnHeight) ? cfg.spawnHeight : 0;
 
@@ -187,6 +304,9 @@ export class RapierDebuggerScene {
         this._chassisMesh.quaternion.identity();
         this._prevChassisPos.set(0, startY, 0);
         this._cameraFollowReady = false;
+        this._cameraFollowPending.set(0, 0, 0);
+        this._cameraFollowVelocity.set(0, 0, 0);
+        this._cameraFollowEngaged = false;
 
         const wheelPositions = [
             { x: -wheelX, y: wheelY, z: wheelZ },
@@ -212,6 +332,22 @@ export class RapierDebuggerScene {
         debugLines.renderOrder = 1000;
         this.root.add(debugLines);
         this._debugRender = debugLines;
+    }
+
+    _buildOriginAxes() {
+        const origin = new THREE.Vector3(0, 0, 0);
+        const length = 2.4;
+        const headLength = 0.45;
+        const headWidth = 0.18;
+
+        const axesGroup = new THREE.Group();
+        const xArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), origin, length, 0xff2d2d, headLength, headWidth);
+        const yArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), origin, length, 0x2fe75c, headLength, headWidth);
+        const zArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), origin, length, 0x2d7dff, headLength, headWidth);
+        axesGroup.add(xArrow, yArrow, zArrow);
+        axesGroup.renderOrder = 800;
+        this.root.add(axesGroup);
+        this._originAxes = axesGroup;
     }
 
     _createChassisMesh() {
@@ -266,7 +402,12 @@ export class RapierDebuggerScene {
         const tireGeo = new THREE.CylinderGeometry(wheelRadius, wheelRadius, wheelWidth, 28, 1, false);
         const tireMatBase = new THREE.MeshStandardMaterial({ color: 0x1b1f26, roughness: 0.9, metalness: 0.05 });
         const lineGeo = new THREE.PlaneGeometry(wheelRadius * 1.3, wheelRadius * 0.12);
-        const lineMatBase = new THREE.MeshStandardMaterial({ color: 0xf5f7fb, roughness: 0.6, metalness: 0.0 });
+        const lineMatBase = new THREE.MeshStandardMaterial({
+            color: 0xf5f7fb,
+            roughness: 0.6,
+            metalness: 0.0,
+            side: THREE.DoubleSide
+        });
 
         tireMatBase.polygonOffset = true;
         tireMatBase.polygonOffsetFactor = -4;
@@ -290,10 +431,11 @@ export class RapierDebuggerScene {
             wheel.add(tire);
             this._wheelTires.push(tire);
 
+            const sideSign = (i % 2 === 0) ? -1 : 1;
             const line = new THREE.Mesh(lineGeo, lineMatBase);
             line.renderOrder = 5001;
-            line.position.x = wheelWidth * 0.5 + 0.01;
-            line.rotation.y = -Math.PI / 2;
+            line.position.x = sideSign * (wheelWidth * 0.5 + 0.01);
+            line.rotation.y = sideSign < 0 ? -Math.PI / 2 : Math.PI / 2;
             line.castShadow = false;
             line.receiveShadow = false;
             wheel.add(line);
@@ -306,6 +448,7 @@ export class RapierDebuggerScene {
     _syncWheels(snapshot) {
         const wheelStates = snapshot.wheelStates ?? [];
         if (!wheelStates.length || !this._wheelMeshes.length) return;
+        const labelMap = {};
 
         const rot = snapshot.body.rotation;
         const chassisQuat = this._tmpQuat.set(rot.x, rot.y, rot.z, rot.w);
@@ -318,6 +461,9 @@ export class RapierDebuggerScene {
             const wheel = this._wheelMeshes[i];
             const state = wheelStates[i];
             if (!wheel || !state) continue;
+            const label = state.label ?? `W${i}`;
+            labelMap[label] = i;
+            wheel.userData.label = label;
 
             const hardPoint = state.hardPoint;
             const suspLen = state.suspensionLength;
@@ -347,7 +493,8 @@ export class RapierDebuggerScene {
                 wheel.position.set(hardPoint.x, hardPoint.y, hardPoint.z);
             }
 
-            const sideSign = (i % 2 === 0) ? -1 : 1;
+            const label = state.label ?? '';
+            const sideSign = label.includes('L') ? -1 : 1;
             wheel.position.addScaledVector(
                 this._tmpVecA.set(sideSign, 0, 0).applyQuaternion(chassisQuat),
                 zFightOffset
@@ -357,6 +504,7 @@ export class RapierDebuggerScene {
             const spinQuat = this._tmpQuatC.setFromAxisAngle(spinAxis, spinAngle);
             wheel.quaternion.copy(chassisQuat).multiply(steerQuat).multiply(spinQuat);
         }
+        this._wheelIndexByLabel = labelMap;
     }
 
     _syncDebugRender(buffers) {
@@ -413,5 +561,19 @@ export class RapierDebuggerScene {
                 child.material?.dispose?.();
             }
         });
+    }
+
+    _smoothDampVec3(current, target, currentVelocity, smoothTime, deltaTime) {
+        const tau = Math.max(0.0001, smoothTime ?? 0.0001);
+        const omega = 2 / tau;
+        const x = omega * deltaTime;
+        const exp = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);
+
+        const change = this._tmpVecA.copy(current).sub(target);
+        const temp = this._tmpVecB.copy(currentVelocity).addScaledVector(change, omega).multiplyScalar(deltaTime);
+
+        currentVelocity.addScaledVector(temp, -omega).multiplyScalar(exp);
+
+        return this._tmpVecC.copy(target).add(this._tmpVecA.copy(change).add(temp).multiplyScalar(exp));
     }
 }

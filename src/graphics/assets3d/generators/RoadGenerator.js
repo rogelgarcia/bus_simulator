@@ -89,7 +89,7 @@ export function generateRoads({ map, config, materials } = {}) {
     const curbExtra = roadCfg.curb?.extraHeight ?? ROAD_DEFAULTS.curb.extraHeight;
     const curbSink = roadCfg.curb?.sink ?? ROAD_DEFAULTS.curb.sink;
     const groundY = config?.ground?.surfaceY ?? (baseRoadY + curbHeight);
-    const roadY = Math.max(baseRoadY, groundY + ROAD_SURFACE_LIFT);
+    const roadY = baseRoadY;
     const markLineW = roadCfg.markings?.lineWidth ?? ROAD_DEFAULTS.markings.lineWidth;
     const markEdgeInset = roadCfg.markings?.edgeInset ?? ROAD_DEFAULTS.markings.edgeInset;
     const markLift = roadCfg.markings?.lift ?? ROAD_DEFAULTS.markings.lift;
@@ -112,7 +112,12 @@ export function generateRoads({ map, config, materials } = {}) {
         ? new THREE.MeshBasicMaterial({ vertexColors: true })
         : roadMatBase;
 
-    if (asphaltMat) asphaltMat.side = THREE.DoubleSide;
+    if (asphaltMat) {
+        asphaltMat.side = THREE.DoubleSide;
+        asphaltMat.polygonOffset = true;
+        asphaltMat.polygonOffsetFactor = -1;
+        asphaltMat.polygonOffsetUnits = -1;
+    }
     if (asphaltDebug && asphaltMat) asphaltMat.toneMapped = false;
 
     const planeGeo = new THREE.PlaneGeometry(GEOMETRY_UNIT, GEOMETRY_UNIT, PLANE_SEGMENTS, PLANE_SEGMENTS);

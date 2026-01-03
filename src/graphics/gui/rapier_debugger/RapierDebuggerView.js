@@ -9,7 +9,11 @@ export class RapierDebuggerView {
 
         this.sim = new RapierDebuggerSim();
         this.scene = new RapierDebuggerScene(engine);
-        this.ui = new RapierDebuggerUI({ vehicleConfig: this.sim.vehicleConfig, tuning: this.sim.tuning });
+        this.ui = new RapierDebuggerUI({
+            vehicleConfig: this.sim.vehicleConfig,
+            tuning: this.sim.tuning,
+            worldConfig: this.sim.worldConfig
+        });
 
         this._initStarted = false;
         this._uiEnabled = false;
@@ -20,12 +24,30 @@ export class RapierDebuggerView {
         this.ui.mount();
         this.ui.onReset = () => this.sim.resetPose();
         this.ui.onWheelHover = (idx) => this.scene.setHighlightedWheel(idx);
+        this.ui.onAddForce = (force) => this.sim.addForce(force);
+        this.ui.onAddForceAtPoint = (force, point) => this.sim.addForceAtPoint(force, point);
+        this.ui.onAddTorque = (torque) => this.sim.addTorque(torque);
+        this.ui.onResetForces = () => this.sim.resetForces();
+        this.ui.onResetTorques = () => this.sim.resetTorques();
+        this.ui.onApplyImpulse = (impulse) => this.sim.applyImpulse(impulse);
+        this.ui.onApplyImpulseAtPoint = (impulse, point) => this.sim.applyImpulseAtPoint(impulse, point);
+        this.ui.onApplyTorqueImpulse = (torque) => this.sim.applyTorqueImpulse(torque);
+        this.ui.onWakeUp = () => this.sim.wakeUp();
         this._ensureInit();
     }
 
     exit() {
         this.ui.onReset = null;
         this.ui.onWheelHover = null;
+        this.ui.onAddForce = null;
+        this.ui.onAddForceAtPoint = null;
+        this.ui.onAddTorque = null;
+        this.ui.onResetForces = null;
+        this.ui.onResetTorques = null;
+        this.ui.onApplyImpulse = null;
+        this.ui.onApplyImpulseAtPoint = null;
+        this.ui.onApplyTorqueImpulse = null;
+        this.ui.onWakeUp = null;
         this.ui.unmount();
         this.scene.dispose();
         this.sim.dispose();
@@ -41,6 +63,7 @@ export class RapierDebuggerView {
         if (this.sim.ready) {
             this.sim.setVehicleConfig(this.ui.getVehicleConfig());
             this.sim.setTuning(this.ui.getTuning());
+            this.sim.setWorldConfig(this.ui.getWorldConfig());
             this.sim.setInputs(this.ui.getInputs());
         }
 

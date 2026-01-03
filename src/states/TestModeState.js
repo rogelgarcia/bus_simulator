@@ -557,6 +557,8 @@ export class TestModeState {
 
         // Camera follow state
         this._prevBusPos = new THREE.Vector3();
+        this._cameraFollowPending = new THREE.Vector3();
+        this._cameraFollowTau = 0.22;
         this._busReadyToken = 0;
 
         this.busState = {
@@ -635,7 +637,7 @@ export class TestModeState {
 
         this.controls = new OrbitControls(cam, this.engine.renderer.domElement);
         this.controls.enableDamping = true;
-        this.controls.dampingFactor = 0.08;
+        this.controls.dampingFactor = 0.05;
         this.controls.enablePan = false;
         this.controls.minDistance = 10;
         this.controls.maxDistance = 80;
@@ -721,7 +723,7 @@ export class TestModeState {
         this._updateInfiniteFloor(this.busAnchor.position);
 
         // camera follow
-        this._updateCameraFollow();
+        this._updateCameraFollow(dt);
 
         this._updateRapierDebug();
         this.controls?.update();
@@ -787,18 +789,26 @@ export class TestModeState {
         }
     }
 
-    _updateCameraFollow() {
+    _updateCameraFollow(dt) {
         if (!this.controls || !this.busAnchor) return;
 
         const cam = this.engine.camera;
         const cur = this.busAnchor.position;
 
         this._tmpV.copy(cur).sub(this._prevBusPos);
-
-        cam.position.add(this._tmpV);
-        this.controls.target.add(this._tmpV);
-
+        this._cameraFollowPending.add(this._tmpV);
         this._prevBusPos.copy(cur);
+
+        const tau = this._cameraFollowTau;
+        const clampedDt = Math.min(Math.max(dt ?? 0, 0), 0.05);
+        const alpha = tau > 0 ? (1 - Math.exp(-clampedDt / tau)) : 1;
+        if (alpha <= 0) return;
+        if (this._cameraFollowPending.lengthSq() < 1e-12) return;
+
+        const step = this._tmpV.copy(this._cameraFollowPending).multiplyScalar(alpha);
+        cam.position.add(step);
+        this.controls.target.add(step);
+        this._cameraFollowPending.sub(step);
     }
 
     _mountHud() {
@@ -1287,6 +1297,7 @@ export class TestModeState {
         }
 
         this._prevBusPos.copy(anchor.position);
+        this._cameraFollowPending.set(0, 0, 0);
 
         if (this.controls) {
             this.controls.target.set(anchor.position.x, 1.8, anchor.position.z);
@@ -1322,6 +1333,7 @@ export class TestModeState {
         this.vehicleController?.setVehicleApi?.(this.vehicle.api, this.busAnchor);
         this.sim?.physics?.setAutoShift?.(this.vehicle.id, false);
         this._prevBusPos.copy(this.busAnchor.position);
+        this._cameraFollowPending.set(0, 0, 0);
         if (this.controls) {
             this.controls.target.set(this.busAnchor.position.x, 1.8, this.busAnchor.position.z);
         }

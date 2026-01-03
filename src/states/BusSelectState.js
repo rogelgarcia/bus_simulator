@@ -153,7 +153,7 @@ export class BusSelectState {
 
         this.controls = new OrbitControls(camera, this.engine.renderer.domElement);
         this.controls.enableDamping = true;
-        this.controls.dampingFactor = 0.08;
+        this.controls.dampingFactor = 0.05;
         this.controls.enablePan = false;
         this.controls.minDistance = 12;
         this.controls.maxDistance = 28;
