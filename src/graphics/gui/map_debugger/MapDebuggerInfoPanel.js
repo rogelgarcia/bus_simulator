@@ -1,16 +1,16 @@
-// src/graphics/gui/city/CityPoleInfoPanel.js
-// Displays hover details for road poles in the city view.
-export class CityPoleInfoPanel {
+// src/graphics/gui/map_debugger/MapDebuggerInfoPanel.js
+// Displays hover details for map objects in the map debugger view.
+export class MapDebuggerInfoPanel {
     constructor() {
         this.root = document.createElement('div');
-        this.root.className = 'city-pole-info-panel hidden';
+        this.root.className = 'map-debugger-info-panel hidden';
 
         this.title = document.createElement('div');
-        this.title.className = 'city-pole-info-title';
+        this.title.className = 'map-debugger-info-title';
         this.title.textContent = 'Object Data';
 
         this.rows = document.createElement('div');
-        this.rows.className = 'city-pole-info-rows';
+        this.rows.className = 'map-debugger-info-rows';
 
         this.typeRow = this._buildRow('Type');
         this.dynamicRows = [];
@@ -48,12 +48,12 @@ export class CityPoleInfoPanel {
 
     _buildRow(labelText) {
         const row = document.createElement('div');
-        row.className = 'city-pole-info-row';
+        row.className = 'map-debugger-info-row';
         const label = document.createElement('span');
-        label.className = 'city-pole-info-label';
+        label.className = 'map-debugger-info-label';
         label.textContent = labelText;
         const value = document.createElement('span');
-        value.className = 'city-pole-info-value';
+        value.className = 'map-debugger-info-value';
         row.appendChild(label);
         row.appendChild(value);
         return { row, label, value };

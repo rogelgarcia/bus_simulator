@@ -46,8 +46,8 @@ export class WelcomeState {
         this.sm.go('bus_select');
     }
 
-    _city() {
-        this.sm.go('city');
+    _mapDebugger() {
+        this.sm.go('map_debugger');
     }
 
     _test() {
@@ -109,7 +109,7 @@ export class WelcomeState {
 
         if (isEnter || isSpace || is1 || is2 || is3 || is4 || isG || isQ) e.preventDefault();
 
-        if (is1) return this._city();
+        if (is1) return this._mapDebugger();
         if (is2) return this._test();
         if (is3) return this._connectorDebugger();
         if (is4) return this._rapierDebugger();

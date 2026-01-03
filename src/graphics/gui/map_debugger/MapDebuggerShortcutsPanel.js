@@ -1,16 +1,16 @@
-// src/graphics/gui/city/CityShortcutsPanel.js
-// Shows keyboard shortcuts for the city debug screen.
-export class CityShortcutsPanel {
+// src/graphics/gui/map_debugger/MapDebuggerShortcutsPanel.js
+// Shows keyboard shortcuts for the map debugger screen.
+export class MapDebuggerShortcutsPanel {
     constructor() {
         this.root = document.createElement('div');
-        this.root.className = 'city-shortcuts-panel hidden';
+        this.root.className = 'map-debugger-shortcuts-panel hidden';
 
         this.title = document.createElement('div');
-        this.title.className = 'city-shortcuts-title';
+        this.title.className = 'map-debugger-shortcuts-title';
         this.title.textContent = 'Shortcuts';
 
         this.list = document.createElement('div');
-        this.list.className = 'city-shortcuts-list';
+        this.list.className = 'map-debugger-shortcuts-list';
 
         const shortcuts = [
             { key: 'A', description: 'Zoom In' },
@@ -24,14 +24,14 @@ export class CityShortcutsPanel {
 
         shortcuts.forEach(({ key, description }) => {
             const item = document.createElement('div');
-            item.className = 'city-shortcuts-item';
+            item.className = 'map-debugger-shortcuts-item';
 
             const keyEl = document.createElement('div');
-            keyEl.className = 'city-shortcuts-key';
+            keyEl.className = 'map-debugger-shortcuts-key';
             keyEl.textContent = key;
 
             const descEl = document.createElement('div');
-            descEl.className = 'city-shortcuts-desc';
+            descEl.className = 'map-debugger-shortcuts-desc';
             descEl.textContent = description;
 
             item.appendChild(keyEl);

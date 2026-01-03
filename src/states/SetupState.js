@@ -18,7 +18,7 @@ export class SetupState {
         this.borderRight = this.uiSetup?.querySelector('#setup-border-right') ?? null;
 
         this.options = [
-            { key: '1', label: 'City Mode', state: 'city' },
+            { key: '1', label: 'Map Debugger', state: 'map_debugger' },
             { key: '2', label: 'Test Mode', state: 'test_mode' },
             { key: '3', label: 'Connector Debugger', state: 'connector_debugger' },
             { key: '4', label: 'Rapier Debugger', state: 'rapier_debugger' },

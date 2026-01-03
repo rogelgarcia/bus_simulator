@@ -81,7 +81,8 @@ export function createCityWorld({
     }
 
     let trees = null;
-    if (map && rng) {
+    const treesEnabled = config?.render?.treesEnabled;
+    if (map && rng && treesEnabled !== false) {
         trees = createTreeField({ map, rng, groundY: roadSurfaceY, config });
         group.add(trees.group);
     }

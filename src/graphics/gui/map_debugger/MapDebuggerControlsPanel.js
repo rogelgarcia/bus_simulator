@@ -1,6 +1,6 @@
-// src/graphics/gui/city/CityDebugTogglesPanel.js
-// Controls city debug toggles and render mode switches.
-export class CityDebugTogglesPanel {
+// src/graphics/gui/map_debugger/MapDebuggerControlsPanel.js
+// Controls map debugger toggles and render mode switches.
+export class MapDebuggerControlsPanel {
     constructor({
         connectorDebugEnabled = true,
         hoverOutlineEnabled = true,
@@ -14,16 +14,16 @@ export class CityDebugTogglesPanel {
         onRoadRenderModeChange = null
     } = {}) {
         this.root = document.createElement('div');
-        this.root.className = 'city-debugs-panel hidden';
+        this.root.className = 'map-debugger-controls-panel hidden';
 
         this.title = document.createElement('div');
-        this.title.className = 'city-debugs-title';
-        this.title.textContent = 'DEBUGs';
+        this.title.className = 'map-debugger-controls-title';
+        this.title.textContent = 'Map Debugger';
 
         this.controls = document.createElement('div');
-        this.controls.className = 'city-debugs-controls';
+        this.controls.className = 'map-debugger-controls';
         this.connectorToggle = document.createElement('label');
-        this.connectorToggle.className = 'connector-debug-toggle-switch city-debugs-toggle-switch';
+        this.connectorToggle.className = 'connector-debug-toggle-switch map-debugger-toggle-switch';
         this.connectorToggleInput = document.createElement('input');
         this.connectorToggleInput.type = 'checkbox';
         this.connectorToggleInput.checked = !!connectorDebugEnabled;
@@ -34,7 +34,7 @@ export class CityDebugTogglesPanel {
         this.controls.appendChild(this.connectorToggle);
 
         this.outlineToggle = document.createElement('label');
-        this.outlineToggle.className = 'connector-debug-toggle-switch city-debugs-toggle-switch';
+        this.outlineToggle.className = 'connector-debug-toggle-switch map-debugger-toggle-switch';
         this.outlineToggleInput = document.createElement('input');
         this.outlineToggleInput.type = 'checkbox';
         this.outlineToggleInput.checked = !!hoverOutlineEnabled;
@@ -45,7 +45,7 @@ export class CityDebugTogglesPanel {
         this.controls.appendChild(this.outlineToggle);
 
         this.collisionToggle = document.createElement('label');
-        this.collisionToggle.className = 'connector-debug-toggle-switch city-debugs-toggle-switch';
+        this.collisionToggle.className = 'connector-debug-toggle-switch map-debugger-toggle-switch';
         this.collisionToggleInput = document.createElement('input');
         this.collisionToggleInput.type = 'checkbox';
         this.collisionToggleInput.checked = !!collisionDebugEnabled;
@@ -56,7 +56,7 @@ export class CityDebugTogglesPanel {
         this.controls.appendChild(this.collisionToggle);
 
         this.treesToggle = document.createElement('label');
-        this.treesToggle.className = 'connector-debug-toggle-switch city-debugs-toggle-switch';
+        this.treesToggle.className = 'connector-debug-toggle-switch map-debugger-toggle-switch';
         this.treesToggleInput = document.createElement('input');
         this.treesToggleInput.type = 'checkbox';
         this.treesToggleInput.checked = !!treesEnabled;
@@ -67,30 +67,30 @@ export class CityDebugTogglesPanel {
         this.controls.appendChild(this.treesToggle);
 
         this.displaySection = document.createElement('div');
-        this.displaySection.className = 'city-debugs-section';
+        this.displaySection.className = 'map-debugger-section';
         this.displayTitle = document.createElement('div');
-        this.displayTitle.className = 'city-debugs-section-title';
+        this.displayTitle.className = 'map-debugger-section-title';
         this.displayTitle.textContent = 'Display';
         this.displayRow = document.createElement('div');
-        this.displayRow.className = 'city-debugs-mode-row';
+        this.displayRow.className = 'map-debugger-mode-row';
         this.displayLabel = document.createElement('span');
-        this.displayLabel.className = 'city-debugs-mode-label';
+        this.displayLabel.className = 'map-debugger-mode-label';
         this.displayLabel.textContent = 'Road rendering mode:';
         this.modeSelector = document.createElement('div');
-        this.modeSelector.className = 'city-debugs-mode-selector';
+        this.modeSelector.className = 'map-debugger-mode-selector';
         this.modeNormal = document.createElement('button');
         this.modeNormal.type = 'button';
-        this.modeNormal.className = 'city-debugs-mode-text';
+        this.modeNormal.className = 'map-debugger-mode-text';
         this.modeNormal.textContent = 'Normal';
         this.modeToggle = document.createElement('button');
         this.modeToggle.type = 'button';
-        this.modeToggle.className = 'city-debugs-mode-toggle';
+        this.modeToggle.className = 'map-debugger-mode-toggle';
         this.modeToggleThumb = document.createElement('span');
-        this.modeToggleThumb.className = 'city-debugs-mode-thumb';
+        this.modeToggleThumb.className = 'map-debugger-mode-thumb';
         this.modeToggle.appendChild(this.modeToggleThumb);
         this.modeDebug = document.createElement('button');
         this.modeDebug.type = 'button';
-        this.modeDebug.className = 'city-debugs-mode-text';
+        this.modeDebug.className = 'map-debugger-mode-text';
         this.modeDebug.textContent = 'Debug';
         this.modeSelector.appendChild(this.modeNormal);
         this.modeSelector.appendChild(this.modeToggle);

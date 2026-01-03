@@ -1,14 +1,14 @@
-// src/states/CityState.js
-// Manages the interactive city debug state and visual overlays.
+// src/states/MapDebuggerState.js
+// Manages the interactive map debugger state and visual overlays.
 import * as THREE from 'three';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { getSharedCity } from '../app/city/City.js';
 import { createCityConfig } from '../app/city/CityConfig.js';
 import { CityMap } from '../app/city/CityMap.js';
-import { CityDebugPanel } from '../graphics/gui/city/CityDebugPanel.js';
-import { CityDebugTogglesPanel } from '../graphics/gui/city/CityDebugTogglesPanel.js';
-import { CityShortcutsPanel } from '../graphics/gui/city/CityShortcutsPanel.js';
-import { CityPoleInfoPanel } from '../graphics/gui/city/CityPoleInfoPanel.js';
+import { MapDebuggerRoadsPanel } from '../graphics/gui/map_debugger/MapDebuggerRoadsPanel.js';
+import { MapDebuggerControlsPanel } from '../graphics/gui/map_debugger/MapDebuggerControlsPanel.js';
+import { MapDebuggerShortcutsPanel } from '../graphics/gui/map_debugger/MapDebuggerShortcutsPanel.js';
+import { MapDebuggerInfoPanel } from '../graphics/gui/map_debugger/MapDebuggerInfoPanel.js';
 import { CityConnectorDebugOverlay } from '../graphics/visuals/city/CityConnectorDebugOverlay.js';
 import { createRoadHighlightMesh } from '../graphics/visuals/city/RoadHighlightMesh.js';
 import { createCollisionPoleMarkers } from '../graphics/visuals/city/CollisionPoleMarkers.js';
@@ -77,7 +77,7 @@ function offsetEndpoints(p0, p1, normal, offset) {
     };
 }
 
-export class CityState {
+export class MapDebuggerState {
     constructor(engine, sm) {
         this.engine = engine;
         this.sm = sm;
@@ -112,7 +112,8 @@ export class CityState {
             seed: 'x'
         };
         this._roadRenderMode = 'debug';
-        this._cityOptions.generatorConfig = { render: { roadMode: this._roadRenderMode } };
+        this._treesEnabled = false;
+        this._cityOptions.generatorConfig = { render: { roadMode: this._roadRenderMode, treesEnabled: this._treesEnabled } };
 
         this._baseSpec = null;
         this.debugPanel = null;
@@ -140,7 +141,6 @@ export class CityState {
         this._connectorDebugEnabled = true;
         this._collisionDebugEnabled = true;
         this._hoverOutlineEnabled = true;
-        this._treesEnabled = true;
         this._outlineLine = null;
         this._outlineMaterial = null;
         this._outlineGeoCache = new WeakMap();
@@ -173,20 +173,20 @@ export class CityState {
         const currentGen = this._cityOptions.generatorConfig ?? {};
         this._cityOptions.generatorConfig = {
             ...currentGen,
-            render: { ...(currentGen.render ?? {}), roadMode: this._roadRenderMode }
+            render: { ...(currentGen.render ?? {}), roadMode: this._roadRenderMode, treesEnabled: this._treesEnabled }
         };
 
         const config = createCityConfig(this._cityOptions);
         this._baseSpec = CityMap.demoSpec(config);
 
-        this.debugPanel = new CityDebugPanel({
+        this.debugPanel = new MapDebuggerRoadsPanel({
             roads: this._baseSpec.roads,
             onReload: () => this._reloadCity(),
             onHover: (road) => this._updateHighlight(road)
         });
         this.debugPanel.show();
 
-        this.debugsPanel = new CityDebugTogglesPanel({
+        this.debugsPanel = new MapDebuggerControlsPanel({
             connectorDebugEnabled: this._connectorDebugEnabled,
             hoverOutlineEnabled: this._hoverOutlineEnabled,
             collisionDebugEnabled: this._collisionDebugEnabled,
@@ -200,10 +200,10 @@ export class CityState {
         });
         this.debugsPanel.show();
 
-        this.shortcutsPanel = new CityShortcutsPanel();
+        this.shortcutsPanel = new MapDebuggerShortcutsPanel();
         this.shortcutsPanel.show();
 
-        this.poleInfoPanel = new CityPoleInfoPanel();
+        this.poleInfoPanel = new MapDebuggerInfoPanel();
         this.poleInfoPanel.show();
 
         this._setCity(this._baseSpec);
@@ -607,8 +607,22 @@ export class CityState {
     _setTreesEnabled(enabled) {
         this._treesEnabled = !!enabled;
         this.debugsPanel?.setTreesEnabled(this._treesEnabled);
+
+        const currentGen = this._cityOptions.generatorConfig ?? {};
+        this._cityOptions.generatorConfig = {
+            ...currentGen,
+            render: { ...(currentGen.render ?? {}), roadMode: this._roadRenderMode, treesEnabled: this._treesEnabled }
+        };
+
         const treesGroup = this.city?.world?.trees?.group ?? null;
-        if (treesGroup) treesGroup.visible = this._treesEnabled;
+        if (treesGroup) {
+            treesGroup.visible = this._treesEnabled;
+            return;
+        }
+
+        if (this._treesEnabled) {
+            this._reloadCity();
+        }
     }
 
     _setRoadRenderMode(mode) {
@@ -616,7 +630,7 @@ export class CityState {
         if (next === this._roadRenderMode) return;
         this._roadRenderMode = next;
         const current = this._cityOptions.generatorConfig ?? {};
-        const render = { ...(current.render ?? {}), roadMode: next };
+        const render = { ...(current.render ?? {}), roadMode: next, treesEnabled: this._treesEnabled };
         this._cityOptions.generatorConfig = { ...current, render };
         this.debugsPanel?.setRoadRenderMode(this._roadRenderMode);
         this._reloadCity();

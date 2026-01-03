@@ -1,19 +1,19 @@
-// src/graphics/gui/city/CityDebugPanel.js
-// Renders the road list and reload controls for the city debug view.
-export class CityDebugPanel {
+// src/graphics/gui/map_debugger/MapDebuggerRoadsPanel.js
+// Renders the road list and reload controls for the map debugger view.
+export class MapDebuggerRoadsPanel {
     constructor({ roads = [], onReload = null, onHover = null } = {}) {
         this.root = document.createElement('div');
-        this.root.className = 'city-debug-panel hidden';
+        this.root.className = 'map-debugger-panel hidden';
 
         this.title = document.createElement('div');
-        this.title.className = 'city-debug-title';
-        this.title.textContent = 'City Roads';
+        this.title.className = 'map-debugger-title';
+        this.title.textContent = 'Map Debugger';
 
         this.tableWrap = document.createElement('div');
-        this.tableWrap.className = 'city-debug-list';
+        this.tableWrap.className = 'map-debugger-list';
 
         this.table = document.createElement('table');
-        this.table.className = 'city-debug-table';
+        this.table.className = 'map-debugger-table';
 
         this.thead = document.createElement('thead');
         const headerRow = document.createElement('tr');
@@ -92,14 +92,14 @@ export class CityDebugPanel {
             });
             row.addEventListener('mouseenter', () => {
                 if (this._hoverRow && this._hoverRow !== row) {
-                    this._hoverRow.classList.remove('city-debug-row-hover');
+                    this._hoverRow.classList.remove('map-debugger-row-hover');
                 }
                 this._hoverRow = row;
-                row.classList.add('city-debug-row-hover');
+                row.classList.add('map-debugger-row-hover');
                 if (this._onHover) this._onHover(road, index);
             });
             row.addEventListener('mouseleave', () => {
-                row.classList.remove('city-debug-row-hover');
+                row.classList.remove('map-debugger-row-hover');
                 if (this._hoverRow === row) this._hoverRow = null;
                 if (this._onHover) this._onHover(null, index);
             });

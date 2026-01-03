@@ -47,9 +47,19 @@ export function setupCity(view) {
         tileMeters: debugConfig.tileMeters,
         mapTileSize: debugConfig.map.tileSize,
         seed: debugConfig.seed,
-        mapSpec
+        mapSpec,
+        generatorConfig: {
+            render: {
+                treesEnabled: false
+            }
+        }
     });
     view.city.attach(view.engine);
+    const treesGroup = view.city?.world?.trees?.group ?? view.city?.group?.getObjectByName?.('Trees') ?? null;
+    if (treesGroup) {
+        treesGroup.visible = false;
+        treesGroup.removeFromParent?.();
+    }
     view._tileSize = debugConfig.map.tileSize;
 }
 
