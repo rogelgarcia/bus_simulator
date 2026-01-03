@@ -150,13 +150,29 @@ function yawFromQuat(q) {
 
 function setControllerAxis(controller, propName, setterName, value) {
     if (!controller) return;
+    const proto = Object.getPrototypeOf(controller);
     const setter = controller[setterName];
     if (typeof setter === 'function') {
         setter.call(controller, value);
         return;
     }
+
+    const setterDesc = Object.getOwnPropertyDescriptor(controller, setterName)
+        ?? Object.getOwnPropertyDescriptor(proto, setterName);
+    if (setterDesc?.set) {
+        setterDesc.set.call(controller, value);
+        return;
+    }
+
+    try {
+        controller[setterName] = value;
+        if (controller[propName] === value) return;
+    } catch {
+        // ignore
+    }
+
     const desc = Object.getOwnPropertyDescriptor(controller, propName)
-        ?? Object.getOwnPropertyDescriptor(Object.getPrototypeOf(controller), propName);
+        ?? Object.getOwnPropertyDescriptor(proto, propName);
     if (desc?.set) {
         desc.set.call(controller, value);
         return;

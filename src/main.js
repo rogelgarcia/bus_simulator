@@ -9,6 +9,7 @@ import { TestModeState } from './states/TestModeState.js';
 import { CityState } from './states/CityState.js';
 import { GameplayState } from './states/GameplayState.js';
 import { ConnectorDebuggerState } from './states/ConnectorDebuggerState.js';
+import { RapierDebuggerState } from './states/rapier_debugger/RapierDebuggerState.js';
 
 const canvas = document.getElementById('game-canvas');
 
@@ -22,6 +23,7 @@ sm.register('test_mode', new TestModeState(engine, sm));
 sm.register('city', new CityState(engine, sm));
 sm.register('game_mode', new GameplayState(engine, sm));
 sm.register('connector_debugger', new ConnectorDebuggerState(engine, sm));
+sm.register('rapier_debugger', new RapierDebuggerState(engine, sm));
 
 engine.setStateMachine(sm);
 engine.start();

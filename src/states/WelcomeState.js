@@ -58,6 +58,10 @@ export class WelcomeState {
         this.sm.go('connector_debugger');
     }
 
+    _rapierDebugger() {
+        this.sm.go('rapier_debugger');
+    }
+
     _setup() {
         this.sm.go('setup');
     }
@@ -99,14 +103,16 @@ export class WelcomeState {
         const is1 = code === 'Digit1' || code === 'Numpad1' || key === '1';
         const is2 = code === 'Digit2' || code === 'Numpad2' || key === '2';
         const is3 = code === 'Digit3' || code === 'Numpad3' || key === '3';
+        const is4 = code === 'Digit4' || code === 'Numpad4' || key === '4';
         const isG = code === 'KeyG' || key === 'g' || key === 'G';
         const isQ = code === 'KeyQ' || key === 'q' || key === 'Q';
 
-        if (isEnter || isSpace || is1 || is2 || is3 || isG || isQ) e.preventDefault();
+        if (isEnter || isSpace || is1 || is2 || is3 || is4 || isG || isQ) e.preventDefault();
 
         if (is1) return this._city();
         if (is2) return this._test();
         if (is3) return this._connectorDebugger();
+        if (is4) return this._rapierDebugger();
         if (isG) return this._garage();
         if (isQ) return this._setup();
         if (isEnter || isSpace) return this._start();
