@@ -179,6 +179,44 @@ function makeTitle(text) {
     return t;
 }
 
+function makePopupDraggable(wrap, handle) {
+    if (!wrap || !handle) return;
+    handle.style.cursor = 'grab';
+    handle.style.userSelect = 'none';
+    handle.style.touchAction = 'none';
+
+    const onPointerDown = (event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        const rect = wrap.getBoundingClientRect();
+        const offsetX = event.clientX - rect.left;
+        const offsetY = event.clientY - rect.top;
+        wrap.style.left = `${rect.left}px`;
+        wrap.style.top = `${rect.top}px`;
+        wrap.style.bottom = '';
+        wrap.style.right = '';
+        handle.style.cursor = 'grabbing';
+
+        const onPointerMove = (moveEvent) => {
+            wrap.style.left = `${moveEvent.clientX - offsetX}px`;
+            wrap.style.top = `${moveEvent.clientY - offsetY}px`;
+        };
+
+        const onPointerUp = () => {
+            handle.style.cursor = 'grab';
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', onPointerUp);
+            window.removeEventListener('pointercancel', onPointerUp);
+        };
+
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+        window.addEventListener('pointercancel', onPointerUp);
+    };
+
+    handle.addEventListener('pointerdown', onPointerDown);
+}
+
 function makeLabel(text) {
     const l = document.createElement('div');
     l.textContent = text;
@@ -1295,6 +1333,7 @@ export class RapierDebuggerUI {
         this._forceActionMax = 12;
         this._forceActionSeq = 0;
         this._forceApplyAtPoint = true;
+        this._forcesActiveTab = 'force';
         this._testsPopup = null;
         this._testsPopupHandlers = null;
         this._testPopup = null;
@@ -1523,6 +1562,7 @@ export class RapierDebuggerUI {
         this._forceActionLog = [];
         this._forceActionSeq = 0;
         this._forceApplyAtPoint = true;
+        this._forcesActiveTab = 'force';
         this._testsPopup = null;
         this._testsPopupHandlers = null;
         this._testPopup = null;
@@ -1630,6 +1670,7 @@ export class RapierDebuggerUI {
         const title = makeTitle('Camera');
         title.style.marginBottom = '0';
         wrap.appendChild(title);
+        makePopupDraggable(wrap, title);
 
         const topSeparator = makeSeparator();
         topSeparator.style.margin = '6px 0 4px';
@@ -1703,6 +1744,7 @@ export class RapierDebuggerUI {
         const title = makeTitle('Gravity');
         title.style.marginBottom = '0';
         wrap.appendChild(title);
+        makePopupDraggable(wrap, title);
 
         const topSeparator = makeSeparator();
         topSeparator.style.margin = '6px 0 4px';
@@ -1856,6 +1898,7 @@ export class RapierDebuggerUI {
         const title = makeTitle('Reset');
         title.style.marginBottom = '0';
         wrap.appendChild(title);
+        makePopupDraggable(wrap, title);
 
         const topSeparator = makeSeparator();
         topSeparator.style.margin = '6px 0 4px';
@@ -2504,6 +2547,7 @@ export class RapierDebuggerUI {
         const title = makeTitle('Center of mass');
         title.style.marginBottom = '0';
         wrap.appendChild(title);
+        makePopupDraggable(wrap, title);
 
         const topSeparator = makeSeparator();
         topSeparator.style.margin = '6px 0 4px';
@@ -2617,6 +2661,7 @@ export class RapierDebuggerUI {
         const title = makeTitle('Inertia');
         title.style.marginBottom = '0';
         wrap.appendChild(title);
+        makePopupDraggable(wrap, title);
 
         const topSeparator = makeSeparator();
         topSeparator.style.margin = '6px 0 4px';
@@ -2755,6 +2800,7 @@ export class RapierDebuggerUI {
         const title = makeTitle('Inertia frame');
         title.style.marginBottom = '0';
         wrap.appendChild(title);
+        makePopupDraggable(wrap, title);
 
         const topSeparator = makeSeparator();
         topSeparator.style.margin = '6px 0 4px';
@@ -2897,6 +2943,7 @@ export class RapierDebuggerUI {
         const title = makeTitle('Locking');
         title.style.marginBottom = '0';
         wrap.appendChild(title);
+        makePopupDraggable(wrap, title);
 
         const topSeparator = makeSeparator();
         topSeparator.style.margin = '6px 0 4px';
@@ -3006,15 +3053,28 @@ export class RapierDebuggerUI {
         wrap.style.display = 'flex';
         wrap.style.flexDirection = 'column';
         wrap.style.gap = '10px';
-        wrap.style.minWidth = '600px';
+        wrap.style.minWidth = '340px';
 
         const title = makeTitle('Forces and impulses');
         title.style.marginBottom = '0';
         wrap.appendChild(title);
+        makePopupDraggable(wrap, title);
 
         const topSeparator = makeSeparator();
         topSeparator.style.margin = '6px 0 4px';
         wrap.appendChild(topSeparator);
+
+        const contentRow = document.createElement('div');
+        contentRow.style.display = 'flex';
+        contentRow.style.alignItems = 'flex-start';
+        contentRow.style.gap = '14px';
+
+        const controlsWrap = document.createElement('div');
+        controlsWrap.style.display = 'flex';
+        controlsWrap.style.flexDirection = 'column';
+        controlsWrap.style.gap = '8px';
+        controlsWrap.style.flex = '0 0 auto';
+        controlsWrap.style.width = '360px';
 
         const applyModeRow = document.createElement('div');
         applyModeRow.style.display = 'flex';
@@ -3068,16 +3128,53 @@ export class RapierDebuggerUI {
 
         applyModeRow.appendChild(applyModeLabel);
         applyModeRow.appendChild(applyModeWrap);
-        wrap.appendChild(applyModeRow);
+        controlsWrap.appendChild(applyModeRow);
 
         const modeSeparator = makeSeparator();
         modeSeparator.style.margin = '6px 0 2px';
-        wrap.appendChild(modeSeparator);
+        controlsWrap.appendChild(modeSeparator);
 
         const grid = document.createElement('div');
         grid.style.display = 'grid';
-        grid.style.gridTemplateColumns = 'minmax(170px, 1fr) minmax(170px, 1fr) minmax(170px, 1fr)';
+        grid.style.gridTemplateColumns = 'minmax(190px, 1fr)';
         grid.style.gap = '14px';
+
+        const tabs = document.createElement('div');
+        tabs.style.display = 'grid';
+        tabs.style.gridTemplateColumns = 'repeat(3, minmax(0, 1fr))';
+        tabs.style.alignItems = 'center';
+        tabs.style.gap = '8px';
+        tabs.style.marginBottom = '4px';
+        tabs.style.width = '100%';
+
+        const makeTabButton = (label, key) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = label;
+            btn.style.padding = '6px 10px';
+            btn.style.borderRadius = '999px';
+            btn.style.border = '1px solid rgba(255,255,255,0.18)';
+            btn.style.background = 'rgba(8, 12, 18, 0.7)';
+            btn.style.color = '#e9f2ff';
+            btn.style.fontSize = '11px';
+            btn.style.fontWeight = '700';
+            btn.style.cursor = 'pointer';
+            btn.style.width = '100%';
+            btn.style.textAlign = 'center';
+            btn.addEventListener('click', () => setActiveTab(key));
+            return btn;
+        };
+
+        const tabButtons = {
+            force: makeTabButton('Forces', 'force'),
+            torque: makeTabButton('Torques', 'torque'),
+            impulse: makeTabButton('Impulses', 'impulse')
+        };
+
+        tabs.appendChild(tabButtons.force);
+        tabs.appendChild(tabButtons.torque);
+        tabs.appendChild(tabButtons.impulse);
+        controlsWrap.appendChild(tabs);
 
         const attachWraps = (wraps, container) => {
             for (const item of wraps) {
@@ -3185,12 +3282,59 @@ export class RapierDebuggerUI {
         grid.appendChild(forceCol);
         grid.appendChild(torqueCol);
         grid.appendChild(impulseCol);
+        controlsWrap.appendChild(grid);
+
+        const bottomSeparator = makeSeparator();
+        bottomSeparator.style.margin = '10px 0 2px';
+        controlsWrap.appendChild(bottomSeparator);
+
+        const velocityRow = document.createElement('div');
+        velocityRow.style.display = 'flex';
+        velocityRow.style.justifyContent = 'flex-end';
+        velocityRow.style.alignItems = 'center';
+        velocityRow.style.gap = '8px';
+        velocityRow.style.width = '100%';
+
+        const resetAllButton = makeButton('Reset all');
+        resetAllButton.style.marginRight = '0';
+        resetAllButton.style.flex = '0 0 auto';
+        resetAllButton.style.whiteSpace = 'nowrap';
+        resetAllButton.addEventListener('click', () => {
+            this.onResetForces?.();
+            this.onResetTorques?.();
+            this.onResetVelocities?.();
+            this._setForceLogEntry('const-force', null);
+            this._setForceLogEntry('const-torque', null);
+            this._clearForceEventLog({ category: 'force', keepConstants: true });
+            this._clearForceEventLog({ category: 'torque', keepConstants: true });
+            this._setInputValue('linvelX', 0);
+            this._setInputValue('linvelY', 0);
+            this._setInputValue('linvelZ', 0);
+            this._setInputValue('angvelX', 0);
+            this._setInputValue('angvelY', 0);
+            this._setInputValue('angvelZ', 0);
+        });
+
+        resetAllButton.style.marginLeft = 'auto';
+        velocityRow.appendChild(resetAllButton);
+
+        const resetVel = buttons.resetVelocities;
+        if (resetVel) {
+            if (resetVel.parentElement) resetVel.parentElement.removeChild(resetVel);
+            resetVel.style.marginRight = '0';
+            resetVel.style.flex = '0 0 auto';
+            velocityRow.appendChild(resetVel);
+        }
+        controlsWrap.appendChild(velocityRow);
 
         const logCol = document.createElement('div');
         logCol.style.display = 'flex';
         logCol.style.flexDirection = 'column';
         logCol.style.gap = '6px';
         logCol.style.display = 'none';
+        logCol.style.flex = '0 0 240px';
+        logCol.style.minWidth = '240px';
+        logCol.style.maxWidth = '280px';
 
         const logLabel = makeLabel('Applied');
         logLabel.style.marginBottom = '4px';
@@ -3202,25 +3346,24 @@ export class RapierDebuggerUI {
         logList.style.gap = '6px';
         logCol.appendChild(logList);
 
-        grid.appendChild(logCol);
-        wrap.appendChild(grid);
+        contentRow.appendChild(controlsWrap);
+        contentRow.appendChild(logCol);
+        wrap.appendChild(contentRow);
 
-        const bottomSeparator = makeSeparator();
-        bottomSeparator.style.margin = '10px 0 2px';
-        wrap.appendChild(bottomSeparator);
-
-        const velocityRow = document.createElement('div');
-        velocityRow.style.display = 'flex';
-        velocityRow.style.justifyContent = 'flex-end';
-        velocityRow.style.gap = '8px';
-
-        const resetVel = buttons.resetVelocities;
-        if (resetVel) {
-            if (resetVel.parentElement) resetVel.parentElement.removeChild(resetVel);
-            resetVel.style.marginRight = '0';
-            velocityRow.appendChild(resetVel);
-        }
-        wrap.appendChild(velocityRow);
+        const setActiveTab = (key) => {
+            this._forcesActiveTab = key;
+            forceCol.style.display = key === 'force' ? 'flex' : 'none';
+            impulseCol.style.display = key === 'impulse' ? 'flex' : 'none';
+            torqueCol.style.display = key === 'torque' ? 'flex' : 'none';
+            for (const [tabKey, btn] of Object.entries(tabButtons)) {
+                if (!btn) continue;
+                const active = tabKey === key;
+                btn.style.background = active ? 'rgba(76,255,122,0.18)' : 'rgba(8, 12, 18, 0.7)';
+                btn.style.borderColor = active ? 'rgba(76,255,122,0.55)' : 'rgba(255,255,255,0.18)';
+                btn.style.color = active ? '#d7ffe4' : '#e9f2ff';
+            }
+            this._refreshForcesPopupLog();
+        };
 
         const updateApplyMode = (enabled) => {
             this._forceApplyAtPoint = !!enabled;
@@ -3241,7 +3384,10 @@ export class RapierDebuggerUI {
             ];
             for (const ctrl of pointControls) {
                 if (!ctrl) continue;
-                ctrl.style.display = this._forceApplyAtPoint ? '' : 'none';
+                const input = ctrl.querySelector?.('input');
+                if (input) input.disabled = !this._forceApplyAtPoint;
+                ctrl.style.opacity = this._forceApplyAtPoint ? '1' : '0.4';
+                ctrl.style.filter = this._forceApplyAtPoint ? 'none' : 'grayscale(0.4)';
             }
             if (buttons.applyForce) {
                 buttons.applyForce.style.display = this._forceApplyAtPoint ? 'none' : '';
@@ -3255,6 +3401,11 @@ export class RapierDebuggerUI {
             if (buttons.applyImpulseAtPoint) {
                 buttons.applyImpulseAtPoint.style.display = this._forceApplyAtPoint ? '' : 'none';
             }
+            if (this._forcesActiveTab === 'force') {
+                forceCol.style.display = 'flex';
+            } else if (this._forcesActiveTab === 'impulse') {
+                impulseCol.style.display = 'flex';
+            }
         };
 
         applyModeToggle.checked = this._forceApplyAtPoint;
@@ -3263,10 +3414,12 @@ export class RapierDebuggerUI {
             updateApplyMode(applyModeToggle.checked);
         });
 
+        setActiveTab(this._forcesActiveTab ?? 'force');
+
         const rect = anchor.getBoundingClientRect();
         const pad = 8;
         const left = Math.min(window.innerWidth - 640, Math.max(pad, rect.right + pad));
-        const top = Math.min(window.innerHeight - 520, Math.max(pad, rect.top - 8));
+        const top = Math.max(pad, rect.top - 320);
         wrap.style.left = `${left}px`;
         wrap.style.top = `${top}px`;
 
@@ -3329,6 +3482,7 @@ export class RapierDebuggerUI {
         const title = makeTitle('Automated tests');
         title.style.marginBottom = '0';
         wrap.appendChild(title);
+        makePopupDraggable(wrap, title);
 
         const topSeparator = makeSeparator();
         topSeparator.style.margin = '6px 0 4px';
@@ -3404,6 +3558,7 @@ export class RapierDebuggerUI {
         title.style.fontWeight = '800';
         title.style.letterSpacing = '0.2px';
         wrap.appendChild(title);
+        makePopupDraggable(wrap, title);
 
         const topSeparator = makeSeparator();
         topSeparator.style.margin = '-2px 0 0';
@@ -3610,12 +3765,6 @@ export class RapierDebuggerUI {
         const log = this._forceActionLog ?? [];
         const show = log.length > 0;
         this._forcesPopupLogCol.style.display = show ? 'flex' : 'none';
-        this._forcesPopupGrid.style.gridTemplateColumns = show
-            ? 'minmax(170px, 1fr) minmax(170px, 1fr) minmax(170px, 1fr) minmax(170px, 1fr)'
-            : 'minmax(170px, 1fr) minmax(170px, 1fr) minmax(170px, 1fr)';
-        if (this._forcesPopup) {
-            this._forcesPopup.style.minWidth = show ? '760px' : '600px';
-        }
         this._forcesPopupLogEl.textContent = '';
         if (!show) return;
         for (const entry of log) {
@@ -3670,17 +3819,35 @@ export class RapierDebuggerUI {
     getForcePreview() {
         if (!this._forcesPopup) return null;
         const com = this._tuning?.chassis?.additionalMassProperties?.com ?? {};
+        const tab = this._forcesActiveTab ?? 'force';
+        const colorByTab = {
+            force: 0x7a4cff,
+            torque: 0xff8a3d,
+            impulse: 0x32d0ff
+        };
+        let vec = this._forces.force ?? { x: 0, y: 0, z: 0 };
+        let point = this._forces.forcePoint ?? { x: 0, y: 0, z: 0 };
+        let atPoint = !!this._forceApplyAtPoint;
+        if (tab === 'impulse') {
+            vec = this._forces.impulse ?? { x: 0, y: 0, z: 0 };
+            point = this._forces.impulsePoint ?? { x: 0, y: 0, z: 0 };
+        } else if (tab === 'torque') {
+            vec = this._forces.torque ?? { x: 0, y: 0, z: 0 };
+            atPoint = false;
+        }
         return {
-            atPoint: !!this._forceApplyAtPoint,
+            tab,
+            color: colorByTab[tab] ?? colorByTab.force,
+            atPoint,
             force: {
-                x: this._forces.force?.x ?? 0,
-                y: this._forces.force?.y ?? 0,
-                z: this._forces.force?.z ?? 0
+                x: vec?.x ?? 0,
+                y: vec?.y ?? 0,
+                z: vec?.z ?? 0
             },
             point: {
-                x: this._forces.forcePoint?.x ?? 0,
-                y: this._forces.forcePoint?.y ?? 0,
-                z: this._forces.forcePoint?.z ?? 0
+                x: point?.x ?? 0,
+                y: point?.y ?? 0,
+                z: point?.z ?? 0
             },
             com: {
                 x: com.x ?? 0,
@@ -4229,7 +4396,7 @@ export class RapierDebuggerUI {
         });
         this._actionButtons.push(applyTorqueImpulseButton);
 
-        const resetAllVelocitiesButton = makeButton('Reset All Velocities');
+        const resetAllVelocitiesButton = makeButton('Reset velocities');
         resetAllVelocitiesButton.addEventListener('click', () => {
             this.onResetVelocities?.();
         });

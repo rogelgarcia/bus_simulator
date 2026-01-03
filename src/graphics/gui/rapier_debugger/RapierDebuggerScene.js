@@ -39,6 +39,12 @@ export class RapierDebuggerScene {
         this._forcePreviewSphere = null;
         this._forcePreviewScale = 0.002;
         this._forcePreviewMaxLength = 6;
+        this._torquePreviewGroup = null;
+        this._torquePreviewDisc = null;
+        this._torquePreviewArc = null;
+        this._torquePreviewArrow = null;
+        this._torquePreviewBar = null;
+        this._torquePreviewMaterial = null;
 
         this._tmpQuat = new THREE.Quaternion();
         this._tmpQuatB = new THREE.Quaternion();
@@ -147,6 +153,12 @@ export class RapierDebuggerScene {
         this._forcePreviewArrowMaterial = null;
         this._forcePreviewAxes = null;
         this._forcePreviewSphere = null;
+        this._torquePreviewGroup = null;
+        this._torquePreviewDisc = null;
+        this._torquePreviewArc = null;
+        this._torquePreviewArrow = null;
+        this._torquePreviewBar = null;
+        this._torquePreviewMaterial = null;
         if (this.camera?.clearViewOffset) {
             this.camera.clearViewOffset();
         }
@@ -530,6 +542,43 @@ export class RapierDebuggerScene {
 
         group.add(arrowGroup);
 
+        const torqueGroup = new THREE.Group();
+        torqueGroup.visible = false;
+        torqueGroup.renderOrder = 3002;
+
+        const torqueMat = new THREE.MeshBasicMaterial({ color: 0xff8a3d, transparent: true, opacity: 0.9 });
+        torqueMat.depthTest = false;
+        torqueMat.depthWrite = false;
+        torqueMat.clippingPlanes = [clipPlane];
+        torqueMat.side = THREE.DoubleSide;
+
+        const disc = new THREE.Mesh(new THREE.CircleGeometry(0.5, 48), torqueMat);
+        disc.renderOrder = 3003;
+        torqueGroup.add(disc);
+
+        const arcRadius = 0.62;
+        const arcAngle = Math.PI * 1.35;
+        const arcStart = -arcAngle * 0.5;
+        const arc = new THREE.Mesh(new THREE.TorusGeometry(arcRadius, 0.035, 8, 64, arcAngle), torqueMat);
+        arc.rotation.z = arcStart;
+        arc.renderOrder = 3003;
+        torqueGroup.add(arc);
+
+        const arrowHead = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.18, 12, 1), torqueMat);
+        const endAngle = arcStart + arcAngle;
+        const endX = arcRadius * Math.cos(endAngle);
+        const endY = arcRadius * Math.sin(endAngle);
+        arrowHead.position.set(endX, endY, 0);
+        arrowHead.quaternion.setFromUnitVectors(this._tmpVecA.set(0, 1, 0), this._tmpVecB.set(-Math.sin(endAngle), Math.cos(endAngle), 0).normalize());
+        arrowHead.renderOrder = 3004;
+        torqueGroup.add(arrowHead);
+
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(1, 0.06, 0.06), torqueMat);
+        bar.renderOrder = 3003;
+        torqueGroup.add(bar);
+
+        group.add(torqueGroup);
+
         this.root.add(group);
         this._forcePreviewGroup = group;
         this._forcePreviewAxes = axes;
@@ -538,13 +587,27 @@ export class RapierDebuggerScene {
         this._forcePreviewArrowShaft = shaft;
         this._forcePreviewArrowHead = head;
         this._forcePreviewArrowMaterial = arrowMat;
+        this._torquePreviewGroup = torqueGroup;
+        this._torquePreviewDisc = disc;
+        this._torquePreviewArc = arc;
+        this._torquePreviewArrow = arrowHead;
+        this._torquePreviewBar = bar;
+        this._torquePreviewMaterial = torqueMat;
     }
 
     setForcePreview(preview) {
         if (!this._forcePreviewGroup || !this._chassisMesh) return;
         if (!preview) {
             this._forcePreviewGroup.visible = false;
+            if (this._torquePreviewGroup) this._torquePreviewGroup.visible = false;
             return;
+        }
+        const tab = preview.tab ?? 'force';
+        if (this._forcePreviewArrowMaterial && Number.isFinite(preview.color)) {
+            this._forcePreviewArrowMaterial.color.setHex(preview.color);
+        }
+        if (this._torquePreviewMaterial && Number.isFinite(preview.color)) {
+            this._torquePreviewMaterial.color.setHex(preview.color);
         }
 
         const force = preview.force ?? {};
@@ -559,32 +622,51 @@ export class RapierDebuggerScene {
         this._forcePreviewGroup.position.copy(worldOrigin);
         this._forcePreviewGroup.visible = true;
 
-        if (!this._forcePreviewArrow || !this._forcePreviewArrowShaft || !this._forcePreviewArrowHead) return;
-        const worldForce = this._tmpVecB
-            .set(force.x ?? 0, force.y ?? 0, force.z ?? 0)
-            .applyQuaternion(chassisQuat);
-        const magnitude = worldForce.length();
-        const length = Math.min(this._forcePreviewMaxLength, magnitude * this._forcePreviewScale);
+        if (tab === 'torque') {
+            if (!this._torquePreviewGroup || !this._torquePreviewBar) return;
+            if (this._forcePreviewArrow) this._forcePreviewArrow.visible = false;
+            const worldTorque = this._tmpVecB
+                .set(force.x ?? 0, force.y ?? 0, force.z ?? 0)
+                .applyQuaternion(chassisQuat);
+            const magnitude = worldTorque.length();
+            const length = Math.min(this._forcePreviewMaxLength, magnitude * this._forcePreviewScale * 2.2);
+            if (!Number.isFinite(length) || length < 0.01) {
+                this._torquePreviewGroup.visible = false;
+                return;
+            }
+            this._torquePreviewGroup.visible = true;
+            this._torquePreviewGroup.quaternion.setFromUnitVectors(this._tmpVecC.set(0, 0, 1), worldTorque.normalize());
+            const barLength = Math.max(0.15, length);
+            this._torquePreviewBar.scale.set(barLength, 1, 1);
+        } else {
+            if (!this._forcePreviewArrow || !this._forcePreviewArrowShaft || !this._forcePreviewArrowHead) return;
+            if (this._torquePreviewGroup) this._torquePreviewGroup.visible = false;
+            const worldForce = this._tmpVecB
+                .set(force.x ?? 0, force.y ?? 0, force.z ?? 0)
+                .applyQuaternion(chassisQuat);
+            const magnitude = worldForce.length();
+            const length = Math.min(this._forcePreviewMaxLength, magnitude * this._forcePreviewScale);
 
-        if (!Number.isFinite(length) || length < 0.01) {
-            this._forcePreviewArrow.visible = false;
-            return;
+            if (!Number.isFinite(length) || length < 0.01) {
+                this._forcePreviewArrow.visible = false;
+                return;
+            }
+
+            const dir = worldForce.normalize();
+            const headLength = Math.max(0.18, Math.min(0.7, length * 0.35));
+            const shaftLength = Math.max(0.02, length - headLength);
+            const shaftRadius = 0.045;
+            const headRadius = Math.max(0.12, shaftRadius * 2.4);
+
+            this._forcePreviewArrowDir.copy(dir);
+            this._forcePreviewArrow.quaternion.setFromUnitVectors(this._tmpVecC.set(1, 0, 0), this._forcePreviewArrowDir);
+
+            this._forcePreviewArrowShaft.scale.set(shaftRadius, shaftLength, shaftRadius);
+            this._forcePreviewArrowShaft.position.set(shaftLength * 0.5, 0, 0);
+            this._forcePreviewArrowHead.scale.set(headRadius, headLength, headRadius);
+            this._forcePreviewArrowHead.position.set(shaftLength + headLength * 0.5, 0, 0);
+            this._forcePreviewArrow.visible = true;
         }
-
-        const dir = worldForce.normalize();
-        const headLength = Math.max(0.18, Math.min(0.7, length * 0.35));
-        const shaftLength = Math.max(0.02, length - headLength);
-        const shaftRadius = 0.045;
-        const headRadius = Math.max(0.12, shaftRadius * 2.4);
-
-        this._forcePreviewArrowDir.copy(dir);
-        this._forcePreviewArrow.quaternion.setFromUnitVectors(this._tmpVecC.set(1, 0, 0), this._forcePreviewArrowDir);
-
-        this._forcePreviewArrowShaft.scale.set(shaftRadius, shaftLength, shaftRadius);
-        this._forcePreviewArrowShaft.position.set(shaftLength * 0.5, 0, 0);
-        this._forcePreviewArrowHead.scale.set(headRadius, headLength, headRadius);
-        this._forcePreviewArrowHead.position.set(shaftLength + headLength * 0.5, 0, 0);
-        this._forcePreviewArrow.visible = true;
     }
 
     _createChassisMesh() {
