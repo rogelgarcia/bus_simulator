@@ -1245,24 +1245,33 @@ export class TestModeState {
         };
 
         const frontRow = makeAxleRow();
+        const midRow = makeAxleRow();
         const rearRow = makeAxleRow();
+        midRow.style.display = 'none';
 
         const fl = makeWheelVizCell({ label: 'Front Left', wheelFirst: true });
         const fr = makeWheelVizCell({ label: 'Front Right', wheelFirst: false });
+        const ml = makeWheelVizCell({ label: 'Mid Left', wheelFirst: true });
+        const mr = makeWheelVizCell({ label: 'Mid Right', wheelFirst: false });
         const rl = makeWheelVizCell({ label: 'Rear Left', wheelFirst: true });
         const rr = makeWheelVizCell({ label: 'Rear Right', wheelFirst: false });
 
         fl.wrap.style.zIndex = '1';
         fr.wrap.style.zIndex = '1';
+        ml.wrap.style.zIndex = '1';
+        mr.wrap.style.zIndex = '1';
         rl.wrap.style.zIndex = '1';
         rr.wrap.style.zIndex = '1';
 
         frontRow.appendChild(fl.wrap);
         frontRow.appendChild(fr.wrap);
+        midRow.appendChild(ml.wrap);
+        midRow.appendChild(mr.wrap);
         rearRow.appendChild(rl.wrap);
         rearRow.appendChild(rr.wrap);
 
         wheelGrid.appendChild(frontRow);
+        wheelGrid.appendChild(midRow);
         wheelGrid.appendChild(rearRow);
 
         telemetryPanel.appendChild(wheelGrid);
@@ -1326,9 +1335,12 @@ export class TestModeState {
         this.wheelViz = {
             FL: fl,
             FR: fr,
+            ML: ml,
+            MR: mr,
             RL: rl,
             RR: rr
         };
+        this._wheelVizRows = { midRow };
 
         this.rapierPanel = rapierPanel;
         this.rapierFields = {
@@ -1356,6 +1368,7 @@ export class TestModeState {
         this.telemetryFields = null;
         this.steerWidget = null;
         this.wheelViz = null;
+        this._wheelVizRows = null;
 
         this.rapierPanel = null;
         this.rapierFields = null;
@@ -1405,6 +1418,7 @@ export class TestModeState {
                 this.steerWidget.needle.style.transform = 'rotate(0deg)';
             }
             if (this.wheelViz) {
+                if (this._wheelVizRows?.midRow) this._wheelVizRows.midRow.style.display = 'none';
                 for (const key of Object.keys(this.wheelViz)) {
                     const wheel = this.wheelViz[key];
                     wheel.wheel.spin.style.transform = 'rotate(0deg)';
@@ -1467,8 +1481,13 @@ export class TestModeState {
         const spinDeg = Number.isFinite(wheelSpin) ? (wheelSpin * 180 / Math.PI) : 0;
 
         if (this.wheelViz) {
+            const midRow = this._wheelVizRows?.midRow ?? null;
+            const hasMid = wheels.some((w) => w?.labelEx === 'ML' || w?.labelEx === 'MR');
+            if (midRow) midRow.style.display = hasMid ? 'flex' : 'none';
+
             for (const wheel of wheels) {
-                const slot = this.wheelViz[wheel.label];
+                const key = wheel.labelEx ?? wheel.label;
+                const slot = this.wheelViz[key];
                 if (!slot) continue;
                 slot.wheel.spin.style.transform = `rotate(${spinDeg.toFixed(1)}deg)`;
                 slot.wheel.contact.style.background = wheel.inContact ? '#7cff9a' : 'rgba(255,255,255,0.35)';

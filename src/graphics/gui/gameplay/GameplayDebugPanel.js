@@ -461,37 +461,19 @@ export class GameplayDebugPanel {
         wheelsLabel.style.fontWeight = '900';
         wheelsLabel.style.opacity = '0.85';
 
-        const wheelsDots = document.createElement('div');
-        wheelsDots.style.display = 'flex';
-        wheelsDots.style.alignItems = 'center';
-        wheelsDots.style.gap = '10px';
-        wheelsDots.style.justifyContent = 'flex-end';
+        this.wheelsDots = document.createElement('div');
+        this.wheelsDots.style.display = 'flex';
+        this.wheelsDots.style.alignItems = 'center';
+        this.wheelsDots.style.justifyContent = 'flex-end';
+        this.wheelsDots.style.gap = '10px';
+        this.wheelsDots.style.flexWrap = 'wrap';
+        this.wheelsDots.style.maxWidth = '250px';
+        this.wheelsDots.style.rowGap = '8px';
+        this._wheelCells = [];
+        this._wheelSig = '';
 
-        const makeWheel = (label) => {
-            const w = document.createElement('div');
-            w.style.display = 'flex';
-            w.style.alignItems = 'center';
-            w.style.gap = '6px';
-            const dot = makeDot();
-            const t = document.createElement('div');
-            t.textContent = label;
-            t.style.fontSize = '12px';
-            t.style.fontWeight = '900';
-            t.style.opacity = '0.95';
-            w.appendChild(dot);
-            w.appendChild(t);
-            return { w, dot };
-        };
-
-        this.wheelDots = {
-            FL: makeWheel('FL'),
-            FR: makeWheel('FR'),
-            RL: makeWheel('RL'),
-            RR: makeWheel('RR')
-        };
-        for (const k of ['FL', 'FR', 'RL', 'RR']) wheelsDots.appendChild(this.wheelDots[k].w);
         wheelsRow.appendChild(wheelsLabel);
-        wheelsRow.appendChild(wheelsDots);
+        wheelsRow.appendChild(this.wheelsDots);
         this.outputGrid.appendChild(wheelsRow);
 
         const logsTitleRow = document.createElement('div');
@@ -628,6 +610,7 @@ export class GameplayDebugPanel {
         if (!debug) {
             setDot(this.readyDot, false);
             this.readyText.textContent = '—';
+            this._syncWheelCells([]);
             return;
         }
 
@@ -649,15 +632,55 @@ export class GameplayDebugPanel {
         this.brakeForceRow.v.textContent = fmt(brakeF, 0);
 
         const wheels = Array.isArray(debug.wheels) ? debug.wheels : [];
-        const byLabel = new Map();
-        for (const w of wheels) {
-            const label = String(w?.label ?? '');
-            if (label) byLabel.set(label, w);
+        this._syncWheelCells(wheels);
+    }
+
+    _syncWheelCells(wheels) {
+        const list = Array.isArray(wheels) ? wheels : [];
+
+        const base = list.map((w) => {
+            const label = String(w?.labelEx ?? w?.label ?? '');
+            if (label) return label;
+            if (Number.isFinite(w?.index)) return `W${w.index}`;
+            return 'W';
+        });
+
+        const dupCount = new Map();
+        const labels = base.map((l) => {
+            const n = (dupCount.get(l) ?? 0) + 1;
+            dupCount.set(l, n);
+            return n > 1 ? `${l}${n}` : l;
+        });
+
+        const sig = labels.join('|');
+        if (sig !== this._wheelSig) {
+            this._wheelSig = sig;
+            this.wheelsDots.innerHTML = '';
+            this._wheelCells.length = 0;
+            for (const label of labels) {
+                const w = document.createElement('div');
+                w.style.display = 'flex';
+                w.style.alignItems = 'center';
+                w.style.gap = '6px';
+                const dot = makeDot();
+                const t = document.createElement('div');
+                t.textContent = label;
+                t.style.fontSize = '12px';
+                t.style.fontWeight = '900';
+                t.style.opacity = '0.95';
+                w.appendChild(dot);
+                w.appendChild(t);
+                this.wheelsDots.appendChild(w);
+                this._wheelCells.push({ dot });
+            }
+            this._scheduleMinHeightRefresh();
         }
-        for (const label of ['FL', 'FR', 'RL', 'RR']) {
-            const w = byLabel.get(label);
+
+        for (let i = 0; i < this._wheelCells.length; i++) {
+            const cell = this._wheelCells[i];
+            const w = list[i];
             const inContact = w ? !!w.inContact : false;
-            setDot(this.wheelDots[label].dot, inContact, { onColor: '#50ff9a', offColor: 'rgba(255, 95, 95, 0.35)' });
+            setDot(cell.dot, inContact, { onColor: '#50ff9a', offColor: 'rgba(255, 95, 95, 0.35)' });
         }
     }
 

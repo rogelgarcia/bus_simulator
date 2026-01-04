@@ -814,6 +814,8 @@ export class RapierVehicleSim {
         const rearLeftIndices = [];
         const rearRightIndices = [];
         const frontXs = [];
+        const wheelCenters = [];
+        const wheelConnections = [];
 
         for (const wheel of layout.wheels) {
             const connection = {
@@ -823,6 +825,8 @@ export class RapierVehicleSim {
             };
             controller.addWheel(connection, direction, axle, restLength, layout.wheelRadius);
             const idx = controller.numWheels() - 1;
+            wheelCenters[idx] = { x: wheel.position.x, y: wheel.position.y, z: wheel.position.z };
+            wheelConnections[idx] = { x: connection.x, y: connection.y, z: connection.z };
 
             controller.setWheelSuspensionRestLength(idx, restLength);
             controller.setWheelRadius(idx, layout.wheelRadius);
@@ -866,6 +870,8 @@ export class RapierVehicleSim {
         entry.centerLocal = centerLocal;
         entry.wheelRadius = layout.wheelRadius;
         entry.wheelSpinAccum = entry.state.locomotion.wheelSpinAccum ?? 0;
+        entry.wheelCenters = wheelCenters;
+        entry.wheelConnections = wheelConnections;
         entry.wheelIndices = {
             front: frontIndices,
             rear: rearIndices,
@@ -959,6 +965,8 @@ export class RapierVehicleSim {
             wheelRadius: DEFAULT_CONFIG.wheelRadius,
             wheelSpinAccum: 0,
             wheelIndices: { front: [], rear: [], frontLeft: [], frontRight: [], rearLeft: [], rearRight: [], all: [] },
+            wheelCenters: [],
+            wheelConnections: [],
             frontTrack: 0,
             wheelbase: 0,
             maxSteerRad: degToRad(DEFAULT_CONFIG.maxSteerDeg),
@@ -1132,6 +1140,9 @@ export class RapierVehicleSim {
         const rearLeft = new Set(entry.wheelIndices?.rearLeft ?? []);
         const rearRight = new Set(entry.wheelIndices?.rearRight ?? []);
 
+        const wheelCenters = entry.wheelCenters ?? [];
+        const wheelConnections = entry.wheelConnections ?? [];
+
         const wheels = ordered.map((i) => {
             let label = `W${i}`;
             if (frontLeft.has(i)) label = 'FL';
@@ -1142,6 +1153,8 @@ export class RapierVehicleSim {
             return {
                 index: i,
                 label,
+                center: wheelCenters[i] ?? null,
+                connection: wheelConnections[i] ?? null,
                 inContact: controller?.wheelIsInContact ? controller.wheelIsInContact(i) : null,
                 suspensionLength: controller?.wheelSuspensionLength ? controller.wheelSuspensionLength(i) : null,
                 suspensionForce: controller?.wheelSuspensionForce ? controller.wheelSuspensionForce(i) : null,
@@ -1150,6 +1163,54 @@ export class RapierVehicleSim {
                 engineForce: controller?.wheelEngineForce ? controller.wheelEngineForce(i) : null,
                 brakeForce: controller?.wheelBrake ? controller.wheelBrake(i) : null
             };
+        });
+
+        // Extended wheel labels for multi-axle vehicles (e.g., 6 wheels).
+        // Computes axle groups by chassis-space connection Z, then assigns FL/FR/ML/MR/RL/RR when possible.
+        const zTol = Math.max(0.25, Math.min(1.25, (entry.wheelRadius ?? DEFAULT_CONFIG.wheelRadius) * 1.5));
+        const withConn = wheels.filter((w) => Number.isFinite(w.connection?.z) && Number.isFinite(w.connection?.x));
+        if (withConn.length) {
+            const sortedByZ = [...withConn].sort((a, b) => (b.connection.z - a.connection.z)); // front -> rear
+            const groups = [];
+            for (const w of sortedByZ) {
+                const last = groups[groups.length - 1];
+                if (!last || Math.abs(w.connection.z - last.z) > zTol) {
+                    groups.push({ z: w.connection.z, wheels: [w] });
+                } else {
+                    last.wheels.push(w);
+                    last.z = last.wheels.reduce((sum, it) => sum + it.connection.z, 0) / last.wheels.length;
+                }
+            }
+
+            const axleCharForRank = (rank, count) => {
+                if (count <= 1) return 'F';
+                if (count === 2) return rank === 0 ? 'F' : 'R';
+                if (count === 3) return rank === 0 ? 'F' : (rank === 1 ? 'M' : 'R');
+                if (rank === 0) return 'F';
+                if (rank === count - 1) return 'R';
+                return 'A';
+            };
+
+            const counts = new Map();
+            for (let g = 0; g < groups.length; g++) {
+                const axleChar = axleCharForRank(g, groups.length);
+                for (const w of groups[g].wheels) {
+                    const sideChar = (w.connection.x ?? 0) < 0 ? 'L' : 'R';
+                    const base = `${axleChar}${sideChar}`;
+                    const n = (counts.get(base) ?? 0) + 1;
+                    counts.set(base, n);
+                    w.labelEx = n > 1 ? `${base}${n}` : base;
+                }
+            }
+        }
+
+        wheels.sort((a, b) => {
+            const az = a.connection?.z ?? a.center?.z ?? 0;
+            const bz = b.connection?.z ?? b.center?.z ?? 0;
+            if (bz !== az) return bz - az; // front -> rear
+            const ax = a.connection?.x ?? a.center?.x ?? 0;
+            const bx = b.connection?.x ?? b.center?.x ?? 0;
+            return ax - bx; // left -> right
         });
 
         const input = { ...entry.input };

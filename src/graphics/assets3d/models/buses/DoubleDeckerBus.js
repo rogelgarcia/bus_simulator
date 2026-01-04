@@ -389,8 +389,18 @@ function attachWheelGroups(bus, wheelGroups, rig) {
     };
 
     const axleClusters = clusters.filter(hasBothSides);
-    const rearCluster = axleClusters[0] ?? null;
-    const frontCluster = axleClusters[axleClusters.length - 1] ?? null;
+    if (!axleClusters.length) return null;
+    const orderedAxles = [...axleClusters].sort((a, b) => (a.z - b.z));
+    const rearCluster = orderedAxles[0] ?? null;
+    const frontCluster = orderedAxles[orderedAxles.length - 1] ?? null;
+    let midCluster = null;
+    if (orderedAxles.length >= 3) {
+        const midIndex = Math.floor(orderedAxles.length / 2);
+        midCluster = orderedAxles[midIndex] ?? null;
+        if (midCluster === rearCluster || midCluster === frontCluster) {
+            midCluster = orderedAxles[1] ?? null;
+        }
+    }
     if (!frontCluster || !rearCluster) return null;
 
     const pickSide = (cluster, side) => {
@@ -404,16 +414,24 @@ function attachWheelGroups(bus, wheelGroups, rig) {
         }, null);
     };
 
-    const selections = [
-        { axle: 'front', side: 'l', item: pickSide(frontCluster, 'l'), isFront: true },
-        { axle: 'front', side: 'r', item: pickSide(frontCluster, 'r'), isFront: true },
-        { axle: 'rear', side: 'l', item: pickSide(rearCluster, 'l'), isFront: false },
-        { axle: 'rear', side: 'r', item: pickSide(rearCluster, 'r'), isFront: false }
-    ].filter((s) => !!s.item);
+    const selections = [];
+    const pushAxle = (axleName, cluster, isFront) => {
+        if (!cluster) return;
+        selections.push(
+            { axle: axleName, side: 'l', item: pickSide(cluster, 'l'), isFront },
+            { axle: axleName, side: 'r', item: pickSide(cluster, 'r'), isFront }
+        );
+    };
+
+    pushAxle('rear', rearCluster, false);
+    if (midCluster && orderedAxles.length >= 3) pushAxle('mid', midCluster, false);
+    pushAxle('front', frontCluster, true);
+
+    const filteredSelections = selections.filter((s) => !!s.item);
 
     const attachedRadii = [];
 
-    for (const sel of selections) {
+    for (const sel of filteredSelections) {
         const item = sel.item;
         const node = makeWheelNode(`wheel_${sel.axle}_${sel.side}`);
         if (sel.side === 'l') node.root.rotation.y = Math.PI;
@@ -484,6 +502,7 @@ function addProceduralWheels(bus, rig, { width, length, wheelRadius }) {
     const wheelW = DEFAULT_WHEEL_WIDTH;
     const axleFront = length * 0.28;
     const axleRear = -length * 0.28;
+    const axleMid = axleRear + Math.min(1.5, Math.max(0.9, length * 0.10));
     const wheelX = (width / 2) - (wheelW / 2) + 0.02;
 
     const wheelsRoot = bus.userData?.bus?.wheelsRoot ?? bus;
@@ -498,6 +517,11 @@ function addProceduralWheels(bus, rig, { width, length, wheelRadius }) {
     wheelsRoot.add(wRR.root);
     rig.addWheel({ rollPivot: wRR.rollPivot, isFront: false });
 
+    const wMR = createBusWheel({ radius: wheelR, width: wheelW });
+    wMR.root.position.set(wheelX, wheelR, axleMid);
+    wheelsRoot.add(wMR.root);
+    rig.addWheel({ rollPivot: wMR.rollPivot, isFront: false });
+
     const wFL = createBusWheel({ radius: wheelR, width: wheelW });
     wFL.root.position.set(-wheelX, wheelR, axleFront);
     wFL.root.rotation.y = Math.PI;
@@ -509,6 +533,12 @@ function addProceduralWheels(bus, rig, { width, length, wheelRadius }) {
     wRL.root.rotation.y = Math.PI;
     wheelsRoot.add(wRL.root);
     rig.addWheel({ rollPivot: wRL.rollPivot, isFront: false });
+
+    const wML = createBusWheel({ radius: wheelR, width: wheelW });
+    wML.root.position.set(-wheelX, wheelR, axleMid);
+    wML.root.rotation.y = Math.PI;
+    wheelsRoot.add(wML.root);
+    rig.addWheel({ rollPivot: wML.rollPivot, isFront: false });
 }
 
 function recenterBody(bus, bounds = null) {
