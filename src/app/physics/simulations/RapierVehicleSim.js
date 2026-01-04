@@ -137,6 +137,19 @@ function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
 }
 
+function computeBoxInertia(mass, width, height, length) {
+    if (!Number.isFinite(mass) || mass <= 0) return { x: null, y: null, z: null };
+    const w2 = width * width;
+    const h2 = height * height;
+    const l2 = length * length;
+    const k = mass / 12;
+    return {
+        x: k * (h2 + l2),
+        y: k * (w2 + l2),
+        z: k * (w2 + h2)
+    };
+}
+
 function degToRad(deg) {
     return deg * (Math.PI / 180);
 }
@@ -755,7 +768,10 @@ export class RapierVehicleSim {
         const layout = computeWheelLayout(entry.anchor, entry.api, entry.config, centerLocal);
         if (!layout || !layout.wheels.length) return false;
 
+        entry.chassisSize = safeSize.clone();
+
         const tuning = resolveBusTuning(entry, model);
+        entry.tuning = tuning;
         const suspension = tuning.suspension ?? {};
         const restLength = Number.isFinite(suspension.restLength) ? suspension.restLength : layout.restLength;
 
@@ -907,6 +923,7 @@ export class RapierVehicleSim {
             anchor,
             api,
             config: null,
+            tuning: null,
             input: { throttle: 0, brake: 0, steering: 0, handbrake: 0 },
             state: {
                 locomotion: {
@@ -935,6 +952,7 @@ export class RapierVehicleSim {
             body: null,
             controller: null,
             centerLocal: new THREE.Vector3(),
+            chassisSize: null,
             wheelRadius: DEFAULT_CONFIG.wheelRadius,
             wheelSpinAccum: 0,
             wheelIndices: { front: [], rear: [], frontLeft: [], frontRight: [], rearLeft: [], rearRight: [], all: [] },
@@ -1155,6 +1173,79 @@ export class RapierVehicleSim {
                 gears: engine?.gears ? engine.gears.map((gear, index) => ({ index, label: gear.label, ratio: gear.ratio })) : null
             },
             wheels
+        };
+    }
+
+    getVehicleConfig(vehicleId) {
+        const entry = this._vehicles.get(vehicleId) ?? this._pendingVehicles.get(vehicleId);
+        if (!entry) return null;
+
+        const tuning = entry.tuning ?? null;
+        const suspension = tuning?.suspension ?? {};
+        const size = entry.chassisSize;
+        const width = Number.isFinite(size?.x)
+            ? size.x
+            : (entry.config?.dimensions?.width ?? FALLBACK_DIMENSIONS.width);
+        const height = Number.isFinite(size?.y)
+            ? size.y
+            : (entry.config?.dimensions?.height ?? FALLBACK_DIMENSIONS.height);
+        const length = Number.isFinite(size?.z)
+            ? size.z
+            : (entry.config?.dimensions?.length ?? FALLBACK_DIMENSIONS.length);
+
+        const invMass = entry.body?.invMass?.();
+        const massKg = (Number.isFinite(invMass) && invMass > 0) ? (1 / invMass) : null;
+        const additionalMassKg = Number.isFinite(tuning?.mass) ? tuning.mass : null;
+        const inertia = computeBoxInertia(
+            Number.isFinite(massKg) ? massKg : additionalMassKg,
+            width,
+            height,
+            length
+        );
+
+        let com = { x: 0, y: 0, z: 0 };
+        const comRaw = entry.body?.localCenterOfMass?.() ?? entry.body?.centerOfMass?.();
+        if (comRaw && Number.isFinite(comRaw.x) && Number.isFinite(comRaw.y) && Number.isFinite(comRaw.z)) {
+            com = { x: comRaw.x, y: comRaw.y, z: comRaw.z };
+        }
+
+        return {
+            massKg,
+            additionalMassKg,
+            com,
+            inertia,
+            dimensions: { width, height, length },
+            centerLocal: entry.centerLocal ? { x: entry.centerLocal.x, y: entry.centerLocal.y, z: entry.centerLocal.z } : null,
+            halfExtents: { x: width * 0.5, y: height * 0.5, z: length * 0.5 },
+            chassis: {
+                linearDamping: Number.isFinite(tuning?.linearDamping) ? tuning.linearDamping : null,
+                angularDamping: Number.isFinite(tuning?.angularDamping) ? tuning.angularDamping : null,
+                friction: Number.isFinite(tuning?.chassisFriction) ? tuning.chassisFriction : null,
+                bodyTiltScale: Number.isFinite(tuning?.bodyTiltScale) ? tuning.bodyTiltScale : null,
+                maxBodyAngleRad: Number.isFinite(entry.maxBodyAngle) ? entry.maxBodyAngle : null
+            },
+            suspension: {
+                restLength: entry.suspensionRestLength ?? suspension.restLength ?? null,
+                travel: entry.suspensionTravel ?? suspension.travel ?? null,
+                stiffness: Number.isFinite(suspension.stiffness) ? suspension.stiffness : null,
+                compression: Number.isFinite(suspension.compression) ? suspension.compression : null,
+                relaxation: Number.isFinite(suspension.relaxation) ? suspension.relaxation : null,
+                maxForce: Number.isFinite(suspension.maxForce) ? suspension.maxForce : null
+            },
+            wheels: {
+                radius: entry.wheelRadius ?? entry.config?.wheelRadius ?? DEFAULT_CONFIG.wheelRadius,
+                wheelbase: entry.wheelbase ?? entry.config?.wheelbase ?? 0,
+                frontTrack: entry.frontTrack ?? 0,
+                frictionSlip: Number.isFinite(tuning?.frictionSlip) ? tuning.frictionSlip : null,
+                sideFrictionStiffness: Number.isFinite(tuning?.sideFrictionStiffness) ? tuning.sideFrictionStiffness : null
+            },
+            forces: {
+                engineForce: Number.isFinite(entry.engineForce) ? entry.engineForce : null,
+                brakeForce: Number.isFinite(entry.brakeForce) ? entry.brakeForce : null,
+                handbrakeForce: Number.isFinite(entry.handbrakeForce) ? entry.handbrakeForce : null,
+                brakeBias: Number.isFinite(entry.brakeBias) ? entry.brakeBias : null,
+                maxSteerRad: Number.isFinite(entry.maxSteerRad) ? entry.maxSteerRad : null
+            }
         };
     }
 

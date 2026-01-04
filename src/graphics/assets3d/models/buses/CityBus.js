@@ -344,6 +344,18 @@ function attachWheelMeshes(bus, wheelNodes, wheelMeshes, rig) {
         const node = wheelNodes[key];
         const { meshes, box } = info[key];
         for (const mesh of meshes) node.rollPivot.attach(mesh);
+        node.rollPivot.updateMatrixWorld(true);
+        const pivotBox = new THREE.Box3();
+        for (const mesh of meshes) {
+            const localBox = getMeshBoundsLocal(node.rollPivot, mesh);
+            if (!localBox.isEmpty()) pivotBox.union(localBox);
+        }
+        if (!pivotBox.isEmpty()) {
+            const center = pivotBox.getCenter(new THREE.Vector3());
+            if (center.lengthSq() > 1e-8) {
+                for (const mesh of meshes) mesh.position.sub(center);
+            }
+        }
         const size = box.getSize(new THREE.Vector3());
         const radius = Math.max(size.y, size.z) * 0.5;
         if (Number.isFinite(radius) && radius > 0) radii.push(radius);

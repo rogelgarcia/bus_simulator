@@ -175,6 +175,44 @@ function makeTitle(text) {
     return t;
 }
 
+function makePopupDraggable(wrap, handle) {
+    if (!wrap || !handle) return;
+    handle.style.cursor = 'grab';
+    handle.style.userSelect = 'none';
+    handle.style.touchAction = 'none';
+
+    const onPointerDown = (event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        const rect = wrap.getBoundingClientRect();
+        const offsetX = event.clientX - rect.left;
+        const offsetY = event.clientY - rect.top;
+        wrap.style.left = `${rect.left}px`;
+        wrap.style.top = `${rect.top}px`;
+        wrap.style.bottom = '';
+        wrap.style.right = '';
+        handle.style.cursor = 'grabbing';
+
+        const onPointerMove = (moveEvent) => {
+            wrap.style.left = `${moveEvent.clientX - offsetX}px`;
+            wrap.style.top = `${moveEvent.clientY - offsetY}px`;
+        };
+
+        const onPointerUp = () => {
+            handle.style.cursor = 'grab';
+            window.removeEventListener('pointermove', onPointerMove);
+            window.removeEventListener('pointerup', onPointerUp);
+            window.removeEventListener('pointercancel', onPointerUp);
+        };
+
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+        window.addEventListener('pointercancel', onPointerUp);
+    };
+
+    handle.addEventListener('pointerdown', onPointerDown);
+}
+
 function makeRow(key, label) {
     const row = document.createElement('div');
     row.style.display = 'flex';
@@ -227,6 +265,25 @@ function makeValueRow(label) {
     row.appendChild(k);
     row.appendChild(v);
     return { row, valueEl: v };
+}
+
+function makeActionButton(label) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = label;
+    btn.style.width = '100%';
+    btn.style.marginTop = '8px';
+    btn.style.padding = '8px 12px';
+    btn.style.borderRadius = '10px';
+    btn.style.border = '1px solid rgba(255,255,255,0.16)';
+    btn.style.background = 'rgba(255,255,255,0.08)';
+    btn.style.color = '#e9f2ff';
+    btn.style.fontSize = '12px';
+    btn.style.fontWeight = '800';
+    btn.style.letterSpacing = '0.4px';
+    btn.style.textTransform = 'uppercase';
+    btn.style.cursor = 'pointer';
+    return btn;
 }
 
 function makeSeparator() {
@@ -736,6 +793,9 @@ export class TestModeState {
         this.rapierPanel = null;
         this.rapierFields = null;
         this.gearControl = null;
+        this.rapierConfigPanel = null;
+        this.rapierConfigOverlay = null;
+        this.rapierConfigFields = null;
 
         this._prevChipDisplay = null;
         this._onKeyDown = (e) => this._handleKeyDown(e);
@@ -974,6 +1034,9 @@ export class TestModeState {
         // Shortcuts
         const shortcuts = document.createElement('div');
         stylePanel(shortcuts, { interactive: false });
+        shortcuts.style.position = 'absolute';
+        shortcuts.style.top = '16px';
+        shortcuts.style.right = '16px';
         shortcuts.appendChild(makeTitle('Shortcuts'));
         shortcuts.appendChild(makeRow('B', 'Toggle Bus'));
         shortcuts.appendChild(makeRow('X', 'Exit to Main Menu'));
@@ -989,6 +1052,9 @@ export class TestModeState {
         // Ops
         const ops = document.createElement('div');
         stylePanel(ops, { interactive: true });
+        ops.style.position = 'absolute';
+        ops.style.top = '16px';
+        ops.style.left = '16px';
         ops.appendChild(makeTitle('Bus Controls'));
 
         // ✅ scrollable
@@ -1202,7 +1268,7 @@ export class TestModeState {
         telemetryPanel.appendChild(wheelGrid);
 
         const rapierPanel = document.createElement('div');
-        stylePanel(rapierPanel, { interactive: false });
+        stylePanel(rapierPanel, { interactive: true });
         rapierPanel.style.position = 'absolute';
         rapierPanel.style.right = '16px';
         rapierPanel.style.bottom = '16px';
@@ -1231,6 +1297,14 @@ export class TestModeState {
         rapierPanel.appendChild(outSteer.row);
         rapierPanel.appendChild(outContacts.row);
         rapierPanel.appendChild(outForces.row);
+
+        const rapierConfigBtn = makeActionButton('Show configuration');
+        rapierConfigBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            this._toggleRapierConfigPanel();
+        });
+        rapierPanel.appendChild(makeSeparator());
+        rapierPanel.appendChild(rapierConfigBtn);
 
         root.appendChild(shortcuts);
         root.appendChild(ops);
@@ -1271,6 +1345,8 @@ export class TestModeState {
     }
 
     _unmountHud() {
+        this._closeRapierConfigPanel();
+
         if (this.hudRoot?.parentNode) this.hudRoot.parentNode.removeChild(this.hudRoot);
         this.hudRoot = null;
 
@@ -1284,6 +1360,9 @@ export class TestModeState {
         this.rapierPanel = null;
         this.rapierFields = null;
         this.gearControl = null;
+        this.rapierConfigPanel = null;
+        this.rapierConfigOverlay = null;
+        this.rapierConfigFields = null;
     }
 
     _updateHudBusName() {
@@ -1305,7 +1384,10 @@ export class TestModeState {
     }
 
     _updateRapierDebug() {
-        if (!this.rapierFields || !this.vehicle?.id) return;
+        if (!this.rapierFields || !this.vehicle?.id) {
+            this._updateRapierConfigPanel();
+            return;
+        }
 
         const fmt = (v, digits = 2) => (Number.isFinite(v) ? v.toFixed(digits) : '—');
         const fmtDeg = (v) => (Number.isFinite(v) ? `${THREE.MathUtils.radToDeg(v).toFixed(1)}°` : '—');
@@ -1331,6 +1413,7 @@ export class TestModeState {
                     wheel.suspension.valueEl.textContent = '0.0 cm';
                 }
             }
+            this._updateRapierConfigPanel();
             return;
         }
 
@@ -1403,6 +1486,218 @@ export class TestModeState {
                 }
             }
         }
+
+        this._updateRapierConfigPanel();
+    }
+
+    _toggleRapierConfigPanel() {
+        if (this.rapierConfigPanel) {
+            this._closeRapierConfigPanel();
+        } else {
+            this._openRapierConfigPanel();
+        }
+    }
+
+    _openRapierConfigPanel() {
+        if (this.rapierConfigPanel || !this.hudRoot) return;
+
+        const overlay = document.createElement('div');
+        overlay.style.position = 'fixed';
+        overlay.style.inset = '0';
+        overlay.style.zIndex = '60';
+        overlay.style.pointerEvents = 'auto';
+        overlay.style.background = 'rgba(0,0,0,0)';
+
+        const panel = document.createElement('div');
+        stylePanel(panel, { interactive: true });
+        panel.style.position = 'absolute';
+        panel.style.top = '80px';
+        panel.style.right = '24px';
+        panel.style.minWidth = '320px';
+        panel.style.maxWidth = '420px';
+        panel.style.maxHeight = 'calc(100vh - 120px)';
+        panel.style.overflowY = 'auto';
+
+        const header = document.createElement('div');
+        header.style.display = 'flex';
+        header.style.alignItems = 'center';
+        header.style.justifyContent = 'space-between';
+        header.style.gap = '12px';
+
+        const title = makeTitle('Rapier Configuration');
+        title.style.marginBottom = '0';
+
+        const closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.textContent = 'X';
+        closeBtn.style.width = '28px';
+        closeBtn.style.height = '28px';
+        closeBtn.style.borderRadius = '8px';
+        closeBtn.style.border = '1px solid rgba(255,255,255,0.16)';
+        closeBtn.style.background = 'rgba(10, 14, 20, 0.75)';
+        closeBtn.style.color = '#e9f2ff';
+        closeBtn.style.fontWeight = '900';
+        closeBtn.style.cursor = 'pointer';
+        closeBtn.style.display = 'grid';
+        closeBtn.style.placeItems = 'center';
+        closeBtn.style.padding = '0';
+
+        closeBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            this._closeRapierConfigPanel();
+        });
+
+        header.appendChild(title);
+        header.appendChild(closeBtn);
+        panel.appendChild(header);
+        panel.appendChild(makeSeparator());
+
+        const fields = {
+            mass: makeValueRow('Mass (kg)'),
+            additionalMass: makeValueRow('Additional mass (kg)'),
+            com: makeValueRow('COM (m)'),
+            inertia: makeValueRow('Inertia (kg m^2)'),
+            dimensions: makeValueRow('Dimensions (m)'),
+            centerLocal: makeValueRow('Chassis center (m)'),
+            halfExtents: makeValueRow('Half extents (m)'),
+            linearDamping: makeValueRow('Linear damping'),
+            angularDamping: makeValueRow('Angular damping'),
+            chassisFriction: makeValueRow('Chassis friction'),
+            bodyTilt: makeValueRow('Body tilt scale'),
+            maxBodyAngle: makeValueRow('Max body angle (deg)'),
+            suspensionRest: makeValueRow('Rest length (m)'),
+            suspensionTravel: makeValueRow('Travel (m)'),
+            suspensionStiffness: makeValueRow('Stiffness'),
+            suspensionCompression: makeValueRow('Compression'),
+            suspensionRelaxation: makeValueRow('Relaxation'),
+            suspensionMaxForce: makeValueRow('Max force (N)'),
+            wheelRadius: makeValueRow('Wheel radius (m)'),
+            wheelbase: makeValueRow('Wheelbase (m)'),
+            frontTrack: makeValueRow('Front track (m)'),
+            frictionSlip: makeValueRow('Friction slip'),
+            sideFriction: makeValueRow('Side stiffness'),
+            engineForce: makeValueRow('Engine force (N)'),
+            brakeForce: makeValueRow('Brake force (N)'),
+            handbrakeForce: makeValueRow('Handbrake force (N)'),
+            brakeBias: makeValueRow('Brake bias'),
+            maxSteer: makeValueRow('Max steer (rad)')
+        };
+
+        panel.appendChild(makeLabel('Chassis'));
+        panel.appendChild(fields.mass.row);
+        panel.appendChild(fields.additionalMass.row);
+        panel.appendChild(fields.com.row);
+        panel.appendChild(fields.inertia.row);
+        panel.appendChild(fields.dimensions.row);
+        panel.appendChild(fields.centerLocal.row);
+        panel.appendChild(fields.halfExtents.row);
+        panel.appendChild(fields.linearDamping.row);
+        panel.appendChild(fields.angularDamping.row);
+        panel.appendChild(fields.chassisFriction.row);
+        panel.appendChild(fields.bodyTilt.row);
+        panel.appendChild(fields.maxBodyAngle.row);
+
+        panel.appendChild(makeLabel('Suspension'));
+        panel.appendChild(fields.suspensionRest.row);
+        panel.appendChild(fields.suspensionTravel.row);
+        panel.appendChild(fields.suspensionStiffness.row);
+        panel.appendChild(fields.suspensionCompression.row);
+        panel.appendChild(fields.suspensionRelaxation.row);
+        panel.appendChild(fields.suspensionMaxForce.row);
+
+        panel.appendChild(makeLabel('Wheels'));
+        panel.appendChild(fields.wheelRadius.row);
+        panel.appendChild(fields.wheelbase.row);
+        panel.appendChild(fields.frontTrack.row);
+        panel.appendChild(fields.frictionSlip.row);
+        panel.appendChild(fields.sideFriction.row);
+
+        panel.appendChild(makeLabel('Forces'));
+        panel.appendChild(fields.engineForce.row);
+        panel.appendChild(fields.brakeForce.row);
+        panel.appendChild(fields.handbrakeForce.row);
+        panel.appendChild(fields.brakeBias.row);
+        panel.appendChild(fields.maxSteer.row);
+
+        overlay.appendChild(panel);
+        overlay.addEventListener('pointerdown', (event) => {
+            if (event.target === overlay) this._closeRapierConfigPanel();
+        });
+
+        this.hudRoot.appendChild(overlay);
+
+        this.rapierConfigOverlay = overlay;
+        this.rapierConfigPanel = panel;
+        this.rapierConfigFields = fields;
+
+        makePopupDraggable(panel, title);
+        this._updateRapierConfigPanel();
+    }
+
+    _closeRapierConfigPanel() {
+        if (this.rapierConfigOverlay?.parentNode) {
+            this.rapierConfigOverlay.parentNode.removeChild(this.rapierConfigOverlay);
+        }
+        this.rapierConfigOverlay = null;
+        this.rapierConfigPanel = null;
+        this.rapierConfigFields = null;
+    }
+
+    _updateRapierConfigPanel() {
+        if (!this.rapierConfigFields) return;
+        const config = this.vehicle?.id
+            ? this.sim?.physics?.getVehicleConfig?.(this.vehicle.id)
+            : null;
+
+        const fmt = (value, digits = 2) => (Number.isFinite(value) ? value.toFixed(digits) : '—');
+        const fmtVec3 = (vec, digits = 2) => {
+            if (!vec || !Number.isFinite(vec.x) || !Number.isFinite(vec.y) || !Number.isFinite(vec.z)) return '—';
+            return `x:${fmt(vec.x, digits)} y:${fmt(vec.y, digits)} z:${fmt(vec.z, digits)}`;
+        };
+        const fmtDims = (dims, digits = 2) => {
+            if (!dims) return '—';
+            return `${fmt(dims.width, digits)} x ${fmt(dims.height, digits)} x ${fmt(dims.length, digits)}`;
+        };
+
+        const fields = this.rapierConfigFields;
+        if (!config) {
+            for (const key of Object.keys(fields)) fields[key].valueEl.textContent = '—';
+            return;
+        }
+
+        fields.mass.valueEl.textContent = fmt(config.massKg, 1);
+        fields.additionalMass.valueEl.textContent = fmt(config.additionalMassKg, 1);
+        fields.com.valueEl.textContent = fmtVec3(config.com, 2);
+        fields.inertia.valueEl.textContent = fmtVec3(config.inertia, 2);
+        fields.dimensions.valueEl.textContent = fmtDims(config.dimensions, 2);
+        fields.centerLocal.valueEl.textContent = fmtVec3(config.centerLocal, 2);
+        fields.halfExtents.valueEl.textContent = fmtVec3(config.halfExtents, 2);
+        fields.linearDamping.valueEl.textContent = fmt(config.chassis?.linearDamping, 2);
+        fields.angularDamping.valueEl.textContent = fmt(config.chassis?.angularDamping, 2);
+        fields.chassisFriction.valueEl.textContent = fmt(config.chassis?.friction, 2);
+        fields.bodyTilt.valueEl.textContent = fmt(config.chassis?.bodyTiltScale, 2);
+        fields.maxBodyAngle.valueEl.textContent = Number.isFinite(config.chassis?.maxBodyAngleRad)
+            ? `${THREE.MathUtils.radToDeg(config.chassis.maxBodyAngleRad).toFixed(1)}°`
+            : '—';
+
+        fields.suspensionRest.valueEl.textContent = fmt(config.suspension?.restLength, 3);
+        fields.suspensionTravel.valueEl.textContent = fmt(config.suspension?.travel, 3);
+        fields.suspensionStiffness.valueEl.textContent = fmt(config.suspension?.stiffness, 1);
+        fields.suspensionCompression.valueEl.textContent = fmt(config.suspension?.compression, 2);
+        fields.suspensionRelaxation.valueEl.textContent = fmt(config.suspension?.relaxation, 2);
+        fields.suspensionMaxForce.valueEl.textContent = fmt(config.suspension?.maxForce, 0);
+
+        fields.wheelRadius.valueEl.textContent = fmt(config.wheels?.radius, 3);
+        fields.wheelbase.valueEl.textContent = fmt(config.wheels?.wheelbase, 3);
+        fields.frontTrack.valueEl.textContent = fmt(config.wheels?.frontTrack, 3);
+        fields.frictionSlip.valueEl.textContent = fmt(config.wheels?.frictionSlip, 2);
+        fields.sideFriction.valueEl.textContent = fmt(config.wheels?.sideFrictionStiffness, 2);
+
+        fields.engineForce.valueEl.textContent = fmt(config.forces?.engineForce, 0);
+        fields.brakeForce.valueEl.textContent = fmt(config.forces?.brakeForce, 0);
+        fields.handbrakeForce.valueEl.textContent = fmt(config.forces?.handbrakeForce, 0);
+        fields.brakeBias.valueEl.textContent = fmt(config.forces?.brakeBias, 2);
+        fields.maxSteer.valueEl.textContent = fmt(config.forces?.maxSteerRad, 3);
     }
 
     _setBus(index) {
@@ -1468,6 +1763,7 @@ export class TestModeState {
         this._updateHudBusName();
         this._syncGearOptions();
         this._scheduleBusPhysicsRefresh();
+        this._updateRapierConfigPanel();
     }
 
     _nextBus() {

@@ -179,6 +179,65 @@ function makeTitle(text) {
     return t;
 }
 
+function makePopupCloseButton(onClose) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = 'x';
+    btn.style.width = '24px';
+    btn.style.height = '24px';
+    btn.style.borderRadius = '8px';
+    btn.style.border = '1px solid rgba(255,255,255,0.16)';
+    btn.style.background = 'rgba(12, 16, 24, 0.85)';
+    btn.style.color = '#e9f2ff';
+    btn.style.fontWeight = '900';
+    btn.style.fontSize = '12px';
+    btn.style.lineHeight = '1';
+    btn.style.cursor = 'pointer';
+    btn.style.opacity = '0.7';
+    btn.style.display = 'grid';
+    btn.style.placeItems = 'center';
+    btn.style.padding = '0';
+
+    btn.addEventListener('pointerdown', (event) => {
+        event.stopPropagation();
+    });
+    btn.addEventListener('mouseenter', () => {
+        btn.style.opacity = '1';
+        btn.style.background = 'rgba(255,255,255,0.12)';
+    });
+    btn.addEventListener('mouseleave', () => {
+        btn.style.opacity = '0.7';
+        btn.style.background = 'rgba(12, 16, 24, 0.85)';
+    });
+    if (typeof onClose === 'function') {
+        btn.addEventListener('click', (event) => {
+            event.preventDefault();
+            onClose();
+        });
+    }
+
+    return btn;
+}
+
+function makePopupHeader(text, onClose) {
+    const header = document.createElement('div');
+    header.style.display = 'flex';
+    header.style.alignItems = 'center';
+    header.style.justifyContent = 'space-between';
+    header.style.gap = '10px';
+
+    const title = makeTitle(text);
+    title.style.marginBottom = '0';
+    title.style.flex = '1';
+
+    const closeBtn = makePopupCloseButton(onClose);
+
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+
+    return { header, title, closeBtn };
+}
+
 function makePopupDraggable(wrap, handle) {
     if (!wrap || !handle) return;
     handle.style.cursor = 'grab';
@@ -1667,10 +1726,9 @@ export class RapierDebuggerUI {
         wrap.style.flexDirection = 'column';
         wrap.style.gap = '8px';
 
-        const title = makeTitle('Camera');
-        title.style.marginBottom = '0';
-        wrap.appendChild(title);
-        makePopupDraggable(wrap, title);
+        const { header } = makePopupHeader('Camera', () => this._closeCameraPopup());
+        wrap.appendChild(header);
+        makePopupDraggable(wrap, header);
 
         const topSeparator = makeSeparator();
         topSeparator.style.margin = '6px 0 4px';
@@ -1741,10 +1799,9 @@ export class RapierDebuggerUI {
         wrap.style.minWidth = '210px';
         wrap.style.maxWidth = '210px';
 
-        const title = makeTitle('Gravity');
-        title.style.marginBottom = '0';
-        wrap.appendChild(title);
-        makePopupDraggable(wrap, title);
+        const { header } = makePopupHeader('Gravity', () => this._closeGravityPopup());
+        wrap.appendChild(header);
+        makePopupDraggable(wrap, header);
 
         const topSeparator = makeSeparator();
         topSeparator.style.margin = '6px 0 4px';
@@ -1895,10 +1952,9 @@ export class RapierDebuggerUI {
         wrap.style.gap = '8px';
         wrap.style.minWidth = '520px';
 
-        const title = makeTitle('Reset');
-        title.style.marginBottom = '0';
-        wrap.appendChild(title);
-        makePopupDraggable(wrap, title);
+        const { header } = makePopupHeader('Reset', () => this._closePositionPopup());
+        wrap.appendChild(header);
+        makePopupDraggable(wrap, header);
 
         const topSeparator = makeSeparator();
         topSeparator.style.margin = '6px 0 4px';
@@ -2544,10 +2600,9 @@ export class RapierDebuggerUI {
         wrap.style.gap = '8px';
         wrap.style.minWidth = '210px';
 
-        const title = makeTitle('Center of mass');
-        title.style.marginBottom = '0';
-        wrap.appendChild(title);
-        makePopupDraggable(wrap, title);
+        const { header } = makePopupHeader('Center of mass', () => this._closeComPopup());
+        wrap.appendChild(header);
+        makePopupDraggable(wrap, header);
 
         const topSeparator = makeSeparator();
         topSeparator.style.margin = '6px 0 4px';
@@ -2658,10 +2713,9 @@ export class RapierDebuggerUI {
         wrap.style.gap = '8px';
         wrap.style.minWidth = '220px';
 
-        const title = makeTitle('Inertia');
-        title.style.marginBottom = '0';
-        wrap.appendChild(title);
-        makePopupDraggable(wrap, title);
+        const { header } = makePopupHeader('Inertia', () => this._closeInertiaPopup());
+        wrap.appendChild(header);
+        makePopupDraggable(wrap, header);
 
         const topSeparator = makeSeparator();
         topSeparator.style.margin = '6px 0 4px';
@@ -2797,10 +2851,9 @@ export class RapierDebuggerUI {
         wrap.style.gap = '8px';
         wrap.style.minWidth = '220px';
 
-        const title = makeTitle('Inertia frame');
-        title.style.marginBottom = '0';
-        wrap.appendChild(title);
-        makePopupDraggable(wrap, title);
+        const { header } = makePopupHeader('Inertia frame', () => this._closeInertiaFramePopup());
+        wrap.appendChild(header);
+        makePopupDraggable(wrap, header);
 
         const topSeparator = makeSeparator();
         topSeparator.style.margin = '6px 0 4px';
@@ -2940,10 +2993,9 @@ export class RapierDebuggerUI {
         wrap.style.gap = '8px';
         wrap.style.minWidth = '220px';
 
-        const title = makeTitle('Locking');
-        title.style.marginBottom = '0';
-        wrap.appendChild(title);
-        makePopupDraggable(wrap, title);
+        const { header } = makePopupHeader('Locking', () => this._closeLockingPopup());
+        wrap.appendChild(header);
+        makePopupDraggable(wrap, header);
 
         const topSeparator = makeSeparator();
         topSeparator.style.margin = '6px 0 4px';
@@ -3055,10 +3107,9 @@ export class RapierDebuggerUI {
         wrap.style.gap = '10px';
         wrap.style.minWidth = '340px';
 
-        const title = makeTitle('Forces and impulses');
-        title.style.marginBottom = '0';
-        wrap.appendChild(title);
-        makePopupDraggable(wrap, title);
+        const { header } = makePopupHeader('Forces and impulses', () => this._closeForcesPopup());
+        wrap.appendChild(header);
+        makePopupDraggable(wrap, header);
 
         const topSeparator = makeSeparator();
         topSeparator.style.margin = '6px 0 4px';
@@ -3479,10 +3530,9 @@ export class RapierDebuggerUI {
         wrap.style.gap = '8px';
         wrap.style.minWidth = '220px';
 
-        const title = makeTitle('Automated tests');
-        title.style.marginBottom = '0';
-        wrap.appendChild(title);
-        makePopupDraggable(wrap, title);
+        const { header } = makePopupHeader('Automated tests', () => this._closeTestsPopup());
+        wrap.appendChild(header);
+        makePopupDraggable(wrap, header);
 
         const topSeparator = makeSeparator();
         topSeparator.style.margin = '6px 0 4px';
@@ -3552,13 +3602,25 @@ export class RapierDebuggerUI {
         wrap.style.flexDirection = 'column';
         wrap.style.gap = '14px';
 
+        const header = document.createElement('div');
+        header.style.display = 'flex';
+        header.style.alignItems = 'center';
+        header.style.justifyContent = 'space-between';
+        header.style.gap = '10px';
+
         const title = document.createElement('div');
         title.textContent = test?.label ?? 'Automated Test';
         title.style.fontSize = '13px';
         title.style.fontWeight = '800';
         title.style.letterSpacing = '0.2px';
-        wrap.appendChild(title);
-        makePopupDraggable(wrap, title);
+        title.style.flex = '1';
+
+        const closeBtn = makePopupCloseButton(() => this._closeTestPopup());
+
+        header.appendChild(title);
+        header.appendChild(closeBtn);
+        wrap.appendChild(header);
+        makePopupDraggable(wrap, header);
 
         const topSeparator = makeSeparator();
         topSeparator.style.margin = '-2px 0 0';

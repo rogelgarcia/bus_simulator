@@ -15,7 +15,6 @@ const DEFAULT_WIDTH = 2.6;
 const DEFAULT_WHEEL_RADIUS = 0.55;
 const DEFAULT_WHEEL_WIDTH = 0.32;
 const MODEL_YAW = Math.PI;
-const MODEL_Z_OFFSET = -5.1;
 
 const MODEL_URL = new URL(
     '../../../../../assets/coach_bus/coach_bus.glb',
@@ -155,25 +154,35 @@ function transformBox(box, matrix) {
 }
 
 function getBodyBoundsLocal(root, model) {
-    const worldBox = new THREE.Box3();
-    model.updateMatrixWorld(true);
+    const box = new THREE.Box3();
     model.traverse((o) => {
         if (!o.isMesh) return;
         if (!isBodyMesh(o)) return;
-        worldBox.expandByObject(o);
+        const localBox = getMeshBoundsLocal(root, o);
+        if (!localBox.isEmpty()) box.union(localBox);
     });
-    if (worldBox.isEmpty()) return worldBox;
-    root.updateMatrixWorld(true);
-    const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
-    return transformBox(worldBox, inv);
+    return box;
 }
 
 function getObjectBoundsLocal(root, object) {
-    const worldBox = new THREE.Box3().setFromObject(object);
-    if (worldBox.isEmpty()) return worldBox;
+    const box = new THREE.Box3();
+    object.traverse((o) => {
+        if (!o.isMesh) return;
+        const localBox = getMeshBoundsLocal(root, o);
+        if (!localBox.isEmpty()) box.union(localBox);
+    });
+    return box;
+}
+
+function getMeshBoundsLocal(root, mesh) {
+    if (!mesh.geometry) return new THREE.Box3();
+    if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+    const localBox = mesh.geometry.boundingBox;
+    if (!localBox) return new THREE.Box3();
     root.updateMatrixWorld(true);
-    const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
-    return transformBox(worldBox, inv);
+    mesh.updateMatrixWorld(true);
+    const toRoot = new THREE.Matrix4().copy(root.matrixWorld).invert().multiply(mesh.matrixWorld);
+    return transformBox(localBox, toRoot);
 }
 
 function normalizeModel(root, targetLength) {
@@ -333,44 +342,119 @@ function attachWheelGroups(bus, wheelGroups, rig) {
     wheelsRoot.updateMatrixWorld(true);
 
     const data = [];
-    const box = new THREE.Box3();
     for (const group of wheelGroups) {
-        box.setFromObject(group);
+        const meshes = [];
+        group.traverse((o) => {
+            if (!o.isMesh) return;
+            const name = (o.name || '').toLowerCase();
+            const parentName = (o.parent?.name || '').toLowerCase();
+            const mats = Array.isArray(o.material) ? o.material : [o.material];
+            const matName = mats.map((m) => m?.name ?? '').join(' ').toLowerCase();
+            if (hasWheelToken(name) || hasWheelToken(parentName) || hasWheelToken(matName)) meshes.push(o);
+        });
+        if (!meshes.length) continue;
+
+        const box = new THREE.Box3();
+        for (const mesh of meshes) {
+            const localBox = getMeshBoundsLocal(wheelsRoot, mesh);
+            if (!localBox.isEmpty()) box.union(localBox);
+        }
         if (box.isEmpty()) continue;
-        const centerWorld = box.getCenter(new THREE.Vector3());
+        const centerLocal = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
-        const centerLocal = wheelsRoot.worldToLocal(centerWorld.clone());
-        data.push({ group, centerLocal, size });
+        data.push({ group, meshes, centerLocal, size });
     }
     if (!data.length) return null;
 
-    const radii = data.map((d) => Math.max(d.size.x, d.size.y, d.size.z) * 0.5);
-    const avgRadius = radii.reduce((a, b) => a + b, 0) / radii.length;
-    const maxZ = Math.max(...data.map((d) => d.centerLocal.z));
-    const minZ = Math.min(...data.map((d) => d.centerLocal.z));
-    const zTol = Math.max(0.01, avgRadius * 0.6);
+    const radii = data.map((d) => Math.max(d.size.x, d.size.y, d.size.z) * 0.5).filter((r) => Number.isFinite(r) && r > 0);
+    const avgRadius = radii.length ? (radii.reduce((a, b) => a + b, 0) / radii.length) : null;
+    const zTol = Math.max(0.01, (avgRadius ?? DEFAULT_WHEEL_RADIUS) * 0.7);
 
-    const frontSet = new Set(data.filter((d) => Math.abs(d.centerLocal.z - maxZ) <= zTol));
-    const rearSet = new Set(data.filter((d) => Math.abs(d.centerLocal.z - minZ) <= zTol));
+    const sorted = [...data].sort((a, b) => (a.centerLocal.z - b.centerLocal.z));
+    const clusters = [];
+    for (const item of sorted) {
+        const last = clusters[clusters.length - 1];
+        if (!last || Math.abs(item.centerLocal.z - last.z) > zTol) {
+            clusters.push({ z: item.centerLocal.z, items: [item] });
+        } else {
+            last.items.push(item);
+            last.z = last.items.reduce((sum, it) => sum + it.centerLocal.z, 0) / last.items.length;
+        }
+    }
 
-    for (const item of data) {
-        const side = item.centerLocal.x >= 0 ? 'r' : 'l';
-        const isFront = frontSet.has(item);
-        const axle = isFront ? 'front' : (rearSet.has(item) ? 'rear' : 'mid');
-        const node = makeWheelNode(`wheel_${axle}_${side}`);
-        if (side === 'l') node.root.rotation.y = Math.PI;
+    const hasBothSides = (cluster) => {
+        let left = false;
+        let right = false;
+        for (const it of cluster.items) {
+            if (it.centerLocal.x < 0) left = true;
+            if (it.centerLocal.x > 0) right = true;
+        }
+        return left && right;
+    };
+
+    const axleClusters = clusters.filter(hasBothSides);
+    const rearCluster = axleClusters[0] ?? null;
+    const frontCluster = axleClusters[axleClusters.length - 1] ?? null;
+    if (!frontCluster || !rearCluster) return null;
+
+    const pickSide = (cluster, side) => {
+        const candidates = cluster.items.filter((it) => (side === 'l' ? it.centerLocal.x < 0 : it.centerLocal.x > 0));
+        if (!candidates.length) return null;
+        return candidates.reduce((best, cur) => {
+            if (!best) return cur;
+            return side === 'l'
+                ? (cur.centerLocal.x < best.centerLocal.x ? cur : best)
+                : (cur.centerLocal.x > best.centerLocal.x ? cur : best);
+        }, null);
+    };
+
+    const selections = [
+        { axle: 'front', side: 'l', item: pickSide(frontCluster, 'l'), isFront: true },
+        { axle: 'front', side: 'r', item: pickSide(frontCluster, 'r'), isFront: true },
+        { axle: 'rear', side: 'l', item: pickSide(rearCluster, 'l'), isFront: false },
+        { axle: 'rear', side: 'r', item: pickSide(rearCluster, 'r'), isFront: false }
+    ].filter((s) => !!s.item);
+
+    const attachedRadii = [];
+
+    for (const sel of selections) {
+        const item = sel.item;
+        const node = makeWheelNode(`wheel_${sel.axle}_${sel.side}`);
+        if (sel.side === 'l') node.root.rotation.y = Math.PI;
         wheelsRoot.add(node.root);
         node.root.position.copy(item.centerLocal);
-        node.rollPivot.attach(item.group);
+
+        const meshes = item.meshes ?? [];
+        for (const mesh of meshes) node.rollPivot.attach(mesh);
+        node.rollPivot.updateMatrixWorld(true);
+
+        const pivotBox = new THREE.Box3();
+        for (const mesh of meshes) {
+            const localBox = getMeshBoundsLocal(node.rollPivot, mesh);
+            if (!localBox.isEmpty()) pivotBox.union(localBox);
+        }
+        if (!pivotBox.isEmpty()) {
+            const center = pivotBox.getCenter(new THREE.Vector3());
+            if (center.lengthSq() > 1e-8) {
+                for (const mesh of meshes) mesh.position.sub(center);
+            }
+            const size = pivotBox.getSize(new THREE.Vector3());
+            const r = Math.max(size.x, size.y, size.z) * 0.5;
+            if (Number.isFinite(r) && r > 0) attachedRadii.push(r);
+        }
+
         rig.addWheel({
             rollPivot: node.rollPivot,
-            steerPivot: isFront ? node.steerPivot : null,
-            isFront
+            steerPivot: sel.isFront ? node.steerPivot : null,
+            isFront: sel.isFront
         });
     }
 
-    if (Number.isFinite(avgRadius) && avgRadius > 0) rig.wheelRadius = avgRadius;
-    return { wheelRadius: avgRadius };
+    const finalRadius = attachedRadii.length
+        ? (attachedRadii.reduce((a, b) => a + b, 0) / attachedRadii.length)
+        : avgRadius;
+    if (Number.isFinite(finalRadius) && finalRadius > 0) rig.wheelRadius = finalRadius;
+    return { wheelRadius: finalRadius };
 }
 
 function hideWheelMeshes(root) {
@@ -441,13 +525,6 @@ function recenterBody(bus, bounds = null) {
     bodyRoot.position.set(-center.x, -center.y, -center.z);
     skeleton._bodyPivotBase.copy(skeleton.bodyTiltPivot.position);
     skeleton.bodyPivotBase.copy(skeleton._bodyPivotBase);
-}
-
-function offsetBusPivot(bus, offsetZ) {
-    if (!Number.isFinite(offsetZ) || Math.abs(offsetZ) < 1e-5) return;
-    const skeleton = bus.userData?.bus;
-    if (!skeleton?.yawPivot) return;
-    skeleton.yawPivot.position.z += offsetZ;
 }
 
 function alignAnchoredBus(bus) {
@@ -562,7 +639,6 @@ export function createCoachBus(spec) {
             }
         }
 
-        offsetBusPivot(bus, MODEL_Z_OFFSET);
         alignAnchoredBus(bus);
     }).finally(() => {
         bus.userData.ready = true;
