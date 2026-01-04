@@ -18,6 +18,7 @@ import { GameLoop } from '../app/core/GameLoop.js';
 import { VehicleController } from '../app/vehicle/VehicleController.js';
 import { InputManager } from '../app/input/InputManager.js';
 import { createVehicleFromBus } from '../app/vehicle/createVehicle.js';
+import { GameplayDebugPanel } from '../graphics/gui/gameplay/GameplayDebugPanel.js';
 
 // Camera tuning
 const CAMERA_TUNE = {
@@ -131,6 +132,9 @@ export class GameplayState {
         this._onPointerDown = (e) => this._handlePointerDown(e);
         this._onPointerMove = (e) => this._handlePointerMove(e);
         this._onPointerUp = (e) => this._handlePointerUp(e);
+
+        this._debugPanel = null;
+        this._debugEnabled = false;
     }
 
     enter() {
@@ -170,6 +174,14 @@ export class GameplayState {
         this.hud = new GameHUD({ mode: 'bus' });
         this.hud.show();
         this.gameLoop.setUI(this.hud);
+
+        const params = new URLSearchParams(window.location.search);
+        this._debugEnabled = params.get('debug') === 'true';
+        if (this._debugEnabled) {
+            this._debugPanel = new GameplayDebugPanel({ events: sim.events });
+            this._debugPanel.attach(document.body);
+            this._debugPanel.log(`selectedBus: ${this.engine.context.selectedBusId ?? this.engine.context.selectedBus?.userData?.id ?? '—'}`);
+        }
 
         // Create vehicle from selected bus using factory
         const selected = this.engine.context.selectedBus || null;
@@ -215,7 +227,9 @@ export class GameplayState {
 
         // ✅ Ensure physics systems have the real anchor/api so locomotion can use rear-axle kinematics.
         sim.physics?.setEnvironment?.(this.city);
+        sim.physics?.removeVehicle?.(this.vehicle.id);
         sim.physics?.addVehicle?.(this.vehicle.id, this.vehicle.config, this.vehicle.anchor, this.vehicle.api);
+        this._debugPanel?.log(`physics.addVehicle(${this.vehicle.id})`);
 
         // Create vehicle controller
         this.vehicleController = new VehicleController(this.vehicle.id, sim.physics, sim.events);
@@ -225,10 +239,12 @@ export class GameplayState {
         const readyPromise = this.busModel?.userData?.readyPromise;
         readyPromise?.then?.(() => {
             if (!this.busAnchor || !this.vehicle?.id) return;
+            this._debugPanel?.log('readyPromise: bus model loaded');
             snapToGroundY(this.busAnchor, roadY);
             sim.physics?.removeVehicle?.(this.vehicle.id);
             sim.physics?.addVehicle?.(this.vehicle.id, this.vehicle.config, this.busAnchor, this.vehicle.api);
             this.vehicleController?.setVehicleApi?.(this.vehicle.api, this.busAnchor);
+            this._debugPanel?.log(`physics.reAddVehicle(${this.vehicle.id})`);
         });
 
         // Subscribe to frame events for telemetry
@@ -266,9 +282,18 @@ export class GameplayState {
         this.inputManager = null;
         this.vehicleController = null;
 
+        if (this.vehicle?.id) {
+            this.engine.simulation?.physics?.removeVehicle?.(this.vehicle.id);
+        }
+        this.vehicle = null;
+
         // Cleanup HUD
         this.hud?.destroy();
         this.hud = null;
+
+        this._debugPanel?.destroy();
+        this._debugPanel = null;
+        this._debugEnabled = false;
 
         // Cleanup scene
         if (this.busAnchor) {
@@ -310,6 +335,11 @@ export class GameplayState {
                 rpm: telemetry.rpm,
                 gear: telemetry.gear
             });
+        }
+
+        if (this._debugEnabled && this._debugPanel) {
+            this._debugPanel.setKeys(this.inputManager?.getKeys?.() ?? this.inputManager?.keys ?? null);
+            this._debugPanel.setRapierDebug(this.engine.simulation?.physics?.getVehicleDebug?.('player') ?? null);
         }
     }
 

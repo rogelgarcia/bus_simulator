@@ -263,6 +263,39 @@ function collectMeshesByMaterial(root, token) {
     return out;
 }
 
+function filterRearLightMeshes(model, meshes) {
+    if (!model || !Array.isArray(meshes) || meshes.length === 0) return [];
+    model.updateMatrixWorld(true);
+    const modelBox = new THREE.Box3().setFromObject(model);
+    if (modelBox.isEmpty()) return [];
+
+    const modelSize = modelBox.getSize(new THREE.Vector3());
+    const modelVol = Math.max(1e-6, modelSize.x * modelSize.y * modelSize.z);
+    const rearZ = modelBox.min.z + modelSize.z * 0.22;
+
+    const out = [];
+    for (const mesh of meshes) {
+        if (!mesh?.isMesh) continue;
+        mesh.updateMatrixWorld(true);
+        const box = new THREE.Box3().setFromObject(mesh);
+        if (box.isEmpty()) continue;
+
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+        const vol = Math.max(0, size.x * size.y * size.z);
+
+        // Keep only small meshes near the rear to avoid accidentally selecting body parts
+        if (center.z > rearZ) continue;
+        if (vol > modelVol * 0.012) continue;
+        if (size.y > modelSize.y * 0.35) continue;
+        if (size.z > modelSize.z * 0.25) continue;
+        if (size.x > modelSize.x * 0.60) continue;
+
+        out.push(mesh);
+    }
+    return out;
+}
+
 function setEmissive(list, colorHex) {
     for (const mesh of list) {
         if (!mesh?.isMesh) continue;
@@ -465,11 +498,12 @@ export function createCityBus(spec) {
         attachWheelMeshes(bus, nodes, wheelMeshes, rig);
 
         const headMeshes = collectMeshesByMaterial(model, 'frontlights');
-        const brakeMeshes = collectMeshesByMaterial(model, 'rearlights');
+        const brakeCandidates = collectMeshesByMaterial(model, 'rearlights');
+        const brakeMeshes = filterRearLightMeshes(model, brakeCandidates);
         const reverseMeshes = collectMeshesByMaterial(model, 'revese');
         const turnMeshes = collectMeshesByMaterial(model, 'turnsignal');
         setEmissive(headMeshes, 0xffffff);
-        setEmissive(brakeMeshes, 0xff2222);
+        setEmissive(brakeMeshes.length ? brakeMeshes : brakeCandidates, 0xff2222);
         setEmissive(reverseMeshes, 0xffffff);
         setEmissive(turnMeshes, 0xffaa22);
         const parts = bus.userData?.parts;
