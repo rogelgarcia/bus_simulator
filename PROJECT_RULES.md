@@ -34,13 +34,15 @@
 - Exception: Hackish solutions (explain what you did and why it's necessary)
 - Exception: Extremely high level logic blocks inside functions (e.g. `// render curbs`, `// compute asphalt`)
 
+**CSS Styling:**
+- Avoid putting css styling in JS files. Use CSS files and import classes instead. One CSS per screen. And also a global (for reusable components)
+- Make the components reuse the classes from the global CSS file and from the specific screen CSS file whenever possible.
+
 ## AI Guidance
 
 **Commits:**
 - Only commit when explicitly asked by the user
 - Never commit automatically after making changes
-- Never commit AI prompt files named `AI_#_title`
-
 
 **Tasks:**
 These are the ones from files AI_#_title
