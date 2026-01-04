@@ -69,11 +69,11 @@ function applyMaterialSettings(root) {
             const name = (mat.name || '').toLowerCase();
             if (mat.map) {
                 mat.map.colorSpace = THREE.SRGBColorSpace;
-                mat.map.needsUpdate = true;
+                if (mat.map.image !== null) mat.map.needsUpdate = true;
             }
             if (mat.emissiveMap) {
                 mat.emissiveMap.colorSpace = THREE.SRGBColorSpace;
-                mat.emissiveMap.needsUpdate = true;
+                if (mat.emissiveMap.image !== null) mat.emissiveMap.needsUpdate = true;
             }
 
             const isGlass = name.includes('glass');

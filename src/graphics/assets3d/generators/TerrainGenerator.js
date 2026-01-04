@@ -6,7 +6,10 @@ import { GROUND_DEFAULTS, ROAD_DEFAULTS } from './GeneratorParams.js';
 import { createTreeField } from './TreeGenerator.js';
 
 function applyTextureColorSpace(tex, { srgb = true } = {}) {
-    if ('colorSpace' in tex) tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    if ('colorSpace' in tex) {
+        tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+        return;
+    }
     if ('encoding' in tex) tex.encoding = srgb ? THREE.sRGBEncoding : THREE.LinearEncoding;
 }
 

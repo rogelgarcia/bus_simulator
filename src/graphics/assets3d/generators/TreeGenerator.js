@@ -27,6 +27,17 @@ const TREE_DEFAULTS = {
 
 const TEXTURE_BASE_URL = new URL('../../../../assets/trees/Textures/', import.meta.url);
 
+const FBX_TEXTURE_PLACEHOLDER_PNG =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMBAAZ5sfcAAAAASUVORK5CYII=';
+const FBX_TEXTURE_PLACEHOLDER_FLAT_NORMAL_PNG =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC';
+const FBX_TEXTURE_PLACEHOLDERS = new Map([
+    ['t_leaf.png', FBX_TEXTURE_PLACEHOLDER_PNG],
+    ['t_trunk.png', FBX_TEXTURE_PLACEHOLDER_PNG],
+    ['t_trunk_realistic9_normal.tga', FBX_TEXTURE_PLACEHOLDER_FLAT_NORMAL_PNG],
+    ['t_leaf_realistic9_normal.tga', FBX_TEXTURE_PLACEHOLDER_FLAT_NORMAL_PNG]
+]);
+
 let texturesPromise = null;
 const templateCache = { desktop: null, mobile: null };
 const promiseCache = { desktop: null, mobile: null };
@@ -49,8 +60,48 @@ function getModelBaseUrl(quality) {
 }
 
 function applyTextureColorSpace(tex, { srgb }) {
-    if ('colorSpace' in tex) tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    if ('colorSpace' in tex) {
+        tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+        return;
+    }
     if ('encoding' in tex) tex.encoding = srgb ? THREE.sRGBEncoding : THREE.LinearEncoding;
+}
+
+function getUrlBasename(url) {
+    const s = String(url ?? '');
+    const stripped = s.split(/[?#]/)[0];
+    const lastSlash = Math.max(stripped.lastIndexOf('/'), stripped.lastIndexOf('\\'));
+    return lastSlash >= 0 ? stripped.slice(lastSlash + 1) : stripped;
+}
+
+function makeTreeLoadingManager() {
+    const manager = new THREE.LoadingManager();
+    manager.setURLModifier((url) => {
+        const basename = getUrlBasename(url).toLowerCase();
+        return FBX_TEXTURE_PLACEHOLDERS.get(basename) ?? url;
+    });
+
+    const placeholderColor = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+    placeholderColor.needsUpdate = true;
+    applyTextureColorSpace(placeholderColor, { srgb: true });
+
+    const placeholderNormal = new THREE.DataTexture(new Uint8Array([128, 128, 255, 255]), 1, 1);
+    placeholderNormal.needsUpdate = true;
+    applyTextureColorSpace(placeholderNormal, { srgb: false });
+
+    const placeholderBinaryTextureLoader = {
+        setPath() {
+            return this;
+        },
+        load(url) {
+            const name = getUrlBasename(url).toLowerCase();
+            return name.includes('normal') ? placeholderNormal : placeholderColor;
+        }
+    };
+
+    manager.addHandler(/\.tga$/i, placeholderBinaryTextureLoader);
+    manager.addHandler(/\.dds$/i, placeholderBinaryTextureLoader);
+    return manager;
 }
 
 function loadTextures() {
@@ -196,7 +247,7 @@ function loadTreeAssets(quality, entries) {
     }
     if (!promiseCache[key]) {
         promiseCache[key] = ensureMaterials().then((mats) => {
-            const loader = new FBXLoader();
+            const loader = new FBXLoader(makeTreeLoadingManager());
             const baseUrl = getModelBaseUrl(key);
             const loadModel = (entry) => loader.loadAsync(new URL(entry.name, baseUrl).toString()).then((model) => {
                 removeCollisionMeshes(model);

@@ -78,7 +78,7 @@ function applyMaterialSettings(root) {
 
             if (mat.map) {
                 mat.map.colorSpace = THREE.SRGBColorSpace;
-                mat.map.needsUpdate = true;
+                if (mat.map.image !== null) mat.map.needsUpdate = true;
                 if (mat.color) {
                     const max = Math.max(mat.color.r, mat.color.g, mat.color.b);
                     if (max < 0.05) mat.color.set(0xffffff);
@@ -86,7 +86,7 @@ function applyMaterialSettings(root) {
             }
             if (mat.emissiveMap) {
                 mat.emissiveMap.colorSpace = THREE.SRGBColorSpace;
-                mat.emissiveMap.needsUpdate = true;
+                if (mat.emissiveMap.image !== null) mat.emissiveMap.needsUpdate = true;
             }
 
             if (isPaint && mat.color) {

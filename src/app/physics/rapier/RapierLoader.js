@@ -6,7 +6,7 @@ export async function loadRapier() {
         rapierPromise = import('@dimforge/rapier3d-compat').then(async (mod) => {
             const rapier = mod?.default ?? mod;
             if (rapier?.init) {
-                await rapier.init();
+                await rapier.init({});
             }
             return rapier;
         });

@@ -21,7 +21,10 @@ function clamp255(v) {
 }
 
 function applyTextureColorSpace(tex, { srgb = true } = {}) {
-    if ('colorSpace' in tex) tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    if ('colorSpace' in tex) {
+        tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+        return;
+    }
     if ('encoding' in tex) tex.encoding = srgb ? THREE.sRGBEncoding : THREE.LinearEncoding;
 }
 
