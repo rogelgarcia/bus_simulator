@@ -3989,7 +3989,7 @@ export class RapierDebuggerUI {
             const toText = (w, fallbackLabel) => {
                 if (!w) return '—';
                 const contact = w.inContact ? 'Y' : 'N';
-                const steerDeg = Number.isFinite(w.steering) ? w.steering * (180 / Math.PI) : NaN;
+                const steerDeg = Number.isFinite(w.steering) ? -w.steering * (180 / Math.PI) : NaN;
                 const centerLocal = w.centerLocal ?? null;
                 const connectionLocal = w.connectionPointLocal ?? null;
                 return (
@@ -4018,7 +4018,7 @@ export class RapierDebuggerUI {
                     cell.knobEl.style.opacity = inContact ? '1' : '0.85';
                 }
                 if (cell.arrowEl) {
-                    const steerDeg = Number.isFinite(wheel?.steering) ? wheel.steering * (180 / Math.PI) : 0;
+                    const steerDeg = Number.isFinite(wheel?.steering) ? -wheel.steering * (180 / Math.PI) : 0;
                     cell.arrowEl.style.transform = `rotate(${steerDeg}deg)`;
                     cell.arrowEl.style.opacity = Number.isFinite(wheel?.steering) ? '1' : '0.2';
                 }
@@ -5791,7 +5791,7 @@ export class RapierDebuggerUI {
                 qNum(w?.suspensionForce, 1),
                 qNum(w?.forwardImpulse, 2),
                 qNum(w?.sideImpulse, 2),
-                qNum(Number.isFinite(w?.steering) ? w.steering : w?.steering, 3)
+                qNum(Number.isFinite(w?.steering) ? -w.steering : w?.steering, 3)
             ])
         };
     }

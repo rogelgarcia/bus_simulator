@@ -994,7 +994,7 @@ export class RapierDebuggerSim {
         const engineForce = this._inputs.engineForce ?? 0;
         const brakeForce = this._inputs.brakeForce ?? 0;
         const handbrakeForce = this._inputs.handbrakeForce ?? 0;
-        const steerAngle = this._inputs.steerAngle ?? 0;
+        const steerAngle = -(this._inputs.steerAngle ?? 0);
 
         const all = this._wheelIndices.all;
         for (const i of all) {
@@ -1040,11 +1040,10 @@ export class RapierDebuggerSim {
         const torque = readVec3(safeCall(this._body, 'torque') ?? safeGet(this._body, 'torque'));
         const upAxis = safeGet(this._controller, 'indexUpAxis');
         const forwardAxis = safeGet(this._controller, 'indexForwardAxis');
-        const forwardIndex = Number.isFinite(forwardAxis) ? forwardAxis : 2;
-        const localForward = axisFromIndex(forwardIndex);
+        const localForward = { x: 0, y: 0, z: 1 };
         const worldForward = rotateVecByQuat(localForward, rot);
         const speedProj = (linvel.x * worldForward.x) + (linvel.y * worldForward.y) + (linvel.z * worldForward.z);
-        const yaw = Math.atan2(worldForward.x ?? 0, worldForward.z ?? 0);
+        const yaw = -Math.atan2(worldForward.x ?? 0, worldForward.z ?? 0);
 
         const invMass = safeCall(this._body, 'invMass') ?? safeGet(this._body, 'invMass');
         const massKg = (Number.isFinite(invMass) && invMass > 0) ? (1 / invMass) : null;

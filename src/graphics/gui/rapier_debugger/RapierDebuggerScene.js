@@ -87,7 +87,19 @@ export class RapierDebuggerScene {
             if (key === 'ArrowRight') dx = step;
             if (key === 'ArrowUp') dz = step;
             if (key === 'ArrowDown') dz = -step;
-            this._panCamera(this._tmpVecD.set(dx, 0, dz));
+            if (!this.camera) return;
+            const forward = this._tmpVecA.copy(this.camera.getWorldDirection(this._tmpVecA));
+            forward.y = 0;
+            if (forward.lengthSq() < 1e-6) {
+                forward.set(0, 0, -1);
+            } else {
+                forward.normalize();
+            }
+            const right = this._tmpVecB.crossVectors(forward, this.camera.up).normalize();
+            const delta = this._tmpVecD.set(0, 0, 0)
+                .addScaledVector(right, dx)
+                .addScaledVector(forward, dz);
+            this._panCamera(delta);
         };
     }
 
