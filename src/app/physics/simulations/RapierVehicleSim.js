@@ -250,6 +250,71 @@ function averageWheelValue(controller, indices, getter) {
     return count ? sum / count : null;
 }
 
+function buildWheelLayoutSnapshot(entry) {
+    const indices = entry?.wheelIndices?.all ?? [];
+    if (!indices.length) return [];
+
+    const wheelCenters = entry.wheelCenters ?? [];
+    const wheelConnections = entry.wheelConnections ?? [];
+
+    const wheels = indices.map((i) => ({
+        index: i,
+        label: `W${i}`,
+        labelEx: null,
+        center: wheelCenters[i] ?? null,
+        connection: wheelConnections[i] ?? null,
+        isFront: (entry.wheelIndices?.front ?? []).includes(i)
+    }));
+
+    const zTol = Math.max(0.25, Math.min(1.25, (entry.wheelRadius ?? DEFAULT_CONFIG.wheelRadius) * 1.5));
+    const withConn = wheels.filter((w) => Number.isFinite(w.connection?.z) && Number.isFinite(w.connection?.x));
+    if (withConn.length) {
+        const sortedByZ = [...withConn].sort((a, b) => (b.connection.z - a.connection.z)); // front -> rear
+        const groups = [];
+        for (const w of sortedByZ) {
+            const last = groups[groups.length - 1];
+            if (!last || Math.abs(w.connection.z - last.z) > zTol) {
+                groups.push({ z: w.connection.z, wheels: [w] });
+            } else {
+                last.wheels.push(w);
+                last.z = last.wheels.reduce((sum, it) => sum + it.connection.z, 0) / last.wheels.length;
+            }
+        }
+
+        const axleCharForRank = (rank, count) => {
+            if (count <= 1) return 'F';
+            if (count === 2) return rank === 0 ? 'F' : 'R';
+            if (count === 3) return rank === 0 ? 'F' : (rank === 1 ? 'M' : 'R');
+            if (rank === 0) return 'F';
+            if (rank === count - 1) return 'R';
+            return 'A';
+        };
+
+        const counts = new Map();
+        for (let g = 0; g < groups.length; g++) {
+            const axleChar = axleCharForRank(g, groups.length);
+            for (const w of groups[g].wheels) {
+                const sideChar = (w.connection.x ?? 0) < 0 ? 'L' : 'R';
+                const base = `${axleChar}${sideChar}`;
+                const n = (counts.get(base) ?? 0) + 1;
+                counts.set(base, n);
+                w.labelEx = n > 1 ? `${base}${n}` : base;
+            }
+        }
+    }
+
+    wheels.sort((a, b) => {
+        const az = a.connection?.z ?? a.center?.z ?? 0;
+        const bz = b.connection?.z ?? b.center?.z ?? 0;
+        if (bz !== az) return bz - az; // front -> rear
+        const ax = a.connection?.x ?? a.center?.x ?? 0;
+        const bx = b.connection?.x ?? b.center?.x ?? 0;
+        return ax - bx; // left -> right
+    });
+
+    return wheels;
+}
+
 const TMP_QUAT = new THREE.Quaternion();
 const TMP_EULER = new THREE.Euler();
 
@@ -1156,6 +1221,7 @@ export class RapierVehicleSim {
                 center: wheelCenters[i] ?? null,
                 connection: wheelConnections[i] ?? null,
                 inContact: controller?.wheelIsInContact ? controller.wheelIsInContact(i) : null,
+                steering: controller?.wheelSteering ? controller.wheelSteering(i) : null,
                 suspensionLength: controller?.wheelSuspensionLength ? controller.wheelSuspensionLength(i) : null,
                 suspensionForce: controller?.wheelSuspensionForce ? controller.wheelSuspensionForce(i) : null,
                 forwardImpulse: controller?.wheelForwardImpulse ? controller.wheelForwardImpulse(i) : null,
@@ -1273,6 +1339,8 @@ export class RapierVehicleSim {
             com = { x: comRaw.x, y: comRaw.y, z: comRaw.z };
         }
 
+        const wheelLayout = buildWheelLayoutSnapshot(entry);
+
         return {
             massKg,
             additionalMassKg,
@@ -1303,6 +1371,7 @@ export class RapierVehicleSim {
                 frictionSlip: Number.isFinite(tuning?.frictionSlip) ? tuning.frictionSlip : null,
                 sideFrictionStiffness: Number.isFinite(tuning?.sideFrictionStiffness) ? tuning.sideFrictionStiffness : null
             },
+            wheelLayout,
             forces: {
                 engineForce: Number.isFinite(entry.engineForce) ? entry.engineForce : null,
                 brakeForce: Number.isFinite(entry.brakeForce) ? entry.brakeForce : null,

@@ -54,6 +54,41 @@ function snapToGroundY(object3d, groundY) {
     }
 }
 
+function applyFloorClipToObject(object3d, { renderer, groundY = 0 } = {}) {
+    if (!object3d || !renderer) return;
+    renderer.localClippingEnabled = true;
+
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -groundY);
+
+    object3d.traverse((o) => {
+        if (!o?.isMesh) return;
+        if (o.userData?._floorClipApplied) return;
+
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        const next = [];
+        let changed = false;
+
+        for (const mat of mats) {
+            if (!mat) {
+                next.push(mat);
+                continue;
+            }
+            // Avoid mutating shared template materials by cloning per mesh.
+            const cloned = mat.clone();
+            cloned.clippingPlanes = [plane];
+            cloned.clipIntersection = false;
+            cloned.needsUpdate = true;
+            next.push(cloned);
+            changed = true;
+        }
+
+        if (!changed) return;
+        o.material = Array.isArray(o.material) ? next : next[0];
+        if (!o.userData) o.userData = {};
+        o.userData._floorClipApplied = true;
+    });
+}
+
 function disposeMaterial(mat, { disposeTextures = true } = {}) {
     if (!mat) return;
     if (disposeTextures) {
@@ -798,6 +833,7 @@ export class TestModeState {
         this.rapierConfigFields = null;
 
         this._prevChipDisplay = null;
+        this._prevLocalClippingEnabled = null;
         this._onKeyDown = (e) => this._handleKeyDown(e);
     }
 
@@ -844,6 +880,7 @@ export class TestModeState {
 
         // Bus
         this.busIndex = this._defaultBusIndex();
+        this._prevLocalClippingEnabled = this.engine?.renderer?.localClippingEnabled ?? null;
         this._setBus(this.busIndex);
 
         // Camera + controls
@@ -908,6 +945,11 @@ export class TestModeState {
 
         if (this.hudChip) this.hudChip.style.display = this._prevChipDisplay ?? '';
         if (this.uiSelect) this.uiSelect.classList.add('hidden');
+
+        if (this._prevLocalClippingEnabled !== null && this.engine?.renderer) {
+            this.engine.renderer.localClippingEnabled = this._prevLocalClippingEnabled;
+        }
+        this._prevLocalClippingEnabled = null;
     }
 
     update(dt) {
@@ -1595,6 +1637,7 @@ export class TestModeState {
             frontTrack: makeValueRow('Front track (m)'),
             frictionSlip: makeValueRow('Friction slip'),
             sideFriction: makeValueRow('Side stiffness'),
+            wheelLayout: document.createElement('div'),
             engineForce: makeValueRow('Engine force (N)'),
             brakeForce: makeValueRow('Brake force (N)'),
             handbrakeForce: makeValueRow('Handbrake force (N)'),
@@ -1630,6 +1673,19 @@ export class TestModeState {
         panel.appendChild(fields.frontTrack.row);
         panel.appendChild(fields.frictionSlip.row);
         panel.appendChild(fields.sideFriction.row);
+        fields.wheelLayout.style.marginTop = '6px';
+        fields.wheelLayout.style.padding = '10px 10px';
+        fields.wheelLayout.style.borderRadius = '12px';
+        fields.wheelLayout.style.border = '1px solid rgba(255,255,255,0.12)';
+        fields.wheelLayout.style.background = 'rgba(0,0,0,0.12)';
+        fields.wheelLayout.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace';
+        fields.wheelLayout.style.fontSize = '11px';
+        fields.wheelLayout.style.fontWeight = '800';
+        fields.wheelLayout.style.opacity = '0.9';
+        fields.wheelLayout.style.whiteSpace = 'pre';
+        fields.wheelLayout.style.lineHeight = '1.35';
+        fields.wheelLayout.textContent = '—';
+        panel.appendChild(fields.wheelLayout);
 
         panel.appendChild(makeLabel('Forces'));
         panel.appendChild(fields.engineForce.row);
@@ -1680,7 +1736,11 @@ export class TestModeState {
 
         const fields = this.rapierConfigFields;
         if (!config) {
-            for (const key of Object.keys(fields)) fields[key].valueEl.textContent = '—';
+            for (const key of Object.keys(fields)) {
+                const field = fields[key];
+                if (field?.valueEl) field.valueEl.textContent = '—';
+                else if (field && typeof field.textContent === 'string') field.textContent = '—';
+            }
             return;
         }
 
@@ -1712,6 +1772,22 @@ export class TestModeState {
         fields.frictionSlip.valueEl.textContent = fmt(config.wheels?.frictionSlip, 2);
         fields.sideFriction.valueEl.textContent = fmt(config.wheels?.sideFrictionStiffness, 2);
 
+        const wheelLines = [];
+        const wheels = config.wheelLayout ?? [];
+        if (Array.isArray(wheels) && wheels.length) {
+            wheelLines.push(`wheels: ${wheels.length}`);
+            wheelLines.push('label   conn(x y z)           center(x y z)');
+            for (const w of wheels) {
+                const label = String(w.labelEx ?? w.label ?? `W${w.index}`).padEnd(5, ' ');
+                const c = w.connection ?? null;
+                const cc = w.center ?? null;
+                const conn = c ? `x:${fmt(c.x, 2)} y:${fmt(c.y, 2)} z:${fmt(c.z, 2)}` : 'x:— y:— z:—';
+                const ctr = cc ? `x:${fmt(cc.x, 2)} y:${fmt(cc.y, 2)} z:${fmt(cc.z, 2)}` : 'x:— y:— z:—';
+                wheelLines.push(`${label} ${conn}   ${ctr}`);
+            }
+        }
+        fields.wheelLayout.textContent = wheelLines.length ? wheelLines.join('\n') : '—';
+
         fields.engineForce.valueEl.textContent = fmt(config.forces?.engineForce, 0);
         fields.brakeForce.valueEl.textContent = fmt(config.forces?.brakeForce, 0);
         fields.handbrakeForce.valueEl.textContent = fmt(config.forces?.handbrakeForce, 0);
@@ -1734,7 +1810,8 @@ export class TestModeState {
 
         if (this.busAnchor) {
             this.scene.remove(this.busAnchor);
-            disposeObject3D(this.busAnchor, { disposeGeometry: false, disposeMaterials: false });
+            // Materials were cloned for clipping; dispose them but keep textures (often shared via loaders).
+            disposeObject3D(this.busAnchor, { disposeGeometry: false, disposeMaterials: true, disposeTextures: false });
             this.busAnchor = null;
             this.busModel = null;
             this.busApi = null;
@@ -1764,6 +1841,8 @@ export class TestModeState {
         this.busAnchor = anchor;
         this.busModel = vehicle?.model ?? busModel;
         this.busApi = vehicle?.api ?? this._getBusApi();
+
+        applyFloorClipToObject(anchor, { renderer: this.engine?.renderer, groundY: 0 });
 
         if (this.vehicle?.id) {
             this.sim?.physics?.addVehicle?.(this.vehicle.id, this.vehicle.config, anchor, this.vehicle.api);
@@ -1810,6 +1889,7 @@ export class TestModeState {
         this.sim?.physics?.addVehicle?.(this.vehicle.id, this.vehicle.config, this.busAnchor, this.vehicle.api);
         this.vehicleController?.setVehicleApi?.(this.vehicle.api, this.busAnchor);
         this.sim?.physics?.setAutoShift?.(this.vehicle.id, false);
+        applyFloorClipToObject(this.busAnchor, { renderer: this.engine?.renderer, groundY: 0 });
         this._prevBusPos.copy(this.busAnchor.position);
         this._cameraFollowPending.set(0, 0, 0);
         if (this.controls) {

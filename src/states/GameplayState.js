@@ -199,6 +199,13 @@ export class GameplayState {
         this.busModel = this.vehicle.model;
         this.busApi = this.vehicle.api;
         this.busAnchor = this.vehicle.anchor;
+        this._debugPanel?.setContext?.({
+            vehicleId: this.vehicle.id,
+            physics: sim.physics,
+            anchor: this.busAnchor,
+            api: this.busApi,
+            model: this.busModel
+        });
 
         // Store resolved model back to context
         this.engine.context.selectedBus = this.busModel;
@@ -244,6 +251,13 @@ export class GameplayState {
             sim.physics?.removeVehicle?.(this.vehicle.id);
             sim.physics?.addVehicle?.(this.vehicle.id, this.vehicle.config, this.busAnchor, this.vehicle.api);
             this.vehicleController?.setVehicleApi?.(this.vehicle.api, this.busAnchor);
+            this._debugPanel?.setContext?.({
+                vehicleId: this.vehicle.id,
+                physics: sim.physics,
+                anchor: this.busAnchor,
+                api: this.vehicle.api,
+                model: this.busModel
+            });
             this._debugPanel?.log(`physics.reAddVehicle(${this.vehicle.id})`);
         });
 
@@ -338,6 +352,13 @@ export class GameplayState {
         }
 
         if (this._debugEnabled && this._debugPanel) {
+            this._debugPanel.setContext?.({
+                vehicleId: 'player',
+                physics: this.engine.simulation?.physics,
+                anchor: this.busAnchor,
+                api: this.busApi,
+                model: this.busModel
+            });
             this._debugPanel.setKeys(this.inputManager?.getKeys?.() ?? this.inputManager?.keys ?? null);
             this._debugPanel.setRapierDebug(this.engine.simulation?.physics?.getVehicleDebug?.('player') ?? null);
         }

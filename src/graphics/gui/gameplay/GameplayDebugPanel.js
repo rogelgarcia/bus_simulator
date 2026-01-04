@@ -37,6 +37,47 @@ function makeDot() {
     return el;
 }
 
+function makeSpinViz() {
+    const wrap = document.createElement('div');
+    wrap.style.position = 'relative';
+    wrap.style.width = '14px';
+    wrap.style.height = '14px';
+    wrap.style.borderRadius = '999px';
+    wrap.style.border = '1px solid rgba(255, 216, 77, 0.30)';
+    wrap.style.background = 'rgba(0,0,0,0.18)';
+    wrap.style.flex = '0 0 auto';
+    const needle = document.createElement('div');
+    needle.style.position = 'absolute';
+    needle.style.left = '50%';
+    needle.style.top = '50%';
+    needle.style.width = '10px';
+    needle.style.height = '2px';
+    needle.style.background = 'rgba(255, 216, 77, 0.85)';
+    needle.style.borderRadius = '999px';
+    needle.style.transformOrigin = '0% 50%';
+    needle.style.transform = 'translate(0, -50%) rotate(0deg)';
+    wrap.appendChild(needle);
+    return { wrap, needle };
+}
+
+function makeYawArrow() {
+    const el = document.createElement('div');
+    el.textContent = '▲';
+    el.style.width = '14px';
+    el.style.height = '14px';
+    el.style.display = 'grid';
+    el.style.placeItems = 'center';
+    el.style.fontSize = '11px';
+    el.style.fontWeight = '950';
+    el.style.opacity = '0.9';
+    el.style.transformOrigin = '50% 50%';
+    return el;
+}
+
+function radToDeg(v) {
+    return (v ?? 0) * (180 / Math.PI);
+}
+
 function setDot(dot, on, { onColor = '#50ff9a', offColor = 'rgba(255, 216, 77, 0.22)' } = {}) {
     dot.style.background = on ? onColor : offColor;
     dot.style.borderColor = on ? 'rgba(80, 255, 154, 0.55)' : 'rgba(255, 216, 77, 0.35)';
@@ -147,12 +188,33 @@ function makeDraggable(wrap, handle) {
     handle.addEventListener('pointerdown', onPointerDown);
 }
 
+function makeSmallLabel(text) {
+    const el = document.createElement('div');
+    el.textContent = text;
+    el.style.fontSize = '11px';
+    el.style.fontWeight = '900';
+    el.style.opacity = '0.72';
+    el.style.letterSpacing = '0.2px';
+    return el;
+}
+
+function isPlainObject(v) {
+    return !!v && typeof v === 'object' && !Array.isArray(v);
+}
+
 export class GameplayDebugPanel {
     constructor({ events } = {}) {
         this.events = events ?? null;
         this._expanded = true;
         this._destroyed = false;
         this._maxLogLines = 350;
+        this._treeExpanded = true;
+        this._treeAuto = true;
+        this._treeUpdateAccum = 0;
+        this._treeUpdateSec = 0.35;
+        this._treeExpandState = new Map();
+        this._treeMode = 'rapier';
+        this._ctx = { vehicleId: null, physics: null, anchor: null, api: null, model: null };
 
         this.root = document.createElement('div');
         this.root.id = 'hud-gameplay-debug';
@@ -210,7 +272,7 @@ export class GameplayDebugPanel {
 
         this.body = document.createElement('div');
         this.body.style.display = 'grid';
-        this.body.style.gridTemplateColumns = '420px 1fr';
+        this.body.style.gridTemplateColumns = '360px 1fr';
         this.body.style.height = 'calc(100% - 44px)';
         this.body.style.minHeight = '0';
         this.root.appendChild(this.body);
@@ -220,10 +282,12 @@ export class GameplayDebugPanel {
         this.left.style.display = 'flex';
         this.left.style.flexDirection = 'column';
         this.left.style.gap = '10px';
-        this.left.style.minWidth = '420px';
-        this.left.style.maxWidth = '420px';
+        this.left.style.minWidth = '360px';
+        this.left.style.maxWidth = '360px';
         this.left.style.borderRight = '1px solid rgba(255, 216, 77, 0.14)';
-        this.left.style.overflow = 'hidden';
+        this.left.style.overflowX = 'hidden';
+        this.left.style.overflowY = 'auto';
+        this.left.style.minHeight = '0';
         this.body.appendChild(this.left);
 
         this.logsWrap = document.createElement('div');
@@ -233,6 +297,17 @@ export class GameplayDebugPanel {
         this.logsWrap.style.gap = '8px';
         this.logsWrap.style.minWidth = '0';
         this.body.appendChild(this.logsWrap);
+
+        this.treeWrap = document.createElement('div');
+        this.treeWrap.style.display = 'flex';
+        this.treeWrap.style.flexDirection = 'column';
+        this.treeWrap.style.gap = '8px';
+        this.treeWrap.style.minHeight = '140px';
+        this.treeWrap.style.borderRadius = '12px';
+        this.treeWrap.style.border = '1px solid rgba(255, 216, 77, 0.16)';
+        this.treeWrap.style.background = 'rgba(0,0,0,0.22)';
+        this.treeWrap.style.padding = '10px';
+        this.logsWrap.appendChild(this.treeWrap);
 
         const keysTitle = document.createElement('div');
         keysTitle.textContent = 'Keys';
@@ -261,12 +336,15 @@ export class GameplayDebugPanel {
         }
 
         const inputTitle = document.createElement('div');
-        inputTitle.textContent = 'Input → Physics';
+        inputTitle.textContent = 'Event Input → Rapier';
         inputTitle.style.fontSize = '12px';
         inputTitle.style.fontWeight = '950';
         inputTitle.style.opacity = '0.9';
         inputTitle.style.marginTop = '4px';
         this.left.appendChild(inputTitle);
+
+        this.inputHint = makeSmallLabel('EventBus: input:controls');
+        this.left.appendChild(this.inputHint);
 
         this.inputGrid = document.createElement('div');
         this.inputGrid.style.display = 'grid';
@@ -275,6 +353,7 @@ export class GameplayDebugPanel {
         this.left.appendChild(this.inputGrid);
 
         this._input = { steering: 0, throttle: 0, brake: 0, handbrake: 0, headlights: false };
+        this._rapierInput = { steering: 0, throttle: 0, brake: 0, handbrake: 0 };
 
         const steerRow = document.createElement('div');
         steerRow.style.display = 'flex';
@@ -396,13 +475,38 @@ export class GameplayDebugPanel {
         togglesRow.appendChild(toggles);
         this.inputGrid.appendChild(togglesRow);
 
+        const rapierInTitle = document.createElement('div');
+        rapierInTitle.textContent = 'Rapier Input (latched)';
+        rapierInTitle.style.fontSize = '12px';
+        rapierInTitle.style.fontWeight = '950';
+        rapierInTitle.style.opacity = '0.9';
+        rapierInTitle.style.marginTop = '4px';
+        this.left.appendChild(rapierInTitle);
+        this.left.appendChild(makeSmallLabel('RapierVehicleSim entry.input'));
+
+        this.rapierInputGrid = document.createElement('div');
+        this.rapierInputGrid.style.display = 'grid';
+        this.rapierInputGrid.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
+        this.rapierInputGrid.style.gap = '8px 10px';
+        this.left.appendChild(this.rapierInputGrid);
+
+        this.rapierInSteer = makeValueRow('Steer');
+        this.rapierInputGrid.appendChild(this.rapierInSteer.row);
+        this.rapierInThrottle = makeValueRow('Throttle');
+        this.rapierInputGrid.appendChild(this.rapierInThrottle.row);
+        this.rapierInBrake = makeValueRow('Brake');
+        this.rapierInputGrid.appendChild(this.rapierInBrake.row);
+        this.rapierInHB = makeValueRow('Handbrake');
+        this.rapierInputGrid.appendChild(this.rapierInHB.row);
+
         const outTitle = document.createElement('div');
-        outTitle.textContent = 'Rapier Output';
+        outTitle.textContent = 'Vehicle Output';
         outTitle.style.fontSize = '12px';
         outTitle.style.fontWeight = '950';
         outTitle.style.opacity = '0.9';
         outTitle.style.marginTop = '4px';
         this.left.appendChild(outTitle);
+        this.left.appendChild(makeSmallLabel('Rapier + EngineSim (computed)'));
 
         this.outputGrid = document.createElement('div');
         this.outputGrid.style.display = 'grid';
@@ -442,7 +546,7 @@ export class GameplayDebugPanel {
         this.outputGrid.appendChild(this.yawRow.row);
         this.gearRow = makeValueRow('Gear');
         this.outputGrid.appendChild(this.gearRow.row);
-        this.rpmRow = makeValueRow('RPM');
+        this.rpmRow = makeValueRow('RPM (engine sim)');
         this.outputGrid.appendChild(this.rpmRow.row);
 
         this.driveRow = makeValueRow('DriveF');
@@ -452,7 +556,7 @@ export class GameplayDebugPanel {
 
         const wheelsRow = document.createElement('div');
         wheelsRow.style.display = 'flex';
-        wheelsRow.style.alignItems = 'center';
+        wheelsRow.style.alignItems = 'flex-start';
         wheelsRow.style.justifyContent = 'space-between';
         wheelsRow.style.gap = '10px';
         const wheelsLabel = document.createElement('div');
@@ -460,15 +564,15 @@ export class GameplayDebugPanel {
         wheelsLabel.style.fontSize = '12px';
         wheelsLabel.style.fontWeight = '900';
         wheelsLabel.style.opacity = '0.85';
+        wheelsLabel.style.paddingTop = '4px';
 
         this.wheelsDots = document.createElement('div');
         this.wheelsDots.style.display = 'flex';
-        this.wheelsDots.style.alignItems = 'center';
-        this.wheelsDots.style.justifyContent = 'flex-end';
-        this.wheelsDots.style.gap = '10px';
-        this.wheelsDots.style.flexWrap = 'wrap';
-        this.wheelsDots.style.maxWidth = '250px';
-        this.wheelsDots.style.rowGap = '8px';
+        this.wheelsDots.style.flexDirection = 'column';
+        this.wheelsDots.style.alignItems = 'stretch';
+        this.wheelsDots.style.justifyContent = 'flex-start';
+        this.wheelsDots.style.gap = '6px';
+        this.wheelsDots.style.minWidth = '220px';
         this._wheelCells = [];
         this._wheelSig = '';
 
@@ -487,10 +591,11 @@ export class GameplayDebugPanel {
         logsTitle.style.fontWeight = '950';
         logsTitle.style.opacity = '0.9';
         this.logsHint = document.createElement('div');
-        this.logsHint.textContent = 'drag header • resize corner';
+        this.logsHint.textContent = '';
         this.logsHint.style.fontSize = '11px';
         this.logsHint.style.fontWeight = '900';
         this.logsHint.style.opacity = '0.55';
+        this.logsHint.style.display = 'none';
         logsTitleRow.appendChild(logsTitle);
         logsTitleRow.appendChild(this.logsHint);
         this.logsWrap.appendChild(logsTitleRow);
@@ -521,6 +626,7 @@ export class GameplayDebugPanel {
             this.setInput(e);
         }) ?? null;
 
+        this._buildTreeHeader();
         this.setExpanded(true);
         this.log('debug panel ready');
     }
@@ -539,16 +645,24 @@ export class GameplayDebugPanel {
         if (this.root.isConnected) this.root.remove();
     }
 
+    setContext({ vehicleId, physics, anchor, api, model } = {}) {
+        this._ctx.vehicleId = vehicleId ?? this._ctx.vehicleId;
+        this._ctx.physics = physics ?? this._ctx.physics;
+        this._ctx.anchor = anchor ?? this._ctx.anchor;
+        this._ctx.api = api ?? this._ctx.api;
+        this._ctx.model = model ?? this._ctx.model;
+    }
+
     setExpanded(expanded) {
         this._expanded = !!expanded;
         if (this._expanded) {
             this.btnToggleLogs.textContent = 'Logs: On';
-            this.body.style.gridTemplateColumns = '420px 1fr';
-            this.root.style.minWidth = '680px';
+            this.body.style.gridTemplateColumns = '360px 1fr';
+            this.root.style.minWidth = '620px';
         } else {
             this.btnToggleLogs.textContent = 'Logs: Off';
-            this.body.style.gridTemplateColumns = '420px 0px';
-            this.root.style.minWidth = '440px';
+            this.body.style.gridTemplateColumns = '360px 0px';
+            this.root.style.minWidth = '380px';
         }
         this._scheduleMinHeightRefresh();
     }
@@ -610,9 +724,20 @@ export class GameplayDebugPanel {
         if (!debug) {
             setDot(this.readyDot, false);
             this.readyText.textContent = '—';
+            this._lastSpinDeg = 0;
             this._syncWheelCells([]);
             return;
         }
+
+        const rapierIn = debug.input ?? {};
+        this._rapierInput.steering = Number.isFinite(rapierIn.steering) ? rapierIn.steering : 0;
+        this._rapierInput.throttle = Number.isFinite(rapierIn.throttle) ? rapierIn.throttle : 0;
+        this._rapierInput.brake = Number.isFinite(rapierIn.brake) ? rapierIn.brake : 0;
+        this._rapierInput.handbrake = Number.isFinite(rapierIn.handbrake) ? rapierIn.handbrake : 0;
+        this.rapierInSteer.v.textContent = fmt(this._rapierInput.steering, 2);
+        this.rapierInThrottle.v.textContent = fmt(this._rapierInput.throttle, 2);
+        this.rapierInBrake.v.textContent = fmt(this._rapierInput.brake, 2);
+        this.rapierInHB.v.textContent = fmt(this._rapierInput.handbrake, 2);
 
         setDot(this.readyDot, !!debug.ready);
         this.readyText.textContent = debug.ready ? 'ready' : 'pending';
@@ -632,56 +757,407 @@ export class GameplayDebugPanel {
         this.brakeForceRow.v.textContent = fmt(brakeF, 0);
 
         const wheels = Array.isArray(debug.wheels) ? debug.wheels : [];
+        this._lastSpinDeg = radToDeg(debug.locomotion?.wheelSpinAccum ?? 0);
         this._syncWheelCells(wheels);
+
+        if (this._treeAuto) {
+            this._treeUpdateAccum += this._treeUpdateSec;
+            this._refreshTree({ force: false });
+        }
     }
 
     _syncWheelCells(wheels) {
         const list = Array.isArray(wheels) ? wheels : [];
 
-        const base = list.map((w) => {
-            const label = String(w?.labelEx ?? w?.label ?? '');
-            if (label) return label;
-            if (Number.isFinite(w?.index)) return `W${w.index}`;
-            return 'W';
+        const wheelInfos = list.map((wheel, i) => {
+            const label = String(wheel?.labelEx ?? wheel?.label ?? '');
+            const derived = label || (Number.isFinite(wheel?.index) ? `W${wheel.index}` : `W${i}`);
+            const x = wheel?.connection?.x ?? wheel?.center?.x ?? null;
+            const z = wheel?.connection?.z ?? wheel?.center?.z ?? null;
+            return {
+                wheel,
+                i,
+                id: Number.isFinite(wheel?.index) ? wheel.index : i,
+                label: derived,
+                x: Number.isFinite(x) ? x : null,
+                z: Number.isFinite(z) ? z : null
+            };
         });
 
-        const dupCount = new Map();
-        const labels = base.map((l) => {
-            const n = (dupCount.get(l) ?? 0) + 1;
-            dupCount.set(l, n);
-            return n > 1 ? `${l}${n}` : l;
+        const clusterAxles = (items) => {
+            const withZ = items.filter((it) => Number.isFinite(it.z));
+            if (!withZ.length) return [{ zRef: 0, items: [...items] }];
+            const sorted = [...withZ].sort((a, b) => (b.z ?? 0) - (a.z ?? 0));
+            const values = sorted.map((s) => s.z ?? 0);
+            const spread = Math.abs(values[0] - values[values.length - 1]);
+            const threshold = Math.max(0.25, spread * 0.12);
+
+            const groups = [];
+            for (const it of sorted) {
+                const z = it.z ?? 0;
+                const last = groups[groups.length - 1] ?? null;
+                if (!last || Math.abs(z - last.zRef) > threshold) {
+                    groups.push({ zRef: z, items: [it] });
+                } else {
+                    last.items.push(it);
+                    last.zRef = (last.zRef * (last.items.length - 1) + z) / last.items.length;
+                }
+            }
+
+            const used = new Set(sorted.map((s) => s.i));
+            for (const it of items) {
+                if (!used.has(it.i)) groups[groups.length - 1].items.push(it);
+            }
+            return groups;
+        };
+
+        const axleGroups = clusterAxles(wheelInfos);
+        const orderedGroups = axleGroups.map((g, gi) => {
+            const wheelsInAxle = [...g.items];
+            wheelsInAxle.sort((a, b) => {
+                const ax = a.x ?? 0;
+                const bx = b.x ?? 0;
+                return ax - bx;
+            });
+            const left = wheelsInAxle.find((w) => (w.x ?? 0) < 0) ?? wheelsInAxle[0] ?? null;
+            const right = [...wheelsInAxle].reverse().find((w) => (w.x ?? 0) > 0) ?? wheelsInAxle[wheelsInAxle.length - 1] ?? null;
+            const leftItem = left ?? null;
+            const rightItem = right && right.i !== leftItem?.i ? right : null;
+            const fallback = wheelsInAxle.find((w) => w.i !== leftItem?.i) ?? null;
+            return {
+                id: `ax${gi}`,
+                zRef: g.zRef,
+                left: leftItem,
+                right: rightItem ?? fallback
+            };
         });
 
-        const sig = labels.join('|');
+        const sig = orderedGroups
+            .map((g) => `${g.id}:${g.left?.id ?? '—'},${g.right?.id ?? '—'}`)
+            .join('|');
         if (sig !== this._wheelSig) {
             this._wheelSig = sig;
             this.wheelsDots.innerHTML = '';
             this._wheelCells.length = 0;
-            for (const label of labels) {
-                const w = document.createElement('div');
-                w.style.display = 'flex';
-                w.style.alignItems = 'center';
-                w.style.gap = '6px';
+            const makeWheelCell = (labelText) => {
+                const cell = document.createElement('div');
+                cell.style.display = 'grid';
+                cell.style.gridTemplateColumns = '16px 14px 14px';
+                cell.style.alignItems = 'center';
+                cell.style.columnGap = '8px';
+                cell.style.padding = '4px 6px';
+                cell.style.borderRadius = '10px';
+                cell.style.border = '1px solid rgba(255, 216, 77, 0.14)';
+                cell.style.background = 'rgba(0,0,0,0.14)';
+                cell.style.minWidth = '0';
+                if (labelText) cell.title = labelText;
+
                 const dot = makeDot();
-                const t = document.createElement('div');
-                t.textContent = label;
-                t.style.fontSize = '12px';
-                t.style.fontWeight = '900';
-                t.style.opacity = '0.95';
-                w.appendChild(dot);
-                w.appendChild(t);
-                this.wheelsDots.appendChild(w);
-                this._wheelCells.push({ dot });
+                dot.style.width = '12px';
+                dot.style.height = '12px';
+
+                const yaw = makeYawArrow();
+                const spin = makeSpinViz();
+
+                cell.appendChild(dot);
+                cell.appendChild(yaw);
+                cell.appendChild(spin.wrap);
+
+                return { cell, dot, yaw, spinNeedle: spin.needle };
+            };
+
+            for (const g of orderedGroups) {
+                const row = document.createElement('div');
+                row.style.display = 'grid';
+                row.style.gridTemplateColumns = '1fr 1fr';
+                row.style.columnGap = '10px';
+                row.style.alignItems = 'center';
+
+                const left = makeWheelCell(g.left?.label ?? '');
+                const right = makeWheelCell(g.right?.label ?? '');
+
+                row.appendChild(left.cell);
+                row.appendChild(right.cell);
+                this.wheelsDots.appendChild(row);
+
+                this._wheelCells.push({ ...left, wheelId: g.left?.id ?? null, row });
+                this._wheelCells.push({ ...right, wheelId: g.right?.id ?? null, row });
             }
             this._scheduleMinHeightRefresh();
         }
 
+        const wheelById = new Map();
+        for (let i = 0; i < wheelInfos.length; i++) {
+            wheelById.set(wheelInfos[i].id, wheelInfos[i].wheel);
+        }
+
         for (let i = 0; i < this._wheelCells.length; i++) {
             const cell = this._wheelCells[i];
-            const w = list[i];
+            const w = cell.wheelId != null ? (wheelById.get(cell.wheelId) ?? null) : null;
             const inContact = w ? !!w.inContact : false;
             setDot(cell.dot, inContact, { onColor: '#50ff9a', offColor: 'rgba(255, 95, 95, 0.35)' });
+            if (cell.row) {
+                cell.cell.style.opacity = w ? (inContact ? '1' : '0.78') : '0.45';
+            }
+
+            const steerRad = (w && Number.isFinite(w.steering)) ? w.steering : 0;
+            // UI convention: positive = right, rapier steering is applied with inverted sign.
+            const steerDeg = -radToDeg(steerRad);
+            if (cell.yaw) {
+                cell.yaw.style.transform = `rotate(${steerDeg.toFixed(1)}deg)`;
+                cell.yaw.style.opacity = w ? (inContact ? '1' : '0.65') : '0.25';
+            }
+            if (cell.spinNeedle) {
+                cell.spinNeedle.style.transform = `translate(0, -50%) rotate(${(this._lastSpinDeg ?? 0).toFixed(1)}deg)`;
+                cell.spinNeedle.style.opacity = w ? (inContact ? '1' : '0.6') : '0.25';
+            }
         }
+    }
+
+    _buildTreeHeader() {
+        this.treeHeader = document.createElement('div');
+        this.treeHeader.style.display = 'flex';
+        this.treeHeader.style.alignItems = 'center';
+        this.treeHeader.style.justifyContent = 'space-between';
+        this.treeHeader.style.gap = '10px';
+
+        const left = document.createElement('div');
+        left.style.display = 'flex';
+        left.style.alignItems = 'center';
+        left.style.gap = '8px';
+
+        this.treeModeSel = document.createElement('select');
+        this.treeModeSel.style.pointerEvents = 'auto';
+        this.treeModeSel.style.border = '1px solid rgba(255, 216, 77, 0.22)';
+        this.treeModeSel.style.background = 'rgba(0,0,0,0.22)';
+        this.treeModeSel.style.color = '#ffd84d';
+        this.treeModeSel.style.borderRadius = '10px';
+        this.treeModeSel.style.padding = '6px 8px';
+        this.treeModeSel.style.fontSize = '12px';
+        this.treeModeSel.style.fontWeight = '900';
+        for (const opt of [
+            { value: 'rapier', label: 'Rapier' },
+            { value: 'event', label: 'Event input' },
+            { value: 'scene', label: 'jtree' },
+            { value: 'skeleton', label: 'Skeleton' }
+        ]) {
+            const o = document.createElement('option');
+            o.value = opt.value;
+            o.textContent = opt.label;
+            this.treeModeSel.appendChild(o);
+        }
+        this.treeModeSel.value = this._treeMode;
+        this.treeModeSel.addEventListener('change', () => {
+            this._treeMode = this.treeModeSel.value;
+            this._refreshTree({ force: true });
+        });
+        left.appendChild(this.treeModeSel);
+
+        const right = document.createElement('div');
+        right.style.display = 'flex';
+        right.style.alignItems = 'center';
+        right.style.gap = '8px';
+
+        this.btnTreeToggle = makeBtn('Tree: On');
+        this.btnTreeToggle.addEventListener('click', () => {
+            this._treeExpanded = !this._treeExpanded;
+            this.btnTreeToggle.textContent = this._treeExpanded ? 'Tree: On' : 'Tree: Off';
+            this.treeBody.style.display = this._treeExpanded ? 'block' : 'none';
+            this._scheduleMinHeightRefresh();
+        });
+
+        this.btnTreeAuto = makeBtn('Auto: On');
+        this.btnTreeAuto.addEventListener('click', () => {
+            this._treeAuto = !this._treeAuto;
+            this.btnTreeAuto.textContent = this._treeAuto ? 'Auto: On' : 'Auto: Off';
+        });
+
+        this.btnTreeRefresh = makeBtn('Refresh');
+        this.btnTreeRefresh.addEventListener('click', () => {
+            this._refreshTree({ force: true });
+        });
+
+        right.appendChild(this.btnTreeToggle);
+        right.appendChild(this.btnTreeAuto);
+        right.appendChild(this.btnTreeRefresh);
+
+        this.treeHeader.appendChild(left);
+        this.treeHeader.appendChild(right);
+        this.treeWrap.appendChild(this.treeHeader);
+
+        this.treeBody = document.createElement('div');
+        this.treeBody.style.display = 'block';
+        this.treeBody.style.overflow = 'auto';
+        this.treeBody.style.maxHeight = '220px';
+        this.treeBody.style.padding = '6px 2px 2px';
+        this.treeBody.style.fontSize = '12px';
+        this.treeBody.style.fontWeight = '800';
+        this.treeBody.style.opacity = '0.95';
+        this.treeWrap.appendChild(this.treeBody);
+
+        this._refreshTree({ force: true });
+    }
+
+    _refreshTree({ force = false } = {}) {
+        if (this._destroyed) return;
+        if (!this._treeExpanded) return;
+        if (!force) {
+            const now = performance?.now ? performance.now() * 0.001 : 0;
+            if (!this._treeLastSec) this._treeLastSec = now;
+            const dt = now - this._treeLastSec;
+            if (dt < this._treeUpdateSec) return;
+            this._treeLastSec = now;
+        }
+
+        let data = null;
+        let title = '';
+        if (this._treeMode === 'event') {
+            title = 'input:controls (latest)';
+            data = { ...this._input };
+        } else if (this._treeMode === 'rapier') {
+            title = 'getVehicleDebug() (latest)';
+            const vid = this._ctx.vehicleId;
+            data = (vid && this._ctx.physics?.getVehicleDebug) ? this._ctx.physics.getVehicleDebug(vid) : null;
+        } else if (this._treeMode === 'scene') {
+            title = 'anchor/model tree';
+            const root = this._ctx.anchor ?? this._ctx.model ?? null;
+            data = root ? this._packObject3DTree(root, 3) : null;
+        } else if (this._treeMode === 'skeleton') {
+            title = 'bus skeleton';
+            data = this._packSkeleton(this._ctx.api);
+        }
+
+        this.treeBody.innerHTML = '';
+        const hint = document.createElement('div');
+        hint.textContent = title;
+        hint.style.fontSize = '11px';
+        hint.style.fontWeight = '900';
+        hint.style.opacity = '0.7';
+        hint.style.marginBottom = '6px';
+        this.treeBody.appendChild(hint);
+
+        if (data == null) {
+            const empty = document.createElement('div');
+            empty.textContent = '—';
+            empty.style.opacity = '0.65';
+            this.treeBody.appendChild(empty);
+            return;
+        }
+
+        this.treeBody.appendChild(this._renderTreeNode('$', data, '$', 0));
+    }
+
+    _renderTreeNode(key, value, path, depth) {
+        const row = document.createElement('div');
+        row.style.display = 'block';
+        row.style.paddingLeft = `${depth * 12}px`;
+        row.style.lineHeight = '1.35';
+
+        const isObj = isPlainObject(value);
+        const isArr = Array.isArray(value);
+        const isExpandable = isObj || isArr;
+        const isOpen = this._treeExpandState.get(path) ?? (depth < 1);
+
+        const head = document.createElement('div');
+        head.style.display = 'flex';
+        head.style.alignItems = 'center';
+        head.style.gap = '8px';
+        head.style.cursor = isExpandable ? 'pointer' : 'default';
+
+        const caret = document.createElement('div');
+        caret.textContent = isExpandable ? (isOpen ? '▾' : '▸') : ' ';
+        caret.style.width = '14px';
+        caret.style.opacity = isExpandable ? '0.9' : '0.3';
+
+        const k = document.createElement('div');
+        k.textContent = String(key);
+        k.style.fontWeight = '950';
+        k.style.opacity = '0.92';
+
+        const v = document.createElement('div');
+        v.style.opacity = '0.85';
+        v.style.whiteSpace = 'pre';
+        v.style.overflow = 'hidden';
+        v.style.textOverflow = 'ellipsis';
+        v.style.flex = '1';
+
+        const summarize = (val) => {
+            if (val == null) return 'null';
+            if (typeof val === 'number') return Number.isFinite(val) ? String(val) : 'NaN';
+            if (typeof val === 'boolean') return val ? 'true' : 'false';
+            if (typeof val === 'string') return JSON.stringify(val);
+            if (Array.isArray(val)) return `Array(${val.length})`;
+            if (isPlainObject(val)) return `Object(${Object.keys(val).length})`;
+            return String(val);
+        };
+
+        v.textContent = isExpandable ? summarize(value) : summarize(value);
+
+        head.appendChild(caret);
+        head.appendChild(k);
+        head.appendChild(v);
+        row.appendChild(head);
+
+        if (isExpandable) {
+            head.addEventListener('click', (e) => {
+                e.preventDefault();
+                const next = !(this._treeExpandState.get(path) ?? (depth < 1));
+                this._treeExpandState.set(path, next);
+                this._refreshTree({ force: true });
+            });
+        }
+
+        if (isExpandable && isOpen) {
+            const body = document.createElement('div');
+            if (isArr) {
+                for (let i = 0; i < value.length; i++) {
+                    const childPath = `${path}[${i}]`;
+                    body.appendChild(this._renderTreeNode(i, value[i], childPath, depth + 1));
+                }
+            } else {
+                const keys = Object.keys(value);
+                for (const kk of keys) {
+                    const childPath = `${path}.${kk}`;
+                    body.appendChild(this._renderTreeNode(kk, value[kk], childPath, depth + 1));
+                }
+            }
+            row.appendChild(body);
+        }
+
+        return row;
+    }
+
+    _packObject3DTree(obj, maxDepth = 3, depth = 0) {
+        if (!obj || depth > maxDepth) return null;
+        const out = {
+            name: obj.name ?? '',
+            type: obj.type ?? '',
+            visible: obj.visible ?? true,
+            position: obj.position ? { x: q(obj.position.x), y: q(obj.position.y), z: q(obj.position.z) } : null,
+            rotation: obj.rotation ? { x: q(obj.rotation.x), y: q(obj.rotation.y), z: q(obj.rotation.z) } : null,
+            children: []
+        };
+        if (Array.isArray(obj.children) && depth < maxDepth) {
+            for (const c of obj.children) {
+                out.children.push(this._packObject3DTree(c, maxDepth, depth + 1));
+            }
+        }
+        return out;
+    }
+
+    _packSkeleton(api) {
+        if (!api) return null;
+        const pick = (o) => o?.isObject3D ? (o.name || o.type || 'Object3D') : null;
+        return {
+            root: pick(api.root),
+            yawPivot: pick(api.yawPivot),
+            vehicleTiltPivot: pick(api.vehicleTiltPivot),
+            wheelsRoot: pick(api.wheelsRoot),
+            bodyTiltPivot: pick(api.bodyTiltPivot),
+            bodyRoot: pick(api.bodyRoot),
+            tiltPivot: pick(api.tiltPivot),
+            wheelRig: api.wheelRig ? { front: api.wheelRig.front?.length ?? 0, rear: api.wheelRig.rear?.length ?? 0, wheelRadius: api.wheelRig.wheelRadius ?? null } : null
+        };
     }
 
     _scheduleMinHeightRefresh() {
@@ -701,4 +1177,8 @@ export class GameplayDebugPanel {
         const minH = Math.max(0, Math.ceil(headerH + leftH + pad));
         this.root.style.minHeight = `${minH}px`;
     }
+}
+
+function q(v) {
+    return Number.isFinite(v) ? Number(v.toFixed(3)) : null;
 }
