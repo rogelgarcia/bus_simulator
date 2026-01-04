@@ -530,7 +530,7 @@ function alignAnchoredBus(bus) {
     if (!parent || parent.userData?.model !== bus) return;
     const origin = parent.userData?.origin ?? 'floor';
     const skeleton = bus.userData?.bus ?? null;
-    const target = origin === 'center' ? (skeleton?.bodyRoot ?? bus) : bus;
+    const target = origin === 'center' ? (skeleton?.tiltPivot ?? skeleton?.bodyRoot ?? bus) : bus;
     const box = getObjectBoundsLocal(parent, target);
     if (box.isEmpty()) return;
     if (origin === 'center') {

@@ -53,6 +53,7 @@ const CAROUSEL = (() => {
 
 function resolveBoundsTarget(model) {
     const api = model?.userData?.bus ?? model?.userData?.api ?? null;
+    if (api?.tiltPivot?.isObject3D) return api.tiltPivot;
     if (api?.bodyRoot?.isObject3D) return api.bodyRoot;
     return model;
 }
@@ -407,7 +408,7 @@ export class BusSelectState {
 
         const spec = BUS_CATALOG[this.activeIndex];
         const label = spec?.name ?? 'Bus';
-        this._setChip(label, `${this.activeIndex + 1} / ${BUS_CATALOG.length}`);
+        this._setChip(label, null);
     }
 
     _handlePointerMove(event) {
@@ -418,14 +419,14 @@ export class BusSelectState {
             this.hoveredBus = bus;
 
             const label = BUS_CATALOG[this.activeIndex]?.name ?? 'Bus';
-            this._setChip(label, `${this.activeIndex + 1} / ${BUS_CATALOG.length}`);
+            this._setChip(label, null);
             this.canvas.style.cursor = 'pointer';
             return;
         }
 
         this.hoveredBus = this.showcase?.bus ?? null;
         const label = BUS_CATALOG[this.activeIndex]?.name ?? 'Bus';
-        this._setChip(label, `${this.activeIndex + 1} / ${BUS_CATALOG.length}`);
+        this._setChip(label, null);
         this.canvas.style.cursor = 'default';
     }
 
@@ -611,15 +612,16 @@ export class BusSelectState {
         t.style.fontWeight = '900';
         t.style.letterSpacing = '0.2px';
 
-        const m = document.createElement('div');
-        m.textContent = meta;
-        m.style.fontSize = '12px';
-        m.style.fontWeight = '800';
-        m.style.opacity = '0.72';
-        m.style.marginTop = '2px';
-
         this.hudChip.appendChild(t);
-        this.hudChip.appendChild(m);
+        if (meta) {
+            const m = document.createElement('div');
+            m.textContent = meta;
+            m.style.fontSize = '12px';
+            m.style.fontWeight = '800';
+            m.style.opacity = '0.72';
+            m.style.marginTop = '2px';
+            this.hudChip.appendChild(m);
+        }
     }
 
     _mountNavUI() {

@@ -287,7 +287,10 @@ function resolveVehicleConfig(vehicle, api, model) {
 
     dimensions = dimensions ?? { ...FALLBACK_DIMENSIONS };
 
-    const wheelRadius = Math.max(0.05, base.wheelRadius ?? api?.wheelRig?.wheelRadius ?? DEFAULT_CONFIG.wheelRadius);
+    const rawWheelRadius = base.wheelRadius ?? api?.wheelRig?.wheelRadius ?? DEFAULT_CONFIG.wheelRadius;
+    const height = dimensions?.height ?? FALLBACK_DIMENSIONS.height;
+    const maxWheelRadius = Math.min(1.2, Math.max(0.55, height * 0.45));
+    const wheelRadius = clamp(Number.isFinite(rawWheelRadius) ? rawWheelRadius : DEFAULT_CONFIG.wheelRadius, 0.2, maxWheelRadius);
     const wheelbaseRaw = base.wheelbase ?? Math.max(2.5, dimensions.length * 0.6);
     const wheelbase = clamp(wheelbaseRaw, 2.5, 10.0);
 

@@ -26,6 +26,14 @@ function isSizeUsable(size) {
     return size && size.x > 0.5 && size.y > 0.5 && size.z > 0.5;
 }
 
+function clampWheelRadius(radius, dimensions) {
+    const r = Number.isFinite(radius) ? radius : NaN;
+    const height = Number.isFinite(dimensions?.height) ? dimensions.height : FALLBACK_DIMENSIONS.height;
+    const max = Math.min(1.2, Math.max(0.55, height * 0.45));
+    if (!Number.isFinite(r)) return 0.55;
+    return Math.max(0.2, Math.min(max, r));
+}
+
 /**
  * Resolve the actual bus model from a selected object.
  * Handles cases where the model is nested in userData.
@@ -35,6 +43,14 @@ function isSizeUsable(size) {
 function resolveBusModel(selected) {
     if (!selected) return null;
     if (selected.userData?.model?.isObject3D) return selected.userData.model;
+    return selected;
+}
+
+function resolveBusAnchor(selected) {
+    if (!selected?.isObject3D) return null;
+    const model = selected.userData?.model;
+    if (!model?.isObject3D) return null;
+    if (selected === model) return null;
     return selected;
 }
 
@@ -50,8 +66,21 @@ function resolveBusApi(busModel) {
 
 function resolveBoundsTarget(model) {
     const api = model?.userData?.bus ?? model?.userData?.api ?? null;
+    if (api?.tiltPivot?.isObject3D) return api.tiltPivot;
     if (api?.bodyRoot?.isObject3D) return api.bodyRoot;
     return model;
+}
+
+function centerModelInAnchor(anchor, model) {
+    const boundsTarget = resolveBoundsTarget(model);
+    if (!boundsTarget) return;
+    anchor.updateMatrixWorld(true);
+    boundsTarget.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(boundsTarget);
+    if (box.isEmpty()) return;
+    const centerWorld = box.getCenter(new THREE.Vector3());
+    const centerLocal = anchor.worldToLocal(centerWorld.clone());
+    model.position.sub(centerLocal);
 }
 
 /**
@@ -69,18 +98,10 @@ function makeVehicleAnchor(model) {
     anchor.userData.origin = 'center';
     anchor.add(model);
 
-    // Reset model transforms
-    model.position.set(0, 0, 0);
-    model.rotation.set(0, 0, 0);
-    model.scale.set(1, 1, 1);
-
     // Center model so its bounds center aligns with the anchor origin.
-    const boundsTarget = resolveBoundsTarget(model);
-    const box = new THREE.Box3().setFromObject(boundsTarget);
-    if (!box.isEmpty()) {
-        const center = box.getCenter(new THREE.Vector3());
-        model.position.sub(center);
-    }
+    // Do not reset transforms here: buses may already be centered by their loader,
+    // and resetting would re-introduce offsets when moving between scenes.
+    centerModelInAnchor(anchor, model);
 
     return anchor;
 }
@@ -92,6 +113,7 @@ function makeVehicleAnchor(model) {
  * @returns {object}
  */
 function extractVehicleConfig(busModel, api) {
+    busModel.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(busModel);
     const size = box.getSize(new THREE.Vector3());
     const dimensions = isSizeUsable(size)
@@ -100,7 +122,7 @@ function extractVehicleConfig(busModel, api) {
 
     // Get wheel rig info
     const wheelRig = api?.wheelRig ?? busModel.userData?.wheelRig ?? null;
-    const wheelRadius = wheelRig?.wheelRadius ?? 0.55;
+    const wheelRadius = clampWheelRadius(wheelRig?.wheelRadius ?? 0.55, dimensions);
 
     // Get suspension tuning
     const suspensionTuning = api?.getSuspensionTuning?.() ?? 
@@ -149,6 +171,8 @@ function extractVehicleConfig(busModel, api) {
  * @returns {object|null} Vehicle object with { id, model, anchor, api, config }
  */
 export function createVehicleFromBus(selected, options = {}) {
+    const providedAnchor = resolveBusAnchor(selected);
+
     // Resolve the actual model
     const model = resolveBusModel(selected);
     if (!model) {
@@ -157,7 +181,9 @@ export function createVehicleFromBus(selected, options = {}) {
     }
 
     // Remove from previous parent (e.g., garage scene)
-    if (model.parent) {
+    if (providedAnchor) {
+        if (providedAnchor.parent) providedAnchor.parent.remove(providedAnchor);
+    } else if (model.parent) {
         model.parent.remove(model);
     }
 
@@ -167,7 +193,14 @@ export function createVehicleFromBus(selected, options = {}) {
         console.warn('[createVehicleFromBus] Bus model has no BusSkeleton API');
     }
 
-    const anchor = makeVehicleAnchor(model);
+    const anchor = providedAnchor ?? makeVehicleAnchor(model);
+    if (providedAnchor) {
+        anchor.userData.type ??= model.userData?.type;
+        anchor.userData.id ??= model.userData?.id;
+        anchor.userData.model = model;
+        anchor.userData.origin ??= 'center';
+        if (model.parent !== anchor) anchor.add(model);
+    }
 
     // Extract configuration
     const config = extractVehicleConfig(model, api);
