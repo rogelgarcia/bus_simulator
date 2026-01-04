@@ -483,7 +483,7 @@ export class GameplayState {
         this._dragSpherical.setFromVector3(drag.offset);
         this._dragSpherical.theta -= dx * CAMERA_DRAG.rotateSpeed;
         this._dragSpherical.phi = clamp(
-            this._dragSpherical.phi + dy * CAMERA_DRAG.tiltSpeed,
+            this._dragSpherical.phi - dy * CAMERA_DRAG.tiltSpeed,
             CAMERA_DRAG.minPhi,
             CAMERA_DRAG.maxPhi
         );

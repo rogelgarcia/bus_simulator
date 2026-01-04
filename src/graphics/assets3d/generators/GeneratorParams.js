@@ -247,16 +247,27 @@ export const ROAD_DEFAULTS = {
         thickness: 0.48,
         height: 0.17,
         extraHeight: 0.0,
-        sink: 0.03,
+        sink: 0.0,
         joinOverlap: 0.36
     }
 };
 
 export const GROUND_DEFAULTS = {
-    surfaceY: ROAD_DEFAULTS.surfaceY + ROAD_DEFAULTS.curb.height
+    // Keep grass and asphalt on the same surface; curbs sit above the asphalt.
+    surfaceY: ROAD_DEFAULTS.surfaceY
 };
 
 export function createGeneratorConfig(overrides = {}) {
     const base = { road: ROAD_DEFAULTS, ground: GROUND_DEFAULTS };
-    return deepMerge(base, overrides);
+    const merged = deepMerge(base, overrides);
+
+    const hasExplicitGroundY = isObj(overrides?.ground)
+        && Object.prototype.hasOwnProperty.call(overrides.ground, 'surfaceY');
+
+    if (!hasExplicitGroundY) {
+        if (!isObj(merged.ground)) merged.ground = {};
+        merged.ground.surfaceY = merged.road?.surfaceY ?? GROUND_DEFAULTS.surfaceY ?? 0;
+    }
+
+    return merged;
 }

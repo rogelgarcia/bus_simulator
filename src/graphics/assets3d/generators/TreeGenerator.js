@@ -17,6 +17,7 @@ const TREE_DEFAULTS = {
     scaleMax: 1.1,
     maxAttempts: 4,
     height: 0,
+    sink: 0.05,
     cornerBoost: 0.8,
     cornerPower: 1.4,
     cornerRadius: 0.45,
@@ -91,17 +92,86 @@ function makeTreeMaterials({ leafMap, leafNormal, trunkMap, trunkNormal }) {
     return { leaf, trunk };
 }
 
+function isFoliageName(name) {
+    const s = String(name ?? '').toLowerCase();
+    return s.includes('leaf') || s.includes('foliage') || s.includes('bush');
+}
+
+function isCollisionMeshName(name) {
+    const s = String(name ?? '').toUpperCase();
+    return s.startsWith('UCX_') || s.startsWith('UBX_') || s.startsWith('UCP_') || s.startsWith('USP_');
+}
+
+function removeCollisionMeshes(root) {
+    const toRemove = [];
+    root.traverse((o) => {
+        if (!o?.isMesh) return;
+        if (!isCollisionMeshName(o.name)) return;
+        toRemove.push(o);
+    });
+    for (const m of toRemove) {
+        if (typeof m.removeFromParent === 'function') m.removeFromParent();
+        else if (m.parent) m.parent.remove(m);
+    }
+    return toRemove.length;
+}
+
+function computeMinWorldYForMaterialIndices(mesh, indices) {
+    const geom = mesh?.geometry;
+    const pos = geom?.attributes?.position;
+    if (!geom || !pos) return null;
+
+    const groups = (Array.isArray(geom.groups) && geom.groups.length)
+        ? geom.groups
+        : [{ start: 0, count: geom.index ? geom.index.count : pos.count, materialIndex: 0 }];
+
+    const posArr = pos.array;
+    const idxArr = geom.index?.array ?? null;
+    const m = mesh.matrixWorld.elements;
+    const m1 = m[1];
+    const m5 = m[5];
+    const m9 = m[9];
+    const m13 = m[13];
+
+    let minY = Infinity;
+
+    const scanVertex = (vi) => {
+        const j = vi * 3;
+        const x = posArr[j];
+        const y = posArr[j + 1];
+        const z = posArr[j + 2];
+        const wy = m1 * x + m5 * y + m9 * z + m13;
+        if (wy < minY) minY = wy;
+    };
+
+    for (const g of groups) {
+        if (!indices.has(g.materialIndex)) continue;
+        const start = Math.max(0, g.start | 0);
+        const end = start + Math.max(0, g.count | 0);
+        if (idxArr) {
+            const max = idxArr.length;
+            for (let i = start; i < end && i < max; i++) scanVertex(idxArr[i]);
+        } else {
+            const max = pos.count;
+            for (let i = start; i < end && i < max; i++) scanVertex(i);
+        }
+    }
+
+    return Number.isFinite(minY) ? minY : null;
+}
+
 function applyTreeMaterials(model, mats) {
     model.traverse((o) => {
         if (!o.isMesh) return;
+        if (isCollisionMeshName(o.name)) return;
         if (Array.isArray(o.material)) {
             o.material = o.material.map((mat) => {
-                const name = `${o.name} ${mat?.name ?? ''}`.toLowerCase();
-                return name.includes('leaf') ? mats.leaf : mats.trunk;
+                const name = `${o.name} ${mat?.name ?? ''}`;
+                return isFoliageName(name) ? mats.leaf : mats.trunk;
             });
         } else {
-            const name = `${o.name} ${o.material?.name ?? ''}`.toLowerCase();
-            o.material = name.includes('leaf') ? mats.leaf : mats.trunk;
+            const name = `${o.name} ${o.material?.name ?? ''}`;
+            o.material = isFoliageName(name) ? mats.leaf : mats.trunk;
         }
         o.castShadow = true;
         o.receiveShadow = true;
@@ -129,11 +199,37 @@ function loadTreeAssets(quality, entries) {
             const loader = new FBXLoader();
             const baseUrl = getModelBaseUrl(key);
             const loadModel = (entry) => loader.loadAsync(new URL(entry.name, baseUrl).toString()).then((model) => {
+                removeCollisionMeshes(model);
                 applyTreeMaterials(model, mats);
                 const rot = Array.isArray(entry.rot) ? entry.rot : [0, 0, 0];
                 model.rotation.set(rot[0] ?? 0, rot[1] ?? 0, rot[2] ?? 0);
-                model.userData.treeBaseY = entry.baseY ?? 0;
-                model.userData.treeHeight = entry.height ?? 1;
+                model.updateMatrixWorld(true);
+                const bounds = new THREE.Box3().setFromObject(model);
+                const computedBaseY = bounds?.min?.y;
+
+                let trunkMinY = Infinity;
+                model.traverse((o) => {
+                    if (!o?.isMesh) return;
+                    if (isCollisionMeshName(o.name)) return;
+                    const matsList = Array.isArray(o.material) ? o.material : [o.material];
+                    const indices = new Set();
+                    for (let i = 0; i < matsList.length; i++) {
+                        if (matsList[i] === mats.trunk) indices.add(i);
+                    }
+                    if (!indices.size) return;
+                    const y = computeMinWorldYForMaterialIndices(o, indices);
+                    if (Number.isFinite(y) && y < trunkMinY) trunkMinY = y;
+                });
+
+                const baseY = Number.isFinite(trunkMinY) ? trunkMinY : computedBaseY;
+                const computedHeight = Number.isFinite(bounds?.max?.y) && Number.isFinite(baseY)
+                    ? (bounds.max.y - baseY)
+                    : null;
+
+                const fallbackBaseY = entry.baseY ?? 0;
+                const fallbackHeight = entry.height ?? 1;
+                model.userData.treeBaseY = Number.isFinite(baseY) ? baseY : fallbackBaseY;
+                model.userData.treeHeight = (Number.isFinite(computedHeight) && computedHeight > 0) ? computedHeight : fallbackHeight;
                 return model;
             });
             return Promise.all(entries.map(loadModel));
@@ -280,13 +376,14 @@ export function createTreeField({ map = null, rng = null, groundY = 0, config = 
         ...(config?.trees ?? {})
     };
 
+    const sink = Math.max(0, params.sink ?? 0);
     const quality = getQuality(params.quality);
     const entries = getTreeEntries(quality);
     if (!entries.length) return { group, placements: [] };
     const placements = buildPlacements({
         map,
         rng,
-        groundY,
+        groundY: groundY - sink,
         params,
         modelCount: entries.length
     });

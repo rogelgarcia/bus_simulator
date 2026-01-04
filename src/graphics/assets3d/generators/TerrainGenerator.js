@@ -21,8 +21,14 @@ export function createCityWorld({
     const group = new THREE.Group();
     group.name = 'CityWorld';
 
-    const computedGroundY = (groundY ?? config?.ground?.surfaceY ?? GROUND_DEFAULTS.surfaceY ?? 0);
     const roadSurfaceY = (config?.road?.surfaceY ?? ROAD_DEFAULTS.surfaceY ?? 0);
+    let computedGroundY = groundY;
+    if (!Number.isFinite(computedGroundY)) {
+        const cfgGround = config?.ground?.surfaceY;
+        computedGroundY = Number.isFinite(cfgGround) ? cfgGround : roadSurfaceY;
+    }
+
+    const FLOOR_EPS = 0.001;
 
     const floorGeo = new THREE.PlaneGeometry(size, size, 1, 1);
     floorGeo.rotateX(-Math.PI / 2);
@@ -35,7 +41,11 @@ export function createCityWorld({
 
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.name = 'CityFloor';
+    // Put the base grass plane slightly below the shared surface to avoid z-fighting with asphalt.
+    // The instanced grass tiles still sit on the true surface Y.
+    floor.position.y = computedGroundY - FLOOR_EPS;
     floor.receiveShadow = true;
+    floor.renderOrder = -30;
     group.add(floor);
 
     let groundTiles = null;
@@ -55,6 +65,7 @@ export function createCityWorld({
         groundTiles = new THREE.InstancedMesh(tileGeo, tilesMat, map.width * map.height);
         groundTiles.name = 'GroundTiles';
         groundTiles.receiveShadow = true;
+        groundTiles.renderOrder = -29;
 
         const dummy = new THREE.Object3D();
         let k = 0;
@@ -65,7 +76,7 @@ export function createCityWorld({
                 if (map.kind[idx] === TILE.ROAD) continue;
 
                 const p = map.tileToWorldCenter(x, y);
-                dummy.position.set(p.x, roadSurfaceY, p.z);
+                dummy.position.set(p.x, computedGroundY, p.z);
                 dummy.rotation.set(0, 0, 0);
                 dummy.scale.set(1, 1, 1);
                 dummy.updateMatrix();
@@ -83,7 +94,7 @@ export function createCityWorld({
     let trees = null;
     const treesEnabled = config?.render?.treesEnabled;
     if (map && rng && treesEnabled !== false) {
-        trees = createTreeField({ map, rng, groundY: roadSurfaceY, config });
+        trees = createTreeField({ map, rng, groundY: computedGroundY, config });
         group.add(trees.group);
     }
 
@@ -93,7 +104,7 @@ export function createCityWorld({
         const minZ = map.origin.z - half;
         const maxX = minX + map.width * map.tileSize;
         const maxZ = minZ + map.height * map.tileSize;
-        const y = roadSurfaceY + 0.002;
+        const y = computedGroundY + 0.002;
 
         const verts = [];
         for (let x = 0; x <= map.width; x++) {
@@ -116,6 +127,7 @@ export function createCityWorld({
 
         gridLines = new THREE.LineSegments(gridGeo, gridMat);
         gridLines.name = 'TileGrid';
+        gridLines.renderOrder = -28;
         group.add(gridLines);
     }
 
