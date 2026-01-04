@@ -1,23 +1,10 @@
 // src/app/vehicle/createVehicle.js
-/**
- * Factory function to create a Vehicle from a bus model.
- * 
- * This bridges the old bus model system (BusSkeleton) to the new
- * vehicle abstraction layer.
- * 
- * Usage:
- *   const vehicle = createVehicleFromBus(busModel);
- *   scene.add(vehicle.anchor);
- *   controller.setVehicleApi(vehicle.api, vehicle.anchor);
- */
+// Creates a vehicle wrapper from a selected bus model.
+// Design: Models are re-anchored to their bounds center without resetting loader transforms.
 import * as THREE from 'three';
 
 const FALLBACK_DIMENSIONS = { width: 2.5, height: 3.0, length: 10.0 };
 
-/**
- * Generate a unique vehicle ID.
- * @returns {string}
- */
 function generateVehicleId() {
     return `vehicle_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -34,12 +21,6 @@ function clampWheelRadius(radius, dimensions) {
     return Math.max(0.2, Math.min(max, r));
 }
 
-/**
- * Resolve the actual bus model from a selected object.
- * Handles cases where the model is nested in userData.
- * @param {THREE.Object3D} selected
- * @returns {THREE.Object3D|null}
- */
 function resolveBusModel(selected) {
     if (!selected) return null;
     if (selected.userData?.model?.isObject3D) return selected.userData.model;
@@ -54,11 +35,6 @@ function resolveBusAnchor(selected) {
     return selected;
 }
 
-/**
- * Resolve the BusSkeleton API from a bus model.
- * @param {THREE.Object3D} busModel
- * @returns {import('../buses/BusSkeleton.js').BusSkeleton|null}
- */
 function resolveBusApi(busModel) {
     if (!busModel) return null;
     return busModel.userData?.bus ?? busModel.userData?.api ?? null;
@@ -83,111 +59,107 @@ function centerModelInAnchor(anchor, model) {
     model.position.sub(centerLocal);
 }
 
-/**
- * Create a vehicle anchor for the model.
- * The anchor origin is at the vehicle's visual center (bounds center).
- * @param {THREE.Object3D} model
- * @returns {THREE.Group}
- */
 function makeVehicleAnchor(model) {
     const anchor = new THREE.Group();
     anchor.name = `${model.name || 'vehicle'}_anchor`;
     anchor.userData.type = model.userData?.type;
     anchor.userData.id = model.userData?.id;
+    anchor.userData.spec = model.userData?.spec ?? null;
     anchor.userData.model = model;
     anchor.userData.origin = 'center';
     anchor.add(model);
-
-    // Center model so its bounds center aligns with the anchor origin.
-    // Do not reset transforms here: buses may already be centered by their loader,
-    // and resetting would re-introduce offsets when moving between scenes.
     centerModelInAnchor(anchor, model);
 
     return anchor;
 }
 
-/**
- * Extract vehicle configuration from bus model.
- * @param {THREE.Object3D} busModel
- * @param {object} api - BusSkeleton API
- * @returns {object}
- */
 function extractVehicleConfig(busModel, api) {
+    const spec = busModel.userData?.spec ?? null;
+    const specDims = spec?.dimensions ?? null;
+    const specTuning = spec?.tuning ?? null;
     busModel.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(busModel);
     const size = box.getSize(new THREE.Vector3());
-    const dimensions = isSizeUsable(size)
+    let dimensions = isSizeUsable(size)
         ? { width: size.x, height: size.y, length: size.z }
         : { ...FALLBACK_DIMENSIONS };
+    if (specDims && Number.isFinite(specDims.width) && Number.isFinite(specDims.height) && Number.isFinite(specDims.length)) {
+        dimensions = { width: specDims.width, height: specDims.height, length: specDims.length };
+    }
 
-    // Get wheel rig info
     const wheelRig = api?.wheelRig ?? busModel.userData?.wheelRig ?? null;
-    const wheelRadius = clampWheelRadius(wheelRig?.wheelRadius ?? 0.55, dimensions);
+    const wheelRadius = clampWheelRadius(spec?.wheel?.radius ?? wheelRig?.wheelRadius ?? 0.55, dimensions);
 
-    // Get suspension tuning
-    const suspensionTuning = api?.getSuspensionTuning?.() ?? 
-                             busModel.userData?.suspensionTuning ?? 
-                             null;
+    const suspensionTuning = api?.getSuspensionTuning?.()
+        ?? busModel.userData?.suspensionTuning
+        ?? null;
 
-    // Estimate wheelbase from wheel positions
-    let wheelbase = 5.5; // default
-    if (wheelRig?.front?.length && wheelRig?.rear?.length) {
+    let wheelbase = 5.5;
+    if (wheelRig?.front?.length || wheelRig?.rear?.length) {
         try {
-            const frontWheel = wheelRig.front[0];
-            const rearWheel = wheelRig.rear[0];
-            const frontPivot = frontWheel?.rollPivot ?? frontWheel?.steerPivot;
-            const rearPivot = rearWheel?.rollPivot;
-            
-            if (frontPivot && rearPivot) {
-                const frontPos = new THREE.Vector3();
-                const rearPos = new THREE.Vector3();
-                frontPivot.getWorldPosition(frontPos);
-                rearPivot.getWorldPosition(rearPos);
-                wheelbase = Math.abs(frontPos.z - rearPos.z);
+            const pivots = [];
+            for (const wheel of wheelRig.front ?? []) {
+                const pivot = wheel?.rollPivot ?? wheel?.steerPivot ?? null;
+                if (pivot?.getWorldPosition) pivots.push(pivot);
             }
-        } catch (e) {
-            // Use default
+            for (const wheel of wheelRig.rear ?? []) {
+                const pivot = wheel?.rollPivot ?? wheel?.steerPivot ?? null;
+                if (pivot?.getWorldPosition) pivots.push(pivot);
+            }
+
+            if (pivots.length >= 2) {
+                busModel.updateMatrixWorld(true);
+                let minZ = Infinity;
+                let maxZ = -Infinity;
+                const worldPos = new THREE.Vector3();
+                for (const pivot of pivots) {
+                    pivot.getWorldPosition(worldPos);
+                    const localPos = busModel.worldToLocal(worldPos.clone());
+                    if (!Number.isFinite(localPos.z)) continue;
+                    minZ = Math.min(minZ, localPos.z);
+                    maxZ = Math.max(maxZ, localPos.z);
+                }
+                if (Number.isFinite(minZ) && Number.isFinite(maxZ) && maxZ > minZ) {
+                    wheelbase = maxZ - minZ;
+                }
+            }
+        } catch {
         }
     }
 
     return {
         type: 'bus',
         name: busModel.name || busModel.userData?.id || 'Unknown Bus',
+        spec,
+        tuning: specTuning,
         dimensions,
         wheelbase,
         wheelRadius,
         suspensionTuning,
-        maxSpeedKph: 80,
-        maxSteerDeg: 55
+        wheelCount: Number.isFinite(spec?.wheelCount)
+            ? spec.wheelCount
+            : (Number.isFinite(wheelRig?.front?.length) ? wheelRig.front.length : 0)
+                + (Number.isFinite(wheelRig?.rear?.length) ? wheelRig.rear.length : 0),
+        maxSpeedKph: Number.isFinite(spec?.maxSpeedKph) ? spec.maxSpeedKph : 80,
+        maxSteerDeg: Number.isFinite(specTuning?.maxSteerDeg) ? specTuning.maxSteerDeg : 55
     };
 }
 
-/**
- * Create a Vehicle object from a bus model.
- * 
- * @param {THREE.Object3D} selected - The selected bus from BusSelectState
- * @param {object} [options]
- * @param {string} [options.id] - Custom vehicle ID
- * @returns {object|null} Vehicle object with { id, model, anchor, api, config }
- */
 export function createVehicleFromBus(selected, options = {}) {
     const providedAnchor = resolveBusAnchor(selected);
 
-    // Resolve the actual model
     const model = resolveBusModel(selected);
     if (!model) {
         console.warn('[createVehicleFromBus] No valid bus model provided');
         return null;
     }
 
-    // Remove from previous parent (e.g., garage scene)
     if (providedAnchor) {
         if (providedAnchor.parent) providedAnchor.parent.remove(providedAnchor);
     } else if (model.parent) {
         model.parent.remove(model);
     }
 
-    // Get the BusSkeleton API
     const api = resolveBusApi(model);
     if (!api) {
         console.warn('[createVehicleFromBus] Bus model has no BusSkeleton API');
@@ -202,10 +174,14 @@ export function createVehicleFromBus(selected, options = {}) {
         if (model.parent !== anchor) anchor.add(model);
     }
 
-    // Extract configuration
+    const spec = providedAnchor?.userData?.spec ?? model.userData?.spec ?? null;
+    if (spec) {
+        model.userData.spec = spec;
+        anchor.userData.spec = spec;
+    }
+
     const config = extractVehicleConfig(model, api);
 
-    // Generate ID
     const id = options.id ?? generateVehicleId();
 
     return {

@@ -9,53 +9,91 @@ function fmt(v, digits = 2) {
     return Number.isFinite(v) ? v.toFixed(digits) : '—';
 }
 
-function makeBtn(label) {
+const HELP = {
+    buttons: {
+        logs: 'Toggles the right column (logs + tree).\n\nOn: shows logs and tree view.\nOff: hides them to save space.',
+        clear: 'Clears the log output (does not affect the simulation).',
+        close: 'Closes the gameplay debug overlay (does not affect the simulation).'
+    },
+    keys: {
+        title: 'Shows which keyboard inputs are currently pressed.\n\nThis is what the input layer sees before it is mapped into the physics/vehicle controller.',
+        left: 'Steer left input.\n\nWhen pressed, steering input becomes negative (left).',
+        right: 'Steer right input.\n\nWhen pressed, steering input becomes positive (right).',
+        up: 'Throttle input.\n\nWhen pressed, throttle input rises toward 1.0.',
+        down: 'Brake input.\n\nWhen pressed, brake input rises toward 1.0.',
+        space: 'Handbrake input.\n\nUsed to lock the rear wheels (or increase brake force depending on tuning).',
+        h: 'Headlights toggle.\n\nVisual only (no effect on physics).'
+    },
+    input: {
+        steer: 'Raw steering input from `input:controls`.\n\nRange: [-1, 1].\nPositive = right (UI convention).\n\nUsed by RapierVehicleSim to set wheel steering angles.',
+        throttle: 'Raw throttle input from `input:controls`.\n\nRange: [0, 1].\n\nUsed by the engine/powertrain sim to produce drive force. Higher throttle increases engine torque, affects clutch engagement, and can trigger upshifts.',
+        brake: 'Raw brake input from `input:controls`.\n\nRange: [0, 1].\n\nUsed to compute wheel brake forces. Higher brake reduces speed and can prevent upshifts.',
+        toggles: 'Input toggles from `input:controls`.\n\nHandbrake affects physics.\nHeadlights are visual only.',
+        handbrake: 'Handbrake state.\n\nAdds additional braking force (often rear-biased). Higher values/active state can help rotate or stop the vehicle but will reduce acceleration.',
+        headlights: 'Headlights state.\n\nVisual only (no effect on physics).'
+    },
+    rapierInput: {
+        title: 'Latest input latched inside RapierVehicleSim (`entry.input`).\n\nIf this differs from the raw EventBus input, it usually means a mapping/sign convention or smoothing step exists between them.',
+        steer: 'Latched steering value used by RapierVehicleSim.\n\nThis is the value applied to wheel steering (after any sign/scale conventions).',
+        throttle: 'Latched throttle value used by RapierVehicleSim.\n\nThis is the value fed into the engine/powertrain sim each physics step.',
+        brake: 'Latched brake value used by RapierVehicleSim.\n\nConverted into wheel brake force using tuning brake parameters.',
+        handbrake: 'Latched handbrake value used by RapierVehicleSim.\n\nCombined with brake force to compute wheel braking.'
+    },
+    outputs: {
+        rapierTitle: 'Physics-side outputs computed from Rapier.\n\nThese values come from the rigid-body and the vehicle controller (contacts, yaw, speed).',
+        engineTitle: 'Powertrain outputs computed by EngineTransmissionSim.\n\nThese values are NOT produced by Rapier; they are used to compute the wheel drive force applied into Rapier.',
+        ready: 'Vehicle controller ready state.\n\nReady means the Rapier vehicle controller exists and is updating.\nPending usually means the vehicle has not finished spawning/initializing.',
+        speed: 'Vehicle speed in km/h.\n\nSource: Rapier vehicle controller forward speed.\nHigher speed increases driveline RPM for a given gear.',
+        yaw: 'Chassis yaw angle (deg).\n\nSource: Rapier rigid-body rotation.\nSign conventions depend on the world axes and camera view; use this to verify steering/yaw direction.',
+        driveForce: 'Drive force applied to EACH driven wheel (N).\n\nSource: EngineTransmissionSim → clutchTorque × gearRatio × finalDrive ÷ wheelRadius.\nThen clamped by `tuning.engineForce` as a safety cap.\nHigher values accelerate faster but can cause wheelspin/instability.',
+        brakeForce: 'Brake force applied (N).\n\nComputed from brake + handbrake inputs and tuning brake parameters.\nHigher values slow down faster and can prevent engine-driven acceleration.',
+        wheels: 'Wheel status.\n\nDot: wheel contact with ground.\nArrow: wheel steering/yaw direction.\nNeedle: wheel spin indicator.\n\nUseful to verify wheel order, contact, and steering sign.'
+    },
+    engineConfig: {
+        wheelForceCap: 'Wheel force cap (`tuning.engineForce`).\n\nActs as a per-wheel clamp for the drive force sent into Rapier.\nIncrease if the engine sim is producing drive force but the vehicle feels artificially limited.',
+        maxTorque: 'Engine max torque (N·m).\n\nUsed by the engine torque curve. Higher max torque increases available drive force across all gears.\n\nNot a Rapier value; it feeds the powertrain sim.',
+        clutchMaxTorque: 'Clutch max transmitted torque (N·m).\n\nUpper limit for torque that can pass through the clutch on the engine side.\nToo low: engine revs but vehicle won’t accelerate.\nToo high: clutch locks too aggressively and RPM follows driveline.',
+        finalDrive: 'Final drive ratio.\n\nMultiplies the current gear ratio to get the overall drive ratio.\nHigher final drive increases wheel torque/force but raises engine RPM for a given speed.',
+        shiftRpm: 'Auto-shift RPM thresholds.\n\nUp-shift: when driveline RPM is high enough.\nDown-shift: when driveline RPM is low enough.\n\nHigher thresholds delay shifting; lower thresholds shift earlier.'
+    },
+    engineState: {
+        gear: 'Current gear selection.\n\nAuto-shift uses driveline RPM (wheel-speed mapped into engine RPM for the current gear) and cooldown timers to decide shifts.',
+        rpm: 'Engine RPM (EngineTransmissionSim).\n\nNot from Rapier.\nIf the clutch is slipping, RPM can be higher than driveline RPM.\nIf the clutch is locked, RPM should track driveline RPM closely.',
+        torque: 'Engine output torque (N·m).\n\nComputed from the torque curve × throttle (before clutch).\nHigher torque increases potential drive force, but actual drive force is limited by clutch and gearing.',
+        drivelineRpm: 'Driveline RPM estimate.\n\nComputed from wheel speed × (gearRatio × finalDrive).\nRepresents RPM if the clutch were fully locked.',
+        slipRpm: 'RPM slip (engine RPM − driveline RPM).\n\nNear 0: clutch locked.\nPositive: engine faster (clutch slipping / accelerating).\nNegative: driveline faster (engine braking / overrun).',
+        clutch: 'Clutch command / coupling.\n\nCommand (0..1): time-filtered engage/disengage.\nCoupling (0..1): effective lock factor used by the sim (includes shift blending and speed-based locking).\nHigher coupling reduces slip and makes RPM follow driveline.',
+        clutchTorque: 'Clutch transmitted torque (N·m).\n\nThis is what actually reaches the gearbox.\nMultiplied by drive ratio and divided by wheel radius to become wheel drive force.',
+        shift: 'Shift status.\n\nBlend: 0→1 ramp during a shift.\nTimer: remaining shift time.\nCooldown: minimum time before the next automatic shift.\n\nIf shifts feel jumpy, increase shift time; if gears skip, increase cooldown.'
+    },
+    tree: {
+        mode: 'Selects which data is shown in the tree view.\n\nRapier: live vehicle debug from physics.\nEvent input: last `input:controls` payload.\njtree: Object3D hierarchy snapshot.\nSkeleton: bus rig/skeleton summary.',
+        toggle: 'Shows/hides the tree view.\n\nOff reduces UI work and keeps the logs area smaller.',
+        auto: 'Auto-refreshes the tree view at a fixed interval.\n\nTurn off to reduce overhead and use Refresh manually.',
+        refresh: 'Manually refreshes the tree view now.'
+    }
+};
+
+function makeBtn(label, tooltip = null) {
     const b = document.createElement('button');
     b.type = 'button';
     b.textContent = label;
-    b.style.border = '1px solid rgba(255, 220, 110, 0.30)';
-    b.style.background = 'rgba(0,0,0,0.22)';
-    b.style.color = '#ffd84d';
-    b.style.fontSize = '12px';
-    b.style.fontWeight = '800';
-    b.style.padding = '6px 10px';
-    b.style.borderRadius = '10px';
-    b.style.cursor = 'pointer';
-    b.style.pointerEvents = 'auto';
-    b.addEventListener('mouseenter', () => { b.style.background = 'rgba(0,0,0,0.32)'; });
-    b.addEventListener('mouseleave', () => { b.style.background = 'rgba(0,0,0,0.22)'; });
+    b.className = 'gpd-btn';
+    if (tooltip) b.title = tooltip;
     return b;
 }
 
 function makeDot() {
     const el = document.createElement('div');
-    el.style.width = '10px';
-    el.style.height = '10px';
-    el.style.borderRadius = '999px';
-    el.style.background = 'rgba(255, 216, 77, 0.22)';
-    el.style.border = '1px solid rgba(255, 216, 77, 0.35)';
+    el.className = 'gpd-dot';
     return el;
 }
 
 function makeSpinViz() {
     const wrap = document.createElement('div');
-    wrap.style.position = 'relative';
-    wrap.style.width = '14px';
-    wrap.style.height = '14px';
-    wrap.style.borderRadius = '999px';
-    wrap.style.border = '1px solid rgba(255, 216, 77, 0.30)';
-    wrap.style.background = 'rgba(0,0,0,0.18)';
-    wrap.style.flex = '0 0 auto';
+    wrap.className = 'gpd-spin';
     const needle = document.createElement('div');
-    needle.style.position = 'absolute';
-    needle.style.left = '50%';
-    needle.style.top = '50%';
-    needle.style.width = '10px';
-    needle.style.height = '2px';
-    needle.style.background = 'rgba(255, 216, 77, 0.85)';
-    needle.style.borderRadius = '999px';
-    needle.style.transformOrigin = '0% 50%';
-    needle.style.transform = 'translate(0, -50%) rotate(0deg)';
+    needle.className = 'gpd-spin-needle';
     wrap.appendChild(needle);
     return { wrap, needle };
 }
@@ -63,14 +101,7 @@ function makeSpinViz() {
 function makeYawArrow() {
     const el = document.createElement('div');
     el.textContent = '▲';
-    el.style.width = '14px';
-    el.style.height = '14px';
-    el.style.display = 'grid';
-    el.style.placeItems = 'center';
-    el.style.fontSize = '11px';
-    el.style.fontWeight = '950';
-    el.style.opacity = '0.9';
-    el.style.transformOrigin = '50% 50%';
+    el.className = 'gpd-yaw-arrow';
     return el;
 }
 
@@ -79,23 +110,14 @@ function radToDeg(v) {
 }
 
 function setDot(dot, on, { onColor = '#50ff9a', offColor = 'rgba(255, 216, 77, 0.22)' } = {}) {
-    dot.style.background = on ? onColor : offColor;
-    dot.style.borderColor = on ? 'rgba(80, 255, 154, 0.55)' : 'rgba(255, 216, 77, 0.35)';
+    dot.classList.toggle('is-on', !!on);
 }
 
 function makeBar({ width = 120, height = 10 } = {}) {
     const wrap = document.createElement('div');
-    wrap.style.width = `${width}px`;
-    wrap.style.height = `${height}px`;
-    wrap.style.borderRadius = '999px';
-    wrap.style.background = 'rgba(255, 216, 77, 0.12)';
-    wrap.style.border = '1px solid rgba(255, 216, 77, 0.22)';
-    wrap.style.overflow = 'hidden';
+    wrap.className = 'gpd-bar';
     const fill = document.createElement('div');
-    fill.style.height = '100%';
-    fill.style.width = '0%';
-    fill.style.background = 'rgba(255, 216, 77, 0.78)';
-    fill.style.borderRadius = '999px';
+    fill.className = 'gpd-bar-fill';
     wrap.appendChild(fill);
     return { wrap, fill };
 }
@@ -107,54 +129,40 @@ function setBar(bar, value01) {
 
 function makeKeyPill(label) {
     const el = document.createElement('div');
+    el.className = 'gpd-key-pill';
     el.textContent = label;
-    el.style.padding = '4px 8px';
-    el.style.borderRadius = '10px';
-    el.style.border = '1px solid rgba(255, 216, 77, 0.22)';
-    el.style.background = 'rgba(0,0,0,0.25)';
-    el.style.fontSize = '12px';
-    el.style.fontWeight = '900';
-    el.style.letterSpacing = '0.2px';
-    el.style.opacity = '0.75';
-    el.style.userSelect = 'none';
     return el;
 }
 
 function setKeyPill(pill, pressed) {
-    pill.style.opacity = pressed ? '1' : '0.55';
-    pill.style.background = pressed ? 'rgba(255, 216, 77, 0.20)' : 'rgba(0,0,0,0.25)';
-    pill.style.borderColor = pressed ? 'rgba(255, 216, 77, 0.55)' : 'rgba(255, 216, 77, 0.22)';
+    pill.classList.toggle('is-pressed', !!pressed);
 }
 
-function makeValueRow(label) {
+function makeValueRow(label, { tooltip = null } = {}) {
     const row = document.createElement('div');
-    row.style.display = 'flex';
-    row.style.alignItems = 'center';
-    row.style.justifyContent = 'space-between';
-    row.style.gap = '10px';
+    row.className = 'gpd-value-row';
 
     const k = document.createElement('div');
+    k.className = 'gpd-value-key';
     k.textContent = label;
-    k.style.fontSize = '12px';
-    k.style.fontWeight = '900';
-    k.style.opacity = '0.85';
 
     const v = document.createElement('div');
+    v.className = 'gpd-value-val';
     v.textContent = '—';
-    v.style.fontSize = '12px';
-    v.style.fontWeight = '900';
-    v.style.opacity = '0.95';
 
     row.appendChild(k);
     row.appendChild(v);
-    return { row, v };
+    if (tooltip) {
+        row.title = tooltip;
+        k.title = tooltip;
+        v.title = tooltip;
+    }
+    return { row, k, v };
 }
 
 function makeDraggable(wrap, handle) {
     if (!wrap || !handle) return;
-    handle.style.cursor = 'grab';
-    handle.style.userSelect = 'none';
-    handle.style.touchAction = 'none';
+    handle.classList.add('gpd-draggable');
 
     const onPointerDown = (event) => {
         if (event.button !== 0) return;
@@ -166,7 +174,7 @@ function makeDraggable(wrap, handle) {
         wrap.style.top = `${rect.top}px`;
         wrap.style.bottom = '';
         wrap.style.right = '';
-        handle.style.cursor = 'grabbing';
+        handle.classList.add('is-dragging');
 
         const onPointerMove = (moveEvent) => {
             wrap.style.left = `${moveEvent.clientX - offsetX}px`;
@@ -174,7 +182,7 @@ function makeDraggable(wrap, handle) {
         };
 
         const onPointerUp = () => {
-            handle.style.cursor = 'grab';
+            handle.classList.remove('is-dragging');
             window.removeEventListener('pointermove', onPointerMove);
             window.removeEventListener('pointerup', onPointerUp);
             window.removeEventListener('pointercancel', onPointerUp);
@@ -190,11 +198,8 @@ function makeDraggable(wrap, handle) {
 
 function makeSmallLabel(text) {
     const el = document.createElement('div');
+    el.className = 'gpd-small-label';
     el.textContent = text;
-    el.style.fontSize = '11px';
-    el.style.fontWeight = '900';
-    el.style.opacity = '0.72';
-    el.style.letterSpacing = '0.2px';
     return el;
 }
 
@@ -218,49 +223,21 @@ export class GameplayDebugPanel {
 
         this.root = document.createElement('div');
         this.root.id = 'hud-gameplay-debug';
-        this.root.style.position = 'fixed';
-        this.root.style.left = '16px';
-        this.root.style.top = '84px';
-        this.root.style.zIndex = '120';
-        this.root.style.pointerEvents = 'auto';
-        this.root.style.userSelect = 'none';
-        this.root.style.color = '#ffd84d';
-        this.root.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
-        this.root.style.background = 'rgba(0,0,0,0.68)';
-        this.root.style.border = '1px solid rgba(255, 216, 77, 0.25)';
-        this.root.style.backdropFilter = 'blur(6px)';
-        this.root.style.borderRadius = '14px';
-        this.root.style.boxShadow = '0 14px 40px rgba(0,0,0,0.45)';
-        this.root.style.minWidth = '680px';
-        this.root.style.width = '760px';
-        this.root.style.height = '360px';
-        this.root.style.resize = 'both';
-        this.root.style.overflow = 'hidden';
+        this.root.className = 'is-expanded';
 
         this.header = document.createElement('div');
-        this.header.style.display = 'flex';
-        this.header.style.alignItems = 'center';
-        this.header.style.justifyContent = 'space-between';
-        this.header.style.gap = '10px';
-        this.header.style.padding = '10px 12px';
-        this.header.style.borderBottom = '1px solid rgba(255, 216, 77, 0.18)';
-        this.header.style.background = 'rgba(0,0,0,0.18)';
+        this.header.className = 'gpd-header';
 
         const title = document.createElement('div');
         title.textContent = 'Gameplay Debug (Rapier)';
-        title.style.fontSize = '12px';
-        title.style.fontWeight = '950';
-        title.style.letterSpacing = '0.7px';
-        title.style.textTransform = 'uppercase';
+        title.className = 'gpd-title';
 
         const btnRow = document.createElement('div');
-        btnRow.style.display = 'flex';
-        btnRow.style.gap = '8px';
+        btnRow.className = 'gpd-btn-row';
 
-        this.btnToggleLogs = makeBtn('Logs');
-        this.btnClear = makeBtn('Clear');
-        this.btnClose = makeBtn('✕');
-        this.btnClose.style.padding = '6px 10px';
+        this.btnToggleLogs = makeBtn('Logs', HELP.buttons.logs);
+        this.btnClear = makeBtn('Clear', HELP.buttons.clear);
+        this.btnClose = makeBtn('✕', HELP.buttons.close);
 
         btnRow.appendChild(this.btnToggleLogs);
         btnRow.appendChild(this.btnClear);
@@ -271,56 +248,29 @@ export class GameplayDebugPanel {
         this.root.appendChild(this.header);
 
         this.body = document.createElement('div');
-        this.body.style.display = 'grid';
-        this.body.style.gridTemplateColumns = '360px 1fr';
-        this.body.style.height = 'calc(100% - 44px)';
-        this.body.style.minHeight = '0';
+        this.body.className = 'gpd-body';
         this.root.appendChild(this.body);
 
         this.left = document.createElement('div');
-        this.left.style.padding = '10px 12px 12px';
-        this.left.style.display = 'flex';
-        this.left.style.flexDirection = 'column';
-        this.left.style.gap = '10px';
-        this.left.style.minWidth = '360px';
-        this.left.style.maxWidth = '360px';
-        this.left.style.borderRight = '1px solid rgba(255, 216, 77, 0.14)';
-        this.left.style.overflowX = 'hidden';
-        this.left.style.overflowY = 'auto';
-        this.left.style.minHeight = '0';
+        this.left.className = 'gpd-left';
         this.body.appendChild(this.left);
 
         this.logsWrap = document.createElement('div');
-        this.logsWrap.style.padding = '10px 12px 12px';
-        this.logsWrap.style.display = 'flex';
-        this.logsWrap.style.flexDirection = 'column';
-        this.logsWrap.style.gap = '8px';
-        this.logsWrap.style.minWidth = '0';
+        this.logsWrap.className = 'gpd-right';
         this.body.appendChild(this.logsWrap);
 
         this.treeWrap = document.createElement('div');
-        this.treeWrap.style.display = 'flex';
-        this.treeWrap.style.flexDirection = 'column';
-        this.treeWrap.style.gap = '8px';
-        this.treeWrap.style.minHeight = '140px';
-        this.treeWrap.style.borderRadius = '12px';
-        this.treeWrap.style.border = '1px solid rgba(255, 216, 77, 0.16)';
-        this.treeWrap.style.background = 'rgba(0,0,0,0.22)';
-        this.treeWrap.style.padding = '10px';
+        this.treeWrap.className = 'gpd-tree-wrap';
         this.logsWrap.appendChild(this.treeWrap);
 
         const keysTitle = document.createElement('div');
         keysTitle.textContent = 'Keys';
-        keysTitle.style.fontSize = '12px';
-        keysTitle.style.fontWeight = '950';
-        keysTitle.style.opacity = '0.9';
+        keysTitle.className = 'gpd-section-title';
+        keysTitle.title = HELP.keys.title;
         this.left.appendChild(keysTitle);
 
         this.keysRow = document.createElement('div');
-        this.keysRow.style.display = 'flex';
-        this.keysRow.style.flexWrap = 'wrap';
-        this.keysRow.style.gap = '6px';
-        this.keysRow.style.alignItems = 'center';
+        this.keysRow.className = 'gpd-keys-row';
         this.left.appendChild(this.keysRow);
 
         this.keyPills = {
@@ -331,60 +281,53 @@ export class GameplayDebugPanel {
             space: makeKeyPill('Space'),
             h: makeKeyPill('H')
         };
+        this.keyPills.left.title = HELP.keys.left;
+        this.keyPills.right.title = HELP.keys.right;
+        this.keyPills.up.title = HELP.keys.up;
+        this.keyPills.down.title = HELP.keys.down;
+        this.keyPills.space.title = HELP.keys.space;
+        this.keyPills.h.title = HELP.keys.h;
         for (const pill of Object.values(this.keyPills)) {
             this.keysRow.appendChild(pill);
         }
 
         const inputTitle = document.createElement('div');
         inputTitle.textContent = 'Event Input → Rapier';
-        inputTitle.style.fontSize = '12px';
-        inputTitle.style.fontWeight = '950';
-        inputTitle.style.opacity = '0.9';
-        inputTitle.style.marginTop = '4px';
+        inputTitle.className = 'gpd-section-title gpd-mt-4';
+        inputTitle.title = HELP.input.steer;
         this.left.appendChild(inputTitle);
 
         this.inputHint = makeSmallLabel('EventBus: input:controls');
         this.left.appendChild(this.inputHint);
 
         this.inputGrid = document.createElement('div');
-        this.inputGrid.style.display = 'grid';
-        this.inputGrid.style.gridTemplateColumns = '1fr';
-        this.inputGrid.style.gap = '8px';
+        this.inputGrid.className = 'gpd-grid';
         this.left.appendChild(this.inputGrid);
 
         this._input = { steering: 0, throttle: 0, brake: 0, handbrake: 0, headlights: false };
         this._rapierInput = { steering: 0, throttle: 0, brake: 0, handbrake: 0 };
 
         const steerRow = document.createElement('div');
-        steerRow.style.display = 'flex';
-        steerRow.style.alignItems = 'center';
-        steerRow.style.justifyContent = 'space-between';
-        steerRow.style.gap = '10px';
+        steerRow.className = 'gpd-value-row';
+        steerRow.title = HELP.input.steer;
         const steerLabel = document.createElement('div');
         steerLabel.textContent = 'Steer';
-        steerLabel.style.fontSize = '12px';
-        steerLabel.style.fontWeight = '900';
-        steerLabel.style.opacity = '0.85';
+        steerLabel.className = 'gpd-value-key';
+        steerLabel.title = HELP.input.steer;
         const steerViz = document.createElement('div');
-        steerViz.style.display = 'flex';
-        steerViz.style.alignItems = 'center';
-        steerViz.style.gap = '8px';
-        steerViz.style.minWidth = '180px';
-        steerViz.style.justifyContent = 'flex-end';
+        steerViz.className = 'gpd-steer-viz';
+        steerViz.title = HELP.input.steer;
         this.steerLeft = document.createElement('div');
         this.steerLeft.textContent = '←';
-        this.steerLeft.style.fontWeight = '900';
-        this.steerLeft.style.opacity = '0.35';
+        this.steerLeft.className = 'gpd-steer-arrow';
         this.steerMid = document.createElement('div');
         this.steerMid.textContent = '•';
-        this.steerMid.style.opacity = '0.6';
+        this.steerMid.className = 'gpd-steer-mid';
         this.steerRight = document.createElement('div');
         this.steerRight.textContent = '→';
-        this.steerRight.style.fontWeight = '900';
-        this.steerRight.style.opacity = '0.35';
+        this.steerRight.className = 'gpd-steer-arrow';
         this.steerVal = document.createElement('div');
-        this.steerVal.style.fontWeight = '900';
-        this.steerVal.style.opacity = '0.95';
+        this.steerVal.className = 'gpd-value-val';
         this.steerVal.textContent = '0.00';
         steerViz.appendChild(this.steerLeft);
         steerViz.appendChild(this.steerMid);
@@ -395,76 +338,65 @@ export class GameplayDebugPanel {
         this.inputGrid.appendChild(steerRow);
 
         const throttleRow = document.createElement('div');
-        throttleRow.style.display = 'flex';
-        throttleRow.style.alignItems = 'center';
-        throttleRow.style.justifyContent = 'space-between';
-        throttleRow.style.gap = '10px';
+        throttleRow.className = 'gpd-value-row';
+        throttleRow.title = HELP.input.throttle;
         const throttleLabel = document.createElement('div');
         throttleLabel.textContent = 'Throttle';
-        throttleLabel.style.fontSize = '12px';
-        throttleLabel.style.fontWeight = '900';
-        throttleLabel.style.opacity = '0.85';
+        throttleLabel.className = 'gpd-value-key';
+        throttleLabel.title = HELP.input.throttle;
         this.throttleBar = makeBar({ width: 170, height: 10 });
+        this.throttleBar.wrap.title = HELP.input.throttle;
         throttleRow.appendChild(throttleLabel);
         throttleRow.appendChild(this.throttleBar.wrap);
         this.inputGrid.appendChild(throttleRow);
 
         const brakeRow = document.createElement('div');
-        brakeRow.style.display = 'flex';
-        brakeRow.style.alignItems = 'center';
-        brakeRow.style.justifyContent = 'space-between';
-        brakeRow.style.gap = '10px';
+        brakeRow.className = 'gpd-value-row';
+        brakeRow.title = HELP.input.brake;
         const brakeLabel = document.createElement('div');
         brakeLabel.textContent = 'Brake';
-        brakeLabel.style.fontSize = '12px';
-        brakeLabel.style.fontWeight = '900';
-        brakeLabel.style.opacity = '0.85';
+        brakeLabel.className = 'gpd-value-key';
+        brakeLabel.title = HELP.input.brake;
         this.brakeBar = makeBar({ width: 170, height: 10 });
-        this.brakeBar.fill.style.background = 'rgba(255, 95, 95, 0.85)';
+        this.brakeBar.wrap.classList.add('is-brake');
+        this.brakeBar.wrap.title = HELP.input.brake;
         brakeRow.appendChild(brakeLabel);
         brakeRow.appendChild(this.brakeBar.wrap);
         this.inputGrid.appendChild(brakeRow);
 
         const togglesRow = document.createElement('div');
-        togglesRow.style.display = 'flex';
-        togglesRow.style.alignItems = 'center';
-        togglesRow.style.justifyContent = 'space-between';
-        togglesRow.style.gap = '10px';
+        togglesRow.className = 'gpd-value-row';
+        togglesRow.title = HELP.input.toggles;
         const togglesLabel = document.createElement('div');
         togglesLabel.textContent = 'Toggles';
-        togglesLabel.style.fontSize = '12px';
-        togglesLabel.style.fontWeight = '900';
-        togglesLabel.style.opacity = '0.85';
+        togglesLabel.className = 'gpd-value-key';
+        togglesLabel.title = HELP.input.toggles;
 
         const toggles = document.createElement('div');
-        toggles.style.display = 'flex';
-        toggles.style.alignItems = 'center';
-        toggles.style.gap = '12px';
+        toggles.className = 'gpd-toggle-row';
 
         const hb = document.createElement('div');
-        hb.style.display = 'flex';
-        hb.style.alignItems = 'center';
-        hb.style.gap = '6px';
+        hb.className = 'gpd-toggle';
         const hbDot = makeDot();
+        hbDot.classList.add('gpd-dot--handbrake');
         const hbText = document.createElement('div');
         hbText.textContent = 'Handbrake';
-        hbText.style.fontSize = '12px';
-        hbText.style.fontWeight = '900';
-        hbText.style.opacity = '0.9';
+        hbText.className = 'gpd-toggle-label';
+        hbText.title = HELP.input.handbrake;
+        hbDot.title = HELP.input.handbrake;
         hb.appendChild(hbDot);
         hb.appendChild(hbText);
         this._hbDot = hbDot;
 
         const hl = document.createElement('div');
-        hl.style.display = 'flex';
-        hl.style.alignItems = 'center';
-        hl.style.gap = '6px';
+        hl.className = 'gpd-toggle';
         const hlDot = makeDot();
+        hlDot.classList.add('gpd-dot--headlights');
         const hlText = document.createElement('div');
         hlText.textContent = 'Headlights';
-        hlText.style.fontSize = '12px';
-        hlText.style.fontWeight = '900';
-        hlText.style.opacity = '0.9';
+        hlText.className = 'gpd-toggle-label';
+        hlText.title = HELP.input.headlights;
+        hlDot.title = HELP.input.headlights;
         hl.appendChild(hlDot);
         hl.appendChild(hlText);
         this._hlDot = hlDot;
@@ -477,137 +409,148 @@ export class GameplayDebugPanel {
 
         const rapierInTitle = document.createElement('div');
         rapierInTitle.textContent = 'Rapier Input (latched)';
-        rapierInTitle.style.fontSize = '12px';
-        rapierInTitle.style.fontWeight = '950';
-        rapierInTitle.style.opacity = '0.9';
-        rapierInTitle.style.marginTop = '4px';
+        rapierInTitle.className = 'gpd-section-title gpd-mt-4';
+        rapierInTitle.title = HELP.rapierInput.title;
         this.left.appendChild(rapierInTitle);
         this.left.appendChild(makeSmallLabel('RapierVehicleSim entry.input'));
 
         this.rapierInputGrid = document.createElement('div');
-        this.rapierInputGrid.style.display = 'grid';
-        this.rapierInputGrid.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
-        this.rapierInputGrid.style.gap = '8px 10px';
+        this.rapierInputGrid.className = 'gpd-grid gpd-grid--two';
         this.left.appendChild(this.rapierInputGrid);
 
-        this.rapierInSteer = makeValueRow('Steer');
+        this.rapierInSteer = makeValueRow('Steer', { tooltip: HELP.rapierInput.steer });
         this.rapierInputGrid.appendChild(this.rapierInSteer.row);
-        this.rapierInThrottle = makeValueRow('Throttle');
+        this.rapierInThrottle = makeValueRow('Throttle', { tooltip: HELP.rapierInput.throttle });
         this.rapierInputGrid.appendChild(this.rapierInThrottle.row);
-        this.rapierInBrake = makeValueRow('Brake');
+        this.rapierInBrake = makeValueRow('Brake', { tooltip: HELP.rapierInput.brake });
         this.rapierInputGrid.appendChild(this.rapierInBrake.row);
-        this.rapierInHB = makeValueRow('Handbrake');
+        this.rapierInHB = makeValueRow('Handbrake', { tooltip: HELP.rapierInput.handbrake });
         this.rapierInputGrid.appendChild(this.rapierInHB.row);
 
         const outTitle = document.createElement('div');
-        outTitle.textContent = 'Vehicle Output';
-        outTitle.style.fontSize = '12px';
-        outTitle.style.fontWeight = '950';
-        outTitle.style.opacity = '0.9';
-        outTitle.style.marginTop = '4px';
+        outTitle.textContent = 'Outputs';
+        outTitle.className = 'gpd-section-title gpd-mt-4';
         this.left.appendChild(outTitle);
-        this.left.appendChild(makeSmallLabel('Rapier + EngineSim (computed)'));
 
-        this.outputGrid = document.createElement('div');
-        this.outputGrid.style.display = 'grid';
-        this.outputGrid.style.gridTemplateColumns = '1fr';
-        this.outputGrid.style.gap = '8px';
-        this.left.appendChild(this.outputGrid);
+        const rapierOutTitle = document.createElement('div');
+        rapierOutTitle.textContent = 'Rapier Output';
+        rapierOutTitle.className = 'gpd-section-title is-muted';
+        rapierOutTitle.title = HELP.outputs.rapierTitle;
+        this.left.appendChild(rapierOutTitle);
+
+        this.rapierOutGrid = document.createElement('div');
+        this.rapierOutGrid.className = 'gpd-grid';
+        this.left.appendChild(this.rapierOutGrid);
 
         const readyRow = document.createElement('div');
-        readyRow.style.display = 'flex';
-        readyRow.style.alignItems = 'center';
-        readyRow.style.justifyContent = 'space-between';
-        readyRow.style.gap = '10px';
+        readyRow.className = 'gpd-value-row';
+        readyRow.title = HELP.outputs.ready;
         const readyLabel = document.createElement('div');
         readyLabel.textContent = 'Vehicle';
-        readyLabel.style.fontSize = '12px';
-        readyLabel.style.fontWeight = '900';
-        readyLabel.style.opacity = '0.85';
+        readyLabel.className = 'gpd-value-key';
+        readyLabel.title = HELP.outputs.ready;
         const readyR = document.createElement('div');
-        readyR.style.display = 'flex';
-        readyR.style.alignItems = 'center';
-        readyR.style.gap = '8px';
+        readyR.className = 'gpd-row-right';
+        readyR.title = HELP.outputs.ready;
         this.readyDot = makeDot();
+        this.readyDot.title = HELP.outputs.ready;
         this.readyText = document.createElement('div');
         this.readyText.textContent = '—';
-        this.readyText.style.fontSize = '12px';
-        this.readyText.style.fontWeight = '900';
-        this.readyText.style.opacity = '0.95';
+        this.readyText.className = 'gpd-value-val';
+        this.readyText.title = HELP.outputs.ready;
         readyR.appendChild(this.readyDot);
         readyR.appendChild(this.readyText);
         readyRow.appendChild(readyLabel);
         readyRow.appendChild(readyR);
-        this.outputGrid.appendChild(readyRow);
+        this.rapierOutGrid.appendChild(readyRow);
 
-        this.speedRow = makeValueRow('Speed (km/h)');
-        this.outputGrid.appendChild(this.speedRow.row);
-        this.yawRow = makeValueRow('Yaw (deg)');
-        this.outputGrid.appendChild(this.yawRow.row);
-        this.gearRow = makeValueRow('Gear');
-        this.outputGrid.appendChild(this.gearRow.row);
-        this.rpmRow = makeValueRow('RPM (engine sim)');
-        this.outputGrid.appendChild(this.rpmRow.row);
-
-        this.driveRow = makeValueRow('DriveF');
-        this.outputGrid.appendChild(this.driveRow.row);
-        this.brakeForceRow = makeValueRow('BrakeF');
-        this.outputGrid.appendChild(this.brakeForceRow.row);
+        this.speedRow = makeValueRow('Speed (km/h)', { tooltip: HELP.outputs.speed });
+        this.rapierOutGrid.appendChild(this.speedRow.row);
+        this.yawRow = makeValueRow('Yaw (deg)', { tooltip: HELP.outputs.yaw });
+        this.rapierOutGrid.appendChild(this.yawRow.row);
+        this.driveRow = makeValueRow('DriveF (N)', { tooltip: HELP.outputs.driveForce });
+        this.rapierOutGrid.appendChild(this.driveRow.row);
+        this.brakeForceRow = makeValueRow('BrakeF (N)', { tooltip: HELP.outputs.brakeForce });
+        this.rapierOutGrid.appendChild(this.brakeForceRow.row);
 
         const wheelsRow = document.createElement('div');
-        wheelsRow.style.display = 'flex';
-        wheelsRow.style.alignItems = 'flex-start';
-        wheelsRow.style.justifyContent = 'space-between';
-        wheelsRow.style.gap = '10px';
+        wheelsRow.className = 'gpd-value-row gpd-wheels-row';
+        wheelsRow.title = HELP.outputs.wheels;
         const wheelsLabel = document.createElement('div');
         wheelsLabel.textContent = 'Wheels';
-        wheelsLabel.style.fontSize = '12px';
-        wheelsLabel.style.fontWeight = '900';
-        wheelsLabel.style.opacity = '0.85';
-        wheelsLabel.style.paddingTop = '4px';
+        wheelsLabel.className = 'gpd-value-key gpd-pad-top-4';
+        wheelsLabel.title = HELP.outputs.wheels;
 
         this.wheelsDots = document.createElement('div');
-        this.wheelsDots.style.display = 'flex';
-        this.wheelsDots.style.flexDirection = 'column';
-        this.wheelsDots.style.alignItems = 'stretch';
-        this.wheelsDots.style.justifyContent = 'flex-start';
-        this.wheelsDots.style.gap = '6px';
-        this.wheelsDots.style.minWidth = '220px';
+        this.wheelsDots.className = 'gpd-wheels-dots';
+        this.wheelsDots.title = HELP.outputs.wheels;
         this._wheelCells = [];
         this._wheelSig = '';
 
         wheelsRow.appendChild(wheelsLabel);
         wheelsRow.appendChild(this.wheelsDots);
-        this.outputGrid.appendChild(wheelsRow);
+        this.rapierOutGrid.appendChild(wheelsRow);
+
+        const engineOutTitle = document.createElement('div');
+        engineOutTitle.textContent = 'Engine / Transmission';
+        engineOutTitle.className = 'gpd-section-title is-muted gpd-mt-6';
+        engineOutTitle.title = HELP.outputs.engineTitle;
+        this.left.appendChild(engineOutTitle);
+
+        this.engineOutGrid = document.createElement('div');
+        this.engineOutGrid.className = 'gpd-grid';
+        this.left.appendChild(this.engineOutGrid);
+
+        const cfgLabel = makeSmallLabel('Config');
+        cfgLabel.title = HELP.outputs.engineTitle;
+        this.engineOutGrid.appendChild(cfgLabel);
+
+        this.engineForceCapRow = makeValueRow('WheelForceCap (N)', { tooltip: HELP.engineConfig.wheelForceCap });
+        this.engineOutGrid.appendChild(this.engineForceCapRow.row);
+        this.maxTorqueCfgRow = makeValueRow('MaxTorque (N*m)', { tooltip: HELP.engineConfig.maxTorque });
+        this.engineOutGrid.appendChild(this.maxTorqueCfgRow.row);
+        this.clutchMaxTorqueCfgRow = makeValueRow('ClutchMaxTq (N*m)', { tooltip: HELP.engineConfig.clutchMaxTorque });
+        this.engineOutGrid.appendChild(this.clutchMaxTorqueCfgRow.row);
+        this.finalDriveCfgRow = makeValueRow('FinalDrive', { tooltip: HELP.engineConfig.finalDrive });
+        this.engineOutGrid.appendChild(this.finalDriveCfgRow.row);
+        this.shiftRpmCfgRow = makeValueRow('ShiftRPM (down/up)', { tooltip: HELP.engineConfig.shiftRpm });
+        this.engineOutGrid.appendChild(this.shiftRpmCfgRow.row);
+
+        const stateLabel = makeSmallLabel('State');
+        stateLabel.title = HELP.outputs.engineTitle;
+        this.engineOutGrid.appendChild(stateLabel);
+
+        this.gearRow = makeValueRow('Gear', { tooltip: HELP.engineState.gear });
+        this.engineOutGrid.appendChild(this.gearRow.row);
+        this.rpmRow = makeValueRow('RPM', { tooltip: HELP.engineState.rpm });
+        this.engineOutGrid.appendChild(this.rpmRow.row);
+        this.engineTorqueRow = makeValueRow('EngTorque (N*m)', { tooltip: HELP.engineState.torque });
+        this.engineOutGrid.appendChild(this.engineTorqueRow.row);
+        this.drivelineRpmRow = makeValueRow('DrivelineRPM', { tooltip: HELP.engineState.drivelineRpm });
+        this.engineOutGrid.appendChild(this.drivelineRpmRow.row);
+        this.slipRpmRow = makeValueRow('SlipRPM', { tooltip: HELP.engineState.slipRpm });
+        this.engineOutGrid.appendChild(this.slipRpmRow.row);
+        this.clutchRow = makeValueRow('Clutch (cmd/cpl)', { tooltip: HELP.engineState.clutch });
+        this.engineOutGrid.appendChild(this.clutchRow.row);
+        this.clutchTorqueRow = makeValueRow('ClutchTq (N*m)', { tooltip: HELP.engineState.clutchTorque });
+        this.engineOutGrid.appendChild(this.clutchTorqueRow.row);
+        this.shiftRow = makeValueRow('Shift', { tooltip: HELP.engineState.shift });
+        this.engineOutGrid.appendChild(this.shiftRow.row);
 
         const logsTitleRow = document.createElement('div');
-        logsTitleRow.style.display = 'flex';
-        logsTitleRow.style.alignItems = 'center';
-        logsTitleRow.style.justifyContent = 'space-between';
-        logsTitleRow.style.gap = '10px';
+        logsTitleRow.className = 'gpd-logs-title-row';
         const logsTitle = document.createElement('div');
         logsTitle.textContent = 'Logs';
-        logsTitle.style.fontSize = '12px';
-        logsTitle.style.fontWeight = '950';
-        logsTitle.style.opacity = '0.9';
+        logsTitle.className = 'gpd-logs-title';
         this.logsHint = document.createElement('div');
+        this.logsHint.className = 'gpd-logs-hint';
         this.logsHint.textContent = '';
-        this.logsHint.style.fontSize = '11px';
-        this.logsHint.style.fontWeight = '900';
-        this.logsHint.style.opacity = '0.55';
-        this.logsHint.style.display = 'none';
         logsTitleRow.appendChild(logsTitle);
         logsTitleRow.appendChild(this.logsHint);
         this.logsWrap.appendChild(logsTitleRow);
 
         this.logs = document.createElement('div');
-        this.logs.style.flex = '1 1 auto';
-        this.logs.style.minHeight = '0';
-        this.logs.style.overflow = 'auto';
-        this.logs.style.padding = '8px 10px';
-        this.logs.style.borderRadius = '12px';
-        this.logs.style.border = '1px solid rgba(255, 216, 77, 0.16)';
-        this.logs.style.background = 'rgba(0,0,0,0.30)';
+        this.logs.className = 'gpd-logs';
         this.logsWrap.appendChild(this.logs);
 
         makeDraggable(this.root, this.header);
@@ -655,26 +598,15 @@ export class GameplayDebugPanel {
 
     setExpanded(expanded) {
         this._expanded = !!expanded;
-        if (this._expanded) {
-            this.btnToggleLogs.textContent = 'Logs: On';
-            this.body.style.gridTemplateColumns = '360px 1fr';
-            this.root.style.minWidth = '620px';
-        } else {
-            this.btnToggleLogs.textContent = 'Logs: Off';
-            this.body.style.gridTemplateColumns = '360px 0px';
-            this.root.style.minWidth = '380px';
-        }
+        this.root.classList.toggle('is-expanded', this._expanded);
+        this.btnToggleLogs.textContent = this._expanded ? 'Logs: On' : 'Logs: Off';
         this._scheduleMinHeightRefresh();
     }
 
     log(message) {
         if (this._destroyed) return;
         const line = document.createElement('div');
-        line.style.whiteSpace = 'pre-wrap';
-        line.style.wordBreak = 'break-word';
-        line.style.fontSize = '12px';
-        line.style.fontWeight = '800';
-        line.style.opacity = '0.92';
+        line.className = 'gpd-log-line';
         const ts = new Date();
         const hh = String(ts.getHours()).padStart(2, '0');
         const mm = String(ts.getMinutes()).padStart(2, '0');
@@ -710,13 +642,13 @@ export class GameplayDebugPanel {
 
         const s = clamp(this._input.steering, -1, 1);
         this.steerVal.textContent = fmt(s, 2);
-        this.steerLeft.style.opacity = s < -0.02 ? '1' : '0.35';
-        this.steerRight.style.opacity = s > 0.02 ? '1' : '0.35';
+        this.steerLeft.classList.toggle('is-active', s < -0.02);
+        this.steerRight.classList.toggle('is-active', s > 0.02);
 
         setBar(this.throttleBar, clamp(this._input.throttle, 0, 1));
         setBar(this.brakeBar, clamp(this._input.brake, 0, 1));
-        setDot(this._hbDot, (this._input.handbrake ?? 0) > 0.5, { onColor: '#ffcc33', offColor: 'rgba(255, 216, 77, 0.12)' });
-        setDot(this._hlDot, !!this._input.headlights, { onColor: '#7bb6ff', offColor: 'rgba(255, 216, 77, 0.12)' });
+        setDot(this._hbDot, (this._input.handbrake ?? 0) > 0.5);
+        setDot(this._hlDot, !!this._input.headlights);
     }
 
     setRapierDebug(debug) {
@@ -724,6 +656,23 @@ export class GameplayDebugPanel {
         if (!debug) {
             setDot(this.readyDot, false);
             this.readyText.textContent = '—';
+            this.speedRow.v.textContent = '—';
+            this.yawRow.v.textContent = '—';
+            this.driveRow.v.textContent = '—';
+            this.brakeForceRow.v.textContent = '—';
+            this.engineForceCapRow.v.textContent = '—';
+            this.maxTorqueCfgRow.v.textContent = '—';
+            this.clutchMaxTorqueCfgRow.v.textContent = '—';
+            this.finalDriveCfgRow.v.textContent = '—';
+            this.shiftRpmCfgRow.v.textContent = '—';
+            this.gearRow.v.textContent = '—';
+            this.rpmRow.v.textContent = '—';
+            this.engineTorqueRow.v.textContent = '—';
+            this.drivelineRpmRow.v.textContent = '—';
+            this.slipRpmRow.v.textContent = '—';
+            this.clutchRow.v.textContent = '—';
+            this.clutchTorqueRow.v.textContent = '—';
+            this.shiftRow.v.textContent = '—';
             this._lastSpinDeg = 0;
             this._syncWheelCells([]);
             return;
@@ -746,13 +695,37 @@ export class GameplayDebugPanel {
         const yawDeg = (debug.locomotion?.yaw ?? 0) * (180 / Math.PI);
         const gearLabel = debug.drivetrain?.gearLabel ?? (debug.drivetrain?.gear ?? null);
         const rpm = debug.drivetrain?.rpm ?? 0;
+        const engineTorque = debug.drivetrain?.torque ?? null;
+        const drivelineRpm = debug.drivetrain?.drivelineRpm ?? null;
+        const clutchTorque = debug.drivetrain?.clutchTorque ?? null;
+        const clutch = debug.drivetrain?.clutch ?? null;
+        const coupling = debug.drivetrain?.coupling ?? null;
+        const slipOmega = debug.drivetrain?.slipOmega ?? null;
+        const slipRpm = Number.isFinite(slipOmega) ? (slipOmega * 60 / (Math.PI * 2)) : null;
+        const shiftBlend = debug.drivetrain?.shiftBlend ?? null;
+        const shiftTimer = debug.drivetrain?.shiftTimer ?? null;
+        const shiftCooldown = debug.drivetrain?.shiftCooldown ?? null;
         const driveF = debug.forces?.driveForce ?? 0;
         const brakeF = debug.forces?.brakeForce ?? 0;
 
         this.speedRow.v.textContent = fmt(speedKph, 1);
         this.yawRow.v.textContent = fmt(yawDeg, 1);
+        const engineCfg = debug.engineSimConfig ?? null;
+        const shiftDownRpm = engineCfg?.shiftDownRpm ?? null;
+        const shiftUpRpm = engineCfg?.shiftUpRpm ?? null;
+        this.engineForceCapRow.v.textContent = fmt(engineCfg?.wheelForceCap, 0);
+        this.maxTorqueCfgRow.v.textContent = fmt(engineCfg?.maxTorque, 0);
+        this.clutchMaxTorqueCfgRow.v.textContent = fmt(engineCfg?.clutchMaxTorque, 0);
+        this.finalDriveCfgRow.v.textContent = fmt(engineCfg?.finalDrive, 2);
+        this.shiftRpmCfgRow.v.textContent = `${fmt(shiftDownRpm, 0)} / ${fmt(shiftUpRpm, 0)}`;
         this.gearRow.v.textContent = gearLabel != null ? String(gearLabel) : '—';
         this.rpmRow.v.textContent = fmt(rpm, 0);
+        this.engineTorqueRow.v.textContent = fmt(engineTorque, 0);
+        this.drivelineRpmRow.v.textContent = fmt(drivelineRpm, 0);
+        this.slipRpmRow.v.textContent = fmt(slipRpm, 0);
+        this.clutchRow.v.textContent = `${fmt(clutch, 2)} / ${fmt(coupling, 2)}`;
+        this.clutchTorqueRow.v.textContent = fmt(clutchTorque, 0);
+        this.shiftRow.v.textContent = `${fmt(shiftBlend, 2)} t:${fmt(shiftTimer, 2)} cd:${fmt(shiftCooldown, 2)}`;
         this.driveRow.v.textContent = fmt(driveF, 0);
         this.brakeForceRow.v.textContent = fmt(brakeF, 0);
 
@@ -841,20 +814,11 @@ export class GameplayDebugPanel {
             this._wheelCells.length = 0;
             const makeWheelCell = (labelText) => {
                 const cell = document.createElement('div');
-                cell.style.display = 'grid';
-                cell.style.gridTemplateColumns = '16px 14px 14px';
-                cell.style.alignItems = 'center';
-                cell.style.columnGap = '8px';
-                cell.style.padding = '4px 6px';
-                cell.style.borderRadius = '10px';
-                cell.style.border = '1px solid rgba(255, 216, 77, 0.14)';
-                cell.style.background = 'rgba(0,0,0,0.14)';
-                cell.style.minWidth = '0';
+                cell.className = 'gpd-wheel-cell';
                 if (labelText) cell.title = labelText;
 
                 const dot = makeDot();
-                dot.style.width = '12px';
-                dot.style.height = '12px';
+                dot.classList.add('gpd-dot--contact');
 
                 const yaw = makeYawArrow();
                 const spin = makeSpinViz();
@@ -868,10 +832,7 @@ export class GameplayDebugPanel {
 
             for (const g of orderedGroups) {
                 const row = document.createElement('div');
-                row.style.display = 'grid';
-                row.style.gridTemplateColumns = '1fr 1fr';
-                row.style.columnGap = '10px';
-                row.style.alignItems = 'center';
+                row.className = 'gpd-wheel-row';
 
                 const left = makeWheelCell(g.left?.label ?? '');
                 const right = makeWheelCell(g.right?.label ?? '');
@@ -895,46 +856,32 @@ export class GameplayDebugPanel {
             const cell = this._wheelCells[i];
             const w = cell.wheelId != null ? (wheelById.get(cell.wheelId) ?? null) : null;
             const inContact = w ? !!w.inContact : false;
-            setDot(cell.dot, inContact, { onColor: '#50ff9a', offColor: 'rgba(255, 95, 95, 0.35)' });
-            if (cell.row) {
-                cell.cell.style.opacity = w ? (inContact ? '1' : '0.78') : '0.45';
-            }
+            setDot(cell.dot, inContact);
+            cell.cell.classList.toggle('is-missing', !w);
+            cell.cell.classList.toggle('is-airborne', !!w && !inContact);
+            cell.cell.classList.toggle('is-contact', !!w && inContact);
 
             const steerRad = (w && Number.isFinite(w.steering)) ? w.steering : 0;
-            // UI convention: positive = right, rapier steering is applied with inverted sign.
             const steerDeg = -radToDeg(steerRad);
             if (cell.yaw) {
                 cell.yaw.style.transform = `rotate(${steerDeg.toFixed(1)}deg)`;
-                cell.yaw.style.opacity = w ? (inContact ? '1' : '0.65') : '0.25';
             }
             if (cell.spinNeedle) {
                 cell.spinNeedle.style.transform = `translate(0, -50%) rotate(${(this._lastSpinDeg ?? 0).toFixed(1)}deg)`;
-                cell.spinNeedle.style.opacity = w ? (inContact ? '1' : '0.6') : '0.25';
             }
         }
     }
 
     _buildTreeHeader() {
         this.treeHeader = document.createElement('div');
-        this.treeHeader.style.display = 'flex';
-        this.treeHeader.style.alignItems = 'center';
-        this.treeHeader.style.justifyContent = 'space-between';
-        this.treeHeader.style.gap = '10px';
+        this.treeHeader.className = 'gpd-tree-header';
 
         const left = document.createElement('div');
-        left.style.display = 'flex';
-        left.style.alignItems = 'center';
-        left.style.gap = '8px';
+        left.className = 'gpd-tree-header-left';
 
         this.treeModeSel = document.createElement('select');
-        this.treeModeSel.style.pointerEvents = 'auto';
-        this.treeModeSel.style.border = '1px solid rgba(255, 216, 77, 0.22)';
-        this.treeModeSel.style.background = 'rgba(0,0,0,0.22)';
-        this.treeModeSel.style.color = '#ffd84d';
-        this.treeModeSel.style.borderRadius = '10px';
-        this.treeModeSel.style.padding = '6px 8px';
-        this.treeModeSel.style.fontSize = '12px';
-        this.treeModeSel.style.fontWeight = '900';
+        this.treeModeSel.className = 'gpd-select';
+        this.treeModeSel.title = HELP.tree.mode;
         for (const opt of [
             { value: 'rapier', label: 'Rapier' },
             { value: 'event', label: 'Event input' },
@@ -954,25 +901,23 @@ export class GameplayDebugPanel {
         left.appendChild(this.treeModeSel);
 
         const right = document.createElement('div');
-        right.style.display = 'flex';
-        right.style.alignItems = 'center';
-        right.style.gap = '8px';
+        right.className = 'gpd-tree-header-right';
 
-        this.btnTreeToggle = makeBtn('Tree: On');
+        this.btnTreeToggle = makeBtn('Tree: On', HELP.tree.toggle);
         this.btnTreeToggle.addEventListener('click', () => {
             this._treeExpanded = !this._treeExpanded;
             this.btnTreeToggle.textContent = this._treeExpanded ? 'Tree: On' : 'Tree: Off';
-            this.treeBody.style.display = this._treeExpanded ? 'block' : 'none';
+            this.treeBody.classList.toggle('hidden', !this._treeExpanded);
             this._scheduleMinHeightRefresh();
         });
 
-        this.btnTreeAuto = makeBtn('Auto: On');
+        this.btnTreeAuto = makeBtn('Auto: On', HELP.tree.auto);
         this.btnTreeAuto.addEventListener('click', () => {
             this._treeAuto = !this._treeAuto;
             this.btnTreeAuto.textContent = this._treeAuto ? 'Auto: On' : 'Auto: Off';
         });
 
-        this.btnTreeRefresh = makeBtn('Refresh');
+        this.btnTreeRefresh = makeBtn('Refresh', HELP.tree.refresh);
         this.btnTreeRefresh.addEventListener('click', () => {
             this._refreshTree({ force: true });
         });
@@ -986,13 +931,8 @@ export class GameplayDebugPanel {
         this.treeWrap.appendChild(this.treeHeader);
 
         this.treeBody = document.createElement('div');
-        this.treeBody.style.display = 'block';
-        this.treeBody.style.overflow = 'auto';
-        this.treeBody.style.maxHeight = '220px';
-        this.treeBody.style.padding = '6px 2px 2px';
-        this.treeBody.style.fontSize = '12px';
-        this.treeBody.style.fontWeight = '800';
-        this.treeBody.style.opacity = '0.95';
+        this.treeBody.className = 'gpd-tree-body';
+        this.treeBody.classList.toggle('hidden', !this._treeExpanded);
         this.treeWrap.appendChild(this.treeBody);
 
         this._refreshTree({ force: true });
@@ -1030,16 +970,13 @@ export class GameplayDebugPanel {
         this.treeBody.innerHTML = '';
         const hint = document.createElement('div');
         hint.textContent = title;
-        hint.style.fontSize = '11px';
-        hint.style.fontWeight = '900';
-        hint.style.opacity = '0.7';
-        hint.style.marginBottom = '6px';
+        hint.className = 'gpd-tree-hint';
         this.treeBody.appendChild(hint);
 
         if (data == null) {
             const empty = document.createElement('div');
             empty.textContent = '—';
-            empty.style.opacity = '0.65';
+            empty.className = 'gpd-tree-empty';
             this.treeBody.appendChild(empty);
             return;
         }
@@ -1049,9 +986,8 @@ export class GameplayDebugPanel {
 
     _renderTreeNode(key, value, path, depth) {
         const row = document.createElement('div');
-        row.style.display = 'block';
+        row.className = 'gpd-tree-node';
         row.style.paddingLeft = `${depth * 12}px`;
-        row.style.lineHeight = '1.35';
 
         const isObj = isPlainObject(value);
         const isArr = Array.isArray(value);
@@ -1059,27 +995,19 @@ export class GameplayDebugPanel {
         const isOpen = this._treeExpandState.get(path) ?? (depth < 1);
 
         const head = document.createElement('div');
-        head.style.display = 'flex';
-        head.style.alignItems = 'center';
-        head.style.gap = '8px';
-        head.style.cursor = isExpandable ? 'pointer' : 'default';
+        head.className = 'gpd-tree-head';
+        head.classList.toggle('is-expandable', isExpandable);
 
         const caret = document.createElement('div');
         caret.textContent = isExpandable ? (isOpen ? '▾' : '▸') : ' ';
-        caret.style.width = '14px';
-        caret.style.opacity = isExpandable ? '0.9' : '0.3';
+        caret.className = 'gpd-tree-caret';
 
         const k = document.createElement('div');
         k.textContent = String(key);
-        k.style.fontWeight = '950';
-        k.style.opacity = '0.92';
+        k.className = 'gpd-tree-key';
 
         const v = document.createElement('div');
-        v.style.opacity = '0.85';
-        v.style.whiteSpace = 'pre';
-        v.style.overflow = 'hidden';
-        v.style.textOverflow = 'ellipsis';
-        v.style.flex = '1';
+        v.className = 'gpd-tree-value';
 
         const summarize = (val) => {
             if (val == null) return 'null';
@@ -1173,7 +1101,7 @@ export class GameplayDebugPanel {
         if (this._destroyed || !this.root.isConnected) return;
         const headerH = this.header.getBoundingClientRect().height || 0;
         const leftH = this.left.scrollHeight || 0;
-        const pad = 6; // borders + rounding safety
+        const pad = 6;
         const minH = Math.max(0, Math.ceil(headerH + leftH + pad));
         this.root.style.minHeight = `${minH}px`;
     }

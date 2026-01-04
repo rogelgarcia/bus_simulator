@@ -1,0 +1,91 @@
+/* src/graphics/gui/bus_select/styles.css */
+
+/* ===== Bus selection HUD ===== */
+.topbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: 0;
+    padding: 12px 14px;
+    display: flex;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 2;
+}
+.topbar .chip {
+    pointer-events: none;
+    padding: 10px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(10,14,20,0.6);
+    color: #fff;
+    font-size: 14px;
+    opacity: 0.92;
+}
+
+.bus-select-chip-title {
+    font-size: 18px;
+    font-weight: 900;
+    letter-spacing: 0.2px;
+}
+
+.bus-select-chip-meta {
+    font-size: 12px;
+    font-weight: 800;
+    opacity: 0.72;
+    margin-top: 2px;
+}
+
+.bus-select-nav {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 3;
+}
+
+.bus-select-nav-btn {
+    pointer-events: auto;
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.18);
+    background: rgba(10, 14, 20, 0.55);
+    color: #f5f7fb;
+    font-size: 30px;
+    font-weight: 900;
+    cursor: pointer;
+    box-shadow: 0 14px 34px rgba(0,0,0,0.38);
+}
+
+.bus-select-nav-btn:hover {
+    background: rgba(20, 26, 38, 0.65);
+}
+
+.bus-select-nav-btn.is-left,
+.bus-select-nav-btn.is-right {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.bus-select-nav-btn.is-left { left: 18px; }
+.bus-select-nav-btn.is-right { right: 18px; }
+
+/* Blink effect */
+#blink {
+    position: fixed;
+    inset: 0;
+    background: #fff;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 5;
+}
+#blink.blink { animation: blink 0.45s linear 1; }
+@keyframes blink {
+    0% { opacity: 0; }
+    12% { opacity: 1; }
+    24% { opacity: 0; }
+    36% { opacity: 1; }
+    48% { opacity: 0; }
+    100% { opacity: 0; }
+}

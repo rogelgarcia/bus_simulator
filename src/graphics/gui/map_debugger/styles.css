@@ -1,0 +1,435 @@
+/* src/graphics/gui/map_debugger/styles.css */
+
+.map-debugger-panel,
+.city-debug-panel {
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    z-index: 4;
+    pointer-events: auto;
+    background: rgba(10, 14, 20, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    padding: 10px 12px;
+    color: #f5f7fb;
+    width: min(540px, calc(100vw - 24px));
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+}
+
+.map-debugger-title,
+.city-debug-title {
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-weight: 700;
+    opacity: 0.85;
+}
+
+.map-debugger-header,
+.city-debug-header {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.7);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.map-debugger-list,
+.city-debug-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow-x: auto;
+    overflow-y: auto;
+    padding-right: 4px;
+    max-width: 100%;
+}
+
+.map-debugger-table,
+.city-debug-table {
+    width: max-content;
+    min-width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.map-debugger-table th,
+.map-debugger-table td,
+.city-debug-table th,
+.city-debug-table td {
+    padding: 4px 6px;
+    text-align: left;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.map-debugger-table th,
+.city-debug-table th {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.7);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.map-debugger-table td:first-child,
+.map-debugger-table th:first-child,
+.city-debug-table td:first-child,
+.city-debug-table th:first-child {
+    width: 24px;
+}
+
+.map-debugger-table tbody tr,
+.map-debugger-table tbody td,
+.city-debug-table tbody tr,
+.city-debug-table tbody td {
+    cursor: default;
+}
+
+.map-debugger-table input,
+.city-debug-table input {
+    cursor: pointer;
+}
+
+.map-debugger-table tbody td:first-child,
+.map-debugger-table thead th:first-child,
+.city-debug-table tbody td:first-child,
+.city-debug-table thead th:first-child {
+    padding-left: 10px;
+}
+
+.map-debugger-table tbody td:last-child,
+.map-debugger-table thead th:last-child,
+.city-debug-table tbody td:last-child,
+.city-debug-table thead th:last-child {
+    padding-right: 10px;
+}
+
+.map-debugger-table tbody tr.map-debugger-row-hover td:first-child,
+.city-debug-table tbody tr.city-debug-row-hover td:first-child {
+    border-top-left-radius: 6px;
+    border-bottom-left-radius: 6px;
+}
+
+.map-debugger-table tbody tr.map-debugger-row-hover td:last-child,
+.city-debug-table tbody tr.city-debug-row-hover td:last-child {
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
+}
+
+.map-debugger-table tbody tr.map-debugger-row-hover td:first-child,
+.city-debug-table tbody tr.city-debug-row-hover td:first-child {
+    box-shadow:
+        inset 1px 0 0 rgba(63, 212, 110, 0.9),
+        inset 0 1px 0 rgba(63, 212, 110, 0.9),
+        inset 0 -1px 0 rgba(63, 212, 110, 0.9);
+}
+
+.map-debugger-table tbody tr.map-debugger-row-hover td:last-child,
+.city-debug-table tbody tr.city-debug-row-hover td:last-child {
+    box-shadow:
+        inset -1px 0 0 rgba(63, 212, 110, 0.9),
+        inset 0 1px 0 rgba(63, 212, 110, 0.9),
+        inset 0 -1px 0 rgba(63, 212, 110, 0.9);
+}
+
+.map-debugger-table tbody tr.map-debugger-row-hover td:not(:first-child):not(:last-child),
+.city-debug-table tbody tr.city-debug-row-hover td:not(:first-child):not(:last-child) {
+    box-shadow:
+        inset 0 1px 0 rgba(63, 212, 110, 0.9),
+        inset 0 -1px 0 rgba(63, 212, 110, 0.9);
+}
+
+.map-debugger-shortcuts-panel,
+.city-shortcuts-panel {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    z-index: 4;
+    pointer-events: auto;
+    background: rgba(10, 14, 20, 0.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    padding: 12px 14px;
+    color: #fff;
+    min-width: 180px;
+    max-width: 240px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+    transition: opacity 0.35s ease;
+}
+
+.map-debugger-shortcuts-panel.is-tour,
+.city-shortcuts-panel.is-tour {
+    opacity: 0.25;
+    pointer-events: none;
+}
+
+.map-debugger-shortcuts-title,
+.city-shortcuts-title {
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-weight: 700;
+    opacity: 0.85;
+}
+
+.map-debugger-shortcuts-list,
+.city-shortcuts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.map-debugger-controls-panel,
+.city-debugs-panel {
+    position: fixed;
+    bottom: 12px;
+    left: 12px;
+    z-index: 4;
+    pointer-events: auto;
+    background: rgba(10, 14, 20, 0.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    padding: 10px 12px;
+    color: #fff;
+    width: max-content;
+    max-width: calc(100vw - 24px);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+    transition: opacity 0.35s ease;
+}
+
+.map-debugger-controls-title,
+.city-debugs-title {
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-weight: 700;
+    opacity: 0.85;
+}
+
+.map-debugger-controls,
+.city-debugs-controls {
+    display: grid;
+    grid-template-columns: repeat(2, max-content);
+    column-gap: 16px;
+    row-gap: 8px;
+    align-items: start;
+}
+
+.map-debugger-section,
+.city-debugs-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 0;
+}
+
+.map-debugger-section-title,
+.city-debugs-section-title {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-weight: 700;
+    opacity: 0.7;
+}
+
+.map-debugger-mode-row,
+.city-debugs-mode-row {
+    display: grid;
+    grid-template-columns: max-content max-content;
+    column-gap: 12px;
+    align-items: center;
+    font-size: 12px;
+}
+
+.map-debugger-mode-label,
+.city-debugs-mode-label {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.map-debugger-mode-selector,
+.city-debugs-mode-selector {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.map-debugger-mode-text,
+.city-debugs-mode-text {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.map-debugger-mode-text.is-active,
+.city-debugs-mode-text.is-active {
+    color: rgba(255, 255, 255, 0.95);
+    font-weight: 600;
+}
+
+.map-debugger-mode-toggle,
+.city-debugs-mode-toggle {
+    position: relative;
+    width: 44px;
+    height: 22px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.08);
+    cursor: pointer;
+    padding: 0;
+}
+
+.map-debugger-mode-thumb,
+.city-debugs-mode-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.9);
+    transition: transform 0.2s ease;
+}
+
+.map-debugger-mode-toggle.is-debug .map-debugger-mode-thumb,
+.city-debugs-mode-toggle.is-debug .city-debugs-mode-thumb {
+    transform: translateX(20px);
+}
+
+.map-debugger-toggle-switch,
+.city-debugs-toggle-switch {
+    color: rgba(255, 255, 255, 0.8);
+    white-space: nowrap;
+}
+
+.city-debugs-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    align-items: center;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.75);
+}
+
+.city-debugs-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.city-debugs-legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2);
+}
+
+.city-debugs-legend-text {
+    white-space: nowrap;
+}
+
+.map-debugger-info-panel,
+.city-pole-info-panel {
+    position: fixed;
+    right: 12px;
+    bottom: 12px;
+    z-index: 4;
+    pointer-events: none;
+    background: rgba(10, 14, 20, 0.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    padding: 10px 12px;
+    color: #fff;
+    min-width: 160px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+}
+
+.map-debugger-info-title,
+.city-pole-info-title {
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-weight: 700;
+    opacity: 0.85;
+}
+
+.map-debugger-info-rows,
+.city-pole-info-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.map-debugger-info-row,
+.city-pole-info-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    gap: 12px;
+}
+
+.map-debugger-info-label,
+.city-pole-info-label {
+    color: rgba(255, 255, 255, 0.7);
+    white-space: nowrap;
+}
+
+.map-debugger-info-value,
+.city-pole-info-value {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.92);
+}
+
+.map-debugger-shortcuts-item,
+.city-shortcuts-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+}
+
+.map-debugger-shortcuts-key,
+.city-shortcuts-key {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 22px;
+    padding: 0 6px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 11px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.map-debugger-shortcuts-desc,
+.city-shortcuts-desc {
+    flex: 1;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.75);
+}

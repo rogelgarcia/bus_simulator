@@ -20,6 +20,16 @@ const DEFAULT_ENGINE = {
     curveSharpness: 1.0,
     finalDrive: 4.2,
     efficiency: 0.88,
+    engineInertia: 9.5,
+    clutchStiffness: 22.0,
+    clutchMaxTorque: 2200,
+    clutchEngageTime: 0.25,
+    clutchLockSpeed: 4.0,
+    idleControlKp: 42.0,
+    frictionTorque: 90.0,
+    frictionViscous: 0.35,
+    shiftTimeSec: 0.32,
+    shiftCooldownSec: 0.55,
     shiftUpRpm: 2000,
     shiftDownRpm: 1100,
     autoShift: true,
@@ -33,6 +43,14 @@ function clamp(value, min, max) {
 
 function lerp(a, b, t) {
     return a + (b - a) * t;
+}
+
+function rpmToOmega(rpm) {
+    return (rpm ?? 0) * (Math.PI * 2) / 60;
+}
+
+function omegaToRpm(omega) {
+    return (omega ?? 0) * 60 / (Math.PI * 2);
 }
 
 function cloneGears(gears) {
@@ -57,9 +75,16 @@ function buildEngineConfig(engine, lengthScale) {
     const maxTorque = Number.isFinite(base.maxTorque)
         ? base.maxTorque * (Number.isFinite(lengthScale) ? lengthScale : 1)
         : DEFAULT_ENGINE.maxTorque;
+    const clutchMaxTorque = Number.isFinite(engine?.clutchMaxTorque)
+        ? Math.max(0, engine.clutchMaxTorque)
+        : Math.max(100, maxTorque * 1.75);
     return {
         ...base,
         maxTorque,
+        engineInertia: Number.isFinite(base.engineInertia)
+            ? Math.max(0.1, base.engineInertia * (Number.isFinite(lengthScale) ? lengthScale : 1))
+            : DEFAULT_ENGINE.engineInertia,
+        clutchMaxTorque,
         gears,
         defaultGearIndex: resolveDefaultGearIndex(gears, base.defaultGearIndex)
     };
@@ -89,51 +114,156 @@ function sampleTorque(engineConfig, rpm) {
     return Math.max(0, (engineConfig.maxTorque ?? DEFAULT_ENGINE.maxTorque) * Math.pow(base, sharpness));
 }
 
-function computeEngineOutput(engineConfig, engineState, speed, wheelRadius, throttle) {
+function computeEngineOutput(engineConfig, engineState, speed, wheelRadius, throttle, dt = 1 / 60, driveWheelCount = 2) {
     const gears = engineState.gears;
     const forwardIndices = engineState.forwardIndices;
     let gearIndex = engineState.gearIndex;
 
-    const wheelRpm = Math.abs(speed) / Math.max(1e-3, wheelRadius) * 60 / (Math.PI * 2);
     const pickGear = (idx) => gears[idx] ?? { label: 'N', ratio: 0 };
 
-    if (engineConfig.autoShift && !engineState.manual && forwardIndices.length) {
+    const clampedDt = Number.isFinite(dt) ? clamp(dt, 0, 0.05) : (1 / 60);
+
+    const idleRpm = engineConfig.idleRpm ?? DEFAULT_ENGINE.idleRpm;
+    const redlineRpm = engineConfig.redlineRpm ?? DEFAULT_ENGINE.redlineRpm;
+    const idleOmega = rpmToOmega(idleRpm);
+    const redlineOmega = rpmToOmega(redlineRpm);
+    const wheelOmega = (Number.isFinite(speed) ? speed : 0) / Math.max(1e-3, wheelRadius);
+
+    let omega = Number.isFinite(engineState.omega) ? engineState.omega : rpmToOmega(engineState.rpm ?? idleRpm);
+    if (!Number.isFinite(omega) || omega <= 0) omega = idleOmega;
+
+    const speedAbs = Math.abs(Number.isFinite(speed) ? speed : 0);
+
+    if (engineState.shiftTimer > 0) {
+        engineState.shiftTimer = Math.max(0, engineState.shiftTimer - clampedDt);
+    }
+
+    if (engineState.shiftCooldown > 0) {
+        engineState.shiftCooldown = Math.max(0, engineState.shiftCooldown - clampedDt);
+    }
+
+    const driveRatioForIndex = (idx) => (pickGear(idx).ratio ?? 0) * (engineConfig.finalDrive ?? DEFAULT_ENGINE.finalDrive);
+    const currentRpm = omegaToRpm(omega);
+    const currentDrivelineRpm = omegaToRpm(Math.abs(wheelOmega * driveRatioForIndex(gearIndex)));
+
+    if (engineConfig.autoShift && !engineState.manual && forwardIndices.length && engineState.shiftCooldown <= 0) {
         if (!forwardIndices.includes(gearIndex)) {
             gearIndex = forwardIndices[0];
         } else {
-            const current = pickGear(gearIndex);
-            const currentRatio = (current.ratio ?? 0) * (engineConfig.finalDrive ?? DEFAULT_ENGINE.finalDrive);
-            const currentRpm = Math.max(engineConfig.idleRpm ?? DEFAULT_ENGINE.idleRpm, wheelRpm * Math.abs(currentRatio));
             const upRpm = engineConfig.shiftUpRpm ?? DEFAULT_ENGINE.shiftUpRpm;
             const downRpm = engineConfig.shiftDownRpm ?? DEFAULT_ENGINE.shiftDownRpm;
             const pos = forwardIndices.indexOf(gearIndex);
-            if (currentRpm > upRpm && pos < forwardIndices.length - 1 && throttle > 0.05) {
-                gearIndex = forwardIndices[pos + 1];
-            } else if (currentRpm < downRpm && pos > 0) {
-                gearIndex = forwardIndices[pos - 1];
+
+            const canUpshift = (pos >= 0) && (pos < forwardIndices.length - 1) && throttle > 0.05 && speedAbs > 0.25;
+            const canDownshift = (pos > 0);
+
+            if (canUpshift && currentDrivelineRpm > upRpm) {
+                const candidate = forwardIndices[pos + 1];
+                const predictedOmega = Math.abs(wheelOmega * driveRatioForIndex(candidate));
+                const predictedRpm = omegaToRpm(predictedOmega);
+                if (predictedRpm > downRpm * 1.08) {
+                    gearIndex = candidate;
+                }
+            } else if (canDownshift && currentDrivelineRpm < downRpm) {
+                const candidate = forwardIndices[pos - 1];
+                const predictedOmega = Math.abs(wheelOmega * driveRatioForIndex(candidate));
+                const predictedRpm = omegaToRpm(predictedOmega);
+                if (predictedRpm < redlineRpm * 0.98) {
+                    gearIndex = candidate;
+                }
             }
         }
     }
 
-    const gear = pickGear(gearIndex);
+    const prevGear = engineState.gearIndex;
+    if (prevGear !== gearIndex) {
+        const shiftTimeSec = Math.max(0, engineConfig.shiftTimeSec ?? DEFAULT_ENGINE.shiftTimeSec);
+        engineState.shiftTimer = shiftTimeSec;
+        const cooldownSec = Math.max(shiftTimeSec, engineConfig.shiftCooldownSec ?? DEFAULT_ENGINE.shiftCooldownSec);
+        engineState.shiftCooldown = Math.max(engineState.shiftCooldown ?? 0, cooldownSec);
+    }
+    engineState.gearIndex = gearIndex;
+
+    const gear = pickGear(engineState.gearIndex);
     const gearRatio = gear.ratio ?? 0;
     const driveRatio = gearRatio * (engineConfig.finalDrive ?? DEFAULT_ENGINE.finalDrive);
-    const idleRpm = engineConfig.idleRpm ?? DEFAULT_ENGINE.idleRpm;
-    const rpmFromWheels = Math.abs(wheelRpm * driveRatio);
-    const minRpm = idleRpm + (engineConfig.redlineRpm - idleRpm) * 0.15 * clamp(throttle, 0, 1);
-    const rpm = clamp(Math.max(idleRpm, rpmFromWheels, minRpm), idleRpm, engineConfig.redlineRpm ?? DEFAULT_ENGINE.redlineRpm);
-    const torque = sampleTorque(engineConfig, rpm) * clamp(throttle, 0, 1);
+
+    const drivelineOmega = Math.abs(wheelOmega * driveRatio);
+
+    const clutchTarget = (Math.abs(driveRatio) > 1e-4) && (speedAbs > 0.35 || throttle > 0.04) ? 1 : 0;
+    const clutchTau = Math.max(1e-3, engineConfig.clutchEngageTime ?? DEFAULT_ENGINE.clutchEngageTime);
+    const clutchAlpha = 1 - Math.exp(-clampedDt / clutchTau);
+    engineState.clutch = lerp(Number.isFinite(engineState.clutch) ? engineState.clutch : clutchTarget, clutchTarget, clutchAlpha);
+
+    const shiftBlend = engineState.shiftTimer > 0
+        ? (1 - clamp(engineState.shiftTimer / Math.max(1e-3, engineConfig.shiftTimeSec ?? DEFAULT_ENGINE.shiftTimeSec), 0, 1))
+        : 1;
+
+    const lockSpeed = Math.max(0.1, engineConfig.clutchLockSpeed ?? DEFAULT_ENGINE.clutchLockSpeed);
+    const lockT = clamp(speedAbs / lockSpeed, 0, 1);
+    const lockFactor = 0.15 + 0.85 * (lockT * lockT * (3 - 2 * lockT));
+    const slipOmega = omega - drivelineOmega;
+    const maxClutchTorque = Math.max(0, engineConfig.clutchMaxTorque ?? DEFAULT_ENGINE.clutchMaxTorque);
+    const clutchStiffness = Math.max(0, engineConfig.clutchStiffness ?? DEFAULT_ENGINE.clutchStiffness);
+
+    const rpmBefore = omegaToRpm(omega);
+    const torqueCurve = sampleTorque(engineConfig, rpmBefore);
+    const throttleClamped = clamp(throttle, 0, 1);
+    const engineTorque = torqueCurve * throttleClamped;
+
+    const friction = Math.max(0, (engineConfig.frictionTorque ?? DEFAULT_ENGINE.frictionTorque))
+        + Math.max(0, (engineConfig.frictionViscous ?? DEFAULT_ENGINE.frictionViscous)) * Math.abs(omega);
+
+    const idleErr = idleOmega - omega;
+    const idleAssist = idleErr > 0
+        ? idleErr * Math.max(0, engineConfig.idleControlKp ?? DEFAULT_ENGINE.idleControlKp)
+        : 0;
+
+    const clutchBlend = clamp(engineState.clutch * shiftBlend, 0, 1);
+    const coupling = clamp(clutchBlend * lockFactor, 0, 1);
+    const syncTorque = clutchStiffness * coupling * slipOmega;
+    const desiredTorque = engineTorque + idleAssist;
+    const clutchCap = maxClutchTorque * coupling;
+    let clutchTorque = desiredTorque + syncTorque;
+    clutchTorque = clamp(clutchTorque, -clutchCap, clutchCap);
+
+    const inertia = Math.max(0.05, engineConfig.engineInertia ?? DEFAULT_ENGINE.engineInertia);
+    omega += ((engineTorque + idleAssist - clutchTorque - friction) / inertia) * clampedDt;
+    omega = clamp(omega, idleOmega, redlineOmega);
+
+    const rpm = omegaToRpm(omega);
+
     const efficiency = engineConfig.efficiency ?? DEFAULT_ENGINE.efficiency;
-    const driveTorque = torque * driveRatio * efficiency;
-    const driveForce = Math.abs(driveRatio) > 1e-4 ? (driveTorque / Math.max(1e-3, wheelRadius)) : 0;
+    const driveTorque = clutchTorque * driveRatio * efficiency;
+    const driveForceTotal = Math.abs(driveRatio) > 1e-4 ? (driveTorque / Math.max(1e-3, wheelRadius)) : 0;
+    const driven = Math.max(1, Number.isFinite(driveWheelCount) ? Math.round(driveWheelCount) : 1);
+    const driveForce = driveForceTotal / driven;
+
+    engineState.omega = omega;
+    engineState.rpm = rpm;
+    engineState.torque = engineTorque;
+    engineState.drivelineRpm = omegaToRpm(drivelineOmega);
+    engineState.slipOmega = slipOmega;
+    engineState.clutchTorque = clutchTorque;
+    engineState.coupling = coupling;
+    engineState.shiftBlend = shiftBlend;
 
     return {
-        gearIndex,
+        gearIndex: engineState.gearIndex,
         gearLabel: gear.label ?? 'N',
         gearNumber: gearLabelToNumber(gear.label),
         rpm,
-        torque,
-        driveForce
+        torque: engineTorque,
+        driveForce,
+        driveForceTotal,
+        drivelineRpm: engineState.drivelineRpm,
+        slipOmega: engineState.slipOmega,
+        clutchTorque: engineState.clutchTorque,
+        clutch: engineState.clutch,
+        coupling: engineState.coupling,
+        shiftBlend: engineState.shiftBlend,
+        shiftTimer: engineState.shiftTimer,
+        shiftCooldown: engineState.shiftCooldown
     };
 }
 
@@ -150,7 +280,14 @@ function createEngineState(engineConfig) {
         forwardIndices,
         gearIndex,
         rpm: idleRpm,
+        omega: rpmToOmega(idleRpm),
         torque: 0,
+        drivelineRpm: idleRpm,
+        slipOmega: 0,
+        clutchTorque: 0,
+        clutch: 1,
+        shiftTimer: 0,
+        shiftCooldown: 0,
         manual: false
     };
 }

@@ -1,0 +1,508 @@
+/* src/graphics/gui/test_mode/styles.css */
+
+.testmode-hud {
+    z-index: 50;
+}
+
+.testmode-shortcuts {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+}
+
+.testmode-hint {
+    font-size: 12px;
+    opacity: 0.72;
+}
+
+.testmode-ops {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+    padding-right: 10px;
+}
+
+.testmode-bus-name {
+    font-size: 13px;
+    font-weight: 800;
+    opacity: 0.92;
+    margin-bottom: 10px;
+}
+
+.testmode-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 8px 0;
+}
+
+.testmode-key {
+    min-width: 34px;
+    text-align: center;
+    font-weight: 900;
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 9px;
+    background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.14);
+    box-sizing: border-box;
+}
+
+.testmode-row-label {
+    font-size: 13px;
+    opacity: 0.95;
+}
+
+.testmode-value-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 6px 0;
+}
+
+.testmode-value-key {
+    font-size: 12px;
+    font-weight: 800;
+    opacity: 0.85;
+}
+
+.testmode-value-val {
+    font-size: 12px;
+    font-weight: 700;
+    opacity: 0.9;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.testmode-action-btn {
+    width: 100%;
+    margin-top: 8px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.16);
+    background: rgba(255,255,255,0.08);
+    color: #e9f2ff;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    cursor: pointer;
+}
+
+.testmode-action-btn:hover {
+    background: rgba(255,255,255,0.12);
+}
+
+.testmode-range {
+    margin: 8px 0 10px;
+}
+
+.testmode-range-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.testmode-range-label {
+    font-size: 13px;
+    font-weight: 700;
+    opacity: 0.95;
+}
+
+.testmode-range-val {
+    font-size: 12px;
+    opacity: 0.75;
+}
+
+.testmode-range-input {
+    width: 100%;
+    margin-top: 6px;
+}
+
+.testmode-toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 10px 0;
+    cursor: pointer;
+}
+
+.testmode-toggle-text {
+    font-size: 13px;
+    font-weight: 700;
+    opacity: 0.95;
+}
+
+.testmode-toggle-input {
+    transform: scale(1.1);
+}
+
+.testmode-select-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 10px 0;
+}
+
+.testmode-select-label {
+    font-size: 13px;
+    font-weight: 700;
+    opacity: 0.95;
+}
+
+.testmode-select {
+    flex: 0 0 120px;
+    padding: 6px 8px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.16);
+    background: rgba(10, 14, 20, 0.75);
+    color: #e9f2ff;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.testmode-gear-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 10px 0;
+}
+
+.testmode-gear-label {
+    font-size: 13px;
+    font-weight: 700;
+    opacity: 0.95;
+}
+
+.testmode-gear-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.testmode-gear-btn {
+    width: 34px;
+    height: 32px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.16);
+    background: rgba(10, 14, 20, 0.75);
+    color: #e9f2ff;
+    font-weight: 900;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+}
+
+.testmode-gear-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.testmode-gear-pill {
+    min-width: 44px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.16);
+    background: rgba(255,255,255,0.08);
+    font-weight: 900;
+    letter-spacing: 0.2px;
+    box-sizing: border-box;
+    transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.testmode-gear-pill.is-flash {
+    box-shadow: 0 0 0 2px rgba(255,204,0,0.55), 0 10px 24px rgba(0,0,0,0.22);
+    border-color: rgba(255,204,0,0.6);
+}
+
+.testmode-stat {
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.testmode-stat-title {
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    opacity: 0.7;
+    letter-spacing: 0.4px;
+}
+
+.testmode-stat-value {
+    font-size: 20px;
+    font-weight: 900;
+    letter-spacing: 0.4px;
+}
+
+.testmode-stat-unit {
+    font-size: 11px;
+    font-weight: 700;
+    opacity: 0.65;
+}
+
+.testmode-telemetry {
+    position: absolute;
+    left: 16px;
+    bottom: 16px;
+    min-width: 320px;
+    max-width: 440px;
+}
+
+.testmode-telemetry-top {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.testmode-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    flex: 1;
+}
+
+.testmode-telemetry-steer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+}
+
+.testmode-telemetry-steer-label {
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    opacity: 0.7;
+}
+
+.testmode-steer {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.25);
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255,255,255,0.04);
+}
+
+.testmode-steer-needle {
+    position: absolute;
+    width: 3px;
+    height: 28px;
+    border-radius: 4px;
+    background: linear-gradient(180deg, #f6d87a, #f2b84e);
+    transform-origin: 50% 80%;
+    transform: rotate(0deg);
+}
+
+.testmode-steer-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #f6d87a;
+}
+
+.testmode-wheel-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.testmode-axle-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.testmode-axle-line {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    top: 50%;
+    height: 1px;
+    background: rgba(255,255,255,0.2);
+    z-index: 0;
+}
+
+.testmode-wheelviz {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+    position: relative;
+    z-index: 1;
+}
+
+.testmode-wheelviz-title {
+    font-size: 10px;
+    font-weight: 800;
+    opacity: 0.7;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.testmode-wheelviz-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.testmode-wheel-box {
+    width: 66px;
+    height: 42px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.18);
+    background: rgba(255,255,255,0.06);
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.testmode-wheel-spin {
+    width: 46px;
+    height: 2px;
+    border-radius: 2px;
+    background: rgba(255,255,255,0.9);
+    transform-origin: 50% 50%;
+}
+
+.testmode-wheel-contact {
+    position: absolute;
+    right: 6px;
+    bottom: 6px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.35);
+}
+
+.testmode-wheel-contact.is-contact {
+    background: #7cff9a;
+}
+
+.testmode-susp {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.testmode-susp-track {
+    width: 16px;
+    height: 70px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    position: relative;
+    box-sizing: border-box;
+}
+
+.testmode-susp-center {
+    position: absolute;
+    left: 2px;
+    right: 2px;
+    top: 50%;
+    height: 1px;
+    background: rgba(255,255,255,0.45);
+}
+
+.testmode-susp-bar {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 6px;
+    height: 20px;
+    border-radius: 6px;
+    background: linear-gradient(180deg, #8dd6ff, #4ea0ff);
+    transform: translate(-50%, -50%) translateY(var(--testmode-susp-offset, 0px));
+}
+
+.testmode-susp-value {
+    font-size: 11px;
+    font-weight: 800;
+    min-width: 46px;
+    text-align: left;
+}
+
+.testmode-rapier-panel {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    min-width: 260px;
+    max-width: 320px;
+}
+
+.testmode-config-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    pointer-events: auto;
+    background: rgba(0,0,0,0);
+}
+
+.testmode-config-panel {
+    position: absolute;
+    top: 80px;
+    right: 24px;
+    min-width: 320px;
+    max-width: 420px;
+    max-height: calc(100vh - 120px);
+    overflow-y: auto;
+}
+
+.testmode-config-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.testmode-config-close {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.16);
+    background: rgba(10, 14, 20, 0.75);
+    color: #e9f2ff;
+    font-weight: 900;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    padding: 0;
+}
+
+.testmode-config-close:hover {
+    background: rgba(255,255,255,0.10);
+}
+
+.testmode-wheel-layout {
+    margin-top: 6px;
+    padding: 10px 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(0,0,0,0.12);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 11px;
+    font-weight: 800;
+    opacity: 0.9;
+    white-space: pre;
+    line-height: 1.35;
+}

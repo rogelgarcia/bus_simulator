@@ -10,14 +10,6 @@ function getEl() {
 
     const el = document.createElement('div');
     el.id = 'ui-fade';
-    el.style.position = 'fixed';
-    el.style.inset = '0';
-    el.style.background = '#000';
-    el.style.opacity = '0';
-    el.style.pointerEvents = 'none';
-    el.style.zIndex = '999999';
-    el.style.willChange = 'opacity';
-
     document.body.appendChild(el);
     _el = el;
     return _el;
@@ -27,9 +19,7 @@ function setOpacity(opacity, { blockInput = true } = {}) {
     const el = getEl();
     const o = Math.max(0, Math.min(1, opacity));
     el.style.opacity = String(o);
-
-    // Optional input block while fading
-    el.style.pointerEvents = blockInput && o > 0.001 ? 'auto' : 'none';
+    el.classList.toggle('is-blocking', blockInput && o > 0.001);
 }
 
 export function fadeTo({ opacity = 0, duration = 0.6, blockInput = true } = {}) {
@@ -41,11 +31,11 @@ export function fadeTo({ opacity = 0, duration = 0.6, blockInput = true } = {}) 
         _stop = null;
     }
 
-    const from = parseFloat(el.style.opacity || '0') || 0;
+    const from = parseFloat(el.style.opacity || getComputedStyle(el).opacity || '0') || 0;
     const to = Math.max(0, Math.min(1, opacity));
 
     // ensure it blocks input immediately if requested
-    if (blockInput) el.style.pointerEvents = 'auto';
+    if (blockInput) el.classList.add('is-blocking');
 
     return new Promise((resolve) => {
         _stop = tween({

@@ -171,50 +171,25 @@ function createSkyline({ spanX = 160, baseZ = -85, depth = 10, minH = 10, maxH =
 function makeHudRoot() {
     const root = document.createElement('div');
     root.id = 'testmode-hud';
-    root.style.position = 'fixed';
-    root.style.inset = '0';
-    root.style.zIndex = '50';
-    root.style.pointerEvents = 'none';
-    root.style.display = 'flex';
-    root.style.justifyContent = 'space-between';
-    root.style.alignItems = 'flex-start';
-    root.style.padding = '16px';
-    root.style.gap = '16px';
+    root.className = 'ui-hud-root testmode-hud';
     return root;
 }
 
 function stylePanel(el, { interactive = false } = {}) {
-    el.style.pointerEvents = interactive ? 'auto' : 'none';
-    el.style.userSelect = 'none';
-    el.style.minWidth = '260px';
-    el.style.maxWidth = '440px';
-    el.style.background = 'rgba(10, 14, 20, 0.52)';
-    el.style.border = '1px solid rgba(255,255,255,0.12)';
-    el.style.backdropFilter = 'blur(8px)';
-    el.style.borderRadius = '14px';
-    el.style.padding = '12px 14px';
-    el.style.color = '#e9f2ff';
-    el.style.fontFamily = 'system-ui, -apple-system, Segoe UI, Roboto, Arial';
-    el.style.boxShadow = '0 10px 28px rgba(0,0,0,0.35)';
+    el.classList.add('ui-panel');
+    el.classList.toggle('is-interactive', !!interactive);
 }
 
 function makeTitle(text) {
     const t = document.createElement('div');
     t.textContent = text;
-    t.style.fontWeight = '800';
-    t.style.fontSize = '14px';
-    t.style.letterSpacing = '0.6px';
-    t.style.textTransform = 'uppercase';
-    t.style.opacity = '0.92';
-    t.style.marginBottom = '10px';
+    t.className = 'ui-title';
     return t;
 }
 
 function makePopupDraggable(wrap, handle) {
     if (!wrap || !handle) return;
-    handle.style.cursor = 'grab';
-    handle.style.userSelect = 'none';
-    handle.style.touchAction = 'none';
+    handle.classList.add('ui-drag-handle');
 
     const onPointerDown = (event) => {
         if (event.button !== 0) return;
@@ -226,7 +201,7 @@ function makePopupDraggable(wrap, handle) {
         wrap.style.top = `${rect.top}px`;
         wrap.style.bottom = '';
         wrap.style.right = '';
-        handle.style.cursor = 'grabbing';
+        handle.classList.add('is-dragging');
 
         const onPointerMove = (moveEvent) => {
             wrap.style.left = `${moveEvent.clientX - offsetX}px`;
@@ -234,7 +209,7 @@ function makePopupDraggable(wrap, handle) {
         };
 
         const onPointerUp = () => {
-            handle.style.cursor = 'grab';
+            handle.classList.remove('is-dragging');
             window.removeEventListener('pointermove', onPointerMove);
             window.removeEventListener('pointerup', onPointerUp);
             window.removeEventListener('pointercancel', onPointerUp);
@@ -250,26 +225,15 @@ function makePopupDraggable(wrap, handle) {
 
 function makeRow(key, label) {
     const row = document.createElement('div');
-    row.style.display = 'flex';
-    row.style.alignItems = 'center';
-    row.style.gap = '10px';
-    row.style.margin = '8px 0';
+    row.className = 'testmode-row';
 
     const k = document.createElement('div');
     k.textContent = key;
-    k.style.minWidth = '34px';
-    k.style.textAlign = 'center';
-    k.style.fontWeight = '900';
-    k.style.fontSize = '12px';
-    k.style.padding = '4px 8px';
-    k.style.borderRadius = '9px';
-    k.style.background = 'rgba(255,255,255,0.10)';
-    k.style.border = '1px solid rgba(255,255,255,0.14)';
+    k.className = 'testmode-key';
 
     const l = document.createElement('div');
     l.textContent = label;
-    l.style.fontSize = '13px';
-    l.style.opacity = '0.95';
+    l.className = 'testmode-row-label';
 
     row.appendChild(k);
     row.appendChild(l);
@@ -278,24 +242,15 @@ function makeRow(key, label) {
 
 function makeValueRow(label) {
     const row = document.createElement('div');
-    row.style.display = 'flex';
-    row.style.alignItems = 'center';
-    row.style.justifyContent = 'space-between';
-    row.style.gap = '10px';
-    row.style.margin = '6px 0';
+    row.className = 'testmode-value-row';
 
     const k = document.createElement('div');
     k.textContent = label;
-    k.style.fontSize = '12px';
-    k.style.fontWeight = '800';
-    k.style.opacity = '0.85';
+    k.className = 'testmode-value-key';
 
     const v = document.createElement('div');
     v.textContent = '—';
-    v.style.fontSize = '12px';
-    v.style.fontWeight = '700';
-    v.style.opacity = '0.9';
-    v.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+    v.className = 'testmode-value-val';
 
     row.appendChild(k);
     row.appendChild(v);
@@ -306,61 +261,36 @@ function makeActionButton(label) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.textContent = label;
-    btn.style.width = '100%';
-    btn.style.marginTop = '8px';
-    btn.style.padding = '8px 12px';
-    btn.style.borderRadius = '10px';
-    btn.style.border = '1px solid rgba(255,255,255,0.16)';
-    btn.style.background = 'rgba(255,255,255,0.08)';
-    btn.style.color = '#e9f2ff';
-    btn.style.fontSize = '12px';
-    btn.style.fontWeight = '800';
-    btn.style.letterSpacing = '0.4px';
-    btn.style.textTransform = 'uppercase';
-    btn.style.cursor = 'pointer';
+    btn.className = 'testmode-action-btn';
     return btn;
 }
 
 function makeSeparator() {
     const hr = document.createElement('div');
-    hr.style.height = '1px';
-    hr.style.margin = '10px 0';
-    hr.style.background = 'rgba(255,255,255,0.10)';
+    hr.className = 'ui-separator';
     return hr;
 }
 
 function makeLabel(text) {
     const l = document.createElement('div');
     l.textContent = text;
-    l.style.fontSize = '12px';
-    l.style.fontWeight = '800';
-    l.style.opacity = '0.85';
-    l.style.marginTop = '10px';
-    l.style.marginBottom = '6px';
-    l.style.textTransform = 'uppercase';
-    l.style.letterSpacing = '0.4px';
+    l.className = 'ui-section-label';
     return l;
 }
 
 function makeRangeControl({ title, min, max, step, value, fmt = (v) => String(v) }) {
     const wrap = document.createElement('div');
-    wrap.style.margin = '8px 0 10px';
+    wrap.className = 'testmode-range';
 
     const head = document.createElement('div');
-    head.style.display = 'flex';
-    head.style.alignItems = 'center';
-    head.style.justifyContent = 'space-between';
-    head.style.gap = '10px';
+    head.className = 'testmode-range-head';
 
     const label = document.createElement('div');
     label.textContent = title;
-    label.style.fontSize = '13px';
-    label.style.fontWeight = '700';
-    label.style.opacity = '0.95';
+    label.className = 'testmode-range-label';
 
     const val = document.createElement('div');
-    val.style.fontSize = '12px';
-    val.style.opacity = '0.75';
+    val.className = 'testmode-range-val';
     val.textContent = fmt(value);
 
     head.appendChild(label);
@@ -372,8 +302,7 @@ function makeRangeControl({ title, min, max, step, value, fmt = (v) => String(v)
     input.max = String(max);
     input.step = String(step);
     input.value = String(value);
-    input.style.width = '100%';
-    input.style.marginTop = '6px';
+    input.className = 'testmode-range-input';
 
     wrap.appendChild(head);
     wrap.appendChild(input);
@@ -383,23 +312,16 @@ function makeRangeControl({ title, min, max, step, value, fmt = (v) => String(v)
 
 function makeToggleControl({ title, checked }) {
     const row = document.createElement('label');
-    row.style.display = 'flex';
-    row.style.alignItems = 'center';
-    row.style.justifyContent = 'space-between';
-    row.style.gap = '12px';
-    row.style.margin = '10px 0';
-    row.style.cursor = 'pointer';
+    row.className = 'testmode-toggle-row';
 
     const text = document.createElement('div');
     text.textContent = title;
-    text.style.fontSize = '13px';
-    text.style.fontWeight = '700';
-    text.style.opacity = '0.95';
+    text.className = 'testmode-toggle-text';
 
     const input = document.createElement('input');
     input.type = 'checkbox';
     input.checked = !!checked;
-    input.style.transform = 'scale(1.1)';
+    input.className = 'testmode-toggle-input';
 
     row.appendChild(text);
     row.appendChild(input);
@@ -409,27 +331,14 @@ function makeToggleControl({ title, checked }) {
 
 function makeSelectControl({ title, options = [], value = '' }) {
     const row = document.createElement('div');
-    row.style.display = 'flex';
-    row.style.alignItems = 'center';
-    row.style.justifyContent = 'space-between';
-    row.style.gap = '12px';
-    row.style.margin = '10px 0';
+    row.className = 'testmode-select-row';
 
     const label = document.createElement('div');
     label.textContent = title;
-    label.style.fontSize = '13px';
-    label.style.fontWeight = '700';
-    label.style.opacity = '0.95';
+    label.className = 'testmode-select-label';
 
     const select = document.createElement('select');
-    select.style.flex = '0 0 120px';
-    select.style.padding = '6px 8px';
-    select.style.borderRadius = '10px';
-    select.style.border = '1px solid rgba(255,255,255,0.16)';
-    select.style.background = 'rgba(10, 14, 20, 0.75)';
-    select.style.color = '#e9f2ff';
-    select.style.fontWeight = '700';
-    select.style.cursor = 'pointer';
+    select.className = 'testmode-select';
 
     const updateOptions = () => {
         select.innerHTML = '';
@@ -454,37 +363,20 @@ function makeSelectControl({ title, options = [], value = '' }) {
 
 function makeGearShiftControl({ title, options = [], value = null }) {
     const row = document.createElement('div');
-    row.style.display = 'flex';
-    row.style.alignItems = 'center';
-    row.style.justifyContent = 'space-between';
-    row.style.gap = '12px';
-    row.style.margin = '10px 0';
+    row.className = 'testmode-gear-row';
 
     const label = document.createElement('div');
     label.textContent = title;
-    label.style.fontSize = '13px';
-    label.style.fontWeight = '700';
-    label.style.opacity = '0.95';
+    label.className = 'testmode-gear-label';
 
     const controls = document.createElement('div');
-    controls.style.display = 'flex';
-    controls.style.alignItems = 'center';
-    controls.style.gap = '8px';
+    controls.className = 'testmode-gear-controls';
 
     const makeBtn = (text) => {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.textContent = text;
-        btn.style.width = '34px';
-        btn.style.height = '32px';
-        btn.style.borderRadius = '10px';
-        btn.style.border = '1px solid rgba(255,255,255,0.16)';
-        btn.style.background = 'rgba(10, 14, 20, 0.75)';
-        btn.style.color = '#e9f2ff';
-        btn.style.fontWeight = '900';
-        btn.style.cursor = 'pointer';
-        btn.style.display = 'grid';
-        btn.style.placeItems = 'center';
+        btn.className = 'testmode-gear-btn';
         return btn;
     };
 
@@ -492,16 +384,7 @@ function makeGearShiftControl({ title, options = [], value = null }) {
     const upBtn = makeBtn('+');
 
     const pill = document.createElement('div');
-    pill.style.minWidth = '44px';
-    pill.style.height = '32px';
-    pill.style.display = 'grid';
-    pill.style.placeItems = 'center';
-    pill.style.padding = '0 10px';
-    pill.style.borderRadius = '999px';
-    pill.style.border = '1px solid rgba(255,255,255,0.16)';
-    pill.style.background = 'rgba(255,255,255,0.08)';
-    pill.style.fontWeight = '900';
-    pill.style.letterSpacing = '0.2px';
+    pill.className = 'testmode-gear-pill';
 
     let flashTimer = null;
     let current = Number.isFinite(value) ? value : null;
@@ -521,16 +404,11 @@ function makeGearShiftControl({ title, options = [], value = null }) {
         const idx = sorted.findIndex((o) => o?.value === current);
         downBtn.disabled = idx <= 0;
         upBtn.disabled = idx < 0 || idx >= sorted.length - 1;
-        downBtn.style.opacity = downBtn.disabled ? '0.45' : '1';
-        upBtn.style.opacity = upBtn.disabled ? '0.45' : '1';
-
         if (flash && current !== null) {
             if (flashTimer) clearTimeout(flashTimer);
-            pill.style.boxShadow = '0 0 0 2px rgba(255,204,0,0.55), 0 10px 24px rgba(0,0,0,0.22)';
-            pill.style.borderColor = 'rgba(255,204,0,0.6)';
+            pill.classList.add('is-flash');
             flashTimer = setTimeout(() => {
-                pill.style.boxShadow = '';
-                pill.style.borderColor = 'rgba(255,255,255,0.16)';
+                pill.classList.remove('is-flash');
                 flashTimer = null;
             }, 220);
         }
@@ -585,33 +463,19 @@ function makeGearShiftControl({ title, options = [], value = null }) {
 
 function makeStatTile({ label, value = '—', unit = '' }) {
     const wrap = document.createElement('div');
-    wrap.style.padding = '10px 12px';
-    wrap.style.borderRadius = '12px';
-    wrap.style.background = 'rgba(255,255,255,0.08)';
-    wrap.style.border = '1px solid rgba(255,255,255,0.12)';
-    wrap.style.display = 'flex';
-    wrap.style.flexDirection = 'column';
-    wrap.style.gap = '4px';
+    wrap.className = 'testmode-stat';
 
     const title = document.createElement('div');
     title.textContent = label;
-    title.style.fontSize = '11px';
-    title.style.fontWeight = '800';
-    title.style.textTransform = 'uppercase';
-    title.style.opacity = '0.7';
-    title.style.letterSpacing = '0.4px';
+    title.className = 'testmode-stat-title';
 
     const val = document.createElement('div');
     val.textContent = value;
-    val.style.fontSize = '20px';
-    val.style.fontWeight = '900';
-    val.style.letterSpacing = '0.4px';
+    val.className = 'testmode-stat-value';
 
     const unitEl = document.createElement('div');
     unitEl.textContent = unit;
-    unitEl.style.fontSize = '11px';
-    unitEl.style.fontWeight = '700';
-    unitEl.style.opacity = '0.65';
+    unitEl.className = 'testmode-stat-unit';
 
     wrap.appendChild(title);
     wrap.appendChild(val);
@@ -622,30 +486,13 @@ function makeStatTile({ label, value = '—', unit = '' }) {
 
 function makeSteerWidget() {
     const wrap = document.createElement('div');
-    wrap.style.width = '72px';
-    wrap.style.height = '72px';
-    wrap.style.borderRadius = '50%';
-    wrap.style.border = '2px solid rgba(255,255,255,0.25)';
-    wrap.style.position = 'relative';
-    wrap.style.display = 'flex';
-    wrap.style.alignItems = 'center';
-    wrap.style.justifyContent = 'center';
-    wrap.style.background = 'rgba(255,255,255,0.04)';
+    wrap.className = 'testmode-steer';
 
     const needle = document.createElement('div');
-    needle.style.position = 'absolute';
-    needle.style.width = '3px';
-    needle.style.height = '28px';
-    needle.style.borderRadius = '4px';
-    needle.style.background = 'linear-gradient(180deg, #f6d87a, #f2b84e)';
-    needle.style.transformOrigin = '50% 80%';
-    needle.style.transform = 'rotate(0deg)';
+    needle.className = 'testmode-steer-needle';
 
     const dot = document.createElement('div');
-    dot.style.width = '8px';
-    dot.style.height = '8px';
-    dot.style.borderRadius = '50%';
-    dot.style.background = '#f6d87a';
+    dot.className = 'testmode-steer-dot';
 
     wrap.appendChild(needle);
     wrap.appendChild(dot);
@@ -655,31 +502,13 @@ function makeSteerWidget() {
 
 function makeWheelBox() {
     const wrap = document.createElement('div');
-    wrap.style.width = '66px';
-    wrap.style.height = '42px';
-    wrap.style.borderRadius = '12px';
-    wrap.style.border = '1px solid rgba(255,255,255,0.18)';
-    wrap.style.background = 'rgba(255,255,255,0.06)';
-    wrap.style.position = 'relative';
-    wrap.style.display = 'flex';
-    wrap.style.alignItems = 'center';
-    wrap.style.justifyContent = 'center';
+    wrap.className = 'testmode-wheel-box';
 
     const spin = document.createElement('div');
-    spin.style.width = '46px';
-    spin.style.height = '2px';
-    spin.style.borderRadius = '2px';
-    spin.style.background = 'rgba(255,255,255,0.9)';
-    spin.style.transformOrigin = '50% 50%';
+    spin.className = 'testmode-wheel-spin';
 
     const contact = document.createElement('div');
-    contact.style.position = 'absolute';
-    contact.style.right = '6px';
-    contact.style.bottom = '6px';
-    contact.style.width = '8px';
-    contact.style.height = '8px';
-    contact.style.borderRadius = '50%';
-    contact.style.background = 'rgba(255,255,255,0.35)';
+    contact.className = 'testmode-wheel-contact';
 
     wrap.appendChild(spin);
     wrap.appendChild(contact);
@@ -689,44 +518,22 @@ function makeWheelBox() {
 
 function makeSuspensionBar() {
     const wrap = document.createElement('div');
-    wrap.style.display = 'flex';
-    wrap.style.alignItems = 'center';
-    wrap.style.gap = '6px';
+    wrap.className = 'testmode-susp';
 
     const track = document.createElement('div');
-    track.style.width = '16px';
-    track.style.height = '70px';
-    track.style.borderRadius = '10px';
-    track.style.background = 'rgba(255,255,255,0.08)';
-    track.style.border = '1px solid rgba(255,255,255,0.12)';
-    track.style.position = 'relative';
+    track.className = 'testmode-susp-track';
 
     const center = document.createElement('div');
-    center.style.position = 'absolute';
-    center.style.left = '2px';
-    center.style.right = '2px';
-    center.style.top = '50%';
-    center.style.height = '1px';
-    center.style.background = 'rgba(255,255,255,0.45)';
+    center.className = 'testmode-susp-center';
 
     const bar = document.createElement('div');
-    bar.style.position = 'absolute';
-    bar.style.left = '50%';
-    bar.style.top = '50%';
-    bar.style.width = '6px';
-    bar.style.height = '20px';
-    bar.style.borderRadius = '6px';
-    bar.style.background = 'linear-gradient(180deg, #8dd6ff, #4ea0ff)';
-    bar.style.transform = 'translate(-50%, -50%)';
+    bar.className = 'testmode-susp-bar';
 
     track.appendChild(center);
     track.appendChild(bar);
 
     const value = document.createElement('div');
-    value.style.fontSize = '11px';
-    value.style.fontWeight = '800';
-    value.style.minWidth = '46px';
-    value.style.textAlign = 'left';
+    value.className = 'testmode-susp-value';
     value.textContent = '0.0 cm';
 
     wrap.appendChild(track);
@@ -738,23 +545,14 @@ function makeSuspensionBar() {
 
 function makeWheelVizCell({ label, wheelFirst }) {
     const wrap = document.createElement('div');
-    wrap.style.display = 'flex';
-    wrap.style.flexDirection = 'column';
-    wrap.style.gap = '4px';
-    wrap.style.flex = '1';
+    wrap.className = 'testmode-wheelviz';
 
     const title = document.createElement('div');
     title.textContent = label;
-    title.style.fontSize = '10px';
-    title.style.fontWeight = '800';
-    title.style.opacity = '0.7';
-    title.style.textTransform = 'uppercase';
-    title.style.letterSpacing = '0.4px';
+    title.className = 'testmode-wheelviz-title';
 
     const row = document.createElement('div');
-    row.style.display = 'flex';
-    row.style.alignItems = 'center';
-    row.style.gap = '8px';
+    row.className = 'testmode-wheelviz-row';
 
     const wheel = makeWheelBox();
     const suspension = makeSuspensionBar();
@@ -832,7 +630,7 @@ export class TestModeState {
         this.rapierConfigOverlay = null;
         this.rapierConfigFields = null;
 
-        this._prevChipDisplay = null;
+        this._chipWasHidden = null;
         this._prevLocalClippingEnabled = null;
         this._onKeyDown = (e) => this._handleKeyDown(e);
     }
@@ -844,8 +642,8 @@ export class TestModeState {
         if (this.uiSelect) this.uiSelect.classList.remove('hidden');
 
         if (this.hudChip) {
-            this._prevChipDisplay = this.hudChip.style.display;
-            this.hudChip.style.display = 'none';
+            this._chipWasHidden = this.hudChip.classList.contains('hidden');
+            this.hudChip.classList.add('hidden');
         }
 
         this.engine.clearScene();
@@ -943,7 +741,8 @@ export class TestModeState {
 
         this._unmountHud();
 
-        if (this.hudChip) this.hudChip.style.display = this._prevChipDisplay ?? '';
+        if (this.hudChip && !this._chipWasHidden) this.hudChip.classList.remove('hidden');
+        this._chipWasHidden = null;
         if (this.uiSelect) this.uiSelect.classList.add('hidden');
 
         if (this._prevLocalClippingEnabled !== null && this.engine?.renderer) {
@@ -1076,9 +875,7 @@ export class TestModeState {
         // Shortcuts
         const shortcuts = document.createElement('div');
         stylePanel(shortcuts, { interactive: false });
-        shortcuts.style.position = 'absolute';
-        shortcuts.style.top = '16px';
-        shortcuts.style.right = '16px';
+        shortcuts.classList.add('testmode-shortcuts');
         shortcuts.appendChild(makeTitle('Shortcuts'));
         shortcuts.appendChild(makeRow('B', 'Toggle Bus'));
         shortcuts.appendChild(makeRow('X', 'Exit to Main Menu'));
@@ -1087,28 +884,17 @@ export class TestModeState {
 
         const hint = document.createElement('div');
         hint.textContent = 'Orbit: drag mouse (camera follows bus translation)';
-        hint.style.fontSize = '12px';
-        hint.style.opacity = '0.72';
+        hint.className = 'testmode-hint';
         shortcuts.appendChild(hint);
 
         // Ops
         const ops = document.createElement('div');
         stylePanel(ops, { interactive: true });
-        ops.style.position = 'absolute';
-        ops.style.top = '16px';
-        ops.style.left = '16px';
+        ops.classList.add('testmode-ops');
         ops.appendChild(makeTitle('Bus Controls'));
 
-        // ✅ scrollable
-        ops.style.maxHeight = 'calc(100vh - 32px)';
-        ops.style.overflowY = 'auto';
-        ops.style.paddingRight = '10px';
-
         const busName = document.createElement('div');
-        busName.style.fontSize = '13px';
-        busName.style.fontWeight = '800';
-        busName.style.opacity = '0.92';
-        busName.style.marginBottom = '10px';
+        busName.className = 'testmode-bus-name';
         busName.textContent = 'Selected: —';
         ops.appendChild(busName);
         this.opsBusName = busName;
@@ -1208,23 +994,14 @@ export class TestModeState {
         headlights.input.addEventListener('change', () => { this.busState.headlights = !!headlights.input.checked; });
         const telemetryPanel = document.createElement('div');
         stylePanel(telemetryPanel, { interactive: false });
-        telemetryPanel.style.position = 'absolute';
-        telemetryPanel.style.left = '16px';
-        telemetryPanel.style.bottom = '16px';
-        telemetryPanel.style.minWidth = '320px';
-        telemetryPanel.style.maxWidth = '440px';
+        telemetryPanel.classList.add('testmode-telemetry');
         telemetryPanel.appendChild(makeTitle('Simulation Output'));
 
         const topRow = document.createElement('div');
-        topRow.style.display = 'flex';
-        topRow.style.alignItems = 'flex-start';
-        topRow.style.gap = '12px';
+        topRow.className = 'testmode-telemetry-top';
 
         const statGrid = document.createElement('div');
-        statGrid.style.display = 'grid';
-        statGrid.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
-        statGrid.style.gap = '10px';
-        statGrid.style.flex = '1';
+        statGrid.className = 'testmode-stat-grid';
 
         const speedTile = makeStatTile({ label: 'Speed', unit: 'km/h' });
         const gearTile = makeStatTile({ label: 'Gear' });
@@ -1238,18 +1015,11 @@ export class TestModeState {
         statGrid.appendChild(torqueTile.wrap);
 
         const steerWrap = document.createElement('div');
-        steerWrap.style.display = 'flex';
-        steerWrap.style.flexDirection = 'column';
-        steerWrap.style.alignItems = 'center';
-        steerWrap.style.gap = '6px';
+        steerWrap.className = 'testmode-telemetry-steer';
 
         const steerLabel = document.createElement('div');
         steerLabel.textContent = 'Steer Input';
-        steerLabel.style.fontSize = '11px';
-        steerLabel.style.fontWeight = '800';
-        steerLabel.style.textTransform = 'uppercase';
-        steerLabel.style.letterSpacing = '0.4px';
-        steerLabel.style.opacity = '0.7';
+        steerLabel.className = 'testmode-telemetry-steer-label';
 
         const steerWidget = makeSteerWidget();
         steerWrap.appendChild(steerLabel);
@@ -1262,25 +1032,14 @@ export class TestModeState {
         telemetryPanel.appendChild(makeLabel('Wheels + Suspension'));
 
         const wheelGrid = document.createElement('div');
-        wheelGrid.style.display = 'flex';
-        wheelGrid.style.flexDirection = 'column';
-        wheelGrid.style.gap = '12px';
+        wheelGrid.className = 'testmode-wheel-grid';
 
         const makeAxleRow = () => {
             const row = document.createElement('div');
-            row.style.position = 'relative';
-            row.style.display = 'flex';
-            row.style.alignItems = 'center';
-            row.style.gap = '12px';
+            row.className = 'testmode-axle-row';
 
             const line = document.createElement('div');
-            line.style.position = 'absolute';
-            line.style.left = '8px';
-            line.style.right = '8px';
-            line.style.top = '50%';
-            line.style.height = '1px';
-            line.style.background = 'rgba(255,255,255,0.2)';
-            line.style.zIndex = '0';
+            line.className = 'testmode-axle-line';
 
             row.appendChild(line);
             return row;
@@ -1289,7 +1048,7 @@ export class TestModeState {
         const frontRow = makeAxleRow();
         const midRow = makeAxleRow();
         const rearRow = makeAxleRow();
-        midRow.style.display = 'none';
+        midRow.classList.add('hidden');
 
         const fl = makeWheelVizCell({ label: 'Front Left', wheelFirst: true });
         const fr = makeWheelVizCell({ label: 'Front Right', wheelFirst: false });
@@ -1297,13 +1056,6 @@ export class TestModeState {
         const mr = makeWheelVizCell({ label: 'Mid Right', wheelFirst: false });
         const rl = makeWheelVizCell({ label: 'Rear Left', wheelFirst: true });
         const rr = makeWheelVizCell({ label: 'Rear Right', wheelFirst: false });
-
-        fl.wrap.style.zIndex = '1';
-        fr.wrap.style.zIndex = '1';
-        ml.wrap.style.zIndex = '1';
-        mr.wrap.style.zIndex = '1';
-        rl.wrap.style.zIndex = '1';
-        rr.wrap.style.zIndex = '1';
 
         frontRow.appendChild(fl.wrap);
         frontRow.appendChild(fr.wrap);
@@ -1320,11 +1072,7 @@ export class TestModeState {
 
         const rapierPanel = document.createElement('div');
         stylePanel(rapierPanel, { interactive: true });
-        rapierPanel.style.position = 'absolute';
-        rapierPanel.style.right = '16px';
-        rapierPanel.style.bottom = '16px';
-        rapierPanel.style.minWidth = '260px';
-        rapierPanel.style.maxWidth = '320px';
+        rapierPanel.classList.add('testmode-rapier-panel');
         rapierPanel.appendChild(makeTitle('Rapier'));
 
         rapierPanel.appendChild(makeLabel('Input'));
@@ -1460,12 +1208,12 @@ export class TestModeState {
                 this.steerWidget.needle.style.transform = 'rotate(0deg)';
             }
             if (this.wheelViz) {
-                if (this._wheelVizRows?.midRow) this._wheelVizRows.midRow.style.display = 'none';
+                if (this._wheelVizRows?.midRow) this._wheelVizRows.midRow.classList.add('hidden');
                 for (const key of Object.keys(this.wheelViz)) {
                     const wheel = this.wheelViz[key];
                     wheel.wheel.spin.style.transform = 'rotate(0deg)';
-                    wheel.wheel.contact.style.background = 'rgba(255,255,255,0.35)';
-                    wheel.suspension.bar.style.transform = 'translate(-50%, -50%)';
+                    wheel.wheel.contact.classList.remove('is-contact');
+                    wheel.suspension.bar.style.removeProperty('--testmode-susp-offset');
                     wheel.suspension.valueEl.textContent = '0.0 cm';
                 }
             }
@@ -1525,24 +1273,24 @@ export class TestModeState {
         if (this.wheelViz) {
             const midRow = this._wheelVizRows?.midRow ?? null;
             const hasMid = wheels.some((w) => w?.labelEx === 'ML' || w?.labelEx === 'MR');
-            if (midRow) midRow.style.display = hasMid ? 'flex' : 'none';
+            if (midRow) midRow.classList.toggle('hidden', !hasMid);
 
             for (const wheel of wheels) {
                 const key = wheel.labelEx ?? wheel.label;
                 const slot = this.wheelViz[key];
                 if (!slot) continue;
                 slot.wheel.spin.style.transform = `rotate(${spinDeg.toFixed(1)}deg)`;
-                slot.wheel.contact.style.background = wheel.inContact ? '#7cff9a' : 'rgba(255,255,255,0.35)';
+                slot.wheel.contact.classList.toggle('is-contact', !!wheel.inContact);
 
                 if (Number.isFinite(restLen) && Number.isFinite(travel) && Number.isFinite(wheel.suspensionLength)) {
                     const compression = restLen - wheel.suspensionLength;
                     const norm = THREE.MathUtils.clamp(compression / Math.max(1e-3, travel), -1, 1);
                     const offset = -norm * slot.suspension.range;
-                    slot.suspension.bar.style.transform = `translate(-50%, -50%) translateY(${offset.toFixed(1)}px)`;
+                    slot.suspension.bar.style.setProperty('--testmode-susp-offset', `${offset.toFixed(1)}px`);
                     const cm = compression * 100;
                     slot.suspension.valueEl.textContent = `${cm >= 0 ? '+' : ''}${cm.toFixed(1)} cm`;
                 } else {
-                    slot.suspension.bar.style.transform = 'translate(-50%, -50%)';
+                    slot.suspension.bar.style.removeProperty('--testmode-susp-offset');
                     slot.suspension.valueEl.textContent = '0.0 cm';
                 }
             }
@@ -1563,45 +1311,22 @@ export class TestModeState {
         if (this.rapierConfigPanel || !this.hudRoot) return;
 
         const overlay = document.createElement('div');
-        overlay.style.position = 'fixed';
-        overlay.style.inset = '0';
-        overlay.style.zIndex = '60';
-        overlay.style.pointerEvents = 'auto';
-        overlay.style.background = 'rgba(0,0,0,0)';
+        overlay.className = 'testmode-config-overlay';
 
         const panel = document.createElement('div');
         stylePanel(panel, { interactive: true });
-        panel.style.position = 'absolute';
-        panel.style.top = '80px';
-        panel.style.right = '24px';
-        panel.style.minWidth = '320px';
-        panel.style.maxWidth = '420px';
-        panel.style.maxHeight = 'calc(100vh - 120px)';
-        panel.style.overflowY = 'auto';
+        panel.classList.add('testmode-config-panel');
 
         const header = document.createElement('div');
-        header.style.display = 'flex';
-        header.style.alignItems = 'center';
-        header.style.justifyContent = 'space-between';
-        header.style.gap = '12px';
+        header.className = 'testmode-config-header';
 
         const title = makeTitle('Rapier Configuration');
-        title.style.marginBottom = '0';
+        title.classList.add('is-inline');
 
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
         closeBtn.textContent = 'X';
-        closeBtn.style.width = '28px';
-        closeBtn.style.height = '28px';
-        closeBtn.style.borderRadius = '8px';
-        closeBtn.style.border = '1px solid rgba(255,255,255,0.16)';
-        closeBtn.style.background = 'rgba(10, 14, 20, 0.75)';
-        closeBtn.style.color = '#e9f2ff';
-        closeBtn.style.fontWeight = '900';
-        closeBtn.style.cursor = 'pointer';
-        closeBtn.style.display = 'grid';
-        closeBtn.style.placeItems = 'center';
-        closeBtn.style.padding = '0';
+        closeBtn.className = 'testmode-config-close';
 
         closeBtn.addEventListener('click', (event) => {
             event.preventDefault();
@@ -1673,17 +1398,7 @@ export class TestModeState {
         panel.appendChild(fields.frontTrack.row);
         panel.appendChild(fields.frictionSlip.row);
         panel.appendChild(fields.sideFriction.row);
-        fields.wheelLayout.style.marginTop = '6px';
-        fields.wheelLayout.style.padding = '10px 10px';
-        fields.wheelLayout.style.borderRadius = '12px';
-        fields.wheelLayout.style.border = '1px solid rgba(255,255,255,0.12)';
-        fields.wheelLayout.style.background = 'rgba(0,0,0,0.12)';
-        fields.wheelLayout.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace';
-        fields.wheelLayout.style.fontSize = '11px';
-        fields.wheelLayout.style.fontWeight = '800';
-        fields.wheelLayout.style.opacity = '0.9';
-        fields.wheelLayout.style.whiteSpace = 'pre';
-        fields.wheelLayout.style.lineHeight = '1.35';
+        fields.wheelLayout.className = 'testmode-wheel-layout';
         fields.wheelLayout.textContent = '—';
         panel.appendChild(fields.wheelLayout);
 

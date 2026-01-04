@@ -260,23 +260,12 @@ export class SetupState {
 
     _measureCharSize() {
         if (!this.frameEl) return { charWidth: 10, lineHeight: 16 };
-        const sampleEl = this.borderTop ?? this.frameEl;
         const span = document.createElement('span');
         span.textContent = '═';
-        span.style.position = 'absolute';
-        span.style.visibility = 'hidden';
-        span.style.padding = '0';
-        span.style.margin = '0';
-        if (sampleEl) {
-            const style = getComputedStyle(sampleEl);
-            span.style.fontFamily = style.fontFamily;
-            span.style.fontSize = style.fontSize;
-            span.style.fontWeight = style.fontWeight;
-            span.style.letterSpacing = style.letterSpacing;
-        }
+        span.className = 'setup-border ui-offscreen';
         this.frameEl.appendChild(span);
         const rect = span.getBoundingClientRect();
-        const style = sampleEl ? getComputedStyle(sampleEl) : null;
+        const style = this.borderTop ? getComputedStyle(this.borderTop) : getComputedStyle(this.frameEl);
         const fontSize = style ? parseFloat(style.fontSize) : 16;
         const lineHeight = style ? style.lineHeight : 'normal';
         const resolvedLineHeight = lineHeight === 'normal' ? fontSize : parseFloat(lineHeight);

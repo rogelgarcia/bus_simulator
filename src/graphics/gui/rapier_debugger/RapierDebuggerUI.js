@@ -1,8 +1,9 @@
 // src/graphics/gui/rapier_debugger/RapierDebuggerUI.js
+// HUD for the Rapier debugger view (DOM + input wiring).
 const INPUT_HELP = {
-    engineForce: 'Sets the forward force applied by the wheel on the chassis. Start around 8000-20000 for this scale.',
-    brakeForce: 'Sets the maximum braking impulse applied by the wheel to slow down the vehicle. Use similar order as engine force.',
-    handbrakeForce: 'Extra rear-wheel braking impulse. Often 0.5x to 1.2x brake force.',
+    engineForce: 'Engine force (N) is a longitudinal force applied by the Rapier vehicle controller at the tire contact patch (it is not engine torque/RPM).\n\nHow it is applied:\n- This debugger applies engine force per-wheel to the REAR wheels only via setWheelEngineForce().\n- Front wheels get 0.\n\nHow it affects the car:\n- Higher values increase forward acceleration and usually increase the reported forwardImpulse.\n- Actual acceleration is limited by tire traction (frictionSlip / sideFrictionStiffness) and whether the wheel is in contact.\n\nInteractions:\n- If Brake/Handbrake are also non-zero, Rapier applies braking too (the forces fight).\n- Very large forces can cause tire slip, jitter, or wheel-hop, especially with soft suspension or low mass.',
+    brakeForce: 'Brake force (N) is the braking strength used by the Rapier vehicle controller via setWheelBrake() (it is not a direct chassis force).\n\nHow it is applied:\n- This debugger applies brake force per-wheel to ALL wheels.\n\nHow it affects the car:\n- Higher values decelerate faster.\n- If brake is too high for available traction, wheels can lock and the vehicle will slide (reduced steering control).\n\nInteractions:\n- Works per-wheel only while that wheel is in contact.\n- If Engine is also non-zero, Rapier applies both; net motion depends on the balance.\n- Braking while steering can strongly affect yaw/understeer/oversteer.',
+    handbrakeForce: 'Handbrake force (N) is extra braking applied only to the REAR wheels (useful to lock the rear axle).\n\nHow it is applied:\n- Rear brake = Brake + Handbrake.\n- Front brake = Brake.\n\nHow it affects the car:\n- Locks/slows the rear wheels more than the fronts, which can create oversteer/spins when steering.\n\nInteractions:\n- Strongly depends on tire friction and contact; if rear wheels lose contact, it has no effect.\n- Too much handbrake force will instantly lock the rear and make the car slide rather than turn.',
     steerAngle: 'Sets the steering angle (radians) for the wheel. Typical +/-0.2 to 0.6.',
     bodyType: 'Rigid-body type: dynamic reacts to forces, fixed is immovable, kinematic is user-driven.',
     translation: 'Rigid-body translation in world space (meters).',
@@ -31,10 +32,10 @@ const INPUT_HELP = {
     wheelSideInset: 'Wheel side offset from chassis side. Positive widens track. Zero keeps wheel outer face flush; typical 0-0.2x wheel width.',
     restLength: 'Sets the rest length of the wheel suspension spring. Often 0.3-0.6 of wheel radius.',
     wheelbaseRatio: 'Wheel Z position as a fraction of chassis length. Typical 0.6-0.75.',
-    additionalMass: 'Additional mass before collider contributions. Typical 0-100000 kg (start at 0).',
+    additionalMass: 'Additional chassis mass (kg).\n\nManual/Auto inertia modes:\n- Used only when full mass properties are NOT being provided.\n\nRapier inertia mode:\n- Used only as a fallback target mass (when Mass props mass is not set) to compute collider density.',
     linearDamping: 'Linear damping coefficient. Typical 0 to 1.',
     angularDamping: 'Angular damping coefficient. Typical 0 to 2.',
-    massPropsMass: 'Overrides additional mass when full mass properties are set.',
+    massPropsMass: 'Mass (kg) used by the mass-properties system.\n\nManual: sets the rigid-body mass.\nAuto: sets mass and is used to auto-compute inertia from the chassis box size.\nRapier: if collider density is 0/unset, this mass is converted into collider density: density = mass / (width·height·length).',
     massPropsComX: 'Additional mass properties center of mass X (local chassis space).',
     massPropsComY: 'Additional mass properties center of mass Y (local chassis space).',
     massPropsComZ: 'Additional mass properties center of mass Z (local chassis space).',
@@ -45,14 +46,16 @@ const INPUT_HELP = {
     massPropsFrameX: 'Inertia frame X. Keep quaternion normalized.',
     massPropsFrameY: 'Inertia frame Y. Keep quaternion normalized.',
     massPropsFrameZ: 'Inertia frame Z. Keep quaternion normalized.',
-    inertia: 'Principal inertia values override how rotational mass is distributed.',
+    massPropsDensity: 'Chassis collider density (kg/m³), used only in Inertia mode = Rapier.\n\nWhen set (>0), Rapier computes chassis mass/COM/inertia from the chassis collider + this density.\nMass = density · (width·height·length).\n\nSet to 0 to disable and fall back to Mass props mass (or Additional mass if mass is missing).',
+    inertiaMode: 'Controls how chassis mass + inertia are determined:\n\nManual: you provide mass, center of mass (COM), inertia and inertia-frame.\nAuto: inertia + frame are computed from mass and chassis box size.\nRapier: mass/COM/inertia come from the chassis collider density (inertia/COM inputs are ignored).',
+    inertia: 'Principal inertia values define how rotational mass is distributed (moment of inertia).\n\nHigher values = harder to rotate. Lower values = easier to tip/roll.\n\nTip: inertia is independent of throttle/engine; it affects angular acceleration from torque.\n\nUse Auto for a sane baseline, Manual to override, or Rapier to let the collider define inertia.',
     inertiaFrame: 'Quaternion that orients the inertia tensor in body space.',
     locking: 'Locks translations or rotations for this rigid body.',
     suspMaxTravel: 'Sets the maximum distance the suspension can travel before and after its resting length. Typical 0.1-0.3.',
     suspStiffness: 'Sets the wheel suspension stiffness. Typical 0-10000 N/m (start around 500).',
     suspCompression: 'Wheel suspension compression damping. Typical 0.0-5.0 (start around 1.0).',
     suspRelaxation: 'Wheel suspension relaxation damping. Typical 0.0-5.0 (start around 1.0).',
-    suspMaxForce: 'Sets the maximum force applied by the wheel suspension. Typical 0-50000 N (start around 10000).',
+    suspMaxForce: 'Sets the maximum force applied by the wheel suspension. Typical 0-200000 N (start around 80000 for bus scale).',
     tireFrictionSlip: 'Sets the parameter controlling how much traction the tire has. Typical 6-10.',
     tireSideStiffness: 'Multiplier of friction between the tire and the collider it is on top of. Typical 1-2.'
 };
@@ -72,7 +75,7 @@ const OUTPUT_HELP = {
     contacts: 'wheelIsInContact for each wheel. Dots are FL, FR, RL, RR (front to rear, left to right).',
     rayDown: 'Ray cast down hit and time of impact.',
     counts: 'Rigid-body and collider counts.',
-    wheels: 'Per-wheel: contact uses wheelIsInContact, steer uses wheelSteering (rad), suspension length/force use wheelSuspensionLength and wheelSuspensionForce, impulses use wheelForwardImpulse and wheelSideImpulse. Connect L is wheelChassisConnectionPointCs (chassis space).'
+    wheels: 'Per-wheel: contact uses wheelIsInContact, steer uses wheelSteering (rad), suspension length/force use wheelSuspensionLength and wheelSuspensionForce, impulses use wheelForwardImpulse and wheelSideImpulse. eng is the engine force applied in this debugger (rear wheels only) and the orange bar shows eng relative to the Engine slider max. Connect L is wheelChassisConnectionPointCs (chassis space).'
 };
 
 function formatNum(value, digits = 2) {
@@ -135,47 +138,49 @@ function crossVec3(a, b) {
     };
 }
 
+function computeBoxInertia(mass, width, height, length) {
+    if (!Number.isFinite(mass) || mass <= 0) return { x: 0, y: 0, z: 0 };
+    const round100 = (value) => Math.round(value / 100) * 100;
+    const w = Number.isFinite(width) ? width : 0;
+    const h = Number.isFinite(height) ? height : 0;
+    const l = Number.isFinite(length) ? length : 0;
+    const w2 = w * w;
+    const h2 = h * h;
+    const l2 = l * l;
+    const k = mass / 12;
+    return {
+        x: round100(k * (h2 + l2)),
+        y: round100(k * (w2 + l2)),
+        z: round100(k * (w2 + h2))
+    };
+}
+
+function resolveInertiaMode(props) {
+    const raw = props?.inertiaMode;
+    if (typeof raw === 'string') {
+        const mode = raw.toLowerCase();
+        if (mode === 'manual' || mode === 'auto' || mode === 'rapier') return mode;
+    }
+    if (typeof props?.autoInertia === 'boolean') return props.autoInertia ? 'auto' : 'manual';
+    return 'auto';
+}
+
 function makeHudRoot() {
     const root = document.createElement('div');
-    root.style.position = 'fixed';
-    root.style.inset = '0';
-    root.style.pointerEvents = 'none';
-    root.style.display = 'flex';
-    root.style.flexWrap = 'wrap';
-    root.style.justifyContent = 'space-between';
-    root.style.alignItems = 'flex-start';
-    root.style.alignContent = 'flex-start';
-    root.style.padding = '16px';
-    root.style.gap = '16px';
-    root.style.zIndex = '60';
+    root.className = 'ui-hud-root rapier-hud';
     return root;
 }
 
 function stylePanel(el, { interactive = false } = {}) {
-    el.style.pointerEvents = interactive ? 'auto' : 'none';
-    el.style.userSelect = 'none';
-    el.style.minWidth = '280px';
-    el.style.maxWidth = '440px';
-    el.style.boxSizing = 'border-box';
-    el.style.background = 'rgba(10, 14, 20, 0.55)';
-    el.style.border = '1px solid rgba(255,255,255,0.12)';
-    el.style.backdropFilter = 'blur(8px)';
-    el.style.borderRadius = '14px';
-    el.style.padding = '12px 14px';
-    el.style.color = '#e9f2ff';
-    el.style.fontFamily = 'system-ui, -apple-system, Segoe UI, Roboto, Arial';
-    el.style.boxShadow = '0 10px 28px rgba(0,0,0,0.35)';
+    el.classList.add('ui-panel');
+    el.classList.add('rapier-panel');
+    el.classList.toggle('is-interactive', !!interactive);
 }
 
 function makeTitle(text) {
     const t = document.createElement('div');
     t.textContent = text;
-    t.style.fontWeight = '800';
-    t.style.fontSize = '14px';
-    t.style.letterSpacing = '0.6px';
-    t.style.textTransform = 'uppercase';
-    t.style.opacity = '0.92';
-    t.style.marginBottom = '10px';
+    t.className = 'ui-title';
     return t;
 }
 
@@ -183,31 +188,10 @@ function makePopupCloseButton(onClose) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.textContent = 'x';
-    btn.style.width = '24px';
-    btn.style.height = '24px';
-    btn.style.borderRadius = '8px';
-    btn.style.border = '1px solid rgba(255,255,255,0.16)';
-    btn.style.background = 'rgba(12, 16, 24, 0.85)';
-    btn.style.color = '#e9f2ff';
-    btn.style.fontWeight = '900';
-    btn.style.fontSize = '12px';
-    btn.style.lineHeight = '1';
-    btn.style.cursor = 'pointer';
-    btn.style.opacity = '0.7';
-    btn.style.display = 'grid';
-    btn.style.placeItems = 'center';
-    btn.style.padding = '0';
+    btn.className = 'rapier-popup-close';
 
     btn.addEventListener('pointerdown', (event) => {
         event.stopPropagation();
-    });
-    btn.addEventListener('mouseenter', () => {
-        btn.style.opacity = '1';
-        btn.style.background = 'rgba(255,255,255,0.12)';
-    });
-    btn.addEventListener('mouseleave', () => {
-        btn.style.opacity = '0.7';
-        btn.style.background = 'rgba(12, 16, 24, 0.85)';
     });
     if (typeof onClose === 'function') {
         btn.addEventListener('click', (event) => {
@@ -221,14 +205,11 @@ function makePopupCloseButton(onClose) {
 
 function makePopupHeader(text, onClose) {
     const header = document.createElement('div');
-    header.style.display = 'flex';
-    header.style.alignItems = 'center';
-    header.style.justifyContent = 'space-between';
-    header.style.gap = '10px';
+    header.className = 'rapier-popup-header';
 
     const title = makeTitle(text);
-    title.style.marginBottom = '0';
-    title.style.flex = '1';
+    title.classList.add('is-inline');
+    title.classList.add('rapier-popup-title');
 
     const closeBtn = makePopupCloseButton(onClose);
 
@@ -240,9 +221,7 @@ function makePopupHeader(text, onClose) {
 
 function makePopupDraggable(wrap, handle) {
     if (!wrap || !handle) return;
-    handle.style.cursor = 'grab';
-    handle.style.userSelect = 'none';
-    handle.style.touchAction = 'none';
+    handle.classList.add('ui-drag-handle');
 
     const onPointerDown = (event) => {
         if (event.button !== 0) return;
@@ -254,7 +233,7 @@ function makePopupDraggable(wrap, handle) {
         wrap.style.top = `${rect.top}px`;
         wrap.style.bottom = '';
         wrap.style.right = '';
-        handle.style.cursor = 'grabbing';
+        handle.classList.add('is-dragging');
 
         const onPointerMove = (moveEvent) => {
             wrap.style.left = `${moveEvent.clientX - offsetX}px`;
@@ -262,7 +241,7 @@ function makePopupDraggable(wrap, handle) {
         };
 
         const onPointerUp = () => {
-            handle.style.cursor = 'grab';
+            handle.classList.remove('is-dragging');
             window.removeEventListener('pointermove', onPointerMove);
             window.removeEventListener('pointerup', onPointerUp);
             window.removeEventListener('pointercancel', onPointerUp);
@@ -276,24 +255,31 @@ function makePopupDraggable(wrap, handle) {
     handle.addEventListener('pointerdown', onPointerDown);
 }
 
+function makePopupWrap({ title, onClose, interactive = true, classes = [] } = {}) {
+    const wrap = document.createElement('div');
+    stylePanel(wrap, { interactive });
+    wrap.classList.add('rapier-popup');
+    for (const cls of classes) {
+        if (cls) wrap.classList.add(cls);
+    }
+
+    const { header, title: titleEl, closeBtn } = makePopupHeader(title, onClose);
+    wrap.appendChild(header);
+    makePopupDraggable(wrap, header);
+
+    return { wrap, header, titleEl, closeBtn };
+}
+
 function makeLabel(text) {
     const l = document.createElement('div');
     l.textContent = text;
-    l.style.fontSize = '12px';
-    l.style.fontWeight = '800';
-    l.style.opacity = '0.85';
-    l.style.marginTop = '10px';
-    l.style.marginBottom = '6px';
-    l.style.textTransform = 'uppercase';
-    l.style.letterSpacing = '0.4px';
+    l.className = 'ui-section-label';
     return l;
 }
 
 function makeSeparator() {
     const hr = document.createElement('div');
-    hr.style.height = '1px';
-    hr.style.margin = '10px 0';
-    hr.style.background = 'rgba(255,255,255,0.10)';
+    hr.className = 'ui-separator';
     return hr;
 }
 
@@ -303,7 +289,7 @@ function makeGroup(title, { tightTop = false, showLabel = true } = {}) {
     if (showLabel) {
         const label = makeLabel(title);
         if (tightTop) {
-            label.style.marginTop = '0';
+            label.classList.add('is-tight');
         }
         wrap.appendChild(label);
     }
@@ -315,19 +301,7 @@ function appendHelp(labelEl, helpText, helpSystem) {
     if (!helpText || !helpSystem) return;
     const help = document.createElement('span');
     help.textContent = '?';
-    help.style.display = 'inline-flex';
-    help.style.alignItems = 'center';
-    help.style.justifyContent = 'center';
-    help.style.width = '16px';
-    help.style.height = '16px';
-    help.style.marginLeft = '6px';
-    help.style.borderRadius = '999px';
-    help.style.border = '1px solid rgba(255,255,255,0.35)';
-    help.style.fontSize = '11px';
-    help.style.fontWeight = '700';
-    help.style.opacity = '0.85';
-    help.style.cursor = 'default';
-    help.style.pointerEvents = 'auto';
+    help.className = 'rapier-help';
     help.addEventListener('mouseenter', (e) => helpSystem.show(helpText, e));
     help.addEventListener('mousemove', (e) => helpSystem.move(e));
     help.addEventListener('mouseleave', () => helpSystem.hide());
@@ -348,26 +322,20 @@ function makeRangeControl({
     showHelp = true
 }) {
     const wrap = document.createElement('div');
-    wrap.style.margin = '8px 0 10px';
+    wrap.className = 'rapier-range';
+    wrap.classList.toggle('is-slider-first', sliderFirst);
+    wrap.classList.toggle('is-no-label', !showLabel);
 
     const head = document.createElement('div');
-    head.style.display = 'flex';
-    head.style.alignItems = 'baseline';
-    head.style.justifyContent = 'space-between';
-    head.style.gap = '10px';
+    head.className = 'rapier-range-head';
 
     const label = document.createElement('div');
     label.textContent = title;
-    label.style.fontSize = '13px';
-    label.style.fontWeight = '700';
-    label.style.opacity = '0.95';
-    label.style.display = 'flex';
-    label.style.alignItems = 'center';
+    label.className = 'rapier-range-label';
     appendHelp(label, help, helpSystem);
 
     const val = document.createElement('div');
-    val.style.fontSize = '12px';
-    val.style.opacity = '0.75';
+    val.className = 'rapier-range-val';
     val.textContent = fmt(value);
 
     if (showLabel && !sliderFirst) {
@@ -381,20 +349,14 @@ function makeRangeControl({
     input.max = String(max);
     input.step = String(step);
     input.value = String(value);
-    input.style.width = '100%';
-    input.style.marginTop = showLabel && !sliderFirst ? '6px' : '0';
+    input.className = 'rapier-range-input';
 
     if (sliderFirst) {
         const row = document.createElement('div');
-        row.style.display = 'flex';
-        row.style.alignItems = 'center';
-        row.style.gap = '8px';
-        input.style.flex = '1 1 auto';
+        row.className = 'rapier-range-row';
 
         const helpWrap = document.createElement('div');
-        helpWrap.style.display = 'inline-flex';
-        helpWrap.style.alignItems = 'center';
-        helpWrap.style.justifyContent = 'center';
+        helpWrap.className = 'rapier-range-helpwrap';
         if (showHelp) {
             appendHelp(helpWrap, help, helpSystem);
         }
@@ -428,30 +390,18 @@ function makeInlineRangeNumberControl({
     inputWidth = '110px'
 }) {
     const wrap = document.createElement('div');
-    wrap.style.margin = '8px 0 10px';
+    wrap.className = 'rapier-inline-range';
 
     const row = document.createElement('div');
-    row.style.display = 'flex';
-    row.style.alignItems = 'center';
-    row.style.gap = '10px';
+    row.className = 'rapier-inline-range-row';
 
     const label = document.createElement('div');
     label.textContent = title;
-    label.style.fontSize = '13px';
-    label.style.fontWeight = '700';
-    label.style.opacity = '0.95';
-    label.style.display = 'flex';
-    label.style.alignItems = 'center';
-    label.style.flex = '1 1 auto';
-    label.style.minWidth = '0';
+    label.className = 'rapier-inline-range-label';
     appendHelp(label, help, helpSystem);
 
     const controls = document.createElement('div');
-    controls.style.display = 'flex';
-    controls.style.alignItems = 'center';
-    controls.style.justifyContent = 'flex-end';
-    controls.style.gap = '10px';
-    controls.style.marginLeft = 'auto';
+    controls.className = 'rapier-inline-range-controls';
 
     const slider = document.createElement('input');
     slider.type = 'range';
@@ -459,9 +409,7 @@ function makeInlineRangeNumberControl({
     slider.max = String(max);
     slider.step = String(step);
     slider.value = String(value);
-    slider.style.flex = `0 0 ${sliderWidth}`;
-    slider.style.width = sliderWidth;
-    slider.style.cursor = 'pointer';
+    slider.className = 'rapier-inline-range-slider';
 
     const input = document.createElement('input');
     input.type = 'number';
@@ -470,14 +418,7 @@ function makeInlineRangeNumberControl({
     input.min = String(min);
     input.max = String(max);
     input.step = String(step);
-    input.style.width = scalePx(inputWidth, 0.5);
-    input.style.padding = '3px 4px';
-    input.style.borderRadius = '8px';
-    input.style.border = '1px solid rgba(255,255,255,0.16)';
-    input.style.background = 'rgba(8, 12, 18, 0.6)';
-    input.style.color = '#e9f2ff';
-    input.style.fontWeight = '600';
-    input.style.fontSize = '11px';
+    input.className = 'rapier-inline-range-number';
 
     const clampNum = (v) => Math.min(max, Math.max(min, v));
     const setBoth = (next, { from = null } = {}) => {
@@ -512,35 +453,26 @@ function makeInlineRangeNumberControl({
 
 function makeKnobControl({ title, min, max, step, value, fmt, help, helpSystem, inlineValue = false }) {
     const wrap = document.createElement('div');
-    wrap.style.margin = '8px 0 10px';
+    wrap.className = 'rapier-knob';
 
     const head = document.createElement('div');
-    head.style.display = 'flex';
-    head.style.alignItems = 'baseline';
-    head.style.justifyContent = inlineValue ? 'flex-start' : 'space-between';
-    head.style.gap = '10px';
+    head.className = 'rapier-knob-head';
+    head.classList.toggle('is-inline-value', inlineValue);
 
     const label = document.createElement('div');
     label.textContent = title;
-    label.style.fontSize = '13px';
-    label.style.fontWeight = '700';
-    label.style.opacity = '0.95';
-    label.style.display = 'flex';
-    label.style.alignItems = 'center';
+    label.className = 'rapier-knob-label';
     let inlineVal = null;
     if (inlineValue) {
         inlineVal = document.createElement('span');
-        inlineVal.style.marginLeft = '6px';
-        inlineVal.style.fontSize = '12px';
-        inlineVal.style.opacity = '0.75';
+        inlineVal.className = 'rapier-knob-inline-val';
         inlineVal.textContent = fmt(value);
         label.appendChild(inlineVal);
     }
     appendHelp(label, help, helpSystem);
 
     const val = document.createElement('div');
-    val.style.fontSize = '12px';
-    val.style.opacity = '0.75';
+    val.className = 'rapier-knob-val';
     val.textContent = fmt(value);
 
     head.appendChild(label);
@@ -549,29 +481,14 @@ function makeKnobControl({ title, min, max, step, value, fmt, help, helpSystem, 
     }
 
     const track = document.createElement('div');
-    track.style.position = 'relative';
-    track.style.height = '18px';
-    track.style.marginTop = '6px';
+    track.className = 'rapier-knob-track';
 
     const line = document.createElement('div');
-    line.style.position = 'absolute';
-    line.style.left = '6px';
-    line.style.right = '6px';
-    line.style.top = '50%';
-    line.style.height = '2px';
-    line.style.transform = 'translateY(-50%)';
-    line.style.background = 'rgba(255,255,255,0.3)';
+    line.className = 'rapier-knob-line';
     track.appendChild(line);
 
     const knob = document.createElement('div');
-    knob.style.position = 'absolute';
-    knob.style.top = '50%';
-    knob.style.width = '12px';
-    knob.style.height = '12px';
-    knob.style.borderRadius = '999px';
-    knob.style.background = '#e9f2ff';
-    knob.style.boxShadow = '0 0 0 2px rgba(0,0,0,0.25)';
-    knob.style.transform = 'translate(-50%, -50%)';
+    knob.className = 'rapier-knob-dot';
     track.appendChild(knob);
 
     const input = document.createElement('input');
@@ -580,12 +497,7 @@ function makeKnobControl({ title, min, max, step, value, fmt, help, helpSystem, 
     input.max = String(max);
     input.step = String(step);
     input.value = String(value);
-    input.style.position = 'absolute';
-    input.style.inset = '0';
-    input.style.width = '100%';
-    input.style.height = '100%';
-    input.style.opacity = '0';
-    input.style.cursor = 'pointer';
+    input.className = 'rapier-knob-input';
     track.appendChild(input);
 
     const update = (next) => {
@@ -621,7 +533,7 @@ function makeNumberControl({
     controlsAlignRight = false
 }) {
     const wrap = document.createElement('div');
-    wrap.style.margin = '8px 0 10px';
+    wrap.className = 'rapier-number';
     const scaledWidth = scalePx(width, 0.5);
     const hasMin = min !== null && min !== undefined && Number.isFinite(Number(min));
     const hasMax = max !== null && max !== undefined && Number.isFinite(Number(max));
@@ -633,33 +545,18 @@ function makeNumberControl({
     const isForceLike = /\(n/i.test(String(title ?? ''));
 
     const row = document.createElement('div');
-    row.style.display = 'flex';
-    row.style.alignItems = 'center';
-    row.style.justifyContent = controlsAlignRight ? 'flex-start' : 'space-between';
-    row.style.gap = '10px';
+    row.className = 'rapier-number-row';
+    row.classList.toggle('is-align-right', controlsAlignRight);
 
     const label = document.createElement('div');
     label.textContent = title;
-    label.style.fontSize = '13px';
-    label.style.fontWeight = '700';
-    label.style.opacity = '0.95';
-    label.style.display = 'flex';
-    label.style.alignItems = 'center';
+    label.className = 'rapier-number-label';
     appendHelp(label, help, helpSystem);
 
     const slider = document.createElement('input');
     slider.type = 'range';
-    if (sliderWidth) {
-        slider.style.flex = `0 0 ${sliderWidth}`;
-        slider.style.width = sliderWidth;
-    } else {
-        slider.style.flex = '1';
-        slider.style.minWidth = '90px';
-    }
-    slider.style.height = '18px';
-    slider.style.margin = '0';
-    slider.style.cursor = 'pointer';
-    slider.style.opacity = '0.95';
+    slider.className = 'rapier-number-slider';
+    slider.classList.toggle('is-fixed', !!sliderWidth);
     slider.step = String(stepValue);
 
     const autoRange = !(hasMin && hasMax);
@@ -692,14 +589,11 @@ function makeNumberControl({
     if (min !== null) input.min = String(min);
     if (max !== null) input.max = String(max);
     if (step !== null) input.step = String(step);
-    input.style.width = scaledWidth;
-    input.style.padding = '3px 4px';
-    input.style.borderRadius = '8px';
-    input.style.border = '1px solid rgba(255,255,255,0.16)';
-    input.style.background = 'rgba(8, 12, 18, 0.6)';
-    input.style.color = '#e9f2ff';
-    input.style.fontWeight = '600';
-    input.style.fontSize = '11px';
+    input.className = 'rapier-number-input';
+    if (typeof scaledWidth === 'string' && scaledWidth.endsWith('px')) {
+        const px = Math.round(parseFloat(scaledWidth));
+        if (Number.isFinite(px)) input.classList.add(`w-${px}`);
+    }
 
     const setBoth = (next, { from = null } = {}) => {
         if (!Number.isFinite(next)) return;
@@ -734,11 +628,7 @@ function makeNumberControl({
 
     if (controlsAlignRight) {
         const controls = document.createElement('div');
-        controls.style.display = 'flex';
-        controls.style.alignItems = 'center';
-        controls.style.justifyContent = 'flex-end';
-        controls.style.gap = '10px';
-        controls.style.marginLeft = 'auto';
+        controls.className = 'rapier-number-controls';
         controls.appendChild(slider);
         controls.appendChild(input);
         row.appendChild(controls);
@@ -763,36 +653,25 @@ function makeInlineVector3Control({
     step = null
 }) {
     const wrap = document.createElement('div');
-    wrap.style.margin = '8px 0 10px';
     const scaledWidth = scalePx(width, 0.5);
+    wrap.className = 'rapier-vec rapier-vec--stacked';
 
     const label = document.createElement('div');
     label.textContent = title;
-    label.style.fontSize = '13px';
-    label.style.fontWeight = '700';
-    label.style.opacity = '0.95';
-    label.style.display = 'flex';
-    label.style.alignItems = 'center';
-    label.style.marginBottom = '6px';
+    label.className = 'rapier-vec-title';
     appendHelp(label, help, helpSystem);
     wrap.appendChild(label);
 
     const row = document.createElement('div');
-    row.style.display = 'flex';
-    row.style.alignItems = 'center';
-    row.style.gap = '10px';
+    row.className = 'rapier-vec-row';
 
     const makeAxis = (axis) => {
         const axisWrap = document.createElement('div');
-        axisWrap.style.display = 'flex';
-        axisWrap.style.alignItems = 'center';
-        axisWrap.style.gap = '6px';
+        axisWrap.className = 'rapier-vec-axis';
 
         const axisLabel = document.createElement('div');
         axisLabel.textContent = axis.toUpperCase();
-        axisLabel.style.fontSize = '11px';
-        axisLabel.style.fontWeight = '700';
-        axisLabel.style.opacity = '0.8';
+        axisLabel.className = 'rapier-vec-axis-label';
 
         const input = document.createElement('input');
         input.type = 'number';
@@ -801,14 +680,11 @@ function makeInlineVector3Control({
         if (min !== null) input.min = String(min);
         if (max !== null) input.max = String(max);
         if (step !== null) input.step = String(step);
-        input.style.width = scaledWidth;
-        input.style.padding = '3px 4px';
-        input.style.borderRadius = '8px';
-        input.style.border = '1px solid rgba(255,255,255,0.16)';
-        input.style.background = 'rgba(8, 12, 18, 0.6)';
-        input.style.color = '#e9f2ff';
-        input.style.fontWeight = '600';
-        input.style.fontSize = '11px';
+        input.className = 'rapier-number-input rapier-vec-input';
+        if (typeof scaledWidth === 'string' && scaledWidth.endsWith('px')) {
+            const px = Math.round(parseFloat(scaledWidth));
+            if (Number.isFinite(px)) input.classList.add(`w-${px}`);
+        }
 
         axisWrap.appendChild(axisLabel);
         axisWrap.appendChild(input);
@@ -835,40 +711,27 @@ function makeInlineVector3Row({
     step = null
 }) {
     const wrap = document.createElement('div');
-    wrap.style.margin = '8px 0 10px';
     const scaledWidth = scalePx(width, 0.5);
+    wrap.className = 'rapier-vec rapier-vec--inline';
 
     const row = document.createElement('div');
-    row.style.display = 'flex';
-    row.style.alignItems = 'center';
-    row.style.justifyContent = 'space-between';
-    row.style.gap = '10px';
+    row.className = 'rapier-vec-row rapier-vec-row--space';
 
     const label = document.createElement('div');
     label.textContent = title;
-    label.style.fontSize = '13px';
-    label.style.fontWeight = '700';
-    label.style.opacity = '0.95';
-    label.style.display = 'flex';
-    label.style.alignItems = 'center';
+    label.className = 'rapier-vec-title rapier-vec-title--inline';
     appendHelp(label, help, helpSystem);
 
     const inputsRow = document.createElement('div');
-    inputsRow.style.display = 'flex';
-    inputsRow.style.alignItems = 'center';
-    inputsRow.style.gap = '10px';
+    inputsRow.className = 'rapier-vec-inputs';
 
     const makeAxis = (axis) => {
         const axisWrap = document.createElement('div');
-        axisWrap.style.display = 'flex';
-        axisWrap.style.alignItems = 'center';
-        axisWrap.style.gap = '6px';
+        axisWrap.className = 'rapier-vec-axis';
 
         const axisLabel = document.createElement('div');
         axisLabel.textContent = axis.toUpperCase();
-        axisLabel.style.fontSize = '11px';
-        axisLabel.style.fontWeight = '700';
-        axisLabel.style.opacity = '0.8';
+        axisLabel.className = 'rapier-vec-axis-label';
 
         const input = document.createElement('input');
         input.type = 'number';
@@ -877,14 +740,11 @@ function makeInlineVector3Row({
         if (min !== null) input.min = String(min);
         if (max !== null) input.max = String(max);
         if (step !== null) input.step = String(step);
-        input.style.width = scaledWidth;
-        input.style.padding = '3px 4px';
-        input.style.borderRadius = '8px';
-        input.style.border = '1px solid rgba(255,255,255,0.16)';
-        input.style.background = 'rgba(8, 12, 18, 0.6)';
-        input.style.color = '#e9f2ff';
-        input.style.fontWeight = '600';
-        input.style.fontSize = '11px';
+        input.className = 'rapier-number-input rapier-vec-input';
+        if (typeof scaledWidth === 'string' && scaledWidth.endsWith('px')) {
+            const px = Math.round(parseFloat(scaledWidth));
+            if (Number.isFinite(px)) input.classList.add(`w-${px}`);
+        }
 
         axisWrap.appendChild(axisLabel);
         axisWrap.appendChild(input);
@@ -911,40 +771,24 @@ function makeInlineValueRowWithButton({
     buttonLabel = '...'
 }) {
     const wrap = document.createElement('div');
-    wrap.style.margin = '8px 0 10px';
+    wrap.className = 'rapier-inline-value';
 
     const row = document.createElement('div');
-    row.style.display = 'flex';
-    row.style.alignItems = 'center';
-    row.style.gap = '10px';
+    row.className = 'rapier-inline-value-row';
 
     const label = document.createElement('div');
     label.textContent = title;
-    label.style.fontSize = '13px';
-    label.style.fontWeight = '700';
-    label.style.opacity = '0.95';
-    label.style.display = 'flex';
-    label.style.alignItems = 'center';
+    label.className = 'rapier-inline-value-label';
     appendHelp(label, help, helpSystem);
 
     const value = document.createElement('div');
     value.textContent = valueText;
-    value.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, monospace';
-    value.style.fontVariantNumeric = 'tabular-nums';
-    value.style.fontSize = '11px';
-    value.style.opacity = '0.9';
-    value.style.flex = '1 1 auto';
+    value.className = 'rapier-inline-value-text';
 
     const button = document.createElement('button');
     button.type = 'button';
     button.textContent = buttonLabel;
-    button.style.padding = '4px 8px';
-    button.style.borderRadius = '8px';
-    button.style.border = '1px solid rgba(255,255,255,0.16)';
-    button.style.background = 'rgba(12, 16, 24, 0.9)';
-    button.style.color = '#e9f2ff';
-    button.style.fontWeight = '700';
-    button.style.cursor = 'pointer';
+    button.className = 'rapier-button is-small';
 
     row.appendChild(label);
     row.appendChild(value);
@@ -956,29 +800,20 @@ function makeInlineValueRowWithButton({
 
 function makeToggleControl({ title, value, help, helpSystem }) {
     const wrap = document.createElement('div');
-    wrap.style.margin = '8px 0 10px';
+    wrap.className = 'rapier-toggle';
 
     const row = document.createElement('div');
-    row.style.display = 'flex';
-    row.style.alignItems = 'center';
-    row.style.justifyContent = 'space-between';
-    row.style.gap = '10px';
+    row.className = 'rapier-toggle-row';
 
     const label = document.createElement('div');
     label.textContent = title;
-    label.style.fontSize = '13px';
-    label.style.fontWeight = '700';
-    label.style.opacity = '0.95';
-    label.style.display = 'flex';
-    label.style.alignItems = 'center';
+    label.className = 'rapier-toggle-label';
     appendHelp(label, help, helpSystem);
 
     const input = document.createElement('input');
     input.type = 'checkbox';
     input.checked = !!value;
-    input.style.width = '16px';
-    input.style.height = '16px';
-    input.style.cursor = 'pointer';
+    input.className = 'rapier-toggle-input';
 
     row.appendChild(label);
     row.appendChild(input);
@@ -989,31 +824,18 @@ function makeToggleControl({ title, value, help, helpSystem }) {
 
 function makeSelectControl({ title, value, options = [], help, helpSystem }) {
     const wrap = document.createElement('div');
-    wrap.style.margin = '8px 0 10px';
+    wrap.className = 'rapier-select';
 
     const row = document.createElement('div');
-    row.style.display = 'flex';
-    row.style.alignItems = 'center';
-    row.style.justifyContent = 'space-between';
-    row.style.gap = '10px';
+    row.className = 'rapier-select-row';
 
     const label = document.createElement('div');
     label.textContent = title;
-    label.style.fontSize = '13px';
-    label.style.fontWeight = '700';
-    label.style.opacity = '0.95';
-    label.style.display = 'flex';
-    label.style.alignItems = 'center';
+    label.className = 'rapier-select-label';
     appendHelp(label, help, helpSystem);
 
     const select = document.createElement('select');
-    select.style.width = '180px';
-    select.style.padding = '4px 6px';
-    select.style.borderRadius = '8px';
-    select.style.border = '1px solid rgba(255,255,255,0.16)';
-    select.style.background = 'rgba(8, 12, 18, 0.6)';
-    select.style.color = '#e9f2ff';
-    select.style.fontWeight = '600';
+    select.className = 'rapier-select-input';
 
     for (const opt of options) {
         const option = document.createElement('option');
@@ -1034,39 +856,22 @@ function makeSelectControl({ title, value, options = [], help, helpSystem }) {
 
 function makeValueRow(label, { help = null, helpSystem = null, bar = false, arrow = false, dots = 0 } = {}) {
     const row = document.createElement('div');
-    row.style.display = 'flex';
-    row.style.alignItems = 'center';
-    row.style.justifyContent = 'space-between';
-    row.style.gap = '10px';
-    row.style.margin = '6px 0';
+    row.className = 'rapier-value-row';
 
     const key = document.createElement('div');
     key.textContent = label;
-    key.style.fontSize = '12px';
-    key.style.fontWeight = '700';
-    key.style.opacity = '0.85';
-    key.style.whiteSpace = 'pre-line';
+    key.className = 'rapier-value-key';
     appendHelp(key, help, helpSystem);
 
     const value = document.createElement('div');
     value.textContent = 'n/a';
-    value.style.fontSize = '12px';
-    value.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, monospace';
-    value.style.fontVariantNumeric = 'tabular-nums';
-    value.style.whiteSpace = 'pre';
-    value.style.textAlign = 'right';
-    value.style.opacity = '0.9';
+    value.className = 'rapier-value-text';
 
     const valueWrap = document.createElement('div');
-    valueWrap.style.display = 'flex';
-    valueWrap.style.flexDirection = 'column';
-    valueWrap.style.alignItems = 'flex-end';
-    valueWrap.style.gap = '4px';
+    valueWrap.className = 'rapier-value-wrap';
 
     const valueLine = document.createElement('div');
-    valueLine.style.display = 'flex';
-    valueLine.style.alignItems = 'center';
-    valueLine.style.gap = '6px';
+    valueLine.className = 'rapier-value-line';
 
     let arrowEl = null;
     if (arrow) {
@@ -1080,16 +885,10 @@ function makeValueRow(label, { help = null, helpSystem = null, bar = false, arro
     let barFill = null;
     if (bar) {
         const barWrap = document.createElement('div');
-        barWrap.style.width = '120px';
-        barWrap.style.height = '6px';
-        barWrap.style.borderRadius = '999px';
-        barWrap.style.background = 'rgba(255,255,255,0.15)';
-        barWrap.style.overflow = 'hidden';
+        barWrap.className = 'rapier-value-bar';
 
         barFill = document.createElement('div');
-        barFill.style.height = '100%';
-        barFill.style.width = '0%';
-        barFill.style.background = 'rgba(76,255,122,0.85)';
+        barFill.className = 'rapier-value-bar-fill';
         barWrap.appendChild(barFill);
         valueWrap.appendChild(barWrap);
     }
@@ -1097,18 +896,12 @@ function makeValueRow(label, { help = null, helpSystem = null, bar = false, arro
     let dotEls = null;
     if (dots > 0) {
         const dotWrap = document.createElement('div');
-        dotWrap.style.display = 'flex';
-        dotWrap.style.alignItems = 'center';
-        dotWrap.style.gap = '6px';
+        dotWrap.className = 'rapier-value-dots';
 
         dotEls = [];
         for (let i = 0; i < dots; i++) {
             const dot = document.createElement('div');
-            dot.style.width = '8px';
-            dot.style.height = '8px';
-            dot.style.borderRadius = '999px';
-            dot.style.background = 'rgba(255,255,255,0.2)';
-            dot.style.boxShadow = '0 0 0 1px rgba(255,255,255,0.15)';
+            dot.className = 'rapier-value-dot';
             dotWrap.appendChild(dot);
             dotEls.push(dot);
         }
@@ -1120,93 +913,43 @@ function makeValueRow(label, { help = null, helpSystem = null, bar = false, arro
     return { row, valueEl: value, barEl: barFill, arrowEl, dotEls };
 }
 
-function makeArrowMarker({ size = 14, color = 'rgba(233, 242, 255, 0.9)' } = {}) {
+function makeArrowMarker({ size = 14 } = {}) {
     const arrow = document.createElement('div');
-    const headWidth = Math.max(6, Math.round(size * 0.6));
-    const headHeight = Math.max(6, Math.round(size * 0.5));
-    const shaftWidth = Math.max(2, Math.round(size * 0.15));
-    const shaftHeight = Math.max(4, size - headHeight - 2);
-
-    arrow.style.position = 'relative';
-    arrow.style.width = `${size}px`;
-    arrow.style.height = `${size}px`;
-    arrow.style.transform = 'rotate(0deg)';
-    arrow.style.transformOrigin = '50% 50%';
-
-    const head = document.createElement('div');
-    head.style.position = 'absolute';
-    head.style.left = '50%';
-    head.style.top = '0';
-    head.style.width = '0';
-    head.style.height = '0';
-    head.style.borderLeft = `${Math.round(headWidth / 2)}px solid transparent`;
-    head.style.borderRight = `${Math.round(headWidth / 2)}px solid transparent`;
-    head.style.borderBottom = `${headHeight}px solid ${color}`;
-    head.style.transform = 'translateX(-50%)';
+    arrow.className = 'rapier-arrow';
+    if (size <= 12) arrow.classList.add('is-sm');
+    if (size >= 18) arrow.classList.add('is-lg');
 
     const shaft = document.createElement('div');
-    shaft.style.position = 'absolute';
-    shaft.style.left = '50%';
-    shaft.style.top = `${headHeight - 1}px`;
-    shaft.style.width = `${shaftWidth}px`;
-    shaft.style.height = `${shaftHeight}px`;
-    shaft.style.background = color;
-    shaft.style.borderRadius = '999px';
-    shaft.style.transform = 'translateX(-50%)';
+    shaft.className = 'rapier-arrow-shaft';
+    const head = document.createElement('div');
+    head.className = 'rapier-arrow-head';
 
     arrow.appendChild(shaft);
     arrow.appendChild(head);
     return arrow;
 }
 
-function makeButton(label) {
+function makeButton(label, { size = 'normal' } = {}) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.textContent = label;
-    btn.style.padding = '8px 12px';
-    btn.style.borderRadius = '10px';
-    btn.style.border = '1px solid rgba(255,255,255,0.16)';
-    btn.style.background = 'rgba(12, 16, 24, 0.9)';
-    btn.style.color = '#e9f2ff';
-    btn.style.fontWeight = '700';
-    btn.style.cursor = 'pointer';
-    btn.style.marginRight = '8px';
+    btn.className = 'rapier-button';
+    if (size === 'small') {
+        btn.classList.add('is-small');
+    }
     return btn;
 }
 
 function makeAxisLegend() {
     const wrap = document.createElement('div');
-    wrap.style.position = 'absolute';
-    wrap.style.left = '50%';
-    wrap.style.bottom = '12px';
-    wrap.style.transform = 'translateX(-50%)';
-    wrap.style.overflow = 'visible';
-    wrap.style.display = 'flex';
-    wrap.style.alignItems = 'center';
-    wrap.style.gap = '12px';
-    wrap.style.padding = '6px 10px';
-    wrap.style.borderRadius = '999px';
-    wrap.style.background = 'rgba(10, 14, 20, 0.6)';
-    wrap.style.border = '1px solid rgba(255,255,255,0.12)';
-    wrap.style.backdropFilter = 'blur(6px)';
-    wrap.style.color = '#e9f2ff';
-    wrap.style.fontSize = '11px';
-    wrap.style.fontWeight = '700';
-    wrap.style.letterSpacing = '0.4px';
-    wrap.style.textTransform = 'uppercase';
+    wrap.className = 'rapier-axis-legend';
 
-    const addItem = (label, color) => {
+    const addItem = (label, colorClass) => {
         const row = document.createElement('div');
-        row.style.display = 'inline-flex';
-        row.style.alignItems = 'center';
-        row.style.gap = '6px';
+        row.className = 'rapier-axis-legend-item';
 
         const dot = document.createElement('span');
-        dot.style.width = '8px';
-        dot.style.height = '8px';
-        dot.style.borderRadius = '999px';
-        dot.style.background = color;
-        dot.style.boxShadow = `0 0 0 1px ${color}`;
+        dot.className = `rapier-axis-legend-dot ${colorClass}`;
 
         const text = document.createElement('span');
         text.textContent = label;
@@ -1216,55 +959,27 @@ function makeAxisLegend() {
         wrap.appendChild(row);
     };
 
-    addItem('X', '#ff2d2d');
-    addItem('Y', '#2fe75c');
-    addItem('Z', '#2d7dff');
+    addItem('X', 'is-x');
+    addItem('Y', 'is-y');
+    addItem('Z', 'is-z');
 
     const camWrap = document.createElement('div');
-    camWrap.style.display = 'inline-flex';
-    camWrap.style.alignItems = 'center';
-    camWrap.style.gap = '8px';
-    camWrap.style.marginLeft = '6px';
+    camWrap.className = 'rapier-axis-legend-camera-wrap';
 
     const camIcon = document.createElement('div');
-    camIcon.style.width = '16px';
-    camIcon.style.height = '11px';
-    camIcon.style.borderRadius = '3px';
-    camIcon.style.border = '1px solid rgba(233, 242, 255, 0.75)';
-    camIcon.style.position = 'relative';
-    camIcon.style.boxSizing = 'border-box';
-    camIcon.style.cursor = 'pointer';
+    camIcon.className = 'rapier-axis-legend-camera';
 
     const camTop = document.createElement('div');
-    camTop.style.position = 'absolute';
-    camTop.style.left = '2px';
-    camTop.style.top = '-4px';
-    camTop.style.width = '6px';
-    camTop.style.height = '4px';
-    camTop.style.border = '1px solid rgba(233, 242, 255, 0.75)';
-    camTop.style.borderBottom = 'none';
-    camTop.style.borderRadius = '2px 2px 0 0';
-    camTop.style.boxSizing = 'border-box';
+    camTop.className = 'rapier-axis-legend-camera-top';
 
     const camLens = document.createElement('div');
-    camLens.style.position = 'absolute';
-    camLens.style.left = '50%';
-    camLens.style.top = '50%';
-    camLens.style.width = '6px';
-    camLens.style.height = '6px';
-    camLens.style.borderRadius = '999px';
-    camLens.style.border = '1px solid rgba(233, 242, 255, 0.85)';
-    camLens.style.transform = 'translate(-50%, -50%)';
-    camLens.style.boxSizing = 'border-box';
+    camLens.className = 'rapier-axis-legend-camera-lens';
 
     camIcon.appendChild(camTop);
     camIcon.appendChild(camLens);
 
     const coords = document.createElement('div');
-    coords.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, monospace';
-    coords.style.fontVariantNumeric = 'tabular-nums';
-    coords.style.fontSize = '11px';
-    coords.style.opacity = '0.9';
+    coords.className = 'rapier-axis-legend-coords';
     coords.textContent = 'X:0.00  Y:0.00  Z:0.00';
 
     camWrap.appendChild(camIcon);
@@ -1272,21 +987,7 @@ function makeAxisLegend() {
     wrap.appendChild(camWrap);
 
     const toast = document.createElement('div');
-    toast.style.position = 'absolute';
-    toast.style.left = '50%';
-    toast.style.bottom = '100%';
-    toast.style.transform = 'translate(-50%, -8px)';
-    toast.style.padding = '6px 10px';
-    toast.style.borderRadius = '10px';
-    toast.style.background = 'rgba(10, 14, 20, 0.92)';
-    toast.style.border = '1px solid rgba(255,255,255,0.18)';
-    toast.style.color = '#e9f2ff';
-    toast.style.fontSize = '11px';
-    toast.style.fontWeight = '700';
-    toast.style.boxShadow = '0 8px 20px rgba(0,0,0,0.35)';
-    toast.style.whiteSpace = 'nowrap';
-    toast.style.display = 'none';
-    toast.style.zIndex = '90';
+    toast.className = 'rapier-axis-legend-toast';
     wrap.appendChild(toast);
 
     return { wrap, coordsEl: coords, camIcon, toastEl: toast };
@@ -1377,6 +1078,7 @@ export class RapierDebuggerUI {
         this._positionPopupLiveProgressInterval = null;
         this._inertiaPopup = null;
         this._inertiaPopupHandlers = null;
+        this._inertiaPopupFields = null;
         this._inertiaFramePopup = null;
         this._inertiaFramePopupHandlers = null;
         this._lockingPopup = null;
@@ -1443,6 +1145,11 @@ export class RapierDebuggerUI {
 
         const baseVehicleConfig = vehicleConfig ?? {};
         this._vehicleConfig = {
+            width: Number.isFinite(baseVehicleConfig.width) ? baseVehicleConfig.width : 2.5,
+            height: Number.isFinite(baseVehicleConfig.height) ? baseVehicleConfig.height : 3.0,
+            length: Number.isFinite(baseVehicleConfig.length) ? baseVehicleConfig.length : 10.0,
+            wheelRadius: Number.isFinite(baseVehicleConfig.wheelRadius) ? baseVehicleConfig.wheelRadius : 0.55,
+            wheelWidth: Number.isFinite(baseVehicleConfig.wheelWidth) ? baseVehicleConfig.wheelWidth : 0.35,
             spawnHeight: Number.isFinite(baseVehicleConfig.spawnHeight) ? baseVehicleConfig.spawnHeight : 3,
             groundClearance: Number.isFinite(baseVehicleConfig.groundClearance) ? baseVehicleConfig.groundClearance : 0.24,
             restLength: Number.isFinite(baseVehicleConfig.restLength) ? baseVehicleConfig.restLength : 0.35,
@@ -1501,7 +1208,9 @@ export class RapierDebuggerUI {
                     z: typeof baseEnabledRotations.z === 'boolean' ? baseEnabledRotations.z : true
                 },
                 additionalMassProperties: {
+                    inertiaMode: resolveInertiaMode(baseProps),
                     mass: Number.isFinite(baseProps.mass) ? baseProps.mass : NaN,
+                    density: Number.isFinite(baseProps.density) ? baseProps.density : NaN,
                     com: {
                         x: Number.isFinite(baseCom.x) ? baseCom.x : 0,
                         y: Number.isFinite(baseCom.y) ? baseCom.y : 0,
@@ -1532,6 +1241,8 @@ export class RapierDebuggerUI {
                 sideFrictionStiffness: Number.isFinite(baseTuning.tires?.sideFrictionStiffness) ? baseTuning.tires.sideFrictionStiffness : 1.45
             }
         };
+
+        this._recomputeAutoInertia();
 
         this.onReset = null;
         this.onResetCamera = null;
@@ -1635,6 +1346,10 @@ export class RapierDebuggerUI {
         this._sleepMarker = null;
         this._wakeButton = null;
         this._sleepingState = null;
+        this._inertiaAutoPill = null;
+        this._inertiaModeNote = null;
+        this._comButton = null;
+        this._inertiaButton = null;
         this._comPopup = null;
         this._comPopupHandlers = null;
         this._positionPopupLiveEnabled = false;
@@ -1696,13 +1411,13 @@ export class RapierDebuggerUI {
     _showAxisToast(message, duration = 2000) {
         if (!this._axisLegendToast) return;
         this._axisLegendToast.textContent = message;
-        this._axisLegendToast.style.display = 'block';
+        this._axisLegendToast.classList.add('is-visible');
         if (this._axisToastTimer) {
             clearTimeout(this._axisToastTimer);
         }
         this._axisToastTimer = window.setTimeout(() => {
             if (this._axisLegendToast) {
-                this._axisLegendToast.style.display = 'none';
+                this._axisLegendToast.classList.remove('is-visible');
             }
             this._axisToastTimer = null;
         }, duration);
@@ -1712,33 +1427,14 @@ export class RapierDebuggerUI {
         this._closeCameraPopup();
         if (!this._hudRoot || !anchor) return;
 
-        const wrap = document.createElement('div');
-        wrap.style.position = 'fixed';
-        wrap.style.zIndex = '90';
-        wrap.style.padding = '10px';
-        wrap.style.borderRadius = '10px';
-        wrap.style.background = 'rgba(10, 14, 20, 0.92)';
-        wrap.style.border = '1px solid rgba(255,255,255,0.18)';
-        wrap.style.color = '#e9f2ff';
-        wrap.style.boxShadow = '0 10px 28px rgba(0,0,0,0.35)';
-        wrap.style.backdropFilter = 'blur(8px)';
-        wrap.style.display = 'flex';
-        wrap.style.flexDirection = 'column';
-        wrap.style.gap = '8px';
-
-        const { header } = makePopupHeader('Camera', () => this._closeCameraPopup());
-        wrap.appendChild(header);
-        makePopupDraggable(wrap, header);
+        const { wrap } = makePopupWrap({ title: 'Camera', onClose: () => this._closeCameraPopup() });
 
         const topSeparator = makeSeparator();
-        topSeparator.style.margin = '6px 0 4px';
+        topSeparator.classList.add('rapier-separator-tight');
         wrap.appendChild(topSeparator);
 
         const resetCameraButton = makeButton('Reset camera');
-        resetCameraButton.style.padding = '6px 10px';
-        resetCameraButton.style.fontSize = '11px';
-        resetCameraButton.style.borderRadius = '8px';
-        resetCameraButton.style.marginRight = '0';
+        resetCameraButton.classList.add('is-popup');
         resetCameraButton.addEventListener('click', () => {
             this.onResetCamera?.();
             this._closeCameraPopup();
@@ -1783,57 +1479,26 @@ export class RapierDebuggerUI {
         this._closeGravityPopup();
         if (!this._hudRoot || !anchor) return;
 
-        const wrap = document.createElement('div');
-        wrap.style.position = 'fixed';
-        wrap.style.zIndex = '90';
-        wrap.style.padding = '10px';
-        wrap.style.borderRadius = '10px';
-        wrap.style.background = 'rgba(10, 14, 20, 0.92)';
-        wrap.style.border = '1px solid rgba(255,255,255,0.18)';
-        wrap.style.color = '#e9f2ff';
-        wrap.style.boxShadow = '0 10px 28px rgba(0,0,0,0.35)';
-        wrap.style.backdropFilter = 'blur(8px)';
-        wrap.style.display = 'flex';
-        wrap.style.flexDirection = 'column';
-        wrap.style.gap = '8px';
-        wrap.style.minWidth = '210px';
-        wrap.style.maxWidth = '210px';
-
-        const { header } = makePopupHeader('Gravity', () => this._closeGravityPopup());
-        wrap.appendChild(header);
-        makePopupDraggable(wrap, header);
+        const { wrap } = makePopupWrap({ title: 'Gravity', onClose: () => this._closeGravityPopup(), classes: ['is-narrow'] });
 
         const topSeparator = makeSeparator();
-        topSeparator.style.margin = '6px 0 4px';
+        topSeparator.classList.add('rapier-separator-tight');
         wrap.appendChild(topSeparator);
 
         const makeField = (axis, value) => {
             const row = document.createElement('div');
-            row.style.display = 'flex';
-            row.style.alignItems = 'center';
-            row.style.justifyContent = 'space-between';
-            row.style.gap = '10px';
+            row.className = 'rapier-popup-field-row';
 
             const label = document.createElement('div');
             label.textContent = axis;
-            label.style.fontSize = '11px';
-            label.style.fontWeight = '700';
-            label.style.opacity = '0.8';
-            label.style.width = '18px';
+            label.className = 'rapier-popup-field-axis';
 
             const input = document.createElement('input');
             input.type = 'number';
             input.inputMode = 'decimal';
             input.step = '0.1';
             input.value = Number.isFinite(value) ? String(value) : '';
-            input.style.width = '80px';
-            input.style.padding = '3px 4px';
-            input.style.borderRadius = '8px';
-            input.style.border = '1px solid rgba(255,255,255,0.16)';
-            input.style.background = 'rgba(8, 12, 18, 0.6)';
-            input.style.color = '#e9f2ff';
-            input.style.fontWeight = '600';
-            input.style.fontSize = '11px';
+            input.className = 'rapier-popup-number-input';
 
             row.appendChild(label);
             row.appendChild(input);
@@ -1864,19 +1529,14 @@ export class RapierDebuggerUI {
         wireLive(inputs.z, 'worldGravityZ');
 
         const actions = document.createElement('div');
-        actions.style.display = 'flex';
-        actions.style.justifyContent = 'flex-end';
-        actions.style.gap = '8px';
+        actions.className = 'rapier-popup-actions';
 
         const separator = makeSeparator();
-        separator.style.margin = '6px 0 4px';
+        separator.classList.add('rapier-separator-tight');
         wrap.appendChild(separator);
 
         const reset = makeButton('Reset');
-        reset.style.padding = '6px 10px';
-        reset.style.fontSize = '11px';
-        reset.style.borderRadius = '8px';
-        reset.style.marginRight = '0';
+        reset.classList.add('is-popup');
         reset.addEventListener('click', () => {
             inputs.x.value = String(initialGravity.x);
             inputs.y.value = String(initialGravity.y);
@@ -1937,27 +1597,10 @@ export class RapierDebuggerUI {
         this._closePositionPopup();
         if (!this._hudRoot || !anchor) return;
 
-        const wrap = document.createElement('div');
-        wrap.style.position = 'fixed';
-        wrap.style.zIndex = '90';
-        wrap.style.padding = '10px';
-        wrap.style.borderRadius = '10px';
-        wrap.style.background = 'rgba(10, 14, 20, 0.92)';
-        wrap.style.border = '1px solid rgba(255,255,255,0.18)';
-        wrap.style.color = '#e9f2ff';
-        wrap.style.boxShadow = '0 10px 28px rgba(0,0,0,0.35)';
-        wrap.style.backdropFilter = 'blur(8px)';
-        wrap.style.display = 'flex';
-        wrap.style.flexDirection = 'column';
-        wrap.style.gap = '8px';
-        wrap.style.minWidth = '520px';
-
-        const { header } = makePopupHeader('Reset', () => this._closePositionPopup());
-        wrap.appendChild(header);
-        makePopupDraggable(wrap, header);
+        const { wrap } = makePopupWrap({ title: 'Reset', onClose: () => this._closePositionPopup(), classes: ['is-wide'] });
 
         const topSeparator = makeSeparator();
-        topSeparator.style.margin = '6px 0 4px';
+        topSeparator.classList.add('rapier-separator-tight');
         wrap.appendChild(topSeparator);
 
         const helpSystem = this._helpSystem;
@@ -1968,14 +1611,7 @@ export class RapierDebuggerUI {
             input.inputMode = 'decimal';
             input.step = String(step);
             input.value = Number.isFinite(value) ? String(value) : '';
-            input.style.width = '70px';
-            input.style.padding = '3px 4px';
-            input.style.borderRadius = '8px';
-            input.style.border = '1px solid rgba(255,255,255,0.16)';
-            input.style.background = 'rgba(8, 12, 18, 0.6)';
-            input.style.color = '#e9f2ff';
-            input.style.fontWeight = '600';
-            input.style.fontSize = '11px';
+            input.className = 'rapier-popup-table-input';
             return input;
         };
 
@@ -1987,58 +1623,39 @@ export class RapierDebuggerUI {
             slider.step = String(step);
             const startValue = Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : 0;
             slider.value = String(startValue);
-            slider.style.width = '70px';
-            slider.style.cursor = 'pointer';
+            slider.className = 'rapier-popup-table-slider';
             return slider;
         };
 
         const makeHeaderCell = (text) => {
             const cell = document.createElement('div');
             cell.textContent = text;
-            cell.style.fontSize = '11px';
-            cell.style.fontWeight = '700';
-            cell.style.opacity = '0.75';
-            cell.style.textAlign = 'center';
+            cell.className = 'rapier-popup-table-header';
             return cell;
         };
 
         const makeLabelCell = (text, help) => {
             const cell = document.createElement('div');
-            cell.style.display = 'grid';
-            cell.style.gridTemplateColumns = '1fr auto';
-            cell.style.alignItems = 'center';
-            cell.style.columnGap = '8px';
-            cell.style.fontSize = '11px';
-            cell.style.fontWeight = '700';
-            cell.style.opacity = '0.85';
+            cell.className = 'rapier-popup-table-label';
             const textSpan = document.createElement('div');
             textSpan.textContent = text;
-            textSpan.style.whiteSpace = 'nowrap';
+            textSpan.className = 'rapier-popup-table-label-text';
             cell.appendChild(textSpan);
             if (help && helpSystem) {
                 appendHelp(cell, help, helpSystem);
-                const helpEl = cell.lastElementChild;
-                if (helpEl) {
-                    helpEl.style.marginLeft = '0';
-                    helpEl.style.justifySelf = 'end';
-                }
             }
             return cell;
         };
 
         const makeEmptyCell = () => {
             const cell = document.createElement('div');
-            cell.style.minHeight = '22px';
+            cell.className = 'rapier-popup-table-empty';
             return cell;
         };
 
         const makeInputCell = (value, { min, max, step }) => {
             const cell = document.createElement('div');
-            cell.style.display = 'flex';
-            cell.style.flexDirection = 'column';
-            cell.style.alignItems = 'center';
-            cell.style.gap = '6px';
-            cell.style.justifyContent = 'center';
+            cell.className = 'rapier-popup-table-inputcell';
             const input = makeTableInput(value, step);
             const slider = makeTableSlider(value, { min, max, step });
             input.addEventListener('input', () => {
@@ -2056,10 +1673,7 @@ export class RapierDebuggerUI {
         };
 
         const table = document.createElement('div');
-        table.style.display = 'grid';
-        table.style.gridTemplateColumns = '200px repeat(4, minmax(0, 1fr))';
-        table.style.gap = '8px 10px';
-        table.style.alignItems = 'start';
+        table.className = 'rapier-position-table';
 
         table.appendChild(makeHeaderCell(''));
         table.appendChild(makeHeaderCell('W'));
@@ -2160,46 +1774,20 @@ export class RapierDebuggerUI {
         };
 
         const actions = document.createElement('div');
-        actions.style.display = 'flex';
-        actions.style.alignItems = 'center';
-        actions.style.justifyContent = 'space-between';
-        actions.style.gap = '8px';
+        actions.className = 'rapier-position-actions';
 
         const liveWrap = document.createElement('label');
-        liveWrap.style.display = 'inline-flex';
-        liveWrap.style.alignItems = 'center';
-        liveWrap.style.gap = '6px';
-        liveWrap.style.fontSize = '11px';
-        liveWrap.style.fontWeight = '700';
-        liveWrap.style.opacity = '0.85';
-        liveWrap.style.cursor = 'pointer';
+        liveWrap.className = 'rapier-live-toggle';
 
         const liveCheckbox = document.createElement('input');
         liveCheckbox.type = 'checkbox';
-        liveCheckbox.style.position = 'absolute';
-        liveCheckbox.style.opacity = '0';
-        liveCheckbox.style.width = '0';
-        liveCheckbox.style.height = '0';
+        liveCheckbox.className = 'rapier-live-checkbox';
 
         const liveTrack = document.createElement('span');
-        liveTrack.style.width = '30px';
-        liveTrack.style.height = '16px';
-        liveTrack.style.borderRadius = '999px';
-        liveTrack.style.background = 'rgba(255,255,255,0.2)';
-        liveTrack.style.boxShadow = 'inset 0 0 0 1px rgba(255,255,255,0.2)';
-        liveTrack.style.position = 'relative';
-        liveTrack.style.transition = 'background 150ms ease';
+        liveTrack.className = 'rapier-live-track';
 
         const liveKnob = document.createElement('span');
-        liveKnob.style.position = 'absolute';
-        liveKnob.style.top = '2px';
-        liveKnob.style.left = '2px';
-        liveKnob.style.width = '12px';
-        liveKnob.style.height = '12px';
-        liveKnob.style.borderRadius = '999px';
-        liveKnob.style.background = '#e9f2ff';
-        liveKnob.style.boxShadow = '0 0 6px rgba(0,0,0,0.25)';
-        liveKnob.style.transition = 'transform 150ms ease';
+        liveKnob.className = 'rapier-live-knob';
 
         liveTrack.appendChild(liveKnob);
 
@@ -2208,6 +1796,7 @@ export class RapierDebuggerUI {
 
         const liveLabel = document.createElement('span');
         liveLabel.textContent = 'Live';
+        liveLabel.className = 'rapier-live-label';
         appendHelp(
             liveLabel,
             `Auto-reset the vehicle using the current reset configuration every ${liveIntervalSeconds}s. Live stays active after closing this panel; the Reset button shows a green border while active.`,
@@ -2215,13 +1804,7 @@ export class RapierDebuggerUI {
         );
 
         const syncLiveToggle = () => {
-            if (liveCheckbox.checked) {
-                liveTrack.style.background = 'rgba(76,255,122,0.45)';
-                liveKnob.style.transform = 'translateX(14px)';
-            } else {
-                liveTrack.style.background = 'rgba(255,255,255,0.2)';
-                liveKnob.style.transform = 'translateX(0)';
-            }
+            liveWrap.classList.toggle('is-on', liveCheckbox.checked);
         };
 
         liveCheckbox.checked = this._positionPopupLiveEnabled;
@@ -2231,38 +1814,17 @@ export class RapierDebuggerUI {
         liveWrap.appendChild(liveLabel);
 
         const liveStatus = document.createElement('span');
-        liveStatus.style.display = 'none';
-        liveStatus.style.width = '84px';
-        liveStatus.style.height = '10px';
-        liveStatus.style.borderRadius = '999px';
-        liveStatus.style.border = '1px solid rgba(255,255,255,0.16)';
-        liveStatus.style.background = 'rgba(255,255,255,0.10)';
-        liveStatus.style.overflow = 'hidden';
-        liveStatus.style.boxSizing = 'border-box';
+        liveStatus.className = 'rapier-live-status hidden';
 
         const liveStatusFill = document.createElement('span');
-        liveStatusFill.style.display = 'block';
-        liveStatusFill.style.height = '100%';
-        liveStatusFill.style.width = '100%';
-        liveStatusFill.style.borderRadius = '999px';
-        liveStatusFill.style.background = 'linear-gradient(270deg, rgba(210,210,210,0.10), rgba(235,235,235,0.55), rgba(210,210,210,0.10))';
-        liveStatusFill.style.backgroundSize = '200% 100%';
-        liveStatusFill.style.backgroundPosition = '100% 50%';
-        liveStatusFill.style.opacity = '0.95';
-        liveStatusFill.style.willChange = 'width, background-position';
-        liveStatusFill.style.transition = 'width 120ms linear';
+        liveStatusFill.className = 'rapier-live-status-fill';
         liveStatus.appendChild(liveStatusFill);
 
         this._positionPopupLiveStatus = liveStatus;
         this._positionPopupLiveProgressFill = liveStatusFill;
 
         const intervalWrap = document.createElement('div');
-        intervalWrap.style.display = 'inline-flex';
-        intervalWrap.style.alignItems = 'center';
-        intervalWrap.style.gap = '6px';
-        intervalWrap.style.fontSize = '11px';
-        intervalWrap.style.fontWeight = '700';
-        intervalWrap.style.opacity = '0.85';
+        intervalWrap.className = 'rapier-live-interval';
 
         const intervalLabel = document.createElement('span');
         intervalLabel.textContent = 'Interval';
@@ -2273,8 +1835,7 @@ export class RapierDebuggerUI {
         intervalSlider.max = '30';
         intervalSlider.step = '1';
         intervalSlider.value = String(Math.min(30, Math.max(1, Math.round(liveIntervalMs / 1000))));
-        intervalSlider.style.width = '120px';
-        intervalSlider.style.cursor = 'pointer';
+        intervalSlider.className = 'rapier-live-interval-slider';
 
         const intervalValue = document.createElement('span');
         intervalValue.textContent = `${intervalSlider.value}s`;
@@ -2294,10 +1855,7 @@ export class RapierDebuggerUI {
         intervalWrap.appendChild(intervalValue);
 
         const liveGroup = document.createElement('div');
-        liveGroup.style.display = 'flex';
-        liveGroup.style.flexWrap = 'wrap';
-        liveGroup.style.alignItems = 'center';
-        liveGroup.style.gap = '10px';
+        liveGroup.className = 'rapier-live-group';
         liveGroup.appendChild(liveWrap);
         liveGroup.appendChild(intervalWrap);
         liveGroup.appendChild(liveStatus);
@@ -2322,10 +1880,7 @@ export class RapierDebuggerUI {
         }
 
         const cancel = makeButton('Cancel');
-        cancel.style.padding = '6px 10px';
-        cancel.style.fontSize = '11px';
-        cancel.style.borderRadius = '8px';
-        cancel.style.marginRight = '0';
+        cancel.classList.add('is-popup');
         cancel.addEventListener('click', () => {
             liveCheckbox.checked = false;
             syncLiveToggle();
@@ -2334,21 +1889,17 @@ export class RapierDebuggerUI {
         });
 
         const apply = makeButton('Apply');
-        apply.style.padding = '6px 10px';
-        apply.style.fontSize = '11px';
-        apply.style.borderRadius = '8px';
-        apply.style.marginRight = '0';
+        apply.classList.add('is-popup');
         apply.addEventListener('click', () => {
             applyValues({ reset: resetOnApply, close: true });
         });
 
         const buttonsSeparator = makeSeparator();
-        buttonsSeparator.style.margin = '6px 0 4px';
+        buttonsSeparator.classList.add('rapier-separator-tight');
         wrap.appendChild(buttonsSeparator);
 
         const buttons = document.createElement('div');
-        buttons.style.display = 'flex';
-        buttons.style.gap = '8px';
+        buttons.className = 'rapier-popup-buttons';
         buttons.appendChild(cancel);
         buttons.appendChild(apply);
 
@@ -2399,7 +1950,7 @@ export class RapierDebuggerUI {
             this._positionPopupLiveProgressInterval = null;
         }
         if (this._positionPopupLiveStatus) {
-            this._positionPopupLiveStatus.style.display = 'none';
+            this._positionPopupLiveStatus.classList.add('hidden');
         }
         if (!this._positionPopupLiveEnabled) {
             this._stopLiveReset();
@@ -2462,7 +2013,7 @@ export class RapierDebuggerUI {
 
         this._setResetLiveActive(true);
         if (this._resetLiveDot) {
-            this._resetLiveDot.style.visibility = 'visible';
+            this._resetLiveDot.classList.add('is-visible');
         }
 
         this._rescheduleLiveReset({ showToast });
@@ -2491,7 +2042,7 @@ export class RapierDebuggerUI {
             this._positionPopupLiveProgressInterval = null;
         }
         if (this._positionPopupLiveStatus) {
-            this._positionPopupLiveStatus.style.display = 'none';
+            this._positionPopupLiveStatus.classList.add('hidden');
         }
         if (this._positionPopupLiveProgressFill) {
             this._positionPopupLiveProgressFill.style.width = '0%';
@@ -2506,7 +2057,7 @@ export class RapierDebuggerUI {
             this._positionPopupLiveProgressInterval = null;
         }
         if (!this._positionPopupLiveStatus || !this._positionPopupLiveProgressFill) return;
-        this._positionPopupLiveStatus.style.display = 'inline-flex';
+        this._positionPopupLiveStatus.classList.remove('hidden');
         this._updateLiveProgress();
         this._positionPopupLiveProgressInterval = window.setInterval(() => {
             if (!this._positionPopupLiveEnabled) return;
@@ -2532,7 +2083,7 @@ export class RapierDebuggerUI {
 
     _startResetLiveIndicator() {
         if (!this._resetLiveDot) return;
-        this._resetLiveDot.style.visibility = 'visible';
+        this._resetLiveDot.classList.add('is-visible');
         if (this._resetLiveBlinkTimer) {
             clearTimeout(this._resetLiveBlinkTimer);
             this._resetLiveBlinkTimer = null;
@@ -2545,13 +2096,7 @@ export class RapierDebuggerUI {
 
     _setResetLiveActive(active) {
         if (!this._resetButton) return;
-        if (active) {
-            this._resetButton.style.border = '1px solid rgba(76,255,122,0.9)';
-            this._resetButton.style.boxShadow = '0 0 0 1px rgba(76,255,122,0.25)';
-        } else {
-            this._resetButton.style.border = this._resetButtonBorder ?? '1px solid rgba(255,255,255,0.16)';
-            this._resetButton.style.boxShadow = '';
-        }
+        this._resetButton.classList.toggle('is-live', active);
     }
 
     _stopResetLiveIndicator() {
@@ -2576,7 +2121,7 @@ export class RapierDebuggerUI {
             this._resetLiveBlinkInterval = null;
         }
         if (this._resetLiveDot) {
-            this._resetLiveDot.style.visibility = 'hidden';
+            this._resetLiveDot.classList.remove('is-visible');
         }
         this._resetLiveNextAt = 0;
     }
@@ -2585,42 +2130,30 @@ export class RapierDebuggerUI {
         this._closeComPopup();
         if (!this._hudRoot || !anchor) return;
 
-        const wrap = document.createElement('div');
-        wrap.style.position = 'fixed';
-        wrap.style.zIndex = '90';
-        wrap.style.padding = '10px';
-        wrap.style.borderRadius = '10px';
-        wrap.style.background = 'rgba(10, 14, 20, 0.92)';
-        wrap.style.border = '1px solid rgba(255,255,255,0.18)';
-        wrap.style.color = '#e9f2ff';
-        wrap.style.boxShadow = '0 10px 28px rgba(0,0,0,0.35)';
-        wrap.style.backdropFilter = 'blur(8px)';
-        wrap.style.display = 'flex';
-        wrap.style.flexDirection = 'column';
-        wrap.style.gap = '8px';
-        wrap.style.minWidth = '210px';
-
-        const { header } = makePopupHeader('Center of mass', () => this._closeComPopup());
-        wrap.appendChild(header);
-        makePopupDraggable(wrap, header);
+        const { wrap } = makePopupWrap({
+            title: 'Center of mass',
+            onClose: () => this._closeComPopup(),
+            classes: ['is-narrow']
+        });
 
         const topSeparator = makeSeparator();
-        topSeparator.style.margin = '6px 0 4px';
+        topSeparator.classList.add('rapier-separator-tight');
         wrap.appendChild(topSeparator);
 
-        const makeField = (axis, value, key) => {
+        const note = document.createElement('div');
+        note.className = 'rapier-popup-note hidden';
+        wrap.appendChild(note);
+
+        const mode = resolveInertiaMode(this._tuning?.chassis?.additionalMassProperties);
+        const disabled = mode === 'rapier';
+
+        const makeField = (axis, value, key, { disabled = false } = {}) => {
             const row = document.createElement('div');
-            row.style.display = 'flex';
-            row.style.alignItems = 'center';
-            row.style.justifyContent = 'space-between';
-            row.style.gap = '10px';
+            row.className = 'rapier-popup-field-row';
 
             const label = document.createElement('div');
             label.textContent = axis;
-            label.style.fontSize = '11px';
-            label.style.fontWeight = '700';
-            label.style.opacity = '0.85';
-            label.style.width = '18px';
+            label.className = 'rapier-popup-field-axis is-strong';
             appendHelp(label, INPUT_HELP[key], this._helpSystem);
 
             const input = document.createElement('input');
@@ -2628,14 +2161,8 @@ export class RapierDebuggerUI {
             input.inputMode = 'decimal';
             input.step = '0.01';
             input.value = Number.isFinite(value) ? String(value) : '';
-            input.style.width = '80px';
-            input.style.padding = '3px 4px';
-            input.style.borderRadius = '8px';
-            input.style.border = '1px solid rgba(255,255,255,0.16)';
-            input.style.background = 'rgba(8, 12, 18, 0.6)';
-            input.style.color = '#e9f2ff';
-            input.style.fontWeight = '600';
-            input.style.fontSize = '11px';
+            input.className = 'rapier-popup-number-input';
+            input.disabled = disabled;
             input.addEventListener('input', () => {
                 const next = parseFloat(input.value);
                 if (!Number.isFinite(next)) return;
@@ -2645,12 +2172,15 @@ export class RapierDebuggerUI {
             row.appendChild(label);
             row.appendChild(input);
             wrap.appendChild(row);
+            return input;
         };
 
         const com = this._tuning?.chassis?.additionalMassProperties?.com ?? {};
-        makeField('X', com.x, 'massPropsComX');
-        makeField('Y', com.y, 'massPropsComY');
-        makeField('Z', com.z, 'massPropsComZ');
+        const inputs = {
+            x: makeField('X', com.x, 'massPropsComX', { disabled }),
+            y: makeField('Y', com.y, 'massPropsComY', { disabled }),
+            z: makeField('Z', com.z, 'massPropsComZ', { disabled })
+        };
 
         const rect = anchor.getBoundingClientRect();
         const pad = 8;
@@ -2672,6 +2202,8 @@ export class RapierDebuggerUI {
         window.addEventListener('keydown', onKeyDown);
         this._comPopup = wrap;
         this._comPopupHandlers = { onPointerDown, onKeyDown };
+        this._comPopupFields = { noteEl: note, inputs };
+        this._syncComPopupState();
         this._emitComPreview();
     }
 
@@ -2685,72 +2217,116 @@ export class RapierDebuggerUI {
         }
         this._comPopup = null;
         this._comPopupHandlers = null;
+        this._comPopupFields = null;
         this.onComPreview?.(false, null);
     }
 
     _emitComPreview() {
         if (!this._comPopup) return;
+        const mode = resolveInertiaMode(this._tuning?.chassis?.additionalMassProperties);
+        if (mode === 'rapier') {
+            this.onComPreview?.(false, null);
+            return;
+        }
         const com = this._tuning?.chassis?.additionalMassProperties?.com ?? {};
         this.onComPreview?.(true, { x: com.x ?? 0, y: com.y ?? 0, z: com.z ?? 0 });
+    }
+
+    _syncComPopupState() {
+        const fields = this._comPopupFields;
+        if (!fields) return;
+        const mode = resolveInertiaMode(this._tuning?.chassis?.additionalMassProperties);
+        const disabled = mode === 'rapier';
+        const com = this._tuning?.chassis?.additionalMassProperties?.com ?? {};
+
+        if (fields.noteEl) {
+            fields.noteEl.textContent = disabled
+                ? 'Rapier mode: center of mass comes from colliders (COM override disabled).'
+                : '';
+            fields.noteEl.classList.toggle('hidden', !disabled);
+        }
+
+        const apply = (input, value) => {
+            if (!input) return;
+            input.disabled = disabled;
+            if (disabled) {
+                input.value = '';
+                input.placeholder = '-';
+                return;
+            }
+            input.placeholder = '';
+            input.value = Number.isFinite(value) ? String(value) : '';
+        };
+        apply(fields.inputs?.x, com.x);
+        apply(fields.inputs?.y, com.y);
+        apply(fields.inputs?.z, com.z);
     }
 
     _openInertiaPopup(anchor) {
         this._closeInertiaPopup();
         if (!this._hudRoot || !anchor) return;
 
-        const wrap = document.createElement('div');
-        wrap.style.position = 'fixed';
-        wrap.style.zIndex = '90';
-        wrap.style.padding = '10px';
-        wrap.style.borderRadius = '10px';
-        wrap.style.background = 'rgba(10, 14, 20, 0.92)';
-        wrap.style.border = '1px solid rgba(255,255,255,0.18)';
-        wrap.style.color = '#e9f2ff';
-        wrap.style.boxShadow = '0 10px 28px rgba(0,0,0,0.35)';
-        wrap.style.backdropFilter = 'blur(8px)';
-        wrap.style.display = 'flex';
-        wrap.style.flexDirection = 'column';
-        wrap.style.gap = '8px';
-        wrap.style.minWidth = '220px';
+        const { wrap } = makePopupWrap({ title: 'Inertia', onClose: () => this._closeInertiaPopup(), classes: ['is-medium'] });
 
-        const { header } = makePopupHeader('Inertia', () => this._closeInertiaPopup());
-        wrap.appendChild(header);
-        makePopupDraggable(wrap, header);
+        const props = this._tuning?.chassis?.additionalMassProperties ?? {};
+        props.inertiaMode = resolveInertiaMode(props);
 
         const topSeparator = makeSeparator();
-        topSeparator.style.margin = '6px 0 4px';
+        topSeparator.classList.add('rapier-separator-tight');
         wrap.appendChild(topSeparator);
 
-        const makeField = (title, value, key) => {
+        const modeRow = document.createElement('div');
+        modeRow.className = 'rapier-popup-row';
+
+        const modeLabel = document.createElement('div');
+        modeLabel.textContent = 'Mode';
+        modeLabel.className = 'rapier-popup-row-label';
+        appendHelp(modeLabel, INPUT_HELP.inertiaMode, this._helpSystem);
+
+        const modeValue = document.createElement('div');
+        modeValue.textContent = '—';
+        modeValue.className = 'rapier-popup-row-value';
+
+        modeRow.appendChild(modeLabel);
+        modeRow.appendChild(modeValue);
+        wrap.appendChild(modeRow);
+
+        const note = document.createElement('div');
+        note.className = 'rapier-popup-note hidden';
+        wrap.appendChild(note);
+
+        const sepA = makeSeparator();
+        sepA.classList.add('rapier-separator-tight');
+        wrap.appendChild(sepA);
+
+        const sectionTitle = (text) => {
+            const el = document.createElement('div');
+            el.textContent = text;
+            el.className = 'rapier-popup-section-title';
+            return el;
+        };
+        wrap.appendChild(sectionTitle('Principal inertia'));
+
+        const makeField = (title, value, key, { disabled = false, step = 0.01, integer = false } = {}) => {
             const row = document.createElement('div');
-            row.style.display = 'flex';
-            row.style.alignItems = 'center';
-            row.style.justifyContent = 'space-between';
-            row.style.gap = '10px';
+            row.className = 'rapier-popup-field-row';
 
             const label = document.createElement('div');
             label.textContent = title;
-            label.style.fontSize = '11px';
-            label.style.fontWeight = '700';
-            label.style.opacity = '0.85';
+            label.className = 'rapier-popup-field-label';
             appendHelp(label, INPUT_HELP[key], this._helpSystem);
 
             const input = document.createElement('input');
             input.type = 'number';
             input.inputMode = 'decimal';
-            input.step = '0.01';
-            input.value = Number.isFinite(value) ? String(value) : '';
-            input.style.width = '90px';
-            input.style.padding = '3px 4px';
-            input.style.borderRadius = '8px';
-            input.style.border = '1px solid rgba(255,255,255,0.16)';
-            input.style.background = 'rgba(8, 12, 18, 0.6)';
-            input.style.color = '#e9f2ff';
-            input.style.fontWeight = '600';
-            input.style.fontSize = '11px';
+            input.step = String(Number.isFinite(step) && step > 0 ? step : 0.01);
+            input.value = Number.isFinite(value) ? String(integer ? Math.round(value) : value) : '';
+            input.className = 'rapier-popup-number-input w-90';
+            input.disabled = disabled;
             input.addEventListener('input', () => {
-                const next = parseFloat(input.value);
+                let next = parseFloat(input.value);
                 if (!Number.isFinite(next)) return;
+                if (integer) next = Math.round(next);
                 this._setInputValue(key, next);
             });
 
@@ -2760,39 +2336,57 @@ export class RapierDebuggerUI {
             return input;
         };
 
-        const inertia = this._tuning?.chassis?.additionalMassProperties?.inertia ?? {};
+        const inertia = props.inertia ?? {};
+        const frame = props.inertiaFrame ?? {};
         const initial = {
-            x: inertia.x ?? 0,
-            y: inertia.y ?? 0,
-            z: inertia.z ?? 0
+            mode: resolveInertiaMode(props),
+            inertia: { x: inertia.x ?? 0, y: inertia.y ?? 0, z: inertia.z ?? 0 },
+            frame: { w: frame.w ?? 1, x: frame.x ?? 0, y: frame.y ?? 0, z: frame.z ?? 0 }
         };
+        const readOnly = resolveInertiaMode(props) !== 'manual';
         const inputs = {
-            x: makeField('Inertia X', initial.x, 'massPropsInertiaX'),
-            y: makeField('Inertia Y', initial.y, 'massPropsInertiaY'),
-            z: makeField('Inertia Z', initial.z, 'massPropsInertiaZ')
+            x: makeField('Inertia X', initial.inertia.x, 'massPropsInertiaX', { disabled: readOnly, step: 100, integer: true }),
+            y: makeField('Inertia Y', initial.inertia.y, 'massPropsInertiaY', { disabled: readOnly, step: 100, integer: true }),
+            z: makeField('Inertia Z', initial.inertia.z, 'massPropsInertiaZ', { disabled: readOnly, step: 100, integer: true })
+        };
+
+        const sepB = makeSeparator();
+        sepB.classList.add('rapier-separator-tight');
+        wrap.appendChild(sepB);
+
+        wrap.appendChild(sectionTitle('Inertia frame (quat)'));
+        const frameInputs = {
+            w: makeField('W', initial.frame.w, 'massPropsFrameW', { disabled: readOnly, step: 0.01 }),
+            x: makeField('X', initial.frame.x, 'massPropsFrameX', { disabled: readOnly, step: 0.01 }),
+            y: makeField('Y', initial.frame.y, 'massPropsFrameY', { disabled: readOnly, step: 0.01 }),
+            z: makeField('Z', initial.frame.z, 'massPropsFrameZ', { disabled: readOnly, step: 0.01 })
         };
 
         const separator = makeSeparator();
-        separator.style.margin = '6px 0 4px';
+        separator.classList.add('rapier-separator-tight');
         wrap.appendChild(separator);
 
         const actions = document.createElement('div');
-        actions.style.display = 'flex';
-        actions.style.justifyContent = 'flex-end';
-        actions.style.gap = '8px';
+        actions.className = 'rapier-popup-actions';
 
         const reset = makeButton('Reset');
-        reset.style.padding = '6px 10px';
-        reset.style.fontSize = '11px';
-        reset.style.borderRadius = '8px';
-        reset.style.marginRight = '0';
+        reset.classList.add('is-popup');
         reset.addEventListener('click', () => {
-            inputs.x.value = String(initial.x);
-            inputs.y.value = String(initial.y);
-            inputs.z.value = String(initial.z);
-            this._setInputValue('massPropsInertiaX', initial.x);
-            this._setInputValue('massPropsInertiaY', initial.y);
-            this._setInputValue('massPropsInertiaZ', initial.z);
+            const mode = resolveInertiaMode(this._tuning?.chassis?.additionalMassProperties);
+            if (mode === 'auto') {
+                this._recomputeAutoInertia();
+                this._syncInertiaPopupState();
+                return;
+            }
+            if (mode !== 'manual') return;
+            this._setInputValue('massPropsInertiaX', initial.inertia.x);
+            this._setInputValue('massPropsInertiaY', initial.inertia.y);
+            this._setInputValue('massPropsInertiaZ', initial.inertia.z);
+            this._setInputValue('massPropsFrameW', initial.frame.w);
+            this._setInputValue('massPropsFrameX', initial.frame.x);
+            this._setInputValue('massPropsFrameY', initial.frame.y);
+            this._setInputValue('massPropsFrameZ', initial.frame.z);
+            this._syncInertiaPopupState();
         });
 
         actions.appendChild(reset);
@@ -2818,6 +2412,8 @@ export class RapierDebuggerUI {
         window.addEventListener('keydown', onKeyDown);
         this._inertiaPopup = wrap;
         this._inertiaPopupHandlers = { onPointerDown, onKeyDown };
+        this._inertiaPopupFields = { modeValueEl: modeValue, noteEl: note, resetButton: reset, inertiaInputs: inputs, frameInputs };
+        this._syncInertiaPopupState();
     }
 
     _closeInertiaPopup() {
@@ -2830,47 +2426,30 @@ export class RapierDebuggerUI {
         }
         this._inertiaPopup = null;
         this._inertiaPopupHandlers = null;
+        this._inertiaPopupFields = null;
     }
 
     _openInertiaFramePopup(anchor) {
         this._closeInertiaFramePopup();
         if (!this._hudRoot || !anchor) return;
 
-        const wrap = document.createElement('div');
-        wrap.style.position = 'fixed';
-        wrap.style.zIndex = '90';
-        wrap.style.padding = '10px';
-        wrap.style.borderRadius = '10px';
-        wrap.style.background = 'rgba(10, 14, 20, 0.92)';
-        wrap.style.border = '1px solid rgba(255,255,255,0.18)';
-        wrap.style.color = '#e9f2ff';
-        wrap.style.boxShadow = '0 10px 28px rgba(0,0,0,0.35)';
-        wrap.style.backdropFilter = 'blur(8px)';
-        wrap.style.display = 'flex';
-        wrap.style.flexDirection = 'column';
-        wrap.style.gap = '8px';
-        wrap.style.minWidth = '220px';
-
-        const { header } = makePopupHeader('Inertia frame', () => this._closeInertiaFramePopup());
-        wrap.appendChild(header);
-        makePopupDraggable(wrap, header);
+        const { wrap } = makePopupWrap({
+            title: 'Inertia frame',
+            onClose: () => this._closeInertiaFramePopup(),
+            classes: ['is-small']
+        });
 
         const topSeparator = makeSeparator();
-        topSeparator.style.margin = '6px 0 4px';
+        topSeparator.classList.add('rapier-separator-tight');
         wrap.appendChild(topSeparator);
 
         const makeField = (title, value, key) => {
             const row = document.createElement('div');
-            row.style.display = 'flex';
-            row.style.alignItems = 'center';
-            row.style.justifyContent = 'space-between';
-            row.style.gap = '10px';
+            row.className = 'rapier-popup-field-row';
 
             const label = document.createElement('div');
             label.textContent = title;
-            label.style.fontSize = '11px';
-            label.style.fontWeight = '700';
-            label.style.opacity = '0.85';
+            label.className = 'rapier-popup-field-label';
             appendHelp(label, INPUT_HELP[key], this._helpSystem);
 
             const input = document.createElement('input');
@@ -2878,14 +2457,7 @@ export class RapierDebuggerUI {
             input.inputMode = 'decimal';
             input.step = '0.01';
             input.value = Number.isFinite(value) ? String(value) : '';
-            input.style.width = '90px';
-            input.style.padding = '3px 4px';
-            input.style.borderRadius = '8px';
-            input.style.border = '1px solid rgba(255,255,255,0.16)';
-            input.style.background = 'rgba(8, 12, 18, 0.6)';
-            input.style.color = '#e9f2ff';
-            input.style.fontWeight = '600';
-            input.style.fontSize = '11px';
+            input.className = 'rapier-popup-number-input w-90';
             input.addEventListener('input', () => {
                 const next = parseFloat(input.value);
                 if (!Number.isFinite(next)) return;
@@ -2913,19 +2485,14 @@ export class RapierDebuggerUI {
         };
 
         const separator = makeSeparator();
-        separator.style.margin = '6px 0 4px';
+        separator.classList.add('rapier-separator-tight');
         wrap.appendChild(separator);
 
         const actions = document.createElement('div');
-        actions.style.display = 'flex';
-        actions.style.justifyContent = 'flex-end';
-        actions.style.gap = '8px';
+        actions.className = 'rapier-popup-actions';
 
         const reset = makeButton('Reset');
-        reset.style.padding = '6px 10px';
-        reset.style.fontSize = '11px';
-        reset.style.borderRadius = '8px';
-        reset.style.marginRight = '0';
+        reset.classList.add('is-popup');
         reset.addEventListener('click', () => {
             inputs.w.value = String(initial.w);
             inputs.x.value = String(initial.x);
@@ -2978,27 +2545,10 @@ export class RapierDebuggerUI {
         this._closeLockingPopup();
         if (!this._hudRoot || !anchor) return;
 
-        const wrap = document.createElement('div');
-        wrap.style.position = 'fixed';
-        wrap.style.zIndex = '90';
-        wrap.style.padding = '10px';
-        wrap.style.borderRadius = '10px';
-        wrap.style.background = 'rgba(10, 14, 20, 0.92)';
-        wrap.style.border = '1px solid rgba(255,255,255,0.18)';
-        wrap.style.color = '#e9f2ff';
-        wrap.style.boxShadow = '0 10px 28px rgba(0,0,0,0.35)';
-        wrap.style.backdropFilter = 'blur(8px)';
-        wrap.style.display = 'flex';
-        wrap.style.flexDirection = 'column';
-        wrap.style.gap = '8px';
-        wrap.style.minWidth = '220px';
-
-        const { header } = makePopupHeader('Locking', () => this._closeLockingPopup());
-        wrap.appendChild(header);
-        makePopupDraggable(wrap, header);
+        const { wrap } = makePopupWrap({ title: 'Locking', onClose: () => this._closeLockingPopup(), classes: ['is-small'] });
 
         const topSeparator = makeSeparator();
-        topSeparator.style.margin = '6px 0 4px';
+        topSeparator.classList.add('rapier-separator-tight');
         wrap.appendChild(topSeparator);
 
         const attach = (control) => {
@@ -3006,7 +2556,7 @@ export class RapierDebuggerUI {
             if (control.wrap.parentElement) {
                 control.wrap.parentElement.removeChild(control.wrap);
             }
-            control.wrap.style.margin = '6px 0';
+            control.wrap.classList.add('rapier-popup-control');
             wrap.appendChild(control.wrap);
         };
 
@@ -3025,19 +2575,14 @@ export class RapierDebuggerUI {
         attach(this._inputControls.enabledRotZ);
 
         const separator = makeSeparator();
-        separator.style.margin = '6px 0 4px';
+        separator.classList.add('rapier-separator-tight');
         wrap.appendChild(separator);
 
         const actions = document.createElement('div');
-        actions.style.display = 'flex';
-        actions.style.justifyContent = 'flex-end';
-        actions.style.gap = '8px';
+        actions.className = 'rapier-popup-actions';
 
         const reset = makeButton('Reset');
-        reset.style.padding = '6px 10px';
-        reset.style.fontSize = '11px';
-        reset.style.borderRadius = '8px';
-        reset.style.marginRight = '0';
+        reset.classList.add('is-popup');
         reset.addEventListener('click', () => {
             this._setInputValue('lockTranslations', initial.lockTranslations);
             this._setInputValue('lockRotations', initial.lockRotations);
@@ -3092,85 +2637,41 @@ export class RapierDebuggerUI {
 
         const helpSystem = this._helpSystem;
 
-        const wrap = document.createElement('div');
-        wrap.style.position = 'fixed';
-        wrap.style.zIndex = '90';
-        wrap.style.padding = '12px';
-        wrap.style.borderRadius = '12px';
-        wrap.style.background = 'rgba(10, 14, 20, 0.92)';
-        wrap.style.border = '1px solid rgba(255,255,255,0.18)';
-        wrap.style.color = '#e9f2ff';
-        wrap.style.boxShadow = '0 10px 28px rgba(0,0,0,0.35)';
-        wrap.style.backdropFilter = 'blur(8px)';
-        wrap.style.display = 'flex';
-        wrap.style.flexDirection = 'column';
-        wrap.style.gap = '10px';
-        wrap.style.minWidth = '340px';
-
-        const { header } = makePopupHeader('Forces and impulses', () => this._closeForcesPopup());
-        wrap.appendChild(header);
-        makePopupDraggable(wrap, header);
+        const { wrap } = makePopupWrap({
+            title: 'Forces and impulses',
+            onClose: () => this._closeForcesPopup(),
+            classes: ['rapier-forces-popup']
+        });
 
         const topSeparator = makeSeparator();
-        topSeparator.style.margin = '6px 0 4px';
+        topSeparator.classList.add('rapier-separator-tight');
         wrap.appendChild(topSeparator);
 
         const contentRow = document.createElement('div');
-        contentRow.style.display = 'flex';
-        contentRow.style.alignItems = 'flex-start';
-        contentRow.style.gap = '14px';
+        contentRow.className = 'rapier-forces-content';
 
         const controlsWrap = document.createElement('div');
-        controlsWrap.style.display = 'flex';
-        controlsWrap.style.flexDirection = 'column';
-        controlsWrap.style.gap = '8px';
-        controlsWrap.style.flex = '0 0 auto';
-        controlsWrap.style.width = '360px';
+        controlsWrap.className = 'rapier-forces-controls';
 
         const applyModeRow = document.createElement('div');
-        applyModeRow.style.display = 'flex';
-        applyModeRow.style.alignItems = 'center';
-        applyModeRow.style.justifyContent = 'space-between';
-        applyModeRow.style.gap = '12px';
+        applyModeRow.className = 'rapier-forces-apply-row';
 
         const applyModeLabel = document.createElement('div');
         applyModeLabel.textContent = 'Apply at point';
-        applyModeLabel.style.fontSize = '12px';
-        applyModeLabel.style.fontWeight = '700';
-        applyModeLabel.style.opacity = '0.85';
+        applyModeLabel.className = 'rapier-forces-apply-label';
 
         const applyModeWrap = document.createElement('label');
-        applyModeWrap.style.display = 'inline-flex';
-        applyModeWrap.style.alignItems = 'center';
-        applyModeWrap.style.gap = '6px';
-        applyModeWrap.style.cursor = 'pointer';
+        applyModeWrap.className = 'rapier-forces-apply-toggle';
 
         const applyModeToggle = document.createElement('input');
         applyModeToggle.type = 'checkbox';
-        applyModeToggle.style.position = 'absolute';
-        applyModeToggle.style.opacity = '0';
-        applyModeToggle.style.width = '0';
-        applyModeToggle.style.height = '0';
+        applyModeToggle.className = 'rapier-forces-apply-checkbox';
 
         const applyModeTrack = document.createElement('span');
-        applyModeTrack.style.width = '34px';
-        applyModeTrack.style.height = '18px';
-        applyModeTrack.style.borderRadius = '999px';
-        applyModeTrack.style.background = 'rgba(255,255,255,0.2)';
-        applyModeTrack.style.boxShadow = 'inset 0 0 0 1px rgba(255,255,255,0.2)';
-        applyModeTrack.style.position = 'relative';
-        applyModeTrack.style.transition = 'background 150ms ease';
+        applyModeTrack.className = 'rapier-forces-apply-track';
 
         const applyModeKnob = document.createElement('span');
-        applyModeKnob.style.position = 'absolute';
-        applyModeKnob.style.top = '2px';
-        applyModeKnob.style.left = '2px';
-        applyModeKnob.style.width = '14px';
-        applyModeKnob.style.height = '14px';
-        applyModeKnob.style.borderRadius = '999px';
-        applyModeKnob.style.background = '#e9f2ff';
-        applyModeKnob.style.boxShadow = '0 0 6px rgba(0,0,0,0.25)';
-        applyModeKnob.style.transition = 'transform 150ms ease';
+        applyModeKnob.className = 'rapier-forces-apply-knob';
 
         applyModeTrack.appendChild(applyModeKnob);
 
@@ -3182,36 +2683,20 @@ export class RapierDebuggerUI {
         controlsWrap.appendChild(applyModeRow);
 
         const modeSeparator = makeSeparator();
-        modeSeparator.style.margin = '6px 0 2px';
+        modeSeparator.classList.add('rapier-separator-slim');
         controlsWrap.appendChild(modeSeparator);
 
         const grid = document.createElement('div');
-        grid.style.display = 'grid';
-        grid.style.gridTemplateColumns = 'minmax(190px, 1fr)';
-        grid.style.gap = '14px';
+        grid.className = 'rapier-forces-grid';
 
         const tabs = document.createElement('div');
-        tabs.style.display = 'grid';
-        tabs.style.gridTemplateColumns = 'repeat(3, minmax(0, 1fr))';
-        tabs.style.alignItems = 'center';
-        tabs.style.gap = '8px';
-        tabs.style.marginBottom = '4px';
-        tabs.style.width = '100%';
+        tabs.className = 'rapier-forces-tabs';
 
         const makeTabButton = (label, key) => {
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.textContent = label;
-            btn.style.padding = '6px 10px';
-            btn.style.borderRadius = '999px';
-            btn.style.border = '1px solid rgba(255,255,255,0.18)';
-            btn.style.background = 'rgba(8, 12, 18, 0.7)';
-            btn.style.color = '#e9f2ff';
-            btn.style.fontSize = '11px';
-            btn.style.fontWeight = '700';
-            btn.style.cursor = 'pointer';
-            btn.style.width = '100%';
-            btn.style.textAlign = 'center';
+            btn.className = 'rapier-forces-tab';
             btn.addEventListener('click', () => setActiveTab(key));
             return btn;
         };
@@ -3239,35 +2724,27 @@ export class RapierDebuggerUI {
             for (const btn of buttons) {
                 if (!btn) continue;
                 if (btn.parentElement) btn.parentElement.removeChild(btn);
-                btn.style.marginRight = '0';
                 container.appendChild(btn);
             }
         };
 
         const makeColumn = (title, help, wraps, buttons) => {
             const col = document.createElement('div');
-            col.style.display = 'flex';
-            col.style.flexDirection = 'column';
-            col.style.gap = '6px';
+            col.className = 'rapier-forces-column';
 
             const label = makeLabel(title);
-            label.style.display = 'flex';
-            label.style.alignItems = 'center';
-            label.style.marginBottom = '4px';
+            label.classList.add('rapier-forces-column-label');
             appendHelp(label, help, helpSystem);
             col.appendChild(label);
 
             attachWraps(wraps, col);
 
             const divider = makeSeparator();
-            divider.style.margin = '6px 0 4px';
+            divider.classList.add('rapier-separator-tight');
             col.appendChild(divider);
 
             const buttonRow = document.createElement('div');
-            buttonRow.style.display = 'flex';
-            buttonRow.style.flexWrap = 'wrap';
-            buttonRow.style.gap = '8px';
-            buttonRow.style.marginTop = '6px';
+            buttonRow.className = 'rapier-forces-button-row';
             attachButtons(buttons, buttonRow);
             col.appendChild(buttonRow);
 
@@ -3336,20 +2813,14 @@ export class RapierDebuggerUI {
         controlsWrap.appendChild(grid);
 
         const bottomSeparator = makeSeparator();
-        bottomSeparator.style.margin = '10px 0 2px';
+        bottomSeparator.classList.add('rapier-separator-bottom');
         controlsWrap.appendChild(bottomSeparator);
 
         const velocityRow = document.createElement('div');
-        velocityRow.style.display = 'flex';
-        velocityRow.style.justifyContent = 'flex-end';
-        velocityRow.style.alignItems = 'center';
-        velocityRow.style.gap = '8px';
-        velocityRow.style.width = '100%';
+        velocityRow.className = 'rapier-forces-velocity-row';
 
         const resetAllButton = makeButton('Reset all');
-        resetAllButton.style.marginRight = '0';
-        resetAllButton.style.flex = '0 0 auto';
-        resetAllButton.style.whiteSpace = 'nowrap';
+        resetAllButton.classList.add('rapier-forces-velocity-btn', 'rapier-forces-reset-all');
         resetAllButton.addEventListener('click', () => {
             this.onResetForces?.();
             this.onResetTorques?.();
@@ -3366,35 +2837,25 @@ export class RapierDebuggerUI {
             this._setInputValue('angvelZ', 0);
         });
 
-        resetAllButton.style.marginLeft = 'auto';
         velocityRow.appendChild(resetAllButton);
 
         const resetVel = buttons.resetVelocities;
         if (resetVel) {
             if (resetVel.parentElement) resetVel.parentElement.removeChild(resetVel);
-            resetVel.style.marginRight = '0';
-            resetVel.style.flex = '0 0 auto';
+            resetVel.classList.add('rapier-forces-velocity-btn');
             velocityRow.appendChild(resetVel);
         }
         controlsWrap.appendChild(velocityRow);
 
         const logCol = document.createElement('div');
-        logCol.style.display = 'flex';
-        logCol.style.flexDirection = 'column';
-        logCol.style.gap = '6px';
-        logCol.style.display = 'none';
-        logCol.style.flex = '0 0 240px';
-        logCol.style.minWidth = '240px';
-        logCol.style.maxWidth = '280px';
+        logCol.className = 'rapier-forces-log-col hidden';
 
         const logLabel = makeLabel('Applied');
-        logLabel.style.marginBottom = '4px';
+        logLabel.classList.add('rapier-forces-log-label');
         logCol.appendChild(logLabel);
 
         const logList = document.createElement('div');
-        logList.style.display = 'flex';
-        logList.style.flexDirection = 'column';
-        logList.style.gap = '6px';
+        logList.className = 'rapier-forces-log-list';
         logCol.appendChild(logList);
 
         contentRow.appendChild(controlsWrap);
@@ -3403,28 +2864,19 @@ export class RapierDebuggerUI {
 
         const setActiveTab = (key) => {
             this._forcesActiveTab = key;
-            forceCol.style.display = key === 'force' ? 'flex' : 'none';
-            impulseCol.style.display = key === 'impulse' ? 'flex' : 'none';
-            torqueCol.style.display = key === 'torque' ? 'flex' : 'none';
+            forceCol.classList.toggle('hidden', key !== 'force');
+            impulseCol.classList.toggle('hidden', key !== 'impulse');
+            torqueCol.classList.toggle('hidden', key !== 'torque');
             for (const [tabKey, btn] of Object.entries(tabButtons)) {
                 if (!btn) continue;
-                const active = tabKey === key;
-                btn.style.background = active ? 'rgba(76,255,122,0.18)' : 'rgba(8, 12, 18, 0.7)';
-                btn.style.borderColor = active ? 'rgba(76,255,122,0.55)' : 'rgba(255,255,255,0.18)';
-                btn.style.color = active ? '#d7ffe4' : '#e9f2ff';
+                btn.classList.toggle('is-active', tabKey === key);
             }
             this._refreshForcesPopupLog();
         };
 
         const updateApplyMode = (enabled) => {
             this._forceApplyAtPoint = !!enabled;
-            if (this._forceApplyAtPoint) {
-                applyModeTrack.style.background = 'rgba(76,255,122,0.45)';
-                applyModeKnob.style.transform = 'translateX(16px)';
-            } else {
-                applyModeTrack.style.background = 'rgba(255,255,255,0.2)';
-                applyModeKnob.style.transform = 'translateX(0)';
-            }
+            applyModeWrap.classList.toggle('is-on', this._forceApplyAtPoint);
             const pointControls = [
                 controls.forcePointX,
                 controls.forcePointY,
@@ -3435,27 +2887,29 @@ export class RapierDebuggerUI {
             ];
             for (const ctrl of pointControls) {
                 if (!ctrl) continue;
-                const input = ctrl.querySelector?.('input');
-                if (input) input.disabled = !this._forceApplyAtPoint;
-                ctrl.style.opacity = this._forceApplyAtPoint ? '1' : '0.4';
-                ctrl.style.filter = this._forceApplyAtPoint ? 'none' : 'grayscale(0.4)';
+                ctrl.classList.add('rapier-forces-point-control');
+                ctrl.classList.toggle('is-disabled', !this._forceApplyAtPoint);
+                const inputs = ctrl.querySelectorAll?.('input') ?? [];
+                for (const input of inputs) {
+                    input.disabled = !this._forceApplyAtPoint;
+                }
             }
             if (buttons.applyForce) {
-                buttons.applyForce.style.display = this._forceApplyAtPoint ? 'none' : '';
+                buttons.applyForce.classList.toggle('hidden', this._forceApplyAtPoint);
             }
             if (buttons.applyForceAtPoint) {
-                buttons.applyForceAtPoint.style.display = this._forceApplyAtPoint ? '' : 'none';
+                buttons.applyForceAtPoint.classList.toggle('hidden', !this._forceApplyAtPoint);
             }
             if (buttons.applyImpulse) {
-                buttons.applyImpulse.style.display = this._forceApplyAtPoint ? 'none' : '';
+                buttons.applyImpulse.classList.toggle('hidden', this._forceApplyAtPoint);
             }
             if (buttons.applyImpulseAtPoint) {
-                buttons.applyImpulseAtPoint.style.display = this._forceApplyAtPoint ? '' : 'none';
+                buttons.applyImpulseAtPoint.classList.toggle('hidden', !this._forceApplyAtPoint);
             }
             if (this._forcesActiveTab === 'force') {
-                forceCol.style.display = 'flex';
+                forceCol.classList.remove('hidden');
             } else if (this._forcesActiveTab === 'impulse') {
-                impulseCol.style.display = 'flex';
+                impulseCol.classList.remove('hidden');
             }
         };
 
@@ -3515,36 +2969,19 @@ export class RapierDebuggerUI {
         }
         if (!this._hudRoot || !anchor) return;
 
-        const wrap = document.createElement('div');
-        wrap.style.position = 'fixed';
-        wrap.style.zIndex = '90';
-        wrap.style.padding = '12px';
-        wrap.style.borderRadius = '12px';
-        wrap.style.background = 'rgba(10, 14, 20, 0.92)';
-        wrap.style.border = '1px solid rgba(255,255,255,0.18)';
-        wrap.style.color = '#e9f2ff';
-        wrap.style.boxShadow = '0 10px 28px rgba(0,0,0,0.35)';
-        wrap.style.backdropFilter = 'blur(8px)';
-        wrap.style.display = 'flex';
-        wrap.style.flexDirection = 'column';
-        wrap.style.gap = '8px';
-        wrap.style.minWidth = '220px';
-
-        const { header } = makePopupHeader('Automated tests', () => this._closeTestsPopup());
-        wrap.appendChild(header);
-        makePopupDraggable(wrap, header);
+        const { wrap } = makePopupWrap({
+            title: 'Automated tests',
+            onClose: () => this._closeTestsPopup(),
+            classes: ['is-small', 'rapier-tests-popup']
+        });
 
         const topSeparator = makeSeparator();
-        topSeparator.style.margin = '6px 0 4px';
+        topSeparator.classList.add('rapier-separator-tight');
         wrap.appendChild(topSeparator);
 
         for (const test of PRESET_TESTS) {
             const btn = makeButton(test.label);
-            btn.style.padding = '6px 10px';
-            btn.style.fontSize = '13px';
-            btn.style.borderRadius = '8px';
-            btn.style.marginRight = '0';
-            btn.style.width = '200px';
+            btn.classList.add('rapier-tests-popup-button');
             btn.addEventListener('click', () => {
                 this._startTest(test);
                 this._closeTestsPopup();
@@ -3592,28 +3029,14 @@ export class RapierDebuggerUI {
 
         const wrap = document.createElement('div');
         stylePanel(wrap, { interactive: true });
-        wrap.style.position = 'fixed';
-        wrap.style.zIndex = '70';
-        wrap.style.minWidth = '220px';
-        wrap.style.maxWidth = '260px';
-        wrap.style.padding = '12px';
-        wrap.style.minHeight = '120px';
-        wrap.style.display = 'flex';
-        wrap.style.flexDirection = 'column';
-        wrap.style.gap = '14px';
+        wrap.classList.add('rapier-test-popup');
 
         const header = document.createElement('div');
-        header.style.display = 'flex';
-        header.style.alignItems = 'center';
-        header.style.justifyContent = 'space-between';
-        header.style.gap = '10px';
+        header.className = 'rapier-test-popup-header';
 
         const title = document.createElement('div');
         title.textContent = test?.label ?? 'Automated Test';
-        title.style.fontSize = '13px';
-        title.style.fontWeight = '800';
-        title.style.letterSpacing = '0.2px';
-        title.style.flex = '1';
+        title.className = 'rapier-test-popup-title';
 
         const closeBtn = makePopupCloseButton(() => this._closeTestPopup());
 
@@ -3623,37 +3046,20 @@ export class RapierDebuggerUI {
         makePopupDraggable(wrap, header);
 
         const topSeparator = makeSeparator();
-        topSeparator.style.margin = '-2px 0 0';
+        topSeparator.classList.add('rapier-test-popup-separator');
         wrap.appendChild(topSeparator);
 
-        const button = makeButton('Recording');
-        button.style.padding = '6px 10px';
-        button.style.fontSize = '13px';
-        button.style.borderRadius = '8px';
-        button.style.marginRight = '0';
-        button.style.width = '100%';
-        button.textContent = '';
+        const button = makeButton('');
+        button.classList.add('rapier-test-popup-button');
         button.disabled = true;
-        button.style.position = 'relative';
 
         const label = document.createElement('span');
         label.textContent = 'Recording';
-        label.style.display = 'block';
-        label.style.width = '100%';
-        label.style.textAlign = 'center';
+        label.className = 'rapier-test-popup-button-label';
         button.appendChild(label);
 
         const dot = document.createElement('span');
-        dot.style.position = 'absolute';
-        dot.style.right = '12px';
-        dot.style.top = '50%';
-        dot.style.transform = 'translateY(-50%)';
-        dot.style.width = '9px';
-        dot.style.height = '9px';
-        dot.style.borderRadius = '999px';
-        dot.style.background = 'rgba(255,45,45,0.95)';
-        dot.style.boxShadow = '0 0 10px rgba(255,45,45,0.6), 0 0 0 1px rgba(255,45,45,0.9)';
-        dot.style.visibility = 'visible';
+        dot.className = 'rapier-test-popup-dot is-visible';
         button.appendChild(dot);
 
         wrap.appendChild(button);
@@ -3698,7 +3104,7 @@ export class RapierDebuggerUI {
             const dots = ['.', '..', '...'];
             let idx = 0;
             this._testPopupLabel.textContent = `Recording${dots[idx]}`;
-            this._testPopupDot.style.visibility = 'visible';
+            this._testPopupDot.classList.add('is-visible');
             this._testPopupButton.disabled = true;
             this._testPopupButton.onclick = null;
             this._testPopupEllipsisTimer = window.setInterval(() => {
@@ -3709,7 +3115,7 @@ export class RapierDebuggerUI {
             }, 400);
         } else if (state === 'done') {
             this._testPopupLabel.textContent = 'Copy telemetry';
-            this._testPopupDot.style.visibility = 'hidden';
+            this._testPopupDot.classList.remove('is-visible');
             this._testPopupButton.disabled = false;
             this._testPopupButton.onclick = () => {
                 this._copyTelemetry().then(() => {
@@ -3826,15 +3232,13 @@ export class RapierDebuggerUI {
         if (!this._forcesPopupLogEl || !this._forcesPopupGrid || !this._forcesPopupLogCol) return;
         const log = this._forceActionLog ?? [];
         const show = log.length > 0;
-        this._forcesPopupLogCol.style.display = show ? 'flex' : 'none';
+        this._forcesPopupLogCol.classList.toggle('hidden', !show);
         this._forcesPopupLogEl.textContent = '';
         if (!show) return;
         for (const entry of log) {
             const row = document.createElement('div');
             row.textContent = entry.text;
-            row.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, monospace';
-            row.style.fontSize = '11px';
-            row.style.opacity = '0.9';
+            row.className = 'rapier-forces-log-entry';
             this._forcesPopupLogEl.appendChild(row);
         }
     }
@@ -3857,7 +3261,9 @@ export class RapierDebuggerUI {
                 angvel: { ...(this._tuning.chassis.angvel ?? {}) },
                 enabledRotations: { ...(this._tuning.chassis.enabledRotations ?? {}) },
                 additionalMassProperties: {
+                    inertiaMode: resolveInertiaMode(this._tuning.chassis.additionalMassProperties),
                     mass: this._tuning.chassis.additionalMassProperties?.mass ?? NaN,
+                    density: this._tuning.chassis.additionalMassProperties?.density ?? NaN,
                     com: { ...(this._tuning.chassis.additionalMassProperties?.com ?? {}) },
                     inertia: { ...(this._tuning.chassis.additionalMassProperties?.inertia ?? {}) },
                     inertiaFrame: { ...(this._tuning.chassis.additionalMassProperties?.inertiaFrame ?? {}) }
@@ -3993,10 +3399,7 @@ export class RapierDebuggerUI {
                 const label = order[i];
                 const wheel = wheels.find((w) => w?.label === label);
                 const on = !!wheel?.inContact;
-                dots[i].style.background = on ? 'rgba(76,255,122,0.95)' : 'rgba(255,255,255,0.2)';
-                dots[i].style.boxShadow = on
-                    ? '0 0 0 1px rgba(76,255,122,0.6), 0 0 10px rgba(76,255,122,0.35)'
-                    : '0 0 0 1px rgba(255,255,255,0.15)';
+                dots[i].classList.toggle('is-on', on);
             }
         }
 
@@ -4016,27 +3419,19 @@ export class RapierDebuggerUI {
         const canForceSleep = snapshot.body?.canForceSleep;
         this._sleepingState = sleeping;
         if (this._sleepMarker) {
-            if (sleeping === true) {
-                this._sleepMarker.style.background = 'rgba(255,76,76,0.95)';
-                this._sleepMarker.style.boxShadow = '0 0 0 1px rgba(255,76,76,0.6), 0 0 10px rgba(255,76,76,0.35)';
-            } else if (sleeping === false) {
-                this._sleepMarker.style.background = 'rgba(76,255,122,0.95)';
-                this._sleepMarker.style.boxShadow = '0 0 0 1px rgba(76,255,122,0.6), 0 0 10px rgba(76,255,122,0.35)';
-            } else {
-                this._sleepMarker.style.background = 'rgba(255,255,255,0.2)';
-                this._sleepMarker.style.boxShadow = '0 0 0 1px rgba(255,255,255,0.2)';
-            }
+            this._sleepMarker.classList.toggle('is-sleeping', sleeping === true);
+            this._sleepMarker.classList.toggle('is-awake', sleeping === false);
         }
         if (this._wakeButton) {
             if (canForceSleep) {
-                this._wakeButton.style.display = '';
+                this._wakeButton.classList.remove('hidden');
                 if (sleeping === false) {
                     this._wakeButton.textContent = 'Sleep';
                 } else {
                     this._wakeButton.textContent = 'Wake up';
                 }
             } else {
-                this._wakeButton.style.display = 'none';
+                this._wakeButton.classList.add('hidden');
             }
         }
 
@@ -4046,6 +3441,7 @@ export class RapierDebuggerUI {
         const suspTravel = this._tuning?.suspension?.maxTravel ?? 0;
         const suspMin = Math.max(0, suspRest - suspTravel);
         const suspMax = suspRest + suspTravel;
+        const engineForceMax = Math.max(1, parseFloat(this._inputControls.engineForce?.input?.max) || 60000);
         if (wheelCells && wheels.length) {
             const find = (label) => wheels.find((w) => w?.label === label);
             const toText = (w, fallbackLabel) => {
@@ -4056,6 +3452,7 @@ export class RapierDebuggerUI {
                 const connectionLocal = w.connectionPointLocal ?? null;
                 return (
                     `${padLeft(String(w.label ?? fallbackLabel), 2)}  contact:${contact}\n` +
+                    `eng:${outNum(w.engineForceApplied, 0, 5)} N\n` +
                     `steer:${outNum(steerDeg, 1, 5)} deg\n` +
                     `susp len:${outNum(w.suspensionLength, 3, 5)} m\n` +
                     `susp force:${outNum(w.suspensionForce, 0, 5)} N\n` +
@@ -4073,22 +3470,24 @@ export class RapierDebuggerUI {
                 }
                 if (cell.knobEl) {
                     const inContact = !!wheel?.inContact;
-                    cell.knobEl.style.background = inContact ? '#4cff7a' : '#c8cbd1';
-                    cell.knobEl.style.boxShadow = inContact
-                        ? '0 0 0 2px rgba(76,255,122,0.25), 0 0 18px rgba(76,255,122,0.25)'
-                        : '0 0 0 2px rgba(0,0,0,0.25)';
-                    cell.knobEl.style.opacity = inContact ? '1' : '0.85';
+                    cell.knobEl.classList.toggle('is-contact', inContact);
                 }
                 if (cell.arrowEl) {
                     const steerDeg = Number.isFinite(wheel?.steering) ? -wheel.steering * (180 / Math.PI) : 0;
                     cell.arrowEl.style.transform = `rotate(${steerDeg}deg)`;
-                    cell.arrowEl.style.opacity = Number.isFinite(wheel?.steering) ? '1' : '0.2';
+                    cell.arrowEl.classList.toggle('is-active', Number.isFinite(wheel?.steering));
                 }
                 if (cell.barEl) {
                     const len = Number.isFinite(wheel?.suspensionLength) ? wheel.suspensionLength : suspRest;
                     const span = Math.max(1e-6, suspMax - suspMin);
                     const t = Math.min(1, Math.max(0, (len - suspMin) / span));
                     cell.barEl.style.height = `${Math.round(t * 100)}%`;
+                }
+                if (cell.driveEl) {
+                    const driveForce = Number.isFinite(wheel?.engineForceApplied) ? wheel.engineForceApplied : 0;
+                    const t = Math.min(1, Math.max(0, driveForce / engineForceMax));
+                    cell.driveEl.style.width = `${Math.round(t * 100)}%`;
+                    cell.driveEl.classList.toggle('is-active', driveForce > 0.01);
                 }
             };
 
@@ -4106,40 +3505,24 @@ export class RapierDebuggerUI {
 
         const inputPanel = document.createElement('div');
         stylePanel(inputPanel, { interactive: true });
+        inputPanel.classList.add('rapier-input-panel');
         const inputHeader = document.createElement('div');
-        inputHeader.style.display = 'flex';
-        inputHeader.style.alignItems = 'center';
-        inputHeader.style.justifyContent = 'space-between';
-        inputHeader.style.gap = '10px';
+        inputHeader.className = 'rapier-input-header';
 
         const inputTitle = makeTitle('Rapier Input');
-        inputTitle.style.marginBottom = '0';
+        inputTitle.classList.add('is-inline');
         inputHeader.appendChild(inputTitle);
 
-        inputHeader.style.marginBottom = '10px';
         inputPanel.appendChild(inputHeader);
-        inputPanel.style.flex = '4 1 972px';
-        inputPanel.style.minWidth = '842px';
-        inputPanel.style.width = 'auto';
-        inputPanel.style.maxHeight = 'calc(100vh - 32px)';
-        inputPanel.style.overflowY = 'auto';
-        inputPanel.style.overflowX = 'auto';
 
         const columns = document.createElement('div');
-        columns.style.display = 'grid';
-        columns.style.gridTemplateColumns = 'minmax(240px, 1fr) minmax(240px, 1fr)';
-        columns.style.gap = '10px 16px';
+        columns.className = 'rapier-input-columns';
 
         const leftCol = document.createElement('div');
-        leftCol.style.display = 'flex';
-        leftCol.style.flexDirection = 'column';
-        leftCol.style.minWidth = '240px';
+        leftCol.className = 'rapier-input-col';
 
         const middleCol = document.createElement('div');
-        middleCol.style.display = 'flex';
-        middleCol.style.flexDirection = 'column';
-        middleCol.style.minWidth = '240px';
-
+        middleCol.className = 'rapier-input-col';
 
         const internalGroups = {
             vehicle: makeGroup('Vehicle', { tightTop: true }),
@@ -4497,19 +3880,27 @@ export class RapierDebuggerUI {
             resetVelocities: resetAllVelocitiesButton
         };
 
-        this._inputControls.additionalMass = makeNumberControl({
-            title: 'Additional mass (kg)',
-            value: this._tuning.chassis.additionalMass,
-            help: INPUT_HELP.additionalMass,
-            helpSystem,
-            min: 0,
-            max: 100000,
-            step: 10,
-            width: '110px',
-            sliderWidth: '140px',
-            controlsAlignRight: true
+        const inertiaBlock = document.createElement('div');
+        inertiaBlock.className = 'rapier-inertia-block';
+        internalGroups.mass.body.appendChild(inertiaBlock);
+
+        this._inputControls.inertiaMode = makeSelectControl({
+            title: 'Inertia mode',
+            value: resolveInertiaMode(this._tuning.chassis.additionalMassProperties),
+            options: [
+                { value: 'manual', label: 'Manual' },
+                { value: 'auto', label: 'Auto' },
+                { value: 'rapier', label: 'Rapier' }
+            ],
+            help: INPUT_HELP.inertiaMode,
+            helpSystem
         });
-        internalGroups.mass.body.appendChild(this._inputControls.additionalMass.wrap);
+        inertiaBlock.appendChild(this._inputControls.inertiaMode.wrap);
+
+        const inertiaModeNote = document.createElement('div');
+        inertiaModeNote.className = 'rapier-inertia-note';
+        inertiaBlock.appendChild(inertiaModeNote);
+        this._inertiaModeNote = inertiaModeNote;
 
         this._inputControls.massPropsMass = makeNumberControl({
             title: 'Mass props mass (kg)',
@@ -4523,30 +3914,48 @@ export class RapierDebuggerUI {
             sliderWidth: '140px',
             controlsAlignRight: true
         });
-        internalGroups.mass.body.appendChild(this._inputControls.massPropsMass.wrap);
+        inertiaBlock.appendChild(this._inputControls.massPropsMass.wrap);
+
+        this._inputControls.additionalMass = makeNumberControl({
+            title: 'Additional mass (kg)',
+            value: this._tuning.chassis.additionalMass,
+            help: INPUT_HELP.additionalMass,
+            helpSystem,
+            min: 0,
+            max: 100000,
+            step: 10,
+            width: '110px',
+            sliderWidth: '140px',
+            controlsAlignRight: true
+        });
+        inertiaBlock.appendChild(this._inputControls.additionalMass.wrap);
+
+        this._inputControls.massPropsDensity = makeNumberControl({
+            title: 'Collider density (kg/m³)',
+            value: this._tuning.chassis.additionalMassProperties.density,
+            help: INPUT_HELP.massPropsDensity,
+            helpSystem,
+            min: 0,
+            max: 5000,
+            step: 1,
+            width: '110px',
+            sliderWidth: '140px',
+            controlsAlignRight: true
+        });
+        inertiaBlock.appendChild(this._inputControls.massPropsDensity.wrap);
 
         this._inputControls.massPropsComX = { input: null, valEl: null };
         this._inputControls.massPropsComY = { input: null, valEl: null };
         this._inputControls.massPropsComZ = { input: null, valEl: null };
 
         const comRow = document.createElement('div');
-        comRow.style.display = 'flex';
-        comRow.style.alignItems = 'center';
-        comRow.style.justifyContent = 'space-between';
-        comRow.style.gap = '10px';
-        comRow.style.margin = '8px 0 10px';
+        comRow.className = 'rapier-inline-row';
 
         const comLabel = document.createElement('div');
         comLabel.textContent = 'Center of mass';
-        comLabel.style.fontSize = '13px';
-        comLabel.style.fontWeight = '700';
-        comLabel.style.opacity = '0.95';
+        comLabel.className = 'rapier-inline-row-label';
 
-        const comButton = makeButton('...');
-        comButton.style.padding = '4px 8px';
-        comButton.style.fontSize = '11px';
-        comButton.style.borderRadius = '8px';
-        comButton.style.marginRight = '0';
+        const comButton = makeButton('...', { size: 'small' });
         comButton.addEventListener('click', (event) => {
             event.preventDefault();
             this._openComPopup(comButton);
@@ -4554,27 +3963,29 @@ export class RapierDebuggerUI {
 
         comRow.appendChild(comLabel);
         comRow.appendChild(comButton);
-        internalGroups.mass.body.appendChild(comRow);
+        inertiaBlock.appendChild(comRow);
+        this._comButton = comButton;
 
         const inertiaRow = document.createElement('div');
-        inertiaRow.style.display = 'flex';
-        inertiaRow.style.alignItems = 'center';
-        inertiaRow.style.justifyContent = 'space-between';
-        inertiaRow.style.gap = '10px';
-        inertiaRow.style.margin = '8px 0 10px';
+        inertiaRow.className = 'rapier-inline-row';
 
         const inertiaLabel = document.createElement('div');
-        inertiaLabel.textContent = 'Inertia (Principal)';
-        inertiaLabel.style.fontSize = '13px';
-        inertiaLabel.style.fontWeight = '700';
-        inertiaLabel.style.opacity = '0.95';
-        appendHelp(inertiaLabel, INPUT_HELP.inertia, helpSystem);
+        inertiaLabel.className = 'rapier-inline-row-label';
 
-        const inertiaButton = makeButton('...');
-        inertiaButton.style.padding = '4px 8px';
-        inertiaButton.style.fontSize = '11px';
-        inertiaButton.style.borderRadius = '8px';
-        inertiaButton.style.marginRight = '0';
+        const inertiaText = document.createElement('div');
+        inertiaText.textContent = 'Inertia';
+        inertiaText.className = 'rapier-inline-row-label-text';
+        appendHelp(inertiaText, INPUT_HELP.inertia, helpSystem);
+
+        const inertiaAuto = document.createElement('div');
+        inertiaAuto.textContent = 'AUTO';
+        inertiaAuto.className = 'rapier-pill hidden';
+        this._inertiaAutoPill = inertiaAuto;
+
+        inertiaLabel.appendChild(inertiaText);
+        inertiaLabel.appendChild(inertiaAuto);
+
+        const inertiaButton = makeButton('...', { size: 'small' });
         inertiaButton.addEventListener('click', (event) => {
             event.preventDefault();
             this._openInertiaPopup(inertiaButton);
@@ -4582,33 +3993,8 @@ export class RapierDebuggerUI {
 
         inertiaRow.appendChild(inertiaLabel);
         inertiaRow.appendChild(inertiaButton);
-
-        const inertiaFrameRow = document.createElement('div');
-        inertiaFrameRow.style.display = 'flex';
-        inertiaFrameRow.style.alignItems = 'center';
-        inertiaFrameRow.style.justifyContent = 'space-between';
-        inertiaFrameRow.style.gap = '10px';
-        inertiaFrameRow.style.margin = '8px 0 10px';
-
-        const inertiaFrameLabel = document.createElement('div');
-        inertiaFrameLabel.textContent = 'Inertia Frame (Quat)';
-        inertiaFrameLabel.style.fontSize = '13px';
-        inertiaFrameLabel.style.fontWeight = '700';
-        inertiaFrameLabel.style.opacity = '0.95';
-        appendHelp(inertiaFrameLabel, INPUT_HELP.inertiaFrame, helpSystem);
-
-        const inertiaFrameButton = makeButton('...');
-        inertiaFrameButton.style.padding = '4px 8px';
-        inertiaFrameButton.style.fontSize = '11px';
-        inertiaFrameButton.style.borderRadius = '8px';
-        inertiaFrameButton.style.marginRight = '0';
-        inertiaFrameButton.addEventListener('click', (event) => {
-            event.preventDefault();
-            this._openInertiaFramePopup(inertiaFrameButton);
-        });
-
-        inertiaFrameRow.appendChild(inertiaFrameLabel);
-        inertiaFrameRow.appendChild(inertiaFrameButton);
+        inertiaBlock.appendChild(inertiaRow);
+        this._inertiaButton = inertiaButton;
 
         this._inputControls.lockTranslations = makeToggleControl({
             title: 'Lock translations',
@@ -4646,24 +4032,14 @@ export class RapierDebuggerUI {
         });
 
         const lockingRow = document.createElement('div');
-        lockingRow.style.display = 'flex';
-        lockingRow.style.alignItems = 'center';
-        lockingRow.style.justifyContent = 'space-between';
-        lockingRow.style.gap = '10px';
-        lockingRow.style.margin = '8px 0 10px';
+        lockingRow.className = 'rapier-inline-row';
 
         const lockingLabel = document.createElement('div');
         lockingLabel.textContent = 'Locking';
-        lockingLabel.style.fontSize = '13px';
-        lockingLabel.style.fontWeight = '700';
-        lockingLabel.style.opacity = '0.95';
+        lockingLabel.className = 'rapier-inline-row-label-text';
         appendHelp(lockingLabel, INPUT_HELP.locking, helpSystem);
 
-        const lockingButton = makeButton('...');
-        lockingButton.style.padding = '4px 8px';
-        lockingButton.style.fontSize = '11px';
-        lockingButton.style.borderRadius = '8px';
-        lockingButton.style.marginRight = '0';
+        const lockingButton = makeButton('...', { size: 'small' });
         lockingButton.addEventListener('click', (event) => {
             event.preventDefault();
             this._openLockingPopup(lockingButton);
@@ -4717,35 +4093,20 @@ export class RapierDebuggerUI {
         internalGroups.ccd.body.appendChild(this._inputControls.ccdEnabled.wrap);
 
         const sleepRow = document.createElement('div');
-        sleepRow.style.display = 'flex';
-        sleepRow.style.alignItems = 'center';
-        sleepRow.style.justifyContent = 'flex-start';
-        sleepRow.style.gap = '10px';
-        sleepRow.style.margin = '8px 0 10px';
+        sleepRow.className = 'rapier-sleep-row';
 
         const sleepLabel = document.createElement('div');
         sleepLabel.textContent = 'Can sleep';
-        sleepLabel.style.fontSize = '13px';
-        sleepLabel.style.fontWeight = '700';
-        sleepLabel.style.opacity = '0.95';
-        sleepLabel.style.display = 'flex';
-        sleepLabel.style.alignItems = 'center';
+        sleepLabel.className = 'rapier-inline-row-label-text';
         appendHelp(sleepLabel, INPUT_HELP.canSleep, helpSystem);
 
         const sleepToggle = document.createElement('input');
         sleepToggle.type = 'checkbox';
         sleepToggle.checked = !!this._tuning.chassis.canSleep;
-        sleepToggle.style.width = '16px';
-        sleepToggle.style.height = '16px';
-        sleepToggle.style.cursor = 'pointer';
+        sleepToggle.className = 'rapier-toggle-input';
 
         const sleepMarker = document.createElement('div');
-        sleepMarker.style.width = '10px';
-        sleepMarker.style.height = '10px';
-        sleepMarker.style.borderRadius = '999px';
-        sleepMarker.style.background = 'rgba(255,255,255,0.2)';
-        sleepMarker.style.boxShadow = '0 0 0 1px rgba(255,255,255,0.2)';
-        sleepMarker.style.cursor = 'default';
+        sleepMarker.className = 'rapier-sleep-marker';
         if (helpSystem) {
             const statusText = () => {
                 if (this._sleepingState === true) return 'Sleeping';
@@ -4759,11 +4120,7 @@ export class RapierDebuggerUI {
         this._sleepMarker = sleepMarker;
 
         const wakeButton = makeButton('Wake up');
-        wakeButton.style.padding = '7px 12px';
-        wakeButton.style.fontSize = '12px';
-        wakeButton.style.borderRadius = '8px';
-        wakeButton.style.marginRight = '0';
-        wakeButton.style.minWidth = '72px';
+        wakeButton.classList.add('is-compact');
         wakeButton.addEventListener('click', () => {
             if (this._sleepingState === false) {
                 this.onSleep?.();
@@ -4775,10 +4132,7 @@ export class RapierDebuggerUI {
         this._wakeButton = wakeButton;
 
         const sleepControls = document.createElement('div');
-        sleepControls.style.display = 'inline-flex';
-        sleepControls.style.alignItems = 'center';
-        sleepControls.style.gap = '8px';
-        sleepControls.style.marginLeft = 'auto';
+        sleepControls.className = 'rapier-sleep-controls';
         sleepControls.appendChild(sleepToggle);
         sleepControls.appendChild(sleepMarker);
         sleepControls.appendChild(wakeButton);
@@ -4793,7 +4147,7 @@ export class RapierDebuggerUI {
         this._inputControls.engineForce = makeRangeControl({
             title: 'Engine (N)',
             min: 0,
-            max: 25000,
+            max: 60000,
             step: 100,
             value: this._inputs.engineForce,
             fmt: (v) => formatNum(v, 0),
@@ -4952,8 +4306,8 @@ export class RapierDebuggerUI {
             help: INPUT_HELP.suspMaxForce,
             helpSystem,
             min: 0,
-            max: 50000,
-            step: 100,
+            max: 200000,
+            step: 500,
             width: '110px',
             sliderWidth: '140px',
             controlsAlignRight: true
@@ -4985,6 +4339,7 @@ export class RapierDebuggerUI {
         internalGroups.tires.body.appendChild(this._inputControls.tireSideStiffness.wrap);
 
         const resetButton = makeButton('Reset');
+        resetButton.classList.add('is-block', 'is-large', 'rapier-reset-button');
         resetButton.title = [
             'Reset: configure and apply a reset to the vehicle body.',
             'Options include position/rotation, linear/angular velocity, plus Live auto-reset scheduling.',
@@ -4994,40 +4349,20 @@ export class RapierDebuggerUI {
             event.preventDefault();
             this._openPositionPopup(resetButton, { resetOnApply: true });
         });
-        resetButton.style.padding = '8px 12px';
-        resetButton.style.fontSize = '14px';
-        resetButton.style.borderRadius = '8px';
-        resetButton.style.marginRight = '0';
-        resetButton.style.width = '100%';
-        resetButton.style.position = 'relative';
         this._resetButton = resetButton;
-        this._resetButtonBorder = resetButton.style.border;
 
         const resetDot = document.createElement('span');
-        resetDot.style.position = 'absolute';
-        resetDot.style.right = '12px';
-        resetDot.style.top = '50%';
-        resetDot.style.transform = 'translateY(-50%)';
-        resetDot.style.width = '9px';
-        resetDot.style.height = '9px';
-        resetDot.style.borderRadius = '999px';
-        resetDot.style.background = 'rgba(76,255,122,0.95)';
-        resetDot.style.boxShadow = '0 0 10px rgba(76,255,122,0.55), 0 0 0 1px rgba(76,255,122,0.85)';
-        resetDot.style.visibility = 'hidden';
+        resetDot.className = 'rapier-reset-dot';
         resetButton.appendChild(resetDot);
         this._resetLiveDot = resetDot;
         const forcesManageButton = makeButton('Forces and Impulses');
+        forcesManageButton.classList.add('is-block', 'is-large');
         forcesManageButton.title = [
             'Forces and Impulses: apply external inputs to the vehicle body.',
             'Force/Torque are persistent (until reset); Impulse/Torque impulse are instantaneous.',
             '“@ point” applies at a world-space point and can induce rotation.',
             'Use Reset forces/torques to clear persistent effects and the applied log.'
         ].join('\n');
-        forcesManageButton.style.padding = '8px 12px';
-        forcesManageButton.style.fontSize = '14px';
-        forcesManageButton.style.borderRadius = '8px';
-        forcesManageButton.style.marginRight = '0';
-        forcesManageButton.style.width = '100%';
         forcesManageButton.addEventListener('click', (event) => {
             event.preventDefault();
             this._openForcesPopup(forcesManageButton);
@@ -5036,21 +4371,11 @@ export class RapierDebuggerUI {
         leftCol.appendChild(makeSeparator());
 
         const gravityRow = document.createElement('div');
-        gravityRow.style.display = 'flex';
-        gravityRow.style.alignItems = 'center';
-        gravityRow.style.gap = '10px';
-        gravityRow.style.margin = '8px 0 10px';
-        gravityRow.style.width = '100%';
-        gravityRow.style.boxSizing = 'border-box';
+        gravityRow.className = 'rapier-gravity-row';
 
         const gravityLabel = document.createElement('div');
         gravityLabel.textContent = 'Gravity';
-        gravityLabel.style.fontSize = '13px';
-        gravityLabel.style.fontWeight = '700';
-        gravityLabel.style.opacity = '0.95';
-        gravityLabel.style.display = 'flex';
-        gravityLabel.style.alignItems = 'center';
-        gravityLabel.style.flex = '0 0 auto';
+        gravityLabel.className = 'rapier-inline-row-label-text rapier-gravity-label';
         appendHelp(gravityLabel, INPUT_HELP.worldGravity, helpSystem);
 
         const gravityScale = document.createElement('input');
@@ -5059,32 +4384,14 @@ export class RapierDebuggerUI {
         gravityScale.max = '3';
         gravityScale.step = '0.05';
         gravityScale.value = String(this._tuning.chassis.gravityScale ?? 1);
-        gravityScale.style.flex = '1 1 0';
-        gravityScale.style.minWidth = '0';
-        gravityScale.style.width = '100%';
-        gravityScale.style.cursor = 'pointer';
+        gravityScale.className = 'rapier-gravity-slider';
 
         const gravityScaleOut = document.createElement('div');
-        gravityScaleOut.style.fontSize = '11px';
-        gravityScaleOut.style.fontWeight = '700';
-        gravityScaleOut.style.opacity = '0.75';
-        gravityScaleOut.style.whiteSpace = 'nowrap';
-        gravityScaleOut.style.flex = '0 0 auto';
-        gravityScaleOut.style.textAlign = 'right';
-        gravityScaleOut.style.minWidth = '72px';
+        gravityScaleOut.className = 'rapier-gravity-out';
         gravityScaleOut.textContent = `${formatNum(parseFloat(gravityScale.value), 2)}`;
 
-        const gravityButton = document.createElement('button');
-        gravityButton.type = 'button';
-        gravityButton.textContent = '...';
-        gravityButton.style.padding = '4px 8px';
-        gravityButton.style.borderRadius = '8px';
-        gravityButton.style.border = '1px solid rgba(255,255,255,0.16)';
-        gravityButton.style.background = 'rgba(12, 16, 24, 0.9)';
-        gravityButton.style.color = '#e9f2ff';
-        gravityButton.style.fontWeight = '700';
-        gravityButton.style.cursor = 'pointer';
-        gravityButton.style.flexShrink = '0';
+        const gravityButton = makeButton('...', { size: 'small' });
+        gravityButton.classList.add('rapier-gravity-button');
 
         gravityRow.appendChild(gravityLabel);
         gravityRow.appendChild(gravityScale);
@@ -5115,18 +4422,14 @@ export class RapierDebuggerUI {
         leftCol.appendChild(internalGroups.sleeping.wrap);
 
         leftCol.appendChild(internalGroups.bodyType.wrap);
-        leftCol.appendChild(inertiaRow);
-        leftCol.appendChild(inertiaFrameRow);
         leftCol.appendChild(lockingRow);
         leftCol.appendChild(internalGroups.dominance.wrap);
 
         const bottomActions = document.createElement('div');
-        bottomActions.style.display = 'flex';
-        bottomActions.style.flexDirection = 'column';
-        bottomActions.style.gap = '8px';
+        bottomActions.className = 'rapier-bottom-actions';
 
         const forcesSeparator = makeSeparator();
-        forcesSeparator.style.margin = '6px 0 4px';
+        forcesSeparator.classList.add('rapier-separator-tight');
         bottomActions.appendChild(forcesSeparator);
         bottomActions.appendChild(forcesManageButton);
         bottomActions.appendChild(resetButton);
@@ -5135,12 +4438,7 @@ export class RapierDebuggerUI {
         leftCol.appendChild(makeSeparator());
 
         const testsButton = makeButton('Run Automated Tests');
-        testsButton.style.width = '100%';
-        testsButton.style.padding = '8px 12px';
-        testsButton.style.fontSize = '14px';
-        testsButton.style.borderRadius = '8px';
-        testsButton.style.marginRight = '0';
-        testsButton.style.marginBottom = '10px';
+        testsButton.classList.add('is-block', 'is-large', 'rapier-tests-button');
         testsButton.addEventListener('click', (event) => {
             event.preventDefault();
             this._openTestsPopup(testsButton);
@@ -5149,54 +4447,33 @@ export class RapierDebuggerUI {
         this._testButtons.push(testsButton);
 
         const sampleWrap = document.createElement('div');
-        sampleWrap.style.display = 'flex';
-        sampleWrap.style.flexWrap = 'wrap';
-        sampleWrap.style.gap = '8px';
-        sampleWrap.style.marginBottom = '10px';
+        sampleWrap.className = 'rapier-sample-wrap';
 
-        const recordButton = makeButton('Record sample');
-        recordButton.style.width = '100%';
-        recordButton.style.flex = '1 1 100%';
-        recordButton.style.padding = '8px 12px';
-        recordButton.style.fontSize = '14px';
-        recordButton.style.borderRadius = '8px';
-        recordButton.style.marginRight = '0';
-        recordButton.textContent = '';
-        recordButton.style.position = 'relative';
+        const recordButton = makeButton('');
+        recordButton.classList.add('is-block', 'is-large', 'rapier-record-button');
 
         const recordLabel = document.createElement('span');
         recordLabel.textContent = 'Record sample';
-        recordLabel.style.display = 'block';
-        recordLabel.style.width = '100%';
-        recordLabel.style.textAlign = 'center';
+        recordLabel.className = 'rapier-record-label';
         recordButton.appendChild(recordLabel);
         this._recordLabel = recordLabel;
 
         const recordDot = document.createElement('span');
-        recordDot.style.position = 'absolute';
-        recordDot.style.right = '12px';
-        recordDot.style.top = '50%';
-        recordDot.style.transform = 'translateY(-50%)';
-        recordDot.style.width = '9px';
-        recordDot.style.height = '9px';
-        recordDot.style.borderRadius = '999px';
-        recordDot.style.background = 'rgba(255,45,45,0.95)';
-        recordDot.style.boxShadow = '0 0 10px rgba(255,45,45,0.6), 0 0 0 1px rgba(255,45,45,0.9)';
-        recordDot.style.visibility = 'hidden';
+        recordDot.className = 'rapier-record-dot';
         recordButton.appendChild(recordDot);
         this._recordDot = recordDot;
 
         recordButton.addEventListener('click', () => {
             if (!this._enabled || this._activeTest || this._sampleRecording) return;
             if (this._recordDot) {
-                this._recordDot.style.visibility = 'visible';
+                this._recordDot.classList.add('is-visible');
             }
             if (this._recordDotTimer) {
                 clearTimeout(this._recordDotTimer);
             }
             this._recordDotTimer = window.setTimeout(() => {
                 if (this._recordDot) {
-                    this._recordDot.style.visibility = 'hidden';
+                    this._recordDot.classList.remove('is-visible');
                 }
                 if (this._recordLabel) {
                     this._recordLabel.textContent = 'Record sample';
@@ -5212,18 +4489,13 @@ export class RapierDebuggerUI {
         leftCol.appendChild(sampleWrap);
 
         const status = document.createElement('div');
-        status.style.fontSize = '12px';
-        status.style.opacity = '0.8';
+        status.className = 'rapier-status-text';
         status.textContent = '';
         leftCol.appendChild(status);
         this._statusText = status;
 
         const copyButton = makeButton('Copy Telemetry');
-        copyButton.style.display = 'none';
-        copyButton.style.padding = '8px 12px';
-        copyButton.style.fontSize = '14px';
-        copyButton.style.borderRadius = '8px';
-        copyButton.style.marginRight = '0';
+        copyButton.classList.add('is-block', 'is-large', 'hidden');
         copyButton.addEventListener('click', () => {
             this._copyTelemetry().then(() => {
                 this._showAxisToast('Telemetry copied to clipboard');
@@ -5234,10 +4506,7 @@ export class RapierDebuggerUI {
 
         const outputPanel = document.createElement('div');
         stylePanel(outputPanel, { interactive: true });
-        outputPanel.style.flex = '1 1 260px';
-        outputPanel.style.minWidth = '240px';
-        outputPanel.style.width = 'auto';
-        outputPanel.style.overflowX = 'hidden';
+        outputPanel.classList.add('rapier-output-panel');
         outputPanel.appendChild(makeTitle('Rapier Output'));
 
         this._outputRows.status = makeValueRow('Status', { help: OUTPUT_HELP.status, helpSystem });
@@ -5277,101 +4546,55 @@ export class RapierDebuggerUI {
         outputPanel.appendChild(wheelsLabel);
 
         const wheelTable = document.createElement('div');
-        wheelTable.style.display = 'grid';
-        wheelTable.style.gridTemplateColumns = 'minmax(140px, 1fr) minmax(140px, 1fr)';
-        wheelTable.style.gap = '12px';
-        wheelTable.style.justifyContent = 'center';
+        wheelTable.className = 'rapier-wheel-table';
 
         const headerLeft = document.createElement('div');
         headerLeft.textContent = 'Left wheels';
-        headerLeft.style.fontSize = '12px';
-        headerLeft.style.fontWeight = '800';
-        headerLeft.style.opacity = '0.85';
-        headerLeft.style.textTransform = 'uppercase';
-        headerLeft.style.letterSpacing = '0.3px';
-        headerLeft.style.textAlign = 'center';
+        headerLeft.className = 'rapier-wheel-header';
 
         const headerRight = headerLeft.cloneNode(true);
         headerRight.textContent = 'Right wheels';
 
         const makeWheelCell = (wheelLabel) => {
             const cell = document.createElement('div');
-            const baseBg = 'rgba(255,255,255,0.06)';
-            const baseBorder = 'rgba(255,255,255,0.10)';
-            const hoverBg = 'rgba(76,255,122,0.14)';
-            const hoverBorder = 'rgba(76,255,122,0.65)';
-            const hoverShadow = '0 0 14px rgba(76,255,122,0.35)';
-            cell.style.background = baseBg;
-            cell.style.border = `1px solid ${baseBorder}`;
-            cell.style.borderRadius = '12px';
-            cell.style.padding = '10px 10px 12px';
-            cell.style.position = 'relative';
-            cell.style.minHeight = '184px';
-            cell.style.transition = 'background 140ms ease, border-color 140ms ease, box-shadow 140ms ease';
+            cell.className = 'rapier-wheel-cell';
 
             const arrow = makeArrowMarker({ size: 14, color: 'rgba(233, 242, 255, 0.9)' });
-            arrow.style.position = 'absolute';
-            arrow.style.top = '10px';
-            arrow.style.left = '10px';
+            arrow.classList.add('rapier-wheel-arrow');
             cell.appendChild(arrow);
 
             const knob = document.createElement('div');
-            knob.style.position = 'absolute';
-            knob.style.top = '10px';
-            knob.style.right = '10px';
-            knob.style.width = '11px';
-            knob.style.height = '11px';
-            knob.style.borderRadius = '999px';
-            knob.style.background = '#c8cbd1';
-            knob.style.boxShadow = '0 0 0 2px rgba(0,0,0,0.25)';
-            knob.style.opacity = '0.85';
+            knob.className = 'rapier-wheel-knob';
             cell.appendChild(knob);
 
             const text = document.createElement('div');
-            text.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, monospace';
-            text.style.fontSize = '12px';
-            text.style.fontVariantNumeric = 'tabular-nums';
-            text.style.whiteSpace = 'pre';
-            text.style.lineHeight = '1.25';
-            text.style.paddingLeft = '28px';
+            text.className = 'rapier-wheel-text';
             text.textContent = '—';
             cell.appendChild(text);
 
             const barWrap = document.createElement('div');
-            barWrap.style.position = 'absolute';
-            barWrap.style.left = '10px';
-            barWrap.style.top = '32px';
-            barWrap.style.width = '8px';
-            barWrap.style.height = '96px';
-            barWrap.style.borderRadius = '999px';
-            barWrap.style.background = 'rgba(255,255,255,0.12)';
-            barWrap.style.overflow = 'hidden';
+            barWrap.className = 'rapier-wheel-bar';
 
             const barFill = document.createElement('div');
-            barFill.style.position = 'absolute';
-            barFill.style.left = '0';
-            barFill.style.bottom = '0';
-            barFill.style.width = '100%';
-            barFill.style.height = '0%';
-            barFill.style.background = 'rgba(76,255,122,0.85)';
+            barFill.className = 'rapier-wheel-bar-fill';
             barWrap.appendChild(barFill);
             cell.appendChild(barWrap);
 
-            const setHover = (active) => {
-                cell.style.background = active ? hoverBg : baseBg;
-                cell.style.borderColor = active ? hoverBorder : baseBorder;
-                cell.style.boxShadow = active ? hoverShadow : 'none';
-            };
+            const driveBar = document.createElement('div');
+            driveBar.className = 'rapier-wheel-drive-bar';
+
+            const driveFill = document.createElement('div');
+            driveFill.className = 'rapier-wheel-drive-fill';
+            driveBar.appendChild(driveFill);
+            cell.appendChild(driveBar);
 
             cell.addEventListener('mouseenter', () => {
-                setHover(true);
                 this.onWheelHover?.(wheelLabel);
             });
             cell.addEventListener('mouseleave', () => {
-                setHover(false);
                 this.onWheelHover?.(null);
             });
-            return { root: cell, textEl: text, knobEl: knob, arrowEl: arrow, barEl: barFill, label: wheelLabel };
+            return { root: cell, textEl: text, knobEl: knob, arrowEl: arrow, barEl: barFill, driveEl: driveFill, label: wheelLabel };
         };
 
         wheelTable.appendChild(headerLeft);
@@ -5409,30 +4632,19 @@ export class RapierDebuggerUI {
             });
         }
 
+        this._refreshInertiaModeBadge();
+        this._syncInertiaModeControls();
         this._wireControls();
     }
 
     _createHelpSystem(root) {
         const tooltip = document.createElement('div');
-        tooltip.style.position = 'fixed';
-        tooltip.style.maxWidth = '280px';
-        tooltip.style.padding = '8px 10px';
-        tooltip.style.borderRadius = '10px';
-        tooltip.style.background = 'rgba(10, 14, 20, 0.92)';
-        tooltip.style.border = '1px solid rgba(255,255,255,0.18)';
-        tooltip.style.color = '#e9f2ff';
-        tooltip.style.fontSize = '12px';
-        tooltip.style.lineHeight = '1.3';
-        tooltip.style.whiteSpace = 'pre-line';
-        tooltip.style.boxShadow = '0 8px 24px rgba(0,0,0,0.45)';
-        tooltip.style.pointerEvents = 'none';
-        tooltip.style.zIndex = '120';
-        tooltip.style.display = 'none';
+        tooltip.className = 'rapier-help-tooltip hidden';
         document.body.appendChild(tooltip);
         this._helpTooltip = tooltip;
 
         const move = (event) => {
-            if (!this._helpTooltip || this._helpTooltip.style.display === 'none') return;
+            if (!this._helpTooltip || this._helpTooltip.classList.contains('hidden')) return;
             const pad = 12;
             const rect = this._helpTooltip.getBoundingClientRect();
             const x = Math.min(window.innerWidth - rect.width - pad, event.clientX + pad);
@@ -5445,13 +4657,13 @@ export class RapierDebuggerUI {
             show: (text, event) => {
                 if (!this._helpTooltip) return;
                 this._helpTooltip.textContent = text;
-                this._helpTooltip.style.display = 'block';
+                this._helpTooltip.classList.remove('hidden');
                 move(event);
             },
             move,
             hide: () => {
                 if (!this._helpTooltip) return;
-                this._helpTooltip.style.display = 'none';
+                this._helpTooltip.classList.add('hidden');
             }
         };
     }
@@ -5515,6 +4727,8 @@ export class RapierDebuggerUI {
         wire(this._inputControls.torqueImpulseZ, 'torqueImpulseZ');
         wire(this._inputControls.additionalMass, 'additionalMass');
         wire(this._inputControls.massPropsMass, 'massPropsMass');
+        wire(this._inputControls.massPropsDensity, 'massPropsDensity');
+        wire(this._inputControls.inertiaMode, 'inertiaMode');
         wire(this._inputControls.massPropsComX, 'massPropsComX');
         wire(this._inputControls.massPropsComY, 'massPropsComY');
         wire(this._inputControls.massPropsComZ, 'massPropsComZ');
@@ -5659,8 +4873,34 @@ export class RapierDebuggerUI {
             this._vehicleConfig.wheelbaseRatio = next;
         } else if (key === 'additionalMass') {
             this._tuning.chassis.additionalMass = next;
+            this._syncInertiaModeControls();
+        } else if (key === 'autoInertia') {
+            this._tuning.chassis.additionalMassProperties.inertiaMode = !!next ? 'auto' : 'manual';
+            this._recomputeAutoInertia();
+            this._refreshInertiaModeBadge();
+            this._syncInertiaPopupState();
+            this._syncComPopupState();
+            this._syncInertiaModeControls();
+            this._emitComPreview();
+        } else if (key === 'inertiaMode') {
+            const mode = String(next).toLowerCase();
+            if (mode === 'manual' || mode === 'auto' || mode === 'rapier') {
+                this._tuning.chassis.additionalMassProperties.inertiaMode = mode;
+                next = mode;
+            }
+            this._recomputeAutoInertia();
+            this._refreshInertiaModeBadge();
+            this._syncInertiaPopupState();
+            this._syncComPopupState();
+            this._syncInertiaModeControls();
+            this._emitComPreview();
         } else if (key === 'massPropsMass') {
             this._tuning.chassis.additionalMassProperties.mass = next;
+            this._recomputeAutoInertia();
+            this._syncInertiaModeControls();
+        } else if (key === 'massPropsDensity') {
+            this._tuning.chassis.additionalMassProperties.density = next;
+            this._syncInertiaModeControls();
         } else if (key === 'massPropsComX') {
             this._tuning.chassis.additionalMassProperties.com.x = next;
             this._emitComPreview();
@@ -5671,19 +4911,33 @@ export class RapierDebuggerUI {
             this._tuning.chassis.additionalMassProperties.com.z = next;
             this._emitComPreview();
         } else if (key === 'massPropsInertiaX') {
-            this._tuning.chassis.additionalMassProperties.inertia.x = next;
+            if (resolveInertiaMode(this._tuning.chassis.additionalMassProperties) === 'manual') {
+                this._tuning.chassis.additionalMassProperties.inertia.x = Math.round(next);
+            }
         } else if (key === 'massPropsInertiaY') {
-            this._tuning.chassis.additionalMassProperties.inertia.y = next;
+            if (resolveInertiaMode(this._tuning.chassis.additionalMassProperties) === 'manual') {
+                this._tuning.chassis.additionalMassProperties.inertia.y = Math.round(next);
+            }
         } else if (key === 'massPropsInertiaZ') {
-            this._tuning.chassis.additionalMassProperties.inertia.z = next;
+            if (resolveInertiaMode(this._tuning.chassis.additionalMassProperties) === 'manual') {
+                this._tuning.chassis.additionalMassProperties.inertia.z = Math.round(next);
+            }
         } else if (key === 'massPropsFrameW') {
-            this._tuning.chassis.additionalMassProperties.inertiaFrame.w = next;
+            if (resolveInertiaMode(this._tuning.chassis.additionalMassProperties) === 'manual') {
+                this._tuning.chassis.additionalMassProperties.inertiaFrame.w = next;
+            }
         } else if (key === 'massPropsFrameX') {
-            this._tuning.chassis.additionalMassProperties.inertiaFrame.x = next;
+            if (resolveInertiaMode(this._tuning.chassis.additionalMassProperties) === 'manual') {
+                this._tuning.chassis.additionalMassProperties.inertiaFrame.x = next;
+            }
         } else if (key === 'massPropsFrameY') {
-            this._tuning.chassis.additionalMassProperties.inertiaFrame.y = next;
+            if (resolveInertiaMode(this._tuning.chassis.additionalMassProperties) === 'manual') {
+                this._tuning.chassis.additionalMassProperties.inertiaFrame.y = next;
+            }
         } else if (key === 'massPropsFrameZ') {
-            this._tuning.chassis.additionalMassProperties.inertiaFrame.z = next;
+            if (resolveInertiaMode(this._tuning.chassis.additionalMassProperties) === 'manual') {
+                this._tuning.chassis.additionalMassProperties.inertiaFrame.z = next;
+            }
         } else if (key === 'linearDamping') {
             this._tuning.chassis.linearDamping = next;
         } else if (key === 'angularDamping') {
@@ -5722,6 +4976,159 @@ export class RapierDebuggerUI {
         if (key === 'worldGravityX' || key === 'worldGravityY' || key === 'worldGravityZ') {
             this._updateGravityDisplay();
         }
+        if (key === 'autoInertia' || key === 'inertiaMode' || key === 'massPropsMass') {
+            this._syncInertiaPopupState();
+        }
+    }
+
+    _refreshInertiaModeBadge() {
+        if (!this._inertiaAutoPill) return;
+        const mode = resolveInertiaMode(this._tuning?.chassis?.additionalMassProperties);
+        if (mode === 'auto') {
+            this._inertiaAutoPill.textContent = 'AUTO';
+            this._inertiaAutoPill.classList.remove('hidden');
+            this._inertiaAutoPill.classList.add('is-auto');
+            this._inertiaAutoPill.classList.remove('is-rapier');
+            return;
+        }
+        if (mode === 'rapier') {
+            this._inertiaAutoPill.textContent = 'RAPIER';
+            this._inertiaAutoPill.classList.remove('hidden');
+            this._inertiaAutoPill.classList.add('is-rapier');
+            this._inertiaAutoPill.classList.remove('is-auto');
+            return;
+        }
+        this._inertiaAutoPill.classList.add('hidden');
+        this._inertiaAutoPill.classList.remove('is-auto');
+        this._inertiaAutoPill.classList.remove('is-rapier');
+    }
+
+    _syncInertiaModeControls() {
+        const mode = resolveInertiaMode(this._tuning?.chassis?.additionalMassProperties);
+        const props = this._tuning?.chassis?.additionalMassProperties ?? {};
+        const cfg = this._vehicleConfig ?? {};
+        const width = Number.isFinite(cfg.width) ? cfg.width : null;
+        const height = Number.isFinite(cfg.height) ? cfg.height : null;
+        const length = Number.isFinite(cfg.length) ? cfg.length : null;
+        const volume = (width && height && length) ? (width * height * length) : null;
+
+        const densityRaw = props.density;
+        const densityOverride = (Number.isFinite(densityRaw) && densityRaw > 0) ? densityRaw : null;
+        const massRaw = props.mass;
+        const fallbackMassRaw = this._tuning?.chassis?.additionalMass;
+        const targetMass = (Number.isFinite(massRaw) && massRaw > 0)
+            ? massRaw
+            : ((Number.isFinite(fallbackMassRaw) && fallbackMassRaw > 0) ? fallbackMassRaw : null);
+        const densityFromMass = (volume && targetMass) ? (targetMass / volume) : null;
+        const resolvedDensity = densityOverride ?? (Number.isFinite(densityFromMass) && densityFromMass > 0 ? densityFromMass : 1);
+        const resolvedMass = volume ? resolvedDensity * volume : null;
+
+        if (this._inputControls.massPropsDensity?.wrap) {
+            this._inputControls.massPropsDensity.wrap.classList.toggle('hidden', mode !== 'rapier');
+        }
+
+        if (this._comButton) {
+            this._comButton.disabled = mode === 'rapier';
+            this._comButton.textContent = mode === 'rapier' ? '-' : '...';
+        }
+        if (this._inertiaButton) {
+            this._inertiaButton.disabled = mode === 'rapier';
+            this._inertiaButton.textContent = mode === 'rapier' ? '-' : '...';
+        }
+
+        if (this._inertiaModeNote) {
+            if (mode === 'manual') {
+                this._inertiaModeNote.textContent = 'Manual: uses Mass props mass + COM + inertia values.';
+            } else if (mode === 'auto') {
+                this._inertiaModeNote.textContent = 'Auto: inertia is computed from Mass props mass and chassis box size.';
+            } else if (mode === 'rapier') {
+                const densityLine = densityOverride
+                    ? `${formatNum(densityOverride, 2)} kg/m³ (manual)`
+                    : (Number.isFinite(densityFromMass) ? `${formatNum(densityFromMass, 2)} kg/m³ (from mass)` : '1.00 kg/m³ (default)');
+                const volumeLine = Number.isFinite(volume) ? `${formatNum(volume, 2)} m³` : 'n/a';
+                const massLine = Number.isFinite(resolvedMass) ? `${formatNum(resolvedMass, 0)} kg` : 'n/a';
+                this._inertiaModeNote.textContent =
+                    `Rapier: mass/COM/inertia come from chassis collider density.\n` +
+                    `Density: ${densityLine}  •  Volume: ${volumeLine}\n` +
+                    `Resulting mass: ${massLine} (from density)`;
+            } else {
+                this._inertiaModeNote.textContent = '';
+            }
+        }
+    }
+
+    _recomputeAutoInertia() {
+        const props = this._tuning?.chassis?.additionalMassProperties ?? null;
+        if (!props || resolveInertiaMode(props) !== 'auto') return;
+        if (!Number.isFinite(props.mass) || props.mass <= 0) return;
+
+        const cfg = this._vehicleConfig ?? {};
+        const inertia = computeBoxInertia(props.mass, cfg.width, cfg.height, cfg.length);
+        const target = props.inertia ?? (props.inertia = { x: 0, y: 0, z: 0 });
+        target.x = inertia.x;
+        target.y = inertia.y;
+        target.z = inertia.z;
+
+        const frame = props.inertiaFrame ?? (props.inertiaFrame = { w: 1, x: 0, y: 0, z: 0 });
+        frame.w = 1;
+        frame.x = 0;
+        frame.y = 0;
+        frame.z = 0;
+
+        this._syncInertiaPopupState();
+    }
+
+    _syncInertiaPopupState() {
+        const fields = this._inertiaPopupFields;
+        if (!fields) return;
+        const props = this._tuning?.chassis?.additionalMassProperties ?? {};
+        const mode = resolveInertiaMode(props);
+        const readOnly = mode !== 'manual';
+
+        if (fields.modeValueEl) {
+            fields.modeValueEl.textContent = mode === 'rapier'
+                ? 'Rapier'
+                : (mode === 'auto' ? 'Auto' : 'Manual');
+        }
+        if (fields.noteEl) {
+            const note = mode === 'auto'
+                ? 'Auto mode: inertia and inertia-frame are computed from mass and chassis box size.'
+                : (mode === 'rapier'
+                    ? 'Rapier mode: inertia comes from the chassis collider density (inertia inputs are ignored).'
+                    : '');
+            fields.noteEl.textContent = note;
+            fields.noteEl.classList.toggle('hidden', !note);
+        }
+        if (fields.resetButton) {
+            fields.resetButton.disabled = mode === 'rapier';
+        }
+
+        const inertia = props.inertia ?? {};
+        const frame = props.inertiaFrame ?? {};
+        const apply = (input, value, { disabled = false, integer = false } = {}) => {
+            if (!input) return;
+            input.disabled = disabled;
+            if (mode === 'rapier') {
+                input.value = '';
+                input.placeholder = '-';
+                return;
+            }
+            input.placeholder = '';
+            if (integer) {
+                input.value = Number.isFinite(value) ? String(Math.round(value)) : '';
+            } else {
+                input.value = Number.isFinite(value) ? String(value) : '';
+            }
+        };
+
+        apply(fields.inertiaInputs?.x, inertia.x, { disabled: readOnly, integer: true });
+        apply(fields.inertiaInputs?.y, inertia.y, { disabled: readOnly, integer: true });
+        apply(fields.inertiaInputs?.z, inertia.z, { disabled: readOnly, integer: true });
+
+        apply(fields.frameInputs?.w, frame.w, { disabled: readOnly });
+        apply(fields.frameInputs?.x, frame.x, { disabled: readOnly });
+        apply(fields.frameInputs?.y, frame.y, { disabled: readOnly });
+        apply(fields.frameInputs?.z, frame.z, { disabled: readOnly });
     }
 
     _startSampleRecord() {
@@ -5808,7 +5215,15 @@ export class RapierDebuggerUI {
                     chassis.enabledRotations?.z ? 1 : 0
                 ],
                 mp: {
+                    im: (() => {
+                        const mode = resolveInertiaMode(massProps);
+                        if (mode === 'manual') return 0;
+                        if (mode === 'auto') return 1;
+                        if (mode === 'rapier') return 2;
+                        return null;
+                    })(),
                     m: qNum(massProps.mass, 1),
+                    d: qNum(massProps.density, 3),
                     com: packVec3(massProps.com, 3),
                     in: packVec3(massProps.inertia, 3),
                     fr: packQuat(massProps.inertiaFrame, 4)
@@ -5870,7 +5285,7 @@ export class RapierDebuggerUI {
         this._testElapsed = 0;
         this._stepElapsed = 0;
         this._testStepIndex = 0;
-        if (this._copyButton) this._copyButton.style.display = 'none';
+        if (this._copyButton) this._copyButton.classList.add('hidden');
         if (this._statusText) this._statusText.textContent = '';
         this._openTestPopup(test);
 
@@ -5910,7 +5325,7 @@ export class RapierDebuggerUI {
     _finishTest() {
         this._activeTest = null;
         if (this._statusText) this._statusText.textContent = '';
-        if (this._copyButton) this._copyButton.style.display = 'none';
+        if (this._copyButton) this._copyButton.classList.add('hidden');
         this._setTestPopupState('done');
         this.setEnabled(this._enabled);
     }
@@ -5944,7 +5359,7 @@ export class RapierDebuggerUI {
         this._testStepIndex = 0;
         this._telemetry = null;
         this._telemetryMeta = null;
-        if (this._copyButton) this._copyButton.style.display = 'none';
+        if (this._copyButton) this._copyButton.classList.add('hidden');
         this._sampleRecording = false;
         this._sampleElapsed = 0;
         this._sampleFrames = null;

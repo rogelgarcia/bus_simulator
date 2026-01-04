@@ -1,4 +1,5 @@
 // src/app/physics/rapier_debugger/RapierDebuggerSim.js
+// Physics-only Rapier debugger simulation used by the Rapier debugger view.
 import { loadRapier } from '../rapier/RapierLoader.js';
 import { RAPIER_DEBUGGER_TUNING, RAPIER_DEBUGGER_VEHICLE_CONFIG, RAPIER_DEBUGGER_WORLD_CONFIG } from './RapierDebuggerConstants.js';
 
@@ -84,7 +85,6 @@ function setControllerAxis(controller, propName, setterName, value) {
         controller[setterName] = value;
         if (controller[propName] === value) return;
     } catch {
-        // ignore
     }
 
     const desc = Object.getOwnPropertyDescriptor(controller, propName)
@@ -198,6 +198,25 @@ function readVec3(v) {
     const z = typeof v.z === 'function' ? v.z() : v.z;
     if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
     return { x, y, z };
+}
+
+function resolveInertiaMode(props) {
+    const raw = props?.inertiaMode;
+    if (typeof raw === 'string') {
+        const mode = raw.toLowerCase();
+        if (mode === 'manual' || mode === 'auto' || mode === 'rapier') return mode;
+    }
+    if (typeof props?.autoInertia === 'boolean') return props.autoInertia ? 'auto' : 'manual';
+    return 'auto';
+}
+
+function computeCuboidDensity({ width, height, length } = {}, massKg) {
+    if (!Number.isFinite(massKg) || massKg <= 0) return null;
+    if (!Number.isFinite(width) || !Number.isFinite(height) || !Number.isFinite(length)) return null;
+    if (width <= 0 || height <= 0 || length <= 0) return null;
+    const volume = width * height * length;
+    if (!Number.isFinite(volume) || volume <= 0) return null;
+    return massKg / volume;
 }
 
 function resolveMassProps(props) {
@@ -442,7 +461,9 @@ export class RapierDebuggerSim {
             if (next.chassis.additionalMassProperties) {
                 const props = next.chassis.additionalMassProperties;
                 const target = this.tuning.chassis.additionalMassProperties ?? {
+                    inertiaMode: resolveInertiaMode(props),
                     mass: NaN,
+                    density: NaN,
                     com: { x: 0, y: 0, z: 0 },
                     inertia: { x: 0, y: 0, z: 0 },
                     inertiaFrame: { w: 1, x: 0, y: 0, z: 0 }
@@ -452,8 +473,19 @@ export class RapierDebuggerSim {
                 const targetFrame = target.inertiaFrame ?? (target.inertiaFrame = { w: 1, x: 0, y: 0, z: 0 });
                 let propsChanged = false;
 
+                const nextMode = resolveInertiaMode(props);
+                if (typeof target.inertiaMode !== 'string' || target.inertiaMode !== nextMode) {
+                    target.inertiaMode = nextMode;
+                    propsChanged = true;
+                }
+
                 if (Number.isFinite(props.mass) && numChanged(target.mass, props.mass)) {
                     target.mass = props.mass;
+                    propsChanged = true;
+                }
+
+                if (Number.isFinite(props.density) && numChanged(target.density, props.density)) {
+                    target.density = props.density;
                     propsChanged = true;
                 }
 
@@ -801,23 +833,35 @@ export class RapierDebuggerSim {
                 typeof enabledRotations.z === 'boolean' ? enabledRotations.z : true
             );
         }
-        const massProps = resolveMassProps(chassisCfg.additionalMassProperties);
+        const rawProps = chassisCfg.additionalMassProperties ?? null;
+        const inertiaMode = resolveInertiaMode(rawProps);
+        const massProps = inertiaMode === 'rapier' ? null : resolveMassProps(rawProps);
         if (massProps && typeof bodyDesc.setAdditionalMassProperties === 'function') {
             bodyDesc.setAdditionalMassProperties(massProps.mass, massProps.com, massProps.inertia, massProps.frame);
-        } else if (Number.isFinite(chassisCfg.additionalMass)) {
+        } else if (inertiaMode !== 'rapier' && Number.isFinite(chassisCfg.additionalMass)) {
             bodyDesc.setAdditionalMass(chassisCfg.additionalMass);
         }
         const body = this._world.createRigidBody(bodyDesc);
         if (Number.isFinite(chassisCfg.gravityScale)) {
             body.setGravityScale(chassisCfg.gravityScale, true);
         }
-        if (!massProps && Number.isFinite(chassisCfg.additionalMass)) {
+        if (inertiaMode !== 'rapier' && !massProps && Number.isFinite(chassisCfg.additionalMass)) {
             body.setAdditionalMass(chassisCfg.additionalMass, true);
         }
 
         const colliderDesc = this._rapier.ColliderDesc.cuboid(halfW, halfH, halfL);
         if (typeof colliderDesc.setDensity === 'function') {
-            colliderDesc.setDensity(0);
+            if (inertiaMode === 'rapier') {
+                const densityOverride = Number.isFinite(rawProps?.density) && rawProps.density > 0 ? rawProps.density : null;
+                const targetMass = Number.isFinite(rawProps?.mass)
+                    ? rawProps.mass
+                    : (Number.isFinite(chassisCfg.additionalMass) ? chassisCfg.additionalMass : null);
+                const densityFromMass = computeCuboidDensity(cfg, targetMass);
+                const nextDensity = densityOverride ?? (Number.isFinite(densityFromMass) && densityFromMass > 0 ? densityFromMass : 1);
+                colliderDesc.setDensity(nextDensity);
+            } else {
+                colliderDesc.setDensity(0);
+            }
         }
         colliderDesc.setFriction(0.2);
         colliderDesc.setRestitution(0.0);
@@ -884,11 +928,46 @@ export class RapierDebuggerSim {
             if (Number.isFinite(chassisCfg.linearDamping)) this._body.setLinearDamping(chassisCfg.linearDamping);
             if (Number.isFinite(chassisCfg.angularDamping)) this._body.setAngularDamping(chassisCfg.angularDamping);
             if (Number.isFinite(chassisCfg.gravityScale)) this._body.setGravityScale(chassisCfg.gravityScale, false);
-            const massProps = resolveMassProps(chassisCfg.additionalMassProperties);
-            if (massProps && typeof this._body.setAdditionalMassProperties === 'function') {
-                this._body.setAdditionalMassProperties(massProps.mass, massProps.com, massProps.inertia, massProps.frame, false);
-            } else if (Number.isFinite(chassisCfg.additionalMass)) {
-                this._body.setAdditionalMass(chassisCfg.additionalMass, false);
+            const rawProps = chassisCfg.additionalMassProperties ?? null;
+            const inertiaMode = resolveInertiaMode(rawProps);
+
+            if (inertiaMode === 'rapier') {
+                safeCall(this._body, 'setAdditionalMassProperties',
+                    0,
+                    { x: 0, y: 0, z: 0 },
+                    { x: 0, y: 0, z: 0 },
+                    { w: 1, x: 0, y: 0, z: 0 },
+                    false
+                );
+                safeCall(this._body, 'setAdditionalMass', 0, false);
+                const densityOverride = Number.isFinite(rawProps?.density) && rawProps.density > 0 ? rawProps.density : null;
+                const targetMass = Number.isFinite(rawProps?.mass)
+                    ? rawProps.mass
+                    : (Number.isFinite(chassisCfg.additionalMass) ? chassisCfg.additionalMass : null);
+                const densityFromMass = computeCuboidDensity(this.vehicleConfig, targetMass);
+                const nextDensity = densityOverride ?? (Number.isFinite(densityFromMass) && densityFromMass > 0 ? densityFromMass : 1);
+                safeCall(this._chassisCollider, 'setDensity', nextDensity, true);
+                safeCall(this._chassisCollider, 'setDensity', nextDensity);
+                safeCall(this._body, 'recomputeMassPropertiesFromColliders');
+            } else {
+                safeCall(this._chassisCollider, 'setDensity', 0, true);
+                safeCall(this._chassisCollider, 'setDensity', 0);
+                safeCall(this._body, 'recomputeMassPropertiesFromColliders');
+
+                const massProps = resolveMassProps(rawProps);
+                if (massProps && typeof this._body.setAdditionalMassProperties === 'function') {
+                    safeCall(this._body, 'setAdditionalMass', 0, false);
+                    this._body.setAdditionalMassProperties(massProps.mass, massProps.com, massProps.inertia, massProps.frame, false);
+                } else if (Number.isFinite(chassisCfg.additionalMass)) {
+                    safeCall(this._body, 'setAdditionalMassProperties',
+                        0,
+                        { x: 0, y: 0, z: 0 },
+                        { x: 0, y: 0, z: 0 },
+                        { w: 1, x: 0, y: 0, z: 0 },
+                        false
+                    );
+                    this._body.setAdditionalMass(chassisCfg.additionalMass, false);
+                }
             }
             if (typeof chassisCfg.canSleep === 'boolean' && typeof this._body.setCanSleep === 'function') {
                 this._body.setCanSleep(chassisCfg.canSleep);
@@ -1048,6 +1127,12 @@ export class RapierDebuggerSim {
         const invMass = safeCall(this._body, 'invMass') ?? safeGet(this._body, 'invMass');
         const massKg = (Number.isFinite(invMass) && invMass > 0) ? (1 / invMass) : null;
 
+        const inputs = this.getInputs();
+        const engineForce = Number.isFinite(inputs.engineForce) ? inputs.engineForce : 0;
+        const brakeForce = Number.isFinite(inputs.brakeForce) ? inputs.brakeForce : 0;
+        const handbrakeForce = Number.isFinite(inputs.handbrakeForce) ? inputs.handbrakeForce : 0;
+        const rearWheels = new Set(this._wheelIndices.rear ?? []);
+
         let contactCount = 0;
         for (const i of this._wheelIndices.all) {
             if (this._controller.wheelIsInContact?.(i)) contactCount += 1;
@@ -1129,6 +1214,11 @@ export class RapierDebuggerSim {
 
             const label = labelFromLocal(centerLocal ?? connectionPointLocal ?? expectedLocal) ?? fallbackLabel;
 
+            const engineForceApplied = rearWheels.has(idx) ? engineForce : 0;
+            const brakeForceApplied = (handbrakeForce > 0 && rearWheels.has(idx))
+                ? (brakeForce + handbrakeForce)
+                : brakeForce;
+
             wheelStates.push({
                 index: idx,
                 label,
@@ -1145,6 +1235,8 @@ export class RapierDebuggerSim {
                 suspensionForce: this._controller.wheelSuspensionForce?.(idx),
                 forwardImpulse: this._controller.wheelForwardImpulse?.(idx),
                 sideImpulse: this._controller.wheelSideImpulse?.(idx),
+                engineForceApplied,
+                brakeForceApplied,
                 steering: this._controller.wheelSteering?.(idx),
                 rotation: this._controller.wheelRotation?.(idx),
                 directionCs: dirLocal,
@@ -1179,7 +1271,7 @@ export class RapierDebuggerSim {
         return {
             status: this._initError ? 'Init failed' : 'Ready',
             initError: this._initError ? String(this._initError?.message ?? this._initError) : null,
-            inputs: this.getInputs(),
+            inputs,
             body: {
                 position: { x: pos.x, y: pos.y, z: pos.z },
                 rotation: { x: rot.x, y: rot.y, z: rot.z, w: rot.w },

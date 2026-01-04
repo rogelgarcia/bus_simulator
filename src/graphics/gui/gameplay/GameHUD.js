@@ -1,6 +1,5 @@
 // src/graphics/gui/gameplay/GameHUD.js
 // Orchestrates gameplay HUD widgets and live telemetry updates.
-import { injectHudStyles } from "./HUDStyles.js";
 import { RampedControl } from "../../../app/input/RampedControl.js";
 import { SteeringWheelWidget } from "./widgets/SteeringWheelWidget.js";
 import { PedalWidget } from "./widgets/PedalWidget.js";
@@ -14,8 +13,6 @@ function clamp(v, a, b) {
 export class GameHUD {
     constructor({ mode = "demo" } = {}) {
         this.mode = mode;
-
-        this._removeStyles = injectHudStyles();
 
         this.root = document.createElement("div");
         this.root.id = "hud-game";
@@ -143,7 +140,6 @@ export class GameHUD {
     destroy() {
         this.hide();
         if (this.root.isConnected) this.root.remove();
-        // this._removeStyles?.();
     }
 
     setTelemetry(t = {}) {

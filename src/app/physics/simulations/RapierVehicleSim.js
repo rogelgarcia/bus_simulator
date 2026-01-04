@@ -1,5 +1,7 @@
 // src/app/physics/simulations/RapierVehicleSim.js
 // Rapier vehicle integration; does not handle rendering or UI.
+// Design: `tuning.engineForce` is a per-wheel force cap (and fallback input when `tuning.engine` is absent).
+// When `tuning.engine` is provided, EngineTransmissionSim computes wheel force from `maxTorque`/ratios and is clamped by `engineForce`.
 import * as THREE from 'three';
 import { PhysicsLoop } from '../PhysicsLoop.js';
 import { loadRapier } from '../rapier/RapierLoader.js';
@@ -45,92 +47,14 @@ const DEFAULT_TUNING = {
     maxBodyAngleDeg: 7,
     suspension: {
         restLength: 0.35,
-        stiffness: 30000,
-        compression: 3600,
-        relaxation: 4200,
+        stiffness: 500,
+        compression: 0.8,
+        relaxation: 0.6,
         travel: 0.2,
         maxForce: 90000
     },
     frictionSlip: 7.8,
     sideFrictionStiffness: 1.3
-};
-
-const BUS_TUNING = {
-    city: {
-        mass: 10000,
-        engineForce: 20000,
-        brakeForce: 15000,
-        handbrakeForce: 17000,
-        maxSteerDeg: 38,
-        linearDamping: 0.32,
-        angularDamping: 1.0,
-        bodyTiltScale: 0.8,
-        maxBodyAngleDeg: 6,
-        suspension: {
-            restLength: 0.32,
-            stiffness: 34000,
-            compression: 4000,
-            relaxation: 4600,
-            travel: 0.18,
-            maxForce: 95000
-        },
-        frictionSlip: 8.2,
-        sideFrictionStiffness: 1.45,
-        engine: {
-            maxTorque: 1300,
-            finalDrive: 4.4
-        }
-    },
-    coach: {
-        mass: 11800,
-        engineForce: 21000,
-        brakeForce: 15500,
-        handbrakeForce: 17500,
-        maxSteerDeg: 36,
-        linearDamping: 0.26,
-        angularDamping: 0.85,
-        bodyTiltScale: 1.0,
-        maxBodyAngleDeg: 8,
-        suspension: {
-            restLength: 0.38,
-            stiffness: 26000,
-            compression: 3200,
-            relaxation: 3800,
-            travel: 0.22,
-            maxForce: 85000
-        },
-        frictionSlip: 7.4,
-        sideFrictionStiffness: 1.22,
-        engine: {
-            maxTorque: 1500,
-            finalDrive: 4.1
-        }
-    },
-    double: {
-        mass: 13500,
-        engineForce: 22000,
-        brakeForce: 16500,
-        handbrakeForce: 18500,
-        maxSteerDeg: 32,
-        linearDamping: 0.34,
-        angularDamping: 1.15,
-        bodyTiltScale: 0.75,
-        maxBodyAngleDeg: 5,
-        suspension: {
-            restLength: 0.36,
-            stiffness: 36000,
-            compression: 4300,
-            relaxation: 5200,
-            travel: 0.2,
-            maxForce: 110000
-        },
-        frictionSlip: 8.6,
-        sideFrictionStiffness: 1.35,
-        engine: {
-            maxTorque: 1650,
-            finalDrive: 4.6
-        }
-    }
 };
 
 function clamp(value, min, max) {
@@ -139,14 +63,15 @@ function clamp(value, min, max) {
 
 function computeBoxInertia(mass, width, height, length) {
     if (!Number.isFinite(mass) || mass <= 0) return { x: null, y: null, z: null };
+    const round100 = (value) => Math.round(value / 100) * 100;
     const w2 = width * width;
     const h2 = height * height;
     const l2 = length * length;
     const k = mass / 12;
     return {
-        x: k * (h2 + l2),
-        y: k * (w2 + l2),
-        z: k * (w2 + h2)
+        x: round100(k * (h2 + l2)),
+        y: round100(k * (w2 + l2)),
+        z: round100(k * (w2 + h2))
     };
 }
 
@@ -181,7 +106,6 @@ function setControllerAxis(controller, propName, setterName, value) {
         controller[setterName] = value;
         if (controller[propName] === value) return;
     } catch {
-        // ignore
     }
 
     const desc = Object.getOwnPropertyDescriptor(controller, propName)
@@ -195,28 +119,20 @@ function setControllerAxis(controller, propName, setterName, value) {
     }
 }
 
-function resolveBusId(entry, model) {
-    const raw = model?.userData?.id
-        ?? entry?.api?.root?.userData?.id
-        ?? entry?.anchor?.userData?.id
-        ?? entry?.vehicle?.id
-        ?? entry?.config?.name;
-    if (!raw || typeof raw !== 'string') return null;
-    const id = raw.toLowerCase();
-    if (id.includes('city')) return 'city';
-    if (id.includes('coach')) return 'coach';
-    if (id.includes('double')) return 'double';
-    return id;
-}
-
 function resolveBusTuning(entry, model) {
-    const busId = resolveBusId(entry, model);
+    const spec = entry?.config?.spec
+        ?? entry?.config?.busSpec
+        ?? entry?.vehicle?.spec
+        ?? entry?.anchor?.userData?.spec
+        ?? model?.userData?.spec
+        ?? null;
+    const specTuning = entry?.config?.tuning ?? entry?.vehicle?.tuning ?? spec?.tuning ?? null;
     const base = {
         ...DEFAULT_TUNING,
-        ...(busId && BUS_TUNING[busId] ? BUS_TUNING[busId] : {})
+        ...(specTuning && typeof specTuning === 'object' ? specTuning : {})
     };
 
-    const length = entry?.config?.dimensions?.length ?? model?.userData?.length ?? FALLBACK_DIMENSIONS.length;
+    const length = entry?.config?.dimensions?.length ?? spec?.dimensions?.length ?? model?.userData?.length ?? FALLBACK_DIMENSIONS.length;
     const lengthScale = clamp(length / FALLBACK_DIMENSIONS.length, 0.85, 1.35);
 
     const suspension = {
@@ -269,7 +185,7 @@ function buildWheelLayoutSnapshot(entry) {
     const zTol = Math.max(0.25, Math.min(1.25, (entry.wheelRadius ?? DEFAULT_CONFIG.wheelRadius) * 1.5));
     const withConn = wheels.filter((w) => Number.isFinite(w.connection?.z) && Number.isFinite(w.connection?.x));
     if (withConn.length) {
-        const sortedByZ = [...withConn].sort((a, b) => (b.connection.z - a.connection.z)); // front -> rear
+        const sortedByZ = [...withConn].sort((a, b) => (b.connection.z - a.connection.z));
         const groups = [];
         for (const w of sortedByZ) {
             const last = groups[groups.length - 1];
@@ -306,10 +222,10 @@ function buildWheelLayoutSnapshot(entry) {
     wheels.sort((a, b) => {
         const az = a.connection?.z ?? a.center?.z ?? 0;
         const bz = b.connection?.z ?? b.center?.z ?? 0;
-        if (bz !== az) return bz - az; // front -> rear
+        if (bz !== az) return bz - az;
         const ax = a.connection?.x ?? a.center?.x ?? 0;
         const bx = b.connection?.x ?? b.center?.x ?? 0;
-        return ax - bx; // left -> right
+        return ax - bx;
     });
 
     return wheels;
@@ -459,10 +375,6 @@ function computeWheelLayout(anchor, api, config, centerLocal) {
 }
 
 export class RapierVehicleSim {
-    /**
-     * @param {import('../core/EventBus.js').EventBus} eventBus
-     * @param {object} [config]
-     */
     constructor(eventBus, config = {}) {
         this.eventBus = eventBus;
 
@@ -609,7 +521,7 @@ export class RapierVehicleSim {
 
         for (const entry of this._vehicles.values()) {
             if (!entry.controller) continue;
-            this._applyVehicleInput(entry);
+            this._applyVehicleInput(entry, dt);
             entry.controller.updateVehicle(dt);
         }
 
@@ -621,8 +533,16 @@ export class RapierVehicleSim {
         }
     }
 
-    _applyVehicleInput(entry) {
+    _applyVehicleInput(entry, dt) {
         const input = entry.input;
+        const allWheels = entry.wheelIndices.all;
+        const steerWheels = entry.wheelIndices.front.length ? entry.wheelIndices.front : allWheels;
+        const driveWheels = entry.wheelIndices.rear.length ? entry.wheelIndices.rear : allWheels;
+        const steerLeftWheels = entry.wheelIndices.frontLeft?.length ? entry.wheelIndices.frontLeft : [];
+        const steerRightWheels = entry.wheelIndices.frontRight?.length ? entry.wheelIndices.frontRight : [];
+        const frontWheels = entry.wheelIndices.front ?? [];
+        const rearWheels = entry.wheelIndices.rear ?? [];
+
         const steering = -input.steering * entry.maxSteerRad;
         let driveForceTotal = input.throttle * entry.engineForce;
         const brakeForceTotal = (input.brake * entry.brakeForce) + (input.handbrake * entry.handbrakeForce);
@@ -634,15 +554,35 @@ export class RapierVehicleSim {
                 speed = 0;
             }
             const wheelRadius = Math.max(1e-3, entry.wheelRadius ?? DEFAULT_CONFIG.wheelRadius);
-            const output = computeEngineOutput(entry.engineConfig, entry.engine, speed, wheelRadius, input.throttle);
+            const output = computeEngineOutput(
+                entry.engineConfig,
+                entry.engine,
+                speed,
+                wheelRadius,
+                input.throttle,
+                dt,
+                driveWheels.length || allWheels.length || 1
+            );
             entry.engine.gearIndex = output.gearIndex;
             entry.engine.rpm = output.rpm;
             entry.engine.torque = output.torque;
             driveForceTotal = output.driveForce;
+            const engineForceCap = Math.abs(entry.engineForce ?? 0);
+            if (engineForceCap > 0 && Number.isFinite(engineForceCap)) {
+                driveForceTotal = clamp(driveForceTotal, -engineForceCap, engineForceCap);
+            }
             drivetrain = entry.state.drivetrain;
             drivetrain.rpm = output.rpm;
             drivetrain.gear = output.gearNumber;
             drivetrain.torque = output.torque;
+            drivetrain.drivelineRpm = output.drivelineRpm;
+            drivetrain.slipOmega = output.slipOmega;
+            drivetrain.clutchTorque = output.clutchTorque;
+            drivetrain.clutch = output.clutch;
+            drivetrain.coupling = output.coupling;
+            drivetrain.shiftBlend = output.shiftBlend;
+            drivetrain.shiftTimer = output.shiftTimer;
+            drivetrain.shiftCooldown = output.shiftCooldown;
         }
 
         entry._driveForce = driveForceTotal;
@@ -651,14 +591,6 @@ export class RapierVehicleSim {
         if (entry.body && (Math.abs(steering) > 1e-4 || input.throttle > 0.01 || input.brake > 0.01 || input.handbrake > 0.01)) {
             entry.body.wakeUp();
         }
-
-        const allWheels = entry.wheelIndices.all;
-        const steerWheels = entry.wheelIndices.front.length ? entry.wheelIndices.front : allWheels;
-        const driveWheels = entry.wheelIndices.rear.length ? entry.wheelIndices.rear : allWheels;
-        const steerLeftWheels = entry.wheelIndices.frontLeft?.length ? entry.wheelIndices.frontLeft : [];
-        const steerRightWheels = entry.wheelIndices.frontRight?.length ? entry.wheelIndices.frontRight : [];
-        const frontWheels = entry.wheelIndices.front ?? [];
-        const rearWheels = entry.wheelIndices.rear ?? [];
 
         const steerAngles = this._computeSteerAngles(entry, steering);
 
@@ -1231,12 +1163,10 @@ export class RapierVehicleSim {
             };
         });
 
-        // Extended wheel labels for multi-axle vehicles (e.g., 6 wheels).
-        // Computes axle groups by chassis-space connection Z, then assigns FL/FR/ML/MR/RL/RR when possible.
         const zTol = Math.max(0.25, Math.min(1.25, (entry.wheelRadius ?? DEFAULT_CONFIG.wheelRadius) * 1.5));
         const withConn = wheels.filter((w) => Number.isFinite(w.connection?.z) && Number.isFinite(w.connection?.x));
         if (withConn.length) {
-            const sortedByZ = [...withConn].sort((a, b) => (b.connection.z - a.connection.z)); // front -> rear
+            const sortedByZ = [...withConn].sort((a, b) => (b.connection.z - a.connection.z));
             const groups = [];
             for (const w of sortedByZ) {
                 const last = groups[groups.length - 1];
@@ -1273,10 +1203,10 @@ export class RapierVehicleSim {
         wheels.sort((a, b) => {
             const az = a.connection?.z ?? a.center?.z ?? 0;
             const bz = b.connection?.z ?? b.center?.z ?? 0;
-            if (bz !== az) return bz - az; // front -> rear
+            if (bz !== az) return bz - az;
             const ax = a.connection?.x ?? a.center?.x ?? 0;
             const bx = b.connection?.x ?? b.center?.x ?? 0;
-            return ax - bx; // left -> right
+            return ax - bx;
         });
 
         const input = { ...entry.input };
@@ -1289,11 +1219,22 @@ export class RapierVehicleSim {
         const engine = entry.engine;
         const gearIndex = engine?.gearIndex ?? null;
         const gearLabel = gearIndex != null ? (engine?.gears?.[gearIndex]?.label ?? null) : null;
+        const engineCfg = entry.engineConfig ?? null;
 
         return {
             ready: !!controller,
             input,
             forces: { driveForce, brakeForce },
+            engineSimConfig: engineCfg ? {
+                maxTorque: engineCfg.maxTorque ?? null,
+                clutchMaxTorque: engineCfg.clutchMaxTorque ?? null,
+                finalDrive: engineCfg.finalDrive ?? null,
+                idleRpm: engineCfg.idleRpm ?? null,
+                redlineRpm: engineCfg.redlineRpm ?? null,
+                shiftUpRpm: engineCfg.shiftUpRpm ?? null,
+                shiftDownRpm: engineCfg.shiftDownRpm ?? null,
+                wheelForceCap: Number.isFinite(entry.engineForce) ? entry.engineForce : null
+            } : null,
             locomotion: { ...entry.state.locomotion },
             suspension: { ...entry.state.suspension, restLength: entry.suspensionRestLength, travel: entry.suspensionTravel },
             drivetrain: {

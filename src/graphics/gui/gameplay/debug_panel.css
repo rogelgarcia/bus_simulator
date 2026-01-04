@@ -1,0 +1,534 @@
+/* src/graphics/gui/gameplay/debug_panel.css */
+
+#hud-gameplay-debug {
+    --gpd-accent: #ffd84d;
+    --gpd-bg: rgba(0,0,0,0.68);
+    --gpd-border: rgba(255, 216, 77, 0.25);
+    --gpd-border-soft: rgba(255, 216, 77, 0.18);
+    --gpd-font: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    --gpd-panel: rgba(0,0,0,0.18);
+
+    position: fixed;
+    left: 16px;
+    top: 84px;
+    z-index: 120;
+    pointer-events: auto;
+    user-select: none;
+    color: var(--gpd-accent);
+    font-family: var(--gpd-font);
+    background: var(--gpd-bg);
+    border: 1px solid var(--gpd-border);
+    backdrop-filter: blur(6px);
+    border-radius: 14px;
+    box-shadow: 0 14px 40px rgba(0,0,0,0.45);
+    min-width: 620px;
+    width: 760px;
+    height: 360px;
+    resize: both;
+    overflow: hidden;
+}
+
+#hud-gameplay-debug:not(.is-expanded) {
+    min-width: 380px;
+}
+
+.gpd-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--gpd-border-soft);
+    background: var(--gpd-panel);
+}
+
+.gpd-draggable {
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+}
+
+.gpd-draggable.is-dragging {
+    cursor: grabbing;
+}
+
+.gpd-title {
+    font-size: 12px;
+    font-weight: 950;
+    letter-spacing: 0.7px;
+    text-transform: uppercase;
+}
+
+.gpd-section-title {
+    font-size: 12px;
+    font-weight: 950;
+    opacity: 0.9;
+}
+
+.gpd-section-title.is-muted {
+    opacity: 0.85;
+}
+
+.gpd-mt-4 {
+    margin-top: 4px;
+}
+
+.gpd-mt-6 {
+    margin-top: 6px;
+}
+
+.gpd-btn-row {
+    display: flex;
+    gap: 8px;
+}
+
+.gpd-btn {
+    border: 1px solid rgba(255, 220, 110, 0.30);
+    background: rgba(0,0,0,0.22);
+    color: var(--gpd-accent);
+    font-size: 12px;
+    font-weight: 800;
+    padding: 6px 10px;
+    border-radius: 10px;
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+.gpd-btn:hover {
+    background: rgba(0,0,0,0.32);
+}
+
+.gpd-body {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    height: calc(100% - 44px);
+    min-height: 0;
+}
+
+#hud-gameplay-debug:not(.is-expanded) .gpd-body {
+    grid-template-columns: 360px 0px;
+}
+
+.gpd-left {
+    padding: 10px 12px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 360px;
+    max-width: 360px;
+    border-right: 1px solid rgba(255, 216, 77, 0.14);
+    overflow-x: hidden;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+.gpd-right {
+    padding: 10px 12px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.gpd-tree-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 140px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 216, 77, 0.16);
+    background: rgba(0,0,0,0.22);
+    padding: 10px;
+}
+
+.gpd-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+}
+
+.gpd-grid.gpd-grid--two {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 10px;
+}
+
+.gpd-row-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.gpd-wheels-row {
+    align-items: flex-start;
+}
+
+.gpd-pad-top-4 {
+    padding-top: 4px;
+}
+
+.gpd-wheels-dots {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 6px;
+    min-width: 220px;
+}
+
+.gpd-steer-viz {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 180px;
+    justify-content: flex-end;
+}
+
+.gpd-steer-arrow {
+    font-weight: 900;
+    opacity: 0.35;
+}
+
+.gpd-steer-arrow.is-active {
+    opacity: 1;
+}
+
+.gpd-steer-mid {
+    opacity: 0.6;
+}
+
+.gpd-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.gpd-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.gpd-toggle-label {
+    font-size: 12px;
+    font-weight: 900;
+    opacity: 0.9;
+}
+
+.gpd-keys-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.gpd-small-label {
+    font-size: 11px;
+    font-weight: 900;
+    opacity: 0.72;
+    letter-spacing: 0.2px;
+}
+
+.gpd-value-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.gpd-value-key {
+    font-size: 12px;
+    font-weight: 900;
+    opacity: 0.85;
+}
+
+.gpd-value-val {
+    font-size: 12px;
+    font-weight: 900;
+    opacity: 0.95;
+}
+
+.gpd-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: rgba(255, 216, 77, 0.22);
+    border: 1px solid rgba(255, 216, 77, 0.35);
+    box-sizing: border-box;
+}
+
+.gpd-dot.is-on {
+    background: var(--gpd-dot-on-bg, #50ff9a);
+    border-color: var(--gpd-dot-on-border, rgba(80, 255, 154, 0.55));
+}
+
+.gpd-dot--contact {
+    background: rgba(255, 95, 95, 0.35);
+    border-color: rgba(255, 95, 95, 0.55);
+    --gpd-dot-on-bg: #50ff9a;
+    --gpd-dot-on-border: rgba(80, 255, 154, 0.55);
+}
+
+.gpd-dot--handbrake {
+    background: rgba(255, 216, 77, 0.12);
+    border-color: rgba(255, 216, 77, 0.35);
+    --gpd-dot-on-bg: #ffcc33;
+    --gpd-dot-on-border: rgba(255, 204, 51, 0.65);
+}
+
+.gpd-dot--headlights {
+    background: rgba(255, 216, 77, 0.12);
+    border-color: rgba(255, 216, 77, 0.35);
+    --gpd-dot-on-bg: #7bb6ff;
+    --gpd-dot-on-border: rgba(123, 182, 255, 0.65);
+}
+
+.gpd-bar {
+    width: 170px;
+    height: 10px;
+    border-radius: 999px;
+    background: rgba(255, 216, 77, 0.12);
+    border: 1px solid rgba(255, 216, 77, 0.22);
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+.gpd-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: rgba(255, 216, 77, 0.78);
+    border-radius: 999px;
+}
+
+.gpd-bar.is-brake .gpd-bar-fill {
+    background: rgba(255, 95, 95, 0.85);
+}
+
+.gpd-key-pill {
+    padding: 4px 8px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 216, 77, 0.22);
+    background: rgba(0,0,0,0.25);
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: 0.2px;
+    opacity: 0.55;
+    user-select: none;
+}
+
+.gpd-key-pill.is-pressed {
+    opacity: 1;
+    background: rgba(255, 216, 77, 0.20);
+    border-color: rgba(255, 216, 77, 0.55);
+}
+
+.gpd-spin {
+    position: relative;
+    width: 14px;
+    height: 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 216, 77, 0.30);
+    background: rgba(0,0,0,0.18);
+    flex: 0 0 auto;
+    box-sizing: border-box;
+}
+
+.gpd-spin-needle {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 10px;
+    height: 2px;
+    background: rgba(255, 216, 77, 0.85);
+    border-radius: 999px;
+    transform-origin: 0% 50%;
+    transform: translate(0, -50%) rotate(0deg);
+}
+
+.gpd-yaw-arrow {
+    width: 14px;
+    height: 14px;
+    display: grid;
+    place-items: center;
+    font-size: 11px;
+    font-weight: 950;
+    opacity: 0.9;
+    transform-origin: 50% 50%;
+}
+
+.gpd-logs-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.gpd-logs-title {
+    font-size: 12px;
+    font-weight: 950;
+    opacity: 0.9;
+}
+
+.gpd-logs-hint {
+    font-size: 11px;
+    font-weight: 900;
+    opacity: 0.55;
+    display: none;
+}
+
+.gpd-logs {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    padding: 8px 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 216, 77, 0.16);
+    background: rgba(0,0,0,0.30);
+}
+
+.gpd-log-line {
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 12px;
+    font-weight: 800;
+    opacity: 0.92;
+}
+
+.gpd-wheel-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 10px;
+    align-items: center;
+}
+
+.gpd-wheel-cell {
+    display: grid;
+    grid-template-columns: 16px 14px 14px;
+    align-items: center;
+    column-gap: 8px;
+    padding: 4px 6px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 216, 77, 0.14);
+    background: rgba(0,0,0,0.14);
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+.gpd-wheel-cell.is-airborne {
+    opacity: 0.78;
+}
+
+.gpd-wheel-cell.is-missing {
+    opacity: 0.45;
+}
+
+.gpd-wheel-cell .gpd-yaw-arrow,
+.gpd-wheel-cell .gpd-spin-needle {
+    opacity: 0.25;
+}
+
+.gpd-wheel-cell.is-airborne .gpd-yaw-arrow {
+    opacity: 0.65;
+}
+
+.gpd-wheel-cell.is-airborne .gpd-spin-needle {
+    opacity: 0.6;
+}
+
+.gpd-wheel-cell.is-contact .gpd-yaw-arrow,
+.gpd-wheel-cell.is-contact .gpd-spin-needle {
+    opacity: 1;
+}
+
+.gpd-wheel-cell .gpd-dot {
+    width: 12px;
+    height: 12px;
+}
+
+.gpd-tree-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.gpd-tree-header-left,
+.gpd-tree-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.gpd-select {
+    pointer-events: auto;
+    border: 1px solid rgba(255, 216, 77, 0.22);
+    background: rgba(0,0,0,0.22);
+    color: var(--gpd-accent);
+    border-radius: 10px;
+    padding: 6px 8px;
+    font-size: 12px;
+    font-weight: 900;
+}
+
+.gpd-tree-body {
+    overflow: auto;
+    max-height: 220px;
+    padding: 6px 2px 2px;
+    font-size: 12px;
+    font-weight: 800;
+    opacity: 0.95;
+}
+
+.gpd-tree-hint {
+    font-size: 11px;
+    font-weight: 900;
+    opacity: 0.7;
+    margin-bottom: 6px;
+}
+
+.gpd-tree-empty {
+    opacity: 0.65;
+}
+
+.gpd-tree-node {
+    display: block;
+    line-height: 1.35;
+}
+
+.gpd-tree-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.gpd-tree-head.is-expandable {
+    cursor: pointer;
+}
+
+.gpd-tree-head:not(.is-expandable) {
+    cursor: default;
+}
+
+.gpd-tree-caret {
+    width: 14px;
+    opacity: 0.3;
+    flex: 0 0 auto;
+}
+
+.gpd-tree-head.is-expandable .gpd-tree-caret {
+    opacity: 0.9;
+}
+
+.gpd-tree-key {
+    font-weight: 950;
+    opacity: 0.92;
+}
+
+.gpd-tree-value {
+    opacity: 0.85;
+    white-space: pre;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+    min-width: 0;
+}

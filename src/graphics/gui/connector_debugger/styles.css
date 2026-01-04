@@ -1,0 +1,357 @@
+/* src/graphics/gui/connector_debugger/styles.css */
+
+.connector-debug-stack {
+    position: fixed;
+    left: 12px;
+    bottom: 12px;
+    z-index: 4;
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    --connector-debug-label-width: 90px;
+    transition: opacity 0.35s ease;
+}
+
+.connector-debug-stack.is-tour {
+    opacity: 0.25;
+    pointer-events: none;
+}
+
+.connector-debug-panel {
+    background: rgba(10, 14, 20, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    padding: 10px 12px;
+    color: #f5f7fb;
+    width: min(520px, calc(100vw - 24px));
+    max-height: 70vh;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+}
+
+.connector-curb-panel {
+    background: rgba(10, 14, 20, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    padding: 8px 12px 12px;
+    color: #f5f7fb;
+    width: min(520px, calc(100vw - 24px));
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+.connector-debug-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.connector-debug-title {
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-weight: 700;
+    opacity: 0.85;
+    padding-bottom: 4px;
+}
+
+.connector-debug-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+    font-size: 11px;
+}
+
+.connector-debug-toggle,
+.connector-debug-radius {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+}
+
+.connector-debug-toggle input,
+.connector-debug-radius input {
+    accent-color: #3bc9ff;
+}
+
+.connector-debug-lines {
+    display: grid;
+    grid-template-columns: var(--connector-debug-label-width) 1fr;
+    grid-template-rows: auto auto;
+    column-gap: 8px;
+    row-gap: 4px;
+    align-items: start;
+}
+
+.connector-debug-lines-title {
+    grid-row: 1 / span 2;
+    grid-column: 1;
+    align-self: start;
+}
+
+.connector-debug-label {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.7;
+    text-align: left;
+    width: var(--connector-debug-label-width);
+    font-weight: 700;
+}
+
+.connector-debug-lines-auto {
+    grid-column: 2;
+    grid-row: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.connector-debug-lines-paths {
+    grid-column: 2;
+    grid-row: 2;
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.connector-debug-curbs {
+    display: grid;
+    grid-template-columns: var(--connector-debug-label-width) 1fr;
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 4px;
+}
+
+.connector-debug-curbs-title {
+    align-self: start;
+}
+
+.connector-debug-curbs-buttons {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.connector-debug-action {
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.08);
+    color: #f5f7fb;
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+}
+
+.connector-debug-action:hover {
+    background: rgba(255, 255, 255, 0.16);
+}
+
+.connector-debug-action:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.connector-debug-curb-create {
+    background: rgba(16, 185, 129, 0.18);
+    border-color: rgba(16, 185, 129, 0.45);
+}
+
+.connector-debug-curb-remove {
+    background: rgba(248, 113, 113, 0.18);
+    border-color: rgba(248, 113, 113, 0.45);
+}
+
+.connector-debug-info-wrap {
+    max-height: 48vh;
+    overflow: auto;
+    padding-right: 4px;
+}
+
+.connector-debug-info-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.connector-debug-section-title {
+    vertical-align: top;
+    padding: 2px 8px 8px 0;
+    font-weight: 700;
+}
+
+.connector-debug-section-body {
+    padding: 2px 0 8px 0;
+    width: 100%;
+    max-width: 100%;
+}
+
+.connector-debug-subtable {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    max-width: 100%;
+}
+
+.connector-debug-subtable th,
+.connector-debug-subtable td {
+    box-sizing: border-box;
+}
+
+.connector-debug-poles-table {
+    table-layout: fixed;
+}
+
+.connector-debug-segments-table {
+    width: 320px;
+    max-width: 320px;
+    table-layout: fixed;
+}
+
+.connector-debug-segments-table .connector-debug-subhead-label {
+    width: 72px;
+}
+
+.connector-debug-meta-table {
+    table-layout: fixed;
+}
+
+.connector-debug-subhead {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    opacity: 0.7;
+    text-align: left;
+    padding: 2px 6px 2px 0;
+    vertical-align: top;
+}
+
+.connector-debug-subhead-label {
+    width: 72px;
+    font-weight: 700;
+}
+
+.connector-debug-subhead-empty {
+    opacity: 0;
+}
+
+.connector-debug-cell-value {
+    font-size: 11px;
+    line-height: 1.35;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    padding: 2px 6px 2px 0;
+    vertical-align: top;
+    white-space: pre-line;
+}
+
+.connector-debug-segment-type {
+    text-align: center;
+}
+
+.connector-debug-segments-table td.connector-debug-cell-value {
+    text-align: right;
+    padding-left: 24px;
+}
+
+.connector-debug-segments-table td.connector-debug-segment-type {
+    text-align: center;
+}
+
+.connector-debug-line-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border-radius: 6px;
+    padding: 2px 6px;
+}
+
+.connector-debug-line-toggle input {
+    accent-color: #ef4444;
+}
+
+.connector-debug-line-toggle.is-selected {
+    background: rgba(59, 130, 246, 0.2);
+}
+
+.connector-debug-toggle-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.connector-debug-toggle-switch input {
+    appearance: none;
+    width: 28px;
+    height: 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.12);
+    position: relative;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.connector-debug-toggle-switch input::after {
+    content: '';
+    position: absolute;
+    top: 1px;
+    left: 1px;
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: #f5f7fb;
+    transition: transform 0.2s ease;
+}
+
+.connector-debug-toggle-switch input:checked {
+    background: rgba(59, 130, 246, 0.7);
+    border-color: rgba(59, 130, 246, 0.9);
+}
+
+.connector-debug-toggle-switch input:checked::after {
+    transform: translateX(14px);
+}
+
+.connector-debug-radius input {
+    width: 80px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 6px;
+    color: #f5f7fb;
+    padding: 3px 6px;
+    font-size: 11px;
+}
+
+.connector-debug-copy {
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(59, 201, 255, 0.16);
+    color: #e7f6ff;
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+}
+
+.connector-debug-copy:hover {
+    background: rgba(59, 201, 255, 0.26);
+}

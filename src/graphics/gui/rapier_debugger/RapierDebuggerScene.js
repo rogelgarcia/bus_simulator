@@ -1,4 +1,5 @@
 // src/graphics/gui/rapier_debugger/RapierDebuggerScene.js
+// Three.js scene wiring for the Rapier debugger view.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeCheckerTexture } from '../../assets3d/textures/CityTextures.js';
@@ -368,18 +369,28 @@ export class RapierDebuggerScene {
     }
 
     _buildGround() {
-        const groundTex = makeCheckerTexture({ size: 256, squares: 8, colorA: '#ffffff', colorB: '#c02929' });
-        groundTex.repeat.set(10, 10);
+        const size = Number.isFinite(this.worldConfig.groundSize) ? this.worldConfig.groundSize : RAPIER_DEBUGGER_WORLD_CONFIG.groundSize;
+        const thickness = Number.isFinite(this.worldConfig.groundThickness) ? this.worldConfig.groundThickness : RAPIER_DEBUGGER_WORLD_CONFIG.groundThickness;
+        const halfT = thickness * 0.5;
 
-        const groundMat = new THREE.MeshStandardMaterial({
+        const groundTex = makeCheckerTexture({ size: 256, squares: 8, colorA: '#2b2f36', colorB: '#1b1f26' });
+        const repeat = Math.max(6, Math.round(size / 18));
+        groundTex.repeat.set(repeat, repeat);
+
+        const topMat = new THREE.MeshStandardMaterial({
             map: groundTex,
             roughness: 0.95,
             metalness: 0.02
         });
+        const sideMat = new THREE.MeshStandardMaterial({
+            color: 0x0f141d,
+            roughness: 0.92,
+            metalness: 0.05
+        });
 
-        const groundGeo = new THREE.PlaneGeometry(this.worldConfig.groundSize, this.worldConfig.groundSize);
-        const ground = new THREE.Mesh(groundGeo, groundMat);
-        ground.rotation.x = -Math.PI / 2;
+        const groundGeo = new THREE.BoxGeometry(size, thickness, size);
+        const ground = new THREE.Mesh(groundGeo, [sideMat, sideMat, topMat, sideMat, sideMat, sideMat]);
+        ground.position.y = -halfT;
         ground.receiveShadow = true;
         this.root.add(ground);
         this._ground = ground;
@@ -398,16 +409,19 @@ export class RapierDebuggerScene {
     }
 
     _buildCamera() {
-        this.camera.position.set(8, 6, 12);
-        this.camera.lookAt(0, 1, 0);
+        const cfg = this.vehicleConfig ?? RAPIER_DEBUGGER_VEHICLE_CONFIG;
+        const d = Math.max(cfg.length ?? 10, cfg.width ?? 2.5, cfg.height ?? 3.0);
+        const targetY = Math.max(1, (cfg.height ?? 3.0) * 0.28);
+        this.camera.position.set(d * 0.85, d * 0.55, d * 1.35);
+        this.camera.lookAt(0, targetY, 0);
 
         this.controls = new OrbitControls(this.camera, this.engine.renderer.domElement);
         this.controls.enableDamping = true;
         this.controls.dampingFactor = 0.05;
-        this.controls.minDistance = 4;
-        this.controls.maxDistance = 50;
+        this.controls.minDistance = Math.max(4, d * 0.35);
+        this.controls.maxDistance = Math.max(50, d * 5);
         this.controls.maxPolarAngle = Math.PI * 0.48;
-        this.controls.target.set(0, 1, 0);
+        this.controls.target.set(0, targetY, 0);
         this.controls.update();
         this._defaultCameraPos.copy(this.camera.position);
         this._defaultCameraTarget.copy(this.controls.target);

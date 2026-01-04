@@ -1,5 +1,6 @@
 // src/states/BusSelectState.js
 // Manages the bus selection showroom state and transitions.
+// Design: Buses are re-anchored to their bounds center to keep carousel swaps stable.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
@@ -11,10 +12,10 @@ import { tuneBusMaterials } from '../graphics/assets3d/factories/tuneBusMaterial
 import { fadeOut } from '../graphics/gui/shared/utils/screenFade.js';
 
 const TRANSITION = {
-    shuffleSec: 1.4,   // was 0.85
-    focusSec: 1.8,     // was 1.1
-    fadeOutSec: 1.2,   // was 0.7
-    fadeTimeoutMs: 3000 // was 1200 (safety timeout)
+    shuffleSec: 1.4,
+    focusSec: 1.8,
+    fadeOutSec: 1.2,
+    fadeTimeoutMs: 3000
 };
 
 const GARAGE = {
@@ -23,12 +24,8 @@ const GARAGE = {
     height: 14
 };
 
-// GarageModel places the roll-up gate near the back wall:
-// `backZ = -depth/2 + 0.35` and gate slats are offset by +0.2.
 const GARAGE_DOOR_Z = -GARAGE.depth * 0.5 + 0.55;
 
-// Coach bus is normalized to ~13.2m long in `src/graphics/assets3d/models/buses/CoachBus.js`.
-// Use that as the platform diameter target so the base matches the coach footprint.
 const COACH_BUS_LENGTH_M = 13.2;
 const PLATFORM_SCALE = 0.95;
 
@@ -62,25 +59,20 @@ function makeVehicleAnchor(model) {
     const anchor = new THREE.Group();
     anchor.name = `${model.name || 'bus'}_anchor`;
 
-    // Preserve metadata on the anchor (what the rest of the game uses)
     anchor.userData = { ...model.userData };
     anchor.userData.model = model;
     anchor.userData.origin = 'center';
 
-    // Put model inside anchor
     anchor.add(model);
 
-    // Reset model transform before measuring
-    model.position.set(0, 0, 0);
-    model.rotation.set(0, 0, 0);
-    model.scale.set(1, 1, 1);
-
-    // Center model so its bounds center aligns with the anchor origin.
     const boundsTarget = resolveBoundsTarget(model);
+    anchor.updateMatrixWorld(true);
+    boundsTarget.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(boundsTarget);
     if (!box.isEmpty()) {
-        const center = box.getCenter(new THREE.Vector3());
-        model.position.sub(center);
+        const centerWorld = box.getCenter(new THREE.Vector3());
+        const centerLocal = anchor.worldToLocal(centerWorld.clone());
+        model.position.sub(centerLocal);
     }
 
     return anchor;
@@ -235,7 +227,7 @@ export class BusSelectState {
 
         this.controls = null;
 
-        this.showcase = null; // { group, bus }
+        this.showcase = null;
         this.hoveredBus = null;
         this.selectedBus = null;
         this._isSelecting = false;
@@ -272,7 +264,6 @@ export class BusSelectState {
         scene.background = new THREE.Color(0x070b12);
         scene.fog = null;
 
-        // Garage environment
         const { root: garageRoot, lights: garageLights } = createGarageModel({
             width: GARAGE.width,
             depth: GARAGE.depth,
@@ -289,7 +280,6 @@ export class BusSelectState {
         scene.add(garageRoot);
         for (const l of garageLights) scene.add(l);
 
-        // Camera
         const camera = this.engine.camera;
         camera.position.set(0, 5.4, 18);
         camera.lookAt(0, 1.7, 0);
@@ -303,31 +293,24 @@ export class BusSelectState {
         this.controls.maxPolarAngle = Math.PI * 0.47;
         this.controls.target.set(0, 1.7, 0);
 
-        // UI
         this._mountNavUI();
-        this.hudChip.style.padding = '10px 14px';
-        this.hudChip.style.fontSize = '14px';
 
-        // Showcase
         this.activeIndex = 0;
         this.showcase = this._createShowcase(this.activeIndex);
         scene.add(this.showcase.group);
         this._setActiveIndex(this.activeIndex);
 
-        // Input
         this.canvas.addEventListener('pointermove', this._onMove);
         this.canvas.addEventListener('pointerdown', this._onDown);
         window.addEventListener('keydown', this._onKeyDown, { passive: false });
-
-        this.canvas.style.cursor = 'default';
+        this.canvas.classList.remove('cursor-pointer');
     }
 
     exit() {
         this.canvas.removeEventListener('pointermove', this._onMove);
         this.canvas.removeEventListener('pointerdown', this._onDown);
         window.removeEventListener('keydown', this._onKeyDown);
-
-        this.canvas.style.cursor = 'default';
+        this.canvas.classList.remove('cursor-pointer');
 
         this.controls?.dispose?.();
         this.controls = null;
@@ -365,7 +348,6 @@ export class BusSelectState {
         if (isLeft) this._moveActive(-1);
         if (isRight) this._moveActive(1);
 
-        // G = select and go to new GameplayState (for testing new architecture)
         if (isG) {
             const bus = this.hoveredBus ?? this.showcase?.bus ?? null;
             if (bus) this._selectBusToGameplay(bus);
@@ -378,18 +360,12 @@ export class BusSelectState {
         }
     }
 
-    /**
-     * Select bus and go to new GameplayState (for testing new architecture).
-     * @param {THREE.Object3D} bus
-     */
     _selectBusToGameplay(bus) {
         if (this._isSelecting) return;
         this._isSelecting = true;
 
-        // Store selection
         this.engine.context.selectedBus = bus;
 
-        // Go directly to new gameplay state
         this.sm.go('game_mode');
     }
 
@@ -420,14 +396,14 @@ export class BusSelectState {
 
             const label = BUS_CATALOG[this.activeIndex]?.name ?? 'Bus';
             this._setChip(label, null);
-            this.canvas.style.cursor = 'pointer';
+            this.canvas.classList.add('cursor-pointer');
             return;
         }
 
         this.hoveredBus = this.showcase?.bus ?? null;
         const label = BUS_CATALOG[this.activeIndex]?.name ?? 'Bus';
         this._setChip(label, null);
-        this.canvas.style.cursor = 'default';
+        this.canvas.classList.remove('cursor-pointer');
     }
 
     _handlePointerDown(event) {
@@ -460,9 +436,8 @@ export class BusSelectState {
 
         this.selectedBus = bus;
         this.hoveredBus = null;
-        this.canvas.style.cursor = 'default';
+        this.canvas.classList.remove('cursor-pointer');
 
-        // Save selection for GameMode
         const selectedSpec = bus.userData.spec ?? BUS_CATALOG[this.activeIndex];
         this.engine.context.selectedBusId = selectedSpec?.id ?? null;
         this.engine.context.selectedBus = bus;
@@ -473,20 +448,15 @@ export class BusSelectState {
         this._blink();
         if (this.controls) this.controls.enabled = false;
 
-        // Run the full sequence
         this._runSelectionSequence(bus).catch((err) => {
             console.error('[BusSelect] Selection sequence failed:', err);
-            // still try to continue to game mode
             this.sm.go('game_mode');
         });
     }
 
     async _runSelectionSequence(bus) {
-        // 1) Camera focus animation
         await this._focusCameraOn(bus);
 
-        // 2) Fade out, then go to game_mode
-        // (Race with a timeout so we NEVER get stuck here)
         await Promise.race([
             fadeOut({ duration: TRANSITION.fadeOutSec }),
             wait(TRANSITION.fadeTimeoutMs)
@@ -520,7 +490,6 @@ export class BusSelectState {
                     cam.lookAt(endTarget);
                 }
 
-                // If OrbitControls is disabled, update() early-returns, so force orientation:
                 cam.lookAt(endTarget);
             }
         });
@@ -607,19 +576,14 @@ export class BusSelectState {
         this.hudChip.innerHTML = '';
 
         const t = document.createElement('div');
+        t.className = 'bus-select-chip-title';
         t.textContent = title;
-        t.style.fontSize = '18px';
-        t.style.fontWeight = '900';
-        t.style.letterSpacing = '0.2px';
 
         this.hudChip.appendChild(t);
         if (meta) {
             const m = document.createElement('div');
+            m.className = 'bus-select-chip-meta';
             m.textContent = meta;
-            m.style.fontSize = '12px';
-            m.style.fontWeight = '800';
-            m.style.opacity = '0.72';
-            m.style.marginTop = '2px';
             this.hudChip.appendChild(m);
         }
     }
@@ -627,45 +591,21 @@ export class BusSelectState {
     _mountNavUI() {
         if (this._uiNav?.root) return;
         const root = document.createElement('div');
-        root.style.position = 'fixed';
-        root.style.left = '0';
-        root.style.right = '0';
-        root.style.top = '0';
-        root.style.bottom = '0';
-        root.style.pointerEvents = 'none';
-        root.style.zIndex = '3';
+        root.className = 'bus-select-nav';
 
         const makeBtn = (text) => {
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.textContent = text;
-            btn.style.pointerEvents = 'auto';
-            btn.style.width = '56px';
-            btn.style.height = '56px';
-            btn.style.borderRadius = '16px';
-            btn.style.border = '1px solid rgba(255,255,255,0.18)';
-            btn.style.background = 'rgba(10, 14, 20, 0.55)';
-            btn.style.color = '#f5f7fb';
-            btn.style.fontSize = '30px';
-            btn.style.fontWeight = '900';
-            btn.style.cursor = 'pointer';
-            btn.style.boxShadow = '0 14px 34px rgba(0,0,0,0.38)';
-            btn.addEventListener('mouseenter', () => { btn.style.background = 'rgba(20, 26, 38, 0.65)'; });
-            btn.addEventListener('mouseleave', () => { btn.style.background = 'rgba(10, 14, 20, 0.55)'; });
+            btn.className = 'bus-select-nav-btn';
             return btn;
         };
 
         const left = makeBtn('←');
-        left.style.position = 'absolute';
-        left.style.left = '18px';
-        left.style.top = '50%';
-        left.style.transform = 'translateY(-50%)';
+        left.classList.add('is-left');
 
         const right = makeBtn('→');
-        right.style.position = 'absolute';
-        right.style.right = '18px';
-        right.style.top = '50%';
-        right.style.transform = 'translateY(-50%)';
+        right.classList.add('is-right');
 
         const onLeft = (e) => {
             e.preventDefault();
