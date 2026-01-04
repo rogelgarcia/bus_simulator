@@ -22,6 +22,7 @@ export class RapierDebuggerScene {
         this._chassisMesh = null;
         this._wheelMeshes = [];
         this._wheelTires = [];
+        this._wheelLines = [];
         this._debugRender = null;
         this._debugColorBuffer = null;
         this._originAxes = null;
@@ -49,6 +50,7 @@ export class RapierDebuggerScene {
         this._tmpQuat = new THREE.Quaternion();
         this._tmpQuatB = new THREE.Quaternion();
         this._tmpQuatC = new THREE.Quaternion();
+        this._tmpQuatD = new THREE.Quaternion();
         this._tmpVecA = new THREE.Vector3();
         this._tmpVecB = new THREE.Vector3();
         this._tmpVecC = new THREE.Vector3();
@@ -85,17 +87,7 @@ export class RapierDebuggerScene {
             if (key === 'ArrowRight') dx = step;
             if (key === 'ArrowUp') dz = step;
             if (key === 'ArrowDown') dz = -step;
-            const forward = this._tmpVecA.set(0, 0, 0);
-            this.camera.getWorldDirection(forward);
-            forward.y = 0;
-            if (forward.lengthSq() < 1e-8) return;
-            forward.normalize();
-            const up = this._tmpVecC.set(0, 1, 0);
-            const right = this._tmpVecB.crossVectors(forward, up).normalize();
-            const delta = this._tmpVecD.set(0, 0, 0)
-                .addScaledVector(right, dx)
-                .addScaledVector(forward, dz);
-            this._panCamera(delta);
+            this._panCamera(this._tmpVecD.set(dx, 0, dz));
         };
     }
 
@@ -134,6 +126,7 @@ export class RapierDebuggerScene {
         this._chassisMesh = null;
         this._wheelMeshes.length = 0;
         this._wheelTires.length = 0;
+        this._wheelLines.length = 0;
         this._debugRender = null;
         this._debugColorBuffer = null;
         this._wheelIndexByLabel = {};
@@ -758,6 +751,7 @@ export class RapierDebuggerScene {
             line.castShadow = false;
             line.receiveShadow = false;
             wheel.add(line);
+            this._wheelLines.push(line);
 
             this.root.add(wheel);
             this._wheelMeshes.push(wheel);
@@ -771,18 +765,17 @@ export class RapierDebuggerScene {
 
         const rot = snapshot.body.rotation;
         const chassisQuat = this._tmpQuat.set(rot.x, rot.y, rot.z, rot.w);
+        const invChassisQuat = this._tmpQuatD.copy(chassisQuat).invert();
         const steerAxis = this._tmpVecB.set(0, 1, 0);
         const spinAxis = this._tmpVecC.set(1, 0, 0);
         const wheelRadius = this.vehicleConfig.wheelRadius;
+        const wheelWidth = this.vehicleConfig.wheelWidth;
         const zFightOffset = 0.01;
 
         for (let i = 0; i < this._wheelMeshes.length; i++) {
             const wheel = this._wheelMeshes[i];
             const state = wheelStates[i];
             if (!wheel || !state) continue;
-            const label = state.label ?? `W${i}`;
-            labelMap[label] = i;
-            wheel.userData.label = label;
 
             const hardPoint = state.hardPoint;
             const suspLen = state.suspensionLength;
@@ -790,7 +783,7 @@ export class RapierDebuggerScene {
             const contactPoint = state.contactPoint;
             const contactNormal = state.contactNormal;
             const dirLocal = state.directionCs ?? { x: 0, y: -1, z: 0 };
-            const steerAngle = state.steering ?? 0;
+            const steerAngle = Number.isFinite(state.steering) ? state.steering : 0;
             const spinAngle = state.rotation ?? 0;
 
             if (inContact && contactPoint && contactNormal) {
@@ -812,7 +805,20 @@ export class RapierDebuggerScene {
                 wheel.position.set(hardPoint.x, hardPoint.y, hardPoint.z);
             }
 
-            const sideSign = label.includes('L') ? -1 : 1;
+            const localPos = this._tmpVecD.copy(wheel.position)
+                .sub(this._chassisMesh.position)
+                .applyQuaternion(invChassisQuat);
+            const sideSign = localPos.x < 0 ? -1 : 1;
+            const front = localPos.z >= 0 ? 'F' : 'R';
+            const side = sideSign < 0 ? 'R' : 'L';
+            const derivedLabel = `${front}${side}`;
+            labelMap[derivedLabel] = i;
+            wheel.userData.label = derivedLabel;
+            const line = this._wheelLines[i];
+            if (line && Number.isFinite(wheelWidth)) {
+                line.position.x = sideSign * (wheelWidth * 0.5 + 0.01);
+                line.rotation.y = sideSign < 0 ? -Math.PI / 2 : Math.PI / 2;
+            }
             wheel.position.addScaledVector(
                 this._tmpVecA.set(sideSign, 0, 0).applyQuaternion(chassisQuat),
                 zFightOffset

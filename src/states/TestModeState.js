@@ -856,7 +856,7 @@ export class TestModeState {
 
         const maxSteer = this.vehicle.config?.maxSteerDeg ?? 55;
 
-        const steerInput = THREE.MathUtils.clamp(-this.busState.steerDeg / maxSteer, -1, 1);
+        const steerInput = THREE.MathUtils.clamp(this.busState.steerDeg / maxSteer, -1, 1);
         const throttleInput = THREE.MathUtils.clamp(this.busState.throttle, 0, 1);
         const brakeInput = THREE.MathUtils.clamp(this.busState.brake, 0, 1);
 

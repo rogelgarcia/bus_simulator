@@ -5791,7 +5791,7 @@ export class RapierDebuggerUI {
                 qNum(w?.suspensionForce, 1),
                 qNum(w?.forwardImpulse, 2),
                 qNum(w?.sideImpulse, 2),
-                qNum(w?.steering, 3)
+                qNum(Number.isFinite(w?.steering) ? w.steering : w?.steering, 3)
             ])
         };
     }

@@ -34,34 +34,16 @@ function axisFromIndex(index) {
     return { x: 0, y: 0, z: 1 };
 }
 
-function dotVec3(a, b) {
-    return (a?.x ?? 0) * (b?.x ?? 0) + (a?.y ?? 0) * (b?.y ?? 0) + (a?.z ?? 0) * (b?.z ?? 0);
-}
-
-function crossVec3(a, b) {
-    return {
-        x: (a?.y ?? 0) * (b?.z ?? 0) - (a?.z ?? 0) * (b?.y ?? 0),
-        y: (a?.z ?? 0) * (b?.x ?? 0) - (a?.x ?? 0) * (b?.z ?? 0),
-        z: (a?.x ?? 0) * (b?.y ?? 0) - (a?.y ?? 0) * (b?.x ?? 0)
-    };
-}
-
-function normalizeVec3(v) {
-    if (!v) return { x: 0, y: 0, z: 0 };
-    const len = Math.hypot(v.x ?? 0, v.y ?? 0, v.z ?? 0);
-    if (!Number.isFinite(len) || len < 1e-8) return { x: 0, y: 0, z: 0 };
-    return { x: (v.x ?? 0) / len, y: (v.y ?? 0) / len, z: (v.z ?? 0) / len };
-}
-
-function labelFromLocal(point, forward, right, fallback) {
-    if (!point || !forward || !right) return fallback;
-    const f = dotVec3(point, forward);
-    const r = dotVec3(point, right);
-    if (!Number.isFinite(f) || !Number.isFinite(r)) return fallback;
-    const front = f >= 0 ? 'F' : 'R';
-    const side = r >= 0 ? 'R' : 'L';
+function labelFromLocal(pos) {
+    if (!pos) return null;
+    const x = pos.x;
+    const z = pos.z;
+    if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
+    const front = z >= 0 ? 'F' : 'R';
+    const side = x < 0 ? 'R' : 'L';
     return `${front}${side}`;
 }
+
 
 function safeGet(obj, prop) {
     try {
@@ -1060,9 +1042,6 @@ export class RapierDebuggerSim {
         const forwardAxis = safeGet(this._controller, 'indexForwardAxis');
         const forwardIndex = Number.isFinite(forwardAxis) ? forwardAxis : 2;
         const localForward = axisFromIndex(forwardIndex);
-        const upIndex = Number.isFinite(upAxis) ? upAxis : 1;
-        const localUp = axisFromIndex(upIndex);
-        const localRight = normalizeVec3(crossVec3(localUp, localForward));
         const worldForward = rotateVecByQuat(localForward, rot);
         const speedProj = (linvel.x * worldForward.x) + (linvel.y * worldForward.y) + (linvel.z * worldForward.z);
         const yaw = Math.atan2(worldForward.x ?? 0, worldForward.z ?? 0);
@@ -1149,8 +1128,7 @@ export class RapierDebuggerSim {
                 };
             }
 
-            const labelSource = connectionPointLocal ?? centerLocal ?? expectedLocal;
-            const label = labelFromLocal(labelSource, localForward, localRight, fallbackLabel);
+            const label = labelFromLocal(centerLocal ?? connectionPointLocal ?? expectedLocal) ?? fallbackLabel;
 
             wheelStates.push({
                 index: idx,
