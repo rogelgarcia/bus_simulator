@@ -22,6 +22,7 @@ export class SetupState {
             { key: '2', label: 'Test Mode', state: 'test_mode' },
             { key: '3', label: 'Connector Debugger', state: 'connector_debugger' },
             { key: '4', label: 'Rapier Debugger', state: 'rapier_debugger' },
+            { key: '5', label: 'Building Fabrication', state: 'building_fabrication' },
             { key: 'Q', label: 'Back', state: 'welcome' }
         ];
 
