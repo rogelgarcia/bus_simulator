@@ -6,6 +6,7 @@ import { createAsphaltBuilder } from './road/builders/AsphaltBuilder.js';
 import { createCurbBuilder } from './road/builders/CurbBuilder.js';
 import { createMarkingsBuilder } from './road/builders/MarkingsBuilder.js';
 import { addConnectorCurbSegments } from './road/connectors/ConnectorCurbUtils.js';
+import { renderSidewalksFromCurbs } from './road/render/RoadSidewalkRenderer.js';
 import {
     ASPHALT_CAPACITY_PER_TILE,
     COLLISION_DEDUP_EPS,
@@ -88,6 +89,8 @@ export function generateRoads({ map, config, materials } = {}) {
     const curbHeight = roadCfg.curb?.height ?? ROAD_DEFAULTS.curb.height;
     const curbExtra = roadCfg.curb?.extraHeight ?? ROAD_DEFAULTS.curb.extraHeight;
     const curbSink = roadCfg.curb?.sink ?? ROAD_DEFAULTS.curb.sink;
+    const sidewalkWidth = roadCfg.sidewalk?.extraWidth ?? ROAD_DEFAULTS.sidewalk.extraWidth;
+    const sidewalkLift = roadCfg.sidewalk?.lift ?? ROAD_DEFAULTS.sidewalk.lift;
     const groundY = config?.ground?.surfaceY ?? (baseRoadY + curbHeight);
     const roadY = baseRoadY;
     const markLineW = roadCfg.markings?.lineWidth ?? ROAD_DEFAULTS.markings.lineWidth;
@@ -99,8 +102,10 @@ export function generateRoads({ map, config, materials } = {}) {
     const curbTop = roadY + curbHeight + curbExtra;
     const curbH = Math.max(EPS, curbTop - curbBottom);
     const curbY = (curbTop + curbBottom) * HALF;
+    const sidewalkY = curbTop + (Number.isFinite(sidewalkLift) ? sidewalkLift : 0);
 
     const roadMatBase = materials?.road ?? new THREE.MeshStandardMaterial({ color: DEFAULT_ROAD_COLOR_HEX, roughness: DEFAULT_ROAD_ROUGHNESS });
+    const sidewalkMatBase = materials?.sidewalk ?? new THREE.MeshStandardMaterial({ color: 0x8f8f8f, roughness: 1.0 });
     const curbMatBase = materials?.curb ?? new THREE.MeshStandardMaterial({ color: DEFAULT_CURB_COLOR_HEX, roughness: DEFAULT_CURB_ROUGHNESS });
     const laneWhiteMat = materials?.laneWhite ?? new THREE.MeshStandardMaterial({ color: LANE_WHITE_COLOR_HEX, roughness: LANE_MARK_ROUGHNESS });
     const laneYellowMat = materials?.laneYellow ?? new THREE.MeshStandardMaterial({ color: LANE_YELLOW_COLOR_HEX, roughness: LANE_MARK_ROUGHNESS });
@@ -119,6 +124,7 @@ export function generateRoads({ map, config, materials } = {}) {
         asphaltMat.polygonOffsetUnits = -1;
     }
     if (asphaltDebug && asphaltMat) asphaltMat.toneMapped = false;
+    if (sidewalkMatBase) sidewalkMatBase.side = THREE.DoubleSide;
 
     const planeGeo = new THREE.PlaneGeometry(GEOMETRY_UNIT, GEOMETRY_UNIT, PLANE_SEGMENTS, PLANE_SEGMENTS);
     planeGeo.rotateX(-Math.PI / 2);
@@ -132,6 +138,16 @@ export function generateRoads({ map, config, materials } = {}) {
         capacity: Math.max(MIN_CAPACITY, roadCount * ASPHALT_CAPACITY_PER_TILE),
         name: 'Asphalt'
     });
+
+    const sidewalk = (Number.isFinite(sidewalkWidth) && sidewalkWidth > EPS)
+        ? createAsphaltBuilder({
+            planeGeo,
+            material: sidewalkMatBase,
+            palette: null,
+            capacity: Math.max(MIN_CAPACITY, roadCount),
+            name: 'Sidewalk'
+        })
+        : null;
 
     const markings = createMarkingsBuilder({
         planeGeo,
@@ -374,6 +390,19 @@ export function generateRoads({ map, config, materials } = {}) {
             }
         }
     }
+
+    if (sidewalk) {
+        renderSidewalksFromCurbs({
+            roadData,
+            roadById,
+            sidewalk,
+            sidewalkY,
+            sidewalkWidth,
+            curbT,
+            arcSegs: curbArcSegs
+        });
+    }
+
     renderStraightRoads({
         roadData,
         asphalt,
@@ -423,6 +452,11 @@ export function generateRoads({ map, config, materials } = {}) {
     asphalt.finalize();
     group.add(asphalt.mesh);
 
+    if (sidewalk) {
+        sidewalk.finalize();
+        group.add(sidewalk.mesh);
+    }
+
     let markingsWhite = null;
     let markingsYellow = null;
     if (markings) {
@@ -448,7 +482,7 @@ export function generateRoads({ map, config, materials } = {}) {
     return {
         group,
         asphalt: asphalt.mesh,
-        sidewalk: null,
+        sidewalk: sidewalk?.mesh ?? null,
         curbBlocks: curb?.mesh ?? null,
         markingsWhite,
         markingsYellow,
