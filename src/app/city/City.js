@@ -102,7 +102,7 @@ export class City {
                     occupyRatio: 1.0,
                     floors: entry.floors,
                     floorHeight: entry.floorHeight,
-                    wallTextureUrl: entry.wallTextureUrl,
+                    style: entry.style,
                     textureCache: textures,
                     renderer: null,
                     overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },

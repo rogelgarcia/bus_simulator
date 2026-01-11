@@ -1,4 +1,5 @@
 // src/app/city/CityMap.js
+import { BUILDING_STYLE, isBuildingStyle } from './BuildingStyle.js';
 export const DIR = { N: 1, E: 2, S: 4, W: 8 };
 export const TILE = { EMPTY: 0, ROAD: 1 };
 
@@ -308,9 +309,9 @@ export class CityMap {
         return map;
     }
 
-    static _buildingsFromSpec(buildingsSpec, map) {
-        const list = Array.isArray(buildingsSpec) ? buildingsSpec : [];
-        const out = [];
+	    static _buildingsFromSpec(buildingsSpec, map) {
+	        const list = Array.isArray(buildingsSpec) ? buildingsSpec : [];
+	        const out = [];
 
         const clampIntLocal = (v, lo, hi) => Math.max(lo, Math.min(hi, Number(v) | 0));
         const clampLocal = (v, lo, hi) => Math.max(lo, Math.min(hi, Number(v) || lo));
@@ -322,14 +323,27 @@ export class CityMap {
             || set.has(`${x},${y + 1}`)
         );
 
-        for (let i = 0; i < list.length; i++) {
-            const raw = list[i];
-            if (!raw) continue;
+	        for (let i = 0; i < list.length; i++) {
+	            const raw = list[i];
+	            if (!raw) continue;
 
-            const id = (typeof raw.id === 'string' && raw.id) ? raw.id : `building_${i + 1}`;
-            const floors = clampIntLocal(raw.floors ?? raw.numFloors, 1, 30);
-            const floorHeight = clampLocal(raw.floorHeight, 1.0, 12.0);
-            const wallTextureUrl = (typeof raw.wallTextureUrl === 'string' && raw.wallTextureUrl) ? raw.wallTextureUrl : null;
+	            const id = (typeof raw.id === 'string' && raw.id) ? raw.id : `building_${i + 1}`;
+	            const floors = clampIntLocal(raw.floors ?? raw.numFloors, 1, 30);
+	            const floorHeight = clampLocal(raw.floorHeight, 1.0, 12.0);
+
+	            const mapStyleFromTextureUrl = (url) => {
+	                const s = typeof url === 'string' ? url : '';
+	                const file = (s.split(/[?#]/)[0].split('/').pop() ?? '').toLowerCase();
+	                if (file === 'brick_wall.png') return BUILDING_STYLE.BRICK;
+	                if (file === 'cement.png') return BUILDING_STYLE.CEMENT;
+	                if (file === 'stonewall_1.png') return BUILDING_STYLE.STONE_1;
+	                if (file === 'stonewall_2.png') return BUILDING_STYLE.STONE_2;
+	                return BUILDING_STYLE.DEFAULT;
+	            };
+
+	            const style = isBuildingStyle(raw.style)
+	                ? raw.style
+	                : mapStyleFromTextureUrl(raw.wallTextureUrl);
 
             const windowsRaw = raw.windows ?? null;
             const windowsEnabled = windowsRaw && typeof windowsRaw === 'object';
@@ -371,16 +385,16 @@ export class CityMap {
                 accepted.push([tx, ty]);
             }
 
-            if (!accepted.length) continue;
-            out.push({
-                id,
-                tiles: accepted,
-                floorHeight,
-                floors,
-                wallTextureUrl,
-                windows: windowsEnabled ? { width: windowWidth, gap: windowGap, height: windowHeight, y: windowY } : null
-            });
-        }
+	            if (!accepted.length) continue;
+	            out.push({
+	                id,
+	                tiles: accepted,
+	                floorHeight,
+	                floors,
+	                style,
+	                windows: windowsEnabled ? { width: windowWidth, gap: windowGap, height: windowHeight, y: windowY } : null
+	            });
+	        }
 
         return out;
     }
@@ -409,22 +423,22 @@ export class CityMap {
                 { a: [12, 0], b: [14, 0], lanesF: 1, lanesB: 1, tag: 'test-east-0' },
                 { a: [14, 1], b: [12, 1], lanesF: 1, lanesB: 1, tag: 'test-west-1' }
             ],
-            buildings: [
-                {
-                    tiles: [[14, 14], [15, 14], [15, 15], [14, 15]],
-                    floorHeight: 3,
-                    floors: 5,
-                    wallTextureUrl: 'assets/public/textures/buildings/brick_wall.png',
-                    windows: { width: 2.2, gap: 1.6, height: 1.4, y: 1.0 }
-                },
-                {
-                    tiles: [[6, 7], [7, 7]],
-                    floorHeight: 3,
-                    floors: 4,
-                    wallTextureUrl: 'assets/public/textures/buildings/stonewall_1.png',
-                    windows: { width: 1.8, gap: 1.4, height: 1.2, y: 0.9 }
-                }
-            ]
-        };
-    }
+	            buildings: [
+	                {
+	                    tiles: [[14, 14], [15, 14], [15, 15], [14, 15]],
+	                    floorHeight: 3,
+	                    floors: 5,
+	                    style: BUILDING_STYLE.BRICK,
+	                    windows: { width: 2.2, gap: 1.6, height: 1.4, y: 1.0 }
+	                },
+	                {
+	                    tiles: [[6, 7], [7, 7]],
+	                    floorHeight: 3,
+	                    floors: 4,
+	                    style: BUILDING_STYLE.STONE_1,
+	                    windows: { width: 1.8, gap: 1.4, height: 1.2, y: 0.9 }
+	                }
+	            ]
+	        };
+	    }
 }

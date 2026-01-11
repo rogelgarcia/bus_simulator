@@ -187,8 +187,8 @@ export class BuildingFabricationView {
             }
         };
 
-        this.ui.onWallTextureChange = (textureUrl) => {
-            if (this.scene.setSelectedBuildingWallTexture(textureUrl)) {
+        this.ui.onBuildingStyleChange = (style) => {
+            if (this.scene.setSelectedBuildingStyle(style)) {
                 this._syncBuildings();
             }
         };
@@ -254,7 +254,7 @@ export class BuildingFabricationView {
         this.ui.onFloorCountChange = null;
         this.ui.onFloorHeightChange = null;
         this.ui.onBuildingTypeChange = null;
-        this.ui.onWallTextureChange = null;
+        this.ui.onBuildingStyleChange = null;
         this.ui.onHideSelectionBorderChange = null;
         this.ui.onWindowWidthChange = null;
         this.ui.onWindowGapChange = null;

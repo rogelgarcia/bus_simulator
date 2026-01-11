@@ -8,10 +8,11 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 
 import { CityMap, TILE } from '../../../app/city/CityMap.js';
 import { createCityWorld } from '../../../app/city/CityWorld.js';
+import { BUILDING_STYLE, isBuildingStyle } from '../../../app/city/BuildingStyle.js';
 import { createGeneratorConfig } from '../../assets3d/generators/GeneratorParams.js';
 import { createGradientSkyDome } from '../../assets3d/generators/SkyGenerator.js';
 import { generateRoads } from '../../assets3d/generators/RoadGenerator.js';
-import { BuildingWallTextureCache, applyWallTextureToGroup, buildBuildingVisualParts } from '../../assets3d/generators/BuildingGenerator.js';
+import { BuildingWallTextureCache, applyBuildingStyleToGroup, buildBuildingVisualParts } from '../../assets3d/generators/BuildingGenerator.js';
 import { getCityMaterials } from '../../assets3d/textures/CityMaterials.js';
 import { createRoadHighlightMesh } from '../../visuals/city/RoadHighlightMesh.js';
 
@@ -391,7 +392,12 @@ export class BuildingFabricationScene {
             id: b.id,
             floors: b.floors,
             floorHeight: b.floorHeight,
-            tileCount: b.tiles.size
+            tileCount: b.tiles.size,
+            style: b.style,
+            windowWidth: b.windowWidth,
+            windowGap: b.windowGap,
+            windowHeight: b.windowHeight,
+            windowY: b.windowY
         }));
     }
 
@@ -569,17 +575,17 @@ export class BuildingFabricationScene {
         return true;
     }
 
-    setSelectedBuildingWallTexture(textureUrl) {
+    setSelectedBuildingStyle(style) {
         const building = this.getSelectedBuilding();
         if (!building) return false;
 
-        const next = typeof textureUrl === 'string' && textureUrl ? textureUrl : null;
-        if (next === building.wallTextureUrl) return false;
-        building.wallTextureUrl = next;
+        const next = isBuildingStyle(style) ? style : BUILDING_STYLE.DEFAULT;
+        if (next === building.style) return false;
+        building.style = next;
 
-        applyWallTextureToGroup({
+        applyBuildingStyleToGroup({
             solidGroup: building.solidGroup,
-            wallTextureUrl: next,
+            style: next,
             baseColorHex: building.baseColorHex,
             textureCache: this._wallTextures
         });
@@ -1142,7 +1148,15 @@ export class BuildingFabricationScene {
         }
 
         const groundY = this.generatorConfig?.ground?.surfaceY ?? this.generatorConfig?.road?.surfaceY ?? 0;
-        const planY = (this.generatorConfig?.road?.surfaceY ?? groundY) + 0.07;
+        const roadCfg = this.generatorConfig?.road ?? {};
+        const baseRoadY = Number.isFinite(roadCfg?.surfaceY) ? roadCfg.surfaceY : (Number.isFinite(groundY) ? groundY : 0);
+        const sidewalkWidth = Number.isFinite(roadCfg?.sidewalk?.extraWidth) ? roadCfg.sidewalk.extraWidth : 0;
+        const curbHeight = Number.isFinite(roadCfg?.curb?.height) ? roadCfg.curb.height : 0;
+        const curbExtra = Number.isFinite(roadCfg?.curb?.extraHeight) ? roadCfg.curb.extraHeight : 0;
+        const sidewalkLift = Number.isFinite(roadCfg?.sidewalk?.lift) ? roadCfg.sidewalk.lift : 0;
+        const sidewalkY = baseRoadY + curbHeight + curbExtra + sidewalkLift;
+        const planBase = sidewalkWidth > EPS ? sidewalkY : baseRoadY;
+        const planY = planBase + 0.07;
         const planPositions = [];
         for (const loop of loops) {
             if (!loop || loop.length < 2) continue;
@@ -1190,7 +1204,7 @@ export class BuildingFabricationScene {
         this._syncTileVisuals();
     }
 
-    _createBuilding(tileIds, floors, floorHeight, { type = 'business', wallTextureUrl = null } = {}) {
+    _createBuilding(tileIds, floors, floorHeight, { type = 'business', style = BUILDING_STYLE.DEFAULT } = {}) {
         const group = new THREE.Group();
         group.name = `building_${this._buildings.length + 1}`;
         this.root.add(group);
@@ -1218,7 +1232,7 @@ export class BuildingFabricationScene {
         const building = {
             id: group.name,
             type,
-            wallTextureUrl: typeof wallTextureUrl === 'string' && wallTextureUrl ? wallTextureUrl : null,
+            style: isBuildingStyle(style) ? style : BUILDING_STYLE.DEFAULT,
             baseColorHex: null,
             tiles: new Set(tileIds),
             floors,
@@ -1325,7 +1339,7 @@ export class BuildingFabricationScene {
         for (let i = 1; i < clusters.length; i++) {
             this._createBuilding(clusters[i], building.floors, building.floorHeight, {
                 type: building.type,
-                wallTextureUrl: building.wallTextureUrl
+                style: building.style
             });
         }
     }
@@ -1681,7 +1695,7 @@ export class BuildingFabricationScene {
             occupyRatio: this.occupyRatio,
             floors: building.floors,
             floorHeight: Number.isFinite(building.floorHeight) ? building.floorHeight : this.floorHeight,
-            wallTextureUrl: building.wallTextureUrl,
+            style: building.style,
             textureCache: this._wallTextures,
             renderer: this.engine?.renderer ?? null,
             colors: { line: BUILDING_LINE_COLOR, border: BUILDING_BORDER_COLOR },

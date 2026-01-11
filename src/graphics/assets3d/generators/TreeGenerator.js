@@ -340,6 +340,16 @@ function buildPlacements({ map, rng, groundY, params, modelCount }) {
     const jitter = THREE.MathUtils.clamp(params.jitter, 0, 0.95);
     const offsetRange = tileHalf * jitter;
 
+    const buildingTileKeys = new Set();
+    const buildings = Array.isArray(map.buildings) ? map.buildings : [];
+    for (const b of buildings) {
+        const tiles = Array.isArray(b?.tiles) ? b.tiles : [];
+        for (const t of tiles) {
+            if (!Array.isArray(t) || t.length < 2) continue;
+            buildingTileKeys.add(`${t[0] | 0},${t[1] | 0}`);
+        }
+    }
+
     let emptyTiles = 0;
     for (let y = 0; y < map.height; y++) {
         for (let x = 0; x < map.width; x++) {
@@ -371,6 +381,7 @@ function buildPlacements({ map, rng, groundY, params, modelCount }) {
         for (let x = 0; x < map.width; x++) {
             const idx = map.index(x, y);
             if (map.kind[idx] !== TILE.EMPTY) continue;
+            if (buildingTileKeys.has(`${x},${y}`)) continue;
             const dx0 = x;
             const dy0 = y;
             const dx1 = x;

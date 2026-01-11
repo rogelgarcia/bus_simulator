@@ -4,10 +4,12 @@ import * as THREE from 'three';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+import { BUILDING_STYLE, isBuildingStyle } from '../../../app/city/BuildingStyle.js';
 
 const EPS = 1e-6;
 const QUANT = 1000;
 let _windowTexture = null;
+const BUILDING_TEXTURE_BASE_URL = new URL('../../../../assets/public/textures/buildings/', import.meta.url);
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -187,6 +189,33 @@ function buildingFootprintMargins({ tileSize, occupyRatio, generatorConfig }) {
     return { baseMargin, roadMargin };
 }
 
+function computeBuildingBaseAndSidewalk({ generatorConfig, floorHeight }) {
+    const roadCfg = generatorConfig?.road ?? {};
+    const baseRoadY = Number.isFinite(roadCfg.surfaceY) ? roadCfg.surfaceY : 0;
+    const curbHeight = Number.isFinite(roadCfg?.curb?.height) ? roadCfg.curb.height : 0;
+    const curbExtra = Number.isFinite(roadCfg?.curb?.extraHeight) ? roadCfg.curb.extraHeight : 0;
+    const sidewalkLift = Number.isFinite(roadCfg?.sidewalk?.lift) ? roadCfg.sidewalk.lift : 0;
+    const sidewalkWidth = Number.isFinite(roadCfg?.sidewalk?.extraWidth) ? roadCfg.sidewalk.extraWidth : 0;
+    const hasSidewalk = sidewalkWidth > EPS;
+
+    const groundY = generatorConfig?.ground?.surfaceY ?? baseRoadY;
+    const sidewalkSurfaceY = hasSidewalk ? (baseRoadY + curbHeight + curbExtra + sidewalkLift) : null;
+    const baseSurfaceY = (hasSidewalk && Number.isFinite(sidewalkSurfaceY)) ? sidewalkSurfaceY : groundY;
+    const baseY = (Number(baseSurfaceY) || 0) + 0.01;
+
+    const extraFirstFloor = (hasSidewalk && Number.isFinite(sidewalkSurfaceY) && Number.isFinite(groundY))
+        ? Math.max(0, sidewalkSurfaceY - groundY)
+        : 0;
+
+    const fh = clamp(floorHeight, 1.0, 12.0);
+    const extra = clamp(extraFirstFloor, 0, Math.max(0, fh * 2));
+
+    const planBase = (hasSidewalk && Number.isFinite(sidewalkSurfaceY)) ? sidewalkSurfaceY : (Number.isFinite(baseRoadY) ? baseRoadY : (Number.isFinite(groundY) ? groundY : 0));
+    const planY = planBase + 0.07;
+
+    return { baseY, extraFirstFloor: extra, planY };
+}
+
 function normalizeTileList(tiles) {
     const out = [];
     if (!Array.isArray(tiles)) return out;
@@ -291,6 +320,41 @@ export class BuildingWallTextureCache {
 
         return null;
     }
+}
+
+export function resolveBuildingStyleWallTextureUrl(styleId) {
+    const id = isBuildingStyle(styleId) ? styleId : BUILDING_STYLE.DEFAULT;
+    if (id === BUILDING_STYLE.BRICK) return new URL('brick_wall.png', BUILDING_TEXTURE_BASE_URL).toString();
+    if (id === BUILDING_STYLE.CEMENT) return new URL('cement.png', BUILDING_TEXTURE_BASE_URL).toString();
+    if (id === BUILDING_STYLE.STONE_1) return new URL('stonewall_1.png', BUILDING_TEXTURE_BASE_URL).toString();
+    if (id === BUILDING_STYLE.STONE_2) return new URL('stonewall_2.png', BUILDING_TEXTURE_BASE_URL).toString();
+    return null;
+}
+
+export function resolveBuildingStyleLabel(styleId) {
+    const id = isBuildingStyle(styleId) ? styleId : BUILDING_STYLE.DEFAULT;
+    if (id === BUILDING_STYLE.DEFAULT) return 'Default';
+    if (id === BUILDING_STYLE.BRICK) return 'Brick';
+    if (id === BUILDING_STYLE.CEMENT) return 'Cement';
+    if (id === BUILDING_STYLE.STONE_1) return 'Stone 1';
+    if (id === BUILDING_STYLE.STONE_2) return 'Stone 2';
+    if (id === BUILDING_STYLE.LEGACY_TEXTURE) return 'Legacy texture';
+    return 'Default';
+}
+
+export function getBuildingStyleOptions() {
+    const ids = [
+        BUILDING_STYLE.DEFAULT,
+        BUILDING_STYLE.BRICK,
+        BUILDING_STYLE.CEMENT,
+        BUILDING_STYLE.STONE_1,
+        BUILDING_STYLE.STONE_2
+    ];
+    return ids.map((id) => ({
+        id,
+        label: resolveBuildingStyleLabel(id),
+        wallTextureUrl: resolveBuildingStyleWallTextureUrl(id)
+    }));
 }
 
 export function computeBuildingLoopsFromTiles({
@@ -501,6 +565,16 @@ export function applyWallTextureToGroup({
     });
 }
 
+export function applyBuildingStyleToGroup({
+    solidGroup,
+    style = BUILDING_STYLE.DEFAULT,
+    baseColorHex = 0xffffff,
+    textureCache = null
+} = {}) {
+    const url = resolveBuildingStyleWallTextureUrl(style);
+    applyWallTextureToGroup({ solidGroup, wallTextureUrl: url, baseColorHex, textureCache });
+}
+
 export function buildBuildingVisualParts({
     map,
     tiles,
@@ -509,7 +583,8 @@ export function buildBuildingVisualParts({
     occupyRatio = 1.0,
     floors = 1,
     floorHeight = 3,
-    wallTextureUrl = null,
+    style = BUILDING_STYLE.DEFAULT,
+    legacyWallTextureUrl = null,
     textureCache = null,
     renderer = null,
     colors = null,
@@ -522,10 +597,8 @@ export function buildBuildingVisualParts({
     const tileCount = normalizeTileList(tiles).length;
     const floorCount = clampInt(floors, 0, 30);
     const fh = clamp(floorHeight, 1.0, 12.0);
-    const height = Math.max(0, floorCount) * fh;
-
-    const groundY = generatorConfig?.ground?.surfaceY ?? generatorConfig?.road?.surfaceY ?? 0;
-    const baseY = groundY + 0.01;
+    const { baseY, extraFirstFloor, planY } = computeBuildingBaseAndSidewalk({ generatorConfig, floorHeight: fh });
+    const height = Math.max(0, floorCount) * fh + extraFirstFloor;
 
     const outerLoops = [];
     const holeLoops = [];
@@ -555,7 +628,8 @@ export function buildBuildingVisualParts({
         metalness: 0.05
     });
 
-    const wallUrl = typeof wallTextureUrl === 'string' && wallTextureUrl ? wallTextureUrl : null;
+    const wallUrl = resolveBuildingStyleWallTextureUrl(style)
+        ?? (typeof legacyWallTextureUrl === 'string' && legacyWallTextureUrl ? legacyWallTextureUrl : null);
     if (wallUrl && textureCache) wallMatTemplate.color.setHex(0xffffff);
 
     for (const outer of outerLoops) {
@@ -624,8 +698,6 @@ export function buildBuildingVisualParts({
         wire.frustumCulled = false;
     }
 
-    const planY = (generatorConfig?.road?.surfaceY ?? groundY) + 0.07;
-
     let plan = null;
     if (showPlan) {
         const planPositions = [];
@@ -691,7 +763,7 @@ export function buildBuildingVisualParts({
         if (divisions) {
             const floorPositions = [];
             for (let i = 1; i <= divisions; i++) {
-                const y = baseY + i * fh;
+                const y = baseY + extraFirstFloor + i * fh;
                 for (const loop of loops) {
                     if (!loop || loop.length < 2) continue;
                     for (let k = 0; k < loop.length; k++) {
@@ -772,7 +844,8 @@ export function buildBuildingVisualParts({
                 const yaw = Math.atan2(nx, nz);
 
                 for (let floor = 0; floor < floorCount; floor++) {
-                    const y = baseY + floor * fh + windowYOffset + windowHeight * 0.5;
+                    const floorBase = floor === 0 ? baseY : (baseY + extraFirstFloor + floor * fh);
+                    const y = floorBase + windowYOffset + windowHeight * 0.5;
                     for (const start of starts) {
                         const centerDist = start + windowWidth * 0.5;
                         const cx = a.x + tx * centerDist + nx * offset;

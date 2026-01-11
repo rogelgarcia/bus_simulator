@@ -875,6 +875,7 @@ async function runTests() {
     // ========== City Building Config Tests ==========
     const { CityMap } = await import('/src/app/city/CityMap.js');
     const { createCityConfig } = await import('/src/app/city/CityConfig.js');
+    const { BUILDING_STYLE } = await import('/src/app/city/BuildingStyle.js');
 
     test('CityMap: builds empty building list when missing', () => {
         const cfg = createCityConfig({ size: 96, mapTileSize: 24, seed: 'test' });
@@ -895,7 +896,7 @@ async function runTests() {
                 tiles: [[0, 0], [1, 0], [3, 3], [1, 1]],
                 floorHeight: 3,
                 floors: 5,
-                wallTextureUrl: 'assets/public/textures/buildings/brick_wall.png',
+                style: BUILDING_STYLE.BRICK,
                 windows: { width: 2.2, gap: 1.6, height: 1.4, y: 1.0 }
             }]
         }, cfg);
@@ -906,6 +907,7 @@ async function runTests() {
         assertEqual(map.buildings[0].tiles[0][1], 0);
         assertEqual(map.buildings[0].tiles[1][0], 1);
         assertEqual(map.buildings[0].tiles[1][1], 0);
+        assertEqual(map.buildings[0].style, BUILDING_STYLE.BRICK);
         assertEqual(map.buildings[0].windows.width, 2.2);
         assertEqual(map.buildings[0].windows.gap, 1.6);
         assertEqual(map.buildings[0].windows.height, 1.4);
@@ -934,6 +936,8 @@ async function runTests() {
     });
 
     const { computeEvenWindowLayout } = await import('/src/graphics/assets3d/generators/BuildingGenerator.js');
+    const { createTreeField } = await import('/src/graphics/assets3d/generators/TreeGenerator.js');
+    const { CityRNG } = await import('/src/app/city/CityRNG.js');
 
     test('BuildingGenerator: window layout keeps a corner gap', () => {
         const length = 20;
@@ -965,6 +969,36 @@ async function runTests() {
             const prev = starts[i - 1];
             const next = starts[i];
             assertTrue(Math.abs((next - prev) - (windowWidth + gap)) < 1e-6, 'Windows should be evenly spaced.');
+        }
+    });
+
+    test('TreeGenerator: does not place trees on building tiles', () => {
+        const cfg = createCityConfig({ size: 96, mapTileSize: 24, seed: 'test-trees' });
+        const map = CityMap.fromSpec({
+            width: cfg.map.width,
+            height: cfg.map.height,
+            tileSize: cfg.map.tileSize,
+            origin: cfg.map.origin,
+            roads: [],
+            buildings: [{
+                tiles: [[2, 2], [3, 2]],
+                floorHeight: 3,
+                floors: 1
+            }]
+        }, cfg);
+
+        const rng = new CityRNG('tree-test');
+        const { placements } = createTreeField({
+            map,
+            rng,
+            groundY: 0,
+            config: { trees: { density: 1.0, jitter: 0.0, clearance: 0.0, maxAttempts: 1, roadBoost: 0 } }
+        });
+
+        const forbidden = new Set(['2,2', '3,2']);
+        for (const p of placements ?? []) {
+            const t = map.worldToTile(p.x, p.z);
+            assertFalse(forbidden.has(`${t.x},${t.y}`), 'Placement should not be on a building tile.');
         }
     });
 
