@@ -1,7 +1,7 @@
 // src/graphics/assets3d/textures/TextureInspectorCatalog.js
 // Defines a stable texture catalog for inspector scenes.
 import { WINDOW_STYLE } from '../../../app/buildings/WindowStyle.js';
-import { getBuildingWindowTextureForStyle } from '../generators/BuildingGenerator.js';
+import { getBuildingWindowTextureForStyle } from '../generators/buildings/BuildingGenerator.js';
 
 export const INSPECTOR_TEXTURE = Object.freeze({
     WINDOW_DEFAULT: 'tex.window.default',

@@ -874,10 +874,9 @@ async function runTests() {
 
     // ========== City Building Config Tests ==========
     const { CityMap } = await import('/src/app/city/CityMap.js');
-    const { createCityConfig } = await import('/src/app/city/CityConfig.js');
-    const { BUILDING_STYLE } = await import('/src/app/city/BuildingStyle.js');
-    const { BELT_COURSE_COLOR } = await import('/src/app/city/BeltCourseColor.js');
-    const { ROOF_COLOR, resolveRoofColorHex } = await import('/src/app/city/RoofColor.js');
+    const { BUILDING_STYLE } = await import('/src/app/buildings/BuildingStyle.js');
+    const { BELT_COURSE_COLOR } = await import('/src/app/buildings/BeltCourseColor.js');
+    const { ROOF_COLOR, resolveRoofColorHex } = await import('/src/app/buildings/RoofColor.js');
 
     test('CityMap: builds empty building list when missing', () => {
         const cfg = createCityConfig({ size: 96, mapTileSize: 24, seed: 'test' });
@@ -937,7 +936,7 @@ async function runTests() {
         assertEqual(map.buildings[0].tiles[1][0], 1);
     });
 
-    const { computeEvenWindowLayout, buildBuildingVisualParts, getWindowStyleOptions } = await import('/src/graphics/assets3d/generators/BuildingGenerator.js');
+    const { computeEvenWindowLayout, buildBuildingVisualParts, getWindowStyleOptions } = await import('/src/graphics/assets3d/generators/buildings/BuildingGenerator.js');
     const { createTreeField } = await import('/src/graphics/assets3d/generators/TreeGenerator.js');
     const { CityRNG } = await import('/src/app/city/CityRNG.js');
 
