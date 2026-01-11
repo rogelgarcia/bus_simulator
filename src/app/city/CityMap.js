@@ -102,6 +102,8 @@ export class CityMap {
         this.roadPrimary = new Int32Array(n);
         this.roadPrimary.fill(-1);
         this.roadIntersections = new Uint8Array(n);
+
+        this.buildings = [];
     }
 
     index(x, y) { return (x | 0) + (y | 0) * this.width; }
@@ -301,7 +303,70 @@ export class CityMap {
             map.addRoadSegment({ ...seg, id: index });
         });
         map.finalize();
+
+        map.buildings = CityMap._buildingsFromSpec(spec.buildings, map);
         return map;
+    }
+
+    static _buildingsFromSpec(buildingsSpec, map) {
+        const list = Array.isArray(buildingsSpec) ? buildingsSpec : [];
+        const out = [];
+
+        const clampIntLocal = (v, lo, hi) => Math.max(lo, Math.min(hi, Number(v) | 0));
+        const clampLocal = (v, lo, hi) => Math.max(lo, Math.min(hi, Number(v) || lo));
+
+        const isAdjacentToSet = (x, y, set) => (
+            set.has(`${x - 1},${y}`)
+            || set.has(`${x + 1},${y}`)
+            || set.has(`${x},${y - 1}`)
+            || set.has(`${x},${y + 1}`)
+        );
+
+        for (let i = 0; i < list.length; i++) {
+            const raw = list[i];
+            if (!raw) continue;
+
+            const id = (typeof raw.id === 'string' && raw.id) ? raw.id : `building_${i + 1}`;
+            const floors = clampIntLocal(raw.floors ?? raw.numFloors, 1, 30);
+            const floorHeight = clampLocal(raw.floorHeight, 1.0, 12.0);
+            const wallTextureUrl = (typeof raw.wallTextureUrl === 'string' && raw.wallTextureUrl) ? raw.wallTextureUrl : null;
+
+            const tilesIn = Array.isArray(raw.tiles ?? raw.footprintTiles) ? (raw.tiles ?? raw.footprintTiles) : [];
+            const accepted = [];
+            const acceptedSet = new Set();
+
+            for (let t = 0; t < tilesIn.length; t++) {
+                const entry = tilesIn[t];
+                let x = null;
+                let y = null;
+                if (Array.isArray(entry) && entry.length >= 2) {
+                    x = entry[0];
+                    y = entry[1];
+                } else if (entry && Number.isFinite(entry.x) && Number.isFinite(entry.y)) {
+                    x = entry.x;
+                    y = entry.y;
+                }
+
+                if (!Number.isFinite(x) || !Number.isFinite(y)) break;
+                const tx = x | 0;
+                const ty = y | 0;
+
+                if (!map.inBounds(tx, ty)) break;
+                if (map.kind[map.index(tx, ty)] === TILE.ROAD) break;
+
+                const key = `${tx},${ty}`;
+                if (acceptedSet.has(key)) continue;
+                if (accepted.length > 0 && !isAdjacentToSet(tx, ty, acceptedSet)) break;
+
+                acceptedSet.add(key);
+                accepted.push([tx, ty]);
+            }
+
+            if (!accepted.length) continue;
+            out.push({ id, tiles: accepted, floorHeight, floors, wallTextureUrl });
+        }
+
+        return out;
     }
 
     static demoSpec(config) {
@@ -327,6 +392,20 @@ export class CityMap {
                 { a: [6, 10], b: [6, 11], lanesF: 2, lanesB: 0, tag: 'oneway-north' },
                 { a: [12, 0], b: [14, 0], lanesF: 1, lanesB: 1, tag: 'test-east-0' },
                 { a: [14, 1], b: [12, 1], lanesF: 1, lanesB: 1, tag: 'test-west-1' }
+            ],
+            buildings: [
+                {
+                    tiles: [[14, 14], [15, 14], [15, 15], [14, 15]],
+                    floorHeight: 3,
+                    floors: 5,
+                    wallTextureUrl: 'assets/public/textures/buildings/brick_wall.png'
+                },
+                {
+                    tiles: [[6, 7], [7, 7]],
+                    floorHeight: 3,
+                    floors: 1,
+                    wallTextureUrl: 'assets/public/textures/buildings/stonewall_1.png'
+                }
             ]
         };
     }

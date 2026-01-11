@@ -11,6 +11,7 @@ import { createCityWorld } from '../../../app/city/CityWorld.js';
 import { createGeneratorConfig } from '../../assets3d/generators/GeneratorParams.js';
 import { createGradientSkyDome } from '../../assets3d/generators/SkyGenerator.js';
 import { generateRoads } from '../../assets3d/generators/RoadGenerator.js';
+import { BuildingWallTextureCache, applyWallTextureToGroup, buildBuildingVisualParts } from '../../assets3d/generators/BuildingGenerator.js';
 import { getCityMaterials } from '../../assets3d/textures/CityMaterials.js';
 import { createRoadHighlightMesh } from '../../visuals/city/RoadHighlightMesh.js';
 
@@ -65,20 +66,11 @@ function signedArea(points) {
     return sum * 0.5;
 }
 
-function applyTextureColorSpace(tex, { srgb = true } = {}) {
-    if (!tex) return;
-    if ('colorSpace' in tex) {
-        tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-        return;
-    }
-    if ('encoding' in tex) tex.encoding = srgb ? THREE.sRGBEncoding : THREE.LinearEncoding;
-}
-
 function disposeTextureProps(mat) {
     if (!mat) return;
     for (const k of Object.keys(mat)) {
         const v = mat[k];
-        if (v && v.isTexture && !v.userData?.buildingFabShared) v.dispose?.();
+        if (v && v.isTexture && !v.userData?.buildingShared) v.dispose?.();
     }
 }
 
@@ -217,8 +209,7 @@ export class BuildingFabricationScene {
         this._roadHighlightY = 0;
 
         this._lineResolution = new THREE.Vector2();
-        this._wallTextureLoader = new THREE.TextureLoader();
-        this._wallTextureCache = new Map();
+        this._wallTextures = new BuildingWallTextureCache({ renderer: this.engine?.renderer ?? null });
     }
 
     enter() {
@@ -266,7 +257,8 @@ export class BuildingFabricationScene {
             this.root = null;
         }
 
-        this._disposeWallTextureCache();
+        this._wallTextures?.dispose?.();
+        this._wallTextures = null;
 
         if (this._restore) {
             this.scene.background = this._restore.bg ?? null;
@@ -528,14 +520,12 @@ export class BuildingFabricationScene {
         if (next === building.wallTextureUrl) return false;
         building.wallTextureUrl = next;
 
-        if (!next) {
-            this._applyWallTextureToBuilding(building, null);
-            return true;
-        }
-
-        const tex = this._getOrRequestWallTexture(next);
-        if (tex) this._applyWallTextureToBuilding(building, tex);
-        else this._applyWallTextureToBuilding(building, null);
+        applyWallTextureToGroup({
+            solidGroup: building.solidGroup,
+            wallTextureUrl: next,
+            baseColorHex: building.baseColorHex,
+            textureCache: this._wallTextures
+        });
         return true;
     }
 
@@ -1603,83 +1593,6 @@ export class BuildingFabricationScene {
         return loops;
     }
 
-    _disposeWallTextureCache() {
-        for (const entry of this._wallTextureCache.values()) {
-            entry?.texture?.dispose?.();
-        }
-        this._wallTextureCache.clear();
-    }
-
-    _getOrRequestWallTexture(url) {
-        const safeUrl = typeof url === 'string' && url ? url : null;
-        if (!safeUrl) return null;
-
-        const cached = this._wallTextureCache.get(safeUrl);
-        if (cached?.texture) return cached.texture;
-        if (cached?.promise) return null;
-
-        const promise = new Promise((resolve, reject) => {
-            this._wallTextureLoader.load(
-                safeUrl,
-                (tex) => resolve(tex),
-                undefined,
-                (err) => reject(err)
-            );
-        });
-
-        this._wallTextureCache.set(safeUrl, { promise });
-
-        promise.then((tex) => {
-            const entry = this._wallTextureCache.get(safeUrl);
-            if (!entry || entry.promise !== promise) {
-                tex.dispose?.();
-                return;
-            }
-
-            tex.userData = tex.userData ?? {};
-            tex.userData.buildingFabShared = true;
-            tex.wrapS = THREE.RepeatWrapping;
-            tex.wrapT = THREE.RepeatWrapping;
-            if (this.engine?.renderer?.capabilities?.getMaxAnisotropy) {
-                tex.anisotropy = Math.min(16, this.engine.renderer.capabilities.getMaxAnisotropy());
-            } else {
-                tex.anisotropy = 16;
-            }
-            applyTextureColorSpace(tex, { srgb: true });
-            tex.needsUpdate = true;
-
-            this._wallTextureCache.set(safeUrl, { texture: tex });
-            for (const building of this._buildings) {
-                if (building.wallTextureUrl === safeUrl) {
-                    this._applyWallTextureToBuilding(building, tex);
-                }
-            }
-        }).catch(() => {
-            const entry = this._wallTextureCache.get(safeUrl);
-            if (entry?.promise === promise) this._wallTextureCache.delete(safeUrl);
-        });
-
-        return null;
-    }
-
-    _applyWallTextureToBuilding(building, tex) {
-        if (!building?.solidGroup) return;
-        const baseColor = Number.isFinite(building.baseColorHex) ? building.baseColorHex : 0xffffff;
-        const useTexture = !!tex;
-
-        building.solidGroup.traverse((obj) => {
-            if (!obj?.isMesh) return;
-            const mats = obj.material;
-            if (!Array.isArray(mats) || mats.length < 2) return;
-            const wallMat = mats[1];
-            if (!wallMat) return;
-
-            wallMat.map = useTexture ? tex : null;
-            wallMat.color.setHex(useTexture ? 0xffffff : baseColor);
-            wallMat.needsUpdate = true;
-        });
-    }
-
     _rebuildBuildingMesh(building) {
         if (!this.root || !building?.group) return;
 
@@ -1688,212 +1601,34 @@ export class BuildingFabricationScene {
             disposeObject3D(child);
         }
 
-        const rects = this._rectsForBuildingTiles(building.tiles);
-        const loops = this._loopsFromRects(rects);
-        if (!loops.length) return;
-
-        const groundY = this.generatorConfig?.ground?.surfaceY ?? this.generatorConfig?.road?.surfaceY ?? 0;
-        const baseY = groundY + 0.01;
-        const floorHeight = Number.isFinite(building.floorHeight) ? building.floorHeight : this.floorHeight;
-        const height = building.floors * floorHeight;
-
-        const outerLoops = [];
-        const holeLoops = [];
-        for (const loop of loops) {
-            if (signedArea(loop) >= 0) outerLoops.push(loop);
-            else holeLoops.push(loop);
+        const tiles = [];
+        for (const tileId of building.tiles) {
+            const meta = this._tileById.get(tileId);
+            if (meta) tiles.push([meta.x, meta.y]);
         }
 
-        const color = makeDeterministicColor(building.tiles.size * 97 + building.floors * 31).getHex();
-        building.baseColorHex = color;
-
-        const roofMat = new THREE.MeshStandardMaterial({
-            color,
-            roughness: 0.85,
-            metalness: 0.05
+        const parts = buildBuildingVisualParts({
+            map: this.map,
+            tiles,
+            generatorConfig: this.generatorConfig,
+            tileSize: this.tileSize,
+            occupyRatio: this.occupyRatio,
+            floors: building.floors,
+            floorHeight: Number.isFinite(building.floorHeight) ? building.floorHeight : this.floorHeight,
+            wallTextureUrl: building.wallTextureUrl,
+            textureCache: this._wallTextures,
+            renderer: this.engine?.renderer ?? null,
+            colors: { line: BUILDING_LINE_COLOR, border: BUILDING_BORDER_COLOR },
+            overlays: { wire: true, floorplan: true, border: true, floorDivisions: true }
         });
+        if (!parts) return;
 
-        const wallMat = new THREE.MeshStandardMaterial({
-            color,
-            roughness: 0.85,
-            metalness: 0.05
-        });
-
-        const wallTextureUrl = typeof building.wallTextureUrl === 'string' ? building.wallTextureUrl : null;
-        if (wallTextureUrl) {
-            wallMat.color.setHex(0xffffff);
-            const tex = this._getOrRequestWallTexture(wallTextureUrl);
-            if (tex) wallMat.map = tex;
-        }
-
-        const appendPositions = (dst, src) => {
-            for (let i = 0; i < src.length; i++) dst.push(src[i]);
-        };
-
-        const wirePositions = [];
-
-        for (const outer of outerLoops) {
-            const shapePts = outer.map((p) => new THREE.Vector2(p.x, -p.z));
-            shapePts.reverse();
-            const shape = new THREE.Shape(shapePts);
-
-            for (const hole of holeLoops) {
-                const holePts = hole.map((p) => new THREE.Vector2(p.x, -p.z));
-                holePts.reverse();
-                shape.holes.push(new THREE.Path(holePts));
-            }
-
-            const geo = new THREE.ExtrudeGeometry(shape, {
-                depth: height,
-                bevelEnabled: false,
-                steps: 1
-            });
-            geo.rotateX(-Math.PI / 2);
-            geo.computeVertexNormals();
-
-            const mesh = new THREE.Mesh(geo, [roofMat.clone(), wallMat.clone()]);
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-            mesh.position.y = baseY;
-            building.solidGroup.add(mesh);
-
-            const edgeGeo = new THREE.EdgesGeometry(geo, 1);
-            appendPositions(wirePositions, edgeGeo.attributes.position.array);
-            edgeGeo.dispose();
-        }
-
-        if (wirePositions.length) {
-            const wireGeo = new LineSegmentsGeometry();
-            wireGeo.setPositions(wirePositions);
-
-            const wireMat = new LineMaterial({
-                color: BUILDING_LINE_COLOR,
-                linewidth: 4,
-                worldUnits: false,
-                transparent: true,
-                opacity: 0.98,
-                depthTest: false,
-                depthWrite: false
-            });
-            if (this.engine?.renderer) {
-                const size = this.engine.renderer.getSize(this._lineResolution);
-                wireMat.resolution.set(size.x, size.y);
-            }
-
-            const edges = new LineSegments2(wireGeo, wireMat);
-            edges.position.y = baseY;
-            edges.renderOrder = 120;
-            edges.frustumCulled = false;
-            building.wireGroup.add(edges);
-        }
-
-        const planY = (this.generatorConfig?.road?.surfaceY ?? groundY) + 0.07;
-        const planPositions = [];
-        for (const loop of loops) {
-            if (!loop || loop.length < 2) continue;
-            for (let i = 0; i < loop.length; i++) {
-                const a = loop[i];
-                const b = loop[(i + 1) % loop.length];
-                planPositions.push(a.x, planY, a.z, b.x, planY, b.z);
-            }
-        }
-        if (planPositions.length) {
-            const planGeo = new LineSegmentsGeometry();
-            planGeo.setPositions(planPositions);
-
-            const planMat = new LineMaterial({
-                color: BUILDING_LINE_COLOR,
-                linewidth: 4,
-                worldUnits: false,
-                transparent: true,
-                opacity: 1.0,
-                depthTest: false,
-                depthWrite: false
-            });
-            if (this.engine?.renderer) {
-                const size = this.engine.renderer.getSize(this._lineResolution);
-                planMat.resolution.set(size.x, size.y);
-            }
-
-            const line = new LineSegments2(planGeo, planMat);
-            line.renderOrder = 140;
-            line.frustumCulled = false;
-            building.planGroup.add(line);
-        }
-
-        const borderY = planY + 0.02;
-        const borderPositions = [];
-        for (const loop of loops) {
-            if (!loop || loop.length < 2) continue;
-            for (let i = 0; i < loop.length; i++) {
-                const a = loop[i];
-                const b = loop[(i + 1) % loop.length];
-                borderPositions.push(a.x, borderY, a.z, b.x, borderY, b.z);
-            }
-        }
-        if (borderPositions.length) {
-            const borderGeo = new LineSegmentsGeometry();
-            borderGeo.setPositions(borderPositions);
-
-            const borderMat = new LineMaterial({
-                color: BUILDING_BORDER_COLOR,
-                linewidth: 6,
-                worldUnits: false,
-                transparent: true,
-                opacity: 0.98,
-                depthTest: false,
-                depthWrite: false
-            });
-            if (this.engine?.renderer) {
-                const size = this.engine.renderer.getSize(this._lineResolution);
-                borderMat.resolution.set(size.x, size.y);
-            }
-
-            const outline = new LineSegments2(borderGeo, borderMat);
-            outline.renderOrder = 160;
-            outline.frustumCulled = false;
-            building.borderGroup.add(outline);
-        }
-
-        const floorCount = Math.max(0, clampInt(building.floors, 0, 30) - 1);
-        if (floorCount) {
-            const floorPositions = [];
-            for (let i = 1; i <= floorCount; i++) {
-                const y = baseY + i * floorHeight;
-                for (const loop of loops) {
-                    if (!loop || loop.length < 2) continue;
-                    for (let k = 0; k < loop.length; k++) {
-                        const a = loop[k];
-                        const b = loop[(k + 1) % loop.length];
-                        floorPositions.push(a.x, y, a.z, b.x, y, b.z);
-                    }
-                }
-            }
-
-            if (floorPositions.length) {
-                const floorsGeo = new LineSegmentsGeometry();
-                floorsGeo.setPositions(floorPositions);
-
-                const floorsMat = new LineMaterial({
-                    color: BUILDING_LINE_COLOR,
-                    linewidth: 3,
-                    worldUnits: false,
-                    transparent: true,
-                    opacity: 0.72,
-                    depthTest: false,
-                    depthWrite: false
-                });
-                if (this.engine?.renderer) {
-                    const size = this.engine.renderer.getSize(this._lineResolution);
-                    floorsMat.resolution.set(size.x, size.y);
-                }
-
-                const line = new LineSegments2(floorsGeo, floorsMat);
-                line.renderOrder = 130;
-                line.frustumCulled = false;
-                building.floorsGroup.add(line);
-            }
-        }
+        building.baseColorHex = parts.baseColorHex;
+        for (const mesh of parts.solidMeshes) building.solidGroup.add(mesh);
+        if (parts.wire) building.wireGroup.add(parts.wire);
+        if (parts.plan) building.planGroup.add(parts.plan);
+        if (parts.border) building.borderGroup.add(parts.border);
+        if (parts.floorDivisions) building.floorsGroup.add(parts.floorDivisions);
 
         this._syncBuildingRenderMode(building);
         this._syncBuildingBorder(building);

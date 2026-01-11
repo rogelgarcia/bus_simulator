@@ -9,6 +9,7 @@ import { getCityMaterials } from '../../graphics/assets3d/textures/CityMaterials
 import { generateRoads } from '../../graphics/assets3d/generators/RoadGenerator.js';
 import { createGradientSkyDome } from '../../graphics/assets3d/generators/SkyGenerator.js';
 import { createGeneratorConfig } from '../../graphics/assets3d/generators/GeneratorParams.js';
+import { BuildingWallTextureCache, buildBuildingVisualParts } from '../../graphics/assets3d/generators/BuildingGenerator.js';
 
 export class City {
     constructor(options = {}) {
@@ -82,6 +83,39 @@ export class City {
         this.materials = getCityMaterials();
         this.roads = generateRoads({ map: this.map, config: this.generatorConfig, materials: this.materials });
         this.group.add(this.roads.group);
+
+        this.buildings = null;
+        const buildingsList = Array.isArray(this.map.buildings) ? this.map.buildings : [];
+        if (buildingsList.length) {
+            const buildingsGroup = new THREE.Group();
+            buildingsGroup.name = 'Buildings';
+
+            const textures = new BuildingWallTextureCache();
+            for (const entry of buildingsList) {
+                const parts = buildBuildingVisualParts({
+                    map: this.map,
+                    tiles: entry.tiles,
+                    generatorConfig: this.generatorConfig,
+                    tileSize: this.map.tileSize,
+                    occupyRatio: 1.0,
+                    floors: entry.floors,
+                    floorHeight: entry.floorHeight,
+                    wallTextureUrl: entry.wallTextureUrl,
+                    textureCache: textures,
+                    renderer: null,
+                    overlays: { wire: false, floorplan: false, border: false, floorDivisions: false }
+                });
+                if (!parts) continue;
+
+                const buildingGroup = new THREE.Group();
+                buildingGroup.name = entry.id ?? 'building';
+                for (const mesh of parts.solidMeshes) buildingGroup.add(mesh);
+                buildingsGroup.add(buildingGroup);
+            }
+
+            this.buildings = { group: buildingsGroup, textures };
+            this.group.add(buildingsGroup);
+        }
 
         this._attached = false;
         this._restore = null;
