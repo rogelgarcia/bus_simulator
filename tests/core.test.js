@@ -872,6 +872,62 @@ async function runTests() {
         assertTrue(roadMargin > baseMargin, 'Road margin should be larger than base margin.');
     });
 
+    // ========== City Building Config Tests ==========
+    const { CityMap } = await import('/src/app/city/CityMap.js');
+    const { createCityConfig } = await import('/src/app/city/CityConfig.js');
+
+    test('CityMap: builds empty building list when missing', () => {
+        const cfg = createCityConfig({ size: 96, mapTileSize: 24, seed: 'test' });
+        const map = CityMap.fromSpec({ roads: [] }, cfg);
+        assertTrue(Array.isArray(map.buildings), 'buildings should be an array.');
+        assertEqual(map.buildings.length, 0, 'buildings should default to empty.');
+    });
+
+    test('CityMap: truncates footprint after first non-adjacent tile', () => {
+        const cfg = createCityConfig({ size: 96, mapTileSize: 24, seed: 'test' });
+        const map = CityMap.fromSpec({
+            width: cfg.map.width,
+            height: cfg.map.height,
+            tileSize: cfg.map.tileSize,
+            origin: cfg.map.origin,
+            roads: [],
+            buildings: [{
+                tiles: [[0, 0], [1, 0], [3, 3], [1, 1]],
+                floorHeight: 3,
+                floors: 5,
+                wallTextureUrl: 'assets/public/textures/buildings/brick_wall.png'
+            }]
+        }, cfg);
+
+        assertEqual(map.buildings.length, 1, 'Should keep one valid building.');
+        assertEqual(map.buildings[0].tiles.length, 2, 'Should keep tiles up to first invalid adjacency.');
+        assertEqual(map.buildings[0].tiles[0][0], 0);
+        assertEqual(map.buildings[0].tiles[0][1], 0);
+        assertEqual(map.buildings[0].tiles[1][0], 1);
+        assertEqual(map.buildings[0].tiles[1][1], 0);
+    });
+
+    test('CityMap: ignores duplicate tiles without aborting', () => {
+        const cfg = createCityConfig({ size: 96, mapTileSize: 24, seed: 'test' });
+        const map = CityMap.fromSpec({
+            width: cfg.map.width,
+            height: cfg.map.height,
+            tileSize: cfg.map.tileSize,
+            origin: cfg.map.origin,
+            roads: [],
+            buildings: [{
+                tiles: [[0, 0], [0, 0], [1, 0]],
+                floorHeight: 3,
+                floors: 2
+            }]
+        }, cfg);
+
+        assertEqual(map.buildings.length, 1);
+        assertEqual(map.buildings[0].tiles.length, 2);
+        assertEqual(map.buildings[0].tiles[0][0], 0);
+        assertEqual(map.buildings[0].tiles[1][0], 1);
+    });
+
     runRoadConnectionDebuggerTests({ test, assertTrue });
 
     // ========== Summary ==========
