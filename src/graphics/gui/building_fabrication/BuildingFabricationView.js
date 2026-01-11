@@ -158,6 +158,11 @@ export class BuildingFabricationView {
             this.scene.setShowFloorplan(enabled);
         };
 
+        this.scene.setHideSelectionBorder(this.ui.getHideSelectionBorder());
+        this.ui.onHideSelectionBorderChange = (hidden) => {
+            this.scene.setHideSelectionBorder(hidden);
+        };
+
         this.ui.onFloorHeightChange = (height) => {
             if (this.scene.setSelectedBuildingFloorHeight(height)) {
                 this._syncBuildings();
@@ -166,6 +171,18 @@ export class BuildingFabricationView {
 
         this.ui.onFloorCountChange = (floors) => {
             if (this.scene.setSelectedBuildingFloors(floors)) {
+                this._syncBuildings();
+            }
+        };
+
+        this.ui.onBuildingTypeChange = (type) => {
+            if (this.scene.setSelectedBuildingType(type)) {
+                this._syncBuildings();
+            }
+        };
+
+        this.ui.onWallTextureChange = (textureUrl) => {
+            if (this.scene.setSelectedBuildingWallTexture(textureUrl)) {
                 this._syncBuildings();
             }
         };
@@ -198,6 +215,9 @@ export class BuildingFabricationView {
         this.ui.onFloorplanChange = null;
         this.ui.onFloorCountChange = null;
         this.ui.onFloorHeightChange = null;
+        this.ui.onBuildingTypeChange = null;
+        this.ui.onWallTextureChange = null;
+        this.ui.onHideSelectionBorderChange = null;
         this.ui.unmount();
 
         this.scene.dispose();

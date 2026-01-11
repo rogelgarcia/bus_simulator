@@ -18,6 +18,7 @@ const QUANT = 1000;
 const ROAD_LANES_F = 1;
 const ROAD_LANES_B = 1;
 const BUILDING_LINE_COLOR = 0xff3b30;
+const BUILDING_BORDER_COLOR = 0x64d2ff;
 
 const EPS = 1e-6;
 const HALF = 0.5;
@@ -64,11 +65,20 @@ function signedArea(points) {
     return sum * 0.5;
 }
 
+function applyTextureColorSpace(tex, { srgb = true } = {}) {
+    if (!tex) return;
+    if ('colorSpace' in tex) {
+        tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+        return;
+    }
+    if ('encoding' in tex) tex.encoding = srgb ? THREE.sRGBEncoding : THREE.LinearEncoding;
+}
+
 function disposeTextureProps(mat) {
     if (!mat) return;
     for (const k of Object.keys(mat)) {
         const v = mat[k];
-        if (v && v.isTexture) v.dispose?.();
+        if (v && v.isTexture && !v.userData?.buildingFabShared) v.dispose?.();
     }
 }
 
@@ -191,6 +201,8 @@ export class BuildingFabricationScene {
         this._selectionPlanGroup = null;
 
         this._selectedBuildingId = null;
+        this._hoveredBuildingId = null;
+        this._hideSelectionBorder = false;
 
         this._roadModeEnabled = false;
         this._roadStartTileId = null;
@@ -205,6 +217,8 @@ export class BuildingFabricationScene {
         this._roadHighlightY = 0;
 
         this._lineResolution = new THREE.Vector2();
+        this._wallTextureLoader = new THREE.TextureLoader();
+        this._wallTextureCache = new Map();
     }
 
     enter() {
@@ -251,6 +265,8 @@ export class BuildingFabricationScene {
             disposeObject3D(this.root);
             this.root = null;
         }
+
+        this._disposeWallTextureCache();
 
         if (this._restore) {
             this.scene.background = this._restore.bg ?? null;
@@ -403,10 +419,32 @@ export class BuildingFabricationScene {
         };
     }
 
+    getHideSelectionBorder() {
+        return this._hideSelectionBorder;
+    }
+
+    setHideSelectionBorder(hidden) {
+        const next = !!hidden;
+        if (next === this._hideSelectionBorder) return;
+        this._hideSelectionBorder = next;
+        this._syncBuildingBorders();
+    }
+
+    _updateHoveredBuildingId() {
+        const tileId = this._hoveredTile;
+        const hovered = (!this._roadModeEnabled && !this._buildingModeEnabled && tileId)
+            ? (this._buildingsByTile.get(tileId)?.id ?? null)
+            : null;
+        const changed = hovered !== this._hoveredBuildingId;
+        this._hoveredBuildingId = hovered;
+        return changed;
+    }
+
     setHoveredTile(tileId) {
         const next = tileId || null;
         if (next === this._hoveredTile) return;
         this._hoveredTile = next;
+        if (this._updateHoveredBuildingId()) this._syncBuildingBorders();
         this._syncTileVisuals();
     }
 
@@ -419,8 +457,10 @@ export class BuildingFabricationScene {
         this._buildingModeEnabled = next;
         this._selectedTiles.clear();
         this._selectedBuildingId = null;
+        this._updateHoveredBuildingId();
         this._syncSelectionPreview();
         this._syncModeVisibility();
+        this._syncBuildingBorders();
         this._syncTileVisuals();
     }
 
@@ -428,6 +468,7 @@ export class BuildingFabricationScene {
         const next = typeof buildingId === 'string' ? buildingId : null;
         if (next === this._selectedBuildingId) return;
         this._selectedBuildingId = next;
+        this._syncBuildingBorders();
         this._syncTileVisuals();
     }
 
@@ -441,6 +482,7 @@ export class BuildingFabricationScene {
         if (!building) return false;
         this._removeBuilding(building);
         this._selectedBuildingId = null;
+        this._syncBuildingBorders();
         this._syncTileVisuals();
         return true;
     }
@@ -463,6 +505,37 @@ export class BuildingFabricationScene {
         if (Math.abs(next - cur) < 1e-6) return false;
         building.floorHeight = next;
         this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingType(type) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const raw = typeof type === 'string' ? type : '';
+        const next = raw === 'business' || raw === 'industrial' || raw === 'apartments' || raw === 'house'
+            ? raw
+            : 'business';
+        if (next === building.type) return false;
+        building.type = next;
+        return true;
+    }
+
+    setSelectedBuildingWallTexture(textureUrl) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+
+        const next = typeof textureUrl === 'string' && textureUrl ? textureUrl : null;
+        if (next === building.wallTextureUrl) return false;
+        building.wallTextureUrl = next;
+
+        if (!next) {
+            this._applyWallTextureToBuilding(building, null);
+            return true;
+        }
+
+        const tex = this._getOrRequestWallTexture(next);
+        if (tex) this._applyWallTextureToBuilding(building, tex);
+        else this._applyWallTextureToBuilding(building, null);
         return true;
     }
 
@@ -495,6 +568,8 @@ export class BuildingFabricationScene {
         this._roadStartTileId = null;
         this._roadEndTileId = null;
         this._syncModeVisibility();
+        this._updateHoveredBuildingId();
+        this._syncBuildingBorders();
         this._syncTileVisuals();
     }
 
@@ -587,6 +662,20 @@ export class BuildingFabricationScene {
         }
     }
 
+    _syncBuildingBorder(building) {
+        if (!building?.borderGroup) return;
+        const hovered = !!this._hoveredBuildingId && building.id === this._hoveredBuildingId;
+        const selected = !!this._selectedBuildingId && building.id === this._selectedBuildingId;
+        const showSelected = selected && !this._hideSelectionBorder;
+        building.borderGroup.visible = hovered || showSelected;
+    }
+
+    _syncBuildingBorders() {
+        for (const building of this._buildings) {
+            this._syncBuildingBorder(building);
+        }
+    }
+
     clearSelection() {
         if (!this._selectedTiles.size) return;
         this._selectedTiles.clear();
@@ -628,14 +717,22 @@ export class BuildingFabricationScene {
         }
 
         const clusters = this._clusterTiles(selection);
+        let best = null;
+        let bestSize = 0;
         for (const cluster of clusters) {
-            this._createBuilding(cluster, clampedFloors, clampedFloorHeight);
+            const created = this._createBuilding(cluster, clampedFloors, clampedFloorHeight);
+            const size = created?.tiles?.size ?? 0;
+            if (created && size >= bestSize) {
+                best = created;
+                bestSize = size;
+            }
         }
 
         this._selectedTiles.clear();
         this._syncSelectionPreview();
         this._syncTileVisuals();
         this.setBuildingModeEnabled(false);
+        if (best?.id) this.setSelectedBuildingId(best.id);
     }
 
     handleRoadTileClick(tileId) {
@@ -1045,7 +1142,7 @@ export class BuildingFabricationScene {
         this._syncTileVisuals();
     }
 
-    _createBuilding(tileIds, floors, floorHeight) {
+    _createBuilding(tileIds, floors, floorHeight, { type = 'business', wallTextureUrl = null } = {}) {
         const group = new THREE.Group();
         group.name = `building_${this._buildings.length + 1}`;
         this.root.add(group);
@@ -1058,14 +1155,20 @@ export class BuildingFabricationScene {
         floorsGroup.name = 'floors';
         const planGroup = new THREE.Group();
         planGroup.name = 'floorplan';
+        const borderGroup = new THREE.Group();
+        borderGroup.name = 'selection_border';
 
         group.add(solidGroup);
         group.add(wireGroup);
         group.add(floorsGroup);
         group.add(planGroup);
+        group.add(borderGroup);
 
         const building = {
             id: group.name,
+            type,
+            wallTextureUrl: typeof wallTextureUrl === 'string' && wallTextureUrl ? wallTextureUrl : null,
+            baseColorHex: null,
             tiles: new Set(tileIds),
             floors,
             floorHeight: clamp(Number.isFinite(floorHeight) ? floorHeight : this.floorHeight, 1.0, 12.0),
@@ -1073,7 +1176,8 @@ export class BuildingFabricationScene {
             solidGroup,
             wireGroup,
             floorsGroup,
-            planGroup
+            planGroup,
+            borderGroup
         };
 
         this._buildings.push(building);
@@ -1081,7 +1185,9 @@ export class BuildingFabricationScene {
         this._rebuildBuildingMesh(building);
 
         this._syncBuildingRenderMode(building);
+        this._syncBuildingBorder(building);
         building.group.visible = !this._roadModeEnabled;
+        return building;
     }
 
     _addRoadBetween(startTileId, endTileId) {
@@ -1161,7 +1267,10 @@ export class BuildingFabricationScene {
         }
 
         for (let i = 1; i < clusters.length; i++) {
-            this._createBuilding(clusters[i], building.floors, building.floorHeight);
+            this._createBuilding(clusters[i], building.floors, building.floorHeight, {
+                type: building.type,
+                wallTextureUrl: building.wallTextureUrl
+            });
         }
     }
 
@@ -1494,10 +1603,87 @@ export class BuildingFabricationScene {
         return loops;
     }
 
+    _disposeWallTextureCache() {
+        for (const entry of this._wallTextureCache.values()) {
+            entry?.texture?.dispose?.();
+        }
+        this._wallTextureCache.clear();
+    }
+
+    _getOrRequestWallTexture(url) {
+        const safeUrl = typeof url === 'string' && url ? url : null;
+        if (!safeUrl) return null;
+
+        const cached = this._wallTextureCache.get(safeUrl);
+        if (cached?.texture) return cached.texture;
+        if (cached?.promise) return null;
+
+        const promise = new Promise((resolve, reject) => {
+            this._wallTextureLoader.load(
+                safeUrl,
+                (tex) => resolve(tex),
+                undefined,
+                (err) => reject(err)
+            );
+        });
+
+        this._wallTextureCache.set(safeUrl, { promise });
+
+        promise.then((tex) => {
+            const entry = this._wallTextureCache.get(safeUrl);
+            if (!entry || entry.promise !== promise) {
+                tex.dispose?.();
+                return;
+            }
+
+            tex.userData = tex.userData ?? {};
+            tex.userData.buildingFabShared = true;
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            if (this.engine?.renderer?.capabilities?.getMaxAnisotropy) {
+                tex.anisotropy = Math.min(16, this.engine.renderer.capabilities.getMaxAnisotropy());
+            } else {
+                tex.anisotropy = 16;
+            }
+            applyTextureColorSpace(tex, { srgb: true });
+            tex.needsUpdate = true;
+
+            this._wallTextureCache.set(safeUrl, { texture: tex });
+            for (const building of this._buildings) {
+                if (building.wallTextureUrl === safeUrl) {
+                    this._applyWallTextureToBuilding(building, tex);
+                }
+            }
+        }).catch(() => {
+            const entry = this._wallTextureCache.get(safeUrl);
+            if (entry?.promise === promise) this._wallTextureCache.delete(safeUrl);
+        });
+
+        return null;
+    }
+
+    _applyWallTextureToBuilding(building, tex) {
+        if (!building?.solidGroup) return;
+        const baseColor = Number.isFinite(building.baseColorHex) ? building.baseColorHex : 0xffffff;
+        const useTexture = !!tex;
+
+        building.solidGroup.traverse((obj) => {
+            if (!obj?.isMesh) return;
+            const mats = obj.material;
+            if (!Array.isArray(mats) || mats.length < 2) return;
+            const wallMat = mats[1];
+            if (!wallMat) return;
+
+            wallMat.map = useTexture ? tex : null;
+            wallMat.color.setHex(useTexture ? 0xffffff : baseColor);
+            wallMat.needsUpdate = true;
+        });
+    }
+
     _rebuildBuildingMesh(building) {
         if (!this.root || !building?.group) return;
 
-        for (const child of [...building.solidGroup.children, ...building.wireGroup.children, ...building.floorsGroup.children, ...building.planGroup.children]) {
+        for (const child of [...building.solidGroup.children, ...building.wireGroup.children, ...building.floorsGroup.children, ...building.planGroup.children, ...building.borderGroup.children]) {
             child.removeFromParent();
             disposeObject3D(child);
         }
@@ -1519,11 +1705,26 @@ export class BuildingFabricationScene {
         }
 
         const color = makeDeterministicColor(building.tiles.size * 97 + building.floors * 31).getHex();
-        const solidMat = new THREE.MeshStandardMaterial({
+        building.baseColorHex = color;
+
+        const roofMat = new THREE.MeshStandardMaterial({
             color,
             roughness: 0.85,
             metalness: 0.05
         });
+
+        const wallMat = new THREE.MeshStandardMaterial({
+            color,
+            roughness: 0.85,
+            metalness: 0.05
+        });
+
+        const wallTextureUrl = typeof building.wallTextureUrl === 'string' ? building.wallTextureUrl : null;
+        if (wallTextureUrl) {
+            wallMat.color.setHex(0xffffff);
+            const tex = this._getOrRequestWallTexture(wallTextureUrl);
+            if (tex) wallMat.map = tex;
+        }
 
         const appendPositions = (dst, src) => {
             for (let i = 0; i < src.length; i++) dst.push(src[i]);
@@ -1550,7 +1751,7 @@ export class BuildingFabricationScene {
             geo.rotateX(-Math.PI / 2);
             geo.computeVertexNormals();
 
-            const mesh = new THREE.Mesh(geo, solidMat.clone());
+            const mesh = new THREE.Mesh(geo, [roofMat.clone(), wallMat.clone()]);
             mesh.castShadow = true;
             mesh.receiveShadow = true;
             mesh.position.y = baseY;
@@ -1620,6 +1821,40 @@ export class BuildingFabricationScene {
             building.planGroup.add(line);
         }
 
+        const borderY = planY + 0.02;
+        const borderPositions = [];
+        for (const loop of loops) {
+            if (!loop || loop.length < 2) continue;
+            for (let i = 0; i < loop.length; i++) {
+                const a = loop[i];
+                const b = loop[(i + 1) % loop.length];
+                borderPositions.push(a.x, borderY, a.z, b.x, borderY, b.z);
+            }
+        }
+        if (borderPositions.length) {
+            const borderGeo = new LineSegmentsGeometry();
+            borderGeo.setPositions(borderPositions);
+
+            const borderMat = new LineMaterial({
+                color: BUILDING_BORDER_COLOR,
+                linewidth: 6,
+                worldUnits: false,
+                transparent: true,
+                opacity: 0.98,
+                depthTest: false,
+                depthWrite: false
+            });
+            if (this.engine?.renderer) {
+                const size = this.engine.renderer.getSize(this._lineResolution);
+                borderMat.resolution.set(size.x, size.y);
+            }
+
+            const outline = new LineSegments2(borderGeo, borderMat);
+            outline.renderOrder = 160;
+            outline.frustumCulled = false;
+            building.borderGroup.add(outline);
+        }
+
         const floorCount = Math.max(0, clampInt(building.floors, 0, 30) - 1);
         if (floorCount) {
             const floorPositions = [];
@@ -1661,6 +1896,7 @@ export class BuildingFabricationScene {
         }
 
         this._syncBuildingRenderMode(building);
+        this._syncBuildingBorder(building);
     }
 
     _syncTileVisuals() {

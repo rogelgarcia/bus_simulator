@@ -50,7 +50,13 @@ export class BuildingFabricationUI {
         this._floorDivisionsEnabled = false;
         this._floorplanEnabled = false;
         this._enabled = true;
+        this._hideSelectionBorder = false;
         this._selectedBuildingId = null;
+        this._buildingType = 'business';
+        this._wallTextureUrl = null;
+        this._wallTextureOptions = [];
+        this._wallTextureOptionsPromise = null;
+        this._wallTextureBaseUrl = new URL('../../../../assets/public/textures/buildings/', import.meta.url).toString();
         this._hoveredBuildingRow = null;
         this._selectedTileCount = 0;
         this._roadStartTileId = null;
@@ -270,6 +276,25 @@ export class BuildingFabricationUI {
 
         this.viewPanel.appendChild(this.viewTitle);
         this.viewPanel.appendChild(this.viewModeRow);
+
+        this.viewOptionsRow = document.createElement('div');
+        this.viewOptionsRow.className = 'building-fab-toggle-row building-fab-view-options';
+
+        this.hideSelectionBorderToggle = document.createElement('label');
+        this.hideSelectionBorderToggle.className = 'building-fab-toggle';
+
+        this.hideSelectionBorderInput = document.createElement('input');
+        this.hideSelectionBorderInput.type = 'checkbox';
+        this.hideSelectionBorderInput.checked = this._hideSelectionBorder;
+
+        this.hideSelectionBorderText = document.createElement('span');
+        this.hideSelectionBorderText.textContent = 'Hide selection border';
+
+        this.hideSelectionBorderToggle.appendChild(this.hideSelectionBorderInput);
+        this.hideSelectionBorderToggle.appendChild(this.hideSelectionBorderText);
+        this.viewOptionsRow.appendChild(this.hideSelectionBorderToggle);
+
+        this.viewPanel.appendChild(this.viewOptionsRow);
         this.viewPanel.appendChild(this.resetBtn);
 
         this.propsTitle = document.createElement('div');
@@ -284,15 +309,60 @@ export class BuildingFabricationUI {
         this.selectedBuildingInfo.className = 'building-fab-selected-building';
         this.selectedBuildingInfo.textContent = 'No building selected.';
 
+        this.typeRow = document.createElement('div');
+        this.typeRow.className = 'building-fab-row building-fab-row-wide';
+        this.typeLabel = document.createElement('div');
+        this.typeLabel.className = 'building-fab-row-label';
+        this.typeLabel.textContent = 'Type';
+        this.typeSelect = document.createElement('select');
+        this.typeSelect.className = 'building-fab-select';
+
+        const addTypeOption = (value, label, { disabled = false } = {}) => {
+            const opt = document.createElement('option');
+            opt.value = value;
+            opt.textContent = label;
+            opt.disabled = !!disabled;
+            this.typeSelect.appendChild(opt);
+        };
+
+        addTypeOption('business', 'Business');
+        addTypeOption('industrial', 'Industrial (coming later)', { disabled: true });
+        addTypeOption('apartments', 'Apartments (coming later)', { disabled: true });
+        addTypeOption('house', 'House (coming later)', { disabled: true });
+        this.typeSelect.value = this._buildingType;
+
         this.deleteBuildingBtn = document.createElement('button');
         this.deleteBuildingBtn.type = 'button';
         this.deleteBuildingBtn.className = 'building-fab-btn building-fab-btn-danger';
         this.deleteBuildingBtn.textContent = 'Delete selected building';
         this.deleteBuildingBtn.disabled = true;
 
+        this.typeRow.appendChild(this.typeLabel);
+        this.typeRow.appendChild(this.typeSelect);
+
+        this.wallTextureRow = document.createElement('div');
+        this.wallTextureRow.className = 'building-fab-row building-fab-row-texture';
+        this.wallTextureLabel = document.createElement('div');
+        this.wallTextureLabel.className = 'building-fab-row-label';
+        this.wallTextureLabel.textContent = 'Wall texture';
+
+        this.wallTexturePicker = document.createElement('div');
+        this.wallTexturePicker.className = 'building-fab-texture-picker';
+        this.wallTextureGrid = document.createElement('div');
+        this.wallTextureGrid.className = 'building-fab-texture-grid';
+        this.wallTextureStatus = document.createElement('div');
+        this.wallTextureStatus.className = 'building-fab-texture-status';
+        this.wallTextureStatus.textContent = 'Loading textures…';
+        this.wallTexturePicker.appendChild(this.wallTextureGrid);
+        this.wallTexturePicker.appendChild(this.wallTextureStatus);
+        this.wallTextureRow.appendChild(this.wallTextureLabel);
+        this.wallTextureRow.appendChild(this.wallTexturePicker);
+
         this.propsPanel.appendChild(this.propsTitle);
         this.propsPanel.appendChild(this.propsHint);
         this.propsPanel.appendChild(this.selectedBuildingInfo);
+        this.propsPanel.appendChild(this.typeRow);
+        this.propsPanel.appendChild(this.wallTextureRow);
         this.propsPanel.appendChild(this.deleteBuildingBtn);
         this.propsPanel.appendChild(this.floorRow);
         this.propsPanel.appendChild(this.floorHeightRow);
@@ -389,6 +459,9 @@ export class BuildingFabricationUI {
         this.onWireframeChange = null;
         this.onFloorDivisionsChange = null;
         this.onFloorplanChange = null;
+        this.onHideSelectionBorderChange = null;
+        this.onBuildingTypeChange = null;
+        this.onWallTextureChange = null;
         this.onFloorCountChange = null;
         this.onFloorHeightChange = null;
 
@@ -398,6 +471,9 @@ export class BuildingFabricationUI {
         this._onFloorNumberInput = () => this._setFloorCountFromUi(this.floorNumber.value);
         this._onFloorHeightRangeInput = () => this._setFloorHeightFromUi(this.floorHeightRange.value);
         this._onFloorHeightNumberInput = () => this._setFloorHeightFromUi(this.floorHeightNumber.value);
+        this._onTypeSelectChange = () => this._setBuildingTypeFromUi(this.typeSelect.value);
+        this._onHideSelectionBorderChange = () => this._setHideSelectionBorderFromUi(this.hideSelectionBorderInput.checked);
+        this._onWallTextureGridClick = (e) => this._handleWallTextureGridClick(e);
         this._onViewModeClick = (e) => {
             const btn = e?.target?.closest?.('.building-fab-view-mode');
             if (!btn || !this.viewModeRow?.contains(btn)) return;
@@ -436,6 +512,7 @@ export class BuildingFabricationUI {
         if (this.root.isConnected) return;
         parent.appendChild(this.root);
         this._bind();
+        this._ensureWallTextureOptionsLoaded();
     }
 
     unmount() {
@@ -598,6 +675,17 @@ export class BuildingFabricationUI {
         this._syncViewControls();
     }
 
+    getHideSelectionBorder() {
+        return this._hideSelectionBorder;
+    }
+
+    setHideSelectionBorder(hidden) {
+        const next = !!hidden;
+        if (next === this._hideSelectionBorder) return;
+        this._hideSelectionBorder = next;
+        if (this.hideSelectionBorderInput) this.hideSelectionBorderInput.checked = next;
+    }
+
     setSelectedBuilding(building) {
         const nextId = typeof building?.id === 'string' ? building.id : null;
         const hasSelected = !!nextId;
@@ -606,6 +694,18 @@ export class BuildingFabricationUI {
         }
         if (hasSelected && Number.isFinite(building?.floorHeight)) {
             this._floorHeight = clamp(building.floorHeight, this.floorHeightMin, this.floorHeightMax);
+        }
+        if (hasSelected) {
+            const type = typeof building?.type === 'string' ? building.type : null;
+            this._buildingType = type === 'business' || type === 'industrial' || type === 'apartments' || type === 'house'
+                ? type
+                : 'business';
+        }
+        if (hasSelected) {
+            const textureUrl = typeof building?.wallTextureUrl === 'string' ? building.wallTextureUrl : null;
+            this._wallTextureUrl = textureUrl || null;
+        } else {
+            this._wallTextureUrl = null;
         }
         this._selectedBuildingId = nextId;
         if (!hasSelected) {
@@ -622,12 +722,15 @@ export class BuildingFabricationUI {
         const allow = !!this._enabled && hasSelected;
 
         this.deleteBuildingBtn.disabled = !allow;
+        this.typeSelect.disabled = !allow;
+        this._syncWallTextureButtons({ allow });
         this.floorRange.disabled = !allow;
         this.floorNumber.disabled = !allow;
         this.floorHeightRange.disabled = !allow;
         this.floorHeightNumber.disabled = !allow;
 
         if (!hasSelected) {
+            this.typeSelect.value = 'business';
             this.floorRange.value = String(this.floorMin);
             this.floorNumber.value = '';
 
@@ -636,6 +739,8 @@ export class BuildingFabricationUI {
             return;
         }
 
+        this.typeSelect.value = this._buildingType;
+        this._syncWallTextureButtons({ allow });
         this.floorRange.value = String(this._floorCount);
         this.floorNumber.value = String(this._floorCount);
 
@@ -811,6 +916,137 @@ export class BuildingFabricationUI {
         if (changed) this.onFloorHeightChange?.(next);
     }
 
+    _setBuildingTypeFromUi(raw) {
+        const next = typeof raw === 'string' ? raw : '';
+        const safe = next === 'business' || next === 'industrial' || next === 'apartments' || next === 'house'
+            ? next
+            : 'business';
+        const changed = safe !== this._buildingType;
+        this._buildingType = safe;
+        this.typeSelect.value = safe;
+        if (changed) this.onBuildingTypeChange?.(safe);
+    }
+
+    _ensureWallTextureOptionsLoaded() {
+        if (this._wallTextureOptionsPromise) return;
+        this._wallTextureOptionsPromise = this._loadWallTextureOptions();
+    }
+
+    async _loadWallTextureOptions() {
+        this._renderWallTextureOptions();
+
+        try {
+            const urls = await this._listWallTextureUrls(this._wallTextureBaseUrl);
+            const options = urls.map((url) => ({ url, label: this._labelForTextureUrl(url) }));
+            this._wallTextureOptions = options;
+            if (!options.length) {
+                this.wallTextureStatus.textContent = 'No textures found.';
+            } else {
+                this.wallTextureStatus.textContent = '';
+            }
+        } catch {
+            this._wallTextureOptions = [];
+            this.wallTextureStatus.textContent = 'Failed to load textures.';
+        }
+
+        this._renderWallTextureOptions();
+        this._syncWallTextureButtons({ allow: !!this._enabled && !!this._selectedBuildingId });
+    }
+
+    _labelForTextureUrl(url) {
+        const raw = typeof url === 'string' ? url : '';
+        const file = raw.split('/').pop() ?? '';
+        const clean = file.replace(/\?.*$/, '').replace(/#.*$/, '');
+        return decodeURIComponent(clean || 'Texture');
+    }
+
+    async _listWallTextureUrls(baseUrl) {
+        const res = await fetch(baseUrl, { cache: 'no-store' });
+        if (!res.ok) return [];
+
+        const html = await res.text();
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const links = Array.from(doc.querySelectorAll('a'));
+
+        const out = [];
+        for (const link of links) {
+            const href = link.getAttribute('href');
+            if (!href || href === '../' || href.startsWith('?') || href.startsWith('#')) continue;
+            const clean = href.split('?')[0].split('#')[0];
+            if (clean.endsWith('/')) continue;
+            if (!/\.(png|jpe?g|webp)$/i.test(clean)) continue;
+            out.push(new URL(clean, baseUrl).toString());
+        }
+
+        return Array.from(new Set(out)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+    }
+
+    _renderWallTextureOptions() {
+        if (!this.wallTextureGrid) return;
+        this.wallTextureGrid.textContent = '';
+
+        const makeButton = (textureUrl, label) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'building-fab-texture-option';
+            btn.dataset.textureUrl = textureUrl || '';
+            btn.title = label;
+            btn.setAttribute('aria-label', label);
+
+            if (!textureUrl) {
+                const placeholder = document.createElement('div');
+                placeholder.className = 'building-fab-texture-default';
+                placeholder.textContent = 'Default';
+                btn.appendChild(placeholder);
+                return btn;
+            }
+
+            const img = document.createElement('img');
+            img.className = 'building-fab-texture-img';
+            img.alt = label;
+            img.loading = 'lazy';
+            img.src = textureUrl;
+            btn.appendChild(img);
+            return btn;
+        };
+
+        this.wallTextureGrid.appendChild(makeButton('', 'Default'));
+        for (const tex of this._wallTextureOptions ?? []) {
+            const url = typeof tex?.url === 'string' ? tex.url : '';
+            if (!url) continue;
+            const label = typeof tex?.label === 'string' ? tex.label : url;
+            this.wallTextureGrid.appendChild(makeButton(url, label));
+        }
+    }
+
+    _syncWallTextureButtons({ allow } = {}) {
+        if (!this.wallTextureGrid) return;
+        const enabled = !!allow;
+        const selected = this._wallTextureUrl || '';
+
+        const buttons = this.wallTextureGrid.querySelectorAll('.building-fab-texture-option');
+        for (const btn of buttons) {
+            if (!btn) continue;
+            const url = btn.dataset?.textureUrl ?? '';
+            const active = url === selected;
+            btn.disabled = !enabled;
+            btn.classList.toggle('is-selected', active);
+            btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+        }
+    }
+
+    _handleWallTextureGridClick(e) {
+        const btn = e?.target?.closest?.('.building-fab-texture-option');
+        if (!btn || !this.wallTextureGrid?.contains(btn)) return;
+        if (btn.disabled) return;
+        const raw = btn.dataset?.textureUrl ?? '';
+        const next = raw || null;
+        const changed = next !== this._wallTextureUrl;
+        this._wallTextureUrl = next;
+        this._syncWallTextureButtons({ allow: true });
+        if (changed) this.onWallTextureChange?.(next);
+    }
+
     _setRoadModeFromUi(enabled) {
         const next = !!enabled;
         if (next === this._roadModeEnabled) return;
@@ -879,6 +1115,14 @@ export class BuildingFabricationUI {
         this.onFloorDivisionsChange?.(floors);
         this.onFloorplanChange?.(floorplan);
         this._syncViewControls();
+    }
+
+    _setHideSelectionBorderFromUi(checked) {
+        const next = !!checked;
+        const changed = next !== this._hideSelectionBorder;
+        this._hideSelectionBorder = next;
+        this.hideSelectionBorderInput.checked = next;
+        if (changed) this.onHideSelectionBorderChange?.(next);
     }
 
     _syncToast() {
@@ -963,6 +1207,7 @@ export class BuildingFabricationUI {
             if (!btn) continue;
             btn.disabled = disableView;
         }
+        if (this.hideSelectionBorderInput) this.hideSelectionBorderInput.disabled = disableView;
         this.resetBtn.disabled = !allowReset;
 
         this._syncViewModeButtons();
@@ -1011,6 +1256,9 @@ export class BuildingFabricationUI {
         this.floorNumber.addEventListener('input', this._onFloorNumberInput);
         this.floorHeightRange.addEventListener('input', this._onFloorHeightRangeInput);
         this.floorHeightNumber.addEventListener('input', this._onFloorHeightNumberInput);
+        this.typeSelect.addEventListener('change', this._onTypeSelectChange);
+        this.hideSelectionBorderInput.addEventListener('change', this._onHideSelectionBorderChange);
+        this.wallTextureGrid.addEventListener('click', this._onWallTextureGridClick);
         this.viewModeRow.addEventListener('click', this._onViewModeClick);
         this.addRoadBtn.addEventListener('click', this._onAddRoad);
         this.startBuildingBtn.addEventListener('click', this._onStartBuilding);
@@ -1034,6 +1282,9 @@ export class BuildingFabricationUI {
         this.floorNumber.removeEventListener('input', this._onFloorNumberInput);
         this.floorHeightRange.removeEventListener('input', this._onFloorHeightRangeInput);
         this.floorHeightNumber.removeEventListener('input', this._onFloorHeightNumberInput);
+        this.typeSelect.removeEventListener('change', this._onTypeSelectChange);
+        this.hideSelectionBorderInput.removeEventListener('change', this._onHideSelectionBorderChange);
+        this.wallTextureGrid.removeEventListener('click', this._onWallTextureGridClick);
         this.viewModeRow.removeEventListener('click', this._onViewModeClick);
         this.addRoadBtn.removeEventListener('click', this._onAddRoad);
         this.startBuildingBtn.removeEventListener('click', this._onStartBuilding);
