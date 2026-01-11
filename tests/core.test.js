@@ -755,6 +755,25 @@ async function runTests() {
         }
     });
 
+    // ========== Public Assets Tests ==========
+    try {
+        const [mainResp, grassResp] = await Promise.all([
+            fetch('/assets/public/main.png', { method: 'HEAD' }),
+            fetch('/assets/public/grass.png', { method: 'HEAD' })
+        ]);
+
+        test('Assets: public main.png served', () => {
+            assertTrue(mainResp.ok, 'Expected /assets/public/main.png to be served.');
+        });
+
+        test('Assets: public grass.png served', () => {
+            assertTrue(grassResp.ok, 'Expected /assets/public/grass.png to be served.');
+        });
+    } catch (e) {
+        errors.push({ name: 'Assets: public assets served', error: e?.message || e });
+        console.error(`❌ Assets: public assets served: ${e?.message || e}`);
+    }
+
     // ========== Building Fabrication UI Tests ==========
     const { BuildingFabricationUI } = await import('/src/graphics/gui/building_fabrication/BuildingFabricationUI.js');
     const { BuildingFabricationScene } = await import('/src/graphics/gui/building_fabrication/BuildingFabricationScene.js');

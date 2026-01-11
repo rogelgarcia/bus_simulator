@@ -2,7 +2,7 @@
 
 /* ===== Splash background ===== */
 body.splash-bg {
-    background: #0b0f14 url('../../../../assets/main.png') center/cover no-repeat fixed;
+    background: #0b0f14 url('../../../../assets/public/main.png') center/cover no-repeat fixed;
 }
 
 /* Darken + add readability overlay on top of the background image */

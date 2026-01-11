@@ -134,7 +134,7 @@ export function createCityWorld({
         group.add(gridLines);
     }
 
-    const grassUrl = new URL('../../../../assets/grass.png', import.meta.url);
+    const grassUrl = new URL('../../../../assets/public/grass.png', import.meta.url);
     const loader = new THREE.TextureLoader();
 
     loader.load(

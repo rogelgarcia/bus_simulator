@@ -22,8 +22,7 @@ Open `index.html` in a modern browser.
 
 ---
 
-## Assets (not included)
+## Assets
 
-This repository does **not** include any 3D models, textures, audio, or other art assets due to licensing.
-
-You can vibe code your own assets tough. 
+- `assets/public/` contains shareable assets (tracked in git).
+- Everything else under `assets/` is treated as licensed/private and is not shared in the repository.

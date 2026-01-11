@@ -1,5 +1,7 @@
 # Assets
-assets/
+assets/*
+!assets/public/
+!assets/public/**
 
 downloads/
 docs/
