@@ -8,14 +8,15 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 
 import { CityMap, TILE } from '../../../app/city/CityMap.js';
 import { createCityWorld } from '../../../app/city/CityWorld.js';
-import { BUILDING_STYLE, isBuildingStyle } from '../../../app/city/BuildingStyle.js';
-import { WINDOW_STYLE, isWindowStyle } from '../../../app/city/WindowStyle.js';
-import { BELT_COURSE_COLOR, isBeltCourseColor } from '../../../app/city/BeltCourseColor.js';
-import { ROOF_COLOR, isRoofColor } from '../../../app/city/RoofColor.js';
+import { BUILDING_STYLE, isBuildingStyle } from '../../../app/buildings/BuildingStyle.js';
+import { WINDOW_STYLE, isWindowStyle } from '../../../app/buildings/WindowStyle.js';
+import { BELT_COURSE_COLOR, isBeltCourseColor } from '../../../app/buildings/BeltCourseColor.js';
+import { ROOF_COLOR, isRoofColor } from '../../../app/buildings/RoofColor.js';
+import { WINDOW_TYPE, getDefaultWindowParams, isWindowTypeId } from '../../assets3d/generators/buildings/WindowTextureGenerator.js';
 import { createGeneratorConfig } from '../../assets3d/generators/GeneratorParams.js';
 import { createGradientSkyDome } from '../../assets3d/generators/SkyGenerator.js';
 import { generateRoads } from '../../assets3d/generators/RoadGenerator.js';
-import { BuildingWallTextureCache, buildBuildingVisualParts } from '../../assets3d/generators/BuildingGenerator.js';
+import { BuildingWallTextureCache, buildBuildingVisualParts } from '../../assets3d/generators/buildings/BuildingGenerator.js';
 import { getCityMaterials } from '../../assets3d/textures/CityMaterials.js';
 import { createRoadHighlightMesh } from '../../visuals/city/RoadHighlightMesh.js';
 
@@ -68,6 +69,31 @@ function signedArea(points) {
         sum += a.x * b.z - b.x * a.z;
     }
     return sum * 0.5;
+}
+
+function resolveWindowTypeIdFromLegacyStyle(styleId) {
+    const id = isWindowStyle(styleId) ? styleId : WINDOW_STYLE.DEFAULT;
+    if (id === WINDOW_STYLE.DARK) return WINDOW_TYPE.STYLE_DARK;
+    if (id === WINDOW_STYLE.BLUE) return WINDOW_TYPE.STYLE_BLUE;
+    if (id === WINDOW_STYLE.WARM) return WINDOW_TYPE.STYLE_WARM;
+    if (id === WINDOW_STYLE.GRID) return WINDOW_TYPE.STYLE_GRID;
+    return WINDOW_TYPE.STYLE_DEFAULT;
+}
+
+function resolveLegacyStyleFromWindowTypeId(typeId) {
+    if (typeId === WINDOW_TYPE.STYLE_DARK) return WINDOW_STYLE.DARK;
+    if (typeId === WINDOW_TYPE.STYLE_BLUE) return WINDOW_STYLE.BLUE;
+    if (typeId === WINDOW_TYPE.STYLE_WARM) return WINDOW_STYLE.WARM;
+    if (typeId === WINDOW_TYPE.STYLE_GRID) return WINDOW_STYLE.GRID;
+    return WINDOW_STYLE.DEFAULT;
+}
+
+function normalizeWindowParams(typeId, params) {
+    const defaults = getDefaultWindowParams(typeId);
+    const hasDefaults = defaults && typeof defaults === 'object' && Object.keys(defaults).length > 0;
+    if (!hasDefaults) return {};
+    const p = params && typeof params === 'object' ? params : {};
+    return { ...defaults, ...p };
 }
 
 function disposeTextureProps(mat) {
@@ -397,6 +423,8 @@ export class BuildingFabricationScene {
             floorHeight: b.floorHeight,
             tileCount: b.tiles.size,
             style: b.style,
+            roofColor: b.roofColor,
+            wallInset: b.wallInset,
             streetEnabled: b.streetEnabled,
             streetFloors: b.streetFloors,
             streetFloorHeight: b.streetFloorHeight,
@@ -407,9 +435,25 @@ export class BuildingFabricationScene {
             beltCourseColor: b.beltCourseColor,
             topBeltEnabled: b.topBeltEnabled,
             topBeltWidth: b.topBeltWidth,
+            topBeltInnerWidth: b.topBeltInnerWidth,
             topBeltHeight: b.topBeltHeight,
+            topBeltColor: b.topBeltColor,
+            windowSpacerEnabled: b.windowSpacerEnabled,
+            windowSpacerEvery: b.windowSpacerEvery,
+            windowSpacerWidth: b.windowSpacerWidth,
+            windowSpacerExtrude: b.windowSpacerExtrude,
+            windowSpacerExtrudeDistance: b.windowSpacerExtrudeDistance,
             windowStyle: b.windowStyle,
+            windowTypeId: b.windowTypeId,
+            windowParams: b.windowParams,
             streetWindowStyle: b.streetWindowStyle,
+            streetWindowTypeId: b.streetWindowTypeId,
+            streetWindowParams: b.streetWindowParams,
+            streetWindowSpacerEnabled: b.streetWindowSpacerEnabled,
+            streetWindowSpacerEvery: b.streetWindowSpacerEvery,
+            streetWindowSpacerWidth: b.streetWindowSpacerWidth,
+            streetWindowSpacerExtrude: b.streetWindowSpacerExtrude,
+            streetWindowSpacerExtrudeDistance: b.streetWindowSpacerExtrudeDistance,
             streetWindowWidth: b.streetWindowWidth,
             streetWindowGap: b.streetWindowGap,
             streetWindowHeight: b.streetWindowHeight,
@@ -525,7 +569,7 @@ export class BuildingFabricationScene {
         const next = clampInt(floors, 1, 30);
         if (next === building.floors) return false;
         building.floors = next;
-        building.streetFloors = clampInt(building.streetFloors, 1, next);
+        building.streetFloors = clampInt(building.streetFloors, 0, next);
         this._rebuildBuildingMesh(building);
         return true;
     }
@@ -542,6 +586,16 @@ export class BuildingFabricationScene {
             building.streetWindowHeight = clamp(building.windowHeight, 0.3, next * 0.95);
             building.streetWindowY = clamp(building.windowY, 0.0, Math.max(0, next - building.streetWindowHeight));
         }
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingWallInset(inset) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = clamp(inset, 0.0, 4.0);
+        if (Math.abs(next - (Number(building.wallInset) || 0)) < 1e-6) return false;
+        building.wallInset = next;
         this._rebuildBuildingMesh(building);
         return true;
     }
@@ -596,10 +650,122 @@ export class BuildingFabricationScene {
     setSelectedBuildingWindowStyle(style) {
         const building = this.getSelectedBuilding();
         if (!building) return false;
-        const next = isWindowStyle(style) ? style : WINDOW_STYLE.DEFAULT;
-        if (next === building.windowStyle) return false;
-        building.windowStyle = next;
-        if (!building.streetEnabled) building.streetWindowStyle = next;
+        const raw = typeof style === 'string' ? style : '';
+        const nextTypeId = isWindowTypeId(raw)
+            ? raw
+            : resolveWindowTypeIdFromLegacyStyle(raw);
+        const nextLegacy = isWindowTypeId(raw)
+            ? resolveLegacyStyleFromWindowTypeId(nextTypeId)
+            : (isWindowStyle(raw) ? raw : WINDOW_STYLE.DEFAULT);
+
+        const changed = nextTypeId !== building.windowTypeId || nextLegacy !== building.windowStyle;
+        if (!changed) return false;
+        building.windowTypeId = nextTypeId;
+        building.windowStyle = nextLegacy;
+        building.windowParams = normalizeWindowParams(nextTypeId, null);
+        if (!building.streetEnabled) {
+            building.streetWindowTypeId = nextTypeId;
+            building.streetWindowStyle = nextLegacy;
+            building.streetWindowParams = normalizeWindowParams(nextTypeId, null);
+        }
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingWindowFrameWidth(value) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const params = building.windowParams && typeof building.windowParams === 'object' ? building.windowParams : {};
+        const next = clamp(value, 0.02, 0.2);
+        if (Math.abs(next - (Number(params.frameWidth) || 0)) < 1e-6) return false;
+        building.windowParams = { ...params, frameWidth: next };
+        if (!building.streetEnabled) building.streetWindowParams = building.windowParams;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingWindowFrameColor(hex) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const params = building.windowParams && typeof building.windowParams === 'object' ? building.windowParams : {};
+        const next = Number.isFinite(hex) ? hex : params.frameColor;
+        if (next === params.frameColor) return false;
+        building.windowParams = { ...params, frameColor: next };
+        if (!building.streetEnabled) building.streetWindowParams = building.windowParams;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingWindowGlassTop(hex) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const params = building.windowParams && typeof building.windowParams === 'object' ? building.windowParams : {};
+        const next = Number.isFinite(hex) ? hex : params.glassTop;
+        if (next === params.glassTop) return false;
+        building.windowParams = { ...params, glassTop: next };
+        if (!building.streetEnabled) building.streetWindowParams = building.windowParams;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingWindowGlassBottom(hex) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const params = building.windowParams && typeof building.windowParams === 'object' ? building.windowParams : {};
+        const next = Number.isFinite(hex) ? hex : params.glassBottom;
+        if (next === params.glassBottom) return false;
+        building.windowParams = { ...params, glassBottom: next };
+        if (!building.streetEnabled) building.streetWindowParams = building.windowParams;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingWindowSpacerEnabled(enabled) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = !!enabled;
+        if (next === building.windowSpacerEnabled) return false;
+        building.windowSpacerEnabled = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingWindowSpacerEvery(count) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = clampInt(count, 1, 99);
+        if (next === building.windowSpacerEvery) return false;
+        building.windowSpacerEvery = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingWindowSpacerWidth(width) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = clamp(width, 0.1, 10.0);
+        if (Math.abs(next - (Number(building.windowSpacerWidth) || 0)) < 1e-6) return false;
+        building.windowSpacerWidth = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingWindowSpacerExtrude(enabled) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = !!enabled;
+        if (next === building.windowSpacerExtrude) return false;
+        building.windowSpacerExtrude = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingWindowSpacerExtrudeDistance(distance) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = clamp(distance, 0.0, 1.0);
+        if (Math.abs(next - (Number(building.windowSpacerExtrudeDistance) || 0)) < 1e-6) return false;
+        building.windowSpacerExtrudeDistance = next;
         this._rebuildBuildingMesh(building);
         return true;
     }
@@ -650,9 +816,113 @@ export class BuildingFabricationScene {
     setSelectedBuildingStreetWindowStyle(style) {
         const building = this.getSelectedBuilding();
         if (!building) return false;
-        const next = isWindowStyle(style) ? style : building.windowStyle;
-        if (next === building.streetWindowStyle) return false;
-        building.streetWindowStyle = next;
+        const raw = typeof style === 'string' ? style : '';
+        const nextTypeId = isWindowTypeId(raw)
+            ? raw
+            : resolveWindowTypeIdFromLegacyStyle(raw);
+        const nextLegacy = isWindowTypeId(raw)
+            ? resolveLegacyStyleFromWindowTypeId(nextTypeId)
+            : (isWindowStyle(raw) ? raw : building.windowStyle);
+
+        const changed = nextTypeId !== building.streetWindowTypeId || nextLegacy !== building.streetWindowStyle;
+        if (!changed) return false;
+        building.streetWindowTypeId = nextTypeId;
+        building.streetWindowStyle = nextLegacy;
+        building.streetWindowParams = normalizeWindowParams(nextTypeId, null);
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingStreetWindowFrameWidth(value) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const params = building.streetWindowParams && typeof building.streetWindowParams === 'object' ? building.streetWindowParams : {};
+        const next = clamp(value, 0.02, 0.2);
+        if (Math.abs(next - (Number(params.frameWidth) || 0)) < 1e-6) return false;
+        building.streetWindowParams = { ...params, frameWidth: next };
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingStreetWindowFrameColor(hex) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const params = building.streetWindowParams && typeof building.streetWindowParams === 'object' ? building.streetWindowParams : {};
+        const next = Number.isFinite(hex) ? hex : params.frameColor;
+        if (next === params.frameColor) return false;
+        building.streetWindowParams = { ...params, frameColor: next };
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingStreetWindowGlassTop(hex) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const params = building.streetWindowParams && typeof building.streetWindowParams === 'object' ? building.streetWindowParams : {};
+        const next = Number.isFinite(hex) ? hex : params.glassTop;
+        if (next === params.glassTop) return false;
+        building.streetWindowParams = { ...params, glassTop: next };
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingStreetWindowGlassBottom(hex) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const params = building.streetWindowParams && typeof building.streetWindowParams === 'object' ? building.streetWindowParams : {};
+        const next = Number.isFinite(hex) ? hex : params.glassBottom;
+        if (next === params.glassBottom) return false;
+        building.streetWindowParams = { ...params, glassBottom: next };
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingStreetWindowSpacerEnabled(enabled) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = !!enabled;
+        if (next === building.streetWindowSpacerEnabled) return false;
+        building.streetWindowSpacerEnabled = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingStreetWindowSpacerEvery(count) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = clampInt(count, 1, 99);
+        if (next === building.streetWindowSpacerEvery) return false;
+        building.streetWindowSpacerEvery = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingStreetWindowSpacerWidth(width) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = clamp(width, 0.1, 10.0);
+        if (Math.abs(next - (Number(building.streetWindowSpacerWidth) || 0)) < 1e-6) return false;
+        building.streetWindowSpacerWidth = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingStreetWindowSpacerExtrude(enabled) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = !!enabled;
+        if (next === building.streetWindowSpacerExtrude) return false;
+        building.streetWindowSpacerExtrude = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingStreetWindowSpacerExtrudeDistance(distance) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = clamp(distance, 0.0, 1.0);
+        if (Math.abs(next - (Number(building.streetWindowSpacerExtrudeDistance) || 0)) < 1e-6) return false;
+        building.streetWindowSpacerExtrudeDistance = next;
         this._rebuildBuildingMesh(building);
         return true;
     }
@@ -673,7 +943,7 @@ export class BuildingFabricationScene {
             building.streetWindowY = building.windowY;
             building.streetWindowStyle = building.windowStyle;
         }
-        building.streetFloors = clampInt(building.streetFloors, 1, building.floors);
+        building.streetFloors = clampInt(building.streetFloors, 0, building.floors);
         this._rebuildBuildingMesh(building);
         return true;
     }
@@ -681,7 +951,7 @@ export class BuildingFabricationScene {
     setSelectedBuildingStreetFloors(count) {
         const building = this.getSelectedBuilding();
         if (!building) return false;
-        const next = clampInt(count, 1, building.floors);
+        const next = clampInt(count, 0, building.floors);
         if (next === building.streetFloors) return false;
         building.streetFloors = next;
         this._rebuildBuildingMesh(building);
@@ -784,6 +1054,16 @@ export class BuildingFabricationScene {
         const next = clamp(width, 0.0, 4.0);
         if (Math.abs(next - (Number(building.topBeltInnerWidth) || 0)) < 1e-6) return false;
         building.topBeltInnerWidth = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingTopBeltColor(color) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = isBeltCourseColor(color) ? color : BELT_COURSE_COLOR.OFFWHITE;
+        if (next === building.topBeltColor) return false;
+        building.topBeltColor = next;
         this._rebuildBuildingMesh(building);
         return true;
     }
@@ -1440,16 +1720,21 @@ export class BuildingFabricationScene {
         type = 'business',
         style = BUILDING_STYLE.DEFAULT,
         roofColor = ROOF_COLOR.DEFAULT,
+        wallInset = 0.0,
         windowStyle = WINDOW_STYLE.DEFAULT,
+        windowTypeId = null,
+        windowParams = null,
         windowWidth = 2.2,
         windowGap = 1.6,
         windowHeight = 1.4,
         windowY = 1.0,
         streetEnabled = false,
-        streetFloors = 1,
+        streetFloors = 0,
         streetFloorHeight = null,
         streetStyle = null,
         streetWindowStyle = null,
+        streetWindowTypeId = null,
+        streetWindowParams = null,
         streetWindowWidth = null,
         streetWindowGap = null,
         streetWindowHeight = null,
@@ -1461,7 +1746,18 @@ export class BuildingFabricationScene {
         topBeltEnabled = false,
         topBeltWidth = 0.4,
         topBeltHeight = 0.18,
-        topBeltInnerWidth = 0.0
+        topBeltInnerWidth = 0.0,
+        topBeltColor = BELT_COURSE_COLOR.OFFWHITE,
+        windowSpacerEnabled = false,
+        windowSpacerEvery = 4,
+        windowSpacerWidth = 0.9,
+        windowSpacerExtrude = false,
+        windowSpacerExtrudeDistance = 0.12,
+        streetWindowSpacerEnabled = false,
+        streetWindowSpacerEvery = 4,
+        streetWindowSpacerWidth = 0.9,
+        streetWindowSpacerExtrude = false,
+        streetWindowSpacerExtrudeDistance = 0.12
     } = {}) {
         const group = new THREE.Group();
         group.name = `building_${this._buildings.length + 1}`;
@@ -1494,6 +1790,14 @@ export class BuildingFabricationScene {
         const safeStyle = isBuildingStyle(style) ? style : BUILDING_STYLE.DEFAULT;
         const safeWindowStyle = isWindowStyle(windowStyle) ? windowStyle : WINDOW_STYLE.DEFAULT;
         const safeStreetWindowStyle = isWindowStyle(streetWindowStyle) ? streetWindowStyle : safeWindowStyle;
+        const safeWindowTypeId = isWindowTypeId(windowTypeId)
+            ? windowTypeId
+            : resolveWindowTypeIdFromLegacyStyle(safeWindowStyle);
+        const safeStreetWindowTypeId = isWindowTypeId(streetWindowTypeId)
+            ? streetWindowTypeId
+            : resolveWindowTypeIdFromLegacyStyle(safeStreetWindowStyle);
+        const safeWindowParams = normalizeWindowParams(safeWindowTypeId, windowParams);
+        const safeStreetWindowParams = normalizeWindowParams(safeStreetWindowTypeId, streetWindowParams);
         const safeStreetWindowWidth = Number.isFinite(streetWindowWidth) ? clamp(streetWindowWidth, 0.3, 12.0) : clamp(windowWidth, 0.3, 12.0);
         const safeStreetWindowGap = Number.isFinite(streetWindowGap) ? clamp(streetWindowGap, 0.0, 24.0) : clamp(windowGap, 0.0, 24.0);
         const safeStreetWindowHeight = Number.isFinite(streetWindowHeight) ? clamp(streetWindowHeight, 0.3, 10.0) : clamp(windowHeight, 0.3, 10.0);
@@ -1503,12 +1807,13 @@ export class BuildingFabricationScene {
             type,
             style: safeStyle,
             roofColor: isRoofColor(roofColor) ? roofColor : ROOF_COLOR.DEFAULT,
+            wallInset: clamp(wallInset, 0.0, 4.0),
             baseColorHex: null,
             tiles: new Set(tileIds),
             floors,
             floorHeight: clampedFloorHeight,
             streetEnabled: !!streetEnabled,
-            streetFloors: clampInt(streetFloors, 1, floors),
+            streetFloors: clampInt(streetFloors, 0, floors),
             streetFloorHeight: clamp(
                 Number.isFinite(streetFloorHeight) ? streetFloorHeight : clampedFloorHeight,
                 1.0,
@@ -1523,16 +1828,31 @@ export class BuildingFabricationScene {
             topBeltWidth: clamp(topBeltWidth, 0.0, 4.0),
             topBeltHeight: clamp(topBeltHeight, 0.02, 1.2),
             topBeltInnerWidth: clamp(topBeltInnerWidth, 0.0, 4.0),
+            topBeltColor: isBeltCourseColor(topBeltColor) ? topBeltColor : BELT_COURSE_COLOR.OFFWHITE,
             windowStyle: safeWindowStyle,
+            windowTypeId: safeWindowTypeId,
+            windowParams: safeWindowParams,
             windowWidth: clamp(windowWidth, 0.3, 12.0),
             windowGap: clamp(windowGap, 0.0, 24.0),
             windowHeight: clamp(windowHeight, 0.3, 10.0),
             windowY: clamp(windowY, 0.0, 12.0),
+            windowSpacerEnabled: !!windowSpacerEnabled,
+            windowSpacerEvery: clampInt(windowSpacerEvery, 1, 99),
+            windowSpacerWidth: clamp(windowSpacerWidth, 0.1, 10.0),
+            windowSpacerExtrude: !!windowSpacerExtrude,
+            windowSpacerExtrudeDistance: clamp(windowSpacerExtrudeDistance, 0.0, 1.0),
             streetWindowStyle: safeStreetWindowStyle,
+            streetWindowTypeId: safeStreetWindowTypeId,
+            streetWindowParams: safeStreetWindowParams,
             streetWindowWidth: safeStreetWindowWidth,
             streetWindowGap: safeStreetWindowGap,
             streetWindowHeight: safeStreetWindowHeight,
             streetWindowY: safeStreetWindowY,
+            streetWindowSpacerEnabled: !!streetWindowSpacerEnabled,
+            streetWindowSpacerEvery: clampInt(streetWindowSpacerEvery, 1, 99),
+            streetWindowSpacerWidth: clamp(streetWindowSpacerWidth, 0.1, 10.0),
+            streetWindowSpacerExtrude: !!streetWindowSpacerExtrude,
+            streetWindowSpacerExtrudeDistance: clamp(streetWindowSpacerExtrudeDistance, 0.0, 1.0),
             group,
             solidGroup,
             featuresGroup,
@@ -1634,7 +1954,10 @@ export class BuildingFabricationScene {
                 type: building.type,
                 style: building.style,
                 roofColor: building.roofColor,
+                wallInset: building.wallInset,
                 windowStyle: building.windowStyle,
+                windowTypeId: building.windowTypeId,
+                windowParams: building.windowParams,
                 streetEnabled: building.streetEnabled,
                 streetFloors: building.streetFloors,
                 streetFloorHeight: building.streetFloorHeight,
@@ -1647,11 +1970,24 @@ export class BuildingFabricationScene {
                 topBeltWidth: building.topBeltWidth,
                 topBeltHeight: building.topBeltHeight,
                 topBeltInnerWidth: building.topBeltInnerWidth,
+                topBeltColor: building.topBeltColor,
+                windowSpacerEnabled: building.windowSpacerEnabled,
+                windowSpacerEvery: building.windowSpacerEvery,
+                windowSpacerWidth: building.windowSpacerWidth,
+                windowSpacerExtrude: building.windowSpacerExtrude,
+                windowSpacerExtrudeDistance: building.windowSpacerExtrudeDistance,
                 windowWidth: building.windowWidth,
                 windowGap: building.windowGap,
                 windowHeight: building.windowHeight,
                 windowY: building.windowY,
                 streetWindowStyle: building.streetWindowStyle,
+                streetWindowTypeId: building.streetWindowTypeId,
+                streetWindowParams: building.streetWindowParams,
+                streetWindowSpacerEnabled: building.streetWindowSpacerEnabled,
+                streetWindowSpacerEvery: building.streetWindowSpacerEvery,
+                streetWindowSpacerWidth: building.streetWindowSpacerWidth,
+                streetWindowSpacerExtrude: building.streetWindowSpacerExtrude,
+                streetWindowSpacerExtrudeDistance: building.streetWindowSpacerExtrudeDistance,
                 streetWindowWidth: building.streetWindowWidth,
                 streetWindowGap: building.streetWindowGap,
                 streetWindowHeight: building.streetWindowHeight,
@@ -2027,13 +2363,25 @@ export class BuildingFabricationScene {
             roof: {
                 color: building.roofColor
             },
+            walls: {
+                inset: building.wallInset
+            },
             windows: {
                 enabled: true,
                 style: building.windowStyle,
+                typeId: building.windowTypeId,
+                params: building.windowParams,
                 width: building.windowWidth,
                 gap: building.windowGap,
                 height: building.windowHeight,
                 y: building.windowY,
+                spacer: {
+                    enabled: !!building.windowSpacerEnabled,
+                    every: building.windowSpacerEvery,
+                    width: building.windowSpacerWidth,
+                    extrude: !!building.windowSpacerExtrude,
+                    extrudeDistance: building.windowSpacerExtrudeDistance
+                },
                 cornerEps: 0.12,
                 offset: 0.05
             },
@@ -2047,7 +2395,16 @@ export class BuildingFabricationScene {
                     gap: building.streetWindowGap,
                     height: building.streetWindowHeight,
                     y: building.streetWindowY,
-                    style: building.streetWindowStyle
+                    style: building.streetWindowStyle,
+                    typeId: building.streetWindowTypeId,
+                    params: building.streetWindowParams,
+                    spacer: {
+                        enabled: !!building.streetWindowSpacerEnabled,
+                        every: building.streetWindowSpacerEvery,
+                        width: building.streetWindowSpacerWidth,
+                        extrude: !!building.streetWindowSpacerExtrude,
+                        extrudeDistance: building.streetWindowSpacerExtrudeDistance
+                    }
                 }
             },
             beltCourse: {
@@ -2060,7 +2417,8 @@ export class BuildingFabricationScene {
                 enabled: !!building.topBeltEnabled,
                 width: building.topBeltWidth,
                 height: building.topBeltHeight,
-                innerWidth: building.topBeltInnerWidth
+                innerWidth: building.topBeltInnerWidth,
+                color: building.topBeltColor
             }
         });
         if (!parts) return;

@@ -1,4 +1,4 @@
-// src/app/city/BuildingStyle.js
+// src/app/buildings/BuildingStyle.js
 // Defines stable building style identifiers used by configs and UI
 
 export const BUILDING_STYLE = Object.freeze({
@@ -19,4 +19,3 @@ export function isBuildingStyle(value) {
         || v === BUILDING_STYLE.STONE_2
         || v === BUILDING_STYLE.LEGACY_TEXTURE;
 }
-

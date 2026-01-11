@@ -1,10 +1,12 @@
 // src/graphics/gui/building_fabrication/BuildingFabricationUI.js
 // Builds the HUD controls for the building fabrication scene.
-import { getBuildingStyleOptions, getWindowStyleOptions } from '../../assets3d/generators/BuildingGenerator.js';
-import { BUILDING_STYLE, isBuildingStyle } from '../../../app/city/BuildingStyle.js';
-import { WINDOW_STYLE, isWindowStyle } from '../../../app/city/WindowStyle.js';
-import { BELT_COURSE_COLOR, getBeltCourseColorOptions, isBeltCourseColor } from '../../../app/city/BeltCourseColor.js';
-import { ROOF_COLOR, getRoofColorOptions, isRoofColor } from '../../../app/city/RoofColor.js';
+import { getBuildingStyleOptions } from '../../assets3d/generators/buildings/BuildingGenerator.js';
+import { BUILDING_STYLE, isBuildingStyle } from '../../../app/buildings/BuildingStyle.js';
+import { WINDOW_STYLE, isWindowStyle } from '../../../app/buildings/WindowStyle.js';
+import { BELT_COURSE_COLOR, getBeltCourseColorOptions, isBeltCourseColor } from '../../../app/buildings/BeltCourseColor.js';
+import { ROOF_COLOR, getRoofColorOptions, isRoofColor } from '../../../app/buildings/RoofColor.js';
+import { PickerPopup } from '../shared/PickerPopup.js';
+import { WINDOW_TYPE, getDefaultWindowParams, getWindowTypeOptions, isWindowTypeId } from '../../assets3d/generators/buildings/WindowTextureGenerator.js';
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -23,6 +25,72 @@ function formatFloat(value, digits = 1) {
     const num = Number(value);
     if (!Number.isFinite(num)) return '';
     return num.toFixed(digits);
+}
+
+function setMaterialThumbToTexture(thumb, url, label) {
+    if (!thumb) return;
+    thumb.textContent = '';
+    thumb.style.background = 'rgba(0,0,0,0.2)';
+    thumb.style.backgroundImage = '';
+    thumb.style.backgroundSize = '';
+    thumb.style.backgroundRepeat = '';
+    thumb.style.backgroundPosition = '';
+    thumb.style.color = '';
+
+    if (typeof url === 'string' && url) {
+        const img = document.createElement('img');
+        img.className = 'building-fab-material-thumb-img';
+        img.alt = label || '';
+        img.loading = 'lazy';
+        img.src = url;
+        thumb.appendChild(img);
+        return;
+    }
+
+    thumb.textContent = label || '';
+    thumb.style.color = '#e9f2ff';
+}
+
+function setMaterialThumbToColor(thumb, hex, { isDefaultRoof = false } = {}) {
+    if (!thumb) return;
+    thumb.textContent = '';
+    thumb.innerHTML = '';
+    thumb.style.background = 'rgba(0,0,0,0.2)';
+    thumb.style.backgroundImage = '';
+    thumb.style.backgroundSize = '';
+    thumb.style.backgroundRepeat = '';
+    thumb.style.backgroundPosition = '';
+
+    if (isDefaultRoof) {
+        thumb.style.backgroundImage = 'repeating-linear-gradient(45deg, rgba(255,255,255,0.85), rgba(255,255,255,0.85) 6px, rgba(0,0,0,0.12) 6px, rgba(0,0,0,0.12) 12px)';
+        thumb.style.backgroundSize = 'auto';
+        return;
+    }
+
+    const safe = Number.isFinite(hex) ? hex : 0xffffff;
+    thumb.style.background = `#${safe.toString(16).padStart(6, '0')}`;
+}
+
+function buildRoofDefaultPreviewUrl({ size = 96 } = {}) {
+    const s = Math.max(16, Math.round(Number(size) || 96));
+    const c = document.createElement('canvas');
+    c.width = s;
+    c.height = s;
+    const ctx = c.getContext('2d');
+    if (!ctx) return null;
+    ctx.fillStyle = '#0b0f14';
+    ctx.fillRect(0, 0, s, s);
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fillRect(0, 0, s, s);
+    ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    for (let i = -s; i < s * 2; i += 12) {
+        ctx.moveTo(i, -2);
+        ctx.lineTo(i + s, s + 2);
+    }
+    ctx.stroke();
+    return c.toDataURL('image/png');
 }
 
 export class BuildingFabricationUI {
@@ -60,11 +128,12 @@ export class BuildingFabricationUI {
         this._buildingType = 'business';
         this._buildingStyle = BUILDING_STYLE.DEFAULT;
         this._buildingStyleOptions = getBuildingStyleOptions();
-        this._windowStyleOptions = getWindowStyleOptions();
+        this._windowTypeOptions = getWindowTypeOptions();
         this._streetEnabled = false;
-        this._streetFloors = 1;
+        this._streetFloors = 0;
         this._streetFloorHeight = this._floorHeight;
         this._streetStyle = BUILDING_STYLE.DEFAULT;
+        this._wallInset = 0.0;
         this._beltCourseEnabled = false;
         this._beltCourseMargin = 0.4;
         this._beltCourseHeight = 0.18;
@@ -74,24 +143,47 @@ export class BuildingFabricationUI {
         this._topBeltWidth = 0.4;
         this._topBeltHeight = 0.18;
         this._topBeltInnerWidth = 0.0;
+        this._topBeltColor = BELT_COURSE_COLOR.OFFWHITE;
         this._roofColorOptions = getRoofColorOptions();
         this._roofColor = ROOF_COLOR.DEFAULT;
-        this._windowStyle = WINDOW_STYLE.DEFAULT;
+        this._windowParamColorOptions = [
+            { id: 'offwhite', label: 'Off-white', hex: 0xdfe7f2 },
+            { id: 'beige', label: 'Beige', hex: 0xd9c4a1 },
+            { id: 'brown', label: 'Brown', hex: 0x6a4c3b },
+            { id: 'warm', label: 'Warm', hex: 0xffcc78 },
+            { id: 'blue', label: 'Blue', hex: 0x1d5c8d },
+            { id: 'navy', label: 'Navy', hex: 0x061a2c },
+            { id: 'dark', label: 'Dark', hex: 0x0a101a }
+        ];
+        this._windowTypeId = WINDOW_TYPE.STYLE_DEFAULT;
+        this._windowParams = getDefaultWindowParams(this._windowTypeId);
         this._windowWidth = 2.2;
         this._windowGap = 1.6;
         this._windowHeight = 1.4;
         this._windowY = 1.0;
-        this._streetWindowStyle = WINDOW_STYLE.DEFAULT;
+        this._windowSpacerEnabled = false;
+        this._windowSpacerEvery = 4;
+        this._windowSpacerWidth = 0.9;
+        this._windowSpacerExtrude = false;
+        this._windowSpacerExtrudeDistance = 0.12;
+        this._streetWindowTypeId = WINDOW_TYPE.STYLE_DEFAULT;
+        this._streetWindowParams = getDefaultWindowParams(this._streetWindowTypeId);
         this._streetWindowWidth = 2.2;
         this._streetWindowGap = 1.6;
         this._streetWindowHeight = 1.4;
         this._streetWindowY = 1.0;
+        this._streetWindowSpacerEnabled = false;
+        this._streetWindowSpacerEvery = 4;
+        this._streetWindowSpacerWidth = 0.9;
+        this._streetWindowSpacerExtrude = false;
+        this._streetWindowSpacerExtrudeDistance = 0.12;
         this._hoveredBuildingRow = null;
         this._selectedTileCount = 0;
         this._roadStartTileId = null;
         this._hoveredRoadId = null;
         this._hoveredRoadRow = null;
         this._roadRemoveButtons = [];
+        this._pickerPopup = new PickerPopup();
 
         this.root = document.createElement('div');
         this.root.className = 'ui-hud-root building-fab-hud';
@@ -382,17 +474,24 @@ export class BuildingFabricationUI {
         this.styleLabel.className = 'building-fab-row-label';
         this.styleLabel.textContent = 'Style';
         this.stylePicker = document.createElement('div');
-        this.stylePicker.className = 'building-fab-texture-picker';
-        this.styleGrid = document.createElement('div');
-        this.styleGrid.className = 'building-fab-texture-grid';
+        this.stylePicker.className = 'building-fab-texture-picker building-fab-material-picker';
+        this.stylePickButton = document.createElement('button');
+        this.stylePickButton.type = 'button';
+        this.stylePickButton.className = 'building-fab-material-button';
+        this.stylePickThumb = document.createElement('div');
+        this.stylePickThumb.className = 'building-fab-material-thumb';
+        this.stylePickText = document.createElement('div');
+        this.stylePickText.className = 'building-fab-material-text';
+        this.stylePickText.textContent = '';
+        this.stylePickButton.appendChild(this.stylePickThumb);
+        this.stylePickButton.appendChild(this.stylePickText);
         this.styleStatus = document.createElement('div');
         this.styleStatus.className = 'building-fab-texture-status';
         this.styleStatus.textContent = '';
-        this.stylePicker.appendChild(this.styleGrid);
+        this.stylePicker.appendChild(this.stylePickButton);
         this.stylePicker.appendChild(this.styleStatus);
         this.styleRow.appendChild(this.styleLabel);
         this.styleRow.appendChild(this.stylePicker);
-        this._renderBuildingStyleOptions();
 
         this.propsPanel.appendChild(this.propsTitle);
         this.propsPanel.appendChild(this.propsHint);
@@ -435,10 +534,10 @@ export class BuildingFabricationUI {
         this.streetFloorsRow = streetFloorsRow.row;
         this.streetFloorsRange = streetFloorsRow.range;
         this.streetFloorsNumber = streetFloorsRow.number;
-        this.streetFloorsRange.min = '1';
+        this.streetFloorsRange.min = '0';
         this.streetFloorsRange.max = String(this.floorMax);
         this.streetFloorsRange.step = '1';
-        this.streetFloorsNumber.min = '1';
+        this.streetFloorsNumber.min = '0';
         this.streetFloorsNumber.max = String(this.floorMax);
         this.streetFloorsNumber.step = '1';
 
@@ -459,17 +558,24 @@ export class BuildingFabricationUI {
         this.streetStyleLabel.className = 'building-fab-row-label';
         this.streetStyleLabel.textContent = 'Street style';
         this.streetStylePicker = document.createElement('div');
-        this.streetStylePicker.className = 'building-fab-texture-picker';
-        this.streetStyleGrid = document.createElement('div');
-        this.streetStyleGrid.className = 'building-fab-texture-grid';
+        this.streetStylePicker.className = 'building-fab-texture-picker building-fab-material-picker';
+        this.streetStylePickButton = document.createElement('button');
+        this.streetStylePickButton.type = 'button';
+        this.streetStylePickButton.className = 'building-fab-material-button';
+        this.streetStylePickThumb = document.createElement('div');
+        this.streetStylePickThumb.className = 'building-fab-material-thumb';
+        this.streetStylePickText = document.createElement('div');
+        this.streetStylePickText.className = 'building-fab-material-text';
+        this.streetStylePickText.textContent = '';
+        this.streetStylePickButton.appendChild(this.streetStylePickThumb);
+        this.streetStylePickButton.appendChild(this.streetStylePickText);
         this.streetStyleStatus = document.createElement('div');
         this.streetStyleStatus.className = 'building-fab-texture-status';
         this.streetStyleStatus.textContent = '';
-        this.streetStylePicker.appendChild(this.streetStyleGrid);
+        this.streetStylePicker.appendChild(this.streetStylePickButton);
         this.streetStylePicker.appendChild(this.streetStyleStatus);
         this.streetStyleRow.appendChild(this.streetStyleLabel);
         this.streetStyleRow.appendChild(this.streetStylePicker);
-        this._renderStreetStyleOptions();
 
         this.beltCourseToggle = document.createElement('label');
         this.beltCourseToggle.className = 'building-fab-toggle building-fab-toggle-wide';
@@ -562,17 +668,49 @@ export class BuildingFabricationUI {
         this.beltColorLabel.className = 'building-fab-row-label';
         this.beltColorLabel.textContent = 'Belt color';
         this.beltColorPicker = document.createElement('div');
-        this.beltColorPicker.className = 'building-fab-texture-picker';
-        this.beltColorGrid = document.createElement('div');
-        this.beltColorGrid.className = 'building-fab-texture-grid';
+        this.beltColorPicker.className = 'building-fab-texture-picker building-fab-material-picker';
+        this.beltColorPickButton = document.createElement('button');
+        this.beltColorPickButton.type = 'button';
+        this.beltColorPickButton.className = 'building-fab-material-button';
+        this.beltColorPickThumb = document.createElement('div');
+        this.beltColorPickThumb.className = 'building-fab-material-thumb';
+        this.beltColorPickText = document.createElement('div');
+        this.beltColorPickText.className = 'building-fab-material-text';
+        this.beltColorPickText.textContent = '';
+        this.beltColorPickButton.appendChild(this.beltColorPickThumb);
+        this.beltColorPickButton.appendChild(this.beltColorPickText);
         this.beltColorStatus = document.createElement('div');
         this.beltColorStatus.className = 'building-fab-texture-status';
         this.beltColorStatus.textContent = '';
-        this.beltColorPicker.appendChild(this.beltColorGrid);
+        this.beltColorPicker.appendChild(this.beltColorPickButton);
         this.beltColorPicker.appendChild(this.beltColorStatus);
         this.beltColorRow.appendChild(this.beltColorLabel);
         this.beltColorRow.appendChild(this.beltColorPicker);
-        this._renderBeltCourseColorOptions();
+
+        this.topBeltColorRow = document.createElement('div');
+        this.topBeltColorRow.className = 'building-fab-row building-fab-row-texture';
+        this.topBeltColorLabel = document.createElement('div');
+        this.topBeltColorLabel.className = 'building-fab-row-label';
+        this.topBeltColorLabel.textContent = 'Roof belt color';
+        this.topBeltColorPicker = document.createElement('div');
+        this.topBeltColorPicker.className = 'building-fab-texture-picker building-fab-material-picker';
+        this.topBeltColorPickButton = document.createElement('button');
+        this.topBeltColorPickButton.type = 'button';
+        this.topBeltColorPickButton.className = 'building-fab-material-button';
+        this.topBeltColorPickThumb = document.createElement('div');
+        this.topBeltColorPickThumb.className = 'building-fab-material-thumb';
+        this.topBeltColorPickText = document.createElement('div');
+        this.topBeltColorPickText.className = 'building-fab-material-text';
+        this.topBeltColorPickText.textContent = '';
+        this.topBeltColorPickButton.appendChild(this.topBeltColorPickThumb);
+        this.topBeltColorPickButton.appendChild(this.topBeltColorPickText);
+        this.topBeltColorStatus = document.createElement('div');
+        this.topBeltColorStatus.className = 'building-fab-texture-status';
+        this.topBeltColorStatus.textContent = '';
+        this.topBeltColorPicker.appendChild(this.topBeltColorPickButton);
+        this.topBeltColorPicker.appendChild(this.topBeltColorStatus);
+        this.topBeltColorRow.appendChild(this.topBeltColorLabel);
+        this.topBeltColorRow.appendChild(this.topBeltColorPicker);
 
         this.roofColorRow = document.createElement('div');
         this.roofColorRow.className = 'building-fab-row building-fab-row-texture';
@@ -580,17 +718,24 @@ export class BuildingFabricationUI {
         this.roofColorLabel.className = 'building-fab-row-label';
         this.roofColorLabel.textContent = 'Roof color';
         this.roofColorPicker = document.createElement('div');
-        this.roofColorPicker.className = 'building-fab-texture-picker';
-        this.roofColorGrid = document.createElement('div');
-        this.roofColorGrid.className = 'building-fab-texture-grid';
+        this.roofColorPicker.className = 'building-fab-texture-picker building-fab-material-picker';
+        this.roofColorPickButton = document.createElement('button');
+        this.roofColorPickButton.type = 'button';
+        this.roofColorPickButton.className = 'building-fab-material-button';
+        this.roofColorPickThumb = document.createElement('div');
+        this.roofColorPickThumb.className = 'building-fab-material-thumb';
+        this.roofColorPickText = document.createElement('div');
+        this.roofColorPickText.className = 'building-fab-material-text';
+        this.roofColorPickText.textContent = '';
+        this.roofColorPickButton.appendChild(this.roofColorPickThumb);
+        this.roofColorPickButton.appendChild(this.roofColorPickText);
         this.roofColorStatus = document.createElement('div');
         this.roofColorStatus.className = 'building-fab-texture-status';
         this.roofColorStatus.textContent = '';
-        this.roofColorPicker.appendChild(this.roofColorGrid);
+        this.roofColorPicker.appendChild(this.roofColorPickButton);
         this.roofColorPicker.appendChild(this.roofColorStatus);
         this.roofColorRow.appendChild(this.roofColorLabel);
         this.roofColorRow.appendChild(this.roofColorPicker);
-        this._renderRoofColorOptions();
 
         this.windowStyleRow = document.createElement('div');
         this.windowStyleRow.className = 'building-fab-row building-fab-row-texture';
@@ -598,17 +743,24 @@ export class BuildingFabricationUI {
         this.windowStyleLabel.className = 'building-fab-row-label';
         this.windowStyleLabel.textContent = 'Window';
         this.windowStylePicker = document.createElement('div');
-        this.windowStylePicker.className = 'building-fab-texture-picker';
-        this.windowStyleGrid = document.createElement('div');
-        this.windowStyleGrid.className = 'building-fab-texture-grid';
+        this.windowStylePicker.className = 'building-fab-texture-picker building-fab-material-picker';
+        this.windowStylePickButton = document.createElement('button');
+        this.windowStylePickButton.type = 'button';
+        this.windowStylePickButton.className = 'building-fab-material-button';
+        this.windowStylePickThumb = document.createElement('div');
+        this.windowStylePickThumb.className = 'building-fab-material-thumb';
+        this.windowStylePickText = document.createElement('div');
+        this.windowStylePickText.className = 'building-fab-material-text';
+        this.windowStylePickText.textContent = '';
+        this.windowStylePickButton.appendChild(this.windowStylePickThumb);
+        this.windowStylePickButton.appendChild(this.windowStylePickText);
         this.windowStyleStatus = document.createElement('div');
         this.windowStyleStatus.className = 'building-fab-texture-status';
         this.windowStyleStatus.textContent = '';
-        this.windowStylePicker.appendChild(this.windowStyleGrid);
+        this.windowStylePicker.appendChild(this.windowStylePickButton);
         this.windowStylePicker.appendChild(this.windowStyleStatus);
         this.windowStyleRow.appendChild(this.windowStyleLabel);
         this.windowStyleRow.appendChild(this.windowStylePicker);
-        this._renderWindowStyleOptions();
 
         this.streetWindowStyleRow = document.createElement('div');
         this.streetWindowStyleRow.className = 'building-fab-row building-fab-row-texture';
@@ -616,17 +768,24 @@ export class BuildingFabricationUI {
         this.streetWindowStyleLabel.className = 'building-fab-row-label';
         this.streetWindowStyleLabel.textContent = 'Window';
         this.streetWindowStylePicker = document.createElement('div');
-        this.streetWindowStylePicker.className = 'building-fab-texture-picker';
-        this.streetWindowStyleGrid = document.createElement('div');
-        this.streetWindowStyleGrid.className = 'building-fab-texture-grid';
+        this.streetWindowStylePicker.className = 'building-fab-texture-picker building-fab-material-picker';
+        this.streetWindowStylePickButton = document.createElement('button');
+        this.streetWindowStylePickButton.type = 'button';
+        this.streetWindowStylePickButton.className = 'building-fab-material-button';
+        this.streetWindowStylePickThumb = document.createElement('div');
+        this.streetWindowStylePickThumb.className = 'building-fab-material-thumb';
+        this.streetWindowStylePickText = document.createElement('div');
+        this.streetWindowStylePickText.className = 'building-fab-material-text';
+        this.streetWindowStylePickText.textContent = '';
+        this.streetWindowStylePickButton.appendChild(this.streetWindowStylePickThumb);
+        this.streetWindowStylePickButton.appendChild(this.streetWindowStylePickText);
         this.streetWindowStyleStatus = document.createElement('div');
         this.streetWindowStyleStatus.className = 'building-fab-texture-status';
         this.streetWindowStyleStatus.textContent = '';
-        this.streetWindowStylePicker.appendChild(this.streetWindowStyleGrid);
+        this.streetWindowStylePicker.appendChild(this.streetWindowStylePickButton);
         this.streetWindowStylePicker.appendChild(this.streetWindowStyleStatus);
         this.streetWindowStyleRow.appendChild(this.streetWindowStyleLabel);
         this.streetWindowStyleRow.appendChild(this.streetWindowStylePicker);
-        this._renderStreetWindowStyleOptions();
 
         const widthRow = makeRangeRow('Window width (m)');
         this.windowWidthRow = widthRow.row;
@@ -672,6 +831,123 @@ export class BuildingFabricationUI {
         this.windowYNumber.max = '12';
         this.windowYNumber.step = '0.1';
 
+        const makeParamColorRow = (labelText) => {
+            const row = document.createElement('div');
+            row.className = 'building-fab-row building-fab-row-texture';
+            const label = document.createElement('div');
+            label.className = 'building-fab-row-label';
+            label.textContent = labelText;
+            const picker = document.createElement('div');
+            picker.className = 'building-fab-texture-picker building-fab-material-picker';
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'building-fab-material-button';
+            const thumb = document.createElement('div');
+            thumb.className = 'building-fab-material-thumb';
+            const text = document.createElement('div');
+            text.className = 'building-fab-material-text';
+            text.textContent = '';
+            btn.appendChild(thumb);
+            btn.appendChild(text);
+            picker.appendChild(btn);
+            row.appendChild(label);
+            row.appendChild(picker);
+            return { row, btn, thumb, text };
+        };
+
+        const windowFrameWidthRow = makeRangeRow('Frame width');
+        this.windowFrameWidthRow = windowFrameWidthRow.row;
+        this.windowFrameWidthRange = windowFrameWidthRow.range;
+        this.windowFrameWidthNumber = windowFrameWidthRow.number;
+        this.windowFrameWidthRange.min = '0.02';
+        this.windowFrameWidthRange.max = '0.2';
+        this.windowFrameWidthRange.step = '0.01';
+        this.windowFrameWidthNumber.min = '0.02';
+        this.windowFrameWidthNumber.max = '0.2';
+        this.windowFrameWidthNumber.step = '0.01';
+
+        const windowFrameColorRow = makeParamColorRow('Frame color');
+        this.windowFrameColorRow = windowFrameColorRow.row;
+        this.windowFrameColorPickButton = windowFrameColorRow.btn;
+        this.windowFrameColorPickThumb = windowFrameColorRow.thumb;
+        this.windowFrameColorPickText = windowFrameColorRow.text;
+
+        const windowGlassTopRow = makeParamColorRow('Glass top');
+        this.windowGlassTopRow = windowGlassTopRow.row;
+        this.windowGlassTopPickButton = windowGlassTopRow.btn;
+        this.windowGlassTopPickThumb = windowGlassTopRow.thumb;
+        this.windowGlassTopPickText = windowGlassTopRow.text;
+
+        const windowGlassBottomRow = makeParamColorRow('Glass bottom');
+        this.windowGlassBottomRow = windowGlassBottomRow.row;
+        this.windowGlassBottomPickButton = windowGlassBottomRow.btn;
+        this.windowGlassBottomPickThumb = windowGlassBottomRow.thumb;
+        this.windowGlassBottomPickText = windowGlassBottomRow.text;
+
+        const wallInsetRow = makeRangeRow('Wall inset (m)');
+        this.wallInsetRow = wallInsetRow.row;
+        this.wallInsetRange = wallInsetRow.range;
+        this.wallInsetNumber = wallInsetRow.number;
+        this.wallInsetRange.min = '0';
+        this.wallInsetRange.max = '4';
+        this.wallInsetRange.step = '0.05';
+        this.wallInsetNumber.min = '0';
+        this.wallInsetNumber.max = '4';
+        this.wallInsetNumber.step = '0.05';
+
+        this.windowSpacerToggle = document.createElement('label');
+        this.windowSpacerToggle.className = 'building-fab-toggle building-fab-toggle-wide';
+        this.windowSpacerInput = document.createElement('input');
+        this.windowSpacerInput.type = 'checkbox';
+        this.windowSpacerInput.checked = this._windowSpacerEnabled;
+        this.windowSpacerText = document.createElement('span');
+        this.windowSpacerText.textContent = 'Window spacer';
+        this.windowSpacerToggle.appendChild(this.windowSpacerInput);
+        this.windowSpacerToggle.appendChild(this.windowSpacerText);
+
+        const windowSpacerEveryRow = makeRangeRow('Spacer every (windows)');
+        this.windowSpacerEveryRow = windowSpacerEveryRow.row;
+        this.windowSpacerEveryRange = windowSpacerEveryRow.range;
+        this.windowSpacerEveryNumber = windowSpacerEveryRow.number;
+        this.windowSpacerEveryRange.min = '1';
+        this.windowSpacerEveryRange.max = '99';
+        this.windowSpacerEveryRange.step = '1';
+        this.windowSpacerEveryNumber.min = '1';
+        this.windowSpacerEveryNumber.max = '99';
+        this.windowSpacerEveryNumber.step = '1';
+
+        const windowSpacerWidthRow = makeRangeRow('Spacer width (m)');
+        this.windowSpacerWidthRow = windowSpacerWidthRow.row;
+        this.windowSpacerWidthRange = windowSpacerWidthRow.range;
+        this.windowSpacerWidthNumber = windowSpacerWidthRow.number;
+        this.windowSpacerWidthRange.min = '0.1';
+        this.windowSpacerWidthRange.max = '10';
+        this.windowSpacerWidthRange.step = '0.1';
+        this.windowSpacerWidthNumber.min = '0.1';
+        this.windowSpacerWidthNumber.max = '10';
+        this.windowSpacerWidthNumber.step = '0.1';
+
+        this.windowSpacerExtrudeToggle = document.createElement('label');
+        this.windowSpacerExtrudeToggle.className = 'building-fab-toggle building-fab-toggle-wide';
+        this.windowSpacerExtrudeInput = document.createElement('input');
+        this.windowSpacerExtrudeInput.type = 'checkbox';
+        this.windowSpacerExtrudeInput.checked = this._windowSpacerExtrude;
+        this.windowSpacerExtrudeText = document.createElement('span');
+        this.windowSpacerExtrudeText.textContent = 'Spacer extrude';
+        this.windowSpacerExtrudeToggle.appendChild(this.windowSpacerExtrudeInput);
+        this.windowSpacerExtrudeToggle.appendChild(this.windowSpacerExtrudeText);
+
+        const windowSpacerExtrudeRow = makeRangeRow('Spacer extrude (m)');
+        this.windowSpacerExtrudeDistanceRow = windowSpacerExtrudeRow.row;
+        this.windowSpacerExtrudeDistanceRange = windowSpacerExtrudeRow.range;
+        this.windowSpacerExtrudeDistanceNumber = windowSpacerExtrudeRow.number;
+        this.windowSpacerExtrudeDistanceRange.min = '0';
+        this.windowSpacerExtrudeDistanceRange.max = '1';
+        this.windowSpacerExtrudeDistanceRange.step = '0.01';
+        this.windowSpacerExtrudeDistanceNumber.min = '0';
+        this.windowSpacerExtrudeDistanceNumber.max = '1';
+        this.windowSpacerExtrudeDistanceNumber.step = '0.01';
+
         const streetWidthRow = makeRangeRow('Window width (m)');
         this.streetWindowWidthRow = streetWidthRow.row;
         this.streetWindowWidthRange = streetWidthRow.range;
@@ -716,6 +992,88 @@ export class BuildingFabricationUI {
         this.streetWindowYNumber.max = '12';
         this.streetWindowYNumber.step = '0.1';
 
+        const streetWindowFrameWidthRow = makeRangeRow('Frame width');
+        this.streetWindowFrameWidthRow = streetWindowFrameWidthRow.row;
+        this.streetWindowFrameWidthRange = streetWindowFrameWidthRow.range;
+        this.streetWindowFrameWidthNumber = streetWindowFrameWidthRow.number;
+        this.streetWindowFrameWidthRange.min = '0.02';
+        this.streetWindowFrameWidthRange.max = '0.2';
+        this.streetWindowFrameWidthRange.step = '0.01';
+        this.streetWindowFrameWidthNumber.min = '0.02';
+        this.streetWindowFrameWidthNumber.max = '0.2';
+        this.streetWindowFrameWidthNumber.step = '0.01';
+
+        const streetWindowFrameColorRow = makeParamColorRow('Frame color');
+        this.streetWindowFrameColorRow = streetWindowFrameColorRow.row;
+        this.streetWindowFrameColorPickButton = streetWindowFrameColorRow.btn;
+        this.streetWindowFrameColorPickThumb = streetWindowFrameColorRow.thumb;
+        this.streetWindowFrameColorPickText = streetWindowFrameColorRow.text;
+
+        const streetWindowGlassTopRow = makeParamColorRow('Glass top');
+        this.streetWindowGlassTopRow = streetWindowGlassTopRow.row;
+        this.streetWindowGlassTopPickButton = streetWindowGlassTopRow.btn;
+        this.streetWindowGlassTopPickThumb = streetWindowGlassTopRow.thumb;
+        this.streetWindowGlassTopPickText = streetWindowGlassTopRow.text;
+
+        const streetWindowGlassBottomRow = makeParamColorRow('Glass bottom');
+        this.streetWindowGlassBottomRow = streetWindowGlassBottomRow.row;
+        this.streetWindowGlassBottomPickButton = streetWindowGlassBottomRow.btn;
+        this.streetWindowGlassBottomPickThumb = streetWindowGlassBottomRow.thumb;
+        this.streetWindowGlassBottomPickText = streetWindowGlassBottomRow.text;
+
+        this.streetWindowSpacerToggle = document.createElement('label');
+        this.streetWindowSpacerToggle.className = 'building-fab-toggle building-fab-toggle-wide';
+        this.streetWindowSpacerInput = document.createElement('input');
+        this.streetWindowSpacerInput.type = 'checkbox';
+        this.streetWindowSpacerInput.checked = this._streetWindowSpacerEnabled;
+        this.streetWindowSpacerText = document.createElement('span');
+        this.streetWindowSpacerText.textContent = 'Window spacer';
+        this.streetWindowSpacerToggle.appendChild(this.streetWindowSpacerInput);
+        this.streetWindowSpacerToggle.appendChild(this.streetWindowSpacerText);
+
+        const streetWindowSpacerEveryRow = makeRangeRow('Spacer every (windows)');
+        this.streetWindowSpacerEveryRow = streetWindowSpacerEveryRow.row;
+        this.streetWindowSpacerEveryRange = streetWindowSpacerEveryRow.range;
+        this.streetWindowSpacerEveryNumber = streetWindowSpacerEveryRow.number;
+        this.streetWindowSpacerEveryRange.min = '1';
+        this.streetWindowSpacerEveryRange.max = '99';
+        this.streetWindowSpacerEveryRange.step = '1';
+        this.streetWindowSpacerEveryNumber.min = '1';
+        this.streetWindowSpacerEveryNumber.max = '99';
+        this.streetWindowSpacerEveryNumber.step = '1';
+
+        const streetWindowSpacerWidthRow = makeRangeRow('Spacer width (m)');
+        this.streetWindowSpacerWidthRow = streetWindowSpacerWidthRow.row;
+        this.streetWindowSpacerWidthRange = streetWindowSpacerWidthRow.range;
+        this.streetWindowSpacerWidthNumber = streetWindowSpacerWidthRow.number;
+        this.streetWindowSpacerWidthRange.min = '0.1';
+        this.streetWindowSpacerWidthRange.max = '10';
+        this.streetWindowSpacerWidthRange.step = '0.1';
+        this.streetWindowSpacerWidthNumber.min = '0.1';
+        this.streetWindowSpacerWidthNumber.max = '10';
+        this.streetWindowSpacerWidthNumber.step = '0.1';
+
+        this.streetWindowSpacerExtrudeToggle = document.createElement('label');
+        this.streetWindowSpacerExtrudeToggle.className = 'building-fab-toggle building-fab-toggle-wide';
+        this.streetWindowSpacerExtrudeInput = document.createElement('input');
+        this.streetWindowSpacerExtrudeInput.type = 'checkbox';
+        this.streetWindowSpacerExtrudeInput.checked = this._streetWindowSpacerExtrude;
+        this.streetWindowSpacerExtrudeText = document.createElement('span');
+        this.streetWindowSpacerExtrudeText.textContent = 'Spacer extrude';
+        this.streetWindowSpacerExtrudeToggle.appendChild(this.streetWindowSpacerExtrudeInput);
+        this.streetWindowSpacerExtrudeToggle.appendChild(this.streetWindowSpacerExtrudeText);
+
+        const streetWindowSpacerExtrudeRow = makeRangeRow('Spacer extrude (m)');
+        this.streetWindowSpacerExtrudeDistanceRow = streetWindowSpacerExtrudeRow.row;
+        this.streetWindowSpacerExtrudeDistanceRange = streetWindowSpacerExtrudeRow.range;
+        this.streetWindowSpacerExtrudeDistanceNumber = streetWindowSpacerExtrudeRow.number;
+        this.streetWindowSpacerExtrudeDistanceRange.min = '0';
+        this.streetWindowSpacerExtrudeDistanceRange.max = '1';
+        this.streetWindowSpacerExtrudeDistanceRange.step = '0.01';
+        this.streetWindowSpacerExtrudeDistanceNumber.min = '0';
+        this.streetWindowSpacerExtrudeDistanceNumber.max = '1';
+        this.streetWindowSpacerExtrudeDistanceNumber.step = '0.01';
+
         const makeDetailsSection = (title, { open = true } = {}) => {
             const details = document.createElement('details');
             details.className = 'building-fab-details';
@@ -738,10 +1096,20 @@ export class BuildingFabricationUI {
         floorsSection.body.appendChild(this.windowStyleRow);
         floorsSection.body.appendChild(this.floorRow);
         floorsSection.body.appendChild(this.floorHeightRow);
+        floorsSection.body.appendChild(this.wallInsetRow);
         floorsSection.body.appendChild(this.windowWidthRow);
         floorsSection.body.appendChild(this.windowGapRow);
         floorsSection.body.appendChild(this.windowHeightRow);
         floorsSection.body.appendChild(this.windowYRow);
+        floorsSection.body.appendChild(this.windowFrameWidthRow);
+        floorsSection.body.appendChild(this.windowFrameColorRow);
+        floorsSection.body.appendChild(this.windowGlassTopRow);
+        floorsSection.body.appendChild(this.windowGlassBottomRow);
+        floorsSection.body.appendChild(this.windowSpacerToggle);
+        floorsSection.body.appendChild(this.windowSpacerEveryRow);
+        floorsSection.body.appendChild(this.windowSpacerWidthRow);
+        floorsSection.body.appendChild(this.windowSpacerExtrudeToggle);
+        floorsSection.body.appendChild(this.windowSpacerExtrudeDistanceRow);
 
         const streetSection = makeDetailsSection('Street floors', { open: true });
         streetSection.summary.appendChild(this.streetEnabledToggle);
@@ -756,24 +1124,31 @@ export class BuildingFabricationUI {
         streetSection.body.appendChild(this.streetWindowGapRow);
         streetSection.body.appendChild(this.streetWindowHeightRow);
         streetSection.body.appendChild(this.streetWindowYRow);
-
-        const featuresSection = makeDetailsSection('Features', { open: true });
-        featuresSection.body.appendChild(this.beltCourseToggle);
-        featuresSection.body.appendChild(this.beltStatus);
-        featuresSection.body.appendChild(this.beltColorRow);
-        featuresSection.body.appendChild(this.beltMarginRow);
-        featuresSection.body.appendChild(this.beltHeightRow);
-        featuresSection.body.appendChild(this.topBeltToggle);
-        featuresSection.body.appendChild(this.topBeltWidthRow);
-        featuresSection.body.appendChild(this.topBeltInnerWidthRow);
-        featuresSection.body.appendChild(this.topBeltHeightRow);
+        streetSection.body.appendChild(this.streetWindowFrameWidthRow);
+        streetSection.body.appendChild(this.streetWindowFrameColorRow);
+        streetSection.body.appendChild(this.streetWindowGlassTopRow);
+        streetSection.body.appendChild(this.streetWindowGlassBottomRow);
+        streetSection.body.appendChild(this.streetWindowSpacerToggle);
+        streetSection.body.appendChild(this.streetWindowSpacerEveryRow);
+        streetSection.body.appendChild(this.streetWindowSpacerWidthRow);
+        streetSection.body.appendChild(this.streetWindowSpacerExtrudeToggle);
+        streetSection.body.appendChild(this.streetWindowSpacerExtrudeDistanceRow);
+        streetSection.body.appendChild(this.beltCourseToggle);
+        streetSection.body.appendChild(this.beltStatus);
+        streetSection.body.appendChild(this.beltColorRow);
+        streetSection.body.appendChild(this.beltMarginRow);
+        streetSection.body.appendChild(this.beltHeightRow);
 
         const roofSection = makeDetailsSection('Roof', { open: true });
         roofSection.body.appendChild(this.roofColorRow);
+        roofSection.body.appendChild(this.topBeltToggle);
+        roofSection.body.appendChild(this.topBeltColorRow);
+        roofSection.body.appendChild(this.topBeltWidthRow);
+        roofSection.body.appendChild(this.topBeltInnerWidthRow);
+        roofSection.body.appendChild(this.topBeltHeightRow);
 
         this.propsPanel.appendChild(floorsSection.details);
         this.propsPanel.appendChild(streetSection.details);
-        this.propsPanel.appendChild(featuresSection.details);
         this.propsPanel.appendChild(roofSection.details);
 
         this.buildingsTitle = document.createElement('div');
@@ -877,6 +1252,7 @@ export class BuildingFabricationUI {
         this.onStreetFloorsChange = null;
         this.onStreetFloorHeightChange = null;
         this.onStreetStyleChange = null;
+        this.onWallInsetChange = null;
         this.onBeltCourseEnabledChange = null;
         this.onBeltCourseMarginChange = null;
         this.onBeltCourseHeightChange = null;
@@ -885,17 +1261,36 @@ export class BuildingFabricationUI {
         this.onTopBeltWidthChange = null;
         this.onTopBeltInnerWidthChange = null;
         this.onTopBeltHeightChange = null;
+        this.onTopBeltColorChange = null;
         this.onRoofColorChange = null;
         this.onWindowStyleChange = null;
+        this.onWindowFrameWidthChange = null;
+        this.onWindowFrameColorChange = null;
+        this.onWindowGlassTopChange = null;
+        this.onWindowGlassBottomChange = null;
         this.onWindowWidthChange = null;
         this.onWindowGapChange = null;
         this.onWindowHeightChange = null;
         this.onWindowYChange = null;
+        this.onWindowSpacerEnabledChange = null;
+        this.onWindowSpacerEveryChange = null;
+        this.onWindowSpacerWidthChange = null;
+        this.onWindowSpacerExtrudeChange = null;
+        this.onWindowSpacerExtrudeDistanceChange = null;
         this.onStreetWindowStyleChange = null;
+        this.onStreetWindowFrameWidthChange = null;
+        this.onStreetWindowFrameColorChange = null;
+        this.onStreetWindowGlassTopChange = null;
+        this.onStreetWindowGlassBottomChange = null;
         this.onStreetWindowWidthChange = null;
         this.onStreetWindowGapChange = null;
         this.onStreetWindowHeightChange = null;
         this.onStreetWindowYChange = null;
+        this.onStreetWindowSpacerEnabledChange = null;
+        this.onStreetWindowSpacerEveryChange = null;
+        this.onStreetWindowSpacerWidthChange = null;
+        this.onStreetWindowSpacerExtrudeChange = null;
+        this.onStreetWindowSpacerExtrudeDistanceChange = null;
 
         this._bound = false;
 
@@ -903,6 +1298,8 @@ export class BuildingFabricationUI {
         this._onFloorNumberInput = () => this._setFloorCountFromUi(this.floorNumber.value);
         this._onFloorHeightRangeInput = () => this._setFloorHeightFromUi(this.floorHeightRange.value);
         this._onFloorHeightNumberInput = () => this._setFloorHeightFromUi(this.floorHeightNumber.value);
+        this._onWallInsetRangeInput = () => this._setWallInsetFromUi(this.wallInsetRange.value);
+        this._onWallInsetNumberInput = () => this._setWallInsetFromUi(this.wallInsetNumber.value);
         this._onWindowWidthRangeInput = () => this._setWindowWidthFromUi(this.windowWidthRange.value);
         this._onWindowWidthNumberInput = () => this._setWindowWidthFromUi(this.windowWidthNumber.value);
         this._onWindowGapRangeInput = () => this._setWindowGapFromUi(this.windowGapRange.value);
@@ -911,18 +1308,31 @@ export class BuildingFabricationUI {
         this._onWindowHeightNumberInput = () => this._setWindowHeightFromUi(this.windowHeightNumber.value);
         this._onWindowYRangeInput = () => this._setWindowYFromUi(this.windowYRange.value);
         this._onWindowYNumberInput = () => this._setWindowYFromUi(this.windowYNumber.value);
+        this._onWindowFrameWidthRangeInput = () => this._setWindowFrameWidthFromUi(this.windowFrameWidthRange.value);
+        this._onWindowFrameWidthNumberInput = () => this._setWindowFrameWidthFromUi(this.windowFrameWidthNumber.value);
+        this._onWindowFrameColorPickClick = () => this._openWindowFrameColorPicker();
+        this._onWindowGlassTopPickClick = () => this._openWindowGlassTopPicker();
+        this._onWindowGlassBottomPickClick = () => this._openWindowGlassBottomPicker();
+        this._onWindowSpacerEnabledChange = () => this._setWindowSpacerEnabledFromUi(this.windowSpacerInput.checked);
+        this._onWindowSpacerEveryRangeInput = () => this._setWindowSpacerEveryFromUi(this.windowSpacerEveryRange.value);
+        this._onWindowSpacerEveryNumberInput = () => this._setWindowSpacerEveryFromUi(this.windowSpacerEveryNumber.value);
+        this._onWindowSpacerWidthRangeInput = () => this._setWindowSpacerWidthFromUi(this.windowSpacerWidthRange.value);
+        this._onWindowSpacerWidthNumberInput = () => this._setWindowSpacerWidthFromUi(this.windowSpacerWidthNumber.value);
+        this._onWindowSpacerExtrudeChange = () => this._setWindowSpacerExtrudeFromUi(this.windowSpacerExtrudeInput.checked);
+        this._onWindowSpacerExtrudeDistanceRangeInput = () => this._setWindowSpacerExtrudeDistanceFromUi(this.windowSpacerExtrudeDistanceRange.value);
+        this._onWindowSpacerExtrudeDistanceNumberInput = () => this._setWindowSpacerExtrudeDistanceFromUi(this.windowSpacerExtrudeDistanceNumber.value);
         this._onStreetEnabledChange = () => this._setStreetEnabledFromUi(this.streetEnabledInput.checked);
         this._onStreetFloorsRangeInput = () => this._setStreetFloorsFromUi(this.streetFloorsRange.value);
         this._onStreetFloorsNumberInput = () => this._setStreetFloorsFromUi(this.streetFloorsNumber.value);
         this._onStreetHeightRangeInput = () => this._setStreetFloorHeightFromUi(this.streetHeightRange.value);
         this._onStreetHeightNumberInput = () => this._setStreetFloorHeightFromUi(this.streetHeightNumber.value);
-        this._onStreetStyleGridClick = (e) => this._handleStreetStyleGridClick(e);
+        this._onStreetStylePickClick = () => this._openStreetStylePicker();
         this._onBeltCourseEnabledChange = () => this._setBeltCourseEnabledFromUi(this.beltCourseInput.checked);
         this._onBeltMarginRangeInput = () => this._setBeltMarginFromUi(this.beltMarginRange.value);
         this._onBeltMarginNumberInput = () => this._setBeltMarginFromUi(this.beltMarginNumber.value);
         this._onBeltHeightRangeInput = () => this._setBeltHeightFromUi(this.beltHeightRange.value);
         this._onBeltHeightNumberInput = () => this._setBeltHeightFromUi(this.beltHeightNumber.value);
-        this._onBeltColorGridClick = (e) => this._handleBeltCourseColorGridClick(e);
+        this._onBeltColorPickClick = () => this._openBeltCourseColorPicker();
         this._onTopBeltEnabledChange = () => this._setTopBeltEnabledFromUi(this.topBeltInput.checked);
         this._onTopBeltWidthRangeInput = () => this._setTopBeltWidthFromUi(this.topBeltWidthRange.value);
         this._onTopBeltWidthNumberInput = () => this._setTopBeltWidthFromUi(this.topBeltWidthNumber.value);
@@ -930,11 +1340,12 @@ export class BuildingFabricationUI {
         this._onTopBeltInnerWidthNumberInput = () => this._setTopBeltInnerWidthFromUi(this.topBeltInnerWidthNumber.value);
         this._onTopBeltHeightRangeInput = () => this._setTopBeltHeightFromUi(this.topBeltHeightRange.value);
         this._onTopBeltHeightNumberInput = () => this._setTopBeltHeightFromUi(this.topBeltHeightNumber.value);
-        this._onWindowStyleGridClick = (e) => this._handleWindowStyleGridClick(e);
-        this._onRoofColorGridClick = (e) => this._handleRoofColorGridClick(e);
+        this._onWindowStylePickClick = () => this._openWindowTypePicker();
+        this._onRoofColorPickClick = () => this._openRoofColorPicker();
+        this._onTopBeltColorPickClick = () => this._openTopBeltColorPicker();
         this._onTypeSelectChange = () => this._setBuildingTypeFromUi(this.typeSelect.value);
-        this._onStyleGridClick = (e) => this._handleBuildingStyleGridClick(e);
-        this._onStreetWindowStyleGridClick = (e) => this._handleStreetWindowStyleGridClick(e);
+        this._onStylePickClick = () => this._openBuildingStylePicker();
+        this._onStreetWindowStylePickClick = () => this._openStreetWindowTypePicker();
         this._onStreetWindowWidthRangeInput = () => this._setStreetWindowWidthFromUi(this.streetWindowWidthRange.value);
         this._onStreetWindowWidthNumberInput = () => this._setStreetWindowWidthFromUi(this.streetWindowWidthNumber.value);
         this._onStreetWindowGapRangeInput = () => this._setStreetWindowGapFromUi(this.streetWindowGapRange.value);
@@ -943,6 +1354,19 @@ export class BuildingFabricationUI {
         this._onStreetWindowHeightNumberInput = () => this._setStreetWindowHeightFromUi(this.streetWindowHeightNumber.value);
         this._onStreetWindowYRangeInput = () => this._setStreetWindowYFromUi(this.streetWindowYRange.value);
         this._onStreetWindowYNumberInput = () => this._setStreetWindowYFromUi(this.streetWindowYNumber.value);
+        this._onStreetWindowFrameWidthRangeInput = () => this._setStreetWindowFrameWidthFromUi(this.streetWindowFrameWidthRange.value);
+        this._onStreetWindowFrameWidthNumberInput = () => this._setStreetWindowFrameWidthFromUi(this.streetWindowFrameWidthNumber.value);
+        this._onStreetWindowFrameColorPickClick = () => this._openStreetWindowFrameColorPicker();
+        this._onStreetWindowGlassTopPickClick = () => this._openStreetWindowGlassTopPicker();
+        this._onStreetWindowGlassBottomPickClick = () => this._openStreetWindowGlassBottomPicker();
+        this._onStreetWindowSpacerEnabledChange = () => this._setStreetWindowSpacerEnabledFromUi(this.streetWindowSpacerInput.checked);
+        this._onStreetWindowSpacerEveryRangeInput = () => this._setStreetWindowSpacerEveryFromUi(this.streetWindowSpacerEveryRange.value);
+        this._onStreetWindowSpacerEveryNumberInput = () => this._setStreetWindowSpacerEveryFromUi(this.streetWindowSpacerEveryNumber.value);
+        this._onStreetWindowSpacerWidthRangeInput = () => this._setStreetWindowSpacerWidthFromUi(this.streetWindowSpacerWidthRange.value);
+        this._onStreetWindowSpacerWidthNumberInput = () => this._setStreetWindowSpacerWidthFromUi(this.streetWindowSpacerWidthNumber.value);
+        this._onStreetWindowSpacerExtrudeChange = () => this._setStreetWindowSpacerExtrudeFromUi(this.streetWindowSpacerExtrudeInput.checked);
+        this._onStreetWindowSpacerExtrudeDistanceRangeInput = () => this._setStreetWindowSpacerExtrudeDistanceFromUi(this.streetWindowSpacerExtrudeDistanceRange.value);
+        this._onStreetWindowSpacerExtrudeDistanceNumberInput = () => this._setStreetWindowSpacerExtrudeDistanceFromUi(this.streetWindowSpacerExtrudeDistanceNumber.value);
         this._onHideSelectionBorderChange = () => this._setHideSelectionBorderFromUi(this.hideSelectionBorderInput.checked);
         this._onViewModeClick = (e) => {
             const btn = e?.target?.closest?.('.building-fab-view-mode');
@@ -985,6 +1409,7 @@ export class BuildingFabricationUI {
     }
 
     unmount() {
+        this._pickerPopup?.dispose?.();
         this._unbind();
         if (this.root.isConnected) this.root.remove();
     }
@@ -1170,9 +1595,9 @@ export class BuildingFabricationUI {
             this._streetEnabled = false;
         }
         if (hasSelected && Number.isFinite(building?.streetFloors)) {
-            this._streetFloors = clampInt(building.streetFloors, 1, this._floorCount);
+            this._streetFloors = clampInt(building.streetFloors, 0, this._floorCount);
         } else {
-            this._streetFloors = 1;
+            this._streetFloors = 0;
         }
         if (hasSelected && Number.isFinite(building?.streetFloorHeight)) {
             this._streetFloorHeight = clamp(building.streetFloorHeight, 1.0, 12.0);
@@ -1187,6 +1612,11 @@ export class BuildingFabricationUI {
                 : (isBuildingStyle(fallback) ? fallback : BUILDING_STYLE.DEFAULT);
         } else {
             this._streetStyle = BUILDING_STYLE.DEFAULT;
+        }
+        if (hasSelected && Number.isFinite(building?.wallInset)) {
+            this._wallInset = clamp(building.wallInset, 0.0, 4.0);
+        } else {
+            this._wallInset = 0.0;
         }
         if (hasSelected) {
             this._beltCourseEnabled = !!building.beltCourseEnabled;
@@ -1230,16 +1660,40 @@ export class BuildingFabricationUI {
             this._topBeltInnerWidth = 0.0;
         }
         if (hasSelected) {
+            const color = typeof building?.topBeltColor === 'string' ? building.topBeltColor : null;
+            this._topBeltColor = isBeltCourseColor(color) ? color : BELT_COURSE_COLOR.OFFWHITE;
+        } else {
+            this._topBeltColor = BELT_COURSE_COLOR.OFFWHITE;
+        }
+        if (hasSelected) {
             const color = typeof building?.roofColor === 'string' ? building.roofColor : null;
             this._roofColor = isRoofColor(color) ? color : ROOF_COLOR.DEFAULT;
         } else {
             this._roofColor = ROOF_COLOR.DEFAULT;
         }
         if (hasSelected) {
-            const style = typeof building?.windowStyle === 'string' ? building.windowStyle : null;
-            this._windowStyle = isWindowStyle(style) ? style : WINDOW_STYLE.DEFAULT;
+            const legacy = typeof building?.windowStyle === 'string' ? building.windowStyle : null;
+            const typeId = typeof building?.windowTypeId === 'string' ? building.windowTypeId : null;
+            if (isWindowTypeId(typeId)) {
+                this._windowTypeId = typeId;
+            } else if (isWindowStyle(legacy)) {
+                this._windowTypeId = legacy === WINDOW_STYLE.DARK
+                    ? WINDOW_TYPE.STYLE_DARK
+                    : legacy === WINDOW_STYLE.BLUE
+                        ? WINDOW_TYPE.STYLE_BLUE
+                        : legacy === WINDOW_STYLE.WARM
+                            ? WINDOW_TYPE.STYLE_WARM
+                            : legacy === WINDOW_STYLE.GRID
+                                ? WINDOW_TYPE.STYLE_GRID
+                                : WINDOW_TYPE.STYLE_DEFAULT;
+            } else {
+                this._windowTypeId = WINDOW_TYPE.STYLE_DEFAULT;
+            }
+            const p = building?.windowParams && typeof building.windowParams === 'object' ? building.windowParams : null;
+            this._windowParams = { ...getDefaultWindowParams(this._windowTypeId), ...(p ?? {}) };
         } else {
-            this._windowStyle = WINDOW_STYLE.DEFAULT;
+            this._windowTypeId = WINDOW_TYPE.STYLE_DEFAULT;
+            this._windowParams = getDefaultWindowParams(this._windowTypeId);
         }
         if (hasSelected && Number.isFinite(building?.windowWidth)) {
             this._windowWidth = clamp(building.windowWidth, 0.3, 12.0);
@@ -1254,13 +1708,64 @@ export class BuildingFabricationUI {
             this._windowY = clamp(building.windowY, 0.0, 12.0);
         }
         if (hasSelected) {
-            const style = typeof building?.streetWindowStyle === 'string' ? building.streetWindowStyle : null;
-            const fallback = typeof building?.windowStyle === 'string' ? building.windowStyle : WINDOW_STYLE.DEFAULT;
-            this._streetWindowStyle = isWindowStyle(style)
-                ? style
-                : (isWindowStyle(fallback) ? fallback : WINDOW_STYLE.DEFAULT);
+            this._windowSpacerEnabled = !!building.windowSpacerEnabled;
         } else {
-            this._streetWindowStyle = WINDOW_STYLE.DEFAULT;
+            this._windowSpacerEnabled = false;
+        }
+        if (hasSelected && Number.isFinite(building?.windowSpacerEvery)) {
+            this._windowSpacerEvery = clampInt(building.windowSpacerEvery, 1, 99);
+        } else {
+            this._windowSpacerEvery = 4;
+        }
+        if (hasSelected && Number.isFinite(building?.windowSpacerWidth)) {
+            this._windowSpacerWidth = clamp(building.windowSpacerWidth, 0.1, 10.0);
+        } else {
+            this._windowSpacerWidth = 0.9;
+        }
+        if (hasSelected) {
+            this._windowSpacerExtrude = !!building.windowSpacerExtrude;
+        } else {
+            this._windowSpacerExtrude = false;
+        }
+        if (hasSelected && Number.isFinite(building?.windowSpacerExtrudeDistance)) {
+            this._windowSpacerExtrudeDistance = clamp(building.windowSpacerExtrudeDistance, 0.0, 1.0);
+        } else {
+            this._windowSpacerExtrudeDistance = 0.12;
+        }
+        if (hasSelected) {
+            const legacy = typeof building?.streetWindowStyle === 'string' ? building.streetWindowStyle : null;
+            const fallbackLegacy = typeof building?.windowStyle === 'string' ? building.windowStyle : WINDOW_STYLE.DEFAULT;
+            const typeId = typeof building?.streetWindowTypeId === 'string' ? building.streetWindowTypeId : null;
+            if (isWindowTypeId(typeId)) {
+                this._streetWindowTypeId = typeId;
+            } else if (isWindowStyle(legacy)) {
+                this._streetWindowTypeId = legacy === WINDOW_STYLE.DARK
+                    ? WINDOW_TYPE.STYLE_DARK
+                    : legacy === WINDOW_STYLE.BLUE
+                        ? WINDOW_TYPE.STYLE_BLUE
+                        : legacy === WINDOW_STYLE.WARM
+                            ? WINDOW_TYPE.STYLE_WARM
+                            : legacy === WINDOW_STYLE.GRID
+                                ? WINDOW_TYPE.STYLE_GRID
+                                : WINDOW_TYPE.STYLE_DEFAULT;
+            } else if (isWindowStyle(fallbackLegacy)) {
+                this._streetWindowTypeId = fallbackLegacy === WINDOW_STYLE.DARK
+                    ? WINDOW_TYPE.STYLE_DARK
+                    : fallbackLegacy === WINDOW_STYLE.BLUE
+                        ? WINDOW_TYPE.STYLE_BLUE
+                        : fallbackLegacy === WINDOW_STYLE.WARM
+                            ? WINDOW_TYPE.STYLE_WARM
+                            : fallbackLegacy === WINDOW_STYLE.GRID
+                                ? WINDOW_TYPE.STYLE_GRID
+                                : WINDOW_TYPE.STYLE_DEFAULT;
+            } else {
+                this._streetWindowTypeId = this._windowTypeId;
+            }
+            const p = building?.streetWindowParams && typeof building.streetWindowParams === 'object' ? building.streetWindowParams : null;
+            this._streetWindowParams = { ...getDefaultWindowParams(this._streetWindowTypeId), ...(p ?? {}) };
+        } else {
+            this._streetWindowTypeId = WINDOW_TYPE.STYLE_DEFAULT;
+            this._streetWindowParams = getDefaultWindowParams(this._streetWindowTypeId);
         }
         if (hasSelected && Number.isFinite(building?.streetWindowWidth)) {
             this._streetWindowWidth = clamp(building.streetWindowWidth, 0.3, 12.0);
@@ -1281,6 +1786,31 @@ export class BuildingFabricationUI {
             this._streetWindowY = clamp(building.streetWindowY, 0.0, 12.0);
         } else {
             this._streetWindowY = this._windowY;
+        }
+        if (hasSelected) {
+            this._streetWindowSpacerEnabled = !!building.streetWindowSpacerEnabled;
+        } else {
+            this._streetWindowSpacerEnabled = false;
+        }
+        if (hasSelected && Number.isFinite(building?.streetWindowSpacerEvery)) {
+            this._streetWindowSpacerEvery = clampInt(building.streetWindowSpacerEvery, 1, 99);
+        } else {
+            this._streetWindowSpacerEvery = 4;
+        }
+        if (hasSelected && Number.isFinite(building?.streetWindowSpacerWidth)) {
+            this._streetWindowSpacerWidth = clamp(building.streetWindowSpacerWidth, 0.1, 10.0);
+        } else {
+            this._streetWindowSpacerWidth = this._windowSpacerWidth;
+        }
+        if (hasSelected) {
+            this._streetWindowSpacerExtrude = !!building.streetWindowSpacerExtrude;
+        } else {
+            this._streetWindowSpacerExtrude = false;
+        }
+        if (hasSelected && Number.isFinite(building?.streetWindowSpacerExtrudeDistance)) {
+            this._streetWindowSpacerExtrudeDistance = clamp(building.streetWindowSpacerExtrudeDistance, 0.0, 1.0);
+        } else {
+            this._streetWindowSpacerExtrudeDistance = this._windowSpacerExtrudeDistance;
         }
         if (hasSelected) {
             const type = typeof building?.type === 'string' ? building.type : null;
@@ -1307,9 +1837,28 @@ export class BuildingFabricationUI {
     _syncPropertyWidgets() {
         const hasSelected = !!this._selectedBuildingId;
         const allow = !!this._enabled && hasSelected;
-        const allowStreet = allow && this._streetEnabled;
-        const allowBelt = allowStreet && this._streetFloors < this._floorCount;
+        const allowStreetStyle = allow && this._streetEnabled && this._streetFloors > 0;
+        const allowStreetFloors = allow;
+        const allowStreetWindows = allow && this._streetFloors > 0;
+        const showWindowParams = hasSelected && this._isParametricWindowType(this._windowTypeId);
+        const showStreetWindowParams = hasSelected
+            && allowStreetWindows
+            && this._isParametricWindowType(this._streetWindowTypeId);
+        const allowWindowParams = allow && showWindowParams;
+        const allowStreetWindowParams = allowStreetWindows && showStreetWindowParams;
+        const allowBelt = allow && this._streetFloors < this._floorCount;
         const allowTopBelt = allow && this._topBeltEnabled;
+        const allowWindowSpacer = allow && this._windowSpacerEnabled;
+        const allowStreetWindowSpacer = allowStreetWindows && this._streetWindowSpacerEnabled;
+
+        if (this.windowFrameWidthRow) this.windowFrameWidthRow.classList.toggle('hidden', !showWindowParams);
+        if (this.windowFrameColorRow) this.windowFrameColorRow.classList.toggle('hidden', !showWindowParams);
+        if (this.windowGlassTopRow) this.windowGlassTopRow.classList.toggle('hidden', !showWindowParams);
+        if (this.windowGlassBottomRow) this.windowGlassBottomRow.classList.toggle('hidden', !showWindowParams);
+        if (this.streetWindowFrameWidthRow) this.streetWindowFrameWidthRow.classList.toggle('hidden', !showStreetWindowParams);
+        if (this.streetWindowFrameColorRow) this.streetWindowFrameColorRow.classList.toggle('hidden', !showStreetWindowParams);
+        if (this.streetWindowGlassTopRow) this.streetWindowGlassTopRow.classList.toggle('hidden', !showStreetWindowParams);
+        if (this.streetWindowGlassBottomRow) this.streetWindowGlassBottomRow.classList.toggle('hidden', !showStreetWindowParams);
 
         this.deleteBuildingBtn.disabled = !allow;
         this.typeSelect.disabled = !allow;
@@ -1319,13 +1868,15 @@ export class BuildingFabricationUI {
         this.floorNumber.disabled = !allow;
         this.floorHeightRange.disabled = !allow;
         this.floorHeightNumber.disabled = !allow;
+        this.wallInsetRange.disabled = !allow;
+        this.wallInsetNumber.disabled = !allow;
         this.streetEnabledInput.disabled = !allow;
-        this.streetFloorsRange.disabled = !allowStreet;
-        this.streetFloorsNumber.disabled = !allowStreet;
-        this.streetHeightRange.disabled = !allowStreet;
-        this.streetHeightNumber.disabled = !allowStreet;
-        this._syncStreetStyleButtons({ allow: allowStreet });
-        this._syncStreetWindowStyleButtons({ allow: allowStreet });
+        this.streetFloorsRange.disabled = !allowStreetFloors;
+        this.streetFloorsNumber.disabled = !allowStreetFloors;
+        this.streetHeightRange.disabled = !allowStreetStyle;
+        this.streetHeightNumber.disabled = !allowStreetStyle;
+        this._syncStreetStyleButtons({ allow: allowStreetStyle });
+        this._syncStreetWindowStyleButtons({ allow: allowStreetWindows });
         this.beltCourseInput.disabled = !allowBelt;
         this._syncBeltCourseColorButtons({ allow: allowBelt && this._beltCourseEnabled });
         this.beltMarginRange.disabled = !allowBelt || !this._beltCourseEnabled;
@@ -1339,6 +1890,7 @@ export class BuildingFabricationUI {
         this.topBeltInnerWidthNumber.disabled = !allowTopBelt;
         this.topBeltHeightRange.disabled = !allowTopBelt;
         this.topBeltHeightNumber.disabled = !allowTopBelt;
+        this._syncTopBeltColorButtons({ allow: allowTopBelt });
         this._syncRoofColorButtons({ allow });
         this.windowWidthRange.disabled = !allow;
         this.windowWidthNumber.disabled = !allow;
@@ -1348,14 +1900,40 @@ export class BuildingFabricationUI {
         this.windowHeightNumber.disabled = !allow;
         this.windowYRange.disabled = !allow;
         this.windowYNumber.disabled = !allow;
-        this.streetWindowWidthRange.disabled = !allowStreet;
-        this.streetWindowWidthNumber.disabled = !allowStreet;
-        this.streetWindowGapRange.disabled = !allowStreet;
-        this.streetWindowGapNumber.disabled = !allowStreet;
-        this.streetWindowHeightRange.disabled = !allowStreet;
-        this.streetWindowHeightNumber.disabled = !allowStreet;
-        this.streetWindowYRange.disabled = !allowStreet;
-        this.streetWindowYNumber.disabled = !allowStreet;
+        this.windowFrameWidthRange.disabled = !allowWindowParams;
+        this.windowFrameWidthNumber.disabled = !allowWindowParams;
+        this.windowFrameColorPickButton.disabled = !allowWindowParams;
+        this.windowGlassTopPickButton.disabled = !allowWindowParams;
+        this.windowGlassBottomPickButton.disabled = !allowWindowParams;
+        this.windowSpacerInput.disabled = !allow;
+        this.windowSpacerEveryRange.disabled = !allowWindowSpacer;
+        this.windowSpacerEveryNumber.disabled = !allowWindowSpacer;
+        this.windowSpacerWidthRange.disabled = !allowWindowSpacer;
+        this.windowSpacerWidthNumber.disabled = !allowWindowSpacer;
+        this.windowSpacerExtrudeInput.disabled = !allowWindowSpacer;
+        this.windowSpacerExtrudeDistanceRange.disabled = !allowWindowSpacer || !this._windowSpacerExtrude;
+        this.windowSpacerExtrudeDistanceNumber.disabled = !allowWindowSpacer || !this._windowSpacerExtrude;
+        this.streetWindowWidthRange.disabled = !allowStreetWindows;
+        this.streetWindowWidthNumber.disabled = !allowStreetWindows;
+        this.streetWindowGapRange.disabled = !allowStreetWindows;
+        this.streetWindowGapNumber.disabled = !allowStreetWindows;
+        this.streetWindowHeightRange.disabled = !allowStreetWindows;
+        this.streetWindowHeightNumber.disabled = !allowStreetWindows;
+        this.streetWindowYRange.disabled = !allowStreetWindows;
+        this.streetWindowYNumber.disabled = !allowStreetWindows;
+        this.streetWindowFrameWidthRange.disabled = !allowStreetWindowParams;
+        this.streetWindowFrameWidthNumber.disabled = !allowStreetWindowParams;
+        this.streetWindowFrameColorPickButton.disabled = !allowStreetWindowParams;
+        this.streetWindowGlassTopPickButton.disabled = !allowStreetWindowParams;
+        this.streetWindowGlassBottomPickButton.disabled = !allowStreetWindowParams;
+        this.streetWindowSpacerInput.disabled = !allowStreetWindows;
+        this.streetWindowSpacerEveryRange.disabled = !allowStreetWindowSpacer;
+        this.streetWindowSpacerEveryNumber.disabled = !allowStreetWindowSpacer;
+        this.streetWindowSpacerWidthRange.disabled = !allowStreetWindowSpacer;
+        this.streetWindowSpacerWidthNumber.disabled = !allowStreetWindowSpacer;
+        this.streetWindowSpacerExtrudeInput.disabled = !allowStreetWindowSpacer;
+        this.streetWindowSpacerExtrudeDistanceRange.disabled = !allowStreetWindowSpacer || !this._streetWindowSpacerExtrude;
+        this.streetWindowSpacerExtrudeDistanceNumber.disabled = !allowStreetWindowSpacer || !this._streetWindowSpacerExtrude;
 
         if (!hasSelected) {
             this.typeSelect.value = 'business';
@@ -1366,7 +1944,7 @@ export class BuildingFabricationUI {
             this.floorHeightNumber.value = '';
 
             this.streetEnabledInput.checked = false;
-            this.streetFloorsRange.value = '1';
+            this.streetFloorsRange.value = '0';
             this.streetFloorsNumber.value = '';
             this.streetHeightRange.value = '1.0';
             this.streetHeightNumber.value = '';
@@ -1380,6 +1958,14 @@ export class BuildingFabricationUI {
             this.streetWindowHeightNumber.value = '';
             this.streetWindowYRange.value = '0';
             this.streetWindowYNumber.value = '';
+            this.streetWindowSpacerInput.checked = false;
+            this.streetWindowSpacerEveryRange.value = '1';
+            this.streetWindowSpacerEveryNumber.value = '';
+            this.streetWindowSpacerWidthRange.value = '0.1';
+            this.streetWindowSpacerWidthNumber.value = '';
+            this.streetWindowSpacerExtrudeInput.checked = false;
+            this.streetWindowSpacerExtrudeDistanceRange.value = '0';
+            this.streetWindowSpacerExtrudeDistanceNumber.value = '';
 
             this.beltCourseInput.checked = false;
             this.beltMarginRange.value = '0';
@@ -1397,9 +1983,13 @@ export class BuildingFabricationUI {
             this.topBeltInnerWidthNumber.value = '';
             this.topBeltHeightRange.value = '0.18';
             this.topBeltHeightNumber.value = '';
+            this._syncTopBeltColorButtons({ allow: false });
+            this.topBeltColorStatus.textContent = '';
 
             this._syncRoofColorButtons({ allow: false });
             this.roofColorStatus.textContent = '';
+            this.wallInsetRange.value = '0';
+            this.wallInsetNumber.value = '';
 
             this._syncWindowStyleButtons({ allow: false });
             this.windowWidthRange.value = '0.3';
@@ -1410,6 +2000,14 @@ export class BuildingFabricationUI {
             this.windowHeightNumber.value = '';
             this.windowYRange.value = '0';
             this.windowYNumber.value = '';
+            this.windowSpacerInput.checked = false;
+            this.windowSpacerEveryRange.value = '1';
+            this.windowSpacerEveryNumber.value = '';
+            this.windowSpacerWidthRange.value = '0.1';
+            this.windowSpacerWidthNumber.value = '';
+            this.windowSpacerExtrudeInput.checked = false;
+            this.windowSpacerExtrudeDistanceRange.value = '0';
+            this.windowSpacerExtrudeDistanceNumber.value = '';
             this._syncBuildingStyleButtons({ allow: false });
             return;
         }
@@ -1429,8 +2027,27 @@ export class BuildingFabricationUI {
         this.streetFloorsNumber.value = String(this._streetFloors);
         this.streetHeightRange.value = String(this._streetFloorHeight);
         this.streetHeightNumber.value = formatFloat(this._streetFloorHeight, 1);
-        this._syncStreetStyleButtons({ allow: allowStreet });
-        this._syncStreetWindowStyleButtons({ allow: allowStreet });
+        this._syncStreetStyleButtons({ allow: allowStreetStyle });
+        this._syncStreetWindowStyleButtons({ allow: allowStreetWindows });
+        const streetWindowParams = { ...getDefaultWindowParams(this._streetWindowTypeId), ...(this._streetWindowParams ?? {}) };
+        const streetWindowFrameWidth = clamp(streetWindowParams.frameWidth, 0.02, 0.2);
+        const streetWindowFrameColor = Number.isFinite(streetWindowParams.frameColor) ? streetWindowParams.frameColor : 0xffffff;
+        const streetWindowGlassTop = Number.isFinite(streetWindowParams.glassTop) ? streetWindowParams.glassTop : 0x94d9ff;
+        const streetWindowGlassBottom = Number.isFinite(streetWindowParams.glassBottom) ? streetWindowParams.glassBottom : 0x12507a;
+        const streetWindowFrameLabel = (this._windowParamColorOptions ?? []).find((c) => c.hex === streetWindowFrameColor)?.label
+            ?? `#${streetWindowFrameColor.toString(16).padStart(6, '0')}`;
+        const streetWindowGlassTopLabel = (this._windowParamColorOptions ?? []).find((c) => c.hex === streetWindowGlassTop)?.label
+            ?? `#${streetWindowGlassTop.toString(16).padStart(6, '0')}`;
+        const streetWindowGlassBottomLabel = (this._windowParamColorOptions ?? []).find((c) => c.hex === streetWindowGlassBottom)?.label
+            ?? `#${streetWindowGlassBottom.toString(16).padStart(6, '0')}`;
+        this.streetWindowFrameWidthRange.value = String(streetWindowFrameWidth);
+        this.streetWindowFrameWidthNumber.value = formatFloat(streetWindowFrameWidth, 2);
+        if (this.streetWindowFrameColorPickText) this.streetWindowFrameColorPickText.textContent = streetWindowFrameLabel;
+        if (this.streetWindowGlassTopPickText) this.streetWindowGlassTopPickText.textContent = streetWindowGlassTopLabel;
+        if (this.streetWindowGlassBottomPickText) this.streetWindowGlassBottomPickText.textContent = streetWindowGlassBottomLabel;
+        setMaterialThumbToColor(this.streetWindowFrameColorPickThumb, streetWindowFrameColor);
+        setMaterialThumbToColor(this.streetWindowGlassTopPickThumb, streetWindowGlassTop);
+        setMaterialThumbToColor(this.streetWindowGlassBottomPickThumb, streetWindowGlassBottom);
         this.streetWindowWidthRange.value = String(this._streetWindowWidth);
         this.streetWindowWidthNumber.value = formatFloat(this._streetWindowWidth, 1);
         this.streetWindowGapRange.value = String(this._streetWindowGap);
@@ -1439,6 +2056,14 @@ export class BuildingFabricationUI {
         this.streetWindowHeightNumber.value = formatFloat(this._streetWindowHeight, 1);
         this.streetWindowYRange.value = String(this._streetWindowY);
         this.streetWindowYNumber.value = formatFloat(this._streetWindowY, 1);
+        this.streetWindowSpacerInput.checked = this._streetWindowSpacerEnabled;
+        this.streetWindowSpacerEveryRange.value = String(this._streetWindowSpacerEvery);
+        this.streetWindowSpacerEveryNumber.value = String(this._streetWindowSpacerEvery);
+        this.streetWindowSpacerWidthRange.value = String(this._streetWindowSpacerWidth);
+        this.streetWindowSpacerWidthNumber.value = formatFloat(this._streetWindowSpacerWidth, 1);
+        this.streetWindowSpacerExtrudeInput.checked = this._streetWindowSpacerExtrude;
+        this.streetWindowSpacerExtrudeDistanceRange.value = String(this._streetWindowSpacerExtrudeDistance);
+        this.streetWindowSpacerExtrudeDistanceNumber.value = formatFloat(this._streetWindowSpacerExtrudeDistance, 2);
 
         this.beltCourseInput.checked = this._beltCourseEnabled;
         this.beltMarginRange.value = String(this._beltCourseMargin);
@@ -1446,15 +2071,32 @@ export class BuildingFabricationUI {
         this.beltHeightRange.value = String(this._beltCourseHeight);
         this.beltHeightNumber.value = formatFloat(this._beltCourseHeight, 2);
         this._syncBeltCourseColorButtons({ allow: allowBelt && this._beltCourseEnabled });
-        if (!this._streetEnabled) {
-            this.beltStatus.textContent = 'Enable street floors to use a belt course.';
-        } else if (this._streetFloors >= this._floorCount) {
+        if (this._streetFloors >= this._floorCount) {
             this.beltStatus.textContent = 'Add at least one upper floor to use a belt course.';
         } else {
             this.beltStatus.textContent = '';
         }
 
         this._syncWindowStyleButtons({ allow });
+        const windowParams = { ...getDefaultWindowParams(this._windowTypeId), ...(this._windowParams ?? {}) };
+        const windowFrameWidth = clamp(windowParams.frameWidth, 0.02, 0.2);
+        const windowFrameColor = Number.isFinite(windowParams.frameColor) ? windowParams.frameColor : 0xffffff;
+        const windowGlassTop = Number.isFinite(windowParams.glassTop) ? windowParams.glassTop : 0x94d9ff;
+        const windowGlassBottom = Number.isFinite(windowParams.glassBottom) ? windowParams.glassBottom : 0x12507a;
+        const windowFrameLabel = (this._windowParamColorOptions ?? []).find((c) => c.hex === windowFrameColor)?.label
+            ?? `#${windowFrameColor.toString(16).padStart(6, '0')}`;
+        const windowGlassTopLabel = (this._windowParamColorOptions ?? []).find((c) => c.hex === windowGlassTop)?.label
+            ?? `#${windowGlassTop.toString(16).padStart(6, '0')}`;
+        const windowGlassBottomLabel = (this._windowParamColorOptions ?? []).find((c) => c.hex === windowGlassBottom)?.label
+            ?? `#${windowGlassBottom.toString(16).padStart(6, '0')}`;
+        this.windowFrameWidthRange.value = String(windowFrameWidth);
+        this.windowFrameWidthNumber.value = formatFloat(windowFrameWidth, 2);
+        if (this.windowFrameColorPickText) this.windowFrameColorPickText.textContent = windowFrameLabel;
+        if (this.windowGlassTopPickText) this.windowGlassTopPickText.textContent = windowGlassTopLabel;
+        if (this.windowGlassBottomPickText) this.windowGlassBottomPickText.textContent = windowGlassBottomLabel;
+        setMaterialThumbToColor(this.windowFrameColorPickThumb, windowFrameColor);
+        setMaterialThumbToColor(this.windowGlassTopPickThumb, windowGlassTop);
+        setMaterialThumbToColor(this.windowGlassBottomPickThumb, windowGlassBottom);
         this.windowWidthRange.value = String(this._windowWidth);
         this.windowWidthNumber.value = formatFloat(this._windowWidth, 1);
         this.windowGapRange.value = String(this._windowGap);
@@ -1463,14 +2105,25 @@ export class BuildingFabricationUI {
         this.windowHeightNumber.value = formatFloat(this._windowHeight, 1);
         this.windowYRange.value = String(this._windowY);
         this.windowYNumber.value = formatFloat(this._windowY, 1);
+        this.windowSpacerInput.checked = this._windowSpacerEnabled;
+        this.windowSpacerEveryRange.value = String(this._windowSpacerEvery);
+        this.windowSpacerEveryNumber.value = String(this._windowSpacerEvery);
+        this.windowSpacerWidthRange.value = String(this._windowSpacerWidth);
+        this.windowSpacerWidthNumber.value = formatFloat(this._windowSpacerWidth, 1);
+        this.windowSpacerExtrudeInput.checked = this._windowSpacerExtrude;
+        this.windowSpacerExtrudeDistanceRange.value = String(this._windowSpacerExtrudeDistance);
+        this.windowSpacerExtrudeDistanceNumber.value = formatFloat(this._windowSpacerExtrudeDistance, 2);
 
         this.topBeltInput.checked = this._topBeltEnabled;
+        this._syncTopBeltColorButtons({ allow: allowTopBelt });
         this.topBeltWidthRange.value = String(this._topBeltWidth);
         this.topBeltWidthNumber.value = formatFloat(this._topBeltWidth, 1);
         this.topBeltInnerWidthRange.value = String(this._topBeltInnerWidth);
         this.topBeltInnerWidthNumber.value = formatFloat(this._topBeltInnerWidth, 1);
         this.topBeltHeightRange.value = String(this._topBeltHeight);
         this.topBeltHeightNumber.value = formatFloat(this._topBeltHeight, 2);
+        this.wallInsetRange.value = String(this._wallInset);
+        this.wallInsetNumber.value = formatFloat(this._wallInset, 2);
     }
 
     setSelectedCount(count) {
@@ -1641,6 +2294,15 @@ export class BuildingFabricationUI {
         if (changed) this.onFloorHeightChange?.(next);
     }
 
+    _setWallInsetFromUi(raw) {
+        const next = clamp(raw, 0.0, 4.0);
+        const changed = Math.abs(next - this._wallInset) >= 1e-6;
+        this._wallInset = next;
+        this.wallInsetRange.value = String(next);
+        this.wallInsetNumber.value = formatFloat(next, 2);
+        if (changed) this.onWallInsetChange?.(next);
+    }
+
     _setWindowWidthFromUi(raw) {
         const next = clamp(raw, 0.3, 12.0);
         const changed = Math.abs(next - this._windowWidth) >= 1e-6;
@@ -1677,6 +2339,180 @@ export class BuildingFabricationUI {
         if (changed) this.onWindowYChange?.(next);
     }
 
+    _isParametricWindowType(typeId) {
+        const id = isWindowTypeId(typeId) ? typeId : WINDOW_TYPE.STYLE_DEFAULT;
+        return id === WINDOW_TYPE.ARCH_V1 || id === WINDOW_TYPE.MODERN_V1;
+    }
+
+    _setWindowFrameWidthFromUi(raw) {
+        const next = clamp(raw, 0.02, 0.2);
+        const prev = Number(this._windowParams?.frameWidth) || 0;
+        const changed = Math.abs(next - prev) >= 1e-6;
+        this._windowParams = { ...(this._windowParams ?? {}), frameWidth: next };
+        this.windowFrameWidthRange.value = String(next);
+        this.windowFrameWidthNumber.value = formatFloat(next, 2);
+        if (changed) this.onWindowFrameWidthChange?.(next);
+    }
+
+    _setStreetWindowFrameWidthFromUi(raw) {
+        const next = clamp(raw, 0.02, 0.2);
+        const prev = Number(this._streetWindowParams?.frameWidth) || 0;
+        const changed = Math.abs(next - prev) >= 1e-6;
+        this._streetWindowParams = { ...(this._streetWindowParams ?? {}), frameWidth: next };
+        this.streetWindowFrameWidthRange.value = String(next);
+        this.streetWindowFrameWidthNumber.value = formatFloat(next, 2);
+        if (changed) this.onStreetWindowFrameWidthChange?.(next);
+    }
+
+    _openWindowParamColorPicker({ title, selectedHex, onPick } = {}) {
+        if (typeof onPick !== 'function') return;
+        const options = (this._windowParamColorOptions ?? []).map((c) => ({
+            id: c.id,
+            label: c.label,
+            kind: 'color',
+            hex: c.hex
+        }));
+        const selected = (this._windowParamColorOptions ?? []).find((c) => c.hex === selectedHex)?.id ?? null;
+        this._pickerPopup.open({
+            title: title || 'Select color',
+            sections: [{ label: 'Colors', options }],
+            selectedId: selected,
+            onSelect: (opt) => onPick(opt?.hex)
+        });
+    }
+
+    _openWindowFrameColorPicker() {
+        const hex = Number(this._windowParams?.frameColor);
+        this._openWindowParamColorPicker({
+            title: 'Frame color',
+            selectedHex: Number.isFinite(hex) ? hex : null,
+            onPick: (pickedHex) => {
+                if (!Number.isFinite(pickedHex)) return;
+                this._windowParams = { ...(this._windowParams ?? {}), frameColor: pickedHex };
+                this.onWindowFrameColorChange?.(pickedHex);
+                this._syncPropertyWidgets();
+            }
+        });
+    }
+
+    _openWindowGlassTopPicker() {
+        const hex = Number(this._windowParams?.glassTop);
+        this._openWindowParamColorPicker({
+            title: 'Glass top',
+            selectedHex: Number.isFinite(hex) ? hex : null,
+            onPick: (pickedHex) => {
+                if (!Number.isFinite(pickedHex)) return;
+                this._windowParams = { ...(this._windowParams ?? {}), glassTop: pickedHex };
+                this.onWindowGlassTopChange?.(pickedHex);
+                this._syncPropertyWidgets();
+            }
+        });
+    }
+
+    _openWindowGlassBottomPicker() {
+        const hex = Number(this._windowParams?.glassBottom);
+        this._openWindowParamColorPicker({
+            title: 'Glass bottom',
+            selectedHex: Number.isFinite(hex) ? hex : null,
+            onPick: (pickedHex) => {
+                if (!Number.isFinite(pickedHex)) return;
+                this._windowParams = { ...(this._windowParams ?? {}), glassBottom: pickedHex };
+                this.onWindowGlassBottomChange?.(pickedHex);
+                this._syncPropertyWidgets();
+            }
+        });
+    }
+
+    _openStreetWindowFrameColorPicker() {
+        const hex = Number(this._streetWindowParams?.frameColor);
+        this._openWindowParamColorPicker({
+            title: 'Street frame color',
+            selectedHex: Number.isFinite(hex) ? hex : null,
+            onPick: (pickedHex) => {
+                if (!Number.isFinite(pickedHex)) return;
+                this._streetWindowParams = { ...(this._streetWindowParams ?? {}), frameColor: pickedHex };
+                this.onStreetWindowFrameColorChange?.(pickedHex);
+                this._syncPropertyWidgets();
+            }
+        });
+    }
+
+    _openStreetWindowGlassTopPicker() {
+        const hex = Number(this._streetWindowParams?.glassTop);
+        this._openWindowParamColorPicker({
+            title: 'Street glass top',
+            selectedHex: Number.isFinite(hex) ? hex : null,
+            onPick: (pickedHex) => {
+                if (!Number.isFinite(pickedHex)) return;
+                this._streetWindowParams = { ...(this._streetWindowParams ?? {}), glassTop: pickedHex };
+                this.onStreetWindowGlassTopChange?.(pickedHex);
+                this._syncPropertyWidgets();
+            }
+        });
+    }
+
+    _openStreetWindowGlassBottomPicker() {
+        const hex = Number(this._streetWindowParams?.glassBottom);
+        this._openWindowParamColorPicker({
+            title: 'Street glass bottom',
+            selectedHex: Number.isFinite(hex) ? hex : null,
+            onPick: (pickedHex) => {
+                if (!Number.isFinite(pickedHex)) return;
+                this._streetWindowParams = { ...(this._streetWindowParams ?? {}), glassBottom: pickedHex };
+                this.onStreetWindowGlassBottomChange?.(pickedHex);
+                this._syncPropertyWidgets();
+            }
+        });
+    }
+
+    _setWindowSpacerEnabledFromUi(raw) {
+        const next = !!raw;
+        const changed = next !== this._windowSpacerEnabled;
+        this._windowSpacerEnabled = next;
+        this.windowSpacerInput.checked = next;
+        this._syncPropertyWidgets();
+        if (changed) this.onWindowSpacerEnabledChange?.(next);
+    }
+
+    _setWindowSpacerEveryFromUi(raw) {
+        const next = clampInt(raw, 1, 99);
+        const changed = next !== this._windowSpacerEvery;
+        this._windowSpacerEvery = next;
+        this.windowSpacerEveryRange.value = String(next);
+        this.windowSpacerEveryNumber.value = String(next);
+        this._syncPropertyWidgets();
+        if (changed) this.onWindowSpacerEveryChange?.(next);
+    }
+
+    _setWindowSpacerWidthFromUi(raw) {
+        const next = clamp(raw, 0.1, 10.0);
+        const changed = Math.abs(next - this._windowSpacerWidth) >= 1e-6;
+        this._windowSpacerWidth = next;
+        this.windowSpacerWidthRange.value = String(next);
+        this.windowSpacerWidthNumber.value = formatFloat(next, 1);
+        this._syncPropertyWidgets();
+        if (changed) this.onWindowSpacerWidthChange?.(next);
+    }
+
+    _setWindowSpacerExtrudeFromUi(raw) {
+        const next = !!raw;
+        const changed = next !== this._windowSpacerExtrude;
+        this._windowSpacerExtrude = next;
+        this.windowSpacerExtrudeInput.checked = next;
+        this._syncPropertyWidgets();
+        if (changed) this.onWindowSpacerExtrudeChange?.(next);
+    }
+
+    _setWindowSpacerExtrudeDistanceFromUi(raw) {
+        const next = clamp(raw, 0.0, 1.0);
+        const changed = Math.abs(next - this._windowSpacerExtrudeDistance) >= 1e-6;
+        this._windowSpacerExtrudeDistance = next;
+        this.windowSpacerExtrudeDistanceRange.value = String(next);
+        this.windowSpacerExtrudeDistanceNumber.value = formatFloat(next, 2);
+        this._syncPropertyWidgets();
+        if (changed) this.onWindowSpacerExtrudeDistanceChange?.(next);
+    }
+
     _setBuildingTypeFromUi(raw) {
         const next = typeof raw === 'string' ? raw : '';
         const safe = next === 'business' || next === 'industrial' || next === 'apartments' || next === 'house'
@@ -1706,8 +2542,8 @@ export class BuildingFabricationUI {
     }
 
     _setStreetFloorsFromUi(raw) {
-        const max = Math.max(1, this._floorCount);
-        const next = clampInt(raw, 1, max);
+        const max = Math.max(0, this._floorCount);
+        const next = clampInt(raw, 0, max);
         const changed = next !== this._streetFloors;
         this._streetFloors = next;
         this.streetFloorsRange.value = String(next);
@@ -1769,6 +2605,14 @@ export class BuildingFabricationUI {
         this._beltCourseColor = next;
         this._syncBeltCourseColorButtons({ allow: true });
         if (changed) this.onBeltCourseColorChange?.(next);
+    }
+
+    _setTopBeltColorFromUi(raw) {
+        const next = isBeltCourseColor(raw) ? raw : BELT_COURSE_COLOR.OFFWHITE;
+        const changed = next !== this._topBeltColor;
+        this._topBeltColor = next;
+        this._syncTopBeltColorButtons({ allow: true });
+        if (changed) this.onTopBeltColorChange?.(next);
     }
 
     _setRoofColorFromUi(raw) {
@@ -1845,34 +2689,97 @@ export class BuildingFabricationUI {
     }
 
     _syncBeltCourseColorButtons({ allow } = {}) {
-        if (!this.beltColorGrid) return;
         const enabled = !!allow;
         const selected = this._beltCourseColor || BELT_COURSE_COLOR.OFFWHITE;
+        const found = (this._beltCourseColorOptions ?? []).find((opt) => opt?.id === selected) ?? null;
+        const label = found?.label ?? selected;
+        const hex = Number.isFinite(found?.hex) ? found.hex : 0xffffff;
 
-        const buttons = this.beltColorGrid.querySelectorAll('.building-fab-texture-option');
-        for (const btn of buttons) {
-            if (!btn) continue;
-            const id = btn.dataset?.colorId ?? '';
-            const active = id === selected;
-            btn.disabled = !enabled;
-            btn.classList.toggle('is-selected', active);
-            btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-        }
+        if (this.beltColorPickButton) this.beltColorPickButton.disabled = !enabled;
+        if (this.beltColorPickText) this.beltColorPickText.textContent = label;
+        setMaterialThumbToColor(this.beltColorPickThumb, hex);
+        this.beltColorStatus.textContent = enabled ? label : '';
+    }
 
-        if (!enabled) {
-            this.beltColorStatus.textContent = '';
-        } else {
-            const found = (this._beltCourseColorOptions ?? []).find((opt) => opt?.id === selected);
-            this.beltColorStatus.textContent = found?.label ?? '';
-        }
+    _openBeltCourseColorPicker() {
+        if (this.beltColorPickButton?.disabled) return;
+        const options = (this._beltCourseColorOptions ?? []).map((opt) => ({
+            id: opt.id,
+            label: opt.label,
+            kind: 'color',
+            hex: opt.hex
+        }));
+        this._pickerPopup.open({
+            title: 'Belt color',
+            sections: [{ label: 'Colors', options }],
+            selectedId: this._beltCourseColor || BELT_COURSE_COLOR.OFFWHITE,
+            onSelect: (opt) => this._setBeltCourseColorFromUi(opt.id)
+        });
     }
 
     _handleBeltCourseColorGridClick(e) {
-        const btn = e?.target?.closest?.('.building-fab-texture-option');
-        if (!btn || !this.beltColorGrid?.contains(btn)) return;
-        if (btn.disabled) return;
-        const raw = btn.dataset?.colorId ?? '';
-        this._setBeltCourseColorFromUi(raw);
+        if (e) e.preventDefault?.();
+        this._openBeltCourseColorPicker();
+    }
+
+    _renderTopBeltColorOptions() {
+        if (!this.topBeltColorGrid) return;
+        this.topBeltColorGrid.textContent = '';
+
+        for (const opt of this._beltCourseColorOptions ?? []) {
+            const id = typeof opt?.id === 'string' ? opt.id : '';
+            if (!id) continue;
+            const label = typeof opt?.label === 'string' ? opt.label : id;
+            const hex = Number.isFinite(opt?.hex) ? opt.hex : 0xffffff;
+            const hexCss = `#${hex.toString(16).padStart(6, '0')}`;
+
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'building-fab-texture-option';
+            btn.dataset.colorId = id;
+            btn.title = label;
+            btn.setAttribute('aria-label', label);
+
+            const swatch = document.createElement('div');
+            swatch.className = 'building-fab-color-swatch';
+            swatch.style.background = hexCss;
+            btn.appendChild(swatch);
+            this.topBeltColorGrid.appendChild(btn);
+        }
+    }
+
+    _syncTopBeltColorButtons({ allow } = {}) {
+        const enabled = !!allow;
+        const selected = this._topBeltColor || BELT_COURSE_COLOR.OFFWHITE;
+        const found = (this._beltCourseColorOptions ?? []).find((opt) => opt?.id === selected) ?? null;
+        const label = found?.label ?? selected;
+        const hex = Number.isFinite(found?.hex) ? found.hex : 0xffffff;
+
+        if (this.topBeltColorPickButton) this.topBeltColorPickButton.disabled = !enabled;
+        if (this.topBeltColorPickText) this.topBeltColorPickText.textContent = label;
+        setMaterialThumbToColor(this.topBeltColorPickThumb, hex);
+        this.topBeltColorStatus.textContent = enabled ? label : '';
+    }
+
+    _openTopBeltColorPicker() {
+        if (this.topBeltColorPickButton?.disabled) return;
+        const options = (this._beltCourseColorOptions ?? []).map((opt) => ({
+            id: opt.id,
+            label: opt.label,
+            kind: 'color',
+            hex: opt.hex
+        }));
+        this._pickerPopup.open({
+            title: 'Roof belt color',
+            sections: [{ label: 'Colors', options }],
+            selectedId: this._topBeltColor || BELT_COURSE_COLOR.OFFWHITE,
+            onSelect: (opt) => this._setTopBeltColorFromUi(opt.id)
+        });
+    }
+
+    _handleTopBeltColorGridClick(e) {
+        if (e) e.preventDefault?.();
+        this._openTopBeltColorPicker();
     }
 
     _renderRoofColorOptions() {
@@ -1904,50 +2811,81 @@ export class BuildingFabricationUI {
     }
 
     _syncRoofColorButtons({ allow } = {}) {
-        if (!this.roofColorGrid) return;
         const enabled = !!allow;
         const selected = this._roofColor || ROOF_COLOR.DEFAULT;
+        const found = (this._roofColorOptions ?? []).find((opt) => opt?.id === selected) ?? null;
+        const label = found?.label ?? selected;
+        const hex = Number.isFinite(found?.hex) ? found.hex : 0xffffff;
 
-        const buttons = this.roofColorGrid.querySelectorAll('.building-fab-texture-option');
-        for (const btn of buttons) {
-            if (!btn) continue;
-            const id = btn.dataset?.roofColorId ?? '';
-            const active = id === selected;
-            btn.disabled = !enabled;
-            btn.classList.toggle('is-selected', active);
-            btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-        }
+        if (this.roofColorPickButton) this.roofColorPickButton.disabled = !enabled;
+        if (this.roofColorPickText) this.roofColorPickText.textContent = label;
+        setMaterialThumbToColor(this.roofColorPickThumb, hex, { isDefaultRoof: selected === ROOF_COLOR.DEFAULT });
+        this.roofColorStatus.textContent = enabled ? label : '';
+    }
 
-        if (!enabled) {
-            this.roofColorStatus.textContent = '';
-        } else {
-            const found = (this._roofColorOptions ?? []).find((opt) => opt?.id === selected);
-            this.roofColorStatus.textContent = found?.label ?? '';
-        }
+    _openRoofColorPicker() {
+        if (this.roofColorPickButton?.disabled) return;
+        const roofDefaultPreviewUrl = buildRoofDefaultPreviewUrl({ size: 96 });
+        const options = (this._roofColorOptions ?? []).map((opt) => {
+            const id = typeof opt?.id === 'string' ? opt.id : '';
+            const label = typeof opt?.label === 'string' ? opt.label : id;
+            const hex = Number.isFinite(opt?.hex) ? opt.hex : 0xffffff;
+            if (id === ROOF_COLOR.DEFAULT && roofDefaultPreviewUrl) {
+                return { id, label, kind: 'texture', previewUrl: roofDefaultPreviewUrl };
+            }
+            return { id, label, kind: 'color', hex };
+        });
+        this._pickerPopup.open({
+            title: 'Roof color',
+            sections: [{ label: 'Colors', options }],
+            selectedId: this._roofColor || ROOF_COLOR.DEFAULT,
+            onSelect: (opt) => this._setRoofColorFromUi(opt.id)
+        });
     }
 
     _handleRoofColorGridClick(e) {
-        const btn = e?.target?.closest?.('.building-fab-texture-option');
-        if (!btn || !this.roofColorGrid?.contains(btn)) return;
-        if (btn.disabled) return;
-        const raw = btn.dataset?.roofColorId ?? '';
-        this._setRoofColorFromUi(raw);
+        if (e) e.preventDefault?.();
+        this._openRoofColorPicker();
     }
 
     _setWindowStyleFromUi(raw) {
-        const next = isWindowStyle(raw) ? raw : WINDOW_STYLE.DEFAULT;
-        const changed = next !== this._windowStyle;
-        this._windowStyle = next;
+        const typeId = isWindowTypeId(raw)
+            ? raw
+            : (isWindowStyle(raw) ? (raw === WINDOW_STYLE.DARK
+                ? WINDOW_TYPE.STYLE_DARK
+                : raw === WINDOW_STYLE.BLUE
+                    ? WINDOW_TYPE.STYLE_BLUE
+                    : raw === WINDOW_STYLE.WARM
+                        ? WINDOW_TYPE.STYLE_WARM
+                        : raw === WINDOW_STYLE.GRID
+                            ? WINDOW_TYPE.STYLE_GRID
+                            : WINDOW_TYPE.STYLE_DEFAULT) : WINDOW_TYPE.STYLE_DEFAULT);
+        const changed = typeId !== this._windowTypeId;
+        this._windowTypeId = typeId;
+        this._windowParams = getDefaultWindowParams(typeId);
         this._syncWindowStyleButtons({ allow: true });
-        if (changed) this.onWindowStyleChange?.(next);
+        this._syncPropertyWidgets();
+        if (changed) this.onWindowStyleChange?.(typeId);
     }
 
     _setStreetWindowStyleFromUi(raw) {
-        const next = isWindowStyle(raw) ? raw : WINDOW_STYLE.DEFAULT;
-        const changed = next !== this._streetWindowStyle;
-        this._streetWindowStyle = next;
+        const typeId = isWindowTypeId(raw)
+            ? raw
+            : (isWindowStyle(raw) ? (raw === WINDOW_STYLE.DARK
+                ? WINDOW_TYPE.STYLE_DARK
+                : raw === WINDOW_STYLE.BLUE
+                    ? WINDOW_TYPE.STYLE_BLUE
+                    : raw === WINDOW_STYLE.WARM
+                        ? WINDOW_TYPE.STYLE_WARM
+                        : raw === WINDOW_STYLE.GRID
+                            ? WINDOW_TYPE.STYLE_GRID
+                            : WINDOW_TYPE.STYLE_DEFAULT) : WINDOW_TYPE.STYLE_DEFAULT);
+        const changed = typeId !== this._streetWindowTypeId;
+        this._streetWindowTypeId = typeId;
+        this._streetWindowParams = getDefaultWindowParams(typeId);
         this._syncStreetWindowStyleButtons({ allow: true });
-        if (changed) this.onStreetWindowStyleChange?.(next);
+        this._syncPropertyWidgets();
+        if (changed) this.onStreetWindowStyleChange?.(typeId);
     }
 
     _setStreetWindowWidthFromUi(raw) {
@@ -1984,6 +2922,54 @@ export class BuildingFabricationUI {
         this.streetWindowYRange.value = String(next);
         this.streetWindowYNumber.value = formatFloat(next, 1);
         if (changed) this.onStreetWindowYChange?.(next);
+    }
+
+    _setStreetWindowSpacerEnabledFromUi(raw) {
+        const next = !!raw;
+        const changed = next !== this._streetWindowSpacerEnabled;
+        this._streetWindowSpacerEnabled = next;
+        this.streetWindowSpacerInput.checked = next;
+        this._syncPropertyWidgets();
+        if (changed) this.onStreetWindowSpacerEnabledChange?.(next);
+    }
+
+    _setStreetWindowSpacerEveryFromUi(raw) {
+        const next = clampInt(raw, 1, 99);
+        const changed = next !== this._streetWindowSpacerEvery;
+        this._streetWindowSpacerEvery = next;
+        this.streetWindowSpacerEveryRange.value = String(next);
+        this.streetWindowSpacerEveryNumber.value = String(next);
+        this._syncPropertyWidgets();
+        if (changed) this.onStreetWindowSpacerEveryChange?.(next);
+    }
+
+    _setStreetWindowSpacerWidthFromUi(raw) {
+        const next = clamp(raw, 0.1, 10.0);
+        const changed = Math.abs(next - this._streetWindowSpacerWidth) >= 1e-6;
+        this._streetWindowSpacerWidth = next;
+        this.streetWindowSpacerWidthRange.value = String(next);
+        this.streetWindowSpacerWidthNumber.value = formatFloat(next, 1);
+        this._syncPropertyWidgets();
+        if (changed) this.onStreetWindowSpacerWidthChange?.(next);
+    }
+
+    _setStreetWindowSpacerExtrudeFromUi(raw) {
+        const next = !!raw;
+        const changed = next !== this._streetWindowSpacerExtrude;
+        this._streetWindowSpacerExtrude = next;
+        this.streetWindowSpacerExtrudeInput.checked = next;
+        this._syncPropertyWidgets();
+        if (changed) this.onStreetWindowSpacerExtrudeChange?.(next);
+    }
+
+    _setStreetWindowSpacerExtrudeDistanceFromUi(raw) {
+        const next = clamp(raw, 0.0, 1.0);
+        const changed = Math.abs(next - this._streetWindowSpacerExtrudeDistance) >= 1e-6;
+        this._streetWindowSpacerExtrudeDistance = next;
+        this.streetWindowSpacerExtrudeDistanceRange.value = String(next);
+        this.streetWindowSpacerExtrudeDistanceNumber.value = formatFloat(next, 2);
+        this._syncPropertyWidgets();
+        if (changed) this.onStreetWindowSpacerExtrudeDistanceChange?.(next);
     }
 
     _renderWindowStyleOptions() {
@@ -2127,85 +3113,119 @@ export class BuildingFabricationUI {
     }
 
     _syncBuildingStyleButtons({ allow } = {}) {
-        if (!this.styleGrid) return;
         const enabled = !!allow;
         const selected = this._buildingStyle || BUILDING_STYLE.DEFAULT;
+        const found = (this._buildingStyleOptions ?? []).find((opt) => opt?.id === selected) ?? null;
+        const label = found?.label ?? selected;
+        const url = typeof found?.wallTextureUrl === 'string' ? found.wallTextureUrl : '';
 
-        const buttons = this.styleGrid.querySelectorAll('.building-fab-texture-option');
-        for (const btn of buttons) {
-            if (!btn) continue;
-            const id = btn.dataset?.styleId ?? '';
-            const active = id === selected;
-            btn.disabled = !enabled;
-            btn.classList.toggle('is-selected', active);
-            btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-        }
+        if (this.stylePickButton) this.stylePickButton.disabled = !enabled;
+        if (this.stylePickText) this.stylePickText.textContent = label;
+        setMaterialThumbToTexture(this.stylePickThumb, url, label);
+        this.styleStatus.textContent = enabled ? '' : 'Select a building to change style.';
+    }
+
+    _openBuildingStylePicker() {
+        if (this.stylePickButton?.disabled) return;
+        const options = (this._buildingStyleOptions ?? []).map((opt) => ({
+            id: opt.id,
+            label: opt.label,
+            kind: 'texture',
+            previewUrl: opt.wallTextureUrl
+        }));
+        this._pickerPopup.open({
+            title: 'Building style',
+            sections: [{ label: 'Textures', options }],
+            selectedId: this._buildingStyle || BUILDING_STYLE.DEFAULT,
+            onSelect: (opt) => this._setBuildingStyleFromUi(opt.id)
+        });
     }
 
     _syncWindowStyleButtons({ allow } = {}) {
-        if (!this.windowStyleGrid) return;
         const enabled = !!allow;
-        const selected = this._windowStyle || WINDOW_STYLE.DEFAULT;
+        const selected = this._windowTypeId || WINDOW_TYPE.STYLE_DEFAULT;
+        const found = (this._windowTypeOptions ?? []).find((opt) => opt?.id === selected) ?? null;
+        const label = found?.label ?? selected;
+        const url = typeof found?.previewUrl === 'string' ? found.previewUrl : '';
 
-        const buttons = this.windowStyleGrid.querySelectorAll('.building-fab-texture-option');
-        for (const btn of buttons) {
-            if (!btn) continue;
-            const id = btn.dataset?.styleId ?? '';
-            const active = id === selected;
-            btn.disabled = !enabled;
-            btn.classList.toggle('is-selected', active);
-            btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-        }
+        if (this.windowStylePickButton) this.windowStylePickButton.disabled = !enabled;
+        if (this.windowStylePickText) this.windowStylePickText.textContent = label;
+        setMaterialThumbToTexture(this.windowStylePickThumb, url, label);
+        this.windowStyleStatus.textContent = enabled ? '' : 'Select a building to change windows.';
+    }
 
-        if (!enabled) {
-            this.windowStyleStatus.textContent = 'Select a building to change windows.';
-        } else {
-            this.windowStyleStatus.textContent = '';
-        }
+    _openWindowTypePicker() {
+        if (this.windowStylePickButton?.disabled) return;
+        const options = (this._windowTypeOptions ?? []).map((opt) => ({
+            id: opt.id,
+            label: opt.label,
+            kind: 'texture',
+            previewUrl: opt.previewUrl
+        }));
+        this._pickerPopup.open({
+            title: 'Window type',
+            sections: [{ label: 'Types', options }],
+            selectedId: this._windowTypeId || WINDOW_TYPE.STYLE_DEFAULT,
+            onSelect: (opt) => this._setWindowStyleFromUi(opt.id)
+        });
     }
 
     _syncStreetStyleButtons({ allow } = {}) {
-        if (!this.streetStyleGrid) return;
         const enabled = !!allow;
         const selected = this._streetStyle || BUILDING_STYLE.DEFAULT;
+        const found = (this._buildingStyleOptions ?? []).find((opt) => opt?.id === selected) ?? null;
+        const label = found?.label ?? selected;
+        const url = typeof found?.wallTextureUrl === 'string' ? found.wallTextureUrl : '';
 
-        const buttons = this.streetStyleGrid.querySelectorAll('.building-fab-texture-option');
-        for (const btn of buttons) {
-            if (!btn) continue;
-            const id = btn.dataset?.styleId ?? '';
-            const active = id === selected;
-            btn.disabled = !enabled;
-            btn.classList.toggle('is-selected', active);
-            btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-        }
+        if (this.streetStylePickButton) this.streetStylePickButton.disabled = !enabled;
+        if (this.streetStylePickText) this.streetStylePickText.textContent = label;
+        setMaterialThumbToTexture(this.streetStylePickThumb, url, label);
+        this.streetStyleStatus.textContent = enabled ? '' : 'Select a building and enable street floors.';
+    }
 
-        if (!enabled) {
-            this.streetStyleStatus.textContent = 'Select a building and enable street floors.';
-        } else {
-            this.streetStyleStatus.textContent = '';
-        }
+    _openStreetStylePicker() {
+        if (this.streetStylePickButton?.disabled) return;
+        const options = (this._buildingStyleOptions ?? []).map((opt) => ({
+            id: opt.id,
+            label: opt.label,
+            kind: 'texture',
+            previewUrl: opt.wallTextureUrl
+        }));
+        this._pickerPopup.open({
+            title: 'Street style',
+            sections: [{ label: 'Textures', options }],
+            selectedId: this._streetStyle || BUILDING_STYLE.DEFAULT,
+            onSelect: (opt) => this._setStreetStyleFromUi(opt.id)
+        });
     }
 
     _syncStreetWindowStyleButtons({ allow } = {}) {
-        if (!this.streetWindowStyleGrid) return;
         const enabled = !!allow;
-        const selected = this._streetWindowStyle || WINDOW_STYLE.DEFAULT;
+        const selected = this._streetWindowTypeId || WINDOW_TYPE.STYLE_DEFAULT;
+        const found = (this._windowTypeOptions ?? []).find((opt) => opt?.id === selected) ?? null;
+        const label = found?.label ?? selected;
+        const url = typeof found?.previewUrl === 'string' ? found.previewUrl : '';
 
-        const buttons = this.streetWindowStyleGrid.querySelectorAll('.building-fab-texture-option');
-        for (const btn of buttons) {
-            if (!btn) continue;
-            const id = btn.dataset?.styleId ?? '';
-            const active = id === selected;
-            btn.disabled = !enabled;
-            btn.classList.toggle('is-selected', active);
-            btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-        }
+        if (this.streetWindowStylePickButton) this.streetWindowStylePickButton.disabled = !enabled;
+        if (this.streetWindowStylePickText) this.streetWindowStylePickText.textContent = label;
+        setMaterialThumbToTexture(this.streetWindowStylePickThumb, url, label);
+        this.streetWindowStyleStatus.textContent = enabled ? '' : 'Select a building and enable street floors.';
+    }
 
-        if (!enabled) {
-            this.streetWindowStyleStatus.textContent = 'Select a building and enable street floors.';
-        } else {
-            this.streetWindowStyleStatus.textContent = '';
-        }
+    _openStreetWindowTypePicker() {
+        if (this.streetWindowStylePickButton?.disabled) return;
+        const options = (this._windowTypeOptions ?? []).map((opt) => ({
+            id: opt.id,
+            label: opt.label,
+            kind: 'texture',
+            previewUrl: opt.previewUrl
+        }));
+        this._pickerPopup.open({
+            title: 'Street window type',
+            sections: [{ label: 'Types', options }],
+            selectedId: this._streetWindowTypeId || WINDOW_TYPE.STYLE_DEFAULT,
+            onSelect: (opt) => this._setStreetWindowStyleFromUi(opt.id)
+        });
     }
 
     _handleBuildingStyleGridClick(e) {
@@ -2449,27 +3469,30 @@ export class BuildingFabricationUI {
         this.floorNumber.addEventListener('input', this._onFloorNumberInput);
         this.floorHeightRange.addEventListener('input', this._onFloorHeightRangeInput);
         this.floorHeightNumber.addEventListener('input', this._onFloorHeightNumberInput);
+        this.wallInsetRange.addEventListener('input', this._onWallInsetRangeInput);
+        this.wallInsetNumber.addEventListener('input', this._onWallInsetNumberInput);
         this.streetEnabledInput.addEventListener('change', this._onStreetEnabledChange);
         this.streetFloorsRange.addEventListener('input', this._onStreetFloorsRangeInput);
         this.streetFloorsNumber.addEventListener('input', this._onStreetFloorsNumberInput);
         this.streetHeightRange.addEventListener('input', this._onStreetHeightRangeInput);
         this.streetHeightNumber.addEventListener('input', this._onStreetHeightNumberInput);
-        this.streetStyleGrid.addEventListener('click', this._onStreetStyleGridClick);
+        this.streetStylePickButton.addEventListener('click', this._onStreetStylePickClick);
         this.beltCourseInput.addEventListener('change', this._onBeltCourseEnabledChange);
         this.beltMarginRange.addEventListener('input', this._onBeltMarginRangeInput);
         this.beltMarginNumber.addEventListener('input', this._onBeltMarginNumberInput);
         this.beltHeightRange.addEventListener('input', this._onBeltHeightRangeInput);
         this.beltHeightNumber.addEventListener('input', this._onBeltHeightNumberInput);
-        this.beltColorGrid.addEventListener('click', this._onBeltColorGridClick);
+        this.beltColorPickButton.addEventListener('click', this._onBeltColorPickClick);
         this.topBeltInput.addEventListener('change', this._onTopBeltEnabledChange);
+        this.topBeltColorPickButton.addEventListener('click', this._onTopBeltColorPickClick);
         this.topBeltWidthRange.addEventListener('input', this._onTopBeltWidthRangeInput);
         this.topBeltWidthNumber.addEventListener('input', this._onTopBeltWidthNumberInput);
         this.topBeltInnerWidthRange.addEventListener('input', this._onTopBeltInnerWidthRangeInput);
         this.topBeltInnerWidthNumber.addEventListener('input', this._onTopBeltInnerWidthNumberInput);
         this.topBeltHeightRange.addEventListener('input', this._onTopBeltHeightRangeInput);
         this.topBeltHeightNumber.addEventListener('input', this._onTopBeltHeightNumberInput);
-        this.roofColorGrid.addEventListener('click', this._onRoofColorGridClick);
-        this.windowStyleGrid.addEventListener('click', this._onWindowStyleGridClick);
+        this.roofColorPickButton.addEventListener('click', this._onRoofColorPickClick);
+        this.windowStylePickButton.addEventListener('click', this._onWindowStylePickClick);
         this.windowWidthRange.addEventListener('input', this._onWindowWidthRangeInput);
         this.windowWidthNumber.addEventListener('input', this._onWindowWidthNumberInput);
         this.windowGapRange.addEventListener('input', this._onWindowGapRangeInput);
@@ -2478,7 +3501,20 @@ export class BuildingFabricationUI {
         this.windowHeightNumber.addEventListener('input', this._onWindowHeightNumberInput);
         this.windowYRange.addEventListener('input', this._onWindowYRangeInput);
         this.windowYNumber.addEventListener('input', this._onWindowYNumberInput);
-        this.streetWindowStyleGrid.addEventListener('click', this._onStreetWindowStyleGridClick);
+        this.windowFrameWidthRange.addEventListener('input', this._onWindowFrameWidthRangeInput);
+        this.windowFrameWidthNumber.addEventListener('input', this._onWindowFrameWidthNumberInput);
+        this.windowFrameColorPickButton.addEventListener('click', this._onWindowFrameColorPickClick);
+        this.windowGlassTopPickButton.addEventListener('click', this._onWindowGlassTopPickClick);
+        this.windowGlassBottomPickButton.addEventListener('click', this._onWindowGlassBottomPickClick);
+        this.windowSpacerInput.addEventListener('change', this._onWindowSpacerEnabledChange);
+        this.windowSpacerEveryRange.addEventListener('input', this._onWindowSpacerEveryRangeInput);
+        this.windowSpacerEveryNumber.addEventListener('input', this._onWindowSpacerEveryNumberInput);
+        this.windowSpacerWidthRange.addEventListener('input', this._onWindowSpacerWidthRangeInput);
+        this.windowSpacerWidthNumber.addEventListener('input', this._onWindowSpacerWidthNumberInput);
+        this.windowSpacerExtrudeInput.addEventListener('change', this._onWindowSpacerExtrudeChange);
+        this.windowSpacerExtrudeDistanceRange.addEventListener('input', this._onWindowSpacerExtrudeDistanceRangeInput);
+        this.windowSpacerExtrudeDistanceNumber.addEventListener('input', this._onWindowSpacerExtrudeDistanceNumberInput);
+        this.streetWindowStylePickButton.addEventListener('click', this._onStreetWindowStylePickClick);
         this.streetWindowWidthRange.addEventListener('input', this._onStreetWindowWidthRangeInput);
         this.streetWindowWidthNumber.addEventListener('input', this._onStreetWindowWidthNumberInput);
         this.streetWindowGapRange.addEventListener('input', this._onStreetWindowGapRangeInput);
@@ -2487,8 +3523,21 @@ export class BuildingFabricationUI {
         this.streetWindowHeightNumber.addEventListener('input', this._onStreetWindowHeightNumberInput);
         this.streetWindowYRange.addEventListener('input', this._onStreetWindowYRangeInput);
         this.streetWindowYNumber.addEventListener('input', this._onStreetWindowYNumberInput);
+        this.streetWindowFrameWidthRange.addEventListener('input', this._onStreetWindowFrameWidthRangeInput);
+        this.streetWindowFrameWidthNumber.addEventListener('input', this._onStreetWindowFrameWidthNumberInput);
+        this.streetWindowFrameColorPickButton.addEventListener('click', this._onStreetWindowFrameColorPickClick);
+        this.streetWindowGlassTopPickButton.addEventListener('click', this._onStreetWindowGlassTopPickClick);
+        this.streetWindowGlassBottomPickButton.addEventListener('click', this._onStreetWindowGlassBottomPickClick);
+        this.streetWindowSpacerInput.addEventListener('change', this._onStreetWindowSpacerEnabledChange);
+        this.streetWindowSpacerEveryRange.addEventListener('input', this._onStreetWindowSpacerEveryRangeInput);
+        this.streetWindowSpacerEveryNumber.addEventListener('input', this._onStreetWindowSpacerEveryNumberInput);
+        this.streetWindowSpacerWidthRange.addEventListener('input', this._onStreetWindowSpacerWidthRangeInput);
+        this.streetWindowSpacerWidthNumber.addEventListener('input', this._onStreetWindowSpacerWidthNumberInput);
+        this.streetWindowSpacerExtrudeInput.addEventListener('change', this._onStreetWindowSpacerExtrudeChange);
+        this.streetWindowSpacerExtrudeDistanceRange.addEventListener('input', this._onStreetWindowSpacerExtrudeDistanceRangeInput);
+        this.streetWindowSpacerExtrudeDistanceNumber.addEventListener('input', this._onStreetWindowSpacerExtrudeDistanceNumberInput);
         this.typeSelect.addEventListener('change', this._onTypeSelectChange);
-        this.styleGrid.addEventListener('click', this._onStyleGridClick);
+        this.stylePickButton.addEventListener('click', this._onStylePickClick);
         this.hideSelectionBorderInput.addEventListener('change', this._onHideSelectionBorderChange);
         this.viewModeRow.addEventListener('click', this._onViewModeClick);
         this.addRoadBtn.addEventListener('click', this._onAddRoad);
@@ -2513,27 +3562,30 @@ export class BuildingFabricationUI {
         this.floorNumber.removeEventListener('input', this._onFloorNumberInput);
         this.floorHeightRange.removeEventListener('input', this._onFloorHeightRangeInput);
         this.floorHeightNumber.removeEventListener('input', this._onFloorHeightNumberInput);
+        this.wallInsetRange.removeEventListener('input', this._onWallInsetRangeInput);
+        this.wallInsetNumber.removeEventListener('input', this._onWallInsetNumberInput);
         this.streetEnabledInput.removeEventListener('change', this._onStreetEnabledChange);
         this.streetFloorsRange.removeEventListener('input', this._onStreetFloorsRangeInput);
         this.streetFloorsNumber.removeEventListener('input', this._onStreetFloorsNumberInput);
         this.streetHeightRange.removeEventListener('input', this._onStreetHeightRangeInput);
         this.streetHeightNumber.removeEventListener('input', this._onStreetHeightNumberInput);
-        this.streetStyleGrid.removeEventListener('click', this._onStreetStyleGridClick);
+        this.streetStylePickButton.removeEventListener('click', this._onStreetStylePickClick);
         this.beltCourseInput.removeEventListener('change', this._onBeltCourseEnabledChange);
         this.beltMarginRange.removeEventListener('input', this._onBeltMarginRangeInput);
         this.beltMarginNumber.removeEventListener('input', this._onBeltMarginNumberInput);
         this.beltHeightRange.removeEventListener('input', this._onBeltHeightRangeInput);
         this.beltHeightNumber.removeEventListener('input', this._onBeltHeightNumberInput);
-        this.beltColorGrid.removeEventListener('click', this._onBeltColorGridClick);
+        this.beltColorPickButton.removeEventListener('click', this._onBeltColorPickClick);
         this.topBeltInput.removeEventListener('change', this._onTopBeltEnabledChange);
+        this.topBeltColorPickButton.removeEventListener('click', this._onTopBeltColorPickClick);
         this.topBeltWidthRange.removeEventListener('input', this._onTopBeltWidthRangeInput);
         this.topBeltWidthNumber.removeEventListener('input', this._onTopBeltWidthNumberInput);
         this.topBeltInnerWidthRange.removeEventListener('input', this._onTopBeltInnerWidthRangeInput);
         this.topBeltInnerWidthNumber.removeEventListener('input', this._onTopBeltInnerWidthNumberInput);
         this.topBeltHeightRange.removeEventListener('input', this._onTopBeltHeightRangeInput);
         this.topBeltHeightNumber.removeEventListener('input', this._onTopBeltHeightNumberInput);
-        this.roofColorGrid.removeEventListener('click', this._onRoofColorGridClick);
-        this.windowStyleGrid.removeEventListener('click', this._onWindowStyleGridClick);
+        this.roofColorPickButton.removeEventListener('click', this._onRoofColorPickClick);
+        this.windowStylePickButton.removeEventListener('click', this._onWindowStylePickClick);
         this.windowWidthRange.removeEventListener('input', this._onWindowWidthRangeInput);
         this.windowWidthNumber.removeEventListener('input', this._onWindowWidthNumberInput);
         this.windowGapRange.removeEventListener('input', this._onWindowGapRangeInput);
@@ -2542,7 +3594,20 @@ export class BuildingFabricationUI {
         this.windowHeightNumber.removeEventListener('input', this._onWindowHeightNumberInput);
         this.windowYRange.removeEventListener('input', this._onWindowYRangeInput);
         this.windowYNumber.removeEventListener('input', this._onWindowYNumberInput);
-        this.streetWindowStyleGrid.removeEventListener('click', this._onStreetWindowStyleGridClick);
+        this.windowFrameWidthRange.removeEventListener('input', this._onWindowFrameWidthRangeInput);
+        this.windowFrameWidthNumber.removeEventListener('input', this._onWindowFrameWidthNumberInput);
+        this.windowFrameColorPickButton.removeEventListener('click', this._onWindowFrameColorPickClick);
+        this.windowGlassTopPickButton.removeEventListener('click', this._onWindowGlassTopPickClick);
+        this.windowGlassBottomPickButton.removeEventListener('click', this._onWindowGlassBottomPickClick);
+        this.windowSpacerInput.removeEventListener('change', this._onWindowSpacerEnabledChange);
+        this.windowSpacerEveryRange.removeEventListener('input', this._onWindowSpacerEveryRangeInput);
+        this.windowSpacerEveryNumber.removeEventListener('input', this._onWindowSpacerEveryNumberInput);
+        this.windowSpacerWidthRange.removeEventListener('input', this._onWindowSpacerWidthRangeInput);
+        this.windowSpacerWidthNumber.removeEventListener('input', this._onWindowSpacerWidthNumberInput);
+        this.windowSpacerExtrudeInput.removeEventListener('change', this._onWindowSpacerExtrudeChange);
+        this.windowSpacerExtrudeDistanceRange.removeEventListener('input', this._onWindowSpacerExtrudeDistanceRangeInput);
+        this.windowSpacerExtrudeDistanceNumber.removeEventListener('input', this._onWindowSpacerExtrudeDistanceNumberInput);
+        this.streetWindowStylePickButton.removeEventListener('click', this._onStreetWindowStylePickClick);
         this.streetWindowWidthRange.removeEventListener('input', this._onStreetWindowWidthRangeInput);
         this.streetWindowWidthNumber.removeEventListener('input', this._onStreetWindowWidthNumberInput);
         this.streetWindowGapRange.removeEventListener('input', this._onStreetWindowGapRangeInput);
@@ -2551,8 +3616,21 @@ export class BuildingFabricationUI {
         this.streetWindowHeightNumber.removeEventListener('input', this._onStreetWindowHeightNumberInput);
         this.streetWindowYRange.removeEventListener('input', this._onStreetWindowYRangeInput);
         this.streetWindowYNumber.removeEventListener('input', this._onStreetWindowYNumberInput);
+        this.streetWindowFrameWidthRange.removeEventListener('input', this._onStreetWindowFrameWidthRangeInput);
+        this.streetWindowFrameWidthNumber.removeEventListener('input', this._onStreetWindowFrameWidthNumberInput);
+        this.streetWindowFrameColorPickButton.removeEventListener('click', this._onStreetWindowFrameColorPickClick);
+        this.streetWindowGlassTopPickButton.removeEventListener('click', this._onStreetWindowGlassTopPickClick);
+        this.streetWindowGlassBottomPickButton.removeEventListener('click', this._onStreetWindowGlassBottomPickClick);
+        this.streetWindowSpacerInput.removeEventListener('change', this._onStreetWindowSpacerEnabledChange);
+        this.streetWindowSpacerEveryRange.removeEventListener('input', this._onStreetWindowSpacerEveryRangeInput);
+        this.streetWindowSpacerEveryNumber.removeEventListener('input', this._onStreetWindowSpacerEveryNumberInput);
+        this.streetWindowSpacerWidthRange.removeEventListener('input', this._onStreetWindowSpacerWidthRangeInput);
+        this.streetWindowSpacerWidthNumber.removeEventListener('input', this._onStreetWindowSpacerWidthNumberInput);
+        this.streetWindowSpacerExtrudeInput.removeEventListener('change', this._onStreetWindowSpacerExtrudeChange);
+        this.streetWindowSpacerExtrudeDistanceRange.removeEventListener('input', this._onStreetWindowSpacerExtrudeDistanceRangeInput);
+        this.streetWindowSpacerExtrudeDistanceNumber.removeEventListener('input', this._onStreetWindowSpacerExtrudeDistanceNumberInput);
         this.typeSelect.removeEventListener('change', this._onTypeSelectChange);
-        this.styleGrid.removeEventListener('click', this._onStyleGridClick);
+        this.stylePickButton.removeEventListener('click', this._onStylePickClick);
         this.hideSelectionBorderInput.removeEventListener('change', this._onHideSelectionBorderChange);
         this.viewModeRow.removeEventListener('click', this._onViewModeClick);
         this.addRoadBtn.removeEventListener('click', this._onAddRoad);

@@ -23,6 +23,8 @@ export class SetupState {
             { key: '3', label: 'Connector Debugger', state: 'connector_debugger' },
             { key: '4', label: 'Rapier Debugger', state: 'rapier_debugger' },
             { key: '5', label: 'Building Fabrication', state: 'building_fabrication' },
+            { key: '6', label: 'Mesh Inspector', state: 'mesh_inspector' },
+            { key: '7', label: 'Texture Inspector', state: 'texture_inspector' },
             { key: 'Q', label: 'Back', state: 'welcome' }
         ];
 

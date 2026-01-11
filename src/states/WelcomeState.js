@@ -66,6 +66,14 @@ export class WelcomeState {
         this.sm.go('building_fabrication');
     }
 
+    _meshInspector() {
+        this.sm.go('mesh_inspector');
+    }
+
+    _textureInspector() {
+        this.sm.go('texture_inspector');
+    }
+
     _setup() {
         this.sm.go('setup');
     }
@@ -109,16 +117,20 @@ export class WelcomeState {
         const is3 = code === 'Digit3' || code === 'Numpad3' || key === '3';
         const is4 = code === 'Digit4' || code === 'Numpad4' || key === '4';
         const is5 = code === 'Digit5' || code === 'Numpad5' || key === '5';
+        const is6 = code === 'Digit6' || code === 'Numpad6' || key === '6';
+        const is7 = code === 'Digit7' || code === 'Numpad7' || key === '7';
         const isG = code === 'KeyG' || key === 'g' || key === 'G';
         const isQ = code === 'KeyQ' || key === 'q' || key === 'Q';
 
-        if (isEnter || isSpace || is1 || is2 || is3 || is4 || is5 || isG || isQ) e.preventDefault();
+        if (isEnter || isSpace || is1 || is2 || is3 || is4 || is5 || is6 || is7 || isG || isQ) e.preventDefault();
 
         if (is1) return this._mapDebugger();
         if (is2) return this._test();
         if (is3) return this._connectorDebugger();
         if (is4) return this._rapierDebugger();
         if (is5) return this._buildingFabrication();
+        if (is6) return this._meshInspector();
+        if (is7) return this._textureInspector();
         if (isG) return this._garage();
         if (isQ) return this._setup();
         if (isEnter || isSpace) return this._start();

@@ -1,0 +1,86 @@
+The building fabrication will follow this specification:
+
+- The building will be created in layers, starting from the foundation up to the roof. As oposed to fixed number of floors, the building will be defined in layers that can have multiple floors each.
+
+- For each layer, it will be defined how many floors
+- Each layer floorplan will start from the layer underneath it. 
+- The first layer uses the base ground floorplan.
+- The layer can be of type: Floor, Roof.
+- Note that there can be Floor layers above Roof layers, to allow for roof terraces. And other roofs on top of those floor layers.
+
+## Roof Layer Specification
+
+- The roof layer will be a ring that surrounds the floor layer below it, creating a continuous roof structure.
+
+- Ring properties:
+  - Inner Radius: Area that goes inside the roof ring.
+  - Outer Radius: Area that goes outside the roof ring. External edge of the roof.
+  - Height: The height of the ring.
+  - Material
+
+- Roof Material Specification (the "floor" of the roof):
+  - Type: e.g., Asphalt Shingles, Metal, Tile
+  - Color: e.g., Dark Gray, Red, Green
+
+## Floor Layer Specification
+
+- Each floor layer will consist of multiple floors stacked vertically.
+- The layer floorplan can be shrinked or expanded compared to the layer below it. Not only the corners, but the entire faces.
+    - A face is the entire edge of a floor. Even if it spans multiple tiles. It is the contiguos line that goes from one corner to another.
+- A floor can be belted (see Belted Floor section below).
+- A floor can have windows and doors (see Windows and Doors section below).
+
+### Belted Floor
+- Floors can have a "belt" feature.
+- No need to "enable" it, just define its properties to have it.
+- It is applied to every floor of the layer.
+- The belt is a horizontal band of material that runs along the top edge of the floor.
+- The belt has height. The height pushes the next floor up by that amount.
+
+- Properties of the belt:
+  - Height: The height of the belt band.
+  - Material: The material used for the belt.
+
+### Windows
+Windows are put on faces of the floor.
+
+There is a catalog of window types that can be used.
+The windows are to be created by functions. The functions take parameters to define the window dimensions and style.
+On the face, the windows are placed with the following properties:
+- Type: The type of window from the catalog.
+- Width: The width of the window.
+- Height: The height of the window.
+- Sill Height: The height from the floor to the bottom of the window.
+- Spacing: The distance between windows on the same face.
+If a window cannot fit on the face with the given spacing, it is not placed.
+
+#### Space Columns
+- When placing windows on a face, space columns can be added between them
+- Space columns are vertical dividers that separate windows.
+- The width of the space columns are added to the already defined spacing between windows.
+- Space columns have their own material specification.
+- Space columns are optional.
+- Space columns can be extruded from the face by a defined amount.
+
+### Doors
+
+- TBD
+
+# Material specification  
+Materials used in belts, roofs, windows, and other building components will be defined using a material specification system. Each material will have properties such as type, color, texture, and other relevant attributes.
+
+
+
+# Code organization
+
+All things related to building fabrication should be organized in a dedicated module or package named `building_fabrication`. This module will contain all classes, functions, and data structures necessary to define and manage the building fabrication process as per the specifications outlined above. It must be under /assets3d/generation/building_fabrication.
+
+
+# Fabrication Screen
+- Create the UI panel in a way that each step is done inside of the other. First, define the layers. Then, for each layer, define its properties.
+- The UI should allow easy addition and removal of layers.
+- Each layer can be collapsed or expanded to show or hide its properties.
+- For each layer, provide inner groups to define its floors, belts, windows, and doors. Like a tree structure. But all inside the layer group.
+- Use a unified material picker for all material selections in the UI. The material picker should show a preview of the material selected. The material picker should show a popup to select the material.
+- Windows and doors should have a catalog browser to select the type from predefined options. 
+

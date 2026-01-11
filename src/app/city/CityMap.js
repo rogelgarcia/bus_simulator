@@ -1,5 +1,6 @@
 // src/app/city/CityMap.js
-import { BUILDING_STYLE, isBuildingStyle } from './BuildingStyle.js';
+import { BUILDING_STYLE, isBuildingStyle } from '../buildings/BuildingStyle.js';
+import { getBuildingConfigById } from './buildings/index.js';
 export const DIR = { N: 1, E: 2, S: 4, W: 8 };
 export const TILE = { EMPTY: 0, ROAD: 1 };
 
@@ -309,9 +310,9 @@ export class CityMap {
         return map;
     }
 
-	    static _buildingsFromSpec(buildingsSpec, map) {
-	        const list = Array.isArray(buildingsSpec) ? buildingsSpec : [];
-	        const out = [];
+    static _buildingsFromSpec(buildingsSpec, map) {
+        const list = Array.isArray(buildingsSpec) ? buildingsSpec : [];
+        const out = [];
 
         const clampIntLocal = (v, lo, hi) => Math.max(lo, Math.min(hi, Number(v) | 0));
         const clampLocal = (v, lo, hi) => Math.max(lo, Math.min(hi, Number(v) || lo));
@@ -323,13 +324,17 @@ export class CityMap {
             || set.has(`${x},${y + 1}`)
         );
 
-	        for (let i = 0; i < list.length; i++) {
-	            const raw = list[i];
-	            if (!raw) continue;
+        for (let i = 0; i < list.length; i++) {
+            const raw = list[i];
+            if (!raw) continue;
 
-	            const id = (typeof raw.id === 'string' && raw.id) ? raw.id : `building_${i + 1}`;
-	            const floors = clampIntLocal(raw.floors ?? raw.numFloors, 1, 30);
-	            const floorHeight = clampLocal(raw.floorHeight, 1.0, 12.0);
+            const id = (typeof raw.id === 'string' && raw.id) ? raw.id : `building_${i + 1}`;
+            const configId = typeof raw.configId === 'string' ? raw.configId : null;
+            const config = configId ? getBuildingConfigById(configId) : null;
+            const design = config && typeof config === 'object' ? config : raw;
+
+            const floors = clampIntLocal(design.floors ?? design.numFloors, 1, 30);
+            const floorHeight = clampLocal(design.floorHeight, 1.0, 12.0);
 
 	            const mapStyleFromTextureUrl = (url) => {
 	                const s = typeof url === 'string' ? url : '';
@@ -341,11 +346,11 @@ export class CityMap {
 	                return BUILDING_STYLE.DEFAULT;
 	            };
 
-	            const style = isBuildingStyle(raw.style)
-	                ? raw.style
-	                : mapStyleFromTextureUrl(raw.wallTextureUrl);
+            const style = isBuildingStyle(design.style)
+                ? design.style
+                : mapStyleFromTextureUrl(design.wallTextureUrl);
 
-            const windowsRaw = raw.windows ?? null;
+            const windowsRaw = design.windows ?? null;
             const windowsEnabled = windowsRaw && typeof windowsRaw === 'object';
             const windowWidth = windowsEnabled ? clampLocal(windowsRaw.width, 0.3, 12.0) : null;
             const windowGap = windowsEnabled ? clampLocal(windowsRaw.gap, 0.0, 24.0) : null;
@@ -385,16 +390,17 @@ export class CityMap {
                 accepted.push([tx, ty]);
             }
 
-	            if (!accepted.length) continue;
-	            out.push({
-	                id,
-	                tiles: accepted,
-	                floorHeight,
-	                floors,
-	                style,
-	                windows: windowsEnabled ? { width: windowWidth, gap: windowGap, height: windowHeight, y: windowY } : null
-	            });
-	        }
+            if (!accepted.length) continue;
+            out.push({
+                id,
+                configId: config?.id ?? null,
+                tiles: accepted,
+                floorHeight,
+                floors,
+                style,
+                windows: windowsEnabled ? { width: windowWidth, gap: windowGap, height: windowHeight, y: windowY } : null
+            });
+        }
 
         return out;
     }
@@ -423,22 +429,18 @@ export class CityMap {
                 { a: [12, 0], b: [14, 0], lanesF: 1, lanesB: 1, tag: 'test-east-0' },
                 { a: [14, 1], b: [12, 1], lanesF: 1, lanesB: 1, tag: 'test-west-1' }
             ],
-	            buildings: [
-	                {
-	                    tiles: [[14, 14], [15, 14], [15, 15], [14, 15]],
-	                    floorHeight: 3,
-	                    floors: 5,
-	                    style: BUILDING_STYLE.BRICK,
-	                    windows: { width: 2.2, gap: 1.6, height: 1.4, y: 1.0 }
-	                },
-	                {
-	                    tiles: [[6, 7], [7, 7]],
-	                    floorHeight: 3,
-	                    floors: 4,
-	                    style: BUILDING_STYLE.STONE_1,
-	                    windows: { width: 1.8, gap: 1.4, height: 1.2, y: 0.9 }
-	                }
-	            ]
+            buildings: [
+                {
+                    id: 'building_1',
+                    configId: 'brick_midrise',
+                    tiles: [[14, 14], [15, 14], [15, 15], [14, 15]]
+                },
+                {
+                    id: 'building_2',
+                    configId: 'stone_lowrise',
+                    tiles: [[6, 7], [7, 7]]
+                }
+            ]
 	        };
 	    }
 }

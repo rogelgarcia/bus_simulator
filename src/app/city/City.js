@@ -9,7 +9,7 @@ import { getCityMaterials } from '../../graphics/assets3d/textures/CityMaterials
 import { generateRoads } from '../../graphics/assets3d/generators/RoadGenerator.js';
 import { createGradientSkyDome } from '../../graphics/assets3d/generators/SkyGenerator.js';
 import { createGeneratorConfig } from '../../graphics/assets3d/generators/GeneratorParams.js';
-import { BuildingWallTextureCache, buildBuildingVisualParts } from '../../graphics/assets3d/generators/BuildingGenerator.js';
+import { BuildingWallTextureCache, buildBuildingVisualParts } from '../../graphics/assets3d/generators/buildings/BuildingGenerator.js';
 
 export class City {
     constructor(options = {}) {

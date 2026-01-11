@@ -1,4 +1,4 @@
-// src/app/city/RoofColor.js
+// src/app/buildings/RoofColor.js
 export const ROOF_COLOR = Object.freeze({
     DEFAULT: 'default',
     DARK_GRAY: 'dark_gray',
@@ -60,4 +60,3 @@ export function getRoofColorOptions(defaultHex = 0xffffff) {
         hex: resolveRoofColorHex(id, defaultHex)
     }));
 }
-

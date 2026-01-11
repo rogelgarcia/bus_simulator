@@ -1,4 +1,4 @@
-// src/app/city/BeltCourseColor.js
+// src/app/buildings/BeltCourseColor.js
 export const BELT_COURSE_COLOR = Object.freeze({
     OFFWHITE: 'offwhite',
     BEIGE: 'beige',
@@ -55,4 +55,3 @@ export function getBeltCourseColorOptions() {
         hex: resolveBeltCourseColorHex(id)
     }));
 }
-

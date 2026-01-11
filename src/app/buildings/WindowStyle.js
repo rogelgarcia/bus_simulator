@@ -1,4 +1,4 @@
-// src/app/city/WindowStyle.js
+// src/app/buildings/WindowStyle.js
 export const WINDOW_STYLE = Object.freeze({
     DEFAULT: 'default',
     DARK: 'dark',
@@ -15,4 +15,3 @@ export function isWindowStyle(value) {
         || value === WINDOW_STYLE.WARM
         || value === WINDOW_STYLE.GRID;
 }
-

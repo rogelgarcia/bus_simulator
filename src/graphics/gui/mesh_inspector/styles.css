@@ -1,0 +1,99 @@
+/* src/graphics/gui/mesh_inspector/styles.css */
+
+.mesh-inspector-hud {
+    justify-content: flex-end;
+    align-items: flex-start;
+}
+
+.mesh-inspector-panel {
+    width: 360px;
+    max-width: 360px;
+}
+
+.mesh-inspector-row {
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.mesh-inspector-row.mesh-inspector-row-wide {
+    grid-template-columns: 74px 1fr;
+}
+
+.mesh-inspector-row-label {
+    font-size: 12px;
+    opacity: 0.8;
+}
+
+.mesh-inspector-row-value {
+    font-size: 12px;
+    opacity: 0.95;
+    word-break: break-word;
+}
+
+.mesh-inspector-catalog {
+    display: grid;
+    grid-template-columns: 76px 1fr 76px;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.mesh-inspector-select {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(0,0,0,0.25);
+    color: #e9f2ff;
+}
+
+.mesh-inspector-btn {
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(0,0,0,0.18);
+    color: #e9f2ff;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.mesh-inspector-btn:hover {
+    background: rgba(0,0,0,0.28);
+}
+
+.mesh-inspector-btn-primary {
+    background: rgba(100, 210, 255, 0.18);
+    border-color: rgba(100, 210, 255, 0.38);
+}
+
+.mesh-inspector-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+    font-size: 12px;
+}
+
+.mesh-inspector-toggle input {
+    width: 16px;
+    height: 16px;
+}
+
+.mesh-inspector-summary {
+    width: 100%;
+    box-sizing: border-box;
+    margin: 8px 0 10px;
+    padding: 10px;
+    resize: none;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(0,0,0,0.2);
+    color: #e9f2ff;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 11px;
+    line-height: 1.35;
+}
+

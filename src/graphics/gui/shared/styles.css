@@ -70,6 +70,137 @@ html, body {
     pointer-events: auto;
 }
 
+.ui-picker-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 250;
+    pointer-events: auto;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.45);
+}
+
+.ui-picker-panel {
+    width: min(760px, calc(100vw - 32px));
+    max-height: min(720px, calc(100vh - 32px));
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.ui-picker-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.ui-picker-title {
+    margin-bottom: 0;
+}
+
+.ui-picker-close {
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(0,0,0,0.18);
+    color: #e9f2ff;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.ui-picker-close:hover {
+    background: rgba(0,0,0,0.28);
+}
+
+.ui-picker-tabs {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.ui-picker-tab {
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(0,0,0,0.14);
+    color: #e9f2ff;
+    cursor: pointer;
+    font-weight: 800;
+    font-size: 12px;
+}
+
+.ui-picker-tab.is-active {
+    border-color: rgba(100, 210, 255, 0.5);
+    background: rgba(100, 210, 255, 0.14);
+}
+
+.ui-picker-grid {
+    overflow: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+    padding: 4px;
+}
+
+.ui-picker-option {
+    display: grid;
+    grid-template-rows: 84px auto;
+    align-items: stretch;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(0,0,0,0.16);
+    color: #e9f2ff;
+    cursor: pointer;
+    text-align: left;
+}
+
+.ui-picker-option:hover {
+    background: rgba(0,0,0,0.24);
+}
+
+.ui-picker-option.is-selected {
+    border-color: rgba(100, 210, 255, 0.6);
+    box-shadow: 0 0 0 2px rgba(100, 210, 255, 0.15) inset;
+}
+
+.ui-picker-thumb {
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(0,0,0,0.2);
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    font-weight: 800;
+    font-size: 12px;
+    line-height: 1.1;
+    padding: 6px;
+    text-transform: uppercase;
+    opacity: 0.92;
+}
+
+.ui-picker-thumb-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.ui-picker-option-label {
+    font-size: 12px;
+    font-weight: 700;
+    opacity: 0.95;
+}
+
+.ui-picker-footer {
+    font-size: 12px;
+    opacity: 0.75;
+}
+
 .ui-title {
     font-weight: 800;
     font-size: 14px;

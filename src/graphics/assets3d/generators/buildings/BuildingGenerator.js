@@ -1,20 +1,18 @@
-// src/graphics/assets3d/generators/BuildingGenerator.js
+// src/graphics/assets3d/generators/buildings/BuildingGenerator.js
 // Generates building meshes from city building footprints
 import * as THREE from 'three';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
-import { BUILDING_STYLE, isBuildingStyle } from '../../../app/city/BuildingStyle.js';
-import { WINDOW_STYLE, isWindowStyle } from '../../../app/city/WindowStyle.js';
-import { resolveBeltCourseColorHex } from '../../../app/city/BeltCourseColor.js';
-import { resolveRoofColorHex } from '../../../app/city/RoofColor.js';
+import { BUILDING_STYLE, isBuildingStyle } from '../../../../app/buildings/BuildingStyle.js';
+import { WINDOW_STYLE, isWindowStyle } from '../../../../app/buildings/WindowStyle.js';
+import { resolveBeltCourseColorHex } from '../../../../app/buildings/BeltCourseColor.js';
+import { resolveRoofColorHex } from '../../../../app/buildings/RoofColor.js';
+import { getLegacyWindowStyleTexture, getWindowTexture, getWindowTypeOptions } from './WindowTextureGenerator.js';
 
 const EPS = 1e-6;
 const QUANT = 1000;
-let _windowTexture = null;
-const _windowTextures = new Map();
-const _windowPreviewUrls = new Map();
-const BUILDING_TEXTURE_BASE_URL = new URL('../../../../assets/public/textures/buildings/', import.meta.url);
+const BUILDING_TEXTURE_BASE_URL = new URL('../../../../../assets/public/textures/buildings/walls/', import.meta.url);
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -173,44 +171,28 @@ function buildWindowStyleCanvas(styleId, { size = 256 } = {}) {
 }
 
 export function getBuildingWindowTextureForStyle(styleId) {
-    const id = isWindowStyle(styleId) ? styleId : WINDOW_STYLE.DEFAULT;
-    if (id === WINDOW_STYLE.DEFAULT && _windowTexture) return _windowTexture;
-    const cached = _windowTextures.get(id);
-    if (cached) return cached;
-
-    const canvas = buildWindowStyleCanvas(id, { size: 256 });
-    const tex = canvasToTexture(canvas, { srgb: true });
-    tex.userData = tex.userData ?? {};
-    tex.userData.buildingShared = true;
-
-    if (id === WINDOW_STYLE.DEFAULT) {
-        _windowTexture = tex;
-    } else {
-        _windowTextures.set(id, tex);
-    }
-    return tex;
+    return getLegacyWindowStyleTexture(styleId);
 }
 
 export function getWindowStyleOptions() {
-    const ids = [
-        WINDOW_STYLE.DEFAULT,
-        WINDOW_STYLE.DARK,
-        WINDOW_STYLE.BLUE,
-        WINDOW_STYLE.WARM,
-        WINDOW_STYLE.GRID
-    ];
+    const typeOptions = getWindowTypeOptions();
+    const previewByTypeId = new Map(typeOptions.map((opt) => [opt.id, opt.previewUrl]));
 
-    const out = [];
-    for (const id of ids) {
-        let previewUrl = _windowPreviewUrls.get(id) ?? null;
-        if (!previewUrl) {
-            const canvas = buildWindowStyleCanvas(id, { size: 96 });
-            previewUrl = canvas?.toDataURL?.('image/png') ?? null;
-            if (previewUrl) _windowPreviewUrls.set(id, previewUrl);
-        }
-        out.push({ id, label: resolveWindowStyleLabel(id), previewUrl });
-    }
-    return out;
+    const styleToTypeId = (styleId) => {
+        const id = isWindowStyle(styleId) ? styleId : WINDOW_STYLE.DEFAULT;
+        if (id === WINDOW_STYLE.DARK) return 'window.style.dark';
+        if (id === WINDOW_STYLE.BLUE) return 'window.style.blue';
+        if (id === WINDOW_STYLE.WARM) return 'window.style.warm';
+        if (id === WINDOW_STYLE.GRID) return 'window.style.grid';
+        return 'window.style.default';
+    };
+
+    const ids = [WINDOW_STYLE.DEFAULT, WINDOW_STYLE.DARK, WINDOW_STYLE.BLUE, WINDOW_STYLE.WARM, WINDOW_STYLE.GRID];
+    return ids.map((id) => ({
+        id,
+        label: resolveWindowStyleLabel(id),
+        previewUrl: previewByTypeId.get(styleToTypeId(id)) ?? null
+    }));
 }
 
 export function computeEvenWindowLayout({
@@ -243,6 +225,191 @@ export function computeEvenWindowLayout({
     const starts = [];
     for (let i = 0; i < count; i++) starts.push(gap + i * (w + gap));
     return { count, gap, starts };
+}
+
+function cross2(a, b) {
+    return a.x * b.z - a.z * b.x;
+}
+
+function dot2(a, b) {
+    return a.x * b.x + a.z * b.z;
+}
+
+function normalize2(v) {
+    const len = Math.hypot(v.x, v.z);
+    if (!(len > EPS)) return { x: 0, z: 0, len: 0 };
+    return { x: v.x / len, z: v.z / len, len };
+}
+
+function linesIntersection2(a, r, b, s) {
+    const rxs = cross2(r, s);
+    if (Math.abs(rxs) < 1e-9) return null;
+    const qp = { x: b.x - a.x, z: b.z - a.z };
+    const t = cross2(qp, s) / rxs;
+    return { x: a.x + t * r.x, z: a.z + t * r.z };
+}
+
+function insetOrthogonalLoopXZ(loop, inset) {
+    const points = Array.isArray(loop) ? loop : [];
+    const n = points.length;
+    const d = clamp(inset, 0, 50);
+    if (!(d > EPS) || n < 3) return loop;
+
+    const winding = signedArea(points);
+    const isCcw = winding >= 0;
+    const insetPoints = new Array(n);
+
+    for (let i = 0; i < n; i++) {
+        const prev = points[(i - 1 + n) % n];
+        const cur = points[i];
+        const next = points[(i + 1) % n];
+        if (!prev || !cur || !next) {
+            insetPoints[i] = cur;
+            continue;
+        }
+
+        const e0 = normalize2({ x: cur.x - prev.x, z: cur.z - prev.z });
+        const e1 = normalize2({ x: next.x - cur.x, z: next.z - cur.z });
+        if (!(e0.len > EPS) || !(e1.len > EPS)) {
+            insetPoints[i] = cur;
+            continue;
+        }
+
+        const left0 = { x: -e0.z, z: e0.x };
+        const left1 = { x: -e1.z, z: e1.x };
+        const n0 = isCcw ? left0 : { x: -left0.x, z: -left0.z };
+        const n1 = isCcw ? left1 : { x: -left1.x, z: -left1.z };
+
+        const p0 = { x: cur.x + n0.x * d, z: cur.z + n0.z * d };
+        const p1 = { x: cur.x + n1.x * d, z: cur.z + n1.z * d };
+        const hit = linesIntersection2(p0, e0, p1, e1);
+        insetPoints[i] = hit ? { x: hit.x, y: cur.y, z: hit.z } : cur;
+    }
+
+    return insetPoints;
+}
+
+function buildExteriorRunsFromLoop(loop) {
+    const pts = Array.isArray(loop) ? loop : [];
+    const n = pts.length;
+    if (n < 2) return [];
+
+    const runs = [];
+    const collinear = (a, b) => Math.abs(cross2(a, b)) < 1e-6 && dot2(a, b) > 0.999;
+
+    for (let i = 0; i < n; i++) {
+        const a = pts[i];
+        const b = pts[(i + 1) % n];
+        if (!a || !b) continue;
+        const v = normalize2({ x: b.x - a.x, z: b.z - a.z });
+        const L = v.len;
+        if (!(L > EPS)) continue;
+
+        const last = runs[runs.length - 1] ?? null;
+        if (last && collinear(last.dir, v)) {
+            last.b = b;
+            last.length += L;
+            continue;
+        }
+
+        runs.push({
+            a,
+            b,
+            dir: { x: v.x, z: v.z },
+            length: L
+        });
+    }
+
+    if (runs.length > 1) {
+        const first = runs[0];
+        const last = runs[runs.length - 1];
+        if (first && last && collinear(first.dir, last.dir)) {
+            first.a = last.a;
+            first.length += last.length;
+            runs.pop();
+        }
+    }
+
+    return runs;
+}
+
+function computeWindowSegmentsWithSpacers({
+    length,
+    windowWidth,
+    desiredGap,
+    cornerEps,
+    spacerEnabled,
+    spacerEvery,
+    spacerWidth
+} = {}) {
+    const L = Number(length);
+    const w = clamp(windowWidth, 0.2, 50);
+    const g = clamp(desiredGap, 0, 50);
+    const eps = clamp(cornerEps, 0.001, 2.0);
+    const enabled = !!spacerEnabled && clampInt(spacerEvery, 0, 9999) > 0 && (Number(spacerWidth) || 0) > EPS;
+    const band = enabled ? clamp(spacerWidth, 0.01, 10.0) : 0;
+    const N = enabled ? clampInt(spacerEvery, 1, 9999) : 0;
+
+    if (!enabled) {
+        return {
+            segments: [{
+                offset: 0,
+                layout: computeEvenWindowLayout({ length: L, windowWidth: w, desiredGap: g, cornerEps: eps })
+            }],
+            spacerCenters: []
+        };
+    }
+
+    let layout = computeEvenWindowLayout({ length: L, windowWidth: w, desiredGap: g, cornerEps: eps });
+    let count = clampInt(layout.count, 0, 9999);
+    if (count <= N) {
+        return { segments: [{ offset: 0, layout }], spacerCenters: [] };
+    }
+
+    let spacerCount = 0;
+    let effectiveLength = L;
+
+    for (let i = 0; i < 16; i++) {
+        spacerCount = Math.floor(Math.max(0, count - 1) / N);
+        effectiveLength = L - spacerCount * band;
+        if (!(effectiveLength > w + eps * 2)) {
+            count = 0;
+            layout = { count: 0, gap: 0, starts: [] };
+            break;
+        }
+
+        const nextLayout = computeEvenWindowLayout({ length: effectiveLength, windowWidth: w, desiredGap: g, cornerEps: eps });
+        const nextCount = clampInt(nextLayout.count, 0, 9999);
+        layout = nextLayout;
+        if (nextCount === count) break;
+        count = nextCount;
+    }
+
+    spacerCount = count > N ? Math.floor(Math.max(0, count - 1) / N) : 0;
+
+    const segments = [];
+    for (let group = 0; group * N < count; group++) {
+        const startIndex = group * N;
+        const endIndex = Math.min(count, (group + 1) * N);
+        segments.push({
+            offset: group * band,
+            layout: { starts: layout.starts.slice(startIndex, endIndex) }
+        });
+    }
+
+    const spacerCenters = [];
+    for (let k = 1; k <= spacerCount; k++) {
+        const leftIndex = k * N - 1;
+        const rightIndex = k * N;
+        if (leftIndex < 0 || rightIndex >= count) break;
+        const leftEndEff = layout.starts[leftIndex] + w;
+        const rightStartEff = layout.starts[rightIndex];
+        const leftEnd = leftEndEff + (k - 1) * band;
+        const rightStart = rightStartEff + k * band;
+        spacerCenters.push((leftEnd + rightStart) * 0.5);
+    }
+
+    return { segments, spacerCenters };
 }
 
 function getRendererResolution(renderer, out = new THREE.Vector2()) {
@@ -682,13 +849,14 @@ export function buildBuildingVisualParts({
     colors = null,
     overlays = null,
     roof = null,
+    walls = null,
     windows = null,
     street = null,
     beltCourse = null,
     topBelt = null
 } = {}) {
-    const loops = computeBuildingLoopsFromTiles({ map, tiles, generatorConfig, tileSize, occupyRatio });
-    if (!loops.length) return null;
+    const footprintLoops = computeBuildingLoopsFromTiles({ map, tiles, generatorConfig, tileSize, occupyRatio });
+    if (!footprintLoops.length) return null;
 
     const tileCount = normalizeTileList(tiles).length;
     const floorCount = clampInt(floors, 0, 30);
@@ -702,7 +870,7 @@ export function buildBuildingVisualParts({
 
     const streetCfg = street ?? {};
     const streetEnabled = !!streetCfg.enabled;
-    const streetFloors = streetEnabled ? clampInt(streetCfg.floors ?? streetCfg.count, 1, floorCount) : 0;
+    const streetFloors = clampInt(streetCfg.floors ?? streetCfg.count ?? 0, 0, floorCount);
     const streetFloorHeight = streetEnabled
         ? clamp(streetCfg.floorHeight ?? upperFloorHeight, 1.0, 12.0)
         : upperFloorHeight;
@@ -711,34 +879,45 @@ export function buildBuildingVisualParts({
         : style;
 
     const beltHeight = Number.isFinite(beltCfg.height) ? clamp(beltCfg.height, 0.02, 1.2) : 0.18;
-    const beltEnabled = !!beltCfg.enabled && streetEnabled && streetFloors > 0 && streetFloors < floorCount;
+    const beltEnabled = !!beltCfg.enabled && floorCount > 0 && streetFloors < floorCount;
     const beltSpacerHeight = beltEnabled ? beltHeight : 0;
 
     const floorBases = new Array(floorCount);
     const floorHeights = new Array(floorCount);
-    let yCursor = baseY;
+    let yCursor = baseY + (beltEnabled && streetFloors === 0 ? beltSpacerHeight : 0);
     for (let i = 0; i < floorCount; i++) {
         floorBases[i] = yCursor;
         const baseH = (streetEnabled && i < streetFloors) ? streetFloorHeight : upperFloorHeight;
         const h = (i === 0) ? (baseH + extraFirstFloor) : baseH;
         floorHeights[i] = h;
         yCursor += h;
-        if (beltEnabled && i === streetFloors - 1) yCursor += beltSpacerHeight;
+        if (beltEnabled && streetFloors > 0 && i === streetFloors - 1) yCursor += beltSpacerHeight;
     }
     const totalHeight = yCursor - baseY;
 
     let streetHeight = 0;
-    if (streetEnabled && streetFloors > 0) {
+    if (streetFloors > 0) {
         for (let i = 0; i < streetFloors; i++) streetHeight += floorHeights[i];
     }
     const upperHeight = Math.max(0, totalHeight - streetHeight - beltSpacerHeight);
 
-    const outerLoops = [];
-    const holeLoops = [];
-    for (const loop of loops) {
-        if (signedArea(loop) >= 0) outerLoops.push(loop);
-        else holeLoops.push(loop);
+    const footprintOuterLoops = [];
+    const footprintHoleLoops = [];
+    for (const loop of footprintLoops) {
+        if (signedArea(loop) >= 0) footprintOuterLoops.push(loop);
+        else footprintHoleLoops.push(loop);
     }
+
+    const wallCfg = walls ?? {};
+    const wallInset = clamp(wallCfg.inset, 0, 4.0);
+    const roofOuterLoops = footprintOuterLoops;
+    const roofHoleLoops = footprintHoleLoops;
+    const wallOuterLoops = wallInset > EPS
+        ? footprintOuterLoops.map((loop) => insetOrthogonalLoopXZ(loop, wallInset))
+        : footprintOuterLoops;
+    const wallHoleLoops = wallInset > EPS
+        ? footprintHoleLoops.map((loop) => insetOrthogonalLoopXZ(loop, wallInset))
+        : footprintHoleLoops;
 
     const baseColorHex = makeDeterministicColor(tileCount * 97 + floorCount * 31).getHex();
     const roofCfg = roof ?? {};
@@ -787,41 +966,46 @@ export function buildBuildingVisualParts({
     const upperWallMat = makeWallMaterial(wallUrl);
     const streetWallMat = streetEnabled ? makeWallMaterial(streetWallUrl) : null;
 
-    for (const outer of outerLoops) {
+    for (const outer of wallOuterLoops) {
         const shapePts = outer.map((p) => new THREE.Vector2(p.x, -p.z));
         shapePts.reverse();
         const shape = new THREE.Shape(shapePts);
 
-        for (const hole of holeLoops) {
+        for (const hole of wallHoleLoops) {
             const holePts = hole.map((p) => new THREE.Vector2(p.x, -p.z));
             holePts.reverse();
             shape.holes.push(new THREE.Path(holePts));
         }
 
-        if (streetEnabled && streetFloors > 0 && Number.isFinite(streetHeight) && streetHeight > EPS) {
-            const streetGeo = new THREE.ExtrudeGeometry(shape, {
+        const hasLower = (streetHeight > EPS) && (streetEnabled || beltEnabled);
+        if (hasLower) {
+            const lowerGeo = new THREE.ExtrudeGeometry(shape, {
                 depth: streetHeight,
                 bevelEnabled: false,
                 steps: 1
             });
-            streetGeo.rotateX(-Math.PI / 2);
-            streetGeo.computeVertexNormals();
+            lowerGeo.rotateX(-Math.PI / 2);
+            lowerGeo.computeVertexNormals();
 
             const roofMat = roofMatTemplate.clone();
-            const mesh = new THREE.Mesh(streetGeo, [roofMat, streetWallMat ?? upperWallMat]);
+            const wallMat = streetEnabled ? (streetWallMat ?? upperWallMat) : upperWallMat;
+            const mesh = new THREE.Mesh(lowerGeo, [roofMat, wallMat]);
             mesh.castShadow = true;
             mesh.receiveShadow = true;
             mesh.position.y = baseY;
             solidMeshes.push(mesh);
 
-            const edgeGeo = new THREE.EdgesGeometry(streetGeo, 1);
+            const edgeGeo = new THREE.EdgesGeometry(lowerGeo, 1);
             appendPositions(wirePositions, edgeGeo.attributes.position.array);
             edgeGeo.dispose();
         }
 
-        if (!streetEnabled || streetFloors <= 0 || upperHeight > EPS) {
+        const buildUpper = (!hasLower && totalHeight > EPS) || (upperHeight > EPS);
+        if (buildUpper) {
+            const soloBeltOffset = (!hasLower && beltEnabled && streetFloors === 0) ? beltSpacerHeight : 0;
+            const depth = hasLower ? upperHeight : Math.max(0, totalHeight - soloBeltOffset);
             const upperGeo = new THREE.ExtrudeGeometry(shape, {
-                depth: streetEnabled ? (streetFloors >= floorCount ? totalHeight : upperHeight) : totalHeight,
+                depth,
                 bevelEnabled: false,
                 steps: 1
             });
@@ -829,16 +1013,47 @@ export function buildBuildingVisualParts({
             upperGeo.computeVertexNormals();
 
             const roofMat = roofMatTemplate.clone();
-            const mesh = new THREE.Mesh(upperGeo, [roofMat, streetEnabled && streetFloors >= floorCount ? (streetWallMat ?? upperWallMat) : upperWallMat]);
+            const wallMat = streetEnabled && streetFloors >= floorCount ? (streetWallMat ?? upperWallMat) : upperWallMat;
+            const mesh = new THREE.Mesh(upperGeo, [roofMat, wallMat]);
             mesh.castShadow = true;
             mesh.receiveShadow = true;
-            const upperOffsetY = streetEnabled && streetFloors > 0 && streetFloors < floorCount ? (streetHeight + beltSpacerHeight) : 0;
-            mesh.position.y = baseY + upperOffsetY;
+            const upperOffsetY = (streetFloors < floorCount) ? (streetHeight + beltSpacerHeight) : 0;
+            mesh.position.y = baseY + (hasLower ? upperOffsetY : soloBeltOffset);
             solidMeshes.push(mesh);
 
             const edgeGeo = new THREE.EdgesGeometry(upperGeo, 1);
-            appendPositions(wirePositions, edgeGeo.attributes.position.array, { yShift: upperOffsetY });
+            const wireOffsetY = hasLower ? upperOffsetY : soloBeltOffset;
+            appendPositions(wirePositions, edgeGeo.attributes.position.array, { yShift: wireOffsetY });
             edgeGeo.dispose();
+        }
+    }
+
+    if (wallInset > EPS && roofOuterLoops.length) {
+        for (const outer of roofOuterLoops) {
+            const shapePts = outer.map((p) => new THREE.Vector2(p.x, -p.z));
+            shapePts.reverse();
+            const shape = new THREE.Shape(shapePts);
+
+            for (const hole of roofHoleLoops) {
+                const holePts = hole.map((p) => new THREE.Vector2(p.x, -p.z));
+                holePts.reverse();
+                shape.holes.push(new THREE.Path(holePts));
+            }
+
+            const roofGeo = new THREE.ShapeGeometry(shape);
+            roofGeo.rotateX(-Math.PI / 2);
+            roofGeo.computeVertexNormals();
+
+            const mat = roofMatTemplate.clone();
+            mat.polygonOffset = true;
+            mat.polygonOffsetFactor = -2;
+            mat.polygonOffsetUnits = -2;
+
+            const mesh = new THREE.Mesh(roofGeo, mat);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            mesh.position.y = baseY + totalHeight + 0.002;
+            solidMeshes.push(mesh);
         }
     }
 
@@ -872,7 +1087,7 @@ export function buildBuildingVisualParts({
     let plan = null;
     if (showPlan) {
         const planPositions = [];
-        for (const loop of loops) {
+        for (const loop of footprintLoops) {
             if (!loop || loop.length < 2) continue;
             for (let i = 0; i < loop.length; i++) {
                 const a = loop[i];
@@ -902,7 +1117,7 @@ export function buildBuildingVisualParts({
     if (showBorder) {
         const borderY = planY + 0.02;
         const borderPositions = [];
-        for (const loop of loops) {
+        for (const loop of footprintLoops) {
             if (!loop || loop.length < 2) continue;
             for (let i = 0; i < loop.length; i++) {
                 const a = loop[i];
@@ -935,7 +1150,7 @@ export function buildBuildingVisualParts({
             const floorPositions = [];
             for (let i = 1; i < floorCount; i++) {
                 const y = floorBases[i];
-                for (const loop of loops) {
+                for (const loop of footprintLoops) {
                     if (!loop || loop.length < 2) continue;
                     for (let k = 0; k < loop.length; k++) {
                         const a = loop[k];
@@ -966,9 +1181,13 @@ export function buildBuildingVisualParts({
     let windowsGroup = null;
     const win = windows ?? {};
     const winEnabled = win.enabled ?? false;
-    if (winEnabled && floorCount > 0 && outerLoops.length) {
+    if (winEnabled && floorCount > 0 && wallOuterLoops.length) {
         const upperWindowWidth = clamp(win.width, 0.3, 12);
         const upperWindowGap = clamp(win.gap, 0, 24);
+        const upperWindowTypeId = typeof win.typeId === 'string'
+            ? win.typeId
+            : (typeof win.type === 'string' ? win.type : null);
+        const upperWindowParams = win.params ?? win.parameters ?? null;
         const upperWindowStyle = isWindowStyle(win.style) ? win.style : WINDOW_STYLE.DEFAULT;
         const upperDesiredWindowHeight = clamp(win.height, 0.3, Math.max(0.31, Math.max(streetFloorHeight, upperFloorHeight) * 0.95));
         const upperDesiredWindowY = clamp(win.y, 0, 12);
@@ -979,93 +1198,153 @@ export function buildBuildingVisualParts({
         const streetWin = streetCfg?.windows ?? null;
         const streetWindowWidth = Number.isFinite(streetWin?.width) ? clamp(streetWin.width, 0.3, 12) : upperWindowWidth;
         const streetWindowGap = Number.isFinite(streetWin?.gap) ? clamp(streetWin.gap, 0, 24) : upperWindowGap;
+        const streetWindowTypeId = typeof streetWin?.typeId === 'string'
+            ? streetWin.typeId
+            : (typeof streetWin?.type === 'string' ? streetWin.type : upperWindowTypeId);
+        const streetWindowParams = streetWin?.params ?? streetWin?.parameters ?? upperWindowParams;
         const streetWindowStyle = isWindowStyle(streetWin?.style) ? streetWin.style : upperWindowStyle;
         const streetDesiredWindowHeight = Number.isFinite(streetWin?.height)
             ? clamp(streetWin.height, 0.3, Math.max(0.31, Math.max(streetFloorHeight, upperFloorHeight) * 0.95))
             : upperDesiredWindowHeight;
         const streetDesiredWindowY = Number.isFinite(streetWin?.y) ? clamp(streetWin.y, 0, 12) : upperDesiredWindowY;
 
-        const makeWindowMaterial = (styleId) => new THREE.MeshStandardMaterial({
+        const upperSpacer = win.spacer ?? null;
+        const upperSpacerEnabled = !!upperSpacer?.enabled;
+        const upperSpacerEvery = clampInt(upperSpacer?.every ?? upperSpacer?.everyN ?? upperSpacer?.after ?? 0, 0, 9999);
+        const upperSpacerWidth = Number.isFinite(upperSpacer?.width) ? clamp(upperSpacer.width, 0.01, 10.0) : 0.0;
+        const upperSpacerExtrude = !!upperSpacer?.extrude;
+        const upperSpacerExtrudeDistance = clamp(upperSpacer?.extrudeDistance ?? upperSpacer?.extrudeDepth ?? 0.0, 0.0, 1.0);
+
+        const streetSpacer = streetWin?.spacer ?? null;
+        const streetSpacerEnabled = !!streetSpacer?.enabled;
+        const streetSpacerEvery = clampInt(streetSpacer?.every ?? streetSpacer?.everyN ?? streetSpacer?.after ?? 0, 0, 9999);
+        const streetSpacerWidth = Number.isFinite(streetSpacer?.width) ? clamp(streetSpacer.width, 0.01, 10.0) : 0.0;
+        const streetSpacerExtrude = !!streetSpacer?.extrude;
+        const streetSpacerExtrudeDistance = clamp(streetSpacer?.extrudeDistance ?? streetSpacer?.extrudeDepth ?? 0.0, 0.0, 1.0);
+
+        const makeWindowMaterial = ({ typeId, params, styleId, windowWidth, windowHeight } = {}) => new THREE.MeshStandardMaterial({
             color: 0xffffff,
-            map: getBuildingWindowTextureForStyle(styleId),
+            map: typeId ? getWindowTexture({ typeId, params, windowWidth, windowHeight }) : getBuildingWindowTextureForStyle(styleId),
             roughness: 0.4,
             metalness: 0.0,
             emissive: new THREE.Color(0x0b1f34),
             emissiveIntensity: 0.35
         });
-        const upperWindowMat = makeWindowMaterial(upperWindowStyle);
-        const streetWindowMat = streetWindowStyle === upperWindowStyle ? upperWindowMat : makeWindowMaterial(streetWindowStyle);
+        const upperWindowMat = makeWindowMaterial({
+            typeId: upperWindowTypeId,
+            params: upperWindowParams,
+            styleId: upperWindowStyle,
+            windowWidth: upperWindowWidth,
+            windowHeight: upperDesiredWindowHeight
+        });
+        const streetWindowMat = (streetWindowTypeId === upperWindowTypeId && streetWindowStyle === upperWindowStyle && streetWindowParams === upperWindowParams && streetWindowWidth === upperWindowWidth && streetDesiredWindowHeight === upperDesiredWindowHeight)
+            ? upperWindowMat
+            : makeWindowMaterial({
+                typeId: streetWindowTypeId,
+                params: streetWindowParams,
+                styleId: streetWindowStyle,
+                windowWidth: streetWindowWidth,
+                windowHeight: streetDesiredWindowHeight
+            });
 
         windowsGroup = new THREE.Group();
         windowsGroup.name = 'windows';
 
-        for (const loop of outerLoops) {
+        for (const loop of wallOuterLoops) {
             if (!loop || loop.length < 2) continue;
-            const n = loop.length;
-            for (let i = 0; i < n; i++) {
-                const a = loop[i];
-                const b = loop[(i + 1) % n];
-                const dx = b.x - a.x;
-                const dz = b.z - a.z;
-                const L = Math.hypot(dx, dz);
+            const runs = buildExteriorRunsFromLoop(loop);
+            for (const run of runs) {
+                const a = run?.a ?? null;
+                const dir = run?.dir ?? null;
+                const L = Number(run?.length) || 0;
+                if (!a || !dir || !(L > EPS)) continue;
 
-                const inv = 1 / L;
-                const tx = dx * inv;
-                const tz = dz * inv;
+                const tx = dir.x;
+                const tz = dir.z;
                 const nx = tz;
                 const nz = -tx;
                 const yaw = Math.atan2(nx, nz);
 
                 for (let floor = 0; floor < floorCount; floor++) {
-                    const isStreetFloor = streetEnabled && floor < streetFloors;
+                    const isStreetFloor = floor < streetFloors;
                     const windowWidth = isStreetFloor ? streetWindowWidth : upperWindowWidth;
                     const windowGap = isStreetFloor ? streetWindowGap : upperWindowGap;
                     const desiredWindowHeight = isStreetFloor ? streetDesiredWindowHeight : upperDesiredWindowHeight;
                     const desiredWindowY = isStreetFloor ? streetDesiredWindowY : upperDesiredWindowY;
                     const windowMat = isStreetFloor ? streetWindowMat : upperWindowMat;
+                    const wallMat = (streetEnabled && isStreetFloor) ? (streetWallMat ?? upperWallMat) : upperWallMat;
+
+                    const spacerEnabled = isStreetFloor ? streetSpacerEnabled : upperSpacerEnabled;
+                    const spacerEvery = isStreetFloor ? streetSpacerEvery : upperSpacerEvery;
+                    const spacerWidth = isStreetFloor ? streetSpacerWidth : upperSpacerWidth;
+                    const spacerExtrude = isStreetFloor ? streetSpacerExtrude : upperSpacerExtrude;
+                    const spacerExtrudeDistance = isStreetFloor ? streetSpacerExtrudeDistance : upperSpacerExtrudeDistance;
 
                     if (!(L > windowWidth + cornerEps * 2)) continue;
-                    const { starts, count } = computeEvenWindowLayout({
+
+                    const { segments, spacerCenters } = computeWindowSegmentsWithSpacers({
                         length: L,
                         windowWidth,
                         desiredGap: windowGap,
-                        cornerEps
+                        cornerEps,
+                        spacerEnabled,
+                        spacerEvery,
+                        spacerWidth
                     });
-                    if (!count) continue;
 
                     const floorBase = floorBases[floor] ?? baseY;
                     const floorH = floorHeights[floor] ?? upperFloorHeight;
                     const windowHeight = Math.min(desiredWindowHeight, Math.max(0.3, floorH * 0.95));
                     const windowYOffset = Math.min(desiredWindowY, Math.max(0, floorH - windowHeight));
                     const y = floorBase + windowYOffset + windowHeight * 0.5;
-                    for (const start of starts) {
-                        const centerDist = start + windowWidth * 0.5;
-                        const cx = a.x + tx * centerDist + nx * offset;
-                        const cz = a.z + tz * centerDist + nz * offset;
 
-                        const geo = new THREE.PlaneGeometry(windowWidth, windowHeight);
-                        const mesh = new THREE.Mesh(geo, windowMat);
-                        mesh.position.set(cx, y, cz);
-                        mesh.rotation.set(0, yaw, 0);
-                        mesh.castShadow = false;
-                        mesh.receiveShadow = false;
-                        windowsGroup.add(mesh);
+                    for (const seg of segments) {
+                        const segOffset = Number(seg?.offset) || 0;
+                        const starts = seg?.layout?.starts ?? [];
+                        for (const start of starts) {
+                            const centerDist = segOffset + start + windowWidth * 0.5;
+                            const cx = a.x + tx * centerDist + nx * offset;
+                            const cz = a.z + tz * centerDist + nz * offset;
+
+                            const geo = new THREE.PlaneGeometry(windowWidth, windowHeight);
+                            const mesh = new THREE.Mesh(geo, windowMat);
+                            mesh.position.set(cx, y, cz);
+                            mesh.rotation.set(0, yaw, 0);
+                            mesh.castShadow = false;
+                            mesh.receiveShadow = false;
+                            windowsGroup.add(mesh);
+                        }
+                    }
+
+                    if (spacerExtrude && spacerExtrudeDistance > EPS && spacerCenters.length && spacerWidth > EPS) {
+                        const bandY = floorBase + floorH * 0.5;
+                        const bandOffset = offset + spacerExtrudeDistance * 0.5;
+                        for (const centerDist of spacerCenters) {
+                            const cx = a.x + tx * centerDist + nx * bandOffset;
+                            const cz = a.z + tz * centerDist + nz * bandOffset;
+                            const geo = new THREE.BoxGeometry(spacerWidth, Math.max(0.1, floorH), spacerExtrudeDistance);
+                            const mesh = new THREE.Mesh(geo, wallMat);
+                            mesh.position.set(cx, bandY, cz);
+                            mesh.rotation.set(0, yaw, 0);
+                            mesh.castShadow = true;
+                            mesh.receiveShadow = true;
+                            windowsGroup.add(mesh);
+                        }
                     }
                 }
             }
         }
     }
 
-    let bounds = null;
-    const ensureBounds = () => {
-        if (bounds) return bounds;
-        if (!outerLoops.length) return null;
+    const computeBoundsFromLoops = (loops) => {
+        const list = Array.isArray(loops) ? loops : [];
+        if (!list.length) return null;
 
         let minX = Infinity;
         let maxX = -Infinity;
         let minZ = Infinity;
         let maxZ = -Infinity;
-        for (const loop of outerLoops) {
+        for (const loop of list) {
             for (const p of loop ?? []) {
                 if (!p) continue;
                 if (p.x < minX) minX = p.x;
@@ -1075,13 +1354,24 @@ export function buildBuildingVisualParts({
             }
         }
         if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minZ) || !Number.isFinite(maxZ)) return null;
-        bounds = { minX, maxX, minZ, maxZ };
-        return bounds;
+        return { minX, maxX, minZ, maxZ };
+    };
+
+    let wallBounds = null;
+    const ensureWallBounds = () => {
+        wallBounds ??= computeBoundsFromLoops(wallOuterLoops);
+        return wallBounds;
+    };
+
+    let roofBounds = null;
+    const ensureRoofBounds = () => {
+        roofBounds ??= computeBoundsFromLoops(roofOuterLoops);
+        return roofBounds;
     };
 
     let beltCourseMesh = null;
     if (beltEnabled) {
-        const b = ensureBounds();
+        const b = ensureWallBounds();
         if (b) {
             const margin = clamp(beltCfg.margin, 0, 4.0);
             const w = Math.max(EPS, b.maxX - b.minX) + margin * 2;
@@ -1109,7 +1399,7 @@ export function buildBuildingVisualParts({
     const topCfg = topBelt ?? {};
     const topEnabled = !!topCfg.enabled && floorCount > 0;
     if (topEnabled) {
-        const b = ensureBounds();
+        const b = ensureRoofBounds();
         if (b) {
             const width = clamp(topCfg.width, 0, 4.0);
             const innerWidth = Number.isFinite(topCfg.innerWidth) ? clamp(topCfg.innerWidth, 0, 4.0) : 0;
