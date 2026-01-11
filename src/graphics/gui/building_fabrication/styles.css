@@ -1,12 +1,53 @@
 /* src/graphics/gui/building_fabrication/styles.css */
 
 .building-fab-hud {
-    justify-content: flex-start;
+    justify-content: space-between;
     align-items: flex-start;
 }
 
+.building-fab-create-panel {
+    position: absolute;
+    left: 16px;
+    top: 16px;
+}
+
+.building-fab-props-panel {
+    position: absolute;
+    right: 16px;
+    top: 16px;
+}
+
+.building-fab-bottom-row {
+    position: absolute;
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 16px;
+    align-items: end;
+    pointer-events: none;
+}
+
+.building-fab-bottom-row > .ui-panel {
+    pointer-events: auto;
+}
+
+.building-fab-roads-panel {
+    justify-self: start;
+}
+
+.building-fab-buildings-panel {
+    justify-self: end;
+}
+
 .building-fab-panel {
-    max-width: 420px;
+    max-width: 460px;
+}
+
+.building-fab-panel.building-fab-toast-panel {
+    justify-self: center;
+    max-width: 520px;
 }
 
 .building-fab-panel.is-disabled {
@@ -15,17 +56,18 @@
 
 .building-fab-hint {
     font-size: 12px;
-    opacity: 0.75;
-    line-height: 1.3;
+    opacity: 0.78;
+    line-height: 1.35;
     margin-bottom: 10px;
 }
 
 .building-fab-counts {
     display: flex;
+    flex-wrap: wrap;
     gap: 10px;
     font-size: 12px;
     opacity: 0.92;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
 }
 
 .building-fab-count {
@@ -35,18 +77,84 @@
     border-radius: 10px;
 }
 
-.building-fab-floor-row {
-    display: grid;
-    grid-template-columns: 1fr 80px;
-    align-items: center;
-    gap: 10px;
+.building-fab-selected-building {
+    font-size: 12px;
+    opacity: 0.9;
+    padding: 8px 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(0, 0, 0, 0.22);
+    margin-bottom: 10px;
 }
 
-.building-fab-floor-range {
+.building-fab-building-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+    max-height: 220px;
+    overflow: auto;
+    padding-right: 4px;
+}
+
+.building-fab-building-empty {
+    font-size: 12px;
+    opacity: 0.7;
+    padding: 10px;
+}
+
+.building-fab-building-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(0, 0, 0, 0.22);
+    cursor: pointer;
+    user-select: none;
+    font-size: 12px;
+}
+
+.building-fab-building-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.building-fab-building-item.is-selected {
+    border-color: rgba(100, 210, 255, 0.55);
+    background: rgba(100, 210, 255, 0.10);
+}
+
+.building-fab-building-item-label {
+    opacity: 0.92;
+    line-height: 1.2;
+}
+
+.building-fab-section {
+    margin-top: 14px;
+}
+
+.building-fab-row {
+    display: grid;
+    grid-template-columns: 120px 1fr 86px;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.building-fab-row-label {
+    font-size: 12px;
+    opacity: 0.9;
+    font-weight: 800;
+    letter-spacing: 0.2px;
+}
+
+.building-fab-range {
     width: 100%;
 }
 
-.building-fab-floor-number {
+.building-fab-number {
     width: 100%;
     box-sizing: border-box;
     padding: 6px 8px;
@@ -56,48 +164,185 @@
     color: #e9f2ff;
 }
 
+.building-fab-toggle-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 10px;
+}
+
+.building-fab-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 12px;
+    opacity: 0.92;
+}
+
+.building-fab-toggle-wide {
+    display: flex;
+}
+
+.building-fab-toast-text {
+    margin-top: 10px;
+    font-size: 12px;
+    opacity: 0.88;
+    line-height: 1.35;
+}
+
+.building-fab-toast-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.building-fab-road-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+    max-height: 220px;
+    overflow: auto;
+    padding-right: 4px;
+}
+
+.building-fab-road-empty {
+    font-size: 12px;
+    opacity: 0.7;
+    padding: 10px;
+}
+
+.building-fab-road-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(0, 0, 0, 0.22);
+    font-size: 12px;
+}
+
+.building-fab-road-item.is-hovered {
+    border-color: rgba(255, 243, 163, 0.55);
+    background: rgba(255, 243, 163, 0.10);
+}
+
+.building-fab-road-item-label {
+    opacity: 0.9;
+    line-height: 1.2;
+}
+
+.building-fab-road-item-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.building-fab-road-trash {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 32px;
+    padding: 0;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(0, 0, 0, 0.24);
+    color: rgba(255, 59, 48, 0.92);
+    cursor: pointer;
+}
+
+.building-fab-road-trash:hover {
+    border-color: rgba(255, 59, 48, 0.55);
+    background: rgba(255, 59, 48, 0.14);
+}
+
+.building-fab-road-trash:disabled {
+    cursor: default;
+    opacity: 0.5;
+}
+
 .building-fab-actions {
     display: grid;
     grid-template-columns: 1fr;
     gap: 8px;
-    margin-top: 14px;
+    margin-top: 12px;
 }
 
 .building-fab-btn {
     cursor: pointer;
     padding: 10px 12px;
     border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    background: rgba(0, 0, 0, 0.28);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(12, 16, 24, 0.90);
     color: #e9f2ff;
     font-weight: 700;
     letter-spacing: 0.2px;
+    box-shadow: 0 8px 22px rgba(0,0,0,0.24);
+    transition: background 120ms ease, border-color 120ms ease, transform 80ms ease;
 }
 
-.building-fab-btn:hover {
+.building-fab-btn:hover:not(:disabled) {
     background: rgba(255, 255, 255, 0.10);
+    border-color: rgba(255, 255, 255, 0.26);
+}
+
+.building-fab-btn:active:not(:disabled) {
+    transform: translateY(1px);
 }
 
 .building-fab-btn:disabled {
     cursor: default;
     opacity: 0.5;
+    box-shadow: none;
 }
 
 .building-fab-btn-primary {
-    border-color: rgba(46, 194, 126, 0.45);
-    background: rgba(46, 194, 126, 0.18);
+    border-color: rgba(46, 194, 126, 0.70);
+    background: linear-gradient(180deg, rgba(46, 194, 126, 0.34), rgba(12, 16, 24, 0.92));
 }
 
-.building-fab-btn-primary:hover {
-    background: rgba(46, 194, 126, 0.30);
+.building-fab-btn-primary.is-active {
+    border-color: rgba(46, 194, 126, 0.92);
+    background: linear-gradient(180deg, rgba(46, 194, 126, 0.46), rgba(12, 16, 24, 0.92));
+}
+
+.building-fab-btn-primary:hover:not(:disabled) {
+    border-color: rgba(46, 194, 126, 0.92);
+    background: linear-gradient(180deg, rgba(46, 194, 126, 0.46), rgba(12, 16, 24, 0.92));
 }
 
 .building-fab-btn-danger {
-    border-color: rgba(255, 59, 48, 0.45);
-    background: rgba(255, 59, 48, 0.14);
+    border-color: rgba(255, 59, 48, 0.66);
+    background: linear-gradient(180deg, rgba(255, 59, 48, 0.30), rgba(12, 16, 24, 0.92));
 }
 
-.building-fab-btn-danger:hover {
-    background: rgba(255, 59, 48, 0.26);
+.building-fab-btn-danger:hover:not(:disabled) {
+    border-color: rgba(255, 59, 48, 0.90);
+    background: linear-gradient(180deg, rgba(255, 59, 48, 0.42), rgba(12, 16, 24, 0.92));
 }
 
+.building-fab-btn-road {
+    border-color: rgba(100, 210, 255, 0.55);
+    background: linear-gradient(180deg, rgba(100, 210, 255, 0.22), rgba(12, 16, 24, 0.92));
+}
+
+.building-fab-btn-road:hover:not(:disabled) {
+    border-color: rgba(100, 210, 255, 0.78);
+    background: linear-gradient(180deg, rgba(100, 210, 255, 0.32), rgba(12, 16, 24, 0.92));
+}
+
+.building-fab-btn-road.is-active {
+    border-color: rgba(191, 90, 242, 0.78);
+    background: linear-gradient(180deg, rgba(191, 90, 242, 0.30), rgba(12, 16, 24, 0.92));
+}
+
+.building-fab-btn-road.is-active:hover:not(:disabled) {
+    border-color: rgba(191, 90, 242, 0.92);
+    background: linear-gradient(180deg, rgba(191, 90, 242, 0.42), rgba(12, 16, 24, 0.92));
+}

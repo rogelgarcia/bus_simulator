@@ -33,11 +33,123 @@ export class BuildingFabricationView {
     enter() {
         this.scene.enter();
         this.ui.mount();
+
+        this.ui.setGridSize(this.scene.getGridSize());
+        this.ui.setFloorHeight(this.scene.getFloorHeight());
+        this.ui.setWireframeEnabled(false);
+        this.ui.setFloorDivisionsEnabled(false);
+        this.ui.setFloorplanEnabled(false);
+        this.ui.setRoadModeEnabled(false);
+        this.ui.setBuildingModeEnabled(false);
+        this.ui.setSelectedBuilding(null);
         this._syncUiCounts();
+        this._syncRoadList();
+        this._syncBuildings();
+
+        this.ui.onBuildingModeChange = (enabled) => {
+            this.scene.setBuildingModeEnabled(enabled);
+            this.ui.setBuildingModeEnabled(this.scene.getBuildingModeEnabled());
+            this.ui.setRoadModeEnabled(this.scene.getRoadModeEnabled());
+            this._syncUiCounts();
+            this._syncBuildings();
+        };
+
+        this.ui.onBuildBuildings = () => {
+            this.scene.createBuildingsFromSelection({
+                floors: this.ui.getFloorCount(),
+                floorHeight: this.ui.getFloorHeight()
+            });
+            this.ui.setBuildingModeEnabled(this.scene.getBuildingModeEnabled());
+            this._syncUiCounts();
+            this._syncBuildings();
+        };
+
+        this.ui.onClearSelection = () => {
+            this.scene.clearSelection();
+            this._syncUiCounts();
+        };
+
+        this.ui.onSelectBuilding = (buildingId) => {
+            this.scene.setSelectedBuildingId(buildingId);
+            const selected = this.scene.getSelectedBuilding();
+            this.ui.setSelectedBuilding(selected);
+            if (selected) this.ui.setFloorCount(selected.floors);
+            this._syncBuildings();
+        };
+
+        this.ui.onDeleteSelectedBuilding = () => {
+            if (this.scene.removeSelectedBuilding()) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
+                this._syncUiCounts();
+                this._syncBuildings();
+            }
+        };
 
         this.ui.onReset = () => {
             this.scene.resetScene();
+            this.ui.setGridSize(this.scene.getGridSize());
+            this.ui.setFloorHeight(this.scene.getFloorHeight());
+            this.ui.setRoadModeEnabled(this.scene.getRoadModeEnabled());
+            this.ui.setBuildingModeEnabled(this.scene.getBuildingModeEnabled());
+            this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
             this._syncUiCounts();
+            this._syncRoadStatus();
+            this._syncRoadList();
+            this._syncBuildings();
+        };
+
+        this.ui.onGridApply = (size) => {
+            this.scene.setGridSize(size);
+            this.ui.setGridSize(this.scene.getGridSize());
+            this._syncUiCounts();
+            this._syncRoadStatus();
+            this._syncRoadList();
+            this._syncBuildings();
+        };
+
+        this.ui.onRoadModeChange = (enabled) => {
+            this.scene.setRoadModeEnabled(enabled);
+            this.ui.setRoadModeEnabled(this.scene.getRoadModeEnabled());
+            this.ui.setBuildingModeEnabled(this.scene.getBuildingModeEnabled());
+            this._syncRoadStatus();
+            this._syncUiCounts();
+            this._syncBuildings();
+        };
+
+        this.ui.onRoadRemove = (roadId) => {
+            if (this.scene.removeRoad(roadId)) {
+                this._syncUiCounts();
+                this._syncRoadList();
+                this._syncBuildings();
+            }
+        };
+
+        this.ui.onRoadHover = (roadId) => {
+            this.scene.setHoveredRoadId(roadId);
+        };
+
+        this.ui.onWireframeChange = (enabled) => {
+            this.scene.setShowWireframe(enabled);
+        };
+
+        this.ui.onFloorDivisionsChange = (enabled) => {
+            this.scene.setShowFloorDivisions(enabled);
+        };
+
+        this.ui.onFloorplanChange = (enabled) => {
+            this.scene.setShowFloorplan(enabled);
+        };
+
+        this.ui.onFloorHeightChange = (height) => {
+            if (this.scene.setSelectedBuildingFloorHeight(height)) {
+                this._syncBuildings();
+            }
+        };
+
+        this.ui.onFloorCountChange = (floors) => {
+            if (this.scene.setSelectedBuildingFloors(floors)) {
+                this._syncBuildings();
+            }
         };
 
         this.canvas.addEventListener('pointermove', this._onPointerMove, { passive: true });
@@ -52,7 +164,21 @@ export class BuildingFabricationView {
         this.canvas.removeEventListener('pointerup', this._onPointerUp);
         this.canvas.removeEventListener('pointerleave', this._onPointerLeave);
 
+        this.ui.onBuildingModeChange = null;
+        this.ui.onBuildBuildings = null;
+        this.ui.onClearSelection = null;
+        this.ui.onSelectBuilding = null;
+        this.ui.onDeleteSelectedBuilding = null;
         this.ui.onReset = null;
+        this.ui.onGridApply = null;
+        this.ui.onRoadModeChange = null;
+        this.ui.onRoadRemove = null;
+        this.ui.onRoadHover = null;
+        this.ui.onWireframeChange = null;
+        this.ui.onFloorDivisionsChange = null;
+        this.ui.onFloorplanChange = null;
+        this.ui.onFloorCountChange = null;
+        this.ui.onFloorHeightChange = null;
         this.ui.unmount();
 
         this.scene.dispose();
@@ -68,7 +194,24 @@ export class BuildingFabricationView {
     }
 
     _syncUiCounts() {
-        this.ui.setBuildingCount(this.scene.getOccupiedCount());
+        this.ui.setSelectedCount(this.scene.getSelectedCount());
+        this.ui.setBuildingCount(this.scene.getBuildingCount());
+        this.ui.setRoadCount(this.scene.getRoadTileCount());
+    }
+
+    _syncRoadStatus() {
+        this.ui.setRoadStatus(this.scene.getRoadSelection());
+    }
+
+    _syncRoadList() {
+        this.ui.setRoads(this.scene.getRoadSegments());
+    }
+
+    _syncBuildings() {
+        const selected = this.scene.getSelectedBuilding();
+        this.ui.setSelectedBuilding(selected);
+        this.ui.setBuildings(this.scene.getBuildings(), { selectedBuildingId: selected?.id ?? null });
+        if (selected) this.ui.setFloorCount(selected.floors);
     }
 
     _setPointerFromEvent(event) {
@@ -119,7 +262,21 @@ export class BuildingFabricationView {
 
         const tileId = this._pickTileId(event);
         if (!tileId) return;
-        this.scene.toggleBuilding(tileId, { floors: this.ui.getFloorCount() });
+
+        if (this.scene.getRoadModeEnabled()) {
+            this.scene.handleRoadTileClick(tileId);
+            this.ui.setRoadModeEnabled(this.scene.getRoadModeEnabled());
+            this.ui.setBuildingModeEnabled(this.scene.getBuildingModeEnabled());
+            this._syncRoadStatus();
+            this._syncRoadList();
+            this._syncBuildings();
+        } else if (this.scene.getBuildingModeEnabled()) {
+            this.scene.toggleTileSelection(tileId);
+        } else {
+            this.scene.selectBuildingByTileId(tileId);
+            this._syncBuildings();
+        }
+
         this._syncUiCounts();
     }
 

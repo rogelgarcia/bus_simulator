@@ -62,6 +62,10 @@ export class WelcomeState {
         this.sm.go('rapier_debugger');
     }
 
+    _buildingFabrication() {
+        this.sm.go('building_fabrication');
+    }
+
     _setup() {
         this.sm.go('setup');
     }
@@ -104,15 +108,17 @@ export class WelcomeState {
         const is2 = code === 'Digit2' || code === 'Numpad2' || key === '2';
         const is3 = code === 'Digit3' || code === 'Numpad3' || key === '3';
         const is4 = code === 'Digit4' || code === 'Numpad4' || key === '4';
+        const is5 = code === 'Digit5' || code === 'Numpad5' || key === '5';
         const isG = code === 'KeyG' || key === 'g' || key === 'G';
         const isQ = code === 'KeyQ' || key === 'q' || key === 'Q';
 
-        if (isEnter || isSpace || is1 || is2 || is3 || is4 || isG || isQ) e.preventDefault();
+        if (isEnter || isSpace || is1 || is2 || is3 || is4 || is5 || isG || isQ) e.preventDefault();
 
         if (is1) return this._mapDebugger();
         if (is2) return this._test();
         if (is3) return this._connectorDebugger();
         if (is4) return this._rapierDebugger();
+        if (is5) return this._buildingFabrication();
         if (isG) return this._garage();
         if (isQ) return this._setup();
         if (isEnter || isSpace) return this._start();
