@@ -876,6 +876,8 @@ async function runTests() {
     const { CityMap } = await import('/src/app/city/CityMap.js');
     const { createCityConfig } = await import('/src/app/city/CityConfig.js');
     const { BUILDING_STYLE } = await import('/src/app/city/BuildingStyle.js');
+    const { BELT_COURSE_COLOR } = await import('/src/app/city/BeltCourseColor.js');
+    const { ROOF_COLOR, resolveRoofColorHex } = await import('/src/app/city/RoofColor.js');
 
     test('CityMap: builds empty building list when missing', () => {
         const cfg = createCityConfig({ size: 96, mapTileSize: 24, seed: 'test' });
@@ -935,7 +937,7 @@ async function runTests() {
         assertEqual(map.buildings[0].tiles[1][0], 1);
     });
 
-    const { computeEvenWindowLayout } = await import('/src/graphics/assets3d/generators/BuildingGenerator.js');
+    const { computeEvenWindowLayout, buildBuildingVisualParts, getWindowStyleOptions } = await import('/src/graphics/assets3d/generators/BuildingGenerator.js');
     const { createTreeField } = await import('/src/graphics/assets3d/generators/TreeGenerator.js');
     const { CityRNG } = await import('/src/app/city/CityRNG.js');
 
@@ -969,6 +971,89 @@ async function runTests() {
             const prev = starts[i - 1];
             const next = starts[i];
             assertTrue(Math.abs((next - prev) - (windowWidth + gap)) < 1e-6, 'Windows should be evenly spaced.');
+        }
+    });
+
+    test('BuildingGenerator: window style options provide previews', () => {
+        const opts = getWindowStyleOptions();
+        assertTrue(Array.isArray(opts) && opts.length >= 3, 'Should expose multiple window styles.');
+        const hasPreview = opts.some((opt) => typeof opt?.previewUrl === 'string' && opt.previewUrl.startsWith('data:image/'));
+        assertTrue(hasPreview, 'Should include at least one preview URL.');
+    });
+
+    test('BuildingGenerator: street floors can add street floor belt', () => {
+        const cfg = createCityConfig({ size: 96, mapTileSize: 24, seed: 'test-street-floors' });
+        const map = CityMap.fromSpec({ roads: [] }, cfg);
+        const parts = buildBuildingVisualParts({
+            map,
+            tiles: [[0, 0], [1, 0]],
+            floors: 4,
+            floorHeight: 3.0,
+            style: BUILDING_STYLE.DEFAULT,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            windows: { enabled: false },
+            street: { enabled: true, floors: 1, floorHeight: 5.0, style: BUILDING_STYLE.DEFAULT },
+            beltCourse: { enabled: true, margin: 0.4, height: 0.3, color: BELT_COURSE_COLOR.ORANGE }
+        });
+        assertTrue(parts !== null, 'Should build parts.');
+        assertTrue(parts.solidMeshes.length >= 2, 'Should split street and upper meshes.');
+        assertTrue(!!parts.beltCourse && !!parts.beltCourse.isMesh, 'Should create belt course mesh.');
+        assertEqual(parts.beltCourse.geometry?.parameters?.height, 0.3, 'Street floor belt height should match.');
+        assertEqual(parts.beltCourse.material?.color?.getHex?.(), 0xd58a3a, 'Street floor belt color should match.');
+
+        const streetMesh = parts.solidMeshes[0];
+        const upperMesh = parts.solidMeshes[1];
+        const streetTopY = (streetMesh?.position?.y ?? 0) + 5.0;
+        assertTrue(Math.abs((parts.beltCourse.position?.y ?? 0) - (streetTopY + 0.15)) < 1e-6, 'Street floor belt should sit above the street floor.');
+        assertTrue(Math.abs((upperMesh?.position?.y ?? 0) - (streetTopY + 0.3)) < 1e-6, 'Upper floors should shift up by belt height.');
+    });
+
+    test('BuildingGenerator: top belt can render above roof', () => {
+        const cfg = createCityConfig({ size: 96, mapTileSize: 24, seed: 'test-top-belt' });
+        const map = CityMap.fromSpec({ roads: [] }, cfg);
+        const parts = buildBuildingVisualParts({
+            map,
+            tiles: [[0, 0], [1, 0]],
+            floors: 2,
+            floorHeight: 3.0,
+            style: BUILDING_STYLE.DEFAULT,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            windows: { enabled: false },
+            topBelt: { enabled: true, width: 0.5, innerWidth: 0.2, height: 0.25 }
+        });
+        assertTrue(parts !== null, 'Should build parts.');
+        assertTrue(!!parts.topBelt && !!parts.topBelt.isMesh, 'Should create top belt mesh.');
+        assertEqual(parts.topBelt.geometry?.type, 'ExtrudeGeometry', 'Top belt should use extruded geometry.');
+        parts.topBelt.geometry?.computeBoundingBox?.();
+        const bbox = parts.topBelt.geometry?.boundingBox ?? null;
+        assertTrue(!!bbox, 'Top belt should have bounds.');
+        assertTrue(Math.abs((bbox.max.y - bbox.min.y) - 0.25) < 1e-6, 'Top belt height should match.');
+        assertTrue(Math.abs((parts.topBelt.position?.y ?? 0) - 6.01) < 1e-6, 'Top belt should start above roof.');
+        const shapes = parts.topBelt.geometry?.parameters?.shapes ?? parts.topBelt.geometry?.parameters?.shape ?? null;
+        const shape = Array.isArray(shapes) ? shapes[0] : shapes;
+        const holeCount = Array.isArray(shape?.holes) ? shape.holes.length : 0;
+        assertTrue(holeCount >= 1, 'Top belt should have an inner hole.');
+        assertEqual(parts.topBelt.material?.color?.getHex?.(), 0xf2f2f2, 'Top belt should default to off-white.');
+    });
+
+    test('BuildingGenerator: roof color can be configured', () => {
+        const cfg = createCityConfig({ size: 96, mapTileSize: 24, seed: 'test-roof-color' });
+        const map = CityMap.fromSpec({ roads: [] }, cfg);
+        const parts = buildBuildingVisualParts({
+            map,
+            tiles: [[0, 0], [1, 0]],
+            floors: 2,
+            floorHeight: 3.0,
+            style: BUILDING_STYLE.DEFAULT,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            windows: { enabled: false },
+            roof: { color: ROOF_COLOR.TERRACOTTA }
+        });
+        assertTrue(parts !== null, 'Should build parts.');
+        const expected = resolveRoofColorHex(ROOF_COLOR.TERRACOTTA, 0xffffff);
+        for (const mesh of parts.solidMeshes ?? []) {
+            const mat = Array.isArray(mesh?.material) ? mesh.material[0] : null;
+            assertEqual(mat?.color?.getHex?.(), expected, 'Roof material color should match.');
         }
     });
 

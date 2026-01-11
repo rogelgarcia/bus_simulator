@@ -9,10 +9,13 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { CityMap, TILE } from '../../../app/city/CityMap.js';
 import { createCityWorld } from '../../../app/city/CityWorld.js';
 import { BUILDING_STYLE, isBuildingStyle } from '../../../app/city/BuildingStyle.js';
+import { WINDOW_STYLE, isWindowStyle } from '../../../app/city/WindowStyle.js';
+import { BELT_COURSE_COLOR, isBeltCourseColor } from '../../../app/city/BeltCourseColor.js';
+import { ROOF_COLOR, isRoofColor } from '../../../app/city/RoofColor.js';
 import { createGeneratorConfig } from '../../assets3d/generators/GeneratorParams.js';
 import { createGradientSkyDome } from '../../assets3d/generators/SkyGenerator.js';
 import { generateRoads } from '../../assets3d/generators/RoadGenerator.js';
-import { BuildingWallTextureCache, applyBuildingStyleToGroup, buildBuildingVisualParts } from '../../assets3d/generators/BuildingGenerator.js';
+import { BuildingWallTextureCache, buildBuildingVisualParts } from '../../assets3d/generators/BuildingGenerator.js';
 import { getCityMaterials } from '../../assets3d/textures/CityMaterials.js';
 import { createRoadHighlightMesh } from '../../visuals/city/RoadHighlightMesh.js';
 
@@ -394,6 +397,23 @@ export class BuildingFabricationScene {
             floorHeight: b.floorHeight,
             tileCount: b.tiles.size,
             style: b.style,
+            streetEnabled: b.streetEnabled,
+            streetFloors: b.streetFloors,
+            streetFloorHeight: b.streetFloorHeight,
+            streetStyle: b.streetStyle,
+            beltCourseEnabled: b.beltCourseEnabled,
+            beltCourseMargin: b.beltCourseMargin,
+            beltCourseHeight: b.beltCourseHeight,
+            beltCourseColor: b.beltCourseColor,
+            topBeltEnabled: b.topBeltEnabled,
+            topBeltWidth: b.topBeltWidth,
+            topBeltHeight: b.topBeltHeight,
+            windowStyle: b.windowStyle,
+            streetWindowStyle: b.streetWindowStyle,
+            streetWindowWidth: b.streetWindowWidth,
+            streetWindowGap: b.streetWindowGap,
+            streetWindowHeight: b.streetWindowHeight,
+            streetWindowY: b.streetWindowY,
             windowWidth: b.windowWidth,
             windowGap: b.windowGap,
             windowHeight: b.windowHeight,
@@ -505,6 +525,7 @@ export class BuildingFabricationScene {
         const next = clampInt(floors, 1, 30);
         if (next === building.floors) return false;
         building.floors = next;
+        building.streetFloors = clampInt(building.streetFloors, 1, next);
         this._rebuildBuildingMesh(building);
         return true;
     }
@@ -516,6 +537,11 @@ export class BuildingFabricationScene {
         const cur = Number.isFinite(building.floorHeight) ? building.floorHeight : this.floorHeight;
         if (Math.abs(next - cur) < 1e-6) return false;
         building.floorHeight = next;
+        if (!building.streetEnabled) building.streetFloorHeight = next;
+        if (!building.streetEnabled) {
+            building.streetWindowHeight = clamp(building.windowHeight, 0.3, next * 0.95);
+            building.streetWindowY = clamp(building.windowY, 0.0, Math.max(0, next - building.streetWindowHeight));
+        }
         this._rebuildBuildingMesh(building);
         return true;
     }
@@ -526,6 +552,7 @@ export class BuildingFabricationScene {
         const next = clamp(width, 0.3, 12.0);
         if (Math.abs(next - (Number(building.windowWidth) || 0)) < 1e-6) return false;
         building.windowWidth = next;
+        if (!building.streetEnabled) building.streetWindowWidth = next;
         this._rebuildBuildingMesh(building);
         return true;
     }
@@ -536,6 +563,7 @@ export class BuildingFabricationScene {
         const next = clamp(gap, 0.0, 24.0);
         if (Math.abs(next - (Number(building.windowGap) || 0)) < 1e-6) return false;
         building.windowGap = next;
+        if (!building.streetEnabled) building.streetWindowGap = next;
         this._rebuildBuildingMesh(building);
         return true;
     }
@@ -547,6 +575,7 @@ export class BuildingFabricationScene {
         const next = clamp(height, 0.3, floorH * 0.95);
         if (Math.abs(next - (Number(building.windowHeight) || 0)) < 1e-6) return false;
         building.windowHeight = next;
+        if (!building.streetEnabled) building.streetWindowHeight = next;
         this._rebuildBuildingMesh(building);
         return true;
     }
@@ -559,6 +588,212 @@ export class BuildingFabricationScene {
         const next = clamp(offset, 0.0, Math.max(0, floorH - winH));
         if (Math.abs(next - (Number(building.windowY) || 0)) < 1e-6) return false;
         building.windowY = next;
+        if (!building.streetEnabled) building.streetWindowY = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingWindowStyle(style) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = isWindowStyle(style) ? style : WINDOW_STYLE.DEFAULT;
+        if (next === building.windowStyle) return false;
+        building.windowStyle = next;
+        if (!building.streetEnabled) building.streetWindowStyle = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingStreetWindowWidth(width) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = clamp(width, 0.3, 12.0);
+        if (Math.abs(next - (Number(building.streetWindowWidth) || 0)) < 1e-6) return false;
+        building.streetWindowWidth = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingStreetWindowGap(gap) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = clamp(gap, 0.0, 24.0);
+        if (Math.abs(next - (Number(building.streetWindowGap) || 0)) < 1e-6) return false;
+        building.streetWindowGap = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingStreetWindowHeight(height) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const floorH = clamp(Number.isFinite(building.streetFloorHeight) ? building.streetFloorHeight : building.floorHeight, 1.0, 12.0);
+        const next = clamp(height, 0.3, floorH * 0.95);
+        if (Math.abs(next - (Number(building.streetWindowHeight) || 0)) < 1e-6) return false;
+        building.streetWindowHeight = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingStreetWindowY(offset) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const floorH = clamp(Number.isFinite(building.streetFloorHeight) ? building.streetFloorHeight : building.floorHeight, 1.0, 12.0);
+        const winH = clamp(Number.isFinite(building.streetWindowHeight) ? building.streetWindowHeight : 1.4, 0.3, floorH * 0.95);
+        const next = clamp(offset, 0.0, Math.max(0, floorH - winH));
+        if (Math.abs(next - (Number(building.streetWindowY) || 0)) < 1e-6) return false;
+        building.streetWindowY = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingStreetWindowStyle(style) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = isWindowStyle(style) ? style : building.windowStyle;
+        if (next === building.streetWindowStyle) return false;
+        building.streetWindowStyle = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingStreetEnabled(enabled) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = !!enabled;
+        if (next === building.streetEnabled) return false;
+        building.streetEnabled = next;
+        if (!isBuildingStyle(building.streetStyle)) building.streetStyle = building.style;
+        if (!Number.isFinite(building.streetFloorHeight)) building.streetFloorHeight = building.floorHeight;
+        if (next) {
+            if (!isWindowStyle(building.windowStyle)) building.windowStyle = WINDOW_STYLE.DEFAULT;
+            building.streetWindowWidth = building.windowWidth;
+            building.streetWindowGap = building.windowGap;
+            building.streetWindowHeight = building.windowHeight;
+            building.streetWindowY = building.windowY;
+            building.streetWindowStyle = building.windowStyle;
+        }
+        building.streetFloors = clampInt(building.streetFloors, 1, building.floors);
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingStreetFloors(count) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = clampInt(count, 1, building.floors);
+        if (next === building.streetFloors) return false;
+        building.streetFloors = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingStreetFloorHeight(height) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = clamp(height, 1.0, 12.0);
+        if (Math.abs(next - (Number(building.streetFloorHeight) || 0)) < 1e-6) return false;
+        building.streetFloorHeight = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingStreetStyle(style) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = isBuildingStyle(style) ? style : building.style;
+        if (next === building.streetStyle) return false;
+        building.streetStyle = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingBeltCourseEnabled(enabled) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = !!enabled;
+        if (next === building.beltCourseEnabled) return false;
+        building.beltCourseEnabled = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingBeltCourseMargin(margin) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = clamp(margin, 0.0, 4.0);
+        if (Math.abs(next - (Number(building.beltCourseMargin) || 0)) < 1e-6) return false;
+        building.beltCourseMargin = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingBeltCourseHeight(height) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = clamp(height, 0.02, 1.2);
+        if (Math.abs(next - (Number(building.beltCourseHeight) || 0)) < 1e-6) return false;
+        building.beltCourseHeight = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingBeltCourseColor(color) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = isBeltCourseColor(color) ? color : BELT_COURSE_COLOR.OFFWHITE;
+        if (next === building.beltCourseColor) return false;
+        building.beltCourseColor = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingTopBeltEnabled(enabled) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = !!enabled;
+        if (next === building.topBeltEnabled) return false;
+        building.topBeltEnabled = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingTopBeltWidth(width) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = clamp(width, 0.0, 4.0);
+        if (Math.abs(next - (Number(building.topBeltWidth) || 0)) < 1e-6) return false;
+        building.topBeltWidth = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingTopBeltHeight(height) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = clamp(height, 0.02, 1.2);
+        if (Math.abs(next - (Number(building.topBeltHeight) || 0)) < 1e-6) return false;
+        building.topBeltHeight = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingTopBeltInnerWidth(width) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = clamp(width, 0.0, 4.0);
+        if (Math.abs(next - (Number(building.topBeltInnerWidth) || 0)) < 1e-6) return false;
+        building.topBeltInnerWidth = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingRoofColor(color) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = isRoofColor(color) ? color : ROOF_COLOR.DEFAULT;
+        if (next === building.roofColor) return false;
+        building.roofColor = next;
         this._rebuildBuildingMesh(building);
         return true;
     }
@@ -582,13 +817,9 @@ export class BuildingFabricationScene {
         const next = isBuildingStyle(style) ? style : BUILDING_STYLE.DEFAULT;
         if (next === building.style) return false;
         building.style = next;
+        if (!building.streetEnabled) building.streetStyle = next;
 
-        applyBuildingStyleToGroup({
-            solidGroup: building.solidGroup,
-            style: next,
-            baseColorHex: building.baseColorHex,
-            textureCache: this._wallTextures
-        });
+        this._rebuildBuildingMesh(building);
         return true;
     }
 
@@ -705,6 +936,7 @@ export class BuildingFabricationScene {
 
         if (building.planGroup) building.planGroup.visible = floorplan;
         if (building.solidGroup) building.solidGroup.visible = !floorplan && !this._showWireframe;
+        if (building.featuresGroup) building.featuresGroup.visible = !floorplan && !this._showWireframe;
         if (building.wireGroup) building.wireGroup.visible = !floorplan && this._showWireframe;
         if (building.floorsGroup) building.floorsGroup.visible = !floorplan && this._showFloorDivisions;
         if (building.windowsGroup) building.windowsGroup.visible = !floorplan && !this._showWireframe;
@@ -1204,13 +1436,41 @@ export class BuildingFabricationScene {
         this._syncTileVisuals();
     }
 
-    _createBuilding(tileIds, floors, floorHeight, { type = 'business', style = BUILDING_STYLE.DEFAULT } = {}) {
+    _createBuilding(tileIds, floors, floorHeight, {
+        type = 'business',
+        style = BUILDING_STYLE.DEFAULT,
+        roofColor = ROOF_COLOR.DEFAULT,
+        windowStyle = WINDOW_STYLE.DEFAULT,
+        windowWidth = 2.2,
+        windowGap = 1.6,
+        windowHeight = 1.4,
+        windowY = 1.0,
+        streetEnabled = false,
+        streetFloors = 1,
+        streetFloorHeight = null,
+        streetStyle = null,
+        streetWindowStyle = null,
+        streetWindowWidth = null,
+        streetWindowGap = null,
+        streetWindowHeight = null,
+        streetWindowY = null,
+        beltCourseEnabled = false,
+        beltCourseMargin = 0.4,
+        beltCourseHeight = 0.18,
+        beltCourseColor = BELT_COURSE_COLOR.OFFWHITE,
+        topBeltEnabled = false,
+        topBeltWidth = 0.4,
+        topBeltHeight = 0.18,
+        topBeltInnerWidth = 0.0
+    } = {}) {
         const group = new THREE.Group();
         group.name = `building_${this._buildings.length + 1}`;
         this.root.add(group);
 
         const solidGroup = new THREE.Group();
         solidGroup.name = 'solid';
+        const featuresGroup = new THREE.Group();
+        featuresGroup.name = 'features';
         const wireGroup = new THREE.Group();
         wireGroup.name = 'wire';
         const floorsGroup = new THREE.Group();
@@ -1223,26 +1483,59 @@ export class BuildingFabricationScene {
         windowsGroup.name = 'windows';
 
         group.add(solidGroup);
+        group.add(featuresGroup);
         group.add(wireGroup);
         group.add(floorsGroup);
         group.add(planGroup);
         group.add(borderGroup);
         group.add(windowsGroup);
 
+        const clampedFloorHeight = clamp(Number.isFinite(floorHeight) ? floorHeight : this.floorHeight, 1.0, 12.0);
+        const safeStyle = isBuildingStyle(style) ? style : BUILDING_STYLE.DEFAULT;
+        const safeWindowStyle = isWindowStyle(windowStyle) ? windowStyle : WINDOW_STYLE.DEFAULT;
+        const safeStreetWindowStyle = isWindowStyle(streetWindowStyle) ? streetWindowStyle : safeWindowStyle;
+        const safeStreetWindowWidth = Number.isFinite(streetWindowWidth) ? clamp(streetWindowWidth, 0.3, 12.0) : clamp(windowWidth, 0.3, 12.0);
+        const safeStreetWindowGap = Number.isFinite(streetWindowGap) ? clamp(streetWindowGap, 0.0, 24.0) : clamp(windowGap, 0.0, 24.0);
+        const safeStreetWindowHeight = Number.isFinite(streetWindowHeight) ? clamp(streetWindowHeight, 0.3, 10.0) : clamp(windowHeight, 0.3, 10.0);
+        const safeStreetWindowY = Number.isFinite(streetWindowY) ? clamp(streetWindowY, 0.0, 12.0) : clamp(windowY, 0.0, 12.0);
         const building = {
             id: group.name,
             type,
-            style: isBuildingStyle(style) ? style : BUILDING_STYLE.DEFAULT,
+            style: safeStyle,
+            roofColor: isRoofColor(roofColor) ? roofColor : ROOF_COLOR.DEFAULT,
             baseColorHex: null,
             tiles: new Set(tileIds),
             floors,
-            floorHeight: clamp(Number.isFinite(floorHeight) ? floorHeight : this.floorHeight, 1.0, 12.0),
-            windowWidth: 2.2,
-            windowGap: 1.6,
-            windowHeight: 1.4,
-            windowY: 1.0,
+            floorHeight: clampedFloorHeight,
+            streetEnabled: !!streetEnabled,
+            streetFloors: clampInt(streetFloors, 1, floors),
+            streetFloorHeight: clamp(
+                Number.isFinite(streetFloorHeight) ? streetFloorHeight : clampedFloorHeight,
+                1.0,
+                12.0
+            ),
+            streetStyle: isBuildingStyle(streetStyle) ? streetStyle : safeStyle,
+            beltCourseEnabled: !!beltCourseEnabled,
+            beltCourseMargin: clamp(beltCourseMargin, 0.0, 4.0),
+            beltCourseHeight: clamp(beltCourseHeight, 0.02, 1.2),
+            beltCourseColor: isBeltCourseColor(beltCourseColor) ? beltCourseColor : BELT_COURSE_COLOR.OFFWHITE,
+            topBeltEnabled: !!topBeltEnabled,
+            topBeltWidth: clamp(topBeltWidth, 0.0, 4.0),
+            topBeltHeight: clamp(topBeltHeight, 0.02, 1.2),
+            topBeltInnerWidth: clamp(topBeltInnerWidth, 0.0, 4.0),
+            windowStyle: safeWindowStyle,
+            windowWidth: clamp(windowWidth, 0.3, 12.0),
+            windowGap: clamp(windowGap, 0.0, 24.0),
+            windowHeight: clamp(windowHeight, 0.3, 10.0),
+            windowY: clamp(windowY, 0.0, 12.0),
+            streetWindowStyle: safeStreetWindowStyle,
+            streetWindowWidth: safeStreetWindowWidth,
+            streetWindowGap: safeStreetWindowGap,
+            streetWindowHeight: safeStreetWindowHeight,
+            streetWindowY: safeStreetWindowY,
             group,
             solidGroup,
+            featuresGroup,
             wireGroup,
             floorsGroup,
             planGroup,
@@ -1339,7 +1632,30 @@ export class BuildingFabricationScene {
         for (let i = 1; i < clusters.length; i++) {
             this._createBuilding(clusters[i], building.floors, building.floorHeight, {
                 type: building.type,
-                style: building.style
+                style: building.style,
+                roofColor: building.roofColor,
+                windowStyle: building.windowStyle,
+                streetEnabled: building.streetEnabled,
+                streetFloors: building.streetFloors,
+                streetFloorHeight: building.streetFloorHeight,
+                streetStyle: building.streetStyle,
+                beltCourseEnabled: building.beltCourseEnabled,
+                beltCourseMargin: building.beltCourseMargin,
+                beltCourseHeight: building.beltCourseHeight,
+                beltCourseColor: building.beltCourseColor,
+                topBeltEnabled: building.topBeltEnabled,
+                topBeltWidth: building.topBeltWidth,
+                topBeltHeight: building.topBeltHeight,
+                topBeltInnerWidth: building.topBeltInnerWidth,
+                windowWidth: building.windowWidth,
+                windowGap: building.windowGap,
+                windowHeight: building.windowHeight,
+                windowY: building.windowY,
+                streetWindowStyle: building.streetWindowStyle,
+                streetWindowWidth: building.streetWindowWidth,
+                streetWindowGap: building.streetWindowGap,
+                streetWindowHeight: building.streetWindowHeight,
+                streetWindowY: building.streetWindowY
             });
         }
     }
@@ -1676,7 +1992,15 @@ export class BuildingFabricationScene {
     _rebuildBuildingMesh(building) {
         if (!this.root || !building?.group) return;
 
-        for (const child of [...building.solidGroup.children, ...building.wireGroup.children, ...building.floorsGroup.children, ...building.planGroup.children, ...building.borderGroup.children, ...building.windowsGroup.children]) {
+        for (const child of [
+            ...building.solidGroup.children,
+            ...building.featuresGroup.children,
+            ...building.wireGroup.children,
+            ...building.floorsGroup.children,
+            ...building.planGroup.children,
+            ...building.borderGroup.children,
+            ...building.windowsGroup.children
+        ]) {
             child.removeFromParent();
             disposeObject3D(child);
         }
@@ -1700,20 +2024,51 @@ export class BuildingFabricationScene {
             renderer: this.engine?.renderer ?? null,
             colors: { line: BUILDING_LINE_COLOR, border: BUILDING_BORDER_COLOR },
             overlays: { wire: true, floorplan: true, border: true, floorDivisions: true },
+            roof: {
+                color: building.roofColor
+            },
             windows: {
                 enabled: true,
+                style: building.windowStyle,
                 width: building.windowWidth,
                 gap: building.windowGap,
                 height: building.windowHeight,
                 y: building.windowY,
                 cornerEps: 0.12,
                 offset: 0.05
+            },
+            street: {
+                enabled: !!building.streetEnabled,
+                floors: building.streetFloors,
+                floorHeight: building.streetFloorHeight,
+                style: building.streetStyle,
+                windows: {
+                    width: building.streetWindowWidth,
+                    gap: building.streetWindowGap,
+                    height: building.streetWindowHeight,
+                    y: building.streetWindowY,
+                    style: building.streetWindowStyle
+                }
+            },
+            beltCourse: {
+                enabled: !!building.beltCourseEnabled,
+                margin: building.beltCourseMargin,
+                height: building.beltCourseHeight,
+                color: building.beltCourseColor
+            },
+            topBelt: {
+                enabled: !!building.topBeltEnabled,
+                width: building.topBeltWidth,
+                height: building.topBeltHeight,
+                innerWidth: building.topBeltInnerWidth
             }
         });
         if (!parts) return;
 
         building.baseColorHex = parts.baseColorHex;
         for (const mesh of parts.solidMeshes) building.solidGroup.add(mesh);
+        if (parts.beltCourse) building.featuresGroup.add(parts.beltCourse);
+        if (parts.topBelt) building.featuresGroup.add(parts.topBelt);
         if (parts.wire) building.wireGroup.add(parts.wire);
         if (parts.plan) building.planGroup.add(parts.plan);
         if (parts.border) building.borderGroup.add(parts.border);

@@ -5,10 +5,15 @@ import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { BUILDING_STYLE, isBuildingStyle } from '../../../app/city/BuildingStyle.js';
+import { WINDOW_STYLE, isWindowStyle } from '../../../app/city/WindowStyle.js';
+import { resolveBeltCourseColorHex } from '../../../app/city/BeltCourseColor.js';
+import { resolveRoofColorHex } from '../../../app/city/RoofColor.js';
 
 const EPS = 1e-6;
 const QUANT = 1000;
 let _windowTexture = null;
+const _windowTextures = new Map();
+const _windowPreviewUrls = new Map();
 const BUILDING_TEXTURE_BASE_URL = new URL('../../../../assets/public/textures/buildings/', import.meta.url);
 
 function clamp(value, min, max) {
@@ -84,20 +89,44 @@ function canvasToTexture(canvas, { srgb = true } = {}) {
 }
 
 export function getBuildingWindowTexture() {
-    if (_windowTexture) return _windowTexture;
+    return getBuildingWindowTextureForStyle(WINDOW_STYLE.DEFAULT);
+}
 
-    const size = 256;
+function resolveWindowStyleLabel(styleId) {
+    const id = isWindowStyle(styleId) ? styleId : WINDOW_STYLE.DEFAULT;
+    if (id === WINDOW_STYLE.DEFAULT) return 'Default';
+    if (id === WINDOW_STYLE.DARK) return 'Dark';
+    if (id === WINDOW_STYLE.BLUE) return 'Blue';
+    if (id === WINDOW_STYLE.WARM) return 'Warm';
+    if (id === WINDOW_STYLE.GRID) return 'Grid';
+    return 'Default';
+}
+
+function buildWindowStyleCanvas(styleId, { size = 256 } = {}) {
+    const id = isWindowStyle(styleId) ? styleId : WINDOW_STYLE.DEFAULT;
     const { c, ctx } = makeCanvas(size);
     const w = size;
     const h = size;
 
     const grad = ctx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, '#10395a');
-    grad.addColorStop(1, '#061a2c');
+    if (id === WINDOW_STYLE.WARM) {
+        grad.addColorStop(0, '#4a3a2f');
+        grad.addColorStop(0.5, '#16283a');
+        grad.addColorStop(1, '#061a2c');
+    } else if (id === WINDOW_STYLE.BLUE) {
+        grad.addColorStop(0, '#1d5c8d');
+        grad.addColorStop(1, '#051526');
+    } else if (id === WINDOW_STYLE.DARK) {
+        grad.addColorStop(0, '#0a101a');
+        grad.addColorStop(1, '#04070c');
+    } else {
+        grad.addColorStop(0, '#10395a');
+        grad.addColorStop(1, '#061a2c');
+    }
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
 
-    const frame = 16;
+    const frame = Math.max(10, Math.round(size * 0.06));
     ctx.strokeStyle = 'rgba(210, 230, 255, 0.75)';
     ctx.lineWidth = frame;
     ctx.strokeRect(frame * 0.5, frame * 0.5, w - frame, h - frame);
@@ -115,10 +144,73 @@ export function getBuildingWindowTexture() {
     ctx.lineTo(w - frame - 8, h * 0.5);
     ctx.stroke();
 
-    _windowTexture = canvasToTexture(c, { srgb: true });
-    _windowTexture.userData = _windowTexture.userData ?? {};
-    _windowTexture.userData.buildingShared = true;
-    return _windowTexture;
+    if (id === WINDOW_STYLE.WARM) {
+        ctx.globalAlpha = 0.7;
+        ctx.fillStyle = 'rgba(255, 204, 120, 0.35)';
+        ctx.fillRect(frame + 10, frame + 10, w - (frame + 10) * 2, h - (frame + 10) * 2);
+        ctx.globalAlpha = 1.0;
+    }
+
+    if (id === WINDOW_STYLE.GRID) {
+        ctx.globalAlpha = 0.35;
+        ctx.strokeStyle = 'rgba(240, 245, 255, 0.7)';
+        ctx.lineWidth = 1;
+        const step = Math.max(12, Math.round(size / 12));
+        for (let i = step; i < size; i += step) {
+            ctx.beginPath();
+            ctx.moveTo(i + 0.5, 0);
+            ctx.lineTo(i + 0.5, size);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(0, i + 0.5);
+            ctx.lineTo(size, i + 0.5);
+            ctx.stroke();
+        }
+        ctx.globalAlpha = 1.0;
+    }
+
+    return c;
+}
+
+export function getBuildingWindowTextureForStyle(styleId) {
+    const id = isWindowStyle(styleId) ? styleId : WINDOW_STYLE.DEFAULT;
+    if (id === WINDOW_STYLE.DEFAULT && _windowTexture) return _windowTexture;
+    const cached = _windowTextures.get(id);
+    if (cached) return cached;
+
+    const canvas = buildWindowStyleCanvas(id, { size: 256 });
+    const tex = canvasToTexture(canvas, { srgb: true });
+    tex.userData = tex.userData ?? {};
+    tex.userData.buildingShared = true;
+
+    if (id === WINDOW_STYLE.DEFAULT) {
+        _windowTexture = tex;
+    } else {
+        _windowTextures.set(id, tex);
+    }
+    return tex;
+}
+
+export function getWindowStyleOptions() {
+    const ids = [
+        WINDOW_STYLE.DEFAULT,
+        WINDOW_STYLE.DARK,
+        WINDOW_STYLE.BLUE,
+        WINDOW_STYLE.WARM,
+        WINDOW_STYLE.GRID
+    ];
+
+    const out = [];
+    for (const id of ids) {
+        let previewUrl = _windowPreviewUrls.get(id) ?? null;
+        if (!previewUrl) {
+            const canvas = buildWindowStyleCanvas(id, { size: 96 });
+            previewUrl = canvas?.toDataURL?.('image/png') ?? null;
+            if (previewUrl) _windowPreviewUrls.set(id, previewUrl);
+        }
+        out.push({ id, label: resolveWindowStyleLabel(id), previewUrl });
+    }
+    return out;
 }
 
 export function computeEvenWindowLayout({
@@ -589,16 +681,57 @@ export function buildBuildingVisualParts({
     renderer = null,
     colors = null,
     overlays = null,
-    windows = null
+    roof = null,
+    windows = null,
+    street = null,
+    beltCourse = null,
+    topBelt = null
 } = {}) {
     const loops = computeBuildingLoopsFromTiles({ map, tiles, generatorConfig, tileSize, occupyRatio });
     if (!loops.length) return null;
 
     const tileCount = normalizeTileList(tiles).length;
     const floorCount = clampInt(floors, 0, 30);
-    const fh = clamp(floorHeight, 1.0, 12.0);
-    const { baseY, extraFirstFloor, planY } = computeBuildingBaseAndSidewalk({ generatorConfig, floorHeight: fh });
-    const height = Math.max(0, floorCount) * fh + extraFirstFloor;
+    const upperFloorHeight = clamp(floorHeight, 1.0, 12.0);
+    const { baseY, extraFirstFloor, planY } = computeBuildingBaseAndSidewalk({
+        generatorConfig,
+        floorHeight: upperFloorHeight
+    });
+
+    const beltCfg = beltCourse ?? {};
+
+    const streetCfg = street ?? {};
+    const streetEnabled = !!streetCfg.enabled;
+    const streetFloors = streetEnabled ? clampInt(streetCfg.floors ?? streetCfg.count, 1, floorCount) : 0;
+    const streetFloorHeight = streetEnabled
+        ? clamp(streetCfg.floorHeight ?? upperFloorHeight, 1.0, 12.0)
+        : upperFloorHeight;
+    const streetStyle = streetEnabled
+        ? (isBuildingStyle(streetCfg.style) ? streetCfg.style : style)
+        : style;
+
+    const beltHeight = Number.isFinite(beltCfg.height) ? clamp(beltCfg.height, 0.02, 1.2) : 0.18;
+    const beltEnabled = !!beltCfg.enabled && streetEnabled && streetFloors > 0 && streetFloors < floorCount;
+    const beltSpacerHeight = beltEnabled ? beltHeight : 0;
+
+    const floorBases = new Array(floorCount);
+    const floorHeights = new Array(floorCount);
+    let yCursor = baseY;
+    for (let i = 0; i < floorCount; i++) {
+        floorBases[i] = yCursor;
+        const baseH = (streetEnabled && i < streetFloors) ? streetFloorHeight : upperFloorHeight;
+        const h = (i === 0) ? (baseH + extraFirstFloor) : baseH;
+        floorHeights[i] = h;
+        yCursor += h;
+        if (beltEnabled && i === streetFloors - 1) yCursor += beltSpacerHeight;
+    }
+    const totalHeight = yCursor - baseY;
+
+    let streetHeight = 0;
+    if (streetEnabled && streetFloors > 0) {
+        for (let i = 0; i < streetFloors; i++) streetHeight += floorHeights[i];
+    }
+    const upperHeight = Math.max(0, totalHeight - streetHeight - beltSpacerHeight);
 
     const outerLoops = [];
     const holeLoops = [];
@@ -608,16 +741,21 @@ export function buildBuildingVisualParts({
     }
 
     const baseColorHex = makeDeterministicColor(tileCount * 97 + floorCount * 31).getHex();
+    const roofCfg = roof ?? {};
+    const roofColorHex = resolveRoofColorHex(roofCfg.color, baseColorHex);
 
     const solidMeshes = [];
     const wirePositions = [];
 
-    const appendPositions = (dst, src) => {
-        for (let i = 0; i < src.length; i++) dst.push(src[i]);
+    const appendPositions = (dst, src, { yShift = 0 } = {}) => {
+        const shift = Number(yShift) || 0;
+        for (let i = 0; i < src.length; i += 3) {
+            dst.push(src[i], src[i + 1] + shift, src[i + 2]);
+        }
     };
 
     const roofMatTemplate = new THREE.MeshStandardMaterial({
-        color: baseColorHex,
+        color: roofColorHex,
         roughness: 0.85,
         metalness: 0.05
     });
@@ -630,7 +768,24 @@ export function buildBuildingVisualParts({
 
     const wallUrl = resolveBuildingStyleWallTextureUrl(style)
         ?? (typeof legacyWallTextureUrl === 'string' && legacyWallTextureUrl ? legacyWallTextureUrl : null);
-    if (wallUrl && textureCache) wallMatTemplate.color.setHex(0xffffff);
+
+    const streetWallUrl = streetEnabled
+        ? (resolveBuildingStyleWallTextureUrl(streetStyle) ?? wallUrl)
+        : null;
+
+    const makeWallMaterial = (url) => {
+        const mat = wallMatTemplate.clone();
+        if (url && textureCache) {
+            mat.color.setHex(0xffffff);
+            const tex = textureCache.trackMaterial(url, mat);
+            if (tex) mat.map = tex;
+            mat.needsUpdate = true;
+        }
+        return mat;
+    };
+
+    const upperWallMat = makeWallMaterial(wallUrl);
+    const streetWallMat = streetEnabled ? makeWallMaterial(streetWallUrl) : null;
 
     for (const outer of outerLoops) {
         const shapePts = outer.map((p) => new THREE.Vector2(p.x, -p.z));
@@ -643,32 +798,48 @@ export function buildBuildingVisualParts({
             shape.holes.push(new THREE.Path(holePts));
         }
 
-        const geo = new THREE.ExtrudeGeometry(shape, {
-            depth: height,
-            bevelEnabled: false,
-            steps: 1
-        });
-        geo.rotateX(-Math.PI / 2);
-        geo.computeVertexNormals();
+        if (streetEnabled && streetFloors > 0 && Number.isFinite(streetHeight) && streetHeight > EPS) {
+            const streetGeo = new THREE.ExtrudeGeometry(shape, {
+                depth: streetHeight,
+                bevelEnabled: false,
+                steps: 1
+            });
+            streetGeo.rotateX(-Math.PI / 2);
+            streetGeo.computeVertexNormals();
 
-        const roofMat = roofMatTemplate.clone();
-        const wallMat = wallMatTemplate.clone();
+            const roofMat = roofMatTemplate.clone();
+            const mesh = new THREE.Mesh(streetGeo, [roofMat, streetWallMat ?? upperWallMat]);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            mesh.position.y = baseY;
+            solidMeshes.push(mesh);
 
-        const mesh = new THREE.Mesh(geo, [roofMat, wallMat]);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        mesh.position.y = baseY;
-        solidMeshes.push(mesh);
-
-        if (wallUrl && textureCache) {
-            const tex = textureCache.trackMaterial(wallUrl, wallMat);
-            if (tex) wallMat.map = tex;
-            wallMat.needsUpdate = true;
+            const edgeGeo = new THREE.EdgesGeometry(streetGeo, 1);
+            appendPositions(wirePositions, edgeGeo.attributes.position.array);
+            edgeGeo.dispose();
         }
 
-        const edgeGeo = new THREE.EdgesGeometry(geo, 1);
-        appendPositions(wirePositions, edgeGeo.attributes.position.array);
-        edgeGeo.dispose();
+        if (!streetEnabled || streetFloors <= 0 || upperHeight > EPS) {
+            const upperGeo = new THREE.ExtrudeGeometry(shape, {
+                depth: streetEnabled ? (streetFloors >= floorCount ? totalHeight : upperHeight) : totalHeight,
+                bevelEnabled: false,
+                steps: 1
+            });
+            upperGeo.rotateX(-Math.PI / 2);
+            upperGeo.computeVertexNormals();
+
+            const roofMat = roofMatTemplate.clone();
+            const mesh = new THREE.Mesh(upperGeo, [roofMat, streetEnabled && streetFloors >= floorCount ? (streetWallMat ?? upperWallMat) : upperWallMat]);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            const upperOffsetY = streetEnabled && streetFloors > 0 && streetFloors < floorCount ? (streetHeight + beltSpacerHeight) : 0;
+            mesh.position.y = baseY + upperOffsetY;
+            solidMeshes.push(mesh);
+
+            const edgeGeo = new THREE.EdgesGeometry(upperGeo, 1);
+            appendPositions(wirePositions, edgeGeo.attributes.position.array, { yShift: upperOffsetY });
+            edgeGeo.dispose();
+        }
     }
 
     const lineColor = colors?.line ?? 0xff3b30;
@@ -762,8 +933,8 @@ export function buildBuildingVisualParts({
         const divisions = Math.max(0, floorCount - 1);
         if (divisions) {
             const floorPositions = [];
-            for (let i = 1; i <= divisions; i++) {
-                const y = baseY + extraFirstFloor + i * fh;
+            for (let i = 1; i < floorCount; i++) {
+                const y = floorBases[i];
                 for (const loop of loops) {
                     if (!loop || loop.length < 2) continue;
                     for (let k = 0; k < loop.length; k++) {
@@ -796,23 +967,34 @@ export function buildBuildingVisualParts({
     const win = windows ?? {};
     const winEnabled = win.enabled ?? false;
     if (winEnabled && floorCount > 0 && outerLoops.length) {
-        const windowWidth = clamp(win.width, 0.3, 12);
-        const windowGap = clamp(win.gap, 0, 24);
-        const windowHeight = clamp(win.height, 0.3, fh * 0.95);
-        const windowYOffset = clamp(win.y, 0, Math.max(0, fh - windowHeight));
+        const upperWindowWidth = clamp(win.width, 0.3, 12);
+        const upperWindowGap = clamp(win.gap, 0, 24);
+        const upperWindowStyle = isWindowStyle(win.style) ? win.style : WINDOW_STYLE.DEFAULT;
+        const upperDesiredWindowHeight = clamp(win.height, 0.3, Math.max(0.31, Math.max(streetFloorHeight, upperFloorHeight) * 0.95));
+        const upperDesiredWindowY = clamp(win.y, 0, 12);
 
         const cornerEps = clamp(win.cornerEps, 0.01, 2.0);
         const offset = clamp(win.offset, 0.01, 0.2);
 
-        const tex = getBuildingWindowTexture();
-        const windowMat = new THREE.MeshStandardMaterial({
+        const streetWin = streetCfg?.windows ?? null;
+        const streetWindowWidth = Number.isFinite(streetWin?.width) ? clamp(streetWin.width, 0.3, 12) : upperWindowWidth;
+        const streetWindowGap = Number.isFinite(streetWin?.gap) ? clamp(streetWin.gap, 0, 24) : upperWindowGap;
+        const streetWindowStyle = isWindowStyle(streetWin?.style) ? streetWin.style : upperWindowStyle;
+        const streetDesiredWindowHeight = Number.isFinite(streetWin?.height)
+            ? clamp(streetWin.height, 0.3, Math.max(0.31, Math.max(streetFloorHeight, upperFloorHeight) * 0.95))
+            : upperDesiredWindowHeight;
+        const streetDesiredWindowY = Number.isFinite(streetWin?.y) ? clamp(streetWin.y, 0, 12) : upperDesiredWindowY;
+
+        const makeWindowMaterial = (styleId) => new THREE.MeshStandardMaterial({
             color: 0xffffff,
-            map: tex,
+            map: getBuildingWindowTextureForStyle(styleId),
             roughness: 0.4,
             metalness: 0.0,
             emissive: new THREE.Color(0x0b1f34),
             emissiveIntensity: 0.35
         });
+        const upperWindowMat = makeWindowMaterial(upperWindowStyle);
+        const streetWindowMat = streetWindowStyle === upperWindowStyle ? upperWindowMat : makeWindowMaterial(streetWindowStyle);
 
         windowsGroup = new THREE.Group();
         windowsGroup.name = 'windows';
@@ -826,15 +1008,6 @@ export function buildBuildingVisualParts({
                 const dx = b.x - a.x;
                 const dz = b.z - a.z;
                 const L = Math.hypot(dx, dz);
-                if (!(L > windowWidth + cornerEps * 2)) continue;
-
-                const { starts, count } = computeEvenWindowLayout({
-                    length: L,
-                    windowWidth,
-                    desiredGap: windowGap,
-                    cornerEps
-                });
-                if (!count) continue;
 
                 const inv = 1 / L;
                 const tx = dx * inv;
@@ -844,7 +1017,26 @@ export function buildBuildingVisualParts({
                 const yaw = Math.atan2(nx, nz);
 
                 for (let floor = 0; floor < floorCount; floor++) {
-                    const floorBase = floor === 0 ? baseY : (baseY + extraFirstFloor + floor * fh);
+                    const isStreetFloor = streetEnabled && floor < streetFloors;
+                    const windowWidth = isStreetFloor ? streetWindowWidth : upperWindowWidth;
+                    const windowGap = isStreetFloor ? streetWindowGap : upperWindowGap;
+                    const desiredWindowHeight = isStreetFloor ? streetDesiredWindowHeight : upperDesiredWindowHeight;
+                    const desiredWindowY = isStreetFloor ? streetDesiredWindowY : upperDesiredWindowY;
+                    const windowMat = isStreetFloor ? streetWindowMat : upperWindowMat;
+
+                    if (!(L > windowWidth + cornerEps * 2)) continue;
+                    const { starts, count } = computeEvenWindowLayout({
+                        length: L,
+                        windowWidth,
+                        desiredGap: windowGap,
+                        cornerEps
+                    });
+                    if (!count) continue;
+
+                    const floorBase = floorBases[floor] ?? baseY;
+                    const floorH = floorHeights[floor] ?? upperFloorHeight;
+                    const windowHeight = Math.min(desiredWindowHeight, Math.max(0.3, floorH * 0.95));
+                    const windowYOffset = Math.min(desiredWindowY, Math.max(0, floorH - windowHeight));
                     const y = floorBase + windowYOffset + windowHeight * 0.5;
                     for (const start of starts) {
                         const centerDist = start + windowWidth * 0.5;
@@ -864,5 +1056,128 @@ export function buildBuildingVisualParts({
         }
     }
 
-    return { baseColorHex, solidMeshes, wire, plan, border, floorDivisions, windows: windowsGroup };
+    let bounds = null;
+    const ensureBounds = () => {
+        if (bounds) return bounds;
+        if (!outerLoops.length) return null;
+
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minZ = Infinity;
+        let maxZ = -Infinity;
+        for (const loop of outerLoops) {
+            for (const p of loop ?? []) {
+                if (!p) continue;
+                if (p.x < minX) minX = p.x;
+                if (p.x > maxX) maxX = p.x;
+                if (p.z < minZ) minZ = p.z;
+                if (p.z > maxZ) maxZ = p.z;
+            }
+        }
+        if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minZ) || !Number.isFinite(maxZ)) return null;
+        bounds = { minX, maxX, minZ, maxZ };
+        return bounds;
+    };
+
+    let beltCourseMesh = null;
+    if (beltEnabled) {
+        const b = ensureBounds();
+        if (b) {
+            const margin = clamp(beltCfg.margin, 0, 4.0);
+            const w = Math.max(EPS, b.maxX - b.minX) + margin * 2;
+            const d = Math.max(EPS, b.maxZ - b.minZ) + margin * 2;
+            const h = beltHeight;
+            const cx = (b.minX + b.maxX) * 0.5;
+            const cz = (b.minZ + b.maxZ) * 0.5;
+            const y = baseY + streetHeight + h * 0.5;
+
+            const colorHex = resolveBeltCourseColorHex(beltCfg.color);
+            const mat = new THREE.MeshStandardMaterial({
+                color: colorHex,
+                roughness: 0.9,
+                metalness: 0.0
+            });
+            const geo = new THREE.BoxGeometry(w, h, d);
+            beltCourseMesh = new THREE.Mesh(geo, mat);
+            beltCourseMesh.position.set(cx, y, cz);
+            beltCourseMesh.castShadow = true;
+            beltCourseMesh.receiveShadow = true;
+        }
+    }
+
+    let topBeltMesh = null;
+    const topCfg = topBelt ?? {};
+    const topEnabled = !!topCfg.enabled && floorCount > 0;
+    if (topEnabled) {
+        const b = ensureBounds();
+        if (b) {
+            const width = clamp(topCfg.width, 0, 4.0);
+            const innerWidth = Number.isFinite(topCfg.innerWidth) ? clamp(topCfg.innerWidth, 0, 4.0) : 0;
+            const h = Number.isFinite(topCfg.height) ? clamp(topCfg.height, 0.02, 1.2) : 0.18;
+
+            const cx = (b.minX + b.maxX) * 0.5;
+            const cz = (b.minZ + b.maxZ) * 0.5;
+
+            const halfX = Math.max(EPS, (b.maxX - b.minX) * 0.5);
+            const halfZ = Math.max(EPS, (b.maxZ - b.minZ) * 0.5);
+
+            const outerHalfX = halfX + width;
+            const outerHalfZ = halfZ + width;
+
+            const maxInnerWidth = Math.max(0, Math.min(halfX, halfZ) - EPS);
+            const safeInnerWidth = clamp(innerWidth, 0, maxInnerWidth);
+            const innerHalfX = Math.max(EPS, halfX - safeInnerWidth);
+            const innerHalfZ = Math.max(EPS, halfZ - safeInnerWidth);
+
+            const outerPts = [
+                new THREE.Vector2(-outerHalfX, outerHalfZ),
+                new THREE.Vector2(outerHalfX, outerHalfZ),
+                new THREE.Vector2(outerHalfX, -outerHalfZ),
+                new THREE.Vector2(-outerHalfX, -outerHalfZ)
+            ];
+            outerPts.reverse();
+            const shape = new THREE.Shape(outerPts);
+
+            const holePts = [
+                new THREE.Vector2(-innerHalfX, innerHalfZ),
+                new THREE.Vector2(innerHalfX, innerHalfZ),
+                new THREE.Vector2(innerHalfX, -innerHalfZ),
+                new THREE.Vector2(-innerHalfX, -innerHalfZ)
+            ];
+            holePts.reverse();
+            shape.holes.push(new THREE.Path(holePts));
+
+            const colorHex = resolveBeltCourseColorHex(topCfg.color);
+            const mat = new THREE.MeshStandardMaterial({
+                color: colorHex,
+                roughness: 0.9,
+                metalness: 0.0
+            });
+
+            const geo = new THREE.ExtrudeGeometry(shape, {
+                depth: h,
+                bevelEnabled: false,
+                steps: 1
+            });
+            geo.rotateX(-Math.PI / 2);
+            geo.computeVertexNormals();
+
+            topBeltMesh = new THREE.Mesh(geo, mat);
+            topBeltMesh.position.set(cx, baseY + totalHeight, cz);
+            topBeltMesh.castShadow = true;
+            topBeltMesh.receiveShadow = true;
+        }
+    }
+
+    return {
+        baseColorHex,
+        solidMeshes,
+        wire,
+        plan,
+        border,
+        floorDivisions,
+        windows: windowsGroup,
+        beltCourse: beltCourseMesh,
+        topBelt: topBeltMesh
+    };
 }

@@ -171,12 +171,14 @@ export class BuildingFabricationView {
 
         this.ui.onFloorHeightChange = (height) => {
             if (this.scene.setSelectedBuildingFloorHeight(height)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
                 this._syncBuildings();
             }
         };
 
         this.ui.onFloorCountChange = (floors) => {
             if (this.scene.setSelectedBuildingFloors(floors)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
                 this._syncBuildings();
             }
         };
@@ -189,6 +191,140 @@ export class BuildingFabricationView {
 
         this.ui.onBuildingStyleChange = (style) => {
             if (this.scene.setSelectedBuildingStyle(style)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
+                this._syncBuildings();
+            }
+        };
+
+        this.ui.onWindowStyleChange = (style) => {
+            if (this.scene.setSelectedBuildingWindowStyle(style)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
+                this._syncBuildings();
+            }
+        };
+
+        this.ui.onStreetEnabledChange = (enabled) => {
+            if (this.scene.setSelectedBuildingStreetEnabled(enabled)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
+                this._syncBuildings();
+            }
+        };
+
+        this.ui.onStreetFloorsChange = (count) => {
+            if (this.scene.setSelectedBuildingStreetFloors(count)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
+                this._syncBuildings();
+            }
+        };
+
+        this.ui.onStreetFloorHeightChange = (height) => {
+            if (this.scene.setSelectedBuildingStreetFloorHeight(height)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
+                this._syncBuildings();
+            }
+        };
+
+        this.ui.onStreetStyleChange = (style) => {
+            if (this.scene.setSelectedBuildingStreetStyle(style)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
+                this._syncBuildings();
+            }
+        };
+
+        this.ui.onStreetWindowStyleChange = (style) => {
+            if (this.scene.setSelectedBuildingStreetWindowStyle(style)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
+                this._syncBuildings();
+            }
+        };
+
+        this.ui.onStreetWindowWidthChange = (width) => {
+            if (this.scene.setSelectedBuildingStreetWindowWidth(width)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
+                this._syncBuildings();
+            }
+        };
+
+        this.ui.onStreetWindowGapChange = (gap) => {
+            if (this.scene.setSelectedBuildingStreetWindowGap(gap)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
+                this._syncBuildings();
+            }
+        };
+
+        this.ui.onStreetWindowHeightChange = (height) => {
+            if (this.scene.setSelectedBuildingStreetWindowHeight(height)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
+                this._syncBuildings();
+            }
+        };
+
+        this.ui.onStreetWindowYChange = (offset) => {
+            if (this.scene.setSelectedBuildingStreetWindowY(offset)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
+                this._syncBuildings();
+            }
+        };
+
+        this.ui.onBeltCourseEnabledChange = (enabled) => {
+            if (this.scene.setSelectedBuildingBeltCourseEnabled(enabled)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
+                this._syncBuildings();
+            }
+        };
+
+        this.ui.onBeltCourseMarginChange = (margin) => {
+            if (this.scene.setSelectedBuildingBeltCourseMargin(margin)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
+                this._syncBuildings();
+            }
+        };
+
+        this.ui.onBeltCourseHeightChange = (height) => {
+            if (this.scene.setSelectedBuildingBeltCourseHeight(height)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
+                this._syncBuildings();
+            }
+        };
+
+        this.ui.onBeltCourseColorChange = (color) => {
+            if (this.scene.setSelectedBuildingBeltCourseColor(color)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
+                this._syncBuildings();
+            }
+        };
+
+        this.ui.onTopBeltEnabledChange = (enabled) => {
+            if (this.scene.setSelectedBuildingTopBeltEnabled(enabled)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
+                this._syncBuildings();
+            }
+        };
+
+        this.ui.onTopBeltWidthChange = (width) => {
+            if (this.scene.setSelectedBuildingTopBeltWidth(width)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
+                this._syncBuildings();
+            }
+        };
+
+        this.ui.onTopBeltInnerWidthChange = (width) => {
+            if (this.scene.setSelectedBuildingTopBeltInnerWidth(width)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
+                this._syncBuildings();
+            }
+        };
+
+        this.ui.onTopBeltHeightChange = (height) => {
+            if (this.scene.setSelectedBuildingTopBeltHeight(height)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
+                this._syncBuildings();
+            }
+        };
+
+        this.ui.onRoofColorChange = (color) => {
+            if (this.scene.setSelectedBuildingRoofColor(color)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
                 this._syncBuildings();
             }
         };
@@ -256,6 +392,25 @@ export class BuildingFabricationView {
         this.ui.onBuildingTypeChange = null;
         this.ui.onBuildingStyleChange = null;
         this.ui.onHideSelectionBorderChange = null;
+        this.ui.onStreetEnabledChange = null;
+        this.ui.onStreetFloorsChange = null;
+        this.ui.onStreetFloorHeightChange = null;
+        this.ui.onStreetStyleChange = null;
+        this.ui.onWindowStyleChange = null;
+        this.ui.onStreetWindowStyleChange = null;
+        this.ui.onStreetWindowWidthChange = null;
+        this.ui.onStreetWindowGapChange = null;
+        this.ui.onStreetWindowHeightChange = null;
+        this.ui.onStreetWindowYChange = null;
+        this.ui.onBeltCourseEnabledChange = null;
+        this.ui.onBeltCourseMarginChange = null;
+        this.ui.onBeltCourseHeightChange = null;
+        this.ui.onBeltCourseColorChange = null;
+        this.ui.onTopBeltEnabledChange = null;
+        this.ui.onTopBeltWidthChange = null;
+        this.ui.onTopBeltInnerWidthChange = null;
+        this.ui.onTopBeltHeightChange = null;
+        this.ui.onRoofColorChange = null;
         this.ui.onWindowWidthChange = null;
         this.ui.onWindowGapChange = null;
         this.ui.onWindowHeightChange = null;
