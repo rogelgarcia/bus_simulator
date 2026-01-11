@@ -331,6 +331,15 @@ export class CityMap {
             const floorHeight = clampLocal(raw.floorHeight, 1.0, 12.0);
             const wallTextureUrl = (typeof raw.wallTextureUrl === 'string' && raw.wallTextureUrl) ? raw.wallTextureUrl : null;
 
+            const windowsRaw = raw.windows ?? null;
+            const windowsEnabled = windowsRaw && typeof windowsRaw === 'object';
+            const windowWidth = windowsEnabled ? clampLocal(windowsRaw.width, 0.3, 12.0) : null;
+            const windowGap = windowsEnabled ? clampLocal(windowsRaw.gap, 0.0, 24.0) : null;
+            const windowHeight = windowsEnabled ? clampLocal(windowsRaw.height, 0.3, Math.max(0.3, floorHeight * 0.95)) : null;
+            const windowY = windowsEnabled
+                ? clampLocal(windowsRaw.y, 0.0, Math.max(0.0, floorHeight - (windowHeight ?? 0.3)))
+                : null;
+
             const tilesIn = Array.isArray(raw.tiles ?? raw.footprintTiles) ? (raw.tiles ?? raw.footprintTiles) : [];
             const accepted = [];
             const acceptedSet = new Set();
@@ -363,7 +372,14 @@ export class CityMap {
             }
 
             if (!accepted.length) continue;
-            out.push({ id, tiles: accepted, floorHeight, floors, wallTextureUrl });
+            out.push({
+                id,
+                tiles: accepted,
+                floorHeight,
+                floors,
+                wallTextureUrl,
+                windows: windowsEnabled ? { width: windowWidth, gap: windowGap, height: windowHeight, y: windowY } : null
+            });
         }
 
         return out;
@@ -398,13 +414,15 @@ export class CityMap {
                     tiles: [[14, 14], [15, 14], [15, 15], [14, 15]],
                     floorHeight: 3,
                     floors: 5,
-                    wallTextureUrl: 'assets/public/textures/buildings/brick_wall.png'
+                    wallTextureUrl: 'assets/public/textures/buildings/brick_wall.png',
+                    windows: { width: 2.2, gap: 1.6, height: 1.4, y: 1.0 }
                 },
                 {
                     tiles: [[6, 7], [7, 7]],
                     floorHeight: 3,
-                    floors: 1,
-                    wallTextureUrl: 'assets/public/textures/buildings/stonewall_1.png'
+                    floors: 4,
+                    wallTextureUrl: 'assets/public/textures/buildings/stonewall_1.png',
+                    windows: { width: 1.8, gap: 1.4, height: 1.2, y: 0.9 }
                 }
             ]
         };

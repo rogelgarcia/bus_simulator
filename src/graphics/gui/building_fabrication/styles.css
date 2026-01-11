@@ -98,6 +98,11 @@
     margin-bottom: 10px;
 }
 
+.building-fab-view-hint {
+    margin-bottom: 6px;
+    opacity: 0.86;
+}
+
 .building-fab-counts {
     display: flex;
     flex-wrap: wrap;

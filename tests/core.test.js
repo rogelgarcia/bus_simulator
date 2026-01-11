@@ -895,7 +895,8 @@ async function runTests() {
                 tiles: [[0, 0], [1, 0], [3, 3], [1, 1]],
                 floorHeight: 3,
                 floors: 5,
-                wallTextureUrl: 'assets/public/textures/buildings/brick_wall.png'
+                wallTextureUrl: 'assets/public/textures/buildings/brick_wall.png',
+                windows: { width: 2.2, gap: 1.6, height: 1.4, y: 1.0 }
             }]
         }, cfg);
 
@@ -905,6 +906,10 @@ async function runTests() {
         assertEqual(map.buildings[0].tiles[0][1], 0);
         assertEqual(map.buildings[0].tiles[1][0], 1);
         assertEqual(map.buildings[0].tiles[1][1], 0);
+        assertEqual(map.buildings[0].windows.width, 2.2);
+        assertEqual(map.buildings[0].windows.gap, 1.6);
+        assertEqual(map.buildings[0].windows.height, 1.4);
+        assertEqual(map.buildings[0].windows.y, 1.0);
     });
 
     test('CityMap: ignores duplicate tiles without aborting', () => {
@@ -926,6 +931,41 @@ async function runTests() {
         assertEqual(map.buildings[0].tiles.length, 2);
         assertEqual(map.buildings[0].tiles[0][0], 0);
         assertEqual(map.buildings[0].tiles[1][0], 1);
+    });
+
+    const { computeEvenWindowLayout } = await import('/src/graphics/assets3d/generators/BuildingGenerator.js');
+
+    test('BuildingGenerator: window layout keeps a corner gap', () => {
+        const length = 20;
+        const windowWidth = 2;
+        const { count, starts } = computeEvenWindowLayout({
+            length,
+            windowWidth,
+            desiredGap: 1.5,
+            cornerEps: 0.1
+        });
+        assertTrue(count > 0, 'Should fit at least one window.');
+        assertTrue(starts[0] > 0.09, 'Start gap should be > corner eps.');
+        const lastEnd = starts[count - 1] + windowWidth;
+        assertTrue(lastEnd < length - 0.09, 'Last window should not touch the corner.');
+    });
+
+    test('BuildingGenerator: window layout distributes evenly', () => {
+        const length = 18;
+        const windowWidth = 2;
+        const { count, starts } = computeEvenWindowLayout({
+            length,
+            windowWidth,
+            desiredGap: 1.2,
+            cornerEps: 0.05
+        });
+        assertTrue(count >= 2, 'Should fit multiple windows.');
+        const gap = starts[0];
+        for (let i = 1; i < count; i++) {
+            const prev = starts[i - 1];
+            const next = starts[i];
+            assertTrue(Math.abs((next - prev) - (windowWidth + gap)) < 1e-6, 'Windows should be evenly spaced.');
+        }
     });
 
     runRoadConnectionDebuggerTests({ test, assertTrue });

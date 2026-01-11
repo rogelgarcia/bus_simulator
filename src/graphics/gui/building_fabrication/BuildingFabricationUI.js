@@ -57,6 +57,10 @@ export class BuildingFabricationUI {
         this._wallTextureOptions = [];
         this._wallTextureOptionsPromise = null;
         this._wallTextureBaseUrl = new URL('../../../../assets/public/textures/buildings/', import.meta.url).toString();
+        this._windowWidth = 2.2;
+        this._windowGap = 1.6;
+        this._windowHeight = 1.4;
+        this._windowY = 1.0;
         this._hoveredBuildingRow = null;
         this._selectedTileCount = 0;
         this._roadStartTileId = null;
@@ -274,7 +278,12 @@ export class BuildingFabricationUI {
         this.viewTitle.className = 'ui-title';
         this.viewTitle.textContent = 'View';
 
+        this.viewHint = document.createElement('div');
+        this.viewHint.className = 'building-fab-hint building-fab-view-hint';
+        this.viewHint.textContent = 'Camera pan: Arrow keys';
+
         this.viewPanel.appendChild(this.viewTitle);
+        this.viewPanel.appendChild(this.viewHint);
         this.viewPanel.appendChild(this.viewModeRow);
 
         this.viewOptionsRow = document.createElement('div');
@@ -366,6 +375,78 @@ export class BuildingFabricationUI {
         this.propsPanel.appendChild(this.deleteBuildingBtn);
         this.propsPanel.appendChild(this.floorRow);
         this.propsPanel.appendChild(this.floorHeightRow);
+
+        this.windowTitle = document.createElement('div');
+        this.windowTitle.className = 'ui-title is-inline';
+        this.windowTitle.textContent = 'Windows';
+
+        const makeWindowRow = (label) => {
+            const row = document.createElement('div');
+            row.className = 'building-fab-row';
+            const l = document.createElement('div');
+            l.className = 'building-fab-row-label';
+            l.textContent = label;
+            const range = document.createElement('input');
+            range.type = 'range';
+            range.className = 'building-fab-range';
+            const number = document.createElement('input');
+            number.type = 'number';
+            number.className = 'building-fab-number';
+            row.appendChild(l);
+            row.appendChild(range);
+            row.appendChild(number);
+            return { row, range, number };
+        };
+
+        const widthRow = makeWindowRow('Window width (m)');
+        this.windowWidthRow = widthRow.row;
+        this.windowWidthRange = widthRow.range;
+        this.windowWidthNumber = widthRow.number;
+        this.windowWidthRange.min = '0.3';
+        this.windowWidthRange.max = '12';
+        this.windowWidthRange.step = '0.1';
+        this.windowWidthNumber.min = '0.3';
+        this.windowWidthNumber.max = '12';
+        this.windowWidthNumber.step = '0.1';
+
+        const gapRow = makeWindowRow('Window spacing (m)');
+        this.windowGapRow = gapRow.row;
+        this.windowGapRange = gapRow.range;
+        this.windowGapNumber = gapRow.number;
+        this.windowGapRange.min = '0';
+        this.windowGapRange.max = '24';
+        this.windowGapRange.step = '0.1';
+        this.windowGapNumber.min = '0';
+        this.windowGapNumber.max = '24';
+        this.windowGapNumber.step = '0.1';
+
+        const heightRow = makeWindowRow('Window height (m)');
+        this.windowHeightRow = heightRow.row;
+        this.windowHeightRange = heightRow.range;
+        this.windowHeightNumber = heightRow.number;
+        this.windowHeightRange.min = '0.3';
+        this.windowHeightRange.max = '10';
+        this.windowHeightRange.step = '0.1';
+        this.windowHeightNumber.min = '0.3';
+        this.windowHeightNumber.max = '10';
+        this.windowHeightNumber.step = '0.1';
+
+        const yRow = makeWindowRow('Window y (m)');
+        this.windowYRow = yRow.row;
+        this.windowYRange = yRow.range;
+        this.windowYNumber = yRow.number;
+        this.windowYRange.min = '0';
+        this.windowYRange.max = '12';
+        this.windowYRange.step = '0.1';
+        this.windowYNumber.min = '0';
+        this.windowYNumber.max = '12';
+        this.windowYNumber.step = '0.1';
+
+        this.propsPanel.appendChild(this.windowTitle);
+        this.propsPanel.appendChild(this.windowWidthRow);
+        this.propsPanel.appendChild(this.windowGapRow);
+        this.propsPanel.appendChild(this.windowHeightRow);
+        this.propsPanel.appendChild(this.windowYRow);
 
         this.buildingsTitle = document.createElement('div');
         this.buildingsTitle.className = 'ui-title';
@@ -464,6 +545,10 @@ export class BuildingFabricationUI {
         this.onWallTextureChange = null;
         this.onFloorCountChange = null;
         this.onFloorHeightChange = null;
+        this.onWindowWidthChange = null;
+        this.onWindowGapChange = null;
+        this.onWindowHeightChange = null;
+        this.onWindowYChange = null;
 
         this._bound = false;
 
@@ -471,6 +556,14 @@ export class BuildingFabricationUI {
         this._onFloorNumberInput = () => this._setFloorCountFromUi(this.floorNumber.value);
         this._onFloorHeightRangeInput = () => this._setFloorHeightFromUi(this.floorHeightRange.value);
         this._onFloorHeightNumberInput = () => this._setFloorHeightFromUi(this.floorHeightNumber.value);
+        this._onWindowWidthRangeInput = () => this._setWindowWidthFromUi(this.windowWidthRange.value);
+        this._onWindowWidthNumberInput = () => this._setWindowWidthFromUi(this.windowWidthNumber.value);
+        this._onWindowGapRangeInput = () => this._setWindowGapFromUi(this.windowGapRange.value);
+        this._onWindowGapNumberInput = () => this._setWindowGapFromUi(this.windowGapNumber.value);
+        this._onWindowHeightRangeInput = () => this._setWindowHeightFromUi(this.windowHeightRange.value);
+        this._onWindowHeightNumberInput = () => this._setWindowHeightFromUi(this.windowHeightNumber.value);
+        this._onWindowYRangeInput = () => this._setWindowYFromUi(this.windowYRange.value);
+        this._onWindowYNumberInput = () => this._setWindowYFromUi(this.windowYNumber.value);
         this._onTypeSelectChange = () => this._setBuildingTypeFromUi(this.typeSelect.value);
         this._onHideSelectionBorderChange = () => this._setHideSelectionBorderFromUi(this.hideSelectionBorderInput.checked);
         this._onWallTextureGridClick = (e) => this._handleWallTextureGridClick(e);
@@ -695,6 +788,18 @@ export class BuildingFabricationUI {
         if (hasSelected && Number.isFinite(building?.floorHeight)) {
             this._floorHeight = clamp(building.floorHeight, this.floorHeightMin, this.floorHeightMax);
         }
+        if (hasSelected && Number.isFinite(building?.windowWidth)) {
+            this._windowWidth = clamp(building.windowWidth, 0.3, 12.0);
+        }
+        if (hasSelected && Number.isFinite(building?.windowGap)) {
+            this._windowGap = clamp(building.windowGap, 0.0, 24.0);
+        }
+        if (hasSelected && Number.isFinite(building?.windowHeight)) {
+            this._windowHeight = clamp(building.windowHeight, 0.3, 10.0);
+        }
+        if (hasSelected && Number.isFinite(building?.windowY)) {
+            this._windowY = clamp(building.windowY, 0.0, 12.0);
+        }
         if (hasSelected) {
             const type = typeof building?.type === 'string' ? building.type : null;
             this._buildingType = type === 'business' || type === 'industrial' || type === 'apartments' || type === 'house'
@@ -728,6 +833,14 @@ export class BuildingFabricationUI {
         this.floorNumber.disabled = !allow;
         this.floorHeightRange.disabled = !allow;
         this.floorHeightNumber.disabled = !allow;
+        this.windowWidthRange.disabled = !allow;
+        this.windowWidthNumber.disabled = !allow;
+        this.windowGapRange.disabled = !allow;
+        this.windowGapNumber.disabled = !allow;
+        this.windowHeightRange.disabled = !allow;
+        this.windowHeightNumber.disabled = !allow;
+        this.windowYRange.disabled = !allow;
+        this.windowYNumber.disabled = !allow;
 
         if (!hasSelected) {
             this.typeSelect.value = 'business';
@@ -736,6 +849,15 @@ export class BuildingFabricationUI {
 
             this.floorHeightRange.value = String(this.floorHeightMin);
             this.floorHeightNumber.value = '';
+
+            this.windowWidthRange.value = '0.3';
+            this.windowWidthNumber.value = '';
+            this.windowGapRange.value = '0';
+            this.windowGapNumber.value = '';
+            this.windowHeightRange.value = '0.3';
+            this.windowHeightNumber.value = '';
+            this.windowYRange.value = '0';
+            this.windowYNumber.value = '';
             return;
         }
 
@@ -746,6 +868,15 @@ export class BuildingFabricationUI {
 
         this.floorHeightRange.value = String(this._floorHeight);
         this.floorHeightNumber.value = formatFloat(this._floorHeight, 1);
+
+        this.windowWidthRange.value = String(this._windowWidth);
+        this.windowWidthNumber.value = formatFloat(this._windowWidth, 1);
+        this.windowGapRange.value = String(this._windowGap);
+        this.windowGapNumber.value = formatFloat(this._windowGap, 1);
+        this.windowHeightRange.value = String(this._windowHeight);
+        this.windowHeightNumber.value = formatFloat(this._windowHeight, 1);
+        this.windowYRange.value = String(this._windowY);
+        this.windowYNumber.value = formatFloat(this._windowY, 1);
     }
 
     setSelectedCount(count) {
@@ -914,6 +1045,42 @@ export class BuildingFabricationUI {
         this.floorHeightRange.value = String(next);
         this.floorHeightNumber.value = formatFloat(next, 1);
         if (changed) this.onFloorHeightChange?.(next);
+    }
+
+    _setWindowWidthFromUi(raw) {
+        const next = clamp(raw, 0.3, 12.0);
+        const changed = Math.abs(next - this._windowWidth) >= 1e-6;
+        this._windowWidth = next;
+        this.windowWidthRange.value = String(next);
+        this.windowWidthNumber.value = formatFloat(next, 1);
+        if (changed) this.onWindowWidthChange?.(next);
+    }
+
+    _setWindowGapFromUi(raw) {
+        const next = clamp(raw, 0.0, 24.0);
+        const changed = Math.abs(next - this._windowGap) >= 1e-6;
+        this._windowGap = next;
+        this.windowGapRange.value = String(next);
+        this.windowGapNumber.value = formatFloat(next, 1);
+        if (changed) this.onWindowGapChange?.(next);
+    }
+
+    _setWindowHeightFromUi(raw) {
+        const next = clamp(raw, 0.3, 10.0);
+        const changed = Math.abs(next - this._windowHeight) >= 1e-6;
+        this._windowHeight = next;
+        this.windowHeightRange.value = String(next);
+        this.windowHeightNumber.value = formatFloat(next, 1);
+        if (changed) this.onWindowHeightChange?.(next);
+    }
+
+    _setWindowYFromUi(raw) {
+        const next = clamp(raw, 0.0, 12.0);
+        const changed = Math.abs(next - this._windowY) >= 1e-6;
+        this._windowY = next;
+        this.windowYRange.value = String(next);
+        this.windowYNumber.value = formatFloat(next, 1);
+        if (changed) this.onWindowYChange?.(next);
     }
 
     _setBuildingTypeFromUi(raw) {
@@ -1256,6 +1423,14 @@ export class BuildingFabricationUI {
         this.floorNumber.addEventListener('input', this._onFloorNumberInput);
         this.floorHeightRange.addEventListener('input', this._onFloorHeightRangeInput);
         this.floorHeightNumber.addEventListener('input', this._onFloorHeightNumberInput);
+        this.windowWidthRange.addEventListener('input', this._onWindowWidthRangeInput);
+        this.windowWidthNumber.addEventListener('input', this._onWindowWidthNumberInput);
+        this.windowGapRange.addEventListener('input', this._onWindowGapRangeInput);
+        this.windowGapNumber.addEventListener('input', this._onWindowGapNumberInput);
+        this.windowHeightRange.addEventListener('input', this._onWindowHeightRangeInput);
+        this.windowHeightNumber.addEventListener('input', this._onWindowHeightNumberInput);
+        this.windowYRange.addEventListener('input', this._onWindowYRangeInput);
+        this.windowYNumber.addEventListener('input', this._onWindowYNumberInput);
         this.typeSelect.addEventListener('change', this._onTypeSelectChange);
         this.hideSelectionBorderInput.addEventListener('change', this._onHideSelectionBorderChange);
         this.wallTextureGrid.addEventListener('click', this._onWallTextureGridClick);
@@ -1282,6 +1457,14 @@ export class BuildingFabricationUI {
         this.floorNumber.removeEventListener('input', this._onFloorNumberInput);
         this.floorHeightRange.removeEventListener('input', this._onFloorHeightRangeInput);
         this.floorHeightNumber.removeEventListener('input', this._onFloorHeightNumberInput);
+        this.windowWidthRange.removeEventListener('input', this._onWindowWidthRangeInput);
+        this.windowWidthNumber.removeEventListener('input', this._onWindowWidthNumberInput);
+        this.windowGapRange.removeEventListener('input', this._onWindowGapRangeInput);
+        this.windowGapNumber.removeEventListener('input', this._onWindowGapNumberInput);
+        this.windowHeightRange.removeEventListener('input', this._onWindowHeightRangeInput);
+        this.windowHeightNumber.removeEventListener('input', this._onWindowHeightNumberInput);
+        this.windowYRange.removeEventListener('input', this._onWindowYRangeInput);
+        this.windowYNumber.removeEventListener('input', this._onWindowYNumberInput);
         this.typeSelect.removeEventListener('change', this._onTypeSelectChange);
         this.hideSelectionBorderInput.removeEventListener('change', this._onHideSelectionBorderChange);
         this.wallTextureGrid.removeEventListener('click', this._onWallTextureGridClick);

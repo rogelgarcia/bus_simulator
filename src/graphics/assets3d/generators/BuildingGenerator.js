@@ -7,6 +7,7 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 
 const EPS = 1e-6;
 const QUANT = 1000;
+let _windowTexture = null;
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -60,6 +61,94 @@ function makeDeterministicColor(seed) {
 
 function tileKey(x, y) {
     return `${x},${y}`;
+}
+
+function makeCanvas(size) {
+    const c = document.createElement('canvas');
+    c.width = size;
+    c.height = size;
+    const ctx = c.getContext('2d');
+    return { c, ctx };
+}
+
+function canvasToTexture(canvas, { srgb = true } = {}) {
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.anisotropy = 8;
+    applyTextureColorSpace(tex, { srgb });
+    tex.needsUpdate = true;
+    return tex;
+}
+
+export function getBuildingWindowTexture() {
+    if (_windowTexture) return _windowTexture;
+
+    const size = 256;
+    const { c, ctx } = makeCanvas(size);
+    const w = size;
+    const h = size;
+
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, '#10395a');
+    grad.addColorStop(1, '#061a2c');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    const frame = 16;
+    ctx.strokeStyle = 'rgba(210, 230, 255, 0.75)';
+    ctx.lineWidth = frame;
+    ctx.strokeRect(frame * 0.5, frame * 0.5, w - frame, h - frame);
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(frame + 6, frame + 6, w - (frame + 6) * 2, h - (frame + 6) * 2);
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(w * 0.5, frame + 8);
+    ctx.lineTo(w * 0.5, h - frame - 8);
+    ctx.moveTo(frame + 8, h * 0.5);
+    ctx.lineTo(w - frame - 8, h * 0.5);
+    ctx.stroke();
+
+    _windowTexture = canvasToTexture(c, { srgb: true });
+    _windowTexture.userData = _windowTexture.userData ?? {};
+    _windowTexture.userData.buildingShared = true;
+    return _windowTexture;
+}
+
+export function computeEvenWindowLayout({
+    length,
+    windowWidth,
+    desiredGap,
+    cornerEps = 0.05
+} = {}) {
+    const L = Number(length);
+    const w = clamp(windowWidth, 0.2, 50);
+    const g = clamp(desiredGap, 0, 50);
+    if (!Number.isFinite(L) || !(L > 0) || !(w > 0)) return { count: 0, gap: 0, starts: [] };
+
+    let count = Math.floor((L + g) / (w + g));
+    if (!Number.isFinite(count) || count < 0) count = 0;
+    if (count === 0) return { count: 0, gap: 0, starts: [] };
+
+    const eps = Math.max(0.001, Number(cornerEps) || 0);
+
+    let gap = 0;
+    while (count > 0) {
+        gap = (L - count * w) / (count + 1);
+        if (gap > eps) break;
+        count -= 1;
+    }
+
+    if (count <= 0) return { count: 0, gap: 0, starts: [] };
+    gap = (L - count * w) / (count + 1);
+
+    const starts = [];
+    for (let i = 0; i < count; i++) starts.push(gap + i * (w + gap));
+    return { count, gap, starts };
 }
 
 function getRendererResolution(renderer, out = new THREE.Vector2()) {
@@ -424,14 +513,16 @@ export function buildBuildingVisualParts({
     textureCache = null,
     renderer = null,
     colors = null,
-    overlays = null
+    overlays = null,
+    windows = null
 } = {}) {
     const loops = computeBuildingLoopsFromTiles({ map, tiles, generatorConfig, tileSize, occupyRatio });
     if (!loops.length) return null;
 
     const tileCount = normalizeTileList(tiles).length;
     const floorCount = clampInt(floors, 0, 30);
-    const height = Math.max(0, floorCount) * clamp(floorHeight, 1.0, 12.0);
+    const fh = clamp(floorHeight, 1.0, 12.0);
+    const height = Math.max(0, floorCount) * fh;
 
     const groundY = generatorConfig?.ground?.surfaceY ?? generatorConfig?.road?.surfaceY ?? 0;
     const baseY = groundY + 0.01;
@@ -599,7 +690,6 @@ export function buildBuildingVisualParts({
         const divisions = Math.max(0, floorCount - 1);
         if (divisions) {
             const floorPositions = [];
-            const fh = clamp(floorHeight, 1.0, 12.0);
             for (let i = 1; i <= divisions; i++) {
                 const y = baseY + i * fh;
                 for (const loop of loops) {
@@ -630,5 +720,76 @@ export function buildBuildingVisualParts({
         }
     }
 
-    return { baseColorHex, solidMeshes, wire, plan, border, floorDivisions };
+    let windowsGroup = null;
+    const win = windows ?? {};
+    const winEnabled = win.enabled ?? false;
+    if (winEnabled && floorCount > 0 && outerLoops.length) {
+        const windowWidth = clamp(win.width, 0.3, 12);
+        const windowGap = clamp(win.gap, 0, 24);
+        const windowHeight = clamp(win.height, 0.3, fh * 0.95);
+        const windowYOffset = clamp(win.y, 0, Math.max(0, fh - windowHeight));
+
+        const cornerEps = clamp(win.cornerEps, 0.01, 2.0);
+        const offset = clamp(win.offset, 0.01, 0.2);
+
+        const tex = getBuildingWindowTexture();
+        const windowMat = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            map: tex,
+            roughness: 0.4,
+            metalness: 0.0,
+            emissive: new THREE.Color(0x0b1f34),
+            emissiveIntensity: 0.35
+        });
+
+        windowsGroup = new THREE.Group();
+        windowsGroup.name = 'windows';
+
+        for (const loop of outerLoops) {
+            if (!loop || loop.length < 2) continue;
+            const n = loop.length;
+            for (let i = 0; i < n; i++) {
+                const a = loop[i];
+                const b = loop[(i + 1) % n];
+                const dx = b.x - a.x;
+                const dz = b.z - a.z;
+                const L = Math.hypot(dx, dz);
+                if (!(L > windowWidth + cornerEps * 2)) continue;
+
+                const { starts, count } = computeEvenWindowLayout({
+                    length: L,
+                    windowWidth,
+                    desiredGap: windowGap,
+                    cornerEps
+                });
+                if (!count) continue;
+
+                const inv = 1 / L;
+                const tx = dx * inv;
+                const tz = dz * inv;
+                const nx = tz;
+                const nz = -tx;
+                const yaw = Math.atan2(nx, nz);
+
+                for (let floor = 0; floor < floorCount; floor++) {
+                    const y = baseY + floor * fh + windowYOffset + windowHeight * 0.5;
+                    for (const start of starts) {
+                        const centerDist = start + windowWidth * 0.5;
+                        const cx = a.x + tx * centerDist + nx * offset;
+                        const cz = a.z + tz * centerDist + nz * offset;
+
+                        const geo = new THREE.PlaneGeometry(windowWidth, windowHeight);
+                        const mesh = new THREE.Mesh(geo, windowMat);
+                        mesh.position.set(cx, y, cz);
+                        mesh.rotation.set(0, yaw, 0);
+                        mesh.castShadow = false;
+                        mesh.receiveShadow = false;
+                        windowsGroup.add(mesh);
+                    }
+                }
+            }
+        }
+    }
+
+    return { baseColorHex, solidMeshes, wire, plan, border, floorDivisions, windows: windowsGroup };
 }

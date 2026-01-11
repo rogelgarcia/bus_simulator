@@ -92,6 +92,8 @@ export class City {
 
             const textures = new BuildingWallTextureCache();
             for (const entry of buildingsList) {
+                const windowsSpec = entry?.windows ?? null;
+                const windowsEnabled = !!windowsSpec && typeof windowsSpec === 'object';
                 const parts = buildBuildingVisualParts({
                     map: this.map,
                     tiles: entry.tiles,
@@ -103,13 +105,23 @@ export class City {
                     wallTextureUrl: entry.wallTextureUrl,
                     textureCache: textures,
                     renderer: null,
-                    overlays: { wire: false, floorplan: false, border: false, floorDivisions: false }
+                    overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+                    windows: windowsEnabled ? {
+                        enabled: true,
+                        width: windowsSpec.width,
+                        gap: windowsSpec.gap,
+                        height: windowsSpec.height,
+                        y: windowsSpec.y,
+                        cornerEps: 0.12,
+                        offset: 0.05
+                    } : null
                 });
                 if (!parts) continue;
 
                 const buildingGroup = new THREE.Group();
                 buildingGroup.name = entry.id ?? 'building';
                 for (const mesh of parts.solidMeshes) buildingGroup.add(mesh);
+                if (parts.windows) buildingGroup.add(parts.windows);
                 buildingsGroup.add(buildingGroup);
             }
 

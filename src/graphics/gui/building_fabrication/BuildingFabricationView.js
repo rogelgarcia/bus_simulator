@@ -23,11 +23,17 @@ export class BuildingFabricationView {
         this._hoveredTile = null;
         this._pointerDown = null;
         this._pointerMoved = false;
+        this._keyState = new Map();
+        this._moveDir = new THREE.Vector3();
+        this._moveForward = new THREE.Vector3();
+        this._moveRight = new THREE.Vector3();
 
         this._onPointerMove = (e) => this._handlePointerMove(e);
         this._onPointerDown = (e) => this._handlePointerDown(e);
         this._onPointerUp = (e) => this._handlePointerUp(e);
         this._onPointerLeave = () => this._handlePointerLeave();
+        this._onKeyDown = (e) => this._handleKeyDown(e);
+        this._onKeyUp = (e) => this._handleKeyUp(e);
     }
 
     enter() {
@@ -187,10 +193,40 @@ export class BuildingFabricationView {
             }
         };
 
+        this.ui.onWindowWidthChange = (width) => {
+            if (this.scene.setSelectedBuildingWindowWidth(width)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
+                this._syncBuildings();
+            }
+        };
+
+        this.ui.onWindowGapChange = (gap) => {
+            if (this.scene.setSelectedBuildingWindowGap(gap)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
+                this._syncBuildings();
+            }
+        };
+
+        this.ui.onWindowHeightChange = (height) => {
+            if (this.scene.setSelectedBuildingWindowHeight(height)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
+                this._syncBuildings();
+            }
+        };
+
+        this.ui.onWindowYChange = (offset) => {
+            if (this.scene.setSelectedBuildingWindowY(offset)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
+                this._syncBuildings();
+            }
+        };
+
         this.canvas.addEventListener('pointermove', this._onPointerMove, { passive: true });
         this.canvas.addEventListener('pointerdown', this._onPointerDown, { passive: true });
         this.canvas.addEventListener('pointerup', this._onPointerUp, { passive: true });
         this.canvas.addEventListener('pointerleave', this._onPointerLeave, { passive: true });
+        window.addEventListener('keydown', this._onKeyDown, { passive: false });
+        window.addEventListener('keyup', this._onKeyUp, { passive: true });
     }
 
     exit() {
@@ -198,6 +234,8 @@ export class BuildingFabricationView {
         this.canvas.removeEventListener('pointerdown', this._onPointerDown);
         this.canvas.removeEventListener('pointerup', this._onPointerUp);
         this.canvas.removeEventListener('pointerleave', this._onPointerLeave);
+        window.removeEventListener('keydown', this._onKeyDown);
+        window.removeEventListener('keyup', this._onKeyUp);
 
         this.ui.onBuildingModeChange = null;
         this.ui.onBuildBuildings = null;
@@ -218,6 +256,10 @@ export class BuildingFabricationView {
         this.ui.onBuildingTypeChange = null;
         this.ui.onWallTextureChange = null;
         this.ui.onHideSelectionBorderChange = null;
+        this.ui.onWindowWidthChange = null;
+        this.ui.onWindowGapChange = null;
+        this.ui.onWindowHeightChange = null;
+        this.ui.onWindowYChange = null;
         this.ui.unmount();
 
         this.scene.dispose();
@@ -225,11 +267,73 @@ export class BuildingFabricationView {
         this._hoveredTile = null;
         this._pointerDown = null;
         this._pointerMoved = false;
+        this._keyState.clear();
         this.canvas.classList.remove('cursor-pointer');
     }
 
     update(dt) {
         this.scene.update(dt);
+        this._updateCameraArrows(dt);
+    }
+
+    _updateCameraArrows(dt) {
+        const camera = this.scene?.camera;
+        const controls = this.scene?.controls;
+        if (!camera || !controls) return;
+
+        const up = this._keyState.get('ArrowUp') ? 1 : 0;
+        const down = this._keyState.get('ArrowDown') ? 1 : 0;
+        const left = this._keyState.get('ArrowLeft') ? 1 : 0;
+        const right = this._keyState.get('ArrowRight') ? 1 : 0;
+
+        const forwardSign = up - down;
+        const rightSign = right - left;
+        if (!forwardSign && !rightSign) return;
+
+        camera.getWorldDirection(this._moveForward);
+        this._moveForward.y = 0;
+        const len = this._moveForward.length();
+        if (len < 1e-6) return;
+        this._moveForward.multiplyScalar(1 / len);
+
+        this._moveRight.crossVectors(this._moveForward, new THREE.Vector3(0, 1, 0));
+        const rLen = this._moveRight.length();
+        if (rLen < 1e-6) return;
+        this._moveRight.multiplyScalar(1 / rLen);
+
+        this._moveDir.set(0, 0, 0);
+        this._moveDir.addScaledVector(this._moveForward, forwardSign);
+        this._moveDir.addScaledVector(this._moveRight, rightSign);
+        const dLen = this._moveDir.length();
+        if (dLen < 1e-6) return;
+        this._moveDir.multiplyScalar(1 / dLen);
+
+        const dist = camera.position.distanceTo(controls.target);
+        const speed = Math.max(10, dist * 0.6);
+        const delta = speed * (Number(dt) || 0);
+
+        this.scene.panCameraOnGround(this._moveDir.x * delta, this._moveDir.z * delta);
+    }
+
+    _handleKeyDown(e) {
+        const code = e?.code;
+        const key = e?.key;
+        if (code !== 'ArrowUp' && code !== 'ArrowDown' && code !== 'ArrowLeft' && code !== 'ArrowRight'
+            && key !== 'ArrowUp' && key !== 'ArrowDown' && key !== 'ArrowLeft' && key !== 'ArrowRight') {
+            return;
+        }
+
+        if (isInteractiveElement(document.activeElement)) return;
+        e.preventDefault();
+        this._keyState.set(code || key, true);
+    }
+
+    _handleKeyUp(e) {
+        const code = e?.code;
+        const key = e?.key;
+        if (!code && !key) return;
+        if (code) this._keyState.delete(code);
+        if (key) this._keyState.delete(key);
     }
 
     handleEscape() {

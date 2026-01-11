@@ -298,6 +298,20 @@ export class BuildingFabricationScene {
         this._syncLineResolution();
     }
 
+    panCameraOnGround(deltaX, deltaZ) {
+        if (!this.camera || !this.controls) return;
+        const dx = Number(deltaX) || 0;
+        const dz = Number(deltaZ) || 0;
+        if (!Number.isFinite(dx) || !Number.isFinite(dz)) return;
+        if (Math.abs(dx) < 1e-6 && Math.abs(dz) < 1e-6) return;
+
+        this.camera.position.x += dx;
+        this.camera.position.z += dz;
+        this.controls.target.x += dx;
+        this.controls.target.z += dz;
+        this.controls.update();
+    }
+
     resetCamera() {
         if (!this.controls || !this.camera) return;
         const span = this.tileSize * this.gridSize;
@@ -500,6 +514,49 @@ export class BuildingFabricationScene {
         return true;
     }
 
+    setSelectedBuildingWindowWidth(width) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = clamp(width, 0.3, 12.0);
+        if (Math.abs(next - (Number(building.windowWidth) || 0)) < 1e-6) return false;
+        building.windowWidth = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingWindowGap(gap) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = clamp(gap, 0.0, 24.0);
+        if (Math.abs(next - (Number(building.windowGap) || 0)) < 1e-6) return false;
+        building.windowGap = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingWindowHeight(height) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const floorH = clamp(Number.isFinite(building.floorHeight) ? building.floorHeight : this.floorHeight, 1.0, 12.0);
+        const next = clamp(height, 0.3, floorH * 0.95);
+        if (Math.abs(next - (Number(building.windowHeight) || 0)) < 1e-6) return false;
+        building.windowHeight = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingWindowY(offset) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const floorH = clamp(Number.isFinite(building.floorHeight) ? building.floorHeight : this.floorHeight, 1.0, 12.0);
+        const winH = clamp(Number.isFinite(building.windowHeight) ? building.windowHeight : 1.4, 0.3, floorH * 0.95);
+        const next = clamp(offset, 0.0, Math.max(0, floorH - winH));
+        if (Math.abs(next - (Number(building.windowY) || 0)) < 1e-6) return false;
+        building.windowY = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
     setSelectedBuildingType(type) {
         const building = this.getSelectedBuilding();
         if (!building) return false;
@@ -644,6 +701,7 @@ export class BuildingFabricationScene {
         if (building.solidGroup) building.solidGroup.visible = !floorplan && !this._showWireframe;
         if (building.wireGroup) building.wireGroup.visible = !floorplan && this._showWireframe;
         if (building.floorsGroup) building.floorsGroup.visible = !floorplan && this._showFloorDivisions;
+        if (building.windowsGroup) building.windowsGroup.visible = !floorplan && !this._showWireframe;
     }
 
     _syncBuildingRenderModes() {
@@ -1147,12 +1205,15 @@ export class BuildingFabricationScene {
         planGroup.name = 'floorplan';
         const borderGroup = new THREE.Group();
         borderGroup.name = 'selection_border';
+        const windowsGroup = new THREE.Group();
+        windowsGroup.name = 'windows';
 
         group.add(solidGroup);
         group.add(wireGroup);
         group.add(floorsGroup);
         group.add(planGroup);
         group.add(borderGroup);
+        group.add(windowsGroup);
 
         const building = {
             id: group.name,
@@ -1162,12 +1223,17 @@ export class BuildingFabricationScene {
             tiles: new Set(tileIds),
             floors,
             floorHeight: clamp(Number.isFinite(floorHeight) ? floorHeight : this.floorHeight, 1.0, 12.0),
+            windowWidth: 2.2,
+            windowGap: 1.6,
+            windowHeight: 1.4,
+            windowY: 1.0,
             group,
             solidGroup,
             wireGroup,
             floorsGroup,
             planGroup,
-            borderGroup
+            borderGroup,
+            windowsGroup
         };
 
         this._buildings.push(building);
@@ -1596,7 +1662,7 @@ export class BuildingFabricationScene {
     _rebuildBuildingMesh(building) {
         if (!this.root || !building?.group) return;
 
-        for (const child of [...building.solidGroup.children, ...building.wireGroup.children, ...building.floorsGroup.children, ...building.planGroup.children, ...building.borderGroup.children]) {
+        for (const child of [...building.solidGroup.children, ...building.wireGroup.children, ...building.floorsGroup.children, ...building.planGroup.children, ...building.borderGroup.children, ...building.windowsGroup.children]) {
             child.removeFromParent();
             disposeObject3D(child);
         }
@@ -1619,7 +1685,16 @@ export class BuildingFabricationScene {
             textureCache: this._wallTextures,
             renderer: this.engine?.renderer ?? null,
             colors: { line: BUILDING_LINE_COLOR, border: BUILDING_BORDER_COLOR },
-            overlays: { wire: true, floorplan: true, border: true, floorDivisions: true }
+            overlays: { wire: true, floorplan: true, border: true, floorDivisions: true },
+            windows: {
+                enabled: true,
+                width: building.windowWidth,
+                gap: building.windowGap,
+                height: building.windowHeight,
+                y: building.windowY,
+                cornerEps: 0.12,
+                offset: 0.05
+            }
         });
         if (!parts) return;
 
@@ -1629,6 +1704,7 @@ export class BuildingFabricationScene {
         if (parts.plan) building.planGroup.add(parts.plan);
         if (parts.border) building.borderGroup.add(parts.border);
         if (parts.floorDivisions) building.floorsGroup.add(parts.floorDivisions);
+        if (parts.windows) building.windowsGroup.add(parts.windows);
 
         this._syncBuildingRenderMode(building);
         this._syncBuildingBorder(building);
