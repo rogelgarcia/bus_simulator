@@ -755,6 +755,104 @@ async function runTests() {
         }
     });
 
+    // ========== Building Fabrication UI Tests ==========
+    const { BuildingFabricationUI } = await import('/src/graphics/gui/building_fabrication/BuildingFabricationUI.js');
+    const { BuildingFabricationScene } = await import('/src/graphics/gui/building_fabrication/BuildingFabricationScene.js');
+
+    test('BuildingFabricationUI: view toggles live in view panel', () => {
+        const ui = new BuildingFabricationUI();
+        const viewPanel = ui.root.querySelector('.building-fab-view-panel');
+        const propsPanel = ui.root.querySelector('.building-fab-props-panel');
+        assertTrue(!!viewPanel, 'View panel should exist.');
+        assertTrue(!!propsPanel, 'Props panel should exist.');
+        assertTrue(!!viewPanel.querySelector('.building-fab-view-modes'), 'View mode selector should be inside view panel.');
+        assertFalse(!!propsPanel.querySelector('.building-fab-view-modes'), 'View mode selector should not be inside props panel.');
+    });
+
+    test('BuildingFabricationUI: reset button lives in view panel', () => {
+        const ui = new BuildingFabricationUI();
+        const resetBtn = Array.from(ui.root.querySelectorAll('button'))
+            .find((btn) => btn.textContent?.trim() === 'Reset scene');
+        assertTrue(!!resetBtn, 'Reset button should exist.');
+        assertTrue(!!resetBtn.closest('.building-fab-view-panel'), 'Reset button should be in view panel.');
+    });
+
+    test('BuildingFabricationUI: grid apply button removed', () => {
+        const ui = new BuildingFabricationUI();
+        const gridBtn = Array.from(ui.root.querySelectorAll('button'))
+            .find((btn) => btn.textContent?.includes('Apply grid size'));
+        assertFalse(!!gridBtn, 'Apply grid size button should be removed.');
+    });
+
+    test('BuildingFabricationUI: view mode is exclusive', () => {
+        const ui = new BuildingFabricationUI();
+        ui.setWireframeEnabled(true);
+        assertTrue(ui.getWireframeEnabled(), 'Wireframe should be enabled.');
+        assertFalse(ui.getFloorDivisionsEnabled(), 'Floors should be disabled.');
+        assertFalse(ui.getFloorplanEnabled(), 'Floorplan should be disabled.');
+
+        ui.setFloorDivisionsEnabled(true);
+        assertFalse(ui.getWireframeEnabled(), 'Wireframe should be disabled.');
+        assertTrue(ui.getFloorDivisionsEnabled(), 'Floors should be enabled.');
+        assertFalse(ui.getFloorplanEnabled(), 'Floorplan should be disabled.');
+
+        ui.setFloorplanEnabled(true);
+        assertFalse(ui.getWireframeEnabled(), 'Wireframe should be disabled.');
+        assertFalse(ui.getFloorDivisionsEnabled(), 'Floors should be disabled.');
+        assertTrue(ui.getFloorplanEnabled(), 'Floorplan should be enabled.');
+    });
+
+    test('BuildingFabricationUI: max floors default is 30', () => {
+        const ui = new BuildingFabricationUI();
+        assertEqual(ui.floorNumber.max, '30', 'Floor max should be 30.');
+        assertEqual(ui.floorRange.max, '30', 'Floor range max should be 30.');
+    });
+
+    test('BuildingFabricationUI: road mode shows done button', () => {
+        const ui = new BuildingFabricationUI();
+        ui.setRoadModeEnabled(true);
+        assertFalse(ui.roadDoneBtn.classList.contains('hidden'), 'Done button should be visible in road mode.');
+        assertTrue(ui.buildBtn.classList.contains('hidden'), 'Build button should be hidden in road mode.');
+    });
+
+    test('BuildingFabricationScene: trims building tiles when road overlaps', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(),
+            canvas: document.createElement('canvas')
+        };
+        const scene = new BuildingFabricationScene(engine);
+
+        const a = '0,0';
+        const b = '1,0';
+        const c = '0,1';
+        scene._tileById.set(a, { x: 0, y: 0 });
+        scene._tileById.set(b, { x: 1, y: 0 });
+        scene._tileById.set(c, { x: 0, y: 1 });
+
+        const building = { id: 'building_test', tiles: new Set([a, b, c]), floors: 1, floorHeight: 3.2 };
+        scene._buildingsByTile.set(a, building);
+        scene._buildingsByTile.set(b, building);
+        scene._buildingsByTile.set(c, building);
+
+        scene._trimBuildingTilesForRoad(building, new Set([b]));
+        assertFalse(building.tiles.has(b), 'Building should drop road tile.');
+        assertFalse(scene._buildingsByTile.has(b), 'Road tile should no longer map to building.');
+        assertTrue(scene._buildingsByTile.get(a) === building, 'Remaining tile should map to building.');
+        assertTrue(scene._buildingsByTile.get(c) === building, 'Remaining tile should map to building.');
+    });
+
+    test('BuildingFabricationScene: shrinks footprint next to roads', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(),
+            canvas: document.createElement('canvas')
+        };
+        const scene = new BuildingFabricationScene(engine);
+        const { baseMargin, roadMargin } = scene._buildingFootprintMargins();
+        assertTrue(roadMargin > baseMargin, 'Road margin should be larger than base margin.');
+    });
+
     runRoadConnectionDebuggerTests({ test, assertTrue });
 
     // ========== Summary ==========

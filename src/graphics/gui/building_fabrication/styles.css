@@ -5,10 +5,14 @@
     align-items: flex-start;
 }
 
-.building-fab-create-panel {
+.building-fab-left-stack {
     position: absolute;
     left: 16px;
     top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 420px;
 }
 
 .building-fab-props-panel {
@@ -17,28 +21,62 @@
     top: 16px;
 }
 
+.building-fab-create-panel,
+.building-fab-view-panel,
+.building-fab-buildings-panel,
+.building-fab-roads-panel {
+    width: 420px;
+    max-width: 420px;
+}
+
+.building-fab-reset-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 120;
+    pointer-events: auto;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.35);
+}
+
+.building-fab-reset-panel {
+    min-width: 320px;
+    max-width: 420px;
+}
+
+.building-fab-reset-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.building-fab-reset-row {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    align-items: center;
+    gap: 10px;
+}
+
+.building-fab-reset-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
 .building-fab-bottom-row {
     position: absolute;
-    left: 16px;
-    right: 16px;
+    left: 50%;
     bottom: 16px;
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
-    gap: 16px;
-    align-items: end;
+    transform: translateX(-50%);
     pointer-events: none;
+    display: flex;
+    justify-content: center;
 }
 
 .building-fab-bottom-row > .ui-panel {
     pointer-events: auto;
-}
-
-.building-fab-roads-panel {
-    justify-self: start;
-}
-
-.building-fab-buildings-panel {
-    justify-self: end;
 }
 
 .building-fab-panel {
@@ -46,7 +84,6 @@
 }
 
 .building-fab-panel.building-fab-toast-panel {
-    justify-self: center;
     max-width: 520px;
 }
 
@@ -79,11 +116,11 @@
 
 .building-fab-selected-building {
     font-size: 12px;
-    opacity: 0.9;
-    padding: 8px 10px;
-    border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(0, 0, 0, 0.22);
+    font-weight: 800;
+    opacity: 0.92;
+    padding: 0;
+    border: none;
+    background: transparent;
     margin-bottom: 10px;
 }
 
@@ -118,7 +155,8 @@
 }
 
 .building-fab-building-item:hover {
-    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.26);
+    background: rgba(255, 255, 255, 0.10);
 }
 
 .building-fab-building-item.is-selected {
@@ -183,6 +221,51 @@
 
 .building-fab-toggle-wide {
     display: flex;
+}
+
+.building-fab-view-modes {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    margin-top: 10px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(0, 0, 0, 0.22);
+    overflow: hidden;
+}
+
+.building-fab-view-mode {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: #e9f2ff;
+    font-size: 12px;
+    font-weight: 800;
+    opacity: 0.88;
+    padding: 8px 10px;
+    cursor: pointer;
+}
+
+.building-fab-view-mode + .building-fab-view-mode {
+    border-left: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.building-fab-view-mode:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.10);
+    opacity: 0.98;
+}
+
+.building-fab-view-mode.is-active {
+    background: rgba(100, 210, 255, 0.18);
+    opacity: 1;
+}
+
+.building-fab-view-mode:disabled {
+    cursor: default;
+    opacity: 0.5;
+}
+
+.building-fab-view-reset {
+    margin-top: 14px;
 }
 
 .building-fab-toast-text {

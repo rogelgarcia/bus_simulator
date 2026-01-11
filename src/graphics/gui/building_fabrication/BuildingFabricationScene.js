@@ -137,7 +137,7 @@ export class BuildingFabricationScene {
         gridSize = 5,
         tileSize = 24,
         occupyRatio = 1.0,
-        floorHeight = 3.2
+        floorHeight = null
     } = {}) {
         this.engine = engine;
         this.scene = engine.scene;
@@ -147,12 +147,19 @@ export class BuildingFabricationScene {
         this.gridSize = clampInt(gridSize, 3, 25);
         this.tileSize = Math.max(4, Number(tileSize) || 24);
         this.occupyRatio = clamp(occupyRatio, 0.5, 1.0);
-        this.floorHeight = clamp(floorHeight, 1.0, 12.0);
 
         this.tileMeters = 2;
         this.generatorConfig = createGeneratorConfig({
             render: { roadMode: 'normal', treesEnabled: false }
         });
+
+        const laneWidth = this.generatorConfig?.road?.laneWidth ?? 4.8;
+        const defaultFloorHeight = laneWidth * (3.2 / 3.6);
+        this.floorHeight = clamp(
+            Number.isFinite(floorHeight) ? floorHeight : defaultFloorHeight,
+            1.0,
+            12.0
+        );
 
         this.root = null;
         this.controls = null;
@@ -441,7 +448,7 @@ export class BuildingFabricationScene {
     setSelectedBuildingFloors(floors) {
         const building = this.getSelectedBuilding();
         if (!building) return false;
-        const next = clampInt(floors, 1, 9999);
+        const next = clampInt(floors, 1, 30);
         if (next === building.floors) return false;
         building.floors = next;
         this._rebuildBuildingMesh(building);
@@ -604,7 +611,7 @@ export class BuildingFabricationScene {
         if (!this.root) return;
         if (!this._selectedTiles.size) return;
 
-        const clampedFloors = clampInt(floors, 1, 9999);
+        const clampedFloors = clampInt(floors, 1, 30);
         const clampedFloorHeight = clamp(
             Number.isFinite(floorHeight) ? floorHeight : this.floorHeight,
             1.0,
@@ -646,12 +653,27 @@ export class BuildingFabricationScene {
 
         if (!this._roadEndTileId) {
             this._roadEndTileId = tileId;
-            this._addRoadBetween(this._roadStartTileId, this._roadEndTileId);
-            this.setRoadModeEnabled(false);
+            const start = this._roadStartTileId;
+            const end = this._roadEndTileId;
+            this._roadStartTileId = null;
+            this._roadEndTileId = null;
+            this._addRoadBetween(start, end);
+            this._syncTileVisuals();
         }
     }
 
-    resetScene() {
+    cancelRoadSelection() {
+        if (!this._roadModeEnabled) return;
+        if (!this._roadStartTileId && !this._roadEndTileId) return;
+        this._roadStartTileId = null;
+        this._roadEndTileId = null;
+        this._syncTileVisuals();
+    }
+
+    resetScene({ gridSize = null } = {}) {
+        if (gridSize !== null && gridSize !== undefined) {
+            this.gridSize = clampInt(gridSize, 3, 25);
+        }
         this._selectedTiles.clear();
         this._roadStartTileId = null;
         this._roadEndTileId = null;
@@ -1083,18 +1105,64 @@ export class BuildingFabricationScene {
         const segment = this.map.roadSegments[id];
         const tiles = Array.isArray(segment?.tiles) ? segment.tiles : [];
 
+        const roadTileIds = new Set();
         const intersects = new Set();
         for (const tile of tiles) {
             const tileId = tileIdFromXY(tile.x, tile.y);
+            roadTileIds.add(tileId);
             const existing = this._buildingsByTile.get(tileId);
             if (existing) intersects.add(existing);
             this._selectedTiles.delete(tileId);
         }
-        for (const building of intersects) this._removeBuilding(building);
+        for (const building of intersects) {
+            this._trimBuildingTilesForRoad(building, roadTileIds);
+        }
 
         this._rebuildRoads();
         this._refreshGroundTiles();
         this._rebuildBuildings();
+    }
+
+    _trimBuildingTilesForRoad(building, roadTileIds) {
+        if (!building || !roadTileIds || !roadTileIds.size) return;
+
+        let changed = false;
+        const remaining = new Set();
+        for (const tileId of building.tiles) {
+            if (roadTileIds.has(tileId)) {
+                changed = true;
+                continue;
+            }
+            remaining.add(tileId);
+        }
+        if (!changed) return;
+
+        for (const tileId of building.tiles) {
+            this._buildingsByTile.delete(tileId);
+        }
+
+        if (!remaining.size) {
+            this._removeBuilding(building);
+            return;
+        }
+
+        const clusters = this._clusterTiles(remaining);
+        if (!clusters.length) {
+            this._removeBuilding(building);
+            return;
+        }
+
+        clusters.sort((a, b) => b.size - a.size);
+        const main = clusters[0];
+
+        building.tiles = main;
+        for (const tileId of building.tiles) {
+            this._buildingsByTile.set(tileId, building);
+        }
+
+        for (let i = 1; i < clusters.length; i++) {
+            this._createBuilding(clusters[i], building.floors, building.floorHeight);
+        }
     }
 
     _rebuildRoads() {
@@ -1132,7 +1200,11 @@ export class BuildingFabricationScene {
 
     _buildingFootprintMargins() {
         const baseMargin = this.tileSize * (1 - this.occupyRatio) * 0.5;
-        const roadMargin = baseMargin;
+
+        const roadCfg = this.generatorConfig?.road ?? {};
+        const sidewalkWidth = Number.isFinite(roadCfg?.sidewalk?.extraWidth) ? roadCfg.sidewalk.extraWidth : 0;
+        const curbT = Number.isFinite(roadCfg?.curb?.thickness) ? roadCfg.curb.thickness : 0;
+        const roadMargin = baseMargin + Math.max(0, sidewalkWidth + curbT * 0.5);
         return { baseMargin, roadMargin };
     }
 
@@ -1548,7 +1620,7 @@ export class BuildingFabricationScene {
             building.planGroup.add(line);
         }
 
-        const floorCount = Math.max(0, clampInt(building.floors, 0, 9999) - 1);
+        const floorCount = Math.max(0, clampInt(building.floors, 0, 30) - 1);
         if (floorCount) {
             const floorPositions = [];
             for (let i = 1; i <= floorCount; i++) {

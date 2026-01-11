@@ -53,6 +53,7 @@ export class BuildingFabricationState {
 
         if (code === 'Escape' || key === 'Escape') {
             e.preventDefault();
+            if (this.view?.handleEscape?.()) return;
             this.sm.go('welcome');
         }
     }

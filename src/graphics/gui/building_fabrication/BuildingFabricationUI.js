@@ -23,11 +23,11 @@ function formatFloat(value, digits = 1) {
 export class BuildingFabricationUI {
     constructor({
         floorMin = 1,
-        floorMax = 80,
+        floorMax = 30,
         floorCount = 8,
         floorHeightMin = 1.0,
         floorHeightMax = 12.0,
-        floorHeight = 3.2,
+        floorHeight = 4.2,
         gridMin = 3,
         gridMax = 25,
         gridSize = 5
@@ -65,6 +65,12 @@ export class BuildingFabricationUI {
         this.panel = document.createElement('div');
         this.panel.className = 'ui-panel is-interactive building-fab-panel building-fab-create-panel';
 
+        this.leftStack = document.createElement('div');
+        this.leftStack.className = 'building-fab-left-stack';
+
+        this.viewPanel = document.createElement('div');
+        this.viewPanel.className = 'ui-panel is-interactive building-fab-panel building-fab-view-panel';
+
         this.propsPanel = document.createElement('div');
         this.propsPanel.className = 'ui-panel is-interactive building-fab-panel building-fab-props-panel';
 
@@ -82,7 +88,7 @@ export class BuildingFabricationUI {
 
         this.title = document.createElement('div');
         this.title.className = 'ui-title';
-        this.title.textContent = 'Building Fabrication';
+        this.title.textContent = 'Fabrication';
 
         this.hint = document.createElement('div');
         this.hint.className = 'building-fab-hint';
@@ -155,42 +161,34 @@ export class BuildingFabricationUI {
         this.floorHeightRow.appendChild(this.floorHeightRange);
         this.floorHeightRow.appendChild(this.floorHeightNumber);
 
-        this.toggleRow = document.createElement('div');
-        this.toggleRow.className = 'building-fab-toggle-row';
+        this.viewModeRow = document.createElement('div');
+        this.viewModeRow.className = 'building-fab-view-modes';
 
-        this.wireframeToggle = document.createElement('label');
-        this.wireframeToggle.className = 'building-fab-toggle';
-        this.wireframeInput = document.createElement('input');
-        this.wireframeInput.type = 'checkbox';
-        this.wireframeInput.checked = this._wireframeEnabled;
-        this.wireframeText = document.createElement('span');
-        this.wireframeText.textContent = 'Wireframe';
-        this.wireframeToggle.appendChild(this.wireframeInput);
-        this.wireframeToggle.appendChild(this.wireframeText);
+        const makeViewModeBtn = (mode, label) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'building-fab-view-mode';
+            btn.dataset.mode = mode;
+            btn.textContent = label;
+            return btn;
+        };
 
-        this.floorDivToggle = document.createElement('label');
-        this.floorDivToggle.className = 'building-fab-toggle';
-        this.floorDivInput = document.createElement('input');
-        this.floorDivInput.type = 'checkbox';
-        this.floorDivInput.checked = this._floorDivisionsEnabled;
-        this.floorDivText = document.createElement('span');
-        this.floorDivText.textContent = 'Floor divisions';
-        this.floorDivToggle.appendChild(this.floorDivInput);
-        this.floorDivToggle.appendChild(this.floorDivText);
+        this.meshModeBtn = makeViewModeBtn('mesh', 'Mesh');
+        this.wireframeModeBtn = makeViewModeBtn('wireframe', 'Wireframe');
+        this.floorModeBtn = makeViewModeBtn('floors', 'Floors');
+        this.floorplanModeBtn = makeViewModeBtn('floorplan', 'Floorplan');
 
-        this.floorplanToggle = document.createElement('label');
-        this.floorplanToggle.className = 'building-fab-toggle';
-        this.floorplanInput = document.createElement('input');
-        this.floorplanInput.type = 'checkbox';
-        this.floorplanInput.checked = this._floorplanEnabled;
-        this.floorplanText = document.createElement('span');
-        this.floorplanText.textContent = 'Floorplan';
-        this.floorplanToggle.appendChild(this.floorplanInput);
-        this.floorplanToggle.appendChild(this.floorplanText);
+        this._viewModeButtons = [
+            this.meshModeBtn,
+            this.wireframeModeBtn,
+            this.floorModeBtn,
+            this.floorplanModeBtn
+        ];
 
-        this.toggleRow.appendChild(this.wireframeToggle);
-        this.toggleRow.appendChild(this.floorDivToggle);
-        this.toggleRow.appendChild(this.floorplanToggle);
+        this.viewModeRow.appendChild(this.meshModeBtn);
+        this.viewModeRow.appendChild(this.wireframeModeBtn);
+        this.viewModeRow.appendChild(this.floorModeBtn);
+        this.viewModeRow.appendChild(this.floorplanModeBtn);
 
         this.createActions = document.createElement('div');
         this.createActions.className = 'building-fab-actions';
@@ -237,42 +235,19 @@ export class BuildingFabricationUI {
         this.buildBtn.className = 'building-fab-btn building-fab-btn-primary';
         this.buildBtn.textContent = 'Build';
 
+        this.roadDoneBtn = document.createElement('button');
+        this.roadDoneBtn.type = 'button';
+        this.roadDoneBtn.className = 'building-fab-btn building-fab-btn-primary hidden';
+        this.roadDoneBtn.textContent = 'Done';
+
         this.toastActions.appendChild(this.cancelModeBtn);
         this.toastActions.appendChild(this.clearSelBtn);
         this.toastActions.appendChild(this.buildBtn);
+        this.toastActions.appendChild(this.roadDoneBtn);
 
         this.toastPanel.appendChild(this.toastTitle);
         this.toastPanel.appendChild(this.toastText);
         this.toastPanel.appendChild(this.toastActions);
-
-        this.gridSection = document.createElement('div');
-        this.gridSection.className = 'building-fab-section';
-        this.gridTitle = document.createElement('div');
-        this.gridTitle.className = 'ui-section-label';
-        this.gridTitle.textContent = 'Grid';
-
-        this.gridRow = document.createElement('div');
-        this.gridRow.className = 'building-fab-row';
-        this.gridLabel = document.createElement('div');
-        this.gridLabel.className = 'building-fab-row-label';
-        this.gridLabel.textContent = 'Size';
-        this.gridNumber = document.createElement('input');
-        this.gridNumber.type = 'number';
-        this.gridNumber.min = String(this.gridMin);
-        this.gridNumber.max = String(this.gridMax);
-        this.gridNumber.step = '1';
-        this.gridNumber.value = String(this._gridSize);
-        this.gridNumber.className = 'building-fab-number';
-        this.gridApplyBtn = document.createElement('button');
-        this.gridApplyBtn.type = 'button';
-        this.gridApplyBtn.className = 'building-fab-btn';
-        this.gridApplyBtn.textContent = 'Apply grid size';
-        this.gridRow.appendChild(this.gridLabel);
-        this.gridRow.appendChild(this.gridNumber);
-        this.gridRow.appendChild(this.gridApplyBtn);
-
-        this.gridSection.appendChild(this.gridTitle);
-        this.gridSection.appendChild(this.gridRow);
 
         this.roadsTitle = document.createElement('div');
         this.roadsTitle.className = 'ui-title';
@@ -286,8 +261,16 @@ export class BuildingFabricationUI {
 
         this.resetBtn = document.createElement('button');
         this.resetBtn.type = 'button';
-        this.resetBtn.className = 'building-fab-btn building-fab-btn-danger';
+        this.resetBtn.className = 'building-fab-btn building-fab-btn-danger building-fab-view-reset';
         this.resetBtn.textContent = 'Reset scene';
+
+        this.viewTitle = document.createElement('div');
+        this.viewTitle.className = 'ui-title';
+        this.viewTitle.textContent = 'View';
+
+        this.viewPanel.appendChild(this.viewTitle);
+        this.viewPanel.appendChild(this.viewModeRow);
+        this.viewPanel.appendChild(this.resetBtn);
 
         this.propsTitle = document.createElement('div');
         this.propsTitle.className = 'ui-title';
@@ -313,7 +296,6 @@ export class BuildingFabricationUI {
         this.propsPanel.appendChild(this.deleteBuildingBtn);
         this.propsPanel.appendChild(this.floorRow);
         this.propsPanel.appendChild(this.floorHeightRow);
-        this.propsPanel.appendChild(this.toggleRow);
 
         this.buildingsTitle = document.createElement('div');
         this.buildingsTitle.className = 'ui-title';
@@ -326,18 +308,72 @@ export class BuildingFabricationUI {
         this.buildingsPanel.appendChild(this.buildingsList);
 
         this.panel.appendChild(this.title);
-        this.panel.appendChild(this.hint);
-        this.panel.appendChild(this.counts);
         this.panel.appendChild(this.createSection);
-        this.panel.appendChild(this.gridSection);
-        this.panel.appendChild(this.resetBtn);
-        this.root.appendChild(this.panel);
+
+        this.leftStack.appendChild(this.viewPanel);
+        this.leftStack.appendChild(this.panel);
+        this.leftStack.appendChild(this.buildingsPanel);
+        this.leftStack.appendChild(this.roadsPanel);
+        this.root.appendChild(this.leftStack);
         this.root.appendChild(this.propsPanel);
 
-        this.bottomRow.appendChild(this.roadsPanel);
         this.bottomRow.appendChild(this.toastPanel);
-        this.bottomRow.appendChild(this.buildingsPanel);
         this.root.appendChild(this.bottomRow);
+
+        this.resetOverlay = document.createElement('div');
+        this.resetOverlay.className = 'building-fab-reset-overlay hidden';
+
+        this.resetPanel = document.createElement('div');
+        this.resetPanel.className = 'ui-panel is-interactive building-fab-panel building-fab-reset-panel';
+
+        this.resetTitle = document.createElement('div');
+        this.resetTitle.className = 'ui-title';
+        this.resetTitle.textContent = 'Reset Scene';
+
+        this.resetBody = document.createElement('div');
+        this.resetBody.className = 'building-fab-reset-body';
+
+        this.resetGridRow = document.createElement('div');
+        this.resetGridRow.className = 'building-fab-reset-row';
+
+        this.resetGridLabel = document.createElement('div');
+        this.resetGridLabel.className = 'building-fab-row-label';
+        this.resetGridLabel.textContent = 'Grid size';
+
+        this.resetGridNumber = document.createElement('input');
+        this.resetGridNumber.type = 'number';
+        this.resetGridNumber.min = String(this.gridMin);
+        this.resetGridNumber.max = String(this.gridMax);
+        this.resetGridNumber.step = '1';
+        this.resetGridNumber.value = String(this._gridSize);
+        this.resetGridNumber.className = 'building-fab-number';
+
+        this.resetGridRow.appendChild(this.resetGridLabel);
+        this.resetGridRow.appendChild(this.resetGridNumber);
+
+        this.resetActions = document.createElement('div');
+        this.resetActions.className = 'building-fab-reset-actions';
+
+        this.resetCancelBtn = document.createElement('button');
+        this.resetCancelBtn.type = 'button';
+        this.resetCancelBtn.className = 'building-fab-btn';
+        this.resetCancelBtn.textContent = 'Cancel';
+
+        this.resetConfirmBtn = document.createElement('button');
+        this.resetConfirmBtn.type = 'button';
+        this.resetConfirmBtn.className = 'building-fab-btn building-fab-btn-danger';
+        this.resetConfirmBtn.textContent = 'Reset scene';
+
+        this.resetActions.appendChild(this.resetCancelBtn);
+        this.resetActions.appendChild(this.resetConfirmBtn);
+
+        this.resetBody.appendChild(this.resetGridRow);
+        this.resetBody.appendChild(this.resetActions);
+
+        this.resetPanel.appendChild(this.resetTitle);
+        this.resetPanel.appendChild(this.resetBody);
+        this.resetOverlay.appendChild(this.resetPanel);
+        this.root.appendChild(this.resetOverlay);
 
         this.onBuildingModeChange = null;
         this.onBuildBuildings = null;
@@ -345,8 +381,9 @@ export class BuildingFabricationUI {
         this.onSelectBuilding = null;
         this.onDeleteSelectedBuilding = null;
         this.onReset = null;
-        this.onGridApply = null;
         this.onRoadModeChange = null;
+        this.onRoadCancel = null;
+        this.onRoadDone = null;
         this.onRoadRemove = null;
         this.onRoadHover = null;
         this.onWireframeChange = null;
@@ -361,18 +398,38 @@ export class BuildingFabricationUI {
         this._onFloorNumberInput = () => this._setFloorCountFromUi(this.floorNumber.value);
         this._onFloorHeightRangeInput = () => this._setFloorHeightFromUi(this.floorHeightRange.value);
         this._onFloorHeightNumberInput = () => this._setFloorHeightFromUi(this.floorHeightNumber.value);
-        this._onWireframeToggle = () => this._setWireframeFromUi(this.wireframeInput.checked);
-        this._onFloorDivToggle = () => this._setFloorDivisionsFromUi(this.floorDivInput.checked);
-        this._onFloorplanToggle = () => this._setFloorplanFromUi(this.floorplanInput.checked);
+        this._onViewModeClick = (e) => {
+            const btn = e?.target?.closest?.('.building-fab-view-mode');
+            if (!btn || !this.viewModeRow?.contains(btn)) return;
+            if (btn.disabled) return;
+            const mode = btn.dataset?.mode ?? null;
+            this._setViewModeFromUi(mode);
+        };
         this._onAddRoad = () => this._toggleRoadModeFromUi();
-        this._onGridNumberInput = () => this._setGridSizeFromUi(this.gridNumber.value);
-        this._onGridApply = () => this.onGridApply?.(this.getGridSize());
         this._onStartBuilding = () => this._toggleBuildingModeFromUi();
         this._onCancelMode = () => this._cancelActiveModeFromUi();
         this._onBuild = () => this.onBuildBuildings?.();
         this._onClearSelection = () => this.onClearSelection?.();
         this._onDeleteSelectedBuilding = () => this.onDeleteSelectedBuilding?.();
-        this._onReset = () => this.onReset?.();
+        this._onRoadDone = () => this.onRoadDone?.();
+        this._onReset = () => this._openResetDialog();
+        this._onResetOverlayClick = (e) => {
+            if (e?.target === this.resetOverlay) this._closeResetDialog();
+        };
+        this._onResetCancel = () => this._closeResetDialog();
+        this._onResetConfirm = () => this._confirmResetDialog();
+        this._onResetGridKeyDown = (e) => {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                this._closeResetDialog();
+            }
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation();
+                this._confirmResetDialog();
+            }
+        };
     }
 
     mount(parent = document.body) {
@@ -392,8 +449,10 @@ export class BuildingFabricationUI {
         this.cancelModeBtn.disabled = !on;
         this.buildBtn.disabled = !on || !this._buildingModeEnabled || this._selectedTileCount <= 0;
         this.clearSelBtn.disabled = !on || !this._buildingModeEnabled || this._selectedTileCount <= 0;
+        this.roadDoneBtn.disabled = !on;
         for (const btn of this._roadRemoveButtons) btn.disabled = !on;
         this._syncCreatePanelControls();
+        this._syncViewControls();
         this._syncPropertyWidgets();
         this.propsPanel.classList.toggle('is-disabled', !on);
         this.roadsPanel.classList.toggle('is-disabled', !on);
@@ -435,7 +494,7 @@ export class BuildingFabricationUI {
         const next = clampInt(size, this.gridMin, this.gridMax);
         if (next === this._gridSize) return;
         this._gridSize = next;
-        this.gridNumber.value = String(next);
+        if (this.resetGridNumber) this.resetGridNumber.value = String(next);
     }
 
     getBuildingModeEnabled() {
@@ -467,16 +526,40 @@ export class BuildingFabricationUI {
         this._syncHint();
     }
 
+    _currentViewMode() {
+        if (this._floorplanEnabled) return 'floorplan';
+        if (this._floorDivisionsEnabled) return 'floors';
+        if (this._wireframeEnabled) return 'wireframe';
+        return 'mesh';
+    }
+
+    _syncViewModeButtons() {
+        const active = this._currentViewMode();
+        for (const btn of this._viewModeButtons ?? []) {
+            if (!btn) continue;
+            const mode = btn.dataset?.mode ?? null;
+            const isActive = mode === active;
+            btn.classList.toggle('is-active', isActive);
+            btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        }
+    }
+
     getWireframeEnabled() {
         return this._wireframeEnabled;
     }
 
     setWireframeEnabled(enabled) {
-        const next = !!enabled;
-        if (next === this._wireframeEnabled) return;
-        this._wireframeEnabled = next;
-        this.wireframeInput.checked = next;
-        this._syncPropertyWidgets();
+        const on = !!enabled;
+        if (on) {
+            if (this._wireframeEnabled && !this._floorDivisionsEnabled && !this._floorplanEnabled) return;
+            this._wireframeEnabled = true;
+            this._floorDivisionsEnabled = false;
+            this._floorplanEnabled = false;
+        } else {
+            if (!this._wireframeEnabled) return;
+            this._wireframeEnabled = false;
+        }
+        this._syncViewControls();
     }
 
     getFloorDivisionsEnabled() {
@@ -484,11 +567,17 @@ export class BuildingFabricationUI {
     }
 
     setFloorDivisionsEnabled(enabled) {
-        const next = !!enabled;
-        if (next === this._floorDivisionsEnabled) return;
-        this._floorDivisionsEnabled = next;
-        this.floorDivInput.checked = next;
-        this._syncPropertyWidgets();
+        const on = !!enabled;
+        if (on) {
+            if (!this._wireframeEnabled && this._floorDivisionsEnabled && !this._floorplanEnabled) return;
+            this._wireframeEnabled = false;
+            this._floorDivisionsEnabled = true;
+            this._floorplanEnabled = false;
+        } else {
+            if (!this._floorDivisionsEnabled) return;
+            this._floorDivisionsEnabled = false;
+        }
+        this._syncViewControls();
     }
 
     getFloorplanEnabled() {
@@ -496,11 +585,17 @@ export class BuildingFabricationUI {
     }
 
     setFloorplanEnabled(enabled) {
-        const next = !!enabled;
-        if (next === this._floorplanEnabled) return;
-        this._floorplanEnabled = next;
-        this.floorplanInput.checked = next;
-        this._syncPropertyWidgets();
+        const on = !!enabled;
+        if (on) {
+            if (!this._wireframeEnabled && !this._floorDivisionsEnabled && this._floorplanEnabled) return;
+            this._wireframeEnabled = false;
+            this._floorDivisionsEnabled = false;
+            this._floorplanEnabled = true;
+        } else {
+            if (!this._floorplanEnabled) return;
+            this._floorplanEnabled = false;
+        }
+        this._syncViewControls();
     }
 
     setSelectedBuilding(building) {
@@ -516,11 +611,7 @@ export class BuildingFabricationUI {
         if (!hasSelected) {
             this.selectedBuildingInfo.textContent = 'No building selected.';
         } else {
-            const tiles = Number.isFinite(building?.tiles?.size) ? building.tiles.size : building?.tileCount;
-            const tileCount = Number.isFinite(tiles) ? tiles : null;
-            this.selectedBuildingInfo.textContent = tileCount === null
-                ? `Selected: ${nextId}`
-                : `Selected: ${nextId} (${tileCount} tiles)`;
+            this.selectedBuildingInfo.textContent = nextId;
         }
         this._syncPropertyWidgets();
         this._syncHint();
@@ -535,9 +626,6 @@ export class BuildingFabricationUI {
         this.floorNumber.disabled = !allow;
         this.floorHeightRange.disabled = !allow;
         this.floorHeightNumber.disabled = !allow;
-        this.wireframeInput.disabled = !allow;
-        this.floorDivInput.disabled = !allow;
-        this.floorplanInput.disabled = !allow;
 
         if (!hasSelected) {
             this.floorRange.value = String(this.floorMin);
@@ -545,14 +633,6 @@ export class BuildingFabricationUI {
 
             this.floorHeightRange.value = String(this.floorHeightMin);
             this.floorHeightNumber.value = '';
-
-            this.wireframeInput.indeterminate = true;
-            this.floorDivInput.indeterminate = true;
-            this.floorplanInput.indeterminate = true;
-
-            this.wireframeInput.checked = false;
-            this.floorDivInput.checked = false;
-            this.floorplanInput.checked = false;
             return;
         }
 
@@ -561,14 +641,6 @@ export class BuildingFabricationUI {
 
         this.floorHeightRange.value = String(this._floorHeight);
         this.floorHeightNumber.value = formatFloat(this._floorHeight, 1);
-
-        this.wireframeInput.indeterminate = false;
-        this.floorDivInput.indeterminate = false;
-        this.floorplanInput.indeterminate = false;
-
-        this.wireframeInput.checked = this._wireframeEnabled;
-        this.floorDivInput.checked = this._floorDivisionsEnabled;
-        this.floorplanInput.checked = this._floorplanEnabled;
     }
 
     setSelectedCount(count) {
@@ -777,35 +849,36 @@ export class BuildingFabricationUI {
         }
 
         if (this._roadModeEnabled) {
-            this._setRoadModeFromUi(false);
+            if (this.onRoadCancel) {
+                this.onRoadCancel();
+            } else {
+                this._setRoadModeFromUi(false);
+            }
         }
     }
 
-    _setGridSizeFromUi(raw) {
-        const next = clampInt(raw, this.gridMin, this.gridMax);
-        this._gridSize = next;
-        this.gridNumber.value = String(next);
-    }
+    _setViewModeFromUi(mode) {
+        const next = (mode === 'wireframe' || mode === 'floors' || mode === 'floorplan' || mode === 'mesh')
+            ? mode
+            : 'mesh';
 
-    _setWireframeFromUi(enabled) {
-        const next = !!enabled;
-        if (next === this._wireframeEnabled) return;
-        this._wireframeEnabled = next;
-        this.onWireframeChange?.(next);
-    }
+        const wireframe = next === 'wireframe';
+        const floors = next === 'floors';
+        const floorplan = next === 'floorplan';
 
-    _setFloorDivisionsFromUi(enabled) {
-        const next = !!enabled;
-        if (next === this._floorDivisionsEnabled) return;
-        this._floorDivisionsEnabled = next;
-        this.onFloorDivisionsChange?.(next);
-    }
+        const changed = wireframe !== this._wireframeEnabled
+            || floors !== this._floorDivisionsEnabled
+            || floorplan !== this._floorplanEnabled;
+        if (!changed) return;
 
-    _setFloorplanFromUi(enabled) {
-        const next = !!enabled;
-        if (next === this._floorplanEnabled) return;
-        this._floorplanEnabled = next;
-        this.onFloorplanChange?.(next);
+        this._wireframeEnabled = wireframe;
+        this._floorDivisionsEnabled = floors;
+        this._floorplanEnabled = floorplan;
+
+        this.onWireframeChange?.(wireframe);
+        this.onFloorDivisionsChange?.(floors);
+        this.onFloorplanChange?.(floorplan);
+        this._syncViewControls();
     }
 
     _syncToast() {
@@ -817,7 +890,7 @@ export class BuildingFabricationUI {
 
         if (this._roadModeEnabled) {
             this.toastTitle.textContent = 'Create Road';
-            this.cancelModeBtn.textContent = 'Cancel road';
+            this.cancelModeBtn.textContent = 'Cancel segment';
 
             const start = this._roadStartTileId;
             this.toastText.textContent = start
@@ -826,12 +899,15 @@ export class BuildingFabricationUI {
 
             this.clearSelBtn?.classList.add('hidden');
             this.buildBtn?.classList.add('hidden');
+            this.roadDoneBtn?.classList.remove('hidden');
+            if (this.cancelModeBtn) this.cancelModeBtn.disabled = !this._enabled || !start;
             return;
         }
 
         if (this._buildingModeEnabled) {
             this.toastTitle.textContent = 'Create Building';
             this.cancelModeBtn.textContent = 'Cancel building';
+            if (this.cancelModeBtn) this.cancelModeBtn.disabled = !this._enabled;
 
             const count = Number.isFinite(this._selectedTileCount) ? this._selectedTileCount : 0;
             this.toastText.textContent = count > 0
@@ -840,6 +916,7 @@ export class BuildingFabricationUI {
 
             this.clearSelBtn?.classList.remove('hidden');
             this.buildBtn?.classList.remove('hidden');
+            this.roadDoneBtn?.classList.add('hidden');
             if (this.buildBtn) this.buildBtn.disabled = count <= 0;
             if (this.clearSelBtn) this.clearSelBtn.disabled = count <= 0;
         }
@@ -855,10 +932,11 @@ export class BuildingFabricationUI {
         }
 
         this.propsHint.textContent = this._selectedBuildingId
-            ? 'Edit the selected building.'
+            ? ''
             : 'Select a building to edit its properties.';
 
         this._syncCreatePanelControls();
+        this._syncViewControls();
         this._syncToast();
     }
 
@@ -870,11 +948,59 @@ export class BuildingFabricationUI {
 
         this.addRoadBtn.disabled = disable;
         this.startBuildingBtn.disabled = disable;
-        this.gridNumber.disabled = disable;
-        this.gridApplyBtn.disabled = disable;
-        this.resetBtn.disabled = disable;
 
         this.panel.classList.toggle('is-disabled', !this._enabled || creating);
+    }
+
+    _syncViewControls() {
+        if (!this.viewPanel) return;
+
+        const creating = this._roadModeEnabled || this._buildingModeEnabled;
+        const allowReset = this._enabled && !creating;
+        const disableView = !this._enabled;
+
+        for (const btn of this._viewModeButtons ?? []) {
+            if (!btn) continue;
+            btn.disabled = disableView;
+        }
+        this.resetBtn.disabled = !allowReset;
+
+        this._syncViewModeButtons();
+        this.viewPanel.classList.toggle('is-disabled', disableView);
+        if (disableView) this._closeResetDialog();
+    }
+
+    _openResetDialog() {
+        if (!this.resetOverlay || !this.resetGridNumber) return;
+        if (!this._enabled) return;
+        const creating = this._roadModeEnabled || this._buildingModeEnabled;
+        if (creating) return;
+
+        this.resetGridNumber.value = String(this._gridSize);
+        this.resetOverlay.classList.remove('hidden');
+        this.resetGridNumber.focus();
+        this.resetGridNumber.select?.();
+    }
+
+    _closeResetDialog() {
+        if (!this.resetOverlay) return;
+        this.resetOverlay.classList.add('hidden');
+    }
+
+    _confirmResetDialog() {
+        if (!this.resetGridNumber) return;
+        const next = clampInt(this.resetGridNumber.value, this.gridMin, this.gridMax);
+        this._gridSize = next;
+        this._closeResetDialog();
+        this.onReset?.(next);
+    }
+
+    isResetDialogOpen() {
+        return !!this.resetOverlay && !this.resetOverlay.classList.contains('hidden');
+    }
+
+    closeResetDialog() {
+        this._closeResetDialog();
     }
 
     _bind() {
@@ -885,18 +1011,19 @@ export class BuildingFabricationUI {
         this.floorNumber.addEventListener('input', this._onFloorNumberInput);
         this.floorHeightRange.addEventListener('input', this._onFloorHeightRangeInput);
         this.floorHeightNumber.addEventListener('input', this._onFloorHeightNumberInput);
-        this.wireframeInput.addEventListener('change', this._onWireframeToggle);
-        this.floorDivInput.addEventListener('change', this._onFloorDivToggle);
-        this.floorplanInput.addEventListener('change', this._onFloorplanToggle);
+        this.viewModeRow.addEventListener('click', this._onViewModeClick);
         this.addRoadBtn.addEventListener('click', this._onAddRoad);
-        this.gridNumber.addEventListener('input', this._onGridNumberInput);
-        this.gridApplyBtn.addEventListener('click', this._onGridApply);
         this.startBuildingBtn.addEventListener('click', this._onStartBuilding);
         this.cancelModeBtn.addEventListener('click', this._onCancelMode);
         this.buildBtn.addEventListener('click', this._onBuild);
         this.clearSelBtn.addEventListener('click', this._onClearSelection);
         this.deleteBuildingBtn.addEventListener('click', this._onDeleteSelectedBuilding);
         this.resetBtn.addEventListener('click', this._onReset);
+        this.roadDoneBtn.addEventListener('click', this._onRoadDone);
+        this.resetOverlay.addEventListener('click', this._onResetOverlayClick);
+        this.resetCancelBtn.addEventListener('click', this._onResetCancel);
+        this.resetConfirmBtn.addEventListener('click', this._onResetConfirm);
+        this.resetGridNumber.addEventListener('keydown', this._onResetGridKeyDown);
     }
 
     _unbind() {
@@ -907,17 +1034,18 @@ export class BuildingFabricationUI {
         this.floorNumber.removeEventListener('input', this._onFloorNumberInput);
         this.floorHeightRange.removeEventListener('input', this._onFloorHeightRangeInput);
         this.floorHeightNumber.removeEventListener('input', this._onFloorHeightNumberInput);
-        this.wireframeInput.removeEventListener('change', this._onWireframeToggle);
-        this.floorDivInput.removeEventListener('change', this._onFloorDivToggle);
-        this.floorplanInput.removeEventListener('change', this._onFloorplanToggle);
+        this.viewModeRow.removeEventListener('click', this._onViewModeClick);
         this.addRoadBtn.removeEventListener('click', this._onAddRoad);
-        this.gridNumber.removeEventListener('input', this._onGridNumberInput);
-        this.gridApplyBtn.removeEventListener('click', this._onGridApply);
         this.startBuildingBtn.removeEventListener('click', this._onStartBuilding);
         this.cancelModeBtn.removeEventListener('click', this._onCancelMode);
         this.buildBtn.removeEventListener('click', this._onBuild);
         this.clearSelBtn.removeEventListener('click', this._onClearSelection);
         this.deleteBuildingBtn.removeEventListener('click', this._onDeleteSelectedBuilding);
         this.resetBtn.removeEventListener('click', this._onReset);
+        this.roadDoneBtn.removeEventListener('click', this._onRoadDone);
+        this.resetOverlay.removeEventListener('click', this._onResetOverlayClick);
+        this.resetCancelBtn.removeEventListener('click', this._onResetCancel);
+        this.resetConfirmBtn.removeEventListener('click', this._onResetConfirm);
+        this.resetGridNumber.removeEventListener('keydown', this._onResetGridKeyDown);
     }
 }
