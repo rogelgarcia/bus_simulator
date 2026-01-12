@@ -152,6 +152,7 @@ export function createDefaultFloorLayer({
         belt: {
             enabled: !!b.enabled,
             height: clamp(b.height ?? 0.18, 0.02, 1.2),
+            extrusion: clamp(b.extrusion ?? b.extrudeDistance ?? b.extrude ?? b.extrudeDepth ?? 0.0, 0.0, 4.0),
             material: normalizeMaterialSpec(b?.material, {
                 fallback: { kind: 'color', id: BELT_COURSE_COLOR.OFFWHITE },
                 allowColorId: isBeltCourseColor,

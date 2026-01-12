@@ -7,6 +7,8 @@ export const INSPECTOR_TEXTURE = Object.freeze({
     WINDOW_DEFAULT: 'tex.window.default',
     WINDOW_DARK: 'tex.window.dark',
     WINDOW_BLUE: 'tex.window.blue',
+    WINDOW_LIGHT_BLUE: 'tex.window.light_blue',
+    WINDOW_GREEN: 'tex.window.green',
     WINDOW_WARM: 'tex.window.warm',
     WINDOW_GRID: 'tex.window.grid'
 });
@@ -15,6 +17,8 @@ const TEXTURE_OPTIONS = Object.freeze([
     { id: INSPECTOR_TEXTURE.WINDOW_DEFAULT, label: 'Window (Default)', kind: 'window', style: WINDOW_STYLE.DEFAULT },
     { id: INSPECTOR_TEXTURE.WINDOW_DARK, label: 'Window (Dark)', kind: 'window', style: WINDOW_STYLE.DARK },
     { id: INSPECTOR_TEXTURE.WINDOW_BLUE, label: 'Window (Blue)', kind: 'window', style: WINDOW_STYLE.BLUE },
+    { id: INSPECTOR_TEXTURE.WINDOW_LIGHT_BLUE, label: 'Window (Light Blue)', kind: 'window', style: WINDOW_STYLE.LIGHT_BLUE },
+    { id: INSPECTOR_TEXTURE.WINDOW_GREEN, label: 'Window (Green)', kind: 'window', style: WINDOW_STYLE.GREEN },
     { id: INSPECTOR_TEXTURE.WINDOW_WARM, label: 'Window (Warm)', kind: 'window', style: WINDOW_STYLE.WARM },
     { id: INSPECTOR_TEXTURE.WINDOW_GRID, label: 'Window (Grid)', kind: 'window', style: WINDOW_STYLE.GRID }
 ]);

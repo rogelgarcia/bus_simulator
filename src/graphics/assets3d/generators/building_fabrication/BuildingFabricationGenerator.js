@@ -402,6 +402,16 @@ function applyPlanOffset({ loops, offset }) {
     return { outer: nextOuter, holes: nextHoles, all: [...nextOuter, ...nextHoles] };
 }
 
+function applyWallInset({ loops, inset }) {
+    const { outer, holes } = splitLoops(loops);
+    const d = clamp(inset, 0.0, 4.0);
+    if (!(d > EPS)) return { outer, holes, all: [...outer, ...holes] };
+
+    const nextOuter = outer.map((loop) => offsetOrthogonalLoopXZ(loop, d));
+    const nextHoles = holes.map((loop) => offsetOrthogonalLoopXZ(loop, -d));
+    return { outer: nextOuter, holes: nextHoles, all: [...nextOuter, ...nextHoles] };
+}
+
 function buildShapeFromLoops({ outerLoop, holeLoops }) {
     const shapePts = (outerLoop ?? []).map((p) => new THREE.Vector2(p.x, -p.z));
     shapePts.reverse();
@@ -502,10 +512,7 @@ export function buildBuildingFabricationVisualParts({
             const planOffset = clamp(layer.planOffset, -8.0, 8.0);
             const { outer: planOuter, holes: planHoles, all: planLoops } = applyPlanOffset({ loops: currentLoops, offset: planOffset });
 
-            const wallLoops = wallInset > EPS
-                ? planLoops.map((loop) => offsetOrthogonalLoopXZ(loop, wallInset))
-                : planLoops;
-            const { outer: wallOuter, holes: wallHoles } = splitLoops(wallLoops);
+            const { outer: wallOuter, holes: wallHoles } = applyWallInset({ loops: planLoops, inset: wallInset });
 
             const floors = clampInt(layer.floors, 0, 99);
             const floorHeight = clamp(layer.floorHeight, 1.0, 12.0);
@@ -514,6 +521,9 @@ export function buildBuildingFabricationVisualParts({
             const beltCfg = layer.belt ?? {};
             const beltEnabled = !!beltCfg.enabled;
             const beltHeight = beltEnabled ? clamp(beltCfg.height, 0.02, 1.2) : 0.0;
+            const beltExtrusion = beltEnabled ? clamp(beltCfg.extrusion, 0.0, 4.0) : 0.0;
+            const beltOffset = wallInset - beltExtrusion;
+            const { outer: beltOuter, holes: beltHoles } = applyPlanOffset({ loops: planLoops, offset: beltOffset });
             const beltMat = makeBeltLikeMaterialFromSpec({
                 material: beltCfg.material,
                 baseColorHex,
@@ -551,6 +561,50 @@ export function buildBuildingFabricationVisualParts({
                 windowHeight: winDesiredHeight
             }) : null;
 
+            const windowRuns = [];
+            if (winEnabled && windowMat && wallOuter.length) {
+                for (const loop of wallOuter) {
+                    if (!loop || loop.length < 2) continue;
+                    const runs = buildExteriorRunsFromLoop(loop);
+                    for (const run of runs) {
+                        const a = run?.a ?? null;
+                        const dir = run?.dir ?? null;
+                        const L = Number(run?.length) || 0;
+                        if (!a || !dir || !(L > EPS)) continue;
+                        if (!(L > winWidth + cornerEps * 2)) continue;
+
+                        const tx = dir.x;
+                        const tz = dir.z;
+                        const nx = tz;
+                        const nz = -tx;
+                        const yaw = Math.atan2(nx, nz);
+
+                        const placement = computeWindowSegmentsWithSpacers({
+                            length: L,
+                            windowWidth: winWidth,
+                            desiredGap: winSpacing,
+                            cornerEps,
+                            spacerEnabled: colsEnabled,
+                            spacerEvery: colsEvery,
+                            spacerWidth: colsWidth
+                        });
+
+                        windowRuns.push({
+                            a,
+                            tx,
+                            tz,
+                            nx,
+                            nz,
+                            yaw,
+                            length: L,
+                            segments: placement?.segments ?? [],
+                            spacerCenters: placement?.spacerCenters ?? []
+                        });
+                    }
+                }
+            }
+
+            const layerStartY = yCursor;
             for (let floor = 0; floor < floors; floor++) {
                 if (showFloors && (solidMeshes.length || floor > 0 || Math.abs(yCursor - baseY) > EPS)) {
                     appendLoopLinePositions(floorPositions, planLoops, yCursor);
@@ -585,69 +639,39 @@ export function buildBuildingFabricationVisualParts({
                     }
                 }
 
-                if (winEnabled && windowMat && wallOuter.length) {
-                    for (const loop of wallOuter) {
-                        if (!loop || loop.length < 2) continue;
-                        const runs = buildExteriorRunsFromLoop(loop);
-                        for (const run of runs) {
-                            const a = run?.a ?? null;
-                            const dir = run?.dir ?? null;
-                            const L = Number(run?.length) || 0;
-                            if (!a || !dir || !(L > EPS)) continue;
-                            if (!(L > winWidth + cornerEps * 2)) continue;
+                if (winEnabled && windowMat && windowRuns.length) {
+                    const windowHeight = Math.min(winDesiredHeight, Math.max(0.3, segHeight * 0.95));
+                    const windowYOffset = Math.min(winSill, Math.max(0, segHeight - windowHeight));
+                    const y = yCursor + windowYOffset + windowHeight * 0.5;
 
-                            const tx = dir.x;
-                            const tz = dir.z;
-                            const nx = tz;
-                            const nz = -tx;
-                            const yaw = Math.atan2(nx, nz);
+                    for (const run of windowRuns) {
+                        const runLength = Number(run?.length) || 0;
+                        if (!(runLength > EPS)) continue;
+                        const a = run.a;
+                        const tx = run.tx;
+                        const tz = run.tz;
+                        const nx = run.nx;
+                        const nz = run.nz;
+                        const yaw = run.yaw;
 
-                            const windowHeight = Math.min(winDesiredHeight, Math.max(0.3, segHeight * 0.95));
-                            const windowYOffset = Math.min(winSill, Math.max(0, segHeight - windowHeight));
-                            const y = yCursor + windowYOffset + windowHeight * 0.5;
+                        for (const seg of run.segments ?? []) {
+                            const segOffset = Number(seg?.offset) || 0;
+                            const starts = seg?.layout?.starts ?? [];
+                            for (const start of starts) {
+                                const leftDist = segOffset + start;
+                                const rightDist = leftDist + winWidth;
+                                if (leftDist < cornerEps - 1e-6 || rightDist > runLength - cornerEps + 1e-6) continue;
+                                const centerDist = segOffset + start + winWidth * 0.5;
+                                const cx = a.x + tx * centerDist + nx * windowOffset;
+                                const cz = a.z + tz * centerDist + nz * windowOffset;
 
-                            const { segments, spacerCenters } = computeWindowSegmentsWithSpacers({
-                                length: L,
-                                windowWidth: winWidth,
-                                desiredGap: winSpacing,
-                                cornerEps,
-                                spacerEnabled: colsEnabled,
-                                spacerEvery: colsEvery,
-                                spacerWidth: colsWidth
-                            });
-
-                            for (const seg of segments) {
-                                const segOffset = Number(seg?.offset) || 0;
-                                const starts = seg?.layout?.starts ?? [];
-                                for (const start of starts) {
-                                    const centerDist = segOffset + start + winWidth * 0.5;
-                                    const cx = a.x + tx * centerDist + nx * windowOffset;
-                                    const cz = a.z + tz * centerDist + nz * windowOffset;
-
-                                    const geo = new THREE.PlaneGeometry(winWidth, windowHeight);
-                                    const mesh = new THREE.Mesh(geo, windowMat);
-                                    mesh.position.set(cx, y, cz);
-                                    mesh.rotation.set(0, yaw, 0);
-                                    mesh.castShadow = false;
-                                    mesh.receiveShadow = false;
-                                    windowsGroup.add(mesh);
-                                }
-                            }
-
-                            if (colsExtrude && colsExtrudeDistance > EPS && spacerCenters.length && colsWidth > EPS) {
-                                const bandY = yCursor + segHeight * 0.5;
-                                const bandOffset = windowOffset + colsExtrudeDistance * 0.5;
-                                for (const centerDist of spacerCenters) {
-                                    const cx = a.x + tx * centerDist + nx * bandOffset;
-                                    const cz = a.z + tz * centerDist + nz * bandOffset;
-                                    const geo = new THREE.BoxGeometry(colsWidth, Math.max(0.1, segHeight), colsExtrudeDistance);
-                                    const mesh = new THREE.Mesh(geo, colsMat);
-                                    mesh.position.set(cx, bandY, cz);
-                                    mesh.rotation.set(0, yaw, 0);
-                                    mesh.castShadow = true;
-                                    mesh.receiveShadow = true;
-                                    windowsGroup.add(mesh);
-                                }
+                                const geo = new THREE.PlaneGeometry(winWidth, windowHeight);
+                                const mesh = new THREE.Mesh(geo, windowMat);
+                                mesh.position.set(cx, y, cz);
+                                mesh.rotation.set(0, yaw, 0);
+                                mesh.castShadow = false;
+                                mesh.receiveShadow = false;
+                                windowsGroup.add(mesh);
                             }
                         }
                     }
@@ -656,9 +680,9 @@ export function buildBuildingFabricationVisualParts({
                 yCursor += segHeight;
 
                 if (beltEnabled && beltHeight > EPS) {
-                    for (const outerLoop of wallOuter) {
+                    for (const outerLoop of beltOuter) {
                         if (!outerLoop || outerLoop.length < 3) continue;
-                        const shape = buildShapeFromLoops({ outerLoop, holeLoops: wallHoles });
+                        const shape = buildShapeFromLoops({ outerLoop, holeLoops: beltHoles });
                         const geo = new THREE.ExtrudeGeometry(shape, {
                             depth: beltHeight,
                             bevelEnabled: false,
@@ -681,6 +705,39 @@ export function buildBuildingFabricationVisualParts({
                     }
 
                     yCursor += beltHeight;
+                }
+            }
+
+            const layerEndY = yCursor;
+            if (colsExtrude && colsExtrudeDistance > EPS && colsWidth > EPS && windowRuns.length && layerEndY - layerStartY > EPS) {
+                const bandY = (layerStartY + layerEndY) * 0.5;
+                const bandHeight = Math.max(0.1, layerEndY - layerStartY);
+                const bandOffset = windowOffset + colsExtrudeDistance * 0.5;
+                const bandHalfWidth = colsWidth * 0.5;
+
+                for (const run of windowRuns) {
+                    if (!Array.isArray(run.spacerCenters) || !run.spacerCenters.length) continue;
+                    const runLength = Number(run?.length) || 0;
+                    if (!(runLength > EPS)) continue;
+                    const a = run.a;
+                    const tx = run.tx;
+                    const tz = run.tz;
+                    const nx = run.nx;
+                    const nz = run.nz;
+                    const yaw = run.yaw;
+
+                    for (const centerDist of run.spacerCenters) {
+                        if (centerDist - bandHalfWidth < cornerEps - 1e-6 || centerDist + bandHalfWidth > runLength - cornerEps + 1e-6) continue;
+                        const cx = a.x + tx * centerDist + nx * bandOffset;
+                        const cz = a.z + tz * centerDist + nz * bandOffset;
+                        const geo = new THREE.BoxGeometry(colsWidth, bandHeight, colsExtrudeDistance);
+                        const mesh = new THREE.Mesh(geo, colsMat);
+                        mesh.position.set(cx, bandY, cz);
+                        mesh.rotation.set(0, yaw, 0);
+                        mesh.castShadow = true;
+                        mesh.receiveShadow = true;
+                        windowsGroup.add(mesh);
+                    }
                 }
             }
 

@@ -11,6 +11,8 @@ export const WINDOW_TYPE = Object.freeze({
     STYLE_DEFAULT: 'window.style.default',
     STYLE_DARK: 'window.style.dark',
     STYLE_BLUE: 'window.style.blue',
+    STYLE_LIGHT_BLUE: 'window.style.light_blue',
+    STYLE_GREEN: 'window.style.green',
     STYLE_WARM: 'window.style.warm',
     STYLE_GRID: 'window.style.grid',
     ARCH_V1: 'window.arch.v1',
@@ -22,6 +24,8 @@ export function isWindowTypeId(value) {
     return value === WINDOW_TYPE.STYLE_DEFAULT
         || value === WINDOW_TYPE.STYLE_DARK
         || value === WINDOW_TYPE.STYLE_BLUE
+        || value === WINDOW_TYPE.STYLE_LIGHT_BLUE
+        || value === WINDOW_TYPE.STYLE_GREEN
         || value === WINDOW_TYPE.STYLE_WARM
         || value === WINDOW_TYPE.STYLE_GRID
         || value === WINDOW_TYPE.ARCH_V1
@@ -70,6 +74,8 @@ function resolveTypeLabel(typeId) {
     if (typeId === WINDOW_TYPE.STYLE_DEFAULT) return 'Default';
     if (typeId === WINDOW_TYPE.STYLE_DARK) return 'Dark';
     if (typeId === WINDOW_TYPE.STYLE_BLUE) return 'Blue';
+    if (typeId === WINDOW_TYPE.STYLE_LIGHT_BLUE) return 'Light Blue';
+    if (typeId === WINDOW_TYPE.STYLE_GREEN) return 'Green';
     if (typeId === WINDOW_TYPE.STYLE_WARM) return 'Warm';
     if (typeId === WINDOW_TYPE.STYLE_GRID) return 'Grid';
     if (typeId === WINDOW_TYPE.ARCH_V1) return 'Arched';
@@ -81,6 +87,8 @@ function normalizeLegacyStyleToTypeId(styleId) {
     const id = isWindowStyle(styleId) ? styleId : WINDOW_STYLE.DEFAULT;
     if (id === WINDOW_STYLE.DARK) return WINDOW_TYPE.STYLE_DARK;
     if (id === WINDOW_STYLE.BLUE) return WINDOW_TYPE.STYLE_BLUE;
+    if (id === WINDOW_STYLE.LIGHT_BLUE) return WINDOW_TYPE.STYLE_LIGHT_BLUE;
+    if (id === WINDOW_STYLE.GREEN) return WINDOW_TYPE.STYLE_GREEN;
     if (id === WINDOW_STYLE.WARM) return WINDOW_TYPE.STYLE_WARM;
     if (id === WINDOW_STYLE.GRID) return WINDOW_TYPE.STYLE_GRID;
     return WINDOW_TYPE.STYLE_DEFAULT;
@@ -120,6 +128,10 @@ function buildLegacyStyleCanvas(styleTypeId, { size = 256 } = {}) {
         ? WINDOW_STYLE.DARK
         : styleTypeId === WINDOW_TYPE.STYLE_BLUE
             ? WINDOW_STYLE.BLUE
+            : styleTypeId === WINDOW_TYPE.STYLE_LIGHT_BLUE
+                ? WINDOW_STYLE.LIGHT_BLUE
+                : styleTypeId === WINDOW_TYPE.STYLE_GREEN
+                    ? WINDOW_STYLE.GREEN
             : styleTypeId === WINDOW_TYPE.STYLE_WARM
                 ? WINDOW_STYLE.WARM
                 : styleTypeId === WINDOW_TYPE.STYLE_GRID
@@ -134,6 +146,12 @@ function buildLegacyStyleCanvas(styleTypeId, { size = 256 } = {}) {
         grad.addColorStop(0, '#4a3a2f');
         grad.addColorStop(0.5, '#16283a');
         grad.addColorStop(1, '#061a2c');
+    } else if (styleId === WINDOW_STYLE.LIGHT_BLUE) {
+        grad.addColorStop(0, '#56c2ff');
+        grad.addColorStop(1, '#0b2e52');
+    } else if (styleId === WINDOW_STYLE.GREEN) {
+        grad.addColorStop(0, '#2fa88a');
+        grad.addColorStop(1, '#06261f');
     } else if (styleId === WINDOW_STYLE.BLUE) {
         grad.addColorStop(0, '#1d5c8d');
         grad.addColorStop(1, '#051526');
@@ -320,6 +338,8 @@ export function getWindowTypeOptions() {
         WINDOW_TYPE.STYLE_DEFAULT,
         WINDOW_TYPE.STYLE_DARK,
         WINDOW_TYPE.STYLE_BLUE,
+        WINDOW_TYPE.STYLE_LIGHT_BLUE,
+        WINDOW_TYPE.STYLE_GREEN,
         WINDOW_TYPE.STYLE_WARM,
         WINDOW_TYPE.STYLE_GRID,
         WINDOW_TYPE.ARCH_V1,

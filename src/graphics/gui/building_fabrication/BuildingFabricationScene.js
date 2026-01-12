@@ -77,6 +77,8 @@ function resolveWindowTypeIdFromLegacyStyle(styleId) {
     const id = isWindowStyle(styleId) ? styleId : WINDOW_STYLE.DEFAULT;
     if (id === WINDOW_STYLE.DARK) return WINDOW_TYPE.STYLE_DARK;
     if (id === WINDOW_STYLE.BLUE) return WINDOW_TYPE.STYLE_BLUE;
+    if (id === WINDOW_STYLE.LIGHT_BLUE) return WINDOW_TYPE.STYLE_LIGHT_BLUE;
+    if (id === WINDOW_STYLE.GREEN) return WINDOW_TYPE.STYLE_GREEN;
     if (id === WINDOW_STYLE.WARM) return WINDOW_TYPE.STYLE_WARM;
     if (id === WINDOW_STYLE.GRID) return WINDOW_TYPE.STYLE_GRID;
     return WINDOW_TYPE.STYLE_DEFAULT;
@@ -85,6 +87,8 @@ function resolveWindowTypeIdFromLegacyStyle(styleId) {
 function resolveLegacyStyleFromWindowTypeId(typeId) {
     if (typeId === WINDOW_TYPE.STYLE_DARK) return WINDOW_STYLE.DARK;
     if (typeId === WINDOW_TYPE.STYLE_BLUE) return WINDOW_STYLE.BLUE;
+    if (typeId === WINDOW_TYPE.STYLE_LIGHT_BLUE) return WINDOW_STYLE.LIGHT_BLUE;
+    if (typeId === WINDOW_TYPE.STYLE_GREEN) return WINDOW_STYLE.GREEN;
     if (typeId === WINDOW_TYPE.STYLE_WARM) return WINDOW_STYLE.WARM;
     if (typeId === WINDOW_TYPE.STYLE_GRID) return WINDOW_STYLE.GRID;
     return WINDOW_STYLE.DEFAULT;

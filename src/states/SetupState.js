@@ -30,6 +30,7 @@ export class SetupState {
 
         this.optionRows = [];
         this.selectedIndex = 0;
+        this._menuColumns = 1;
 
         this._onKeyDown = (e) => this._handleKeyDown(e);
         this._onResize = () => this._syncLayout();
@@ -45,7 +46,7 @@ export class SetupState {
 
         this.engine.clearScene();
 
-        this._buildMenu();
+        this._buildMenu({ force: true });
         this.selectedIndex = 0;
         this._setSelected(this.selectedIndex);
 
@@ -69,14 +70,40 @@ export class SetupState {
         if (this.uiSetup) this.uiSetup.classList.add('hidden');
     }
 
-    _buildMenu() {
+    _buildMenu({ force = false, preserveSelection = false } = {}) {
         if (!this.menuEl && !this.menuBackEl) return;
-        if ((this.menuEl?.childElementCount ?? 0) > 0 || (this.menuBackEl?.childElementCount ?? 0) > 0) return;
+        if (!force && ((this.menuEl?.childElementCount ?? 0) > 0 || (this.menuBackEl?.childElementCount ?? 0) > 0)) return;
 
-        for (const [index, option] of this.options.entries()) {
+        const prevKey = preserveSelection ? (this.optionRows[this.selectedIndex]?.button?.dataset?.key ?? null) : null;
+
+        if (this.menuEl) this.menuEl.textContent = '';
+        if (this.menuBackEl) this.menuBackEl.textContent = '';
+        this.optionRows = [];
+
+        const cols = this._getMenuColumns();
+        const main = this.options.filter((opt) => opt?.state !== 'welcome');
+        const back = this.options.find((opt) => opt?.state === 'welcome') ?? null;
+
+        const displayMain = cols === 2
+            ? (() => {
+                const half = Math.ceil(main.length / 2);
+                const out = [];
+                for (let i = 0; i < half; i++) {
+                    if (main[i]) out.push(main[i]);
+                    const other = main[half + i] ?? null;
+                    if (other) out.push(other);
+                }
+                return out;
+            })()
+            : main;
+
+        const display = back ? [...displayMain, back] : displayMain;
+
+        for (const option of display) {
             const target = option.state === 'welcome' && this.menuBackEl ? this.menuBackEl : this.menuEl;
             if (!target) continue;
 
+            const index = this.optionRows.length;
             const row = document.createElement('div');
             row.className = 'setup-option-row';
 
@@ -120,7 +147,12 @@ export class SetupState {
             row.appendChild(indicator);
             row.appendChild(button);
             target.appendChild(row);
-            this.optionRows.push({ row, button, indicator });
+            this.optionRows.push({ row, button, indicator, option });
+        }
+
+        if (prevKey) {
+            const idx = this.optionRows.findIndex((r) => r?.button?.dataset?.key === prevKey);
+            if (idx >= 0) this.selectedIndex = idx;
         }
     }
 
@@ -174,12 +206,12 @@ export class SetupState {
     }
 
     _activateSelected() {
-        const option = this.options[this.selectedIndex];
+        const option = this.optionRows[this.selectedIndex]?.option ?? null;
         if (option) this._go(option.state);
     }
 
     _moveSelection({ isUp, isDown, isLeft, isRight }) {
-        if (!this.options.length) return;
+        if (!this.optionRows.length) return;
         const cols = this._getMenuColumns();
         let next = this.selectedIndex;
 
@@ -193,16 +225,15 @@ export class SetupState {
 
         if (isRight) {
             if (cols === 1) next += 1;
-            else if (next % cols === 0 && next + 1 < this.options.length) next += 1;
+            else if (next % cols === 0 && next + 1 < this.optionRows.length) next += 1;
         }
 
-        next = Math.max(0, Math.min(next, this.options.length - 1));
+        next = Math.max(0, Math.min(next, this.optionRows.length - 1));
         if (next !== this.selectedIndex) this._setSelected(next);
     }
 
     _getMenuColumns() {
-        if (!this.menuEl) return 1;
-        return this.menuEl.classList.contains('two-col') ? 2 : 1;
+        return this._menuColumns;
     }
 
     _setSelected(index) {
@@ -228,16 +259,24 @@ export class SetupState {
 
     _syncMenuColumns() {
         if (!this.menuEl) return;
-        this.menuEl.classList.remove('two-col');
-        const needsTwo = this.menuEl.scrollHeight > this.menuEl.clientHeight + 1;
-        if (needsTwo) this.menuEl.classList.add('two-col');
+        const mainCount = this.options.filter((opt) => opt?.state !== 'welcome').length;
+        const width = this.frameEl?.getBoundingClientRect?.().width ?? window.innerWidth;
+        const wantsTwo = mainCount > 4 && width >= 640;
+        const nextCols = wantsTwo ? 2 : 1;
+        const changed = nextCols !== this._menuColumns;
+        this._menuColumns = nextCols;
+        this.menuEl.classList.toggle('two-col', wantsTwo);
+        if (changed) {
+            this._buildMenu({ force: true, preserveSelection: true });
+            this._setSelected(Math.max(0, Math.min(this.selectedIndex, this.optionRows.length - 1)));
+        }
     }
 
     _syncBorders() {
         if (!this.frameEl) return;
 
         const size = this._measureCharSize();
-        const maxWidth = Math.min(window.innerWidth * 0.92, size.charWidth * 90);
+        const maxWidth = Math.min(window.innerWidth * 0.96, size.charWidth * 110);
         const maxHeight = Math.min(window.innerHeight * 0.8, 620, window.innerHeight - 32);
 
         const cols = Math.max(20, Math.floor(maxWidth / size.charWidth) - 2);

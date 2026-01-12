@@ -65,6 +65,33 @@
     border-color: rgba(100, 210, 255, 0.38);
 }
 
+.texture-inspector-checkbox {
+    width: 18px;
+    height: 18px;
+    accent-color: rgba(100, 210, 255, 0.9);
+    justify-self: start;
+}
+
+.texture-inspector-gap-controls {
+    display: grid;
+    grid-template-columns: 1fr 84px;
+    gap: 8px;
+    align-items: center;
+}
+
+.texture-inspector-range {
+    width: 100%;
+}
+
+.texture-inspector-number {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(0,0,0,0.25);
+    color: #e9f2ff;
+}
+
 .texture-inspector-summary {
     width: 100%;
     box-sizing: border-box;
@@ -79,4 +106,3 @@
     font-size: 11px;
     line-height: 1.35;
 }
-

@@ -780,7 +780,7 @@ async function runTests() {
     const { offsetOrthogonalLoopXZ } = await import('/src/graphics/assets3d/generators/buildings/BuildingGenerator.js');
     const { buildBuildingFabricationVisualParts } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationGenerator.js');
     const { createDefaultFloorLayer, createDefaultRoofLayer } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationTypes.js');
-    const { WINDOW_TYPE } = await import('/src/graphics/assets3d/generators/buildings/WindowTextureGenerator.js');
+    const { WINDOW_TYPE, getWindowTypeOptions, getWindowTexture } = await import('/src/graphics/assets3d/generators/buildings/WindowTextureGenerator.js');
 
     test('BuildingFabricationUI: view toggles live in view panel', () => {
         const ui = new BuildingFabricationUI();
@@ -1012,6 +1012,140 @@ async function runTests() {
         assertTrue(!!mat.transparent, 'Arched window material should be transparent.');
     });
 
+    test('BuildingFabricationGenerator: belt extrusion can extend beyond footprint', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+
+        const extrusion = 0.3;
+        const layers = [
+            createDefaultFloorLayer({
+                floors: 1,
+                floorHeight: 3.0,
+                belt: { enabled: true, height: 0.2, extrusion },
+                windows: { enabled: false }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!parts, 'Expected visual parts.');
+        assertTrue(!!parts.beltCourse, 'Expected belt group.');
+
+        const floorMesh = parts.solidMeshes?.find?.((m) => m?.isMesh) ?? null;
+        const beltMesh = parts.beltCourse?.children?.find?.((m) => m?.isMesh) ?? null;
+        assertTrue(!!floorMesh, 'Expected a floor mesh.');
+        assertTrue(!!beltMesh, 'Expected a belt mesh.');
+
+        const floorBox = new THREE.Box3().setFromObject(floorMesh);
+        const beltBox = new THREE.Box3().setFromObject(beltMesh);
+        const floorW = floorBox.max.x - floorBox.min.x;
+        const floorD = floorBox.max.z - floorBox.min.z;
+        const beltW = beltBox.max.x - beltBox.min.x;
+        const beltD = beltBox.max.z - beltBox.min.z;
+
+        assertTrue(beltW > floorW + extrusion * 1.5, 'Expected belt to extend outward in X.');
+        assertTrue(beltD > floorD + extrusion * 1.5, 'Expected belt to extend outward in Z.');
+    });
+
+    test('BuildingFabricationGenerator: space columns are continuous across belted floors', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+
+        const floors = 3;
+        const floorHeight = 3.0;
+        const beltHeight = 0.2;
+        const colsExtrudeDistance = 0.2;
+        const layers = [
+            createDefaultFloorLayer({
+                floors,
+                floorHeight,
+                belt: { enabled: true, height: beltHeight, extrusion: 0.0 },
+                windows: {
+                    enabled: true,
+                    width: 1.0,
+                    height: 1.2,
+                    sillHeight: 0.8,
+                    spacing: 0.0,
+                    spaceColumns: { enabled: true, every: 2, width: 1.0, extrude: true, extrudeDistance: colsExtrudeDistance }
+                }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!parts, 'Expected visual parts.');
+        assertTrue(!!parts.windows, 'Expected windows group.');
+
+        const meshes = parts.windows?.children?.filter?.((m) => m?.isMesh) ?? [];
+        const columns = meshes.filter((m) => m?.geometry?.type === 'BoxGeometry');
+        assertTrue(columns.length > 0, 'Expected at least 1 space column mesh.');
+
+        const seen = new Map();
+        for (const col of columns) {
+            const px = Math.round((col.position?.x ?? 0) * 1000);
+            const pz = Math.round((col.position?.z ?? 0) * 1000);
+            const key = `${px},${pz}`;
+            seen.set(key, (seen.get(key) ?? 0) + 1);
+        }
+
+        let maxDup = 0;
+        for (const count of seen.values()) maxDup = Math.max(maxDup, count);
+        assertEqual(maxDup, 1, 'Expected a single continuous column per spacer position (not split per floor).');
+
+        const expectedHeight = floors * (floorHeight + beltHeight);
+        for (const col of columns) {
+            const h = col.geometry?.parameters?.height ?? null;
+            assertTrue(Number.isFinite(h), 'Expected a BoxGeometry height.');
+            assertTrue(Math.abs(h - expectedHeight) < 1e-6, `Column height should span full layer (${expectedHeight}).`);
+        }
+    });
+
     test('BuildingFabricationScene: trims building tiles when road overlaps', () => {
         const engine = {
             scene: new THREE.Scene(),
@@ -1080,6 +1214,35 @@ async function runTests() {
         assertTrue(source.includes('export_test_building'), 'Expected module to include id.');
         assertTrue(source.includes('layers: Object.freeze'), 'Expected module to include layers.');
         assertTrue(source.includes('export default'), 'Expected module to export default.');
+    });
+
+    test('BuildingConfigExport: preserves belt extrusion in exported layers', () => {
+        const layers = [
+            createDefaultFloorLayer({
+                floors: 2,
+                floorHeight: 3.0,
+                belt: { enabled: true, height: 0.2, extrusion: 0.35 }
+            }),
+            createDefaultRoofLayer()
+        ];
+        const cfg = createCityBuildingConfigFromFabrication({
+            id: 'export_belt_extrusion',
+            name: 'Export belt extrusion',
+            layers
+        });
+
+        const belt = cfg.layers?.[0]?.belt ?? null;
+        assertTrue(!!belt && typeof belt === 'object', 'Expected belt spec.');
+        assertTrue(Number.isFinite(belt.extrusion), 'Expected belt extrusion to be numeric.');
+        assertTrue(Math.abs(belt.extrusion - 0.35) < 1e-6, 'Belt extrusion should be preserved.');
+
+        const source = serializeCityBuildingConfigToEsModule(cfg);
+        assertTrue(source.includes('"extrusion"'), 'Expected serialized module to include belt extrusion.');
+        const match = source.match(/"extrusion"\s*:\s*([0-9eE+.-]+)/);
+        assertTrue(!!match, 'Expected serialized belt extrusion field.');
+        const serialized = Number(match[1]);
+        assertTrue(Number.isFinite(serialized), 'Expected serialized belt extrusion value to be numeric.');
+        assertTrue(Math.abs(serialized - 0.35) < 1e-6, 'Expected serialized belt extrusion value.');
     });
 
     test('CityMap: preserves layer-based building configs', () => {
@@ -1160,9 +1323,10 @@ async function runTests() {
         assertEqual(map.buildings[0].tiles[1][0], 1);
     });
 
-    const { computeEvenWindowLayout, buildBuildingVisualParts, getWindowStyleOptions } = await import('/src/graphics/assets3d/generators/buildings/BuildingGenerator.js');
+    const { computeEvenWindowLayout, computeBuildingLoopsFromTiles, buildBuildingVisualParts, getWindowStyleOptions } = await import('/src/graphics/assets3d/generators/buildings/BuildingGenerator.js');
     const { createTreeField } = await import('/src/graphics/assets3d/generators/TreeGenerator.js');
     const { CityRNG } = await import('/src/app/city/CityRNG.js');
+    const { INSPECTOR_TEXTURE, getTextureInspectorOptions, getTextureInspectorTextureById } = await import('/src/graphics/assets3d/textures/TextureInspectorCatalog.js');
 
     test('BuildingGenerator: window layout keeps a corner gap', () => {
         const length = 20;
@@ -1202,6 +1366,115 @@ async function runTests() {
         assertTrue(Array.isArray(opts) && opts.length >= 3, 'Should expose multiple window styles.');
         const hasPreview = opts.some((opt) => typeof opt?.previewUrl === 'string' && opt.previewUrl.startsWith('data:image/'));
         assertTrue(hasPreview, 'Should include at least one preview URL.');
+    });
+
+    test('WindowTextureGenerator: registers Light Blue and Green types with caching', () => {
+        const opts = getWindowTypeOptions();
+        assertTrue(Array.isArray(opts) && opts.length > 0, 'Expected window type options.');
+
+        const ids = new Set(opts.map((opt) => opt.id));
+        assertTrue(ids.has(WINDOW_TYPE.STYLE_LIGHT_BLUE), 'Expected Light Blue window type.');
+        assertTrue(ids.has(WINDOW_TYPE.STYLE_GREEN), 'Expected Green window type.');
+
+        const lightBlueOpt = opts.find((opt) => opt.id === WINDOW_TYPE.STYLE_LIGHT_BLUE) ?? null;
+        const greenOpt = opts.find((opt) => opt.id === WINDOW_TYPE.STYLE_GREEN) ?? null;
+        assertTrue(typeof lightBlueOpt?.previewUrl === 'string' && lightBlueOpt.previewUrl.startsWith('data:image/'), 'Expected Light Blue preview.');
+        assertTrue(typeof greenOpt?.previewUrl === 'string' && greenOpt.previewUrl.startsWith('data:image/'), 'Expected Green preview.');
+
+        const t0 = getWindowTexture({ typeId: WINDOW_TYPE.STYLE_LIGHT_BLUE });
+        const t1 = getWindowTexture({ typeId: WINDOW_TYPE.STYLE_LIGHT_BLUE });
+        assertTrue(t0 === t1, 'Expected Light Blue window textures to be cached.');
+
+        const g0 = getWindowTexture({ typeId: WINDOW_TYPE.STYLE_GREEN });
+        const g1 = getWindowTexture({ typeId: WINDOW_TYPE.STYLE_GREEN });
+        assertTrue(g0 === g1, 'Expected Green window textures to be cached.');
+    });
+
+    test('TextureInspectorCatalog: includes Light Blue and Green window entries', () => {
+        const opts = getTextureInspectorOptions();
+        const ids = new Set(opts.map((opt) => opt.id));
+        assertTrue(ids.has(INSPECTOR_TEXTURE.WINDOW_LIGHT_BLUE), 'Expected Light Blue inspector entry.');
+        assertTrue(ids.has(INSPECTOR_TEXTURE.WINDOW_GREEN), 'Expected Green inspector entry.');
+        assertTrue(!!getTextureInspectorTextureById(INSPECTOR_TEXTURE.WINDOW_LIGHT_BLUE), 'Expected Light Blue inspector texture.');
+        assertTrue(!!getTextureInspectorTextureById(INSPECTOR_TEXTURE.WINDOW_GREEN), 'Expected Green inspector texture.');
+    });
+
+    test('BuildingGenerator: never renders windows outside wall bounds', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+
+        const tiles = [[0, 0]];
+        const occupyRatio = 1.0;
+        const footprintLoops = computeBuildingLoopsFromTiles({ map, tiles, generatorConfig, tileSize, occupyRatio });
+        assertTrue(footprintLoops.length > 0, 'Expected footprint loops.');
+
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minZ = Infinity;
+        let maxZ = -Infinity;
+        for (const loop of footprintLoops) {
+            for (const p of loop ?? []) {
+                if (!p) continue;
+                minX = Math.min(minX, p.x);
+                maxX = Math.max(maxX, p.x);
+                minZ = Math.min(minZ, p.z);
+                maxZ = Math.max(maxZ, p.z);
+            }
+        }
+        assertTrue(Number.isFinite(minX) && Number.isFinite(maxX), 'Expected X bounds.');
+        assertTrue(Number.isFinite(minZ) && Number.isFinite(maxZ), 'Expected Z bounds.');
+
+        const parts = buildBuildingVisualParts({
+            map,
+            tiles,
+            generatorConfig,
+            tileSize,
+            occupyRatio,
+            floors: 1,
+            floorHeight: 3.0,
+            style: BUILDING_STYLE.DEFAULT,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 },
+            windows: {
+                enabled: true,
+                width: 1.0,
+                gap: 0.0,
+                height: 1.2,
+                y: 0.8,
+                cornerEps: 0.05,
+                offset: 0.05,
+                spacer: { enabled: true, every: 2, width: 1.0, extrude: true, extrudeDistance: 0.2 }
+            },
+            street: { enabled: false }
+        });
+        assertTrue(!!parts && !!parts.windows, 'Expected windows group.');
+
+        const meshes = parts.windows?.children?.filter?.((m) => m?.isMesh) ?? [];
+        assertTrue(meshes.length > 0, 'Expected at least one window/spacer mesh.');
+
+        const margin = 0.4;
+        const box = new THREE.Box3();
+        for (const mesh of meshes) {
+            box.setFromObject(mesh);
+            assertTrue(box.min.x >= minX - margin, `Mesh should not extend beyond minX (${box.min.x} < ${minX - margin}).`);
+            assertTrue(box.max.x <= maxX + margin, `Mesh should not extend beyond maxX (${box.max.x} > ${maxX + margin}).`);
+            assertTrue(box.min.z >= minZ - margin, `Mesh should not extend beyond minZ (${box.min.z} < ${minZ - margin}).`);
+            assertTrue(box.max.z <= maxZ + margin, `Mesh should not extend beyond maxZ (${box.max.z} > ${maxZ + margin}).`);
+        }
     });
 
     test('BuildingGenerator: street floors can add street floor belt', () => {

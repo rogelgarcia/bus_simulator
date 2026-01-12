@@ -72,6 +72,66 @@ export class TextureInspectorUI {
         this.surfaceLabel.className = 'ui-section-label';
         this.surfaceLabel.textContent = 'Surface';
 
+        this.previewLabel = document.createElement('div');
+        this.previewLabel.className = 'ui-section-label';
+        this.previewLabel.textContent = 'Preview';
+
+        this.previewModeRow = document.createElement('div');
+        this.previewModeRow.className = 'texture-inspector-row';
+        this.previewModeLabel = document.createElement('div');
+        this.previewModeLabel.className = 'texture-inspector-row-label';
+        this.previewModeLabel.textContent = 'Mode';
+        this.previewModeSelect = document.createElement('select');
+        this.previewModeSelect.className = 'texture-inspector-select';
+        const modeSingle = document.createElement('option');
+        modeSingle.value = 'single';
+        modeSingle.textContent = 'Single';
+        const modeTiled = document.createElement('option');
+        modeTiled.value = 'tiled';
+        modeTiled.textContent = 'Tiled';
+        this.previewModeSelect.appendChild(modeSingle);
+        this.previewModeSelect.appendChild(modeTiled);
+        this.previewModeRow.appendChild(this.previewModeLabel);
+        this.previewModeRow.appendChild(this.previewModeSelect);
+
+        this.gridRow = document.createElement('div');
+        this.gridRow.className = 'texture-inspector-row';
+        this.gridLabel = document.createElement('div');
+        this.gridLabel.className = 'texture-inspector-row-label';
+        this.gridLabel.textContent = 'Grid';
+        this.gridToggle = document.createElement('input');
+        this.gridToggle.type = 'checkbox';
+        this.gridToggle.className = 'texture-inspector-checkbox';
+        this.gridToggle.checked = true;
+        this.gridRow.appendChild(this.gridLabel);
+        this.gridRow.appendChild(this.gridToggle);
+
+        this.tileGapRow = document.createElement('div');
+        this.tileGapRow.className = 'texture-inspector-row';
+        this.tileGapLabel = document.createElement('div');
+        this.tileGapLabel.className = 'texture-inspector-row-label';
+        this.tileGapLabel.textContent = 'Gap';
+        this.tileGapControls = document.createElement('div');
+        this.tileGapControls.className = 'texture-inspector-gap-controls';
+        this.tileGapRange = document.createElement('input');
+        this.tileGapRange.type = 'range';
+        this.tileGapRange.className = 'texture-inspector-range';
+        this.tileGapRange.min = '0';
+        this.tileGapRange.max = '0.75';
+        this.tileGapRange.step = '0.01';
+        this.tileGapRange.value = '0';
+        this.tileGapNumber = document.createElement('input');
+        this.tileGapNumber.type = 'number';
+        this.tileGapNumber.className = 'texture-inspector-number';
+        this.tileGapNumber.min = '0';
+        this.tileGapNumber.max = '0.75';
+        this.tileGapNumber.step = '0.01';
+        this.tileGapNumber.value = '0';
+        this.tileGapControls.appendChild(this.tileGapRange);
+        this.tileGapControls.appendChild(this.tileGapNumber);
+        this.tileGapRow.appendChild(this.tileGapLabel);
+        this.tileGapRow.appendChild(this.tileGapControls);
+
         this.baseColorRow = document.createElement('div');
         this.baseColorRow.className = 'texture-inspector-row';
         this.baseColorLabel = document.createElement('div');
@@ -106,6 +166,10 @@ export class TextureInspectorUI {
         this.panel.appendChild(this.catalogRow);
         this.panel.appendChild(this.surfaceLabel);
         this.panel.appendChild(this.baseColorRow);
+        this.panel.appendChild(this.previewLabel);
+        this.panel.appendChild(this.previewModeRow);
+        this.panel.appendChild(this.gridRow);
+        this.panel.appendChild(this.tileGapRow);
         this.panel.appendChild(this.summary);
         this.panel.appendChild(this.copyBtn);
         this.root.appendChild(this.panel);
@@ -114,14 +178,26 @@ export class TextureInspectorUI {
         this.onTexturePrev = null;
         this.onTextureNext = null;
         this.onBaseColorChange = null;
+        this.onPreviewModeChange = null;
+        this.onGridEnabledChange = null;
+        this.onTileGapChange = null;
 
         this._onSelectChange = () => this.onTextureIdChange?.(this.textureSelect.value);
         this._onPrev = () => this.onTexturePrev?.();
         this._onNext = () => this.onTextureNext?.();
         this._onBaseColor = () => this.onBaseColorChange?.(this.baseColorSelect.value);
+        this._onPreviewMode = () => {
+            this._syncPreviewWidgets();
+            this.onPreviewModeChange?.(this.previewModeSelect.value);
+        };
+        this._onGrid = () => this.onGridEnabledChange?.(this.gridToggle.checked);
+        this._onTileGapRange = () => this._setTileGapFromUi(this.tileGapRange.value);
+        this._onTileGapNumber = () => this._setTileGapFromUi(this.tileGapNumber.value);
         this._onCopy = () => this._copySummary();
 
         this._bound = false;
+
+        this._syncPreviewWidgets();
     }
 
     mount() {
@@ -163,6 +239,32 @@ export class TextureInspectorUI {
         this._syncSummary();
     }
 
+    setPreviewModeId(modeId) {
+        const next = modeId === 'tiled' ? 'tiled' : 'single';
+        this.previewModeSelect.value = next;
+        this._syncPreviewWidgets();
+    }
+
+    getPreviewModeId() {
+        return this.previewModeSelect.value === 'tiled' ? 'tiled' : 'single';
+    }
+
+    setGridEnabled(enabled) {
+        this.gridToggle.checked = !!enabled;
+    }
+
+    getGridEnabled() {
+        return !!this.gridToggle.checked;
+    }
+
+    setTileGap(value) {
+        const num = Number(value);
+        const next = Number.isFinite(num) ? Math.max(0, Math.min(0.75, num)) : 0;
+        const text = String(next);
+        this.tileGapRange.value = text;
+        this.tileGapNumber.value = text;
+    }
+
     getBaseColorHex() {
         const id = this.baseColorSelect.value;
         return TEXTURE_INSPECTOR_BASE_COLORS.find((c) => c.id === id)?.hex ?? 0xffffff;
@@ -184,6 +286,18 @@ export class TextureInspectorUI {
         this._fallbackCopy(text);
     }
 
+    _setTileGapFromUi(raw) {
+        const num = Number(raw);
+        const next = Number.isFinite(num) ? Math.max(0, Math.min(0.75, num)) : 0;
+        this.setTileGap(next);
+        this.onTileGapChange?.(next);
+    }
+
+    _syncPreviewWidgets() {
+        const tiled = this.getPreviewModeId() === 'tiled';
+        if (this.tileGapRow) this.tileGapRow.classList.toggle('hidden', !tiled);
+    }
+
     _fallbackCopy(text) {
         this.summary.focus();
         this.summary.select();
@@ -202,6 +316,10 @@ export class TextureInspectorUI {
         this.prevBtn.addEventListener('click', this._onPrev);
         this.nextBtn.addEventListener('click', this._onNext);
         this.baseColorSelect.addEventListener('change', this._onBaseColor);
+        this.previewModeSelect.addEventListener('change', this._onPreviewMode);
+        this.gridToggle.addEventListener('change', this._onGrid);
+        this.tileGapRange.addEventListener('input', this._onTileGapRange);
+        this.tileGapNumber.addEventListener('change', this._onTileGapNumber);
         this.copyBtn.addEventListener('click', this._onCopy);
     }
 
@@ -212,7 +330,10 @@ export class TextureInspectorUI {
         this.prevBtn.removeEventListener('click', this._onPrev);
         this.nextBtn.removeEventListener('click', this._onNext);
         this.baseColorSelect.removeEventListener('change', this._onBaseColor);
+        this.previewModeSelect.removeEventListener('change', this._onPreviewMode);
+        this.gridToggle.removeEventListener('change', this._onGrid);
+        this.tileGapRange.removeEventListener('input', this._onTileGapRange);
+        this.tileGapNumber.removeEventListener('change', this._onTileGapNumber);
         this.copyBtn.removeEventListener('click', this._onCopy);
     }
 }
-

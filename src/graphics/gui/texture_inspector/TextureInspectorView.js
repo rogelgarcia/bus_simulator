@@ -19,6 +19,12 @@ export class TextureInspectorView {
         this.ui.setSelectedTexture(this.scene.getSelectedTextureMeta() ?? {});
         this.ui.setBaseColorId('white');
         this.scene.setBaseColorHex(this.ui.getBaseColorHex());
+        this.ui.setPreviewModeId('single');
+        this.ui.setGridEnabled(true);
+        this.ui.setTileGap(0.0);
+        this.scene.setPreviewModeId(this.ui.getPreviewModeId());
+        this.scene.setGridEnabled(this.ui.getGridEnabled());
+        this.scene.setTileGap(0.0);
 
         this.ui.onTextureIdChange = (id) => {
             this.scene.setSelectedTextureId(id);
@@ -39,6 +45,18 @@ export class TextureInspectorView {
             this.ui.setBaseColorId(baseId);
             this.scene.setBaseColorHex(this.ui.getBaseColorHex());
         };
+
+        this.ui.onPreviewModeChange = (modeId) => {
+            this.scene.setPreviewModeId(modeId);
+        };
+
+        this.ui.onGridEnabledChange = (enabled) => {
+            this.scene.setGridEnabled(enabled);
+        };
+
+        this.ui.onTileGapChange = (gap) => {
+            this.scene.setTileGap(gap);
+        };
     }
 
     exit() {
@@ -46,6 +64,9 @@ export class TextureInspectorView {
         this.ui.onTexturePrev = null;
         this.ui.onTextureNext = null;
         this.ui.onBaseColorChange = null;
+        this.ui.onPreviewModeChange = null;
+        this.ui.onGridEnabledChange = null;
+        this.ui.onTileGapChange = null;
 
         this.ui.unmount();
         this.scene.dispose();
@@ -55,4 +76,3 @@ export class TextureInspectorView {
         this.scene.update();
     }
 }
-

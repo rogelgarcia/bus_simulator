@@ -32,7 +32,7 @@ body.setup-bg #game-canvas {
     font-size: clamp(14px, 1.4vw, 18px);
     line-height: 1.25;
     letter-spacing: 0.02em;
-    width: min(92vw, 90ch);
+    width: min(96vw, 110ch);
     height: min(80svh, 620px);
     max-height: calc(100svh - 32px);
     display: grid;

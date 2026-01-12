@@ -146,6 +146,8 @@ function resolveWindowStyleLabel(styleId) {
     if (id === WINDOW_STYLE.DEFAULT) return 'Default';
     if (id === WINDOW_STYLE.DARK) return 'Dark';
     if (id === WINDOW_STYLE.BLUE) return 'Blue';
+    if (id === WINDOW_STYLE.LIGHT_BLUE) return 'Light Blue';
+    if (id === WINDOW_STYLE.GREEN) return 'Green';
     if (id === WINDOW_STYLE.WARM) return 'Warm';
     if (id === WINDOW_STYLE.GRID) return 'Grid';
     return 'Default';
@@ -162,6 +164,12 @@ function buildWindowStyleCanvas(styleId, { size = 256 } = {}) {
         grad.addColorStop(0, '#4a3a2f');
         grad.addColorStop(0.5, '#16283a');
         grad.addColorStop(1, '#061a2c');
+    } else if (id === WINDOW_STYLE.LIGHT_BLUE) {
+        grad.addColorStop(0, '#56c2ff');
+        grad.addColorStop(1, '#0b2e52');
+    } else if (id === WINDOW_STYLE.GREEN) {
+        grad.addColorStop(0, '#2fa88a');
+        grad.addColorStop(1, '#06261f');
     } else if (id === WINDOW_STYLE.BLUE) {
         grad.addColorStop(0, '#1d5c8d');
         grad.addColorStop(1, '#051526');
@@ -231,14 +239,24 @@ export function getWindowStyleOptions() {
 
     const styleToTypeId = (styleId) => {
         const id = isWindowStyle(styleId) ? styleId : WINDOW_STYLE.DEFAULT;
-        if (id === WINDOW_STYLE.DARK) return 'window.style.dark';
-        if (id === WINDOW_STYLE.BLUE) return 'window.style.blue';
-        if (id === WINDOW_STYLE.WARM) return 'window.style.warm';
-        if (id === WINDOW_STYLE.GRID) return 'window.style.grid';
-        return 'window.style.default';
+        if (id === WINDOW_STYLE.DARK) return WINDOW_TYPE.STYLE_DARK;
+        if (id === WINDOW_STYLE.BLUE) return WINDOW_TYPE.STYLE_BLUE;
+        if (id === WINDOW_STYLE.LIGHT_BLUE) return WINDOW_TYPE.STYLE_LIGHT_BLUE;
+        if (id === WINDOW_STYLE.GREEN) return WINDOW_TYPE.STYLE_GREEN;
+        if (id === WINDOW_STYLE.WARM) return WINDOW_TYPE.STYLE_WARM;
+        if (id === WINDOW_STYLE.GRID) return WINDOW_TYPE.STYLE_GRID;
+        return WINDOW_TYPE.STYLE_DEFAULT;
     };
 
-    const ids = [WINDOW_STYLE.DEFAULT, WINDOW_STYLE.DARK, WINDOW_STYLE.BLUE, WINDOW_STYLE.WARM, WINDOW_STYLE.GRID];
+    const ids = [
+        WINDOW_STYLE.DEFAULT,
+        WINDOW_STYLE.DARK,
+        WINDOW_STYLE.BLUE,
+        WINDOW_STYLE.LIGHT_BLUE,
+        WINDOW_STYLE.GREEN,
+        WINDOW_STYLE.WARM,
+        WINDOW_STYLE.GRID
+    ];
     return ids.map((id) => ({
         id,
         label: resolveWindowStyleLabel(id),
@@ -1374,6 +1392,9 @@ export function buildBuildingVisualParts({
                         const segOffset = Number(seg?.offset) || 0;
                         const starts = seg?.layout?.starts ?? [];
                         for (const start of starts) {
+                            const leftDist = segOffset + start;
+                            const rightDist = leftDist + windowWidth;
+                            if (leftDist < cornerEps - 1e-6 || rightDist > L - cornerEps + 1e-6) continue;
                             const centerDist = segOffset + start + windowWidth * 0.5;
                             const cx = a.x + tx * centerDist + nx * offset;
                             const cz = a.z + tz * centerDist + nz * offset;
@@ -1391,7 +1412,9 @@ export function buildBuildingVisualParts({
                     if (spacerExtrude && spacerExtrudeDistance > EPS && spacerCenters.length && spacerWidth > EPS) {
                         const bandY = floorBase + floorH * 0.5;
                         const bandOffset = offset + spacerExtrudeDistance * 0.5;
+                        const bandHalfWidth = spacerWidth * 0.5;
                         for (const centerDist of spacerCenters) {
+                            if (centerDist - bandHalfWidth < cornerEps - 1e-6 || centerDist + bandHalfWidth > L - cornerEps + 1e-6) continue;
                             const cx = a.x + tx * centerDist + nx * bandOffset;
                             const cz = a.z + tz * centerDist + nz * bandOffset;
                             const geo = new THREE.BoxGeometry(spacerWidth, Math.max(0.1, floorH), spacerExtrudeDistance);

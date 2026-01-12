@@ -196,6 +196,7 @@ export class BuildingFabricationUI {
                 belt: {
                     enabled: this._beltCourseEnabled,
                     height: this._beltCourseHeight,
+                    extrusion: 0.0,
                     material: { color: this._beltCourseColor }
                 },
                 windows: {
@@ -1775,11 +1776,15 @@ export class BuildingFabricationUI {
                     ? WINDOW_TYPE.STYLE_DARK
                     : legacy === WINDOW_STYLE.BLUE
                         ? WINDOW_TYPE.STYLE_BLUE
-                        : legacy === WINDOW_STYLE.WARM
-                            ? WINDOW_TYPE.STYLE_WARM
-                            : legacy === WINDOW_STYLE.GRID
-                                ? WINDOW_TYPE.STYLE_GRID
-                                : WINDOW_TYPE.STYLE_DEFAULT;
+                        : legacy === WINDOW_STYLE.LIGHT_BLUE
+                            ? WINDOW_TYPE.STYLE_LIGHT_BLUE
+                            : legacy === WINDOW_STYLE.GREEN
+                                ? WINDOW_TYPE.STYLE_GREEN
+                                : legacy === WINDOW_STYLE.WARM
+                                    ? WINDOW_TYPE.STYLE_WARM
+                                    : legacy === WINDOW_STYLE.GRID
+                                        ? WINDOW_TYPE.STYLE_GRID
+                                        : WINDOW_TYPE.STYLE_DEFAULT;
             } else {
                 this._windowTypeId = WINDOW_TYPE.STYLE_DEFAULT;
             }
@@ -1837,21 +1842,29 @@ export class BuildingFabricationUI {
                     ? WINDOW_TYPE.STYLE_DARK
                     : legacy === WINDOW_STYLE.BLUE
                         ? WINDOW_TYPE.STYLE_BLUE
-                        : legacy === WINDOW_STYLE.WARM
-                            ? WINDOW_TYPE.STYLE_WARM
-                            : legacy === WINDOW_STYLE.GRID
-                                ? WINDOW_TYPE.STYLE_GRID
-                                : WINDOW_TYPE.STYLE_DEFAULT;
+                        : legacy === WINDOW_STYLE.LIGHT_BLUE
+                            ? WINDOW_TYPE.STYLE_LIGHT_BLUE
+                            : legacy === WINDOW_STYLE.GREEN
+                                ? WINDOW_TYPE.STYLE_GREEN
+                                : legacy === WINDOW_STYLE.WARM
+                                    ? WINDOW_TYPE.STYLE_WARM
+                                    : legacy === WINDOW_STYLE.GRID
+                                        ? WINDOW_TYPE.STYLE_GRID
+                                        : WINDOW_TYPE.STYLE_DEFAULT;
             } else if (isWindowStyle(fallbackLegacy)) {
                 this._streetWindowTypeId = fallbackLegacy === WINDOW_STYLE.DARK
                     ? WINDOW_TYPE.STYLE_DARK
                     : fallbackLegacy === WINDOW_STYLE.BLUE
                         ? WINDOW_TYPE.STYLE_BLUE
-                        : fallbackLegacy === WINDOW_STYLE.WARM
-                            ? WINDOW_TYPE.STYLE_WARM
-                            : fallbackLegacy === WINDOW_STYLE.GRID
-                                ? WINDOW_TYPE.STYLE_GRID
-                                : WINDOW_TYPE.STYLE_DEFAULT;
+                        : fallbackLegacy === WINDOW_STYLE.LIGHT_BLUE
+                            ? WINDOW_TYPE.STYLE_LIGHT_BLUE
+                            : fallbackLegacy === WINDOW_STYLE.GREEN
+                                ? WINDOW_TYPE.STYLE_GREEN
+                                : fallbackLegacy === WINDOW_STYLE.WARM
+                                    ? WINDOW_TYPE.STYLE_WARM
+                                    : fallbackLegacy === WINDOW_STYLE.GRID
+                                        ? WINDOW_TYPE.STYLE_GRID
+                                        : WINDOW_TYPE.STYLE_DEFAULT;
             } else {
                 this._streetWindowTypeId = this._windowTypeId;
             }
@@ -2422,6 +2435,8 @@ export class BuildingFabricationUI {
                     layer.belt.enabled = !!beltToggle.input.checked;
                     beltHeightRow.range.disabled = !allow || !layer.belt.enabled;
                     beltHeightRow.number.disabled = !allow || !layer.belt.enabled;
+                    beltExtrudeRow.range.disabled = !allow || !layer.belt.enabled;
+                    beltExtrudeRow.number.disabled = !allow || !layer.belt.enabled;
                     beltMaterialPicker.button.disabled = !allow || !layer.belt.enabled;
                     this._notifySelectedLayersChanged();
                 });
@@ -2453,6 +2468,33 @@ export class BuildingFabricationUI {
                     this._notifySelectedLayersChanged();
                 });
                 beltGroup.body.appendChild(beltHeightRow.row);
+
+                const beltExtrudeRow = makeRangeRow('Belt extrusion (m)');
+                beltExtrudeRow.range.min = '0';
+                beltExtrudeRow.range.max = '4';
+                beltExtrudeRow.range.step = '0.01';
+                beltExtrudeRow.number.min = '0';
+                beltExtrudeRow.number.max = '4';
+                beltExtrudeRow.number.step = '0.01';
+                beltExtrudeRow.range.value = String(layer?.belt?.extrusion ?? 0);
+                beltExtrudeRow.number.value = formatFloat(layer?.belt?.extrusion ?? 0, 2);
+                beltExtrudeRow.range.disabled = !allow || !layer?.belt?.enabled;
+                beltExtrudeRow.number.disabled = !allow || !layer?.belt?.enabled;
+                beltExtrudeRow.range.addEventListener('input', () => {
+                    const next = clamp(beltExtrudeRow.range.value, 0.0, 4.0);
+                    layer.belt.extrusion = next;
+                    beltExtrudeRow.range.value = String(next);
+                    beltExtrudeRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                beltExtrudeRow.number.addEventListener('change', () => {
+                    const next = clamp(beltExtrudeRow.number.value, 0.0, 4.0);
+                    layer.belt.extrusion = next;
+                    beltExtrudeRow.range.value = String(next);
+                    beltExtrudeRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                beltGroup.body.appendChild(beltExtrudeRow.row);
 
                 const beltMaterialPicker = makePickerRow('Belt material');
                 const beltMaterial = layer?.belt?.material ?? { kind: 'color', id: BELT_COURSE_COLOR.OFFWHITE };
@@ -4038,6 +4080,10 @@ export class BuildingFabricationUI {
                 ? WINDOW_TYPE.STYLE_DARK
                 : raw === WINDOW_STYLE.BLUE
                     ? WINDOW_TYPE.STYLE_BLUE
+                    : raw === WINDOW_STYLE.LIGHT_BLUE
+                        ? WINDOW_TYPE.STYLE_LIGHT_BLUE
+                        : raw === WINDOW_STYLE.GREEN
+                            ? WINDOW_TYPE.STYLE_GREEN
                     : raw === WINDOW_STYLE.WARM
                         ? WINDOW_TYPE.STYLE_WARM
                         : raw === WINDOW_STYLE.GRID
@@ -4058,6 +4104,10 @@ export class BuildingFabricationUI {
                 ? WINDOW_TYPE.STYLE_DARK
                 : raw === WINDOW_STYLE.BLUE
                     ? WINDOW_TYPE.STYLE_BLUE
+                    : raw === WINDOW_STYLE.LIGHT_BLUE
+                        ? WINDOW_TYPE.STYLE_LIGHT_BLUE
+                        : raw === WINDOW_STYLE.GREEN
+                            ? WINDOW_TYPE.STYLE_GREEN
                     : raw === WINDOW_STYLE.WARM
                         ? WINDOW_TYPE.STYLE_WARM
                         : raw === WINDOW_STYLE.GRID
