@@ -142,13 +142,12 @@ export function createAsset() {
             const attachZ = (armBox.min.z + armBox.max.z) / 2;
 
             const headCenterX = (headBox.min.x + headBox.max.x) / 2;
-            const headMaxY = headBox.max.y;
-            const headHeight = headBox.max.y - headBox.min.y;
+            const headCenterY = (headBox.min.y + headBox.max.y) / 2;
             const headCenterZ = (headBox.min.z + headBox.max.z) / 2;
 
             const translation = new THREE.Matrix4().makeTranslation(
                 attachX - headCenterX,
-                attachY - headMaxY + headHeight,
+                attachY - headCenterY,
                 attachZ - headCenterZ - headDepth
             );
 
@@ -225,13 +224,12 @@ export function createAsset() {
                     const attachZ = (armBox.min.z + armBox.max.z) / 2;
 
                     const headCenterX = (headBox.min.x + headBox.max.x) / 2;
-                    const headMaxY = headBox.max.y;
-                    const headHeight = headBox.max.y - headBox.min.y;
+                    const headCenterY = (headBox.min.y + headBox.max.y) / 2;
                     const headCenterZ = (headBox.min.z + headBox.max.z) / 2;
 
                     const translation = new THREE.Matrix4().makeTranslation(
                         attachX - headCenterX,
-                        attachY - headMaxY + headHeight,
+                        attachY - headCenterY,
                         attachZ - headCenterZ - headDepth
                     );
 

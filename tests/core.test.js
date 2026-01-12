@@ -1379,6 +1379,14 @@ async function runTests() {
         assertEqual(a.length, 2, 'Expected two traffic lights.');
         assertTrue(a.every((p) => p.kind === TRAFFIC_CONTROL.TRAFFIC_LIGHT), 'Expected traffic light placements.');
 
+        const laneWidth = gen?.road?.laneWidth ?? 4.8;
+        const epsLane = 1e-6;
+        for (const p of a) {
+            assertTrue(Number.isFinite(p.scale) && p.scale > 0, 'Traffic light placement should include a positive scale.');
+            assertTrue(Number.isFinite(p.armLength) && p.armLength > 0, 'Traffic light placement should include a positive armLength.');
+            assertNear(p.armLength * p.scale, laneWidth, epsLane, 'Traffic light arm reach should match 1 lane width.');
+        }
+
         const tileSize = map.tileSize;
         const minX = map.origin.x - tileSize * 0.5;
         const minZ = map.origin.z - tileSize * 0.5;
@@ -2059,6 +2067,51 @@ async function runTests() {
                 'traffic_light_head:light_yellow',
                 'traffic_light_head:light_green'
             ]);
+        });
+
+        test('ProceduralMesh: traffic light head hangs under the arm', () => {
+            const asset = proceduralMeshes.catalog.createProceduralMeshAsset(proceduralMeshes.trafficLight.MESH_ID);
+            const geo = asset?.mesh?.geometry ?? null;
+            assertTrue(!!geo, 'Traffic light geometry should exist.');
+
+            const groups = geo?.groups ?? [];
+            const index = geo?.index ?? null;
+            const pos = geo?.attributes?.position ?? null;
+            assertTrue(!!index?.isBufferAttribute && !!pos?.isBufferAttribute, 'Traffic light should have indexed positions.');
+
+            const armGroup = groups.find((g) => g?.materialIndex === 2) ?? null;
+            assertTrue(!!armGroup, 'Traffic light should include an arm group.');
+
+            const computeGroupBox = (group) => {
+                const box = new THREE.Box3();
+                box.makeEmpty();
+                const v = new THREE.Vector3();
+                const start = group?.start ?? 0;
+                const end = start + (group?.count ?? 0);
+                for (let i = start; i < end; i++) {
+                    const vi = index.getX(i);
+                    v.fromBufferAttribute(pos, vi);
+                    box.expandByPoint(v);
+                }
+                return box;
+            };
+
+            const armBox = computeGroupBox(armGroup);
+            const armCenterY = (armBox.min.y + armBox.max.y) / 2;
+
+            const headBox = new THREE.Box3();
+            headBox.makeEmpty();
+            for (const g of groups) {
+                const mi = g?.materialIndex;
+                if (!Number.isFinite(mi) || mi < 3) continue;
+                headBox.union(computeGroupBox(g));
+            }
+            assertFalse(headBox.isEmpty(), 'Traffic light should include head geometry.');
+
+            const headCenterY = (headBox.min.y + headBox.max.y) / 2;
+            const eps = 1e-4;
+            assertNear(headCenterY, armCenterY, eps, 'Traffic light head should be centered at arm height.');
+            assertTrue(headBox.min.y < armCenterY, 'Traffic light head should hang below the arm.');
         });
 
         test('ProceduralMesh: stop sign plate region ids stable', () => {

@@ -112,11 +112,11 @@ export function computeTrafficControlPlacements({
                 const conn = map.conn[idx] ?? 0;
                 const tileHalf = map.tileSize * 0.5;
                 const postOffset = clamp(map.tileSize * 0.12, 1.2, 3.6);
-                const armWorld = majorAxis === 'EW' ? offsetZ : offsetX;
-                const armReachWorld = armWorld + poleInset;
+                const poleSideOffsetWorld = (majorAxis === 'EW' ? offsetZ : offsetX) + poleInset;
+
                 const targetArm = 4.0;
-                const scale = clamp(armReachWorld / targetArm, 2.4, 3.2);
-                const armLength = armReachWorld / scale;
+                const scale = clamp(poleSideOffsetWorld / targetArm, 2.4, 3.2);
+                const armLength = laneWidth / scale;
                 const baseY = sidewalkY + 1.2 * scale;
 
                 const addLight = ({ key, corner, px, pz, yaw }) => {
@@ -140,7 +140,7 @@ export function computeTrafficControlPlacements({
                             key: `${x},${y}:${kind}:NW`,
                             corner: 'NW',
                             px: center.x - tileHalf - postOffset,
-                            pz: center.z - armReachWorld,
+                            pz: center.z - poleSideOffsetWorld,
                             yaw: Math.PI * 0.5
                         });
                     }
@@ -149,7 +149,7 @@ export function computeTrafficControlPlacements({
                             key: `${x},${y}:${kind}:SE`,
                             corner: 'SE',
                             px: center.x + tileHalf + postOffset,
-                            pz: center.z + armReachWorld,
+                            pz: center.z + poleSideOffsetWorld,
                             yaw: -Math.PI * 0.5
                         });
                     }
@@ -158,7 +158,7 @@ export function computeTrafficControlPlacements({
                         addLight({
                             key: `${x},${y}:${kind}:NE`,
                             corner: 'NE',
-                            px: center.x + armReachWorld,
+                            px: center.x + poleSideOffsetWorld,
                             pz: center.z - tileHalf - postOffset,
                             yaw: 0
                         });
@@ -167,7 +167,7 @@ export function computeTrafficControlPlacements({
                         addLight({
                             key: `${x},${y}:${kind}:SW`,
                             corner: 'SW',
-                            px: center.x - armReachWorld,
+                            px: center.x - poleSideOffsetWorld,
                             pz: center.z + tileHalf + postOffset,
                             yaw: Math.PI
                         });
