@@ -1,7 +1,7 @@
-// src/app/city/buildings/Building4.js
-export const BUILDING_4_BUILDING_CONFIG = Object.freeze({
-    id: "building_4",
-    name: "building_4",
+// src/app/city/buildings/BlueBeltTower.js
+export const BLUE_BELT_TOWER_BUILDING_CONFIG = Object.freeze({
+    id: 'blue_belt_tower',
+    name: 'Blue belt tower',
     layers: Object.freeze(
         [
             {
@@ -80,4 +80,4 @@ export const BUILDING_4_BUILDING_CONFIG = Object.freeze({
     }),
 });
 
-export default BUILDING_4_BUILDING_CONFIG;
+export default BLUE_BELT_TOWER_BUILDING_CONFIG;

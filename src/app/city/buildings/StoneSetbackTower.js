@@ -1,7 +1,7 @@
-// src/app/city/buildings/Building3.js
-export const BUILDING_3_BUILDING_CONFIG = Object.freeze({
-    id: "building_3",
-    name: "building_3",
+// src/app/city/buildings/StoneSetbackTower.js
+export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
+    id: 'stone_setback_tower',
+    name: 'Stone setback tower',
     layers: Object.freeze(
         [
             {
@@ -175,4 +175,4 @@ export const BUILDING_3_BUILDING_CONFIG = Object.freeze({
     }),
 });
 
-export default BUILDING_3_BUILDING_CONFIG;
+export default STONE_SETBACK_TOWER_BUILDING_CONFIG;

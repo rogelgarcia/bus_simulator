@@ -14,6 +14,10 @@ export class TextureInspectorView {
         this.scene.enter();
         this.ui.mount();
 
+        const collectionOptions = this.scene.getCollectionOptions();
+        this.ui.setCollectionOptions(collectionOptions);
+        this.ui.setSelectedCollection(this.scene.getSelectedCollectionMeta() ?? {});
+
         const options = this.scene.getTextureOptions();
         this.ui.setTextureOptions(options);
         this.ui.setSelectedTexture(this.scene.getSelectedTextureMeta() ?? {});
@@ -26,8 +30,21 @@ export class TextureInspectorView {
         this.scene.setGridEnabled(this.ui.getGridEnabled());
         this.scene.setTileGap(0.0);
 
+        this.ui.onCollectionIdChange = (id) => {
+            this.scene.setSelectedCollectionId(id);
+            this.ui.setSelectedCollection(this.scene.getSelectedCollectionMeta() ?? {});
+            this.ui.setTextureOptions(this.scene.getTextureOptions());
+            this.ui.setSelectedTexture(this.scene.getSelectedTextureMeta() ?? {});
+        };
+
         this.ui.onTextureIdChange = (id) => {
+            const prevCollectionId = this.scene.getSelectedCollectionMeta()?.id ?? null;
             this.scene.setSelectedTextureId(id);
+            const nextCollection = this.scene.getSelectedCollectionMeta();
+            if (nextCollection?.id && nextCollection.id !== prevCollectionId) {
+                this.ui.setSelectedCollection(nextCollection ?? {});
+                this.ui.setTextureOptions(this.scene.getTextureOptions());
+            }
             this.ui.setSelectedTexture(this.scene.getSelectedTextureMeta() ?? {});
         };
 
@@ -61,6 +78,7 @@ export class TextureInspectorView {
 
     exit() {
         this.ui.onTextureIdChange = null;
+        this.ui.onCollectionIdChange = null;
         this.ui.onTexturePrev = null;
         this.ui.onTextureNext = null;
         this.ui.onBaseColorChange = null;

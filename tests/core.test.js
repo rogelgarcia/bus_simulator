@@ -26,6 +26,18 @@ function assertTrue(value, msg = '') {
     }
 }
 
+function assertNear(actual, expected, eps = 1e-6, msg = '') {
+    const a = Number(actual);
+    const e = Number(expected);
+    const tol = Number(eps);
+    if (!Number.isFinite(a) || !Number.isFinite(e) || !Number.isFinite(tol)) {
+        throw new Error(`${msg} Expected finite numbers, got ${actual} vs ${expected}`);
+    }
+    if (Math.abs(a - e) > tol) {
+        throw new Error(`${msg} Expected ${expected}±${eps}, got ${actual}`);
+    }
+}
+
 function assertFalse(value, msg = '') {
     if (value) {
         throw new Error(`${msg} Expected falsy, got ${value}`);
@@ -1186,10 +1198,93 @@ async function runTests() {
 
     // ========== City Building Config Tests ==========
     const { CityMap } = await import('/src/app/city/CityMap.js');
+    const { getBuildingConfigById, getBuildingConfigs } = await import('/src/app/city/buildings/index.js');
+    const { createDemoCitySpec } = await import('/src/app/city/specs/DemoCitySpec.js');
     const { createCityBuildingConfigFromFabrication, serializeCityBuildingConfigToEsModule } = await import('/src/app/city/buildings/BuildingConfigExport.js');
     const { BUILDING_STYLE } = await import('/src/app/buildings/BuildingStyle.js');
     const { BELT_COURSE_COLOR } = await import('/src/app/buildings/BeltCourseColor.js');
     const { ROOF_COLOR, resolveRoofColorHex } = await import('/src/app/buildings/RoofColor.js');
+
+    test('BuildingCatalog: includes new tower configs', () => {
+        const blue = getBuildingConfigById('blue_belt_tower');
+        assertTrue(!!blue, 'Expected blue_belt_tower in catalog.');
+        assertEqual(blue.id, 'blue_belt_tower');
+        assertEqual(blue.name, 'Blue belt tower');
+        assertTrue(Array.isArray(blue.layers) && blue.layers.length >= 1, 'Expected layers on blue tower config.');
+
+        const stone = getBuildingConfigById('stone_setback_tower');
+        assertTrue(!!stone, 'Expected stone_setback_tower in catalog.');
+        assertEqual(stone.id, 'stone_setback_tower');
+        assertEqual(stone.name, 'Stone setback tower');
+        assertTrue(Array.isArray(stone.layers) && stone.layers.length >= 1, 'Expected layers on stone tower config.');
+
+        const all = getBuildingConfigs();
+        assertTrue(Array.isArray(all) && all.length >= 4, 'Expected at least 4 building configs.');
+    });
+
+    test('BuildingCatalog: includes gov_center config', () => {
+        const gov = getBuildingConfigById('gov_center');
+        assertTrue(!!gov, 'Expected gov_center in catalog.');
+        assertEqual(gov.id, 'gov_center');
+        assertEqual(gov.name, 'Gov center');
+
+        const all = getBuildingConfigs();
+        assertTrue(all.includes(gov), 'Expected catalog list to include Gov center config.');
+    });
+
+    test('BuildingCatalog: does not rely on placeholder building_3/building_4 ids', () => {
+        assertEqual(getBuildingConfigById('building_3'), null, 'Expected building_3 placeholder id to be absent.');
+        assertEqual(getBuildingConfigById('building_4'), null, 'Expected building_4 placeholder id to be absent.');
+    });
+
+    test('DemoCitySpec: extracted demo spec module is importable', () => {
+        assertTrue(typeof createDemoCitySpec === 'function', 'Expected createDemoCitySpec export.');
+        const cfg = createCityConfig({ size: 96, mapTileSize: 24, seed: 'demo-spec-test' });
+        const spec = createDemoCitySpec(cfg);
+        assertTrue(!!spec && typeof spec === 'object', 'Expected demo spec object.');
+        assertEqual(spec.seed, 'demo-spec-test', 'Expected demo spec seed from config.');
+        assertTrue(Array.isArray(spec.roads), 'Expected roads array.');
+        assertTrue(Array.isArray(spec.buildings), 'Expected buildings array.');
+    });
+
+    test('CityMap: demoSpec still works via extracted module', () => {
+        const cfg = createCityConfig({ size: 96, mapTileSize: 24, seed: 'demo-spec-test-2' });
+        const spec = CityMap.demoSpec(cfg);
+        assertTrue(!!spec && typeof spec === 'object', 'Expected demo spec object.');
+        assertEqual(spec.seed, 'demo-spec-test-2', 'Expected demo spec seed from config.');
+        assertTrue(Array.isArray(spec.roads), 'Expected roads array.');
+        assertTrue(Array.isArray(spec.buildings), 'Expected buildings array.');
+    });
+
+    test('CityMap: exportSpec produces reloadable spec shape with road tags', () => {
+        const cfg = createCityConfig({ size: 96, mapTileSize: 24, seed: 'spec-export' });
+        const tileSize = cfg.map.tileSize;
+        const origin = { x: -4 * tileSize * 0.5 + tileSize * 0.5, z: -3 * tileSize * 0.5 + tileSize * 0.5 };
+        const specIn = {
+            version: 1,
+            seed: 'spec-seed',
+            width: 4,
+            height: 3,
+            tileSize,
+            origin,
+            roads: [{ a: [0, 0], b: [0, 2], lanesF: 2, lanesB: 1, tag: 'arterial' }],
+            buildings: [{ id: 'building_1', configId: 'brick_midrise', tiles: [[2, 1]] }]
+        };
+
+        const map = CityMap.fromSpec(specIn, cfg);
+        const out = map.exportSpec({ seed: specIn.seed, version: specIn.version });
+        assertEqual(out.version, 1);
+        assertEqual(out.seed, 'spec-seed');
+        assertEqual(out.width, 4);
+        assertEqual(out.height, 3);
+        assertEqual(out.tileSize, tileSize);
+        assertEqual(out.origin.x, origin.x);
+        assertEqual(out.origin.z, origin.z);
+        assertTrue(Array.isArray(out.roads) && out.roads.length === 1, 'Expected one road in export.');
+        assertEqual(out.roads[0].tag, 'arterial', 'Expected road tag to round-trip.');
+        assertTrue(Array.isArray(out.buildings) && out.buildings.length === 1, 'Expected one building in export.');
+        assertEqual(out.buildings[0].configId, 'brick_midrise', 'Expected building configId in export.');
+    });
 
     test('BuildingConfigExport: exports building fabrication layers for city', () => {
         const layers = [
@@ -1326,7 +1421,15 @@ async function runTests() {
     const { computeEvenWindowLayout, computeBuildingLoopsFromTiles, buildBuildingVisualParts, getWindowStyleOptions } = await import('/src/graphics/assets3d/generators/buildings/BuildingGenerator.js');
     const { createTreeField } = await import('/src/graphics/assets3d/generators/TreeGenerator.js');
     const { CityRNG } = await import('/src/app/city/CityRNG.js');
-    const { INSPECTOR_TEXTURE, getTextureInspectorOptions, getTextureInspectorTextureById } = await import('/src/graphics/assets3d/textures/TextureInspectorCatalog.js');
+    const {
+        INSPECTOR_COLLECTION,
+        INSPECTOR_TEXTURE,
+        getTextureInspectorCollections,
+        getTextureInspectorOptions,
+        getTextureInspectorOptionsForCollection,
+        getTextureInspectorTextureById
+    } = await import('/src/graphics/assets3d/textures/TextureInspectorCatalog.js');
+    const { getSignAssetById, getSignAssets, resolveSignAssetModulePath } = await import('/src/graphics/assets3d/textures/signs/SignAssets.js');
 
     test('BuildingGenerator: window layout keeps a corner gap', () => {
         const length = 20;
@@ -1397,6 +1500,103 @@ async function runTests() {
         assertTrue(ids.has(INSPECTOR_TEXTURE.WINDOW_GREEN), 'Expected Green inspector entry.');
         assertTrue(!!getTextureInspectorTextureById(INSPECTOR_TEXTURE.WINDOW_LIGHT_BLUE), 'Expected Light Blue inspector texture.');
         assertTrue(!!getTextureInspectorTextureById(INSPECTOR_TEXTURE.WINDOW_GREEN), 'Expected Green inspector texture.');
+    });
+
+    test('TextureInspectorCatalog: exposes collections with expected entries', () => {
+        const collections = getTextureInspectorCollections();
+        assertTrue(Array.isArray(collections) && collections.length >= 2, 'Expected multiple inspector collections.');
+        const collectionIds = new Set(collections.map((c) => c.id));
+        assertTrue(collectionIds.has(INSPECTOR_COLLECTION.WINDOWS), 'Expected Windows collection.');
+        assertTrue(collectionIds.has(INSPECTOR_COLLECTION.TRAFFIC_SIGNS), 'Expected Traffic Signs collection.');
+
+        const windows = getTextureInspectorOptionsForCollection(INSPECTOR_COLLECTION.WINDOWS);
+        const windowIds = new Set(windows.map((opt) => opt.id));
+        assertTrue(windowIds.has(INSPECTOR_TEXTURE.WINDOW_LIGHT_BLUE), 'Expected Light Blue under Windows.');
+        assertTrue(windowIds.has(INSPECTOR_TEXTURE.WINDOW_GREEN), 'Expected Green under Windows.');
+        assertFalse(windowIds.has('sign.basic.001'), 'Did not expect signs under Windows.');
+
+        const signs = getTextureInspectorOptionsForCollection(INSPECTOR_COLLECTION.TRAFFIC_SIGNS);
+        assertEqual(signs.length, getSignAssets().length, 'Expected Traffic Signs collection to include all signs.');
+        const signIds = new Set(signs.map((opt) => opt.id));
+        assertTrue(signIds.has('sign.basic.001'), 'Expected basic sign under Traffic Signs.');
+        assertFalse(signIds.has(INSPECTOR_TEXTURE.WINDOW_GREEN), 'Did not expect windows under Traffic Signs.');
+    });
+
+    let signModulesOk = true;
+    let signModulesError = null;
+    try {
+        const signAssets = getSignAssets();
+        await Promise.all(signAssets.map((asset) => {
+            const modulePath = resolveSignAssetModulePath(asset.id);
+            if (!modulePath) throw new Error(`Missing module path for sign id: ${asset.id}`);
+            return import(modulePath);
+        }));
+    } catch (err) {
+        signModulesOk = false;
+        signModulesError = err;
+    }
+
+    test('SignAssets: all sign modules are importable', () => {
+        assertTrue(signModulesOk, signModulesError?.message ?? 'Expected all sign modules to import.');
+    });
+
+    test('TextureInspectorCatalog: includes all sign entries', () => {
+        const opts = getTextureInspectorOptions();
+        const ids = new Set(opts.map((opt) => opt.id));
+        const signIds = getSignAssets().map((asset) => asset.id);
+        for (const signId of signIds) {
+            assertTrue(ids.has(signId), `Missing inspector entry for sign id: ${signId}`);
+        }
+    });
+
+    test('SignAssets: uv mapping is sane', () => {
+        for (const asset of getSignAssets()) {
+            const uv = asset.uv;
+            const offset = asset.offset;
+            const repeat = asset.repeat;
+            assertTrue(uv.u0 >= 0 && uv.u0 < uv.u1 && uv.u1 <= 1, `Bad u-range for ${asset.id}`);
+            assertTrue(uv.v0 >= 0 && uv.v0 < uv.v1 && uv.v1 <= 1, `Bad v-range for ${asset.id}`);
+            assertTrue(offset.x >= 0 && offset.x <= 1, `Bad offset.x for ${asset.id}`);
+            assertTrue(offset.y >= 0 && offset.y <= 1, `Bad offset.y for ${asset.id}`);
+            assertTrue(repeat.x > 0 && repeat.x <= 1, `Bad repeat.x for ${asset.id}`);
+            assertTrue(repeat.y > 0 && repeat.y <= 1, `Bad repeat.y for ${asset.id}`);
+        }
+    });
+
+    test('SignAssets: representative UVs are stable', () => {
+        const basic = getSignAssetById('sign.basic.001');
+        assertEqual(basic.rectPx.x, 937);
+        assertEqual(basic.rectPx.y, 7);
+        assertEqual(basic.rectPx.w, 139);
+        assertEqual(basic.rectPx.h, 139);
+        assertNear(basic.uv.u0, 937 / 1575, 1e-9, 'basic u0');
+        assertNear(basic.uv.u1, (937 + 139) / 1575, 1e-9, 'basic u1');
+        assertNear(basic.uv.v0, 1 - (7 + 139) / 945, 1e-9, 'basic v0');
+        assertNear(basic.uv.v1, 1 - 7 / 945, 1e-9, 'basic v1');
+
+        const lane = getSignAssetById('sign.lane.022');
+        assertEqual(lane.rectPx.x, 822);
+        assertEqual(lane.rectPx.y, 800);
+        assertEqual(lane.rectPx.w, 413);
+        assertEqual(lane.rectPx.h, 207);
+        assertNear(lane.uv.u0, 822 / 1258, 1e-9, 'lane u0');
+        assertNear(lane.uv.u1, (822 + 413) / 1258, 1e-9, 'lane u1');
+        assertNear(lane.uv.v0, 1 - (800 + 207) / 1033, 1e-9, 'lane v0');
+        assertNear(lane.uv.v1, 1 - 800 / 1033, 1e-9, 'lane v1');
+
+        const white = getSignAssetById('sign.white_messages.001');
+        assertEqual(white.rectPx.x, 22);
+        assertEqual(white.rectPx.y, 22);
+        assertEqual(white.rectPx.w, 395);
+        assertEqual(white.rectPx.h, 493);
+        assertNear(white.uv.u0, 22 / 1340, 1e-9, 'white u0');
+        assertNear(white.uv.u1, (22 + 395) / 1340, 1e-9, 'white u1');
+        assertNear(white.uv.v0, 1 - (22 + 493) / 1592, 1e-9, 'white v0');
+        assertNear(white.uv.v1, 1 - 22 / 1592, 1e-9, 'white v1');
+
+        assertTrue(!!getTextureInspectorTextureById(basic.id), 'Expected basic sign texture.');
+        assertTrue(!!getTextureInspectorTextureById(lane.id), 'Expected lane sign texture.');
+        assertTrue(!!getTextureInspectorTextureById(white.id), 'Expected white sign texture.');
     });
 
     test('BuildingGenerator: never renders windows outside wall bounds', () => {
@@ -1582,6 +1782,105 @@ async function runTests() {
             assertFalse(forbidden.has(`${t.x},${t.y}`), 'Placement should not be on a building tile.');
         }
     });
+
+    // ========== Procedural Mesh Tests (added in Task 30) ==========
+    let proceduralMeshes = null;
+    try {
+        proceduralMeshes = {
+            catalog: await import('/src/graphics/assets3d/procedural_meshes/ProceduralMeshCatalog.js'),
+            ball: await import('/src/graphics/assets3d/procedural_meshes/meshes/BallMesh_v1.js'),
+            streetSignPole: await import('/src/graphics/assets3d/procedural_meshes/meshes/StreetSignPoleMesh_v1.js'),
+            trafficLightPole: await import('/src/graphics/assets3d/procedural_meshes/meshes/TrafficLightPoleMesh_v1.js'),
+            trafficLightHead: await import('/src/graphics/assets3d/procedural_meshes/meshes/TrafficLightHeadMesh_v1.js'),
+            trafficLight: await import('/src/graphics/assets3d/procedural_meshes/meshes/TrafficLightMesh_v1.js')
+        };
+    } catch (e) {
+        test('ProceduralMesh: modules are importable', () => {
+            throw e;
+        });
+    }
+
+    if (proceduralMeshes) {
+        test('ProceduralMesh: mesh modules expose stable ids', () => {
+            assertEqual(proceduralMeshes.ball.MESH_ID, 'mesh.ball.v1', 'Ball mesh id should be stable.');
+            assertEqual(proceduralMeshes.streetSignPole.MESH_ID, 'mesh.street_sign_pole.v1', 'Street sign pole id should be stable.');
+            assertEqual(proceduralMeshes.trafficLightPole.MESH_ID, 'mesh.traffic_light_pole.v1', 'Traffic light pole id should be stable.');
+            assertEqual(proceduralMeshes.trafficLightHead.MESH_ID, 'mesh.traffic_light_head.v1', 'Traffic light head id should be stable.');
+            assertEqual(proceduralMeshes.trafficLight.MESH_ID, 'mesh.traffic_light.v1', 'Traffic light mesh id should be stable.');
+        });
+
+        test('ProceduralMeshCatalog: exposes new mesh ids', () => {
+            const options = proceduralMeshes.catalog.getProceduralMeshOptions();
+            const ids = options.map((opt) => opt.id);
+            assertTrue(ids.includes(proceduralMeshes.streetSignPole.MESH_ID), 'Options should include street sign pole.');
+            assertTrue(ids.includes(proceduralMeshes.trafficLightPole.MESH_ID), 'Options should include traffic light pole.');
+            assertTrue(ids.includes(proceduralMeshes.trafficLightHead.MESH_ID), 'Options should include traffic light head.');
+            assertTrue(ids.includes(proceduralMeshes.trafficLight.MESH_ID), 'Options should include traffic light.');
+        });
+
+        const assertRegionIds = (asset, expectedIds) => {
+            assertTrue(asset !== null, 'Asset should exist.');
+            assertTrue(Array.isArray(asset.regions), 'Asset regions should be an array.');
+            const actual = asset.regions.map((r) => r.id);
+            assertEqual(actual.length, expectedIds.length, 'Regions length should be stable.');
+            for (let i = 0; i < expectedIds.length; i++) {
+                assertEqual(actual[i], expectedIds[i], 'Region id should be stable.');
+                assertTrue(typeof actual[i] === 'string' && actual[i].length > 0, 'Region id should be non-empty.');
+            }
+
+            const geometry = asset.mesh?.geometry ?? null;
+            const groups = geometry?.groups ?? null;
+            assertTrue(Array.isArray(groups) && groups.length > 0, 'Geometry groups should exist.');
+            for (const group of groups) {
+                assertTrue(Number.isInteger(group.materialIndex), 'Group materialIndex should be an integer.');
+                assertTrue(group.materialIndex >= 0 && group.materialIndex < expectedIds.length, 'Group materialIndex should map to a region.');
+                assertTrue(Number.isInteger(group.start) && Number.isInteger(group.count), 'Group start/count should be integers.');
+                assertTrue(group.count > 0, 'Group count should be non-zero.');
+            }
+        };
+
+        test('ProceduralMesh: street sign pole region ids stable', () => {
+            const asset = proceduralMeshes.catalog.createProceduralMeshAsset(proceduralMeshes.streetSignPole.MESH_ID);
+            assertRegionIds(asset, ['street_sign_pole:body']);
+        });
+
+        test('ProceduralMesh: traffic light pole region ids stable', () => {
+            const asset = proceduralMeshes.catalog.createProceduralMeshAsset(proceduralMeshes.trafficLightPole.MESH_ID);
+            assertRegionIds(asset, [
+                'traffic_light_pole:vertical',
+                'traffic_light_pole:inclined',
+                'traffic_light_pole:arm'
+            ]);
+        });
+
+        test('ProceduralMesh: traffic light head region ids stable', () => {
+            const asset = proceduralMeshes.catalog.createProceduralMeshAsset(proceduralMeshes.trafficLightHead.MESH_ID);
+            assertRegionIds(asset, [
+                'traffic_light_head:housing',
+                'traffic_light_head:light_red',
+                'traffic_light_head:light_yellow',
+                'traffic_light_head:light_green'
+            ]);
+
+            asset.mesh.geometry.computeBoundingBox();
+            const box = asset.mesh.geometry.boundingBox;
+            assertTrue(Math.abs(box.min.y) < 1e-6, 'Traffic light head should start at y=0.');
+            assertTrue(Math.abs(box.min.z) < 1e-6, 'Traffic light head should start at z=0.');
+        });
+
+        test('ProceduralMesh: traffic light composed mesh region ids stable', () => {
+            const asset = proceduralMeshes.catalog.createProceduralMeshAsset(proceduralMeshes.trafficLight.MESH_ID);
+            assertRegionIds(asset, [
+                'traffic_light_pole:vertical',
+                'traffic_light_pole:inclined',
+                'traffic_light_pole:arm',
+                'traffic_light_head:housing',
+                'traffic_light_head:light_red',
+                'traffic_light_head:light_yellow',
+                'traffic_light_head:light_green'
+            ]);
+        });
+    }
 
     runRoadConnectionDebuggerTests({ test, assertTrue });
 

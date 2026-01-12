@@ -433,3 +433,541 @@
     font-size: 11px;
     color: rgba(255, 255, 255, 0.75);
 }
+
+.map-debugger-editor-panel {
+    width: min(560px, calc(100vw - 24px));
+}
+
+.map-debugger-editor-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.map-debugger-editor-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.map-debugger-editor-section:first-child {
+    border-top: 0;
+    padding-top: 0;
+}
+
+.map-debugger-editor-section-title {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-weight: 700;
+    opacity: 0.7;
+}
+
+.map-debugger-editor-section-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.map-debugger-editor-row {
+    display: grid;
+    grid-template-columns: 72px 1fr;
+    column-gap: 10px;
+    align-items: center;
+}
+
+.map-debugger-editor-row-label {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.72);
+}
+
+.map-debugger-editor-row-field {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.map-debugger-editor-input {
+    flex: 1;
+    min-width: 140px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 8px;
+    padding: 6px 8px;
+    color: rgba(255, 255, 255, 0.95);
+    font-size: 12px;
+    outline: none;
+}
+
+.map-debugger-editor-input:focus {
+    border-color: rgba(63, 212, 110, 0.85);
+    box-shadow: 0 0 0 3px rgba(63, 212, 110, 0.15);
+}
+
+.map-debugger-editor-input-short {
+    flex: 0 0 auto;
+    min-width: 74px;
+    width: 74px;
+}
+
+.map-debugger-editor-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.map-debugger-editor-btn {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 8px;
+    padding: 6px 10px;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.map-debugger-editor-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.map-debugger-editor-btn-primary {
+    background: rgba(63, 212, 110, 0.18);
+    border-color: rgba(63, 212, 110, 0.55);
+    color: rgba(255, 255, 255, 0.95);
+}
+
+.map-debugger-editor-tool-row {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.map-debugger-editor-tool {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.8);
+    cursor: pointer;
+}
+
+.map-debugger-editor-tool.is-active {
+    background: rgba(63, 212, 110, 0.18);
+    border-color: rgba(63, 212, 110, 0.55);
+    color: rgba(255, 255, 255, 0.95);
+}
+
+.map-debugger-editor-draft-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.map-debugger-editor-draft-label,
+.map-debugger-editor-selected-label,
+.map-debugger-editor-help {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.75);
+}
+
+.map-debugger-editor-export {
+    width: 100%;
+    background: rgba(0, 0, 0, 0.28);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 10px;
+    padding: 8px 10px;
+    color: rgba(255, 255, 255, 0.9);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 11px;
+    resize: vertical;
+    box-sizing: border-box;
+}
+
+.map-debugger-city-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.map-debugger-city-label {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.72);
+    white-space: nowrap;
+}
+
+.map-debugger-city-sep {
+    opacity: 0.55;
+}
+
+.map-debugger-city-input {
+    flex: 1;
+    min-width: 120px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 8px;
+    padding: 6px 8px;
+    color: rgba(255, 255, 255, 0.95);
+    font-size: 12px;
+    outline: none;
+}
+
+.map-debugger-city-input:focus {
+    border-color: rgba(63, 212, 110, 0.85);
+    box-shadow: 0 0 0 3px rgba(63, 212, 110, 0.15);
+}
+
+.map-debugger-city-input-short {
+    flex: 0 0 auto;
+    min-width: 74px;
+    width: 74px;
+}
+
+.map-debugger-city-btn {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 8px;
+    padding: 6px 10px;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.map-debugger-city-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.map-debugger-city-btn-primary {
+    background: rgba(63, 212, 110, 0.18);
+    border-color: rgba(63, 212, 110, 0.55);
+    color: rgba(255, 255, 255, 0.95);
+}
+
+.map-debugger-city-extra-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.map-debugger-tab-row {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.map-debugger-editor-table-wrap {
+    max-height: 240px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 4px;
+}
+
+.map-debugger-row-actions {
+    text-align: right;
+    width: 86px;
+}
+
+.map-debugger-row-actions .map-debugger-icon-btn + .map-debugger-icon-btn {
+    margin-left: 6px;
+}
+
+.map-debugger-row-toggle {
+    width: 58px;
+    text-align: center;
+}
+
+.map-debugger-row-toggle input[type="checkbox"] {
+    transform: scale(1.05);
+    cursor: pointer;
+}
+
+.map-debugger-icon-btn {
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 8px;
+    color: rgba(255, 255, 255, 0.85);
+    cursor: pointer;
+    padding: 0;
+}
+
+.map-debugger-icon-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.map-debugger-icon-btn svg {
+    display: block;
+}
+
+.map-debugger-building-style-cell {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 160px;
+}
+
+.map-debugger-building-style-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.map-debugger-create-overlay {
+    position: fixed;
+    left: 50%;
+    bottom: 12px;
+    transform: translateX(-50%);
+    z-index: 6;
+    pointer-events: none;
+    display: flex;
+    justify-content: center;
+    width: calc(100vw - 24px);
+    padding: 0;
+    background: transparent;
+}
+
+.map-debugger-create-panel {
+    width: min(760px, calc(100vw - 24px));
+    max-width: min(760px, calc(100vw - 24px));
+    min-width: 340px;
+}
+
+.map-debugger-create-title {
+    margin-bottom: 4px;
+}
+
+.map-debugger-create-text {
+    font-size: 12px;
+    opacity: 0.82;
+    margin-bottom: 10px;
+    line-height: 1.35;
+}
+
+.map-debugger-create-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.map-debugger-create-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.map-debugger-create-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    align-items: end;
+}
+
+.map-debugger-create-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.map-debugger-create-field-wide {
+    grid-column: 1 / -1;
+}
+
+.map-debugger-create-field-label {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.map-debugger-create-input {
+    width: 100%;
+    background: rgba(0, 0, 0, 0.22);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 10px;
+    padding: 8px 10px;
+    color: rgba(255, 255, 255, 0.95);
+    font-size: 12px;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.map-debugger-create-input:focus {
+    border-color: rgba(63, 212, 110, 0.85);
+    box-shadow: 0 0 0 3px rgba(63, 212, 110, 0.15);
+}
+
+.map-debugger-create-style-btn {
+    text-align: left;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 10px;
+    padding: 8px 10px;
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.map-debugger-create-style-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.map-debugger-lane-buttons {
+    display: inline-flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.map-debugger-lane-btn {
+    min-width: 36px;
+    height: 32px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.85);
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.map-debugger-lane-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.map-debugger-lane-btn.is-active {
+    background: rgba(63, 212, 110, 0.18);
+    border-color: rgba(63, 212, 110, 0.55);
+    color: rgba(255, 255, 255, 0.95);
+}
+
+.map-debugger-bottom-row {
+    position: fixed;
+    left: 50%;
+    bottom: 12px;
+    transform: translateX(-50%);
+    pointer-events: none;
+    z-index: 6;
+    display: flex;
+    justify-content: center;
+    width: calc(100vw - 24px);
+}
+
+.map-debugger-bottom-row > .ui-panel {
+    pointer-events: auto;
+}
+
+.map-debugger-bottom-panel {
+    width: min(760px, calc(100vw - 24px));
+    max-width: min(760px, calc(100vw - 24px));
+    min-width: 340px;
+}
+
+.map-debugger-bottom-text {
+    font-size: 12px;
+    opacity: 0.82;
+    margin-bottom: 8px;
+    line-height: 1.35;
+}
+
+.map-debugger-bottom-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.map-debugger-bottom-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.map-debugger-bottom-row-controls {
+    display: grid;
+    grid-template-columns: 1fr 160px;
+    gap: 12px;
+    align-items: end;
+}
+
+.map-debugger-bottom-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.map-debugger-bottom-field-label {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.map-debugger-bottom-input {
+    width: 100%;
+    background: rgba(0, 0, 0, 0.22);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 10px;
+    padding: 8px 10px;
+    color: rgba(255, 255, 255, 0.95);
+    font-size: 12px;
+    outline: none;
+}
+
+.map-debugger-bottom-input:focus {
+    border-color: rgba(63, 212, 110, 0.85);
+    box-shadow: 0 0 0 3px rgba(63, 212, 110, 0.15);
+}
+
+.map-debugger-bottom-input-short {
+    width: 76px;
+    min-width: 76px;
+}
+
+.map-debugger-bottom-lanes {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.map-debugger-bottom-style-btn {
+    text-align: left;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 10px;
+    padding: 8px 10px;
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.map-debugger-bottom-style-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.map-debugger-bottom-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 34px;
+    padding: 0 12px;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.22);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.92);
+}

@@ -36,6 +36,7 @@ export class MeshInspectorScene {
         this.sun = null;
         this.floor = null;
         this._grid = null;
+        this._axes = null;
 
         this._asset = null;
         this._edges = null;
@@ -81,6 +82,25 @@ export class MeshInspectorScene {
         this.root.add(grid);
         this._grid = grid;
 
+        const axisSize = 2;
+        const axes = new THREE.Group();
+        axes.name = 'mesh_inspector_axes';
+        axes.position.y = this.floor.position.y + 0.002;
+
+        const makeAxis = (dir, color) => {
+            const points = [new THREE.Vector3(0, 0, 0), dir.clone().multiplyScalar(axisSize)];
+            const geo = new THREE.BufferGeometry().setFromPoints(points);
+            const mat = new THREE.LineBasicMaterial({ color });
+            return new THREE.Line(geo, mat);
+        };
+
+        axes.add(makeAxis(new THREE.Vector3(1, 0, 0), 0xff0000));
+        axes.add(makeAxis(new THREE.Vector3(0, 1, 0), 0x00ff00));
+        axes.add(makeAxis(new THREE.Vector3(0, 0, 1), 0x0000ff));
+
+        this.root.add(axes);
+        this._axes = axes;
+
         this.camera.position.set(0, 0.65, 4.2);
         this.camera.lookAt(0, 0, 0);
 
@@ -114,6 +134,19 @@ export class MeshInspectorScene {
                 this._grid.material?.dispose?.();
             }
             this._grid = null;
+        }
+
+        if (this._axes) {
+            this.root?.remove?.(this._axes);
+            this._axes.traverse?.((obj) => {
+                obj.geometry?.dispose?.();
+                if (Array.isArray(obj.material)) {
+                    for (const m of obj.material) m?.dispose?.();
+                } else {
+                    obj.material?.dispose?.();
+                }
+            });
+            this._axes = null;
         }
 
         if (this.floor) {

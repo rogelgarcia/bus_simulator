@@ -64,7 +64,8 @@ export class City {
         });
         this.group.add(this.sky);
 
-        this.genConfig = createCityConfig({ size, tileMeters, mapTileSize, seed });
+        const resolvedSeed = mapSpec?.seed ?? seed;
+        this.genConfig = createCityConfig({ size, tileMeters, mapTileSize, seed: resolvedSeed });
         this.generatorConfig = createGeneratorConfig(generatorConfig ?? {});
 
         this.rng = new CityRNG(this.genConfig.seed);

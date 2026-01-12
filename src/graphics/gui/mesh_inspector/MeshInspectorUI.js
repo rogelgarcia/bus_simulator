@@ -10,6 +10,14 @@ export class MeshInspectorUI {
         this.panel = document.createElement('div');
         this.panel.className = 'ui-panel is-interactive mesh-inspector-panel';
 
+        this.axisLegend = document.createElement('div');
+        this.axisLegend.className = 'mesh-inspector-axis-legend';
+        this.axisLegend.innerHTML = `
+            <span class="mesh-inspector-axis mesh-inspector-axis-x">X</span>
+            <span class="mesh-inspector-axis mesh-inspector-axis-y">Y</span>
+            <span class="mesh-inspector-axis mesh-inspector-axis-z">Z</span>
+        `;
+
         this.title = document.createElement('div');
         this.title.className = 'ui-title';
         this.title.textContent = 'Mesh Inspector';
@@ -151,6 +159,7 @@ export class MeshInspectorUI {
         this.panel.appendChild(this.copyBtn);
 
         this.root.appendChild(this.panel);
+        this.root.appendChild(this.axisLegend);
 
         this.onMeshIdChange = null;
         this.onMeshPrev = null;

@@ -9,6 +9,28 @@ export const TEXTURE_INSPECTOR_BASE_COLORS = Object.freeze([
     { id: 'black', label: 'Black', hex: 0x0b0f14 }
 ]);
 
+function formatFloat(value, digits = 5) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return '-';
+    return num.toFixed(digits);
+}
+
+function formatRectPx(rectPx) {
+    const r = rectPx && typeof rectPx === 'object' ? rectPx : null;
+    if (!r) return '-';
+    const x = Number.isFinite(r.x) ? r.x : '-';
+    const y = Number.isFinite(r.y) ? r.y : '-';
+    const w = Number.isFinite(r.w) ? r.w : '-';
+    const h = Number.isFinite(r.h) ? r.h : '-';
+    return `${x},${y},${w},${h}`;
+}
+
+function formatUv(uv) {
+    const r = uv && typeof uv === 'object' ? uv : null;
+    if (!r) return '-';
+    return `${formatFloat(r.u0)},${formatFloat(r.v0)},${formatFloat(r.u1)},${formatFloat(r.v1)}`;
+}
+
 export class TextureInspectorUI {
     constructor() {
         this.root = document.createElement('div');
@@ -47,6 +69,16 @@ export class TextureInspectorUI {
         this.catalogLabel = document.createElement('div');
         this.catalogLabel.className = 'ui-section-label';
         this.catalogLabel.textContent = 'Catalog';
+
+        this.collectionRow = document.createElement('div');
+        this.collectionRow.className = 'texture-inspector-row';
+        this.collectionLabel = document.createElement('div');
+        this.collectionLabel.className = 'texture-inspector-row-label';
+        this.collectionLabel.textContent = 'Collection';
+        this.collectionSelect = document.createElement('select');
+        this.collectionSelect.className = 'texture-inspector-select';
+        this.collectionRow.appendChild(this.collectionLabel);
+        this.collectionRow.appendChild(this.collectionSelect);
 
         this.catalogRow = document.createElement('div');
         this.catalogRow.className = 'texture-inspector-catalog';
@@ -163,6 +195,7 @@ export class TextureInspectorUI {
         this.panel.appendChild(this.textureIdRow);
         this.panel.appendChild(this.textureNameRow);
         this.panel.appendChild(this.catalogLabel);
+        this.panel.appendChild(this.collectionRow);
         this.panel.appendChild(this.catalogRow);
         this.panel.appendChild(this.surfaceLabel);
         this.panel.appendChild(this.baseColorRow);
@@ -175,6 +208,7 @@ export class TextureInspectorUI {
         this.root.appendChild(this.panel);
 
         this.onTextureIdChange = null;
+        this.onCollectionIdChange = null;
         this.onTexturePrev = null;
         this.onTextureNext = null;
         this.onBaseColorChange = null;
@@ -183,6 +217,7 @@ export class TextureInspectorUI {
         this.onTileGapChange = null;
 
         this._onSelectChange = () => this.onTextureIdChange?.(this.textureSelect.value);
+        this._onCollectionChange = () => this.onCollectionIdChange?.(this.collectionSelect.value);
         this._onPrev = () => this.onTexturePrev?.();
         this._onNext = () => this.onTextureNext?.();
         this._onBaseColor = () => this.onBaseColorChange?.(this.baseColorSelect.value);
@@ -196,6 +231,7 @@ export class TextureInspectorUI {
         this._onCopy = () => this._copySummary();
 
         this._bound = false;
+        this._selectedExtra = null;
 
         this._syncPreviewWidgets();
     }
@@ -208,6 +244,27 @@ export class TextureInspectorUI {
     unmount() {
         this._unbind();
         this.root.remove();
+    }
+
+    setCollectionOptions(options) {
+        const list = Array.isArray(options) ? options : [];
+        const current = this.collectionSelect.value;
+        this.collectionSelect.textContent = '';
+        for (const opt of list) {
+            const id = typeof opt?.id === 'string' ? opt.id : '';
+            if (!id) continue;
+            const label = typeof opt?.name === 'string' ? opt.name : (typeof opt?.label === 'string' ? opt.label : id);
+            const el = document.createElement('option');
+            el.value = id;
+            el.textContent = `${label} (${id})`;
+            this.collectionSelect.appendChild(el);
+        }
+        if (current) this.collectionSelect.value = current;
+    }
+
+    setSelectedCollection({ id = '-' } = {}) {
+        if (id) this.collectionSelect.value = id;
+        this._syncSummary();
     }
 
     setTextureOptions(options) {
@@ -226,9 +283,11 @@ export class TextureInspectorUI {
         if (current) this.textureSelect.value = current;
     }
 
-    setSelectedTexture({ id = '-', name = '-' } = {}) {
+    setSelectedTexture({ id = '-', name = '-', collection = null, extra = null } = {}) {
         this.textureIdValue.textContent = id || '-';
-        this.textureNameValue.textContent = name || '-';
+        const safeCollection = typeof collection === 'string' ? collection : '';
+        this.textureNameValue.textContent = safeCollection ? `${name || '-'} (${safeCollection})` : (name || '-');
+        this._selectedExtra = extra;
         if (id) this.textureSelect.value = id;
         this._syncSummary();
     }
@@ -271,9 +330,17 @@ export class TextureInspectorUI {
     }
 
     _syncSummary() {
+        const collectionId = this.collectionSelect.value || '-';
         const textureId = this.textureSelect.value || '-';
         const base = this.baseColorSelect.value || 'white';
-        this.summary.value = `texture:${textureId} base:${base}`;
+        const extra = this._selectedExtra;
+
+        const parts = [`collection:${collectionId}`, `texture:${textureId}`, `base:${base}`];
+        const atlas = typeof extra?.atlas === 'string' ? extra.atlas : '';
+        if (atlas) parts.push(`atlas:${atlas}`);
+        if (extra?.rectPx) parts.push(`rect:${formatRectPx(extra.rectPx)}`);
+        if (extra?.uv) parts.push(`uv:${formatUv(extra.uv)}`);
+        this.summary.value = parts.join(' ');
     }
 
     _copySummary() {
@@ -312,6 +379,7 @@ export class TextureInspectorUI {
     _bind() {
         if (this._bound) return;
         this._bound = true;
+        this.collectionSelect.addEventListener('change', this._onCollectionChange);
         this.textureSelect.addEventListener('change', this._onSelectChange);
         this.prevBtn.addEventListener('click', this._onPrev);
         this.nextBtn.addEventListener('click', this._onNext);
@@ -326,6 +394,7 @@ export class TextureInspectorUI {
     _unbind() {
         if (!this._bound) return;
         this._bound = false;
+        this.collectionSelect.removeEventListener('change', this._onCollectionChange);
         this.textureSelect.removeEventListener('change', this._onSelectChange);
         this.prevBtn.removeEventListener('click', this._onPrev);
         this.nextBtn.removeEventListener('click', this._onNext);

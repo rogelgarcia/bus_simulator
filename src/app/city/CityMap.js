@@ -1,6 +1,7 @@
 // src/app/city/CityMap.js
 import { BUILDING_STYLE, isBuildingStyle } from '../buildings/BuildingStyle.js';
 import { getBuildingConfigById } from './buildings/index.js';
+import { createDemoCitySpec } from './specs/DemoCitySpec.js';
 export const DIR = { N: 1, E: 2, S: 4, W: 8 };
 export const TILE = { EMPTY: 0, ROAD: 1 };
 
@@ -141,7 +142,7 @@ export class CityMap {
         if (nv > arr[idx]) arr[idx] = nv;
     }
 
-    addRoadSegment({ a, b, lanesF = 1, lanesB = 1, id = null } = {}) {
+    addRoadSegment({ a, b, lanesF = 1, lanesB = 1, id = null, tag = 'road' } = {}) {
         if (!a || !b) return;
 
         let roadId = id;
@@ -165,6 +166,7 @@ export class CityMap {
             b: { x: x1, y: y1 },
             lanesF,
             lanesB,
+            tag: typeof tag === 'string' ? tag : 'road',
             angle,
             tiles: []
         };
@@ -280,6 +282,56 @@ export class CityMap {
         let c = 0;
         for (let i = 0; i < this.kind.length; i++) if (this.kind[i] === TILE.ROAD) c++;
         return c;
+    }
+
+    exportSpec({ seed = null, version = 1 } = {}) {
+        const spec = {
+            version: Number.isFinite(version) ? (version | 0) : 1,
+            seed,
+            width: this.width,
+            height: this.height,
+            tileSize: this.tileSize,
+            origin: { x: this.origin.x, z: this.origin.z },
+            roads: [],
+            buildings: []
+        };
+
+        const segments = Array.isArray(this.roadSegments) ? this.roadSegments : [];
+        for (const seg of segments) {
+            if (!seg?.a || !seg?.b) continue;
+            spec.roads.push({
+                a: [seg.a.x | 0, seg.a.y | 0],
+                b: [seg.b.x | 0, seg.b.y | 0],
+                lanesF: seg.lanesF ?? 0,
+                lanesB: seg.lanesB ?? 0,
+                tag: typeof seg.tag === 'string' ? seg.tag : 'road'
+            });
+        }
+
+        const buildings = Array.isArray(this.buildings) ? this.buildings : [];
+        for (const building of buildings) {
+            const tiles = Array.isArray(building?.tiles) ? building.tiles : [];
+            if (!tiles.length) continue;
+
+            const record = {
+                id: typeof building.id === 'string' ? building.id : null,
+                configId: typeof building.configId === 'string' ? building.configId : null,
+                tiles: tiles.map((tile) => [tile?.[0] | 0, tile?.[1] | 0])
+            };
+
+            if (!record.configId) {
+                if (Array.isArray(building?.layers) && building.layers.length) record.layers = building.layers;
+                if (Number.isFinite(building?.wallInset)) record.wallInset = building.wallInset;
+                if (Number.isFinite(building?.floorHeight)) record.floorHeight = building.floorHeight;
+                if (Number.isFinite(building?.floors)) record.floors = building.floors;
+                if (typeof building?.style === 'string') record.style = building.style;
+                if (building?.windows && typeof building.windows === 'object') record.windows = building.windows;
+            }
+
+            spec.buildings.push(record);
+        }
+
+        return spec;
     }
 
     getLanesAtIndex(idx) {
@@ -437,41 +489,6 @@ export class CityMap {
     }
 
     static demoSpec(config) {
-        return {
-            version: 1,
-            seed: config.seed,
-            width: config.map.width,
-            height: config.map.height,
-            tileSize: config.map.tileSize,
-            origin: config.map.origin,
-            roads: [
-                { a: [0, 0], b: [4, 4], lanesF: 1, lanesB: 1, tag: 'diag-test' },
-                { a: [0, 0], b: [8, 2], lanesF: 2, lanesB: 2, tag: 'diag-shallow' },
-                { a: [2, 8], b: [13, 8], lanesF: 2, lanesB: 2, tag: 'arterial' },
-                { a: [8, 2], b: [8, 13], lanesF: 2, lanesB: 2, tag: 'arterial' },
-
-                { a: [4, 4], b: [11, 4], lanesF: 1, lanesB: 1, tag: 'collector' },
-                { a: [4, 4], b: [4, 11], lanesF: 1, lanesB: 1, tag: 'collector' },
-                { a: [4, 11], b: [11, 11], lanesF: 1, lanesB: 1, tag: 'collector' },
-                { a: [11, 4], b: [11, 11], lanesF: 1, lanesB: 1, tag: 'collector' },
-
-                { a: [5, 10], b: [6, 10], lanesF: 2, lanesB: 0, tag: 'oneway-east' },
-                { a: [6, 10], b: [6, 11], lanesF: 2, lanesB: 0, tag: 'oneway-north' },
-                { a: [12, 0], b: [14, 0], lanesF: 1, lanesB: 1, tag: 'test-east-0' },
-                { a: [14, 1], b: [12, 1], lanesF: 1, lanesB: 1, tag: 'test-west-1' }
-            ],
-            buildings: [
-                {
-                    id: 'building_1',
-                    configId: 'brick_midrise',
-                    tiles: [[14, 14], [15, 14], [15, 15], [14, 15]]
-                },
-                {
-                    id: 'building_2',
-                    configId: 'stone_lowrise',
-                    tiles: [[6, 7], [7, 7]]
-                }
-            ]
-	        };
+        return createDemoCitySpec(config);
 	    }
 }

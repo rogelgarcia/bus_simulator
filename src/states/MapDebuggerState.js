@@ -4,11 +4,13 @@ import * as THREE from 'three';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { getSharedCity } from '../app/city/City.js';
 import { createCityConfig } from '../app/city/CityConfig.js';
-import { CityMap } from '../app/city/CityMap.js';
-import { MapDebuggerRoadsPanel } from '../graphics/gui/map_debugger/MapDebuggerRoadsPanel.js';
+import { CityMap, TILE } from '../app/city/CityMap.js';
+import { getBuildingConfigs } from '../app/city/buildings/index.js';
+import { MapDebuggerEditorPanel } from '../graphics/gui/map_debugger/MapDebuggerEditorPanel.js';
 import { MapDebuggerControlsPanel } from '../graphics/gui/map_debugger/MapDebuggerControlsPanel.js';
 import { MapDebuggerShortcutsPanel } from '../graphics/gui/map_debugger/MapDebuggerShortcutsPanel.js';
 import { MapDebuggerInfoPanel } from '../graphics/gui/map_debugger/MapDebuggerInfoPanel.js';
+import { computeBuildingLoopsFromTiles } from '../graphics/assets3d/generators/buildings/BuildingGenerator.js';
 import { CityConnectorDebugOverlay } from '../graphics/visuals/city/CityConnectorDebugOverlay.js';
 import { createRoadHighlightMesh } from '../graphics/visuals/city/RoadHighlightMesh.js';
 import { createCollisionPoleMarkers } from '../graphics/visuals/city/CollisionPoleMarkers.js';
@@ -115,11 +117,30 @@ export class MapDebuggerState {
         this._treesEnabled = false;
         this._cityOptions.generatorConfig = { render: { roadMode: this._roadRenderMode, treesEnabled: this._treesEnabled } };
 
-        this._baseSpec = null;
-        this.debugPanel = null;
+        this._spec = null;
+        this.editorPanel = null;
+        this._editorTab = 'road';
+        this._roadParams = { tag: 'road', lanesF: 1, lanesB: 1 };
+        this._roadModeEnabled = false;
+        this._roadDraftStart = null;
+        this._buildingModeEnabled = false;
+        this._buildingSelection = new Set();
+        this._newBuildingConfigId = null;
         this.debugsPanel = null;
         this.shortcutsPanel = null;
         this.poleInfoPanel = null;
+        this._selectionOverlayMesh = null;
+        this._selectionOverlayGeo = null;
+        this._selectionOverlayMat = null;
+        this._roadStartOverlayMesh = null;
+        this._roadStartOverlayGeo = null;
+        this._roadStartOverlayMat = null;
+        this._buildingHoverOverlayMesh = null;
+        this._buildingHoverOverlayGeo = null;
+        this._buildingHoverOverlayMat = null;
+        this._buildingSelectionOutlineLine = null;
+        this._buildingSelectionOutlineMaterial = null;
+        this._hoverBuildingTiles = null;
         this._highlightMesh = null;
         this._highlightGeo = null;
         this._highlightMat = null;
@@ -157,6 +178,7 @@ export class MapDebuggerState {
         this._onKeyDown = (e) => this._handleKeyDown(e);
         this._onKeyUp = (e) => this._handleKeyUp(e);
         this._onPointerMove = (e) => this._handlePointerMove(e);
+        this._onPointerDown = (e) => this._handlePointerDown(e);
         this._onPointerLeave = () => this._handlePointerLeave();
 
     }
@@ -177,14 +199,44 @@ export class MapDebuggerState {
         };
 
         const config = createCityConfig(this._cityOptions);
-        this._baseSpec = CityMap.demoSpec(config);
+        this._spec = CityMap.demoSpec(config);
 
-        this.debugPanel = new MapDebuggerRoadsPanel({
-            roads: this._baseSpec.roads,
-            onReload: () => this._reloadCity(),
-            onHover: (road) => this._updateHighlight(road)
+        const buildingConfigs = getBuildingConfigs();
+        if (!this._newBuildingConfigId) this._newBuildingConfigId = buildingConfigs[0]?.id ?? null;
+
+        this.editorPanel = new MapDebuggerEditorPanel({
+            spec: this._spec,
+            buildingConfigs,
+            roadParams: this._roadParams,
+            tab: this._editorTab,
+            roadModeEnabled: this._roadModeEnabled,
+            roadDraftStart: this._roadDraftStart,
+            buildingModeEnabled: this._buildingModeEnabled,
+            buildingSelectionCount: this._buildingSelection.size,
+            newBuildingConfigId: this._newBuildingConfigId,
+            onApplyCity: (settings) => this._applyCitySettings(settings),
+            onClearCity: () => this._clearCity(),
+            onResetDemo: () => this._resetDemo(),
+            onRandomizeSeed: () => this._randomizeSeed(),
+            onRoadParamsChange: (params) => this._setRoadParams(params),
+            onTabChange: (tab) => this._setEditorTab(tab),
+            onStartRoadMode: () => this._startRoadMode(),
+            onDoneRoadMode: () => this._doneRoadMode(),
+            onCancelRoadDraft: () => this._cancelRoadDraft(),
+            onRoadRenderedChange: (index, rendered) => this._setRoadRendered(index, rendered),
+            onDeleteRoad: (index) => this._deleteRoadAtIndex(index),
+            onStartBuildingMode: () => this._startBuildingMode(),
+            onDoneBuildingMode: () => this._doneBuildingMode(),
+            onCancelBuildingMode: () => this._cancelBuildingMode(),
+            onClearBuildingSelection: () => this._clearBuildingSelection(),
+            onNewBuildingConfigIdChange: (configId) => this._setNewBuildingConfigId(configId),
+            onBuildingRenderedChange: (id, rendered) => this._setBuildingRendered(id, rendered),
+            onDeleteBuilding: (id) => this._deleteBuildingById(id),
+            onBuildingConfigChange: (data) => this._setBuildingConfigForBuilding(data),
+            onRoadHover: (road) => this._updateHighlight(road),
+            onBuildingHover: (building) => this._setHoveredBuilding(building),
         });
-        this.debugPanel.show();
+        this.editorPanel.show();
 
         this.debugsPanel = new MapDebuggerControlsPanel({
             connectorDebugEnabled: this._connectorDebugEnabled,
@@ -206,7 +258,7 @@ export class MapDebuggerState {
         this.poleInfoPanel = new MapDebuggerInfoPanel();
         this.poleInfoPanel.show();
 
-        this._setCity(this._baseSpec);
+        this._applySpec(this._spec, { resetCamera: true });
 
         const cam = this.engine.camera;
         const size = this.city?.config?.size ?? this._cityOptions.size;
@@ -229,6 +281,7 @@ export class MapDebuggerState {
         window.addEventListener('keydown', this._onKeyDown, { passive: false });
         window.addEventListener('keyup', this._onKeyUp, { passive: false });
         this.canvas?.addEventListener('pointermove', this._onPointerMove);
+        this.canvas?.addEventListener('pointerdown', this._onPointerDown);
         this.canvas?.addEventListener('pointerleave', this._onPointerLeave);
     }
 
@@ -236,18 +289,20 @@ export class MapDebuggerState {
         window.removeEventListener('keydown', this._onKeyDown);
         window.removeEventListener('keyup', this._onKeyUp);
         this.canvas?.removeEventListener('pointermove', this._onPointerMove);
+        this.canvas?.removeEventListener('pointerdown', this._onPointerDown);
         this.canvas?.removeEventListener('pointerleave', this._onPointerLeave);
 
-        this.debugPanel?.destroy();
-        this.debugPanel = null;
+        this.editorPanel?.destroy();
+        this.editorPanel = null;
         this.debugsPanel?.destroy();
         this.debugsPanel = null;
         this.shortcutsPanel?.destroy();
         this.shortcutsPanel = null;
         this.poleInfoPanel?.destroy();
         this.poleInfoPanel = null;
-        this._baseSpec = null;
+        this._spec = null;
         this._clearHighlight();
+        this._clearSelectionOverlays();
         this._clearCollisionMarkers();
         this._clearConnectorOverlay();
         this._destroyHoverOutline();
@@ -296,6 +351,14 @@ export class MapDebuggerState {
 
         if (code === 'Escape') {
             e.preventDefault();
+            if (this._roadModeEnabled) {
+                this._cancelRoadDraft();
+                return;
+            }
+            if (this._buildingModeEnabled) {
+                this._cancelBuildingMode();
+                return;
+            }
             this.sm.go('welcome');
         }
     }
@@ -313,11 +376,14 @@ export class MapDebuggerState {
         this.city?.detach(this.engine);
         this._clearConnectorOverlay();
         this._clearCollisionMarkers();
+        this._clearSelectionOverlays();
         this.engine.clearScene();
         this.engine.context.city = null;
+        if (mapSpec?.seed !== undefined) this._cityOptions.seed = mapSpec.seed;
         this.city = getSharedCity(this.engine, { ...this._cityOptions, mapSpec });
         this.city.attach(this.engine);
         this._setupHighlight();
+        this._setupSelectionOverlays();
         this._setupConnectorOverlay();
         this._setupCollisionMarkers();
         this._setupHoverOutline();
@@ -325,26 +391,502 @@ export class MapDebuggerState {
         this._setPoleInfoData(null);
     }
 
-    _reloadCity() {
-        if (!this._baseSpec || !this.debugPanel) return;
-        const selected = this.debugPanel.getSelectedRoads();
-        const roads = selected.map((road) => ({
-            a: [road.a[0], road.a[1]],
-            b: [road.b[0], road.b[1]],
-            lanesF: road.lanesF,
-            lanesB: road.lanesB,
-            tag: road.tag
-        }));
-        const mapSpec = {
-            version: this._baseSpec.version,
-            seed: this._baseSpec.seed,
-            width: this._baseSpec.width,
-            height: this._baseSpec.height,
-            tileSize: this._baseSpec.tileSize,
-            origin: this._baseSpec.origin,
-            roads
+    _applySpec(spec, { resetCamera = false } = {}) {
+        const fullSpec = this._normalizeSpec(spec);
+        const renderSpec = this._filterSpecForRender(fullSpec);
+        this._setCity(renderSpec);
+
+        const version = fullSpec.version ?? 1;
+        const seed = this.city?.genConfig?.seed ?? fullSpec.seed;
+        const sanitized = this.city?.map?.exportSpec ? this.city.map.exportSpec({ seed, version }) : renderSpec;
+        this._spec = this._mergeSanitizedRenderSpec(fullSpec, sanitized);
+
+        this.editorPanel?.setSpec(this._spec);
+        this.editorPanel?.setTab(this._editorTab);
+        this.editorPanel?.setRoadParams(this._roadParams);
+        this.editorPanel?.setRoadModeEnabled(this._roadModeEnabled);
+        this.editorPanel?.setRoadDraftStart(this._roadDraftStart);
+        this.editorPanel?.setBuildingModeEnabled(this._buildingModeEnabled);
+        this.editorPanel?.setBuildingSelectionCount(this._buildingSelection.size);
+        this.editorPanel?.setNewBuildingConfigId(this._newBuildingConfigId);
+
+        this._recomputeCameraLimits({ resetPosition: resetCamera });
+    }
+
+    _filterSpecForRender(spec) {
+        const input = spec && typeof spec === 'object' ? spec : {};
+        const roadsIn = Array.isArray(input.roads) ? input.roads : [];
+        const buildingsIn = Array.isArray(input.buildings) ? input.buildings : [];
+        return {
+            ...input,
+            roads: roadsIn.filter((road) => road?.rendered !== false),
+            buildings: buildingsIn.filter((building) => building?.rendered !== false)
         };
-        this._setCity(mapSpec);
+    }
+
+    _mergeSanitizedRenderSpec(fullSpec, sanitizedRenderSpec) {
+        const full = fullSpec && typeof fullSpec === 'object' ? fullSpec : {};
+        const sanitized = sanitizedRenderSpec && typeof sanitizedRenderSpec === 'object' ? sanitizedRenderSpec : {};
+
+        const fullRoads = Array.isArray(full.roads) ? full.roads : [];
+        const sanitizedRoads = Array.isArray(sanitized.roads) ? sanitized.roads : [];
+
+        const mergedRoads = [];
+        let roadIndex = 0;
+        for (const road of fullRoads) {
+            if (road?.rendered === false) {
+                mergedRoads.push({ ...road, rendered: false });
+                continue;
+            }
+
+            const clean = sanitizedRoads[roadIndex] ?? road;
+            if (sanitizedRoads[roadIndex]) roadIndex += 1;
+            mergedRoads.push({ ...clean, rendered: true });
+        }
+
+        const fullBuildings = Array.isArray(full.buildings) ? full.buildings : [];
+        const sanitizedBuildings = Array.isArray(sanitized.buildings) ? sanitized.buildings : [];
+
+        const mergedBuildings = [];
+        let buildingIndex = 0;
+        for (const building of fullBuildings) {
+            if (building?.rendered === false) {
+                mergedBuildings.push({ ...building, rendered: false });
+                continue;
+            }
+
+            const clean = sanitizedBuildings[buildingIndex] ?? building;
+            if (sanitizedBuildings[buildingIndex]) buildingIndex += 1;
+            mergedBuildings.push({ ...clean, rendered: true });
+        }
+
+        return {
+            ...full,
+            ...sanitized,
+            roads: mergedRoads,
+            buildings: mergedBuildings
+        };
+    }
+
+    _normalizeSpec(spec) {
+        const input = spec && typeof spec === 'object' ? spec : {};
+        const cfg = createCityConfig(this._cityOptions);
+
+        const version = Number.isFinite(input.version) ? (input.version | 0) : 1;
+        const width = Number.isFinite(input.width) ? Math.max(1, input.width | 0) : (cfg.map.width | 0);
+        const height = Number.isFinite(input.height) ? Math.max(1, input.height | 0) : (cfg.map.height | 0);
+        const tileSize = Number.isFinite(input.tileSize) ? Number(input.tileSize) : cfg.map.tileSize;
+
+        const seedRaw = input.seed ?? cfg.seed ?? this._cityOptions.seed ?? 'city';
+        const seed = String(seedRaw);
+
+        const originIn = input.origin ?? null;
+        const originOk = originIn && Number.isFinite(originIn.x) && Number.isFinite(originIn.z);
+        const origin = originOk ? { x: originIn.x, z: originIn.z } : this._centerOrigin(width, height, tileSize);
+
+        const roads = Array.isArray(input.roads) ? input.roads.slice() : [];
+        const buildings = Array.isArray(input.buildings) ? input.buildings.slice() : [];
+
+        if (Number.isFinite(tileSize) && tileSize > 0 && tileSize !== this._cityOptions.mapTileSize) {
+            this._cityOptions.mapTileSize = tileSize;
+        }
+
+        return {
+            version,
+            seed,
+            width,
+            height,
+            tileSize,
+            origin,
+            roads,
+            buildings
+        };
+    }
+
+    _centerOrigin(width, height, tileSize) {
+        const w = Math.max(1, width | 0);
+        const h = Math.max(1, height | 0);
+        const t = Number.isFinite(tileSize) ? tileSize : 1;
+        const originX = -w * t * 0.5 + t * 0.5;
+        const originZ = -h * t * 0.5 + t * 0.5;
+        return { x: originX, z: originZ };
+    }
+
+    _recomputeCameraLimits({ resetPosition = false } = {}) {
+        const cam = this.engine.camera;
+        const size = this.city?.config?.size ?? this._cityOptions.size;
+        const fovRad = cam.fov * Math.PI / 180;
+        const aspect = cam.aspect || 1;
+        const hFov = 2 * Math.atan(Math.tan(fovRad * 0.5) * aspect);
+        const viewHalf = size * 0.45;
+        this._zoomMin = Math.max(3, size * 0.03);
+        this._zoomMax = size * 1.25;
+        const zoomV = viewHalf / Math.tan(fovRad * 0.5);
+        const zoomH = viewHalf / Math.tan(hFov * 0.5);
+        const suggested = clamp(Math.max(zoomV, zoomH), this._zoomMin, this._zoomMax);
+        this._moveSpeed = size * 0.12;
+        this._zoomSpeed = size * 0.6;
+
+        if (resetPosition) {
+            this._zoom = suggested;
+            cam.position.set(0, this._zoom, 0);
+        } else {
+            if (!Number.isFinite(this._zoom)) this._zoom = suggested;
+            this._zoom = clamp(this._zoom, this._zoomMin, this._zoomMax);
+            cam.position.y = this._zoom;
+        }
+
+        cam.rotation.order = 'YXZ';
+        cam.rotation.set(-Math.PI * 0.5, 0, 0);
+    }
+
+    _applyCitySettings({ width, height, seed } = {}) {
+        if (!this._spec) return;
+        const nextWidth = Number.isFinite(width) ? Math.max(1, width | 0) : this._spec.width;
+        const nextHeight = Number.isFinite(height) ? Math.max(1, height | 0) : this._spec.height;
+        const tileSize = Number.isFinite(this._spec.tileSize) ? this._spec.tileSize : this._cityOptions.mapTileSize;
+        const nextSeed = typeof seed === 'string' && seed.trim() ? seed.trim() : this._spec.seed;
+        const origin = this._centerOrigin(nextWidth, nextHeight, tileSize);
+
+        this._roadDraftStart = null;
+        this._roadModeEnabled = false;
+        this._buildingModeEnabled = false;
+        this._buildingSelection.clear();
+
+        const desiredSize = Math.max(1, Math.max(nextWidth, nextHeight) * tileSize);
+        this._cityOptions.size = desiredSize;
+
+        this._applySpec({ ...this._spec, width: nextWidth, height: nextHeight, seed: nextSeed, origin }, { resetCamera: true });
+    }
+
+    _clearCity() {
+        if (!this._spec) return;
+        this._roadDraftStart = null;
+        this._roadModeEnabled = false;
+        this._buildingModeEnabled = false;
+        this._buildingSelection.clear();
+        this._applySpec({ ...this._spec, roads: [], buildings: [] }, { resetCamera: false });
+    }
+
+    _resetDemo() {
+        const cfg = createCityConfig(this._cityOptions);
+        this._roadDraftStart = null;
+        this._roadModeEnabled = false;
+        this._buildingModeEnabled = false;
+        this._buildingSelection.clear();
+        this._applySpec(CityMap.demoSpec(cfg), { resetCamera: true });
+    }
+
+    _randomizeSeed() {
+        if (!this._spec) return;
+        const seed = this._makeRandomSeed();
+        this._applySpec({ ...this._spec, seed }, { resetCamera: false });
+    }
+
+    _makeRandomSeed() {
+        const part = Math.random().toString(36).slice(2, 10);
+        return `seed_${part || Date.now()}`;
+    }
+
+    _setEditorTab(tab) {
+        const next = tab === 'building' ? 'building' : 'road';
+        if (next === this._editorTab) return;
+        this._editorTab = next;
+        this._doneRoadMode();
+        this._cancelBuildingMode();
+        this.editorPanel?.setTab(this._editorTab);
+    }
+
+    _setRoadParams(params) {
+        const next = params && typeof params === 'object' ? params : {};
+        const tag = typeof next.tag === 'string' ? next.tag.trim() : this._roadParams.tag;
+        const lanesF = Number.isFinite(next.lanesF) ? Math.max(0, next.lanesF | 0) : this._roadParams.lanesF;
+        const lanesB = Number.isFinite(next.lanesB) ? Math.max(0, next.lanesB | 0) : this._roadParams.lanesB;
+        this._roadParams = { tag: tag || 'road', lanesF, lanesB };
+        this.editorPanel?.setRoadParams(this._roadParams);
+    }
+
+    _startRoadMode() {
+        this._roadModeEnabled = true;
+        this._roadDraftStart = null;
+        this._buildingModeEnabled = false;
+        this._buildingSelection.clear();
+        this.editorPanel?.setRoadModeEnabled(this._roadModeEnabled);
+        this.editorPanel?.setRoadDraftStart(this._roadDraftStart);
+        this.editorPanel?.setBuildingModeEnabled(this._buildingModeEnabled);
+        this.editorPanel?.setBuildingSelectionCount(this._buildingSelection.size);
+        this._syncSelectionOverlay();
+        this._syncRoadStartOverlay();
+    }
+
+    _doneRoadMode() {
+        this._roadModeEnabled = false;
+        this._roadDraftStart = null;
+        this.editorPanel?.setRoadModeEnabled(this._roadModeEnabled);
+        this.editorPanel?.setRoadDraftStart(this._roadDraftStart);
+        this._syncRoadStartOverlay();
+    }
+
+    _cancelRoadDraft() {
+        this._roadDraftStart = null;
+        this.editorPanel?.setRoadDraftStart(null);
+        this._syncRoadStartOverlay();
+    }
+
+    _deleteRoadAtIndex(index) {
+        if (!this._spec) return;
+        const idx = Number(index);
+        if (!Number.isFinite(idx) || idx < 0) return;
+        const roads = Array.isArray(this._spec.roads) ? this._spec.roads.slice() : [];
+        if (idx >= roads.length) return;
+        roads.splice(idx, 1);
+        this._applySpec({ ...this._spec, roads }, { resetCamera: false });
+    }
+
+    _setRoadRendered(index, rendered) {
+        if (!this._spec) return;
+        const idx = Number(index);
+        if (!Number.isFinite(idx) || idx < 0) return;
+        const roads = Array.isArray(this._spec.roads) ? this._spec.roads.slice() : [];
+        if (idx >= roads.length) return;
+        const road = roads[idx];
+        if (!road || typeof road !== 'object') return;
+        roads[idx] = { ...road, rendered: !!rendered };
+        this._applySpec({ ...this._spec, roads }, { resetCamera: false });
+    }
+
+    _startBuildingMode() {
+        this._buildingModeEnabled = true;
+        this._buildingSelection.clear();
+        this._roadModeEnabled = false;
+        this._roadDraftStart = null;
+        this.editorPanel?.setBuildingModeEnabled(this._buildingModeEnabled);
+        this.editorPanel?.setBuildingSelectionCount(this._buildingSelection.size);
+        this.editorPanel?.setRoadModeEnabled(this._roadModeEnabled);
+        this.editorPanel?.setRoadDraftStart(this._roadDraftStart);
+        this._syncSelectionOverlay();
+        this._syncRoadStartOverlay();
+    }
+
+    _doneBuildingMode() {
+        if (!this._spec) return;
+        if (!this._buildingSelection.size) {
+            this._cancelBuildingMode();
+            return;
+        }
+        const map = this.city?.map ?? null;
+        if (!map) return;
+
+        const width = map.width | 0;
+        const selectedIdx = new Set(this._buildingSelection);
+
+        const buildingsIn = Array.isArray(this._spec.buildings) ? this._spec.buildings : [];
+        const kept = [];
+        for (const building of buildingsIn) {
+            const tiles = Array.isArray(building?.tiles) ? building.tiles : [];
+            let overlaps = false;
+            for (const t of tiles) {
+                const tx = t?.[0] | 0;
+                const ty = t?.[1] | 0;
+                const tidx = tx + ty * width;
+                if (selectedIdx.has(tidx)) {
+                    overlaps = true;
+                    break;
+                }
+            }
+            if (!overlaps) kept.push(building);
+        }
+
+        const clusters = this._clusterTileIndices(selectedIdx, width, map.height | 0);
+        const buildings = kept.slice();
+        const configId = typeof this._newBuildingConfigId === 'string' ? this._newBuildingConfigId : null;
+        for (const cluster of clusters) {
+            const tiles = cluster.map((idx) => [idx % width, Math.floor(idx / width)]);
+            if (!tiles.length) continue;
+            const id = this._nextBuildingId(buildings);
+            buildings.push({ id, configId, tiles });
+        }
+
+        this._buildingModeEnabled = false;
+        this._buildingSelection.clear();
+        this.editorPanel?.setBuildingModeEnabled(this._buildingModeEnabled);
+        this.editorPanel?.setBuildingSelectionCount(this._buildingSelection.size);
+        this._syncSelectionOverlay();
+
+        this._applySpec({ ...this._spec, buildings }, { resetCamera: false });
+    }
+
+    _cancelBuildingMode() {
+        this._buildingModeEnabled = false;
+        this._buildingSelection.clear();
+        this.editorPanel?.setBuildingModeEnabled(this._buildingModeEnabled);
+        this.editorPanel?.setBuildingSelectionCount(this._buildingSelection.size);
+        this._syncSelectionOverlay();
+    }
+
+    _clearBuildingSelection() {
+        this._buildingSelection.clear();
+        this.editorPanel?.setBuildingSelectionCount(this._buildingSelection.size);
+        this._syncSelectionOverlay();
+    }
+
+    _setNewBuildingConfigId(configId) {
+        const next = typeof configId === 'string' && configId ? configId : null;
+        if (!next) return;
+        this._newBuildingConfigId = next;
+        this.editorPanel?.setNewBuildingConfigId(next);
+    }
+
+    _deleteBuildingById(id) {
+        if (!this._spec) return;
+        const key = typeof id === 'string' ? id : '';
+        if (!key) return;
+        const buildings = Array.isArray(this._spec.buildings) ? this._spec.buildings.filter((b) => b?.id !== key) : [];
+        this._applySpec({ ...this._spec, buildings }, { resetCamera: false });
+    }
+
+    _setBuildingRendered(id, rendered) {
+        if (!this._spec) return;
+        const key = typeof id === 'string' ? id : '';
+        if (!key) return;
+        const buildings = Array.isArray(this._spec.buildings) ? this._spec.buildings.slice() : [];
+        const idx = buildings.findIndex((b) => b?.id === key);
+        if (idx < 0) return;
+        const building = buildings[idx];
+        if (!building || typeof building !== 'object') return;
+        buildings[idx] = { ...building, rendered: !!rendered };
+        this._applySpec({ ...this._spec, buildings }, { resetCamera: false });
+    }
+
+    _setBuildingConfigForBuilding(data) {
+        if (!this._spec) return;
+        const buildingId = typeof data?.buildingId === 'string' ? data.buildingId : '';
+        const configId = typeof data?.configId === 'string' ? data.configId : '';
+        if (!buildingId || !configId) return;
+
+        const buildings = Array.isArray(this._spec.buildings) ? this._spec.buildings.slice() : [];
+        const idx = buildings.findIndex((b) => b?.id === buildingId);
+        if (idx < 0) return;
+        buildings[idx] = { ...buildings[idx], configId };
+        this._applySpec({ ...this._spec, buildings }, { resetCamera: false });
+    }
+
+    _clusterTileIndices(indices, width, height) {
+        const remaining = new Set(indices);
+        const clusters = [];
+
+        const takeOne = () => remaining.values().next().value;
+        const isValid = (idx) => Number.isFinite(idx) && idx >= 0 && idx < width * height;
+
+        while (remaining.size) {
+            const root = takeOne();
+            remaining.delete(root);
+            if (!isValid(root)) continue;
+            const queue = [root];
+            const cluster = [];
+
+            while (queue.length) {
+                const idx = queue.shift();
+                if (!isValid(idx)) continue;
+                cluster.push(idx);
+
+                const x = idx % width;
+                const y = Math.floor(idx / width);
+                const neighbors = [];
+                if (x + 1 < width) neighbors.push(idx + 1);
+                if (x - 1 >= 0) neighbors.push(idx - 1);
+                if (y + 1 < height) neighbors.push(idx + width);
+                if (y - 1 >= 0) neighbors.push(idx - width);
+
+                for (const n of neighbors) {
+                    if (!remaining.has(n)) continue;
+                    remaining.delete(n);
+                    queue.push(n);
+                }
+            }
+
+            if (cluster.length) clusters.push(cluster);
+        }
+
+        return clusters;
+    }
+
+    _nextBuildingId(buildings) {
+        const list = Array.isArray(buildings) ? buildings : [];
+        let max = 0;
+        for (const b of list) {
+            const id = typeof b?.id === 'string' ? b.id : '';
+            const match = id.match(/^building_(\d+)$/);
+            if (!match) continue;
+            const n = Number(match[1]);
+            if (Number.isFinite(n) && n > max) max = n;
+        }
+        return `building_${max + 1}`;
+    }
+
+    _isAdjacentToTiles(x, y, tiles) {
+        const list = Array.isArray(tiles) ? tiles : [];
+        for (const tile of list) {
+            const tx = Array.isArray(tile) ? tile[0] : tile?.x;
+            const ty = Array.isArray(tile) ? tile[1] : tile?.y;
+            if (!Number.isFinite(tx) || !Number.isFinite(ty)) continue;
+            const dx = Math.abs((tx | 0) - x);
+            const dy = Math.abs((ty | 0) - y);
+            if ((dx === 1 && dy === 0) || (dx === 0 && dy === 1)) return true;
+        }
+        return false;
+    }
+
+    _handleRoadToolClick(tile) {
+        if (!this._spec) return;
+        if (!this._roadDraftStart) {
+            this._roadDraftStart = { x: tile.x | 0, y: tile.y | 0 };
+            this.editorPanel?.setRoadDraftStart(this._roadDraftStart);
+            this._syncRoadStartOverlay();
+            return;
+        }
+
+        const start = this._roadDraftStart;
+        const end = { x: tile.x | 0, y: tile.y | 0 };
+        this._roadDraftStart = null;
+        this._syncRoadStartOverlay();
+
+        if (start.x === end.x && start.y === end.y) {
+            this.editorPanel?.setRoadDraftStart(null);
+            return;
+        }
+
+        const road = {
+            a: [start.x, start.y],
+            b: [end.x, end.y],
+            lanesF: this._roadParams.lanesF ?? 1,
+            lanesB: this._roadParams.lanesB ?? 1,
+            tag: this._roadParams.tag ?? 'road'
+        };
+
+        const roads = Array.isArray(this._spec.roads) ? this._spec.roads.slice() : [];
+        roads.push(road);
+        this._applySpec({ ...this._spec, roads }, { resetCamera: false });
+    }
+
+    _handleBuildingToolClick(tile) {
+        if (!this._spec || !this.city?.map) return;
+        const map = this.city.map;
+        const x = tile.x | 0;
+        const y = tile.y | 0;
+        const idx = map.index(x, y);
+        if (map.kind[idx] === TILE.ROAD) return;
+
+        if (this._buildingSelection.has(idx)) this._buildingSelection.delete(idx);
+        else this._buildingSelection.add(idx);
+
+        this.editorPanel?.setBuildingSelectionCount(this._buildingSelection.size);
+        this._syncSelectionOverlay();
+    }
+
+    _setHoveredBuilding(building) {
+        this._hoverBuildingTiles = Array.isArray(building?.tiles) ? building.tiles : null;
+        this._syncBuildingHoverOverlay();
     }
 
     _setupHighlight() {
@@ -380,6 +922,277 @@ export class MapDebuggerState {
         this._highlightGeo = null;
         this._highlightMat = null;
         this._highlightPos = null;
+    }
+
+    _clearSelectionOverlays() {
+        if (this._selectionOverlayMesh) this._selectionOverlayMesh.removeFromParent();
+        if (this._selectionOverlayGeo) this._selectionOverlayGeo.dispose();
+        if (this._selectionOverlayMat) this._selectionOverlayMat.dispose();
+        if (this._roadStartOverlayMesh) this._roadStartOverlayMesh.removeFromParent();
+        if (this._roadStartOverlayGeo) this._roadStartOverlayGeo.dispose();
+        if (this._roadStartOverlayMat) this._roadStartOverlayMat.dispose();
+        if (this._buildingHoverOverlayMesh) this._buildingHoverOverlayMesh.removeFromParent();
+        if (this._buildingHoverOverlayGeo) this._buildingHoverOverlayGeo.dispose();
+        if (this._buildingHoverOverlayMat) this._buildingHoverOverlayMat.dispose();
+        if (this._buildingSelectionOutlineLine) this._buildingSelectionOutlineLine.removeFromParent();
+        if (this._buildingSelectionOutlineLine?.geometry) this._buildingSelectionOutlineLine.geometry.dispose?.();
+        if (this._buildingSelectionOutlineMaterial) this._buildingSelectionOutlineMaterial.dispose?.();
+        this._selectionOverlayMesh = null;
+        this._selectionOverlayGeo = null;
+        this._selectionOverlayMat = null;
+        this._roadStartOverlayMesh = null;
+        this._roadStartOverlayGeo = null;
+        this._roadStartOverlayMat = null;
+        this._buildingHoverOverlayMesh = null;
+        this._buildingHoverOverlayGeo = null;
+        this._buildingHoverOverlayMat = null;
+        this._buildingSelectionOutlineLine = null;
+        this._buildingSelectionOutlineMaterial = null;
+    }
+
+    _setupSelectionOverlays() {
+        this._clearSelectionOverlays();
+        const map = this.city?.map ?? null;
+        if (!map) return;
+
+        const tileSize = map.tileSize ?? 1;
+        const baseGeo = new THREE.PlaneGeometry(tileSize * 0.94, tileSize * 0.94, 1, 1);
+        baseGeo.rotateX(-Math.PI / 2);
+
+        const selMat = new THREE.MeshBasicMaterial({
+            color: 0x34c759,
+            transparent: true,
+            opacity: 0.28,
+            depthTest: false,
+            depthWrite: false
+        });
+
+        const max = Math.max(1, map.width * map.height);
+        const selMesh = new THREE.InstancedMesh(baseGeo, selMat, max);
+        selMesh.name = 'EditorSelectionTiles';
+        selMesh.renderOrder = 40;
+        selMesh.frustumCulled = false;
+        this._selectionOverlayGeo = baseGeo;
+        this._selectionOverlayMat = selMat;
+        this._selectionOverlayMesh = selMesh;
+        this.city.group.add(selMesh);
+
+        const hoverGeo = new THREE.PlaneGeometry(tileSize * 0.96, tileSize * 0.96, 1, 1);
+        hoverGeo.rotateX(-Math.PI / 2);
+
+        const hoverMat = new THREE.MeshBasicMaterial({
+            color: 0xfff3a3,
+            transparent: true,
+            opacity: 0.22,
+            depthTest: false,
+            depthWrite: false
+        });
+
+        const hoverMesh = new THREE.InstancedMesh(hoverGeo, hoverMat, max);
+        hoverMesh.name = 'EditorHoveredBuildingTiles';
+        hoverMesh.renderOrder = 39;
+        hoverMesh.frustumCulled = false;
+        hoverMesh.visible = false;
+        this._buildingHoverOverlayGeo = hoverGeo;
+        this._buildingHoverOverlayMat = hoverMat;
+        this._buildingHoverOverlayMesh = hoverMesh;
+        this.city.group.add(hoverMesh);
+
+        const outline = createHoverOutlineLine({
+            renderer: this.engine?.renderer ?? null,
+            color: 0xff3b30,
+            lineWidth: 5,
+            opacity: 1.0,
+            renderOrder: 42,
+            depthTest: false,
+            depthWrite: false
+        });
+        outline.line.name = 'EditorBuildingSelectionOutline';
+        this._buildingSelectionOutlineLine = outline.line;
+        this._buildingSelectionOutlineMaterial = outline.material;
+        this.city.group.add(outline.line);
+
+        const startGeo = new THREE.PlaneGeometry(tileSize * 0.86, tileSize * 0.86, 1, 1);
+        startGeo.rotateX(-Math.PI / 2);
+        const startMat = new THREE.MeshBasicMaterial({
+            color: 0xff9500,
+            transparent: true,
+            opacity: 0.38,
+            depthTest: false,
+            depthWrite: false
+        });
+        const startMesh = new THREE.Mesh(startGeo, startMat);
+        startMesh.name = 'EditorRoadStartTile';
+        startMesh.renderOrder = 41;
+        startMesh.frustumCulled = false;
+        startMesh.visible = false;
+        this._roadStartOverlayGeo = startGeo;
+        this._roadStartOverlayMat = startMat;
+        this._roadStartOverlayMesh = startMesh;
+        this.city.group.add(startMesh);
+
+        this._syncSelectionOverlay();
+        this._syncBuildingHoverOverlay();
+        this._syncRoadStartOverlay();
+    }
+
+    _overlaySurfaceY() {
+        const roadCfg = this.city?.generatorConfig?.road ?? {};
+        const groundCfg = this.city?.generatorConfig?.ground ?? {};
+        const baseRoadY = roadCfg.surfaceY ?? 0.02;
+        const curbHeight = roadCfg.curb?.height ?? 0.17;
+        const groundY = groundCfg.surfaceY ?? (baseRoadY + curbHeight);
+        return groundY + ROAD_SURFACE_LIFT;
+    }
+
+    _syncSelectionOverlay() {
+        const mesh = this._selectionOverlayMesh;
+        const map = this.city?.map ?? null;
+        if (!mesh || !map) return;
+
+        const dummy = new THREE.Object3D();
+        const y = this._overlaySurfaceY();
+        let count = 0;
+        for (const idx of this._buildingSelection) {
+            const x = idx % map.width;
+            const yTile = Math.floor(idx / map.width);
+            if (!map.inBounds(x, yTile)) continue;
+            const p = map.tileToWorldCenter(x, yTile);
+            dummy.position.set(p.x, y, p.z);
+            dummy.rotation.set(0, 0, 0);
+            dummy.scale.set(1, 1, 1);
+            dummy.updateMatrix();
+            mesh.setMatrixAt(count++, dummy.matrix);
+        }
+        mesh.count = count;
+        mesh.instanceMatrix.needsUpdate = true;
+        this._syncBuildingSelectionOutline();
+    }
+
+    _syncRoadStartOverlay() {
+        const mesh = this._roadStartOverlayMesh;
+        const map = this.city?.map ?? null;
+        if (!mesh || !map) return;
+        const start = this._roadDraftStart;
+        if (!start) {
+            mesh.visible = false;
+            return;
+        }
+        const x = start.x | 0;
+        const yTile = start.y | 0;
+        if (!map.inBounds(x, yTile)) {
+            mesh.visible = false;
+            return;
+        }
+        const p = map.tileToWorldCenter(x, yTile);
+        mesh.position.set(p.x, this._overlaySurfaceY(), p.z);
+        mesh.rotation.set(0, 0, 0);
+        mesh.visible = true;
+    }
+
+    _selectionPlanY() {
+        const roadCfg = this.city?.generatorConfig?.road ?? {};
+        const baseRoadY = Number.isFinite(roadCfg.surfaceY) ? roadCfg.surfaceY : 0;
+        const curbHeight = Number.isFinite(roadCfg?.curb?.height) ? roadCfg.curb.height : 0;
+        const curbExtra = Number.isFinite(roadCfg?.curb?.extraHeight) ? roadCfg.curb.extraHeight : 0;
+        const sidewalkLift = Number.isFinite(roadCfg?.sidewalk?.lift) ? roadCfg.sidewalk.lift : 0;
+        const sidewalkWidth = Number.isFinite(roadCfg?.sidewalk?.extraWidth) ? roadCfg.sidewalk.extraWidth : 0;
+        const hasSidewalk = sidewalkWidth > EPS;
+
+        const groundY = this.city?.generatorConfig?.ground?.surfaceY ?? baseRoadY;
+        const sidewalkSurfaceY = hasSidewalk ? (baseRoadY + curbHeight + curbExtra + sidewalkLift) : null;
+        const planBase = (hasSidewalk && Number.isFinite(sidewalkSurfaceY))
+            ? sidewalkSurfaceY
+            : (Number.isFinite(baseRoadY) ? baseRoadY : (Number.isFinite(groundY) ? groundY : 0));
+        return planBase + 0.07;
+    }
+
+    _syncBuildingSelectionOutline() {
+        const line = this._buildingSelectionOutlineLine;
+        const map = this.city?.map ?? null;
+        if (!line || !map) return;
+
+        const selection = this._buildingSelection;
+        if (!this._buildingModeEnabled || !selection?.size) {
+            line.visible = false;
+            line.geometry.setPositions([]);
+            line.geometry.computeBoundingSphere?.();
+            return;
+        }
+
+        const tiles = [];
+        for (const idx of selection) {
+            const x = idx % map.width;
+            const y = Math.floor(idx / map.width);
+            if (!map.inBounds(x, y)) continue;
+            tiles.push([x, y]);
+        }
+
+        const loops = computeBuildingLoopsFromTiles({
+            map,
+            tiles,
+            generatorConfig: this.city?.generatorConfig ?? null,
+            tileSize: map.tileSize,
+            occupyRatio: 1.0
+        });
+
+        const y = this._selectionPlanY();
+        const positions = [];
+        for (const loop of loops) {
+            if (!loop || loop.length < 2) continue;
+            for (let i = 0; i < loop.length; i++) {
+                const a = loop[i];
+                const b = loop[(i + 1) % loop.length];
+                positions.push(a.x, y, a.z, b.x, y, b.z);
+            }
+        }
+
+        if (!positions.length) {
+            line.visible = false;
+            line.geometry.setPositions([]);
+            line.geometry.computeBoundingSphere?.();
+            return;
+        }
+
+        line.geometry.setPositions(positions);
+        line.geometry.computeBoundingSphere?.();
+        line.visible = true;
+    }
+
+    _syncBuildingHoverOverlay() {
+        const mesh = this._buildingHoverOverlayMesh;
+        const map = this.city?.map ?? null;
+        if (!mesh || !map) return;
+
+        const tiles = Array.isArray(this._hoverBuildingTiles) ? this._hoverBuildingTiles : [];
+        if (!tiles.length) {
+            mesh.visible = false;
+            mesh.count = 0;
+            mesh.instanceMatrix.needsUpdate = true;
+            return;
+        }
+
+        const dummy = new THREE.Object3D();
+        const y = this._overlaySurfaceY();
+        let count = 0;
+        for (const tile of tiles) {
+            const x = Array.isArray(tile) ? tile[0] : tile?.x;
+            const yTile = Array.isArray(tile) ? tile[1] : tile?.y;
+            if (!Number.isFinite(x) || !Number.isFinite(yTile)) continue;
+            const tx = x | 0;
+            const ty = yTile | 0;
+            if (!map.inBounds(tx, ty)) continue;
+            const p = map.tileToWorldCenter(tx, ty);
+            dummy.position.set(p.x, y, p.z);
+            dummy.rotation.set(0, 0, 0);
+            dummy.scale.set(1, 1, 1);
+            dummy.updateMatrix();
+            mesh.setMatrixAt(count++, dummy.matrix);
+        }
+
+        mesh.count = count;
+        mesh.instanceMatrix.needsUpdate = true;
+        mesh.visible = count > 0;
     }
 
     _setupCollisionMarkers() {
@@ -621,7 +1434,7 @@ export class MapDebuggerState {
         }
 
         if (this._treesEnabled) {
-            this._reloadCity();
+            this._applySpec(this._spec, { resetCamera: false });
         }
     }
 
@@ -633,7 +1446,7 @@ export class MapDebuggerState {
         const render = { ...(current.render ?? {}), roadMode: next, treesEnabled: this._treesEnabled };
         this._cityOptions.generatorConfig = { ...current, render };
         this.debugsPanel?.setRoadRenderMode(this._roadRenderMode);
-        this._reloadCity();
+        this._applySpec(this._spec, { resetCamera: false });
     }
 
     _setHoverOutlineEnabled(enabled) {
@@ -644,7 +1457,7 @@ export class MapDebuggerState {
     }
 
     _handlePointerMove(e) {
-        if (this.debugPanel?.root?.contains(e.target) || this.debugsPanel?.root?.contains(e.target) || this.shortcutsPanel?.root?.contains(e.target)) {
+        if (this.editorPanel?.root?.contains(e.target) || this.debugsPanel?.root?.contains(e.target) || this.shortcutsPanel?.root?.contains(e.target)) {
             this._clearConnectorHover();
             this._clearHoverOutline();
             return;
@@ -706,6 +1519,28 @@ export class MapDebuggerState {
         if (this._hoverOutlineEnabled) this._updateHoverOutline(hoverHit);
         else this._clearHoverOutline();
         this._updateHoverInfo(hoverHit);
+    }
+
+    _handlePointerDown(e) {
+        if (e.button !== 0) return;
+        if (!this.city?.map) return;
+        if (!this._roadModeEnabled && !this._buildingModeEnabled) return;
+
+        this._setPointerFromEvent(e);
+        const hit = this._intersectHoverPlane();
+        if (!hit) return;
+
+        const tile = this.city.map.worldToTile(hit.x, hit.z);
+        const x = tile?.x;
+        const y = tile?.y;
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        if (!this.city.map.inBounds(x | 0, y | 0)) return;
+
+        if (this._roadModeEnabled) {
+            this._handleRoadToolClick({ x: x | 0, y: y | 0 });
+        } else if (this._buildingModeEnabled) {
+            this._handleBuildingToolClick({ x: x | 0, y: y | 0 });
+        }
     }
 
     _clearConnectorHover() {
