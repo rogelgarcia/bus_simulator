@@ -11,6 +11,8 @@ import { createGradientSkyDome } from '../../graphics/assets3d/generators/SkyGen
 import { createGeneratorConfig } from '../../graphics/assets3d/generators/GeneratorParams.js';
 import { BuildingWallTextureCache, buildBuildingVisualParts } from '../../graphics/assets3d/generators/buildings/BuildingGenerator.js';
 import { buildBuildingFabricationVisualParts } from '../../graphics/assets3d/generators/building_fabrication/BuildingFabricationGenerator.js';
+import { computeTrafficControlPlacements } from './TrafficControlPlacement.js';
+import { createTrafficControlProps } from '../../graphics/visuals/city/TrafficControlProps.js';
 
 export class City {
     constructor(options = {}) {
@@ -85,6 +87,16 @@ export class City {
         this.materials = getCityMaterials();
         this.roads = generateRoads({ map: this.map, config: this.generatorConfig, materials: this.materials });
         this.group.add(this.roads.group);
+
+        this.trafficControls = null;
+        const trafficControlPlacements = computeTrafficControlPlacements({
+            map: this.map,
+            generatorConfig: this.generatorConfig
+        });
+        if (trafficControlPlacements.length) {
+            this.trafficControls = createTrafficControlProps({ placements: trafficControlPlacements });
+            this.group.add(this.trafficControls.group);
+        }
 
         this.buildings = null;
         const buildingsList = Array.isArray(this.map.buildings) ? this.map.buildings : [];

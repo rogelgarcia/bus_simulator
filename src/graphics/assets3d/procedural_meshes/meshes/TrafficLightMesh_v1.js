@@ -96,16 +96,16 @@ function cloneSolidMaterials(materials, count) {
 }
 
 export function createAsset() {
-    const poleWidthProp = createNumberProperty({
-        id: 'poleWidth',
-        label: 'Pole width',
-        min: 0.03,
-        max: 0.12,
-        step: 0.005,
-        defaultValue: 0.055
+    const armLengthProp = createNumberProperty({
+        id: 'armLength',
+        label: 'Arm length',
+        min: 0.8,
+        max: 4.2,
+        step: 0.1,
+        defaultValue: 2.2
     });
 
-    const poleAsset = TrafficLightPoleMeshV1.createAsset({ radius: poleWidthProp.defaultValue });
+    const poleAsset = TrafficLightPoleMeshV1.createAsset({ armLength: armLengthProp.defaultValue });
     const headAsset = TrafficLightHeadMeshV1.createAsset();
     let rotatedHeadGeo = null;
 
@@ -127,7 +127,7 @@ export function createAsset() {
         const armGeo = armRegionIndex >= 0 ? poleParts[armRegionIndex] : null;
         const armBox = computeIndexedBoundingBox(armGeo);
 
-        const headRotation = new THREE.Matrix4().makeRotationY(Math.PI / 2);
+        const headRotation = new THREE.Matrix4().makeRotationY(Math.PI);
         rotatedHeadGeo = headGeo?.clone?.() ?? null;
         if (!rotatedHeadGeo) throw new Error('TrafficLightMesh: missing head geometry.');
         rotatedHeadGeo.applyMatrix4(headRotation);
@@ -148,7 +148,7 @@ export function createAsset() {
 
             const translation = new THREE.Matrix4().makeTranslation(
                 attachX - headCenterX,
-                attachY - headMaxY + headHeight * 0.5,
+                attachY - headMaxY + headHeight,
                 attachZ - headCenterZ - headDepth
             );
 
@@ -182,13 +182,13 @@ export function createAsset() {
         const rootSchema = Object.freeze({
             id: 'skeleton.traffic_light.v1',
             label: 'Traffic light',
-            properties: Object.freeze([poleWidthProp]),
+            properties: Object.freeze([armLengthProp]),
             children: Object.freeze([headSkeleton.schema])
         });
 
-        const state = { poleWidth: poleWidthProp.defaultValue };
-        const rebuildGeometry = (poleWidth) => {
-            const poleRebuild = TrafficLightPoleMeshV1.createAsset({ radius: poleWidth });
+        const state = { armLength: armLengthProp.defaultValue };
+        const rebuildGeometry = (armLength) => {
+            const poleRebuild = TrafficLightPoleMeshV1.createAsset({ armLength });
             const headRebuild = TrafficLightHeadMeshV1.createAsset();
             let rotated = null;
 
@@ -209,7 +209,7 @@ export function createAsset() {
                 const armGeo = armRegionIndex >= 0 ? poleParts[armRegionIndex] : null;
                 const armBox = computeIndexedBoundingBox(armGeo);
 
-                const headRotation = new THREE.Matrix4().makeRotationY(Math.PI / 2);
+                const headRotation = new THREE.Matrix4().makeRotationY(Math.PI);
                 rotated = headGeo?.clone?.() ?? null;
                 if (!rotated) return null;
                 rotated.applyMatrix4(headRotation);
@@ -231,7 +231,7 @@ export function createAsset() {
 
                     const translation = new THREE.Matrix4().makeTranslation(
                         attachX - headCenterX,
-                        attachY - headMaxY + headHeight * 0.5,
+                        attachY - headMaxY + headHeight,
                         attachZ - headCenterZ - headDepth
                     );
 
@@ -258,14 +258,14 @@ export function createAsset() {
             schema: rootSchema,
             children: [headSkeleton],
             getValue: (propId) => {
-                if (propId === 'poleWidth') return state.poleWidth;
+                if (propId === 'armLength') return state.armLength;
                 return null;
             },
             setValue: (propId, value) => {
-                if (propId !== 'poleWidth') return;
-                const next = clampNumber(value, poleWidthProp);
-                if (Math.abs(next - state.poleWidth) < 1e-9) return;
-                state.poleWidth = next;
+                if (propId !== 'armLength') return;
+                const next = clampNumber(value, armLengthProp);
+                if (Math.abs(next - state.armLength) < 1e-9) return;
+                state.armLength = next;
                 const nextGeo = rebuildGeometry(next);
                 if (!nextGeo) return;
                 const prev = mesh.geometry;

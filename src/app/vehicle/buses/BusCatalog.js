@@ -7,6 +7,8 @@
 // - `wheel`: approximate wheel geometry { radius, width }
 // - `tuning`: gameplay/physics defaults (engine, suspension, damping, etc)
 
+const ENGINE_POWER_SCALE = 1.3;
+
 export const BUS_CATALOG = [
     {
         id: 'city',
@@ -18,7 +20,7 @@ export const BUS_CATALOG = [
         wheel: { radius: 0.55 * 1.15, width: 0.32 * 1.15 },
         tuning: {
             mass: 10000,
-            engineForce: 200000,
+            engineForce: 200000 * ENGINE_POWER_SCALE,
             brakeForce: 15000,
             handbrakeForce: 17000,
             maxSteerDeg: 38,
@@ -37,7 +39,7 @@ export const BUS_CATALOG = [
             frictionSlip: 8.2,
             sideFrictionStiffness: 1.45,
             engine: {
-                maxTorque: 2300,
+                maxTorque: 2300 * ENGINE_POWER_SCALE,
                 finalDrive: 4.4
             }
         }
@@ -52,7 +54,7 @@ export const BUS_CATALOG = [
         wheel: { radius: 0.55, width: 0.32 },
         tuning: {
             mass: 11800,
-            engineForce: 210000,
+            engineForce: 210000 * ENGINE_POWER_SCALE,
             brakeForce: 15500,
             handbrakeForce: 17500,
             maxSteerDeg: 36,
@@ -71,7 +73,7 @@ export const BUS_CATALOG = [
             frictionSlip: 7.4,
             sideFrictionStiffness: 1.22,
             engine: {
-                maxTorque: 2500,
+                maxTorque: 2500 * ENGINE_POWER_SCALE,
                 finalDrive: 4.1
             }
         }
@@ -86,7 +88,7 @@ export const BUS_CATALOG = [
         wheel: { radius: 0.55, width: 0.30 },
         tuning: {
             mass: 13500,
-            engineForce: 220000,
+            engineForce: 220000 * ENGINE_POWER_SCALE,
             brakeForce: 16500,
             handbrakeForce: 18500,
             maxSteerDeg: 32,
@@ -105,7 +107,7 @@ export const BUS_CATALOG = [
             frictionSlip: 8.6,
             sideFrictionStiffness: 1.35,
             engine: {
-                maxTorque: 2650,
+                maxTorque: 2650 * ENGINE_POWER_SCALE,
                 finalDrive: 4.6
             }
         }

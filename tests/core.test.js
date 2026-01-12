@@ -139,6 +139,30 @@ async function runTests() {
         assertEqual(manager.count, 2, 'Should have 2 vehicles.');
     });
 
+    // ========== Bus Catalog Tests ==========
+    const { BUS_CATALOG, getBusSpec } = await import('/src/app/vehicle/buses/BusCatalog.js');
+
+    test('BusCatalog: engine power scaled by 30%', () => {
+        const scale = 1.3;
+        const baseline = Object.freeze({
+            city: { engineForce: 200000, maxTorque: 2300 },
+            coach: { engineForce: 210000, maxTorque: 2500 },
+            double: { engineForce: 220000, maxTorque: 2650 }
+        });
+
+        const expectedIds = Object.keys(baseline);
+        for (const id of expectedIds) {
+            assertTrue(BUS_CATALOG.some((spec) => spec?.id === id), `Expected ${id} in BUS_CATALOG.`);
+        }
+
+        for (const [id, expected] of Object.entries(baseline)) {
+            const spec = getBusSpec(id);
+            assertTrue(!!spec, `Expected bus spec ${id}.`);
+            assertNear(spec?.tuning?.engineForce, expected.engineForce * scale, 1e-6, `${id} engineForce.`);
+            assertNear(spec?.tuning?.engine?.maxTorque, expected.maxTorque * scale, 1e-6, `${id} maxTorque.`);
+        }
+    });
+
     // ========== PhysicsController Tests (added in Task 4) ==========
     try {
         const { PhysicsController } = await import('/src/app/physics/PhysicsController.js');
@@ -1315,6 +1339,92 @@ async function runTests() {
         assertEqual(out.buildings[0].configId, 'brick_midrise', 'Expected building configId in export.');
     });
 
+    // ========== Traffic Control Placement Tests ==========
+    const { classifyIntersectionTrafficControl, computeTrafficControlPlacements, TRAFFIC_CONTROL } = await import('/src/app/city/TrafficControlPlacement.js');
+
+    test('TrafficControlPlacement: classifies 2x2+ lane intersections as traffic lights', () => {
+        const kind = classifyIntersectionTrafficControl({ n: 2, e: 2, s: 2, w: 2 }, 2);
+        assertEqual(kind, TRAFFIC_CONTROL.TRAFFIC_LIGHT);
+    });
+
+    test('TrafficControlPlacement: classifies smaller intersections as stop signs', () => {
+        const kind = classifyIntersectionTrafficControl({ n: 1, e: 2, s: 1, w: 2 }, 2);
+        assertEqual(kind, TRAFFIC_CONTROL.STOP_SIGN);
+    });
+
+    test('TrafficControlPlacement: deterministic traffic light placements for fixed spec', () => {
+        const cfg = createCityConfig({ size: 120, mapTileSize: 24, seed: 'traffic-control-determinism' });
+        const w = cfg.map.width;
+        const h = cfg.map.height;
+        const spec = {
+            version: 1,
+            seed: cfg.seed,
+            width: w,
+            height: h,
+            tileSize: cfg.map.tileSize,
+            origin: cfg.map.origin,
+            roads: [
+                { a: [0, 2], b: [w - 1, 2], lanesF: 2, lanesB: 2, tag: 'road' },
+                { a: [2, 0], b: [2, h - 1], lanesF: 2, lanesB: 2, tag: 'road' }
+            ],
+            buildings: []
+        };
+        const map = CityMap.fromSpec(spec, cfg);
+        const gen = createGeneratorConfig();
+
+        const a = computeTrafficControlPlacements({ map, generatorConfig: gen, laneThreshold: 2 });
+        const b = computeTrafficControlPlacements({ map, generatorConfig: gen, laneThreshold: 2 });
+
+        assertEqual(JSON.stringify(a), JSON.stringify(b), 'Placements should be deterministic.');
+        assertEqual(a.length, 2, 'Expected two traffic lights.');
+        assertTrue(a.every((p) => p.kind === TRAFFIC_CONTROL.TRAFFIC_LIGHT), 'Expected traffic light placements.');
+
+        const tileSize = map.tileSize;
+        const minX = map.origin.x - tileSize * 0.5;
+        const minZ = map.origin.z - tileSize * 0.5;
+        const maxX = map.origin.x + (map.width - 1) * tileSize + tileSize * 0.5;
+        const maxZ = map.origin.z + (map.height - 1) * tileSize + tileSize * 0.5;
+        for (const p of a) {
+            assertTrue(p.position.x >= minX && p.position.x <= maxX, 'Placement x should be within bounds.');
+            assertTrue(p.position.z >= minZ && p.position.z <= maxZ, 'Placement z should be within bounds.');
+        }
+    });
+
+    test('TrafficControlPlacement: stop sign intersections place stop signs within bounds', () => {
+        const cfg = createCityConfig({ size: 120, mapTileSize: 24, seed: 'traffic-control-stops' });
+        const w = cfg.map.width;
+        const h = cfg.map.height;
+        const spec = {
+            version: 1,
+            seed: cfg.seed,
+            width: w,
+            height: h,
+            tileSize: cfg.map.tileSize,
+            origin: cfg.map.origin,
+            roads: [
+                { a: [0, 2], b: [w - 1, 2], lanesF: 1, lanesB: 1, tag: 'road' },
+                { a: [2, 0], b: [2, h - 1], lanesF: 1, lanesB: 1, tag: 'road' }
+            ],
+            buildings: []
+        };
+        const map = CityMap.fromSpec(spec, cfg);
+        const gen = createGeneratorConfig();
+
+        const placements = computeTrafficControlPlacements({ map, generatorConfig: gen, laneThreshold: 2 });
+        assertEqual(placements.length, 4, 'Expected four stop signs on a 4-way stop.');
+        assertTrue(placements.every((p) => p.kind === TRAFFIC_CONTROL.STOP_SIGN), 'Expected stop sign placements.');
+
+        const tileSize = map.tileSize;
+        const minX = map.origin.x - tileSize * 0.5;
+        const minZ = map.origin.z - tileSize * 0.5;
+        const maxX = map.origin.x + (map.width - 1) * tileSize + tileSize * 0.5;
+        const maxZ = map.origin.z + (map.height - 1) * tileSize + tileSize * 0.5;
+        for (const p of placements) {
+            assertTrue(p.position.x >= minX && p.position.x <= maxX, 'Placement x should be within bounds.');
+            assertTrue(p.position.z >= minZ && p.position.z <= maxZ, 'Placement z should be within bounds.');
+        }
+    });
+
     test('BuildingConfigExport: exports building fabrication layers for city', () => {
         const layers = [
             createDefaultFloorLayer({ floors: 3, floorHeight: 3.0 }),
@@ -1880,6 +1990,40 @@ async function runTests() {
             assertRegionIds(asset, ['street_sign_pole:body']);
         });
 
+        test('ProceduralMesh: street sign pole dimensions scaled down', () => {
+            const asset = proceduralMeshes.catalog.createProceduralMeshAsset(proceduralMeshes.streetSignPole.MESH_ID);
+            const geo = asset?.mesh?.geometry ?? null;
+            assertTrue(!!geo, 'Expected street sign pole geometry.');
+
+            geo.computeBoundingBox();
+            const box = geo.boundingBox ?? null;
+            assertTrue(!!box, 'Expected street sign pole bounding box.');
+
+            const w = box.max.x - box.min.x;
+            const h = box.max.y - box.min.y;
+            const d = box.max.z - box.min.z;
+
+            const baselineRadius = 0.055;
+            const baselineHeight = 3.0;
+            const baselineSegments = 6;
+            const baselineGeo = new THREE.CylinderGeometry(baselineRadius, baselineRadius, baselineHeight, baselineSegments, 1, false);
+            baselineGeo.translate(0, -1.2 + baselineHeight / 2, 0);
+            baselineGeo.computeBoundingBox();
+            const baselineBox = baselineGeo.boundingBox ?? null;
+            assertTrue(!!baselineBox, 'Expected baseline street sign pole bounding box.');
+            const baselineW = baselineBox.max.x - baselineBox.min.x;
+            const baselineH = baselineBox.max.y - baselineBox.min.y;
+            const baselineD = baselineBox.max.z - baselineBox.min.z;
+
+            const heightScale = 0.8;
+            const diameterScale = 0.9;
+            const eps = 1e-4;
+
+            assertNear(h, baselineH * heightScale, eps, 'Expected pole height scaled by 0.8.');
+            assertNear(w, baselineW * diameterScale, eps, 'Expected pole width scaled by 0.9.');
+            assertNear(d, baselineD * diameterScale, eps, 'Expected pole depth scaled by 0.9.');
+        });
+
         test('ProceduralMesh: traffic light pole region ids stable', () => {
             const asset = proceduralMeshes.catalog.createProceduralMeshAsset(proceduralMeshes.trafficLightPole.MESH_ID);
             assertRegionIds(asset, [
@@ -1924,6 +2068,8 @@ async function runTests() {
                 'stop_sign_plate:face',
                 'stop_sign_plate:back'
             ]);
+            const radialSegments = asset?.mesh?.geometry?.parameters?.radialSegments ?? null;
+            assertEqual(radialSegments, 8, 'Stop sign plate should have 8 sides.');
         });
 
         test('ProceduralMesh: stop sign composed mesh region ids stable', () => {
@@ -1975,6 +2121,46 @@ async function runTests() {
             assertTrue(minV >= 0 - eps && maxV <= 1 + eps, 'Stop sign plate V coordinates should be within [0,1].');
             assertTrue(minU >= stopSign.uv.u0 - eps && maxU <= stopSign.uv.u1 + eps, 'Stop sign plate U range should match stop sign atlas rect.');
             assertTrue(minV >= stopSign.uv.v0 - eps && maxV <= stopSign.uv.v1 + eps, 'Stop sign plate V range should match stop sign atlas rect.');
+        });
+
+        test('ProceduralMesh: stop sign plate face UVs project from XY plane', () => {
+            const asset = proceduralMeshes.catalog.createProceduralMeshAsset(proceduralMeshes.stopSignPlate.MESH_ID);
+            const geo = asset?.mesh?.geometry ?? null;
+            assertTrue(!!geo, 'Stop sign plate geometry should exist.');
+
+            const groups = geo?.groups ?? [];
+            const faceGroup = groups.find((g) => g?.materialIndex === 1) ?? null;
+            assertTrue(!!faceGroup, 'Stop sign plate should include a face group.');
+
+            const index = geo?.index ?? null;
+            const uv = geo?.attributes?.uv ?? null;
+            const pos = geo?.attributes?.position ?? null;
+            assertTrue(!!index?.isBufferAttribute && !!uv?.isBufferAttribute && !!pos?.isBufferAttribute, 'Stop sign plate should have indexed UVs.');
+
+            const sign = proceduralMeshes.signAssets.getSignAssetById(proceduralMeshes.stopSignPlate.STOP_SIGN_TEXTURE_ID);
+            const { offset, repeat } = sign.getTextureDescriptor();
+
+            const vertSet = new Set();
+            let maxR = 0;
+            for (let i = faceGroup.start; i < faceGroup.start + faceGroup.count; i++) {
+                const vi = index.getX(i);
+                if (vertSet.has(vi)) continue;
+                vertSet.add(vi);
+                const x = pos.getX(vi);
+                const y = pos.getY(vi);
+                maxR = Math.max(maxR, Math.hypot(x, y));
+            }
+            assertTrue(maxR > 0, 'Stop sign face radius should be non-zero.');
+
+            const eps = 1e-6;
+            for (const vi of vertSet) {
+                const x = pos.getX(vi);
+                const y = pos.getY(vi);
+                const localU = (uv.getX(vi) - offset.x) / repeat.x;
+                const localV = (uv.getY(vi) - offset.y) / repeat.y;
+                assertNear(localU, x / (2 * maxR) + 0.5, eps, 'Expected U projected from X.');
+                assertNear(localV, y / (2 * maxR) + 0.5, eps, 'Expected V projected from Y.');
+            }
         });
 
         test('ProceduralMesh: traffic light head exposes skeleton schema', () => {
@@ -2034,8 +2220,8 @@ async function runTests() {
             const head = children.find((child) => child?.schema?.id === 'skeleton.traffic_light_head.v1') ?? null;
             assertTrue(!!head, 'Child controls should include traffic light head skeleton.');
 
-            const poleProp = (Array.isArray(api.schema?.properties) ? api.schema.properties : []).find((p) => p?.id === 'poleWidth') ?? null;
-            assertTrue(!!poleProp && poleProp.type === 'number', 'Composed traffic light should expose poleWidth.');
+            const armProp = (Array.isArray(api.schema?.properties) ? api.schema.properties : []).find((p) => p?.id === 'armLength') ?? null;
+            assertTrue(!!armProp && armProp.type === 'number', 'Composed traffic light should expose armLength.');
 
             head.setValue('activeLight', 'yellow');
             const idxYellow = (asset.regions ?? []).findIndex((r) => r?.id === 'traffic_light_head:light_yellow');
@@ -2048,8 +2234,8 @@ async function runTests() {
             assertTrue(Number(asset.materials?.solid?.[idxGreen]?.emissiveIntensity) < 1e-6, 'Composed green light should be off.');
 
             const prevGeo = asset.mesh?.geometry ?? null;
-            api.setValue('poleWidth', 0.1);
-            assertTrue(asset.mesh?.geometry !== prevGeo, 'poleWidth should rebuild composed geometry.');
+            api.setValue('armLength', 3.2);
+            assertTrue(asset.mesh?.geometry !== prevGeo, 'armLength should rebuild composed geometry.');
         });
     }
 

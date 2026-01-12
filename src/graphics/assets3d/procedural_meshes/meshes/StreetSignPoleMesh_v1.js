@@ -17,7 +17,7 @@ function groupSpanCount(geometry) {
     return 0;
 }
 
-function buildPoleGeometry({ radius = 0.055, height = 3.0, radialSegments = 6 } = {}) {
+function buildPoleGeometry({ radius = 0.055 * 0.9, height = 3.0 * 0.8, radialSegments = 6 } = {}) {
     const geometry = new THREE.CylinderGeometry(radius, radius, height, radialSegments, 1, false);
     geometry.translate(0, -1.2 + height / 2, 0);
     geometry.clearGroups();
@@ -68,4 +68,3 @@ export function createAsset() {
         materials: { semantic: semanticMaterials, solid: solidMaterial }
     };
 }
-

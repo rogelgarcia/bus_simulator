@@ -62,7 +62,6 @@ Tasks:
 5. **Trust the AI**: It will retrieve necessary files, determine implementation details, and follow project conventions automatically
 6. **Save the Request**: Store the complete request in a file for reference (Use an specific file name AI_#_title)
 7. **New file**: Always create a new file for each request. Unless expecitely stated in the last message that it is to update an existing request.
-8. **Text width**: Keep the text width to a maximum of 80 characters.
-9. **Request improvement**: Try to understand the nature of the user request and add inference of nice to have features when translating the user request to the document.
+8. **Request improvement**: Try to understand the nature of the user request and add inference of nice to have features when translating the user request to the document.
 
 
