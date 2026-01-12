@@ -1200,6 +1200,8 @@ async function runTests() {
     const { CityMap } = await import('/src/app/city/CityMap.js');
     const { getBuildingConfigById, getBuildingConfigs } = await import('/src/app/city/buildings/index.js');
     const { createDemoCitySpec } = await import('/src/app/city/specs/DemoCitySpec.js');
+    const { BIG_CITY_SPEC, createBigCitySpec } = await import('/src/app/city/specs/BigCitySpec.js');
+    const { getGameplayCityOptions } = await import('/src/states/GameplayState.js');
     const { createCityBuildingConfigFromFabrication, serializeCityBuildingConfigToEsModule } = await import('/src/app/city/buildings/BuildingConfigExport.js');
     const { BUILDING_STYLE } = await import('/src/app/buildings/BuildingStyle.js');
     const { BELT_COURSE_COLOR } = await import('/src/app/buildings/BeltCourseColor.js');
@@ -1235,6 +1237,33 @@ async function runTests() {
     test('BuildingCatalog: does not rely on placeholder building_3/building_4 ids', () => {
         assertEqual(getBuildingConfigById('building_3'), null, 'Expected building_3 placeholder id to be absent.');
         assertEqual(getBuildingConfigById('building_4'), null, 'Expected building_4 placeholder id to be absent.');
+    });
+
+    test('BigCitySpec: module is importable', () => {
+        assertTrue(typeof createBigCitySpec === 'function', 'Expected createBigCitySpec export.');
+        assertTrue(!!BIG_CITY_SPEC && typeof BIG_CITY_SPEC === 'object', 'Expected BIG_CITY_SPEC export.');
+        assertTrue(Array.isArray(BIG_CITY_SPEC.roads) && BIG_CITY_SPEC.roads.length > 0, 'Expected roads list.');
+        assertTrue(Array.isArray(BIG_CITY_SPEC.buildings) && BIG_CITY_SPEC.buildings.length > 0, 'Expected buildings list.');
+    });
+
+    test('BigCitySpec: compatible with CityMap.fromSpec', () => {
+        const cfg = createCityConfig({ size: 600, mapTileSize: 24, seed: 'bigcity-spec-test' });
+        const spec = createBigCitySpec(cfg);
+        const map = CityMap.fromSpec(spec, cfg);
+        assertEqual(map.width, spec.width, 'Expected map width from spec.');
+        assertEqual(map.height, spec.height, 'Expected map height from spec.');
+        assertEqual(map.tileSize, spec.tileSize, 'Expected map tileSize from spec.');
+        assertEqual(map.roadSegments.length, spec.roads.length, 'Expected roadSegments count to match spec.');
+        assertTrue(Array.isArray(map.buildings) && map.buildings.length > 0, 'Expected buildings generated from spec.');
+    });
+
+    test('GameplayState: uses Big City spec by default', () => {
+        assertTrue(typeof getGameplayCityOptions === 'function', 'Expected getGameplayCityOptions export.');
+        const options = getGameplayCityOptions();
+        assertTrue(!!options && typeof options === 'object', 'Expected gameplay city options.');
+        assertTrue(options.mapSpec === BIG_CITY_SPEC, 'Expected gameplay mapSpec to be Big City spec.');
+        assertEqual(options.mapTileSize, BIG_CITY_SPEC.tileSize, 'Expected gameplay mapTileSize from spec.');
+        assertEqual(options.size, BIG_CITY_SPEC.tileSize * BIG_CITY_SPEC.width, 'Expected gameplay size to match spec.');
     });
 
     test('DemoCitySpec: extracted demo spec module is importable', () => {
@@ -1792,7 +1821,10 @@ async function runTests() {
             streetSignPole: await import('/src/graphics/assets3d/procedural_meshes/meshes/StreetSignPoleMesh_v1.js'),
             trafficLightPole: await import('/src/graphics/assets3d/procedural_meshes/meshes/TrafficLightPoleMesh_v1.js'),
             trafficLightHead: await import('/src/graphics/assets3d/procedural_meshes/meshes/TrafficLightHeadMesh_v1.js'),
-            trafficLight: await import('/src/graphics/assets3d/procedural_meshes/meshes/TrafficLightMesh_v1.js')
+            trafficLight: await import('/src/graphics/assets3d/procedural_meshes/meshes/TrafficLightMesh_v1.js'),
+            stopSignPlate: await import('/src/graphics/assets3d/procedural_meshes/meshes/StopSignPlateMesh_v1.js'),
+            stopSign: await import('/src/graphics/assets3d/procedural_meshes/meshes/StopSignMesh_v1.js'),
+            signAssets: await import('/src/graphics/assets3d/textures/signs/SignAssets.js')
         };
     } catch (e) {
         test('ProceduralMesh: modules are importable', () => {
@@ -1807,6 +1839,8 @@ async function runTests() {
             assertEqual(proceduralMeshes.trafficLightPole.MESH_ID, 'mesh.traffic_light_pole.v1', 'Traffic light pole id should be stable.');
             assertEqual(proceduralMeshes.trafficLightHead.MESH_ID, 'mesh.traffic_light_head.v1', 'Traffic light head id should be stable.');
             assertEqual(proceduralMeshes.trafficLight.MESH_ID, 'mesh.traffic_light.v1', 'Traffic light mesh id should be stable.');
+            assertEqual(proceduralMeshes.stopSignPlate.MESH_ID, 'mesh.stop_sign_plate.v1', 'Stop sign plate id should be stable.');
+            assertEqual(proceduralMeshes.stopSign.MESH_ID, 'mesh.stop_sign.v1', 'Stop sign id should be stable.');
         });
 
         test('ProceduralMeshCatalog: exposes new mesh ids', () => {
@@ -1816,6 +1850,8 @@ async function runTests() {
             assertTrue(ids.includes(proceduralMeshes.trafficLightPole.MESH_ID), 'Options should include traffic light pole.');
             assertTrue(ids.includes(proceduralMeshes.trafficLightHead.MESH_ID), 'Options should include traffic light head.');
             assertTrue(ids.includes(proceduralMeshes.trafficLight.MESH_ID), 'Options should include traffic light.');
+            assertTrue(ids.includes(proceduralMeshes.stopSignPlate.MESH_ID), 'Options should include stop sign plate.');
+            assertTrue(ids.includes(proceduralMeshes.stopSign.MESH_ID), 'Options should include stop sign.');
         });
 
         const assertRegionIds = (asset, expectedIds) => {
@@ -1880,6 +1916,215 @@ async function runTests() {
                 'traffic_light_head:light_green'
             ]);
         });
+
+        test('ProceduralMesh: stop sign plate region ids stable', () => {
+            const asset = proceduralMeshes.catalog.createProceduralMeshAsset(proceduralMeshes.stopSignPlate.MESH_ID);
+            assertRegionIds(asset, [
+                'stop_sign_plate:edge',
+                'stop_sign_plate:face',
+                'stop_sign_plate:back'
+            ]);
+        });
+
+        test('ProceduralMesh: stop sign composed mesh region ids stable', () => {
+            const asset = proceduralMeshes.catalog.createProceduralMeshAsset(proceduralMeshes.stopSign.MESH_ID);
+            assertRegionIds(asset, [
+                'street_sign_pole:body',
+                'stop_sign_plate:edge',
+                'stop_sign_plate:face',
+                'stop_sign_plate:back'
+            ]);
+        });
+
+        test('ProceduralMesh: stop sign plate uses stop sign atlas UVs', () => {
+            const asset = proceduralMeshes.catalog.createProceduralMeshAsset(proceduralMeshes.stopSignPlate.MESH_ID);
+            const geo = asset?.mesh?.geometry ?? null;
+            const groups = geo?.groups ?? [];
+            const faceGroup = groups.find((g) => g?.materialIndex === 1) ?? null;
+            assertTrue(!!faceGroup, 'Stop sign plate should include a face group.');
+
+            const index = geo?.index ?? null;
+            const uv = geo?.attributes?.uv ?? null;
+            assertTrue(!!index?.isBufferAttribute && !!uv?.isBufferAttribute, 'Stop sign plate should have indexed UVs.');
+
+            const stopId = proceduralMeshes.stopSignPlate.STOP_SIGN_TEXTURE_ID;
+            assertEqual(stopId, 'sign.basic.stop', 'Stop sign texture id should be stable.');
+
+            const stopSign = proceduralMeshes.signAssets.getSignAssetById(stopId);
+            const atlasTex = stopSign.getAtlasTexture();
+
+            const faceMat = Array.isArray(asset.materials?.solid) ? asset.materials.solid[1] : null;
+            assertTrue(faceMat?.map === atlasTex, 'Stop sign face material should use the sign atlas texture.');
+
+            let minU = Infinity;
+            let maxU = -Infinity;
+            let minV = Infinity;
+            let maxV = -Infinity;
+            for (let i = faceGroup.start; i < faceGroup.start + faceGroup.count; i++) {
+                const vi = index.getX(i);
+                const u = uv.getX(vi);
+                const v = uv.getY(vi);
+                minU = Math.min(minU, u);
+                maxU = Math.max(maxU, u);
+                minV = Math.min(minV, v);
+                maxV = Math.max(maxV, v);
+            }
+
+            const eps = 1e-4;
+            assertTrue(minU >= 0 - eps && maxU <= 1 + eps, 'Stop sign plate U coordinates should be within [0,1].');
+            assertTrue(minV >= 0 - eps && maxV <= 1 + eps, 'Stop sign plate V coordinates should be within [0,1].');
+            assertTrue(minU >= stopSign.uv.u0 - eps && maxU <= stopSign.uv.u1 + eps, 'Stop sign plate U range should match stop sign atlas rect.');
+            assertTrue(minV >= stopSign.uv.v0 - eps && maxV <= stopSign.uv.v1 + eps, 'Stop sign plate V range should match stop sign atlas rect.');
+        });
+
+        test('ProceduralMesh: traffic light head exposes skeleton schema', () => {
+            const asset = proceduralMeshes.catalog.createProceduralMeshAsset(proceduralMeshes.trafficLightHead.MESH_ID);
+            const api = asset?.mesh?.userData?.api ?? null;
+            assertTrue(!!api, 'Traffic light head should expose a skeleton api.');
+            assertTrue(!!api.schema && typeof api.schema === 'object', 'Skeleton api should expose schema.');
+            const props = Array.isArray(api.schema?.properties) ? api.schema.properties : [];
+            const active = props.find((p) => p?.id === 'activeLight') ?? null;
+            assertTrue(!!active, 'Schema should include activeLight.');
+            assertEqual(active.type, 'enum', 'activeLight should be an enum.');
+            const options = Array.isArray(active.options) ? active.options : [];
+            const ids = options.map((opt) => opt.id);
+            assertTrue(ids.includes('none'), 'activeLight should include none.');
+            assertTrue(ids.includes('red'), 'activeLight should include red.');
+            assertTrue(ids.includes('yellow'), 'activeLight should include yellow.');
+            assertTrue(ids.includes('green'), 'activeLight should include green.');
+        });
+
+        test('ProceduralMesh: traffic light head activeLight updates emissive state', () => {
+            const asset = proceduralMeshes.catalog.createProceduralMeshAsset(proceduralMeshes.trafficLightHead.MESH_ID);
+            const api = asset?.mesh?.userData?.api ?? null;
+            assertTrue(!!api, 'Traffic light head should expose a skeleton api.');
+            const regions = asset?.regions ?? [];
+            const idxRed = regions.findIndex((r) => r?.id === 'traffic_light_head:light_red');
+            const idxYellow = regions.findIndex((r) => r?.id === 'traffic_light_head:light_yellow');
+            const idxGreen = regions.findIndex((r) => r?.id === 'traffic_light_head:light_green');
+            assertTrue(idxRed >= 0 && idxYellow >= 0 && idxGreen >= 0, 'Light region indices should exist.');
+
+            api.setValue('activeLight', 'green');
+
+            const getIntensity = (materials, idx) => {
+                const mat = Array.isArray(materials) ? materials[idx] : null;
+                return Number(mat?.emissiveIntensity) || 0;
+            };
+
+            assertTrue(getIntensity(asset.materials?.semantic, idxGreen) > 0.01, 'Semantic green light should be on.');
+            assertTrue(getIntensity(asset.materials?.semantic, idxRed) < 1e-6, 'Semantic red light should be off.');
+            assertTrue(getIntensity(asset.materials?.semantic, idxYellow) < 1e-6, 'Semantic yellow light should be off.');
+
+            assertTrue(getIntensity(asset.materials?.solid, idxGreen) > 0.01, 'Solid green light should be on.');
+            assertTrue(getIntensity(asset.materials?.solid, idxRed) < 1e-6, 'Solid red light should be off.');
+            assertTrue(getIntensity(asset.materials?.solid, idxYellow) < 1e-6, 'Solid yellow light should be off.');
+
+            api.setValue('activeLight', 'none');
+            assertTrue(getIntensity(asset.materials?.solid, idxGreen) < 1e-6, 'Solid green light should be off for none.');
+            assertTrue(getIntensity(asset.materials?.solid, idxRed) < 1e-6, 'Solid red light should be off for none.');
+            assertTrue(getIntensity(asset.materials?.solid, idxYellow) < 1e-6, 'Solid yellow light should be off for none.');
+        });
+
+        test('ProceduralMesh: composed traffic light exposes child skeleton controls', () => {
+            const asset = proceduralMeshes.catalog.createProceduralMeshAsset(proceduralMeshes.trafficLight.MESH_ID);
+            const api = asset?.mesh?.userData?.api ?? null;
+            assertTrue(!!api, 'Composed traffic light should expose a skeleton api.');
+            const children = Array.isArray(api.children) ? api.children : [];
+            assertTrue(children.length >= 1, 'Composed traffic light should expose child controls.');
+            const head = children.find((child) => child?.schema?.id === 'skeleton.traffic_light_head.v1') ?? null;
+            assertTrue(!!head, 'Child controls should include traffic light head skeleton.');
+
+            const poleProp = (Array.isArray(api.schema?.properties) ? api.schema.properties : []).find((p) => p?.id === 'poleWidth') ?? null;
+            assertTrue(!!poleProp && poleProp.type === 'number', 'Composed traffic light should expose poleWidth.');
+
+            head.setValue('activeLight', 'yellow');
+            const idxYellow = (asset.regions ?? []).findIndex((r) => r?.id === 'traffic_light_head:light_yellow');
+            const idxRed = (asset.regions ?? []).findIndex((r) => r?.id === 'traffic_light_head:light_red');
+            const idxGreen = (asset.regions ?? []).findIndex((r) => r?.id === 'traffic_light_head:light_green');
+            assertTrue(idxYellow >= 0 && idxRed >= 0 && idxGreen >= 0, 'Composed light region indices should exist.');
+
+            assertTrue(Number(asset.materials?.solid?.[idxYellow]?.emissiveIntensity) > 0.01, 'Composed yellow light should be on.');
+            assertTrue(Number(asset.materials?.solid?.[idxRed]?.emissiveIntensity) < 1e-6, 'Composed red light should be off.');
+            assertTrue(Number(asset.materials?.solid?.[idxGreen]?.emissiveIntensity) < 1e-6, 'Composed green light should be off.');
+
+            const prevGeo = asset.mesh?.geometry ?? null;
+            api.setValue('poleWidth', 0.1);
+            assertTrue(asset.mesh?.geometry !== prevGeo, 'poleWidth should rebuild composed geometry.');
+        });
+    }
+
+    // ========== Map Debugger Camera Controls Tests ==========
+    try {
+        const { MapDebuggerShortcutsPanel } = await import('/src/graphics/gui/map_debugger/MapDebuggerShortcutsPanel.js');
+        const { MapDebuggerState } = await import('/src/states/MapDebuggerState.js');
+
+        test('MapDebuggerShortcutsPanel: includes R and T shortcuts', () => {
+            const panel = new MapDebuggerShortcutsPanel();
+            const keys = Array.from(panel.root.querySelectorAll('.map-debugger-shortcuts-key')).map((el) => el.textContent);
+            const expected = ['A', 'Z', 'R', 'T', '↑', '↓', '←', '→', 'Esc'];
+            expected.forEach((key) => {
+                assertTrue(keys.includes(key), `Expected shortcut key ${key}.`);
+            });
+            panel.destroy();
+        });
+
+        test('MapDebuggerState: wheel zoom gated by editing', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(),
+                clearScene: () => {},
+                context: {}
+            };
+            const sm = { go: () => {} };
+            const state = new MapDebuggerState(engine, sm);
+
+            state._zoom = 10;
+            state._zoomMin = 0;
+            state._zoomMax = 100;
+            state._zoomSpeed = 40;
+
+            let prevented = false;
+            const e = { deltaMode: 0, deltaY: 120, preventDefault: () => { prevented = true; } };
+
+            state._roadModeEnabled = true;
+            state._buildingModeEnabled = false;
+            state._handleWheel(e);
+            assertEqual(state._zoom, 10, 'Zoom should not change while editing.');
+            assertFalse(prevented, 'Wheel should not prevent default while editing.');
+
+            state._roadModeEnabled = false;
+            state._buildingModeEnabled = false;
+            state._handleWheel(e);
+            assertTrue(state._zoom !== 10, 'Zoom should change when not editing.');
+            assertTrue(prevented, 'Wheel should prevent default when zooming.');
+        });
+
+        test('MapDebuggerState: drag pan gated by editing', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(),
+                clearScene: () => {},
+                context: {}
+            };
+            const sm = { go: () => {} };
+            const state = new MapDebuggerState(engine, sm);
+
+            let dragStarted = false;
+            state._startCameraDrag = () => { dragStarted = true; };
+            const e = { button: 0 };
+
+            state._roadModeEnabled = true;
+            state._buildingModeEnabled = false;
+            state._handlePointerDown(e);
+            assertFalse(dragStarted, 'Drag should not start while editing.');
+
+            state._roadModeEnabled = false;
+            state._buildingModeEnabled = false;
+            state._handlePointerDown(e);
+            assertTrue(dragStarted, 'Drag should start when not editing.');
+        });
+    } catch (e) {
+        console.log('⏭️  Map debugger camera tests skipped:', e.message);
     }
 
     runRoadConnectionDebuggerTests({ test, assertTrue });

@@ -777,6 +777,16 @@
     align-items: end;
 }
 
+.map-debugger-create-grid-road {
+    grid-template-columns: 1fr 1fr 1fr;
+}
+
+@media (max-width: 640px) {
+    .map-debugger-create-grid-road {
+        grid-template-columns: 1fr;
+    }
+}
+
 .map-debugger-create-field {
     display: flex;
     flex-direction: column;

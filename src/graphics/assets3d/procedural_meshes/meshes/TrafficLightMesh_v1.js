@@ -4,6 +4,8 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as TrafficLightPoleMeshV1 from './TrafficLightPoleMesh_v1.js';
 import * as TrafficLightHeadMeshV1 from './TrafficLightHeadMesh_v1.js';
+import { clampNumber, createNumberProperty } from '../skeletons/MeshSkeletonSchema.js';
+import { createTrafficLightHeadSkeletonApi } from '../skeletons/TrafficLightHeadSkeleton_v1.js';
 
 export const MESH_ID = 'mesh.traffic_light.v1';
 export const MESH_OPTION = Object.freeze({ id: MESH_ID, label: 'Traffic light' });
@@ -94,7 +96,16 @@ function cloneSolidMaterials(materials, count) {
 }
 
 export function createAsset() {
-    const poleAsset = TrafficLightPoleMeshV1.createAsset();
+    const poleWidthProp = createNumberProperty({
+        id: 'poleWidth',
+        label: 'Pole width',
+        min: 0.03,
+        max: 0.12,
+        step: 0.005,
+        defaultValue: 0.055
+    });
+
+    const poleAsset = TrafficLightPoleMeshV1.createAsset({ radius: poleWidthProp.defaultValue });
     const headAsset = TrafficLightHeadMeshV1.createAsset();
     let rotatedHeadGeo = null;
 
@@ -162,6 +173,107 @@ export function createAsset() {
         mesh.castShadow = true;
         mesh.receiveShadow = false;
         mesh.rotation.y = Math.PI;
+
+        const headSkeleton = createTrafficLightHeadSkeletonApi({
+            regions,
+            materials: { semantic: semanticMaterials, solid: solidMaterials }
+        });
+
+        const rootSchema = Object.freeze({
+            id: 'skeleton.traffic_light.v1',
+            label: 'Traffic light',
+            properties: Object.freeze([poleWidthProp]),
+            children: Object.freeze([headSkeleton.schema])
+        });
+
+        const state = { poleWidth: poleWidthProp.defaultValue };
+        const rebuildGeometry = (poleWidth) => {
+            const poleRebuild = TrafficLightPoleMeshV1.createAsset({ radius: poleWidth });
+            const headRebuild = TrafficLightHeadMeshV1.createAsset();
+            let rotated = null;
+
+            try {
+                const poleRebuildRegions = poleRebuild?.regions ?? [];
+                const headRebuildRegions = headRebuild?.regions ?? [];
+
+                const poleGeo = poleRebuild?.mesh?.geometry ?? null;
+                const headGeo = headRebuild?.mesh?.geometry ?? null;
+                const poleParts = extractRegionGeometries(poleGeo, poleRebuildRegions.length);
+                const headParts = extractRegionGeometries(headGeo, headRebuildRegions.length);
+                if (!poleParts || !headParts) return null;
+
+                const poleCounterRotation = new THREE.Matrix4().makeRotationY(Math.PI);
+                for (const geo of poleParts) geo?.applyMatrix4?.(poleCounterRotation);
+
+                const armRegionIndex = poleRebuildRegions.findIndex((r) => r?.id === 'traffic_light_pole:arm');
+                const armGeo = armRegionIndex >= 0 ? poleParts[armRegionIndex] : null;
+                const armBox = computeIndexedBoundingBox(armGeo);
+
+                const headRotation = new THREE.Matrix4().makeRotationY(Math.PI / 2);
+                rotated = headGeo?.clone?.() ?? null;
+                if (!rotated) return null;
+                rotated.applyMatrix4(headRotation);
+                rotated.computeBoundingBox();
+
+                const headBox = rotated.boundingBox ?? null;
+                const headSourceBox = computeBoundingBox(headGeo);
+                const headDepth = headSourceBox ? headSourceBox.max.z - headSourceBox.min.z : 0;
+
+                if (armBox && headBox) {
+                    const attachX = armBox.max.x;
+                    const attachY = (armBox.min.y + armBox.max.y) / 2;
+                    const attachZ = (armBox.min.z + armBox.max.z) / 2;
+
+                    const headCenterX = (headBox.min.x + headBox.max.x) / 2;
+                    const headMaxY = headBox.max.y;
+                    const headHeight = headBox.max.y - headBox.min.y;
+                    const headCenterZ = (headBox.min.z + headBox.max.z) / 2;
+
+                    const translation = new THREE.Matrix4().makeTranslation(
+                        attachX - headCenterX,
+                        attachY - headMaxY + headHeight * 0.5,
+                        attachZ - headCenterZ - headDepth
+                    );
+
+                    const transform = new THREE.Matrix4().copy(translation).multiply(headRotation);
+                    for (const geo of headParts) geo?.applyMatrix4?.(transform);
+                }
+
+                const mergedParts = [...poleParts, ...headParts];
+                const rebuilt = mergeGeometries(mergedParts, true);
+                rebuilt?.computeVertexNormals?.();
+                return rebuilt ?? null;
+            } finally {
+                rotated?.dispose?.();
+                poleRebuild?.mesh?.geometry?.dispose?.();
+                headRebuild?.mesh?.geometry?.dispose?.();
+                disposeMaterials(poleRebuild?.materials?.semantic ?? null);
+                disposeMaterials(poleRebuild?.materials?.solid ?? null);
+                disposeMaterials(headRebuild?.materials?.semantic ?? null);
+                disposeMaterials(headRebuild?.materials?.solid ?? null);
+            }
+        };
+
+        mesh.userData.api = {
+            schema: rootSchema,
+            children: [headSkeleton],
+            getValue: (propId) => {
+                if (propId === 'poleWidth') return state.poleWidth;
+                return null;
+            },
+            setValue: (propId, value) => {
+                if (propId !== 'poleWidth') return;
+                const next = clampNumber(value, poleWidthProp);
+                if (Math.abs(next - state.poleWidth) < 1e-9) return;
+                state.poleWidth = next;
+                const nextGeo = rebuildGeometry(next);
+                if (!nextGeo) return;
+                const prev = mesh.geometry;
+                mesh.geometry = nextGeo;
+                prev?.dispose?.();
+                mesh.userData._meshInspectorNeedsEdgesRefresh = true;
+            }
+        };
 
         return {
             id,

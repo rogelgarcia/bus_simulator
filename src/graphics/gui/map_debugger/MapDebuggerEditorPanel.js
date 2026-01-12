@@ -729,10 +729,10 @@ export class MapDebuggerEditorPanel {
         }
 
         const controls = document.createElement('div');
-        controls.className = 'map-debugger-create-grid';
+        controls.className = 'map-debugger-create-grid map-debugger-create-grid-road';
 
         const tagWrap = document.createElement('div');
-        tagWrap.className = 'map-debugger-create-field map-debugger-create-field-wide';
+        tagWrap.className = 'map-debugger-create-field';
         const tagLabel = document.createElement('div');
         tagLabel.className = 'map-debugger-create-field-label';
         tagLabel.textContent = 'Type';

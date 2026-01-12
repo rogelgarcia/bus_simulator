@@ -42,12 +42,14 @@ export class MeshInspectorView {
         this.ui.setWireframeEnabled(this.scene.getWireframeEnabled());
         this.ui.setEdgesEnabled(this.scene.getEdgesEnabled());
         this.ui.setColorMode(this.scene.getColorMode());
+        this.ui.setSkeleton(this.scene.getSkeletonApi?.() ?? null);
         this.ui.setHoverInfo(null);
         this.ui.setSelectedInfo(null);
 
         this.ui.onMeshIdChange = (id) => {
             this.scene.setSelectedMeshId(id);
             this.ui.setSelectedMesh(this.scene.getSelectedMeshMeta() ?? {});
+            this.ui.setSkeleton(this.scene.getSkeletonApi?.() ?? null);
             this._clearSelection();
         };
 
@@ -55,6 +57,7 @@ export class MeshInspectorView {
             const next = this.scene.getSelectedMeshIndex() - 1;
             this.scene.setSelectedMeshIndex(next);
             this.ui.setSelectedMesh(this.scene.getSelectedMeshMeta() ?? {});
+            this.ui.setSkeleton(this.scene.getSkeletonApi?.() ?? null);
             this._clearSelection();
         };
 
@@ -62,6 +65,7 @@ export class MeshInspectorView {
             const next = this.scene.getSelectedMeshIndex() + 1;
             this.scene.setSelectedMeshIndex(next);
             this.ui.setSelectedMesh(this.scene.getSelectedMeshMeta() ?? {});
+            this.ui.setSkeleton(this.scene.getSkeletonApi?.() ?? null);
             this._clearSelection();
         };
 
@@ -181,4 +185,3 @@ export class MeshInspectorView {
         this.canvas.classList.remove('cursor-pointer');
     }
 }
-

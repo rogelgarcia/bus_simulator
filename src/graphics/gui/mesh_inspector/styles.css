@@ -82,6 +82,61 @@
     height: 16px;
 }
 
+.mesh-inspector-skeleton {
+    margin-bottom: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.mesh-inspector-skeleton-group,
+.mesh-inspector-skeleton-root {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.10);
+    background: rgba(0,0,0,0.16);
+}
+
+.mesh-inspector-skeleton-group-title {
+    font-size: 12px;
+    font-weight: 800;
+    opacity: 0.92;
+    letter-spacing: 0.02em;
+}
+
+.mesh-inspector-skeleton-row {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 10px;
+    align-items: center;
+}
+
+.mesh-inspector-skeleton-row-label {
+    font-size: 12px;
+    opacity: 0.85;
+}
+
+.mesh-inspector-skeleton-number {
+    display: grid;
+    grid-template-columns: 1fr 56px;
+    gap: 10px;
+    align-items: center;
+}
+
+.mesh-inspector-skeleton-number-slider {
+    width: 100%;
+}
+
+.mesh-inspector-skeleton-number-value {
+    font-size: 12px;
+    text-align: right;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    opacity: 0.95;
+}
+
 .mesh-inspector-summary {
     width: 100%;
     box-sizing: border-box;

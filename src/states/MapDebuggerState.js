@@ -11,6 +11,7 @@ import { MapDebuggerControlsPanel } from '../graphics/gui/map_debugger/MapDebugg
 import { MapDebuggerShortcutsPanel } from '../graphics/gui/map_debugger/MapDebuggerShortcutsPanel.js';
 import { MapDebuggerInfoPanel } from '../graphics/gui/map_debugger/MapDebuggerInfoPanel.js';
 import { computeBuildingLoopsFromTiles } from '../graphics/assets3d/generators/buildings/BuildingGenerator.js';
+import { ConnectorCameraTour } from '../graphics/gui/connector_debugger/ConnectorCameraTour.js';
 import { CityConnectorDebugOverlay } from '../graphics/visuals/city/CityConnectorDebugOverlay.js';
 import { createRoadHighlightMesh } from '../graphics/visuals/city/RoadHighlightMesh.js';
 import { createCollisionPoleMarkers } from '../graphics/visuals/city/CollisionPoleMarkers.js';
@@ -77,6 +78,12 @@ function offsetEndpoints(p0, p1, normal, offset) {
         start: { x: p0.x + normal.x * offset, y: p0.y + normal.y * offset },
         end: { x: p1.x + normal.x * offset, y: p1.y + normal.y * offset }
     };
+}
+
+function isInteractiveElement(target) {
+    const tag = target?.tagName;
+    if (!tag) return false;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || target?.isContentEditable;
 }
 
 export class MapDebuggerState {
@@ -174,12 +181,20 @@ export class MapDebuggerState {
         this._hoverThreshold = 1;
         this._hoverConnectorIndex = -1;
         this._hoverPoleIndex = -1;
+        this._cameraDragActive = false;
+        this._cameraDragPointerId = null;
+        this._cameraDragStartWorld = new THREE.Vector3();
+        this._cameraDragStartCam = new THREE.Vector3();
+        this._tourActive = false;
+        this._tour = null;
 
         this._onKeyDown = (e) => this._handleKeyDown(e);
         this._onKeyUp = (e) => this._handleKeyUp(e);
         this._onPointerMove = (e) => this._handlePointerMove(e);
         this._onPointerDown = (e) => this._handlePointerDown(e);
+        this._onPointerUp = (e) => this._handlePointerUp(e);
         this._onPointerLeave = () => this._handlePointerLeave();
+        this._onWheel = (e) => this._handleWheel(e);
 
     }
 
@@ -282,7 +297,10 @@ export class MapDebuggerState {
         window.addEventListener('keyup', this._onKeyUp, { passive: false });
         this.canvas?.addEventListener('pointermove', this._onPointerMove);
         this.canvas?.addEventListener('pointerdown', this._onPointerDown);
+        this.canvas?.addEventListener('pointerup', this._onPointerUp);
+        this.canvas?.addEventListener('pointercancel', this._onPointerUp);
         this.canvas?.addEventListener('pointerleave', this._onPointerLeave);
+        this.canvas?.addEventListener('wheel', this._onWheel, { passive: false });
     }
 
     exit() {
@@ -290,7 +308,10 @@ export class MapDebuggerState {
         window.removeEventListener('keyup', this._onKeyUp);
         this.canvas?.removeEventListener('pointermove', this._onPointerMove);
         this.canvas?.removeEventListener('pointerdown', this._onPointerDown);
+        this.canvas?.removeEventListener('pointerup', this._onPointerUp);
+        this.canvas?.removeEventListener('pointercancel', this._onPointerUp);
         this.canvas?.removeEventListener('pointerleave', this._onPointerLeave);
+        this.canvas?.removeEventListener('wheel', this._onWheel);
 
         this.editorPanel?.destroy();
         this.editorPanel = null;
@@ -306,6 +327,8 @@ export class MapDebuggerState {
         this._clearCollisionMarkers();
         this._clearConnectorOverlay();
         this._destroyHoverOutline();
+        this._stopTour();
+        this._stopCameraDrag();
 
         this.city?.detach(this.engine);
         this.engine.clearScene();
@@ -316,6 +339,11 @@ export class MapDebuggerState {
         const cam = this.engine.camera;
 
         this.city?.update(this.engine);
+
+        if (this._tourActive && this._tour) {
+            this._tour.update(dt);
+            return;
+        }
 
         const move = new THREE.Vector3();
         if (this._keys.ArrowUp) move.z -= 1;
@@ -343,12 +371,6 @@ export class MapDebuggerState {
     _handleKeyDown(e) {
         const code = e.code;
 
-        if (code in this._keys) {
-            e.preventDefault();
-            this._keys[code] = true;
-            return;
-        }
-
         if (code === 'Escape') {
             e.preventDefault();
             if (this._roadModeEnabled) {
@@ -360,6 +382,31 @@ export class MapDebuggerState {
                 return;
             }
             this.sm.go('welcome');
+            return;
+        }
+
+        if (isInteractiveElement(e.target) || isInteractiveElement(document.activeElement)) return;
+
+        if (code === 'KeyR') {
+            e.preventDefault();
+            this._resetCamera();
+            return;
+        }
+
+        if (code === 'KeyT') {
+            if (this._roadModeEnabled || this._buildingModeEnabled) return;
+            if (this._tourActive) return;
+            e.preventDefault();
+            this._startTour();
+            return;
+        }
+
+        if (this._tourActive) return;
+
+        if (code in this._keys) {
+            e.preventDefault();
+            this._keys[code] = true;
+            return;
         }
     }
 
@@ -370,6 +417,58 @@ export class MapDebuggerState {
             e.preventDefault();
             this._keys[code] = false;
         }
+    }
+
+    _resetCamera() {
+        this._stopTour();
+        this._stopCameraDrag();
+        for (const key of Object.keys(this._keys)) this._keys[key] = false;
+        this._recomputeCameraLimits({ resetPosition: true });
+    }
+
+    _setTourActive(active) {
+        this._tourActive = !!active;
+        this.shortcutsPanel?.setTourActive(this._tourActive);
+    }
+
+    _ensureTour() {
+        if (this._tour) return;
+        this._tour = new ConnectorCameraTour({
+            engine: this.engine,
+            getCurbs: () => this.city?.roads?.curbConnectors ?? [],
+            getCurbEndPosition: () => null,
+            getCenter: () => {
+                const map = this.city?.map;
+                const y = -(this._hoverPlane?.constant ?? 0);
+                if (!map) return new THREE.Vector3(0, y, 0);
+                const cx = map.origin.x + (map.width - 1) * map.tileSize * 0.5;
+                const cz = map.origin.z + (map.height - 1) * map.tileSize * 0.5;
+                return new THREE.Vector3(cx, y, cz);
+            },
+            getGroundY: () => -(this._hoverPlane?.constant ?? 0),
+            getZoom: () => this._zoom,
+            setZoom: (value) => {
+                this._zoom = value;
+                const cam = this.engine.camera;
+                cam.position.y = this._zoom;
+            },
+            onActiveChange: (active) => this._setTourActive(active)
+        });
+    }
+
+    _startTour() {
+        this._ensureTour();
+        if (this._tourActive || !this._tour) return;
+        if (!this._tour.start()) return;
+        this._stopCameraDrag();
+        this._clearConnectorHover();
+        this._clearHoverOutline();
+        for (const key of Object.keys(this._keys)) this._keys[key] = false;
+    }
+
+    _stopTour() {
+        this._tour?.stop();
+        this._tour = null;
     }
 
     _setCity(mapSpec) {
@@ -1457,6 +1556,18 @@ export class MapDebuggerState {
     }
 
     _handlePointerMove(e) {
+        if (this._tourActive) return;
+
+        if (this._cameraDragActive) {
+            this._setPointerFromEvent(e);
+            const hit = this._intersectHoverPlane();
+            if (!hit) return;
+            const cam = this.engine.camera;
+            cam.position.x = this._cameraDragStartCam.x + (this._cameraDragStartWorld.x - hit.x);
+            cam.position.z = this._cameraDragStartCam.z + (this._cameraDragStartWorld.z - hit.z);
+            return;
+        }
+
         if (this.editorPanel?.root?.contains(e.target) || this.debugsPanel?.root?.contains(e.target) || this.shortcutsPanel?.root?.contains(e.target)) {
             this._clearConnectorHover();
             this._clearHoverOutline();
@@ -1523,8 +1634,14 @@ export class MapDebuggerState {
 
     _handlePointerDown(e) {
         if (e.button !== 0) return;
+        if (this._tourActive) return;
+
+        if (!this._roadModeEnabled && !this._buildingModeEnabled) {
+            this._startCameraDrag(e);
+            return;
+        }
+
         if (!this.city?.map) return;
-        if (!this._roadModeEnabled && !this._buildingModeEnabled) return;
 
         this._setPointerFromEvent(e);
         const hit = this._intersectHoverPlane();
@@ -1543,6 +1660,73 @@ export class MapDebuggerState {
         }
     }
 
+    _handlePointerUp() {
+        this._stopCameraDrag();
+    }
+
+    _handleWheel(e) {
+        if (this._tourActive) return;
+        if (this._roadModeEnabled || this._buildingModeEnabled) return;
+        if (isInteractiveElement(document.activeElement)) return;
+        if (!e) return;
+        e.preventDefault();
+
+        const mode = e.deltaMode ?? 0;
+        const scale = mode === 1 ? 16 : (mode === 2 ? 400 : 1);
+        const delta = (Number(e.deltaY) || 0) * scale;
+        if (!Number.isFinite(delta) || delta === 0) return;
+
+        const zoomSpeed = Number.isFinite(this._zoomSpeed) ? this._zoomSpeed : 1;
+        const amount = delta * (zoomSpeed / 12000);
+        this._zoom = clamp(this._zoom + amount, this._zoomMin, this._zoomMax);
+
+        const cam = this.engine.camera;
+        cam.position.y = this._zoom;
+        cam.rotation.order = 'YXZ';
+        cam.rotation.set(-Math.PI * 0.5, 0, 0);
+    }
+
+    _startCameraDrag(e) {
+        if (!this.canvas) return;
+        if (this._cameraDragActive) return;
+        if (this._roadModeEnabled || this._buildingModeEnabled) return;
+        if (!e) return;
+        if (isInteractiveElement(document.activeElement)) return;
+
+        this._setPointerFromEvent(e);
+        const hit = this._intersectHoverPlane();
+        if (!hit) return;
+
+        this._cameraDragActive = true;
+        this._cameraDragPointerId = Number.isFinite(e.pointerId) ? e.pointerId : null;
+        this._cameraDragStartWorld.copy(hit);
+        this._cameraDragStartCam.copy(this.engine.camera.position);
+        this._clearConnectorHover();
+        this._clearHoverOutline();
+
+        if (this._cameraDragPointerId !== null) {
+            try {
+                this.canvas.setPointerCapture(this._cameraDragPointerId);
+            } catch (err) {
+                // Ignore capture failures (e.g. older browsers).
+            }
+        }
+    }
+
+    _stopCameraDrag() {
+        if (!this._cameraDragActive) return;
+        const id = this._cameraDragPointerId;
+        this._cameraDragActive = false;
+        this._cameraDragPointerId = null;
+        if (this.canvas && id !== null) {
+            try {
+                this.canvas.releasePointerCapture(id);
+            } catch (err) {
+                // Ignore release failures.
+            }
+        }
+    }
+
     _clearConnectorHover() {
         this._hoverConnectorIndex = -1;
         this._hoverPoleIndex = -1;
@@ -1551,6 +1735,7 @@ export class MapDebuggerState {
     }
 
     _handlePointerLeave() {
+        this._stopCameraDrag();
         this._clearConnectorHover();
         this._clearHoverOutline();
     }

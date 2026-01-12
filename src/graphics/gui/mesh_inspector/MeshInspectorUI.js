@@ -106,6 +106,13 @@ export class MeshInspectorUI {
         this.colorModeRow.appendChild(this.colorModeLabel);
         this.colorModeRow.appendChild(this.colorModeSelect);
 
+        this.skeletonLabel = document.createElement('div');
+        this.skeletonLabel.className = 'ui-section-label';
+        this.skeletonLabel.textContent = 'Skeleton';
+
+        this.skeletonPanel = document.createElement('div');
+        this.skeletonPanel.className = 'mesh-inspector-skeleton';
+
         this.selectionLabel = document.createElement('div');
         this.selectionLabel.className = 'ui-section-label';
         this.selectionLabel.textContent = 'Selection';
@@ -152,6 +159,8 @@ export class MeshInspectorUI {
         this.panel.appendChild(this.wireframeToggle);
         this.panel.appendChild(this.edgesToggle);
         this.panel.appendChild(this.colorModeRow);
+        this.panel.appendChild(this.skeletonLabel);
+        this.panel.appendChild(this.skeletonPanel);
         this.panel.appendChild(this.selectionLabel);
         this.panel.appendChild(this.hoverRow);
         this.panel.appendChild(this.selectedRow);
@@ -177,6 +186,7 @@ export class MeshInspectorUI {
         this._onCopy = () => this._copySummary();
 
         this._bound = false;
+        this._skeletonApi = null;
     }
 
     mount() {
@@ -221,6 +231,116 @@ export class MeshInspectorUI {
 
     setColorMode(mode) {
         this.colorModeSelect.value = mode === 'solid' ? 'solid' : 'semantic';
+    }
+
+    setSkeleton(api) {
+        const valid = !!api && typeof api === 'object'
+            && !!api.schema && typeof api.getValue === 'function' && typeof api.setValue === 'function';
+        this._skeletonApi = valid ? api : null;
+        this.skeletonPanel.textContent = '';
+
+        if (!this._skeletonApi) {
+            this.skeletonLabel.style.display = 'none';
+            this.skeletonPanel.style.display = 'none';
+            return;
+        }
+
+        this.skeletonLabel.style.display = '';
+        this.skeletonPanel.style.display = '';
+
+        const renderGroup = (groupApi, { title = null, isChild = false } = {}) => {
+            const schema = groupApi?.schema ?? null;
+            if (!schema) return;
+
+            const container = document.createElement('div');
+            container.className = isChild ? 'mesh-inspector-skeleton-group' : 'mesh-inspector-skeleton-root';
+
+            if (title) {
+                const heading = document.createElement('div');
+                heading.className = 'mesh-inspector-skeleton-group-title';
+                heading.textContent = title;
+                container.appendChild(heading);
+            }
+
+            const props = Array.isArray(schema.properties) ? schema.properties : [];
+            for (const prop of props) {
+                const propId = typeof prop?.id === 'string' ? prop.id : '';
+                if (!propId) continue;
+
+                const row = document.createElement('div');
+                row.className = 'mesh-inspector-skeleton-row';
+
+                const label = document.createElement('div');
+                label.className = 'mesh-inspector-skeleton-row-label';
+                label.textContent = prop?.label ?? propId;
+
+                const control = document.createElement('div');
+                control.className = 'mesh-inspector-skeleton-row-control';
+
+                if (prop?.type === 'enum') {
+                    const select = document.createElement('select');
+                    select.className = 'mesh-inspector-select';
+                    const options = Array.isArray(prop?.options) ? prop.options : [];
+                    for (const opt of options) {
+                        const optId = typeof opt?.id === 'string' ? opt.id : '';
+                        if (!optId) continue;
+                        const el = document.createElement('option');
+                        el.value = optId;
+                        el.textContent = opt?.label ?? optId;
+                        select.appendChild(el);
+                    }
+                    select.value = groupApi.getValue(propId) ?? prop.defaultValue ?? '';
+                    select.addEventListener('change', () => {
+                        groupApi.setValue(propId, select.value);
+                        select.value = groupApi.getValue(propId) ?? select.value;
+                    });
+                    control.appendChild(select);
+                } else if (prop?.type === 'number') {
+                    const wrap = document.createElement('div');
+                    wrap.className = 'mesh-inspector-skeleton-number';
+
+                    const slider = document.createElement('input');
+                    slider.type = 'range';
+                    slider.min = String(Number(prop?.min ?? 0));
+                    slider.max = String(Number(prop?.max ?? 1));
+                    slider.step = String(Number(prop?.step ?? 0.01));
+                    slider.value = String(groupApi.getValue(propId) ?? prop.defaultValue ?? 0);
+                    slider.className = 'mesh-inspector-skeleton-number-slider';
+
+                    const value = document.createElement('div');
+                    value.className = 'mesh-inspector-skeleton-number-value';
+                    value.textContent = slider.value;
+
+                    const sync = () => {
+                        groupApi.setValue(propId, slider.value);
+                        const next = groupApi.getValue(propId) ?? slider.value;
+                        slider.value = String(next);
+                        value.textContent = String(next);
+                    };
+
+                    slider.addEventListener('input', sync);
+                    slider.addEventListener('change', sync);
+
+                    wrap.appendChild(slider);
+                    wrap.appendChild(value);
+                    control.appendChild(wrap);
+                }
+
+                row.appendChild(label);
+                row.appendChild(control);
+                container.appendChild(row);
+            }
+
+            this.skeletonPanel.appendChild(container);
+
+            const children = Array.isArray(groupApi.children) ? groupApi.children : [];
+            for (const child of children) {
+                const childLabel = child?.schema?.label ?? child?.schema?.id ?? 'Child';
+                renderGroup(child, { title: childLabel, isChild: true });
+            }
+        };
+
+        renderGroup(this._skeletonApi);
     }
 
     setHoverInfo(info) {

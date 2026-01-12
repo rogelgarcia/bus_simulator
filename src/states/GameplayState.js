@@ -11,6 +11,7 @@
  */
 import * as THREE from 'three';
 import { getSharedCity } from '../app/city/City.js';
+import { createBigCitySpec } from '../app/city/specs/BigCitySpec.js';
 import { fadeIn } from '../graphics/gui/shared/utils/screenFade.js';
 import { GameHUD } from '../graphics/gui/gameplay/GameHUD.js';
 import { GameplayCameraTour } from '../graphics/gui/gameplay/GameplayCameraTour.js';
@@ -42,6 +43,22 @@ const CAMERA_DRAG = {
 };
 
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
+export function getGameplayCityOptions() {
+    const mapSpec = createBigCitySpec();
+    const mapTileSize = Number.isFinite(mapSpec?.tileSize) ? mapSpec.tileSize : 24;
+    const mapWidth = Number.isFinite(mapSpec?.width) ? mapSpec.width : 25;
+    const seed = typeof mapSpec?.seed === 'string' ? mapSpec.seed : 'x';
+
+    return {
+        size: mapWidth * mapTileSize,
+        tileMeters: 2,
+        mapTileSize,
+        seed,
+        mapSpec,
+        generatorConfig: { render: { roadMode: 'normal' } }
+    };
+}
 
 function easeWithHold(t, edge) {
     const x = clamp(t, 0, 1);
@@ -160,13 +177,7 @@ export class GameplayState {
         this.gameLoop.setInputManager(this.inputManager);
 
         // Setup city
-        this.city = getSharedCity(this.engine, {
-            size: 400,
-            tileMeters: 2,
-            mapTileSize: 24,
-            seed: 'x',
-            generatorConfig: { render: { roadMode: 'normal' } }
-        });
+        this.city = getSharedCity(this.engine, getGameplayCityOptions());
         this.city.attach(this.engine);
         this.gameLoop.setWorld(this.city);
 

@@ -100,10 +100,11 @@ function makePoleMaterial({ wireframe = false } = {}) {
     });
 }
 
-export function createAsset() {
+export function createAsset(options = null) {
     const id = MESH_ID;
     const regions = REGIONS.map((r) => ({ ...r }));
-    const geometry = buildPoleGeometry();
+    const cfg = options && typeof options === 'object' ? options : {};
+    const geometry = buildPoleGeometry(cfg);
 
     const semanticMaterials = makeRegionMaterials(regions, { wireframe: false });
     const solidMaterial = makePoleMaterial({ wireframe: false });

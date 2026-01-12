@@ -15,6 +15,8 @@ export class MapDebuggerShortcutsPanel {
         const shortcuts = [
             { key: 'A', description: 'Zoom In' },
             { key: 'Z', description: 'Zoom Out' },
+            { key: 'R', description: 'Reset Camera' },
+            { key: 'T', description: 'Camera Tour' },
             { key: '↑', description: 'Move Up' },
             { key: '↓', description: 'Move Down' },
             { key: '←', description: 'Move Left' },
@@ -54,6 +56,10 @@ export class MapDebuggerShortcutsPanel {
 
     hide() {
         this.root.classList.add('hidden');
+    }
+
+    setTourActive(active) {
+        this.root.classList.toggle('is-tour', !!active);
     }
 
     destroy() {
