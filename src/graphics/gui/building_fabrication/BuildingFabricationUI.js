@@ -7,6 +7,7 @@ import { BELT_COURSE_COLOR, getBeltCourseColorOptions, isBeltCourseColor } from 
 import { ROOF_COLOR, getRoofColorOptions, isRoofColor } from '../../../app/buildings/RoofColor.js';
 import { PickerPopup } from '../shared/PickerPopup.js';
 import { WINDOW_TYPE, getDefaultWindowParams, getWindowTypeOptions, isWindowTypeId } from '../../assets3d/generators/buildings/WindowTextureGenerator.js';
+import { LAYER_TYPE, cloneBuildingLayers, createDefaultFloorLayer, createDefaultRoofLayer, normalizeBuildingLayers } from '../../assets3d/generators/building_fabrication/BuildingFabricationTypes.js';
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -184,6 +185,50 @@ export class BuildingFabricationUI {
         this._hoveredRoadRow = null;
         this._roadRemoveButtons = [];
         this._pickerPopup = new PickerPopup();
+        this._detailsOpenByKey = new Map();
+
+        this._templateLayers = normalizeBuildingLayers([
+            createDefaultFloorLayer({
+                floors: this._floorCount,
+                floorHeight: this._floorHeight,
+                style: this._buildingStyle,
+                planOffset: 0.0,
+                belt: {
+                    enabled: this._beltCourseEnabled,
+                    height: this._beltCourseHeight,
+                    material: { color: this._beltCourseColor }
+                },
+                windows: {
+                    enabled: true,
+                    typeId: this._windowTypeId,
+                    params: this._windowParams,
+                    width: this._windowWidth,
+                    height: this._windowHeight,
+                    sillHeight: this._windowY,
+                    spacing: this._windowGap,
+                    spaceColumns: {
+                        enabled: this._windowSpacerEnabled,
+                        every: this._windowSpacerEvery,
+                        width: this._windowSpacerWidth,
+                        material: { color: this._beltCourseColor },
+                        extrude: this._windowSpacerExtrude,
+                        extrudeDistance: this._windowSpacerExtrudeDistance
+                    }
+                }
+            }),
+            createDefaultRoofLayer({
+                ring: {
+                    enabled: this._topBeltEnabled,
+                    outerRadius: this._topBeltWidth,
+                    innerRadius: this._topBeltInnerWidth,
+                    height: this._topBeltHeight,
+                    material: { color: this._topBeltColor }
+                },
+                roof: { color: this._roofColor, type: 'Asphalt' }
+            })
+        ]);
+        this._selectedLayers = [];
+        this.onSelectedBuildingLayersChange = null;
 
         this.root = document.createElement('div');
         this.root.className = 'ui-hud-root building-fab-hud';
@@ -422,10 +467,6 @@ export class BuildingFabricationUI {
         this.propsTitle.className = 'ui-title';
         this.propsTitle.textContent = 'PROPERTIES';
 
-        this.propsHint = document.createElement('div');
-        this.propsHint.className = 'building-fab-hint';
-        this.propsHint.textContent = 'Select a building to edit its properties.';
-
         this.nameRow = document.createElement('div');
         this.nameRow.className = 'building-fab-row building-fab-row-wide';
         this.nameLabel = document.createElement('div');
@@ -465,6 +506,11 @@ export class BuildingFabricationUI {
         this.deleteBuildingBtn.textContent = 'Delete selected building';
         this.deleteBuildingBtn.disabled = true;
 
+        this.exportBuildingBtn = document.createElement('button');
+        this.exportBuildingBtn.type = 'button';
+        this.exportBuildingBtn.className = 'building-fab-btn building-fab-btn-road building-fab-btn-export';
+        this.exportBuildingBtn.textContent = 'EXPORT';
+
         this.typeRow.appendChild(this.typeLabel);
         this.typeRow.appendChild(this.typeSelect);
 
@@ -494,10 +540,10 @@ export class BuildingFabricationUI {
         this.styleRow.appendChild(this.stylePicker);
 
         this.propsPanel.appendChild(this.propsTitle);
-        this.propsPanel.appendChild(this.propsHint);
         this.propsPanel.appendChild(this.nameRow);
         this.propsPanel.appendChild(this.typeRow);
         this.propsPanel.appendChild(this.deleteBuildingBtn);
+        this.propsPanel.appendChild(this.exportBuildingBtn);
 
         const makeRangeRow = (label) => {
             const row = document.createElement('div');
@@ -1088,8 +1134,45 @@ export class BuildingFabricationUI {
             const body = document.createElement('div');
             body.className = 'building-fab-details-body';
             details.appendChild(body);
-            return { details, summary, body };
+            return { details, summary, body, label };
         };
+
+        this.layersActions = document.createElement('div');
+        this.layersActions.className = 'building-fab-layer-actions building-fab-layer-actions-bar';
+        this.layersActions.addEventListener('click', (e) => e.stopPropagation());
+
+        this.addFloorLayerBtn = document.createElement('button');
+        this.addFloorLayerBtn.type = 'button';
+        this.addFloorLayerBtn.className = 'building-fab-layer-btn';
+        this.addFloorLayerBtn.textContent = '+ Floor layer';
+
+        this.addRoofLayerBtn = document.createElement('button');
+        this.addRoofLayerBtn.type = 'button';
+        this.addRoofLayerBtn.className = 'building-fab-layer-btn';
+        this.addRoofLayerBtn.textContent = '+ Roof layer';
+
+        this.layersActions.appendChild(this.addFloorLayerBtn);
+        this.layersActions.appendChild(this.addRoofLayerBtn);
+        this.propsPanel.appendChild(this.layersActions);
+
+        this.addFloorLayerBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._handleAddLayer(LAYER_TYPE.FLOOR);
+        });
+        this.addRoofLayerBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._handleAddLayer(LAYER_TYPE.ROOF);
+        });
+
+        this.layersStatus = document.createElement('div');
+        this.layersStatus.className = 'building-fab-hint building-fab-layer-status';
+        this.layersStatus.textContent = 'Edit the template layers, then create a building.';
+
+        this.layersList = document.createElement('div');
+        this.layersList.className = 'building-fab-layer-list';
+
+        this.propsPanel.appendChild(this.layersStatus);
+        this.propsPanel.appendChild(this.layersList);
 
         const floorsSection = makeDetailsSection('Floors', { open: true });
         floorsSection.body.appendChild(this.styleRow);
@@ -1150,6 +1233,10 @@ export class BuildingFabricationUI {
         this.propsPanel.appendChild(floorsSection.details);
         this.propsPanel.appendChild(streetSection.details);
         this.propsPanel.appendChild(roofSection.details);
+
+        floorsSection.details.classList.add('hidden');
+        streetSection.details.classList.add('hidden');
+        roofSection.details.classList.add('hidden');
 
         this.buildingsTitle = document.createElement('div');
         this.buildingsTitle.className = 'ui-title';
@@ -1234,6 +1321,7 @@ export class BuildingFabricationUI {
         this.onClearSelection = null;
         this.onSelectBuilding = null;
         this.onDeleteSelectedBuilding = null;
+        this.onExportBuildingConfig = null;
         this.onReset = null;
         this.onRoadModeChange = null;
         this.onRoadCancel = null;
@@ -1379,6 +1467,7 @@ export class BuildingFabricationUI {
         this._onStartBuilding = () => this._toggleBuildingModeFromUi();
         this._onCancelMode = () => this._cancelActiveModeFromUi();
         this._onBuild = () => this.onBuildBuildings?.();
+        this._onExportBuildingConfig = () => this.onExportBuildingConfig?.();
         this._onClearSelection = () => this.onClearSelection?.();
         this._onDeleteSelectedBuilding = () => this.onDeleteSelectedBuilding?.();
         this._onRoadDone = () => this.onRoadDone?.();
@@ -1425,6 +1514,7 @@ export class BuildingFabricationUI {
         this._syncCreatePanelControls();
         this._syncViewControls();
         this._syncPropertyWidgets();
+        this._renderLayersPanel();
         this.propsPanel.classList.toggle('is-disabled', !on);
         this.roadsPanel.classList.toggle('is-disabled', !on);
         this.toastPanel.classList.toggle('is-disabled', !on);
@@ -1446,6 +1536,10 @@ export class BuildingFabricationUI {
 
     getFloorHeight() {
         return this._floorHeight;
+    }
+
+    getTemplateLayers() {
+        return cloneBuildingLayers(this._templateLayers);
     }
 
     setFloorHeight(height) {
@@ -1830,8 +1924,1095 @@ export class BuildingFabricationUI {
         } else {
             this.nameValue.textContent = nextId;
         }
+        this._selectedLayers = hasSelected && Array.isArray(building?.layers) && building.layers.length
+            ? cloneBuildingLayers(building.layers)
+            : [];
+        this._syncLayersPanel();
+        this._renderLayersPanel();
         this._syncPropertyWidgets();
         this._syncHint();
+    }
+
+    _getActiveLayers() {
+        return this._selectedBuildingId ? (this._selectedLayers ?? []) : (this._templateLayers ?? []);
+    }
+
+    _setActiveLayers(nextLayers) {
+        const layers = Array.isArray(nextLayers) ? nextLayers : [];
+        if (this._selectedBuildingId) {
+            this._selectedLayers = layers;
+            return;
+        }
+        this._templateLayers = layers;
+    }
+
+    _notifySelectedLayersChanged() {
+        if (!this._selectedBuildingId) return;
+        if (typeof this.onSelectedBuildingLayersChange !== 'function') return;
+        this.onSelectedBuildingLayersChange(cloneBuildingLayers(this._selectedLayers));
+    }
+
+    _syncLayersPanel() {
+        if (!this.layersStatus) return;
+        const hasSelected = !!this._selectedBuildingId;
+        this.layersStatus.textContent = hasSelected
+            ? 'Edit layers for the selected building.'
+            : 'Edit the template layers, then create a building.';
+
+        const allow = !!this._enabled;
+        if (this.addFloorLayerBtn) this.addFloorLayerBtn.disabled = !allow;
+        if (this.addRoofLayerBtn) this.addRoofLayerBtn.disabled = !allow;
+    }
+
+    _handleAddLayer(layerType) {
+        if (!this._enabled) return;
+        const type = layerType === LAYER_TYPE.ROOF ? LAYER_TYPE.ROOF : LAYER_TYPE.FLOOR;
+
+        const layers = this._getActiveLayers();
+        const lastFloor = [...layers].reverse().find((layer) => layer?.type === LAYER_TYPE.FLOOR) ?? null;
+        const lastRoof = [...layers].reverse().find((layer) => layer?.type === LAYER_TYPE.ROOF) ?? null;
+
+        const next = layers.slice();
+        if (type === LAYER_TYPE.FLOOR) {
+            next.push(createDefaultFloorLayer({
+                floors: lastFloor?.floors ?? 2,
+                floorHeight: lastFloor?.floorHeight ?? this._floorHeight,
+                planOffset: 0.0,
+                style: lastFloor?.style ?? this._buildingStyle,
+                material: lastFloor?.material ?? null,
+                belt: lastFloor?.belt ?? null,
+                windows: lastFloor?.windows ?? null
+            }));
+        } else {
+            next.push(createDefaultRoofLayer({
+                ring: lastRoof?.ring ?? null,
+                roof: lastRoof?.roof ?? null
+            }));
+        }
+
+        const normalized = normalizeBuildingLayers(next);
+        this._setActiveLayers(normalized);
+        this._renderLayersPanel();
+        this._notifySelectedLayersChanged();
+    }
+
+    _handleMoveLayer(layerId, delta) {
+        if (!this._enabled) return;
+        const layers = this._getActiveLayers();
+        const idx = layers.findIndex((l) => l?.id === layerId);
+        if (idx < 0) return;
+        const nextIdx = idx + (delta < 0 ? -1 : 1);
+        if (nextIdx < 0 || nextIdx >= layers.length) return;
+        const next = layers.slice();
+        const tmp = next[idx];
+        next[idx] = next[nextIdx];
+        next[nextIdx] = tmp;
+        const normalized = normalizeBuildingLayers(next);
+        this._setActiveLayers(normalized);
+        this._renderLayersPanel();
+        this._notifySelectedLayersChanged();
+    }
+
+    _handleRemoveLayer(layerId) {
+        if (!this._enabled) return;
+        const layers = this._getActiveLayers();
+        const idx = layers.findIndex((l) => l?.id === layerId);
+        if (idx < 0) return;
+
+        const next = layers.filter((l) => l?.id !== layerId);
+        const hasFloor = next.some((l) => l?.type === LAYER_TYPE.FLOOR);
+        const hasRoof = next.some((l) => l?.type === LAYER_TYPE.ROOF);
+        if (!hasFloor || !hasRoof) return;
+
+        const normalized = normalizeBuildingLayers(next);
+        this._setActiveLayers(normalized);
+        this._renderLayersPanel();
+        this._notifySelectedLayersChanged();
+    }
+
+    _renderLayersPanel() {
+        if (!this.layersList) return;
+        this.layersList.textContent = '';
+
+        const layers = this._getActiveLayers();
+        if (!layers.length) return;
+
+        const allow = !!this._enabled;
+        const scopeKey = this._selectedBuildingId ? `building:${this._selectedBuildingId}` : 'template';
+
+        const bindDetailsState = (details, key, { open = true } = {}) => {
+            if (!details || typeof key !== 'string' || !key) return;
+            details.dataset.detailsKey = key;
+            const stored = this._detailsOpenByKey.get(key);
+            details.open = typeof stored === 'boolean' ? stored : !!open;
+            this._detailsOpenByKey.set(key, details.open);
+            details.addEventListener('toggle', () => {
+                this._detailsOpenByKey.set(key, details.open);
+            });
+        };
+
+        const makeDetailsSection = (title, { open = true, nested = false, key = null } = {}) => {
+            const details = document.createElement('details');
+            details.className = nested ? 'building-fab-details building-fab-layer-subdetails' : 'building-fab-details';
+            const summary = document.createElement('summary');
+            summary.className = 'building-fab-details-summary';
+            const label = document.createElement('span');
+            label.className = 'building-fab-details-title';
+            label.textContent = title;
+            summary.appendChild(label);
+            details.appendChild(summary);
+            const body = document.createElement('div');
+            body.className = 'building-fab-details-body';
+            details.appendChild(body);
+            bindDetailsState(details, key, { open });
+            return { details, summary, body, label };
+        };
+
+        const makeRangeRow = (labelText) => {
+            const row = document.createElement('div');
+            row.className = 'building-fab-row';
+            const l = document.createElement('div');
+            l.className = 'building-fab-row-label';
+            l.textContent = labelText;
+            const range = document.createElement('input');
+            range.type = 'range';
+            range.className = 'building-fab-range';
+            const number = document.createElement('input');
+            number.type = 'number';
+            number.className = 'building-fab-number';
+            row.appendChild(l);
+            row.appendChild(range);
+            row.appendChild(number);
+            return { row, range, number };
+        };
+
+        const makeToggleRow = (labelText) => {
+            const toggle = document.createElement('label');
+            toggle.className = 'building-fab-toggle building-fab-toggle-wide';
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            const text = document.createElement('span');
+            text.textContent = labelText;
+            toggle.appendChild(input);
+            toggle.appendChild(text);
+            return { toggle, input };
+        };
+
+        const makePickerRow = (labelText) => {
+            const row = document.createElement('div');
+            row.className = 'building-fab-row building-fab-row-texture';
+            const label = document.createElement('div');
+            label.className = 'building-fab-row-label';
+            label.textContent = labelText;
+            const picker = document.createElement('div');
+            picker.className = 'building-fab-texture-picker building-fab-material-picker';
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'building-fab-material-button';
+            const thumb = document.createElement('div');
+            thumb.className = 'building-fab-material-thumb';
+            const text = document.createElement('div');
+            text.className = 'building-fab-material-text';
+            button.appendChild(thumb);
+            button.appendChild(text);
+            picker.appendChild(button);
+            row.appendChild(label);
+            row.appendChild(picker);
+            return { row, button, thumb, text };
+        };
+
+        const getStyleOption = (id) => (this._buildingStyleOptions ?? []).find((opt) => opt?.id === id) ?? null;
+        const getWindowOption = (id) => (this._windowTypeOptions ?? []).find((opt) => opt?.id === id) ?? null;
+        const getBeltColorOption = (id) => (this._beltCourseColorOptions ?? []).find((opt) => opt?.id === id) ?? null;
+        const getRoofColorOption = (id) => (this._roofColorOptions ?? []).find((opt) => opt?.id === id) ?? null;
+
+        const parseMaterialPickerId = (value) => {
+            if (typeof value !== 'string' || !value) return null;
+            const idx = value.indexOf(':');
+            if (idx <= 0) return null;
+            const kind = value.slice(0, idx);
+            const id = value.slice(idx + 1);
+            if (!id) return null;
+            if (kind !== 'texture' && kind !== 'color') return null;
+            return { kind, id };
+        };
+
+        const makeTextureMaterialOptions = () => (this._buildingStyleOptions ?? []).map((opt) => ({
+            id: `texture:${opt.id}`,
+            label: opt.label,
+            kind: 'texture',
+            previewUrl: opt.wallTextureUrl
+        }));
+
+        const makeBeltColorMaterialOptions = () => (this._beltCourseColorOptions ?? []).map((opt) => ({
+            id: `color:${opt.id}`,
+            label: opt.label,
+            kind: 'color',
+            hex: opt.hex
+        }));
+
+        const makeRoofColorMaterialOptions = () => {
+            const defaultPreviewUrl = buildRoofDefaultPreviewUrl({ size: 96 });
+            return (this._roofColorOptions ?? []).map((opt) => {
+                if (opt.id === ROOF_COLOR.DEFAULT) {
+                    return {
+                        id: `color:${opt.id}`,
+                        label: opt.label,
+                        kind: 'color',
+                        previewUrl: defaultPreviewUrl
+                    };
+                }
+                return {
+                    id: `color:${opt.id}`,
+                    label: opt.label,
+                    kind: 'color',
+                    hex: opt.hex
+                };
+            });
+        };
+
+        const openMaterialPicker = ({
+            title = 'Material',
+            material = null,
+            textureOptions = [],
+            colorOptions = [],
+            onSelect = null
+        } = {}) => {
+            const kind = material?.kind;
+            const id = material?.id;
+            const selectedId = (kind === 'texture' || kind === 'color') && typeof id === 'string' && id
+                ? `${kind}:${id}`
+                : null;
+
+            this._pickerPopup.open({
+                title,
+                sections: [
+                    { label: 'Texture', options: textureOptions },
+                    { label: 'Color', options: colorOptions }
+                ],
+                selectedId,
+                onSelect: (opt) => {
+                    if (typeof onSelect !== 'function') return;
+                    const next = parseMaterialPickerId(opt?.id);
+                    if (!next) return;
+                    onSelect(next);
+                }
+            });
+        };
+
+        const openWindowPicker = (layer, picker) => {
+            const options = (this._windowTypeOptions ?? []).map((opt) => ({
+                id: opt.id,
+                label: opt.label,
+                kind: 'texture',
+                previewUrl: opt.previewUrl
+            }));
+            this._pickerPopup.open({
+                title: 'Window type',
+                sections: [{ label: 'Types', options }],
+                selectedId: layer?.windows?.typeId || WINDOW_TYPE.STYLE_DEFAULT,
+                onSelect: (opt) => {
+                    layer.windows.typeId = opt.id;
+                    const found = getWindowOption(layer.windows.typeId) ?? null;
+                    const label = found?.label ?? layer.windows.typeId;
+                    picker.text.textContent = label;
+                    setMaterialThumbToTexture(picker.thumb, found?.previewUrl ?? '', label);
+                    layer.windows.params = { ...getDefaultWindowParams(layer.windows.typeId), ...(layer.windows.params ?? {}) };
+                    this._notifySelectedLayersChanged();
+                }
+            });
+        };
+
+        const textureMaterialOptions = makeTextureMaterialOptions();
+        const beltColorMaterialOptions = makeBeltColorMaterialOptions();
+        const roofColorMaterialOptions = makeRoofColorMaterialOptions();
+
+        for (const [idx, layer] of layers.entries()) {
+            const layerId = layer?.id ?? `layer_${idx}`;
+            const isFloor = layer?.type === LAYER_TYPE.FLOOR;
+            const titleBase = isFloor ? 'Floor layer' : 'Roof layer';
+
+            const layerSection = makeDetailsSection(titleBase, { open: true, key: `${scopeKey}:layer:${layerId}` });
+            layerSection.details.classList.add('building-fab-layer');
+
+            const actions = document.createElement('div');
+            actions.className = 'building-fab-layer-row-actions';
+            actions.addEventListener('click', (e) => e.stopPropagation());
+
+            const makeActionBtn = (text) => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'building-fab-layer-action';
+                btn.textContent = text;
+                return btn;
+            };
+
+            const upBtn = makeActionBtn('Up');
+            const downBtn = makeActionBtn('Down');
+            const delBtn = makeActionBtn('Remove');
+
+            upBtn.disabled = !allow || idx === 0;
+            downBtn.disabled = !allow || idx === layers.length - 1;
+            delBtn.disabled = !allow;
+
+            upBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this._handleMoveLayer(layerId, -1);
+            });
+            downBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this._handleMoveLayer(layerId, 1);
+            });
+            delBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this._handleRemoveLayer(layerId);
+            });
+
+            actions.appendChild(upBtn);
+            actions.appendChild(downBtn);
+            actions.appendChild(delBtn);
+            layerSection.summary.appendChild(actions);
+
+            const updateLayerTitle = () => {
+                if (layer?.type === LAYER_TYPE.FLOOR) {
+                    const floors = clampInt(layer.floors, 1, 99);
+                    layerSection.label.textContent = `Floor layer · ${floors} floors`;
+                    return;
+                }
+                layerSection.label.textContent = 'Roof layer';
+            };
+            updateLayerTitle();
+
+            if (isFloor) {
+                const floorsGroup = makeDetailsSection('Floors', { open: true, nested: true, key: `${scopeKey}:layer:${layerId}:floors` });
+                const floorsRow = makeRangeRow('Floors');
+                floorsRow.range.min = '1';
+                floorsRow.range.max = String(this.floorMax);
+                floorsRow.range.step = '1';
+                floorsRow.number.min = '1';
+                floorsRow.number.max = String(this.floorMax);
+                floorsRow.number.step = '1';
+                floorsRow.range.value = String(layer.floors);
+                floorsRow.number.value = String(layer.floors);
+                floorsRow.range.disabled = !allow;
+                floorsRow.number.disabled = !allow;
+                floorsRow.range.addEventListener('input', () => {
+                    const next = clampInt(floorsRow.range.value, 1, this.floorMax);
+                    layer.floors = next;
+                    floorsRow.range.value = String(next);
+                    floorsRow.number.value = String(next);
+                    updateLayerTitle();
+                    this._notifySelectedLayersChanged();
+                });
+                floorsRow.number.addEventListener('change', () => {
+                    const next = clampInt(floorsRow.number.value, 1, this.floorMax);
+                    layer.floors = next;
+                    floorsRow.range.value = String(next);
+                    floorsRow.number.value = String(next);
+                    updateLayerTitle();
+                    this._notifySelectedLayersChanged();
+                });
+
+                const heightRow = makeRangeRow('Floor height (m)');
+                heightRow.range.min = '1.0';
+                heightRow.range.max = '12.0';
+                heightRow.range.step = '0.1';
+                heightRow.number.min = '1.0';
+                heightRow.number.max = '12.0';
+                heightRow.number.step = '0.1';
+                heightRow.range.value = String(layer.floorHeight);
+                heightRow.number.value = formatFloat(layer.floorHeight, 1);
+                heightRow.range.disabled = !allow;
+                heightRow.number.disabled = !allow;
+                heightRow.range.addEventListener('input', () => {
+                    const next = clamp(heightRow.range.value, 1.0, 12.0);
+                    layer.floorHeight = next;
+                    heightRow.range.value = String(next);
+                    heightRow.number.value = formatFloat(next, 1);
+                    this._notifySelectedLayersChanged();
+                });
+                heightRow.number.addEventListener('change', () => {
+                    const next = clamp(heightRow.number.value, 1.0, 12.0);
+                    layer.floorHeight = next;
+                    heightRow.range.value = String(next);
+                    heightRow.number.value = formatFloat(next, 1);
+                    this._notifySelectedLayersChanged();
+                });
+
+                floorsGroup.body.appendChild(floorsRow.row);
+                floorsGroup.body.appendChild(heightRow.row);
+
+                const planGroup = makeDetailsSection('Floorplan', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:floorplan` });
+                const insetRow = makeRangeRow('Plan offset (m)');
+                insetRow.range.min = '-8';
+                insetRow.range.max = '8';
+                insetRow.range.step = '0.1';
+                insetRow.number.min = '-8';
+                insetRow.number.max = '8';
+                insetRow.number.step = '0.1';
+                insetRow.range.value = String(layer.planOffset ?? 0);
+                insetRow.number.value = formatFloat(layer.planOffset ?? 0, 1);
+                insetRow.range.disabled = !allow;
+                insetRow.number.disabled = !allow;
+                insetRow.range.addEventListener('input', () => {
+                    const next = clamp(insetRow.range.value, -8.0, 8.0);
+                    layer.planOffset = next;
+                    insetRow.range.value = String(next);
+                    insetRow.number.value = formatFloat(next, 1);
+                    this._notifySelectedLayersChanged();
+                });
+                insetRow.number.addEventListener('change', () => {
+                    const next = clamp(insetRow.number.value, -8.0, 8.0);
+                    layer.planOffset = next;
+                    insetRow.range.value = String(next);
+                    insetRow.number.value = formatFloat(next, 1);
+                    this._notifySelectedLayersChanged();
+                });
+                planGroup.body.appendChild(insetRow.row);
+
+                const wallsGroup = makeDetailsSection('Walls', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls` });
+                const wallMaterialPicker = makePickerRow('Wall material');
+                const wallMaterial = layer?.material ?? { kind: 'texture', id: layer?.style ?? BUILDING_STYLE.DEFAULT };
+                if (wallMaterial?.kind === 'color') {
+                    const colorId = typeof wallMaterial.id === 'string' && wallMaterial.id ? wallMaterial.id : BELT_COURSE_COLOR.OFFWHITE;
+                    const found = getBeltColorOption(colorId) ?? null;
+                    const label = found?.label ?? colorId;
+                    wallMaterialPicker.text.textContent = label;
+                    setMaterialThumbToColor(wallMaterialPicker.thumb, found?.hex ?? 0xffffff);
+                } else {
+                    const styleId = typeof wallMaterial?.id === 'string' && wallMaterial.id ? wallMaterial.id : (layer?.style ?? BUILDING_STYLE.DEFAULT);
+                    const found = getStyleOption(styleId) ?? null;
+                    const label = found?.label ?? styleId;
+                    wallMaterialPicker.text.textContent = label;
+                    setMaterialThumbToTexture(wallMaterialPicker.thumb, found?.wallTextureUrl ?? '', label);
+                }
+                wallMaterialPicker.button.disabled = !allow;
+                wallMaterialPicker.button.addEventListener('click', () => {
+                    openMaterialPicker({
+                        title: 'Wall material',
+                        material: layer.material ?? wallMaterial,
+                        textureOptions: textureMaterialOptions,
+                        colorOptions: beltColorMaterialOptions,
+                        onSelect: (spec) => {
+                            layer.material = spec;
+                            if (spec.kind === 'texture') layer.style = spec.id;
+
+                            if (spec.kind === 'color') {
+                                const found = getBeltColorOption(spec.id) ?? null;
+                                const label = found?.label ?? spec.id;
+                                wallMaterialPicker.text.textContent = label;
+                                setMaterialThumbToColor(wallMaterialPicker.thumb, found?.hex ?? 0xffffff);
+                            } else {
+                                const found = getStyleOption(spec.id) ?? null;
+                                const label = found?.label ?? spec.id;
+                                wallMaterialPicker.text.textContent = label;
+                                setMaterialThumbToTexture(wallMaterialPicker.thumb, found?.wallTextureUrl ?? '', label);
+                            }
+                            this._notifySelectedLayersChanged();
+                        }
+                    });
+                });
+                wallsGroup.body.appendChild(wallMaterialPicker.row);
+
+                const beltGroup = makeDetailsSection('Belt', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:belt` });
+                const beltToggle = makeToggleRow('Enable belt');
+                beltToggle.input.checked = !!layer?.belt?.enabled;
+                beltToggle.input.disabled = !allow;
+                beltToggle.input.addEventListener('change', () => {
+                    layer.belt.enabled = !!beltToggle.input.checked;
+                    beltHeightRow.range.disabled = !allow || !layer.belt.enabled;
+                    beltHeightRow.number.disabled = !allow || !layer.belt.enabled;
+                    beltMaterialPicker.button.disabled = !allow || !layer.belt.enabled;
+                    this._notifySelectedLayersChanged();
+                });
+                beltGroup.body.appendChild(beltToggle.toggle);
+
+                const beltHeightRow = makeRangeRow('Belt height (m)');
+                beltHeightRow.range.min = '0.02';
+                beltHeightRow.range.max = '1.2';
+                beltHeightRow.range.step = '0.01';
+                beltHeightRow.number.min = '0.02';
+                beltHeightRow.number.max = '1.2';
+                beltHeightRow.number.step = '0.01';
+                beltHeightRow.range.value = String(layer?.belt?.height ?? 0.18);
+                beltHeightRow.number.value = formatFloat(layer?.belt?.height ?? 0.18, 2);
+                beltHeightRow.range.disabled = !allow || !layer?.belt?.enabled;
+                beltHeightRow.number.disabled = !allow || !layer?.belt?.enabled;
+                beltHeightRow.range.addEventListener('input', () => {
+                    const next = clamp(beltHeightRow.range.value, 0.02, 1.2);
+                    layer.belt.height = next;
+                    beltHeightRow.range.value = String(next);
+                    beltHeightRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                beltHeightRow.number.addEventListener('change', () => {
+                    const next = clamp(beltHeightRow.number.value, 0.02, 1.2);
+                    layer.belt.height = next;
+                    beltHeightRow.range.value = String(next);
+                    beltHeightRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                beltGroup.body.appendChild(beltHeightRow.row);
+
+                const beltMaterialPicker = makePickerRow('Belt material');
+                const beltMaterial = layer?.belt?.material ?? { kind: 'color', id: BELT_COURSE_COLOR.OFFWHITE };
+                if (beltMaterial?.kind === 'texture') {
+                    const styleId = typeof beltMaterial.id === 'string' && beltMaterial.id ? beltMaterial.id : BUILDING_STYLE.DEFAULT;
+                    const found = getStyleOption(styleId) ?? null;
+                    const label = found?.label ?? styleId;
+                    beltMaterialPicker.text.textContent = label;
+                    setMaterialThumbToTexture(beltMaterialPicker.thumb, found?.wallTextureUrl ?? '', label);
+                } else {
+                    const colorId = typeof beltMaterial?.id === 'string' && beltMaterial.id ? beltMaterial.id : BELT_COURSE_COLOR.OFFWHITE;
+                    const found = getBeltColorOption(colorId) ?? null;
+                    const label = found?.label ?? colorId;
+                    beltMaterialPicker.text.textContent = label;
+                    setMaterialThumbToColor(beltMaterialPicker.thumb, found?.hex ?? 0xffffff);
+                }
+                beltMaterialPicker.button.disabled = !allow || !layer?.belt?.enabled;
+                beltMaterialPicker.button.addEventListener('click', () => {
+                    openMaterialPicker({
+                        title: 'Belt material',
+                        material: layer.belt.material ?? beltMaterial,
+                        textureOptions: textureMaterialOptions,
+                        colorOptions: beltColorMaterialOptions,
+                        onSelect: (spec) => {
+                            layer.belt.material = spec;
+                            if (spec.kind === 'color') {
+                                const found = getBeltColorOption(spec.id) ?? null;
+                                const label = found?.label ?? spec.id;
+                                beltMaterialPicker.text.textContent = label;
+                                setMaterialThumbToColor(beltMaterialPicker.thumb, found?.hex ?? 0xffffff);
+                            } else {
+                                const found = getStyleOption(spec.id) ?? null;
+                                const label = found?.label ?? spec.id;
+                                beltMaterialPicker.text.textContent = label;
+                                setMaterialThumbToTexture(beltMaterialPicker.thumb, found?.wallTextureUrl ?? '', label);
+                            }
+                            this._notifySelectedLayersChanged();
+                        }
+                    });
+                });
+                beltGroup.body.appendChild(beltMaterialPicker.row);
+
+                const windowsGroup = makeDetailsSection('Windows', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:windows` });
+                const windowsToggle = makeToggleRow('Enable windows');
+                windowsToggle.input.checked = !!layer?.windows?.enabled;
+                windowsToggle.input.disabled = !allow;
+                windowsGroup.body.appendChild(windowsToggle.toggle);
+
+                const windowPicker = makePickerRow('Window type');
+                const winTypeId = layer?.windows?.typeId ?? WINDOW_TYPE.STYLE_DEFAULT;
+                const winFound = getWindowOption(winTypeId) ?? null;
+                const winLabel = winFound?.label ?? winTypeId;
+                windowPicker.text.textContent = winLabel;
+                setMaterialThumbToTexture(windowPicker.thumb, winFound?.previewUrl ?? '', winLabel);
+                windowPicker.button.disabled = !allow || !layer?.windows?.enabled;
+                windowPicker.button.addEventListener('click', () => openWindowPicker(layer, windowPicker));
+                windowsGroup.body.appendChild(windowPicker.row);
+
+                const winWidthRow = makeRangeRow('Window width (m)');
+                winWidthRow.range.min = '0.3';
+                winWidthRow.range.max = '12';
+                winWidthRow.range.step = '0.1';
+                winWidthRow.number.min = '0.3';
+                winWidthRow.number.max = '12';
+                winWidthRow.number.step = '0.1';
+                winWidthRow.range.value = String(layer?.windows?.width ?? 2.2);
+                winWidthRow.number.value = formatFloat(layer?.windows?.width ?? 2.2, 1);
+                winWidthRow.range.disabled = !allow || !layer?.windows?.enabled;
+                winWidthRow.number.disabled = !allow || !layer?.windows?.enabled;
+                winWidthRow.range.addEventListener('input', () => {
+                    const next = clamp(winWidthRow.range.value, 0.3, 12.0);
+                    layer.windows.width = next;
+                    winWidthRow.number.value = formatFloat(next, 1);
+                    this._notifySelectedLayersChanged();
+                });
+                winWidthRow.number.addEventListener('change', () => {
+                    const next = clamp(winWidthRow.number.value, 0.3, 12.0);
+                    layer.windows.width = next;
+                    winWidthRow.range.value = String(next);
+                    winWidthRow.number.value = formatFloat(next, 1);
+                    this._notifySelectedLayersChanged();
+                });
+                windowsGroup.body.appendChild(winWidthRow.row);
+
+                const winSpacingRow = makeRangeRow('Window spacing (m)');
+                winSpacingRow.range.min = '0';
+                winSpacingRow.range.max = '24';
+                winSpacingRow.range.step = '0.1';
+                winSpacingRow.number.min = '0';
+                winSpacingRow.number.max = '24';
+                winSpacingRow.number.step = '0.1';
+                winSpacingRow.range.value = String(layer?.windows?.spacing ?? 1.6);
+                winSpacingRow.number.value = formatFloat(layer?.windows?.spacing ?? 1.6, 1);
+                winSpacingRow.range.disabled = !allow || !layer?.windows?.enabled;
+                winSpacingRow.number.disabled = !allow || !layer?.windows?.enabled;
+                winSpacingRow.range.addEventListener('input', () => {
+                    const next = clamp(winSpacingRow.range.value, 0.0, 24.0);
+                    layer.windows.spacing = next;
+                    winSpacingRow.number.value = formatFloat(next, 1);
+                    this._notifySelectedLayersChanged();
+                });
+                winSpacingRow.number.addEventListener('change', () => {
+                    const next = clamp(winSpacingRow.number.value, 0.0, 24.0);
+                    layer.windows.spacing = next;
+                    winSpacingRow.range.value = String(next);
+                    winSpacingRow.number.value = formatFloat(next, 1);
+                    this._notifySelectedLayersChanged();
+                });
+                windowsGroup.body.appendChild(winSpacingRow.row);
+
+                const winHeightRow = makeRangeRow('Window height (m)');
+                winHeightRow.range.min = '0.3';
+                winHeightRow.range.max = '10';
+                winHeightRow.range.step = '0.1';
+                winHeightRow.number.min = '0.3';
+                winHeightRow.number.max = '10';
+                winHeightRow.number.step = '0.1';
+                winHeightRow.range.value = String(layer?.windows?.height ?? 1.4);
+                winHeightRow.number.value = formatFloat(layer?.windows?.height ?? 1.4, 1);
+                winHeightRow.range.disabled = !allow || !layer?.windows?.enabled;
+                winHeightRow.number.disabled = !allow || !layer?.windows?.enabled;
+                winHeightRow.range.addEventListener('input', () => {
+                    const next = clamp(winHeightRow.range.value, 0.3, 10.0);
+                    layer.windows.height = next;
+                    winHeightRow.number.value = formatFloat(next, 1);
+                    this._notifySelectedLayersChanged();
+                });
+                winHeightRow.number.addEventListener('change', () => {
+                    const next = clamp(winHeightRow.number.value, 0.3, 10.0);
+                    layer.windows.height = next;
+                    winHeightRow.range.value = String(next);
+                    winHeightRow.number.value = formatFloat(next, 1);
+                    this._notifySelectedLayersChanged();
+                });
+                windowsGroup.body.appendChild(winHeightRow.row);
+
+                const winSillRow = makeRangeRow('Sill height (m)');
+                winSillRow.range.min = '0';
+                winSillRow.range.max = '12';
+                winSillRow.range.step = '0.1';
+                winSillRow.number.min = '0';
+                winSillRow.number.max = '12';
+                winSillRow.number.step = '0.1';
+                winSillRow.range.value = String(layer?.windows?.sillHeight ?? 1.0);
+                winSillRow.number.value = formatFloat(layer?.windows?.sillHeight ?? 1.0, 1);
+                winSillRow.range.disabled = !allow || !layer?.windows?.enabled;
+                winSillRow.number.disabled = !allow || !layer?.windows?.enabled;
+                winSillRow.range.addEventListener('input', () => {
+                    const next = clamp(winSillRow.range.value, 0.0, 12.0);
+                    layer.windows.sillHeight = next;
+                    winSillRow.number.value = formatFloat(next, 1);
+                    this._notifySelectedLayersChanged();
+                });
+                winSillRow.number.addEventListener('change', () => {
+                    const next = clamp(winSillRow.number.value, 0.0, 12.0);
+                    layer.windows.sillHeight = next;
+                    winSillRow.range.value = String(next);
+                    winSillRow.number.value = formatFloat(next, 1);
+                    this._notifySelectedLayersChanged();
+                });
+                windowsGroup.body.appendChild(winSillRow.row);
+
+                const columnsGroup = makeDetailsSection('Space columns', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:space_columns` });
+                const colsToggle = makeToggleRow('Enable space columns');
+                colsToggle.input.checked = !!layer?.windows?.spaceColumns?.enabled;
+                colsToggle.input.disabled = !allow || !layer?.windows?.enabled;
+                columnsGroup.body.appendChild(colsToggle.toggle);
+
+                const colsEveryRow = makeRangeRow('Every N windows');
+                colsEveryRow.range.min = '1';
+                colsEveryRow.range.max = '99';
+                colsEveryRow.range.step = '1';
+                colsEveryRow.number.min = '1';
+                colsEveryRow.number.max = '99';
+                colsEveryRow.number.step = '1';
+                colsEveryRow.range.value = String(layer?.windows?.spaceColumns?.every ?? 4);
+                colsEveryRow.number.value = String(layer?.windows?.spaceColumns?.every ?? 4);
+                colsEveryRow.range.disabled = !allow || !layer?.windows?.enabled || !layer?.windows?.spaceColumns?.enabled;
+                colsEveryRow.number.disabled = colsEveryRow.range.disabled;
+                colsEveryRow.range.addEventListener('input', () => {
+                    const next = clampInt(colsEveryRow.range.value, 1, 99);
+                    layer.windows.spaceColumns.every = next;
+                    colsEveryRow.number.value = String(next);
+                    this._notifySelectedLayersChanged();
+                });
+                colsEveryRow.number.addEventListener('change', () => {
+                    const next = clampInt(colsEveryRow.number.value, 1, 99);
+                    layer.windows.spaceColumns.every = next;
+                    colsEveryRow.range.value = String(next);
+                    colsEveryRow.number.value = String(next);
+                    this._notifySelectedLayersChanged();
+                });
+                columnsGroup.body.appendChild(colsEveryRow.row);
+
+                const colsWidthRow = makeRangeRow('Column width (m)');
+                colsWidthRow.range.min = '0.1';
+                colsWidthRow.range.max = '10';
+                colsWidthRow.range.step = '0.1';
+                colsWidthRow.number.min = '0.1';
+                colsWidthRow.number.max = '10';
+                colsWidthRow.number.step = '0.1';
+                colsWidthRow.range.value = String(layer?.windows?.spaceColumns?.width ?? 0.9);
+                colsWidthRow.number.value = formatFloat(layer?.windows?.spaceColumns?.width ?? 0.9, 1);
+                colsWidthRow.range.disabled = !allow || !layer?.windows?.enabled || !layer?.windows?.spaceColumns?.enabled;
+                colsWidthRow.number.disabled = colsWidthRow.range.disabled;
+                colsWidthRow.range.addEventListener('input', () => {
+                    const next = clamp(colsWidthRow.range.value, 0.1, 10.0);
+                    layer.windows.spaceColumns.width = next;
+                    colsWidthRow.number.value = formatFloat(next, 1);
+                    this._notifySelectedLayersChanged();
+                });
+                colsWidthRow.number.addEventListener('change', () => {
+                    const next = clamp(colsWidthRow.number.value, 0.1, 10.0);
+                    layer.windows.spaceColumns.width = next;
+                    colsWidthRow.range.value = String(next);
+                    colsWidthRow.number.value = formatFloat(next, 1);
+                    this._notifySelectedLayersChanged();
+                });
+                columnsGroup.body.appendChild(colsWidthRow.row);
+
+                const colsMaterialPicker = makePickerRow('Column material');
+                const colsMaterial = layer?.windows?.spaceColumns?.material ?? { kind: 'color', id: BELT_COURSE_COLOR.OFFWHITE };
+                if (colsMaterial?.kind === 'texture') {
+                    const styleId = typeof colsMaterial.id === 'string' && colsMaterial.id ? colsMaterial.id : BUILDING_STYLE.DEFAULT;
+                    const found = getStyleOption(styleId) ?? null;
+                    const label = found?.label ?? styleId;
+                    colsMaterialPicker.text.textContent = label;
+                    setMaterialThumbToTexture(colsMaterialPicker.thumb, found?.wallTextureUrl ?? '', label);
+                } else {
+                    const colorId = typeof colsMaterial?.id === 'string' && colsMaterial.id ? colsMaterial.id : BELT_COURSE_COLOR.OFFWHITE;
+                    const found = getBeltColorOption(colorId) ?? null;
+                    const label = found?.label ?? colorId;
+                    colsMaterialPicker.text.textContent = label;
+                    setMaterialThumbToColor(colsMaterialPicker.thumb, found?.hex ?? 0xffffff);
+                }
+                colsMaterialPicker.button.disabled = !allow || !layer?.windows?.enabled || !layer?.windows?.spaceColumns?.enabled;
+                colsMaterialPicker.button.addEventListener('click', () => {
+                    openMaterialPicker({
+                        title: 'Column material',
+                        material: layer.windows.spaceColumns.material ?? colsMaterial,
+                        textureOptions: textureMaterialOptions,
+                        colorOptions: beltColorMaterialOptions,
+                        onSelect: (spec) => {
+                            layer.windows.spaceColumns.material = spec;
+                            if (spec.kind === 'color') {
+                                const found = getBeltColorOption(spec.id) ?? null;
+                                const label = found?.label ?? spec.id;
+                                colsMaterialPicker.text.textContent = label;
+                                setMaterialThumbToColor(colsMaterialPicker.thumb, found?.hex ?? 0xffffff);
+                            } else {
+                                const found = getStyleOption(spec.id) ?? null;
+                                const label = found?.label ?? spec.id;
+                                colsMaterialPicker.text.textContent = label;
+                                setMaterialThumbToTexture(colsMaterialPicker.thumb, found?.wallTextureUrl ?? '', label);
+                            }
+                            this._notifySelectedLayersChanged();
+                        }
+                    });
+                });
+                columnsGroup.body.appendChild(colsMaterialPicker.row);
+
+                const colsExtrudeToggle = makeToggleRow('Extrude columns');
+                colsExtrudeToggle.input.checked = !!layer?.windows?.spaceColumns?.extrude;
+                colsExtrudeToggle.input.disabled = !allow || !layer?.windows?.enabled || !layer?.windows?.spaceColumns?.enabled;
+                columnsGroup.body.appendChild(colsExtrudeToggle.toggle);
+
+                const colsExtrudeRow = makeRangeRow('Extrude distance (m)');
+                colsExtrudeRow.range.min = '0';
+                colsExtrudeRow.range.max = '1';
+                colsExtrudeRow.range.step = '0.01';
+                colsExtrudeRow.number.min = '0';
+                colsExtrudeRow.number.max = '1';
+                colsExtrudeRow.number.step = '0.01';
+                colsExtrudeRow.range.value = String(layer?.windows?.spaceColumns?.extrudeDistance ?? 0.12);
+                colsExtrudeRow.number.value = formatFloat(layer?.windows?.spaceColumns?.extrudeDistance ?? 0.12, 2);
+                colsExtrudeRow.range.disabled = !allow || !layer?.windows?.enabled || !layer?.windows?.spaceColumns?.enabled || !layer?.windows?.spaceColumns?.extrude;
+                colsExtrudeRow.number.disabled = colsExtrudeRow.range.disabled;
+                colsExtrudeRow.range.addEventListener('input', () => {
+                    const next = clamp(colsExtrudeRow.range.value, 0.0, 1.0);
+                    layer.windows.spaceColumns.extrudeDistance = next;
+                    colsExtrudeRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                colsExtrudeRow.number.addEventListener('change', () => {
+                    const next = clamp(colsExtrudeRow.number.value, 0.0, 1.0);
+                    layer.windows.spaceColumns.extrudeDistance = next;
+                    colsExtrudeRow.range.value = String(next);
+                    colsExtrudeRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                columnsGroup.body.appendChild(colsExtrudeRow.row);
+
+                colsToggle.input.addEventListener('change', () => {
+                    layer.windows.spaceColumns.enabled = !!colsToggle.input.checked;
+                    const enabled = layer.windows.enabled && layer.windows.spaceColumns.enabled;
+                    colsEveryRow.range.disabled = !allow || !enabled;
+                    colsEveryRow.number.disabled = colsEveryRow.range.disabled;
+                    colsWidthRow.range.disabled = !allow || !enabled;
+                    colsWidthRow.number.disabled = colsWidthRow.range.disabled;
+                    colsMaterialPicker.button.disabled = !allow || !enabled;
+                    colsExtrudeToggle.input.disabled = !allow || !enabled;
+                    colsExtrudeRow.range.disabled = !allow || !enabled || !layer.windows.spaceColumns.extrude;
+                    colsExtrudeRow.number.disabled = colsExtrudeRow.range.disabled;
+                    this._notifySelectedLayersChanged();
+                });
+
+                colsExtrudeToggle.input.addEventListener('change', () => {
+                    layer.windows.spaceColumns.extrude = !!colsExtrudeToggle.input.checked;
+                    const enabled = layer.windows.enabled && layer.windows.spaceColumns.enabled && layer.windows.spaceColumns.extrude;
+                    colsExtrudeRow.range.disabled = !allow || !enabled;
+                    colsExtrudeRow.number.disabled = colsExtrudeRow.range.disabled;
+                    this._notifySelectedLayersChanged();
+                });
+
+                windowsToggle.input.addEventListener('change', () => {
+                    layer.windows.enabled = !!windowsToggle.input.checked;
+                    const winEnabled = layer.windows.enabled;
+                    windowPicker.button.disabled = !allow || !winEnabled;
+                    winWidthRow.range.disabled = !allow || !winEnabled;
+                    winWidthRow.number.disabled = winWidthRow.range.disabled;
+                    winSpacingRow.range.disabled = !allow || !winEnabled;
+                    winSpacingRow.number.disabled = winSpacingRow.range.disabled;
+                    winHeightRow.range.disabled = !allow || !winEnabled;
+                    winHeightRow.number.disabled = winHeightRow.range.disabled;
+                    winSillRow.range.disabled = !allow || !winEnabled;
+                    winSillRow.number.disabled = winSillRow.range.disabled;
+                    colsToggle.input.disabled = !allow || !winEnabled;
+                    const colsEnabled = winEnabled && layer.windows.spaceColumns.enabled;
+                    colsEveryRow.range.disabled = !allow || !colsEnabled;
+                    colsEveryRow.number.disabled = colsEveryRow.range.disabled;
+                    colsWidthRow.range.disabled = !allow || !colsEnabled;
+                    colsWidthRow.number.disabled = colsWidthRow.range.disabled;
+                    colsMaterialPicker.button.disabled = !allow || !colsEnabled;
+                    colsExtrudeToggle.input.disabled = !allow || !colsEnabled;
+                    colsExtrudeRow.range.disabled = !allow || !colsEnabled || !layer.windows.spaceColumns.extrude;
+                    colsExtrudeRow.number.disabled = colsExtrudeRow.range.disabled;
+                    this._notifySelectedLayersChanged();
+                });
+
+                const doorsGroup = makeDetailsSection('Doors', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:doors` });
+                const doorsHint = document.createElement('div');
+                doorsHint.className = 'building-fab-hint';
+                doorsHint.textContent = 'Doors: TBD.';
+                doorsGroup.body.appendChild(doorsHint);
+
+                layerSection.body.appendChild(floorsGroup.details);
+                layerSection.body.appendChild(planGroup.details);
+                layerSection.body.appendChild(wallsGroup.details);
+                layerSection.body.appendChild(beltGroup.details);
+                layerSection.body.appendChild(windowsGroup.details);
+                layerSection.body.appendChild(columnsGroup.details);
+                layerSection.body.appendChild(doorsGroup.details);
+            } else {
+                const roofTypeRow = document.createElement('div');
+                roofTypeRow.className = 'building-fab-row building-fab-row-wide';
+                const roofTypeLabel = document.createElement('div');
+                roofTypeLabel.className = 'building-fab-row-label';
+                roofTypeLabel.textContent = 'Type';
+                const roofTypeSelect = document.createElement('select');
+                roofTypeSelect.className = 'building-fab-select';
+                const types = ['Asphalt', 'Metal', 'Tile'];
+                for (const t of types) {
+                    const opt = document.createElement('option');
+                    opt.value = t;
+                    opt.textContent = t;
+                    roofTypeSelect.appendChild(opt);
+                }
+                roofTypeSelect.value = layer?.roof?.type ?? 'Asphalt';
+                roofTypeSelect.disabled = !allow;
+                roofTypeSelect.addEventListener('change', () => {
+                    layer.roof.type = roofTypeSelect.value;
+                    this._notifySelectedLayersChanged();
+                });
+                roofTypeRow.appendChild(roofTypeLabel);
+                roofTypeRow.appendChild(roofTypeSelect);
+                layerSection.body.appendChild(roofTypeRow);
+
+                const roofMaterialPicker = makePickerRow('Roof material');
+                const roofMaterial = layer?.roof?.material ?? { kind: 'color', id: layer?.roof?.color ?? ROOF_COLOR.DEFAULT };
+                if (roofMaterial?.kind === 'texture') {
+                    const styleId = typeof roofMaterial.id === 'string' && roofMaterial.id ? roofMaterial.id : BUILDING_STYLE.DEFAULT;
+                    const found = getStyleOption(styleId) ?? null;
+                    const label = found?.label ?? styleId;
+                    roofMaterialPicker.text.textContent = label;
+                    setMaterialThumbToTexture(roofMaterialPicker.thumb, found?.wallTextureUrl ?? '', label);
+                } else {
+                    const colorId = typeof roofMaterial?.id === 'string' && roofMaterial.id ? roofMaterial.id : ROOF_COLOR.DEFAULT;
+                    const found = getRoofColorOption(colorId) ?? null;
+                    const label = found?.label ?? colorId;
+                    roofMaterialPicker.text.textContent = label;
+                    setMaterialThumbToColor(roofMaterialPicker.thumb, found?.hex ?? 0xffffff, { isDefaultRoof: colorId === ROOF_COLOR.DEFAULT });
+                }
+                roofMaterialPicker.button.disabled = !allow;
+                roofMaterialPicker.button.addEventListener('click', () => {
+                    openMaterialPicker({
+                        title: 'Roof material',
+                        material: layer.roof.material ?? roofMaterial,
+                        textureOptions: textureMaterialOptions,
+                        colorOptions: roofColorMaterialOptions,
+                        onSelect: (spec) => {
+                            layer.roof.material = spec;
+                            if (spec.kind === 'color') layer.roof.color = spec.id;
+
+                            if (spec.kind === 'color') {
+                                const found = getRoofColorOption(spec.id) ?? null;
+                                const label = found?.label ?? spec.id;
+                                roofMaterialPicker.text.textContent = label;
+                                setMaterialThumbToColor(roofMaterialPicker.thumb, found?.hex ?? 0xffffff, { isDefaultRoof: spec.id === ROOF_COLOR.DEFAULT });
+                            } else {
+                                const found = getStyleOption(spec.id) ?? null;
+                                const label = found?.label ?? spec.id;
+                                roofMaterialPicker.text.textContent = label;
+                                setMaterialThumbToTexture(roofMaterialPicker.thumb, found?.wallTextureUrl ?? '', label);
+                            }
+                            this._notifySelectedLayersChanged();
+                        }
+                    });
+                });
+                layerSection.body.appendChild(roofMaterialPicker.row);
+
+                const ringToggle = makeToggleRow('Enable ring');
+                ringToggle.input.checked = !!layer?.ring?.enabled;
+                ringToggle.input.disabled = !allow;
+                layerSection.body.appendChild(ringToggle.toggle);
+
+                const ringOuterRow = makeRangeRow('Outer radius (m)');
+                ringOuterRow.range.min = '0';
+                ringOuterRow.range.max = '8';
+                ringOuterRow.range.step = '0.05';
+                ringOuterRow.number.min = '0';
+                ringOuterRow.number.max = '8';
+                ringOuterRow.number.step = '0.05';
+                ringOuterRow.range.value = String(layer?.ring?.outerRadius ?? 0.4);
+                ringOuterRow.number.value = formatFloat(layer?.ring?.outerRadius ?? 0.4, 2);
+                ringOuterRow.range.disabled = !allow || !layer?.ring?.enabled;
+                ringOuterRow.number.disabled = ringOuterRow.range.disabled;
+                ringOuterRow.range.addEventListener('input', () => {
+                    const next = clamp(ringOuterRow.range.value, 0.0, 8.0);
+                    layer.ring.outerRadius = next;
+                    ringOuterRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                ringOuterRow.number.addEventListener('change', () => {
+                    const next = clamp(ringOuterRow.number.value, 0.0, 8.0);
+                    layer.ring.outerRadius = next;
+                    ringOuterRow.range.value = String(next);
+                    ringOuterRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                layerSection.body.appendChild(ringOuterRow.row);
+
+                const ringInnerRow = makeRangeRow('Inner radius (m)');
+                ringInnerRow.range.min = '0';
+                ringInnerRow.range.max = '8';
+                ringInnerRow.range.step = '0.05';
+                ringInnerRow.number.min = '0';
+                ringInnerRow.number.max = '8';
+                ringInnerRow.number.step = '0.05';
+                ringInnerRow.range.value = String(layer?.ring?.innerRadius ?? 0.0);
+                ringInnerRow.number.value = formatFloat(layer?.ring?.innerRadius ?? 0.0, 2);
+                ringInnerRow.range.disabled = !allow || !layer?.ring?.enabled;
+                ringInnerRow.number.disabled = ringInnerRow.range.disabled;
+                ringInnerRow.range.addEventListener('input', () => {
+                    const next = clamp(ringInnerRow.range.value, 0.0, 8.0);
+                    layer.ring.innerRadius = next;
+                    ringInnerRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                ringInnerRow.number.addEventListener('change', () => {
+                    const next = clamp(ringInnerRow.number.value, 0.0, 8.0);
+                    layer.ring.innerRadius = next;
+                    ringInnerRow.range.value = String(next);
+                    ringInnerRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                layerSection.body.appendChild(ringInnerRow.row);
+
+                const ringHeightRow = makeRangeRow('Height (m)');
+                ringHeightRow.range.min = '0';
+                ringHeightRow.range.max = '2';
+                ringHeightRow.range.step = '0.02';
+                ringHeightRow.number.min = '0';
+                ringHeightRow.number.max = '2';
+                ringHeightRow.number.step = '0.02';
+                ringHeightRow.range.value = String(layer?.ring?.height ?? 0.4);
+                ringHeightRow.number.value = formatFloat(layer?.ring?.height ?? 0.4, 2);
+                ringHeightRow.range.disabled = !allow || !layer?.ring?.enabled;
+                ringHeightRow.number.disabled = ringHeightRow.range.disabled;
+                ringHeightRow.range.addEventListener('input', () => {
+                    const next = clamp(ringHeightRow.range.value, 0.0, 2.0);
+                    layer.ring.height = next;
+                    ringHeightRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                ringHeightRow.number.addEventListener('change', () => {
+                    const next = clamp(ringHeightRow.number.value, 0.0, 2.0);
+                    layer.ring.height = next;
+                    ringHeightRow.range.value = String(next);
+                    ringHeightRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                layerSection.body.appendChild(ringHeightRow.row);
+
+                const ringMaterialPicker = makePickerRow('Ring material');
+                const ringMaterial = layer?.ring?.material ?? { kind: 'color', id: BELT_COURSE_COLOR.OFFWHITE };
+                if (ringMaterial?.kind === 'texture') {
+                    const styleId = typeof ringMaterial.id === 'string' && ringMaterial.id ? ringMaterial.id : BUILDING_STYLE.DEFAULT;
+                    const found = getStyleOption(styleId) ?? null;
+                    const label = found?.label ?? styleId;
+                    ringMaterialPicker.text.textContent = label;
+                    setMaterialThumbToTexture(ringMaterialPicker.thumb, found?.wallTextureUrl ?? '', label);
+                } else {
+                    const colorId = typeof ringMaterial?.id === 'string' && ringMaterial.id ? ringMaterial.id : BELT_COURSE_COLOR.OFFWHITE;
+                    const found = getBeltColorOption(colorId) ?? null;
+                    const label = found?.label ?? colorId;
+                    ringMaterialPicker.text.textContent = label;
+                    setMaterialThumbToColor(ringMaterialPicker.thumb, found?.hex ?? 0xffffff);
+                }
+                ringMaterialPicker.button.disabled = !allow || !layer?.ring?.enabled;
+                ringMaterialPicker.button.addEventListener('click', () => {
+                    openMaterialPicker({
+                        title: 'Ring material',
+                        material: layer.ring.material ?? ringMaterial,
+                        textureOptions: textureMaterialOptions,
+                        colorOptions: beltColorMaterialOptions,
+                        onSelect: (spec) => {
+                            layer.ring.material = spec;
+                            if (spec.kind === 'color') {
+                                const found = getBeltColorOption(spec.id) ?? null;
+                                const label = found?.label ?? spec.id;
+                                ringMaterialPicker.text.textContent = label;
+                                setMaterialThumbToColor(ringMaterialPicker.thumb, found?.hex ?? 0xffffff);
+                            } else {
+                                const found = getStyleOption(spec.id) ?? null;
+                                const label = found?.label ?? spec.id;
+                                ringMaterialPicker.text.textContent = label;
+                                setMaterialThumbToTexture(ringMaterialPicker.thumb, found?.wallTextureUrl ?? '', label);
+                            }
+                            this._notifySelectedLayersChanged();
+                        }
+                    });
+                });
+                layerSection.body.appendChild(ringMaterialPicker.row);
+
+                ringToggle.input.addEventListener('change', () => {
+                    layer.ring.enabled = !!ringToggle.input.checked;
+                    const enabled = layer.ring.enabled;
+                    ringOuterRow.range.disabled = !allow || !enabled;
+                    ringOuterRow.number.disabled = ringOuterRow.range.disabled;
+                    ringInnerRow.range.disabled = !allow || !enabled;
+                    ringInnerRow.number.disabled = ringInnerRow.range.disabled;
+                    ringHeightRow.range.disabled = !allow || !enabled;
+                    ringHeightRow.number.disabled = ringHeightRow.range.disabled;
+                    ringMaterialPicker.button.disabled = !allow || !enabled;
+                    this._notifySelectedLayersChanged();
+                });
+            }
+
+            this.layersList.appendChild(layerSection.details);
+        }
     }
 
     _syncPropertyWidgets() {
@@ -1850,6 +3031,7 @@ export class BuildingFabricationUI {
         const allowTopBelt = allow && this._topBeltEnabled;
         const allowWindowSpacer = allow && this._windowSpacerEnabled;
         const allowStreetWindowSpacer = allowStreetWindows && this._streetWindowSpacerEnabled;
+        this._syncLayersPanel();
 
         if (this.windowFrameWidthRow) this.windowFrameWidthRow.classList.toggle('hidden', !showWindowParams);
         if (this.windowFrameColorRow) this.windowFrameColorRow.classList.toggle('hidden', !showWindowParams);
@@ -1861,6 +3043,7 @@ export class BuildingFabricationUI {
         if (this.streetWindowGlassBottomRow) this.streetWindowGlassBottomRow.classList.toggle('hidden', !showStreetWindowParams);
 
         this.deleteBuildingBtn.disabled = !allow;
+        if (this.exportBuildingBtn) this.exportBuildingBtn.disabled = !this._enabled;
         this.typeSelect.disabled = !allow;
         this._syncBuildingStyleButtons({ allow });
         this._syncWindowStyleButtons({ allow });
@@ -3388,10 +4571,6 @@ export class BuildingFabricationUI {
             this.hint.textContent = 'Create a road or building, then select it to edit properties.';
         }
 
-        this.propsHint.textContent = this._selectedBuildingId
-            ? ''
-            : 'Select a building to edit its properties.';
-
         this._syncCreatePanelControls();
         this._syncViewControls();
         this._syncToast();
@@ -3546,6 +4725,7 @@ export class BuildingFabricationUI {
         this.buildBtn.addEventListener('click', this._onBuild);
         this.clearSelBtn.addEventListener('click', this._onClearSelection);
         this.deleteBuildingBtn.addEventListener('click', this._onDeleteSelectedBuilding);
+        this.exportBuildingBtn.addEventListener('click', this._onExportBuildingConfig);
         this.resetBtn.addEventListener('click', this._onReset);
         this.roadDoneBtn.addEventListener('click', this._onRoadDone);
         this.resetOverlay.addEventListener('click', this._onResetOverlayClick);
@@ -3639,6 +4819,7 @@ export class BuildingFabricationUI {
         this.buildBtn.removeEventListener('click', this._onBuild);
         this.clearSelBtn.removeEventListener('click', this._onClearSelection);
         this.deleteBuildingBtn.removeEventListener('click', this._onDeleteSelectedBuilding);
+        this.exportBuildingBtn.removeEventListener('click', this._onExportBuildingConfig);
         this.resetBtn.removeEventListener('click', this._onReset);
         this.roadDoneBtn.removeEventListener('click', this._onRoadDone);
         this.resetOverlay.removeEventListener('click', this._onResetOverlayClick);

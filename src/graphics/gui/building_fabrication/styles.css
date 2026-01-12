@@ -406,6 +406,83 @@
     padding: 0 12px 12px 12px;
 }
 
+.building-fab-layer-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.building-fab-layer-actions-bar {
+    margin-top: 12px;
+    margin-bottom: 10px;
+}
+
+.building-fab-layer-btn {
+    appearance: none;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(0, 0, 0, 0.14);
+    color: #e9f2ff;
+    border-radius: 10px;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: 800;
+    cursor: pointer;
+    opacity: 0.92;
+}
+
+.building-fab-layer-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.10);
+    opacity: 1.0;
+}
+
+.building-fab-layer-btn:disabled {
+    cursor: default;
+    opacity: 0.5;
+}
+
+.building-fab-layer-status {
+    margin-top: 0;
+}
+
+.building-fab-layer-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.building-fab-layer-row-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.building-fab-layer-action {
+    appearance: none;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(0, 0, 0, 0.14);
+    color: #e9f2ff;
+    border-radius: 10px;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: 800;
+    cursor: pointer;
+    opacity: 0.88;
+}
+
+.building-fab-layer-action:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.10);
+    opacity: 1.0;
+}
+
+.building-fab-layer-action:disabled {
+    cursor: default;
+    opacity: 0.5;
+}
+
+.building-fab-layer-subdetails {
+    margin-top: 10px;
+    background: rgba(0, 0, 0, 0.12);
+}
+
 .building-fab-section-toggle {}
 
 .building-fab-toggle-row {

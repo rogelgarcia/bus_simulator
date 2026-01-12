@@ -10,6 +10,7 @@ import { generateRoads } from '../../graphics/assets3d/generators/RoadGenerator.
 import { createGradientSkyDome } from '../../graphics/assets3d/generators/SkyGenerator.js';
 import { createGeneratorConfig } from '../../graphics/assets3d/generators/GeneratorParams.js';
 import { BuildingWallTextureCache, buildBuildingVisualParts } from '../../graphics/assets3d/generators/buildings/BuildingGenerator.js';
+import { buildBuildingFabricationVisualParts } from '../../graphics/assets3d/generators/building_fabrication/BuildingFabricationGenerator.js';
 
 export class City {
     constructor(options = {}) {
@@ -92,36 +93,54 @@ export class City {
 
             const textures = new BuildingWallTextureCache();
             for (const entry of buildingsList) {
+                const wallInset = Number.isFinite(entry?.wallInset) ? entry.wallInset : 0.0;
+                const hasLayers = Array.isArray(entry?.layers) && entry.layers.length;
                 const windowsSpec = entry?.windows ?? null;
                 const windowsEnabled = !!windowsSpec && typeof windowsSpec === 'object';
-                const parts = buildBuildingVisualParts({
-                    map: this.map,
-                    tiles: entry.tiles,
-                    generatorConfig: this.generatorConfig,
-                    tileSize: this.map.tileSize,
-                    occupyRatio: 1.0,
-                    floors: entry.floors,
-                    floorHeight: entry.floorHeight,
-                    style: entry.style,
-                    textureCache: textures,
-                    renderer: null,
-                    overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
-                    windows: windowsEnabled ? {
-                        enabled: true,
-                        width: windowsSpec.width,
-                        gap: windowsSpec.gap,
-                        height: windowsSpec.height,
-                        y: windowsSpec.y,
-                        cornerEps: 0.12,
-                        offset: 0.05
-                    } : null
-                });
+                const parts = hasLayers
+                    ? buildBuildingFabricationVisualParts({
+                        map: this.map,
+                        tiles: entry.tiles,
+                        generatorConfig: this.generatorConfig,
+                        tileSize: this.map.tileSize,
+                        occupyRatio: 1.0,
+                        layers: entry.layers,
+                        textureCache: textures,
+                        renderer: null,
+                        overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+                        walls: { inset: wallInset }
+                    })
+                    : buildBuildingVisualParts({
+                        map: this.map,
+                        tiles: entry.tiles,
+                        generatorConfig: this.generatorConfig,
+                        tileSize: this.map.tileSize,
+                        occupyRatio: 1.0,
+                        floors: entry.floors,
+                        floorHeight: entry.floorHeight,
+                        style: entry.style,
+                        textureCache: textures,
+                        renderer: null,
+                        overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+                        walls: { inset: wallInset },
+                        windows: windowsEnabled ? {
+                            enabled: true,
+                            width: windowsSpec.width,
+                            gap: windowsSpec.gap,
+                            height: windowsSpec.height,
+                            y: windowsSpec.y,
+                            cornerEps: 0.12,
+                            offset: 0.05
+                        } : null
+                    });
                 if (!parts) continue;
 
                 const buildingGroup = new THREE.Group();
                 buildingGroup.name = entry.id ?? 'building';
                 for (const mesh of parts.solidMeshes) buildingGroup.add(mesh);
                 if (parts.windows) buildingGroup.add(parts.windows);
+                if (parts.beltCourse) buildingGroup.add(parts.beltCourse);
+                if (parts.topBelt) buildingGroup.add(parts.topBelt);
                 buildingsGroup.add(buildingGroup);
             }
 

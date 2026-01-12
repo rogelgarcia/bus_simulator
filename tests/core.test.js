@@ -777,6 +777,10 @@ async function runTests() {
     // ========== Building Fabrication UI Tests ==========
     const { BuildingFabricationUI } = await import('/src/graphics/gui/building_fabrication/BuildingFabricationUI.js');
     const { BuildingFabricationScene } = await import('/src/graphics/gui/building_fabrication/BuildingFabricationScene.js');
+    const { offsetOrthogonalLoopXZ } = await import('/src/graphics/assets3d/generators/buildings/BuildingGenerator.js');
+    const { buildBuildingFabricationVisualParts } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationGenerator.js');
+    const { createDefaultFloorLayer, createDefaultRoofLayer } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationTypes.js');
+    const { WINDOW_TYPE } = await import('/src/graphics/assets3d/generators/buildings/WindowTextureGenerator.js');
 
     test('BuildingFabricationUI: view toggles live in view panel', () => {
         const ui = new BuildingFabricationUI();
@@ -827,11 +831,185 @@ async function runTests() {
         assertEqual(ui.floorRange.max, '30', 'Floor range max should be 30.');
     });
 
+    test('BuildingFabricationUI: layer editor renders template layers', () => {
+        const ui = new BuildingFabricationUI();
+        ui.setSelectedBuilding(null);
+        const list = ui.root.querySelector('.building-fab-layer-list');
+        assertTrue(!!list, 'Layer list should exist.');
+        assertTrue((list?.children?.length ?? 0) > 0, 'Layer list should render template layers.');
+    });
+
+    test('BuildingFabricationUI: material picker shows texture/color tabs', () => {
+        const ui = new BuildingFabricationUI();
+        const building = { id: 'building_test', layers: ui.getTemplateLayers() };
+        ui.setSelectedBuilding(building);
+
+        const label = Array.from(ui.root.querySelectorAll('.building-fab-row-label'))
+            .find((el) => el.textContent?.trim() === 'Wall material');
+        assertTrue(!!label, 'Wall material row should exist.');
+        const row = label.closest('.building-fab-row') ?? null;
+        assertTrue(!!row, 'Wall material row wrapper should exist.');
+        const btn = row.querySelector('button.building-fab-material-button') ?? null;
+        assertTrue(!!btn, 'Wall material button should exist.');
+
+        btn.click();
+
+        const tabs = document.querySelector('.ui-picker-tabs');
+        assertTrue(!!tabs, 'Picker tabs element should exist.');
+        assertFalse(tabs.classList.contains('hidden'), 'Picker tabs should be visible.');
+        const tabBtns = tabs.querySelectorAll('button.ui-picker-tab');
+        assertEqual(tabBtns.length, 2, 'Picker should show 2 tabs.');
+        ui._pickerPopup?.close?.();
+    });
+
+    test('BuildingFabricationUI: roof layer has no nested roof/ring sections', () => {
+        const ui = new BuildingFabricationUI();
+        ui.setSelectedBuilding(null);
+        const roofTitle = Array.from(ui.root.querySelectorAll('.building-fab-details-title'))
+            .find((el) => el.textContent?.trim() === 'Roof layer');
+        assertTrue(!!roofTitle, 'Roof layer section should exist.');
+        const roofDetails = roofTitle.closest('details') ?? null;
+        assertTrue(!!roofDetails, 'Roof layer details wrapper should exist.');
+        const nested = roofDetails.querySelectorAll('.building-fab-layer-subdetails');
+        assertEqual(nested.length, 0, 'Roof layer should not render nested detail sections.');
+    });
+
+    test('BuildingFabricationUI: sections do not auto-collapse on refresh', () => {
+        const ui = new BuildingFabricationUI();
+        const building = { id: 'building_test', layers: ui.getTemplateLayers() };
+        ui.setSelectedBuilding(building);
+
+        const title = Array.from(ui.root.querySelectorAll('.building-fab-details-title'))
+            .find((el) => el.textContent?.trim() === 'Floorplan');
+        const details = title?.closest?.('details') ?? null;
+        assertTrue(!!details, 'Floorplan section should exist.');
+        details.open = true;
+        details.dispatchEvent(new Event('toggle'));
+
+        ui.setSelectedBuilding(building);
+
+        const title2 = Array.from(ui.root.querySelectorAll('.building-fab-details-title'))
+            .find((el) => el.textContent?.trim() === 'Floorplan');
+        const details2 = title2?.closest?.('details') ?? null;
+        assertTrue(!!details2, 'Floorplan section should exist after refresh.');
+        assertTrue(details2.open, 'Floorplan section should remain open after refresh.');
+    });
+
     test('BuildingFabricationUI: road mode shows done button', () => {
         const ui = new BuildingFabricationUI();
         ui.setRoadModeEnabled(true);
         assertFalse(ui.roadDoneBtn.classList.contains('hidden'), 'Done button should be visible in road mode.');
         assertTrue(ui.buildBtn.classList.contains('hidden'), 'Build button should be hidden in road mode.');
+    });
+
+    test('BuildingGenerator: offsetOrthogonalLoopXZ offsets collinear points', () => {
+        const loop = [
+            { x: 0, z: 0 },
+            { x: 1, z: 0 },
+            { x: 2, z: 0 },
+            { x: 3, z: 0 },
+            { x: 3, z: 1 },
+            { x: 0, z: 1 }
+        ];
+
+        const out = offsetOrthogonalLoopXZ(loop, 0.2);
+        assertTrue(Math.abs(out[1].z - 0.2) < 1e-6, 'Collinear point should shift with offset.');
+        assertTrue(Math.abs(out[2].z - 0.2) < 1e-6, 'Collinear point should shift with offset.');
+    });
+
+    test('BuildingFabricationGenerator: floor above roof ignores ring height', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+
+        const lowerFloorHeight = 3.0;
+        const ringHeight = 1.0;
+        const layers = [
+            createDefaultFloorLayer({ floors: 1, floorHeight: lowerFloorHeight, windows: { enabled: false } }),
+            createDefaultRoofLayer({ ring: { enabled: true, height: ringHeight } }),
+            createDefaultFloorLayer({ floors: 1, floorHeight: 2.5, windows: { enabled: false } })
+        ];
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!parts, 'Expected visual parts.');
+
+        const meshes = parts.solidMeshes ?? [];
+        assertTrue(meshes.length >= 3, 'Expected floor, roof, floor meshes.');
+
+        const floor1 = meshes[0];
+        const floor2 = meshes[2];
+        const expected = floor1.position.y + lowerFloorHeight;
+        assertTrue(Math.abs(floor2.position.y - expected) < 1e-6, `Floor above roof should start at ${expected}, got ${floor2.position.y}.`);
+    });
+
+    test('BuildingFabricationGenerator: arched windows render with transparency', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+
+        const layers = [
+            createDefaultFloorLayer({
+                floors: 1,
+                floorHeight: 3.0,
+                windows: { enabled: true, typeId: WINDOW_TYPE.ARCH_V1 }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!parts, 'Expected visual parts.');
+        assertTrue(!!parts.windows, 'Expected windows group.');
+
+        const meshes = parts.windows?.children?.filter?.((m) => m?.isMesh) ?? [];
+        assertTrue(meshes.length > 0, 'Expected at least 1 window mesh.');
+
+        const mat = meshes[0]?.material ?? null;
+        assertTrue(!!mat, 'Expected a window material.');
+        assertTrue(!!mat.transparent, 'Arched window material should be transparent.');
     });
 
     test('BuildingFabricationScene: trims building tiles when road overlaps', () => {
@@ -874,9 +1052,55 @@ async function runTests() {
 
     // ========== City Building Config Tests ==========
     const { CityMap } = await import('/src/app/city/CityMap.js');
+    const { createCityBuildingConfigFromFabrication, serializeCityBuildingConfigToEsModule } = await import('/src/app/city/buildings/BuildingConfigExport.js');
     const { BUILDING_STYLE } = await import('/src/app/buildings/BuildingStyle.js');
     const { BELT_COURSE_COLOR } = await import('/src/app/buildings/BeltCourseColor.js');
     const { ROOF_COLOR, resolveRoofColorHex } = await import('/src/app/buildings/RoofColor.js');
+
+    test('BuildingConfigExport: exports building fabrication layers for city', () => {
+        const layers = [
+            createDefaultFloorLayer({ floors: 3, floorHeight: 3.0 }),
+            createDefaultRoofLayer()
+        ];
+        const cfg = createCityBuildingConfigFromFabrication({
+            id: 'export_test_building',
+            name: 'Export test building',
+            layers,
+            wallInset: 0.25
+        });
+
+        assertEqual(cfg.id, 'export_test_building');
+        assertEqual(cfg.name, 'Export test building');
+        assertTrue(Array.isArray(cfg.layers) && cfg.layers.length === 2, 'Expected normalized layers.');
+        assertTrue(Number.isFinite(cfg.floors) && cfg.floors >= 1, 'Expected legacy floors.');
+        assertTrue(Number.isFinite(cfg.floorHeight) && cfg.floorHeight > 0, 'Expected legacy floorHeight.');
+        assertTrue(typeof cfg.style === 'string' && cfg.style.length > 0, 'Expected legacy style.');
+
+        const source = serializeCityBuildingConfigToEsModule(cfg);
+        assertTrue(source.includes('export_test_building'), 'Expected module to include id.');
+        assertTrue(source.includes('layers: Object.freeze'), 'Expected module to include layers.');
+        assertTrue(source.includes('export default'), 'Expected module to export default.');
+    });
+
+    test('CityMap: preserves layer-based building configs', () => {
+        const cfg = createCityConfig({ size: 96, mapTileSize: 24, seed: 'test-layer-config' });
+        const layers = [
+            createDefaultFloorLayer({ floors: 2, floorHeight: 3.0 }),
+            createDefaultRoofLayer()
+        ];
+        const map = CityMap.fromSpec({
+            roads: [],
+            buildings: [{
+                id: 'layer_building_1',
+                tiles: [[0, 0]],
+                layers
+            }]
+        }, cfg);
+
+        assertEqual(map.buildings.length, 1, 'Expected one building.');
+        assertEqual(map.buildings[0].id, 'layer_building_1');
+        assertTrue(Array.isArray(map.buildings[0].layers) && map.buildings[0].layers.length === 2, 'Expected layers on map building entry.');
+    });
 
     test('CityMap: builds empty building list when missing', () => {
         const cfg = createCityConfig({ size: 96, mapTileSize: 24, seed: 'test' });

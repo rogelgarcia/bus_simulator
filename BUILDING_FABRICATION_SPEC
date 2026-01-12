@@ -36,9 +36,11 @@ The building fabrication will follow this specification:
 - It is applied to every floor of the layer.
 - The belt is a horizontal band of material that runs along the top edge of the floor.
 - The belt has height. The height pushes the next floor up by that amount.
+- The belt can be extruded out from the wall face by a defined amount.
 
 - Properties of the belt:
   - Height: The height of the belt band.
+  - Extrusion: How far the belt protrudes out from the wall face.
   - Material: The material used for the belt.
 
 ### Windows
@@ -84,3 +86,28 @@ All things related to building fabrication should be organized in a dedicated mo
 - Use a unified material picker for all material selections in the UI. The material picker should show a preview of the material selected. The material picker should show a popup to select the material.
 - Windows and doors should have a catalog browser to select the type from predefined options. 
 
+## Export building configuration
+
+- There must be an `EXPORT` button in the fabrication screen.
+- The export must contain the current building configuration (at minimum the
+  full layer definition) in a form that can be used by city creation.
+- Export should download a single building config file as an ES module.
+- The exported file should be directly usable by placing it under
+  `src/app/city/buildings/` and then registering it in
+  `src/app/city/buildings/index.js`.
+- The exported config must include stable identifiers:
+  - `id` (string): used as `configId` from the city map spec.
+  - `name` (string): human-readable name for pickers/debugging.
+- The exported config should include:
+  - `layers`: the layer-based building definition used by building fabrication.
+  - Optional legacy fields (`floors`, `floorHeight`, `style`, `windows`) when a
+    meaningful mapping exists, so older building generation paths can still
+    render something reasonable.
+
+# Building Placement over streets
+
+- When defining the building floor plan, ensure that the building does not overlap with existing streets.
+- The building must be adjusted to fit within the available land area, avoiding any intersections with street geometries.
+- The building must end at the edge of the side walk.
+- Do this by checking each corner of the building floor plan against the street geometries. If it is inside of streets, get the closest point on the street edge and move the corner there.
+- When creating the belts and roof rings, ensure that they are respecting the adjusted building floor plan.

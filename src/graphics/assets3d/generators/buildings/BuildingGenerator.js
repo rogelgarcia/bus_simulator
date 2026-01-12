@@ -8,7 +8,7 @@ import { BUILDING_STYLE, isBuildingStyle } from '../../../../app/buildings/Build
 import { WINDOW_STYLE, isWindowStyle } from '../../../../app/buildings/WindowStyle.js';
 import { resolveBeltCourseColorHex } from '../../../../app/buildings/BeltCourseColor.js';
 import { resolveRoofColorHex } from '../../../../app/buildings/RoofColor.js';
-import { getLegacyWindowStyleTexture, getWindowTexture, getWindowTypeOptions } from './WindowTextureGenerator.js';
+import { WINDOW_TYPE, getLegacyWindowStyleTexture, getWindowTexture, getWindowTypeOptions } from './WindowTextureGenerator.js';
 
 const EPS = 1e-6;
 const QUANT = 1000;
@@ -45,6 +45,57 @@ function signedArea(points) {
         sum += a.x * b.z - b.x * a.z;
     }
     return sum * 0.5;
+}
+
+function simplifyLoopXZ(loop) {
+    const points = Array.isArray(loop) ? loop : [];
+    if (points.length < 4) return points;
+
+    const same = (a, b) => !!a && !!b && Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.z - b.z) < 1e-6;
+
+    let cleaned = [];
+    for (const p of points) {
+        if (!p) continue;
+        const last = cleaned[cleaned.length - 1] ?? null;
+        if (last && same(last, p)) continue;
+        cleaned.push(p);
+    }
+
+    if (cleaned.length > 1 && same(cleaned[0], cleaned[cleaned.length - 1])) cleaned = cleaned.slice(0, -1);
+
+    let out = cleaned;
+    for (let pass = 0; pass < 8; pass++) {
+        if (out.length < 4) break;
+        let changed = false;
+        const next = [];
+        const n = out.length;
+
+        for (let i = 0; i < n; i++) {
+            const prev = out[(i - 1 + n) % n];
+            const cur = out[i];
+            const nextPt = out[(i + 1) % n];
+            if (!prev || !cur || !nextPt) continue;
+
+            if (same(prev, cur) || same(cur, nextPt)) {
+                changed = true;
+                continue;
+            }
+
+            const collinearX = Math.abs(prev.x - cur.x) < 1e-6 && Math.abs(cur.x - nextPt.x) < 1e-6;
+            const collinearZ = Math.abs(prev.z - cur.z) < 1e-6 && Math.abs(cur.z - nextPt.z) < 1e-6;
+            if (collinearX || collinearZ) {
+                changed = true;
+                continue;
+            }
+
+            next.push(cur);
+        }
+
+        out = next;
+        if (!changed) break;
+    }
+
+    return out.length >= 3 ? out : cleaned;
 }
 
 function applyTextureColorSpace(tex, { srgb = true } = {}) {
@@ -249,14 +300,17 @@ function linesIntersection2(a, r, b, s) {
     return { x: a.x + t * r.x, z: a.z + t * r.z };
 }
 
-function insetOrthogonalLoopXZ(loop, inset) {
+export function offsetOrthogonalLoopXZ(loop, offset) {
     const points = Array.isArray(loop) ? loop : [];
     const n = points.length;
-    const d = clamp(inset, 0, 50);
+    const signed = Number(offset) || 0;
+    const d = clamp(Math.abs(signed), 0, 50);
     if (!(d > EPS) || n < 3) return loop;
 
     const winding = signedArea(points);
     const isCcw = winding >= 0;
+    const outward = signed < 0;
+    const mult = outward ? -1 : 1;
     const insetPoints = new Array(n);
 
     for (let i = 0; i < n; i++) {
@@ -280,10 +334,19 @@ function insetOrthogonalLoopXZ(loop, inset) {
         const n0 = isCcw ? left0 : { x: -left0.x, z: -left0.z };
         const n1 = isCcw ? left1 : { x: -left1.x, z: -left1.z };
 
-        const p0 = { x: cur.x + n0.x * d, z: cur.z + n0.z * d };
-        const p1 = { x: cur.x + n1.x * d, z: cur.z + n1.z * d };
+        const nn0 = mult === 1 ? n0 : { x: -n0.x, z: -n0.z };
+        const nn1 = mult === 1 ? n1 : { x: -n1.x, z: -n1.z };
+
+        const p0 = { x: cur.x + nn0.x * d, z: cur.z + nn0.z * d };
+        const p1 = { x: cur.x + nn1.x * d, z: cur.z + nn1.z * d };
         const hit = linesIntersection2(p0, e0, p1, e1);
-        insetPoints[i] = hit ? { x: hit.x, y: cur.y, z: hit.z } : cur;
+        if (hit) {
+            insetPoints[i] = { x: hit.x, y: cur.y, z: hit.z };
+            continue;
+        }
+
+        const collinear = Math.abs(cross2(e0, e1)) < 1e-6 && dot2(e0, e1) > 0.999;
+        insetPoints[i] = collinear ? { x: p0.x, y: cur.y, z: p0.z } : cur;
     }
 
     return insetPoints;
@@ -788,7 +851,11 @@ export function computeBuildingLoopsFromTiles({
         if (loop.length >= 3) loops.push(loop);
     }
 
-    return loops;
+    const simplified = loops
+        .map((loop) => simplifyLoopXZ(loop))
+        .filter((loop) => Array.isArray(loop) && loop.length >= 3);
+
+    return simplified;
 }
 
 export function applyWallTextureToGroup({
@@ -913,10 +980,10 @@ export function buildBuildingVisualParts({
     const roofOuterLoops = footprintOuterLoops;
     const roofHoleLoops = footprintHoleLoops;
     const wallOuterLoops = wallInset > EPS
-        ? footprintOuterLoops.map((loop) => insetOrthogonalLoopXZ(loop, wallInset))
+        ? footprintOuterLoops.map((loop) => offsetOrthogonalLoopXZ(loop, wallInset))
         : footprintOuterLoops;
     const wallHoleLoops = wallInset > EPS
-        ? footprintHoleLoops.map((loop) => insetOrthogonalLoopXZ(loop, wallInset))
+        ? footprintHoleLoops.map((loop) => offsetOrthogonalLoopXZ(loop, wallInset))
         : footprintHoleLoops;
 
     const baseColorHex = makeDeterministicColor(tileCount * 97 + floorCount * 31).getHex();
@@ -1222,14 +1289,19 @@ export function buildBuildingVisualParts({
         const streetSpacerExtrude = !!streetSpacer?.extrude;
         const streetSpacerExtrudeDistance = clamp(streetSpacer?.extrudeDistance ?? streetSpacer?.extrudeDepth ?? 0.0, 0.0, 1.0);
 
-        const makeWindowMaterial = ({ typeId, params, styleId, windowWidth, windowHeight } = {}) => new THREE.MeshStandardMaterial({
-            color: 0xffffff,
-            map: typeId ? getWindowTexture({ typeId, params, windowWidth, windowHeight }) : getBuildingWindowTextureForStyle(styleId),
-            roughness: 0.4,
-            metalness: 0.0,
-            emissive: new THREE.Color(0x0b1f34),
-            emissiveIntensity: 0.35
-        });
+        const makeWindowMaterial = ({ typeId, params, styleId, windowWidth, windowHeight } = {}) => {
+            const wantsAlpha = typeId === WINDOW_TYPE.ARCH_V1;
+            return new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                map: typeId ? getWindowTexture({ typeId, params, windowWidth, windowHeight }) : getBuildingWindowTextureForStyle(styleId),
+                roughness: 0.4,
+                metalness: 0.0,
+                emissive: new THREE.Color(0x0b1f34),
+                emissiveIntensity: 0.35,
+                transparent: wantsAlpha,
+                alphaTest: wantsAlpha ? 0.01 : 0.0
+            });
+        };
         const upperWindowMat = makeWindowMaterial({
             typeId: upperWindowTypeId,
             params: upperWindowParams,

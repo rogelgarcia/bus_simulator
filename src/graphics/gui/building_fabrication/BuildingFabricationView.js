@@ -3,6 +3,13 @@
 import * as THREE from 'three';
 import { BuildingFabricationScene } from './BuildingFabricationScene.js';
 import { BuildingFabricationUI } from './BuildingFabricationUI.js';
+import {
+    buildingConfigIdToFileBaseName,
+    createCityBuildingConfigFromFabrication,
+    sanitizeBuildingConfigId,
+    sanitizeBuildingConfigName,
+    serializeCityBuildingConfigToEsModule
+} from '../../../app/city/buildings/BuildingConfigExport.js';
 
 function isInteractiveElement(target) {
     const tag = target?.tagName;
@@ -63,7 +70,8 @@ export class BuildingFabricationView {
         this.ui.onBuildBuildings = () => {
             this.scene.createBuildingsFromSelection({
                 floors: this.ui.getFloorCount(),
-                floorHeight: this.ui.getFloorHeight()
+                floorHeight: this.ui.getFloorHeight(),
+                layers: this.ui.getTemplateLayers()
             });
             this.ui.setBuildingModeEnabled(this.scene.getBuildingModeEnabled());
             this._syncUiCounts();
@@ -222,6 +230,47 @@ export class BuildingFabricationView {
                 this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
                 this._syncBuildings();
             }
+        };
+
+        this.ui.onSelectedBuildingLayersChange = (layers) => {
+            if (this.scene.setSelectedBuildingLayers(layers)) {
+                const selected = this.scene.getSelectedBuilding();
+                this.ui.setBuildings(this.scene.getBuildings(), { selectedBuildingId: selected?.id ?? null });
+                if (selected) this.ui.setFloorCount(selected.floors);
+            }
+        };
+
+        this.ui.onExportBuildingConfig = () => {
+            const selected = this.scene.getSelectedBuilding();
+            const layers = Array.isArray(selected?.layers) && selected.layers.length
+                ? selected.layers
+                : this.ui.getTemplateLayers();
+            if (!Array.isArray(layers) || !layers.length) return;
+
+            const defaultName = selected?.id ?? 'Building config';
+            const nameRaw = window.prompt('Export building config name:', defaultName);
+            if (nameRaw === null) return;
+            const name = sanitizeBuildingConfigName(nameRaw, { fallback: defaultName });
+
+            const suggestedId = sanitizeBuildingConfigId(name);
+            const idRaw = window.prompt('Export building config id (used as configId):', suggestedId);
+            if (idRaw === null) return;
+            const id = sanitizeBuildingConfigId(idRaw, { fallback: suggestedId });
+
+            const wallInset = Number.isFinite(selected?.wallInset) ? selected.wallInset : 0.0;
+            const cfg = createCityBuildingConfigFromFabrication({ id, name, layers, wallInset });
+            const fileBaseName = buildingConfigIdToFileBaseName(cfg.id);
+            const source = serializeCityBuildingConfigToEsModule(cfg, { fileBaseName });
+
+            const blob = new Blob([source], { type: 'text/javascript' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${fileBaseName}.js`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.setTimeout(() => URL.revokeObjectURL(url), 250);
         };
 
         this.ui.onWindowGlassTopChange = (hex) => {

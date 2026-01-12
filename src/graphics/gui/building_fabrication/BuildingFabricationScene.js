@@ -17,6 +17,8 @@ import { createGeneratorConfig } from '../../assets3d/generators/GeneratorParams
 import { createGradientSkyDome } from '../../assets3d/generators/SkyGenerator.js';
 import { generateRoads } from '../../assets3d/generators/RoadGenerator.js';
 import { BuildingWallTextureCache, buildBuildingVisualParts } from '../../assets3d/generators/buildings/BuildingGenerator.js';
+import { buildBuildingFabricationVisualParts } from '../../assets3d/generators/building_fabrication/BuildingFabricationGenerator.js';
+import { cloneBuildingLayers, createDefaultFloorLayer, createDefaultRoofLayer, normalizeBuildingLayers } from '../../assets3d/generators/building_fabrication/BuildingFabricationTypes.js';
 import { getCityMaterials } from '../../assets3d/textures/CityMaterials.js';
 import { createRoadHighlightMesh } from '../../visuals/city/RoadHighlightMesh.js';
 
@@ -570,6 +572,32 @@ export class BuildingFabricationScene {
         if (next === building.floors) return false;
         building.floors = next;
         building.streetFloors = clampInt(building.streetFloors, 0, next);
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingLayers(layers) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        if (!Array.isArray(layers) || !layers.length) return false;
+
+        const nextLayers = cloneBuildingLayers(layers);
+        building.layers = nextLayers;
+
+        const totalFloors = nextLayers
+            .filter((layer) => layer?.type === 'floor')
+            .reduce((sum, layer) => sum + clampInt(layer.floors, 0, 99), 0);
+        if (totalFloors > 0) building.floors = clampInt(totalFloors, 1, 30);
+
+        const firstFloor = nextLayers.find((layer) => layer?.type === 'floor') ?? null;
+        if (Number.isFinite(firstFloor?.floorHeight)) {
+            building.floorHeight = clamp(firstFloor.floorHeight, 1.0, 12.0);
+        }
+
+        const firstRoof = nextLayers.find((layer) => layer?.type === 'roof') ?? null;
+        const roofColor = typeof firstRoof?.roof?.color === 'string' ? firstRoof.roof.color : null;
+        if (isRoofColor(roofColor)) building.roofColor = roofColor;
+
         this._rebuildBuildingMesh(building);
         return true;
     }
@@ -1262,16 +1290,32 @@ export class BuildingFabricationScene {
         this._syncTileVisuals();
     }
 
-    createBuildingsFromSelection({ floors, floorHeight } = {}) {
+    createBuildingsFromSelection({ floors, floorHeight, layers = null } = {}) {
         if (!this.root) return;
         if (!this._selectedTiles.size) return;
 
-        const clampedFloors = clampInt(floors, 1, 30);
-        const clampedFloorHeight = clamp(
+        const resolvedLayers = Array.isArray(layers) && layers.length
+            ? cloneBuildingLayers(layers)
+            : null;
+
+        let clampedFloors = clampInt(floors, 1, 30);
+        let clampedFloorHeight = clamp(
             Number.isFinite(floorHeight) ? floorHeight : this.floorHeight,
             1.0,
             12.0
         );
+
+        if (resolvedLayers) {
+            const total = resolvedLayers
+                .filter((layer) => layer?.type === 'floor')
+                .reduce((sum, layer) => sum + clampInt(layer.floors, 0, 99), 0);
+            if (total > 0) clampedFloors = clampInt(total, 1, 30);
+
+            const first = resolvedLayers.find((layer) => layer?.type === 'floor') ?? null;
+            if (Number.isFinite(first?.floorHeight)) {
+                clampedFloorHeight = clamp(first.floorHeight, 1.0, 12.0);
+            }
+        }
         const selection = new Set(this._selectedTiles);
         const overlaps = new Set();
         for (const tileId of selection) {
@@ -1286,7 +1330,9 @@ export class BuildingFabricationScene {
         let best = null;
         let bestSize = 0;
         for (const cluster of clusters) {
-            const created = this._createBuilding(cluster, clampedFloors, clampedFloorHeight);
+            const created = this._createBuilding(cluster, clampedFloors, clampedFloorHeight, {
+                layers: resolvedLayers ? cloneBuildingLayers(resolvedLayers) : null
+            });
             const size = created?.tiles?.size ?? 0;
             if (created && size >= bestSize) {
                 best = created;
@@ -1757,7 +1803,8 @@ export class BuildingFabricationScene {
         streetWindowSpacerEvery = 4,
         streetWindowSpacerWidth = 0.9,
         streetWindowSpacerExtrude = false,
-        streetWindowSpacerExtrudeDistance = 0.12
+        streetWindowSpacerExtrudeDistance = 0.12,
+        layers = null
     } = {}) {
         const group = new THREE.Group();
         group.name = `building_${this._buildings.length + 1}`;
@@ -1802,6 +1849,123 @@ export class BuildingFabricationScene {
         const safeStreetWindowGap = Number.isFinite(streetWindowGap) ? clamp(streetWindowGap, 0.0, 24.0) : clamp(windowGap, 0.0, 24.0);
         const safeStreetWindowHeight = Number.isFinite(streetWindowHeight) ? clamp(streetWindowHeight, 0.3, 10.0) : clamp(windowHeight, 0.3, 10.0);
         const safeStreetWindowY = Number.isFinite(streetWindowY) ? clamp(streetWindowY, 0.0, 12.0) : clamp(windowY, 0.0, 12.0);
+
+        const totalFloors = clampInt(floors, 1, 99);
+        const safeStreetFloors = streetEnabled ? clampInt(streetFloors, 0, totalFloors) : 0;
+        const upperFloors = Math.max(0, totalFloors - safeStreetFloors);
+
+        const buildFloorLayer = ({
+            floors: layerFloors,
+            floorHeight: layerFloorHeight,
+            style: layerStyle,
+            beltEnabled,
+            beltHeight,
+            beltColor,
+            windowTypeId: layerWindowTypeId,
+            windowParams: layerWindowParams,
+            windowWidth: layerWindowWidth,
+            windowSpacing: layerWindowSpacing,
+            windowHeight: layerWindowHeight,
+            windowSillHeight: layerWindowSillHeight,
+            spacerEnabled,
+            spacerEvery,
+            spacerWidth,
+            spacerMaterialColor,
+            spacerExtrude,
+            spacerExtrudeDistance
+        }) => createDefaultFloorLayer({
+            floors: layerFloors,
+            floorHeight: layerFloorHeight,
+            style: layerStyle,
+            belt: {
+                enabled: beltEnabled,
+                height: beltHeight,
+                material: { color: beltColor }
+            },
+            windows: {
+                enabled: true,
+                typeId: layerWindowTypeId,
+                params: layerWindowParams,
+                width: layerWindowWidth,
+                height: layerWindowHeight,
+                sillHeight: layerWindowSillHeight,
+                spacing: layerWindowSpacing,
+                spaceColumns: {
+                    enabled: spacerEnabled,
+                    every: spacerEvery,
+                    width: spacerWidth,
+                    material: { color: spacerMaterialColor },
+                    extrude: spacerExtrude,
+                    extrudeDistance: spacerExtrudeDistance
+                }
+            }
+        });
+
+        const fallbackLayers = [];
+        if (safeStreetFloors > 0) {
+            fallbackLayers.push(buildFloorLayer({
+                floors: safeStreetFloors,
+                floorHeight: clamp(
+                    Number.isFinite(streetFloorHeight) ? streetFloorHeight : clampedFloorHeight,
+                    1.0,
+                    12.0
+                ),
+                style: isBuildingStyle(streetStyle) ? streetStyle : safeStyle,
+                beltEnabled: !!beltCourseEnabled,
+                beltHeight: clamp(beltCourseHeight, 0.02, 1.2),
+                beltColor: isBeltCourseColor(beltCourseColor) ? beltCourseColor : BELT_COURSE_COLOR.OFFWHITE,
+                windowTypeId: safeStreetWindowTypeId,
+                windowParams: safeStreetWindowParams,
+                windowWidth: safeStreetWindowWidth,
+                windowSpacing: safeStreetWindowGap,
+                windowHeight: safeStreetWindowHeight,
+                windowSillHeight: safeStreetWindowY,
+                spacerEnabled: !!streetWindowSpacerEnabled,
+                spacerEvery: clampInt(streetWindowSpacerEvery, 1, 99),
+                spacerWidth: clamp(streetWindowSpacerWidth, 0.1, 10.0),
+                spacerMaterialColor: isBeltCourseColor(beltCourseColor) ? beltCourseColor : BELT_COURSE_COLOR.OFFWHITE,
+                spacerExtrude: !!streetWindowSpacerExtrude,
+                spacerExtrudeDistance: clamp(streetWindowSpacerExtrudeDistance, 0.0, 1.0)
+            }));
+        }
+
+        if (upperFloors > 0) {
+            fallbackLayers.push(buildFloorLayer({
+                floors: upperFloors,
+                floorHeight: clampedFloorHeight,
+                style: safeStyle,
+                beltEnabled: safeStreetFloors > 0 ? false : !!beltCourseEnabled,
+                beltHeight: clamp(beltCourseHeight, 0.02, 1.2),
+                beltColor: isBeltCourseColor(beltCourseColor) ? beltCourseColor : BELT_COURSE_COLOR.OFFWHITE,
+                windowTypeId: safeWindowTypeId,
+                windowParams: safeWindowParams,
+                windowWidth: clamp(windowWidth, 0.3, 12.0),
+                windowSpacing: clamp(windowGap, 0.0, 24.0),
+                windowHeight: clamp(windowHeight, 0.3, 10.0),
+                windowSillHeight: clamp(windowY, 0.0, 12.0),
+                spacerEnabled: !!windowSpacerEnabled,
+                spacerEvery: clampInt(windowSpacerEvery, 1, 99),
+                spacerWidth: clamp(windowSpacerWidth, 0.1, 10.0),
+                spacerMaterialColor: isBeltCourseColor(beltCourseColor) ? beltCourseColor : BELT_COURSE_COLOR.OFFWHITE,
+                spacerExtrude: !!windowSpacerExtrude,
+                spacerExtrudeDistance: clamp(windowSpacerExtrudeDistance, 0.0, 1.0)
+            }));
+        }
+
+        fallbackLayers.push(createDefaultRoofLayer({
+            ring: {
+                enabled: !!topBeltEnabled,
+                outerRadius: clamp(topBeltWidth, 0.0, 8.0),
+                innerRadius: clamp(topBeltInnerWidth, 0.0, 8.0),
+                height: clamp(topBeltHeight, 0.02, 2.0),
+                material: { color: isBeltCourseColor(topBeltColor) ? topBeltColor : BELT_COURSE_COLOR.OFFWHITE }
+            },
+            roof: { color: isRoofColor(roofColor) ? roofColor : ROOF_COLOR.DEFAULT }
+        }));
+
+        const resolvedLayers = Array.isArray(layers) && layers.length
+            ? cloneBuildingLayers(layers)
+            : normalizeBuildingLayers(null, { fallback: fallbackLayers });
         const building = {
             id: group.name,
             type,
@@ -1853,6 +2017,7 @@ export class BuildingFabricationScene {
             streetWindowSpacerWidth: clamp(streetWindowSpacerWidth, 0.1, 10.0),
             streetWindowSpacerExtrude: !!streetWindowSpacerExtrude,
             streetWindowSpacerExtrudeDistance: clamp(streetWindowSpacerExtrudeDistance, 0.0, 1.0),
+            layers: resolvedLayers,
             group,
             solidGroup,
             featuresGroup,
@@ -1958,6 +2123,7 @@ export class BuildingFabricationScene {
                 windowStyle: building.windowStyle,
                 windowTypeId: building.windowTypeId,
                 windowParams: building.windowParams,
+                layers: cloneBuildingLayers(building.layers),
                 streetEnabled: building.streetEnabled,
                 streetFloors: building.streetFloors,
                 streetFloorHeight: building.streetFloorHeight,
@@ -2347,80 +2513,97 @@ export class BuildingFabricationScene {
             if (meta) tiles.push([meta.x, meta.y]);
         }
 
-        const parts = buildBuildingVisualParts({
-            map: this.map,
-            tiles,
-            generatorConfig: this.generatorConfig,
-            tileSize: this.tileSize,
-            occupyRatio: this.occupyRatio,
-            floors: building.floors,
-            floorHeight: Number.isFinite(building.floorHeight) ? building.floorHeight : this.floorHeight,
-            style: building.style,
-            textureCache: this._wallTextures,
-            renderer: this.engine?.renderer ?? null,
-            colors: { line: BUILDING_LINE_COLOR, border: BUILDING_BORDER_COLOR },
-            overlays: { wire: true, floorplan: true, border: true, floorDivisions: true },
-            roof: {
-                color: building.roofColor
-            },
-            walls: {
-                inset: building.wallInset
-            },
-            windows: {
-                enabled: true,
-                style: building.windowStyle,
-                typeId: building.windowTypeId,
-                params: building.windowParams,
-                width: building.windowWidth,
-                gap: building.windowGap,
-                height: building.windowHeight,
-                y: building.windowY,
-                spacer: {
-                    enabled: !!building.windowSpacerEnabled,
-                    every: building.windowSpacerEvery,
-                    width: building.windowSpacerWidth,
-                    extrude: !!building.windowSpacerExtrude,
-                    extrudeDistance: building.windowSpacerExtrudeDistance
-                },
-                cornerEps: 0.12,
-                offset: 0.05
-            },
-            street: {
-                enabled: !!building.streetEnabled,
-                floors: building.streetFloors,
-                floorHeight: building.streetFloorHeight,
-                style: building.streetStyle,
-                windows: {
-                    width: building.streetWindowWidth,
-                    gap: building.streetWindowGap,
-                    height: building.streetWindowHeight,
-                    y: building.streetWindowY,
-                    style: building.streetWindowStyle,
-                    typeId: building.streetWindowTypeId,
-                    params: building.streetWindowParams,
-                    spacer: {
-                        enabled: !!building.streetWindowSpacerEnabled,
-                        every: building.streetWindowSpacerEvery,
-                        width: building.streetWindowSpacerWidth,
-                        extrude: !!building.streetWindowSpacerExtrude,
-                        extrudeDistance: building.streetWindowSpacerExtrudeDistance
-                    }
+        const useLayers = Array.isArray(building.layers) && building.layers.length;
+        const parts = useLayers
+            ? buildBuildingFabricationVisualParts({
+                map: this.map,
+                tiles,
+                generatorConfig: this.generatorConfig,
+                tileSize: this.tileSize,
+                occupyRatio: this.occupyRatio,
+                layers: building.layers,
+                textureCache: this._wallTextures,
+                renderer: this.engine?.renderer ?? null,
+                colors: { line: BUILDING_LINE_COLOR, border: BUILDING_BORDER_COLOR },
+                overlays: { wire: true, floorplan: true, border: true, floorDivisions: true },
+                walls: {
+                    inset: building.wallInset
                 }
-            },
-            beltCourse: {
-                enabled: !!building.beltCourseEnabled,
-                margin: building.beltCourseMargin,
-                height: building.beltCourseHeight,
-                color: building.beltCourseColor
-            },
-            topBelt: {
-                enabled: !!building.topBeltEnabled,
-                width: building.topBeltWidth,
-                height: building.topBeltHeight,
-                innerWidth: building.topBeltInnerWidth,
-                color: building.topBeltColor
-            }
-        });
+            })
+            : buildBuildingVisualParts({
+                map: this.map,
+                tiles,
+                generatorConfig: this.generatorConfig,
+                tileSize: this.tileSize,
+                occupyRatio: this.occupyRatio,
+                floors: building.floors,
+                floorHeight: Number.isFinite(building.floorHeight) ? building.floorHeight : this.floorHeight,
+                style: building.style,
+                textureCache: this._wallTextures,
+                renderer: this.engine?.renderer ?? null,
+                colors: { line: BUILDING_LINE_COLOR, border: BUILDING_BORDER_COLOR },
+                overlays: { wire: true, floorplan: true, border: true, floorDivisions: true },
+                roof: {
+                    color: building.roofColor
+                },
+                walls: {
+                    inset: building.wallInset
+                },
+                windows: {
+                    enabled: true,
+                    style: building.windowStyle,
+                    typeId: building.windowTypeId,
+                    params: building.windowParams,
+                    width: building.windowWidth,
+                    gap: building.windowGap,
+                    height: building.windowHeight,
+                    y: building.windowY,
+                    spacer: {
+                        enabled: !!building.windowSpacerEnabled,
+                        every: building.windowSpacerEvery,
+                        width: building.windowSpacerWidth,
+                        extrude: !!building.windowSpacerExtrude,
+                        extrudeDistance: building.windowSpacerExtrudeDistance
+                    },
+                    cornerEps: 0.12,
+                    offset: 0.05
+                },
+                street: {
+                    enabled: !!building.streetEnabled,
+                    floors: building.streetFloors,
+                    floorHeight: building.streetFloorHeight,
+                    style: building.streetStyle,
+                    windows: {
+                        width: building.streetWindowWidth,
+                        gap: building.streetWindowGap,
+                        height: building.streetWindowHeight,
+                        y: building.streetWindowY,
+                        style: building.streetWindowStyle,
+                        typeId: building.streetWindowTypeId,
+                        params: building.streetWindowParams,
+                        spacer: {
+                            enabled: !!building.streetWindowSpacerEnabled,
+                            every: building.streetWindowSpacerEvery,
+                            width: building.streetWindowSpacerWidth,
+                            extrude: !!building.streetWindowSpacerExtrude,
+                            extrudeDistance: building.streetWindowSpacerExtrudeDistance
+                        }
+                    }
+                },
+                beltCourse: {
+                    enabled: !!building.beltCourseEnabled,
+                    margin: building.beltCourseMargin,
+                    height: building.beltCourseHeight,
+                    color: building.beltCourseColor
+                },
+                topBelt: {
+                    enabled: !!building.topBeltEnabled,
+                    width: building.topBeltWidth,
+                    height: building.topBeltHeight,
+                    innerWidth: building.topBeltInnerWidth,
+                    color: building.topBeltColor
+                }
+            });
         if (!parts) return;
 
         building.baseColorHex = parts.baseColorHex;

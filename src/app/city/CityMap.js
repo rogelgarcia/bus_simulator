@@ -316,6 +316,7 @@ export class CityMap {
 
         const clampIntLocal = (v, lo, hi) => Math.max(lo, Math.min(hi, Number(v) | 0));
         const clampLocal = (v, lo, hi) => Math.max(lo, Math.min(hi, Number(v) || lo));
+        const clampFiniteLocal = (v, lo, hi, fallback) => Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : fallback;
 
         const isAdjacentToSet = (x, y, set) => (
             set.has(`${x - 1},${y}`)
@@ -333,8 +334,36 @@ export class CityMap {
             const config = configId ? getBuildingConfigById(configId) : null;
             const design = config && typeof config === 'object' ? config : raw;
 
-            const floors = clampIntLocal(design.floors ?? design.numFloors, 1, 30);
-            const floorHeight = clampLocal(design.floorHeight, 1.0, 12.0);
+            const designLayers = Array.isArray(design.layers) ? design.layers : null;
+            const hasLayers = !!designLayers?.length;
+
+            const deriveLegacyFromLayers = (layers) => {
+                const list = Array.isArray(layers) ? layers : [];
+                const floorLayers = list.filter((layer) => layer?.type === 'floor');
+                const firstFloor = floorLayers[0] ?? null;
+                const totalFloors = floorLayers.reduce((sum, layer) => sum + clampIntLocal(layer?.floors ?? 0, 0, 99), 0);
+                const floors = clampIntLocal(totalFloors || 1, 1, 30);
+                const floorHeight = clampFiniteLocal(firstFloor?.floorHeight, 1.0, 12.0, 3.0);
+                const styleRaw = firstFloor?.style;
+                const style = isBuildingStyle(styleRaw) ? styleRaw : BUILDING_STYLE.DEFAULT;
+                const win = firstFloor?.windows ?? null;
+                const windows = win?.enabled ? {
+                    width: clampFiniteLocal(win?.width, 0.3, 12.0, 2.2),
+                    gap: clampFiniteLocal(win?.spacing, 0.0, 24.0, 1.6),
+                    height: clampFiniteLocal(win?.height, 0.3, 10.0, 1.4),
+                    y: clampFiniteLocal(win?.sillHeight, 0.0, 12.0, 1.0)
+                } : null;
+                return { floors, floorHeight, style, windows };
+            };
+
+            const derivedLegacy = hasLayers ? deriveLegacyFromLayers(designLayers) : null;
+
+            const floors = Number.isFinite(design.floors ?? design.numFloors)
+                ? clampIntLocal(design.floors ?? design.numFloors, 1, 30)
+                : (derivedLegacy?.floors ?? 1);
+            const floorHeight = Number.isFinite(design.floorHeight)
+                ? clampLocal(design.floorHeight, 1.0, 12.0)
+                : (derivedLegacy?.floorHeight ?? 3.0);
 
 	            const mapStyleFromTextureUrl = (url) => {
 	                const s = typeof url === 'string' ? url : '';
@@ -348,9 +377,9 @@ export class CityMap {
 
             const style = isBuildingStyle(design.style)
                 ? design.style
-                : mapStyleFromTextureUrl(design.wallTextureUrl);
+                : (derivedLegacy?.style ?? mapStyleFromTextureUrl(design.wallTextureUrl));
 
-            const windowsRaw = design.windows ?? null;
+            const windowsRaw = design.windows ?? derivedLegacy?.windows ?? null;
             const windowsEnabled = windowsRaw && typeof windowsRaw === 'object';
             const windowWidth = windowsEnabled ? clampLocal(windowsRaw.width, 0.3, 12.0) : null;
             const windowGap = windowsEnabled ? clampLocal(windowsRaw.gap, 0.0, 24.0) : null;
@@ -395,6 +424,8 @@ export class CityMap {
                 id,
                 configId: config?.id ?? null,
                 tiles: accepted,
+                layers: hasLayers ? designLayers : null,
+                wallInset: clampFiniteLocal(design.wallInset, 0.0, 4.0, 0.0),
                 floorHeight,
                 floors,
                 style,
