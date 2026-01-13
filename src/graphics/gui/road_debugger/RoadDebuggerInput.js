@@ -116,6 +116,21 @@ export function handlePointerMove(view, e) {
         view.clearDraftPreview?.();
         return;
     }
+    if (view._junctionSelectDrag?.active) {
+        const drag = view._junctionSelectDrag;
+        if (drag.pointerId !== null && Number.isFinite(e?.pointerId) && e.pointerId !== drag.pointerId) return;
+        view.ui?.setSelectionRect?.({ x0: drag.startX, y0: drag.startY, x1: e.clientX ?? drag.startX, y1: e.clientY ?? drag.startY });
+        const mode = e.shiftKey ? 'add' : 'replace';
+        view.selectJunctionToolCandidatesInScreenRect?.({
+            x0: drag.startX,
+            y0: drag.startY,
+            x1: e.clientX ?? drag.startX,
+            y1: e.clientY ?? drag.startY,
+            mode,
+            baseSelected: drag.baseSelected
+        });
+        return;
+    }
     if (view._isDraggingCamera && isPointerOverUIByClientXY(view, e)) {
         view._pendingClick = false;
         view._isDraggingCamera = false;
@@ -154,6 +169,29 @@ export function handlePointerMove(view, e) {
         const threshold = Number.isFinite(view._dragThresholdPx) ? view._dragThresholdPx : 6;
         if (Math.hypot(dx, dy) >= threshold) {
             view._pendingClick = false;
+            const junctionToolEnabled = view.getJunctionToolEnabled?.() ?? view._junctionToolEnabled === true;
+            if (junctionToolEnabled) {
+                const startX = view._pointerDownClient?.x ?? 0;
+                const startY = view._pointerDownClient?.y ?? 0;
+                view._junctionSelectDrag = {
+                    active: true,
+                    pointerId: view._cameraDragPointerId,
+                    startX,
+                    startY,
+                    baseSelected: new Set(view._junctionToolSelectedCandidateIds ?? [])
+                };
+                view.ui?.setSelectionRect?.({ x0: startX, y0: startY, x1: e.clientX ?? startX, y1: e.clientY ?? startY });
+                const mode = e.shiftKey ? 'add' : 'replace';
+                view.selectJunctionToolCandidatesInScreenRect?.({
+                    x0: startX,
+                    y0: startY,
+                    x1: e.clientX ?? startX,
+                    y1: e.clientY ?? startY,
+                    mode,
+                    baseSelected: view._junctionSelectDrag.baseSelected
+                });
+                return;
+            }
             view._isDraggingCamera = true;
             view._cameraDragStartWorld.copy(view._pointerDownWorld);
             view._cameraDragStartCam.copy(view._pointerDownCam);
@@ -186,6 +224,7 @@ export function handlePointerDown(view, e) {
     const hit = intersectPlane(view);
     if (!hit) return;
 
+    view._junctionSelectDrag = null;
     view._pointerDownButton = button;
     view._pointerDownClient = { x: e.clientX ?? 0, y: e.clientY ?? 0 };
     view._pointerDownWorld.copy(hit);
@@ -229,6 +268,24 @@ export function handlePointerDown(view, e) {
 export function handlePointerUp(view, e) {
     if (view.isPointDragActive?.()) view.endPointDrag?.();
     const id = view._cameraDragPointerId;
+
+    if (view._junctionSelectDrag?.active) {
+        const drag = view._junctionSelectDrag;
+        if (e) {
+            const mode = e.shiftKey ? 'add' : 'replace';
+            view.selectJunctionToolCandidatesInScreenRect?.({
+                x0: drag.startX,
+                y0: drag.startY,
+                x1: e.clientX ?? drag.startX,
+                y1: e.clientY ?? drag.startY,
+                mode,
+                baseSelected: drag.baseSelected
+            });
+        }
+        view._junctionSelectDrag = null;
+        view.ui?.hideSelectionRect?.();
+        view._pendingClick = false;
+    }
 
     if (view._pendingClick && view._pointerDownButton === 0 && e) {
         view._pendingClick = false;

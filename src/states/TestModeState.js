@@ -1535,7 +1535,12 @@ export class TestModeState {
         const spec = BUS_CATALOG[index] ?? BUS_CATALOG[0];
         const busModel = createBus(spec);
 
-        tuneBusMaterials(busModel, { colorScale: 0.72, roughness: 0.85, metalness: 0.02 });
+        const tuneOpts = { colorScale: 0.72, roughness: 0.85, metalness: 0.02 };
+        tuneBusMaterials(busModel, tuneOpts);
+        busModel.userData?.readyPromise?.then?.(() => {
+            if (this.busModel !== busModel) return;
+            tuneBusMaterials(busModel, tuneOpts);
+        });
 
         busModel.traverse((o) => {
             if (o.isMesh) {

@@ -242,6 +242,24 @@
     gap: 10px;
 }
 
+.road-debugger-popup-tabs {
+    display: flex;
+    gap: 8px;
+}
+
+.road-debugger-popup-tab.road-debugger-btn {
+    flex: 1 1 auto;
+    padding: 6px 10px;
+    font-size: 10px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.road-debugger-popup-tab.is-active {
+    border-color: rgba(59, 130, 246, 0.75);
+    background: rgba(59, 130, 246, 0.18);
+}
+
 .road-debugger-popup-title {
     font-size: 11px;
     color: rgba(255, 255, 255, 0.72);
@@ -253,10 +271,53 @@
     line-height: 1.35;
 }
 
+.road-debugger-popup-candidates {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 160px;
+    overflow: auto;
+}
+
+.road-debugger-candidate-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.04);
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.78);
+    cursor: pointer;
+    user-select: none;
+}
+
+.road-debugger-candidate-row.is-hovered {
+    border-color: rgba(52, 199, 89, 0.65);
+    background: rgba(52, 199, 89, 0.12);
+}
+
+.road-debugger-candidate-label {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .road-debugger-actions {
     display: flex;
     justify-content: center;
     gap: 10px;
+}
+
+.road-debugger-selection-rect {
+    position: fixed;
+    border: 2px solid rgba(239, 68, 68, 0.95);
+    background: rgba(239, 68, 68, 0.12);
+    border-radius: 10px;
+    pointer-events: none;
+    box-sizing: border-box;
 }
 
 .road-debugger-edit-buttons {
@@ -296,6 +357,108 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+}
+
+.road-debugger-junction-tool-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.road-debugger-junction-tool-controls .road-debugger-btn {
+    flex: 1 1 140px;
+}
+
+.road-debugger-junction-tool-toggle.is-active {
+    border-color: rgba(59, 130, 246, 0.75);
+    background: rgba(59, 130, 246, 0.18);
+}
+
+.road-debugger-junction-tool-status {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.68);
+    line-height: 1.35;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.12);
+}
+
+.road-debugger-junction-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.road-debugger-junction-action {
+    padding: 6px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 10px;
+    font-family: inherit;
+    cursor: pointer;
+    flex: 0 0 auto;
+}
+
+.road-debugger-junction-action:disabled {
+    cursor: default;
+    opacity: 0.55;
+}
+
+.road-debugger-junction-action.is-danger:hover {
+    border-color: rgba(248, 113, 113, 0.65);
+    background: rgba(248, 113, 113, 0.12);
+}
+
+.road-debugger-junction-subhead {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.6);
+    padding: 10px 10px 4px 32px;
+}
+
+.road-debugger-junction-endpoint-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 10px 7px 32px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    cursor: pointer;
+}
+
+.road-debugger-junction-endpoint-row.is-hovered {
+    border-color: rgba(52, 199, 89, 0.6);
+    background: rgba(52, 199, 89, 0.08);
+}
+
+.road-debugger-junction-endpoint-row.is-selected {
+    border-color: rgba(59, 130, 246, 0.75);
+    background: rgba(59, 130, 246, 0.12);
+}
+
+.road-debugger-junction-endpoint-label {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.78);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.road-debugger-junction-endpoint-meta {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.5);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 180px;
+    flex: 0 0 auto;
 }
 
 .road-debugger-road-row {

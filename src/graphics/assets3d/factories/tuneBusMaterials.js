@@ -1,5 +1,6 @@
 // src/graphics/assets3d/factories/tuneBusMaterials.js
 import * as THREE from 'three';
+import { IBL_DEFAULTS } from '../../lighting/IBL.js';
 
 function isNonBlack(c) {
     return !!c && (c.r > 0.0001 || c.g > 0.0001 || c.b > 0.0001);
@@ -9,7 +10,7 @@ export function tuneBusMaterials(bus, {
     colorScale = 0.78,
     roughness = 0.90,
     metalness = 0.00,
-    envMapIntensity = 0.25
+    envMapIntensity = IBL_DEFAULTS.envMapIntensity
 } = {}) {
     bus.traverse((o) => {
         if (!o.isMesh || !o.material) return;
@@ -36,7 +37,10 @@ export function tuneBusMaterials(bus, {
 
             if ('roughness' in m) m.roughness = THREE.MathUtils.clamp(roughness, 0, 1);
             if ('metalness' in m) m.metalness = THREE.MathUtils.clamp(metalness, 0, 1);
-            if ('envMapIntensity' in m) m.envMapIntensity = envMapIntensity;
+            if ('envMapIntensity' in m) {
+                m.envMapIntensity = envMapIntensity;
+                m.userData.iblEnvMapIntensity = envMapIntensity;
+            }
 
             m.needsUpdate = true;
         }

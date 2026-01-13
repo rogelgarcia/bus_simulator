@@ -60,6 +60,99 @@ function highlightInfo(view) {
 
     const schemaRoadById = (roadId) => schemaRoads.find((r) => r?.id === roadId) ?? null;
 
+    const junctionToolText = (() => {
+        const enabled = view.getJunctionToolEnabled?.() ?? view._junctionToolEnabled === true;
+        if (!enabled) return null;
+        const candidates = derived?.junctionCandidates ?? null;
+        const endpoints = candidates?.endpoints ?? [];
+        const corners = candidates?.corners ?? [];
+
+        const byId = new Map();
+        for (const endpoint of endpoints) {
+            const id = endpoint?.id ?? null;
+            if (!id) continue;
+            byId.set(id, { kind: 'endpoint', value: endpoint });
+        }
+        for (const corner of corners) {
+            const id = corner?.id ?? null;
+            if (!id) continue;
+            byId.set(id, { kind: 'corner', value: corner });
+        }
+
+        const selected = view.getJunctionToolSelection?.() ?? Array.from(view._junctionToolSelectedCandidateIds ?? []).sort();
+        const hoverId = view._junctionToolHoverCandidateId ?? null;
+
+        const counts = { endpoints: 0, corners: 0 };
+        for (const id of selected) {
+            const entry = byId.get(id) ?? null;
+            if (entry?.kind === 'corner') counts.corners += 1;
+            else counts.endpoints += 1;
+        }
+
+        const lines = [];
+        lines.push(`selected: ${fmtInt(selected.length)} (endpoints ${fmtInt(counts.endpoints)}, corners ${fmtInt(counts.corners)})`);
+
+        if (hoverId) {
+            const entry = byId.get(hoverId) ?? null;
+            if (entry?.kind === 'endpoint') {
+                const endpoint = entry.value ?? null;
+                lines.push(`hover: endpoint ${hoverId}`);
+                lines.push(`hoverRoad: ${endpoint?.roadId ?? '--'} · seg ${endpoint?.segmentId ?? '--'} · piece ${endpoint?.pieceId ?? '--'} · ${endpoint?.end ?? '--'}`);
+                lines.push(`hoverWorld: ${fmt(endpoint?.world?.x, 2)}, ${fmt(endpoint?.world?.z, 2)}`);
+            } else if (entry?.kind === 'corner') {
+                const corner = entry.value ?? null;
+                const angleDeg = (Number(corner?.angleRad) || 0) * 57.2958;
+                lines.push(`hover: corner ${hoverId}`);
+                lines.push(`hoverRoad: ${corner?.roadId ?? '--'} · pt ${corner?.pointId ?? '--'} · ang ${fmt(angleDeg, 1)}°`);
+                lines.push(`hoverWorld: ${fmt(corner?.world?.x, 2)}, ${fmt(corner?.world?.z, 2)}`);
+            } else {
+                lines.push(`hover: ${hoverId}`);
+            }
+        }
+
+        const selectedWorld = [];
+        for (const id of selected) {
+            const entry = byId.get(id) ?? null;
+            const world = entry?.value?.world ?? null;
+            if (!world) continue;
+            selectedWorld.push({ id, x: Number(world.x) || 0, z: Number(world.z) || 0 });
+        }
+        if (selectedWorld.length === 2) {
+            const dx = selectedWorld[1].x - selectedWorld[0].x;
+            const dz = selectedWorld[1].z - selectedWorld[0].z;
+            lines.push(`distance: ${fmt(Math.hypot(dx, dz), 2)}m`);
+        } else if (selectedWorld.length > 2) {
+            let minX = Infinity;
+            let minZ = Infinity;
+            let maxX = -Infinity;
+            let maxZ = -Infinity;
+            for (const pt of selectedWorld) {
+                minX = Math.min(minX, pt.x);
+                minZ = Math.min(minZ, pt.z);
+                maxX = Math.max(maxX, pt.x);
+                maxZ = Math.max(maxZ, pt.z);
+            }
+            const span = Math.hypot(maxX - minX, maxZ - minZ);
+            lines.push(`span: ${fmt(span, 2)}m · bounds x ${fmt(minX, 1)}→${fmt(maxX, 1)} z ${fmt(minZ, 1)}→${fmt(maxZ, 1)}`);
+        }
+
+        if (selected.length) {
+            const shown = selected.slice(0, 6);
+            const suffix = selected.length > shown.length ? ` +${selected.length - shown.length} more` : '';
+            lines.push(`ids: ${shown.join(', ')}${suffix}`);
+        }
+
+        return lines.join('\n');
+    })();
+
+    const appendJunctionToolInfo = (info) => {
+        if (!junctionToolText) return info;
+        const base = info ?? { title: 'Info', text: '—' };
+        const baseText = base?.text ?? '—';
+        if (baseText === '—') return { title: 'Junction tool', text: junctionToolText };
+        return { title: base?.title ?? 'Info', text: `${baseText}\n\nJunction tool:\n${junctionToolText}` };
+    };
+
     const highlight = sel?.type
         ? {
             source: 'Selected',
@@ -69,23 +162,28 @@ function highlightInfo(view) {
             pointId: sel.pointId ?? null,
             pieceId: sel.pieceId ?? null,
             junctionId: sel.junctionId ?? null,
-            connectorId: sel.connectorId ?? null
+            connectorId: sel.connectorId ?? null,
+            approachId: sel.approachId ?? null
         }
         : hover?.connectorId
             ? { source: 'Hovered', type: 'connector', roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: hover.junctionId ?? null, connectorId: hover.connectorId ?? null }
+            : hover?.approachId
+                ? { source: 'Hovered', type: 'approach', roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: hover.junctionId ?? null, connectorId: null, approachId: hover.approachId ?? null }
             : hover?.junctionId
-                ? { source: 'Hovered', type: 'junction', roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: hover.junctionId ?? null, connectorId: null }
+                ? { source: 'Hovered', type: 'junction', roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: hover.junctionId ?? null, connectorId: null, approachId: null }
+                : hover?.pointId
+                    ? { source: 'Hovered', type: 'point', roadId: hover.roadId ?? null, segmentId: null, pointId: hover.pointId ?? null, pieceId: null, junctionId: null, connectorId: null, approachId: null }
                 : hover?.segmentId
-                    ? { source: 'Hovered', type: 'segment', roadId: hover.roadId ?? null, segmentId: hover.segmentId ?? null, pointId: null, pieceId: null, junctionId: null, connectorId: null }
+                    ? { source: 'Hovered', type: 'segment', roadId: hover.roadId ?? null, segmentId: hover.segmentId ?? null, pointId: null, pieceId: null, junctionId: null, connectorId: null, approachId: null }
                     : hover?.roadId
-                        ? { source: 'Hovered', type: 'road', roadId: hover.roadId ?? null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null }
+                        ? { source: 'Hovered', type: 'road', roadId: hover.roadId ?? null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null, approachId: null }
                         : null;
 
-    if (!highlight) return { title: 'Info', text: '—' };
+    if (!highlight) return appendJunctionToolInfo({ title: 'Info', text: '—' });
 
     if (highlight.type === 'road') {
         const road = derived?.roads?.find?.((r) => r?.id === highlight.roadId) ?? null;
-        if (!road) return { title: `${highlight.source}: Road`, text: `Road: ${highlight.roadId ?? '--'}` };
+        if (!road) return appendJunctionToolInfo({ title: `${highlight.source}: Road`, text: `Road: ${highlight.roadId ?? '--'}` });
         const lanesF = Number(road.lanesF) || 0;
         const lanesB = Number(road.lanesB) || 0;
         const wR = lanesF * laneWidth + margin;
@@ -95,7 +193,7 @@ function highlightInfo(view) {
         const ptCount = road?.points?.length ?? 0;
         const schemaRoad = schemaRoadById(road.id);
         const visible = schemaRoad?.visible !== false;
-        return {
+        return appendJunctionToolInfo({
             title: `${highlight.source}: Road`,
             text: [
                 `name: ${road.name}`,
@@ -107,12 +205,12 @@ function highlightInfo(view) {
                 `asphalt L/R: ${fmt(wL, 2)} / ${fmt(wR, 2)}`,
                 `asphalt total: ${fmt(total, 2)}`
             ].join('\n')
-        };
+        });
     }
 
     if (highlight.type === 'segment') {
         const seg = derived?.segments?.find?.((s) => s?.id === highlight.segmentId) ?? null;
-        if (!seg) return { title: `${highlight.source}: Segment`, text: `Segment: ${highlight.segmentId ?? '--'}` };
+        if (!seg) return appendJunctionToolInfo({ title: `${highlight.source}: Segment`, text: `Segment: ${highlight.segmentId ?? '--'}` });
         const wL = seg.asphaltObb?.halfWidthLeft ?? null;
         const wR = seg.asphaltObb?.halfWidthRight ?? null;
         const wTotal = (Number(wL) || 0) + (Number(wR) || 0);
@@ -169,33 +267,60 @@ function highlightInfo(view) {
             }
         }
 
-        return { title: `${highlight.source}: Segment`, text: lines.join('\n') };
+        return appendJunctionToolInfo({ title: `${highlight.source}: Segment`, text: lines.join('\n') });
     }
 
     if (highlight.type === 'junction') {
         const junction = derived?.junctions?.find?.((j) => j?.id === highlight.junctionId) ?? null;
-        if (!junction) return { title: `${highlight.source}: Junction`, text: `Junction: ${highlight.junctionId ?? '--'}` };
+        if (!junction) return appendJunctionToolInfo({ title: `${highlight.source}: Junction`, text: `Junction: ${highlight.junctionId ?? '--'}` });
         const roads = Array.isArray(junction.roadIds) ? junction.roadIds : [];
         const endpoints = Array.isArray(junction.endpoints) ? junction.endpoints : [];
         const connectors = Array.isArray(junction.connectors) ? junction.connectors : [];
+        const missing = Array.isArray(junction.missingCandidateIds) ? junction.missingCandidateIds : [];
+        const source = junction.source ?? 'auto';
         const mergedCount = connectors.filter((c) => c?.mergedIntoRoad).length;
         const activeCount = connectors.length - mergedCount;
         const lines = [
             `id: ${junction.id}`,
+            `source: ${source}`,
+            `asphaltVisible: ${junction.asphaltVisible !== false ? 'yes' : 'no'}`,
             `roads: ${roads.length ? roads.join(', ') : '--'}`,
             `endpoints: ${fmtInt(endpoints.length)}`,
             `connectors: ${fmtInt(connectors.length)} (active ${fmtInt(activeCount)}, merged ${fmtInt(mergedCount)})`,
             `center: ${fmt(junction.center?.x, 2)}, ${fmt(junction.center?.z, 2)}`
         ];
+        if (missing.length) lines.push(`missing: ${missing.join(', ')}`);
 
         for (const ep of endpoints) {
             const dx = Number(ep?.dirOut?.x) || 0;
             const dz = Number(ep?.dirOut?.z) || 0;
             const ang = (Math.atan2(dz, dx) * 180) / Math.PI;
-            lines.push(`end: ${ep.id} · road ${ep.roadId} · seg ${ep.segmentId} · piece ${ep.pieceId} · ${ep.end} · w ${fmt(ep.world?.x, 2)}, ${fmt(ep.world?.z, 2)} · ang ${fmt(ang, 1)}°`);
+            lines.push(`approach: ${ep.id} · road ${ep.roadId} · seg ${ep.segmentId} · piece ${ep.pieceId} · ${ep.end} · w ${fmt(ep.world?.x, 2)}, ${fmt(ep.world?.z, 2)} · ang ${fmt(ang, 1)}°`);
         }
 
-        return { title: `${highlight.source}: Junction`, text: lines.join('\n') };
+        return appendJunctionToolInfo({ title: `${highlight.source}: Junction`, text: lines.join('\n') });
+    }
+
+    if (highlight.type === 'approach') {
+        const junction = derived?.junctions?.find?.((j) => j?.id === highlight.junctionId) ?? null;
+        const ep = junction?.endpoints?.find?.((e) => e?.id === highlight.approachId) ?? null;
+        if (!junction || !ep) return appendJunctionToolInfo({ title: `${highlight.source}: Approach`, text: `Approach: ${highlight.approachId ?? '--'}` });
+        const dx = Number(ep?.dirOut?.x) || 0;
+        const dz = Number(ep?.dirOut?.z) || 0;
+        const ang = (Math.atan2(dz, dx) * 180) / Math.PI;
+        return appendJunctionToolInfo({
+            title: `${highlight.source}: Approach`,
+            text: [
+                'Approach: a road piece endpoint participating in this junction.',
+                `id: ${ep.id}`,
+                `junction: ${junction.id}`,
+                `road: ${ep.roadId ?? '--'}`,
+                `segment: ${ep.segmentId ?? '--'} (${ep.end ?? '--'})`,
+                `piece: ${ep.pieceId ?? '--'}`,
+                `world: ${fmt(ep.world?.x, 2)}, ${fmt(ep.world?.z, 2)}`,
+                `dirOut: ${fmt(ep.dirOut?.x, 3)}, ${fmt(ep.dirOut?.z, 3)} · ang ${fmt(ang, 1)}°`
+            ].join('\n')
+        });
     }
 
     if (highlight.type === 'connector') {
@@ -210,18 +335,32 @@ function highlightInfo(view) {
                 break;
             }
         }
-        if (!conn) return { title: `${highlight.source}: Connector`, text: `Connector: ${highlight.connectorId ?? '--'}` };
+        if (!conn) return appendJunctionToolInfo({ title: `${highlight.source}: Connector`, text: `Connector: ${highlight.connectorId ?? '--'}` });
         const aEp = junction?.endpoints?.find?.((e) => e?.id === conn.aEndpointId) ?? null;
         const bEp = junction?.endpoints?.find?.((e) => e?.id === conn.bEndpointId) ?? null;
+        const allowed = conn.allowAToB && conn.allowBToA
+            ? 'A↔B'
+            : conn.allowAToB
+                ? 'A→B'
+                : conn.allowBToA
+                    ? 'A←B'
+                    : 'none';
+        const mergeAvailable = !!(conn.sameRoad && !conn.mergedIntoRoad);
         const lines = [
+            'Movement: a connector edge between two approaches (topology). It does not create separate asphalt.',
             `id: ${conn.id}`,
             `junction: ${conn.junctionId ?? junction?.id ?? '--'}`,
             `roads: ${conn.aRoadId ?? '--'} ↔ ${conn.bRoadId ?? '--'}`,
             `segments: ${conn.aSegmentId ?? '--'} ↔ ${conn.bSegmentId ?? '--'}`,
             `distance: ${fmt(conn.distance, 2)}`,
             `sameRoad: ${conn.sameRoad ? 'yes' : 'no'}`,
+            `movement: ${allowed}`,
             `mergedIntoRoad: ${conn.mergedIntoRoad ? 'yes' : 'no'}`
         ];
+        if (mergeAvailable) {
+            lines.push('merge: available (Merge into road)');
+            lines.push('mergeEffect: hides this movement and treats continuity as part of the road (asphalt mesh is unchanged).');
+        }
         if (aEp && bEp) {
             const dx = (Number(bEp.world?.x) || 0) - (Number(aEp.world?.x) || 0);
             const dz = (Number(bEp.world?.z) || 0) - (Number(aEp.world?.z) || 0);
@@ -230,15 +369,15 @@ function highlightInfo(view) {
             lines.push(`b: ${bEp.id} · ${fmt(bEp.world?.x, 2)}, ${fmt(bEp.world?.z, 2)}`);
             lines.push(`bearing: ${fmt(bearing, 1)}°`);
         }
-        return { title: `${highlight.source}: Connector`, text: lines.join('\n') };
+        return appendJunctionToolInfo({ title: `${highlight.source}: Movement`, text: lines.join('\n') });
     }
 
     if (highlight.type === 'piece') {
         const seg = derived?.segments?.find?.((s) => s?.id === highlight.segmentId) ?? null;
-        if (!seg) return { title: `${highlight.source}: Piece`, text: `Piece: ${highlight.pieceId ?? '--'}` };
+        if (!seg) return appendJunctionToolInfo({ title: `${highlight.source}: Piece`, text: `Piece: ${highlight.pieceId ?? '--'}` });
         const piece = seg.keptPieces?.find?.((p) => p?.id === highlight.pieceId) ?? null;
-        if (!piece) return { title: `${highlight.source}: Piece`, text: `Piece: ${highlight.pieceId ?? '--'}` };
-        return {
+        if (!piece) return appendJunctionToolInfo({ title: `${highlight.source}: Piece`, text: `Piece: ${highlight.pieceId ?? '--'}` });
+        return appendJunctionToolInfo({
             title: `${highlight.source}: Piece`,
             text: [
                 `id: ${piece.id}`,
@@ -247,15 +386,15 @@ function highlightInfo(view) {
                 `t: ${fmt(piece.t0, 3)} → ${fmt(piece.t1, 3)}`,
                 `length: ${fmt(piece.length, 2)}`
             ].join('\n')
-        };
+        });
     }
 
     if (highlight.type === 'point') {
         const road = derived?.roads?.find?.((r) => r?.id === highlight.roadId) ?? null;
         const pt = road?.points?.find?.((p) => p?.id === highlight.pointId) ?? null;
-        if (!pt) return { title: `${highlight.source}: Point`, text: `Point: ${highlight.pointId ?? '--'}` };
+        if (!pt) return appendJunctionToolInfo({ title: `${highlight.source}: Point`, text: `Point: ${highlight.pointId ?? '--'}` });
         const w = pt?.world ?? null;
-        return {
+        return appendJunctionToolInfo({
             title: `${highlight.source}: Point`,
             text: [
                 `id: ${pt.id}`,
@@ -265,10 +404,10 @@ function highlightInfo(view) {
                 `world: ${fmt(w?.x, 2)}, ${fmt(w?.z, 2)}`,
                 `tangentFactor: ${fmt(pt.tangentFactor, 2)}`
             ].join('\n')
-        };
+        });
     }
 
-    return { title: `${highlight.source}`, text: '—' };
+    return appendJunctionToolInfo({ title: `${highlight.source}`, text: '—' });
 }
 
 export function setupUI(view) {
@@ -316,6 +455,9 @@ export function setupUI(view) {
     const markingsRow = makeToggleRow('Markings');
     markingsRow.row.title = 'Render lane markings and direction arrows along kept asphalt pieces.';
     viewToggles.appendChild(markingsRow.row);
+    const arrowTangentRow = makeToggleRow('Arrow tangents');
+    arrowTangentRow.row.title = 'Render short tangent lines at lane arrow centers to validate orientation.';
+    viewToggles.appendChild(arrowTangentRow.row);
     const dividerRow = makeToggleRow('Divider centerline');
     dividerRow.row.title = 'Show the middle divider centerline (road reference line).';
     viewToggles.appendChild(dividerRow.row);
@@ -326,11 +468,8 @@ export function setupUI(view) {
     edgesRow.row.title = 'Show lane edges and asphalt edges derived from lane counts + margin.';
     viewToggles.appendChild(edgesRow.row);
     const pointsRow = makeToggleRow('Points');
-    pointsRow.row.title = 'Show authored control points and markers for debugging.';
+    pointsRow.row.title = 'Show derived point markers for debugging.';
     viewToggles.appendChild(pointsRow.row);
-    const hoverCubeRow = makeToggleRow('Hover cube');
-    hoverCubeRow.row.title = 'Show a blue 3D hover cube around draggable control points.';
-    viewToggles.appendChild(hoverCubeRow.row);
     const snapRow = makeToggleRow('Snap');
     snapRow.row.title = 'Snap point movement/placement to tile/10 grid. Hold Alt to temporarily disable. Hold Shift to axis-lock.';
     viewToggles.appendChild(snapRow.row);
@@ -385,11 +524,14 @@ export function setupUI(view) {
     const trimIntervalsRow = makeToggleRow('Intervals');
     trimIntervalsRow.row.title = 'Show removed [t0,t1] intervals along each segment centerline.';
     trimToggles.appendChild(trimIntervalsRow.row);
+    const trimRemovedRow = makeToggleRow('Removed pieces');
+    trimRemovedRow.row.title = 'Visualize the removed intervals as asphalt polygons (the cut-out pieces).';
+    trimToggles.appendChild(trimRemovedRow.row);
     const trimKeptRow = makeToggleRow('Kept pieces');
     trimKeptRow.row.title = 'Visualize kept pieces after trimming/splitting.';
     trimToggles.appendChild(trimKeptRow.row);
     const trimDroppedRow = makeToggleRow('Dropped pieces');
-    trimDroppedRow.row.title = 'Visualize dropped tiny pieces (kept pieces shorter than snap step tileSize/10). Many crossings produce none.';
+    trimDroppedRow.row.title = 'Visualize dropped tiny pieces (kept pieces shorter than snap step tileSize/10). For cut-out pieces, use Removed pieces.';
     trimToggles.appendChild(trimDroppedRow.row);
     const trimHighlightRow = makeToggleRow('Highlight');
     trimHighlightRow.row.title = 'Show AABB/OBB bounds and selected kept piece outline.';
@@ -459,6 +601,10 @@ export function setupUI(view) {
     junctionConnectorsRow.row.title = 'Show connector edge lines for each junction (movement graph preview).';
     junctionToggles.appendChild(junctionConnectorsRow.row);
 
+    const junctionEdgeOrderRow = makeToggleRow('Edge order');
+    junctionEdgeOrderRow.row.title = 'Show the endpoint ordering used to stitch the junction boundary.';
+    junctionToggles.appendChild(junctionEdgeOrderRow.row);
+
     const junctionsList = document.createElement('div');
     junctionsList.className = 'road-debugger-junctions-list';
     junctionsSection.appendChild(junctionsList);
@@ -503,20 +649,42 @@ export function setupUI(view) {
 
     const controlsHint = document.createElement('div');
     controlsHint.className = 'road-debugger-hint';
-    controlsHint.textContent = 'Click: select / add points · Drag: pan / move points · Wheel/A/Z: zoom · Shift: axis lock · Alt: snap off · Esc: exit';
+    controlsHint.textContent = 'Click: select / add points · Drag: pan / move points · Junctions: drag box selects candidates (Shift adds) · Wheel/A/Z: zoom · Shift: axis lock · Alt: snap off · Esc: exit';
     left.appendChild(controlsHint);
+
+    const selectionRect = document.createElement('div');
+    selectionRect.className = 'road-debugger-selection-rect';
+    selectionRect.style.display = 'none';
+    root.appendChild(selectionRect);
 
     const bottom = document.createElement('div');
     bottom.className = 'road-debugger-popup';
 
+    const popupTabs = document.createElement('div');
+    popupTabs.className = 'road-debugger-popup-tabs';
+    const popupTabRoads = makeButton('Roads');
+    popupTabRoads.classList.add('road-debugger-popup-tab');
+    popupTabRoads.title = 'Road drafting workflow.';
+    const popupTabJunctions = makeButton('Junctions');
+    popupTabJunctions.classList.add('road-debugger-popup-tab');
+    popupTabJunctions.title = 'Junction creation workflow.';
+    popupTabs.appendChild(popupTabRoads);
+    popupTabs.appendChild(popupTabJunctions);
+    bottom.appendChild(popupTabs);
+
     const popupTitle = document.createElement('div');
     popupTitle.className = 'road-debugger-popup-title';
-    popupTitle.textContent = 'Road creation';
+    popupTitle.textContent = 'Roads';
     bottom.appendChild(popupTitle);
 
     const popupBody = document.createElement('div');
     popupBody.className = 'road-debugger-popup-body';
     bottom.appendChild(popupBody);
+
+    const popupCandidates = document.createElement('div');
+    popupCandidates.className = 'road-debugger-popup-candidates';
+    popupCandidates.style.display = 'none';
+    bottom.appendChild(popupCandidates);
 
     const actions = document.createElement('div');
     actions.className = 'road-debugger-actions';
@@ -734,8 +902,20 @@ export function setupUI(view) {
         'Strips: expanded strips used for near-overlap.',
         'Overlaps: clipped overlap polygons.',
         'Intervals: removed [t0,t1] along the centerline.',
+        'Removed pieces: visualize the removed intervals as asphalt polygons (cut-out pieces).',
         'Kept/Dropped pieces: post-split results (dropped are not asphalt).',
         'Highlight: show AABB/OBB + selected piece outline.'
+    ]);
+
+    addHelpSection('Junctions and junction creation', [
+        'A junction represents one physical intersection/corner region (one node), not multiple pairwise junctions.',
+        'Its asphalt is rendered as one merged surface patch that fills the gap where incoming road pieces stop.',
+        'An approach is a road piece endpoint that participates in the junction (connected road piece).',
+        'Movements (connector edges) are topology/turn options between approaches; they do not create separate asphalt patches.',
+        'Same-road movements can be merged into the parent road to treat them as road continuity (use Undo to revert).',
+        'Use the Junctions tab in the bottom workflow panel: New junction → select endpoints/corners (drag a red rectangle to multi-select) → Done to create.',
+        'Esc clears the selection; Cancel exits junction creation mode.',
+        'Use Hide/Show on a junction row to toggle its asphalt surface; use Delete/Suppress to remove it.'
     ]);
 
     helpPanel.appendChild(helpHeader);
@@ -746,15 +926,40 @@ export function setupUI(view) {
 
     const expandedRoads = new Set();
     const expandedJunctions = new Set();
+    let popupMode = 'roads';
+
+    const finalizePopupMode = () => {
+        if (popupMode === 'roads') {
+            const draft = view.getDraftRoad?.() ?? view._draft ?? null;
+            if (!draft) return;
+            view.finishRoadDraft();
+            const stillDraft = view.getDraftRoad?.() ?? view._draft ?? null;
+            if (stillDraft) view.cancelRoadDraft();
+            return;
+        }
+
+        const enabled = view.getJunctionToolEnabled?.() ?? view._junctionToolEnabled === true;
+        if (!enabled) return;
+        view.createJunctionFromToolSelection?.();
+        view.setJunctionToolEnabled?.(false);
+    };
+
+    const setPopupMode = (nextMode) => {
+        const next = nextMode === 'junctions' ? 'junctions' : 'roads';
+        if (next === popupMode) return;
+        finalizePopupMode();
+        popupMode = next;
+        sync();
+    };
 
     const onGridChange = () => view.setGridEnabled(gridRow.input.checked);
     const onAsphaltChange = () => view.setRenderOptions({ asphalt: asphaltRow.input.checked });
     const onMarkingsChange = () => view.setRenderOptions({ markings: markingsRow.input.checked });
+    const onArrowTangentChange = () => view.setArrowTangentDebugEnabled?.(arrowTangentRow.input.checked);
     const onDividerChange = () => view.setRenderOptions({ centerline: dividerRow.input.checked });
     const onDirCenterChange = () => view.setRenderOptions({ directionCenterlines: dirCenterRow.input.checked });
     const onEdgesChange = () => view.setRenderOptions({ edges: edgesRow.input.checked });
     const onPointsChange = () => view.setRenderOptions({ points: pointsRow.input.checked });
-    const onHoverCubeChange = () => view.setHoverCubeEnabled?.(hoverCubeRow.input.checked);
     const onSnapChange = () => view.setSnapEnabled(snapRow.input.checked);
     const onTrimThresholdRangeChange = (e) => {
         e.stopPropagation();
@@ -774,6 +979,7 @@ export function setupUI(view) {
     const onTrimStripsChange = () => view.setTrimDebugOptions?.({ strips: trimStripsRow.input.checked });
     const onTrimOverlapsChange = () => view.setTrimDebugOptions?.({ overlaps: trimOverlapsRow.input.checked });
     const onTrimIntervalsChange = () => view.setTrimDebugOptions?.({ intervals: trimIntervalsRow.input.checked });
+    const onTrimRemovedChange = () => view.setTrimDebugOptions?.({ removedPieces: trimRemovedRow.input.checked });
     const onTrimKeptChange = () => view.setTrimDebugOptions?.({ keptPieces: trimKeptRow.input.checked });
     const onTrimDroppedChange = () => view.setTrimDebugOptions?.({ droppedPieces: trimDroppedRow.input.checked });
     const onTrimHighlightChange = () => view.setTrimDebugOptions?.({ highlight: trimHighlightRow.input.checked });
@@ -781,6 +987,15 @@ export function setupUI(view) {
     const onJunctionEndpointsChange = () => view.setJunctionDebugOptions?.({ endpoints: junctionEndpointsRow.input.checked });
     const onJunctionBoundaryChange = () => view.setJunctionDebugOptions?.({ boundary: junctionBoundaryRow.input.checked });
     const onJunctionConnectorsChange = () => view.setJunctionDebugOptions?.({ connectors: junctionConnectorsRow.input.checked });
+    const onJunctionEdgeOrderChange = () => view.setJunctionDebugOptions?.({ edgeOrder: junctionEdgeOrderRow.input.checked });
+    const onPopupTabRoads = (e) => {
+        e.preventDefault?.();
+        setPopupMode('roads');
+    };
+    const onPopupTabJunctions = (e) => {
+        e.preventDefault?.();
+        setPopupMode('junctions');
+    };
     const onUndo = (e) => {
         e.preventDefault();
         view.undo?.();
@@ -791,15 +1006,21 @@ export function setupUI(view) {
     };
     const onNewRoad = (e) => {
         e.preventDefault();
-        view.startRoadDraft();
+        if (popupMode === 'roads') view.startRoadDraft();
+        else view.setJunctionToolEnabled?.(true);
     };
     const onDone = (e) => {
         e.preventDefault();
-        view.finishRoadDraft();
+        if (popupMode === 'roads') view.finishRoadDraft();
+        else {
+            const ok = view.createJunctionFromToolSelection?.() ?? false;
+            if (ok) view.setJunctionToolEnabled?.(false);
+        }
     };
     const onCancel = (e) => {
         e.preventDefault();
-        view.cancelRoadDraft();
+        if (popupMode === 'roads') view.cancelRoadDraft();
+        else view.setJunctionToolEnabled?.(false);
     };
     const onRoadsLeave = () => view.clearHover();
     const onJunctionsLeave = () => view.clearHover();
@@ -813,6 +1034,7 @@ export function setupUI(view) {
         const vh = Number(window?.innerHeight) || 0;
         const leftRect = left?.getBoundingClientRect?.() ?? null;
         const popupRect = bottom?.getBoundingClientRect?.() ?? null;
+        const bottomRightRect = bottomRight?.getBoundingClientRect?.() ?? null;
 
         let leftInset = Number(leftRect?.right) + helpGap;
         if (!Number.isFinite(leftInset)) leftInset = helpPadding;
@@ -822,9 +1044,13 @@ export function setupUI(view) {
         if (vw - rightInset - leftInset < minWidth) leftInset = helpPadding;
 
         let bottomInset = helpPadding;
-        if (popupRect && Number.isFinite(Number(popupRect.top))) {
-            bottomInset = Math.max(helpPadding, (vh - Number(popupRect.top)) + helpGap);
-        }
+        const bottomCandidates = [];
+        if (popupRect && Number.isFinite(Number(popupRect.top))) bottomCandidates.push((vh - Number(popupRect.top)) + helpGap);
+        if (bottomRightRect && Number.isFinite(Number(bottomRightRect.top))) bottomCandidates.push((vh - Number(bottomRightRect.top)) + helpGap);
+        if (bottomCandidates.length) bottomInset = Math.max(helpPadding, ...bottomCandidates);
+        const minHeight = 220;
+        const maxInset = Math.max(helpPadding, vh - helpPadding - minHeight);
+        bottomInset = Math.max(helpPadding, Math.min(bottomInset, maxInset));
 
         helpModal.style.left = `${Math.round(leftInset)}px`;
         helpModal.style.top = `${helpPadding}px`;
@@ -931,11 +1157,11 @@ export function setupUI(view) {
     gridRow.input.addEventListener('change', onGridChange);
     asphaltRow.input.addEventListener('change', onAsphaltChange);
     markingsRow.input.addEventListener('change', onMarkingsChange);
+    arrowTangentRow.input.addEventListener('change', onArrowTangentChange);
     dividerRow.input.addEventListener('change', onDividerChange);
     dirCenterRow.input.addEventListener('change', onDirCenterChange);
     edgesRow.input.addEventListener('change', onEdgesChange);
     pointsRow.input.addEventListener('change', onPointsChange);
-    hoverCubeRow.input.addEventListener('change', onHoverCubeChange);
     snapRow.input.addEventListener('change', onSnapChange);
     trimThresholdRange.addEventListener('input', onTrimThresholdRangeChange);
     trimThresholdNumber.addEventListener('change', onTrimThresholdNumberChange);
@@ -943,6 +1169,7 @@ export function setupUI(view) {
     trimStripsRow.input.addEventListener('change', onTrimStripsChange);
     trimOverlapsRow.input.addEventListener('change', onTrimOverlapsChange);
     trimIntervalsRow.input.addEventListener('change', onTrimIntervalsChange);
+    trimRemovedRow.input.addEventListener('change', onTrimRemovedChange);
     trimKeptRow.input.addEventListener('change', onTrimKeptChange);
     trimDroppedRow.input.addEventListener('change', onTrimDroppedChange);
     trimHighlightRow.input.addEventListener('change', onTrimHighlightChange);
@@ -950,12 +1177,15 @@ export function setupUI(view) {
     junctionEndpointsRow.input.addEventListener('change', onJunctionEndpointsChange);
     junctionBoundaryRow.input.addEventListener('change', onJunctionBoundaryChange);
     junctionConnectorsRow.input.addEventListener('change', onJunctionConnectorsChange);
+    junctionEdgeOrderRow.input.addEventListener('change', onJunctionEdgeOrderChange);
     helpBtn.addEventListener('click', onHelp);
     helpClose.addEventListener('click', onHelpClose);
     undoBtn.addEventListener('click', onUndo);
     redoBtn.addEventListener('click', onRedo);
     exportBtn.addEventListener('click', onExport);
     importBtn.addEventListener('click', onImport);
+    popupTabRoads.addEventListener('click', onPopupTabRoads);
+    popupTabJunctions.addEventListener('click', onPopupTabJunctions);
     newRoad.addEventListener('click', onNewRoad);
     done.addEventListener('click', onDone);
     cancel.addEventListener('click', onCancel);
@@ -1233,8 +1463,12 @@ export function setupUI(view) {
         const label = document.createElement('div');
         label.className = 'road-debugger-road-label';
         const ends = junction?.endpoints?.length ?? 0;
-        const conns = junction?.connectors?.length ?? 0;
-        label.textContent = `Junction · ${fmtInt(ends)} ends · ${fmtInt(conns)} edges`;
+        const connList = junction?.connectors ?? [];
+        const conns = connList.length;
+        const mergedCount = connList.filter((c) => c?.mergedIntoRoad).length;
+        const activeCount = conns - mergedCount;
+        const source = junction?.source ?? 'auto';
+        label.textContent = `Junction · ${source} · ${fmtInt(ends)} approaches · ${fmtInt(activeCount)} movements${mergedCount ? ` · ${fmtInt(mergedCount)} merged` : ''}`;
         main.appendChild(label);
 
         const meta = document.createElement('div');
@@ -1244,31 +1478,131 @@ export function setupUI(view) {
 
         row.appendChild(main);
 
-        const isSelected = (view._selection?.type === 'junction' || view._selection?.type === 'connector') && view._selection?.junctionId === junction.id;
-        const isHovered = view._hover?.junctionId === junction.id;
+        const right = document.createElement('div');
+        right.className = 'road-debugger-road-right';
+
+        const actions = document.createElement('div');
+        actions.className = 'road-debugger-junction-actions';
+
+        const asphaltVisible = junction?.asphaltVisible !== false;
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'road-debugger-junction-action';
+        toggle.textContent = asphaltVisible ? 'Hide' : 'Show';
+        toggle.title = asphaltVisible ? 'Hide this junction asphalt surface.' : 'Show this junction asphalt surface.';
+        toggle.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            view.toggleJunctionAsphaltVisibility?.(junction.id);
+        });
+        actions.appendChild(toggle);
+
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'road-debugger-junction-action is-danger';
+        const isManual = source === 'manual';
+        del.textContent = isManual ? 'Delete' : 'Suppress';
+        del.title = isManual
+            ? 'Delete this authored junction.'
+            : 'Suppress this auto junction (it will not regenerate).';
+        del.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            view.deleteJunction?.(junction.id);
+        });
+        actions.appendChild(del);
+
+        right.appendChild(actions);
+        row.appendChild(right);
+
+        const isSelected = view._selection?.type === 'junction' && view._selection?.junctionId === junction.id;
+        const isHovered = view._hover?.junctionId === junction.id && !view._hover?.connectorId && !view._hover?.approachId;
         row.classList.toggle('is-selected', !!isSelected);
         row.classList.toggle('is-hovered', !!isHovered);
+        row.classList.toggle('is-hidden', junction?.asphaltVisible === false);
 
         row.addEventListener('mouseenter', () => view.setHoverJunction?.(junction.id));
         row.addEventListener('mouseleave', () => {
-            if (view._hover?.junctionId === junction.id && !view._hover?.connectorId) view.clearHover();
+            if (view._hover?.junctionId === junction.id && !view._hover?.connectorId && !view._hover?.approachId) view.clearHover();
         });
         row.addEventListener('click', () => view.selectJunction?.(junction.id));
         return row;
     };
 
-    const buildConnectorRow = ({ connector, junctionId }) => {
+    const buildJunctionSubheadRow = ({ text, title = '' }) => {
+        const row = document.createElement('div');
+        row.className = 'road-debugger-junction-subhead';
+        row.textContent = text;
+        if (title) row.title = title;
+        return row;
+    };
+
+    const buildJunctionEndpointRow = ({ endpoint, junctionId }) => {
+        const row = document.createElement('div');
+        row.className = 'road-debugger-junction-endpoint-row';
+        row.dataset.junctionId = junctionId;
+        row.dataset.endpointId = endpoint?.id ?? '';
+
+        const label = document.createElement('div');
+        label.className = 'road-debugger-junction-endpoint-label';
+        label.textContent = `Approach · ${endpoint?.roadId ?? '--'} · ${endpoint?.end ?? '--'} · seg ${endpoint?.segmentId ?? '--'} · piece ${endpoint?.pieceId ?? '--'}`;
+        row.appendChild(label);
+
+        const meta = document.createElement('div');
+        meta.className = 'road-debugger-junction-endpoint-meta';
+        meta.textContent = endpoint?.id ?? '--';
+        row.appendChild(meta);
+
+        const isSelected = view._selection?.type === 'approach' && view._selection?.junctionId === junctionId && view._selection?.approachId === endpoint?.id;
+        const isHovered = view._hover?.junctionId === junctionId && view._hover?.approachId === endpoint?.id;
+        row.classList.toggle('is-selected', !!isSelected);
+        row.classList.toggle('is-hovered', !!isHovered);
+
+        row.title = 'Approach: a road piece endpoint participating in this junction.';
+        row.addEventListener('mouseenter', () => view.setHoverApproach?.(junctionId, endpoint?.id));
+        row.addEventListener('mouseleave', () => {
+            if (view._hover?.junctionId === junctionId && view._hover?.approachId === endpoint?.id) view.clearHover();
+        });
+        row.addEventListener('click', () => view.selectApproach?.(junctionId, endpoint?.id));
+
+        return row;
+    };
+
+    const buildConnectorRow = ({ connector, junctionId, junction = null }) => {
+        const resolvedJunctionId = junction?.id ?? junctionId ?? null;
+        const endpointById = new Map((junction?.endpoints ?? []).map((e) => [e?.id, e]));
+        const aEp = endpointById.get(connector?.aEndpointId) ?? null;
+        const bEp = endpointById.get(connector?.bEndpointId) ?? null;
+
+        const aRoad = aEp?.roadId ?? connector?.aRoadId ?? '--';
+        const bRoad = bEp?.roadId ?? connector?.bRoadId ?? '--';
+        const aEnd = aEp?.end ?? '--';
+        const bEnd = bEp?.end ?? '--';
+        const dist = Number(connector?.distance) || 0;
+
+        const symbol = connector?.allowAToB && connector?.allowBToA
+            ? '↔'
+            : connector?.allowAToB
+                ? '→'
+                : connector?.allowBToA
+                    ? '←'
+                    : '×';
+
         const row = document.createElement('div');
         row.className = 'road-debugger-connector-row';
         row.dataset.connectorId = connector.id;
-        row.dataset.junctionId = junctionId;
+        if (resolvedJunctionId) row.dataset.junctionId = resolvedJunctionId;
 
         const label = document.createElement('div');
         label.className = 'road-debugger-connector-label';
-        const aRoad = connector?.aRoadId ?? '--';
-        const bRoad = connector?.bRoadId ?? '--';
-        const dist = Number(connector?.distance) || 0;
-        label.textContent = `${aRoad} ↔ ${bRoad} · ${fmt(dist, 1)}m`;
+        if (connector?.sameRoad) {
+            const roadId = aRoad !== '--' ? aRoad : bRoad;
+            label.textContent = `${connector?.mergedIntoRoad ? 'Continuity (merged)' : 'Continuity'} · ${roadId} · ${aEnd} ${symbol} ${bEnd} · ${fmt(dist, 1)}m`;
+            row.title = 'Continuity: same-road movement between two approaches. Merge into road to treat it as road continuity.';
+        } else {
+            label.textContent = `Movement · ${aRoad} ${aEnd} ${symbol} ${bRoad} ${bEnd} · ${fmt(dist, 1)}m`;
+            row.title = 'Movement: a connector edge between two approaches (topology/turn option). It does not create separate asphalt.';
+        }
         row.appendChild(label);
 
         const right = document.createElement('div');
@@ -1284,11 +1618,11 @@ export function setupUI(view) {
             merge.type = 'button';
             merge.className = 'road-debugger-connector-merge';
             const merged = connector?.mergedIntoRoad;
-            merge.textContent = merged ? 'Merged' : 'Merge';
+            merge.textContent = merged ? 'Merged' : 'Merge into road';
             merge.disabled = !!merged;
             merge.title = merged
-                ? 'This connector has been merged into the parent road (continuity is treated as part of the road).'
-                : 'Merge this same-road connector into the parent road (removes the need for a connector edge for continuity).';
+                ? 'This same-road movement is treated as road continuity (hidden from movements). Asphalt is unchanged.'
+                : 'Treat this same-road movement as road continuity (removes it from the movements list). Asphalt is unchanged.';
             merge.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -1317,11 +1651,11 @@ export function setupUI(view) {
         gridRow.input.checked = view._gridEnabled !== false;
         asphaltRow.input.checked = view._renderOptions?.asphalt !== false;
         markingsRow.input.checked = view._renderOptions?.markings === true;
+        arrowTangentRow.input.checked = view.getArrowTangentDebugEnabled?.() ?? view._arrowTangentDebugEnabled === true;
         dividerRow.input.checked = view._renderOptions?.centerline !== false;
         dirCenterRow.input.checked = view._renderOptions?.directionCenterlines !== false;
         edgesRow.input.checked = view._renderOptions?.edges !== false;
         pointsRow.input.checked = view._renderOptions?.points !== false;
-        hoverCubeRow.input.checked = view.getHoverCubeEnabled?.() ?? view._hoverCubeEnabled !== false;
         snapRow.input.checked = view.getSnapEnabled?.() ?? view._snapEnabled !== false;
         undoBtn.disabled = !(view.canUndo?.() ?? false);
         redoBtn.disabled = !(view.canRedo?.() ?? false);
@@ -1335,6 +1669,7 @@ export function setupUI(view) {
         trimStripsRow.input.checked = !!trimDebug.strips;
         trimOverlapsRow.input.checked = !!trimDebug.overlaps;
         trimIntervalsRow.input.checked = !!trimDebug.intervals;
+        trimRemovedRow.input.checked = !!trimDebug.removedPieces;
         trimKeptRow.input.checked = !!trimDebug.keptPieces;
         trimDroppedRow.input.checked = !!trimDebug.droppedPieces;
         trimHighlightRow.input.checked = !!trimDebug.highlight;
@@ -1344,12 +1679,39 @@ export function setupUI(view) {
         junctionEndpointsRow.input.checked = !!junctionDebug.endpoints;
         junctionBoundaryRow.input.checked = !!junctionDebug.boundary;
         junctionConnectorsRow.input.checked = !!junctionDebug.connectors;
+        junctionEdgeOrderRow.input.checked = !!junctionDebug.edgeOrder;
+
+        const junctionToolEnabled = view.getJunctionToolEnabled?.() ?? view._junctionToolEnabled === true;
+        const selectedCandidates = view.getJunctionToolSelection?.() ?? Array.from(view._junctionToolSelectedCandidateIds ?? []).sort();
+        const selectedCount = selectedCandidates.length;
+        const singleIsCorner = selectedCount === 1 && String(selectedCandidates[0] ?? '').startsWith('corner_');
 
         const info = highlightInfo(view);
         infoTitle.textContent = info.title;
         infoBody.textContent = info.text;
 
         const derived = view.getDerived?.() ?? view._derived ?? null;
+        const setRowLabel = (row, text) => {
+            const span = row?.querySelector?.('.road-debugger-label') ?? null;
+            if (span && span.textContent !== text) span.textContent = text;
+        };
+        const segsForCounts = Array.isArray(derived?.segments) ? derived.segments : [];
+        const trimCounts = segsForCounts.reduce(
+            (acc, seg) => {
+                acc.intervals += seg?.trimRemoved?.length ?? 0;
+                acc.removedPieces += seg?.trimRemoved?.length ?? 0;
+                acc.kept += seg?.keptPieces?.length ?? 0;
+                acc.dropped += seg?.droppedPieces?.length ?? 0;
+                return acc;
+            },
+            { intervals: 0, removedPieces: 0, kept: 0, dropped: 0 }
+        );
+        const overlapCount = derived?.trim?.overlaps?.length ?? 0;
+        setRowLabel(trimOverlapsRow.row, `Overlaps (${fmtInt(overlapCount)})`);
+        setRowLabel(trimIntervalsRow.row, `Intervals (${fmtInt(trimCounts.intervals)})`);
+        setRowLabel(trimRemovedRow.row, `Removed pieces (${fmtInt(trimCounts.removedPieces)})`);
+        setRowLabel(trimKeptRow.row, `Kept pieces (${fmtInt(trimCounts.kept)})`);
+        setRowLabel(trimDroppedRow.row, `Dropped pieces (${fmtInt(trimCounts.dropped)})`);
         const sel = view._selection ?? {};
         const selRoad = sel?.roadId ? (derived?.roads?.find?.((r) => r?.id === sel.roadId) ?? null) : null;
         const selPoint = sel?.type === 'point' ? (selRoad?.points?.find?.((p) => p?.id === sel.pointId) ?? null) : null;
@@ -1394,11 +1756,12 @@ export function setupUI(view) {
             }
         }
 
-        if (view._hover?.junctionId) expandedJunctions.add(view._hover.junctionId);
-        if (view._selection?.junctionId && (view._selection?.type === 'junction' || view._selection?.type === 'connector')) expandedJunctions.add(view._selection.junctionId);
-
         junctionsList.textContent = '';
         const junctions = derived?.junctions ?? [];
+        const junctionIds = new Set(junctions.map((j) => j?.id).filter(Boolean));
+        for (const id of Array.from(expandedJunctions)) {
+            if (!junctionIds.has(id)) expandedJunctions.delete(id);
+        }
         if (!junctions.length) {
             const empty = document.createElement('div');
             empty.className = 'road-debugger-placeholder';
@@ -1416,10 +1779,35 @@ export function setupUI(view) {
                 if (!junction?.id) continue;
                 junctionsList.appendChild(buildJunctionRow({ junction }));
                 if (expandedJunctions.has(junction.id)) {
+                    const endpoints = junction?.endpoints ?? [];
+                    if (endpoints.length) {
+                        junctionsList.appendChild(buildJunctionSubheadRow({
+                            text: `Approaches (${fmtInt(endpoints.length)})`,
+                            title: 'Approach: a road piece endpoint participating in this junction.'
+                        }));
+                    }
+                    for (const endpoint of endpoints) {
+                        if (!endpoint?.id) continue;
+                        junctionsList.appendChild(buildJunctionEndpointRow({ endpoint, junctionId: junction.id }));
+                    }
                     const conns = junction?.connectors ?? [];
-                    for (const conn of conns) {
-                        if (!conn?.id) continue;
-                        junctionsList.appendChild(buildConnectorRow({ connector: conn, junctionId: junction.id }));
+                    const active = conns.filter((c) => c?.id && !c?.mergedIntoRoad);
+                    const merged = conns.filter((c) => c?.id && !!c?.mergedIntoRoad);
+
+                    if (active.length) {
+                        junctionsList.appendChild(buildJunctionSubheadRow({
+                            text: `Movements (${fmtInt(active.length)})`,
+                            title: 'Movement: a connector edge between two approaches (topology/turn option).'
+                        }));
+                    }
+                    for (const conn of active) junctionsList.appendChild(buildConnectorRow({ connector: conn, junction }));
+
+                    if (merged.length) {
+                        junctionsList.appendChild(buildJunctionSubheadRow({
+                            text: `Merged into road (${fmtInt(merged.length)})`,
+                            title: 'Continuity: same-road movements merged into their parent road (hidden from movements).'
+                        }));
+                        for (const conn of merged) junctionsList.appendChild(buildConnectorRow({ connector: conn, junction }));
                     }
                 }
             }
@@ -1427,13 +1815,84 @@ export function setupUI(view) {
 
         const draftActive = !!draft;
         const pts = draft?.points?.length ?? 0;
-        popupBody.textContent = draftActive
-            ? `Drafting ${draft.name} · ${pts} point${pts === 1 ? '' : 's'} · click tiles to add points.`
-            : 'Start a new road, then click tiles to place points.';
+        popupTabRoads.classList.toggle('is-active', popupMode === 'roads');
+        popupTabJunctions.classList.toggle('is-active', popupMode === 'junctions');
 
-        newRoad.disabled = draftActive;
-        done.disabled = !draftActive || pts < 2;
-        cancel.disabled = !draftActive;
+        if (popupMode === 'roads') {
+            popupTitle.textContent = 'Roads';
+            popupBody.textContent = draftActive
+                ? `Drafting ${draft.name} · ${pts} point${pts === 1 ? '' : 's'} · click tiles to add points.`
+                : 'Start a new road, then click tiles to place points.';
+
+            popupCandidates.style.display = 'none';
+            popupCandidates.textContent = '';
+
+            newRoad.textContent = 'New road';
+            newRoad.title = 'Start drafting a new road (click tiles to add points).';
+            done.title = 'Finish the current draft road (requires at least 2 points).';
+            cancel.title = 'Cancel the current draft road.';
+
+            newRoad.disabled = draftActive;
+            done.disabled = !draftActive || pts < 2;
+            cancel.disabled = !draftActive;
+        } else {
+            popupTitle.textContent = 'Junctions';
+            popupBody.textContent = junctionToolEnabled
+                ? `Selecting junction points · ${fmtInt(selectedCount)} selected · drag a red rectangle to multi-select · click to toggle · Done to create.`
+                : 'Start a new junction, then click endpoints/corners (or drag a red rectangle) to select points.';
+
+            newRoad.textContent = 'New junction';
+            newRoad.title = 'Start selecting junction points (endpoints + corners).';
+            done.title = 'Create a junction from the current selection.';
+            cancel.title = 'Cancel junction creation (exits selection mode).';
+
+            newRoad.disabled = junctionToolEnabled;
+            done.disabled = !junctionToolEnabled || (!(selectedCount >= 2) && !singleIsCorner);
+            cancel.disabled = !junctionToolEnabled;
+
+            popupCandidates.style.display = junctionToolEnabled ? '' : 'none';
+            popupCandidates.textContent = '';
+            if (junctionToolEnabled) {
+                if (!selectedCandidates.length) {
+                    const empty = document.createElement('div');
+                    empty.className = 'road-debugger-placeholder';
+                    empty.textContent = 'No selected candidates yet.';
+                    popupCandidates.appendChild(empty);
+                } else {
+                    const derivedCandidates = derived?.junctionCandidates ?? null;
+                    const endpoints = derivedCandidates?.endpoints ?? [];
+                    const corners = derivedCandidates?.corners ?? [];
+                    const endpointById = new Map(endpoints.map((c) => [c?.id, c]));
+                    const cornerById = new Map(corners.map((c) => [c?.id, c]));
+                    for (const id of selectedCandidates) {
+                        const row = document.createElement('div');
+                        row.className = 'road-debugger-candidate-row';
+                        row.dataset.candidateId = id;
+                        row.classList.toggle('is-hovered', view._junctionToolHoverCandidateId === id);
+
+                        const isCorner = String(id).startsWith('corner_');
+                        const cand = (isCorner ? cornerById.get(id) : endpointById.get(id)) ?? null;
+
+                        const label = document.createElement('div');
+                        label.className = 'road-debugger-candidate-label';
+                        label.textContent = isCorner
+                            ? `${id} · ${fmt((cand?.angleRad ?? 0) * 57.2958, 1)}°`
+                            : `${id} · ${cand?.roadId ?? '--'} · ${cand?.end ?? '--'}`;
+                        row.appendChild(label);
+
+                        row.addEventListener('mouseenter', () => view.setJunctionToolHoverCandidate?.(id));
+                        row.addEventListener('mouseleave', () => view.clearJunctionToolHoverCandidate?.(id));
+                        row.addEventListener('click', (e) => {
+                            e.preventDefault?.();
+                            e.stopPropagation?.();
+                            view.toggleJunctionToolCandidate?.(id);
+                        });
+
+                        popupCandidates.appendChild(row);
+                    }
+                }
+            }
+        }
 
         if (isHelpOpen()) layoutHelp();
     };
@@ -1479,14 +1938,29 @@ export function setupUI(view) {
         openExitConfirm,
         closeExitConfirm,
         isExitConfirmOpen,
+        selectionRect,
+        setSelectionRect: ({ x0, y0, x1, y1 }) => {
+            const left = Math.min(Number(x0) || 0, Number(x1) || 0);
+            const top = Math.min(Number(y0) || 0, Number(y1) || 0);
+            const w = Math.abs((Number(x1) || 0) - (Number(x0) || 0));
+            const h = Math.abs((Number(y1) || 0) - (Number(y0) || 0));
+            selectionRect.style.display = '';
+            selectionRect.style.left = `${Math.round(left)}px`;
+            selectionRect.style.top = `${Math.round(top)}px`;
+            selectionRect.style.width = `${Math.round(w)}px`;
+            selectionRect.style.height = `${Math.round(h)}px`;
+        },
+        hideSelectionRect: () => {
+            selectionRect.style.display = 'none';
+        },
         gridToggle: gridRow.input,
         asphaltToggle: asphaltRow.input,
         markingsToggle: markingsRow.input,
+        arrowTangentToggle: arrowTangentRow.input,
         dividerToggle: dividerRow.input,
         dirCenterToggle: dirCenterRow.input,
         edgesToggle: edgesRow.input,
         pointsToggle: pointsRow.input,
-        hoverCubeToggle: hoverCubeRow.input,
         snapToggle: snapRow.input,
         trimThresholdRange,
         trimThresholdNumber,
@@ -1494,6 +1968,7 @@ export function setupUI(view) {
         trimStripsToggle: trimStripsRow.input,
         trimOverlapsToggle: trimOverlapsRow.input,
         trimIntervalsToggle: trimIntervalsRow.input,
+        trimRemovedToggle: trimRemovedRow.input,
         trimKeptToggle: trimKeptRow.input,
         trimDroppedToggle: trimDroppedRow.input,
         trimHighlightToggle: trimHighlightRow.input,
@@ -1501,6 +1976,12 @@ export function setupUI(view) {
         junctionEndpointsToggle: junctionEndpointsRow.input,
         junctionBoundaryToggle: junctionBoundaryRow.input,
         junctionConnectorsToggle: junctionConnectorsRow.input,
+        junctionEdgeOrderToggle: junctionEdgeOrderRow.input,
+        popupTabRoads,
+        popupTabJunctions,
+        popupTitle,
+        popupBody,
+        popupCandidates,
         roadsList,
         expandedRoads,
         junctionsList,
@@ -1523,11 +2004,11 @@ export function setupUI(view) {
         _onGridChange: onGridChange,
         _onAsphaltChange: onAsphaltChange,
         _onMarkingsChange: onMarkingsChange,
+        _onArrowTangentChange: onArrowTangentChange,
         _onDividerChange: onDividerChange,
         _onDirCenterChange: onDirCenterChange,
         _onEdgesChange: onEdgesChange,
         _onPointsChange: onPointsChange,
-        _onHoverCubeChange: onHoverCubeChange,
         _onSnapChange: onSnapChange,
         _onTrimThresholdRangeChange: onTrimThresholdRangeChange,
         _onTrimThresholdNumberChange: onTrimThresholdNumberChange,
@@ -1535,6 +2016,7 @@ export function setupUI(view) {
         _onTrimStripsChange: onTrimStripsChange,
         _onTrimOverlapsChange: onTrimOverlapsChange,
         _onTrimIntervalsChange: onTrimIntervalsChange,
+        _onTrimRemovedChange: onTrimRemovedChange,
         _onTrimKeptChange: onTrimKeptChange,
         _onTrimDroppedChange: onTrimDroppedChange,
         _onTrimHighlightChange: onTrimHighlightChange,
@@ -1542,6 +2024,9 @@ export function setupUI(view) {
         _onJunctionEndpointsChange: onJunctionEndpointsChange,
         _onJunctionBoundaryChange: onJunctionBoundaryChange,
         _onJunctionConnectorsChange: onJunctionConnectorsChange,
+        _onJunctionEdgeOrderChange: onJunctionEdgeOrderChange,
+        _onPopupTabRoads: onPopupTabRoads,
+        _onPopupTabJunctions: onPopupTabJunctions,
         _onHelp: onHelp,
         _onHelpClose: onHelpClose,
         _onResize: onResize,
@@ -1583,11 +2068,11 @@ export function destroyUI(view) {
     ui.gridToggle?.removeEventListener?.('change', ui._onGridChange);
     ui.asphaltToggle?.removeEventListener?.('change', ui._onAsphaltChange);
     ui.markingsToggle?.removeEventListener?.('change', ui._onMarkingsChange);
+    ui.arrowTangentToggle?.removeEventListener?.('change', ui._onArrowTangentChange);
     ui.dividerToggle?.removeEventListener?.('change', ui._onDividerChange);
     ui.dirCenterToggle?.removeEventListener?.('change', ui._onDirCenterChange);
     ui.edgesToggle?.removeEventListener?.('change', ui._onEdgesChange);
     ui.pointsToggle?.removeEventListener?.('change', ui._onPointsChange);
-    ui.hoverCubeToggle?.removeEventListener?.('change', ui._onHoverCubeChange);
     ui.snapToggle?.removeEventListener?.('change', ui._onSnapChange);
     ui.trimThresholdRange?.removeEventListener?.('input', ui._onTrimThresholdRangeChange);
     ui.trimThresholdNumber?.removeEventListener?.('change', ui._onTrimThresholdNumberChange);
@@ -1595,6 +2080,7 @@ export function destroyUI(view) {
     ui.trimStripsToggle?.removeEventListener?.('change', ui._onTrimStripsChange);
     ui.trimOverlapsToggle?.removeEventListener?.('change', ui._onTrimOverlapsChange);
     ui.trimIntervalsToggle?.removeEventListener?.('change', ui._onTrimIntervalsChange);
+    ui.trimRemovedToggle?.removeEventListener?.('change', ui._onTrimRemovedChange);
     ui.trimKeptToggle?.removeEventListener?.('change', ui._onTrimKeptChange);
     ui.trimDroppedToggle?.removeEventListener?.('change', ui._onTrimDroppedChange);
     ui.trimHighlightToggle?.removeEventListener?.('change', ui._onTrimHighlightChange);
@@ -1602,6 +2088,9 @@ export function destroyUI(view) {
     ui.junctionEndpointsToggle?.removeEventListener?.('change', ui._onJunctionEndpointsChange);
     ui.junctionBoundaryToggle?.removeEventListener?.('change', ui._onJunctionBoundaryChange);
     ui.junctionConnectorsToggle?.removeEventListener?.('change', ui._onJunctionConnectorsChange);
+    ui.junctionEdgeOrderToggle?.removeEventListener?.('change', ui._onJunctionEdgeOrderChange);
+    ui.popupTabRoads?.removeEventListener?.('click', ui._onPopupTabRoads);
+    ui.popupTabJunctions?.removeEventListener?.('click', ui._onPopupTabJunctions);
     ui.roadsList?.removeEventListener?.('mouseleave', ui._onRoadsLeave);
     ui.junctionsList?.removeEventListener?.('mouseleave', ui._onJunctionsLeave);
     ui.tangentRange?.removeEventListener?.('change', ui._onTangentRangeChange);

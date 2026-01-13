@@ -164,6 +164,91 @@ export class TextureInspectorUI {
         this.tileGapRow.appendChild(this.tileGapLabel);
         this.tileGapRow.appendChild(this.tileGapControls);
 
+        const makeRangeRow = (label, {
+            min = 0,
+            max = 1,
+            step = 0.01,
+            value = 0
+        } = {}) => {
+            const row = document.createElement('div');
+            row.className = 'texture-inspector-row';
+            const lab = document.createElement('div');
+            lab.className = 'texture-inspector-row-label';
+            lab.textContent = label;
+            const controls = document.createElement('div');
+            controls.className = 'texture-inspector-gap-controls';
+            const range = document.createElement('input');
+            range.type = 'range';
+            range.className = 'texture-inspector-range';
+            range.min = String(min);
+            range.max = String(max);
+            range.step = String(step);
+            range.value = String(value);
+            const number = document.createElement('input');
+            number.type = 'number';
+            number.className = 'texture-inspector-number';
+            number.min = String(min);
+            number.max = String(max);
+            number.step = String(step);
+            number.value = String(value);
+            controls.appendChild(range);
+            controls.appendChild(number);
+            row.appendChild(lab);
+            row.appendChild(controls);
+            return { row, range, number, min, max };
+        };
+
+        this.lightingLabel = document.createElement('div');
+        this.lightingLabel.className = 'ui-section-label';
+        this.lightingLabel.textContent = 'Lighting';
+
+        const sunAz = makeRangeRow('Sun az', { min: 0, max: 360, step: 1, value: 45 });
+        this.sunAzimuthRow = sunAz.row;
+        this.sunAzimuthRange = sunAz.range;
+        this.sunAzimuthNumber = sunAz.number;
+        this._sunAzMin = sunAz.min;
+        this._sunAzMax = sunAz.max;
+
+        const sunEl = makeRangeRow('Sun el', { min: 0, max: 85, step: 1, value: 55 });
+        this.sunElevationRow = sunEl.row;
+        this.sunElevationRange = sunEl.range;
+        this.sunElevationNumber = sunEl.number;
+        this._sunElMin = sunEl.min;
+        this._sunElMax = sunEl.max;
+
+        const sunI = makeRangeRow('Sun I', { min: 0, max: 6, step: 0.01, value: 1.0 });
+        this.sunIntensityRow = sunI.row;
+        this.sunIntensityRange = sunI.range;
+        this.sunIntensityNumber = sunI.number;
+        this._sunIMin = sunI.min;
+        this._sunIMax = sunI.max;
+
+        const hemiI = makeRangeRow('Hemi I', { min: 0, max: 3, step: 0.01, value: 0.55 });
+        this.hemiIntensityRow = hemiI.row;
+        this.hemiIntensityRange = hemiI.range;
+        this.hemiIntensityNumber = hemiI.number;
+        this._hemiIMin = hemiI.min;
+        this._hemiIMax = hemiI.max;
+
+        this.fillRow = document.createElement('div');
+        this.fillRow.className = 'texture-inspector-row';
+        this.fillLabel = document.createElement('div');
+        this.fillLabel.className = 'texture-inspector-row-label';
+        this.fillLabel.textContent = 'Fill';
+        this.fillToggle = document.createElement('input');
+        this.fillToggle.type = 'checkbox';
+        this.fillToggle.className = 'texture-inspector-checkbox';
+        this.fillToggle.checked = false;
+        this.fillRow.appendChild(this.fillLabel);
+        this.fillRow.appendChild(this.fillToggle);
+
+        const fillI = makeRangeRow('Fill I', { min: 0, max: 6, step: 0.01, value: 0.35 });
+        this.fillIntensityRow = fillI.row;
+        this.fillIntensityRange = fillI.range;
+        this.fillIntensityNumber = fillI.number;
+        this._fillIMin = fillI.min;
+        this._fillIMax = fillI.max;
+
         this.baseColorRow = document.createElement('div');
         this.baseColorRow.className = 'texture-inspector-row';
         this.baseColorLabel = document.createElement('div');
@@ -203,6 +288,13 @@ export class TextureInspectorUI {
         this.panel.appendChild(this.previewModeRow);
         this.panel.appendChild(this.gridRow);
         this.panel.appendChild(this.tileGapRow);
+        this.panel.appendChild(this.lightingLabel);
+        this.panel.appendChild(this.sunAzimuthRow);
+        this.panel.appendChild(this.sunElevationRow);
+        this.panel.appendChild(this.sunIntensityRow);
+        this.panel.appendChild(this.hemiIntensityRow);
+        this.panel.appendChild(this.fillRow);
+        this.panel.appendChild(this.fillIntensityRow);
         this.panel.appendChild(this.summary);
         this.panel.appendChild(this.copyBtn);
         this.root.appendChild(this.panel);
@@ -215,6 +307,7 @@ export class TextureInspectorUI {
         this.onPreviewModeChange = null;
         this.onGridEnabledChange = null;
         this.onTileGapChange = null;
+        this.onLightingChange = null;
 
         this._onSelectChange = () => this.onTextureIdChange?.(this.textureSelect.value);
         this._onCollectionChange = () => this.onCollectionIdChange?.(this.collectionSelect.value);
@@ -228,12 +321,27 @@ export class TextureInspectorUI {
         this._onGrid = () => this.onGridEnabledChange?.(this.gridToggle.checked);
         this._onTileGapRange = () => this._setTileGapFromUi(this.tileGapRange.value);
         this._onTileGapNumber = () => this._setTileGapFromUi(this.tileGapNumber.value);
+        this._onSunAzRange = () => this._setSunAzimuthFromUi(this.sunAzimuthRange.value);
+        this._onSunAzNumber = () => this._setSunAzimuthFromUi(this.sunAzimuthNumber.value);
+        this._onSunElRange = () => this._setSunElevationFromUi(this.sunElevationRange.value);
+        this._onSunElNumber = () => this._setSunElevationFromUi(this.sunElevationNumber.value);
+        this._onSunIRange = () => this._setSunIntensityFromUi(this.sunIntensityRange.value);
+        this._onSunINumber = () => this._setSunIntensityFromUi(this.sunIntensityNumber.value);
+        this._onHemiIRange = () => this._setHemiIntensityFromUi(this.hemiIntensityRange.value);
+        this._onHemiINumber = () => this._setHemiIntensityFromUi(this.hemiIntensityNumber.value);
+        this._onFillToggle = () => {
+            this._syncLightingWidgets();
+            this.onLightingChange?.(this.getLighting());
+        };
+        this._onFillIRange = () => this._setFillIntensityFromUi(this.fillIntensityRange.value);
+        this._onFillINumber = () => this._setFillIntensityFromUi(this.fillIntensityNumber.value);
         this._onCopy = () => this._copySummary();
 
         this._bound = false;
         this._selectedExtra = null;
 
         this._syncPreviewWidgets();
+        this._syncLightingWidgets();
     }
 
     mount() {
@@ -329,6 +437,34 @@ export class TextureInspectorUI {
         return TEXTURE_INSPECTOR_BASE_COLORS.find((c) => c.id === id)?.hex ?? 0xffffff;
     }
 
+    setLighting({
+        sunAzimuthDeg = 45,
+        sunElevationDeg = 55,
+        sunIntensity = 1.0,
+        hemiIntensity = 0.55,
+        fillEnabled = false,
+        fillIntensity = 0.35
+    } = {}) {
+        this._setRangeNumberPair(this.sunAzimuthRange, this.sunAzimuthNumber, sunAzimuthDeg, this._sunAzMin, this._sunAzMax);
+        this._setRangeNumberPair(this.sunElevationRange, this.sunElevationNumber, sunElevationDeg, this._sunElMin, this._sunElMax);
+        this._setRangeNumberPair(this.sunIntensityRange, this.sunIntensityNumber, sunIntensity, this._sunIMin, this._sunIMax);
+        this._setRangeNumberPair(this.hemiIntensityRange, this.hemiIntensityNumber, hemiIntensity, this._hemiIMin, this._hemiIMax);
+        this.fillToggle.checked = !!fillEnabled;
+        this._setRangeNumberPair(this.fillIntensityRange, this.fillIntensityNumber, fillIntensity, this._fillIMin, this._fillIMax);
+        this._syncLightingWidgets();
+    }
+
+    getLighting() {
+        return {
+            sunAzimuthDeg: Number(this.sunAzimuthRange.value) || 0,
+            sunElevationDeg: Number(this.sunElevationRange.value) || 0,
+            sunIntensity: Number(this.sunIntensityRange.value) || 0,
+            hemiIntensity: Number(this.hemiIntensityRange.value) || 0,
+            fillEnabled: !!this.fillToggle.checked,
+            fillIntensity: Number(this.fillIntensityRange.value) || 0
+        };
+    }
+
     _syncSummary() {
         const collectionId = this.collectionSelect.value || '-';
         const textureId = this.textureSelect.value || '-';
@@ -340,6 +476,7 @@ export class TextureInspectorUI {
         if (atlas) parts.push(`atlas:${atlas}`);
         if (extra?.rectPx) parts.push(`rect:${formatRectPx(extra.rectPx)}`);
         if (extra?.uv) parts.push(`uv:${formatUv(extra.uv)}`);
+        if (typeof extra?.style === 'string' && extra.style) parts.push(`style:${extra.style}`);
         this.summary.value = parts.join(' ');
     }
 
@@ -365,6 +502,47 @@ export class TextureInspectorUI {
         if (this.tileGapRow) this.tileGapRow.classList.toggle('hidden', !tiled);
     }
 
+    _syncLightingWidgets() {
+        const enabled = !!this.fillToggle.checked;
+        if (this.fillIntensityRow) this.fillIntensityRow.classList.toggle('hidden', !enabled);
+    }
+
+    _setRangeNumberPair(rangeEl, numberEl, raw, min, max) {
+        const num = Number(raw);
+        const lo = Number(min);
+        const hi = Number(max);
+        const next = Number.isFinite(num) ? Math.max(lo, Math.min(hi, num)) : lo;
+        const text = String(next);
+        rangeEl.value = text;
+        numberEl.value = text;
+        return next;
+    }
+
+    _setSunAzimuthFromUi(raw) {
+        this._setRangeNumberPair(this.sunAzimuthRange, this.sunAzimuthNumber, raw, this._sunAzMin, this._sunAzMax);
+        this.onLightingChange?.(this.getLighting());
+    }
+
+    _setSunElevationFromUi(raw) {
+        this._setRangeNumberPair(this.sunElevationRange, this.sunElevationNumber, raw, this._sunElMin, this._sunElMax);
+        this.onLightingChange?.(this.getLighting());
+    }
+
+    _setSunIntensityFromUi(raw) {
+        this._setRangeNumberPair(this.sunIntensityRange, this.sunIntensityNumber, raw, this._sunIMin, this._sunIMax);
+        this.onLightingChange?.(this.getLighting());
+    }
+
+    _setHemiIntensityFromUi(raw) {
+        this._setRangeNumberPair(this.hemiIntensityRange, this.hemiIntensityNumber, raw, this._hemiIMin, this._hemiIMax);
+        this.onLightingChange?.(this.getLighting());
+    }
+
+    _setFillIntensityFromUi(raw) {
+        this._setRangeNumberPair(this.fillIntensityRange, this.fillIntensityNumber, raw, this._fillIMin, this._fillIMax);
+        this.onLightingChange?.(this.getLighting());
+    }
+
     _fallbackCopy(text) {
         this.summary.focus();
         this.summary.select();
@@ -374,21 +552,6 @@ export class TextureInspectorUI {
             // ignore
         }
         this.summary.setSelectionRange(text.length, text.length);
-    }
-
-    _bind() {
-        if (this._bound) return;
-        this._bound = true;
-        this.collectionSelect.addEventListener('change', this._onCollectionChange);
-        this.textureSelect.addEventListener('change', this._onSelectChange);
-        this.prevBtn.addEventListener('click', this._onPrev);
-        this.nextBtn.addEventListener('click', this._onNext);
-        this.baseColorSelect.addEventListener('change', this._onBaseColor);
-        this.previewModeSelect.addEventListener('change', this._onPreviewMode);
-        this.gridToggle.addEventListener('change', this._onGrid);
-        this.tileGapRange.addEventListener('input', this._onTileGapRange);
-        this.tileGapNumber.addEventListener('change', this._onTileGapNumber);
-        this.copyBtn.addEventListener('click', this._onCopy);
     }
 
     _unbind() {
@@ -403,6 +566,43 @@ export class TextureInspectorUI {
         this.gridToggle.removeEventListener('change', this._onGrid);
         this.tileGapRange.removeEventListener('input', this._onTileGapRange);
         this.tileGapNumber.removeEventListener('change', this._onTileGapNumber);
+        this.sunAzimuthRange.removeEventListener('input', this._onSunAzRange);
+        this.sunAzimuthNumber.removeEventListener('change', this._onSunAzNumber);
+        this.sunElevationRange.removeEventListener('input', this._onSunElRange);
+        this.sunElevationNumber.removeEventListener('change', this._onSunElNumber);
+        this.sunIntensityRange.removeEventListener('input', this._onSunIRange);
+        this.sunIntensityNumber.removeEventListener('change', this._onSunINumber);
+        this.hemiIntensityRange.removeEventListener('input', this._onHemiIRange);
+        this.hemiIntensityNumber.removeEventListener('change', this._onHemiINumber);
+        this.fillToggle.removeEventListener('change', this._onFillToggle);
+        this.fillIntensityRange.removeEventListener('input', this._onFillIRange);
+        this.fillIntensityNumber.removeEventListener('change', this._onFillINumber);
         this.copyBtn.removeEventListener('click', this._onCopy);
+    }
+
+    _bind() {
+        if (this._bound) return;
+        this._bound = true;
+        this.collectionSelect.addEventListener('change', this._onCollectionChange);
+        this.textureSelect.addEventListener('change', this._onSelectChange);
+        this.prevBtn.addEventListener('click', this._onPrev);
+        this.nextBtn.addEventListener('click', this._onNext);
+        this.baseColorSelect.addEventListener('change', this._onBaseColor);
+        this.previewModeSelect.addEventListener('change', this._onPreviewMode);
+        this.gridToggle.addEventListener('change', this._onGrid);
+        this.tileGapRange.addEventListener('input', this._onTileGapRange);
+        this.tileGapNumber.addEventListener('change', this._onTileGapNumber);
+        this.sunAzimuthRange.addEventListener('input', this._onSunAzRange);
+        this.sunAzimuthNumber.addEventListener('change', this._onSunAzNumber);
+        this.sunElevationRange.addEventListener('input', this._onSunElRange);
+        this.sunElevationNumber.addEventListener('change', this._onSunElNumber);
+        this.sunIntensityRange.addEventListener('input', this._onSunIRange);
+        this.sunIntensityNumber.addEventListener('change', this._onSunINumber);
+        this.hemiIntensityRange.addEventListener('input', this._onHemiIRange);
+        this.hemiIntensityNumber.addEventListener('change', this._onHemiINumber);
+        this.fillToggle.addEventListener('change', this._onFillToggle);
+        this.fillIntensityRange.addEventListener('input', this._onFillIRange);
+        this.fillIntensityNumber.addEventListener('change', this._onFillINumber);
+        this.copyBtn.addEventListener('click', this._onCopy);
     }
 }

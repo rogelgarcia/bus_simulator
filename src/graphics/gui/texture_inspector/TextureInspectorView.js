@@ -26,6 +26,7 @@ export class TextureInspectorView {
         this.ui.setPreviewModeId('single');
         this.ui.setGridEnabled(true);
         this.ui.setTileGap(0.0);
+        this.ui.setLighting(this.scene.getLighting());
         this.scene.setPreviewModeId(this.ui.getPreviewModeId());
         this.scene.setGridEnabled(this.ui.getGridEnabled());
         this.scene.setTileGap(0.0);
@@ -74,6 +75,10 @@ export class TextureInspectorView {
         this.ui.onTileGapChange = (gap) => {
             this.scene.setTileGap(gap);
         };
+
+        this.ui.onLightingChange = (params) => {
+            this.scene.setLighting(params);
+        };
     }
 
     exit() {
@@ -85,6 +90,7 @@ export class TextureInspectorView {
         this.ui.onPreviewModeChange = null;
         this.ui.onGridEnabledChange = null;
         this.ui.onTileGapChange = null;
+        this.ui.onLightingChange = null;
 
         this.ui.unmount();
         this.scene.dispose();

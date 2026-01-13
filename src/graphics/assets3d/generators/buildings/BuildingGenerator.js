@@ -13,6 +13,7 @@ import { WINDOW_TYPE, getLegacyWindowStyleTexture, getWindowTexture, getWindowTy
 const EPS = 1e-6;
 const QUANT = 1000;
 const BUILDING_TEXTURE_BASE_URL = new URL('../../../../../assets/public/textures/buildings/walls/', import.meta.url);
+const RED_BRICK_2K_PBR_BASE_URL = new URL('pbr/red_brick_2k/', BUILDING_TEXTURE_BASE_URL);
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -585,7 +586,7 @@ export class BuildingWallTextureCache {
         this._cache.clear();
     }
 
-    _configureTexture(tex) {
+    _configureTexture(tex, { srgb = true } = {}) {
         if (!tex) return;
         tex.userData = tex.userData ?? {};
         tex.userData.buildingShared = true;
@@ -599,24 +600,32 @@ export class BuildingWallTextureCache {
             tex.anisotropy = 16;
         }
 
-        applyTextureColorSpace(tex, { srgb: true });
+        applyTextureColorSpace(tex, { srgb });
         tex.needsUpdate = true;
     }
 
-    trackMaterial(url, material) {
-        const safeUrl = typeof url === 'string' && url ? url : null;
-        if (!safeUrl || !material) return null;
+    _makeKey(url, { srgb = true } = {}) {
+        return `${url}|cs:${srgb ? 'srgb' : 'data'}`;
+    }
 
-        let entry = this._cache.get(safeUrl);
+    trackMaterial(url, material, { slot = 'map', srgb = true } = {}) {
+        const safeUrl = typeof url === 'string' && url ? url : null;
+        const safeSlot = typeof slot === 'string' && slot ? slot : 'map';
+        if (!safeUrl || !material) return null;
+        const key = this._makeKey(safeUrl, { srgb: !!srgb });
+
+        let entry = this._cache.get(key);
         if (!entry) {
-            entry = { texture: null, promise: null, materials: new Set() };
-            this._cache.set(safeUrl, entry);
+            entry = { url: safeUrl, srgb: !!srgb, texture: null, promise: null, materials: new Map() };
+            this._cache.set(key, entry);
         }
 
-        entry.materials.add(material);
+        const slots = entry.materials.get(material) ?? new Set();
+        slots.add(safeSlot);
+        entry.materials.set(material, slots);
 
         if (entry.texture) {
-            material.map = entry.texture;
+            material[safeSlot] = entry.texture;
             material.needsUpdate = true;
             return entry.texture;
         }
@@ -624,7 +633,7 @@ export class BuildingWallTextureCache {
         if (!entry.promise) {
             const promise = new Promise((resolve, reject) => {
                 this._loader.load(
-                    safeUrl,
+                    entry.url,
                     (tex) => resolve(tex),
                     undefined,
                     (err) => reject(err)
@@ -633,27 +642,29 @@ export class BuildingWallTextureCache {
             entry.promise = promise;
 
             promise.then((tex) => {
-                const next = this._cache.get(safeUrl);
+                const next = this._cache.get(key);
                 if (!next || next.promise !== promise) {
                     tex.dispose?.();
                     return;
                 }
 
-                this._configureTexture(tex);
+                this._configureTexture(tex, { srgb: next.srgb });
                 next.texture = tex;
                 next.promise = null;
 
-                for (const mat of next.materials) {
+                for (const [mat, slotSet] of next.materials) {
                     if (!mat) continue;
-                    mat.map = tex;
+                    for (const slot of slotSet) {
+                        mat[slot] = tex;
+                    }
                     mat.needsUpdate = true;
                 }
             }).catch(() => {
-                const next = this._cache.get(safeUrl);
+                const next = this._cache.get(key);
                 if (next?.promise === promise) {
                     next.promise = null;
                     next.materials.clear();
-                    this._cache.delete(safeUrl);
+                    this._cache.delete(key);
                 }
             });
         }
@@ -664,11 +675,24 @@ export class BuildingWallTextureCache {
 
 export function resolveBuildingStyleWallTextureUrl(styleId) {
     const id = isBuildingStyle(styleId) ? styleId : BUILDING_STYLE.DEFAULT;
-    if (id === BUILDING_STYLE.BRICK) return new URL('brick_wall.png', BUILDING_TEXTURE_BASE_URL).toString();
+    if (id === BUILDING_STYLE.BRICK) return new URL('basecolor.jpg', RED_BRICK_2K_PBR_BASE_URL).toString();
     if (id === BUILDING_STYLE.CEMENT) return new URL('cement.png', BUILDING_TEXTURE_BASE_URL).toString();
     if (id === BUILDING_STYLE.STONE_1) return new URL('stonewall_1.png', BUILDING_TEXTURE_BASE_URL).toString();
     if (id === BUILDING_STYLE.STONE_2) return new URL('stonewall_2.png', BUILDING_TEXTURE_BASE_URL).toString();
     return null;
+}
+
+export function resolveBuildingStyleWallMaterialUrls(styleId) {
+    const id = isBuildingStyle(styleId) ? styleId : BUILDING_STYLE.DEFAULT;
+    const baseColorUrl = resolveBuildingStyleWallTextureUrl(id);
+    if (id === BUILDING_STYLE.BRICK) {
+        return {
+            baseColorUrl,
+            normalUrl: new URL('normal_gl.jpg', RED_BRICK_2K_PBR_BASE_URL).toString(),
+            ormUrl: new URL('arm.jpg', RED_BRICK_2K_PBR_BASE_URL).toString()
+        };
+    }
+    return { baseColorUrl, normalUrl: null, ormUrl: null };
 }
 
 export function resolveBuildingStyleLabel(styleId) {
@@ -879,6 +903,8 @@ export function computeBuildingLoopsFromTiles({
 export function applyWallTextureToGroup({
     solidGroup,
     wallTextureUrl = null,
+    wallNormalUrl = null,
+    wallOrmUrl = null,
     baseColorHex = 0xffffff,
     textureCache = null
 } = {}) {
@@ -886,6 +912,9 @@ export function applyWallTextureToGroup({
 
     const safeUrl = typeof wallTextureUrl === 'string' && wallTextureUrl ? wallTextureUrl : null;
     const useTexture = !!safeUrl && !!textureCache;
+    const safeNormalUrl = typeof wallNormalUrl === 'string' && wallNormalUrl ? wallNormalUrl : null;
+    const safeOrmUrl = typeof wallOrmUrl === 'string' && wallOrmUrl ? wallOrmUrl : null;
+    const usePbr = !!useTexture && (!!safeNormalUrl || !!safeOrmUrl);
     const color = Number.isFinite(baseColorHex) ? baseColorHex : 0xffffff;
 
     solidGroup.traverse((obj) => {
@@ -897,14 +926,38 @@ export function applyWallTextureToGroup({
 
         if (!useTexture) {
             wallMat.map = null;
+            wallMat.normalMap = null;
+            wallMat.roughnessMap = null;
+            wallMat.metalnessMap = null;
+            wallMat.aoMap = null;
             wallMat.color.setHex(color);
             wallMat.needsUpdate = true;
             return;
         }
 
         wallMat.color.setHex(0xffffff);
-        const tex = textureCache.trackMaterial(safeUrl, wallMat);
+        const tex = textureCache.trackMaterial(safeUrl, wallMat, { slot: 'map', srgb: true });
         if (tex) wallMat.map = tex;
+
+        if (safeNormalUrl) {
+            const n = textureCache.trackMaterial(safeNormalUrl, wallMat, { slot: 'normalMap', srgb: false });
+            if (n) wallMat.normalMap = n;
+        } else if (wallMat.normalMap) {
+            wallMat.normalMap = null;
+        }
+
+        if (safeOrmUrl) {
+            const rough = textureCache.trackMaterial(safeOrmUrl, wallMat, { slot: 'roughnessMap', srgb: false });
+            if (rough) wallMat.roughnessMap = rough;
+            wallMat.roughness = 1.0;
+            wallMat.metalness = 0.0;
+        } else {
+            wallMat.roughnessMap = null;
+            wallMat.metalnessMap = null;
+            wallMat.aoMap = null;
+        }
+
+        if (usePbr) wallMat.normalScale?.set?.(0.9, 0.9);
         wallMat.needsUpdate = true;
     });
 }
@@ -915,8 +968,15 @@ export function applyBuildingStyleToGroup({
     baseColorHex = 0xffffff,
     textureCache = null
 } = {}) {
-    const url = resolveBuildingStyleWallTextureUrl(style);
-    applyWallTextureToGroup({ solidGroup, wallTextureUrl: url, baseColorHex, textureCache });
+    const urls = resolveBuildingStyleWallMaterialUrls(style);
+    applyWallTextureToGroup({
+        solidGroup,
+        wallTextureUrl: urls.baseColorUrl,
+        wallNormalUrl: urls.normalUrl,
+        wallOrmUrl: urls.ormUrl,
+        baseColorHex,
+        textureCache
+    });
 }
 
 export function buildBuildingVisualParts({
@@ -1030,26 +1090,45 @@ export function buildBuildingVisualParts({
         metalness: 0.05
     });
 
-    const wallUrl = resolveBuildingStyleWallTextureUrl(style)
-        ?? (typeof legacyWallTextureUrl === 'string' && legacyWallTextureUrl ? legacyWallTextureUrl : null);
+    const legacyUrl = (typeof legacyWallTextureUrl === 'string' && legacyWallTextureUrl) ? legacyWallTextureUrl : null;
+    const wallUrls = resolveBuildingStyleWallMaterialUrls(style);
+    const wallSpec = wallUrls.baseColorUrl
+        ? wallUrls
+        : { baseColorUrl: legacyUrl, normalUrl: null, ormUrl: null };
 
-    const streetWallUrl = streetEnabled
-        ? (resolveBuildingStyleWallTextureUrl(streetStyle) ?? wallUrl)
-        : null;
+    const streetUrls = streetEnabled ? resolveBuildingStyleWallMaterialUrls(streetStyle) : null;
+    const streetSpec = (streetEnabled && streetUrls?.baseColorUrl) ? streetUrls : wallSpec;
 
-    const makeWallMaterial = (url) => {
+    const makeWallMaterial = (spec) => {
         const mat = wallMatTemplate.clone();
+        const url = spec?.baseColorUrl ?? null;
+        const normalUrl = spec?.normalUrl ?? null;
+        const ormUrl = spec?.ormUrl ?? null;
+
         if (url && textureCache) {
             mat.color.setHex(0xffffff);
-            const tex = textureCache.trackMaterial(url, mat);
+            const tex = textureCache.trackMaterial(url, mat, { slot: 'map', srgb: true });
             if (tex) mat.map = tex;
-            mat.needsUpdate = true;
         }
+
+        if (normalUrl && textureCache) {
+            const tex = textureCache.trackMaterial(normalUrl, mat, { slot: 'normalMap', srgb: false });
+            if (tex) mat.normalMap = tex;
+            mat.normalScale.set(0.9, 0.9);
+        }
+
+        if (ormUrl && textureCache) {
+            const rough = textureCache.trackMaterial(ormUrl, mat, { slot: 'roughnessMap', srgb: false });
+            if (rough) mat.roughnessMap = rough;
+            mat.roughness = 1.0;
+            mat.metalness = 0.0;
+        }
+        mat.needsUpdate = true;
         return mat;
     };
 
-    const upperWallMat = makeWallMaterial(wallUrl);
-    const streetWallMat = streetEnabled ? makeWallMaterial(streetWallUrl) : null;
+    const upperWallMat = makeWallMaterial(wallSpec);
+    const streetWallMat = streetEnabled ? makeWallMaterial(streetSpec) : null;
 
     for (const outer of wallOuterLoops) {
         const shapePts = outer.map((p) => new THREE.Vector2(p.x, -p.z));

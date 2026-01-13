@@ -3681,6 +3681,48 @@ async function runTests() {
             assertTrue((a.vertices?.length ?? 0) >= 3, 'Expected vertices for a valid polygon.');
             assertEqual((a.indices?.length ?? 0), Math.max(0, (a.vertices.length - 2) * 3), 'Expected N-2 triangulation indices.');
         });
+
+        test('RoadEngineCompute: manual corner junction cuts segments and emits junction surface (AI 82)', () => {
+            const roads = [
+                {
+                    id: 'r1',
+                    name: 'CornerRoad',
+                    lanesF: 1,
+                    lanesB: 1,
+                    points: [
+                        { id: 'a', tileX: 0, tileY: 0, offsetX: 0, offsetY: 0, tangentFactor: 1 },
+                        { id: 'b', tileX: 2, tileY: 0, offsetX: 0, offsetY: 0, tangentFactor: 1 },
+                        { id: 'c', tileX: 2, tileY: 2, offsetX: 0, offsetY: 0, tangentFactor: 1 }
+                    ]
+                }
+            ];
+            const settings = {
+                origin: { x: 0, z: 0 },
+                tileSize: 24,
+                laneWidth: 4.8,
+                marginFactor: 0.1,
+                junctions: {
+                    manualJunctions: [{ candidateIds: ['corner_r1_b'] }]
+                }
+            };
+
+            const out = computeRoadEngineEdges({ roads, settings });
+            const corners = out?.junctionCandidates?.corners ?? [];
+            assertTrue(corners.some((c) => c?.id === 'corner_r1_b'), 'Expected corner candidate corner_r1_b.');
+
+            const junction = out?.junctions?.find?.((j) => j?.source === 'manual' && (j?.candidateIds ?? []).includes('corner_r1_b')) ?? null;
+            assertTrue(!!junction, 'Expected a manual junction from the corner candidate.');
+            assertTrue((junction?.endpoints?.length ?? 0) >= 2, 'Expected 2+ endpoints for corner junction.');
+
+            const segIn = out?.segments?.find?.((s) => s?.id === 'seg_r1_a_b') ?? null;
+            const segOut = out?.segments?.find?.((s) => s?.id === 'seg_r1_b_c') ?? null;
+            assertTrue(!!segIn && !!segOut, 'Expected both segments around the corner.');
+            assertTrue((segIn?.keptPieces?.[0]?.t1 ?? 1) < 0.99, 'Expected incoming segment to be cut before the corner.');
+            assertTrue((segOut?.keptPieces?.[0]?.t0 ?? 0) > 0.01, 'Expected outgoing segment to be cut after the corner.');
+
+            const surface = (out?.primitives ?? []).find((p) => p?.kind === 'junction_surface' && p?.junctionId === junction.id) ?? null;
+            assertTrue(!!surface, 'Expected a junction_surface primitive for the corner junction.');
+        });
     } catch (e) {
         console.log('⏭️  Road engine tests skipped:', e.message);
     }
@@ -4163,10 +4205,49 @@ async function runTests() {
             }
         });
 
-	        test('RoadDebugger: lane arrows follow segment forward direction (Task 71)', () => {
-	            const engine = {
-	                canvas: document.createElement('canvas'),
-	                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+        test('RoadDebugger: distance-scaled edge thickness is automatic (Task 89)', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: false });
+            view.enter();
+            try {
+                view.startRoadDraft();
+                view.addDraftPointByTile(0, 0);
+                view.addDraftPointByTile(2, 0);
+                view.finishRoadDraft();
+
+                view._zoom = view._zoomMin;
+                view._syncOrbitCamera();
+                const asphaltNear = view._materials?.lineBase?.get?.('asphalt_edge_left') ?? null;
+                const laneNear = view._materials?.lineBase?.get?.('lane_edge_left') ?? null;
+                assertTrue(!!asphaltNear, 'Expected asphalt edge line material.');
+                assertTrue(!!laneNear, 'Expected lane edge line material.');
+                assertNear(Number(asphaltNear.linewidth) || 0, 4, 1e-6, 'Expected full asphalt edge thickness at near zoom.');
+                assertNear(Number(laneNear.linewidth) || 0, 2, 1e-6, 'Expected full lane edge thickness at near zoom.');
+
+                view._zoom = view._zoomMax;
+                view._syncOrbitCamera();
+                const asphaltFar = view._materials?.lineBase?.get?.('asphalt_edge_left') ?? null;
+                const laneFar = view._materials?.lineBase?.get?.('lane_edge_left') ?? null;
+                assertTrue(!!asphaltFar, 'Expected asphalt edge line material at far zoom.');
+                assertTrue(!!laneFar, 'Expected lane edge line material at far zoom.');
+                assertNear(Number(asphaltFar.linewidth) || 0, 1, 1e-6, 'Expected thinner asphalt edges at far zoom.');
+                assertNear(Number(laneFar.linewidth) || 0, 0.55, 1e-6, 'Expected thinner lane edges at far zoom.');
+                assertTrue((Number(laneFar.linewidth) || 0) < (Number(laneNear.linewidth) || 0), 'Expected lane edges to scale down when zoomed out.');
+            } finally {
+                view.exit();
+            }
+        });
+
+        test('RoadDebugger: lane arrows follow segment forward direction (Task 71)', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
                 scene: new THREE.Scene(),
                 clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
             };
@@ -4237,6 +4318,277 @@ async function runTests() {
                 }
 
                 assertTrue(foundForward && foundBackward, 'Expected both forward and backward lane arrows.');
+            } finally {
+                view.exit();
+            }
+        });
+
+        test('RoadDebugger: lane arrows correct on vertical segment (Task 84)', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: false });
+            view.enter();
+            try {
+                view.startRoadDraft();
+                view.addDraftPointByTile(0, 0);
+                view.addDraftPointByTile(0, 2);
+                view.finishRoadDraft();
+                view.setRenderOptions({ markings: true });
+
+                const derived = view.getDerived();
+                const seg = derived?.segments?.[0] ?? null;
+                assertTrue(!!seg?.aWorld && !!seg?.bWorld && !!seg?.dir && !!seg?.right, 'Expected derived segment with direction vectors.');
+
+                const mesh = view._arrowMeshes?.[0] ?? null;
+                const attr = mesh?.geometry?.getAttribute?.('position') ?? null;
+                const positions = attr?.array ?? null;
+                assertTrue(Array.isArray(positions) || positions instanceof Float32Array, 'Expected arrow geometry positions.');
+                assertTrue((positions.length % (9 * 3)) === 0, 'Expected arrow geometry to be packed as 9 vertices per arrow.');
+
+                const arrowCount = positions.length / (9 * 3);
+                assertTrue(arrowCount >= 2, 'Expected at least two lane arrows (forward + backward).');
+
+                const segMidX = ((Number(seg.aWorld.x) || 0) + (Number(seg.bWorld.x) || 0)) * 0.5;
+                const segMidZ = ((Number(seg.aWorld.z) || 0) + (Number(seg.bWorld.z) || 0)) * 0.5;
+                const dirX = Number(seg.dir.x) || 0;
+                const dirZ = Number(seg.dir.z) || 0;
+                const rightX = Number(seg.right.x) || 0;
+                const rightZ = Number(seg.right.z) || 0;
+
+                const readV = (vertexIndex) => {
+                    const i = vertexIndex * 3;
+                    return { x: Number(positions[i]) || 0, y: Number(positions[i + 1]) || 0, z: Number(positions[i + 2]) || 0 };
+                };
+
+                let foundForward = false;
+                let foundBackward = false;
+                for (let a = 0; a < arrowCount; a++) {
+                    const base = a * 9;
+                    const tip = readV(base + 6);
+                    const t0 = readV(base + 0);
+                    const t3 = readV(base + 3);
+                    const t5 = readV(base + 5);
+                    const tail = {
+                        x: (t0.x + t3.x + t5.x) / 3,
+                        z: (t0.z + t3.z + t5.z) / 3
+                    };
+
+                    const arrowDirX = tip.x - tail.x;
+                    const arrowDirZ = tip.z - tail.z;
+                    const dotForward = arrowDirX * dirX + arrowDirZ * dirZ;
+
+                    const centerX = (tip.x + tail.x) * 0.5;
+                    const centerZ = (tip.z + tail.z) * 0.5;
+                    const side = (centerX - segMidX) * rightX + (centerZ - segMidZ) * rightZ;
+                    if (side >= 0) {
+                        foundForward = true;
+                        assertTrue(dotForward > 0.25, 'Expected forward-lane arrow to point along segment direction.');
+                    } else {
+                        foundBackward = true;
+                        assertTrue(dotForward < -0.25, 'Expected backward-lane arrow to point opposite segment direction.');
+                    }
+                }
+                assertTrue(foundForward && foundBackward, 'Expected both forward and backward lane arrows.');
+            } finally {
+                view.exit();
+            }
+        });
+
+        test('RoadDebugger: lane arrows correct on diagonal segment (Task 84)', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: false });
+            view.enter();
+            try {
+                view.startRoadDraft();
+                view.addDraftPointByTile(0, 0);
+                view.addDraftPointByTile(2, 2);
+                view.finishRoadDraft();
+                view.setRenderOptions({ markings: true });
+
+                const derived = view.getDerived();
+                const seg = derived?.segments?.[0] ?? null;
+                assertTrue(!!seg?.aWorld && !!seg?.bWorld && !!seg?.dir && !!seg?.right, 'Expected derived segment with direction vectors.');
+
+                const mesh = view._arrowMeshes?.[0] ?? null;
+                const attr = mesh?.geometry?.getAttribute?.('position') ?? null;
+                const positions = attr?.array ?? null;
+                assertTrue(Array.isArray(positions) || positions instanceof Float32Array, 'Expected arrow geometry positions.');
+                assertTrue((positions.length % (9 * 3)) === 0, 'Expected arrow geometry to be packed as 9 vertices per arrow.');
+
+                const arrowCount = positions.length / (9 * 3);
+                assertTrue(arrowCount >= 2, 'Expected at least two lane arrows (forward + backward).');
+
+                const segMidX = ((Number(seg.aWorld.x) || 0) + (Number(seg.bWorld.x) || 0)) * 0.5;
+                const segMidZ = ((Number(seg.aWorld.z) || 0) + (Number(seg.bWorld.z) || 0)) * 0.5;
+                const dirX = Number(seg.dir.x) || 0;
+                const dirZ = Number(seg.dir.z) || 0;
+                const rightX = Number(seg.right.x) || 0;
+                const rightZ = Number(seg.right.z) || 0;
+
+                const readV = (vertexIndex) => {
+                    const i = vertexIndex * 3;
+                    return { x: Number(positions[i]) || 0, y: Number(positions[i + 1]) || 0, z: Number(positions[i + 2]) || 0 };
+                };
+
+                let foundForward = false;
+                let foundBackward = false;
+                for (let a = 0; a < arrowCount; a++) {
+                    const base = a * 9;
+                    const tip = readV(base + 6);
+                    const t0 = readV(base + 0);
+                    const t3 = readV(base + 3);
+                    const t5 = readV(base + 5);
+                    const tail = {
+                        x: (t0.x + t3.x + t5.x) / 3,
+                        z: (t0.z + t3.z + t5.z) / 3
+                    };
+
+                    const arrowDirX = tip.x - tail.x;
+                    const arrowDirZ = tip.z - tail.z;
+                    const dotForward = arrowDirX * dirX + arrowDirZ * dirZ;
+
+                    const centerX = (tip.x + tail.x) * 0.5;
+                    const centerZ = (tip.z + tail.z) * 0.5;
+                    const side = (centerX - segMidX) * rightX + (centerZ - segMidZ) * rightZ;
+                    if (side >= 0) {
+                        foundForward = true;
+                        assertTrue(dotForward > 0.25, 'Expected forward-lane arrow to point along segment direction.');
+                    } else {
+                        foundBackward = true;
+                        assertTrue(dotForward < -0.25, 'Expected backward-lane arrow to point opposite segment direction.');
+                    }
+                }
+                assertTrue(foundForward && foundBackward, 'Expected both forward and backward lane arrows.');
+            } finally {
+                view.exit();
+            }
+        });
+
+        test('RoadDebugger: lane arrows correct on multi-segment road (Task 84)', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: false });
+            view.enter();
+            try {
+                view.startRoadDraft();
+                view.addDraftPointByTile(0, 0);
+                view.addDraftPointByTile(2, 0);
+                view.addDraftPointByTile(2, 2);
+                view.finishRoadDraft();
+                view.setRenderOptions({ markings: true });
+
+                const derived = view.getDerived();
+                const segs = derived?.segments ?? [];
+                assertTrue(segs.length >= 2, 'Expected at least two segments.');
+
+                const mesh = view._arrowMeshes?.[0] ?? null;
+                const attr = mesh?.geometry?.getAttribute?.('position') ?? null;
+                const positions = attr?.array ?? null;
+                assertTrue(Array.isArray(positions) || positions instanceof Float32Array, 'Expected arrow geometry positions.');
+                assertTrue((positions.length % (9 * 3)) === 0, 'Expected arrow geometry to be packed as 9 vertices per arrow.');
+
+                const arrowCount = positions.length / (9 * 3);
+                assertTrue(arrowCount >= 4, 'Expected arrows for each segment and direction.');
+
+                const segInfo = segs.map((seg) => ({
+                    seg,
+                    midX: ((Number(seg.aWorld?.x) || 0) + (Number(seg.bWorld?.x) || 0)) * 0.5,
+                    midZ: ((Number(seg.aWorld?.z) || 0) + (Number(seg.bWorld?.z) || 0)) * 0.5,
+                    dirX: Number(seg.dir?.x) || 0,
+                    dirZ: Number(seg.dir?.z) || 0,
+                    rightX: Number(seg.right?.x) || 0,
+                    rightZ: Number(seg.right?.z) || 0,
+                    foundForward: false,
+                    foundBackward: false
+                }));
+
+                const readV = (vertexIndex) => {
+                    const i = vertexIndex * 3;
+                    return { x: Number(positions[i]) || 0, y: Number(positions[i + 1]) || 0, z: Number(positions[i + 2]) || 0 };
+                };
+
+                for (let a = 0; a < arrowCount; a++) {
+                    const base = a * 9;
+                    const tip = readV(base + 6);
+                    const t0 = readV(base + 0);
+                    const t3 = readV(base + 3);
+                    const t5 = readV(base + 5);
+                    const tail = {
+                        x: (t0.x + t3.x + t5.x) / 3,
+                        z: (t0.z + t3.z + t5.z) / 3
+                    };
+                    const centerX = (tip.x + tail.x) * 0.5;
+                    const centerZ = (tip.z + tail.z) * 0.5;
+
+                    let best = 0;
+                    let bestDist = Infinity;
+                    for (let i = 0; i < segInfo.length; i++) {
+                        const dx = centerX - segInfo[i].midX;
+                        const dz = centerZ - segInfo[i].midZ;
+                        const d2 = dx * dx + dz * dz;
+                        if (d2 < bestDist) {
+                            bestDist = d2;
+                            best = i;
+                        }
+                    }
+                    const info = segInfo[best];
+
+                    const arrowDirX = tip.x - tail.x;
+                    const arrowDirZ = tip.z - tail.z;
+                    const dotForward = arrowDirX * info.dirX + arrowDirZ * info.dirZ;
+
+                    const side = (centerX - info.midX) * info.rightX + (centerZ - info.midZ) * info.rightZ;
+                    if (side >= 0) {
+                        info.foundForward = true;
+                        assertTrue(dotForward > 0.25, 'Expected forward-lane arrow to point along its segment direction.');
+                    } else {
+                        info.foundBackward = true;
+                        assertTrue(dotForward < -0.25, 'Expected backward-lane arrow to point opposite its segment direction.');
+                    }
+                }
+
+                for (const info of segInfo.slice(0, 2)) {
+                    assertTrue(info.foundForward && info.foundBackward, 'Expected both forward and backward arrows per segment.');
+                }
+            } finally {
+                view.exit();
+            }
+        });
+
+        test('RoadDebugger: arrow tangent overlay builds (Task 84)', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: false });
+            view.enter();
+            try {
+                view.startRoadDraft();
+                view.addDraftPointByTile(0, 0);
+                view.addDraftPointByTile(2, 0);
+                view.finishRoadDraft();
+                view.setRenderOptions({ markings: true });
+                view.setArrowTangentDebugEnabled(true);
+                assertTrue((view._arrowTangentLines?.length ?? 0) > 0, 'Expected arrow tangent lines to be created when enabled.');
             } finally {
                 view.exit();
             }
@@ -4536,6 +4888,8 @@ async function runTests() {
 
                 const segMidX = ((Number(segAfter.aWorld?.x) || 0) + (Number(segAfter.bWorld?.x) || 0)) * 0.5;
                 const segMidZ = ((Number(segAfter.aWorld?.z) || 0) + (Number(segAfter.bWorld?.z) || 0)) * 0.5;
+                const dirX = Number(segAfter.dir?.x) || 0;
+                const dirZ = Number(segAfter.dir?.z) || 0;
                 const rightX = Number(segAfter.right?.x) || 0;
                 const rightZ = Number(segAfter.right?.z) || 0;
 
@@ -4554,6 +4908,11 @@ async function runTests() {
                         x: (t0.x + t3.x + t5.x) / 3,
                         z: (t0.z + t3.z + t5.z) / 3
                     };
+
+                    const arrowDirX = tip.x - tail.x;
+                    const arrowDirZ = tip.z - tail.z;
+                    const dotForward = arrowDirX * dirX + arrowDirZ * dirZ;
+                    assertTrue(dotForward > 0.25, 'Expected one-way road arrows to point along segment direction.');
 
                     const centerX = (tip.x + tail.x) * 0.5;
                     const centerZ = (tip.z + tail.z) * 0.5;
@@ -4819,6 +5178,67 @@ async function runTests() {
                 (outDbg.primitives ?? []).filter((p) => p?.type === 'polygon' && p?.kind === 'trim_dropped_piece').length,
                 droppedCount,
                 'Expected dropped piece primitives when enabled.'
+            );
+        });
+
+        test('RoadDebuggerPipeline: removed pieces only render when enabled', () => {
+            const laneWidth = 4.8;
+            const roads = [
+                {
+                    id: 'main',
+                    name: 'Main',
+                    lanesF: 1,
+                    lanesB: 1,
+                    points: [
+                        { id: 'm0', tileX: 0, tileY: 0, offsetX: -12, offsetY: 0, tangentFactor: 1 },
+                        { id: 'm1', tileX: 2, tileY: 0, offsetX: 12, offsetY: 0, tangentFactor: 1 }
+                    ]
+                },
+                {
+                    id: 'cross1',
+                    name: 'Cross 1',
+                    lanesF: 1,
+                    lanesB: 1,
+                    points: [
+                        { id: 'c10', tileX: 0, tileY: 0, offsetX: 12, offsetY: -12, tangentFactor: 1 },
+                        { id: 'c11', tileX: 0, tileY: 1, offsetX: 12, offsetY: 12, tangentFactor: 1 }
+                    ]
+                },
+                {
+                    id: 'cross2',
+                    name: 'Cross 2',
+                    lanesF: 1,
+                    lanesB: 1,
+                    points: [
+                        { id: 'c20', tileX: 1, tileY: 0, offsetX: 0, offsetY: -12, tangentFactor: 1 },
+                        { id: 'c21', tileX: 1, tileY: 1, offsetX: 0, offsetY: 12, tangentFactor: 1 }
+                    ]
+                }
+            ];
+
+            const baseSettings = {
+                origin: { x: 0, z: 0 },
+                tileSize: 24,
+                laneWidth,
+                marginFactor: 0.1
+            };
+
+            const outNoDbg = rebuildRoadDebuggerPipeline({
+                roads,
+                settings: { ...baseSettings, trim: { enabled: true, threshold: laneWidth * 0.1, debug: { removedPieces: false } } }
+            });
+            const removedCount = (outNoDbg.segments ?? []).reduce((sum, seg) => sum + (seg?.trimRemoved?.length ?? 0), 0);
+            assertTrue(removedCount > 0, 'Expected at least one removed interval.');
+            assertEqual((outNoDbg.primitives ?? []).filter((p) => p?.type === 'polygon' && p?.kind === 'trim_removed_piece').length, 0, 'Expected removed piece primitives to be hidden.');
+
+            const outDbg = rebuildRoadDebuggerPipeline({
+                roads,
+                settings: { ...baseSettings, trim: { enabled: true, threshold: laneWidth * 0.1, debug: { removedPieces: true } } }
+            });
+            assertEqual(
+                (outDbg.primitives ?? []).filter((p) => p?.type === 'polygon' && p?.kind === 'trim_removed_piece').length,
+                removedCount,
+                'Expected removed piece primitives when enabled.'
             );
         });
     } catch (e) {
@@ -5496,7 +5916,7 @@ async function runTests() {
     try {
         const { RoadDebuggerView } = await import('/src/graphics/gui/road_debugger/RoadDebuggerView.js');
 
-        test('RoadDebugger: hover cube gizmo shows for hovered point and respects toggle', () => {
+        test('RoadDebugger: hover cube gizmo shows for hovered and selected point (Task 90)', () => {
             const engine = {
                 canvas: document.createElement('canvas'),
                 camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
@@ -5507,8 +5927,6 @@ async function runTests() {
             const view = new RoadDebuggerView(engine, { uiEnabled: false });
             view.enter();
             try {
-                assertTrue(view.getHoverCubeEnabled?.() ?? view._hoverCubeEnabled !== false, 'Expected hover cube enabled by default.');
-
                 view.startRoadDraft();
                 view.addDraftPointByTile(0, 0);
                 view.addDraftPointByTile(2, 0);
@@ -5528,14 +5946,20 @@ async function runTests() {
                 assertNear(view._hoverCubeMesh.position.x, control.position.x, 1e-6, 'Hover cube X should match control point.');
                 assertNear(view._hoverCubeMesh.position.z, control.position.z, 1e-6, 'Hover cube Z should match control point.');
 
-                view.setHoverCubeEnabled(false);
-                assertFalse(view._hoverCubeMesh?.visible ?? false, 'Expected hover cube hidden when disabled.');
+                view.clearHover();
+                assertFalse(view._hoverCubeMesh?.visible ?? false, 'Expected hover cube hidden after clearing hover.');
+
+                view.selectPoint(roadId, pointId);
+                assertTrue(view._hoverCubeMesh?.visible === true, 'Expected hover cube visible when a point is selected.');
+
+                view.clearSelection();
+                assertFalse(view._hoverCubeMesh?.visible ?? false, 'Expected hover cube hidden after clearing selection.');
             } finally {
                 view.exit();
             }
         });
 
-        test('RoadDebuggerUI: hovering point row shows hover cube gizmo', () => {
+        test('RoadDebuggerUI: point row hover/select keeps hover cube visible (Task 90)', () => {
             const engine = {
                 canvas: document.createElement('canvas'),
                 camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
@@ -5551,8 +5975,7 @@ async function runTests() {
                 view.addDraftPointByTile(2, 0);
                 view.finishRoadDraft();
 
-                assertTrue(!!view.ui?.hoverCubeToggle, 'Expected hover cube toggle.');
-                assertTrue(view.ui.hoverCubeToggle.checked === true, 'Expected hover cube toggle enabled by default.');
+                assertTrue(!view.ui?.hoverCubeToggle, 'Expected no hover cube toggle in UI.');
 
                 const roadId = view.getRoads()[0].id;
                 const roadRow = document.querySelector(`.road-debugger-road-row[data-road-id="${roadId}"]`);
@@ -5571,9 +5994,12 @@ async function runTests() {
                 assertEqual(view._hover?.pointId, pointId, 'Expected hovered pointId from table hover.');
                 assertTrue(view._hoverCubeMesh?.visible === true, 'Expected hover cube visible after point row hover.');
 
-                view.ui.hoverCubeToggle.checked = false;
-                view.ui.hoverCubeToggle.dispatchEvent(new Event('change', { bubbles: true }));
-                assertFalse(view._hoverCubeMesh?.visible ?? false, 'Expected hover cube hidden after toggling off.');
+                pointRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                assertEqual(view._selection?.type, 'point', 'Expected click to select point.');
+
+                pointRow.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
+                assertFalse(!!view._hover?.pointId, 'Expected hover pointId to clear on leave.');
+                assertTrue(view._hoverCubeMesh?.visible === true, 'Expected hover cube to remain visible for selected point.');
             } finally {
                 view.exit();
             }

@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createGradientSkyDome } from '../../assets3d/generators/SkyGenerator.js';
+import { resolveBuildingStyleWallMaterialUrls } from '../../assets3d/generators/buildings/BuildingGenerator.js';
 import { getSignAlphaMaskTextureById } from '../../assets3d/textures/signs/SignAlphaMaskCache.js';
 import {
     getTextureInspectorCollectionById,
@@ -28,11 +29,18 @@ function clamp(value, min, max) {
     return Math.max(min, Math.min(max, num));
 }
 
-function clonePreviewTexture(tex, { offset = null, repeat = null } = {}) {
+function ensureUv2(geometry) {
+    const geo = geometry ?? null;
+    const uv = geo?.attributes?.uv ?? null;
+    if (!geo || !uv || geo.attributes?.uv2) return;
+    geo.setAttribute('uv2', new THREE.BufferAttribute(uv.array, 2));
+}
+
+function clonePreviewTexture(tex, { offset = null, repeat = null, wrap = THREE.ClampToEdgeWrapping } = {}) {
     if (!tex) return null;
     const clone = tex.clone();
-    clone.wrapS = THREE.ClampToEdgeWrapping;
-    clone.wrapT = THREE.ClampToEdgeWrapping;
+    clone.wrapS = wrap;
+    clone.wrapT = wrap;
     const rep = repeat && typeof repeat === 'object' ? repeat : null;
     const off = offset && typeof offset === 'object' ? offset : null;
     clone.repeat.set(Number(rep?.x) || 1, Number(rep?.y) || 1);
@@ -54,6 +62,7 @@ export class TextureInspectorScene {
         this.sky = null;
         this.hemi = null;
         this.sun = null;
+        this.fill = null;
         this._grid = null;
 
         this._plane = null;
@@ -62,11 +71,26 @@ export class TextureInspectorScene {
         this._overlay = null;
         this._overlayMat = null;
         this._previewTexture = null;
+        this._previewNormalMap = null;
+        this._previewRoughnessMap = null;
         this._previewAlphaMap = null;
         this._tileGroup = null;
         this._tileGeo = null;
         this._tileMat = null;
         this._tileMeshes = [];
+
+        this._textureLoader = new THREE.TextureLoader();
+        this._urlTextures = new Map();
+        this._loadToken = 0;
+
+        this._lighting = {
+            sunAzimuthDeg: 45,
+            sunElevationDeg: 55,
+            sunIntensity: 1.0,
+            hemiIntensity: 0.55,
+            fillEnabled: false,
+            fillIntensity: 0.35
+        };
 
         this._collectionIndex = 0;
         this._collectionId = null;
@@ -89,14 +113,20 @@ export class TextureInspectorScene {
         this.sky = createGradientSkyDome();
         if (this.sky) this.root.add(this.sky);
 
-        this.hemi = new THREE.HemisphereLight(0xe8f0ff, 0x0b0f14, 0.9);
+        this.hemi = new THREE.HemisphereLight(0xe8f0ff, 0x0b0f14, 0.55);
         this.root.add(this.hemi);
 
         this.sun = new THREE.DirectionalLight(0xffffff, 1.0);
         this.sun.position.set(4, 7, 4);
         this.root.add(this.sun);
 
+        this.fill = new THREE.DirectionalLight(0xffffff, 0.0);
+        this.fill.position.set(-4, 3, -4);
+        this.fill.visible = false;
+        this.root.add(this.fill);
+
         this._planeGeo = new THREE.PlaneGeometry(PLANE_SIZE, PLANE_SIZE, 1, 1);
+        ensureUv2(this._planeGeo);
         this._planeMat = new THREE.MeshStandardMaterial({
             color: this._baseColor,
             metalness: 0.0,
@@ -128,6 +158,7 @@ export class TextureInspectorScene {
         this.root.add(this._tileGroup);
 
         this._tileGeo = new THREE.PlaneGeometry(1, 1, 1, 1);
+        ensureUv2(this._tileGeo);
         this._tileMat = new THREE.MeshStandardMaterial({
             color: this._baseColor,
             metalness: 0.0,
@@ -159,6 +190,7 @@ export class TextureInspectorScene {
         this.controls.target.set(0, 0, 0);
         this.controls.update();
 
+        this._applyLighting();
         this.setSelectedCollectionIndex(this._collectionIndex);
     }
 
@@ -167,6 +199,7 @@ export class TextureInspectorScene {
         this.controls = null;
 
         this._disposePreviewTexture();
+        this._disposeUrlTextures();
 
         if (this._tileGroup) {
             this.root?.remove?.(this._tileGroup);
@@ -194,6 +227,11 @@ export class TextureInspectorScene {
             this.sky.geometry?.dispose?.();
             this.sky.material?.dispose?.();
             this.sky = null;
+        }
+
+        if (this.fill) {
+            this.root?.remove?.(this.fill);
+            this.fill = null;
         }
 
         if (this._plane) this.root?.remove?.(this._plane);
@@ -289,6 +327,11 @@ export class TextureInspectorScene {
         this._textureId = nextId;
         this._selectedAspect = entry?.aspect ?? null;
 
+        if (entry?.kind === 'building_wall') {
+            this._setBuildingWallMaterial(entry);
+            return;
+        }
+
         const tex = getTextureInspectorTextureById(nextId);
         this._setPlaneTexture(tex, entry);
     }
@@ -298,7 +341,7 @@ export class TextureInspectorScene {
         if (!entry) return null;
         const extra = entry.kind === 'sign'
             ? { atlas: entry.atlasLabel ?? entry.atlasId ?? '-', rectPx: entry.rectPx ?? null, uv: entry.uv ?? null }
-            : null;
+            : (entry.kind === 'building_wall' ? { style: entry.style ?? '-' } : null);
         return { id: entry.id, name: entry.label, collection: entry.collectionLabel ?? entry.collectionId ?? '-', extra };
     }
 
@@ -333,9 +376,41 @@ export class TextureInspectorScene {
         this._disposePreviewTexture();
         const preview = clonePreviewTexture(tex, { offset: entry?.offset ?? null, repeat: entry?.repeat ?? null });
         this._previewTexture = preview;
+        this._previewNormalMap = null;
+        this._previewRoughnessMap = null;
         this._previewAlphaMap = entry?.kind === 'sign' ? getSignAlphaMaskTextureById(entry?.id) : null;
         this._setPlaneAspect(entry?.aspect ?? null);
         this._syncPreviewMaps();
+    }
+
+    _setBuildingWallMaterial(entry) {
+        this._disposePreviewTexture();
+
+        const token = ++this._loadToken;
+        const urls = resolveBuildingStyleWallMaterialUrls(entry?.style);
+        const baseUrl = urls?.baseColorUrl ?? null;
+        const normalUrl = urls?.normalUrl ?? null;
+        const ormUrl = urls?.ormUrl ?? null;
+
+        this._previewAlphaMap = null;
+        this._setPlaneAspect(null);
+
+        Promise.all([
+            this._loadUrlTexture(baseUrl, { srgb: true }),
+            this._loadUrlTexture(normalUrl, { srgb: false }),
+            this._loadUrlTexture(ormUrl, { srgb: false })
+        ]).then(([baseTex, normalTex, ormTex]) => {
+            if (token !== this._loadToken) return;
+            const tiling = { x: 2, y: 2 };
+            this._previewTexture = clonePreviewTexture(baseTex, { repeat: tiling, wrap: THREE.RepeatWrapping });
+            this._previewNormalMap = clonePreviewTexture(normalTex, { repeat: tiling, wrap: THREE.RepeatWrapping });
+            this._previewRoughnessMap = clonePreviewTexture(ormTex, { repeat: tiling, wrap: THREE.RepeatWrapping });
+            this._syncPreviewMaps();
+        }).catch((err) => {
+            if (token !== this._loadToken) return;
+            console.warn('[TextureInspector] Failed to load building wall textures', err);
+            this._syncPreviewMaps();
+        });
     }
 
     _setPlaneAspect(aspect) {
@@ -395,44 +470,163 @@ export class TextureInspectorScene {
 
     _syncPreviewMaps() {
         const tex = this._previewTexture ?? null;
+        const normalMap = this._previewNormalMap ?? null;
+        const roughnessMap = this._previewRoughnessMap ?? null;
         const tiled = this._previewMode === 'tiled';
 
         const alphaMap = this._previewAlphaMap ?? null;
+        const hasPbr = !!normalMap || !!roughnessMap;
+        const roughness = roughnessMap ? 1.0 : 0.8;
+        const metalness = 0.0;
 
         if (this._overlayMat) {
             this._overlayMat.map = tiled ? null : tex;
+            this._overlayMat.normalMap = tiled ? null : normalMap;
+            this._overlayMat.roughnessMap = tiled ? null : roughnessMap;
             this._overlayMat.alphaMap = tiled ? null : alphaMap;
             this._overlayMat.alphaTest = alphaMap ? 0.5 : 0;
+            this._overlayMat.roughness = roughness;
+            this._overlayMat.metalness = metalness;
+            if (hasPbr && this._overlayMat.normalScale) this._overlayMat.normalScale.set(0.9, 0.9);
             this._overlayMat.needsUpdate = true;
         }
 
         if (this._tileMat) {
             this._tileMat.map = tex;
+            this._tileMat.normalMap = normalMap;
+            this._tileMat.roughnessMap = roughnessMap;
             this._tileMat.alphaMap = alphaMap;
             this._tileMat.alphaTest = alphaMap ? 0.5 : 0;
+            this._tileMat.roughness = roughness;
+            this._tileMat.metalness = metalness;
+            if (hasPbr && this._tileMat.normalScale) this._tileMat.normalScale.set(0.9, 0.9);
             this._tileMat.needsUpdate = true;
         }
     }
 
+    _applyLighting() {
+        if (this.hemi) this.hemi.intensity = clamp(this._lighting.hemiIntensity, 0, 5);
+        if (this.sun) {
+            this.sun.intensity = clamp(this._lighting.sunIntensity, 0, 10);
+            this._setDirectionalFromAngles(this.sun, this._lighting.sunAzimuthDeg, this._lighting.sunElevationDeg, 10);
+        }
+        if (this.fill) {
+            const enabled = !!this._lighting.fillEnabled;
+            this.fill.visible = enabled;
+            this.fill.intensity = enabled ? clamp(this._lighting.fillIntensity, 0, 10) : 0;
+            if (enabled) {
+                this._setDirectionalFromAngles(
+                    this.fill,
+                    this._lighting.sunAzimuthDeg + 200,
+                    25,
+                    7
+                );
+            }
+        }
+
+        if (this.sky?.material?.uniforms?.uSunDir?.value && this.sun) {
+            this.sky.material.uniforms.uSunDir.value.copy(this.sun.position).normalize();
+        }
+    }
+
+    _setDirectionalFromAngles(light, azimuthDeg, elevationDeg, distance) {
+        const az = THREE.MathUtils.degToRad(Number(azimuthDeg) || 0);
+        const el = THREE.MathUtils.degToRad(clamp(Number(elevationDeg) || 0, 0, 89.9));
+        const dist = Math.max(0.01, Number(distance) || 10);
+        const cosEl = Math.cos(el);
+        const dir = new THREE.Vector3(
+            Math.cos(az) * cosEl,
+            Math.sin(el),
+            Math.sin(az) * cosEl
+        );
+        light.position.copy(dir.multiplyScalar(dist));
+    }
+
+    getLighting() {
+        return { ...this._lighting };
+    }
+
+    setLighting(params = {}) {
+        const next = params && typeof params === 'object' ? params : {};
+        if (Number.isFinite(Number(next.sunAzimuthDeg))) this._lighting.sunAzimuthDeg = Number(next.sunAzimuthDeg);
+        if (Number.isFinite(Number(next.sunElevationDeg))) this._lighting.sunElevationDeg = Number(next.sunElevationDeg);
+        if (Number.isFinite(Number(next.sunIntensity))) this._lighting.sunIntensity = Number(next.sunIntensity);
+        if (Number.isFinite(Number(next.hemiIntensity))) this._lighting.hemiIntensity = Number(next.hemiIntensity);
+        if (next.fillEnabled !== undefined) this._lighting.fillEnabled = !!next.fillEnabled;
+        if (Number.isFinite(Number(next.fillIntensity))) this._lighting.fillIntensity = Number(next.fillIntensity);
+        this._applyLighting();
+    }
+
+    _configureUrlTexture(tex, { srgb = true } = {}) {
+        if (!tex) return;
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        tex.anisotropy = 8;
+        if ('colorSpace' in tex) {
+            tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+        } else if ('encoding' in tex) {
+            tex.encoding = srgb ? THREE.sRGBEncoding : THREE.LinearEncoding;
+        }
+        tex.needsUpdate = true;
+    }
+
+    _disposeUrlTextures() {
+        for (const entry of this._urlTextures.values()) {
+            entry?.texture?.dispose?.();
+        }
+        this._urlTextures.clear();
+    }
+
+    _loadUrlTexture(url, { srgb = true } = {}) {
+        const safeUrl = typeof url === 'string' && url ? url : null;
+        if (!safeUrl) return Promise.resolve(null);
+
+        const cached = this._urlTextures.get(safeUrl) ?? null;
+        if (cached?.texture) return Promise.resolve(cached.texture);
+        if (cached?.promise) return cached.promise;
+
+        const promise = this._textureLoader.loadAsync(safeUrl).then((tex) => {
+            this._configureUrlTexture(tex, { srgb });
+            this._urlTextures.set(safeUrl, { texture: tex, promise: null });
+            return tex;
+        }).catch((err) => {
+            this._urlTextures.delete(safeUrl);
+            throw err;
+        });
+
+        this._urlTextures.set(safeUrl, { texture: null, promise });
+        return promise;
+    }
+
     _disposePreviewTexture() {
-        if (!this._previewTexture) return;
-        this._previewTexture.dispose?.();
+        this._previewTexture?.dispose?.();
+        this._previewNormalMap?.dispose?.();
+        this._previewRoughnessMap?.dispose?.();
+
         this._previewTexture = null;
+        this._previewNormalMap = null;
+        this._previewRoughnessMap = null;
         this._previewAlphaMap = null;
         if (this._planeMat) {
             this._planeMat.map = null;
+            this._planeMat.normalMap = null;
+            this._planeMat.roughnessMap = null;
             this._planeMat.needsUpdate = true;
         }
         if (this._overlayMat) {
             this._overlayMat.map = null;
             this._overlayMat.alphaMap = null;
             this._overlayMat.alphaTest = 0;
+            this._overlayMat.normalMap = null;
+            this._overlayMat.roughnessMap = null;
             this._overlayMat.needsUpdate = true;
         }
         if (this._tileMat) {
             this._tileMat.map = null;
             this._tileMat.alphaMap = null;
             this._tileMat.alphaTest = 0;
+            this._tileMat.normalMap = null;
+            this._tileMat.roughnessMap = null;
             this._tileMat.needsUpdate = true;
         }
     }

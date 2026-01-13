@@ -1,6 +1,7 @@
 // src/app/core/GameEngine.js
 import * as THREE from 'three';
 import { SimulationContext } from './SimulationContext.js';
+import { applyIBLIntensity, applyIBLToScene, getIBLConfig, loadIBLTexture } from '../../graphics/lighting/IBL.js';
 
 export class GameEngine {
     constructor({ canvas }) {
@@ -45,6 +46,10 @@ export class GameEngine {
         this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 500);
         this.camera.position.set(0, 4, 14);
 
+        this._ibl = null;
+        this._iblPromise = null;
+        this._initIBL();
+
         // ✅ SimulationContext owns EventBus, VehicleManager, PhysicsController
         this.simulation = new SimulationContext();
 
@@ -65,6 +70,35 @@ export class GameEngine {
         this._onResize = () => this.resize();
         window.addEventListener('resize', this._onResize, { passive: true });
         this.resize();
+    }
+
+    _initIBL() {
+        const config = getIBLConfig();
+        this._ibl = {
+            config,
+            envMap: null,
+            lastState: null,
+            scanUntilMs: 0,
+            nextScanMs: 0,
+            scanIntervalMs: 500,
+            scanDurationMs: 2000
+        };
+
+        this._iblPromise = loadIBLTexture(this.renderer, config).then((envMap) => {
+            this._ibl.envMap = envMap;
+            if (envMap) {
+                applyIBLToScene(this.scene, envMap, config);
+                const now = performance.now();
+                this._ibl.scanUntilMs = now + this._ibl.scanDurationMs;
+                this._ibl.nextScanMs = 0;
+                applyIBLIntensity(this.scene, config, { force: true });
+            }
+            return envMap;
+        }).catch((err) => {
+            console.warn('[IBL] Failed to load HDR environment map:', err);
+            this._ibl.envMap = null;
+            return null;
+        });
     }
 
     /**
@@ -110,6 +144,23 @@ export class GameEngine {
         this._lastT = t;
 
         this._stateMachine?.update(dt);
+
+        if (this._ibl?.envMap) {
+            const state = this._stateMachine?.current ?? null;
+            const now = performance.now();
+            if (state !== this._ibl.lastState) {
+                this._ibl.lastState = state;
+                applyIBLToScene(this.scene, this._ibl.envMap, this._ibl.config);
+                this._ibl.scanUntilMs = now + this._ibl.scanDurationMs;
+                this._ibl.nextScanMs = 0;
+            }
+
+            if (now < this._ibl.scanUntilMs && now >= this._ibl.nextScanMs) {
+                applyIBLIntensity(this.scene, this._ibl.config, { force: false });
+                this._ibl.nextScanMs = now + this._ibl.scanIntervalMs;
+            }
+        }
+
         this.renderer.render(this.scene, this.camera);
 
         requestAnimationFrame((tt) => this._tick(tt));

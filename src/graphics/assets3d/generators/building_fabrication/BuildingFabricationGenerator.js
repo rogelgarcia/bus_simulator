@@ -9,7 +9,7 @@ import { ROOF_COLOR, resolveRoofColorHex } from '../../../../app/buildings/RoofC
 import { resolveBeltCourseColorHex } from '../../../../app/buildings/BeltCourseColor.js';
 import { BUILDING_STYLE, isBuildingStyle } from '../../../../app/buildings/BuildingStyle.js';
 import { WINDOW_TYPE, getDefaultWindowParams, getWindowTexture, isWindowTypeId } from '../buildings/WindowTextureGenerator.js';
-import { computeBuildingLoopsFromTiles, offsetOrthogonalLoopXZ, resolveBuildingStyleWallTextureUrl } from '../buildings/BuildingGenerator.js';
+import { computeBuildingLoopsFromTiles, offsetOrthogonalLoopXZ, resolveBuildingStyleWallMaterialUrls } from '../buildings/BuildingGenerator.js';
 import { LAYER_TYPE, normalizeBuildingLayers } from './BuildingFabricationTypes.js';
 
 const EPS = 1e-6;
@@ -273,7 +273,10 @@ function makeDeterministicColor(seed) {
 
 function makeWallMaterial({ style, baseColorHex, textureCache }) {
     const styleId = isBuildingStyle(style) ? style : BUILDING_STYLE.DEFAULT;
-    const url = resolveBuildingStyleWallTextureUrl(styleId);
+    const urls = resolveBuildingStyleWallMaterialUrls(styleId);
+    const url = urls?.baseColorUrl ?? null;
+    const normalUrl = urls?.normalUrl ?? null;
+    const ormUrl = urls?.ormUrl ?? null;
     const mat = new THREE.MeshStandardMaterial({
         color: baseColorHex,
         roughness: 0.85,
@@ -282,11 +285,24 @@ function makeWallMaterial({ style, baseColorHex, textureCache }) {
 
     if (url && textureCache) {
         mat.color.setHex(0xffffff);
-        const tex = textureCache.trackMaterial(url, mat);
+        const tex = textureCache.trackMaterial(url, mat, { slot: 'map', srgb: true });
         if (tex) mat.map = tex;
-        mat.needsUpdate = true;
     }
 
+    if (normalUrl && textureCache) {
+        const tex = textureCache.trackMaterial(normalUrl, mat, { slot: 'normalMap', srgb: false });
+        if (tex) mat.normalMap = tex;
+        mat.normalScale.set(0.9, 0.9);
+    }
+
+    if (ormUrl && textureCache) {
+        const rough = textureCache.trackMaterial(ormUrl, mat, { slot: 'roughnessMap', srgb: false });
+        if (rough) mat.roughnessMap = rough;
+        mat.roughness = 1.0;
+        mat.metalness = 0.0;
+    }
+
+    mat.needsUpdate = true;
     return mat;
 }
 
@@ -301,7 +317,10 @@ function makeTextureMaterialFromBuildingStyle({
     polygonOffsetUnits = 0
 } = {}) {
     const styleId = isBuildingStyle(style) ? style : BUILDING_STYLE.DEFAULT;
-    const url = resolveBuildingStyleWallTextureUrl(styleId);
+    const urls = resolveBuildingStyleWallMaterialUrls(styleId);
+    const url = urls?.baseColorUrl ?? null;
+    const normalUrl = urls?.normalUrl ?? null;
+    const ormUrl = urls?.ormUrl ?? null;
     const mat = new THREE.MeshStandardMaterial({
         color: baseColorHex,
         roughness,
@@ -313,11 +332,22 @@ function makeTextureMaterialFromBuildingStyle({
 
     if (url && textureCache) {
         mat.color.setHex(0xffffff);
-        const tex = textureCache.trackMaterial(url, mat);
+        const tex = textureCache.trackMaterial(url, mat, { slot: 'map', srgb: true });
         if (tex) mat.map = tex;
-        mat.needsUpdate = true;
     }
 
+    if (normalUrl && textureCache) {
+        const tex = textureCache.trackMaterial(normalUrl, mat, { slot: 'normalMap', srgb: false });
+        if (tex) mat.normalMap = tex;
+        mat.normalScale.set(0.9, 0.9);
+    }
+
+    if (ormUrl && textureCache) {
+        const tex = textureCache.trackMaterial(ormUrl, mat, { slot: 'roughnessMap', srgb: false });
+        if (tex) mat.roughnessMap = tex;
+    }
+
+    mat.needsUpdate = true;
     return mat;
 }
 

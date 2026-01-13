@@ -1,12 +1,14 @@
 // src/graphics/assets3d/textures/TextureInspectorCatalog.js
 // Defines a stable texture catalog for inspector scenes.
 import { WINDOW_STYLE } from '../../../app/buildings/WindowStyle.js';
+import { BUILDING_STYLE } from '../../../app/buildings/BuildingStyle.js';
 import { getBuildingWindowTextureForStyle } from '../generators/buildings/BuildingGenerator.js';
 import { getSignAssetById, getSignAssets } from './signs/SignAssets.js';
 
 export const INSPECTOR_COLLECTION = Object.freeze({
     WINDOWS: 'tex.collection.windows',
-    TRAFFIC_SIGNS: 'tex.collection.traffic_signs'
+    TRAFFIC_SIGNS: 'tex.collection.traffic_signs',
+    BUILDING_WALLS: 'tex.collection.building_walls'
 });
 
 export const INSPECTOR_TEXTURE = Object.freeze({
@@ -16,7 +18,11 @@ export const INSPECTOR_TEXTURE = Object.freeze({
     WINDOW_LIGHT_BLUE: 'tex.window.light_blue',
     WINDOW_GREEN: 'tex.window.green',
     WINDOW_WARM: 'tex.window.warm',
-    WINDOW_GRID: 'tex.window.grid'
+    WINDOW_GRID: 'tex.window.grid',
+    WALL_BRICK: 'tex.wall.brick',
+    WALL_CEMENT: 'tex.wall.cement',
+    WALL_STONE_1: 'tex.wall.stone_1',
+    WALL_STONE_2: 'tex.wall.stone_2'
 });
 
 const COLLECTIONS = Object.freeze([
@@ -48,6 +54,16 @@ const COLLECTIONS = Object.freeze([
             repeat: sign.repeat,
             aspect: sign.aspect
         })))
+    },
+    {
+        id: INSPECTOR_COLLECTION.BUILDING_WALLS,
+        label: 'Building Walls',
+        entries: Object.freeze([
+            { id: INSPECTOR_TEXTURE.WALL_BRICK, label: 'Brick (PBR)', kind: 'building_wall', style: BUILDING_STYLE.BRICK },
+            { id: INSPECTOR_TEXTURE.WALL_CEMENT, label: 'Cement', kind: 'building_wall', style: BUILDING_STYLE.CEMENT },
+            { id: INSPECTOR_TEXTURE.WALL_STONE_1, label: 'Stone 1', kind: 'building_wall', style: BUILDING_STYLE.STONE_1 },
+            { id: INSPECTOR_TEXTURE.WALL_STONE_2, label: 'Stone 2', kind: 'building_wall', style: BUILDING_STYLE.STONE_2 }
+        ])
     }
 ]);
 

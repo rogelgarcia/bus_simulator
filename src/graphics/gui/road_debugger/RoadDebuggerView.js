@@ -28,6 +28,29 @@ function cloneJson(value) {
     return JSON.parse(JSON.stringify(value));
 }
 
+function fnv1a32(str) {
+    const s = String(str ?? '');
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) {
+        hash ^= s.charCodeAt(i);
+        hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    return hash >>> 0;
+}
+
+function stableHashId(prefix, key) {
+    const hex = fnv1a32(key).toString(16).padStart(8, '0');
+    return `${prefix}${hex}`;
+}
+
+function compareString(a, b) {
+    const aa = String(a ?? '');
+    const bb = String(b ?? '');
+    if (aa < bb) return -1;
+    if (aa > bb) return 1;
+    return 0;
+}
+
 function baseColorForKind(kind) {
     switch (kind) {
         case 'centerline': return 0xe5e7eb;
@@ -36,10 +59,11 @@ function baseColorForKind(kind) {
         case 'lane_edge_left':
         case 'lane_edge_right': return 0xfbbf24;
         case 'asphalt_edge_left':
-        case 'asphalt_edge_right': return 0xfb7185;
+        case 'asphalt_edge_right': return 0xf59e0b;
         case 'junction_boundary': return 0xc084fc;
         case 'junction_connector': return 0x34c759;
         case 'junction_endpoints': return 0xf97316;
+        case 'junction_edge_order': return 0x22d3ee;
         case 'trim_removed_interval': return 0xf87171;
         default: return 0x94a3b8;
     }
@@ -52,6 +76,7 @@ function baseLineWidthForKind(kind) {
         case 'centerline': return 3;
         case 'junction_connector': return 3;
         case 'junction_boundary': return 3;
+        case 'junction_edge_order': return 3;
         default: return 2;
     }
 }
@@ -65,6 +90,7 @@ function baseLineOpacityForKind(kind) {
         case 'backward_centerline': return 0.86;
         case 'junction_connector': return 0.88;
         case 'junction_boundary': return 0.88;
+        case 'junction_edge_order': return 0.88;
         default: return 0.82;
     }
 }
@@ -72,6 +98,7 @@ function baseLineOpacityForKind(kind) {
 function baseLineRenderOrderForKind(kind) {
     switch (kind) {
         case 'junction_connector': return 35;
+        case 'junction_edge_order': return 35;
         case 'junction_boundary': return 34;
         case 'asphalt_edge_left':
         case 'asphalt_edge_right': return 32;
@@ -103,6 +130,12 @@ function ensureMapEntry(map, key, factory) {
     map.set(key, value);
     return value;
 }
+
+const JUNCTION_CANDIDATE_HOVER_RADIUS_PX = 20;
+const JUNCTION_CANDIDATE_CLICK_RADIUS_PX = 22;
+const CONTROL_POINT_HOVER_RADIUS_PX = 16;
+const CONTROL_POINT_CLICK_RADIUS_PX = 18;
+const tmpProjectVec = new THREE.Vector3();
 
 export class RoadDebuggerView {
     constructor(engine, { uiEnabled = true } = {}) {
@@ -147,6 +180,7 @@ export class RoadDebuggerView {
             asphalt: true,
             markings: false
         };
+        this._arrowTangentDebugEnabled = false;
 
         this._trimThresholdFactor = 0.1;
         this._trimDebug = {
@@ -154,6 +188,7 @@ export class RoadDebuggerView {
             strips: false,
             overlaps: false,
             intervals: false,
+            removedPieces: false,
             keptPieces: false,
             droppedPieces: false,
             highlight: false
@@ -169,6 +204,12 @@ export class RoadDebuggerView {
             edgeOrder: false
         };
         this._mergedConnectorIds = new Set();
+        this._authoredJunctions = [];
+        this._hiddenJunctionIds = new Set();
+        this._suppressedAutoJunctionIds = new Set();
+        this._junctionToolEnabled = false;
+        this._junctionToolHoverCandidateId = null;
+        this._junctionToolSelectedCandidateIds = new Set();
 
         this._snapEnabled = true;
         this._snapHighlightMesh = null;
@@ -176,13 +217,16 @@ export class RoadDebuggerView {
 
         this._draftFirstTileMarkerMesh = null;
         this._draftFirstTileMarkerGeo = null;
+        this._draftHoverTileMarkerMesh = null;
+        this._draftHoverTileMarkerGeo = null;
 
         this._draftPreviewLine = null;
         this._draftPreviewGeo = null;
 
-        this._hoverCubeEnabled = true;
         this._hoverCubeMesh = null;
         this._hoverCubeGeo = null;
+        this._approachMarkerMesh = null;
+        this._approachMarkerGeo = null;
 
         this._roads = [];
         this._draft = null;
@@ -193,8 +237,8 @@ export class RoadDebuggerView {
         this._redoStack = [];
         this._undoMax = 64;
 
-        this._hover = { roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null };
-        this._selection = { type: null, roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null };
+        this._hover = { roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null, approachId: null };
+        this._selection = { type: null, roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null, approachId: null };
         this._derived = null;
 
         this._keys = {
@@ -250,10 +294,13 @@ export class RoadDebuggerView {
         this._junctionSurfaceMeshes = [];
         this._markingLines = [];
         this._arrowMeshes = [];
+        this._arrowTangentLines = [];
         this._controlPointMeshes = [];
         this._segmentPickMeshes = [];
         this._junctionPickMeshes = [];
         this._connectorPickMeshes = [];
+        this._junctionCandidateMeshes = [];
+        this._junctionCandidatePickMeshes = [];
         this._materials = {
             lineBase: new Map(),
             lineHover: new Map(),
@@ -269,23 +316,35 @@ export class RoadDebuggerView {
             controlPointHover: new THREE.MeshBasicMaterial({ color: 0x34c759, transparent: true, opacity: 0.98, depthTest: false, depthWrite: false }),
             controlPointSelected: new THREE.MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 1.0, depthTest: false, depthWrite: false }),
             hoverCube: new THREE.LineBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.95, depthTest: false, depthWrite: false }),
-            draftPreviewLine: new THREE.LineBasicMaterial({ color: 0x93c5fd, transparent: true, opacity: 0.85, depthTest: false, depthWrite: false }),
-            snapHighlight: new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.26, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
+            draftPreviewLine: new THREE.LineBasicMaterial({ color: 0x93c5fd, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false }),
+            snapHighlight: new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.34, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
             draftFirstTileMarker: new THREE.MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.85, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
-            asphaltBase: new THREE.MeshBasicMaterial({ color: 0x111827, transparent: true, opacity: 0.92, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
-            markingLine: new THREE.LineBasicMaterial({ color: 0xf8fafc, transparent: true, opacity: 0.82, depthTest: false, depthWrite: false }),
-            arrow: new THREE.MeshBasicMaterial({ color: 0xf8fafc, transparent: true, opacity: 0.95, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
-            debugRawAsphalt: new THREE.MeshBasicMaterial({ color: 0x60a5fa, transparent: true, opacity: 0.26, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
-            debugStrip: new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.24, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
-            debugOverlap: new THREE.MeshBasicMaterial({ color: 0xc084fc, transparent: true, opacity: 0.34, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
-            debugKeptPiece: new THREE.MeshBasicMaterial({ color: 0x34c759, transparent: true, opacity: 0.22, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
+            draftHoverTileMarker: new THREE.MeshBasicMaterial({ color: 0x93c5fd, transparent: true, opacity: 0.75, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
+            asphaltBase: new THREE.MeshBasicMaterial({ color: 0x111827, transparent: true, opacity: 0.96, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
+            markingLine: new THREE.LineBasicMaterial({ color: 0xf8fafc, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false }),
+            arrow: new THREE.MeshBasicMaterial({ color: 0xf8fafc, transparent: true, opacity: 0.97, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
+            arrowTangent: new THREE.LineBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.95, depthTest: false, depthWrite: false }),
+            debugRawAsphalt: new THREE.MeshBasicMaterial({ color: 0x60a5fa, transparent: true, opacity: 0.38, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
+            debugStrip: new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.36, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
+            debugOverlap: new THREE.MeshBasicMaterial({ color: 0xc084fc, transparent: true, opacity: 0.46, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
+            debugKeptPiece: new THREE.MeshBasicMaterial({ color: 0x34c759, transparent: true, opacity: 0.36, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
+            debugRemovedPiece: new THREE.MeshBasicMaterial({ color: 0xfb7185, transparent: true, opacity: 0.42, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
             debugDroppedPiece: new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.5, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
+            junctionCandidateEndpoint: new THREE.MeshBasicMaterial({ color: 0xf97316, transparent: true, opacity: 0.92, depthTest: false, depthWrite: false }),
+            junctionCandidateCorner: new THREE.MeshBasicMaterial({ color: 0xc084fc, transparent: true, opacity: 0.92, depthTest: false, depthWrite: false }),
+            junctionCandidateHover: new THREE.MeshBasicMaterial({ color: 0x34c759, transparent: true, opacity: 0.98, depthTest: false, depthWrite: false }),
+            junctionCandidateSelected: new THREE.MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 1.0, depthTest: false, depthWrite: false }),
+            junctionCandidateRing: new THREE.MeshBasicMaterial({ color: 0x93c5fd, transparent: true, opacity: 0.55, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
+            approachMarkerHover: new THREE.MeshBasicMaterial({ color: 0x34c759, transparent: true, opacity: 0.85, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
+            approachMarkerSelected: new THREE.MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.92, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
             highlightObb: new THREE.LineBasicMaterial({ color: 0xf8fafc, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false }),
             highlightAabb: new THREE.LineBasicMaterial({ color: 0x93c5fd, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false }),
             highlightPiece: new THREE.LineBasicMaterial({ color: 0x34c759, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false })
         };
         this._lineMaterialResolution = new THREE.Vector2(0, 0);
         this._sphereGeo = new THREE.SphereGeometry(0.45, 12, 10);
+        this._junctionCandidateGeo = new THREE.SphereGeometry(0.32, 10, 8);
+        this._junctionCandidateRingGeo = null;
 
         this._uiEnabled = uiEnabled !== false;
         this.ui = null;
@@ -317,6 +376,7 @@ export class RoadDebuggerView {
         destroyUI(this);
         this._setSnapHighlightVisible(false);
         this._setDraftPreviewVisible(false);
+        this._setDraftHoverTileMarkerVisible(false);
         this._clearOverlays();
         disposeScene(this);
         this._disposeResources();
@@ -345,6 +405,52 @@ export class RoadDebuggerView {
         this._rebuildPipeline();
     }
 
+    _edgeLineWidthScale() {
+        const zoomMin = Number.isFinite(this._zoomMin) ? this._zoomMin : 0;
+        const zoomMax = Number.isFinite(this._zoomMax) ? this._zoomMax : zoomMin;
+        if (!(zoomMax > zoomMin + 1e-6)) return 1;
+        const zoom = clamp(Number(this._zoom) || zoomMin, zoomMin, zoomMax);
+        const t = clamp((zoom - zoomMin) / (zoomMax - zoomMin), 0, 1);
+        const minScale = 0.25;
+        const curved = Math.pow(t, 1.25);
+        return 1 - curved * (1 - minScale);
+    }
+
+    _applyDistanceScaledEdgeLineWidths() {
+        const scale = this._edgeLineWidthScale();
+        const kinds = ['lane_edge_left', 'lane_edge_right', 'asphalt_edge_left', 'asphalt_edge_right'];
+        const configs = [
+            { map: this._materials?.lineBase, add: 0, min: 0.55 },
+            { map: this._materials?.lineHover, add: 0.25, min: 0.75 },
+            { map: this._materials?.lineSelected, add: 0.45, min: 0.85 }
+        ];
+
+        for (const kind of kinds) {
+            const base = baseLineWidthForKind(kind);
+            for (const cfg of configs) {
+                const map = cfg.map;
+                if (!(map instanceof Map)) continue;
+                const mat = map.get(kind);
+                if (!mat) continue;
+                const target = Math.max(cfg.min, (base + cfg.add) * scale);
+                if (Math.abs((Number(mat.linewidth) || 0) - target) > 1e-4) mat.linewidth = target;
+            }
+        }
+    }
+
+    setArrowTangentDebugEnabled(enabled) {
+        const next = !!enabled;
+        if (this._arrowTangentDebugEnabled === next) return;
+        this._arrowTangentDebugEnabled = next;
+        this._rebuildOverlaysFromDerived();
+        this._applyHighlights();
+        this.ui?.sync?.();
+    }
+
+    getArrowTangentDebugEnabled() {
+        return this._arrowTangentDebugEnabled === true;
+    }
+
     setTrimThresholdFactor(value) {
         const next = clamp(value, 0, 0.5);
         if (Math.abs((this._trimThresholdFactor ?? 0) - next) < 1e-9) return;
@@ -354,7 +460,7 @@ export class RoadDebuggerView {
 
     setTrimDebugOptions(opts = {}) {
         const o = opts && typeof opts === 'object' ? opts : {};
-        const keys = ['rawSegments', 'strips', 'overlaps', 'intervals', 'keptPieces', 'droppedPieces', 'highlight'];
+        const keys = ['rawSegments', 'strips', 'overlaps', 'intervals', 'removedPieces', 'keptPieces', 'droppedPieces', 'highlight'];
         let changed = false;
         for (const key of keys) {
             if (o[key] === undefined) continue;
@@ -416,6 +522,295 @@ export class RoadDebuggerView {
 
     getJunctionDebugOptions() {
         return { ...this._junctionDebug };
+    }
+
+    setJunctionToolEnabled(enabled) {
+        const next = enabled !== false;
+        if (this._junctionToolEnabled === next) return;
+        this._junctionToolEnabled = next;
+        this._junctionToolHoverCandidateId = null;
+        this._junctionToolSelectedCandidateIds.clear();
+        this._rebuildOverlaysFromDerived();
+        this._applyHighlights();
+        this.ui?.sync?.();
+    }
+
+    getJunctionToolEnabled() {
+        return this._junctionToolEnabled === true;
+    }
+
+    getJunctionToolSelection() {
+        return Array.from(this._junctionToolSelectedCandidateIds ?? []).sort(compareString);
+    }
+
+    clearJunctionToolSelection() {
+        if (!(this._junctionToolSelectedCandidateIds?.size > 0) && !this._junctionToolHoverCandidateId) return;
+        this._junctionToolHoverCandidateId = null;
+        this._junctionToolSelectedCandidateIds.clear();
+        this._applyHighlights();
+        this.ui?.sync?.();
+    }
+
+    _isJunctionCandidateIdValid(candidateId) {
+        const id = typeof candidateId === 'string' && candidateId.trim() ? candidateId.trim() : null;
+        if (!id) return false;
+        const derived = this._derived ?? null;
+        const candidates = derived?.junctionCandidates ?? null;
+        const endpoints = candidates?.endpoints ?? [];
+        for (const ep of endpoints) {
+            if (ep?.id === id) return true;
+        }
+        const corners = candidates?.corners ?? [];
+        for (const corner of corners) {
+            if (corner?.id === id) return true;
+        }
+        return false;
+    }
+
+    setJunctionToolHoverCandidate(candidateId) {
+        if (!this._junctionToolEnabled) return false;
+        const id = typeof candidateId === 'string' && candidateId.trim() ? candidateId.trim() : null;
+        if (!id) return false;
+        if (!this._isJunctionCandidateIdValid(id)) return false;
+        if (this._junctionToolHoverCandidateId === id) return true;
+        this._junctionToolHoverCandidateId = id;
+        this._applyHighlights();
+        this.ui?.sync?.();
+        return true;
+    }
+
+    clearJunctionToolHoverCandidate(candidateId) {
+        if (!this._junctionToolEnabled) return false;
+        const current = this._junctionToolHoverCandidateId ?? null;
+        if (!current) return false;
+        const id = typeof candidateId === 'string' && candidateId.trim() ? candidateId.trim() : null;
+        if (id && id !== current) return false;
+        this._junctionToolHoverCandidateId = null;
+        this._applyHighlights();
+        this.ui?.sync?.();
+        return true;
+    }
+
+    toggleJunctionToolCandidate(candidateId) {
+        if (!this._junctionToolEnabled) return false;
+        const id = typeof candidateId === 'string' && candidateId.trim() ? candidateId.trim() : null;
+        if (!id) return false;
+        if (this._junctionToolSelectedCandidateIds.has(id)) this._junctionToolSelectedCandidateIds.delete(id);
+        else this._junctionToolSelectedCandidateIds.add(id);
+        this._applyHighlights();
+        this.ui?.sync?.();
+        return true;
+    }
+
+    setJunctionToolSelection(candidateIds) {
+        if (!this._junctionToolEnabled) return false;
+        const ids = Array.isArray(candidateIds)
+            ? candidateIds
+            : candidateIds instanceof Set
+                ? Array.from(candidateIds)
+                : [];
+
+        const derived = this._derived ?? null;
+        const candidates = derived?.junctionCandidates ?? null;
+        const endpoints = candidates?.endpoints ?? [];
+        const corners = candidates?.corners ?? [];
+
+        const roads = this._getRoadsForPipeline({ includeDraft: true });
+        const visibleByRoadId = new Map();
+        for (const road of roads) {
+            if (!road?.id) continue;
+            visibleByRoadId.set(road.id, road.visible !== false);
+        }
+        const isRoadVisible = (roadId) => {
+            if (!roadId) return true;
+            return visibleByRoadId.get(roadId) !== false;
+        };
+
+        const valid = new Map();
+        for (const ep of endpoints) {
+            if (!ep?.id) continue;
+            if (!isRoadVisible(ep.roadId ?? null)) continue;
+            valid.set(ep.id, true);
+        }
+        for (const corner of corners) {
+            if (!corner?.id) continue;
+            if (!isRoadVisible(corner.roadId ?? null)) continue;
+            valid.set(corner.id, true);
+        }
+
+        const next = new Set();
+        for (const id of ids) {
+            const safe = typeof id === 'string' && id.trim() ? id.trim() : null;
+            if (!safe) continue;
+            if (!valid.has(safe)) continue;
+            next.add(safe);
+        }
+
+        const prev = this._junctionToolSelectedCandidateIds ?? new Set();
+        let changed = false;
+        if (prev.size !== next.size) changed = true;
+        else {
+            for (const id of prev) {
+                if (!next.has(id)) {
+                    changed = true;
+                    break;
+                }
+            }
+        }
+        if (!changed) return false;
+
+        prev.clear();
+        for (const id of next) prev.add(id);
+        this._applyHighlights();
+        this.ui?.sync?.();
+        return true;
+    }
+
+    selectJunctionToolCandidatesInScreenRect({ x0, y0, x1, y1, mode = 'replace', baseSelected = null } = {}) {
+        if (!this._junctionToolEnabled) return false;
+        if (!this.canvas) return false;
+        const rect = this.canvas.getBoundingClientRect?.() ?? null;
+        if (!rect || !(rect.width > 1) || !(rect.height > 1)) return false;
+
+        const minX = Math.min(Number(x0) || 0, Number(x1) || 0);
+        const maxX = Math.max(Number(x0) || 0, Number(x1) || 0);
+        const minY = Math.min(Number(y0) || 0, Number(y1) || 0);
+        const maxY = Math.max(Number(y0) || 0, Number(y1) || 0);
+
+        const derived = this._derived ?? null;
+        const candidates = derived?.junctionCandidates ?? null;
+        if (!candidates) return false;
+
+        const roads = this._getRoadsForPipeline({ includeDraft: true });
+        const visibleByRoadId = new Map();
+        for (const road of roads) {
+            if (!road?.id) continue;
+            visibleByRoadId.set(road.id, road.visible !== false);
+        }
+        const isRoadVisible = (roadId) => {
+            if (!roadId) return true;
+            return visibleByRoadId.get(roadId) !== false;
+        };
+
+        const w = Number(rect.width) || 1;
+        const h = Number(rect.height) || 1;
+        const left = Number(rect.left) || 0;
+        const top = Number(rect.top) || 0;
+        const y = this._groundY + 0.055;
+
+        const inside = new Set();
+        const addIfInside = (cand) => {
+            if (!cand?.id || !cand?.world) return;
+            if (!isRoadVisible(cand.roadId ?? null)) return;
+            tmpProjectVec.set(Number(cand.world.x) || 0, y, Number(cand.world.z) || 0);
+            tmpProjectVec.project(this.camera);
+            if (!(tmpProjectVec.z >= -1 && tmpProjectVec.z <= 1)) return;
+            const sx = left + (tmpProjectVec.x * 0.5 + 0.5) * w;
+            const sy = top + (-tmpProjectVec.y * 0.5 + 0.5) * h;
+            if (sx < minX || sx > maxX || sy < minY || sy > maxY) return;
+            inside.add(cand.id);
+        };
+
+        const endpoints = candidates?.endpoints ?? [];
+        for (const ep of endpoints) addIfInside(ep);
+
+        const corners = candidates?.corners ?? [];
+        for (const corner of corners) addIfInside(corner);
+
+        const additive = mode === 'add';
+        const base = additive
+            ? (baseSelected instanceof Set ? baseSelected : this._junctionToolSelectedCandidateIds)
+            : null;
+        if (base) {
+            for (const id of Array.from(base)) inside.add(id);
+        }
+
+        return this.setJunctionToolSelection(inside);
+    }
+
+    createJunctionFromToolSelection() {
+        if (!this._junctionToolEnabled) return false;
+        const candidateIds = this.getJunctionToolSelection();
+        if (!candidateIds.length) return false;
+        if (candidateIds.length < 2) {
+            const derived = this._derived ?? null;
+            const corners = derived?.junctionCandidates?.corners ?? [];
+            const isCorner = corners.some((c) => c?.id === candidateIds[0]);
+            if (!isCorner) return false;
+        }
+
+        const id = stableHashId('junc_', candidateIds.join('|'));
+        if (this._authoredJunctions.some((j) => j?.id === id)) {
+            this.clearJunctionToolSelection();
+            this.selectJunction(id);
+            return true;
+        }
+
+        this._pushUndoSnapshot();
+        this._authoredJunctions.push({ id, candidateIds });
+        this._authoredJunctions.sort((a, b) => compareString(a?.id, b?.id));
+        this._junctionToolHoverCandidateId = null;
+        this._junctionToolSelectedCandidateIds.clear();
+        this._selection = { type: 'junction', roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: id, connectorId: null };
+        this._rebuildPipeline();
+        return true;
+    }
+
+    toggleJunctionAsphaltVisibility(junctionId) {
+        const id = typeof junctionId === 'string' && junctionId.trim() ? junctionId.trim() : null;
+        if (!id) return false;
+        this._pushUndoSnapshot();
+        if (this._hiddenJunctionIds.has(id)) this._hiddenJunctionIds.delete(id);
+        else this._hiddenJunctionIds.add(id);
+        this._rebuildPipeline();
+        return true;
+    }
+
+    deleteJunction(junctionId) {
+        const id = typeof junctionId === 'string' && junctionId.trim() ? junctionId.trim() : null;
+        if (!id) return false;
+        const manualIndex = this._authoredJunctions.findIndex((j) => j?.id === id);
+        const isManual = manualIndex >= 0;
+        const alreadySuppressed = this._suppressedAutoJunctionIds.has(id);
+        if (!isManual && alreadySuppressed) return false;
+
+        this._pushUndoSnapshot();
+        if (isManual) this._authoredJunctions.splice(manualIndex, 1);
+        else this._suppressedAutoJunctionIds.add(id);
+        this._hiddenJunctionIds.delete(id);
+
+        if (this._hover?.junctionId === id) this.clearHover();
+        if (this._selection?.junctionId === id) this.clearSelection();
+        this._rebuildPipeline();
+        this._sanitizeSelection();
+        return true;
+    }
+
+    _sanitizeJunctionToolSelection() {
+        if (!this._junctionToolEnabled) return;
+        const derived = this._derived ?? null;
+        const candidates = derived?.junctionCandidates ?? null;
+        const endpoints = candidates?.endpoints ?? [];
+        const corners = candidates?.corners ?? [];
+        const valid = new Set();
+        for (const ep of endpoints) if (ep?.id) valid.add(ep.id);
+        for (const corner of corners) if (corner?.id) valid.add(corner.id);
+
+        if (this._junctionToolHoverCandidateId && !valid.has(this._junctionToolHoverCandidateId)) {
+            this._junctionToolHoverCandidateId = null;
+        }
+        if (!(this._junctionToolSelectedCandidateIds?.size > 0)) return;
+        let changed = false;
+        for (const id of Array.from(this._junctionToolSelectedCandidateIds)) {
+            if (!valid.has(id)) {
+                this._junctionToolSelectedCandidateIds.delete(id);
+                changed = true;
+            }
+        }
+        if (changed) {
+            this._applyHighlights();
+            this.ui?.sync?.();
+        }
     }
 
     setSnapEnabled(enabled) {
@@ -501,6 +896,7 @@ export class RoadDebuggerView {
             tangentFactor: 1
         });
 
+        if ((draft.points?.length ?? 0) >= 2) this._setDraftHoverTileMarkerVisible(false);
         this._rebuildPipeline();
         return true;
     }
@@ -509,21 +905,22 @@ export class RoadDebuggerView {
         if (!this._draft) return false;
         const hit = world ?? null;
         if (!hit) return false;
-        const snapActive = (this._snapEnabled !== false) && !altKey;
-        const res = this._worldToTilePoint(hit.x, hit.z, { snap: snapActive });
+        if (!this._isWorldInsideMapBounds(hit.x, hit.z)) return false;
+        const res = this._worldToTilePoint(hit.x, hit.z, { snap: false });
         if (!res) return false;
-        return this.addDraftPointByTile(res.tileX, res.tileY, { offsetX: res.offsetX, offsetY: res.offsetY });
+        return this.addDraftPointByTile(res.tileX, res.tileY, { offsetX: 0, offsetY: 0 });
     }
 
     setHoverRoad(roadId) {
         const nextRoadId = roadId ?? null;
-        if (this._hover.roadId === nextRoadId && !this._hover.segmentId && !this._hover.pointId && !this._hover.pieceId && !this._hover.junctionId && !this._hover.connectorId) return;
+        if (this._hover.roadId === nextRoadId && !this._hover.segmentId && !this._hover.pointId && !this._hover.pieceId && !this._hover.junctionId && !this._hover.connectorId && !this._hover.approachId) return;
         this._hover.roadId = nextRoadId;
         this._hover.segmentId = null;
         this._hover.pointId = null;
         this._hover.pieceId = null;
         this._hover.junctionId = null;
         this._hover.connectorId = null;
+        this._hover.approachId = null;
         this._applyHighlights();
         this.ui?.sync?.();
     }
@@ -532,13 +929,14 @@ export class RoadDebuggerView {
         const seg = this._derived?.segments?.find?.((s) => s?.id === segmentId) ?? null;
         const nextSegId = seg?.id ?? null;
         const nextRoadId = seg?.roadId ?? null;
-        if (this._hover.segmentId === nextSegId && this._hover.roadId === nextRoadId && !this._hover.pointId && !this._hover.pieceId && !this._hover.junctionId && !this._hover.connectorId) return;
+        if (this._hover.segmentId === nextSegId && this._hover.roadId === nextRoadId && !this._hover.pointId && !this._hover.pieceId && !this._hover.junctionId && !this._hover.connectorId && !this._hover.approachId) return;
         this._hover.segmentId = nextSegId;
         this._hover.roadId = nextRoadId;
         this._hover.pointId = null;
         this._hover.pieceId = null;
         this._hover.junctionId = null;
         this._hover.connectorId = null;
+        this._hover.approachId = null;
         this._applyHighlights();
         this.ui?.sync?.();
     }
@@ -546,26 +944,28 @@ export class RoadDebuggerView {
     setHoverPoint(roadId, pointId) {
         const nextRoadId = roadId ?? null;
         const nextPointId = pointId ?? null;
-        if (this._hover.roadId === nextRoadId && this._hover.pointId === nextPointId && !this._hover.segmentId && !this._hover.pieceId && !this._hover.junctionId && !this._hover.connectorId) return;
+        if (this._hover.roadId === nextRoadId && this._hover.pointId === nextPointId && !this._hover.segmentId && !this._hover.pieceId && !this._hover.junctionId && !this._hover.connectorId && !this._hover.approachId) return;
         this._hover.roadId = nextRoadId;
         this._hover.segmentId = null;
         this._hover.pointId = nextPointId;
         this._hover.pieceId = null;
         this._hover.junctionId = null;
         this._hover.connectorId = null;
+        this._hover.approachId = null;
         this._applyHighlights();
         this.ui?.sync?.();
     }
 
     setHoverJunction(junctionId) {
         const nextJunctionId = junctionId ?? null;
-        if (this._hover.junctionId === nextJunctionId && !this._hover.roadId && !this._hover.segmentId && !this._hover.pointId && !this._hover.pieceId && !this._hover.connectorId) return;
+        if (this._hover.junctionId === nextJunctionId && !this._hover.roadId && !this._hover.segmentId && !this._hover.pointId && !this._hover.pieceId && !this._hover.connectorId && !this._hover.approachId) return;
         this._hover.roadId = null;
         this._hover.segmentId = null;
         this._hover.pointId = null;
         this._hover.pieceId = null;
         this._hover.junctionId = nextJunctionId;
         this._hover.connectorId = null;
+        this._hover.approachId = null;
         this._applyHighlights();
         this.ui?.sync?.();
     }
@@ -586,31 +986,52 @@ export class RoadDebuggerView {
                 break;
             }
         }
-        if (this._hover.connectorId === nextConnectorId && this._hover.junctionId === junctionId && !this._hover.roadId && !this._hover.segmentId && !this._hover.pointId && !this._hover.pieceId) return;
+        if (this._hover.connectorId === nextConnectorId && this._hover.junctionId === junctionId && !this._hover.roadId && !this._hover.segmentId && !this._hover.pointId && !this._hover.pieceId && !this._hover.approachId) return;
         this._hover.roadId = null;
         this._hover.segmentId = null;
         this._hover.pointId = null;
         this._hover.pieceId = null;
         this._hover.junctionId = junctionId;
         this._hover.connectorId = nextConnectorId;
+        this._hover.approachId = null;
+        this._applyHighlights();
+        this.ui?.sync?.();
+    }
+
+    setHoverApproach(junctionId, approachId) {
+        const nextJunctionId = junctionId ?? null;
+        const nextApproachId = approachId ?? null;
+        if (!nextJunctionId || !nextApproachId) {
+            this.clearHover();
+            return;
+        }
+        if (this._hover.approachId === nextApproachId && this._hover.junctionId === nextJunctionId && !this._hover.roadId && !this._hover.segmentId && !this._hover.pointId && !this._hover.pieceId && !this._hover.connectorId) return;
+        this._hover.roadId = null;
+        this._hover.segmentId = null;
+        this._hover.pointId = null;
+        this._hover.pieceId = null;
+        this._hover.junctionId = nextJunctionId;
+        this._hover.connectorId = null;
+        this._hover.approachId = nextApproachId;
         this._applyHighlights();
         this.ui?.sync?.();
     }
 
     clearHover() {
-        if (!this._hover.roadId && !this._hover.segmentId && !this._hover.pointId && !this._hover.pieceId && !this._hover.junctionId && !this._hover.connectorId) return;
+        if (!this._hover.roadId && !this._hover.segmentId && !this._hover.pointId && !this._hover.pieceId && !this._hover.junctionId && !this._hover.connectorId && !this._hover.approachId) return;
         this._hover.roadId = null;
         this._hover.segmentId = null;
         this._hover.pointId = null;
         this._hover.pieceId = null;
         this._hover.junctionId = null;
         this._hover.connectorId = null;
+        this._hover.approachId = null;
         this._applyHighlights();
         this.ui?.sync?.();
     }
 
     selectRoad(roadId) {
-        this._selection = { type: 'road', roadId, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null };
+        this._selection = { type: 'road', roadId, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null, approachId: null };
         this._applyHighlights();
         this.ui?.sync?.();
     }
@@ -618,19 +1039,19 @@ export class RoadDebuggerView {
     selectSegment(segmentId) {
         const seg = this._derived?.segments?.find?.((s) => s?.id === segmentId) ?? null;
         if (!seg) return;
-        this._selection = { type: 'segment', roadId: seg.roadId, segmentId: seg.id, pointId: null, pieceId: null, junctionId: null, connectorId: null };
+        this._selection = { type: 'segment', roadId: seg.roadId, segmentId: seg.id, pointId: null, pieceId: null, junctionId: null, connectorId: null, approachId: null };
         this._applyHighlights();
         this.ui?.sync?.();
     }
 
     selectPoint(roadId, pointId) {
-        this._selection = { type: 'point', roadId, segmentId: null, pointId, pieceId: null, junctionId: null, connectorId: null };
+        this._selection = { type: 'point', roadId, segmentId: null, pointId, pieceId: null, junctionId: null, connectorId: null, approachId: null };
         this._applyHighlights();
         this.ui?.sync?.();
     }
 
     selectPiece(roadId, segmentId, pieceId) {
-        this._selection = { type: 'piece', roadId, segmentId, pointId: null, pieceId, junctionId: null, connectorId: null };
+        this._selection = { type: 'piece', roadId, segmentId, pointId: null, pieceId, junctionId: null, connectorId: null, approachId: null };
         this._applyHighlights();
         this.ui?.sync?.();
     }
@@ -638,7 +1059,7 @@ export class RoadDebuggerView {
     selectJunction(junctionId) {
         const nextJunctionId = junctionId ?? null;
         if (!nextJunctionId) return;
-        this._selection = { type: 'junction', roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: nextJunctionId, connectorId: null };
+        this._selection = { type: 'junction', roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: nextJunctionId, connectorId: null, approachId: null };
         this._applyHighlights();
         this.ui?.sync?.();
     }
@@ -656,13 +1077,22 @@ export class RoadDebuggerView {
                 break;
             }
         }
-        this._selection = { type: 'connector', roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId, connectorId: nextConnectorId };
+        this._selection = { type: 'connector', roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId, connectorId: nextConnectorId, approachId: null };
+        this._applyHighlights();
+        this.ui?.sync?.();
+    }
+
+    selectApproach(junctionId, approachId) {
+        const nextJunctionId = junctionId ?? null;
+        const nextApproachId = approachId ?? null;
+        if (!nextJunctionId || !nextApproachId) return;
+        this._selection = { type: 'approach', roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: nextJunctionId, connectorId: null, approachId: nextApproachId };
         this._applyHighlights();
         this.ui?.sync?.();
     }
 
     clearSelection() {
-        this._selection = { type: null, roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null };
+        this._selection = { type: null, roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null, approachId: null };
         this._applyHighlights();
         this.ui?.sync?.();
     }
@@ -768,6 +1198,21 @@ export class RoadDebuggerView {
         }
 
         const pick = this._pickAtPointer();
+        if (this._junctionToolEnabled) {
+            if (pick?.type === 'junction_candidate') {
+                this.toggleJunctionToolCandidate(pick.candidateId);
+                return;
+            }
+            if (pick?.type === 'connector') {
+                this.selectConnector(pick.connectorId);
+                return;
+            }
+            if (pick?.type === 'junction') {
+                this.selectJunction(pick.junctionId);
+                return;
+            }
+            return;
+        }
         if (pick?.type === 'connector') {
             this.selectConnector(pick.connectorId);
             return;
@@ -793,14 +1238,26 @@ export class RoadDebuggerView {
     }
 
     handleEnter() {
-        if (!this._draft) return false;
-        this.finishRoadDraft();
-        return true;
+        if (this._draft) {
+            this.finishRoadDraft();
+            return true;
+        }
+        if (this._junctionToolEnabled) return this.createJunctionFromToolSelection();
+        return false;
     }
 
     handleEscape() {
         if (this._draft) {
             this.finishRoadDraft();
+            return true;
+        }
+
+        if (this._junctionToolEnabled) {
+            if (this._junctionToolSelectedCandidateIds?.size > 0) {
+                this.clearJunctionToolSelection();
+                return true;
+            }
+            this.setJunctionToolEnabled(false);
             return true;
         }
 
@@ -841,27 +1298,53 @@ export class RoadDebuggerView {
 
     clearDraftPreview() {
         this._setDraftPreviewVisible(false);
+        this._setDraftHoverTileMarkerVisible(false);
     }
 
     updateDraftPreviewFromWorld(world, { altKey = false } = {}) {
         const draft = this._draft ?? null;
-        const last = draft?.points?.[draft.points.length - 1] ?? null;
-        if (!draft || !last) {
+        if (!draft) {
             this._setDraftPreviewVisible(false);
+            this._setDraftHoverTileMarkerVisible(false);
             return false;
         }
 
         const hit = world ?? null;
-        if (!hit) {
+        if (!hit || !this._isWorldInsideMapBounds(hit.x, hit.z)) {
             this._setDraftPreviewVisible(false);
+            this._setDraftHoverTileMarkerVisible(false);
             return false;
         }
 
-        const snapActive = (this._snapEnabled !== false) && !altKey;
-        const res = this._worldToTilePoint(hit.x, hit.z, { snap: snapActive });
+        const res = this._worldToTilePoint(hit.x, hit.z, { snap: false });
         if (!res) {
             this._setDraftPreviewVisible(false);
+            this._setDraftHoverTileMarkerVisible(false);
             return false;
+        }
+
+        const tileSize = Number(this._tileSize) || 24;
+        const ox = Number(this._origin?.x) || 0;
+        const oz = Number(this._origin?.z) || 0;
+        const endX = ox + (Number(res.tileX) || 0) * tileSize;
+        const endZ = oz + (Number(res.tileY) || 0) * tileSize;
+
+        const showHover = (draft.points?.length ?? 0) < 2;
+        if (showHover) {
+            this._ensureDraftHoverTileMarker();
+            const mesh = this._draftHoverTileMarkerMesh;
+            if (mesh) {
+                mesh.position.set(endX, this._groundY + 0.021, endZ);
+                this._setDraftHoverTileMarkerVisible(true);
+            }
+        } else {
+            this._setDraftHoverTileMarkerVisible(false);
+        }
+
+        const last = draft?.points?.[draft.points.length - 1] ?? null;
+        if (!last) {
+            this._setDraftPreviewVisible(false);
+            return true;
         }
 
         const start = this._schemaPointWorld(last);
@@ -879,9 +1362,9 @@ export class RoadDebuggerView {
         arr[0] = Number(start.x) || 0;
         arr[1] = y;
         arr[2] = Number(start.z) || 0;
-        arr[3] = Number(res.x) || 0;
+        arr[3] = endX;
         arr[4] = y;
-        arr[5] = Number(res.z) || 0;
+        arr[5] = endZ;
         attr.needsUpdate = true;
 
         this._setDraftPreviewVisible(true);
@@ -956,6 +1439,7 @@ export class RoadDebuggerView {
         cam.position.set(tx + ox, ty + oy, tz + oz);
         cam.up.set(0, 1, 0);
         cam.lookAt(tx, ty, tz);
+        this._applyDistanceScaledEdgeLineWidths();
     }
 
     movePointToWorld(roadId, pointId, world, { snap = null } = {}) {
@@ -1005,6 +1489,19 @@ export class RoadDebuggerView {
         for (const road of payload.roads ?? []) this._normalizeSchemaRoadInPlace(road);
         this._normalizeSchemaRoadInPlace(payload.draft);
 
+        const junctions = Array.isArray(this._authoredJunctions)
+            ? this._authoredJunctions
+                .map((j) => ({
+                    id: typeof j?.id === 'string' && j.id.trim() ? j.id.trim() : null,
+                    candidateIds: Array.isArray(j?.candidateIds)
+                        ? Array.from(new Set(j.candidateIds.filter((v) => typeof v === 'string' && v.trim()).map((v) => v.trim()))).sort()
+                        : []
+                }))
+                .filter((j) => j.candidateIds.length > 0)
+                .map((j) => ({ id: j.id ?? stableHashId('junc_', j.candidateIds.join('|')), candidateIds: j.candidateIds }))
+                .sort((a, b) => compareString(a?.id, b?.id))
+            : [];
+
         const schema = {
             version: 1,
             laneWidth: Number(this._laneWidth) || 4.8,
@@ -1013,7 +1510,9 @@ export class RoadDebuggerView {
             roads: payload.roads,
             draft: payload.draft,
             mergedConnectorIds: Array.from(this._mergedConnectorIds ?? []).filter((id) => typeof id === 'string' && id.trim()).sort(),
-            junctions: cloneJson(this._derived?.junctions ?? [])
+            junctions,
+            hiddenJunctionIds: Array.from(this._hiddenJunctionIds ?? []).filter((id) => typeof id === 'string' && id.trim()).sort(),
+            suppressedAutoJunctionIds: Array.from(this._suppressedAutoJunctionIds ?? []).filter((id) => typeof id === 'string' && id.trim()).sort()
         };
         return JSON.stringify(schema, null, pretty ? 2 : 0);
     }
@@ -1029,6 +1528,11 @@ export class RoadDebuggerView {
         this._marginFactor = parsed.marginFactor;
         this._snapEnabled = parsed.snapEnabled;
         this._mergedConnectorIds = new Set(parsed.mergedConnectorIds ?? []);
+        this._authoredJunctions = parsed.junctions ?? [];
+        this._hiddenJunctionIds = new Set(parsed.hiddenJunctionIds ?? []);
+        this._suppressedAutoJunctionIds = new Set(parsed.suppressedAutoJunctionIds ?? []);
+        this._junctionToolHoverCandidateId = null;
+        this._junctionToolSelectedCandidateIds?.clear?.();
         this._hover = { roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null };
         this._selection = { type: null, roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null };
 
@@ -1127,18 +1631,6 @@ export class RoadDebuggerView {
         return true;
     }
 
-    setHoverCubeEnabled(enabled) {
-        const next = enabled !== false;
-        if (this._hoverCubeEnabled === next) return;
-        this._hoverCubeEnabled = next;
-        this._applyHighlights();
-        this.ui?.sync?.();
-    }
-
-    getHoverCubeEnabled() {
-        return this._hoverCubeEnabled !== false;
-    }
-
     _worldToTilePoint(worldX, worldZ, { snap = false } = {}) {
         const tileSize = Number(this._tileSize) || 24;
         const half = tileSize * 0.5;
@@ -1172,6 +1664,26 @@ export class RoadDebuggerView {
         const x = ox + norm.tileX * tileSize + norm.offsetX;
         const z = oz + norm.tileY * tileSize + norm.offsetY;
         return { tileX: norm.tileX, tileY: norm.tileY, offsetX: norm.offsetX, offsetY: norm.offsetY, x, z };
+    }
+
+    _isWorldInsideMapBounds(worldX, worldZ) {
+        const tileSize = Number(this._tileSize) || 24;
+        const half = tileSize * 0.5;
+        const ox = Number(this._origin?.x) || 0;
+        const oz = Number(this._origin?.z) || 0;
+        const maxX = Math.max(0, (this._mapWidth ?? 1) - 1);
+        const maxY = Math.max(0, (this._mapHeight ?? 1) - 1);
+
+        const x = Number(worldX);
+        const z = Number(worldZ);
+        if (!Number.isFinite(x) || !Number.isFinite(z)) return false;
+
+        const minX = ox - half;
+        const maxWorldX = ox + maxX * tileSize + half;
+        const minZ = oz - half;
+        const maxWorldZ = oz + maxY * tileSize + half;
+        const eps = 1e-6;
+        return x >= minX - eps && x <= maxWorldX + eps && z >= minZ - eps && z <= maxWorldZ + eps;
     }
 
     _applyPointTileUpdate(roadId, pointId, next, { pushUndo = false } = {}) {
@@ -1223,7 +1735,10 @@ export class RoadDebuggerView {
             roadCounter: this._roadCounter,
             pointCounter: this._pointCounter,
             selection: this._selection,
-            mergedConnectorIds: Array.from(this._mergedConnectorIds ?? []).filter((id) => typeof id === 'string' && id.trim()).sort()
+            mergedConnectorIds: Array.from(this._mergedConnectorIds ?? []).filter((id) => typeof id === 'string' && id.trim()).sort(),
+            junctions: Array.isArray(this._authoredJunctions) ? this._authoredJunctions : [],
+            hiddenJunctionIds: Array.from(this._hiddenJunctionIds ?? []).filter((id) => typeof id === 'string' && id.trim()).sort(),
+            suppressedAutoJunctionIds: Array.from(this._suppressedAutoJunctionIds ?? []).filter((id) => typeof id === 'string' && id.trim()).sort()
         });
         for (const road of snapshot.roads ?? []) this._normalizeSchemaRoadInPlace(road);
         this._normalizeSchemaRoadInPlace(snapshot.draft);
@@ -1238,6 +1753,11 @@ export class RoadDebuggerView {
         this._pointCounter = Number.isFinite(Number(next.pointCounter)) ? Number(next.pointCounter) : 1;
         const merged = Array.isArray(next.mergedConnectorIds) ? next.mergedConnectorIds : [];
         this._mergedConnectorIds = new Set(merged.filter((id) => typeof id === 'string' && id.trim()));
+        this._authoredJunctions = Array.isArray(next.junctions) ? next.junctions : [];
+        const hidden = Array.isArray(next.hiddenJunctionIds) ? next.hiddenJunctionIds : [];
+        this._hiddenJunctionIds = new Set(hidden.filter((id) => typeof id === 'string' && id.trim()));
+        const suppressed = Array.isArray(next.suppressedAutoJunctionIds) ? next.suppressedAutoJunctionIds : [];
+        this._suppressedAutoJunctionIds = new Set(suppressed.filter((id) => typeof id === 'string' && id.trim()));
         for (const road of this._roads ?? []) this._normalizeSchemaRoadInPlace(road);
         this._normalizeSchemaRoadInPlace(this._draft);
         const sel = next.selection && typeof next.selection === 'object' ? next.selection : {};
@@ -1248,9 +1768,12 @@ export class RoadDebuggerView {
             pointId: sel.pointId ?? null,
             pieceId: sel.pieceId ?? null,
             junctionId: sel.junctionId ?? null,
-            connectorId: sel.connectorId ?? null
+            connectorId: sel.connectorId ?? null,
+            approachId: sel.approachId ?? null
         };
-        this._hover = { roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null };
+        this._hover = { roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null, approachId: null };
+        this._junctionToolHoverCandidateId = null;
+        this._junctionToolSelectedCandidateIds?.clear?.();
     }
 
     _pushUndoSnapshot() {
@@ -1268,21 +1791,25 @@ export class RoadDebuggerView {
 
         if (sel.type === 'road') {
             const ok = derived.roads?.some?.((r) => r?.id === sel.roadId) ?? false;
-            if (!ok) this._selection = { type: null, roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null };
+            if (!ok) this._selection = { type: null, roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null, approachId: null };
         } else if (sel.type === 'point') {
             const road = derived.roads?.find?.((r) => r?.id === sel.roadId) ?? null;
             const ok = !!(road?.points?.some?.((p) => p?.id === sel.pointId));
-            if (!ok) this._selection = { type: null, roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null };
+            if (!ok) this._selection = { type: null, roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null, approachId: null };
         } else if (sel.type === 'piece') {
             const seg = derived.segments?.find?.((s) => s?.id === sel.segmentId) ?? null;
             const ok = !!(seg?.keptPieces?.some?.((p) => p?.id === sel.pieceId));
-            if (!ok) this._selection = { type: null, roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null };
+            if (!ok) this._selection = { type: null, roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null, approachId: null };
         } else if (sel.type === 'segment') {
             const ok = derived.segments?.some?.((s) => s?.id === sel.segmentId) ?? false;
-            if (!ok) this._selection = { type: null, roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null };
+            if (!ok) this._selection = { type: null, roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null, approachId: null };
         } else if (sel.type === 'junction') {
             const ok = derived.junctions?.some?.((j) => j?.id === sel.junctionId) ?? false;
-            if (!ok) this._selection = { type: null, roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null };
+            if (!ok) this._selection = { type: null, roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null, approachId: null };
+        } else if (sel.type === 'approach') {
+            const junction = derived.junctions?.find?.((j) => j?.id === sel.junctionId) ?? null;
+            const ok = !!junction?.endpoints?.some?.((e) => e?.id === sel.approachId);
+            if (!ok) this._selection = { type: null, roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null, approachId: null };
         } else if (sel.type === 'connector') {
             const junctions = derived.junctions ?? [];
             let ok = false;
@@ -1292,7 +1819,7 @@ export class RoadDebuggerView {
                     break;
                 }
             }
-            if (!ok) this._selection = { type: null, roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null };
+            if (!ok) this._selection = { type: null, roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null, approachId: null };
         }
 
         this._applyHighlights();
@@ -1349,7 +1876,31 @@ export class RoadDebuggerView {
         const mergedConnectorIds = Array.isArray(obj?.mergedConnectorIds)
             ? obj.mergedConnectorIds.filter((id) => typeof id === 'string' && id.trim()).sort()
             : [];
-        return { roads, draft, laneWidth, marginFactor, snapEnabled, mergedConnectorIds };
+
+        const junctionsRaw = Array.isArray(obj?.junctions) ? obj.junctions : [];
+        const junctions = junctionsRaw
+            .filter((j) => j && typeof j === 'object' && Array.isArray(j.candidateIds))
+            .map((j) => {
+                const candidateIds = Array.isArray(j.candidateIds)
+                    ? Array.from(new Set(j.candidateIds.filter((v) => typeof v === 'string' && v.trim()).map((v) => v.trim()))).sort()
+                    : [];
+                if (!candidateIds.length) return null;
+                return {
+                    id: stableHashId('junc_', candidateIds.join('|')),
+                    candidateIds
+                };
+            })
+            .filter(Boolean)
+            .sort((a, b) => compareString(a?.id, b?.id));
+
+        const hiddenJunctionIds = Array.isArray(obj?.hiddenJunctionIds)
+            ? obj.hiddenJunctionIds.filter((id) => typeof id === 'string' && id.trim()).map((id) => id.trim()).sort()
+            : [];
+        const suppressedAutoJunctionIds = Array.isArray(obj?.suppressedAutoJunctionIds)
+            ? obj.suppressedAutoJunctionIds.filter((id) => typeof id === 'string' && id.trim()).map((id) => id.trim()).sort()
+            : [];
+
+        return { roads, draft, laneWidth, marginFactor, snapEnabled, mergedConnectorIds, junctions, hiddenJunctionIds, suppressedAutoJunctionIds };
     }
 
     _resolveCounters() {
@@ -1429,12 +1980,14 @@ export class RoadDebuggerView {
     }
 
     _syncHoverCube() {
-        if (!this._hoverCubeEnabled) {
-            this._setHoverCubeVisible(false);
-            return;
-        }
-        const roadId = this._hover?.roadId ?? null;
-        const pointId = this._hover?.pointId ?? null;
+        const hoverRoadId = this._hover?.roadId ?? null;
+        const hoverPointId = this._hover?.pointId ?? null;
+        const sel = this._selection ?? {};
+        const selRoadId = sel?.type === 'point' ? (sel.roadId ?? null) : null;
+        const selPointId = sel?.type === 'point' ? (sel.pointId ?? null) : null;
+
+        const roadId = hoverRoadId ?? selRoadId;
+        const pointId = hoverPointId ?? selPointId;
         if (!roadId || !pointId) {
             this._setHoverCubeVisible(false);
             return;
@@ -1510,6 +2063,30 @@ export class RoadDebuggerView {
         this.root.add(mesh);
     }
 
+    _ensureDraftHoverTileMarker() {
+        if (this._draftHoverTileMarkerMesh) return;
+        if (!this.root) return;
+        const tileSize = Number(this._tileSize) || 24;
+        const outer = Math.max(2, tileSize * 0.38);
+        const inner = Math.max(1, outer * 0.85);
+        const geo = new THREE.RingGeometry(inner, outer, 48);
+        geo.rotateX(-Math.PI * 0.5);
+        this._draftHoverTileMarkerGeo = geo;
+
+        const mesh = new THREE.Mesh(geo, this._materials.draftHoverTileMarker);
+        mesh.visible = false;
+        mesh.frustumCulled = false;
+        mesh.renderOrder = 119;
+        mesh.userData = { type: 'draft_hover_tile_marker' };
+        this._draftHoverTileMarkerMesh = mesh;
+        this.root.add(mesh);
+    }
+
+    _setDraftHoverTileMarkerVisible(visible) {
+        if (!this._draftHoverTileMarkerMesh) return;
+        this._draftHoverTileMarkerMesh.visible = !!visible;
+    }
+
     _setDraftFirstTileMarkerVisible(visible) {
         if (!this._draftFirstTileMarkerMesh) return;
         this._draftFirstTileMarkerMesh.visible = !!visible;
@@ -1535,14 +2112,195 @@ export class RoadDebuggerView {
         this._setDraftFirstTileMarkerVisible(true);
     }
 
-    _pickAtPointer() {
-        this.raycaster.setFromCamera(this.pointer, this.camera);
-        const pointHits = this.raycaster.intersectObjects(this._controlPointMeshes ?? [], false);
-        const pointObj = pointHits[0]?.object ?? null;
-        if (pointObj?.userData?.roadId && pointObj?.userData?.pointId) {
-            return { type: 'point', roadId: pointObj.userData.roadId, pointId: pointObj.userData.pointId };
+    _ensureApproachMarker() {
+        if (this._approachMarkerMesh) return;
+        if (!this.root) return;
+        const tileSize = Number(this._tileSize) || 24;
+        const outer = Math.max(1.5, tileSize * 0.08);
+        const inner = Math.max(0.9, outer * 0.7);
+        const geo = new THREE.RingGeometry(inner, outer, 36);
+        geo.rotateX(-Math.PI * 0.5);
+        this._approachMarkerGeo = geo;
+
+        const mesh = new THREE.Mesh(geo, this._materials.approachMarkerHover);
+        mesh.visible = false;
+        mesh.frustumCulled = false;
+        mesh.renderOrder = 125;
+        mesh.userData = { type: 'junction_approach_marker' };
+        this._approachMarkerMesh = mesh;
+        this.root.add(mesh);
+    }
+
+    _setApproachMarkerVisible(visible) {
+        if (!this._approachMarkerMesh) return;
+        this._approachMarkerMesh.visible = !!visible;
+    }
+
+    _syncApproachMarker() {
+        const derived = this._derived ?? null;
+        if (!derived) {
+            this._setApproachMarkerVisible(false);
+            return;
         }
 
+        const sel = this._selection ?? {};
+        const hover = this._hover ?? {};
+
+        const selApproach = sel?.type === 'approach' ? (sel.approachId ?? null) : null;
+        const selJunction = selApproach ? (sel.junctionId ?? null) : null;
+        const hoverApproach = hover?.approachId ?? null;
+        const hoverJunction = hoverApproach ? (hover.junctionId ?? null) : null;
+
+        const approachId = selApproach ?? hoverApproach ?? null;
+        const junctionId = selApproach ? selJunction : hoverJunction;
+        if (!approachId || !junctionId) {
+            this._setApproachMarkerVisible(false);
+            return;
+        }
+
+        const junction = derived?.junctions?.find?.((j) => j?.id === junctionId) ?? null;
+        const endpoint = junction?.endpoints?.find?.((e) => e?.id === approachId) ?? null;
+        const w = endpoint?.world ?? null;
+        if (!w) {
+            this._setApproachMarkerVisible(false);
+            return;
+        }
+
+        this._ensureApproachMarker();
+        const mesh = this._approachMarkerMesh;
+        if (!mesh) return;
+        const isSelected = !!selApproach && selApproach === approachId;
+        mesh.material = isSelected ? this._materials.approachMarkerSelected : this._materials.approachMarkerHover;
+        mesh.position.set(Number(w.x) || 0, this._groundY + 0.024, Number(w.z) || 0);
+        this._setApproachMarkerVisible(true);
+    }
+
+    _pickJunctionCandidateAtPointer({ radiusPx = JUNCTION_CANDIDATE_CLICK_RADIUS_PX } = {}) {
+        if (!this.canvas) return null;
+        const rect = this.canvas.getBoundingClientRect?.() ?? null;
+        if (!rect || !(rect.width > 1) || !(rect.height > 1)) return null;
+        const ndcX = Number(this.pointer?.x) || 0;
+        const ndcY = Number(this.pointer?.y) || 0;
+        const clientX = Number(rect.left) + (ndcX * 0.5 + 0.5) * Number(rect.width);
+        const clientY = Number(rect.top) + (-ndcY * 0.5 + 0.5) * Number(rect.height);
+        return this._pickJunctionCandidateAtClient(clientX, clientY, { rect, radiusPx });
+    }
+
+    _pickJunctionCandidateAtClient(clientX, clientY, { rect, radiusPx = JUNCTION_CANDIDATE_CLICK_RADIUS_PX } = {}) {
+        const derived = this._derived ?? null;
+        const candidates = derived?.junctionCandidates ?? null;
+        if (!candidates) return null;
+
+        const roads = this._getRoadsForPipeline({ includeDraft: true });
+        const visibleByRoadId = new Map();
+        for (const road of roads) {
+            if (!road?.id) continue;
+            visibleByRoadId.set(road.id, road.visible !== false);
+        }
+        const isRoadVisible = (roadId) => {
+            if (!roadId) return true;
+            return visibleByRoadId.get(roadId) !== false;
+        };
+
+        const r = Number(radiusPx) || 0;
+        const radiusSq = r * r;
+        const rectObj = rect ?? (this.canvas?.getBoundingClientRect?.() ?? null);
+        if (!rectObj || !(rectObj.width > 1) || !(rectObj.height > 1)) return null;
+
+        const w = Number(rectObj.width) || 1;
+        const h = Number(rectObj.height) || 1;
+        const left = Number(rectObj.left) || 0;
+        const top = Number(rectObj.top) || 0;
+        const y = this._groundY + 0.055;
+
+        let best = null;
+        let bestDistSq = radiusSq;
+
+        const tryCandidate = (cand, kind) => {
+            if (!cand?.id || !cand?.world) return;
+            if (!isRoadVisible(cand.roadId ?? null)) return;
+
+            tmpProjectVec.set(Number(cand.world.x) || 0, y, Number(cand.world.z) || 0);
+            tmpProjectVec.project(this.camera);
+            if (!(tmpProjectVec.z >= -1 && tmpProjectVec.z <= 1)) return;
+            const sx = left + (tmpProjectVec.x * 0.5 + 0.5) * w;
+            const sy = top + (-tmpProjectVec.y * 0.5 + 0.5) * h;
+            const dx = sx - clientX;
+            const dy = sy - clientY;
+            const d2 = dx * dx + dy * dy;
+            if (d2 > bestDistSq) return;
+            bestDistSq = d2;
+            best = { candidateId: cand.id, candidateKind: kind };
+        };
+
+        const endpoints = candidates?.endpoints ?? [];
+        for (const ep of endpoints) tryCandidate(ep, 'endpoint');
+
+        const corners = candidates?.corners ?? [];
+        for (const corner of corners) tryCandidate(corner, 'corner');
+
+        return best;
+    }
+
+    _pickControlPointAtPointer({ radiusPx = CONTROL_POINT_CLICK_RADIUS_PX } = {}) {
+        if (!this.canvas) return null;
+        const rect = this.canvas.getBoundingClientRect?.() ?? null;
+        if (!rect || !(rect.width > 1) || !(rect.height > 1)) return null;
+
+        const ndcX = Number(this.pointer?.x) || 0;
+        const ndcY = Number(this.pointer?.y) || 0;
+        const clientX = Number(rect.left) + (ndcX * 0.5 + 0.5) * Number(rect.width);
+        const clientY = Number(rect.top) + (-ndcY * 0.5 + 0.5) * Number(rect.height);
+
+        const r = Number(radiusPx) || 0;
+        const radiusSq = r * r;
+        const w = Number(rect.width) || 1;
+        const h = Number(rect.height) || 1;
+        const left = Number(rect.left) || 0;
+        const top = Number(rect.top) || 0;
+
+        let best = null;
+        let bestDistSq = radiusSq;
+
+        const meshes = this._controlPointMeshes ?? [];
+        for (const mesh of meshes) {
+            const roadId = mesh?.userData?.roadId ?? null;
+            const pointId = mesh?.userData?.pointId ?? null;
+            if (!roadId || !pointId) continue;
+            if (!mesh?.position) continue;
+
+            tmpProjectVec.copy(mesh.position);
+            tmpProjectVec.project(this.camera);
+            if (!(tmpProjectVec.z >= -1 && tmpProjectVec.z <= 1)) continue;
+            const sx = left + (tmpProjectVec.x * 0.5 + 0.5) * w;
+            const sy = top + (-tmpProjectVec.y * 0.5 + 0.5) * h;
+            const dx = sx - clientX;
+            const dy = sy - clientY;
+            const d2 = dx * dx + dy * dy;
+            if (d2 > bestDistSq) continue;
+            bestDistSq = d2;
+            best = { roadId, pointId };
+        }
+
+        if (!best) return null;
+        return { type: 'point', roadId: best.roadId, pointId: best.pointId };
+    }
+
+    _pickAtPointer() {
+        if (this._junctionToolEnabled) {
+            const cand = this._pickJunctionCandidateAtPointer({ radiusPx: JUNCTION_CANDIDATE_CLICK_RADIUS_PX });
+            if (cand?.candidateId) {
+                return {
+                    type: 'junction_candidate',
+                    candidateId: cand.candidateId,
+                    candidateKind: cand.candidateKind ?? null
+                };
+            }
+        }
+        const pointPick = this._pickControlPointAtPointer({ radiusPx: CONTROL_POINT_CLICK_RADIUS_PX });
+        if (pointPick) return pointPick;
+
+        this.raycaster.setFromCamera(this.pointer, this.camera);
         const connHits = this.raycaster.intersectObjects(this._connectorPickMeshes ?? [], false);
         const connObj = connHits[0]?.object ?? null;
         if (connObj?.userData?.connectorId) {
@@ -1571,14 +2329,20 @@ export class RoadDebuggerView {
     }
 
     _pickHoverAtPointer() {
-        this.raycaster.setFromCamera(this.pointer, this.camera);
-
-        const pointHits = this.raycaster.intersectObjects(this._controlPointMeshes ?? [], false);
-        const pointObj = pointHits[0]?.object ?? null;
-        if (pointObj?.userData?.roadId && pointObj?.userData?.pointId) {
-            return { type: 'point', roadId: pointObj.userData.roadId, pointId: pointObj.userData.pointId };
+        if (this._junctionToolEnabled) {
+            const cand = this._pickJunctionCandidateAtPointer({ radiusPx: JUNCTION_CANDIDATE_HOVER_RADIUS_PX });
+            if (cand?.candidateId) {
+                return {
+                    type: 'junction_candidate',
+                    candidateId: cand.candidateId,
+                    candidateKind: cand.candidateKind ?? null
+                };
+            }
         }
+        const pointPick = this._pickControlPointAtPointer({ radiusPx: CONTROL_POINT_HOVER_RADIUS_PX });
+        if (pointPick) return pointPick;
 
+        this.raycaster.setFromCamera(this.pointer, this.camera);
         const connHits = this.raycaster.intersectObjects(this._connectorPickMeshes ?? [], false);
         const connObj = connHits[0]?.object ?? null;
         if (connObj?.userData?.connectorId) {
@@ -1609,6 +2373,20 @@ export class RoadDebuggerView {
     updateHoverFromPointer() {
         if (this._isDraggingCamera || this._pendingClick || this.isPointDragActive?.()) return;
         const pick = this._pickHoverAtPointer();
+        if (pick?.type === 'junction_candidate') {
+            const next = pick.candidateId ?? null;
+            if (this._junctionToolHoverCandidateId !== next) {
+                this._junctionToolHoverCandidateId = next;
+                this._applyHighlights();
+                this.ui?.sync?.();
+            }
+            return;
+        }
+        if (this._junctionToolHoverCandidateId) {
+            this._junctionToolHoverCandidateId = null;
+            this._applyHighlights();
+            this.ui?.sync?.();
+        }
         if (pick?.type === 'connector') {
             this.setHoverConnector(pick.connectorId);
             return;
@@ -1665,11 +2443,15 @@ export class RoadDebuggerView {
                     enabled: this._junctionEnabled !== false,
                     thresholdFactor: Number(this._junctionThresholdFactor) || 1.5,
                     debug: { ...this._junctionDebug },
-                    mergedConnectorIds: Array.from(this._mergedConnectorIds ?? [])
+                    mergedConnectorIds: Array.from(this._mergedConnectorIds ?? []),
+                    manualJunctions: cloneJson(this._authoredJunctions ?? []),
+                    hiddenJunctionIds: Array.from(this._hiddenJunctionIds ?? []),
+                    suppressedAutoJunctionIds: Array.from(this._suppressedAutoJunctionIds ?? [])
                 }
             }
         });
 
+        this._sanitizeJunctionToolSelection?.();
         this._rebuildOverlaysFromDerived();
         this._syncDraftFirstTileMarker();
         this._applyHighlights();
@@ -1682,6 +2464,8 @@ export class RoadDebuggerView {
             this._overlayRoot.traverse((child) => {
                 if (!child?.geometry?.dispose) return;
                 if (child.geometry === this._sphereGeo) return;
+                if (child.geometry === this._junctionCandidateGeo) return;
+                if (child.geometry === this._junctionCandidateRingGeo) return;
                 child.geometry.dispose();
             });
             this._overlayRoot = null;
@@ -1696,10 +2480,13 @@ export class RoadDebuggerView {
         this._junctionSurfaceMeshes = [];
         this._markingLines = [];
         this._arrowMeshes = [];
+        this._arrowTangentLines = [];
         this._controlPointMeshes = [];
         this._segmentPickMeshes = [];
         this._junctionPickMeshes = [];
         this._connectorPickMeshes = [];
+        this._junctionCandidateMeshes = [];
+        this._junctionCandidatePickMeshes = [];
     }
 
     _rebuildOverlaysFromDerived() {
@@ -1746,6 +2533,10 @@ export class RoadDebuggerView {
         controlGroup.name = 'RoadDebuggerControlPoints';
         overlay.add(controlGroup);
 
+        const junctionToolGroup = new THREE.Group();
+        junctionToolGroup.name = 'RoadDebuggerJunctionTool';
+        overlay.add(junctionToolGroup);
+
         const pickGroup = new THREE.Group();
         pickGroup.name = 'RoadDebuggerPickMeshes';
         overlay.add(pickGroup);
@@ -1774,9 +2565,11 @@ export class RoadDebuggerView {
 
         const derivedJunctions = this._derived?.junctions ?? [];
         const visibleByJunctionId = new Map();
+        const junctionById = new Map();
         for (const junction of derivedJunctions) {
             const jid = junction?.id ?? null;
             if (!jid) continue;
+            junctionById.set(jid, junction);
             const roadIds = Array.isArray(junction?.roadIds) ? junction.roadIds : [];
             const anyVisible = roadIds.length ? roadIds.some((rid) => isRoadVisible(rid)) : true;
             visibleByJunctionId.set(jid, anyVisible);
@@ -1980,11 +2773,15 @@ export class RoadDebuggerView {
             if (kind === 'junction_surface') {
                 const geo = makePolygonGeometry(id, pts, asphaltY);
                 if (!geo) continue;
-                const mesh = new THREE.Mesh(geo, this._materials.asphaltBase);
-                mesh.userData = { type: 'junction_surface', junctionId, id };
-                mesh.renderOrder = -1;
-                asphaltGroup.add(mesh);
-                this._junctionSurfaceMeshes.push(mesh);
+                const junction = junctionById.get(junctionId) ?? null;
+                const showAsphalt = junction?.asphaltVisible !== false;
+                if (showAsphalt) {
+                    const mesh = new THREE.Mesh(geo, this._materials.asphaltBase);
+                    mesh.userData = { type: 'junction_surface', junctionId, id };
+                    mesh.renderOrder = -1;
+                    asphaltGroup.add(mesh);
+                    this._junctionSurfaceMeshes.push(mesh);
+                }
 
                 const pickGeo = makePolygonGeometry(id, pts, pickY);
                 if (pickGeo) {
@@ -2001,6 +2798,7 @@ export class RoadDebuggerView {
                 if (kind === 'trim_raw_asphalt') return this._materials.debugRawAsphalt;
                 if (kind === 'trim_strip') return this._materials.debugStrip;
                 if (kind === 'trim_overlap') return this._materials.debugOverlap;
+                if (kind === 'trim_removed_piece') return this._materials.debugRemovedPiece;
                 if (kind === 'trim_kept_piece') return this._materials.debugKeptPiece;
                 if (kind === 'trim_dropped_piece') return this._materials.debugDroppedPiece;
                 return this._materials.debugStrip;
@@ -2008,7 +2806,7 @@ export class RoadDebuggerView {
 
             const y = kind === 'trim_overlap'
                 ? debugY1
-                : (kind === 'trim_kept_piece' || kind === 'trim_dropped_piece')
+                : (kind === 'trim_kept_piece' || kind === 'trim_removed_piece' || kind === 'trim_dropped_piece')
                     ? debugY2
                     : debugY0;
             const geo = makePolygonGeometry(id, pts, y);
@@ -2019,9 +2817,11 @@ export class RoadDebuggerView {
                 ? 1
                 : kind === 'trim_kept_piece'
                     ? 2
-                    : kind === 'trim_dropped_piece'
+                    : kind === 'trim_removed_piece'
                         ? 3
-                        : 0;
+                        : kind === 'trim_dropped_piece'
+                            ? 4
+                            : 0;
             debugGroup.add(mesh);
         }
 
@@ -2043,8 +2843,75 @@ export class RoadDebuggerView {
             }
         }
 
+        if (this._junctionToolEnabled) {
+            const candidates = this._derived?.junctionCandidates ?? null;
+            const endpointCandidates = candidates?.endpoints ?? [];
+            const cornerCandidates = candidates?.corners ?? [];
+            const candidateY = this._groundY + 0.055;
+            const ringY = this._groundY + 0.022;
+
+            if (!this._junctionCandidateRingGeo) {
+                const laneWidth = Number(this._laneWidth) || 4.8;
+                const outer = Math.max(1.2, laneWidth * 0.28);
+                const inner = Math.max(0.75, outer * 0.72);
+                const geo = new THREE.RingGeometry(inner, outer, 32);
+                geo.rotateX(-Math.PI * 0.5);
+                this._junctionCandidateRingGeo = geo;
+            }
+            const ringGeo = this._junctionCandidateRingGeo;
+
+            const addCandidate = ({ candidateId, kind, world, roadId }) => {
+                if (!candidateId || !world) return;
+                if (roadId && !isRoadVisible(roadId)) return;
+                const mat = kind === 'corner' ? this._materials.junctionCandidateCorner : this._materials.junctionCandidateEndpoint;
+                const mesh = new THREE.Mesh(this._junctionCandidateGeo, mat);
+                mesh.position.set(Number(world.x) || 0, candidateY, Number(world.z) || 0);
+                mesh.userData = { type: 'junction_candidate', candidateId, candidateKind: kind };
+                mesh.renderOrder = 55;
+                mesh.frustumCulled = false;
+                junctionToolGroup.add(mesh);
+                this._junctionCandidateMeshes.push(mesh);
+
+                if (ringGeo) {
+                    const ring = new THREE.Mesh(ringGeo, this._materials.junctionCandidateRing);
+                    ring.position.set(mesh.position.x, ringY, mesh.position.z);
+                    ring.userData = { type: 'junction_candidate_ring', candidateId, candidateKind: kind };
+                    ring.renderOrder = 54;
+                    ring.frustumCulled = false;
+                    junctionToolGroup.add(ring);
+                }
+
+                const pick = new THREE.Mesh(this._junctionCandidateGeo, this._materials.pickHidden);
+                pick.position.copy(mesh.position);
+                pick.scale.setScalar(2.1);
+                pick.userData = { type: 'junction_candidate_pick', candidateId, candidateKind: kind };
+                pick.renderOrder = 4;
+                pickGroup.add(pick);
+                this._junctionCandidatePickMeshes.push(pick);
+            };
+
+            for (const ep of endpointCandidates) {
+                addCandidate({
+                    candidateId: ep?.id ?? null,
+                    kind: 'endpoint',
+                    world: ep?.world ?? null,
+                    roadId: ep?.roadId ?? null
+                });
+            }
+
+            for (const corner of cornerCandidates) {
+                addCandidate({
+                    candidateId: corner?.id ?? null,
+                    kind: 'corner',
+                    world: corner?.world ?? null,
+                    roadId: corner?.roadId ?? null
+                });
+            }
+        }
+
         const markingPositions = [];
         const arrowPositions = [];
+        const arrowTangentPositions = [];
 
         const segs = this._derived?.segments ?? [];
         for (const seg of segs) {
@@ -2118,6 +2985,15 @@ export class RoadDebuggerView {
                             const rx = fz;
                             const rz = -fx;
 
+                            if (this._arrowTangentDebugEnabled) {
+                                const tangentLen = arrowLen * 0.75;
+                                const y = arrowY + 0.003;
+                                arrowTangentPositions.push(
+                                    cx, y, cz,
+                                    cx + fx * tangentLen, y, cz + fz * tangentLen
+                                );
+                            }
+
                             const local = [
                                 [tailX, bodyHalf], [bodyX, bodyHalf], [bodyX, -bodyHalf],
                                 [tailX, bodyHalf], [bodyX, -bodyHalf], [tailX, -bodyHalf],
@@ -2159,6 +3035,18 @@ export class RoadDebuggerView {
             this._arrowMeshes.push(mesh);
         }
 
+        if (arrowTangentPositions.length) {
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(arrowTangentPositions, 3));
+            geo.computeBoundingSphere();
+            const lines = new THREE.LineSegments(geo, this._materials.arrowTangent);
+            lines.userData = { type: 'arrow_tangents' };
+            lines.renderOrder = 3;
+            markingsGroup.add(lines);
+            this._arrowTangentLines.push(lines);
+        }
+
+        this._applyDistanceScaledEdgeLineWidths();
         this._rebuildSelectionHighlight();
     }
 
@@ -2176,6 +3064,10 @@ export class RoadDebuggerView {
         this._materials.lineSelected.clear();
         this._materials.pointBase.clear();
         this._sphereGeo?.dispose?.();
+        this._junctionCandidateGeo?.dispose?.();
+        this._junctionCandidateGeo = null;
+        this._junctionCandidateRingGeo?.dispose?.();
+        this._junctionCandidateRingGeo = null;
         this._snapHighlightGeo?.dispose?.();
         this._snapHighlightGeo = null;
         this._snapHighlightMesh = null;
@@ -2188,6 +3080,12 @@ export class RoadDebuggerView {
         this._draftFirstTileMarkerGeo?.dispose?.();
         this._draftFirstTileMarkerGeo = null;
         this._draftFirstTileMarkerMesh = null;
+        this._draftHoverTileMarkerGeo?.dispose?.();
+        this._draftHoverTileMarkerGeo = null;
+        this._draftHoverTileMarkerMesh = null;
+        this._approachMarkerGeo?.dispose?.();
+        this._approachMarkerGeo = null;
+        this._approachMarkerMesh = null;
     }
 
     _rebuildSelectionHighlight() {
@@ -2256,12 +3154,15 @@ export class RoadDebuggerView {
         const hoverPointId = hover.pointId ?? null;
         const hoverJunctionId = hover.junctionId ?? null;
         const hoverConnectorId = hover.connectorId ?? null;
+        const hoverApproachId = hover.approachId ?? null;
+        const hoverJunctionHighlightId = (!hoverConnectorId && !hoverApproachId) ? hoverJunctionId : null;
 
         const selRoadId = sel.type ? (sel.roadId ?? null) : null;
         const selSegmentId = (sel.type === 'segment' || sel.type === 'piece') ? (sel.segmentId ?? null) : null;
         const selPointId = sel.type === 'point' ? (sel.pointId ?? null) : null;
-        const selJunctionId = (sel.type === 'junction' || sel.type === 'connector') ? (sel.junctionId ?? null) : null;
+        const selJunctionId = sel.type === 'junction' ? (sel.junctionId ?? null) : null;
         const selConnectorId = sel.type === 'connector' ? (sel.connectorId ?? null) : null;
+        const selApproachId = sel.type === 'approach' ? (sel.approachId ?? null) : null;
 
         const extraSelectedRoadIds = new Set();
         const extraSelectedSegmentIds = new Set();
@@ -2269,48 +3170,12 @@ export class RoadDebuggerView {
             const junction = derived?.junctions?.find?.((j) => j?.id === selJunctionId) ?? null;
             for (const rid of junction?.roadIds ?? []) extraSelectedRoadIds.add(rid);
             for (const sid of junction?.segmentIds ?? []) extraSelectedSegmentIds.add(sid);
-        } else if (sel.type === 'connector' && selConnectorId) {
-            const junctions = derived?.junctions ?? [];
-            let junction = null;
-            let connector = null;
-            for (const j of junctions) {
-                const hit = j?.connectors?.find?.((c) => c?.id === selConnectorId) ?? null;
-                if (hit) {
-                    junction = j;
-                    connector = hit;
-                    break;
-                }
-            }
-            for (const rid of junction?.roadIds ?? []) extraSelectedRoadIds.add(rid);
-            for (const sid of junction?.segmentIds ?? []) extraSelectedSegmentIds.add(sid);
-            if (connector?.aRoadId) extraSelectedRoadIds.add(connector.aRoadId);
-            if (connector?.bRoadId) extraSelectedRoadIds.add(connector.bRoadId);
-            if (connector?.aSegmentId) extraSelectedSegmentIds.add(connector.aSegmentId);
-            if (connector?.bSegmentId) extraSelectedSegmentIds.add(connector.bSegmentId);
         }
 
         const extraHoverRoadIds = new Set();
         const extraHoverSegmentIds = new Set();
-        if (hoverConnectorId) {
-            const junctions = derived?.junctions ?? [];
-            let junction = null;
-            let connector = null;
-            for (const j of junctions) {
-                const hit = j?.connectors?.find?.((c) => c?.id === hoverConnectorId) ?? null;
-                if (hit) {
-                    junction = j;
-                    connector = hit;
-                    break;
-                }
-            }
-            for (const rid of junction?.roadIds ?? []) extraHoverRoadIds.add(rid);
-            for (const sid of junction?.segmentIds ?? []) extraHoverSegmentIds.add(sid);
-            if (connector?.aRoadId) extraHoverRoadIds.add(connector.aRoadId);
-            if (connector?.bRoadId) extraHoverRoadIds.add(connector.bRoadId);
-            if (connector?.aSegmentId) extraHoverSegmentIds.add(connector.aSegmentId);
-            if (connector?.bSegmentId) extraHoverSegmentIds.add(connector.bSegmentId);
-        } else if (hoverJunctionId) {
-            const junction = derived?.junctions?.find?.((j) => j?.id === hoverJunctionId) ?? null;
+        if (hoverJunctionHighlightId) {
+            const junction = derived?.junctions?.find?.((j) => j?.id === hoverJunctionHighlightId) ?? null;
             for (const rid of junction?.roadIds ?? []) extraHoverRoadIds.add(rid);
             for (const sid of junction?.segmentIds ?? []) extraHoverSegmentIds.add(sid);
         }
@@ -2330,8 +3195,8 @@ export class RoadDebuggerView {
                 || (!!roadId && extraSelectedRoadIds.has(roadId));
             const hovered = !selected && (
                 (!!hoverSegmentId && segmentId === hoverSegmentId)
-                || (!hoverSegmentId && !!hoverRoadId && roadId === hoverRoadId)
-                || (!!hoverJunctionId && junctionId === hoverJunctionId)
+                || (!hoverSegmentId && !!hoverRoadId && !hoverPointId && roadId === hoverRoadId)
+                || (!!hoverJunctionHighlightId && junctionId === hoverJunctionHighlightId)
                 || (!!hoverConnectorId && connectorId === hoverConnectorId)
                 || (!!segmentId && extraHoverSegmentIds.has(segmentId))
                 || (!!roadId && extraHoverRoadIds.has(roadId))
@@ -2380,6 +3245,8 @@ export class RoadDebuggerView {
             line.visible = true;
         }
 
+        this._applyDistanceScaledEdgeLineWidths();
+
         for (const pts of this._overlayPoints) {
             const roadId = pts?.userData?.roadId ?? null;
             const segmentId = pts?.userData?.segmentId ?? null;
@@ -2393,8 +3260,8 @@ export class RoadDebuggerView {
                 || (!!roadId && extraSelectedRoadIds.has(roadId));
             const hovered = !selected && (
                 (!!hoverSegmentId && segmentId === hoverSegmentId)
-                || (!hoverSegmentId && !!hoverRoadId && roadId === hoverRoadId)
-                || (!!hoverJunctionId && junctionId === hoverJunctionId)
+                || (!hoverSegmentId && !!hoverRoadId && !hoverPointId && roadId === hoverRoadId)
+                || (!!hoverJunctionHighlightId && junctionId === hoverJunctionHighlightId)
                 || (!!segmentId && extraHoverSegmentIds.has(segmentId))
                 || (!!roadId && extraHoverRoadIds.has(roadId))
             );
@@ -2432,7 +3299,7 @@ export class RoadDebuggerView {
                 || (!!roadId && extraSelectedRoadIds.has(roadId));
             const hovered = !selected && (
                 (!!hoverSegmentId && segmentId === hoverSegmentId)
-                || (!hoverSegmentId && !!hoverRoadId && roadId === hoverRoadId)
+                || (!hoverSegmentId && !!hoverRoadId && !hoverPointId && roadId === hoverRoadId)
                 || (!!segmentId && extraHoverSegmentIds.has(segmentId))
                 || (!!roadId && extraHoverRoadIds.has(roadId))
             );
@@ -2443,7 +3310,7 @@ export class RoadDebuggerView {
         for (const mesh of this._junctionPickMeshes) {
             const junctionId = mesh?.userData?.junctionId ?? null;
             const selected = !!selJunctionId && junctionId === selJunctionId;
-            const hovered = !selected && !!hoverJunctionId && junctionId === hoverJunctionId;
+            const hovered = !selected && !!hoverJunctionHighlightId && junctionId === hoverJunctionHighlightId;
             mesh.material = selected ? this._materials.pickSelected : (hovered ? this._materials.pickHover : this._materials.pickHidden);
             mesh.visible = true;
         }
@@ -2456,7 +3323,33 @@ export class RoadDebuggerView {
             mesh.visible = true;
         }
 
+        if (this._junctionToolEnabled) {
+            const hoverCandidateId = this._junctionToolHoverCandidateId ?? null;
+            const selectedCandidates = this._junctionToolSelectedCandidateIds ?? new Set();
+
+            for (const mesh of this._junctionCandidatePickMeshes) {
+                const candidateId = mesh?.userData?.candidateId ?? null;
+                const selected = candidateId && selectedCandidates.has(candidateId);
+                const hovered = !selected && candidateId && candidateId === hoverCandidateId;
+                mesh.material = selected ? this._materials.pickSelected : (hovered ? this._materials.pickHover : this._materials.pickHidden);
+                mesh.visible = true;
+            }
+
+            for (const mesh of this._junctionCandidateMeshes) {
+                const candidateId = mesh?.userData?.candidateId ?? null;
+                const kind = mesh?.userData?.candidateKind ?? 'endpoint';
+                const selected = candidateId && selectedCandidates.has(candidateId);
+                const hovered = !selected && candidateId && candidateId === hoverCandidateId;
+                const base = kind === 'corner' ? this._materials.junctionCandidateCorner : this._materials.junctionCandidateEndpoint;
+                mesh.material = selected ? this._materials.junctionCandidateSelected : (hovered ? this._materials.junctionCandidateHover : base);
+                const scale = selected ? 1.25 : (hovered ? 1.15 : 1);
+                mesh.scale.setScalar(scale);
+                mesh.visible = true;
+            }
+        }
+
         this._rebuildSelectionHighlight();
+        this._syncApproachMarker();
         this._syncHoverCube();
     }
 }

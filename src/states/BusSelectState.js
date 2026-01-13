@@ -527,7 +527,10 @@ export class BusSelectState {
         group.add(bus);
 
         snapBusToPlatformTop(bus, platformTopY);
-        bus.userData?.readyPromise?.then?.(() => snapBusToPlatformTop(bus, platformTopY));
+        bus.userData?.readyPromise?.then?.(() => {
+            tuneBusMaterials(bus, { colorScale: 0.78, roughness: 0.92, metalness: 0.0 });
+            snapBusToPlatformTop(bus, platformTopY);
+        });
 
         applyFade(group, 1);
         setCarouselAngle(group, 0);
