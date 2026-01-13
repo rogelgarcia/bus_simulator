@@ -13,6 +13,7 @@ import { RapierDebuggerState } from './states/rapier_debugger/RapierDebuggerStat
 import { BuildingFabricationState } from './states/BuildingFabricationState.js';
 import { MeshInspectorState } from './states/MeshInspectorState.js';
 import { TextureInspectorState } from './states/TextureInspectorState.js';
+import { DebugCorners2State } from './states/DebugCorners2State.js';
 
 const canvas = document.getElementById('game-canvas');
 
@@ -30,6 +31,7 @@ sm.register('rapier_debugger', new RapierDebuggerState(engine, sm));
 sm.register('building_fabrication', new BuildingFabricationState(engine, sm));
 sm.register('mesh_inspector', new MeshInspectorState(engine, sm));
 sm.register('texture_inspector', new TextureInspectorState(engine, sm));
+sm.register('debug_corners2', new DebugCorners2State(engine, sm));
 
 engine.setStateMachine(sm);
 engine.start();

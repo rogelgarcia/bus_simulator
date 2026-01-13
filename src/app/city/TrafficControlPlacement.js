@@ -7,6 +7,10 @@ function clamp(v, lo, hi) {
     return Math.max(lo, Math.min(hi, v));
 }
 
+const EPS = 1e-6;
+const HALF = 0.5;
+const MIN_LANES_ONEWAY = 2;
+
 export const TRAFFIC_CONTROL = Object.freeze({
     TRAFFIC_LIGHT: 'traffic_light',
     STOP_SIGN: 'stop_sign'
@@ -30,6 +34,23 @@ export function classifyIntersectionTrafficControl(lanes, threshold = DEFAULT_TR
     return isTrafficLightIntersection(lanes, threshold) ? TRAFFIC_CONTROL.TRAFFIC_LIGHT : TRAFFIC_CONTROL.STOP_SIGN;
 }
 
+function laneCountForEdge(edge) {
+    const lanesF = Number(edge?.lanesF) || 0;
+    const lanesB = Number(edge?.lanesB) || 0;
+    const total = lanesF + lanesB;
+    if (!(total > 0)) return 0;
+    if (lanesF === 0 || lanesB === 0) return Math.max(MIN_LANES_ONEWAY, total);
+    return total;
+}
+
+function laneCountOutForEdgeAtNode(edge, nodeId) {
+    const lanesF = Number(edge?.lanesF) || 0;
+    const lanesB = Number(edge?.lanesB) || 0;
+    if (nodeId === edge?.a) return Math.max(0, lanesF);
+    if (nodeId === edge?.b) return Math.max(0, lanesB);
+    return Math.max(0, Math.max(lanesF, lanesB));
+}
+
 function roadWidthFromTotalLanes(totalLanes, { laneWidth, shoulder, tileSize }) {
     const lanes = Number.isFinite(totalLanes) ? totalLanes : 0;
     if (!(lanes > 0)) return 0;
@@ -38,6 +59,14 @@ function roadWidthFromTotalLanes(totalLanes, { laneWidth, shoulder, tileSize }) 
     const ts = Number.isFinite(tileSize) ? tileSize : 1;
     const raw = lanes * lw + sh * 2;
     return clamp(raw, lw, ts);
+}
+
+function roadWidthWorldFromTotalLanes(totalLanes, { laneWidth, shoulder }) {
+    const lanes = Number.isFinite(totalLanes) ? totalLanes : 0;
+    if (!(lanes > 0)) return 0;
+    const lw = Number.isFinite(laneWidth) ? laneWidth : ROAD_DEFAULTS.laneWidth;
+    const sh = Number.isFinite(shoulder) ? shoulder : ROAD_DEFAULTS.shoulder;
+    return Math.max(lw, lanes * lw + sh * 2);
 }
 
 function getWorldBounds(map) {
@@ -52,6 +81,36 @@ function getWorldBounds(map) {
 
 function withinBounds(bounds, x, z) {
     return x >= bounds.minX && x <= bounds.maxX && z >= bounds.minZ && z <= bounds.maxZ;
+}
+
+function normalizeDirXZ(x, z) {
+    const len = Math.hypot(x, z);
+    if (!(len > EPS)) return null;
+    const inv = 1 / len;
+    return { x: x * inv, z: z * inv };
+}
+
+function dotXZ(a, b) {
+    return a.x * b.x + a.z * b.z;
+}
+
+function rightNormalXZ(dir) {
+    return { x: dir.z, z: -dir.x };
+}
+
+function isTrafficLightNode(incidents, threshold) {
+    const t = Number.isFinite(threshold) ? Math.max(1, threshold | 0) : DEFAULT_TRAFFIC_LIGHT_LANE_THRESHOLD;
+    if (incidents.length !== 4) return false;
+    for (const inc of incidents) {
+        if ((inc?.laneOut ?? 0) < t) return false;
+    }
+    const sorted = incidents.slice().sort((a, b) => (a.angle ?? 0) - (b.angle ?? 0));
+    const a0 = sorted[0]?.dirOut ?? null;
+    const a1 = sorted[1]?.dirOut ?? null;
+    const a2 = sorted[2]?.dirOut ?? null;
+    const a3 = sorted[3]?.dirOut ?? null;
+    if (!a0 || !a1 || !a2 || !a3) return false;
+    return dotXZ(a0, a2) < -0.6 && dotXZ(a1, a3) < -0.6;
 }
 
 export function computeTrafficControlPlacements({
@@ -81,6 +140,112 @@ export function computeTrafficControlPlacements({
 
     const placements = [];
     const added = new Set();
+
+    const network = map.roadNetwork ?? null;
+    const hasNetwork = !!network?.getNodes && !!network?.getEdges;
+    if (hasNetwork) {
+        const edges = network.getEdges().filter((edge) => edge?.rendered !== false);
+        const edgesById = new Map(edges.map((edge) => [edge.id, edge]));
+
+        for (const node of network.getNodes()) {
+            const edgeIds = Array.isArray(node?.edgeIds) ? node.edgeIds : [];
+            const incidents = [];
+            let maxHalfWidth = 0;
+
+            for (const edgeId of edgeIds) {
+                const edge = edgesById.get(edgeId) ?? null;
+                if (!edge) continue;
+                const otherId = node.id === edge.a ? edge.b : edge.a;
+                const other = network.getNode(otherId);
+                if (!other) continue;
+                const dirOut = normalizeDirXZ(other.position.x - node.position.x, other.position.z - node.position.z);
+                if (!dirOut) continue;
+
+                const totalLanes = laneCountForEdge(edge);
+                if (!(totalLanes > 0)) continue;
+                const width = roadWidthWorldFromTotalLanes(totalLanes, { laneWidth, shoulder });
+                const halfWidth = width * HALF;
+                if (!(halfWidth > 0)) continue;
+                if (halfWidth > maxHalfWidth) maxHalfWidth = halfWidth;
+
+                incidents.push({
+                    edgeId: edge.id,
+                    dirOut,
+                    angle: Math.atan2(dirOut.z, dirOut.x),
+                    laneOut: laneCountOutForEdgeAtNode(edge, node.id),
+                    totalLanes,
+                    halfWidth
+                });
+            }
+
+            if (incidents.length < 3) continue;
+
+            const kind = isTrafficLightNode(incidents, laneThreshold) ? TRAFFIC_CONTROL.TRAFFIC_LIGHT : TRAFFIC_CONTROL.STOP_SIGN;
+            const nodeOuter = maxHalfWidth + curbT + stopInset;
+
+            const isLight = kind === TRAFFIC_CONTROL.TRAFFIC_LIGHT;
+            let placementIncidents = incidents;
+            if (isLight && incidents.length === 4) {
+                const sorted = incidents.slice().sort((a, b) => (a.angle ?? 0) - (b.angle ?? 0));
+                const pairA = [sorted[0], sorted[2]];
+                const pairB = [sorted[1], sorted[3]];
+                const sumA = (pairA[0].laneOut ?? 0) + (pairA[1].laneOut ?? 0);
+                const sumB = (pairB[0].laneOut ?? 0) + (pairB[1].laneOut ?? 0);
+
+                const xA = Math.abs(pairA[0].dirOut.x) + Math.abs(pairA[1].dirOut.x);
+                const xB = Math.abs(pairB[0].dirOut.x) + Math.abs(pairB[1].dirOut.x);
+                placementIncidents = (sumB > sumA || (sumB === sumA && xB > xA)) ? pairB : pairA;
+            }
+
+            placementIncidents = placementIncidents.slice().sort((a, b) => (a.angle ?? 0) - (b.angle ?? 0));
+
+            for (const inc of placementIncidents) {
+                const key = `${node.id}:${kind}:${inc.edgeId}`;
+                if (added.has(key)) continue;
+
+                const side = rightNormalXZ(inc.dirOut);
+                const sideOffset = inc.halfWidth + curbT + stopInset;
+                const px = node.position.x + inc.dirOut.x * nodeOuter + side.x * sideOffset;
+                const pz = node.position.z + inc.dirOut.z * nodeOuter + side.z * sideOffset;
+                if (!withinBounds(bounds, px, pz)) continue;
+
+                if (isLight) {
+                    const targetArm = 4.0;
+                    const poleSideOffsetWorld = sideOffset + poleInset;
+                    const scale = clamp(poleSideOffsetWorld / targetArm, 2.4, 3.2);
+                    const armLength = laneWidth / scale;
+                    const baseY = sidewalkY + 1.2 * scale;
+                    placements.push({
+                        kind,
+                        nodeId: node.id,
+                        tile: node.tile ?? null,
+                        approach: inc.edgeId,
+                        position: { x: px, y: baseY, z: pz },
+                        rotationY: Math.atan2(inc.dirOut.x, inc.dirOut.z),
+                        scale,
+                        armLength
+                    });
+                    added.add(key);
+                    continue;
+                }
+
+                const scale = 1.1;
+                const baseY = sidewalkY + 1.2 * scale;
+                placements.push({
+                    kind,
+                    nodeId: node.id,
+                    tile: node.tile ?? null,
+                    approach: inc.edgeId,
+                    position: { x: px, y: baseY, z: pz },
+                    rotationY: Math.atan2(inc.dirOut.x, inc.dirOut.z),
+                    scale
+                });
+                added.add(key);
+            }
+        }
+
+        return placements;
+    }
 
     for (let y = 0; y < map.height; y++) {
         for (let x = 0; x < map.width; x++) {

@@ -53,8 +53,9 @@ import { linkRoadPoles } from './road/poles/RoadPoleLinking.js';
 import { renderStraightRoads } from './road/render/RoadRenderData.js';
 import { renderCurveConnectors } from './road/render/RoadCurveRenderer.js';
 import { renderIntersectionPolygons } from './road/render/RoadIntersectionPolygon.js';
+import { generateRoadsFromRoadNetwork } from './road2/CenterlineRoadGenerator.js';
 
-export function generateRoads({ map, config, materials } = {}) {
+function generateRoadsLegacy({ map, config, materials } = {}) {
     const group = new THREE.Group();
     group.name = 'Roads';
     const curbConnectors = [];
@@ -489,4 +490,11 @@ export function generateRoads({ map, config, materials } = {}) {
         curbConnectors,
         collisionMarkers
     };
+}
+
+export function generateRoads({ map, config, materials } = {}) {
+    if (map?.roadNetwork) {
+        return generateRoadsFromRoadNetwork({ network: map.roadNetwork, config, materials });
+    }
+    return generateRoadsLegacy({ map, config, materials });
 }

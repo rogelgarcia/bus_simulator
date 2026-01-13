@@ -2125,6 +2125,31 @@ async function runTests() {
             assertEqual(radialSegments, 8, 'Stop sign plate should have 8 sides.');
         });
 
+        test('ProceduralMesh: stop sign plate depth scaled down by 80%', () => {
+            const asset = proceduralMeshes.catalog.createProceduralMeshAsset(proceduralMeshes.stopSignPlate.MESH_ID);
+            const geo = asset?.mesh?.geometry ?? null;
+            assertTrue(!!geo, 'Expected stop sign plate geometry.');
+
+            geo.computeBoundingBox();
+            const box = geo.boundingBox ?? null;
+            assertTrue(!!box, 'Expected stop sign plate bounding box.');
+            const depth = box.max.z - box.min.z;
+
+            const baselineRadius = 0.34;
+            const baselineThickness = 0.04;
+            const radialSegments = 8;
+            const baselineGeo = new THREE.CylinderGeometry(baselineRadius, baselineRadius, baselineThickness, radialSegments, 1, false);
+            baselineGeo.rotateX(Math.PI / 2);
+            baselineGeo.rotateZ(Math.PI / radialSegments);
+            baselineGeo.computeBoundingBox();
+            const baselineBox = baselineGeo.boundingBox ?? null;
+            assertTrue(!!baselineBox, 'Expected baseline stop sign plate bounding box.');
+            const baselineDepth = baselineBox.max.z - baselineBox.min.z;
+
+            const eps = 1e-4;
+            assertNear(depth, baselineDepth * 0.2, eps, 'Expected stop sign plate depth scaled by 0.2.');
+        });
+
         test('ProceduralMesh: stop sign composed mesh region ids stable', () => {
             const asset = proceduralMeshes.catalog.createProceduralMeshAsset(proceduralMeshes.stopSign.MESH_ID);
             assertRegionIds(asset, [
@@ -2289,13 +2314,83 @@ async function runTests() {
             const prevGeo = asset.mesh?.geometry ?? null;
             api.setValue('armLength', 3.2);
             assertTrue(asset.mesh?.geometry !== prevGeo, 'armLength should rebuild composed geometry.');
+
+            const geo = asset?.mesh?.geometry ?? null;
+            assertTrue(!!geo, 'Composed traffic light geometry should exist after rebuild.');
+            const groups = geo?.groups ?? [];
+            const index = geo?.index ?? null;
+            const pos = geo?.attributes?.position ?? null;
+            assertTrue(!!index?.isBufferAttribute && !!pos?.isBufferAttribute, 'Composed traffic light should have indexed positions.');
+
+            const computeGroupBox = (group) => {
+                const box = new THREE.Box3();
+                box.makeEmpty();
+                const v = new THREE.Vector3();
+                const start = group?.start ?? 0;
+                const end = start + (group?.count ?? 0);
+                for (let i = start; i < end; i++) {
+                    const vi = index.getX(i);
+                    v.fromBufferAttribute(pos, vi);
+                    box.expandByPoint(v);
+                }
+                return box;
+            };
+
+            const armGroup = groups.find((g) => g?.materialIndex === 2) ?? null;
+            assertTrue(!!armGroup, 'Composed traffic light should include an arm group.');
+            const armBox = computeGroupBox(armGroup);
+            const armCenterY = (armBox.min.y + armBox.max.y) / 2;
+
+            const headBox = new THREE.Box3();
+            headBox.makeEmpty();
+            for (const g of groups) {
+                const mi = g?.materialIndex;
+                if (!Number.isFinite(mi) || mi < 3) continue;
+                headBox.union(computeGroupBox(g));
+            }
+            assertFalse(headBox.isEmpty(), 'Composed traffic light should include head geometry.');
+            const headCenterY = (headBox.min.y + headBox.max.y) / 2;
+
+            const eps = 1e-4;
+            assertNear(headCenterY, armCenterY, eps, 'Composed traffic light head should stay centered after armLength rebuild.');
         });
     }
+
+    // ========== City Spec Registry Tests ==========
+    const citySpecs = await import('/src/app/city/specs/CitySpecRegistry.js');
+    const { generateRoads } = await import('/src/graphics/assets3d/generators/RoadGenerator.js');
+
+    test('CitySpecRegistry: contains expected entries', () => {
+        const entries = Array.isArray(citySpecs.CITY_SPEC_REGISTRY) ? citySpecs.CITY_SPEC_REGISTRY : [];
+        assertTrue(entries.length >= 2, 'Expected at least 2 city specs in registry.');
+        assertTrue(entries.some((entry) => entry?.id === citySpecs.DEFAULT_CITY_SPEC_ID), 'Expected default city spec id in registry.');
+        assertTrue(entries.some((entry) => entry?.id === 'bigcity'), 'Expected bigcity entry in registry.');
+    });
+
+    test('CitySpecRegistry: creating different specs rebuilds roads without errors', () => {
+        const cfg = createCityConfig({ size: 400, tileMeters: 2, mapTileSize: 24, seed: 'city-spec-test' });
+        const demoSpec = citySpecs.createCitySpecById(citySpecs.DEFAULT_CITY_SPEC_ID, cfg);
+        const bigSpec = citySpecs.createCitySpecById('bigcity', cfg);
+        assertTrue(!!demoSpec, 'Expected demo spec to be created.');
+        assertTrue(!!bigSpec, 'Expected bigcity spec to be created.');
+
+        const demoMap = CityMap.fromSpec(demoSpec, cfg);
+        const bigMap = CityMap.fromSpec(bigSpec, cfg);
+        assertTrue(!!demoMap && !!bigMap, 'Expected CityMap instances from specs.');
+
+        const genCfg = createGeneratorConfig();
+        const demoRoads = generateRoads({ map: demoMap, config: genCfg, materials: {} });
+        const bigRoads = generateRoads({ map: bigMap, config: genCfg, materials: {} });
+        assertTrue(!!demoRoads?.group, 'Expected demo roads group.');
+        assertTrue(!!bigRoads?.group, 'Expected bigcity roads group.');
+    });
 
     // ========== Map Debugger Camera Controls Tests ==========
     try {
         const { MapDebuggerShortcutsPanel } = await import('/src/graphics/gui/map_debugger/MapDebuggerShortcutsPanel.js');
         const { MapDebuggerState } = await import('/src/states/MapDebuggerState.js');
+        const { createCityConfig } = await import('/src/app/city/CityConfig.js');
+        const { CityMap } = await import('/src/app/city/CityMap.js');
 
         test('MapDebuggerShortcutsPanel: includes R and T shortcuts', () => {
             const panel = new MapDebuggerShortcutsPanel();
@@ -2362,8 +2457,976 @@ async function runTests() {
             state._handlePointerDown(e);
             assertTrue(dragStarted, 'Drag should start when not editing.');
         });
+
+        test('MapDebuggerState: loadCitySpec triggers rebuild path', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(),
+                clearScene: () => {},
+                context: {}
+            };
+            const sm = { go: () => {} };
+            const state = new MapDebuggerState(engine, sm);
+
+            let called = null;
+            state._applySpec = (spec, options) => { called = { spec, options }; };
+
+            state._loadCitySpec('bigcity');
+            assertTrue(!!called, 'Expected loadCitySpec to call _applySpec.');
+            assertEqual(state._citySpecId, 'bigcity', 'Expected selected spec id to be stored.');
+            assertTrue(!!called?.options?.resetCamera, 'Expected loadCitySpec to reset camera.');
+            assertEqual(state._cityOptions.size, 600, 'Expected bigcity size to update city options.');
+        });
+
+        test('MapDebuggerState: road draft markers + live preview (segment-by-segment)', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); },
+                context: {}
+            };
+            const sm = { go: () => {} };
+            const state = new MapDebuggerState(engine, sm);
+            const cfg = createCityConfig(state._cityOptions);
+            const spec = CityMap.demoSpec(cfg);
+            state._applySpec(spec, { resetCamera: true });
+
+            state._startRoadMode();
+            const markers = state.city.group.getObjectByName('EditorRoadDraftMarkers');
+            const preview = state.city.group.getObjectByName('EditorRoadDraftPreview');
+            assertTrue(!!markers, 'Expected draft marker overlay.');
+            assertTrue(!!preview, 'Expected draft preview group.');
+            assertEqual(markers.count, 0, 'Expected 0 draft markers initially.');
+            assertEqual(preview.children.length, 0, 'Expected 0 preview sections initially.');
+
+            state._handleRoadToolClick({ x: 1, y: 1 });
+            assertEqual(markers.count, 1, 'Expected 1 draft marker after first point.');
+            assertEqual(preview.children.length, 0, 'Preview should not render with <2 draft points.');
+
+            state._handleRoadToolClick({ x: 3, y: 1 });
+            assertEqual(markers.count, 2, 'Expected 2 draft markers after second point.');
+            assertEqual(preview.children.length, 1, 'Expected 1 preview section for 2 draft points.');
+
+            const hashFloatArray = (arr, scale = 1000) => {
+                let h = 2166136261;
+                for (let i = 0; i < arr.length; i++) {
+                    const v = Math.round(arr[i] * scale);
+                    h ^= v;
+                    h = Math.imul(h, 16777619);
+                }
+                return h >>> 0;
+            };
+
+            const hashPreview = (group) => {
+                let h = 2166136261;
+                group.traverse((obj) => {
+                    if (obj?.name !== 'Asphalt') return;
+                    const arr = obj.geometry?.attributes?.position?.array ?? null;
+                    if (!arr) return;
+                    h ^= hashFloatArray(arr);
+                    h = Math.imul(h, 16777619);
+                });
+                return h >>> 0;
+            };
+
+            const h1 = hashPreview(preview);
+            state._syncRoadDraftPreview();
+            const h2 = hashPreview(preview);
+            assertEqual(h2, h1, 'Expected deterministic preview rebuild hash.');
+
+            state._handleRoadToolClick({ x: 3, y: 4 });
+            assertEqual(preview.children.length, 2, 'Expected N-1 preview sections for N draft points.');
+
+            state._cancelRoadDraft();
+            assertEqual(markers.count, 0, 'Expected markers cleared after cancelling road draft.');
+            assertEqual(preview.children.length, 0, 'Expected preview cleared after cancelling road draft.');
+        });
+
+        test('MapDebuggerState: road draft preview clears on done', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); },
+                context: {}
+            };
+            const sm = { go: () => {} };
+            const state = new MapDebuggerState(engine, sm);
+            const cfg = createCityConfig(state._cityOptions);
+            const spec = CityMap.demoSpec(cfg);
+            state._applySpec(spec, { resetCamera: true });
+
+            state._startRoadMode();
+            state._handleRoadToolClick({ x: 2, y: 2 });
+            state._handleRoadToolClick({ x: 5, y: 2 });
+            state._handleRoadToolClick({ x: 4, y: 6 });
+            state._doneRoadMode();
+
+            const markers = state.city.group.getObjectByName('EditorRoadDraftMarkers');
+            const preview = state.city.group.getObjectByName('EditorRoadDraftPreview');
+            assertTrue(!!markers, 'Expected draft marker overlay after done.');
+            assertTrue(!!preview, 'Expected draft preview group after done.');
+            assertEqual(markers.count, 0, 'Expected markers cleared after done.');
+            assertEqual(preview.children.length, 0, 'Expected preview cleared after done.');
+            assertFalse(state._roadModeEnabled, 'Expected road mode disabled after done.');
+        });
+
+        test('MapDebuggerState: hover edge connection lines', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); },
+                context: {}
+            };
+            const sm = { go: () => {} };
+            const state = new MapDebuggerState(engine, sm);
+
+            const cfg = createCityConfig({ size: 288, mapTileSize: 24, seed: 'edge-hover-001' });
+            const spec = {
+                version: 1,
+                seed: cfg.seed,
+                width: 12,
+                height: 12,
+                tileSize: cfg.map.tileSize,
+                origin: cfg.map.origin,
+                roads: [
+                    { a: [5, 5], b: [9, 5], lanesF: 2, lanesB: 2, tag: 'r1' },
+                    { a: [5, 5], b: [5, 9], lanesF: 2, lanesB: 2, tag: 'r2' }
+                ],
+                buildings: []
+            };
+            state._applySpec(spec, { resetCamera: true });
+
+            const line = state.city.group.getObjectByName('EditorEdgeConnectionHoverLine');
+            assertTrue(!!line, 'Expected edge connection hover line overlay.');
+            assertFalse(line.visible, 'Expected hover line hidden by default.');
+
+            const debug = state.city?.roads?.debug ?? null;
+            const joins = Array.isArray(debug?.cornerJoins) ? debug.cornerJoins : [];
+            const edges = Array.isArray(debug?.edges) ? debug.edges : [];
+            const join = joins.find((j) => j?.nodeId === 't:5,5') ?? joins[0] ?? null;
+            assertTrue(!!join, 'Expected a corner join in the test map.');
+            const conn = Array.isArray(join?.connections) ? join.connections[0] : null;
+            assertTrue(!!conn?.a && !!conn?.b, 'Expected join connections.');
+
+            const edgePoint = (nodeId, edgeId, side) => {
+                const edge = edges.find((e) => e?.edgeId === edgeId) ?? null;
+                if (!edge) return null;
+                if (edge.a === nodeId) return side === 'left' ? edge.left?.a : edge.right?.a;
+                if (edge.b === nodeId) return side === 'left' ? edge.right?.b : edge.left?.b;
+                return null;
+            };
+
+            const pConnected = edgePoint(join.nodeId, conn.a.edgeId, conn.a.side);
+            assertTrue(!!pConnected, 'Expected connected edge point position.');
+            state._updateEdgeConnectionHover(new THREE.Vector3(pConnected.x, 0, pConnected.z));
+            assertTrue(line.visible, 'Expected hover line visible when hovering connected edge point.');
+            const startCount = line.geometry?.attributes?.instanceStart?.count ?? 0;
+            const endCount = line.geometry?.attributes?.instanceEnd?.count ?? 0;
+            assertEqual(startCount, 1, 'Expected exactly one hover line segment.');
+            assertEqual(endCount, 1, 'Expected exactly one hover line segment.');
+
+            const edgeForConn = edges.find((e) => e?.edgeId === conn.a.edgeId) ?? null;
+            const otherNodeId = edgeForConn ? (edgeForConn.a === join.nodeId ? edgeForConn.b : edgeForConn.a) : null;
+            const pUnconnected = otherNodeId ? (edgePoint(otherNodeId, conn.a.edgeId, conn.a.side) ?? edgePoint(otherNodeId, conn.a.edgeId, 'left')) : null;
+            assertTrue(!!pUnconnected, 'Expected unconnected edge point position.');
+            state._updateEdgeConnectionHover(new THREE.Vector3(pUnconnected.x, 0, pUnconnected.z));
+            assertFalse(line.visible, 'Expected no hover line when hovering unconnected edge point.');
+
+            state._updateEdgeConnectionHover(new THREE.Vector3(9999, 0, 9999));
+            assertFalse(line.visible, 'Expected hover line cleared when hover ends.');
+        });
     } catch (e) {
         console.log('⏭️  Map debugger camera tests skipped:', e.message);
+    }
+
+    // ========== Road Graph / Geometry Tests ==========
+    try {
+        const { createCityConfig } = await import('/src/app/city/CityConfig.js');
+        const { CityMap } = await import('/src/app/city/CityMap.js');
+        const { generateRoads } = await import('/src/graphics/assets3d/generators/RoadGenerator.js');
+        const { getCityMaterials } = await import('/src/graphics/assets3d/textures/CityMaterials.js');
+        const { generateCenterlineFromPolyline } = await import('/src/app/geometry/PolylineTAT.js');
+
+	        const hashFloatArray = (arr, scale = 1000) => {
+	            let h = 2166136261;
+	            for (let i = 0; i < arr.length; i++) {
+	                const v = Math.round(arr[i] * scale);
+	                h ^= v;
+	                h = Math.imul(h, 16777619);
+	            }
+	            return h >>> 0;
+	        };
+
+	        const findMergeRange = (mesh, predicate) => {
+	            const geom = mesh?.geometry ?? null;
+	            const ranges = Array.isArray(geom?.userData?.mergeRanges) ? geom.userData.mergeRanges : [];
+	            const data = Array.isArray(geom?.userData?.mergeRangeData) ? geom.userData.mergeRangeData : [];
+	            const n = Math.min(ranges.length, data.length);
+	            for (let i = 0; i < n; i++) {
+	                const meta = data[i];
+	                if (!predicate(meta, i)) continue;
+	                return { range: ranges[i], meta, index: i };
+	            }
+	            return null;
+	        };
+
+	        const centroidRangeXZ = (mesh, range) => {
+	            const pos = mesh?.geometry?.attributes?.position?.array ?? null;
+	            const start = range?.start ?? null;
+	            const count = range?.count ?? null;
+	            if (!pos || !Number.isFinite(start) || !Number.isFinite(count) || !(count > 0)) return null;
+	            let cx = 0;
+	            let cz = 0;
+	            let n = 0;
+	            for (let i = 0; i < count; i++) {
+	                const idx = (start + i) * 3;
+	                const x = pos[idx];
+	                const z = pos[idx + 2];
+	                if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
+	                cx += x;
+	                cz += z;
+	                n += 1;
+	            }
+	            if (n === 0) return null;
+	            return { x: cx / n, z: cz / n };
+	        };
+
+	        const orientXZ = (a, b, c) => (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x);
+
+	        const onSegmentXZ = (a, b, p, eps = 1e-9) => {
+	            const minX = Math.min(a.x, b.x) - eps;
+	            const maxX = Math.max(a.x, b.x) + eps;
+	            const minZ = Math.min(a.z, b.z) - eps;
+	            const maxZ = Math.max(a.z, b.z) + eps;
+	            return p.x >= minX && p.x <= maxX && p.z >= minZ && p.z <= maxZ;
+	        };
+
+	        const segmentsIntersectXZ = (a0, a1, b0, b1, eps = 1e-9) => {
+	            const o1 = orientXZ(a0, a1, b0);
+	            const o2 = orientXZ(a0, a1, b1);
+	            const o3 = orientXZ(b0, b1, a0);
+	            const o4 = orientXZ(b0, b1, a1);
+
+	            const s1 = Math.abs(o1) <= eps ? 0 : (o1 > 0 ? 1 : -1);
+	            const s2 = Math.abs(o2) <= eps ? 0 : (o2 > 0 ? 1 : -1);
+	            const s3 = Math.abs(o3) <= eps ? 0 : (o3 > 0 ? 1 : -1);
+	            const s4 = Math.abs(o4) <= eps ? 0 : (o4 > 0 ? 1 : -1);
+
+	            if (s1 !== 0 && s2 !== 0 && s3 !== 0 && s4 !== 0) {
+	                return (s1 !== s2) && (s3 !== s4);
+	            }
+
+	            if (s1 === 0 && onSegmentXZ(a0, a1, b0, eps)) return true;
+	            if (s2 === 0 && onSegmentXZ(a0, a1, b1, eps)) return true;
+	            if (s3 === 0 && onSegmentXZ(b0, b1, a0, eps)) return true;
+	            if (s4 === 0 && onSegmentXZ(b0, b1, a1, eps)) return true;
+	            return false;
+	        };
+
+            const polygonSignedAreaXZ = (pts) => {
+                const list = Array.isArray(pts) ? pts : [];
+                if (list.length < 3) return 0;
+                let area = 0;
+                for (let i = 0; i < list.length; i++) {
+                    const a = list[i];
+                    const b = list[(i + 1) % list.length];
+                    area += a.x * b.z - b.x * a.z;
+                }
+                return area * 0.5;
+            };
+
+            const findMergeRanges = (mesh, predicate) => {
+                const geom = mesh?.geometry ?? null;
+                const ranges = Array.isArray(geom?.userData?.mergeRanges) ? geom.userData.mergeRanges : [];
+                const data = Array.isArray(geom?.userData?.mergeRangeData) ? geom.userData.mergeRangeData : [];
+                const n = Math.min(ranges.length, data.length);
+                const out = [];
+                for (let i = 0; i < n; i++) {
+                    const meta = data[i];
+                    if (!predicate(meta, i)) continue;
+                    out.push({ range: ranges[i], meta, index: i });
+                }
+                return out;
+            };
+
+            const verticesInRangeXZ = (mesh, range) => {
+                const pos = mesh?.geometry?.attributes?.position?.array ?? null;
+                const start = range?.start ?? null;
+                const count = range?.count ?? null;
+                if (!pos || !Number.isFinite(start) || !Number.isFinite(count) || !(count > 0)) return [];
+                const out = [];
+                for (let i = 0; i < count; i++) {
+                    const idx = (start + i) * 3;
+                    const x = pos[idx];
+                    const z = pos[idx + 2];
+                    if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
+                    out.push({ x, z });
+                }
+                return out;
+            };
+
+            const pointInPolygonStrictXZ = (p, poly, eps = 1e-9) => {
+                const list = Array.isArray(poly) ? poly : [];
+                if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.z) || list.length < 3) return false;
+
+                for (let i = 0; i < list.length; i++) {
+                    const a = list[i];
+                    const b = list[(i + 1) % list.length];
+                    if (Math.abs(orientXZ(a, b, p)) <= eps && onSegmentXZ(a, b, p, eps)) return false;
+                }
+
+                let inside = false;
+                for (let i = 0, j = list.length - 1; i < list.length; j = i++) {
+                    const a = list[i];
+                    const b = list[j];
+                    const zi = a.z;
+                    const zj = b.z;
+                    const intersects = ((zi > p.z) !== (zj > p.z))
+                        && (p.x < (b.x - a.x) * (p.z - zi) / (zj - zi + 0.0) + a.x);
+                    if (intersects) inside = !inside;
+                }
+                return inside;
+            };
+
+            const normalizeXZ = (a, b) => {
+                const dx = b.x - a.x;
+                const dz = b.z - a.z;
+                const len = Math.hypot(dx, dz);
+                if (!(len > 1e-9)) return null;
+                const inv = 1 / len;
+                return { x: dx * inv, z: dz * inv, length: len };
+            };
+
+            const tangentDirAt = (arc, point) => {
+                if (!arc || !point) return null;
+                const center = arc.center ?? null;
+                const ccw = arc.ccw === true;
+                if (!center || !Number.isFinite(center.x) || !Number.isFinite(center.z)) return null;
+                const rx = point.x - center.x;
+                const rz = point.z - center.z;
+                const len = Math.hypot(rx, rz);
+                if (!(len > 1e-9)) return null;
+                const inv = 1 / len;
+                const ux = rx * inv;
+                const uz = rz * inv;
+                const tx = ccw ? -uz : uz;
+                const tz = ccw ? ux : -ux;
+                return { x: tx, z: tz };
+            };
+
+            const hashPointsXZ = (pts, scale = 1000) => {
+                const list = Array.isArray(pts) ? pts : [];
+                let h = 2166136261;
+                for (const p of list) {
+                    const x = Math.round((p?.x ?? 0) * scale);
+                    const z = Math.round((p?.z ?? 0) * scale);
+                    h ^= x;
+                    h = Math.imul(h, 16777619);
+                    h ^= z;
+                    h = Math.imul(h, 16777619);
+                }
+                return h >>> 0;
+            };
+
+            const findPointIndexNear = (pts, target, eps = 1e-5) => {
+                const list = Array.isArray(pts) ? pts : [];
+                if (!target || !Number.isFinite(target.x) || !Number.isFinite(target.z)) return -1;
+                const e2 = eps * eps;
+                for (let i = 0; i < list.length; i++) {
+                    const p = list[i];
+                    const dx = p.x - target.x;
+                    const dz = p.z - target.z;
+                    if ((dx * dx + dz * dz) <= e2) return i;
+                }
+                return -1;
+            };
+
+        test('RoadNetwork: splits centerline crossings into nodes', () => {
+            const cfg = createCityConfig({ size: 288, mapTileSize: 24, seed: 'road-net-001' });
+            const spec = {
+                version: 1,
+                seed: cfg.seed,
+                width: 12,
+                height: 12,
+                tileSize: cfg.map.tileSize,
+                origin: cfg.map.origin,
+                roads: [
+                    { a: [0, 5], b: [10, 5], lanesF: 2, lanesB: 2, tag: 'h' },
+                    { a: [5, 0], b: [5, 10], lanesF: 2, lanesB: 2, tag: 'v' }
+                ],
+                buildings: []
+            };
+
+            const map = CityMap.fromSpec(spec, cfg);
+            const net = map.roadNetwork;
+            assertTrue(!!net, 'Expected CityMap to create a roadNetwork.');
+
+            const node = net.getNode('t:5,5');
+            assertTrue(!!node, 'Expected intersection node at t:5,5.');
+            assertEqual(node.edgeIds.length, 4, 'Expected 4 edge pieces incident at the crossing.');
+
+            const edges = net.getEdges();
+            assertEqual(edges.length, 4, 'Expected 4 total edge pieces after splitting.');
+        });
+
+        test('RoadNetwork: demo spec graph is deterministic', () => {
+            const cfg = createCityConfig({ seed: 'demo-graph-001' });
+            const spec = CityMap.demoSpec(cfg);
+
+            const mapA = CityMap.fromSpec(spec, cfg);
+            const mapB = CityMap.fromSpec(spec, cfg);
+
+            const netA = mapA.roadNetwork;
+            const netB = mapB.roadNetwork;
+
+            assertTrue(!!netA && !!netB, 'Expected road networks to exist.');
+            assertEqual(JSON.stringify(netA.nodeIds), JSON.stringify(netB.nodeIds), 'Expected node ids to be stable.');
+            assertEqual(JSON.stringify(netA.edgeIds), JSON.stringify(netB.edgeIds), 'Expected edge ids to be stable.');
+
+            assertTrue(netA.getNode('t:8,8') !== null, 'Expected arterial crossing node at t:8,8.');
+        });
+
+        test('RoadGenerator: generates stable centerline asphalt geometry', () => {
+            const cfg = createCityConfig({ seed: 'demo-geo-001' });
+            const spec = CityMap.demoSpec(cfg);
+            const map = CityMap.fromSpec(spec, cfg);
+            const materials = getCityMaterials();
+
+            const a = generateRoads({ map, config: { road: {} }, materials });
+            const b = generateRoads({ map, config: { road: {} }, materials });
+
+            const posA = a?.asphalt?.geometry?.attributes?.position?.array ?? null;
+            const posB = b?.asphalt?.geometry?.attributes?.position?.array ?? null;
+            assertTrue(posA && posB, 'Expected asphalt geometry position buffers.');
+            assertEqual(posA.length, posB.length, 'Expected matching geometry buffer sizes.');
+
+            for (let i = 0; i < posA.length; i++) {
+                assertTrue(Number.isFinite(posA[i]), 'Expected finite position values.');
+            }
+
+            const hashA = hashFloatArray(posA);
+            const hashB = hashFloatArray(posB);
+            assertEqual(hashA, hashB, 'Expected deterministic asphalt geometry.');
+        });
+
+	        test('RoadGenerator: produces intersections and joins', () => {
+	            const cfg = createCityConfig({ seed: 'demo-joins-001' });
+	            const spec = CityMap.demoSpec(cfg);
+	            const map = CityMap.fromSpec(spec, cfg);
+	            const materials = getCityMaterials();
+
+	            const roads = generateRoads({ map, config: { road: {} }, materials });
+	            const debug = roads?.debug ?? null;
+	            const intersections = Array.isArray(debug?.intersections) ? debug.intersections : [];
+	            const joins = Array.isArray(debug?.cornerJoins) ? debug.cornerJoins : [];
+
+	            assertTrue(intersections.length > 0, 'Expected at least 1 intersection polygon.');
+	            assertTrue(joins.length > 0, 'Expected at least 1 corner join.');
+	        });
+
+	        test('RoadGenerator: T junction intersection stays local and keeps boundaries offset', () => {
+	            const cfg = createCityConfig({ size: 288, mapTileSize: 24, seed: 't-junction-001' });
+	            const spec = {
+                version: 1,
+                seed: cfg.seed,
+                width: 12,
+                height: 12,
+                tileSize: cfg.map.tileSize,
+                origin: cfg.map.origin,
+                roads: [
+                    { a: [0, 2], b: [10, 2], lanesF: 2, lanesB: 2, tag: 'main' },
+                    { a: [5, 0], b: [5, 2], lanesF: 2, lanesB: 2, tag: 'branch' }
+                ],
+                buildings: []
+            };
+
+            const map = CityMap.fromSpec(spec, cfg);
+            const materials = getCityMaterials();
+            const roads = generateRoads({ map, config: { road: {} }, materials });
+
+            const net = map.roadNetwork;
+            const nodeId = 't:5,2';
+            const node = net?.getNode?.(nodeId) ?? null;
+            assertTrue(!!node, 'Expected T junction node at t:5,2.');
+
+	            const debug = roads?.debug ?? null;
+	            const intersections = Array.isArray(debug?.intersections) ? debug.intersections : [];
+	            const entry = intersections.find((e) => e?.nodeId === nodeId) ?? null;
+	            assertTrue(!!entry, 'Expected intersection polygon at the T junction node.');
+
+            const points = Array.isArray(entry?.points) ? entry.points : [];
+            assertTrue(points.length >= 3, 'Expected intersection polygon points.');
+
+            let cx = 0;
+            let cz = 0;
+            let count = 0;
+            for (const p of points) {
+                if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.z)) continue;
+                cx += p.x;
+                cz += p.z;
+                count += 1;
+            }
+            assertTrue(count >= 3, 'Expected finite polygon vertex coordinates.');
+	            cx /= count;
+	            cz /= count;
+	            const centroidDist = Math.hypot(cx - node.position.x, cz - node.position.z);
+	            assertTrue(centroidDist < cfg.map.tileSize * 2, 'Expected polygon centroid near the node.');
+
+	            const asphaltMesh = roads?.asphalt ?? null;
+	            const intersectionRange = findMergeRange(asphaltMesh, (meta) => meta?.kind === 'intersection' && meta?.nodeId === nodeId);
+	            assertTrue(!!intersectionRange, 'Expected intersection asphalt merge range meta for the T junction.');
+	            const geoCentroid = centroidRangeXZ(asphaltMesh, intersectionRange.range);
+	            assertTrue(!!geoCentroid, 'Expected intersection asphalt centroid.');
+	            const geoDist = Math.hypot(geoCentroid.x - node.position.x, geoCentroid.z - node.position.z);
+	            assertTrue(geoDist < cfg.map.tileSize * 2, 'Expected intersection asphalt geometry near the node.');
+
+            const edges = Array.isArray(debug?.edges) ? debug.edges : [];
+            const incident = edges.filter((e) => e?.a === nodeId || e?.b === nodeId);
+            assertTrue(incident.length === 3, 'Expected 3 incident edge pieces at the T junction node.');
+
+	            for (const edge of incident) {
+	                const isA = edge.a === nodeId;
+	                const left = isA ? edge?.left?.a : edge?.left?.b;
+	                const right = isA ? edge?.right?.a : edge?.right?.b;
+	                assertTrue(!!left && !!right, 'Expected edge boundary points at the junction.');
+	                const dl = Math.hypot(left.x - node.position.x, left.z - node.position.z);
+	                const dr = Math.hypot(right.x - node.position.x, right.z - node.position.z);
+	                assertTrue(dl > 0.5 && dr > 0.5, 'Expected boundary points to be offset from node center.');
+	            }
+	        });
+
+	        test('RoadGenerator: corner join recesses edges and avoids crossing', () => {
+	            const cfg = createCityConfig({ size: 288, mapTileSize: 24, seed: 'corner-join-001' });
+	            const spec = {
+	                version: 1,
+	                seed: cfg.seed,
+	                width: 12,
+	                height: 12,
+	                tileSize: cfg.map.tileSize,
+	                origin: cfg.map.origin,
+	                roads: [
+	                    { a: [2, 2], b: [2, 8], lanesF: 1, lanesB: 1, tag: 'v' },
+	                    { a: [2, 2], b: [8, 2], lanesF: 1, lanesB: 1, tag: 'h' }
+	                ],
+	                buildings: []
+	            };
+
+	            const map = CityMap.fromSpec(spec, cfg);
+	            const materials = getCityMaterials();
+	            const roads = generateRoads({ map, config: { road: {} }, materials });
+
+	            const nodeId = 't:2,2';
+	            const debug = roads?.debug ?? null;
+	            const edges = Array.isArray(debug?.edges) ? debug.edges : [];
+	            const incident = edges.filter((e) => e?.a === nodeId || e?.b === nodeId);
+	            assertTrue(incident.length === 2, 'Expected 2 incident edge pieces at the corner node.');
+
+	            const asphaltMesh = roads?.asphalt ?? null;
+	            const joinRange = findMergeRange(asphaltMesh, (meta) => meta?.kind === 'join' && meta?.nodeId === nodeId);
+	            assertTrue(!!joinRange, 'Expected join asphalt merge range meta for the corner node.');
+	            assertTrue(Number.isFinite(joinRange.meta?.cutback) && joinRange.meta.cutback > 0.1, 'Expected join to recess road endpoints.');
+
+	            const joinCentroid = centroidRangeXZ(asphaltMesh, joinRange.range);
+	            assertTrue(!!joinCentroid, 'Expected join asphalt centroid.');
+	            const node = map.roadNetwork?.getNode?.(nodeId) ?? null;
+	            assertTrue(!!node, 'Expected corner node to exist.');
+	            const joinDist = Math.hypot(joinCentroid.x - node.position.x, joinCentroid.z - node.position.z);
+	            assertTrue(joinDist < cfg.map.tileSize * 2, 'Expected join asphalt geometry near the node.');
+
+	            const cuts = [];
+	            const crossSections = [];
+	            for (const edge of incident) {
+	                const isA = edge.a === nodeId;
+	                const left = isA ? edge?.left?.a : edge?.left?.b;
+	                const right = isA ? edge?.right?.a : edge?.right?.b;
+	                assertTrue(!!left && !!right, 'Expected boundary points at the corner node.');
+	                cuts.push(Math.hypot(left.x - node.position.x, left.z - node.position.z));
+	                cuts.push(Math.hypot(right.x - node.position.x, right.z - node.position.z));
+	                crossSections.push({ left, right });
+	            }
+	            assertTrue(cuts.every((d) => d > 0.5), 'Expected boundaries to be cut back from node center.');
+	            assertTrue(!segmentsIntersectXZ(crossSections[0].left, crossSections[0].right, crossSections[1].left, crossSections[1].right), 'Expected trimmed cross-sections not to cross.');
+	        });
+
+            test('PolylineTAT: fillet is G1-continuous at tangents', () => {
+                const res = generateCenterlineFromPolyline({
+                    points: [
+                        { x: 0, z: 0 },
+                        { x: 10, z: 0 },
+                        { x: 10, z: 10 }
+                    ],
+                    defaultRadius: 3,
+                    chord: 0.25
+                });
+
+                assertTrue(res?.ok === true, 'Expected generateCenterlineFromPolyline to succeed.');
+                assertTrue(Array.isArray(res?.points) && res.points.length > 3, 'Expected sampled points.');
+                assertTrue(Array.isArray(res?.corners) && res.corners.length === 1, 'Expected one corner entry.');
+                assertTrue(res.corners[0]?.ok === true, 'Expected corner to be filleted.');
+
+                for (const p of res.points) {
+                    assertTrue(Number.isFinite(p.x) && Number.isFinite(p.z), 'Expected finite sampled points.');
+                }
+
+                const c = res.corners[0];
+                const iIn = findPointIndexNear(res.points, c.inTangent, 1e-4);
+                const iOut = findPointIndexNear(res.points, c.outTangent, 1e-4);
+                assertTrue(iIn > 0 && iIn + 1 < res.points.length, 'Expected inTangent in sampled points.');
+                assertTrue(iOut > 0 && iOut + 1 < res.points.length, 'Expected outTangent in sampled points.');
+
+                const d0 = normalizeXZ(res.points[iIn - 1], res.points[iIn]);
+                const d1 = normalizeXZ(res.points[iIn], res.points[iIn + 1]);
+                const d2 = normalizeXZ(res.points[iOut - 1], res.points[iOut]);
+                const d3 = normalizeXZ(res.points[iOut], res.points[iOut + 1]);
+                assertTrue(!!d0 && !!d1 && !!d2 && !!d3, 'Expected finite tangent directions.');
+                assertTrue((d0.x * d1.x + d0.z * d1.z) > 0.99, 'Expected G1 continuity at inTangent.');
+                assertTrue((d2.x * d3.x + d2.z * d3.z) > 0.99, 'Expected G1 continuity at outTangent.');
+            });
+
+            test('PolylineTAT: clamps radius when it does not fit', () => {
+                const res = generateCenterlineFromPolyline({
+                    points: [
+                        { x: 0, z: 0 },
+                        { x: 1, z: 0 },
+                        { x: 1, z: 1 }
+                    ],
+                    defaultRadius: 100,
+                    chord: 0.05
+                });
+
+                assertTrue(res?.ok === true, 'Expected centerline generation to succeed.');
+                assertTrue(res.corners.length === 1, 'Expected one corner entry.');
+                const c = res.corners[0];
+                assertTrue(c.ok === true, 'Expected corner to be filleted.');
+                assertTrue(c.radiusUsed > 0, 'Expected radiusUsed > 0.');
+                assertTrue(c.radiusUsed <= 1.001, 'Expected radius to be clamped to fit short segments.');
+                assertTrue(c.radiusUsed < c.radiusRequested, 'Expected radiusUsed < radiusRequested.');
+            });
+
+            test('PolylineTAT: per-point radius overrides default', () => {
+                const res = generateCenterlineFromPolyline({
+                    points: [
+                        { x: 0, z: 0 },
+                        { x: 10, z: 0, radius: 1 },
+                        { x: 10, z: 10 },
+                        { x: 20, z: 10 }
+                    ],
+                    defaultRadius: 4,
+                    chord: 0.25
+                });
+
+                assertTrue(res?.ok === true, 'Expected centerline generation to succeed.');
+                const corners = Array.isArray(res?.corners) ? res.corners : [];
+                const c1 = corners.find((c) => c?.index === 1) ?? null;
+                const c2 = corners.find((c) => c?.index === 2) ?? null;
+                assertTrue(!!c1 && !!c2, 'Expected 2 corner entries.');
+                assertNear(c1.radiusRequested, 1, 1e-6, 'Expected override radiusRequested.');
+                assertNear(c2.radiusRequested, 4, 1e-6, 'Expected default radiusRequested.');
+            });
+
+            test('RoadGenerator: polyline road spec round-trips and is deterministic', () => {
+                const cfg = createCityConfig({ size: 288, mapTileSize: 24, seed: 'polyline-spec-001' });
+                const ts = cfg.map.tileSize;
+                const org = cfg.map.origin;
+                const wpt = (x, y) => ({ x: org.x + x * ts, z: org.z + y * ts });
+
+                const spec = {
+                    version: 1,
+                    seed: cfg.seed,
+                    width: 12,
+                    height: 12,
+                    tileSize: ts,
+                    origin: org,
+                    roads: [
+                        {
+                            points: [wpt(2, 2), wpt(2, 8), wpt(8, 8)],
+                            defaultRadius: ts * 0.2,
+                            lanesF: 1,
+                            lanesB: 1,
+                            tag: 'poly',
+                            rendered: true
+                        }
+                    ],
+                    buildings: []
+                };
+
+                const mapA = CityMap.fromSpec(spec, cfg);
+                assertEqual(mapA.roadSegments.length, 1, 'Expected one road segment entry.');
+                assertEqual(mapA.roadSegments[0]?.kind, 'polyline', 'Expected polyline road meta.');
+
+                const outA = mapA.exportSpec({ seed: cfg.seed, version: 1 });
+                const mapB = CityMap.fromSpec(outA, cfg);
+                const outB = mapB.exportSpec({ seed: cfg.seed, version: 1 });
+                assertEqual(JSON.stringify(outA.roads), JSON.stringify(outB.roads), 'Expected exported roads to be reloadable and deterministic.');
+
+                const materials = getCityMaterials();
+                const a = generateRoads({ map: mapA, config: { road: {} }, materials });
+                const b = generateRoads({ map: mapA, config: { road: {} }, materials });
+                const posA = a?.asphalt?.geometry?.attributes?.position?.array ?? null;
+                const posB = b?.asphalt?.geometry?.attributes?.position?.array ?? null;
+                assertTrue(!!posA && !!posB, 'Expected asphalt position buffers.');
+                assertEqual(hashFloatArray(posA), hashFloatArray(posB), 'Expected deterministic asphalt geometry for polyline roads.');
+            });
+
+            test('RoadGenerator: join boundary is simple, symmetric, and has curb/sidewalk', () => {
+                const cfg = createCityConfig({ size: 288, mapTileSize: 24, seed: 'join-round-001' });
+                const spec = {
+                    version: 1,
+                    seed: cfg.seed,
+                    width: 12,
+                    height: 12,
+                    tileSize: cfg.map.tileSize,
+                    origin: cfg.map.origin,
+                    roads: [
+                        { a: [2, 2], b: [2, 8], lanesF: 2, lanesB: 2, tag: 'v' },
+                        { a: [2, 2], b: [8, 2], lanesF: 3, lanesB: 1, tag: 'h' }
+                    ],
+                    buildings: []
+                };
+
+                const map = CityMap.fromSpec(spec, cfg);
+                const materials = getCityMaterials();
+                const config = {
+                    road: {
+                        curb: { height: 0, extraHeight: 0, thickness: 0.25 },
+                        sidewalk: { extraWidth: 1.0, lift: 0 },
+                        curves: { turnRadius: 6 }
+                    }
+                };
+                const roads = generateRoads({ map, config, materials });
+                const nodeId = 't:2,2';
+
+                const debug = roads?.debug ?? null;
+                const join = (Array.isArray(debug?.cornerJoins) ? debug.cornerJoins : []).find((j) => j?.nodeId === nodeId) ?? null;
+                assertTrue(!!join, 'Expected corner join debug entry.');
+                assertTrue(Array.isArray(join?.points) && join.points.length >= 4, 'Expected join boundary polygon points.');
+                assertTrue(Number.isFinite(join?.cutback) && join.cutback > 0.1, 'Expected join cutback.');
+
+                for (const p of join.points) {
+                    assertTrue(Number.isFinite(p.x) && Number.isFinite(p.z), 'Expected finite join boundary points.');
+                }
+
+                const poly = join.points;
+                for (let i = 0; i < poly.length; i++) {
+                    const a0 = poly[i];
+                    const a1 = poly[(i + 1) % poly.length];
+                    for (let j = i + 1; j < poly.length; j++) {
+                        const b0 = poly[j];
+                        const b1 = poly[(j + 1) % poly.length];
+                        const adjacent = (i === j) || ((i + 1) % poly.length === j) || (i === (j + 1) % poly.length);
+                        if (adjacent) continue;
+                        assertFalse(segmentsIntersectXZ(a0, a1, b0, b1), 'Expected join boundary polygon not to self-intersect.');
+                    }
+                }
+
+                const edges = Array.isArray(debug?.edges) ? debug.edges : [];
+                const incident = edges.filter((e) => e?.a === nodeId || e?.b === nodeId);
+                assertTrue(incident.length === 2, 'Expected 2 incident edge pieces at join node.');
+                const node = map.roadNetwork?.getNode?.(nodeId) ?? null;
+                assertTrue(!!node, 'Expected join node to exist.');
+
+                const dirs = [];
+                for (const e of incident) {
+                    const a = e?.centerline?.a ?? null;
+                    const b = e?.centerline?.b ?? null;
+                    if (!a || !b) continue;
+                    const dir = (e.a === nodeId) ? normalizeXZ(a, b) : normalizeXZ(b, a);
+                    if (dir) dirs.push({ x: dir.x, z: dir.z });
+
+                    const isA = e.a === nodeId;
+                    const left = isA ? e?.left?.a : e?.left?.b;
+                    const right = isA ? e?.right?.a : e?.right?.b;
+                    assertTrue(!!left && !!right, 'Expected boundary points at join node.');
+                    assertNear(Math.hypot(left.x - right.x, left.z - right.z), e.width, 1e-3, 'Expected constant road width at join.');
+
+                    const pl = (left.x - node.position.x) * dir.x + (left.z - node.position.z) * dir.z;
+                    const pr = (right.x - node.position.x) * dir.x + (right.z - node.position.z) * dir.z;
+                    assertNear(pl, join.cutback, 1e-3, 'Expected symmetric cutback projection (left).');
+                    assertNear(pr, join.cutback, 1e-3, 'Expected symmetric cutback projection (right).');
+                }
+
+                const checkArc = (arc) => {
+                    if (!arc) return;
+                    const t0 = arc.tangent0 ?? null;
+                    const t1 = arc.tangent1 ?? null;
+                    const dt0 = tangentDirAt(arc, t0);
+                    const dt1 = tangentDirAt(arc, t1);
+                    assertTrue(!!dt0 && !!dt1, 'Expected arc tangent directions.');
+                    assertTrue(dirs.some((d) => Math.abs(d.x * dt0.x + d.z * dt0.z) > 0.99), 'Expected arc to be tangent to an incident road at tangent0.');
+                    assertTrue(dirs.some((d) => Math.abs(d.x * dt1.x + d.z * dt1.z) > 0.99), 'Expected arc to be tangent to an incident road at tangent1.');
+                };
+
+                checkArc(join?.fillets?.edge12 ?? null);
+                checkArc(join?.fillets?.edge30 ?? null);
+
+                const curbMesh = roads?.curbBlocks ?? null;
+                const walkMesh = roads?.sidewalk ?? null;
+                const curbRanges = findMergeRanges(curbMesh, (meta) => meta?.kind === 'curb' && meta?.nodeId === nodeId);
+                const walkRanges = findMergeRanges(walkMesh, (meta) => meta?.kind === 'sidewalk' && meta?.nodeId === nodeId);
+                assertTrue(curbRanges.length > 0, 'Expected curb geometry ranges for join node.');
+                assertTrue(walkRanges.length > 0, 'Expected sidewalk geometry ranges for join node.');
+            });
+
+            test('RoadGenerator: intersection stitching is clockwise and curb/sidewalk stay outside', () => {
+                const cfg = createCityConfig({ size: 288, mapTileSize: 24, seed: 'intersection-clip-001' });
+                const spec = {
+                    version: 1,
+                    seed: cfg.seed,
+                    width: 12,
+                    height: 12,
+                    tileSize: cfg.map.tileSize,
+                    origin: cfg.map.origin,
+                    roads: [
+                        { a: [0, 0], b: [10, 10], lanesF: 2, lanesB: 2, tag: 'd1' },
+                        { a: [0, 10], b: [10, 0], lanesF: 2, lanesB: 2, tag: 'd2' }
+                    ],
+                    buildings: []
+                };
+
+                const map = CityMap.fromSpec(spec, cfg);
+                const materials = getCityMaterials();
+                const config = {
+                    road: {
+                        curb: { height: 0, extraHeight: 0, thickness: 0.25 },
+                        sidewalk: { extraWidth: 1.0, lift: 0 }
+                    }
+                };
+
+                const a = generateRoads({ map, config, materials });
+                const b = generateRoads({ map, config, materials });
+
+                const nodeId = 't:5,5';
+                const intsA = Array.isArray(a?.debug?.intersections) ? a.debug.intersections : [];
+                const intsB = Array.isArray(b?.debug?.intersections) ? b.debug.intersections : [];
+                const ia = intsA.find((e) => e?.nodeId === nodeId) ?? null;
+                const ib = intsB.find((e) => e?.nodeId === nodeId) ?? null;
+                assertTrue(!!ia && !!ib, 'Expected intersection debug entry.');
+                assertTrue(Array.isArray(ia.points) && ia.points.length >= 3, 'Expected intersection points.');
+
+                const area = polygonSignedAreaXZ(ia.points);
+                assertTrue(area < -1e-6, 'Expected clockwise intersection boundary ordering.');
+                assertEqual(hashPointsXZ(ia.points), hashPointsXZ(ib.points), 'Expected stable intersection boundary ordering across runs.');
+
+                const poly = ia.points;
+                for (let i = 0; i < poly.length; i++) {
+                    const a0 = poly[i];
+                    const a1 = poly[(i + 1) % poly.length];
+                    for (let j = i + 1; j < poly.length; j++) {
+                        const b0 = poly[j];
+                        const b1 = poly[(j + 1) % poly.length];
+                        const adjacent = (i === j) || ((i + 1) % poly.length === j) || (i === (j + 1) % poly.length);
+                        if (adjacent) continue;
+                        assertFalse(segmentsIntersectXZ(a0, a1, b0, b1), 'Expected intersection boundary polygon not to self-intersect.');
+                    }
+                }
+
+                const curbMesh = a?.curbBlocks ?? null;
+                const walkMesh = a?.sidewalk ?? null;
+                const curbRanges = findMergeRanges(curbMesh, (meta) => meta?.kind === 'curb' && meta?.nodeId === nodeId);
+                const walkRanges = findMergeRanges(walkMesh, (meta) => meta?.kind === 'sidewalk' && meta?.nodeId === nodeId);
+                assertTrue(curbRanges.length > 0, 'Expected curb ranges at intersection node.');
+                assertTrue(walkRanges.length > 0, 'Expected sidewalk ranges at intersection node.');
+
+                for (const entry of curbRanges) {
+                    const verts = verticesInRangeXZ(curbMesh, entry.range);
+                    for (const p of verts) {
+                        assertFalse(pointInPolygonStrictXZ(p, ia.points, 1e-7), 'Expected curb vertices to stay outside intersection asphalt polygon.');
+                    }
+                }
+                for (const entry of walkRanges) {
+                    const verts = verticesInRangeXZ(walkMesh, entry.range);
+                    for (const p of verts) {
+                        assertFalse(pointInPolygonStrictXZ(p, ia.points, 1e-7), 'Expected sidewalk vertices to stay outside intersection asphalt polygon.');
+                    }
+                }
+            });
+	    } catch (e) {
+	        console.log('⏭️  Road graph tests skipped:', e.message);
+	    }
+
+    // ========== Debug Corners 2 Tests (AI_47) ==========
+    try {
+        const { GameEngine } = await import('/src/app/core/GameEngine.js');
+        const { DebugCorners2View } = await import('/src/graphics/gui/debug_corners2/DebugCorners2View.js');
+
+        test('DebugCorners2: view can enter and rebuild telemetry', () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 100;
+            canvas.height = 100;
+            const engine = new GameEngine({ canvas });
+            const view = new DebugCorners2View(engine, { uiEnabled: false });
+            view.enter();
+            view.forceRebuild();
+            const t = view.getTelemetry();
+            assertTrue(t.ok === true, 'Expected initial fillet telemetry to be OK.');
+            view.exit();
+        });
+
+        test('DebugCorners2: debug option toggles affect scene visibility', () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 100;
+            canvas.height = 100;
+            const engine = new GameEngine({ canvas });
+            const view = new DebugCorners2View(engine, { uiEnabled: false });
+            view.enter();
+            view.forceRebuild();
+            assertTrue(!!view._generatedRoadsGroup, 'Expected generated asphalt group.');
+            assertTrue(view._generatedRoadsGroup.visible, 'Expected asphalt visible by default.');
+
+            view.setDebugOptions({ renderAsphalt: false, renderEdges: false, renderCenterline: false, showConnectingPoint: false });
+            view.forceRebuild();
+            assertFalse(view._generatedRoadsGroup.visible, 'Expected asphalt hidden after toggle.');
+            assertFalse(view._lines.aLeft.line.visible, 'Expected edges hidden after toggle.');
+            assertFalse(view._lines.aCenter.line.visible, 'Expected centerline hidden after toggle.');
+            view.exit();
+        });
+
+        test('DebugCorners2: lane/yaw edits update telemetry', () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 100;
+            canvas.height = 100;
+            const engine = new GameEngine({ canvas });
+            const view = new DebugCorners2View(engine, { uiEnabled: false });
+            view.enter();
+            view.forceRebuild();
+            const before = view.getTelemetry();
+            const w0 = before?.roads?.A?.width ?? null;
+
+            view.setRoadConfig('A', { lanes: 6, yaw: Math.PI / 4 });
+            view.forceRebuild();
+            const after = view.getTelemetry();
+            const w1 = after?.roads?.A?.width ?? null;
+
+            assertTrue(Number.isFinite(w0) && Number.isFinite(w1), 'Expected road width telemetry.');
+            assertTrue(Math.abs(w1 - w0) > 1e-3, 'Expected width to change when lane count changes.');
+            assertNear(after?.roads?.A?.yaw ?? 0, Math.PI / 4, 1e-6, 'Expected yaw telemetry to update.');
+            view.exit();
+        });
+
+        test('DebugCorners2: connecting point marker matches telemetry', () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 100;
+            canvas.height = 100;
+            const engine = new GameEngine({ canvas });
+            const view = new DebugCorners2View(engine, { uiEnabled: false });
+            view.enter();
+            view.setDebugOptions({ showConnectingPoint: true });
+            view.forceRebuild();
+            const t = view.getTelemetry();
+            const cp = t?.roads?.A?.connectingPoint ?? null;
+            assertTrue(!!cp, 'Expected connecting point telemetry for road A.');
+            const mesh = view._connectingPointMeshes?.A ?? null;
+            assertTrue(!!mesh, 'Expected connecting point mesh for road A.');
+            assertTrue(mesh.visible, 'Expected connecting point mesh to be visible.');
+            assertNear(mesh.position.x, cp.x, 1e-6, 'Connecting point X should match mesh.');
+            assertNear(mesh.position.z, cp.z, 1e-6, 'Connecting point Z should match mesh.');
+            view.exit();
+        });
+    } catch (e) {
+        console.log('⏭️  Debug Corners 2 tests skipped:', e.message);
     }
 
     runRoadConnectionDebuggerTests({ test, assertTrue });

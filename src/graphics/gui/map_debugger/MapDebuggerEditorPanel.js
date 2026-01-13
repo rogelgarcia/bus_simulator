@@ -55,11 +55,14 @@ function resolveConfigLabel(configs, id) {
 export class MapDebuggerEditorPanel {
     constructor({
         spec = null,
+        citySpecs = [],
+        citySpecId = null,
         buildingConfigs = [],
         tab = 'road',
         roadParams = null,
         roadModeEnabled = false,
         roadDraftStart = null,
+        roadDraftCount = 0,
         buildingModeEnabled = false,
         buildingSelectionCount = 0,
         newBuildingConfigId = null,
@@ -83,7 +86,8 @@ export class MapDebuggerEditorPanel {
         onDeleteBuilding = null,
         onBuildingConfigChange = null,
         onRoadHover = null,
-        onBuildingHover = null
+        onBuildingHover = null,
+        onLoadCitySpec = null
     } = {}) {
         this.root = document.createElement('div');
         this.root.className = 'map-debugger-panel map-debugger-editor-panel hidden';
@@ -125,6 +129,8 @@ export class MapDebuggerEditorPanel {
         this.createOverlay.appendChild(this.createPanel);
 
         this._spec = null;
+        this._citySpecs = Array.isArray(citySpecs) ? citySpecs.slice() : [];
+        this._citySpecId = typeof citySpecId === 'string' ? citySpecId : null;
         this._buildingConfigs = Array.isArray(buildingConfigs) ? buildingConfigs.slice() : [];
         this._tab = tab === 'building' ? 'building' : 'road';
         this._roadParams = {
@@ -137,6 +143,7 @@ export class MapDebuggerEditorPanel {
         this._roadDraftStart = roadDraftStart && Number.isFinite(roadDraftStart?.x) && Number.isFinite(roadDraftStart?.y)
             ? { x: roadDraftStart.x | 0, y: roadDraftStart.y | 0 }
             : null;
+        this._roadDraftCount = Math.max(0, Number(roadDraftCount) | 0);
         this._buildingModeEnabled = !!buildingModeEnabled;
         this._buildingSelectionCount = Math.max(0, Number(buildingSelectionCount) | 0);
         this._newBuildingConfigId = typeof newBuildingConfigId === 'string' ? newBuildingConfigId : (this._buildingConfigs[0]?.id ?? null);
@@ -162,6 +169,7 @@ export class MapDebuggerEditorPanel {
         this._onBuildingConfigChange = onBuildingConfigChange;
         this._onRoadHover = onRoadHover;
         this._onBuildingHover = onBuildingHover;
+        this._onLoadCitySpec = onLoadCitySpec;
 
         this._pickerPopup = new PickerPopup();
         this._pickerContext = null;
@@ -173,10 +181,13 @@ export class MapDebuggerEditorPanel {
         this._buildExportSection();
 
         this.setSpec(spec);
+        this.setCitySpecs(this._citySpecs);
+        this.setCitySpecId(this._citySpecId);
         this.setTab(this._tab);
         this.setRoadParams(this._roadParams);
         this.setRoadModeEnabled(this._roadModeEnabled);
         this.setRoadDraftStart(this._roadDraftStart);
+        this.setRoadDraftCount(this._roadDraftCount);
         this.setBuildingModeEnabled(this._buildingModeEnabled);
         this.setBuildingSelectionCount(this._buildingSelectionCount);
         this.setNewBuildingConfigId(this._newBuildingConfigId);
@@ -196,6 +207,35 @@ export class MapDebuggerEditorPanel {
         this._renderBuildings(buildings);
 
         this._refreshExportText();
+    }
+
+    setCitySpecs(specs) {
+        this._citySpecs = Array.isArray(specs) ? specs.slice() : [];
+        if (!this.citySpecSelect) return;
+
+        const current = typeof this.citySpecSelect.value === 'string' ? this.citySpecSelect.value : '';
+        this.citySpecSelect.textContent = '';
+
+        for (const entry of this._citySpecs) {
+            const id = typeof entry?.id === 'string' ? entry.id : '';
+            if (!id) continue;
+            const option = document.createElement('option');
+            option.value = id;
+            option.textContent = typeof entry?.label === 'string' && entry.label ? entry.label : id;
+            this.citySpecSelect.appendChild(option);
+        }
+
+        const fallback = typeof this._citySpecs[0]?.id === 'string' ? this._citySpecs[0].id : '';
+        const next = this._hasCitySpecOption(this._citySpecId) ? this._citySpecId : (this._hasCitySpecOption(current) ? current : fallback);
+        this.setCitySpecId(next);
+    }
+
+    setCitySpecId(id) {
+        this._citySpecId = typeof id === 'string' && id ? id : null;
+        if (!this.citySpecSelect) return;
+        if (this._hasCitySpecOption(this._citySpecId)) {
+            this.citySpecSelect.value = this._citySpecId;
+        }
     }
 
     setTab(tab) {
@@ -221,6 +261,11 @@ export class MapDebuggerEditorPanel {
 
     setRoadDraftStart(tile) {
         this._roadDraftStart = tile && Number.isFinite(tile.x) && Number.isFinite(tile.y) ? { x: tile.x | 0, y: tile.y | 0 } : null;
+        this._renderCreatePopup();
+    }
+
+    setRoadDraftCount(count) {
+        this._roadDraftCount = Math.max(0, Number(count) | 0);
         this._renderCreatePopup();
     }
 
@@ -338,6 +383,21 @@ export class MapDebuggerEditorPanel {
         this.resetDemoBtn.textContent = 'Demo';
         extraActions.appendChild(this.resetDemoBtn);
 
+        const specLabel = document.createElement('span');
+        specLabel.className = 'map-debugger-city-label';
+        specLabel.textContent = 'Spec';
+        extraActions.appendChild(specLabel);
+
+        this.citySpecSelect = document.createElement('select');
+        this.citySpecSelect.className = 'map-debugger-city-input map-debugger-city-select';
+        extraActions.appendChild(this.citySpecSelect);
+
+        this.loadCitySpecBtn = document.createElement('button');
+        this.loadCitySpecBtn.type = 'button';
+        this.loadCitySpecBtn.className = 'map-debugger-city-btn';
+        this.loadCitySpecBtn.textContent = 'Load';
+        extraActions.appendChild(this.loadCitySpecBtn);
+
         section.body.appendChild(bar);
         section.body.appendChild(extraActions);
         this.sections.appendChild(section.root);
@@ -362,6 +422,13 @@ export class MapDebuggerEditorPanel {
 
         this.resetDemoBtn.addEventListener('click', () => {
             if (this._onResetDemo) this._onResetDemo();
+        });
+
+        this.loadCitySpecBtn.addEventListener('click', () => {
+            if (!this._onLoadCitySpec) return;
+            const id = typeof this.citySpecSelect?.value === 'string' ? this.citySpecSelect.value : '';
+            if (!id) return;
+            this._onLoadCitySpec(id);
         });
     }
 
@@ -395,6 +462,12 @@ export class MapDebuggerEditorPanel {
         if (this._onTabChange) this._onTabChange(this._tab);
     }
 
+    _hasCitySpecOption(id) {
+        const key = typeof id === 'string' ? id : '';
+        if (!key || !this.citySpecSelect) return false;
+        return Array.from(this.citySpecSelect.options ?? []).some((opt) => opt?.value === key);
+    }
+
     _buildRoadsSection() {
         const section = this._makeSection('Roads');
         this.roadsSection = section.root;
@@ -416,7 +489,7 @@ export class MapDebuggerEditorPanel {
 
         const thead = document.createElement('thead');
         const tr = document.createElement('tr');
-        const headers = ['#', 'render', 'lanesF', 'lanesB', 'type', 'start', 'end', ''];
+        const headers = ['#', 'render', 'lanesF', 'lanesB', 'tag', 'start', 'end', ''];
         for (const label of headers) {
             const th = document.createElement('th');
             th.textContent = label;
@@ -486,10 +559,23 @@ export class MapDebuggerEditorPanel {
         list.forEach((road, index) => {
             const row = document.createElement('tr');
 
-            const startX = road?.a?.[0] ?? 0;
-            const startY = road?.a?.[1] ?? 0;
-            const endX = road?.b?.[0] ?? 0;
-            const endY = road?.b?.[1] ?? 0;
+            const origin = this._spec?.origin ?? null;
+            const tileSize = this._spec?.tileSize ?? null;
+
+            const worldToTileLabel = (p) => {
+                const x = p?.x;
+                const z = Number.isFinite(p?.z) ? p.z : p?.y;
+                if (!Number.isFinite(x) || !Number.isFinite(z)) return '--';
+                if (!origin || !Number.isFinite(origin.x) || !Number.isFinite(origin.z)) return `${x.toFixed(1)},${z.toFixed(1)}`;
+                if (!Number.isFinite(tileSize) || !(tileSize > 0)) return `${x.toFixed(1)},${z.toFixed(1)}`;
+                const tx = Math.round((x - origin.x) / tileSize);
+                const ty = Math.round((z - origin.z) / tileSize);
+                return `${tx}:${ty}`;
+            };
+
+            const isPolyline = Array.isArray(road?.points) && road.points.length >= 2;
+            const startLabel = isPolyline ? worldToTileLabel(road.points[0]) : `${road?.a?.[0] ?? 0}:${road?.a?.[1] ?? 0}`;
+            const endLabel = isPolyline ? worldToTileLabel(road.points[road.points.length - 1]) : `${road?.b?.[0] ?? 0}:${road?.b?.[1] ?? 0}`;
 
             const addCell = (value) => {
                 const td = document.createElement('td');
@@ -511,8 +597,8 @@ export class MapDebuggerEditorPanel {
             addCell(road?.lanesF ?? 0);
             addCell(road?.lanesB ?? 0);
             addCell(road?.tag ?? 'road');
-            addCell(`${startX}:${startY}`);
-            addCell(`${endX}:${endY}`);
+            addCell(startLabel);
+            addCell(endLabel);
 
             const tdActions = document.createElement('td');
             tdActions.className = 'map-debugger-row-actions';
@@ -719,14 +805,12 @@ export class MapDebuggerEditorPanel {
     }
 
     _renderRoadCreatePopup() {
-        const start = this._roadDraftStart;
+        const count = this._roadDraftCount;
         this.createTitle.textContent = 'Create Road';
 
-        if (!start) {
-            this.createText.textContent = 'Select start tile.';
-        } else {
-            this.createText.textContent = `Select end tile (start: ${start.x}:${start.y}).`;
-        }
+        this.createText.textContent = count > 0
+            ? `Click tiles to add points. Draft points: ${count}.`
+            : 'Click tiles to add points.';
 
         const controls = document.createElement('div');
         controls.className = 'map-debugger-create-grid map-debugger-create-grid-road';
@@ -743,6 +827,21 @@ export class MapDebuggerEditorPanel {
         tagWrap.appendChild(tagLabel);
         tagWrap.appendChild(this.roadTagInput);
         controls.appendChild(tagWrap);
+
+        const radiusWrap = document.createElement('div');
+        radiusWrap.className = 'map-debugger-create-field';
+        const radiusLabel = document.createElement('div');
+        radiusLabel.className = 'map-debugger-create-field-label';
+        radiusLabel.textContent = 'Default radius';
+        this.roadRadiusInput = document.createElement('input');
+        this.roadRadiusInput.type = 'number';
+        this.roadRadiusInput.min = '0';
+        this.roadRadiusInput.step = '0.5';
+        this.roadRadiusInput.className = 'map-debugger-create-input';
+        this.roadRadiusInput.value = String(Number.isFinite(this._roadParams.defaultRadius) ? this._roadParams.defaultRadius : 0);
+        radiusWrap.appendChild(radiusLabel);
+        radiusWrap.appendChild(this.roadRadiusInput);
+        controls.appendChild(radiusWrap);
 
         const makeLanesWrap = ({ label, value, onPick }) => {
             const wrap = document.createElement('div');
@@ -793,11 +892,18 @@ export class MapDebuggerEditorPanel {
             this._onRoadParamsChange({ ...this._roadParams, tag: tag || 'road' });
         });
 
+        this.roadRadiusInput.addEventListener('change', () => {
+            if (!this._onRoadParamsChange) return;
+            const value = Number(this.roadRadiusInput?.value);
+            const radius = Number.isFinite(value) ? Math.max(0, value) : 0;
+            this._onRoadParamsChange({ ...this._roadParams, defaultRadius: radius });
+        });
+
         const cancelBtn = document.createElement('button');
         cancelBtn.type = 'button';
         cancelBtn.className = 'map-debugger-editor-btn';
-        cancelBtn.textContent = 'Cancel segment';
-        cancelBtn.disabled = !start;
+        cancelBtn.textContent = 'Clear points';
+        cancelBtn.disabled = count <= 0;
         this.createActions.appendChild(cancelBtn);
         cancelBtn.addEventListener('click', () => {
             if (this._onCancelRoadDraft) this._onCancelRoadDraft();

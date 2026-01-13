@@ -62,7 +62,7 @@ function buildPlateGeometry({
     thickness = 0.04,
     radialSegments = 8
 } = {}) {
-    const geometry = new THREE.CylinderGeometry(radius, radius, thickness, radialSegments, 1, false);
+    const geometry = new THREE.CylinderGeometry(radius, radius, thickness * 0.2, radialSegments, 1, false);
     geometry.rotateX(Math.PI / 2);
     geometry.rotateZ(Math.PI / radialSegments);
 

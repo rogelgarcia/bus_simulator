@@ -1,0 +1,135 @@
+/* src/graphics/gui/debug_corners2/styles.css */
+
+.debug-corners2-panel {
+    position: fixed;
+    top: 18px;
+    z-index: 50;
+    background: rgba(10, 14, 22, 0.78);
+    color: #e7eefc;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    border-radius: 10px;
+    padding: 10px 12px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans", "Liberation Sans", sans-serif;
+}
+
+.debug-corners2-panel-left {
+    left: 16px;
+    width: 300px;
+}
+
+.debug-corners2-panel-topright {
+    right: 16px;
+    width: 260px;
+}
+
+.debug-corners2-panel-bottomright {
+    right: 16px;
+    top: auto;
+    bottom: 16px;
+    width: 360px;
+}
+
+.debug-corners2-title {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    margin-bottom: 8px;
+}
+
+.debug-corners2-section {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.debug-corners2-section-title {
+    font-size: 12px;
+    font-weight: 700;
+    opacity: 0.9;
+    margin-bottom: 6px;
+}
+
+.debug-corners2-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 6px 0;
+}
+
+.debug-corners2-label {
+    font-size: 12px;
+    opacity: 0.9;
+}
+
+.debug-corners2-toggle {
+    cursor: pointer;
+}
+
+.debug-corners2-checkbox {
+    width: 18px;
+    height: 18px;
+    accent-color: #3b82f6;
+}
+
+.debug-corners2-input {
+    width: 120px;
+    background: rgba(15, 23, 42, 0.85);
+    color: #e7eefc;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    border-radius: 8px;
+    padding: 6px 8px;
+}
+
+.debug-corners2-edge-buttons {
+    display: flex;
+    gap: 6px;
+}
+
+.debug-corners2-edge-buttons button {
+    background: rgba(15, 23, 42, 0.85);
+    color: #e7eefc;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    border-radius: 8px;
+    padding: 6px 10px;
+    cursor: pointer;
+}
+
+.debug-corners2-edge-buttons button.is-active {
+    border-color: rgba(59, 130, 246, 0.8);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+}
+
+.debug-corners2-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 12px;
+    opacity: 0.95;
+}
+
+.debug-corners2-legend-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.debug-corners2-swatch {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.debug-corners2-telemetry {
+    margin: 0;
+    white-space: pre-wrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 11px;
+    line-height: 1.35;
+    opacity: 0.95;
+}

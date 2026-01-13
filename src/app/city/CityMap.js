@@ -1,7 +1,10 @@
 // src/app/city/CityMap.js
+// Stores tile/grid map data and builds a centerline RoadNetwork for rendering and gameplay.
 import { BUILDING_STYLE, isBuildingStyle } from '../buildings/BuildingStyle.js';
 import { getBuildingConfigById } from './buildings/index.js';
 import { createDemoCitySpec } from './specs/DemoCitySpec.js';
+import { createRoadNetworkFromWorldSegments } from './roads/RoadNetwork.js';
+import { generateCenterlineFromPolyline } from '../geometry/PolylineTAT.js';
 export const DIR = { N: 1, E: 2, S: 4, W: 8 };
 export const TILE = { EMPTY: 0, ROAD: 1 };
 
@@ -100,6 +103,7 @@ export class CityMap {
         this._roadCounter = 0;
 
         this.roadSegments = [];
+        this.roadNetwork = null;
         this.roadAngles = new Float32Array(n);
         this.roadAngles.fill(Number.NaN);
         this.roadPrimary = new Int32Array(n);
@@ -142,7 +146,7 @@ export class CityMap {
         if (nv > arr[idx]) arr[idx] = nv;
     }
 
-    addRoadSegment({ a, b, lanesF = 1, lanesB = 1, id = null, tag = 'road' } = {}) {
+    addRoadSegment({ a, b, lanesF = 1, lanesB = 1, id = null, tag = 'road', rendered = true } = {}) {
         if (!a || !b) return;
 
         let roadId = id;
@@ -167,6 +171,7 @@ export class CityMap {
             lanesF,
             lanesB,
             tag: typeof tag === 'string' ? tag : 'road',
+            rendered: rendered !== false,
             angle,
             tiles: []
         };
@@ -204,7 +209,116 @@ export class CityMap {
         this.roadSegments[roadId] = meta;
     }
 
-    finalize() {
+    addRoadPolyline({ points, lanesF = 1, lanesB = 1, id = null, tag = 'road', rendered = true, defaultRadius = 0 } = {}) {
+        const list = Array.isArray(points) ? points : [];
+        if (list.length < 2) return;
+
+        let roadId = id;
+        if (roadId === null || roadId === undefined) {
+            roadId = this._roadCounter;
+            this._roadCounter += 1;
+        } else if (roadId >= this._roadCounter) {
+            this._roadCounter = roadId + 1;
+        }
+
+        const pointsWorld = [];
+        const pointsTile = [];
+        for (const raw of list) {
+            let wx = null;
+            let wz = null;
+            let radius = null;
+            if (Array.isArray(raw) && raw.length >= 2) {
+                wx = raw[0];
+                wz = raw[1];
+            } else if (raw && Number.isFinite(raw.x) && (Number.isFinite(raw.z) || Number.isFinite(raw.y))) {
+                wx = raw.x;
+                wz = Number.isFinite(raw.z) ? raw.z : raw.y;
+                if (Number.isFinite(raw.radius)) radius = raw.radius;
+                else if (Number.isFinite(raw.r)) radius = raw.r;
+            }
+            if (!Number.isFinite(wx) || !Number.isFinite(wz)) continue;
+            const tile = this.worldToTile(wx, wz);
+            if (!tile || !this.inBounds(tile.x, tile.y)) continue;
+
+            const lastTile = pointsTile[pointsTile.length - 1] ?? null;
+            if (lastTile && lastTile.x === (tile.x | 0) && lastTile.y === (tile.y | 0)) {
+                const lastWorld = pointsWorld[pointsWorld.length - 1] ?? null;
+                if (lastWorld && Number.isFinite(radius)) lastWorld.radius = radius;
+                continue;
+            }
+
+            pointsTile.push({ x: tile.x | 0, y: tile.y | 0 });
+            pointsWorld.push({ x: wx, z: wz, radius: Number.isFinite(radius) ? radius : null });
+        }
+
+        if (pointsTile.length < 2) return;
+
+        const dx0 = pointsTile[1].x - pointsTile[0].x;
+        const dy0 = pointsTile[1].y - pointsTile[0].y;
+        const angle = snapAngle(Math.atan2(dy0, dx0));
+
+        const meta = {
+            id: roadId,
+            kind: 'polyline',
+            points: pointsWorld,
+            defaultRadius: Number.isFinite(defaultRadius) ? defaultRadius : 0,
+            lanesF,
+            lanesB,
+            tag: typeof tag === 'string' ? tag : 'road',
+            rendered: rendered !== false,
+            angle,
+            tiles: []
+        };
+
+        const visited = new Set();
+        for (let i = 0; i + 1 < pointsTile.length; i++) {
+            const a = pointsTile[i];
+            const b = pointsTile[i + 1];
+            const x0 = a.x | 0;
+            const y0 = a.y | 0;
+            const x1 = b.x | 0;
+            const y1 = b.y | 0;
+            const tiles = rasterizeLine(x0, y0, x1, y1);
+
+            const dxRaw = x1 - x0;
+            const dyRaw = y1 - y0;
+            const axisAligned = dxRaw === 0 || dyRaw === 0;
+            const dx = Math.sign(dxRaw);
+            const dy = Math.sign(dyRaw);
+
+            for (const tile of tiles) {
+                const idx = this._markRoad(tile.x, tile.y, roadId);
+                if (idx < 0) continue;
+                if (!visited.has(idx)) {
+                    visited.add(idx);
+                    meta.tiles.push({ x: tile.x, y: tile.y, idx });
+                }
+
+                if (!axisAligned) continue;
+                if (dyRaw === 0) {
+                    if (dx >= 0) {
+                        this._maxLane(this.lanesE, idx, lanesF);
+                        this._maxLane(this.lanesW, idx, lanesB);
+                    } else {
+                        this._maxLane(this.lanesW, idx, lanesF);
+                        this._maxLane(this.lanesE, idx, lanesB);
+                    }
+                } else if (dxRaw === 0) {
+                    if (dy >= 0) {
+                        this._maxLane(this.lanesN, idx, lanesF);
+                        this._maxLane(this.lanesS, idx, lanesB);
+                    } else {
+                        this._maxLane(this.lanesS, idx, lanesF);
+                        this._maxLane(this.lanesN, idx, lanesB);
+                    }
+                }
+            }
+        }
+
+        this.roadSegments[roadId] = meta;
+    }
+
+    finalize({ seed = null } = {}) {
         const w = this.width, h = this.height;
         const sharesRoad = (aIdx, bIdx) => {
             let aSet = this.roadIds[aIdx];
@@ -276,6 +390,63 @@ export class CityMap {
                 this.axis[idx] = ew >= ns ? AXIS.EW : AXIS.NS;
             }
         }
+
+        const resolvedSeed = seed ?? this.roadNetwork?.seed ?? null;
+        const chord = Math.max(0.25, this.tileSize * 0.02);
+        const worldSegments = [];
+
+        const roads = Array.isArray(this.roadSegments) ? this.roadSegments : [];
+        for (const road of roads) {
+            if (!road) continue;
+            const tag = typeof road.tag === 'string' ? road.tag : 'road';
+            const rendered = road.rendered !== false;
+            const lanesF = road.lanesF ?? 0;
+            const lanesB = road.lanesB ?? 0;
+
+            if (road.kind === 'polyline' && Array.isArray(road.points) && road.points.length >= 2) {
+                const centerline = generateCenterlineFromPolyline({
+                    points: road.points,
+                    defaultRadius: road.defaultRadius ?? 0,
+                    chord
+                });
+                const pts = Array.isArray(centerline?.points) && centerline.points.length >= 2
+                    ? centerline.points
+                    : road.points.map((p) => ({ x: p.x, z: Number.isFinite(p.z) ? p.z : p.y }));
+
+                for (let i = 0; i + 1 < pts.length; i++) {
+                    const a = pts[i];
+                    const b = pts[i + 1];
+                    worldSegments.push({
+                        sourceId: `r:${road.id}:${i}`,
+                        tag,
+                        rendered,
+                        lanesF,
+                        lanesB,
+                        a: { x: a.x, z: a.z },
+                        b: { x: b.x, z: b.z }
+                    });
+                }
+                continue;
+            }
+
+            if (road?.a && road?.b) {
+                const a = road.a;
+                const b = road.b;
+                const p0 = this.tileToWorldCenter(a.x, a.y);
+                const p1 = this.tileToWorldCenter(b.x, b.y);
+                worldSegments.push({
+                    sourceId: `r:${road.id}`,
+                    tag,
+                    rendered,
+                    lanesF,
+                    lanesB,
+                    a: { x: p0.x, z: p0.z },
+                    b: { x: p1.x, z: p1.z }
+                });
+            }
+        }
+
+        this.roadNetwork = createRoadNetworkFromWorldSegments(worldSegments, { origin: this.origin, tileSize: this.tileSize, seed: resolvedSeed });
     }
 
     countRoadTiles() {
@@ -296,15 +467,38 @@ export class CityMap {
             buildings: []
         };
 
-        const segments = Array.isArray(this.roadSegments) ? this.roadSegments : [];
-        for (const seg of segments) {
-            if (!seg?.a || !seg?.b) continue;
+        const roads = Array.isArray(this.roadSegments) ? this.roadSegments : [];
+        for (const road of roads) {
+            if (!road) continue;
+            const tag = typeof road.tag === 'string' ? road.tag : 'road';
+            const lanesF = road.lanesF ?? 0;
+            const lanesB = road.lanesB ?? 0;
+            const rendered = road.rendered !== false;
+
+            if (road.kind === 'polyline' && Array.isArray(road.points) && road.points.length >= 2) {
+                spec.roads.push({
+                    points: road.points.map((p) => {
+                        const entry = { x: p?.x ?? 0, z: (Number.isFinite(p?.z) ? p.z : p?.y) ?? 0 };
+                        if (Number.isFinite(p?.radius)) entry.radius = p.radius;
+                        return entry;
+                    }),
+                    defaultRadius: Number.isFinite(road.defaultRadius) ? road.defaultRadius : 0,
+                    lanesF,
+                    lanesB,
+                    tag,
+                    rendered
+                });
+                continue;
+            }
+
+            if (!road?.a || !road?.b) continue;
             spec.roads.push({
-                a: [seg.a.x | 0, seg.a.y | 0],
-                b: [seg.b.x | 0, seg.b.y | 0],
-                lanesF: seg.lanesF ?? 0,
-                lanesB: seg.lanesB ?? 0,
-                tag: typeof seg.tag === 'string' ? seg.tag : 'road'
+                a: [road.a.x | 0, road.a.y | 0],
+                b: [road.b.x | 0, road.b.y | 0],
+                lanesF,
+                lanesB,
+                tag,
+                rendered
             });
         }
 
@@ -353,10 +547,15 @@ export class CityMap {
 
         const map = new CityMap({ width, height, tileSize, origin });
 
-        (spec.roads ?? []).forEach((seg, index) => {
-            map.addRoadSegment({ ...seg, id: index });
+        const roads = Array.isArray(spec.roads) ? spec.roads : [];
+        roads.forEach((road, index) => {
+            if (Array.isArray(road?.points) && road.points.length >= 2) {
+                map.addRoadPolyline({ ...road, id: index });
+            } else {
+                map.addRoadSegment({ ...road, id: index });
+            }
         });
-        map.finalize();
+        map.finalize({ seed: spec.seed ?? config.seed ?? null });
 
         map.buildings = CityMap._buildingsFromSpec(spec.buildings, map);
         return map;

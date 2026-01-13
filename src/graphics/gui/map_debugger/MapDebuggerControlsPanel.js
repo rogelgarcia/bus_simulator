@@ -6,11 +6,21 @@ export class MapDebuggerControlsPanel {
         hoverOutlineEnabled = true,
         collisionDebugEnabled = true,
         treesEnabled = true,
+        roadEdgesEnabled = true,
+        roadCrossingsEnabled = true,
+        roadCenterlineEnabled = true,
+        roadDirectionLinesEnabled = true,
+        roadEndpointsEnabled = true,
         roadRenderMode = 'debug',
         onConnectorDebugToggle = null,
         onHoverOutlineToggle = null,
         onCollisionDebugToggle = null,
         onTreesToggle = null,
+        onRoadEdgesToggle = null,
+        onRoadCrossingsToggle = null,
+        onRoadCenterlineToggle = null,
+        onRoadDirectionLinesToggle = null,
+        onRoadEndpointsToggle = null,
         onRoadRenderModeChange = null
     } = {}) {
         this.root = document.createElement('div');
@@ -66,6 +76,61 @@ export class MapDebuggerControlsPanel {
         this.treesToggle.appendChild(this.treesToggleLabel);
         this.controls.appendChild(this.treesToggle);
 
+        this.roadEdgesToggle = document.createElement('label');
+        this.roadEdgesToggle.className = 'connector-debug-toggle-switch map-debugger-toggle-switch';
+        this.roadEdgesToggleInput = document.createElement('input');
+        this.roadEdgesToggleInput.type = 'checkbox';
+        this.roadEdgesToggleInput.checked = !!roadEdgesEnabled;
+        this.roadEdgesToggleLabel = document.createElement('span');
+        this.roadEdgesToggleLabel.textContent = 'Road edges';
+        this.roadEdgesToggle.appendChild(this.roadEdgesToggleInput);
+        this.roadEdgesToggle.appendChild(this.roadEdgesToggleLabel);
+        this.controls.appendChild(this.roadEdgesToggle);
+
+        this.roadCrossingsToggle = document.createElement('label');
+        this.roadCrossingsToggle.className = 'connector-debug-toggle-switch map-debugger-toggle-switch';
+        this.roadCrossingsToggleInput = document.createElement('input');
+        this.roadCrossingsToggleInput.type = 'checkbox';
+        this.roadCrossingsToggleInput.checked = !!roadCrossingsEnabled;
+        this.roadCrossingsToggleLabel = document.createElement('span');
+        this.roadCrossingsToggleLabel.textContent = 'Road crossings';
+        this.roadCrossingsToggle.appendChild(this.roadCrossingsToggleInput);
+        this.roadCrossingsToggle.appendChild(this.roadCrossingsToggleLabel);
+        this.controls.appendChild(this.roadCrossingsToggle);
+
+        this.roadCenterlineToggle = document.createElement('label');
+        this.roadCenterlineToggle.className = 'connector-debug-toggle-switch map-debugger-toggle-switch';
+        this.roadCenterlineToggleInput = document.createElement('input');
+        this.roadCenterlineToggleInput.type = 'checkbox';
+        this.roadCenterlineToggleInput.checked = !!roadCenterlineEnabled;
+        this.roadCenterlineToggleLabel = document.createElement('span');
+        this.roadCenterlineToggleLabel.textContent = 'Road centerline';
+        this.roadCenterlineToggle.appendChild(this.roadCenterlineToggleInput);
+        this.roadCenterlineToggle.appendChild(this.roadCenterlineToggleLabel);
+        this.controls.appendChild(this.roadCenterlineToggle);
+
+        this.roadDirectionLinesToggle = document.createElement('label');
+        this.roadDirectionLinesToggle.className = 'connector-debug-toggle-switch map-debugger-toggle-switch';
+        this.roadDirectionLinesToggleInput = document.createElement('input');
+        this.roadDirectionLinesToggleInput.type = 'checkbox';
+        this.roadDirectionLinesToggleInput.checked = !!roadDirectionLinesEnabled;
+        this.roadDirectionLinesToggleLabel = document.createElement('span');
+        this.roadDirectionLinesToggleLabel.textContent = 'Road directions';
+        this.roadDirectionLinesToggle.appendChild(this.roadDirectionLinesToggleInput);
+        this.roadDirectionLinesToggle.appendChild(this.roadDirectionLinesToggleLabel);
+        this.controls.appendChild(this.roadDirectionLinesToggle);
+
+        this.roadEndpointsToggle = document.createElement('label');
+        this.roadEndpointsToggle.className = 'connector-debug-toggle-switch map-debugger-toggle-switch';
+        this.roadEndpointsToggleInput = document.createElement('input');
+        this.roadEndpointsToggleInput.type = 'checkbox';
+        this.roadEndpointsToggleInput.checked = !!roadEndpointsEnabled;
+        this.roadEndpointsToggleLabel = document.createElement('span');
+        this.roadEndpointsToggleLabel.textContent = 'Road endpoints';
+        this.roadEndpointsToggle.appendChild(this.roadEndpointsToggleInput);
+        this.roadEndpointsToggle.appendChild(this.roadEndpointsToggleLabel);
+        this.controls.appendChild(this.roadEndpointsToggle);
+
         this.displaySection = document.createElement('div');
         this.displaySection.className = 'map-debugger-section';
         this.displayTitle = document.createElement('div');
@@ -108,6 +173,11 @@ export class MapDebuggerControlsPanel {
         this._onHoverOutlineToggle = onHoverOutlineToggle;
         this._onCollisionDebugToggle = onCollisionDebugToggle;
         this._onTreesToggle = onTreesToggle;
+        this._onRoadEdgesToggle = onRoadEdgesToggle;
+        this._onRoadCrossingsToggle = onRoadCrossingsToggle;
+        this._onRoadCenterlineToggle = onRoadCenterlineToggle;
+        this._onRoadDirectionLinesToggle = onRoadDirectionLinesToggle;
+        this._onRoadEndpointsToggle = onRoadEndpointsToggle;
         this._onRoadRenderModeChange = onRoadRenderModeChange;
 
         this._setRoadRenderMode(roadRenderMode);
@@ -126,6 +196,26 @@ export class MapDebuggerControlsPanel {
 
         this.treesToggleInput.addEventListener('change', () => {
             if (this._onTreesToggle) this._onTreesToggle(this.treesToggleInput.checked);
+        });
+
+        this.roadEdgesToggleInput.addEventListener('change', () => {
+            if (this._onRoadEdgesToggle) this._onRoadEdgesToggle(this.roadEdgesToggleInput.checked);
+        });
+
+        this.roadCrossingsToggleInput.addEventListener('change', () => {
+            if (this._onRoadCrossingsToggle) this._onRoadCrossingsToggle(this.roadCrossingsToggleInput.checked);
+        });
+
+        this.roadCenterlineToggleInput.addEventListener('change', () => {
+            if (this._onRoadCenterlineToggle) this._onRoadCenterlineToggle(this.roadCenterlineToggleInput.checked);
+        });
+
+        this.roadDirectionLinesToggleInput.addEventListener('change', () => {
+            if (this._onRoadDirectionLinesToggle) this._onRoadDirectionLinesToggle(this.roadDirectionLinesToggleInput.checked);
+        });
+
+        this.roadEndpointsToggleInput.addEventListener('change', () => {
+            if (this._onRoadEndpointsToggle) this._onRoadEndpointsToggle(this.roadEndpointsToggleInput.checked);
         });
 
         this.modeToggle.addEventListener('click', () => {
@@ -163,6 +253,26 @@ export class MapDebuggerControlsPanel {
         if (this.treesToggleInput) this.treesToggleInput.checked = !!enabled;
     }
 
+    setRoadEdgesEnabled(enabled) {
+        if (this.roadEdgesToggleInput) this.roadEdgesToggleInput.checked = !!enabled;
+    }
+
+    setRoadCrossingsEnabled(enabled) {
+        if (this.roadCrossingsToggleInput) this.roadCrossingsToggleInput.checked = !!enabled;
+    }
+
+    setRoadCenterlineEnabled(enabled) {
+        if (this.roadCenterlineToggleInput) this.roadCenterlineToggleInput.checked = !!enabled;
+    }
+
+    setRoadDirectionLinesEnabled(enabled) {
+        if (this.roadDirectionLinesToggleInput) this.roadDirectionLinesToggleInput.checked = !!enabled;
+    }
+
+    setRoadEndpointsEnabled(enabled) {
+        if (this.roadEndpointsToggleInput) this.roadEndpointsToggleInput.checked = !!enabled;
+    }
+
     setRoadRenderMode(mode) {
         this._setRoadRenderMode(mode);
     }
@@ -181,6 +291,26 @@ export class MapDebuggerControlsPanel {
 
     setOnTreesToggle(fn) {
         this._onTreesToggle = fn;
+    }
+
+    setOnRoadEdgesToggle(fn) {
+        this._onRoadEdgesToggle = fn;
+    }
+
+    setOnRoadCrossingsToggle(fn) {
+        this._onRoadCrossingsToggle = fn;
+    }
+
+    setOnRoadCenterlineToggle(fn) {
+        this._onRoadCenterlineToggle = fn;
+    }
+
+    setOnRoadDirectionLinesToggle(fn) {
+        this._onRoadDirectionLinesToggle = fn;
+    }
+
+    setOnRoadEndpointsToggle(fn) {
+        this._onRoadEndpointsToggle = fn;
     }
 
     setOnRoadRenderModeChange(fn) {
