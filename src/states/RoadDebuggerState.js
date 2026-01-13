@@ -13,48 +13,39 @@ export class RoadDebuggerState {
         this.uiHudTest = document.getElementById('ui-test');
 
         this.view = null;
-
-        this._onKeyDown = (e) => this._handleKeyDown(e);
+        this._uiBound = false;
     }
 
     enter() {
-        document.body.classList.remove('splash-bg');
-        document.body.classList.remove('setup-bg');
+        const appCanvas = document.getElementById('game-canvas');
+        this._uiBound = !!(appCanvas && this.engine?.canvas === appCanvas);
 
-        if (this.uiSelect) this.uiSelect.classList.add('hidden');
-        if (this.uiWelcome) this.uiWelcome.classList.add('hidden');
-        if (this.uiSetup) this.uiSetup.classList.add('hidden');
-        if (this.uiHudTest) this.uiHudTest.classList.add('hidden');
+        if (this._uiBound) {
+            document.body.classList.remove('splash-bg');
+            document.body.classList.remove('setup-bg');
+
+            if (this.uiSelect) this.uiSelect.classList.add('hidden');
+            if (this.uiWelcome) this.uiWelcome.classList.add('hidden');
+            if (this.uiSetup) this.uiSetup.classList.add('hidden');
+            if (this.uiHudTest) this.uiHudTest.classList.add('hidden');
+        }
 
         this.engine.clearScene();
 
         this.view = new RoadDebuggerView(this.engine);
+        this.view.onExit = () => this.sm.go('welcome');
         this.view.enter();
-
-        window.addEventListener('keydown', this._onKeyDown, { passive: false });
     }
 
     exit() {
-        window.removeEventListener('keydown', this._onKeyDown);
-
         this.view?.exit();
         this.view = null;
 
         this.engine.clearScene();
+        this._uiBound = false;
     }
 
     update(dt) {
         this.view?.update(dt);
     }
-
-    _handleKeyDown(e) {
-        const code = e.code;
-        const key = e.key;
-
-        if (code === 'Escape' || key === 'Escape') {
-            e.preventDefault();
-            this.sm.go('welcome');
-        }
-    }
 }
-

@@ -14,6 +14,12 @@ function isInteractiveElement(target) {
     return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || target?.isContentEditable;
 }
 
+function isTextEntryElement(target) {
+    const tag = target?.tagName;
+    if (!tag) return false;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable;
+}
+
 function setPointerFromEvent(view, e) {
     const rect = view.canvas.getBoundingClientRect();
     const x = (e.clientX - rect.left) / rect.width;
@@ -107,6 +113,7 @@ export function handlePointerMove(view, e) {
         const hit = intersectPlane(view);
         if (!hit) return;
         view.updatePointDrag?.(hit, { altKey: !!e.altKey, shiftKey: !!e.shiftKey });
+        view.clearDraftPreview?.();
         return;
     }
     if (view._isDraggingCamera && isPointerOverUIByClientXY(view, e)) {
@@ -127,6 +134,13 @@ export function handlePointerMove(view, e) {
     setPointerFromEvent(view, e);
 
     if (!view._pendingClick && !view._isDraggingCamera) {
+        const draft = view.getDraftRoad?.() ?? view._draft ?? null;
+        if (draft) {
+            const hit = intersectPlane(view);
+            view.updateDraftPreviewFromWorld?.(hit, { altKey: !!e.altKey });
+        } else {
+            view.clearDraftPreview?.();
+        }
         view.updateHoverFromPointer?.();
         return;
     }
@@ -220,7 +234,7 @@ export function handlePointerUp(view, e) {
         view._pendingClick = false;
         if (e && view.canvas) setPointerFromEvent(view, e);
         const hit = view.canvas ? intersectPlane(view) : null;
-        if (hit) view.handleCanvasClick?.(hit);
+        if (hit) view.handleCanvasClick?.(hit, { altKey: !!e.altKey });
     }
 
     view._pendingClick = false;
@@ -253,7 +267,31 @@ export function handleWheel(view, e) {
 }
 
 export function handleKeyDown(view, e) {
+    if (!e) return;
     const code = e.code;
+    const key = e.key;
+
+    if (code === 'Escape' || key === 'Escape') {
+        const exitConfirmOpen = view?.isExitConfirmOpen?.() ?? false;
+        if (!exitConfirmOpen && (isTextEntryElement(e.target) || isTextEntryElement(document.activeElement))) return;
+        const handled = view.handleEscape?.();
+        if (handled) {
+            e.preventDefault();
+            e.stopImmediatePropagation?.();
+        }
+        return;
+    }
+
+    if (code === 'Enter' || code === 'NumpadEnter' || key === 'Enter') {
+        if (isInteractiveElement(e.target) || isInteractiveElement(document.activeElement)) return;
+        const handled = view.handleEnter?.();
+        if (handled) {
+            e.preventDefault();
+            e.stopImmediatePropagation?.();
+            return;
+        }
+    }
+
     if (isInteractiveElement(e.target) || isInteractiveElement(document.activeElement)) return;
     const ctrl = !!(e.ctrlKey || e.metaKey);
     if (ctrl && code === 'KeyZ' && !e.shiftKey) {

@@ -292,6 +292,12 @@
     gap: 6px;
 }
 
+.road-debugger-junctions-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
 .road-debugger-road-row {
     display: flex;
     align-items: center;
@@ -461,9 +467,114 @@
     max-width: 180px;
 }
 
+.road-debugger-point-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 10px 7px 32px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    cursor: pointer;
+}
+
+.road-debugger-point-row.is-hovered {
+    border-color: rgba(52, 199, 89, 0.6);
+    background: rgba(52, 199, 89, 0.08);
+}
+
+.road-debugger-point-row.is-selected {
+    border-color: rgba(59, 130, 246, 0.75);
+    background: rgba(59, 130, 246, 0.12);
+}
+
+.road-debugger-point-label {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.82);
+    white-space: nowrap;
+}
+
+.road-debugger-point-meta {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.45);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 180px;
+}
+
+.road-debugger-connector-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 10px 7px 32px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    cursor: pointer;
+}
+
+.road-debugger-connector-row.is-hovered {
+    border-color: rgba(52, 199, 89, 0.6);
+    background: rgba(52, 199, 89, 0.08);
+}
+
+.road-debugger-connector-row.is-selected {
+    border-color: rgba(59, 130, 246, 0.75);
+    background: rgba(59, 130, 246, 0.12);
+}
+
+.road-debugger-connector-row.is-merged {
+    opacity: 0.78;
+}
+
+.road-debugger-connector-label {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.82);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.road-debugger-connector-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+}
+
+.road-debugger-connector-meta {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.5);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 180px;
+}
+
+.road-debugger-connector-merge {
+    padding: 6px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 10px;
+    font-family: inherit;
+    cursor: pointer;
+    flex: 0 0 auto;
+}
+
+.road-debugger-connector-merge:disabled {
+    cursor: default;
+    opacity: 0.55;
+}
+
 .road-debugger-schema-modal {
     position: fixed;
     inset: 0;
+    z-index: 50;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -476,6 +587,7 @@
     width: min(760px, calc(100vw - 24px));
     max-height: calc(100vh - 24px);
     padding: 12px 14px;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -500,6 +612,9 @@
     height: min(460px, 55vh);
     resize: vertical;
     padding: 10px 12px;
+    box-sizing: border-box;
+    max-width: 100%;
+    overflow: auto;
     border-radius: 10px;
     border: 1px solid rgba(255, 255, 255, 0.12);
     background: rgba(0, 0, 0, 0.22);
@@ -510,6 +625,51 @@
 }
 
 .road-debugger-schema-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.road-debugger-exit-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    pointer-events: auto;
+    background: rgba(0, 0, 0, 0.55);
+}
+
+.road-debugger-exit-panel {
+    width: min(420px, calc(100vw - 24px));
+    max-height: calc(100vh - 24px);
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.road-debugger-exit-title {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.75);
+}
+
+.road-debugger-exit-body {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.72);
+    line-height: 1.35;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.12);
+}
+
+.road-debugger-exit-actions {
     display: flex;
     justify-content: flex-end;
     gap: 10px;

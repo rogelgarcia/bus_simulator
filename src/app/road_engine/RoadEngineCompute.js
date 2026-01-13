@@ -1,0 +1,1261 @@
+// src/app/road_engine/RoadEngineCompute.js
+// Pure rebuild pipeline for road-edge computation and derived debug primitives.
+// Design: Returns plain serializable data so results are deterministic and renderer-agnostic.
+
+import { normalizeRoadTileOffsetBoundary } from './RoadEngineTileOffset.js';
+
+const EPS = 1e-9;
+
+function clampInt(v, lo, hi) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return lo;
+    return Math.max(lo, Math.min(hi, n | 0));
+}
+
+function safeId(value, fallback) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+    return fallback;
+}
+
+function compareString(a, b) {
+    const aa = String(a ?? '');
+    const bb = String(b ?? '');
+    if (aa < bb) return -1;
+    if (aa > bb) return 1;
+    return 0;
+}
+
+function normalizeDirXZ(a, b) {
+    const dx = (b?.x ?? 0) - (a?.x ?? 0);
+    const dz = (b?.z ?? 0) - (a?.z ?? 0);
+    const len = Math.hypot(dx, dz);
+    if (!(len > EPS)) return null;
+    const inv = 1 / len;
+    return { x: dx * inv, z: dz * inv, length: len };
+}
+
+function rightNormalXZ(dir) {
+    return { x: dir.z, z: -dir.x };
+}
+
+function resolveOrigin(origin) {
+    const ox = Number(origin?.x) || 0;
+    const oz = Number(origin?.z) || 0;
+    return { x: ox, z: oz };
+}
+
+function resolveFlags(flags) {
+    const f = flags && typeof flags === 'object' ? flags : {};
+    return {
+        centerline: f.centerline !== false,
+        directionCenterlines: f.directionCenterlines !== false,
+        laneEdges: f.laneEdges !== false,
+        asphaltEdges: f.asphaltEdges !== false,
+        markers: f.markers !== false,
+        asphaltObb: f.asphaltObb !== false
+    };
+}
+
+function resolveTrim(trim, laneWidth) {
+    const t = trim && typeof trim === 'object' ? trim : {};
+    const debug = t.debug && typeof t.debug === 'object' ? t.debug : {};
+    const threshold = Number.isFinite(t.threshold) ? Number(t.threshold) : (Number(laneWidth) || 4.8) * 0.1;
+    return {
+        enabled: t.enabled !== false,
+        threshold,
+        debug: {
+            rawSegments: !!debug.rawSegments,
+            strips: !!debug.strips,
+            overlaps: !!debug.overlaps,
+            intervals: !!debug.intervals,
+            keptPieces: !!debug.keptPieces,
+            droppedPieces: !!debug.droppedPieces
+        }
+    };
+}
+
+function resolveJunctions(junctions, laneWidth) {
+    const j = junctions && typeof junctions === 'object' ? junctions : {};
+    const debug = j.debug && typeof j.debug === 'object' ? j.debug : {};
+    const thresholdFactor = Number.isFinite(j.thresholdFactor) ? Number(j.thresholdFactor) : 1.5;
+    const minThreshold = Number.isFinite(j.minThreshold) ? Number(j.minThreshold) : (Number(laneWidth) || 4.8) * 1.5;
+    const maxThreshold = Number.isFinite(j.maxThreshold) ? Number(j.maxThreshold) : Infinity;
+    const mergedConnectorIds = Array.isArray(j.mergedConnectorIds) ? j.mergedConnectorIds.filter((v) => typeof v === 'string' && v.trim()) : [];
+    return {
+        enabled: j.enabled !== false,
+        thresholdFactor,
+        minThreshold,
+        maxThreshold,
+        mergedConnectorIds,
+        debug: {
+            endpoints: !!debug.endpoints,
+            boundary: !!debug.boundary,
+            connectors: !!debug.connectors,
+            rejected: !!debug.rejected,
+            edgeOrder: !!debug.edgeOrder
+        }
+    };
+}
+
+export function resolveRoadEngineSettings(settings = {}) {
+    const tileSize = Number(settings.tileSize) || 24;
+    const laneWidth = Number(settings.laneWidth) || 4.8;
+    const marginFactor = Number.isFinite(settings.marginFactor) ? Number(settings.marginFactor) : 0.1;
+    const origin = resolveOrigin(settings.origin);
+    const flags = resolveFlags(settings.flags);
+    const trim = resolveTrim(settings.trim, laneWidth);
+    const junctions = resolveJunctions(settings.junctions, laneWidth);
+    return {
+        tileSize,
+        laneWidth,
+        marginFactor,
+        origin,
+        flags,
+        trim,
+        junctions
+    };
+}
+
+function pointWorldPosition(point, settings) {
+    const tileX = Number(point?.tileX) || 0;
+    const tileY = Number(point?.tileY) || 0;
+    const offsetX = Number(point?.offsetX) || 0;
+    const offsetY = Number(point?.offsetY) || 0;
+    const tileSize = Number(settings?.tileSize) || 24;
+    const origin = settings?.origin ?? { x: 0, z: 0 };
+    return {
+        x: origin.x + tileX * tileSize + offsetX,
+        z: origin.z + tileY * tileSize + offsetY
+    };
+}
+
+function normalizePoint(raw, { roadId, index, settings }) {
+    const id = safeId(raw?.id, `pt_${roadId}_${index}`);
+    const norm = normalizeRoadTileOffsetBoundary(
+        {
+            tileX: Number(raw?.tileX) || 0,
+            tileY: Number(raw?.tileY) || 0,
+            offsetX: Number(raw?.offsetX) || 0,
+            offsetY: Number(raw?.offsetY) || 0
+        },
+        { tileSize: settings?.tileSize }
+    );
+    const tangentFactor = Number.isFinite(raw?.tangentFactor) ? Number(raw.tangentFactor) : 1;
+    const world = pointWorldPosition(norm, settings);
+    return {
+        id,
+        tileX: norm.tileX,
+        tileY: norm.tileY,
+        offsetX: norm.offsetX,
+        offsetY: norm.offsetY,
+        tangentFactor,
+        world
+    };
+}
+
+function offsetPointXZ(p, right, offset) {
+    return {
+        x: (p?.x ?? 0) + right.x * offset,
+        z: (p?.z ?? 0) + right.z * offset
+    };
+}
+
+function makePolyline({ segmentId, roadId, kind, offset, right, aPoint, bPoint }) {
+    const id = `${segmentId}__${kind}`;
+    const a = offsetPointXZ(aPoint.world, right, offset);
+    const b = offsetPointXZ(bPoint.world, right, offset);
+    return {
+        id,
+        kind,
+        roadId,
+        segmentId,
+        offset,
+        points: [
+            {
+                id: `${id}__${aPoint.id}`,
+                x: a.x,
+                z: a.z,
+                tangentFactor: aPoint.tangentFactor,
+                roadPointId: aPoint.id
+            },
+            {
+                id: `${id}__${bPoint.id}`,
+                x: b.x,
+                z: b.z,
+                tangentFactor: bPoint.tangentFactor,
+                roadPointId: bPoint.id
+            }
+        ]
+    };
+}
+
+function segmentCorners(aWorld, bWorld, right, leftWidth, rightWidth) {
+    const aL = offsetPointXZ(aWorld, right, -leftWidth);
+    const aR = offsetPointXZ(aWorld, right, rightWidth);
+    const bR = offsetPointXZ(bWorld, right, rightWidth);
+    const bL = offsetPointXZ(bWorld, right, -leftWidth);
+    return [aL, aR, bR, bL];
+}
+
+function computeAabb(points) {
+    let minX = Infinity;
+    let minZ = Infinity;
+    let maxX = -Infinity;
+    let maxZ = -Infinity;
+    for (const p of points) {
+        const x = p?.x ?? 0;
+        const z = p?.z ?? 0;
+        if (x < minX) minX = x;
+        if (z < minZ) minZ = z;
+        if (x > maxX) maxX = x;
+        if (z > maxZ) maxZ = z;
+    }
+    if (!Number.isFinite(minX) || !Number.isFinite(minZ) || !Number.isFinite(maxX) || !Number.isFinite(maxZ)) {
+        return { minX: 0, minZ: 0, maxX: 0, maxZ: 0 };
+    }
+    return { minX, minZ, maxX, maxZ };
+}
+
+function cross2(a, b) {
+    return (a?.x ?? 0) * (b?.z ?? 0) - (a?.z ?? 0) * (b?.x ?? 0);
+}
+
+function dot2(a, b) {
+    return (a?.x ?? 0) * (b?.x ?? 0) + (a?.z ?? 0) * (b?.z ?? 0);
+}
+
+function polygonArea(points) {
+    const pts = Array.isArray(points) ? points : [];
+    const n = pts.length;
+    if (n < 3) return 0;
+    let sum = 0;
+    for (let i = 0; i < n; i++) {
+        const a = pts[i];
+        const b = pts[(i + 1) % n];
+        sum += (a?.x ?? 0) * (b?.z ?? 0) - (b?.x ?? 0) * (a?.z ?? 0);
+    }
+    return sum * 0.5;
+}
+
+function ensureCcw(points) {
+    const pts = Array.isArray(points) ? points : [];
+    if (pts.length < 3) return pts;
+    if (polygonArea(pts) >= 0) return pts;
+    return pts.slice().reverse();
+}
+
+function fnv1a32(str) {
+    const s = String(str ?? '');
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) {
+        hash ^= s.charCodeAt(i);
+        hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    return hash >>> 0;
+}
+
+function stableHashId(prefix, key) {
+    const hex = fnv1a32(key).toString(16).padStart(8, '0');
+    return `${prefix}${hex}`;
+}
+
+function lineIntersectionParam(p, q, a, b) {
+    const r = { x: (q?.x ?? 0) - (p?.x ?? 0), z: (q?.z ?? 0) - (p?.z ?? 0) };
+    const s = { x: (b?.x ?? 0) - (a?.x ?? 0), z: (b?.z ?? 0) - (a?.z ?? 0) };
+    const denom = cross2(r, s);
+    if (Math.abs(denom) <= EPS) return null;
+    const ap = { x: (a?.x ?? 0) - (p?.x ?? 0), z: (a?.z ?? 0) - (p?.z ?? 0) };
+    return cross2(ap, s) / denom;
+}
+
+function clipPolygon(subject, clip) {
+    let output = ensureCcw(subject);
+    const clipPts = ensureCcw(clip);
+    if (output.length < 3 || clipPts.length < 3) return [];
+
+    for (let i = 0; i < clipPts.length; i++) {
+        const a = clipPts[i];
+        const b = clipPts[(i + 1) % clipPts.length];
+        const input = output;
+        output = [];
+        if (input.length < 3) break;
+
+        const edge = { x: (b?.x ?? 0) - (a?.x ?? 0), z: (b?.z ?? 0) - (a?.z ?? 0) };
+        const inside = (p) => cross2(edge, { x: (p?.x ?? 0) - (a?.x ?? 0), z: (p?.z ?? 0) - (a?.z ?? 0) }) >= -EPS;
+
+        for (let j = 0; j < input.length; j++) {
+            const p = input[j];
+            const q = input[(j + 1) % input.length];
+            const pIn = inside(p);
+            const qIn = inside(q);
+
+            if (pIn && qIn) {
+                output.push({ x: q.x, z: q.z });
+                continue;
+            }
+            if (pIn && !qIn) {
+                const t = lineIntersectionParam(p, q, a, b);
+                if (t !== null) {
+                    const tt = Math.max(0, Math.min(1, t));
+                    output.push({ x: (p.x ?? 0) + ((q.x ?? 0) - (p.x ?? 0)) * tt, z: (p.z ?? 0) + ((q.z ?? 0) - (p.z ?? 0)) * tt });
+                }
+                continue;
+            }
+            if (!pIn && qIn) {
+                const t = lineIntersectionParam(p, q, a, b);
+                if (t !== null) {
+                    const tt = Math.max(0, Math.min(1, t));
+                    output.push({ x: (p.x ?? 0) + ((q.x ?? 0) - (p.x ?? 0)) * tt, z: (p.z ?? 0) + ((q.z ?? 0) - (p.z ?? 0)) * tt });
+                }
+                output.push({ x: q.x, z: q.z });
+            }
+        }
+    }
+
+    if (output.length < 3) return [];
+    const cleaned = [];
+    for (const p of output) {
+        const last = cleaned[cleaned.length - 1] ?? null;
+        if (last && Math.hypot((p.x ?? 0) - (last.x ?? 0), (p.z ?? 0) - (last.z ?? 0)) <= 1e-6) continue;
+        cleaned.push(p);
+    }
+    if (cleaned.length >= 3) {
+        const first = cleaned[0];
+        const last = cleaned[cleaned.length - 1];
+        if (first && last && Math.hypot((first.x ?? 0) - (last.x ?? 0), (first.z ?? 0) - (last.z ?? 0)) <= 1e-6) cleaned.pop();
+    }
+    return cleaned.length >= 3 ? cleaned : [];
+}
+
+function projectionsOverlapOnAxis(pointsA, pointsB, axis) {
+    let minA = Infinity;
+    let maxA = -Infinity;
+    let minB = Infinity;
+    let maxB = -Infinity;
+    for (const p of pointsA) {
+        const v = dot2(p, axis);
+        if (v < minA) minA = v;
+        if (v > maxA) maxA = v;
+    }
+    for (const p of pointsB) {
+        const v = dot2(p, axis);
+        if (v < minB) minB = v;
+        if (v > maxB) maxB = v;
+    }
+    if (!Number.isFinite(minA) || !Number.isFinite(maxA) || !Number.isFinite(minB) || !Number.isFinite(maxB)) return false;
+    return !(maxA < minB - EPS || maxB < minA - EPS);
+}
+
+function satOverlapConvex(pointsA, pointsB, axes) {
+    for (const axis of axes) {
+        if (!projectionsOverlapOnAxis(pointsA, pointsB, axis)) return false;
+    }
+    return true;
+}
+
+function aabbOverlaps(a, b) {
+    if (!a || !b) return false;
+    return !(
+        (a.maxX ?? 0) < (b.minX ?? 0) - EPS ||
+        (b.maxX ?? 0) < (a.minX ?? 0) - EPS ||
+        (a.maxZ ?? 0) < (b.minZ ?? 0) - EPS ||
+        (b.maxZ ?? 0) < (a.minZ ?? 0) - EPS
+    );
+}
+
+function projectPolygonToSegmentT(points, segStart, axis, length) {
+    if (!Array.isArray(points) || points.length < 3) return null;
+    if (!(length > EPS)) return null;
+    let minT = Infinity;
+    let maxT = -Infinity;
+    for (const p of points) {
+        const rel = { x: (p?.x ?? 0) - (segStart?.x ?? 0), z: (p?.z ?? 0) - (segStart?.z ?? 0) };
+        const t = dot2(rel, axis) / length;
+        if (t < minT) minT = t;
+        if (t > maxT) maxT = t;
+    }
+    if (!Number.isFinite(minT) || !Number.isFinite(maxT)) return null;
+    return { t0: minT, t1: maxT };
+}
+
+function clamp01(v) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(0, Math.min(1, n));
+}
+
+function segmentIntersectionXZ(a0, a1, b0, b1) {
+    const p = { x: a0?.x ?? 0, z: a0?.z ?? 0 };
+    const r = { x: (a1?.x ?? 0) - (a0?.x ?? 0), z: (a1?.z ?? 0) - (a0?.z ?? 0) };
+    const q = { x: b0?.x ?? 0, z: b0?.z ?? 0 };
+    const s = { x: (b1?.x ?? 0) - (b0?.x ?? 0), z: (b1?.z ?? 0) - (b0?.z ?? 0) };
+    const denom = cross2(r, s);
+    if (Math.abs(denom) <= EPS) return null;
+    const qp = { x: q.x - p.x, z: q.z - p.z };
+    const t = cross2(qp, s) / denom;
+    const u = cross2(qp, r) / denom;
+    if (t < -EPS || t > 1 + EPS || u < -EPS || u > 1 + EPS) return null;
+    return { x: p.x + r.x * t, z: p.z + r.z * t };
+}
+
+function centroid(points) {
+    const pts = Array.isArray(points) ? points : [];
+    if (!pts.length) return { x: 0, z: 0 };
+    let x = 0;
+    let z = 0;
+    for (const p of pts) {
+        x += p?.x ?? 0;
+        z += p?.z ?? 0;
+    }
+    const inv = 1 / pts.length;
+    return { x: x * inv, z: z * inv };
+}
+
+function makeRectCorners(start, end, right, leftWidth, rightWidth) {
+    return segmentCorners(start, end, right, leftWidth, rightWidth);
+}
+
+function comparePointsLex(a, b) {
+    const ax = Number(a?.x) || 0;
+    const az = Number(a?.z) || 0;
+    const bx = Number(b?.x) || 0;
+    const bz = Number(b?.z) || 0;
+    if (ax < bx - 1e-9) return -1;
+    if (ax > bx + 1e-9) return 1;
+    if (az < bz - 1e-9) return -1;
+    if (az > bz + 1e-9) return 1;
+    return 0;
+}
+
+function convexHullXZ(points) {
+    const pts = Array.isArray(points) ? points.slice() : [];
+    pts.sort(comparePointsLex);
+    const unique = [];
+    for (const p of pts) {
+        const last = unique[unique.length - 1] ?? null;
+        if (last && Math.hypot((p?.x ?? 0) - (last.x ?? 0), (p?.z ?? 0) - (last.z ?? 0)) <= 1e-6) continue;
+        unique.push({ x: Number(p?.x) || 0, z: Number(p?.z) || 0 });
+    }
+    if (unique.length < 3) return unique;
+
+    const cross = (o, a, b) => ((a.x - o.x) * (b.z - o.z) - (a.z - o.z) * (b.x - o.x));
+
+    const lower = [];
+    for (const p of unique) {
+        while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 1e-12) lower.pop();
+        lower.push(p);
+    }
+    const upper = [];
+    for (let i = unique.length - 1; i >= 0; i--) {
+        const p = unique[i];
+        while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 1e-12) upper.pop();
+        upper.push(p);
+    }
+    upper.pop();
+    lower.pop();
+    const hull = lower.concat(upper);
+    return hull.length >= 3 ? ensureCcw(hull) : hull;
+}
+
+function mergeIntervals(intervals) {
+    const list = Array.isArray(intervals) ? intervals.slice() : [];
+    list.sort((a, b) => (a.t0 ?? 0) - (b.t0 ?? 0));
+    const out = [];
+    for (const it of list) {
+        const t0 = clamp01(it?.t0 ?? 0);
+        const t1 = clamp01(it?.t1 ?? 0);
+        if (!(t1 > t0 + EPS)) continue;
+        const last = out[out.length - 1] ?? null;
+        if (!last || t0 > last.t1 + 1e-6) {
+            out.push({ t0, t1 });
+        } else {
+            last.t1 = Math.max(last.t1, t1);
+        }
+    }
+    return out;
+}
+
+function complementIntervals(removed) {
+    const out = [];
+    let t = 0;
+    for (const it of removed) {
+        if ((it.t0 ?? 0) > t + 1e-9) out.push({ t0: t, t1: it.t0 });
+        t = Math.max(t, it.t1 ?? t);
+        if (t >= 1 - 1e-9) {
+            t = 1;
+            break;
+        }
+    }
+    if (t < 1 - 1e-9) out.push({ t0: t, t1: 1 });
+    return out.filter((it) => (it.t1 ?? 0) > (it.t0 ?? 0) + EPS);
+}
+
+function buildSegment({ road, roadIndex, segmentIndex, aPoint, bPoint, settings }) {
+    const segmentId = `seg_${road.id}_${aPoint.id}_${bPoint.id}`;
+    const dir = normalizeDirXZ(aPoint.world, bPoint.world);
+    if (!dir) return null;
+    const right = rightNormalXZ(dir);
+
+    const laneWidth = settings.laneWidth;
+    const margin = laneWidth * settings.marginFactor;
+    const lanesF = clampInt(road.lanesF, 0, 99);
+    const lanesB = clampInt(road.lanesB, 0, 99);
+    const rightLaneEdge = lanesF * laneWidth;
+    const leftLaneEdge = lanesB * laneWidth;
+    const rightAsphaltEdge = rightLaneEdge + margin;
+    const leftAsphaltEdge = leftLaneEdge + margin;
+
+    const polylines = [];
+    polylines.push(makePolyline({
+        segmentId,
+        roadId: road.id,
+        kind: 'centerline',
+        offset: 0,
+        right,
+        aPoint,
+        bPoint
+    }));
+
+    if (lanesF > 0) {
+        polylines.push(makePolyline({
+            segmentId,
+            roadId: road.id,
+            kind: 'forward_centerline',
+            offset: rightLaneEdge * 0.5,
+            right,
+            aPoint,
+            bPoint
+        }));
+    }
+
+    if (lanesB > 0) {
+        polylines.push(makePolyline({
+            segmentId,
+            roadId: road.id,
+            kind: 'backward_centerline',
+            offset: -leftLaneEdge * 0.5,
+            right,
+            aPoint,
+            bPoint
+        }));
+    }
+
+    if (lanesF > 0) {
+        polylines.push(makePolyline({
+            segmentId,
+            roadId: road.id,
+            kind: 'lane_edge_right',
+            offset: rightLaneEdge,
+            right,
+            aPoint,
+            bPoint
+        }));
+    }
+
+    if (lanesB > 0) {
+        polylines.push(makePolyline({
+            segmentId,
+            roadId: road.id,
+            kind: 'lane_edge_left',
+            offset: -leftLaneEdge,
+            right,
+            aPoint,
+            bPoint
+        }));
+    }
+
+    polylines.push(makePolyline({
+        segmentId,
+        roadId: road.id,
+        kind: 'asphalt_edge_right',
+        offset: rightAsphaltEdge,
+        right,
+        aPoint,
+        bPoint
+    }));
+
+    polylines.push(makePolyline({
+        segmentId,
+        roadId: road.id,
+        kind: 'asphalt_edge_left',
+        offset: -leftAsphaltEdge,
+        right,
+        aPoint,
+        bPoint
+    }));
+
+    const corners = segmentCorners(aPoint.world, bPoint.world, right, leftAsphaltEdge, rightAsphaltEdge);
+    const obb = {
+        id: `${segmentId}__asphalt_obb`,
+        roadId: road.id,
+        segmentId,
+        center: {
+            x: (aPoint.world.x + bPoint.world.x) * 0.5,
+            z: (aPoint.world.z + bPoint.world.z) * 0.5
+        },
+        axis: { x: dir.x, z: dir.z },
+        halfLength: dir.length * 0.5,
+        halfWidthLeft: leftAsphaltEdge,
+        halfWidthRight: rightAsphaltEdge,
+        corners,
+        aabb: computeAabb(corners)
+    };
+
+    return {
+        id: segmentId,
+        roadId: road.id,
+        roadIndex,
+        index: segmentIndex,
+        aPointId: aPoint.id,
+        bPointId: bPoint.id,
+        aWorld: { x: aPoint.world.x, z: aPoint.world.z },
+        bWorld: { x: bPoint.world.x, z: bPoint.world.z },
+        lanesF,
+        lanesB,
+        length: dir.length,
+        dir: { x: dir.x, z: dir.z },
+        right,
+        laneWidth,
+        margin,
+        polylines,
+        asphaltObb: obb
+    };
+}
+
+function includePolyline(kind, flags) {
+    if (kind === 'centerline') return flags.centerline;
+    if (kind === 'forward_centerline' || kind === 'backward_centerline') return flags.directionCenterlines;
+    if (kind === 'lane_edge_left' || kind === 'lane_edge_right') return flags.laneEdges;
+    if (kind === 'asphalt_edge_left' || kind === 'asphalt_edge_right') return flags.asphaltEdges;
+    return true;
+}
+
+function pushPolylinePrimitive(primitives, poly) {
+    primitives.push({
+        type: 'polyline',
+        id: poly.id,
+        kind: poly.kind,
+        roadId: poly.roadId,
+        segmentId: poly.segmentId,
+        points: poly.points.map((p) => ({ x: p.x, z: p.z }))
+    });
+}
+
+function pushMarkerPrimitive(primitives, poly) {
+    primitives.push({
+        type: 'points',
+        id: `${poly.id}__markers`,
+        kind: `${poly.kind}_markers`,
+        roadId: poly.roadId,
+        segmentId: poly.segmentId,
+        points: poly.points.map((p) => ({ x: p.x, z: p.z }))
+    });
+}
+
+function pushObbPrimitive(primitives, obb) {
+    primitives.push({
+        type: 'polygon',
+        id: obb.id,
+        kind: 'asphalt_obb',
+        roadId: obb.roadId,
+        segmentId: obb.segmentId,
+        points: obb.corners.map((p) => ({ x: p.x, z: p.z }))
+    });
+}
+
+export function computeRoadEngineEdges({ roads = [], settings = {} } = {}) {
+    const resolvedSettings = resolveRoadEngineSettings(settings);
+    const derivedRoads = [];
+    const segments = [];
+    const primitives = [];
+    const flags = resolvedSettings.flags;
+    const trim = resolvedSettings.trim ?? { enabled: false, threshold: 0 };
+    const junctionsSettings = resolvedSettings.junctions ?? { enabled: false, thresholdFactor: 1.5 };
+
+    const list = Array.isArray(roads) ? roads : [];
+    for (let roadIndex = 0; roadIndex < list.length; roadIndex++) {
+        const rawRoad = list[roadIndex] ?? {};
+        const roadId = safeId(rawRoad?.id, `road_${roadIndex}`);
+        const name = typeof rawRoad?.name === 'string' && rawRoad.name.trim() ? rawRoad.name.trim() : roadId;
+        const lanesF = clampInt(rawRoad?.lanesF ?? 1, 0, 99);
+        const lanesB = clampInt(rawRoad?.lanesB ?? 1, 0, 99);
+        const rawPoints = Array.isArray(rawRoad?.points) ? rawRoad.points : [];
+        const points = rawPoints.map((pt, index) => normalizePoint(pt, { roadId, index, settings: resolvedSettings }));
+
+        const roadOut = {
+            id: roadId,
+            name,
+            lanesF,
+            lanesB,
+            points,
+            segmentIds: []
+        };
+
+        for (let i = 0; i < points.length - 1; i++) {
+            const seg = buildSegment({
+                road: roadOut,
+                roadIndex,
+                segmentIndex: i,
+                aPoint: points[i],
+                bPoint: points[i + 1],
+                settings: resolvedSettings
+            });
+            if (!seg) continue;
+            roadOut.segmentIds.push(seg.id);
+            segments.push(seg);
+
+            for (const poly of seg.polylines) {
+                if (!includePolyline(poly.kind, flags)) continue;
+                pushPolylinePrimitive(primitives, poly);
+                if (flags.markers) pushMarkerPrimitive(primitives, poly);
+            }
+
+            if (flags.asphaltObb) pushObbPrimitive(primitives, seg.asphaltObb);
+        }
+
+        derivedRoads.push(roadOut);
+    }
+
+    const trimOut = {
+        enabled: trim.enabled,
+        threshold: trim.threshold,
+        overlaps: []
+    };
+
+    if (trim.enabled) {
+        const threshold = Math.max(0, Number(trim.threshold) || 0);
+        const pad = threshold * 0.5;
+        const snapStep = resolvedSettings.tileSize / 10;
+
+        const expanded = segments.map((seg) => {
+            const left = (seg?.asphaltObb?.halfWidthLeft ?? 0) + pad;
+            const rightW = (seg?.asphaltObb?.halfWidthRight ?? 0) + pad;
+            const axis = seg?.dir ?? { x: 1, z: 0 };
+            const right = seg?.right ?? { x: 0, z: -1 };
+            const a = seg?.aWorld ?? { x: 0, z: 0 };
+            const b = seg?.bWorld ?? { x: 0, z: 0 };
+            const start = { x: (a.x ?? 0) - (axis.x ?? 0) * pad, z: (a.z ?? 0) - (axis.z ?? 0) * pad };
+            const end = { x: (b.x ?? 0) + (axis.x ?? 0) * pad, z: (b.z ?? 0) + (axis.z ?? 0) * pad };
+            const corners = makeRectCorners(start, end, right, left, rightW);
+            return {
+                segmentId: seg.id,
+                roadId: seg.roadId,
+                axis,
+                right,
+                start,
+                end,
+                leftWidth: left,
+                rightWidth: rightW,
+                corners: ensureCcw(corners),
+                aabb: computeAabb(corners)
+            };
+        });
+
+        const expandedById = new Map(expanded.map((s) => [s.segmentId, s]));
+        const intervalsBySeg = new Map();
+
+        const sortedSegs = segments.slice().sort((a, b) => {
+            const aId = String(a?.id ?? '');
+            const bId = String(b?.id ?? '');
+            if (aId < bId) return -1;
+            if (aId > bId) return 1;
+            return 0;
+        });
+        for (let i = 0; i < sortedSegs.length; i++) {
+            const aSeg = sortedSegs[i];
+            const aStrip = expandedById.get(aSeg.id);
+            if (!aStrip) continue;
+            for (let j = i + 1; j < sortedSegs.length; j++) {
+                const bSeg = sortedSegs[j];
+                if (aSeg.aPointId === bSeg.aPointId || aSeg.aPointId === bSeg.bPointId || aSeg.bPointId === bSeg.aPointId || aSeg.bPointId === bSeg.bPointId) continue;
+
+                const bStrip = expandedById.get(bSeg.id);
+                if (!bStrip) continue;
+                if (!aabbOverlaps(aStrip.aabb, bStrip.aabb)) continue;
+
+                const axes = [
+                    aStrip.axis, aStrip.right,
+                    bStrip.axis, bStrip.right
+                ];
+                if (!satOverlapConvex(aStrip.corners, bStrip.corners, axes)) continue;
+
+                const overlapPoly = clipPolygon(aStrip.corners, bStrip.corners);
+                if (overlapPoly.length < 3) continue;
+                const area = Math.abs(polygonArea(overlapPoly));
+                if (!(area > 1e-6)) continue;
+
+                const anchor = segmentIntersectionXZ(aSeg.aWorld, aSeg.bWorld, bSeg.aWorld, bSeg.bWorld) ?? centroid(overlapPoly);
+
+                const aProj = projectPolygonToSegmentT(overlapPoly, aSeg.aWorld, aSeg.dir, aSeg.length);
+                const bProj = projectPolygonToSegmentT(overlapPoly, bSeg.aWorld, bSeg.dir, bSeg.length);
+                if (!aProj || !bProj) continue;
+
+                const aT0 = clamp01(aProj.t0);
+                const aT1 = clamp01(aProj.t1);
+                const bT0 = clamp01(bProj.t0);
+                const bT1 = clamp01(bProj.t1);
+                if (!(aT1 > aT0 + 1e-9) || !(bT1 > bT0 + 1e-9)) continue;
+
+                const aCrossRaw = clamp01(dot2({ x: (anchor.x ?? 0) - (aSeg.aWorld.x ?? 0), z: (anchor.z ?? 0) - (aSeg.aWorld.z ?? 0) }, aSeg.dir) / aSeg.length);
+                const bCrossRaw = clamp01(dot2({ x: (anchor.x ?? 0) - (bSeg.aWorld.x ?? 0), z: (anchor.z ?? 0) - (bSeg.aWorld.z ?? 0) }, bSeg.dir) / bSeg.length);
+
+                const aCross = (aT0 + aT1) * 0.5;
+                const bCross = (bT0 + bT1) * 0.5;
+
+                const aRemove = { t0: aT0, t1: aT1 };
+                const bRemove = { t0: bT0, t1: bT1 };
+
+                if (!intervalsBySeg.has(aSeg.id)) intervalsBySeg.set(aSeg.id, []);
+                if (!intervalsBySeg.has(bSeg.id)) intervalsBySeg.set(bSeg.id, []);
+                intervalsBySeg.get(aSeg.id).push({ ...aRemove, otherSegmentId: bSeg.id });
+                intervalsBySeg.get(bSeg.id).push({ ...bRemove, otherSegmentId: aSeg.id });
+
+                const overlapId = `ov_${aSeg.id}__${bSeg.id}`;
+                trimOut.overlaps.push({
+                    id: overlapId,
+                    aSegmentId: aSeg.id,
+                    bSegmentId: bSeg.id,
+                    polygon: overlapPoly,
+                    aInterval: aRemove,
+                    bInterval: bRemove,
+                    aCross,
+                    bCross,
+                    aCrossRaw,
+                    bCrossRaw
+                });
+
+                if (trim.debug?.overlaps) {
+                    primitives.push({
+                        type: 'polygon',
+                        id: `${overlapId}__poly`,
+                        kind: 'trim_overlap',
+                        roadId: null,
+                        segmentId: overlapId,
+                        points: overlapPoly.map((p) => ({ x: p.x, z: p.z }))
+                    });
+                }
+            }
+        }
+
+        for (const seg of segments) {
+            const rawIntervals = intervalsBySeg.get(seg.id) ?? [];
+            const removed = mergeIntervals(rawIntervals);
+            const hadTrim = removed.length > 0;
+            const kept = hadTrim ? complementIntervals(removed) : [{ t0: 0, t1: 1 }];
+
+            seg.trimRemoved = removed;
+            seg.keptPieces = [];
+            seg.droppedPieces = [];
+
+            const makePiece = ({ t0, t1, index, dropped }) => {
+                const length = seg.length * (t1 - t0);
+                const start = { x: seg.aWorld.x + seg.dir.x * (seg.length * t0), z: seg.aWorld.z + seg.dir.z * (seg.length * t0) };
+                const end = { x: seg.aWorld.x + seg.dir.x * (seg.length * t1), z: seg.aWorld.z + seg.dir.z * (seg.length * t1) };
+                const corners = makeRectCorners(start, end, seg.right, seg.asphaltObb.halfWidthLeft, seg.asphaltObb.halfWidthRight);
+                return {
+                    id: `${seg.id}__${dropped ? 'drop' : 'keep'}_${index}`,
+                    roadId: seg.roadId,
+                    segmentId: seg.id,
+                    index,
+                    t0,
+                    t1,
+                    length,
+                    aWorld: start,
+                    bWorld: end,
+                    corners,
+                    aabb: computeAabb(corners)
+                };
+            };
+
+            let keepIndex = 0;
+            let dropIndex = 0;
+            for (const it of kept) {
+                const t0 = clamp01(it.t0);
+                const t1 = clamp01(it.t1);
+                if (!(t1 > t0 + 1e-9)) continue;
+                const pieceLen = seg.length * (t1 - t0);
+                if (hadTrim && pieceLen < snapStep - 1e-6) {
+                    const piece = makePiece({ t0, t1, index: dropIndex++, dropped: true });
+                    seg.droppedPieces.push(piece);
+                    if (trim.debug?.droppedPieces) {
+                        primitives.push({
+                            type: 'polygon',
+                            id: piece.id,
+                            kind: 'trim_dropped_piece',
+                            roadId: piece.roadId,
+                            segmentId: piece.segmentId,
+                            points: piece.corners.map((p) => ({ x: p.x, z: p.z }))
+                        });
+                    }
+                    continue;
+                }
+
+                const piece = makePiece({ t0, t1, index: keepIndex++, dropped: false });
+                seg.keptPieces.push(piece);
+                primitives.push({
+                    type: 'polygon',
+                    id: piece.id,
+                    kind: 'asphalt_piece',
+                    roadId: piece.roadId,
+                    segmentId: piece.segmentId,
+                    points: piece.corners.map((p) => ({ x: p.x, z: p.z }))
+                });
+
+                if (trim.debug?.keptPieces) {
+                    primitives.push({
+                        type: 'polygon',
+                        id: `${piece.id}__dbg`,
+                        kind: 'trim_kept_piece',
+                        roadId: piece.roadId,
+                        segmentId: piece.segmentId,
+                        points: piece.corners.map((p) => ({ x: p.x, z: p.z }))
+                    });
+                }
+            }
+
+            if (trim.debug?.rawSegments) {
+                const corners = seg.asphaltObb?.corners ?? null;
+                if (Array.isArray(corners) && corners.length === 4) {
+                    primitives.push({
+                        type: 'polygon',
+                        id: `${seg.id}__raw_asphalt`,
+                        kind: 'trim_raw_asphalt',
+                        roadId: seg.roadId,
+                        segmentId: seg.id,
+                        points: corners.map((p) => ({ x: p.x, z: p.z }))
+                    });
+                }
+            }
+
+            if (trim.debug?.strips) {
+                const strip = expandedById.get(seg.id);
+                const pts = strip?.corners ?? null;
+                if (Array.isArray(pts) && pts.length >= 3) {
+                    primitives.push({
+                        type: 'polygon',
+                        id: `${seg.id}__strip`,
+                        kind: 'trim_strip',
+                        roadId: seg.roadId,
+                        segmentId: seg.id,
+                        points: pts.map((p) => ({ x: p.x, z: p.z }))
+                    });
+                }
+            }
+
+            if (trim.debug?.intervals) {
+                for (let k = 0; k < removed.length; k++) {
+                    const it = removed[k];
+                    const start = { x: seg.aWorld.x + seg.dir.x * (seg.length * it.t0), z: seg.aWorld.z + seg.dir.z * (seg.length * it.t0) };
+                    const end = { x: seg.aWorld.x + seg.dir.x * (seg.length * it.t1), z: seg.aWorld.z + seg.dir.z * (seg.length * it.t1) };
+                    primitives.push({
+                        type: 'polyline',
+                        id: `${seg.id}__removed_${k}`,
+                        kind: 'trim_removed_interval',
+                        roadId: seg.roadId,
+                        segmentId: seg.id,
+                        points: [{ x: start.x, z: start.z }, { x: end.x, z: end.z }]
+                    });
+                }
+            }
+        }
+    } else {
+        for (const seg of segments) {
+            seg.trimRemoved = [];
+            seg.keptPieces = [];
+            seg.droppedPieces = [];
+            const corners = seg.asphaltObb?.corners ?? null;
+            if (Array.isArray(corners) && corners.length === 4) {
+                primitives.push({
+                    type: 'polygon',
+                    id: `${seg.id}__keep_0`,
+                    kind: 'asphalt_piece',
+                    roadId: seg.roadId,
+                    segmentId: seg.id,
+                    points: corners.map((p) => ({ x: p.x, z: p.z }))
+                });
+            }
+        }
+    }
+
+    const junctions = [];
+    if (junctionsSettings.enabled) {
+        const thresholdFactor = Number(junctionsSettings.thresholdFactor) || 1.5;
+        const minThreshold = Math.max(0, Number(junctionsSettings.minThreshold) || 0);
+        const maxThreshold = Number.isFinite(junctionsSettings.maxThreshold) ? Number(junctionsSettings.maxThreshold) : Infinity;
+
+        const endpoints = [];
+        const byEndpointId = new Map();
+        const internalPointIdsByRoadId = new Map();
+        for (const road of derivedRoads) {
+            const pts = Array.isArray(road?.points) ? road.points : [];
+            const internal = new Set();
+            for (let i = 1; i < pts.length - 1; i++) {
+                const id = pts[i]?.id ?? null;
+                if (id) internal.add(id);
+            }
+            internalPointIdsByRoadId.set(road.id, internal);
+        }
+        for (const seg of segments) {
+            const pieces = Array.isArray(seg?.keptPieces) ? seg.keptPieces : [];
+            if (!pieces.length) continue;
+            const baseDir = seg?.dir ?? null;
+            const baseRight = seg?.right ?? null;
+            if (!baseDir || !baseRight) continue;
+            const halfLeft = Number(seg?.asphaltObb?.halfWidthLeft) || 0;
+            const halfRight = Number(seg?.asphaltObb?.halfWidthRight) || 0;
+
+            const makeEndpoint = (piece, end) => {
+                const isA = end === 'a';
+                const t0 = Number(piece?.t0) || 0;
+                const t1 = Number(piece?.t1) || 0;
+                const roadInternal = internalPointIdsByRoadId.get(seg.roadId) ?? null;
+                if (isA && t0 <= 1e-9 && roadInternal?.has?.(seg.aPointId)) return null;
+                if (!isA && t1 >= 1 - 1e-9 && roadInternal?.has?.(seg.bPointId)) return null;
+
+                const world = isA ? (piece?.aWorld ?? null) : (piece?.bWorld ?? null);
+                if (!world) return null;
+                const dirOut = isA ? { x: Number(baseDir.x) || 0, z: Number(baseDir.z) || 0 } : { x: -(Number(baseDir.x) || 0), z: -(Number(baseDir.z) || 0) };
+                const rightOut = isA ? { x: Number(baseRight.x) || 0, z: Number(baseRight.z) || 0 } : { x: -(Number(baseRight.x) || 0), z: -(Number(baseRight.z) || 0) };
+                const widthRight = isA ? halfRight : halfLeft;
+                const widthLeft = isA ? halfLeft : halfRight;
+                const rightEdge = offsetPointXZ(world, rightOut, widthRight);
+                const leftEdge = offsetPointXZ(world, rightOut, -widthLeft);
+                const id = `${piece.id}__${end}`;
+                return {
+                    id,
+                    roadId: piece.roadId,
+                    segmentId: piece.segmentId,
+                    pieceId: piece.id,
+                    end,
+                    world: { x: Number(world.x) || 0, z: Number(world.z) || 0 },
+                    dirOut,
+                    rightOut,
+                    widthLeft,
+                    widthRight,
+                    connectRadius: Math.max(0, widthLeft, widthRight),
+                    leftEdge: { x: Number(leftEdge.x) || 0, z: Number(leftEdge.z) || 0 },
+                    rightEdge: { x: Number(rightEdge.x) || 0, z: Number(rightEdge.z) || 0 }
+                };
+            };
+
+            for (const piece of pieces) {
+                const aEp = makeEndpoint(piece, 'a');
+                const bEp = makeEndpoint(piece, 'b');
+                if (aEp) endpoints.push(aEp);
+                if (bEp) endpoints.push(bEp);
+            }
+        }
+
+        endpoints.sort((a, b) => compareString(a?.id, b?.id));
+        for (let i = 0; i < endpoints.length; i++) byEndpointId.set(endpoints[i].id, endpoints[i]);
+
+        const parent = endpoints.map((_, i) => i);
+        const find = (i) => {
+            let x = i;
+            while (parent[x] !== x) x = parent[x];
+            let y = i;
+            while (parent[y] !== y) {
+                const p = parent[y];
+                parent[y] = x;
+                y = p;
+            }
+            return x;
+        };
+        const unite = (a, b) => {
+            const ra = find(a);
+            const rb = find(b);
+            if (ra === rb) return;
+            parent[rb] = ra;
+        };
+
+        for (let i = 0; i < endpoints.length; i++) {
+            const a = endpoints[i] ?? null;
+            const aw = a?.world ?? null;
+            if (!a || !aw) continue;
+            for (let j = i + 1; j < endpoints.length; j++) {
+                const b = endpoints[j] ?? null;
+                const bw = b?.world ?? null;
+                if (!b || !bw) continue;
+                const dx = (aw.x ?? 0) - (bw.x ?? 0);
+                const dz = (aw.z ?? 0) - (bw.z ?? 0);
+                const dist2 = dx * dx + dz * dz;
+
+                const radius = Math.max(Number(a.connectRadius) || 0, Number(b.connectRadius) || 0);
+                const local = Math.max(minThreshold, radius * thresholdFactor);
+                const t = Math.min(maxThreshold, local);
+                if (!(t > 1e-9)) continue;
+                if (dist2 <= t * t + 1e-9) unite(i, j);
+            }
+        }
+
+        const clusterByRoot = new Map();
+        for (let i = 0; i < endpoints.length; i++) {
+            const root = find(i);
+            if (!clusterByRoot.has(root)) clusterByRoot.set(root, []);
+            clusterByRoot.get(root).push(endpoints[i]);
+        }
+
+        const mergedSet = new Set(junctionsSettings.mergedConnectorIds ?? []);
+
+        const clusters = Array.from(clusterByRoot.values());
+        clusters.sort((a, b) => {
+            const aKey = a.map((e) => e.id).sort().join('|');
+            const bKey = b.map((e) => e.id).sort().join('|');
+            if (aKey < bKey) return -1;
+            if (aKey > bKey) return 1;
+            return 0;
+        });
+
+        for (const cluster of clusters) {
+            if (cluster.length < 2) continue;
+            const endpointIds = cluster.map((e) => e.id).sort();
+            const junctionId = stableHashId('junc_', endpointIds.join('|'));
+            const center = centroid(cluster.map((e) => e.world));
+            const roadsSet = new Set(cluster.map((e) => e.roadId).filter(Boolean));
+            const segmentsSet = new Set(cluster.map((e) => e.segmentId).filter(Boolean));
+
+            const ordered = cluster.slice().sort((a, b) => {
+                const aAng = Math.atan2(Number(a?.dirOut?.z) || 0, Number(a?.dirOut?.x) || 0);
+                const bAng = Math.atan2(Number(b?.dirOut?.z) || 0, Number(b?.dirOut?.x) || 0);
+                if (aAng < bAng - 1e-12) return -1;
+                if (aAng > bAng + 1e-12) return 1;
+                return compareString(a?.id, b?.id);
+            });
+
+            const boundaryPts = [];
+            for (const ep of ordered) {
+                boundaryPts.push({ x: ep.rightEdge.x, z: ep.rightEdge.z });
+                boundaryPts.push({ x: ep.leftEdge.x, z: ep.leftEdge.z });
+            }
+
+            const cleanedBoundary = [];
+            for (const p of boundaryPts) {
+                const last = cleanedBoundary[cleanedBoundary.length - 1] ?? null;
+                if (last && Math.hypot((p?.x ?? 0) - (last.x ?? 0), (p?.z ?? 0) - (last.z ?? 0)) <= 1e-6) continue;
+                cleanedBoundary.push({ x: Number(p?.x) || 0, z: Number(p?.z) || 0 });
+            }
+            if (cleanedBoundary.length >= 3) {
+                const first = cleanedBoundary[0];
+                const last = cleanedBoundary[cleanedBoundary.length - 1];
+                if (first && last && Math.hypot((first.x ?? 0) - (last.x ?? 0), (first.z ?? 0) - (last.z ?? 0)) <= 1e-6) cleanedBoundary.pop();
+            }
+
+            let surface = ensureCcw(cleanedBoundary);
+            const area = Math.abs(polygonArea(surface));
+            if (!(area > 1e-6)) surface = convexHullXZ(cleanedBoundary);
+
+            const connectors = [];
+            const endpointsSorted = cluster.slice().sort((a, b) => compareString(a?.id, b?.id));
+            for (let i = 0; i < endpointsSorted.length; i++) {
+                const a = endpointsSorted[i];
+                for (let j = i + 1; j < endpointsSorted.length; j++) {
+                    const b = endpointsSorted[j];
+                    const aId = a.id;
+                    const bId = b.id;
+                    const connId = stableHashId('con_', `${junctionId}|${aId}|${bId}`);
+                    const sameRoad = (a.roadId ?? null) && a.roadId === b.roadId;
+                    const mergedIntoRoad = sameRoad && mergedSet.has(connId);
+                    const dx = (a.world.x ?? 0) - (b.world.x ?? 0);
+                    const dz = (a.world.z ?? 0) - (b.world.z ?? 0);
+                    connectors.push({
+                        id: connId,
+                        junctionId,
+                        aEndpointId: aId,
+                        bEndpointId: bId,
+                        aRoadId: a.roadId,
+                        bRoadId: b.roadId,
+                        aSegmentId: a.segmentId,
+                        bSegmentId: b.segmentId,
+                        aPieceId: a.pieceId,
+                        bPieceId: b.pieceId,
+                        distance: Math.hypot(dx, dz),
+                        sameRoad,
+                        mergedIntoRoad,
+                        allowAToB: true,
+                        allowBToA: true
+                    });
+                }
+            }
+            connectors.sort((a, b) => compareString(a?.id, b?.id));
+
+            const junction = {
+                id: junctionId,
+                center: { x: Number(center.x) || 0, z: Number(center.z) || 0 },
+                roadIds: Array.from(roadsSet).sort(),
+                segmentIds: Array.from(segmentsSet).sort(),
+                endpoints: cluster.map((e) => ({ ...e, junctionId })).sort((a, b) => compareString(a?.id, b?.id)),
+                connectors,
+                surface: {
+                    points: surface.map((p) => ({ x: Number(p?.x) || 0, z: Number(p?.z) || 0 })),
+                    area: Math.abs(polygonArea(surface))
+                }
+            };
+            junctions.push(junction);
+
+            if (junction.surface.points.length >= 3) {
+                primitives.push({
+                    type: 'polygon',
+                    id: `${junctionId}__surface`,
+                    kind: 'junction_surface',
+                    roadId: null,
+                    segmentId: junctionId,
+                    junctionId,
+                    points: junction.surface.points.map((p) => ({ x: p.x, z: p.z }))
+                });
+            }
+
+            if (junctionsSettings.debug?.boundary && junction.surface.points.length >= 2) {
+                primitives.push({
+                    type: 'polyline',
+                    id: `${junctionId}__boundary`,
+                    kind: 'junction_boundary',
+                    roadId: null,
+                    segmentId: junctionId,
+                    junctionId,
+                    points: [...junction.surface.points, junction.surface.points[0]].map((p) => ({ x: p.x, z: p.z }))
+                });
+            }
+
+            if (junctionsSettings.debug?.endpoints && cluster.length) {
+                primitives.push({
+                    type: 'points',
+                    id: `${junctionId}__endpoints`,
+                    kind: 'junction_endpoints',
+                    roadId: null,
+                    segmentId: junctionId,
+                    junctionId,
+                    points: cluster.map((e) => ({ x: e.world.x, z: e.world.z }))
+                });
+            }
+
+            if (junctionsSettings.debug?.connectors && connectors.length) {
+                for (const conn of connectors) {
+                    const a = byEndpointId.get(conn.aEndpointId) ?? null;
+                    const b = byEndpointId.get(conn.bEndpointId) ?? null;
+                    if (!a || !b) continue;
+                    if (conn.mergedIntoRoad) continue;
+                    primitives.push({
+                        type: 'polyline',
+                        id: `${conn.id}__line`,
+                        kind: 'junction_connector',
+                        roadId: null,
+                        segmentId: junctionId,
+                        junctionId,
+                        connectorId: conn.id,
+                        points: [{ x: a.world.x, z: a.world.z }, { x: b.world.x, z: b.world.z }]
+                    });
+                }
+            }
+        }
+    }
+
+    return {
+        settings: resolvedSettings,
+        roads: derivedRoads,
+        segments,
+        primitives,
+        trim: trimOut,
+        junctions
+    };
+}
