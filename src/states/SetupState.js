@@ -22,6 +22,7 @@ export class SetupState {
             { key: '2', label: 'Test Mode', state: 'test_mode' },
             { key: '3', label: 'Connector Debugger', state: 'connector_debugger' },
             { key: '8', label: 'Debug Corners 2', state: 'debug_corners2' },
+            { key: '9', label: 'Road Debugger', state: 'road_debugger' },
             { key: '4', label: 'Rapier Debugger', state: 'rapier_debugger' },
             { key: '5', label: 'Building Fabrication', state: 'building_fabrication' },
             { key: '6', label: 'Mesh Inspector', state: 'mesh_inspector' },

@@ -3429,6 +3429,822 @@ async function runTests() {
         console.log('⏭️  Debug Corners 2 tests skipped:', e.message);
     }
 
+    // ========== Road Debugger State Tests (Task 53) ==========
+    try {
+        const { RoadDebuggerState } = await import('/src/states/RoadDebuggerState.js');
+
+        test('RoadDebuggerState: enter/exit without errors', () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 100;
+            canvas.height = 100;
+
+            const engine = {
+                canvas,
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const sm = { go: () => {} };
+            const state = new RoadDebuggerState(engine, sm);
+
+            state.enter();
+            assertTrue(!!state.view, 'Expected RoadDebugger view instance.');
+            assertTrue(engine.scene.children.length > 0, 'Expected RoadDebugger scene objects.');
+            assertTrue(!!document.querySelector('.road-debugger-ui'), 'Expected RoadDebugger UI root.');
+
+            state.exit();
+            assertEqual(document.querySelector('.road-debugger-ui'), null, 'Expected RoadDebugger UI cleanup.');
+        });
+    } catch (e) {
+        console.log('⏭️  Road Debugger tests skipped:', e.message);
+    }
+
+    // ========== Road Debugger Pipeline Tests (Task 54) ==========
+    try {
+        const { rebuildRoadDebuggerPipeline } = await import('/src/app/road_debugger/RoadDebuggerPipeline.js');
+
+        test('RoadDebuggerPipeline: N points produce N-1 segments', () => {
+            const roads = [
+                {
+                    id: 'roadA',
+                    name: 'Road A',
+                    lanesF: 2,
+                    lanesB: 1,
+                    points: [
+                        { id: 'p0', tileX: 0, tileY: 0, offsetX: 0, offsetY: 0, tangentFactor: 1 },
+                        { id: 'p1', tileX: 1, tileY: 0, offsetX: 0, offsetY: 0, tangentFactor: 1 },
+                        { id: 'p2', tileX: 2, tileY: 0, offsetX: 0, offsetY: 0, tangentFactor: 1 },
+                        { id: 'p3', tileX: 3, tileY: 0, offsetX: 0, offsetY: 0, tangentFactor: 1 }
+                    ]
+                }
+            ];
+
+            const out = rebuildRoadDebuggerPipeline({ roads, settings: { origin: { x: 0, z: 0 }, tileSize: 24, laneWidth: 4.8, marginFactor: 0.1 } });
+            assertEqual(out.segments.length, 3, 'Expected N-1 segments for N points.');
+            assertEqual(out.segments[0]?.id, 'seg_roadA_p0_p1', 'Expected stable derived segment id.');
+            assertEqual(out.segments[1]?.id, 'seg_roadA_p1_p2', 'Expected stable derived segment id.');
+        });
+
+        test('RoadDebuggerPipeline: lane/asphalt offsets follow laneWidth + margin', () => {
+            const laneWidth = 4.8;
+            const margin = laneWidth * 0.1;
+            const lanesF = 2;
+            const lanesB = 1;
+
+            const roads = [
+                {
+                    id: 'r1',
+                    name: 'R1',
+                    lanesF,
+                    lanesB,
+                    points: [
+                        { id: 'a', tileX: 0, tileY: 0, offsetX: 0, offsetY: 0, tangentFactor: 1 },
+                        { id: 'b', tileX: 1, tileY: 0, offsetX: 0, offsetY: 0, tangentFactor: 1 }
+                    ]
+                }
+            ];
+
+            const out = rebuildRoadDebuggerPipeline({ roads, settings: { origin: { x: 0, z: 0 }, tileSize: 24, laneWidth, marginFactor: 0.1 } });
+            const seg = out.segments[0];
+            assertTrue(!!seg, 'Expected segment output.');
+
+            const getLine = (kind) => seg.polylines.find((p) => p.kind === kind);
+            const z0 = (kind) => getLine(kind)?.points?.[0]?.z;
+
+            assertNear(z0('centerline'), 0, 1e-6, 'Centerline should be at divider.');
+            assertNear(z0('forward_centerline'), -(lanesF * laneWidth) * 0.5, 1e-6, 'Forward centerline offset.');
+            assertNear(z0('backward_centerline'), (lanesB * laneWidth) * 0.5, 1e-6, 'Backward centerline offset.');
+            assertNear(z0('lane_edge_right'), -(lanesF * laneWidth), 1e-6, 'Forward lane edge offset.');
+            assertNear(z0('lane_edge_left'), lanesB * laneWidth, 1e-6, 'Backward lane edge offset.');
+            assertNear(z0('asphalt_edge_right'), -(lanesF * laneWidth + margin), 1e-6, 'Forward asphalt edge offset.');
+            assertNear(z0('asphalt_edge_left'), lanesB * laneWidth + margin, 1e-6, 'Backward asphalt edge offset.');
+
+            assertNear(seg.asphaltObb.halfWidthLeft, lanesB * laneWidth + margin, 1e-6, 'OBB left half-width.');
+            assertNear(seg.asphaltObb.halfWidthRight, lanesF * laneWidth + margin, 1e-6, 'OBB right half-width.');
+        });
+
+        test('RoadDebuggerPipeline: deterministic output for same input', () => {
+            const roads = [
+                {
+                    id: 'roadDet',
+                    name: 'Deterministic',
+                    lanesF: 3,
+                    lanesB: 2,
+                    points: [
+                        { id: 'p0', tileX: 0, tileY: 0, offsetX: 1.2, offsetY: -0.4, tangentFactor: 1 },
+                        { id: 'p1', tileX: 0, tileY: 2, offsetX: -0.2, offsetY: 0.7, tangentFactor: 0.8 },
+                        { id: 'p2', tileX: 2, tileY: 2, offsetX: 0.0, offsetY: 0.0, tangentFactor: 1.1 }
+                    ]
+                }
+            ];
+
+            const settings = { origin: { x: 0, z: 0 }, tileSize: 24, laneWidth: 4.8, marginFactor: 0.1 };
+            const a = rebuildRoadDebuggerPipeline({ roads, settings });
+            const b = rebuildRoadDebuggerPipeline({ roads, settings });
+            assertEqual(JSON.stringify(a), JSON.stringify(b), 'Expected deterministic pipeline output.');
+        });
+    } catch (e) {
+        console.log('⏭️  Road Debugger pipeline tests skipped:', e.message);
+    }
+
+    // ========== Road Debugger Authoring Tests (Task 55) ==========
+    try {
+        const { RoadDebuggerView } = await import('/src/graphics/gui/road_debugger/RoadDebuggerView.js');
+
+        test('RoadDebugger: roads can be created from tile clicks (N points -> N-1 segments)', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: true });
+            view.enter();
+            try {
+                view.startRoadDraft();
+                const ox = view._origin.x;
+                const oz = view._origin.z;
+                const tileSize = view._tileSize;
+                const w = (tx, ty) => ({ x: ox + tx * tileSize, z: oz + ty * tileSize });
+
+                view.addDraftPointFromWorld(w(0, 0));
+                view.addDraftPointFromWorld(w(2, 0));
+                view.addDraftPointFromWorld(w(2, 2));
+                assertEqual(view.getDraftRoad().points.length, 3, 'Expected 3 draft points.');
+
+                view.finishRoadDraft();
+                const roads = view.getRoads();
+                assertEqual(roads.length, 1, 'Expected 1 authored road.');
+
+                const derived = view.getDerived();
+                const segs = (derived?.segments ?? []).filter((s) => s?.roadId === roads[0].id);
+                assertEqual(segs.length, 2, 'Expected N-1 derived segments.');
+                assertTrue(!!document.querySelector(`.road-debugger-road-row[data-road-id="${roads[0].id}"]`), 'Expected road row in table.');
+            } finally {
+                view.exit();
+            }
+        });
+
+        test('RoadDebugger: table hover/selection updates highlight state', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: true });
+            view.enter();
+            try {
+                view.startRoadDraft();
+                view.addDraftPointByTile(0, 0);
+                view.addDraftPointByTile(2, 0);
+                view.addDraftPointByTile(2, 2);
+                view.finishRoadDraft();
+                view.clearSelection();
+
+                const roadId = view.getRoads()[0].id;
+                const derived = view.getDerived();
+                const segId = (derived?.segments ?? []).find((s) => s?.roadId === roadId)?.id ?? null;
+                assertTrue(!!segId, 'Expected derived segment id.');
+
+                let roadRow = document.querySelector(`.road-debugger-road-row[data-road-id="${roadId}"]`);
+                assertTrue(!!roadRow, 'Expected road row.');
+                roadRow.dispatchEvent(new Event('mouseenter'));
+                assertEqual(view._hover.roadId, roadId, 'Expected hover road id to update.');
+
+                const exp = roadRow.querySelector('.road-debugger-expand');
+                exp.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+                const segRow = document.querySelector(`.road-debugger-seg-row[data-segment-id="${segId}"]`);
+                assertTrue(!!segRow, 'Expected segment row after expand.');
+                segRow.dispatchEvent(new Event('mouseenter'));
+                assertEqual(view._hover.segmentId, segId, 'Expected hover segment id to update.');
+
+                segRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                assertEqual(view._selection.type, 'segment', 'Expected segment selection type.');
+                assertEqual(view._selection.segmentId, segId, 'Expected segment selection id.');
+            } finally {
+                view.exit();
+            }
+        });
+
+        test('RoadDebugger: lane config edits update derived widths', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: true });
+            view.enter();
+            try {
+                view.startRoadDraft();
+                view.addDraftPointByTile(0, 0);
+                view.addDraftPointByTile(3, 0);
+                view.finishRoadDraft();
+
+                const roadId = view.getRoads()[0].id;
+                const before = view.getDerived().segments.find((s) => s?.roadId === roadId);
+                assertTrue(!!before, 'Expected derived segment.');
+                assertNear(before.asphaltObb.halfWidthRight, 5.28, 1e-6, 'Expected initial right half-width for lanesF=1.');
+                assertNear(before.asphaltObb.halfWidthLeft, 5.28, 1e-6, 'Expected initial left half-width for lanesB=1.');
+
+                let roadRow = document.querySelector(`.road-debugger-road-row[data-road-id="${roadId}"]`);
+                assertTrue(!!roadRow, 'Expected road row.');
+                let laneInputs = roadRow.querySelectorAll('.road-debugger-lane-input');
+                assertEqual(laneInputs.length, 2, 'Expected two lane inputs (F/B).');
+
+                laneInputs[0].value = '3';
+                laneInputs[0].dispatchEvent(new Event('change'));
+                const afterF = view.getDerived().segments.find((s) => s?.roadId === roadId);
+                assertNear(afterF.asphaltObb.halfWidthRight, 14.88, 1e-6, 'Expected right half-width to update for lanesF=3.');
+
+                roadRow = document.querySelector(`.road-debugger-road-row[data-road-id="${roadId}"]`);
+                laneInputs = roadRow.querySelectorAll('.road-debugger-lane-input');
+                laneInputs[1].value = '2';
+                laneInputs[1].dispatchEvent(new Event('change'));
+                const afterB = view.getDerived().segments.find((s) => s?.roadId === roadId);
+                assertNear(afterB.asphaltObb.halfWidthLeft, 10.08, 1e-6, 'Expected left half-width to update for lanesB=2.');
+            } finally {
+                view.exit();
+            }
+        });
+    } catch (e) {
+        console.log('⏭️  Road Debugger authoring tests skipped:', e.message);
+    }
+
+    // ========== Road Debugger Editing Tests (Task 56) ==========
+    try {
+        const { RoadDebuggerView } = await import('/src/graphics/gui/road_debugger/RoadDebuggerView.js');
+
+        test('RoadDebugger: moving points updates tile coords across boundaries', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: false });
+            view.startRoadDraft();
+            view.addDraftPointByTile(0, 0);
+            view.addDraftPointByTile(0, 1);
+            view.finishRoadDraft();
+
+            const road = view.getRoads()[0];
+            const roadId = road.id;
+            const pointId = road.points[0].id;
+            const tileSize = view._tileSize;
+            const ox = view._origin.x;
+            const oz = view._origin.z;
+
+            const ok = view.movePointToWorld(roadId, pointId, { x: ox + tileSize * 0.6, z: oz }, { snap: false });
+            assertTrue(ok, 'Expected point move to apply.');
+
+            const moved = view.getRoads()[0].points.find((p) => p?.id === pointId);
+            assertEqual(moved.tileX, 1, 'Expected tileX to update after crossing boundary.');
+            assertEqual(moved.tileY, 0, 'Expected tileY to remain.');
+            assertNear(moved.offsetX, -0.4 * tileSize, 1e-6, 'Expected offsetX to be relative to new tile center.');
+            assertNear(moved.offsetY, 0, 1e-6, 'Expected offsetY to remain.');
+        });
+
+        test('RoadDebugger: snapping produces only tile/10 positions and clamps inside tile', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: false });
+            view.startRoadDraft();
+            view.addDraftPointByTile(0, 0);
+            view.addDraftPointByTile(1, 0);
+            view.finishRoadDraft();
+
+            const road = view.getRoads()[0];
+            const roadId = road.id;
+            const pointId = road.points[0].id;
+            const tileSize = view._tileSize;
+            const step = tileSize / 10;
+            const half = tileSize * 0.5;
+            const ox = view._origin.x;
+            const oz = view._origin.z;
+
+            view.movePointToWorld(roadId, pointId, { x: ox + 3.1, z: oz - 4.9 }, { snap: true });
+            let pt = view.getRoads()[0].points.find((p) => p?.id === pointId);
+            const ix = Math.round(pt.offsetX / step);
+            const iy = Math.round(pt.offsetY / step);
+            assertTrue(ix >= -5 && ix <= 5, 'Expected snap index X within [-5..5].');
+            assertTrue(iy >= -5 && iy <= 5, 'Expected snap index Y within [-5..5].');
+            assertNear(pt.offsetX, ix * step, 1e-6, 'Expected snapped offsetX to match grid.');
+            assertNear(pt.offsetY, iy * step, 1e-6, 'Expected snapped offsetY to match grid.');
+            assertTrue(Math.abs(pt.offsetX) <= half + 1e-6, 'Expected snapped offsetX within tile bounds.');
+            assertTrue(Math.abs(pt.offsetY) <= half + 1e-6, 'Expected snapped offsetY within tile bounds.');
+
+            view.movePointToWorld(roadId, pointId, { x: ox - tileSize * 100, z: oz - tileSize * 100 }, { snap: true });
+            pt = view.getRoads()[0].points.find((p) => p?.id === pointId);
+            assertEqual(pt.tileX, 0, 'Expected clamped tileX at map boundary.');
+            assertEqual(pt.tileY, 0, 'Expected clamped tileY at map boundary.');
+            assertNear(pt.offsetX, -half, 1e-6, 'Expected clamped offsetX inside tile bounds.');
+            assertNear(pt.offsetY, -half, 1e-6, 'Expected clamped offsetY inside tile bounds.');
+        });
+
+        test('RoadDebugger: undo/redo reverts point moves deterministically', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: false });
+            view.startRoadDraft();
+            view.addDraftPointByTile(0, 0);
+            view.addDraftPointByTile(2, 0);
+            view.finishRoadDraft();
+
+            const road = view.getRoads()[0];
+            const roadId = road.id;
+            const pointId = road.points[0].id;
+            const tileSize = view._tileSize;
+            const ox = view._origin.x;
+            const oz = view._origin.z;
+
+            const before = JSON.stringify(view.getDerived());
+            view.movePointToWorld(roadId, pointId, { x: ox + tileSize * 0.6, z: oz }, { snap: false });
+            const after = JSON.stringify(view.getDerived());
+            assertTrue(before !== after, 'Expected derived output to change after move.');
+
+            assertTrue(view.undo(), 'Expected undo to succeed.');
+            assertEqual(JSON.stringify(view.getDerived()), before, 'Expected undo to restore derived output.');
+
+            assertTrue(view.redo(), 'Expected redo to succeed.');
+            assertEqual(JSON.stringify(view.getDerived()), after, 'Expected redo to restore derived output.');
+        });
+
+        test('RoadDebugger: undo/redo covers road creation', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: false });
+            view.startRoadDraft();
+            view.addDraftPointByTile(0, 0);
+            view.addDraftPointByTile(2, 0);
+            view.finishRoadDraft();
+
+            assertEqual(view.getRoads().length, 1, 'Expected 1 road after finishing draft.');
+            assertTrue(view.undo(), 'Expected undo to succeed.');
+            assertEqual(view.getRoads().length, 0, 'Expected undo to remove road.');
+            assertTrue(!!view.getDraftRoad(), 'Expected undo to restore draft.');
+
+            assertTrue(view.redo(), 'Expected redo to succeed.');
+            assertEqual(view.getRoads().length, 1, 'Expected redo to restore road.');
+            assertEqual(view.getDraftRoad(), null, 'Expected redo to clear draft.');
+        });
+
+        test('RoadDebugger: schema export/import roundtrip preserves derived output', () => {
+            const engineA = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const viewA = new RoadDebuggerView(engineA, { uiEnabled: false });
+            viewA.startRoadDraft();
+            viewA.addDraftPointByTile(0, 0);
+            viewA.addDraftPointByTile(3, 0);
+            viewA.addDraftPointByTile(3, 2);
+            viewA.finishRoadDraft();
+
+            const roadId = viewA.getRoads()[0].id;
+            const pointId = viewA.getRoads()[0].points[0].id;
+            viewA.setRoadLaneConfig(roadId, { lanesF: 3, lanesB: 2 });
+            viewA.setPointTangentFactor(roadId, pointId, 1.4);
+            viewA.movePointToWorld(roadId, pointId, { x: viewA._origin.x + viewA._tileSize * 0.6, z: viewA._origin.z }, { snap: true });
+
+            const exported = viewA.exportSchema({ pretty: false, includeDraft: true });
+            const expected = JSON.stringify(viewA.getDerived());
+
+            const engineB = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+            const viewB = new RoadDebuggerView(engineB, { uiEnabled: false });
+            assertTrue(viewB.importSchema(exported, { pushUndo: false }), 'Expected schema import to succeed.');
+            assertEqual(JSON.stringify(viewB.getDerived()), expected, 'Expected derived output to match after import.');
+        });
+    } catch (e) {
+        console.log('⏭️  Road Debugger editing tests skipped:', e.message);
+    }
+
+    // ========== Road Debugger Rendering Tests (Task 57) ==========
+    try {
+        const { RoadDebuggerView } = await import('/src/graphics/gui/road_debugger/RoadDebuggerView.js');
+
+        test('RoadDebugger: asphalt toggle controls asphalt visibility', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: true });
+            view.enter();
+            try {
+                view.startRoadDraft();
+                view.addDraftPointByTile(0, 0);
+                view.addDraftPointByTile(2, 0);
+                view.finishRoadDraft();
+
+                assertTrue((view._asphaltMeshes?.length ?? 0) > 0, 'Expected asphalt meshes for authored segments.');
+                assertTrue(view._asphaltGroup?.visible !== false, 'Expected asphalt to be visible by default.');
+
+                const rows = Array.from(document.querySelectorAll('.road-debugger-row'));
+                const asphaltRow = rows.find((r) => r.textContent.includes('Asphalt')) ?? null;
+                assertTrue(!!asphaltRow, 'Expected Asphalt toggle row.');
+                const input = asphaltRow.querySelector('input[type="checkbox"]');
+                assertTrue(!!input, 'Expected Asphalt checkbox input.');
+
+                input.checked = false;
+                input.dispatchEvent(new Event('change'));
+                assertTrue(view._asphaltGroup?.visible === false, 'Expected asphalt group to be hidden after toggle off.');
+
+                input.checked = true;
+                input.dispatchEvent(new Event('change'));
+                assertTrue(view._asphaltGroup?.visible === true, 'Expected asphalt group to be visible after toggle on.');
+            } finally {
+                view.exit();
+            }
+        });
+
+        test('RoadDebugger: markings toggle controls arrow/marking visibility', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: true });
+            view.enter();
+            try {
+                view.startRoadDraft();
+                view.addDraftPointByTile(0, 0);
+                view.addDraftPointByTile(1, 0);
+                view.finishRoadDraft();
+
+                assertTrue(view._markingsGroup?.visible === false, 'Expected markings to be hidden by default.');
+
+                const rows = Array.from(document.querySelectorAll('.road-debugger-row'));
+                const markingsRow = rows.find((r) => r.textContent.includes('Markings')) ?? null;
+                assertTrue(!!markingsRow, 'Expected Markings toggle row.');
+                const input = markingsRow.querySelector('input[type="checkbox"]');
+                assertTrue(!!input, 'Expected Markings checkbox input.');
+
+                input.checked = true;
+                input.dispatchEvent(new Event('change'));
+                assertTrue(view._markingsGroup?.visible === true, 'Expected markings group to be visible after toggle on.');
+                assertTrue((view._markingLines?.length ?? 0) > 0, 'Expected lane marking line object.');
+                assertTrue((view._arrowMeshes?.length ?? 0) > 0, 'Expected lane arrow mesh object.');
+
+                input.checked = false;
+                input.dispatchEvent(new Event('change'));
+                assertTrue(view._markingsGroup?.visible === false, 'Expected markings group to be hidden after toggle off.');
+            } finally {
+                view.exit();
+            }
+        });
+    } catch (e) {
+        console.log('⏭️  Road Debugger rendering tests skipped:', e.message);
+    }
+
+    // ========== Road Debugger Trimming Tests (Task 58) ==========
+    try {
+        const { rebuildRoadDebuggerPipeline } = await import('/src/app/road_debugger/RoadDebuggerPipeline.js');
+
+        const dot2 = (a, b) => (Number(a?.x) || 0) * (Number(b?.x) || 0) + (Number(a?.z) || 0) * (Number(b?.z) || 0);
+        const rectAxes = (points) => {
+            const pts = Array.isArray(points) ? points : [];
+            const axes = [];
+            for (let i = 0; i < pts.length; i++) {
+                const a = pts[i];
+                const b = pts[(i + 1) % pts.length];
+                const dx = (Number(b?.x) || 0) - (Number(a?.x) || 0);
+                const dz = (Number(b?.z) || 0) - (Number(a?.z) || 0);
+                const len = Math.hypot(dx, dz);
+                if (!(len > 1e-9)) continue;
+                const inv = 1 / len;
+                axes.push({ x: dz * inv, z: -dx * inv });
+            }
+            return axes;
+        };
+        const project = (points, axis) => {
+            const pts = Array.isArray(points) ? points : [];
+            let min = Infinity;
+            let max = -Infinity;
+            for (const p of pts) {
+                const t = dot2(p, axis);
+                if (t < min) min = t;
+                if (t > max) max = t;
+            }
+            return { min, max };
+        };
+        const satOverlap = (aPts, bPts, eps = 1e-5) => {
+            const axes = [...rectAxes(aPts), ...rectAxes(bPts)];
+            for (const axis of axes) {
+                const a = project(aPts, axis);
+                const b = project(bPts, axis);
+                if (a.max <= b.min + eps || b.max <= a.min + eps) return false;
+            }
+            return true;
+        };
+
+        test('RoadDebuggerPipeline: trim output is deterministic', () => {
+            const laneWidth = 4.8;
+            const roads = [
+                {
+                    id: 'A',
+                    name: 'A',
+                    lanesF: 1,
+                    lanesB: 1,
+                    points: [
+                        { id: 'A0', tileX: 0, tileY: 0, offsetX: -12, offsetY: 0, tangentFactor: 1 },
+                        { id: 'A1', tileX: 1, tileY: 0, offsetX: 12, offsetY: 0, tangentFactor: 1 }
+                    ]
+                },
+                {
+                    id: 'B',
+                    name: 'B',
+                    lanesF: 1,
+                    lanesB: 1,
+                    points: [
+                        { id: 'B0', tileX: 0, tileY: 0, offsetX: 12, offsetY: -12, tangentFactor: 1 },
+                        { id: 'B1', tileX: 0, tileY: 1, offsetX: 12, offsetY: 12, tangentFactor: 1 }
+                    ]
+                }
+            ];
+
+            const settings = {
+                origin: { x: 0, z: 0 },
+                tileSize: 24,
+                laneWidth,
+                marginFactor: 0.1,
+                trim: { enabled: true, threshold: laneWidth * 0.1, debug: {} }
+            };
+
+            const a = rebuildRoadDebuggerPipeline({ roads, settings });
+            const b = rebuildRoadDebuggerPipeline({ roads, settings });
+            assertEqual(JSON.stringify(a), JSON.stringify(b), 'Expected deterministic rebuild output.');
+        });
+
+        test('RoadDebuggerPipeline: kept asphalt pieces do not overlap after trim', () => {
+            const laneWidth = 4.8;
+            const roads = [
+                {
+                    id: 'A',
+                    name: 'A',
+                    lanesF: 1,
+                    lanesB: 1,
+                    points: [
+                        { id: 'A0', tileX: 0, tileY: 0, offsetX: -12, offsetY: 0, tangentFactor: 1 },
+                        { id: 'A1', tileX: 1, tileY: 0, offsetX: 12, offsetY: 0, tangentFactor: 1 }
+                    ]
+                },
+                {
+                    id: 'B',
+                    name: 'B',
+                    lanesF: 1,
+                    lanesB: 1,
+                    points: [
+                        { id: 'B0', tileX: 0, tileY: 0, offsetX: 12, offsetY: -12, tangentFactor: 1 },
+                        { id: 'B1', tileX: 0, tileY: 1, offsetX: 12, offsetY: 12, tangentFactor: 1 }
+                    ]
+                }
+            ];
+
+            const settings = {
+                origin: { x: 0, z: 0 },
+                tileSize: 24,
+                laneWidth,
+                marginFactor: 0.1,
+                trim: { enabled: true, threshold: laneWidth * 0.1, debug: {} }
+            };
+
+            const out = rebuildRoadDebuggerPipeline({ roads, settings });
+            const pieces = [];
+            for (const seg of out.segments ?? []) {
+                for (const piece of seg?.keptPieces ?? []) {
+                    if (!Array.isArray(piece?.corners) || piece.corners.length < 3) continue;
+                    pieces.push({ id: piece.id, segmentId: seg.id, corners: piece.corners });
+                }
+            }
+
+            assertTrue(pieces.length > 0, 'Expected kept pieces.');
+            assertTrue((out.trim?.overlaps?.length ?? 0) > 0, 'Expected at least one overlap before trimming.');
+
+            for (let i = 0; i < pieces.length; i++) {
+                for (let j = i + 1; j < pieces.length; j++) {
+                    const a = pieces[i];
+                    const b = pieces[j];
+                    if (satOverlap(a.corners, b.corners)) {
+                        throw new Error(`Unexpected kept overlap: ${a.id} vs ${b.id}`);
+                    }
+                }
+            }
+        });
+
+        test('RoadDebuggerPipeline: trims can split into multiple kept pieces', () => {
+            const laneWidth = 4.8;
+            const roads = [
+                {
+                    id: 'main',
+                    name: 'Main',
+                    lanesF: 1,
+                    lanesB: 1,
+                    points: [
+                        { id: 'm0', tileX: 0, tileY: 0, offsetX: -12, offsetY: 0, tangentFactor: 1 },
+                        { id: 'm1', tileX: 4, tileY: 0, offsetX: 12, offsetY: 0, tangentFactor: 1 }
+                    ]
+                },
+                {
+                    id: 'cross1',
+                    name: 'Cross 1',
+                    lanesF: 1,
+                    lanesB: 1,
+                    points: [
+                        { id: 'c10', tileX: 0, tileY: 0, offsetX: 12, offsetY: -12, tangentFactor: 1 },
+                        { id: 'c11', tileX: 0, tileY: 1, offsetX: 12, offsetY: 12, tangentFactor: 1 }
+                    ]
+                },
+                {
+                    id: 'cross2',
+                    name: 'Cross 2',
+                    lanesF: 1,
+                    lanesB: 1,
+                    points: [
+                        { id: 'c20', tileX: 2, tileY: 0, offsetX: 12, offsetY: -12, tangentFactor: 1 },
+                        { id: 'c21', tileX: 2, tileY: 1, offsetX: 12, offsetY: 12, tangentFactor: 1 }
+                    ]
+                }
+            ];
+
+            const settings = {
+                origin: { x: 0, z: 0 },
+                tileSize: 24,
+                laneWidth,
+                marginFactor: 0.1,
+                trim: { enabled: true, threshold: laneWidth * 0.1, debug: {} }
+            };
+
+            const outA = rebuildRoadDebuggerPipeline({ roads, settings });
+            const outB = rebuildRoadDebuggerPipeline({ roads, settings });
+
+            const segA = outA.segments?.find?.((s) => s?.roadId === 'main') ?? null;
+            const segB = outB.segments?.find?.((s) => s?.roadId === 'main') ?? null;
+            assertTrue(!!segA && !!segB, 'Expected main segment.');
+
+            assertTrue((segA.trimRemoved?.length ?? 0) >= 2, 'Expected at least two removed intervals on the main segment.');
+            assertEqual(segA.keptPieces?.length ?? 0, 3, 'Expected main segment to split into 3 kept pieces.');
+
+            const stableA = (segA.keptPieces ?? []).map((p) => ({ t0: p.t0, t1: p.t1, length: p.length }));
+            const stableB = (segB.keptPieces ?? []).map((p) => ({ t0: p.t0, t1: p.t1, length: p.length }));
+            assertEqual(JSON.stringify(stableA), JSON.stringify(stableB), 'Expected stable split intervals across runs.');
+        });
+
+        test('RoadDebuggerPipeline: dropped pieces only render when enabled', () => {
+            const laneWidth = 4.8;
+            const roads = [
+                {
+                    id: 'main',
+                    name: 'Main',
+                    lanesF: 1,
+                    lanesB: 1,
+                    points: [
+                        { id: 'm0', tileX: 0, tileY: 0, offsetX: -12, offsetY: 0, tangentFactor: 1 },
+                        { id: 'm1', tileX: 2, tileY: 0, offsetX: 12, offsetY: 0, tangentFactor: 1 }
+                    ]
+                },
+                {
+                    id: 'cross1',
+                    name: 'Cross 1',
+                    lanesF: 1,
+                    lanesB: 1,
+                    points: [
+                        { id: 'c10', tileX: 0, tileY: 0, offsetX: 12, offsetY: -12, tangentFactor: 1 },
+                        { id: 'c11', tileX: 0, tileY: 1, offsetX: 12, offsetY: 12, tangentFactor: 1 }
+                    ]
+                },
+                {
+                    id: 'cross2',
+                    name: 'Cross 2',
+                    lanesF: 1,
+                    lanesB: 1,
+                    points: [
+                        { id: 'c20', tileX: 1, tileY: 0, offsetX: 0, offsetY: -12, tangentFactor: 1 },
+                        { id: 'c21', tileX: 1, tileY: 1, offsetX: 0, offsetY: 12, tangentFactor: 1 }
+                    ]
+                }
+            ];
+
+            const baseSettings = {
+                origin: { x: 0, z: 0 },
+                tileSize: 24,
+                laneWidth,
+                marginFactor: 0.1
+            };
+
+            const outNoDbg = rebuildRoadDebuggerPipeline({
+                roads,
+                settings: { ...baseSettings, trim: { enabled: true, threshold: laneWidth * 0.1, debug: { droppedPieces: false } } }
+            });
+            const droppedCount = (outNoDbg.segments ?? []).reduce((sum, seg) => sum + (seg?.droppedPieces?.length ?? 0), 0);
+            assertTrue(droppedCount > 0, 'Expected at least one dropped piece.');
+            assertEqual((outNoDbg.primitives ?? []).filter((p) => p?.type === 'polygon' && p?.kind === 'trim_dropped_piece').length, 0, 'Expected dropped piece primitives to be hidden.');
+
+            const outDbg = rebuildRoadDebuggerPipeline({
+                roads,
+                settings: { ...baseSettings, trim: { enabled: true, threshold: laneWidth * 0.1, debug: { droppedPieces: true } } }
+            });
+            assertEqual(
+                (outDbg.primitives ?? []).filter((p) => p?.type === 'polygon' && p?.kind === 'trim_dropped_piece').length,
+                droppedCount,
+                'Expected dropped piece primitives when enabled.'
+            );
+        });
+    } catch (e) {
+        console.log('⏭️  Road Debugger trimming tests skipped:', e.message);
+    }
+
+    // ========== Road Debugger Help UI Tests (Task 59) ==========
+    try {
+        const { RoadDebuggerView } = await import('/src/graphics/gui/road_debugger/RoadDebuggerView.js');
+
+        test('RoadDebuggerUI: help panel exists and contains key concepts', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: true });
+            view.enter();
+            try {
+                const helpBtn = document.querySelector('.road-debugger-help-btn');
+                assertTrue(!!helpBtn, 'Expected Help button.');
+
+                const helpModal = document.querySelector('.road-debugger-help-modal');
+                assertTrue(!!helpModal, 'Expected Help modal.');
+
+                helpBtn.click();
+                assertTrue(helpModal.style.display !== 'none', 'Expected help modal to be visible after open.');
+
+                const text = (helpModal.textContent || '').toLowerCase();
+                const terms = [
+                    'lane model',
+                    'width derivation',
+                    'direction centerlines',
+                    'tangent factor',
+                    'snapping',
+                    'crossing threshold',
+                    'aabb',
+                    'obb',
+                    'sat',
+                    'sutherland',
+                    'removed intervals',
+                    't0',
+                    't1',
+                    'dropped'
+                ];
+                for (const term of terms) {
+                    assertTrue(text.includes(term), `Expected help text to include "${term}".`);
+                }
+
+                const rows = Array.from(document.querySelectorAll('.road-debugger-row'));
+                const snapRow = rows.find((r) => (r.textContent || '').includes('Snap')) ?? null;
+                assertTrue(!!snapRow, 'Expected Snap row.');
+                assertTrue((snapRow.title || '').includes('tile/10'), 'Expected Snap tooltip to mention tile/10.');
+            } finally {
+                view.exit();
+            }
+        });
+    } catch (e) {
+        console.log('⏭️  Road Debugger help UI tests skipped:', e.message);
+    }
+
     runRoadConnectionDebuggerTests({ test, assertTrue });
 
     // ========== Summary ==========

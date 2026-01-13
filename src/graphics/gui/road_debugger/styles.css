@@ -1,0 +1,489 @@
+/* src/graphics/gui/road_debugger/styles.css */
+
+.road-debugger-ui {
+    position: fixed;
+    inset: 0;
+    z-index: 4;
+    pointer-events: none;
+    color: #f5f7fb;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.road-debugger-panel {
+    pointer-events: auto;
+    background: rgba(10, 14, 20, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+}
+
+.road-debugger-panel-left {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    width: min(360px, calc(100vw - 24px));
+    max-height: calc(100vh - 24px);
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow: auto;
+}
+
+.road-debugger-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.road-debugger-help-btn {
+    padding: 6px 10px;
+    font-size: 10px;
+    border-radius: 10px;
+    flex: 0 0 auto;
+}
+
+.road-debugger-title {
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-weight: 700;
+    opacity: 0.9;
+}
+
+.road-debugger-subtitle {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.72);
+}
+
+.road-debugger-placeholder {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.72);
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px dashed rgba(255, 255, 255, 0.18);
+    background: rgba(0, 0, 0, 0.12);
+}
+
+.road-debugger-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 6px;
+}
+
+.road-debugger-section-title {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.65);
+}
+
+.road-debugger-toggle-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+@media (max-width: 420px) {
+    .road-debugger-toggle-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.road-debugger-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.road-debugger-label {
+    color: rgba(255, 255, 255, 0.78);
+}
+
+.road-debugger-checkbox {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+.road-debugger-hint {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.6);
+    padding-top: 2px;
+}
+
+.road-debugger-popup {
+    position: absolute;
+    left: 50%;
+    bottom: 12px;
+    transform: translateX(-50%);
+    pointer-events: auto;
+    padding: 10px 12px;
+    background: rgba(10, 14, 20, 0.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+    min-width: min(420px, calc(100vw - 24px));
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.road-debugger-popup-title {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.72);
+}
+
+.road-debugger-popup-body {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.72);
+    line-height: 1.35;
+}
+
+.road-debugger-actions {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+}
+
+.road-debugger-edit-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.road-debugger-edit-buttons .road-debugger-btn {
+    flex: 1 1 120px;
+}
+
+.road-debugger-btn {
+    pointer-events: auto;
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 11px;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.road-debugger-btn:disabled {
+    cursor: default;
+    opacity: 0.45;
+}
+
+.road-debugger-roads-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.road-debugger-road-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    cursor: pointer;
+}
+
+.road-debugger-road-row.is-draft {
+    border-style: dashed;
+    opacity: 0.9;
+}
+
+.road-debugger-road-row.is-hovered {
+    border-color: rgba(52, 199, 89, 0.65);
+    background: rgba(52, 199, 89, 0.10);
+}
+
+.road-debugger-road-row.is-selected {
+    border-color: rgba(59, 130, 246, 0.75);
+    background: rgba(59, 130, 246, 0.12);
+}
+
+.road-debugger-road-main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+}
+
+.road-debugger-expand {
+    align-self: flex-start;
+    width: 22px;
+    height: 22px;
+    margin-bottom: 2px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.85);
+    cursor: pointer;
+}
+
+.road-debugger-road-label {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.92);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.road-debugger-road-meta {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.55);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.road-debugger-road-lanes {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.road-debugger-lane-wrap {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.road-debugger-lane-cap {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.62);
+}
+
+.road-debugger-lane-input {
+    width: 44px;
+    padding: 6px 6px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(0, 0, 0, 0.2);
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 11px;
+    font-family: inherit;
+}
+
+.road-debugger-seg-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 10px 7px 32px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    cursor: pointer;
+}
+
+.road-debugger-seg-row.is-hovered {
+    border-color: rgba(52, 199, 89, 0.6);
+    background: rgba(52, 199, 89, 0.08);
+}
+
+.road-debugger-seg-row.is-selected {
+    border-color: rgba(59, 130, 246, 0.75);
+    background: rgba(59, 130, 246, 0.12);
+}
+
+.road-debugger-seg-label {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.85);
+    white-space: nowrap;
+}
+
+.road-debugger-seg-meta {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.5);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 180px;
+}
+
+.road-debugger-selection {
+    white-space: pre-wrap;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.78);
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.12);
+}
+
+.road-debugger-schema-modal {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    pointer-events: auto;
+    background: rgba(0, 0, 0, 0.55);
+}
+
+.road-debugger-schema-panel {
+    width: min(760px, calc(100vw - 24px));
+    max-height: calc(100vh - 24px);
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.road-debugger-schema-title {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.75);
+}
+
+.road-debugger-schema-msg {
+    font-size: 10px;
+    color: rgba(248, 113, 113, 0.9);
+    min-height: 14px;
+}
+
+.road-debugger-schema-textarea {
+    width: 100%;
+    height: min(460px, 55vh);
+    resize: vertical;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(0, 0, 0, 0.22);
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 11px;
+    font-family: inherit;
+    line-height: 1.35;
+}
+
+.road-debugger-schema-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.road-debugger-help-modal {
+    position: fixed;
+    display: flex;
+    top: 12px;
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    align-items: stretch;
+    justify-content: stretch;
+    pointer-events: none;
+    background: transparent;
+}
+
+.road-debugger-help-panel {
+    width: 100%;
+    height: 100%;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow: hidden;
+}
+
+.road-debugger-help-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.road-debugger-help-title {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.75);
+}
+
+.road-debugger-help-body {
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-right: 4px;
+}
+
+.road-debugger-help-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.12);
+}
+
+.road-debugger-help-section-title {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.65);
+}
+
+.road-debugger-help-text {
+    white-space: pre-wrap;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.78);
+    line-height: 1.35;
+}
+
+.road-debugger-tangent {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.10);
+}
+
+.road-debugger-tangent-label {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.65);
+    letter-spacing: 0.08em;
+}
+
+.road-debugger-tangent-inputs {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.road-debugger-tangent-range {
+    flex: 1;
+}
+
+.road-debugger-tangent-number {
+    width: 76px;
+    padding: 6px 6px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(0, 0, 0, 0.2);
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 11px;
+    font-family: inherit;
+}
