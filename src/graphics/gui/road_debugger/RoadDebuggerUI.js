@@ -43,80 +43,158 @@ function fmtInt(v) {
     return Number.isFinite(v) ? String(v | 0) : '--';
 }
 
-function selectionText(view) {
+function highlightInfo(view) {
     const sel = view._selection ?? {};
+    const hover = view._hover ?? {};
     const derived = view.getDerived?.() ?? view._derived ?? null;
     const settings = derived?.settings ?? null;
     const laneWidth = settings?.laneWidth ?? view._laneWidth ?? 4.8;
     const marginFactor = settings?.marginFactor ?? view._marginFactor ?? 0.1;
     const margin = laneWidth * marginFactor;
 
-    if (!sel?.type) return 'None';
+    const schemaRoads = (() => {
+        const draft = view.getDraftRoad?.() ?? view._draft ?? null;
+        const roads = view.getRoads?.() ?? view._roads ?? [];
+        return draft ? [draft, ...roads] : roads;
+    })();
 
-    if (sel.type === 'road') {
-        const road = derived?.roads?.find?.((r) => r?.id === sel.roadId) ?? null;
-        if (!road) return `Road: ${sel.roadId}`;
+    const schemaRoadById = (roadId) => schemaRoads.find((r) => r?.id === roadId) ?? null;
+
+    const highlight = sel?.type
+        ? { source: 'Selected', type: sel.type, roadId: sel.roadId ?? null, segmentId: sel.segmentId ?? null, pointId: sel.pointId ?? null, pieceId: sel.pieceId ?? null }
+        : hover?.segmentId
+            ? { source: 'Hovered', type: 'segment', roadId: hover.roadId ?? null, segmentId: hover.segmentId ?? null, pointId: null, pieceId: null }
+            : hover?.roadId
+                ? { source: 'Hovered', type: 'road', roadId: hover.roadId ?? null, segmentId: null, pointId: null, pieceId: null }
+                : null;
+
+    if (!highlight) return { title: 'Info', text: '—' };
+
+    if (highlight.type === 'road') {
+        const road = derived?.roads?.find?.((r) => r?.id === highlight.roadId) ?? null;
+        if (!road) return { title: `${highlight.source}: Road`, text: `Road: ${highlight.roadId ?? '--'}` };
         const lanesF = Number(road.lanesF) || 0;
         const lanesB = Number(road.lanesB) || 0;
         const wR = lanesF * laneWidth + margin;
         const wL = lanesB * laneWidth + margin;
         const total = wL + wR;
-        return [
-            `Road: ${road.name}`,
-            `id: ${road.id}`,
-            `lanesF/B: ${fmtInt(lanesF)} / ${fmtInt(lanesB)}`,
-            `asphalt L/R: ${fmt(wL, 2)} / ${fmt(wR, 2)}`,
-            `asphalt total: ${fmt(total, 2)}`
-        ].join('\n');
+        const segCount = derived?.segments?.filter?.((s) => s?.roadId === road.id)?.length ?? 0;
+        const ptCount = road?.points?.length ?? 0;
+        const schemaRoad = schemaRoadById(road.id);
+        const visible = schemaRoad?.visible !== false;
+        return {
+            title: `${highlight.source}: Road`,
+            text: [
+                `name: ${road.name}`,
+                `id: ${road.id}`,
+                `visible: ${visible ? 'yes' : 'no'}`,
+                `lanesF/B: ${fmtInt(lanesF)} / ${fmtInt(lanesB)}`,
+                `points: ${fmtInt(ptCount)}`,
+                `segments: ${fmtInt(segCount)}`,
+                `asphalt L/R: ${fmt(wL, 2)} / ${fmt(wR, 2)}`,
+                `asphalt total: ${fmt(total, 2)}`
+            ].join('\n')
+        };
     }
 
-    if (sel.type === 'segment') {
-        const seg = derived?.segments?.find?.((s) => s?.id === sel.segmentId) ?? null;
-        if (!seg) return `Segment: ${sel.segmentId}`;
+    if (highlight.type === 'segment') {
+        const seg = derived?.segments?.find?.((s) => s?.id === highlight.segmentId) ?? null;
+        if (!seg) return { title: `${highlight.source}: Segment`, text: `Segment: ${highlight.segmentId ?? '--'}` };
         const wL = seg.asphaltObb?.halfWidthLeft ?? null;
         const wR = seg.asphaltObb?.halfWidthRight ?? null;
+        const wTotal = (Number(wL) || 0) + (Number(wR) || 0);
         const removedCount = seg.trimRemoved?.length ?? 0;
         const keptCount = seg.keptPieces?.length ?? 0;
         const droppedCount = seg.droppedPieces?.length ?? 0;
-        return [
-            `Segment: ${seg.id}`,
+        const trimEnabled = derived?.trim?.enabled !== false;
+        const trimThreshold = derived?.trim?.threshold ?? null;
+        const trimDebug = view.getTrimDebugOptions?.() ?? view._trimDebug ?? {};
+
+        const lines = [
+            `id: ${seg.id}`,
             `road: ${seg.roadId}`,
             `index: ${fmtInt(seg.index)}`,
+            `a: ${fmt(seg.aWorld?.x, 2)}, ${fmt(seg.aWorld?.z, 2)} (${seg.aPointId})`,
+            `b: ${fmt(seg.bWorld?.x, 2)}, ${fmt(seg.bWorld?.z, 2)} (${seg.bPointId})`,
+            `dir: ${fmt(seg.dir?.x, 3)}, ${fmt(seg.dir?.z, 3)}`,
             `length: ${fmt(seg.length, 2)}`,
+            `laneWidth: ${fmt(seg.laneWidth, 2)} · margin: ${fmt(seg.margin, 2)}`,
             `lanesF/B: ${fmtInt(seg.lanesF)} / ${fmtInt(seg.lanesB)}`,
-            `asphalt L/R: ${fmt(wL, 2)} / ${fmt(wR, 2)}`,
+            `asphalt L/R: ${fmt(wL, 2)} / ${fmt(wR, 2)} (total ${fmt(wTotal, 2)})`,
             `trim: removed ${fmtInt(removedCount)} · kept ${fmtInt(keptCount)} · dropped ${fmtInt(droppedCount)}`
-        ].join('\n');
+        ];
+
+        if (trimEnabled && Number.isFinite(trimThreshold)) {
+            lines.push(`trim threshold: ${fmt(trimThreshold, 3)}`);
+        }
+
+        if (trimDebug.intervals && removedCount) {
+            for (const it of seg.trimRemoved ?? []) {
+                lines.push(`removed: t ${fmt(it.t0, 3)} → ${fmt(it.t1, 3)}`);
+            }
+        }
+
+        if (trimDebug.overlaps) {
+            const overlaps = derived?.trim?.overlaps ?? [];
+            for (const ov of overlaps) {
+                if (ov?.aSegmentId !== seg.id && ov?.bSegmentId !== seg.id) continue;
+                const other = ov?.aSegmentId === seg.id ? ov?.bSegmentId : ov?.aSegmentId;
+                const it = ov?.aSegmentId === seg.id ? ov?.aInterval : ov?.bInterval;
+                if (it) lines.push(`overlap: ${other} · t ${fmt(it.t0, 3)} → ${fmt(it.t1, 3)}`);
+            }
+        }
+
+        if (trimDebug.keptPieces && keptCount) {
+            for (const piece of seg.keptPieces ?? []) {
+                lines.push(`kept: ${piece.id} · t ${fmt(piece.t0, 3)} → ${fmt(piece.t1, 3)} · ${fmt(piece.length, 2)}m`);
+            }
+        }
+
+        if (trimDebug.droppedPieces && droppedCount) {
+            for (const piece of seg.droppedPieces ?? []) {
+                lines.push(`dropped: ${piece.id} · t ${fmt(piece.t0, 3)} → ${fmt(piece.t1, 3)} · ${fmt(piece.length, 2)}m`);
+            }
+        }
+
+        return { title: `${highlight.source}: Segment`, text: lines.join('\n') };
     }
 
-    if (sel.type === 'piece') {
-        const seg = derived?.segments?.find?.((s) => s?.id === sel.segmentId) ?? null;
-        if (!seg) return `Piece: ${sel.pieceId}`;
-        const piece = seg.keptPieces?.find?.((p) => p?.id === sel.pieceId) ?? null;
-        if (!piece) return `Piece: ${sel.pieceId}`;
-        return [
-            `Piece: ${piece.id}`,
-            `segment: ${seg.id}`,
-            `road: ${seg.roadId}`,
-            `t: ${fmt(piece.t0, 3)} → ${fmt(piece.t1, 3)}`,
-            `length: ${fmt(piece.length, 2)}`
-        ].join('\n');
+    if (highlight.type === 'piece') {
+        const seg = derived?.segments?.find?.((s) => s?.id === highlight.segmentId) ?? null;
+        if (!seg) return { title: `${highlight.source}: Piece`, text: `Piece: ${highlight.pieceId ?? '--'}` };
+        const piece = seg.keptPieces?.find?.((p) => p?.id === highlight.pieceId) ?? null;
+        if (!piece) return { title: `${highlight.source}: Piece`, text: `Piece: ${highlight.pieceId ?? '--'}` };
+        return {
+            title: `${highlight.source}: Piece`,
+            text: [
+                `id: ${piece.id}`,
+                `segment: ${seg.id}`,
+                `road: ${seg.roadId}`,
+                `t: ${fmt(piece.t0, 3)} → ${fmt(piece.t1, 3)}`,
+                `length: ${fmt(piece.length, 2)}`
+            ].join('\n')
+        };
     }
 
-    if (sel.type === 'point') {
-        const road = derived?.roads?.find?.((r) => r?.id === sel.roadId) ?? null;
-        const pt = road?.points?.find?.((p) => p?.id === sel.pointId) ?? null;
-        if (!pt) return `Point: ${sel.pointId}`;
-        return [
-            `Point: ${pt.id}`,
-            `road: ${road?.id ?? sel.roadId}`,
-            `tile: ${fmtInt(pt.tileX)}, ${fmtInt(pt.tileY)}`,
-            `offset: ${fmt(pt.offsetX, 2)}, ${fmt(pt.offsetY, 2)}`,
-            `tangentFactor: ${fmt(pt.tangentFactor, 2)}`
-        ].join('\n');
+    if (highlight.type === 'point') {
+        const road = derived?.roads?.find?.((r) => r?.id === highlight.roadId) ?? null;
+        const pt = road?.points?.find?.((p) => p?.id === highlight.pointId) ?? null;
+        if (!pt) return { title: `${highlight.source}: Point`, text: `Point: ${highlight.pointId ?? '--'}` };
+        const w = pt?.world ?? null;
+        return {
+            title: `${highlight.source}: Point`,
+            text: [
+                `id: ${pt.id}`,
+                `road: ${road?.id ?? highlight.roadId ?? '--'}`,
+                `tile: ${fmtInt(pt.tileX)}, ${fmtInt(pt.tileY)}`,
+                `offset: ${fmt(pt.offsetX, 2)}, ${fmt(pt.offsetY, 2)}`,
+                `world: ${fmt(w?.x, 2)}, ${fmt(w?.z, 2)}`,
+                `tangentFactor: ${fmt(pt.tangentFactor, 2)}`
+            ].join('\n')
+        };
     }
 
-    return 'None';
+    return { title: `${highlight.source}`, text: '—' };
 }
 
 export function setupUI(view) {
@@ -164,9 +242,12 @@ export function setupUI(view) {
     const markingsRow = makeToggleRow('Markings');
     markingsRow.row.title = 'Render lane markings and direction arrows along kept asphalt pieces.';
     viewToggles.appendChild(markingsRow.row);
-    const centerRow = makeToggleRow('Centerlines');
-    centerRow.row.title = 'Show centerlines: divider + optional direction centerlines when lanes exist.';
-    viewToggles.appendChild(centerRow.row);
+    const dividerRow = makeToggleRow('Divider centerline');
+    dividerRow.row.title = 'Show the middle divider centerline (road reference line).';
+    viewToggles.appendChild(dividerRow.row);
+    const dirCenterRow = makeToggleRow('Direction centerlines');
+    dirCenterRow.row.title = 'Show per-direction centerlines inside lanes (same color for both directions).';
+    viewToggles.appendChild(dirCenterRow.row);
     const edgesRow = makeToggleRow('Edges');
     edgesRow.row.title = 'Show lane edges and asphalt edges derived from lane counts + margin.';
     viewToggles.appendChild(edgesRow.row);
@@ -274,15 +355,13 @@ export function setupUI(view) {
     roadsSection.appendChild(roadsList);
     left.appendChild(roadsSection);
 
-    const selectionSection = document.createElement('div');
-    selectionSection.className = 'road-debugger-section';
-    const selectionTitle = document.createElement('div');
-    selectionTitle.className = 'road-debugger-section-title';
-    selectionTitle.textContent = 'Selection';
-    selectionSection.appendChild(selectionTitle);
-    const selectionBox = document.createElement('div');
-    selectionBox.className = 'road-debugger-selection';
-    selectionSection.appendChild(selectionBox);
+    const pointSection = document.createElement('div');
+    pointSection.className = 'road-debugger-section';
+    pointSection.style.display = 'none';
+    const pointTitle = document.createElement('div');
+    pointTitle.className = 'road-debugger-section-title';
+    pointTitle.textContent = 'Point';
+    pointSection.appendChild(pointTitle);
 
     const tangentRow = document.createElement('div');
     tangentRow.className = 'road-debugger-tangent';
@@ -308,9 +387,9 @@ export function setupUI(view) {
     tangentInputs.appendChild(tangentNumber);
     tangentRow.appendChild(tangentLabel);
     tangentRow.appendChild(tangentInputs);
-    selectionSection.appendChild(tangentRow);
+    pointSection.appendChild(tangentRow);
 
-    left.appendChild(selectionSection);
+    left.appendChild(pointSection);
 
     const controlsHint = document.createElement('div');
     controlsHint.className = 'road-debugger-hint';
@@ -342,8 +421,54 @@ export function setupUI(view) {
     actions.appendChild(cancel);
     bottom.appendChild(actions);
 
+    const infoPanel = document.createElement('div');
+    infoPanel.className = 'road-debugger-panel road-debugger-info-panel';
+
+    const infoHeader = document.createElement('div');
+    infoHeader.className = 'road-debugger-info-header';
+
+    const infoTitle = document.createElement('div');
+    infoTitle.className = 'road-debugger-info-title';
+    infoTitle.textContent = 'Info';
+    infoHeader.appendChild(infoTitle);
+    infoPanel.appendChild(infoHeader);
+
+    const infoBody = document.createElement('div');
+    infoBody.className = 'road-debugger-info-body';
+    infoBody.textContent = '—';
+    infoPanel.appendChild(infoBody);
+
+    const orbitPanel = document.createElement('div');
+    orbitPanel.className = 'road-debugger-panel road-debugger-orbit-panel';
+
+    const orbitHeader = document.createElement('div');
+    orbitHeader.className = 'road-debugger-orbit-header';
+
+    const orbitTitle = document.createElement('div');
+    orbitTitle.className = 'road-debugger-orbit-title';
+    orbitTitle.textContent = 'Orbit';
+    orbitHeader.appendChild(orbitTitle);
+
+    const orbitReset = makeButton('Reset');
+    orbitReset.classList.add('road-debugger-orbit-reset');
+    orbitReset.title = 'Reset orbit yaw/pitch to the default top-down orientation.';
+    orbitHeader.appendChild(orbitReset);
+
+    orbitPanel.appendChild(orbitHeader);
+
+    const orbitSurface = document.createElement('div');
+    orbitSurface.className = 'road-debugger-orbit-surface';
+    orbitSurface.title = 'Drag to orbit the camera around the current focus point.';
+    orbitPanel.appendChild(orbitSurface);
+
+    const bottomRight = document.createElement('div');
+    bottomRight.className = 'road-debugger-bottom-right';
+    bottomRight.appendChild(orbitPanel);
+    bottomRight.appendChild(infoPanel);
+
     root.appendChild(left);
     root.appendChild(bottom);
+    root.appendChild(bottomRight);
 
     const schemaModal = document.createElement('div');
     schemaModal.className = 'road-debugger-schema-modal';
@@ -489,7 +614,8 @@ export function setupUI(view) {
     const onGridChange = () => view.setGridEnabled(gridRow.input.checked);
     const onAsphaltChange = () => view.setRenderOptions({ asphalt: asphaltRow.input.checked });
     const onMarkingsChange = () => view.setRenderOptions({ markings: markingsRow.input.checked });
-    const onCenterChange = () => view.setRenderOptions({ centerlines: centerRow.input.checked });
+    const onDividerChange = () => view.setRenderOptions({ centerline: dividerRow.input.checked });
+    const onDirCenterChange = () => view.setRenderOptions({ directionCenterlines: dirCenterRow.input.checked });
     const onEdgesChange = () => view.setRenderOptions({ edges: edgesRow.input.checked });
     const onPointsChange = () => view.setRenderOptions({ points: pointsRow.input.checked });
     const onSnapChange = () => view.setSnapEnabled(snapRow.input.checked);
@@ -642,7 +768,8 @@ export function setupUI(view) {
     gridRow.input.addEventListener('change', onGridChange);
     asphaltRow.input.addEventListener('change', onAsphaltChange);
     markingsRow.input.addEventListener('change', onMarkingsChange);
-    centerRow.input.addEventListener('change', onCenterChange);
+    dividerRow.input.addEventListener('change', onDividerChange);
+    dirCenterRow.input.addEventListener('change', onDirCenterChange);
     edgesRow.input.addEventListener('change', onEdgesChange);
     pointsRow.input.addEventListener('change', onPointsChange);
     snapRow.input.addEventListener('change', onSnapChange);
@@ -671,11 +798,73 @@ export function setupUI(view) {
         if (e.target === schemaModal) closeSchemaModal();
     });
 
+    let orbitDrag = null;
+    const onOrbitPointerDown = (e) => {
+        e.preventDefault?.();
+        e.stopPropagation?.();
+        const rect = orbitSurface.getBoundingClientRect?.() ?? { width: 120, height: 120 };
+        const yaw = view.getCameraOrbit?.().yaw ?? view._orbitYaw ?? 0;
+        const pitch = view.getCameraOrbit?.().pitch ?? view._orbitPitch ?? 0;
+        orbitDrag = {
+            pointerId: Number.isFinite(e.pointerId) ? e.pointerId : null,
+            startX: e.clientX ?? 0,
+            startY: e.clientY ?? 0,
+            startYaw: Number(yaw) || 0,
+            startPitch: Number(pitch) || 0,
+            size: Math.max(60, Number(rect.width) || 120)
+        };
+        orbitSurface.classList.add('is-dragging');
+        if (orbitDrag.pointerId !== null) {
+            try {
+                orbitSurface.setPointerCapture(orbitDrag.pointerId);
+            } catch (err) {}
+        }
+    };
+
+    const onOrbitPointerMove = (e) => {
+        if (!orbitDrag) return;
+        e.preventDefault?.();
+        e.stopPropagation?.();
+        const dx = (e.clientX ?? 0) - orbitDrag.startX;
+        const dy = (e.clientY ?? 0) - orbitDrag.startY;
+        const scale = orbitDrag.size || 120;
+        const yaw = orbitDrag.startYaw + dx * ((Math.PI * 2) / scale);
+        const pitch = orbitDrag.startPitch + dy * ((Math.PI * 0.5) / scale);
+        view.setCameraOrbit?.({ yaw, pitch });
+    };
+
+    const onOrbitPointerUp = (e) => {
+        if (!orbitDrag) return;
+        e.preventDefault?.();
+        e.stopPropagation?.();
+        const pid = orbitDrag.pointerId;
+        orbitDrag = null;
+        orbitSurface.classList.remove('is-dragging');
+        if (pid !== null) {
+            try {
+                orbitSurface.releasePointerCapture(pid);
+            } catch (err) {}
+        }
+    };
+
+    const onOrbitReset = (e) => {
+        e.preventDefault?.();
+        view.resetCameraOrbit?.();
+    };
+
+    orbitSurface.addEventListener('pointerdown', onOrbitPointerDown);
+    orbitSurface.addEventListener('pointermove', onOrbitPointerMove);
+    orbitSurface.addEventListener('pointerup', onOrbitPointerUp);
+    orbitSurface.addEventListener('pointercancel', onOrbitPointerUp);
+    orbitReset.addEventListener('click', onOrbitReset);
+
     const buildRoadRow = ({ road, isDraft, derived }) => {
         const row = document.createElement('div');
-        row.className = 'road-debugger-road-row';
+        row.className = 'road-debugger-road-row road-debugger-road-row-single';
         row.dataset.roadId = road.id;
         if (isDraft) row.classList.add('is-draft');
+        const isVisible = road?.visible !== false;
+        row.classList.toggle('is-hidden', !isVisible);
 
         const main = document.createElement('div');
         main.className = 'road-debugger-road-main';
@@ -704,6 +893,9 @@ export function setupUI(view) {
         main.appendChild(meta);
 
         row.appendChild(main);
+
+        const right = document.createElement('div');
+        right.className = 'road-debugger-road-right';
 
         const lanes = document.createElement('div');
         lanes.className = 'road-debugger-road-lanes';
@@ -739,14 +931,47 @@ export function setupUI(view) {
 
         lanes.appendChild(makeLane('F', 'F', road.lanesF));
         lanes.appendChild(makeLane('B', 'B', road.lanesB));
-        row.appendChild(lanes);
+        right.appendChild(lanes);
 
-        const isSelected = view._selection?.type === 'road' && view._selection?.roadId === road.id;
-        const isHovered = view._hover?.roadId === road.id && !view._hover?.segmentId;
+        const actions = document.createElement('div');
+        actions.className = 'road-debugger-road-actions';
+
+        const vis = document.createElement('input');
+        vis.type = 'checkbox';
+        vis.className = 'road-debugger-road-visible';
+        vis.checked = isVisible;
+        vis.title = 'Toggle visibility (hides rendering only; still used for trimming/crossing calculations).';
+        vis.addEventListener('click', (e) => e.stopPropagation());
+        vis.addEventListener('change', (e) => {
+            e.stopPropagation();
+            view.setRoadVisibility?.(road.id, vis.checked);
+        });
+        actions.appendChild(vis);
+
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'road-debugger-road-delete';
+        del.textContent = '✕';
+        del.title = isDraft ? 'Cancel draft road.' : 'Delete road.';
+        del.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            view.deleteRoad?.(road.id);
+        });
+        actions.appendChild(del);
+
+        right.appendChild(actions);
+        row.appendChild(right);
+
+        const isSelected = view._selection?.roadId === road.id && !!view._selection?.type;
+        const isHovered = view._hover?.roadId === road.id;
         row.classList.toggle('is-selected', !!isSelected);
         row.classList.toggle('is-hovered', !!isHovered);
 
         row.addEventListener('mouseenter', () => view.setHoverRoad(road.id));
+        row.addEventListener('mouseleave', () => {
+            if (view._hover?.roadId === road.id && !view._hover?.segmentId) view.clearHover();
+        });
         row.addEventListener('click', () => view.selectRoad(road.id));
         return row;
     };
@@ -773,6 +998,9 @@ export function setupUI(view) {
         row.classList.toggle('is-hovered', !!isHovered);
 
         row.addEventListener('mouseenter', () => view.setHoverSegment(seg.id));
+        row.addEventListener('mouseleave', () => {
+            if (view._hover?.segmentId === seg.id) view.clearHover();
+        });
         row.addEventListener('click', () => view.selectSegment(seg.id));
         return row;
     };
@@ -781,7 +1009,8 @@ export function setupUI(view) {
         gridRow.input.checked = view._gridEnabled !== false;
         asphaltRow.input.checked = view._renderOptions?.asphalt !== false;
         markingsRow.input.checked = view._renderOptions?.markings === true;
-        centerRow.input.checked = view._renderOptions?.centerlines !== false;
+        dividerRow.input.checked = view._renderOptions?.centerline !== false;
+        dirCenterRow.input.checked = view._renderOptions?.directionCenterlines !== false;
         edgesRow.input.checked = view._renderOptions?.edges !== false;
         pointsRow.input.checked = view._renderOptions?.points !== false;
         snapRow.input.checked = view.getSnapEnabled?.() ?? view._snapEnabled !== false;
@@ -801,24 +1030,29 @@ export function setupUI(view) {
         trimDroppedRow.input.checked = !!trimDebug.droppedPieces;
         trimHighlightRow.input.checked = !!trimDebug.highlight;
 
-        selectionBox.textContent = selectionText(view);
+        const info = highlightInfo(view);
+        infoTitle.textContent = info.title;
+        infoBody.textContent = info.text;
 
         const derived = view.getDerived?.() ?? view._derived ?? null;
         const sel = view._selection ?? {};
         const selRoad = sel?.roadId ? (derived?.roads?.find?.((r) => r?.id === sel.roadId) ?? null) : null;
         const selPoint = sel?.type === 'point' ? (selRoad?.points?.find?.((p) => p?.id === sel.pointId) ?? null) : null;
         if (selPoint) {
-            tangentRow.style.display = '';
+            pointSection.style.display = '';
             const factor = Number.isFinite(selPoint.tangentFactor) ? selPoint.tangentFactor : 1;
             tangentRange.value = String(factor);
             tangentNumber.value = String(factor);
         } else {
-            tangentRow.style.display = 'none';
+            pointSection.style.display = 'none';
         }
 
         const draft = view.getDraftRoad?.() ?? view._draft ?? null;
         const roads = view.getRoads?.() ?? view._roads ?? [];
         const all = draft ? [draft, ...roads] : roads;
+
+        if (view._hover?.segmentId && view._hover?.roadId) expandedRoads.add(view._hover.roadId);
+        if ((view._selection?.type === 'segment' || view._selection?.type === 'piece') && view._selection?.roadId) expandedRoads.add(view._selection.roadId);
 
         roadsList.textContent = '';
 
@@ -891,6 +1125,11 @@ export function setupUI(view) {
         gridToggle: gridRow.input,
         asphaltToggle: asphaltRow.input,
         markingsToggle: markingsRow.input,
+        dividerToggle: dividerRow.input,
+        dirCenterToggle: dirCenterRow.input,
+        edgesToggle: edgesRow.input,
+        pointsToggle: pointsRow.input,
+        snapToggle: snapRow.input,
         trimThresholdRange,
         trimThresholdNumber,
         trimRawToggle: trimRawRow.input,
@@ -902,6 +1141,17 @@ export function setupUI(view) {
         trimHighlightToggle: trimHighlightRow.input,
         roadsList,
         expandedRoads,
+        orbitPanel,
+        orbitSurface,
+        orbitReset,
+        _onOrbitPointerDown: onOrbitPointerDown,
+        _onOrbitPointerMove: onOrbitPointerMove,
+        _onOrbitPointerUp: onOrbitPointerUp,
+        _onOrbitReset: onOrbitReset,
+        infoPanel,
+        infoTitle,
+        infoBody,
+        pointSection,
         tangentRow,
         tangentRange,
         tangentNumber,
@@ -909,7 +1159,8 @@ export function setupUI(view) {
         _onGridChange: onGridChange,
         _onAsphaltChange: onAsphaltChange,
         _onMarkingsChange: onMarkingsChange,
-        _onCenterChange: onCenterChange,
+        _onDividerChange: onDividerChange,
+        _onDirCenterChange: onDirCenterChange,
         _onEdgesChange: onEdgesChange,
         _onPointsChange: onPointsChange,
         _onSnapChange: onSnapChange,
@@ -950,11 +1201,21 @@ export function destroyUI(view) {
     if (!ui) return;
 
     window.removeEventListener('resize', ui._onResize);
+    ui.orbitSurface?.removeEventListener?.('pointerdown', ui._onOrbitPointerDown);
+    ui.orbitSurface?.removeEventListener?.('pointermove', ui._onOrbitPointerMove);
+    ui.orbitSurface?.removeEventListener?.('pointerup', ui._onOrbitPointerUp);
+    ui.orbitSurface?.removeEventListener?.('pointercancel', ui._onOrbitPointerUp);
+    ui.orbitReset?.removeEventListener?.('click', ui._onOrbitReset);
     ui.helpBtn?.removeEventListener?.('click', ui._onHelp);
     ui.helpClose?.removeEventListener?.('click', ui._onHelpClose);
     ui.gridToggle?.removeEventListener?.('change', ui._onGridChange);
     ui.asphaltToggle?.removeEventListener?.('change', ui._onAsphaltChange);
     ui.markingsToggle?.removeEventListener?.('change', ui._onMarkingsChange);
+    ui.dividerToggle?.removeEventListener?.('change', ui._onDividerChange);
+    ui.dirCenterToggle?.removeEventListener?.('change', ui._onDirCenterChange);
+    ui.edgesToggle?.removeEventListener?.('change', ui._onEdgesChange);
+    ui.pointsToggle?.removeEventListener?.('change', ui._onPointsChange);
+    ui.snapToggle?.removeEventListener?.('change', ui._onSnapChange);
     ui.trimThresholdRange?.removeEventListener?.('input', ui._onTrimThresholdRangeChange);
     ui.trimThresholdNumber?.removeEventListener?.('change', ui._onTrimThresholdNumberChange);
     ui.trimRawToggle?.removeEventListener?.('change', ui._onTrimRawChange);

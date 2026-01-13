@@ -4245,6 +4245,555 @@ async function runTests() {
         console.log('⏭️  Road Debugger help UI tests skipped:', e.message);
     }
 
+    // ========== Road Debugger Line Visualization Tests (Task 60) ==========
+    try {
+        const { RoadDebuggerView } = await import('/src/graphics/gui/road_debugger/RoadDebuggerView.js');
+
+        test('RoadDebugger: divider vs direction centerline toggles are independent', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: true });
+            view.enter();
+            try {
+                view.startRoadDraft();
+                view.addDraftPointByTile(0, 0);
+                view.addDraftPointByTile(2, 0);
+                view.finishRoadDraft();
+
+                const findToggle = (labelText) => {
+                    const rows = Array.from(document.querySelectorAll('.road-debugger-row'));
+                    for (const row of rows) {
+                        const label = row.querySelector('.road-debugger-label');
+                        if ((label?.textContent || '').trim() !== labelText) continue;
+                        return row.querySelector('input[type="checkbox"]');
+                    }
+                    return null;
+                };
+
+                const dividerToggle = findToggle('Divider centerline');
+                const directionToggle = findToggle('Direction centerlines');
+                assertTrue(!!dividerToggle, 'Expected divider centerline toggle.');
+                assertTrue(!!directionToggle, 'Expected direction centerlines toggle.');
+
+                const kinds = () => (view.getDerived()?.primitives ?? [])
+                    .filter((p) => p?.type === 'polyline')
+                    .map((p) => p?.kind);
+
+                assertTrue(kinds().includes('centerline'), 'Expected divider centerline primitives by default.');
+                assertTrue(kinds().includes('forward_centerline'), 'Expected forward direction centerline primitives by default.');
+                assertTrue(kinds().includes('backward_centerline'), 'Expected backward direction centerline primitives by default.');
+
+                dividerToggle.checked = false;
+                dividerToggle.dispatchEvent(new Event('change', { bubbles: true }));
+                assertFalse(kinds().includes('centerline'), 'Expected divider centerline primitives hidden after toggle.');
+                assertTrue(kinds().includes('forward_centerline'), 'Expected direction centerlines to remain visible when divider is hidden.');
+
+                dividerToggle.checked = true;
+                dividerToggle.dispatchEvent(new Event('change', { bubbles: true }));
+                directionToggle.checked = false;
+                directionToggle.dispatchEvent(new Event('change', { bubbles: true }));
+                assertTrue(kinds().includes('centerline'), 'Expected divider centerline primitives visible after re-enable.');
+                assertFalse(kinds().includes('forward_centerline'), 'Expected forward direction centerline primitives hidden after toggle.');
+                assertFalse(kinds().includes('backward_centerline'), 'Expected backward direction centerline primitives hidden after toggle.');
+            } finally {
+                view.exit();
+            }
+        });
+
+        test('RoadDebugger: direction centerlines share a distinct color', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: false });
+            view.enter();
+            try {
+                view.startRoadDraft();
+                view.addDraftPointByTile(0, 0);
+                view.addDraftPointByTile(2, 0);
+                view.finishRoadDraft();
+
+                const matCenter = view._materials?.lineBase?.get?.('centerline') ?? null;
+                const matF = view._materials?.lineBase?.get?.('forward_centerline') ?? null;
+                const matB = view._materials?.lineBase?.get?.('backward_centerline') ?? null;
+                assertTrue(!!matCenter && !!matF && !!matB, 'Expected centerline and direction line materials.');
+
+                const c = matCenter.color?.getHex?.() ?? null;
+                const f = matF.color?.getHex?.() ?? null;
+                const b = matB.color?.getHex?.() ?? null;
+                assertTrue(Number.isFinite(c) && Number.isFinite(f) && Number.isFinite(b), 'Expected material colors.');
+                assertEqual(f, b, 'Expected forward/back direction centerlines to share the same color.');
+                assertFalse(f === c, 'Expected direction centerline color to differ from divider centerline.');
+            } finally {
+                view.exit();
+            }
+        });
+    } catch (e) {
+        console.log('⏭️  Road Debugger line visualization tests skipped:', e.message);
+    }
+
+    // ========== Road Debugger First Tile Marker Tests (Task 61) ==========
+    try {
+        const { RoadDebuggerView } = await import('/src/graphics/gui/road_debugger/RoadDebuggerView.js');
+
+        test('RoadDebugger: first draft point creates tile marker', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: false });
+            view.enter();
+            try {
+                view.startRoadDraft();
+                assertFalse(view._draftFirstTileMarkerMesh?.visible ?? false, 'Expected marker hidden before first click.');
+
+                view.addDraftPointByTile(3, 4);
+                assertTrue(view._draftFirstTileMarkerMesh?.visible === true, 'Expected marker visible after first click.');
+
+                const ox = Number(view._origin?.x) || 0;
+                const oz = Number(view._origin?.z) || 0;
+                const tileSize = Number(view._tileSize) || 24;
+                const marker = view._draftFirstTileMarkerMesh;
+                assertNear(marker.position.x, ox + 3 * tileSize, 1e-6, 'Marker X should be centered on the tile.');
+                assertNear(marker.position.z, oz + 4 * tileSize, 1e-6, 'Marker Z should be centered on the tile.');
+
+                view.addDraftPointByTile(5, 4);
+                assertTrue(view._draftFirstTileMarkerMesh?.visible === true, 'Expected marker to remain visible after additional points.');
+            } finally {
+                view.exit();
+            }
+        });
+
+        test('RoadDebugger: cancelling or finishing draft removes tile marker', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: false });
+            view.enter();
+            try {
+                view.startRoadDraft();
+                view.addDraftPointByTile(1, 1);
+                assertTrue(view._draftFirstTileMarkerMesh?.visible === true, 'Expected marker visible after first click.');
+                view.cancelRoadDraft();
+                assertFalse(view._draftFirstTileMarkerMesh?.visible ?? false, 'Expected marker hidden after cancel.');
+
+                view.startRoadDraft();
+                view.addDraftPointByTile(2, 2);
+                view.addDraftPointByTile(3, 2);
+                assertTrue(view._draftFirstTileMarkerMesh?.visible === true, 'Expected marker visible before done.');
+                view.finishRoadDraft();
+                assertFalse(view._draftFirstTileMarkerMesh?.visible ?? false, 'Expected marker hidden after done.');
+            } finally {
+                view.exit();
+            }
+        });
+    } catch (e) {
+        console.log('⏭️  Road Debugger first tile marker tests skipped:', e.message);
+    }
+
+    // ========== Road Debugger Hover/Selection Sync Tests (Task 62) ==========
+    try {
+        const { RoadDebuggerView } = await import('/src/graphics/gui/road_debugger/RoadDebuggerView.js');
+
+        test('RoadDebugger: table hover/selection syncs to viewport state', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: true });
+            view.enter();
+            try {
+                view.startRoadDraft();
+                view.addDraftPointByTile(0, 0);
+                view.addDraftPointByTile(2, 0);
+                view.finishRoadDraft();
+
+                const roadId = view.getRoads()[0].id;
+                const roadRow = document.querySelector(`.road-debugger-road-row[data-road-id="${roadId}"]`);
+                assertTrue(!!roadRow, 'Expected road row.');
+
+                roadRow.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+                assertEqual(view._hover?.roadId, roadId, 'Expected hover roadId from table hover.');
+                assertEqual(view._hover?.segmentId, null, 'Expected no hovered segment when hovering road row.');
+
+                roadRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                assertEqual(view._selection?.type, 'road', 'Expected selection type road from table click.');
+                assertEqual(view._selection?.roadId, roadId, 'Expected selected roadId from table click.');
+
+                const exp = roadRow.querySelector('.road-debugger-expand');
+                assertTrue(!!exp, 'Expected expand button.');
+                exp.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+                const segId = view.getDerived()?.segments?.[0]?.id ?? null;
+                assertTrue(!!segId, 'Expected derived segment id.');
+                const segRow = document.querySelector(`.road-debugger-seg-row[data-segment-id="${segId}"]`);
+                assertTrue(!!segRow, 'Expected segment row after expand.');
+
+                segRow.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+                assertEqual(view._hover?.segmentId, segId, 'Expected hovered segmentId from table hover.');
+                segRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                assertEqual(view._selection?.type, 'segment', 'Expected selection type segment from table click.');
+                assertEqual(view._selection?.segmentId, segId, 'Expected selected segmentId from table click.');
+            } finally {
+                view.exit();
+            }
+        });
+
+        test('RoadDebugger: viewport hover/selection syncs to table highlight', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: true });
+            view.enter();
+            try {
+                view.startRoadDraft();
+                view.addDraftPointByTile(0, 0);
+                view.addDraftPointByTile(3, 0);
+                view.finishRoadDraft();
+
+                const roadId = view.getRoads()[0].id;
+                const segId = view.getDerived()?.segments?.[0]?.id ?? null;
+                assertTrue(!!segId, 'Expected derived segment id.');
+
+                view.setHoverSegment(segId);
+                const roadRow = document.querySelector(`.road-debugger-road-row[data-road-id="${roadId}"]`);
+                assertTrue(!!roadRow, 'Expected road row.');
+                assertTrue(roadRow.classList.contains('is-hovered'), 'Expected road row hovered class from viewport hover.');
+
+                const segRow = document.querySelector(`.road-debugger-seg-row[data-segment-id="${segId}"]`);
+                assertTrue(!!segRow, 'Expected segment row to be visible after viewport hover.');
+                assertTrue(segRow.classList.contains('is-hovered'), 'Expected segment row hovered class from viewport hover.');
+
+                view.selectSegment(segId);
+                assertTrue(roadRow.classList.contains('is-selected'), 'Expected road row selected class from viewport selection.');
+                assertTrue(segRow.classList.contains('is-selected'), 'Expected segment row selected class from viewport selection.');
+            } finally {
+                view.exit();
+            }
+        });
+    } catch (e) {
+        console.log('⏭️  Road Debugger hover/selection sync tests skipped:', e.message);
+    }
+
+    // ========== Road Debugger Table Delete/Visibility Tests (Task 63) ==========
+    try {
+        const { RoadDebuggerView } = await import('/src/graphics/gui/road_debugger/RoadDebuggerView.js');
+
+        test('RoadDebugger: road row is single-line and supports delete', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: true });
+            view.enter();
+            try {
+                view.startRoadDraft();
+                view.addDraftPointByTile(0, 0);
+                view.addDraftPointByTile(2, 0);
+                view.finishRoadDraft();
+
+                view.startRoadDraft();
+                view.addDraftPointByTile(0, 2);
+                view.addDraftPointByTile(2, 2);
+                view.finishRoadDraft();
+
+                const roads = view.getRoads();
+                assertEqual(roads.length, 2, 'Expected 2 roads before delete.');
+                const roadId = roads[0].id;
+
+                const roadRow = document.querySelector(`.road-debugger-road-row[data-road-id="${roadId}"]`);
+                assertTrue(!!roadRow, 'Expected road row.');
+                assertTrue(roadRow.classList.contains('road-debugger-road-row-single'), 'Expected single-line road row class.');
+
+                const del = roadRow.querySelector('.road-debugger-road-delete');
+                assertTrue(!!del, 'Expected delete button.');
+                del.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+                assertEqual(view.getRoads().length, 1, 'Expected road count to decrease after delete.');
+                assertFalse(!!document.querySelector(`.road-debugger-road-row[data-road-id="${roadId}"]`), 'Expected deleted road row to be removed.');
+            } finally {
+                view.exit();
+            }
+        });
+
+        test('RoadDebugger: visibility toggle hides rendering but keeps derived geometry stable', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: true });
+            view.enter();
+            try {
+                view.startRoadDraft();
+                view.addDraftPointByTile(0, 0);
+                view.addDraftPointByTile(3, 0);
+                view.finishRoadDraft();
+
+                view.startRoadDraft();
+                view.addDraftPointByTile(0, 1);
+                view.addDraftPointByTile(3, 1);
+                view.finishRoadDraft();
+
+                const roads = view.getRoads();
+                const hideId = roads[0].id;
+                const keepId = roads[1].id;
+
+                const before = JSON.stringify(view.getDerived());
+                const beforeHiddenAsphalt = (view._asphaltMeshes ?? []).filter((m) => m?.userData?.roadId === hideId).length;
+                const beforeKeepAsphalt = (view._asphaltMeshes ?? []).filter((m) => m?.userData?.roadId === keepId).length;
+                assertTrue(beforeHiddenAsphalt > 0, 'Expected asphalt meshes for road to hide.');
+                assertTrue(beforeKeepAsphalt > 0, 'Expected asphalt meshes for road to keep.');
+
+                const hideRow = document.querySelector(`.road-debugger-road-row[data-road-id="${hideId}"]`);
+                assertTrue(!!hideRow, 'Expected road row for visibility toggle.');
+                const vis = hideRow.querySelector('.road-debugger-road-visible');
+                assertTrue(!!vis, 'Expected visibility checkbox.');
+                vis.checked = false;
+                vis.dispatchEvent(new Event('change', { bubbles: true }));
+
+                assertEqual(JSON.stringify(view.getDerived()), before, 'Expected derived output to be unchanged after visibility toggle.');
+
+                const afterHiddenAsphalt = (view._asphaltMeshes ?? []).filter((m) => m?.userData?.roadId === hideId).length;
+                const afterKeepAsphalt = (view._asphaltMeshes ?? []).filter((m) => m?.userData?.roadId === keepId).length;
+                assertEqual(afterHiddenAsphalt, 0, 'Expected hidden road to have no rendered asphalt meshes.');
+                assertTrue(afterKeepAsphalt > 0, 'Expected visible road to keep rendered asphalt meshes.');
+            } finally {
+                view.exit();
+            }
+        });
+    } catch (e) {
+        console.log('⏭️  Road Debugger table delete/visibility tests skipped:', e.message);
+    }
+
+    // ========== Road Debugger Info Panel Tests (Task 64) ==========
+    try {
+        const { RoadDebuggerView } = await import('/src/graphics/gui/road_debugger/RoadDebuggerView.js');
+
+        test('RoadDebuggerUI: info panel exists and updates with hover/selection', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: true });
+            view.enter();
+            try {
+                const panel = document.querySelector('.road-debugger-info-panel');
+                assertTrue(!!panel, 'Expected bottom-right info panel.');
+                const title = panel.querySelector('.road-debugger-info-title');
+                const body = panel.querySelector('.road-debugger-info-body');
+                assertTrue(!!title && !!body, 'Expected info panel title/body.');
+                assertEqual((body.textContent || '').trim(), '—', 'Expected placeholder info when nothing highlighted.');
+
+                view.startRoadDraft();
+                view.addDraftPointByTile(0, 0);
+                view.addDraftPointByTile(2, 0);
+                view.finishRoadDraft();
+
+                const roadId = view.getRoads()[0].id;
+                const segId = view.getDerived().segments[0].id;
+
+                view.setHoverRoad(roadId);
+                assertTrue((title.textContent || '').includes('Hovered'), 'Expected hover to drive info title.');
+                assertTrue((body.textContent || '').includes(roadId), 'Expected hovered road id in info body.');
+
+                view.selectSegment(segId);
+                assertTrue((title.textContent || '').includes('Selected'), 'Expected selection to drive info title.');
+                assertTrue((body.textContent || '').includes(`id: ${segId}`), 'Expected selected segment id in info body.');
+            } finally {
+                view.exit();
+            }
+        });
+
+        test('RoadDebuggerUI: selection info overrides hovered info', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: true });
+            view.enter();
+            try {
+                view.startRoadDraft();
+                view.addDraftPointByTile(0, 0);
+                view.addDraftPointByTile(2, 0);
+                view.finishRoadDraft();
+
+                view.startRoadDraft();
+                view.addDraftPointByTile(0, 1);
+                view.addDraftPointByTile(2, 1);
+                view.finishRoadDraft();
+
+                const roads = view.getRoads();
+                assertTrue(roads.length >= 2, 'Expected at least two roads for override test.');
+                const hoverId = roads[0].id;
+                const selectedId = roads[1].id;
+
+                const panel = document.querySelector('.road-debugger-info-panel');
+                const title = panel?.querySelector?.('.road-debugger-info-title') ?? null;
+                const body = panel?.querySelector?.('.road-debugger-info-body') ?? null;
+                assertTrue(!!panel && !!title && !!body, 'Expected info panel elements.');
+
+                view.setHoverRoad(hoverId);
+                assertTrue((body.textContent || '').includes(hoverId), 'Expected hovered road id in info body.');
+
+                view.selectRoad(selectedId);
+                view.setHoverRoad(hoverId);
+                assertTrue((title.textContent || '').includes('Selected'), 'Expected selection to override hover in title.');
+                assertTrue((body.textContent || '').includes(selectedId), 'Expected selected road id in info body.');
+                assertFalse((body.textContent || '').includes(hoverId), 'Expected hovered road id to not override selected info.');
+            } finally {
+                view.exit();
+            }
+        });
+    } catch (e) {
+        console.log('⏭️  Road Debugger info panel tests skipped:', e.message);
+    }
+
+    // ========== Road Debugger Camera Controls Tests (Task 65) ==========
+    try {
+        const { RoadDebuggerView } = await import('/src/graphics/gui/road_debugger/RoadDebuggerView.js');
+        const { ROAD_DEBUGGER_WHEEL_ZOOM_DIVISOR } = await import('/src/graphics/gui/road_debugger/RoadDebuggerInput.js');
+
+        test('RoadDebuggerInput: wheel zoom divisor is configured for faster zoom', () => {
+            assertTrue(Number.isFinite(ROAD_DEBUGGER_WHEEL_ZOOM_DIVISOR), 'Expected wheel zoom divisor to be a number.');
+            assertTrue(ROAD_DEBUGGER_WHEEL_ZOOM_DIVISOR < 12000, 'Expected wheel zoom divisor to be faster than legacy 12000.');
+        });
+
+        test('RoadDebuggerUI: orbit widget exists and updates camera when dragged', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: true });
+            view.enter();
+            try {
+                const surface = document.querySelector('.road-debugger-orbit-surface');
+                assertTrue(!!surface, 'Expected orbit widget surface.');
+                assertTrue(typeof PointerEvent !== 'undefined', 'Expected PointerEvent support for orbit widget test.');
+
+                const before = view.camera.position.clone();
+                surface.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 10, clientY: 10, pointerId: 1 }));
+                surface.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 60, clientY: 60, pointerId: 1 }));
+                surface.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: 60, clientY: 60, pointerId: 1 }));
+                const after = view.camera.position.clone();
+
+                assertTrue(after.distanceTo(before) > 1e-6, 'Expected orbit widget drag to update camera position.');
+            } finally {
+                view.exit();
+            }
+        });
+    } catch (e) {
+        console.log('⏭️  Road Debugger camera controls tests skipped:', e.message);
+    }
+
+    // ========== Road Debugger Pan Stability Tests (Task 66) ==========
+    try {
+        const { RoadDebuggerView } = await import('/src/graphics/gui/road_debugger/RoadDebuggerView.js');
+        const { handlePointerDown, handlePointerMove } = await import('/src/graphics/gui/road_debugger/RoadDebuggerInput.js');
+
+        test('RoadDebuggerInput: mouse pan is deterministic for a synthetic pointer sequence', () => {
+            assertTrue(typeof PointerEvent !== 'undefined', 'Expected PointerEvent support for pan test.');
+
+            const run = () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = 200;
+                canvas.height = 200;
+                canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 200, height: 200 });
+
+                const engine = {
+                    canvas,
+                    camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                    scene: new THREE.Scene(),
+                    clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+                };
+
+                const view = new RoadDebuggerView(engine, { uiEnabled: false });
+                view.enter();
+                try {
+                    const start = view.camera.position.clone();
+                    handlePointerDown(view, { button: 1, clientX: 100, clientY: 100, pointerId: 1, target: canvas });
+                    handlePointerMove(view, { clientX: 120, clientY: 100, pointerId: 1, target: window });
+                    const after = view.camera.position.clone();
+                    return { start, after };
+                } finally {
+                    view.exit();
+                }
+            };
+
+            const a = run();
+            const b = run();
+            assertTrue(a.after.distanceTo(a.start) > 1e-6, 'Expected pan to move the camera.');
+            assertNear(a.after.x, b.after.x, 1e-6, 'Pan X should be deterministic.');
+            assertNear(a.after.y, b.after.y, 1e-6, 'Pan Y should be deterministic.');
+            assertNear(a.after.z, b.after.z, 1e-6, 'Pan Z should be deterministic.');
+        });
+
+        test('RoadDebuggerInput: mouse pan applies no extra delta when pointer does not move', () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 200;
+            canvas.height = 200;
+            canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 200, height: 200 });
+
+            const engine = {
+                canvas,
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: false });
+            view.enter();
+            try {
+                handlePointerDown(view, { button: 1, clientX: 100, clientY: 100, pointerId: 1, target: canvas });
+                handlePointerMove(view, { clientX: 120, clientY: 100, pointerId: 1, target: window });
+                const after = view.camera.position.clone();
+                handlePointerMove(view, { clientX: 120, clientY: 100, pointerId: 1, target: window });
+                const after2 = view.camera.position.clone();
+                assertTrue(after2.distanceTo(after) < 1e-6, 'Expected no camera movement when pointer stays still.');
+            } finally {
+                view.exit();
+            }
+        });
+    } catch (e) {
+        console.log('⏭️  Road Debugger pan stability tests skipped:', e.message);
+    }
+
     runRoadConnectionDebuggerTests({ test, assertTrue });
 
     // ========== Summary ==========

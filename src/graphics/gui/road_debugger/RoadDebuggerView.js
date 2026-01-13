@@ -1,6 +1,9 @@
 // src/graphics/gui/road_debugger/RoadDebuggerView.js
 // Orchestrates the Road Debugger scene (authoring, debug rendering, camera controls, UI).
 import * as THREE from 'three';
+import { Line2 } from 'three/addons/lines/Line2.js';
+import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { createCityConfig } from '../../../app/city/CityConfig.js';
 import { rebuildRoadDebuggerPipeline } from '../../../app/road_debugger/RoadDebuggerPipeline.js';
 import { setupScene, disposeScene } from './RoadDebuggerScene.js';
@@ -26,8 +29,8 @@ function cloneJson(value) {
 function baseColorForKind(kind) {
     switch (kind) {
         case 'centerline': return 0xe5e7eb;
-        case 'forward_centerline': return 0x5eead4;
-        case 'backward_centerline': return 0xa5b4fc;
+        case 'forward_centerline':
+        case 'backward_centerline': return 0x5eead4;
         case 'lane_edge_left':
         case 'lane_edge_right': return 0xfbbf24;
         case 'asphalt_edge_left':
@@ -35,6 +38,52 @@ function baseColorForKind(kind) {
         case 'trim_removed_interval': return 0xf87171;
         default: return 0x94a3b8;
     }
+}
+
+function baseLineWidthForKind(kind) {
+    switch (kind) {
+        case 'asphalt_edge_left':
+        case 'asphalt_edge_right': return 4;
+        case 'centerline': return 3;
+        default: return 2;
+    }
+}
+
+function baseLineOpacityForKind(kind) {
+    switch (kind) {
+        case 'asphalt_edge_left':
+        case 'asphalt_edge_right': return 0.96;
+        case 'centerline': return 0.92;
+        case 'forward_centerline':
+        case 'backward_centerline': return 0.86;
+        default: return 0.82;
+    }
+}
+
+function baseLineRenderOrderForKind(kind) {
+    switch (kind) {
+        case 'asphalt_edge_left':
+        case 'asphalt_edge_right': return 32;
+        case 'centerline': return 31;
+        case 'forward_centerline':
+        case 'backward_centerline': return 30;
+        case 'lane_edge_left':
+        case 'lane_edge_right': return 29;
+        default: return 28;
+    }
+}
+
+function getLineMaterialResolution(view) {
+    const renderer = view?.engine?.renderer ?? null;
+    if (renderer?.getSize) {
+        const size = renderer.getSize(new THREE.Vector2());
+        return { x: size.x, y: size.y };
+    }
+
+    const canvas = view?.canvas ?? null;
+    const w = canvas?.clientWidth || canvas?.width || window.innerWidth || 1;
+    const h = canvas?.clientHeight || canvas?.height || window.innerHeight || 1;
+    return { x: w, y: h };
 }
 
 function ensureMapEntry(map, key, factory) {
@@ -80,7 +129,8 @@ export class RoadDebuggerView {
         this._laneWidth = 4.8;
         this._marginFactor = 0.1;
         this._renderOptions = {
-            centerlines: true,
+            centerline: true,
+            directionCenterlines: true,
             edges: true,
             points: true,
             asphalt: true,
@@ -101,6 +151,9 @@ export class RoadDebuggerView {
         this._snapEnabled = true;
         this._snapHighlightMesh = null;
         this._snapHighlightGeo = null;
+
+        this._draftFirstTileMarkerMesh = null;
+        this._draftFirstTileMarkerGeo = null;
 
         this._roads = [];
         this._draft = null;
@@ -130,10 +183,15 @@ export class RoadDebuggerView {
         this._zoomMin = 0;
         this._zoomMax = 0;
 
+        this._orbitTarget = new THREE.Vector3();
+        this._orbitYaw = 0;
+        this._orbitPitch = 0;
+
         this._isDraggingCamera = false;
         this._cameraDragPointerId = null;
         this._cameraDragStartWorld = new THREE.Vector3();
         this._cameraDragStartCam = new THREE.Vector3();
+        this._cameraDragStartTarget = new THREE.Vector3();
         this._pointerDownButton = null;
         this._pointerDownClient = { x: 0, y: 0 };
         this._pointerDownWorld = new THREE.Vector3();
@@ -166,9 +224,9 @@ export class RoadDebuggerView {
         this._segmentPickMeshes = [];
         this._materials = {
             lineBase: new Map(),
+            lineHover: new Map(),
+            lineSelected: new Map(),
             pointBase: new Map(),
-            hoverLine: new THREE.LineBasicMaterial({ color: 0x34c759, transparent: true, opacity: 0.95, depthTest: false, depthWrite: false }),
-            selectedLine: new THREE.LineBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.98, depthTest: false, depthWrite: false }),
             hoverPoint: new THREE.PointsMaterial({ color: 0x34c759, size: 6, sizeAttenuation: false, depthTest: false, depthWrite: false }),
             selectedPoint: new THREE.PointsMaterial({ color: 0x3b82f6, size: 7, sizeAttenuation: false, depthTest: false, depthWrite: false }),
             pickHover: new THREE.MeshBasicMaterial({ color: 0x34c759, transparent: true, opacity: 0.18, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
@@ -179,6 +237,7 @@ export class RoadDebuggerView {
             controlPointHover: new THREE.MeshBasicMaterial({ color: 0x34c759, transparent: true, opacity: 0.98, depthTest: false, depthWrite: false }),
             controlPointSelected: new THREE.MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 1.0, depthTest: false, depthWrite: false }),
             snapHighlight: new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.26, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
+            draftFirstTileMarker: new THREE.MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.85, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
             asphaltBase: new THREE.MeshBasicMaterial({ color: 0x111827, transparent: true, opacity: 0.92, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
             markingLine: new THREE.LineBasicMaterial({ color: 0xf8fafc, transparent: true, opacity: 0.82, depthTest: false, depthWrite: false }),
             arrow: new THREE.MeshBasicMaterial({ color: 0xf8fafc, transparent: true, opacity: 0.95, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
@@ -191,6 +250,7 @@ export class RoadDebuggerView {
             highlightAabb: new THREE.LineBasicMaterial({ color: 0x93c5fd, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false }),
             highlightPiece: new THREE.LineBasicMaterial({ color: 0x34c759, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false })
         };
+        this._lineMaterialResolution = new THREE.Vector2(0, 0);
         this._sphereGeo = new THREE.SphereGeometry(0.45, 12, 10);
 
         this._uiEnabled = uiEnabled !== false;
@@ -235,8 +295,13 @@ export class RoadDebuggerView {
         if (this._gridLines) this._gridLines.visible = this._gridEnabled;
     }
 
-    setRenderOptions({ centerlines = null, edges = null, points = null, asphalt = null, markings = null } = {}) {
-        if (centerlines !== null) this._renderOptions.centerlines = !!centerlines;
+    setRenderOptions({ centerlines = null, centerline = null, directionCenterlines = null, edges = null, points = null, asphalt = null, markings = null } = {}) {
+        if (centerlines !== null) {
+            this._renderOptions.centerline = !!centerlines;
+            this._renderOptions.directionCenterlines = !!centerlines;
+        }
+        if (centerline !== null) this._renderOptions.centerline = !!centerline;
+        if (directionCenterlines !== null) this._renderOptions.directionCenterlines = !!directionCenterlines;
         if (edges !== null) this._renderOptions.edges = !!edges;
         if (points !== null) this._renderOptions.points = !!points;
         if (asphalt !== null) this._renderOptions.asphalt = !!asphalt;
@@ -285,11 +350,25 @@ export class RoadDebuggerView {
         return this._snapEnabled !== false;
     }
 
+    _syncLineMaterialResolution({ force = false } = {}) {
+        const size = getLineMaterialResolution(this);
+        if (!force && this._lineMaterialResolution.x === size.x && this._lineMaterialResolution.y === size.y) return;
+        this._lineMaterialResolution.set(size.x, size.y);
+        const maps = [this._materials?.lineBase, this._materials?.lineHover, this._materials?.lineSelected];
+        for (const map of maps) {
+            if (!(map instanceof Map)) continue;
+            for (const mat of map.values()) {
+                if (!mat?.resolution?.set) continue;
+                mat.resolution.set(size.x, size.y);
+            }
+        }
+    }
+
     startRoadDraft() {
         if (this._draft) return;
         this._pushUndoSnapshot();
         const id = `road_${this._roadCounter++}`;
-        this._draft = { id, name: `Road ${this._roadCounter - 1}`, lanesF: 1, lanesB: 1, points: [] };
+        this._draft = { id, name: `Road ${this._roadCounter - 1}`, lanesF: 1, lanesB: 1, visible: true, points: [] };
         this._selection = { type: 'road', roadId: id, segmentId: null, pointId: null, pieceId: null };
         this._rebuildPipeline();
     }
@@ -351,7 +430,9 @@ export class RoadDebuggerView {
     }
 
     setHoverRoad(roadId) {
-        this._hover.roadId = roadId ?? null;
+        const nextRoadId = roadId ?? null;
+        if (this._hover.roadId === nextRoadId && !this._hover.segmentId && !this._hover.pointId && !this._hover.pieceId) return;
+        this._hover.roadId = nextRoadId;
         this._hover.segmentId = null;
         this._hover.pointId = null;
         this._hover.pieceId = null;
@@ -361,8 +442,11 @@ export class RoadDebuggerView {
 
     setHoverSegment(segmentId) {
         const seg = this._derived?.segments?.find?.((s) => s?.id === segmentId) ?? null;
-        this._hover.segmentId = seg?.id ?? null;
-        this._hover.roadId = seg?.roadId ?? null;
+        const nextSegId = seg?.id ?? null;
+        const nextRoadId = seg?.roadId ?? null;
+        if (this._hover.segmentId === nextSegId && this._hover.roadId === nextRoadId && !this._hover.pointId && !this._hover.pieceId) return;
+        this._hover.segmentId = nextSegId;
+        this._hover.roadId = nextRoadId;
         this._hover.pointId = null;
         this._hover.pieceId = null;
         this._applyHighlights();
@@ -370,6 +454,7 @@ export class RoadDebuggerView {
     }
 
     clearHover() {
+        if (!this._hover.roadId && !this._hover.segmentId && !this._hover.pointId && !this._hover.pieceId) return;
         this._hover.roadId = null;
         this._hover.segmentId = null;
         this._hover.pointId = null;
@@ -539,6 +624,64 @@ export class RoadDebuggerView {
         return this._derived;
     }
 
+    getCameraOrbit() {
+        return {
+            yaw: Number(this._orbitYaw) || 0,
+            pitch: Number(this._orbitPitch) || 0,
+            target: { x: Number(this._orbitTarget?.x) || 0, z: Number(this._orbitTarget?.z) || 0 }
+        };
+    }
+
+    setCameraOrbit({ yaw = null, pitch = null } = {}) {
+        if (yaw !== null) this._orbitYaw = Number(yaw) || 0;
+        if (pitch !== null) this._orbitPitch = Number(pitch) || 0;
+        this._syncOrbitCamera();
+    }
+
+    orbitCameraBy({ yawDelta = 0, pitchDelta = 0 } = {}) {
+        const dyaw = Number(yawDelta) || 0;
+        const dpitch = Number(pitchDelta) || 0;
+        this._orbitYaw = (Number(this._orbitYaw) || 0) + dyaw;
+        this._orbitPitch = (Number(this._orbitPitch) || 0) + dpitch;
+        this._syncOrbitCamera();
+    }
+
+    resetCameraOrbit() {
+        this._orbitYaw = 0;
+        this._orbitPitch = 0;
+        this._syncOrbitCamera();
+    }
+
+    _syncOrbitCamera() {
+        const cam = this.camera;
+        if (!cam) return;
+
+        const min = Number.isFinite(this._zoomMin) ? this._zoomMin : 0;
+        const max = Number.isFinite(this._zoomMax) ? this._zoomMax : min;
+        this._zoom = clamp(Number(this._zoom) || min, min, max);
+
+        const yaw = Number(this._orbitYaw) || 0;
+        const pitchMax = Math.PI * 0.5 - 0.08;
+        const pitch = clamp(Number(this._orbitPitch) || 0, 0, pitchMax);
+        this._orbitPitch = pitch;
+
+        const r = Number(this._zoom) || 0;
+        const sin = Math.sin(pitch);
+        const cos = Math.cos(pitch);
+        const target = this._orbitTarget ?? new THREE.Vector3();
+        const tx = Number(target.x) || 0;
+        const ty = Number.isFinite(target.y) ? target.y : this._groundY;
+        const tz = Number(target.z) || 0;
+
+        const ox = r * sin * Math.sin(yaw);
+        const oz = r * sin * Math.cos(yaw);
+        const oy = r * cos;
+
+        cam.position.set(tx + ox, ty + oy, tz + oz);
+        cam.up.set(0, 1, 0);
+        cam.lookAt(tx, ty, tz);
+    }
+
     movePointToWorld(roadId, pointId, world, { snap = null } = {}) {
         const hit = world ?? null;
         if (!hit) return false;
@@ -636,6 +779,43 @@ export class RoadDebuggerView {
             if (point) return { road, point };
         }
         return null;
+    }
+
+    _findSchemaRoad(roadId) {
+        if (!roadId) return null;
+        if (this._draft?.id === roadId) return { road: this._draft, isDraft: true };
+        const road = this._roads.find((r) => r?.id === roadId) ?? null;
+        if (!road) return null;
+        return { road, isDraft: false };
+    }
+
+    deleteRoad(roadId) {
+        if (!roadId) return false;
+        if (this._draft?.id === roadId) {
+            this.cancelRoadDraft();
+            return true;
+        }
+        const index = this._roads.findIndex((r) => r?.id === roadId);
+        if (index < 0) return false;
+        this._pushUndoSnapshot();
+        this._roads.splice(index, 1);
+        this._rebuildPipeline();
+        this._sanitizeSelection();
+        return true;
+    }
+
+    setRoadVisibility(roadId, visible) {
+        const found = this._findSchemaRoad(roadId);
+        if (!found) return false;
+        const next = visible !== false;
+        const prev = found.road.visible !== false;
+        if (prev === next) return false;
+        this._pushUndoSnapshot();
+        found.road.visible = next;
+        this._rebuildOverlaysFromDerived();
+        this._applyHighlights();
+        this.ui?.sync?.();
+        return true;
     }
 
     _worldToTilePoint(worldX, worldZ, { snap = false } = {}) {
@@ -784,9 +964,10 @@ export class RoadDebuggerView {
             const name = typeof road?.name === 'string' && road.name.trim() ? road.name.trim() : id;
             const lanesF = clampInt(road?.lanesF ?? 1, 1, 5);
             const lanesB = clampInt(road?.lanesB ?? 1, 1, 5);
+            const visible = road?.visible === undefined ? true : road.visible !== false;
             const ptsRaw = Array.isArray(road?.points) ? road.points : [];
             const points = ptsRaw.map((pt, i) => normalizePoint(pt, i));
-            return { id, name, lanesF, lanesB, points };
+            return { id, name, lanesF, lanesB, visible, points };
         };
 
         const roads = roadsRaw.map((road, i) => normalizeRoad(road, i));
@@ -850,6 +1031,50 @@ export class RoadDebuggerView {
         this._snapHighlightMesh.visible = !!visible;
     }
 
+    _ensureDraftFirstTileMarker() {
+        if (this._draftFirstTileMarkerMesh) return;
+        if (!this.root) return;
+        const tileSize = Number(this._tileSize) || 24;
+        const outer = Math.max(2, tileSize * 0.38);
+        const inner = Math.max(1, outer * 0.85);
+        const geo = new THREE.RingGeometry(inner, outer, 48);
+        geo.rotateX(-Math.PI * 0.5);
+        this._draftFirstTileMarkerGeo = geo;
+
+        const mesh = new THREE.Mesh(geo, this._materials.draftFirstTileMarker);
+        mesh.visible = false;
+        mesh.frustumCulled = false;
+        mesh.renderOrder = 120;
+        mesh.userData = { type: 'draft_first_tile_marker' };
+        this._draftFirstTileMarkerMesh = mesh;
+        this.root.add(mesh);
+    }
+
+    _setDraftFirstTileMarkerVisible(visible) {
+        if (!this._draftFirstTileMarkerMesh) return;
+        this._draftFirstTileMarkerMesh.visible = !!visible;
+    }
+
+    _syncDraftFirstTileMarker() {
+        const draft = this._draft ?? null;
+        const first = draft?.points?.[0] ?? null;
+        if (!draft || !first) {
+            this._setDraftFirstTileMarkerVisible(false);
+            return;
+        }
+
+        this._ensureDraftFirstTileMarker();
+        const mesh = this._draftFirstTileMarkerMesh;
+        if (!mesh) return;
+        const tileSize = Number(this._tileSize) || 24;
+        const ox = Number(this._origin?.x) || 0;
+        const oz = Number(this._origin?.z) || 0;
+        const tx = Number(first.tileX) || 0;
+        const ty = Number(first.tileY) || 0;
+        mesh.position.set(ox + tx * tileSize, this._groundY + 0.021, oz + ty * tileSize);
+        this._setDraftFirstTileMarkerVisible(true);
+    }
+
     _pickAtPointer() {
         this.raycaster.setFromCamera(this.pointer, this.camera);
         const pointHits = this.raycaster.intersectObjects(this._controlPointMeshes ?? [], false);
@@ -873,6 +1098,48 @@ export class RoadDebuggerView {
         return null;
     }
 
+    _pickHoverAtPointer() {
+        this.raycaster.setFromCamera(this.pointer, this.camera);
+
+        const segHits = this.raycaster.intersectObjects(this._segmentPickMeshes ?? [], false);
+        const segObj = segHits[0]?.object ?? null;
+        if (segObj?.userData?.roadId && segObj?.userData?.segmentId) {
+            return { type: 'segment', roadId: segObj.userData.roadId, segmentId: segObj.userData.segmentId };
+        }
+
+        const asphaltHits = this.raycaster.intersectObjects(this._asphaltMeshes ?? [], false);
+        const asphaltObj = asphaltHits[0]?.object ?? null;
+        if (asphaltObj?.userData?.roadId && asphaltObj?.userData?.segmentId && asphaltObj?.userData?.pieceId) {
+            return { type: 'piece', roadId: asphaltObj.userData.roadId, segmentId: asphaltObj.userData.segmentId, pieceId: asphaltObj.userData.pieceId };
+        }
+
+        const pointHits = this.raycaster.intersectObjects(this._controlPointMeshes ?? [], false);
+        const pointObj = pointHits[0]?.object ?? null;
+        if (pointObj?.userData?.roadId) {
+            return { type: 'road', roadId: pointObj.userData.roadId };
+        }
+
+        return null;
+    }
+
+    updateHoverFromPointer() {
+        if (this._isDraggingCamera || this._pendingClick || this.isPointDragActive?.()) return;
+        const pick = this._pickHoverAtPointer();
+        if (pick?.type === 'segment') {
+            this.setHoverSegment(pick.segmentId);
+            return;
+        }
+        if (pick?.type === 'piece') {
+            this.setHoverSegment(pick.segmentId);
+            return;
+        }
+        if (pick?.type === 'road') {
+            this.setHoverRoad(pick.roadId);
+            return;
+        }
+        this.clearHover();
+    }
+
     _getRoadsForPipeline({ includeDraft = false } = {}) {
         if (!includeDraft || !this._draft) return this._roads;
         return [...this._roads, this._draft];
@@ -880,8 +1147,8 @@ export class RoadDebuggerView {
 
     _rebuildPipeline() {
         const flags = {
-            centerline: this._renderOptions.centerlines,
-            directionCenterlines: this._renderOptions.centerlines,
+            centerline: this._renderOptions.centerline,
+            directionCenterlines: this._renderOptions.directionCenterlines,
             laneEdges: this._renderOptions.edges,
             asphaltEdges: this._renderOptions.edges,
             markers: this._renderOptions.points,
@@ -906,6 +1173,7 @@ export class RoadDebuggerView {
         });
 
         this._rebuildOverlaysFromDerived();
+        this._syncDraftFirstTileMarker();
         this._applyHighlights();
         this.ui?.sync?.();
     }
@@ -936,6 +1204,7 @@ export class RoadDebuggerView {
     _rebuildOverlaysFromDerived() {
         if (!this.root) return;
         this._clearOverlays();
+        this._syncLineMaterialResolution({ force: true });
 
         const overlay = new THREE.Group();
         overlay.name = 'RoadDebuggerOverlays';
@@ -991,6 +1260,16 @@ export class RoadDebuggerView {
         const pickY = this._groundY + 0.02;
 
         const primitives = this._derived?.primitives ?? [];
+        const schemaRoads = this._getRoadsForPipeline({ includeDraft: true });
+        const visibleByRoadId = new Map();
+        for (const road of schemaRoads) {
+            if (!road?.id) continue;
+            visibleByRoadId.set(road.id, road.visible !== false);
+        }
+        const isRoadVisible = (roadId) => {
+            if (!roadId) return true;
+            return visibleByRoadId.get(roadId) !== false;
+        };
         const makePolygonGeometry = (pts, y) => {
             const points = Array.isArray(pts) ? pts : [];
             if (points.length < 3) return null;
@@ -1021,27 +1300,37 @@ export class RoadDebuggerView {
             if (!prim || prim.type !== 'polyline') continue;
             const pts = Array.isArray(prim.points) ? prim.points : [];
             if (pts.length < 2) continue;
+            const roadId = prim.roadId ?? null;
+            if (!isRoadVisible(roadId)) continue;
 
             const positions = [];
             for (const p of pts) {
                 positions.push(Number(p.x) || 0, lineY, Number(p.z) || 0);
             }
 
-            const geo = new THREE.BufferGeometry();
-            geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            const geo = new LineGeometry();
+            geo.setPositions(positions);
 
             const kind = prim.kind ?? 'unknown';
-            const baseMat = ensureMapEntry(this._materials.lineBase, kind, () => new THREE.LineBasicMaterial({
-                color: baseColorForKind(kind),
-                transparent: true,
-                opacity: 0.78,
-                depthTest: false,
-                depthWrite: false
-            }));
+            const baseMat = ensureMapEntry(this._materials.lineBase, kind, () => {
+                const mat = new LineMaterial({
+                    color: baseColorForKind(kind),
+                    linewidth: baseLineWidthForKind(kind),
+                    worldUnits: false,
+                    transparent: true,
+                    opacity: baseLineOpacityForKind(kind),
+                    depthTest: false,
+                    depthWrite: false
+                });
+                mat.resolution.set(this._lineMaterialResolution.x, this._lineMaterialResolution.y);
+                return mat;
+            });
 
-            const line = new THREE.Line(geo, baseMat);
+            const line = new Line2(geo, baseMat);
+            line.computeLineDistances();
             line.frustumCulled = false;
-            line.userData = { type: 'polyline', roadId: prim.roadId ?? null, segmentId: prim.segmentId ?? null, kind };
+            line.userData = { type: 'polyline', roadId, segmentId: prim.segmentId ?? null, kind };
+            line.renderOrder = baseLineRenderOrderForKind(kind);
             linesGroup.add(line);
             this._overlayLines.push(line);
         }
@@ -1050,6 +1339,8 @@ export class RoadDebuggerView {
             if (!prim || prim.type !== 'points') continue;
             const pts = Array.isArray(prim.points) ? prim.points : [];
             if (!pts.length) continue;
+            const roadId = prim.roadId ?? null;
+            if (!isRoadVisible(roadId)) continue;
             const positions = [];
             for (const p of pts) {
                 positions.push(Number(p.x) || 0, pointY, Number(p.z) || 0);
@@ -1070,7 +1361,7 @@ export class RoadDebuggerView {
 
             const points = new THREE.Points(geo, baseMat);
             points.frustumCulled = false;
-            points.userData = { type: 'points', roadId: prim.roadId ?? null, segmentId: prim.segmentId ?? null, kind };
+            points.userData = { type: 'points', roadId, segmentId: prim.segmentId ?? null, kind };
             pointsGroup.add(points);
             this._overlayPoints.push(points);
         }
@@ -1083,6 +1374,7 @@ export class RoadDebuggerView {
             const roadId = prim.roadId ?? null;
             const segmentId = prim.segmentId ?? null;
             const id = prim.id ?? `${segmentId ?? 'poly'}__${kind}`;
+            if (!isRoadVisible(roadId)) continue;
 
             if (kind === 'asphalt_piece') {
                 const geo = makePolygonGeometry(pts, asphaltY);
@@ -1135,6 +1427,7 @@ export class RoadDebuggerView {
         const roads = this._derived?.roads ?? [];
         for (const road of roads) {
             const isDraft = this._draft?.id === road?.id;
+            if (!isRoadVisible(road?.id)) continue;
             const mat = isDraft ? this._materials.controlPointDraft : this._materials.controlPoint;
             const pts = road?.points ?? [];
             for (const pt of pts) {
@@ -1154,6 +1447,7 @@ export class RoadDebuggerView {
 
         const segs = this._derived?.segments ?? [];
         for (const seg of segs) {
+            if (!isRoadVisible(seg?.roadId)) continue;
             const dir = seg?.dir ?? null;
             const right = seg?.right ?? null;
             const laneWidth = Number(seg?.laneWidth) || Number(this._laneWidth) || 4.8;
@@ -1269,17 +1563,24 @@ export class RoadDebuggerView {
 
     _disposeResources() {
         for (const mat of this._materials.lineBase.values()) mat?.dispose?.();
+        for (const mat of this._materials.lineHover.values()) mat?.dispose?.();
+        for (const mat of this._materials.lineSelected.values()) mat?.dispose?.();
         for (const mat of this._materials.pointBase.values()) mat?.dispose?.();
         for (const mat of Object.values(this._materials)) {
             if (!mat || typeof mat === 'function' || mat instanceof Map) continue;
             mat?.dispose?.();
         }
         this._materials.lineBase.clear();
+        this._materials.lineHover.clear();
+        this._materials.lineSelected.clear();
         this._materials.pointBase.clear();
         this._sphereGeo?.dispose?.();
         this._snapHighlightGeo?.dispose?.();
         this._snapHighlightGeo = null;
         this._snapHighlightMesh = null;
+        this._draftFirstTileMarkerGeo?.dispose?.();
+        this._draftFirstTileMarkerGeo = null;
+        this._draftFirstTileMarkerMesh = null;
     }
 
     _rebuildSelectionHighlight() {
@@ -1338,6 +1639,7 @@ export class RoadDebuggerView {
     }
 
     _applyHighlights() {
+        this._syncLineMaterialResolution();
         const hoverRoadId = this._hover.roadId;
         const hoverSegmentId = this._hover.segmentId;
         const hoverPointId = this._hover.pointId;
@@ -1351,14 +1653,47 @@ export class RoadDebuggerView {
             const kind = line?.userData?.kind ?? 'unknown';
             const selected = (!!selSegmentId && segmentId === selSegmentId) || (!!selRoadId && roadId === selRoadId);
             const hovered = !selected && ((!!hoverSegmentId && segmentId === hoverSegmentId) || (!!hoverRoadId && roadId === hoverRoadId));
-            const baseMat = ensureMapEntry(this._materials.lineBase, kind, () => new THREE.LineBasicMaterial({
-                color: baseColorForKind(kind),
-                transparent: true,
-                opacity: 0.78,
-                depthTest: false,
-                depthWrite: false
-            }));
-            line.material = selected ? this._materials.selectedLine : (hovered ? this._materials.hoverLine : baseMat);
+            const baseMat = ensureMapEntry(this._materials.lineBase, kind, () => {
+                const mat = new LineMaterial({
+                    color: baseColorForKind(kind),
+                    linewidth: baseLineWidthForKind(kind),
+                    worldUnits: false,
+                    transparent: true,
+                    opacity: baseLineOpacityForKind(kind),
+                    depthTest: false,
+                    depthWrite: false
+                });
+                mat.resolution.set(this._lineMaterialResolution.x, this._lineMaterialResolution.y);
+                return mat;
+            });
+            const hoverMat = ensureMapEntry(this._materials.lineHover, kind, () => {
+                const mat = new LineMaterial({
+                    color: 0x34c759,
+                    linewidth: baseLineWidthForKind(kind),
+                    worldUnits: false,
+                    transparent: true,
+                    opacity: 0.95,
+                    depthTest: false,
+                    depthWrite: false
+                });
+                mat.resolution.set(this._lineMaterialResolution.x, this._lineMaterialResolution.y);
+                return mat;
+            });
+            const selectedMat = ensureMapEntry(this._materials.lineSelected, kind, () => {
+                const mat = new LineMaterial({
+                    color: 0x3b82f6,
+                    linewidth: baseLineWidthForKind(kind),
+                    worldUnits: false,
+                    transparent: true,
+                    opacity: 0.98,
+                    depthTest: false,
+                    depthWrite: false
+                });
+                mat.resolution.set(this._lineMaterialResolution.x, this._lineMaterialResolution.y);
+                return mat;
+            });
+
+            line.material = selected ? selectedMat : (hovered ? hoverMat : baseMat);
             line.visible = true;
         }
 
