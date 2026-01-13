@@ -27,6 +27,17 @@ Open `index.html` in a modern browser.
 - `assets/public/` contains shareable assets (tracked in git).
 - Everything else under `assets/` is treated as licensed/private and is not shared in the repository.
 
+### Git LFS
+
+Some files under `assets/public/` are stored with Git Large File Storage (LFS).
+
+If you clone the repo without Git LFS installed, you may see small “pointer” text files instead of the real asset contents.
+
+Setup:
+- Install Git LFS: https://git-lfs.com/
+- Run once (per machine): `git lfs install`
+- If you already cloned: `git lfs pull`
+
 ---
 
 ## Buildings
