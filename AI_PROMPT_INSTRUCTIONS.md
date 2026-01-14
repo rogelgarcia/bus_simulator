@@ -14,9 +14,19 @@ Rules:
 - `DONE` appears **immediately after the number** when the work is completed.
 - `SUBJECT` is the *problem space* and must be uppercase, one of:
   - `ROADS`
+  - `VEHICLES`
+  - `TRAFFIC`
+  - `BUILDINGS`
+  - `PEDESTRIANS`
+  - `COLLISION`
+  - `CITY`
   - `MESHES`
   - `MATERIAL`
   - `PHYSICS`
+  - `AUDIO`
+  - `TOOLS`
+  - `REPORTS`
+  - `REFACTOR`
 - `title` is lowercase, words separated by `_`.
 - Prefer no file extension (match existing `AI_*` files in the repo).
 

@@ -3508,20 +3508,20 @@ async function runTests() {
         const { rebuildRoadDebuggerPipeline } = await import('/src/app/road_debugger/RoadDebuggerPipeline.js');
 
         test('RoadDebuggerPipeline: N points produce N-1 segments', () => {
-            const roads = [
-                {
-                    id: 'roadA',
-                    name: 'Road A',
-                    lanesF: 2,
-                    lanesB: 1,
-                    points: [
-                        { id: 'p0', tileX: 0, tileY: 0, offsetX: 0, offsetY: 0, tangentFactor: 1 },
-                        { id: 'p1', tileX: 1, tileY: 0, offsetX: 0, offsetY: 0, tangentFactor: 1 },
-                        { id: 'p2', tileX: 2, tileY: 0, offsetX: 0, offsetY: 0, tangentFactor: 1 },
-                        { id: 'p3', tileX: 3, tileY: 0, offsetX: 0, offsetY: 0, tangentFactor: 1 }
-                    ]
-                }
-            ];
+	            const roads = [
+	                {
+	                    id: 'roadA',
+	                    name: 'Road A',
+	                    lanesF: 2,
+	                    lanesB: 1,
+	                    points: [
+	                        { id: 'p0', tileX: 0, tileY: 0, offsetU: 0, offsetV: 0, tangentFactor: 1 },
+	                        { id: 'p1', tileX: 1, tileY: 0, offsetU: 0, offsetV: 0, tangentFactor: 1 },
+	                        { id: 'p2', tileX: 2, tileY: 0, offsetU: 0, offsetV: 0, tangentFactor: 1 },
+	                        { id: 'p3', tileX: 3, tileY: 0, offsetU: 0, offsetV: 0, tangentFactor: 1 }
+	                    ]
+	                }
+	            ];
 
             const out = rebuildRoadDebuggerPipeline({ roads, settings: { origin: { x: 0, z: 0 }, tileSize: 24, laneWidth: 4.8, marginFactor: 0.1 } });
             assertEqual(out.segments.length, 3, 'Expected N-1 segments for N points.');
@@ -3535,18 +3535,18 @@ async function runTests() {
             const lanesF = 2;
             const lanesB = 1;
 
-            const roads = [
-                {
-                    id: 'r1',
-                    name: 'R1',
-                    lanesF,
-                    lanesB,
-                    points: [
-                        { id: 'a', tileX: 0, tileY: 0, offsetX: 0, offsetY: 0, tangentFactor: 1 },
-                        { id: 'b', tileX: 1, tileY: 0, offsetX: 0, offsetY: 0, tangentFactor: 1 }
-                    ]
-                }
-            ];
+	            const roads = [
+	                {
+	                    id: 'r1',
+	                    name: 'R1',
+	                    lanesF,
+	                    lanesB,
+	                    points: [
+	                        { id: 'a', tileX: 0, tileY: 0, offsetU: 0, offsetV: 0, tangentFactor: 1 },
+	                        { id: 'b', tileX: 1, tileY: 0, offsetU: 0, offsetV: 0, tangentFactor: 1 }
+	                    ]
+	                }
+	            ];
 
             const out = rebuildRoadDebuggerPipeline({ roads, settings: { origin: { x: 0, z: 0 }, tileSize: 24, laneWidth, marginFactor: 0.1 } });
             const seg = out.segments[0];
@@ -3568,19 +3568,19 @@ async function runTests() {
         });
 
         test('RoadDebuggerPipeline: deterministic output for same input', () => {
-            const roads = [
-                {
-                    id: 'roadDet',
-                    name: 'Deterministic',
-                    lanesF: 3,
-                    lanesB: 2,
-                    points: [
-                        { id: 'p0', tileX: 0, tileY: 0, offsetX: 1.2, offsetY: -0.4, tangentFactor: 1 },
-                        { id: 'p1', tileX: 0, tileY: 2, offsetX: -0.2, offsetY: 0.7, tangentFactor: 0.8 },
-                        { id: 'p2', tileX: 2, tileY: 2, offsetX: 0.0, offsetY: 0.0, tangentFactor: 1.1 }
-                    ]
-                }
-            ];
+	            const roads = [
+	                {
+	                    id: 'roadDet',
+	                    name: 'Deterministic',
+	                    lanesF: 3,
+	                    lanesB: 2,
+	                    points: [
+	                        { id: 'p0', tileX: 0, tileY: 0, offsetU: 0.05, offsetV: -0.02, tangentFactor: 1 },
+	                        { id: 'p1', tileX: 0, tileY: 2, offsetU: -0.01, offsetV: 0.03, tangentFactor: 0.8 },
+	                        { id: 'p2', tileX: 2, tileY: 2, offsetU: 0.0, offsetV: 0.0, tangentFactor: 1.1 }
+	                    ]
+	                }
+	            ];
 
             const settings = { origin: { x: 0, z: 0 }, tileSize: 24, laneWidth: 4.8, marginFactor: 0.1 };
             const a = rebuildRoadDebuggerPipeline({ roads, settings });
@@ -3589,47 +3589,47 @@ async function runTests() {
         });
 
         test('RoadDebuggerPipeline: does not create junctions for internal polyline points (Task 67)', () => {
-            const roads = [
-                {
-                    id: 'roadA',
-                    name: 'Road A',
-                    lanesF: 1,
-                    lanesB: 1,
-                    points: [
-                        { id: 'p0', tileX: 0, tileY: 0, offsetX: 0, offsetY: 0, tangentFactor: 1 },
-                        { id: 'p1', tileX: 2, tileY: 0, offsetX: 0, offsetY: 0, tangentFactor: 1 },
-                        { id: 'p2', tileX: 4, tileY: 0, offsetX: 0, offsetY: 0, tangentFactor: 1 }
-                    ]
-                }
-            ];
+	            const roads = [
+	                {
+	                    id: 'roadA',
+	                    name: 'Road A',
+	                    lanesF: 1,
+	                    lanesB: 1,
+	                    points: [
+	                        { id: 'p0', tileX: 0, tileY: 0, offsetU: 0, offsetV: 0, tangentFactor: 1 },
+	                        { id: 'p1', tileX: 2, tileY: 0, offsetU: 0, offsetV: 0, tangentFactor: 1 },
+	                        { id: 'p2', tileX: 4, tileY: 0, offsetU: 0, offsetV: 0, tangentFactor: 1 }
+	                    ]
+	                }
+	            ];
             const settings = { origin: { x: 0, z: 0 }, tileSize: 24, laneWidth: 4.8, marginFactor: 0.1 };
             const out = rebuildRoadDebuggerPipeline({ roads, settings });
             assertEqual(out?.junctions?.length ?? 0, 0, 'Expected no junctions for a continuous polyline road.');
         });
 
         test('RoadDebuggerPipeline: crossing produces 1 junction with 4 endpoints (Task 67)', () => {
-            const roads = [
-                {
-                    id: 'roadH',
-                    name: 'Horizontal',
-                    lanesF: 1,
-                    lanesB: 1,
-                    points: [
-                        { id: 'h0', tileX: 0, tileY: 1, offsetX: 0, offsetY: 0, tangentFactor: 1 },
-                        { id: 'h1', tileX: 4, tileY: 1, offsetX: 0, offsetY: 0, tangentFactor: 1 }
-                    ]
-                },
-                {
-                    id: 'roadV',
-                    name: 'Vertical',
-                    lanesF: 1,
-                    lanesB: 1,
-                    points: [
-                        { id: 'v0', tileX: 2, tileY: 0, offsetX: 0, offsetY: 0, tangentFactor: 1 },
-                        { id: 'v1', tileX: 2, tileY: 3, offsetX: 0, offsetY: 0, tangentFactor: 1 }
-                    ]
-                }
-            ];
+	            const roads = [
+	                {
+	                    id: 'roadH',
+	                    name: 'Horizontal',
+	                    lanesF: 1,
+	                    lanesB: 1,
+	                    points: [
+	                        { id: 'h0', tileX: 0, tileY: 1, offsetU: 0, offsetV: 0, tangentFactor: 1 },
+	                        { id: 'h1', tileX: 4, tileY: 1, offsetU: 0, offsetV: 0, tangentFactor: 1 }
+	                    ]
+	                },
+	                {
+	                    id: 'roadV',
+	                    name: 'Vertical',
+	                    lanesF: 1,
+	                    lanesB: 1,
+	                    points: [
+	                        { id: 'v0', tileX: 2, tileY: 0, offsetU: 0, offsetV: 0, tangentFactor: 1 },
+	                        { id: 'v1', tileX: 2, tileY: 3, offsetU: 0, offsetV: 0, tangentFactor: 1 }
+	                    ]
+	                }
+	            ];
             const settings = { origin: { x: 0, z: 0 }, tileSize: 24, laneWidth: 4.8, marginFactor: 0.1 };
             const out = rebuildRoadDebuggerPipeline({ roads, settings });
             assertEqual(out?.junctions?.length ?? 0, 1, 'Expected a single junction for a simple 2-road crossing.');
@@ -3646,20 +3646,20 @@ async function runTests() {
         const { computeRoadEngineEdges } = await import('/src/app/road_engine/RoadEngineCompute.js');
         const { triangulateSimplePolygonXZ } = await import('/src/app/road_engine/RoadEngineMeshData.js');
 
-        test('RoadEngineCompute: deterministic output for JSON-cloned inputs (AI 76)', () => {
-            const roads = [
-                {
-                    id: 'roadDet',
-                    name: 'Deterministic',
-                    lanesF: 3,
-                    lanesB: 2,
-                    points: [
-                        { id: 'p0', tileX: 0, tileY: 0, offsetX: 1.2, offsetY: -0.4, tangentFactor: 1 },
-                        { id: 'p1', tileX: 0, tileY: 2, offsetX: -0.2, offsetY: 0.7, tangentFactor: 0.8 },
-                        { id: 'p2', tileX: 2, tileY: 2, offsetX: 0.0, offsetY: 0.0, tangentFactor: 1.1 }
-                    ]
-                }
-            ];
+	        test('RoadEngineCompute: deterministic output for JSON-cloned inputs (AI 76)', () => {
+	            const roads = [
+	                {
+	                    id: 'roadDet',
+	                    name: 'Deterministic',
+	                    lanesF: 3,
+	                    lanesB: 2,
+	                    points: [
+	                        { id: 'p0', tileX: 0, tileY: 0, offsetU: 0.05, offsetV: -0.02, tangentFactor: 1 },
+	                        { id: 'p1', tileX: 0, tileY: 2, offsetU: -0.01, offsetV: 0.03, tangentFactor: 0.8 },
+	                        { id: 'p2', tileX: 2, tileY: 2, offsetU: 0.0, offsetV: 0.0, tangentFactor: 1.1 }
+	                    ]
+	                }
+	            ];
             const settings = { origin: { x: 0, z: 0 }, tileSize: 24, laneWidth: 4.8, marginFactor: 0.1 };
             const a = computeRoadEngineEdges({ roads, settings });
             const b = computeRoadEngineEdges({ roads: JSON.parse(JSON.stringify(roads)), settings: JSON.parse(JSON.stringify(settings)) });
@@ -3686,20 +3686,20 @@ async function runTests() {
             assertEqual((a.indices?.length ?? 0), Math.max(0, (a.vertices.length - 2) * 3), 'Expected N-2 triangulation indices.');
         });
 
-        test('RoadEngineCompute: manual corner junction cuts segments and emits junction surface (AI 82)', () => {
-            const roads = [
-                {
-                    id: 'r1',
-                    name: 'CornerRoad',
-                    lanesF: 1,
-                    lanesB: 1,
-                    points: [
-                        { id: 'a', tileX: 0, tileY: 0, offsetX: 0, offsetY: 0, tangentFactor: 1 },
-                        { id: 'b', tileX: 2, tileY: 0, offsetX: 0, offsetY: 0, tangentFactor: 1 },
-                        { id: 'c', tileX: 2, tileY: 2, offsetX: 0, offsetY: 0, tangentFactor: 1 }
-                    ]
-                }
-            ];
+	        test('RoadEngineCompute: manual corner junction cuts segments and emits junction surface (AI 82)', () => {
+	            const roads = [
+	                {
+	                    id: 'r1',
+	                    name: 'CornerRoad',
+	                    lanesF: 1,
+	                    lanesB: 1,
+	                    points: [
+	                        { id: 'a', tileX: 0, tileY: 0, offsetU: 0, offsetV: 0, tangentFactor: 1 },
+	                        { id: 'b', tileX: 2, tileY: 0, offsetU: 0, offsetV: 0, tangentFactor: 1 },
+	                        { id: 'c', tileX: 2, tileY: 2, offsetU: 0, offsetV: 0, tangentFactor: 1 }
+	                    ]
+	                }
+	            ];
             const settings = {
                 origin: { x: 0, z: 0 },
                 tileSize: 24,
@@ -3770,7 +3770,7 @@ async function runTests() {
             }
         });
 
-        test('RoadDebugger: table hover/selection updates highlight state', () => {
+	        test('RoadDebugger: table hover/selection updates highlight state', () => {
             const engine = {
                 canvas: document.createElement('canvas'),
                 camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
@@ -3793,28 +3793,28 @@ async function runTests() {
                 const segId = (derived?.segments ?? []).find((s) => s?.roadId === roadId)?.id ?? null;
                 assertTrue(!!segId, 'Expected derived segment id.');
 
-                let roadRow = document.querySelector(`.road-debugger-road-row[data-road-id="${roadId}"]`);
-                assertTrue(!!roadRow, 'Expected road row.');
-                roadRow.dispatchEvent(new Event('mouseenter'));
-                assertEqual(view._hover.roadId, roadId, 'Expected hover road id to update.');
+	                let roadRow = document.querySelector(`.road-debugger-road-row[data-road-id="${roadId}"]`);
+	                assertTrue(!!roadRow, 'Expected road row.');
+	                roadRow.dispatchEvent(new Event('mouseenter'));
+	                assertEqual(view._hover.roadId, roadId, 'Expected hover road id to update.');
 
-                const exp = roadRow.querySelector('.road-debugger-expand');
-                exp.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+	                roadRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+	                assertEqual(view._selection.type, 'road', 'Expected road selection type.');
 
-                const segRow = document.querySelector(`.road-debugger-seg-row[data-segment-id="${segId}"]`);
-                assertTrue(!!segRow, 'Expected segment row after expand.');
-                segRow.dispatchEvent(new Event('mouseenter'));
-                assertEqual(view._hover.segmentId, segId, 'Expected hover segment id to update.');
+	                const segRow = document.querySelector(`.road-debugger-seg-row[data-segment-id="${segId}"]`);
+	                assertTrue(!!segRow, 'Expected segment row in detail panel.');
+	                segRow.dispatchEvent(new Event('mouseenter'));
+	                assertEqual(view._hover.segmentId, segId, 'Expected hover segment id to update.');
 
-                segRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-                assertEqual(view._selection.type, 'segment', 'Expected segment selection type.');
-                assertEqual(view._selection.segmentId, segId, 'Expected segment selection id.');
+	                segRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+	                assertEqual(view._selection.type, 'segment', 'Expected segment selection type.');
+	                assertEqual(view._selection.segmentId, segId, 'Expected segment selection id.');
             } finally {
                 view.exit();
             }
         });
 
-        test('RoadDebugger: lane config edits update derived widths', () => {
+	        test('RoadDebugger: lane config edits update derived widths', () => {
             const engine = {
                 canvas: document.createElement('canvas'),
                 camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
@@ -3833,32 +3833,36 @@ async function runTests() {
                 const roadId = view.getRoads()[0].id;
                 const before = view.getDerived().segments.find((s) => s?.roadId === roadId);
                 assertTrue(!!before, 'Expected derived segment.');
-                assertNear(before.asphaltObb.halfWidthRight, 5.28, 1e-6, 'Expected initial right half-width for lanesF=1.');
-                assertNear(before.asphaltObb.halfWidthLeft, 5.28, 1e-6, 'Expected initial left half-width for lanesB=1.');
+	                assertNear(before.asphaltObb.halfWidthRight, 5.28, 1e-6, 'Expected initial right half-width for lanesF=1.');
+	                assertNear(before.asphaltObb.halfWidthLeft, 5.28, 1e-6, 'Expected initial left half-width for lanesB=1.');
 
-                let roadRow = document.querySelector(`.road-debugger-road-row[data-road-id="${roadId}"]`);
-                assertTrue(!!roadRow, 'Expected road row.');
-                let laneInputs = roadRow.querySelectorAll('.road-debugger-lane-input');
-                assertEqual(laneInputs.length, 2, 'Expected two lane inputs (F/B).');
+	                const roadRow = document.querySelector(`.road-debugger-road-row[data-road-id="${roadId}"]`);
+	                assertTrue(!!roadRow, 'Expected road row.');
+	                roadRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+	                assertEqual(view._selection?.type, 'road', 'Expected road selection.');
 
-                laneInputs[0].value = '3';
-                laneInputs[0].dispatchEvent(new Event('change'));
-                const afterF = view.getDerived().segments.find((s) => s?.roadId === roadId);
-                assertNear(afterF.asphaltObb.halfWidthRight, 14.88, 1e-6, 'Expected right half-width to update for lanesF=3.');
+	                const editor = document.querySelector('.road-debugger-editor');
+	                assertTrue(!!editor, 'Expected bottom editor panel.');
+	                const getLaneInputs = () => Array.from(editor.querySelectorAll('.road-debugger-editor-content input.road-debugger-editor-number'));
+	                let laneInputs = getLaneInputs();
+	                assertEqual(laneInputs.length, 2, 'Expected lanesF + lanesB number inputs.');
 
-                roadRow = document.querySelector(`.road-debugger-road-row[data-road-id="${roadId}"]`);
-                laneInputs = roadRow.querySelectorAll('.road-debugger-lane-input');
-                laneInputs[1].value = '2';
-                laneInputs[1].dispatchEvent(new Event('change'));
-                const afterB = view.getDerived().segments.find((s) => s?.roadId === roadId);
-                assertNear(afterB.asphaltObb.halfWidthLeft, 10.08, 1e-6, 'Expected left half-width to update for lanesB=2.');
+	                laneInputs[0].value = '3';
+	                laneInputs[0].dispatchEvent(new Event('change'));
+	                const afterF = view.getDerived().segments.find((s) => s?.roadId === roadId);
+	                assertNear(afterF.asphaltObb.halfWidthRight, 14.88, 1e-6, 'Expected right half-width to update for lanesF=3.');
 
-                roadRow = document.querySelector(`.road-debugger-road-row[data-road-id="${roadId}"]`);
-                laneInputs = roadRow.querySelectorAll('.road-debugger-lane-input');
-                laneInputs[1].value = '0';
-                laneInputs[1].dispatchEvent(new Event('change'));
-                const afterB0 = view.getDerived().segments.find((s) => s?.roadId === roadId);
-                assertNear(afterB0.asphaltObb.halfWidthLeft, 0.48, 1e-6, 'Expected left half-width to update for lanesB=0 (one-way).');
+	                laneInputs = getLaneInputs();
+	                laneInputs[1].value = '2';
+	                laneInputs[1].dispatchEvent(new Event('change'));
+	                const afterB = view.getDerived().segments.find((s) => s?.roadId === roadId);
+	                assertNear(afterB.asphaltObb.halfWidthLeft, 10.08, 1e-6, 'Expected left half-width to update for lanesB=2.');
+
+	                laneInputs = getLaneInputs();
+	                laneInputs[1].value = '0';
+	                laneInputs[1].dispatchEvent(new Event('change'));
+	                const afterB0 = view.getDerived().segments.find((s) => s?.roadId === roadId);
+	                assertNear(afterB0.asphaltObb.halfWidthLeft, 0.48, 1e-6, 'Expected left half-width to update for lanesB=0 (one-way).');
             } finally {
                 view.exit();
             }
@@ -3871,7 +3875,7 @@ async function runTests() {
     try {
         const { RoadDebuggerView } = await import('/src/graphics/gui/road_debugger/RoadDebuggerView.js');
 
-        test('RoadDebugger: moving points updates tile coords across boundaries', () => {
+	        test('RoadDebugger: moving points updates tile coords across boundaries', () => {
             const engine = {
                 canvas: document.createElement('canvas'),
                 camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
@@ -3895,14 +3899,14 @@ async function runTests() {
             const ok = view.movePointToWorld(roadId, pointId, { x: ox + tileSize * 0.6, z: oz }, { snap: false });
             assertTrue(ok, 'Expected point move to apply.');
 
-            const moved = view.getRoads()[0].points.find((p) => p?.id === pointId);
-            assertEqual(moved.tileX, 1, 'Expected tileX to update after crossing boundary.');
-            assertEqual(moved.tileY, 0, 'Expected tileY to remain.');
-            assertNear(moved.offsetX, -0.4 * tileSize, 1e-6, 'Expected offsetX to be relative to new tile center.');
-            assertNear(moved.offsetY, 0, 1e-6, 'Expected offsetY to remain.');
-        });
+	            const moved = view.getRoads()[0].points.find((p) => p?.id === pointId);
+	            assertEqual(moved.tileX, 1, 'Expected tileX to update after crossing boundary.');
+	            assertEqual(moved.tileY, 0, 'Expected tileY to remain.');
+	            assertNear(moved.offsetU, -0.4, 1e-6, 'Expected offsetU to be relative to new tile center.');
+	            assertNear(moved.offsetV, 0, 1e-6, 'Expected offsetV to remain.');
+	        });
 
-        test('RoadDebugger: snapping produces only tile/10 positions and clamps inside tile', () => {
+	        test('RoadDebugger: snapping produces only tile/10 positions and clamps inside tile', () => {
             const engine = {
                 canvas: document.createElement('canvas'),
                 camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
@@ -3917,32 +3921,32 @@ async function runTests() {
             view.finishRoadDraft();
 
             const road = view.getRoads()[0];
-            const roadId = road.id;
-            const pointId = road.points[0].id;
-            const tileSize = view._tileSize;
-            const step = tileSize / 10;
-            const half = tileSize * 0.5;
-            const ox = view._origin.x;
-            const oz = view._origin.z;
+	            const roadId = road.id;
+	            const pointId = road.points[0].id;
+	            const step = 0.1;
+	            const half = 0.5;
+	            const ox = view._origin.x;
+	            const oz = view._origin.z;
 
-            view.movePointToWorld(roadId, pointId, { x: ox + 3.1, z: oz - 4.9 }, { snap: true });
-            let pt = view.getRoads()[0].points.find((p) => p?.id === pointId);
-            const ix = Math.round(pt.offsetX / step);
-            const iy = Math.round(pt.offsetY / step);
-            assertTrue(ix >= -5 && ix <= 5, 'Expected snap index X within [-5..5].');
-            assertTrue(iy >= -5 && iy <= 5, 'Expected snap index Y within [-5..5].');
-            assertNear(pt.offsetX, ix * step, 1e-6, 'Expected snapped offsetX to match grid.');
-            assertNear(pt.offsetY, iy * step, 1e-6, 'Expected snapped offsetY to match grid.');
-            assertTrue(Math.abs(pt.offsetX) <= half + 1e-6, 'Expected snapped offsetX within tile bounds.');
-            assertTrue(Math.abs(pt.offsetY) <= half + 1e-6, 'Expected snapped offsetY within tile bounds.');
+	            view.movePointToWorld(roadId, pointId, { x: ox + 3.1, z: oz - 4.9 }, { snap: true });
+	            let pt = view.getRoads()[0].points.find((p) => p?.id === pointId);
+	            const ix = Math.round(pt.offsetU / step);
+	            const iy = Math.round(pt.offsetV / step);
+	            assertTrue(ix >= -5 && ix <= 5, 'Expected snap index X within [-5..5].');
+	            assertTrue(iy >= -5 && iy <= 5, 'Expected snap index Y within [-5..5].');
+	            assertNear(pt.offsetU, ix * step, 1e-6, 'Expected snapped offsetU to match grid.');
+	            assertNear(pt.offsetV, iy * step, 1e-6, 'Expected snapped offsetV to match grid.');
+	            assertTrue(Math.abs(pt.offsetU) <= half + 1e-6, 'Expected snapped offsetU within tile bounds.');
+	            assertTrue(Math.abs(pt.offsetV) <= half + 1e-6, 'Expected snapped offsetV within tile bounds.');
 
-            view.movePointToWorld(roadId, pointId, { x: ox - tileSize * 100, z: oz - tileSize * 100 }, { snap: true });
-            pt = view.getRoads()[0].points.find((p) => p?.id === pointId);
-            assertEqual(pt.tileX, 0, 'Expected clamped tileX at map boundary.');
-            assertEqual(pt.tileY, 0, 'Expected clamped tileY at map boundary.');
-            assertNear(pt.offsetX, -half, 1e-6, 'Expected clamped offsetX inside tile bounds.');
-            assertNear(pt.offsetY, -half, 1e-6, 'Expected clamped offsetY inside tile bounds.');
-        });
+	            const tileSize = view._tileSize;
+	            view.movePointToWorld(roadId, pointId, { x: ox - tileSize * 100, z: oz - tileSize * 100 }, { snap: true });
+	            pt = view.getRoads()[0].points.find((p) => p?.id === pointId);
+	            assertEqual(pt.tileX, 0, 'Expected clamped tileX at map boundary.');
+	            assertEqual(pt.tileY, 0, 'Expected clamped tileY at map boundary.');
+	            assertNear(pt.offsetU, -half, 1e-6, 'Expected clamped offsetU inside tile bounds.');
+	            assertNear(pt.offsetV, -half, 1e-6, 'Expected clamped offsetV inside tile bounds.');
+	        });
 
         test('RoadDebugger: undo/redo reverts point moves deterministically', () => {
             const engine = {
@@ -4171,11 +4175,11 @@ async function runTests() {
             }
         });
 
-        test('RoadDebugger: markings toggle controls arrow/marking visibility', () => {
-            const engine = {
-                canvas: document.createElement('canvas'),
-                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
-                scene: new THREE.Scene(),
+	        test('RoadDebugger: markings toggle controls arrow/marking visibility', () => {
+	            const engine = {
+	                canvas: document.createElement('canvas'),
+	                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+	                scene: new THREE.Scene(),
                 clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
             };
 
@@ -4184,30 +4188,30 @@ async function runTests() {
             try {
                 view.startRoadDraft();
                 view.addDraftPointByTile(0, 0);
-                view.addDraftPointByTile(1, 0);
-                view.finishRoadDraft();
+	                view.addDraftPointByTile(1, 0);
+	                view.finishRoadDraft();
 
-                assertTrue(view._markingsGroup?.visible === false, 'Expected markings to be hidden by default.');
+	                const rows = Array.from(document.querySelectorAll('.road-debugger-row'));
+	                const markingsRow = rows.find((r) => r.textContent.includes('Markings')) ?? null;
+	                assertTrue(!!markingsRow, 'Expected Markings toggle row.');
+	                const input = markingsRow.querySelector('input[type="checkbox"]');
+	                assertTrue(!!input, 'Expected Markings checkbox input.');
 
-                const rows = Array.from(document.querySelectorAll('.road-debugger-row'));
-                const markingsRow = rows.find((r) => r.textContent.includes('Markings')) ?? null;
-                assertTrue(!!markingsRow, 'Expected Markings toggle row.');
-                const input = markingsRow.querySelector('input[type="checkbox"]');
-                assertTrue(!!input, 'Expected Markings checkbox input.');
+	                assertTrue(view._markingsGroup?.visible !== false, 'Expected markings to be visible by default.');
 
-                input.checked = true;
-                input.dispatchEvent(new Event('change'));
-                assertTrue(view._markingsGroup?.visible === true, 'Expected markings group to be visible after toggle on.');
-                assertTrue((view._markingLines?.length ?? 0) > 0, 'Expected lane marking line object.');
-                assertTrue((view._arrowMeshes?.length ?? 0) > 0, 'Expected lane arrow mesh object.');
+	                input.checked = false;
+	                input.dispatchEvent(new Event('change'));
+	                assertTrue(view._markingsGroup?.visible === false, 'Expected markings group to be hidden after toggle off.');
 
-                input.checked = false;
-                input.dispatchEvent(new Event('change'));
-                assertTrue(view._markingsGroup?.visible === false, 'Expected markings group to be hidden after toggle off.');
-            } finally {
-                view.exit();
-            }
-        });
+	                input.checked = true;
+	                input.dispatchEvent(new Event('change'));
+	                assertTrue(view._markingsGroup?.visible === true, 'Expected markings group to be visible after toggle on.');
+	                assertTrue((view._markingLines?.length ?? 0) > 0, 'Expected lane marking line object.');
+	                assertTrue((view._arrowMeshes?.length ?? 0) > 0, 'Expected lane arrow mesh object.');
+	            } finally {
+	                view.exit();
+	            }
+	        });
 
         test('RoadDebugger: distance-scaled edge thickness is automatic (Task 89)', () => {
             const engine = {
@@ -4218,37 +4222,38 @@ async function runTests() {
             };
 
             const view = new RoadDebuggerView(engine, { uiEnabled: false });
-            view.enter();
-            try {
-                view.startRoadDraft();
-                view.addDraftPointByTile(0, 0);
-                view.addDraftPointByTile(2, 0);
-                view.finishRoadDraft();
+	            view.enter();
+	            try {
+	                view.startRoadDraft();
+	                view.addDraftPointByTile(0, 0);
+	                view.addDraftPointByTile(2, 0);
+	                view.finishRoadDraft();
+	                view.setRenderOptions({ edges: true });
 
-                view._zoom = view._zoomMin;
-                view._syncOrbitCamera();
-                const asphaltNear = view._materials?.lineBase?.get?.('asphalt_edge_left') ?? null;
-                const laneNear = view._materials?.lineBase?.get?.('lane_edge_left') ?? null;
-                assertTrue(!!asphaltNear, 'Expected asphalt edge line material.');
-                assertTrue(!!laneNear, 'Expected lane edge line material.');
-                const nearAsphaltWidth = Number(asphaltNear.linewidth) || 0;
-                const nearLaneWidth = Number(laneNear.linewidth) || 0;
-                assertNear(nearAsphaltWidth, 4, 1e-6, 'Expected full asphalt edge thickness at near zoom.');
-                assertNear(nearLaneWidth, 2, 1e-6, 'Expected full lane edge thickness at near zoom.');
+	                view._zoom = view._zoomMin;
+	                view._syncOrbitCamera();
+		                const asphaltNear = view._materials?.lineBase?.get?.('asphalt_edge_left') ?? null;
+		                const laneNear = view._materials?.lineBase?.get?.('lane_edge_left') ?? null;
+	                assertTrue(!!asphaltNear, 'Expected asphalt edge line material.');
+	                assertTrue(!!laneNear, 'Expected lane edge line material.');
+	                const nearAsphaltWidth = Number(asphaltNear.linewidth) || 0;
+	                const nearLaneWidth = Number(laneNear.linewidth) || 0;
+	                assertNear(nearAsphaltWidth, 2, 1e-6, 'Expected full asphalt edge thickness at near zoom.');
+	                assertNear(nearLaneWidth, 2, 1e-6, 'Expected full lane edge thickness at near zoom.');
 
                 view._zoom = view._zoomMax;
                 view._syncOrbitCamera();
                 const asphaltFar = view._materials?.lineBase?.get?.('asphalt_edge_left') ?? null;
                 const laneFar = view._materials?.lineBase?.get?.('lane_edge_left') ?? null;
-                assertTrue(!!asphaltFar, 'Expected asphalt edge line material at far zoom.');
-                assertTrue(!!laneFar, 'Expected lane edge line material at far zoom.');
-                const farAsphaltWidth = Number(asphaltFar.linewidth) || 0;
-                const farLaneWidth = Number(laneFar.linewidth) || 0;
-                assertNear(farAsphaltWidth, 1, 1e-6, 'Expected thinner asphalt edges at far zoom.');
-                assertNear(farLaneWidth, 0.55, 1e-6, 'Expected thinner lane edges at far zoom.');
-                assertTrue(farLaneWidth < nearLaneWidth, 'Expected lane edges to scale down when zoomed out.');
-            } finally {
-                view.exit();
+	                assertTrue(!!asphaltFar, 'Expected asphalt edge line material at far zoom.');
+	                assertTrue(!!laneFar, 'Expected lane edge line material at far zoom.');
+	                const farAsphaltWidth = Number(asphaltFar.linewidth) || 0;
+	                const farLaneWidth = Number(laneFar.linewidth) || 0;
+	                assertNear(farAsphaltWidth, 0.55, 1e-6, 'Expected thinner asphalt edges at far zoom.');
+	                assertNear(farLaneWidth, 0.55, 1e-6, 'Expected thinner lane edges at far zoom.');
+	                assertTrue(farLaneWidth < nearLaneWidth, 'Expected lane edges to scale down when zoomed out.');
+	            } finally {
+	                view.exit();
             }
         });
 
@@ -4758,38 +4763,41 @@ async function runTests() {
             }
         });
 
-        test('RoadDebugger: draft preview line shows and clears (Task 72)', () => {
-            const engine = {
-                canvas: document.createElement('canvas'),
-                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+	        test('RoadDebugger: draft preview line shows and clears (Task 72)', () => {
+	            const engine = {
+	                canvas: document.createElement('canvas'),
+	                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
                 scene: new THREE.Scene(),
                 clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
             };
 
             const view = new RoadDebuggerView(engine, { uiEnabled: false });
-            view.enter();
-            try {
-                view.startRoadDraft();
-                view.addDraftPointByTile(0, 0);
+	            view.enter();
+	            try {
+	                view.startRoadDraft();
+	                view.addDraftPointByTile(0, 0);
 
-                const world = {
-                    x: (Number(view._origin?.x) || 0) + (Number(view._tileSize) || 24) * 0.35,
-                    z: (Number(view._origin?.z) || 0) + (Number(view._tileSize) || 24) * 0.20
-                };
+	                const world = {
+	                    x: (Number(view._origin?.x) || 0) + (Number(view._tileSize) || 24) * 0.55,
+	                    z: (Number(view._origin?.z) || 0) + (Number(view._tileSize) || 24) * 0.20
+	                };
 
-                assertTrue(view.updateDraftPreviewFromWorld(world) === true, 'Expected preview update to succeed with a 1-point draft.');
-                assertTrue(!!view._draftPreviewLine && view._draftPreviewLine.visible === true, 'Expected draft preview line to be visible.');
+	                assertTrue(view.updateDraftPreviewFromWorld(world) === true, 'Expected preview update to succeed with a 1-point draft.');
+	                assertTrue(!!view._draftPreviewLine && view._draftPreviewLine.visible === true, 'Expected draft preview line to be visible.');
 
-                const res = view._worldToTilePoint(world.x, world.z, { snap: true });
-                const attr = view._draftPreviewLine?.geometry?.getAttribute?.('position') ?? null;
-                const positions = attr?.array ?? null;
-                assertTrue(!!res && !!positions && positions.length >= 6, 'Expected preview geometry positions to exist.');
-                assertTrue(Math.abs((positions[3] ?? 0) - res.x) < 1e-6, 'Expected preview endpoint X to match snapped tile position.');
-                assertTrue(Math.abs((positions[5] ?? 0) - res.z) < 1e-6, 'Expected preview endpoint Z to match snapped tile position.');
+	                const res = view._worldToTilePoint(world.x, world.z, { snap: false });
+	                const attr = view._draftPreviewLine?.geometry?.getAttribute?.('position') ?? null;
+	                const positions = attr?.array ?? null;
+	                assertTrue(!!res && !!positions && positions.length >= 6, 'Expected preview geometry positions to exist.');
+	                const tileSize = Number(view._tileSize) || 24;
+	                const expectedX = (Number(view._origin?.x) || 0) + (Number(res.tileX) || 0) * tileSize;
+	                const expectedZ = (Number(view._origin?.z) || 0) + (Number(res.tileY) || 0) * tileSize;
+	                assertTrue(Math.abs((positions[3] ?? 0) - expectedX) < 1e-6, 'Expected preview endpoint X to match the hovered tile center.');
+	                assertTrue(Math.abs((positions[5] ?? 0) - expectedZ) < 1e-6, 'Expected preview endpoint Z to match the hovered tile center.');
 
-                view.cancelRoadDraft();
-                assertTrue(view._draftPreviewLine.visible === false, 'Expected preview line to clear on cancel.');
-            } finally {
+	                view.cancelRoadDraft();
+	                assertTrue(view._draftPreviewLine.visible === false, 'Expected preview line to clear on cancel.');
+	            } finally {
                 view.exit();
             }
         });
@@ -4825,26 +4833,27 @@ async function runTests() {
             }
         });
 
-        test('RoadDebugger: segment row hover highlights only that segment (Task 78)', () => {
-            const engine = {
-                canvas: document.createElement('canvas'),
-                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+	        test('RoadDebugger: segment row hover highlights only that segment (Task 78)', () => {
+	            const engine = {
+	                canvas: document.createElement('canvas'),
+	                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
                 scene: new THREE.Scene(),
                 clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
             };
 
             const view = new RoadDebuggerView(engine, { uiEnabled: false });
-            view.enter();
-            try {
-                view.startRoadDraft();
-                view.addDraftPointByTile(0, 0);
-                view.addDraftPointByTile(2, 0);
-                view.addDraftPointByTile(2, 2);
-                view.finishRoadDraft();
+	            view.enter();
+	            try {
+	                view.startRoadDraft();
+	                view.addDraftPointByTile(0, 0);
+	                view.addDraftPointByTile(2, 0);
+	                view.addDraftPointByTile(2, 2);
+	                view.finishRoadDraft();
+	                view.setRenderOptions({ edges: true });
 
-                const segs = view.getDerived()?.segments ?? [];
-                assertTrue(segs.length >= 2, 'Expected multiple derived segments.');
-                const segA = segs[0];
+	                const segs = view.getDerived()?.segments ?? [];
+	                assertTrue(segs.length >= 2, 'Expected multiple derived segments.');
+	                const segA = segs[0];
                 const segB = segs[1];
                 assertTrue(!!segA?.id && !!segB?.id, 'Expected segment ids.');
 
@@ -4872,10 +4881,10 @@ async function runTests() {
             }
         });
 
-        test('RoadDebugger: lanesB=0 produces one-way overlays (Task 81)', () => {
-            const engine = {
-                canvas: document.createElement('canvas'),
-                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+	        test('RoadDebugger: lanesB=0 produces one-way overlays (Task 81)', () => {
+	            const engine = {
+	                canvas: document.createElement('canvas'),
+	                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
                 scene: new THREE.Scene(),
                 clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
             };
@@ -4888,14 +4897,15 @@ async function runTests() {
                 view.addDraftPointByTile(2, 0);
                 view.finishRoadDraft();
 
-                const roadId = view.getRoads()?.[0]?.id ?? null;
-                assertTrue(!!roadId, 'Expected road id.');
-                view.setRoadLaneConfig(roadId, { lanesF: 2, lanesB: 0 });
-                assertEqual(view.getRoads()?.[0]?.lanesB, 0, 'Expected lanesB to allow 0 for one-way roads.');
+	                const roadId = view.getRoads()?.[0]?.id ?? null;
+	                assertTrue(!!roadId, 'Expected road id.');
+	                view.setRoadLaneConfig(roadId, { lanesF: 2, lanesB: 0 });
+	                assertEqual(view.getRoads()?.[0]?.lanesB, 0, 'Expected lanesB to allow 0 for one-way roads.');
+	                view.setRenderOptions({ centerlines: true, edges: true });
 
-                const derived = view.getDerived();
-                const seg = derived?.segments?.[0] ?? null;
-                assertTrue(!!seg?.id, 'Expected derived segment.');
+	                const derived = view.getDerived();
+	                const seg = derived?.segments?.[0] ?? null;
+	                assertTrue(!!seg?.id, 'Expected derived segment.');
                 const kinds = (derived?.primitives ?? [])
                     .filter((p) => p?.type === 'polyline' && p?.segmentId === seg.id)
                     .map((p) => p.kind);
@@ -5341,10 +5351,10 @@ async function runTests() {
     try {
         const { RoadDebuggerView } = await import('/src/graphics/gui/road_debugger/RoadDebuggerView.js');
 
-        test('RoadDebugger: divider vs direction centerline toggles are independent', () => {
-            const engine = {
-                canvas: document.createElement('canvas'),
-                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+	        test('RoadDebugger: divider vs direction centerline toggles are independent', () => {
+	            const engine = {
+	                canvas: document.createElement('canvas'),
+	                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
                 scene: new THREE.Scene(),
                 clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
             };
@@ -5365,57 +5375,68 @@ async function runTests() {
                         return row.querySelector('input[type="checkbox"]');
                     }
                     return null;
-                };
+	                };
 
-                const dividerToggle = findToggle('Divider centerline');
-                const directionToggle = findToggle('Direction centerlines');
-                assertTrue(!!dividerToggle, 'Expected divider centerline toggle.');
-                assertTrue(!!directionToggle, 'Expected direction centerlines toggle.');
+	                const dividerToggle = findToggle('Divider');
+	                const directionToggle = findToggle('Direction lines');
+	                assertTrue(!!dividerToggle, 'Expected divider toggle.');
+	                assertTrue(!!directionToggle, 'Expected direction lines toggle.');
 
-                const kinds = () => (view.getDerived()?.primitives ?? [])
-                    .filter((p) => p?.type === 'polyline')
-                    .map((p) => p?.kind);
+	                const kinds = () => (view.getDerived()?.primitives ?? [])
+	                    .filter((p) => p?.type === 'polyline')
+	                    .map((p) => p?.kind);
 
-                assertTrue(kinds().includes('centerline'), 'Expected divider centerline primitives by default.');
-                assertTrue(kinds().includes('forward_centerline'), 'Expected forward direction centerline primitives by default.');
-                assertTrue(kinds().includes('backward_centerline'), 'Expected backward direction centerline primitives by default.');
+	                assertFalse(kinds().includes('centerline'), 'Expected divider centerline primitives disabled by default.');
+	                assertFalse(kinds().includes('forward_centerline'), 'Expected forward direction centerline primitives disabled by default.');
+	                assertFalse(kinds().includes('backward_centerline'), 'Expected backward direction centerline primitives disabled by default.');
 
-                dividerToggle.checked = false;
-                dividerToggle.dispatchEvent(new Event('change', { bubbles: true }));
-                assertFalse(kinds().includes('centerline'), 'Expected divider centerline primitives hidden after toggle.');
-                assertTrue(kinds().includes('forward_centerline'), 'Expected direction centerlines to remain visible when divider is hidden.');
+	                dividerToggle.checked = true;
+	                dividerToggle.dispatchEvent(new Event('change', { bubbles: true }));
+	                directionToggle.checked = true;
+	                directionToggle.dispatchEvent(new Event('change', { bubbles: true }));
+	                assertTrue(kinds().includes('centerline'), 'Expected divider centerline primitives after toggle on.');
+	                assertTrue(kinds().includes('forward_centerline'), 'Expected forward direction centerline primitives after toggle on.');
+	                assertTrue(kinds().includes('backward_centerline'), 'Expected backward direction centerline primitives after toggle on.');
 
-                dividerToggle.checked = true;
-                dividerToggle.dispatchEvent(new Event('change', { bubbles: true }));
-                directionToggle.checked = false;
-                directionToggle.dispatchEvent(new Event('change', { bubbles: true }));
-                assertTrue(kinds().includes('centerline'), 'Expected divider centerline primitives visible after re-enable.');
-                assertFalse(kinds().includes('forward_centerline'), 'Expected forward direction centerline primitives hidden after toggle.');
-                assertFalse(kinds().includes('backward_centerline'), 'Expected backward direction centerline primitives hidden after toggle.');
-            } finally {
-                view.exit();
+	                dividerToggle.checked = false;
+	                dividerToggle.dispatchEvent(new Event('change', { bubbles: true }));
+	                assertFalse(kinds().includes('centerline'), 'Expected divider centerline primitives hidden after toggle.');
+	                assertTrue(kinds().includes('forward_centerline'), 'Expected direction centerlines to remain visible when divider is hidden.');
+
+	                dividerToggle.checked = true;
+	                dividerToggle.dispatchEvent(new Event('change', { bubbles: true }));
+	                assertTrue(kinds().includes('centerline'), 'Expected divider centerline primitives visible after re-enable.');
+	                assertTrue(kinds().includes('forward_centerline'), 'Expected direction centerlines to remain visible when divider is re-enabled.');
+
+	                directionToggle.checked = false;
+	                directionToggle.dispatchEvent(new Event('change', { bubbles: true }));
+	                assertFalse(kinds().includes('forward_centerline'), 'Expected forward direction centerline primitives hidden after toggle.');
+	                assertFalse(kinds().includes('backward_centerline'), 'Expected backward direction centerline primitives hidden after toggle.');
+	            } finally {
+	                view.exit();
             }
         });
 
-        test('RoadDebugger: direction centerlines share a distinct color', () => {
-            const engine = {
-                canvas: document.createElement('canvas'),
-                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+	        test('RoadDebugger: direction centerlines share a distinct color', () => {
+	            const engine = {
+	                canvas: document.createElement('canvas'),
+	                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
                 scene: new THREE.Scene(),
                 clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
             };
 
             const view = new RoadDebuggerView(engine, { uiEnabled: false });
-            view.enter();
-            try {
-                view.startRoadDraft();
-                view.addDraftPointByTile(0, 0);
-                view.addDraftPointByTile(2, 0);
-                view.finishRoadDraft();
+	            view.enter();
+	            try {
+	                view.startRoadDraft();
+	                view.addDraftPointByTile(0, 0);
+	                view.addDraftPointByTile(2, 0);
+	                view.finishRoadDraft();
+	                view.setRenderOptions({ centerlines: true });
 
-                const matCenter = view._materials?.lineBase?.get?.('centerline') ?? null;
-                const matF = view._materials?.lineBase?.get?.('forward_centerline') ?? null;
-                const matB = view._materials?.lineBase?.get?.('backward_centerline') ?? null;
+	                const matCenter = view._materials?.lineBase?.get?.('centerline') ?? null;
+	                const matF = view._materials?.lineBase?.get?.('forward_centerline') ?? null;
+	                const matB = view._materials?.lineBase?.get?.('backward_centerline') ?? null;
                 assertTrue(!!matCenter && !!matF && !!matB, 'Expected centerline and direction line materials.');
 
                 const c = matCenter.color?.getHex?.() ?? null;
@@ -5526,18 +5547,14 @@ async function runTests() {
                 assertEqual(view._hover?.roadId, roadId, 'Expected hover roadId from table hover.');
                 assertEqual(view._hover?.segmentId, null, 'Expected no hovered segment when hovering road row.');
 
-                roadRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-                assertEqual(view._selection?.type, 'road', 'Expected selection type road from table click.');
-                assertEqual(view._selection?.roadId, roadId, 'Expected selected roadId from table click.');
+	                roadRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+	                assertEqual(view._selection?.type, 'road', 'Expected selection type road from table click.');
+	                assertEqual(view._selection?.roadId, roadId, 'Expected selected roadId from table click.');
 
-                const exp = roadRow.querySelector('.road-debugger-expand');
-                assertTrue(!!exp, 'Expected expand button.');
-                exp.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-
-                const segId = view.getDerived()?.segments?.[0]?.id ?? null;
-                assertTrue(!!segId, 'Expected derived segment id.');
-                const segRow = document.querySelector(`.road-debugger-seg-row[data-segment-id="${segId}"]`);
-                assertTrue(!!segRow, 'Expected segment row after expand.');
+	                const segId = view.getDerived()?.segments?.[0]?.id ?? null;
+	                assertTrue(!!segId, 'Expected derived segment id.');
+	                const segRow = document.querySelector(`.road-debugger-seg-row[data-segment-id="${segId}"]`);
+	                assertTrue(!!segRow, 'Expected segment row in detail panel.');
 
                 segRow.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
                 assertEqual(view._hover?.segmentId, segId, 'Expected hovered segmentId from table hover.');
@@ -5549,7 +5566,7 @@ async function runTests() {
             }
         });
 
-        test('RoadDebugger: viewport hover/selection syncs to table highlight', () => {
+	        test('RoadDebugger: viewport hover/selection syncs to table highlight', () => {
             const engine = {
                 canvas: document.createElement('canvas'),
                 camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
@@ -5565,26 +5582,29 @@ async function runTests() {
                 view.addDraftPointByTile(3, 0);
                 view.finishRoadDraft();
 
-                const roadId = view.getRoads()[0].id;
-                const segId = view.getDerived()?.segments?.[0]?.id ?? null;
-                assertTrue(!!segId, 'Expected derived segment id.');
+	                const roadId = view.getRoads()[0].id;
+	                const segId = view.getDerived()?.segments?.[0]?.id ?? null;
+	                assertTrue(!!segId, 'Expected derived segment id.');
 
-                view.setHoverSegment(segId);
-                const roadRow = document.querySelector(`.road-debugger-road-row[data-road-id="${roadId}"]`);
-                assertTrue(!!roadRow, 'Expected road row.');
-                assertTrue(roadRow.classList.contains('is-hovered'), 'Expected road row hovered class from viewport hover.');
+	                const roadRow = document.querySelector(`.road-debugger-road-row[data-road-id="${roadId}"]`);
+	                assertTrue(!!roadRow, 'Expected road row.');
+	                roadRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+	                assertTrue(roadRow.classList.contains('is-selected'), 'Expected road row selected class after selection.');
 
-                const segRow = document.querySelector(`.road-debugger-seg-row[data-segment-id="${segId}"]`);
-                assertTrue(!!segRow, 'Expected segment row to be visible after viewport hover.');
-                assertTrue(segRow.classList.contains('is-hovered'), 'Expected segment row hovered class from viewport hover.');
+	                view.setHoverSegment(segId);
+	                let segRow = document.querySelector(`.road-debugger-seg-row[data-segment-id="${segId}"]`);
+	                assertTrue(!!segRow, 'Expected segment row in detail panel.');
+	                assertTrue(segRow.classList.contains('is-hovered'), 'Expected segment row hovered class from viewport hover.');
 
-                view.selectSegment(segId);
-                assertTrue(roadRow.classList.contains('is-selected'), 'Expected road row selected class from viewport selection.');
-                assertTrue(segRow.classList.contains('is-selected'), 'Expected segment row selected class from viewport selection.');
-            } finally {
-                view.exit();
-            }
-        });
+	                view.selectSegment(segId);
+	                assertTrue(roadRow.classList.contains('is-selected'), 'Expected road row selected class from viewport selection.');
+	                segRow = document.querySelector(`.road-debugger-seg-row[data-segment-id="${segId}"]`);
+	                assertTrue(!!segRow, 'Expected segment row in detail panel.');
+	                assertTrue(segRow.classList.contains('is-selected'), 'Expected segment row selected class from viewport selection.');
+	            } finally {
+	                view.exit();
+	            }
+	        });
     } catch (e) {
         console.log('⏭️  Road Debugger hover/selection sync tests skipped:', e.message);
     }
@@ -5593,7 +5613,7 @@ async function runTests() {
     try {
         const { RoadDebuggerView } = await import('/src/graphics/gui/road_debugger/RoadDebuggerView.js');
 
-        test('RoadDebugger: road row is single-line and supports delete', () => {
+	        test('RoadDebugger: road row is single-line and supports delete', () => {
             const engine = {
                 canvas: document.createElement('canvas'),
                 camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
@@ -5618,22 +5638,25 @@ async function runTests() {
                 assertEqual(roads.length, 2, 'Expected 2 roads before delete.');
                 const roadId = roads[0].id;
 
-                const roadRow = document.querySelector(`.road-debugger-road-row[data-road-id="${roadId}"]`);
-                assertTrue(!!roadRow, 'Expected road row.');
-                assertTrue(roadRow.classList.contains('road-debugger-road-row-single'), 'Expected single-line road row class.');
+	                const roadRow = document.querySelector(`.road-debugger-road-row[data-road-id="${roadId}"]`);
+	                assertTrue(!!roadRow, 'Expected road row.');
+	                assertTrue(roadRow.classList.contains('road-debugger-road-row-single'), 'Expected single-line road row class.');
 
-                const del = roadRow.querySelector('.road-debugger-road-delete');
-                assertTrue(!!del, 'Expected delete button.');
-                del.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+	                roadRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+	                const editor = document.querySelector('.road-debugger-editor');
+	                assertTrue(!!editor, 'Expected bottom editor panel.');
+	                const del = Array.from(editor.querySelectorAll('button')).find((b) => (b.textContent || '').trim() === 'Delete road') ?? null;
+	                assertTrue(!!del, 'Expected delete button.');
+	                del.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
-                assertEqual(view.getRoads().length, 1, 'Expected road count to decrease after delete.');
-                assertFalse(!!document.querySelector(`.road-debugger-road-row[data-road-id="${roadId}"]`), 'Expected deleted road row to be removed.');
+	                assertEqual(view.getRoads().length, 1, 'Expected road count to decrease after delete.');
+	                assertFalse(!!document.querySelector(`.road-debugger-road-row[data-road-id="${roadId}"]`), 'Expected deleted road row to be removed.');
             } finally {
                 view.exit();
             }
         });
 
-        test('RoadDebugger: visibility toggle hides rendering but keeps derived geometry stable', () => {
+	        test('RoadDebugger: visibility toggle hides rendering but keeps derived geometry stable', () => {
             const engine = {
                 canvas: document.createElement('canvas'),
                 camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
@@ -5660,16 +5683,20 @@ async function runTests() {
 
                 const before = JSON.stringify(view.getDerived());
                 const beforeHiddenAsphalt = (view._asphaltMeshes ?? []).filter((m) => m?.userData?.roadId === hideId).length;
-                const beforeKeepAsphalt = (view._asphaltMeshes ?? []).filter((m) => m?.userData?.roadId === keepId).length;
-                assertTrue(beforeHiddenAsphalt > 0, 'Expected asphalt meshes for road to hide.');
-                assertTrue(beforeKeepAsphalt > 0, 'Expected asphalt meshes for road to keep.');
+	                const beforeKeepAsphalt = (view._asphaltMeshes ?? []).filter((m) => m?.userData?.roadId === keepId).length;
+	                assertTrue(beforeHiddenAsphalt > 0, 'Expected asphalt meshes for road to hide.');
+	                assertTrue(beforeKeepAsphalt > 0, 'Expected asphalt meshes for road to keep.');
 
-                const hideRow = document.querySelector(`.road-debugger-road-row[data-road-id="${hideId}"]`);
-                assertTrue(!!hideRow, 'Expected road row for visibility toggle.');
-                const vis = hideRow.querySelector('.road-debugger-road-visible');
-                assertTrue(!!vis, 'Expected visibility checkbox.');
-                vis.checked = false;
-                vis.dispatchEvent(new Event('change', { bubbles: true }));
+	                const hideRow = document.querySelector(`.road-debugger-road-row[data-road-id="${hideId}"]`);
+	                assertTrue(!!hideRow, 'Expected road row for visibility toggle.');
+	                hideRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+	                const editor = document.querySelector('.road-debugger-editor');
+	                assertTrue(!!editor, 'Expected bottom editor panel.');
+	                const visibleField = Array.from(editor.querySelectorAll('.road-debugger-editor-field')).find((row) => (row.querySelector('.road-debugger-editor-field-label')?.textContent || '').trim() === 'visible') ?? null;
+	                const vis = visibleField?.querySelector?.('input[type="checkbox"]') ?? null;
+	                assertTrue(!!vis, 'Expected visibility checkbox.');
+	                vis.checked = false;
+	                vis.dispatchEvent(new Event('change', { bubbles: true }));
 
                 assertEqual(JSON.stringify(view.getDerived()), before, 'Expected derived output to be unchanged after visibility toggle.');
 
@@ -5705,7 +5732,7 @@ async function runTests() {
                 const title = panel.querySelector('.road-debugger-info-title');
                 const body = panel.querySelector('.road-debugger-info-body');
                 assertTrue(!!title && !!body, 'Expected info panel title/body.');
-                assertEqual((body.textContent || '').trim(), '—', 'Expected placeholder info when nothing highlighted.');
+                assertEqual((body.textContent || '').trim(), 'Hovered\n—\n\nSelected\n—', 'Expected placeholder sections when nothing highlighted.');
 
                 view.startRoadDraft();
                 view.addDraftPointByTile(0, 0);
@@ -5713,21 +5740,21 @@ async function runTests() {
                 view.finishRoadDraft();
 
                 const roadId = view.getRoads()[0].id;
+                const roadName = view.getRoads()[0].name;
                 const segId = view.getDerived().segments[0].id;
 
                 view.setHoverRoad(roadId);
-                assertTrue((title.textContent || '').includes('Hovered'), 'Expected hover to drive info title.');
-                assertTrue((body.textContent || '').includes(roadId), 'Expected hovered road id in info body.');
+                assertTrue((title.textContent || '').includes('Hover'), 'Expected info panel title to indicate hover panel.');
+                assertTrue((body.textContent || '').includes(`road: ${roadName}`), 'Expected hovered road name in info body.');
 
                 view.selectSegment(segId);
-                assertTrue((title.textContent || '').includes('Selected'), 'Expected selection to drive info title.');
-                assertTrue((body.textContent || '').includes(`id: ${segId}`), 'Expected selected segment id in info body.');
+                assertTrue((body.textContent || '').includes(`segment: ${segId}`), 'Expected selected segment id in info body.');
             } finally {
                 view.exit();
             }
         });
 
-        test('RoadDebuggerUI: selection info overrides hovered info', () => {
+        test('RoadDebuggerUI: hover and selection sections are independent', () => {
             const engine = {
                 canvas: document.createElement('canvas'),
                 camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
@@ -5752,20 +5779,31 @@ async function runTests() {
                 assertTrue(roads.length >= 2, 'Expected at least two roads for override test.');
                 const hoverId = roads[0].id;
                 const selectedId = roads[1].id;
+                const hoverName = roads[0].name;
+                const selectedName = roads[1].name;
 
                 const panel = document.querySelector('.road-debugger-info-panel');
                 const title = panel?.querySelector?.('.road-debugger-info-title') ?? null;
                 const body = panel?.querySelector?.('.road-debugger-info-body') ?? null;
                 assertTrue(!!panel && !!title && !!body, 'Expected info panel elements.');
 
+                const sections = () => {
+                    const raw = String(body.textContent ?? '');
+                    const parts = raw.split('\n\nSelected\n');
+                    const hovered = parts[0]?.replace(/^Hovered\n/, '')?.trim?.() ?? '';
+                    const selected = parts[1]?.trim?.() ?? '';
+                    return { hovered, selected };
+                };
+
                 view.setHoverRoad(hoverId);
-                assertTrue((body.textContent || '').includes(hoverId), 'Expected hovered road id in info body.');
+                assertTrue(sections().hovered.includes(hoverName), 'Expected hovered road name in hover section.');
+                assertEqual(sections().selected, '—', 'Expected selected section placeholder before selecting.');
 
                 view.selectRoad(selectedId);
                 view.setHoverRoad(hoverId);
-                assertTrue((title.textContent || '').includes('Selected'), 'Expected selection to override hover in title.');
-                assertTrue((body.textContent || '').includes(selectedId), 'Expected selected road id in info body.');
-                assertFalse((body.textContent || '').includes(hoverId), 'Expected hovered road id to not override selected info.');
+                assertTrue((title.textContent || '').includes('Hover'), 'Expected info panel title to indicate hover panel.');
+                assertTrue(sections().hovered.includes(hoverName), 'Expected hover section to continue reflecting hover target.');
+                assertTrue(sections().selected.includes(selectedName), 'Expected selected section to reflect the selected road.');
             } finally {
                 view.exit();
             }
@@ -5891,29 +5929,29 @@ async function runTests() {
         const { normalizeRoadDebuggerTileOffsetBoundary } = await import('/src/app/road_debugger/RoadDebuggerTileOffset.js');
         const { RoadDebuggerView } = await import('/src/graphics/gui/road_debugger/RoadDebuggerView.js');
 
-        test('RoadDebuggerTileOffset: +half boundary normalizes to next tile -half (both axes)', () => {
-            const tileSize = 24;
-            const half = tileSize * 0.5;
+	        test('RoadDebuggerTileOffset: +half boundary normalizes to next tile -half (both axes)', () => {
+	            const tileSize = 24;
+	            const half = 0.5;
 
-            const x = normalizeRoadDebuggerTileOffsetBoundary({ tileX: 7, tileY: 8, offsetX: half, offsetY: 0 }, { tileSize });
-            assertEqual(x.tileX, 8, 'tileX should increment when offsetX is +half.');
-            assertNear(x.offsetX, -half, 1e-9, 'offsetX should normalize to -half.');
+	            const x = normalizeRoadDebuggerTileOffsetBoundary({ tileX: 7, tileY: 8, offsetU: half, offsetV: 0 }, { tileSize });
+	            assertEqual(x.tileX, 8, 'tileX should increment when offsetU is +half.');
+	            assertNear(x.offsetU, -half, 1e-9, 'offsetU should normalize to -half.');
 
-            const y = normalizeRoadDebuggerTileOffsetBoundary({ tileX: 7, tileY: 8, offsetX: 0, offsetY: half }, { tileSize });
-            assertEqual(y.tileY, 9, 'tileY should increment when offsetY is +half.');
-            assertNear(y.offsetY, -half, 1e-9, 'offsetY should normalize to -half.');
-        });
+	            const y = normalizeRoadDebuggerTileOffsetBoundary({ tileX: 7, tileY: 8, offsetU: 0, offsetV: half }, { tileSize });
+	            assertEqual(y.tileY, 9, 'tileY should increment when offsetV is +half.');
+	            assertNear(y.offsetV, -half, 1e-9, 'offsetV should normalize to -half.');
+	        });
 
-        test('RoadDebuggerTileOffset: boundary-equivalent representations normalize deterministically', () => {
-            const tileSize = 24;
-            const half = tileSize * 0.5;
+	        test('RoadDebuggerTileOffset: boundary-equivalent representations normalize deterministically', () => {
+	            const tileSize = 24;
+	            const half = 0.5;
 
-            const a = normalizeRoadDebuggerTileOffsetBoundary({ tileX: 7, tileY: 8, offsetX: 0, offsetY: half }, { tileSize });
-            const b = normalizeRoadDebuggerTileOffsetBoundary({ tileX: 7, tileY: 9, offsetX: 0, offsetY: -half }, { tileSize });
-            assertEqual(JSON.stringify(a), JSON.stringify(b), 'Expected boundary-equivalent points to normalize identically.');
-        });
+	            const a = normalizeRoadDebuggerTileOffsetBoundary({ tileX: 7, tileY: 8, offsetU: 0, offsetV: half }, { tileSize });
+	            const b = normalizeRoadDebuggerTileOffsetBoundary({ tileX: 7, tileY: 9, offsetU: 0, offsetV: -half }, { tileSize });
+	            assertEqual(JSON.stringify(a), JSON.stringify(b), 'Expected boundary-equivalent points to normalize identically.');
+	        });
 
-        test('RoadDebuggerView: snapping to +half boundary returns canonical next-tile -half', () => {
+	        test('RoadDebuggerView: snapping to +half boundary returns canonical next-tile -half', () => {
             const engine = {
                 canvas: document.createElement('canvas'),
                 camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
@@ -5923,25 +5961,25 @@ async function runTests() {
 
             const view = new RoadDebuggerView(engine, { uiEnabled: false });
             view.enter();
-            try {
-                const tileSize = Number(view._tileSize) || 24;
-                const half = tileSize * 0.5;
-                const step = tileSize / 10;
-                const ox = Number(view._origin?.x) || 0;
-                const oz = Number(view._origin?.z) || 0;
+	            try {
+	                const tileSize = Number(view._tileSize) || 24;
+	                const half = 0.5;
+	                const step = tileSize / 10;
+	                const ox = Number(view._origin?.x) || 0;
+	                const oz = Number(view._origin?.z) || 0;
 
                 const tileX = 5;
                 const tileY = 5;
-                const worldX = ox + tileX * tileSize + half - step * 0.25;
-                const worldZ = oz + tileY * tileSize;
-                const res = view._worldToTilePoint(worldX, worldZ, { snap: true });
+	                const worldX = ox + tileX * tileSize + half * tileSize - step * 0.25;
+	                const worldZ = oz + tileY * tileSize;
+	                const res = view._worldToTilePoint(worldX, worldZ, { snap: true });
 
-                assertEqual(res.tileX, tileX + 1, 'Expected snap to normalize to the next tile.');
-                assertNear(res.offsetX, -half, 1e-6, 'Expected snap to normalize to -half.');
-                assertEqual(res.tileY, tileY, 'Expected Y tile to remain unchanged.');
-            } finally {
-                view.exit();
-            }
+	                assertEqual(res.tileX, tileX + 1, 'Expected snap to normalize to the next tile.');
+	                assertNear(res.offsetU, -half, 1e-6, 'Expected snap to normalize to -half.');
+	                assertEqual(res.tileY, tileY, 'Expected Y tile to remain unchanged.');
+	            } finally {
+	                view.exit();
+	            }
         });
     } catch (e) {
         console.log('⏭️  Road Debugger tile offset normalization tests skipped:', e.message);
@@ -6012,19 +6050,17 @@ async function runTests() {
 
                 assertTrue(!view.ui?.hoverCubeToggle, 'Expected no hover cube toggle in UI.');
 
-                const roadId = view.getRoads()[0].id;
-                const roadRow = document.querySelector(`.road-debugger-road-row[data-road-id="${roadId}"]`);
-                assertTrue(!!roadRow, 'Expected road row.');
-                const exp = roadRow.querySelector('.road-debugger-expand');
-                assertTrue(!!exp, 'Expected expand button.');
-                exp.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+	                const roadId = view.getRoads()[0].id;
+	                const roadRow = document.querySelector(`.road-debugger-road-row[data-road-id="${roadId}"]`);
+	                assertTrue(!!roadRow, 'Expected road row.');
+	                roadRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
-                const derivedRoad = view.getDerived()?.roads?.find?.((r) => r?.id === roadId) ?? null;
-                const pointId = derivedRoad?.points?.[0]?.id ?? null;
-                assertTrue(!!pointId, 'Expected derived point id.');
+	                const derivedRoad = view.getDerived()?.roads?.find?.((r) => r?.id === roadId) ?? null;
+	                const pointId = derivedRoad?.points?.[0]?.id ?? null;
+	                assertTrue(!!pointId, 'Expected derived point id.');
 
-                const pointRow = document.querySelector(`.road-debugger-point-row[data-road-id="${roadId}"][data-point-id="${pointId}"]`);
-                assertTrue(!!pointRow, 'Expected point row after expand.');
+	                const pointRow = document.querySelector(`.road-debugger-point-row[data-road-id="${roadId}"][data-point-id="${pointId}"]`);
+	                assertTrue(!!pointRow, 'Expected point row in detail panel.');
                 pointRow.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
                 assertEqual(view._hover?.pointId, pointId, 'Expected hovered pointId from table hover.');
                 assertTrue(view._hoverCubeMesh?.visible === true, 'Expected hover cube visible after point row hover.');

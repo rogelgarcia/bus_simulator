@@ -169,7 +169,10 @@ export function handlePointerMove(view, e) {
         }
         return;
     }
-    if (!view._isDraggingCamera && !view._pendingClick && isPointerOverUI(view, e.target)) return;
+    if (!view._isDraggingCamera && !view._pendingClick && isPointerOverUIByClientXY(view, e)) {
+        if (view.getDraftRoad?.() ?? view._draft) view.clearDraftPreview?.();
+        return;
+    }
 
     setPointerFromEvent(view, e);
 
@@ -258,7 +261,7 @@ export function handlePointerDown(view, e) {
     view._cameraDragPointerId = pointerId;
 
     if (button === 0) {
-        const pick = view._pickAtPointer?.() ?? null;
+        const pick = view._picking?.pickDragStart?.() ?? view._pickAtPointer?.() ?? null;
         if (pick?.type === 'point') {
             e.preventDefault?.();
             view._pendingClick = false;

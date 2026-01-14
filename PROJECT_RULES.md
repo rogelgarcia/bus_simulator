@@ -73,3 +73,8 @@ If using resources from downloads/ folder, always copy to the application.
 - if 3d meshes, put in assets
 - if libraries, copy the source to src/lib 
 - always organize subfolders accordingly
+
+## Tools
+
+- New tools under `tools/` must live in their own subfolder and include a `README.md`.
+- Register all tools in `PROJECT_TOOLS.md`.

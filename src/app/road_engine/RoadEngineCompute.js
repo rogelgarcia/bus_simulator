@@ -127,26 +127,31 @@ export function resolveRoadEngineSettings(settings = {}) {
 function pointWorldPosition(point, settings) {
     const tileX = Number(point?.tileX) || 0;
     const tileY = Number(point?.tileY) || 0;
-    const offsetX = Number(point?.offsetX) || 0;
-    const offsetY = Number(point?.offsetY) || 0;
+    const offsetU = Number(point?.offsetU) || 0;
+    const offsetV = Number(point?.offsetV) || 0;
     const tileSize = Number(settings?.tileSize) || 24;
     const origin = settings?.origin ?? { x: 0, z: 0 };
     return {
-        x: origin.x + tileX * tileSize + offsetX,
-        z: origin.z + tileY * tileSize + offsetY
+        x: origin.x + (tileX + offsetU) * tileSize,
+        z: origin.z + (tileY + offsetV) * tileSize
     };
 }
 
 function normalizePoint(raw, { roadId, index, settings }) {
     const id = safeId(raw?.id, `pt_${roadId}_${index}`);
+    const tileSize = Number(settings?.tileSize) || 24;
+    const rawU = Number(raw?.offsetU);
+    const rawV = Number(raw?.offsetV);
+    const offsetU = Number.isFinite(rawU) ? rawU : (Number(raw?.offsetX) || 0) / tileSize;
+    const offsetV = Number.isFinite(rawV) ? rawV : (Number(raw?.offsetY) || 0) / tileSize;
     const norm = normalizeRoadTileOffsetBoundary(
         {
             tileX: Number(raw?.tileX) || 0,
             tileY: Number(raw?.tileY) || 0,
-            offsetX: Number(raw?.offsetX) || 0,
-            offsetY: Number(raw?.offsetY) || 0
+            offsetU,
+            offsetV
         },
-        { tileSize: settings?.tileSize }
+        { tileSize }
     );
     const tangentFactor = Number.isFinite(raw?.tangentFactor) ? Number(raw.tangentFactor) : 1;
     const world = pointWorldPosition(norm, settings);
@@ -154,8 +159,8 @@ function normalizePoint(raw, { roadId, index, settings }) {
         id,
         tileX: norm.tileX,
         tileY: norm.tileY,
-        offsetX: norm.offsetX,
-        offsetY: norm.offsetY,
+        offsetU: norm.offsetU,
+        offsetV: norm.offsetV,
         tangentFactor,
         world
     };
