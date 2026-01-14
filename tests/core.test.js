@@ -6125,6 +6125,29 @@ async function runTests() {
 
     runRoadConnectionDebuggerTests({ test, assertTrue });
 
+    // ========== Scene Shortcut Tests ==========
+    const { getSceneShortcutByKey, getSceneShortcutById } = await import('/src/states/SceneShortcutRegistry.js');
+
+    test('SceneShortcutRegistry: key 6 maps to Inspector Room', () => {
+        const scene = getSceneShortcutByKey('6');
+        assertTrue(!!scene, 'Expected scene for key 6.');
+        assertEqual(scene.id, 'inspector_room', 'Expected inspector_room id.');
+        assertEqual(scene.label, 'Inspector Room', 'Expected Inspector Room label.');
+    });
+
+    test('SceneShortcutRegistry: inspector_room uses key 6', () => {
+        const scene = getSceneShortcutById('inspector_room');
+        assertTrue(!!scene, 'Expected scene for inspector_room.');
+        assertEqual(scene.key, '6', 'Expected inspector_room key 6.');
+    });
+
+    const { InspectorRoomUI } = await import('/src/graphics/gui/inspector_room/InspectorRoomUI.js');
+
+    test('InspectorRoomUI: lighting slider initializes from light state', () => {
+        const ui = new InspectorRoomUI();
+        assertEqual(ui.lightY.value, String(ui.getLightState().y), 'Expected lightY slider to match light state.');
+    });
+
     // ========== Summary ==========
     console.log('\n' + '='.repeat(50));
     if (errors.length === 0) {

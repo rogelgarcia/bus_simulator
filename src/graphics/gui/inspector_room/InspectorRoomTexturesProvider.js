@@ -1,8 +1,6 @@
-// src/graphics/gui/texture_inspector/TextureInspectorScene.js
-// Renders textures on a reference plane for inspection.
+// src/graphics/gui/inspector_room/InspectorRoomTexturesProvider.js
+// Texture inspection content provider for the Inspector Room.
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { createGradientSkyDome } from '../../assets3d/generators/SkyGenerator.js';
 import { resolveBuildingStyleWallMaterialUrls } from '../../assets3d/generators/buildings/BuildingGenerator.js';
 import { getSignAlphaMaskTextureById } from '../../assets3d/textures/signs/SignAlphaMaskCache.js';
 import {
@@ -50,30 +48,23 @@ function clonePreviewTexture(tex, { offset = null, repeat = null, wrap = THREE.C
     return clone;
 }
 
-export class TextureInspectorScene {
-    constructor(engine) {
+export class InspectorRoomTexturesProvider {
+    constructor(engine, room) {
         this.engine = engine;
-        this.scene = engine.scene;
-        this.camera = engine.camera;
-        this.canvas = engine.canvas;
+        this.room = room;
 
         this.root = null;
-        this.controls = null;
-        this.sky = null;
-        this.hemi = null;
-        this.sun = null;
-        this.fill = null;
-        this._grid = null;
+        this._parent = null;
 
-        this._plane = null;
-        this._planeGeo = null;
-        this._planeMat = null;
         this._overlay = null;
         this._overlayMat = null;
+        this._overlayGeo = null;
+
         this._previewTexture = null;
         this._previewNormalMap = null;
         this._previewRoughnessMap = null;
         this._previewAlphaMap = null;
+
         this._tileGroup = null;
         this._tileGeo = null;
         this._tileMat = null;
@@ -83,181 +74,86 @@ export class TextureInspectorScene {
         this._urlTextures = new Map();
         this._loadToken = 0;
 
-        const lighting = engine?.lightingSettings ?? {};
-        const defaultSun = Number.isFinite(lighting.sunIntensity) ? lighting.sunIntensity : 1.0;
-        const defaultHemi = Number.isFinite(lighting.hemiIntensity) ? lighting.hemiIntensity : 0.55;
-
-        this._lighting = {
-            sunAzimuthDeg: 45,
-            sunElevationDeg: 55,
-            sunIntensity: defaultSun,
-            hemiIntensity: defaultHemi,
-            fillEnabled: false,
-            fillIntensity: 0.35
-        };
-
         this._collectionIndex = 0;
         this._collectionId = null;
         this._textureIndex = 0;
         this._textureId = null;
         this._baseColor = 0xffffff;
         this._previewMode = 'single';
-        this._gridEnabled = true;
         this._tileGap = 0.0;
         this._selectedAspect = null;
     }
 
-    enter() {
-        if (this.root) return;
+    getId() {
+        return 'textures';
+    }
 
-        this.root = new THREE.Group();
-        this.root.name = 'texture_inspector_root';
-        this.scene.add(this.root);
+    getLabel() {
+        return 'Textures';
+    }
 
-        this.sky = createGradientSkyDome();
-        if (this.sky) this.root.add(this.sky);
+    getRoomConfig() {
+        return {
+            planeSize: PLANE_SIZE,
+            planeY: 0,
+            planeColor: this._baseColor,
+            planeRoughness: 0.8,
+            planeMetalness: 0.0,
+            gridSize: 6,
+            gridDivisions: 24
+        };
+    }
 
-        this.hemi = new THREE.HemisphereLight(0xe8f0ff, 0x0b0f14, this._lighting.hemiIntensity);
-        this.root.add(this.hemi);
+    mount(parent) {
+        const target = parent && typeof parent === 'object' ? parent : null;
+        if (!target) return;
+        this._parent = target;
 
-        this.sun = new THREE.DirectionalLight(0xffffff, this._lighting.sunIntensity);
-        this.sun.position.set(4, 7, 4);
-        this.root.add(this.sun);
-
-        this.fill = new THREE.DirectionalLight(0xffffff, 0.0);
-        this.fill.position.set(-4, 3, -4);
-        this.fill.visible = false;
-        this.root.add(this.fill);
-
-        this._planeGeo = new THREE.PlaneGeometry(PLANE_SIZE, PLANE_SIZE, 1, 1);
-        ensureUv2(this._planeGeo);
-        this._planeMat = new THREE.MeshStandardMaterial({
-            color: this._baseColor,
-            metalness: 0.0,
-            roughness: 0.8
-        });
-        this._plane = new THREE.Mesh(this._planeGeo, this._planeMat);
-        this._plane.rotation.x = -Math.PI / 2;
-        this._plane.position.y = 0;
-        this.root.add(this._plane);
-
-        this._overlayMat = new THREE.MeshStandardMaterial({
-            color: this._baseColor,
-            metalness: 0.0,
-            roughness: 0.8
-        });
-        this._overlay = new THREE.Mesh(this._planeGeo, this._overlayMat);
-        this._overlay.rotation.x = -Math.PI / 2;
-        this._overlay.position.y = 0.002;
-        this.root.add(this._overlay);
-
-        const grid = new THREE.GridHelper(6, 24, 0x2b3544, 0x1a2230);
-        grid.position.y = 0.001;
-        grid.visible = this._gridEnabled;
-        this.root.add(grid);
-        this._grid = grid;
-
-        this._tileGroup = new THREE.Group();
-        this._tileGroup.name = 'texture_inspector_tiles';
-        this.root.add(this._tileGroup);
-
-        this._tileGeo = new THREE.PlaneGeometry(1, 1, 1, 1);
-        ensureUv2(this._tileGeo);
-        this._tileMat = new THREE.MeshStandardMaterial({
-            color: this._baseColor,
-            metalness: 0.0,
-            roughness: 0.8
-        });
-
-        this._tileMeshes = [];
-        for (let i = 0; i < TILE_REPEAT * TILE_REPEAT; i++) {
-            const tile = new THREE.Mesh(this._tileGeo, this._tileMat);
-            tile.rotation.x = -Math.PI / 2;
-            tile.position.y = 0.002;
-            tile.castShadow = false;
-            tile.receiveShadow = true;
-            this._tileGroup.add(tile);
-            this._tileMeshes.push(tile);
+        if (!this.root) {
+            this.root = new THREE.Group();
+            this.root.name = 'inspector_room_textures_root';
         }
-        this._layoutTiles();
+        if (!this.root.parent) target.add(this.root);
+
+        if (!this._overlay) this._createPreviewMeshes();
         this._syncPreviewMode();
 
-        this.camera.position.set(0, 2.2, 2.6);
-        this.camera.lookAt(0, 0, 0);
+        this.room?.setPlaneBaseColor?.(this._baseColor);
 
-        this.controls = new OrbitControls(this.camera, this.canvas);
-        this.controls.enablePan = false;
-        this.controls.enableDamping = true;
-        this.controls.dampingFactor = 0.08;
-        this.controls.minDistance = 1.6;
-        this.controls.maxDistance = 14;
-        this.controls.target.set(0, 0, 0);
-        this.controls.update();
+        if (this._collectionId) this.setSelectedCollectionId(this._collectionId);
+        else this.setSelectedCollectionIndex(this._collectionIndex);
+    }
 
-        this._applyLighting();
-        this.setSelectedCollectionIndex(this._collectionIndex);
+    unmount() {
+        this._parent?.remove?.(this.root);
+        this._parent = null;
     }
 
     dispose() {
-        this.controls?.dispose?.();
-        this.controls = null;
-
         this._disposePreviewTexture();
         this._disposeUrlTextures();
 
-        if (this._tileGroup) {
-            this.root?.remove?.(this._tileGroup);
-            this._tileGroup = null;
-        }
+        if (this._tileGroup) this.root?.remove?.(this._tileGroup);
+        this._tileGroup = null;
         this._tileMeshes = [];
         this._tileGeo?.dispose?.();
         this._tileGeo = null;
         this._tileMat?.dispose?.();
         this._tileMat = null;
 
-        if (this._grid) {
-            this.root?.remove?.(this._grid);
-            this._grid.geometry?.dispose?.();
-            if (Array.isArray(this._grid.material)) {
-                for (const m of this._grid.material) m?.dispose?.();
-            } else {
-                this._grid.material?.dispose?.();
-            }
-            this._grid = null;
-        }
-
-        if (this.sky) {
-            this.root?.remove?.(this.sky);
-            this.sky.geometry?.dispose?.();
-            this.sky.material?.dispose?.();
-            this.sky = null;
-        }
-
-        if (this.fill) {
-            this.root?.remove?.(this.fill);
-            this.fill = null;
-        }
-
-        if (this._plane) this.root?.remove?.(this._plane);
-        this._plane = null;
-        this._planeGeo?.dispose?.();
-        this._planeGeo = null;
-        this._planeMat?.dispose?.();
-        this._planeMat = null;
         if (this._overlay) this.root?.remove?.(this._overlay);
         this._overlay = null;
+        this._overlayGeo?.dispose?.();
+        this._overlayGeo = null;
         this._overlayMat?.dispose?.();
         this._overlayMat = null;
 
-        if (this.root) {
-            this.scene.remove(this.root);
-            this.root = null;
-        }
+        this._parent?.remove?.(this.root);
+        this._parent = null;
+        this.root = null;
     }
 
-    update() {
-        this.controls?.update?.();
-    }
+    update() {}
 
     getCollectionOptions() {
         return getTextureInspectorCollections();
@@ -273,6 +169,10 @@ export class TextureInspectorScene {
         this._collectionIndex = next;
         const id = options[next]?.id ?? options[0]?.id ?? null;
         if (id) this.setSelectedCollectionId(id);
+    }
+
+    getSelectedCollectionId() {
+        return this._collectionId;
     }
 
     setSelectedCollectionId(collectionId) {
@@ -308,6 +208,10 @@ export class TextureInspectorScene {
         this._textureIndex = next;
         const id = options[next]?.id ?? options[0]?.id ?? null;
         if (id) this.setSelectedTextureId(id);
+    }
+
+    getSelectedTextureId() {
+        return this._textureId;
     }
 
     setSelectedTextureId(textureId) {
@@ -352,9 +256,13 @@ export class TextureInspectorScene {
     setBaseColorHex(hex) {
         const next = Number.isFinite(hex) ? hex : 0xffffff;
         this._baseColor = next;
-        if (this._planeMat) this._planeMat.color.setHex(next);
+        this.room?.setPlaneBaseColor?.(next);
         if (this._overlayMat) this._overlayMat.color.setHex(next);
         if (this._tileMat) this._tileMat.color.setHex(next);
+    }
+
+    getBaseColorHex() {
+        return this._baseColor;
     }
 
     setPreviewModeId(modeId) {
@@ -364,9 +272,8 @@ export class TextureInspectorScene {
         this._syncPreviewMode();
     }
 
-    setGridEnabled(enabled) {
-        this._gridEnabled = !!enabled;
-        if (this._grid) this._grid.visible = this._gridEnabled;
+    getPreviewModeId() {
+        return this._previewMode;
     }
 
     setTileGap(value) {
@@ -374,6 +281,118 @@ export class TextureInspectorScene {
         if (Math.abs(next - this._tileGap) < 1e-6) return;
         this._tileGap = next;
         this._layoutTiles();
+    }
+
+    getTileGap() {
+        return this._tileGap;
+    }
+
+    getFocusBounds() {
+        const radius = PLANE_SIZE * 0.55;
+        return {
+            center: new THREE.Vector3(0, 0, 0),
+            radius: Number.isFinite(radius) ? Math.max(0.001, radius) : 1
+        };
+    }
+
+    _createPreviewMeshes() {
+        if (!this.root) return;
+
+        this._overlayGeo = new THREE.PlaneGeometry(PLANE_SIZE, PLANE_SIZE, 1, 1);
+        ensureUv2(this._overlayGeo);
+
+        this._overlayMat = new THREE.MeshStandardMaterial({
+            color: this._baseColor,
+            metalness: 0.0,
+            roughness: 0.8
+        });
+
+        this._overlay = new THREE.Mesh(this._overlayGeo, this._overlayMat);
+        this._overlay.name = 'inspector_room_texture_overlay';
+        this._overlay.rotation.x = -Math.PI / 2;
+        this._overlay.position.y = 0.002;
+        this._overlay.castShadow = false;
+        this._overlay.receiveShadow = true;
+        this.root.add(this._overlay);
+
+        this._tileGroup = new THREE.Group();
+        this._tileGroup.name = 'inspector_room_texture_tiles';
+        this.root.add(this._tileGroup);
+
+        this._tileGeo = new THREE.PlaneGeometry(1, 1, 1, 1);
+        ensureUv2(this._tileGeo);
+        this._tileMat = new THREE.MeshStandardMaterial({
+            color: this._baseColor,
+            metalness: 0.0,
+            roughness: 0.8
+        });
+
+        this._tileMeshes = [];
+        for (let i = 0; i < TILE_REPEAT * TILE_REPEAT; i++) {
+            const tile = new THREE.Mesh(this._tileGeo, this._tileMat);
+            tile.rotation.x = -Math.PI / 2;
+            tile.position.y = 0.002;
+            tile.castShadow = false;
+            tile.receiveShadow = true;
+            this._tileGroup.add(tile);
+            this._tileMeshes.push(tile);
+        }
+        this._layoutTiles();
+    }
+
+    _layoutTiles() {
+        const meshes = this._tileMeshes ?? [];
+        if (!meshes.length) return;
+
+        const span = PLANE_SIZE;
+        const repeat = TILE_REPEAT;
+        const maxGap = (span - repeat * 0.05) / Math.max(1, repeat - 1);
+        const gap = clamp(this._tileGap, 0.0, Math.max(0.0, maxGap));
+        const tile = Math.max(0.05, (span - gap * (repeat - 1)) / repeat);
+
+        const startX = -span * 0.5 + tile * 0.5;
+        const startZ = -span * 0.5 + tile * 0.5;
+
+        for (let iz = 0; iz < repeat; iz++) {
+            for (let ix = 0; ix < repeat; ix++) {
+                const index = ix + iz * repeat;
+                const mesh = meshes[index] ?? null;
+                if (!mesh) continue;
+                const x = startX + ix * (tile + gap);
+                const z = startZ + iz * (tile + gap);
+                mesh.position.x = x;
+                mesh.position.z = z;
+                mesh.scale.set(tile, tile, 1);
+            }
+        }
+    }
+
+    _syncPreviewMode() {
+        const tiled = this._previewMode === 'tiled';
+        if (this._tileGroup) this._tileGroup.visible = tiled;
+        if (this._overlay) this._overlay.visible = !tiled;
+        this._setPlaneAspect(this._selectedAspect);
+        this._syncPreviewMaps();
+    }
+
+    _setPlaneAspect(aspect) {
+        if (this._previewMode === 'tiled') {
+            if (this._overlay) this._overlay.scale.set(1, 1, 1);
+            return;
+        }
+        if (!this._overlay) return;
+        const a = Number(aspect);
+        if (!Number.isFinite(a) || !(a > 0)) {
+            this._overlay.scale.set(1, 1, 1);
+            return;
+        }
+
+        if (a >= 1) {
+            this._overlay.scale.set(1, 1 / a, 1);
+            return;
+        }
+
+        this._overlay.scale.set(a, 1, 1);
     }
 
     _setPlaneTexture(tex, entry) {
@@ -412,64 +431,9 @@ export class TextureInspectorScene {
             this._syncPreviewMaps();
         }).catch((err) => {
             if (token !== this._loadToken) return;
-            console.warn('[TextureInspector] Failed to load building wall textures', err);
+            console.warn('[InspectorRoom] Failed to load building wall textures', err);
             this._syncPreviewMaps();
         });
-    }
-
-    _setPlaneAspect(aspect) {
-        if (this._previewMode === 'tiled') {
-            if (this._overlay) this._overlay.scale.set(1, 1, 1);
-            return;
-        }
-        if (!this._overlay) return;
-        const a = Number(aspect);
-        if (!Number.isFinite(a) || !(a > 0)) {
-            this._overlay.scale.set(1, 1, 1);
-            return;
-        }
-
-        if (a >= 1) {
-            this._overlay.scale.set(1, 1 / a, 1);
-            return;
-        }
-
-        this._overlay.scale.set(a, 1, 1);
-    }
-
-    _layoutTiles() {
-        const meshes = this._tileMeshes ?? [];
-        if (!meshes.length) return;
-
-        const span = PLANE_SIZE;
-        const repeat = TILE_REPEAT;
-        const maxGap = (span - repeat * 0.05) / Math.max(1, repeat - 1);
-        const gap = clamp(this._tileGap, 0.0, Math.max(0.0, maxGap));
-        const tile = Math.max(0.05, (span - gap * (repeat - 1)) / repeat);
-
-        const startX = -span * 0.5 + tile * 0.5;
-        const startZ = -span * 0.5 + tile * 0.5;
-
-        for (let iz = 0; iz < repeat; iz++) {
-            for (let ix = 0; ix < repeat; ix++) {
-                const index = ix + iz * repeat;
-                const mesh = meshes[index] ?? null;
-                if (!mesh) continue;
-                const x = startX + ix * (tile + gap);
-                const z = startZ + iz * (tile + gap);
-                mesh.position.x = x;
-                mesh.position.z = z;
-                mesh.scale.set(tile, tile, 1);
-            }
-        }
-    }
-
-    _syncPreviewMode() {
-        const tiled = this._previewMode === 'tiled';
-        if (this._tileGroup) this._tileGroup.visible = tiled;
-        if (this._overlay) this._overlay.visible = !tiled;
-        this._setPlaneAspect(this._selectedAspect);
-        this._syncPreviewMaps();
     }
 
     _syncPreviewMaps() {
@@ -506,59 +470,6 @@ export class TextureInspectorScene {
             if (hasPbr && this._tileMat.normalScale) this._tileMat.normalScale.set(0.9, 0.9);
             this._tileMat.needsUpdate = true;
         }
-    }
-
-    _applyLighting() {
-        if (this.hemi) this.hemi.intensity = clamp(this._lighting.hemiIntensity, 0, 5);
-        if (this.sun) {
-            this.sun.intensity = clamp(this._lighting.sunIntensity, 0, 10);
-            this._setDirectionalFromAngles(this.sun, this._lighting.sunAzimuthDeg, this._lighting.sunElevationDeg, 10);
-        }
-        if (this.fill) {
-            const enabled = !!this._lighting.fillEnabled;
-            this.fill.visible = enabled;
-            this.fill.intensity = enabled ? clamp(this._lighting.fillIntensity, 0, 10) : 0;
-            if (enabled) {
-                this._setDirectionalFromAngles(
-                    this.fill,
-                    this._lighting.sunAzimuthDeg + 200,
-                    25,
-                    7
-                );
-            }
-        }
-
-        if (this.sky?.material?.uniforms?.uSunDir?.value && this.sun) {
-            this.sky.material.uniforms.uSunDir.value.copy(this.sun.position).normalize();
-        }
-    }
-
-    _setDirectionalFromAngles(light, azimuthDeg, elevationDeg, distance) {
-        const az = THREE.MathUtils.degToRad(Number(azimuthDeg) || 0);
-        const el = THREE.MathUtils.degToRad(clamp(Number(elevationDeg) || 0, 0, 89.9));
-        const dist = Math.max(0.01, Number(distance) || 10);
-        const cosEl = Math.cos(el);
-        const dir = new THREE.Vector3(
-            Math.cos(az) * cosEl,
-            Math.sin(el),
-            Math.sin(az) * cosEl
-        );
-        light.position.copy(dir.multiplyScalar(dist));
-    }
-
-    getLighting() {
-        return { ...this._lighting };
-    }
-
-    setLighting(params = {}) {
-        const next = params && typeof params === 'object' ? params : {};
-        if (Number.isFinite(Number(next.sunAzimuthDeg))) this._lighting.sunAzimuthDeg = Number(next.sunAzimuthDeg);
-        if (Number.isFinite(Number(next.sunElevationDeg))) this._lighting.sunElevationDeg = Number(next.sunElevationDeg);
-        if (Number.isFinite(Number(next.sunIntensity))) this._lighting.sunIntensity = Number(next.sunIntensity);
-        if (Number.isFinite(Number(next.hemiIntensity))) this._lighting.hemiIntensity = Number(next.hemiIntensity);
-        if (next.fillEnabled !== undefined) this._lighting.fillEnabled = !!next.fillEnabled;
-        if (Number.isFinite(Number(next.fillIntensity))) this._lighting.fillIntensity = Number(next.fillIntensity);
-        this._applyLighting();
     }
 
     _configureUrlTexture(tex, { srgb = true } = {}) {
@@ -611,12 +522,7 @@ export class TextureInspectorScene {
         this._previewNormalMap = null;
         this._previewRoughnessMap = null;
         this._previewAlphaMap = null;
-        if (this._planeMat) {
-            this._planeMat.map = null;
-            this._planeMat.normalMap = null;
-            this._planeMat.roughnessMap = null;
-            this._planeMat.needsUpdate = true;
-        }
+
         if (this._overlayMat) {
             this._overlayMat.map = null;
             this._overlayMat.alphaMap = null;
@@ -635,3 +541,4 @@ export class TextureInspectorScene {
         }
     }
 }
+

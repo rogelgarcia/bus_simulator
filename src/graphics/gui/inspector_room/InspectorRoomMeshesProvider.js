@@ -1,8 +1,6 @@
-// src/graphics/gui/mesh_inspector/MeshInspectorScene.js
-// Renders procedural meshes with stable region identifiers.
+// src/graphics/gui/inspector_room/InspectorRoomMeshesProvider.js
+// Mesh inspection content provider for the Inspector Room.
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { createGradientSkyDome } from '../../assets3d/generators/SkyGenerator.js';
 import {
     createProceduralMeshAsset,
     getProceduralMeshCollectionId,
@@ -12,44 +10,11 @@ import {
 import { isRigApi } from '../../../app/rigs/RigSchema.js';
 import { isPrefabParamsApi } from '../../../app/prefabs/PrefabParamsSchema.js';
 
-const STORAGE_KEY = 'bus_sim.mesh_inspector.v1';
-
 function clampInt(value, min, max) {
     const num = Number(value);
     if (!Number.isFinite(num)) return min;
     const rounded = Math.round(num);
     return Math.max(min, Math.min(max, rounded));
-}
-
-function readStoredSelection() {
-    if (typeof window === 'undefined') return null;
-    const storage = window.localStorage;
-    if (!storage) return null;
-    const raw = storage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    try {
-        const parsed = JSON.parse(raw);
-        const collectionId = typeof parsed?.collectionId === 'string' ? parsed.collectionId : null;
-        const meshId = typeof parsed?.meshId === 'string' ? parsed.meshId : null;
-        return { collectionId, meshId };
-    } catch {
-        return null;
-    }
-}
-
-function writeStoredSelection({ collectionId, meshId }) {
-    if (typeof window === 'undefined') return;
-    const storage = window.localStorage;
-    if (!storage) return;
-    const payload = {
-        collectionId: typeof collectionId === 'string' ? collectionId : null,
-        meshId: typeof meshId === 'string' ? meshId : null
-    };
-    try {
-        storage.setItem(STORAGE_KEY, JSON.stringify(payload));
-    } catch {
-        // ignore
-    }
 }
 
 function groupForTriangleOffset(geometry, triOffset) {
@@ -62,170 +27,79 @@ function groupForTriangleOffset(geometry, triOffset) {
     return null;
 }
 
-export class MeshInspectorScene {
+export class InspectorRoomMeshesProvider {
     constructor(engine) {
         this.engine = engine;
-        this.scene = engine.scene;
-        this.camera = engine.camera;
-        this.canvas = engine.canvas;
 
         this.root = null;
-        this.controls = null;
-        this.sky = null;
-        this.hemi = null;
-        this.sun = null;
-        this.floor = null;
-        this._grid = null;
-        this._axes = null;
+        this._parent = null;
 
         this._asset = null;
         this._edges = null;
+        this._pivotGizmo = null;
 
         this._wireframe = false;
         this._edgesEnabled = false;
+        this._pivotEnabled = false;
         this._colorMode = 'semantic';
-        this._collectionId = null;
+        this._collectionId = this.getCollectionOptions()[0]?.id ?? null;
         this._meshId = null;
         this._meshIndex = 0;
-
-        const saved = readStoredSelection();
-        const collections = this.getCollectionOptions();
-        const preferredCollection = saved?.collectionId ?? null;
-        this._collectionId = collections.find((c) => c?.id === preferredCollection)?.id ?? collections[0]?.id ?? null;
-        const preferredMesh = saved?.meshId ?? null;
-        this._meshId = typeof preferredMesh === 'string' ? preferredMesh : null;
     }
 
-    enter() {
-        if (this.root) return;
+    getId() {
+        return 'meshes';
+    }
 
-        this.root = new THREE.Group();
-        this.root.name = 'mesh_inspector_root';
-        this.scene.add(this.root);
+    getLabel() {
+        return 'Meshes';
+    }
 
-        this.sky = createGradientSkyDome();
-        if (this.sky) this.root.add(this.sky);
-
-        const lighting = this.engine?.lightingSettings ?? {};
-
-        this.hemi = new THREE.HemisphereLight(0xe8f0ff, 0x0b0f14, Number.isFinite(lighting.hemiIntensity) ? lighting.hemiIntensity : 0.85);
-        this.root.add(this.hemi);
-
-        this.sun = new THREE.DirectionalLight(0xffffff, Number.isFinite(lighting.sunIntensity) ? lighting.sunIntensity : 1.2);
-        this.sun.position.set(4, 8, 5);
-        this.sun.castShadow = true;
-        this.sun.shadow.mapSize.width = 1024;
-        this.sun.shadow.mapSize.height = 1024;
-        this.sun.shadow.camera.near = 0.1;
-        this.sun.shadow.camera.far = 50;
-        this.root.add(this.sun);
-
-        const planeGeo = new THREE.PlaneGeometry(20, 20);
-        const planeMat = new THREE.MeshStandardMaterial({ color: 0x0f1722, metalness: 0.0, roughness: 1.0 });
-        this.floor = new THREE.Mesh(planeGeo, planeMat);
-        this.floor.rotation.x = -Math.PI / 2;
-        this.floor.position.y = -1.25;
-        this.floor.receiveShadow = true;
-        this.root.add(this.floor);
-
-        const grid = new THREE.GridHelper(20, 40, 0x2b3544, 0x1a2230);
-        grid.position.y = this.floor.position.y + 0.001;
-        this.root.add(grid);
-        this._grid = grid;
-
-        const axisSize = 2;
-        const axes = new THREE.Group();
-        axes.name = 'mesh_inspector_axes';
-        axes.position.y = this.floor.position.y + 0.002;
-
-        const makeAxis = (dir, color) => {
-            const points = [new THREE.Vector3(0, 0, 0), dir.clone().multiplyScalar(axisSize)];
-            const geo = new THREE.BufferGeometry().setFromPoints(points);
-            const mat = new THREE.LineBasicMaterial({ color });
-            return new THREE.Line(geo, mat);
+    getRoomConfig() {
+        return {
+            planeSize: 20,
+            planeY: 0,
+            planeColor: 0x0f1722,
+            planeRoughness: 1.0,
+            planeMetalness: 0.0,
+            gridSize: 20,
+            gridDivisions: 40
         };
+    }
 
-        axes.add(makeAxis(new THREE.Vector3(1, 0, 0), 0xff0000));
-        axes.add(makeAxis(new THREE.Vector3(0, 1, 0), 0x00ff00));
-        axes.add(makeAxis(new THREE.Vector3(0, 0, 1), 0x0000ff));
+    mount(parent) {
+        const target = parent && typeof parent === 'object' ? parent : null;
+        if (!target) return;
+        this._parent = target;
 
-        this.root.add(axes);
-        this._axes = axes;
-
-        this.camera.position.set(0, 0.65, 4.2);
-        this.camera.lookAt(0, 0, 0);
-
-        this.controls = new OrbitControls(this.camera, this.canvas);
-        this.controls.enablePan = false;
-        this.controls.enableDamping = true;
-        this.controls.dampingFactor = 0.08;
-        this.controls.minDistance = 1.4;
-        this.controls.maxDistance = 12;
-        this.controls.target.set(0, 0, 0);
-        this.controls.update();
-
-        if (this._meshId) {
-            this.setSelectedMeshId(this._meshId);
-        } else {
-            this.setSelectedMeshIndex(this._meshIndex);
+        if (!this.root) {
+            this.root = new THREE.Group();
+            this.root.name = 'inspector_room_meshes_root';
         }
-        this._syncMeshMaterials();
-        this._syncEdgesOverlay();
+
+        if (!this.root.parent) target.add(this.root);
+
+        if (!this._asset) {
+            if (this._meshId) this.setSelectedMeshId(this._meshId);
+            else this.setSelectedMeshIndex(this._meshIndex);
+        }
+    }
+
+    unmount() {
+        this._parent?.remove?.(this.root);
+        this._parent = null;
     }
 
     dispose() {
-        this.controls?.dispose?.();
-        this.controls = null;
-
-        this._disposeAsset();
+        this._disposePivotGizmo();
         this._disposeEdges();
-
-        if (this._grid) {
-            this.root?.remove?.(this._grid);
-            this._grid.geometry?.dispose?.();
-            if (Array.isArray(this._grid.material)) {
-                for (const m of this._grid.material) m?.dispose?.();
-            } else {
-                this._grid.material?.dispose?.();
-            }
-            this._grid = null;
-        }
-
-        if (this._axes) {
-            this.root?.remove?.(this._axes);
-            this._axes.traverse?.((obj) => {
-                obj.geometry?.dispose?.();
-                if (Array.isArray(obj.material)) {
-                    for (const m of obj.material) m?.dispose?.();
-                } else {
-                    obj.material?.dispose?.();
-                }
-            });
-            this._axes = null;
-        }
-
-        if (this.floor) {
-            this.root?.remove?.(this.floor);
-            this.floor.geometry?.dispose?.();
-            this.floor.material?.dispose?.();
-            this.floor = null;
-        }
-
-        if (this.sky) {
-            this.root?.remove?.(this.sky);
-            this.sky.geometry?.dispose?.();
-            this.sky.material?.dispose?.();
-            this.sky = null;
-        }
-
-        if (this.root) {
-            this.scene.remove(this.root);
-            this.root = null;
-        }
+        this._disposeAsset();
+        this._parent?.remove?.(this.root);
+        this._parent = null;
+        this.root = null;
     }
 
     update() {
-        this.controls?.update?.();
         const mesh = this._asset?.mesh ?? null;
         if (mesh?.userData?._meshInspectorNeedsEdgesRefresh) {
             mesh.userData._meshInspectorNeedsEdgesRefresh = false;
@@ -251,7 +125,6 @@ export class MeshInspectorScene {
         const keep = options.find((opt) => opt?.id === this._meshId)?.id ?? options[0]?.id ?? null;
         this._meshIndex = 0;
         if (keep) this.setSelectedMeshId(keep);
-        writeStoredSelection({ collectionId: this._collectionId, meshId: this._meshId });
     }
 
     getMeshOptions() {
@@ -268,6 +141,10 @@ export class MeshInspectorScene {
         this._meshIndex = next;
         const id = options[next]?.id ?? options[0]?.id ?? null;
         if (id) this.setSelectedMeshId(id);
+    }
+
+    getSelectedMeshId() {
+        return this._meshId;
     }
 
     setSelectedMeshId(meshId) {
@@ -290,18 +167,34 @@ export class MeshInspectorScene {
 
         const asset = createProceduralMeshAsset(resolved);
         this._asset = asset;
-        if (asset?.mesh) {
+        if (asset?.mesh && this.root) {
             asset.mesh.position.set(0, 0, 0);
+            asset.mesh.castShadow = true;
+            asset.mesh.receiveShadow = true;
             this.root.add(asset.mesh);
         }
         this._syncMeshMaterials();
         this._syncEdgesOverlay();
-        writeStoredSelection({ collectionId: this._collectionId, meshId: this._meshId });
+        this._syncPivotGizmo();
     }
 
     getSelectedMeshMeta() {
         if (!this._asset) return null;
         return { id: this._asset.id, name: this._asset.name };
+    }
+
+    getPickMesh() {
+        return this._asset?.mesh ?? null;
+    }
+
+    getPrefabParamsApi() {
+        const api = this._asset?.mesh?.userData?.prefab ?? null;
+        return isPrefabParamsApi(api) ? api : null;
+    }
+
+    getRigApi() {
+        const api = this._asset?.mesh?.userData?.rig ?? null;
+        return isRigApi(api) ? api : null;
     }
 
     getColorMode() {
@@ -337,18 +230,15 @@ export class MeshInspectorScene {
         this._syncEdgesOverlay();
     }
 
-    getAssetMesh() {
-        return this._asset?.mesh ?? null;
+    getPivotEnabled() {
+        return this._pivotEnabled;
     }
 
-    getPrefabParamsApi() {
-        const api = this._asset?.mesh?.userData?.prefab ?? null;
-        return isPrefabParamsApi(api) ? api : null;
-    }
-
-    getRigApi() {
-        const api = this._asset?.mesh?.userData?.rig ?? null;
-        return isRigApi(api) ? api : null;
+    setPivotEnabled(enabled) {
+        const next = !!enabled;
+        if (next === this._pivotEnabled) return;
+        this._pivotEnabled = next;
+        this._syncPivotGizmo();
     }
 
     getRegionInfoFromIntersection(hit) {
@@ -382,6 +272,19 @@ export class MeshInspectorScene {
         };
     }
 
+    getFocusBounds() {
+        const mesh = this._asset?.mesh ?? null;
+        if (!mesh) return null;
+        const box = new THREE.Box3().setFromObject(mesh);
+        if (box.isEmpty()) return null;
+        const sphere = new THREE.Sphere();
+        box.getBoundingSphere(sphere);
+        return {
+            center: sphere.center.clone(),
+            radius: Number.isFinite(sphere.radius) ? Math.max(0.001, sphere.radius) : 1
+        };
+    }
+
     _syncMeshMaterials() {
         const asset = this._asset;
         const mesh = asset?.mesh;
@@ -412,11 +315,11 @@ export class MeshInspectorScene {
             return;
         }
 
-        if (!this._edges && this._asset?.mesh?.geometry) {
+        if (!this._edges && this._asset?.mesh?.geometry && this.root) {
             const geo = new THREE.EdgesGeometry(this._asset.mesh.geometry, 14);
             const mat = new THREE.LineBasicMaterial({ color: 0xcfe1ff, transparent: true, opacity: 0.65 });
             this._edges = new THREE.LineSegments(geo, mat);
-            this._edges.name = 'mesh_inspector_edges';
+            this._edges.name = 'inspector_room_mesh_edges';
             this.root.add(this._edges);
         }
 
@@ -429,6 +332,76 @@ export class MeshInspectorScene {
                 this._edges.scale.copy(mesh.scale);
             }
         }
+    }
+
+    _syncPivotGizmo() {
+        const mesh = this._asset?.mesh ?? null;
+        if (!mesh || !this._pivotEnabled) {
+            if (this._pivotGizmo) this._pivotGizmo.visible = false;
+            return;
+        }
+
+        if (!this._pivotGizmo) {
+            const gizmo = new THREE.Group();
+            gizmo.name = 'inspector_room_mesh_pivot';
+
+            const makeAxis = (dir, color, len) => {
+                const pts = [new THREE.Vector3(0, 0, 0), dir.clone().multiplyScalar(len)];
+                const geo = new THREE.BufferGeometry().setFromPoints(pts);
+                const mat = new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.95 });
+                const line = new THREE.Line(geo, mat);
+                line.renderOrder = 999;
+                return line;
+            };
+
+            const len = this._getPivotScale();
+            gizmo.add(makeAxis(new THREE.Vector3(1, 0, 0), 0xff0000, len));
+            gizmo.add(makeAxis(new THREE.Vector3(0, 1, 0), 0x00ff00, len));
+            gizmo.add(makeAxis(new THREE.Vector3(0, 0, 1), 0x0000ff, len));
+            gizmo.renderOrder = 999;
+            this._pivotGizmo = gizmo;
+        }
+
+        this._pivotGizmo.visible = true;
+        if (!mesh.children.includes(this._pivotGizmo)) mesh.add(this._pivotGizmo);
+        this._pivotGizmo.position.set(0, 0, 0);
+
+        const len = this._getPivotScale();
+        for (const child of this._pivotGizmo.children) {
+            const geo = child?.geometry ?? null;
+            const pos = geo?.attributes?.position ?? null;
+            if (!pos || !pos.array || pos.array.length < 6) continue;
+            pos.array[3] = (pos.array[3] > 0 ? 1 : (pos.array[3] < 0 ? -1 : 0)) * len;
+            pos.array[4] = (pos.array[4] > 0 ? 1 : (pos.array[4] < 0 ? -1 : 0)) * len;
+            pos.array[5] = (pos.array[5] > 0 ? 1 : (pos.array[5] < 0 ? -1 : 0)) * len;
+            pos.needsUpdate = true;
+        }
+    }
+
+    _getPivotScale() {
+        const mesh = this._asset?.mesh ?? null;
+        if (!mesh) return 0.5;
+        const box = new THREE.Box3().setFromObject(mesh);
+        if (box.isEmpty()) return 0.5;
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        const extent = Math.max(size.x, size.y, size.z);
+        return Math.max(0.25, Math.min(1.8, extent * 0.22));
+    }
+
+    _disposePivotGizmo() {
+        const pivot = this._pivotGizmo ?? null;
+        if (!pivot) return;
+        pivot.parent?.remove?.(pivot);
+        pivot.traverse?.((obj) => {
+            obj.geometry?.dispose?.();
+            if (Array.isArray(obj.material)) {
+                for (const m of obj.material) m?.dispose?.();
+            } else {
+                obj.material?.dispose?.();
+            }
+        });
+        this._pivotGizmo = null;
     }
 
     _disposeEdges() {
@@ -462,3 +435,4 @@ export class MeshInspectorScene {
         this._asset = null;
     }
 }
+

@@ -28,8 +28,8 @@ export const SCENE_SHORTCUT_REGISTRY = Object.freeze([
         key: '5'
     },
     {
-        id: 'mesh_inspector',
-        label: 'Inspector',
+        id: 'inspector_room',
+        label: 'Inspector Room',
         key: '6'
     },
     {
