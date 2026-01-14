@@ -4244,11 +4244,11 @@ async function runTests() {
             }
         });
 
-        test('RoadDebugger: lane arrows follow segment forward direction (Task 71)', () => {
-            const engine = {
-                canvas: document.createElement('canvas'),
-                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
-                scene: new THREE.Scene(),
+	        test('RoadDebugger: lane arrows follow segment forward direction (Task 71)', () => {
+	            const engine = {
+	                canvas: document.createElement('canvas'),
+	                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+	                scene: new THREE.Scene(),
                 clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
             };
 
@@ -4260,10 +4260,10 @@ async function runTests() {
                 view.addDraftPointByTile(2, 0);
                 view.finishRoadDraft();
                 view.setRenderOptions({ markings: true });
-
-                const derived = view.getDerived();
-                const seg = derived?.segments?.[0] ?? null;
-                assertTrue(!!seg?.aWorld && !!seg?.bWorld && !!seg?.dir && !!seg?.right, 'Expected derived segment with direction vectors.');
+	
+	                const derived = view.getDerived();
+	                const seg = derived?.segments?.[0] ?? null;
+	                assertTrue(!!seg?.aWorld && !!seg?.bWorld && !!seg?.dir && !!seg?.right, 'Expected derived segment with direction vectors.');
 
                 const mesh = view._arrowMeshes?.[0] ?? null;
                 const attr = mesh?.geometry?.getAttribute?.('position') ?? null;
@@ -4274,16 +4274,19 @@ async function runTests() {
                 const arrowCount = positions.length / (9 * 3);
                 assertTrue(arrowCount >= 2, 'Expected at least two lane arrows (forward + backward).');
 
-                const segMidX = ((Number(seg.aWorld.x) || 0) + (Number(seg.bWorld.x) || 0)) * 0.5;
-                const segMidZ = ((Number(seg.aWorld.z) || 0) + (Number(seg.bWorld.z) || 0)) * 0.5;
-                const dirX = Number(seg.dir.x) || 0;
-                const dirZ = Number(seg.dir.z) || 0;
-                const rightX = Number(seg.right.x) || 0;
-                const rightZ = Number(seg.right.z) || 0;
-
-                const readV = (vertexIndex) => {
-                    const i = vertexIndex * 3;
-                    return { x: Number(positions[i]) || 0, y: Number(positions[i + 1]) || 0, z: Number(positions[i + 2]) || 0 };
+	                const segMidX = ((Number(seg.aWorld.x) || 0) + (Number(seg.bWorld.x) || 0)) * 0.5;
+	                const segMidZ = ((Number(seg.aWorld.z) || 0) + (Number(seg.bWorld.z) || 0)) * 0.5;
+	                const dirX = Number(seg.dir.x) || 0;
+	                const dirZ = Number(seg.dir.z) || 0;
+	                const expectedRightX = -dirZ;
+	                const expectedRightZ = dirX;
+	                const rightX = Number(seg.right.x) || 0;
+	                const rightZ = Number(seg.right.z) || 0;
+	                assertTrue((rightX * expectedRightX + rightZ * expectedRightZ) > 0.95, 'Expected segment.right to follow right-hand traffic convention.');
+	
+	                const readV = (vertexIndex) => {
+	                    const i = vertexIndex * 3;
+	                    return { x: Number(positions[i]) || 0, y: Number(positions[i + 1]) || 0, z: Number(positions[i + 2]) || 0 };
                 };
 
                 let foundForward = false;
@@ -4300,24 +4303,26 @@ async function runTests() {
                         z: (t0.z + t3.z + t5.z) / 3
                     };
 
-                    const arrowDirX = tip.x - tail.x;
-                    const arrowDirZ = tip.z - tail.z;
-                    const dotForward = arrowDirX * dirX + arrowDirZ * dirZ;
-
-                    const centerX = (tip.x + tail.x) * 0.5;
-                    const centerZ = (tip.z + tail.z) * 0.5;
-                    const side = (centerX - segMidX) * rightX + (centerZ - segMidZ) * rightZ;
-
-                    if (side >= 0) {
-                        foundForward = true;
-                        assertTrue(dotForward > 0.25, 'Expected forward-lane arrow to point along segment direction.');
-                    } else {
-                        foundBackward = true;
-                        assertTrue(dotForward < -0.25, 'Expected backward-lane arrow to point opposite segment direction.');
-                    }
-                }
-
-                assertTrue(foundForward && foundBackward, 'Expected both forward and backward lane arrows.');
+	                    const arrowDirX = tip.x - tail.x;
+	                    const arrowDirZ = tip.z - tail.z;
+	                    const dotForward = arrowDirX * dirX + arrowDirZ * dirZ;
+	
+	                    const centerX = (tip.x + tail.x) * 0.5;
+	                    const centerZ = (tip.z + tail.z) * 0.5;
+	                    const side = (centerX - segMidX) * expectedRightX + (centerZ - segMidZ) * expectedRightZ;
+	
+	                    if (dotForward > 0) {
+	                        foundForward = true;
+	                        assertTrue(dotForward > 0.25, 'Expected forward-lane arrow to point along segment direction.');
+	                        assertTrue(side > 1e-6, 'Expected forward-lane arrow to render on the right side of the centerline.');
+	                    } else {
+	                        foundBackward = true;
+	                        assertTrue(dotForward < -0.25, 'Expected backward-lane arrow to point opposite segment direction.');
+	                        assertTrue(side < -1e-6, 'Expected backward-lane arrow to render on the left side of the centerline.');
+	                    }
+	                }
+	
+	                assertTrue(foundForward && foundBackward, 'Expected both forward and backward lane arrows.');
             } finally {
                 view.exit();
             }
@@ -4353,12 +4358,15 @@ async function runTests() {
                 const arrowCount = positions.length / (9 * 3);
                 assertTrue(arrowCount >= 2, 'Expected at least two lane arrows (forward + backward).');
 
-                const segMidX = ((Number(seg.aWorld.x) || 0) + (Number(seg.bWorld.x) || 0)) * 0.5;
-                const segMidZ = ((Number(seg.aWorld.z) || 0) + (Number(seg.bWorld.z) || 0)) * 0.5;
-                const dirX = Number(seg.dir.x) || 0;
-                const dirZ = Number(seg.dir.z) || 0;
-                const rightX = Number(seg.right.x) || 0;
-                const rightZ = Number(seg.right.z) || 0;
+	                const segMidX = ((Number(seg.aWorld.x) || 0) + (Number(seg.bWorld.x) || 0)) * 0.5;
+	                const segMidZ = ((Number(seg.aWorld.z) || 0) + (Number(seg.bWorld.z) || 0)) * 0.5;
+	                const dirX = Number(seg.dir.x) || 0;
+	                const dirZ = Number(seg.dir.z) || 0;
+	                const expectedRightX = -dirZ;
+	                const expectedRightZ = dirX;
+	                const rightX = Number(seg.right.x) || 0;
+	                const rightZ = Number(seg.right.z) || 0;
+	                assertTrue((rightX * expectedRightX + rightZ * expectedRightZ) > 0.95, 'Expected segment.right to follow right-hand traffic convention.');
 
                 const readV = (vertexIndex) => {
                     const i = vertexIndex * 3;
@@ -4378,22 +4386,24 @@ async function runTests() {
                         z: (t0.z + t3.z + t5.z) / 3
                     };
 
-                    const arrowDirX = tip.x - tail.x;
-                    const arrowDirZ = tip.z - tail.z;
-                    const dotForward = arrowDirX * dirX + arrowDirZ * dirZ;
-
-                    const centerX = (tip.x + tail.x) * 0.5;
-                    const centerZ = (tip.z + tail.z) * 0.5;
-                    const side = (centerX - segMidX) * rightX + (centerZ - segMidZ) * rightZ;
-                    if (side >= 0) {
-                        foundForward = true;
-                        assertTrue(dotForward > 0.25, 'Expected forward-lane arrow to point along segment direction.');
-                    } else {
-                        foundBackward = true;
-                        assertTrue(dotForward < -0.25, 'Expected backward-lane arrow to point opposite segment direction.');
-                    }
-                }
-                assertTrue(foundForward && foundBackward, 'Expected both forward and backward lane arrows.');
+	                    const arrowDirX = tip.x - tail.x;
+	                    const arrowDirZ = tip.z - tail.z;
+	                    const dotForward = arrowDirX * dirX + arrowDirZ * dirZ;
+	
+	                    const centerX = (tip.x + tail.x) * 0.5;
+	                    const centerZ = (tip.z + tail.z) * 0.5;
+	                    const side = (centerX - segMidX) * expectedRightX + (centerZ - segMidZ) * expectedRightZ;
+	                    if (dotForward > 0) {
+	                        foundForward = true;
+	                        assertTrue(dotForward > 0.25, 'Expected forward-lane arrow to point along segment direction.');
+	                    } else {
+	                        foundBackward = true;
+	                        assertTrue(dotForward < -0.25, 'Expected backward-lane arrow to point opposite segment direction.');
+	                    }
+	                    if (dotForward > 0) assertTrue(side > 1e-6, 'Expected forward-lane arrow to render on the right side of the centerline.');
+	                    else assertTrue(side < -1e-6, 'Expected backward-lane arrow to render on the left side of the centerline.');
+	                }
+	                assertTrue(foundForward && foundBackward, 'Expected both forward and backward lane arrows.');
             } finally {
                 view.exit();
             }
@@ -4429,12 +4439,15 @@ async function runTests() {
                 const arrowCount = positions.length / (9 * 3);
                 assertTrue(arrowCount >= 2, 'Expected at least two lane arrows (forward + backward).');
 
-                const segMidX = ((Number(seg.aWorld.x) || 0) + (Number(seg.bWorld.x) || 0)) * 0.5;
-                const segMidZ = ((Number(seg.aWorld.z) || 0) + (Number(seg.bWorld.z) || 0)) * 0.5;
-                const dirX = Number(seg.dir.x) || 0;
-                const dirZ = Number(seg.dir.z) || 0;
-                const rightX = Number(seg.right.x) || 0;
-                const rightZ = Number(seg.right.z) || 0;
+	                const segMidX = ((Number(seg.aWorld.x) || 0) + (Number(seg.bWorld.x) || 0)) * 0.5;
+	                const segMidZ = ((Number(seg.aWorld.z) || 0) + (Number(seg.bWorld.z) || 0)) * 0.5;
+	                const dirX = Number(seg.dir.x) || 0;
+	                const dirZ = Number(seg.dir.z) || 0;
+	                const expectedRightX = -dirZ;
+	                const expectedRightZ = dirX;
+	                const rightX = Number(seg.right.x) || 0;
+	                const rightZ = Number(seg.right.z) || 0;
+	                assertTrue((rightX * expectedRightX + rightZ * expectedRightZ) > 0.95, 'Expected segment.right to follow right-hand traffic convention.');
 
                 const readV = (vertexIndex) => {
                     const i = vertexIndex * 3;
@@ -4454,22 +4467,24 @@ async function runTests() {
                         z: (t0.z + t3.z + t5.z) / 3
                     };
 
-                    const arrowDirX = tip.x - tail.x;
-                    const arrowDirZ = tip.z - tail.z;
-                    const dotForward = arrowDirX * dirX + arrowDirZ * dirZ;
-
-                    const centerX = (tip.x + tail.x) * 0.5;
-                    const centerZ = (tip.z + tail.z) * 0.5;
-                    const side = (centerX - segMidX) * rightX + (centerZ - segMidZ) * rightZ;
-                    if (side >= 0) {
-                        foundForward = true;
-                        assertTrue(dotForward > 0.25, 'Expected forward-lane arrow to point along segment direction.');
-                    } else {
-                        foundBackward = true;
-                        assertTrue(dotForward < -0.25, 'Expected backward-lane arrow to point opposite segment direction.');
-                    }
-                }
-                assertTrue(foundForward && foundBackward, 'Expected both forward and backward lane arrows.');
+	                    const arrowDirX = tip.x - tail.x;
+	                    const arrowDirZ = tip.z - tail.z;
+	                    const dotForward = arrowDirX * dirX + arrowDirZ * dirZ;
+	
+	                    const centerX = (tip.x + tail.x) * 0.5;
+	                    const centerZ = (tip.z + tail.z) * 0.5;
+	                    const side = (centerX - segMidX) * expectedRightX + (centerZ - segMidZ) * expectedRightZ;
+	                    if (dotForward > 0) {
+	                        foundForward = true;
+	                        assertTrue(dotForward > 0.25, 'Expected forward-lane arrow to point along segment direction.');
+	                    } else {
+	                        foundBackward = true;
+	                        assertTrue(dotForward < -0.25, 'Expected backward-lane arrow to point opposite segment direction.');
+	                    }
+	                    if (dotForward > 0) assertTrue(side > 1e-6, 'Expected forward-lane arrow to render on the right side of the centerline.');
+	                    else assertTrue(side < -1e-6, 'Expected backward-lane arrow to render on the left side of the centerline.');
+	                }
+	                assertTrue(foundForward && foundBackward, 'Expected both forward and backward lane arrows.');
             } finally {
                 view.exit();
             }
@@ -4506,17 +4521,24 @@ async function runTests() {
                 const arrowCount = positions.length / (9 * 3);
                 assertTrue(arrowCount >= 4, 'Expected arrows for each segment and direction.');
 
-                const segInfo = segs.map((seg) => ({
-                    seg,
-                    midX: ((Number(seg.aWorld?.x) || 0) + (Number(seg.bWorld?.x) || 0)) * 0.5,
-                    midZ: ((Number(seg.aWorld?.z) || 0) + (Number(seg.bWorld?.z) || 0)) * 0.5,
-                    dirX: Number(seg.dir?.x) || 0,
-                    dirZ: Number(seg.dir?.z) || 0,
-                    rightX: Number(seg.right?.x) || 0,
-                    rightZ: Number(seg.right?.z) || 0,
-                    foundForward: false,
-                    foundBackward: false
-                }));
+	                const segInfo = segs.map((seg) => ({
+	                    seg,
+	                    midX: ((Number(seg.aWorld?.x) || 0) + (Number(seg.bWorld?.x) || 0)) * 0.5,
+	                    midZ: ((Number(seg.aWorld?.z) || 0) + (Number(seg.bWorld?.z) || 0)) * 0.5,
+	                    dirX: Number(seg.dir?.x) || 0,
+	                    dirZ: Number(seg.dir?.z) || 0,
+	                    expectedRightX: -(Number(seg.dir?.z) || 0),
+	                    expectedRightZ: (Number(seg.dir?.x) || 0),
+	                    foundForward: false,
+	                    foundBackward: false
+	                }));
+	
+	                for (const info of segInfo) {
+	                    const rightX = Number(info.seg?.right?.x) || 0;
+	                    const rightZ = Number(info.seg?.right?.z) || 0;
+	                    const dot = rightX * info.expectedRightX + rightZ * info.expectedRightZ;
+	                    assertTrue(dot > 0.95, 'Expected segment.right to follow right-hand traffic convention.');
+	                }
 
                 const readV = (vertexIndex) => {
                     const i = vertexIndex * 3;
@@ -4549,19 +4571,21 @@ async function runTests() {
                     }
                     const info = segInfo[best];
 
-                    const arrowDirX = tip.x - tail.x;
-                    const arrowDirZ = tip.z - tail.z;
-                    const dotForward = arrowDirX * info.dirX + arrowDirZ * info.dirZ;
-
-                    const side = (centerX - info.midX) * info.rightX + (centerZ - info.midZ) * info.rightZ;
-                    if (side >= 0) {
-                        info.foundForward = true;
-                        assertTrue(dotForward > 0.25, 'Expected forward-lane arrow to point along its segment direction.');
-                    } else {
-                        info.foundBackward = true;
-                        assertTrue(dotForward < -0.25, 'Expected backward-lane arrow to point opposite its segment direction.');
-                    }
-                }
+	                    const arrowDirX = tip.x - tail.x;
+	                    const arrowDirZ = tip.z - tail.z;
+	                    const dotForward = arrowDirX * info.dirX + arrowDirZ * info.dirZ;
+	
+	                    const side = (centerX - info.midX) * info.expectedRightX + (centerZ - info.midZ) * info.expectedRightZ;
+	                    if (dotForward > 0) {
+	                        info.foundForward = true;
+	                        assertTrue(dotForward > 0.25, 'Expected forward-lane arrow to point along its segment direction.');
+	                    } else {
+	                        info.foundBackward = true;
+	                        assertTrue(dotForward < -0.25, 'Expected backward-lane arrow to point opposite its segment direction.');
+	                    }
+	                    if (dotForward > 0) assertTrue(side > 1e-6, 'Expected forward-lane arrow to render on the right side of the centerline.');
+	                    else assertTrue(side < -1e-6, 'Expected backward-lane arrow to render on the left side of the centerline.');
+	                }
 
                 for (const info of segInfo.slice(0, 2)) {
                     assertTrue(info.foundForward && info.foundBackward, 'Expected both forward and backward arrows per segment.');
@@ -4887,11 +4911,14 @@ async function runTests() {
                 assertTrue(arrowCount > 0, 'Expected at least one forward lane arrow.');
 
                 const segMidX = ((Number(segAfter.aWorld?.x) || 0) + (Number(segAfter.bWorld?.x) || 0)) * 0.5;
-                const segMidZ = ((Number(segAfter.aWorld?.z) || 0) + (Number(segAfter.bWorld?.z) || 0)) * 0.5;
-                const dirX = Number(segAfter.dir?.x) || 0;
-                const dirZ = Number(segAfter.dir?.z) || 0;
-                const rightX = Number(segAfter.right?.x) || 0;
-                const rightZ = Number(segAfter.right?.z) || 0;
+	                const segMidZ = ((Number(segAfter.aWorld?.z) || 0) + (Number(segAfter.bWorld?.z) || 0)) * 0.5;
+	                const dirX = Number(segAfter.dir?.x) || 0;
+	                const dirZ = Number(segAfter.dir?.z) || 0;
+	                const expectedRightX = -dirZ;
+	                const expectedRightZ = dirX;
+	                const rightX = Number(segAfter.right?.x) || 0;
+	                const rightZ = Number(segAfter.right?.z) || 0;
+	                assertTrue((rightX * expectedRightX + rightZ * expectedRightZ) > 0.95, 'Expected segment.right to follow right-hand traffic convention.');
 
                 const readV = (vertexIndex) => {
                     const i = vertexIndex * 3;
@@ -4911,16 +4938,16 @@ async function runTests() {
 
                     const arrowDirX = tip.x - tail.x;
                     const arrowDirZ = tip.z - tail.z;
-                    const dotForward = arrowDirX * dirX + arrowDirZ * dirZ;
-                    assertTrue(dotForward > 0.25, 'Expected one-way road arrows to point along segment direction.');
-
-                    const centerX = (tip.x + tail.x) * 0.5;
-                    const centerZ = (tip.z + tail.z) * 0.5;
-                    const side = (centerX - segMidX) * rightX + (centerZ - segMidZ) * rightZ;
-                    assertTrue(side > -1e-6, 'Expected one-way road arrows to only appear on the forward side.');
-                }
-            } finally {
-                view.exit();
+	                    const dotForward = arrowDirX * dirX + arrowDirZ * dirZ;
+	                    assertTrue(dotForward > 0.25, 'Expected one-way road arrows to point along segment direction.');
+	
+	                    const centerX = (tip.x + tail.x) * 0.5;
+	                    const centerZ = (tip.z + tail.z) * 0.5;
+	                    const side = (centerX - segMidX) * expectedRightX + (centerZ - segMidZ) * expectedRightZ;
+	                    assertTrue(side > -1e-6, 'Expected one-way road arrows to only appear on the forward side.');
+	                }
+	            } finally {
+	                view.exit();
             }
         });
     } catch (e) {

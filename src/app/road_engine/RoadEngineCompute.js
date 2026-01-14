@@ -36,7 +36,7 @@ function normalizeDirXZ(a, b) {
 }
 
 function rightNormalXZ(dir) {
-    return { x: dir.z, z: -dir.x };
+    return { x: -dir.z, z: dir.x };
 }
 
 function resolveOrigin(origin) {
