@@ -13,18 +13,26 @@ function applySolidMaterials(asset) {
 
 function setTrafficLightArmLength(asset, armLength) {
     const mesh = asset?.mesh ?? null;
-    const api = mesh?.userData?.api ?? null;
-    if (!api || typeof api.setValue !== 'function') return;
-    api.setValue('armLength', armLength);
+    const prefab = mesh?.userData?.prefab ?? null;
+    if (prefab && typeof prefab.setParam === 'function') {
+        prefab.setParam('armLength', armLength);
+        return;
+    }
+    const legacy = mesh?.userData?.api ?? null;
+    if (legacy && typeof legacy.setValue === 'function') legacy.setValue('armLength', armLength);
 }
 
 function setTrafficLightActive(asset, activeLight) {
     const mesh = asset?.mesh ?? null;
-    const api = mesh?.userData?.api ?? null;
-    const children = Array.isArray(api?.children) ? api.children : [];
+    const rig = mesh?.userData?.rig ?? null;
+    if (rig && typeof rig.setValue === 'function') {
+        rig.setValue('signal', activeLight);
+        return;
+    }
+    const legacy = mesh?.userData?.api ?? null;
+    const children = Array.isArray(legacy?.children) ? legacy.children : [];
     const head = children.find((child) => child?.schema?.id === 'skeleton.traffic_light_head.v1') ?? null;
-    if (!head || typeof head.setValue !== 'function') return;
-    head.setValue('activeLight', activeLight);
+    if (head && typeof head.setValue === 'function') head.setValue('activeLight', activeLight);
 }
 
 export function createTrafficControlProps({ placements = [], useSolidMaterials = true } = {}) {

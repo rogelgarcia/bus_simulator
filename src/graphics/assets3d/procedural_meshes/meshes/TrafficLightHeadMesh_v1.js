@@ -2,7 +2,7 @@
 // Generates a traffic light head mesh with stable region identifiers.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { createTrafficLightHeadSkeletonApi } from '../skeletons/TrafficLightHeadSkeleton_v1.js';
+import { createTrafficLightHeadLegacySkeletonApi, createTrafficLightHeadRig } from '../rigs/TrafficLightHeadRig_v1.js';
 
 export const MESH_ID = 'mesh.traffic_light_head.v1';
 export const MESH_OPTION = Object.freeze({ id: MESH_ID, label: 'Traffic light head' });
@@ -92,10 +92,12 @@ export function createAsset() {
     mesh.castShadow = true;
     mesh.receiveShadow = false;
 
-    mesh.userData.api = createTrafficLightHeadSkeletonApi({
+    const rig = createTrafficLightHeadRig({
         regions,
         materials: { semantic: semanticMaterials, solid: solidMaterials }
     });
+    mesh.userData.rig = rig;
+    mesh.userData.api = createTrafficLightHeadLegacySkeletonApi(rig);
 
     return {
         id,

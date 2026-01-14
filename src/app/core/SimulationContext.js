@@ -85,7 +85,7 @@ export class SimulationContext {
      * 
      * @param {object} vehicle - The bus model (THREE.Object3D)
      * @param {object} anchor - The floor anchor group
-     * @param {object} api - The BusSkeleton API
+     * @param {object} api - The BusRig API
      * @param {string} [id] - Optional custom ID
      * @returns {string} The vehicle ID
      */

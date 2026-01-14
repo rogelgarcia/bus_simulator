@@ -67,7 +67,7 @@ const HELP = {
         shift: 'Shift status.\n\nBlend: 0→1 ramp during a shift.\nTimer: remaining shift time.\nCooldown: minimum time before the next automatic shift.\n\nIf shifts feel jumpy, increase shift time; if gears skip, increase cooldown.'
     },
     tree: {
-        mode: 'Selects which data is shown in the tree view.\n\nRapier: live vehicle debug from physics.\nEvent input: last `input:controls` payload.\njtree: Object3D hierarchy snapshot.\nSkeleton: bus rig/skeleton summary.',
+        mode: 'Selects which data is shown in the tree view.\n\nRapier: live vehicle debug from physics.\nEvent input: last `input:controls` payload.\njtree: Object3D hierarchy snapshot.\nRig: bus rig summary.',
         toggle: 'Shows/hides the tree view.\n\nOff reduces UI work and keeps the logs area smaller.',
         auto: 'Auto-refreshes the tree view at a fixed interval.\n\nTurn off to reduce overhead and use Refresh manually.',
         refresh: 'Manually refreshes the tree view now.'
@@ -886,14 +886,14 @@ export class GameplayDebugPanel {
             { value: 'rapier', label: 'Rapier' },
             { value: 'event', label: 'Event input' },
             { value: 'scene', label: 'jtree' },
-            { value: 'skeleton', label: 'Skeleton' }
+            { value: 'rig', label: 'Rig' }
         ]) {
             const o = document.createElement('option');
             o.value = opt.value;
             o.textContent = opt.label;
             this.treeModeSel.appendChild(o);
         }
-        this.treeModeSel.value = this._treeMode;
+        this.treeModeSel.value = this._treeMode === 'skeleton' ? 'rig' : this._treeMode;
         this.treeModeSel.addEventListener('change', () => {
             this._treeMode = this.treeModeSel.value;
             this._refreshTree({ force: true });
@@ -962,9 +962,9 @@ export class GameplayDebugPanel {
             title = 'anchor/model tree';
             const root = this._ctx.anchor ?? this._ctx.model ?? null;
             data = root ? this._packObject3DTree(root, 3) : null;
-        } else if (this._treeMode === 'skeleton') {
-            title = 'bus skeleton';
-            data = this._packSkeleton(this._ctx.api);
+        } else if (this._treeMode === 'rig' || this._treeMode === 'skeleton') {
+            title = 'bus rig';
+            data = this._packRig(this._ctx.api);
         }
 
         this.treeBody.innerHTML = '';
@@ -1073,7 +1073,7 @@ export class GameplayDebugPanel {
         return out;
     }
 
-    _packSkeleton(api) {
+    _packRig(api) {
         if (!api) return null;
         const pick = (o) => o?.isObject3D ? (o.name || o.type || 'Object3D') : null;
         return {

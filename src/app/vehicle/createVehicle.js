@@ -37,11 +37,11 @@ function resolveBusAnchor(selected) {
 
 function resolveBusApi(busModel) {
     if (!busModel) return null;
-    return busModel.userData?.bus ?? busModel.userData?.api ?? null;
+    return busModel.userData?.rig ?? busModel.userData?.bus ?? busModel.userData?.api ?? null;
 }
 
 function resolveBoundsTarget(model) {
-    const api = model?.userData?.bus ?? model?.userData?.api ?? null;
+    const api = model?.userData?.rig ?? model?.userData?.bus ?? model?.userData?.api ?? null;
     if (api?.tiltPivot?.isObject3D) return api.tiltPivot;
     if (api?.bodyRoot?.isObject3D) return api.bodyRoot;
     return model;
@@ -162,7 +162,7 @@ export function createVehicleFromBus(selected, options = {}) {
 
     const api = resolveBusApi(model);
     if (!api) {
-        console.warn('[createVehicleFromBus] Bus model has no BusSkeleton API');
+        console.warn('[createVehicleFromBus] Bus model has no BusRig API');
     }
 
     const anchor = providedAnchor ?? makeVehicleAnchor(model);

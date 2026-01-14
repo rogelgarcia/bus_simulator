@@ -82,15 +82,15 @@
     height: 16px;
 }
 
-.mesh-inspector-skeleton {
+.mesh-inspector-controls {
     margin-bottom: 10px;
     display: flex;
     flex-direction: column;
     gap: 10px;
 }
 
-.mesh-inspector-skeleton-group,
-.mesh-inspector-skeleton-root {
+.mesh-inspector-controls-group,
+.mesh-inspector-controls-root {
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -100,37 +100,70 @@
     background: rgba(0,0,0,0.16);
 }
 
-.mesh-inspector-skeleton-group-title {
+.mesh-inspector-controls-group-title {
     font-size: 12px;
     font-weight: 800;
     opacity: 0.92;
     letter-spacing: 0.02em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: inherit;
+    cursor: default;
 }
 
-.mesh-inspector-skeleton-row {
+.mesh-inspector-controls-group-title.is-collapsible {
+    cursor: pointer;
+}
+
+.mesh-inspector-controls-group-title.is-collapsible:hover {
+    opacity: 1.0;
+}
+
+.mesh-inspector-controls-group-caret {
+    width: 14px;
+    display: inline-flex;
+    justify-content: center;
+    opacity: 0.85;
+}
+
+.mesh-inspector-controls-group-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.mesh-inspector-controls-group.is-collapsed .mesh-inspector-controls-group-body {
+    display: none;
+}
+
+.mesh-inspector-control-row {
     display: grid;
     grid-template-columns: 120px 1fr;
     gap: 10px;
     align-items: center;
 }
 
-.mesh-inspector-skeleton-row-label {
+.mesh-inspector-control-row-label {
     font-size: 12px;
     opacity: 0.85;
 }
 
-.mesh-inspector-skeleton-number {
+.mesh-inspector-control-number {
     display: grid;
     grid-template-columns: 1fr 56px;
     gap: 10px;
     align-items: center;
 }
 
-.mesh-inspector-skeleton-number-slider {
+.mesh-inspector-control-number-slider {
     width: 100%;
 }
 
-.mesh-inspector-skeleton-number-value {
+.mesh-inspector-control-number-value {
     font-size: 12px;
     text-align: right;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;

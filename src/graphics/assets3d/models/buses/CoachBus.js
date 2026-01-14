@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createBusWheel } from './components/BusWheel.js';
 import { WheelRig } from './components/WheelRig.js';
-import { attachBusSkeleton } from '../../../../app/skeletons/buses/BusSkeleton.js';
+import { attachBusRig } from '../../../../app/rigs/buses/BusRig.js';
 
 const TRANSPARENT_BUS = false;
 const BUS_BODY_OPACITY = 0.4;
@@ -338,7 +338,7 @@ function attachWheelGroups(bus, wheelGroups, rig) {
     if (!wheelGroups.length) return null;
     bus.updateMatrixWorld(true);
 
-    const wheelsRoot = bus.userData?.bus?.wheelsRoot ?? bus;
+    const wheelsRoot = bus.userData?.rig?.wheelsRoot ?? bus.userData?.bus?.wheelsRoot ?? bus;
     wheelsRoot.updateMatrixWorld(true);
 
     const data = [];
@@ -507,7 +507,7 @@ function addProceduralWheels(bus, rig, { width, length, wheelRadius }) {
     const axleMid = axleRear + Math.min(1.5, Math.max(0.9, length * 0.10));
     const wheelX = (width / 2) + (wheelW / 2) - 0.30;
 
-    const wheelsRoot = bus.userData?.bus?.wheelsRoot ?? bus;
+    const wheelsRoot = bus.userData?.rig?.wheelsRoot ?? bus.userData?.bus?.wheelsRoot ?? bus;
 
     const wFR = createBusWheel({ radius: wheelR, width: wheelW });
     wFR.root.position.set(wheelX, wheelR, axleFront);
@@ -544,25 +544,25 @@ function addProceduralWheels(bus, rig, { width, length, wheelRadius }) {
 }
 
 function recenterBody(bus, bounds = null) {
-    const skeleton = bus.userData?.bus;
-    if (!skeleton?.bodyRoot || !skeleton?.bodyTiltPivot) return;
-    const bodyRoot = skeleton.bodyRoot;
+    const rig = bus.userData?.rig ?? bus.userData?.bus;
+    if (!rig?.bodyRoot || !rig?.bodyTiltPivot) return;
+    const bodyRoot = rig.bodyRoot;
     let box = bounds;
     if (!box || box.isEmpty()) box = getObjectBoundsLocal(bodyRoot, bodyRoot);
     if (!box || box.isEmpty()) return;
     const center = box.getCenter(new THREE.Vector3());
-    skeleton.bodyTiltPivot.position.copy(center);
+    rig.bodyTiltPivot.position.copy(center);
     bodyRoot.position.set(-center.x, -center.y, -center.z);
-    skeleton._bodyPivotBase.copy(skeleton.bodyTiltPivot.position);
-    skeleton.bodyPivotBase.copy(skeleton._bodyPivotBase);
+    rig._bodyPivotBase.copy(rig.bodyTiltPivot.position);
+    rig.bodyPivotBase.copy(rig._bodyPivotBase);
 }
 
 function alignAnchoredBus(bus) {
     const parent = bus.parent;
     if (!parent || parent.userData?.model !== bus) return;
     const origin = parent.userData?.origin ?? 'floor';
-    const skeleton = bus.userData?.bus ?? null;
-    const target = origin === 'center' ? (skeleton?.tiltPivot ?? skeleton?.bodyRoot ?? bus) : bus;
+    const rig = bus.userData?.rig ?? bus.userData?.bus ?? null;
+    const target = origin === 'center' ? (rig?.tiltPivot ?? rig?.bodyRoot ?? bus) : bus;
     const box = getObjectBoundsLocal(parent, target);
     if (box.isEmpty()) return;
     if (origin === 'center') {
@@ -604,7 +604,7 @@ export function createCoachBus(spec) {
         brakeLights: [lights.bl, lights.br]
     };
 
-    attachBusSkeleton(bus, { wheelRig: rig, parts: bus.userData.parts });
+    attachBusRig(bus, { wheelRig: rig, parts: bus.userData.parts });
 
     loadBusModel().then((template) => {
         if (!template) return;
@@ -618,8 +618,8 @@ export function createCoachBus(spec) {
         alignModelToGround(model, wheelGroups);
         applyShadows(model);
 
-        const skeleton = bus.userData?.bus;
-        const bodyRoot = skeleton?.bodyRoot ?? bus;
+        const rig = bus.userData?.rig ?? bus.userData?.bus;
+        const bodyRoot = rig?.bodyRoot ?? bus;
         bodyRoot.add(model);
         const bodyBoundsLocal = getBodyBoundsLocal(bodyRoot, model);
         const localBounds = bodyBoundsLocal.isEmpty()

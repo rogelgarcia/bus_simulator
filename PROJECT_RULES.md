@@ -6,7 +6,7 @@
 - MUST READ PROJECT_RULES.local.md
 
 **Project Structure & Module Organization**
-- Application logic → `src/app/` (city, core, geometry, input, physics, skeletons, utils, vehicle)
+- Application logic → `src/app/` (city, core, geometry, input, physics, rigs, utils, vehicle)
 - Rendering/UI code → `src/graphics/`
   - Three.js assets (models, geometries, generators, textures, factories) → `src/graphics/assets3d/`
   - GUI/HUD/CSS → `src/graphics/gui/`

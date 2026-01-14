@@ -4,7 +4,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createGradientSkyDome } from '../../assets3d/generators/SkyGenerator.js';
 import { createProceduralMeshAsset, getProceduralMeshOptions } from '../../assets3d/procedural_meshes/ProceduralMeshCatalog.js';
-import { isMeshSkeletonApi } from '../../assets3d/procedural_meshes/skeletons/MeshSkeletonSchema.js';
+import { isRigApi } from '../../../app/rigs/RigSchema.js';
+import { isPrefabParamsApi } from '../../../app/prefabs/PrefabParamsSchema.js';
 
 function clampInt(value, min, max) {
     const num = Number(value);
@@ -257,9 +258,14 @@ export class MeshInspectorScene {
         return this._asset?.mesh ?? null;
     }
 
-    getSkeletonApi() {
-        const api = this._asset?.mesh?.userData?.api ?? null;
-        return isMeshSkeletonApi(api) ? api : null;
+    getPrefabParamsApi() {
+        const api = this._asset?.mesh?.userData?.prefab ?? null;
+        return isPrefabParamsApi(api) ? api : null;
+    }
+
+    getRigApi() {
+        const api = this._asset?.mesh?.userData?.rig ?? null;
+        return isRigApi(api) ? api : null;
     }
 
     getRegionInfoFromIntersection(hit) {

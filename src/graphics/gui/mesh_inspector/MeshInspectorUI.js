@@ -106,12 +106,19 @@ export class MeshInspectorUI {
         this.colorModeRow.appendChild(this.colorModeLabel);
         this.colorModeRow.appendChild(this.colorModeSelect);
 
-        this.skeletonLabel = document.createElement('div');
-        this.skeletonLabel.className = 'ui-section-label';
-        this.skeletonLabel.textContent = 'Skeleton';
+        this.prefabLabel = document.createElement('div');
+        this.prefabLabel.className = 'ui-section-label';
+        this.prefabLabel.textContent = 'Construction / Prefab Params';
 
-        this.skeletonPanel = document.createElement('div');
-        this.skeletonPanel.className = 'mesh-inspector-skeleton';
+        this.prefabPanel = document.createElement('div');
+        this.prefabPanel.className = 'mesh-inspector-controls';
+
+        this.rigLabel = document.createElement('div');
+        this.rigLabel.className = 'ui-section-label';
+        this.rigLabel.textContent = 'Runtime / Rig Controls';
+
+        this.rigPanel = document.createElement('div');
+        this.rigPanel.className = 'mesh-inspector-controls';
 
         this.selectionLabel = document.createElement('div');
         this.selectionLabel.className = 'ui-section-label';
@@ -159,8 +166,10 @@ export class MeshInspectorUI {
         this.panel.appendChild(this.wireframeToggle);
         this.panel.appendChild(this.edgesToggle);
         this.panel.appendChild(this.colorModeRow);
-        this.panel.appendChild(this.skeletonLabel);
-        this.panel.appendChild(this.skeletonPanel);
+        this.panel.appendChild(this.prefabLabel);
+        this.panel.appendChild(this.prefabPanel);
+        this.panel.appendChild(this.rigLabel);
+        this.panel.appendChild(this.rigPanel);
         this.panel.appendChild(this.selectionLabel);
         this.panel.appendChild(this.hoverRow);
         this.panel.appendChild(this.selectedRow);
@@ -186,7 +195,8 @@ export class MeshInspectorUI {
         this._onCopy = () => this._copySummary();
 
         this._bound = false;
-        this._skeletonApi = null;
+        this._prefabApi = null;
+        this._rigApi = null;
     }
 
     mount() {
@@ -233,114 +243,178 @@ export class MeshInspectorUI {
         this.colorModeSelect.value = mode === 'solid' ? 'solid' : 'semantic';
     }
 
-    setSkeleton(api) {
+    setPrefabParams(api) {
         const valid = !!api && typeof api === 'object'
-            && !!api.schema && typeof api.getValue === 'function' && typeof api.setValue === 'function';
-        this._skeletonApi = valid ? api : null;
-        this.skeletonPanel.textContent = '';
+            && !!api.schema && typeof api.getParam === 'function' && typeof api.setParam === 'function';
+        this._prefabApi = valid ? api : null;
+        this.prefabPanel.textContent = '';
 
-        if (!this._skeletonApi) {
-            this.skeletonLabel.style.display = 'none';
-            this.skeletonPanel.style.display = 'none';
+        if (!this._prefabApi) {
+            this.prefabLabel.style.display = 'none';
+            this.prefabPanel.style.display = 'none';
             return;
         }
 
-        this.skeletonLabel.style.display = '';
-        this.skeletonPanel.style.display = '';
+        this.prefabLabel.style.display = '';
+        this.prefabPanel.style.display = '';
+
+        this._renderSchemaControls(this.prefabPanel, this._prefabApi, {
+            getValue: (id) => this._prefabApi.getParam(id),
+            setValue: (id, value) => this._prefabApi.setParam(id, value),
+            collapsible: false
+        });
+    }
+
+    setRig(api) {
+        const valid = !!api && typeof api === 'object'
+            && !!api.schema && typeof api.getValue === 'function' && typeof api.setValue === 'function';
+        this._rigApi = valid ? api : null;
+        this.rigPanel.textContent = '';
+
+        if (!this._rigApi) {
+            this.rigLabel.style.display = 'none';
+            this.rigPanel.style.display = 'none';
+            return;
+        }
+
+        this.rigLabel.style.display = '';
+        this.rigPanel.style.display = '';
 
         const renderGroup = (groupApi, { title = null, isChild = false } = {}) => {
-            const schema = groupApi?.schema ?? null;
-            if (!schema) return;
+            this._renderSchemaControls(this.rigPanel, groupApi, {
+                title,
+                isChild,
+                getValue: (id) => groupApi.getValue(id),
+                setValue: (id, value) => groupApi.setValue(id, value),
+                collapsible: isChild
+            });
 
-            const container = document.createElement('div');
-            container.className = isChild ? 'mesh-inspector-skeleton-group' : 'mesh-inspector-skeleton-root';
-
-            if (title) {
-                const heading = document.createElement('div');
-                heading.className = 'mesh-inspector-skeleton-group-title';
-                heading.textContent = title;
-                container.appendChild(heading);
-            }
-
-            const props = Array.isArray(schema.properties) ? schema.properties : [];
-            for (const prop of props) {
-                const propId = typeof prop?.id === 'string' ? prop.id : '';
-                if (!propId) continue;
-
-                const row = document.createElement('div');
-                row.className = 'mesh-inspector-skeleton-row';
-
-                const label = document.createElement('div');
-                label.className = 'mesh-inspector-skeleton-row-label';
-                label.textContent = prop?.label ?? propId;
-
-                const control = document.createElement('div');
-                control.className = 'mesh-inspector-skeleton-row-control';
-
-                if (prop?.type === 'enum') {
-                    const select = document.createElement('select');
-                    select.className = 'mesh-inspector-select';
-                    const options = Array.isArray(prop?.options) ? prop.options : [];
-                    for (const opt of options) {
-                        const optId = typeof opt?.id === 'string' ? opt.id : '';
-                        if (!optId) continue;
-                        const el = document.createElement('option');
-                        el.value = optId;
-                        el.textContent = opt?.label ?? optId;
-                        select.appendChild(el);
-                    }
-                    select.value = groupApi.getValue(propId) ?? prop.defaultValue ?? '';
-                    select.addEventListener('change', () => {
-                        groupApi.setValue(propId, select.value);
-                        select.value = groupApi.getValue(propId) ?? select.value;
-                    });
-                    control.appendChild(select);
-                } else if (prop?.type === 'number') {
-                    const wrap = document.createElement('div');
-                    wrap.className = 'mesh-inspector-skeleton-number';
-
-                    const slider = document.createElement('input');
-                    slider.type = 'range';
-                    slider.min = String(Number(prop?.min ?? 0));
-                    slider.max = String(Number(prop?.max ?? 1));
-                    slider.step = String(Number(prop?.step ?? 0.01));
-                    slider.value = String(groupApi.getValue(propId) ?? prop.defaultValue ?? 0);
-                    slider.className = 'mesh-inspector-skeleton-number-slider';
-
-                    const value = document.createElement('div');
-                    value.className = 'mesh-inspector-skeleton-number-value';
-                    value.textContent = slider.value;
-
-                    const sync = () => {
-                        groupApi.setValue(propId, slider.value);
-                        const next = groupApi.getValue(propId) ?? slider.value;
-                        slider.value = String(next);
-                        value.textContent = String(next);
-                    };
-
-                    slider.addEventListener('input', sync);
-                    slider.addEventListener('change', sync);
-
-                    wrap.appendChild(slider);
-                    wrap.appendChild(value);
-                    control.appendChild(wrap);
-                }
-
-                row.appendChild(label);
-                row.appendChild(control);
-                container.appendChild(row);
-            }
-
-            this.skeletonPanel.appendChild(container);
-
-            const children = Array.isArray(groupApi.children) ? groupApi.children : [];
+            const children = Array.isArray(groupApi?.children) ? groupApi.children : [];
             for (const child of children) {
                 const childLabel = child?.schema?.label ?? child?.schema?.id ?? 'Child';
                 renderGroup(child, { title: childLabel, isChild: true });
             }
         };
 
-        renderGroup(this._skeletonApi);
+        renderGroup(this._rigApi);
+    }
+
+    _renderSchemaControls(panel, groupApi, { title = null, isChild = false, getValue, setValue, collapsible = false } = {}) {
+        const schema = groupApi?.schema ?? null;
+        if (!schema) return;
+
+        const container = document.createElement('div');
+        container.className = isChild ? 'mesh-inspector-controls-group' : 'mesh-inspector-controls-root';
+
+        const body = document.createElement('div');
+        body.className = 'mesh-inspector-controls-group-body';
+
+        if (title) {
+            const heading = document.createElement('button');
+            heading.type = 'button';
+            heading.className = 'mesh-inspector-controls-group-title';
+
+            const caret = document.createElement('span');
+            caret.className = 'mesh-inspector-controls-group-caret';
+            caret.textContent = collapsible ? '▾' : '';
+
+            const text = document.createElement('span');
+            text.textContent = title;
+
+            heading.appendChild(caret);
+            heading.appendChild(text);
+            container.appendChild(heading);
+
+            if (collapsible) {
+                heading.classList.add('is-collapsible');
+                heading.addEventListener('click', () => {
+                    const nextCollapsed = !container.classList.contains('is-collapsed');
+                    container.classList.toggle('is-collapsed', nextCollapsed);
+                    caret.textContent = nextCollapsed ? '▸' : '▾';
+                });
+            }
+        }
+
+        const props = Array.isArray(schema.properties) ? schema.properties : [];
+        for (const prop of props) {
+            const propId = typeof prop?.id === 'string' ? prop.id : '';
+            if (!propId) continue;
+
+            const row = document.createElement('div');
+            row.className = 'mesh-inspector-control-row';
+
+            const label = document.createElement('div');
+            label.className = 'mesh-inspector-control-row-label';
+            label.textContent = prop?.label ?? propId;
+
+            const control = document.createElement('div');
+            control.className = 'mesh-inspector-control-row-control';
+
+            if (prop?.type === 'enum') {
+                const select = document.createElement('select');
+                select.className = 'mesh-inspector-select';
+                const options = Array.isArray(prop?.options) ? prop.options : [];
+                for (const opt of options) {
+                    const optId = typeof opt?.id === 'string' ? opt.id : '';
+                    if (!optId) continue;
+                    const el = document.createElement('option');
+                    el.value = optId;
+                    el.textContent = opt?.label ?? optId;
+                    select.appendChild(el);
+                }
+                select.value = getValue(propId) ?? prop.defaultValue ?? '';
+                select.addEventListener('change', () => {
+                    setValue(propId, select.value);
+                    select.value = getValue(propId) ?? select.value;
+                });
+                control.appendChild(select);
+            } else if (prop?.type === 'number') {
+                const wrap = document.createElement('div');
+                wrap.className = 'mesh-inspector-control-number';
+
+                const slider = document.createElement('input');
+                slider.type = 'range';
+                slider.min = String(Number(prop?.min ?? 0));
+                slider.max = String(Number(prop?.max ?? 1));
+                slider.step = String(Number(prop?.step ?? 0.01));
+                slider.value = String(getValue(propId) ?? prop.defaultValue ?? 0);
+                slider.className = 'mesh-inspector-control-number-slider';
+
+                const value = document.createElement('div');
+                value.className = 'mesh-inspector-control-number-value';
+                value.textContent = slider.value;
+
+                const sync = () => {
+                    setValue(propId, slider.value);
+                    const next = getValue(propId) ?? slider.value;
+                    slider.value = String(next);
+                    value.textContent = String(next);
+                };
+
+                slider.addEventListener('input', sync);
+                slider.addEventListener('change', sync);
+
+                wrap.appendChild(slider);
+                wrap.appendChild(value);
+                control.appendChild(wrap);
+            } else if (prop?.type === 'boolean') {
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = !!(getValue(propId) ?? prop.defaultValue ?? false);
+                checkbox.addEventListener('change', () => {
+                    setValue(propId, checkbox.checked);
+                    checkbox.checked = !!(getValue(propId) ?? checkbox.checked);
+                });
+                control.appendChild(checkbox);
+            }
+
+            row.appendChild(label);
+            row.appendChild(control);
+            body.appendChild(row);
+        }
+
+        container.appendChild(body);
+        panel.appendChild(container);
     }
 
     setHoverInfo(info) {

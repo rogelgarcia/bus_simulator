@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 import { WheelRig } from './components/WheelRig.js';
-import { attachBusSkeleton } from '../../../../app/skeletons/buses/BusSkeleton.js';
+import { attachBusRig } from '../../../../app/rigs/buses/BusRig.js';
 
 const TRANSPARENT_BUS = false;
 const BUS_BODY_OPACITY = 0.4;
@@ -170,24 +170,24 @@ function normalizeModel(root, { targetLength, rideHeight }) {
 }
 
 function recenterBody(bus) {
-    const skeleton = bus.userData?.bus;
-    if (!skeleton?.bodyRoot || !skeleton?.bodyTiltPivot) return;
-    const bodyRoot = skeleton.bodyRoot;
+    const rig = bus.userData?.rig ?? bus.userData?.bus;
+    if (!rig?.bodyRoot || !rig?.bodyTiltPivot) return;
+    const bodyRoot = rig.bodyRoot;
     const box = getObjectBoundsLocal(bodyRoot, bodyRoot);
     if (box.isEmpty()) return;
     const center = box.getCenter(new THREE.Vector3());
-    skeleton.bodyTiltPivot.position.copy(center);
+    rig.bodyTiltPivot.position.copy(center);
     bodyRoot.position.set(-center.x, -center.y, -center.z);
-    skeleton._bodyPivotBase.copy(skeleton.bodyTiltPivot.position);
-    skeleton.bodyPivotBase.copy(skeleton._bodyPivotBase);
+    rig._bodyPivotBase.copy(rig.bodyTiltPivot.position);
+    rig.bodyPivotBase.copy(rig._bodyPivotBase);
 }
 
 function alignAnchoredBus(bus) {
     const parent = bus.parent;
     if (!parent || parent.userData?.model !== bus) return;
     const origin = parent.userData?.origin ?? 'floor';
-    const skeleton = bus.userData?.bus ?? null;
-    const target = origin === 'center' ? (skeleton?.tiltPivot ?? skeleton?.bodyRoot ?? bus) : bus;
+    const rig = bus.userData?.rig ?? bus.userData?.bus ?? null;
+    const target = origin === 'center' ? (rig?.tiltPivot ?? rig?.bodyRoot ?? bus) : bus;
     const box = getObjectBoundsLocal(parent, target);
     if (box.isEmpty()) return;
     if (origin === 'center') {
@@ -353,7 +353,7 @@ function getObjectBoundsLocal(root, object) {
 
 function attachWheelMeshes(bus, wheelNodes, wheelMeshes, rig) {
     const info = {};
-    const wheelSpaceRoot = bus.userData?.bus?.wheelsRoot ?? bus;
+    const wheelSpaceRoot = bus.userData?.rig?.wheelsRoot ?? bus.userData?.bus?.wheelsRoot ?? bus;
     bus.updateMatrixWorld(true);
 
     for (const key of Object.keys(wheelNodes)) {
@@ -481,7 +481,7 @@ export function createCityBus(spec) {
         brakeLights: [bl, br]
     };
 
-    attachBusSkeleton(bus, { wheelRig: rig, parts: bus.userData.parts });
+    attachBusRig(bus, { wheelRig: rig, parts: bus.userData.parts });
 
     loadBusModel().then((template) => {
         if (!template) return;
@@ -489,8 +489,8 @@ export function createCityBus(spec) {
         applyMaterialSettings(model);
         normalizeModel(model, { targetLength: length, rideHeight });
         applyShadows(model);
-        const skeleton = bus.userData?.bus;
-        const bodyRoot = skeleton?.bodyRoot ?? bus;
+        const rig = bus.userData?.rig ?? bus.userData?.bus;
+        const bodyRoot = rig?.bodyRoot ?? bus;
         bodyRoot.add(model);
         recenterBody(bus);
         bus.updateMatrixWorld(true);

@@ -64,9 +64,9 @@ export class VehicleController {
         });
     }
 
-    /**
+     /**
      * Set the vehicle API for visual updates.
-     * @param {object} api - BusSkeleton API
+     * @param {object} api - BusRig API
      * @param {object} anchor - Floor anchor group
      */
     setVehicleApi(api, anchor) {

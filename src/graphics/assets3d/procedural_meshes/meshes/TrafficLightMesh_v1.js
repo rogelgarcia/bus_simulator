@@ -4,8 +4,9 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as TrafficLightPoleMeshV1 from './TrafficLightPoleMesh_v1.js';
 import * as TrafficLightHeadMeshV1 from './TrafficLightHeadMesh_v1.js';
-import { clampNumber, createNumberProperty } from '../skeletons/MeshSkeletonSchema.js';
-import { createTrafficLightHeadSkeletonApi } from '../skeletons/TrafficLightHeadSkeleton_v1.js';
+import { clampNumber, createNumberProperty } from '../../../../app/prefabs/PrefabParamsSchema.js';
+import { createCompositeRig } from '../../../../app/rigs/CompositeRig.js';
+import { createTrafficLightHeadLegacySkeletonApi, createTrafficLightHeadRig } from '../rigs/TrafficLightHeadRig_v1.js';
 
 export const MESH_ID = 'mesh.traffic_light.v1';
 export const MESH_OPTION = Object.freeze({ id: MESH_ID, label: 'Traffic light' });
@@ -173,19 +174,20 @@ export function createAsset() {
         mesh.receiveShadow = false;
         mesh.rotation.y = Math.PI;
 
-        const headSkeleton = createTrafficLightHeadSkeletonApi({
+        const headRig = createTrafficLightHeadRig({
             regions,
             materials: { semantic: semanticMaterials, solid: solidMaterials }
         });
 
-        const rootSchema = Object.freeze({
-            id: 'skeleton.traffic_light.v1',
+        const rig = createCompositeRig({
+            id: 'rig.traffic_light.v1',
             label: 'Traffic light',
-            properties: Object.freeze([armLengthProp]),
-            children: Object.freeze([headSkeleton.schema])
+            children: [{ key: 'head', rig: headRig, label: 'Head' }],
+            aliases: [{ id: 'signal', label: 'Signal', path: 'head.signal' }]
         });
+        mesh.userData.rig = rig;
 
-        const state = { armLength: armLengthProp.defaultValue };
+        const params = { armLength: armLengthProp.defaultValue };
         const rebuildGeometry = (armLength) => {
             const poleRebuild = TrafficLightPoleMeshV1.createAsset({ armLength });
             const headRebuild = TrafficLightHeadMeshV1.createAsset();
@@ -252,18 +254,23 @@ export function createAsset() {
             }
         };
 
-        mesh.userData.api = {
-            schema: rootSchema,
-            children: [headSkeleton],
-            getValue: (propId) => {
-                if (propId === 'armLength') return state.armLength;
+        const prefab = {
+            schema: Object.freeze({
+                id: 'prefab_params.traffic_light.v1',
+                label: 'Traffic light',
+                properties: Object.freeze([armLengthProp]),
+                children: Object.freeze([])
+            }),
+            children: [],
+            getParam: (propId) => {
+                if (propId === 'armLength') return params.armLength;
                 return null;
             },
-            setValue: (propId, value) => {
+            setParam: (propId, value) => {
                 if (propId !== 'armLength') return;
                 const next = clampNumber(value, armLengthProp);
-                if (Math.abs(next - state.armLength) < 1e-9) return;
-                state.armLength = next;
+                if (Math.abs(next - params.armLength) < 1e-9) return;
+                params.armLength = next;
                 const nextGeo = rebuildGeometry(next);
                 if (!nextGeo) return;
                 const prev = mesh.geometry;
@@ -271,6 +278,22 @@ export function createAsset() {
                 prev?.dispose?.();
                 mesh.userData._meshInspectorNeedsEdgesRefresh = true;
             }
+        };
+        mesh.userData.prefab = prefab;
+
+        const legacyHead = createTrafficLightHeadLegacySkeletonApi(headRig);
+        const legacySchema = Object.freeze({
+            id: 'skeleton.traffic_light.v1',
+            label: 'Traffic light',
+            properties: Object.freeze([armLengthProp]),
+            children: Object.freeze([legacyHead?.schema ?? null].filter(Boolean))
+        });
+
+        mesh.userData.api = {
+            schema: legacySchema,
+            children: legacyHead ? [legacyHead] : [],
+            getValue: (propId) => prefab.getParam(propId),
+            setValue: (propId, value) => prefab.setParam(propId, value)
         };
 
         return {

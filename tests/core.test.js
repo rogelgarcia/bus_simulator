@@ -2241,34 +2241,35 @@ async function runTests() {
             }
         });
 
-        test('ProceduralMesh: traffic light head exposes skeleton schema', () => {
+        test('ProceduralMesh: traffic light head exposes rig schema', () => {
             const asset = proceduralMeshes.catalog.createProceduralMeshAsset(proceduralMeshes.trafficLightHead.MESH_ID);
-            const api = asset?.mesh?.userData?.api ?? null;
-            assertTrue(!!api, 'Traffic light head should expose a skeleton api.');
-            assertTrue(!!api.schema && typeof api.schema === 'object', 'Skeleton api should expose schema.');
-            const props = Array.isArray(api.schema?.properties) ? api.schema.properties : [];
-            const active = props.find((p) => p?.id === 'activeLight') ?? null;
-            assertTrue(!!active, 'Schema should include activeLight.');
-            assertEqual(active.type, 'enum', 'activeLight should be an enum.');
-            const options = Array.isArray(active.options) ? active.options : [];
+            const rig = asset?.mesh?.userData?.rig ?? null;
+            assertTrue(!!rig, 'Traffic light head should expose a rig api.');
+            assertTrue(!!rig.schema && typeof rig.schema === 'object', 'Rig api should expose schema.');
+            assertEqual(rig.schema.id, 'rig.traffic_light_head.v1', 'Rig schema id should be stable.');
+            const props = Array.isArray(rig.schema?.properties) ? rig.schema.properties : [];
+            const signal = props.find((p) => p?.id === 'signal') ?? null;
+            assertTrue(!!signal, 'Schema should include signal.');
+            assertEqual(signal.type, 'enum', 'signal should be an enum.');
+            const options = Array.isArray(signal.options) ? signal.options : [];
             const ids = options.map((opt) => opt.id);
-            assertTrue(ids.includes('none'), 'activeLight should include none.');
-            assertTrue(ids.includes('red'), 'activeLight should include red.');
-            assertTrue(ids.includes('yellow'), 'activeLight should include yellow.');
-            assertTrue(ids.includes('green'), 'activeLight should include green.');
+            assertTrue(ids.includes('none'), 'signal should include none.');
+            assertTrue(ids.includes('red'), 'signal should include red.');
+            assertTrue(ids.includes('yellow'), 'signal should include yellow.');
+            assertTrue(ids.includes('green'), 'signal should include green.');
         });
 
-        test('ProceduralMesh: traffic light head activeLight updates emissive state', () => {
+        test('ProceduralMesh: traffic light head signal updates emissive state', () => {
             const asset = proceduralMeshes.catalog.createProceduralMeshAsset(proceduralMeshes.trafficLightHead.MESH_ID);
-            const api = asset?.mesh?.userData?.api ?? null;
-            assertTrue(!!api, 'Traffic light head should expose a skeleton api.');
+            const rig = asset?.mesh?.userData?.rig ?? null;
+            assertTrue(!!rig, 'Traffic light head should expose a rig api.');
             const regions = asset?.regions ?? [];
             const idxRed = regions.findIndex((r) => r?.id === 'traffic_light_head:light_red');
             const idxYellow = regions.findIndex((r) => r?.id === 'traffic_light_head:light_yellow');
             const idxGreen = regions.findIndex((r) => r?.id === 'traffic_light_head:light_green');
             assertTrue(idxRed >= 0 && idxYellow >= 0 && idxGreen >= 0, 'Light region indices should exist.');
 
-            api.setValue('activeLight', 'green');
+            rig.setValue('signal', 'green');
 
             const getIntensity = (materials, idx) => {
                 const mat = Array.isArray(materials) ? materials[idx] : null;
@@ -2283,25 +2284,28 @@ async function runTests() {
             assertTrue(getIntensity(asset.materials?.solid, idxRed) < 1e-6, 'Solid red light should be off.');
             assertTrue(getIntensity(asset.materials?.solid, idxYellow) < 1e-6, 'Solid yellow light should be off.');
 
-            api.setValue('activeLight', 'none');
+            rig.setValue('signal', 'none');
             assertTrue(getIntensity(asset.materials?.solid, idxGreen) < 1e-6, 'Solid green light should be off for none.');
             assertTrue(getIntensity(asset.materials?.solid, idxRed) < 1e-6, 'Solid red light should be off for none.');
             assertTrue(getIntensity(asset.materials?.solid, idxYellow) < 1e-6, 'Solid yellow light should be off for none.');
         });
 
-        test('ProceduralMesh: composed traffic light exposes child skeleton controls', () => {
+        test('ProceduralMesh: composed traffic light exposes prefab params and child rigs', () => {
             const asset = proceduralMeshes.catalog.createProceduralMeshAsset(proceduralMeshes.trafficLight.MESH_ID);
-            const api = asset?.mesh?.userData?.api ?? null;
-            assertTrue(!!api, 'Composed traffic light should expose a skeleton api.');
-            const children = Array.isArray(api.children) ? api.children : [];
-            assertTrue(children.length >= 1, 'Composed traffic light should expose child controls.');
-            const head = children.find((child) => child?.schema?.id === 'skeleton.traffic_light_head.v1') ?? null;
-            assertTrue(!!head, 'Child controls should include traffic light head skeleton.');
+            const prefab = asset?.mesh?.userData?.prefab ?? null;
+            assertTrue(!!prefab, 'Composed traffic light should expose prefab params.');
+            const rig = asset?.mesh?.userData?.rig ?? null;
+            assertTrue(!!rig, 'Composed traffic light should expose a rig api.');
 
-            const armProp = (Array.isArray(api.schema?.properties) ? api.schema.properties : []).find((p) => p?.id === 'armLength') ?? null;
-            assertTrue(!!armProp && armProp.type === 'number', 'Composed traffic light should expose armLength.');
+            const children = Array.isArray(rig.children) ? rig.children : [];
+            assertTrue(children.length >= 1, 'Composed traffic light should expose child rigs.');
+            const head = rig.getChildRig?.('head') ?? children.find((child) => child?.schema?.id === 'rig.traffic_light_head.v1') ?? null;
+            assertTrue(!!head, 'Child rigs should include traffic light head rig.');
 
-            head.setValue('activeLight', 'yellow');
+            const armProp = (Array.isArray(prefab.schema?.properties) ? prefab.schema.properties : []).find((p) => p?.id === 'armLength') ?? null;
+            assertTrue(!!armProp && armProp.type === 'number', 'Prefab params should expose armLength.');
+
+            rig.setValue('head.signal', 'yellow');
             const idxYellow = (asset.regions ?? []).findIndex((r) => r?.id === 'traffic_light_head:light_yellow');
             const idxRed = (asset.regions ?? []).findIndex((r) => r?.id === 'traffic_light_head:light_red');
             const idxGreen = (asset.regions ?? []).findIndex((r) => r?.id === 'traffic_light_head:light_green');
@@ -2312,7 +2316,7 @@ async function runTests() {
             assertTrue(Number(asset.materials?.solid?.[idxGreen]?.emissiveIntensity) < 1e-6, 'Composed green light should be off.');
 
             const prevGeo = asset.mesh?.geometry ?? null;
-            api.setValue('armLength', 3.2);
+            prefab.setParam('armLength', 3.2);
             assertTrue(asset.mesh?.geometry !== prevGeo, 'armLength should rebuild composed geometry.');
 
             const geo = asset?.mesh?.geometry ?? null;

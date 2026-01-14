@@ -1,10 +1,10 @@
 // src/graphics/assets3d/factories/BusFactory.js
-// Creates bus models from catalog specs and ensures they expose a BusSkeleton API.
+// Creates bus models from catalog specs and ensures they expose a BusRig API.
 import { createCityBus } from '../models/buses/CityBus.js';
 import { createCoachBus } from '../models/buses/CoachBus.js';
 import { createDoubleDeckerBus } from '../models/buses/DoubleDeckerBus.js';
 
-import { attachBusSkeleton } from '../../../app/skeletons/buses/BusSkeleton.js';
+import { attachBusRig } from '../../../app/rigs/buses/BusRig.js';
 
 export function createBus(spec) {
     let bus;
@@ -29,7 +29,7 @@ export function createBus(spec) {
     }
 
     if (!bus.userData?.bus) {
-        attachBusSkeleton(bus, {
+        attachBusRig(bus, {
             wheelRig: bus.userData?.wheelRig ?? null,
             parts: bus.userData?.parts ?? null
         });
