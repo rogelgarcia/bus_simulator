@@ -351,7 +351,7 @@ function getObjectBoundsLocal(root, object) {
     return box;
 }
 
-function attachWheelMeshes(bus, wheelNodes, wheelMeshes, rig) {
+function attachWheelMeshes(bus, wheelNodes, wheelMeshes, wheelRig) {
     const info = {};
     const wheelSpaceRoot = bus.userData?.rig?.wheelsRoot ?? bus.userData?.bus?.wheelsRoot ?? bus;
     bus.updateMatrixWorld(true);
@@ -394,8 +394,8 @@ function attachWheelMeshes(bus, wheelNodes, wheelMeshes, rig) {
         if (Number.isFinite(radius) && radius > 0) radii.push(radius);
     }
 
-    if (radii.length) {
-        rig.wheelRadius = radii.reduce((a, b) => a + b, 0) / radii.length;
+    if (wheelRig && radii.length) {
+        wheelRig.wheelRadius = radii.reduce((a, b) => a + b, 0) / radii.length;
     }
 }
 
@@ -452,7 +452,7 @@ export function createCityBus(spec) {
     br.visible = false;
     bus.add(hl, hr, bl, br);
 
-    const rig = new WheelRig({ wheelRadius: wheelR });
+    const wheelRig = new WheelRig({ wheelRadius: wheelR });
 
     const nodes = {
         fr: makeWheelNode('wheel_fr'),
@@ -470,18 +470,18 @@ export function createCityBus(spec) {
 
     bus.add(nodes.fr.root, nodes.rr.root, nodes.fl.root, nodes.rl.root);
 
-    rig.addWheel({ rollPivot: nodes.fr.rollPivot, steerPivot: nodes.fr.steerPivot, isFront: true });
-    rig.addWheel({ rollPivot: nodes.rr.rollPivot, isFront: false });
-    rig.addWheel({ rollPivot: nodes.fl.rollPivot, steerPivot: nodes.fl.steerPivot, isFront: true });
-    rig.addWheel({ rollPivot: nodes.rl.rollPivot, isFront: false });
+    wheelRig.addWheel({ rollPivot: nodes.fr.rollPivot, steerPivot: nodes.fr.steerPivot, isFront: true });
+    wheelRig.addWheel({ rollPivot: nodes.rr.rollPivot, isFront: false });
+    wheelRig.addWheel({ rollPivot: nodes.fl.rollPivot, steerPivot: nodes.fl.steerPivot, isFront: true });
+    wheelRig.addWheel({ rollPivot: nodes.rl.rollPivot, isFront: false });
 
-    bus.userData.wheelRig = rig;
+    bus.userData.wheelRig = wheelRig;
     bus.userData.parts = {
         headlights: [hl, hr],
         brakeLights: [bl, br]
     };
 
-    attachBusRig(bus, { wheelRig: rig, parts: bus.userData.parts });
+    attachBusRig(bus, { wheelRig, parts: bus.userData.parts });
 
     loadBusModel().then((template) => {
         if (!template) return;
@@ -489,13 +489,14 @@ export function createCityBus(spec) {
         applyMaterialSettings(model);
         normalizeModel(model, { targetLength: length, rideHeight });
         applyShadows(model);
-        const rig = bus.userData?.rig ?? bus.userData?.bus;
-        const bodyRoot = rig?.bodyRoot ?? bus;
+        const busRig = bus.userData?.rig ?? bus.userData?.bus ?? null;
+        const wheelRig = busRig?.wheelRig ?? bus.userData?.wheelRig ?? null;
+        const bodyRoot = busRig?.bodyRoot ?? bus;
         bodyRoot.add(model);
         recenterBody(bus);
         bus.updateMatrixWorld(true);
         const wheelMeshes = collectWheelMeshes(model);
-        attachWheelMeshes(bus, nodes, wheelMeshes, rig);
+        attachWheelMeshes(bus, nodes, wheelMeshes, wheelRig);
 
         const headMeshes = collectMeshesByMaterial(model, 'frontlights');
         const brakeCandidates = collectMeshesByMaterial(model, 'rearlights');

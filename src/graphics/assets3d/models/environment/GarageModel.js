@@ -121,7 +121,8 @@ function createRollUpGate({ width, height, depth, matMetal, matFrame }) {
 function addRoundCeilingLight(root, lights, {
     x, y, z,
     intensity = 4.0,
-    color = 0xbfe9ff
+    color = 0xbfe9ff,
+    castShadow = false
 }) {
     const fixture = new THREE.Group();
 
@@ -152,9 +153,11 @@ function addRoundCeilingLight(root, lights, {
     root.add(target);
     down.target = target;
 
-    down.castShadow = true;
-    down.shadow.mapSize.set(1024, 1024);
-    down.shadow.bias = -0.00025;
+    down.castShadow = !!castShadow;
+    if (down.castShadow) {
+        down.shadow.mapSize.set(1024, 1024);
+        down.shadow.bias = -0.00025;
+    }
 
     lights.push(down);
 }
@@ -163,7 +166,8 @@ function addWallTubeLamp(root, lights, {
     x, y, z,
     side = 'left',
     length = 3.2,
-    lightColor = 0xfff0d8
+    lightColor = 0xfff0d8,
+    castShadow = false
 }) {
     const g = new THREE.Group();
     g.position.set(x, y, z);
@@ -231,9 +235,11 @@ function addWallTubeLamp(root, lights, {
     root.add(target);
     spot.target = target;
 
-    spot.castShadow = true;
-    spot.shadow.mapSize.set(512, 512);
-    spot.shadow.bias = -0.0002;
+    spot.castShadow = !!castShadow;
+    if (spot.castShadow) {
+        spot.shadow.mapSize.set(512, 512);
+        spot.shadow.bias = -0.0002;
+    }
     lights.push(spot);
 
     const p = new THREE.PointLight(lightColor, 0.6, 7, 2);

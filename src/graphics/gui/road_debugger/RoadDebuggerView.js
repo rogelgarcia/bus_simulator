@@ -844,7 +844,7 @@ export class RoadDebuggerView {
         this._pushUndoSnapshot();
         const id = `road_${this._roadCounter++}`;
         this._draft = { id, name: `Road ${this._roadCounter - 1}`, lanesF: 1, lanesB: 1, visible: true, points: [] };
-        this._selection = { type: 'road', roadId: id, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null };
+        this._selection = { type: null, roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null, approachId: null };
         this._rebuildPipeline();
     }
 
@@ -865,7 +865,7 @@ export class RoadDebuggerView {
         this._pushUndoSnapshot();
         this._roads.push(draft);
         this._draft = null;
-        this._selection = { type: 'road', roadId: draft.id, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null };
+        this._selection = { type: null, roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null, approachId: null };
         this.clearDraftPreview?.();
         this._rebuildPipeline();
     }
@@ -1316,18 +1316,16 @@ export class RoadDebuggerView {
             return false;
         }
 
-        const res = this._worldToTilePoint(hit.x, hit.z, { snap: false });
+        const snapActive = (this.getSnapEnabled?.() ?? this._snapEnabled !== false) && !altKey;
+        const res = this._worldToTilePoint(hit.x, hit.z, { snap: snapActive });
         if (!res) {
             this._setDraftPreviewVisible(false);
             this._setDraftHoverTileMarkerVisible(false);
             return false;
         }
 
-        const tileSize = Number(this._tileSize) || 24;
-        const ox = Number(this._origin?.x) || 0;
-        const oz = Number(this._origin?.z) || 0;
-        const endX = ox + (Number(res.tileX) || 0) * tileSize;
-        const endZ = oz + (Number(res.tileY) || 0) * tileSize;
+        const endX = Number(res.x) || 0;
+        const endZ = Number(res.z) || 0;
 
         const showHover = (draft.points?.length ?? 0) < 2;
         if (showHover) {
@@ -1437,8 +1435,10 @@ export class RoadDebuggerView {
         const oy = r * cos;
 
         cam.position.set(tx + ox, ty + oy, tz + oz);
-        cam.up.set(0, 1, 0);
+        if (Math.abs(sin) < 1e-6) cam.up.set(Math.sin(yaw), 0, Math.cos(yaw));
+        else cam.up.set(0, 1, 0);
         cam.lookAt(tx, ty, tz);
+        cam.updateMatrixWorld(true);
         this._applyDistanceScaledEdgeLineWidths();
     }
 
@@ -1661,8 +1661,8 @@ export class RoadDebuggerView {
             { tileX, tileY, offsetX, offsetY },
             { tileSize, mapWidth: this._mapWidth, mapHeight: this._mapHeight }
         );
-        const x = ox + norm.tileX * tileSize + norm.offsetX;
-        const z = oz + norm.tileY * tileSize + norm.offsetY;
+        const x = Math.fround(ox + norm.tileX * tileSize + norm.offsetX);
+        const z = Math.fround(oz + norm.tileY * tileSize + norm.offsetY);
         return { tileX: norm.tileX, tileY: norm.tileY, offsetX: norm.offsetX, offsetY: norm.offsetY, x, z };
     }
 

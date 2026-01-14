@@ -1647,6 +1647,8 @@ export function setupUI(view) {
         return row;
     };
 
+    let roadsListKey = null;
+
     const sync = () => {
         gridRow.input.checked = view._gridEnabled !== false;
         asphaltRow.input.checked = view._renderOptions?.asphalt !== false;
@@ -1733,26 +1735,76 @@ export function setupUI(view) {
         if ((view._selection?.type === 'segment' || view._selection?.type === 'piece') && view._selection?.roadId) expandedRoads.add(view._selection.roadId);
         if (view._selection?.type === 'point' && view._selection?.roadId) expandedRoads.add(view._selection.roadId);
 
-        roadsList.textContent = '';
-
-        if (!all.length) {
-            const empty = document.createElement('div');
-            empty.className = 'road-debugger-placeholder';
-            empty.textContent = 'No roads yet.';
-            roadsList.appendChild(empty);
-        }
-
+        const nextKeyParts = [];
         for (const road of all) {
             if (!road?.id) continue;
+            const expanded = expandedRoads.has(road.id);
             const isDraft = draft?.id === road.id;
-            roadsList.appendChild(buildRoadRow({ road, isDraft, derived }));
-
-            if (expandedRoads.has(road.id)) {
+            const visible = road.visible !== false;
+            const lanesF = fmtInt(road.lanesF);
+            const lanesB = fmtInt(road.lanesB);
+            let expandedDetails = '';
+            if (expanded) {
                 const derivedRoad = derived?.roads?.find?.((r) => r?.id === road.id) ?? null;
                 const pts = derivedRoad?.points ?? [];
-                for (let i = 0; i < pts.length; i++) roadsList.appendChild(buildPointRow({ roadId: road.id, pt: pts[i], index: i }));
-                const segs = derived?.segments?.filter?.((s) => s?.roadId === road.id) ?? [];
-                for (const seg of segs) roadsList.appendChild(buildSegmentRow({ seg }));
+                const ptIds = pts.map((p) => p?.id ?? '').join(',');
+                const segIds = (derived?.segments?.filter?.((s) => s?.roadId === road.id) ?? []).map((s) => s?.id ?? '').join(',');
+                expandedDetails = `|pts:${ptIds}|segs:${segIds}`;
+            }
+            nextKeyParts.push(`${road.id}:${isDraft ? 1 : 0}:${expanded ? 1 : 0}:${visible ? 1 : 0}:${lanesF}:${lanesB}${expandedDetails}`);
+        }
+        const nextRoadsListKey = nextKeyParts.join('||');
+
+        const rebuildRoadList = nextRoadsListKey !== roadsListKey;
+        if (rebuildRoadList) {
+            roadsList.textContent = '';
+
+            if (!all.length) {
+                const empty = document.createElement('div');
+                empty.className = 'road-debugger-placeholder';
+                empty.textContent = 'No roads yet.';
+                roadsList.appendChild(empty);
+            }
+
+            for (const road of all) {
+                if (!road?.id) continue;
+                const isDraft = draft?.id === road.id;
+                roadsList.appendChild(buildRoadRow({ road, isDraft, derived }));
+
+                if (expandedRoads.has(road.id)) {
+                    const derivedRoad = derived?.roads?.find?.((r) => r?.id === road.id) ?? null;
+                    const pts = derivedRoad?.points ?? [];
+                    for (let i = 0; i < pts.length; i++) roadsList.appendChild(buildPointRow({ roadId: road.id, pt: pts[i], index: i }));
+                    const segs = derived?.segments?.filter?.((s) => s?.roadId === road.id) ?? [];
+                    for (const seg of segs) roadsList.appendChild(buildSegmentRow({ seg }));
+                }
+            }
+
+            roadsListKey = nextRoadsListKey;
+        } else {
+            const sel = view._selection ?? {};
+            const hover = view._hover ?? {};
+            for (const row of roadsList.querySelectorAll('.road-debugger-road-row[data-road-id]')) {
+                const roadId = row?.dataset?.roadId ?? null;
+                if (!roadId) continue;
+                row.classList.toggle('is-selected', !!sel.type && sel.roadId === roadId);
+                row.classList.toggle('is-hovered', hover.roadId === roadId);
+            }
+            for (const row of roadsList.querySelectorAll('.road-debugger-seg-row[data-segment-id]')) {
+                const segId = row?.dataset?.segmentId ?? null;
+                if (!segId) continue;
+                const selected = (sel.type === 'segment' || sel.type === 'piece') && sel.segmentId === segId;
+                row.classList.toggle('is-selected', !!selected);
+                row.classList.toggle('is-hovered', hover.segmentId === segId);
+            }
+            for (const row of roadsList.querySelectorAll('.road-debugger-point-row[data-point-id]')) {
+                const roadId = row?.dataset?.roadId ?? null;
+                const pointId = row?.dataset?.pointId ?? null;
+                if (!roadId || !pointId) continue;
+                const selected = sel.type === 'point' && sel.roadId === roadId && sel.pointId === pointId;
+                const hovered = hover.roadId === roadId && hover.pointId === pointId;
+                row.classList.toggle('is-selected', !!selected);
+                row.classList.toggle('is-hovered', !!hovered);
             }
         }
 

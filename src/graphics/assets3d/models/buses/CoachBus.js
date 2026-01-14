@@ -334,8 +334,9 @@ function makeWheelNode(name) {
     return { root, steerPivot, rollPivot };
 }
 
-function attachWheelGroups(bus, wheelGroups, rig) {
+function attachWheelGroups(bus, wheelGroups, wheelRig) {
     if (!wheelGroups.length) return null;
+    if (!wheelRig?.addWheel) return null;
     bus.updateMatrixWorld(true);
 
     const wheelsRoot = bus.userData?.rig?.wheelsRoot ?? bus.userData?.bus?.wheelsRoot ?? bus;
@@ -461,7 +462,7 @@ function attachWheelGroups(bus, wheelGroups, rig) {
             if (Number.isFinite(r) && r > 0) attachedRadii.push(r);
         }
 
-        rig.addWheel({
+        wheelRig.addWheel({
             rollPivot: node.rollPivot,
             steerPivot: sel.isFront ? node.steerPivot : null,
             isFront: sel.isFront
@@ -471,7 +472,7 @@ function attachWheelGroups(bus, wheelGroups, rig) {
     const finalRadius = attachedRadii.length
         ? (attachedRadii.reduce((a, b) => a + b, 0) / attachedRadii.length)
         : avgRadius;
-    if (Number.isFinite(finalRadius) && finalRadius > 0) rig.wheelRadius = finalRadius;
+    if (Number.isFinite(finalRadius) && finalRadius > 0) wheelRig.wheelRadius = finalRadius;
     return { wheelRadius: finalRadius };
 }
 
@@ -499,7 +500,8 @@ function removeWheelMeshes(root) {
     }
 }
 
-function addProceduralWheels(bus, rig, { width, length, wheelRadius }) {
+function addProceduralWheels(bus, wheelRig, { width, length, wheelRadius }) {
+    if (!wheelRig?.addWheel) return;
     const wheelR = wheelRadius ?? DEFAULT_WHEEL_RADIUS;
     const wheelW = DEFAULT_WHEEL_WIDTH;
     const axleFront = length * 0.29;
@@ -512,35 +514,35 @@ function addProceduralWheels(bus, rig, { width, length, wheelRadius }) {
     const wFR = createBusWheel({ radius: wheelR, width: wheelW });
     wFR.root.position.set(wheelX, wheelR, axleFront);
     wheelsRoot.add(wFR.root);
-    rig.addWheel({ rollPivot: wFR.rollPivot, steerPivot: wFR.steerPivot, isFront: true });
+    wheelRig.addWheel({ rollPivot: wFR.rollPivot, steerPivot: wFR.steerPivot, isFront: true });
 
     const wRR = createBusWheel({ radius: wheelR, width: wheelW });
     wRR.root.position.set(wheelX, wheelR, axleRear);
     wheelsRoot.add(wRR.root);
-    rig.addWheel({ rollPivot: wRR.rollPivot, isFront: false });
+    wheelRig.addWheel({ rollPivot: wRR.rollPivot, isFront: false });
 
     const wMR = createBusWheel({ radius: wheelR, width: wheelW });
     wMR.root.position.set(wheelX, wheelR, axleMid);
     wheelsRoot.add(wMR.root);
-    rig.addWheel({ rollPivot: wMR.rollPivot, isFront: false });
+    wheelRig.addWheel({ rollPivot: wMR.rollPivot, isFront: false });
 
     const wFL = createBusWheel({ radius: wheelR, width: wheelW });
     wFL.root.position.set(-wheelX, wheelR, axleFront);
     wFL.root.rotation.y = Math.PI;
     wheelsRoot.add(wFL.root);
-    rig.addWheel({ rollPivot: wFL.rollPivot, steerPivot: wFL.steerPivot, isFront: true });
+    wheelRig.addWheel({ rollPivot: wFL.rollPivot, steerPivot: wFL.steerPivot, isFront: true });
 
     const wRL = createBusWheel({ radius: wheelR, width: wheelW });
     wRL.root.position.set(-wheelX, wheelR, axleRear);
     wRL.root.rotation.y = Math.PI;
     wheelsRoot.add(wRL.root);
-    rig.addWheel({ rollPivot: wRL.rollPivot, isFront: false });
+    wheelRig.addWheel({ rollPivot: wRL.rollPivot, isFront: false });
 
     const wML = createBusWheel({ radius: wheelR, width: wheelW });
     wML.root.position.set(-wheelX, wheelR, axleMid);
     wML.root.rotation.y = Math.PI;
     wheelsRoot.add(wML.root);
-    rig.addWheel({ rollPivot: wML.rollPivot, isFront: false });
+    wheelRig.addWheel({ rollPivot: wML.rollPivot, isFront: false });
 }
 
 function recenterBody(bus, bounds = null) {
@@ -584,8 +586,8 @@ export function createCoachBus(spec) {
         resolveReady = resolve;
     });
 
-    const rig = new WheelRig({ wheelRadius: DEFAULT_WHEEL_RADIUS });
-    bus.userData.wheelRig = rig;
+    const wheelRig = new WheelRig({ wheelRadius: DEFAULT_WHEEL_RADIUS });
+    bus.userData.wheelRig = wheelRig;
 
     const mats = makeLightMaterials();
     const lights = createLightMeshes(
@@ -604,7 +606,7 @@ export function createCoachBus(spec) {
         brakeLights: [lights.bl, lights.br]
     };
 
-    attachBusRig(bus, { wheelRig: rig, parts: bus.userData.parts });
+    attachBusRig(bus, { wheelRig, parts: bus.userData.parts });
 
     loadBusModel().then((template) => {
         if (!template) return;
@@ -618,8 +620,9 @@ export function createCoachBus(spec) {
         alignModelToGround(model, wheelGroups);
         applyShadows(model);
 
-        const rig = bus.userData?.rig ?? bus.userData?.bus;
-        const bodyRoot = rig?.bodyRoot ?? bus;
+        const busRig = bus.userData?.rig ?? bus.userData?.bus ?? null;
+        const wheelRig = busRig?.wheelRig ?? bus.userData?.wheelRig ?? null;
+        const bodyRoot = busRig?.bodyRoot ?? bus;
         bodyRoot.add(model);
         const bodyBoundsLocal = getBodyBoundsLocal(bodyRoot, model);
         const localBounds = bodyBoundsLocal.isEmpty()
@@ -628,15 +631,15 @@ export function createCoachBus(spec) {
         recenterBody(bus, localBounds);
         bus.updateMatrixWorld(true);
 
-        const wheelsAttached = attachWheelGroups(bus, wheelGroups, rig);
+        const wheelsAttached = attachWheelGroups(bus, wheelGroups, wheelRig);
         if (!wheelsAttached) {
             hideWheelMeshes(model);
             removeWheelMeshes(model);
             const size = localBounds.getSize(new THREE.Vector3());
-            addProceduralWheels(bus, rig, {
+            addProceduralWheels(bus, wheelRig, {
                 width: size.x || DEFAULT_WIDTH,
                 length: size.z || TARGET_LENGTH,
-                wheelRadius: rig.wheelRadius || DEFAULT_WHEEL_RADIUS
+                wheelRadius: wheelRig?.wheelRadius || DEFAULT_WHEEL_RADIUS
             });
         }
 
@@ -644,7 +647,7 @@ export function createCoachBus(spec) {
         positionLightMeshes(lights, {
             width: localSize.x || DEFAULT_WIDTH,
             length: localSize.z || TARGET_LENGTH,
-            wheelRadius: rig.wheelRadius || DEFAULT_WHEEL_RADIUS,
+            wheelRadius: wheelRig?.wheelRadius || DEFAULT_WHEEL_RADIUS,
             frontZ: localBounds.max.z,
             rearZ: localBounds.min.z
         });

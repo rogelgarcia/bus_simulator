@@ -3556,12 +3556,12 @@ async function runTests() {
             const z0 = (kind) => getLine(kind)?.points?.[0]?.z;
 
             assertNear(z0('centerline'), 0, 1e-6, 'Centerline should be at divider.');
-            assertNear(z0('forward_centerline'), -(lanesF * laneWidth) * 0.5, 1e-6, 'Forward centerline offset.');
-            assertNear(z0('backward_centerline'), (lanesB * laneWidth) * 0.5, 1e-6, 'Backward centerline offset.');
-            assertNear(z0('lane_edge_right'), -(lanesF * laneWidth), 1e-6, 'Forward lane edge offset.');
-            assertNear(z0('lane_edge_left'), lanesB * laneWidth, 1e-6, 'Backward lane edge offset.');
-            assertNear(z0('asphalt_edge_right'), -(lanesF * laneWidth + margin), 1e-6, 'Forward asphalt edge offset.');
-            assertNear(z0('asphalt_edge_left'), lanesB * laneWidth + margin, 1e-6, 'Backward asphalt edge offset.');
+            assertNear(z0('forward_centerline'), (lanesF * laneWidth) * 0.5, 1e-6, 'Forward centerline offset.');
+            assertNear(z0('backward_centerline'), -(lanesB * laneWidth) * 0.5, 1e-6, 'Backward centerline offset.');
+            assertNear(z0('lane_edge_right'), lanesF * laneWidth, 1e-6, 'Forward lane edge offset.');
+            assertNear(z0('lane_edge_left'), -(lanesB * laneWidth), 1e-6, 'Backward lane edge offset.');
+            assertNear(z0('asphalt_edge_right'), lanesF * laneWidth + margin, 1e-6, 'Forward asphalt edge offset.');
+            assertNear(z0('asphalt_edge_left'), -(lanesB * laneWidth + margin), 1e-6, 'Backward asphalt edge offset.');
 
             assertNear(seg.asphaltObb.halfWidthLeft, lanesB * laneWidth + margin, 1e-6, 'OBB left half-width.');
             assertNear(seg.asphaltObb.halfWidthRight, lanesF * laneWidth + margin, 1e-6, 'OBB right half-width.');
@@ -4231,8 +4231,10 @@ async function runTests() {
                 const laneNear = view._materials?.lineBase?.get?.('lane_edge_left') ?? null;
                 assertTrue(!!asphaltNear, 'Expected asphalt edge line material.');
                 assertTrue(!!laneNear, 'Expected lane edge line material.');
-                assertNear(Number(asphaltNear.linewidth) || 0, 4, 1e-6, 'Expected full asphalt edge thickness at near zoom.');
-                assertNear(Number(laneNear.linewidth) || 0, 2, 1e-6, 'Expected full lane edge thickness at near zoom.');
+                const nearAsphaltWidth = Number(asphaltNear.linewidth) || 0;
+                const nearLaneWidth = Number(laneNear.linewidth) || 0;
+                assertNear(nearAsphaltWidth, 4, 1e-6, 'Expected full asphalt edge thickness at near zoom.');
+                assertNear(nearLaneWidth, 2, 1e-6, 'Expected full lane edge thickness at near zoom.');
 
                 view._zoom = view._zoomMax;
                 view._syncOrbitCamera();
@@ -4240,9 +4242,11 @@ async function runTests() {
                 const laneFar = view._materials?.lineBase?.get?.('lane_edge_left') ?? null;
                 assertTrue(!!asphaltFar, 'Expected asphalt edge line material at far zoom.');
                 assertTrue(!!laneFar, 'Expected lane edge line material at far zoom.');
-                assertNear(Number(asphaltFar.linewidth) || 0, 1, 1e-6, 'Expected thinner asphalt edges at far zoom.');
-                assertNear(Number(laneFar.linewidth) || 0, 0.55, 1e-6, 'Expected thinner lane edges at far zoom.');
-                assertTrue((Number(laneFar.linewidth) || 0) < (Number(laneNear.linewidth) || 0), 'Expected lane edges to scale down when zoomed out.');
+                const farAsphaltWidth = Number(asphaltFar.linewidth) || 0;
+                const farLaneWidth = Number(laneFar.linewidth) || 0;
+                assertNear(farAsphaltWidth, 1, 1e-6, 'Expected thinner asphalt edges at far zoom.');
+                assertNear(farLaneWidth, 0.55, 1e-6, 'Expected thinner lane edges at far zoom.');
+                assertTrue(farLaneWidth < nearLaneWidth, 'Expected lane edges to scale down when zoomed out.');
             } finally {
                 view.exit();
             }

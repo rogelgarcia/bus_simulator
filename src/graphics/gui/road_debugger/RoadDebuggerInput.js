@@ -17,21 +17,47 @@ function isInteractiveElement(target) {
 function isTextEntryElement(target) {
     const tag = target?.tagName;
     if (!tag) return false;
-    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable;
+    if (target?.isContentEditable) return true;
+    if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    if (tag !== 'INPUT') return false;
+    const type = String(target.type ?? '').toLowerCase();
+    if (!type || type === 'text') return true;
+    return type === 'search'
+        || type === 'email'
+        || type === 'url'
+        || type === 'tel'
+        || type === 'password'
+        || type === 'number'
+        || type === 'date'
+        || type === 'time'
+        || type === 'datetime-local'
+        || type === 'month'
+        || type === 'week';
 }
 
 function setPointerFromEvent(view, e) {
-    const rect = view.canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width;
-    const y = (e.clientY - rect.top) / rect.height;
+    const rect = view.canvas.getBoundingClientRect?.() ?? null;
+    const left = Number(rect?.left) || 0;
+    const top = Number(rect?.top) || 0;
+    const w = Number(rect?.width) || view.canvas.width || 1;
+    const h = Number(rect?.height) || view.canvas.height || 1;
+    const clientX = Number(e?.clientX);
+    const clientY = Number(e?.clientY);
+    const x = Number.isFinite(clientX) ? (clientX - left) / w : 0.5;
+    const y = Number.isFinite(clientY) ? (clientY - top) / h : 0.5;
     view.pointer.set(x * 2 - 1, -(y * 2 - 1));
 }
 
 function intersectPlane(view) {
-    view.raycaster.setFromCamera(view.pointer, view.camera);
+    const cam = view.camera ?? null;
+    if (!cam || !view.hoverPlane) return null;
+    cam.updateMatrixWorld?.(true);
+    view.raycaster.setFromCamera(view.pointer, cam);
     const hit = new THREE.Vector3();
     const ok = view.raycaster.ray.intersectPlane(view.hoverPlane, hit);
-    return ok ? hit : null;
+    if (!ok) return null;
+    if (!Number.isFinite(hit.x) || !Number.isFinite(hit.y) || !Number.isFinite(hit.z)) return null;
+    return hit;
 }
 
 function isPointerOverUI(view, target) {
@@ -144,7 +170,6 @@ export function handlePointerMove(view, e) {
         return;
     }
     if (!view._isDraggingCamera && !view._pendingClick && isPointerOverUI(view, e.target)) return;
-    if (isInteractiveElement(document.activeElement)) return;
 
     setPointerFromEvent(view, e);
 
@@ -218,7 +243,6 @@ export function handlePointerDown(view, e) {
     const button = e.button ?? 0;
     if (button !== 0 && button !== 1 && button !== 2) return;
     if (isPointerOverUI(view, e.target)) return;
-    if (isInteractiveElement(document.activeElement)) return;
 
     setPointerFromEvent(view, e);
     const hit = intersectPlane(view);
@@ -308,7 +332,6 @@ export function handlePointerUp(view, e) {
 export function handleWheel(view, e) {
     if (!view.canvas) return;
     if (isPointerOverUI(view, e.target)) return;
-    if (isInteractiveElement(document.activeElement)) return;
     if (!e) return;
     e.preventDefault();
 
@@ -340,7 +363,7 @@ export function handleKeyDown(view, e) {
     }
 
     if (code === 'Enter' || code === 'NumpadEnter' || key === 'Enter') {
-        if (isInteractiveElement(e.target) || isInteractiveElement(document.activeElement)) return;
+        if (isTextEntryElement(e.target) || isTextEntryElement(document.activeElement)) return;
         const handled = view.handleEnter?.();
         if (handled) {
             e.preventDefault();

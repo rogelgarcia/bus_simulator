@@ -8,7 +8,9 @@
 **Project Structure & Module Organization**
 - Application logic → `src/app/` (city, core, geometry, input, physics, rigs, utils, vehicle)
 - Rendering/UI code → `src/graphics/`
-  - Three.js assets (models, geometries, generators, textures, factories) → `src/graphics/assets3d/`
+  - Engine 3D fabrication code → `src/graphics/engine3d/`
+  - Content 3D catalogs/definitions → `src/graphics/content3d/`
+  - Legacy / in-migration 3D code → `src/graphics/assets3d/`
   - GUI/HUD/CSS → `src/graphics/gui/`
   - Visual effects & rendering utilities → `src/graphics/visuals/`
 - High-level gameplay states → `src/states/`
