@@ -30,10 +30,10 @@ function parseNumber(value, fallback, { min = -Infinity, max = Infinity } = {}) 
     return clamp(num, min, max);
 }
 
-export function getIBLConfig(overrides = {}) {
+export function getIBLConfig(overrides = {}, { includeUrlOverrides = true } = {}) {
     const config = { ...IBL_DEFAULTS, ...(overrides ?? {}) };
 
-    if (typeof window !== 'undefined') {
+    if (includeUrlOverrides && typeof window !== 'undefined') {
         const params = new URLSearchParams(window.location.search);
         if (params.has('ibl')) config.enabled = parseBool(params.get('ibl'), config.enabled);
         if (params.has('iblIntensity')) {
@@ -57,4 +57,3 @@ export function getIBLConfig(overrides = {}) {
         previewUrl: entry?.previewUrl ?? null
     };
 }
-

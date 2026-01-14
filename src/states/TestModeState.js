@@ -662,9 +662,14 @@ export class TestModeState {
 
         // Lights
         scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-        scene.add(new THREE.HemisphereLight(0xbad7ff, 0x0a0b10, 0.45));
 
-        const key = new THREE.DirectionalLight(0xffffff, 0.95);
+        const lighting = this.engine?.lightingSettings ?? {};
+        const hemiIntensity = Number.isFinite(lighting.hemiIntensity) ? lighting.hemiIntensity : 0.45;
+        const sunIntensity = Number.isFinite(lighting.sunIntensity) ? lighting.sunIntensity : 0.95;
+
+        scene.add(new THREE.HemisphereLight(0xbad7ff, 0x0a0b10, hemiIntensity));
+
+        const key = new THREE.DirectionalLight(0xffffff, sunIntensity);
         key.position.set(18, 28, 22);
         key.castShadow = true;
         key.shadow.mapSize.set(2048, 2048);

@@ -3,6 +3,7 @@ export class StateMachine {
     constructor() {
         this.states = new Map();
         this.current = null;
+        this.currentName = null;
     }
 
     register(name, state) {
@@ -15,6 +16,7 @@ export class StateMachine {
 
         this.current?.exit?.();
         this.current = next;
+        this.currentName = name;
         this.current?.enter?.(params);
     }
 

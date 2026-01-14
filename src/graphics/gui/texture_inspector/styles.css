@@ -60,6 +60,14 @@
     background: rgba(0,0,0,0.28);
 }
 
+.texture-inspector-btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    min-width: 44px;
+}
+
 .texture-inspector-btn-primary {
     background: rgba(100, 210, 255, 0.18);
     border-color: rgba(100, 210, 255, 0.38);

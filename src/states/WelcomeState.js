@@ -1,4 +1,6 @@
 // src/states/WelcomeState.js
+import { getSceneShortcutByKey } from './SceneShortcutRegistry.js';
+
 export class WelcomeState {
     constructor(engine, sm) {
         this.engine = engine;
@@ -46,36 +48,10 @@ export class WelcomeState {
         this.sm.go('bus_select');
     }
 
-    _mapDebugger() {
-        this.sm.go('map_debugger');
-    }
-
-    _test() {
-        this.sm.go('test_mode');
-    }
-
-    _connectorDebugger() {
-        this.sm.go('connector_debugger');
-    }
-
-    _rapierDebugger() {
-        this.sm.go('rapier_debugger');
-    }
-
-    _buildingFabrication() {
-        this.sm.go('building_fabrication');
-    }
-
-    _meshInspector() {
-        this.sm.go('mesh_inspector');
-    }
-
-    _textureInspector() {
-        this.sm.go('texture_inspector');
-    }
-
-    _roadDebugger() {
-        this.sm.go('road_debugger');
+    _goScene(sceneId) {
+        const id = typeof sceneId === 'string' ? sceneId : '';
+        if (!id) return;
+        this.sm.go(id);
     }
 
     _setup() {
@@ -116,27 +92,15 @@ export class WelcomeState {
 
         const isEnter = code === 'Enter' || key === 'Enter';
         const isSpace = code === 'Space' || key === ' ' || key === 'Spacebar';
-        const is1 = code === 'Digit1' || code === 'Numpad1' || key === '1';
-        const is2 = code === 'Digit2' || code === 'Numpad2' || key === '2';
-        const is3 = code === 'Digit3' || code === 'Numpad3' || key === '3';
-        const is4 = code === 'Digit4' || code === 'Numpad4' || key === '4';
-        const is5 = code === 'Digit5' || code === 'Numpad5' || key === '5';
-        const is6 = code === 'Digit6' || code === 'Numpad6' || key === '6';
-        const is7 = code === 'Digit7' || code === 'Numpad7' || key === '7';
-        const is9 = code === 'Digit9' || code === 'Numpad9' || key === '9';
         const isG = code === 'KeyG' || key === 'g' || key === 'G';
         const isQ = code === 'KeyQ' || key === 'q' || key === 'Q';
 
-        if (isEnter || isSpace || is1 || is2 || is3 || is4 || is5 || is6 || is7 || is9 || isG || isQ) e.preventDefault();
+        const typed = typeof key === 'string' ? key.toUpperCase() : '';
+        const scene = getSceneShortcutByKey(typed);
 
-        if (is1) return this._mapDebugger();
-        if (is2) return this._test();
-        if (is3) return this._connectorDebugger();
-        if (is4) return this._rapierDebugger();
-        if (is5) return this._buildingFabrication();
-        if (is6) return this._meshInspector();
-        if (is7) return this._textureInspector();
-        if (is9) return this._roadDebugger();
+        if (isEnter || isSpace || scene || isG || isQ) e.preventDefault();
+
+        if (scene) return this._goScene(scene.id);
         if (isG) return this._garage();
         if (isQ) return this._setup();
         if (isEnter || isSpace) return this._start();

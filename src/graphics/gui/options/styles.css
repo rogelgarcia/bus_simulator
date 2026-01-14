@@ -1,0 +1,204 @@
+/* src/graphics/gui/options/styles.css */
+
+.options-layer {
+    pointer-events: auto;
+    z-index: 200;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(10px);
+    padding: 18px;
+    box-sizing: border-box;
+}
+
+.options-panel {
+    width: min(760px, calc(100vw - 36px));
+    max-height: calc(100vh - 36px);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.options-header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.options-title {
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-size: 14px;
+}
+
+.options-subtitle {
+    font-size: 12px;
+    opacity: 0.75;
+}
+
+.options-tabs {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.options-tab {
+    padding: 8px 10px;
+    border-radius: 12px 12px 6px 6px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(0,0,0,0.14);
+    color: #e9f2ff;
+    cursor: pointer;
+    font-weight: 900;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.options-tab:hover {
+    background: rgba(0,0,0,0.22);
+}
+
+.options-tab.is-active {
+    border-color: rgba(100, 210, 255, 0.5);
+    background: rgba(100, 210, 255, 0.14);
+}
+
+.options-body {
+    overflow: auto;
+    padding-right: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 0;
+}
+
+.options-section {
+    border: 1px solid rgba(255,255,255,0.10);
+    background: rgba(0,0,0,0.14);
+    border-radius: 14px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.options-section-title {
+    font-size: 12px;
+    font-weight: 900;
+    opacity: 0.92;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.options-row {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    gap: 10px;
+    align-items: center;
+}
+
+.options-row-wide {
+    grid-template-columns: 240px 1fr;
+}
+
+.options-row-label {
+    font-size: 12px;
+    opacity: 0.92;
+}
+
+.options-row-control {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.options-row-control-wide {
+    justify-content: stretch;
+}
+
+.options-toggle {
+    width: 18px;
+    height: 18px;
+    accent-color: rgba(100, 210, 255, 0.9);
+}
+
+.options-range {
+    width: 100%;
+    flex: 1 1 auto;
+}
+
+.options-number {
+    width: 92px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(0,0,0,0.25);
+    color: #e9f2ff;
+}
+
+.options-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.options-btn {
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(0,0,0,0.18);
+    color: #e9f2ff;
+    cursor: pointer;
+    font-weight: 800;
+    font-size: 12px;
+}
+
+.options-btn:hover {
+    background: rgba(0,0,0,0.28);
+}
+
+.options-btn-primary {
+    background: rgba(100, 210, 255, 0.18);
+    border-color: rgba(100, 210, 255, 0.38);
+}
+
+.options-note {
+    font-size: 12px;
+    opacity: 0.7;
+    padding: 0 2px;
+}
+
+.options-placeholder {
+    border: 1px dashed rgba(255,255,255,0.22);
+    border-radius: 14px;
+    padding: 14px 12px;
+    background: rgba(0,0,0,0.12);
+}
+
+.options-placeholder-title {
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 12px;
+    margin-bottom: 6px;
+}
+
+.options-placeholder-text {
+    font-size: 12px;
+    opacity: 0.75;
+}
+
+@media (max-width: 560px) {
+    .options-row,
+    .options-row-wide {
+        grid-template-columns: 1fr;
+    }
+
+    .options-row-control {
+        justify-content: stretch;
+    }
+}
+

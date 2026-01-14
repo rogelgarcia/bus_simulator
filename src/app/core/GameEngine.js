@@ -1,7 +1,8 @@
 // src/app/core/GameEngine.js
 import * as THREE from 'three';
 import { SimulationContext } from './SimulationContext.js';
-import { applyIBLIntensity, applyIBLToScene, getIBLConfig, loadIBLTexture } from '../../graphics/lighting/IBL.js';
+import { applyIBLIntensity, applyIBLToScene, loadIBLTexture } from '../../graphics/lighting/IBL.js';
+import { getResolvedLightingSettings } from '../../graphics/lighting/LightingSettings.js';
 
 export class GameEngine {
     constructor({ canvas }) {
@@ -39,7 +40,8 @@ export class GameEngine {
 
         // ✅ Tone mapping
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 1.6; // try 2.2 if still dark
+        this._lighting = getResolvedLightingSettings();
+        this.renderer.toneMappingExposure = this._lighting.exposure;
 
         this.scene = new THREE.Scene();
 
@@ -72,8 +74,12 @@ export class GameEngine {
         this.resize();
     }
 
+    get lightingSettings() {
+        return this._lighting;
+    }
+
     _initIBL() {
-        const config = getIBLConfig();
+        const config = this._lighting?.ibl ?? getResolvedLightingSettings().ibl;
         this._ibl = {
             config,
             envMap: null,
@@ -99,6 +105,24 @@ export class GameEngine {
             this._ibl.envMap = null;
             return null;
         });
+    }
+
+    reloadLightingSettings() {
+        this._lighting = getResolvedLightingSettings();
+        this.renderer.toneMappingExposure = this._lighting.exposure;
+        this.scene.environment = null;
+        this.scene.background = null;
+        this._ibl = null;
+        this._iblPromise = null;
+        this._initIBL();
+    }
+
+    restart({ startState = 'welcome' } = {}) {
+        const sm = this._stateMachine ?? null;
+        if (sm) sm.go(startState);
+        if (this._contextProxy && 'city' in this._contextProxy) this._contextProxy.city = null;
+        this.clearScene();
+        this.reloadLightingSettings();
     }
 
     /**

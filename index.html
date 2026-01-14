@@ -4,13 +4,15 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Bus Sim (Prototype)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
     <link rel="stylesheet" href="./src/graphics/gui/shared/styles.css" />
     <link rel="stylesheet" href="./src/graphics/gui/welcome/styles.css" />
     <link rel="stylesheet" href="./src/graphics/gui/setup/styles.css" />
     <link rel="stylesheet" href="./src/graphics/gui/bus_select/styles.css" />
     <link rel="stylesheet" href="./src/graphics/gui/map_debugger/styles.css" />
     <link rel="stylesheet" href="./src/graphics/gui/connector_debugger/styles.css" />
-    <link rel="stylesheet" href="./src/graphics/gui/debug_corners2/styles.css" />
     <link rel="stylesheet" href="./src/graphics/gui/road_debugger/styles.css" />
     <link rel="stylesheet" href="./src/graphics/gui/gameplay/hud.css" />
     <link rel="stylesheet" href="./src/graphics/gui/gameplay/debug_panel.css" />
@@ -19,6 +21,7 @@
     <link rel="stylesheet" href="./src/graphics/gui/building_fabrication/styles.css" />
     <link rel="stylesheet" href="./src/graphics/gui/mesh_inspector/styles.css" />
     <link rel="stylesheet" href="./src/graphics/gui/texture_inspector/styles.css" />
+    <link rel="stylesheet" href="./src/graphics/gui/options/styles.css" />
 </head>
 
 <body>
@@ -31,7 +34,6 @@
         <div class="splash-subtitle">Drive the city. Master the routes. Build your fleet.</div>
         <button id="btn-start" class="start-btn" autofocus>Press Start</button>
         <div class="hint">Enter / Space</div>
-        <div class="hint">9: Road Debugger</div>
         <div class="hint">Q: Setup</div>
     </div>
     <div id="ui-test-errors" class="test-error-widget hidden"></div>
@@ -46,7 +48,7 @@
             <div class="setup-subtitle">Select a scene</div>
             <div class="setup-menu" id="setup-menu"></div>
             <div class="setup-menu setup-menu-back" id="setup-menu-back"></div>
-            <div class="setup-footer">Press number, Q, or click. Esc to return.</div>
+            <div class="setup-footer">Press number, 0 (Options), Q, or click. Esc to return.</div>
         </div>
         <div class="setup-border setup-border-right" id="setup-border-right"></div>
         <div class="setup-border setup-border-bottom" id="setup-border-bottom"></div>

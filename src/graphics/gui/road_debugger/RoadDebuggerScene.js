@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { createGradientSkyDome } from '../../assets3d/generators/SkyGenerator.js';
 import { createCityWorld } from '../../assets3d/generators/TerrainGenerator.js';
+import { getResolvedLightingSettings } from '../../lighting/LightingSettings.js';
 
 function disposeMaterial(mat) {
     if (!mat) return;
@@ -50,11 +51,13 @@ export function setupScene(view) {
     view.root = group;
     view.scene.add(group);
 
-    const hemi = new THREE.HemisphereLight(0xffffff, 0x253018, 0.85);
+    const lighting = view?.engine?.lightingSettings ?? getResolvedLightingSettings();
+
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x253018, lighting.hemiIntensity);
     hemi.position.set(0, 120, 0);
     group.add(hemi);
 
-    const sun = new THREE.DirectionalLight(0xffffff, 1.15);
+    const sun = new THREE.DirectionalLight(0xffffff, lighting.sunIntensity);
     sun.position.set(80, 140, 60);
     group.add(sun);
 
@@ -100,4 +103,3 @@ export function disposeScene(view) {
     view._sun = null;
     view._sky = null;
 }
-

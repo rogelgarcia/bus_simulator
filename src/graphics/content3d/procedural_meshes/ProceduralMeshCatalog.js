@@ -18,6 +18,18 @@ export const PROCEDURAL_MESH = Object.freeze({
     STOP_SIGN_V1: StopSignMeshV1.MESH_ID
 });
 
+export const PROCEDURAL_MESH_COLLECTION = Object.freeze({
+    DEBUG: 'mesh_collection.debug',
+    SIGNS: 'mesh_collection.signs',
+    TRAFFIC_CONTROLS: 'mesh_collection.traffic_controls'
+});
+
+export const PROCEDURAL_MESH_COLLECTIONS = Object.freeze([
+    { id: PROCEDURAL_MESH_COLLECTION.SIGNS, label: 'Signs' },
+    { id: PROCEDURAL_MESH_COLLECTION.TRAFFIC_CONTROLS, label: 'Traffic controls' },
+    { id: PROCEDURAL_MESH_COLLECTION.DEBUG, label: 'Debug' }
+]);
+
 const MESH_MODULES = [
     BallMeshV1,
     StreetSignPoleMeshV1,
@@ -30,8 +42,47 @@ const MESH_MODULES = [
 
 const MESH_BY_ID = new Map(MESH_MODULES.map((mesh) => [mesh.MESH_ID, mesh]));
 
+const COLLECTION_BY_MESH_ID = new Map([
+    [PROCEDURAL_MESH.BALL_V1, PROCEDURAL_MESH_COLLECTION.DEBUG],
+    [PROCEDURAL_MESH.STREET_SIGN_POLE_V1, PROCEDURAL_MESH_COLLECTION.SIGNS],
+    [PROCEDURAL_MESH.STOP_SIGN_PLATE_V1, PROCEDURAL_MESH_COLLECTION.SIGNS],
+    [PROCEDURAL_MESH.STOP_SIGN_V1, PROCEDURAL_MESH_COLLECTION.SIGNS],
+    [PROCEDURAL_MESH.TRAFFIC_LIGHT_POLE_V1, PROCEDURAL_MESH_COLLECTION.TRAFFIC_CONTROLS],
+    [PROCEDURAL_MESH.TRAFFIC_LIGHT_HEAD_V1, PROCEDURAL_MESH_COLLECTION.TRAFFIC_CONTROLS],
+    [PROCEDURAL_MESH.TRAFFIC_LIGHT_V1, PROCEDURAL_MESH_COLLECTION.TRAFFIC_CONTROLS]
+]);
+
+export function getProceduralMeshCollectionId(meshId) {
+    const id = typeof meshId === 'string' ? meshId : '';
+    return COLLECTION_BY_MESH_ID.get(id) ?? null;
+}
+
+export function getProceduralMeshCollections() {
+    const options = getProceduralMeshOptions();
+    const counts = new Map(PROCEDURAL_MESH_COLLECTIONS.map((c) => [c.id, 0]));
+    for (const opt of options) {
+        const id = opt?.collectionId ?? null;
+        if (!id) continue;
+        counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    return PROCEDURAL_MESH_COLLECTIONS
+        .map((c) => ({ ...c, count: counts.get(c.id) ?? 0 }))
+        .filter((c) => c.count > 0);
+}
+
 export function getProceduralMeshOptions() {
-    return MESH_MODULES.map((mesh) => mesh.MESH_OPTION);
+    return MESH_MODULES.map((mesh) => {
+        const id = mesh.MESH_ID;
+        const collectionId = COLLECTION_BY_MESH_ID.get(id) ?? PROCEDURAL_MESH_COLLECTION.DEBUG;
+        return { ...mesh.MESH_OPTION, collectionId };
+    });
+}
+
+export function getProceduralMeshOptionsForCollection(collectionId) {
+    const id = typeof collectionId === 'string' ? collectionId : '';
+    const list = getProceduralMeshOptions();
+    if (!id) return list;
+    return list.filter((opt) => opt?.collectionId === id);
 }
 
 export function createProceduralMeshAsset(meshId) {

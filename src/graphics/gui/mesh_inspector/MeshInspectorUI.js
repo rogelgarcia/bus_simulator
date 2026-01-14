@@ -1,6 +1,8 @@
 // src/graphics/gui/mesh_inspector/MeshInspectorUI.js
 // HUD UI for browsing procedural meshes and copying region selection info.
 
+import { applyMaterialSymbolToButton } from '../shared/materialSymbols.js';
+
 export class MeshInspectorUI {
     constructor() {
         this.root = document.createElement('div');
@@ -48,18 +50,28 @@ export class MeshInspectorUI {
         this.catalogLabel.className = 'ui-section-label';
         this.catalogLabel.textContent = 'Catalog';
 
+        this.collectionRow = document.createElement('div');
+        this.collectionRow.className = 'mesh-inspector-row mesh-inspector-row-wide';
+        this.collectionLabel = document.createElement('div');
+        this.collectionLabel.className = 'mesh-inspector-row-label';
+        this.collectionLabel.textContent = 'Collection';
+        this.collectionSelect = document.createElement('select');
+        this.collectionSelect.className = 'mesh-inspector-select';
+        this.collectionRow.appendChild(this.collectionLabel);
+        this.collectionRow.appendChild(this.collectionSelect);
+
         this.catalogRow = document.createElement('div');
         this.catalogRow.className = 'mesh-inspector-catalog';
 
         this.prevBtn = document.createElement('button');
         this.prevBtn.type = 'button';
-        this.prevBtn.className = 'mesh-inspector-btn';
-        this.prevBtn.textContent = 'Prev';
+        this.prevBtn.className = 'mesh-inspector-btn mesh-inspector-btn-icon';
+        applyMaterialSymbolToButton(this.prevBtn, { name: 'chevron_left', label: 'Previous mesh', size: 'md' });
 
         this.nextBtn = document.createElement('button');
         this.nextBtn.type = 'button';
-        this.nextBtn.className = 'mesh-inspector-btn';
-        this.nextBtn.textContent = 'Next';
+        this.nextBtn.className = 'mesh-inspector-btn mesh-inspector-btn-icon';
+        applyMaterialSymbolToButton(this.nextBtn, { name: 'chevron_right', label: 'Next mesh', size: 'md' });
 
         this.meshSelect = document.createElement('select');
         this.meshSelect.className = 'mesh-inspector-select';
@@ -161,6 +173,7 @@ export class MeshInspectorUI {
         this.panel.appendChild(this.meshIdRow);
         this.panel.appendChild(this.meshNameRow);
         this.panel.appendChild(this.catalogLabel);
+        this.panel.appendChild(this.collectionRow);
         this.panel.appendChild(this.catalogRow);
         this.panel.appendChild(this.viewLabel);
         this.panel.appendChild(this.wireframeToggle);
@@ -179,6 +192,7 @@ export class MeshInspectorUI {
         this.root.appendChild(this.panel);
         this.root.appendChild(this.axisLegend);
 
+        this.onCollectionChange = null;
         this.onMeshIdChange = null;
         this.onMeshPrev = null;
         this.onMeshNext = null;
@@ -186,6 +200,7 @@ export class MeshInspectorUI {
         this.onEdgesChange = null;
         this.onColorModeChange = null;
 
+        this._onCollectionChange = () => this.onCollectionChange?.(this.collectionSelect.value);
         this._onSelectChange = () => this.onMeshIdChange?.(this.meshSelect.value);
         this._onPrev = () => this.onMeshPrev?.();
         this._onNext = () => this.onMeshNext?.();
@@ -223,6 +238,27 @@ export class MeshInspectorUI {
             this.meshSelect.appendChild(el);
         }
         if (current) this.meshSelect.value = current;
+    }
+
+    setCollectionOptions(collections) {
+        const list = Array.isArray(collections) ? collections : [];
+        const current = this.collectionSelect.value;
+        this.collectionSelect.textContent = '';
+        for (const entry of list) {
+            const id = typeof entry?.id === 'string' ? entry.id : '';
+            if (!id) continue;
+            const label = typeof entry?.label === 'string' ? entry.label : id;
+            const el = document.createElement('option');
+            el.value = id;
+            el.textContent = label;
+            this.collectionSelect.appendChild(el);
+        }
+        if (current) this.collectionSelect.value = current;
+    }
+
+    setSelectedCollectionId(collectionId) {
+        const id = typeof collectionId === 'string' ? collectionId : '';
+        if (id) this.collectionSelect.value = id;
     }
 
     setSelectedMesh({ id = '-', name = '-' } = {}) {
@@ -468,6 +504,7 @@ export class MeshInspectorUI {
     _bind() {
         if (this._bound) return;
         this._bound = true;
+        this.collectionSelect.addEventListener('change', this._onCollectionChange);
         this.meshSelect.addEventListener('change', this._onSelectChange);
         this.prevBtn.addEventListener('click', this._onPrev);
         this.nextBtn.addEventListener('click', this._onNext);
@@ -480,6 +517,7 @@ export class MeshInspectorUI {
     _unbind() {
         if (!this._bound) return;
         this._bound = false;
+        this.collectionSelect.removeEventListener('change', this._onCollectionChange);
         this.meshSelect.removeEventListener('change', this._onSelectChange);
         this.prevBtn.removeEventListener('click', this._onPrev);
         this.nextBtn.removeEventListener('click', this._onNext);

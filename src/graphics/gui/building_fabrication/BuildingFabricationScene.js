@@ -1397,11 +1397,15 @@ export class BuildingFabricationScene {
     }
 
     _buildLights() {
-        this.hemi = new THREE.HemisphereLight(0xffffff, 0x2a3b1f, 0.85);
+        const lighting = this.engine?.lightingSettings ?? {};
+        const hemiIntensity = Number.isFinite(lighting.hemiIntensity) ? lighting.hemiIntensity : 0.85;
+        const sunIntensity = Number.isFinite(lighting.sunIntensity) ? lighting.sunIntensity : 1.2;
+
+        this.hemi = new THREE.HemisphereLight(0xffffff, 0x2a3b1f, hemiIntensity);
         this.hemi.position.set(0, 100, 0);
         this.root.add(this.hemi);
 
-        this.sun = new THREE.DirectionalLight(0xffffff, 1.2);
+        this.sun = new THREE.DirectionalLight(0xffffff, sunIntensity);
         this.sun.position.set(80, 140, 60);
         this.sun.castShadow = true;
         this.sun.shadow.mapSize.set(2048, 2048);

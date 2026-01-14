@@ -3351,88 +3351,6 @@ async function runTests() {
 	        console.log('⏭️  Road graph tests skipped:', e.message);
 	    }
 
-    // ========== Debug Corners 2 Tests (AI_47) ==========
-    try {
-        const { GameEngine } = await import('/src/app/core/GameEngine.js');
-        const { DebugCorners2View } = await import('/src/graphics/gui/debug_corners2/DebugCorners2View.js');
-
-        test('DebugCorners2: view can enter and rebuild telemetry', () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = 100;
-            canvas.height = 100;
-            const engine = new GameEngine({ canvas });
-            const view = new DebugCorners2View(engine, { uiEnabled: false });
-            view.enter();
-            view.forceRebuild();
-            const t = view.getTelemetry();
-            assertTrue(t.ok === true, 'Expected initial fillet telemetry to be OK.');
-            view.exit();
-        });
-
-        test('DebugCorners2: debug option toggles affect scene visibility', () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = 100;
-            canvas.height = 100;
-            const engine = new GameEngine({ canvas });
-            const view = new DebugCorners2View(engine, { uiEnabled: false });
-            view.enter();
-            view.forceRebuild();
-            assertTrue(!!view._generatedRoadsGroup, 'Expected generated asphalt group.');
-            assertTrue(view._generatedRoadsGroup.visible, 'Expected asphalt visible by default.');
-
-            view.setDebugOptions({ renderAsphalt: false, renderEdges: false, renderCenterline: false, showConnectingPoint: false });
-            view.forceRebuild();
-            assertFalse(view._generatedRoadsGroup.visible, 'Expected asphalt hidden after toggle.');
-            assertFalse(view._lines.aLeft.line.visible, 'Expected edges hidden after toggle.');
-            assertFalse(view._lines.aCenter.line.visible, 'Expected centerline hidden after toggle.');
-            view.exit();
-        });
-
-        test('DebugCorners2: lane/yaw edits update telemetry', () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = 100;
-            canvas.height = 100;
-            const engine = new GameEngine({ canvas });
-            const view = new DebugCorners2View(engine, { uiEnabled: false });
-            view.enter();
-            view.forceRebuild();
-            const before = view.getTelemetry();
-            const w0 = before?.roads?.A?.width ?? null;
-
-            view.setRoadConfig('A', { lanes: 6, yaw: Math.PI / 4 });
-            view.forceRebuild();
-            const after = view.getTelemetry();
-            const w1 = after?.roads?.A?.width ?? null;
-
-            assertTrue(Number.isFinite(w0) && Number.isFinite(w1), 'Expected road width telemetry.');
-            assertTrue(Math.abs(w1 - w0) > 1e-3, 'Expected width to change when lane count changes.');
-            assertNear(after?.roads?.A?.yaw ?? 0, Math.PI / 4, 1e-6, 'Expected yaw telemetry to update.');
-            view.exit();
-        });
-
-        test('DebugCorners2: connecting point marker matches telemetry', () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = 100;
-            canvas.height = 100;
-            const engine = new GameEngine({ canvas });
-            const view = new DebugCorners2View(engine, { uiEnabled: false });
-            view.enter();
-            view.setDebugOptions({ showConnectingPoint: true });
-            view.forceRebuild();
-            const t = view.getTelemetry();
-            const cp = t?.roads?.A?.connectingPoint ?? null;
-            assertTrue(!!cp, 'Expected connecting point telemetry for road A.');
-            const mesh = view._connectingPointMeshes?.A ?? null;
-            assertTrue(!!mesh, 'Expected connecting point mesh for road A.');
-            assertTrue(mesh.visible, 'Expected connecting point mesh to be visible.');
-            assertNear(mesh.position.x, cp.x, 1e-6, 'Connecting point X should match mesh.');
-            assertNear(mesh.position.z, cp.z, 1e-6, 'Connecting point Z should match mesh.');
-            view.exit();
-        });
-    } catch (e) {
-        console.log('⏭️  Debug Corners 2 tests skipped:', e.message);
-    }
-
     // ========== Road Debugger State Tests (Task 53) ==========
     try {
         const { RoadDebuggerState } = await import('/src/states/RoadDebuggerState.js');
@@ -3607,7 +3525,7 @@ async function runTests() {
             assertEqual(out?.junctions?.length ?? 0, 0, 'Expected no junctions for a continuous polyline road.');
         });
 
-        test('RoadDebuggerPipeline: crossing produces 1 junction with 4 endpoints (Task 67)', () => {
+        test('RoadDebuggerPipeline: crossing only produces junctions when manual junctions are provided (Task 67)', () => {
 	            const roads = [
 	                {
 	                    id: 'roadH',
@@ -3631,9 +3549,37 @@ async function runTests() {
 	                }
 	            ];
             const settings = { origin: { x: 0, z: 0 }, tileSize: 24, laneWidth: 4.8, marginFactor: 0.1 };
-            const out = rebuildRoadDebuggerPipeline({ roads, settings });
-            assertEqual(out?.junctions?.length ?? 0, 1, 'Expected a single junction for a simple 2-road crossing.');
+            const outNoJunc = rebuildRoadDebuggerPipeline({ roads, settings });
+            assertEqual(outNoJunc?.junctions?.length ?? 0, 0, 'Expected no junctions unless created explicitly.');
+
+            const endpoints = outNoJunc?.junctionCandidates?.endpoints ?? [];
+            const center = { x: 2 * settings.tileSize, z: 1 * settings.tileSize };
+            const byRoad = (roadId) => endpoints
+                .filter((e) => e?.id && e?.roadId === roadId && e?.world)
+                .map((e) => {
+                    const dx = (e.world.x ?? 0) - center.x;
+                    const dz = (e.world.z ?? 0) - center.z;
+                    return { id: e.id, dist: dx * dx + dz * dz };
+                })
+                .sort((a, b) => a.dist - b.dist)
+                .slice(0, 2)
+                .map((e) => e.id);
+
+            const candidateIds = Array.from(new Set([...byRoad('roadH'), ...byRoad('roadV')])).sort();
+            assertEqual(candidateIds.length, 4, 'Expected 4 endpoint candidates for manual crossing junction.');
+
+            const out = rebuildRoadDebuggerPipeline({
+                roads,
+                settings: {
+                    ...settings,
+                    junctions: {
+                        manualJunctions: [{ candidateIds }]
+                    }
+                }
+            });
+            assertEqual(out?.junctions?.length ?? 0, 1, 'Expected a single manual junction for a simple 2-road crossing.');
             const junction = out.junctions?.[0] ?? null;
+            assertEqual(junction?.source, 'manual', 'Expected junction source to be manual.');
             assertEqual(junction?.endpoints?.length ?? 0, 4, 'Expected 4 approach endpoints for a 2-road crossing.');
             assertTrue((junction?.surface?.points?.length ?? 0) >= 4, 'Expected a junction surface polygon.');
         });
@@ -3843,30 +3789,72 @@ async function runTests() {
 
 	                const editor = document.querySelector('.road-debugger-editor');
 	                assertTrue(!!editor, 'Expected bottom editor panel.');
-	                const getLaneInputs = () => Array.from(editor.querySelectorAll('.road-debugger-editor-content input.road-debugger-editor-number'));
-	                let laneInputs = getLaneInputs();
-	                assertEqual(laneInputs.length, 2, 'Expected lanesF + lanesB number inputs.');
+	                const getLaneGroup = (capText) => Array.from(editor.querySelectorAll('.road-debugger-lane-group')).find((el) => ((el.querySelector('.road-debugger-lane-group-cap')?.textContent ?? '').trim() === capText)) ?? null;
+	                const clickLane = (capText, value) => {
+	                    const group = getLaneGroup(capText);
+	                    assertTrue(!!group, `Expected ${capText} lane group.`);
+	                    const btn = Array.from(group.querySelectorAll('button.road-debugger-segmented-btn')).find((b) => ((b.textContent ?? '').trim() === String(value))) ?? null;
+	                    assertTrue(!!btn, `Expected ${capText} button ${value}.`);
+	                    btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+	                };
 
-	                laneInputs[0].value = '3';
-	                laneInputs[0].dispatchEvent(new Event('change'));
+	                clickLane('lanesF', 3);
 	                const afterF = view.getDerived().segments.find((s) => s?.roadId === roadId);
 	                assertNear(afterF.asphaltObb.halfWidthRight, 14.88, 1e-6, 'Expected right half-width to update for lanesF=3.');
 
-	                laneInputs = getLaneInputs();
-	                laneInputs[1].value = '2';
-	                laneInputs[1].dispatchEvent(new Event('change'));
+	                clickLane('lanesB', 2);
 	                const afterB = view.getDerived().segments.find((s) => s?.roadId === roadId);
 	                assertNear(afterB.asphaltObb.halfWidthLeft, 10.08, 1e-6, 'Expected left half-width to update for lanesB=2.');
 
-	                laneInputs = getLaneInputs();
-	                laneInputs[1].value = '0';
-	                laneInputs[1].dispatchEvent(new Event('change'));
+	                clickLane('lanesB', 0);
 	                const afterB0 = view.getDerived().segments.find((s) => s?.roadId === roadId);
 	                assertNear(afterB0.asphaltObb.halfWidthLeft, 0.48, 1e-6, 'Expected left half-width to update for lanesB=0 (one-way).');
             } finally {
                 view.exit();
             }
         });
+
+	        test('RoadDebugger: lanesF cannot be zero', () => {
+	            const engine = {
+	                canvas: document.createElement('canvas'),
+	                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+	                scene: new THREE.Scene(),
+	                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+	            };
+
+	            const view = new RoadDebuggerView(engine, { uiEnabled: true });
+	            view.enter();
+	            try {
+	                view.startRoadDraft({ lanesF: 0, lanesB: 1 });
+	                assertEqual(view.getDraftRoad()?.lanesF ?? null, 1, 'Expected draft lanesF to clamp to 1 when passed 0.');
+
+	                view.addDraftPointByTile(0, 0);
+	                view.addDraftPointByTile(2, 0);
+	                view.finishRoadDraft();
+
+	                const roadId = view.getRoads()?.[0]?.id ?? null;
+	                assertTrue(!!roadId, 'Expected road id.');
+	                assertEqual(view.getRoads()?.[0]?.lanesF ?? null, 1, 'Expected authored road lanesF to be at least 1.');
+
+	                view.setRoadLaneConfig(roadId, { lanesF: 0 });
+	                assertEqual(view.getRoads()?.[0]?.lanesF ?? null, 1, 'Expected lanesF to remain at least 1 after lane edit attempt.');
+
+	                const roadRow = document.querySelector(`.road-debugger-road-row[data-road-id="${roadId}"]`);
+	                assertTrue(!!roadRow, 'Expected road row.');
+	                roadRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+	                const editor = document.querySelector('.road-debugger-editor');
+	                assertTrue(!!editor, 'Expected bottom editor panel.');
+	                const lanesFGroup = Array.from(editor.querySelectorAll('.road-debugger-lane-group'))
+	                    .find((el) => ((el.querySelector('.road-debugger-lane-group-cap')?.textContent ?? '').trim() === 'lanesF')) ?? null;
+	                assertTrue(!!lanesFGroup, 'Expected lanesF lane group.');
+	                const hasZero = Array.from(lanesFGroup.querySelectorAll('button.road-debugger-segmented-btn'))
+	                    .some((b) => ((b.textContent ?? '').trim() === '0'));
+	                assertFalse(hasZero, 'Expected lanesF selector to not include 0.');
+	            } finally {
+	                view.exit();
+	            }
+	        });
     } catch (e) {
         console.log('⏭️  Road Debugger authoring tests skipped:', e.message);
     }
@@ -4069,8 +4057,33 @@ async function runTests() {
             };
 
             const derived0 = viewA.getDerived();
-            assertEqual(derived0?.junctions?.length ?? 0, 1, 'Expected a single crossing junction.');
-            const junction0 = derived0.junctions[0];
+            assertEqual(derived0?.junctions?.length ?? 0, 0, 'Expected no junctions unless created explicitly.');
+
+            const endpoints = derived0?.junctionCandidates?.endpoints ?? [];
+            const center = { x: viewA._origin.x + viewA._tileSize * 2, z: viewA._origin.z + viewA._tileSize * 1 };
+            const roadIds = viewA.getRoads().map((r) => r?.id).filter(Boolean);
+            const byRoad = (roadId) => endpoints
+                .filter((e) => e?.id && e?.roadId === roadId && e?.world)
+                .map((e) => {
+                    const dx = (e.world.x ?? 0) - center.x;
+                    const dz = (e.world.z ?? 0) - center.z;
+                    return { id: e.id, dist: dx * dx + dz * dz };
+                })
+                .sort((a, b) => a.dist - b.dist)
+                .slice(0, 2)
+                .map((e) => e.id);
+
+            const candidateIds = Array.from(new Set(roadIds.flatMap((id) => byRoad(id)))).sort();
+            assertEqual(candidateIds.length, 4, 'Expected 4 endpoint candidates for manual crossing junction.');
+
+            viewA.setJunctionToolEnabled(true);
+            assertTrue(viewA.setJunctionToolSelection(candidateIds), 'Expected junction tool selection to apply.');
+            assertTrue(viewA.createJunctionFromToolSelection(), 'Expected manual junction creation to succeed.');
+            viewA.setJunctionToolEnabled(false);
+
+            const derived1 = viewA.getDerived();
+            assertEqual(derived1?.junctions?.length ?? 0, 1, 'Expected a single crossing junction after manual creation.');
+            const junction0 = derived1.junctions[0];
             const sameRoad = (junction0?.connectors ?? []).find((c) => c?.sameRoad && !c?.mergedIntoRoad) ?? null;
             assertTrue(!!sameRoad?.id, 'Expected at least one same-road connector.');
 
@@ -5645,8 +5658,8 @@ async function runTests() {
 	                roadRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 	                const editor = document.querySelector('.road-debugger-editor');
 	                assertTrue(!!editor, 'Expected bottom editor panel.');
-	                const del = Array.from(editor.querySelectorAll('button')).find((b) => (b.textContent || '').trim() === 'Delete road') ?? null;
-	                assertTrue(!!del, 'Expected delete button.');
+	                const del = editor.querySelector('.road-debugger-editor-delete');
+	                assertTrue(!!del && del.style.display !== 'none', 'Expected delete button.');
 	                del.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
 	                assertEqual(view.getRoads().length, 1, 'Expected road count to decrease after delete.');
@@ -5655,6 +5668,44 @@ async function runTests() {
                 view.exit();
             }
         });
+
+	        test('RoadDebugger: delete is available when selecting a segment in the viewport', () => {
+	            const engine = {
+	                canvas: document.createElement('canvas'),
+	                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+	                scene: new THREE.Scene(),
+	                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+	            };
+
+	            const view = new RoadDebuggerView(engine, { uiEnabled: true });
+	            view.enter();
+	            try {
+	                view.startRoadDraft();
+	                view.addDraftPointByTile(0, 0);
+	                view.addDraftPointByTile(2, 0);
+	                view.finishRoadDraft();
+
+	                const roadId = view.getRoads()?.[0]?.id ?? null;
+	                const segId = view.getDerived()?.segments?.[0]?.id ?? null;
+	                assertTrue(!!roadId, 'Expected road id.');
+	                assertTrue(!!segId, 'Expected derived segment id.');
+
+	                view.selectSegment(segId);
+	                assertEqual(view._selection?.type ?? null, 'segment', 'Expected segment selection after viewport pick.');
+
+	                const editor = document.querySelector('.road-debugger-editor');
+	                assertTrue(!!editor, 'Expected bottom editor panel.');
+	                const del = editor.querySelector('.road-debugger-editor-delete');
+	                assertTrue(!!del && del.style.display !== 'none', 'Expected delete button when a segment is selected.');
+
+	                del.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+	                assertEqual(view.getRoads().length, 0, 'Expected road to be deleted from segment selection.');
+	                assertFalse(!!document.querySelector(`.road-debugger-road-row[data-road-id="${roadId}"]`), 'Expected deleted road row to be removed.');
+	            } finally {
+	                view.exit();
+	            }
+	        });
 
 	        test('RoadDebugger: visibility toggle hides rendering but keeps derived geometry stable', () => {
             const engine = {
@@ -5732,7 +5783,7 @@ async function runTests() {
                 const title = panel.querySelector('.road-debugger-info-title');
                 const body = panel.querySelector('.road-debugger-info-body');
                 assertTrue(!!title && !!body, 'Expected info panel title/body.');
-                assertEqual((body.textContent || '').trim(), 'Hovered\n—\n\nSelected\n—', 'Expected placeholder sections when nothing highlighted.');
+                assertEqual((body.textContent || '').trim(), '—', 'Expected placeholder info when nothing is hovered.');
 
                 view.startRoadDraft();
                 view.addDraftPointByTile(0, 0);
@@ -5748,13 +5799,14 @@ async function runTests() {
                 assertTrue((body.textContent || '').includes(`road: ${roadName}`), 'Expected hovered road name in info body.');
 
                 view.selectSegment(segId);
-                assertTrue((body.textContent || '').includes(`segment: ${segId}`), 'Expected selected segment id in info body.');
+                assertTrue((body.textContent || '').includes(`road: ${roadName}`), 'Expected hovered info to remain after selection changes.');
+                assertFalse((body.textContent || '').includes(`segment: ${segId}`), 'Expected selection info to not be shown in hover panel.');
             } finally {
                 view.exit();
             }
         });
 
-        test('RoadDebuggerUI: hover and selection sections are independent', () => {
+        test('RoadDebuggerUI: hover panel does not include selection details', () => {
             const engine = {
                 canvas: document.createElement('canvas'),
                 camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
@@ -5787,23 +5839,15 @@ async function runTests() {
                 const body = panel?.querySelector?.('.road-debugger-info-body') ?? null;
                 assertTrue(!!panel && !!title && !!body, 'Expected info panel elements.');
 
-                const sections = () => {
-                    const raw = String(body.textContent ?? '');
-                    const parts = raw.split('\n\nSelected\n');
-                    const hovered = parts[0]?.replace(/^Hovered\n/, '')?.trim?.() ?? '';
-                    const selected = parts[1]?.trim?.() ?? '';
-                    return { hovered, selected };
-                };
-
                 view.setHoverRoad(hoverId);
-                assertTrue(sections().hovered.includes(hoverName), 'Expected hovered road name in hover section.');
-                assertEqual(sections().selected, '—', 'Expected selected section placeholder before selecting.');
+                assertTrue((body.textContent || '').includes(hoverName), 'Expected hovered road name in hover panel.');
+                assertFalse((body.textContent || '').includes(selectedName), 'Expected selection to not appear in hover panel.');
 
                 view.selectRoad(selectedId);
                 view.setHoverRoad(hoverId);
                 assertTrue((title.textContent || '').includes('Hover'), 'Expected info panel title to indicate hover panel.');
-                assertTrue(sections().hovered.includes(hoverName), 'Expected hover section to continue reflecting hover target.');
-                assertTrue(sections().selected.includes(selectedName), 'Expected selected section to reflect the selected road.');
+                assertTrue((body.textContent || '').includes(hoverName), 'Expected hover panel to continue reflecting hover target.');
+                assertFalse((body.textContent || '').includes(selectedName), 'Expected selection to not appear in hover panel.');
             } finally {
                 view.exit();
             }

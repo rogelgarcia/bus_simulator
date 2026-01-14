@@ -100,11 +100,12 @@ export function applyIBLToScene(scene, envMap, overrides = {}) {
 
     if (!enabled || !envMap) {
         if (scene.environment) scene.environment = null;
+        if (scene.background) scene.background = null;
         return;
     }
 
     scene.environment = envMap;
-    if (setBackground) scene.background = envMap;
+    scene.background = setBackground ? envMap : null;
 }
 
 export function applyIBLIntensity(root, overrides = {}, { force = false } = {}) {

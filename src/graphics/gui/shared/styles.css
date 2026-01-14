@@ -252,6 +252,32 @@ html, body {
     pointer-events: none;
 }
 
+.ui-icon {
+    font-family: "Material Symbols Outlined";
+    font-weight: normal;
+    font-style: normal;
+    font-size: var(--ui-icon-size, 20px);
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    vertical-align: middle;
+    user-select: none;
+    font-variation-settings:
+        "FILL" var(--ui-icon-fill, 0),
+        "wght" var(--ui-icon-weight, 400),
+        "GRAD" 0,
+        "opsz" 24;
+}
+
+.ui-icon-sm { --ui-icon-size: 16px; }
+.ui-icon-md { --ui-icon-size: 20px; }
+.ui-icon-lg { --ui-icon-size: 26px; }
+
+.ui-icon.is-active { --ui-icon-fill: 1; }
+.ui-icon.is-disabled { opacity: 0.45; }
+button:disabled .ui-icon { opacity: 0.4; }
+
 #ui-fade {
     position: fixed;
     inset: 0;

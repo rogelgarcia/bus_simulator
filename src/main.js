@@ -13,8 +13,16 @@ import { RapierDebuggerState } from './states/rapier_debugger/RapierDebuggerStat
 import { BuildingFabricationState } from './states/BuildingFabricationState.js';
 import { MeshInspectorState } from './states/MeshInspectorState.js';
 import { TextureInspectorState } from './states/TextureInspectorState.js';
-import { DebugCorners2State } from './states/DebugCorners2State.js';
 import { RoadDebuggerState } from './states/RoadDebuggerState.js';
+import { OptionsState } from './states/OptionsState.js';
+
+function isEditableTarget(target) {
+    const el = target && typeof target === 'object' ? target : null;
+    if (!el) return false;
+    const tag = String(el.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+    return !!el.isContentEditable;
+}
 
 const canvas = document.getElementById('game-canvas');
 
@@ -32,9 +40,20 @@ sm.register('rapier_debugger', new RapierDebuggerState(engine, sm));
 sm.register('building_fabrication', new BuildingFabricationState(engine, sm));
 sm.register('mesh_inspector', new MeshInspectorState(engine, sm));
 sm.register('texture_inspector', new TextureInspectorState(engine, sm));
-sm.register('debug_corners2', new DebugCorners2State(engine, sm));
 sm.register('road_debugger', new RoadDebuggerState(engine, sm));
+sm.register('options', new OptionsState(engine, sm));
 
 engine.setStateMachine(sm);
 engine.start();
 sm.go('welcome');
+
+window.addEventListener('keydown', (e) => {
+    if (isEditableTarget(e.target)) return;
+    const code = e.code;
+    const key = e.key;
+    const is0 = code === 'Digit0' || code === 'Numpad0' || key === '0';
+    if (!is0) return;
+    if (sm.currentName === 'options') return;
+    e.preventDefault();
+    sm.go('options', { returnTo: sm.currentName || 'welcome' });
+}, { passive: false, capture: true });

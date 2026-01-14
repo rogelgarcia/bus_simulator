@@ -46,7 +46,6 @@ function fmtInt(v) {
 function outputInfo(view) {
     const derived = view.getDerived?.() ?? view._derived ?? null;
     const hover = view._hover ?? {};
-    const sel = view._selection ?? {};
 
     const summarizeJunction = (junctionId) => {
         const junction = derived?.junctions?.find?.((j) => j?.id === junctionId) ?? null;
@@ -100,35 +99,10 @@ function outputInfo(view) {
         if (road?.id && road.id !== hover.roadId) hoverLines.push(`id: ${road.id}`);
     }
 
-    const selectedLines = [];
-    if (sel.type === 'road') {
-        const road = derived?.roads?.find?.((r) => r?.id === sel.roadId) ?? null;
-        selectedLines.push(`road: ${road?.name ?? sel.roadId ?? '--'}`);
-    } else if (sel.type === 'segment') {
-        selectedLines.push(`segment: ${sel.segmentId ?? '--'}`);
-    } else if (sel.type === 'piece') {
-        selectedLines.push(`piece: ${sel.pieceId ?? '--'}`);
-        if (sel.segmentId) selectedLines.push(`segment: ${sel.segmentId}`);
-    } else if (sel.type === 'point') {
-        selectedLines.push(`point: ${sel.pointId ?? '--'}`);
-        if (sel.roadId) selectedLines.push(`road: ${sel.roadId}`);
-    } else if (sel.type === 'junction') {
-        const j = summarizeJunction(sel.junctionId);
-        selectedLines.push(j.label);
-        selectedLines.push(`approaches: ${fmtInt(j.approaches)}`);
-    } else if (sel.type === 'connector') {
-        selectedLines.push(`connector: ${sel.connectorId ?? '--'}`);
-        if (sel.junctionId) selectedLines.push(`junction: ${sel.junctionId}`);
-    } else if (sel.type === 'approach') {
-        selectedLines.push(`approach: ${sel.approachId ?? '--'}`);
-        if (sel.junctionId) selectedLines.push(`junction: ${sel.junctionId}`);
-    }
-
     const hoverText = hoverLines.length ? hoverLines.join('\n') : '—';
-    const selectedText = selectedLines.length ? selectedLines.join('\n') : '—';
     return {
         title: 'Hover',
-        text: `Hovered\n${hoverText}\n\nSelected\n${selectedText}`
+        text: hoverText
     };
 }
 
@@ -911,24 +885,15 @@ export function setupUI(view) {
 
     const popupTabs = document.createElement('div');
     popupTabs.className = 'road-debugger-editor-tabs';
-    const popupTabEdit = makeButton('Edit');
-    popupTabEdit.classList.add('road-debugger-editor-tab');
-    popupTabEdit.title = 'Edit the current selection.';
     const popupTabRoads = makeButton('Roads');
     popupTabRoads.classList.add('road-debugger-editor-tab');
     popupTabRoads.title = 'Road drafting workflow.';
     const popupTabJunctions = makeButton('Junctions');
     popupTabJunctions.classList.add('road-debugger-editor-tab');
     popupTabJunctions.title = 'Junction creation workflow.';
-    popupTabs.appendChild(popupTabEdit);
     popupTabs.appendChild(popupTabRoads);
     popupTabs.appendChild(popupTabJunctions);
     bottom.appendChild(popupTabs);
-
-    const popupTitle = document.createElement('div');
-    popupTitle.className = 'road-debugger-editor-title';
-    popupTitle.textContent = 'Edit';
-    bottom.appendChild(popupTitle);
 
     const popupBody = document.createElement('div');
     popupBody.className = 'road-debugger-editor-body';
@@ -943,6 +908,17 @@ export function setupUI(view) {
     popupCandidates.style.display = 'none';
     bottom.appendChild(popupCandidates);
 
+    const footer = document.createElement('div');
+    footer.className = 'road-debugger-editor-footer';
+
+    const footerLeft = document.createElement('div');
+    footerLeft.className = 'road-debugger-editor-footer-left';
+    const deleteBtn = makeButton('Delete');
+    deleteBtn.classList.add('road-debugger-editor-delete', 'is-danger');
+    deleteBtn.title = 'Delete the selected road or junction.';
+    footerLeft.appendChild(deleteBtn);
+    footer.appendChild(footerLeft);
+
     const actions = document.createElement('div');
     actions.className = 'road-debugger-editor-actions';
     const newRoad = makeButton('New Road');
@@ -954,7 +930,8 @@ export function setupUI(view) {
     actions.appendChild(newRoad);
     actions.appendChild(cancel);
     actions.appendChild(done);
-    bottom.appendChild(actions);
+    footer.appendChild(actions);
+    bottom.appendChild(footer);
 
     const infoPanel = document.createElement('div');
     infoPanel.className = 'road-debugger-panel road-debugger-info-panel';
@@ -1182,7 +1159,7 @@ export function setupUI(view) {
     root.appendChild(helpModal);
     document.body.appendChild(root);
 
-    let popupMode = 'edit';
+    let popupMode = 'roads';
     let pendingRoadLanesF = 1;
     let pendingRoadLanesB = 1;
 
@@ -1229,17 +1206,12 @@ export function setupUI(view) {
         if (mode === 'junctions') {
             const enabled = view.getJunctionToolEnabled?.() ?? view._junctionToolEnabled === true;
             if (!enabled) return;
-            view.createJunctionFromToolSelection?.();
             view.setJunctionToolEnabled?.(false);
         }
     };
 
     const setPopupMode = (nextMode) => {
-        const next = nextMode === 'roads'
-            ? 'roads'
-            : nextMode === 'junctions'
-                ? 'junctions'
-                : 'edit';
+        const next = nextMode === 'junctions' ? 'junctions' : 'roads';
         if (next === popupMode) return;
         finalizePopupMode(popupMode);
         popupMode = next;
@@ -1282,16 +1254,20 @@ export function setupUI(view) {
     const onJunctionBoundaryChange = () => view.setJunctionDebugOptions?.({ boundary: junctionBoundaryRow.input.checked });
     const onJunctionConnectorsChange = () => view.setJunctionDebugOptions?.({ connectors: junctionConnectorsRow.input.checked });
     const onJunctionEdgeOrderChange = () => view.setJunctionDebugOptions?.({ edgeOrder: junctionEdgeOrderRow.input.checked });
-    const onPopupTabEdit = (e) => {
-        e.preventDefault?.();
-        setPopupMode('edit');
-    };
     const onPopupTabRoads = (e) => {
         e.preventDefault?.();
+        const sel = view._selection ?? {};
+        if (sel.type === 'junction' || sel.type === 'connector' || sel.type === 'approach') {
+            view.clearSelection?.();
+        }
         setPopupMode('roads');
     };
     const onPopupTabJunctions = (e) => {
         e.preventDefault?.();
+        const sel = view._selection ?? {};
+        if (sel.type === 'road' || sel.type === 'segment' || sel.type === 'piece' || sel.type === 'point') {
+            view.clearSelection?.();
+        }
         setPopupMode('junctions');
     };
     const onUndo = (e) => {
@@ -1319,6 +1295,14 @@ export function setupUI(view) {
         e.preventDefault();
         if (popupMode === 'roads') view.cancelRoadDraft();
         else if (popupMode === 'junctions') view.setJunctionToolEnabled?.(false);
+    };
+    const onDelete = (e) => {
+        e.preventDefault();
+        const sel = view._selection ?? {};
+        if ((sel?.type === 'road' || sel?.type === 'segment' || sel?.type === 'piece' || sel?.type === 'point') && sel.roadId) {
+            view.deleteRoad?.(sel.roadId);
+        }
+        else if (sel?.type === 'junction' && sel.junctionId) view.deleteJunction?.(sel.junctionId);
     };
     const onRoadsLeave = () => view.clearHover();
     const onJunctionsLeave = () => view.clearHover();
@@ -1486,9 +1470,9 @@ export function setupUI(view) {
     redoBtn.addEventListener('click', onRedo);
     exportBtn.addEventListener('click', onExport);
     importBtn.addEventListener('click', onImport);
-    popupTabEdit.addEventListener('click', onPopupTabEdit);
     popupTabRoads.addEventListener('click', onPopupTabRoads);
     popupTabJunctions.addEventListener('click', onPopupTabJunctions);
+    deleteBtn.addEventListener('click', onDelete);
     newRoad.addEventListener('click', onNewRoad);
     done.addEventListener('click', onDone);
     cancel.addEventListener('click', onCancel);
@@ -1601,7 +1585,7 @@ export function setupUI(view) {
             if (h.roadId === road.id && !h.segmentId && !h.pointId && !h.junctionId) view.clearHover();
         });
         row.addEventListener('click', () => {
-            setPopupMode('edit');
+            setPopupMode('roads');
             view.selectRoad(road.id);
         });
         return row;
@@ -1633,7 +1617,7 @@ export function setupUI(view) {
             if (view._hover?.segmentId === seg.id) view.clearHover();
         });
         row.addEventListener('click', () => {
-            setPopupMode('edit');
+            setPopupMode('roads');
             view.selectSegment(seg.id);
         });
         return row;
@@ -1665,7 +1649,7 @@ export function setupUI(view) {
             if (view._hover?.roadId === roadId && view._hover?.pointId === pt.id) view.clearHover();
         });
         row.addEventListener('click', () => {
-            setPopupMode('edit');
+            setPopupMode('roads');
             view.selectPoint?.(roadId, pt.id);
         });
         return row;
@@ -1708,7 +1692,7 @@ export function setupUI(view) {
             if (h.junctionId === junction.id && !h.connectorId && !h.approachId) view.clearHover();
         });
         row.addEventListener('click', () => {
-            setPopupMode('edit');
+            setPopupMode('junctions');
             view.selectJunction?.(junction.id);
         });
         return row;
@@ -1749,7 +1733,7 @@ export function setupUI(view) {
             if (view._hover?.junctionId === junctionId && view._hover?.approachId === endpoint?.id) view.clearHover();
         });
         row.addEventListener('click', () => {
-            setPopupMode('edit');
+            setPopupMode('junctions');
             view.selectApproach?.(junctionId, endpoint?.id);
         });
 
@@ -1832,7 +1816,7 @@ export function setupUI(view) {
             if (view._hover?.connectorId === connector.id) view.clearHover();
         });
         row.addEventListener('click', () => {
-            setPopupMode('edit');
+            setPopupMode('junctions');
             view.selectConnector?.(connector.id);
         });
         return row;
@@ -1921,6 +1905,29 @@ export function setupUI(view) {
             row.textContent = text;
             return row;
         };
+
+        const draftRoad = view.getDraftRoad?.() ?? view._draft ?? null;
+        if (draftRoad) {
+            const pts = Array.isArray(draftRoad?.points) ? draftRoad.points : [];
+            appendDetail(buildDetailSubhead('Road draft'));
+            appendDetail(buildDetailSummary([
+                `Road: ${draftRoad.name ?? '--'}`,
+                `id: ${draftRoad.id ?? '--'}`,
+                `lanesF/B: ${fmtInt(draftRoad.lanesF)} / ${fmtInt(draftRoad.lanesB)}`,
+                `points: ${fmtInt(pts.length)}`
+            ]));
+        }
+
+        if (junctionToolEnabled) {
+            const shown = selectedCandidates.slice(0, 6);
+            const suffix = selectedCandidates.length > shown.length ? ` +${selectedCandidates.length - shown.length} more` : '';
+            const ids = selectedCandidates.length ? `ids: ${shown.join(', ')}${suffix}` : 'ids: —';
+            appendDetail(buildDetailSubhead('Junction draft'));
+            appendDetail(buildDetailSummary([
+                `selected: ${fmtInt(selectedCount)}`,
+                ids
+            ]));
+        }
 
         const selectedIssueId = view.getSelectedIssueId?.() ?? view._selectedIssueId ?? null;
         const selectedIssue = selectedIssueId ? (view.getIssueById?.(selectedIssueId) ?? null) : null;
@@ -2039,7 +2046,7 @@ export function setupUI(view) {
         const sel = view._selection ?? {};
         const selRoad = sel?.roadId ? (derived?.roads?.find?.((r) => r?.id === sel.roadId) ?? null) : null;
         const selPoint = sel?.type === 'point' ? (selRoad?.points?.find?.((p) => p?.id === sel.pointId) ?? null) : null;
-        const showPointEditor = popupMode === 'edit' && !!selPoint;
+        const showPointEditor = popupMode === 'roads' && !!selPoint;
         pointSection.style.display = showPointEditor ? '' : 'none';
         if (showPointEditor) {
             const factor = Number.isFinite(selPoint.tangentFactor) ? selPoint.tangentFactor : 1;
@@ -2221,13 +2228,23 @@ export function setupUI(view) {
 
         const draftActive = !!draft;
         const pts = draft?.points?.length ?? 0;
-        popupTabEdit.classList.toggle('is-active', popupMode === 'edit');
+        const desiredMode = sel?.type === 'junction' || sel?.type === 'connector' || sel?.type === 'approach'
+            ? 'junctions'
+            : sel?.type === 'road' || sel?.type === 'segment' || sel?.type === 'piece' || sel?.type === 'point'
+                ? 'roads'
+                : null;
+        if (desiredMode && desiredMode !== popupMode) {
+            setPopupMode(desiredMode);
+            return;
+        }
         popupTabRoads.classList.toggle('is-active', popupMode === 'roads');
         popupTabJunctions.classList.toggle('is-active', popupMode === 'junctions');
 
         popupContent.textContent = '';
         popupCandidates.style.display = 'none';
         popupCandidates.textContent = '';
+
+        deleteBtn.style.display = 'none';
 
         newRoad.style.display = 'none';
         cancel.style.display = 'none';
@@ -2258,187 +2275,113 @@ export function setupUI(view) {
             popupContent.appendChild(row);
         };
 
-        if (popupMode === 'edit') {
-            popupTitle.textContent = 'Edit';
-            const sel = view._selection ?? {};
-            if (!sel?.type) {
-                addEditorText('Select an entity from the lists, the detail tree, or the map.');
-            } else if (sel.type === 'road') {
-                const schemaDraft = view.getDraftRoad?.() ?? view._draft ?? null;
-                const schemaRoads = view.getRoads?.() ?? view._roads ?? [];
-                const schema = (schemaDraft?.id === sel.roadId ? schemaDraft : schemaRoads.find((r) => r?.id === sel.roadId)) ?? null;
-                addEditorText(schema ? `${schema.name} · ${schema.id}` : `Road · ${sel.roadId ?? '--'}`);
+        const deleteVisible = (
+            (sel?.type === 'road' || sel?.type === 'segment' || sel?.type === 'piece' || sel?.type === 'point')
+            && !!sel.roadId
+        ) || (sel?.type === 'junction' && !!sel.junctionId);
+        deleteBtn.style.display = deleteVisible ? '' : 'none';
+        deleteBtn.disabled = !deleteVisible;
 
-                const lanesF = document.createElement('input');
-                lanesF.type = 'number';
-                lanesF.min = '1';
-                lanesF.max = '5';
-                lanesF.step = '1';
-                lanesF.className = 'road-debugger-editor-number';
-                lanesF.value = String(clampInt(schema?.lanesF ?? 1, 1, 5));
-                lanesF.addEventListener('change', (e) => {
+        const laneOptionsF = [1, 2, 3, 4, 5];
+        const laneOptionsB = [0, 1, 2, 3, 4, 5];
+        const buildLaneButtonGroup = ({ labelText, value, options, onSet, title = '' }) => {
+            const row = document.createElement('div');
+            row.className = 'road-debugger-lane-group';
+            if (title) row.title = title;
+
+            const cap = document.createElement('div');
+            cap.className = 'road-debugger-lane-group-cap';
+            cap.textContent = labelText;
+            row.appendChild(cap);
+
+            const group = document.createElement('div');
+            group.className = 'road-debugger-segmented';
+            row.appendChild(group);
+
+            const list = Array.isArray(options) ? options : [];
+            for (const opt of list) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'road-debugger-segmented-btn';
+                btn.textContent = String(opt);
+                btn.classList.toggle('is-active', opt === value);
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
                     e.stopPropagation();
-                    const next = clampInt(lanesF.value, 1, 5);
-                    lanesF.value = String(next);
-                    view.setRoadLaneConfig?.(sel.roadId, { lanesF: next });
+                    onSet(opt);
                 });
-                addEditorField({ labelText: 'lanesF', inputEl: lanesF });
+                group.appendChild(btn);
+            }
 
-                const lanesB = document.createElement('input');
-                lanesB.type = 'number';
-                lanesB.min = '0';
-                lanesB.max = '5';
-                lanesB.step = '1';
-                lanesB.className = 'road-debugger-editor-number';
-                lanesB.value = String(clampInt(schema?.lanesB ?? 1, 0, 5));
-                lanesB.addEventListener('change', (e) => {
-                    e.stopPropagation();
-                    const next = clampInt(lanesB.value, 0, 5);
-                    lanesB.value = String(next);
-                    view.setRoadLaneConfig?.(sel.roadId, { lanesB: next });
-                });
-                addEditorField({ labelText: 'lanesB', inputEl: lanesB });
+            return row;
+        };
 
+        if (popupMode === 'roads') {
+            const selectedRoadId = (sel?.type === 'road' || sel?.type === 'segment' || sel?.type === 'piece' || sel?.type === 'point')
+                ? sel.roadId
+                : null;
+            const schemaDraft = view.getDraftRoad?.() ?? view._draft ?? null;
+            const schemaRoads = view.getRoads?.() ?? view._roads ?? [];
+            const schemaRoad = selectedRoadId
+                ? ((schemaDraft?.id === selectedRoadId ? schemaDraft : schemaRoads.find((r) => r?.id === selectedRoadId)) ?? null)
+                : null;
+            const laneTarget = draftActive ? schemaDraft : schemaRoad;
+            const laneTargetId = laneTarget?.id ?? null;
+
+            const showLaneControls = (draftActive && !!schemaDraft?.id) || !!selectedRoadId;
+            if (showLaneControls && laneTargetId) {
+                const lanesFValue = clampInt(laneTarget?.lanesF ?? pendingRoadLanesF, 1, 5);
+                const lanesBValue = clampInt(laneTarget?.lanesB ?? pendingRoadLanesB, 0, 5);
+
+                const lanesGroup = document.createElement('div');
+                lanesGroup.className = 'road-debugger-lanes-group';
+
+                const setLanesF = (next) => {
+                    const value = clampInt(next, 1, 5);
+                    if (draftActive) pendingRoadLanesF = value;
+                    view.setRoadLaneConfig?.(laneTargetId, { lanesF: value });
+                };
+
+                const setLanesB = (next) => {
+                    const value = clampInt(next, 0, 5);
+                    if (draftActive) pendingRoadLanesB = value;
+                    view.setRoadLaneConfig?.(laneTargetId, { lanesB: value });
+                };
+
+                lanesGroup.appendChild(buildLaneButtonGroup({
+                    labelText: 'lanesF',
+                    value: lanesFValue,
+                    options: laneOptionsF,
+                    onSet: setLanesF,
+                    title: 'Forward lanes (relative to A → B direction). Forward lanes are on the right side of the divider centerline.'
+                }));
+                lanesGroup.appendChild(buildLaneButtonGroup({
+                    labelText: 'lanesB',
+                    value: lanesBValue,
+                    options: laneOptionsB,
+                    onSet: setLanesB,
+                    title: 'Backward lanes (relative to A → B direction). Backward lanes are on the left side of the divider centerline. Set to 0 for one-way roads.'
+                }));
+                popupContent.appendChild(lanesGroup);
+            }
+
+            if (schemaRoad && selectedRoadId) {
                 const visible = document.createElement('input');
                 visible.type = 'checkbox';
                 visible.className = 'road-debugger-editor-checkbox';
-                visible.checked = schema?.visible !== false;
+                visible.checked = schemaRoad?.visible !== false;
                 visible.addEventListener('change', (e) => {
                     e.stopPropagation();
-                    view.setRoadVisibility?.(sel.roadId, visible.checked);
+                    view.setRoadVisibility?.(selectedRoadId, visible.checked);
                 });
                 addEditorField({ labelText: 'visible', inputEl: visible });
-
-                const del = makeButton('Delete road');
-                del.classList.add('is-danger');
-                del.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    view.deleteRoad?.(sel.roadId);
-                });
-                addEditorButtonRow([del]);
-            } else if (sel.type === 'point') {
-                addEditorText(`Point · ${sel.pointId ?? '--'}`);
-                if (pointSection.parentElement !== popupBody) popupBody.appendChild(pointSection);
-            } else if (sel.type === 'junction' || sel.type === 'approach' || sel.type === 'connector') {
-                const junctionId = sel.junctionId ?? null;
-                const junction = derived?.junctions?.find?.((j) => j?.id === junctionId) ?? null;
-                addEditorText(junction ? `Junction · ${junction.id}` : `Junction · ${junctionId ?? '--'}`);
-
-                const toggle = makeButton((junction?.asphaltVisible ?? true) ? 'Hide asphalt' : 'Show asphalt');
-                toggle.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    view.toggleJunctionAsphaltVisibility?.(junctionId);
-                });
-
-                const del = makeButton(junction?.source === 'manual' ? 'Delete junction' : 'Suppress junction');
-                del.classList.add('is-danger');
-                del.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    view.deleteJunction?.(junctionId);
-                });
-
-                addEditorButtonRow([toggle, del]);
-
-                if (sel.type === 'connector' && sel.connectorId) {
-                    const connector = derived?.junctions
-                        ?.flatMap?.((j) => j?.connectors ?? [])
-                        ?.find?.((c) => c?.id === sel.connectorId) ?? null;
-                    const merge = makeButton('Merge into road');
-                    merge.disabled = !(connector?.sameRoad) || !!connector?.mergedIntoRoad;
-                    merge.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        view.mergeConnectorIntoRoad?.(sel.connectorId);
-                    });
-                    addEditorButtonRow([merge]);
-                }
-            } else if (sel.type === 'segment' || sel.type === 'piece') {
-                addEditorText(`${sel.type === 'piece' ? 'Piece' : 'Segment'} · ${sel.segmentId ?? '--'}`);
-            } else {
-                addEditorText(`${sel.type} selected.`);
             }
-        } else if (popupMode === 'roads') {
-            popupTitle.textContent = 'Roads';
-            const lanesFValue = clampInt(draft?.lanesF ?? pendingRoadLanesF, 1, 5);
-            const lanesBValue = clampInt(draft?.lanesB ?? pendingRoadLanesB, 0, 5);
 
-            const lanesGroup = document.createElement('div');
-            lanesGroup.className = 'road-debugger-lanes-group';
-
-            const buildLaneStepper = ({ capText, value, min, max, onSet, title = '' }) => {
-                const row = document.createElement('div');
-                row.className = 'road-debugger-lane-stepper';
-                if (title) row.title = title;
-
-                const cap = document.createElement('div');
-                cap.className = 'road-debugger-lane-stepper-cap';
-                cap.textContent = capText;
-                row.appendChild(cap);
-
-                const dec = document.createElement('button');
-                dec.type = 'button';
-                dec.className = 'road-debugger-lane-stepper-btn';
-                dec.textContent = '−';
-                dec.disabled = value <= min;
-                dec.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    onSet(Math.max(min, value - 1));
-                });
-                row.appendChild(dec);
-
-                const val = document.createElement('div');
-                val.className = 'road-debugger-lane-stepper-value';
-                val.textContent = String(value);
-                row.appendChild(val);
-
-                const inc = document.createElement('button');
-                inc.type = 'button';
-                inc.className = 'road-debugger-lane-stepper-btn';
-                inc.textContent = '+';
-                inc.disabled = value >= max;
-                inc.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    onSet(Math.min(max, value + 1));
-                });
-                row.appendChild(inc);
-
-                return row;
-            };
-
-            const setLanesF = (next) => {
-                const value = clampInt(next, 1, 5);
-                pendingRoadLanesF = value;
-                if (draftActive && draft?.id) view.setRoadLaneConfig?.(draft.id, { lanesF: value });
-                else sync();
-            };
-
-            const setLanesB = (next) => {
-                const value = clampInt(next, 0, 5);
-                pendingRoadLanesB = value;
-                if (draftActive && draft?.id) view.setRoadLaneConfig?.(draft.id, { lanesB: value });
-                else sync();
-            };
-
-            lanesGroup.appendChild(buildLaneStepper({
-                capText: 'F',
-                value: lanesFValue,
-                min: 1,
-                max: 5,
-                onSet: setLanesF,
-                title: 'Forward lanes (relative to A → B direction). Forward lanes are on the right side of the divider centerline.'
-            }));
-            lanesGroup.appendChild(buildLaneStepper({
-                capText: 'B',
-                value: lanesBValue,
-                min: 0,
-                max: 5,
-                onSet: setLanesB,
-                title: 'Backward lanes (relative to A → B direction). Backward lanes are on the left side of the divider centerline. Set to 0 for one-way roads.'
-            }));
-            popupContent.appendChild(lanesGroup);
-
-            addEditorText(draftActive
-                ? `Drafting ${draft.name} · ${pts} point${pts === 1 ? '' : 's'} · click tiles to add points.`
-                : 'Click New Road, then click tiles to place points.');
+            addEditorText(selectedRoadId
+                ? `Selected road: ${selectedRoadId}`
+                : draftActive
+                    ? 'Road draft active.'
+                    : 'Click New Road to start drafting.');
 
             newRoad.textContent = 'New Road';
             newRoad.title = 'Start drafting a new road (click tiles to add points).';
@@ -2455,10 +2398,11 @@ export function setupUI(view) {
                 newRoad.disabled = false;
             }
         } else {
-            popupTitle.textContent = 'Junctions';
-            addEditorText(junctionToolEnabled
-                ? `Selecting junction points · ${fmtInt(selectedCount)} selected · drag a rectangle to multi-select · click to toggle · Done to create.`
-                : 'Click New Junction, then click endpoints/corners (or drag a rectangle) to select points.');
+            addEditorText(sel?.type === 'junction' && sel.junctionId
+                ? `Selected junction: ${sel.junctionId}`
+                : junctionToolEnabled
+                    ? 'Junction draft active.'
+                    : 'Click New Junction to start selecting candidates.');
 
             newRoad.textContent = 'New Junction';
             newRoad.title = 'Start selecting junction points (endpoints + corners).';
@@ -2470,46 +2414,6 @@ export function setupUI(view) {
                 done.style.display = '';
                 cancel.disabled = false;
                 done.disabled = (!(selectedCount >= 2) && !singleIsCorner);
-
-                popupCandidates.style.display = '';
-                if (!selectedCandidates.length) {
-                    const empty = document.createElement('div');
-                    empty.className = 'road-debugger-placeholder';
-                    empty.textContent = 'No selected candidates yet.';
-                    popupCandidates.appendChild(empty);
-                } else {
-                    const derivedCandidates = derived?.junctionCandidates ?? null;
-                    const endpoints = derivedCandidates?.endpoints ?? [];
-                    const corners = derivedCandidates?.corners ?? [];
-                    const endpointById = new Map(endpoints.map((c) => [c?.id, c]));
-                    const cornerById = new Map(corners.map((c) => [c?.id, c]));
-                    for (const id of selectedCandidates) {
-                        const row = document.createElement('div');
-                        row.className = 'road-debugger-candidate-row';
-                        row.dataset.candidateId = id;
-                        row.classList.toggle('is-hovered', view._junctionToolHoverCandidateId === id);
-
-                        const isCorner = String(id).startsWith('corner_');
-                        const cand = (isCorner ? cornerById.get(id) : endpointById.get(id)) ?? null;
-
-                        const label = document.createElement('div');
-                        label.className = 'road-debugger-candidate-label';
-                        label.textContent = isCorner
-                            ? `${id} · ${fmt((cand?.angleRad ?? 0) * 57.2958, 1)}°`
-                            : `${id} · ${cand?.roadId ?? '--'} · ${cand?.end ?? '--'}`;
-                        row.appendChild(label);
-
-                        row.addEventListener('mouseenter', () => view.setJunctionToolHoverCandidate?.(id));
-                        row.addEventListener('mouseleave', () => view.clearJunctionToolHoverCandidate?.(id));
-                        row.addEventListener('click', (e) => {
-                            e.preventDefault?.();
-                            e.stopPropagation?.();
-                            view.toggleJunctionToolCandidate?.(id);
-                        });
-
-                        popupCandidates.appendChild(row);
-                    }
-                }
             } else {
                 newRoad.style.display = '';
                 newRoad.disabled = false;
@@ -2625,13 +2529,12 @@ export function setupUI(view) {
         vizTabGrid,
         detailPanel,
         detailBody,
-        popupTabEdit,
         popupTabRoads,
         popupTabJunctions,
-        popupTitle,
         popupBody,
         popupContent,
         popupCandidates,
+        deleteBtn,
         warningsList,
         warningsSelectionOnly: selectionOnlyRow.input,
         warningsFilterInfoBtn: filterInfoBtn,
@@ -2682,7 +2585,6 @@ export function setupUI(view) {
         _onVizTabJunctions: onVizTabJunctions,
         _onVizTabSegments: onVizTabSegments,
         _onVizTabGrid: onVizTabGrid,
-        _onPopupTabEdit: onPopupTabEdit,
         _onPopupTabRoads: onPopupTabRoads,
         _onPopupTabJunctions: onPopupTabJunctions,
         _onHelp: onHelp,
@@ -2695,6 +2597,7 @@ export function setupUI(view) {
         _onNewRoad: onNewRoad,
         _onDone: onDone,
         _onCancel: onCancel,
+        _onDelete: onDelete,
         _onRoadsLeave: onRoadsLeave,
         _onJunctionsLeave: onJunctionsLeave,
         _onTangentRangeChange: onTangentRangeChange,
@@ -2753,6 +2656,7 @@ export function destroyUI(view) {
     ui.vizTabGrid?.removeEventListener?.('click', ui._onVizTabGrid);
     ui.popupTabRoads?.removeEventListener?.('click', ui._onPopupTabRoads);
     ui.popupTabJunctions?.removeEventListener?.('click', ui._onPopupTabJunctions);
+    ui.deleteBtn?.removeEventListener?.('click', ui._onDelete);
     ui.roadsList?.removeEventListener?.('mouseleave', ui._onRoadsLeave);
     ui.junctionsList?.removeEventListener?.('mouseleave', ui._onJunctionsLeave);
     ui.tangentRange?.removeEventListener?.('change', ui._onTangentRangeChange);

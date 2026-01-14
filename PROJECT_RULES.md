@@ -48,6 +48,9 @@
 - Avoid putting css styling in JS files. Use CSS files and import classes instead. One CSS per screen. And also a global (for reusable components)
 - Make the components reuse the classes from the global CSS file and from the specific screen CSS file whenever possible.
 
+**Icons:**
+- Use Material Symbols Outlined glyphs for all UI icons (via `.ui-icon` / `createMaterialSymbolIcon()`), not ad-hoc SVGs or mixed icon sets.
+
 ## Testing
 
 - Tests run in the browser via `tests/core.test.js`; check the console for pass/fail output.
@@ -63,7 +66,7 @@
 
 **Tasks:**
 These are the ones from AI prompt files.
-- Even if explicitly requested, never start prompts whose filename contains `_DONE_` without double confirming with the user.
+- Even if explicitly requested, never start prompts whose filename starts with `AI_DONE_` without double confirming with the user.
 
 **AI Prompt naming:**
 - Follow `AI_PROMPT_INSTRUCTIONS.md` (naming, template, and completion steps).

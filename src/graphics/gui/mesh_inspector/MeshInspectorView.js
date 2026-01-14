@@ -36,6 +36,9 @@ export class MeshInspectorView {
         this.scene.enter();
         this.ui.mount();
 
+        this.ui.setCollectionOptions(this.scene.getCollectionOptions());
+        this.ui.setSelectedCollectionId(this.scene.getSelectedCollectionId());
+
         const options = this.scene.getMeshOptions();
         this.ui.setMeshOptions(options);
         this.ui.setSelectedMesh(this.scene.getSelectedMeshMeta() ?? {});
@@ -46,6 +49,16 @@ export class MeshInspectorView {
         this.ui.setRig(this.scene.getRigApi?.() ?? null);
         this.ui.setHoverInfo(null);
         this.ui.setSelectedInfo(null);
+
+        this.ui.onCollectionChange = (collectionId) => {
+            this.scene.setSelectedCollectionId(collectionId);
+            this.ui.setSelectedCollectionId(this.scene.getSelectedCollectionId());
+            this.ui.setMeshOptions(this.scene.getMeshOptions());
+            this.ui.setSelectedMesh(this.scene.getSelectedMeshMeta() ?? {});
+            this.ui.setPrefabParams(this.scene.getPrefabParamsApi?.() ?? null);
+            this.ui.setRig(this.scene.getRigApi?.() ?? null);
+            this._clearSelection();
+        };
 
         this.ui.onMeshIdChange = (id) => {
             this.scene.setSelectedMeshId(id);
@@ -100,6 +113,7 @@ export class MeshInspectorView {
         this.canvas.removeEventListener('pointerup', this._onPointerUp);
         this.canvas.removeEventListener('pointerleave', this._onPointerLeave);
 
+        this.ui.onCollectionChange = null;
         this.ui.onMeshIdChange = null;
         this.ui.onMeshPrev = null;
         this.ui.onMeshNext = null;

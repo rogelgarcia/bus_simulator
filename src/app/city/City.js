@@ -13,6 +13,7 @@ import { BuildingWallTextureCache, buildBuildingVisualParts } from '../../graphi
 import { buildBuildingFabricationVisualParts } from '../../graphics/assets3d/generators/building_fabrication/BuildingFabricationGenerator.js';
 import { computeTrafficControlPlacements } from './TrafficControlPlacement.js';
 import { createTrafficControlProps } from '../../graphics/visuals/city/TrafficControlProps.js';
+import { getResolvedLightingSettings } from '../../graphics/lighting/LightingSettings.js';
 
 export class City {
     constructor(options = {}) {
@@ -42,11 +43,13 @@ export class City {
         originAxes.position.set(0, 0, 0);
         this.group.add(originAxes);
 
-        this.hemi = new THREE.HemisphereLight(0xffffff, 0x2a3b1f, 0.85);
+        const lighting = getResolvedLightingSettings();
+
+        this.hemi = new THREE.HemisphereLight(0xffffff, 0x2a3b1f, lighting.hemiIntensity);
         this.hemi.position.set(0, 100, 0);
         this.group.add(this.hemi);
 
-        this.sun = new THREE.DirectionalLight(0xffffff, 1.2);
+        this.sun = new THREE.DirectionalLight(0xffffff, lighting.sunIntensity);
         this.sun.position.set(80, 140, 60);
         this.sun.castShadow = true;
         this.sun.shadow.mapSize.set(2048, 2048);

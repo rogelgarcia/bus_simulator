@@ -83,11 +83,15 @@ export class TextureInspectorScene {
         this._urlTextures = new Map();
         this._loadToken = 0;
 
+        const lighting = engine?.lightingSettings ?? {};
+        const defaultSun = Number.isFinite(lighting.sunIntensity) ? lighting.sunIntensity : 1.0;
+        const defaultHemi = Number.isFinite(lighting.hemiIntensity) ? lighting.hemiIntensity : 0.55;
+
         this._lighting = {
             sunAzimuthDeg: 45,
             sunElevationDeg: 55,
-            sunIntensity: 1.0,
-            hemiIntensity: 0.55,
+            sunIntensity: defaultSun,
+            hemiIntensity: defaultHemi,
             fillEnabled: false,
             fillIntensity: 0.35
         };
@@ -113,10 +117,10 @@ export class TextureInspectorScene {
         this.sky = createGradientSkyDome();
         if (this.sky) this.root.add(this.sky);
 
-        this.hemi = new THREE.HemisphereLight(0xe8f0ff, 0x0b0f14, 0.55);
+        this.hemi = new THREE.HemisphereLight(0xe8f0ff, 0x0b0f14, this._lighting.hemiIntensity);
         this.root.add(this.hemi);
 
-        this.sun = new THREE.DirectionalLight(0xffffff, 1.0);
+        this.sun = new THREE.DirectionalLight(0xffffff, this._lighting.sunIntensity);
         this.sun.position.set(4, 7, 4);
         this.root.add(this.sun);
 

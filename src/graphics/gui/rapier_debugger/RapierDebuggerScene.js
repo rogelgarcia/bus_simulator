@@ -400,7 +400,9 @@ export class RapierDebuggerScene {
         const amb = new THREE.AmbientLight(0xffffff, 0.45);
         this.root.add(amb);
 
-        const sun = new THREE.DirectionalLight(0xffffff, 1.1);
+        const lighting = this.engine?.lightingSettings ?? {};
+        const sunIntensity = Number.isFinite(lighting.sunIntensity) ? lighting.sunIntensity : 1.1;
+        const sun = new THREE.DirectionalLight(0xffffff, sunIntensity);
         sun.position.set(18, 24, 12);
         sun.castShadow = true;
         sun.shadow.mapSize.set(2048, 2048);

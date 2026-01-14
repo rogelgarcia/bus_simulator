@@ -69,7 +69,7 @@ export class ConnectorDebugPanel {
 
         this.title = document.createElement('div');
         this.title.className = 'connector-debug-title';
-        this.title.textContent = 'Connector Debugger';
+        this.title.textContent = 'Rubins Debugger';
 
         this.copyButton = document.createElement('button');
         this.copyButton.type = 'button';

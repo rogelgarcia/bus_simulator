@@ -3,15 +3,53 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createGradientSkyDome } from '../../assets3d/generators/SkyGenerator.js';
-import { createProceduralMeshAsset, getProceduralMeshOptions } from '../../assets3d/procedural_meshes/ProceduralMeshCatalog.js';
+import {
+    createProceduralMeshAsset,
+    getProceduralMeshCollectionId,
+    getProceduralMeshCollections,
+    getProceduralMeshOptionsForCollection
+} from '../../assets3d/procedural_meshes/ProceduralMeshCatalog.js';
 import { isRigApi } from '../../../app/rigs/RigSchema.js';
 import { isPrefabParamsApi } from '../../../app/prefabs/PrefabParamsSchema.js';
+
+const STORAGE_KEY = 'bus_sim.mesh_inspector.v1';
 
 function clampInt(value, min, max) {
     const num = Number(value);
     if (!Number.isFinite(num)) return min;
     const rounded = Math.round(num);
     return Math.max(min, Math.min(max, rounded));
+}
+
+function readStoredSelection() {
+    if (typeof window === 'undefined') return null;
+    const storage = window.localStorage;
+    if (!storage) return null;
+    const raw = storage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    try {
+        const parsed = JSON.parse(raw);
+        const collectionId = typeof parsed?.collectionId === 'string' ? parsed.collectionId : null;
+        const meshId = typeof parsed?.meshId === 'string' ? parsed.meshId : null;
+        return { collectionId, meshId };
+    } catch {
+        return null;
+    }
+}
+
+function writeStoredSelection({ collectionId, meshId }) {
+    if (typeof window === 'undefined') return;
+    const storage = window.localStorage;
+    if (!storage) return;
+    const payload = {
+        collectionId: typeof collectionId === 'string' ? collectionId : null,
+        meshId: typeof meshId === 'string' ? meshId : null
+    };
+    try {
+        storage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+        // ignore
+    }
 }
 
 function groupForTriangleOffset(geometry, triOffset) {
@@ -46,7 +84,16 @@ export class MeshInspectorScene {
         this._wireframe = false;
         this._edgesEnabled = false;
         this._colorMode = 'semantic';
+        this._collectionId = null;
+        this._meshId = null;
         this._meshIndex = 0;
+
+        const saved = readStoredSelection();
+        const collections = this.getCollectionOptions();
+        const preferredCollection = saved?.collectionId ?? null;
+        this._collectionId = collections.find((c) => c?.id === preferredCollection)?.id ?? collections[0]?.id ?? null;
+        const preferredMesh = saved?.meshId ?? null;
+        this._meshId = typeof preferredMesh === 'string' ? preferredMesh : null;
     }
 
     enter() {
@@ -59,10 +106,12 @@ export class MeshInspectorScene {
         this.sky = createGradientSkyDome();
         if (this.sky) this.root.add(this.sky);
 
-        this.hemi = new THREE.HemisphereLight(0xe8f0ff, 0x0b0f14, 0.85);
+        const lighting = this.engine?.lightingSettings ?? {};
+
+        this.hemi = new THREE.HemisphereLight(0xe8f0ff, 0x0b0f14, Number.isFinite(lighting.hemiIntensity) ? lighting.hemiIntensity : 0.85);
         this.root.add(this.hemi);
 
-        this.sun = new THREE.DirectionalLight(0xffffff, 1.2);
+        this.sun = new THREE.DirectionalLight(0xffffff, Number.isFinite(lighting.sunIntensity) ? lighting.sunIntensity : 1.2);
         this.sun.position.set(4, 8, 5);
         this.sun.castShadow = true;
         this.sun.shadow.mapSize.width = 1024;
@@ -115,7 +164,11 @@ export class MeshInspectorScene {
         this.controls.target.set(0, 0, 0);
         this.controls.update();
 
-        this.setSelectedMeshIndex(this._meshIndex);
+        if (this._meshId) {
+            this.setSelectedMeshId(this._meshId);
+        } else {
+            this.setSelectedMeshIndex(this._meshIndex);
+        }
         this._syncMeshMaterials();
         this._syncEdgesOverlay();
     }
@@ -181,8 +234,28 @@ export class MeshInspectorScene {
         }
     }
 
+    getCollectionOptions() {
+        return getProceduralMeshCollections();
+    }
+
+    getSelectedCollectionId() {
+        return this._collectionId;
+    }
+
+    setSelectedCollectionId(collectionId) {
+        const list = this.getCollectionOptions();
+        const next = list.find((c) => c?.id === collectionId)?.id ?? list[0]?.id ?? null;
+        if (!next || next === this._collectionId) return;
+        this._collectionId = next;
+        const options = this.getMeshOptions();
+        const keep = options.find((opt) => opt?.id === this._meshId)?.id ?? options[0]?.id ?? null;
+        this._meshIndex = 0;
+        if (keep) this.setSelectedMeshId(keep);
+        writeStoredSelection({ collectionId: this._collectionId, meshId: this._meshId });
+    }
+
     getMeshOptions() {
-        return getProceduralMeshOptions();
+        return getProceduralMeshOptionsForCollection(this._collectionId);
     }
 
     getSelectedMeshIndex() {
@@ -198,15 +271,24 @@ export class MeshInspectorScene {
     }
 
     setSelectedMeshId(meshId) {
+        const desiredCollection = getProceduralMeshCollectionId(meshId);
+        if (desiredCollection && desiredCollection !== this._collectionId) {
+            this._collectionId = desiredCollection;
+        }
+
         const options = this.getMeshOptions();
         const idx = options.findIndex((opt) => opt?.id === meshId);
-        if (idx >= 0) this._meshIndex = idx;
+        const resolved = idx >= 0 ? meshId : (options[0]?.id ?? null);
+        if (!resolved) return;
+        const resolvedIndex = idx >= 0 ? idx : 0;
+        this._meshIndex = resolvedIndex;
+        this._meshId = resolved;
 
-        if (this._asset?.id === meshId) return;
+        if (this._asset?.id === resolved) return;
         this._disposeEdges();
         this._disposeAsset();
 
-        const asset = createProceduralMeshAsset(meshId);
+        const asset = createProceduralMeshAsset(resolved);
         this._asset = asset;
         if (asset?.mesh) {
             asset.mesh.position.set(0, 0, 0);
@@ -214,6 +296,7 @@ export class MeshInspectorScene {
         }
         this._syncMeshMaterials();
         this._syncEdgesOverlay();
+        writeStoredSelection({ collectionId: this._collectionId, meshId: this._meshId });
     }
 
     getSelectedMeshMeta() {

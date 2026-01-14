@@ -1,6 +1,8 @@
 // src/graphics/gui/texture_inspector/TextureInspectorUI.js
 // HUD UI for browsing textures and previewing them on a plane.
 
+import { applyMaterialSymbolToButton } from '../shared/materialSymbols.js';
+
 export const TEXTURE_INSPECTOR_BASE_COLORS = Object.freeze([
     { id: 'white', label: 'White', hex: 0xffffff },
     { id: 'light_gray', label: 'Light gray', hex: 0xd7dde7 },
@@ -85,13 +87,13 @@ export class TextureInspectorUI {
 
         this.prevBtn = document.createElement('button');
         this.prevBtn.type = 'button';
-        this.prevBtn.className = 'texture-inspector-btn';
-        this.prevBtn.textContent = 'Prev';
+        this.prevBtn.className = 'texture-inspector-btn texture-inspector-btn-icon';
+        applyMaterialSymbolToButton(this.prevBtn, { name: 'chevron_left', label: 'Previous texture', size: 'md' });
 
         this.nextBtn = document.createElement('button');
         this.nextBtn.type = 'button';
-        this.nextBtn.className = 'texture-inspector-btn';
-        this.nextBtn.textContent = 'Next';
+        this.nextBtn.className = 'texture-inspector-btn texture-inspector-btn-icon';
+        applyMaterialSymbolToButton(this.nextBtn, { name: 'chevron_right', label: 'Next texture', size: 'md' });
 
         this.textureSelect = document.createElement('select');
         this.textureSelect.className = 'texture-inspector-select';

@@ -7,6 +7,7 @@
     pointer-events: none;
     color: #f5f7fb;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    --road-debugger-bottom-panel-height: min(180px, calc(100vh - 24px));
 }
 
 .road-debugger-pick-debug {
@@ -122,7 +123,7 @@
 
 .road-debugger-orbit-panel {
     width: 140px;
-    max-height: min(360px, calc(100vh - 24px));
+    height: var(--road-debugger-bottom-panel-height);
     padding: 12px 14px;
     display: flex;
     flex-direction: column;
@@ -173,7 +174,7 @@
 
 .road-debugger-info-panel {
     width: min(360px, calc(100vw - 24px));
-    max-height: min(360px, calc(100vh - 24px));
+    height: var(--road-debugger-bottom-panel-height);
     padding: 12px 14px;
     display: flex;
     flex-direction: column;
@@ -367,12 +368,12 @@
     bottom: 12px;
     transform: translateX(-50%);
     pointer-events: auto;
-    padding: 12px 14px;
+    padding: 0;
     width: min(520px, calc(100vw - 24px));
-    height: min(360px, calc(100vh - 24px));
+    height: var(--road-debugger-bottom-panel-height);
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 0;
     overflow: hidden;
     background: rgba(10, 14, 20, 0.86);
     backdrop-filter: blur(12px);
@@ -381,19 +382,22 @@
 .road-debugger-editor-tabs {
     display: flex;
     gap: 8px;
+    padding: 12px 14px 0 14px;
 }
 
 .road-debugger-editor-tab.road-debugger-btn {
     flex: 1 1 auto;
-    padding: 6px 10px;
+    padding: 8px 10px;
     font-size: 10px;
     border-radius: 10px;
-    background: rgba(255, 255, 255, 0.04);
+    background: rgba(0, 0, 0, 0.18);
+    color: rgba(255, 255, 255, 0.68);
 }
 
 .road-debugger-editor-tab.is-active {
     border-color: rgba(59, 130, 246, 0.75);
     background: rgba(59, 130, 246, 0.18);
+    color: rgba(255, 255, 255, 0.92);
 }
 
 .road-debugger-editor-title {
@@ -407,7 +411,7 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
-    padding-right: 4px;
+    padding: 12px 14px;
 }
 
 .road-debugger-editor-content {
@@ -428,6 +432,32 @@
     gap: 6px;
     max-height: 160px;
     overflow: auto;
+}
+
+.road-debugger-editor-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 14px 12px 14px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.14);
+}
+
+.road-debugger-editor-footer-left {
+    flex: 0 0 auto;
+}
+
+.road-debugger-editor-actions {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.road-debugger-editor-delete.road-debugger-btn {
+    padding: 8px 12px;
 }
 
 .road-debugger-candidate-row {
@@ -454,12 +484,6 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-}
-
-.road-debugger-editor-actions {
-    display: flex;
-    justify-content: center;
-    gap: 10px;
 }
 
 .road-debugger-editor-field {
@@ -510,18 +534,14 @@
     background: rgba(255, 255, 255, 0.03);
 }
 
-.road-debugger-lane-stepper {
-    display: grid;
-    grid-template-columns: 16px 30px 1fr 30px;
+.road-debugger-lane-group {
+    display: flex;
+    flex-direction: column;
     gap: 6px;
-    align-items: center;
-    padding: 6px 8px;
-    border-radius: 10px;
-    background: rgba(0, 0, 0, 0.12);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    min-width: 0;
 }
 
-.road-debugger-lane-stepper-cap {
+.road-debugger-lane-group-cap {
     font-size: 10px;
     color: rgba(255, 255, 255, 0.62);
     font-weight: 700;
@@ -529,27 +549,40 @@
     letter-spacing: 0.08em;
 }
 
-.road-debugger-lane-stepper-btn {
-    width: 30px;
-    height: 30px;
-    border-radius: 10px;
+.road-debugger-segmented {
+    display: flex;
+    border-radius: 12px;
+    overflow: hidden;
     border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(255, 255, 255, 0.06);
-    color: rgba(255, 255, 255, 0.9);
-    font-size: 14px;
+    background: rgba(0, 0, 0, 0.12);
+}
+
+.road-debugger-segmented-btn {
+    flex: 1 1 auto;
+    min-width: 0;
+    border: 0;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    background: transparent;
+    color: rgba(255, 255, 255, 0.82);
+    padding: 8px 0;
+    font-size: 11px;
     font-family: inherit;
     cursor: pointer;
 }
 
-.road-debugger-lane-stepper-btn:disabled {
-    cursor: default;
-    opacity: 0.45;
+.road-debugger-segmented-btn:last-child {
+    border-right: 0;
 }
 
-.road-debugger-lane-stepper-value {
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.9);
-    text-align: center;
+.road-debugger-segmented-btn.is-active {
+    border-color: rgba(59, 130, 246, 0.75);
+    background: rgba(59, 130, 246, 0.18);
+    color: rgba(255, 255, 255, 0.95);
+}
+
+.road-debugger-segmented-btn:disabled {
+    cursor: default;
+    opacity: 0.45;
 }
 
 .road-debugger-btn.is-danger:hover {

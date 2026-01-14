@@ -23,6 +23,11 @@ body.setup-bg #game-canvas {
 .setup-layer {
     pointer-events: auto;
     z-index: 3;
+    overflow: auto;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 16px;
+    box-sizing: border-box;
 }
 
 .setup-frame {
@@ -101,9 +106,8 @@ body.setup-bg #game-canvas {
     grid-template-columns: 1fr;
     gap: 20px;
     align-content: start;
-    overflow: auto;
-    flex: 1 1 auto;
-    min-height: 0;
+    overflow: visible;
+    flex: 0 0 auto;
     padding-right: 6px;
 }
 
