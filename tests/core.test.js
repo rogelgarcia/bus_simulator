@@ -6012,6 +6012,32 @@ async function runTests() {
             scene.dispose();
             assertTrue(engine.renderer.localClippingEnabled === false, 'Expected Rapier debugger to restore local clipping state.');
         });
+
+        test('RapierDebuggerScene: restores scene fog/background on dispose', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                renderer: {
+                    localClippingEnabled: false,
+                    getSize: (out) => {
+                        out.set(800, 600);
+                        return out;
+                    }
+                }
+            };
+
+            engine.scene.background = null;
+            engine.scene.fog = null;
+
+            const scene = new RapierDebuggerScene(engine);
+            scene.enter();
+            assertTrue(!!engine.scene.background, 'Expected Rapier debugger to set scene background.');
+            assertTrue(!!engine.scene.fog, 'Expected Rapier debugger to set scene fog.');
+            scene.dispose();
+            assertEqual(engine.scene.background, null, 'Expected Rapier debugger to restore scene background.');
+            assertEqual(engine.scene.fog, null, 'Expected Rapier debugger to restore scene fog.');
+        });
     } catch (e) {
         console.log('⏭️  Rapier Debugger renderer state tests skipped:', e.message);
     }

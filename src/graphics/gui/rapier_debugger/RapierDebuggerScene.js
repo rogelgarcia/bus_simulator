@@ -49,6 +49,7 @@ export class RapierDebuggerScene {
         this._torquePreviewBar = null;
         this._torquePreviewMaterial = null;
         this._prevLocalClippingEnabled = null;
+        this._restoreScene = null;
 
         this._tmpQuat = new THREE.Quaternion();
         this._tmpQuatB = new THREE.Quaternion();
@@ -111,6 +112,12 @@ export class RapierDebuggerScene {
         if (this.engine?.renderer && this._prevLocalClippingEnabled === null) {
             this._prevLocalClippingEnabled = !!this.engine.renderer.localClippingEnabled;
         }
+        if (!this._restoreScene && this.scene) {
+            this._restoreScene = {
+                background: this.scene.background ?? null,
+                fog: this.scene.fog ?? null
+            };
+        }
         this.root = new THREE.Group();
         this.scene.add(this.root);
 
@@ -133,6 +140,12 @@ export class RapierDebuggerScene {
     dispose() {
         this.controls?.dispose?.();
         this.controls = null;
+
+        if (this._restoreScene && this.scene) {
+            this.scene.background = this._restoreScene.background ?? null;
+            this.scene.fog = this._restoreScene.fog ?? null;
+        }
+        this._restoreScene = null;
 
         if (this._prevLocalClippingEnabled !== null && this.engine?.renderer) {
             this.engine.renderer.localClippingEnabled = this._prevLocalClippingEnabled;
