@@ -22,6 +22,7 @@ export class RapierDebuggerView {
     enter() {
         this.scene.enter();
         this.ui.mount();
+        this.scene.setUiRoot?.(this.ui._hudRoot ?? null);
         this.ui.onReset = () => {
             this.sim.setTuning(this.ui.getTuning());
             this.sim.resetPose();
@@ -60,6 +61,7 @@ export class RapierDebuggerView {
         this.ui.onSleep = null;
         this.ui.onComPreview = null;
         this.ui.unmount();
+        this.scene.setUiRoot?.(null);
         this.scene.dispose();
         this.sim.dispose();
         this._initStarted = false;

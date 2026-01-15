@@ -4,11 +4,13 @@ import { WINDOW_STYLE } from '../../../app/buildings/WindowStyle.js';
 import { BUILDING_STYLE } from '../../../app/buildings/BuildingStyle.js';
 import { getBuildingWindowTextureForStyle } from '../../assets3d/generators/buildings/BuildingGenerator.js';
 import { getSignAssetById, getSignAssets } from '../../assets3d/textures/signs/SignAssets.js';
+import { getPbrMaterialOptions } from '../materials/PbrMaterialCatalog.js';
 
 export const INSPECTOR_COLLECTION = Object.freeze({
     WINDOWS: 'tex.collection.windows',
     TRAFFIC_SIGNS: 'tex.collection.traffic_signs',
-    BUILDING_WALLS: 'tex.collection.building_walls'
+    BUILDING_WALLS: 'tex.collection.building_walls',
+    PBR_MATERIALS: 'tex.collection.pbr_materials'
 });
 
 export const INSPECTOR_TEXTURE = Object.freeze({
@@ -59,11 +61,23 @@ const COLLECTIONS = Object.freeze([
         id: INSPECTOR_COLLECTION.BUILDING_WALLS,
         label: 'Building Walls',
         entries: Object.freeze([
-            { id: INSPECTOR_TEXTURE.WALL_BRICK, label: 'Brick (PBR)', kind: 'building_wall', style: BUILDING_STYLE.BRICK },
+            { id: INSPECTOR_TEXTURE.WALL_BRICK, label: 'Brick', kind: 'building_wall', style: BUILDING_STYLE.BRICK },
             { id: INSPECTOR_TEXTURE.WALL_CEMENT, label: 'Cement', kind: 'building_wall', style: BUILDING_STYLE.CEMENT },
             { id: INSPECTOR_TEXTURE.WALL_STONE_1, label: 'Stone 1', kind: 'building_wall', style: BUILDING_STYLE.STONE_1 },
             { id: INSPECTOR_TEXTURE.WALL_STONE_2, label: 'Stone 2', kind: 'building_wall', style: BUILDING_STYLE.STONE_2 }
         ])
+    },
+    {
+        id: INSPECTOR_COLLECTION.PBR_MATERIALS,
+        label: 'PBR Materials',
+        entries: Object.freeze(getPbrMaterialOptions().map((opt) => ({
+            id: opt.id,
+            label: opt.label,
+            kind: 'pbr_material',
+            materialId: opt.id,
+            root: opt.root,
+            buildingEligible: opt.buildingEligible
+        })))
     }
 ]);
 

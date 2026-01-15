@@ -3,6 +3,10 @@ assets/*
 !assets/public/
 !assets/public/**
 
+# Local-only heavy PBR texture packs
+assets/public/pbr/
+assets/public/pbr/**
+
 downloads/
 docs/
 

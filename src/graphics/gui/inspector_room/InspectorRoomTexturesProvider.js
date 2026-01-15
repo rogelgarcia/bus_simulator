@@ -2,6 +2,7 @@
 // Texture inspection content provider for the Inspector Room.
 import * as THREE from 'three';
 import { resolveBuildingStyleWallMaterialUrls } from '../../assets3d/generators/buildings/BuildingGenerator.js';
+import { resolvePbrMaterialUrls } from '../../assets3d/materials/PbrMaterialCatalog.js';
 import { getSignAlphaMaskTextureById } from '../../assets3d/textures/signs/SignAlphaMaskCache.js';
 import {
     getTextureInspectorCollectionById,
@@ -46,6 +47,51 @@ function clonePreviewTexture(tex, { offset = null, repeat = null, wrap = THREE.C
     clone.anisotropy = 8;
     clone.needsUpdate = true;
     return clone;
+}
+
+function buildPlaceholderCanvas({ label = '', size = 256 } = {}) {
+    const s = Math.max(32, Math.round(Number(size) || 256));
+    const c = document.createElement('canvas');
+    c.width = s;
+    c.height = s;
+    const ctx = c.getContext('2d');
+    if (!ctx) return c;
+
+    const text = String(label || '');
+    const seed = Array.from(text).reduce((sum, ch) => (sum * 33 + ch.charCodeAt(0)) >>> 0, 5381);
+    const hue = (seed % 360) / 360;
+    ctx.fillStyle = `hsl(${Math.round(hue * 360)}, 35%, 55%)`;
+    ctx.fillRect(0, 0, s, s);
+
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    ctx.translate(s * 0.5, s * 0.5);
+    ctx.rotate(-Math.PI / 6);
+    ctx.translate(-s * 0.5, -s * 0.5);
+    ctx.fillStyle = '#000';
+    for (let i = -s; i < s * 2; i += 24) {
+        ctx.fillRect(i, 0, 12, s);
+    }
+    ctx.restore();
+
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillRect(0, s - 44, s, 44);
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.font = `bold ${Math.max(14, Math.round(s * 0.07))}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text.slice(0, 22) || 'Missing', Math.max(10, Math.round(s * 0.04)), s - 22);
+    return c;
+}
+
+function canvasToTexture(canvas, { srgb = true } = {}) {
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.anisotropy = 8;
+    if ('colorSpace' in tex) tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    else if ('encoding' in tex) tex.encoding = srgb ? THREE.sRGBEncoding : THREE.LinearEncoding;
+    tex.needsUpdate = true;
+    return tex;
 }
 
 export class InspectorRoomTexturesProvider {
@@ -237,6 +283,11 @@ export class InspectorRoomTexturesProvider {
 
         if (entry?.kind === 'building_wall') {
             this._setBuildingWallMaterial(entry);
+            return;
+        }
+
+        if (entry?.kind === 'pbr_material') {
+            this._setPbrMaterial(entry);
             return;
         }
 
@@ -436,6 +487,62 @@ export class InspectorRoomTexturesProvider {
         });
     }
 
+    _setPbrMaterial(entry) {
+        this._disposePreviewTexture();
+
+        const token = ++this._loadToken;
+        const urls = resolvePbrMaterialUrls(entry?.materialId);
+        const baseUrl = urls?.baseColorUrl ?? null;
+        const normalUrl = urls?.normalUrl ?? null;
+        const ormUrl = urls?.ormUrl ?? null;
+
+        this._previewAlphaMap = null;
+        this._setPlaneAspect(null);
+
+        if (!baseUrl && !normalUrl && !ormUrl) {
+            const label = entry?.label ?? entry?.materialId ?? 'PBR material';
+            const tex = canvasToTexture(buildPlaceholderCanvas({ label, size: 256 }), { srgb: true });
+            this._previewTexture = clonePreviewTexture(tex, { repeat: { x: 2, y: 2 }, wrap: THREE.RepeatWrapping });
+            tex.dispose?.();
+            this._previewNormalMap = null;
+            this._previewRoughnessMap = null;
+            this._syncPreviewMaps();
+            return;
+        }
+
+        Promise.all([
+            this._loadUrlTexture(baseUrl, { srgb: true }),
+            this._loadUrlTexture(normalUrl, { srgb: false }),
+            this._loadUrlTexture(ormUrl, { srgb: false })
+        ]).then(([baseTex, normalTex, ormTex]) => {
+            if (token !== this._loadToken) return;
+            if (!baseTex && !normalTex && !ormTex) {
+                const label = entry?.label ?? entry?.materialId ?? 'PBR material';
+                const tex = canvasToTexture(buildPlaceholderCanvas({ label, size: 256 }), { srgb: true });
+                this._previewTexture = clonePreviewTexture(tex, { repeat: { x: 2, y: 2 }, wrap: THREE.RepeatWrapping });
+                tex.dispose?.();
+                this._previewNormalMap = null;
+                this._previewRoughnessMap = null;
+                this._syncPreviewMaps();
+                return;
+            }
+            const tiling = { x: 2, y: 2 };
+            this._previewTexture = clonePreviewTexture(baseTex, { repeat: tiling, wrap: THREE.RepeatWrapping });
+            this._previewNormalMap = clonePreviewTexture(normalTex, { repeat: tiling, wrap: THREE.RepeatWrapping });
+            this._previewRoughnessMap = clonePreviewTexture(ormTex, { repeat: tiling, wrap: THREE.RepeatWrapping });
+            this._syncPreviewMaps();
+        }).catch((err) => {
+            if (token !== this._loadToken) return;
+            const label = entry?.label ?? entry?.materialId ?? 'PBR material';
+            const tex = canvasToTexture(buildPlaceholderCanvas({ label, size: 256 }), { srgb: true });
+            this._previewTexture = clonePreviewTexture(tex, { repeat: { x: 2, y: 2 }, wrap: THREE.RepeatWrapping });
+            tex.dispose?.();
+            this._previewNormalMap = null;
+            this._previewRoughnessMap = null;
+            this._syncPreviewMaps();
+        });
+    }
+
     _syncPreviewMaps() {
         const tex = this._previewTexture ?? null;
         const normalMap = this._previewNormalMap ?? null;
@@ -541,4 +648,3 @@ export class InspectorRoomTexturesProvider {
         }
     }
 }
-

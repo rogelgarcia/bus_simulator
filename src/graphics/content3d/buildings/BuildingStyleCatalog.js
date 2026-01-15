@@ -1,8 +1,8 @@
 // src/graphics/content3d/buildings/BuildingStyleCatalog.js
 // Defines building style labels and wall material URL specifications.
+import { getPbrMaterialLabel, isPbrMaterialId, resolvePbrMaterialUrls } from '../materials/PbrMaterialCatalog.js';
 
 const BUILDING_TEXTURE_BASE_URL = new URL('../../../../assets/public/textures/buildings/walls/', import.meta.url);
-const RED_BRICK_2K_PBR_BASE_URL = new URL('pbr/red_brick_2k/', BUILDING_TEXTURE_BASE_URL);
 
 const BUILDING_STYLE_DEFS = Object.freeze({
     default: Object.freeze({
@@ -14,9 +14,9 @@ const BUILDING_STYLE_DEFS = Object.freeze({
         id: 'brick',
         label: 'Brick',
         wall: Object.freeze({
-            baseColorUrl: new URL('basecolor.jpg', RED_BRICK_2K_PBR_BASE_URL).toString(),
-            normalUrl: new URL('normal_gl.jpg', RED_BRICK_2K_PBR_BASE_URL).toString(),
-            ormUrl: new URL('arm.jpg', RED_BRICK_2K_PBR_BASE_URL).toString()
+            baseColorUrl: new URL('brick_wall_DEPRECATED.png', BUILDING_TEXTURE_BASE_URL).toString(),
+            normalUrl: null,
+            ormUrl: null
         })
     }),
     cement: Object.freeze({
@@ -72,10 +72,12 @@ export function getBuildingStyleDefinition(styleId) {
 }
 
 export function resolveBuildingStyleLabel(styleId) {
+    if (isPbrMaterialId(styleId)) return getPbrMaterialLabel(styleId);
     return getBuildingStyleDefinition(styleId).label;
 }
 
 export function resolveBuildingStyleWallMaterialUrls(styleId) {
+    if (isPbrMaterialId(styleId)) return resolvePbrMaterialUrls(styleId);
     const wall = getBuildingStyleDefinition(styleId).wall ?? null;
     return {
         baseColorUrl: typeof wall?.baseColorUrl === 'string' ? wall.baseColorUrl : null,
@@ -98,4 +100,3 @@ export function getBuildingStyleOptions() {
         };
     });
 }
-

@@ -25,6 +25,7 @@ import { createHoverOutlineLine } from '../graphics/visuals/city/HoverOutlineLin
 import { RoadGraphDebugOverlay } from '../graphics/visuals/city/RoadGraphDebugOverlay.js';
 import { createRoadNetworkFromWorldSegments } from '../app/city/roads/RoadNetwork.js';
 import { generateRoadsFromRoadNetwork } from '../graphics/assets3d/generators/road2/CenterlineRoadGenerator.js';
+import { createToolCameraController, getTopDownToolCameraHomeDirection } from '../graphics/engine3d/camera/ToolCameraPrefab.js';
 
 function clamp(v, a, b) {
     return Math.max(a, Math.min(b, v));
@@ -126,6 +127,7 @@ export class MapDebuggerState {
         this.uiSelect = document.getElementById('ui-select');
         this.uiHudTest = document.getElementById('ui-test');
 
+        this.uiRoot = null;
         this.city = null;
 
         this._keys = {
@@ -234,6 +236,7 @@ export class MapDebuggerState {
         this._hoverThreshold = 1;
         this._hoverConnectorIndex = -1;
         this._hoverPoleIndex = -1;
+        this.controls = null;
         this._cameraDragActive = false;
         this._cameraDragPointerId = null;
         this._cameraDragStartWorld = new THREE.Vector3();
@@ -258,6 +261,11 @@ export class MapDebuggerState {
         if (this.uiHudTest) this.uiHudTest.classList.add('hidden');
 
         this.engine.clearScene();
+
+        if (this.uiRoot?.isConnected) this.uiRoot.remove();
+        this.uiRoot = document.createElement('div');
+        this.uiRoot.className = 'map-debugger-ui-root';
+        document.body.appendChild(this.uiRoot);
 
         this._roadRenderMode = 'debug';
         const currentGen = this._cityOptions.generatorConfig ?? {};
@@ -309,7 +317,8 @@ export class MapDebuggerState {
             onRoadHover: (road) => this._updateHighlight(road),
             onBuildingHover: (building) => this._setHoveredBuilding(building),
         });
-        this.editorPanel.show();
+        this.editorPanel.attach(this.uiRoot);
+        this.editorPanel.root.classList.remove('hidden');
 
         this.debugsPanel = new MapDebuggerControlsPanel({
             connectorDebugEnabled: this._connectorDebugEnabled,
@@ -333,33 +342,18 @@ export class MapDebuggerState {
             onRoadEndpointsToggle: (enabled) => this._setRoadEndpointsDebugEnabled(enabled),
             onRoadRenderModeChange: (mode) => this._setRoadRenderMode(mode)
         });
-        this.debugsPanel.show();
+        this.debugsPanel.attach(this.uiRoot);
+        this.debugsPanel.root.classList.remove('hidden');
 
         this.shortcutsPanel = new MapDebuggerShortcutsPanel();
-        this.shortcutsPanel.show();
+        this.shortcutsPanel.attach(this.uiRoot);
+        this.shortcutsPanel.root.classList.remove('hidden');
 
         this.poleInfoPanel = new MapDebuggerInfoPanel();
-        this.poleInfoPanel.show();
+        this.poleInfoPanel.attach(this.uiRoot);
+        this.poleInfoPanel.root.classList.remove('hidden');
 
         this._applySpec(this._spec, { resetCamera: true });
-
-        const cam = this.engine.camera;
-        const size = this.city?.config?.size ?? this._cityOptions.size;
-        const fovRad = cam.fov * Math.PI / 180;
-        const aspect = cam.aspect || 1;
-        const hFov = 2 * Math.atan(Math.tan(fovRad * 0.5) * aspect);
-        const viewHalf = size * 0.45;
-        this._zoomMin = Math.max(3, size * 0.03);
-        this._zoomMax = size * 1.25;
-        const zoomV = viewHalf / Math.tan(fovRad * 0.5);
-        const zoomH = viewHalf / Math.tan(hFov * 0.5);
-        this._zoom = clamp(Math.max(zoomV, zoomH), this._zoomMin, this._zoomMax);
-        this._moveSpeed = size * 0.12;
-        this._zoomSpeed = size * 0.6;
-
-        cam.position.set(0, this._zoom, 0);
-        cam.rotation.order = 'YXZ';
-        cam.rotation.set(-Math.PI * 0.5, 0, 0);
 
         window.addEventListener('keydown', this._onKeyDown, { passive: false });
         window.addEventListener('keyup', this._onKeyUp, { passive: false });
@@ -368,7 +362,8 @@ export class MapDebuggerState {
         this.canvas?.addEventListener('pointerup', this._onPointerUp);
         this.canvas?.addEventListener('pointercancel', this._onPointerUp);
         this.canvas?.addEventListener('pointerleave', this._onPointerLeave);
-        this.canvas?.addEventListener('wheel', this._onWheel, { passive: false });
+
+        this._ensureToolCameraControls({ resetHome: true });
     }
 
     exit() {
@@ -391,6 +386,8 @@ export class MapDebuggerState {
         this.shortcutsPanel = null;
         this.poleInfoPanel?.destroy();
         this.poleInfoPanel = null;
+        if (this.uiRoot?.isConnected) this.uiRoot.remove();
+        this.uiRoot = null;
         this._spec = null;
         this._citySpecId = null;
         this._clearHighlight();
@@ -401,6 +398,8 @@ export class MapDebuggerState {
         this._destroyHoverOutline();
         this._stopTour();
         this._stopCameraDrag();
+        this.controls?.dispose?.();
+        this.controls = null;
 
         this.city?.detach(this.engine);
         this.engine.clearScene();
@@ -408,14 +407,15 @@ export class MapDebuggerState {
     }
 
     update(dt) {
-        const cam = this.engine.camera;
-
         this.city?.update(this.engine);
 
         if (this._tourActive && this._tour) {
             this._tour.update(dt);
             return;
         }
+
+        const controls = this.controls ?? null;
+        if (!controls) return;
 
         const move = new THREE.Vector3();
         if (this._keys.ArrowUp) move.z -= 1;
@@ -425,19 +425,21 @@ export class MapDebuggerState {
 
         if (move.lengthSq() > 0) {
             move.normalize().multiplyScalar(this._moveSpeed * dt);
-            cam.position.add(move);
+            controls.panWorld(move.x, 0, move.z);
         }
 
         let zoomDir = 0;
         if (this._keys.KeyA) zoomDir -= 1;
         if (this._keys.KeyZ) zoomDir += 1;
         if (zoomDir !== 0) {
-            this._zoom = clamp(this._zoom + zoomDir * this._zoomSpeed * dt, this._zoomMin, this._zoomMax);
+            controls.dollyBy?.(zoomDir * this._zoomSpeed * dt);
         }
 
-        cam.position.y = this._zoom;
-        cam.rotation.order = 'YXZ';
-        cam.rotation.set(-Math.PI * 0.5, 0, 0);
+        controls.update(dt);
+        const orbit = controls.getOrbit?.() ?? null;
+        const radius = Number(orbit?.radius);
+        if (Number.isFinite(radius)) this._zoom = clamp(radius, this._zoomMin, this._zoomMax);
+        this._syncRoadPointPopupPosition();
     }
 
     _handleKeyDown(e) {
@@ -469,7 +471,24 @@ export class MapDebuggerState {
 
         if (code === 'KeyR') {
             e.preventDefault();
-            this._resetCamera();
+            e.stopImmediatePropagation?.();
+            this._stopTour();
+            this._stopCameraDrag();
+            for (const key of Object.keys(this._keys)) this._keys[key] = false;
+            this.controls?.reset?.();
+            const orbit = this.controls?.getOrbit?.() ?? null;
+            const radius = Number(orbit?.radius);
+            if (Number.isFinite(radius)) this._zoom = clamp(radius, this._zoomMin, this._zoomMax);
+            return;
+        }
+
+        if (code === 'KeyF') {
+            e.preventDefault();
+            e.stopImmediatePropagation?.();
+            this.controls?.frame?.();
+            const orbit = this.controls?.getOrbit?.() ?? null;
+            const radius = Number(orbit?.radius);
+            if (Number.isFinite(radius)) this._zoom = clamp(radius, this._zoomMin, this._zoomMax);
             return;
         }
 
@@ -506,8 +525,66 @@ export class MapDebuggerState {
         this._recomputeCameraLimits({ resetPosition: true });
     }
 
+    _ensureToolCameraControls({ resetHome = false } = {}) {
+        if (!this.engine?.camera || !this.canvas) return false;
+
+        const map = this.city?.map ?? null;
+        const origin = map?.origin ?? { x: 0, z: 0 };
+        const cx = Number(origin.x) + ((Number(map?.width) || 1) - 1) * (Number(map?.tileSize) || 1) * 0.5;
+        const cz = Number(origin.z) + ((Number(map?.height) || 1) - 1) * (Number(map?.tileSize) || 1) * 0.5;
+        const y = -(this._hoverPlane?.constant ?? 0);
+        const target = new THREE.Vector3(cx, y, cz);
+
+        const zoom = clamp(Number(this._zoom) || this._zoomMin, this._zoomMin, this._zoomMax);
+        const dir = getTopDownToolCameraHomeDirection();
+        const position = target.clone().addScaledVector(dir, zoom);
+
+        this.controls?.dispose?.();
+        this.controls = createToolCameraController(this.engine.camera, this.canvas, {
+            uiRoot: this.uiRoot ?? document.body,
+            enabled: true,
+            enableDamping: true,
+            dampingFactor: 0.08,
+            rotateSpeed: 1.0,
+            panSpeed: 1.0,
+            zoomSpeed: 1.0,
+            minDistance: this._zoomMin,
+            maxDistance: this._zoomMax,
+            minPolarAngle: 0.001,
+            maxPolarAngle: Math.PI * 0.5 - 0.08,
+            getFocusTarget: () => this._getCameraFocusTarget(),
+            initialPose: { position, target }
+        });
+
+        if (resetHome) this.controls.setHomeFromCurrent();
+        return true;
+    }
+
+    _getCameraFocusTarget() {
+        const map = this.city?.map ?? null;
+        if (!map) return null;
+        const tileSize = Number(map.tileSize) || 1;
+        const half = tileSize * 0.5;
+        const origin = map.origin ?? { x: 0, z: 0 };
+        const ox = Number(origin.x) || 0;
+        const oz = Number(origin.z) || 0;
+        const maxX = Math.max(0, (map.width ?? 1) - 1);
+        const maxY = Math.max(0, (map.height ?? 1) - 1);
+        const y = -(this._hoverPlane?.constant ?? 0);
+        return {
+            box: {
+                min: { x: ox - half, y, z: oz - half },
+                max: { x: ox + maxX * tileSize + half, y, z: oz + maxY * tileSize + half }
+            }
+        };
+    }
+
     _setTourActive(active) {
         this._tourActive = !!active;
+        if (this.controls) {
+            this.controls.enabled = !this._tourActive;
+            if (!this._tourActive) this.controls.syncFromCamera?.();
+        }
         this.shortcutsPanel?.setTourActive(this._tourActive);
     }
 
@@ -529,8 +606,6 @@ export class MapDebuggerState {
             getZoom: () => this._zoom,
             setZoom: (value) => {
                 this._zoom = value;
-                const cam = this.engine.camera;
-                cam.position.y = this._zoom;
             },
             onActiveChange: (active) => this._setTourActive(active)
         });
@@ -708,6 +783,32 @@ export class MapDebuggerState {
         const suggested = clamp(Math.max(zoomV, zoomH), this._zoomMin, this._zoomMax);
         this._moveSpeed = size * 0.12;
         this._zoomSpeed = size * 0.6;
+
+        if (this.controls?.setOrbit) {
+            this.controls.minDistance = this._zoomMin;
+            this.controls.maxDistance = this._zoomMax;
+
+            if (resetPosition) {
+                this._zoom = suggested;
+                const map = this.city?.map ?? null;
+                const origin = map?.origin ?? { x: 0, z: 0 };
+                const cx = Number(origin.x) + ((Number(map?.width) || 1) - 1) * (Number(map?.tileSize) || 1) * 0.5;
+                const cz = Number(origin.z) + ((Number(map?.height) || 1) - 1) * (Number(map?.tileSize) || 1) * 0.5;
+                const y = -(this._hoverPlane?.constant ?? 0);
+                const target = new THREE.Vector3(cx, y, cz);
+                const dir = getTopDownToolCameraHomeDirection();
+                const position = target.clone().addScaledVector(dir, this._zoom);
+                this.controls.setLookAt({ position, target });
+                this.controls.setHomeFromCurrent();
+            } else {
+                const orbit = this.controls.getOrbit?.() ?? null;
+                const radius = Number(orbit?.radius);
+                if (!Number.isFinite(this._zoom)) this._zoom = Number.isFinite(radius) ? radius : suggested;
+                this._zoom = clamp(this._zoom, this._zoomMin, this._zoomMax);
+                this.controls.setOrbit({ radius: this._zoom }, { immediate: true });
+            }
+            return;
+        }
 
         if (resetPosition) {
             this._zoom = suggested;
@@ -2500,18 +2601,16 @@ export class MapDebuggerState {
     }
 
     _handlePointerDown(e) {
-        if (e.button !== 0) return;
+        if (!e) return;
         if (this._tourActive) return;
 
         if (this.editorPanel?.root?.contains(e.target) || this.debugsPanel?.root?.contains(e.target) || this.shortcutsPanel?.root?.contains(e.target)) {
             return;
         }
 
-        if (!this._roadModeEnabled && !this._buildingModeEnabled) {
-            this._startCameraDrag(e);
-            return;
-        }
+        if (!this._roadModeEnabled && !this._buildingModeEnabled) return;
 
+        if (e.button !== 0) return;
         if (!this.city?.map) return;
 
         this._setPointerFromEvent(e);
@@ -2548,12 +2647,11 @@ export class MapDebuggerState {
 
         const zoomSpeed = Number.isFinite(this._zoomSpeed) ? this._zoomSpeed : 1;
         const amount = delta * (zoomSpeed / 12000);
-        this._zoom = clamp(this._zoom + amount, this._zoomMin, this._zoomMax);
+        this.controls?.dollyBy?.(amount, { immediate: true });
 
-        const cam = this.engine.camera;
-        cam.position.y = this._zoom;
-        cam.rotation.order = 'YXZ';
-        cam.rotation.set(-Math.PI * 0.5, 0, 0);
+        const orbit = this.controls?.getOrbit?.() ?? null;
+        const radius = Number(orbit?.radius);
+        if (Number.isFinite(radius)) this._zoom = clamp(radius, this._zoomMin, this._zoomMax);
 
         this._syncRoadPointPopupPosition();
     }

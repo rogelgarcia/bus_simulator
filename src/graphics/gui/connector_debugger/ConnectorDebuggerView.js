@@ -143,6 +143,7 @@ export class ConnectorDebuggerView {
         this._inputEnabled = true;
         this._tourActive = false;
         this._tour = null;
+        this.controls = null;
 
         this._onPointerMove = (e) => handlePointerMove(this, e);
         this._onPointerDown = (e) => handlePointerDown(this, e);
@@ -170,6 +171,8 @@ export class ConnectorDebuggerView {
         this.panel = null;
         this.shortcutsPanel?.destroy();
         this.shortcutsPanel = null;
+        this.controls?.dispose?.();
+        this.controls = null;
         this._tour?.stop();
         this._tour = null;
         if (this.group) this.group.removeFromParent();
@@ -336,6 +339,10 @@ export class ConnectorDebuggerView {
     _setTourActive(active) {
         this._tourActive = !!active;
         this._inputEnabled = !this._tourActive;
+        if (this.controls) {
+            this.controls.enabled = !this._tourActive;
+            if (!this._tourActive) this.controls.syncFromCamera?.();
+        }
         this.panel?.setTourActive(this._tourActive);
         this.shortcutsPanel?.setTourActive(this._tourActive);
     }

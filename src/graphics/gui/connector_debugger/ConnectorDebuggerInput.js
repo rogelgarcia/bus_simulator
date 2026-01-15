@@ -1,6 +1,7 @@
 // src/graphics/gui/connector_debugger/ConnectorDebuggerInput.js
 // Handles input and camera updates for the connector debugger.
 import * as THREE from 'three';
+import { createToolCameraController, getTopDownToolCameraHomeDirection } from '../../engine3d/camera/ToolCameraPrefab.js';
 
 function clamp(v, a, b) {
     return Math.max(a, Math.min(b, v));
@@ -53,9 +54,46 @@ export function setupCamera(view) {
     view._zoom = clamp(Math.max(zoomV, zoomH), view._zoomMin, view._zoomMax);
     view._moveSpeed = size * 0.12;
     view._zoomSpeed = size * 0.6;
-    cam.position.set(0, view._zoom, 0);
-    cam.rotation.order = 'YXZ';
-    cam.rotation.set(-Math.PI * 0.5, 0, 0);
+
+    const map = view.city?.map ?? null;
+    const origin = map?.origin ?? { x: 0, z: 0 };
+    const cx = Number(origin.x) + ((Number(map?.width) || 1) - 1) * (Number(map?.tileSize) || 1) * 0.5;
+    const cz = Number(origin.z) + ((Number(map?.height) || 1) - 1) * (Number(map?.tileSize) || 1) * 0.5;
+    const target = new THREE.Vector3(cx, view._groundY ?? 0, cz);
+    const dir = getTopDownToolCameraHomeDirection();
+    const position = target.clone().addScaledVector(dir, view._zoom);
+
+    view.controls?.dispose?.();
+    view.controls = createToolCameraController(cam, view.canvas, {
+        uiRoot: document.body,
+        enabled: true,
+        enableDamping: true,
+        dampingFactor: 0.08,
+        rotateSpeed: 1.0,
+        panSpeed: 1.0,
+        zoomSpeed: 1.0,
+        minDistance: view._zoomMin,
+        maxDistance: view._zoomMax,
+        minPolarAngle: 0.001,
+        maxPolarAngle: Math.PI * 0.5 - 0.08,
+        getFocusTarget: () => {
+            if (!map) return null;
+            const tileSize = Number(map.tileSize) || 1;
+            const half = tileSize * 0.5;
+            const ox = Number(origin.x) || 0;
+            const oz = Number(origin.z) || 0;
+            const maxX = Math.max(0, (map.width ?? 1) - 1);
+            const maxY = Math.max(0, (map.height ?? 1) - 1);
+            const y = view._groundY ?? 0;
+            return {
+                box: {
+                    min: { x: ox - half, y, z: oz - half },
+                    max: { x: ox + maxX * tileSize + half, y, z: oz + maxY * tileSize + half }
+                }
+            };
+        },
+        initialPose: { position, target }
+    });
 }
 
 export function attachEvents(view) {
@@ -171,7 +209,9 @@ export function handleKeyUp(view, e) {
 }
 
 export function updateCamera(view, dt) {
-    const cam = view.engine.camera;
+    const controls = view.controls ?? null;
+    if (!controls) return;
+
     const move = new THREE.Vector3();
     if (view._keys.ArrowUp) move.z -= 1;
     if (view._keys.ArrowDown) move.z += 1;
@@ -179,17 +219,19 @@ export function updateCamera(view, dt) {
     if (view._keys.ArrowLeft) move.x -= 1;
     if (move.lengthSq() > 0) {
         move.normalize().multiplyScalar(view._moveSpeed * dt);
-        cam.position.add(move);
+        controls.panWorld(move.x, 0, move.z);
     }
     let zoomDir = 0;
     if (view._keys.KeyA && !view._isDragging) zoomDir -= 1;
     if (view._keys.KeyZ) zoomDir += 1;
     if (zoomDir !== 0) {
-        view._zoom = clamp(view._zoom + zoomDir * view._zoomSpeed * dt, view._zoomMin, view._zoomMax);
+        controls.dollyBy?.(zoomDir * view._zoomSpeed * dt);
     }
-    cam.position.y = view._zoom;
-    cam.rotation.order = 'YXZ';
-    cam.rotation.set(-Math.PI * 0.5, 0, 0);
+
+    controls.update(dt);
+    const orbit = controls.getOrbit?.() ?? null;
+    const radius = Number(orbit?.radius);
+    if (Number.isFinite(radius)) view._zoom = clamp(radius, view._zoomMin, view._zoomMax);
 }
 
 export function updateRotation(view, dt) {

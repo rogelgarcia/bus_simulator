@@ -620,7 +620,7 @@ export class CityMap {
 	                const s = typeof url === 'string' ? url : '';
 	                const clean = s.split(/[?#]/)[0].toLowerCase();
 	                const file = (clean.split('/').pop() ?? '').toLowerCase();
-	                if (clean.includes('/pbr/red_brick_2k/basecolor.jpg')) return BUILDING_STYLE.BRICK;
+	                if (clean.includes('/pbr/red_brick/basecolor.jpg')) return BUILDING_STYLE.BRICK;
 	                if (file === 'brick_wall.png' || file === 'brick_wall_deprecated.png') return BUILDING_STYLE.BRICK;
 	                if (file === 'cement.png') return BUILDING_STYLE.CEMENT;
 	                if (file === 'stonewall_1.png') return BUILDING_STYLE.STONE_1;

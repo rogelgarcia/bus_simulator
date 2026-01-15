@@ -1,6 +1,7 @@
 // src/graphics/assets3d/generators/building_fabrication/BuildingFabricationTypes.js
 // Defines layer-based building fabrication data types.
 import { BUILDING_STYLE, isBuildingStyle } from '../../../../app/buildings/BuildingStyle.js';
+import { isPbrBuildingWallMaterialId } from '../../materials/PbrMaterialCatalog.js';
 import { ROOF_COLOR, isRoofColor } from '../../../../app/buildings/RoofColor.js';
 import { BELT_COURSE_COLOR, isBeltCourseColor } from '../../../../app/buildings/BeltCourseColor.js';
 import { WINDOW_TYPE, getDefaultWindowParams, isWindowTypeId } from '../buildings/WindowTextureGenerator.js';
@@ -131,14 +132,15 @@ export function createDefaultFloorLayer({
     windows = null
 } = {}) {
     const b = belt ?? {};
-    const safeStyle = isBuildingStyle(style) ? style : BUILDING_STYLE.DEFAULT;
+    const styleId = typeof style === 'string' ? style : '';
+    const safeStyle = isBuildingStyle(styleId) || isPbrBuildingWallMaterialId(styleId) ? styleId : BUILDING_STYLE.DEFAULT;
     const wallMaterial = normalizeMaterialSpec(material, {
         fallback: { kind: 'texture', id: safeStyle },
         allowColorId: isBeltCourseColor,
-        allowTextureId: isBuildingStyle,
+        allowTextureId: (id) => isBuildingStyle(id) || isPbrBuildingWallMaterialId(id),
         stringKind: 'texture'
     });
-    const derivedStyle = wallMaterial.kind === 'texture' && isBuildingStyle(wallMaterial.id)
+    const derivedStyle = wallMaterial.kind === 'texture' && (isBuildingStyle(wallMaterial.id) || isPbrBuildingWallMaterialId(wallMaterial.id))
         ? wallMaterial.id
         : safeStyle;
     return {

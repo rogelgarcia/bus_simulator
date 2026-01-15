@@ -1,9 +1,9 @@
 // src/graphics/gui/rapier_debugger/RapierDebuggerScene.js
 // Three.js scene wiring for the Rapier debugger view.
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { makeCheckerTexture } from '../../assets3d/textures/CityTextures.js';
 import { RAPIER_DEBUGGER_VEHICLE_CONFIG, RAPIER_DEBUGGER_WORLD_CONFIG } from '../../../app/physics/rapier_debugger/RapierDebuggerConstants.js';
+import { createToolCameraController } from '../../engine3d/camera/ToolCameraPrefab.js';
 
 export class RapierDebuggerScene {
     constructor(engine, {
@@ -17,6 +17,7 @@ export class RapierDebuggerScene {
         this.vehicleConfig = { ...vehicleConfig };
 
         this.controls = null;
+        this._uiRoot = null;
         this.root = null;
 
         this._ground = null;
@@ -47,6 +48,7 @@ export class RapierDebuggerScene {
         this._torquePreviewArrow = null;
         this._torquePreviewBar = null;
         this._torquePreviewMaterial = null;
+        this._prevLocalClippingEnabled = null;
 
         this._tmpQuat = new THREE.Quaternion();
         this._tmpQuatB = new THREE.Quaternion();
@@ -106,6 +108,9 @@ export class RapierDebuggerScene {
 
     enter() {
         if (this.root) return;
+        if (this.engine?.renderer && this._prevLocalClippingEnabled === null) {
+            this._prevLocalClippingEnabled = !!this.engine.renderer.localClippingEnabled;
+        }
         this.root = new THREE.Group();
         this.scene.add(this.root);
 
@@ -128,6 +133,11 @@ export class RapierDebuggerScene {
     dispose() {
         this.controls?.dispose?.();
         this.controls = null;
+
+        if (this._prevLocalClippingEnabled !== null && this.engine?.renderer) {
+            this.engine.renderer.localClippingEnabled = this._prevLocalClippingEnabled;
+        }
+        this._prevLocalClippingEnabled = null;
 
         if (this.root) {
             this.scene.remove(this.root);
@@ -180,7 +190,10 @@ export class RapierDebuggerScene {
         if (this.controls && this._cameraFollowReady) {
             const clampedDt = Math.min(Math.max(dt ?? 0, 0), 0.05);
             const lagLen = this._cameraFollowPending.length();
-            const followDistance = this.camera.position.distanceTo(this.controls.target);
+            const orbit = this.controls.getOrbit?.() ?? null;
+            const t = orbit?.target ?? null;
+            const followTarget = new THREE.Vector3(Number(t?.x) || 0, Number(t?.y) || 0, Number(t?.z) || 0);
+            const followDistance = this.camera.position.distanceTo(followTarget);
             const deadZone = followDistance * this._cameraFollowDeadZoneRatio;
 
             if (!this._cameraFollowEngaged && lagLen > deadZone) {
@@ -204,8 +217,7 @@ export class RapierDebuggerScene {
                         clampedDt
                     );
                     const step = this._tmpVecB.copy(this._cameraFollowPending).sub(smoothed);
-                    this.camera.position.add(step);
-                    this.controls.target.add(step);
+                    this.controls.panWorld?.(step.x, step.y, step.z);
                     this._cameraFollowPending.copy(smoothed);
 
                     if (this._cameraFollowPending.lengthSq() < 1e-10) {
@@ -216,14 +228,13 @@ export class RapierDebuggerScene {
                 }
             }
         }
-        this.controls?.update?.();
+        this.controls?.update?.(dt);
     }
 
     resetCamera() {
         if (!this.controls || !this.camera) return;
-        this.camera.position.copy(this._defaultCameraPos);
-        this.controls.target.copy(this._defaultCameraTarget);
-        this.controls.update();
+        this.controls.setLookAt({ position: this._defaultCameraPos, target: this._defaultCameraTarget });
+        this.controls.setHomeFromCurrent();
         this._cameraFollowPending.set(0, 0, 0);
         this._cameraFollowVelocity.set(0, 0, 0);
         this._cameraFollowEngaged = false;
@@ -232,9 +243,7 @@ export class RapierDebuggerScene {
 
     _panCamera(delta) {
         if (!this.controls || !this.camera) return;
-        this.camera.position.add(delta);
-        this.controls.target.add(delta);
-        this.controls.update();
+        this.controls.panWorld?.(delta.x, delta.y, delta.z);
         this._cameraFollowPending.set(0, 0, 0);
         this._cameraFollowVelocity.set(0, 0, 0);
         this._cameraFollowEngaged = false;
@@ -414,19 +423,33 @@ export class RapierDebuggerScene {
         const cfg = this.vehicleConfig ?? RAPIER_DEBUGGER_VEHICLE_CONFIG;
         const d = Math.max(cfg.length ?? 10, cfg.width ?? 2.5, cfg.height ?? 3.0);
         const targetY = Math.max(1, (cfg.height ?? 3.0) * 0.28);
-        this.camera.position.set(d * 0.85, d * 0.55, d * 1.35);
-        this.camera.lookAt(0, targetY, 0);
+        const target = new THREE.Vector3(0, targetY, 0);
+        const position = new THREE.Vector3(d * 0.85, d * 0.55, d * 1.35);
 
-        this.controls = new OrbitControls(this.camera, this.engine.renderer.domElement);
-        this.controls.enableDamping = true;
-        this.controls.dampingFactor = 0.05;
-        this.controls.minDistance = Math.max(4, d * 0.35);
-        this.controls.maxDistance = Math.max(50, d * 5);
-        this.controls.maxPolarAngle = Math.PI * 0.48;
-        this.controls.target.set(0, targetY, 0);
-        this.controls.update();
-        this._defaultCameraPos.copy(this.camera.position);
-        this._defaultCameraTarget.copy(this.controls.target);
+        this.controls?.dispose?.();
+        this.controls = createToolCameraController(this.camera, this.engine.canvas, {
+            uiRoot: this._uiRoot,
+            enabled: true,
+            enableDamping: true,
+            dampingFactor: 0.05,
+            rotateSpeed: 1.0,
+            panSpeed: 1.0,
+            zoomSpeed: 1.0,
+            minDistance: Math.max(4, d * 0.35),
+            maxDistance: Math.max(50, d * 5),
+            minPolarAngle: 0.05,
+            maxPolarAngle: Math.PI * 0.48,
+            getFocusTarget: () => ({ center: target, radius: d * 0.85 }),
+            initialPose: { position, target }
+        });
+
+        this._defaultCameraPos.copy(position);
+        this._defaultCameraTarget.copy(target);
+    }
+
+    setUiRoot(uiRoot) {
+        this._uiRoot = uiRoot ?? null;
+        this.controls?.setUiRoot?.(this._uiRoot);
     }
 
     _buildChassis() {

@@ -1,6 +1,7 @@
 // src/graphics/gui/road_debugger/RoadDebuggerInput.js
 // Input + camera controls for the Road Debugger (click to author, pan/zoom, select).
 import * as THREE from 'three';
+import { createToolCameraController, getTopDownToolCameraHomeDirection } from '../../engine3d/camera/ToolCameraPrefab.js';
 
 function clamp(v, lo, hi) {
     return Math.max(lo, Math.min(hi, v));
@@ -102,17 +103,31 @@ export function setupCamera(view) {
     view._moveSpeed = size * 0.12;
     view._zoomSpeed = size * 0.6;
     const center = cameraCenter(view);
-    if (view._orbitTarget?.set) view._orbitTarget.set(center.x, view._groundY ?? 0, center.z);
-    else view._orbitTarget = new THREE.Vector3(center.x, view._groundY ?? 0, center.z);
-    view._orbitYaw = 0;
-    view._orbitPitch = 0;
+    const target = new THREE.Vector3(center.x, view._groundY ?? 0, center.z);
+    const dir = getTopDownToolCameraHomeDirection();
+    const position = target.clone().addScaledVector(dir, view._zoom);
+
+    if (view.controls?.dispose) view.controls.dispose();
+    view.controls = createToolCameraController(cam, view.canvas, {
+        uiRoot: view.ui?.root ?? null,
+        enabled: true,
+        enableDamping: true,
+        dampingFactor: 0.08,
+        rotateSpeed: 1.0,
+        panSpeed: 1.0,
+        zoomSpeed: 1.0,
+        minDistance: view._zoomMin,
+        maxDistance: view._zoomMax,
+        minPolarAngle: 0.02,
+        maxPolarAngle: Math.PI * 0.5 - 0.08,
+        getFocusTarget: () => view.getCameraFocusTarget?.() ?? null,
+        initialPose: { position, target }
+    });
     view._syncOrbitCamera?.();
 }
 
 export function attachEvents(view) {
     view.canvas?.addEventListener('pointerdown', view._onPointerDown);
-    view.canvas?.addEventListener('wheel', view._onWheel, { passive: false });
-    view.canvas?.addEventListener('contextmenu', view._onContextMenu);
     window.addEventListener('pointermove', view._onPointerMove, { passive: true });
     window.addEventListener('pointerup', view._onPointerUp, { passive: true });
     window.addEventListener('pointercancel', view._onPointerUp, { passive: true });
@@ -122,8 +137,6 @@ export function attachEvents(view) {
 
 export function detachEvents(view) {
     view.canvas?.removeEventListener('pointerdown', view._onPointerDown);
-    view.canvas?.removeEventListener('wheel', view._onWheel);
-    view.canvas?.removeEventListener('contextmenu', view._onContextMenu);
     window.removeEventListener('pointermove', view._onPointerMove);
     window.removeEventListener('pointerup', view._onPointerUp);
     window.removeEventListener('pointercancel', view._onPointerUp);
@@ -157,94 +170,60 @@ export function handlePointerMove(view, e) {
         });
         return;
     }
-    if (view._isDraggingCamera && isPointerOverUIByClientXY(view, e)) {
-        view._pendingClick = false;
-        view._isDraggingCamera = false;
-        const pid = view._cameraDragPointerId;
-        view._cameraDragPointerId = null;
-        if (pid !== null && view.canvas?.releasePointerCapture) {
-            try {
-                view.canvas.releasePointerCapture(pid);
-            } catch (err) {}
-        }
-        return;
-    }
-    if (!view._isDraggingCamera && !view._pendingClick && isPointerOverUIByClientXY(view, e)) {
+    if (!view._pendingClick && isPointerOverUIByClientXY(view, e)) {
         if (view.getDraftRoad?.() ?? view._draft) view.clearDraftPreview?.();
         return;
     }
 
     setPointerFromEvent(view, e);
 
-    if (!view._pendingClick && !view._isDraggingCamera) {
-        const draft = view.getDraftRoad?.() ?? view._draft ?? null;
-        if (draft) {
-            const hit = intersectPlane(view);
-            view.updateDraftPreviewFromWorld?.(hit, { altKey: !!e.altKey });
-        } else {
-            view.clearDraftPreview?.();
-        }
-        view.updateHoverFromPointer?.();
-        return;
-    }
-
-    const hit = intersectPlane(view);
-    if (!hit) return;
-
     if (view._pendingClick) {
         const dx = (e.clientX ?? 0) - (view._pointerDownClient?.x ?? 0);
         const dy = (e.clientY ?? 0) - (view._pointerDownClient?.y ?? 0);
         const threshold = Number.isFinite(view._dragThresholdPx) ? view._dragThresholdPx : 6;
-        if (Math.hypot(dx, dy) >= threshold) {
-            view._pendingClick = false;
-            const junctionToolEnabled = view.getJunctionToolEnabled?.() ?? view._junctionToolEnabled === true;
-            if (junctionToolEnabled) {
-                const startX = view._pointerDownClient?.x ?? 0;
-                const startY = view._pointerDownClient?.y ?? 0;
-                view._junctionSelectDrag = {
-                    active: true,
-                    pointerId: view._cameraDragPointerId,
-                    startX,
-                    startY,
-                    baseSelected: new Set(view._junctionToolSelectedCandidateIds ?? [])
-                };
-                view.ui?.setSelectionRect?.({ x0: startX, y0: startY, x1: e.clientX ?? startX, y1: e.clientY ?? startY });
-                const mode = e.shiftKey ? 'add' : 'replace';
-                view.selectJunctionToolCandidatesInScreenRect?.({
-                    x0: startX,
-                    y0: startY,
-                    x1: e.clientX ?? startX,
-                    y1: e.clientY ?? startY,
-                    mode,
-                    baseSelected: view._junctionSelectDrag.baseSelected
-                });
-                return;
-            }
-            view._isDraggingCamera = true;
-            view._cameraDragStartWorld.copy(view._pointerDownWorld);
-            view._cameraDragStartCam.copy(view._pointerDownCam);
-            view._cameraDragStartTarget.copy(view._orbitTarget ?? new THREE.Vector3());
-        } else {
+        if (Math.hypot(dx, dy) < threshold) return;
+
+        view._pendingClick = false;
+        const junctionToolEnabled = view.getJunctionToolEnabled?.() ?? view._junctionToolEnabled === true;
+        if (junctionToolEnabled) {
+            const startX = view._pointerDownClient?.x ?? 0;
+            const startY = view._pointerDownClient?.y ?? 0;
+            view._junctionSelectDrag = {
+                active: true,
+                pointerId: view._cameraDragPointerId,
+                startX,
+                startY,
+                baseSelected: new Set(view._junctionToolSelectedCandidateIds ?? [])
+            };
+            view.ui?.setSelectionRect?.({ x0: startX, y0: startY, x1: e.clientX ?? startX, y1: e.clientY ?? startY });
+            const mode = e.shiftKey ? 'add' : 'replace';
+            view.selectJunctionToolCandidatesInScreenRect?.({
+                x0: startX,
+                y0: startY,
+                x1: e.clientX ?? startX,
+                y1: e.clientY ?? startY,
+                mode,
+                baseSelected: view._junctionSelectDrag.baseSelected
+            });
             return;
         }
     }
 
-    if (!view._isDraggingCamera) return;
-    const dx = view._cameraDragStartWorld.x - hit.x;
-    const dz = view._cameraDragStartWorld.z - hit.z;
-    if (view._orbitTarget) {
-        view._orbitTarget.x += dx;
-        view._orbitTarget.z += dz;
-        view._orbitTarget.y = view._groundY ?? view._orbitTarget.y;
+    const draft = view.getDraftRoad?.() ?? view._draft ?? null;
+    if (draft) {
+        const hit = intersectPlane(view);
+        view.updateDraftPreviewFromWorld?.(hit, { altKey: !!e.altKey });
+    } else {
+        view.clearDraftPreview?.();
     }
-    view._syncOrbitCamera?.();
+    view.updateHoverFromPointer?.();
 }
 
 export function handlePointerDown(view, e) {
     if (!view.canvas) return;
     if (!e) return;
     const button = e.button ?? 0;
-    if (button !== 0 && button !== 1 && button !== 2) return;
+    if (button !== 0) return;
     if (isPointerOverUI(view, e.target)) return;
 
     setPointerFromEvent(view, e);
@@ -260,30 +239,19 @@ export function handlePointerDown(view, e) {
     const pointerId = Number.isFinite(e.pointerId) ? e.pointerId : null;
     view._cameraDragPointerId = pointerId;
 
-    if (button === 0) {
-        const pick = view._picking?.pickDragStart?.() ?? view._pickAtPointer?.() ?? null;
-        if (pick?.type === 'point') {
-            e.preventDefault?.();
-            view._pendingClick = false;
-            view._isDraggingCamera = false;
-            view.beginPointDrag?.({ roadId: pick.roadId, pointId: pick.pointId, hitWorld: hit, pointerId });
-            if (pointerId !== null) {
-                try {
-                    view.canvas.setPointerCapture(pointerId);
-                } catch (err) {}
-            }
-            return;
-        }
-        view._pendingClick = true;
-        view._isDraggingCamera = false;
-    } else {
+    const pick = view._picking?.pickDragStart?.() ?? view._pickAtPointer?.() ?? null;
+    if (pick?.type === 'point') {
         e.preventDefault?.();
         view._pendingClick = false;
-        view._isDraggingCamera = true;
-        view._cameraDragStartWorld.copy(hit);
-        view._cameraDragStartCam.copy(view.camera.position);
-        view._cameraDragStartTarget.copy(view._orbitTarget ?? new THREE.Vector3());
+        view.beginPointDrag?.({ roadId: pick.roadId, pointId: pick.pointId, hitWorld: hit, pointerId });
+        if (pointerId !== null) {
+            try {
+                view.canvas.setPointerCapture(pointerId);
+            } catch (err) {}
+        }
+        return;
     }
+    view._pendingClick = true;
 
     if (pointerId !== null) {
         try {
@@ -322,7 +290,6 @@ export function handlePointerUp(view, e) {
     }
 
     view._pendingClick = false;
-    view._isDraggingCamera = false;
     view._cameraDragPointerId = null;
     view._pointerDownButton = null;
     if (view.canvas && id !== null) {
@@ -330,23 +297,6 @@ export function handlePointerUp(view, e) {
             view.canvas.releasePointerCapture(id);
         } catch (err) {}
     }
-}
-
-export function handleWheel(view, e) {
-    if (!view.canvas) return;
-    if (isPointerOverUI(view, e.target)) return;
-    if (!e) return;
-    e.preventDefault();
-
-    const mode = e.deltaMode ?? 0;
-    const scale = mode === 1 ? 16 : (mode === 2 ? 400 : 1);
-    const delta = (Number(e.deltaY) || 0) * scale;
-    if (!Number.isFinite(delta) || delta === 0) return;
-
-    const zoomSpeed = Number.isFinite(view._zoomSpeed) ? view._zoomSpeed : 1;
-    const amount = delta * (zoomSpeed / ROAD_DEBUGGER_WHEEL_ZOOM_DIVISOR);
-    view._zoom = clamp(view._zoom + amount, view._zoomMin, view._zoomMax);
-    view._syncOrbitCamera?.();
 }
 
 export function handleKeyDown(view, e) {
@@ -402,29 +352,26 @@ export function handleKeyUp(view, e) {
 }
 
 export function updateCamera(view, dt) {
+    const controls = view.controls ?? null;
+    if (!controls) return;
+
     const move = new THREE.Vector3();
     if (view._keys.ArrowUp) move.z -= 1;
     if (view._keys.ArrowDown) move.z += 1;
     if (view._keys.ArrowRight) move.x += 1;
     if (view._keys.ArrowLeft) move.x -= 1;
-    let changed = false;
     if (move.lengthSq() > 0) {
         move.normalize().multiplyScalar(view._moveSpeed * dt);
-        if (view._orbitTarget) {
-            view._orbitTarget.x += move.x;
-            view._orbitTarget.z += move.z;
-            view._orbitTarget.y = view._groundY ?? view._orbitTarget.y;
-        }
-        changed = true;
+        controls.panWorld?.(move.x, 0, move.z);
     }
 
     let zoomDir = 0;
-    if (view._keys.KeyA && !view._isDraggingCamera) zoomDir -= 1;
+    if (view._keys.KeyA) zoomDir -= 1;
     if (view._keys.KeyZ) zoomDir += 1;
     if (zoomDir !== 0) {
-        view._zoom = clamp(view._zoom + zoomDir * view._zoomSpeed * dt, view._zoomMin, view._zoomMax);
-        changed = true;
+        controls.dollyBy?.(zoomDir * view._zoomSpeed * dt);
     }
 
-    if (changed) view._syncOrbitCamera?.();
+    controls.update?.(dt);
+    view._syncOrbitCamera?.();
 }

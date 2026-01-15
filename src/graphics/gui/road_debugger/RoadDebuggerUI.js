@@ -950,32 +950,8 @@ export function setupUI(view) {
     infoBody.textContent = '—';
     infoPanel.appendChild(infoBody);
 
-    const orbitPanel = document.createElement('div');
-    orbitPanel.className = 'road-debugger-panel road-debugger-orbit-panel';
-
-    const orbitHeader = document.createElement('div');
-    orbitHeader.className = 'road-debugger-orbit-header';
-
-    const orbitTitle = document.createElement('div');
-    orbitTitle.className = 'road-debugger-orbit-title';
-    orbitTitle.textContent = 'Orbit';
-    orbitHeader.appendChild(orbitTitle);
-
-    const orbitReset = makeButton('Reset');
-    orbitReset.classList.add('road-debugger-orbit-reset');
-    orbitReset.title = 'Reset orbit yaw/pitch to the default top-down orientation.';
-    orbitHeader.appendChild(orbitReset);
-
-    orbitPanel.appendChild(orbitHeader);
-
-    const orbitSurface = document.createElement('div');
-    orbitSurface.className = 'road-debugger-orbit-surface';
-    orbitSurface.title = 'Drag to orbit the camera around the current focus point.';
-    orbitPanel.appendChild(orbitSurface);
-
     const bottomRight = document.createElement('div');
     bottomRight.className = 'road-debugger-bottom-right';
-    bottomRight.appendChild(orbitPanel);
     bottomRight.appendChild(infoPanel);
 
     root.appendChild(left);
@@ -1488,66 +1464,6 @@ export function setupUI(view) {
     exitModal.addEventListener('click', (e) => {
         if (e.target === exitModal) closeExitConfirm();
     });
-
-    let orbitDrag = null;
-    const onOrbitPointerDown = (e) => {
-        e.preventDefault?.();
-        e.stopPropagation?.();
-        const rect = orbitSurface.getBoundingClientRect?.() ?? { width: 120, height: 120 };
-        const yaw = view.getCameraOrbit?.().yaw ?? view._orbitYaw ?? 0;
-        const pitch = view.getCameraOrbit?.().pitch ?? view._orbitPitch ?? 0;
-        orbitDrag = {
-            pointerId: Number.isFinite(e.pointerId) ? e.pointerId : null,
-            startX: e.clientX ?? 0,
-            startY: e.clientY ?? 0,
-            startYaw: Number(yaw) || 0,
-            startPitch: Number(pitch) || 0,
-            size: Math.max(60, Number(rect.width) || 120)
-        };
-        orbitSurface.classList.add('is-dragging');
-        if (orbitDrag.pointerId !== null) {
-            try {
-                orbitSurface.setPointerCapture(orbitDrag.pointerId);
-            } catch (err) {}
-        }
-    };
-
-    const onOrbitPointerMove = (e) => {
-        if (!orbitDrag) return;
-        e.preventDefault?.();
-        e.stopPropagation?.();
-        const dx = (e.clientX ?? 0) - orbitDrag.startX;
-        const dy = (e.clientY ?? 0) - orbitDrag.startY;
-        const scale = orbitDrag.size || 120;
-        const yaw = orbitDrag.startYaw + dx * ((Math.PI * 2) / scale);
-        const pitch = orbitDrag.startPitch + dy * ((Math.PI * 0.5) / scale);
-        view.setCameraOrbit?.({ yaw, pitch });
-    };
-
-    const onOrbitPointerUp = (e) => {
-        if (!orbitDrag) return;
-        e.preventDefault?.();
-        e.stopPropagation?.();
-        const pid = orbitDrag.pointerId;
-        orbitDrag = null;
-        orbitSurface.classList.remove('is-dragging');
-        if (pid !== null) {
-            try {
-                orbitSurface.releasePointerCapture(pid);
-            } catch (err) {}
-        }
-    };
-
-    const onOrbitReset = (e) => {
-        e.preventDefault?.();
-        view.resetCameraOrbit?.();
-    };
-
-    orbitSurface.addEventListener('pointerdown', onOrbitPointerDown);
-    orbitSurface.addEventListener('pointermove', onOrbitPointerMove);
-    orbitSurface.addEventListener('pointerup', onOrbitPointerUp);
-    orbitSurface.addEventListener('pointercancel', onOrbitPointerUp);
-    orbitReset.addEventListener('click', onOrbitReset);
 
     const buildRoadRow = ({ road, isDraft }) => {
         const row = document.createElement('div');
@@ -2542,13 +2458,6 @@ export function setupUI(view) {
         warningsFilterErrorBtn: filterErrorBtn,
         roadsList,
         junctionsList,
-        orbitPanel,
-        orbitSurface,
-        orbitReset,
-        _onOrbitPointerDown: onOrbitPointerDown,
-        _onOrbitPointerMove: onOrbitPointerMove,
-        _onOrbitPointerUp: onOrbitPointerUp,
-        _onOrbitReset: onOrbitReset,
         infoPanel,
         infoTitle,
         infoBody,
@@ -2619,11 +2528,6 @@ export function destroyUI(view) {
     if (!ui) return;
 
     window.removeEventListener('resize', ui._onResize);
-    ui.orbitSurface?.removeEventListener?.('pointerdown', ui._onOrbitPointerDown);
-    ui.orbitSurface?.removeEventListener?.('pointermove', ui._onOrbitPointerMove);
-    ui.orbitSurface?.removeEventListener?.('pointerup', ui._onOrbitPointerUp);
-    ui.orbitSurface?.removeEventListener?.('pointercancel', ui._onOrbitPointerUp);
-    ui.orbitReset?.removeEventListener?.('click', ui._onOrbitReset);
     ui.helpBtn?.removeEventListener?.('click', ui._onHelp);
     ui.helpClose?.removeEventListener?.('click', ui._onHelpClose);
     ui.gridToggle?.removeEventListener?.('change', ui._onGridChange);

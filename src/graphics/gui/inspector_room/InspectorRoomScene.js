@@ -1,8 +1,8 @@
 // src/graphics/gui/inspector_room/InspectorRoomScene.js
 // Shared inspection room environment with grid, plane, lighting, and camera controls.
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createGradientSkyDome } from '../../assets3d/generators/SkyGenerator.js';
+import { createToolCameraController } from '../../engine3d/camera/ToolCameraPrefab.js';
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -34,6 +34,7 @@ export class InspectorRoomScene {
         this.content = null;
 
         this.controls = null;
+        this._uiRoot = null;
 
         this.sky = null;
         this.hemi = null;
@@ -109,30 +110,31 @@ export class InspectorRoomScene {
         this._syncLightMarker();
         this._applyAxisAlwaysVisible();
 
-        this.controls = new OrbitControls(this.camera, this.canvas);
-        this.controls.enableDamping = true;
-        this.controls.dampingFactor = 0.08;
-        this.controls.enablePan = true;
-        this.controls.panSpeed = 0.9;
-        this.controls.rotateSpeed = 0.8;
-        this.controls.zoomSpeed = 1.0;
-        this.controls.mouseButtons = {
-            LEFT: THREE.MOUSE.ROTATE,
-            MIDDLE: THREE.MOUSE.PAN,
-            RIGHT: THREE.MOUSE.PAN
-        };
-        if (THREE.TOUCH) {
-            this.controls.touches = {
-                ONE: THREE.TOUCH.ROTATE,
-                TWO: THREE.TOUCH.PAN
-            };
-        }
-        this._applyFocusToControls({ immediate: true });
+        const dist = this._getFitDistance();
+        const center = this._focus.center.clone();
+        const pos = center.clone().add(new THREE.Vector3(1, 0.75, 1).normalize().multiplyScalar(dist));
+
+        this.controls = createToolCameraController(this.camera, this.canvas, {
+            uiRoot: this._uiRoot,
+            enabled: true,
+            enableDamping: true,
+            dampingFactor: 0.08,
+            rotateSpeed: 0.9,
+            panSpeed: 0.9,
+            zoomSpeed: 1.0,
+            minDistance: Math.max(0.15, this._focus.radius * 0.35),
+            maxDistance: Math.max(5, this._focus.radius * 80),
+            minPolarAngle: 0.001,
+            maxPolarAngle: Math.PI - 0.001,
+            getFocusTarget: () => ({ center: this._focus.center, radius: this._focus.radius }),
+            initialPose: { position: pos, target: center }
+        });
     }
 
     dispose() {
         this.controls?.dispose?.();
         this.controls = null;
+        this._uiRoot = null;
 
         if (this.lightMarker) {
             this.root?.remove?.(this.lightMarker);
@@ -207,7 +209,12 @@ export class InspectorRoomScene {
 
     update(dt) {
         if (this._cameraTween) this._tickCameraTween(dt);
-        this.controls?.update?.();
+        this.controls?.update?.(dt);
+    }
+
+    setUiRoot(uiRoot) {
+        this._uiRoot = uiRoot ?? null;
+        this.controls?.setUiRoot?.(this._uiRoot);
     }
 
     getContentRoot() {
@@ -341,10 +348,12 @@ export class InspectorRoomScene {
 
         const delta = nextCenter.clone().sub(prevCenter);
         if (keepCamera && this.controls) {
-            this.camera.position.add(delta);
-            this.controls.target.add(delta);
-            this.camera.lookAt(this.controls.target);
-            this.controls.update();
+            const position = this.camera.position.clone().add(delta);
+            const orbit = this.controls.getOrbit?.() ?? null;
+            const t = orbit?.target ?? null;
+            const target = new THREE.Vector3(Number(t?.x) || 0, Number(t?.y) || 0, Number(t?.z) || 0).add(delta);
+            this.camera.up.set(0, 1, 0);
+            this.controls.setLookAt({ position, target });
             return;
         }
 
@@ -389,12 +398,8 @@ export class InspectorRoomScene {
 
     _applyFocusToControls({ immediate = false } = {}) {
         if (!this.controls) return;
-        if (immediate) {
-            this.controls.target.copy(this._focus.center);
-            this.controls.update();
-            return;
-        }
-        this.controls.target.copy(this._focus.center);
+        const c = this._focus.center;
+        this.controls.setOrbit?.({ target: { x: c.x, y: c.y, z: c.z } }, { immediate });
     }
 
     _applyCameraPose({ position, target, up }) {
@@ -402,10 +407,7 @@ export class InspectorRoomScene {
         this._cameraTween = null;
         this.controls.enabled = true;
         this.camera.up.copy(up);
-        this.camera.position.copy(position);
-        this.controls.target.copy(target);
-        this.camera.lookAt(target);
-        this.controls.update();
+        this.controls.setLookAt({ position, target });
     }
 
     _startCameraTween({ fromPosition, fromTarget, fromUp, toPosition, toTarget, toUp, duration }) {
@@ -431,15 +433,15 @@ export class InspectorRoomScene {
         const p = tween.duration > 0 ? tween.t / tween.duration : 1;
         const eased = easeInOutCubic(p);
 
+        const target = tween.fromTarget.clone().lerp(tween.toTarget, eased);
         this.camera.position.lerpVectors(tween.fromPosition, tween.toPosition, eased);
-        this.controls.target.lerpVectors(tween.fromTarget, tween.toTarget, eased);
         this.camera.up.lerpVectors(tween.fromUp, tween.toUp, eased).normalize();
-        this.camera.lookAt(this.controls.target);
+        this.camera.lookAt(target);
 
         if (p >= 1) {
             this._cameraTween = null;
             this.controls.enabled = true;
-            this.controls.update();
+            this.controls.setLookAt({ position: this.camera.position, target });
         }
     }
 

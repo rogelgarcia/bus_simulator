@@ -1,6 +1,6 @@
 // src/states/TestModeState.js
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { createToolCameraController } from '../graphics/engine3d/camera/ToolCameraPrefab.js';
 
 import { BUS_CATALOG } from '../graphics/assets3d/factories/BusCatalog.js';
 import { createBus } from '../graphics/assets3d/factories/BusFactory.js';
@@ -583,6 +583,10 @@ export class TestModeState {
         this.hudChip = this.uiSelect?.querySelector?.('.chip') ?? null;
 
         this.controls = null;
+        this._cameraHomeOrbit = null;
+        this._tmpCameraTarget = new THREE.Vector3();
+        this._tmpCameraSphere = new THREE.Sphere();
+        this._tmpCameraBox = new THREE.Box3();
 
         this.sim = this.engine.simulation;
         this.vehicle = null;
@@ -690,22 +694,28 @@ export class TestModeState {
         const cam = this.engine.camera;
         cam.position.set(10.5, 5.2, 18);
 
-        this.controls = new OrbitControls(cam, this.engine.renderer.domElement);
-        this.controls.enableDamping = true;
-        this.controls.dampingFactor = 0.05;
-        this.controls.enablePan = false;
-        this.controls.minDistance = 10;
-        this.controls.maxDistance = 80;
-        this.controls.maxPolarAngle = Math.PI * 0.47;
-
-        if (this.busAnchor) {
-            this.controls.target.set(this.busAnchor.position.x, 1.8, this.busAnchor.position.z);
-            this._prevBusPos.copy(this.busAnchor.position);
-        } else {
-            this.controls.target.set(0, 1.8, -10);
-        }
+        const canvas = this.engine.canvas ?? this.engine.renderer?.domElement ?? null;
+        const initialTarget = this._getBusCameraTarget() ?? new THREE.Vector3(0, 1.8, -10);
+        this.controls = createToolCameraController(cam, canvas, {
+            uiRoot: null,
+            enabled: true,
+            enableDamping: true,
+            dampingFactor: 0.05,
+            rotateSpeed: 1.0,
+            panSpeed: 1.0,
+            zoomSpeed: 1.0,
+            minDistance: 10,
+            maxDistance: 80,
+            minPolarAngle: 0.05,
+            maxPolarAngle: Math.PI * 0.47,
+            getFocusTarget: () => this._getBusFocusTarget() ?? { center: initialTarget, radius: 6 },
+            initialPose: { position: cam.position.clone(), target: initialTarget.clone() }
+        });
+        this._captureCameraHomeOrbit();
+        if (this.busAnchor) this._prevBusPos.copy(this.busAnchor.position);
 
         this._mountHud();
+        this.controls?.setUiRoot?.(this.hudRoot);
 
         window.addEventListener('keydown', this._onKeyDown, { passive: false });
     }
@@ -787,7 +797,7 @@ export class TestModeState {
         this._updateCameraFollow(dt);
 
         this._updateRapierDebug();
-        this.controls?.update();
+        this.controls?.update?.(dt);
     }
 
     _defaultBusIndex() {
@@ -853,7 +863,6 @@ export class TestModeState {
     _updateCameraFollow(dt) {
         if (!this.controls || !this.busAnchor) return;
 
-        const cam = this.engine.camera;
         const cur = this.busAnchor.position;
 
         this._tmpV.copy(cur).sub(this._prevBusPos);
@@ -867,8 +876,7 @@ export class TestModeState {
         if (this._cameraFollowPending.lengthSq() < 1e-12) return;
 
         const step = this._tmpV.copy(this._cameraFollowPending).multiplyScalar(alpha);
-        cam.position.add(step);
-        this.controls.target.add(step);
+        this.controls.panWorld?.(step.x, step.y, step.z);
         this._cameraFollowPending.sub(step);
     }
 
@@ -888,7 +896,7 @@ export class TestModeState {
         shortcuts.appendChild(makeSeparator());
 
         const hint = document.createElement('div');
-        hint.textContent = 'Orbit: drag mouse (camera follows bus translation)';
+        hint.textContent = 'Orbit: drag RMB · Pan: MMB or Shift+RMB · R: reset camera';
         hint.className = 'testmode-hint';
         shortcuts.appendChild(hint);
 
@@ -1580,7 +1588,8 @@ export class TestModeState {
         this._cameraFollowPending.set(0, 0, 0);
 
         if (this.controls) {
-            this.controls.target.set(anchor.position.x, 1.8, anchor.position.z);
+            this._setCameraTargetToBus({ immediate: true });
+            this._captureCameraHomeOrbit();
         }
 
         this._updateHudBusName();
@@ -1618,7 +1627,7 @@ export class TestModeState {
         this._prevBusPos.copy(this.busAnchor.position);
         this._cameraFollowPending.set(0, 0, 0);
         if (this.controls) {
-            this.controls.target.set(this.busAnchor.position.x, 1.8, this.busAnchor.position.z);
+            this._setCameraTargetToBus({ immediate: true });
         }
         this._syncGearOptions();
     }
@@ -1629,11 +1638,71 @@ export class TestModeState {
 
         const isB = code === 'KeyB' || key === 'b' || key === 'B';
         const isX = code === 'KeyX' || key === 'x' || key === 'X';
+        const isR = code === 'KeyR' || key === 'r' || key === 'R';
         const isEsc = code === 'Escape' || key === 'Escape';
 
-        if (isB || isX || isEsc) e.preventDefault();
+        if (isB || isX || isR || isEsc) e.preventDefault();
 
+        if (isR) {
+            this._resetCameraToHome();
+            e.stopImmediatePropagation?.();
+            return;
+        }
         if (isB) return this._nextBus();
         if (isX || isEsc) return this.sm.go('welcome');
+    }
+
+    _getBusCameraTarget() {
+        const anchor = this.busAnchor ?? null;
+        if (!anchor) return null;
+        return this._tmpCameraTarget.set(anchor.position.x, 1.8, anchor.position.z);
+    }
+
+    _getBusFocusTarget() {
+        const model = this.busAnchor ?? this.busModel ?? null;
+        if (!model) return null;
+        this._tmpCameraBox.setFromObject(model);
+        if (this._tmpCameraBox.isEmpty()) return null;
+        this._tmpCameraBox.getBoundingSphere(this._tmpCameraSphere);
+        const c = this._tmpCameraSphere.center;
+        const r = this._tmpCameraSphere.radius;
+        if (!Number.isFinite(c.x) || !Number.isFinite(c.y) || !Number.isFinite(c.z) || !Number.isFinite(r)) return null;
+        return { center: { x: c.x, y: c.y, z: c.z }, radius: Math.max(0.5, r) };
+    }
+
+    _setCameraTargetToBus({ immediate = true } = {}) {
+        const target = this._getBusCameraTarget();
+        if (!target || !this.controls?.setOrbit) return false;
+        this.controls.setOrbit({ target: { x: target.x, y: target.y, z: target.z } }, { immediate: !!immediate });
+        return true;
+    }
+
+    _captureCameraHomeOrbit() {
+        const orbit = this.controls?.getOrbit?.() ?? null;
+        if (!orbit) return false;
+        const radius = Number(orbit.radius);
+        const theta = Number(orbit.theta);
+        const phi = Number(orbit.phi);
+        if (!Number.isFinite(radius) || !Number.isFinite(theta) || !Number.isFinite(phi)) return false;
+        this._cameraHomeOrbit = { radius, theta, phi };
+        return true;
+    }
+
+    _resetCameraToHome() {
+        if (!this.controls?.setOrbit) return false;
+        const home = this._cameraHomeOrbit ?? null;
+        const target = this._getBusCameraTarget() ?? null;
+        if (!home || !target) return false;
+        this.controls.setOrbit(
+            {
+                radius: home.radius,
+                theta: home.theta,
+                phi: home.phi,
+                target: { x: target.x, y: target.y, z: target.z }
+            },
+            { immediate: true }
+        );
+        this.controls.setHomeFromCurrent?.();
+        return true;
     }
 }

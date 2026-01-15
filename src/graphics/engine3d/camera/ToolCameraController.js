@@ -62,6 +62,13 @@ function getHitElementFromPoint(canvas, e) {
     return el || null;
 }
 
+function canUsePointerCapture(canvas) {
+    if (!canvas?.setPointerCapture) return false;
+    if (canvas.isConnected) return true;
+    const doc = canvas.ownerDocument ?? document;
+    return !!doc?.contains?.(canvas);
+}
+
 export class ToolCameraController {
     constructor(camera, canvas, {
         uiRoot = null,
@@ -207,6 +214,84 @@ export class ToolCameraController {
         this._applyCamera();
     }
 
+    getOrbit() {
+        const s = this._sphericalEnd ?? this._spherical;
+        const t = this._targetEnd ?? this.target;
+        return {
+            radius: Number(s?.radius) || 0,
+            theta: Number(s?.theta) || 0,
+            phi: Number(s?.phi) || 0,
+            target: { x: Number(t?.x) || 0, y: Number(t?.y) || 0, z: Number(t?.z) || 0 }
+        };
+    }
+
+    setOrbit({ radius = null, theta = null, phi = null, target = null } = {}, { immediate = false } = {}) {
+        if (!this._sphericalEnd || !this._targetEnd) return false;
+
+        let changed = false;
+
+        if (radius !== null) {
+            const r = clamp(radius, this.minDistance, this.maxDistance);
+            if (Math.abs((Number(this._sphericalEnd.radius) || 0) - r) > 1e-9) {
+                this._sphericalEnd.radius = r;
+                changed = true;
+            }
+        }
+
+        if (theta !== null) {
+            const th = Number(theta);
+            if (Number.isFinite(th) && Math.abs((Number(this._sphericalEnd.theta) || 0) - th) > 1e-9) {
+                this._sphericalEnd.theta = th;
+                changed = true;
+            }
+        }
+
+        if (phi !== null) {
+            const p = clamp(phi, this.minPolarAngle, this.maxPolarAngle);
+            if (Math.abs((Number(this._sphericalEnd.phi) || 0) - p) > 1e-9) {
+                this._sphericalEnd.phi = p;
+                changed = true;
+            }
+        }
+
+        if (target && typeof target === 'object') {
+            const x = Number(target.x);
+            const y = Number(target.y);
+            const z = Number(target.z);
+            if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
+                if (Math.abs((Number(this._targetEnd.x) || 0) - x) > 1e-9
+                    || Math.abs((Number(this._targetEnd.y) || 0) - y) > 1e-9
+                    || Math.abs((Number(this._targetEnd.z) || 0) - z) > 1e-9) {
+                    this._targetEnd.set(x, y, z);
+                    changed = true;
+                }
+            }
+        }
+
+        if (immediate) {
+            this.target.copy(this._targetEnd);
+            this._spherical.copy(this._sphericalEnd);
+            this._applyCamera();
+        }
+
+        return changed;
+    }
+
+    dollyBy(delta, { immediate = false } = {}) {
+        if (!this._sphericalEnd) return false;
+        const d = Number(delta) || 0;
+        if (!Number.isFinite(d) || Math.abs(d) < 1e-9) return false;
+        const r = clamp((Number(this._sphericalEnd.radius) || 0) + d, this.minDistance, this.maxDistance);
+        const changed = Math.abs((Number(this._sphericalEnd.radius) || 0) - r) > 1e-9;
+        if (!changed) return false;
+        this._sphericalEnd.radius = r;
+        if (immediate) {
+            this._spherical.radius = r;
+            this._applyCamera();
+        }
+        return true;
+    }
+
     frame() {
         if (!this.camera || !this._getFocusTarget) return false;
         const focus = this._getFocusTarget();
@@ -280,27 +365,41 @@ export class ToolCameraController {
         const hit = getHitElementFromPoint(this.canvas, e) ?? e?.target ?? null;
         if (!hit) return false;
         if (hit === this.canvas) return false;
-        return this._uiRoot.contains(hit);
+        if (!this._uiRoot.contains(hit)) return false;
+        if (hit === this._uiRoot) return false;
+        return true;
     }
 
     _handleContextMenu(e) {
         if (!this.enabled) return;
-        if (this._isEventOverUi(e)) return;
-        e.preventDefault();
-        e.stopImmediatePropagation();
+        const hit = getHitElementFromPoint(this.canvas, e) ?? e?.target ?? null;
+        if (isInteractiveElement(hit) || isInteractiveElement(document.activeElement)) return;
+        e.preventDefault?.();
+        e.stopImmediatePropagation?.();
     }
 
     _handleWindowContextMenu(e) {
         if (!this.enabled) return;
-        if (this._isEventOverUi(e)) return;
+        const hit = getHitElementFromPoint(this.canvas, e) ?? e?.target ?? null;
+        if (isInteractiveElement(hit) || isInteractiveElement(document.activeElement)) return;
         const now = (typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now();
         const shouldSuppress = this._activeButton === 2
             || this._state === 'orbit'
             || this._state === 'pan'
             || now <= this._suppressContextMenuUntil;
-        if (!shouldSuppress) return;
-        e.preventDefault();
-        e.stopImmediatePropagation();
+        const overUi = !!(this._uiRoot && hit && this._uiRoot.contains(hit));
+        let overCanvas = false;
+        if (this.canvas && Number.isFinite(e?.clientX) && Number.isFinite(e?.clientY)) {
+            const rect = this.canvas.getBoundingClientRect?.() ?? null;
+            if (rect) {
+                const x = e.clientX;
+                const y = e.clientY;
+                overCanvas = x >= rect.left && x <= rect.left + rect.width && y >= rect.top && y <= rect.top + rect.height;
+            }
+        }
+        if (!shouldSuppress && !overUi && !overCanvas) return;
+        e.preventDefault?.();
+        e.stopImmediatePropagation?.();
     }
 
     _handleKeyDown(e) {
@@ -346,7 +445,11 @@ export class ToolCameraController {
         this._pointerStart.y = e.clientY;
         this._orbitStart.theta = this._sphericalEnd.theta;
         this._orbitStart.phi = this._sphericalEnd.phi;
-        this.canvas?.setPointerCapture?.(e.pointerId);
+        if (canUsePointerCapture(this.canvas)) {
+            try {
+                this.canvas.setPointerCapture(e.pointerId);
+            } catch (err) {}
+        }
         e.preventDefault();
         e.stopImmediatePropagation();
     }
@@ -401,6 +504,11 @@ export class ToolCameraController {
             this._activePointerId = null;
             this._state = null;
             this._activeButton = null;
+            if (canUsePointerCapture(this.canvas) && this.canvas?.releasePointerCapture) {
+                try {
+                    this.canvas.releasePointerCapture(e.pointerId);
+                } catch (err) {}
+            }
             const now = (typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now();
             this._suppressContextMenuUntil = Math.max(this._suppressContextMenuUntil, now + 250);
         }
@@ -430,10 +538,10 @@ export class ToolCameraController {
         const worldPerPixelY = 2 * Math.tan(fovRad * 0.5) * dist / h;
         const worldPerPixelX = worldPerPixelY * (w / h);
 
-        this.camera.getWorldDirection(this._tmpV3);
-        this._tmpUp.set(0, 1, 0);
-        this._tmpRight.crossVectors(this._tmpV3, this._tmpUp).normalize();
-        this._tmpUp.crossVectors(this._tmpRight, this._tmpV3).normalize();
+        this.camera.updateMatrixWorld?.(true);
+        const m = this.camera.matrixWorld.elements;
+        this._tmpRight.set(m[0], m[1], m[2]).normalize();
+        this._tmpUp.set(m[4], m[5], m[6]).normalize();
 
         this._tmpOffset.set(0, 0, 0);
         this._tmpOffset.addScaledVector(this._tmpRight, -dx * worldPerPixelX * this.panSpeed);

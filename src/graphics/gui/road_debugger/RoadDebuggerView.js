@@ -10,7 +10,7 @@ import { buildRoadEnginePolygonMeshData, triangulateSimplePolygonXZ } from '../.
 import { clampRoadDebuggerTileOffsetForMap, normalizeRoadDebuggerTileOffsetForMap } from '../../../app/road_debugger/RoadDebuggerTileOffset.js';
 import { validateRoadDebuggerIssues } from '../../../app/road_debugger/RoadDebuggerValidation.js';
 import { setupScene, disposeScene } from './RoadDebuggerScene.js';
-import { attachEvents, detachEvents, handleKeyDown, handleKeyUp, handlePointerDown, handlePointerMove, handlePointerUp, handleWheel, setupCamera, updateCamera } from './RoadDebuggerInput.js';
+import { attachEvents, detachEvents, handleKeyDown, handleKeyUp, handlePointerDown, handlePointerMove, handlePointerUp, setupCamera, updateCamera } from './RoadDebuggerInput.js';
 import { setupUI, destroyUI } from './RoadDebuggerUI.js';
 import { RoadDebuggerPicking } from './RoadDebuggerPicking.js';
 
@@ -258,15 +258,8 @@ export class RoadDebuggerView {
         this._zoomMin = 0;
         this._zoomMax = 0;
 
-        this._orbitTarget = new THREE.Vector3();
-        this._orbitYaw = 0;
-        this._orbitPitch = 0;
-
-        this._isDraggingCamera = false;
+        this.controls = null;
         this._cameraDragPointerId = null;
-        this._cameraDragStartWorld = new THREE.Vector3();
-        this._cameraDragStartCam = new THREE.Vector3();
-        this._cameraDragStartTarget = new THREE.Vector3();
         this._pointerDownButton = null;
         this._pointerDownClient = { x: 0, y: 0 };
         this._pointerDownWorld = new THREE.Vector3();
@@ -356,10 +349,8 @@ export class RoadDebuggerView {
         this._onPointerMove = (e) => handlePointerMove(this, e);
         this._onPointerDown = (e) => handlePointerDown(this, e);
         this._onPointerUp = (e) => handlePointerUp(this, e);
-        this._onWheel = (e) => handleWheel(this, e);
         this._onKeyDown = (e) => handleKeyDown(this, e);
         this._onKeyUp = (e) => handleKeyUp(this, e);
-        this._onContextMenu = (e) => e.preventDefault();
 
         this._picking = new RoadDebuggerPicking(this);
     }
@@ -370,6 +361,7 @@ export class RoadDebuggerView {
         setupScene(this);
         this._ensureSnapHighlight();
         if (this._uiEnabled) setupUI(this);
+        this.controls?.setUiRoot?.(this.ui?.root ?? null);
         attachEvents(this);
         this.setGridEnabled(this._gridEnabled);
         this._rebuildPipeline();
@@ -378,6 +370,8 @@ export class RoadDebuggerView {
     exit() {
         handlePointerUp(this, null);
         detachEvents(this);
+        this.controls?.dispose?.();
+        this.controls = null;
         destroyUI(this);
         this._setSnapHighlightVisible(false);
         this._setDraftPreviewVisible(false);
@@ -1542,64 +1536,105 @@ export class RoadDebuggerView {
         return false;
     }
 
-    getCameraOrbit() {
+    getCameraFocusTarget() {
+        const y = Number.isFinite(this._groundY) ? this._groundY : 0;
+        const derived = this._derived ?? null;
+        const selection = this._selection ?? null;
+
+        const points = [];
+        const addXZ = (x, z) => {
+            const xx = Number(x);
+            const zz = Number(z);
+            if (!Number.isFinite(xx) || !Number.isFinite(zz)) return;
+            points.push({ x: xx, y, z: zz });
+        };
+
+        const addWorldXZ = (w) => {
+            if (!w) return;
+            addXZ(w.x, w.z);
+        };
+
+        if (selection?.type === 'point') {
+            const found = this._findSchemaPoint(selection.roadId, selection.pointId);
+            if (found?.point) {
+                const w = this._schemaPointWorld(found.point);
+                addXZ(w.x, w.z);
+            }
+        } else if (selection?.type === 'segment') {
+            const segId = selection.segmentId ?? null;
+            const seg = derived?.segments?.find?.((s) => s?.id === segId) ?? null;
+            if (seg?.aWorld && seg?.bWorld) {
+                addWorldXZ(seg.aWorld);
+                addWorldXZ(seg.bWorld);
+            }
+        } else if (selection?.type === 'road') {
+            const roadId = selection.roadId ?? null;
+            const found = this._findSchemaRoad(roadId);
+            const pts = found?.road?.points ?? [];
+            for (const p of pts) {
+                const w = this._schemaPointWorld(p);
+                addXZ(w.x, w.z);
+            }
+        } else if (selection?.type === 'junction') {
+            const id = selection.junctionId ?? null;
+            const junction = derived?.junctions?.find?.((j) => j?.id === id) ?? null;
+            const endpoints = junction?.endpoints ?? [];
+            for (const ep of endpoints) addWorldXZ(ep?.world);
+        }
+
+        if (!points.length) {
+            const draft = this._draft ?? null;
+            const pts = draft?.points ?? [];
+            for (const p of pts) {
+                const w = this._schemaPointWorld(p);
+                addXZ(w.x, w.z);
+            }
+        }
+
+        if (!points.length) {
+            const tileSize = Number(this._tileSize) || 24;
+            const half = tileSize * 0.5;
+            const ox = Number(this._origin?.x) || 0;
+            const oz = Number(this._origin?.z) || 0;
+            const maxX = Math.max(0, (this._mapWidth ?? 1) - 1);
+            const maxY = Math.max(0, (this._mapHeight ?? 1) - 1);
+            return {
+                box: {
+                    min: { x: ox - half, y, z: oz - half },
+                    max: { x: ox + maxX * tileSize + half, y, z: oz + maxY * tileSize + half }
+                }
+            };
+        }
+
+        let minX = Infinity;
+        let minZ = Infinity;
+        let maxX = -Infinity;
+        let maxZ = -Infinity;
+        for (const p of points) {
+            if (p.x < minX) minX = p.x;
+            if (p.z < minZ) minZ = p.z;
+            if (p.x > maxX) maxX = p.x;
+            if (p.z > maxZ) maxZ = p.z;
+        }
+
+        const pad = Math.max(2, (Number(this._tileSize) || 24) * 0.4);
         return {
-            yaw: Number(this._orbitYaw) || 0,
-            pitch: Number(this._orbitPitch) || 0,
-            target: { x: Number(this._orbitTarget?.x) || 0, z: Number(this._orbitTarget?.z) || 0 }
+            box: {
+                min: { x: minX - pad, y, z: minZ - pad },
+                max: { x: maxX + pad, y, z: maxZ + pad }
+            }
         };
     }
 
-    setCameraOrbit({ yaw = null, pitch = null } = {}) {
-        if (yaw !== null) this._orbitYaw = Number(yaw) || 0;
-        if (pitch !== null) this._orbitPitch = Number(pitch) || 0;
-        this._syncOrbitCamera();
-    }
-
-    orbitCameraBy({ yawDelta = 0, pitchDelta = 0 } = {}) {
-        const dyaw = Number(yawDelta) || 0;
-        const dpitch = Number(pitchDelta) || 0;
-        this._orbitYaw = (Number(this._orbitYaw) || 0) + dyaw;
-        this._orbitPitch = (Number(this._orbitPitch) || 0) + dpitch;
-        this._syncOrbitCamera();
-    }
-
-    resetCameraOrbit() {
-        this._orbitYaw = 0;
-        this._orbitPitch = 0;
-        this._syncOrbitCamera();
-    }
-
     _syncOrbitCamera() {
-        const cam = this.camera;
-        if (!cam) return;
-
         const min = Number.isFinite(this._zoomMin) ? this._zoomMin : 0;
         const max = Number.isFinite(this._zoomMax) ? this._zoomMax : min;
-        this._zoom = clamp(Number(this._zoom) || min, min, max);
 
-        const yaw = Number(this._orbitYaw) || 0;
-        const pitchMax = Math.PI * 0.5 - 0.08;
-        const pitchMin = 0.02;
-        const pitch = clamp(Number(this._orbitPitch) || 0, pitchMin, pitchMax);
-        this._orbitPitch = pitch;
+        const orbit = this.controls?.getOrbit?.() ?? null;
+        const radius = Number(orbit?.radius);
+        const current = Number.isFinite(radius) ? radius : (Number(this._zoom) || min);
+        this._zoom = clamp(current, min, max);
 
-        const r = Number(this._zoom) || 0;
-        const sin = Math.sin(pitch);
-        const cos = Math.cos(pitch);
-        const target = this._orbitTarget ?? new THREE.Vector3();
-        const tx = Number(target.x) || 0;
-        const ty = Number.isFinite(target.y) ? target.y : this._groundY;
-        const tz = Number(target.z) || 0;
-
-        const ox = r * sin * Math.sin(yaw);
-        const oz = r * sin * Math.cos(yaw);
-        const oy = r * cos;
-
-        cam.position.set(tx + ox, ty + oy, tz + oz);
-        cam.up.set(0, 1, 0);
-        cam.lookAt(tx, ty, tz);
-        cam.updateMatrixWorld(true);
         this._applyDistanceScaledEdgeLineWidths();
         this._applyControlPointBaseScales();
     }
@@ -2357,7 +2392,7 @@ export class RoadDebuggerView {
     }
 
     updateHoverFromPointer() {
-        if (this._isDraggingCamera || this._pendingClick || this.isPointDragActive?.()) return;
+        if (this._pendingClick || this.isPointDragActive?.()) return;
         const pick = this._pickHoverAtPointer();
         if (pick?.type === 'junction_candidate') {
             const next = pick.candidateId ?? null;

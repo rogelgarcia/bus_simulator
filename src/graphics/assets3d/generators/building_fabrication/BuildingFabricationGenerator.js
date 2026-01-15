@@ -7,7 +7,7 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 
 import { ROOF_COLOR, resolveRoofColorHex } from '../../../../app/buildings/RoofColor.js';
 import { resolveBeltCourseColorHex } from '../../../../app/buildings/BeltCourseColor.js';
-import { BUILDING_STYLE, isBuildingStyle } from '../../../../app/buildings/BuildingStyle.js';
+import { BUILDING_STYLE } from '../../../../app/buildings/BuildingStyle.js';
 import { WINDOW_TYPE, getDefaultWindowParams, getWindowTexture, isWindowTypeId } from '../buildings/WindowTextureGenerator.js';
 import { computeBuildingLoopsFromTiles, offsetOrthogonalLoopXZ, resolveBuildingStyleWallMaterialUrls } from '../buildings/BuildingGenerator.js';
 import { LAYER_TYPE, normalizeBuildingLayers } from './BuildingFabricationTypes.js';
@@ -272,7 +272,7 @@ function makeDeterministicColor(seed) {
 }
 
 function makeWallMaterial({ style, baseColorHex, textureCache }) {
-    const styleId = isBuildingStyle(style) ? style : BUILDING_STYLE.DEFAULT;
+    const styleId = typeof style === 'string' && style ? style : BUILDING_STYLE.DEFAULT;
     const urls = resolveBuildingStyleWallMaterialUrls(styleId);
     const url = urls?.baseColorUrl ?? null;
     const normalUrl = urls?.normalUrl ?? null;
@@ -316,7 +316,7 @@ function makeTextureMaterialFromBuildingStyle({
     polygonOffsetFactor = 0,
     polygonOffsetUnits = 0
 } = {}) {
-    const styleId = isBuildingStyle(style) ? style : BUILDING_STYLE.DEFAULT;
+    const styleId = typeof style === 'string' && style ? style : BUILDING_STYLE.DEFAULT;
     const urls = resolveBuildingStyleWallMaterialUrls(styleId);
     const url = urls?.baseColorUrl ?? null;
     const normalUrl = urls?.normalUrl ?? null;

@@ -8,6 +8,7 @@ import { ROOF_COLOR, getRoofColorOptions, isRoofColor } from '../../../app/build
 import { PickerPopup } from '../shared/PickerPopup.js';
 import { WINDOW_TYPE, getDefaultWindowParams, getWindowTypeOptions, isWindowTypeId } from '../../assets3d/generators/buildings/WindowTextureGenerator.js';
 import { normalizeWindowParams, normalizeWindowTypeIdOrLegacyStyle } from '../../assets3d/generators/buildings/WindowTypeCompatibility.js';
+import { getPbrMaterialOptionsForBuildings } from '../../assets3d/materials/PbrMaterialCatalog.js';
 import { LAYER_TYPE, cloneBuildingLayers, createDefaultFloorLayer, createDefaultRoofLayer, normalizeBuildingLayers } from '../../assets3d/generators/building_fabrication/BuildingFabricationTypes.js';
 
 function clamp(value, min, max) {
@@ -2094,6 +2095,19 @@ export class BuildingFabricationUI {
         };
 
         const getStyleOption = (id) => (this._buildingStyleOptions ?? []).find((opt) => opt?.id === id) ?? null;
+        const wallTextureDefs = [
+            ...(this._buildingStyleOptions ?? []).map((opt) => ({
+                id: opt.id,
+                label: opt.label,
+                wallTextureUrl: opt.wallTextureUrl ?? null
+            })),
+            ...getPbrMaterialOptionsForBuildings().map((opt) => ({
+                id: opt.id,
+                label: opt.label,
+                wallTextureUrl: opt.previewUrl ?? null
+            }))
+        ];
+        const getWallTextureOption = (id) => wallTextureDefs.find((opt) => opt?.id === id) ?? null;
         const getWindowOption = (id) => (this._windowTypeOptions ?? []).find((opt) => opt?.id === id) ?? null;
         const getBeltColorOption = (id) => (this._beltCourseColorOptions ?? []).find((opt) => opt?.id === id) ?? null;
         const getRoofColorOption = (id) => (this._roofColorOptions ?? []).find((opt) => opt?.id === id) ?? null;
@@ -2110,6 +2124,13 @@ export class BuildingFabricationUI {
         };
 
         const makeTextureMaterialOptions = () => (this._buildingStyleOptions ?? []).map((opt) => ({
+            id: `texture:${opt.id}`,
+            label: opt.label,
+            kind: 'texture',
+            previewUrl: opt.wallTextureUrl
+        }));
+
+        const makeWallTextureMaterialOptions = () => wallTextureDefs.map((opt) => ({
             id: `texture:${opt.id}`,
             label: opt.label,
             kind: 'texture',
@@ -2196,6 +2217,7 @@ export class BuildingFabricationUI {
         };
 
         const textureMaterialOptions = makeTextureMaterialOptions();
+        const wallTextureMaterialOptions = makeWallTextureMaterialOptions();
         const beltColorMaterialOptions = makeBeltColorMaterialOptions();
         const roofColorMaterialOptions = makeRoofColorMaterialOptions();
 
@@ -2353,7 +2375,7 @@ export class BuildingFabricationUI {
                     setMaterialThumbToColor(wallMaterialPicker.thumb, found?.hex ?? 0xffffff);
                 } else {
                     const styleId = typeof wallMaterial?.id === 'string' && wallMaterial.id ? wallMaterial.id : (layer?.style ?? BUILDING_STYLE.DEFAULT);
-                    const found = getStyleOption(styleId) ?? null;
+                    const found = getWallTextureOption(styleId) ?? null;
                     const label = found?.label ?? styleId;
                     wallMaterialPicker.text.textContent = label;
                     setMaterialThumbToTexture(wallMaterialPicker.thumb, found?.wallTextureUrl ?? '', label);
@@ -2363,7 +2385,7 @@ export class BuildingFabricationUI {
                     openMaterialPicker({
                         title: 'Wall material',
                         material: layer.material ?? wallMaterial,
-                        textureOptions: textureMaterialOptions,
+                        textureOptions: wallTextureMaterialOptions,
                         colorOptions: beltColorMaterialOptions,
                         onSelect: (spec) => {
                             layer.material = spec;
@@ -2375,7 +2397,7 @@ export class BuildingFabricationUI {
                                 wallMaterialPicker.text.textContent = label;
                                 setMaterialThumbToColor(wallMaterialPicker.thumb, found?.hex ?? 0xffffff);
                             } else {
-                                const found = getStyleOption(spec.id) ?? null;
+                                const found = getWallTextureOption(spec.id) ?? null;
                                 const label = found?.label ?? spec.id;
                                 wallMaterialPicker.text.textContent = label;
                                 setMaterialThumbToTexture(wallMaterialPicker.thumb, found?.wallTextureUrl ?? '', label);

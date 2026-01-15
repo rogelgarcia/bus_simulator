@@ -105,6 +105,7 @@ export class InspectorRoomView {
     enter() {
         this.room.enter();
         this.ui.mount();
+        this.room.setUiRoot(this.ui.root);
 
         this.ui.onModeChange = (mode) => this._setMode(mode, { user: true });
         this.ui.onCollectionChange = (collectionId) => this._setCollection(collectionId);
@@ -223,6 +224,7 @@ export class InspectorRoomView {
         this.ui.onCameraPreset = null;
 
         this.ui.unmount();
+        this.room.setUiRoot(null);
 
         this.meshes.dispose();
         this.textures.dispose();

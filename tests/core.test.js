@@ -2459,7 +2459,7 @@ async function runTests() {
             state._roadModeEnabled = false;
             state._buildingModeEnabled = false;
             state._handlePointerDown(e);
-            assertTrue(dragStarted, 'Drag should start when not editing.');
+            assertFalse(dragStarted, 'Drag should not start when not editing (tool camera uses RMB/MMB).');
         });
 
         test('MapDebuggerState: loadCitySpec triggers rebuild path', () => {
@@ -4226,7 +4226,7 @@ async function runTests() {
 	            }
 	        });
 
-        test('RoadDebugger: distance-scaled edge thickness is automatic (Task 89)', () => {
+	        test('RoadDebugger: distance-scaled edge thickness is automatic (Task 89)', () => {
             const engine = {
                 canvas: document.createElement('canvas'),
                 camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
@@ -4243,10 +4243,10 @@ async function runTests() {
 	                view.finishRoadDraft();
 	                view.setRenderOptions({ edges: true });
 
-	                view._zoom = view._zoomMin;
-	                view._syncOrbitCamera();
-		                const asphaltNear = view._materials?.lineBase?.get?.('asphalt_edge_left') ?? null;
-		                const laneNear = view._materials?.lineBase?.get?.('lane_edge_left') ?? null;
+		                view.controls?.setOrbit?.({ radius: view._zoomMin }, { immediate: true });
+		                view._syncOrbitCamera();
+			                const asphaltNear = view._materials?.lineBase?.get?.('asphalt_edge_left') ?? null;
+			                const laneNear = view._materials?.lineBase?.get?.('lane_edge_left') ?? null;
 	                assertTrue(!!asphaltNear, 'Expected asphalt edge line material.');
 	                assertTrue(!!laneNear, 'Expected lane edge line material.');
 	                const nearAsphaltWidth = Number(asphaltNear.linewidth) || 0;
@@ -4254,10 +4254,10 @@ async function runTests() {
 	                assertNear(nearAsphaltWidth, 2, 1e-6, 'Expected full asphalt edge thickness at near zoom.');
 	                assertNear(nearLaneWidth, 2, 1e-6, 'Expected full lane edge thickness at near zoom.');
 
-                view._zoom = view._zoomMax;
-                view._syncOrbitCamera();
-                const asphaltFar = view._materials?.lineBase?.get?.('asphalt_edge_left') ?? null;
-                const laneFar = view._materials?.lineBase?.get?.('lane_edge_left') ?? null;
+	                view.controls?.setOrbit?.({ radius: view._zoomMax }, { immediate: true });
+	                view._syncOrbitCamera();
+	                const asphaltFar = view._materials?.lineBase?.get?.('asphalt_edge_left') ?? null;
+	                const laneFar = view._materials?.lineBase?.get?.('lane_edge_left') ?? null;
 	                assertTrue(!!asphaltFar, 'Expected asphalt edge line material at far zoom.');
 	                assertTrue(!!laneFar, 'Expected lane edge line material at far zoom.');
 	                const farAsphaltWidth = Number(asphaltFar.linewidth) || 0;
@@ -5866,7 +5866,7 @@ async function runTests() {
             assertTrue(ROAD_DEBUGGER_WHEEL_ZOOM_DIVISOR < 12000, 'Expected wheel zoom divisor to be faster than legacy 12000.');
         });
 
-        test('RoadDebuggerUI: orbit widget exists and updates camera when dragged', () => {
+        test('RoadDebuggerUI: orbit widget removed and RMB orbit updates camera', () => {
             const engine = {
                 canvas: document.createElement('canvas'),
                 camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
@@ -5874,35 +5874,46 @@ async function runTests() {
                 clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
             };
 
+            engine.canvas.width = 800;
+            engine.canvas.height = 600;
+            engine.canvas.style.width = '800px';
+            engine.canvas.style.height = '600px';
+            engine.canvas.style.position = 'fixed';
+            engine.canvas.style.left = '0px';
+            engine.canvas.style.top = '0px';
+            engine.canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 800, height: 600 });
+            document.body.appendChild(engine.canvas);
+
             const view = new RoadDebuggerView(engine, { uiEnabled: true });
             view.enter();
             try {
                 const surface = document.querySelector('.road-debugger-orbit-surface');
-                assertTrue(!!surface, 'Expected orbit widget surface.');
+                assertEqual(surface, null, 'Expected orbit widget surface to be removed.');
                 assertTrue(typeof PointerEvent !== 'undefined', 'Expected PointerEvent support for orbit widget test.');
 
                 const before = view.camera.position.clone();
-                surface.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 10, clientY: 10, pointerId: 1 }));
-                surface.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 60, clientY: 60, pointerId: 1 }));
-                surface.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: 60, clientY: 60, pointerId: 1 }));
+                engine.canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 2, clientX: 380, clientY: 300, pointerId: 1 }));
+                engine.canvas.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, button: 2, clientX: 420, clientY: 340, pointerId: 1 }));
+                engine.canvas.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, button: 2, clientX: 420, clientY: 340, pointerId: 1 }));
+                view.controls?.update?.(1 / 60);
                 const after = view.camera.position.clone();
 
-                assertTrue(after.distanceTo(before) > 1e-6, 'Expected orbit widget drag to update camera position.');
+                assertTrue(after.distanceTo(before) > 1e-6, 'Expected RMB orbit to update camera position.');
             } finally {
                 view.exit();
+                engine.canvas.remove();
             }
         });
     } catch (e) {
         console.log('⏭️  Road Debugger camera controls tests skipped:', e.message);
     }
 
-    // ========== Road Debugger Pan Stability Tests (Task 66) ==========
-    try {
-        const { RoadDebuggerView } = await import('/src/graphics/gui/road_debugger/RoadDebuggerView.js');
-        const { handlePointerDown, handlePointerMove } = await import('/src/graphics/gui/road_debugger/RoadDebuggerInput.js');
+	    // ========== Road Debugger Pan Stability Tests (Task 66) ==========
+	    try {
+	        const { RoadDebuggerView } = await import('/src/graphics/gui/road_debugger/RoadDebuggerView.js');
 
-        test('RoadDebuggerInput: mouse pan is deterministic for a synthetic pointer sequence', () => {
-            assertTrue(typeof PointerEvent !== 'undefined', 'Expected PointerEvent support for pan test.');
+	        test('RoadDebuggerInput: mouse pan is deterministic for a synthetic pointer sequence', () => {
+	            assertTrue(typeof PointerEvent !== 'undefined', 'Expected PointerEvent support for pan test.');
 
             const run = () => {
                 const canvas = document.createElement('canvas');
@@ -5917,16 +5928,19 @@ async function runTests() {
                     clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
                 };
 
-                const view = new RoadDebuggerView(engine, { uiEnabled: false });
-                view.enter();
-                try {
-                    const start = view.camera.position.clone();
-                    handlePointerDown(view, { button: 1, clientX: 100, clientY: 100, pointerId: 1, target: canvas });
-                    handlePointerMove(view, { clientX: 120, clientY: 100, pointerId: 1, target: window });
-                    const after = view.camera.position.clone();
-                    return { start, after };
-                } finally {
-                    view.exit();
+	                const view = new RoadDebuggerView(engine, { uiEnabled: false });
+	                view.enter();
+	                try {
+                        view.controls.enableDamping = false;
+	                    const start = view.camera.position.clone();
+	                    canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 1, clientX: 100, clientY: 100, pointerId: 1 }));
+	                    canvas.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 120, clientY: 100, pointerId: 1 }));
+	                    canvas.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: 120, clientY: 100, pointerId: 1 }));
+                        view.controls.update(1 / 60);
+	                    const after = view.camera.position.clone();
+	                    return { start, after };
+	                } finally {
+	                    view.exit();
                 }
             };
 
@@ -5938,7 +5952,7 @@ async function runTests() {
             assertNear(a.after.z, b.after.z, 1e-6, 'Pan Z should be deterministic.');
         });
 
-        test('RoadDebuggerInput: mouse pan applies no extra delta when pointer does not move', () => {
+	        test('RoadDebuggerInput: mouse pan applies no extra delta when pointer does not move', () => {
             const canvas = document.createElement('canvas');
             canvas.width = 200;
             canvas.height = 200;
@@ -5951,21 +5965,55 @@ async function runTests() {
                 clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
             };
 
-            const view = new RoadDebuggerView(engine, { uiEnabled: false });
-            view.enter();
-            try {
-                handlePointerDown(view, { button: 1, clientX: 100, clientY: 100, pointerId: 1, target: canvas });
-                handlePointerMove(view, { clientX: 120, clientY: 100, pointerId: 1, target: window });
-                const after = view.camera.position.clone();
-                handlePointerMove(view, { clientX: 120, clientY: 100, pointerId: 1, target: window });
-                const after2 = view.camera.position.clone();
-                assertTrue(after2.distanceTo(after) < 1e-6, 'Expected no camera movement when pointer stays still.');
-            } finally {
-                view.exit();
+	            const view = new RoadDebuggerView(engine, { uiEnabled: false });
+	            view.enter();
+	            try {
+                    view.controls.enableDamping = false;
+	                canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 1, clientX: 100, clientY: 100, pointerId: 1 }));
+	                canvas.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 120, clientY: 100, pointerId: 1 }));
+	                canvas.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: 120, clientY: 100, pointerId: 1 }));
+                    view.controls.update(1 / 60);
+	                const after = view.camera.position.clone();
+                    canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 1, clientX: 120, clientY: 100, pointerId: 1 }));
+                    canvas.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 120, clientY: 100, pointerId: 1 }));
+                    canvas.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: 120, clientY: 100, pointerId: 1 }));
+                    view.controls.update(1 / 60);
+	                const after2 = view.camera.position.clone();
+	                assertTrue(after2.distanceTo(after) < 1e-6, 'Expected no camera movement when pointer stays still.');
+	            } finally {
+	                view.exit();
             }
         });
     } catch (e) {
         console.log('⏭️  Road Debugger pan stability tests skipped:', e.message);
+    }
+
+    // ========== Rapier Debugger Renderer State Tests ==========
+    try {
+        const { RapierDebuggerScene } = await import('/src/graphics/gui/rapier_debugger/RapierDebuggerScene.js');
+
+        test('RapierDebuggerScene: restores renderer localClippingEnabled on dispose', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                renderer: {
+                    localClippingEnabled: false,
+                    getSize: (out) => {
+                        out.set(800, 600);
+                        return out;
+                    }
+                }
+            };
+
+            const scene = new RapierDebuggerScene(engine);
+            scene.enter();
+            assertTrue(engine.renderer.localClippingEnabled === true, 'Expected Rapier debugger to enable local clipping.');
+            scene.dispose();
+            assertTrue(engine.renderer.localClippingEnabled === false, 'Expected Rapier debugger to restore local clipping state.');
+        });
+    } catch (e) {
+        console.log('⏭️  Rapier Debugger renderer state tests skipped:', e.message);
     }
 
     // ========== Road Debugger Tile Offset Normalization Tests (Task 68) ==========
@@ -6175,12 +6223,45 @@ async function runTests() {
         resolveBuildingStyleWallMaterialUrls
     } = await import('/src/graphics/content3d/buildings/BuildingStyleCatalog.js');
 
-    test('BuildingStyleCatalog: brick style exposes PBR URLs', () => {
+    test('BuildingStyleCatalog: brick style uses lightweight wall texture', () => {
         assertEqual(resolveBuildingStyleLabel('brick'), 'Brick', 'Brick label mismatch.');
         const urls = resolveBuildingStyleWallMaterialUrls('brick');
-        assertTrue(typeof urls.baseColorUrl === 'string' && urls.baseColorUrl.includes('basecolor'), 'Expected baseColorUrl.');
-        assertTrue(typeof urls.normalUrl === 'string' && urls.normalUrl.includes('normal'), 'Expected normalUrl.');
-        assertTrue(typeof urls.ormUrl === 'string' && urls.ormUrl.includes('arm'), 'Expected ormUrl.');
+        assertTrue(typeof urls.baseColorUrl === 'string' && urls.baseColorUrl.includes('brick_wall'), 'Expected baseColorUrl.');
+        assertEqual(urls.normalUrl, null, 'Expected normalUrl to be null.');
+        assertEqual(urls.ormUrl, null, 'Expected ormUrl to be null.');
+    });
+
+    const {
+        getPbrMaterialOptions,
+        getPbrMaterialOptionsForBuildings
+    } = await import('/src/graphics/content3d/materials/PbrMaterialCatalog.js');
+
+    test('BuildingStyleCatalog: PBR style ids resolve safely when assets are missing', () => {
+        assertEqual(resolveBuildingStyleLabel('pbr.red_brick'), 'Red Brick', 'PBR label mismatch.');
+        const urls = resolveBuildingStyleWallMaterialUrls('pbr.red_brick');
+        const hasAny = !!urls.baseColorUrl || !!urls.normalUrl || !!urls.ormUrl;
+        if (!hasAny) {
+            assertEqual(urls.baseColorUrl, null, 'Expected missing baseColorUrl for local-only assets.');
+            assertEqual(urls.normalUrl, null, 'Expected missing normalUrl for local-only assets.');
+            assertEqual(urls.ormUrl, null, 'Expected missing ormUrl for local-only assets.');
+            return;
+        }
+        assertTrue(typeof urls.baseColorUrl === 'string' && urls.baseColorUrl.includes('/assets/public/pbr/red_brick/basecolor'), 'Expected baseColorUrl to point at local-only PBR folder.');
+        assertTrue(typeof urls.normalUrl === 'string' && urls.normalUrl.includes('/assets/public/pbr/red_brick/normal_gl'), 'Expected normalUrl to point at local-only PBR folder.');
+        assertTrue(typeof urls.ormUrl === 'string' && urls.ormUrl.includes('/assets/public/pbr/red_brick/arm'), 'Expected ormUrl to point at local-only PBR folder.');
+    });
+
+    test('PbrMaterialCatalog: exposes expected PBR ids', () => {
+        const all = getPbrMaterialOptions();
+        assertTrue(all.some((opt) => opt?.id === 'pbr.red_brick'), 'Expected pbr.red_brick.');
+        assertTrue(all.some((opt) => opt?.id === 'pbr.asphalt_02'), 'Expected pbr.asphalt_02.');
+    });
+
+    test('PbrMaterialCatalog: building list excludes grass and surfaces', () => {
+        const building = getPbrMaterialOptionsForBuildings();
+        assertTrue(building.some((opt) => opt?.id === 'pbr.red_brick'), 'Expected pbr.red_brick to be building-eligible.');
+        assertFalse(building.some((opt) => opt?.id === 'pbr.asphalt_02'), 'Did not expect pbr.asphalt_02 to be building-eligible.');
+        assertFalse(building.some((opt) => String(opt?.id ?? '').toLowerCase().includes('grass')), 'Did not expect grass materials in building list.');
     });
 
     const { sampleConnector } = await import('/src/app/geometry/ConnectorSampling.js');
