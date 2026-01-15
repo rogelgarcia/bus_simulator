@@ -3,6 +3,9 @@ import * as THREE from 'three';
 import { wrapAngle } from '../math/RoadMath.js';
 import { mergeBufferGeometries, applyWorldSpaceUV_XZ } from '../geometry/RoadGeometry.js';
 import { solveConnectorPath } from '../../../../../app/geometry/ConnectorPathSolver.js';
+import { sampleConnector as sampleConnectorApp } from '../../../../../app/geometry/ConnectorSampling.js';
+
+export { sampleConnector } from '../../../../../app/geometry/ConnectorSampling.js';
 
 const EPS = 1e-8;
 const TAU = Math.PI * 2;
@@ -247,63 +250,6 @@ export function solveFilletConnector({ p0, dir0, p1, dir1, R } = {}) {
     };
 }
 
-function appendSamplePoint(points, tangents, p, t) {
-    const last = points[points.length - 1];
-    if (last && last.distanceToSquared(p) < 1e-10) return;
-    points.push(p);
-    tangents.push(t);
-}
-
-export function sampleConnector(connector, stepMeters = 0.5) {
-    if (!connector) return { points: [], tangents: [] };
-    const step = Math.max(0.05, stepMeters ?? 0.5);
-    const points = [];
-    const tangents = [];
-    const sampleArc = (arc) => {
-        if (!arc || arc.deltaAngle < EPS) return;
-        const len = arc.deltaAngle * arc.radius;
-        const steps = Math.max(1, Math.ceil(len / step));
-        const sign = arc.turnDir === 'L' ? 1 : -1;
-        for (let i = 0; i <= steps; i++) {
-            const t = i / steps;
-            const ang = arc.startAngle + sign * arc.deltaAngle * t;
-            const p = new THREE.Vector2(
-                arc.center.x + Math.cos(ang) * arc.radius,
-                arc.center.y + Math.sin(ang) * arc.radius
-            );
-            const tan = travelTangent(arc.center, p, arc.turnDir);
-            appendSamplePoint(points, tangents, p, tan);
-        }
-    };
-    const sampleStraight = (straight) => {
-        if (!straight) return;
-        const start = straight.startPoint ?? straight.start ?? null;
-        const end = straight.endPoint ?? straight.end ?? null;
-        if (!start || !end) return;
-        const len = straight.length ?? end.clone().sub(start).length();
-        if (len < EPS) return;
-        const steps = Math.max(1, Math.ceil(len / step));
-        const dir = straight.direction ?? straight.dir ?? end.clone().sub(start).normalize();
-        for (let i = 0; i <= steps; i++) {
-            const t = i / steps;
-            const p = start.clone().lerp(end, t);
-            appendSamplePoint(points, tangents, p, dir.clone());
-        }
-    };
-    const segments = Array.isArray(connector) ? connector : (connector.segments ?? null);
-    if (segments && segments.length) {
-        for (const seg of segments) {
-            if (seg.type === 'ARC') sampleArc(seg);
-            else if (seg.type === 'STRAIGHT') sampleStraight(seg);
-        }
-    } else {
-        sampleArc(connector.arc0);
-        sampleStraight(connector.straight);
-        sampleArc(connector.arc1);
-    }
-    return { points, tangents };
-}
-
 function shapeFromEdges(left, right) {
     const shape = new THREE.Shape();
     if (!left.length || !right.length) return shape;
@@ -367,7 +313,7 @@ export function buildConnectorDemoGroup() {
         radius: 4.5,
         allowFallback: true
     });
-    const { points, tangents } = sampleConnector(connector, 0.5);
+    const { points, tangents } = sampleConnectorApp(connector, 0.5);
     const { asphaltGeometry, curbGeometry } = buildRoadMeshesFromCenterline(points, tangents, 6.4, 0.3, 0.18, 3.5);
     if (asphaltGeometry) {
         const asphaltMat = new THREE.MeshStandardMaterial({ color: 0x2b2b2b, roughness: 0.95 });

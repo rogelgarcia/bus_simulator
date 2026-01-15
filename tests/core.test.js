@@ -6148,6 +6148,67 @@ async function runTests() {
         assertEqual(ui.lightY.value, String(ui.getLightState().y), 'Expected lightY slider to match light state.');
     });
 
+    // ========== AI-113 Registry Tests ==========
+    const { WINDOW_STYLE } = await import('/src/app/buildings/WindowStyle.js');
+    const { WINDOW_TYPE: WINDOW_TYPE_IDS } = await import('/src/graphics/assets3d/generators/buildings/WindowTextureGenerator.js');
+    const {
+        windowTypeIdFromLegacyWindowStyle,
+        legacyWindowStyleFromWindowTypeId,
+        normalizeWindowTypeIdOrLegacyStyle
+    } = await import('/src/graphics/assets3d/generators/buildings/WindowTypeCompatibility.js');
+
+    test('WindowTypeCompatibility: legacy styles map to window type IDs', () => {
+        assertEqual(windowTypeIdFromLegacyWindowStyle(WINDOW_STYLE.DARK), WINDOW_TYPE_IDS.STYLE_DARK, 'DARK mismatch.');
+        assertEqual(windowTypeIdFromLegacyWindowStyle(WINDOW_STYLE.BLUE), WINDOW_TYPE_IDS.STYLE_BLUE, 'BLUE mismatch.');
+        assertEqual(windowTypeIdFromLegacyWindowStyle(WINDOW_STYLE.GRID), WINDOW_TYPE_IDS.STYLE_GRID, 'GRID mismatch.');
+        assertEqual(normalizeWindowTypeIdOrLegacyStyle(WINDOW_STYLE.WARM), WINDOW_TYPE_IDS.STYLE_WARM, 'WARM mismatch.');
+        assertEqual(normalizeWindowTypeIdOrLegacyStyle('not_a_style'), WINDOW_TYPE_IDS.STYLE_DEFAULT, 'Default mismatch.');
+    });
+
+    test('WindowTypeCompatibility: window types map to legacy styles', () => {
+        assertEqual(legacyWindowStyleFromWindowTypeId(WINDOW_TYPE_IDS.STYLE_GREEN), WINDOW_STYLE.GREEN, 'GREEN mismatch.');
+        assertEqual(legacyWindowStyleFromWindowTypeId(WINDOW_TYPE_IDS.ARCH_V1), WINDOW_STYLE.DEFAULT, 'ARCH mismatch.');
+    });
+
+    const {
+        resolveBuildingStyleLabel,
+        resolveBuildingStyleWallMaterialUrls
+    } = await import('/src/graphics/content3d/buildings/BuildingStyleCatalog.js');
+
+    test('BuildingStyleCatalog: brick style exposes PBR URLs', () => {
+        assertEqual(resolveBuildingStyleLabel('brick'), 'Brick', 'Brick label mismatch.');
+        const urls = resolveBuildingStyleWallMaterialUrls('brick');
+        assertTrue(typeof urls.baseColorUrl === 'string' && urls.baseColorUrl.includes('basecolor'), 'Expected baseColorUrl.');
+        assertTrue(typeof urls.normalUrl === 'string' && urls.normalUrl.includes('normal'), 'Expected normalUrl.');
+        assertTrue(typeof urls.ormUrl === 'string' && urls.ormUrl.includes('arm'), 'Expected ormUrl.');
+    });
+
+    const { sampleConnector } = await import('/src/app/geometry/ConnectorSampling.js');
+    const THREE_NS = await import('three');
+
+    test('ConnectorSampling: straight connector samples endpoints', () => {
+        const start = new THREE_NS.Vector2(0, 0);
+        const end = new THREE_NS.Vector2(1, 0);
+        const connector = {
+            segments: [{
+                type: 'STRAIGHT',
+                startPoint: start,
+                endPoint: end,
+                length: 1,
+                direction: new THREE_NS.Vector2(1, 0)
+            }]
+        };
+        const { points, tangents } = sampleConnector(connector, 0.4);
+        assertTrue(points.length >= 2, 'Expected at least 2 points.');
+        assertEqual(points[0].x, 0, 'Expected first point x=0.');
+        assertEqual(points[0].y, 0, 'Expected first point y=0.');
+        assertNear(points[points.length - 1].x, 1, 1e-6, 'Expected last point x≈1.');
+        assertNear(points[points.length - 1].y, 0, 1e-6, 'Expected last point y≈0.');
+        assertTrue(tangents.length === points.length, 'Expected tangents to match points length.');
+        assertNear(tangents[0].x, 1, 1e-6, 'Expected tangent x≈1.');
+        assertNear(tangents[0].y, 0, 1e-6, 'Expected tangent y≈0.');
+    });
+
     // ========== Summary ==========
     console.log('\n' + '='.repeat(50));
     if (errors.length === 0) {

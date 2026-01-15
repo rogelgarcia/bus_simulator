@@ -1,5 +1,5 @@
 // src/graphics/assets3d/generators/road/connectors/ConnectorSampling.js
-import { sampleConnector } from './ArcConnector.js';
+import { sampleConnector } from '../../../../../app/geometry/ConnectorSampling.js';
 
 export function sampleConnectorPoints(connector, curveSampleStep) {
     if (!connector || !connector.ok) return null;

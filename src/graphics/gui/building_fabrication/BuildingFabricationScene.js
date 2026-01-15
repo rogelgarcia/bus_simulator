@@ -12,7 +12,12 @@ import { BUILDING_STYLE, isBuildingStyle } from '../../../app/buildings/Building
 import { WINDOW_STYLE, isWindowStyle } from '../../../app/buildings/WindowStyle.js';
 import { BELT_COURSE_COLOR, isBeltCourseColor } from '../../../app/buildings/BeltCourseColor.js';
 import { ROOF_COLOR, isRoofColor } from '../../../app/buildings/RoofColor.js';
-import { WINDOW_TYPE, getDefaultWindowParams, isWindowTypeId } from '../../assets3d/generators/buildings/WindowTextureGenerator.js';
+import { WINDOW_TYPE, isWindowTypeId } from '../../assets3d/generators/buildings/WindowTextureGenerator.js';
+import {
+    legacyWindowStyleFromWindowTypeId,
+    normalizeWindowParams as normalizeWindowParamsCompat,
+    normalizeWindowTypeIdOrLegacyStyle
+} from '../../assets3d/generators/buildings/WindowTypeCompatibility.js';
 import { createGeneratorConfig } from '../../assets3d/generators/GeneratorParams.js';
 import { createGradientSkyDome } from '../../assets3d/generators/SkyGenerator.js';
 import { generateRoads } from '../../assets3d/generators/RoadGenerator.js';
@@ -71,35 +76,6 @@ function signedArea(points) {
         sum += a.x * b.z - b.x * a.z;
     }
     return sum * 0.5;
-}
-
-function resolveWindowTypeIdFromLegacyStyle(styleId) {
-    const id = isWindowStyle(styleId) ? styleId : WINDOW_STYLE.DEFAULT;
-    if (id === WINDOW_STYLE.DARK) return WINDOW_TYPE.STYLE_DARK;
-    if (id === WINDOW_STYLE.BLUE) return WINDOW_TYPE.STYLE_BLUE;
-    if (id === WINDOW_STYLE.LIGHT_BLUE) return WINDOW_TYPE.STYLE_LIGHT_BLUE;
-    if (id === WINDOW_STYLE.GREEN) return WINDOW_TYPE.STYLE_GREEN;
-    if (id === WINDOW_STYLE.WARM) return WINDOW_TYPE.STYLE_WARM;
-    if (id === WINDOW_STYLE.GRID) return WINDOW_TYPE.STYLE_GRID;
-    return WINDOW_TYPE.STYLE_DEFAULT;
-}
-
-function resolveLegacyStyleFromWindowTypeId(typeId) {
-    if (typeId === WINDOW_TYPE.STYLE_DARK) return WINDOW_STYLE.DARK;
-    if (typeId === WINDOW_TYPE.STYLE_BLUE) return WINDOW_STYLE.BLUE;
-    if (typeId === WINDOW_TYPE.STYLE_LIGHT_BLUE) return WINDOW_STYLE.LIGHT_BLUE;
-    if (typeId === WINDOW_TYPE.STYLE_GREEN) return WINDOW_STYLE.GREEN;
-    if (typeId === WINDOW_TYPE.STYLE_WARM) return WINDOW_STYLE.WARM;
-    if (typeId === WINDOW_TYPE.STYLE_GRID) return WINDOW_STYLE.GRID;
-    return WINDOW_STYLE.DEFAULT;
-}
-
-function normalizeWindowParams(typeId, params) {
-    const defaults = getDefaultWindowParams(typeId);
-    const hasDefaults = defaults && typeof defaults === 'object' && Object.keys(defaults).length > 0;
-    if (!hasDefaults) return {};
-    const p = params && typeof params === 'object' ? params : {};
-    return { ...defaults, ...p };
 }
 
 function disposeTextureProps(mat) {
@@ -683,22 +659,18 @@ export class BuildingFabricationScene {
         const building = this.getSelectedBuilding();
         if (!building) return false;
         const raw = typeof style === 'string' ? style : '';
-        const nextTypeId = isWindowTypeId(raw)
-            ? raw
-            : resolveWindowTypeIdFromLegacyStyle(raw);
-        const nextLegacy = isWindowTypeId(raw)
-            ? resolveLegacyStyleFromWindowTypeId(nextTypeId)
-            : (isWindowStyle(raw) ? raw : WINDOW_STYLE.DEFAULT);
+        const nextTypeId = normalizeWindowTypeIdOrLegacyStyle(raw);
+        const nextLegacy = isWindowStyle(raw) ? raw : legacyWindowStyleFromWindowTypeId(nextTypeId);
 
         const changed = nextTypeId !== building.windowTypeId || nextLegacy !== building.windowStyle;
         if (!changed) return false;
         building.windowTypeId = nextTypeId;
         building.windowStyle = nextLegacy;
-        building.windowParams = normalizeWindowParams(nextTypeId, null);
+        building.windowParams = normalizeWindowParamsCompat(nextTypeId, null);
         if (!building.streetEnabled) {
             building.streetWindowTypeId = nextTypeId;
             building.streetWindowStyle = nextLegacy;
-            building.streetWindowParams = normalizeWindowParams(nextTypeId, null);
+            building.streetWindowParams = normalizeWindowParamsCompat(nextTypeId, null);
         }
         this._rebuildBuildingMesh(building);
         return true;
@@ -849,18 +821,16 @@ export class BuildingFabricationScene {
         const building = this.getSelectedBuilding();
         if (!building) return false;
         const raw = typeof style === 'string' ? style : '';
-        const nextTypeId = isWindowTypeId(raw)
+        const nextTypeId = normalizeWindowTypeIdOrLegacyStyle(raw);
+        const nextLegacy = isWindowStyle(raw)
             ? raw
-            : resolveWindowTypeIdFromLegacyStyle(raw);
-        const nextLegacy = isWindowTypeId(raw)
-            ? resolveLegacyStyleFromWindowTypeId(nextTypeId)
-            : (isWindowStyle(raw) ? raw : building.windowStyle);
+            : (isWindowTypeId(raw) ? legacyWindowStyleFromWindowTypeId(nextTypeId) : building.windowStyle);
 
         const changed = nextTypeId !== building.streetWindowTypeId || nextLegacy !== building.streetWindowStyle;
         if (!changed) return false;
         building.streetWindowTypeId = nextTypeId;
         building.streetWindowStyle = nextLegacy;
-        building.streetWindowParams = normalizeWindowParams(nextTypeId, null);
+        building.streetWindowParams = normalizeWindowParamsCompat(nextTypeId, null);
         this._rebuildBuildingMesh(building);
         return true;
     }
@@ -1847,12 +1817,12 @@ export class BuildingFabricationScene {
         const safeStreetWindowStyle = isWindowStyle(streetWindowStyle) ? streetWindowStyle : safeWindowStyle;
         const safeWindowTypeId = isWindowTypeId(windowTypeId)
             ? windowTypeId
-            : resolveWindowTypeIdFromLegacyStyle(safeWindowStyle);
+            : normalizeWindowTypeIdOrLegacyStyle(safeWindowStyle);
         const safeStreetWindowTypeId = isWindowTypeId(streetWindowTypeId)
             ? streetWindowTypeId
-            : resolveWindowTypeIdFromLegacyStyle(safeStreetWindowStyle);
-        const safeWindowParams = normalizeWindowParams(safeWindowTypeId, windowParams);
-        const safeStreetWindowParams = normalizeWindowParams(safeStreetWindowTypeId, streetWindowParams);
+            : normalizeWindowTypeIdOrLegacyStyle(safeStreetWindowStyle);
+        const safeWindowParams = normalizeWindowParamsCompat(safeWindowTypeId, windowParams);
+        const safeStreetWindowParams = normalizeWindowParamsCompat(safeStreetWindowTypeId, streetWindowParams);
         const safeStreetWindowWidth = Number.isFinite(streetWindowWidth) ? clamp(streetWindowWidth, 0.3, 12.0) : clamp(windowWidth, 0.3, 12.0);
         const safeStreetWindowGap = Number.isFinite(streetWindowGap) ? clamp(streetWindowGap, 0.0, 24.0) : clamp(windowGap, 0.0, 24.0);
         const safeStreetWindowHeight = Number.isFinite(streetWindowHeight) ? clamp(streetWindowHeight, 0.3, 10.0) : clamp(windowHeight, 0.3, 10.0);

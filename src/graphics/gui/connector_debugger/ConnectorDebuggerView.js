@@ -2,7 +2,7 @@
 // Orchestrates the connector debugger screen and its 3D interactions.
 import * as THREE from 'three';
 import { CONNECTOR_PATH_TYPES } from '../../../app/geometry/ConnectorPathSolver.js';
-import { sampleConnector } from '../../assets3d/generators/road/connectors/ArcConnector.js';
+import { sampleConnector } from '../../../app/geometry/ConnectorSampling.js';
 import {
     buildConnectorMesh,
     clearConnectorMesh,

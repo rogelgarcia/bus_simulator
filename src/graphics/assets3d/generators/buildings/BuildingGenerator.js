@@ -8,12 +8,17 @@ import { BUILDING_STYLE, isBuildingStyle } from '../../../../app/buildings/Build
 import { WINDOW_STYLE, isWindowStyle } from '../../../../app/buildings/WindowStyle.js';
 import { resolveBeltCourseColorHex } from '../../../../app/buildings/BeltCourseColor.js';
 import { resolveRoofColorHex } from '../../../../app/buildings/RoofColor.js';
-import { WINDOW_TYPE, getLegacyWindowStyleTexture, getWindowTexture, getWindowTypeOptions } from './WindowTextureGenerator.js';
+import { WINDOW_TYPE, getWindowTexture, getWindowTypeOptions } from './WindowTextureGenerator.js';
+import { getLegacyWindowStyleTexture, windowTypeIdFromLegacyWindowStyle } from './WindowTypeCompatibility.js';
+import {
+    getBuildingStyleOptions as getBuildingStyleOptionsFromCatalog,
+    resolveBuildingStyleLabel as resolveBuildingStyleLabelFromCatalog,
+    resolveBuildingStyleWallMaterialUrls as resolveBuildingStyleWallMaterialUrlsFromCatalog,
+    resolveBuildingStyleWallTextureUrl as resolveBuildingStyleWallTextureUrlFromCatalog
+} from '../../../content3d/buildings/BuildingStyleCatalog.js';
 
 const EPS = 1e-6;
 const QUANT = 1000;
-const BUILDING_TEXTURE_BASE_URL = new URL('../../../../../assets/public/textures/buildings/walls/', import.meta.url);
-const RED_BRICK_2K_PBR_BASE_URL = new URL('pbr/red_brick_2k/', BUILDING_TEXTURE_BASE_URL);
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -238,17 +243,6 @@ export function getWindowStyleOptions() {
     const typeOptions = getWindowTypeOptions();
     const previewByTypeId = new Map(typeOptions.map((opt) => [opt.id, opt.previewUrl]));
 
-    const styleToTypeId = (styleId) => {
-        const id = isWindowStyle(styleId) ? styleId : WINDOW_STYLE.DEFAULT;
-        if (id === WINDOW_STYLE.DARK) return WINDOW_TYPE.STYLE_DARK;
-        if (id === WINDOW_STYLE.BLUE) return WINDOW_TYPE.STYLE_BLUE;
-        if (id === WINDOW_STYLE.LIGHT_BLUE) return WINDOW_TYPE.STYLE_LIGHT_BLUE;
-        if (id === WINDOW_STYLE.GREEN) return WINDOW_TYPE.STYLE_GREEN;
-        if (id === WINDOW_STYLE.WARM) return WINDOW_TYPE.STYLE_WARM;
-        if (id === WINDOW_STYLE.GRID) return WINDOW_TYPE.STYLE_GRID;
-        return WINDOW_TYPE.STYLE_DEFAULT;
-    };
-
     const ids = [
         WINDOW_STYLE.DEFAULT,
         WINDOW_STYLE.DARK,
@@ -261,7 +255,7 @@ export function getWindowStyleOptions() {
     return ids.map((id) => ({
         id,
         label: resolveWindowStyleLabel(id),
-        previewUrl: previewByTypeId.get(styleToTypeId(id)) ?? null
+        previewUrl: previewByTypeId.get(windowTypeIdFromLegacyWindowStyle(id)) ?? null
     }));
 }
 
@@ -674,51 +668,19 @@ export class BuildingWallTextureCache {
 }
 
 export function resolveBuildingStyleWallTextureUrl(styleId) {
-    const id = isBuildingStyle(styleId) ? styleId : BUILDING_STYLE.DEFAULT;
-    if (id === BUILDING_STYLE.BRICK) return new URL('basecolor.jpg', RED_BRICK_2K_PBR_BASE_URL).toString();
-    if (id === BUILDING_STYLE.CEMENT) return new URL('cement.png', BUILDING_TEXTURE_BASE_URL).toString();
-    if (id === BUILDING_STYLE.STONE_1) return new URL('stonewall_1.png', BUILDING_TEXTURE_BASE_URL).toString();
-    if (id === BUILDING_STYLE.STONE_2) return new URL('stonewall_2.png', BUILDING_TEXTURE_BASE_URL).toString();
-    return null;
+    return resolveBuildingStyleWallTextureUrlFromCatalog(styleId);
 }
 
 export function resolveBuildingStyleWallMaterialUrls(styleId) {
-    const id = isBuildingStyle(styleId) ? styleId : BUILDING_STYLE.DEFAULT;
-    const baseColorUrl = resolveBuildingStyleWallTextureUrl(id);
-    if (id === BUILDING_STYLE.BRICK) {
-        return {
-            baseColorUrl,
-            normalUrl: new URL('normal_gl.jpg', RED_BRICK_2K_PBR_BASE_URL).toString(),
-            ormUrl: new URL('arm.jpg', RED_BRICK_2K_PBR_BASE_URL).toString()
-        };
-    }
-    return { baseColorUrl, normalUrl: null, ormUrl: null };
+    return resolveBuildingStyleWallMaterialUrlsFromCatalog(styleId);
 }
 
 export function resolveBuildingStyleLabel(styleId) {
-    const id = isBuildingStyle(styleId) ? styleId : BUILDING_STYLE.DEFAULT;
-    if (id === BUILDING_STYLE.DEFAULT) return 'Default';
-    if (id === BUILDING_STYLE.BRICK) return 'Brick';
-    if (id === BUILDING_STYLE.CEMENT) return 'Cement';
-    if (id === BUILDING_STYLE.STONE_1) return 'Stone 1';
-    if (id === BUILDING_STYLE.STONE_2) return 'Stone 2';
-    if (id === BUILDING_STYLE.LEGACY_TEXTURE) return 'Legacy texture';
-    return 'Default';
+    return resolveBuildingStyleLabelFromCatalog(styleId);
 }
 
 export function getBuildingStyleOptions() {
-    const ids = [
-        BUILDING_STYLE.DEFAULT,
-        BUILDING_STYLE.BRICK,
-        BUILDING_STYLE.CEMENT,
-        BUILDING_STYLE.STONE_1,
-        BUILDING_STYLE.STONE_2
-    ];
-    return ids.map((id) => ({
-        id,
-        label: resolveBuildingStyleLabel(id),
-        wallTextureUrl: resolveBuildingStyleWallTextureUrl(id)
-    }));
+    return getBuildingStyleOptionsFromCatalog();
 }
 
 export function computeBuildingLoopsFromTiles({

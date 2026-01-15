@@ -7,6 +7,7 @@ import { BELT_COURSE_COLOR, getBeltCourseColorOptions, isBeltCourseColor } from 
 import { ROOF_COLOR, getRoofColorOptions, isRoofColor } from '../../../app/buildings/RoofColor.js';
 import { PickerPopup } from '../shared/PickerPopup.js';
 import { WINDOW_TYPE, getDefaultWindowParams, getWindowTypeOptions, isWindowTypeId } from '../../assets3d/generators/buildings/WindowTextureGenerator.js';
+import { normalizeWindowParams, normalizeWindowTypeIdOrLegacyStyle } from '../../assets3d/generators/buildings/WindowTypeCompatibility.js';
 import { LAYER_TYPE, cloneBuildingLayers, createDefaultFloorLayer, createDefaultRoofLayer, normalizeBuildingLayers } from '../../assets3d/generators/building_fabrication/BuildingFabricationTypes.js';
 
 function clamp(value, min, max) {
@@ -1769,27 +1770,9 @@ export class BuildingFabricationUI {
         if (hasSelected) {
             const legacy = typeof building?.windowStyle === 'string' ? building.windowStyle : null;
             const typeId = typeof building?.windowTypeId === 'string' ? building.windowTypeId : null;
-            if (isWindowTypeId(typeId)) {
-                this._windowTypeId = typeId;
-            } else if (isWindowStyle(legacy)) {
-                this._windowTypeId = legacy === WINDOW_STYLE.DARK
-                    ? WINDOW_TYPE.STYLE_DARK
-                    : legacy === WINDOW_STYLE.BLUE
-                        ? WINDOW_TYPE.STYLE_BLUE
-                        : legacy === WINDOW_STYLE.LIGHT_BLUE
-                            ? WINDOW_TYPE.STYLE_LIGHT_BLUE
-                            : legacy === WINDOW_STYLE.GREEN
-                                ? WINDOW_TYPE.STYLE_GREEN
-                                : legacy === WINDOW_STYLE.WARM
-                                    ? WINDOW_TYPE.STYLE_WARM
-                                    : legacy === WINDOW_STYLE.GRID
-                                        ? WINDOW_TYPE.STYLE_GRID
-                                        : WINDOW_TYPE.STYLE_DEFAULT;
-            } else {
-                this._windowTypeId = WINDOW_TYPE.STYLE_DEFAULT;
-            }
+            this._windowTypeId = isWindowTypeId(typeId) ? typeId : normalizeWindowTypeIdOrLegacyStyle(legacy);
             const p = building?.windowParams && typeof building.windowParams === 'object' ? building.windowParams : null;
-            this._windowParams = { ...getDefaultWindowParams(this._windowTypeId), ...(p ?? {}) };
+            this._windowParams = normalizeWindowParams(this._windowTypeId, p);
         } else {
             this._windowTypeId = WINDOW_TYPE.STYLE_DEFAULT;
             this._windowParams = getDefaultWindowParams(this._windowTypeId);
@@ -1838,38 +1821,14 @@ export class BuildingFabricationUI {
             if (isWindowTypeId(typeId)) {
                 this._streetWindowTypeId = typeId;
             } else if (isWindowStyle(legacy)) {
-                this._streetWindowTypeId = legacy === WINDOW_STYLE.DARK
-                    ? WINDOW_TYPE.STYLE_DARK
-                    : legacy === WINDOW_STYLE.BLUE
-                        ? WINDOW_TYPE.STYLE_BLUE
-                        : legacy === WINDOW_STYLE.LIGHT_BLUE
-                            ? WINDOW_TYPE.STYLE_LIGHT_BLUE
-                            : legacy === WINDOW_STYLE.GREEN
-                                ? WINDOW_TYPE.STYLE_GREEN
-                                : legacy === WINDOW_STYLE.WARM
-                                    ? WINDOW_TYPE.STYLE_WARM
-                                    : legacy === WINDOW_STYLE.GRID
-                                        ? WINDOW_TYPE.STYLE_GRID
-                                        : WINDOW_TYPE.STYLE_DEFAULT;
+                this._streetWindowTypeId = normalizeWindowTypeIdOrLegacyStyle(legacy);
             } else if (isWindowStyle(fallbackLegacy)) {
-                this._streetWindowTypeId = fallbackLegacy === WINDOW_STYLE.DARK
-                    ? WINDOW_TYPE.STYLE_DARK
-                    : fallbackLegacy === WINDOW_STYLE.BLUE
-                        ? WINDOW_TYPE.STYLE_BLUE
-                        : fallbackLegacy === WINDOW_STYLE.LIGHT_BLUE
-                            ? WINDOW_TYPE.STYLE_LIGHT_BLUE
-                            : fallbackLegacy === WINDOW_STYLE.GREEN
-                                ? WINDOW_TYPE.STYLE_GREEN
-                                : fallbackLegacy === WINDOW_STYLE.WARM
-                                    ? WINDOW_TYPE.STYLE_WARM
-                                    : fallbackLegacy === WINDOW_STYLE.GRID
-                                        ? WINDOW_TYPE.STYLE_GRID
-                                        : WINDOW_TYPE.STYLE_DEFAULT;
+                this._streetWindowTypeId = normalizeWindowTypeIdOrLegacyStyle(fallbackLegacy);
             } else {
                 this._streetWindowTypeId = this._windowTypeId;
             }
             const p = building?.streetWindowParams && typeof building.streetWindowParams === 'object' ? building.streetWindowParams : null;
-            this._streetWindowParams = { ...getDefaultWindowParams(this._streetWindowTypeId), ...(p ?? {}) };
+            this._streetWindowParams = normalizeWindowParams(this._streetWindowTypeId, p);
         } else {
             this._streetWindowTypeId = WINDOW_TYPE.STYLE_DEFAULT;
             this._streetWindowParams = getDefaultWindowParams(this._streetWindowTypeId);
@@ -4074,21 +4033,7 @@ export class BuildingFabricationUI {
     }
 
     _setWindowStyleFromUi(raw) {
-        const typeId = isWindowTypeId(raw)
-            ? raw
-            : (isWindowStyle(raw) ? (raw === WINDOW_STYLE.DARK
-                ? WINDOW_TYPE.STYLE_DARK
-                : raw === WINDOW_STYLE.BLUE
-                    ? WINDOW_TYPE.STYLE_BLUE
-                    : raw === WINDOW_STYLE.LIGHT_BLUE
-                        ? WINDOW_TYPE.STYLE_LIGHT_BLUE
-                        : raw === WINDOW_STYLE.GREEN
-                            ? WINDOW_TYPE.STYLE_GREEN
-                    : raw === WINDOW_STYLE.WARM
-                        ? WINDOW_TYPE.STYLE_WARM
-                        : raw === WINDOW_STYLE.GRID
-                            ? WINDOW_TYPE.STYLE_GRID
-                            : WINDOW_TYPE.STYLE_DEFAULT) : WINDOW_TYPE.STYLE_DEFAULT);
+        const typeId = normalizeWindowTypeIdOrLegacyStyle(raw);
         const changed = typeId !== this._windowTypeId;
         this._windowTypeId = typeId;
         this._windowParams = getDefaultWindowParams(typeId);
@@ -4098,21 +4043,7 @@ export class BuildingFabricationUI {
     }
 
     _setStreetWindowStyleFromUi(raw) {
-        const typeId = isWindowTypeId(raw)
-            ? raw
-            : (isWindowStyle(raw) ? (raw === WINDOW_STYLE.DARK
-                ? WINDOW_TYPE.STYLE_DARK
-                : raw === WINDOW_STYLE.BLUE
-                    ? WINDOW_TYPE.STYLE_BLUE
-                    : raw === WINDOW_STYLE.LIGHT_BLUE
-                        ? WINDOW_TYPE.STYLE_LIGHT_BLUE
-                        : raw === WINDOW_STYLE.GREEN
-                            ? WINDOW_TYPE.STYLE_GREEN
-                    : raw === WINDOW_STYLE.WARM
-                        ? WINDOW_TYPE.STYLE_WARM
-                        : raw === WINDOW_STYLE.GRID
-                            ? WINDOW_TYPE.STYLE_GRID
-                            : WINDOW_TYPE.STYLE_DEFAULT) : WINDOW_TYPE.STYLE_DEFAULT);
+        const typeId = normalizeWindowTypeIdOrLegacyStyle(raw);
         const changed = typeId !== this._streetWindowTypeId;
         this._streetWindowTypeId = typeId;
         this._streetWindowParams = getDefaultWindowParams(typeId);

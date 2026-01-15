@@ -1,7 +1,7 @@
 // src/graphics/visuals/city/CityConnectorDebugOverlay.js
 // Manages connector debug visuals and hover highlights for the city state.
 import * as THREE from 'three';
-import { sampleConnector } from '../../assets3d/generators/road/connectors/ArcConnector.js';
+import { sampleConnector } from '../../../app/geometry/ConnectorSampling.js';
 import { createPoleMarkerAssets, createPoleMarkerGroup } from '../shared/PoleMarkerGroup.js';
 import { createConnectorPathLine } from '../shared/ConnectorPathLine.js';
 import { createConnectorTurnCircleLines } from '../shared/ConnectorTurnCircleLines.js';

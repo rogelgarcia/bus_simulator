@@ -8,7 +8,7 @@ import { solveConnectorPath } from '../../../app/geometry/ConnectorPathSolver.js
 import { getCityMaterials } from '../../assets3d/textures/CityMaterials.js';
 import { createCurbBuilder } from '../../assets3d/generators/road/builders/CurbBuilder.js';
 import { addConnectorCurbSegments } from '../../assets3d/generators/road/connectors/ConnectorCurbUtils.js';
-import { sampleConnector } from '../../assets3d/generators/road/connectors/ArcConnector.js';
+import { sampleConnector } from '../../../app/geometry/ConnectorSampling.js';
 import { CURB_COLOR_PALETTE } from '../../assets3d/generators/GeneratorParams.js';
 import { createPoleMarkerAssets, createPoleMarkerGroup } from '../../visuals/shared/PoleMarkerGroup.js';
 import { createConnectorPathLine } from '../../visuals/shared/ConnectorPathLine.js';

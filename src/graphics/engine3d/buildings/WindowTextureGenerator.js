@@ -1,36 +1,20 @@
 // src/graphics/engine3d/buildings/WindowTextureGenerator.js
 // Generates window textures from "type + params" with caching and previews.
 import * as THREE from 'three';
-import { WINDOW_STYLE, isWindowStyle } from '../../../app/buildings/WindowStyle.js';
+import {
+    WINDOW_TYPE,
+    isWindowTypeId,
+    normalizeWindowTypeId,
+    getWindowTypeDefinition,
+    getWindowTypeParamSpec,
+    listWindowTypeIds
+} from '../../content3d/buildings/WindowTypeCatalog.js';
 
 const QUANT = 1000;
 const _textureCache = new Map();
 const _previewUrlCache = new Map();
 
-export const WINDOW_TYPE = Object.freeze({
-    STYLE_DEFAULT: 'window.style.default',
-    STYLE_DARK: 'window.style.dark',
-    STYLE_BLUE: 'window.style.blue',
-    STYLE_LIGHT_BLUE: 'window.style.light_blue',
-    STYLE_GREEN: 'window.style.green',
-    STYLE_WARM: 'window.style.warm',
-    STYLE_GRID: 'window.style.grid',
-    ARCH_V1: 'window.arch.v1',
-    MODERN_V1: 'window.modern.v1'
-});
-
-export function isWindowTypeId(value) {
-    if (typeof value !== 'string') return false;
-    return value === WINDOW_TYPE.STYLE_DEFAULT
-        || value === WINDOW_TYPE.STYLE_DARK
-        || value === WINDOW_TYPE.STYLE_BLUE
-        || value === WINDOW_TYPE.STYLE_LIGHT_BLUE
-        || value === WINDOW_TYPE.STYLE_GREEN
-        || value === WINDOW_TYPE.STYLE_WARM
-        || value === WINDOW_TYPE.STYLE_GRID
-        || value === WINDOW_TYPE.ARCH_V1
-        || value === WINDOW_TYPE.MODERN_V1;
-}
+export { WINDOW_TYPE, isWindowTypeId };
 
 function q(value) {
     return Math.round(Number(value) * QUANT);
@@ -70,92 +54,28 @@ function hexToCss(hex) {
     return `#${safe.toString(16).padStart(6, '0')}`;
 }
 
-function resolveTypeLabel(typeId) {
-    if (typeId === WINDOW_TYPE.STYLE_DEFAULT) return 'Default';
-    if (typeId === WINDOW_TYPE.STYLE_DARK) return 'Dark';
-    if (typeId === WINDOW_TYPE.STYLE_BLUE) return 'Blue';
-    if (typeId === WINDOW_TYPE.STYLE_LIGHT_BLUE) return 'Light Blue';
-    if (typeId === WINDOW_TYPE.STYLE_GREEN) return 'Green';
-    if (typeId === WINDOW_TYPE.STYLE_WARM) return 'Warm';
-    if (typeId === WINDOW_TYPE.STYLE_GRID) return 'Grid';
-    if (typeId === WINDOW_TYPE.ARCH_V1) return 'Arched';
-    if (typeId === WINDOW_TYPE.MODERN_V1) return 'Modern';
-    return 'Default';
-}
-
-function normalizeLegacyStyleToTypeId(styleId) {
-    const id = isWindowStyle(styleId) ? styleId : WINDOW_STYLE.DEFAULT;
-    if (id === WINDOW_STYLE.DARK) return WINDOW_TYPE.STYLE_DARK;
-    if (id === WINDOW_STYLE.BLUE) return WINDOW_TYPE.STYLE_BLUE;
-    if (id === WINDOW_STYLE.LIGHT_BLUE) return WINDOW_TYPE.STYLE_LIGHT_BLUE;
-    if (id === WINDOW_STYLE.GREEN) return WINDOW_TYPE.STYLE_GREEN;
-    if (id === WINDOW_STYLE.WARM) return WINDOW_TYPE.STYLE_WARM;
-    if (id === WINDOW_STYLE.GRID) return WINDOW_TYPE.STYLE_GRID;
-    return WINDOW_TYPE.STYLE_DEFAULT;
-}
-
-function normalizeWindowTypeId(typeId) {
-    if (isWindowTypeId(typeId)) return typeId;
-    if (isWindowStyle(typeId)) return normalizeLegacyStyleToTypeId(typeId);
-    return WINDOW_TYPE.STYLE_DEFAULT;
-}
-
-function normalizeModernParams(params) {
-    const p = params && typeof params === 'object' ? params : {};
-    return {
-        frameWidth: Math.max(0.02, Math.min(0.2, Number(p.frameWidth) || 0.06)),
-        frameColor: Number.isFinite(p.frameColor) ? p.frameColor : 0xdfe7f2,
-        glassTop: Number.isFinite(p.glassTop) ? p.glassTop : 0x1d5c8d,
-        glassBottom: Number.isFinite(p.glassBottom) ? p.glassBottom : 0x061a2c
-    };
-}
-
-function normalizeArchParams(params) {
-    const p = params && typeof params === 'object' ? params : {};
-    return {
-        frameWidth: Math.max(0.02, Math.min(0.2, Number(p.frameWidth) || 0.06)),
-        frameColor: Number.isFinite(p.frameColor) ? p.frameColor : 0xdfe7f2,
-        glassTop: Number.isFinite(p.glassTop) ? p.glassTop : 0x10395a,
-        glassBottom: Number.isFinite(p.glassBottom) ? p.glassBottom : 0x061a2c
-    };
-}
-
 function buildLegacyStyleCanvas(styleTypeId, { size = 256 } = {}) {
     const { c, ctx } = makeCanvas(size, size);
     if (!ctx) return c;
-
-    const styleId = styleTypeId === WINDOW_TYPE.STYLE_DARK
-        ? WINDOW_STYLE.DARK
-        : styleTypeId === WINDOW_TYPE.STYLE_BLUE
-            ? WINDOW_STYLE.BLUE
-            : styleTypeId === WINDOW_TYPE.STYLE_LIGHT_BLUE
-                ? WINDOW_STYLE.LIGHT_BLUE
-                : styleTypeId === WINDOW_TYPE.STYLE_GREEN
-                    ? WINDOW_STYLE.GREEN
-            : styleTypeId === WINDOW_TYPE.STYLE_WARM
-                ? WINDOW_STYLE.WARM
-                : styleTypeId === WINDOW_TYPE.STYLE_GRID
-                    ? WINDOW_STYLE.GRID
-                    : WINDOW_STYLE.DEFAULT;
 
     const w = size;
     const h = size;
 
     const grad = ctx.createLinearGradient(0, 0, 0, h);
-    if (styleId === WINDOW_STYLE.WARM) {
+    if (styleTypeId === WINDOW_TYPE.STYLE_WARM) {
         grad.addColorStop(0, '#4a3a2f');
         grad.addColorStop(0.5, '#16283a');
         grad.addColorStop(1, '#061a2c');
-    } else if (styleId === WINDOW_STYLE.LIGHT_BLUE) {
+    } else if (styleTypeId === WINDOW_TYPE.STYLE_LIGHT_BLUE) {
         grad.addColorStop(0, '#56c2ff');
         grad.addColorStop(1, '#0b2e52');
-    } else if (styleId === WINDOW_STYLE.GREEN) {
+    } else if (styleTypeId === WINDOW_TYPE.STYLE_GREEN) {
         grad.addColorStop(0, '#2fa88a');
         grad.addColorStop(1, '#06261f');
-    } else if (styleId === WINDOW_STYLE.BLUE) {
+    } else if (styleTypeId === WINDOW_TYPE.STYLE_BLUE) {
         grad.addColorStop(0, '#1d5c8d');
         grad.addColorStop(1, '#051526');
-    } else if (styleId === WINDOW_STYLE.DARK) {
+    } else if (styleTypeId === WINDOW_TYPE.STYLE_DARK) {
         grad.addColorStop(0, '#0a101a');
         grad.addColorStop(1, '#04070c');
     } else {
@@ -183,14 +103,14 @@ function buildLegacyStyleCanvas(styleTypeId, { size = 256 } = {}) {
     ctx.lineTo(w - frame - 8, h * 0.5);
     ctx.stroke();
 
-    if (styleId === WINDOW_STYLE.WARM) {
+    if (styleTypeId === WINDOW_TYPE.STYLE_WARM) {
         ctx.globalAlpha = 0.7;
         ctx.fillStyle = 'rgba(255, 204, 120, 0.35)';
         ctx.fillRect(frame + 10, frame + 10, w - (frame + 10) * 2, h - (frame + 10) * 2);
         ctx.globalAlpha = 1.0;
     }
 
-    if (styleId === WINDOW_STYLE.GRID) {
+    if (styleTypeId === WINDOW_TYPE.STYLE_GRID) {
         ctx.globalAlpha = 0.35;
         ctx.strokeStyle = 'rgba(240, 245, 255, 0.7)';
         ctx.lineWidth = 1;
@@ -322,45 +242,39 @@ function buildCacheKey(typeId, params, { windowWidth = 1, windowHeight = 1 } = {
     const h = Number(windowHeight) || 1;
     const aspectQ = q(h / Math.max(0.01, w));
 
-    if (t === WINDOW_TYPE.ARCH_V1) {
-        const p = normalizeArchParams(params);
+    const def = getWindowTypeDefinition(t);
+    const paramSpec = getWindowTypeParamSpec(t);
+    if (def?.renderKind === 'arch_v1' && paramSpec) {
+        const p = normalizeParamsFromSpec(paramSpec, params);
         return `${t}|a:${aspectQ}|fw:${q(p.frameWidth)}|fc:${p.frameColor}|gt:${p.glassTop}|gb:${p.glassBottom}`;
     }
-    if (t === WINDOW_TYPE.MODERN_V1) {
-        const p = normalizeModernParams(params);
+    if (def?.renderKind === 'modern_v1' && paramSpec) {
+        const p = normalizeParamsFromSpec(paramSpec, params);
         return `${t}|a:${aspectQ}|fw:${q(p.frameWidth)}|fc:${p.frameColor}|gt:${p.glassTop}|gb:${p.glassBottom}`;
     }
     return `${t}|legacy`;
 }
 
 export function getWindowTypeOptions() {
-    const types = [
-        WINDOW_TYPE.STYLE_DEFAULT,
-        WINDOW_TYPE.STYLE_DARK,
-        WINDOW_TYPE.STYLE_BLUE,
-        WINDOW_TYPE.STYLE_LIGHT_BLUE,
-        WINDOW_TYPE.STYLE_GREEN,
-        WINDOW_TYPE.STYLE_WARM,
-        WINDOW_TYPE.STYLE_GRID,
-        WINDOW_TYPE.ARCH_V1,
-        WINDOW_TYPE.MODERN_V1
-    ];
+    const types = listWindowTypeIds();
 
     const out = [];
     for (const id of types) {
+        const def = getWindowTypeDefinition(id);
         let previewUrl = _previewUrlCache.get(id) ?? null;
         if (!previewUrl) {
-            const canvas = id === WINDOW_TYPE.ARCH_V1
-                ? buildArchedCanvas({ width: 96, height: 128 })
-                : id === WINDOW_TYPE.MODERN_V1
-                    ? buildModernCanvas({ width: 96, height: 96 })
-                    : buildLegacyStyleCanvas(id, { size: 96 });
+            const preview = def?.preview ?? null;
+            const canvas = def?.renderKind === 'arch_v1'
+                ? buildArchedCanvas({ width: preview?.width ?? 96, height: preview?.height ?? 128 })
+                : def?.renderKind === 'modern_v1'
+                    ? buildModernCanvas({ width: preview?.width ?? 96, height: preview?.height ?? 96 })
+                    : buildLegacyStyleCanvas(id, { size: preview?.size ?? 96 });
             previewUrl = canvas?.toDataURL?.('image/png') ?? null;
             if (previewUrl) _previewUrlCache.set(id, previewUrl);
         }
         out.push({
             id,
-            label: resolveTypeLabel(id),
+            label: def?.label ?? id,
             previewUrl
         });
     }
@@ -369,9 +283,9 @@ export function getWindowTypeOptions() {
 
 export function getDefaultWindowParams(typeId) {
     const t = normalizeWindowTypeId(typeId);
-    if (t === WINDOW_TYPE.ARCH_V1) return normalizeArchParams(null);
-    if (t === WINDOW_TYPE.MODERN_V1) return normalizeModernParams(null);
-    return {};
+    const spec = getWindowTypeParamSpec(t);
+    if (!spec) return {};
+    return normalizeParamsFromSpec(spec, null);
 }
 
 export function getWindowTexture({ typeId, params, windowWidth = 1, windowHeight = 1 } = {}) {
@@ -381,8 +295,10 @@ export function getWindowTexture({ typeId, params, windowWidth = 1, windowHeight
     if (cached) return cached;
 
     let tex;
-    if (t === WINDOW_TYPE.ARCH_V1) {
-        const p = normalizeArchParams(params);
+    const def = getWindowTypeDefinition(t);
+    const paramSpec = getWindowTypeParamSpec(t);
+    if (def?.renderKind === 'arch_v1' && paramSpec) {
+        const p = normalizeParamsFromSpec(paramSpec, params);
         const aspect = (Number(windowHeight) || 1) / Math.max(0.01, Number(windowWidth) || 1);
         const hPx = Math.max(64, Math.min(512, Math.round(256 * aspect)));
         const canvas = buildArchedCanvas({
@@ -391,8 +307,8 @@ export function getWindowTexture({ typeId, params, windowWidth = 1, windowHeight
             ...p
         });
         tex = canvasToTexture(canvas, { srgb: true });
-    } else if (t === WINDOW_TYPE.MODERN_V1) {
-        const p = normalizeModernParams(params);
+    } else if (def?.renderKind === 'modern_v1' && paramSpec) {
+        const p = normalizeParamsFromSpec(paramSpec, params);
         const aspect = (Number(windowHeight) || 1) / Math.max(0.01, Number(windowWidth) || 1);
         const hPx = Math.max(64, Math.min(512, Math.round(256 * aspect)));
         const canvas = buildModernCanvas({
@@ -410,8 +326,22 @@ export function getWindowTexture({ typeId, params, windowWidth = 1, windowHeight
     return tex;
 }
 
+function normalizeParamsFromSpec(paramSpec, params) {
+    const p = params && typeof params === 'object' ? params : {};
+    const out = {};
 
-export function getLegacyWindowStyleTexture(styleId) {
-    const t = normalizeLegacyStyleToTypeId(styleId);
-    return getWindowTexture({ typeId: t });
+    for (const [key, spec] of Object.entries(paramSpec ?? {})) {
+        if (!spec || typeof spec !== 'object') continue;
+        const raw = p[key];
+        if (Number.isFinite(spec.min) && Number.isFinite(spec.max)) {
+            const num = Number(raw);
+            const fallback = Number.isFinite(spec.default) ? spec.default : 0;
+            out[key] = Math.max(spec.min, Math.min(spec.max, Number.isFinite(num) ? num : fallback));
+            continue;
+        }
+        if (Number.isFinite(raw)) out[key] = raw;
+        else if (Number.isFinite(spec.default)) out[key] = spec.default;
+    }
+
+    return out;
 }
