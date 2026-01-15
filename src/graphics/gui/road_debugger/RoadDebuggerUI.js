@@ -43,6 +43,99 @@ function fmtInt(v) {
     return Number.isFinite(v) ? String(v | 0) : '--';
 }
 
+function applyFallbackLayoutIfNeeded({
+    root,
+    left,
+    detailPanel,
+    bottom,
+    bottomRight,
+    infoPanel,
+    selectionRect,
+    pickDebugOverlay
+} = {}) {
+    if (typeof window === 'undefined') return false;
+    if (!root || !window.getComputedStyle) return false;
+
+    const cs = window.getComputedStyle(root);
+    const hasExpectedBase = cs.position === 'fixed' && cs.pointerEvents === 'none';
+    if (hasExpectedBase) return false;
+
+    root.style.position = 'fixed';
+    root.style.inset = '0';
+    root.style.zIndex = '4';
+    root.style.pointerEvents = 'none';
+
+    const enablePanel = (el) => {
+        if (!el) return;
+        el.style.pointerEvents = 'auto';
+    };
+    enablePanel(left);
+    enablePanel(detailPanel);
+    enablePanel(bottom);
+    enablePanel(infoPanel);
+
+    if (left) {
+        left.style.position = 'absolute';
+        left.style.top = '12px';
+        left.style.left = '12px';
+        left.style.width = '360px';
+        left.style.maxHeight = 'calc(100vh - 24px)';
+        left.style.overflow = 'auto';
+    }
+
+    if (detailPanel) {
+        detailPanel.style.position = 'absolute';
+        detailPanel.style.top = '12px';
+        detailPanel.style.right = '12px';
+        detailPanel.style.width = '360px';
+        detailPanel.style.maxHeight = '420px';
+        detailPanel.style.overflow = 'hidden';
+    }
+
+    if (bottom) {
+        bottom.style.position = 'absolute';
+        bottom.style.left = '50%';
+        bottom.style.bottom = '12px';
+        bottom.style.transform = 'translateX(-50%)';
+        bottom.style.width = '520px';
+        bottom.style.height = '180px';
+        bottom.style.overflow = 'hidden';
+    }
+
+    if (bottomRight) {
+        bottomRight.style.position = 'absolute';
+        bottomRight.style.right = '12px';
+        bottomRight.style.bottom = '12px';
+        bottomRight.style.display = 'flex';
+        bottomRight.style.alignItems = 'flex-end';
+        bottomRight.style.justifyContent = 'flex-end';
+        bottomRight.style.gap = '10px';
+        bottomRight.style.pointerEvents = 'none';
+    }
+
+    if (infoPanel) {
+        infoPanel.style.width = '360px';
+        infoPanel.style.height = '180px';
+        infoPanel.style.overflow = 'hidden';
+    }
+
+    if (selectionRect) {
+        selectionRect.style.position = 'absolute';
+        selectionRect.style.inset = '0';
+        selectionRect.style.pointerEvents = 'none';
+    }
+
+    if (pickDebugOverlay) {
+        pickDebugOverlay.style.position = 'absolute';
+        pickDebugOverlay.style.top = '12px';
+        pickDebugOverlay.style.left = '50%';
+        pickDebugOverlay.style.transform = 'translateX(-50%)';
+        pickDebugOverlay.style.pointerEvents = 'none';
+    }
+
+    return true;
+}
+
 function outputInfo(view) {
     const derived = view.getDerived?.() ?? view._derived ?? null;
     const hover = view._hover ?? {};
@@ -1134,6 +1227,7 @@ export function setupUI(view) {
     helpModal.appendChild(helpPanel);
     root.appendChild(helpModal);
     document.body.appendChild(root);
+    applyFallbackLayoutIfNeeded({ root, left, detailPanel, bottom, bottomRight, infoPanel, selectionRect, pickDebugOverlay });
 
     let popupMode = 'roads';
     let pendingRoadLanesF = 1;

@@ -2647,11 +2647,12 @@ export class MapDebuggerState {
 
         const zoomSpeed = Number.isFinite(this._zoomSpeed) ? this._zoomSpeed : 1;
         const amount = delta * (zoomSpeed / 12000);
-        this.controls?.dollyBy?.(amount, { immediate: true });
+        const usedControls = !!this.controls?.dollyBy?.(amount, { immediate: true });
 
         const orbit = this.controls?.getOrbit?.() ?? null;
         const radius = Number(orbit?.radius);
         if (Number.isFinite(radius)) this._zoom = clamp(radius, this._zoomMin, this._zoomMax);
+        else if (!usedControls) this._zoom = clamp((Number(this._zoom) || 0) + amount, this._zoomMin, this._zoomMax);
 
         this._syncRoadPointPopupPosition();
     }

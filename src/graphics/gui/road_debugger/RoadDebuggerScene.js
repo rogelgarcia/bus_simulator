@@ -46,6 +46,11 @@ function makeEmptyGridMap(view) {
 }
 
 export function setupScene(view) {
+    if (view?.scene) {
+        view.scene.background = null;
+        view.scene.fog = null;
+    }
+
     const group = new THREE.Group();
     group.name = 'RoadDebugger';
     view.root = group;

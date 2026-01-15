@@ -2,8 +2,10 @@
 // Shared HDR IBL loader and scene applier.
 import * as THREE from 'three';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 const DEFAULT_ENV_MAP_INTENSITY = 0.25;
 const _cacheByRenderer = new WeakMap();
+const GIT_LFS_POINTER_PREFIX = 'version https://git-lfs.github.com/spec/v1';
 
 function getRendererCache(renderer) {
     let cache = _cacheByRenderer.get(renderer);
@@ -19,7 +21,7 @@ function getCacheEntry(renderer, cacheKey) {
     const key = typeof cacheKey === 'string' ? cacheKey : '';
     let entry = cache.get(key);
     if (!entry) {
-        entry = { envMap: null, promise: null };
+        entry = { envMap: null, promise: null, warned: false };
         cache.set(key, entry);
     }
     return entry;
@@ -34,6 +36,44 @@ function applyHdrColorSpace(tex) {
     if ('encoding' in tex) tex.encoding = THREE.LinearEncoding;
 }
 
+function decodeAsciiPrefix(buffer, maxBytes = 96) {
+    if (!buffer) return '';
+    const len = Math.min(Math.max(0, Number(maxBytes) || 0), buffer.byteLength || 0);
+    if (len <= 0) return '';
+    const view = new Uint8Array(buffer, 0, len);
+    if (typeof TextDecoder !== 'undefined') {
+        try {
+            return new TextDecoder('utf-8', { fatal: false }).decode(view);
+        } catch {}
+    }
+    let out = '';
+    for (let i = 0; i < view.length; i++) out += String.fromCharCode(view[i]);
+    return out;
+}
+
+function isGitLfsPointerBuffer(buffer) {
+    const prefix = decodeAsciiPrefix(buffer, 96);
+    if (!prefix) return false;
+    if (prefix.startsWith(GIT_LFS_POINTER_PREFIX)) return true;
+    return prefix.includes('oid sha256:') && prefix.includes('git-lfs.github.com/spec/v1');
+}
+
+async function fetchArrayBuffer(url) {
+    const res = await fetch(url, { method: 'GET' });
+    if (!res.ok) {
+        throw new Error(`HTTP ${res.status} loading ${url}`);
+    }
+    return res.arrayBuffer();
+}
+
+function createFallbackEnvMap(renderer) {
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const envMap = pmrem.fromScene(new RoomEnvironment()).texture;
+    pmrem.dispose();
+    applyHdrColorSpace(envMap);
+    return envMap;
+}
+
 export async function loadIBLTexture(renderer, overrides = {}) {
     const enabled = overrides?.enabled ?? true;
     const hdrUrl = typeof overrides?.hdrUrl === 'string' ? overrides.hdrUrl : '';
@@ -46,26 +86,40 @@ export async function loadIBLTexture(renderer, overrides = {}) {
     if (entry.promise) return entry.promise;
 
     entry.promise = (async () => {
-        const pmrem = new THREE.PMREMGenerator(renderer);
-        pmrem.compileEquirectangularShader?.();
+        try {
+            const pmrem = new THREE.PMREMGenerator(renderer);
+            pmrem.compileEquirectangularShader?.();
 
-        const loader = new RGBELoader();
-        if (THREE.HalfFloatType) loader.setDataType(THREE.HalfFloatType);
-        const hdr = await loader.loadAsync(hdrUrl);
-        hdr.mapping = THREE.EquirectangularReflectionMapping;
-        applyHdrColorSpace(hdr);
+            const buffer = await fetchArrayBuffer(hdrUrl);
+            if (isGitLfsPointerBuffer(buffer)) {
+                throw new Error(`HDRI at ${hdrUrl} is a Git LFS pointer. Run git lfs pull to download assets.`);
+            }
 
-        const envMap = pmrem.fromEquirectangular(hdr).texture;
-        hdr.dispose();
-        pmrem.dispose();
-        applyHdrColorSpace(envMap);
+            const loader = new RGBELoader();
+            if (THREE.HalfFloatType) loader.setDataType(THREE.HalfFloatType);
+            const hdr = loader.parse(buffer);
+            hdr.mapping = THREE.EquirectangularReflectionMapping;
+            applyHdrColorSpace(hdr);
 
-        entry.envMap = envMap;
-        entry.promise = null;
-        return envMap;
-    })().catch((err) => {
-        entry.promise = null;
-        throw err;
+            const envMap = pmrem.fromEquirectangular(hdr).texture;
+            hdr.dispose();
+            pmrem.dispose();
+            applyHdrColorSpace(envMap);
+
+            entry.envMap = envMap;
+            entry.promise = null;
+            return envMap;
+        } catch (err) {
+            if (!entry.warned) {
+                entry.warned = true;
+                console.warn('[IBL] Falling back to procedural environment (HDRI unavailable):', err);
+            }
+
+            const envMap = createFallbackEnvMap(renderer);
+            entry.envMap = envMap;
+            entry.promise = null;
+            return envMap;
+        }
     });
 
     return entry.promise;

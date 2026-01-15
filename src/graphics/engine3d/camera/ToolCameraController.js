@@ -69,6 +69,20 @@ function canUsePointerCapture(canvas) {
     return !!doc?.contains?.(canvas);
 }
 
+function isUiBlockerElement(el, uiRoot) {
+    if (!el || !uiRoot) return false;
+    if (el === uiRoot) return false;
+    if (typeof window === 'undefined' || !window.getComputedStyle) return true;
+
+    let cur = el;
+    while (cur && cur !== uiRoot) {
+        const pe = window.getComputedStyle(cur)?.pointerEvents ?? '';
+        if (pe && pe !== 'none') return true;
+        cur = cur.parentElement;
+    }
+    return false;
+}
+
 export class ToolCameraController {
     constructor(camera, canvas, {
         uiRoot = null,
@@ -362,12 +376,12 @@ export class ToolCameraController {
 
     _isEventOverUi(e) {
         if (!this._uiRoot) return false;
+        if (e?.target === this.canvas) return false;
         const hit = getHitElementFromPoint(this.canvas, e) ?? e?.target ?? null;
         if (!hit) return false;
         if (hit === this.canvas) return false;
         if (!this._uiRoot.contains(hit)) return false;
-        if (hit === this._uiRoot) return false;
-        return true;
+        return isUiBlockerElement(hit, this._uiRoot);
     }
 
     _handleContextMenu(e) {
@@ -456,9 +470,9 @@ export class ToolCameraController {
 
     _handlePointerMove(e) {
         if (!this.enabled || !e) return;
-        if (this._isEventOverUi(e)) return;
 
         if (e.pointerType === 'touch') {
+            if (this._isEventOverUi(e)) return;
             if (!this._touchPointers.has(e.pointerId)) return;
             this._touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
             if (this._state === 'pinch' && this._touchPointers.size === 2) {
