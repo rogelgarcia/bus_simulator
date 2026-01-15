@@ -46,6 +46,7 @@ export class BuildingFabricationView {
     enter() {
         this.scene.enter();
         this.ui.mount();
+        this.scene.setUiRoot(this.ui.root);
 
         this.ui.setGridSize(this.scene.getGridSize());
         this.ui.setFloorHeight(this.scene.getFloorHeight());

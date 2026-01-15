@@ -6209,6 +6209,17 @@ async function runTests() {
         assertNear(tangents[0].y, 0, 1e-6, 'Expected tangent y≈0.');
     });
 
+    const { computeFrameDistanceForSphere } = await import('/src/graphics/engine3d/camera/ToolCameraController.js');
+
+    test('ToolCameraController: frame distance fits sphere', () => {
+        const d = computeFrameDistanceForSphere({ radius: 1, fovDeg: 90, aspect: 1, padding: 1.0 });
+        assertNear(d, 1, 1e-6, 'Expected radius=1 to fit at distance=1 for 90° fov.');
+        const padded = computeFrameDistanceForSphere({ radius: 1, fovDeg: 90, aspect: 1, padding: 1.2 });
+        assertTrue(padded > d, 'Expected padding to increase distance.');
+        const tall = computeFrameDistanceForSphere({ radius: 1, fovDeg: 90, aspect: 0.5, padding: 1.0 });
+        assertTrue(tall > d, 'Expected narrower aspect to require larger distance.');
+    });
+
     // ========== Summary ==========
     console.log('\n' + '='.repeat(50));
     if (errors.length === 0) {

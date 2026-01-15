@@ -1,7 +1,6 @@
 // src/graphics/gui/building_fabrication/BuildingFabricationScene.js
 // Renders the building fabrication 3D grid and generated buildings/roads.
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
@@ -26,6 +25,7 @@ import { buildBuildingFabricationVisualParts } from '../../assets3d/generators/b
 import { cloneBuildingLayers, createDefaultFloorLayer, createDefaultRoofLayer, normalizeBuildingLayers } from '../../assets3d/generators/building_fabrication/BuildingFabricationTypes.js';
 import { getCityMaterials } from '../../assets3d/textures/CityMaterials.js';
 import { createRoadHighlightMesh } from '../../visuals/city/RoadHighlightMesh.js';
+import { ToolCameraController } from '../../engine3d/camera/ToolCameraController.js';
 
 const QUANT = 1000;
 const ROAD_LANES_F = 1;
@@ -302,8 +302,8 @@ export class BuildingFabricationScene {
         this.hemi = null;
     }
 
-    update() {
-        this.controls?.update?.();
+    update(dt = 0) {
+        this.controls?.update?.(dt);
         if (this.sky && this.camera) {
             this.sky.position.copy(this.camera.position);
         }
@@ -316,20 +316,21 @@ export class BuildingFabricationScene {
         const dz = Number(deltaZ) || 0;
         if (!Number.isFinite(dx) || !Number.isFinite(dz)) return;
         if (Math.abs(dx) < 1e-6 && Math.abs(dz) < 1e-6) return;
-
-        this.camera.position.x += dx;
-        this.camera.position.z += dz;
-        this.controls.target.x += dx;
-        this.controls.target.z += dz;
-        this.controls.update();
+        this.controls.panWorld(dx, 0, dz);
     }
 
     resetCamera() {
         if (!this.controls || !this.camera) return;
         const span = this.tileSize * this.gridSize;
-        this.camera.position.set(0, span * 0.95, span * 0.95);
-        this.controls.target.set(0, 0, 0);
-        this.controls.update();
+        this.controls.setLookAt({
+            position: new THREE.Vector3(0, span * 0.95, span * 0.95),
+            target: new THREE.Vector3(0, 0, 0)
+        });
+        this.controls.setHomeFromCurrent?.();
+    }
+
+    setUiRoot(uiRoot) {
+        this.controls?.setUiRoot?.(uiRoot);
     }
 
     _syncLineResolution() {
@@ -1504,18 +1505,17 @@ export class BuildingFabricationScene {
 
     _buildCamera() {
         if (!this.camera) return;
-        this.controls = new OrbitControls(this.camera, this.canvas);
-        this.controls.enableDamping = true;
-        this.controls.dampingFactor = 0.08;
-        this.controls.screenSpacePanning = false;
-        this.controls.maxPolarAngle = Math.PI / 2.05;
-        this.controls.minPolarAngle = 0.12;
-        this.controls.enablePan = true;
-
         const span = this.tileSize * this.gridSize;
         const dist = span * 1.2;
-        this.controls.minDistance = Math.max(16, dist * 0.35);
-        this.controls.maxDistance = dist * 2.2;
+        this.controls = new ToolCameraController(this.camera, this.canvas, {
+            enableDamping: true,
+            dampingFactor: 0.08,
+            minPolarAngle: 0.12,
+            maxPolarAngle: Math.PI / 2.05,
+            minDistance: Math.max(16, dist * 0.35),
+            maxDistance: dist * 2.2,
+            getFocusTarget: () => this._getCameraFocusTarget()
+        });
 
         this.resetCamera();
     }
@@ -1570,9 +1570,7 @@ export class BuildingFabricationScene {
 
         if (this.controls && this.camera) {
             if (cameraPos && cameraTarget) {
-                this.camera.position.copy(cameraPos);
-                this.controls.target.copy(cameraTarget);
-                this.controls.update();
+                this.controls.setLookAt({ position: cameraPos, target: cameraTarget });
             } else {
                 this.resetCamera();
             }
@@ -2014,6 +2012,25 @@ export class BuildingFabricationScene {
         this._syncBuildingBorder(building);
         building.group.visible = !this._roadModeEnabled;
         return building;
+    }
+
+    _getCameraFocusTarget() {
+        const y = 0;
+        if (this._selectedTiles?.size) {
+            const box = new THREE.Box3();
+            for (const tileId of this._selectedTiles) {
+                const meta = this._tileById.get(tileId);
+                if (meta?.center) box.expandByPoint(meta.center);
+            }
+            if (!box.isEmpty()) return { box };
+        }
+
+        const span = this.tileSize * this.gridSize;
+        const half = span * 0.5;
+        return {
+            center: new THREE.Vector3(0, y, 0),
+            radius: Math.max(1, half)
+        };
     }
 
     _addRoadBetween(startTileId, endTileId) {
