@@ -112,7 +112,13 @@ export async function loadIBLTexture(renderer, overrides = {}) {
         } catch (err) {
             if (!entry.warned) {
                 entry.warned = true;
-                console.warn('[IBL] Falling back to procedural environment (HDRI unavailable):', err);
+                const detail = err?.message ?? String(err);
+                const message = `[IBL] HDR environment map failed to load (${hdrUrl}). Using fallback environment. ${detail} (Fix: git lfs pull, or disable IBL with ?ibl=0)`;
+                console.error(message);
+                if (typeof window !== 'undefined') {
+                    if (!Array.isArray(window.__testFatals)) window.__testFatals = [];
+                    window.__testFatals.push({ name: 'IBL', message });
+                }
             }
 
             const envMap = createFallbackEnvMap(renderer);
