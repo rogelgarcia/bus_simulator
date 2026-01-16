@@ -1263,6 +1263,36 @@ async function runTests() {
         assertEqual(getBuildingConfigById('building_4'), null, 'Expected building_4 placeholder id to be absent.');
     });
 
+    test('BuildingCatalog: shipped configs are layer-based', () => {
+        const all = getBuildingConfigs();
+        assertTrue(Array.isArray(all) && all.length > 0, 'Expected building configs list.');
+        for (const cfg of all) {
+            assertTrue(Array.isArray(cfg?.layers) && cfg.layers.length > 0, `Expected layers on config ${cfg?.id ?? '(missing id)'}.`);
+        }
+    });
+
+    test('BuildingCatalog: converted configs preserve legacy fields', () => {
+        const brick = getBuildingConfigById('brick_midrise');
+        assertTrue(!!brick, 'Expected brick_midrise in catalog.');
+        assertEqual(brick.floors, 5);
+        assertEqual(brick.floorHeight, 3);
+        assertEqual(brick.style, BUILDING_STYLE.BRICK);
+        assertEqual(brick.windows.width, 2.2);
+        assertEqual(brick.windows.gap, 1.6);
+        assertEqual(brick.windows.height, 1.4);
+        assertEqual(brick.windows.y, 1.0);
+
+        const stone = getBuildingConfigById('stone_lowrise');
+        assertTrue(!!stone, 'Expected stone_lowrise in catalog.');
+        assertEqual(stone.floors, 4);
+        assertEqual(stone.floorHeight, 3);
+        assertEqual(stone.style, BUILDING_STYLE.STONE_1);
+        assertEqual(stone.windows.width, 1.8);
+        assertEqual(stone.windows.gap, 1.4);
+        assertEqual(stone.windows.height, 1.2);
+        assertEqual(stone.windows.y, 0.9);
+    });
+
     test('BigCitySpec: module is importable', () => {
         assertTrue(typeof createBigCitySpec === 'function', 'Expected createBigCitySpec export.');
         assertTrue(!!BIG_CITY_SPEC && typeof BIG_CITY_SPEC === 'object', 'Expected BIG_CITY_SPEC export.');
@@ -6247,20 +6277,25 @@ async function runTests() {
     const {
         resolveBuildingStyleLabel,
         resolveBuildingStyleWallMaterialUrls
-    } = await import('/src/graphics/content3d/buildings/BuildingStyleCatalog.js');
+    } = await import('/src/graphics/content3d/catalogs/BuildingStyleCatalog.js');
 
     test('BuildingStyleCatalog: brick style uses lightweight wall texture', () => {
         assertEqual(resolveBuildingStyleLabel('brick'), 'Brick', 'Brick label mismatch.');
         const urls = resolveBuildingStyleWallMaterialUrls('brick');
-        assertTrue(typeof urls.baseColorUrl === 'string' && urls.baseColorUrl.includes('brick_wall'), 'Expected baseColorUrl.');
+        assertTrue(
+            typeof urls.baseColorUrl === 'string' && urls.baseColorUrl.includes('brick_wall_DEPRECATED.png'),
+            'Expected baseColorUrl.'
+        );
         assertEqual(urls.normalUrl, null, 'Expected normalUrl to be null.');
         assertEqual(urls.ormUrl, null, 'Expected ormUrl to be null.');
     });
 
     const {
         getPbrMaterialOptions,
-        getPbrMaterialOptionsForBuildings
-    } = await import('/src/graphics/content3d/materials/PbrMaterialCatalog.js');
+        getPbrMaterialOptionsForBuildings,
+        computePbrMaterialTextureRepeat,
+        getPbrMaterialMeta
+    } = await import('/src/graphics/content3d/catalogs/PbrMaterialCatalog.js');
 
     test('BuildingStyleCatalog: PBR style ids resolve safely when assets are missing', () => {
         assertEqual(resolveBuildingStyleLabel('pbr.red_brick'), 'Red Brick', 'PBR label mismatch.');
@@ -6288,6 +6323,58 @@ async function runTests() {
         assertTrue(building.some((opt) => opt?.id === 'pbr.red_brick'), 'Expected pbr.red_brick to be building-eligible.');
         assertFalse(building.some((opt) => opt?.id === 'pbr.asphalt_02'), 'Did not expect pbr.asphalt_02 to be building-eligible.');
         assertFalse(building.some((opt) => String(opt?.id ?? '').toLowerCase().includes('grass')), 'Did not expect grass materials in building list.');
+    });
+
+    test('PbrMaterialCatalog: scale metadata computes repeat consistently', () => {
+        const meta = getPbrMaterialMeta('pbr.red_brick');
+        assertTrue(!!meta, 'Expected red_brick metadata.');
+        assertTrue(Number.isFinite(meta.tileMeters) && meta.tileMeters > 0, 'Expected tileMeters > 0.');
+        assertEqual(meta.preferredVariant, '1k', 'Expected preferredVariant to default to 1k.');
+        assertTrue(Array.isArray(meta.variants) && meta.variants.includes('1k'), 'Expected variants to include 1k.');
+        assertTrue(Array.isArray(meta.maps) && meta.maps.includes('baseColor') && meta.maps.includes('normal') && meta.maps.includes('orm'), 'Expected map keys.');
+
+        const repWorld = computePbrMaterialTextureRepeat('pbr.red_brick', { uvSpace: 'meters' });
+        assertNear(repWorld.x, 1 / meta.tileMeters, 1e-6, 'Expected world repeat x=1/tileMeters.');
+        assertNear(repWorld.y, 1 / meta.tileMeters, 1e-6, 'Expected world repeat y=1/tileMeters.');
+
+        const repUnit = computePbrMaterialTextureRepeat('pbr.red_brick', { uvSpace: 'unit', surfaceSizeMeters: { x: 3, y: 3 } });
+        assertNear(repUnit.x, 3 / meta.tileMeters, 1e-6, 'Expected unit repeat x=surface/tileMeters.');
+        assertNear(repUnit.y, 3 / meta.tileMeters, 1e-6, 'Expected unit repeat y=surface/tileMeters.');
+    });
+
+    const { buildTexturePreviewMaterialMaps } = await import('/src/graphics/gui/inspector_room/InspectorRoomTexturesProvider.js');
+
+    test('InspectorRoomTexturesProvider: preview maps use standard material slots', () => {
+        const baseUrl = 'base';
+        const normalUrl = 'normal';
+        const ormUrl = 'orm';
+        const alphaUrl = 'alpha';
+
+        const single = buildTexturePreviewMaterialMaps({
+            previewMode: 'single',
+            baseTex: baseUrl,
+            normalTex: normalUrl,
+            ormTex: ormUrl,
+            alphaTex: alphaUrl
+        });
+        assertEqual(single.overlay.map, baseUrl, 'Expected base map in overlay (single).');
+        assertEqual(single.overlay.normalMap, normalUrl, 'Expected normal map in overlay (single).');
+        assertEqual(single.overlay.roughnessMap, ormUrl, 'Expected ORM in roughnessMap slot (single).');
+        assertEqual(single.overlay.alphaMap, alphaUrl, 'Expected alpha map in overlay (single).');
+
+        const tiled = buildTexturePreviewMaterialMaps({
+            previewMode: 'tiled',
+            baseTex: baseUrl,
+            normalTex: normalUrl,
+            ormTex: ormUrl,
+            alphaTex: alphaUrl
+        });
+        assertEqual(tiled.overlay.map, null, 'Expected overlay map cleared in tiled mode.');
+        assertEqual(tiled.overlay.normalMap, null, 'Expected overlay normal cleared in tiled mode.');
+        assertEqual(tiled.overlay.roughnessMap, null, 'Expected overlay roughness cleared in tiled mode.');
+        assertEqual(tiled.tile.map, baseUrl, 'Expected base map in tile material.');
+        assertEqual(tiled.tile.normalMap, normalUrl, 'Expected normal map in tile material.');
+        assertEqual(tiled.tile.roughnessMap, ormUrl, 'Expected ORM in roughnessMap slot (tile).');
     });
 
     const { sampleConnector } = await import('/src/app/geometry/ConnectorSampling.js');

@@ -129,7 +129,7 @@ export function serializeCityBuildingConfigToEsModule(config, { exportConstName 
     const wallInset = Number.isFinite(cfg.wallInset) ? clamp(cfg.wallInset, 0.0, 4.0) : null;
 
     const lines = [
-        `// src/app/city/buildings/${baseName}.js`,
+        `// src/graphics/content3d/buildings/configs/${baseName}.js`,
         `export const ${constName} = Object.freeze({`,
         `    id: ${JSON.stringify(id)},`,
         `    name: ${JSON.stringify(name)},`,
@@ -149,4 +149,3 @@ export function serializeCityBuildingConfigToEsModule(config, { exportConstName 
 
     return lines.join('\n');
 }
-

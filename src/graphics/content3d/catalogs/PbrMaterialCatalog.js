@@ -1,6 +1,6 @@
-// src/graphics/content3d/materials/PbrMaterialCatalog.js
+// src/graphics/content3d/catalogs/PbrMaterialCatalog.js
 // Defines a stable registry of imported PBR materials (URLs + building eligibility).
-import { getPbrAssetsEnabled } from './PbrAssetsRuntime.js';
+import { getPbrAssetsEnabled } from '../materials/PbrAssetsRuntime.js';
 
 const PBR_ID_PREFIX = 'pbr.';
 
@@ -10,6 +10,21 @@ const MAPS = Object.freeze({
     baseColor: 'basecolor.jpg',
     normal: 'normal_gl.png',
     orm: 'arm.png'
+});
+
+const DEFAULT_TILE_METERS_BY_ROOT = Object.freeze({
+    wall: 2.0,
+    surface: 4.0
+});
+
+const DEFAULT_VARIANT = '1k';
+
+const MATERIAL_META_OVERRIDES = Object.freeze({
+    [makeId('red_brick')]: Object.freeze({
+        tileMeters: 2.0,
+        preferredVariant: DEFAULT_VARIANT,
+        variants: Object.freeze([DEFAULT_VARIANT])
+    })
 });
 
 function toTitle(slug) {
@@ -22,6 +37,15 @@ function toTitle(slug) {
 
 function makeId(slug) {
     return `${PBR_ID_PREFIX}${slug}`;
+}
+
+function normalizeRoot(value) {
+    return value === 'surface' ? 'surface' : 'wall';
+}
+
+function normalizeVariant(value) {
+    const id = typeof value === 'string' ? value.trim() : '';
+    return id ? id : null;
 }
 
 function makePreviewUrl({ id, label }) {
@@ -113,10 +137,83 @@ export function getPbrMaterialDefinition(materialId) {
     return MATERIAL_BY_ID.get(id) ?? null;
 }
 
+export function getPbrMaterialMeta(materialId) {
+    const def = getPbrMaterialDefinition(materialId);
+    if (!def) return null;
+
+    const root = normalizeRoot(def.root);
+    const override = MATERIAL_META_OVERRIDES[def.id] ?? null;
+
+    const tileCandidate = Number.isFinite(override?.tileMeters) ? override.tileMeters : def.tileMeters;
+    const fallbackTile = DEFAULT_TILE_METERS_BY_ROOT[root] ?? 1.0;
+    const tileMeters = (Number.isFinite(tileCandidate) && tileCandidate > 0) ? tileCandidate : fallbackTile;
+
+    const preferredCandidate = normalizeVariant(override?.preferredVariant ?? def.preferredVariant);
+    const preferredVariant = preferredCandidate ?? DEFAULT_VARIANT;
+
+    const variantsRaw = Array.isArray(override?.variants) ? override.variants : (Array.isArray(def.variants) ? def.variants : null);
+    const variants = variantsRaw
+        ? variantsRaw.map((v) => normalizeVariant(v)).filter(Boolean)
+        : [preferredVariant];
+    if (!variants.includes(preferredVariant)) variants.unshift(preferredVariant);
+
+    return {
+        id: def.id,
+        label: getPbrMaterialLabel(def.id),
+        root,
+        buildingEligible: !!def.buildingEligible,
+        tileMeters,
+        preferredVariant,
+        variants,
+        maps: Object.keys(MAPS)
+    };
+}
+
+export function getPbrMaterialTileMeters(materialId) {
+    const meta = getPbrMaterialMeta(materialId);
+    const t = Number(meta?.tileMeters);
+    if (Number.isFinite(t) && t > 0) return t;
+    const def = getPbrMaterialDefinition(materialId);
+    const root = normalizeRoot(def?.root);
+    return DEFAULT_TILE_METERS_BY_ROOT[root] ?? 1.0;
+}
+
+export function computePbrMaterialTextureRepeat(materialId, { uvSpace = 'meters', surfaceSizeMeters = null } = {}) {
+    const tileMeters = getPbrMaterialTileMeters(materialId);
+    const tile = Number(tileMeters);
+    const safeTile = (Number.isFinite(tile) && tile > 0) ? tile : 1.0;
+
+    if (uvSpace === 'unit') {
+        const size = surfaceSizeMeters && typeof surfaceSizeMeters === 'object' ? surfaceSizeMeters : null;
+        const sx = Number(size?.x);
+        const sy = Number(size?.y);
+        if (!(Number.isFinite(sx) && sx > 0) || !(Number.isFinite(sy) && sy > 0)) return { x: 1, y: 1 };
+        return { x: sx / safeTile, y: sy / safeTile };
+    }
+
+    const rep = 1 / safeTile;
+    return { x: rep, y: rep };
+}
+
 export function getPbrMaterialLabel(materialId) {
     const def = getPbrMaterialDefinition(materialId);
     if (!def) return typeof materialId === 'string' ? materialId : '';
     return def.label || toTitle(def.id.slice(PBR_ID_PREFIX.length));
+}
+
+export function tryGetPbrMaterialIdFromUrl(url) {
+    const raw = typeof url === 'string' ? url : '';
+    if (!raw) return null;
+    const marker = '/assets/public/pbr/';
+    const idx = raw.indexOf(marker);
+    if (idx < 0) return null;
+    const rest = raw.slice(idx + marker.length);
+    const slash = rest.indexOf('/');
+    if (slash <= 0) return null;
+    const slug = rest.slice(0, slash);
+    if (!slug) return null;
+    const id = makeId(slug);
+    return isPbrMaterialId(id) ? id : null;
 }
 
 export function resolvePbrMaterialUrls(materialId) {
@@ -133,12 +230,17 @@ export function resolvePbrMaterialUrls(materialId) {
 
 export function getPbrMaterialOptions() {
     return MATERIALS.map((entry) => {
+        const meta = getPbrMaterialMeta(entry.id);
         return {
             id: entry.id,
             label: entry.label || toTitle(entry.id.slice(PBR_ID_PREFIX.length)),
             previewUrl: makePreviewUrl({ id: entry.id, label: entry.label || toTitle(entry.id.slice(PBR_ID_PREFIX.length)) }),
             root: entry.root,
-            buildingEligible: !!entry.buildingEligible
+            buildingEligible: !!entry.buildingEligible,
+            tileMeters: meta?.tileMeters ?? null,
+            preferredVariant: meta?.preferredVariant ?? null,
+            variants: meta?.variants ?? null,
+            maps: meta?.maps ?? null
         };
     });
 }

@@ -1,6 +1,6 @@
 // src/graphics/content3d/lighting/IBLConfig.js
 // Resolves IBL configuration using stable catalog ids.
-import { DEFAULT_IBL_ID, getIblEntryById } from './IBLCatalog.js';
+import { DEFAULT_IBL_ID, getIblEntryById } from '../catalogs/IBLCatalog.js';
 
 export const IBL_DEFAULTS = Object.freeze({
     enabled: true,

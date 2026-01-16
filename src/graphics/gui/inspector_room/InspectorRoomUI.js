@@ -1028,6 +1028,19 @@ export class InspectorRoomUI {
         if (extra?.rectPx) parts.push(`rect:${formatRectPx(extra.rectPx)}`);
         if (extra?.uv) parts.push(`uv:${formatUv(extra.uv)}`);
         if (typeof extra?.style === 'string' && extra.style) parts.push(`style:${extra.style}`);
+
+        const tileMeters = Number(extra?.tileMeters);
+        if (Number.isFinite(tileMeters) && tileMeters > 0) parts.push(`tile:${formatFloat(tileMeters, 2)}m`);
+        const variant = typeof extra?.preferredVariant === 'string' ? extra.preferredVariant : '';
+        if (variant) parts.push(`variant:${variant}`);
+        const variants = Array.isArray(extra?.variants) ? extra.variants.filter((v) => typeof v === 'string' && v) : null;
+        if (variants?.length) parts.push(`variants:${variants.join(',')}`);
+        const maps = Array.isArray(extra?.maps) ? extra.maps.filter((m) => typeof m === 'string' && m) : null;
+        if (maps?.length) parts.push(`maps:${maps.join(',')}`);
+        if (maps?.length && extra?.resolvedMaps && typeof extra.resolvedMaps === 'object') {
+            const resolved = maps.filter((m) => !!extra.resolvedMaps[m]);
+            if (resolved.length !== maps.length) parts.push(`resolved:${resolved.length ? resolved.join(',') : 'none'}`);
+        }
         this.textureSummary.value = parts.join(' ');
     }
 

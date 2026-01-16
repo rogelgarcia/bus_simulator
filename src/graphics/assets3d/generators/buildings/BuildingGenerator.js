@@ -15,7 +15,8 @@ import {
     resolveBuildingStyleLabel as resolveBuildingStyleLabelFromCatalog,
     resolveBuildingStyleWallMaterialUrls as resolveBuildingStyleWallMaterialUrlsFromCatalog,
     resolveBuildingStyleWallTextureUrl as resolveBuildingStyleWallTextureUrlFromCatalog
-} from '../../../content3d/buildings/BuildingStyleCatalog.js';
+} from '../../../content3d/catalogs/BuildingStyleCatalog.js';
+import { computePbrMaterialTextureRepeat, tryGetPbrMaterialIdFromUrl } from '../../../content3d/catalogs/PbrMaterialCatalog.js';
 
 const EPS = 1e-6;
 const QUANT = 1000;
@@ -571,6 +572,7 @@ export class BuildingWallTextureCache {
         this._renderer = renderer ?? null;
         this._loader = textureLoader ?? new THREE.TextureLoader();
         this._cache = new Map();
+        this._warned = new Set();
     }
 
     dispose() {
@@ -578,14 +580,40 @@ export class BuildingWallTextureCache {
             entry?.texture?.dispose?.();
         }
         this._cache.clear();
+        this._warned.clear();
     }
 
-    _configureTexture(tex, { srgb = true } = {}) {
+    _warnOnce(url, err) {
+        const safeUrl = typeof url === 'string' && url ? url : null;
+        if (!safeUrl) return;
+        if (this._warned.has(safeUrl)) return;
+        this._warned.add(safeUrl);
+        const detail = err?.message ?? (typeof err === 'string' ? err : '');
+        const suffix = ' (Fix: ensure asset exists; if using Git LFS run git lfs pull.)';
+        const msg = detail
+            ? `[BuildingWallTextureCache] Failed to load texture: ${safeUrl}. ${detail}${suffix}`
+            : `[BuildingWallTextureCache] Failed to load texture: ${safeUrl}.${suffix}`;
+        console.warn(msg);
+    }
+
+    _configureTexture(tex, { srgb = true, url = null } = {}) {
         if (!tex) return;
         tex.userData = tex.userData ?? {};
         tex.userData.buildingShared = true;
         tex.wrapS = THREE.RepeatWrapping;
         tex.wrapT = THREE.RepeatWrapping;
+
+        const materialId = tryGetPbrMaterialIdFromUrl(url);
+        if (materialId) {
+            const rep = computePbrMaterialTextureRepeat(materialId, { uvSpace: 'meters' });
+            const rx = Number(rep?.x);
+            const ry = Number(rep?.y);
+            if (Number.isFinite(rx) && Number.isFinite(ry)) {
+                tex.repeat.set(rx, ry);
+                tex.userData.pbrMaterialId = materialId;
+                tex.userData.pbrRepeat = { x: rx, y: ry };
+            }
+        }
 
         const renderer = this._renderer;
         if (renderer?.capabilities?.getMaxAnisotropy) {
@@ -642,7 +670,7 @@ export class BuildingWallTextureCache {
                     return;
                 }
 
-                this._configureTexture(tex, { srgb: next.srgb });
+                this._configureTexture(tex, { srgb: next.srgb, url: next.url });
                 next.texture = tex;
                 next.promise = null;
 
@@ -653,7 +681,8 @@ export class BuildingWallTextureCache {
                     }
                     mat.needsUpdate = true;
                 }
-            }).catch(() => {
+            }).catch((err) => {
+                this._warnOnce(entry.url, err);
                 const next = this._cache.get(key);
                 if (next?.promise === promise) {
                     next.promise = null;

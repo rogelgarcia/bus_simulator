@@ -1,4 +1,4 @@
-// src/graphics/content3d/buildings/WindowTypeCatalog.js
+// src/graphics/content3d/catalogs/WindowTypeCatalog.js
 // Defines window type IDs and metadata for window texture generation and UI.
 
 export const WINDOW_TYPE = Object.freeze({
@@ -121,4 +121,3 @@ export function getWindowTypeParamSpec(typeId) {
     const def = getWindowTypeDefinition(typeId);
     return def?.paramSpec ?? null;
 }
-

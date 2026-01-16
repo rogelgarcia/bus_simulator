@@ -1,4 +1,4 @@
-// src/graphics/content3d/lighting/IBLCatalog.js
+// src/graphics/content3d/catalogs/IBLCatalog.js
 // Defines stable IBL/HDRI environment catalog entries.
 
 export const IBL_ID = Object.freeze({
@@ -29,4 +29,3 @@ export function getIblEntryById(iblId) {
     const id = typeof iblId === 'string' ? iblId : '';
     return IBL_CATALOG.find((entry) => entry.id === id) ?? IBL_CATALOG[0] ?? null;
 }
-

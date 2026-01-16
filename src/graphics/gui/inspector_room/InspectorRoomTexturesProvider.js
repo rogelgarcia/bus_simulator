@@ -2,7 +2,7 @@
 // Texture inspection content provider for the Inspector Room.
 import * as THREE from 'three';
 import { resolveBuildingStyleWallMaterialUrls } from '../../assets3d/generators/buildings/BuildingGenerator.js';
-import { resolvePbrMaterialUrls } from '../../assets3d/materials/PbrMaterialCatalog.js';
+import { computePbrMaterialTextureRepeat, getPbrMaterialMeta, resolvePbrMaterialUrls } from '../../assets3d/materials/PbrMaterialCatalog.js';
 import { getSignAlphaMaskTextureById } from '../../assets3d/textures/signs/SignAlphaMaskCache.js';
 import {
     getTextureInspectorCollectionById,
@@ -47,6 +47,21 @@ function clonePreviewTexture(tex, { offset = null, repeat = null, wrap = THREE.C
     clone.anisotropy = 8;
     clone.needsUpdate = true;
     return clone;
+}
+
+export function buildTexturePreviewMaterialMaps({ previewMode = 'single', baseTex = null, normalTex = null, ormTex = null, alphaTex = null } = {}) {
+    const tiled = previewMode === 'tiled';
+    const maps = {
+        map: baseTex ?? null,
+        normalMap: normalTex ?? null,
+        roughnessMap: ormTex ?? null,
+        alphaMap: alphaTex ?? null
+    };
+
+    return {
+        overlay: tiled ? { map: null, normalMap: null, roughnessMap: null, alphaMap: null } : maps,
+        tile: maps
+    };
 }
 
 function buildPlaceholderCanvas({ label = '', size = 256 } = {}) {
@@ -115,9 +130,11 @@ export class InspectorRoomTexturesProvider {
         this._tileGeo = null;
         this._tileMat = null;
         this._tileMeshes = [];
+        this._tileSize = PLANE_SIZE / TILE_REPEAT;
 
         this._textureLoader = new THREE.TextureLoader();
         this._urlTextures = new Map();
+        this._warnedUrls = new Set();
         this._loadToken = 0;
 
         this._collectionIndex = 0;
@@ -128,6 +145,7 @@ export class InspectorRoomTexturesProvider {
         this._previewMode = 'single';
         this._tileGap = 0.0;
         this._selectedAspect = null;
+        this._activePbrMaterialId = null;
     }
 
     getId() {
@@ -178,6 +196,7 @@ export class InspectorRoomTexturesProvider {
     dispose() {
         this._disposePreviewTexture();
         this._disposeUrlTextures();
+        this._warnedUrls.clear();
 
         if (this._tileGroup) this.root?.remove?.(this._tileGroup);
         this._tileGroup = null;
@@ -280,6 +299,7 @@ export class InspectorRoomTexturesProvider {
         if (nextId === this._textureId) return;
         this._textureId = nextId;
         this._selectedAspect = entry?.aspect ?? null;
+        this._activePbrMaterialId = entry?.kind === 'pbr_material' ? (entry?.materialId ?? entry?.id ?? null) : null;
 
         if (entry?.kind === 'building_wall') {
             this._setBuildingWallMaterial(entry);
@@ -298,9 +318,28 @@ export class InspectorRoomTexturesProvider {
     getSelectedTextureMeta() {
         const entry = getTextureInspectorEntryById(this._textureId);
         if (!entry) return null;
-        const extra = entry.kind === 'sign'
-            ? { atlas: entry.atlasLabel ?? entry.atlasId ?? '-', rectPx: entry.rectPx ?? null, uv: entry.uv ?? null }
-            : (entry.kind === 'building_wall' ? { style: entry.style ?? '-' } : null);
+        let extra = null;
+        if (entry.kind === 'sign') {
+            extra = { kind: 'sign', atlas: entry.atlasLabel ?? entry.atlasId ?? '-', rectPx: entry.rectPx ?? null, uv: entry.uv ?? null };
+        } else if (entry.kind === 'building_wall') {
+            extra = { kind: 'building_wall', style: entry.style ?? '-' };
+        } else if (entry.kind === 'pbr_material') {
+            const materialId = entry?.materialId ?? entry?.id ?? null;
+            const meta = getPbrMaterialMeta(materialId);
+            const urls = resolvePbrMaterialUrls(materialId);
+            extra = {
+                kind: 'pbr_material',
+                tileMeters: meta?.tileMeters ?? null,
+                preferredVariant: meta?.preferredVariant ?? null,
+                variants: meta?.variants ?? null,
+                maps: meta?.maps ?? null,
+                resolvedMaps: {
+                    baseColor: !!urls?.baseColorUrl,
+                    normal: !!urls?.normalUrl,
+                    orm: !!urls?.ormUrl
+                }
+            };
+        }
         return { id: entry.id, name: entry.label, collection: entry.collectionLabel ?? entry.collectionId ?? '-', extra };
     }
 
@@ -400,6 +439,7 @@ export class InspectorRoomTexturesProvider {
         const maxGap = (span - repeat * 0.05) / Math.max(1, repeat - 1);
         const gap = clamp(this._tileGap, 0.0, Math.max(0.0, maxGap));
         const tile = Math.max(0.05, (span - gap * (repeat - 1)) / repeat);
+        this._tileSize = tile;
 
         const startX = -span * 0.5 + tile * 0.5;
         const startZ = -span * 0.5 + tile * 0.5;
@@ -416,6 +456,8 @@ export class InspectorRoomTexturesProvider {
                 mesh.scale.set(tile, tile, 1);
             }
         }
+
+        this._syncActivePreviewRepeat();
     }
 
     _syncPreviewMode() {
@@ -423,7 +465,31 @@ export class InspectorRoomTexturesProvider {
         if (this._tileGroup) this._tileGroup.visible = tiled;
         if (this._overlay) this._overlay.visible = !tiled;
         this._setPlaneAspect(this._selectedAspect);
+        this._syncActivePreviewRepeat();
         this._syncPreviewMaps();
+    }
+
+    _syncActivePreviewRepeat() {
+        const materialId = typeof this._activePbrMaterialId === 'string' ? this._activePbrMaterialId : null;
+        if (!materialId) return;
+
+        const surfaceSize = this._previewMode === 'tiled'
+            ? { x: this._tileSize, y: this._tileSize }
+            : { x: PLANE_SIZE, y: PLANE_SIZE };
+        const rep = computePbrMaterialTextureRepeat(materialId, { uvSpace: 'unit', surfaceSizeMeters: surfaceSize });
+        const rx = Number(rep?.x);
+        const ry = Number(rep?.y);
+        if (!(Number.isFinite(rx) && Number.isFinite(ry))) return;
+
+        const apply = (tex) => {
+            if (!tex) return;
+            tex.repeat.set(rx, ry);
+            tex.needsUpdate = true;
+        };
+
+        apply(this._previewTexture);
+        apply(this._previewNormalMap);
+        apply(this._previewRoughnessMap);
     }
 
     _setPlaneAspect(aspect) {
@@ -469,20 +535,42 @@ export class InspectorRoomTexturesProvider {
         this._previewAlphaMap = null;
         this._setPlaneAspect(null);
 
-        Promise.all([
+        Promise.allSettled([
             this._loadUrlTexture(baseUrl, { srgb: true }),
             this._loadUrlTexture(normalUrl, { srgb: false }),
             this._loadUrlTexture(ormUrl, { srgb: false })
-        ]).then(([baseTex, normalTex, ormTex]) => {
+        ]).then((results) => {
             if (token !== this._loadToken) return;
+            const getTex = (idx, url) => {
+                const res = results[idx] ?? null;
+                if (res?.status === 'rejected') this._warnTextureUrlOnce(url, res.reason);
+                return res?.status === 'fulfilled' ? (res.value ?? null) : null;
+            };
+
+            const baseTex = getTex(0, baseUrl);
+            const normalTex = getTex(1, normalUrl);
+            const ormTex = getTex(2, ormUrl);
+
             const tiling = { x: 2, y: 2 };
-            this._previewTexture = clonePreviewTexture(baseTex, { repeat: tiling, wrap: THREE.RepeatWrapping });
+            const label = entry?.label ?? entry?.style ?? 'Building wall';
+            if (!baseTex && !normalTex && !ormTex) {
+                const tex = canvasToTexture(buildPlaceholderCanvas({ label, size: 256 }), { srgb: true });
+                this._previewTexture = clonePreviewTexture(tex, { repeat: tiling, wrap: THREE.RepeatWrapping });
+                tex.dispose?.();
+                this._previewNormalMap = null;
+                this._previewRoughnessMap = null;
+                this._syncPreviewMaps();
+                return;
+            }
+
+            if (baseTex) this._previewTexture = clonePreviewTexture(baseTex, { repeat: tiling, wrap: THREE.RepeatWrapping });
+            else {
+                const tex = canvasToTexture(buildPlaceholderCanvas({ label, size: 256 }), { srgb: true });
+                this._previewTexture = clonePreviewTexture(tex, { repeat: tiling, wrap: THREE.RepeatWrapping });
+                tex.dispose?.();
+            }
             this._previewNormalMap = clonePreviewTexture(normalTex, { repeat: tiling, wrap: THREE.RepeatWrapping });
             this._previewRoughnessMap = clonePreviewTexture(ormTex, { repeat: tiling, wrap: THREE.RepeatWrapping });
-            this._syncPreviewMaps();
-        }).catch((err) => {
-            if (token !== this._loadToken) return;
-            console.warn('[InspectorRoom] Failed to load building wall textures', err);
             this._syncPreviewMaps();
         });
     }
@@ -510,56 +598,91 @@ export class InspectorRoomTexturesProvider {
             return;
         }
 
-        Promise.all([
+        Promise.allSettled([
             this._loadUrlTexture(baseUrl, { srgb: true }),
             this._loadUrlTexture(normalUrl, { srgb: false }),
             this._loadUrlTexture(ormUrl, { srgb: false })
-        ]).then(([baseTex, normalTex, ormTex]) => {
+        ]).then((results) => {
             if (token !== this._loadToken) return;
+            const getTex = (idx, url) => {
+                const res = results[idx] ?? null;
+                if (res?.status === 'rejected') this._warnTextureUrlOnce(url, res.reason);
+                return res?.status === 'fulfilled' ? (res.value ?? null) : null;
+            };
+
+            const baseTex = getTex(0, baseUrl);
+            const normalTex = getTex(1, normalUrl);
+            const ormTex = getTex(2, ormUrl);
+
+            const tiling = computePbrMaterialTextureRepeat(entry?.materialId, {
+                uvSpace: 'unit',
+                surfaceSizeMeters: this._previewMode === 'tiled' ? { x: this._tileSize, y: this._tileSize } : { x: PLANE_SIZE, y: PLANE_SIZE }
+            });
+
+            const label = entry?.label ?? entry?.materialId ?? 'PBR material';
             if (!baseTex && !normalTex && !ormTex) {
-                const label = entry?.label ?? entry?.materialId ?? 'PBR material';
                 const tex = canvasToTexture(buildPlaceholderCanvas({ label, size: 256 }), { srgb: true });
-                this._previewTexture = clonePreviewTexture(tex, { repeat: { x: 2, y: 2 }, wrap: THREE.RepeatWrapping });
+                this._previewTexture = clonePreviewTexture(tex, { repeat: tiling, wrap: THREE.RepeatWrapping });
                 tex.dispose?.();
                 this._previewNormalMap = null;
                 this._previewRoughnessMap = null;
+                this._syncActivePreviewRepeat();
                 this._syncPreviewMaps();
                 return;
             }
-            const tiling = { x: 2, y: 2 };
-            this._previewTexture = clonePreviewTexture(baseTex, { repeat: tiling, wrap: THREE.RepeatWrapping });
+
+            if (baseTex) this._previewTexture = clonePreviewTexture(baseTex, { repeat: tiling, wrap: THREE.RepeatWrapping });
+            else {
+                const tex = canvasToTexture(buildPlaceholderCanvas({ label, size: 256 }), { srgb: true });
+                this._previewTexture = clonePreviewTexture(tex, { repeat: tiling, wrap: THREE.RepeatWrapping });
+                tex.dispose?.();
+            }
+
             this._previewNormalMap = clonePreviewTexture(normalTex, { repeat: tiling, wrap: THREE.RepeatWrapping });
             this._previewRoughnessMap = clonePreviewTexture(ormTex, { repeat: tiling, wrap: THREE.RepeatWrapping });
-            this._syncPreviewMaps();
-        }).catch((err) => {
-            if (token !== this._loadToken) return;
-            const label = entry?.label ?? entry?.materialId ?? 'PBR material';
-            const tex = canvasToTexture(buildPlaceholderCanvas({ label, size: 256 }), { srgb: true });
-            this._previewTexture = clonePreviewTexture(tex, { repeat: { x: 2, y: 2 }, wrap: THREE.RepeatWrapping });
-            tex.dispose?.();
-            this._previewNormalMap = null;
-            this._previewRoughnessMap = null;
+            this._syncActivePreviewRepeat();
             this._syncPreviewMaps();
         });
+    }
+
+    _warnTextureUrlOnce(url, err) {
+        const safeUrl = typeof url === 'string' && url ? url : null;
+        if (!safeUrl) return;
+        if (this._warnedUrls.has(safeUrl)) return;
+        this._warnedUrls.add(safeUrl);
+
+        const detail = err?.message ?? (typeof err === 'string' ? err : '');
+        const suffix = ' (Fix: ensure asset exists; if using Git LFS run git lfs pull.)';
+        const msg = detail
+            ? `[InspectorRoom] Failed to load texture: ${safeUrl}. ${detail}${suffix}`
+            : `[InspectorRoom] Failed to load texture: ${safeUrl}.${suffix}`;
+        console.warn(msg);
     }
 
     _syncPreviewMaps() {
         const tex = this._previewTexture ?? null;
         const normalMap = this._previewNormalMap ?? null;
         const roughnessMap = this._previewRoughnessMap ?? null;
-        const tiled = this._previewMode === 'tiled';
 
         const alphaMap = this._previewAlphaMap ?? null;
         const hasPbr = !!normalMap || !!roughnessMap;
-        const roughness = roughnessMap ? 1.0 : 0.8;
-        const metalness = 0.0;
+        const roughness = roughnessMap ? 1.0 : 0.85;
+        const metalness = roughnessMap ? 0.0 : 0.05;
+
+        const maps = buildTexturePreviewMaterialMaps({
+            previewMode: this._previewMode,
+            baseTex: tex,
+            normalTex: normalMap,
+            ormTex: roughnessMap,
+            alphaTex: alphaMap
+        });
 
         if (this._overlayMat) {
-            this._overlayMat.map = tiled ? null : tex;
-            this._overlayMat.normalMap = tiled ? null : normalMap;
-            this._overlayMat.roughnessMap = tiled ? null : roughnessMap;
-            this._overlayMat.alphaMap = tiled ? null : alphaMap;
-            this._overlayMat.alphaTest = alphaMap ? 0.5 : 0;
+            this._overlayMat.map = maps.overlay.map;
+            this._overlayMat.normalMap = maps.overlay.normalMap;
+            this._overlayMat.roughnessMap = maps.overlay.roughnessMap;
+            this._overlayMat.alphaMap = maps.overlay.alphaMap;
+            this._overlayMat.alphaTest = maps.overlay.alphaMap ? 0.5 : 0;
             this._overlayMat.roughness = roughness;
             this._overlayMat.metalness = metalness;
             if (hasPbr && this._overlayMat.normalScale) this._overlayMat.normalScale.set(0.9, 0.9);
@@ -567,11 +690,11 @@ export class InspectorRoomTexturesProvider {
         }
 
         if (this._tileMat) {
-            this._tileMat.map = tex;
-            this._tileMat.normalMap = normalMap;
-            this._tileMat.roughnessMap = roughnessMap;
-            this._tileMat.alphaMap = alphaMap;
-            this._tileMat.alphaTest = alphaMap ? 0.5 : 0;
+            this._tileMat.map = maps.tile.map;
+            this._tileMat.normalMap = maps.tile.normalMap;
+            this._tileMat.roughnessMap = maps.tile.roughnessMap;
+            this._tileMat.alphaMap = maps.tile.alphaMap;
+            this._tileMat.alphaTest = maps.tile.alphaMap ? 0.5 : 0;
             this._tileMat.roughness = roughness;
             this._tileMat.metalness = metalness;
             if (hasPbr && this._tileMat.normalScale) this._tileMat.normalScale.set(0.9, 0.9);

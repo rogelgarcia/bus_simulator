@@ -1,4 +1,5 @@
-// src/app/city/buildings/BlueBeltTower.js
+// src/graphics/content3d/buildings/configs/BlueBeltTower.js
+// City building config: Blue belt tower.
 export const BLUE_BELT_TOWER_BUILDING_CONFIG = Object.freeze({
     id: 'blue_belt_tower',
     name: 'Blue belt tower',
@@ -81,3 +82,4 @@ export const BLUE_BELT_TOWER_BUILDING_CONFIG = Object.freeze({
 });
 
 export default BLUE_BELT_TOWER_BUILDING_CONFIG;
+

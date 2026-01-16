@@ -1,10 +1,10 @@
-// src/graphics/content3d/textures/TextureInspectorCatalog.js
+// src/graphics/content3d/catalogs/TextureInspectorCatalog.js
 // Defines a stable texture catalog for inspector scenes.
 import { WINDOW_STYLE } from '../../../app/buildings/WindowStyle.js';
 import { BUILDING_STYLE } from '../../../app/buildings/BuildingStyle.js';
 import { getBuildingWindowTextureForStyle } from '../../assets3d/generators/buildings/BuildingGenerator.js';
 import { getSignAssetById, getSignAssets } from '../../assets3d/textures/signs/SignAssets.js';
-import { getPbrMaterialOptions } from '../materials/PbrMaterialCatalog.js';
+import { getPbrMaterialOptions } from './PbrMaterialCatalog.js';
 
 export const INSPECTOR_COLLECTION = Object.freeze({
     WINDOWS: 'tex.collection.windows',

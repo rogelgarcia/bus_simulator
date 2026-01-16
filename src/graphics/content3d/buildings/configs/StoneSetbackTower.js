@@ -1,4 +1,5 @@
-// src/app/city/buildings/StoneSetbackTower.js
+// src/graphics/content3d/buildings/configs/StoneSetbackTower.js
+// City building config: Stone setback tower.
 export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
     id: 'stone_setback_tower',
     name: 'Stone setback tower',
@@ -176,3 +177,4 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
 });
 
 export default STONE_SETBACK_TOWER_BUILDING_CONFIG;
+

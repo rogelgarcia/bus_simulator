@@ -1,4 +1,5 @@
-// src/app/city/buildings/GovCenter.js
+// src/graphics/content3d/buildings/configs/GovCenter.js
+// City building config: Gov center.
 export const GOV_CENTER_BUILDING_CONFIG = Object.freeze({
     id: 'gov_center',
     name: 'Gov center',
@@ -166,3 +167,4 @@ export const GOV_CENTER_BUILDING_CONFIG = Object.freeze({
 });
 
 export default GOV_CENTER_BUILDING_CONFIG;
+

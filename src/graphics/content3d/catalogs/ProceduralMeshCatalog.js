@@ -1,12 +1,12 @@
-// src/graphics/content3d/procedural_meshes/ProceduralMeshCatalog.js
+// src/graphics/content3d/catalogs/ProceduralMeshCatalog.js
 // Defines procedural meshes with stable ids and stable region identifiers.
 import * as BallMeshV1 from '../../assets3d/procedural_meshes/meshes/BallMesh_v1.js';
 import * as StreetSignPoleMeshV1 from '../../assets3d/procedural_meshes/meshes/StreetSignPoleMesh_v1.js';
 import * as StopSignPlateMeshV1 from '../../assets3d/procedural_meshes/meshes/StopSignPlateMesh_v1.js';
 import * as StopSignMeshV1 from '../../assets3d/procedural_meshes/meshes/StopSignMesh_v1.js';
-import * as TrafficLightPoleMeshV1 from './meshes/TrafficLightPoleMesh_v1.js';
-import * as TrafficLightHeadMeshV1 from './meshes/TrafficLightHeadMesh_v1.js';
-import * as TrafficLightMeshV1 from './meshes/TrafficLightMesh_v1.js';
+import * as TrafficLightPoleMeshV1 from '../procedural_meshes/meshes/TrafficLightPoleMesh_v1.js';
+import * as TrafficLightHeadMeshV1 from '../procedural_meshes/meshes/TrafficLightHeadMesh_v1.js';
+import * as TrafficLightMeshV1 from '../procedural_meshes/meshes/TrafficLightMesh_v1.js';
 
 export const PROCEDURAL_MESH = Object.freeze({
     BALL_V1: BallMeshV1.MESH_ID,

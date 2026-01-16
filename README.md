@@ -43,7 +43,7 @@ Setup:
 ## Buildings
 
 - Shared building enums/options live in `src/app/buildings/` (styles, roof colors, belt colors, window styles).
-- City building designs live in `src/app/city/buildings/` and are referenced by id from `src/app/city/CityMap.js`.
+- City building designs live in `src/graphics/content3d/buildings/configs/` and are referenced by id from `src/app/city/CityMap.js`.
 - Building generation code lives in `src/graphics/assets3d/generators/buildings/`.
 - Building fabrication UI lives in `src/graphics/gui/building_fabrication/`.
-- To add a new city building design: add a config file in `src/app/city/buildings/`, export it from `src/app/city/buildings/index.js`, then reference it via `configId` in `src/app/city/CityMap.js`.
+- To add a new city building design: add a config file in `src/graphics/content3d/buildings/configs/`, register it in `src/graphics/content3d/buildings/BuildingConfigCatalog.js`, then reference it via `configId` in `src/app/city/CityMap.js`.

@@ -90,6 +90,8 @@ export function createDefaultWindowSpec({
     height = 1.4,
     sillHeight = 1.0,
     spacing = 1.6,
+    cornerEps = 0.01,
+    offset = 0.01,
     enabled = true,
     spaceColumns = null
 } = {}) {
@@ -105,6 +107,8 @@ export function createDefaultWindowSpec({
         height: clamp(height, 0.3, 10.0),
         sillHeight: clamp(sillHeight, 0.0, 12.0),
         spacing: clamp(spacing, 0.0, 24.0),
+        cornerEps: clamp(cornerEps, 0.01, 2.0),
+        offset: clamp(offset, 0.01, 0.2),
         spaceColumns: {
             enabled: !!cols.enabled,
             every: clampInt(cols.every ?? cols.everyN ?? cols.after ?? 4, 1, 99),

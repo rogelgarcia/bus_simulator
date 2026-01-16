@@ -93,8 +93,8 @@ All things related to building fabrication should be organized in a dedicated mo
   full layer definition) in a form that can be used by city creation.
 - Export should download a single building config file as an ES module.
 - The exported file should be directly usable by placing it under
-  `src/app/city/buildings/` and then registering it in
-  `src/app/city/buildings/index.js`.
+  `src/graphics/content3d/buildings/configs/` and then registering it in
+  `src/graphics/content3d/buildings/BuildingConfigCatalog.js`.
 - The exported config must include stable identifiers:
   - `id` (string): used as `configId` from the city map spec.
   - `name` (string): human-readable name for pickers/debugging.

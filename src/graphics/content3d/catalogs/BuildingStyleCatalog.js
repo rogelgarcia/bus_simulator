@@ -1,6 +1,6 @@
-// src/graphics/content3d/buildings/BuildingStyleCatalog.js
+// src/graphics/content3d/catalogs/BuildingStyleCatalog.js
 // Defines building style labels and wall material URL specifications.
-import { getPbrMaterialLabel, isPbrMaterialId, resolvePbrMaterialUrls } from '../materials/PbrMaterialCatalog.js';
+import { getPbrMaterialLabel, isPbrMaterialId, resolvePbrMaterialUrls } from './PbrMaterialCatalog.js';
 
 const BUILDING_TEXTURE_BASE_URL = new URL('../../../../assets/public/textures/buildings/walls/', import.meta.url);
 

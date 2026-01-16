@@ -8,7 +8,7 @@ import {
     getWindowTypeDefinition,
     getWindowTypeParamSpec,
     listWindowTypeIds
-} from '../../content3d/buildings/WindowTypeCatalog.js';
+} from '../../content3d/catalogs/WindowTypeCatalog.js';
 
 const QUANT = 1000;
 const _textureCache = new Map();
