@@ -14,7 +14,7 @@ export const STONE_LOWRISE_BUILDING_CONFIG = Object.freeze({
                 style: 'stone_1',
                 material: {
                     kind: 'texture',
-                    id: 'stone_1'
+                    id: 'pbr.painted_plaster_wall'
                 },
                 belt: {
                     enabled: false,

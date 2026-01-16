@@ -14,7 +14,7 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
                 "style": "stone_1",
                 "material": {
                     "kind": "texture",
-                    "id": "stone_1"
+                    "id": "pbr.patterned_concrete_wall"
                 },
                 "belt": {
                     "enabled": true,
@@ -44,7 +44,7 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
                         "width": 0.9,
                         "material": {
                             "kind": "texture",
-                            "id": "stone_1"
+                            "id": "pbr.patterned_concrete_wall"
                         },
                         "extrude": true,
                         "extrudeDistance": 0.47
@@ -82,7 +82,7 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
                 "style": "stone_1",
                 "material": {
                     "kind": "texture",
-                    "id": "stone_1"
+                    "id": "pbr.patterned_concrete_wall"
                 },
                 "belt": {
                     "enabled": true,
@@ -112,7 +112,7 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
                         "width": 0.9,
                         "material": {
                             "kind": "texture",
-                            "id": "stone_1"
+                            "id": "pbr.patterned_concrete_wall"
                         },
                         "extrude": true,
                         "extrudeDistance": 0.47
@@ -129,7 +129,7 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
                     "height": 0.64,
                     "material": {
                         "kind": "texture",
-                        "id": "stone_1"
+                        "id": "pbr.patterned_concrete_wall"
                     }
                 },
                 "roof": {
@@ -151,7 +151,7 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
                     "height": 0.82,
                     "material": {
                         "kind": "texture",
-                        "id": "stone_1"
+                        "id": "pbr.patterned_concrete_wall"
                     }
                 },
                 "roof": {
@@ -177,4 +177,3 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
 });
 
 export default STONE_SETBACK_TOWER_BUILDING_CONFIG;
-

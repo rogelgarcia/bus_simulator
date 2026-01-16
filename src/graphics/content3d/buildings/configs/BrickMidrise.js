@@ -14,7 +14,7 @@ export const BRICK_MIDRISE_BUILDING_CONFIG = Object.freeze({
                 style: 'brick',
                 material: {
                     kind: 'texture',
-                    id: 'brick'
+                    id: 'pbr.red_brick'
                 },
                 belt: {
                     enabled: false,

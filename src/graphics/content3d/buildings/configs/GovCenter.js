@@ -14,7 +14,7 @@ export const GOV_CENTER_BUILDING_CONFIG = Object.freeze({
                 "style": "cement",
                 "material": {
                     "kind": "texture",
-                    "id": "cement"
+                    "id": "pbr.plaster_brick_pattern"
                 },
                 "belt": {
                     "enabled": false,
@@ -99,7 +99,7 @@ export const GOV_CENTER_BUILDING_CONFIG = Object.freeze({
                 "style": "cement",
                 "material": {
                     "kind": "texture",
-                    "id": "cement"
+                    "id": "pbr.plaster_brick_pattern"
                 },
                 "belt": {
                     "enabled": true,
@@ -167,4 +167,3 @@ export const GOV_CENTER_BUILDING_CONFIG = Object.freeze({
 });
 
 export default GOV_CENTER_BUILDING_CONFIG;
-

@@ -1243,6 +1243,26 @@ async function runTests() {
         assertEqual(stone.id, 'stone_setback_tower');
         assertEqual(stone.name, 'Stone setback tower');
         assertTrue(Array.isArray(stone.layers) && stone.layers.length >= 1, 'Expected layers on stone tower config.');
+        assertEqual(
+            stone.layers?.[0]?.material?.id,
+            'pbr.patterned_concrete_wall',
+            'Expected Stone setback tower main wall material to use patterned concrete PBR.'
+        );
+        assertEqual(
+            stone.layers?.[0]?.windows?.spaceColumns?.material?.id,
+            'pbr.patterned_concrete_wall',
+            'Expected Stone setback tower spacer columns to use patterned concrete PBR.'
+        );
+        assertEqual(
+            stone.layers?.[2]?.material?.id,
+            'pbr.patterned_concrete_wall',
+            'Expected Stone setback tower setback wall material to use patterned concrete PBR.'
+        );
+        assertEqual(
+            stone.layers?.[3]?.ring?.material?.id,
+            'pbr.patterned_concrete_wall',
+            'Expected Stone setback tower roof ring material to use patterned concrete PBR.'
+        );
 
         const all = getBuildingConfigs();
         assertTrue(Array.isArray(all) && all.length >= 4, 'Expected at least 4 building configs.');
@@ -1253,6 +1273,16 @@ async function runTests() {
         assertTrue(!!gov, 'Expected gov_center in catalog.');
         assertEqual(gov.id, 'gov_center');
         assertEqual(gov.name, 'Gov center');
+        assertEqual(
+            gov.layers?.[0]?.material?.id,
+            'pbr.plaster_brick_pattern',
+            'Expected Gov center main wall material to use plaster brick pattern PBR.'
+        );
+        assertEqual(
+            gov.layers?.[3]?.material?.id,
+            'pbr.plaster_brick_pattern',
+            'Expected Gov center upper wall material to use plaster brick pattern PBR.'
+        );
 
         const all = getBuildingConfigs();
         assertTrue(all.includes(gov), 'Expected catalog list to include Gov center config.');
@@ -1281,6 +1311,7 @@ async function runTests() {
         assertEqual(brick.windows.gap, 1.6);
         assertEqual(brick.windows.height, 1.4);
         assertEqual(brick.windows.y, 1.0);
+        assertEqual(brick.layers?.[0]?.material?.id, 'pbr.red_brick', 'Expected Brick midrise wall material to use PBR red brick.');
 
         const stone = getBuildingConfigById('stone_lowrise');
         assertTrue(!!stone, 'Expected stone_lowrise in catalog.');
@@ -1291,6 +1322,7 @@ async function runTests() {
         assertEqual(stone.windows.gap, 1.4);
         assertEqual(stone.windows.height, 1.2);
         assertEqual(stone.windows.y, 0.9);
+        assertEqual(stone.layers?.[0]?.material?.id, 'pbr.painted_plaster_wall', 'Expected Stone lowrise wall material to use PBR painted plaster wall.');
     });
 
     test('BigCitySpec: module is importable', () => {
