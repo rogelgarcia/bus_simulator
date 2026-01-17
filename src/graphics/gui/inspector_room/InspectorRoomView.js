@@ -8,6 +8,7 @@ import { InspectorRoomUI } from './InspectorRoomUI.js';
 import { computeBoundsSize, formatMeters } from './InspectorRoomMeasurementUtils.js';
 
 const STORAGE_KEY = 'bus_sim.inspector_room.v1';
+const UP = new THREE.Vector3(0, 1, 0);
 
 function isInteractiveElement(target) {
     const tag = target?.tagName;
@@ -84,6 +85,8 @@ export class InspectorRoomView {
         this._selectedInfo = null;
         this._measureBox = new THREE.Box3();
         this._scratchVec = new THREE.Vector3();
+        this._lightMapForward = new THREE.Vector3();
+        this._lightMapRight = new THREE.Vector3();
 
         this._pointerDown = null;
         this._pointerMoved = false;
@@ -187,6 +190,18 @@ export class InspectorRoomView {
             this.room.setLightMarkerVisible(enabled);
             this.ui.setLightState({ markerEnabled: this.room.getLightMarkerVisible() });
         };
+        this.ui.onLightEnabledToggle = (enabled) => {
+            this.room.setLightEnabled(enabled);
+            this.ui.setLightState({ enabled: this.room.getLightEnabled() });
+        };
+        this.ui.onLightIntensityChange = (intensity) => {
+            this.room.setLightIntensity(intensity);
+            this.ui.setLightState({ intensity: this.room.getLightIntensity() });
+        };
+        this.ui.onLightColorChange = (hex) => {
+            this.room.setLightColorHex(hex);
+            this.ui.setLightState({ colorHex: this.room.getLightColorHex() });
+        };
 
         this.ui.onCameraPreset = (presetId) => {
             this.room.setCameraPreset(presetId, { duration: 0.26, instant: false });
@@ -195,7 +210,16 @@ export class InspectorRoomView {
         this._setMode(this._selection.mode ?? 'meshes', { user: false, instantCamera: true });
 
         const lightPos = this.room.getLightPosition();
-        this.ui.setLightState({ x: lightPos.x, y: lightPos.y, z: lightPos.z, markerEnabled: this.room.getLightMarkerVisible(), range: 10 });
+        this.ui.setLightState({
+            x: lightPos.x,
+            y: lightPos.y,
+            z: lightPos.z,
+            markerEnabled: this.room.getLightMarkerVisible(),
+            enabled: this.room.getLightEnabled(),
+            intensity: this.room.getLightIntensity(),
+            colorHex: this.room.getLightColorHex(),
+            range: 10
+        });
 
         window.addEventListener('keydown', this._onKeyDown, { passive: false });
         this.canvas.addEventListener('contextmenu', this._onContextMenu, { passive: false });
@@ -234,6 +258,9 @@ export class InspectorRoomView {
         this.ui.onMeasurementsToggle = null;
         this.ui.onLightChange = null;
         this.ui.onLightMarkerToggle = null;
+        this.ui.onLightEnabledToggle = null;
+        this.ui.onLightIntensityChange = null;
+        this.ui.onLightColorChange = null;
         this.ui.onCameraPreset = null;
 
         this.ui.unmount();
@@ -250,7 +277,29 @@ export class InspectorRoomView {
         this.room.update(dt);
         this.meshes.update();
         this.textures.update();
+        this._syncLightMapBasis();
         this._syncViewportOverlays();
+    }
+
+    _syncLightMapBasis() {
+        const camera = this.engine?.camera ?? null;
+        if (!camera) return;
+        this._lightMapForward.set(0, 0, -1).applyQuaternion(camera.quaternion);
+        this._lightMapForward.y = 0;
+        const len = this._lightMapForward.lengthSq();
+        if (len <= 1e-6) return;
+        this._lightMapForward.multiplyScalar(1 / Math.sqrt(len));
+        this._lightMapRight.crossVectors(this._lightMapForward, UP);
+        const rLen = this._lightMapRight.lengthSq();
+        if (rLen <= 1e-6) return;
+        this._lightMapRight.multiplyScalar(1 / Math.sqrt(rLen));
+
+        this.ui.setLightMapBasis({
+            rightX: this._lightMapRight.x,
+            rightZ: this._lightMapRight.z,
+            forwardX: this._lightMapForward.x,
+            forwardZ: this._lightMapForward.z
+        });
     }
 
     _syncViewportOverlays() {

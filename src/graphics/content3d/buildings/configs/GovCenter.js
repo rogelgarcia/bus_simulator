@@ -1,8 +1,8 @@
 // src/graphics/content3d/buildings/configs/GovCenter.js
 // City building config: Gov center.
 export const GOV_CENTER_BUILDING_CONFIG = Object.freeze({
-    id: 'gov_center',
-    name: 'Gov center',
+    id: "gov_center",
+    name: "Gov center",
     layers: Object.freeze(
         [
             {
@@ -11,7 +11,7 @@ export const GOV_CENTER_BUILDING_CONFIG = Object.freeze({
                 "floors": 2,
                 "floorHeight": 5,
                 "planOffset": 1.7,
-                "style": "cement",
+                "style": "pbr.plaster_brick_pattern",
                 "material": {
                     "kind": "texture",
                     "id": "pbr.plaster_brick_pattern"
@@ -96,7 +96,7 @@ export const GOV_CENTER_BUILDING_CONFIG = Object.freeze({
                 "floors": 8,
                 "floorHeight": 3.4,
                 "planOffset": 4.2,
-                "style": "cement",
+                "style": "pbr.plaster_brick_pattern",
                 "material": {
                     "kind": "texture",
                     "id": "pbr.plaster_brick_pattern"
@@ -157,7 +157,7 @@ export const GOV_CENTER_BUILDING_CONFIG = Object.freeze({
     ),
     floors: 10,
     floorHeight: 5,
-    style: "cement",
+    style: "default",
     windows: Object.freeze({
         width: 2.7,
         gap: 0,

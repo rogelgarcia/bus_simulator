@@ -38,6 +38,14 @@ export function sanitizeBuildingConfigName(raw, { fallback = 'Building config' }
     return typeof fallback === 'string' && fallback.trim() ? fallback.trim() : 'Building config';
 }
 
+export function buildingConfigIdToDisplayName(id) {
+    const safe = sanitizeBuildingConfigId(id);
+    const label = safe.replace(/_+/g, ' ').trim();
+    if (!label) return 'Building config';
+    const lower = label.toLowerCase();
+    return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
+
 export function buildingConfigIdToConstName(id) {
     const safe = sanitizeBuildingConfigId(id);
     const base = safe.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
@@ -83,7 +91,7 @@ export function createCityBuildingConfigFromFabrication({
     wallInset = 0.0
 } = {}) {
     const safeId = sanitizeBuildingConfigId(id);
-    const safeName = sanitizeBuildingConfigName(name, { fallback: safeId });
+    const safeName = sanitizeBuildingConfigName(name, { fallback: buildingConfigIdToDisplayName(safeId) });
     const safeLayers = normalizeBuildingLayers(layers);
     const { floors, floorHeight, style, windows } = deriveLegacyFieldsFromLayers(safeLayers);
 
@@ -105,7 +113,7 @@ export function createCityBuildingConfigFromFabrication({
 export function serializeCityBuildingConfigToEsModule(config, { exportConstName = null, fileBaseName = null } = {}) {
     const cfg = config && typeof config === 'object' ? config : {};
     const id = sanitizeBuildingConfigId(cfg.id);
-    const name = sanitizeBuildingConfigName(cfg.name, { fallback: id });
+    const name = sanitizeBuildingConfigName(cfg.name, { fallback: buildingConfigIdToDisplayName(id) });
     const constName = typeof exportConstName === 'string' && exportConstName.trim()
         ? exportConstName.trim()
         : buildingConfigIdToConstName(id);
@@ -130,6 +138,7 @@ export function serializeCityBuildingConfigToEsModule(config, { exportConstName 
 
     const lines = [
         `// src/graphics/content3d/buildings/configs/${baseName}.js`,
+        `// City building config: ${name}.`,
         `export const ${constName} = Object.freeze({`,
         `    id: ${JSON.stringify(id)},`,
         `    name: ${JSON.stringify(name)},`,

@@ -6287,10 +6287,23 @@ async function runTests() {
     });
 
     const { InspectorRoomUI } = await import('/src/graphics/gui/inspector_room/InspectorRoomUI.js');
+    const { lightSignedExpSliderToValue, lightSignedExpValueToSlider } = await import('/src/graphics/gui/inspector_room/InspectorRoomLightUtils.js');
+
+    test('InspectorRoomLightUtils: signed exponential mapping is symmetric', () => {
+        const samples = [-1, -0.5, -0.1, 0, 0.1, 0.5, 1];
+        for (const t of samples) {
+            const v = lightSignedExpSliderToValue(t);
+            const back = lightSignedExpValueToSlider(v);
+            assertNear(back, t, 1e-6, 'Expected slider->value->slider roundtrip.');
+            assertNear(lightSignedExpSliderToValue(-t), -v, 1e-6, 'Expected symmetry about 0.');
+        }
+    });
 
     test('InspectorRoomUI: lighting slider initializes from light state', () => {
         const ui = new InspectorRoomUI();
-        assertEqual(ui.lightY.value, String(ui.getLightState().y), 'Expected lightY slider to match light state.');
+        const state = ui.getLightState();
+        const expected = lightSignedExpValueToSlider(state.y);
+        assertNear(Number(ui.lightY.value), expected, 1e-3, 'Expected lightY slider to match mapped light state.');
     });
 
     const { InspectorRoomMeshesProvider } = await import('/src/graphics/gui/inspector_room/InspectorRoomMeshesProvider.js');

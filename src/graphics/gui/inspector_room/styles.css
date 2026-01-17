@@ -377,8 +377,17 @@
     cursor: pointer;
 }
 
+.inspector-room-mini-btn.is-active {
+    border-color: rgba(100, 210, 255, 0.78);
+    background: rgba(100, 210, 255, 0.18);
+}
+
 .inspector-room-mini-btn:hover {
     background: rgba(0,0,0,0.28);
+}
+
+.inspector-room-mini-btn:active {
+    transform: translateY(1px);
 }
 
 .inspector-room-axis-legend.labels-off .inspector-room-axis-label { display: none; }
@@ -422,6 +431,12 @@
     justify-content: space-between;
     gap: 10px;
     margin-bottom: 10px;
+}
+
+.inspector-room-lighting-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
 .inspector-room-lighting-title {
@@ -478,7 +493,53 @@
     font-weight: 800;
 }
 
+.inspector-room-light-y-value {
+    font-size: 11px;
+    opacity: 0.78;
+    font-weight: 800;
+}
+
 .inspector-room-light-y-slider {
     width: 140px;
     transform: rotate(-90deg);
+}
+
+.inspector-room-lighting-extras {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.inspector-room-light-row {
+    display: grid;
+    grid-template-columns: 76px 1fr 56px;
+    align-items: center;
+    gap: 8px;
+}
+
+.inspector-room-light-row-label {
+    font-size: 12px;
+    opacity: 0.85;
+    font-weight: 800;
+}
+
+.inspector-room-light-row-slider {
+    width: 100%;
+}
+
+.inspector-room-light-row-color {
+    width: 100%;
+    height: 28px;
+    padding: 0;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.18);
+    background: rgba(0,0,0,0.22);
+}
+
+.inspector-room-light-row-value {
+    font-size: 11px;
+    opacity: 0.72;
+    font-weight: 800;
+    text-align: right;
 }

@@ -1,8 +1,8 @@
 // src/graphics/content3d/buildings/configs/BlueBeltTower.js
 // City building config: Blue belt tower.
 export const BLUE_BELT_TOWER_BUILDING_CONFIG = Object.freeze({
-    id: 'blue_belt_tower',
-    name: 'Blue belt tower',
+    id: "blue_belt_tower",
+    name: "Blue belt tower",
     layers: Object.freeze(
         [
             {
@@ -11,10 +11,10 @@ export const BLUE_BELT_TOWER_BUILDING_CONFIG = Object.freeze({
                 "floors": 8,
                 "floorHeight": 3.8,
                 "planOffset": 0,
-                "style": "default",
+                "style": "pbr.painted_plaster_wall",
                 "material": {
-                    "kind": "color",
-                    "id": "blue_tint"
+                    "kind": "texture",
+                    "id": "pbr.painted_plaster_wall"
                 },
                 "belt": {
                     "enabled": true,
@@ -82,4 +82,3 @@ export const BLUE_BELT_TOWER_BUILDING_CONFIG = Object.freeze({
 });
 
 export default BLUE_BELT_TOWER_BUILDING_CONFIG;
-

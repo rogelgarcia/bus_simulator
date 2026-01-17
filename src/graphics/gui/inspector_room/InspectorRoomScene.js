@@ -62,6 +62,9 @@ export class InspectorRoomScene {
         this._axisLinesVisible = true;
         this._axisAlwaysVisible = false;
         this._lightMarkerVisible = false;
+        this._lightEnabled = true;
+        this._lightIntensity = 1.2;
+        this._lightColorHex = 0xffffff;
 
         this._config = {
             planeSize: 20,
@@ -105,13 +108,16 @@ export class InspectorRoomScene {
 
         const lighting = this.engine?.lightingSettings ?? {};
         const hemiIntensity = Number.isFinite(lighting.hemiIntensity) ? lighting.hemiIntensity : 0.85;
-        const sunIntensity = Number.isFinite(lighting.sunIntensity) ? lighting.sunIntensity : 1.2;
+        const sunIntensity = Number.isFinite(lighting.sunIntensity) ? lighting.sunIntensity : this._lightIntensity;
+        this._lightIntensity = sunIntensity;
 
         this.hemi = new THREE.HemisphereLight(0xe8f0ff, 0x0b0f14, hemiIntensity);
         this.root.add(this.hemi);
 
         this.sun = new THREE.DirectionalLight(0xffffff, sunIntensity);
         this.sun.position.set(4, 7, 4);
+        this.sun.color.setHex(this._lightColorHex);
+        this.sun.visible = this._lightEnabled;
         this.sun.castShadow = true;
         this.sun.shadow.mapSize.width = 1024;
         this.sun.shadow.mapSize.height = 1024;
@@ -395,6 +401,40 @@ export class InspectorRoomScene {
 
     getLightMarkerVisible() {
         return this._lightMarkerVisible;
+    }
+
+    setLightEnabled(enabled) {
+        this._lightEnabled = !!enabled;
+        if (this.sun) this.sun.visible = this._lightEnabled;
+        this._syncLightMarker();
+    }
+
+    getLightEnabled() {
+        return this._lightEnabled;
+    }
+
+    setLightIntensity(intensity) {
+        const next = clamp(intensity, 0, 4);
+        this._lightIntensity = next;
+        if (this.sun) this.sun.intensity = next;
+        this._syncLightMarker();
+    }
+
+    getLightIntensity() {
+        if (this.sun && Number.isFinite(Number(this.sun.intensity))) return this.sun.intensity;
+        return this._lightIntensity;
+    }
+
+    setLightColorHex(hex) {
+        const next = Number.isFinite(Number(hex)) ? Number(hex) : 0xffffff;
+        this._lightColorHex = next;
+        if (this.sun) this.sun.color.setHex(next);
+        this._syncLightMarker();
+    }
+
+    getLightColorHex() {
+        if (this.sun) return this.sun.color.getHex();
+        return this._lightColorHex;
     }
 
     getLightPosition() {
@@ -696,6 +736,18 @@ export class InspectorRoomScene {
         }
         this.lightMarker.visible = this._lightMarkerVisible;
         this.lightMarker.position.copy(this.sun.position);
+        const mat = this.lightMarker.material;
+        const color = this.sun.color ?? null;
+        const intensity = clamp(this.getLightIntensity(), 0, 4);
+        const intensityNorm = clamp(intensity / 4, 0, 1);
+        const opacity = this._lightEnabled ? (0.24 + 0.72 * intensityNorm) : 0.12;
+        if (mat && mat.isMeshBasicMaterial) {
+            if (color) mat.color.copy(color);
+            mat.opacity = opacity;
+            mat.needsUpdate = true;
+        }
+        const scale = 0.9 + 0.5 * intensityNorm;
+        this.lightMarker.scale.setScalar(scale);
         if (this.sky?.material?.uniforms?.uSunDir?.value) {
             this.sky.material.uniforms.uSunDir.value.copy(this.sun.position).normalize();
         }

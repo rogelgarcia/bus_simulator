@@ -1,8 +1,8 @@
 // src/graphics/content3d/buildings/configs/StoneSetbackTower.js
 // City building config: Stone setback tower.
 export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
-    id: 'stone_setback_tower',
-    name: 'Stone setback tower',
+    id: "stone_setback_tower",
+    name: "Stone setback tower",
     layers: Object.freeze(
         [
             {
@@ -11,7 +11,7 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
                 "floors": 8,
                 "floorHeight": 4.2,
                 "planOffset": 0,
-                "style": "stone_1",
+                "style": "pbr.patterned_concrete_wall",
                 "material": {
                     "kind": "texture",
                     "id": "pbr.patterned_concrete_wall"
@@ -38,6 +38,8 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
                     "height": 3,
                     "sillHeight": 1,
                     "spacing": 1.8,
+                    "cornerEps": 0.01,
+                    "offset": 0.01,
                     "spaceColumns": {
                         "enabled": true,
                         "every": 2,
@@ -79,7 +81,7 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
                 "floors": 1,
                 "floorHeight": 4.2,
                 "planOffset": 8,
-                "style": "stone_1",
+                "style": "pbr.patterned_concrete_wall",
                 "material": {
                     "kind": "texture",
                     "id": "pbr.patterned_concrete_wall"
@@ -106,13 +108,15 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
                     "height": 3,
                     "sillHeight": 1,
                     "spacing": 4.9,
+                    "cornerEps": 0.01,
+                    "offset": 0.01,
                     "spaceColumns": {
                         "enabled": false,
                         "every": 2,
                         "width": 0.9,
                         "material": {
-                            "kind": "texture",
-                            "id": "pbr.patterned_concrete_wall"
+                            "kind": "color",
+                            "id": "offwhite"
                         },
                         "extrude": true,
                         "extrudeDistance": 0.47
@@ -150,8 +154,8 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
                     "outerRadius": 2.75,
                     "height": 0.82,
                     "material": {
-                        "kind": "texture",
-                        "id": "pbr.patterned_concrete_wall"
+                        "kind": "color",
+                        "id": "offwhite"
                     }
                 },
                 "roof": {
@@ -167,7 +171,7 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
     ),
     floors: 9,
     floorHeight: 4.2,
-    style: "stone_1",
+    style: "default",
     windows: Object.freeze({
         width: 2.5,
         gap: 1.8,
