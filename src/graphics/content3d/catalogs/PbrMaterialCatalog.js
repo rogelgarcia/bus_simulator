@@ -21,7 +21,7 @@ const DEFAULT_VARIANT = '1k';
 
 const MATERIAL_META_OVERRIDES = Object.freeze({
     [makeId('red_brick')]: Object.freeze({
-        tileMeters: 2.0,
+        tileMeters: 4.0,
         preferredVariant: DEFAULT_VARIANT,
         variants: Object.freeze([DEFAULT_VARIANT])
     })
@@ -135,6 +135,17 @@ export function isPbrMaterialId(materialId) {
 export function getPbrMaterialDefinition(materialId) {
     const id = typeof materialId === 'string' ? materialId : '';
     return MATERIAL_BY_ID.get(id) ?? null;
+}
+
+export function getPbrMaterialExplicitTileMeters(materialId) {
+    const def = getPbrMaterialDefinition(materialId);
+    if (!def) return null;
+
+    const override = MATERIAL_META_OVERRIDES[def.id] ?? null;
+    const candidate = Number.isFinite(override?.tileMeters) ? override.tileMeters : def.tileMeters;
+    const tile = Number(candidate);
+    if (Number.isFinite(tile) && tile > 0) return tile;
+    return null;
 }
 
 export function getPbrMaterialMeta(materialId) {

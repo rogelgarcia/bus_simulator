@@ -5,6 +5,7 @@ import { InspectorRoomScene } from './InspectorRoomScene.js';
 import { InspectorRoomMeshesProvider } from './InspectorRoomMeshesProvider.js';
 import { InspectorRoomTexturesProvider } from './InspectorRoomTexturesProvider.js';
 import { InspectorRoomUI } from './InspectorRoomUI.js';
+import { computeBoundsSize, formatMeters } from './InspectorRoomMeasurementUtils.js';
 
 const STORAGE_KEY = 'bus_sim.inspector_room.v1';
 
@@ -81,6 +82,8 @@ export class InspectorRoomView {
         this._pointer = new THREE.Vector2();
         this._hoverInfo = null;
         this._selectedInfo = null;
+        this._measureBox = new THREE.Box3();
+        this._scratchVec = new THREE.Vector3();
 
         this._pointerDown = null;
         this._pointerMoved = false;
@@ -144,6 +147,13 @@ export class InspectorRoomView {
             if (this._active !== this.textures) return;
             this.textures.setPreviewModeId(modeId);
             this.ui.setPreviewModeId(this.textures.getPreviewModeId());
+            this._syncFocusToRoom({ instantCamera: false, fitCamera: false, keepCamera: true });
+        };
+        this.ui.onTextureSizeChange = ({ widthMeters, heightMeters } = {}) => {
+            if (this._active !== this.textures) return;
+            this.textures.setSelectedRealWorldSizeMeters({ widthMeters, heightMeters });
+            this.ui.setTextureRealWorldSizeMeters(this.textures.getSelectedRealWorldSizeMeters());
+            this._syncFocusToRoom({ instantCamera: false, fitCamera: false, keepCamera: true });
         };
         this.ui.onTileGapChange = (gap) => {
             if (this._active !== this.textures) return;
@@ -151,7 +161,8 @@ export class InspectorRoomView {
             this.ui.setTileGap(this.textures.getTileGap());
         };
 
-        this.ui.onAxisLabelsToggle = () => {};
+        this.ui.onAxisLabelsToggle = () => this._syncViewportOverlays();
+        this.ui.onMeasurementsToggle = () => this._syncViewportOverlays();
         this.ui.onAxisLinesToggle = (enabled) => {
             this.room.setAxisLinesVisible(enabled);
             this.ui.setAxisLegendState({ axisLinesEnabled: this.room.getAxisLinesVisible() });
@@ -213,12 +224,14 @@ export class InspectorRoomView {
         this.ui.onColorModeChange = null;
         this.ui.onBaseColorChange = null;
         this.ui.onPreviewModeChange = null;
+        this.ui.onTextureSizeChange = null;
         this.ui.onTileGapChange = null;
         this.ui.onAxisLabelsToggle = null;
         this.ui.onAxisLinesToggle = null;
         this.ui.onAxisAlwaysVisibleToggle = null;
         this.ui.onGridToggle = null;
         this.ui.onPlaneToggle = null;
+        this.ui.onMeasurementsToggle = null;
         this.ui.onLightChange = null;
         this.ui.onLightMarkerToggle = null;
         this.ui.onCameraPreset = null;
@@ -237,6 +250,87 @@ export class InspectorRoomView {
         this.room.update(dt);
         this.meshes.update();
         this.textures.update();
+        this._syncViewportOverlays();
+    }
+
+    _syncViewportOverlays() {
+        const rect = this.canvas.getBoundingClientRect();
+        const camera = this.engine?.camera ?? null;
+        if (!camera || !rect?.width || !rect?.height) return;
+
+        const axisState = this.ui.getAxisLegendState();
+        const endpoints = this.room.getAxisEndpoints?.() ?? null;
+        const showAxisLabels = !!axisState.labelsEnabled && !!axisState.axisLinesEnabled && !!endpoints;
+
+        const project = (pt) => {
+            this._scratchVec.set(Number(pt?.x) || 0, Number(pt?.y) || 0, Number(pt?.z) || 0);
+            this._scratchVec.project(camera);
+            const nx = this._scratchVec.x;
+            const ny = this._scratchVec.y;
+            const nz = this._scratchVec.z;
+            const visible = nx >= -1 && nx <= 1 && ny >= -1 && ny <= 1 && nz >= -1 && nz <= 1;
+            return {
+                x: rect.left + (nx * 0.5 + 0.5) * rect.width,
+                y: rect.top + (-ny * 0.5 + 0.5) * rect.height,
+                visible
+            };
+        };
+
+        if (showAxisLabels) {
+            this.ui.setViewportAxisLabelPositions({
+                xn: project(endpoints.xn),
+                xp: project(endpoints.xp),
+                yn: project(endpoints.yn),
+                yp: project(endpoints.yp),
+                zn: project(endpoints.zn),
+                zp: project(endpoints.zp)
+            });
+        } else {
+            this.ui.setViewportAxisLabelPositions(null);
+        }
+
+        const measurementsEnabled = !!axisState.measurementsEnabled;
+        if (!measurementsEnabled) {
+            this.room.setMeasurementOverlay?.({ enabled: false });
+            this.ui.setViewportMeasurementLabelPositions(null);
+            return;
+        }
+
+        const target = this._active?.getMeasurementObject3d?.() ?? null;
+        if (!target) {
+            this.room.setMeasurementOverlay?.({ enabled: false });
+            this.ui.setViewportMeasurementLabelPositions(null);
+            return;
+        }
+
+        target.updateWorldMatrix(true, true);
+        this._measureBox.setFromObject(target);
+        if (this._measureBox.isEmpty()) {
+            this.room.setMeasurementOverlay?.({ enabled: false });
+            this.ui.setViewportMeasurementLabelPositions(null);
+            return;
+        }
+
+        const mode = this._mode === 'textures' ? 'xz' : 'xyz';
+        this.room.setMeasurementOverlay?.({ enabled: true, mode, bounds: { min: this._measureBox.min, max: this._measureBox.max } });
+
+        const size = computeBoundsSize({ min: this._measureBox.min, max: this._measureBox.max });
+        const min = this._measureBox.min;
+        const max = this._measureBox.max;
+
+        const xMid = { x: (min.x + max.x) * 0.5, y: max.y, z: max.z };
+        const zMid = { x: max.x, y: max.y, z: (min.z + max.z) * 0.5 };
+        const yMid = { x: max.x, y: (min.y + max.y) * 0.5, z: max.z };
+
+        const xPos = project(xMid);
+        const yPos = project(yMid);
+        const zPos = project(zMid);
+
+        this.ui.setViewportMeasurementLabelPositions({
+            x: { ...xPos, text: formatMeters(size?.x), visible: xPos.visible && Number.isFinite(size?.x) },
+            y: { ...yPos, text: formatMeters(size?.y), visible: mode === 'xyz' && yPos.visible && Number.isFinite(size?.y) },
+            z: { ...zPos, text: formatMeters(size?.z), visible: zPos.visible && Number.isFinite(size?.z) }
+        });
     }
 
     _handleKeyDown(e) {
@@ -301,6 +395,7 @@ export class InspectorRoomView {
             this.ui.setItemOptions(provider.getTextureOptions?.() ?? []);
             this.ui.setSelectedItemId(provider.getSelectedTextureId?.() ?? null);
             this.ui.setSelectedItemMeta(provider.getSelectedTextureMeta?.() ?? {});
+            this.ui.setTextureRealWorldSizeMeters(provider.getSelectedRealWorldSizeMeters?.() ?? {});
         } else {
             this.ui.setItemOptions(provider.getMeshOptions?.() ?? []);
             this.ui.setSelectedItemId(provider.getSelectedMeshId?.() ?? null);
@@ -345,6 +440,7 @@ export class InspectorRoomView {
             this.textures.setBaseColorHex(this.ui.getBaseColorHex());
             this.ui.setPreviewModeId('single');
             this.textures.setPreviewModeId(this.ui.getPreviewModeId());
+            this.ui.setTextureRealWorldSizeMeters(this.textures.getSelectedRealWorldSizeMeters());
             this.ui.setTileGap(0.0);
             this.textures.setTileGap(0.0);
         }
@@ -368,6 +464,7 @@ export class InspectorRoomView {
             this.ui.setItemOptions(provider.getTextureOptions?.() ?? []);
             this.ui.setSelectedItemId(provider.getSelectedTextureId?.() ?? null);
             this.ui.setSelectedItemMeta(provider.getSelectedTextureMeta?.() ?? {});
+            this.ui.setTextureRealWorldSizeMeters(provider.getSelectedRealWorldSizeMeters?.() ?? {});
             this._selection.textures = {
                 collectionId: provider.getSelectedCollectionId?.() ?? null,
                 itemId: provider.getSelectedTextureId?.() ?? null
@@ -398,6 +495,7 @@ export class InspectorRoomView {
             this.ui.setItemOptions(provider.getTextureOptions?.() ?? []);
             this.ui.setSelectedItemId(provider.getSelectedTextureId?.() ?? null);
             this.ui.setSelectedItemMeta(provider.getSelectedTextureMeta?.() ?? {});
+            this.ui.setTextureRealWorldSizeMeters(provider.getSelectedRealWorldSizeMeters?.() ?? {});
             this._selection.textures = {
                 collectionId: provider.getSelectedCollectionId?.() ?? null,
                 itemId: provider.getSelectedTextureId?.() ?? null
@@ -429,6 +527,7 @@ export class InspectorRoomView {
             provider.setSelectedTextureIndex?.(index);
             this.ui.setSelectedItemId(provider.getSelectedTextureId?.() ?? null);
             this.ui.setSelectedItemMeta(provider.getSelectedTextureMeta?.() ?? {});
+            this.ui.setTextureRealWorldSizeMeters(provider.getSelectedRealWorldSizeMeters?.() ?? {});
             this._selection.textures.itemId = provider.getSelectedTextureId?.() ?? null;
         } else {
             provider.setSelectedMeshIndex?.(index);
@@ -473,7 +572,7 @@ export class InspectorRoomView {
 
         this._setPointerFromEvent(event);
         this._raycaster.setFromCamera(this._pointer, this.engine.camera);
-        const hits = this._raycaster.intersectObject(mesh, false);
+        const hits = this._raycaster.intersectObject(mesh, true);
         if (!hits.length) return null;
         return this.meshes.getRegionInfoFromIntersection(hits[0]);
     }

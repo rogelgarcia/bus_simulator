@@ -26,6 +26,7 @@ import { cloneBuildingLayers, createDefaultFloorLayer, createDefaultRoofLayer, n
 import { getCityMaterials } from '../../assets3d/textures/CityMaterials.js';
 import { createRoadHighlightMesh } from '../../visuals/city/RoadHighlightMesh.js';
 import { ToolCameraController } from '../../engine3d/camera/ToolCameraController.js';
+import { getBuildingConfigById } from '../../content3d/catalogs/BuildingConfigCatalog.js';
 
 const QUANT = 1000;
 const ROAD_LANES_F = 1;
@@ -115,6 +116,25 @@ function makeDeterministicColor(seed) {
 
 function tileIdFromXY(x, y) {
     return `${x},${y}`;
+}
+
+export function getHighestIndex3x2FootprintTileIds(gridSize) {
+    const size = Math.round(Number(gridSize));
+    if (!Number.isFinite(size) || size < 3) return [];
+
+    const footprintW = 3;
+    const footprintH = 2;
+    if (size < footprintW || size < footprintH) return [];
+
+    const startX = size - footprintW;
+    const startY = size - footprintH;
+    const tiles = [];
+    for (let y = startY; y < startY + footprintH; y++) {
+        for (let x = startX; x < startX + footprintW; x++) {
+            tiles.push(tileIdFromXY(x, y));
+        }
+    }
+    return tiles;
 }
 
 function normalizeDir(x, y) {
@@ -1322,6 +1342,70 @@ export class BuildingFabricationScene {
         if (best?.id) this.setSelectedBuildingId(best.id);
     }
 
+    loadBuildingConfigFromCatalog(configId) {
+        if (!this.root) return null;
+
+        const cfg = getBuildingConfigById(configId);
+        if (!cfg) return null;
+
+        const tileIds = getHighestIndex3x2FootprintTileIds(this.gridSize);
+        if (!tileIds.length) return null;
+
+        const overlaps = new Set();
+        for (const tileId of tileIds) {
+            const existing = this._buildingsByTile.get(tileId);
+            if (existing) overlaps.add(existing);
+        }
+        for (const building of overlaps) {
+            this._removeBuilding(building);
+        }
+
+        const resolvedLayers = Array.isArray(cfg.layers) && cfg.layers.length
+            ? cloneBuildingLayers(cfg.layers)
+            : null;
+
+        let floors = clampInt(cfg.floors, 1, 30);
+        let floorHeight = clamp(
+            Number.isFinite(cfg.floorHeight) ? cfg.floorHeight : this.floorHeight,
+            1.0,
+            12.0
+        );
+
+        if (resolvedLayers) {
+            const total = resolvedLayers
+                .filter((layer) => layer?.type === 'floor')
+                .reduce((sum, layer) => sum + clampInt(layer.floors, 0, 99), 0);
+            if (total > 0) floors = clampInt(total, 1, 30);
+
+            const first = resolvedLayers.find((layer) => layer?.type === 'floor') ?? null;
+            if (Number.isFinite(first?.floorHeight)) floorHeight = clamp(first.floorHeight, 1.0, 12.0);
+        }
+
+        const style = isBuildingStyle(cfg.style) ? cfg.style : BUILDING_STYLE.DEFAULT;
+        const win = cfg.windows && typeof cfg.windows === 'object' ? cfg.windows : null;
+        const wallInset = Number.isFinite(cfg.wallInset) ? cfg.wallInset : 0.0;
+
+        this._selectedTiles.clear();
+        this._syncSelectionPreview();
+        this.setRoadModeEnabled(false);
+        this.setBuildingModeEnabled(false);
+
+        const created = this._createBuilding(tileIds, floors, floorHeight, {
+            id: typeof cfg.id === 'string' ? cfg.id : null,
+            style,
+            wallInset,
+            windowWidth: win?.width,
+            windowGap: win?.gap,
+            windowHeight: win?.height,
+            windowY: win?.y,
+            layers: resolvedLayers
+        });
+
+        this._syncTileVisuals();
+        if (created?.id) this.setSelectedBuildingId(created.id);
+        return created;
+    }
+
     handleRoadTileClick(tileId) {
         if (!this._roadModeEnabled) return;
         if (!this.map) return;
@@ -1739,6 +1823,7 @@ export class BuildingFabricationScene {
     }
 
     _createBuilding(tileIds, floors, floorHeight, {
+        id = null,
         type = 'business',
         style = BUILDING_STYLE.DEFAULT,
         roofColor = ROOF_COLOR.DEFAULT,
@@ -1783,7 +1868,18 @@ export class BuildingFabricationScene {
         layers = null
     } = {}) {
         const group = new THREE.Group();
-        group.name = `building_${this._buildings.length + 1}`;
+        const baseName = typeof id === 'string' ? id.trim() : '';
+        if (!baseName) {
+            group.name = `building_${this._buildings.length + 1}`;
+        } else {
+            let nextName = baseName;
+            if (this._buildings.some((b) => b?.id === nextName)) {
+                let suffix = 2;
+                while (this._buildings.some((b) => b?.id === `${baseName}_${suffix}`)) suffix += 1;
+                nextName = `${baseName}_${suffix}`;
+            }
+            group.name = nextName;
+        }
         this.root.add(group);
 
         const solidGroup = new THREE.Group();

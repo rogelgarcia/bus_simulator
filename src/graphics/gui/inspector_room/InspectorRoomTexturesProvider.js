@@ -2,7 +2,7 @@
 // Texture inspection content provider for the Inspector Room.
 import * as THREE from 'three';
 import { resolveBuildingStyleWallMaterialUrls } from '../../assets3d/generators/buildings/BuildingGenerator.js';
-import { computePbrMaterialTextureRepeat, getPbrMaterialMeta, resolvePbrMaterialUrls } from '../../assets3d/materials/PbrMaterialCatalog.js';
+import { getPbrMaterialExplicitTileMeters, getPbrMaterialMeta, resolvePbrMaterialUrls } from '../../assets3d/materials/PbrMaterialCatalog.js';
 import { getSignAlphaMaskTextureById } from '../../assets3d/textures/signs/SignAlphaMaskCache.js';
 import {
     getTextureInspectorCollectionById,
@@ -14,6 +14,9 @@ import {
 
 const PLANE_SIZE = 3;
 const TILE_REPEAT = 4;
+const DEFAULT_REAL_WORLD_SIZE_METERS = 2.0;
+
+const _realWorldSizeOverrides = new Map();
 
 function clampInt(value, min, max) {
     const num = Number(value);
@@ -26,6 +29,62 @@ function clamp(value, min, max) {
     const num = Number(value);
     if (!Number.isFinite(num)) return min;
     return Math.max(min, Math.min(max, num));
+}
+
+function normalizeRealWorldSizeMeters({ widthMeters, heightMeters } = {}, { fallbackWidthMeters = DEFAULT_REAL_WORLD_SIZE_METERS, fallbackHeightMeters = DEFAULT_REAL_WORLD_SIZE_METERS } = {}) {
+    const fw = Number(fallbackWidthMeters);
+    const fh = Number(fallbackHeightMeters);
+    const fallbackW = (Number.isFinite(fw) && fw > 0) ? fw : DEFAULT_REAL_WORLD_SIZE_METERS;
+    const fallbackH = (Number.isFinite(fh) && fh > 0) ? fh : DEFAULT_REAL_WORLD_SIZE_METERS;
+
+    const w = Number(widthMeters);
+    const h = Number(heightMeters);
+    const safeW = (Number.isFinite(w) && w > 0) ? w : fallbackW;
+    const safeH = (Number.isFinite(h) && h > 0) ? h : fallbackH;
+
+    return {
+        widthMeters: clamp(safeW, 0.01, 1000),
+        heightMeters: clamp(safeH, 0.01, 1000)
+    };
+}
+
+function deriveRealWorldSizeFromAspect(aspect, { baseMeters = DEFAULT_REAL_WORLD_SIZE_METERS } = {}) {
+    const base = Number(baseMeters);
+    const safeBase = (Number.isFinite(base) && base > 0) ? base : DEFAULT_REAL_WORLD_SIZE_METERS;
+    const raw = Number(aspect);
+    if (!(Number.isFinite(raw) && raw > 0)) return { widthMeters: safeBase, heightMeters: safeBase };
+    const a = clamp(raw, 0.001, 500);
+    if (a >= 1) return { widthMeters: safeBase * a, heightMeters: safeBase };
+    return { widthMeters: safeBase, heightMeters: safeBase / a };
+}
+
+function getDefaultRealWorldSizeForEntry(entry) {
+    const kind = entry?.kind ?? null;
+    if (kind === 'pbr_material') {
+        const materialId = entry?.materialId ?? entry?.id ?? null;
+        const tile = getPbrMaterialExplicitTileMeters(materialId);
+        if (Number.isFinite(tile) && tile > 0) {
+            return { size: { widthMeters: tile, heightMeters: tile }, source: 'catalog' };
+        }
+    }
+
+    if (Number.isFinite(Number(entry?.aspect)) && Number(entry?.aspect) > 0) {
+        return { size: deriveRealWorldSizeFromAspect(entry.aspect), source: 'default' };
+    }
+
+    return { size: { widthMeters: DEFAULT_REAL_WORLD_SIZE_METERS, heightMeters: DEFAULT_REAL_WORLD_SIZE_METERS }, source: 'default' };
+}
+
+function getEffectiveRealWorldSizeForEntry(entry) {
+    const id = typeof entry?.id === 'string' ? entry.id : null;
+    if (id) {
+        const override = _realWorldSizeOverrides.get(id) ?? null;
+        if (override && typeof override === 'object') {
+            const normalized = normalizeRealWorldSizeMeters(override);
+            return { size: normalized, source: 'override' };
+        }
+    }
+    return getDefaultRealWorldSizeForEntry(entry);
 }
 
 function ensureUv2(geometry) {
@@ -62,6 +121,25 @@ export function buildTexturePreviewMaterialMaps({ previewMode = 'single', baseTe
         overlay: tiled ? { map: null, normalMap: null, roughnessMap: null, alphaMap: null } : maps,
         tile: maps
     };
+}
+
+export function computeRealWorldAspectRatio({ widthMeters, heightMeters } = {}) {
+    const w = Number(widthMeters);
+    const h = Number(heightMeters);
+    if (!(Number.isFinite(w) && w > 0) || !(Number.isFinite(h) && h > 0)) return null;
+    return w / h;
+}
+
+export function computeRealWorldRepeat({ surfaceSizeMeters = null, tileSizeMeters = null } = {}) {
+    const surface = surfaceSizeMeters && typeof surfaceSizeMeters === 'object' ? surfaceSizeMeters : null;
+    const tile = tileSizeMeters && typeof tileSizeMeters === 'object' ? tileSizeMeters : null;
+    const sx = Number(surface?.x);
+    const sy = Number(surface?.y);
+    const tx = Number(tile?.x);
+    const ty = Number(tile?.y);
+    if (!(Number.isFinite(sx) && sx > 0) || !(Number.isFinite(sy) && sy > 0)) return { x: 1, y: 1 };
+    if (!(Number.isFinite(tx) && tx > 0) || !(Number.isFinite(ty) && ty > 0)) return { x: 1, y: 1 };
+    return { x: sx / tx, y: sy / ty };
 }
 
 function buildPlaceholderCanvas({ label = '', size = 256 } = {}) {
@@ -130,7 +208,7 @@ export class InspectorRoomTexturesProvider {
         this._tileGeo = null;
         this._tileMat = null;
         this._tileMeshes = [];
-        this._tileSize = PLANE_SIZE / TILE_REPEAT;
+        this._selectedSizeMeters = { widthMeters: DEFAULT_REAL_WORLD_SIZE_METERS, heightMeters: DEFAULT_REAL_WORLD_SIZE_METERS };
 
         this._textureLoader = new THREE.TextureLoader();
         this._urlTextures = new Map();
@@ -144,8 +222,6 @@ export class InspectorRoomTexturesProvider {
         this._baseColor = 0xffffff;
         this._previewMode = 'single';
         this._tileGap = 0.0;
-        this._selectedAspect = null;
-        this._activePbrMaterialId = null;
     }
 
     getId() {
@@ -298,8 +374,8 @@ export class InspectorRoomTexturesProvider {
 
         if (nextId === this._textureId) return;
         this._textureId = nextId;
-        this._selectedAspect = entry?.aspect ?? null;
-        this._activePbrMaterialId = entry?.kind === 'pbr_material' ? (entry?.materialId ?? entry?.id ?? null) : null;
+        this._selectedSizeMeters = getEffectiveRealWorldSizeForEntry(entry).size;
+        this._syncPreviewLayout();
 
         if (entry?.kind === 'building_wall') {
             this._setBuildingWallMaterial(entry);
@@ -327,9 +403,10 @@ export class InspectorRoomTexturesProvider {
             const materialId = entry?.materialId ?? entry?.id ?? null;
             const meta = getPbrMaterialMeta(materialId);
             const urls = resolvePbrMaterialUrls(materialId);
+            const tileMeters = getPbrMaterialExplicitTileMeters(materialId);
             extra = {
                 kind: 'pbr_material',
-                tileMeters: meta?.tileMeters ?? null,
+                tileMeters: (Number.isFinite(Number(tileMeters)) && Number(tileMeters) > 0) ? Number(tileMeters) : null,
                 preferredVariant: meta?.preferredVariant ?? null,
                 variants: meta?.variants ?? null,
                 maps: meta?.maps ?? null,
@@ -377,18 +454,75 @@ export class InspectorRoomTexturesProvider {
         return this._tileGap;
     }
 
+    getSelectedRealWorldSizeMeters() {
+        return { ...this._selectedSizeMeters };
+    }
+
+    setSelectedRealWorldSizeMeters({ widthMeters, heightMeters } = {}) {
+        const entry = getTextureInspectorEntryById(this._textureId);
+        if (!entry) return;
+        const id = typeof entry.id === 'string' ? entry.id : null;
+        if (!id) return;
+
+        const rawW = Number(widthMeters);
+        const rawH = Number(heightMeters);
+        const hasW = Number.isFinite(rawW) && rawW > 0;
+        const hasH = Number.isFinite(rawH) && rawH > 0;
+
+        if (!hasW && !hasH) {
+            _realWorldSizeOverrides.delete(id);
+            this._selectedSizeMeters = getDefaultRealWorldSizeForEntry(entry).size;
+            this._syncPreviewLayout();
+            return;
+        }
+
+        const current = this._selectedSizeMeters ?? { widthMeters: DEFAULT_REAL_WORLD_SIZE_METERS, heightMeters: DEFAULT_REAL_WORLD_SIZE_METERS };
+        const next = normalizeRealWorldSizeMeters(
+            { widthMeters: hasW ? rawW : current.widthMeters, heightMeters: hasH ? rawH : current.heightMeters },
+            { fallbackWidthMeters: current.widthMeters, fallbackHeightMeters: current.heightMeters }
+        );
+        _realWorldSizeOverrides.set(id, next);
+        this._selectedSizeMeters = next;
+        this._syncPreviewLayout();
+    }
+
     getFocusBounds() {
-        const radius = PLANE_SIZE * 0.55;
+        const size = this._getPreviewSurfaceSizeMeters();
+        const w = Number(size?.widthMeters);
+        const h = Number(size?.heightMeters);
+        const radius = (Number.isFinite(w) && Number.isFinite(h))
+            ? 0.5 * Math.sqrt(w * w + h * h)
+            : PLANE_SIZE * 0.55;
         return {
             center: new THREE.Vector3(0, 0, 0),
             radius: Number.isFinite(radius) ? Math.max(0.001, radius) : 1
         };
     }
 
+    getMeasurementObject3d() {
+        if (this._previewMode === 'tiled') {
+            const tiles = this._tileMeshes ?? [];
+            if (!tiles.length) return this._tileGroup ?? null;
+            let best = tiles[0];
+            let bestD2 = (best.position.x ** 2) + (best.position.z ** 2);
+            for (let i = 1; i < tiles.length; i++) {
+                const t = tiles[i];
+                if (!t) continue;
+                const d2 = (t.position.x ** 2) + (t.position.z ** 2);
+                if (d2 < bestD2) {
+                    best = t;
+                    bestD2 = d2;
+                }
+            }
+            return best ?? this._tileGroup ?? null;
+        }
+        return this._overlay ?? null;
+    }
+
     _createPreviewMeshes() {
         if (!this.root) return;
 
-        this._overlayGeo = new THREE.PlaneGeometry(PLANE_SIZE, PLANE_SIZE, 1, 1);
+        this._overlayGeo = new THREE.PlaneGeometry(1, 1, 1, 1);
         ensureUv2(this._overlayGeo);
 
         this._overlayMat = new THREE.MeshStandardMaterial({
@@ -434,92 +568,80 @@ export class InspectorRoomTexturesProvider {
         const meshes = this._tileMeshes ?? [];
         if (!meshes.length) return;
 
-        const span = PLANE_SIZE;
         const repeat = TILE_REPEAT;
-        const maxGap = (span - repeat * 0.05) / Math.max(1, repeat - 1);
-        const gap = clamp(this._tileGap, 0.0, Math.max(0.0, maxGap));
-        const tile = Math.max(0.05, (span - gap * (repeat - 1)) / repeat);
-        this._tileSize = tile;
+        const gap = clamp(this._tileGap, 0.0, 0.75);
+        const size = normalizeRealWorldSizeMeters(this._selectedSizeMeters);
+        const tileW = size.widthMeters;
+        const tileH = size.heightMeters;
 
-        const startX = -span * 0.5 + tile * 0.5;
-        const startZ = -span * 0.5 + tile * 0.5;
+        const spanW = repeat * tileW + gap * (repeat - 1);
+        const spanH = repeat * tileH + gap * (repeat - 1);
+        const startX = -spanW * 0.5 + tileW * 0.5;
+        const startZ = -spanH * 0.5 + tileH * 0.5;
 
         for (let iz = 0; iz < repeat; iz++) {
             for (let ix = 0; ix < repeat; ix++) {
                 const index = ix + iz * repeat;
                 const mesh = meshes[index] ?? null;
                 if (!mesh) continue;
-                const x = startX + ix * (tile + gap);
-                const z = startZ + iz * (tile + gap);
+                const x = startX + ix * (tileW + gap);
+                const z = startZ + iz * (tileH + gap);
                 mesh.position.x = x;
                 mesh.position.z = z;
-                mesh.scale.set(tile, tile, 1);
+                mesh.scale.set(tileW, tileH, 1);
             }
         }
-
-        this._syncActivePreviewRepeat();
     }
 
     _syncPreviewMode() {
         const tiled = this._previewMode === 'tiled';
         if (this._tileGroup) this._tileGroup.visible = tiled;
         if (this._overlay) this._overlay.visible = !tiled;
-        this._setPlaneAspect(this._selectedAspect);
-        this._syncActivePreviewRepeat();
+        this._syncPreviewLayout();
+        this._syncPreviewWrap();
         this._syncPreviewMaps();
     }
 
-    _syncActivePreviewRepeat() {
-        const materialId = typeof this._activePbrMaterialId === 'string' ? this._activePbrMaterialId : null;
-        if (!materialId) return;
+    _syncPreviewLayout() {
+        const size = normalizeRealWorldSizeMeters(this._selectedSizeMeters);
+        if (this._overlay) this._overlay.scale.set(size.widthMeters, size.heightMeters, 1);
+        this._layoutTiles();
+    }
 
-        const surfaceSize = this._previewMode === 'tiled'
-            ? { x: this._tileSize, y: this._tileSize }
-            : { x: PLANE_SIZE, y: PLANE_SIZE };
-        const rep = computePbrMaterialTextureRepeat(materialId, { uvSpace: 'unit', surfaceSizeMeters: surfaceSize });
-        const rx = Number(rep?.x);
-        const ry = Number(rep?.y);
-        if (!(Number.isFinite(rx) && Number.isFinite(ry))) return;
-
+    _syncPreviewWrap() {
+        const wrap = this._previewMode === 'tiled' ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
         const apply = (tex) => {
             if (!tex) return;
-            tex.repeat.set(rx, ry);
+            tex.wrapS = wrap;
+            tex.wrapT = wrap;
             tex.needsUpdate = true;
         };
-
         apply(this._previewTexture);
         apply(this._previewNormalMap);
         apply(this._previewRoughnessMap);
     }
 
-    _setPlaneAspect(aspect) {
-        if (this._previewMode === 'tiled') {
-            if (this._overlay) this._overlay.scale.set(1, 1, 1);
-            return;
-        }
-        if (!this._overlay) return;
-        const a = Number(aspect);
-        if (!Number.isFinite(a) || !(a > 0)) {
-            this._overlay.scale.set(1, 1, 1);
-            return;
-        }
+    _getPreviewSurfaceSizeMeters() {
+        const size = normalizeRealWorldSizeMeters(this._selectedSizeMeters);
+        if (this._previewMode !== 'tiled') return size;
 
-        if (a >= 1) {
-            this._overlay.scale.set(1, 1 / a, 1);
-            return;
-        }
-
-        this._overlay.scale.set(a, 1, 1);
+        const repeat = TILE_REPEAT;
+        const gap = clamp(this._tileGap, 0.0, 0.75);
+        return {
+            widthMeters: repeat * size.widthMeters + gap * (repeat - 1),
+            heightMeters: repeat * size.heightMeters + gap * (repeat - 1)
+        };
     }
 
     _setPlaneTexture(tex, entry) {
         this._disposePreviewTexture();
-        const preview = clonePreviewTexture(tex, { offset: entry?.offset ?? null, repeat: entry?.repeat ?? null });
+        const wrap = this._previewMode === 'tiled' ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+        const preview = clonePreviewTexture(tex, { offset: entry?.offset ?? null, repeat: entry?.repeat ?? null, wrap });
         this._previewTexture = preview;
         this._previewNormalMap = null;
         this._previewRoughnessMap = null;
         this._previewAlphaMap = entry?.kind === 'sign' ? getSignAlphaMaskTextureById(entry?.id) : null;
-        this._setPlaneAspect(entry?.aspect ?? null);
+        this._syncPreviewWrap();
         this._syncPreviewMaps();
     }
 
@@ -533,7 +655,6 @@ export class InspectorRoomTexturesProvider {
         const ormUrl = urls?.ormUrl ?? null;
 
         this._previewAlphaMap = null;
-        this._setPlaneAspect(null);
 
         Promise.allSettled([
             this._loadUrlTexture(baseUrl, { srgb: true }),
@@ -551,26 +672,28 @@ export class InspectorRoomTexturesProvider {
             const normalTex = getTex(1, normalUrl);
             const ormTex = getTex(2, ormUrl);
 
-            const tiling = { x: 2, y: 2 };
+            const wrap = this._previewMode === 'tiled' ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
             const label = entry?.label ?? entry?.style ?? 'Building wall';
             if (!baseTex && !normalTex && !ormTex) {
                 const tex = canvasToTexture(buildPlaceholderCanvas({ label, size: 256 }), { srgb: true });
-                this._previewTexture = clonePreviewTexture(tex, { repeat: tiling, wrap: THREE.RepeatWrapping });
+                this._previewTexture = clonePreviewTexture(tex, { wrap });
                 tex.dispose?.();
                 this._previewNormalMap = null;
                 this._previewRoughnessMap = null;
+                this._syncPreviewWrap();
                 this._syncPreviewMaps();
                 return;
             }
 
-            if (baseTex) this._previewTexture = clonePreviewTexture(baseTex, { repeat: tiling, wrap: THREE.RepeatWrapping });
+            if (baseTex) this._previewTexture = clonePreviewTexture(baseTex, { wrap });
             else {
                 const tex = canvasToTexture(buildPlaceholderCanvas({ label, size: 256 }), { srgb: true });
-                this._previewTexture = clonePreviewTexture(tex, { repeat: tiling, wrap: THREE.RepeatWrapping });
+                this._previewTexture = clonePreviewTexture(tex, { wrap });
                 tex.dispose?.();
             }
-            this._previewNormalMap = clonePreviewTexture(normalTex, { repeat: tiling, wrap: THREE.RepeatWrapping });
-            this._previewRoughnessMap = clonePreviewTexture(ormTex, { repeat: tiling, wrap: THREE.RepeatWrapping });
+            this._previewNormalMap = clonePreviewTexture(normalTex, { wrap });
+            this._previewRoughnessMap = clonePreviewTexture(ormTex, { wrap });
+            this._syncPreviewWrap();
             this._syncPreviewMaps();
         });
     }
@@ -585,15 +708,16 @@ export class InspectorRoomTexturesProvider {
         const ormUrl = urls?.ormUrl ?? null;
 
         this._previewAlphaMap = null;
-        this._setPlaneAspect(null);
 
         if (!baseUrl && !normalUrl && !ormUrl) {
             const label = entry?.label ?? entry?.materialId ?? 'PBR material';
             const tex = canvasToTexture(buildPlaceholderCanvas({ label, size: 256 }), { srgb: true });
-            this._previewTexture = clonePreviewTexture(tex, { repeat: { x: 2, y: 2 }, wrap: THREE.RepeatWrapping });
+            const wrap = this._previewMode === 'tiled' ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+            this._previewTexture = clonePreviewTexture(tex, { wrap });
             tex.dispose?.();
             this._previewNormalMap = null;
             this._previewRoughnessMap = null;
+            this._syncPreviewWrap();
             this._syncPreviewMaps();
             return;
         }
@@ -614,33 +738,30 @@ export class InspectorRoomTexturesProvider {
             const normalTex = getTex(1, normalUrl);
             const ormTex = getTex(2, ormUrl);
 
-            const tiling = computePbrMaterialTextureRepeat(entry?.materialId, {
-                uvSpace: 'unit',
-                surfaceSizeMeters: this._previewMode === 'tiled' ? { x: this._tileSize, y: this._tileSize } : { x: PLANE_SIZE, y: PLANE_SIZE }
-            });
+            const wrap = this._previewMode === 'tiled' ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
 
             const label = entry?.label ?? entry?.materialId ?? 'PBR material';
             if (!baseTex && !normalTex && !ormTex) {
                 const tex = canvasToTexture(buildPlaceholderCanvas({ label, size: 256 }), { srgb: true });
-                this._previewTexture = clonePreviewTexture(tex, { repeat: tiling, wrap: THREE.RepeatWrapping });
+                this._previewTexture = clonePreviewTexture(tex, { wrap });
                 tex.dispose?.();
                 this._previewNormalMap = null;
                 this._previewRoughnessMap = null;
-                this._syncActivePreviewRepeat();
+                this._syncPreviewWrap();
                 this._syncPreviewMaps();
                 return;
             }
 
-            if (baseTex) this._previewTexture = clonePreviewTexture(baseTex, { repeat: tiling, wrap: THREE.RepeatWrapping });
+            if (baseTex) this._previewTexture = clonePreviewTexture(baseTex, { wrap });
             else {
                 const tex = canvasToTexture(buildPlaceholderCanvas({ label, size: 256 }), { srgb: true });
-                this._previewTexture = clonePreviewTexture(tex, { repeat: tiling, wrap: THREE.RepeatWrapping });
+                this._previewTexture = clonePreviewTexture(tex, { wrap });
                 tex.dispose?.();
             }
 
-            this._previewNormalMap = clonePreviewTexture(normalTex, { repeat: tiling, wrap: THREE.RepeatWrapping });
-            this._previewRoughnessMap = clonePreviewTexture(ormTex, { repeat: tiling, wrap: THREE.RepeatWrapping });
-            this._syncActivePreviewRepeat();
+            this._previewNormalMap = clonePreviewTexture(normalTex, { wrap });
+            this._previewRoughnessMap = clonePreviewTexture(ormTex, { wrap });
+            this._syncPreviewWrap();
             this._syncPreviewMaps();
         });
     }

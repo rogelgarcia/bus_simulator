@@ -119,6 +119,12 @@ function loadTextures() {
         applyTextureColorSpace(trunkNormal, { srgb: false });
         leafMap.anisotropy = 8;
         trunkMap.anisotropy = 8;
+        trunkMap.wrapS = THREE.RepeatWrapping;
+        trunkMap.wrapT = THREE.RepeatWrapping;
+        trunkNormal.wrapS = THREE.RepeatWrapping;
+        trunkNormal.wrapT = THREE.RepeatWrapping;
+        trunkMap.needsUpdate = true;
+        trunkNormal.needsUpdate = true;
         return { leafMap, leafNormal, trunkMap, trunkNormal };
     });
 }
@@ -425,6 +431,16 @@ function buildPlacements({ map, rng, groundY, params, modelCount }) {
     }
 
     return placements;
+}
+
+export function loadTreeMaterials() {
+    return ensureMaterials();
+}
+
+export function loadTreeTemplates(quality = 'mobile') {
+    const q = getQuality(quality);
+    const entries = getTreeEntries(q);
+    return loadTreeAssets(q, entries);
 }
 
 export function createTreeField({ map = null, rng = null, groundY = 0, config = null } = {}) {

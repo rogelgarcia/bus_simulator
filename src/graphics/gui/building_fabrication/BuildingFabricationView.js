@@ -100,6 +100,16 @@ export class BuildingFabricationView {
             }
         };
 
+        this.ui.onLoadBuildingConfigFromCatalog = (configId) => {
+            const created = this.scene.loadBuildingConfigFromCatalog(configId);
+            if (!created) return;
+            this.ui.setRoadModeEnabled(this.scene.getRoadModeEnabled());
+            this.ui.setBuildingModeEnabled(this.scene.getBuildingModeEnabled());
+            this._syncUiCounts();
+            this._syncRoadStatus();
+            this._syncBuildings();
+        };
+
         this.ui.onReset = (gridSize) => {
             this.scene.resetScene({ gridSize });
             this.ui.setGridSize(this.scene.getGridSize());

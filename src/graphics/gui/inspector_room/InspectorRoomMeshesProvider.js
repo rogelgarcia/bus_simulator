@@ -7,6 +7,14 @@ import {
     getProceduralMeshCollections,
     getProceduralMeshOptionsForCollection
 } from '../../assets3d/procedural_meshes/ProceduralMeshCatalog.js';
+import { loadTreeTemplates } from '../../assets3d/generators/TreeGenerator.js';
+import {
+    getTreeMeshCollections,
+    getTreeMeshEntryById,
+    getTreeMeshOptionsForCollection,
+    isTreeMeshId,
+    TREE_MESH_COLLECTION
+} from '../../content3d/catalogs/TreeMeshCatalog.js';
 import { isRigApi } from '../../../app/rigs/RigSchema.js';
 import { isPrefabParamsApi } from '../../../app/prefabs/PrefabParamsSchema.js';
 
@@ -27,6 +35,22 @@ function groupForTriangleOffset(geometry, triOffset) {
     return null;
 }
 
+function isFoliageName(name) {
+    const s = String(name ?? '').toLowerCase();
+    return s.includes('leaf') || s.includes('foliage') || s.includes('bush');
+}
+
+function makeTreePlaceholderMesh() {
+    const geo = new THREE.CylinderGeometry(0.4, 0.55, 6, 12, 1, true);
+    const mat = new THREE.MeshStandardMaterial({ color: 0xaab3bf, metalness: 0.0, roughness: 0.8 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.name = 'inspector_room_tree_placeholder';
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.position.y = 3;
+    return mesh;
+}
+
 export class InspectorRoomMeshesProvider {
     constructor(engine) {
         this.engine = engine;
@@ -37,6 +61,7 @@ export class InspectorRoomMeshesProvider {
         this._asset = null;
         this._edges = null;
         this._pivotGizmo = null;
+        this._loadToken = 0;
 
         this._wireframe = false;
         this._edgesEnabled = false;
@@ -59,8 +84,8 @@ export class InspectorRoomMeshesProvider {
         return {
             planeSize: 20,
             planeY: 0,
-            planeColor: 0x0f1722,
-            planeRoughness: 1.0,
+            planeColor: 0x5b5f66,
+            planeRoughness: 0.95,
             planeMetalness: 0.0,
             gridSize: 20,
             gridDivisions: 40
@@ -105,11 +130,16 @@ export class InspectorRoomMeshesProvider {
             mesh.userData._meshInspectorNeedsEdgesRefresh = false;
             this._disposeEdges();
             this._syncEdgesOverlay();
+            this._syncPivotGizmo();
+        }
+        if (this._pivotEnabled && this._pivotGizmo && mesh) {
+            this._pivotGizmo.position.copy(mesh.position);
+            this._pivotGizmo.quaternion.copy(mesh.quaternion);
         }
     }
 
     getCollectionOptions() {
-        return getProceduralMeshCollections();
+        return [...getProceduralMeshCollections(), ...getTreeMeshCollections()];
     }
 
     getSelectedCollectionId() {
@@ -128,6 +158,9 @@ export class InspectorRoomMeshesProvider {
     }
 
     getMeshOptions() {
+        if (this._collectionId === TREE_MESH_COLLECTION.TREES_DESKTOP || this._collectionId === TREE_MESH_COLLECTION.TREES_MOBILE) {
+            return getTreeMeshOptionsForCollection(this._collectionId);
+        }
         return getProceduralMeshOptionsForCollection(this._collectionId);
     }
 
@@ -148,10 +181,9 @@ export class InspectorRoomMeshesProvider {
     }
 
     setSelectedMeshId(meshId) {
-        const desiredCollection = getProceduralMeshCollectionId(meshId);
-        if (desiredCollection && desiredCollection !== this._collectionId) {
-            this._collectionId = desiredCollection;
-        }
+        const treeEntry = isTreeMeshId(meshId) ? getTreeMeshEntryById(meshId) : null;
+        const desiredCollection = treeEntry?.collectionId ?? getProceduralMeshCollectionId(meshId);
+        if (desiredCollection && desiredCollection !== this._collectionId) this._collectionId = desiredCollection;
 
         const options = this.getMeshOptions();
         const idx = options.findIndex((opt) => opt?.id === meshId);
@@ -165,8 +197,13 @@ export class InspectorRoomMeshesProvider {
         this._disposeEdges();
         this._disposeAsset();
 
+        if (isTreeMeshId(resolved)) {
+            this._setTreeAsset(resolved);
+            return;
+        }
+
         const asset = createProceduralMeshAsset(resolved);
-        this._asset = asset;
+        this._asset = { ...asset, kind: 'procedural' };
         if (asset?.mesh && this.root) {
             asset.mesh.position.set(0, 0, 0);
             asset.mesh.castShadow = true;
@@ -242,7 +279,26 @@ export class InspectorRoomMeshesProvider {
     }
 
     getRegionInfoFromIntersection(hit) {
-        const mesh = this._asset?.mesh;
+        const asset = this._asset ?? null;
+        if (!asset || !hit) return null;
+
+        if (asset.kind === 'tree') {
+            const faceIndex = Number.isFinite(hit.faceIndex) ? hit.faceIndex : null;
+            const partName = `${hit.object?.name ?? ''} ${hit.object?.material?.name ?? ''}`;
+            const foliage = isFoliageName(partName);
+            return {
+                meshId: asset.id,
+                meshName: asset.name,
+                sourceType: asset?.source?.type ?? 'TreeFBX',
+                sourceVersion: asset?.source?.version ?? 1,
+                regionId: foliage ? 'tree:foliage' : 'tree:trunk',
+                regionLabel: foliage ? 'Foliage' : 'Trunk',
+                tag: foliage ? 'foliage' : 'trunk',
+                triangle: faceIndex
+            };
+        }
+
+        const mesh = asset.mesh;
         const geometry = mesh?.geometry;
         if (!hit || hit.object !== mesh || !geometry) return null;
 
@@ -285,10 +341,74 @@ export class InspectorRoomMeshesProvider {
         };
     }
 
+    getMeasurementObject3d() {
+        return this._asset?.mesh ?? null;
+    }
+
+    _setTreeAsset(meshId) {
+        const entry = getTreeMeshEntryById(meshId);
+        if (!entry || !this.root) return;
+
+        const token = ++this._loadToken;
+        const placeholderRoot = new THREE.Group();
+        placeholderRoot.name = `tree_asset_${entry.quality}_${entry.index}`;
+        const placeholderMesh = makeTreePlaceholderMesh();
+        placeholderRoot.add(placeholderMesh);
+
+        this._asset = {
+            id: entry.id,
+            name: entry.label,
+            source: { type: 'TreeFBX', version: 1, quality: entry.quality, fileName: entry.fileName },
+            regions: [],
+            mesh: placeholderRoot,
+            kind: 'tree',
+            materials: null,
+            _placeholder: { mesh: placeholderMesh, geometry: placeholderMesh.geometry, material: placeholderMesh.material }
+        };
+        this.root.add(placeholderRoot);
+
+        loadTreeTemplates(entry.quality).then((assets) => {
+            if (token !== this._loadToken) return;
+            const template = assets?.templates?.[entry.index] ?? null;
+            if (!template) return;
+
+            const tree = template.clone(true);
+            const baseY = Number(template.userData?.treeBaseY) || 0;
+            const baseHeight = Math.max(0.001, Number(template.userData?.treeHeight) || 1);
+            const targetHeight = 6;
+            const scale = targetHeight / baseHeight;
+            tree.scale.setScalar(scale);
+            tree.position.set(0, -baseY * scale, 0);
+
+            const shared = assets?.materials ?? null;
+            const leaf = shared?.leaf?.clone?.() ?? new THREE.MeshStandardMaterial({ color: 0xb9c86c, roughness: 0.9, metalness: 0.0, alphaTest: 0.5, side: THREE.DoubleSide });
+            const trunk = shared?.trunk?.clone?.() ?? new THREE.MeshStandardMaterial({ color: 0xb9a188, roughness: 0.95, metalness: 0.0 });
+            const solid = new THREE.MeshStandardMaterial({ color: 0xd7dde7, metalness: 0.0, roughness: 0.7 });
+
+            const placeholder = this._asset?._placeholder ?? null;
+            placeholder?.geometry?.dispose?.();
+            placeholder?.material?.dispose?.();
+
+            placeholderRoot.clear();
+            placeholderRoot.add(tree);
+            this._asset.mesh = placeholderRoot;
+            this._asset.materials = { semantic: { leaf, trunk }, solid };
+            this._asset._placeholder = null;
+
+            this._syncMeshMaterials();
+            this._syncPivotGizmo();
+        }).catch(() => {});
+    }
+
     _syncMeshMaterials() {
         const asset = this._asset;
         const mesh = asset?.mesh;
         if (!asset || !mesh) return;
+
+        if (asset.kind === 'tree') {
+            this._syncTreeMaterials(asset);
+            return;
+        }
 
         const materials = this._colorMode === 'solid'
             ? asset.materials.solid
@@ -309,7 +429,55 @@ export class InspectorRoomMeshesProvider {
         mesh.material = materials;
     }
 
+    _syncTreeMaterials(asset) {
+        const root = asset?.mesh ?? null;
+        const mats = asset?.materials ?? null;
+        if (!root || !mats) return;
+
+        const applyWireframe = (mat) => {
+            if (!mat) return;
+            mat.wireframe = !!this._wireframe;
+            mat.needsUpdate = true;
+        };
+
+        const mode = this._colorMode === 'solid' ? 'solid' : 'semantic';
+        const leaf = mats.semantic?.leaf ?? null;
+        const trunk = mats.semantic?.trunk ?? null;
+        const solid = mats.solid ?? null;
+
+        if (mode === 'solid') {
+            applyWireframe(solid);
+        } else {
+            applyWireframe(leaf);
+            applyWireframe(trunk);
+        }
+
+        root.traverse?.((o) => {
+            if (!o?.isMesh) return;
+            if (Array.isArray(o.material)) {
+                o.material = o.material.map((mat) => {
+                    if (mode === 'solid') return solid;
+                    const name = `${o.name} ${mat?.name ?? ''}`;
+                    return isFoliageName(name) ? leaf : trunk;
+                });
+            } else {
+                if (mode === 'solid') o.material = solid;
+                else {
+                    const name = `${o.name} ${o.material?.name ?? ''}`;
+                    o.material = isFoliageName(name) ? leaf : trunk;
+                }
+            }
+            o.castShadow = true;
+            o.receiveShadow = true;
+        });
+    }
+
     _syncEdgesOverlay() {
+        if (this._asset?.kind === 'tree') {
+            if (this._edges) this._edges.visible = false;
+            return;
+        }
+
         if (!this._edgesEnabled) {
             if (this._edges) this._edges.visible = false;
             return;
@@ -363,8 +531,13 @@ export class InspectorRoomMeshesProvider {
         }
 
         this._pivotGizmo.visible = true;
-        if (!mesh.children.includes(this._pivotGizmo)) mesh.add(this._pivotGizmo);
-        this._pivotGizmo.position.set(0, 0, 0);
+        if (this.root && this._pivotGizmo.parent !== this.root) {
+            this._pivotGizmo.parent?.remove?.(this._pivotGizmo);
+            this.root.add(this._pivotGizmo);
+        }
+        this._pivotGizmo.position.copy(mesh.position);
+        this._pivotGizmo.quaternion.copy(mesh.quaternion);
+        this._pivotGizmo.scale.set(1, 1, 1);
 
         const len = this._getPivotScale();
         for (const child of this._pivotGizmo.children) {
@@ -414,25 +587,39 @@ export class InspectorRoomMeshesProvider {
 
     _disposeAsset() {
         if (!this._asset) return;
+        this._loadToken += 1;
         const asset = this._asset;
         const mesh = asset.mesh;
-        if (mesh) {
-            this.root?.remove?.(mesh);
-            mesh.geometry?.dispose?.();
-            const semantic = asset?.materials?.semantic;
-            const solid = asset?.materials?.solid;
-            if (Array.isArray(semantic)) {
-                for (const m of semantic) m?.dispose?.();
-            } else {
-                semantic?.dispose?.();
-            }
-            if (Array.isArray(solid)) {
-                for (const m of solid) m?.dispose?.();
-            } else {
-                solid?.dispose?.();
-            }
+        if (mesh) this.root?.remove?.(mesh);
+
+        if (asset.kind === 'tree') {
+            const leaf = asset?.materials?.semantic?.leaf ?? null;
+            const trunk = asset?.materials?.semantic?.trunk ?? null;
+            const solid = asset?.materials?.solid ?? null;
+            leaf?.dispose?.();
+            trunk?.dispose?.();
+            solid?.dispose?.();
+
+            const placeholder = asset?._placeholder ?? null;
+            placeholder?.geometry?.dispose?.();
+            placeholder?.material?.dispose?.();
+            this._asset = null;
+            return;
+        }
+
+        mesh?.geometry?.dispose?.();
+        const semantic = asset?.materials?.semantic;
+        const solid = asset?.materials?.solid;
+        if (Array.isArray(semantic)) {
+            for (const m of semantic) m?.dispose?.();
+        } else {
+            semantic?.dispose?.();
+        }
+        if (Array.isArray(solid)) {
+            for (const m of solid) m?.dispose?.();
+        } else {
+            solid?.dispose?.();
         }
         this._asset = null;
     }
 }
-

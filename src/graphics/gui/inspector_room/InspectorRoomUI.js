@@ -154,6 +154,7 @@ export class InspectorRoomUI {
         this._buildAxisLegend();
         this._buildCameraPresets();
         this._buildLightingPanel();
+        this._buildViewportOverlay();
 
         this.onModeChange = null;
         this.onCollectionChange = null;
@@ -168,6 +169,7 @@ export class InspectorRoomUI {
 
         this.onBaseColorChange = null;
         this.onPreviewModeChange = null;
+        this.onTextureSizeChange = null;
         this.onTileGapChange = null;
 
         this.onAxisLabelsToggle = null;
@@ -175,6 +177,7 @@ export class InspectorRoomUI {
         this.onAxisAlwaysVisibleToggle = null;
         this.onGridToggle = null;
         this.onPlaneToggle = null;
+        this.onMeasurementsToggle = null;
 
         this.onLightChange = null;
         this.onLightMarkerToggle = null;
@@ -189,6 +192,7 @@ export class InspectorRoomUI {
         this._axesAlwaysVisible = false;
         this._gridEnabled = true;
         this._planeEnabled = true;
+        this._measurementsEnabled = false;
         this._lightMarkerEnabled = false;
 
         this._onMode = () => this.onModeChange?.(this.modeSelect.value);
@@ -205,7 +209,11 @@ export class InspectorRoomUI {
         this._onBaseColor = () => this.onBaseColorChange?.(this.baseColorSelect.value);
         this._onPreviewMode = () => {
             this._syncTexturePreviewWidgets();
-            this.onPreviewModeChange?.(this.previewModeSelect.value);
+            this.onPreviewModeChange?.(this.getPreviewModeId());
+        };
+        this._onTextureSize = () => {
+            this.onTextureSizeChange?.(this.getTextureRealWorldSizeMeters());
+            this._syncTextureSummary();
         };
         this._onTileGapRange = () => this._setTileGapFromUi(this.tileGapRange.value);
         this._onTileGapNumber = () => this._setTileGapFromUi(this.tileGapNumber.value);
@@ -234,6 +242,11 @@ export class InspectorRoomUI {
             this._planeEnabled = !this._planeEnabled;
             this._syncAxisLegendState();
             this.onPlaneToggle?.(this._planeEnabled);
+        };
+        this._onMeasurementsToggle = () => {
+            this._measurementsEnabled = !this._measurementsEnabled;
+            this._syncAxisLegendState();
+            this.onMeasurementsToggle?.(this._measurementsEnabled);
         };
 
         this._onLightMarker = () => {
@@ -436,12 +449,30 @@ export class InspectorRoomUI {
 
     setPreviewModeId(modeId) {
         const next = modeId === 'tiled' ? 'tiled' : 'single';
-        this.previewModeSelect.value = next;
+        this.tiledInput.checked = next === 'tiled';
         this._syncTexturePreviewWidgets();
+        this._syncTextureSummary();
     }
 
     getPreviewModeId() {
-        return this.previewModeSelect.value === 'tiled' ? 'tiled' : 'single';
+        return this.tiledInput.checked ? 'tiled' : 'single';
+    }
+
+    setTextureRealWorldSizeMeters({ widthMeters, heightMeters } = {}) {
+        const w = Number(widthMeters);
+        const h = Number(heightMeters);
+        if (Number.isFinite(w) && w > 0) this.textureWidthMeters.value = String(w);
+        if (Number.isFinite(h) && h > 0) this.textureHeightMeters.value = String(h);
+        this._syncTextureSummary();
+    }
+
+    getTextureRealWorldSizeMeters() {
+        const w = Number(this.textureWidthMeters.value);
+        const h = Number(this.textureHeightMeters.value);
+        return {
+            widthMeters: (Number.isFinite(w) && w > 0) ? w : null,
+            heightMeters: (Number.isFinite(h) && h > 0) ? h : null
+        };
     }
 
     setTileGap(value) {
@@ -452,12 +483,13 @@ export class InspectorRoomUI {
         this.tileGapNumber.value = text;
     }
 
-    setAxisLegendState({ labelsEnabled, axisLinesEnabled, axesAlwaysVisible, gridEnabled, planeEnabled } = {}) {
+    setAxisLegendState({ labelsEnabled, axisLinesEnabled, axesAlwaysVisible, gridEnabled, planeEnabled, measurementsEnabled } = {}) {
         if (labelsEnabled !== undefined) this._axisLabelsEnabled = !!labelsEnabled;
         if (axisLinesEnabled !== undefined) this._axisLinesEnabled = !!axisLinesEnabled;
         if (axesAlwaysVisible !== undefined) this._axesAlwaysVisible = !!axesAlwaysVisible;
         if (gridEnabled !== undefined) this._gridEnabled = !!gridEnabled;
         if (planeEnabled !== undefined) this._planeEnabled = !!planeEnabled;
+        if (measurementsEnabled !== undefined) this._measurementsEnabled = !!measurementsEnabled;
         this._syncAxisLegendState();
     }
 
@@ -467,7 +499,8 @@ export class InspectorRoomUI {
             axisLinesEnabled: this._axisLinesEnabled,
             axesAlwaysVisible: this._axesAlwaysVisible,
             gridEnabled: this._gridEnabled,
-            planeEnabled: this._planeEnabled
+            planeEnabled: this._planeEnabled,
+            measurementsEnabled: this._measurementsEnabled
         };
     }
 
@@ -637,19 +670,49 @@ export class InspectorRoomUI {
         modeLab.textContent = 'Preview';
         const modeBody = document.createElement('div');
         modeBody.className = 'inspector-room-row-body';
-        this.previewModeSelect = document.createElement('select');
-        this.previewModeSelect.className = 'inspector-room-select';
-        const modeSingle = document.createElement('option');
-        modeSingle.value = 'single';
-        modeSingle.textContent = 'Single';
-        const modeTiled = document.createElement('option');
-        modeTiled.value = 'tiled';
-        modeTiled.textContent = 'Tiled';
-        this.previewModeSelect.appendChild(modeSingle);
-        this.previewModeSelect.appendChild(modeTiled);
-        modeBody.appendChild(this.previewModeSelect);
+        this.tiledToggle = document.createElement('label');
+        this.tiledToggle.className = 'inspector-room-toggle inspector-room-toggle-inline';
+        this.tiledInput = document.createElement('input');
+        this.tiledInput.type = 'checkbox';
+        const tiledText = document.createElement('span');
+        tiledText.textContent = 'Tiled';
+        this.tiledToggle.appendChild(this.tiledInput);
+        this.tiledToggle.appendChild(tiledText);
+        modeBody.appendChild(this.tiledToggle);
         modeRow.appendChild(modeLab);
         modeRow.appendChild(modeBody);
+
+        const sizeRow = document.createElement('div');
+        sizeRow.className = 'inspector-room-row';
+        const sizeLab = document.createElement('div');
+        sizeLab.className = 'inspector-room-row-label';
+        sizeLab.textContent = 'Size (m)';
+        const sizeBody = document.createElement('div');
+        sizeBody.className = 'inspector-room-row-body';
+        this.textureSizeControls = document.createElement('div');
+        this.textureSizeControls.className = 'inspector-room-dim-controls';
+        this.textureWidthMeters = document.createElement('input');
+        this.textureWidthMeters.type = 'number';
+        this.textureWidthMeters.className = 'inspector-room-number';
+        this.textureWidthMeters.min = '0.01';
+        this.textureWidthMeters.step = '0.01';
+        this.textureWidthMeters.value = '2';
+        const dimSep = document.createElement('div');
+        dimSep.className = 'inspector-room-dim-sep';
+        dimSep.textContent = '×';
+        this.textureHeightMeters = document.createElement('input');
+        this.textureHeightMeters.type = 'number';
+        this.textureHeightMeters.className = 'inspector-room-number';
+        this.textureHeightMeters.min = '0.01';
+        this.textureHeightMeters.step = '0.01';
+        this.textureHeightMeters.value = '2';
+        this.textureSizeControls.appendChild(this.textureWidthMeters);
+        this.textureSizeControls.appendChild(dimSep);
+        this.textureSizeControls.appendChild(this.textureHeightMeters);
+        sizeBody.appendChild(this.textureSizeControls);
+        sizeRow.appendChild(sizeLab);
+        sizeRow.appendChild(sizeBody);
+        this.textureSizeRow = sizeRow;
 
         const gapRow = document.createElement('div');
         gapRow.className = 'inspector-room-row';
@@ -692,6 +755,7 @@ export class InspectorRoomUI {
         this.textureSection.appendChild(this.textureLabel);
         this.textureSection.appendChild(baseRow);
         this.textureSection.appendChild(modeRow);
+        this.textureSection.appendChild(sizeRow);
         this.textureSection.appendChild(gapRow);
         this.textureSection.appendChild(this.textureSummary);
         this.textureSection.appendChild(this.textureCopyBtn);
@@ -701,32 +765,19 @@ export class InspectorRoomUI {
         this.axisLegend = document.createElement('div');
         this.axisLegend.className = 'inspector-room-axis-legend';
 
-        this.axisCross = document.createElement('div');
-        this.axisCross.className = 'inspector-room-axis-cross';
+        this.axisKey = document.createElement('div');
+        this.axisKey.className = 'inspector-room-axis-key';
 
-        const xLine = document.createElement('div');
-        xLine.className = 'inspector-room-axis-line inspector-room-axis-line-x';
-        const yLine = document.createElement('div');
-        yLine.className = 'inspector-room-axis-line inspector-room-axis-line-y';
-        const zLine = document.createElement('div');
-        zLine.className = 'inspector-room-axis-line inspector-room-axis-line-z';
-        this.axisCross.appendChild(xLine);
-        this.axisCross.appendChild(yLine);
-        this.axisCross.appendChild(zLine);
-
-        const makeLabel = (text, cls) => {
+        const makeKey = (text, cls) => {
             const el = document.createElement('span');
-            el.className = `inspector-room-axis-label ${cls}`;
+            el.className = `inspector-room-axis-key-item ${cls}`;
             el.textContent = text;
             return el;
         };
 
-        this.axisCross.appendChild(makeLabel('-X', 'is-xn'));
-        this.axisCross.appendChild(makeLabel('+X', 'is-xp'));
-        this.axisCross.appendChild(makeLabel('+Y', 'is-yp'));
-        this.axisCross.appendChild(makeLabel('-Y', 'is-yn'));
-        this.axisCross.appendChild(makeLabel('-Z', 'is-zn'));
-        this.axisCross.appendChild(makeLabel('+Z', 'is-zp'));
+        this.axisKey.appendChild(makeKey('X', 'is-x'));
+        this.axisKey.appendChild(makeKey('Y', 'is-y'));
+        this.axisKey.appendChild(makeKey('Z', 'is-z'));
 
         this.axisActions = document.createElement('div');
         this.axisActions.className = 'inspector-room-axis-actions';
@@ -760,16 +811,99 @@ export class InspectorRoomUI {
         this.planeBtn.className = 'inspector-room-mini-btn';
         applyMaterialSymbolToButton(this.planeBtn, { name: 'layers', label: 'Toggle plane material', size: 'sm' });
 
+        this.measureBtn = document.createElement('button');
+        this.measureBtn.type = 'button';
+        this.measureBtn.className = 'inspector-room-mini-btn';
+        applyMaterialSymbolToButton(this.measureBtn, { name: 'straighten', label: 'Toggle measurements', size: 'sm' });
+
         this.axisActions.appendChild(this.labelsBtn);
         this.axisActions.appendChild(this.axisLinesBtn);
         this.axisActions.appendChild(this.axisAlwaysBtn);
         this.axisActions.appendChild(this.axisSep);
         this.axisActions.appendChild(this.gridBtn);
         this.axisActions.appendChild(this.planeBtn);
+        this.axisActions.appendChild(this.measureBtn);
 
-        this.axisLegend.appendChild(this.axisCross);
+        this.axisLegend.appendChild(this.axisKey);
         this.axisLegend.appendChild(this.axisActions);
         this.root.appendChild(this.axisLegend);
+    }
+
+    _buildViewportOverlay() {
+        this.viewportOverlay = document.createElement('div');
+        this.viewportOverlay.className = 'inspector-room-viewport-overlay';
+
+        const makeLabel = (text, cls) => {
+            const el = document.createElement('div');
+            el.className = `inspector-room-viewport-label ${cls}`;
+            el.textContent = text;
+            el.style.display = 'none';
+            this.viewportOverlay.appendChild(el);
+            return el;
+        };
+
+        this.viewportAxisLabels = {
+            xn: makeLabel('-X', 'inspector-room-viewport-axis is-x'),
+            xp: makeLabel('+X', 'inspector-room-viewport-axis is-x'),
+            yn: makeLabel('-Y', 'inspector-room-viewport-axis is-y'),
+            yp: makeLabel('+Y', 'inspector-room-viewport-axis is-y'),
+            zn: makeLabel('-Z', 'inspector-room-viewport-axis is-z'),
+            zp: makeLabel('+Z', 'inspector-room-viewport-axis is-z')
+        };
+
+        this.viewportMeasureLabels = {
+            x: makeLabel('0m', 'inspector-room-viewport-measure'),
+            y: makeLabel('0m', 'inspector-room-viewport-measure'),
+            z: makeLabel('0m', 'inspector-room-viewport-measure')
+        };
+
+        this.root.appendChild(this.viewportOverlay);
+    }
+
+    setViewportAxisLabelPositions(positions = null) {
+        const enabled = !!this._axisLabelsEnabled;
+        const list = positions && typeof positions === 'object' ? positions : null;
+        const labels = this.viewportAxisLabels ?? {};
+
+        for (const key of Object.keys(labels)) {
+            const el = labels[key];
+            if (!el) continue;
+            const pos = enabled ? (list?.[key] ?? null) : null;
+            const x = Number(pos?.x);
+            const y = Number(pos?.y);
+            const visible = !!pos?.visible && Number.isFinite(x) && Number.isFinite(y);
+            if (!visible) {
+                el.style.display = 'none';
+                continue;
+            }
+            el.style.display = 'block';
+            el.style.left = `${x}px`;
+            el.style.top = `${y}px`;
+        }
+    }
+
+    setViewportMeasurementLabelPositions(positions = null) {
+        const enabled = !!this._measurementsEnabled;
+        const list = positions && typeof positions === 'object' ? positions : null;
+        const labels = this.viewportMeasureLabels ?? {};
+
+        for (const key of Object.keys(labels)) {
+            const el = labels[key];
+            if (!el) continue;
+            const pos = enabled ? (list?.[key] ?? null) : null;
+            const x = Number(pos?.x);
+            const y = Number(pos?.y);
+            const text = typeof pos?.text === 'string' ? pos.text : '';
+            const visible = !!pos?.visible && Number.isFinite(x) && Number.isFinite(y) && !!text;
+            if (!visible) {
+                el.style.display = 'none';
+                continue;
+            }
+            el.textContent = text;
+            el.style.display = 'block';
+            el.style.left = `${x}px`;
+            el.style.top = `${y}px`;
+        }
     }
 
     _buildCameraPresets() {
@@ -1020,14 +1154,22 @@ export class InspectorRoomUI {
         const collectionId = this.collectionSelect.value || '-';
         const textureId = this.itemSelect.value || '-';
         const base = this.baseColorSelect.value || 'white';
+        const preview = this.getPreviewModeId();
+        const size = this.getTextureRealWorldSizeMeters();
         const extra = this._selectedExtra;
 
-        const parts = [`collection:${collectionId}`, `texture:${textureId}`, `base:${base}`];
+        const parts = [`collection:${collectionId}`, `texture:${textureId}`, `base:${base}`, `preview:${preview}`];
         const atlas = typeof extra?.atlas === 'string' ? extra.atlas : '';
         if (atlas) parts.push(`atlas:${atlas}`);
         if (extra?.rectPx) parts.push(`rect:${formatRectPx(extra.rectPx)}`);
         if (extra?.uv) parts.push(`uv:${formatUv(extra.uv)}`);
         if (typeof extra?.style === 'string' && extra.style) parts.push(`style:${extra.style}`);
+
+        const widthMeters = Number(size?.widthMeters);
+        const heightMeters = Number(size?.heightMeters);
+        if (Number.isFinite(widthMeters) && widthMeters > 0 && Number.isFinite(heightMeters) && heightMeters > 0) {
+            parts.push(`size:${formatFloat(widthMeters, 2)}x${formatFloat(heightMeters, 2)}m`);
+        }
 
         const tileMeters = Number(extra?.tileMeters);
         if (Number.isFinite(tileMeters) && tileMeters > 0) parts.push(`tile:${formatFloat(tileMeters, 2)}m`);
@@ -1085,6 +1227,7 @@ export class InspectorRoomUI {
         this.axisLegend.classList.toggle('always-on', !!this._axesAlwaysVisible);
         this.axisLegend.classList.toggle('grid-off', !this._gridEnabled);
         this.axisLegend.classList.toggle('plane-off', !this._planeEnabled);
+        this.axisLegend.classList.toggle('measure-on', !!this._measurementsEnabled);
     }
 
     _syncLightingWidgets() {
@@ -1161,7 +1304,9 @@ export class InspectorRoomUI {
         this.colorModeSelect.addEventListener('change', this._onColorMode);
 
         this.baseColorSelect.addEventListener('change', this._onBaseColor);
-        this.previewModeSelect.addEventListener('change', this._onPreviewMode);
+        this.tiledInput.addEventListener('change', this._onPreviewMode);
+        this.textureWidthMeters.addEventListener('change', this._onTextureSize);
+        this.textureHeightMeters.addEventListener('change', this._onTextureSize);
         this.tileGapRange.addEventListener('input', this._onTileGapRange);
         this.tileGapNumber.addEventListener('change', this._onTileGapNumber);
 
@@ -1170,6 +1315,7 @@ export class InspectorRoomUI {
         this.axisAlwaysBtn.addEventListener('click', this._onAxisAlwaysToggle);
         this.gridBtn.addEventListener('click', this._onGridToggle);
         this.planeBtn.addEventListener('click', this._onPlaneToggle);
+        this.measureBtn.addEventListener('click', this._onMeasurementsToggle);
 
         this.lightMarkerBtn.addEventListener('click', this._onLightMarker);
         this.lightY.addEventListener('input', this._onLightSlider);
@@ -1207,7 +1353,9 @@ export class InspectorRoomUI {
         this.colorModeSelect.removeEventListener('change', this._onColorMode);
 
         this.baseColorSelect.removeEventListener('change', this._onBaseColor);
-        this.previewModeSelect.removeEventListener('change', this._onPreviewMode);
+        this.tiledInput.removeEventListener('change', this._onPreviewMode);
+        this.textureWidthMeters.removeEventListener('change', this._onTextureSize);
+        this.textureHeightMeters.removeEventListener('change', this._onTextureSize);
         this.tileGapRange.removeEventListener('input', this._onTileGapRange);
         this.tileGapNumber.removeEventListener('change', this._onTileGapNumber);
 
@@ -1216,6 +1364,7 @@ export class InspectorRoomUI {
         this.axisAlwaysBtn.removeEventListener('click', this._onAxisAlwaysToggle);
         this.gridBtn.removeEventListener('click', this._onGridToggle);
         this.planeBtn.removeEventListener('click', this._onPlaneToggle);
+        this.measureBtn.removeEventListener('click', this._onMeasurementsToggle);
 
         this.lightMarkerBtn.removeEventListener('click', this._onLightMarker);
         this.lightY.removeEventListener('input', this._onLightSlider);

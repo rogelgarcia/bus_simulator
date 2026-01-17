@@ -812,7 +812,7 @@ async function runTests() {
 
     // ========== Building Fabrication UI Tests ==========
     const { BuildingFabricationUI } = await import('/src/graphics/gui/building_fabrication/BuildingFabricationUI.js');
-    const { BuildingFabricationScene } = await import('/src/graphics/gui/building_fabrication/BuildingFabricationScene.js');
+    const { BuildingFabricationScene, getHighestIndex3x2FootprintTileIds } = await import('/src/graphics/gui/building_fabrication/BuildingFabricationScene.js');
     const { offsetOrthogonalLoopXZ } = await import('/src/graphics/assets3d/generators/buildings/BuildingGenerator.js');
     const { buildBuildingFabricationVisualParts } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationGenerator.js');
     const { createDefaultFloorLayer, createDefaultRoofLayer } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationTypes.js');
@@ -1218,6 +1218,15 @@ async function runTests() {
         const scene = new BuildingFabricationScene(engine);
         const { baseMargin, roadMargin } = scene._buildingFootprintMargins();
         assertTrue(roadMargin > baseMargin, 'Road margin should be larger than base margin.');
+    });
+
+    test('BuildingFabricationScene: highest index 3x2 footprint is deterministic', () => {
+        const tiles = getHighestIndex3x2FootprintTileIds(5);
+        assertEqual(tiles.length, 6, 'Expected 3x2 footprint tile count.');
+        assertEqual(tiles.join('|'), '2,3|3,3|4,3|2,4|3,4|4,4', 'Expected top-right 3x2 footprint.');
+
+        const small = getHighestIndex3x2FootprintTileIds(2);
+        assertEqual(small.length, 0, 'Expected empty footprint for small grids.');
     });
 
     // ========== City Building Config Tests ==========
@@ -6284,6 +6293,43 @@ async function runTests() {
         assertEqual(ui.lightY.value, String(ui.getLightState().y), 'Expected lightY slider to match light state.');
     });
 
+    const { InspectorRoomMeshesProvider } = await import('/src/graphics/gui/inspector_room/InspectorRoomMeshesProvider.js');
+    const THREE_IR = await import('three');
+
+    test('InspectorRoomMeshesProvider: pivot gizmo does not change focus bounds', () => {
+        const provider = new InspectorRoomMeshesProvider({});
+        const parent = new THREE_IR.Group();
+        provider.mount(parent);
+        provider.setSelectedMeshId('mesh.ball.v1');
+
+        const before = provider.getFocusBounds();
+        assertTrue(!!before, 'Expected focus bounds before pivot.');
+
+        provider.setPivotEnabled(true);
+        const after = provider.getFocusBounds();
+        assertTrue(!!after, 'Expected focus bounds after pivot.');
+
+        assertNear(after.center.x, before.center.x, 1e-6, 'Expected focus center x unchanged.');
+        assertNear(after.center.y, before.center.y, 1e-6, 'Expected focus center y unchanged.');
+        assertNear(after.center.z, before.center.z, 1e-6, 'Expected focus center z unchanged.');
+        assertNear(after.radius, before.radius, 1e-6, 'Expected focus radius unchanged.');
+    });
+
+    const { getTreeMeshCollections, getTreeMeshEntryById, getTreeMeshOptionsForCollection, isTreeMeshId, TREE_MESH_COLLECTION } = await import('/src/graphics/content3d/catalogs/TreeMeshCatalog.js');
+
+    test('TreeMeshCatalog: desktop tree entries resolve stable ids', () => {
+        const collections = getTreeMeshCollections();
+        assertTrue(collections.some((c) => c.id === TREE_MESH_COLLECTION.TREES_DESKTOP), 'Expected desktop tree collection.');
+
+        const options = getTreeMeshOptionsForCollection(TREE_MESH_COLLECTION.TREES_DESKTOP);
+        assertTrue(options.length > 0, 'Expected at least one desktop tree option.');
+
+        const firstId = options[0].id;
+        assertTrue(isTreeMeshId(firstId), 'Expected tree id to be recognized.');
+        const entry = getTreeMeshEntryById(firstId);
+        assertTrue(!!entry && typeof entry.fileName === 'string', 'Expected tree entry with fileName.');
+    });
+
     // ========== AI-113 Registry Tests ==========
     const { WINDOW_STYLE } = await import('/src/app/buildings/WindowStyle.js');
     const { WINDOW_TYPE: WINDOW_TYPE_IDS } = await import('/src/graphics/assets3d/generators/buildings/WindowTextureGenerator.js');
@@ -6325,6 +6371,7 @@ async function runTests() {
     const {
         getPbrMaterialOptions,
         getPbrMaterialOptionsForBuildings,
+        getPbrMaterialExplicitTileMeters,
         computePbrMaterialTextureRepeat,
         getPbrMaterialMeta
     } = await import('/src/graphics/content3d/catalogs/PbrMaterialCatalog.js');
@@ -6374,7 +6421,21 @@ async function runTests() {
         assertNear(repUnit.y, 3 / meta.tileMeters, 1e-6, 'Expected unit repeat y=surface/tileMeters.');
     });
 
-    const { buildTexturePreviewMaterialMaps } = await import('/src/graphics/gui/inspector_room/InspectorRoomTexturesProvider.js');
+    test('PbrMaterialCatalog: explicit tile size is only set for configured materials', () => {
+        assertNear(getPbrMaterialExplicitTileMeters('pbr.red_brick'), 4.0, 1e-6, 'Expected explicit tileMeters for red_brick.');
+        assertEqual(getPbrMaterialExplicitTileMeters('pbr.concrete'), null, 'Expected null explicit tileMeters for materials without config.');
+    });
+
+    const { buildTexturePreviewMaterialMaps, computeRealWorldAspectRatio, computeRealWorldRepeat } = await import('/src/graphics/gui/inspector_room/InspectorRoomTexturesProvider.js');
+
+    test('InspectorRoomTexturesProvider: real-world helpers compute repeat/aspect', () => {
+        assertEqual(computeRealWorldAspectRatio({ widthMeters: 2, heightMeters: 1 }), 2, 'Expected aspect=2.');
+        assertEqual(computeRealWorldAspectRatio({ widthMeters: 2, heightMeters: 0 }), null, 'Expected invalid aspect to return null.');
+
+        const rep = computeRealWorldRepeat({ surfaceSizeMeters: { x: 3, y: 3 }, tileSizeMeters: { x: 2, y: 1 } });
+        assertNear(rep.x, 1.5, 1e-6, 'Expected repeat x=surface/tile.');
+        assertNear(rep.y, 3, 1e-6, 'Expected repeat y=surface/tile.');
+    });
 
     test('InspectorRoomTexturesProvider: preview maps use standard material slots', () => {
         const baseUrl = 'base';
@@ -6407,6 +6468,18 @@ async function runTests() {
         assertEqual(tiled.tile.map, baseUrl, 'Expected base map in tile material.');
         assertEqual(tiled.tile.normalMap, normalUrl, 'Expected normal map in tile material.');
         assertEqual(tiled.tile.roughnessMap, ormUrl, 'Expected ORM in roughnessMap slot (tile).');
+    });
+
+    const { computeBoundsSize, formatMeters } = await import('/src/graphics/gui/inspector_room/InspectorRoomMeasurementUtils.js');
+
+    test('InspectorRoomMeasurementUtils: bounds size and meters formatting', () => {
+        const size = computeBoundsSize({ min: { x: 1, y: 2, z: 3 }, max: { x: 4, y: 6, z: 5 } });
+        assertTrue(!!size, 'Expected size.');
+        assertNear(size.x, 3, 1e-6, 'Expected dx=3.');
+        assertNear(size.y, 4, 1e-6, 'Expected dy=4.');
+        assertNear(size.z, 2, 1e-6, 'Expected dz=2.');
+        assertEqual(formatMeters(2, { digits: 0 }), '2m', 'Expected 0-digit meters.');
+        assertEqual(formatMeters(2.3456, { digits: 2 }), '2.35m', 'Expected rounded meters.');
     });
 
     const { sampleConnector } = await import('/src/app/geometry/ConnectorSampling.js');

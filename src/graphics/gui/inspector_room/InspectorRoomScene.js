@@ -1,7 +1,6 @@
 // src/graphics/gui/inspector_room/InspectorRoomScene.js
 // Shared inspection room environment with grid, plane, lighting, and camera controls.
 import * as THREE from 'three';
-import { createGradientSkyDome } from '../../assets3d/generators/SkyGenerator.js';
 import { createToolCameraController } from '../../engine3d/camera/ToolCameraPrefab.js';
 
 function clamp(value, min, max) {
@@ -37,6 +36,9 @@ export class InspectorRoomScene {
         this._uiRoot = null;
 
         this.sky = null;
+        this._prevSceneBackground = null;
+        this._backgroundColor = new THREE.Color(0x8a8a8a);
+        this._prevRendererClear = null;
         this.hemi = null;
         this.sun = null;
 
@@ -47,8 +49,13 @@ export class InspectorRoomScene {
         this.grid = null;
         this.axes = null;
         this._axisMaterials = [];
+        this._axisEndpoints = null;
 
         this.lightMarker = null;
+
+        this.measurements = null;
+        this._measurementGeo = null;
+        this._measurementMat = null;
 
         this._gridVisible = true;
         this._planeVisible = true;
@@ -59,7 +66,7 @@ export class InspectorRoomScene {
         this._config = {
             planeSize: 20,
             planeY: 0,
-            planeColor: 0x0f1722,
+            planeColor: 0x5b5f66,
             planeRoughness: 1.0,
             planeMetalness: 0.0,
             gridSize: 20,
@@ -77,6 +84,17 @@ export class InspectorRoomScene {
     enter() {
         if (this.root) return;
 
+        if (!this._prevSceneBackground) this._prevSceneBackground = this.scene.background ?? null;
+        this.scene.background = this._backgroundColor;
+
+        const renderer = this.engine?.renderer ?? null;
+        if (renderer && !this._prevRendererClear) {
+            const prevColor = new THREE.Color();
+            renderer.getClearColor(prevColor);
+            this._prevRendererClear = { color: prevColor, alpha: renderer.getClearAlpha?.() ?? 0 };
+        }
+        renderer?.setClearColor?.(this._backgroundColor, 1);
+
         this.root = new THREE.Group();
         this.root.name = 'inspector_room_root';
         this.scene.add(this.root);
@@ -84,9 +102,6 @@ export class InspectorRoomScene {
         this.content = new THREE.Group();
         this.content.name = 'inspector_room_content';
         this.root.add(this.content);
-
-        this.sky = createGradientSkyDome();
-        if (this.sky) this.root.add(this.sky);
 
         const lighting = this.engine?.lightingSettings ?? {};
         const hemiIntensity = Number.isFinite(lighting.hemiIntensity) ? lighting.hemiIntensity : 0.85;
@@ -156,6 +171,7 @@ export class InspectorRoomScene {
             this.axes = null;
         }
         this._axisMaterials = [];
+        this._axisEndpoints = null;
 
         if (this.grid) {
             this.root?.remove?.(this.grid);
@@ -177,11 +193,13 @@ export class InspectorRoomScene {
             this._planeMat = null;
         }
 
-        if (this.sky) {
-            this.root?.remove?.(this.sky);
-            this.sky.geometry?.dispose?.();
-            this.sky.material?.dispose?.();
-            this.sky = null;
+        if (this.measurements) {
+            this.root?.remove?.(this.measurements);
+            this._measurementGeo?.dispose?.();
+            this._measurementMat?.dispose?.();
+            this.measurements = null;
+            this._measurementGeo = null;
+            this._measurementMat = null;
         }
 
         if (this.hemi) {
@@ -204,10 +222,83 @@ export class InspectorRoomScene {
             this.root = null;
         }
 
+        if (this.scene) this.scene.background = this._prevSceneBackground ?? null;
+        this._prevSceneBackground = null;
+
+        const renderer = this.engine?.renderer ?? null;
+        const clear = this._prevRendererClear ?? null;
+        if (renderer && clear?.color) renderer.setClearColor(clear.color, clear.alpha ?? 0);
+        this._prevRendererClear = null;
+
         this._cameraTween = null;
     }
 
+    getAxisEndpoints() {
+        return this._axisEndpoints;
+    }
+
+    setMeasurementOverlay({ enabled = false, mode = 'xyz', bounds = null } = {}) {
+        const on = !!enabled;
+        if (!on) {
+            if (this.measurements) this.measurements.visible = false;
+            return;
+        }
+
+        const b = bounds && typeof bounds === 'object' ? bounds : null;
+        const min = b?.min && typeof b.min === 'object' ? b.min : null;
+        const max = b?.max && typeof b.max === 'object' ? b.max : null;
+        const minX = Number(min?.x);
+        const minY = Number(min?.y);
+        const minZ = Number(min?.z);
+        const maxX = Number(max?.x);
+        const maxY = Number(max?.y);
+        const maxZ = Number(max?.z);
+        if (!(Number.isFinite(minX) && Number.isFinite(minY) && Number.isFinite(minZ) && Number.isFinite(maxX) && Number.isFinite(maxY) && Number.isFinite(maxZ))) {
+            if (this.measurements) this.measurements.visible = false;
+            return;
+        }
+
+        if (!this.measurements && this.root) {
+            this._measurementGeo = new THREE.BufferGeometry();
+            this._measurementMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthTest: false });
+            this.measurements = new THREE.LineSegments(this._measurementGeo, this._measurementMat);
+            this.measurements.name = 'inspector_room_measurements';
+            this.measurements.renderOrder = 999;
+            this.measurements.visible = false;
+            this.root.add(this.measurements);
+        }
+
+        if (!this.measurements || !this._measurementGeo) return;
+
+        const nextMode = mode === 'xz' ? 'xz' : 'xyz';
+        const pts = [
+            minX, maxY, maxZ,
+            maxX, maxY, maxZ,
+            maxX, maxY, minZ,
+            maxX, maxY, maxZ
+        ];
+        if (nextMode === 'xyz') {
+            pts.push(
+                maxX, minY, maxZ,
+                maxX, maxY, maxZ
+            );
+        }
+
+        const attr = this._measurementGeo.attributes?.position ?? null;
+        if (!attr || !attr.array || attr.array.length !== pts.length) {
+            this._measurementGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pts), 3));
+        } else {
+            attr.array.set(pts);
+            attr.needsUpdate = true;
+        }
+        this._measurementGeo.computeBoundingSphere();
+        this.measurements.visible = true;
+    }
+
     update(dt) {
+        if (this.root && this.scene && this.scene.background !== this._backgroundColor) {
+            this.scene.background = this._backgroundColor;
+        }
         if (this._cameraTween) this._tickCameraTween(dt);
         this.controls?.update?.(dt);
     }
@@ -478,7 +569,8 @@ export class InspectorRoomScene {
         this._planeMat = new THREE.MeshStandardMaterial({
             color: this._config.planeColor,
             metalness: this._config.planeMetalness,
-            roughness: this._config.planeRoughness
+            roughness: this._config.planeRoughness,
+            side: THREE.DoubleSide
         });
 
         this.plane = new THREE.Mesh(this._planeGeo, this._planeMat);
@@ -546,7 +638,7 @@ export class InspectorRoomScene {
         }
         this._axisMaterials = [];
 
-        const axisSize = 2;
+        const axisSize = 1;
         const yOffset = this._config.planeY + 0.002;
 
         const makeLine = (a, b, color) => {
@@ -562,11 +654,19 @@ export class InspectorRoomScene {
         axes.visible = this._axisLinesVisible;
 
         axes.add(makeLine(new THREE.Vector3(-axisSize, yOffset, 0), new THREE.Vector3(axisSize, yOffset, 0), 0xff0000));
-        axes.add(makeLine(new THREE.Vector3(0, -axisSize, 0), new THREE.Vector3(0, axisSize, 0), 0x00ff00));
+        axes.add(makeLine(new THREE.Vector3(0, yOffset - axisSize, 0), new THREE.Vector3(0, yOffset + axisSize, 0), 0x00ff00));
         axes.add(makeLine(new THREE.Vector3(0, yOffset, -axisSize), new THREE.Vector3(0, yOffset, axisSize), 0x0000ff));
 
         this.root.add(axes);
         this.axes = axes;
+        this._axisEndpoints = {
+            xn: { x: -axisSize, y: yOffset, z: 0 },
+            xp: { x: axisSize, y: yOffset, z: 0 },
+            yn: { x: 0, y: yOffset - axisSize, z: 0 },
+            yp: { x: 0, y: yOffset + axisSize, z: 0 },
+            zn: { x: 0, y: yOffset, z: -axisSize },
+            zp: { x: 0, y: yOffset, z: axisSize }
+        };
     }
 
     _applyAxisAlwaysVisible() {

@@ -10,6 +10,7 @@ import { WINDOW_TYPE, getDefaultWindowParams, getWindowTypeOptions, isWindowType
 import { normalizeWindowParams, normalizeWindowTypeIdOrLegacyStyle } from '../../assets3d/generators/buildings/WindowTypeCompatibility.js';
 import { getPbrMaterialOptionsForBuildings } from '../../assets3d/materials/PbrMaterialCatalog.js';
 import { LAYER_TYPE, cloneBuildingLayers, createDefaultFloorLayer, createDefaultRoofLayer, normalizeBuildingLayers } from '../../assets3d/generators/building_fabrication/BuildingFabricationTypes.js';
+import { getBuildingConfigs } from '../../content3d/catalogs/BuildingConfigCatalog.js';
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -231,6 +232,7 @@ export class BuildingFabricationUI {
             })
         ]);
         this._selectedLayers = [];
+        this._catalogBuildingConfigId = '';
         this.onSelectedBuildingLayersChange = null;
 
         this.root = document.createElement('div');
@@ -503,6 +505,46 @@ export class BuildingFabricationUI {
         addTypeOption('house', 'House (coming later)', { disabled: true });
         this.typeSelect.value = this._buildingType;
 
+        this.loadCatalogRow = document.createElement('div');
+        this.loadCatalogRow.className = 'building-fab-row';
+        this.loadCatalogLabel = document.createElement('div');
+        this.loadCatalogLabel.className = 'building-fab-row-label';
+        this.loadCatalogLabel.textContent = 'Load config';
+        this.loadCatalogSelect = document.createElement('select');
+        this.loadCatalogSelect.className = 'building-fab-select';
+
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'Select building config';
+        this.loadCatalogSelect.appendChild(placeholder);
+
+        const catalogConfigs = getBuildingConfigs();
+        catalogConfigs.sort((a, b) => {
+            const al = String(a?.name ?? a?.id ?? '').toLowerCase();
+            const bl = String(b?.name ?? b?.id ?? '').toLowerCase();
+            return al.localeCompare(bl);
+        });
+        for (const cfg of catalogConfigs) {
+            const id = typeof cfg?.id === 'string' ? cfg.id : '';
+            if (!id) continue;
+            const opt = document.createElement('option');
+            opt.value = id;
+            const name = typeof cfg?.name === 'string' ? cfg.name : '';
+            opt.textContent = name ? `${name} (${id})` : id;
+            this.loadCatalogSelect.appendChild(opt);
+        }
+        this.loadCatalogSelect.value = this._catalogBuildingConfigId;
+
+        this.loadCatalogBtn = document.createElement('button');
+        this.loadCatalogBtn.type = 'button';
+        this.loadCatalogBtn.className = 'building-fab-btn building-fab-btn-road';
+        this.loadCatalogBtn.textContent = 'Load';
+        this.loadCatalogBtn.disabled = true;
+
+        this.loadCatalogRow.appendChild(this.loadCatalogLabel);
+        this.loadCatalogRow.appendChild(this.loadCatalogSelect);
+        this.loadCatalogRow.appendChild(this.loadCatalogBtn);
+
         this.deleteBuildingBtn = document.createElement('button');
         this.deleteBuildingBtn.type = 'button';
         this.deleteBuildingBtn.className = 'building-fab-btn building-fab-btn-danger';
@@ -545,6 +587,7 @@ export class BuildingFabricationUI {
         this.propsPanel.appendChild(this.propsTitle);
         this.propsPanel.appendChild(this.nameRow);
         this.propsPanel.appendChild(this.typeRow);
+        this.propsPanel.appendChild(this.loadCatalogRow);
         this.propsPanel.appendChild(this.deleteBuildingBtn);
         this.propsPanel.appendChild(this.exportBuildingBtn);
 
@@ -1324,6 +1367,7 @@ export class BuildingFabricationUI {
         this.onClearSelection = null;
         this.onSelectBuilding = null;
         this.onDeleteSelectedBuilding = null;
+        this.onLoadBuildingConfigFromCatalog = null;
         this.onExportBuildingConfig = null;
         this.onReset = null;
         this.onRoadModeChange = null;
@@ -1470,6 +1514,8 @@ export class BuildingFabricationUI {
         this._onStartBuilding = () => this._toggleBuildingModeFromUi();
         this._onCancelMode = () => this._cancelActiveModeFromUi();
         this._onBuild = () => this.onBuildBuildings?.();
+        this._onLoadCatalogSelectChange = () => this._setCatalogBuildingConfigFromUi(this.loadCatalogSelect.value, { autoLoad: true });
+        this._onLoadCatalogBtnClick = () => this._loadCatalogBuildingConfigFromUi();
         this._onExportBuildingConfig = () => this.onExportBuildingConfig?.();
         this._onClearSelection = () => this.onClearSelection?.();
         this._onDeleteSelectedBuilding = () => this.onDeleteSelectedBuilding?.();
@@ -3067,6 +3113,8 @@ export class BuildingFabricationUI {
 
         this.deleteBuildingBtn.disabled = !allow;
         if (this.exportBuildingBtn) this.exportBuildingBtn.disabled = !this._enabled;
+        if (this.loadCatalogSelect) this.loadCatalogSelect.disabled = !this._enabled;
+        if (this.loadCatalogBtn) this.loadCatalogBtn.disabled = !this._enabled || !this._catalogBuildingConfigId;
         this.typeSelect.disabled = !allow;
         this._syncBuildingStyleButtons({ allow });
         this._syncWindowStyleButtons({ allow });
@@ -3728,6 +3776,21 @@ export class BuildingFabricationUI {
         this._buildingType = safe;
         this.typeSelect.value = safe;
         if (changed) this.onBuildingTypeChange?.(safe);
+    }
+
+    _setCatalogBuildingConfigFromUi(raw, { autoLoad = false } = {}) {
+        const next = typeof raw === 'string' ? raw : '';
+        this._catalogBuildingConfigId = next;
+        if (this.loadCatalogSelect) this.loadCatalogSelect.value = next;
+        this._syncPropertyWidgets();
+        if (autoLoad && this._enabled && next) this.onLoadBuildingConfigFromCatalog?.(next);
+    }
+
+    _loadCatalogBuildingConfigFromUi() {
+        if (!this._enabled) return;
+        const id = this._catalogBuildingConfigId;
+        if (!id) return;
+        this.onLoadBuildingConfigFromCatalog?.(id);
     }
 
     _setBuildingStyleFromUi(raw) {
@@ -4719,6 +4782,8 @@ export class BuildingFabricationUI {
         this.streetWindowSpacerExtrudeDistanceRange.addEventListener('input', this._onStreetWindowSpacerExtrudeDistanceRangeInput);
         this.streetWindowSpacerExtrudeDistanceNumber.addEventListener('input', this._onStreetWindowSpacerExtrudeDistanceNumberInput);
         this.typeSelect.addEventListener('change', this._onTypeSelectChange);
+        this.loadCatalogSelect.addEventListener('change', this._onLoadCatalogSelectChange);
+        this.loadCatalogBtn.addEventListener('click', this._onLoadCatalogBtnClick);
         this.stylePickButton.addEventListener('click', this._onStylePickClick);
         this.hideSelectionBorderInput.addEventListener('change', this._onHideSelectionBorderChange);
         this.viewModeRow.addEventListener('click', this._onViewModeClick);
@@ -4813,6 +4878,8 @@ export class BuildingFabricationUI {
         this.streetWindowSpacerExtrudeDistanceRange.removeEventListener('input', this._onStreetWindowSpacerExtrudeDistanceRangeInput);
         this.streetWindowSpacerExtrudeDistanceNumber.removeEventListener('input', this._onStreetWindowSpacerExtrudeDistanceNumberInput);
         this.typeSelect.removeEventListener('change', this._onTypeSelectChange);
+        this.loadCatalogSelect.removeEventListener('change', this._onLoadCatalogSelectChange);
+        this.loadCatalogBtn.removeEventListener('click', this._onLoadCatalogBtnClick);
         this.stylePickButton.removeEventListener('click', this._onStylePickClick);
         this.hideSelectionBorderInput.removeEventListener('change', this._onHideSelectionBorderChange);
         this.viewModeRow.removeEventListener('click', this._onViewModeClick);
