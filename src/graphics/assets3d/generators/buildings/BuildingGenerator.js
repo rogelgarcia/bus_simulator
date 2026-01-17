@@ -17,6 +17,7 @@ import {
     resolveBuildingStyleWallTextureUrl as resolveBuildingStyleWallTextureUrlFromCatalog
 } from '../../../content3d/catalogs/BuildingStyleCatalog.js';
 import { computePbrMaterialTextureRepeat, tryGetPbrMaterialIdFromUrl } from '../../../content3d/catalogs/PbrMaterialCatalog.js';
+import { applyMaterialVariationToMeshStandardMaterial, computeMaterialVariationSeedFromTiles, MATERIAL_VARIATION_ROOT } from '../../materials/MaterialVariationSystem.js';
 
 const EPS = 1e-6;
 const QUANT = 1000;
@@ -995,6 +996,7 @@ export function buildBuildingVisualParts({
     if (!footprintLoops.length) return null;
 
     const tileCount = normalizeTileList(tiles).length;
+    const matVarSeed = computeMaterialVariationSeedFromTiles(tiles, { salt: 'building' });
     const floorCount = clampInt(floors, 0, 30);
     const upperFloorHeight = clamp(floorHeight, 1.0, 12.0);
     const { baseY, extraFirstFloor, planY } = computeBuildingBaseAndSidewalk({
@@ -1090,7 +1092,7 @@ export function buildBuildingVisualParts({
     const streetUrls = streetEnabled ? resolveBuildingStyleWallMaterialUrls(streetStyle) : null;
     const streetSpec = (streetEnabled && streetUrls?.baseColorUrl) ? streetUrls : wallSpec;
 
-    const makeWallMaterial = (spec) => {
+    const makeWallMaterial = (spec, { seedOffset = 0 } = {}) => {
         const mat = wallMatTemplate.clone();
         const url = spec?.baseColorUrl ?? null;
         const normalUrl = spec?.normalUrl ?? null;
@@ -1114,12 +1116,22 @@ export function buildBuildingVisualParts({
             mat.roughness = 1.0;
             mat.metalness = 0.0;
         }
+
+        if (ormUrl) {
+            applyMaterialVariationToMeshStandardMaterial(mat, {
+                seed: matVarSeed,
+                seedOffset,
+                heightMin: baseY,
+                heightMax: baseY + totalHeight,
+                root: MATERIAL_VARIATION_ROOT.WALL
+            });
+        }
         mat.needsUpdate = true;
         return mat;
     };
 
-    const upperWallMat = makeWallMaterial(wallSpec);
-    const streetWallMat = streetEnabled ? makeWallMaterial(streetSpec) : null;
+    const upperWallMat = makeWallMaterial(wallSpec, { seedOffset: 0 });
+    const streetWallMat = streetEnabled ? makeWallMaterial(streetSpec, { seedOffset: 1 }) : null;
 
     for (const outer of wallOuterLoops) {
         const shapePts = outer.map((p) => new THREE.Vector2(p.x, -p.z));

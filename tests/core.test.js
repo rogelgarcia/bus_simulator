@@ -6532,6 +6532,50 @@ async function runTests() {
         assertTrue(tall > d, 'Expected narrower aspect to require larger distance.');
     });
 
+    // ========== Material Variation Tests ==========
+    const {
+        computeMaterialVariationSeedFromTiles,
+        normalizeMaterialVariationConfig
+    } = await import('/src/graphics/assets3d/materials/MaterialVariationSystem.js');
+
+    test('MaterialVariation: seed stable across tile order', () => {
+        const tilesA = [[1, 2], [3, 4], [2, 2]];
+        const tilesB = [[3, 4], [2, 2], [1, 2]];
+        const tilesObj = [{ x: 1, y: 2 }, { x: 3, y: 4 }, { x: 2, y: 2 }];
+
+        const a = computeMaterialVariationSeedFromTiles(tilesA, { salt: 'building' });
+        const b = computeMaterialVariationSeedFromTiles(tilesB, { salt: 'building' });
+        const c = computeMaterialVariationSeedFromTiles(tilesObj, { salt: 'building' });
+        assertEqual(a, b, 'Expected same seed regardless of tile order.');
+        assertEqual(a, c, 'Expected same seed for array/object tile formats.');
+    });
+
+    test('MaterialVariation: seed changes when tiles change', () => {
+        const tilesA = [[1, 2], [3, 4], [2, 2]];
+        const tilesC = [[1, 2], [3, 4], [2, 3]];
+        const a = computeMaterialVariationSeedFromTiles(tilesA, { salt: 'building' });
+        const c = computeMaterialVariationSeedFromTiles(tilesC, { salt: 'building' });
+        assertTrue(a !== c, 'Expected different seeds for different tile sets.');
+    });
+
+    test('MaterialVariation: config normalization clamps ranges', () => {
+        const cfg = normalizeMaterialVariationConfig({
+            worldSpaceScale: 999,
+            objectSpaceScale: -5,
+            tintAmount: 9,
+            roughnessAmount: 9,
+            dust: { strength: -1, heightBand: { min: 1, max: 0 } }
+        });
+
+        assertTrue(cfg.worldSpaceScale <= 20.0, 'worldSpaceScale should clamp to max.');
+        assertTrue(cfg.objectSpaceScale >= 0.001, 'objectSpaceScale should clamp to min.');
+        assertTrue(cfg.tintAmount <= 0.35, 'tintAmount should clamp to max.');
+        assertTrue(cfg.roughnessAmount <= 0.75, 'roughnessAmount should clamp to max.');
+        assertEqual(cfg.dust.strength, 0, 'dust.strength should clamp to 0.');
+        assertEqual(cfg.dust.heightBand.min, 0, 'heightBand.min should normalize/swap.');
+        assertEqual(cfg.dust.heightBand.max, 1, 'heightBand.max should normalize/swap.');
+    });
+
     // ========== Summary ==========
     console.log('\n' + '='.repeat(50));
     if (errors.length === 0) {

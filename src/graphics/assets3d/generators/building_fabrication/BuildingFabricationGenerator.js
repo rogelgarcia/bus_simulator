@@ -11,6 +11,7 @@ import { BUILDING_STYLE } from '../../../../app/buildings/BuildingStyle.js';
 import { WINDOW_TYPE, getDefaultWindowParams, getWindowTexture, isWindowTypeId } from '../buildings/WindowTextureGenerator.js';
 import { computeBuildingLoopsFromTiles, offsetOrthogonalLoopXZ, resolveBuildingStyleWallMaterialUrls } from '../buildings/BuildingGenerator.js';
 import { LAYER_TYPE, normalizeBuildingLayers } from './BuildingFabricationTypes.js';
+import { applyMaterialVariationToMeshStandardMaterial, computeMaterialVariationSeedFromTiles, MATERIAL_VARIATION_ROOT } from '../../materials/MaterialVariationSystem.js';
 
 const EPS = 1e-6;
 
@@ -271,6 +272,46 @@ function makeDeterministicColor(seed) {
     return color;
 }
 
+function estimateFabricationHeightMax({ baseY, extraFirstFloor, layers } = {}) {
+    const safeLayers = Array.isArray(layers) ? layers : [];
+    let yCursor = Number.isFinite(baseY) ? Number(baseY) : 0;
+    let firstExtra = Number.isFinite(extraFirstFloor) ? Math.max(0, Number(extraFirstFloor)) : 0;
+
+    for (let layerIndex = 0; layerIndex < safeLayers.length; layerIndex++) {
+        const layer = safeLayers[layerIndex];
+        const type = layer?.type;
+
+        if (type === LAYER_TYPE.FLOOR) {
+            const floors = clampInt(layer?.floors, 0, 99);
+            const floorHeight = clamp(layer?.floorHeight, 1.0, 12.0);
+
+            const beltCfg = layer?.belt ?? {};
+            const beltEnabled = !!beltCfg.enabled;
+            const beltHeight = beltEnabled ? clamp(beltCfg.height, 0.02, 1.2) : 0.0;
+
+            for (let floor = 0; floor < floors; floor++) {
+                const segHeight = floorHeight + (floor === 0 ? firstExtra : 0);
+                if (floor === 0) firstExtra = 0;
+                yCursor += segHeight;
+                if (beltEnabled && beltHeight > EPS) yCursor += beltHeight;
+            }
+            continue;
+        }
+
+        if (type === LAYER_TYPE.ROOF) {
+            const ring = layer?.ring ?? {};
+            const ringEnabled = !!ring.enabled;
+            const ringHeight = ringEnabled ? clamp(ring.height, 0.02, 2.0) : 0.0;
+
+            const nextLayer = safeLayers[layerIndex + 1] ?? null;
+            const hasFloorsAboveRoof = nextLayer?.type === LAYER_TYPE.FLOOR;
+            if (!hasFloorsAboveRoof) yCursor += ringHeight;
+        }
+    }
+
+    return yCursor;
+}
+
 function makeWallMaterial({ style, baseColorHex, textureCache }) {
     const styleId = typeof style === 'string' && style ? style : BUILDING_STYLE.DEFAULT;
     const urls = resolveBuildingStyleWallMaterialUrls(styleId);
@@ -496,10 +537,12 @@ export function buildBuildingFabricationVisualParts({
     const safeLayers = normalizeBuildingLayers(layers);
     const tileCount = Array.isArray(tiles) ? tiles.length : 0;
     const baseColorHex = makeDeterministicColor(tileCount * 97 + safeLayers.length * 31).getHex();
+    const matVarSeed = computeMaterialVariationSeedFromTiles(tiles, { salt: 'building' });
 
     const firstFloorLayer = safeLayers.find((layer) => layer?.type === LAYER_TYPE.FLOOR) ?? null;
     const firstFloorHeight = clamp(firstFloorLayer?.floorHeight ?? 3.2, 1.0, 12.0);
     const { baseY, extraFirstFloor, planY } = computeBuildingBaseAndSidewalk({ generatorConfig, floorHeight: firstFloorHeight });
+    const matVarHeightMax = estimateFabricationHeightMax({ baseY, extraFirstFloor, layers: safeLayers });
     const overlayLoops = applyPlanOffset({ loops: footprintLoops, offset: firstFloorLayer?.planOffset ?? 0.0 }).all;
 
     const wallInset = clamp(walls?.inset, 0.0, 4.0);
@@ -547,6 +590,18 @@ export function buildBuildingFabricationVisualParts({
             const floors = clampInt(layer.floors, 0, 99);
             const floorHeight = clamp(layer.floorHeight, 1.0, 12.0);
             const wallMat = makeWallMaterialFromSpec({ material: layer.material, baseColorHex, textureCache });
+            const wallStyleId = layer.material?.kind === 'texture' ? layer.material.id : null;
+            const wallUrls = wallStyleId ? resolveBuildingStyleWallMaterialUrls(wallStyleId) : null;
+            const wallIsPbr = !!wallUrls?.ormUrl;
+            if (wallIsPbr) {
+                applyMaterialVariationToMeshStandardMaterial(wallMat, {
+                    seed: matVarSeed,
+                    seedOffset: layerIndex,
+                    heightMin: baseY,
+                    heightMax: matVarHeightMax,
+                    root: MATERIAL_VARIATION_ROOT.WALL
+                });
+            }
 
             const beltCfg = layer.belt ?? {};
             const beltEnabled = !!beltCfg.enabled;
@@ -782,6 +837,18 @@ export function buildBuildingFabricationVisualParts({
                 baseColorHex,
                 textureCache
             });
+            const roofStyleId = roofCfg.material?.kind === 'texture' ? roofCfg.material.id : null;
+            const roofUrls = roofStyleId ? resolveBuildingStyleWallMaterialUrls(roofStyleId) : null;
+            const roofIsPbr = !!roofUrls?.ormUrl;
+            if (roofIsPbr) {
+                applyMaterialVariationToMeshStandardMaterial(roofMat, {
+                    seed: matVarSeed,
+                    seedOffset: 100 + layerIndex,
+                    heightMin: baseY,
+                    heightMax: matVarHeightMax,
+                    root: MATERIAL_VARIATION_ROOT.SURFACE
+                });
+            }
 
             const { outer: planOuter, holes: planHoles } = splitLoops(currentLoops);
             for (const outerLoop of planOuter) {
