@@ -354,6 +354,54 @@ function applyUvYContinuityOffsetToGeometry(geometry, { yOffset = 0.0, materialI
     uv.needsUpdate = true;
 }
 
+function collectLoopCornerPointsXZ(loop) {
+    const pts = Array.isArray(loop) ? loop : [];
+    const n = pts.length;
+    if (n < 3) return [];
+
+    const corners = [];
+    for (let i = 0; i < n; i++) {
+        const prev = pts[(i + n - 1) % n];
+        const curr = pts[i];
+        const next = pts[(i + 1) % n];
+        if (!prev || !curr || !next) continue;
+
+        const a = normalize2({ x: curr.x - prev.x, z: curr.z - prev.z });
+        const b = normalize2({ x: next.x - curr.x, z: next.z - curr.z });
+        if (!(a.len > EPS) || !(b.len > EPS)) continue;
+
+        const dot = Math.abs(a.x * b.x + a.z * b.z);
+        if (dot > 0.999) continue;
+        corners.push({ x: curr.x, z: curr.z });
+    }
+
+    return corners;
+}
+
+function applyMatVarCornerDistanceToGeometry(geometry, { loops } = {}) {
+    const geo = geometry ?? null;
+    const pos = geo?.getAttribute?.('position') ?? null;
+    if (!pos?.count || !pos.getX || !pos.getZ) return;
+
+    const srcLoops = Array.isArray(loops) ? loops : [];
+    const corners = [];
+    for (const loop of srcLoops) corners.push(...collectLoopCornerPointsXZ(loop));
+    if (!corners.length) return;
+
+    const data = new Float32Array(pos.count);
+    for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i);
+        const z = pos.getZ(i);
+        let best = Infinity;
+        for (const c of corners) {
+            const d = Math.hypot(x - c.x, z - c.z);
+            if (d < best) best = d;
+        }
+        data[i] = Number.isFinite(best) ? best : 0.0;
+    }
+    geo.setAttribute('matVarCornerDist', new THREE.Float32BufferAttribute(data, 1));
+}
+
 function estimateFabricationHeightMax({ baseY, extraFirstFloor, layers } = {}) {
     const safeLayers = Array.isArray(layers) ? layers : [];
     let yCursor = Number.isFinite(baseY) ? Number(baseY) : 0;
@@ -706,7 +754,8 @@ export function buildBuildingFabricationVisualParts({
                     heightMin: baseY,
                     heightMax: matVarHeightMax,
                     config: wallMatVar,
-                    root: MATERIAL_VARIATION_ROOT.WALL
+                    root: MATERIAL_VARIATION_ROOT.WALL,
+                    cornerDist: true
                 });
             }
 
@@ -796,9 +845,52 @@ export function buildBuildingFabricationVisualParts({
                 }
             }
 
+            const hadSolidMeshesBeforeLayer = solidMeshes.length;
             const layerStartY = yCursor;
+            const continuousWalls = !beltEnabled || !(beltHeight > EPS);
+
+            if (continuousWalls) {
+                let totalWallHeight = 0.0;
+                let pendingExtra = firstFloorPendingExtra;
+                for (let floor = 0; floor < floors; floor++) {
+                    const segHeight = floorHeight + (floor === 0 ? pendingExtra : 0);
+                    if (floor === 0) pendingExtra = 0;
+                    totalWallHeight += segHeight;
+                }
+
+                if (totalWallHeight > EPS) {
+                    for (const outerLoop of wallOuter) {
+                        if (!outerLoop || outerLoop.length < 3) continue;
+                        const shape = buildShapeFromLoops({ outerLoop, holeLoops: wallHoles });
+                        let geo = new THREE.ExtrudeGeometry(shape, {
+                            depth: totalWallHeight,
+                            bevelEnabled: false,
+                            steps: 1
+                        });
+                        geo.rotateX(-Math.PI / 2);
+                        applyUvYContinuityOffsetToGeometry(geo, { yOffset: layerStartY - baseY, materialIndex: 1 });
+                        applyMatVarCornerDistanceToGeometry(geo, { loops: [outerLoop, ...wallHoles] });
+                        if (geo.index) geo = geo.toNonIndexed();
+                        geo.computeVertexNormals();
+
+                        const roofMat = roofMatTemplate.clone();
+                        const mesh = new THREE.Mesh(geo, [roofMat, wallMat]);
+                        mesh.castShadow = true;
+                        mesh.receiveShadow = true;
+                        mesh.position.y = layerStartY;
+                        solidMeshes.push(mesh);
+
+                        if (showWire) {
+                            const edgeGeo = new THREE.EdgesGeometry(geo, 1);
+                            appendWirePositions(wirePositions, edgeGeo, layerStartY);
+                            edgeGeo.dispose();
+                        }
+                    }
+                }
+            }
+
             for (let floor = 0; floor < floors; floor++) {
-                if (showFloors && (solidMeshes.length || floor > 0 || Math.abs(yCursor - baseY) > EPS)) {
+                if (showFloors && (hadSolidMeshesBeforeLayer || floor > 0 || Math.abs(yCursor - baseY) > EPS)) {
                     appendLoopLinePositions(floorPositions, planLoops, yCursor);
                 }
 
@@ -806,30 +898,33 @@ export function buildBuildingFabricationVisualParts({
                 const segHeight = floorHeight + (floor === 0 ? floorExtra : 0);
                 if (floor === 0) firstFloorPendingExtra = 0;
 
-                for (const outerLoop of wallOuter) {
-                    if (!outerLoop || outerLoop.length < 3) continue;
-                    const shape = buildShapeFromLoops({ outerLoop, holeLoops: wallHoles });
-                    let geo = new THREE.ExtrudeGeometry(shape, {
-                        depth: segHeight,
-                        bevelEnabled: false,
-                        steps: 1
-                    });
-                    geo.rotateX(-Math.PI / 2);
-                    applyUvYContinuityOffsetToGeometry(geo, { yOffset: yCursor - baseY, materialIndex: 1 });
-                    if (geo.index) geo = geo.toNonIndexed();
-                    geo.computeVertexNormals();
+                if (!continuousWalls) {
+                    for (const outerLoop of wallOuter) {
+                        if (!outerLoop || outerLoop.length < 3) continue;
+                        const shape = buildShapeFromLoops({ outerLoop, holeLoops: wallHoles });
+                        let geo = new THREE.ExtrudeGeometry(shape, {
+                            depth: segHeight,
+                            bevelEnabled: false,
+                            steps: 1
+                        });
+                        geo.rotateX(-Math.PI / 2);
+                        applyUvYContinuityOffsetToGeometry(geo, { yOffset: yCursor - baseY, materialIndex: 1 });
+                        applyMatVarCornerDistanceToGeometry(geo, { loops: [outerLoop, ...wallHoles] });
+                        if (geo.index) geo = geo.toNonIndexed();
+                        geo.computeVertexNormals();
 
-                    const roofMat = roofMatTemplate.clone();
-                    const mesh = new THREE.Mesh(geo, [roofMat, wallMat]);
-                    mesh.castShadow = true;
-                    mesh.receiveShadow = true;
-                    mesh.position.y = yCursor;
-                    solidMeshes.push(mesh);
+                        const roofMat = roofMatTemplate.clone();
+                        const mesh = new THREE.Mesh(geo, [roofMat, wallMat]);
+                        mesh.castShadow = true;
+                        mesh.receiveShadow = true;
+                        mesh.position.y = yCursor;
+                        solidMeshes.push(mesh);
 
-                    if (showWire) {
-                        const edgeGeo = new THREE.EdgesGeometry(geo, 1);
-                        appendWirePositions(wirePositions, edgeGeo, yCursor);
-                        edgeGeo.dispose();
+                        if (showWire) {
+                            const edgeGeo = new THREE.EdgesGeometry(geo, 1);
+                            appendWirePositions(wirePositions, edgeGeo, yCursor);
+                            edgeGeo.dispose();
+                        }
                     }
                 }
 

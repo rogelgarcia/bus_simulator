@@ -2607,22 +2607,22 @@ export class BuildingFabricationUI {
                 wallTilingGroup.body.appendChild(uvToggle.toggle);
 
                 const uvOffsetURow = makeRangeRow('U offset (tiles)');
-                uvOffsetURow.range.min = '-1';
-                uvOffsetURow.range.max = '1';
+                uvOffsetURow.range.min = '-10';
+                uvOffsetURow.range.max = '10';
                 uvOffsetURow.range.step = '0.01';
-                uvOffsetURow.number.min = '-1';
-                uvOffsetURow.number.max = '1';
+                uvOffsetURow.number.min = '-10';
+                uvOffsetURow.number.max = '10';
                 uvOffsetURow.number.step = '0.01';
                 uvOffsetURow.range.value = String(layer?.tiling?.offsetU ?? 0.0);
                 uvOffsetURow.number.value = formatFloat(layer?.tiling?.offsetU ?? 0.0, 2);
                 wallTilingGroup.body.appendChild(uvOffsetURow.row);
 
                 const uvOffsetVRow = makeRangeRow('V offset (tiles)');
-                uvOffsetVRow.range.min = '-1';
-                uvOffsetVRow.range.max = '1';
+                uvOffsetVRow.range.min = '-10';
+                uvOffsetVRow.range.max = '10';
                 uvOffsetVRow.range.step = '0.01';
-                uvOffsetVRow.number.min = '-1';
-                uvOffsetVRow.number.max = '1';
+                uvOffsetVRow.number.min = '-10';
+                uvOffsetVRow.number.max = '10';
                 uvOffsetVRow.number.step = '0.01';
                 uvOffsetVRow.range.value = String(layer?.tiling?.offsetV ?? 0.0);
                 uvOffsetVRow.number.value = formatFloat(layer?.tiling?.offsetV ?? 0.0, 2);
@@ -2669,13 +2669,13 @@ export class BuildingFabricationUI {
                 });
 
                 uvOffsetURow.range.addEventListener('input', () => {
-                    const next = clamp(uvOffsetURow.range.value, -1.0, 1.0);
+                    const next = clamp(uvOffsetURow.range.value, -10.0, 10.0);
                     layer.tiling.offsetU = next;
                     uvOffsetURow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 uvOffsetURow.number.addEventListener('change', () => {
-                    const next = clamp(uvOffsetURow.number.value, -1.0, 1.0);
+                    const next = clamp(uvOffsetURow.number.value, -10.0, 10.0);
                     layer.tiling.offsetU = next;
                     uvOffsetURow.range.value = String(next);
                     uvOffsetURow.number.value = formatFloat(next, 2);
@@ -2683,13 +2683,13 @@ export class BuildingFabricationUI {
                 });
 
                 uvOffsetVRow.range.addEventListener('input', () => {
-                    const next = clamp(uvOffsetVRow.range.value, -1.0, 1.0);
+                    const next = clamp(uvOffsetVRow.range.value, -10.0, 10.0);
                     layer.tiling.offsetV = next;
                     uvOffsetVRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 uvOffsetVRow.number.addEventListener('change', () => {
-                    const next = clamp(uvOffsetVRow.number.value, -1.0, 1.0);
+                    const next = clamp(uvOffsetVRow.number.value, -10.0, 10.0);
                     layer.tiling.offsetV = next;
                     uvOffsetVRow.range.value = String(next);
                     uvOffsetVRow.number.value = formatFloat(next, 2);
@@ -2734,10 +2734,10 @@ export class BuildingFabricationUI {
 
                 const intensityRow = makeRangeRow('Intensity');
                 intensityRow.range.min = '0';
-                intensityRow.range.max = '8';
+                intensityRow.range.max = '20';
                 intensityRow.range.step = '0.01';
                 intensityRow.number.min = '0';
-                intensityRow.number.max = '8';
+                intensityRow.number.max = '20';
                 intensityRow.number.step = '0.01';
                 intensityRow.range.value = String(wallMatVarNormalized.globalIntensity);
                 intensityRow.number.value = formatFloat(wallMatVarNormalized.globalIntensity, 2);
@@ -2820,30 +2820,31 @@ export class BuildingFabricationUI {
                 aoAmountRow.number.value = formatFloat(wallMatVarNormalized.aoAmount, 2);
                 wallMatVarGroup.body.appendChild(aoAmountRow.row);
 
-                const macroGroup = makeDetailsSection('Macro', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:macro` });
-                const macroToggle = makeToggleRow('Enable macro');
-                macroToggle.input.checked = !!wallMatVarNormalized.macro.enabled;
+                const macro0 = wallMatVarNormalized.macroLayers?.[0] ?? null;
+                const macroGroup = makeDetailsSection('Macro layer 1', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:macro0` });
+                const macroToggle = makeToggleRow('Enable macro layer 1');
+                macroToggle.input.checked = !!macro0?.enabled;
                 macroToggle.input.disabled = !allow || !wallMatVarNormalized.enabled;
                 macroGroup.body.appendChild(macroToggle.toggle);
                 const macroIntensityRow = makeRangeRow('Intensity');
                 macroIntensityRow.range.min = '0';
-                macroIntensityRow.range.max = '4';
+                macroIntensityRow.range.max = '20';
                 macroIntensityRow.range.step = '0.01';
                 macroIntensityRow.number.min = '0';
-                macroIntensityRow.number.max = '4';
+                macroIntensityRow.number.max = '20';
                 macroIntensityRow.number.step = '0.01';
-                macroIntensityRow.range.value = String(wallMatVarNormalized.macro.intensity);
-                macroIntensityRow.number.value = formatFloat(wallMatVarNormalized.macro.intensity, 2);
+                macroIntensityRow.range.value = String(macro0?.intensity ?? 0.0);
+                macroIntensityRow.number.value = formatFloat(macro0?.intensity ?? 0.0, 2);
                 macroGroup.body.appendChild(macroIntensityRow.row);
                 const macroScaleRow = makeRangeRow('Scale');
-                macroScaleRow.range.min = '0.05';
-                macroScaleRow.range.max = '10';
+                macroScaleRow.range.min = '0.01';
+                macroScaleRow.range.max = '80';
                 macroScaleRow.range.step = '0.01';
-                macroScaleRow.number.min = '0.05';
-                macroScaleRow.number.max = '10';
+                macroScaleRow.number.min = '0.01';
+                macroScaleRow.number.max = '80';
                 macroScaleRow.number.step = '0.01';
-                macroScaleRow.range.value = String(wallMatVarNormalized.macro.scale);
-                macroScaleRow.number.value = formatFloat(wallMatVarNormalized.macro.scale, 2);
+                macroScaleRow.range.value = String(macro0?.scale ?? 1.0);
+                macroScaleRow.number.value = formatFloat(macro0?.scale ?? 1.0, 2);
                 macroGroup.body.appendChild(macroScaleRow.row);
 
                 const macroHueRow = makeRangeRow('Hue shift (deg)');
@@ -2853,9 +2854,53 @@ export class BuildingFabricationUI {
                 macroHueRow.number.min = '-180';
                 macroHueRow.number.max = '180';
                 macroHueRow.number.step = '1';
-                macroHueRow.range.value = String(wallMatVarNormalized.macro.hueDegrees);
-                macroHueRow.number.value = String(Math.round(wallMatVarNormalized.macro.hueDegrees));
+                macroHueRow.range.value = String(macro0?.hueDegrees ?? 0.0);
+                macroHueRow.number.value = String(Math.round(macro0?.hueDegrees ?? 0.0));
                 macroGroup.body.appendChild(macroHueRow.row);
+
+                const macroValueRow = makeRangeRow('Value');
+                macroValueRow.range.min = '-4';
+                macroValueRow.range.max = '4';
+                macroValueRow.range.step = '0.01';
+                macroValueRow.number.min = '-4';
+                macroValueRow.number.max = '4';
+                macroValueRow.number.step = '0.01';
+                macroValueRow.range.value = String(macro0?.value ?? 0.0);
+                macroValueRow.number.value = formatFloat(macro0?.value ?? 0.0, 2);
+                macroGroup.body.appendChild(macroValueRow.row);
+
+                const macroSaturationRow = makeRangeRow('Saturation');
+                macroSaturationRow.range.min = '-4';
+                macroSaturationRow.range.max = '4';
+                macroSaturationRow.range.step = '0.01';
+                macroSaturationRow.number.min = '-4';
+                macroSaturationRow.number.max = '4';
+                macroSaturationRow.number.step = '0.01';
+                macroSaturationRow.range.value = String(macro0?.saturation ?? 0.0);
+                macroSaturationRow.number.value = formatFloat(macro0?.saturation ?? 0.0, 2);
+                macroGroup.body.appendChild(macroSaturationRow.row);
+
+                const macroRoughnessRow = makeRangeRow('Roughness');
+                macroRoughnessRow.range.min = '-4';
+                macroRoughnessRow.range.max = '4';
+                macroRoughnessRow.range.step = '0.01';
+                macroRoughnessRow.number.min = '-4';
+                macroRoughnessRow.number.max = '4';
+                macroRoughnessRow.number.step = '0.01';
+                macroRoughnessRow.range.value = String(macro0?.roughness ?? 0.0);
+                macroRoughnessRow.number.value = formatFloat(macro0?.roughness ?? 0.0, 2);
+                macroGroup.body.appendChild(macroRoughnessRow.row);
+
+                const macroNormalRow = makeRangeRow('Normal');
+                macroNormalRow.range.min = '-2';
+                macroNormalRow.range.max = '2';
+                macroNormalRow.range.step = '0.01';
+                macroNormalRow.number.min = '-2';
+                macroNormalRow.number.max = '2';
+                macroNormalRow.number.step = '0.01';
+                macroNormalRow.range.value = String(macro0?.normal ?? 0.0);
+                macroNormalRow.number.value = formatFloat(macro0?.normal ?? 0.0, 2);
+                macroGroup.body.appendChild(macroNormalRow.row);
                 wallMatVarGroup.body.appendChild(macroGroup.details);
 
                 const streaksGroup = makeDetailsSection('Streaks', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:streaks` });
@@ -2865,20 +2910,20 @@ export class BuildingFabricationUI {
                 streaksGroup.body.appendChild(streaksToggle.toggle);
                 const streakStrengthRow = makeRangeRow('Strength');
                 streakStrengthRow.range.min = '0';
-                streakStrengthRow.range.max = '4';
+                streakStrengthRow.range.max = '12';
                 streakStrengthRow.range.step = '0.01';
                 streakStrengthRow.number.min = '0';
-                streakStrengthRow.number.max = '4';
+                streakStrengthRow.number.max = '12';
                 streakStrengthRow.number.step = '0.01';
                 streakStrengthRow.range.value = String(wallMatVarNormalized.streaks.strength);
                 streakStrengthRow.number.value = formatFloat(wallMatVarNormalized.streaks.strength, 2);
                 streaksGroup.body.appendChild(streakStrengthRow.row);
                 const streakScaleRow = makeRangeRow('Scale');
-                streakScaleRow.range.min = '0.05';
-                streakScaleRow.range.max = '10';
+                streakScaleRow.range.min = '0.01';
+                streakScaleRow.range.max = '50';
                 streakScaleRow.range.step = '0.01';
-                streakScaleRow.number.min = '0.05';
-                streakScaleRow.number.max = '10';
+                streakScaleRow.number.min = '0.01';
+                streakScaleRow.number.max = '50';
                 streakScaleRow.number.step = '0.01';
                 streakScaleRow.range.value = String(wallMatVarNormalized.streaks.scale);
                 streakScaleRow.number.value = formatFloat(wallMatVarNormalized.streaks.scale, 2);
@@ -2886,10 +2931,10 @@ export class BuildingFabricationUI {
 
                 const streakLedgeStrengthRow = makeRangeRow('Ledge strength');
                 streakLedgeStrengthRow.range.min = '0';
-                streakLedgeStrengthRow.range.max = '4';
+                streakLedgeStrengthRow.range.max = '12';
                 streakLedgeStrengthRow.range.step = '0.01';
                 streakLedgeStrengthRow.number.min = '0';
-                streakLedgeStrengthRow.number.max = '4';
+                streakLedgeStrengthRow.number.max = '12';
                 streakLedgeStrengthRow.number.step = '0.01';
                 streakLedgeStrengthRow.range.value = String(wallMatVarNormalized.streaks.ledgeStrength);
                 streakLedgeStrengthRow.number.value = formatFloat(wallMatVarNormalized.streaks.ledgeStrength, 2);
@@ -2905,106 +2950,185 @@ export class BuildingFabricationUI {
                 streakLedgeScaleRow.range.value = String(wallMatVarNormalized.streaks.ledgeScale);
                 streakLedgeScaleRow.number.value = formatFloat(wallMatVarNormalized.streaks.ledgeScale, 1);
                 streaksGroup.body.appendChild(streakLedgeScaleRow.row);
+
+                const streakHueRow = makeRangeRow('Hue shift (deg)');
+                streakHueRow.range.min = '-180';
+                streakHueRow.range.max = '180';
+                streakHueRow.range.step = '1';
+                streakHueRow.number.min = '-180';
+                streakHueRow.number.max = '180';
+                streakHueRow.number.step = '1';
+                streakHueRow.range.value = String(wallMatVarNormalized.streaks.hueDegrees);
+                streakHueRow.number.value = String(Math.round(wallMatVarNormalized.streaks.hueDegrees));
+                streaksGroup.body.appendChild(streakHueRow.row);
+
+                const streakValueRow = makeRangeRow('Value');
+                streakValueRow.range.min = '-4';
+                streakValueRow.range.max = '4';
+                streakValueRow.range.step = '0.01';
+                streakValueRow.number.min = '-4';
+                streakValueRow.number.max = '4';
+                streakValueRow.number.step = '0.01';
+                streakValueRow.range.value = String(wallMatVarNormalized.streaks.value ?? 0.0);
+                streakValueRow.number.value = formatFloat(wallMatVarNormalized.streaks.value ?? 0.0, 2);
+                streaksGroup.body.appendChild(streakValueRow.row);
+
+                const streakSaturationRow = makeRangeRow('Saturation');
+                streakSaturationRow.range.min = '-4';
+                streakSaturationRow.range.max = '4';
+                streakSaturationRow.range.step = '0.01';
+                streakSaturationRow.number.min = '-4';
+                streakSaturationRow.number.max = '4';
+                streakSaturationRow.number.step = '0.01';
+                streakSaturationRow.range.value = String(wallMatVarNormalized.streaks.saturation ?? 0.0);
+                streakSaturationRow.number.value = formatFloat(wallMatVarNormalized.streaks.saturation ?? 0.0, 2);
+                streaksGroup.body.appendChild(streakSaturationRow.row);
+
+                const streakRoughnessRow = makeRangeRow('Roughness');
+                streakRoughnessRow.range.min = '-4';
+                streakRoughnessRow.range.max = '4';
+                streakRoughnessRow.range.step = '0.01';
+                streakRoughnessRow.number.min = '-4';
+                streakRoughnessRow.number.max = '4';
+                streakRoughnessRow.number.step = '0.01';
+                streakRoughnessRow.range.value = String(wallMatVarNormalized.streaks.roughness ?? 0.0);
+                streakRoughnessRow.number.value = formatFloat(wallMatVarNormalized.streaks.roughness ?? 0.0, 2);
+                streaksGroup.body.appendChild(streakRoughnessRow.row);
+
+                const streakNormalRow = makeRangeRow('Normal');
+                streakNormalRow.range.min = '-2';
+                streakNormalRow.range.max = '2';
+                streakNormalRow.range.step = '0.01';
+                streakNormalRow.number.min = '-2';
+                streakNormalRow.number.max = '2';
+                streakNormalRow.number.step = '0.01';
+                streakNormalRow.range.value = String(wallMatVarNormalized.streaks.normal ?? 0.0);
+                streakNormalRow.number.value = formatFloat(wallMatVarNormalized.streaks.normal ?? 0.0, 2);
+                streaksGroup.body.appendChild(streakNormalRow.row);
                 wallMatVarGroup.body.appendChild(streaksGroup.details);
 
-                const edgeGroup = makeDetailsSection('Edge wear', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:edge` });
-                const edgeToggle = makeToggleRow('Enable edge wear');
-                edgeToggle.input.checked = !!wallMatVarNormalized.edgeWear.enabled;
+                const wearSide = wallMatVarNormalized.wearSide ?? null;
+                const edgeGroup = makeDetailsSection('Side wear (vertical edges)', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:wearSide` });
+                const edgeToggle = makeToggleRow('Enable side wear');
+                edgeToggle.input.checked = !!wearSide?.enabled;
                 edgeToggle.input.disabled = !allow || !wallMatVarNormalized.enabled;
                 edgeGroup.body.appendChild(edgeToggle.toggle);
                 const edgeStrengthRow = makeRangeRow('Strength');
                 edgeStrengthRow.range.min = '0';
-                edgeStrengthRow.range.max = '4';
+                edgeStrengthRow.range.max = '20';
                 edgeStrengthRow.range.step = '0.01';
                 edgeStrengthRow.number.min = '0';
-                edgeStrengthRow.number.max = '4';
+                edgeStrengthRow.number.max = '20';
                 edgeStrengthRow.number.step = '0.01';
-                edgeStrengthRow.range.value = String(wallMatVarNormalized.edgeWear.strength);
-                edgeStrengthRow.number.value = formatFloat(wallMatVarNormalized.edgeWear.strength, 2);
+                edgeStrengthRow.range.value = String(wearSide?.intensity ?? 0.0);
+                edgeStrengthRow.number.value = formatFloat(wearSide?.intensity ?? 0.0, 2);
                 edgeGroup.body.appendChild(edgeStrengthRow.row);
 
                 const edgeWidthRow = makeRangeRow('Width');
                 edgeWidthRow.range.min = '0';
-                edgeWidthRow.range.max = '0.5';
+                edgeWidthRow.range.max = '4';
                 edgeWidthRow.range.step = '0.01';
                 edgeWidthRow.number.min = '0';
-                edgeWidthRow.number.max = '0.5';
+                edgeWidthRow.number.max = '4';
                 edgeWidthRow.number.step = '0.01';
-                edgeWidthRow.range.value = String(wallMatVarNormalized.edgeWear.width);
-                edgeWidthRow.number.value = formatFloat(wallMatVarNormalized.edgeWear.width, 2);
+                edgeWidthRow.range.value = String(wearSide?.width ?? 1.0);
+                edgeWidthRow.number.value = formatFloat(wearSide?.width ?? 1.0, 2);
                 edgeGroup.body.appendChild(edgeWidthRow.row);
 
-                const edgeNoiseRow = makeRangeRow('Noise warp');
-                edgeNoiseRow.range.min = '0';
-                edgeNoiseRow.range.max = '10';
-                edgeNoiseRow.range.step = '0.01';
-                edgeNoiseRow.number.min = '0';
-                edgeNoiseRow.number.max = '10';
-                edgeNoiseRow.number.step = '0.01';
-                edgeNoiseRow.range.value = String(wallMatVarNormalized.edgeWear.noiseWarp);
-                edgeNoiseRow.number.value = formatFloat(wallMatVarNormalized.edgeWear.noiseWarp, 2);
-                edgeGroup.body.appendChild(edgeNoiseRow.row);
+                const edgeScaleRow = makeRangeRow('Scale');
+                edgeScaleRow.range.min = '0.01';
+                edgeScaleRow.range.max = '50';
+                edgeScaleRow.range.step = '0.01';
+                edgeScaleRow.number.min = '0.01';
+                edgeScaleRow.number.max = '50';
+                edgeScaleRow.number.step = '0.01';
+                edgeScaleRow.range.value = String(wearSide?.scale ?? 1.0);
+                edgeScaleRow.number.value = formatFloat(wearSide?.scale ?? 1.0, 2);
+                edgeGroup.body.appendChild(edgeScaleRow.row);
 
-                const edgeHorizRow = makeRangeRow('Horizontal edges');
-                edgeHorizRow.range.min = '0';
-                edgeHorizRow.range.max = '4';
-                edgeHorizRow.range.step = '0.01';
-                edgeHorizRow.number.min = '0';
-                edgeHorizRow.number.max = '4';
-                edgeHorizRow.number.step = '0.01';
-                edgeHorizRow.range.value = String(wallMatVarNormalized.edgeWear.horizontalStrength);
-                edgeHorizRow.number.value = formatFloat(wallMatVarNormalized.edgeWear.horizontalStrength, 2);
-                edgeGroup.body.appendChild(edgeHorizRow.row);
+                const edgeHueRow = makeRangeRow('Hue shift (deg)');
+                edgeHueRow.range.min = '-180';
+                edgeHueRow.range.max = '180';
+                edgeHueRow.range.step = '1';
+                edgeHueRow.number.min = '-180';
+                edgeHueRow.number.max = '180';
+                edgeHueRow.number.step = '1';
+                edgeHueRow.range.value = String(wearSide?.hueDegrees ?? 0.0);
+                edgeHueRow.number.value = String(Math.round(wearSide?.hueDegrees ?? 0.0));
+                edgeGroup.body.appendChild(edgeHueRow.row);
 
-                const edgeVertRow = makeRangeRow('Vertical edges');
-                edgeVertRow.range.min = '0';
-                edgeVertRow.range.max = '4';
-                edgeVertRow.range.step = '0.01';
-                edgeVertRow.number.min = '0';
-                edgeVertRow.number.max = '4';
-                edgeVertRow.number.step = '0.01';
-                edgeVertRow.range.value = String(wallMatVarNormalized.edgeWear.verticalStrength);
-                edgeVertRow.number.value = formatFloat(wallMatVarNormalized.edgeWear.verticalStrength, 2);
-                edgeGroup.body.appendChild(edgeVertRow.row);
+                const edgeValueRow = makeRangeRow('Value');
+                edgeValueRow.range.min = '-4';
+                edgeValueRow.range.max = '4';
+                edgeValueRow.range.step = '0.01';
+                edgeValueRow.number.min = '-4';
+                edgeValueRow.number.max = '4';
+                edgeValueRow.number.step = '0.01';
+                edgeValueRow.range.value = String(wearSide?.value ?? 0.0);
+                edgeValueRow.number.value = formatFloat(wearSide?.value ?? 0.0, 2);
+                edgeGroup.body.appendChild(edgeValueRow.row);
 
-                const edgeColorRow = makeRangeRow('Color bias');
-                edgeColorRow.range.min = '-2';
-                edgeColorRow.range.max = '2';
-                edgeColorRow.range.step = '0.01';
-                edgeColorRow.number.min = '-2';
-                edgeColorRow.number.max = '2';
-                edgeColorRow.number.step = '0.01';
-                edgeColorRow.range.value = String(wallMatVarNormalized.edgeWear.color);
-                edgeColorRow.number.value = formatFloat(wallMatVarNormalized.edgeWear.color, 2);
-                edgeGroup.body.appendChild(edgeColorRow.row);
+                const edgeSaturationRow = makeRangeRow('Saturation');
+                edgeSaturationRow.range.min = '-4';
+                edgeSaturationRow.range.max = '4';
+                edgeSaturationRow.range.step = '0.01';
+                edgeSaturationRow.number.min = '-4';
+                edgeSaturationRow.number.max = '4';
+                edgeSaturationRow.number.step = '0.01';
+                edgeSaturationRow.range.value = String(wearSide?.saturation ?? 0.0);
+                edgeSaturationRow.number.value = formatFloat(wearSide?.saturation ?? 0.0, 2);
+                edgeGroup.body.appendChild(edgeSaturationRow.row);
 
-                const edgeRoughRow = makeRangeRow('Roughness bias');
-                edgeRoughRow.range.min = '-2';
-                edgeRoughRow.range.max = '2';
-                edgeRoughRow.range.step = '0.01';
-                edgeRoughRow.number.min = '-2';
-                edgeRoughRow.number.max = '2';
-                edgeRoughRow.number.step = '0.01';
-                edgeRoughRow.range.value = String(wallMatVarNormalized.edgeWear.roughness);
-                edgeRoughRow.number.value = formatFloat(wallMatVarNormalized.edgeWear.roughness, 2);
-                edgeGroup.body.appendChild(edgeRoughRow.row);
+                const edgeRoughnessRow = makeRangeRow('Roughness');
+                edgeRoughnessRow.range.min = '-4';
+                edgeRoughnessRow.range.max = '4';
+                edgeRoughnessRow.range.step = '0.01';
+                edgeRoughnessRow.number.min = '-4';
+                edgeRoughnessRow.number.max = '4';
+                edgeRoughnessRow.number.step = '0.01';
+                edgeRoughnessRow.range.value = String(wearSide?.roughness ?? 0.0);
+                edgeRoughnessRow.number.value = formatFloat(wearSide?.roughness ?? 0.0, 2);
+                edgeGroup.body.appendChild(edgeRoughnessRow.row);
+
+                const edgeNormalRow = makeRangeRow('Normal');
+                edgeNormalRow.range.min = '-2';
+                edgeNormalRow.range.max = '2';
+                edgeNormalRow.range.step = '0.01';
+                edgeNormalRow.number.min = '-2';
+                edgeNormalRow.number.max = '2';
+                edgeNormalRow.number.step = '0.01';
+                edgeNormalRow.range.value = String(wearSide?.normal ?? 0.0);
+                edgeNormalRow.number.value = formatFloat(wearSide?.normal ?? 0.0, 2);
+                edgeGroup.body.appendChild(edgeNormalRow.row);
                 wallMatVarGroup.body.appendChild(edgeGroup.details);
 
-                const grimeGroup = makeDetailsSection('Grime', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:grime` });
-                const grimeToggle = makeToggleRow('Enable grime');
-                grimeToggle.input.checked = !!wallMatVarNormalized.grime.enabled;
+                const wearBottom = wallMatVarNormalized.wearBottom ?? null;
+                const grimeGroup = makeDetailsSection('Bottom wear', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:wearBottom` });
+                const grimeToggle = makeToggleRow('Enable bottom wear');
+                grimeToggle.input.checked = !!wearBottom?.enabled;
                 grimeToggle.input.disabled = !allow || !wallMatVarNormalized.enabled;
                 grimeGroup.body.appendChild(grimeToggle.toggle);
                 const grimeStrengthRow = makeRangeRow('Strength');
                 grimeStrengthRow.range.min = '0';
-                grimeStrengthRow.range.max = '4';
+                grimeStrengthRow.range.max = '20';
                 grimeStrengthRow.range.step = '0.01';
                 grimeStrengthRow.number.min = '0';
-                grimeStrengthRow.number.max = '4';
+                grimeStrengthRow.number.max = '20';
                 grimeStrengthRow.number.step = '0.01';
-                grimeStrengthRow.range.value = String(wallMatVarNormalized.grime.strength);
-                grimeStrengthRow.number.value = formatFloat(wallMatVarNormalized.grime.strength, 2);
+                grimeStrengthRow.range.value = String(wearBottom?.intensity ?? 0.0);
+                grimeStrengthRow.number.value = formatFloat(wearBottom?.intensity ?? 0.0, 2);
                 grimeGroup.body.appendChild(grimeStrengthRow.row);
+
+                const grimeWidthRow = makeRangeRow('Width');
+                grimeWidthRow.range.min = '0';
+                grimeWidthRow.range.max = '1';
+                grimeWidthRow.range.step = '0.01';
+                grimeWidthRow.number.min = '0';
+                grimeWidthRow.number.max = '1';
+                grimeWidthRow.number.step = '0.01';
+                grimeWidthRow.range.value = String(wearBottom?.width ?? 0.5);
+                grimeWidthRow.number.value = formatFloat(wearBottom?.width ?? 0.5, 2);
+                grimeGroup.body.appendChild(grimeWidthRow.row);
 
                 const grimeScaleRow = makeRangeRow('Scale');
                 grimeScaleRow.range.min = '0.01';
@@ -3013,37 +3137,93 @@ export class BuildingFabricationUI {
                 grimeScaleRow.number.min = '0.01';
                 grimeScaleRow.number.max = '50';
                 grimeScaleRow.number.step = '0.01';
-                grimeScaleRow.range.value = String(wallMatVarNormalized.grime.scale);
-                grimeScaleRow.number.value = formatFloat(wallMatVarNormalized.grime.scale, 2);
+                grimeScaleRow.range.value = String(wearBottom?.scale ?? 1.0);
+                grimeScaleRow.number.value = formatFloat(wearBottom?.scale ?? 1.0, 2);
                 grimeGroup.body.appendChild(grimeScaleRow.row);
 
-                const grimeCornerRow = makeRangeRow('Corner strength');
-                grimeCornerRow.range.min = '0';
-                grimeCornerRow.range.max = '4';
-                grimeCornerRow.range.step = '0.01';
-                grimeCornerRow.number.min = '0';
-                grimeCornerRow.number.max = '4';
-                grimeCornerRow.number.step = '0.01';
-                grimeCornerRow.range.value = String(wallMatVarNormalized.grime.cornerStrength);
-                grimeCornerRow.number.value = formatFloat(wallMatVarNormalized.grime.cornerStrength, 2);
-                grimeGroup.body.appendChild(grimeCornerRow.row);
+                const grimeHueRow = makeRangeRow('Hue shift (deg)');
+                grimeHueRow.range.min = '-180';
+                grimeHueRow.range.max = '180';
+                grimeHueRow.range.step = '1';
+                grimeHueRow.number.min = '-180';
+                grimeHueRow.number.max = '180';
+                grimeHueRow.number.step = '1';
+                grimeHueRow.range.value = String(wearBottom?.hueDegrees ?? 0.0);
+                grimeHueRow.number.value = String(Math.round(wearBottom?.hueDegrees ?? 0.0));
+                grimeGroup.body.appendChild(grimeHueRow.row);
+
+                const grimeValueRow = makeRangeRow('Value');
+                grimeValueRow.range.min = '-4';
+                grimeValueRow.range.max = '4';
+                grimeValueRow.range.step = '0.01';
+                grimeValueRow.number.min = '-4';
+                grimeValueRow.number.max = '4';
+                grimeValueRow.number.step = '0.01';
+                grimeValueRow.range.value = String(wearBottom?.value ?? 0.0);
+                grimeValueRow.number.value = formatFloat(wearBottom?.value ?? 0.0, 2);
+                grimeGroup.body.appendChild(grimeValueRow.row);
+
+                const grimeSaturationRow = makeRangeRow('Saturation');
+                grimeSaturationRow.range.min = '-4';
+                grimeSaturationRow.range.max = '4';
+                grimeSaturationRow.range.step = '0.01';
+                grimeSaturationRow.number.min = '-4';
+                grimeSaturationRow.number.max = '4';
+                grimeSaturationRow.number.step = '0.01';
+                grimeSaturationRow.range.value = String(wearBottom?.saturation ?? 0.0);
+                grimeSaturationRow.number.value = formatFloat(wearBottom?.saturation ?? 0.0, 2);
+                grimeGroup.body.appendChild(grimeSaturationRow.row);
+
+                const grimeRoughnessRow = makeRangeRow('Roughness');
+                grimeRoughnessRow.range.min = '-4';
+                grimeRoughnessRow.range.max = '4';
+                grimeRoughnessRow.range.step = '0.01';
+                grimeRoughnessRow.number.min = '-4';
+                grimeRoughnessRow.number.max = '4';
+                grimeRoughnessRow.number.step = '0.01';
+                grimeRoughnessRow.range.value = String(wearBottom?.roughness ?? 0.0);
+                grimeRoughnessRow.number.value = formatFloat(wearBottom?.roughness ?? 0.0, 2);
+                grimeGroup.body.appendChild(grimeRoughnessRow.row);
+
+                const grimeNormalRow = makeRangeRow('Normal');
+                grimeNormalRow.range.min = '-2';
+                grimeNormalRow.range.max = '2';
+                grimeNormalRow.range.step = '0.01';
+                grimeNormalRow.number.min = '-2';
+                grimeNormalRow.number.max = '2';
+                grimeNormalRow.number.step = '0.01';
+                grimeNormalRow.range.value = String(wearBottom?.normal ?? 0.0);
+                grimeNormalRow.number.value = formatFloat(wearBottom?.normal ?? 0.0, 2);
+                grimeGroup.body.appendChild(grimeNormalRow.row);
                 wallMatVarGroup.body.appendChild(grimeGroup.details);
 
-                const dustGroup = makeDetailsSection('Dust', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:dust` });
-                const dustToggle = makeToggleRow('Enable dust');
-                dustToggle.input.checked = !!wallMatVarNormalized.dust.enabled;
+                const wearTop = wallMatVarNormalized.wearTop ?? null;
+                const dustGroup = makeDetailsSection('Top wear', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:wearTop` });
+                const dustToggle = makeToggleRow('Enable top wear');
+                dustToggle.input.checked = !!wearTop?.enabled;
                 dustToggle.input.disabled = !allow || !wallMatVarNormalized.enabled;
                 dustGroup.body.appendChild(dustToggle.toggle);
                 const dustStrengthRow = makeRangeRow('Strength');
                 dustStrengthRow.range.min = '0';
-                dustStrengthRow.range.max = '4';
+                dustStrengthRow.range.max = '20';
                 dustStrengthRow.range.step = '0.01';
                 dustStrengthRow.number.min = '0';
-                dustStrengthRow.number.max = '4';
+                dustStrengthRow.number.max = '20';
                 dustStrengthRow.number.step = '0.01';
-                dustStrengthRow.range.value = String(wallMatVarNormalized.dust.strength);
-                dustStrengthRow.number.value = formatFloat(wallMatVarNormalized.dust.strength, 2);
+                dustStrengthRow.range.value = String(wearTop?.intensity ?? 0.0);
+                dustStrengthRow.number.value = formatFloat(wearTop?.intensity ?? 0.0, 2);
                 dustGroup.body.appendChild(dustStrengthRow.row);
+
+                const dustWidthRow = makeRangeRow('Width');
+                dustWidthRow.range.min = '0';
+                dustWidthRow.range.max = '1';
+                dustWidthRow.range.step = '0.01';
+                dustWidthRow.number.min = '0';
+                dustWidthRow.number.max = '1';
+                dustWidthRow.number.step = '0.01';
+                dustWidthRow.range.value = String(wearTop?.width ?? 0.4);
+                dustWidthRow.number.value = formatFloat(wearTop?.width ?? 0.4, 2);
+                dustGroup.body.appendChild(dustWidthRow.row);
 
                 const dustScaleRow = makeRangeRow('Scale');
                 dustScaleRow.range.min = '0.01';
@@ -3052,31 +3232,64 @@ export class BuildingFabricationUI {
                 dustScaleRow.number.min = '0.01';
                 dustScaleRow.number.max = '50';
                 dustScaleRow.number.step = '0.01';
-                dustScaleRow.range.value = String(wallMatVarNormalized.dust.scale);
-                dustScaleRow.number.value = formatFloat(wallMatVarNormalized.dust.scale, 2);
+                dustScaleRow.range.value = String(wearTop?.scale ?? 1.0);
+                dustScaleRow.number.value = formatFloat(wearTop?.scale ?? 1.0, 2);
                 dustGroup.body.appendChild(dustScaleRow.row);
 
-                const dustHeightMinRow = makeRangeRow('Height min');
-                dustHeightMinRow.range.min = '0';
-                dustHeightMinRow.range.max = '1';
-                dustHeightMinRow.range.step = '0.01';
-                dustHeightMinRow.number.min = '0';
-                dustHeightMinRow.number.max = '1';
-                dustHeightMinRow.number.step = '0.01';
-                dustHeightMinRow.range.value = String(wallMatVarNormalized.dust.heightBand.min);
-                dustHeightMinRow.number.value = formatFloat(wallMatVarNormalized.dust.heightBand.min, 2);
-                dustGroup.body.appendChild(dustHeightMinRow.row);
+                const dustHueRow = makeRangeRow('Hue shift (deg)');
+                dustHueRow.range.min = '-180';
+                dustHueRow.range.max = '180';
+                dustHueRow.range.step = '1';
+                dustHueRow.number.min = '-180';
+                dustHueRow.number.max = '180';
+                dustHueRow.number.step = '1';
+                dustHueRow.range.value = String(wearTop?.hueDegrees ?? 0.0);
+                dustHueRow.number.value = String(Math.round(wearTop?.hueDegrees ?? 0.0));
+                dustGroup.body.appendChild(dustHueRow.row);
 
-                const dustHeightMaxRow = makeRangeRow('Height max');
-                dustHeightMaxRow.range.min = '0';
-                dustHeightMaxRow.range.max = '1';
-                dustHeightMaxRow.range.step = '0.01';
-                dustHeightMaxRow.number.min = '0';
-                dustHeightMaxRow.number.max = '1';
-                dustHeightMaxRow.number.step = '0.01';
-                dustHeightMaxRow.range.value = String(wallMatVarNormalized.dust.heightBand.max);
-                dustHeightMaxRow.number.value = formatFloat(wallMatVarNormalized.dust.heightBand.max, 2);
-                dustGroup.body.appendChild(dustHeightMaxRow.row);
+                const dustValueRow = makeRangeRow('Value');
+                dustValueRow.range.min = '-4';
+                dustValueRow.range.max = '4';
+                dustValueRow.range.step = '0.01';
+                dustValueRow.number.min = '-4';
+                dustValueRow.number.max = '4';
+                dustValueRow.number.step = '0.01';
+                dustValueRow.range.value = String(wearTop?.value ?? 0.0);
+                dustValueRow.number.value = formatFloat(wearTop?.value ?? 0.0, 2);
+                dustGroup.body.appendChild(dustValueRow.row);
+
+                const dustSaturationRow = makeRangeRow('Saturation');
+                dustSaturationRow.range.min = '-4';
+                dustSaturationRow.range.max = '4';
+                dustSaturationRow.range.step = '0.01';
+                dustSaturationRow.number.min = '-4';
+                dustSaturationRow.number.max = '4';
+                dustSaturationRow.number.step = '0.01';
+                dustSaturationRow.range.value = String(wearTop?.saturation ?? 0.0);
+                dustSaturationRow.number.value = formatFloat(wearTop?.saturation ?? 0.0, 2);
+                dustGroup.body.appendChild(dustSaturationRow.row);
+
+                const dustRoughnessRow = makeRangeRow('Roughness');
+                dustRoughnessRow.range.min = '-4';
+                dustRoughnessRow.range.max = '4';
+                dustRoughnessRow.range.step = '0.01';
+                dustRoughnessRow.number.min = '-4';
+                dustRoughnessRow.number.max = '4';
+                dustRoughnessRow.number.step = '0.01';
+                dustRoughnessRow.range.value = String(wearTop?.roughness ?? 0.0);
+                dustRoughnessRow.number.value = formatFloat(wearTop?.roughness ?? 0.0, 2);
+                dustGroup.body.appendChild(dustRoughnessRow.row);
+
+                const dustNormalRow = makeRangeRow('Normal');
+                dustNormalRow.range.min = '-2';
+                dustNormalRow.range.max = '2';
+                dustNormalRow.range.step = '0.01';
+                dustNormalRow.number.min = '-2';
+                dustNormalRow.number.max = '2';
+                dustNormalRow.number.step = '0.01';
+                dustNormalRow.range.value = String(wearTop?.normal ?? 0.0);
+                dustNormalRow.number.value = formatFloat(wearTop?.normal ?? 0.0, 2);
+                dustGroup.body.appendChild(dustNormalRow.row);
                 wallMatVarGroup.body.appendChild(dustGroup.details);
 
                 const antiGroup = makeDetailsSection('Anti-tiling', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:anti` });
@@ -3086,10 +3299,10 @@ export class BuildingFabricationUI {
                 antiGroup.body.appendChild(antiToggle.toggle);
                 const antiStrengthRow = makeRangeRow('Strength');
                 antiStrengthRow.range.min = '0';
-                antiStrengthRow.range.max = '4';
+                antiStrengthRow.range.max = '12';
                 antiStrengthRow.range.step = '0.01';
                 antiStrengthRow.number.min = '0';
-                antiStrengthRow.number.max = '4';
+                antiStrengthRow.number.max = '12';
                 antiStrengthRow.number.step = '0.01';
                 antiStrengthRow.range.value = String(wallMatVarNormalized.antiTiling.strength);
                 antiStrengthRow.number.value = formatFloat(wallMatVarNormalized.antiTiling.strength, 2);
@@ -3118,22 +3331,22 @@ export class BuildingFabricationUI {
                 antiGroup.body.appendChild(antiBlendRow.row);
 
                 const antiOffsetVRow = makeRangeRow('Vertical shift');
-                antiOffsetVRow.range.min = '-1';
-                antiOffsetVRow.range.max = '1';
+                antiOffsetVRow.range.min = '-4';
+                antiOffsetVRow.range.max = '4';
                 antiOffsetVRow.range.step = '0.01';
-                antiOffsetVRow.number.min = '-1';
-                antiOffsetVRow.number.max = '1';
+                antiOffsetVRow.number.min = '-4';
+                antiOffsetVRow.number.max = '4';
                 antiOffsetVRow.number.step = '0.01';
                 antiOffsetVRow.range.value = String(wallMatVarNormalized.antiTiling.offsetV);
                 antiOffsetVRow.number.value = formatFloat(wallMatVarNormalized.antiTiling.offsetV, 2);
                 antiGroup.body.appendChild(antiOffsetVRow.row);
 
                 const antiOffsetURow = makeRangeRow('Horizontal shift');
-                antiOffsetURow.range.min = '-1';
-                antiOffsetURow.range.max = '1';
+                antiOffsetURow.range.min = '-4';
+                antiOffsetURow.range.max = '4';
                 antiOffsetURow.range.step = '0.01';
-                antiOffsetURow.number.min = '-1';
-                antiOffsetURow.number.max = '1';
+                antiOffsetURow.number.min = '-4';
+                antiOffsetURow.number.max = '4';
                 antiOffsetURow.number.step = '0.01';
                 antiOffsetURow.range.value = String(wallMatVarNormalized.antiTiling.offsetU);
                 antiOffsetURow.number.value = formatFloat(wallMatVarNormalized.antiTiling.offsetU, 2);
@@ -3164,10 +3377,10 @@ export class BuildingFabricationUI {
 
                 const stairStrengthRow = makeRangeRow('Strength');
                 stairStrengthRow.range.min = '0';
-                stairStrengthRow.range.max = '4';
+                stairStrengthRow.range.max = '12';
                 stairStrengthRow.range.step = '0.01';
                 stairStrengthRow.number.min = '0';
-                stairStrengthRow.number.max = '4';
+                stairStrengthRow.number.max = '12';
                 stairStrengthRow.number.step = '0.01';
                 stairStrengthRow.range.value = String(wallMatVarNormalized.stairShift.strength);
                 stairStrengthRow.number.value = formatFloat(wallMatVarNormalized.stairShift.strength, 2);
@@ -3185,11 +3398,11 @@ export class BuildingFabricationUI {
                 stairGroup.body.appendChild(stairStepRow.row);
 
                 const stairShiftRow = makeRangeRow('Shift per step');
-                stairShiftRow.range.min = '-1';
-                stairShiftRow.range.max = '1';
+                stairShiftRow.range.min = '-4';
+                stairShiftRow.range.max = '4';
                 stairShiftRow.range.step = '0.01';
-                stairShiftRow.number.min = '-1';
-                stairShiftRow.number.max = '1';
+                stairShiftRow.number.min = '-4';
+                stairShiftRow.number.max = '4';
                 stairShiftRow.number.step = '0.01';
                 stairShiftRow.range.value = String(wallMatVarNormalized.stairShift.shift);
                 stairShiftRow.number.value = formatFloat(wallMatVarNormalized.stairShift.shift, 2);
@@ -3215,20 +3428,21 @@ export class BuildingFabricationUI {
 
                 wallMatVarGroup.body.appendChild(stairGroup.details);
 
-                const detailGroup = makeDetailsSection('Detail', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:detail` });
-                const detailToggle = makeToggleRow('Enable detail');
-                detailToggle.input.checked = !!wallMatVarNormalized.detail.enabled;
+                const macro1 = wallMatVarNormalized.macroLayers?.[1] ?? null;
+                const detailGroup = makeDetailsSection('Macro layer 2', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:macro1` });
+                const detailToggle = makeToggleRow('Enable macro layer 2');
+                detailToggle.input.checked = !!macro1?.enabled;
                 detailToggle.input.disabled = !allow || !wallMatVarNormalized.enabled;
                 detailGroup.body.appendChild(detailToggle.toggle);
-                const detailStrengthRow = makeRangeRow('Strength');
+                const detailStrengthRow = makeRangeRow('Intensity');
                 detailStrengthRow.range.min = '0';
-                detailStrengthRow.range.max = '4';
+                detailStrengthRow.range.max = '20';
                 detailStrengthRow.range.step = '0.01';
                 detailStrengthRow.number.min = '0';
-                detailStrengthRow.number.max = '4';
+                detailStrengthRow.number.max = '20';
                 detailStrengthRow.number.step = '0.01';
-                detailStrengthRow.range.value = String(wallMatVarNormalized.detail.strength);
-                detailStrengthRow.number.value = formatFloat(wallMatVarNormalized.detail.strength, 2);
+                detailStrengthRow.range.value = String(macro1?.intensity ?? 0.0);
+                detailStrengthRow.number.value = formatFloat(macro1?.intensity ?? 0.0, 2);
                 detailGroup.body.appendChild(detailStrengthRow.row);
 
                 const detailScaleRow = makeRangeRow('Scale');
@@ -3238,8 +3452,8 @@ export class BuildingFabricationUI {
                 detailScaleRow.number.min = '0.01';
                 detailScaleRow.number.max = '80';
                 detailScaleRow.number.step = '0.01';
-                detailScaleRow.range.value = String(wallMatVarNormalized.detail.scale);
-                detailScaleRow.number.value = formatFloat(wallMatVarNormalized.detail.scale, 2);
+                detailScaleRow.range.value = String(macro1?.scale ?? 1.0);
+                detailScaleRow.number.value = formatFloat(macro1?.scale ?? 1.0, 2);
                 detailGroup.body.appendChild(detailScaleRow.row);
 
                 const detailHueRow = makeRangeRow('Hue shift (deg)');
@@ -3249,25 +3463,155 @@ export class BuildingFabricationUI {
                 detailHueRow.number.min = '-180';
                 detailHueRow.number.max = '180';
                 detailHueRow.number.step = '1';
-                detailHueRow.range.value = String(wallMatVarNormalized.detail.hueDegrees);
-                detailHueRow.number.value = String(Math.round(wallMatVarNormalized.detail.hueDegrees));
+                detailHueRow.range.value = String(macro1?.hueDegrees ?? 0.0);
+                detailHueRow.number.value = String(Math.round(macro1?.hueDegrees ?? 0.0));
                 detailGroup.body.appendChild(detailHueRow.row);
+
+                const detailValueRow = makeRangeRow('Value');
+                detailValueRow.range.min = '-4';
+                detailValueRow.range.max = '4';
+                detailValueRow.range.step = '0.01';
+                detailValueRow.number.min = '-4';
+                detailValueRow.number.max = '4';
+                detailValueRow.number.step = '0.01';
+                detailValueRow.range.value = String(macro1?.value ?? 0.0);
+                detailValueRow.number.value = formatFloat(macro1?.value ?? 0.0, 2);
+                detailGroup.body.appendChild(detailValueRow.row);
+
+                const detailSaturationRow = makeRangeRow('Saturation');
+                detailSaturationRow.range.min = '-4';
+                detailSaturationRow.range.max = '4';
+                detailSaturationRow.range.step = '0.01';
+                detailSaturationRow.number.min = '-4';
+                detailSaturationRow.number.max = '4';
+                detailSaturationRow.number.step = '0.01';
+                detailSaturationRow.range.value = String(macro1?.saturation ?? 0.0);
+                detailSaturationRow.number.value = formatFloat(macro1?.saturation ?? 0.0, 2);
+                detailGroup.body.appendChild(detailSaturationRow.row);
+
+                const detailRoughnessRow = makeRangeRow('Roughness');
+                detailRoughnessRow.range.min = '-4';
+                detailRoughnessRow.range.max = '4';
+                detailRoughnessRow.range.step = '0.01';
+                detailRoughnessRow.number.min = '-4';
+                detailRoughnessRow.number.max = '4';
+                detailRoughnessRow.number.step = '0.01';
+                detailRoughnessRow.range.value = String(macro1?.roughness ?? 0.0);
+                detailRoughnessRow.number.value = formatFloat(macro1?.roughness ?? 0.0, 2);
+                detailGroup.body.appendChild(detailRoughnessRow.row);
+
+                const detailNormalRow = makeRangeRow('Normal');
+                detailNormalRow.range.min = '-2';
+                detailNormalRow.range.max = '2';
+                detailNormalRow.range.step = '0.01';
+                detailNormalRow.number.min = '-2';
+                detailNormalRow.number.max = '2';
+                detailNormalRow.number.step = '0.01';
+                detailNormalRow.range.value = String(macro1?.normal ?? 0.0);
+                detailNormalRow.number.value = formatFloat(macro1?.normal ?? 0.0, 2);
+                detailGroup.body.appendChild(detailNormalRow.row);
                 wallMatVarGroup.body.appendChild(detailGroup.details);
 
+                const macro2 = wallMatVarNormalized.macroLayers?.[2] ?? null;
+                const macro2Group = makeDetailsSection('Macro layer 3', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:macro2` });
+                const macro2Toggle = makeToggleRow('Enable macro layer 3');
+                macro2Toggle.input.checked = !!macro2?.enabled;
+                macro2Toggle.input.disabled = !allow || !wallMatVarNormalized.enabled;
+                macro2Group.body.appendChild(macro2Toggle.toggle);
+
+                const macro2StrengthRow = makeRangeRow('Intensity');
+                macro2StrengthRow.range.min = '0';
+                macro2StrengthRow.range.max = '20';
+                macro2StrengthRow.range.step = '0.01';
+                macro2StrengthRow.number.min = '0';
+                macro2StrengthRow.number.max = '20';
+                macro2StrengthRow.number.step = '0.01';
+                macro2StrengthRow.range.value = String(macro2?.intensity ?? 0.0);
+                macro2StrengthRow.number.value = formatFloat(macro2?.intensity ?? 0.0, 2);
+                macro2Group.body.appendChild(macro2StrengthRow.row);
+
+                const macro2ScaleRow = makeRangeRow('Scale');
+                macro2ScaleRow.range.min = '0.01';
+                macro2ScaleRow.range.max = '80';
+                macro2ScaleRow.range.step = '0.01';
+                macro2ScaleRow.number.min = '0.01';
+                macro2ScaleRow.number.max = '80';
+                macro2ScaleRow.number.step = '0.01';
+                macro2ScaleRow.range.value = String(macro2?.scale ?? 1.0);
+                macro2ScaleRow.number.value = formatFloat(macro2?.scale ?? 1.0, 2);
+                macro2Group.body.appendChild(macro2ScaleRow.row);
+
+                const macro2HueRow = makeRangeRow('Hue shift (deg)');
+                macro2HueRow.range.min = '-180';
+                macro2HueRow.range.max = '180';
+                macro2HueRow.range.step = '1';
+                macro2HueRow.number.min = '-180';
+                macro2HueRow.number.max = '180';
+                macro2HueRow.number.step = '1';
+                macro2HueRow.range.value = String(macro2?.hueDegrees ?? 0.0);
+                macro2HueRow.number.value = String(Math.round(macro2?.hueDegrees ?? 0.0));
+                macro2Group.body.appendChild(macro2HueRow.row);
+
+                const macro2ValueRow = makeRangeRow('Value');
+                macro2ValueRow.range.min = '-4';
+                macro2ValueRow.range.max = '4';
+                macro2ValueRow.range.step = '0.01';
+                macro2ValueRow.number.min = '-4';
+                macro2ValueRow.number.max = '4';
+                macro2ValueRow.number.step = '0.01';
+                macro2ValueRow.range.value = String(macro2?.value ?? 0.0);
+                macro2ValueRow.number.value = formatFloat(macro2?.value ?? 0.0, 2);
+                macro2Group.body.appendChild(macro2ValueRow.row);
+
+                const macro2SaturationRow = makeRangeRow('Saturation');
+                macro2SaturationRow.range.min = '-4';
+                macro2SaturationRow.range.max = '4';
+                macro2SaturationRow.range.step = '0.01';
+                macro2SaturationRow.number.min = '-4';
+                macro2SaturationRow.number.max = '4';
+                macro2SaturationRow.number.step = '0.01';
+                macro2SaturationRow.range.value = String(macro2?.saturation ?? 0.0);
+                macro2SaturationRow.number.value = formatFloat(macro2?.saturation ?? 0.0, 2);
+                macro2Group.body.appendChild(macro2SaturationRow.row);
+
+                const macro2RoughnessRow = makeRangeRow('Roughness');
+                macro2RoughnessRow.range.min = '-4';
+                macro2RoughnessRow.range.max = '4';
+                macro2RoughnessRow.range.step = '0.01';
+                macro2RoughnessRow.number.min = '-4';
+                macro2RoughnessRow.number.max = '4';
+                macro2RoughnessRow.number.step = '0.01';
+                macro2RoughnessRow.range.value = String(macro2?.roughness ?? 0.0);
+                macro2RoughnessRow.number.value = formatFloat(macro2?.roughness ?? 0.0, 2);
+                macro2Group.body.appendChild(macro2RoughnessRow.row);
+
+                const macro2NormalRow = makeRangeRow('Normal');
+                macro2NormalRow.range.min = '-2';
+                macro2NormalRow.range.max = '2';
+                macro2NormalRow.range.step = '0.01';
+                macro2NormalRow.number.min = '-2';
+                macro2NormalRow.number.max = '2';
+                macro2NormalRow.number.step = '0.01';
+                macro2NormalRow.range.value = String(macro2?.normal ?? 0.0);
+                macro2NormalRow.number.value = formatFloat(macro2?.normal ?? 0.0, 2);
+                macro2Group.body.appendChild(macro2NormalRow.row);
+                wallMatVarGroup.body.appendChild(macro2Group.details);
+
+                const cracksLayer = wallMatVarNormalized.cracksLayer ?? null;
                 const cracksGroup = makeDetailsSection('Cracks', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:cracks` });
                 const cracksToggle = makeToggleRow('Enable cracks');
-                cracksToggle.input.checked = !!wallMatVarNormalized.cracks.enabled;
+                cracksToggle.input.checked = !!cracksLayer?.enabled;
                 cracksToggle.input.disabled = !allow || !wallMatVarNormalized.enabled;
                 cracksGroup.body.appendChild(cracksToggle.toggle);
                 const crackStrengthRow = makeRangeRow('Strength');
                 crackStrengthRow.range.min = '0';
-                crackStrengthRow.range.max = '4';
+                crackStrengthRow.range.max = '20';
                 crackStrengthRow.range.step = '0.01';
                 crackStrengthRow.number.min = '0';
-                crackStrengthRow.number.max = '4';
+                crackStrengthRow.number.max = '20';
                 crackStrengthRow.number.step = '0.01';
-                crackStrengthRow.range.value = String(wallMatVarNormalized.cracks.strength);
-                crackStrengthRow.number.value = formatFloat(wallMatVarNormalized.cracks.strength, 2);
+                crackStrengthRow.range.value = String(cracksLayer?.intensity ?? 0.0);
+                crackStrengthRow.number.value = formatFloat(cracksLayer?.intensity ?? 0.0, 2);
                 cracksGroup.body.appendChild(crackStrengthRow.row);
 
                 const crackScaleRow = makeRangeRow('Scale');
@@ -3277,9 +3621,64 @@ export class BuildingFabricationUI {
                 crackScaleRow.number.min = '0.01';
                 crackScaleRow.number.max = '80';
                 crackScaleRow.number.step = '0.01';
-                crackScaleRow.range.value = String(wallMatVarNormalized.cracks.scale);
-                crackScaleRow.number.value = formatFloat(wallMatVarNormalized.cracks.scale, 2);
+                crackScaleRow.range.value = String(cracksLayer?.scale ?? 1.0);
+                crackScaleRow.number.value = formatFloat(cracksLayer?.scale ?? 1.0, 2);
                 cracksGroup.body.appendChild(crackScaleRow.row);
+
+                const crackHueRow = makeRangeRow('Hue shift (deg)');
+                crackHueRow.range.min = '-180';
+                crackHueRow.range.max = '180';
+                crackHueRow.range.step = '1';
+                crackHueRow.number.min = '-180';
+                crackHueRow.number.max = '180';
+                crackHueRow.number.step = '1';
+                crackHueRow.range.value = String(cracksLayer?.hueDegrees ?? 0.0);
+                crackHueRow.number.value = String(Math.round(cracksLayer?.hueDegrees ?? 0.0));
+                cracksGroup.body.appendChild(crackHueRow.row);
+
+                const crackValueRow = makeRangeRow('Value');
+                crackValueRow.range.min = '-4';
+                crackValueRow.range.max = '4';
+                crackValueRow.range.step = '0.01';
+                crackValueRow.number.min = '-4';
+                crackValueRow.number.max = '4';
+                crackValueRow.number.step = '0.01';
+                crackValueRow.range.value = String(cracksLayer?.value ?? 0.0);
+                crackValueRow.number.value = formatFloat(cracksLayer?.value ?? 0.0, 2);
+                cracksGroup.body.appendChild(crackValueRow.row);
+
+                const crackSaturationRow = makeRangeRow('Saturation');
+                crackSaturationRow.range.min = '-4';
+                crackSaturationRow.range.max = '4';
+                crackSaturationRow.range.step = '0.01';
+                crackSaturationRow.number.min = '-4';
+                crackSaturationRow.number.max = '4';
+                crackSaturationRow.number.step = '0.01';
+                crackSaturationRow.range.value = String(cracksLayer?.saturation ?? 0.0);
+                crackSaturationRow.number.value = formatFloat(cracksLayer?.saturation ?? 0.0, 2);
+                cracksGroup.body.appendChild(crackSaturationRow.row);
+
+                const crackRoughnessRow = makeRangeRow('Roughness');
+                crackRoughnessRow.range.min = '-4';
+                crackRoughnessRow.range.max = '4';
+                crackRoughnessRow.range.step = '0.01';
+                crackRoughnessRow.number.min = '-4';
+                crackRoughnessRow.number.max = '4';
+                crackRoughnessRow.number.step = '0.01';
+                crackRoughnessRow.range.value = String(cracksLayer?.roughness ?? 0.0);
+                crackRoughnessRow.number.value = formatFloat(cracksLayer?.roughness ?? 0.0, 2);
+                cracksGroup.body.appendChild(crackRoughnessRow.row);
+
+                const crackNormalRow = makeRangeRow('Normal');
+                crackNormalRow.range.min = '-2';
+                crackNormalRow.range.max = '2';
+                crackNormalRow.range.step = '0.01';
+                crackNormalRow.number.min = '-2';
+                crackNormalRow.number.max = '2';
+                crackNormalRow.number.step = '0.01';
+                crackNormalRow.range.value = String(cracksLayer?.normal ?? 0.0);
+                crackNormalRow.number.value = formatFloat(cracksLayer?.normal ?? 0.0, 2);
+                cracksGroup.body.appendChild(crackNormalRow.row);
                 wallMatVarGroup.body.appendChild(cracksGroup.details);
 
                 const syncMatVarEnabled = () => {
@@ -3311,6 +3710,14 @@ export class BuildingFabricationUI {
                     macroScaleRow.number.disabled = macroScaleRow.range.disabled;
                     macroHueRow.range.disabled = !allow || !enabled || !macroToggle.input.checked;
                     macroHueRow.number.disabled = macroHueRow.range.disabled;
+                    macroValueRow.range.disabled = !allow || !enabled || !macroToggle.input.checked;
+                    macroValueRow.number.disabled = macroValueRow.range.disabled;
+                    macroSaturationRow.range.disabled = !allow || !enabled || !macroToggle.input.checked;
+                    macroSaturationRow.number.disabled = macroSaturationRow.range.disabled;
+                    macroRoughnessRow.range.disabled = !allow || !enabled || !macroToggle.input.checked;
+                    macroRoughnessRow.number.disabled = macroRoughnessRow.range.disabled;
+                    macroNormalRow.range.disabled = !allow || !enabled || !macroToggle.input.checked;
+                    macroNormalRow.number.disabled = macroNormalRow.range.disabled;
 
                     streaksToggle.input.disabled = !allow || !enabled;
                     streakStrengthRow.range.disabled = !allow || !enabled || !streaksToggle.input.checked;
@@ -3321,40 +3728,70 @@ export class BuildingFabricationUI {
                     streakLedgeStrengthRow.number.disabled = streakLedgeStrengthRow.range.disabled;
                     streakLedgeScaleRow.range.disabled = !allow || !enabled || !streaksToggle.input.checked;
                     streakLedgeScaleRow.number.disabled = streakLedgeScaleRow.range.disabled;
+                    streakHueRow.range.disabled = !allow || !enabled || !streaksToggle.input.checked;
+                    streakHueRow.number.disabled = streakHueRow.range.disabled;
+                    streakValueRow.range.disabled = !allow || !enabled || !streaksToggle.input.checked;
+                    streakValueRow.number.disabled = streakValueRow.range.disabled;
+                    streakSaturationRow.range.disabled = !allow || !enabled || !streaksToggle.input.checked;
+                    streakSaturationRow.number.disabled = streakSaturationRow.range.disabled;
+                    streakRoughnessRow.range.disabled = !allow || !enabled || !streaksToggle.input.checked;
+                    streakRoughnessRow.number.disabled = streakRoughnessRow.range.disabled;
+                    streakNormalRow.range.disabled = !allow || !enabled || !streaksToggle.input.checked;
+                    streakNormalRow.number.disabled = streakNormalRow.range.disabled;
 
                     edgeToggle.input.disabled = !allow || !enabled;
                     edgeStrengthRow.range.disabled = !allow || !enabled || !edgeToggle.input.checked;
                     edgeStrengthRow.number.disabled = edgeStrengthRow.range.disabled;
                     edgeWidthRow.range.disabled = !allow || !enabled || !edgeToggle.input.checked;
                     edgeWidthRow.number.disabled = edgeWidthRow.range.disabled;
-                    edgeNoiseRow.range.disabled = !allow || !enabled || !edgeToggle.input.checked;
-                    edgeNoiseRow.number.disabled = edgeNoiseRow.range.disabled;
-                    edgeHorizRow.range.disabled = !allow || !enabled || !edgeToggle.input.checked;
-                    edgeHorizRow.number.disabled = edgeHorizRow.range.disabled;
-                    edgeVertRow.range.disabled = !allow || !enabled || !edgeToggle.input.checked;
-                    edgeVertRow.number.disabled = edgeVertRow.range.disabled;
-                    edgeColorRow.range.disabled = !allow || !enabled || !edgeToggle.input.checked;
-                    edgeColorRow.number.disabled = edgeColorRow.range.disabled;
-                    edgeRoughRow.range.disabled = !allow || !enabled || !edgeToggle.input.checked;
-                    edgeRoughRow.number.disabled = edgeRoughRow.range.disabled;
+                    edgeScaleRow.range.disabled = !allow || !enabled || !edgeToggle.input.checked;
+                    edgeScaleRow.number.disabled = edgeScaleRow.range.disabled;
+                    edgeHueRow.range.disabled = !allow || !enabled || !edgeToggle.input.checked;
+                    edgeHueRow.number.disabled = edgeHueRow.range.disabled;
+                    edgeValueRow.range.disabled = !allow || !enabled || !edgeToggle.input.checked;
+                    edgeValueRow.number.disabled = edgeValueRow.range.disabled;
+                    edgeSaturationRow.range.disabled = !allow || !enabled || !edgeToggle.input.checked;
+                    edgeSaturationRow.number.disabled = edgeSaturationRow.range.disabled;
+                    edgeRoughnessRow.range.disabled = !allow || !enabled || !edgeToggle.input.checked;
+                    edgeRoughnessRow.number.disabled = edgeRoughnessRow.range.disabled;
+                    edgeNormalRow.range.disabled = !allow || !enabled || !edgeToggle.input.checked;
+                    edgeNormalRow.number.disabled = edgeNormalRow.range.disabled;
 
                     grimeToggle.input.disabled = !allow || !enabled;
                     grimeStrengthRow.range.disabled = !allow || !enabled || !grimeToggle.input.checked;
                     grimeStrengthRow.number.disabled = grimeStrengthRow.range.disabled;
+                    grimeWidthRow.range.disabled = !allow || !enabled || !grimeToggle.input.checked;
+                    grimeWidthRow.number.disabled = grimeWidthRow.range.disabled;
                     grimeScaleRow.range.disabled = !allow || !enabled || !grimeToggle.input.checked;
                     grimeScaleRow.number.disabled = grimeScaleRow.range.disabled;
-                    grimeCornerRow.range.disabled = !allow || !enabled || !grimeToggle.input.checked;
-                    grimeCornerRow.number.disabled = grimeCornerRow.range.disabled;
+                    grimeHueRow.range.disabled = !allow || !enabled || !grimeToggle.input.checked;
+                    grimeHueRow.number.disabled = grimeHueRow.range.disabled;
+                    grimeValueRow.range.disabled = !allow || !enabled || !grimeToggle.input.checked;
+                    grimeValueRow.number.disabled = grimeValueRow.range.disabled;
+                    grimeSaturationRow.range.disabled = !allow || !enabled || !grimeToggle.input.checked;
+                    grimeSaturationRow.number.disabled = grimeSaturationRow.range.disabled;
+                    grimeRoughnessRow.range.disabled = !allow || !enabled || !grimeToggle.input.checked;
+                    grimeRoughnessRow.number.disabled = grimeRoughnessRow.range.disabled;
+                    grimeNormalRow.range.disabled = !allow || !enabled || !grimeToggle.input.checked;
+                    grimeNormalRow.number.disabled = grimeNormalRow.range.disabled;
 
                     dustToggle.input.disabled = !allow || !enabled;
                     dustStrengthRow.range.disabled = !allow || !enabled || !dustToggle.input.checked;
                     dustStrengthRow.number.disabled = dustStrengthRow.range.disabled;
+                    dustWidthRow.range.disabled = !allow || !enabled || !dustToggle.input.checked;
+                    dustWidthRow.number.disabled = dustWidthRow.range.disabled;
                     dustScaleRow.range.disabled = !allow || !enabled || !dustToggle.input.checked;
                     dustScaleRow.number.disabled = dustScaleRow.range.disabled;
-                    dustHeightMinRow.range.disabled = !allow || !enabled || !dustToggle.input.checked;
-                    dustHeightMinRow.number.disabled = dustHeightMinRow.range.disabled;
-                    dustHeightMaxRow.range.disabled = !allow || !enabled || !dustToggle.input.checked;
-                    dustHeightMaxRow.number.disabled = dustHeightMaxRow.range.disabled;
+                    dustHueRow.range.disabled = !allow || !enabled || !dustToggle.input.checked;
+                    dustHueRow.number.disabled = dustHueRow.range.disabled;
+                    dustValueRow.range.disabled = !allow || !enabled || !dustToggle.input.checked;
+                    dustValueRow.number.disabled = dustValueRow.range.disabled;
+                    dustSaturationRow.range.disabled = !allow || !enabled || !dustToggle.input.checked;
+                    dustSaturationRow.number.disabled = dustSaturationRow.range.disabled;
+                    dustRoughnessRow.range.disabled = !allow || !enabled || !dustToggle.input.checked;
+                    dustRoughnessRow.number.disabled = dustRoughnessRow.range.disabled;
+                    dustNormalRow.range.disabled = !allow || !enabled || !dustToggle.input.checked;
+                    dustNormalRow.number.disabled = dustNormalRow.range.disabled;
 
                     antiToggle.input.disabled = !allow || !enabled;
                     antiStrengthRow.range.disabled = !allow || !enabled || !antiToggle.input.checked;
@@ -3387,12 +3824,46 @@ export class BuildingFabricationUI {
                     detailScaleRow.number.disabled = detailScaleRow.range.disabled;
                     detailHueRow.range.disabled = !allow || !enabled || !detailToggle.input.checked;
                     detailHueRow.number.disabled = detailHueRow.range.disabled;
+                    detailValueRow.range.disabled = !allow || !enabled || !detailToggle.input.checked;
+                    detailValueRow.number.disabled = detailValueRow.range.disabled;
+                    detailSaturationRow.range.disabled = !allow || !enabled || !detailToggle.input.checked;
+                    detailSaturationRow.number.disabled = detailSaturationRow.range.disabled;
+                    detailRoughnessRow.range.disabled = !allow || !enabled || !detailToggle.input.checked;
+                    detailRoughnessRow.number.disabled = detailRoughnessRow.range.disabled;
+                    detailNormalRow.range.disabled = !allow || !enabled || !detailToggle.input.checked;
+                    detailNormalRow.number.disabled = detailNormalRow.range.disabled;
+
+                    macro2Toggle.input.disabled = !allow || !enabled;
+                    macro2StrengthRow.range.disabled = !allow || !enabled || !macro2Toggle.input.checked;
+                    macro2StrengthRow.number.disabled = macro2StrengthRow.range.disabled;
+                    macro2ScaleRow.range.disabled = !allow || !enabled || !macro2Toggle.input.checked;
+                    macro2ScaleRow.number.disabled = macro2ScaleRow.range.disabled;
+                    macro2HueRow.range.disabled = !allow || !enabled || !macro2Toggle.input.checked;
+                    macro2HueRow.number.disabled = macro2HueRow.range.disabled;
+                    macro2ValueRow.range.disabled = !allow || !enabled || !macro2Toggle.input.checked;
+                    macro2ValueRow.number.disabled = macro2ValueRow.range.disabled;
+                    macro2SaturationRow.range.disabled = !allow || !enabled || !macro2Toggle.input.checked;
+                    macro2SaturationRow.number.disabled = macro2SaturationRow.range.disabled;
+                    macro2RoughnessRow.range.disabled = !allow || !enabled || !macro2Toggle.input.checked;
+                    macro2RoughnessRow.number.disabled = macro2RoughnessRow.range.disabled;
+                    macro2NormalRow.range.disabled = !allow || !enabled || !macro2Toggle.input.checked;
+                    macro2NormalRow.number.disabled = macro2NormalRow.range.disabled;
 
                     cracksToggle.input.disabled = !allow || !enabled;
                     crackStrengthRow.range.disabled = !allow || !enabled || !cracksToggle.input.checked;
                     crackStrengthRow.number.disabled = crackStrengthRow.range.disabled;
                     crackScaleRow.range.disabled = !allow || !enabled || !cracksToggle.input.checked;
                     crackScaleRow.number.disabled = crackScaleRow.range.disabled;
+                    crackHueRow.range.disabled = !allow || !enabled || !cracksToggle.input.checked;
+                    crackHueRow.number.disabled = crackHueRow.range.disabled;
+                    crackValueRow.range.disabled = !allow || !enabled || !cracksToggle.input.checked;
+                    crackValueRow.number.disabled = crackValueRow.range.disabled;
+                    crackSaturationRow.range.disabled = !allow || !enabled || !cracksToggle.input.checked;
+                    crackSaturationRow.number.disabled = crackSaturationRow.range.disabled;
+                    crackRoughnessRow.range.disabled = !allow || !enabled || !cracksToggle.input.checked;
+                    crackRoughnessRow.number.disabled = crackRoughnessRow.range.disabled;
+                    crackNormalRow.range.disabled = !allow || !enabled || !cracksToggle.input.checked;
+                    crackNormalRow.number.disabled = crackNormalRow.range.disabled;
                 };
 
                 matVarToggle.input.addEventListener('change', () => {
@@ -3414,13 +3885,13 @@ export class BuildingFabricationUI {
                     this._notifySelectedLayersChanged();
                 });
                 intensityRow.range.addEventListener('input', () => {
-                    const next = clamp(intensityRow.range.value, 0.0, 8.0);
+                    const next = clamp(intensityRow.range.value, 0.0, 20.0);
                     layer.materialVariation.globalIntensity = next;
                     intensityRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 intensityRow.number.addEventListener('change', () => {
-                    const next = clamp(intensityRow.number.value, 0.0, 8.0);
+                    const next = clamp(intensityRow.number.value, 0.0, 20.0);
                     layer.materialVariation.globalIntensity = next;
                     intensityRow.range.value = String(next);
                     intensityRow.number.value = formatFloat(next, 2);
@@ -3525,54 +3996,133 @@ export class BuildingFabricationUI {
                 });
 
                 macroToggle.input.addEventListener('change', () => {
-                    layer.materialVariation.macro ??= {};
-                    layer.materialVariation.macro.enabled = !!macroToggle.input.checked;
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[0] ??= {};
+                    layer.materialVariation.macroLayers[0].enabled = !!macroToggle.input.checked;
                     syncMatVarEnabled();
                     this._notifySelectedLayersChanged();
                 });
                 macroIntensityRow.range.addEventListener('input', () => {
-                    const next = clamp(macroIntensityRow.range.value, 0.0, 4.0);
-                    layer.materialVariation.macro ??= {};
-                    layer.materialVariation.macro.intensity = next;
+                    const next = clamp(macroIntensityRow.range.value, 0.0, 20.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[0] ??= {};
+                    layer.materialVariation.macroLayers[0].intensity = next;
                     macroIntensityRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 macroIntensityRow.number.addEventListener('change', () => {
-                    const next = clamp(macroIntensityRow.number.value, 0.0, 4.0);
-                    layer.materialVariation.macro ??= {};
-                    layer.materialVariation.macro.intensity = next;
+                    const next = clamp(macroIntensityRow.number.value, 0.0, 20.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[0] ??= {};
+                    layer.materialVariation.macroLayers[0].intensity = next;
                     macroIntensityRow.range.value = String(next);
                     macroIntensityRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 macroScaleRow.range.addEventListener('input', () => {
-                    const next = clamp(macroScaleRow.range.value, 0.05, 10.0);
-                    layer.materialVariation.macro ??= {};
-                    layer.materialVariation.macro.scale = next;
+                    const next = clamp(macroScaleRow.range.value, 0.01, 80.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[0] ??= {};
+                    layer.materialVariation.macroLayers[0].scale = next;
                     macroScaleRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 macroScaleRow.number.addEventListener('change', () => {
-                    const next = clamp(macroScaleRow.number.value, 0.05, 10.0);
-                    layer.materialVariation.macro ??= {};
-                    layer.materialVariation.macro.scale = next;
+                    const next = clamp(macroScaleRow.number.value, 0.01, 80.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[0] ??= {};
+                    layer.materialVariation.macroLayers[0].scale = next;
                     macroScaleRow.range.value = String(next);
                     macroScaleRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 macroHueRow.range.addEventListener('input', () => {
                     const next = clamp(macroHueRow.range.value, -180.0, 180.0);
-                    layer.materialVariation.macro ??= {};
-                    layer.materialVariation.macro.hueDegrees = next;
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[0] ??= {};
+                    layer.materialVariation.macroLayers[0].hueDegrees = next;
                     macroHueRow.number.value = String(Math.round(next));
                     this._notifySelectedLayersChanged();
                 });
                 macroHueRow.number.addEventListener('change', () => {
                     const next = clamp(macroHueRow.number.value, -180.0, 180.0);
-                    layer.materialVariation.macro ??= {};
-                    layer.materialVariation.macro.hueDegrees = next;
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[0] ??= {};
+                    layer.materialVariation.macroLayers[0].hueDegrees = next;
                     macroHueRow.range.value = String(next);
                     macroHueRow.number.value = String(Math.round(next));
+                    this._notifySelectedLayersChanged();
+                });
+
+                macroValueRow.range.addEventListener('input', () => {
+                    const next = clamp(macroValueRow.range.value, -4.0, 4.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[0] ??= {};
+                    layer.materialVariation.macroLayers[0].value = next;
+                    macroValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                macroValueRow.number.addEventListener('change', () => {
+                    const next = clamp(macroValueRow.number.value, -4.0, 4.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[0] ??= {};
+                    layer.materialVariation.macroLayers[0].value = next;
+                    macroValueRow.range.value = String(next);
+                    macroValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                macroSaturationRow.range.addEventListener('input', () => {
+                    const next = clamp(macroSaturationRow.range.value, -4.0, 4.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[0] ??= {};
+                    layer.materialVariation.macroLayers[0].saturation = next;
+                    macroSaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                macroSaturationRow.number.addEventListener('change', () => {
+                    const next = clamp(macroSaturationRow.number.value, -4.0, 4.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[0] ??= {};
+                    layer.materialVariation.macroLayers[0].saturation = next;
+                    macroSaturationRow.range.value = String(next);
+                    macroSaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                macroRoughnessRow.range.addEventListener('input', () => {
+                    const next = clamp(macroRoughnessRow.range.value, -4.0, 4.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[0] ??= {};
+                    layer.materialVariation.macroLayers[0].roughness = next;
+                    macroRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                macroRoughnessRow.number.addEventListener('change', () => {
+                    const next = clamp(macroRoughnessRow.number.value, -4.0, 4.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[0] ??= {};
+                    layer.materialVariation.macroLayers[0].roughness = next;
+                    macroRoughnessRow.range.value = String(next);
+                    macroRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                macroNormalRow.range.addEventListener('input', () => {
+                    const next = clamp(macroNormalRow.range.value, -2.0, 2.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[0] ??= {};
+                    layer.materialVariation.macroLayers[0].normal = next;
+                    macroNormalRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                macroNormalRow.number.addEventListener('change', () => {
+                    const next = clamp(macroNormalRow.number.value, -2.0, 2.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[0] ??= {};
+                    layer.materialVariation.macroLayers[0].normal = next;
+                    macroNormalRow.range.value = String(next);
+                    macroNormalRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
 
@@ -3583,14 +4133,14 @@ export class BuildingFabricationUI {
                     this._notifySelectedLayersChanged();
                 });
                 streakStrengthRow.range.addEventListener('input', () => {
-                    const next = clamp(streakStrengthRow.range.value, 0.0, 4.0);
+                    const next = clamp(streakStrengthRow.range.value, 0.0, 12.0);
                     layer.materialVariation.streaks ??= {};
                     layer.materialVariation.streaks.strength = next;
                     streakStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 streakStrengthRow.number.addEventListener('change', () => {
-                    const next = clamp(streakStrengthRow.number.value, 0.0, 4.0);
+                    const next = clamp(streakStrengthRow.number.value, 0.0, 12.0);
                     layer.materialVariation.streaks ??= {};
                     layer.materialVariation.streaks.strength = next;
                     streakStrengthRow.range.value = String(next);
@@ -3598,14 +4148,14 @@ export class BuildingFabricationUI {
                     this._notifySelectedLayersChanged();
                 });
                 streakScaleRow.range.addEventListener('input', () => {
-                    const next = clamp(streakScaleRow.range.value, 0.05, 10.0);
+                    const next = clamp(streakScaleRow.range.value, 0.01, 50.0);
                     layer.materialVariation.streaks ??= {};
                     layer.materialVariation.streaks.scale = next;
                     streakScaleRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 streakScaleRow.number.addEventListener('change', () => {
-                    const next = clamp(streakScaleRow.number.value, 0.05, 10.0);
+                    const next = clamp(streakScaleRow.number.value, 0.01, 50.0);
                     layer.materialVariation.streaks ??= {};
                     layer.materialVariation.streaks.scale = next;
                     streakScaleRow.range.value = String(next);
@@ -3613,14 +4163,14 @@ export class BuildingFabricationUI {
                     this._notifySelectedLayersChanged();
                 });
                 streakLedgeStrengthRow.range.addEventListener('input', () => {
-                    const next = clamp(streakLedgeStrengthRow.range.value, 0.0, 4.0);
+                    const next = clamp(streakLedgeStrengthRow.range.value, 0.0, 12.0);
                     layer.materialVariation.streaks ??= {};
                     layer.materialVariation.streaks.ledgeStrength = next;
                     streakLedgeStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 streakLedgeStrengthRow.number.addEventListener('change', () => {
-                    const next = clamp(streakLedgeStrengthRow.number.value, 0.0, 4.0);
+                    const next = clamp(streakLedgeStrengthRow.number.value, 0.0, 12.0);
                     layer.materialVariation.streaks ??= {};
                     layer.materialVariation.streaks.ledgeStrength = next;
                     streakLedgeStrengthRow.range.value = String(next);
@@ -3643,270 +4193,482 @@ export class BuildingFabricationUI {
                     this._notifySelectedLayersChanged();
                 });
 
+                streakHueRow.range.addEventListener('input', () => {
+                    const next = clamp(streakHueRow.range.value, -180.0, 180.0);
+                    layer.materialVariation.streaks ??= {};
+                    layer.materialVariation.streaks.hueDegrees = next;
+                    streakHueRow.number.value = String(Math.round(next));
+                    this._notifySelectedLayersChanged();
+                });
+                streakHueRow.number.addEventListener('change', () => {
+                    const next = clamp(streakHueRow.number.value, -180.0, 180.0);
+                    layer.materialVariation.streaks ??= {};
+                    layer.materialVariation.streaks.hueDegrees = next;
+                    streakHueRow.range.value = String(next);
+                    streakHueRow.number.value = String(Math.round(next));
+                    this._notifySelectedLayersChanged();
+                });
+
+                streakValueRow.range.addEventListener('input', () => {
+                    const next = clamp(streakValueRow.range.value, -4.0, 4.0);
+                    layer.materialVariation.streaks ??= {};
+                    layer.materialVariation.streaks.value = next;
+                    streakValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                streakValueRow.number.addEventListener('change', () => {
+                    const next = clamp(streakValueRow.number.value, -4.0, 4.0);
+                    layer.materialVariation.streaks ??= {};
+                    layer.materialVariation.streaks.value = next;
+                    streakValueRow.range.value = String(next);
+                    streakValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                streakSaturationRow.range.addEventListener('input', () => {
+                    const next = clamp(streakSaturationRow.range.value, -4.0, 4.0);
+                    layer.materialVariation.streaks ??= {};
+                    layer.materialVariation.streaks.saturation = next;
+                    streakSaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                streakSaturationRow.number.addEventListener('change', () => {
+                    const next = clamp(streakSaturationRow.number.value, -4.0, 4.0);
+                    layer.materialVariation.streaks ??= {};
+                    layer.materialVariation.streaks.saturation = next;
+                    streakSaturationRow.range.value = String(next);
+                    streakSaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                streakRoughnessRow.range.addEventListener('input', () => {
+                    const next = clamp(streakRoughnessRow.range.value, -4.0, 4.0);
+                    layer.materialVariation.streaks ??= {};
+                    layer.materialVariation.streaks.roughness = next;
+                    streakRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                streakRoughnessRow.number.addEventListener('change', () => {
+                    const next = clamp(streakRoughnessRow.number.value, -4.0, 4.0);
+                    layer.materialVariation.streaks ??= {};
+                    layer.materialVariation.streaks.roughness = next;
+                    streakRoughnessRow.range.value = String(next);
+                    streakRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                streakNormalRow.range.addEventListener('input', () => {
+                    const next = clamp(streakNormalRow.range.value, -2.0, 2.0);
+                    layer.materialVariation.streaks ??= {};
+                    layer.materialVariation.streaks.normal = next;
+                    streakNormalRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                streakNormalRow.number.addEventListener('change', () => {
+                    const next = clamp(streakNormalRow.number.value, -2.0, 2.0);
+                    layer.materialVariation.streaks ??= {};
+                    layer.materialVariation.streaks.normal = next;
+                    streakNormalRow.range.value = String(next);
+                    streakNormalRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
                 edgeToggle.input.addEventListener('change', () => {
-                    layer.materialVariation.edgeWear ??= {};
-                    layer.materialVariation.edgeWear.enabled = !!edgeToggle.input.checked;
+                    layer.materialVariation.wearSide ??= {};
+                    layer.materialVariation.wearSide.enabled = !!edgeToggle.input.checked;
                     syncMatVarEnabled();
                     this._notifySelectedLayersChanged();
                 });
                 edgeStrengthRow.range.addEventListener('input', () => {
-                    const next = clamp(edgeStrengthRow.range.value, 0.0, 4.0);
-                    layer.materialVariation.edgeWear ??= {};
-                    layer.materialVariation.edgeWear.strength = next;
+                    const next = clamp(edgeStrengthRow.range.value, 0.0, 20.0);
+                    layer.materialVariation.wearSide ??= {};
+                    layer.materialVariation.wearSide.strength = next;
                     edgeStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 edgeStrengthRow.number.addEventListener('change', () => {
-                    const next = clamp(edgeStrengthRow.number.value, 0.0, 4.0);
-                    layer.materialVariation.edgeWear ??= {};
-                    layer.materialVariation.edgeWear.strength = next;
+                    const next = clamp(edgeStrengthRow.number.value, 0.0, 20.0);
+                    layer.materialVariation.wearSide ??= {};
+                    layer.materialVariation.wearSide.strength = next;
                     edgeStrengthRow.range.value = String(next);
                     edgeStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
 
                 edgeWidthRow.range.addEventListener('input', () => {
-                    const next = clamp(edgeWidthRow.range.value, 0.0, 0.5);
-                    layer.materialVariation.edgeWear ??= {};
-                    layer.materialVariation.edgeWear.width = next;
+                    const next = clamp(edgeWidthRow.range.value, 0.0, 4.0);
+                    layer.materialVariation.wearSide ??= {};
+                    layer.materialVariation.wearSide.width = next;
                     edgeWidthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 edgeWidthRow.number.addEventListener('change', () => {
-                    const next = clamp(edgeWidthRow.number.value, 0.0, 0.5);
-                    layer.materialVariation.edgeWear ??= {};
-                    layer.materialVariation.edgeWear.width = next;
+                    const next = clamp(edgeWidthRow.number.value, 0.0, 4.0);
+                    layer.materialVariation.wearSide ??= {};
+                    layer.materialVariation.wearSide.width = next;
                     edgeWidthRow.range.value = String(next);
                     edgeWidthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
 
-                edgeNoiseRow.range.addEventListener('input', () => {
-                    const next = clamp(edgeNoiseRow.range.value, 0.0, 10.0);
-                    layer.materialVariation.edgeWear ??= {};
-                    layer.materialVariation.edgeWear.noiseWarp = next;
-                    edgeNoiseRow.number.value = formatFloat(next, 2);
+                edgeScaleRow.range.addEventListener('input', () => {
+                    const next = clamp(edgeScaleRow.range.value, 0.01, 50.0);
+                    layer.materialVariation.wearSide ??= {};
+                    layer.materialVariation.wearSide.scale = next;
+                    edgeScaleRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
-                edgeNoiseRow.number.addEventListener('change', () => {
-                    const next = clamp(edgeNoiseRow.number.value, 0.0, 10.0);
-                    layer.materialVariation.edgeWear ??= {};
-                    layer.materialVariation.edgeWear.noiseWarp = next;
-                    edgeNoiseRow.range.value = String(next);
-                    edgeNoiseRow.number.value = formatFloat(next, 2);
-                    this._notifySelectedLayersChanged();
-                });
-
-                edgeHorizRow.range.addEventListener('input', () => {
-                    const next = clamp(edgeHorizRow.range.value, 0.0, 4.0);
-                    layer.materialVariation.edgeWear ??= {};
-                    layer.materialVariation.edgeWear.horizontalStrength = next;
-                    edgeHorizRow.number.value = formatFloat(next, 2);
-                    this._notifySelectedLayersChanged();
-                });
-                edgeHorizRow.number.addEventListener('change', () => {
-                    const next = clamp(edgeHorizRow.number.value, 0.0, 4.0);
-                    layer.materialVariation.edgeWear ??= {};
-                    layer.materialVariation.edgeWear.horizontalStrength = next;
-                    edgeHorizRow.range.value = String(next);
-                    edgeHorizRow.number.value = formatFloat(next, 2);
+                edgeScaleRow.number.addEventListener('change', () => {
+                    const next = clamp(edgeScaleRow.number.value, 0.01, 50.0);
+                    layer.materialVariation.wearSide ??= {};
+                    layer.materialVariation.wearSide.scale = next;
+                    edgeScaleRow.range.value = String(next);
+                    edgeScaleRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
 
-                edgeVertRow.range.addEventListener('input', () => {
-                    const next = clamp(edgeVertRow.range.value, 0.0, 4.0);
-                    layer.materialVariation.edgeWear ??= {};
-                    layer.materialVariation.edgeWear.verticalStrength = next;
-                    edgeVertRow.number.value = formatFloat(next, 2);
+                edgeHueRow.range.addEventListener('input', () => {
+                    const next = clamp(edgeHueRow.range.value, -180.0, 180.0);
+                    layer.materialVariation.wearSide ??= {};
+                    layer.materialVariation.wearSide.hueDegrees = next;
+                    edgeHueRow.number.value = String(Math.round(next));
                     this._notifySelectedLayersChanged();
                 });
-                edgeVertRow.number.addEventListener('change', () => {
-                    const next = clamp(edgeVertRow.number.value, 0.0, 4.0);
-                    layer.materialVariation.edgeWear ??= {};
-                    layer.materialVariation.edgeWear.verticalStrength = next;
-                    edgeVertRow.range.value = String(next);
-                    edgeVertRow.number.value = formatFloat(next, 2);
-                    this._notifySelectedLayersChanged();
-                });
-
-                edgeColorRow.range.addEventListener('input', () => {
-                    const next = clamp(edgeColorRow.range.value, -2.0, 2.0);
-                    layer.materialVariation.edgeWear ??= {};
-                    layer.materialVariation.edgeWear.color = next;
-                    edgeColorRow.number.value = formatFloat(next, 2);
-                    this._notifySelectedLayersChanged();
-                });
-                edgeColorRow.number.addEventListener('change', () => {
-                    const next = clamp(edgeColorRow.number.value, -2.0, 2.0);
-                    layer.materialVariation.edgeWear ??= {};
-                    layer.materialVariation.edgeWear.color = next;
-                    edgeColorRow.range.value = String(next);
-                    edgeColorRow.number.value = formatFloat(next, 2);
+                edgeHueRow.number.addEventListener('change', () => {
+                    const next = clamp(edgeHueRow.number.value, -180.0, 180.0);
+                    layer.materialVariation.wearSide ??= {};
+                    layer.materialVariation.wearSide.hueDegrees = next;
+                    edgeHueRow.range.value = String(next);
+                    edgeHueRow.number.value = String(Math.round(next));
                     this._notifySelectedLayersChanged();
                 });
 
-                edgeRoughRow.range.addEventListener('input', () => {
-                    const next = clamp(edgeRoughRow.range.value, -2.0, 2.0);
-                    layer.materialVariation.edgeWear ??= {};
-                    layer.materialVariation.edgeWear.roughness = next;
-                    edgeRoughRow.number.value = formatFloat(next, 2);
+                edgeValueRow.range.addEventListener('input', () => {
+                    const next = clamp(edgeValueRow.range.value, -4.0, 4.0);
+                    layer.materialVariation.wearSide ??= {};
+                    layer.materialVariation.wearSide.value = next;
+                    edgeValueRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
-                edgeRoughRow.number.addEventListener('change', () => {
-                    const next = clamp(edgeRoughRow.number.value, -2.0, 2.0);
-                    layer.materialVariation.edgeWear ??= {};
-                    layer.materialVariation.edgeWear.roughness = next;
-                    edgeRoughRow.range.value = String(next);
-                    edgeRoughRow.number.value = formatFloat(next, 2);
+                edgeValueRow.number.addEventListener('change', () => {
+                    const next = clamp(edgeValueRow.number.value, -4.0, 4.0);
+                    layer.materialVariation.wearSide ??= {};
+                    layer.materialVariation.wearSide.value = next;
+                    edgeValueRow.range.value = String(next);
+                    edgeValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                edgeSaturationRow.range.addEventListener('input', () => {
+                    const next = clamp(edgeSaturationRow.range.value, -4.0, 4.0);
+                    layer.materialVariation.wearSide ??= {};
+                    layer.materialVariation.wearSide.saturation = next;
+                    edgeSaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                edgeSaturationRow.number.addEventListener('change', () => {
+                    const next = clamp(edgeSaturationRow.number.value, -4.0, 4.0);
+                    layer.materialVariation.wearSide ??= {};
+                    layer.materialVariation.wearSide.saturation = next;
+                    edgeSaturationRow.range.value = String(next);
+                    edgeSaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                edgeRoughnessRow.range.addEventListener('input', () => {
+                    const next = clamp(edgeRoughnessRow.range.value, -4.0, 4.0);
+                    layer.materialVariation.wearSide ??= {};
+                    layer.materialVariation.wearSide.roughness = next;
+                    edgeRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                edgeRoughnessRow.number.addEventListener('change', () => {
+                    const next = clamp(edgeRoughnessRow.number.value, -4.0, 4.0);
+                    layer.materialVariation.wearSide ??= {};
+                    layer.materialVariation.wearSide.roughness = next;
+                    edgeRoughnessRow.range.value = String(next);
+                    edgeRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                edgeNormalRow.range.addEventListener('input', () => {
+                    const next = clamp(edgeNormalRow.range.value, -2.0, 2.0);
+                    layer.materialVariation.wearSide ??= {};
+                    layer.materialVariation.wearSide.normal = next;
+                    edgeNormalRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                edgeNormalRow.number.addEventListener('change', () => {
+                    const next = clamp(edgeNormalRow.number.value, -2.0, 2.0);
+                    layer.materialVariation.wearSide ??= {};
+                    layer.materialVariation.wearSide.normal = next;
+                    edgeNormalRow.range.value = String(next);
+                    edgeNormalRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
 
                 grimeToggle.input.addEventListener('change', () => {
-                    layer.materialVariation.grime ??= {};
-                    layer.materialVariation.grime.enabled = !!grimeToggle.input.checked;
+                    layer.materialVariation.wearBottom ??= {};
+                    layer.materialVariation.wearBottom.enabled = !!grimeToggle.input.checked;
                     syncMatVarEnabled();
                     this._notifySelectedLayersChanged();
                 });
                 grimeStrengthRow.range.addEventListener('input', () => {
-                    const next = clamp(grimeStrengthRow.range.value, 0.0, 4.0);
-                    layer.materialVariation.grime ??= {};
-                    layer.materialVariation.grime.strength = next;
+                    const next = clamp(grimeStrengthRow.range.value, 0.0, 20.0);
+                    layer.materialVariation.wearBottom ??= {};
+                    layer.materialVariation.wearBottom.strength = next;
                     grimeStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 grimeStrengthRow.number.addEventListener('change', () => {
-                    const next = clamp(grimeStrengthRow.number.value, 0.0, 4.0);
-                    layer.materialVariation.grime ??= {};
-                    layer.materialVariation.grime.strength = next;
+                    const next = clamp(grimeStrengthRow.number.value, 0.0, 20.0);
+                    layer.materialVariation.wearBottom ??= {};
+                    layer.materialVariation.wearBottom.strength = next;
                     grimeStrengthRow.range.value = String(next);
                     grimeStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
+
+                grimeWidthRow.range.addEventListener('input', () => {
+                    const next = clamp(grimeWidthRow.range.value, 0.0, 1.0);
+                    layer.materialVariation.wearBottom ??= {};
+                    layer.materialVariation.wearBottom.width = next;
+                    grimeWidthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                grimeWidthRow.number.addEventListener('change', () => {
+                    const next = clamp(grimeWidthRow.number.value, 0.0, 1.0);
+                    layer.materialVariation.wearBottom ??= {};
+                    layer.materialVariation.wearBottom.width = next;
+                    grimeWidthRow.range.value = String(next);
+                    grimeWidthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
                 grimeScaleRow.range.addEventListener('input', () => {
                     const next = clamp(grimeScaleRow.range.value, 0.01, 50.0);
-                    layer.materialVariation.grime ??= {};
-                    layer.materialVariation.grime.scale = next;
+                    layer.materialVariation.wearBottom ??= {};
+                    layer.materialVariation.wearBottom.scale = next;
                     grimeScaleRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 grimeScaleRow.number.addEventListener('change', () => {
                     const next = clamp(grimeScaleRow.number.value, 0.01, 50.0);
-                    layer.materialVariation.grime ??= {};
-                    layer.materialVariation.grime.scale = next;
+                    layer.materialVariation.wearBottom ??= {};
+                    layer.materialVariation.wearBottom.scale = next;
                     grimeScaleRow.range.value = String(next);
                     grimeScaleRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
-                grimeCornerRow.range.addEventListener('input', () => {
-                    const next = clamp(grimeCornerRow.range.value, 0.0, 4.0);
-                    layer.materialVariation.grime ??= {};
-                    layer.materialVariation.grime.cornerStrength = next;
-                    grimeCornerRow.number.value = formatFloat(next, 2);
+
+                grimeHueRow.range.addEventListener('input', () => {
+                    const next = clamp(grimeHueRow.range.value, -180.0, 180.0);
+                    layer.materialVariation.wearBottom ??= {};
+                    layer.materialVariation.wearBottom.hueDegrees = next;
+                    grimeHueRow.number.value = String(Math.round(next));
                     this._notifySelectedLayersChanged();
                 });
-                grimeCornerRow.number.addEventListener('change', () => {
-                    const next = clamp(grimeCornerRow.number.value, 0.0, 4.0);
-                    layer.materialVariation.grime ??= {};
-                    layer.materialVariation.grime.cornerStrength = next;
-                    grimeCornerRow.range.value = String(next);
-                    grimeCornerRow.number.value = formatFloat(next, 2);
+                grimeHueRow.number.addEventListener('change', () => {
+                    const next = clamp(grimeHueRow.number.value, -180.0, 180.0);
+                    layer.materialVariation.wearBottom ??= {};
+                    layer.materialVariation.wearBottom.hueDegrees = next;
+                    grimeHueRow.range.value = String(next);
+                    grimeHueRow.number.value = String(Math.round(next));
+                    this._notifySelectedLayersChanged();
+                });
+
+                grimeValueRow.range.addEventListener('input', () => {
+                    const next = clamp(grimeValueRow.range.value, -4.0, 4.0);
+                    layer.materialVariation.wearBottom ??= {};
+                    layer.materialVariation.wearBottom.value = next;
+                    grimeValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                grimeValueRow.number.addEventListener('change', () => {
+                    const next = clamp(grimeValueRow.number.value, -4.0, 4.0);
+                    layer.materialVariation.wearBottom ??= {};
+                    layer.materialVariation.wearBottom.value = next;
+                    grimeValueRow.range.value = String(next);
+                    grimeValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                grimeSaturationRow.range.addEventListener('input', () => {
+                    const next = clamp(grimeSaturationRow.range.value, -4.0, 4.0);
+                    layer.materialVariation.wearBottom ??= {};
+                    layer.materialVariation.wearBottom.saturation = next;
+                    grimeSaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                grimeSaturationRow.number.addEventListener('change', () => {
+                    const next = clamp(grimeSaturationRow.number.value, -4.0, 4.0);
+                    layer.materialVariation.wearBottom ??= {};
+                    layer.materialVariation.wearBottom.saturation = next;
+                    grimeSaturationRow.range.value = String(next);
+                    grimeSaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                grimeRoughnessRow.range.addEventListener('input', () => {
+                    const next = clamp(grimeRoughnessRow.range.value, -4.0, 4.0);
+                    layer.materialVariation.wearBottom ??= {};
+                    layer.materialVariation.wearBottom.roughness = next;
+                    grimeRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                grimeRoughnessRow.number.addEventListener('change', () => {
+                    const next = clamp(grimeRoughnessRow.number.value, -4.0, 4.0);
+                    layer.materialVariation.wearBottom ??= {};
+                    layer.materialVariation.wearBottom.roughness = next;
+                    grimeRoughnessRow.range.value = String(next);
+                    grimeRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                grimeNormalRow.range.addEventListener('input', () => {
+                    const next = clamp(grimeNormalRow.range.value, -2.0, 2.0);
+                    layer.materialVariation.wearBottom ??= {};
+                    layer.materialVariation.wearBottom.normal = next;
+                    grimeNormalRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                grimeNormalRow.number.addEventListener('change', () => {
+                    const next = clamp(grimeNormalRow.number.value, -2.0, 2.0);
+                    layer.materialVariation.wearBottom ??= {};
+                    layer.materialVariation.wearBottom.normal = next;
+                    grimeNormalRow.range.value = String(next);
+                    grimeNormalRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
 
                 dustToggle.input.addEventListener('change', () => {
-                    layer.materialVariation.dust ??= {};
-                    layer.materialVariation.dust.enabled = !!dustToggle.input.checked;
+                    layer.materialVariation.wearTop ??= {};
+                    layer.materialVariation.wearTop.enabled = !!dustToggle.input.checked;
                     syncMatVarEnabled();
                     this._notifySelectedLayersChanged();
                 });
                 dustStrengthRow.range.addEventListener('input', () => {
-                    const next = clamp(dustStrengthRow.range.value, 0.0, 4.0);
-                    layer.materialVariation.dust ??= {};
-                    layer.materialVariation.dust.strength = next;
+                    const next = clamp(dustStrengthRow.range.value, 0.0, 20.0);
+                    layer.materialVariation.wearTop ??= {};
+                    layer.materialVariation.wearTop.strength = next;
                     dustStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 dustStrengthRow.number.addEventListener('change', () => {
-                    const next = clamp(dustStrengthRow.number.value, 0.0, 4.0);
-                    layer.materialVariation.dust ??= {};
-                    layer.materialVariation.dust.strength = next;
+                    const next = clamp(dustStrengthRow.number.value, 0.0, 20.0);
+                    layer.materialVariation.wearTop ??= {};
+                    layer.materialVariation.wearTop.strength = next;
                     dustStrengthRow.range.value = String(next);
                     dustStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
+                dustWidthRow.range.addEventListener('input', () => {
+                    const next = clamp(dustWidthRow.range.value, 0.0, 1.0);
+                    layer.materialVariation.wearTop ??= {};
+                    layer.materialVariation.wearTop.width = next;
+                    dustWidthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                dustWidthRow.number.addEventListener('change', () => {
+                    const next = clamp(dustWidthRow.number.value, 0.0, 1.0);
+                    layer.materialVariation.wearTop ??= {};
+                    layer.materialVariation.wearTop.width = next;
+                    dustWidthRow.range.value = String(next);
+                    dustWidthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
                 dustScaleRow.range.addEventListener('input', () => {
                     const next = clamp(dustScaleRow.range.value, 0.01, 50.0);
-                    layer.materialVariation.dust ??= {};
-                    layer.materialVariation.dust.scale = next;
+                    layer.materialVariation.wearTop ??= {};
+                    layer.materialVariation.wearTop.scale = next;
                     dustScaleRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 dustScaleRow.number.addEventListener('change', () => {
                     const next = clamp(dustScaleRow.number.value, 0.01, 50.0);
-                    layer.materialVariation.dust ??= {};
-                    layer.materialVariation.dust.scale = next;
+                    layer.materialVariation.wearTop ??= {};
+                    layer.materialVariation.wearTop.scale = next;
                     dustScaleRow.range.value = String(next);
                     dustScaleRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
-                dustHeightMinRow.range.addEventListener('input', () => {
-                    const a = clamp(dustHeightMinRow.range.value, 0.0, 1.0);
-                    const b = clamp(dustHeightMaxRow.range.value, 0.0, 1.0);
-                    const min = Math.min(a, b);
-                    const max = Math.max(a, b);
-                    layer.materialVariation.dust ??= {};
-                    layer.materialVariation.dust.heightBand ??= {};
-                    layer.materialVariation.dust.heightBand.min = min;
-                    layer.materialVariation.dust.heightBand.max = max;
-                    dustHeightMinRow.range.value = String(min);
-                    dustHeightMinRow.number.value = formatFloat(min, 2);
-                    dustHeightMaxRow.range.value = String(max);
-                    dustHeightMaxRow.number.value = formatFloat(max, 2);
+
+                dustHueRow.range.addEventListener('input', () => {
+                    const next = clamp(dustHueRow.range.value, -180.0, 180.0);
+                    layer.materialVariation.wearTop ??= {};
+                    layer.materialVariation.wearTop.hueDegrees = next;
+                    dustHueRow.number.value = String(Math.round(next));
                     this._notifySelectedLayersChanged();
                 });
-                dustHeightMinRow.number.addEventListener('change', () => {
-                    const a = clamp(dustHeightMinRow.number.value, 0.0, 1.0);
-                    const b = clamp(dustHeightMaxRow.number.value, 0.0, 1.0);
-                    const min = Math.min(a, b);
-                    const max = Math.max(a, b);
-                    layer.materialVariation.dust ??= {};
-                    layer.materialVariation.dust.heightBand ??= {};
-                    layer.materialVariation.dust.heightBand.min = min;
-                    layer.materialVariation.dust.heightBand.max = max;
-                    dustHeightMinRow.range.value = String(min);
-                    dustHeightMinRow.number.value = formatFloat(min, 2);
-                    dustHeightMaxRow.range.value = String(max);
-                    dustHeightMaxRow.number.value = formatFloat(max, 2);
+                dustHueRow.number.addEventListener('change', () => {
+                    const next = clamp(dustHueRow.number.value, -180.0, 180.0);
+                    layer.materialVariation.wearTop ??= {};
+                    layer.materialVariation.wearTop.hueDegrees = next;
+                    dustHueRow.range.value = String(next);
+                    dustHueRow.number.value = String(Math.round(next));
                     this._notifySelectedLayersChanged();
                 });
-                dustHeightMaxRow.range.addEventListener('input', () => {
-                    const a = clamp(dustHeightMinRow.range.value, 0.0, 1.0);
-                    const b = clamp(dustHeightMaxRow.range.value, 0.0, 1.0);
-                    const min = Math.min(a, b);
-                    const max = Math.max(a, b);
-                    layer.materialVariation.dust ??= {};
-                    layer.materialVariation.dust.heightBand ??= {};
-                    layer.materialVariation.dust.heightBand.min = min;
-                    layer.materialVariation.dust.heightBand.max = max;
-                    dustHeightMinRow.range.value = String(min);
-                    dustHeightMinRow.number.value = formatFloat(min, 2);
-                    dustHeightMaxRow.range.value = String(max);
-                    dustHeightMaxRow.number.value = formatFloat(max, 2);
+
+                dustValueRow.range.addEventListener('input', () => {
+                    const next = clamp(dustValueRow.range.value, -4.0, 4.0);
+                    layer.materialVariation.wearTop ??= {};
+                    layer.materialVariation.wearTop.value = next;
+                    dustValueRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
-                dustHeightMaxRow.number.addEventListener('change', () => {
-                    const a = clamp(dustHeightMinRow.number.value, 0.0, 1.0);
-                    const b = clamp(dustHeightMaxRow.number.value, 0.0, 1.0);
-                    const min = Math.min(a, b);
-                    const max = Math.max(a, b);
-                    layer.materialVariation.dust ??= {};
-                    layer.materialVariation.dust.heightBand ??= {};
-                    layer.materialVariation.dust.heightBand.min = min;
-                    layer.materialVariation.dust.heightBand.max = max;
-                    dustHeightMinRow.range.value = String(min);
-                    dustHeightMinRow.number.value = formatFloat(min, 2);
-                    dustHeightMaxRow.range.value = String(max);
-                    dustHeightMaxRow.number.value = formatFloat(max, 2);
+                dustValueRow.number.addEventListener('change', () => {
+                    const next = clamp(dustValueRow.number.value, -4.0, 4.0);
+                    layer.materialVariation.wearTop ??= {};
+                    layer.materialVariation.wearTop.value = next;
+                    dustValueRow.range.value = String(next);
+                    dustValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                dustSaturationRow.range.addEventListener('input', () => {
+                    const next = clamp(dustSaturationRow.range.value, -4.0, 4.0);
+                    layer.materialVariation.wearTop ??= {};
+                    layer.materialVariation.wearTop.saturation = next;
+                    dustSaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                dustSaturationRow.number.addEventListener('change', () => {
+                    const next = clamp(dustSaturationRow.number.value, -4.0, 4.0);
+                    layer.materialVariation.wearTop ??= {};
+                    layer.materialVariation.wearTop.saturation = next;
+                    dustSaturationRow.range.value = String(next);
+                    dustSaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                dustRoughnessRow.range.addEventListener('input', () => {
+                    const next = clamp(dustRoughnessRow.range.value, -4.0, 4.0);
+                    layer.materialVariation.wearTop ??= {};
+                    layer.materialVariation.wearTop.roughness = next;
+                    dustRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                dustRoughnessRow.number.addEventListener('change', () => {
+                    const next = clamp(dustRoughnessRow.number.value, -4.0, 4.0);
+                    layer.materialVariation.wearTop ??= {};
+                    layer.materialVariation.wearTop.roughness = next;
+                    dustRoughnessRow.range.value = String(next);
+                    dustRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                dustNormalRow.range.addEventListener('input', () => {
+                    const next = clamp(dustNormalRow.range.value, -2.0, 2.0);
+                    layer.materialVariation.wearTop ??= {};
+                    layer.materialVariation.wearTop.normal = next;
+                    dustNormalRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                dustNormalRow.number.addEventListener('change', () => {
+                    const next = clamp(dustNormalRow.number.value, -2.0, 2.0);
+                    layer.materialVariation.wearTop ??= {};
+                    layer.materialVariation.wearTop.normal = next;
+                    dustNormalRow.range.value = String(next);
+                    dustNormalRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
 
@@ -3917,14 +4679,14 @@ export class BuildingFabricationUI {
                     this._notifySelectedLayersChanged();
                 });
                 antiStrengthRow.range.addEventListener('input', () => {
-                    const next = clamp(antiStrengthRow.range.value, 0.0, 4.0);
+                    const next = clamp(antiStrengthRow.range.value, 0.0, 12.0);
                     layer.materialVariation.antiTiling ??= {};
                     layer.materialVariation.antiTiling.strength = next;
                     antiStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 antiStrengthRow.number.addEventListener('change', () => {
-                    const next = clamp(antiStrengthRow.number.value, 0.0, 4.0);
+                    const next = clamp(antiStrengthRow.number.value, 0.0, 12.0);
                     layer.materialVariation.antiTiling ??= {};
                     layer.materialVariation.antiTiling.strength = next;
                     antiStrengthRow.range.value = String(next);
@@ -3965,14 +4727,14 @@ export class BuildingFabricationUI {
                 });
 
                 antiOffsetVRow.range.addEventListener('input', () => {
-                    const next = clamp(antiOffsetVRow.range.value, -1.0, 1.0);
+                    const next = clamp(antiOffsetVRow.range.value, -4.0, 4.0);
                     layer.materialVariation.antiTiling ??= {};
                     layer.materialVariation.antiTiling.offsetV = next;
                     antiOffsetVRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 antiOffsetVRow.number.addEventListener('change', () => {
-                    const next = clamp(antiOffsetVRow.number.value, -1.0, 1.0);
+                    const next = clamp(antiOffsetVRow.number.value, -4.0, 4.0);
                     layer.materialVariation.antiTiling ??= {};
                     layer.materialVariation.antiTiling.offsetV = next;
                     antiOffsetVRow.range.value = String(next);
@@ -3981,14 +4743,14 @@ export class BuildingFabricationUI {
                 });
 
                 antiOffsetURow.range.addEventListener('input', () => {
-                    const next = clamp(antiOffsetURow.range.value, -1.0, 1.0);
+                    const next = clamp(antiOffsetURow.range.value, -4.0, 4.0);
                     layer.materialVariation.antiTiling ??= {};
                     layer.materialVariation.antiTiling.offsetU = next;
                     antiOffsetURow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 antiOffsetURow.number.addEventListener('change', () => {
-                    const next = clamp(antiOffsetURow.number.value, -1.0, 1.0);
+                    const next = clamp(antiOffsetURow.number.value, -4.0, 4.0);
                     layer.materialVariation.antiTiling ??= {};
                     layer.materialVariation.antiTiling.offsetU = next;
                     antiOffsetURow.range.value = String(next);
@@ -4025,14 +4787,14 @@ export class BuildingFabricationUI {
                     this._notifySelectedLayersChanged();
                 });
                 stairStrengthRow.range.addEventListener('input', () => {
-                    const next = clamp(stairStrengthRow.range.value, 0.0, 4.0);
+                    const next = clamp(stairStrengthRow.range.value, 0.0, 12.0);
                     layer.materialVariation.stairShift ??= {};
                     layer.materialVariation.stairShift.strength = next;
                     stairStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 stairStrengthRow.number.addEventListener('change', () => {
-                    const next = clamp(stairStrengthRow.number.value, 0.0, 4.0);
+                    const next = clamp(stairStrengthRow.number.value, 0.0, 12.0);
                     layer.materialVariation.stairShift ??= {};
                     layer.materialVariation.stairShift.strength = next;
                     stairStrengthRow.range.value = String(next);
@@ -4055,14 +4817,14 @@ export class BuildingFabricationUI {
                     this._notifySelectedLayersChanged();
                 });
                 stairShiftRow.range.addEventListener('input', () => {
-                    const next = clamp(stairShiftRow.range.value, -1.0, 1.0);
+                    const next = clamp(stairShiftRow.range.value, -4.0, 4.0);
                     layer.materialVariation.stairShift ??= {};
                     layer.materialVariation.stairShift.shift = next;
                     stairShiftRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 stairShiftRow.number.addEventListener('change', () => {
-                    const next = clamp(stairShiftRow.number.value, -1.0, 1.0);
+                    const next = clamp(stairShiftRow.number.value, -4.0, 4.0);
                     layer.materialVariation.stairShift ??= {};
                     layer.materialVariation.stairShift.shift = next;
                     stairShiftRow.range.value = String(next);
@@ -4076,91 +4838,384 @@ export class BuildingFabricationUI {
                 });
 
                 detailToggle.input.addEventListener('change', () => {
-                    layer.materialVariation.detail ??= {};
-                    layer.materialVariation.detail.enabled = !!detailToggle.input.checked;
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[1] ??= {};
+                    layer.materialVariation.macroLayers[1].enabled = !!detailToggle.input.checked;
                     syncMatVarEnabled();
                     this._notifySelectedLayersChanged();
                 });
                 detailStrengthRow.range.addEventListener('input', () => {
-                    const next = clamp(detailStrengthRow.range.value, 0.0, 4.0);
-                    layer.materialVariation.detail ??= {};
-                    layer.materialVariation.detail.strength = next;
+                    const next = clamp(detailStrengthRow.range.value, 0.0, 20.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[1] ??= {};
+                    layer.materialVariation.macroLayers[1].intensity = next;
                     detailStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 detailStrengthRow.number.addEventListener('change', () => {
-                    const next = clamp(detailStrengthRow.number.value, 0.0, 4.0);
-                    layer.materialVariation.detail ??= {};
-                    layer.materialVariation.detail.strength = next;
+                    const next = clamp(detailStrengthRow.number.value, 0.0, 20.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[1] ??= {};
+                    layer.materialVariation.macroLayers[1].intensity = next;
                     detailStrengthRow.range.value = String(next);
                     detailStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 detailScaleRow.range.addEventListener('input', () => {
                     const next = clamp(detailScaleRow.range.value, 0.01, 80.0);
-                    layer.materialVariation.detail ??= {};
-                    layer.materialVariation.detail.scale = next;
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[1] ??= {};
+                    layer.materialVariation.macroLayers[1].scale = next;
                     detailScaleRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 detailScaleRow.number.addEventListener('change', () => {
                     const next = clamp(detailScaleRow.number.value, 0.01, 80.0);
-                    layer.materialVariation.detail ??= {};
-                    layer.materialVariation.detail.scale = next;
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[1] ??= {};
+                    layer.materialVariation.macroLayers[1].scale = next;
                     detailScaleRow.range.value = String(next);
                     detailScaleRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 detailHueRow.range.addEventListener('input', () => {
                     const next = clamp(detailHueRow.range.value, -180.0, 180.0);
-                    layer.materialVariation.detail ??= {};
-                    layer.materialVariation.detail.hueDegrees = next;
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[1] ??= {};
+                    layer.materialVariation.macroLayers[1].hueDegrees = next;
                     detailHueRow.number.value = String(Math.round(next));
                     this._notifySelectedLayersChanged();
                 });
                 detailHueRow.number.addEventListener('change', () => {
                     const next = clamp(detailHueRow.number.value, -180.0, 180.0);
-                    layer.materialVariation.detail ??= {};
-                    layer.materialVariation.detail.hueDegrees = next;
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[1] ??= {};
+                    layer.materialVariation.macroLayers[1].hueDegrees = next;
                     detailHueRow.range.value = String(next);
                     detailHueRow.number.value = String(Math.round(next));
                     this._notifySelectedLayersChanged();
                 });
 
+                detailValueRow.range.addEventListener('input', () => {
+                    const next = clamp(detailValueRow.range.value, -4.0, 4.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[1] ??= {};
+                    layer.materialVariation.macroLayers[1].value = next;
+                    detailValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                detailValueRow.number.addEventListener('change', () => {
+                    const next = clamp(detailValueRow.number.value, -4.0, 4.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[1] ??= {};
+                    layer.materialVariation.macroLayers[1].value = next;
+                    detailValueRow.range.value = String(next);
+                    detailValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                detailSaturationRow.range.addEventListener('input', () => {
+                    const next = clamp(detailSaturationRow.range.value, -4.0, 4.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[1] ??= {};
+                    layer.materialVariation.macroLayers[1].saturation = next;
+                    detailSaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                detailSaturationRow.number.addEventListener('change', () => {
+                    const next = clamp(detailSaturationRow.number.value, -4.0, 4.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[1] ??= {};
+                    layer.materialVariation.macroLayers[1].saturation = next;
+                    detailSaturationRow.range.value = String(next);
+                    detailSaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                detailRoughnessRow.range.addEventListener('input', () => {
+                    const next = clamp(detailRoughnessRow.range.value, -4.0, 4.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[1] ??= {};
+                    layer.materialVariation.macroLayers[1].roughness = next;
+                    detailRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                detailRoughnessRow.number.addEventListener('change', () => {
+                    const next = clamp(detailRoughnessRow.number.value, -4.0, 4.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[1] ??= {};
+                    layer.materialVariation.macroLayers[1].roughness = next;
+                    detailRoughnessRow.range.value = String(next);
+                    detailRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                detailNormalRow.range.addEventListener('input', () => {
+                    const next = clamp(detailNormalRow.range.value, -2.0, 2.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[1] ??= {};
+                    layer.materialVariation.macroLayers[1].normal = next;
+                    detailNormalRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                detailNormalRow.number.addEventListener('change', () => {
+                    const next = clamp(detailNormalRow.number.value, -2.0, 2.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[1] ??= {};
+                    layer.materialVariation.macroLayers[1].normal = next;
+                    detailNormalRow.range.value = String(next);
+                    detailNormalRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                macro2Toggle.input.addEventListener('change', () => {
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[2] ??= {};
+                    layer.materialVariation.macroLayers[2].enabled = !!macro2Toggle.input.checked;
+                    syncMatVarEnabled();
+                    this._notifySelectedLayersChanged();
+                });
+
+                macro2StrengthRow.range.addEventListener('input', () => {
+                    const next = clamp(macro2StrengthRow.range.value, 0.0, 20.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[2] ??= {};
+                    layer.materialVariation.macroLayers[2].intensity = next;
+                    macro2StrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                macro2StrengthRow.number.addEventListener('change', () => {
+                    const next = clamp(macro2StrengthRow.number.value, 0.0, 20.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[2] ??= {};
+                    layer.materialVariation.macroLayers[2].intensity = next;
+                    macro2StrengthRow.range.value = String(next);
+                    macro2StrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                macro2ScaleRow.range.addEventListener('input', () => {
+                    const next = clamp(macro2ScaleRow.range.value, 0.01, 80.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[2] ??= {};
+                    layer.materialVariation.macroLayers[2].scale = next;
+                    macro2ScaleRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                macro2ScaleRow.number.addEventListener('change', () => {
+                    const next = clamp(macro2ScaleRow.number.value, 0.01, 80.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[2] ??= {};
+                    layer.materialVariation.macroLayers[2].scale = next;
+                    macro2ScaleRow.range.value = String(next);
+                    macro2ScaleRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                macro2HueRow.range.addEventListener('input', () => {
+                    const next = clamp(macro2HueRow.range.value, -180.0, 180.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[2] ??= {};
+                    layer.materialVariation.macroLayers[2].hueDegrees = next;
+                    macro2HueRow.number.value = String(Math.round(next));
+                    this._notifySelectedLayersChanged();
+                });
+                macro2HueRow.number.addEventListener('change', () => {
+                    const next = clamp(macro2HueRow.number.value, -180.0, 180.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[2] ??= {};
+                    layer.materialVariation.macroLayers[2].hueDegrees = next;
+                    macro2HueRow.range.value = String(next);
+                    macro2HueRow.number.value = String(Math.round(next));
+                    this._notifySelectedLayersChanged();
+                });
+
+                macro2ValueRow.range.addEventListener('input', () => {
+                    const next = clamp(macro2ValueRow.range.value, -4.0, 4.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[2] ??= {};
+                    layer.materialVariation.macroLayers[2].value = next;
+                    macro2ValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                macro2ValueRow.number.addEventListener('change', () => {
+                    const next = clamp(macro2ValueRow.number.value, -4.0, 4.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[2] ??= {};
+                    layer.materialVariation.macroLayers[2].value = next;
+                    macro2ValueRow.range.value = String(next);
+                    macro2ValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                macro2SaturationRow.range.addEventListener('input', () => {
+                    const next = clamp(macro2SaturationRow.range.value, -4.0, 4.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[2] ??= {};
+                    layer.materialVariation.macroLayers[2].saturation = next;
+                    macro2SaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                macro2SaturationRow.number.addEventListener('change', () => {
+                    const next = clamp(macro2SaturationRow.number.value, -4.0, 4.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[2] ??= {};
+                    layer.materialVariation.macroLayers[2].saturation = next;
+                    macro2SaturationRow.range.value = String(next);
+                    macro2SaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                macro2RoughnessRow.range.addEventListener('input', () => {
+                    const next = clamp(macro2RoughnessRow.range.value, -4.0, 4.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[2] ??= {};
+                    layer.materialVariation.macroLayers[2].roughness = next;
+                    macro2RoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                macro2RoughnessRow.number.addEventListener('change', () => {
+                    const next = clamp(macro2RoughnessRow.number.value, -4.0, 4.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[2] ??= {};
+                    layer.materialVariation.macroLayers[2].roughness = next;
+                    macro2RoughnessRow.range.value = String(next);
+                    macro2RoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                macro2NormalRow.range.addEventListener('input', () => {
+                    const next = clamp(macro2NormalRow.range.value, -2.0, 2.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[2] ??= {};
+                    layer.materialVariation.macroLayers[2].normal = next;
+                    macro2NormalRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                macro2NormalRow.number.addEventListener('change', () => {
+                    const next = clamp(macro2NormalRow.number.value, -2.0, 2.0);
+                    layer.materialVariation.macroLayers ??= [];
+                    layer.materialVariation.macroLayers[2] ??= {};
+                    layer.materialVariation.macroLayers[2].normal = next;
+                    macro2NormalRow.range.value = String(next);
+                    macro2NormalRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
                 cracksToggle.input.addEventListener('change', () => {
-                    layer.materialVariation.cracks ??= {};
-                    layer.materialVariation.cracks.enabled = !!cracksToggle.input.checked;
+                    layer.materialVariation.cracksLayer ??= {};
+                    layer.materialVariation.cracksLayer.enabled = !!cracksToggle.input.checked;
                     syncMatVarEnabled();
                     this._notifySelectedLayersChanged();
                 });
                 crackStrengthRow.range.addEventListener('input', () => {
-                    const next = clamp(crackStrengthRow.range.value, 0.0, 4.0);
-                    layer.materialVariation.cracks ??= {};
-                    layer.materialVariation.cracks.strength = next;
+                    const next = clamp(crackStrengthRow.range.value, 0.0, 20.0);
+                    layer.materialVariation.cracksLayer ??= {};
+                    layer.materialVariation.cracksLayer.strength = next;
                     crackStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 crackStrengthRow.number.addEventListener('change', () => {
-                    const next = clamp(crackStrengthRow.number.value, 0.0, 4.0);
-                    layer.materialVariation.cracks ??= {};
-                    layer.materialVariation.cracks.strength = next;
+                    const next = clamp(crackStrengthRow.number.value, 0.0, 20.0);
+                    layer.materialVariation.cracksLayer ??= {};
+                    layer.materialVariation.cracksLayer.strength = next;
                     crackStrengthRow.range.value = String(next);
                     crackStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 crackScaleRow.range.addEventListener('input', () => {
                     const next = clamp(crackScaleRow.range.value, 0.01, 80.0);
-                    layer.materialVariation.cracks ??= {};
-                    layer.materialVariation.cracks.scale = next;
+                    layer.materialVariation.cracksLayer ??= {};
+                    layer.materialVariation.cracksLayer.scale = next;
                     crackScaleRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 crackScaleRow.number.addEventListener('change', () => {
                     const next = clamp(crackScaleRow.number.value, 0.01, 80.0);
-                    layer.materialVariation.cracks ??= {};
-                    layer.materialVariation.cracks.scale = next;
+                    layer.materialVariation.cracksLayer ??= {};
+                    layer.materialVariation.cracksLayer.scale = next;
                     crackScaleRow.range.value = String(next);
                     crackScaleRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                crackHueRow.range.addEventListener('input', () => {
+                    const next = clamp(crackHueRow.range.value, -180.0, 180.0);
+                    layer.materialVariation.cracksLayer ??= {};
+                    layer.materialVariation.cracksLayer.hueDegrees = next;
+                    crackHueRow.number.value = String(Math.round(next));
+                    this._notifySelectedLayersChanged();
+                });
+                crackHueRow.number.addEventListener('change', () => {
+                    const next = clamp(crackHueRow.number.value, -180.0, 180.0);
+                    layer.materialVariation.cracksLayer ??= {};
+                    layer.materialVariation.cracksLayer.hueDegrees = next;
+                    crackHueRow.range.value = String(next);
+                    crackHueRow.number.value = String(Math.round(next));
+                    this._notifySelectedLayersChanged();
+                });
+
+                crackValueRow.range.addEventListener('input', () => {
+                    const next = clamp(crackValueRow.range.value, -4.0, 4.0);
+                    layer.materialVariation.cracksLayer ??= {};
+                    layer.materialVariation.cracksLayer.value = next;
+                    crackValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                crackValueRow.number.addEventListener('change', () => {
+                    const next = clamp(crackValueRow.number.value, -4.0, 4.0);
+                    layer.materialVariation.cracksLayer ??= {};
+                    layer.materialVariation.cracksLayer.value = next;
+                    crackValueRow.range.value = String(next);
+                    crackValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                crackSaturationRow.range.addEventListener('input', () => {
+                    const next = clamp(crackSaturationRow.range.value, -4.0, 4.0);
+                    layer.materialVariation.cracksLayer ??= {};
+                    layer.materialVariation.cracksLayer.saturation = next;
+                    crackSaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                crackSaturationRow.number.addEventListener('change', () => {
+                    const next = clamp(crackSaturationRow.number.value, -4.0, 4.0);
+                    layer.materialVariation.cracksLayer ??= {};
+                    layer.materialVariation.cracksLayer.saturation = next;
+                    crackSaturationRow.range.value = String(next);
+                    crackSaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                crackRoughnessRow.range.addEventListener('input', () => {
+                    const next = clamp(crackRoughnessRow.range.value, -4.0, 4.0);
+                    layer.materialVariation.cracksLayer ??= {};
+                    layer.materialVariation.cracksLayer.roughness = next;
+                    crackRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                crackRoughnessRow.number.addEventListener('change', () => {
+                    const next = clamp(crackRoughnessRow.number.value, -4.0, 4.0);
+                    layer.materialVariation.cracksLayer ??= {};
+                    layer.materialVariation.cracksLayer.roughness = next;
+                    crackRoughnessRow.range.value = String(next);
+                    crackRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                crackNormalRow.range.addEventListener('input', () => {
+                    const next = clamp(crackNormalRow.range.value, -2.0, 2.0);
+                    layer.materialVariation.cracksLayer ??= {};
+                    layer.materialVariation.cracksLayer.normal = next;
+                    crackNormalRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                crackNormalRow.number.addEventListener('change', () => {
+                    const next = clamp(crackNormalRow.number.value, -2.0, 2.0);
+                    layer.materialVariation.cracksLayer ??= {};
+                    layer.materialVariation.cracksLayer.normal = next;
+                    crackNormalRow.range.value = String(next);
+                    crackNormalRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
 
@@ -4707,22 +5762,22 @@ export class BuildingFabricationUI {
                 layerSection.body.appendChild(roofUvToggle.toggle);
 
                 const roofUvOffsetURow = makeRangeRow('U offset (tiles)');
-                roofUvOffsetURow.range.min = '-1';
-                roofUvOffsetURow.range.max = '1';
+                roofUvOffsetURow.range.min = '-10';
+                roofUvOffsetURow.range.max = '10';
                 roofUvOffsetURow.range.step = '0.01';
-                roofUvOffsetURow.number.min = '-1';
-                roofUvOffsetURow.number.max = '1';
+                roofUvOffsetURow.number.min = '-10';
+                roofUvOffsetURow.number.max = '10';
                 roofUvOffsetURow.number.step = '0.01';
                 roofUvOffsetURow.range.value = String(layer?.roof?.tiling?.offsetU ?? 0.0);
                 roofUvOffsetURow.number.value = formatFloat(layer?.roof?.tiling?.offsetU ?? 0.0, 2);
                 layerSection.body.appendChild(roofUvOffsetURow.row);
 
                 const roofUvOffsetVRow = makeRangeRow('V offset (tiles)');
-                roofUvOffsetVRow.range.min = '-1';
-                roofUvOffsetVRow.range.max = '1';
+                roofUvOffsetVRow.range.min = '-10';
+                roofUvOffsetVRow.range.max = '10';
                 roofUvOffsetVRow.range.step = '0.01';
-                roofUvOffsetVRow.number.min = '-1';
-                roofUvOffsetVRow.number.max = '1';
+                roofUvOffsetVRow.number.min = '-10';
+                roofUvOffsetVRow.number.max = '10';
                 roofUvOffsetVRow.number.step = '0.01';
                 roofUvOffsetVRow.range.value = String(layer?.roof?.tiling?.offsetV ?? 0.0);
                 roofUvOffsetVRow.number.value = formatFloat(layer?.roof?.tiling?.offsetV ?? 0.0, 2);
@@ -4763,13 +5818,13 @@ export class BuildingFabricationUI {
                 });
 
                 roofUvOffsetURow.range.addEventListener('input', () => {
-                    const next = clamp(roofUvOffsetURow.range.value, -1.0, 1.0);
+                    const next = clamp(roofUvOffsetURow.range.value, -10.0, 10.0);
                     layer.roof.tiling.offsetU = next;
                     roofUvOffsetURow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofUvOffsetURow.number.addEventListener('change', () => {
-                    const next = clamp(roofUvOffsetURow.number.value, -1.0, 1.0);
+                    const next = clamp(roofUvOffsetURow.number.value, -10.0, 10.0);
                     layer.roof.tiling.offsetU = next;
                     roofUvOffsetURow.range.value = String(next);
                     roofUvOffsetURow.number.value = formatFloat(next, 2);
@@ -4777,13 +5832,13 @@ export class BuildingFabricationUI {
                 });
 
                 roofUvOffsetVRow.range.addEventListener('input', () => {
-                    const next = clamp(roofUvOffsetVRow.range.value, -1.0, 1.0);
+                    const next = clamp(roofUvOffsetVRow.range.value, -10.0, 10.0);
                     layer.roof.tiling.offsetV = next;
                     roofUvOffsetVRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofUvOffsetVRow.number.addEventListener('change', () => {
-                    const next = clamp(roofUvOffsetVRow.number.value, -1.0, 1.0);
+                    const next = clamp(roofUvOffsetVRow.number.value, -10.0, 10.0);
                     layer.roof.tiling.offsetV = next;
                     roofUvOffsetVRow.range.value = String(next);
                     roofUvOffsetVRow.number.value = formatFloat(next, 2);
@@ -4833,10 +5888,10 @@ export class BuildingFabricationUI {
 
 	                const roofIntensityRow = makeRangeRow('Intensity');
 	                roofIntensityRow.range.min = '0';
-	                roofIntensityRow.range.max = '8';
+	                roofIntensityRow.range.max = '20';
 	                roofIntensityRow.range.step = '0.01';
 	                roofIntensityRow.number.min = '0';
-	                roofIntensityRow.number.max = '8';
+	                roofIntensityRow.number.max = '20';
 	                roofIntensityRow.number.step = '0.01';
 	                roofIntensityRow.range.value = String(roofMatVarNormalized.globalIntensity);
 	                roofIntensityRow.number.value = formatFloat(roofMatVarNormalized.globalIntensity, 2);
@@ -4919,80 +5974,183 @@ export class BuildingFabricationUI {
 	                roofAoAmountRow.number.value = formatFloat(roofMatVarNormalized.aoAmount, 2);
 	                layerSection.body.appendChild(roofAoAmountRow.row);
 
-	                appendRoofSectionLabel('Macro');
-	                const roofMacroToggle = makeToggleRow('Enable macro');
-	                roofMacroToggle.input.checked = !!roofMatVarNormalized.macro.enabled;
+                const roofMacro0 = roofMatVarNormalized.macroLayers?.[0] ?? null;
+                appendRoofSectionLabel('Macro layer 1');
+                const roofMacroToggle = makeToggleRow('Enable macro layer 1');
+                roofMacroToggle.input.checked = !!roofMacro0?.enabled;
                 roofMacroToggle.input.disabled = !allow || !roofMatVarNormalized.enabled;
                 layerSection.body.appendChild(roofMacroToggle.toggle);
-	                const roofMacroIntensityRow = makeRangeRow('Intensity');
-	                roofMacroIntensityRow.range.min = '0';
-	                roofMacroIntensityRow.range.max = '4';
-	                roofMacroIntensityRow.range.step = '0.01';
-	                roofMacroIntensityRow.number.min = '0';
-	                roofMacroIntensityRow.number.max = '4';
-	                roofMacroIntensityRow.number.step = '0.01';
-	                roofMacroIntensityRow.range.value = String(roofMatVarNormalized.macro.intensity);
-	                roofMacroIntensityRow.number.value = formatFloat(roofMatVarNormalized.macro.intensity, 2);
-	                layerSection.body.appendChild(roofMacroIntensityRow.row);
-	                const roofMacroScaleRow = makeRangeRow('Scale');
-	                roofMacroScaleRow.range.min = '0.05';
-	                roofMacroScaleRow.range.max = '10';
-	                roofMacroScaleRow.range.step = '0.01';
-	                roofMacroScaleRow.number.min = '0.05';
-	                roofMacroScaleRow.number.max = '10';
-	                roofMacroScaleRow.number.step = '0.01';
-	                roofMacroScaleRow.range.value = String(roofMatVarNormalized.macro.scale);
-	                roofMacroScaleRow.number.value = formatFloat(roofMatVarNormalized.macro.scale, 2);
-	                layerSection.body.appendChild(roofMacroScaleRow.row);
 
-	                const roofMacroHueRow = makeRangeRow('Hue shift (deg)');
-	                roofMacroHueRow.range.min = '-180';
-	                roofMacroHueRow.range.max = '180';
-	                roofMacroHueRow.range.step = '1';
-	                roofMacroHueRow.number.min = '-180';
-	                roofMacroHueRow.number.max = '180';
-	                roofMacroHueRow.number.step = '1';
-	                roofMacroHueRow.range.value = String(roofMatVarNormalized.macro.hueDegrees);
-	                roofMacroHueRow.number.value = String(Math.round(roofMatVarNormalized.macro.hueDegrees));
-	                layerSection.body.appendChild(roofMacroHueRow.row);
+                const roofMacroIntensityRow = makeRangeRow('Intensity');
+                roofMacroIntensityRow.range.min = '0';
+                roofMacroIntensityRow.range.max = '20';
+                roofMacroIntensityRow.range.step = '0.01';
+                roofMacroIntensityRow.number.min = '0';
+                roofMacroIntensityRow.number.max = '20';
+                roofMacroIntensityRow.number.step = '0.01';
+                roofMacroIntensityRow.range.value = String(roofMacro0?.intensity ?? 0.0);
+                roofMacroIntensityRow.number.value = formatFloat(roofMacro0?.intensity ?? 0.0, 2);
+                layerSection.body.appendChild(roofMacroIntensityRow.row);
 
-                appendRoofSectionLabel('Grime');
-                const roofGrimeToggle = makeToggleRow('Enable grime');
-                roofGrimeToggle.input.checked = !!roofMatVarNormalized.grime.enabled;
+                const roofMacroScaleRow = makeRangeRow('Scale');
+                roofMacroScaleRow.range.min = '0.01';
+                roofMacroScaleRow.range.max = '80';
+                roofMacroScaleRow.range.step = '0.01';
+                roofMacroScaleRow.number.min = '0.01';
+                roofMacroScaleRow.number.max = '80';
+                roofMacroScaleRow.number.step = '0.01';
+                roofMacroScaleRow.range.value = String(roofMacro0?.scale ?? 1.0);
+                roofMacroScaleRow.number.value = formatFloat(roofMacro0?.scale ?? 1.0, 2);
+                layerSection.body.appendChild(roofMacroScaleRow.row);
+
+                const roofMacroHueRow = makeRangeRow('Hue shift (deg)');
+                roofMacroHueRow.range.min = '-180';
+                roofMacroHueRow.range.max = '180';
+                roofMacroHueRow.range.step = '1';
+                roofMacroHueRow.number.min = '-180';
+                roofMacroHueRow.number.max = '180';
+                roofMacroHueRow.number.step = '1';
+                roofMacroHueRow.range.value = String(roofMacro0?.hueDegrees ?? 0.0);
+                roofMacroHueRow.number.value = String(Math.round(roofMacro0?.hueDegrees ?? 0.0));
+                layerSection.body.appendChild(roofMacroHueRow.row);
+
+                const roofMacroValueRow = makeRangeRow('Value');
+                roofMacroValueRow.range.min = '-4';
+                roofMacroValueRow.range.max = '4';
+                roofMacroValueRow.range.step = '0.01';
+                roofMacroValueRow.number.min = '-4';
+                roofMacroValueRow.number.max = '4';
+                roofMacroValueRow.number.step = '0.01';
+                roofMacroValueRow.range.value = String(roofMacro0?.value ?? 0.0);
+                roofMacroValueRow.number.value = formatFloat(roofMacro0?.value ?? 0.0, 2);
+                layerSection.body.appendChild(roofMacroValueRow.row);
+
+                const roofMacroSaturationRow = makeRangeRow('Saturation');
+                roofMacroSaturationRow.range.min = '-4';
+                roofMacroSaturationRow.range.max = '4';
+                roofMacroSaturationRow.range.step = '0.01';
+                roofMacroSaturationRow.number.min = '-4';
+                roofMacroSaturationRow.number.max = '4';
+                roofMacroSaturationRow.number.step = '0.01';
+                roofMacroSaturationRow.range.value = String(roofMacro0?.saturation ?? 0.0);
+                roofMacroSaturationRow.number.value = formatFloat(roofMacro0?.saturation ?? 0.0, 2);
+                layerSection.body.appendChild(roofMacroSaturationRow.row);
+
+                const roofMacroRoughnessRow = makeRangeRow('Roughness');
+                roofMacroRoughnessRow.range.min = '-4';
+                roofMacroRoughnessRow.range.max = '4';
+                roofMacroRoughnessRow.range.step = '0.01';
+                roofMacroRoughnessRow.number.min = '-4';
+                roofMacroRoughnessRow.number.max = '4';
+                roofMacroRoughnessRow.number.step = '0.01';
+                roofMacroRoughnessRow.range.value = String(roofMacro0?.roughness ?? 0.0);
+                roofMacroRoughnessRow.number.value = formatFloat(roofMacro0?.roughness ?? 0.0, 2);
+                layerSection.body.appendChild(roofMacroRoughnessRow.row);
+
+                const roofMacroNormalRow = makeRangeRow('Normal');
+                roofMacroNormalRow.range.min = '-2';
+                roofMacroNormalRow.range.max = '2';
+                roofMacroNormalRow.range.step = '0.01';
+                roofMacroNormalRow.number.min = '-2';
+                roofMacroNormalRow.number.max = '2';
+                roofMacroNormalRow.number.step = '0.01';
+                roofMacroNormalRow.range.value = String(roofMacro0?.normal ?? 0.0);
+                roofMacroNormalRow.number.value = formatFloat(roofMacro0?.normal ?? 0.0, 2);
+                layerSection.body.appendChild(roofMacroNormalRow.row);
+
+                const roofWearBottom = roofMatVarNormalized.wearBottom ?? null;
+                appendRoofSectionLabel('Bottom wear');
+                const roofGrimeToggle = makeToggleRow('Enable bottom wear');
+                roofGrimeToggle.input.checked = !!roofWearBottom?.enabled;
                 roofGrimeToggle.input.disabled = !allow || !roofMatVarNormalized.enabled;
                 layerSection.body.appendChild(roofGrimeToggle.toggle);
-	                const roofGrimeStrengthRow = makeRangeRow('Strength');
-	                roofGrimeStrengthRow.range.min = '0';
-	                roofGrimeStrengthRow.range.max = '4';
-	                roofGrimeStrengthRow.range.step = '0.01';
-	                roofGrimeStrengthRow.number.min = '0';
-	                roofGrimeStrengthRow.number.max = '4';
-	                roofGrimeStrengthRow.number.step = '0.01';
-	                roofGrimeStrengthRow.range.value = String(roofMatVarNormalized.grime.strength);
-	                roofGrimeStrengthRow.number.value = formatFloat(roofMatVarNormalized.grime.strength, 2);
-	                layerSection.body.appendChild(roofGrimeStrengthRow.row);
+                const roofGrimeStrengthRow = makeRangeRow('Strength');
+                roofGrimeStrengthRow.range.min = '0';
+                roofGrimeStrengthRow.range.max = '20';
+                roofGrimeStrengthRow.range.step = '0.01';
+                roofGrimeStrengthRow.number.min = '0';
+                roofGrimeStrengthRow.number.max = '20';
+                roofGrimeStrengthRow.number.step = '0.01';
+                roofGrimeStrengthRow.range.value = String(roofWearBottom?.intensity ?? 0.0);
+                roofGrimeStrengthRow.number.value = formatFloat(roofWearBottom?.intensity ?? 0.0, 2);
+                layerSection.body.appendChild(roofGrimeStrengthRow.row);
 
-	                const roofGrimeScaleRow = makeRangeRow('Scale');
-	                roofGrimeScaleRow.range.min = '0.01';
-	                roofGrimeScaleRow.range.max = '50';
-	                roofGrimeScaleRow.range.step = '0.01';
-	                roofGrimeScaleRow.number.min = '0.01';
-	                roofGrimeScaleRow.number.max = '50';
-	                roofGrimeScaleRow.number.step = '0.01';
-	                roofGrimeScaleRow.range.value = String(roofMatVarNormalized.grime.scale);
-	                roofGrimeScaleRow.number.value = formatFloat(roofMatVarNormalized.grime.scale, 2);
-	                layerSection.body.appendChild(roofGrimeScaleRow.row);
+                const roofGrimeWidthRow = makeRangeRow('Width');
+                roofGrimeWidthRow.range.min = '0';
+                roofGrimeWidthRow.range.max = '1';
+                roofGrimeWidthRow.range.step = '0.01';
+                roofGrimeWidthRow.number.min = '0';
+                roofGrimeWidthRow.number.max = '1';
+                roofGrimeWidthRow.number.step = '0.01';
+                roofGrimeWidthRow.range.value = String(roofWearBottom?.width ?? 0.5);
+                roofGrimeWidthRow.number.value = formatFloat(roofWearBottom?.width ?? 0.5, 2);
+                layerSection.body.appendChild(roofGrimeWidthRow.row);
 
-	                const roofGrimeCornerRow = makeRangeRow('Corner strength');
-	                roofGrimeCornerRow.range.min = '0';
-	                roofGrimeCornerRow.range.max = '4';
-	                roofGrimeCornerRow.range.step = '0.01';
-	                roofGrimeCornerRow.number.min = '0';
-	                roofGrimeCornerRow.number.max = '4';
-	                roofGrimeCornerRow.number.step = '0.01';
-	                roofGrimeCornerRow.range.value = String(roofMatVarNormalized.grime.cornerStrength);
-	                roofGrimeCornerRow.number.value = formatFloat(roofMatVarNormalized.grime.cornerStrength, 2);
-	                layerSection.body.appendChild(roofGrimeCornerRow.row);
+                const roofGrimeScaleRow = makeRangeRow('Scale');
+                roofGrimeScaleRow.range.min = '0.01';
+                roofGrimeScaleRow.range.max = '50';
+                roofGrimeScaleRow.range.step = '0.01';
+                roofGrimeScaleRow.number.min = '0.01';
+                roofGrimeScaleRow.number.max = '50';
+                roofGrimeScaleRow.number.step = '0.01';
+                roofGrimeScaleRow.range.value = String(roofWearBottom?.scale ?? 1.0);
+                roofGrimeScaleRow.number.value = formatFloat(roofWearBottom?.scale ?? 1.0, 2);
+                layerSection.body.appendChild(roofGrimeScaleRow.row);
+
+                const roofGrimeHueRow = makeRangeRow('Hue shift (deg)');
+                roofGrimeHueRow.range.min = '-180';
+                roofGrimeHueRow.range.max = '180';
+                roofGrimeHueRow.range.step = '1';
+                roofGrimeHueRow.number.min = '-180';
+                roofGrimeHueRow.number.max = '180';
+                roofGrimeHueRow.number.step = '1';
+                roofGrimeHueRow.range.value = String(roofWearBottom?.hueDegrees ?? 0.0);
+                roofGrimeHueRow.number.value = String(Math.round(roofWearBottom?.hueDegrees ?? 0.0));
+                layerSection.body.appendChild(roofGrimeHueRow.row);
+
+                const roofGrimeValueRow = makeRangeRow('Value');
+                roofGrimeValueRow.range.min = '-4';
+                roofGrimeValueRow.range.max = '4';
+                roofGrimeValueRow.range.step = '0.01';
+                roofGrimeValueRow.number.min = '-4';
+                roofGrimeValueRow.number.max = '4';
+                roofGrimeValueRow.number.step = '0.01';
+                roofGrimeValueRow.range.value = String(roofWearBottom?.value ?? 0.0);
+                roofGrimeValueRow.number.value = formatFloat(roofWearBottom?.value ?? 0.0, 2);
+                layerSection.body.appendChild(roofGrimeValueRow.row);
+
+                const roofGrimeSaturationRow = makeRangeRow('Saturation');
+                roofGrimeSaturationRow.range.min = '-4';
+                roofGrimeSaturationRow.range.max = '4';
+                roofGrimeSaturationRow.range.step = '0.01';
+                roofGrimeSaturationRow.number.min = '-4';
+                roofGrimeSaturationRow.number.max = '4';
+                roofGrimeSaturationRow.number.step = '0.01';
+                roofGrimeSaturationRow.range.value = String(roofWearBottom?.saturation ?? 0.0);
+                roofGrimeSaturationRow.number.value = formatFloat(roofWearBottom?.saturation ?? 0.0, 2);
+                layerSection.body.appendChild(roofGrimeSaturationRow.row);
+
+                const roofGrimeRoughnessRow = makeRangeRow('Roughness');
+                roofGrimeRoughnessRow.range.min = '-4';
+                roofGrimeRoughnessRow.range.max = '4';
+                roofGrimeRoughnessRow.range.step = '0.01';
+                roofGrimeRoughnessRow.number.min = '-4';
+                roofGrimeRoughnessRow.number.max = '4';
+                roofGrimeRoughnessRow.number.step = '0.01';
+                roofGrimeRoughnessRow.range.value = String(roofWearBottom?.roughness ?? 0.0);
+                roofGrimeRoughnessRow.number.value = formatFloat(roofWearBottom?.roughness ?? 0.0, 2);
+                layerSection.body.appendChild(roofGrimeRoughnessRow.row);
+
+                const roofGrimeNormalRow = makeRangeRow('Normal');
+                roofGrimeNormalRow.range.min = '-2';
+                roofGrimeNormalRow.range.max = '2';
+                roofGrimeNormalRow.range.step = '0.01';
+                roofGrimeNormalRow.number.min = '-2';
+                roofGrimeNormalRow.number.max = '2';
+                roofGrimeNormalRow.number.step = '0.01';
+                roofGrimeNormalRow.range.value = String(roofWearBottom?.normal ?? 0.0);
+                roofGrimeNormalRow.number.value = formatFloat(roofWearBottom?.normal ?? 0.0, 2);
+                layerSection.body.appendChild(roofGrimeNormalRow.row);
 
                 appendRoofSectionLabel('Streaks');
                 const roofStreaksToggle = makeToggleRow('Enable streaks');
@@ -5001,20 +6159,20 @@ export class BuildingFabricationUI {
                 layerSection.body.appendChild(roofStreaksToggle.toggle);
                 const roofStreakStrengthRow = makeRangeRow('Strength');
                 roofStreakStrengthRow.range.min = '0';
-                roofStreakStrengthRow.range.max = '4';
+                roofStreakStrengthRow.range.max = '12';
                 roofStreakStrengthRow.range.step = '0.01';
                 roofStreakStrengthRow.number.min = '0';
-                roofStreakStrengthRow.number.max = '4';
+                roofStreakStrengthRow.number.max = '12';
                 roofStreakStrengthRow.number.step = '0.01';
                 roofStreakStrengthRow.range.value = String(roofMatVarNormalized.streaks.strength);
                 roofStreakStrengthRow.number.value = formatFloat(roofMatVarNormalized.streaks.strength, 2);
                 layerSection.body.appendChild(roofStreakStrengthRow.row);
                 const roofStreakScaleRow = makeRangeRow('Scale');
-                roofStreakScaleRow.range.min = '0.05';
-                roofStreakScaleRow.range.max = '10';
+                roofStreakScaleRow.range.min = '0.01';
+                roofStreakScaleRow.range.max = '50';
                 roofStreakScaleRow.range.step = '0.01';
-                roofStreakScaleRow.number.min = '0.05';
-                roofStreakScaleRow.number.max = '10';
+                roofStreakScaleRow.number.min = '0.01';
+                roofStreakScaleRow.number.max = '50';
                 roofStreakScaleRow.number.step = '0.01';
                 roofStreakScaleRow.range.value = String(roofMatVarNormalized.streaks.scale);
                 roofStreakScaleRow.number.value = formatFloat(roofMatVarNormalized.streaks.scale, 2);
@@ -5022,10 +6180,10 @@ export class BuildingFabricationUI {
 
                 const roofStreakLedgeStrengthRow = makeRangeRow('Ledge strength');
                 roofStreakLedgeStrengthRow.range.min = '0';
-                roofStreakLedgeStrengthRow.range.max = '4';
+                roofStreakLedgeStrengthRow.range.max = '12';
                 roofStreakLedgeStrengthRow.range.step = '0.01';
                 roofStreakLedgeStrengthRow.number.min = '0';
-                roofStreakLedgeStrengthRow.number.max = '4';
+                roofStreakLedgeStrengthRow.number.max = '12';
                 roofStreakLedgeStrengthRow.number.step = '0.01';
                 roofStreakLedgeStrengthRow.range.value = String(roofMatVarNormalized.streaks.ledgeStrength);
                 roofStreakLedgeStrengthRow.number.value = formatFloat(roofMatVarNormalized.streaks.ledgeStrength, 2);
@@ -5042,103 +6200,182 @@ export class BuildingFabricationUI {
                 roofStreakLedgeScaleRow.number.value = formatFloat(roofMatVarNormalized.streaks.ledgeScale, 1);
                 layerSection.body.appendChild(roofStreakLedgeScaleRow.row);
 
-                appendRoofSectionLabel('Edge wear');
-                const roofEdgeToggle = makeToggleRow('Enable edge wear');
-                roofEdgeToggle.input.checked = !!roofMatVarNormalized.edgeWear.enabled;
+                const roofStreakHueRow = makeRangeRow('Hue shift (deg)');
+                roofStreakHueRow.range.min = '-180';
+                roofStreakHueRow.range.max = '180';
+                roofStreakHueRow.range.step = '1';
+                roofStreakHueRow.number.min = '-180';
+                roofStreakHueRow.number.max = '180';
+                roofStreakHueRow.number.step = '1';
+                roofStreakHueRow.range.value = String(roofMatVarNormalized.streaks.hueDegrees);
+                roofStreakHueRow.number.value = String(Math.round(roofMatVarNormalized.streaks.hueDegrees));
+                layerSection.body.appendChild(roofStreakHueRow.row);
+
+                const roofStreakValueRow = makeRangeRow('Value');
+                roofStreakValueRow.range.min = '-4';
+                roofStreakValueRow.range.max = '4';
+                roofStreakValueRow.range.step = '0.01';
+                roofStreakValueRow.number.min = '-4';
+                roofStreakValueRow.number.max = '4';
+                roofStreakValueRow.number.step = '0.01';
+                roofStreakValueRow.range.value = String(roofMatVarNormalized.streaks.value ?? 0.0);
+                roofStreakValueRow.number.value = formatFloat(roofMatVarNormalized.streaks.value ?? 0.0, 2);
+                layerSection.body.appendChild(roofStreakValueRow.row);
+
+                const roofStreakSaturationRow = makeRangeRow('Saturation');
+                roofStreakSaturationRow.range.min = '-4';
+                roofStreakSaturationRow.range.max = '4';
+                roofStreakSaturationRow.range.step = '0.01';
+                roofStreakSaturationRow.number.min = '-4';
+                roofStreakSaturationRow.number.max = '4';
+                roofStreakSaturationRow.number.step = '0.01';
+                roofStreakSaturationRow.range.value = String(roofMatVarNormalized.streaks.saturation ?? 0.0);
+                roofStreakSaturationRow.number.value = formatFloat(roofMatVarNormalized.streaks.saturation ?? 0.0, 2);
+                layerSection.body.appendChild(roofStreakSaturationRow.row);
+
+                const roofStreakRoughnessRow = makeRangeRow('Roughness');
+                roofStreakRoughnessRow.range.min = '-4';
+                roofStreakRoughnessRow.range.max = '4';
+                roofStreakRoughnessRow.range.step = '0.01';
+                roofStreakRoughnessRow.number.min = '-4';
+                roofStreakRoughnessRow.number.max = '4';
+                roofStreakRoughnessRow.number.step = '0.01';
+                roofStreakRoughnessRow.range.value = String(roofMatVarNormalized.streaks.roughness ?? 0.0);
+                roofStreakRoughnessRow.number.value = formatFloat(roofMatVarNormalized.streaks.roughness ?? 0.0, 2);
+                layerSection.body.appendChild(roofStreakRoughnessRow.row);
+
+                const roofStreakNormalRow = makeRangeRow('Normal');
+                roofStreakNormalRow.range.min = '-2';
+                roofStreakNormalRow.range.max = '2';
+                roofStreakNormalRow.range.step = '0.01';
+                roofStreakNormalRow.number.min = '-2';
+                roofStreakNormalRow.number.max = '2';
+                roofStreakNormalRow.number.step = '0.01';
+                roofStreakNormalRow.range.value = String(roofMatVarNormalized.streaks.normal ?? 0.0);
+                roofStreakNormalRow.number.value = formatFloat(roofMatVarNormalized.streaks.normal ?? 0.0, 2);
+                layerSection.body.appendChild(roofStreakNormalRow.row);
+
+                const roofWearSide = roofMatVarNormalized.wearSide ?? null;
+                appendRoofSectionLabel('Side wear (vertical edges)');
+                const roofEdgeToggle = makeToggleRow('Enable side wear');
+                roofEdgeToggle.input.checked = !!roofWearSide?.enabled;
                 roofEdgeToggle.input.disabled = !allow || !roofMatVarNormalized.enabled;
                 layerSection.body.appendChild(roofEdgeToggle.toggle);
                 const roofEdgeStrengthRow = makeRangeRow('Strength');
                 roofEdgeStrengthRow.range.min = '0';
-                roofEdgeStrengthRow.range.max = '4';
+                roofEdgeStrengthRow.range.max = '20';
                 roofEdgeStrengthRow.range.step = '0.01';
                 roofEdgeStrengthRow.number.min = '0';
-                roofEdgeStrengthRow.number.max = '4';
+                roofEdgeStrengthRow.number.max = '20';
                 roofEdgeStrengthRow.number.step = '0.01';
-                roofEdgeStrengthRow.range.value = String(roofMatVarNormalized.edgeWear.strength);
-                roofEdgeStrengthRow.number.value = formatFloat(roofMatVarNormalized.edgeWear.strength, 2);
+                roofEdgeStrengthRow.range.value = String(roofWearSide?.intensity ?? 0.0);
+                roofEdgeStrengthRow.number.value = formatFloat(roofWearSide?.intensity ?? 0.0, 2);
                 layerSection.body.appendChild(roofEdgeStrengthRow.row);
 
                 const roofEdgeWidthRow = makeRangeRow('Width');
                 roofEdgeWidthRow.range.min = '0';
-                roofEdgeWidthRow.range.max = '0.5';
+                roofEdgeWidthRow.range.max = '4';
                 roofEdgeWidthRow.range.step = '0.01';
                 roofEdgeWidthRow.number.min = '0';
-                roofEdgeWidthRow.number.max = '0.5';
+                roofEdgeWidthRow.number.max = '4';
                 roofEdgeWidthRow.number.step = '0.01';
-                roofEdgeWidthRow.range.value = String(roofMatVarNormalized.edgeWear.width);
-                roofEdgeWidthRow.number.value = formatFloat(roofMatVarNormalized.edgeWear.width, 2);
+                roofEdgeWidthRow.range.value = String(roofWearSide?.width ?? 1.0);
+                roofEdgeWidthRow.number.value = formatFloat(roofWearSide?.width ?? 1.0, 2);
                 layerSection.body.appendChild(roofEdgeWidthRow.row);
 
-                const roofEdgeNoiseRow = makeRangeRow('Noise warp');
-                roofEdgeNoiseRow.range.min = '0';
-                roofEdgeNoiseRow.range.max = '10';
-                roofEdgeNoiseRow.range.step = '0.01';
-                roofEdgeNoiseRow.number.min = '0';
-                roofEdgeNoiseRow.number.max = '10';
-                roofEdgeNoiseRow.number.step = '0.01';
-                roofEdgeNoiseRow.range.value = String(roofMatVarNormalized.edgeWear.noiseWarp);
-                roofEdgeNoiseRow.number.value = formatFloat(roofMatVarNormalized.edgeWear.noiseWarp, 2);
-                layerSection.body.appendChild(roofEdgeNoiseRow.row);
+                const roofEdgeScaleRow = makeRangeRow('Scale');
+                roofEdgeScaleRow.range.min = '0.01';
+                roofEdgeScaleRow.range.max = '50';
+                roofEdgeScaleRow.range.step = '0.01';
+                roofEdgeScaleRow.number.min = '0.01';
+                roofEdgeScaleRow.number.max = '50';
+                roofEdgeScaleRow.number.step = '0.01';
+                roofEdgeScaleRow.range.value = String(roofWearSide?.scale ?? 1.0);
+                roofEdgeScaleRow.number.value = formatFloat(roofWearSide?.scale ?? 1.0, 2);
+                layerSection.body.appendChild(roofEdgeScaleRow.row);
 
-                const roofEdgeHorizRow = makeRangeRow('Horizontal edges');
-                roofEdgeHorizRow.range.min = '0';
-                roofEdgeHorizRow.range.max = '4';
-                roofEdgeHorizRow.range.step = '0.01';
-                roofEdgeHorizRow.number.min = '0';
-                roofEdgeHorizRow.number.max = '4';
-                roofEdgeHorizRow.number.step = '0.01';
-                roofEdgeHorizRow.range.value = String(roofMatVarNormalized.edgeWear.horizontalStrength);
-                roofEdgeHorizRow.number.value = formatFloat(roofMatVarNormalized.edgeWear.horizontalStrength, 2);
-                layerSection.body.appendChild(roofEdgeHorizRow.row);
+                const roofEdgeHueRow = makeRangeRow('Hue shift (deg)');
+                roofEdgeHueRow.range.min = '-180';
+                roofEdgeHueRow.range.max = '180';
+                roofEdgeHueRow.range.step = '1';
+                roofEdgeHueRow.number.min = '-180';
+                roofEdgeHueRow.number.max = '180';
+                roofEdgeHueRow.number.step = '1';
+                roofEdgeHueRow.range.value = String(roofWearSide?.hueDegrees ?? 0.0);
+                roofEdgeHueRow.number.value = String(Math.round(roofWearSide?.hueDegrees ?? 0.0));
+                layerSection.body.appendChild(roofEdgeHueRow.row);
 
-                const roofEdgeVertRow = makeRangeRow('Vertical edges');
-                roofEdgeVertRow.range.min = '0';
-                roofEdgeVertRow.range.max = '4';
-                roofEdgeVertRow.range.step = '0.01';
-                roofEdgeVertRow.number.min = '0';
-                roofEdgeVertRow.number.max = '4';
-                roofEdgeVertRow.number.step = '0.01';
-                roofEdgeVertRow.range.value = String(roofMatVarNormalized.edgeWear.verticalStrength);
-                roofEdgeVertRow.number.value = formatFloat(roofMatVarNormalized.edgeWear.verticalStrength, 2);
-                layerSection.body.appendChild(roofEdgeVertRow.row);
+                const roofEdgeValueRow = makeRangeRow('Value');
+                roofEdgeValueRow.range.min = '-4';
+                roofEdgeValueRow.range.max = '4';
+                roofEdgeValueRow.range.step = '0.01';
+                roofEdgeValueRow.number.min = '-4';
+                roofEdgeValueRow.number.max = '4';
+                roofEdgeValueRow.number.step = '0.01';
+                roofEdgeValueRow.range.value = String(roofWearSide?.value ?? 0.0);
+                roofEdgeValueRow.number.value = formatFloat(roofWearSide?.value ?? 0.0, 2);
+                layerSection.body.appendChild(roofEdgeValueRow.row);
 
-                const roofEdgeColorRow = makeRangeRow('Color bias');
-                roofEdgeColorRow.range.min = '-2';
-                roofEdgeColorRow.range.max = '2';
-                roofEdgeColorRow.range.step = '0.01';
-                roofEdgeColorRow.number.min = '-2';
-                roofEdgeColorRow.number.max = '2';
-                roofEdgeColorRow.number.step = '0.01';
-                roofEdgeColorRow.range.value = String(roofMatVarNormalized.edgeWear.color);
-                roofEdgeColorRow.number.value = formatFloat(roofMatVarNormalized.edgeWear.color, 2);
-                layerSection.body.appendChild(roofEdgeColorRow.row);
+                const roofEdgeSaturationRow = makeRangeRow('Saturation');
+                roofEdgeSaturationRow.range.min = '-4';
+                roofEdgeSaturationRow.range.max = '4';
+                roofEdgeSaturationRow.range.step = '0.01';
+                roofEdgeSaturationRow.number.min = '-4';
+                roofEdgeSaturationRow.number.max = '4';
+                roofEdgeSaturationRow.number.step = '0.01';
+                roofEdgeSaturationRow.range.value = String(roofWearSide?.saturation ?? 0.0);
+                roofEdgeSaturationRow.number.value = formatFloat(roofWearSide?.saturation ?? 0.0, 2);
+                layerSection.body.appendChild(roofEdgeSaturationRow.row);
 
-                const roofEdgeRoughRow = makeRangeRow('Roughness bias');
-                roofEdgeRoughRow.range.min = '-2';
-                roofEdgeRoughRow.range.max = '2';
-                roofEdgeRoughRow.range.step = '0.01';
-                roofEdgeRoughRow.number.min = '-2';
-                roofEdgeRoughRow.number.max = '2';
-                roofEdgeRoughRow.number.step = '0.01';
-                roofEdgeRoughRow.range.value = String(roofMatVarNormalized.edgeWear.roughness);
-                roofEdgeRoughRow.number.value = formatFloat(roofMatVarNormalized.edgeWear.roughness, 2);
-                layerSection.body.appendChild(roofEdgeRoughRow.row);
+                const roofEdgeRoughnessRow = makeRangeRow('Roughness');
+                roofEdgeRoughnessRow.range.min = '-4';
+                roofEdgeRoughnessRow.range.max = '4';
+                roofEdgeRoughnessRow.range.step = '0.01';
+                roofEdgeRoughnessRow.number.min = '-4';
+                roofEdgeRoughnessRow.number.max = '4';
+                roofEdgeRoughnessRow.number.step = '0.01';
+                roofEdgeRoughnessRow.range.value = String(roofWearSide?.roughness ?? 0.0);
+                roofEdgeRoughnessRow.number.value = formatFloat(roofWearSide?.roughness ?? 0.0, 2);
+                layerSection.body.appendChild(roofEdgeRoughnessRow.row);
 
-                appendRoofSectionLabel('Dust');
-                const roofDustToggle = makeToggleRow('Enable dust');
-                roofDustToggle.input.checked = !!roofMatVarNormalized.dust.enabled;
+                const roofEdgeNormalRow = makeRangeRow('Normal');
+                roofEdgeNormalRow.range.min = '-2';
+                roofEdgeNormalRow.range.max = '2';
+                roofEdgeNormalRow.range.step = '0.01';
+                roofEdgeNormalRow.number.min = '-2';
+                roofEdgeNormalRow.number.max = '2';
+                roofEdgeNormalRow.number.step = '0.01';
+                roofEdgeNormalRow.range.value = String(roofWearSide?.normal ?? 0.0);
+                roofEdgeNormalRow.number.value = formatFloat(roofWearSide?.normal ?? 0.0, 2);
+                layerSection.body.appendChild(roofEdgeNormalRow.row);
+
+                const roofWearTop = roofMatVarNormalized.wearTop ?? null;
+                appendRoofSectionLabel('Top wear');
+                const roofDustToggle = makeToggleRow('Enable top wear');
+                roofDustToggle.input.checked = !!roofWearTop?.enabled;
                 roofDustToggle.input.disabled = !allow || !roofMatVarNormalized.enabled;
                 layerSection.body.appendChild(roofDustToggle.toggle);
                 const roofDustStrengthRow = makeRangeRow('Strength');
                 roofDustStrengthRow.range.min = '0';
-                roofDustStrengthRow.range.max = '4';
+                roofDustStrengthRow.range.max = '20';
                 roofDustStrengthRow.range.step = '0.01';
                 roofDustStrengthRow.number.min = '0';
-                roofDustStrengthRow.number.max = '4';
+                roofDustStrengthRow.number.max = '20';
                 roofDustStrengthRow.number.step = '0.01';
-                roofDustStrengthRow.range.value = String(roofMatVarNormalized.dust.strength);
-                roofDustStrengthRow.number.value = formatFloat(roofMatVarNormalized.dust.strength, 2);
+                roofDustStrengthRow.range.value = String(roofWearTop?.intensity ?? 0.0);
+                roofDustStrengthRow.number.value = formatFloat(roofWearTop?.intensity ?? 0.0, 2);
                 layerSection.body.appendChild(roofDustStrengthRow.row);
+
+                const roofDustWidthRow = makeRangeRow('Width');
+                roofDustWidthRow.range.min = '0';
+                roofDustWidthRow.range.max = '1';
+                roofDustWidthRow.range.step = '0.01';
+                roofDustWidthRow.number.min = '0';
+                roofDustWidthRow.number.max = '1';
+                roofDustWidthRow.number.step = '0.01';
+                roofDustWidthRow.range.value = String(roofWearTop?.width ?? 0.4);
+                roofDustWidthRow.number.value = formatFloat(roofWearTop?.width ?? 0.4, 2);
+                layerSection.body.appendChild(roofDustWidthRow.row);
 
                 const roofDustScaleRow = makeRangeRow('Scale');
                 roofDustScaleRow.range.min = '0.01';
@@ -5147,31 +6384,64 @@ export class BuildingFabricationUI {
                 roofDustScaleRow.number.min = '0.01';
                 roofDustScaleRow.number.max = '50';
                 roofDustScaleRow.number.step = '0.01';
-                roofDustScaleRow.range.value = String(roofMatVarNormalized.dust.scale);
-                roofDustScaleRow.number.value = formatFloat(roofMatVarNormalized.dust.scale, 2);
+                roofDustScaleRow.range.value = String(roofWearTop?.scale ?? 1.0);
+                roofDustScaleRow.number.value = formatFloat(roofWearTop?.scale ?? 1.0, 2);
                 layerSection.body.appendChild(roofDustScaleRow.row);
 
-                const roofDustHeightMinRow = makeRangeRow('Height min');
-                roofDustHeightMinRow.range.min = '0';
-                roofDustHeightMinRow.range.max = '1';
-                roofDustHeightMinRow.range.step = '0.01';
-                roofDustHeightMinRow.number.min = '0';
-                roofDustHeightMinRow.number.max = '1';
-                roofDustHeightMinRow.number.step = '0.01';
-                roofDustHeightMinRow.range.value = String(roofMatVarNormalized.dust.heightBand.min);
-                roofDustHeightMinRow.number.value = formatFloat(roofMatVarNormalized.dust.heightBand.min, 2);
-                layerSection.body.appendChild(roofDustHeightMinRow.row);
+                const roofDustHueRow = makeRangeRow('Hue shift (deg)');
+                roofDustHueRow.range.min = '-180';
+                roofDustHueRow.range.max = '180';
+                roofDustHueRow.range.step = '1';
+                roofDustHueRow.number.min = '-180';
+                roofDustHueRow.number.max = '180';
+                roofDustHueRow.number.step = '1';
+                roofDustHueRow.range.value = String(roofWearTop?.hueDegrees ?? 0.0);
+                roofDustHueRow.number.value = String(Math.round(roofWearTop?.hueDegrees ?? 0.0));
+                layerSection.body.appendChild(roofDustHueRow.row);
 
-                const roofDustHeightMaxRow = makeRangeRow('Height max');
-                roofDustHeightMaxRow.range.min = '0';
-                roofDustHeightMaxRow.range.max = '1';
-                roofDustHeightMaxRow.range.step = '0.01';
-                roofDustHeightMaxRow.number.min = '0';
-                roofDustHeightMaxRow.number.max = '1';
-                roofDustHeightMaxRow.number.step = '0.01';
-                roofDustHeightMaxRow.range.value = String(roofMatVarNormalized.dust.heightBand.max);
-                roofDustHeightMaxRow.number.value = formatFloat(roofMatVarNormalized.dust.heightBand.max, 2);
-                layerSection.body.appendChild(roofDustHeightMaxRow.row);
+                const roofDustValueRow = makeRangeRow('Value');
+                roofDustValueRow.range.min = '-4';
+                roofDustValueRow.range.max = '4';
+                roofDustValueRow.range.step = '0.01';
+                roofDustValueRow.number.min = '-4';
+                roofDustValueRow.number.max = '4';
+                roofDustValueRow.number.step = '0.01';
+                roofDustValueRow.range.value = String(roofWearTop?.value ?? 0.0);
+                roofDustValueRow.number.value = formatFloat(roofWearTop?.value ?? 0.0, 2);
+                layerSection.body.appendChild(roofDustValueRow.row);
+
+                const roofDustSaturationRow = makeRangeRow('Saturation');
+                roofDustSaturationRow.range.min = '-4';
+                roofDustSaturationRow.range.max = '4';
+                roofDustSaturationRow.range.step = '0.01';
+                roofDustSaturationRow.number.min = '-4';
+                roofDustSaturationRow.number.max = '4';
+                roofDustSaturationRow.number.step = '0.01';
+                roofDustSaturationRow.range.value = String(roofWearTop?.saturation ?? 0.0);
+                roofDustSaturationRow.number.value = formatFloat(roofWearTop?.saturation ?? 0.0, 2);
+                layerSection.body.appendChild(roofDustSaturationRow.row);
+
+                const roofDustRoughnessRow = makeRangeRow('Roughness');
+                roofDustRoughnessRow.range.min = '-4';
+                roofDustRoughnessRow.range.max = '4';
+                roofDustRoughnessRow.range.step = '0.01';
+                roofDustRoughnessRow.number.min = '-4';
+                roofDustRoughnessRow.number.max = '4';
+                roofDustRoughnessRow.number.step = '0.01';
+                roofDustRoughnessRow.range.value = String(roofWearTop?.roughness ?? 0.0);
+                roofDustRoughnessRow.number.value = formatFloat(roofWearTop?.roughness ?? 0.0, 2);
+                layerSection.body.appendChild(roofDustRoughnessRow.row);
+
+                const roofDustNormalRow = makeRangeRow('Normal');
+                roofDustNormalRow.range.min = '-2';
+                roofDustNormalRow.range.max = '2';
+                roofDustNormalRow.range.step = '0.01';
+                roofDustNormalRow.number.min = '-2';
+                roofDustNormalRow.number.max = '2';
+                roofDustNormalRow.number.step = '0.01';
+                roofDustNormalRow.range.value = String(roofWearTop?.normal ?? 0.0);
+                roofDustNormalRow.number.value = formatFloat(roofWearTop?.normal ?? 0.0, 2);
+                layerSection.body.appendChild(roofDustNormalRow.row);
 
                 appendRoofSectionLabel('Anti-tiling');
                 const roofAntiToggle = makeToggleRow('Enable anti-tiling');
@@ -5180,10 +6450,10 @@ export class BuildingFabricationUI {
                 layerSection.body.appendChild(roofAntiToggle.toggle);
                 const roofAntiStrengthRow = makeRangeRow('Strength');
                 roofAntiStrengthRow.range.min = '0';
-                roofAntiStrengthRow.range.max = '4';
+                roofAntiStrengthRow.range.max = '12';
                 roofAntiStrengthRow.range.step = '0.01';
                 roofAntiStrengthRow.number.min = '0';
-                roofAntiStrengthRow.number.max = '4';
+                roofAntiStrengthRow.number.max = '12';
                 roofAntiStrengthRow.number.step = '0.01';
                 roofAntiStrengthRow.range.value = String(roofMatVarNormalized.antiTiling.strength);
                 roofAntiStrengthRow.number.value = formatFloat(roofMatVarNormalized.antiTiling.strength, 2);
@@ -5212,22 +6482,22 @@ export class BuildingFabricationUI {
                 layerSection.body.appendChild(roofAntiBlendRow.row);
 
                 const roofAntiOffsetURow = makeRangeRow('U shift');
-                roofAntiOffsetURow.range.min = '-1';
-                roofAntiOffsetURow.range.max = '1';
+                roofAntiOffsetURow.range.min = '-4';
+                roofAntiOffsetURow.range.max = '4';
                 roofAntiOffsetURow.range.step = '0.01';
-                roofAntiOffsetURow.number.min = '-1';
-                roofAntiOffsetURow.number.max = '1';
+                roofAntiOffsetURow.number.min = '-4';
+                roofAntiOffsetURow.number.max = '4';
                 roofAntiOffsetURow.number.step = '0.01';
                 roofAntiOffsetURow.range.value = String(roofMatVarNormalized.antiTiling.offsetU);
                 roofAntiOffsetURow.number.value = formatFloat(roofMatVarNormalized.antiTiling.offsetU, 2);
                 layerSection.body.appendChild(roofAntiOffsetURow.row);
 
                 const roofAntiOffsetVRow = makeRangeRow('V shift');
-                roofAntiOffsetVRow.range.min = '-1';
-                roofAntiOffsetVRow.range.max = '1';
+                roofAntiOffsetVRow.range.min = '-4';
+                roofAntiOffsetVRow.range.max = '4';
                 roofAntiOffsetVRow.range.step = '0.01';
-                roofAntiOffsetVRow.number.min = '-1';
-                roofAntiOffsetVRow.number.max = '1';
+                roofAntiOffsetVRow.number.min = '-4';
+                roofAntiOffsetVRow.number.max = '4';
                 roofAntiOffsetVRow.number.step = '0.01';
                 roofAntiOffsetVRow.range.value = String(roofMatVarNormalized.antiTiling.offsetV);
                 roofAntiOffsetVRow.number.value = formatFloat(roofMatVarNormalized.antiTiling.offsetV, 2);
@@ -5257,10 +6527,10 @@ export class BuildingFabricationUI {
 
                 const roofStairStrengthRow = makeRangeRow('Strength');
                 roofStairStrengthRow.range.min = '0';
-                roofStairStrengthRow.range.max = '4';
+                roofStairStrengthRow.range.max = '12';
                 roofStairStrengthRow.range.step = '0.01';
                 roofStairStrengthRow.number.min = '0';
-                roofStairStrengthRow.number.max = '4';
+                roofStairStrengthRow.number.max = '12';
                 roofStairStrengthRow.number.step = '0.01';
                 roofStairStrengthRow.range.value = String(roofMatVarNormalized.stairShift.strength);
                 roofStairStrengthRow.number.value = formatFloat(roofMatVarNormalized.stairShift.strength, 2);
@@ -5278,11 +6548,11 @@ export class BuildingFabricationUI {
                 layerSection.body.appendChild(roofStairStepRow.row);
 
                 const roofStairShiftRow = makeRangeRow('Shift per step');
-                roofStairShiftRow.range.min = '-1';
-                roofStairShiftRow.range.max = '1';
+                roofStairShiftRow.range.min = '-4';
+                roofStairShiftRow.range.max = '4';
                 roofStairShiftRow.range.step = '0.01';
-                roofStairShiftRow.number.min = '-1';
-                roofStairShiftRow.number.max = '1';
+                roofStairShiftRow.number.min = '-4';
+                roofStairShiftRow.number.max = '4';
                 roofStairShiftRow.number.step = '0.01';
                 roofStairShiftRow.range.value = String(roofMatVarNormalized.stairShift.shift);
                 roofStairShiftRow.number.value = formatFloat(roofMatVarNormalized.stairShift.shift, 2);
@@ -5306,20 +6576,21 @@ export class BuildingFabricationUI {
                 roofStairDirRow.appendChild(roofStairDirSelect);
                 layerSection.body.appendChild(roofStairDirRow);
 
-                appendRoofSectionLabel('Detail');
-                const roofDetailToggle = makeToggleRow('Enable detail');
-                roofDetailToggle.input.checked = !!roofMatVarNormalized.detail.enabled;
+                const roofMacro1 = roofMatVarNormalized.macroLayers?.[1] ?? null;
+                appendRoofSectionLabel('Macro layer 2');
+                const roofDetailToggle = makeToggleRow('Enable macro layer 2');
+                roofDetailToggle.input.checked = !!roofMacro1?.enabled;
                 roofDetailToggle.input.disabled = !allow || !roofMatVarNormalized.enabled;
                 layerSection.body.appendChild(roofDetailToggle.toggle);
-                const roofDetailStrengthRow = makeRangeRow('Strength');
+                const roofDetailStrengthRow = makeRangeRow('Intensity');
                 roofDetailStrengthRow.range.min = '0';
-                roofDetailStrengthRow.range.max = '4';
+                roofDetailStrengthRow.range.max = '20';
                 roofDetailStrengthRow.range.step = '0.01';
                 roofDetailStrengthRow.number.min = '0';
-                roofDetailStrengthRow.number.max = '4';
+                roofDetailStrengthRow.number.max = '20';
                 roofDetailStrengthRow.number.step = '0.01';
-                roofDetailStrengthRow.range.value = String(roofMatVarNormalized.detail.strength);
-                roofDetailStrengthRow.number.value = formatFloat(roofMatVarNormalized.detail.strength, 2);
+                roofDetailStrengthRow.range.value = String(roofMacro1?.intensity ?? 0.0);
+                roofDetailStrengthRow.number.value = formatFloat(roofMacro1?.intensity ?? 0.0, 2);
                 layerSection.body.appendChild(roofDetailStrengthRow.row);
 
                 const roofDetailScaleRow = makeRangeRow('Scale');
@@ -5329,8 +6600,8 @@ export class BuildingFabricationUI {
                 roofDetailScaleRow.number.min = '0.01';
                 roofDetailScaleRow.number.max = '80';
                 roofDetailScaleRow.number.step = '0.01';
-                roofDetailScaleRow.range.value = String(roofMatVarNormalized.detail.scale);
-                roofDetailScaleRow.number.value = formatFloat(roofMatVarNormalized.detail.scale, 2);
+                roofDetailScaleRow.range.value = String(roofMacro1?.scale ?? 1.0);
+                roofDetailScaleRow.number.value = formatFloat(roofMacro1?.scale ?? 1.0, 2);
                 layerSection.body.appendChild(roofDetailScaleRow.row);
 
                 const roofDetailHueRow = makeRangeRow('Hue shift (deg)');
@@ -5340,24 +6611,153 @@ export class BuildingFabricationUI {
                 roofDetailHueRow.number.min = '-180';
                 roofDetailHueRow.number.max = '180';
                 roofDetailHueRow.number.step = '1';
-                roofDetailHueRow.range.value = String(roofMatVarNormalized.detail.hueDegrees);
-                roofDetailHueRow.number.value = String(Math.round(roofMatVarNormalized.detail.hueDegrees));
+                roofDetailHueRow.range.value = String(roofMacro1?.hueDegrees ?? 0.0);
+                roofDetailHueRow.number.value = String(Math.round(roofMacro1?.hueDegrees ?? 0.0));
                 layerSection.body.appendChild(roofDetailHueRow.row);
 
+                const roofDetailValueRow = makeRangeRow('Value');
+                roofDetailValueRow.range.min = '-4';
+                roofDetailValueRow.range.max = '4';
+                roofDetailValueRow.range.step = '0.01';
+                roofDetailValueRow.number.min = '-4';
+                roofDetailValueRow.number.max = '4';
+                roofDetailValueRow.number.step = '0.01';
+                roofDetailValueRow.range.value = String(roofMacro1?.value ?? 0.0);
+                roofDetailValueRow.number.value = formatFloat(roofMacro1?.value ?? 0.0, 2);
+                layerSection.body.appendChild(roofDetailValueRow.row);
+
+                const roofDetailSaturationRow = makeRangeRow('Saturation');
+                roofDetailSaturationRow.range.min = '-4';
+                roofDetailSaturationRow.range.max = '4';
+                roofDetailSaturationRow.range.step = '0.01';
+                roofDetailSaturationRow.number.min = '-4';
+                roofDetailSaturationRow.number.max = '4';
+                roofDetailSaturationRow.number.step = '0.01';
+                roofDetailSaturationRow.range.value = String(roofMacro1?.saturation ?? 0.0);
+                roofDetailSaturationRow.number.value = formatFloat(roofMacro1?.saturation ?? 0.0, 2);
+                layerSection.body.appendChild(roofDetailSaturationRow.row);
+
+                const roofDetailRoughnessRow = makeRangeRow('Roughness');
+                roofDetailRoughnessRow.range.min = '-4';
+                roofDetailRoughnessRow.range.max = '4';
+                roofDetailRoughnessRow.range.step = '0.01';
+                roofDetailRoughnessRow.number.min = '-4';
+                roofDetailRoughnessRow.number.max = '4';
+                roofDetailRoughnessRow.number.step = '0.01';
+                roofDetailRoughnessRow.range.value = String(roofMacro1?.roughness ?? 0.0);
+                roofDetailRoughnessRow.number.value = formatFloat(roofMacro1?.roughness ?? 0.0, 2);
+                layerSection.body.appendChild(roofDetailRoughnessRow.row);
+
+                const roofDetailNormalRow = makeRangeRow('Normal');
+                roofDetailNormalRow.range.min = '-2';
+                roofDetailNormalRow.range.max = '2';
+                roofDetailNormalRow.range.step = '0.01';
+                roofDetailNormalRow.number.min = '-2';
+                roofDetailNormalRow.number.max = '2';
+                roofDetailNormalRow.number.step = '0.01';
+                roofDetailNormalRow.range.value = String(roofMacro1?.normal ?? 0.0);
+                roofDetailNormalRow.number.value = formatFloat(roofMacro1?.normal ?? 0.0, 2);
+                layerSection.body.appendChild(roofDetailNormalRow.row);
+
+                const roofMacro2 = roofMatVarNormalized.macroLayers?.[2] ?? null;
+                appendRoofSectionLabel('Macro layer 3');
+                const roofMacro2Toggle = makeToggleRow('Enable macro layer 3');
+                roofMacro2Toggle.input.checked = !!roofMacro2?.enabled;
+                roofMacro2Toggle.input.disabled = !allow || !roofMatVarNormalized.enabled;
+                layerSection.body.appendChild(roofMacro2Toggle.toggle);
+
+                const roofMacro2StrengthRow = makeRangeRow('Intensity');
+                roofMacro2StrengthRow.range.min = '0';
+                roofMacro2StrengthRow.range.max = '20';
+                roofMacro2StrengthRow.range.step = '0.01';
+                roofMacro2StrengthRow.number.min = '0';
+                roofMacro2StrengthRow.number.max = '20';
+                roofMacro2StrengthRow.number.step = '0.01';
+                roofMacro2StrengthRow.range.value = String(roofMacro2?.intensity ?? 0.0);
+                roofMacro2StrengthRow.number.value = formatFloat(roofMacro2?.intensity ?? 0.0, 2);
+                layerSection.body.appendChild(roofMacro2StrengthRow.row);
+
+                const roofMacro2ScaleRow = makeRangeRow('Scale');
+                roofMacro2ScaleRow.range.min = '0.01';
+                roofMacro2ScaleRow.range.max = '80';
+                roofMacro2ScaleRow.range.step = '0.01';
+                roofMacro2ScaleRow.number.min = '0.01';
+                roofMacro2ScaleRow.number.max = '80';
+                roofMacro2ScaleRow.number.step = '0.01';
+                roofMacro2ScaleRow.range.value = String(roofMacro2?.scale ?? 1.0);
+                roofMacro2ScaleRow.number.value = formatFloat(roofMacro2?.scale ?? 1.0, 2);
+                layerSection.body.appendChild(roofMacro2ScaleRow.row);
+
+                const roofMacro2HueRow = makeRangeRow('Hue shift (deg)');
+                roofMacro2HueRow.range.min = '-180';
+                roofMacro2HueRow.range.max = '180';
+                roofMacro2HueRow.range.step = '1';
+                roofMacro2HueRow.number.min = '-180';
+                roofMacro2HueRow.number.max = '180';
+                roofMacro2HueRow.number.step = '1';
+                roofMacro2HueRow.range.value = String(roofMacro2?.hueDegrees ?? 0.0);
+                roofMacro2HueRow.number.value = String(Math.round(roofMacro2?.hueDegrees ?? 0.0));
+                layerSection.body.appendChild(roofMacro2HueRow.row);
+
+                const roofMacro2ValueRow = makeRangeRow('Value');
+                roofMacro2ValueRow.range.min = '-4';
+                roofMacro2ValueRow.range.max = '4';
+                roofMacro2ValueRow.range.step = '0.01';
+                roofMacro2ValueRow.number.min = '-4';
+                roofMacro2ValueRow.number.max = '4';
+                roofMacro2ValueRow.number.step = '0.01';
+                roofMacro2ValueRow.range.value = String(roofMacro2?.value ?? 0.0);
+                roofMacro2ValueRow.number.value = formatFloat(roofMacro2?.value ?? 0.0, 2);
+                layerSection.body.appendChild(roofMacro2ValueRow.row);
+
+                const roofMacro2SaturationRow = makeRangeRow('Saturation');
+                roofMacro2SaturationRow.range.min = '-4';
+                roofMacro2SaturationRow.range.max = '4';
+                roofMacro2SaturationRow.range.step = '0.01';
+                roofMacro2SaturationRow.number.min = '-4';
+                roofMacro2SaturationRow.number.max = '4';
+                roofMacro2SaturationRow.number.step = '0.01';
+                roofMacro2SaturationRow.range.value = String(roofMacro2?.saturation ?? 0.0);
+                roofMacro2SaturationRow.number.value = formatFloat(roofMacro2?.saturation ?? 0.0, 2);
+                layerSection.body.appendChild(roofMacro2SaturationRow.row);
+
+                const roofMacro2RoughnessRow = makeRangeRow('Roughness');
+                roofMacro2RoughnessRow.range.min = '-4';
+                roofMacro2RoughnessRow.range.max = '4';
+                roofMacro2RoughnessRow.range.step = '0.01';
+                roofMacro2RoughnessRow.number.min = '-4';
+                roofMacro2RoughnessRow.number.max = '4';
+                roofMacro2RoughnessRow.number.step = '0.01';
+                roofMacro2RoughnessRow.range.value = String(roofMacro2?.roughness ?? 0.0);
+                roofMacro2RoughnessRow.number.value = formatFloat(roofMacro2?.roughness ?? 0.0, 2);
+                layerSection.body.appendChild(roofMacro2RoughnessRow.row);
+
+                const roofMacro2NormalRow = makeRangeRow('Normal');
+                roofMacro2NormalRow.range.min = '-2';
+                roofMacro2NormalRow.range.max = '2';
+                roofMacro2NormalRow.range.step = '0.01';
+                roofMacro2NormalRow.number.min = '-2';
+                roofMacro2NormalRow.number.max = '2';
+                roofMacro2NormalRow.number.step = '0.01';
+                roofMacro2NormalRow.range.value = String(roofMacro2?.normal ?? 0.0);
+                roofMacro2NormalRow.number.value = formatFloat(roofMacro2?.normal ?? 0.0, 2);
+                layerSection.body.appendChild(roofMacro2NormalRow.row);
+
+                const roofCracksLayer = roofMatVarNormalized.cracksLayer ?? null;
                 appendRoofSectionLabel('Cracks');
                 const roofCracksToggle = makeToggleRow('Enable cracks');
-                roofCracksToggle.input.checked = !!roofMatVarNormalized.cracks.enabled;
+                roofCracksToggle.input.checked = !!roofCracksLayer?.enabled;
                 roofCracksToggle.input.disabled = !allow || !roofMatVarNormalized.enabled;
                 layerSection.body.appendChild(roofCracksToggle.toggle);
                 const roofCrackStrengthRow = makeRangeRow('Strength');
                 roofCrackStrengthRow.range.min = '0';
-                roofCrackStrengthRow.range.max = '4';
+                roofCrackStrengthRow.range.max = '20';
                 roofCrackStrengthRow.range.step = '0.01';
                 roofCrackStrengthRow.number.min = '0';
-                roofCrackStrengthRow.number.max = '4';
+                roofCrackStrengthRow.number.max = '20';
                 roofCrackStrengthRow.number.step = '0.01';
-                roofCrackStrengthRow.range.value = String(roofMatVarNormalized.cracks.strength);
-                roofCrackStrengthRow.number.value = formatFloat(roofMatVarNormalized.cracks.strength, 2);
+                roofCrackStrengthRow.range.value = String(roofCracksLayer?.intensity ?? 0.0);
+                roofCrackStrengthRow.number.value = formatFloat(roofCracksLayer?.intensity ?? 0.0, 2);
                 layerSection.body.appendChild(roofCrackStrengthRow.row);
 
                 const roofCrackScaleRow = makeRangeRow('Scale');
@@ -5367,9 +6767,64 @@ export class BuildingFabricationUI {
                 roofCrackScaleRow.number.min = '0.01';
                 roofCrackScaleRow.number.max = '80';
                 roofCrackScaleRow.number.step = '0.01';
-                roofCrackScaleRow.range.value = String(roofMatVarNormalized.cracks.scale);
-                roofCrackScaleRow.number.value = formatFloat(roofMatVarNormalized.cracks.scale, 2);
+                roofCrackScaleRow.range.value = String(roofCracksLayer?.scale ?? 1.0);
+                roofCrackScaleRow.number.value = formatFloat(roofCracksLayer?.scale ?? 1.0, 2);
                 layerSection.body.appendChild(roofCrackScaleRow.row);
+
+                const roofCrackHueRow = makeRangeRow('Hue shift (deg)');
+                roofCrackHueRow.range.min = '-180';
+                roofCrackHueRow.range.max = '180';
+                roofCrackHueRow.range.step = '1';
+                roofCrackHueRow.number.min = '-180';
+                roofCrackHueRow.number.max = '180';
+                roofCrackHueRow.number.step = '1';
+                roofCrackHueRow.range.value = String(roofCracksLayer?.hueDegrees ?? 0.0);
+                roofCrackHueRow.number.value = String(Math.round(roofCracksLayer?.hueDegrees ?? 0.0));
+                layerSection.body.appendChild(roofCrackHueRow.row);
+
+                const roofCrackValueRow = makeRangeRow('Value');
+                roofCrackValueRow.range.min = '-4';
+                roofCrackValueRow.range.max = '4';
+                roofCrackValueRow.range.step = '0.01';
+                roofCrackValueRow.number.min = '-4';
+                roofCrackValueRow.number.max = '4';
+                roofCrackValueRow.number.step = '0.01';
+                roofCrackValueRow.range.value = String(roofCracksLayer?.value ?? 0.0);
+                roofCrackValueRow.number.value = formatFloat(roofCracksLayer?.value ?? 0.0, 2);
+                layerSection.body.appendChild(roofCrackValueRow.row);
+
+                const roofCrackSaturationRow = makeRangeRow('Saturation');
+                roofCrackSaturationRow.range.min = '-4';
+                roofCrackSaturationRow.range.max = '4';
+                roofCrackSaturationRow.range.step = '0.01';
+                roofCrackSaturationRow.number.min = '-4';
+                roofCrackSaturationRow.number.max = '4';
+                roofCrackSaturationRow.number.step = '0.01';
+                roofCrackSaturationRow.range.value = String(roofCracksLayer?.saturation ?? 0.0);
+                roofCrackSaturationRow.number.value = formatFloat(roofCracksLayer?.saturation ?? 0.0, 2);
+                layerSection.body.appendChild(roofCrackSaturationRow.row);
+
+                const roofCrackRoughnessRow = makeRangeRow('Roughness');
+                roofCrackRoughnessRow.range.min = '-4';
+                roofCrackRoughnessRow.range.max = '4';
+                roofCrackRoughnessRow.range.step = '0.01';
+                roofCrackRoughnessRow.number.min = '-4';
+                roofCrackRoughnessRow.number.max = '4';
+                roofCrackRoughnessRow.number.step = '0.01';
+                roofCrackRoughnessRow.range.value = String(roofCracksLayer?.roughness ?? 0.0);
+                roofCrackRoughnessRow.number.value = formatFloat(roofCracksLayer?.roughness ?? 0.0, 2);
+                layerSection.body.appendChild(roofCrackRoughnessRow.row);
+
+                const roofCrackNormalRow = makeRangeRow('Normal');
+                roofCrackNormalRow.range.min = '-2';
+                roofCrackNormalRow.range.max = '2';
+                roofCrackNormalRow.range.step = '0.01';
+                roofCrackNormalRow.number.min = '-2';
+                roofCrackNormalRow.number.max = '2';
+                roofCrackNormalRow.number.step = '0.01';
+                roofCrackNormalRow.range.value = String(roofCracksLayer?.normal ?? 0.0);
+                roofCrackNormalRow.number.value = formatFloat(roofCracksLayer?.normal ?? 0.0, 2);
+                layerSection.body.appendChild(roofCrackNormalRow.row);
 
                 const syncRoofMatVarEnabled = () => {
                     const enabled = !!layer.roof.materialVariation.enabled;
@@ -5400,14 +6855,32 @@ export class BuildingFabricationUI {
                     roofMacroScaleRow.number.disabled = roofMacroScaleRow.range.disabled;
                     roofMacroHueRow.range.disabled = !allow || !enabled || !roofMacroToggle.input.checked;
                     roofMacroHueRow.number.disabled = roofMacroHueRow.range.disabled;
+                    roofMacroValueRow.range.disabled = !allow || !enabled || !roofMacroToggle.input.checked;
+                    roofMacroValueRow.number.disabled = roofMacroValueRow.range.disabled;
+                    roofMacroSaturationRow.range.disabled = !allow || !enabled || !roofMacroToggle.input.checked;
+                    roofMacroSaturationRow.number.disabled = roofMacroSaturationRow.range.disabled;
+                    roofMacroRoughnessRow.range.disabled = !allow || !enabled || !roofMacroToggle.input.checked;
+                    roofMacroRoughnessRow.number.disabled = roofMacroRoughnessRow.range.disabled;
+                    roofMacroNormalRow.range.disabled = !allow || !enabled || !roofMacroToggle.input.checked;
+                    roofMacroNormalRow.number.disabled = roofMacroNormalRow.range.disabled;
 
                     roofGrimeToggle.input.disabled = !allow || !enabled;
                     roofGrimeStrengthRow.range.disabled = !allow || !enabled || !roofGrimeToggle.input.checked;
                     roofGrimeStrengthRow.number.disabled = roofGrimeStrengthRow.range.disabled;
+                    roofGrimeWidthRow.range.disabled = !allow || !enabled || !roofGrimeToggle.input.checked;
+                    roofGrimeWidthRow.number.disabled = roofGrimeWidthRow.range.disabled;
                     roofGrimeScaleRow.range.disabled = !allow || !enabled || !roofGrimeToggle.input.checked;
                     roofGrimeScaleRow.number.disabled = roofGrimeScaleRow.range.disabled;
-                    roofGrimeCornerRow.range.disabled = !allow || !enabled || !roofGrimeToggle.input.checked;
-                    roofGrimeCornerRow.number.disabled = roofGrimeCornerRow.range.disabled;
+                    roofGrimeHueRow.range.disabled = !allow || !enabled || !roofGrimeToggle.input.checked;
+                    roofGrimeHueRow.number.disabled = roofGrimeHueRow.range.disabled;
+                    roofGrimeValueRow.range.disabled = !allow || !enabled || !roofGrimeToggle.input.checked;
+                    roofGrimeValueRow.number.disabled = roofGrimeValueRow.range.disabled;
+                    roofGrimeSaturationRow.range.disabled = !allow || !enabled || !roofGrimeToggle.input.checked;
+                    roofGrimeSaturationRow.number.disabled = roofGrimeSaturationRow.range.disabled;
+                    roofGrimeRoughnessRow.range.disabled = !allow || !enabled || !roofGrimeToggle.input.checked;
+                    roofGrimeRoughnessRow.number.disabled = roofGrimeRoughnessRow.range.disabled;
+                    roofGrimeNormalRow.range.disabled = !allow || !enabled || !roofGrimeToggle.input.checked;
+                    roofGrimeNormalRow.number.disabled = roofGrimeNormalRow.range.disabled;
 
                     roofStreaksToggle.input.disabled = !allow || !enabled;
                     roofStreakStrengthRow.range.disabled = !allow || !enabled || !roofStreaksToggle.input.checked;
@@ -5418,32 +6891,52 @@ export class BuildingFabricationUI {
                     roofStreakLedgeStrengthRow.number.disabled = roofStreakLedgeStrengthRow.range.disabled;
                     roofStreakLedgeScaleRow.range.disabled = !allow || !enabled || !roofStreaksToggle.input.checked;
                     roofStreakLedgeScaleRow.number.disabled = roofStreakLedgeScaleRow.range.disabled;
+                    roofStreakHueRow.range.disabled = !allow || !enabled || !roofStreaksToggle.input.checked;
+                    roofStreakHueRow.number.disabled = roofStreakHueRow.range.disabled;
+                    roofStreakValueRow.range.disabled = !allow || !enabled || !roofStreaksToggle.input.checked;
+                    roofStreakValueRow.number.disabled = roofStreakValueRow.range.disabled;
+                    roofStreakSaturationRow.range.disabled = !allow || !enabled || !roofStreaksToggle.input.checked;
+                    roofStreakSaturationRow.number.disabled = roofStreakSaturationRow.range.disabled;
+                    roofStreakRoughnessRow.range.disabled = !allow || !enabled || !roofStreaksToggle.input.checked;
+                    roofStreakRoughnessRow.number.disabled = roofStreakRoughnessRow.range.disabled;
+                    roofStreakNormalRow.range.disabled = !allow || !enabled || !roofStreaksToggle.input.checked;
+                    roofStreakNormalRow.number.disabled = roofStreakNormalRow.range.disabled;
 
                     roofEdgeToggle.input.disabled = !allow || !enabled;
                     roofEdgeStrengthRow.range.disabled = !allow || !enabled || !roofEdgeToggle.input.checked;
                     roofEdgeStrengthRow.number.disabled = roofEdgeStrengthRow.range.disabled;
                     roofEdgeWidthRow.range.disabled = !allow || !enabled || !roofEdgeToggle.input.checked;
                     roofEdgeWidthRow.number.disabled = roofEdgeWidthRow.range.disabled;
-                    roofEdgeNoiseRow.range.disabled = !allow || !enabled || !roofEdgeToggle.input.checked;
-                    roofEdgeNoiseRow.number.disabled = roofEdgeNoiseRow.range.disabled;
-                    roofEdgeHorizRow.range.disabled = !allow || !enabled || !roofEdgeToggle.input.checked;
-                    roofEdgeHorizRow.number.disabled = roofEdgeHorizRow.range.disabled;
-                    roofEdgeVertRow.range.disabled = !allow || !enabled || !roofEdgeToggle.input.checked;
-                    roofEdgeVertRow.number.disabled = roofEdgeVertRow.range.disabled;
-                    roofEdgeColorRow.range.disabled = !allow || !enabled || !roofEdgeToggle.input.checked;
-                    roofEdgeColorRow.number.disabled = roofEdgeColorRow.range.disabled;
-                    roofEdgeRoughRow.range.disabled = !allow || !enabled || !roofEdgeToggle.input.checked;
-                    roofEdgeRoughRow.number.disabled = roofEdgeRoughRow.range.disabled;
+                    roofEdgeScaleRow.range.disabled = !allow || !enabled || !roofEdgeToggle.input.checked;
+                    roofEdgeScaleRow.number.disabled = roofEdgeScaleRow.range.disabled;
+                    roofEdgeHueRow.range.disabled = !allow || !enabled || !roofEdgeToggle.input.checked;
+                    roofEdgeHueRow.number.disabled = roofEdgeHueRow.range.disabled;
+                    roofEdgeValueRow.range.disabled = !allow || !enabled || !roofEdgeToggle.input.checked;
+                    roofEdgeValueRow.number.disabled = roofEdgeValueRow.range.disabled;
+                    roofEdgeSaturationRow.range.disabled = !allow || !enabled || !roofEdgeToggle.input.checked;
+                    roofEdgeSaturationRow.number.disabled = roofEdgeSaturationRow.range.disabled;
+                    roofEdgeRoughnessRow.range.disabled = !allow || !enabled || !roofEdgeToggle.input.checked;
+                    roofEdgeRoughnessRow.number.disabled = roofEdgeRoughnessRow.range.disabled;
+                    roofEdgeNormalRow.range.disabled = !allow || !enabled || !roofEdgeToggle.input.checked;
+                    roofEdgeNormalRow.number.disabled = roofEdgeNormalRow.range.disabled;
 
                     roofDustToggle.input.disabled = !allow || !enabled;
                     roofDustStrengthRow.range.disabled = !allow || !enabled || !roofDustToggle.input.checked;
                     roofDustStrengthRow.number.disabled = roofDustStrengthRow.range.disabled;
+                    roofDustWidthRow.range.disabled = !allow || !enabled || !roofDustToggle.input.checked;
+                    roofDustWidthRow.number.disabled = roofDustWidthRow.range.disabled;
                     roofDustScaleRow.range.disabled = !allow || !enabled || !roofDustToggle.input.checked;
                     roofDustScaleRow.number.disabled = roofDustScaleRow.range.disabled;
-                    roofDustHeightMinRow.range.disabled = !allow || !enabled || !roofDustToggle.input.checked;
-                    roofDustHeightMinRow.number.disabled = roofDustHeightMinRow.range.disabled;
-                    roofDustHeightMaxRow.range.disabled = !allow || !enabled || !roofDustToggle.input.checked;
-                    roofDustHeightMaxRow.number.disabled = roofDustHeightMaxRow.range.disabled;
+                    roofDustHueRow.range.disabled = !allow || !enabled || !roofDustToggle.input.checked;
+                    roofDustHueRow.number.disabled = roofDustHueRow.range.disabled;
+                    roofDustValueRow.range.disabled = !allow || !enabled || !roofDustToggle.input.checked;
+                    roofDustValueRow.number.disabled = roofDustValueRow.range.disabled;
+                    roofDustSaturationRow.range.disabled = !allow || !enabled || !roofDustToggle.input.checked;
+                    roofDustSaturationRow.number.disabled = roofDustSaturationRow.range.disabled;
+                    roofDustRoughnessRow.range.disabled = !allow || !enabled || !roofDustToggle.input.checked;
+                    roofDustRoughnessRow.number.disabled = roofDustRoughnessRow.range.disabled;
+                    roofDustNormalRow.range.disabled = !allow || !enabled || !roofDustToggle.input.checked;
+                    roofDustNormalRow.number.disabled = roofDustNormalRow.range.disabled;
 
                     roofAntiToggle.input.disabled = !allow || !enabled;
                     roofAntiStrengthRow.range.disabled = !allow || !enabled || !roofAntiToggle.input.checked;
@@ -5476,12 +6969,46 @@ export class BuildingFabricationUI {
                     roofDetailScaleRow.number.disabled = roofDetailScaleRow.range.disabled;
                     roofDetailHueRow.range.disabled = !allow || !enabled || !roofDetailToggle.input.checked;
                     roofDetailHueRow.number.disabled = roofDetailHueRow.range.disabled;
+                    roofDetailValueRow.range.disabled = !allow || !enabled || !roofDetailToggle.input.checked;
+                    roofDetailValueRow.number.disabled = roofDetailValueRow.range.disabled;
+                    roofDetailSaturationRow.range.disabled = !allow || !enabled || !roofDetailToggle.input.checked;
+                    roofDetailSaturationRow.number.disabled = roofDetailSaturationRow.range.disabled;
+                    roofDetailRoughnessRow.range.disabled = !allow || !enabled || !roofDetailToggle.input.checked;
+                    roofDetailRoughnessRow.number.disabled = roofDetailRoughnessRow.range.disabled;
+                    roofDetailNormalRow.range.disabled = !allow || !enabled || !roofDetailToggle.input.checked;
+                    roofDetailNormalRow.number.disabled = roofDetailNormalRow.range.disabled;
+
+                    roofMacro2Toggle.input.disabled = !allow || !enabled;
+                    roofMacro2StrengthRow.range.disabled = !allow || !enabled || !roofMacro2Toggle.input.checked;
+                    roofMacro2StrengthRow.number.disabled = roofMacro2StrengthRow.range.disabled;
+                    roofMacro2ScaleRow.range.disabled = !allow || !enabled || !roofMacro2Toggle.input.checked;
+                    roofMacro2ScaleRow.number.disabled = roofMacro2ScaleRow.range.disabled;
+                    roofMacro2HueRow.range.disabled = !allow || !enabled || !roofMacro2Toggle.input.checked;
+                    roofMacro2HueRow.number.disabled = roofMacro2HueRow.range.disabled;
+                    roofMacro2ValueRow.range.disabled = !allow || !enabled || !roofMacro2Toggle.input.checked;
+                    roofMacro2ValueRow.number.disabled = roofMacro2ValueRow.range.disabled;
+                    roofMacro2SaturationRow.range.disabled = !allow || !enabled || !roofMacro2Toggle.input.checked;
+                    roofMacro2SaturationRow.number.disabled = roofMacro2SaturationRow.range.disabled;
+                    roofMacro2RoughnessRow.range.disabled = !allow || !enabled || !roofMacro2Toggle.input.checked;
+                    roofMacro2RoughnessRow.number.disabled = roofMacro2RoughnessRow.range.disabled;
+                    roofMacro2NormalRow.range.disabled = !allow || !enabled || !roofMacro2Toggle.input.checked;
+                    roofMacro2NormalRow.number.disabled = roofMacro2NormalRow.range.disabled;
 
                     roofCracksToggle.input.disabled = !allow || !enabled;
                     roofCrackStrengthRow.range.disabled = !allow || !enabled || !roofCracksToggle.input.checked;
                     roofCrackStrengthRow.number.disabled = roofCrackStrengthRow.range.disabled;
                     roofCrackScaleRow.range.disabled = !allow || !enabled || !roofCracksToggle.input.checked;
                     roofCrackScaleRow.number.disabled = roofCrackScaleRow.range.disabled;
+                    roofCrackHueRow.range.disabled = !allow || !enabled || !roofCracksToggle.input.checked;
+                    roofCrackHueRow.number.disabled = roofCrackHueRow.range.disabled;
+                    roofCrackValueRow.range.disabled = !allow || !enabled || !roofCracksToggle.input.checked;
+                    roofCrackValueRow.number.disabled = roofCrackValueRow.range.disabled;
+                    roofCrackSaturationRow.range.disabled = !allow || !enabled || !roofCracksToggle.input.checked;
+                    roofCrackSaturationRow.number.disabled = roofCrackSaturationRow.range.disabled;
+                    roofCrackRoughnessRow.range.disabled = !allow || !enabled || !roofCracksToggle.input.checked;
+                    roofCrackRoughnessRow.number.disabled = roofCrackRoughnessRow.range.disabled;
+                    roofCrackNormalRow.range.disabled = !allow || !enabled || !roofCracksToggle.input.checked;
+                    roofCrackNormalRow.number.disabled = roofCrackNormalRow.range.disabled;
                 };
 
                 roofMatVarToggle.input.addEventListener('change', () => {
@@ -5503,13 +7030,13 @@ export class BuildingFabricationUI {
                     this._notifySelectedLayersChanged();
                 });
                 roofIntensityRow.range.addEventListener('input', () => {
-                    const next = clamp(roofIntensityRow.range.value, 0.0, 8.0);
+                    const next = clamp(roofIntensityRow.range.value, 0.0, 20.0);
                     layer.roof.materialVariation.globalIntensity = next;
                     roofIntensityRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofIntensityRow.number.addEventListener('change', () => {
-                    const next = clamp(roofIntensityRow.number.value, 0.0, 8.0);
+                    const next = clamp(roofIntensityRow.number.value, 0.0, 20.0);
                     layer.roof.materialVariation.globalIntensity = next;
                     roofIntensityRow.range.value = String(next);
                     roofIntensityRow.number.value = formatFloat(next, 2);
@@ -5613,105 +7140,266 @@ export class BuildingFabricationUI {
                     this._notifySelectedLayersChanged();
                 });
                 roofMacroToggle.input.addEventListener('change', () => {
-                    layer.roof.materialVariation.macro ??= {};
-                    layer.roof.materialVariation.macro.enabled = !!roofMacroToggle.input.checked;
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[0] ??= {};
+                    layer.roof.materialVariation.macroLayers[0].enabled = !!roofMacroToggle.input.checked;
                     syncRoofMatVarEnabled();
                     this._notifySelectedLayersChanged();
                 });
                 roofMacroIntensityRow.range.addEventListener('input', () => {
-                    const next = clamp(roofMacroIntensityRow.range.value, 0.0, 4.0);
-                    layer.roof.materialVariation.macro ??= {};
-                    layer.roof.materialVariation.macro.intensity = next;
+                    const next = clamp(roofMacroIntensityRow.range.value, 0.0, 20.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[0] ??= {};
+                    layer.roof.materialVariation.macroLayers[0].intensity = next;
                     roofMacroIntensityRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofMacroIntensityRow.number.addEventListener('change', () => {
-                    const next = clamp(roofMacroIntensityRow.number.value, 0.0, 4.0);
-                    layer.roof.materialVariation.macro ??= {};
-                    layer.roof.materialVariation.macro.intensity = next;
+                    const next = clamp(roofMacroIntensityRow.number.value, 0.0, 20.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[0] ??= {};
+                    layer.roof.materialVariation.macroLayers[0].intensity = next;
                     roofMacroIntensityRow.range.value = String(next);
                     roofMacroIntensityRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofMacroScaleRow.range.addEventListener('input', () => {
-                    const next = clamp(roofMacroScaleRow.range.value, 0.05, 10.0);
-                    layer.roof.materialVariation.macro ??= {};
-                    layer.roof.materialVariation.macro.scale = next;
+                    const next = clamp(roofMacroScaleRow.range.value, 0.01, 80.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[0] ??= {};
+                    layer.roof.materialVariation.macroLayers[0].scale = next;
                     roofMacroScaleRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofMacroScaleRow.number.addEventListener('change', () => {
-                    const next = clamp(roofMacroScaleRow.number.value, 0.05, 10.0);
-                    layer.roof.materialVariation.macro ??= {};
-                    layer.roof.materialVariation.macro.scale = next;
+                    const next = clamp(roofMacroScaleRow.number.value, 0.01, 80.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[0] ??= {};
+                    layer.roof.materialVariation.macroLayers[0].scale = next;
                     roofMacroScaleRow.range.value = String(next);
                     roofMacroScaleRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofMacroHueRow.range.addEventListener('input', () => {
                     const next = clamp(roofMacroHueRow.range.value, -180.0, 180.0);
-                    layer.roof.materialVariation.macro ??= {};
-                    layer.roof.materialVariation.macro.hueDegrees = next;
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[0] ??= {};
+                    layer.roof.materialVariation.macroLayers[0].hueDegrees = next;
                     roofMacroHueRow.number.value = String(Math.round(next));
                     this._notifySelectedLayersChanged();
                 });
                 roofMacroHueRow.number.addEventListener('change', () => {
                     const next = clamp(roofMacroHueRow.number.value, -180.0, 180.0);
-                    layer.roof.materialVariation.macro ??= {};
-                    layer.roof.materialVariation.macro.hueDegrees = next;
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[0] ??= {};
+                    layer.roof.materialVariation.macroLayers[0].hueDegrees = next;
                     roofMacroHueRow.range.value = String(next);
                     roofMacroHueRow.number.value = String(Math.round(next));
                     this._notifySelectedLayersChanged();
                 });
+
+                roofMacroValueRow.range.addEventListener('input', () => {
+                    const next = clamp(roofMacroValueRow.range.value, -4.0, 4.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[0] ??= {};
+                    layer.roof.materialVariation.macroLayers[0].value = next;
+                    roofMacroValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofMacroValueRow.number.addEventListener('change', () => {
+                    const next = clamp(roofMacroValueRow.number.value, -4.0, 4.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[0] ??= {};
+                    layer.roof.materialVariation.macroLayers[0].value = next;
+                    roofMacroValueRow.range.value = String(next);
+                    roofMacroValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofMacroSaturationRow.range.addEventListener('input', () => {
+                    const next = clamp(roofMacroSaturationRow.range.value, -4.0, 4.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[0] ??= {};
+                    layer.roof.materialVariation.macroLayers[0].saturation = next;
+                    roofMacroSaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofMacroSaturationRow.number.addEventListener('change', () => {
+                    const next = clamp(roofMacroSaturationRow.number.value, -4.0, 4.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[0] ??= {};
+                    layer.roof.materialVariation.macroLayers[0].saturation = next;
+                    roofMacroSaturationRow.range.value = String(next);
+                    roofMacroSaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofMacroRoughnessRow.range.addEventListener('input', () => {
+                    const next = clamp(roofMacroRoughnessRow.range.value, -4.0, 4.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[0] ??= {};
+                    layer.roof.materialVariation.macroLayers[0].roughness = next;
+                    roofMacroRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofMacroRoughnessRow.number.addEventListener('change', () => {
+                    const next = clamp(roofMacroRoughnessRow.number.value, -4.0, 4.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[0] ??= {};
+                    layer.roof.materialVariation.macroLayers[0].roughness = next;
+                    roofMacroRoughnessRow.range.value = String(next);
+                    roofMacroRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofMacroNormalRow.range.addEventListener('input', () => {
+                    const next = clamp(roofMacroNormalRow.range.value, -2.0, 2.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[0] ??= {};
+                    layer.roof.materialVariation.macroLayers[0].normal = next;
+                    roofMacroNormalRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofMacroNormalRow.number.addEventListener('change', () => {
+                    const next = clamp(roofMacroNormalRow.number.value, -2.0, 2.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[0] ??= {};
+                    layer.roof.materialVariation.macroLayers[0].normal = next;
+                    roofMacroNormalRow.range.value = String(next);
+                    roofMacroNormalRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
                 roofGrimeToggle.input.addEventListener('change', () => {
-                    layer.roof.materialVariation.grime ??= {};
-                    layer.roof.materialVariation.grime.enabled = !!roofGrimeToggle.input.checked;
+                    layer.roof.materialVariation.wearBottom ??= {};
+                    layer.roof.materialVariation.wearBottom.enabled = !!roofGrimeToggle.input.checked;
                     syncRoofMatVarEnabled();
                     this._notifySelectedLayersChanged();
                 });
                 roofGrimeStrengthRow.range.addEventListener('input', () => {
-                    const next = clamp(roofGrimeStrengthRow.range.value, 0.0, 4.0);
-                    layer.roof.materialVariation.grime ??= {};
-                    layer.roof.materialVariation.grime.strength = next;
+                    const next = clamp(roofGrimeStrengthRow.range.value, 0.0, 20.0);
+                    layer.roof.materialVariation.wearBottom ??= {};
+                    layer.roof.materialVariation.wearBottom.strength = next;
                     roofGrimeStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofGrimeStrengthRow.number.addEventListener('change', () => {
-                    const next = clamp(roofGrimeStrengthRow.number.value, 0.0, 4.0);
-                    layer.roof.materialVariation.grime ??= {};
-                    layer.roof.materialVariation.grime.strength = next;
+                    const next = clamp(roofGrimeStrengthRow.number.value, 0.0, 20.0);
+                    layer.roof.materialVariation.wearBottom ??= {};
+                    layer.roof.materialVariation.wearBottom.strength = next;
                     roofGrimeStrengthRow.range.value = String(next);
                     roofGrimeStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
+
+                roofGrimeWidthRow.range.addEventListener('input', () => {
+                    const next = clamp(roofGrimeWidthRow.range.value, 0.0, 1.0);
+                    layer.roof.materialVariation.wearBottom ??= {};
+                    layer.roof.materialVariation.wearBottom.width = next;
+                    roofGrimeWidthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofGrimeWidthRow.number.addEventListener('change', () => {
+                    const next = clamp(roofGrimeWidthRow.number.value, 0.0, 1.0);
+                    layer.roof.materialVariation.wearBottom ??= {};
+                    layer.roof.materialVariation.wearBottom.width = next;
+                    roofGrimeWidthRow.range.value = String(next);
+                    roofGrimeWidthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
                 roofGrimeScaleRow.range.addEventListener('input', () => {
                     const next = clamp(roofGrimeScaleRow.range.value, 0.01, 50.0);
-                    layer.roof.materialVariation.grime ??= {};
-                    layer.roof.materialVariation.grime.scale = next;
+                    layer.roof.materialVariation.wearBottom ??= {};
+                    layer.roof.materialVariation.wearBottom.scale = next;
                     roofGrimeScaleRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofGrimeScaleRow.number.addEventListener('change', () => {
                     const next = clamp(roofGrimeScaleRow.number.value, 0.01, 50.0);
-                    layer.roof.materialVariation.grime ??= {};
-                    layer.roof.materialVariation.grime.scale = next;
+                    layer.roof.materialVariation.wearBottom ??= {};
+                    layer.roof.materialVariation.wearBottom.scale = next;
                     roofGrimeScaleRow.range.value = String(next);
                     roofGrimeScaleRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
-                roofGrimeCornerRow.range.addEventListener('input', () => {
-                    const next = clamp(roofGrimeCornerRow.range.value, 0.0, 4.0);
-                    layer.roof.materialVariation.grime ??= {};
-                    layer.roof.materialVariation.grime.cornerStrength = next;
-                    roofGrimeCornerRow.number.value = formatFloat(next, 2);
+
+                roofGrimeHueRow.range.addEventListener('input', () => {
+                    const next = clamp(roofGrimeHueRow.range.value, -180.0, 180.0);
+                    layer.roof.materialVariation.wearBottom ??= {};
+                    layer.roof.materialVariation.wearBottom.hueDegrees = next;
+                    roofGrimeHueRow.number.value = String(Math.round(next));
                     this._notifySelectedLayersChanged();
                 });
-                roofGrimeCornerRow.number.addEventListener('change', () => {
-                    const next = clamp(roofGrimeCornerRow.number.value, 0.0, 4.0);
-                    layer.roof.materialVariation.grime ??= {};
-                    layer.roof.materialVariation.grime.cornerStrength = next;
-                    roofGrimeCornerRow.range.value = String(next);
-                    roofGrimeCornerRow.number.value = formatFloat(next, 2);
+                roofGrimeHueRow.number.addEventListener('change', () => {
+                    const next = clamp(roofGrimeHueRow.number.value, -180.0, 180.0);
+                    layer.roof.materialVariation.wearBottom ??= {};
+                    layer.roof.materialVariation.wearBottom.hueDegrees = next;
+                    roofGrimeHueRow.range.value = String(next);
+                    roofGrimeHueRow.number.value = String(Math.round(next));
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofGrimeValueRow.range.addEventListener('input', () => {
+                    const next = clamp(roofGrimeValueRow.range.value, -4.0, 4.0);
+                    layer.roof.materialVariation.wearBottom ??= {};
+                    layer.roof.materialVariation.wearBottom.value = next;
+                    roofGrimeValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofGrimeValueRow.number.addEventListener('change', () => {
+                    const next = clamp(roofGrimeValueRow.number.value, -4.0, 4.0);
+                    layer.roof.materialVariation.wearBottom ??= {};
+                    layer.roof.materialVariation.wearBottom.value = next;
+                    roofGrimeValueRow.range.value = String(next);
+                    roofGrimeValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofGrimeSaturationRow.range.addEventListener('input', () => {
+                    const next = clamp(roofGrimeSaturationRow.range.value, -4.0, 4.0);
+                    layer.roof.materialVariation.wearBottom ??= {};
+                    layer.roof.materialVariation.wearBottom.saturation = next;
+                    roofGrimeSaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofGrimeSaturationRow.number.addEventListener('change', () => {
+                    const next = clamp(roofGrimeSaturationRow.number.value, -4.0, 4.0);
+                    layer.roof.materialVariation.wearBottom ??= {};
+                    layer.roof.materialVariation.wearBottom.saturation = next;
+                    roofGrimeSaturationRow.range.value = String(next);
+                    roofGrimeSaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofGrimeRoughnessRow.range.addEventListener('input', () => {
+                    const next = clamp(roofGrimeRoughnessRow.range.value, -4.0, 4.0);
+                    layer.roof.materialVariation.wearBottom ??= {};
+                    layer.roof.materialVariation.wearBottom.roughness = next;
+                    roofGrimeRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofGrimeRoughnessRow.number.addEventListener('change', () => {
+                    const next = clamp(roofGrimeRoughnessRow.number.value, -4.0, 4.0);
+                    layer.roof.materialVariation.wearBottom ??= {};
+                    layer.roof.materialVariation.wearBottom.roughness = next;
+                    roofGrimeRoughnessRow.range.value = String(next);
+                    roofGrimeRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofGrimeNormalRow.range.addEventListener('input', () => {
+                    const next = clamp(roofGrimeNormalRow.range.value, -2.0, 2.0);
+                    layer.roof.materialVariation.wearBottom ??= {};
+                    layer.roof.materialVariation.wearBottom.normal = next;
+                    roofGrimeNormalRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofGrimeNormalRow.number.addEventListener('change', () => {
+                    const next = clamp(roofGrimeNormalRow.number.value, -2.0, 2.0);
+                    layer.roof.materialVariation.wearBottom ??= {};
+                    layer.roof.materialVariation.wearBottom.normal = next;
+                    roofGrimeNormalRow.range.value = String(next);
+                    roofGrimeNormalRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
 
@@ -5722,14 +7410,14 @@ export class BuildingFabricationUI {
                     this._notifySelectedLayersChanged();
                 });
                 roofStreakStrengthRow.range.addEventListener('input', () => {
-                    const next = clamp(roofStreakStrengthRow.range.value, 0.0, 4.0);
+                    const next = clamp(roofStreakStrengthRow.range.value, 0.0, 12.0);
                     layer.roof.materialVariation.streaks ??= {};
                     layer.roof.materialVariation.streaks.strength = next;
                     roofStreakStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofStreakStrengthRow.number.addEventListener('change', () => {
-                    const next = clamp(roofStreakStrengthRow.number.value, 0.0, 4.0);
+                    const next = clamp(roofStreakStrengthRow.number.value, 0.0, 12.0);
                     layer.roof.materialVariation.streaks ??= {};
                     layer.roof.materialVariation.streaks.strength = next;
                     roofStreakStrengthRow.range.value = String(next);
@@ -5737,14 +7425,14 @@ export class BuildingFabricationUI {
                     this._notifySelectedLayersChanged();
                 });
                 roofStreakScaleRow.range.addEventListener('input', () => {
-                    const next = clamp(roofStreakScaleRow.range.value, 0.05, 10.0);
+                    const next = clamp(roofStreakScaleRow.range.value, 0.01, 50.0);
                     layer.roof.materialVariation.streaks ??= {};
                     layer.roof.materialVariation.streaks.scale = next;
                     roofStreakScaleRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofStreakScaleRow.number.addEventListener('change', () => {
-                    const next = clamp(roofStreakScaleRow.number.value, 0.05, 10.0);
+                    const next = clamp(roofStreakScaleRow.number.value, 0.01, 50.0);
                     layer.roof.materialVariation.streaks ??= {};
                     layer.roof.materialVariation.streaks.scale = next;
                     roofStreakScaleRow.range.value = String(next);
@@ -5752,14 +7440,14 @@ export class BuildingFabricationUI {
                     this._notifySelectedLayersChanged();
                 });
                 roofStreakLedgeStrengthRow.range.addEventListener('input', () => {
-                    const next = clamp(roofStreakLedgeStrengthRow.range.value, 0.0, 4.0);
+                    const next = clamp(roofStreakLedgeStrengthRow.range.value, 0.0, 12.0);
                     layer.roof.materialVariation.streaks ??= {};
                     layer.roof.materialVariation.streaks.ledgeStrength = next;
                     roofStreakLedgeStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofStreakLedgeStrengthRow.number.addEventListener('change', () => {
-                    const next = clamp(roofStreakLedgeStrengthRow.number.value, 0.0, 4.0);
+                    const next = clamp(roofStreakLedgeStrengthRow.number.value, 0.0, 12.0);
                     layer.roof.materialVariation.streaks ??= {};
                     layer.roof.materialVariation.streaks.ledgeStrength = next;
                     roofStreakLedgeStrengthRow.range.value = String(next);
@@ -5782,212 +7470,347 @@ export class BuildingFabricationUI {
                     this._notifySelectedLayersChanged();
                 });
 
+                roofStreakHueRow.range.addEventListener('input', () => {
+                    const next = clamp(roofStreakHueRow.range.value, -180.0, 180.0);
+                    layer.roof.materialVariation.streaks ??= {};
+                    layer.roof.materialVariation.streaks.hueDegrees = next;
+                    roofStreakHueRow.number.value = String(Math.round(next));
+                    this._notifySelectedLayersChanged();
+                });
+                roofStreakHueRow.number.addEventListener('change', () => {
+                    const next = clamp(roofStreakHueRow.number.value, -180.0, 180.0);
+                    layer.roof.materialVariation.streaks ??= {};
+                    layer.roof.materialVariation.streaks.hueDegrees = next;
+                    roofStreakHueRow.range.value = String(next);
+                    roofStreakHueRow.number.value = String(Math.round(next));
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofStreakValueRow.range.addEventListener('input', () => {
+                    const next = clamp(roofStreakValueRow.range.value, -4.0, 4.0);
+                    layer.roof.materialVariation.streaks ??= {};
+                    layer.roof.materialVariation.streaks.value = next;
+                    roofStreakValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofStreakValueRow.number.addEventListener('change', () => {
+                    const next = clamp(roofStreakValueRow.number.value, -4.0, 4.0);
+                    layer.roof.materialVariation.streaks ??= {};
+                    layer.roof.materialVariation.streaks.value = next;
+                    roofStreakValueRow.range.value = String(next);
+                    roofStreakValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofStreakSaturationRow.range.addEventListener('input', () => {
+                    const next = clamp(roofStreakSaturationRow.range.value, -4.0, 4.0);
+                    layer.roof.materialVariation.streaks ??= {};
+                    layer.roof.materialVariation.streaks.saturation = next;
+                    roofStreakSaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofStreakSaturationRow.number.addEventListener('change', () => {
+                    const next = clamp(roofStreakSaturationRow.number.value, -4.0, 4.0);
+                    layer.roof.materialVariation.streaks ??= {};
+                    layer.roof.materialVariation.streaks.saturation = next;
+                    roofStreakSaturationRow.range.value = String(next);
+                    roofStreakSaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofStreakRoughnessRow.range.addEventListener('input', () => {
+                    const next = clamp(roofStreakRoughnessRow.range.value, -4.0, 4.0);
+                    layer.roof.materialVariation.streaks ??= {};
+                    layer.roof.materialVariation.streaks.roughness = next;
+                    roofStreakRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofStreakRoughnessRow.number.addEventListener('change', () => {
+                    const next = clamp(roofStreakRoughnessRow.number.value, -4.0, 4.0);
+                    layer.roof.materialVariation.streaks ??= {};
+                    layer.roof.materialVariation.streaks.roughness = next;
+                    roofStreakRoughnessRow.range.value = String(next);
+                    roofStreakRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofStreakNormalRow.range.addEventListener('input', () => {
+                    const next = clamp(roofStreakNormalRow.range.value, -2.0, 2.0);
+                    layer.roof.materialVariation.streaks ??= {};
+                    layer.roof.materialVariation.streaks.normal = next;
+                    roofStreakNormalRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofStreakNormalRow.number.addEventListener('change', () => {
+                    const next = clamp(roofStreakNormalRow.number.value, -2.0, 2.0);
+                    layer.roof.materialVariation.streaks ??= {};
+                    layer.roof.materialVariation.streaks.normal = next;
+                    roofStreakNormalRow.range.value = String(next);
+                    roofStreakNormalRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
                 roofEdgeToggle.input.addEventListener('change', () => {
-                    layer.roof.materialVariation.edgeWear ??= {};
-                    layer.roof.materialVariation.edgeWear.enabled = !!roofEdgeToggle.input.checked;
+                    layer.roof.materialVariation.wearSide ??= {};
+                    layer.roof.materialVariation.wearSide.enabled = !!roofEdgeToggle.input.checked;
                     syncRoofMatVarEnabled();
                     this._notifySelectedLayersChanged();
                 });
                 roofEdgeStrengthRow.range.addEventListener('input', () => {
-                    const next = clamp(roofEdgeStrengthRow.range.value, 0.0, 4.0);
-                    layer.roof.materialVariation.edgeWear ??= {};
-                    layer.roof.materialVariation.edgeWear.strength = next;
+                    const next = clamp(roofEdgeStrengthRow.range.value, 0.0, 20.0);
+                    layer.roof.materialVariation.wearSide ??= {};
+                    layer.roof.materialVariation.wearSide.strength = next;
                     roofEdgeStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofEdgeStrengthRow.number.addEventListener('change', () => {
-                    const next = clamp(roofEdgeStrengthRow.number.value, 0.0, 4.0);
-                    layer.roof.materialVariation.edgeWear ??= {};
-                    layer.roof.materialVariation.edgeWear.strength = next;
+                    const next = clamp(roofEdgeStrengthRow.number.value, 0.0, 20.0);
+                    layer.roof.materialVariation.wearSide ??= {};
+                    layer.roof.materialVariation.wearSide.strength = next;
                     roofEdgeStrengthRow.range.value = String(next);
                     roofEdgeStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofEdgeWidthRow.range.addEventListener('input', () => {
-                    const next = clamp(roofEdgeWidthRow.range.value, 0.0, 0.5);
-                    layer.roof.materialVariation.edgeWear ??= {};
-                    layer.roof.materialVariation.edgeWear.width = next;
+                    const next = clamp(roofEdgeWidthRow.range.value, 0.0, 4.0);
+                    layer.roof.materialVariation.wearSide ??= {};
+                    layer.roof.materialVariation.wearSide.width = next;
                     roofEdgeWidthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofEdgeWidthRow.number.addEventListener('change', () => {
-                    const next = clamp(roofEdgeWidthRow.number.value, 0.0, 0.5);
-                    layer.roof.materialVariation.edgeWear ??= {};
-                    layer.roof.materialVariation.edgeWear.width = next;
+                    const next = clamp(roofEdgeWidthRow.number.value, 0.0, 4.0);
+                    layer.roof.materialVariation.wearSide ??= {};
+                    layer.roof.materialVariation.wearSide.width = next;
                     roofEdgeWidthRow.range.value = String(next);
                     roofEdgeWidthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
-                roofEdgeNoiseRow.range.addEventListener('input', () => {
-                    const next = clamp(roofEdgeNoiseRow.range.value, 0.0, 10.0);
-                    layer.roof.materialVariation.edgeWear ??= {};
-                    layer.roof.materialVariation.edgeWear.noiseWarp = next;
-                    roofEdgeNoiseRow.number.value = formatFloat(next, 2);
+                roofEdgeScaleRow.range.addEventListener('input', () => {
+                    const next = clamp(roofEdgeScaleRow.range.value, 0.01, 50.0);
+                    layer.roof.materialVariation.wearSide ??= {};
+                    layer.roof.materialVariation.wearSide.scale = next;
+                    roofEdgeScaleRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
-                roofEdgeNoiseRow.number.addEventListener('change', () => {
-                    const next = clamp(roofEdgeNoiseRow.number.value, 0.0, 10.0);
-                    layer.roof.materialVariation.edgeWear ??= {};
-                    layer.roof.materialVariation.edgeWear.noiseWarp = next;
-                    roofEdgeNoiseRow.range.value = String(next);
-                    roofEdgeNoiseRow.number.value = formatFloat(next, 2);
+                roofEdgeScaleRow.number.addEventListener('change', () => {
+                    const next = clamp(roofEdgeScaleRow.number.value, 0.01, 50.0);
+                    layer.roof.materialVariation.wearSide ??= {};
+                    layer.roof.materialVariation.wearSide.scale = next;
+                    roofEdgeScaleRow.range.value = String(next);
+                    roofEdgeScaleRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
-                roofEdgeHorizRow.range.addEventListener('input', () => {
-                    const next = clamp(roofEdgeHorizRow.range.value, 0.0, 4.0);
-                    layer.roof.materialVariation.edgeWear ??= {};
-                    layer.roof.materialVariation.edgeWear.horizontalStrength = next;
-                    roofEdgeHorizRow.number.value = formatFloat(next, 2);
+
+                roofEdgeHueRow.range.addEventListener('input', () => {
+                    const next = clamp(roofEdgeHueRow.range.value, -180.0, 180.0);
+                    layer.roof.materialVariation.wearSide ??= {};
+                    layer.roof.materialVariation.wearSide.hueDegrees = next;
+                    roofEdgeHueRow.number.value = String(Math.round(next));
                     this._notifySelectedLayersChanged();
                 });
-                roofEdgeHorizRow.number.addEventListener('change', () => {
-                    const next = clamp(roofEdgeHorizRow.number.value, 0.0, 4.0);
-                    layer.roof.materialVariation.edgeWear ??= {};
-                    layer.roof.materialVariation.edgeWear.horizontalStrength = next;
-                    roofEdgeHorizRow.range.value = String(next);
-                    roofEdgeHorizRow.number.value = formatFloat(next, 2);
+                roofEdgeHueRow.number.addEventListener('change', () => {
+                    const next = clamp(roofEdgeHueRow.number.value, -180.0, 180.0);
+                    layer.roof.materialVariation.wearSide ??= {};
+                    layer.roof.materialVariation.wearSide.hueDegrees = next;
+                    roofEdgeHueRow.range.value = String(next);
+                    roofEdgeHueRow.number.value = String(Math.round(next));
                     this._notifySelectedLayersChanged();
                 });
-                roofEdgeVertRow.range.addEventListener('input', () => {
-                    const next = clamp(roofEdgeVertRow.range.value, 0.0, 4.0);
-                    layer.roof.materialVariation.edgeWear ??= {};
-                    layer.roof.materialVariation.edgeWear.verticalStrength = next;
-                    roofEdgeVertRow.number.value = formatFloat(next, 2);
+
+                roofEdgeValueRow.range.addEventListener('input', () => {
+                    const next = clamp(roofEdgeValueRow.range.value, -4.0, 4.0);
+                    layer.roof.materialVariation.wearSide ??= {};
+                    layer.roof.materialVariation.wearSide.value = next;
+                    roofEdgeValueRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
-                roofEdgeVertRow.number.addEventListener('change', () => {
-                    const next = clamp(roofEdgeVertRow.number.value, 0.0, 4.0);
-                    layer.roof.materialVariation.edgeWear ??= {};
-                    layer.roof.materialVariation.edgeWear.verticalStrength = next;
-                    roofEdgeVertRow.range.value = String(next);
-                    roofEdgeVertRow.number.value = formatFloat(next, 2);
+                roofEdgeValueRow.number.addEventListener('change', () => {
+                    const next = clamp(roofEdgeValueRow.number.value, -4.0, 4.0);
+                    layer.roof.materialVariation.wearSide ??= {};
+                    layer.roof.materialVariation.wearSide.value = next;
+                    roofEdgeValueRow.range.value = String(next);
+                    roofEdgeValueRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
-                roofEdgeColorRow.range.addEventListener('input', () => {
-                    const next = clamp(roofEdgeColorRow.range.value, -2.0, 2.0);
-                    layer.roof.materialVariation.edgeWear ??= {};
-                    layer.roof.materialVariation.edgeWear.color = next;
-                    roofEdgeColorRow.number.value = formatFloat(next, 2);
+
+                roofEdgeSaturationRow.range.addEventListener('input', () => {
+                    const next = clamp(roofEdgeSaturationRow.range.value, -4.0, 4.0);
+                    layer.roof.materialVariation.wearSide ??= {};
+                    layer.roof.materialVariation.wearSide.saturation = next;
+                    roofEdgeSaturationRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
-                roofEdgeColorRow.number.addEventListener('change', () => {
-                    const next = clamp(roofEdgeColorRow.number.value, -2.0, 2.0);
-                    layer.roof.materialVariation.edgeWear ??= {};
-                    layer.roof.materialVariation.edgeWear.color = next;
-                    roofEdgeColorRow.range.value = String(next);
-                    roofEdgeColorRow.number.value = formatFloat(next, 2);
+                roofEdgeSaturationRow.number.addEventListener('change', () => {
+                    const next = clamp(roofEdgeSaturationRow.number.value, -4.0, 4.0);
+                    layer.roof.materialVariation.wearSide ??= {};
+                    layer.roof.materialVariation.wearSide.saturation = next;
+                    roofEdgeSaturationRow.range.value = String(next);
+                    roofEdgeSaturationRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
-                roofEdgeRoughRow.range.addEventListener('input', () => {
-                    const next = clamp(roofEdgeRoughRow.range.value, -2.0, 2.0);
-                    layer.roof.materialVariation.edgeWear ??= {};
-                    layer.roof.materialVariation.edgeWear.roughness = next;
-                    roofEdgeRoughRow.number.value = formatFloat(next, 2);
+
+                roofEdgeRoughnessRow.range.addEventListener('input', () => {
+                    const next = clamp(roofEdgeRoughnessRow.range.value, -4.0, 4.0);
+                    layer.roof.materialVariation.wearSide ??= {};
+                    layer.roof.materialVariation.wearSide.roughness = next;
+                    roofEdgeRoughnessRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
-                roofEdgeRoughRow.number.addEventListener('change', () => {
-                    const next = clamp(roofEdgeRoughRow.number.value, -2.0, 2.0);
-                    layer.roof.materialVariation.edgeWear ??= {};
-                    layer.roof.materialVariation.edgeWear.roughness = next;
-                    roofEdgeRoughRow.range.value = String(next);
-                    roofEdgeRoughRow.number.value = formatFloat(next, 2);
+                roofEdgeRoughnessRow.number.addEventListener('change', () => {
+                    const next = clamp(roofEdgeRoughnessRow.number.value, -4.0, 4.0);
+                    layer.roof.materialVariation.wearSide ??= {};
+                    layer.roof.materialVariation.wearSide.roughness = next;
+                    roofEdgeRoughnessRow.range.value = String(next);
+                    roofEdgeRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofEdgeNormalRow.range.addEventListener('input', () => {
+                    const next = clamp(roofEdgeNormalRow.range.value, -2.0, 2.0);
+                    layer.roof.materialVariation.wearSide ??= {};
+                    layer.roof.materialVariation.wearSide.normal = next;
+                    roofEdgeNormalRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofEdgeNormalRow.number.addEventListener('change', () => {
+                    const next = clamp(roofEdgeNormalRow.number.value, -2.0, 2.0);
+                    layer.roof.materialVariation.wearSide ??= {};
+                    layer.roof.materialVariation.wearSide.normal = next;
+                    roofEdgeNormalRow.range.value = String(next);
+                    roofEdgeNormalRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
 
                 roofDustToggle.input.addEventListener('change', () => {
-                    layer.roof.materialVariation.dust ??= {};
-                    layer.roof.materialVariation.dust.enabled = !!roofDustToggle.input.checked;
+                    layer.roof.materialVariation.wearTop ??= {};
+                    layer.roof.materialVariation.wearTop.enabled = !!roofDustToggle.input.checked;
                     syncRoofMatVarEnabled();
                     this._notifySelectedLayersChanged();
                 });
                 roofDustStrengthRow.range.addEventListener('input', () => {
-                    const next = clamp(roofDustStrengthRow.range.value, 0.0, 4.0);
-                    layer.roof.materialVariation.dust ??= {};
-                    layer.roof.materialVariation.dust.strength = next;
+                    const next = clamp(roofDustStrengthRow.range.value, 0.0, 20.0);
+                    layer.roof.materialVariation.wearTop ??= {};
+                    layer.roof.materialVariation.wearTop.strength = next;
                     roofDustStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofDustStrengthRow.number.addEventListener('change', () => {
-                    const next = clamp(roofDustStrengthRow.number.value, 0.0, 4.0);
-                    layer.roof.materialVariation.dust ??= {};
-                    layer.roof.materialVariation.dust.strength = next;
+                    const next = clamp(roofDustStrengthRow.number.value, 0.0, 20.0);
+                    layer.roof.materialVariation.wearTop ??= {};
+                    layer.roof.materialVariation.wearTop.strength = next;
                     roofDustStrengthRow.range.value = String(next);
                     roofDustStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
+                roofDustWidthRow.range.addEventListener('input', () => {
+                    const next = clamp(roofDustWidthRow.range.value, 0.0, 1.0);
+                    layer.roof.materialVariation.wearTop ??= {};
+                    layer.roof.materialVariation.wearTop.width = next;
+                    roofDustWidthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofDustWidthRow.number.addEventListener('change', () => {
+                    const next = clamp(roofDustWidthRow.number.value, 0.0, 1.0);
+                    layer.roof.materialVariation.wearTop ??= {};
+                    layer.roof.materialVariation.wearTop.width = next;
+                    roofDustWidthRow.range.value = String(next);
+                    roofDustWidthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
                 roofDustScaleRow.range.addEventListener('input', () => {
                     const next = clamp(roofDustScaleRow.range.value, 0.01, 50.0);
-                    layer.roof.materialVariation.dust ??= {};
-                    layer.roof.materialVariation.dust.scale = next;
+                    layer.roof.materialVariation.wearTop ??= {};
+                    layer.roof.materialVariation.wearTop.scale = next;
                     roofDustScaleRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofDustScaleRow.number.addEventListener('change', () => {
                     const next = clamp(roofDustScaleRow.number.value, 0.01, 50.0);
-                    layer.roof.materialVariation.dust ??= {};
-                    layer.roof.materialVariation.dust.scale = next;
+                    layer.roof.materialVariation.wearTop ??= {};
+                    layer.roof.materialVariation.wearTop.scale = next;
                     roofDustScaleRow.range.value = String(next);
                     roofDustScaleRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
-                roofDustHeightMinRow.range.addEventListener('input', () => {
-                    const a = clamp(roofDustHeightMinRow.range.value, 0.0, 1.0);
-                    const b = clamp(roofDustHeightMaxRow.range.value, 0.0, 1.0);
-                    const min = Math.min(a, b);
-                    const max = Math.max(a, b);
-                    layer.roof.materialVariation.dust ??= {};
-                    layer.roof.materialVariation.dust.heightBand ??= {};
-                    layer.roof.materialVariation.dust.heightBand.min = min;
-                    layer.roof.materialVariation.dust.heightBand.max = max;
-                    roofDustHeightMinRow.range.value = String(min);
-                    roofDustHeightMinRow.number.value = formatFloat(min, 2);
-                    roofDustHeightMaxRow.range.value = String(max);
-                    roofDustHeightMaxRow.number.value = formatFloat(max, 2);
+
+                roofDustHueRow.range.addEventListener('input', () => {
+                    const next = clamp(roofDustHueRow.range.value, -180.0, 180.0);
+                    layer.roof.materialVariation.wearTop ??= {};
+                    layer.roof.materialVariation.wearTop.hueDegrees = next;
+                    roofDustHueRow.number.value = String(Math.round(next));
                     this._notifySelectedLayersChanged();
                 });
-                roofDustHeightMinRow.number.addEventListener('change', () => {
-                    const a = clamp(roofDustHeightMinRow.number.value, 0.0, 1.0);
-                    const b = clamp(roofDustHeightMaxRow.number.value, 0.0, 1.0);
-                    const min = Math.min(a, b);
-                    const max = Math.max(a, b);
-                    layer.roof.materialVariation.dust ??= {};
-                    layer.roof.materialVariation.dust.heightBand ??= {};
-                    layer.roof.materialVariation.dust.heightBand.min = min;
-                    layer.roof.materialVariation.dust.heightBand.max = max;
-                    roofDustHeightMinRow.range.value = String(min);
-                    roofDustHeightMinRow.number.value = formatFloat(min, 2);
-                    roofDustHeightMaxRow.range.value = String(max);
-                    roofDustHeightMaxRow.number.value = formatFloat(max, 2);
+                roofDustHueRow.number.addEventListener('change', () => {
+                    const next = clamp(roofDustHueRow.number.value, -180.0, 180.0);
+                    layer.roof.materialVariation.wearTop ??= {};
+                    layer.roof.materialVariation.wearTop.hueDegrees = next;
+                    roofDustHueRow.range.value = String(next);
+                    roofDustHueRow.number.value = String(Math.round(next));
                     this._notifySelectedLayersChanged();
                 });
-                roofDustHeightMaxRow.range.addEventListener('input', () => {
-                    const a = clamp(roofDustHeightMinRow.range.value, 0.0, 1.0);
-                    const b = clamp(roofDustHeightMaxRow.range.value, 0.0, 1.0);
-                    const min = Math.min(a, b);
-                    const max = Math.max(a, b);
-                    layer.roof.materialVariation.dust ??= {};
-                    layer.roof.materialVariation.dust.heightBand ??= {};
-                    layer.roof.materialVariation.dust.heightBand.min = min;
-                    layer.roof.materialVariation.dust.heightBand.max = max;
-                    roofDustHeightMinRow.range.value = String(min);
-                    roofDustHeightMinRow.number.value = formatFloat(min, 2);
-                    roofDustHeightMaxRow.range.value = String(max);
-                    roofDustHeightMaxRow.number.value = formatFloat(max, 2);
+
+                roofDustValueRow.range.addEventListener('input', () => {
+                    const next = clamp(roofDustValueRow.range.value, -4.0, 4.0);
+                    layer.roof.materialVariation.wearTop ??= {};
+                    layer.roof.materialVariation.wearTop.value = next;
+                    roofDustValueRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
-                roofDustHeightMaxRow.number.addEventListener('change', () => {
-                    const a = clamp(roofDustHeightMinRow.number.value, 0.0, 1.0);
-                    const b = clamp(roofDustHeightMaxRow.number.value, 0.0, 1.0);
-                    const min = Math.min(a, b);
-                    const max = Math.max(a, b);
-                    layer.roof.materialVariation.dust ??= {};
-                    layer.roof.materialVariation.dust.heightBand ??= {};
-                    layer.roof.materialVariation.dust.heightBand.min = min;
-                    layer.roof.materialVariation.dust.heightBand.max = max;
-                    roofDustHeightMinRow.range.value = String(min);
-                    roofDustHeightMinRow.number.value = formatFloat(min, 2);
-                    roofDustHeightMaxRow.range.value = String(max);
-                    roofDustHeightMaxRow.number.value = formatFloat(max, 2);
+                roofDustValueRow.number.addEventListener('change', () => {
+                    const next = clamp(roofDustValueRow.number.value, -4.0, 4.0);
+                    layer.roof.materialVariation.wearTop ??= {};
+                    layer.roof.materialVariation.wearTop.value = next;
+                    roofDustValueRow.range.value = String(next);
+                    roofDustValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofDustSaturationRow.range.addEventListener('input', () => {
+                    const next = clamp(roofDustSaturationRow.range.value, -4.0, 4.0);
+                    layer.roof.materialVariation.wearTop ??= {};
+                    layer.roof.materialVariation.wearTop.saturation = next;
+                    roofDustSaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofDustSaturationRow.number.addEventListener('change', () => {
+                    const next = clamp(roofDustSaturationRow.number.value, -4.0, 4.0);
+                    layer.roof.materialVariation.wearTop ??= {};
+                    layer.roof.materialVariation.wearTop.saturation = next;
+                    roofDustSaturationRow.range.value = String(next);
+                    roofDustSaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofDustRoughnessRow.range.addEventListener('input', () => {
+                    const next = clamp(roofDustRoughnessRow.range.value, -4.0, 4.0);
+                    layer.roof.materialVariation.wearTop ??= {};
+                    layer.roof.materialVariation.wearTop.roughness = next;
+                    roofDustRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofDustRoughnessRow.number.addEventListener('change', () => {
+                    const next = clamp(roofDustRoughnessRow.number.value, -4.0, 4.0);
+                    layer.roof.materialVariation.wearTop ??= {};
+                    layer.roof.materialVariation.wearTop.roughness = next;
+                    roofDustRoughnessRow.range.value = String(next);
+                    roofDustRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofDustNormalRow.range.addEventListener('input', () => {
+                    const next = clamp(roofDustNormalRow.range.value, -2.0, 2.0);
+                    layer.roof.materialVariation.wearTop ??= {};
+                    layer.roof.materialVariation.wearTop.normal = next;
+                    roofDustNormalRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofDustNormalRow.number.addEventListener('change', () => {
+                    const next = clamp(roofDustNormalRow.number.value, -2.0, 2.0);
+                    layer.roof.materialVariation.wearTop ??= {};
+                    layer.roof.materialVariation.wearTop.normal = next;
+                    roofDustNormalRow.range.value = String(next);
+                    roofDustNormalRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
 
@@ -5998,14 +7821,14 @@ export class BuildingFabricationUI {
                     this._notifySelectedLayersChanged();
                 });
                 roofAntiStrengthRow.range.addEventListener('input', () => {
-                    const next = clamp(roofAntiStrengthRow.range.value, 0.0, 4.0);
+                    const next = clamp(roofAntiStrengthRow.range.value, 0.0, 12.0);
                     layer.roof.materialVariation.antiTiling ??= {};
                     layer.roof.materialVariation.antiTiling.strength = next;
                     roofAntiStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofAntiStrengthRow.number.addEventListener('change', () => {
-                    const next = clamp(roofAntiStrengthRow.number.value, 0.0, 4.0);
+                    const next = clamp(roofAntiStrengthRow.number.value, 0.0, 12.0);
                     layer.roof.materialVariation.antiTiling ??= {};
                     layer.roof.materialVariation.antiTiling.strength = next;
                     roofAntiStrengthRow.range.value = String(next);
@@ -6046,14 +7869,14 @@ export class BuildingFabricationUI {
                 });
 
                 roofAntiOffsetURow.range.addEventListener('input', () => {
-                    const next = clamp(roofAntiOffsetURow.range.value, -1.0, 1.0);
+                    const next = clamp(roofAntiOffsetURow.range.value, -4.0, 4.0);
                     layer.roof.materialVariation.antiTiling ??= {};
                     layer.roof.materialVariation.antiTiling.offsetU = next;
                     roofAntiOffsetURow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofAntiOffsetURow.number.addEventListener('change', () => {
-                    const next = clamp(roofAntiOffsetURow.number.value, -1.0, 1.0);
+                    const next = clamp(roofAntiOffsetURow.number.value, -4.0, 4.0);
                     layer.roof.materialVariation.antiTiling ??= {};
                     layer.roof.materialVariation.antiTiling.offsetU = next;
                     roofAntiOffsetURow.range.value = String(next);
@@ -6062,14 +7885,14 @@ export class BuildingFabricationUI {
                 });
 
                 roofAntiOffsetVRow.range.addEventListener('input', () => {
-                    const next = clamp(roofAntiOffsetVRow.range.value, -1.0, 1.0);
+                    const next = clamp(roofAntiOffsetVRow.range.value, -4.0, 4.0);
                     layer.roof.materialVariation.antiTiling ??= {};
                     layer.roof.materialVariation.antiTiling.offsetV = next;
                     roofAntiOffsetVRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofAntiOffsetVRow.number.addEventListener('change', () => {
-                    const next = clamp(roofAntiOffsetVRow.number.value, -1.0, 1.0);
+                    const next = clamp(roofAntiOffsetVRow.number.value, -4.0, 4.0);
                     layer.roof.materialVariation.antiTiling ??= {};
                     layer.roof.materialVariation.antiTiling.offsetV = next;
                     roofAntiOffsetVRow.range.value = String(next);
@@ -6106,14 +7929,14 @@ export class BuildingFabricationUI {
                     this._notifySelectedLayersChanged();
                 });
                 roofStairStrengthRow.range.addEventListener('input', () => {
-                    const next = clamp(roofStairStrengthRow.range.value, 0.0, 4.0);
+                    const next = clamp(roofStairStrengthRow.range.value, 0.0, 12.0);
                     layer.roof.materialVariation.stairShift ??= {};
                     layer.roof.materialVariation.stairShift.strength = next;
                     roofStairStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofStairStrengthRow.number.addEventListener('change', () => {
-                    const next = clamp(roofStairStrengthRow.number.value, 0.0, 4.0);
+                    const next = clamp(roofStairStrengthRow.number.value, 0.0, 12.0);
                     layer.roof.materialVariation.stairShift ??= {};
                     layer.roof.materialVariation.stairShift.strength = next;
                     roofStairStrengthRow.range.value = String(next);
@@ -6136,14 +7959,14 @@ export class BuildingFabricationUI {
                     this._notifySelectedLayersChanged();
                 });
                 roofStairShiftRow.range.addEventListener('input', () => {
-                    const next = clamp(roofStairShiftRow.range.value, -1.0, 1.0);
+                    const next = clamp(roofStairShiftRow.range.value, -4.0, 4.0);
                     layer.roof.materialVariation.stairShift ??= {};
                     layer.roof.materialVariation.stairShift.shift = next;
                     roofStairShiftRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofStairShiftRow.number.addEventListener('change', () => {
-                    const next = clamp(roofStairShiftRow.number.value, -1.0, 1.0);
+                    const next = clamp(roofStairShiftRow.number.value, -4.0, 4.0);
                     layer.roof.materialVariation.stairShift ??= {};
                     layer.roof.materialVariation.stairShift.shift = next;
                     roofStairShiftRow.range.value = String(next);
@@ -6157,91 +7980,381 @@ export class BuildingFabricationUI {
                 });
 
                 roofDetailToggle.input.addEventListener('change', () => {
-                    layer.roof.materialVariation.detail ??= {};
-                    layer.roof.materialVariation.detail.enabled = !!roofDetailToggle.input.checked;
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[1] ??= {};
+                    layer.roof.materialVariation.macroLayers[1].enabled = !!roofDetailToggle.input.checked;
                     syncRoofMatVarEnabled();
                     this._notifySelectedLayersChanged();
                 });
                 roofDetailStrengthRow.range.addEventListener('input', () => {
-                    const next = clamp(roofDetailStrengthRow.range.value, 0.0, 4.0);
-                    layer.roof.materialVariation.detail ??= {};
-                    layer.roof.materialVariation.detail.strength = next;
+                    const next = clamp(roofDetailStrengthRow.range.value, 0.0, 20.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[1] ??= {};
+                    layer.roof.materialVariation.macroLayers[1].intensity = next;
                     roofDetailStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofDetailStrengthRow.number.addEventListener('change', () => {
-                    const next = clamp(roofDetailStrengthRow.number.value, 0.0, 4.0);
-                    layer.roof.materialVariation.detail ??= {};
-                    layer.roof.materialVariation.detail.strength = next;
+                    const next = clamp(roofDetailStrengthRow.number.value, 0.0, 20.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[1] ??= {};
+                    layer.roof.materialVariation.macroLayers[1].intensity = next;
                     roofDetailStrengthRow.range.value = String(next);
                     roofDetailStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofDetailScaleRow.range.addEventListener('input', () => {
                     const next = clamp(roofDetailScaleRow.range.value, 0.01, 80.0);
-                    layer.roof.materialVariation.detail ??= {};
-                    layer.roof.materialVariation.detail.scale = next;
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[1] ??= {};
+                    layer.roof.materialVariation.macroLayers[1].scale = next;
                     roofDetailScaleRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofDetailScaleRow.number.addEventListener('change', () => {
                     const next = clamp(roofDetailScaleRow.number.value, 0.01, 80.0);
-                    layer.roof.materialVariation.detail ??= {};
-                    layer.roof.materialVariation.detail.scale = next;
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[1] ??= {};
+                    layer.roof.materialVariation.macroLayers[1].scale = next;
                     roofDetailScaleRow.range.value = String(next);
                     roofDetailScaleRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofDetailHueRow.range.addEventListener('input', () => {
                     const next = clamp(roofDetailHueRow.range.value, -180.0, 180.0);
-                    layer.roof.materialVariation.detail ??= {};
-                    layer.roof.materialVariation.detail.hueDegrees = next;
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[1] ??= {};
+                    layer.roof.materialVariation.macroLayers[1].hueDegrees = next;
                     roofDetailHueRow.number.value = String(Math.round(next));
                     this._notifySelectedLayersChanged();
                 });
                 roofDetailHueRow.number.addEventListener('change', () => {
                     const next = clamp(roofDetailHueRow.number.value, -180.0, 180.0);
-                    layer.roof.materialVariation.detail ??= {};
-                    layer.roof.materialVariation.detail.hueDegrees = next;
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[1] ??= {};
+                    layer.roof.materialVariation.macroLayers[1].hueDegrees = next;
                     roofDetailHueRow.range.value = String(next);
                     roofDetailHueRow.number.value = String(Math.round(next));
                     this._notifySelectedLayersChanged();
                 });
 
+                roofDetailValueRow.range.addEventListener('input', () => {
+                    const next = clamp(roofDetailValueRow.range.value, -4.0, 4.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[1] ??= {};
+                    layer.roof.materialVariation.macroLayers[1].value = next;
+                    roofDetailValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofDetailValueRow.number.addEventListener('change', () => {
+                    const next = clamp(roofDetailValueRow.number.value, -4.0, 4.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[1] ??= {};
+                    layer.roof.materialVariation.macroLayers[1].value = next;
+                    roofDetailValueRow.range.value = String(next);
+                    roofDetailValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofDetailSaturationRow.range.addEventListener('input', () => {
+                    const next = clamp(roofDetailSaturationRow.range.value, -4.0, 4.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[1] ??= {};
+                    layer.roof.materialVariation.macroLayers[1].saturation = next;
+                    roofDetailSaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofDetailSaturationRow.number.addEventListener('change', () => {
+                    const next = clamp(roofDetailSaturationRow.number.value, -4.0, 4.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[1] ??= {};
+                    layer.roof.materialVariation.macroLayers[1].saturation = next;
+                    roofDetailSaturationRow.range.value = String(next);
+                    roofDetailSaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofDetailRoughnessRow.range.addEventListener('input', () => {
+                    const next = clamp(roofDetailRoughnessRow.range.value, -4.0, 4.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[1] ??= {};
+                    layer.roof.materialVariation.macroLayers[1].roughness = next;
+                    roofDetailRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofDetailRoughnessRow.number.addEventListener('change', () => {
+                    const next = clamp(roofDetailRoughnessRow.number.value, -4.0, 4.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[1] ??= {};
+                    layer.roof.materialVariation.macroLayers[1].roughness = next;
+                    roofDetailRoughnessRow.range.value = String(next);
+                    roofDetailRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofDetailNormalRow.range.addEventListener('input', () => {
+                    const next = clamp(roofDetailNormalRow.range.value, -2.0, 2.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[1] ??= {};
+                    layer.roof.materialVariation.macroLayers[1].normal = next;
+                    roofDetailNormalRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofDetailNormalRow.number.addEventListener('change', () => {
+                    const next = clamp(roofDetailNormalRow.number.value, -2.0, 2.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[1] ??= {};
+                    layer.roof.materialVariation.macroLayers[1].normal = next;
+                    roofDetailNormalRow.range.value = String(next);
+                    roofDetailNormalRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofMacro2Toggle.input.addEventListener('change', () => {
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[2] ??= {};
+                    layer.roof.materialVariation.macroLayers[2].enabled = !!roofMacro2Toggle.input.checked;
+                    syncRoofMatVarEnabled();
+                    this._notifySelectedLayersChanged();
+                });
+                roofMacro2StrengthRow.range.addEventListener('input', () => {
+                    const next = clamp(roofMacro2StrengthRow.range.value, 0.0, 20.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[2] ??= {};
+                    layer.roof.materialVariation.macroLayers[2].intensity = next;
+                    roofMacro2StrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofMacro2StrengthRow.number.addEventListener('change', () => {
+                    const next = clamp(roofMacro2StrengthRow.number.value, 0.0, 20.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[2] ??= {};
+                    layer.roof.materialVariation.macroLayers[2].intensity = next;
+                    roofMacro2StrengthRow.range.value = String(next);
+                    roofMacro2StrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofMacro2ScaleRow.range.addEventListener('input', () => {
+                    const next = clamp(roofMacro2ScaleRow.range.value, 0.01, 80.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[2] ??= {};
+                    layer.roof.materialVariation.macroLayers[2].scale = next;
+                    roofMacro2ScaleRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofMacro2ScaleRow.number.addEventListener('change', () => {
+                    const next = clamp(roofMacro2ScaleRow.number.value, 0.01, 80.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[2] ??= {};
+                    layer.roof.materialVariation.macroLayers[2].scale = next;
+                    roofMacro2ScaleRow.range.value = String(next);
+                    roofMacro2ScaleRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofMacro2HueRow.range.addEventListener('input', () => {
+                    const next = clamp(roofMacro2HueRow.range.value, -180.0, 180.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[2] ??= {};
+                    layer.roof.materialVariation.macroLayers[2].hueDegrees = next;
+                    roofMacro2HueRow.number.value = String(Math.round(next));
+                    this._notifySelectedLayersChanged();
+                });
+                roofMacro2HueRow.number.addEventListener('change', () => {
+                    const next = clamp(roofMacro2HueRow.number.value, -180.0, 180.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[2] ??= {};
+                    layer.roof.materialVariation.macroLayers[2].hueDegrees = next;
+                    roofMacro2HueRow.range.value = String(next);
+                    roofMacro2HueRow.number.value = String(Math.round(next));
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofMacro2ValueRow.range.addEventListener('input', () => {
+                    const next = clamp(roofMacro2ValueRow.range.value, -4.0, 4.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[2] ??= {};
+                    layer.roof.materialVariation.macroLayers[2].value = next;
+                    roofMacro2ValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofMacro2ValueRow.number.addEventListener('change', () => {
+                    const next = clamp(roofMacro2ValueRow.number.value, -4.0, 4.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[2] ??= {};
+                    layer.roof.materialVariation.macroLayers[2].value = next;
+                    roofMacro2ValueRow.range.value = String(next);
+                    roofMacro2ValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofMacro2SaturationRow.range.addEventListener('input', () => {
+                    const next = clamp(roofMacro2SaturationRow.range.value, -4.0, 4.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[2] ??= {};
+                    layer.roof.materialVariation.macroLayers[2].saturation = next;
+                    roofMacro2SaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofMacro2SaturationRow.number.addEventListener('change', () => {
+                    const next = clamp(roofMacro2SaturationRow.number.value, -4.0, 4.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[2] ??= {};
+                    layer.roof.materialVariation.macroLayers[2].saturation = next;
+                    roofMacro2SaturationRow.range.value = String(next);
+                    roofMacro2SaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofMacro2RoughnessRow.range.addEventListener('input', () => {
+                    const next = clamp(roofMacro2RoughnessRow.range.value, -4.0, 4.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[2] ??= {};
+                    layer.roof.materialVariation.macroLayers[2].roughness = next;
+                    roofMacro2RoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofMacro2RoughnessRow.number.addEventListener('change', () => {
+                    const next = clamp(roofMacro2RoughnessRow.number.value, -4.0, 4.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[2] ??= {};
+                    layer.roof.materialVariation.macroLayers[2].roughness = next;
+                    roofMacro2RoughnessRow.range.value = String(next);
+                    roofMacro2RoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofMacro2NormalRow.range.addEventListener('input', () => {
+                    const next = clamp(roofMacro2NormalRow.range.value, -2.0, 2.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[2] ??= {};
+                    layer.roof.materialVariation.macroLayers[2].normal = next;
+                    roofMacro2NormalRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofMacro2NormalRow.number.addEventListener('change', () => {
+                    const next = clamp(roofMacro2NormalRow.number.value, -2.0, 2.0);
+                    layer.roof.materialVariation.macroLayers ??= [];
+                    layer.roof.materialVariation.macroLayers[2] ??= {};
+                    layer.roof.materialVariation.macroLayers[2].normal = next;
+                    roofMacro2NormalRow.range.value = String(next);
+                    roofMacro2NormalRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
                 roofCracksToggle.input.addEventListener('change', () => {
-                    layer.roof.materialVariation.cracks ??= {};
-                    layer.roof.materialVariation.cracks.enabled = !!roofCracksToggle.input.checked;
+                    layer.roof.materialVariation.cracksLayer ??= {};
+                    layer.roof.materialVariation.cracksLayer.enabled = !!roofCracksToggle.input.checked;
                     syncRoofMatVarEnabled();
                     this._notifySelectedLayersChanged();
                 });
                 roofCrackStrengthRow.range.addEventListener('input', () => {
-                    const next = clamp(roofCrackStrengthRow.range.value, 0.0, 4.0);
-                    layer.roof.materialVariation.cracks ??= {};
-                    layer.roof.materialVariation.cracks.strength = next;
+                    const next = clamp(roofCrackStrengthRow.range.value, 0.0, 20.0);
+                    layer.roof.materialVariation.cracksLayer ??= {};
+                    layer.roof.materialVariation.cracksLayer.strength = next;
                     roofCrackStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofCrackStrengthRow.number.addEventListener('change', () => {
-                    const next = clamp(roofCrackStrengthRow.number.value, 0.0, 4.0);
-                    layer.roof.materialVariation.cracks ??= {};
-                    layer.roof.materialVariation.cracks.strength = next;
+                    const next = clamp(roofCrackStrengthRow.number.value, 0.0, 20.0);
+                    layer.roof.materialVariation.cracksLayer ??= {};
+                    layer.roof.materialVariation.cracksLayer.strength = next;
                     roofCrackStrengthRow.range.value = String(next);
                     roofCrackStrengthRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofCrackScaleRow.range.addEventListener('input', () => {
                     const next = clamp(roofCrackScaleRow.range.value, 0.01, 80.0);
-                    layer.roof.materialVariation.cracks ??= {};
-                    layer.roof.materialVariation.cracks.scale = next;
+                    layer.roof.materialVariation.cracksLayer ??= {};
+                    layer.roof.materialVariation.cracksLayer.scale = next;
                     roofCrackScaleRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofCrackScaleRow.number.addEventListener('change', () => {
                     const next = clamp(roofCrackScaleRow.number.value, 0.01, 80.0);
-                    layer.roof.materialVariation.cracks ??= {};
-                    layer.roof.materialVariation.cracks.scale = next;
+                    layer.roof.materialVariation.cracksLayer ??= {};
+                    layer.roof.materialVariation.cracksLayer.scale = next;
                     roofCrackScaleRow.range.value = String(next);
                     roofCrackScaleRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofCrackHueRow.range.addEventListener('input', () => {
+                    const next = clamp(roofCrackHueRow.range.value, -180.0, 180.0);
+                    layer.roof.materialVariation.cracksLayer ??= {};
+                    layer.roof.materialVariation.cracksLayer.hueDegrees = next;
+                    roofCrackHueRow.number.value = String(Math.round(next));
+                    this._notifySelectedLayersChanged();
+                });
+                roofCrackHueRow.number.addEventListener('change', () => {
+                    const next = clamp(roofCrackHueRow.number.value, -180.0, 180.0);
+                    layer.roof.materialVariation.cracksLayer ??= {};
+                    layer.roof.materialVariation.cracksLayer.hueDegrees = next;
+                    roofCrackHueRow.range.value = String(next);
+                    roofCrackHueRow.number.value = String(Math.round(next));
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofCrackValueRow.range.addEventListener('input', () => {
+                    const next = clamp(roofCrackValueRow.range.value, -4.0, 4.0);
+                    layer.roof.materialVariation.cracksLayer ??= {};
+                    layer.roof.materialVariation.cracksLayer.value = next;
+                    roofCrackValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofCrackValueRow.number.addEventListener('change', () => {
+                    const next = clamp(roofCrackValueRow.number.value, -4.0, 4.0);
+                    layer.roof.materialVariation.cracksLayer ??= {};
+                    layer.roof.materialVariation.cracksLayer.value = next;
+                    roofCrackValueRow.range.value = String(next);
+                    roofCrackValueRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofCrackSaturationRow.range.addEventListener('input', () => {
+                    const next = clamp(roofCrackSaturationRow.range.value, -4.0, 4.0);
+                    layer.roof.materialVariation.cracksLayer ??= {};
+                    layer.roof.materialVariation.cracksLayer.saturation = next;
+                    roofCrackSaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofCrackSaturationRow.number.addEventListener('change', () => {
+                    const next = clamp(roofCrackSaturationRow.number.value, -4.0, 4.0);
+                    layer.roof.materialVariation.cracksLayer ??= {};
+                    layer.roof.materialVariation.cracksLayer.saturation = next;
+                    roofCrackSaturationRow.range.value = String(next);
+                    roofCrackSaturationRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofCrackRoughnessRow.range.addEventListener('input', () => {
+                    const next = clamp(roofCrackRoughnessRow.range.value, -4.0, 4.0);
+                    layer.roof.materialVariation.cracksLayer ??= {};
+                    layer.roof.materialVariation.cracksLayer.roughness = next;
+                    roofCrackRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofCrackRoughnessRow.number.addEventListener('change', () => {
+                    const next = clamp(roofCrackRoughnessRow.number.value, -4.0, 4.0);
+                    layer.roof.materialVariation.cracksLayer ??= {};
+                    layer.roof.materialVariation.cracksLayer.roughness = next;
+                    roofCrackRoughnessRow.range.value = String(next);
+                    roofCrackRoughnessRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofCrackNormalRow.range.addEventListener('input', () => {
+                    const next = clamp(roofCrackNormalRow.range.value, -2.0, 2.0);
+                    layer.roof.materialVariation.cracksLayer ??= {};
+                    layer.roof.materialVariation.cracksLayer.normal = next;
+                    roofCrackNormalRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofCrackNormalRow.number.addEventListener('change', () => {
+                    const next = clamp(roofCrackNormalRow.number.value, -2.0, 2.0);
+                    layer.roof.materialVariation.cracksLayer ??= {};
+                    layer.roof.materialVariation.cracksLayer.normal = next;
+                    roofCrackNormalRow.range.value = String(next);
+                    roofCrackNormalRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
 
