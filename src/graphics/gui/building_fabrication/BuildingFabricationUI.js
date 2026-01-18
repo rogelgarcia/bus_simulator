@@ -9,6 +9,7 @@ import { PickerPopup } from '../shared/PickerPopup.js';
 import { WINDOW_TYPE, getDefaultWindowParams, getWindowTypeOptions, isWindowTypeId } from '../../assets3d/generators/buildings/WindowTextureGenerator.js';
 import { normalizeWindowParams, normalizeWindowTypeIdOrLegacyStyle } from '../../assets3d/generators/buildings/WindowTypeCompatibility.js';
 import { getPbrMaterialOptionsForBuildings } from '../../assets3d/materials/PbrMaterialCatalog.js';
+import { MATERIAL_VARIATION_ROOT, normalizeMaterialVariationConfig } from '../../assets3d/materials/MaterialVariationSystem.js';
 import { LAYER_TYPE, cloneBuildingLayers, createDefaultFloorLayer, createDefaultRoofLayer, normalizeBuildingLayers } from '../../assets3d/generators/building_fabrication/BuildingFabricationTypes.js';
 import { getBuildingConfigs } from '../../content3d/catalogs/BuildingConfigCatalog.js';
 
@@ -232,8 +233,11 @@ export class BuildingFabricationUI {
             })
         ]);
         this._selectedLayers = [];
+        this._templateMaterialVariationSeed = null;
+        this._selectedMaterialVariationSeed = null;
         this._catalogBuildingConfigId = '';
         this.onSelectedBuildingLayersChange = null;
+        this.onSelectedBuildingMaterialVariationSeedChange = null;
 
         this.root = document.createElement('div');
         this.root.className = 'ui-hud-root building-fab-hud';
@@ -1214,10 +1218,43 @@ export class BuildingFabricationUI {
         this.layersStatus.className = 'building-fab-hint building-fab-layer-status';
         this.layersStatus.textContent = 'Edit the template layers, then create a building.';
 
+        this.materialVariationSeedSection = makeDetailsSection('Material variation seed', { open: false });
+
+        this.materialVariationSeedToggle = document.createElement('label');
+        this.materialVariationSeedToggle.className = 'building-fab-toggle building-fab-toggle-wide';
+        this.materialVariationSeedToggleInput = document.createElement('input');
+        this.materialVariationSeedToggleInput.type = 'checkbox';
+        this.materialVariationSeedToggleText = document.createElement('span');
+        this.materialVariationSeedToggleText.textContent = 'Override building seed';
+        this.materialVariationSeedToggle.appendChild(this.materialVariationSeedToggleInput);
+        this.materialVariationSeedToggle.appendChild(this.materialVariationSeedToggleText);
+        this.materialVariationSeedSection.body.appendChild(this.materialVariationSeedToggle);
+
+        this.materialVariationSeedRow = document.createElement('div');
+        this.materialVariationSeedRow.className = 'building-fab-row';
+        this.materialVariationSeedLabel = document.createElement('div');
+        this.materialVariationSeedLabel.className = 'building-fab-row-label';
+        this.materialVariationSeedLabel.textContent = 'Seed';
+        this.materialVariationSeedNumber = document.createElement('input');
+        this.materialVariationSeedNumber.type = 'number';
+        this.materialVariationSeedNumber.min = '0';
+        this.materialVariationSeedNumber.max = '4294967295';
+        this.materialVariationSeedNumber.step = '1';
+        this.materialVariationSeedNumber.className = 'building-fab-number';
+        this.materialVariationSeedRow.appendChild(this.materialVariationSeedLabel);
+        this.materialVariationSeedRow.appendChild(this.materialVariationSeedNumber);
+        this.materialVariationSeedSection.body.appendChild(this.materialVariationSeedRow);
+
+        this.materialVariationSeedHint = document.createElement('div');
+        this.materialVariationSeedHint.className = 'building-fab-hint';
+        this.materialVariationSeedHint.textContent = 'When disabled, the seed is derived from the building footprint.';
+        this.materialVariationSeedSection.body.appendChild(this.materialVariationSeedHint);
+
         this.layersList = document.createElement('div');
         this.layersList.className = 'building-fab-layer-list';
 
         this.propsPanel.appendChild(this.layersStatus);
+        this.propsPanel.appendChild(this.materialVariationSeedSection.details);
         this.propsPanel.appendChild(this.layersList);
 
         const floorsSection = makeDetailsSection('Floors', { open: true });
@@ -1502,6 +1539,8 @@ export class BuildingFabricationUI {
         this._onStreetWindowSpacerExtrudeChange = () => this._setStreetWindowSpacerExtrudeFromUi(this.streetWindowSpacerExtrudeInput.checked);
         this._onStreetWindowSpacerExtrudeDistanceRangeInput = () => this._setStreetWindowSpacerExtrudeDistanceFromUi(this.streetWindowSpacerExtrudeDistanceRange.value);
         this._onStreetWindowSpacerExtrudeDistanceNumberInput = () => this._setStreetWindowSpacerExtrudeDistanceFromUi(this.streetWindowSpacerExtrudeDistanceNumber.value);
+        this._onMaterialVariationSeedOverrideChange = () => this._setMaterialVariationSeedOverrideFromUi(this.materialVariationSeedToggleInput.checked);
+        this._onMaterialVariationSeedNumberChange = () => this._setMaterialVariationSeedFromUi(this.materialVariationSeedNumber.value);
         this._onHideSelectionBorderChange = () => this._setHideSelectionBorderFromUi(this.hideSelectionBorderInput.checked);
         this._onViewModeClick = (e) => {
             const btn = e?.target?.closest?.('.building-fab-view-mode');
@@ -1589,6 +1628,10 @@ export class BuildingFabricationUI {
 
     getTemplateLayers() {
         return cloneBuildingLayers(this._templateLayers);
+    }
+
+    getTemplateMaterialVariationSeed() {
+        return Number.isFinite(this._templateMaterialVariationSeed) ? this._templateMaterialVariationSeed : null;
     }
 
     setFloorHeight(height) {
@@ -1946,6 +1989,9 @@ export class BuildingFabricationUI {
         this._selectedLayers = hasSelected && Array.isArray(building?.layers) && building.layers.length
             ? cloneBuildingLayers(building.layers)
             : [];
+        this._selectedMaterialVariationSeed = hasSelected && Number.isFinite(building?.materialVariationSeed)
+            ? clampInt(building.materialVariationSeed, 0, 4294967295)
+            : null;
         this._syncLayersPanel();
         this._renderLayersPanel();
         this._syncPropertyWidgets();
@@ -1954,6 +2000,10 @@ export class BuildingFabricationUI {
 
     _getActiveLayers() {
         return this._selectedBuildingId ? (this._selectedLayers ?? []) : (this._templateLayers ?? []);
+    }
+
+    _getActiveMaterialVariationSeed() {
+        return this._selectedBuildingId ? this._selectedMaterialVariationSeed : this._templateMaterialVariationSeed;
     }
 
     _setActiveLayers(nextLayers) {
@@ -1965,10 +2015,68 @@ export class BuildingFabricationUI {
         this._templateLayers = layers;
     }
 
+    _setActiveMaterialVariationSeed(seed) {
+        const next = Number.isFinite(seed) ? clampInt(seed, 0, 4294967295) : null;
+        if (this._selectedBuildingId) {
+            this._selectedMaterialVariationSeed = next;
+            return;
+        }
+        this._templateMaterialVariationSeed = next;
+    }
+
     _notifySelectedLayersChanged() {
         if (!this._selectedBuildingId) return;
         if (typeof this.onSelectedBuildingLayersChange !== 'function') return;
         this.onSelectedBuildingLayersChange(cloneBuildingLayers(this._selectedLayers));
+    }
+
+    _notifySelectedMaterialVariationSeedChanged() {
+        if (!this._selectedBuildingId) return;
+        if (typeof this.onSelectedBuildingMaterialVariationSeedChange !== 'function') return;
+        this.onSelectedBuildingMaterialVariationSeedChange(this._selectedMaterialVariationSeed);
+    }
+
+    _syncMaterialVariationSeedPanel() {
+        if (!this.materialVariationSeedToggleInput || !this.materialVariationSeedNumber) return;
+
+        const hasSelected = !!this._selectedBuildingId;
+        const allow = !!this._enabled;
+        const seed = this._getActiveMaterialVariationSeed();
+        const override = Number.isFinite(seed);
+
+        this.materialVariationSeedToggleInput.checked = override;
+        this.materialVariationSeedToggleInput.disabled = !allow;
+        this.materialVariationSeedNumber.disabled = !allow || !override;
+        this.materialVariationSeedNumber.value = String(override ? seed : 0);
+
+        if (this.materialVariationSeedSection?.label) {
+            this.materialVariationSeedSection.label.textContent = hasSelected ? 'Material variation seed (building)' : 'Material variation seed (template)';
+        }
+    }
+
+    _setMaterialVariationSeedOverrideFromUi(enabled) {
+        if (!this._enabled) return;
+        const on = !!enabled;
+        if (!on) {
+            this._setActiveMaterialVariationSeed(null);
+            this._syncMaterialVariationSeedPanel();
+            this._notifySelectedMaterialVariationSeedChanged();
+            return;
+        }
+
+        const current = this._getActiveMaterialVariationSeed();
+        const next = Number.isFinite(current) ? current : 0;
+        this._setActiveMaterialVariationSeed(next);
+        this._syncMaterialVariationSeedPanel();
+        this._notifySelectedMaterialVariationSeedChanged();
+    }
+
+    _setMaterialVariationSeedFromUi(value) {
+        if (!this._enabled) return;
+        const next = clampInt(value, 0, 4294967295);
+        this._setActiveMaterialVariationSeed(next);
+        this._syncMaterialVariationSeedPanel();
+        this._notifySelectedMaterialVariationSeedChanged();
     }
 
     _syncLayersPanel() {
@@ -1999,6 +2107,8 @@ export class BuildingFabricationUI {
                 planOffset: 0.0,
                 style: lastFloor?.style ?? this._buildingStyle,
                 material: lastFloor?.material ?? null,
+                tiling: lastFloor?.tiling ?? null,
+                materialVariation: lastFloor?.materialVariation ?? null,
                 belt: lastFloor?.belt ?? null,
                 windows: lastFloor?.windows ?? null
             }));
@@ -2453,6 +2563,551 @@ export class BuildingFabricationUI {
                     });
                 });
                 wallsGroup.body.appendChild(wallMaterialPicker.row);
+
+                const wallTilingGroup = makeDetailsSection('Texture tiling', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:tiling` });
+                layer.tiling ??= { enabled: false, tileMeters: 2.0 };
+                const tilingToggle = makeToggleRow('Override tile meters');
+                tilingToggle.input.checked = !!layer?.tiling?.enabled;
+                tilingToggle.input.disabled = !allow;
+                wallTilingGroup.body.appendChild(tilingToggle.toggle);
+
+                const tileMetersRow = makeRangeRow('Tile meters');
+                tileMetersRow.range.min = '0.25';
+                tileMetersRow.range.max = '20';
+                tileMetersRow.range.step = '0.25';
+                tileMetersRow.number.min = '0.25';
+                tileMetersRow.number.max = '20';
+                tileMetersRow.number.step = '0.25';
+                tileMetersRow.range.value = String(layer?.tiling?.tileMeters ?? 2.0);
+                tileMetersRow.number.value = formatFloat(layer?.tiling?.tileMeters ?? 2.0, 2);
+                tileMetersRow.range.disabled = !allow || !layer?.tiling?.enabled;
+                tileMetersRow.number.disabled = tileMetersRow.range.disabled;
+                tilingToggle.input.addEventListener('change', () => {
+                    layer.tiling.enabled = !!tilingToggle.input.checked;
+                    tileMetersRow.range.disabled = !allow || !layer.tiling.enabled;
+                    tileMetersRow.number.disabled = tileMetersRow.range.disabled;
+                    this._notifySelectedLayersChanged();
+                });
+                tileMetersRow.range.addEventListener('input', () => {
+                    const next = clamp(tileMetersRow.range.value, 0.25, 20.0);
+                    layer.tiling.tileMeters = next;
+                    tileMetersRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                tileMetersRow.number.addEventListener('change', () => {
+                    const next = clamp(tileMetersRow.number.value, 0.25, 20.0);
+                    layer.tiling.tileMeters = next;
+                    tileMetersRow.range.value = String(next);
+                    tileMetersRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                wallTilingGroup.body.appendChild(tileMetersRow.row);
+
+                const tilingHint = document.createElement('div');
+                tilingHint.className = 'building-fab-hint';
+                tilingHint.textContent = 'Overrides the material tile size in meters.';
+                wallTilingGroup.body.appendChild(tilingHint);
+                wallsGroup.body.appendChild(wallTilingGroup.details);
+
+                const wallMatVarGroup = makeDetailsSection('Material variation', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar` });
+                layer.materialVariation ??= { enabled: false, seedOffset: 0 };
+                const wallMatVarNormalized = normalizeMaterialVariationConfig(layer.materialVariation, { root: MATERIAL_VARIATION_ROOT.WALL });
+
+                const matVarToggle = makeToggleRow('Enable variation');
+                matVarToggle.input.checked = !!wallMatVarNormalized.enabled;
+                matVarToggle.input.disabled = !allow;
+                wallMatVarGroup.body.appendChild(matVarToggle.toggle);
+
+                const seedOffsetRow = makeRangeRow('Seed offset');
+                seedOffsetRow.range.min = '-9999';
+                seedOffsetRow.range.max = '9999';
+                seedOffsetRow.range.step = '1';
+                seedOffsetRow.number.min = '-9999';
+                seedOffsetRow.number.max = '9999';
+                seedOffsetRow.number.step = '1';
+                seedOffsetRow.range.value = String(layer.materialVariation.seedOffset ?? 0);
+                seedOffsetRow.number.value = String(layer.materialVariation.seedOffset ?? 0);
+                wallMatVarGroup.body.appendChild(seedOffsetRow.row);
+
+                const intensityRow = makeRangeRow('Intensity');
+                intensityRow.range.min = '0';
+                intensityRow.range.max = '2';
+                intensityRow.range.step = '0.01';
+                intensityRow.number.min = '0';
+                intensityRow.number.max = '2';
+                intensityRow.number.step = '0.01';
+                intensityRow.range.value = String(wallMatVarNormalized.globalIntensity);
+                intensityRow.number.value = formatFloat(wallMatVarNormalized.globalIntensity, 2);
+                wallMatVarGroup.body.appendChild(intensityRow.row);
+
+                const scaleRow = makeRangeRow('World scale');
+                scaleRow.range.min = '0.05';
+                scaleRow.range.max = '1';
+                scaleRow.range.step = '0.01';
+                scaleRow.number.min = '0.05';
+                scaleRow.number.max = '1';
+                scaleRow.number.step = '0.01';
+                scaleRow.range.value = String(wallMatVarNormalized.worldSpaceScale);
+                scaleRow.number.value = formatFloat(wallMatVarNormalized.worldSpaceScale, 2);
+                wallMatVarGroup.body.appendChild(scaleRow.row);
+
+                const macroGroup = makeDetailsSection('Macro', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:macro` });
+                const macroToggle = makeToggleRow('Enable macro');
+                macroToggle.input.checked = !!wallMatVarNormalized.macro.enabled;
+                macroToggle.input.disabled = !allow || !wallMatVarNormalized.enabled;
+                macroGroup.body.appendChild(macroToggle.toggle);
+                const macroIntensityRow = makeRangeRow('Intensity');
+                macroIntensityRow.range.min = '0';
+                macroIntensityRow.range.max = '2';
+                macroIntensityRow.range.step = '0.01';
+                macroIntensityRow.number.min = '0';
+                macroIntensityRow.number.max = '2';
+                macroIntensityRow.number.step = '0.01';
+                macroIntensityRow.range.value = String(wallMatVarNormalized.macro.intensity);
+                macroIntensityRow.number.value = formatFloat(wallMatVarNormalized.macro.intensity, 2);
+                macroGroup.body.appendChild(macroIntensityRow.row);
+                const macroScaleRow = makeRangeRow('Scale');
+                macroScaleRow.range.min = '0.05';
+                macroScaleRow.range.max = '2';
+                macroScaleRow.range.step = '0.01';
+                macroScaleRow.number.min = '0.05';
+                macroScaleRow.number.max = '2';
+                macroScaleRow.number.step = '0.01';
+                macroScaleRow.range.value = String(wallMatVarNormalized.macro.scale);
+                macroScaleRow.number.value = formatFloat(wallMatVarNormalized.macro.scale, 2);
+                macroGroup.body.appendChild(macroScaleRow.row);
+                wallMatVarGroup.body.appendChild(macroGroup.details);
+
+                const streaksGroup = makeDetailsSection('Streaks', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:streaks` });
+                const streaksToggle = makeToggleRow('Enable streaks');
+                streaksToggle.input.checked = !!wallMatVarNormalized.streaks.enabled;
+                streaksToggle.input.disabled = !allow || !wallMatVarNormalized.enabled;
+                streaksGroup.body.appendChild(streaksToggle.toggle);
+                const streakStrengthRow = makeRangeRow('Strength');
+                streakStrengthRow.range.min = '0';
+                streakStrengthRow.range.max = '1';
+                streakStrengthRow.range.step = '0.01';
+                streakStrengthRow.number.min = '0';
+                streakStrengthRow.number.max = '1';
+                streakStrengthRow.number.step = '0.01';
+                streakStrengthRow.range.value = String(wallMatVarNormalized.streaks.strength);
+                streakStrengthRow.number.value = formatFloat(wallMatVarNormalized.streaks.strength, 2);
+                streaksGroup.body.appendChild(streakStrengthRow.row);
+                const streakScaleRow = makeRangeRow('Scale');
+                streakScaleRow.range.min = '0.05';
+                streakScaleRow.range.max = '5';
+                streakScaleRow.range.step = '0.01';
+                streakScaleRow.number.min = '0.05';
+                streakScaleRow.number.max = '5';
+                streakScaleRow.number.step = '0.01';
+                streakScaleRow.range.value = String(wallMatVarNormalized.streaks.scale);
+                streakScaleRow.number.value = formatFloat(wallMatVarNormalized.streaks.scale, 2);
+                streaksGroup.body.appendChild(streakScaleRow.row);
+                wallMatVarGroup.body.appendChild(streaksGroup.details);
+
+                const edgeGroup = makeDetailsSection('Edge wear', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:edge` });
+                const edgeToggle = makeToggleRow('Enable edge wear');
+                edgeToggle.input.checked = !!wallMatVarNormalized.edgeWear.enabled;
+                edgeToggle.input.disabled = !allow || !wallMatVarNormalized.enabled;
+                edgeGroup.body.appendChild(edgeToggle.toggle);
+                const edgeStrengthRow = makeRangeRow('Strength');
+                edgeStrengthRow.range.min = '0';
+                edgeStrengthRow.range.max = '1';
+                edgeStrengthRow.range.step = '0.01';
+                edgeStrengthRow.number.min = '0';
+                edgeStrengthRow.number.max = '1';
+                edgeStrengthRow.number.step = '0.01';
+                edgeStrengthRow.range.value = String(wallMatVarNormalized.edgeWear.strength);
+                edgeStrengthRow.number.value = formatFloat(wallMatVarNormalized.edgeWear.strength, 2);
+                edgeGroup.body.appendChild(edgeStrengthRow.row);
+                wallMatVarGroup.body.appendChild(edgeGroup.details);
+
+                const grimeGroup = makeDetailsSection('Grime', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:grime` });
+                const grimeToggle = makeToggleRow('Enable grime');
+                grimeToggle.input.checked = !!wallMatVarNormalized.grime.enabled;
+                grimeToggle.input.disabled = !allow || !wallMatVarNormalized.enabled;
+                grimeGroup.body.appendChild(grimeToggle.toggle);
+                const grimeStrengthRow = makeRangeRow('Strength');
+                grimeStrengthRow.range.min = '0';
+                grimeStrengthRow.range.max = '1';
+                grimeStrengthRow.range.step = '0.01';
+                grimeStrengthRow.number.min = '0';
+                grimeStrengthRow.number.max = '1';
+                grimeStrengthRow.number.step = '0.01';
+                grimeStrengthRow.range.value = String(wallMatVarNormalized.grime.strength);
+                grimeStrengthRow.number.value = formatFloat(wallMatVarNormalized.grime.strength, 2);
+                grimeGroup.body.appendChild(grimeStrengthRow.row);
+                wallMatVarGroup.body.appendChild(grimeGroup.details);
+
+                const dustGroup = makeDetailsSection('Dust', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:dust` });
+                const dustToggle = makeToggleRow('Enable dust');
+                dustToggle.input.checked = !!wallMatVarNormalized.dust.enabled;
+                dustToggle.input.disabled = !allow || !wallMatVarNormalized.enabled;
+                dustGroup.body.appendChild(dustToggle.toggle);
+                const dustStrengthRow = makeRangeRow('Strength');
+                dustStrengthRow.range.min = '0';
+                dustStrengthRow.range.max = '1';
+                dustStrengthRow.range.step = '0.01';
+                dustStrengthRow.number.min = '0';
+                dustStrengthRow.number.max = '1';
+                dustStrengthRow.number.step = '0.01';
+                dustStrengthRow.range.value = String(wallMatVarNormalized.dust.strength);
+                dustStrengthRow.number.value = formatFloat(wallMatVarNormalized.dust.strength, 2);
+                dustGroup.body.appendChild(dustStrengthRow.row);
+                wallMatVarGroup.body.appendChild(dustGroup.details);
+
+                const antiGroup = makeDetailsSection('Anti-tiling', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:anti` });
+                const antiToggle = makeToggleRow('Enable anti-tiling');
+                antiToggle.input.checked = !!wallMatVarNormalized.antiTiling.enabled;
+                antiToggle.input.disabled = !allow || !wallMatVarNormalized.enabled;
+                antiGroup.body.appendChild(antiToggle.toggle);
+                const antiStrengthRow = makeRangeRow('Strength');
+                antiStrengthRow.range.min = '0';
+                antiStrengthRow.range.max = '1';
+                antiStrengthRow.range.step = '0.01';
+                antiStrengthRow.number.min = '0';
+                antiStrengthRow.number.max = '1';
+                antiStrengthRow.number.step = '0.01';
+                antiStrengthRow.range.value = String(wallMatVarNormalized.antiTiling.strength);
+                antiStrengthRow.number.value = formatFloat(wallMatVarNormalized.antiTiling.strength, 2);
+                antiGroup.body.appendChild(antiStrengthRow.row);
+                wallMatVarGroup.body.appendChild(antiGroup.details);
+
+                const detailGroup = makeDetailsSection('Detail', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:detail` });
+                const detailToggle = makeToggleRow('Enable detail');
+                detailToggle.input.checked = !!wallMatVarNormalized.detail.enabled;
+                detailToggle.input.disabled = !allow || !wallMatVarNormalized.enabled;
+                detailGroup.body.appendChild(detailToggle.toggle);
+                const detailStrengthRow = makeRangeRow('Strength');
+                detailStrengthRow.range.min = '0';
+                detailStrengthRow.range.max = '1';
+                detailStrengthRow.range.step = '0.01';
+                detailStrengthRow.number.min = '0';
+                detailStrengthRow.number.max = '1';
+                detailStrengthRow.number.step = '0.01';
+                detailStrengthRow.range.value = String(wallMatVarNormalized.detail.strength);
+                detailStrengthRow.number.value = formatFloat(wallMatVarNormalized.detail.strength, 2);
+                detailGroup.body.appendChild(detailStrengthRow.row);
+                wallMatVarGroup.body.appendChild(detailGroup.details);
+
+                const cracksGroup = makeDetailsSection('Cracks', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:cracks` });
+                const cracksToggle = makeToggleRow('Enable cracks');
+                cracksToggle.input.checked = !!wallMatVarNormalized.cracks.enabled;
+                cracksToggle.input.disabled = !allow || !wallMatVarNormalized.enabled;
+                cracksGroup.body.appendChild(cracksToggle.toggle);
+                const crackStrengthRow = makeRangeRow('Strength');
+                crackStrengthRow.range.min = '0';
+                crackStrengthRow.range.max = '1';
+                crackStrengthRow.range.step = '0.01';
+                crackStrengthRow.number.min = '0';
+                crackStrengthRow.number.max = '1';
+                crackStrengthRow.number.step = '0.01';
+                crackStrengthRow.range.value = String(wallMatVarNormalized.cracks.strength);
+                crackStrengthRow.number.value = formatFloat(wallMatVarNormalized.cracks.strength, 2);
+                cracksGroup.body.appendChild(crackStrengthRow.row);
+                wallMatVarGroup.body.appendChild(cracksGroup.details);
+
+                const syncMatVarEnabled = () => {
+                    const enabled = !!layer.materialVariation.enabled;
+                    seedOffsetRow.range.disabled = !allow || !enabled;
+                    seedOffsetRow.number.disabled = seedOffsetRow.range.disabled;
+                    intensityRow.range.disabled = !allow || !enabled;
+                    intensityRow.number.disabled = intensityRow.range.disabled;
+                    scaleRow.range.disabled = !allow || !enabled;
+                    scaleRow.number.disabled = scaleRow.range.disabled;
+
+                    macroToggle.input.disabled = !allow || !enabled;
+                    macroIntensityRow.range.disabled = !allow || !enabled || !macroToggle.input.checked;
+                    macroIntensityRow.number.disabled = macroIntensityRow.range.disabled;
+                    macroScaleRow.range.disabled = !allow || !enabled || !macroToggle.input.checked;
+                    macroScaleRow.number.disabled = macroScaleRow.range.disabled;
+
+                    streaksToggle.input.disabled = !allow || !enabled;
+                    streakStrengthRow.range.disabled = !allow || !enabled || !streaksToggle.input.checked;
+                    streakStrengthRow.number.disabled = streakStrengthRow.range.disabled;
+                    streakScaleRow.range.disabled = !allow || !enabled || !streaksToggle.input.checked;
+                    streakScaleRow.number.disabled = streakScaleRow.range.disabled;
+
+                    edgeToggle.input.disabled = !allow || !enabled;
+                    edgeStrengthRow.range.disabled = !allow || !enabled || !edgeToggle.input.checked;
+                    edgeStrengthRow.number.disabled = edgeStrengthRow.range.disabled;
+
+                    grimeToggle.input.disabled = !allow || !enabled;
+                    grimeStrengthRow.range.disabled = !allow || !enabled || !grimeToggle.input.checked;
+                    grimeStrengthRow.number.disabled = grimeStrengthRow.range.disabled;
+
+                    dustToggle.input.disabled = !allow || !enabled;
+                    dustStrengthRow.range.disabled = !allow || !enabled || !dustToggle.input.checked;
+                    dustStrengthRow.number.disabled = dustStrengthRow.range.disabled;
+
+                    antiToggle.input.disabled = !allow || !enabled;
+                    antiStrengthRow.range.disabled = !allow || !enabled || !antiToggle.input.checked;
+                    antiStrengthRow.number.disabled = antiStrengthRow.range.disabled;
+
+                    detailToggle.input.disabled = !allow || !enabled;
+                    detailStrengthRow.range.disabled = !allow || !enabled || !detailToggle.input.checked;
+                    detailStrengthRow.number.disabled = detailStrengthRow.range.disabled;
+
+                    cracksToggle.input.disabled = !allow || !enabled;
+                    crackStrengthRow.range.disabled = !allow || !enabled || !cracksToggle.input.checked;
+                    crackStrengthRow.number.disabled = crackStrengthRow.range.disabled;
+                };
+
+                matVarToggle.input.addEventListener('change', () => {
+                    layer.materialVariation.enabled = !!matVarToggle.input.checked;
+                    syncMatVarEnabled();
+                    this._notifySelectedLayersChanged();
+                });
+                seedOffsetRow.range.addEventListener('input', () => {
+                    const next = clampInt(seedOffsetRow.range.value, -9999, 9999);
+                    layer.materialVariation.seedOffset = next;
+                    seedOffsetRow.number.value = String(next);
+                    this._notifySelectedLayersChanged();
+                });
+                seedOffsetRow.number.addEventListener('change', () => {
+                    const next = clampInt(seedOffsetRow.number.value, -9999, 9999);
+                    layer.materialVariation.seedOffset = next;
+                    seedOffsetRow.range.value = String(next);
+                    seedOffsetRow.number.value = String(next);
+                    this._notifySelectedLayersChanged();
+                });
+                intensityRow.range.addEventListener('input', () => {
+                    const next = clamp(intensityRow.range.value, 0.0, 2.0);
+                    layer.materialVariation.globalIntensity = next;
+                    intensityRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                intensityRow.number.addEventListener('change', () => {
+                    const next = clamp(intensityRow.number.value, 0.0, 2.0);
+                    layer.materialVariation.globalIntensity = next;
+                    intensityRow.range.value = String(next);
+                    intensityRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                scaleRow.range.addEventListener('input', () => {
+                    const next = clamp(scaleRow.range.value, 0.05, 1.0);
+                    layer.materialVariation.worldSpaceScale = next;
+                    scaleRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                scaleRow.number.addEventListener('change', () => {
+                    const next = clamp(scaleRow.number.value, 0.05, 1.0);
+                    layer.materialVariation.worldSpaceScale = next;
+                    scaleRow.range.value = String(next);
+                    scaleRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                macroToggle.input.addEventListener('change', () => {
+                    layer.materialVariation.macro ??= {};
+                    layer.materialVariation.macro.enabled = !!macroToggle.input.checked;
+                    syncMatVarEnabled();
+                    this._notifySelectedLayersChanged();
+                });
+                macroIntensityRow.range.addEventListener('input', () => {
+                    const next = clamp(macroIntensityRow.range.value, 0.0, 2.0);
+                    layer.materialVariation.macro ??= {};
+                    layer.materialVariation.macro.intensity = next;
+                    macroIntensityRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                macroIntensityRow.number.addEventListener('change', () => {
+                    const next = clamp(macroIntensityRow.number.value, 0.0, 2.0);
+                    layer.materialVariation.macro ??= {};
+                    layer.materialVariation.macro.intensity = next;
+                    macroIntensityRow.range.value = String(next);
+                    macroIntensityRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                macroScaleRow.range.addEventListener('input', () => {
+                    const next = clamp(macroScaleRow.range.value, 0.05, 2.0);
+                    layer.materialVariation.macro ??= {};
+                    layer.materialVariation.macro.scale = next;
+                    macroScaleRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                macroScaleRow.number.addEventListener('change', () => {
+                    const next = clamp(macroScaleRow.number.value, 0.05, 2.0);
+                    layer.materialVariation.macro ??= {};
+                    layer.materialVariation.macro.scale = next;
+                    macroScaleRow.range.value = String(next);
+                    macroScaleRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                streaksToggle.input.addEventListener('change', () => {
+                    layer.materialVariation.streaks ??= {};
+                    layer.materialVariation.streaks.enabled = !!streaksToggle.input.checked;
+                    syncMatVarEnabled();
+                    this._notifySelectedLayersChanged();
+                });
+                streakStrengthRow.range.addEventListener('input', () => {
+                    const next = clamp(streakStrengthRow.range.value, 0.0, 1.0);
+                    layer.materialVariation.streaks ??= {};
+                    layer.materialVariation.streaks.strength = next;
+                    streakStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                streakStrengthRow.number.addEventListener('change', () => {
+                    const next = clamp(streakStrengthRow.number.value, 0.0, 1.0);
+                    layer.materialVariation.streaks ??= {};
+                    layer.materialVariation.streaks.strength = next;
+                    streakStrengthRow.range.value = String(next);
+                    streakStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                streakScaleRow.range.addEventListener('input', () => {
+                    const next = clamp(streakScaleRow.range.value, 0.05, 5.0);
+                    layer.materialVariation.streaks ??= {};
+                    layer.materialVariation.streaks.scale = next;
+                    streakScaleRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                streakScaleRow.number.addEventListener('change', () => {
+                    const next = clamp(streakScaleRow.number.value, 0.05, 5.0);
+                    layer.materialVariation.streaks ??= {};
+                    layer.materialVariation.streaks.scale = next;
+                    streakScaleRow.range.value = String(next);
+                    streakScaleRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                edgeToggle.input.addEventListener('change', () => {
+                    layer.materialVariation.edgeWear ??= {};
+                    layer.materialVariation.edgeWear.enabled = !!edgeToggle.input.checked;
+                    syncMatVarEnabled();
+                    this._notifySelectedLayersChanged();
+                });
+                edgeStrengthRow.range.addEventListener('input', () => {
+                    const next = clamp(edgeStrengthRow.range.value, 0.0, 1.0);
+                    layer.materialVariation.edgeWear ??= {};
+                    layer.materialVariation.edgeWear.strength = next;
+                    edgeStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                edgeStrengthRow.number.addEventListener('change', () => {
+                    const next = clamp(edgeStrengthRow.number.value, 0.0, 1.0);
+                    layer.materialVariation.edgeWear ??= {};
+                    layer.materialVariation.edgeWear.strength = next;
+                    edgeStrengthRow.range.value = String(next);
+                    edgeStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                grimeToggle.input.addEventListener('change', () => {
+                    layer.materialVariation.grime ??= {};
+                    layer.materialVariation.grime.enabled = !!grimeToggle.input.checked;
+                    syncMatVarEnabled();
+                    this._notifySelectedLayersChanged();
+                });
+                grimeStrengthRow.range.addEventListener('input', () => {
+                    const next = clamp(grimeStrengthRow.range.value, 0.0, 1.0);
+                    layer.materialVariation.grime ??= {};
+                    layer.materialVariation.grime.strength = next;
+                    grimeStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                grimeStrengthRow.number.addEventListener('change', () => {
+                    const next = clamp(grimeStrengthRow.number.value, 0.0, 1.0);
+                    layer.materialVariation.grime ??= {};
+                    layer.materialVariation.grime.strength = next;
+                    grimeStrengthRow.range.value = String(next);
+                    grimeStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                dustToggle.input.addEventListener('change', () => {
+                    layer.materialVariation.dust ??= {};
+                    layer.materialVariation.dust.enabled = !!dustToggle.input.checked;
+                    syncMatVarEnabled();
+                    this._notifySelectedLayersChanged();
+                });
+                dustStrengthRow.range.addEventListener('input', () => {
+                    const next = clamp(dustStrengthRow.range.value, 0.0, 1.0);
+                    layer.materialVariation.dust ??= {};
+                    layer.materialVariation.dust.strength = next;
+                    dustStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                dustStrengthRow.number.addEventListener('change', () => {
+                    const next = clamp(dustStrengthRow.number.value, 0.0, 1.0);
+                    layer.materialVariation.dust ??= {};
+                    layer.materialVariation.dust.strength = next;
+                    dustStrengthRow.range.value = String(next);
+                    dustStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                antiToggle.input.addEventListener('change', () => {
+                    layer.materialVariation.antiTiling ??= {};
+                    layer.materialVariation.antiTiling.enabled = !!antiToggle.input.checked;
+                    syncMatVarEnabled();
+                    this._notifySelectedLayersChanged();
+                });
+                antiStrengthRow.range.addEventListener('input', () => {
+                    const next = clamp(antiStrengthRow.range.value, 0.0, 1.0);
+                    layer.materialVariation.antiTiling ??= {};
+                    layer.materialVariation.antiTiling.strength = next;
+                    antiStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                antiStrengthRow.number.addEventListener('change', () => {
+                    const next = clamp(antiStrengthRow.number.value, 0.0, 1.0);
+                    layer.materialVariation.antiTiling ??= {};
+                    layer.materialVariation.antiTiling.strength = next;
+                    antiStrengthRow.range.value = String(next);
+                    antiStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                detailToggle.input.addEventListener('change', () => {
+                    layer.materialVariation.detail ??= {};
+                    layer.materialVariation.detail.enabled = !!detailToggle.input.checked;
+                    syncMatVarEnabled();
+                    this._notifySelectedLayersChanged();
+                });
+                detailStrengthRow.range.addEventListener('input', () => {
+                    const next = clamp(detailStrengthRow.range.value, 0.0, 1.0);
+                    layer.materialVariation.detail ??= {};
+                    layer.materialVariation.detail.strength = next;
+                    detailStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                detailStrengthRow.number.addEventListener('change', () => {
+                    const next = clamp(detailStrengthRow.number.value, 0.0, 1.0);
+                    layer.materialVariation.detail ??= {};
+                    layer.materialVariation.detail.strength = next;
+                    detailStrengthRow.range.value = String(next);
+                    detailStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                cracksToggle.input.addEventListener('change', () => {
+                    layer.materialVariation.cracks ??= {};
+                    layer.materialVariation.cracks.enabled = !!cracksToggle.input.checked;
+                    syncMatVarEnabled();
+                    this._notifySelectedLayersChanged();
+                });
+                crackStrengthRow.range.addEventListener('input', () => {
+                    const next = clamp(crackStrengthRow.range.value, 0.0, 1.0);
+                    layer.materialVariation.cracks ??= {};
+                    layer.materialVariation.cracks.strength = next;
+                    crackStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                crackStrengthRow.number.addEventListener('change', () => {
+                    const next = clamp(crackStrengthRow.number.value, 0.0, 1.0);
+                    layer.materialVariation.cracks ??= {};
+                    layer.materialVariation.cracks.strength = next;
+                    crackStrengthRow.range.value = String(next);
+                    crackStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                syncMatVarEnabled();
+                wallMatVarGroup.body.appendChild(document.createElement('div')).className = 'building-fab-hint';
+                wallMatVarGroup.body.lastChild.textContent = 'Enable the variation system to add weathering and breakup.';
+                wallsGroup.body.appendChild(wallMatVarGroup.details);
 
                 const beltGroup = makeDetailsSection('Belt', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:belt` });
                 const beltToggle = makeToggleRow('Enable belt');
@@ -2942,6 +3597,548 @@ export class BuildingFabricationUI {
                 });
                 layerSection.body.appendChild(roofMaterialPicker.row);
 
+                const appendRoofSectionLabel = (text) => {
+                    const label = document.createElement('div');
+                    label.className = 'ui-section-label';
+                    label.textContent = text;
+                    layerSection.body.appendChild(label);
+                };
+
+                appendRoofSectionLabel('Texture tiling');
+                layer.roof.tiling ??= { enabled: false, tileMeters: 4.0 };
+                const roofTilingToggle = makeToggleRow('Override tile meters');
+                roofTilingToggle.input.checked = !!layer?.roof?.tiling?.enabled;
+                roofTilingToggle.input.disabled = !allow;
+                layerSection.body.appendChild(roofTilingToggle.toggle);
+
+                const roofTileMetersRow = makeRangeRow('Tile meters');
+                roofTileMetersRow.range.min = '0.25';
+                roofTileMetersRow.range.max = '20';
+                roofTileMetersRow.range.step = '0.25';
+                roofTileMetersRow.number.min = '0.25';
+                roofTileMetersRow.number.max = '20';
+                roofTileMetersRow.number.step = '0.25';
+                roofTileMetersRow.range.value = String(layer?.roof?.tiling?.tileMeters ?? 4.0);
+                roofTileMetersRow.number.value = formatFloat(layer?.roof?.tiling?.tileMeters ?? 4.0, 2);
+                roofTileMetersRow.range.disabled = !allow || !layer?.roof?.tiling?.enabled;
+                roofTileMetersRow.number.disabled = roofTileMetersRow.range.disabled;
+                roofTilingToggle.input.addEventListener('change', () => {
+                    layer.roof.tiling.enabled = !!roofTilingToggle.input.checked;
+                    roofTileMetersRow.range.disabled = !allow || !layer.roof.tiling.enabled;
+                    roofTileMetersRow.number.disabled = roofTileMetersRow.range.disabled;
+                    this._notifySelectedLayersChanged();
+                });
+                roofTileMetersRow.range.addEventListener('input', () => {
+                    const next = clamp(roofTileMetersRow.range.value, 0.25, 20.0);
+                    layer.roof.tiling.tileMeters = next;
+                    roofTileMetersRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofTileMetersRow.number.addEventListener('change', () => {
+                    const next = clamp(roofTileMetersRow.number.value, 0.25, 20.0);
+                    layer.roof.tiling.tileMeters = next;
+                    roofTileMetersRow.range.value = String(next);
+                    roofTileMetersRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                layerSection.body.appendChild(roofTileMetersRow.row);
+
+                const roofTilingHint = document.createElement('div');
+                roofTilingHint.className = 'building-fab-hint';
+                roofTilingHint.textContent = 'Overrides the material tile size in meters.';
+                layerSection.body.appendChild(roofTilingHint);
+
+                appendRoofSectionLabel('Material variation');
+                layer.roof.materialVariation ??= { enabled: false, seedOffset: 0 };
+                const roofMatVarNormalized = normalizeMaterialVariationConfig(layer.roof.materialVariation, { root: MATERIAL_VARIATION_ROOT.SURFACE });
+
+                const roofMatVarToggle = makeToggleRow('Enable variation');
+                roofMatVarToggle.input.checked = !!roofMatVarNormalized.enabled;
+                roofMatVarToggle.input.disabled = !allow;
+                layerSection.body.appendChild(roofMatVarToggle.toggle);
+
+                const roofSeedOffsetRow = makeRangeRow('Seed offset');
+                roofSeedOffsetRow.range.min = '-9999';
+                roofSeedOffsetRow.range.max = '9999';
+                roofSeedOffsetRow.range.step = '1';
+                roofSeedOffsetRow.number.min = '-9999';
+                roofSeedOffsetRow.number.max = '9999';
+                roofSeedOffsetRow.number.step = '1';
+                roofSeedOffsetRow.range.value = String(layer.roof.materialVariation.seedOffset ?? 0);
+                roofSeedOffsetRow.number.value = String(layer.roof.materialVariation.seedOffset ?? 0);
+                layerSection.body.appendChild(roofSeedOffsetRow.row);
+
+                const roofIntensityRow = makeRangeRow('Intensity');
+                roofIntensityRow.range.min = '0';
+                roofIntensityRow.range.max = '2';
+                roofIntensityRow.range.step = '0.01';
+                roofIntensityRow.number.min = '0';
+                roofIntensityRow.number.max = '2';
+                roofIntensityRow.number.step = '0.01';
+                roofIntensityRow.range.value = String(roofMatVarNormalized.globalIntensity);
+                roofIntensityRow.number.value = formatFloat(roofMatVarNormalized.globalIntensity, 2);
+                layerSection.body.appendChild(roofIntensityRow.row);
+
+                const roofScaleRow = makeRangeRow('World scale');
+                roofScaleRow.range.min = '0.05';
+                roofScaleRow.range.max = '1';
+                roofScaleRow.range.step = '0.01';
+                roofScaleRow.number.min = '0.05';
+                roofScaleRow.number.max = '1';
+                roofScaleRow.number.step = '0.01';
+                roofScaleRow.range.value = String(roofMatVarNormalized.worldSpaceScale);
+                roofScaleRow.number.value = formatFloat(roofMatVarNormalized.worldSpaceScale, 2);
+                layerSection.body.appendChild(roofScaleRow.row);
+
+                appendRoofSectionLabel('Macro');
+                const roofMacroToggle = makeToggleRow('Enable macro');
+                roofMacroToggle.input.checked = !!roofMatVarNormalized.macro.enabled;
+                roofMacroToggle.input.disabled = !allow || !roofMatVarNormalized.enabled;
+                layerSection.body.appendChild(roofMacroToggle.toggle);
+                const roofMacroIntensityRow = makeRangeRow('Intensity');
+                roofMacroIntensityRow.range.min = '0';
+                roofMacroIntensityRow.range.max = '2';
+                roofMacroIntensityRow.range.step = '0.01';
+                roofMacroIntensityRow.number.min = '0';
+                roofMacroIntensityRow.number.max = '2';
+                roofMacroIntensityRow.number.step = '0.01';
+                roofMacroIntensityRow.range.value = String(roofMatVarNormalized.macro.intensity);
+                roofMacroIntensityRow.number.value = formatFloat(roofMatVarNormalized.macro.intensity, 2);
+                layerSection.body.appendChild(roofMacroIntensityRow.row);
+                const roofMacroScaleRow = makeRangeRow('Scale');
+                roofMacroScaleRow.range.min = '0.05';
+                roofMacroScaleRow.range.max = '2';
+                roofMacroScaleRow.range.step = '0.01';
+                roofMacroScaleRow.number.min = '0.05';
+                roofMacroScaleRow.number.max = '2';
+                roofMacroScaleRow.number.step = '0.01';
+                roofMacroScaleRow.range.value = String(roofMatVarNormalized.macro.scale);
+                roofMacroScaleRow.number.value = formatFloat(roofMatVarNormalized.macro.scale, 2);
+                layerSection.body.appendChild(roofMacroScaleRow.row);
+
+                appendRoofSectionLabel('Grime');
+                const roofGrimeToggle = makeToggleRow('Enable grime');
+                roofGrimeToggle.input.checked = !!roofMatVarNormalized.grime.enabled;
+                roofGrimeToggle.input.disabled = !allow || !roofMatVarNormalized.enabled;
+                layerSection.body.appendChild(roofGrimeToggle.toggle);
+                const roofGrimeStrengthRow = makeRangeRow('Strength');
+                roofGrimeStrengthRow.range.min = '0';
+                roofGrimeStrengthRow.range.max = '1';
+                roofGrimeStrengthRow.range.step = '0.01';
+                roofGrimeStrengthRow.number.min = '0';
+                roofGrimeStrengthRow.number.max = '1';
+                roofGrimeStrengthRow.number.step = '0.01';
+                roofGrimeStrengthRow.range.value = String(roofMatVarNormalized.grime.strength);
+                roofGrimeStrengthRow.number.value = formatFloat(roofMatVarNormalized.grime.strength, 2);
+                layerSection.body.appendChild(roofGrimeStrengthRow.row);
+
+                appendRoofSectionLabel('Streaks');
+                const roofStreaksToggle = makeToggleRow('Enable streaks');
+                roofStreaksToggle.input.checked = !!roofMatVarNormalized.streaks.enabled;
+                roofStreaksToggle.input.disabled = !allow || !roofMatVarNormalized.enabled;
+                layerSection.body.appendChild(roofStreaksToggle.toggle);
+                const roofStreakStrengthRow = makeRangeRow('Strength');
+                roofStreakStrengthRow.range.min = '0';
+                roofStreakStrengthRow.range.max = '1';
+                roofStreakStrengthRow.range.step = '0.01';
+                roofStreakStrengthRow.number.min = '0';
+                roofStreakStrengthRow.number.max = '1';
+                roofStreakStrengthRow.number.step = '0.01';
+                roofStreakStrengthRow.range.value = String(roofMatVarNormalized.streaks.strength);
+                roofStreakStrengthRow.number.value = formatFloat(roofMatVarNormalized.streaks.strength, 2);
+                layerSection.body.appendChild(roofStreakStrengthRow.row);
+                const roofStreakScaleRow = makeRangeRow('Scale');
+                roofStreakScaleRow.range.min = '0.05';
+                roofStreakScaleRow.range.max = '5';
+                roofStreakScaleRow.range.step = '0.01';
+                roofStreakScaleRow.number.min = '0.05';
+                roofStreakScaleRow.number.max = '5';
+                roofStreakScaleRow.number.step = '0.01';
+                roofStreakScaleRow.range.value = String(roofMatVarNormalized.streaks.scale);
+                roofStreakScaleRow.number.value = formatFloat(roofMatVarNormalized.streaks.scale, 2);
+                layerSection.body.appendChild(roofStreakScaleRow.row);
+
+                appendRoofSectionLabel('Edge wear');
+                const roofEdgeToggle = makeToggleRow('Enable edge wear');
+                roofEdgeToggle.input.checked = !!roofMatVarNormalized.edgeWear.enabled;
+                roofEdgeToggle.input.disabled = !allow || !roofMatVarNormalized.enabled;
+                layerSection.body.appendChild(roofEdgeToggle.toggle);
+                const roofEdgeStrengthRow = makeRangeRow('Strength');
+                roofEdgeStrengthRow.range.min = '0';
+                roofEdgeStrengthRow.range.max = '1';
+                roofEdgeStrengthRow.range.step = '0.01';
+                roofEdgeStrengthRow.number.min = '0';
+                roofEdgeStrengthRow.number.max = '1';
+                roofEdgeStrengthRow.number.step = '0.01';
+                roofEdgeStrengthRow.range.value = String(roofMatVarNormalized.edgeWear.strength);
+                roofEdgeStrengthRow.number.value = formatFloat(roofMatVarNormalized.edgeWear.strength, 2);
+                layerSection.body.appendChild(roofEdgeStrengthRow.row);
+
+                appendRoofSectionLabel('Dust');
+                const roofDustToggle = makeToggleRow('Enable dust');
+                roofDustToggle.input.checked = !!roofMatVarNormalized.dust.enabled;
+                roofDustToggle.input.disabled = !allow || !roofMatVarNormalized.enabled;
+                layerSection.body.appendChild(roofDustToggle.toggle);
+                const roofDustStrengthRow = makeRangeRow('Strength');
+                roofDustStrengthRow.range.min = '0';
+                roofDustStrengthRow.range.max = '1';
+                roofDustStrengthRow.range.step = '0.01';
+                roofDustStrengthRow.number.min = '0';
+                roofDustStrengthRow.number.max = '1';
+                roofDustStrengthRow.number.step = '0.01';
+                roofDustStrengthRow.range.value = String(roofMatVarNormalized.dust.strength);
+                roofDustStrengthRow.number.value = formatFloat(roofMatVarNormalized.dust.strength, 2);
+                layerSection.body.appendChild(roofDustStrengthRow.row);
+
+                appendRoofSectionLabel('Anti-tiling');
+                const roofAntiToggle = makeToggleRow('Enable anti-tiling');
+                roofAntiToggle.input.checked = !!roofMatVarNormalized.antiTiling.enabled;
+                roofAntiToggle.input.disabled = !allow || !roofMatVarNormalized.enabled;
+                layerSection.body.appendChild(roofAntiToggle.toggle);
+                const roofAntiStrengthRow = makeRangeRow('Strength');
+                roofAntiStrengthRow.range.min = '0';
+                roofAntiStrengthRow.range.max = '1';
+                roofAntiStrengthRow.range.step = '0.01';
+                roofAntiStrengthRow.number.min = '0';
+                roofAntiStrengthRow.number.max = '1';
+                roofAntiStrengthRow.number.step = '0.01';
+                roofAntiStrengthRow.range.value = String(roofMatVarNormalized.antiTiling.strength);
+                roofAntiStrengthRow.number.value = formatFloat(roofMatVarNormalized.antiTiling.strength, 2);
+                layerSection.body.appendChild(roofAntiStrengthRow.row);
+
+                appendRoofSectionLabel('Detail');
+                const roofDetailToggle = makeToggleRow('Enable detail');
+                roofDetailToggle.input.checked = !!roofMatVarNormalized.detail.enabled;
+                roofDetailToggle.input.disabled = !allow || !roofMatVarNormalized.enabled;
+                layerSection.body.appendChild(roofDetailToggle.toggle);
+                const roofDetailStrengthRow = makeRangeRow('Strength');
+                roofDetailStrengthRow.range.min = '0';
+                roofDetailStrengthRow.range.max = '1';
+                roofDetailStrengthRow.range.step = '0.01';
+                roofDetailStrengthRow.number.min = '0';
+                roofDetailStrengthRow.number.max = '1';
+                roofDetailStrengthRow.number.step = '0.01';
+                roofDetailStrengthRow.range.value = String(roofMatVarNormalized.detail.strength);
+                roofDetailStrengthRow.number.value = formatFloat(roofMatVarNormalized.detail.strength, 2);
+                layerSection.body.appendChild(roofDetailStrengthRow.row);
+
+                appendRoofSectionLabel('Cracks');
+                const roofCracksToggle = makeToggleRow('Enable cracks');
+                roofCracksToggle.input.checked = !!roofMatVarNormalized.cracks.enabled;
+                roofCracksToggle.input.disabled = !allow || !roofMatVarNormalized.enabled;
+                layerSection.body.appendChild(roofCracksToggle.toggle);
+                const roofCrackStrengthRow = makeRangeRow('Strength');
+                roofCrackStrengthRow.range.min = '0';
+                roofCrackStrengthRow.range.max = '1';
+                roofCrackStrengthRow.range.step = '0.01';
+                roofCrackStrengthRow.number.min = '0';
+                roofCrackStrengthRow.number.max = '1';
+                roofCrackStrengthRow.number.step = '0.01';
+                roofCrackStrengthRow.range.value = String(roofMatVarNormalized.cracks.strength);
+                roofCrackStrengthRow.number.value = formatFloat(roofMatVarNormalized.cracks.strength, 2);
+                layerSection.body.appendChild(roofCrackStrengthRow.row);
+
+                const syncRoofMatVarEnabled = () => {
+                    const enabled = !!layer.roof.materialVariation.enabled;
+                    roofSeedOffsetRow.range.disabled = !allow || !enabled;
+                    roofSeedOffsetRow.number.disabled = roofSeedOffsetRow.range.disabled;
+                    roofIntensityRow.range.disabled = !allow || !enabled;
+                    roofIntensityRow.number.disabled = roofIntensityRow.range.disabled;
+                    roofScaleRow.range.disabled = !allow || !enabled;
+                    roofScaleRow.number.disabled = roofScaleRow.range.disabled;
+
+                    roofMacroToggle.input.disabled = !allow || !enabled;
+                    roofMacroIntensityRow.range.disabled = !allow || !enabled || !roofMacroToggle.input.checked;
+                    roofMacroIntensityRow.number.disabled = roofMacroIntensityRow.range.disabled;
+                    roofMacroScaleRow.range.disabled = !allow || !enabled || !roofMacroToggle.input.checked;
+                    roofMacroScaleRow.number.disabled = roofMacroScaleRow.range.disabled;
+
+                    roofGrimeToggle.input.disabled = !allow || !enabled;
+                    roofGrimeStrengthRow.range.disabled = !allow || !enabled || !roofGrimeToggle.input.checked;
+                    roofGrimeStrengthRow.number.disabled = roofGrimeStrengthRow.range.disabled;
+
+                    roofStreaksToggle.input.disabled = !allow || !enabled;
+                    roofStreakStrengthRow.range.disabled = !allow || !enabled || !roofStreaksToggle.input.checked;
+                    roofStreakStrengthRow.number.disabled = roofStreakStrengthRow.range.disabled;
+                    roofStreakScaleRow.range.disabled = !allow || !enabled || !roofStreaksToggle.input.checked;
+                    roofStreakScaleRow.number.disabled = roofStreakScaleRow.range.disabled;
+
+                    roofEdgeToggle.input.disabled = !allow || !enabled;
+                    roofEdgeStrengthRow.range.disabled = !allow || !enabled || !roofEdgeToggle.input.checked;
+                    roofEdgeStrengthRow.number.disabled = roofEdgeStrengthRow.range.disabled;
+
+                    roofDustToggle.input.disabled = !allow || !enabled;
+                    roofDustStrengthRow.range.disabled = !allow || !enabled || !roofDustToggle.input.checked;
+                    roofDustStrengthRow.number.disabled = roofDustStrengthRow.range.disabled;
+
+                    roofAntiToggle.input.disabled = !allow || !enabled;
+                    roofAntiStrengthRow.range.disabled = !allow || !enabled || !roofAntiToggle.input.checked;
+                    roofAntiStrengthRow.number.disabled = roofAntiStrengthRow.range.disabled;
+
+                    roofDetailToggle.input.disabled = !allow || !enabled;
+                    roofDetailStrengthRow.range.disabled = !allow || !enabled || !roofDetailToggle.input.checked;
+                    roofDetailStrengthRow.number.disabled = roofDetailStrengthRow.range.disabled;
+
+                    roofCracksToggle.input.disabled = !allow || !enabled;
+                    roofCrackStrengthRow.range.disabled = !allow || !enabled || !roofCracksToggle.input.checked;
+                    roofCrackStrengthRow.number.disabled = roofCrackStrengthRow.range.disabled;
+                };
+
+                roofMatVarToggle.input.addEventListener('change', () => {
+                    layer.roof.materialVariation.enabled = !!roofMatVarToggle.input.checked;
+                    syncRoofMatVarEnabled();
+                    this._notifySelectedLayersChanged();
+                });
+                roofSeedOffsetRow.range.addEventListener('input', () => {
+                    const next = clampInt(roofSeedOffsetRow.range.value, -9999, 9999);
+                    layer.roof.materialVariation.seedOffset = next;
+                    roofSeedOffsetRow.number.value = String(next);
+                    this._notifySelectedLayersChanged();
+                });
+                roofSeedOffsetRow.number.addEventListener('change', () => {
+                    const next = clampInt(roofSeedOffsetRow.number.value, -9999, 9999);
+                    layer.roof.materialVariation.seedOffset = next;
+                    roofSeedOffsetRow.range.value = String(next);
+                    roofSeedOffsetRow.number.value = String(next);
+                    this._notifySelectedLayersChanged();
+                });
+                roofIntensityRow.range.addEventListener('input', () => {
+                    const next = clamp(roofIntensityRow.range.value, 0.0, 2.0);
+                    layer.roof.materialVariation.globalIntensity = next;
+                    roofIntensityRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofIntensityRow.number.addEventListener('change', () => {
+                    const next = clamp(roofIntensityRow.number.value, 0.0, 2.0);
+                    layer.roof.materialVariation.globalIntensity = next;
+                    roofIntensityRow.range.value = String(next);
+                    roofIntensityRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofScaleRow.range.addEventListener('input', () => {
+                    const next = clamp(roofScaleRow.range.value, 0.05, 1.0);
+                    layer.roof.materialVariation.worldSpaceScale = next;
+                    roofScaleRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofScaleRow.number.addEventListener('change', () => {
+                    const next = clamp(roofScaleRow.number.value, 0.05, 1.0);
+                    layer.roof.materialVariation.worldSpaceScale = next;
+                    roofScaleRow.range.value = String(next);
+                    roofScaleRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofMacroToggle.input.addEventListener('change', () => {
+                    layer.roof.materialVariation.macro ??= {};
+                    layer.roof.materialVariation.macro.enabled = !!roofMacroToggle.input.checked;
+                    syncRoofMatVarEnabled();
+                    this._notifySelectedLayersChanged();
+                });
+                roofMacroIntensityRow.range.addEventListener('input', () => {
+                    const next = clamp(roofMacroIntensityRow.range.value, 0.0, 2.0);
+                    layer.roof.materialVariation.macro ??= {};
+                    layer.roof.materialVariation.macro.intensity = next;
+                    roofMacroIntensityRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofMacroIntensityRow.number.addEventListener('change', () => {
+                    const next = clamp(roofMacroIntensityRow.number.value, 0.0, 2.0);
+                    layer.roof.materialVariation.macro ??= {};
+                    layer.roof.materialVariation.macro.intensity = next;
+                    roofMacroIntensityRow.range.value = String(next);
+                    roofMacroIntensityRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofMacroScaleRow.range.addEventListener('input', () => {
+                    const next = clamp(roofMacroScaleRow.range.value, 0.05, 2.0);
+                    layer.roof.materialVariation.macro ??= {};
+                    layer.roof.materialVariation.macro.scale = next;
+                    roofMacroScaleRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofMacroScaleRow.number.addEventListener('change', () => {
+                    const next = clamp(roofMacroScaleRow.number.value, 0.05, 2.0);
+                    layer.roof.materialVariation.macro ??= {};
+                    layer.roof.materialVariation.macro.scale = next;
+                    roofMacroScaleRow.range.value = String(next);
+                    roofMacroScaleRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofGrimeToggle.input.addEventListener('change', () => {
+                    layer.roof.materialVariation.grime ??= {};
+                    layer.roof.materialVariation.grime.enabled = !!roofGrimeToggle.input.checked;
+                    syncRoofMatVarEnabled();
+                    this._notifySelectedLayersChanged();
+                });
+                roofGrimeStrengthRow.range.addEventListener('input', () => {
+                    const next = clamp(roofGrimeStrengthRow.range.value, 0.0, 1.0);
+                    layer.roof.materialVariation.grime ??= {};
+                    layer.roof.materialVariation.grime.strength = next;
+                    roofGrimeStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofGrimeStrengthRow.number.addEventListener('change', () => {
+                    const next = clamp(roofGrimeStrengthRow.number.value, 0.0, 1.0);
+                    layer.roof.materialVariation.grime ??= {};
+                    layer.roof.materialVariation.grime.strength = next;
+                    roofGrimeStrengthRow.range.value = String(next);
+                    roofGrimeStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofStreaksToggle.input.addEventListener('change', () => {
+                    layer.roof.materialVariation.streaks ??= {};
+                    layer.roof.materialVariation.streaks.enabled = !!roofStreaksToggle.input.checked;
+                    syncRoofMatVarEnabled();
+                    this._notifySelectedLayersChanged();
+                });
+                roofStreakStrengthRow.range.addEventListener('input', () => {
+                    const next = clamp(roofStreakStrengthRow.range.value, 0.0, 1.0);
+                    layer.roof.materialVariation.streaks ??= {};
+                    layer.roof.materialVariation.streaks.strength = next;
+                    roofStreakStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofStreakStrengthRow.number.addEventListener('change', () => {
+                    const next = clamp(roofStreakStrengthRow.number.value, 0.0, 1.0);
+                    layer.roof.materialVariation.streaks ??= {};
+                    layer.roof.materialVariation.streaks.strength = next;
+                    roofStreakStrengthRow.range.value = String(next);
+                    roofStreakStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofStreakScaleRow.range.addEventListener('input', () => {
+                    const next = clamp(roofStreakScaleRow.range.value, 0.05, 5.0);
+                    layer.roof.materialVariation.streaks ??= {};
+                    layer.roof.materialVariation.streaks.scale = next;
+                    roofStreakScaleRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofStreakScaleRow.number.addEventListener('change', () => {
+                    const next = clamp(roofStreakScaleRow.number.value, 0.05, 5.0);
+                    layer.roof.materialVariation.streaks ??= {};
+                    layer.roof.materialVariation.streaks.scale = next;
+                    roofStreakScaleRow.range.value = String(next);
+                    roofStreakScaleRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofEdgeToggle.input.addEventListener('change', () => {
+                    layer.roof.materialVariation.edgeWear ??= {};
+                    layer.roof.materialVariation.edgeWear.enabled = !!roofEdgeToggle.input.checked;
+                    syncRoofMatVarEnabled();
+                    this._notifySelectedLayersChanged();
+                });
+                roofEdgeStrengthRow.range.addEventListener('input', () => {
+                    const next = clamp(roofEdgeStrengthRow.range.value, 0.0, 1.0);
+                    layer.roof.materialVariation.edgeWear ??= {};
+                    layer.roof.materialVariation.edgeWear.strength = next;
+                    roofEdgeStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofEdgeStrengthRow.number.addEventListener('change', () => {
+                    const next = clamp(roofEdgeStrengthRow.number.value, 0.0, 1.0);
+                    layer.roof.materialVariation.edgeWear ??= {};
+                    layer.roof.materialVariation.edgeWear.strength = next;
+                    roofEdgeStrengthRow.range.value = String(next);
+                    roofEdgeStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofDustToggle.input.addEventListener('change', () => {
+                    layer.roof.materialVariation.dust ??= {};
+                    layer.roof.materialVariation.dust.enabled = !!roofDustToggle.input.checked;
+                    syncRoofMatVarEnabled();
+                    this._notifySelectedLayersChanged();
+                });
+                roofDustStrengthRow.range.addEventListener('input', () => {
+                    const next = clamp(roofDustStrengthRow.range.value, 0.0, 1.0);
+                    layer.roof.materialVariation.dust ??= {};
+                    layer.roof.materialVariation.dust.strength = next;
+                    roofDustStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofDustStrengthRow.number.addEventListener('change', () => {
+                    const next = clamp(roofDustStrengthRow.number.value, 0.0, 1.0);
+                    layer.roof.materialVariation.dust ??= {};
+                    layer.roof.materialVariation.dust.strength = next;
+                    roofDustStrengthRow.range.value = String(next);
+                    roofDustStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofAntiToggle.input.addEventListener('change', () => {
+                    layer.roof.materialVariation.antiTiling ??= {};
+                    layer.roof.materialVariation.antiTiling.enabled = !!roofAntiToggle.input.checked;
+                    syncRoofMatVarEnabled();
+                    this._notifySelectedLayersChanged();
+                });
+                roofAntiStrengthRow.range.addEventListener('input', () => {
+                    const next = clamp(roofAntiStrengthRow.range.value, 0.0, 1.0);
+                    layer.roof.materialVariation.antiTiling ??= {};
+                    layer.roof.materialVariation.antiTiling.strength = next;
+                    roofAntiStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofAntiStrengthRow.number.addEventListener('change', () => {
+                    const next = clamp(roofAntiStrengthRow.number.value, 0.0, 1.0);
+                    layer.roof.materialVariation.antiTiling ??= {};
+                    layer.roof.materialVariation.antiTiling.strength = next;
+                    roofAntiStrengthRow.range.value = String(next);
+                    roofAntiStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofDetailToggle.input.addEventListener('change', () => {
+                    layer.roof.materialVariation.detail ??= {};
+                    layer.roof.materialVariation.detail.enabled = !!roofDetailToggle.input.checked;
+                    syncRoofMatVarEnabled();
+                    this._notifySelectedLayersChanged();
+                });
+                roofDetailStrengthRow.range.addEventListener('input', () => {
+                    const next = clamp(roofDetailStrengthRow.range.value, 0.0, 1.0);
+                    layer.roof.materialVariation.detail ??= {};
+                    layer.roof.materialVariation.detail.strength = next;
+                    roofDetailStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofDetailStrengthRow.number.addEventListener('change', () => {
+                    const next = clamp(roofDetailStrengthRow.number.value, 0.0, 1.0);
+                    layer.roof.materialVariation.detail ??= {};
+                    layer.roof.materialVariation.detail.strength = next;
+                    roofDetailStrengthRow.range.value = String(next);
+                    roofDetailStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofCracksToggle.input.addEventListener('change', () => {
+                    layer.roof.materialVariation.cracks ??= {};
+                    layer.roof.materialVariation.cracks.enabled = !!roofCracksToggle.input.checked;
+                    syncRoofMatVarEnabled();
+                    this._notifySelectedLayersChanged();
+                });
+                roofCrackStrengthRow.range.addEventListener('input', () => {
+                    const next = clamp(roofCrackStrengthRow.range.value, 0.0, 1.0);
+                    layer.roof.materialVariation.cracks ??= {};
+                    layer.roof.materialVariation.cracks.strength = next;
+                    roofCrackStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofCrackStrengthRow.number.addEventListener('change', () => {
+                    const next = clamp(roofCrackStrengthRow.number.value, 0.0, 1.0);
+                    layer.roof.materialVariation.cracks ??= {};
+                    layer.roof.materialVariation.cracks.strength = next;
+                    roofCrackStrengthRow.range.value = String(next);
+                    roofCrackStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                syncRoofMatVarEnabled();
+                const roofMatVarHint = document.createElement('div');
+                roofMatVarHint.className = 'building-fab-hint';
+                roofMatVarHint.textContent = 'Enable the variation system to add weathering and breakup.';
+                layerSection.body.appendChild(roofMatVarHint);
+
                 const ringToggle = makeToggleRow('Enable ring');
                 ringToggle.input.checked = !!layer?.ring?.enabled;
                 ringToggle.input.disabled = !allow;
@@ -3101,6 +4298,7 @@ export class BuildingFabricationUI {
         const allowWindowSpacer = allow && this._windowSpacerEnabled;
         const allowStreetWindowSpacer = allowStreetWindows && this._streetWindowSpacerEnabled;
         this._syncLayersPanel();
+        this._syncMaterialVariationSeedPanel();
 
         if (this.windowFrameWidthRow) this.windowFrameWidthRow.classList.toggle('hidden', !showWindowParams);
         if (this.windowFrameColorRow) this.windowFrameColorRow.classList.toggle('hidden', !showWindowParams);
@@ -4785,6 +5983,8 @@ export class BuildingFabricationUI {
         this.loadCatalogSelect.addEventListener('change', this._onLoadCatalogSelectChange);
         this.loadCatalogBtn.addEventListener('click', this._onLoadCatalogBtnClick);
         this.stylePickButton.addEventListener('click', this._onStylePickClick);
+        this.materialVariationSeedToggleInput.addEventListener('change', this._onMaterialVariationSeedOverrideChange);
+        this.materialVariationSeedNumber.addEventListener('change', this._onMaterialVariationSeedNumberChange);
         this.hideSelectionBorderInput.addEventListener('change', this._onHideSelectionBorderChange);
         this.viewModeRow.addEventListener('click', this._onViewModeClick);
         this.addRoadBtn.addEventListener('click', this._onAddRoad);
@@ -4881,6 +6081,8 @@ export class BuildingFabricationUI {
         this.loadCatalogSelect.removeEventListener('change', this._onLoadCatalogSelectChange);
         this.loadCatalogBtn.removeEventListener('click', this._onLoadCatalogBtnClick);
         this.stylePickButton.removeEventListener('click', this._onStylePickClick);
+        this.materialVariationSeedToggleInput.removeEventListener('change', this._onMaterialVariationSeedOverrideChange);
+        this.materialVariationSeedNumber.removeEventListener('change', this._onMaterialVariationSeedNumberChange);
         this.hideSelectionBorderInput.removeEventListener('change', this._onHideSelectionBorderChange);
         this.viewModeRow.removeEventListener('click', this._onViewModeClick);
         this.addRoadBtn.removeEventListener('click', this._onAddRoad);

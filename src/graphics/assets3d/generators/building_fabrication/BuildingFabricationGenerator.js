@@ -12,6 +12,8 @@ import { WINDOW_TYPE, getDefaultWindowParams, getWindowTexture, isWindowTypeId }
 import { computeBuildingLoopsFromTiles, offsetOrthogonalLoopXZ, resolveBuildingStyleWallMaterialUrls } from '../buildings/BuildingGenerator.js';
 import { LAYER_TYPE, normalizeBuildingLayers } from './BuildingFabricationTypes.js';
 import { applyMaterialVariationToMeshStandardMaterial, computeMaterialVariationSeedFromTiles, MATERIAL_VARIATION_ROOT } from '../../materials/MaterialVariationSystem.js';
+import { applyUvTilingToMeshStandardMaterial } from '../../materials/MaterialUvTilingSystem.js';
+import { getPbrMaterialTileMeters, tryGetPbrMaterialIdFromUrl } from '../../materials/PbrMaterialCatalog.js';
 
 const EPS = 1e-6;
 
@@ -26,6 +28,14 @@ function clampInt(value, min, max) {
     if (!Number.isFinite(num)) return min;
     const rounded = Math.round(num);
     return Math.max(min, Math.min(max, rounded));
+}
+
+function resolvePbrTileMetersFromUrls(urls) {
+    const pbrId = tryGetPbrMaterialIdFromUrl(urls?.baseColorUrl ?? null);
+    if (!pbrId) return 1.0;
+    const tileMeters = getPbrMaterialTileMeters(pbrId);
+    const t = Number(tileMeters);
+    return (Number.isFinite(t) && t > EPS) ? t : 1.0;
 }
 
 function signedArea(points) {
@@ -525,6 +535,7 @@ export function buildBuildingFabricationVisualParts({
     tileSize = null,
     occupyRatio = 1.0,
     layers = null,
+    materialVariationSeed = null,
     textureCache = null,
     renderer = null,
     colors = null,
@@ -537,7 +548,9 @@ export function buildBuildingFabricationVisualParts({
     const safeLayers = normalizeBuildingLayers(layers);
     const tileCount = Array.isArray(tiles) ? tiles.length : 0;
     const baseColorHex = makeDeterministicColor(tileCount * 97 + safeLayers.length * 31).getHex();
-    const matVarSeed = computeMaterialVariationSeedFromTiles(tiles, { salt: 'building' });
+    const matVarSeed = Number.isFinite(materialVariationSeed)
+        ? (Number(materialVariationSeed) >>> 0)
+        : computeMaterialVariationSeedFromTiles(tiles, { salt: 'building' });
 
     const firstFloorLayer = safeLayers.find((layer) => layer?.type === LAYER_TYPE.FLOOR) ?? null;
     const firstFloorHeight = clamp(firstFloorLayer?.floorHeight ?? 3.2, 1.0, 12.0);
@@ -592,13 +605,22 @@ export function buildBuildingFabricationVisualParts({
             const wallMat = makeWallMaterialFromSpec({ material: layer.material, baseColorHex, textureCache });
             const wallStyleId = layer.material?.kind === 'texture' ? layer.material.id : null;
             const wallUrls = wallStyleId ? resolveBuildingStyleWallMaterialUrls(wallStyleId) : null;
-            const wallIsPbr = !!wallUrls?.ormUrl;
-            if (wallIsPbr) {
+            const wallTiling = layer?.tiling ?? null;
+            if (wallTiling?.enabled && (Number(wallTiling?.tileMeters) || 0) > EPS) {
+                const baseTileMeters = resolvePbrTileMetersFromUrls(wallUrls);
+                const desiredTileMeters = clamp(wallTiling.tileMeters, 0.1, 100.0);
+                const scale = baseTileMeters / desiredTileMeters;
+                if (Math.abs(scale - 1.0) > 1e-6) applyUvTilingToMeshStandardMaterial(wallMat, { scale });
+            }
+
+            const wallMatVar = layer?.materialVariation ?? null;
+            if (wallMatVar?.enabled) {
                 applyMaterialVariationToMeshStandardMaterial(wallMat, {
                     seed: matVarSeed,
-                    seedOffset: layerIndex,
+                    seedOffset: clampInt(wallMatVar?.seedOffset ?? 0, -9999, 9999),
                     heightMin: baseY,
                     heightMax: matVarHeightMax,
+                    config: wallMatVar,
                     root: MATERIAL_VARIATION_ROOT.WALL
                 });
             }
@@ -839,13 +861,22 @@ export function buildBuildingFabricationVisualParts({
             });
             const roofStyleId = roofCfg.material?.kind === 'texture' ? roofCfg.material.id : null;
             const roofUrls = roofStyleId ? resolveBuildingStyleWallMaterialUrls(roofStyleId) : null;
-            const roofIsPbr = !!roofUrls?.ormUrl;
-            if (roofIsPbr) {
+            const roofTiling = roofCfg?.tiling ?? null;
+            if (roofTiling?.enabled && (Number(roofTiling?.tileMeters) || 0) > EPS) {
+                const baseTileMeters = resolvePbrTileMetersFromUrls(roofUrls);
+                const desiredTileMeters = clamp(roofTiling.tileMeters, 0.1, 100.0);
+                const scale = baseTileMeters / desiredTileMeters;
+                if (Math.abs(scale - 1.0) > 1e-6) applyUvTilingToMeshStandardMaterial(roofMat, { scale });
+            }
+
+            const roofMatVar = roofCfg?.materialVariation ?? null;
+            if (roofMatVar?.enabled) {
                 applyMaterialVariationToMeshStandardMaterial(roofMat, {
                     seed: matVarSeed,
-                    seedOffset: 100 + layerIndex,
+                    seedOffset: clampInt(roofMatVar?.seedOffset ?? 0, -9999, 9999),
                     heightMin: baseY,
                     heightMax: matVarHeightMax,
+                    config: roofMatVar,
                     root: MATERIAL_VARIATION_ROOT.SURFACE
                 });
             }

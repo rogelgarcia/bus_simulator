@@ -6576,6 +6576,55 @@ async function runTests() {
         assertEqual(cfg.dust.heightBand.max, 1, 'heightBand.max should normalize/swap.');
     });
 
+    // ========== Building Fabrication Layer Schema Tests ==========
+    const {
+        cloneBuildingLayers
+    } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationTypes.js');
+
+    test('BuildingFabricationTypes: default layers include mat-var and tiling sections', () => {
+        const floor = createDefaultFloorLayer();
+        assertTrue(!!floor.tiling, 'Expected floor tiling config.');
+        assertFalse(floor.tiling.enabled, 'Expected floor tiling disabled by default.');
+        assertTrue(Number.isFinite(floor.tiling.tileMeters), 'Expected floor tileMeters to be a number.');
+        assertTrue(!!floor.materialVariation, 'Expected floor materialVariation config.');
+        assertFalse(floor.materialVariation.enabled, 'Expected floor materialVariation disabled by default.');
+        assertTrue(Number.isFinite(floor.materialVariation.seedOffset), 'Expected floor seedOffset to be a number.');
+
+        const roof = createDefaultRoofLayer();
+        assertTrue(!!roof.roof?.tiling, 'Expected roof tiling config.');
+        assertFalse(roof.roof.tiling.enabled, 'Expected roof tiling disabled by default.');
+        assertTrue(Number.isFinite(roof.roof.tiling.tileMeters), 'Expected roof tileMeters to be a number.');
+        assertTrue(!!roof.roof?.materialVariation, 'Expected roof materialVariation config.');
+        assertFalse(roof.roof.materialVariation.enabled, 'Expected roof materialVariation disabled by default.');
+        assertTrue(Number.isFinite(roof.roof.materialVariation.seedOffset), 'Expected roof seedOffset to be a number.');
+    });
+
+    test('BuildingFabricationTypes: cloneBuildingLayers deep clones mat-var and tiling', () => {
+        const original = [
+            createDefaultFloorLayer({
+                tiling: { enabled: true, tileMeters: 3.5 },
+                materialVariation: { enabled: true, seedOffset: 7, macro: { enabled: true, intensity: 1.2 } }
+            }),
+            createDefaultRoofLayer({
+                roof: {
+                    tiling: { enabled: true, tileMeters: 5.0 },
+                    materialVariation: { enabled: true, seedOffset: 9, grime: { enabled: true, strength: 0.25 } }
+                }
+            })
+        ];
+
+        const cloned = cloneBuildingLayers(original);
+        cloned[0].tiling.tileMeters = 9.0;
+        cloned[0].materialVariation.seedOffset = 123;
+        cloned[1].roof.tiling.tileMeters = 9.0;
+        cloned[1].roof.materialVariation.seedOffset = 456;
+
+        assertEqual(original[0].tiling.tileMeters, 3.5, 'Expected floor tiling to be cloned (no shared refs).');
+        assertEqual(original[0].materialVariation.seedOffset, 7, 'Expected floor materialVariation to be cloned (no shared refs).');
+        assertEqual(original[1].roof.tiling.tileMeters, 5.0, 'Expected roof tiling to be cloned (no shared refs).');
+        assertEqual(original[1].roof.materialVariation.seedOffset, 9, 'Expected roof materialVariation to be cloned (no shared refs).');
+    });
+
     // ========== Summary ==========
     console.log('\n' + '='.repeat(50));
     if (errors.length === 0) {

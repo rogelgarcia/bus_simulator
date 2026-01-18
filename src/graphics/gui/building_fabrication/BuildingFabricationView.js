@@ -72,7 +72,8 @@ export class BuildingFabricationView {
             this.scene.createBuildingsFromSelection({
                 floors: this.ui.getFloorCount(),
                 floorHeight: this.ui.getFloorHeight(),
-                layers: this.ui.getTemplateLayers()
+                layers: this.ui.getTemplateLayers(),
+                materialVariationSeed: this.ui.getTemplateMaterialVariationSeed()
             });
             this.ui.setBuildingModeEnabled(this.scene.getBuildingModeEnabled());
             this._syncUiCounts();
@@ -251,6 +252,13 @@ export class BuildingFabricationView {
             }
         };
 
+        this.ui.onSelectedBuildingMaterialVariationSeedChange = (seed) => {
+            if (this.scene.setSelectedBuildingMaterialVariationSeed(seed)) {
+                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
+                this._syncBuildings();
+            }
+        };
+
         this.ui.onExportBuildingConfig = () => {
             const selected = this.scene.getSelectedBuilding();
             const layers = Array.isArray(selected?.layers) && selected.layers.length
@@ -269,7 +277,10 @@ export class BuildingFabricationView {
             const id = sanitizeBuildingConfigId(idRaw, { fallback: suggestedId });
 
             const wallInset = Number.isFinite(selected?.wallInset) ? selected.wallInset : 0.0;
-            const cfg = createCityBuildingConfigFromFabrication({ id, name, layers, wallInset });
+            const materialVariationSeed = Number.isFinite(selected?.materialVariationSeed)
+                ? selected.materialVariationSeed
+                : this.ui.getTemplateMaterialVariationSeed();
+            const cfg = createCityBuildingConfigFromFabrication({ id, name, layers, wallInset, materialVariationSeed });
             const fileBaseName = buildingConfigIdToFileBaseName(cfg.id);
             const source = serializeCityBuildingConfigToEsModule(cfg, { fileBaseName });
 

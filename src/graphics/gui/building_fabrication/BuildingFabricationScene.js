@@ -603,6 +603,17 @@ export class BuildingFabricationScene {
         return true;
     }
 
+    setSelectedBuildingMaterialVariationSeed(seed) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = Number.isFinite(seed) ? clampInt(seed, 0, 4294967295) : null;
+        const cur = Number.isFinite(building.materialVariationSeed) ? building.materialVariationSeed : null;
+        if (next === cur) return false;
+        building.materialVariationSeed = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
     setSelectedBuildingFloorHeight(height) {
         const building = this.getSelectedBuilding();
         if (!building) return false;
@@ -1285,7 +1296,7 @@ export class BuildingFabricationScene {
         this._syncTileVisuals();
     }
 
-    createBuildingsFromSelection({ floors, floorHeight, layers = null } = {}) {
+    createBuildingsFromSelection({ floors, floorHeight, layers = null, materialVariationSeed = null } = {}) {
         if (!this.root) return;
         if (!this._selectedTiles.size) return;
 
@@ -1326,7 +1337,8 @@ export class BuildingFabricationScene {
         let bestSize = 0;
         for (const cluster of clusters) {
             const created = this._createBuilding(cluster, clampedFloors, clampedFloorHeight, {
-                layers: resolvedLayers ? cloneBuildingLayers(resolvedLayers) : null
+                layers: resolvedLayers ? cloneBuildingLayers(resolvedLayers) : null,
+                materialVariationSeed
             });
             const size = created?.tiles?.size ?? 0;
             if (created && size >= bestSize) {
@@ -1398,7 +1410,8 @@ export class BuildingFabricationScene {
             windowGap: win?.gap,
             windowHeight: win?.height,
             windowY: win?.y,
-            layers: resolvedLayers
+            layers: resolvedLayers,
+            materialVariationSeed: Number.isFinite(cfg?.materialVariationSeed) ? cfg.materialVariationSeed : null
         });
 
         this._syncTileVisuals();
@@ -1865,7 +1878,8 @@ export class BuildingFabricationScene {
         streetWindowSpacerWidth = 0.9,
         streetWindowSpacerExtrude = false,
         streetWindowSpacerExtrudeDistance = 0.12,
-        layers = null
+        layers = null,
+        materialVariationSeed = null
     } = {}) {
         const group = new THREE.Group();
         const baseName = typeof id === 'string' ? id.trim() : '';
@@ -2044,6 +2058,7 @@ export class BuildingFabricationScene {
             style: safeStyle,
             roofColor: isRoofColor(roofColor) ? roofColor : ROOF_COLOR.DEFAULT,
             wallInset: clamp(wallInset, 0.0, 4.0),
+            materialVariationSeed: Number.isFinite(materialVariationSeed) ? clampInt(materialVariationSeed, 0, 4294967295) : null,
             baseColorHex: null,
             tiles: new Set(tileIds),
             floors,
@@ -2215,6 +2230,7 @@ export class BuildingFabricationScene {
                 windowTypeId: building.windowTypeId,
                 windowParams: building.windowParams,
                 layers: cloneBuildingLayers(building.layers),
+                materialVariationSeed: building.materialVariationSeed,
                 streetEnabled: building.streetEnabled,
                 streetFloors: building.streetFloors,
                 streetFloorHeight: building.streetFloorHeight,
@@ -2613,6 +2629,7 @@ export class BuildingFabricationScene {
                 tileSize: this.tileSize,
                 occupyRatio: this.occupyRatio,
                 layers: building.layers,
+                materialVariationSeed: building.materialVariationSeed,
                 textureCache: this._wallTextures,
                 renderer: this.engine?.renderer ?? null,
                 colors: { line: BUILDING_LINE_COLOR, border: BUILDING_BORDER_COLOR },

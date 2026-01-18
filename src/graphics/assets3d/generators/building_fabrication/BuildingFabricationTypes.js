@@ -19,6 +19,29 @@ function clampInt(value, min, max) {
     return Math.max(min, Math.min(max, rounded));
 }
 
+function deepClone(value) {
+    if (Array.isArray(value)) return value.map((entry) => deepClone(entry));
+    if (value && typeof value === 'object') {
+        const out = {};
+        for (const [k, v] of Object.entries(value)) out[k] = deepClone(v);
+        return out;
+    }
+    return value;
+}
+
+function normalizeTilingConfig(value, { defaultTileMeters = 2.0 } = {}) {
+    const src = value && typeof value === 'object' ? value : {};
+    const enabled = !!src.enabled;
+    const tileMeters = clamp(src.tileMeters ?? src.tileSizeMeters ?? defaultTileMeters, 0.1, 100.0);
+    return { enabled, tileMeters };
+}
+
+function normalizeMaterialVariationConfig(value, { defaultEnabled = false, defaultSeedOffset = 0 } = {}) {
+    const src = value && typeof value === 'object' ? value : {};
+    const seedOffset = clampInt(src.seedOffset ?? 0, -9999, 9999);
+    return { ...deepClone(src), enabled: src.enabled === undefined ? !!defaultEnabled : !!src.enabled, seedOffset };
+}
+
 function normalizeMaterialSpec(
     value,
     {
@@ -133,7 +156,9 @@ export function createDefaultFloorLayer({
     style = BUILDING_STYLE.DEFAULT,
     material = null,
     belt = null,
-    windows = null
+    windows = null,
+    tiling = null,
+    materialVariation = null
 } = {}) {
     const b = belt ?? {};
     const styleId = typeof style === 'string' ? style : '';
@@ -147,6 +172,8 @@ export function createDefaultFloorLayer({
     const derivedStyle = wallMaterial.kind === 'texture' && (isBuildingStyle(wallMaterial.id) || isPbrBuildingWallMaterialId(wallMaterial.id))
         ? wallMaterial.id
         : safeStyle;
+    const tilingCfg = normalizeTilingConfig(tiling, { defaultTileMeters: 2.0 });
+    const matVarCfg = normalizeMaterialVariationConfig(materialVariation, { defaultEnabled: false, defaultSeedOffset: 0 });
     return {
         id: typeof id === 'string' && id ? id : createLayerId('floor'),
         type: LAYER_TYPE.FLOOR,
@@ -155,6 +182,8 @@ export function createDefaultFloorLayer({
         planOffset: clamp(planOffset, -8.0, 8.0),
         style: derivedStyle,
         material: wallMaterial,
+        tiling: tilingCfg,
+        materialVariation: matVarCfg,
         belt: {
             enabled: !!b.enabled,
             height: clamp(b.height ?? 0.18, 0.02, 1.2),
@@ -192,6 +221,9 @@ export function createDefaultRoofLayer({
         stringKind: 'color'
     });
 
+    const tilingCfg = normalizeTilingConfig(rf?.tiling, { defaultTileMeters: 4.0 });
+    const matVarCfg = normalizeMaterialVariationConfig(rf?.materialVariation, { defaultEnabled: false, defaultSeedOffset: 0 });
+
     const legacyRoofColor = typeof rf?.color === 'string' ? rf.color : null;
     if ((!rf || rf.material === undefined) && isRoofColor(legacyRoofColor)) {
         roofMaterial = { kind: 'color', id: legacyRoofColor };
@@ -213,6 +245,8 @@ export function createDefaultRoofLayer({
         roof: {
             type: typeof rf.type === 'string' && rf.type ? rf.type : 'Asphalt',
             material: roofMaterial,
+            tiling: tilingCfg,
+            materialVariation: matVarCfg,
             color: roofColorId
         }
     };
@@ -295,10 +329,14 @@ export function cloneBuildingLayers(layers) {
             const columns = windows?.spaceColumns ?? {};
             const columnsMaterial = columns?.material ?? null;
             const material = layer?.material ?? null;
+            const tiling = layer?.tiling ?? null;
+            const materialVariation = layer?.materialVariation ?? null;
 
             out.push({
                 ...layer,
                 material: material ? { ...material } : material,
+                tiling: tiling ? deepClone(tiling) : tiling,
+                materialVariation: materialVariation ? deepClone(materialVariation) : materialVariation,
                 belt: {
                     ...belt,
                     material: beltMaterial ? { ...beltMaterial } : beltMaterial
@@ -319,6 +357,8 @@ export function cloneBuildingLayers(layers) {
             const ring = layer?.ring ?? {};
             const ringMaterial = ring?.material ?? null;
             const roof = layer?.roof ?? {};
+            const roofTiling = roof?.tiling ?? null;
+            const roofMaterialVariation = roof?.materialVariation ?? null;
 
             out.push({
                 ...layer,
@@ -326,7 +366,11 @@ export function cloneBuildingLayers(layers) {
                     ...ring,
                     material: ringMaterial ? { ...ringMaterial } : ringMaterial
                 },
-                roof: roof?.material ? { ...roof, material: { ...roof.material } } : { ...roof }
+                roof: {
+                    ...(roof?.material ? { ...roof, material: { ...roof.material } } : { ...roof }),
+                    tiling: roofTiling ? deepClone(roofTiling) : roofTiling,
+                    materialVariation: roofMaterialVariation ? deepClone(roofMaterialVariation) : roofMaterialVariation
+                }
             });
         }
     }

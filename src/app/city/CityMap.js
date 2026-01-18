@@ -516,6 +516,7 @@ export class CityMap {
             if (!record.configId) {
                 if (Array.isArray(building?.layers) && building.layers.length) record.layers = building.layers;
                 if (Number.isFinite(building?.wallInset)) record.wallInset = building.wallInset;
+                if (Number.isFinite(building?.materialVariationSeed)) record.materialVariationSeed = building.materialVariationSeed;
                 if (Number.isFinite(building?.floorHeight)) record.floorHeight = building.floorHeight;
                 if (Number.isFinite(building?.floors)) record.floors = building.floors;
                 if (typeof building?.style === 'string') record.style = building.style;
@@ -679,6 +680,9 @@ export class CityMap {
                 tiles: accepted,
                 layers: hasLayers ? designLayers : null,
                 wallInset: clampFiniteLocal(design.wallInset, 0.0, 4.0, 0.0),
+                materialVariationSeed: Number.isFinite(design.materialVariationSeed)
+                    ? clampIntLocal(design.materialVariationSeed, 0, 4294967295)
+                    : null,
                 floorHeight,
                 floors,
                 style,

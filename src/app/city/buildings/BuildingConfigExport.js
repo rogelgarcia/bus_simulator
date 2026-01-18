@@ -88,7 +88,8 @@ export function createCityBuildingConfigFromFabrication({
     id,
     name,
     layers,
-    wallInset = 0.0
+    wallInset = 0.0,
+    materialVariationSeed = null
 } = {}) {
     const safeId = sanitizeBuildingConfigId(id);
     const safeName = sanitizeBuildingConfigName(name, { fallback: buildingConfigIdToDisplayName(safeId) });
@@ -96,6 +97,7 @@ export function createCityBuildingConfigFromFabrication({
     const { floors, floorHeight, style, windows } = deriveLegacyFieldsFromLayers(safeLayers);
 
     const inset = clamp(wallInset, 0.0, 4.0);
+    const seed = Number.isFinite(materialVariationSeed) ? clampInt(materialVariationSeed, 0, 4294967295) : null;
     const cfg = {
         id: safeId,
         name: safeName,
@@ -107,6 +109,7 @@ export function createCityBuildingConfigFromFabrication({
     };
 
     if (inset > 1e-6) cfg.wallInset = inset;
+    if (seed !== null) cfg.materialVariationSeed = seed;
     return cfg;
 }
 
@@ -135,6 +138,7 @@ export function serializeCityBuildingConfigToEsModule(config, { exportConstName 
     ] : ['    windows: null,'];
 
     const wallInset = Number.isFinite(cfg.wallInset) ? clamp(cfg.wallInset, 0.0, 4.0) : null;
+    const seed = Number.isFinite(cfg.materialVariationSeed) ? clampInt(cfg.materialVariationSeed, 0, 4294967295) : null;
 
     const lines = [
         `// src/graphics/content3d/buildings/configs/${baseName}.js`,
@@ -146,6 +150,7 @@ export function serializeCityBuildingConfigToEsModule(config, { exportConstName 
         layersBlock,
         '    ),',
         ...(wallInset !== null && wallInset > 1e-6 ? [`    wallInset: ${wallInset},`] : []),
+        ...(seed !== null ? [`    materialVariationSeed: ${seed},`] : []),
         `    floors: ${clampInt(cfg.floors ?? 1, 1, 30)},`,
         `    floorHeight: ${clamp(cfg.floorHeight ?? 3, 1.0, 12.0)},`,
         `    style: ${JSON.stringify(isBuildingStyle(cfg.style) ? cfg.style : BUILDING_STYLE.DEFAULT)},`,

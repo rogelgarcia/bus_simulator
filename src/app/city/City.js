@@ -121,6 +121,7 @@ export class City {
                         tileSize: this.map.tileSize,
                         occupyRatio: 1.0,
                         layers: entry.layers,
+                        materialVariationSeed: entry.materialVariationSeed,
                         textureCache: textures,
                         renderer: null,
                         overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
