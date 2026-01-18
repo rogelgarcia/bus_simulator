@@ -2,8 +2,8 @@
 // Applies deterministic, composable procedural material variation to MeshStandardMaterial via shader injection.
 import * as THREE from 'three';
 
-const MATVAR_SHADER_VERSION = 9;
-const MATVAR_MACRO_LAYERS_MAX = 3;
+const MATVAR_SHADER_VERSION = 10;
+const MATVAR_MACRO_LAYERS_MAX = 4;
 
 const EPS = 1e-6;
 
@@ -190,7 +190,8 @@ export function getDefaultMaterialVariationPreset(root = MATERIAL_VARIATION_ROOT
             macroLayers: [
                 { enabled: true, intensity: 0.9, scale: 0.22, hueDegrees: 0.0, value: 0.1, saturation: 0.06, roughness: 0.18, normal: 0.18 },
                 { enabled: true, intensity: 0.55, scale: 3.0, hueDegrees: 0.0, value: 0.07, saturation: 0.05, roughness: 0.22, normal: 0.25 },
-                { enabled: false, intensity: 0.35, scale: 0.9, hueDegrees: 0.0, value: 0.12, saturation: 0.0, roughness: 0.0, normal: 0.0 }
+                { enabled: false, intensity: 0.35, scale: 0.9, hueDegrees: 0.0, value: 0.12, saturation: 0.0, roughness: 0.0, normal: 0.0, coverage: 0.65 },
+                { enabled: false, intensity: 0.45, scale: 14.0, hueDegrees: 0.0, value: 0.0, saturation: 0.0, roughness: 0.24, normal: 0.18 }
             ],
             streaks: {
                 enabled: false,
@@ -205,12 +206,28 @@ export function getDefaultMaterialVariationPreset(root = MATERIAL_VARIATION_ROOT
                 roughness: 0.18,
                 normal: 0.0
             },
+            exposure: {
+                enabled: false,
+                strength: 0.0,
+                exponent: 1.6,
+                direction: { x: 0.4, y: 0.85, z: 0.2 },
+                value: 0.12,
+                saturation: -0.16,
+                roughness: -0.08
+            },
+            brick: {
+                bricksPerTileX: 6.0,
+                bricksPerTileY: 3.0,
+                mortarWidth: 0.08,
+                perBrick: { enabled: false, strength: 0.0, scale: 1.0, hueDegrees: 0.0, value: 0.06, saturation: 0.05, roughness: 0.1, normal: 0.0 },
+                mortar: { enabled: false, strength: 0.0, scale: 1.0, hueDegrees: 0.0, value: -0.12, saturation: -0.05, roughness: 0.22, normal: 0.0 }
+            },
             wearTop: { enabled: true, strength: 0.14, width: 0.38, scale: 0.7, hueDegrees: 0.0, value: 0.18, saturation: -0.2, roughness: 0.1, normal: 0.0 },
             wearBottom: { enabled: true, strength: 0.16, width: 0.5, scale: 0.85, hueDegrees: 0.0, value: -0.22, saturation: -0.05, roughness: 0.24, normal: 0.0 },
             wearSide: { enabled: true, strength: 0.12, width: 1.0, scale: 1.25, hueDegrees: 0.0, value: -0.18, saturation: -0.02, roughness: 0.2, normal: 0.0 },
             cracks: { enabled: false, strength: 0.25, scale: 2.8, hueDegrees: 0.0, value: -0.12, saturation: -0.05, roughness: 0.22, normal: 0.15 },
             antiTiling: { enabled: true, strength: 0.55, mode: 'fast', cellSize: 2.0, blendWidth: 0.2, offsetU: 0.22, offsetV: 0.22, rotationDegrees: 18.0 },
-            stairShift: { enabled: false, strength: 0.0, mode: 'stair', direction: 'horizontal', stepSize: 1.0, shift: 0.1, blendWidth: 0.0 },
+            stairShift: { enabled: false, strength: 0.0, mode: 'stair', direction: 'horizontal', stepSize: 1.0, shift: 0.1, blendWidth: 0.0, patternA: 0.4, patternB: 0.8 },
 
             macro: { enabled: true, intensity: 1.0, scale: 0.22, hueDegrees: 0.0 },
             roughnessVariation: { enabled: true, intensity: 1.0, microScale: 2.4, macroScale: 0.7 },
@@ -242,7 +259,8 @@ export function getDefaultMaterialVariationPreset(root = MATERIAL_VARIATION_ROOT
         macroLayers: [
             { enabled: true, intensity: 1.0, scale: 0.2, hueDegrees: 0.0, value: 0.12, saturation: 0.08, roughness: 0.22, normal: 0.18 },
             { enabled: true, intensity: 0.75, scale: 3.0, hueDegrees: 0.0, value: 0.08, saturation: 0.06, roughness: 0.28, normal: 0.3 },
-            { enabled: false, intensity: 0.55, scale: 0.8, hueDegrees: 0.0, value: 0.16, saturation: 0.0, roughness: 0.0, normal: 0.0 }
+            { enabled: false, intensity: 0.55, scale: 0.8, hueDegrees: 0.0, value: 0.16, saturation: 0.0, roughness: 0.0, normal: 0.0, coverage: 0.6 },
+            { enabled: false, intensity: 0.45, scale: 10.0, hueDegrees: 0.0, value: 0.0, saturation: 0.0, roughness: 0.28, normal: 0.2 }
         ],
         macro: { enabled: true, intensity: 1.0, scale: 0.2, hueDegrees: 0.0 },
         roughnessVariation: { enabled: true, intensity: 1.0, microScale: 2.0, macroScale: 0.55 },
@@ -259,6 +277,22 @@ export function getDefaultMaterialVariationPreset(root = MATERIAL_VARIATION_ROOT
             roughness: 0.24,
             normal: 0.0
         },
+        exposure: {
+            enabled: false,
+            strength: 0.0,
+            exponent: 1.8,
+            direction: { x: 0.45, y: 0.8, z: 0.25 },
+            value: 0.14,
+            saturation: -0.18,
+            roughness: -0.1
+        },
+        brick: {
+            bricksPerTileX: 6.0,
+            bricksPerTileY: 3.0,
+            mortarWidth: 0.08,
+            perBrick: { enabled: false, strength: 0.0, scale: 1.0, hueDegrees: 0.0, value: 0.06, saturation: 0.05, roughness: 0.12, normal: 0.0 },
+            mortar: { enabled: false, strength: 0.0, scale: 1.0, hueDegrees: 0.0, value: -0.14, saturation: -0.06, roughness: 0.26, normal: 0.0 }
+        },
         wearTop: { enabled: true, strength: 0.14, width: 0.42, scale: 0.65, hueDegrees: 0.0, value: 0.18, saturation: -0.22, roughness: 0.14, normal: 0.0 },
         wearBottom: { enabled: true, strength: 0.22, width: 0.55, scale: 0.9, hueDegrees: 0.0, value: -0.28, saturation: -0.08, roughness: 0.3, normal: 0.0 },
         wearSide: { enabled: true, strength: 0.18, width: 1.0, scale: 1.25, hueDegrees: 0.0, value: -0.22, saturation: -0.04, roughness: 0.24, normal: 0.0 },
@@ -271,7 +305,7 @@ export function getDefaultMaterialVariationPreset(root = MATERIAL_VARIATION_ROOT
         soot: { enabled: true, strength: 0.18, scale: 0.7, heightBand: { min: 0.0, max: 0.28 } },
         efflorescence: { enabled: false, strength: 0.0, scale: 0.9 },
         antiTiling: { enabled: true, strength: 0.65, mode: 'fast', cellSize: 2.0, blendWidth: 0.2, offsetU: 0.18, offsetV: 0.28, rotationDegrees: 22.0 },
-        stairShift: { enabled: false, strength: 0.0, mode: 'stair', direction: 'horizontal', stepSize: 1.0, shift: 0.1, blendWidth: 0.0 },
+        stairShift: { enabled: false, strength: 0.0, mode: 'stair', direction: 'horizontal', stepSize: 1.0, shift: 0.1, blendWidth: 0.0, patternA: 0.4, patternB: 0.8 },
         detail: { enabled: true, strength: 0.1, scale: 3.0, hueDegrees: 0.0 },
         cracks: { enabled: false, strength: 0.25, scale: 3.2 },
         cracksLayer: { enabled: false, strength: 0.25, scale: 3.2, hueDegrees: 0.0, value: -0.12, saturation: -0.05, roughness: 0.22, normal: 0.15 }
@@ -285,6 +319,8 @@ export function normalizeMaterialVariationConfig(input, { root = MATERIAL_VARIAT
     const macro = cfg.macro ?? {};
     const roughnessVariation = cfg.roughnessVariation ?? {};
     const streaks = cfg.streaks ?? {};
+    const exposure = cfg.exposure ?? {};
+    const brick = cfg.brick ?? {};
     const edgeWear = cfg.edgeWear ?? {};
     const grime = cfg.grime ?? {};
     const dust = cfg.dust ?? {};
@@ -313,7 +349,9 @@ export function normalizeMaterialVariationConfig(input, { root = MATERIAL_VARIAT
         const srcLayer = macroLayersRaw?.[i] ?? null;
         const fallback = presetMacroLayers[i] ?? presetMacroLayers[presetMacroLayers.length - 1] ?? null;
         if (srcLayer) {
-            macroLayers.push(normalizeLayerLike(srcLayer, fallback, { enabledDefault: i === 0 }));
+            const normalized = normalizeLayerLike(srcLayer, fallback, { enabledDefault: i === 0 });
+            if (i === 2) normalized.coverage = clamp(srcLayer.coverage ?? srcLayer.patchCoverage ?? fallback?.coverage ?? 0.0, 0.0, 1.0);
+            macroLayers.push(normalized);
             continue;
         }
 
@@ -356,7 +394,9 @@ export function normalizeMaterialVariationConfig(input, { root = MATERIAL_VARIAT
             }
         }
 
-        macroLayers.push(normalizeLayerLike(fallback, fallback, { enabledDefault: false }));
+        const normalized = normalizeLayerLike(fallback, fallback, { enabledDefault: false });
+        if (i === 2) normalized.coverage = clamp(fallback?.coverage ?? 0.0, 0.0, 1.0);
+        macroLayers.push(normalized);
     }
 
     const wearTop = normalizeLayerLike(cfg.wearTop ?? preset.wearTop, preset.wearTop, { enabledDefault: true });
@@ -436,6 +476,32 @@ export function normalizeMaterialVariationConfig(input, { root = MATERIAL_VARIAT
 
     const cracksLayer = normalizeLayerLike(cfg.cracksLayer ?? cfg.cracks ?? preset.cracksLayer ?? preset.cracks, preset.cracksLayer ?? preset.cracks, { enabledDefault: false });
 
+    const stairModeSrc = stairShift.mode ?? preset.stairShift?.mode;
+    const stairMode =
+        stairModeSrc === 'random'
+            ? 'random'
+            : (stairModeSrc === 'alternate'
+                ? 'alternate'
+                : ((stairModeSrc === 'pattern3' || stairModeSrc === 'bond3') ? 'pattern3' : 'stair'));
+    const stairPatternA = clamp(stairShift.patternA ?? stairShift.bondA ?? preset.stairShift?.patternA ?? 0.4, -4.0, 4.0);
+    const stairPatternB = clamp(stairShift.patternB ?? stairShift.bondB ?? preset.stairShift?.patternB ?? 0.8, -4.0, 4.0);
+
+    const exposurePreset = preset.exposure ?? {};
+    const exposureEnabled = exposure.enabled === undefined ? !!exposurePreset.enabled : !!exposure.enabled;
+    const exposureStrength = clamp(exposure.strength ?? exposurePreset.strength ?? 0.0, 0.0, 12.0);
+    const exposureExponent = clamp(exposure.exponent ?? exposurePreset.exponent ?? 1.6, 0.1, 8.0);
+    const exposureDirection = makeVector3(exposure.direction ?? exposurePreset.direction, { x: 0.4, y: 0.8, z: 0.2 });
+    const exposureValue = normalizeSignedAmount(exposure.value ?? exposure.valueAmount ?? exposurePreset.value ?? 0.12, 0.12);
+    const exposureSaturation = normalizeSignedAmount(exposure.saturation ?? exposure.saturationAmount ?? exposurePreset.saturation ?? -0.16, -0.16);
+    const exposureRoughness = normalizeSignedAmount(exposure.roughness ?? exposure.roughnessAmount ?? exposurePreset.roughness ?? -0.08, -0.08, { min: -2.0, max: 2.0 });
+
+    const brickPreset = preset.brick ?? {};
+    const bricksPerTileX = clamp(brick.bricksPerTileX ?? brick.bricksX ?? brickPreset.bricksPerTileX ?? 6.0, 0.25, 200.0);
+    const bricksPerTileY = clamp(brick.bricksPerTileY ?? brick.bricksY ?? brickPreset.bricksPerTileY ?? 3.0, 0.25, 200.0);
+    const mortarWidth = clamp(brick.mortarWidth ?? brick.mortar ?? brickPreset.mortarWidth ?? 0.08, 0.0, 0.49);
+    const perBrick = normalizeLayerLike(brick.perBrick ?? brick.brick ?? brickPreset.perBrick, brickPreset.perBrick, { enabledDefault: false });
+    const mortar = normalizeLayerLike(brick.mortar ?? brickPreset.mortar, brickPreset.mortar, { enabledDefault: false });
+
     return {
         enabled: cfg.enabled === undefined ? !!preset.enabled : !!cfg.enabled,
         root: normalizeRoot(cfg.root ?? preset.root),
@@ -478,6 +544,22 @@ export function normalizeMaterialVariationConfig(input, { root = MATERIAL_VARIAT
             saturation: streakSaturation,
             roughness: streakRoughness,
             normal: streakNormal
+        },
+        exposure: {
+            enabled: exposureEnabled,
+            strength: exposureStrength,
+            exponent: exposureExponent,
+            direction: exposureDirection,
+            value: exposureValue,
+            saturation: exposureSaturation,
+            roughness: exposureRoughness
+        },
+        brick: {
+            bricksPerTileX,
+            bricksPerTileY,
+            mortarWidth,
+            perBrick,
+            mortar
         },
         edgeWear: {
             enabled: edgeWear.enabled === undefined ? !!preset.edgeWear.enabled : !!edgeWear.enabled,
@@ -542,15 +624,15 @@ export function normalizeMaterialVariationConfig(input, { root = MATERIAL_VARIAT
             rotationDegrees: clamp(antiRotationDegrees, 0.0, 180.0)
         },
         stairShift: {
-            mode: (stairShift.mode ?? preset.stairShift?.mode) === 'random'
-                ? 'random'
-                : ((stairShift.mode ?? preset.stairShift?.mode) === 'alternate' ? 'alternate' : 'stair'),
+            mode: stairMode,
             enabled: stairShift.enabled === undefined ? !!preset.stairShift?.enabled : !!stairShift.enabled,
             strength: clamp(stairShift.strength ?? preset.stairShift?.strength ?? 0.0, 0.0, 12.0),
             direction: (stairShift.direction ?? preset.stairShift?.direction) === 'vertical' ? 'vertical' : 'horizontal',
             stepSize: clamp(stairShift.stepSize ?? preset.stairShift?.stepSize ?? 1.0, 0.01, 50.0),
             shift: clamp(stairShift.shift ?? preset.stairShift?.shift ?? 0.0, -4.0, 4.0),
-            blendWidth: clamp(stairShift.blendWidth ?? preset.stairShift?.blendWidth ?? 0.0, 0.0, 0.49)
+            blendWidth: clamp(stairShift.blendWidth ?? preset.stairShift?.blendWidth ?? 0.0, 0.0, 0.49),
+            patternA: stairPatternA,
+            patternB: stairPatternB
         },
         detail: {
             enabled: detail.enabled === undefined ? !!preset.detail.enabled : !!detail.enabled,
@@ -588,10 +670,12 @@ function buildUniformBundle({
     const macro0 = macroLayers[0] ?? null;
     const macro1 = macroLayers[1] ?? null;
     const macro2 = macroLayers[2] ?? null;
+    const macro3 = macroLayers[3] ?? null;
 
     const macro0Hue = clamp(macro0?.hueDegrees ?? 0.0, -180.0, 180.0) * (Math.PI / 180);
     const macro1Hue = clamp(macro1?.hueDegrees ?? 0.0, -180.0, 180.0) * (Math.PI / 180);
     const macro2Hue = clamp(macro2?.hueDegrees ?? 0.0, -180.0, 180.0) * (Math.PI / 180);
+    const macro3Hue = clamp(macro3?.hueDegrees ?? 0.0, -180.0, 180.0) * (Math.PI / 180);
 
     const wearTop = cfg.wearTop ?? null;
     const wearBottom = cfg.wearBottom ?? null;
@@ -605,9 +689,16 @@ function buildUniformBundle({
     const cracks = cfg.cracksLayer ?? null;
     const cracksHue = clamp(cracks?.hueDegrees ?? 0.0, -180.0, 180.0) * (Math.PI / 180);
     const streakDir = cfg.streaks.direction.clone();
+    const exposureDir = cfg.exposure.direction.clone();
+    const exposureExponent = clamp(cfg.exposure.exponent ?? 1.6, 0.1, 8.0);
+    const brick = cfg.brick ?? null;
+    const perBrick = brick?.perBrick ?? null;
+    const mortar = brick?.mortar ?? null;
+    const perBrickHue = clamp(perBrick?.hueDegrees ?? 0.0, -180.0, 180.0) * (Math.PI / 180);
+    const mortarHue = clamp(mortar?.hueDegrees ?? 0.0, -180.0, 180.0) * (Math.PI / 180);
 
     const stairMode = cfg.stairShift?.mode;
-    const stairModeCode = stairMode === 'random' ? 2 : (stairMode === 'alternate' ? 1 : 0);
+    const stairModeCode = stairMode === 'random' ? 2 : (stairMode === 'alternate' ? 1 : (stairMode === 'pattern3' ? 3 : 0));
 
     return {
         config0: new THREE.Vector4(safeSeed, safeSeedOffset, cfg.enabled ? cfg.globalIntensity : 0, spaceMode),
@@ -618,12 +709,20 @@ function buildUniformBundle({
         macro0b: new THREE.Vector4(macro0?.value ?? 0.0, macro0?.saturation ?? 0.0, macro0?.roughness ?? 0.0, macro0?.normal ?? 0.0),
         macro1: new THREE.Vector4(macro1?.enabled ? macro1.intensity : 0.0, macro1?.scale ?? 1.0, macro1Hue, 0.0),
         macro1b: new THREE.Vector4(macro1?.value ?? 0.0, macro1?.saturation ?? 0.0, macro1?.roughness ?? 0.0, macro1?.normal ?? 0.0),
-        macro2: new THREE.Vector4(macro2?.enabled ? macro2.intensity : 0.0, macro2?.scale ?? 1.0, macro2Hue, 0.0),
+        macro2: new THREE.Vector4(macro2?.enabled ? macro2.intensity : 0.0, macro2?.scale ?? 1.0, macro2Hue, clamp(macro2?.coverage ?? 0.0, 0.0, 1.0)),
         macro2b: new THREE.Vector4(macro2?.value ?? 0.0, macro2?.saturation ?? 0.0, macro2?.roughness ?? 0.0, macro2?.normal ?? 0.0),
+        macro3: new THREE.Vector4(macro3?.enabled ? macro3.intensity : 0.0, macro3?.scale ?? 1.0, macro3Hue, 0.0),
+        macro3b: new THREE.Vector4(macro3?.value ?? 0.0, macro3?.saturation ?? 0.0, macro3?.roughness ?? 0.0, macro3?.normal ?? 0.0),
 
         streaks: new THREE.Vector4(cfg.streaks.enabled ? cfg.streaks.strength : 0.0, cfg.streaks.scale, cfg.streaks.ledgeStrength, cfg.streaks.ledgeScale),
         streakDir: new THREE.Vector4(streakDir.x, streakDir.y, streakDir.z, streakHue),
         streaks2: new THREE.Vector4(cfg.streaks.value ?? 0.0, cfg.streaks.saturation ?? 0.0, cfg.streaks.roughness ?? 0.0, cfg.streaks.normal ?? 0.0),
+        exposure0: new THREE.Vector4(exposureDir.x, exposureDir.y, exposureDir.z, exposureExponent),
+        exposure1: new THREE.Vector4(cfg.exposure.enabled ? cfg.exposure.strength : 0.0, cfg.exposure.value ?? 0.0, cfg.exposure.saturation ?? 0.0, cfg.exposure.roughness ?? 0.0),
+        brick0: new THREE.Vector4(perBrick?.enabled ? perBrick.intensity : 0.0, mortar?.enabled ? mortar.intensity : 0.0, brick?.bricksPerTileX ?? 1.0, brick?.bricksPerTileY ?? 1.0),
+        brick1: new THREE.Vector4(brick?.mortarWidth ?? 0.08, perBrickHue, mortarHue, 0.0),
+        brick2: new THREE.Vector4(perBrick?.value ?? 0.0, perBrick?.saturation ?? 0.0, perBrick?.roughness ?? 0.0, perBrick?.normal ?? 0.0),
+        brick3: new THREE.Vector4(mortar?.value ?? 0.0, mortar?.saturation ?? 0.0, mortar?.roughness ?? 0.0, mortar?.normal ?? 0.0),
 
         wearTop: new THREE.Vector4(wearTop?.enabled ? wearTop.intensity : 0.0, wearTop?.scale ?? 1.0, wearTop?.width ?? 0.3, wearTopHue),
         wearTop2: new THREE.Vector4(wearTop?.value ?? 0.0, wearTop?.saturation ?? 0.0, wearTop?.roughness ?? 0.0, wearTop?.normal ?? 0.0),
@@ -638,7 +737,7 @@ function buildUniformBundle({
         anti: new THREE.Vector4(cfg.antiTiling.enabled ? cfg.antiTiling.strength : 0, cfg.antiTiling.cellSize, cfg.antiTiling.blendWidth, antiRot),
         anti2: new THREE.Vector4(cfg.antiTiling.offsetU, cfg.antiTiling.offsetV, antiMode, 0),
         stair: new THREE.Vector4(cfg.stairShift.enabled ? cfg.stairShift.strength : 0, cfg.stairShift.stepSize, cfg.stairShift.shift, cfg.stairShift.direction === 'vertical' ? 1 : 0),
-        stair2: new THREE.Vector4(cfg.stairShift.blendWidth ?? 0.0, stairModeCode, 0.0, 0.0),
+        stair2: new THREE.Vector4(cfg.stairShift.blendWidth ?? 0.0, stairModeCode, cfg.stairShift.patternA ?? 0.4, cfg.stairShift.patternB ?? 0.8),
     };
 }
 
@@ -655,9 +754,17 @@ function injectMatVarShader(material, shader) {
     shader.uniforms.uMatVarMacro1B = { value: cfg.uniforms.macro1b };
     shader.uniforms.uMatVarMacro2 = { value: cfg.uniforms.macro2 };
     shader.uniforms.uMatVarMacro2B = { value: cfg.uniforms.macro2b };
+    shader.uniforms.uMatVarMacro3 = { value: cfg.uniforms.macro3 };
+    shader.uniforms.uMatVarMacro3B = { value: cfg.uniforms.macro3b };
     shader.uniforms.uMatVarStreaks = { value: cfg.uniforms.streaks };
     shader.uniforms.uMatVarStreakDir = { value: cfg.uniforms.streakDir };
     shader.uniforms.uMatVarStreaks2 = { value: cfg.uniforms.streaks2 };
+    shader.uniforms.uMatVarExposure0 = { value: cfg.uniforms.exposure0 };
+    shader.uniforms.uMatVarExposure1 = { value: cfg.uniforms.exposure1 };
+    shader.uniforms.uMatVarBrick0 = { value: cfg.uniforms.brick0 };
+    shader.uniforms.uMatVarBrick1 = { value: cfg.uniforms.brick1 };
+    shader.uniforms.uMatVarBrick2 = { value: cfg.uniforms.brick2 };
+    shader.uniforms.uMatVarBrick3 = { value: cfg.uniforms.brick3 };
     shader.uniforms.uMatVarWearTop = { value: cfg.uniforms.wearTop };
     shader.uniforms.uMatVarWearTop2 = { value: cfg.uniforms.wearTop2 };
     shader.uniforms.uMatVarWearBottom = { value: cfg.uniforms.wearBottom };
@@ -728,9 +835,17 @@ function injectMatVarShader(material, shader) {
         'uniform vec4 uMatVarMacro1B;',
         'uniform vec4 uMatVarMacro2;',
         'uniform vec4 uMatVarMacro2B;',
+        'uniform vec4 uMatVarMacro3;',
+        'uniform vec4 uMatVarMacro3B;',
         'uniform vec4 uMatVarStreaks;',
         'uniform vec4 uMatVarStreakDir;',
         'uniform vec4 uMatVarStreaks2;',
+        'uniform vec4 uMatVarExposure0;',
+        'uniform vec4 uMatVarExposure1;',
+        'uniform vec4 uMatVarBrick0;',
+        'uniform vec4 uMatVarBrick1;',
+        'uniform vec4 uMatVarBrick2;',
+        'uniform vec4 uMatVarBrick3;',
         'uniform vec4 uMatVarWearTop;',
         'uniform vec4 uMatVarWearTop2;',
         'uniform vec4 uMatVarWearBottom;',
@@ -763,8 +878,10 @@ function injectMatVarShader(material, shader) {
         '}',
         'float mvSmooth01(float x){return x*x*(3.0-2.0*x);}',
         'vec3 mvAntiTiling(vec2 uv){',
-        'float anti=uMatVarAnti.x*uMatVarConfig0.z;',
+        'float mvEnabled=step(1e-6,uMatVarConfig0.z);',
+        'float anti=uMatVarAnti.x*mvEnabled;',
         'if(anti<=0.0) return vec3(uv,0.0);',
+        'float quality=step(0.5,uMatVarAnti2.z);',
         'float cellSize=max(0.001,uMatVarAnti.y);',
         'vec2 cellUv=uv/cellSize;',
         'vec2 cell=floor(cellUv);',
@@ -787,10 +904,10 @@ function injectMatVarShader(material, shader) {
         'vec4 r10=vec4(mvHash12(c10+vec2(seedOA*91.7,seedOB*53.3)),mvHash22(c10+vec2(seedOB*17.3,seedOA*29.1)),0.0);',
         'vec4 r01=vec4(mvHash12(c01+vec2(seedOA*91.7,seedOB*53.3)),mvHash22(c01+vec2(seedOB*17.3,seedOA*29.1)),0.0);',
         'vec4 r11=vec4(mvHash12(c11+vec2(seedOA*91.7,seedOB*53.3)),mvHash22(c11+vec2(seedOB*17.3,seedOA*29.1)),0.0);',
-        'float a00=(r00.x*2.0-1.0)*uMatVarAnti.w*anti;',
-        'float a10=(r10.x*2.0-1.0)*uMatVarAnti.w*anti;',
-        'float a01=(r01.x*2.0-1.0)*uMatVarAnti.w*anti;',
-        'float a11=(r11.x*2.0-1.0)*uMatVarAnti.w*anti;',
+        'float a00=(r00.x*2.0-1.0)*uMatVarAnti.w*anti*quality;',
+        'float a10=(r10.x*2.0-1.0)*uMatVarAnti.w*anti*quality;',
+        'float a01=(r01.x*2.0-1.0)*uMatVarAnti.w*anti*quality;',
+        'float a11=(r11.x*2.0-1.0)*uMatVarAnti.w*anti*quality;',
         'vec2 o00=(r00.yz*2.0-1.0)*uMatVarAnti2.xy*anti;',
         'vec2 o10=(r10.yz*2.0-1.0)*uMatVarAnti2.xy*anti;',
         'vec2 o01=(r01.yz*2.0-1.0)*uMatVarAnti2.xy*anti;',
@@ -817,7 +934,8 @@ function injectMatVarShader(material, shader) {
         'float w11=t.x*t.y;',
         'vec2 uv2=uv00*w00+uv10*w10+uv01*w01+uv11*w11;',
         'vec2 rv=vec2(cos(a00),sin(a00))*w00+vec2(cos(a10),sin(a10))*w10+vec2(cos(a01),sin(a01))*w01+vec2(cos(a11),sin(a11))*w11;',
-        'float ang=atan(rv.y,rv.x);',
+        'float ang=0.0;',
+        'if(dot(rv,rv)>1e-8) ang=atan(rv.y,rv.x);',
         'if(uMatVarAnti2.z>0.5){',
         'float n1=mvFbm2(uv*0.11+vec2(seedOB*13.1,seedOA*17.9));',
         'float n2=mvFbm2(uv*0.13+vec2(seedOA*9.7,seedOB*21.3));',
@@ -827,7 +945,8 @@ function injectMatVarShader(material, shader) {
         'return vec3(uv2,ang);',
         '}',
         'vec2 mvStairShiftUv(vec2 uv){',
-        'float s=uMatVarStair.x*uMatVarConfig0.z;',
+        'float mvEnabled=step(1e-6,uMatVarConfig0.z);',
+        'float s=uMatVarStair.x*mvEnabled;',
         'if(s<=0.0)return uv;',
         'float stepSize=max(0.001,uMatVarStair.y);',
         'float shift=uMatVarStair.z*s;',
@@ -845,13 +964,20 @@ function injectMatVarShader(material, shader) {
         '}else if(mode<1.5){',
         'o0=mod(idx0,2.0)*shift;',
         'o1=mod(idx1,2.0)*shift;',
-        '}else{',
+        '}else if(mode<2.5){',
         'float seedA=uMatVarGlobal1.z*37.1+uMatVarConfig0.y*0.19;',
         'float seedB=uMatVarGlobal1.w*53.7+uMatVarStair.w*11.9;',
         'float h0=mvHash12(vec2(idx0+seedA,seedB));',
         'float h1=mvHash12(vec2(idx1+seedA,seedB));',
         'o0=(h0*2.0-1.0)*shift;',
         'o1=(h1*2.0-1.0)*shift;',
+        '}else{',
+        'float a=uMatVarStair2.z;',
+        'float b=uMatVarStair2.w;',
+        'float k0=mod(idx0,3.0);',
+        'float k1=mod(idx1,3.0);',
+        'o0=(k0<0.5)?0.0:((k0<1.5)?(a*shift):(b*shift));',
+        'o1=(k1<0.5)?0.0:((k1<1.5)?(a*shift):(b*shift));',
         '}',
         'float bw=clamp(uMatVarStair2.x,0.0,0.49);',
         'float blendT=0.0;',
@@ -952,9 +1078,56 @@ function injectMatVarShader(material, shader) {
             'float mvMacro2Strength = uMatVarMacro2.x * mvIntensity;',
             'if (mvMacro2Strength > 0.0) {',
             'float n = mvFbm2(mvP * uMatVarMacro2.y + vec2(mvSeedOA * 11.7, mvSeedOB * 83.2));',
+            'float c = uMatVarMacro2.w;',
+            'float m = 0.0;',
+            'if (c > 1e-6) {',
+            'float aa = fwidth(n) * 2.0 + 1e-6;',
+            'm = smoothstep(c, c + aa, n) * mvMacro2Strength;',
+            '} else {',
             'float m0 = n * 2.0 - 1.0;',
-            'float m = sign(m0) * pow(abs(m0), 1.15) * mvMacro2Strength;',
+            'm = sign(m0) * pow(abs(m0), 1.15) * mvMacro2Strength;',
+            '}',
             'mvApplyLayer(mvColor, mvRough, matVarNormalFactor, m, uMatVarMacro2B, uMatVarMacro2.z);',
+            '}',
+            'float mvMacro3Strength = uMatVarMacro3.x * mvIntensity;',
+            'if (mvMacro3Strength > 0.0) {',
+            'float n = mvFbm2(mvP * uMatVarMacro3.y + vec2(mvSeedOB * 21.7, mvSeedOA * 63.2));',
+            'float m = (n * 2.0 - 1.0) * mvMacro3Strength;',
+            'mvApplyLayer(mvColor, mvRough, matVarNormalFactor, m, uMatVarMacro3B, uMatVarMacro3.z);',
+            '}',
+            '#ifdef USE_MAP',
+            'float brickStrength = uMatVarBrick0.x * mvIntensity;',
+            'float mortarStrength = uMatVarBrick0.y * mvIntensity;',
+            'if (brickStrength > 0.0 || mortarStrength > 0.0) {',
+            'vec2 buv = mvMapUv * vec2(max(0.25, uMatVarBrick0.z), max(0.25, uMatVarBrick0.w));',
+            'vec2 cell = floor(buv);',
+            'vec2 f = fract(buv);',
+            'float mw = clamp(uMatVarBrick1.x, 0.0, 0.49);',
+            'vec2 edge = min(f, 1.0 - f);',
+            'float aa = fwidth(f.x) * 1.5 + 1e-6;',
+            'float mx = 1.0 - smoothstep(mw, mw + aa, edge.x);',
+            'float my = 1.0 - smoothstep(mw, mw + aa, edge.y);',
+            'float mortarMask = max(mx, my);',
+            'float brickMask = 1.0 - mortarMask;',
+            'if (brickStrength > 0.0) {',
+            'float r = mvHash12(cell + vec2(mvSeedOA * 11.3, mvSeedOB * 19.7));',
+            'float brickVar = (r * 2.0 - 1.0) * brickStrength;',
+            'mvApplyLayer(mvColor, mvRough, matVarNormalFactor, brickVar * brickMask, uMatVarBrick2, uMatVarBrick1.y);',
+            '}',
+            'if (mortarStrength > 0.0) {',
+            'float m = mortarMask * mortarStrength * (0.6 + 0.4 * mvCavity);',
+            'mvApplyLayer(mvColor, mvRough, matVarNormalFactor, m, uMatVarBrick3, uMatVarBrick1.z);',
+            '}',
+            '}',
+            '#endif',
+            'float exposureStrength = uMatVarExposure1.x * mvIntensity;',
+            'if (exposureStrength > 0.0) {',
+            'vec3 ed = normalize(uMatVarExposure0.xyz);',
+            'float expo = pow(mvSaturate(dot(mvN, ed)), uMatVarExposure0.w);',
+            'float mask = expo * exposureStrength;',
+            'if (abs(uMatVarExposure1.y) > 1e-6) mvColor *= 1.0 + mask * uMatVarExposure1.y;',
+            'if (abs(uMatVarExposure1.z) > 1e-6) mvColor = mvSaturateColor(mvColor, mask * uMatVarExposure1.z);',
+            'if (abs(uMatVarExposure1.w) > 1e-6) mvRough += mask * uMatVarExposure1.w;',
             '}',
             'float streakStrength = uMatVarStreaks.x * mvIntensity;',
             'if (streakStrength > 0.0) {',
@@ -1044,12 +1217,10 @@ function injectMatVarShader(material, shader) {
         [
             '#ifdef USE_MATVAR',
             '#ifdef USE_NORMALMAP',
-            'vec3 normalTex = texture2D( normalMap, mvMatVarUv( vNormalMapUv ) ).xyz * 2.0 - 1.0;',
-            'float mvAntiRot = mvMatVarUvRotation( vNormalMapUv );',
-            'float mvAntiC = cos( mvAntiRot );',
-            'float mvAntiS = sin( mvAntiRot );',
-            'normalTex.xy = mat2( mvAntiC, -mvAntiS, mvAntiS, mvAntiC ) * ( normalTex.xy * normalScale * matVarNormalFactor );',
-            'normal = mvPerturbNormal2Arb( -vViewPosition, normal, normalTex, faceDirection, vNormalMapUv );',
+            'vec2 mvNormUv = mvMatVarUv( vNormalMapUv );',
+            'vec3 normalTex = texture2D( normalMap, mvNormUv ).xyz * 2.0 - 1.0;',
+            'normalTex.xy *= normalScale * matVarNormalFactor;',
+            'normal = mvPerturbNormal2Arb( -vViewPosition, normal, normalTex, faceDirection, mvNormUv );',
             '#endif',
             '#ifdef USE_BUMPMAP',
             'normal = perturbNormalArb( -vViewPosition, normal, dHdxy_fwd() );',
@@ -1185,7 +1356,7 @@ export function updateMaterialVariationOnMeshStandardMaterial(material, { seed, 
     const uniforms = buildUniformBundle({ seed, seedOffset, heightMin, heightMax, config: normalized });
 
     const cfg = material.userData?.materialVariationConfig ?? null;
-    if (!cfg || !cfg.uniforms?.macro0 || !cfg.uniforms?.wearTop) {
+    if (!cfg || !cfg.uniforms?.macro0 || !cfg.uniforms?.wearTop || !cfg.uniforms?.macro3) {
         const nextCornerDist = cornerDist === undefined ? !!cfg?.cornerDist : !!cornerDist;
         applyMaterialVariationToMeshStandardMaterial(material, { seed, seedOffset, heightMin, heightMax, config: normalized, root, cornerDist: nextCornerDist });
         return;
@@ -1209,9 +1380,17 @@ export function updateMaterialVariationOnMeshStandardMaterial(material, { seed, 
     cfg.uniforms.macro1b.copy(uniforms.macro1b);
     cfg.uniforms.macro2.copy(uniforms.macro2);
     cfg.uniforms.macro2b.copy(uniforms.macro2b);
+    cfg.uniforms.macro3.copy(uniforms.macro3);
+    cfg.uniforms.macro3b.copy(uniforms.macro3b);
     cfg.uniforms.streaks.copy(uniforms.streaks);
     cfg.uniforms.streakDir.copy(uniforms.streakDir);
     cfg.uniforms.streaks2.copy(uniforms.streaks2);
+    cfg.uniforms.exposure0.copy(uniforms.exposure0);
+    cfg.uniforms.exposure1.copy(uniforms.exposure1);
+    cfg.uniforms.brick0.copy(uniforms.brick0);
+    cfg.uniforms.brick1.copy(uniforms.brick1);
+    cfg.uniforms.brick2.copy(uniforms.brick2);
+    cfg.uniforms.brick3.copy(uniforms.brick3);
     cfg.uniforms.wearTop.copy(uniforms.wearTop);
     cfg.uniforms.wearTop2.copy(uniforms.wearTop2);
     cfg.uniforms.wearBottom.copy(uniforms.wearBottom);
@@ -1237,9 +1416,17 @@ export function updateMaterialVariationOnMeshStandardMaterial(material, { seed, 
     if (shaderUniforms?.uMatVarMacro1B?.value) shaderUniforms.uMatVarMacro1B.value = cfg.uniforms.macro1b;
     if (shaderUniforms?.uMatVarMacro2?.value) shaderUniforms.uMatVarMacro2.value = cfg.uniforms.macro2;
     if (shaderUniforms?.uMatVarMacro2B?.value) shaderUniforms.uMatVarMacro2B.value = cfg.uniforms.macro2b;
+    if (shaderUniforms?.uMatVarMacro3?.value) shaderUniforms.uMatVarMacro3.value = cfg.uniforms.macro3;
+    if (shaderUniforms?.uMatVarMacro3B?.value) shaderUniforms.uMatVarMacro3B.value = cfg.uniforms.macro3b;
     if (shaderUniforms?.uMatVarStreaks?.value) shaderUniforms.uMatVarStreaks.value = cfg.uniforms.streaks;
     if (shaderUniforms?.uMatVarStreakDir?.value) shaderUniforms.uMatVarStreakDir.value = cfg.uniforms.streakDir;
     if (shaderUniforms?.uMatVarStreaks2?.value) shaderUniforms.uMatVarStreaks2.value = cfg.uniforms.streaks2;
+    if (shaderUniforms?.uMatVarExposure0?.value) shaderUniforms.uMatVarExposure0.value = cfg.uniforms.exposure0;
+    if (shaderUniforms?.uMatVarExposure1?.value) shaderUniforms.uMatVarExposure1.value = cfg.uniforms.exposure1;
+    if (shaderUniforms?.uMatVarBrick0?.value) shaderUniforms.uMatVarBrick0.value = cfg.uniforms.brick0;
+    if (shaderUniforms?.uMatVarBrick1?.value) shaderUniforms.uMatVarBrick1.value = cfg.uniforms.brick1;
+    if (shaderUniforms?.uMatVarBrick2?.value) shaderUniforms.uMatVarBrick2.value = cfg.uniforms.brick2;
+    if (shaderUniforms?.uMatVarBrick3?.value) shaderUniforms.uMatVarBrick3.value = cfg.uniforms.brick3;
     if (shaderUniforms?.uMatVarWearTop?.value) shaderUniforms.uMatVarWearTop.value = cfg.uniforms.wearTop;
     if (shaderUniforms?.uMatVarWearTop2?.value) shaderUniforms.uMatVarWearTop2.value = cfg.uniforms.wearTop2;
     if (shaderUniforms?.uMatVarWearBottom?.value) shaderUniforms.uMatVarWearBottom.value = cfg.uniforms.wearBottom;

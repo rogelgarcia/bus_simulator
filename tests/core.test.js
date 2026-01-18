@@ -898,6 +898,43 @@ async function runTests() {
         ui._pickerPopup?.close?.();
     });
 
+    test('BuildingFabricationUI: windows fake depth controls toggle and disable sliders', () => {
+        const ui = new BuildingFabricationUI();
+        const building = { id: 'building_test', layers: ui.getTemplateLayers() };
+        ui.setSelectedBuilding(building);
+
+        const toggleText = Array.from(ui.root.querySelectorAll('.building-fab-toggle span'))
+            .find((el) => el.textContent?.trim() === 'Fake depth (parallax)');
+        assertTrue(!!toggleText, 'Fake depth toggle should exist.');
+        const toggleLabel = toggleText.closest('label') ?? null;
+        const toggleInput = toggleLabel?.querySelector('input[type="checkbox"]') ?? null;
+        assertTrue(!!toggleInput, 'Fake depth checkbox should exist.');
+
+        const strengthLabel = Array.from(ui.root.querySelectorAll('.building-fab-row-label'))
+            .find((el) => el.textContent?.trim() === 'Fake depth strength');
+        assertTrue(!!strengthLabel, 'Fake depth strength row should exist.');
+        const strengthRow = strengthLabel.closest('.building-fab-row') ?? null;
+        const strengthRange = strengthRow?.querySelector('input[type="range"]') ?? null;
+        assertTrue(!!strengthRange, 'Fake depth strength range should exist.');
+
+        const insetLabel = Array.from(ui.root.querySelectorAll('.building-fab-row-label'))
+            .find((el) => el.textContent?.trim() === 'Inset / recess');
+        assertTrue(!!insetLabel, 'Inset / recess row should exist.');
+        const insetRow = insetLabel.closest('.building-fab-row') ?? null;
+        const insetRange = insetRow?.querySelector('input[type="range"]') ?? null;
+        assertTrue(!!insetRange, 'Inset / recess range should exist.');
+
+        assertFalse(toggleInput.checked, 'Fake depth should be off by default.');
+        assertTrue(strengthRange.disabled, 'Strength slider should be disabled by default.');
+        assertTrue(insetRange.disabled, 'Inset slider should be disabled by default.');
+
+        toggleInput.checked = true;
+        toggleInput.dispatchEvent(new Event('change'));
+
+        assertFalse(strengthRange.disabled, 'Strength slider should enable when fake depth enabled.');
+        assertFalse(insetRange.disabled, 'Inset slider should enable when fake depth enabled.');
+    });
+
     test('BuildingFabricationUI: roof layer has no nested roof/ring sections', () => {
         const ui = new BuildingFabricationUI();
         ui.setSelectedBuilding(null);
@@ -6865,6 +6902,14 @@ async function runTests() {
         assertTrue(Number.isFinite(roof.roof.materialVariation.seedOffset), 'Expected roof seedOffset to be a number.');
     });
 
+    test('BuildingFabricationTypes: windows include fake depth defaults', () => {
+        const floor = createDefaultFloorLayer();
+        assertTrue(!!floor.windows?.fakeDepth, 'Expected windows.fakeDepth config.');
+        assertFalse(floor.windows.fakeDepth.enabled, 'Expected windows fakeDepth disabled by default.');
+        assertTrue(Number.isFinite(floor.windows.fakeDepth.strength), 'Expected windows fakeDepth strength to be a number.');
+        assertTrue(Number.isFinite(floor.windows.fakeDepth.insetStrength), 'Expected windows fakeDepth insetStrength to be a number.');
+    });
+
     test('BuildingFabricationTypes: cloneBuildingLayers deep clones mat-var and tiling', () => {
         const original = [
             createDefaultFloorLayer({
@@ -6893,6 +6938,21 @@ async function runTests() {
         assertEqual(original[1].roof.tiling.tileMeters, 5.0, 'Expected roof tiling to be cloned (no shared refs).');
         assertEqual(original[1].roof.tiling.rotationDegrees, -30, 'Expected roof tiling UV fields to be cloned (no shared refs).');
         assertEqual(original[1].roof.materialVariation.seedOffset, 9, 'Expected roof materialVariation to be cloned (no shared refs).');
+    });
+
+    test('BuildingFabricationTypes: cloneBuildingLayers clones window fakeDepth', () => {
+        const original = [
+            createDefaultFloorLayer({
+                windows: { fakeDepth: { enabled: true, strength: 0.12, insetStrength: 0.4 } }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+
+        const cloned = cloneBuildingLayers(original);
+        cloned[0].windows.fakeDepth.strength = 0.2;
+        cloned[0].windows.fakeDepth.insetStrength = 0.9;
+        assertEqual(original[0].windows.fakeDepth.strength, 0.12, 'Expected window fakeDepth to be cloned (no shared refs).');
+        assertEqual(original[0].windows.fakeDepth.insetStrength, 0.4, 'Expected window fakeDepth to be cloned (no shared refs).');
     });
 
     // ========== InspectorRoomLightUtils Tests ==========

@@ -1,6 +1,8 @@
 // src/graphics/gui/road_debugger/RoadDebuggerUI.js
 // Builds the Road Debugger UI (roads table, view toggles, and creation controls).
 
+import { applyMaterialSymbolToButton } from '../shared/materialSymbols.js';
+
 function clampInt(v, lo, hi) {
     const n = Number(v);
     if (!Number.isFinite(n)) return lo;
@@ -707,7 +709,7 @@ export function setupUI(view) {
     const junctionConnectorsRow = makeToggleRow('Connectors');
     junctionConnectorsRow.row.title = 'Show connector edge lines for each junction (movement graph preview).';
     const junctionTatRow = makeToggleRow('TAT');
-    junctionTatRow.row.title = 'Show tangent–arc–tangent (TAT) geometry used to stitch degree-2 junction surfaces.';
+    junctionTatRow.row.title = 'Show tangent–arc–tangent (TAT) geometry used to round junction boundaries.';
     const junctionEdgeOrderRow = makeToggleRow('Edge order');
     junctionEdgeOrderRow.row.title = 'Show the endpoint ordering used to stitch the junction boundary.';
 
@@ -830,6 +832,36 @@ export function setupUI(view) {
     snapRow.row.title = 'Snap point movement/placement to tile/10 grid. Hold Alt to temporarily disable. Hold Shift to axis-lock.';
     settingsGrid.appendChild(snapRow.row);
 
+    const autoJunctionRow = makeToggleRow('Auto junction');
+    autoJunctionRow.row.title = 'Automatically create junction records when trims/cuts produce junction candidates.';
+    settingsGrid.appendChild(autoJunctionRow.row);
+
+    const junctionFilletRow = document.createElement('div');
+    junctionFilletRow.className = 'road-debugger-tangent';
+    junctionFilletRow.title = 'Junction corner fillet radius as a fraction of the road half-width. Higher values produce rounder joins.';
+    const junctionFilletLabel = document.createElement('div');
+    junctionFilletLabel.className = 'road-debugger-tangent-label';
+    junctionFilletLabel.textContent = 'junction fillet × halfWidth';
+    const junctionFilletInputs = document.createElement('div');
+    junctionFilletInputs.className = 'road-debugger-tangent-inputs';
+    const junctionFilletRange = document.createElement('input');
+    junctionFilletRange.type = 'range';
+    junctionFilletRange.min = '0';
+    junctionFilletRange.max = '1';
+    junctionFilletRange.step = '0.01';
+    junctionFilletRange.className = 'road-debugger-tangent-range';
+    const junctionFilletNumber = document.createElement('input');
+    junctionFilletNumber.type = 'number';
+    junctionFilletNumber.min = '0';
+    junctionFilletNumber.max = '1';
+    junctionFilletNumber.step = '0.01';
+    junctionFilletNumber.className = 'road-debugger-tangent-number';
+    junctionFilletInputs.appendChild(junctionFilletRange);
+    junctionFilletInputs.appendChild(junctionFilletNumber);
+    junctionFilletRow.appendChild(junctionFilletLabel);
+    junctionFilletRow.appendChild(junctionFilletInputs);
+    settingsSection.appendChild(junctionFilletRow);
+
     const pickDebugRow = makeToggleRow('Pick debug');
     pickDebugRow.row.title = 'Show picking debug overlay (hover type + id).';
     settingsGrid.appendChild(pickDebugRow.row);
@@ -838,6 +870,46 @@ export function setupUI(view) {
     gridPanel.appendChild(gridRow.row);
 
     left.appendChild(vizSection);
+    const decorationSection = document.createElement('div');
+    decorationSection.className = 'road-debugger-section';
+
+    const decorationTitle = document.createElement('div');
+    decorationTitle.className = 'road-debugger-section-title';
+    decorationTitle.textContent = 'Decoration pipeline';
+    decorationSection.appendChild(decorationTitle);
+
+    const decorationGrid = document.createElement('div');
+    decorationGrid.className = 'road-debugger-decoration-grid';
+    decorationSection.appendChild(decorationGrid);
+
+    const decorationButtonsById = new Map();
+    const decorationButtonHandlers = [];
+    const initPipeline = view.getDecorationPipeline?.() ?? view._decorationPipeline ?? [];
+    for (const step of initPipeline) {
+        if (!step?.id) continue;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'road-debugger-btn road-debugger-decoration-btn';
+        btn.dataset.stepId = step.id;
+        btn.classList.toggle('is-active', !!step.enabled);
+        btn.setAttribute('aria-pressed', step.enabled ? 'true' : 'false');
+        applyMaterialSymbolToButton(btn, {
+            name: step.icon ?? 'build',
+            label: step.tooltip ?? step.label ?? step.id,
+            size: 'md',
+            active: !!step.enabled
+        });
+        const onToggle = (e) => {
+            e.preventDefault();
+            view.toggleDecorationPipelineStep?.(step.id);
+        };
+        decorationButtonHandlers.push({ btn, onToggle });
+        btn.addEventListener('click', onToggle);
+        decorationButtonsById.set(step.id, btn);
+        decorationGrid.appendChild(btn);
+    }
+
+    left.appendChild(decorationSection);
     left.appendChild(settingsSection);
 
     const editSection = document.createElement('div');
@@ -1324,6 +1396,21 @@ export function setupUI(view) {
     const onEdgesChange = () => view.setRenderOptions({ edges: edgesRow.input.checked });
     const onPointsChange = () => view.setRenderOptions({ points: pointsRow.input.checked });
     const onSnapChange = () => view.setSnapEnabled(snapRow.input.checked);
+    const onAutoJunctionChange = () => view.setAutoJunctionEnabled?.(autoJunctionRow.input.checked);
+    const onJunctionFilletRangeChange = (e) => {
+        e.stopPropagation();
+        const next = clamp(junctionFilletRange.value, 0, 1);
+        junctionFilletRange.value = String(next);
+        junctionFilletNumber.value = String(next);
+        view.setJunctionFilletRadiusFactor?.(next);
+    };
+    const onJunctionFilletNumberChange = (e) => {
+        e.stopPropagation();
+        const next = clamp(junctionFilletNumber.value, 0, 1);
+        junctionFilletRange.value = String(next);
+        junctionFilletNumber.value = String(next);
+        view.setJunctionFilletRadiusFactor?.(next);
+    };
     const onTrimThresholdRangeChange = (e) => {
         e.stopPropagation();
         const next = clamp(trimThresholdRange.value, 0, 5);
@@ -1543,6 +1630,9 @@ export function setupUI(view) {
     edgesRow.input.addEventListener('change', onEdgesChange);
     pointsRow.input.addEventListener('change', onPointsChange);
     snapRow.input.addEventListener('change', onSnapChange);
+    autoJunctionRow.input.addEventListener('change', onAutoJunctionChange);
+    junctionFilletRange.addEventListener('input', onJunctionFilletRangeChange);
+    junctionFilletNumber.addEventListener('change', onJunctionFilletNumberChange);
     trimThresholdRange.addEventListener('input', onTrimThresholdRangeChange);
     trimThresholdNumber.addEventListener('change', onTrimThresholdNumberChange);
     trimRawRow.input.addEventListener('change', onTrimRawChange);
@@ -1869,21 +1959,47 @@ export function setupUI(view) {
         row.dataset.junctionId = junctionId;
         row.dataset.tatId = item.id;
 
-        const label = document.createElement('div');
-        label.className = 'road-debugger-tat-label';
         const arc = item?.arc ?? null;
         const tangents = Array.isArray(item?.tangents) ? item.tangents : [];
         const tangentTotal = tangents.reduce((acc, t) => acc + (Number(t?.length) || 0), 0);
         const arcLen = Number(arc?.length) || 0;
         const radius = Number(arc?.radius) || 0;
         const kind = item?.type ?? 'tat';
+        const header = document.createElement('div');
+        header.className = 'road-debugger-tat-header';
+
+        const label = document.createElement('div');
+        label.className = 'road-debugger-tat-label';
         label.textContent = `TAT · ${kind} · tan ${fmt(tangentTotal, 1)}m · arc ${fmt(arcLen, 1)}m · r ${fmt(radius, 1)}m`;
-        row.appendChild(label);
+        header.appendChild(label);
 
         const meta = document.createElement('div');
         meta.className = 'road-debugger-tat-meta';
         meta.textContent = item.id;
-        row.appendChild(meta);
+        header.appendChild(meta);
+
+        row.appendChild(header);
+
+        const details = document.createElement('div');
+        details.className = 'road-debugger-tat-details';
+        if (tangents.length) {
+            for (let i = 0; i < tangents.length; i++) {
+                const len = Number(tangents[i]?.length) || 0;
+                const line = document.createElement('div');
+                line.className = 'road-debugger-tat-detail';
+                line.textContent = `tangent ${i + 1}: ${fmt(len, 2)}m`;
+                details.appendChild(line);
+            }
+        }
+        if (arc?.center) {
+            const spanRad = Number(arc.spanAng) || 0;
+            const spanDeg = spanRad * (180 / Math.PI);
+            const line = document.createElement('div');
+            line.className = 'road-debugger-tat-detail';
+            line.textContent = `arc: ${fmt(arcLen, 2)}m · r ${fmt(radius, 2)}m · span ${fmt(spanRad, 2)}rad (${fmt(spanDeg, 1)}°)`;
+            details.appendChild(line);
+        }
+        if (details.childNodes.length) row.appendChild(details);
 
         const isHovered = view._hover?.junctionId === junctionId && view._hover?.tatId === item.id;
         row.classList.toggle('is-hovered', !!isHovered);
@@ -1893,7 +2009,7 @@ export function setupUI(view) {
             if (view._hover?.junctionId === junctionId && view._hover?.tatId === item.id) view.clearHover();
         });
 
-        row.title = 'Tangent–arc–tangent curve used for degree-2 junction surface stitching.';
+        row.title = 'Tangent–arc–tangent fillet curve used to round junction boundaries.';
         return row;
     };
 
@@ -1918,6 +2034,10 @@ export function setupUI(view) {
         edgesRow.input.checked = view._renderOptions?.edges !== false;
         pointsRow.input.checked = view._renderOptions?.points !== false;
         snapRow.input.checked = view.getSnapEnabled?.() ?? view._snapEnabled !== false;
+        autoJunctionRow.input.checked = view.getAutoJunctionEnabled?.() ?? view._autoJunctionEnabled === true;
+        const junctionFillet = clamp(view.getJunctionFilletRadiusFactor?.() ?? view._junctionFilletRadiusFactor ?? 1, 0, 1);
+        junctionFilletRange.value = String(junctionFillet);
+        junctionFilletNumber.value = String(junctionFillet);
         const pickDebugEnabled = pickDebugRow.input.checked;
         if (view._picking) view._picking.debugEnabled = pickDebugEnabled;
         pickDebugOverlay.style.display = pickDebugEnabled ? '' : 'none';
@@ -1956,6 +2076,17 @@ export function setupUI(view) {
         junctionConnectorsRow.input.disabled = !junctionsVisible;
         junctionTatRow.input.disabled = !junctionsVisible;
         junctionEdgeOrderRow.input.disabled = !junctionsVisible;
+
+        const decorationPipeline = view.getDecorationPipeline?.() ?? view._decorationPipeline ?? [];
+        for (const step of decorationPipeline) {
+            const btn = decorationButtonsById.get(step?.id ?? '') ?? null;
+            if (!btn) continue;
+            const enabled = !!step?.enabled;
+            btn.classList.toggle('is-active', enabled);
+            btn.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+            const icon = btn.querySelector('.ui-icon');
+            if (icon) icon.classList.toggle('is-active', enabled);
+        }
 
         const junctionToolEnabled = view.getJunctionToolEnabled?.() ?? view._junctionToolEnabled === true;
         const selectedCandidates = view.getJunctionToolSelection?.() ?? Array.from(view._junctionToolSelectedCandidateIds ?? []).sort();
@@ -2590,6 +2721,9 @@ export function setupUI(view) {
         edgesToggle: edgesRow.input,
         pointsToggle: pointsRow.input,
         snapToggle: snapRow.input,
+        autoJunctionToggle: autoJunctionRow.input,
+        junctionFilletRange,
+        junctionFilletNumber,
         pickDebugToggle: pickDebugRow.input,
         pickDebugOverlay,
         trimThresholdRange,
@@ -2612,6 +2746,10 @@ export function setupUI(view) {
         vizTabJunctions,
         vizTabSegments,
         vizTabGrid,
+        decorationSection,
+        decorationGrid,
+        decorationButtonsById,
+        decorationButtonHandlers,
         detailPanel,
         detailBody,
         popupTabRoads,
@@ -2644,6 +2782,9 @@ export function setupUI(view) {
         _onEdgesChange: onEdgesChange,
         _onPointsChange: onPointsChange,
         _onSnapChange: onSnapChange,
+        _onAutoJunctionChange: onAutoJunctionChange,
+        _onJunctionFilletRangeChange: onJunctionFilletRangeChange,
+        _onJunctionFilletNumberChange: onJunctionFilletNumberChange,
         _onTrimThresholdRangeChange: onTrimThresholdRangeChange,
         _onTrimThresholdNumberChange: onTrimThresholdNumberChange,
         _onTrimRawChange: onTrimRawChange,
@@ -2709,6 +2850,9 @@ export function destroyUI(view) {
     ui.edgesToggle?.removeEventListener?.('change', ui._onEdgesChange);
     ui.pointsToggle?.removeEventListener?.('change', ui._onPointsChange);
     ui.snapToggle?.removeEventListener?.('change', ui._onSnapChange);
+    ui.autoJunctionToggle?.removeEventListener?.('change', ui._onAutoJunctionChange);
+    ui.junctionFilletRange?.removeEventListener?.('input', ui._onJunctionFilletRangeChange);
+    ui.junctionFilletNumber?.removeEventListener?.('change', ui._onJunctionFilletNumberChange);
     ui.trimThresholdRange?.removeEventListener?.('input', ui._onTrimThresholdRangeChange);
     ui.trimThresholdNumber?.removeEventListener?.('change', ui._onTrimThresholdNumberChange);
     ui.trimRawToggle?.removeEventListener?.('change', ui._onTrimRawChange);
@@ -2725,6 +2869,9 @@ export function destroyUI(view) {
     ui.junctionConnectorsToggle?.removeEventListener?.('change', ui._onJunctionConnectorsChange);
     ui.junctionTatToggle?.removeEventListener?.('change', ui._onJunctionTatChange);
     ui.junctionEdgeOrderToggle?.removeEventListener?.('change', ui._onJunctionEdgeOrderChange);
+    for (const handler of ui.decorationButtonHandlers ?? []) {
+        handler?.btn?.removeEventListener?.('click', handler.onToggle);
+    }
     ui.vizTabRoads?.removeEventListener?.('click', ui._onVizTabRoads);
     ui.vizTabJunctions?.removeEventListener?.('click', ui._onVizTabJunctions);
     ui.vizTabSegments?.removeEventListener?.('click', ui._onVizTabSegments);

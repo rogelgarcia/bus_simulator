@@ -70,16 +70,15 @@ export function computeEdgeFilletArcXZ({ p0, dir0, out0, p1, dir1, out1, radius 
     const t1 = { x: center.x - o1.x * r, z: center.z - o1.z * r };
 
     const r0 = { x: t0.x - center.x, z: t0.z - center.z };
-    const baseTan = normalizeDirXZ(leftNormalXZ(r0));
-    if (!baseTan) return null;
-    const ccwScore = dotXZ(baseTan, d0);
-    const cwScore = dotXZ({ x: -baseTan.x, z: -baseTan.z }, d0);
-    const ccw = ccwScore >= cwScore;
-
-    const a0 = Math.atan2(t0.z - center.z, t0.x - center.x);
-    const a1 = Math.atan2(t1.z - center.z, t1.x - center.x);
-    const span = ccw ? angleDeltaCCW(a0, a1) : angleDeltaCCW(a1, a0);
-    if (!(span > 1e-6) || span > TAU - 1e-6) return null;
+    const r1 = { x: t1.x - center.x, z: t1.z - center.z };
+    const a0 = Math.atan2(r0.z, r0.x);
+    const a1 = Math.atan2(r1.z, r1.x);
+    const spanCCW = angleDeltaCCW(a0, a1);
+    const spanCW = angleDeltaCCW(a1, a0);
+    if (!(spanCCW > 1e-6) || !(spanCW > 1e-6)) return null;
+    const ccw = spanCCW <= spanCW;
+    const span = ccw ? spanCCW : spanCW;
+    if (!(span > 1e-6) || span > Math.PI + 1e-6) return null;
 
     const miter = lineIntersectionXZ(p0, d0, p1, d1);
     let trim0 = null;

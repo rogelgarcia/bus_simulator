@@ -577,11 +577,11 @@ function makeRoofSurfaceMaterialFromSpec({ material, baseColorHex, textureCache 
     });
 }
 
-function makeWindowMaterial({ typeId, params, windowWidth, windowHeight } = {}) {
+function makeWindowMaterial({ typeId, params, windowWidth, windowHeight, fakeDepth } = {}) {
     const safeTypeId = isWindowTypeId(typeId) ? typeId : WINDOW_TYPE.STYLE_DEFAULT;
     const safeParams = { ...getDefaultWindowParams(safeTypeId), ...(params ?? {}) };
     const wantsAlpha = safeTypeId === WINDOW_TYPE.ARCH_V1;
-    return new THREE.MeshStandardMaterial({
+    const mat = new THREE.MeshStandardMaterial({
         color: 0xffffff,
         map: getWindowTexture({ typeId: safeTypeId, params: safeParams, windowWidth, windowHeight }),
         roughness: 0.4,
@@ -591,6 +591,112 @@ function makeWindowMaterial({ typeId, params, windowWidth, windowHeight } = {}) 
         transparent: wantsAlpha,
         alphaTest: wantsAlpha ? 0.01 : 0.0
     });
+
+    const fd = fakeDepth && typeof fakeDepth === 'object' ? fakeDepth : null;
+    const enabled = !!fd?.enabled;
+    if (enabled) {
+        const strength = clamp(fd?.strength ?? 0.06, 0.0, 0.25);
+        const insetStrength = clamp(fd?.insetStrength ?? 0.25, 0.0, 1.0);
+        const frameWidth = clamp(safeParams?.frameWidth ?? 0.06, 0.0, 0.25);
+        const aspect = clamp((Number(windowHeight) || 1) / Math.max(0.01, Number(windowWidth) || 1), 0.1, 10.0);
+
+        mat.userData = mat.userData ?? {};
+        mat.userData.windowFakeDepth = { strength, insetStrength, frameWidth, aspect };
+        mat.customProgramCacheKey = () => 'window_fake_depth_v1';
+        mat.onBeforeCompile = (shader) => {
+            shader.uniforms.uWinFakeDepth = { value: new THREE.Vector4(strength, insetStrength, frameWidth, aspect) };
+
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <common>',
+                `#include <common>
+uniform vec4 uWinFakeDepth;
+`
+            );
+
+            shader.fragmentShader = shader.fragmentShader.replace(
+                'vec4 diffuseColor = vec4( diffuse, opacity );',
+                `vec4 diffuseColor = vec4( diffuse, opacity );
+float mvWinOcclusion = 0.0;`
+            );
+
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <map_fragment>',
+                `#ifdef USE_MAP
+{
+vec2 mvUvBase = vMapUv;
+vec2 mvUv = mvUvBase;
+vec3 mvNormal = normalize(vNormal);
+vec3 mvViewDir = normalize(vViewPosition);
+vec3 mvUp = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
+vec3 mvTanU = cross(mvUp, mvNormal);
+mvTanU /= max(1e-5, length(mvTanU));
+vec3 mvTanV = normalize(cross(mvNormal, mvTanU));
+vec3 mvViewTS = vec3(dot(mvViewDir, mvTanU), dot(mvViewDir, mvTanV), dot(mvViewDir, mvNormal));
+
+float mvFrame = clamp(uWinFakeDepth.z, 0.0, 0.45);
+float mvAspect = max(0.1, uWinFakeDepth.w);
+float mvFrameU = mvFrame * min(1.0, mvAspect);
+float mvFrameV = mvFrame * min(1.0, 1.0 / mvAspect);
+float mvBlur = 0.02;
+float mvInX = smoothstep(mvFrameU, mvFrameU + mvBlur, mvUvBase.x) * (1.0 - smoothstep(1.0 - mvFrameU - mvBlur, 1.0 - mvFrameU, mvUvBase.x));
+float mvInY = smoothstep(mvFrameV, mvFrameV + mvBlur, mvUvBase.y) * (1.0 - smoothstep(1.0 - mvFrameV - mvBlur, 1.0 - mvFrameV, mvUvBase.y));
+float mvInterior = mvInX * mvInY;
+
+vec2 mvParDir = mvViewTS.xy / max(0.35, mvViewTS.z);
+float mvDepth = clamp(uWinFakeDepth.x, 0.0, 0.25);
+mvUv = mix(mvUv, mvUvBase - mvParDir * mvDepth, mvInterior);
+mvUv = clamp(mvUv, vec2(0.0), vec2(1.0));
+
+float mvInset = clamp(uWinFakeDepth.y, 0.0, 1.0);
+float mvEdgeDist = min(min(mvUvBase.x, 1.0 - mvUvBase.x), min(mvUvBase.y, 1.0 - mvUvBase.y));
+float mvOuterOcc = (1.0 - smoothstep(0.0, 0.08, mvEdgeDist)) * 0.55;
+float mvDx = min(mvUvBase.x - mvFrameU, (1.0 - mvFrameU) - mvUvBase.x);
+float mvDy = min(mvUvBase.y - mvFrameV, (1.0 - mvFrameV) - mvUvBase.y);
+float mvInnerDist = max(0.0, min(mvDx, mvDy));
+float mvInnerOcc = (1.0 - smoothstep(0.0, 0.12, mvInnerDist)) * mvInterior;
+mvWinOcclusion = clamp(mvInset * (mvInnerOcc * 0.65 + mvOuterOcc * 0.35), 0.0, 1.0);
+
+vec4 texelColor = texture2D(map, mvUv);
+diffuseColor *= texelColor;
+diffuseColor.rgb *= (1.0 - mvWinOcclusion * 0.35);
+}
+#endif`
+            );
+
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <normal_fragment_maps>',
+                `#include <normal_fragment_maps>
+#ifdef USE_MAP
+{
+float mvFrame = clamp(uWinFakeDepth.z, 0.0, 0.45);
+float mvAspect = max(0.1, uWinFakeDepth.w);
+float mvFrameU = mvFrame * min(1.0, mvAspect);
+float mvFrameV = mvFrame * min(1.0, 1.0 / mvAspect);
+float mvBlur = 0.02;
+float mvInX = smoothstep(mvFrameU, mvFrameU + mvBlur, vMapUv.x) * (1.0 - smoothstep(1.0 - mvFrameU - mvBlur, 1.0 - mvFrameU, vMapUv.x));
+float mvInY = smoothstep(mvFrameV, mvFrameV + mvBlur, vMapUv.y) * (1.0 - smoothstep(1.0 - mvFrameV - mvBlur, 1.0 - mvFrameV, vMapUv.y));
+float mvInterior = mvInX * mvInY;
+vec2 mvP = (vMapUv - vec2(0.5)) * 2.0;
+float mvAmt = clamp(uWinFakeDepth.y, 0.0, 1.0) * 0.12 * mvInterior;
+vec3 mvUp = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
+vec3 mvTanU = cross(mvUp, normal);
+mvTanU /= max(1e-5, length(mvTanU));
+vec3 mvTanV = normalize(cross(normal, mvTanU));
+normal = normalize(normal + mvTanU * (-mvP.x) * mvAmt + mvTanV * (-mvP.y) * mvAmt);
+}
+#endif`
+            );
+
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <emissivemap_fragment>',
+                `#include <emissivemap_fragment>
+totalEmissiveRadiance *= (1.0 - mvWinOcclusion * 0.55);`
+            );
+        };
+    }
+
+    mat.needsUpdate = true;
+    return mat;
 }
 
 function applyPlanOffset({ loops, offset }) {
@@ -779,6 +885,7 @@ export function buildBuildingFabricationVisualParts({
             const winSill = clamp(winCfg?.sillHeight, 0.0, 12.0);
             const winTypeId = typeof winCfg?.typeId === 'string' ? winCfg.typeId : WINDOW_TYPE.STYLE_DEFAULT;
             const winParams = winCfg?.params ?? null;
+            const winFakeDepth = winCfg?.fakeDepth ?? null;
 
             const columns = winCfg?.spaceColumns ?? null;
             const colsEnabled = !!columns?.enabled;
@@ -799,7 +906,8 @@ export function buildBuildingFabricationVisualParts({
                 typeId: winTypeId,
                 params: winParams,
                 windowWidth: winWidth,
-                windowHeight: winDesiredHeight
+                windowHeight: winDesiredHeight,
+                fakeDepth: winFakeDepth
             }) : null;
 
             const windowRuns = [];

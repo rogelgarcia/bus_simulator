@@ -29,6 +29,14 @@ function deepClone(value) {
     return value;
 }
 
+function normalizeWindowFakeDepthConfig(value) {
+    const src = value && typeof value === 'object' ? value : {};
+    const enabled = !!src.enabled;
+    const strength = clamp(src.strength ?? src.parallaxStrength ?? 0.06, 0.0, 0.25);
+    const insetStrength = clamp(src.insetStrength ?? src.inset ?? 0.25, 0.0, 1.0);
+    return { enabled, strength, insetStrength };
+}
+
 function normalizeTilingConfig(value, { defaultTileMeters = 2.0 } = {}) {
     const src = value && typeof value === 'object' ? value : {};
     const enabled = !!src.enabled;
@@ -120,6 +128,7 @@ export function createDefaultWindowSpec({
     cornerEps = 0.01,
     offset = 0.01,
     enabled = true,
+    fakeDepth = null,
     spaceColumns = null
 } = {}) {
     const safeTypeId = isWindowTypeId(typeId) ? typeId : WINDOW_TYPE.STYLE_DEFAULT;
@@ -136,6 +145,7 @@ export function createDefaultWindowSpec({
         spacing: clamp(spacing, 0.0, 24.0),
         cornerEps: clamp(cornerEps, 0.01, 2.0),
         offset: clamp(offset, 0.01, 0.2),
+        fakeDepth: normalizeWindowFakeDepthConfig(fakeDepth),
         spaceColumns: {
             enabled: !!cols.enabled,
             every: clampInt(cols.every ?? cols.everyN ?? cols.after ?? 4, 1, 99),
@@ -332,6 +342,7 @@ export function cloneBuildingLayers(layers) {
             const windows = layer?.windows ?? {};
             const columns = windows?.spaceColumns ?? {};
             const columnsMaterial = columns?.material ?? null;
+            const fakeDepth = windows?.fakeDepth ?? null;
             const material = layer?.material ?? null;
             const tiling = layer?.tiling ?? null;
             const materialVariation = layer?.materialVariation ?? null;
@@ -348,6 +359,7 @@ export function cloneBuildingLayers(layers) {
                 windows: {
                     ...windows,
                     params: { ...(windows?.params ?? {}) },
+                    fakeDepth: fakeDepth ? deepClone(fakeDepth) : fakeDepth,
                     spaceColumns: {
                         ...columns,
                         material: columnsMaterial ? { ...columnsMaterial } : columnsMaterial

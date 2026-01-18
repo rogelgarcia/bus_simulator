@@ -10,6 +10,30 @@
     --road-debugger-bottom-panel-height: min(180px, calc(100vh - 24px));
 }
 
+.road-debugger-ui .ui-icon {
+    font-family: "Material Symbols Outlined";
+    font-weight: normal;
+    font-style: normal;
+    font-size: var(--ui-icon-size, 20px);
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    vertical-align: middle;
+    user-select: none;
+    font-variation-settings:
+        "FILL" var(--ui-icon-fill, 0),
+        "wght" var(--ui-icon-weight, 400),
+        "GRAD" 0,
+        "opsz" 24;
+}
+
+.road-debugger-ui .ui-icon-sm { --ui-icon-size: 16px; }
+.road-debugger-ui .ui-icon-md { --ui-icon-size: 20px; }
+.road-debugger-ui .ui-icon-lg { --ui-icon-size: 26px; }
+.road-debugger-ui .ui-icon.is-active { --ui-icon-fill: 1; }
+.road-debugger-ui .ui-icon.is-disabled { opacity: 0.45; }
+
 .road-debugger-pick-debug {
     position: absolute;
     top: 12px;
@@ -267,6 +291,34 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 8px;
+}
+
+.road-debugger-decoration-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.road-debugger-decoration-btn.road-debugger-btn {
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.03);
+    overflow: hidden;
+    flex: 0 0 auto;
+}
+
+.road-debugger-decoration-btn .ui-icon {
+    pointer-events: none;
+}
+
+.road-debugger-decoration-btn.is-active {
+    border-color: rgba(59, 130, 246, 0.75);
+    background: rgba(59, 130, 246, 0.18);
 }
 
 .road-debugger-viz {
@@ -1133,6 +1185,65 @@
 .road-debugger-connector-merge:disabled {
     cursor: default;
     opacity: 0.55;
+}
+
+.road-debugger-tat-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 7px 10px 7px 32px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    cursor: pointer;
+}
+
+.road-debugger-tat-row.is-hovered {
+    border-color: rgba(52, 199, 89, 0.6);
+    background: rgba(52, 199, 89, 0.08);
+}
+
+.road-debugger-tat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.road-debugger-tat-label {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.82);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.road-debugger-tat-meta {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.5);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 160px;
+    flex: 0 0 auto;
+}
+
+.road-debugger-tat-details {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.road-debugger-tat-detail {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.62);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.road-debugger-tat-row.is-hovered .road-debugger-tat-detail {
+    color: rgba(255, 255, 255, 0.78);
 }
 
 .road-debugger-schema-modal {

@@ -5,6 +5,7 @@ import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { createCityConfig } from '../../../app/city/CityConfig.js';
+import { sampleArcXZ } from '../../../app/geometry/RoadEdgeFillet.js';
 import { computeRoadEngineEdges } from '../../../app/road_engine/RoadEngineCompute.js';
 import { buildRoadEnginePolygonMeshData, triangulateSimplePolygonXZ } from '../../../app/road_engine/RoadEngineMeshData.js';
 import { clampRoadDebuggerTileOffsetForMap, normalizeRoadDebuggerTileOffsetForMap } from '../../../app/road_debugger/RoadDebuggerTileOffset.js';
@@ -66,6 +67,8 @@ function baseColorForKind(kind) {
         case 'junction_connector': return 0x34c759;
         case 'junction_endpoints': return 0xf97316;
         case 'junction_edge_order': return 0x22d3ee;
+        case 'junction_tat_tangent': return 0x22d3ee;
+        case 'junction_tat_arc': return 0xc084fc;
         case 'trim_removed_interval': return 0xf87171;
         default: return 0x94a3b8;
     }
@@ -79,6 +82,8 @@ function baseLineWidthForKind(kind) {
         case 'junction_connector': return 3;
         case 'junction_boundary': return 3;
         case 'junction_edge_order': return 3;
+        case 'junction_tat_tangent':
+        case 'junction_tat_arc': return 3;
         default: return 2;
     }
 }
@@ -93,12 +98,16 @@ function baseLineOpacityForKind(kind) {
         case 'junction_connector': return 0.88;
         case 'junction_boundary': return 0.88;
         case 'junction_edge_order': return 0.88;
+        case 'junction_tat_tangent':
+        case 'junction_tat_arc': return 0.92;
         default: return 0.82;
     }
 }
 
 function baseLineRenderOrderForKind(kind) {
     switch (kind) {
+        case 'junction_tat_tangent':
+        case 'junction_tat_arc': return 36;
         case 'junction_connector': return 35;
         case 'junction_edge_order': return 35;
         case 'junction_boundary': return 34;
@@ -193,7 +202,9 @@ export class RoadDebuggerView {
         };
 
         this._junctionEnabled = true;
+        this._autoJunctionEnabled = true;
         this._junctionThresholdFactor = 1.5;
+        this._junctionFilletRadiusFactor = 1;
         this._junctionDebug = {
             endpoints: false,
             boundary: false,
@@ -227,6 +238,9 @@ export class RoadDebuggerView {
         this._approachMarkerMesh = null;
         this._approachMarkerGeo = null;
 
+        this._hoverTatGroup = null;
+        this._hoverTatOverlayKey = '';
+
         this._roads = [];
         this._draft = null;
         this._roadCounter = 1;
@@ -236,7 +250,7 @@ export class RoadDebuggerView {
         this._redoStack = [];
         this._undoMax = 64;
 
-        this._hover = { roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null, approachId: null };
+        this._hover = { roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null, approachId: null, tatId: null, tatType: null };
         this._selection = { type: null, roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null, approachId: null };
         this._issues = [];
         this._issuesById = new Map();
@@ -284,6 +298,8 @@ export class RoadDebuggerView {
         this._markingsGroup = null;
         this._debugGroup = null;
         this._highlightGroup = null;
+        this._hoverTatGroup = null;
+        this._hoverTatOverlayKey = '';
         this._overlayLines = [];
         this._overlayPoints = [];
         this._asphaltMeshes = [];
@@ -295,6 +311,7 @@ export class RoadDebuggerView {
         this._segmentPickMeshes = [];
         this._junctionPickMeshes = [];
         this._connectorPickMeshes = [];
+        this._junctionTatPickMeshes = [];
         this._junctionCandidateMeshes = [];
         this._junctionCandidatePickMeshes = [];
         this._materials = {
@@ -513,6 +530,28 @@ export class RoadDebuggerView {
         return this._junctionEnabled !== false;
     }
 
+    setAutoJunctionEnabled(enabled) {
+        const next = enabled === true;
+        if (this._autoJunctionEnabled === next) return;
+        this._autoJunctionEnabled = next;
+        this._rebuildPipeline();
+    }
+
+    getAutoJunctionEnabled() {
+        return this._autoJunctionEnabled === true;
+    }
+
+    setJunctionFilletRadiusFactor(value) {
+        const next = clamp(value, 0, 1);
+        if (Math.abs((this._junctionFilletRadiusFactor ?? 1) - next) < 1e-9) return;
+        this._junctionFilletRadiusFactor = next;
+        this._rebuildPipeline();
+    }
+
+    getJunctionFilletRadiusFactor() {
+        return this._junctionFilletRadiusFactor ?? 1;
+    }
+
     setJunctionThresholdFactor(value) {
         const next = clamp(value, 0.25, 3.5);
         if (Math.abs((this._junctionThresholdFactor ?? 0) - next) < 1e-9) return;
@@ -526,7 +565,7 @@ export class RoadDebuggerView {
 
     setJunctionDebugOptions(opts = {}) {
         const o = opts && typeof opts === 'object' ? opts : {};
-        const keys = ['endpoints', 'boundary', 'connectors', 'rejected', 'edgeOrder'];
+        const keys = ['endpoints', 'boundary', 'connectors', 'tat', 'rejected', 'edgeOrder'];
         let changed = false;
         for (const key of keys) {
             if (o[key] === undefined) continue;
@@ -935,7 +974,7 @@ export class RoadDebuggerView {
     setHoverRoad(roadId) {
         this._hoverIssueId = null;
         const nextRoadId = roadId ?? null;
-        if (this._hover.roadId === nextRoadId && !this._hover.segmentId && !this._hover.pointId && !this._hover.pieceId && !this._hover.junctionId && !this._hover.connectorId && !this._hover.approachId) return;
+        if (this._hover.roadId === nextRoadId && !this._hover.segmentId && !this._hover.pointId && !this._hover.pieceId && !this._hover.junctionId && !this._hover.connectorId && !this._hover.approachId && !this._hover.tatId) return;
         this._hover.roadId = nextRoadId;
         this._hover.segmentId = null;
         this._hover.pointId = null;
@@ -943,6 +982,8 @@ export class RoadDebuggerView {
         this._hover.junctionId = null;
         this._hover.connectorId = null;
         this._hover.approachId = null;
+        this._hover.tatId = null;
+        this._hover.tatType = null;
         this._applyHighlights();
         this.ui?.sync?.();
     }
@@ -952,7 +993,7 @@ export class RoadDebuggerView {
         const seg = this._derived?.segments?.find?.((s) => s?.id === segmentId) ?? null;
         const nextSegId = seg?.id ?? null;
         const nextRoadId = seg?.roadId ?? null;
-        if (this._hover.segmentId === nextSegId && this._hover.roadId === nextRoadId && !this._hover.pointId && !this._hover.pieceId && !this._hover.junctionId && !this._hover.connectorId && !this._hover.approachId) return;
+        if (this._hover.segmentId === nextSegId && this._hover.roadId === nextRoadId && !this._hover.pointId && !this._hover.pieceId && !this._hover.junctionId && !this._hover.connectorId && !this._hover.approachId && !this._hover.tatId) return;
         this._hover.segmentId = nextSegId;
         this._hover.roadId = nextRoadId;
         this._hover.pointId = null;
@@ -960,6 +1001,8 @@ export class RoadDebuggerView {
         this._hover.junctionId = null;
         this._hover.connectorId = null;
         this._hover.approachId = null;
+        this._hover.tatId = null;
+        this._hover.tatType = null;
         this._applyHighlights();
         this.ui?.sync?.();
     }
@@ -968,7 +1011,7 @@ export class RoadDebuggerView {
         this._hoverIssueId = null;
         const nextRoadId = roadId ?? null;
         const nextPointId = pointId ?? null;
-        if (this._hover.roadId === nextRoadId && this._hover.pointId === nextPointId && !this._hover.segmentId && !this._hover.pieceId && !this._hover.junctionId && !this._hover.connectorId && !this._hover.approachId) return;
+        if (this._hover.roadId === nextRoadId && this._hover.pointId === nextPointId && !this._hover.segmentId && !this._hover.pieceId && !this._hover.junctionId && !this._hover.connectorId && !this._hover.approachId && !this._hover.tatId) return;
         this._hover.roadId = nextRoadId;
         this._hover.segmentId = null;
         this._hover.pointId = nextPointId;
@@ -976,6 +1019,8 @@ export class RoadDebuggerView {
         this._hover.junctionId = null;
         this._hover.connectorId = null;
         this._hover.approachId = null;
+        this._hover.tatId = null;
+        this._hover.tatType = null;
         this._applyHighlights();
         this.ui?.sync?.();
     }
@@ -983,7 +1028,7 @@ export class RoadDebuggerView {
     setHoverJunction(junctionId) {
         this._hoverIssueId = null;
         const nextJunctionId = junctionId ?? null;
-        if (this._hover.junctionId === nextJunctionId && !this._hover.roadId && !this._hover.segmentId && !this._hover.pointId && !this._hover.pieceId && !this._hover.connectorId && !this._hover.approachId) return;
+        if (this._hover.junctionId === nextJunctionId && !this._hover.roadId && !this._hover.segmentId && !this._hover.pointId && !this._hover.pieceId && !this._hover.connectorId && !this._hover.approachId && !this._hover.tatId) return;
         this._hover.roadId = null;
         this._hover.segmentId = null;
         this._hover.pointId = null;
@@ -991,6 +1036,32 @@ export class RoadDebuggerView {
         this._hover.junctionId = nextJunctionId;
         this._hover.connectorId = null;
         this._hover.approachId = null;
+        this._hover.tatId = null;
+        this._hover.tatType = null;
+        this._applyHighlights();
+        this.ui?.sync?.();
+    }
+
+    setHoverJunctionTat(junctionId, tatId, tatType = null) {
+        this._hoverIssueId = null;
+        const nextJunctionId = junctionId ?? null;
+        const nextTatId = tatId ?? null;
+        const nextTatType = tatType ?? null;
+        if (!nextJunctionId || !nextTatId) {
+            this.clearHover();
+            return;
+        }
+        if (this._hover.junctionId === nextJunctionId && this._hover.tatId === nextTatId && this._hover.tatType === nextTatType) return;
+        this._hover.roadId = null;
+        this._hover.segmentId = null;
+        this._hover.pointId = null;
+        this._hover.pieceId = null;
+        this._hover.junctionId = nextJunctionId;
+        this._hover.connectorId = null;
+        this._hover.approachId = null;
+        this._hover.tatId = nextTatId;
+        this._hover.tatType = nextTatType;
+        this._syncHoverTatOverlay();
         this._applyHighlights();
         this.ui?.sync?.();
     }
@@ -1012,7 +1083,7 @@ export class RoadDebuggerView {
                 break;
             }
         }
-        if (this._hover.connectorId === nextConnectorId && this._hover.junctionId === junctionId && !this._hover.roadId && !this._hover.segmentId && !this._hover.pointId && !this._hover.pieceId && !this._hover.approachId) return;
+        if (this._hover.connectorId === nextConnectorId && this._hover.junctionId === junctionId && !this._hover.roadId && !this._hover.segmentId && !this._hover.pointId && !this._hover.pieceId && !this._hover.approachId && !this._hover.tatId) return;
         this._hover.roadId = null;
         this._hover.segmentId = null;
         this._hover.pointId = null;
@@ -1020,6 +1091,8 @@ export class RoadDebuggerView {
         this._hover.junctionId = junctionId;
         this._hover.connectorId = nextConnectorId;
         this._hover.approachId = null;
+        this._hover.tatId = null;
+        this._hover.tatType = null;
         this._applyHighlights();
         this.ui?.sync?.();
     }
@@ -1032,7 +1105,7 @@ export class RoadDebuggerView {
             this.clearHover();
             return;
         }
-        if (this._hover.approachId === nextApproachId && this._hover.junctionId === nextJunctionId && !this._hover.roadId && !this._hover.segmentId && !this._hover.pointId && !this._hover.pieceId && !this._hover.connectorId) return;
+        if (this._hover.approachId === nextApproachId && this._hover.junctionId === nextJunctionId && !this._hover.roadId && !this._hover.segmentId && !this._hover.pointId && !this._hover.pieceId && !this._hover.connectorId && !this._hover.tatId) return;
         this._hover.roadId = null;
         this._hover.segmentId = null;
         this._hover.pointId = null;
@@ -1040,13 +1113,15 @@ export class RoadDebuggerView {
         this._hover.junctionId = nextJunctionId;
         this._hover.connectorId = null;
         this._hover.approachId = nextApproachId;
+        this._hover.tatId = null;
+        this._hover.tatType = null;
         this._applyHighlights();
         this.ui?.sync?.();
     }
 
     clearHover() {
         this._hoverIssueId = null;
-        if (!this._hover.roadId && !this._hover.segmentId && !this._hover.pointId && !this._hover.pieceId && !this._hover.junctionId && !this._hover.connectorId && !this._hover.approachId) return;
+        if (!this._hover.roadId && !this._hover.segmentId && !this._hover.pointId && !this._hover.pieceId && !this._hover.junctionId && !this._hover.connectorId && !this._hover.approachId && !this._hover.tatId) return;
         this._hover.roadId = null;
         this._hover.segmentId = null;
         this._hover.pointId = null;
@@ -1054,6 +1129,9 @@ export class RoadDebuggerView {
         this._hover.junctionId = null;
         this._hover.connectorId = null;
         this._hover.approachId = null;
+        this._hover.tatId = null;
+        this._hover.tatType = null;
+        this._syncHoverTatOverlay();
         this._applyHighlights();
         this.ui?.sync?.();
     }
@@ -1732,8 +1810,8 @@ export class RoadDebuggerView {
         this._suppressedAutoJunctionIds = new Set(parsed.suppressedAutoJunctionIds ?? []);
         this._junctionToolHoverCandidateId = null;
         this._junctionToolSelectedCandidateIds?.clear?.();
-        this._hover = { roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null };
-        this._selection = { type: null, roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null };
+        this._hover = { roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null, approachId: null, tatId: null, tatType: null };
+        this._selection = { type: null, roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null, approachId: null };
 
         const counters = this._resolveCounters();
         this._roadCounter = counters.roadCounter;
@@ -1970,7 +2048,7 @@ export class RoadDebuggerView {
             connectorId: sel.connectorId ?? null,
             approachId: sel.approachId ?? null
         };
-        this._hover = { roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null, approachId: null };
+        this._hover = { roadId: null, segmentId: null, pointId: null, pieceId: null, junctionId: null, connectorId: null, approachId: null, tatId: null, tatType: null };
         this._junctionToolHoverCandidateId = null;
         this._junctionToolSelectedCandidateIds?.clear?.();
     }
@@ -2417,6 +2495,10 @@ export class RoadDebuggerView {
             this.setHoverJunction(pick.junctionId);
             return;
         }
+        if (pick?.type === 'junction_tat') {
+            this.setHoverJunctionTat(pick.junctionId, pick.tatId, pick.tatType ?? null);
+            return;
+        }
         if (pick?.type === 'point') {
             this.setHoverPoint(pick.roadId, pick.pointId);
             return;
@@ -2464,6 +2546,8 @@ export class RoadDebuggerView {
                 junctions: {
                     enabled: true,
                     thresholdFactor: Number(this._junctionThresholdFactor) || 1.5,
+                    autoCreate: this._autoJunctionEnabled === true,
+                    filletRadiusFactor: Number.isFinite(this._junctionFilletRadiusFactor) ? this._junctionFilletRadiusFactor : 1,
                     debug: { ...this._junctionDebug },
                     mergedConnectorIds: Array.from(this._mergedConnectorIds ?? []),
                     manualJunctions: cloneJson(this._authoredJunctions ?? []),
@@ -2513,6 +2597,7 @@ export class RoadDebuggerView {
         this._segmentPickMeshes = [];
         this._junctionPickMeshes = [];
         this._connectorPickMeshes = [];
+        this._junctionTatPickMeshes = [];
         this._junctionCandidateMeshes = [];
         this._junctionCandidatePickMeshes = [];
     }
@@ -2552,6 +2637,11 @@ export class RoadDebuggerView {
         const linesGroup = new THREE.Group();
         linesGroup.name = 'RoadDebuggerLines';
         overlay.add(linesGroup);
+
+        const hoverTatGroup = new THREE.Group();
+        hoverTatGroup.name = 'RoadDebuggerHoverTat';
+        overlay.add(hoverTatGroup);
+        this._hoverTatGroup = hoverTatGroup;
 
         const pointsGroup = new THREE.Group();
         pointsGroup.name = 'RoadDebuggerPoints';
@@ -3242,8 +3332,92 @@ export class RoadDebuggerView {
         }
     }
 
+    _syncHoverTatOverlay({ force = false } = {}) {
+        const group = this._hoverTatGroup ?? null;
+        if (!group) return;
+
+        const hover = this._hover ?? {};
+        const junctionId = hover?.junctionId ?? null;
+        const tatId = hover?.tatId ?? null;
+        const enabled = !!junctionId && !!tatId && !(this._junctionDebug?.tat === true);
+        const key = enabled ? `${junctionId}|${tatId}` : '';
+        if (!force && key === this._hoverTatOverlayKey) return;
+        this._hoverTatOverlayKey = key;
+
+        group.traverse((child) => {
+            if (child?.geometry?.dispose) child.geometry.dispose();
+        });
+        group.clear();
+        if (!enabled) return;
+
+        const junction = this._derived?.junctions?.find?.((j) => j?.id === junctionId) ?? null;
+        const tat = junction?.tat?.find?.((t) => t?.id === tatId) ?? null;
+        if (!tat) return;
+
+        this._syncLineMaterialResolution();
+        const lineY = this._groundY + 0.03;
+        const chord = Math.max(0.35, (Number(this._laneWidth) || 4.8) * 0.18);
+
+        const makeLine = (points, kind) => {
+            const pts = Array.isArray(points) ? points.filter(Boolean) : [];
+            if (pts.length < 2) return;
+            const positions = [];
+            for (const p of pts) {
+                positions.push(Number(p.x) || 0, lineY, Number(p.z) || 0);
+            }
+            if (positions.length < 6) return;
+
+            const geo = new LineGeometry();
+            geo.setPositions(positions);
+
+            const mat = ensureMapEntry(this._materials.lineHover, kind, () => {
+                const material = new LineMaterial({
+                    color: 0x34c759,
+                    linewidth: baseLineWidthForKind(kind),
+                    worldUnits: false,
+                    transparent: true,
+                    opacity: 0.95,
+                    depthTest: false,
+                    depthWrite: false
+                });
+                material.resolution.set(this._lineMaterialResolution.x, this._lineMaterialResolution.y);
+                return material;
+            });
+
+            const line = new Line2(geo, mat);
+            line.computeLineDistances();
+            line.frustumCulled = false;
+            line.userData = { type: 'polyline', kind, junctionId, tatId, tatType: tat?.type ?? null };
+            line.renderOrder = baseLineRenderOrderForKind(kind);
+            group.add(line);
+        };
+
+        for (const seg of tat?.tangents ?? []) {
+            const a = seg?.a ?? null;
+            const b = seg?.b ?? null;
+            if (!a || !b) continue;
+            makeLine([a, b], 'junction_tat_tangent');
+        }
+
+        const arc = tat?.arc ?? null;
+        if (arc?.center && Number.isFinite(arc.radius) && arc.radius > 1e-6 && Number.isFinite(arc.startAng) && Number.isFinite(arc.spanAng) && arc.spanAng > 1e-6) {
+            const arcLen = Math.abs(Number(arc.spanAng) || 0) * (Number(arc.radius) || 0);
+            const segments = Math.max(6, Math.min(96, Math.ceil(arcLen / chord)));
+            const pts = sampleArcXZ({
+                center: arc.center,
+                radius: arc.radius,
+                startAng: arc.startAng,
+                spanAng: arc.spanAng,
+                ccw: arc.ccw !== false,
+                segments
+            });
+            makeLine(pts, 'junction_tat_arc');
+        }
+    }
+
     _applyHighlights() {
         this._syncLineMaterialResolution();
+        this._syncHoverTatOverlay();
         const derived = this._derived ?? null;
         const sel = this._selection ?? {};
         const hover = this._hover ?? {};
