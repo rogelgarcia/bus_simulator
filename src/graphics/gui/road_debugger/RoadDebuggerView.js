@@ -198,6 +198,7 @@ export class RoadDebuggerView {
             endpoints: false,
             boundary: false,
             connectors: false,
+            tat: false,
             rejected: false,
             edgeOrder: false
         };
@@ -2670,6 +2671,56 @@ export class RoadDebuggerView {
             return geo;
         };
 
+        const makePickPolylineGeometry = (points, width, y) => {
+            const pts = Array.isArray(points) ? points : [];
+            if (pts.length < 2) return null;
+            const hw = (Number(width) || 0) * 0.5;
+            if (!(hw > 1e-6)) return null;
+
+            const positions = [];
+            for (let i = 0; i < pts.length - 1; i++) {
+                const a = pts[i];
+                const b = pts[i + 1];
+                const ax = Number(a?.x) || 0;
+                const az = Number(a?.z) || 0;
+                const bx = Number(b?.x) || 0;
+                const bz = Number(b?.z) || 0;
+                const dx = bx - ax;
+                const dz = bz - az;
+                const len = Math.hypot(dx, dz);
+                if (!(len > 1e-6)) continue;
+                const inv = 1 / len;
+                const ux = dx * inv;
+                const uz = dz * inv;
+                const rx = uz;
+                const rz = -ux;
+
+                const p0x = ax + rx * hw;
+                const p0z = az + rz * hw;
+                const p1x = ax - rx * hw;
+                const p1z = az - rz * hw;
+                const p2x = bx - rx * hw;
+                const p2z = bz - rz * hw;
+                const p3x = bx + rx * hw;
+                const p3z = bz + rz * hw;
+
+                positions.push(
+                    p0x, y, p0z,
+                    p1x, y, p1z,
+                    p2x, y, p2z,
+                    p0x, y, p0z,
+                    p2x, y, p2z,
+                    p3x, y, p3z
+                );
+            }
+
+            if (positions.length < 18) return null;
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+            geo.computeBoundingSphere();
+            return geo;
+        };
+
         for (const prim of primitives) {
             if (!prim || prim.type !== 'polyline') continue;
             const pts = Array.isArray(prim.points) ? prim.points : [];
@@ -2708,7 +2759,16 @@ export class RoadDebuggerView {
             const line = new Line2(geo, baseMat);
             line.computeLineDistances();
             line.frustumCulled = false;
-            line.userData = { type: 'polyline', roadId, segmentId: prim.segmentId ?? null, kind, junctionId, connectorId: prim.connectorId ?? null };
+            line.userData = {
+                type: 'polyline',
+                roadId,
+                segmentId: prim.segmentId ?? null,
+                kind,
+                junctionId,
+                connectorId: prim.connectorId ?? null,
+                tatId: prim.tatId ?? null,
+                tatType: prim.tatType ?? null
+            };
             line.renderOrder = baseLineRenderOrderForKind(kind);
             linesGroup.add(line);
             this._overlayLines.push(line);
@@ -2722,6 +2782,18 @@ export class RoadDebuggerView {
                     pick.renderOrder = 4;
                     pickGroup.add(pick);
                     this._connectorPickMeshes.push(pick);
+                }
+            }
+
+            if ((kind === 'junction_tat_tangent' || kind === 'junction_tat_arc') && prim.tatId && pts.length >= 2) {
+                const pickWidth = Math.max(0.85, (Number(this._laneWidth) || 4.8) * 0.18);
+                const pickGeo = makePickPolylineGeometry(pts, pickWidth, pickY);
+                if (pickGeo) {
+                    const pick = new THREE.Mesh(pickGeo, this._materials.pickHidden);
+                    pick.userData = { type: 'junction_tat_pick', junctionId, tatId: prim.tatId, tatType: prim.tatType ?? null };
+                    pick.renderOrder = 4;
+                    pickGroup.add(pick);
+                    this._junctionTatPickMeshes.push(pick);
                 }
             }
         }
@@ -3182,7 +3254,8 @@ export class RoadDebuggerView {
         const hoverJunctionId = hover.junctionId ?? null;
         const hoverConnectorId = hover.connectorId ?? null;
         const hoverApproachId = hover.approachId ?? null;
-        const hoverJunctionHighlightId = (!hoverConnectorId && !hoverApproachId) ? hoverJunctionId : null;
+        const hoverTatId = hover.tatId ?? null;
+        const hoverJunctionHighlightId = (!hoverConnectorId && !hoverApproachId && !hoverTatId) ? hoverJunctionId : null;
 
         const selRoadId = sel.type ? (sel.roadId ?? null) : null;
         const selSegmentId = (sel.type === 'segment' || sel.type === 'piece') ? (sel.segmentId ?? null) : null;
@@ -3247,6 +3320,7 @@ export class RoadDebuggerView {
             const segmentId = line?.userData?.segmentId ?? null;
             const junctionId = line?.userData?.junctionId ?? null;
             const connectorId = line?.userData?.connectorId ?? null;
+            const tatId = line?.userData?.tatId ?? null;
             const kind = line?.userData?.kind ?? 'unknown';
             const selected =
                 (!!selSegmentId && segmentId === selSegmentId)
@@ -3266,6 +3340,7 @@ export class RoadDebuggerView {
                 || (!!connectorId && extraHoverConnectorIds.has(connectorId))
                 || (!!segmentId && extraHoverSegmentIds.has(segmentId))
                 || (!!roadId && extraHoverRoadIds.has(roadId))
+                || (!!hoverTatId && !!junctionId && junctionId === hoverJunctionId && !!tatId && tatId === hoverTatId)
             );
             const baseMat = ensureMapEntry(this._materials.lineBase, kind, () => {
                 const mat = new LineMaterial({
@@ -3430,6 +3505,15 @@ export class RoadDebuggerView {
             const hovered = (!!hoverConnectorId && connectorId === hoverConnectorId) || (!!connectorId && extraHoverConnectorIds.has(connectorId));
             mesh.material = hovered ? this._materials.pickHover : (selected ? this._materials.pickSelected : this._materials.pickHidden);
             mesh.visible = true;
+        }
+
+        for (const mesh of this._junctionTatPickMeshes) {
+            const junctionId = mesh?.userData?.junctionId ?? null;
+            const tatId = mesh?.userData?.tatId ?? null;
+            const hovered = (!!hoverTatId && !!junctionId && junctionId === hoverJunctionId && !!tatId && tatId === hoverTatId);
+            const junctionAllowed = junctionOverlaysEnabled || (!!junctionId && forcedJunctionIds.has(junctionId));
+            mesh.material = hovered ? this._materials.pickHover : this._materials.pickHidden;
+            mesh.visible = junctionAllowed;
         }
 
         if (this._junctionToolEnabled) {

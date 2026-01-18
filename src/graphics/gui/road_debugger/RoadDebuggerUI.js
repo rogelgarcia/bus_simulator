@@ -168,6 +168,30 @@ function outputInfo(view) {
         hoverLines.push(`${hoverIssue.severity}: ${hoverIssue.label}`);
     } else if (hoverCandidate) {
         hoverLines.push(`candidate: ${hoverCandidate}`);
+    } else if (hover.tatId) {
+        const junctionId = hover.junctionId ?? null;
+        const tatId = hover.tatId ?? null;
+        const tatType = hover.tatType ?? null;
+        const junction = junctionId ? (derived?.junctions?.find?.((j) => j?.id === junctionId) ?? null) : null;
+        const tat = junction && tatId ? (junction?.tat?.find?.((t) => t?.id === tatId) ?? null) : null;
+        hoverLines.push(`tat: ${tatId ?? '--'}`);
+        if (tatType) hoverLines.push(`type: ${tatType}`);
+        if (junctionId) hoverLines.push(`junction: ${junctionId}`);
+        if (tat?.aSide && tat?.bSide) hoverLines.push(`edges: ${tat.aSide} → ${tat.bSide}`);
+        const tangents = Array.isArray(tat?.tangents) ? tat.tangents : [];
+        for (let i = 0; i < tangents.length; i++) {
+            const len = Number(tangents[i]?.length);
+            if (Number.isFinite(len)) hoverLines.push(`tangent ${i + 1}: ${fmt(len, 2)}m`);
+        }
+        const arc = tat?.arc ?? null;
+        if (arc?.center) {
+            hoverLines.push(`radius: ${fmt(Number(arc.radius) || 0, 2)}m`);
+            const spanRad = Number(arc.spanAng) || 0;
+            const spanDeg = spanRad * (180 / Math.PI);
+            hoverLines.push(`span: ${fmt(spanRad, 2)}rad (${fmt(spanDeg, 1)}°)`);
+            if (Number.isFinite(arc.length)) hoverLines.push(`arc length: ${fmt(Number(arc.length) || 0, 2)}m`);
+            hoverLines.push(`center: ${fmt(Number(arc.center.x) || 0, 1)}, ${fmt(Number(arc.center.z) || 0, 1)}`);
+        }
     } else if (hover.connectorId) {
         hoverLines.push(`connector: ${hover.connectorId}`);
     } else if (hover.approachId) {
@@ -682,6 +706,8 @@ export function setupUI(view) {
     junctionBoundaryRow.row.title = 'Show the stitched junction boundary polyline.';
     const junctionConnectorsRow = makeToggleRow('Connectors');
     junctionConnectorsRow.row.title = 'Show connector edge lines for each junction (movement graph preview).';
+    const junctionTatRow = makeToggleRow('TAT');
+    junctionTatRow.row.title = 'Show tangent–arc–tangent (TAT) geometry used to stitch degree-2 junction surfaces.';
     const junctionEdgeOrderRow = makeToggleRow('Edge order');
     junctionEdgeOrderRow.row.title = 'Show the endpoint ordering used to stitch the junction boundary.';
 
@@ -725,6 +751,7 @@ export function setupUI(view) {
     junctionGeomGrid.appendChild(junctionEndpointsRow.row);
     junctionGeomGrid.appendChild(junctionBoundaryRow.row);
     junctionGeomGrid.appendChild(junctionConnectorsRow.row);
+    junctionGeomGrid.appendChild(junctionTatRow.row);
     junctionGeomGrid.appendChild(junctionEdgeOrderRow.row);
     junctionGeometry.appendChild(junctionGeomGrid);
     junctionsVizPanel.appendChild(junctionGeometry);
@@ -1323,6 +1350,7 @@ export function setupUI(view) {
     const onJunctionEndpointsChange = () => view.setJunctionDebugOptions?.({ endpoints: junctionEndpointsRow.input.checked });
     const onJunctionBoundaryChange = () => view.setJunctionDebugOptions?.({ boundary: junctionBoundaryRow.input.checked });
     const onJunctionConnectorsChange = () => view.setJunctionDebugOptions?.({ connectors: junctionConnectorsRow.input.checked });
+    const onJunctionTatChange = () => view.setJunctionDebugOptions?.({ tat: junctionTatRow.input.checked });
     const onJunctionEdgeOrderChange = () => view.setJunctionDebugOptions?.({ edgeOrder: junctionEdgeOrderRow.input.checked });
     const onPopupTabRoads = (e) => {
         e.preventDefault?.();
@@ -1529,6 +1557,7 @@ export function setupUI(view) {
     junctionEndpointsRow.input.addEventListener('change', onJunctionEndpointsChange);
     junctionBoundaryRow.input.addEventListener('change', onJunctionBoundaryChange);
     junctionConnectorsRow.input.addEventListener('change', onJunctionConnectorsChange);
+    junctionTatRow.input.addEventListener('change', onJunctionTatChange);
     junctionEdgeOrderRow.input.addEventListener('change', onJunctionEdgeOrderChange);
     vizTabRoads.addEventListener('click', onVizTabRoads);
     vizTabJunctions.addEventListener('click', onVizTabJunctions);
@@ -1691,7 +1720,7 @@ export function setupUI(view) {
         const sel = view._selection ?? {};
         const hover = view._hover ?? {};
         const isSelected = sel?.type === 'junction' && sel?.junctionId === junction.id;
-        const isHovered = hover?.junctionId === junction.id && !hover?.connectorId && !hover?.approachId;
+        const isHovered = hover?.junctionId === junction.id && !hover?.connectorId && !hover?.approachId && !hover?.tatId;
         row.classList.toggle('is-selected', !!isSelected);
         row.classList.toggle('is-hovered', !!isHovered);
         row.classList.toggle('is-hidden', junction?.asphaltVisible === false);
@@ -1699,7 +1728,7 @@ export function setupUI(view) {
         row.addEventListener('mouseenter', () => view.setHoverJunction?.(junction.id));
         row.addEventListener('mouseleave', () => {
             const h = view._hover ?? {};
-            if (h.junctionId === junction.id && !h.connectorId && !h.approachId) view.clearHover();
+            if (h.junctionId === junction.id && !h.connectorId && !h.approachId && !h.tatId) view.clearHover();
         });
         row.addEventListener('click', () => {
             setPopupMode('junctions');
@@ -1832,6 +1861,42 @@ export function setupUI(view) {
         return row;
     };
 
+    const buildTatRow = ({ tat, junctionId }) => {
+        const item = tat ?? null;
+        if (!item?.id) return null;
+        const row = document.createElement('div');
+        row.className = 'road-debugger-tat-row';
+        row.dataset.junctionId = junctionId;
+        row.dataset.tatId = item.id;
+
+        const label = document.createElement('div');
+        label.className = 'road-debugger-tat-label';
+        const arc = item?.arc ?? null;
+        const tangents = Array.isArray(item?.tangents) ? item.tangents : [];
+        const tangentTotal = tangents.reduce((acc, t) => acc + (Number(t?.length) || 0), 0);
+        const arcLen = Number(arc?.length) || 0;
+        const radius = Number(arc?.radius) || 0;
+        const kind = item?.type ?? 'tat';
+        label.textContent = `TAT · ${kind} · tan ${fmt(tangentTotal, 1)}m · arc ${fmt(arcLen, 1)}m · r ${fmt(radius, 1)}m`;
+        row.appendChild(label);
+
+        const meta = document.createElement('div');
+        meta.className = 'road-debugger-tat-meta';
+        meta.textContent = item.id;
+        row.appendChild(meta);
+
+        const isHovered = view._hover?.junctionId === junctionId && view._hover?.tatId === item.id;
+        row.classList.toggle('is-hovered', !!isHovered);
+
+        row.addEventListener('mouseenter', () => view.setHoverJunctionTat?.(junctionId, item.id, item?.type ?? null));
+        row.addEventListener('mouseleave', () => {
+            if (view._hover?.junctionId === junctionId && view._hover?.tatId === item.id) view.clearHover();
+        });
+
+        row.title = 'Tangent–arc–tangent curve used for degree-2 junction surface stitching.';
+        return row;
+    };
+
     let roadsListKey = null;
 
     const sync = () => {
@@ -1884,10 +1949,12 @@ export function setupUI(view) {
         junctionEndpointsRow.input.checked = !!junctionDebug.endpoints;
         junctionBoundaryRow.input.checked = !!junctionDebug.boundary;
         junctionConnectorsRow.input.checked = !!junctionDebug.connectors;
+        junctionTatRow.input.checked = !!junctionDebug.tat;
         junctionEdgeOrderRow.input.checked = !!junctionDebug.edgeOrder;
         junctionEndpointsRow.input.disabled = !junctionsVisible;
         junctionBoundaryRow.input.disabled = !junctionsVisible;
         junctionConnectorsRow.input.disabled = !junctionsVisible;
+        junctionTatRow.input.disabled = !junctionsVisible;
         junctionEdgeOrderRow.input.disabled = !junctionsVisible;
 
         const junctionToolEnabled = view.getJunctionToolEnabled?.() ?? view._junctionToolEnabled === true;
@@ -1994,6 +2061,13 @@ export function setupUI(view) {
                 for (const endpoint of endpoints) {
                     if (!endpoint?.id) continue;
                     appendDetail(buildJunctionEndpointRow({ endpoint, junctionId: junction.id }));
+                }
+
+                const tat = Array.isArray(junction?.tat) ? junction.tat : [];
+                if (tat.length) appendDetail(buildDetailSubhead(`TAT (${fmtInt(tat.length)})`));
+                for (const item of tat) {
+                    const row = buildTatRow({ tat: item, junctionId: junction.id });
+                    if (row) appendDetail(row);
                 }
 
                 const connectors = junction?.connectors ?? [];
@@ -2532,6 +2606,7 @@ export function setupUI(view) {
         junctionEndpointsToggle: junctionEndpointsRow.input,
         junctionBoundaryToggle: junctionBoundaryRow.input,
         junctionConnectorsToggle: junctionConnectorsRow.input,
+        junctionTatToggle: junctionTatRow.input,
         junctionEdgeOrderToggle: junctionEdgeOrderRow.input,
         vizTabRoads,
         vizTabJunctions,
@@ -2583,6 +2658,7 @@ export function setupUI(view) {
         _onJunctionEndpointsChange: onJunctionEndpointsChange,
         _onJunctionBoundaryChange: onJunctionBoundaryChange,
         _onJunctionConnectorsChange: onJunctionConnectorsChange,
+        _onJunctionTatChange: onJunctionTatChange,
         _onJunctionEdgeOrderChange: onJunctionEdgeOrderChange,
         _onVizTabRoads: onVizTabRoads,
         _onVizTabJunctions: onVizTabJunctions,
@@ -2647,6 +2723,7 @@ export function destroyUI(view) {
     ui.junctionEndpointsToggle?.removeEventListener?.('change', ui._onJunctionEndpointsChange);
     ui.junctionBoundaryToggle?.removeEventListener?.('change', ui._onJunctionBoundaryChange);
     ui.junctionConnectorsToggle?.removeEventListener?.('change', ui._onJunctionConnectorsChange);
+    ui.junctionTatToggle?.removeEventListener?.('change', ui._onJunctionTatChange);
     ui.junctionEdgeOrderToggle?.removeEventListener?.('change', ui._onJunctionEdgeOrderChange);
     ui.vizTabRoads?.removeEventListener?.('click', ui._onVizTabRoads);
     ui.vizTabJunctions?.removeEventListener?.('click', ui._onVizTabJunctions);

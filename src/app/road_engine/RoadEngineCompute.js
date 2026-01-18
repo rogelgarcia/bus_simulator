@@ -3,6 +3,7 @@
 // Design: Returns plain serializable data so results are deterministic and renderer-agnostic.
 
 import { normalizeRoadTileOffsetBoundary } from './RoadEngineTileOffset.js';
+import { computeEdgeFilletArcXZ, sampleArcXZ } from '../geometry/RoadEdgeFillet.js';
 
 const EPS = 1e-9;
 
@@ -99,6 +100,7 @@ function resolveJunctions(junctions, laneWidth) {
             endpoints: !!debug.endpoints,
             boundary: !!debug.boundary,
             connectors: !!debug.connectors,
+            tat: !!debug.tat,
             rejected: !!debug.rejected,
             edgeOrder: !!debug.edgeOrder
         }
@@ -491,6 +493,215 @@ function convexHullXZ(points) {
     lower.pop();
     const hull = lower.concat(upper);
     return hull.length >= 3 ? ensureCcw(hull) : hull;
+}
+
+function normalizeVecXZ(dir) {
+    if (!dir) return null;
+    const x = Number(dir?.x) || 0;
+    const z = Number(dir?.z) || 0;
+    const len = Math.hypot(x, z);
+    if (!(len > EPS)) return null;
+    const inv = 1 / len;
+    return { x: x * inv, z: z * inv, length: len };
+}
+
+function distXZ(a, b) {
+    const dx = (Number(a?.x) || 0) - (Number(b?.x) || 0);
+    const dz = (Number(a?.z) || 0) - (Number(b?.z) || 0);
+    return Math.hypot(dx, dz);
+}
+
+function appendUniquePoint(out, p, eps = 1e-6) {
+    if (!p) return;
+    const last = out[out.length - 1] ?? null;
+    if (last && distXZ(last, p) <= eps) return;
+    out.push({ x: Number(p?.x) || 0, z: Number(p?.z) || 0 });
+}
+
+function buildDegree2JunctionSurfaceXZ({ junctionId, endpoints, laneWidth }) {
+    const eps = Array.isArray(endpoints) ? endpoints.filter(Boolean) : [];
+    if (eps.length !== 2) return null;
+    const e0 = eps[0];
+    const e1 = eps[1];
+    if (!e0?.leftEdge || !e0?.rightEdge || !e1?.leftEdge || !e1?.rightEdge) return null;
+
+    const d0In = normalizeVecXZ({ x: -(Number(e0?.dirOut?.x) || 0), z: -(Number(e0?.dirOut?.z) || 0) });
+    const d1In = normalizeVecXZ({ x: -(Number(e1?.dirOut?.x) || 0), z: -(Number(e1?.dirOut?.z) || 0) });
+    if (!d0In || !d1In) return null;
+
+    const r0 = normalizeVecXZ(e0?.rightOut);
+    const r1 = normalizeVecXZ(e1?.rightOut);
+    if (!r0 || !r1) return null;
+
+    const getEdgePoint = (endpoint, side) => (side === 'left' ? endpoint.leftEdge : endpoint.rightEdge);
+    const getOutsideNormal = (right, side) => (side === 'right' ? { x: right.x, z: right.z } : { x: -right.x, z: -right.z });
+
+    const scorePairing = (a0, a1, b0, b1) => (
+        distXZ(getEdgePoint(e0, a0), getEdgePoint(e1, a1))
+        + distXZ(getEdgePoint(e0, b0), getEdgePoint(e1, b1))
+    );
+
+    const directScore = scorePairing('left', 'left', 'right', 'right');
+    const swappedScore = scorePairing('left', 'right', 'right', 'left');
+    const pairing = swappedScore < directScore - 1e-9
+        ? { a0: 'left', a1: 'right', b0: 'right', b1: 'left' }
+        : { a0: 'left', a1: 'left', b0: 'right', b1: 'right' };
+
+    const maxRadius = Math.max(0, Math.min(Number(e0?.connectRadius) || 0, Number(e1?.connectRadius) || 0));
+    const chord = Math.max(0.35, (Number(laneWidth) || 4.8) * 0.18);
+
+    const fitFillet = ({ p0, dir0, out0, p1, dir1, out1, radiusMax }) => {
+        const max = Number(radiusMax) || 0;
+        if (!(max > 1e-6)) return null;
+        let lo = 0;
+        let hi = max;
+        let best = null;
+        for (let iter = 0; iter < 22; iter++) {
+            const r = (lo + hi) * 0.5;
+            if (!(r > 1e-6)) break;
+            const arc = computeEdgeFilletArcXZ({ p0, dir0, out0, p1, dir1, out1, radius: r });
+            if (arc) {
+                const t0 = arc.tangent0 ?? null;
+                const t1 = arc.tangent1 ?? null;
+                const s0 = t0 ? dot2({ x: (t0.x ?? 0) - (p0.x ?? 0), z: (t0.z ?? 0) - (p0.z ?? 0) }, dir0) : -1;
+                const s1 = t1 ? dot2({ x: (t1.x ?? 0) - (p1.x ?? 0), z: (t1.z ?? 0) - (p1.z ?? 0) }, dir1) : -1;
+                if (s0 >= -1e-4 && s1 >= -1e-4) {
+                    best = arc;
+                    lo = r;
+                    continue;
+                }
+            }
+            hi = r;
+        }
+        return best;
+    };
+
+    const buildTat = ({ aSide, bSide }) => {
+        const p0 = getEdgePoint(e0, aSide);
+        const p1 = getEdgePoint(e1, bSide);
+        const out0 = getOutsideNormal(r0, aSide);
+        const out1 = getOutsideNormal(r1, bSide);
+
+        const arc = fitFillet({
+            p0,
+            dir0: d0In,
+            out0,
+            p1,
+            dir1: d1In,
+            out1,
+            radiusMax: maxRadius
+        });
+
+        const points = [];
+        appendUniquePoint(points, p0);
+
+        const tangents = [];
+        let arcRec = null;
+
+        if (arc) {
+            const t0 = arc.tangent0 ?? null;
+            const t1 = arc.tangent1 ?? null;
+            if (t0) {
+                appendUniquePoint(points, t0);
+                tangents.push({
+                    a: { x: Number(p0.x) || 0, z: Number(p0.z) || 0 },
+                    b: { x: Number(t0.x) || 0, z: Number(t0.z) || 0 },
+                    length: distXZ(p0, t0)
+                });
+            }
+
+            const arcLen = Math.abs(Number(arc.spanAng) || 0) * (Number(arc.radius) || 0);
+            const segments = Math.max(6, Math.min(96, Math.ceil(arcLen / chord)));
+            const arcPts = sampleArcXZ({ ...arc, segments });
+            for (let i = 1; i < arcPts.length; i++) appendUniquePoint(points, arcPts[i]);
+
+            if (t1) {
+                tangents.push({
+                    a: { x: Number(t1.x) || 0, z: Number(t1.z) || 0 },
+                    b: { x: Number(p1.x) || 0, z: Number(p1.z) || 0 },
+                    length: distXZ(t1, p1)
+                });
+            }
+
+            arcRec = {
+                center: { x: Number(arc.center?.x) || 0, z: Number(arc.center?.z) || 0 },
+                radius: Number(arc.radius) || 0,
+                startAng: Number(arc.startAng) || 0,
+                spanAng: Number(arc.spanAng) || 0,
+                ccw: arc.ccw !== false,
+                tangent0: t0 ? { x: Number(t0.x) || 0, z: Number(t0.z) || 0 } : null,
+                tangent1: t1 ? { x: Number(t1.x) || 0, z: Number(t1.z) || 0 } : null,
+                length: arcLen
+            };
+        } else {
+            appendUniquePoint(points, p1);
+            tangents.push({
+                a: { x: Number(p0.x) || 0, z: Number(p0.z) || 0 },
+                b: { x: Number(p1.x) || 0, z: Number(p1.z) || 0 },
+                length: distXZ(p0, p1)
+            });
+        }
+
+        const tatId = stableHashId('tat_', `${junctionId}|${e0?.id ?? ''}|${aSide}|${e1?.id ?? ''}|${bSide}`);
+        return {
+            id: tatId,
+            type: 'pair',
+            aEndpointId: e0?.id ?? null,
+            aSide,
+            bEndpointId: e1?.id ?? null,
+            bSide,
+            tangents,
+            arc: arcRec,
+            points,
+            a: { x: Number(p0?.x) || 0, z: Number(p0?.z) || 0 },
+            b: { x: Number(p1?.x) || 0, z: Number(p1?.z) || 0 }
+        };
+    };
+
+    const tatA = buildTat({ aSide: pairing.a0, bSide: pairing.a1 });
+    const tatB = buildTat({ aSide: pairing.b0, bSide: pairing.b1 });
+    if (!tatA?.points?.length || !tatB?.points?.length) return null;
+
+    const distA = distXZ(tatA.a, tatA.b);
+    const distB = distXZ(tatB.a, tatB.b);
+    const outer = distA >= distB ? tatA : tatB;
+    const inner = distA >= distB ? tatB : tatA;
+    outer.type = 'outer';
+    inner.type = 'inner';
+
+    const poly = [];
+    for (const p of outer.points ?? []) appendUniquePoint(poly, p);
+    appendUniquePoint(poly, inner.b);
+    const innerRev = (inner.points ?? []).slice().reverse();
+    for (const p of innerRev) appendUniquePoint(poly, p);
+    appendUniquePoint(poly, outer.a);
+
+    const cleaned = [];
+    for (const p of poly) appendUniquePoint(cleaned, p);
+    if (cleaned.length >= 3 && distXZ(cleaned[0], cleaned[cleaned.length - 1]) <= 1e-6) cleaned.pop();
+
+    let surface = ensureCcw(cleaned);
+    const area = Math.abs(polygonArea(surface));
+    if (polygonSelfIntersectsXZ(surface) || !(area > 1e-6)) {
+        const quad = [outer.a, outer.b, inner.b, inner.a];
+        surface = ensureCcw(quad);
+        const fallbackArea = Math.abs(polygonArea(surface));
+        if (polygonSelfIntersectsXZ(surface) || !(fallbackArea > 1e-6)) surface = convexHullXZ([outer.a, outer.b, inner.a, inner.b]);
+    }
+
+    return {
+        points: surface.map((p) => ({ x: Number(p?.x) || 0, z: Number(p?.z) || 0 })),
+        tat: [outer, inner].map((t) => ({
+            id: t.id,
+            type: t.type,
+            aEndpointId: t.aEndpointId,
+            aSide: t.aSide,
+            bEndpointId: t.bEndpointId,
+            bSide: t.bSide,
+            tangents: t.tangents,
+            arc: t.arc
+        }))
+    };
 }
 
 function mergeIntervals(intervals) {
@@ -1343,27 +1554,39 @@ export function computeRoadEngineEdges({ roads = [], settings = {} } = {}) {
             return compareString(a?.id, b?.id);
         });
 
-        const boundaryPts = [];
-        for (const ep of ordered) {
-            boundaryPts.push({ x: ep.rightEdge.x, z: ep.rightEdge.z });
-            boundaryPts.push({ x: ep.leftEdge.x, z: ep.leftEdge.z });
+        let tat = [];
+        let surface = null;
+        if (ordered.length === 2) {
+            const deg2 = buildDegree2JunctionSurfaceXZ({ junctionId: id, endpoints: ordered, laneWidth: resolvedSettings.laneWidth });
+            if (deg2?.points?.length >= 3) {
+                surface = deg2.points;
+                tat = Array.isArray(deg2.tat) ? deg2.tat : [];
+            }
         }
 
-        const cleanedBoundary = [];
-        for (const p of boundaryPts) {
-            const last = cleanedBoundary[cleanedBoundary.length - 1] ?? null;
-            if (last && Math.hypot((p?.x ?? 0) - (last.x ?? 0), (p?.z ?? 0) - (last.z ?? 0)) <= 1e-6) continue;
-            cleanedBoundary.push({ x: Number(p?.x) || 0, z: Number(p?.z) || 0 });
-        }
-        if (cleanedBoundary.length >= 3) {
-            const first = cleanedBoundary[0];
-            const last = cleanedBoundary[cleanedBoundary.length - 1];
-            if (first && last && Math.hypot((first.x ?? 0) - (last.x ?? 0), (first.z ?? 0) - (last.z ?? 0)) <= 1e-6) cleanedBoundary.pop();
-        }
+        if (!surface) {
+            const boundaryPts = [];
+            for (const ep of ordered) {
+                boundaryPts.push({ x: ep.rightEdge.x, z: ep.rightEdge.z });
+                boundaryPts.push({ x: ep.leftEdge.x, z: ep.leftEdge.z });
+            }
 
-        let surface = ensureCcw(cleanedBoundary);
-        const area = Math.abs(polygonArea(surface));
-        if (polygonSelfIntersectsXZ(surface) || !(area > 1e-6)) surface = convexHullXZ(cleanedBoundary);
+            const cleanedBoundary = [];
+            for (const p of boundaryPts) {
+                const last = cleanedBoundary[cleanedBoundary.length - 1] ?? null;
+                if (last && Math.hypot((p?.x ?? 0) - (last.x ?? 0), (p?.z ?? 0) - (last.z ?? 0)) <= 1e-6) continue;
+                cleanedBoundary.push({ x: Number(p?.x) || 0, z: Number(p?.z) || 0 });
+            }
+            if (cleanedBoundary.length >= 3) {
+                const first = cleanedBoundary[0];
+                const last = cleanedBoundary[cleanedBoundary.length - 1];
+                if (first && last && Math.hypot((first.x ?? 0) - (last.x ?? 0), (first.z ?? 0) - (last.z ?? 0)) <= 1e-6) cleanedBoundary.pop();
+            }
+
+            surface = ensureCcw(cleanedBoundary);
+            const area = Math.abs(polygonArea(surface));
+            if (polygonSelfIntersectsXZ(surface) || !(area > 1e-6)) surface = convexHullXZ(cleanedBoundary);
+        }
 
         const connectors = [];
         const endpointsSorted = eps.slice().sort((a, b) => compareString(a?.id, b?.id));
@@ -1413,6 +1636,7 @@ export function computeRoadEngineEdges({ roads = [], settings = {} } = {}) {
             segmentIds: Array.from(segmentsSet).sort(),
             endpoints: eps.map((e) => ({ ...e, junctionId: id })).sort((a, b) => compareString(a?.id, b?.id)),
             connectors,
+            tat,
             surface: {
                 points: surface.map((p) => ({ x: Number(p?.x) || 0, z: Number(p?.z) || 0 })),
                 area: Math.abs(polygonArea(surface))
@@ -1484,6 +1708,61 @@ export function computeRoadEngineEdges({ roads = [], settings = {} } = {}) {
                         connectorId: conn.id,
                         points: [{ x: a.world.x, z: a.world.z }, { x: b.world.x, z: b.world.z }]
                     });
+                }
+            }
+
+            if (junctionsSettings.debug?.tat && tat.length) {
+                const chord = Math.max(0.35, (Number(resolvedSettings.laneWidth) || 4.8) * 0.18);
+                for (const item of tat) {
+                    const tatId = item?.id ?? null;
+                    if (!tatId) continue;
+                    const tatType = item?.type ?? null;
+
+                    const tangents = Array.isArray(item?.tangents) ? item.tangents : [];
+                    for (let i = 0; i < tangents.length; i++) {
+                        const seg = tangents[i] ?? null;
+                        const a = seg?.a ?? null;
+                        const b = seg?.b ?? null;
+                        if (!a || !b) continue;
+                        primitives.push({
+                            type: 'polyline',
+                            id: `${id}__tat_${tatId}__tangent_${i}`,
+                            kind: 'junction_tat_tangent',
+                            roadId: null,
+                            segmentId: id,
+                            junctionId: id,
+                            tatId,
+                            tatType,
+                            points: [{ x: a.x, z: a.z }, { x: b.x, z: b.z }]
+                        });
+                    }
+
+                    const arc = item?.arc ?? null;
+                    if (arc?.center && Number.isFinite(arc.radius) && arc.radius > 1e-6 && Number.isFinite(arc.startAng) && Number.isFinite(arc.spanAng) && arc.spanAng > 1e-6) {
+                        const arcLen = Math.abs(Number(arc.spanAng) || 0) * (Number(arc.radius) || 0);
+                        const segments = Math.max(6, Math.min(96, Math.ceil(arcLen / chord)));
+                        const pts = sampleArcXZ({
+                            center: arc.center,
+                            radius: arc.radius,
+                            startAng: arc.startAng,
+                            spanAng: arc.spanAng,
+                            ccw: arc.ccw !== false,
+                            segments
+                        });
+                        if (pts.length >= 2) {
+                            primitives.push({
+                                type: 'polyline',
+                                id: `${id}__tat_${tatId}__arc`,
+                                kind: 'junction_tat_arc',
+                                roadId: null,
+                                segmentId: id,
+                                junctionId: id,
+                                tatId,
+                                tatType,
+                                points: pts.map((p) => ({ x: p.x, z: p.z }))
+                            });
+                        }
+                    }
                 }
             }
         }

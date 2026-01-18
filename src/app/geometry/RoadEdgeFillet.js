@@ -94,7 +94,7 @@ export function computeEdgeFilletArcXZ({ p0, dir0, out0, p1, dir1, out1, radius 
         radius: r,
         tangent0: t0,
         tangent1: t1,
-        startAng: ccw ? a0 : a1,
+        startAng: a0,
         spanAng: span,
         ccw,
         miter: miter ? { x: miter.x, z: miter.z } : null,
@@ -117,4 +117,3 @@ export function sampleArcXZ({ center, radius, startAng, spanAng, ccw = true, seg
     }
     return out;
 }
-

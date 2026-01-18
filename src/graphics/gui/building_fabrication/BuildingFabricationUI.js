@@ -3408,6 +3408,35 @@ export class BuildingFabricationUI {
                 stairShiftRow.number.value = formatFloat(wallMatVarNormalized.stairShift.shift, 2);
                 stairGroup.body.appendChild(stairShiftRow.row);
 
+                const stairModeRow = document.createElement('div');
+                stairModeRow.className = 'building-fab-row building-fab-row-wide';
+                const stairModeLabel = document.createElement('div');
+                stairModeLabel.className = 'building-fab-row-label';
+                stairModeLabel.textContent = 'Mode';
+                const stairModeSelect = document.createElement('select');
+                stairModeSelect.className = 'building-fab-select';
+                for (const v of ['stair', 'alternate', 'random']) {
+                    const opt = document.createElement('option');
+                    opt.value = v;
+                    opt.textContent = v === 'random' ? 'Random (per step)' : (v === 'alternate' ? 'Alternate (0 / shift)' : 'Stair (shift += stepIndex)');
+                    stairModeSelect.appendChild(opt);
+                }
+                stairModeSelect.value = wallMatVarNormalized.stairShift.mode || 'stair';
+                stairModeRow.appendChild(stairModeLabel);
+                stairModeRow.appendChild(stairModeSelect);
+                stairGroup.body.appendChild(stairModeRow);
+
+                const stairBlendRow = makeRangeRow('Blend width');
+                stairBlendRow.range.min = '0';
+                stairBlendRow.range.max = '0.49';
+                stairBlendRow.range.step = '0.01';
+                stairBlendRow.number.min = '0';
+                stairBlendRow.number.max = '0.49';
+                stairBlendRow.number.step = '0.01';
+                stairBlendRow.range.value = String(wallMatVarNormalized.stairShift.blendWidth ?? 0.0);
+                stairBlendRow.number.value = formatFloat(wallMatVarNormalized.stairShift.blendWidth ?? 0.0, 2);
+                stairGroup.body.appendChild(stairBlendRow.row);
+
                 const stairDirRow = document.createElement('div');
                 stairDirRow.className = 'building-fab-row building-fab-row-wide';
                 const stairDirLabel = document.createElement('div');
@@ -3815,6 +3844,9 @@ export class BuildingFabricationUI {
                     stairStepRow.number.disabled = stairStepRow.range.disabled;
                     stairShiftRow.range.disabled = !allow || !enabled || !stairToggle.input.checked;
                     stairShiftRow.number.disabled = stairShiftRow.range.disabled;
+                    stairModeSelect.disabled = !allow || !enabled || !stairToggle.input.checked;
+                    stairBlendRow.range.disabled = !allow || !enabled || !stairToggle.input.checked;
+                    stairBlendRow.number.disabled = stairBlendRow.range.disabled;
                     stairDirSelect.disabled = !allow || !enabled || !stairToggle.input.checked;
 
                     detailToggle.input.disabled = !allow || !enabled;
@@ -4829,6 +4861,27 @@ export class BuildingFabricationUI {
                     layer.materialVariation.stairShift.shift = next;
                     stairShiftRow.range.value = String(next);
                     stairShiftRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                stairModeSelect.addEventListener('change', () => {
+                    layer.materialVariation.stairShift ??= {};
+                    const v = stairModeSelect.value;
+                    layer.materialVariation.stairShift.mode = v === 'random' ? 'random' : (v === 'alternate' ? 'alternate' : 'stair');
+                    this._notifySelectedLayersChanged();
+                });
+                stairBlendRow.range.addEventListener('input', () => {
+                    const next = clamp(stairBlendRow.range.value, 0.0, 0.49);
+                    layer.materialVariation.stairShift ??= {};
+                    layer.materialVariation.stairShift.blendWidth = next;
+                    stairBlendRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                stairBlendRow.number.addEventListener('change', () => {
+                    const next = clamp(stairBlendRow.number.value, 0.0, 0.49);
+                    layer.materialVariation.stairShift ??= {};
+                    layer.materialVariation.stairShift.blendWidth = next;
+                    stairBlendRow.range.value = String(next);
+                    stairBlendRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 stairDirSelect.addEventListener('change', () => {
@@ -6558,6 +6611,35 @@ export class BuildingFabricationUI {
                 roofStairShiftRow.number.value = formatFloat(roofMatVarNormalized.stairShift.shift, 2);
                 layerSection.body.appendChild(roofStairShiftRow.row);
 
+                const roofStairModeRow = document.createElement('div');
+                roofStairModeRow.className = 'building-fab-row building-fab-row-wide';
+                const roofStairModeLabel = document.createElement('div');
+                roofStairModeLabel.className = 'building-fab-row-label';
+                roofStairModeLabel.textContent = 'Mode';
+                const roofStairModeSelect = document.createElement('select');
+                roofStairModeSelect.className = 'building-fab-select';
+                for (const v of ['stair', 'alternate', 'random']) {
+                    const opt = document.createElement('option');
+                    opt.value = v;
+                    opt.textContent = v === 'random' ? 'Random (per step)' : (v === 'alternate' ? 'Alternate (0 / shift)' : 'Stair (shift += stepIndex)');
+                    roofStairModeSelect.appendChild(opt);
+                }
+                roofStairModeSelect.value = roofMatVarNormalized.stairShift.mode || 'stair';
+                roofStairModeRow.appendChild(roofStairModeLabel);
+                roofStairModeRow.appendChild(roofStairModeSelect);
+                layerSection.body.appendChild(roofStairModeRow);
+
+                const roofStairBlendRow = makeRangeRow('Blend width');
+                roofStairBlendRow.range.min = '0';
+                roofStairBlendRow.range.max = '0.49';
+                roofStairBlendRow.range.step = '0.01';
+                roofStairBlendRow.number.min = '0';
+                roofStairBlendRow.number.max = '0.49';
+                roofStairBlendRow.number.step = '0.01';
+                roofStairBlendRow.range.value = String(roofMatVarNormalized.stairShift.blendWidth ?? 0.0);
+                roofStairBlendRow.number.value = formatFloat(roofMatVarNormalized.stairShift.blendWidth ?? 0.0, 2);
+                layerSection.body.appendChild(roofStairBlendRow.row);
+
                 const roofStairDirRow = document.createElement('div');
                 roofStairDirRow.className = 'building-fab-row building-fab-row-wide';
                 const roofStairDirLabel = document.createElement('div');
@@ -6960,6 +7042,9 @@ export class BuildingFabricationUI {
                     roofStairStepRow.number.disabled = roofStairStepRow.range.disabled;
                     roofStairShiftRow.range.disabled = !allow || !enabled || !roofStairToggle.input.checked;
                     roofStairShiftRow.number.disabled = roofStairShiftRow.range.disabled;
+                    roofStairModeSelect.disabled = !allow || !enabled || !roofStairToggle.input.checked;
+                    roofStairBlendRow.range.disabled = !allow || !enabled || !roofStairToggle.input.checked;
+                    roofStairBlendRow.number.disabled = roofStairBlendRow.range.disabled;
                     roofStairDirSelect.disabled = !allow || !enabled || !roofStairToggle.input.checked;
 
                     roofDetailToggle.input.disabled = !allow || !enabled;
@@ -7971,6 +8056,27 @@ export class BuildingFabricationUI {
                     layer.roof.materialVariation.stairShift.shift = next;
                     roofStairShiftRow.range.value = String(next);
                     roofStairShiftRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofStairModeSelect.addEventListener('change', () => {
+                    layer.roof.materialVariation.stairShift ??= {};
+                    const v = roofStairModeSelect.value;
+                    layer.roof.materialVariation.stairShift.mode = v === 'random' ? 'random' : (v === 'alternate' ? 'alternate' : 'stair');
+                    this._notifySelectedLayersChanged();
+                });
+                roofStairBlendRow.range.addEventListener('input', () => {
+                    const next = clamp(roofStairBlendRow.range.value, 0.0, 0.49);
+                    layer.roof.materialVariation.stairShift ??= {};
+                    layer.roof.materialVariation.stairShift.blendWidth = next;
+                    roofStairBlendRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofStairBlendRow.number.addEventListener('change', () => {
+                    const next = clamp(roofStairBlendRow.number.value, 0.0, 0.49);
+                    layer.roof.materialVariation.stairShift ??= {};
+                    layer.roof.materialVariation.stairShift.blendWidth = next;
+                    roofStairBlendRow.range.value = String(next);
+                    roofStairBlendRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofStairDirSelect.addEventListener('change', () => {

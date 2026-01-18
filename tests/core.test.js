@@ -1151,11 +1151,9 @@ async function runTests() {
         const wallMeshes = (parts.solidMeshes ?? []).filter((m) => (
             m?.isMesh && Array.isArray(m.material) && m.material.length === 2
         ));
-        assertTrue(wallMeshes.length >= 2, 'Expected at least 2 wall meshes.');
+        assertTrue(wallMeshes.length >= 1, 'Expected at least 1 wall mesh.');
 
         wallMeshes.sort((a, b) => (a.position.y - b.position.y));
-        const lower = wallMeshes[0];
-        const upper = wallMeshes[1];
 
         const collectMaterialVertexIndices = (geo, materialIndex) => {
             const groups = Array.isArray(geo?.groups) ? geo.groups : [];
@@ -1215,6 +1213,17 @@ async function runTests() {
             if (!nBottom || !nTop) return null;
             return { bottom: sumBottom / nBottom, top: sumTop / nTop };
         };
+
+        if (wallMeshes.length < 2) {
+            const single = wallMeshes[0] ?? null;
+            const uv = getUvYEdgeValues(single);
+            assertTrue(!!uv, 'Expected UV edge values.');
+            assertNear(Math.abs(uv.top - uv.bottom), floors * floorHeight, 1e-3, 'Expected wall UV span to match wall height.');
+            return;
+        }
+
+        const lower = wallMeshes[0];
+        const upper = wallMeshes[1];
 
         const lowerUv = getUvYEdgeValues(lower);
         const upperUv = getUvYEdgeValues(upper);

@@ -2,7 +2,7 @@
 // Applies deterministic, composable procedural material variation to MeshStandardMaterial via shader injection.
 import * as THREE from 'three';
 
-const MATVAR_SHADER_VERSION = 7;
+const MATVAR_SHADER_VERSION = 9;
 const MATVAR_MACRO_LAYERS_MAX = 3;
 
 const EPS = 1e-6;
@@ -210,7 +210,7 @@ export function getDefaultMaterialVariationPreset(root = MATERIAL_VARIATION_ROOT
             wearSide: { enabled: true, strength: 0.12, width: 1.0, scale: 1.25, hueDegrees: 0.0, value: -0.18, saturation: -0.02, roughness: 0.2, normal: 0.0 },
             cracks: { enabled: false, strength: 0.25, scale: 2.8, hueDegrees: 0.0, value: -0.12, saturation: -0.05, roughness: 0.22, normal: 0.15 },
             antiTiling: { enabled: true, strength: 0.55, mode: 'fast', cellSize: 2.0, blendWidth: 0.2, offsetU: 0.22, offsetV: 0.22, rotationDegrees: 18.0 },
-            stairShift: { enabled: false, strength: 0.0, direction: 'horizontal', stepSize: 1.0, shift: 0.1 },
+            stairShift: { enabled: false, strength: 0.0, mode: 'stair', direction: 'horizontal', stepSize: 1.0, shift: 0.1, blendWidth: 0.0 },
 
             macro: { enabled: true, intensity: 1.0, scale: 0.22, hueDegrees: 0.0 },
             roughnessVariation: { enabled: true, intensity: 1.0, microScale: 2.4, macroScale: 0.7 },
@@ -271,7 +271,7 @@ export function getDefaultMaterialVariationPreset(root = MATERIAL_VARIATION_ROOT
         soot: { enabled: true, strength: 0.18, scale: 0.7, heightBand: { min: 0.0, max: 0.28 } },
         efflorescence: { enabled: false, strength: 0.0, scale: 0.9 },
         antiTiling: { enabled: true, strength: 0.65, mode: 'fast', cellSize: 2.0, blendWidth: 0.2, offsetU: 0.18, offsetV: 0.28, rotationDegrees: 22.0 },
-        stairShift: { enabled: false, strength: 0.0, direction: 'horizontal', stepSize: 1.0, shift: 0.1 },
+        stairShift: { enabled: false, strength: 0.0, mode: 'stair', direction: 'horizontal', stepSize: 1.0, shift: 0.1, blendWidth: 0.0 },
         detail: { enabled: true, strength: 0.1, scale: 3.0, hueDegrees: 0.0 },
         cracks: { enabled: false, strength: 0.25, scale: 3.2 },
         cracksLayer: { enabled: false, strength: 0.25, scale: 3.2, hueDegrees: 0.0, value: -0.12, saturation: -0.05, roughness: 0.22, normal: 0.15 }
@@ -542,11 +542,15 @@ export function normalizeMaterialVariationConfig(input, { root = MATERIAL_VARIAT
             rotationDegrees: clamp(antiRotationDegrees, 0.0, 180.0)
         },
         stairShift: {
+            mode: (stairShift.mode ?? preset.stairShift?.mode) === 'random'
+                ? 'random'
+                : ((stairShift.mode ?? preset.stairShift?.mode) === 'alternate' ? 'alternate' : 'stair'),
             enabled: stairShift.enabled === undefined ? !!preset.stairShift?.enabled : !!stairShift.enabled,
             strength: clamp(stairShift.strength ?? preset.stairShift?.strength ?? 0.0, 0.0, 12.0),
             direction: (stairShift.direction ?? preset.stairShift?.direction) === 'vertical' ? 'vertical' : 'horizontal',
             stepSize: clamp(stairShift.stepSize ?? preset.stairShift?.stepSize ?? 1.0, 0.01, 50.0),
-            shift: clamp(stairShift.shift ?? preset.stairShift?.shift ?? 0.0, -4.0, 4.0)
+            shift: clamp(stairShift.shift ?? preset.stairShift?.shift ?? 0.0, -4.0, 4.0),
+            blendWidth: clamp(stairShift.blendWidth ?? preset.stairShift?.blendWidth ?? 0.0, 0.0, 0.49)
         },
         detail: {
             enabled: detail.enabled === undefined ? !!preset.detail.enabled : !!detail.enabled,
@@ -602,6 +606,9 @@ function buildUniformBundle({
     const cracksHue = clamp(cracks?.hueDegrees ?? 0.0, -180.0, 180.0) * (Math.PI / 180);
     const streakDir = cfg.streaks.direction.clone();
 
+    const stairMode = cfg.stairShift?.mode;
+    const stairModeCode = stairMode === 'random' ? 2 : (stairMode === 'alternate' ? 1 : 0);
+
     return {
         config0: new THREE.Vector4(safeSeed, safeSeedOffset, cfg.enabled ? cfg.globalIntensity : 0, spaceMode),
         config1: new THREE.Vector4(cfg.worldSpaceScale, cfg.objectSpaceScale, heightLo, heightHi),
@@ -631,6 +638,7 @@ function buildUniformBundle({
         anti: new THREE.Vector4(cfg.antiTiling.enabled ? cfg.antiTiling.strength : 0, cfg.antiTiling.cellSize, cfg.antiTiling.blendWidth, antiRot),
         anti2: new THREE.Vector4(cfg.antiTiling.offsetU, cfg.antiTiling.offsetV, antiMode, 0),
         stair: new THREE.Vector4(cfg.stairShift.enabled ? cfg.stairShift.strength : 0, cfg.stairShift.stepSize, cfg.stairShift.shift, cfg.stairShift.direction === 'vertical' ? 1 : 0),
+        stair2: new THREE.Vector4(cfg.stairShift.blendWidth ?? 0.0, stairModeCode, 0.0, 0.0),
     };
 }
 
@@ -661,6 +669,7 @@ function injectMatVarShader(material, shader) {
     shader.uniforms.uMatVarAnti = { value: cfg.uniforms.anti };
     shader.uniforms.uMatVarAnti2 = { value: cfg.uniforms.anti2 };
     shader.uniforms.uMatVarStair = { value: cfg.uniforms.stair };
+    shader.uniforms.uMatVarStair2 = { value: cfg.uniforms.stair2 };
 
     const vertexCommonInject = [
         '#include <common>',
@@ -733,6 +742,7 @@ function injectMatVarShader(material, shader) {
         'uniform vec4 uMatVarAnti;',
         'uniform vec4 uMatVarAnti2;',
         'uniform vec4 uMatVarStair;',
+        'uniform vec4 uMatVarStair2;',
         'float mvSaturate(float v){return clamp(v,0.0,1.0);}',
         'float mvHash12(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123);}',
         'vec2 mvHash22(vec2 p){float n=mvHash12(p);return vec2(n,mvHash12(p+n));}',
@@ -816,7 +826,57 @@ function injectMatVarShader(material, shader) {
         '}',
         'return vec3(uv2,ang);',
         '}',
-        'vec2 mvStairShiftUv(vec2 uv){float s=uMatVarStair.x*uMatVarConfig0.z;if(s<=0.0)return uv;float stepSize=max(0.001,uMatVarStair.y);float idx=(uMatVarStair.w<0.5)?floor(uv.y/stepSize):floor(uv.x/stepSize);float shift=idx*uMatVarStair.z*s;return (uMatVarStair.w<0.5)?(uv+vec2(shift,0.0)):(uv+vec2(0.0,shift));}',
+        'vec2 mvStairShiftUv(vec2 uv){',
+        'float s=uMatVarStair.x*uMatVarConfig0.z;',
+        'if(s<=0.0)return uv;',
+        'float stepSize=max(0.001,uMatVarStair.y);',
+        'float shift=uMatVarStair.z*s;',
+        'float axis=(uMatVarStair.w<0.5)?uv.y:uv.x;',
+        'float t=axis/stepSize;',
+        'float idx0=floor(t);',
+        'float idx1=idx0+1.0;',
+        'float f=fract(t);',
+        'float mode=uMatVarStair2.y;',
+        'float o0=0.0;',
+        'float o1=0.0;',
+        'if(mode<0.5){',
+        'o0=idx0*shift;',
+        'o1=idx1*shift;',
+        '}else if(mode<1.5){',
+        'o0=mod(idx0,2.0)*shift;',
+        'o1=mod(idx1,2.0)*shift;',
+        '}else{',
+        'float seedA=uMatVarGlobal1.z*37.1+uMatVarConfig0.y*0.19;',
+        'float seedB=uMatVarGlobal1.w*53.7+uMatVarStair.w*11.9;',
+        'float h0=mvHash12(vec2(idx0+seedA,seedB));',
+        'float h1=mvHash12(vec2(idx1+seedA,seedB));',
+        'o0=(h0*2.0-1.0)*shift;',
+        'o1=(h1*2.0-1.0)*shift;',
+        '}',
+        'float bw=clamp(uMatVarStair2.x,0.0,0.49);',
+        'float blendT=0.0;',
+        'if(bw>0.0){',
+        'float edge=1.0-bw;',
+        'blendT=mvSaturate((f-edge)/max(1e-5,bw));',
+        'blendT=mvSmooth01(blendT);',
+        '}',
+        'float off=mix(o0,o1,blendT);',
+        'return (uMatVarStair.w<0.5)?(uv+vec2(off,0.0)):(uv+vec2(0.0,off));',
+        '}',
+        '#ifdef USE_NORMALMAP',
+        'vec3 mvPerturbNormal2Arb(vec3 eye_pos, vec3 surf_norm, vec3 mapN, float faceDirection, vec2 uv){',
+        'vec3 q0=dFdx(eye_pos.xyz);',
+        'vec3 q1=dFdy(eye_pos.xyz);',
+        'vec2 st0=dFdx(uv.st);',
+        'vec2 st1=dFdy(uv.st);',
+        'vec3 S=normalize(q0*st1.t-q1*st0.t);',
+        'vec3 T=normalize(-q0*st1.s+q1*st0.s);',
+        'vec3 N=normalize(surf_norm);',
+        'mat3 tsn=mat3(S,T,N);',
+        'mapN.xy*=faceDirection;',
+        'return normalize(tsn*mapN);',
+        '}',
+        '#endif',
         '#endif',
         'vec2 mvMatVarUv(vec2 uv){',
         '#ifdef USE_MATVAR',
@@ -989,10 +1049,10 @@ function injectMatVarShader(material, shader) {
             'float mvAntiC = cos( mvAntiRot );',
             'float mvAntiS = sin( mvAntiRot );',
             'normalTex.xy = mat2( mvAntiC, -mvAntiS, mvAntiS, mvAntiC ) * ( normalTex.xy * normalScale * matVarNormalFactor );',
-            'normal = perturbNormal2Arb( -vViewPosition, normal, normalTex, faceDirection );',
+            'normal = mvPerturbNormal2Arb( -vViewPosition, normal, normalTex, faceDirection, vNormalMapUv );',
             '#endif',
             '#ifdef USE_BUMPMAP',
-            '#include <bumpmap_fragment>',
+            'normal = perturbNormalArb( -vViewPosition, normal, dHdxy_fwd() );',
             '#endif',
             '#else',
             '#include <normal_fragment_maps>',
@@ -1164,6 +1224,8 @@ export function updateMaterialVariationOnMeshStandardMaterial(material, { seed, 
     cfg.uniforms.anti2.copy(uniforms.anti2);
     if (cfg.uniforms.stair?.copy) cfg.uniforms.stair.copy(uniforms.stair);
     else cfg.uniforms.stair = uniforms.stair;
+    if (cfg.uniforms.stair2?.copy) cfg.uniforms.stair2.copy(uniforms.stair2);
+    else cfg.uniforms.stair2 = uniforms.stair2;
 
     const shaderUniforms = cfg.shaderUniforms;
     if (shaderUniforms?.uMatVarConfig0?.value) shaderUniforms.uMatVarConfig0.value = cfg.uniforms.config0;
@@ -1189,5 +1251,6 @@ export function updateMaterialVariationOnMeshStandardMaterial(material, { seed, 
     if (shaderUniforms?.uMatVarAnti?.value) shaderUniforms.uMatVarAnti.value = cfg.uniforms.anti;
     if (shaderUniforms?.uMatVarAnti2?.value) shaderUniforms.uMatVarAnti2.value = cfg.uniforms.anti2;
     if (shaderUniforms?.uMatVarStair?.value) shaderUniforms.uMatVarStair.value = cfg.uniforms.stair;
+    if (shaderUniforms?.uMatVarStair2?.value) shaderUniforms.uMatVarStair2.value = cfg.uniforms.stair2;
 
 }

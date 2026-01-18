@@ -847,7 +847,7 @@ export function buildBuildingFabricationVisualParts({
 
             const hadSolidMeshesBeforeLayer = solidMeshes.length;
             const layerStartY = yCursor;
-            const continuousWalls = !beltEnabled || !(beltHeight > EPS);
+            const continuousWalls = true;
 
             if (continuousWalls) {
                 let totalWallHeight = 0.0;
@@ -856,6 +856,7 @@ export function buildBuildingFabricationVisualParts({
                     const segHeight = floorHeight + (floor === 0 ? pendingExtra : 0);
                     if (floor === 0) pendingExtra = 0;
                     totalWallHeight += segHeight;
+                    if (beltEnabled && beltHeight > EPS) totalWallHeight += beltHeight;
                 }
 
                 if (totalWallHeight > EPS) {

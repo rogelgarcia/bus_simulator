@@ -69,6 +69,7 @@ export class RoadDebuggerPicking {
         if (p.type === 'piece') return `piece ${p.pieceId ?? ''}`.trim();
         if (p.type === 'road') return `road ${p.roadId ?? ''}`.trim();
         if (p.type === 'junction') return `junction ${p.junctionId ?? ''}`.trim();
+        if (p.type === 'junction_tat') return `tat ${p.tatType ?? ''} ${p.tatId ?? ''}`.trim();
         if (p.type === 'connector') return `connector ${p.connectorId ?? ''}`.trim();
         if (p.type === 'junction_candidate') return `candidate ${p.candidateId ?? ''}`.trim();
         return String(p.type);
@@ -103,6 +104,19 @@ export class RoadDebuggerPicking {
         if (pointPick) return this._finalizeDebug(pointPick);
 
         raycaster.setFromCamera(view.pointer, camera);
+
+        const junctionDebug = view.getJunctionDebugOptions?.() ?? view?._junctionDebug ?? {};
+        if (mode === 'hover' && junctionDebug?.tat) {
+            const tatObj = raycaster.intersectObjects(view._junctionTatPickMeshes ?? [], false)[0]?.object ?? null;
+            if (tatObj?.userData?.junctionId && tatObj?.userData?.tatId) {
+                return this._finalizeDebug({
+                    type: 'junction_tat',
+                    junctionId: tatObj.userData.junctionId,
+                    tatId: tatObj.userData.tatId,
+                    tatType: tatObj.userData.tatType ?? null
+                });
+            }
+        }
 
         const connObj = raycaster.intersectObjects(view._connectorPickMeshes ?? [], false)[0]?.object ?? null;
         if (connObj?.userData?.connectorId) {
@@ -246,4 +260,3 @@ export class RoadDebuggerPicking {
         return { type: 'point', roadId: best.roadId, pointId: best.pointId };
     }
 }
-
