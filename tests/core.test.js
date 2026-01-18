@@ -1106,6 +1106,122 @@ async function runTests() {
         assertTrue(beltD > floorD + extrusion * 1.5, 'Expected belt to extend outward in Z.');
     });
 
+    test('BuildingFabricationGenerator: wall texture UVs are continuous across floors', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+
+        const floors = 2;
+        const floorHeight = 3.0;
+        const layers = [
+            createDefaultFloorLayer({
+                floors,
+                floorHeight,
+                belt: { enabled: false },
+                windows: { enabled: false }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!parts, 'Expected visual parts.');
+
+        const wallMeshes = (parts.solidMeshes ?? []).filter((m) => (
+            m?.isMesh && Array.isArray(m.material) && m.material.length === 2
+        ));
+        assertTrue(wallMeshes.length >= 2, 'Expected at least 2 wall meshes.');
+
+        wallMeshes.sort((a, b) => (a.position.y - b.position.y));
+        const lower = wallMeshes[0];
+        const upper = wallMeshes[1];
+
+        const collectMaterialVertexIndices = (geo, materialIndex) => {
+            const groups = Array.isArray(geo?.groups) ? geo.groups : [];
+            if (!groups.length) return null;
+            const out = new Set();
+            const index = geo.index ?? null;
+            for (const g of groups) {
+                if ((g?.materialIndex ?? 0) !== materialIndex) continue;
+                const start = Math.max(0, Number(g?.start) || 0);
+                const count = Math.max(0, Number(g?.count) || 0);
+                if (!count) continue;
+                if (index?.getX) {
+                    for (let i = start; i < start + count; i++) out.add(index.getX(i));
+                } else {
+                    for (let i = start; i < start + count; i++) out.add(i);
+                }
+            }
+            return out.size ? Array.from(out) : null;
+        };
+
+        const getUvYEdgeValues = (mesh) => {
+            const geo = mesh?.geometry ?? null;
+            const pos = geo?.getAttribute?.('position') ?? null;
+            const uv = geo?.getAttribute?.('uv') ?? null;
+            if (!pos?.getY || !uv?.getY) return null;
+            const vis = collectMaterialVertexIndices(geo, 1);
+            if (!vis?.length) return null;
+
+            let minY = Infinity;
+            let maxY = -Infinity;
+            for (const vi of vis) {
+                const y = pos.getY(vi);
+                if (!Number.isFinite(y)) continue;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+            if (!(minY < Infinity) || !(maxY > -Infinity)) return null;
+
+            const epsY = 1e-5;
+            let sumBottom = 0;
+            let sumTop = 0;
+            let nBottom = 0;
+            let nTop = 0;
+            for (const vi of vis) {
+                const y = pos.getY(vi);
+                const v = uv.getY(vi);
+                if (!Number.isFinite(y) || !Number.isFinite(v)) continue;
+                if (Math.abs(y - minY) < epsY) {
+                    sumBottom += v;
+                    nBottom += 1;
+                }
+                if (Math.abs(y - maxY) < epsY) {
+                    sumTop += v;
+                    nTop += 1;
+                }
+            }
+            if (!nBottom || !nTop) return null;
+            return { bottom: sumBottom / nBottom, top: sumTop / nTop };
+        };
+
+        const lowerUv = getUvYEdgeValues(lower);
+        const upperUv = getUvYEdgeValues(upper);
+        assertTrue(!!lowerUv && !!upperUv, 'Expected UV edge values.');
+        assertNear(lowerUv.top, upperUv.bottom, 1e-3, 'Expected wall UVs to be continuous across floors.');
+    });
+
     test('BuildingFabricationGenerator: space columns are continuous across belted floors', () => {
         const tileSize = 10;
         const map = {
@@ -2290,6 +2406,10 @@ async function runTests() {
             const { offset, repeat } = sign.getTextureDescriptor();
 
             const vertSet = new Set();
+            let minX = Infinity;
+            let maxX = -Infinity;
+            let minY = Infinity;
+            let maxY = -Infinity;
             let maxR = 0;
             for (let i = faceGroup.start; i < faceGroup.start + faceGroup.count; i++) {
                 const vi = index.getX(i);
@@ -2297,14 +2417,26 @@ async function runTests() {
                 vertSet.add(vi);
                 const x = pos.getX(vi);
                 const y = pos.getY(vi);
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+            assertTrue(vertSet.size > 0, 'Stop sign face should contain vertices.');
+
+            const cx = (minX + maxX) * 0.5;
+            const cy = (minY + maxY) * 0.5;
+            for (const vi of vertSet) {
+                const x = pos.getX(vi) - cx;
+                const y = pos.getY(vi) - cy;
                 maxR = Math.max(maxR, Math.hypot(x, y));
             }
             assertTrue(maxR > 0, 'Stop sign face radius should be non-zero.');
 
             const eps = 1e-6;
             for (const vi of vertSet) {
-                const x = pos.getX(vi);
-                const y = pos.getY(vi);
+                const x = pos.getX(vi) - cx;
+                const y = pos.getY(vi) - cy;
                 const localU = (uv.getX(vi) - offset.x) / repeat.x;
                 const localV = (uv.getY(vi) - offset.y) / repeat.y;
                 assertNear(localU, x / (2 * maxR) + 0.5, eps, 'Expected U projected from X.');
@@ -6287,7 +6419,14 @@ async function runTests() {
     });
 
     const { InspectorRoomUI } = await import('/src/graphics/gui/inspector_room/InspectorRoomUI.js');
-    const { lightSignedExpSliderToValue, lightSignedExpValueToSlider } = await import('/src/graphics/gui/inspector_room/InspectorRoomLightUtils.js');
+    const {
+        lightSignedExpSliderToValue,
+        lightSignedExpValueToSlider,
+        lightBiasedSignedExpSliderToValue,
+        lightHexIntToHueTone,
+        lightHueToneToHexInt,
+        lightBiasedSignedExpValueToSlider
+    } = await import('/src/graphics/gui/inspector_room/InspectorRoomLightUtils.js');
 
     test('InspectorRoomLightUtils: signed exponential mapping is symmetric', () => {
         const samples = [-1, -0.5, -0.1, 0, 0.1, 0.5, 1];
@@ -6302,7 +6441,7 @@ async function runTests() {
     test('InspectorRoomUI: lighting slider initializes from light state', () => {
         const ui = new InspectorRoomUI();
         const state = ui.getLightState();
-        const expected = lightSignedExpValueToSlider(state.y);
+        const expected = lightBiasedSignedExpValueToSlider(state.y, { maxAbs: 25, exponent: 3, zeroAt: 0.25 });
         assertNear(Number(ui.lightY.value), expected, 1e-3, 'Expected lightY slider to match mapped light state.');
     });
 
@@ -6341,6 +6480,115 @@ async function runTests() {
         assertTrue(isTreeMeshId(firstId), 'Expected tree id to be recognized.');
         const entry = getTreeMeshEntryById(firstId);
         assertTrue(!!entry && typeof entry.fileName === 'string', 'Expected tree entry with fileName.');
+    });
+
+    const { PROCEDURAL_MESH, PROCEDURAL_MESH_COLLECTION, createProceduralMeshAsset, getProceduralMeshOptionsForCollection } = await import('/src/graphics/content3d/catalogs/ProceduralMeshCatalog.js');
+
+    test('ProceduralMeshCatalog: Urban collection includes signs + traffic controls', () => {
+        const urban = getProceduralMeshOptionsForCollection(PROCEDURAL_MESH_COLLECTION.URBAN);
+        const ids = urban.map((o) => o.id);
+        assertEqual(new Set(ids).size, ids.length, 'Expected no duplicate ids in Urban collection.');
+
+        const required = [
+            PROCEDURAL_MESH.STREET_SIGN_POLE_V1,
+            PROCEDURAL_MESH.STOP_SIGN_PLATE_V1,
+            PROCEDURAL_MESH.STOP_SIGN_V1,
+            PROCEDURAL_MESH.TRAFFIC_LIGHT_POLE_V1,
+            PROCEDURAL_MESH.TRAFFIC_LIGHT_HEAD_V1,
+            PROCEDURAL_MESH.TRAFFIC_LIGHT_V1
+        ];
+        for (const id of required) {
+            assertTrue(ids.includes(id), `Expected Urban collection to include ${id}.`);
+        }
+    });
+
+    test('Procedural meshes: urban props + ball pivots are at base', () => {
+        const ids = [
+            PROCEDURAL_MESH.BALL_V1,
+            PROCEDURAL_MESH.STREET_SIGN_POLE_V1,
+            PROCEDURAL_MESH.STOP_SIGN_PLATE_V1,
+            PROCEDURAL_MESH.STOP_SIGN_V1,
+            PROCEDURAL_MESH.TRAFFIC_LIGHT_POLE_V1,
+            PROCEDURAL_MESH.TRAFFIC_LIGHT_HEAD_V1,
+            PROCEDURAL_MESH.TRAFFIC_LIGHT_V1
+        ];
+
+        for (const id of ids) {
+            const asset = createProceduralMeshAsset(id);
+            const mesh = asset?.mesh ?? null;
+            assertTrue(!!mesh && typeof mesh.updateMatrixWorld === 'function', `Expected mesh for ${id}.`);
+            mesh.updateMatrixWorld(true);
+            const box = new THREE_IR.Box3().setFromObject(mesh);
+            assertFalse(box.isEmpty(), `Expected non-empty bounds for ${id}.`);
+            assertNear(box.min.y, 0, 1e-3, `Expected ${id} base (min.y) ~ 0.`);
+        }
+    });
+
+    test('PbrMaterialCatalog: default tile meters is 4 when unset', async () => {
+        const { getPbrMaterialExplicitTileMeters, getPbrMaterialTileMeters } = await import('/src/graphics/assets3d/materials/PbrMaterialCatalog.js');
+        assertEqual(getPbrMaterialExplicitTileMeters('pbr.brick_wall_11'), null, 'Expected no explicit tile meters for brick_wall_11.');
+        assertEqual(getPbrMaterialTileMeters('pbr.brick_wall_11'), 4.0, 'Expected 4m default tiling for brick_wall_11.');
+    });
+
+    test('InspectorRoomTexturesProvider: pbr materials default to 4x4 meters', async () => {
+        const { InspectorRoomTexturesProvider } = await import('/src/graphics/gui/inspector_room/InspectorRoomTexturesProvider.js');
+        const provider = new InspectorRoomTexturesProvider({}, null);
+        provider._syncPreviewLayout = () => {};
+        provider._setPbrMaterial = () => {};
+        provider.setSelectedTextureId('pbr.brick_wall_11');
+        const size = provider.getSelectedRealWorldSizeMeters();
+        assertEqual(size.widthMeters, 4.0, 'Expected default PBR widthMeters 4.0.');
+        assertEqual(size.heightMeters, 4.0, 'Expected default PBR heightMeters 4.0.');
+        const meta = provider.getSelectedTextureMeta();
+        assertEqual(meta?.extra?.tileMeters, 4.0, 'Expected tileMeters shown as 4.0 in meta.');
+    });
+
+    const { applyInspectorTreeMaterials, getInspectorTreeRoleFromIntersection, tagInspectorTreeMaterialRoles } = await import('/src/graphics/gui/inspector_room/InspectorRoomTreeMaterialUtils.js');
+
+    test('InspectorRoomTreeMaterialUtils: preserves leaf materials for multi-material tree meshes', () => {
+        const leafTex = new THREE_IR.DataTexture(new Uint8Array([60, 160, 60, 255]), 1, 1);
+        leafTex.needsUpdate = true;
+        const trunkTex = new THREE_IR.DataTexture(new Uint8Array([140, 90, 60, 255]), 1, 1);
+        trunkTex.needsUpdate = true;
+
+        const sharedLeaf = new THREE_IR.MeshStandardMaterial({ map: leafTex, alphaTest: 0.5 });
+        const sharedTrunk = new THREE_IR.MeshStandardMaterial({ map: trunkTex });
+
+        const geo = new THREE_IR.BufferGeometry();
+        geo.setAttribute('position', new THREE_IR.Float32BufferAttribute([
+            0, 0, 0,
+            1, 0, 0,
+            0, 1, 0,
+            0, 0, 1,
+            1, 0, 1,
+            0, 1, 1
+        ], 3));
+        geo.setIndex([0, 1, 2, 3, 4, 5]);
+        geo.clearGroups();
+        geo.addGroup(0, 3, 0);
+        geo.addGroup(3, 3, 1);
+
+        const mesh = new THREE_IR.Mesh(geo, [sharedTrunk, sharedLeaf]);
+        const root = new THREE_IR.Group();
+        root.add(mesh);
+
+        tagInspectorTreeMaterialRoles(root, { sharedLeaf, sharedTrunk });
+
+        const leaf = new THREE_IR.MeshStandardMaterial({ color: 0x00ff00, alphaTest: 0.5 });
+        const trunk = new THREE_IR.MeshStandardMaterial({ color: 0x885533 });
+        const solid = new THREE_IR.MeshStandardMaterial({ color: 0xffffff });
+
+        applyInspectorTreeMaterials(root, { mode: 'semantic', leaf, trunk, solid, wireframe: false });
+        assertTrue(Array.isArray(mesh.material), 'Expected multi-material mesh.');
+        assertTrue(mesh.material[0] === trunk, 'Expected group 0 material to be trunk.');
+        assertTrue(mesh.material[1] === leaf, 'Expected group 1 material to be leaf.');
+
+        assertEqual(getInspectorTreeRoleFromIntersection({ object: mesh, faceIndex: 0 }), 'trunk', 'Expected triangle 0 to be trunk.');
+        assertEqual(getInspectorTreeRoleFromIntersection({ object: mesh, faceIndex: 1 }), 'leaf', 'Expected triangle 1 to be leaf.');
+
+        applyInspectorTreeMaterials(root, { mode: 'solid', leaf, trunk, solid, wireframe: false });
+        assertTrue(mesh.material[0] === solid, 'Expected solid mode to override trunk material.');
+        assertTrue(mesh.material[1] === solid, 'Expected solid mode to override leaf material.');
     });
 
     // ========== AI-113 Registry Tests ==========
@@ -6570,8 +6818,8 @@ async function runTests() {
 
         assertTrue(cfg.worldSpaceScale <= 20.0, 'worldSpaceScale should clamp to max.');
         assertTrue(cfg.objectSpaceScale >= 0.001, 'objectSpaceScale should clamp to min.');
-        assertTrue(cfg.tintAmount <= 0.35, 'tintAmount should clamp to max.');
-        assertTrue(cfg.roughnessAmount <= 0.75, 'roughnessAmount should clamp to max.');
+        assertTrue(cfg.tintAmount <= 2.0, 'tintAmount should clamp to max.');
+        assertTrue(cfg.roughnessAmount <= 2.0, 'roughnessAmount should clamp to max.');
         assertEqual(cfg.dust.strength, 0, 'dust.strength should clamp to 0.');
         assertEqual(cfg.dust.heightBand.min, 0, 'heightBand.min should normalize/swap.');
         assertEqual(cfg.dust.heightBand.max, 1, 'heightBand.max should normalize/swap.');
@@ -6587,6 +6835,10 @@ async function runTests() {
         assertTrue(!!floor.tiling, 'Expected floor tiling config.');
         assertFalse(floor.tiling.enabled, 'Expected floor tiling disabled by default.');
         assertTrue(Number.isFinite(floor.tiling.tileMeters), 'Expected floor tileMeters to be a number.');
+        assertFalse(floor.tiling.uvEnabled, 'Expected floor UV transform disabled by default.');
+        assertEqual(floor.tiling.offsetU, 0.0, 'Expected floor UV offsetU default 0.');
+        assertEqual(floor.tiling.offsetV, 0.0, 'Expected floor UV offsetV default 0.');
+        assertEqual(floor.tiling.rotationDegrees, 0.0, 'Expected floor UV rotation default 0.');
         assertTrue(!!floor.materialVariation, 'Expected floor materialVariation config.');
         assertFalse(floor.materialVariation.enabled, 'Expected floor materialVariation disabled by default.');
         assertTrue(Number.isFinite(floor.materialVariation.seedOffset), 'Expected floor seedOffset to be a number.');
@@ -6595,6 +6847,10 @@ async function runTests() {
         assertTrue(!!roof.roof?.tiling, 'Expected roof tiling config.');
         assertFalse(roof.roof.tiling.enabled, 'Expected roof tiling disabled by default.');
         assertTrue(Number.isFinite(roof.roof.tiling.tileMeters), 'Expected roof tileMeters to be a number.');
+        assertFalse(roof.roof.tiling.uvEnabled, 'Expected roof UV transform disabled by default.');
+        assertEqual(roof.roof.tiling.offsetU, 0.0, 'Expected roof UV offsetU default 0.');
+        assertEqual(roof.roof.tiling.offsetV, 0.0, 'Expected roof UV offsetV default 0.');
+        assertEqual(roof.roof.tiling.rotationDegrees, 0.0, 'Expected roof UV rotation default 0.');
         assertTrue(!!roof.roof?.materialVariation, 'Expected roof materialVariation config.');
         assertFalse(roof.roof.materialVariation.enabled, 'Expected roof materialVariation disabled by default.');
         assertTrue(Number.isFinite(roof.roof.materialVariation.seedOffset), 'Expected roof seedOffset to be a number.');
@@ -6603,12 +6859,12 @@ async function runTests() {
     test('BuildingFabricationTypes: cloneBuildingLayers deep clones mat-var and tiling', () => {
         const original = [
             createDefaultFloorLayer({
-                tiling: { enabled: true, tileMeters: 3.5 },
+                tiling: { enabled: true, tileMeters: 3.5, uvEnabled: true, offsetU: 0.25, offsetV: -0.15, rotationDegrees: 45 },
                 materialVariation: { enabled: true, seedOffset: 7, macro: { enabled: true, intensity: 1.2 } }
             }),
             createDefaultRoofLayer({
                 roof: {
-                    tiling: { enabled: true, tileMeters: 5.0 },
+                    tiling: { enabled: true, tileMeters: 5.0, uvEnabled: true, offsetU: -0.2, offsetV: 0.33, rotationDegrees: -30 },
                     materialVariation: { enabled: true, seedOffset: 9, grime: { enabled: true, strength: 0.25 } }
                 }
             })
@@ -6616,14 +6872,66 @@ async function runTests() {
 
         const cloned = cloneBuildingLayers(original);
         cloned[0].tiling.tileMeters = 9.0;
+        cloned[0].tiling.offsetU = 0.99;
         cloned[0].materialVariation.seedOffset = 123;
         cloned[1].roof.tiling.tileMeters = 9.0;
+        cloned[1].roof.tiling.rotationDegrees = 90;
         cloned[1].roof.materialVariation.seedOffset = 456;
 
         assertEqual(original[0].tiling.tileMeters, 3.5, 'Expected floor tiling to be cloned (no shared refs).');
+        assertEqual(original[0].tiling.offsetU, 0.25, 'Expected floor tiling UV fields to be cloned (no shared refs).');
         assertEqual(original[0].materialVariation.seedOffset, 7, 'Expected floor materialVariation to be cloned (no shared refs).');
         assertEqual(original[1].roof.tiling.tileMeters, 5.0, 'Expected roof tiling to be cloned (no shared refs).');
+        assertEqual(original[1].roof.tiling.rotationDegrees, -30, 'Expected roof tiling UV fields to be cloned (no shared refs).');
         assertEqual(original[1].roof.materialVariation.seedOffset, 9, 'Expected roof materialVariation to be cloned (no shared refs).');
+    });
+
+    // ========== InspectorRoomLightUtils Tests ==========
+    test('InspectorRoomLightUtils: biased slider uses 25% zero pivot', () => {
+        const opts = { maxAbs: 25, exponent: 3, zeroAt: 0.25 };
+        assertNear(lightBiasedSignedExpSliderToValue(0, opts), -25, 1e-6, 'Slider 0 should map to -maxAbs.');
+        assertNear(lightBiasedSignedExpSliderToValue(0.25, opts), 0, 1e-6, 'Slider pivot should map to 0.');
+        assertNear(lightBiasedSignedExpSliderToValue(1, opts), 25, 1e-6, 'Slider 1 should map to +maxAbs.');
+
+        assertNear(lightBiasedSignedExpValueToSlider(-25, opts), 0, 1e-6, 'Value -maxAbs should map to slider 0.');
+        assertNear(lightBiasedSignedExpValueToSlider(0, opts), 0.25, 1e-6, 'Value 0 should map to slider pivot.');
+        assertNear(lightBiasedSignedExpValueToSlider(25, opts), 1, 1e-6, 'Value +maxAbs should map to slider 1.');
+    });
+
+    test('InspectorRoomLightUtils: biased slider round-trips without jumps', () => {
+        const opts = { maxAbs: 25, exponent: 3, zeroAt: 0.25 };
+        const values = [-25, -12.5, -1, 0, 1, 12.5, 25];
+        for (const v of values) {
+            const s = lightBiasedSignedExpValueToSlider(v, opts);
+            const vv = lightBiasedSignedExpSliderToValue(s, opts);
+            assertNear(vv, v, 1e-6, `Round-trip for ${v}.`);
+        }
+    });
+
+    test('InspectorRoomLightUtils: hue/tone encodes core extremes', () => {
+        assertEqual(lightHueToneToHexInt(0, 0), 0xff0000, 'Hue 0 should be red at tone 0.');
+        assertEqual(lightHueToneToHexInt(120, 0), 0x00ff00, 'Hue 120 should be green at tone 0.');
+        assertEqual(lightHueToneToHexInt(240, 0), 0x0000ff, 'Hue 240 should be blue at tone 0.');
+        assertEqual(lightHueToneToHexInt(200, -1), 0x000000, 'Tone -1 should be black.');
+        assertEqual(lightHueToneToHexInt(200, 1), 0xffffff, 'Tone 1 should be white.');
+    });
+
+    test('InspectorRoomLightUtils: hex->hue/tone preserves generated colors', () => {
+        const cases = [
+            { hueDegrees: 0, tone: -0.5 },
+            { hueDegrees: 0, tone: 0 },
+            { hueDegrees: 0, tone: 0.4 },
+            { hueDegrees: 60, tone: -0.25 },
+            { hueDegrees: 120, tone: 0.25 },
+            { hueDegrees: 200, tone: 0.75 }
+        ];
+
+        for (const c of cases) {
+            const hex = lightHueToneToHexInt(c.hueDegrees, c.tone);
+            const decoded = lightHexIntToHueTone(hex, { fallbackHueDegrees: c.hueDegrees });
+            const back = lightHueToneToHexInt(decoded.hueDegrees, decoded.tone);
+            assertEqual(back, hex, `Expected round-trip for hue=${c.hueDegrees} tone=${c.tone}.`);
+        }
     });
 
     // ========== Summary ==========

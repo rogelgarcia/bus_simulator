@@ -2,7 +2,7 @@
 // Scales MeshStandardMaterial UV varyings via shader injection for per-material tiling overrides.
 import * as THREE from 'three';
 
-const UV_TILING_SHADER_VERSION = 1;
+const UV_TILING_SHADER_VERSION = 2;
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -14,8 +14,19 @@ function normalizeScale(value) {
     return clamp(value, 0.001, 1000.0);
 }
 
+function normalizeOffset(value) {
+    return clamp(value, -1000.0, 1000.0);
+}
+
+function normalizeRotationDegrees(value) {
+    return clamp(value, -180.0, 180.0);
+}
+
 function injectUvTilingShader(material, shader) {
-    shader.uniforms.uUvTiling = { value: material.userData?.uvTilingConfig?.tiling ?? new THREE.Vector2(1, 1) };
+    const cfg = material.userData?.uvTilingConfig ?? null;
+    shader.uniforms.uUvTiling = { value: cfg?.tiling ?? new THREE.Vector2(1, 1) };
+    shader.uniforms.uUvOffset = { value: cfg?.offset ?? new THREE.Vector2(0, 0) };
+    shader.uniforms.uUvRotation = { value: cfg?.rotation ?? 0.0 };
 
     shader.vertexShader = shader.vertexShader.replace(
         '#include <common>',
@@ -23,6 +34,17 @@ function injectUvTilingShader(material, shader) {
             '#include <common>',
             '#ifdef USE_UV_TILING',
             'uniform vec2 uUvTiling;',
+            'uniform vec2 uUvOffset;',
+            'uniform float uUvRotation;',
+            'vec2 uvTilingTransform(vec2 uv){',
+            'uv *= uUvTiling;',
+            'if (abs(uUvRotation) > 1e-6) {',
+            'float c = cos(uUvRotation);',
+            'float s = sin(uUvRotation);',
+            'uv = mat2(c, -s, s, c) * uv;',
+            '}',
+            'return uv + uUvOffset;',
+            '}',
             '#endif'
         ].join('\n')
     );
@@ -33,22 +55,22 @@ function injectUvTilingShader(material, shader) {
             '#include <uv_vertex>',
             '#ifdef USE_UV_TILING',
             '#ifdef USE_MAP',
-            'vMapUv *= uUvTiling;',
+            'vMapUv = uvTilingTransform(vMapUv);',
             '#endif',
             '#ifdef USE_NORMALMAP',
-            'vNormalMapUv *= uUvTiling;',
+            'vNormalMapUv = uvTilingTransform(vNormalMapUv);',
             '#endif',
             '#ifdef USE_ROUGHNESSMAP',
-            'vRoughnessMapUv *= uUvTiling;',
+            'vRoughnessMapUv = uvTilingTransform(vRoughnessMapUv);',
             '#endif',
             '#ifdef USE_METALNESSMAP',
-            'vMetalnessMapUv *= uUvTiling;',
+            'vMetalnessMapUv = uvTilingTransform(vMetalnessMapUv);',
             '#endif',
             '#ifdef USE_EMISSIVEMAP',
-            'vEmissiveMapUv *= uUvTiling;',
+            'vEmissiveMapUv = uvTilingTransform(vEmissiveMapUv);',
             '#endif',
             '#ifdef USE_AOMAP',
-            'vAoMapUv *= uUvTiling;',
+            'vAoMapUv = uvTilingTransform(vAoMapUv);',
             '#endif',
             '#endif'
         ].join('\n')
@@ -77,14 +99,22 @@ function ensureUvTilingConfigOnMaterial(material, config) {
     };
 }
 
-export function applyUvTilingToMeshStandardMaterial(material, { scale = 1.0 } = {}) {
+export function applyUvTilingToMeshStandardMaterial(
+    material,
+    { scale = 1.0, scaleU = null, scaleV = null, offsetU = 0.0, offsetV = 0.0, rotationDegrees = 0.0 } = {}
+) {
     if (!material?.isMeshStandardMaterial) return material;
 
-    const s = normalizeScale(scale);
-    const tiling = new THREE.Vector2(s, s);
+    const su = normalizeScale(scaleU ?? scale);
+    const sv = normalizeScale(scaleV ?? scale);
+    const tiling = new THREE.Vector2(su, sv);
+    const offset = new THREE.Vector2(normalizeOffset(offsetU), normalizeOffset(offsetV));
+    const rotation = normalizeRotationDegrees(rotationDegrees) * (Math.PI / 180);
 
     const cfg = {
         tiling,
+        offset,
+        rotation,
         shaderUniforms: null
     };
 
@@ -93,22 +123,40 @@ export function applyUvTilingToMeshStandardMaterial(material, { scale = 1.0 } = 
     return material;
 }
 
-export function updateUvTilingOnMeshStandardMaterial(material, { scale = null } = {}) {
+export function updateUvTilingOnMeshStandardMaterial(material, { scale = null, scaleU = null, scaleV = null, offsetU = null, offsetV = null, rotationDegrees = null } = {}) {
     if (!material?.isMeshStandardMaterial) return;
 
     const cfg = material.userData?.uvTilingConfig ?? null;
     if (!cfg) {
-        if (scale !== null && scale !== undefined) applyUvTilingToMeshStandardMaterial(material, { scale });
+        if (
+            scale !== null || scaleU !== null || scaleV !== null || offsetU !== null || offsetV !== null || rotationDegrees !== null
+        ) {
+            applyUvTilingToMeshStandardMaterial(material, {
+                scale: scale ?? 1.0,
+                scaleU: scaleU ?? undefined,
+                scaleV: scaleV ?? undefined,
+                offsetU: offsetU ?? undefined,
+                offsetV: offsetV ?? undefined,
+                rotationDegrees: rotationDegrees ?? undefined
+            });
+        }
         return;
     }
 
-    if (scale !== null && scale !== undefined) {
-        const s = normalizeScale(scale);
-        cfg.tiling.set(s, s);
+    const hasScale = scale !== null && scale !== undefined;
+    const hasScaleU = scaleU !== null && scaleU !== undefined;
+    const hasScaleV = scaleV !== null && scaleV !== undefined;
+    if (hasScale || hasScaleU || hasScaleV) {
+        const nextU = normalizeScale(hasScaleU ? scaleU : (hasScale ? scale : cfg.tiling.x));
+        const nextV = normalizeScale(hasScaleV ? scaleV : (hasScale ? scale : cfg.tiling.y));
+        cfg.tiling.set(nextU, nextV);
     }
+    if (offsetU !== null && offsetU !== undefined) cfg.offset.x = normalizeOffset(offsetU);
+    if (offsetV !== null && offsetV !== undefined) cfg.offset.y = normalizeOffset(offsetV);
+    if (rotationDegrees !== null && rotationDegrees !== undefined) cfg.rotation = normalizeRotationDegrees(rotationDegrees) * (Math.PI / 180);
 
     const shaderUniforms = cfg.shaderUniforms;
     if (shaderUniforms?.uUvTiling?.value) shaderUniforms.uUvTiling.value = cfg.tiling;
-    material.needsUpdate = true;
+    if (shaderUniforms?.uUvOffset?.value) shaderUniforms.uUvOffset.value = cfg.offset;
+    if (shaderUniforms?.uUvRotation) shaderUniforms.uUvRotation.value = cfg.rotation;
 }
-

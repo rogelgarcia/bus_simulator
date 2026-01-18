@@ -19,7 +19,7 @@ function groupSpanCount(geometry) {
 
 function buildPoleGeometry({ radius = 0.055 * 0.9, height = 3.0 * 0.8, radialSegments = 6 } = {}) {
     const geometry = new THREE.CylinderGeometry(radius, radius, height, radialSegments, 1, false);
-    geometry.translate(0, -1.2 + height / 2, 0);
+    geometry.translate(0, height / 2, 0);
     geometry.clearGroups();
     const span = groupSpanCount(geometry);
     if (span > 0) geometry.addGroup(0, span, 0);

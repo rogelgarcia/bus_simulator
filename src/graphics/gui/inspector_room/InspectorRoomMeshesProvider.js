@@ -15,6 +15,11 @@ import {
     isTreeMeshId,
     TREE_MESH_COLLECTION
 } from '../../content3d/catalogs/TreeMeshCatalog.js';
+import {
+    applyInspectorTreeMaterials,
+    getInspectorTreeRoleFromIntersection,
+    tagInspectorTreeMaterialRoles
+} from './InspectorRoomTreeMaterialUtils.js';
 import { isRigApi } from '../../../app/rigs/RigSchema.js';
 import { isPrefabParamsApi } from '../../../app/prefabs/PrefabParamsSchema.js';
 
@@ -33,11 +38,6 @@ function groupForTriangleOffset(geometry, triOffset) {
         if (triOffset >= start && triOffset < start + count) return group;
     }
     return null;
-}
-
-function isFoliageName(name) {
-    const s = String(name ?? '').toLowerCase();
-    return s.includes('leaf') || s.includes('foliage') || s.includes('bush');
 }
 
 function makeTreePlaceholderMesh() {
@@ -284,8 +284,8 @@ export class InspectorRoomMeshesProvider {
 
         if (asset.kind === 'tree') {
             const faceIndex = Number.isFinite(hit.faceIndex) ? hit.faceIndex : null;
-            const partName = `${hit.object?.name ?? ''} ${hit.object?.material?.name ?? ''}`;
-            const foliage = isFoliageName(partName);
+            const role = getInspectorTreeRoleFromIntersection(hit, { defaultRole: 'trunk' });
+            const foliage = role === 'leaf';
             return {
                 meshId: asset.id,
                 meshName: asset.name,
@@ -385,6 +385,8 @@ export class InspectorRoomMeshesProvider {
             const trunk = shared?.trunk?.clone?.() ?? new THREE.MeshStandardMaterial({ color: 0xb9a188, roughness: 0.95, metalness: 0.0 });
             const solid = new THREE.MeshStandardMaterial({ color: 0xd7dde7, metalness: 0.0, roughness: 0.7 });
 
+            tagInspectorTreeMaterialRoles(tree, { sharedLeaf: shared?.leaf ?? null, sharedTrunk: shared?.trunk ?? null });
+
             const placeholder = this._asset?._placeholder ?? null;
             placeholder?.geometry?.dispose?.();
             placeholder?.material?.dispose?.();
@@ -433,42 +435,13 @@ export class InspectorRoomMeshesProvider {
         const root = asset?.mesh ?? null;
         const mats = asset?.materials ?? null;
         if (!root || !mats) return;
-
-        const applyWireframe = (mat) => {
-            if (!mat) return;
-            mat.wireframe = !!this._wireframe;
-            mat.needsUpdate = true;
-        };
-
         const mode = this._colorMode === 'solid' ? 'solid' : 'semantic';
-        const leaf = mats.semantic?.leaf ?? null;
-        const trunk = mats.semantic?.trunk ?? null;
-        const solid = mats.solid ?? null;
-
-        if (mode === 'solid') {
-            applyWireframe(solid);
-        } else {
-            applyWireframe(leaf);
-            applyWireframe(trunk);
-        }
-
-        root.traverse?.((o) => {
-            if (!o?.isMesh) return;
-            if (Array.isArray(o.material)) {
-                o.material = o.material.map((mat) => {
-                    if (mode === 'solid') return solid;
-                    const name = `${o.name} ${mat?.name ?? ''}`;
-                    return isFoliageName(name) ? leaf : trunk;
-                });
-            } else {
-                if (mode === 'solid') o.material = solid;
-                else {
-                    const name = `${o.name} ${o.material?.name ?? ''}`;
-                    o.material = isFoliageName(name) ? leaf : trunk;
-                }
-            }
-            o.castShadow = true;
-            o.receiveShadow = true;
+        applyInspectorTreeMaterials(root, {
+            mode,
+            leaf: mats.semantic?.leaf ?? null,
+            trunk: mats.semantic?.trunk ?? null,
+            solid: mats.solid ?? null,
+            wireframe: this._wireframe
         });
     }
 

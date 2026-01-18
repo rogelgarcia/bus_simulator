@@ -1,7 +1,12 @@
 // src/graphics/gui/inspector_room/InspectorRoomUI.js
 // Unified HUD UI for the Inspector Room.
 import { applyMaterialSymbolToButton } from '../shared/materialSymbols.js';
-import { lightSignedExpSliderToValue, lightSignedExpValueToSlider } from './InspectorRoomLightUtils.js';
+import {
+    lightBiasedSignedExpSliderToValue,
+    lightBiasedSignedExpValueToSlider,
+    lightHexIntToHueTone,
+    lightHueToneToHexInt
+} from './InspectorRoomLightUtils.js';
 
 const MODE_OPTIONS = Object.freeze([
     { id: 'meshes', label: 'Meshes' },
@@ -156,6 +161,9 @@ export class InspectorRoomUI {
         this._lightEnabled = true;
         this._lightIntensity = 1.2;
         this._lightColorHex = 0xffffff;
+        const colorState = lightHexIntToHueTone(this._lightColorHex, { fallbackHueDegrees: 0 });
+        this._lightColorHueDegrees = colorState.hueDegrees;
+        this._lightColorTone = colorState.tone;
         this._lightMapBasis = { rightX: 1, rightZ: 0, forwardX: 0, forwardZ: 1 };
 
         this._buildAxisLegend();
@@ -273,8 +281,8 @@ export class InspectorRoomUI {
         };
 
         this._onLightSlider = () => {
-            const t = clamp(Number(this.lightY.value), -1, 1);
-            this._light.y = lightSignedExpSliderToValue(t, { maxAbs: this._lightYMaxAbs, exponent: this._lightYExponent });
+            const t = clamp(Number(this.lightY.value), 0, 1);
+            this._light.y = lightBiasedSignedExpSliderToValue(t, { maxAbs: this._lightYMaxAbs, exponent: this._lightYExponent, zeroAt: 0.25 });
             this.onLightChange?.({ ...this._light });
             this._syncLightingWidgets();
             this._syncLightMarkerUi();
@@ -288,14 +296,22 @@ export class InspectorRoomUI {
             this._syncLightMarkerUi();
         };
 
-        this._onLightColor = () => {
-            const raw = typeof this.lightColor.value === 'string' ? this.lightColor.value : '';
-            const hex = raw.startsWith('#') ? Number.parseInt(raw.slice(1), 16) : Number.parseInt(raw, 16);
-            const next = Number.isFinite(hex) ? hex : 0xffffff;
+        const syncLightColorFromSliders = () => {
+            const next = lightHueToneToHexInt(this._lightColorHueDegrees, this._lightColorTone);
             this._lightColorHex = next;
             this._syncLightingWidgets();
             this.onLightColorChange?.(next);
             this._syncLightMarkerUi();
+        };
+
+        this._onLightHue = () => {
+            this._lightColorHueDegrees = clamp(Number(this.lightHue.value), 0, 360);
+            syncLightColorFromSliders();
+        };
+
+        this._onLightTone = () => {
+            this._lightColorTone = -clamp(Number(this.lightTone.value), -1, 1);
+            syncLightColorFromSliders();
         };
 
         this._onCameraFree = () => this.onCameraPreset?.('free');
@@ -540,7 +556,7 @@ export class InspectorRoomUI {
         };
     }
 
-    setLightState({ x, z, y, markerEnabled, enabled, intensity, colorHex, range } = {}) {
+    setLightState({ x, z, y, markerEnabled, enabled, intensity, colorHex, colorHueDegrees, colorTone, range } = {}) {
         if (Number.isFinite(Number(range)) && range > 0) this._lightRange = Number(range);
         if (Number.isFinite(Number(x))) this._light.x = Number(x);
         if (Number.isFinite(Number(z))) this._light.z = Number(z);
@@ -548,10 +564,30 @@ export class InspectorRoomUI {
         if (markerEnabled !== undefined) this._lightMarkerEnabled = !!markerEnabled;
         if (enabled !== undefined) this._lightEnabled = !!enabled;
         if (Number.isFinite(Number(intensity))) this._lightIntensity = clamp(intensity, 0, 4);
-        if (Number.isFinite(Number(colorHex))) this._lightColorHex = Number(colorHex);
-        this.lightY.value = String(lightSignedExpValueToSlider(this._light.y, { maxAbs: this._lightYMaxAbs, exponent: this._lightYExponent }));
+
+        const hasHueUpdate = Number.isFinite(Number(colorHueDegrees));
+        const hasToneUpdate = Number.isFinite(Number(colorTone));
+        if (hasHueUpdate) this._lightColorHueDegrees = clamp(colorHueDegrees, 0, 360);
+        if (hasToneUpdate) this._lightColorTone = clamp(colorTone, -1, 1);
+
+        const sliderHex = lightHueToneToHexInt(this._lightColorHueDegrees, this._lightColorTone);
+
+        if (Number.isFinite(Number(colorHex))) {
+            const nextHex = Number(colorHex);
+            if (nextHex !== this._lightColorHex && nextHex !== sliderHex) {
+                const nextState = lightHexIntToHueTone(nextHex, { fallbackHueDegrees: this._lightColorHueDegrees });
+                this._lightColorHueDegrees = nextState.hueDegrees;
+                this._lightColorTone = nextState.tone;
+            }
+            this._lightColorHex = nextHex;
+        } else if (hasHueUpdate || hasToneUpdate) {
+            this._lightColorHex = sliderHex;
+        }
+
+        this.lightY.value = String(lightBiasedSignedExpValueToSlider(this._light.y, { maxAbs: this._lightYMaxAbs, exponent: this._lightYExponent, zeroAt: 0.25 }));
         this.lightIntensity.value = String(clamp(this._lightIntensity, 0, 4));
-        this.lightColor.value = `#${(Number(this._lightColorHex) || 0xffffff).toString(16).padStart(6, '0')}`;
+        this.lightHue.value = String(clamp(this._lightColorHueDegrees, 0, 360));
+        this.lightTone.value = String(-clamp(this._lightColorTone, -1, 1));
         this._syncLightingWidgets();
         this._syncLightMarkerUi();
     }
@@ -563,7 +599,9 @@ export class InspectorRoomUI {
             markerEnabled: this._lightMarkerEnabled,
             enabled: this._lightEnabled,
             intensity: this._lightIntensity,
-            colorHex: this._lightColorHex
+            colorHex: this._lightColorHex,
+            colorHueDegrees: this._lightColorHueDegrees,
+            colorTone: this._lightColorTone
         };
     }
 
@@ -1052,24 +1090,15 @@ export class InspectorRoomUI {
         this.lightYWrap = document.createElement('div');
         this.lightYWrap.className = 'inspector-room-light-y';
 
-        this.lightYLabel = document.createElement('div');
-        this.lightYLabel.className = 'inspector-room-light-y-label';
-        this.lightYLabel.textContent = 'Y';
-
-        this.lightYValue = document.createElement('div');
-        this.lightYValue.className = 'inspector-room-light-y-value';
-        this.lightYValue.textContent = '';
-
         this.lightY = document.createElement('input');
         this.lightY.type = 'range';
         this.lightY.className = 'inspector-room-light-y-slider';
-        this.lightY.min = '-1';
+        this.lightY.min = '0';
         this.lightY.max = '1';
         this.lightY.step = '0.001';
-        this.lightY.value = String(lightSignedExpValueToSlider(this._light.y, { maxAbs: this._lightYMaxAbs, exponent: this._lightYExponent }));
+        this.lightY.value = String(lightBiasedSignedExpValueToSlider(this._light.y, { maxAbs: this._lightYMaxAbs, exponent: this._lightYExponent, zeroAt: 0.25 }));
+        this.lightY.setAttribute('aria-label', 'Light height (Y)');
 
-        this.lightYWrap.appendChild(this.lightYLabel);
-        this.lightYWrap.appendChild(this.lightYValue);
         this.lightYWrap.appendChild(this.lightY);
 
         const body = document.createElement('div');
@@ -1099,24 +1128,47 @@ export class InspectorRoomUI {
         this.lightIntensityRow.appendChild(this.lightIntensity);
         this.lightIntensityRow.appendChild(this.lightIntensityValue);
 
-        this.lightColorRow = document.createElement('div');
-        this.lightColorRow.className = 'inspector-room-light-row';
-        this.lightColorLabel = document.createElement('div');
-        this.lightColorLabel.className = 'inspector-room-light-row-label';
-        this.lightColorLabel.textContent = 'Hue';
-        this.lightColor = document.createElement('input');
-        this.lightColor.type = 'color';
-        this.lightColor.className = 'inspector-room-light-row-color';
-        this.lightColor.value = `#${(Number(this._lightColorHex) || 0xffffff).toString(16).padStart(6, '0')}`;
-        this.lightColorValue = document.createElement('div');
-        this.lightColorValue.className = 'inspector-room-light-row-value';
-        this.lightColorValue.textContent = '';
-        this.lightColorRow.appendChild(this.lightColorLabel);
-        this.lightColorRow.appendChild(this.lightColor);
-        this.lightColorRow.appendChild(this.lightColorValue);
+        this.lightHueRow = document.createElement('div');
+        this.lightHueRow.className = 'inspector-room-light-row';
+        this.lightHueLabel = document.createElement('div');
+        this.lightHueLabel.className = 'inspector-room-light-row-label';
+        this.lightHueLabel.textContent = 'Color';
+        this.lightHue = document.createElement('input');
+        this.lightHue.type = 'range';
+        this.lightHue.className = 'inspector-room-light-row-slider inspector-room-light-hue-slider';
+        this.lightHue.min = '0';
+        this.lightHue.max = '360';
+        this.lightHue.step = '1';
+        this.lightHue.value = String(clamp(this._lightColorHueDegrees, 0, 360));
+        this.lightHueValue = document.createElement('div');
+        this.lightHueValue.className = 'inspector-room-light-row-value';
+        this.lightHueValue.textContent = '';
+        this.lightHueRow.appendChild(this.lightHueLabel);
+        this.lightHueRow.appendChild(this.lightHue);
+        this.lightHueRow.appendChild(this.lightHueValue);
+
+        this.lightToneRow = document.createElement('div');
+        this.lightToneRow.className = 'inspector-room-light-row';
+        this.lightToneLabel = document.createElement('div');
+        this.lightToneLabel.className = 'inspector-room-light-row-label';
+        this.lightToneLabel.textContent = 'White/Black';
+        this.lightTone = document.createElement('input');
+        this.lightTone.type = 'range';
+        this.lightTone.className = 'inspector-room-light-row-slider inspector-room-light-tone-slider';
+        this.lightTone.min = '-1';
+        this.lightTone.max = '1';
+        this.lightTone.step = '0.01';
+        this.lightTone.value = String(-clamp(this._lightColorTone, -1, 1));
+        this.lightToneValue = document.createElement('div');
+        this.lightToneValue.className = 'inspector-room-light-row-value';
+        this.lightToneValue.textContent = '';
+        this.lightToneRow.appendChild(this.lightToneLabel);
+        this.lightToneRow.appendChild(this.lightTone);
+        this.lightToneRow.appendChild(this.lightToneValue);
 
         this.lightExtras.appendChild(this.lightIntensityRow);
-        this.lightExtras.appendChild(this.lightColorRow);
+        this.lightExtras.appendChild(this.lightHueRow);
+        this.lightExtras.appendChild(this.lightToneRow);
 
         this.lightingPanel.appendChild(header);
         this.lightingPanel.appendChild(body);
@@ -1370,20 +1422,18 @@ export class InspectorRoomUI {
         if (this.lightMarkerBtn) this.lightMarkerBtn.classList.toggle('is-active', !!this._lightMarkerEnabled);
         if (this.lightEnabledBtn) this.lightEnabledBtn.classList.toggle('is-active', !!this._lightEnabled);
 
-        if (this.lightYValue) {
-            const y = Number.isFinite(Number(this._light.y)) ? Number(this._light.y) : 0;
-            const rounded = Math.abs(y) < 1e-6 ? 0 : y;
-            this.lightYValue.textContent = `${rounded.toFixed(2)}m`;
-        }
-
         if (this.lightIntensityValue) {
             this.lightIntensityValue.textContent = `${clamp(this._lightIntensity, 0, 4).toFixed(2)}×`;
         }
 
-        if (this.lightColorValue) {
+        if (this.lightHueValue) {
+            this.lightHueValue.textContent = `${Math.round(clamp(this._lightColorHueDegrees, 0, 360))}°`;
+        }
+
+        if (this.lightToneValue) {
             const hex = Number(this._lightColorHex);
             const safe = Number.isFinite(hex) ? hex : 0xffffff;
-            this.lightColorValue.textContent = `#${safe.toString(16).padStart(6, '0')}`;
+            this.lightToneValue.textContent = `#${safe.toString(16).padStart(6, '0')}`;
         }
     }
 
@@ -1509,7 +1559,8 @@ export class InspectorRoomUI {
         this.lightEnabledBtn.addEventListener('click', this._onLightEnabled);
         this.lightY.addEventListener('input', this._onLightSlider);
         this.lightIntensity.addEventListener('input', this._onLightIntensity);
-        this.lightColor.addEventListener('input', this._onLightColor);
+        this.lightHue.addEventListener('input', this._onLightHue);
+        this.lightTone.addEventListener('input', this._onLightTone);
         this.lightMap.addEventListener('pointerdown', this._onLightMapDown, { passive: false });
         this.lightMap.addEventListener('pointermove', this._onLightMapMove, { passive: false });
         this.lightMap.addEventListener('pointerup', this._onLightMapUp, { passive: false });
@@ -1561,7 +1612,8 @@ export class InspectorRoomUI {
         this.lightEnabledBtn.removeEventListener('click', this._onLightEnabled);
         this.lightY.removeEventListener('input', this._onLightSlider);
         this.lightIntensity.removeEventListener('input', this._onLightIntensity);
-        this.lightColor.removeEventListener('input', this._onLightColor);
+        this.lightHue.removeEventListener('input', this._onLightHue);
+        this.lightTone.removeEventListener('input', this._onLightTone);
         this.lightMap.removeEventListener('pointerdown', this._onLightMapDown);
         this.lightMap.removeEventListener('pointermove', this._onLightMapMove);
         this.lightMap.removeEventListener('pointerup', this._onLightMapUp);

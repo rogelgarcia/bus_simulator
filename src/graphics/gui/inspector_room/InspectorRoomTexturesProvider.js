@@ -2,7 +2,7 @@
 // Texture inspection content provider for the Inspector Room.
 import * as THREE from 'three';
 import { resolveBuildingStyleWallMaterialUrls } from '../../assets3d/generators/buildings/BuildingGenerator.js';
-import { getPbrMaterialExplicitTileMeters, getPbrMaterialMeta, resolvePbrMaterialUrls } from '../../assets3d/materials/PbrMaterialCatalog.js';
+import { getPbrMaterialMeta, getPbrMaterialTileMeters, resolvePbrMaterialUrls } from '../../assets3d/materials/PbrMaterialCatalog.js';
 import { getSignAlphaMaskTextureById } from '../../assets3d/textures/signs/SignAlphaMaskCache.js';
 import {
     getTextureInspectorCollectionById,
@@ -62,7 +62,7 @@ function getDefaultRealWorldSizeForEntry(entry) {
     const kind = entry?.kind ?? null;
     if (kind === 'pbr_material') {
         const materialId = entry?.materialId ?? entry?.id ?? null;
-        const tile = getPbrMaterialExplicitTileMeters(materialId);
+        const tile = getPbrMaterialTileMeters(materialId);
         if (Number.isFinite(tile) && tile > 0) {
             return { size: { widthMeters: tile, heightMeters: tile }, source: 'catalog' };
         }
@@ -403,7 +403,7 @@ export class InspectorRoomTexturesProvider {
             const materialId = entry?.materialId ?? entry?.id ?? null;
             const meta = getPbrMaterialMeta(materialId);
             const urls = resolvePbrMaterialUrls(materialId);
-            const tileMeters = getPbrMaterialExplicitTileMeters(materialId);
+            const tileMeters = meta?.tileMeters ?? null;
             extra = {
                 kind: 'pbr_material',
                 tileMeters: (Number.isFinite(Number(tileMeters)) && Number(tileMeters) > 0) ? Number(tileMeters) : null,

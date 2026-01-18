@@ -283,6 +283,77 @@ function makeDeterministicColor(seed) {
     return color;
 }
 
+function collectGeometryVertexIndicesForMaterialIndex(geometry, materialIndex) {
+    const geo = geometry ?? null;
+    const groups = Array.isArray(geo?.groups) ? geo.groups : [];
+    if (!groups.length) return null;
+
+    const target = Number.isFinite(materialIndex) ? Number(materialIndex) : 0;
+    const out = new Set();
+    const index = geo.index ?? null;
+
+    for (const group of groups) {
+        if (!group) continue;
+        const idx = Number(group.materialIndex) || 0;
+        if (idx !== target) continue;
+        const start = Math.max(0, Number(group.start) || 0);
+        const count = Math.max(0, Number(group.count) || 0);
+        if (!count) continue;
+
+        if (index?.getX) {
+            for (let i = start; i < start + count; i++) out.add(index.getX(i));
+            continue;
+        }
+
+        for (let i = start; i < start + count; i++) out.add(i);
+    }
+
+    return out.size ? Array.from(out) : null;
+}
+
+function applyUvYContinuityOffsetToGeometry(geometry, { yOffset = 0.0, materialIndex = 1 } = {}) {
+    const geo = geometry ?? null;
+    const uv = geo?.getAttribute?.('uv') ?? null;
+    const pos = geo?.getAttribute?.('position') ?? null;
+    if (!uv?.getY || !uv?.setY || !pos?.getY) return;
+
+    const dy = Number(yOffset) || 0.0;
+    if (Math.abs(dy) < 1e-9) return;
+
+    const vertexIndices = collectGeometryVertexIndicesForMaterialIndex(geo, materialIndex);
+    if (!vertexIndices?.length) return;
+
+    let n = 0;
+    let sumY = 0;
+    let sumV = 0;
+    let sumYV = 0;
+    const step = Math.max(1, Math.floor(vertexIndices.length / 128));
+    for (let i = 0; i < vertexIndices.length; i += step) {
+        const vi = vertexIndices[i];
+        const y = pos.getY(vi);
+        const v = uv.getY(vi);
+        if (!Number.isFinite(y) || !Number.isFinite(v)) continue;
+        n += 1;
+        sumY += y;
+        sumV += v;
+        sumYV += y * v;
+    }
+    if (!n) return;
+
+    const meanY = sumY / n;
+    const meanV = sumV / n;
+    const cov = sumYV / n - meanY * meanV;
+    const dir = cov >= 0 ? 1 : -1;
+    const delta = dir * dy;
+
+    for (const vi of vertexIndices) {
+        const v = uv.getY(vi);
+        if (!Number.isFinite(v)) continue;
+        uv.setY(vi, v + delta);
+    }
+    uv.needsUpdate = true;
+}
+
 function estimateFabricationHeightMax({ baseY, extraFirstFloor, layers } = {}) {
     const safeLayers = Array.isArray(layers) ? layers : [];
     let yCursor = Number.isFinite(baseY) ? Number(baseY) : 0;
@@ -607,11 +678,24 @@ export function buildBuildingFabricationVisualParts({
             const wallStyleId = layer.material?.kind === 'texture' ? layer.material.id : null;
             const wallUrls = wallStyleId ? resolveBuildingStyleWallMaterialUrls(wallStyleId) : null;
             const wallTiling = layer?.tiling ?? null;
+            const wallUvEnabled = !!wallTiling?.uvEnabled;
+            const wallUvOffsetU = wallUvEnabled ? clamp(wallTiling?.offsetU, -10.0, 10.0) : 0.0;
+            const wallUvOffsetV = wallUvEnabled ? clamp(wallTiling?.offsetV, -10.0, 10.0) : 0.0;
+            const wallUvRotationDegrees = wallUvEnabled ? clamp(wallTiling?.rotationDegrees, -180.0, 180.0) : 0.0;
+
+            let wallUvScale = 1.0;
             if (wallTiling?.enabled && (Number(wallTiling?.tileMeters) || 0) > EPS) {
                 const baseTileMeters = resolvePbrTileMetersFromUrls(wallUrls, wallStyleId);
                 const desiredTileMeters = clamp(wallTiling.tileMeters, 0.1, 100.0);
-                const scale = baseTileMeters / desiredTileMeters;
-                if (Math.abs(scale - 1.0) > 1e-6) applyUvTilingToMeshStandardMaterial(wallMat, { scale });
+                wallUvScale = baseTileMeters / desiredTileMeters;
+            }
+            if (wallUvEnabled || Math.abs(wallUvScale - 1.0) > 1e-6) {
+                applyUvTilingToMeshStandardMaterial(wallMat, {
+                    scale: wallUvScale,
+                    offsetU: wallUvOffsetU,
+                    offsetV: wallUvOffsetV,
+                    rotationDegrees: wallUvRotationDegrees
+                });
             }
 
             const wallMatVar = layer?.materialVariation ?? null;
@@ -725,12 +809,14 @@ export function buildBuildingFabricationVisualParts({
                 for (const outerLoop of wallOuter) {
                     if (!outerLoop || outerLoop.length < 3) continue;
                     const shape = buildShapeFromLoops({ outerLoop, holeLoops: wallHoles });
-                    const geo = new THREE.ExtrudeGeometry(shape, {
+                    let geo = new THREE.ExtrudeGeometry(shape, {
                         depth: segHeight,
                         bevelEnabled: false,
                         steps: 1
                     });
                     geo.rotateX(-Math.PI / 2);
+                    applyUvYContinuityOffsetToGeometry(geo, { yOffset: yCursor - baseY, materialIndex: 1 });
+                    if (geo.index) geo = geo.toNonIndexed();
                     geo.computeVertexNormals();
 
                     const roofMat = roofMatTemplate.clone();
@@ -863,11 +949,24 @@ export function buildBuildingFabricationVisualParts({
             const roofStyleId = roofCfg.material?.kind === 'texture' ? roofCfg.material.id : null;
             const roofUrls = roofStyleId ? resolveBuildingStyleWallMaterialUrls(roofStyleId) : null;
             const roofTiling = roofCfg?.tiling ?? null;
+            const roofUvEnabled = !!roofTiling?.uvEnabled;
+            const roofUvOffsetU = roofUvEnabled ? clamp(roofTiling?.offsetU, -10.0, 10.0) : 0.0;
+            const roofUvOffsetV = roofUvEnabled ? clamp(roofTiling?.offsetV, -10.0, 10.0) : 0.0;
+            const roofUvRotationDegrees = roofUvEnabled ? clamp(roofTiling?.rotationDegrees, -180.0, 180.0) : 0.0;
+
+            let roofUvScale = 1.0;
             if (roofTiling?.enabled && (Number(roofTiling?.tileMeters) || 0) > EPS) {
                 const baseTileMeters = resolvePbrTileMetersFromUrls(roofUrls, roofStyleId);
                 const desiredTileMeters = clamp(roofTiling.tileMeters, 0.1, 100.0);
-                const scale = baseTileMeters / desiredTileMeters;
-                if (Math.abs(scale - 1.0) > 1e-6) applyUvTilingToMeshStandardMaterial(roofMat, { scale });
+                roofUvScale = baseTileMeters / desiredTileMeters;
+            }
+            if (roofUvEnabled || Math.abs(roofUvScale - 1.0) > 1e-6) {
+                applyUvTilingToMeshStandardMaterial(roofMat, {
+                    scale: roofUvScale,
+                    offsetU: roofUvOffsetU,
+                    offsetV: roofUvOffsetV,
+                    rotationDegrees: roofUvRotationDegrees
+                });
             }
 
             const roofMatVar = roofCfg?.materialVariation ?? null;

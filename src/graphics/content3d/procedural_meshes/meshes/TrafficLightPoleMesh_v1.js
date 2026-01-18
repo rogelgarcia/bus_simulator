@@ -15,7 +15,7 @@ export const REGIONS = Object.freeze([
 function buildPoleGeometry({
     radius = 0.055,
     radialSegments = 6,
-    bottomY = -1.2,
+    bottomY = 0,
     verticalHeight = 2.4,
     inclinedLength = 0.55,
     inclinedAngleRad = Math.PI * 0.1,
@@ -77,6 +77,13 @@ function buildPoleGeometry({
     }
 
     geometry.rotateY(Math.PI);
+    geometry.computeBoundingBox();
+    const baseY = Number(geometry.boundingBox?.min?.y);
+    if (Number.isFinite(baseY)) {
+        geometry.translate(0, -baseY, 0);
+        geometry.boundingBox = null;
+        geometry.boundingSphere = null;
+    }
     geometry.computeVertexNormals();
     return geometry;
 }

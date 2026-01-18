@@ -33,7 +33,11 @@ function normalizeTilingConfig(value, { defaultTileMeters = 2.0 } = {}) {
     const src = value && typeof value === 'object' ? value : {};
     const enabled = !!src.enabled;
     const tileMeters = clamp(src.tileMeters ?? src.tileSizeMeters ?? defaultTileMeters, 0.1, 100.0);
-    return { enabled, tileMeters };
+    const uvEnabled = !!(src.uvEnabled ?? src.uvTransformEnabled ?? false);
+    const offsetU = clamp(src.offsetU ?? src.uvOffsetU ?? 0.0, -10.0, 10.0);
+    const offsetV = clamp(src.offsetV ?? src.uvOffsetV ?? 0.0, -10.0, 10.0);
+    const rotationDegrees = clamp(src.rotationDegrees ?? src.uvRotationDegrees ?? 0.0, -180.0, 180.0);
+    return { enabled, tileMeters, uvEnabled, offsetU, offsetV, rotationDegrees };
 }
 
 function normalizeMaterialVariationConfig(value, { defaultEnabled = false, defaultSeedOffset = 0 } = {}) {

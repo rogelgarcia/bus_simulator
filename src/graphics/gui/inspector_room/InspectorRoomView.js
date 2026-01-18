@@ -5,6 +5,7 @@ import { InspectorRoomScene } from './InspectorRoomScene.js';
 import { InspectorRoomMeshesProvider } from './InspectorRoomMeshesProvider.js';
 import { InspectorRoomTexturesProvider } from './InspectorRoomTexturesProvider.js';
 import { InspectorRoomUI } from './InspectorRoomUI.js';
+import { lightHexIntToHueTone, lightHueToneToHexInt } from './InspectorRoomLightUtils.js';
 import { computeBoundsSize, formatMeters } from './InspectorRoomMeasurementUtils.js';
 
 const STORAGE_KEY = 'bus_sim.inspector_room.v1';
@@ -27,6 +28,7 @@ function readStoredSelection() {
         const mode = parsed?.mode === 'textures' ? 'textures' : 'meshes';
         const meshes = parsed?.meshes && typeof parsed.meshes === 'object' ? parsed.meshes : {};
         const textures = parsed?.textures && typeof parsed.textures === 'object' ? parsed.textures : {};
+        const light = parsed?.light && typeof parsed.light === 'object' ? parsed.light : null;
         return {
             mode,
             meshes: {
@@ -36,17 +38,68 @@ function readStoredSelection() {
             textures: {
                 collectionId: typeof textures.collectionId === 'string' ? textures.collectionId : null,
                 itemId: typeof textures.itemId === 'string' ? textures.itemId : null
-            }
+            },
+            light
         };
     } catch {
         return null;
     }
 }
 
-function writeStoredSelection({ mode, meshes, textures }) {
+function clamp(value, min, max) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return min;
+    return Math.max(min, Math.min(max, num));
+}
+
+function sanitizeStoredLight(light, { fallbackHueDegrees = 0 } = {}) {
+    const src = light && typeof light === 'object' ? light : null;
+    if (!src) return null;
+
+    const x = Number(src.x);
+    const y = Number(src.y);
+    const z = Number(src.z);
+    const enabled = src.enabled !== undefined ? !!src.enabled : undefined;
+    const markerEnabled = src.markerEnabled !== undefined ? !!src.markerEnabled : undefined;
+    const intensity = Number(src.intensity);
+
+    const hueRaw = Number(src.colorHueDegrees ?? src.hueDegrees ?? src.hue);
+    const toneRaw = Number(src.colorTone ?? src.tone);
+    const hexRaw = Number(src.colorHex ?? src.hex ?? src.color);
+
+    let colorHueDegrees = Number.isFinite(hueRaw) ? clamp(hueRaw, 0, 360) : null;
+    let colorTone = Number.isFinite(toneRaw) ? clamp(toneRaw, -1, 1) : null;
+    let colorHex = Number.isFinite(hexRaw) ? (hexRaw >>> 0) : null;
+
+    if (!(colorHueDegrees !== null && colorTone !== null) && colorHex !== null) {
+        const next = lightHexIntToHueTone(colorHex, { fallbackHueDegrees });
+        colorHueDegrees = next.hueDegrees;
+        colorTone = next.tone;
+    }
+
+    if (colorHueDegrees !== null && colorTone !== null) {
+        colorHex = lightHueToneToHexInt(colorHueDegrees, colorTone);
+    }
+
+    const payload = {};
+    if (Number.isFinite(x)) payload.x = x;
+    if (Number.isFinite(y)) payload.y = y;
+    if (Number.isFinite(z)) payload.z = z;
+    if (enabled !== undefined) payload.enabled = enabled;
+    if (markerEnabled !== undefined) payload.markerEnabled = markerEnabled;
+    if (Number.isFinite(intensity)) payload.intensity = clamp(intensity, 0, 4);
+    if (colorHueDegrees !== null) payload.colorHueDegrees = colorHueDegrees;
+    if (colorTone !== null) payload.colorTone = colorTone;
+    if (colorHex !== null) payload.colorHex = colorHex;
+
+    return Object.keys(payload).length ? payload : null;
+}
+
+function writeStoredSelection({ mode, meshes, textures, light }) {
     if (typeof window === 'undefined') return;
     const storage = window.localStorage;
     if (!storage) return;
+    const sanitizedLight = sanitizeStoredLight(light, { fallbackHueDegrees: 0 });
     const payload = {
         mode: mode === 'textures' ? 'textures' : 'meshes',
         meshes: {
@@ -56,7 +109,8 @@ function writeStoredSelection({ mode, meshes, textures }) {
         textures: {
             collectionId: typeof textures?.collectionId === 'string' ? textures.collectionId : null,
             itemId: typeof textures?.itemId === 'string' ? textures.itemId : null
-        }
+        },
+        light: sanitizedLight
     };
     try {
         storage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -95,7 +149,8 @@ export class InspectorRoomView {
         this._selection = stored ?? {
             mode: 'meshes',
             meshes: { collectionId: null, itemId: null },
-            textures: { collectionId: null, itemId: null }
+            textures: { collectionId: null, itemId: null },
+            light: null
         };
 
         this.onExit = null;
@@ -106,12 +161,24 @@ export class InspectorRoomView {
         this._onPointerDown = (e) => this._handlePointerDown(e);
         this._onPointerUp = (e) => this._handlePointerUp(e);
         this._onPointerLeave = () => this._handlePointerLeave();
+
+        this._persistLightTimer = null;
     }
 
     enter() {
         this.room.enter();
         this.ui.mount();
         this.room.setUiRoot(this.ui.root);
+
+        const storedLight = sanitizeStoredLight(this._selection.light, { fallbackHueDegrees: 0 });
+        if (storedLight) {
+            this._selection.light = storedLight;
+            this.room.setLightPosition(storedLight);
+            if (storedLight.markerEnabled !== undefined) this.room.setLightMarkerVisible(storedLight.markerEnabled);
+            if (storedLight.enabled !== undefined) this.room.setLightEnabled(storedLight.enabled);
+            if (Number.isFinite(Number(storedLight.intensity))) this.room.setLightIntensity(storedLight.intensity);
+            if (Number.isFinite(Number(storedLight.colorHex))) this.room.setLightColorHex(storedLight.colorHex);
+        }
 
         this.ui.onModeChange = (mode) => this._setMode(mode, { user: true });
         this.ui.onCollectionChange = (collectionId) => this._setCollection(collectionId);
@@ -185,22 +252,27 @@ export class InspectorRoomView {
 
         this.ui.onLightChange = (light) => {
             this.room.setLightPosition(light);
+            this._schedulePersistLight();
         };
         this.ui.onLightMarkerToggle = (enabled) => {
             this.room.setLightMarkerVisible(enabled);
             this.ui.setLightState({ markerEnabled: this.room.getLightMarkerVisible() });
+            this._persistLightFromUi();
         };
         this.ui.onLightEnabledToggle = (enabled) => {
             this.room.setLightEnabled(enabled);
             this.ui.setLightState({ enabled: this.room.getLightEnabled() });
+            this._persistLightFromUi();
         };
         this.ui.onLightIntensityChange = (intensity) => {
             this.room.setLightIntensity(intensity);
             this.ui.setLightState({ intensity: this.room.getLightIntensity() });
+            this._persistLightFromUi();
         };
         this.ui.onLightColorChange = (hex) => {
             this.room.setLightColorHex(hex);
             this.ui.setLightState({ colorHex: this.room.getLightColorHex() });
+            this._persistLightFromUi();
         };
 
         this.ui.onCameraPreset = (presetId) => {
@@ -210,6 +282,9 @@ export class InspectorRoomView {
         this._setMode(this._selection.mode ?? 'meshes', { user: false, instantCamera: true });
 
         const lightPos = this.room.getLightPosition();
+        const colorHex = this.room.getLightColorHex();
+        const lightColorFallbackHue = storedLight?.colorHueDegrees ?? 0;
+        const derivedColor = lightHexIntToHueTone(colorHex, { fallbackHueDegrees: lightColorFallbackHue });
         this.ui.setLightState({
             x: lightPos.x,
             y: lightPos.y,
@@ -217,9 +292,13 @@ export class InspectorRoomView {
             markerEnabled: this.room.getLightMarkerVisible(),
             enabled: this.room.getLightEnabled(),
             intensity: this.room.getLightIntensity(),
-            colorHex: this.room.getLightColorHex(),
+            colorHex,
+            colorHueDegrees: storedLight?.colorHueDegrees ?? derivedColor.hueDegrees,
+            colorTone: storedLight?.colorTone ?? derivedColor.tone,
             range: 10
         });
+
+        if (storedLight) this._persistLightFromUi();
 
         window.addEventListener('keydown', this._onKeyDown, { passive: false });
         this.canvas.addEventListener('contextmenu', this._onContextMenu, { passive: false });
@@ -230,6 +309,11 @@ export class InspectorRoomView {
     }
 
     exit() {
+        if (this._persistLightTimer !== null) {
+            clearTimeout(this._persistLightTimer);
+            this._persistLightTimer = null;
+        }
+
         window.removeEventListener('keydown', this._onKeyDown);
         this.canvas.removeEventListener('contextmenu', this._onContextMenu);
         this.canvas.removeEventListener('pointermove', this._onPointerMove);
@@ -461,6 +545,48 @@ export class InspectorRoomView {
 
     _persistSelection() {
         writeStoredSelection(this._selection);
+    }
+
+    _persistLightFromUi() {
+        const state = this.ui.getLightState();
+        const round = (value, digits) => {
+            const v = Number(value);
+            if (!Number.isFinite(v)) return null;
+            const d = Number(digits);
+            if (!Number.isFinite(d) || d < 0) return v;
+            const f = Math.pow(10, Math.floor(d));
+            return Math.round(v * f) / f;
+        };
+
+        const x = round(state?.x, 3);
+        const y = round(state?.y, 3);
+        const z = round(state?.z, 3);
+        const intensity = round(clamp(state?.intensity, 0, 4), 2);
+        const hueDegrees = Math.round(clamp(state?.colorHueDegrees, 0, 360));
+        const tone = Math.round(clamp(state?.colorTone, -1, 1) * 100) / 100;
+        const colorHex = lightHueToneToHexInt(hueDegrees, tone);
+
+        this._selection.light = {
+            ...(x !== null ? { x } : {}),
+            ...(y !== null ? { y } : {}),
+            ...(z !== null ? { z } : {}),
+            enabled: !!state?.enabled,
+            markerEnabled: !!state?.markerEnabled,
+            intensity: intensity ?? 1.2,
+            colorHueDegrees: hueDegrees,
+            colorTone: tone,
+            colorHex
+        };
+
+        this._persistSelection();
+    }
+
+    _schedulePersistLight() {
+        if (this._persistLightTimer !== null) clearTimeout(this._persistLightTimer);
+        this._persistLightTimer = setTimeout(() => {
+            this._persistLightTimer = null;
+            this._persistLightFromUi();
+        }, 175);
     }
 
     _syncGlobalTogglesToUi() {

@@ -2,7 +2,7 @@
 // Applies deterministic, composable procedural material variation to MeshStandardMaterial via shader injection.
 import * as THREE from 'three';
 
-const MATVAR_SHADER_VERSION = 3;
+const MATVAR_SHADER_VERSION = 5;
 
 const EPS = 1e-6;
 
@@ -159,11 +159,11 @@ export function getDefaultMaterialVariationPreset(root = MATERIAL_VARIATION_ROOT
             roughnessAmount: 0.18,
             normalAmount: 0.2,
             aoAmount: 0.45,
-            macro: { enabled: true, intensity: 1.0, scale: 0.22 },
+            macro: { enabled: true, intensity: 1.0, scale: 0.22, hueDegrees: 0.0 },
             roughnessVariation: { enabled: true, intensity: 1.0, microScale: 2.4, macroScale: 0.7 },
             streaks: { enabled: false, strength: 0.0, scale: 0.55, direction: { x: 0, y: -1, z: 0 }, ledgeStrength: 0.0, ledgeScale: 0.0 },
-            edgeWear: { enabled: false, strength: 0.0, width: 0.08, noiseWarp: 1.4 },
-            grime: { enabled: true, strength: 0.16, scale: 0.85 },
+            edgeWear: { enabled: false, strength: 0.0, width: 0.08, noiseWarp: 1.4, horizontalStrength: 1.0, verticalStrength: 1.0, color: 1.0, roughness: 1.0 },
+            grime: { enabled: true, strength: 0.16, scale: 0.85, cornerStrength: 0.0 },
             dust: { enabled: true, strength: 0.12, scale: 0.7, heightBand: { min: 0.55, max: 1.0 } },
             wetness: { enabled: false, strength: 0.0, scale: 1.0, heightBand: { min: 0.0, max: 1.0 } },
             sunBleach: { enabled: true, strength: 0.1, exponent: 1.6, direction: { x: 0.4, y: 0.85, z: 0.2 } },
@@ -171,7 +171,8 @@ export function getDefaultMaterialVariationPreset(root = MATERIAL_VARIATION_ROOT
             soot: { enabled: false, strength: 0.0, scale: 0.8, heightBand: { min: 0.0, max: 0.25 } },
             efflorescence: { enabled: false, strength: 0.0, scale: 0.8 },
             antiTiling: { enabled: true, strength: 0.5, mode: 'fast', cellSize: 2.0, blendWidth: 0.2, offsetU: 0.22, offsetV: 0.22, rotationDegrees: 0.0 },
-            detail: { enabled: true, strength: 0.08, scale: 3.2 },
+            stairShift: { enabled: false, strength: 0.0, direction: 'horizontal', stepSize: 1.0, shift: 0.1 },
+            detail: { enabled: true, strength: 0.08, scale: 3.2, hueDegrees: 0.0 },
             cracks: { enabled: false, strength: 0.25, scale: 2.8 }
         };
     }
@@ -189,11 +190,11 @@ export function getDefaultMaterialVariationPreset(root = MATERIAL_VARIATION_ROOT
         roughnessAmount: 0.22,
         normalAmount: 0.28,
         aoAmount: 0.6,
-        macro: { enabled: true, intensity: 1.0, scale: 0.2 },
+        macro: { enabled: true, intensity: 1.0, scale: 0.2, hueDegrees: 0.0 },
         roughnessVariation: { enabled: true, intensity: 1.0, microScale: 2.0, macroScale: 0.55 },
         streaks: { enabled: true, strength: 0.35, scale: 0.55, direction: { x: 0, y: -1, z: 0 }, ledgeStrength: 0.0, ledgeScale: 0.0 },
-        edgeWear: { enabled: true, strength: 0.28, width: 0.08, noiseWarp: 1.7 },
-        grime: { enabled: true, strength: 0.2, scale: 0.9 },
+        edgeWear: { enabled: true, strength: 0.28, width: 0.08, noiseWarp: 1.7, horizontalStrength: 1.0, verticalStrength: 1.0, color: 1.0, roughness: 1.0 },
+        grime: { enabled: true, strength: 0.2, scale: 0.9, cornerStrength: 0.0 },
         dust: { enabled: true, strength: 0.14, scale: 0.65, heightBand: { min: 0.58, max: 1.0 } },
         wetness: { enabled: false, strength: 0.0, scale: 1.0, heightBand: { min: 0.0, max: 1.0 } },
         sunBleach: { enabled: true, strength: 0.12, exponent: 1.8, direction: { x: 0.45, y: 0.8, z: 0.25 } },
@@ -201,7 +202,8 @@ export function getDefaultMaterialVariationPreset(root = MATERIAL_VARIATION_ROOT
         soot: { enabled: true, strength: 0.18, scale: 0.7, heightBand: { min: 0.0, max: 0.28 } },
         efflorescence: { enabled: false, strength: 0.0, scale: 0.9 },
         antiTiling: { enabled: true, strength: 0.65, mode: 'fast', cellSize: 2.0, blendWidth: 0.2, offsetU: 0.0, offsetV: 0.28, rotationDegrees: 0.0 },
-        detail: { enabled: true, strength: 0.1, scale: 3.0 },
+        stairShift: { enabled: false, strength: 0.0, direction: 'horizontal', stepSize: 1.0, shift: 0.1 },
+        detail: { enabled: true, strength: 0.1, scale: 3.0, hueDegrees: 0.0 },
         cracks: { enabled: false, strength: 0.25, scale: 3.2 }
     };
 }
@@ -222,6 +224,7 @@ export function normalizeMaterialVariationConfig(input, { root = MATERIAL_VARIAT
     const soot = cfg.soot ?? {};
     const efflorescence = cfg.efflorescence ?? {};
     const antiTiling = cfg.antiTiling ?? {};
+    const stairShift = cfg.stairShift ?? {};
     const detail = cfg.detail ?? {};
     const cracks = cfg.cracks ?? {};
 
@@ -239,97 +242,111 @@ export function normalizeMaterialVariationConfig(input, { root = MATERIAL_VARIAT
         space: normalizeSpace(cfg.space ?? preset.space),
         worldSpaceScale: clamp(cfg.worldSpaceScale ?? preset.worldSpaceScale, 0.001, 20.0),
         objectSpaceScale: clamp(cfg.objectSpaceScale ?? preset.objectSpaceScale, 0.001, 20.0),
-        globalIntensity: clamp(cfg.globalIntensity ?? preset.globalIntensity, 0.0, 2.0),
-        tintAmount: clamp(cfg.tintAmount ?? preset.tintAmount, 0.0, 0.35),
-        valueAmount: clamp(cfg.valueAmount ?? preset.valueAmount, 0.0, 0.35),
-        saturationAmount: clamp(cfg.saturationAmount ?? preset.saturationAmount, 0.0, 0.35),
-        roughnessAmount: clamp(cfg.roughnessAmount ?? preset.roughnessAmount, 0.0, 0.75),
-        normalAmount: clamp(cfg.normalAmount ?? preset.normalAmount, 0.0, 1.25),
+        globalIntensity: clamp(cfg.globalIntensity ?? preset.globalIntensity, 0.0, 8.0),
+        tintAmount: clamp(cfg.tintAmount ?? preset.tintAmount, 0.0, 2.0),
+        valueAmount: clamp(cfg.valueAmount ?? preset.valueAmount, 0.0, 2.0),
+        saturationAmount: clamp(cfg.saturationAmount ?? preset.saturationAmount, 0.0, 2.0),
+        roughnessAmount: clamp(cfg.roughnessAmount ?? preset.roughnessAmount, 0.0, 2.0),
+        normalAmount: clamp(cfg.normalAmount ?? preset.normalAmount, 0.0, 4.0),
         aoAmount: clamp(cfg.aoAmount ?? preset.aoAmount, 0.0, 1.0),
         macro: {
             enabled: macro.enabled === undefined ? !!preset.macro.enabled : !!macro.enabled,
-            intensity: clamp(macro.intensity ?? preset.macro.intensity, 0.0, 2.0),
-            scale: clamp(macro.scale ?? preset.macro.scale, 0.001, 10.0)
+            intensity: clamp(macro.intensity ?? preset.macro.intensity, 0.0, 4.0),
+            scale: clamp(macro.scale ?? preset.macro.scale, 0.001, 10.0),
+            hueDegrees: clamp(macro.hueDegrees ?? preset.macro.hueDegrees ?? 0.0, -180.0, 180.0)
         },
         roughnessVariation: {
             enabled: roughnessVariation.enabled === undefined ? !!preset.roughnessVariation.enabled : !!roughnessVariation.enabled,
-            intensity: clamp(roughnessVariation.intensity ?? preset.roughnessVariation.intensity, 0.0, 2.0),
+            intensity: clamp(roughnessVariation.intensity ?? preset.roughnessVariation.intensity, 0.0, 4.0),
             microScale: clamp(roughnessVariation.microScale ?? preset.roughnessVariation.microScale, 0.01, 50.0),
             macroScale: clamp(roughnessVariation.macroScale ?? preset.roughnessVariation.macroScale, 0.01, 50.0)
         },
         streaks: {
             enabled: streaks.enabled === undefined ? !!preset.streaks.enabled : !!streaks.enabled,
-            strength: clamp(streaks.strength ?? preset.streaks.strength, 0.0, 1.0),
+            strength: clamp(streaks.strength ?? preset.streaks.strength, 0.0, 4.0),
             scale: clamp(streaks.scale ?? preset.streaks.scale, 0.01, 50.0),
             direction: makeVector3(streaks.direction ?? preset.streaks.direction, { x: 0, y: -1, z: 0 }),
-            ledgeStrength: clamp(streaks.ledgeStrength ?? preset.streaks.ledgeStrength, 0.0, 1.0),
+            ledgeStrength: clamp(streaks.ledgeStrength ?? preset.streaks.ledgeStrength, 0.0, 4.0),
             ledgeScale: clamp(streaks.ledgeScale ?? preset.streaks.ledgeScale, 0.0, 50.0)
         },
         edgeWear: {
             enabled: edgeWear.enabled === undefined ? !!preset.edgeWear.enabled : !!edgeWear.enabled,
-            strength: clamp(edgeWear.strength ?? preset.edgeWear.strength, 0.0, 1.0),
+            strength: clamp(edgeWear.strength ?? preset.edgeWear.strength, 0.0, 4.0),
             width: clamp(edgeWear.width ?? preset.edgeWear.width, 0.0, 0.5),
-            noiseWarp: clamp(edgeWear.noiseWarp ?? preset.edgeWear.noiseWarp, 0.0, 10.0)
+            noiseWarp: clamp(edgeWear.noiseWarp ?? preset.edgeWear.noiseWarp, 0.0, 10.0),
+            horizontalStrength: clamp(edgeWear.horizontalStrength ?? preset.edgeWear.horizontalStrength ?? 1.0, 0.0, 4.0),
+            verticalStrength: clamp(edgeWear.verticalStrength ?? preset.edgeWear.verticalStrength ?? 1.0, 0.0, 4.0),
+            color: clamp(edgeWear.color ?? preset.edgeWear.color ?? 1.0, -2.0, 2.0),
+            roughness: clamp(edgeWear.roughness ?? preset.edgeWear.roughness ?? 1.0, -2.0, 2.0)
         },
         grime: {
             enabled: grime.enabled === undefined ? !!preset.grime.enabled : !!grime.enabled,
-            strength: clamp(grime.strength ?? preset.grime.strength, 0.0, 1.0),
-            scale: clamp(grime.scale ?? preset.grime.scale, 0.01, 50.0)
+            strength: clamp(grime.strength ?? preset.grime.strength, 0.0, 4.0),
+            scale: clamp(grime.scale ?? preset.grime.scale, 0.01, 50.0),
+            cornerStrength: clamp(grime.cornerStrength ?? preset.grime.cornerStrength ?? 0.0, 0.0, 4.0)
         },
         dust: {
             enabled: dust.enabled === undefined ? !!preset.dust.enabled : !!dust.enabled,
-            strength: clamp(dust.strength ?? preset.dust.strength, 0.0, 1.0),
+            strength: clamp(dust.strength ?? preset.dust.strength, 0.0, 4.0),
             scale: clamp(dust.scale ?? preset.dust.scale, 0.01, 50.0),
             heightBand: normalizeBand(dust.heightBand ?? preset.dust.heightBand, { fallbackMin: 0.6, fallbackMax: 1.0 })
         },
         wetness: {
             enabled: wetness.enabled === undefined ? !!preset.wetness.enabled : !!wetness.enabled,
-            strength: clamp(wetness.strength ?? preset.wetness.strength, 0.0, 1.0),
+            strength: clamp(wetness.strength ?? preset.wetness.strength, 0.0, 4.0),
             scale: clamp(wetness.scale ?? preset.wetness.scale, 0.01, 50.0),
             heightBand: normalizeBand(wetness.heightBand ?? preset.wetness.heightBand, { fallbackMin: 0.0, fallbackMax: 1.0 })
         },
         sunBleach: {
             enabled: sunBleach.enabled === undefined ? !!preset.sunBleach.enabled : !!sunBleach.enabled,
-            strength: clamp(sunBleach.strength ?? preset.sunBleach.strength, 0.0, 1.0),
+            strength: clamp(sunBleach.strength ?? preset.sunBleach.strength, 0.0, 4.0),
             exponent: clamp(sunBleach.exponent ?? preset.sunBleach.exponent, 0.1, 8.0),
             direction: makeVector3(sunBleach.direction ?? preset.sunBleach.direction, { x: 0.4, y: 0.8, z: 0.2 })
         },
         moss: {
             enabled: moss.enabled === undefined ? !!preset.moss.enabled : !!moss.enabled,
-            strength: clamp(moss.strength ?? preset.moss.strength, 0.0, 1.0),
+            strength: clamp(moss.strength ?? preset.moss.strength, 0.0, 4.0),
             scale: clamp(moss.scale ?? preset.moss.scale, 0.01, 50.0),
             heightBand: normalizeBand(moss.heightBand ?? preset.moss.heightBand, { fallbackMin: 0.0, fallbackMax: 0.6 }),
             tint: makeColor3(moss.tint ?? preset.moss.tint, 0x406b2d)
         },
         soot: {
             enabled: soot.enabled === undefined ? !!preset.soot.enabled : !!soot.enabled,
-            strength: clamp(soot.strength ?? preset.soot.strength, 0.0, 1.0),
+            strength: clamp(soot.strength ?? preset.soot.strength, 0.0, 4.0),
             scale: clamp(soot.scale ?? preset.soot.scale, 0.01, 50.0),
             heightBand: normalizeBand(soot.heightBand ?? preset.soot.heightBand, { fallbackMin: 0.0, fallbackMax: 0.3 })
         },
         efflorescence: {
             enabled: efflorescence.enabled === undefined ? !!preset.efflorescence.enabled : !!efflorescence.enabled,
-            strength: clamp(efflorescence.strength ?? preset.efflorescence.strength, 0.0, 1.0),
+            strength: clamp(efflorescence.strength ?? preset.efflorescence.strength, 0.0, 4.0),
             scale: clamp(efflorescence.scale ?? preset.efflorescence.scale, 0.01, 50.0)
         },
         antiTiling: {
             enabled: antiTiling.enabled === undefined ? !!preset.antiTiling.enabled : !!antiTiling.enabled,
             mode: antiMode,
-            strength: clamp(antiTiling.strength ?? presetAnti.strength ?? 0.65, 0.0, 1.0),
+            strength: clamp(antiTiling.strength ?? presetAnti.strength ?? 0.65, 0.0, 4.0),
             cellSize: clamp(antiCellSize, 0.25, 20.0),
             blendWidth: clamp(antiBlendWidth, 0.0, 0.49),
-            offsetU: clamp(antiOffsetU, 0.0, 0.5),
-            offsetV: clamp(antiOffsetV, 0.0, 0.5),
+            offsetU: clamp(antiOffsetU, -1.0, 1.0),
+            offsetV: clamp(antiOffsetV, -1.0, 1.0),
             rotationDegrees: clamp(antiRotationDegrees, 0.0, 180.0)
+        },
+        stairShift: {
+            enabled: stairShift.enabled === undefined ? !!preset.stairShift?.enabled : !!stairShift.enabled,
+            strength: clamp(stairShift.strength ?? preset.stairShift?.strength ?? 0.0, 0.0, 4.0),
+            direction: (stairShift.direction ?? preset.stairShift?.direction) === 'vertical' ? 'vertical' : 'horizontal',
+            stepSize: clamp(stairShift.stepSize ?? preset.stairShift?.stepSize ?? 1.0, 0.01, 50.0),
+            shift: clamp(stairShift.shift ?? preset.stairShift?.shift ?? 0.0, -1.0, 1.0)
         },
         detail: {
             enabled: detail.enabled === undefined ? !!preset.detail.enabled : !!detail.enabled,
-            strength: clamp(detail.strength ?? preset.detail.strength, 0.0, 1.0),
-            scale: clamp(detail.scale ?? preset.detail.scale, 0.01, 80.0)
+            strength: clamp(detail.strength ?? preset.detail.strength, 0.0, 4.0),
+            scale: clamp(detail.scale ?? preset.detail.scale, 0.01, 80.0),
+            hueDegrees: clamp(detail.hueDegrees ?? preset.detail.hueDegrees ?? 0.0, -180.0, 180.0)
         },
         cracks: {
             enabled: cracks.enabled === undefined ? !!preset.cracks.enabled : !!cracks.enabled,
-            strength: clamp(cracks.strength ?? preset.cracks.strength, 0.0, 1.0),
+            strength: clamp(cracks.strength ?? preset.cracks.strength, 0.0, 4.0),
             scale: clamp(cracks.scale ?? preset.cracks.scale, 0.01, 80.0)
         }
     };
@@ -343,8 +360,8 @@ function buildUniformBundle({
     config
 } = {}) {
     const cfg = config;
-    const safeSeed = Number(seed) || 0;
-    const safeSeedOffset = Number(seedOffset) || 0;
+    const safeSeed = (Number(seed) >>> 0) || 0;
+    const safeSeedOffset = Number.isFinite(seedOffset) ? Number(seedOffset) : 0;
     const hMin = Number.isFinite(heightMin) ? Number(heightMin) : 0;
     const hMax = Number.isFinite(heightMax) ? Number(heightMax) : 1;
     const heightLo = Math.min(hMin, hMax);
@@ -353,18 +370,21 @@ function buildUniformBundle({
     const spaceMode = cfg.space === MATERIAL_VARIATION_SPACE.OBJECT ? 1 : 0;
     const antiRot = clamp(cfg.antiTiling.rotationDegrees, 0.0, 180.0) * (Math.PI / 180);
     const antiMode = cfg.antiTiling.mode === 'quality' ? 1 : 0;
+    const macroHue = clamp(cfg.macro.hueDegrees ?? 0.0, -180.0, 180.0) * (Math.PI / 180);
+    const detailHue = clamp(cfg.detail.hueDegrees ?? 0.0, -180.0, 180.0) * (Math.PI / 180);
 
     return {
         config0: new THREE.Vector4(safeSeed, safeSeedOffset, cfg.enabled ? cfg.globalIntensity : 0, spaceMode),
         config1: new THREE.Vector4(cfg.worldSpaceScale, cfg.objectSpaceScale, heightLo, heightHi),
         global0: new THREE.Vector4(cfg.tintAmount, cfg.valueAmount, cfg.saturationAmount, cfg.roughnessAmount),
         global1: new THREE.Vector4(cfg.normalAmount, cfg.aoAmount, seedToFloat01(safeSeed), seedToFloat01(safeSeed ^ 0x9e3779b9)),
-        macro: new THREE.Vector4(cfg.macro.enabled ? cfg.macro.intensity : 0, cfg.macro.scale, 0, 0),
+        macro: new THREE.Vector4(cfg.macro.enabled ? cfg.macro.intensity : 0, cfg.macro.scale, macroHue, 0),
         roughnessVar: new THREE.Vector4(cfg.roughnessVariation.enabled ? cfg.roughnessVariation.intensity : 0, cfg.roughnessVariation.microScale, cfg.roughnessVariation.macroScale, 0),
         streaks: new THREE.Vector4(cfg.streaks.enabled ? cfg.streaks.strength : 0, cfg.streaks.scale, cfg.streaks.ledgeStrength, cfg.streaks.ledgeScale),
         streakDir: cfg.streaks.direction.clone(),
         edge: new THREE.Vector4(cfg.edgeWear.enabled ? cfg.edgeWear.strength : 0, cfg.edgeWear.width, cfg.edgeWear.noiseWarp, 0),
-        grime: new THREE.Vector4(cfg.grime.enabled ? cfg.grime.strength : 0, cfg.grime.scale, 0, 0),
+        edge2: new THREE.Vector4(cfg.edgeWear.horizontalStrength, cfg.edgeWear.verticalStrength, cfg.edgeWear.color, cfg.edgeWear.roughness),
+        grime: new THREE.Vector4(cfg.grime.enabled ? cfg.grime.strength : 0, cfg.grime.scale, cfg.grime.cornerStrength ?? 0.0, 0),
         dust: new THREE.Vector4(cfg.dust.enabled ? cfg.dust.strength : 0, cfg.dust.scale, cfg.dust.heightBand.min, cfg.dust.heightBand.max),
         wetness: new THREE.Vector4(cfg.wetness.enabled ? cfg.wetness.strength : 0, cfg.wetness.scale, cfg.wetness.heightBand.min, cfg.wetness.heightBand.max),
         sun: new THREE.Vector4(cfg.sunBleach.enabled ? cfg.sunBleach.strength : 0, cfg.sunBleach.exponent, 0, 0),
@@ -375,7 +395,8 @@ function buildUniformBundle({
         eff: new THREE.Vector4(cfg.efflorescence.enabled ? cfg.efflorescence.strength : 0, cfg.efflorescence.scale, 0, 0),
         anti: new THREE.Vector4(cfg.antiTiling.enabled ? cfg.antiTiling.strength : 0, cfg.antiTiling.cellSize, cfg.antiTiling.blendWidth, antiRot),
         anti2: new THREE.Vector4(cfg.antiTiling.offsetU, cfg.antiTiling.offsetV, antiMode, 0),
-        detail: new THREE.Vector4(cfg.detail.enabled ? cfg.detail.strength : 0, cfg.detail.scale, 0, 0),
+        stair: new THREE.Vector4(cfg.stairShift.enabled ? cfg.stairShift.strength : 0, cfg.stairShift.stepSize, cfg.stairShift.shift, cfg.stairShift.direction === 'vertical' ? 1 : 0),
+        detail: new THREE.Vector4(cfg.detail.enabled ? cfg.detail.strength : 0, cfg.detail.scale, detailHue, 0),
         cracks: new THREE.Vector4(cfg.cracks.enabled ? cfg.cracks.strength : 0, cfg.cracks.scale, 0, 0)
     };
 }
@@ -393,6 +414,7 @@ function injectMatVarShader(material, shader) {
     shader.uniforms.uMatVarStreaks = { value: cfg.uniforms.streaks };
     shader.uniforms.uMatVarStreakDir = { value: cfg.uniforms.streakDir };
     shader.uniforms.uMatVarEdge = { value: cfg.uniforms.edge };
+    shader.uniforms.uMatVarEdge2 = { value: cfg.uniforms.edge2 };
     shader.uniforms.uMatVarGrime = { value: cfg.uniforms.grime };
     shader.uniforms.uMatVarDust = { value: cfg.uniforms.dust };
     shader.uniforms.uMatVarWetness = { value: cfg.uniforms.wetness };
@@ -404,6 +426,7 @@ function injectMatVarShader(material, shader) {
     shader.uniforms.uMatVarEff = { value: cfg.uniforms.eff };
     shader.uniforms.uMatVarAnti = { value: cfg.uniforms.anti };
     shader.uniforms.uMatVarAnti2 = { value: cfg.uniforms.anti2 };
+    shader.uniforms.uMatVarStair = { value: cfg.uniforms.stair };
     shader.uniforms.uMatVarDetail = { value: cfg.uniforms.detail };
     shader.uniforms.uMatVarCracks = { value: cfg.uniforms.cracks };
 
@@ -454,6 +477,7 @@ function injectMatVarShader(material, shader) {
         'uniform vec4 uMatVarStreaks;',
         'uniform vec3 uMatVarStreakDir;',
         'uniform vec4 uMatVarEdge;',
+        'uniform vec4 uMatVarEdge2;',
         'uniform vec4 uMatVarGrime;',
         'uniform vec4 uMatVarDust;',
         'uniform vec4 uMatVarWetness;',
@@ -465,6 +489,7 @@ function injectMatVarShader(material, shader) {
         'uniform vec4 uMatVarEff;',
         'uniform vec4 uMatVarAnti;',
         'uniform vec4 uMatVarAnti2;',
+        'uniform vec4 uMatVarStair;',
         'uniform vec4 uMatVarDetail;',
         'uniform vec4 uMatVarCracks;',
         'float mvSaturate(float v){return clamp(v,0.0,1.0);}',
@@ -474,21 +499,23 @@ function injectMatVarShader(material, shader) {
         'float mvFbm2(vec2 p){float v=0.0;float a=0.5;vec2 shift=vec2(100.0,100.0);for(int i=0;i<4;i++){v+=a*mvNoise2(p);p=p*2.03+shift;a*=0.5;}return v;}',
         'float mvRidged2(vec2 p){float n=mvNoise2(p)*2.0-1.0;return 1.0-abs(n);}',
         'float mvFbmRidged(vec2 p){float v=0.0;float a=0.5;vec2 shift=vec2(23.7,91.3);for(int i=0;i<4;i++){v+=a*mvRidged2(p);p=p*2.0+shift;a*=0.5;}return v;}',
-        'vec3 mvSaturateColor(vec3 c, float amount){float l=dot(c,vec3(0.2126,0.7152,0.0722));return mix(vec3(l),c,mvSaturate(1.0+amount));}',
+        'vec3 mvSaturateColor(vec3 c, float amount){float l=dot(c,vec3(0.2126,0.7152,0.0722));float t=clamp(1.0+amount,0.0,2.0);return mix(vec3(l),c,t);}',
+        'vec3 mvHueShift(vec3 c, float a){float cosA=cos(a);float sinA=sin(a);float Y=dot(c,vec3(0.299,0.587,0.114));float I=dot(c,vec3(0.596,-0.275,-0.321));float Q=dot(c,vec3(0.212,-0.523,0.311));float I2=I*cosA-Q*sinA;float Q2=I*sinA+Q*cosA;return vec3(Y+0.956*I2+0.621*Q2,Y-0.272*I2-0.647*Q2,Y-1.106*I2+1.703*Q2);}',
         'vec2 mvPlanarUV(vec3 p, vec3 n){vec3 a=abs(n);if(a.y>a.x&&a.y>a.z)return p.xz;if(a.x>a.z)return p.zy;return p.xy;}',
         'float mvAntiEdge(vec2 f, float w){if(w<=0.0)return 1.0;float a=smoothstep(0.0,w,f.x)*smoothstep(0.0,w,f.y);float b=smoothstep(0.0,w,1.0-f.x)*smoothstep(0.0,w,1.0-f.y);return a*b;}',
-        'vec3 mvAntiTiling(vec2 uv){float anti=uMatVarAnti.x*uMatVarConfig0.z; if(anti<=0.0) return vec3(uv,0.0);float cellSize=max(0.001,uMatVarAnti.y);vec2 cellUv=uv/cellSize;vec2 cell=floor(cellUv);vec2 f=fract(cellUv);float edge=mvAntiEdge(f,uMatVarAnti.z);float seedOffset=uMatVarConfig0.y;float seedOA=fract(uMatVarGlobal1.z+seedOffset*0.013);float seedOB=fract(uMatVarGlobal1.w+seedOffset*0.017);float rr=mvHash12(cell+vec2(seedOA*91.7,seedOB*53.3));float angle=(rr*2.0-1.0)*uMatVarAnti.w*anti*edge;vec2 offR=mvHash22(cell+vec2(seedOB*17.3,seedOA*29.1))*2.0-1.0;vec2 off=offR*uMatVarAnti2.xy*anti*edge;vec2 p=f-0.5;float c=cos(angle);float s=sin(angle);p=vec2(c*p.x-s*p.y,s*p.x+c*p.y)+off;vec2 uv2=(cell+p+0.5)*cellSize;if(uMatVarAnti2.z>0.5){float n1=mvFbm2(uv*0.15+vec2(seedOB*13.1,seedOA*17.9));float n2=mvFbm2(uv*0.17+vec2(seedOA*9.7,seedOB*21.3));vec2 warp=(vec2(n1,n2)*2.0-1.0)*uMatVarAnti2.xy*0.35*anti;uv2+=warp;}return vec3(uv2,angle);}',
+        'vec3 mvAntiTiling(vec2 uv){float anti=uMatVarAnti.x*uMatVarConfig0.z; if(anti<=0.0) return vec3(uv,0.0);float cellSize=max(0.001,uMatVarAnti.y);vec2 cellUv=uv/cellSize;vec2 cell=floor(cellUv);vec2 f=fract(cellUv);float edge=mvAntiEdge(f,uMatVarAnti.z);float seedOffset=uMatVarConfig0.y;float seedOA=fract(uMatVarGlobal1.z+seedOffset*0.013);float seedOB=fract(uMatVarGlobal1.w+seedOffset*0.017);float rr=mvHash12(cell+vec2(seedOA*91.7,seedOB*53.3));float angle=(rr*2.0-1.0)*uMatVarAnti.w*anti*edge;vec2 offR=mvHash22(cell+vec2(seedOB*17.3,seedOA*29.1))*2.0-1.0;vec2 off=offR*uMatVarAnti2.xy*anti*edge;vec2 p=f-0.5;float c=cos(angle);float s=sin(angle);p=vec2(c*p.x-s*p.y,s*p.x+c*p.y)+off;vec2 uv2=(cell+p+0.5)*cellSize;if(uMatVarAnti2.z>0.5){float n1=mvFbm2(uv*0.15+vec2(seedOB*13.1,seedOA*17.9));float n2=mvFbm2(uv*0.17+vec2(seedOA*9.7,seedOB*21.3));vec2 warp=(vec2(n1,n2)*2.0-1.0)*uMatVarAnti2.xy*0.9*anti;uv2+=warp;}return vec3(uv2,angle);}',
+        'vec2 mvStairShiftUv(vec2 uv){float s=uMatVarStair.x*uMatVarConfig0.z;if(s<=0.0)return uv;float stepSize=max(0.001,uMatVarStair.y);float idx=(uMatVarStair.w<0.5)?floor(uv.y/stepSize):floor(uv.x/stepSize);float shift=idx*uMatVarStair.z*s;return (uMatVarStair.w<0.5)?(uv+vec2(shift,0.0)):(uv+vec2(0.0,shift));}',
         '#endif',
         'vec2 mvMatVarUv(vec2 uv){',
         '#ifdef USE_MATVAR',
-        'vec3 a=mvAntiTiling(uv);return a.xy;',
+        'uv = mvStairShiftUv(uv);vec3 a=mvAntiTiling(uv);return a.xy;',
         '#else',
         'return uv;',
         '#endif',
         '}',
         'float mvMatVarUvRotation(vec2 uv){',
         '#ifdef USE_MATVAR',
-        'vec3 a=mvAntiTiling(uv);return a.z;',
+        'uv = mvStairShiftUv(uv);vec3 a=mvAntiTiling(uv);return a.z;',
         '#else',
         'return 0.0;',
         '#endif',
@@ -497,8 +524,30 @@ function injectMatVarShader(material, shader) {
 
     shader.fragmentShader = shader.fragmentShader.replace('#include <common>', fragCommonInject);
 
-    shader.fragmentShader = shader.fragmentShader.split('texture2D( map, vMapUv )').join('texture2D( map, mvMatVarUv( vMapUv ) )');
-    shader.fragmentShader = shader.fragmentShader.split('texture2D( normalMap, vNormalMapUv )').join('texture2D( normalMap, mvMatVarUv( vNormalMapUv ) )');
+    shader.fragmentShader = shader.fragmentShader.replace(
+        /(texture2D|texture)\s*\(\s*map\s*,\s*vMapUv\s*\)/g,
+        '$1( map, mvMatVarUv( vMapUv ) )'
+    );
+    shader.fragmentShader = shader.fragmentShader.replace(
+        /(texture2D|texture)\s*\(\s*normalMap\s*,\s*vNormalMapUv\s*\)/g,
+        '$1( normalMap, mvMatVarUv( vNormalMapUv ) )'
+    );
+    shader.fragmentShader = shader.fragmentShader.replace(
+        /(texture2D|texture)\s*\(\s*aoMap\s*,\s*vAoMapUv\s*\)/g,
+        '$1( aoMap, mvMatVarUv( vAoMapUv ) )'
+    );
+    shader.fragmentShader = shader.fragmentShader.replace(
+        /(texture2D|texture)\s*\(\s*metalnessMap\s*,\s*vMetalnessMapUv\s*\)/g,
+        '$1( metalnessMap, mvMatVarUv( vMetalnessMapUv ) )'
+    );
+    shader.fragmentShader = shader.fragmentShader.replace(
+        /(texture2D|texture)\s*\(\s*roughnessMap\s*,\s*vRoughnessMapUv\s*\)/g,
+        '$1( roughnessMap, mvMatVarUv( vRoughnessMapUv ) )'
+    );
+    shader.fragmentShader = shader.fragmentShader.replace(
+        /(texture2D|texture)\s*\(\s*emissiveMap\s*,\s*vEmissiveMapUv\s*\)/g,
+        '$1( emissiveMap, mvMatVarUv( vEmissiveMapUv ) )'
+    );
 
     shader.fragmentShader = shader.fragmentShader.replace(
         'vec4 diffuseColor = vec4( diffuse, opacity );',
@@ -521,14 +570,7 @@ function injectMatVarShader(material, shader) {
             '#ifdef USE_MATVAR',
             'matVarAoTex = matVarOrm.r;',
             '#endif',
-            '#endif'
-        ].join('\n')
-    );
-
-    shader.fragmentShader = shader.fragmentShader.replace(
-        '#include <metalnessmap_fragment>',
-        [
-            '#include <metalnessmap_fragment>',
+            '#endif',
             '#ifdef USE_MATVAR',
             'float mvSeed = uMatVarConfig0.x;',
             'float mvSeedOffset = uMatVarConfig0.y;',
@@ -566,6 +608,9 @@ function injectMatVarShader(material, shader) {
             'mvColor *= 1.0 + (m * mvValueAmount * mvMacroStrength);',
             'mvRough += (m * mvRoughAmount * 0.35 * mvMacroStrength);',
             'mvColor = mvSaturateColor(mvColor, (m * mvSatAmount * mvMacroStrength));',
+            'matVarNormalFactor += abs(m) * mvNormalAmount * 0.15 * mvMacroStrength;',
+            'float mvMacroHue = uMatVarMacro.z;',
+            'if (abs(mvMacroHue) > 1e-6) mvColor = mvHueShift(mvColor, mvMacroHue * m * mvMacroStrength);',
             '}',
             'float mvRoughVarStrength = uMatVarRoughnessVar.x * mvIntensity;',
             'if (mvRoughVarStrength > 0.0) {',
@@ -580,11 +625,22 @@ function injectMatVarShader(material, shader) {
             'vec3 sd = normalize(uMatVarStreakDir);',
             'vec3 axis = abs(sd.y) > 0.8 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);',
             'vec3 tx = normalize(cross(axis, sd));',
-            'vec3 tz = cross(sd, tx);',
-            'float sU = dot(mvPos, tx) * uMatVarStreaks.y;',
-            'float sV = dot(mvPos, sd) * uMatVarStreaks.y * 1.9;',
-            'float lines = mvFbm2(vec2(sU * 0.7, sV) + vec2(mvSeedOA * 41.3, mvSeedOB * 17.1));',
-            'float streaks = pow(mvSaturate(lines), 4.0);',
+            'float u = dot(mvPos, tx) * uMatVarStreaks.y;',
+            'float v = dot(mvPos, sd) * uMatVarStreaks.y * 1.9;',
+            'float uWarp = (mvFbm2(vec2(u * 0.15, v * 0.05) + vec2(mvSeedOA * 41.3, mvSeedOB * 17.1)) * 2.0 - 1.0) * 0.25;',
+            'u += uWarp;',
+            'float cell = floor(u);',
+            'float fu = fract(u);',
+            'float r1 = mvHash12(vec2(cell + mvSeedOA * 17.3, mvSeedOB * 19.1));',
+            'float r2 = mvHash12(vec2(cell + mvSeedOB * 23.7, mvSeedOA * 29.9));',
+            'float center = r1;',
+            'float width = mix(0.04, 0.22, r2);',
+            'float dist = abs(fu - center);',
+            'float aa = fwidth(fu) * 1.5;',
+            'float line = 1.0 - smoothstep(width, width + aa, dist);',
+            'float flow = mvFbm2(vec2(cell * 0.17 + mvSeedOB * 7.9, v * 0.12 + mvSeedOA * 13.1));',
+            'float run = pow(mvSaturate(flow), 1.6);',
+            'float streaks = line * run;',
             'float heightW = mvSaturate(mvHeight01 * 1.15);',
             'float ledgeStrength = uMatVarStreaks.z;',
             'float ledgeScale = uMatVarStreaks.w;',
@@ -607,16 +663,27 @@ function injectMatVarShader(material, shader) {
             'float curv = length(fwidth(mvN)) * 12.0;',
             'float curvMask = mvSaturate(curv);',
             'float warp = mvFbm2(mvP * uMatVarEdge.z + vec2(mvSeedOB * 12.7, mvSeedOA * 9.1));',
-            'mvEdgeMask = mvSaturate(max(border, curvMask) * (0.35 + 0.65 * warp)) * edgeStrength;',
-            'mvColor *= 1.0 + mvEdgeMask * 0.18;',
-            'mvRough += mvEdgeMask * mvRoughAmount * 0.32;',
+            'float horiz = uMatVarEdge2.x;',
+            'float vert = uMatVarEdge2.y;',
+            'float edgeBase = border * horiz + curvMask * vert;',
+            'mvEdgeMask = mvSaturate(edgeBase * (0.35 + 0.65 * warp)) * edgeStrength;',
+            'float edgeColor = uMatVarEdge2.z;',
+            'float edgeRough = uMatVarEdge2.w;',
+            'mvColor *= 1.0 + mvEdgeMask * 0.18 * edgeColor;',
+            'mvRough += mvEdgeMask * mvRoughAmount * 0.32 * edgeRough;',
             '}',
             'float grimeStrength = uMatVarGrime.x * mvIntensity;',
             'if (grimeStrength > 0.0) {',
             'float cavity = mvSaturate(1.0 - matVarAoTex);',
             'float baseBand = 1.0 - smoothstep(0.15, 0.65, mvHeight01);',
             'float g = mvFbm2(mvP * uMatVarGrime.y + vec2(mvSeedOA * 71.2, mvSeedOB * 31.9));',
-            'float grime = mvSaturate((0.35 + 0.65 * g) * max(cavity, baseBand)) * grimeStrength;',
+            'float grime = mvSaturate((0.35 + 0.65 * g) * max(cavity, baseBand));',
+            'float cornerStrength = uMatVarGrime.z;',
+            'if (cornerStrength > 0.0) {',
+            'float corners = mvSaturate(length(fwidth(mvN)) * 12.0);',
+            'grime = mvSaturate(grime + corners * cornerStrength);',
+            '}',
+            'grime = grime * grimeStrength;',
             'mvColor *= 1.0 - grime * 0.18;',
             'mvRough += grime * mvRoughAmount * 0.45;',
             '}',
@@ -684,6 +751,13 @@ function injectMatVarShader(material, shader) {
             'mvRough += dd * mvRoughAmount * 0.45;',
             'mvColor *= 1.0 + dd * mvValueAmount * 0.95;',
             'matVarNormalFactor += abs(dd) * mvNormalAmount * 0.65;',
+            'float detailHue = uMatVarDetail.z;',
+            'if (abs(detailHue) > 1e-6) {',
+            'float l = dot(mvColor, vec3(0.2126, 0.7152, 0.0722));',
+            'float chroma = length(mvColor - vec3(l));',
+            'float cm = mvSaturate(chroma * 3.0);',
+            'mvColor = mvHueShift(mvColor, detailHue * dd * cm);',
+            '}',
             '}',
             'float crackStrength = uMatVarCracks.x * mvIntensity;',
             'if (crackStrength > 0.0) {',
@@ -699,6 +773,11 @@ function injectMatVarShader(material, shader) {
             'roughnessFactor = mvRough;',
             '#endif'
         ].join('\n')
+    );
+
+    shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <metalnessmap_fragment>',
+        '#include <metalnessmap_fragment>'
     );
 
     shader.fragmentShader = shader.fragmentShader.replace(
@@ -781,6 +860,8 @@ export function updateMaterialVariationOnMeshStandardMaterial(material, { seed, 
     cfg.uniforms.streaks.copy(uniforms.streaks);
     cfg.uniforms.streakDir.copy(uniforms.streakDir);
     cfg.uniforms.edge.copy(uniforms.edge);
+    if (cfg.uniforms.edge2?.copy) cfg.uniforms.edge2.copy(uniforms.edge2);
+    else cfg.uniforms.edge2 = uniforms.edge2;
     cfg.uniforms.grime.copy(uniforms.grime);
     cfg.uniforms.dust.copy(uniforms.dust);
     cfg.uniforms.wetness.copy(uniforms.wetness);
@@ -792,6 +873,8 @@ export function updateMaterialVariationOnMeshStandardMaterial(material, { seed, 
     cfg.uniforms.eff.copy(uniforms.eff);
     cfg.uniforms.anti.copy(uniforms.anti);
     cfg.uniforms.anti2.copy(uniforms.anti2);
+    if (cfg.uniforms.stair?.copy) cfg.uniforms.stair.copy(uniforms.stair);
+    else cfg.uniforms.stair = uniforms.stair;
     cfg.uniforms.detail.copy(uniforms.detail);
     cfg.uniforms.cracks.copy(uniforms.cracks);
 
@@ -805,6 +888,7 @@ export function updateMaterialVariationOnMeshStandardMaterial(material, { seed, 
     if (shaderUniforms?.uMatVarStreaks?.value) shaderUniforms.uMatVarStreaks.value = cfg.uniforms.streaks;
     if (shaderUniforms?.uMatVarStreakDir?.value) shaderUniforms.uMatVarStreakDir.value = cfg.uniforms.streakDir;
     if (shaderUniforms?.uMatVarEdge?.value) shaderUniforms.uMatVarEdge.value = cfg.uniforms.edge;
+    if (shaderUniforms?.uMatVarEdge2?.value) shaderUniforms.uMatVarEdge2.value = cfg.uniforms.edge2;
     if (shaderUniforms?.uMatVarGrime?.value) shaderUniforms.uMatVarGrime.value = cfg.uniforms.grime;
     if (shaderUniforms?.uMatVarDust?.value) shaderUniforms.uMatVarDust.value = cfg.uniforms.dust;
     if (shaderUniforms?.uMatVarWetness?.value) shaderUniforms.uMatVarWetness.value = cfg.uniforms.wetness;
@@ -816,8 +900,8 @@ export function updateMaterialVariationOnMeshStandardMaterial(material, { seed, 
     if (shaderUniforms?.uMatVarEff?.value) shaderUniforms.uMatVarEff.value = cfg.uniforms.eff;
     if (shaderUniforms?.uMatVarAnti?.value) shaderUniforms.uMatVarAnti.value = cfg.uniforms.anti;
     if (shaderUniforms?.uMatVarAnti2?.value) shaderUniforms.uMatVarAnti2.value = cfg.uniforms.anti2;
+    if (shaderUniforms?.uMatVarStair?.value) shaderUniforms.uMatVarStair.value = cfg.uniforms.stair;
     if (shaderUniforms?.uMatVarDetail?.value) shaderUniforms.uMatVarDetail.value = cfg.uniforms.detail;
     if (shaderUniforms?.uMatVarCracks?.value) shaderUniforms.uMatVarCracks.value = cfg.uniforms.cracks;
 
-    material.needsUpdate = true;
 }

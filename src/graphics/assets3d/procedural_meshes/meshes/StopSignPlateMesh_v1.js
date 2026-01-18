@@ -32,6 +32,10 @@ function applyAtlasUvToGroup(geometry, materialIndex, { offset, repeat, rotateRa
     const start = group.start ?? 0;
     const end = start + (group.count ?? 0);
     const vertSet = new Set();
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
     let maxR = 0;
     for (let i = start; i < end; i++) {
         const vi = index.getX(i);
@@ -39,13 +43,25 @@ function applyAtlasUvToGroup(geometry, materialIndex, { offset, repeat, rotateRa
         vertSet.add(vi);
         const x = pos.getX(vi);
         const y = pos.getY(vi);
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+    }
+    if (!vertSet.size) return;
+
+    const cx = (minX + maxX) * 0.5;
+    const cy = (minY + maxY) * 0.5;
+    for (const vi of vertSet) {
+        const x = pos.getX(vi) - cx;
+        const y = pos.getY(vi) - cy;
         maxR = Math.max(maxR, Math.hypot(x, y));
     }
     if (maxR <= 0) return;
 
     for (const vi of vertSet) {
-        const x = pos.getX(vi);
-        const y = pos.getY(vi);
+        const x = pos.getX(vi) - cx;
+        const y = pos.getY(vi) - cy;
         const u0 = x / (2 * maxR) + 0.5;
         const v0 = y / (2 * maxR) + 0.5;
         const dx = u0 - 0.5;
@@ -65,6 +81,13 @@ function buildPlateGeometry({
     const geometry = new THREE.CylinderGeometry(radius, radius, thickness * 0.2, radialSegments, 1, false);
     geometry.rotateX(Math.PI / 2);
     geometry.rotateZ(Math.PI / radialSegments);
+    geometry.computeBoundingBox();
+    const baseY = Number(geometry.boundingBox?.min?.y);
+    if (Number.isFinite(baseY)) {
+        geometry.translate(0, -baseY, 0);
+        geometry.boundingBox = null;
+        geometry.boundingSphere = null;
+    }
 
     const sign = getSignAssetById(STOP_SIGN_TEXTURE_ID);
     const { offset, repeat } = sign.getTextureDescriptor();

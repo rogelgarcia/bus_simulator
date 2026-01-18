@@ -74,6 +74,7 @@ function buildBallGeometry({ radius = 1.0, widthSegments = 36, heightSegments = 
 
     out.setIndex(newIndex);
     out.computeVertexNormals();
+    out.translate(0, radius, 0);
     return out;
 }
 
@@ -116,4 +117,3 @@ export function createAsset() {
         materials: { semantic: semanticMaterials, solid: solidMaterial }
     };
 }
-

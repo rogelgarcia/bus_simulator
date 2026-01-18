@@ -214,7 +214,7 @@ export function computeTrafficControlPlacements({
                     const poleSideOffsetWorld = sideOffset + poleInset;
                     const scale = clamp(poleSideOffsetWorld / targetArm, 2.4, 3.2);
                     const armLength = laneWidth / scale;
-                    const baseY = sidewalkY + 1.2 * scale;
+                    const baseY = sidewalkY;
                     placements.push({
                         kind,
                         nodeId: node.id,
@@ -230,7 +230,7 @@ export function computeTrafficControlPlacements({
                 }
 
                 const scale = 1.1;
-                const baseY = sidewalkY + 1.2 * scale;
+                const baseY = sidewalkY;
                 placements.push({
                     kind,
                     nodeId: node.id,
@@ -282,7 +282,7 @@ export function computeTrafficControlPlacements({
                 const targetArm = 4.0;
                 const scale = clamp(poleSideOffsetWorld / targetArm, 2.4, 3.2);
                 const armLength = laneWidth / scale;
-                const baseY = sidewalkY + 1.2 * scale;
+                const baseY = sidewalkY;
 
                 const addLight = ({ key, corner, px, pz, yaw }) => {
                     if (added.has(key)) return;
@@ -355,7 +355,7 @@ export function computeTrafficControlPlacements({
                 if (!withinBounds(bounds, p.x, p.z)) continue;
 
                 const scale = 1.1;
-                const baseY = sidewalkY + 1.2 * scale;
+                const baseY = sidewalkY;
 
                 placements.push({
                     kind,
