@@ -2771,6 +2771,66 @@ export class BuildingFabricationUI {
                 antiStrengthRow.range.value = String(wallMatVarNormalized.antiTiling.strength);
                 antiStrengthRow.number.value = formatFloat(wallMatVarNormalized.antiTiling.strength, 2);
                 antiGroup.body.appendChild(antiStrengthRow.row);
+
+                const antiCellSizeRow = makeRangeRow('Cell size (tiles)');
+                antiCellSizeRow.range.min = '0.25';
+                antiCellSizeRow.range.max = '20';
+                antiCellSizeRow.range.step = '0.25';
+                antiCellSizeRow.number.min = '0.25';
+                antiCellSizeRow.number.max = '20';
+                antiCellSizeRow.number.step = '0.25';
+                antiCellSizeRow.range.value = String(wallMatVarNormalized.antiTiling.cellSize);
+                antiCellSizeRow.number.value = formatFloat(wallMatVarNormalized.antiTiling.cellSize, 2);
+                antiGroup.body.appendChild(antiCellSizeRow.row);
+
+                const antiBlendRow = makeRangeRow('Blend width');
+                antiBlendRow.range.min = '0';
+                antiBlendRow.range.max = '0.49';
+                antiBlendRow.range.step = '0.01';
+                antiBlendRow.number.min = '0';
+                antiBlendRow.number.max = '0.49';
+                antiBlendRow.number.step = '0.01';
+                antiBlendRow.range.value = String(wallMatVarNormalized.antiTiling.blendWidth);
+                antiBlendRow.number.value = formatFloat(wallMatVarNormalized.antiTiling.blendWidth, 2);
+                antiGroup.body.appendChild(antiBlendRow.row);
+
+                const antiOffsetVRow = makeRangeRow('Vertical shift');
+                antiOffsetVRow.range.min = '0';
+                antiOffsetVRow.range.max = '0.5';
+                antiOffsetVRow.range.step = '0.01';
+                antiOffsetVRow.number.min = '0';
+                antiOffsetVRow.number.max = '0.5';
+                antiOffsetVRow.number.step = '0.01';
+                antiOffsetVRow.range.value = String(wallMatVarNormalized.antiTiling.offsetV);
+                antiOffsetVRow.number.value = formatFloat(wallMatVarNormalized.antiTiling.offsetV, 2);
+                antiGroup.body.appendChild(antiOffsetVRow.row);
+
+                const antiOffsetURow = makeRangeRow('Horizontal shift');
+                antiOffsetURow.range.min = '0';
+                antiOffsetURow.range.max = '0.5';
+                antiOffsetURow.range.step = '0.01';
+                antiOffsetURow.number.min = '0';
+                antiOffsetURow.number.max = '0.5';
+                antiOffsetURow.number.step = '0.01';
+                antiOffsetURow.range.value = String(wallMatVarNormalized.antiTiling.offsetU);
+                antiOffsetURow.number.value = formatFloat(wallMatVarNormalized.antiTiling.offsetU, 2);
+                antiGroup.body.appendChild(antiOffsetURow.row);
+
+                const antiRotationRow = makeRangeRow('Rotation (deg)');
+                antiRotationRow.range.min = '0';
+                antiRotationRow.range.max = '180';
+                antiRotationRow.range.step = '1';
+                antiRotationRow.number.min = '0';
+                antiRotationRow.number.max = '180';
+                antiRotationRow.number.step = '1';
+                antiRotationRow.range.value = String(wallMatVarNormalized.antiTiling.rotationDegrees);
+                antiRotationRow.number.value = String(Math.round(wallMatVarNormalized.antiTiling.rotationDegrees));
+                antiGroup.body.appendChild(antiRotationRow.row);
+
+                const antiQualityToggle = makeToggleRow('Quality mode');
+                antiQualityToggle.input.checked = wallMatVarNormalized.antiTiling.mode === 'quality';
+                antiQualityToggle.input.disabled = !allow || !wallMatVarNormalized.enabled || !wallMatVarNormalized.antiTiling.enabled;
+                antiGroup.body.appendChild(antiQualityToggle.toggle);
                 wallMatVarGroup.body.appendChild(antiGroup.details);
 
                 const detailGroup = makeDetailsSection('Detail', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:detail` });
@@ -2843,6 +2903,17 @@ export class BuildingFabricationUI {
                     antiToggle.input.disabled = !allow || !enabled;
                     antiStrengthRow.range.disabled = !allow || !enabled || !antiToggle.input.checked;
                     antiStrengthRow.number.disabled = antiStrengthRow.range.disabled;
+                    antiCellSizeRow.range.disabled = !allow || !enabled || !antiToggle.input.checked;
+                    antiCellSizeRow.number.disabled = antiCellSizeRow.range.disabled;
+                    antiBlendRow.range.disabled = !allow || !enabled || !antiToggle.input.checked;
+                    antiBlendRow.number.disabled = antiBlendRow.range.disabled;
+                    antiOffsetVRow.range.disabled = !allow || !enabled || !antiToggle.input.checked;
+                    antiOffsetVRow.number.disabled = antiOffsetVRow.range.disabled;
+                    antiOffsetURow.range.disabled = !allow || !enabled || !antiToggle.input.checked;
+                    antiOffsetURow.number.disabled = antiOffsetURow.range.disabled;
+                    antiRotationRow.range.disabled = !allow || !enabled || !antiToggle.input.checked;
+                    antiRotationRow.number.disabled = antiRotationRow.range.disabled;
+                    antiQualityToggle.input.disabled = !allow || !enabled || !antiToggle.input.checked;
 
                     detailToggle.input.disabled = !allow || !enabled;
                     detailStrengthRow.range.disabled = !allow || !enabled || !detailToggle.input.checked;
@@ -3057,6 +3128,92 @@ export class BuildingFabricationUI {
                     layer.materialVariation.antiTiling.strength = next;
                     antiStrengthRow.range.value = String(next);
                     antiStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                antiCellSizeRow.range.addEventListener('input', () => {
+                    const next = clamp(antiCellSizeRow.range.value, 0.25, 20.0);
+                    layer.materialVariation.antiTiling ??= {};
+                    layer.materialVariation.antiTiling.cellSize = next;
+                    antiCellSizeRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                antiCellSizeRow.number.addEventListener('change', () => {
+                    const next = clamp(antiCellSizeRow.number.value, 0.25, 20.0);
+                    layer.materialVariation.antiTiling ??= {};
+                    layer.materialVariation.antiTiling.cellSize = next;
+                    antiCellSizeRow.range.value = String(next);
+                    antiCellSizeRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                antiBlendRow.range.addEventListener('input', () => {
+                    const next = clamp(antiBlendRow.range.value, 0.0, 0.49);
+                    layer.materialVariation.antiTiling ??= {};
+                    layer.materialVariation.antiTiling.blendWidth = next;
+                    antiBlendRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                antiBlendRow.number.addEventListener('change', () => {
+                    const next = clamp(antiBlendRow.number.value, 0.0, 0.49);
+                    layer.materialVariation.antiTiling ??= {};
+                    layer.materialVariation.antiTiling.blendWidth = next;
+                    antiBlendRow.range.value = String(next);
+                    antiBlendRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                antiOffsetVRow.range.addEventListener('input', () => {
+                    const next = clamp(antiOffsetVRow.range.value, 0.0, 0.5);
+                    layer.materialVariation.antiTiling ??= {};
+                    layer.materialVariation.antiTiling.offsetV = next;
+                    antiOffsetVRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                antiOffsetVRow.number.addEventListener('change', () => {
+                    const next = clamp(antiOffsetVRow.number.value, 0.0, 0.5);
+                    layer.materialVariation.antiTiling ??= {};
+                    layer.materialVariation.antiTiling.offsetV = next;
+                    antiOffsetVRow.range.value = String(next);
+                    antiOffsetVRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                antiOffsetURow.range.addEventListener('input', () => {
+                    const next = clamp(antiOffsetURow.range.value, 0.0, 0.5);
+                    layer.materialVariation.antiTiling ??= {};
+                    layer.materialVariation.antiTiling.offsetU = next;
+                    antiOffsetURow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                antiOffsetURow.number.addEventListener('change', () => {
+                    const next = clamp(antiOffsetURow.number.value, 0.0, 0.5);
+                    layer.materialVariation.antiTiling ??= {};
+                    layer.materialVariation.antiTiling.offsetU = next;
+                    antiOffsetURow.range.value = String(next);
+                    antiOffsetURow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                antiRotationRow.range.addEventListener('input', () => {
+                    const next = clamp(antiRotationRow.range.value, 0.0, 180.0);
+                    layer.materialVariation.antiTiling ??= {};
+                    layer.materialVariation.antiTiling.rotationDegrees = next;
+                    antiRotationRow.number.value = String(Math.round(next));
+                    this._notifySelectedLayersChanged();
+                });
+                antiRotationRow.number.addEventListener('change', () => {
+                    const next = clamp(antiRotationRow.number.value, 0.0, 180.0);
+                    layer.materialVariation.antiTiling ??= {};
+                    layer.materialVariation.antiTiling.rotationDegrees = next;
+                    antiRotationRow.range.value = String(next);
+                    antiRotationRow.number.value = String(Math.round(next));
+                    this._notifySelectedLayersChanged();
+                });
+
+                antiQualityToggle.input.addEventListener('change', () => {
+                    layer.materialVariation.antiTiling ??= {};
+                    layer.materialVariation.antiTiling.mode = antiQualityToggle.input.checked ? 'quality' : 'fast';
                     this._notifySelectedLayersChanged();
                 });
 
@@ -3806,6 +3963,66 @@ export class BuildingFabricationUI {
                 roofAntiStrengthRow.number.value = formatFloat(roofMatVarNormalized.antiTiling.strength, 2);
                 layerSection.body.appendChild(roofAntiStrengthRow.row);
 
+                const roofAntiCellSizeRow = makeRangeRow('Cell size (tiles)');
+                roofAntiCellSizeRow.range.min = '0.25';
+                roofAntiCellSizeRow.range.max = '20';
+                roofAntiCellSizeRow.range.step = '0.25';
+                roofAntiCellSizeRow.number.min = '0.25';
+                roofAntiCellSizeRow.number.max = '20';
+                roofAntiCellSizeRow.number.step = '0.25';
+                roofAntiCellSizeRow.range.value = String(roofMatVarNormalized.antiTiling.cellSize);
+                roofAntiCellSizeRow.number.value = formatFloat(roofMatVarNormalized.antiTiling.cellSize, 2);
+                layerSection.body.appendChild(roofAntiCellSizeRow.row);
+
+                const roofAntiBlendRow = makeRangeRow('Blend width');
+                roofAntiBlendRow.range.min = '0';
+                roofAntiBlendRow.range.max = '0.49';
+                roofAntiBlendRow.range.step = '0.01';
+                roofAntiBlendRow.number.min = '0';
+                roofAntiBlendRow.number.max = '0.49';
+                roofAntiBlendRow.number.step = '0.01';
+                roofAntiBlendRow.range.value = String(roofMatVarNormalized.antiTiling.blendWidth);
+                roofAntiBlendRow.number.value = formatFloat(roofMatVarNormalized.antiTiling.blendWidth, 2);
+                layerSection.body.appendChild(roofAntiBlendRow.row);
+
+                const roofAntiOffsetURow = makeRangeRow('U shift');
+                roofAntiOffsetURow.range.min = '0';
+                roofAntiOffsetURow.range.max = '0.5';
+                roofAntiOffsetURow.range.step = '0.01';
+                roofAntiOffsetURow.number.min = '0';
+                roofAntiOffsetURow.number.max = '0.5';
+                roofAntiOffsetURow.number.step = '0.01';
+                roofAntiOffsetURow.range.value = String(roofMatVarNormalized.antiTiling.offsetU);
+                roofAntiOffsetURow.number.value = formatFloat(roofMatVarNormalized.antiTiling.offsetU, 2);
+                layerSection.body.appendChild(roofAntiOffsetURow.row);
+
+                const roofAntiOffsetVRow = makeRangeRow('V shift');
+                roofAntiOffsetVRow.range.min = '0';
+                roofAntiOffsetVRow.range.max = '0.5';
+                roofAntiOffsetVRow.range.step = '0.01';
+                roofAntiOffsetVRow.number.min = '0';
+                roofAntiOffsetVRow.number.max = '0.5';
+                roofAntiOffsetVRow.number.step = '0.01';
+                roofAntiOffsetVRow.range.value = String(roofMatVarNormalized.antiTiling.offsetV);
+                roofAntiOffsetVRow.number.value = formatFloat(roofMatVarNormalized.antiTiling.offsetV, 2);
+                layerSection.body.appendChild(roofAntiOffsetVRow.row);
+
+                const roofAntiRotationRow = makeRangeRow('Rotation (deg)');
+                roofAntiRotationRow.range.min = '0';
+                roofAntiRotationRow.range.max = '180';
+                roofAntiRotationRow.range.step = '1';
+                roofAntiRotationRow.number.min = '0';
+                roofAntiRotationRow.number.max = '180';
+                roofAntiRotationRow.number.step = '1';
+                roofAntiRotationRow.range.value = String(roofMatVarNormalized.antiTiling.rotationDegrees);
+                roofAntiRotationRow.number.value = String(Math.round(roofMatVarNormalized.antiTiling.rotationDegrees));
+                layerSection.body.appendChild(roofAntiRotationRow.row);
+
+                const roofAntiQualityToggle = makeToggleRow('Quality mode');
+                roofAntiQualityToggle.input.checked = roofMatVarNormalized.antiTiling.mode === 'quality';
+                roofAntiQualityToggle.input.disabled = !allow || !roofMatVarNormalized.enabled || !roofMatVarNormalized.antiTiling.enabled;
+                layerSection.body.appendChild(roofAntiQualityToggle.toggle);
+
                 appendRoofSectionLabel('Detail');
                 const roofDetailToggle = makeToggleRow('Enable detail');
                 roofDetailToggle.input.checked = !!roofMatVarNormalized.detail.enabled;
@@ -3874,6 +4091,17 @@ export class BuildingFabricationUI {
                     roofAntiToggle.input.disabled = !allow || !enabled;
                     roofAntiStrengthRow.range.disabled = !allow || !enabled || !roofAntiToggle.input.checked;
                     roofAntiStrengthRow.number.disabled = roofAntiStrengthRow.range.disabled;
+                    roofAntiCellSizeRow.range.disabled = !allow || !enabled || !roofAntiToggle.input.checked;
+                    roofAntiCellSizeRow.number.disabled = roofAntiCellSizeRow.range.disabled;
+                    roofAntiBlendRow.range.disabled = !allow || !enabled || !roofAntiToggle.input.checked;
+                    roofAntiBlendRow.number.disabled = roofAntiBlendRow.range.disabled;
+                    roofAntiOffsetURow.range.disabled = !allow || !enabled || !roofAntiToggle.input.checked;
+                    roofAntiOffsetURow.number.disabled = roofAntiOffsetURow.range.disabled;
+                    roofAntiOffsetVRow.range.disabled = !allow || !enabled || !roofAntiToggle.input.checked;
+                    roofAntiOffsetVRow.number.disabled = roofAntiOffsetVRow.range.disabled;
+                    roofAntiRotationRow.range.disabled = !allow || !enabled || !roofAntiToggle.input.checked;
+                    roofAntiRotationRow.number.disabled = roofAntiRotationRow.range.disabled;
+                    roofAntiQualityToggle.input.disabled = !allow || !enabled || !roofAntiToggle.input.checked;
 
                     roofDetailToggle.input.disabled = !allow || !enabled;
                     roofDetailStrengthRow.range.disabled = !allow || !enabled || !roofDetailToggle.input.checked;
@@ -4086,6 +4314,92 @@ export class BuildingFabricationUI {
                     layer.roof.materialVariation.antiTiling.strength = next;
                     roofAntiStrengthRow.range.value = String(next);
                     roofAntiStrengthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofAntiCellSizeRow.range.addEventListener('input', () => {
+                    const next = clamp(roofAntiCellSizeRow.range.value, 0.25, 20.0);
+                    layer.roof.materialVariation.antiTiling ??= {};
+                    layer.roof.materialVariation.antiTiling.cellSize = next;
+                    roofAntiCellSizeRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofAntiCellSizeRow.number.addEventListener('change', () => {
+                    const next = clamp(roofAntiCellSizeRow.number.value, 0.25, 20.0);
+                    layer.roof.materialVariation.antiTiling ??= {};
+                    layer.roof.materialVariation.antiTiling.cellSize = next;
+                    roofAntiCellSizeRow.range.value = String(next);
+                    roofAntiCellSizeRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofAntiBlendRow.range.addEventListener('input', () => {
+                    const next = clamp(roofAntiBlendRow.range.value, 0.0, 0.49);
+                    layer.roof.materialVariation.antiTiling ??= {};
+                    layer.roof.materialVariation.antiTiling.blendWidth = next;
+                    roofAntiBlendRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofAntiBlendRow.number.addEventListener('change', () => {
+                    const next = clamp(roofAntiBlendRow.number.value, 0.0, 0.49);
+                    layer.roof.materialVariation.antiTiling ??= {};
+                    layer.roof.materialVariation.antiTiling.blendWidth = next;
+                    roofAntiBlendRow.range.value = String(next);
+                    roofAntiBlendRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofAntiOffsetURow.range.addEventListener('input', () => {
+                    const next = clamp(roofAntiOffsetURow.range.value, 0.0, 0.5);
+                    layer.roof.materialVariation.antiTiling ??= {};
+                    layer.roof.materialVariation.antiTiling.offsetU = next;
+                    roofAntiOffsetURow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofAntiOffsetURow.number.addEventListener('change', () => {
+                    const next = clamp(roofAntiOffsetURow.number.value, 0.0, 0.5);
+                    layer.roof.materialVariation.antiTiling ??= {};
+                    layer.roof.materialVariation.antiTiling.offsetU = next;
+                    roofAntiOffsetURow.range.value = String(next);
+                    roofAntiOffsetURow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofAntiOffsetVRow.range.addEventListener('input', () => {
+                    const next = clamp(roofAntiOffsetVRow.range.value, 0.0, 0.5);
+                    layer.roof.materialVariation.antiTiling ??= {};
+                    layer.roof.materialVariation.antiTiling.offsetV = next;
+                    roofAntiOffsetVRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofAntiOffsetVRow.number.addEventListener('change', () => {
+                    const next = clamp(roofAntiOffsetVRow.number.value, 0.0, 0.5);
+                    layer.roof.materialVariation.antiTiling ??= {};
+                    layer.roof.materialVariation.antiTiling.offsetV = next;
+                    roofAntiOffsetVRow.range.value = String(next);
+                    roofAntiOffsetVRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofAntiRotationRow.range.addEventListener('input', () => {
+                    const next = clamp(roofAntiRotationRow.range.value, 0.0, 180.0);
+                    layer.roof.materialVariation.antiTiling ??= {};
+                    layer.roof.materialVariation.antiTiling.rotationDegrees = next;
+                    roofAntiRotationRow.number.value = String(Math.round(next));
+                    this._notifySelectedLayersChanged();
+                });
+                roofAntiRotationRow.number.addEventListener('change', () => {
+                    const next = clamp(roofAntiRotationRow.number.value, 0.0, 180.0);
+                    layer.roof.materialVariation.antiTiling ??= {};
+                    layer.roof.materialVariation.antiTiling.rotationDegrees = next;
+                    roofAntiRotationRow.range.value = String(next);
+                    roofAntiRotationRow.number.value = String(Math.round(next));
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofAntiQualityToggle.input.addEventListener('change', () => {
+                    layer.roof.materialVariation.antiTiling ??= {};
+                    layer.roof.materialVariation.antiTiling.mode = roofAntiQualityToggle.input.checked ? 'quality' : 'fast';
                     this._notifySelectedLayersChanged();
                 });
 
