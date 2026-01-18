@@ -6435,8 +6435,9 @@ async function runTests() {
     });
 
     test('PbrMaterialCatalog: explicit tile size is only set for configured materials', () => {
-        assertNear(getPbrMaterialExplicitTileMeters('pbr.red_brick'), 4.0, 1e-6, 'Expected explicit tileMeters for red_brick.');
+        assertEqual(getPbrMaterialExplicitTileMeters('pbr.red_brick'), null, 'Expected null explicit tileMeters for red_brick.');
         assertEqual(getPbrMaterialExplicitTileMeters('pbr.concrete'), null, 'Expected null explicit tileMeters for materials without config.');
+        assertNear(getPbrMaterialMeta('pbr.concrete')?.tileMeters, 4.0, 1e-6, 'Expected default tileMeters=4m for wall materials.');
     });
 
     const { buildTexturePreviewMaterialMaps, computeRealWorldAspectRatio, computeRealWorldRepeat } = await import('/src/graphics/gui/inspector_room/InspectorRoomTexturesProvider.js');

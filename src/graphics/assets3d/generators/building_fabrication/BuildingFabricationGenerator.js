@@ -13,7 +13,7 @@ import { computeBuildingLoopsFromTiles, offsetOrthogonalLoopXZ, resolveBuildingS
 import { LAYER_TYPE, normalizeBuildingLayers } from './BuildingFabricationTypes.js';
 import { applyMaterialVariationToMeshStandardMaterial, computeMaterialVariationSeedFromTiles, MATERIAL_VARIATION_ROOT } from '../../materials/MaterialVariationSystem.js';
 import { applyUvTilingToMeshStandardMaterial } from '../../materials/MaterialUvTilingSystem.js';
-import { getPbrMaterialTileMeters, tryGetPbrMaterialIdFromUrl } from '../../materials/PbrMaterialCatalog.js';
+import { getPbrMaterialTileMeters, isPbrMaterialId, tryGetPbrMaterialIdFromUrl } from '../../materials/PbrMaterialCatalog.js';
 
 const EPS = 1e-6;
 
@@ -30,8 +30,9 @@ function clampInt(value, min, max) {
     return Math.max(min, Math.min(max, rounded));
 }
 
-function resolvePbrTileMetersFromUrls(urls) {
-    const pbrId = tryGetPbrMaterialIdFromUrl(urls?.baseColorUrl ?? null);
+function resolvePbrTileMetersFromUrls(urls, styleId) {
+    const direct = typeof styleId === 'string' ? styleId : '';
+    const pbrId = isPbrMaterialId(direct) ? direct : tryGetPbrMaterialIdFromUrl(urls?.baseColorUrl ?? null);
     if (!pbrId) return 1.0;
     const tileMeters = getPbrMaterialTileMeters(pbrId);
     const t = Number(tileMeters);
@@ -607,7 +608,7 @@ export function buildBuildingFabricationVisualParts({
             const wallUrls = wallStyleId ? resolveBuildingStyleWallMaterialUrls(wallStyleId) : null;
             const wallTiling = layer?.tiling ?? null;
             if (wallTiling?.enabled && (Number(wallTiling?.tileMeters) || 0) > EPS) {
-                const baseTileMeters = resolvePbrTileMetersFromUrls(wallUrls);
+                const baseTileMeters = resolvePbrTileMetersFromUrls(wallUrls, wallStyleId);
                 const desiredTileMeters = clamp(wallTiling.tileMeters, 0.1, 100.0);
                 const scale = baseTileMeters / desiredTileMeters;
                 if (Math.abs(scale - 1.0) > 1e-6) applyUvTilingToMeshStandardMaterial(wallMat, { scale });
@@ -863,7 +864,7 @@ export function buildBuildingFabricationVisualParts({
             const roofUrls = roofStyleId ? resolveBuildingStyleWallMaterialUrls(roofStyleId) : null;
             const roofTiling = roofCfg?.tiling ?? null;
             if (roofTiling?.enabled && (Number(roofTiling?.tileMeters) || 0) > EPS) {
-                const baseTileMeters = resolvePbrTileMetersFromUrls(roofUrls);
+                const baseTileMeters = resolvePbrTileMetersFromUrls(roofUrls, roofStyleId);
                 const desiredTileMeters = clamp(roofTiling.tileMeters, 0.1, 100.0);
                 const scale = baseTileMeters / desiredTileMeters;
                 if (Math.abs(scale - 1.0) > 1e-6) applyUvTilingToMeshStandardMaterial(roofMat, { scale });

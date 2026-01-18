@@ -13,19 +13,13 @@ const MAPS = Object.freeze({
 });
 
 const DEFAULT_TILE_METERS_BY_ROOT = Object.freeze({
-    wall: 2.0,
+    wall: 4.0,
     surface: 4.0
 });
 
 const DEFAULT_VARIANT = '1k';
 
-const MATERIAL_META_OVERRIDES = Object.freeze({
-    [makeId('red_brick')]: Object.freeze({
-        tileMeters: 4.0,
-        preferredVariant: DEFAULT_VARIANT,
-        variants: Object.freeze([DEFAULT_VARIANT])
-    })
-});
+const MATERIAL_META_OVERRIDES = Object.freeze({});
 
 function toTitle(slug) {
     return String(slug || '')
