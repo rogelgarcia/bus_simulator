@@ -27,6 +27,7 @@ import { getCityMaterials } from '../../assets3d/textures/CityMaterials.js';
 import { createRoadHighlightMesh } from '../../visuals/city/RoadHighlightMesh.js';
 import { ToolCameraController } from '../../engine3d/camera/ToolCameraController.js';
 import { getBuildingConfigById } from '../../content3d/catalogs/BuildingConfigCatalog.js';
+import { updateMaterialVariationDebugOnMeshStandardMaterial } from '../../assets3d/materials/MaterialVariationSystem.js';
 
 const QUANT = 1000;
 const ROAD_LANES_F = 1;
@@ -242,6 +243,7 @@ export class BuildingFabricationScene {
 
         this._lineResolution = new THREE.Vector2();
         this._wallTextures = new BuildingWallTextureCache({ renderer: this.engine?.renderer ?? null });
+        this._materialVariationDebug = null;
     }
 
     enter() {
@@ -507,6 +509,28 @@ export class BuildingFabricationScene {
         if (next === this._hideSelectionBorder) return;
         this._hideSelectionBorder = next;
         this._syncBuildingBorders();
+    }
+
+    setMaterialVariationDebugConfig(debugConfig) {
+        const next = debugConfig && typeof debugConfig === 'object' ? { ...debugConfig } : null;
+        this._materialVariationDebug = next;
+        this._applyMaterialVariationDebugToObject(this.root);
+    }
+
+    _applyMaterialVariationDebugToObject(obj) {
+        const root = obj && typeof obj.traverse === 'function' ? obj : null;
+        if (!root) return;
+        const debug = this._materialVariationDebug;
+
+        root.traverse((o) => {
+            const mat = o?.material ?? null;
+            if (!mat) return;
+            if (Array.isArray(mat)) {
+                for (const entry of mat) updateMaterialVariationDebugOnMeshStandardMaterial(entry, debug);
+                return;
+            }
+            updateMaterialVariationDebugOnMeshStandardMaterial(mat, debug);
+        });
     }
 
     _updateHoveredBuildingId() {
@@ -2726,6 +2750,7 @@ export class BuildingFabricationScene {
 
         this._syncBuildingRenderMode(building);
         this._syncBuildingBorder(building);
+        this._applyMaterialVariationDebugToObject(building.group);
     }
 
     _syncTileVisuals() {

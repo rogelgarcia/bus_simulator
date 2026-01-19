@@ -259,6 +259,11 @@ export class BuildingFabricationView {
             }
         };
 
+        this.scene.setMaterialVariationDebugConfig(this.ui.getMaterialVariationDebugConfig());
+        this.ui.onMaterialVariationDebugChange = (debug) => {
+            this.scene.setMaterialVariationDebugConfig(debug);
+        };
+
         this.ui.onExportBuildingConfig = () => {
             const selected = this.scene.getSelectedBuilding();
             const layers = Array.isArray(selected?.layers) && selected.layers.length

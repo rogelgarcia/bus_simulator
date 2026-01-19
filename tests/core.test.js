@@ -166,7 +166,7 @@ async function runTests() {
     const THREE = await import('three');
     const { applyMaterialVariationToMeshStandardMaterial, MATERIAL_VARIATION_ROOT } = await import('/src/graphics/assets3d/materials/MaterialVariationSystem.js');
 
-    test('MaterialVariationSystem: normal map shader uses stable UV basis', () => {
+    test('MaterialVariationSystem: normal map shader supports mat-var debug toggles', () => {
         const mat = new THREE.MeshStandardMaterial();
         mat.normalMap = new THREE.Texture();
         mat.normalScale.set(1, 1);
@@ -190,8 +190,20 @@ async function runTests() {
 
         assertTrue(shader.fragmentShader.includes('mvMatVarUvRotation'), 'Expected anti-tiling rotation to be applied to normal vectors.');
         assertTrue(
-            shader.fragmentShader.includes('mvPerturbNormal2Arb( -vViewPosition, normal, normalTex, faceDirection, vNormalMapUv )'),
-            'Expected mvPerturbNormal2Arb to use the original normal-map UVs for a stable tangent basis.'
+            shader.fragmentShader.includes('uniform vec4 uMatVarDebug0;') && shader.fragmentShader.includes('uniform vec4 uMatVarDebug1;') && shader.fragmentShader.includes('uniform vec4 uMatVarDebug2;'),
+            'Expected mat-var debug uniforms to be injected.'
+        );
+        assertTrue(
+            shader.fragmentShader.includes('vec2 mvBasisUv = (mvUseOrigUv > 0.5) ? vNormalMapUv : mvNormUv;'),
+            'Expected normal-map basis UV selection to be controllable via debug toggles.'
+        );
+        assertTrue(
+            shader.fragmentShader.includes('mvPerturbNormal2Arb( -vViewPosition, normal, normalTex, faceDirection, mvBasisUv );'),
+            'Expected mvPerturbNormal2Arb to use the selectable basis UVs.'
+        );
+        assertTrue(
+            shader.fragmentShader.includes('vec3 q0perp=cross(N,q0);') && shader.fragmentShader.includes('float scale=(det==0.0)?0.0:faceDirection*inversesqrt(det);'),
+            'Expected mvPerturbNormal2Arb to use the cross-product tangent basis (matches Three.js).'
         );
     });
 

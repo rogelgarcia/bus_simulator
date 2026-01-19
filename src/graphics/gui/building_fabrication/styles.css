@@ -102,6 +102,11 @@
     margin-bottom: 10px;
 }
 
+.building-fab-debug-readout {
+    white-space: pre-wrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
 .building-fab-view-hint {
     margin-bottom: 6px;
     opacity: 0.86;

@@ -10,7 +10,7 @@ import { applyMaterialSymbolToButton } from '../shared/materialSymbols.js';
 import { WINDOW_TYPE, getDefaultWindowParams, getWindowTypeOptions, isWindowTypeId } from '../../assets3d/generators/buildings/WindowTextureGenerator.js';
 import { normalizeWindowParams, normalizeWindowTypeIdOrLegacyStyle } from '../../assets3d/generators/buildings/WindowTypeCompatibility.js';
 import { getPbrMaterialOptionsForBuildings } from '../../assets3d/materials/PbrMaterialCatalog.js';
-import { MATERIAL_VARIATION_ROOT, getDefaultMaterialVariationPreset, normalizeMaterialVariationConfig } from '../../assets3d/materials/MaterialVariationSystem.js';
+import { MATERIAL_VARIATION_DEBUG_DEFAULT, MATERIAL_VARIATION_ROOT, getDefaultMaterialVariationPreset, normalizeMaterialVariationConfig, normalizeMaterialVariationDebugConfig } from '../../assets3d/materials/MaterialVariationSystem.js';
 import { LAYER_TYPE, cloneBuildingLayers, createDefaultFloorLayer, createDefaultRoofLayer, normalizeBuildingLayers } from '../../assets3d/generators/building_fabrication/BuildingFabricationTypes.js';
 import { getBuildingConfigs } from '../../content3d/catalogs/BuildingConfigCatalog.js';
 import { createTextureTilingMiniController } from './mini_controllers/TextureTilingMiniController.js';
@@ -239,9 +239,11 @@ export class BuildingFabricationUI {
         this._selectedLayers = [];
         this._templateMaterialVariationSeed = null;
         this._selectedMaterialVariationSeed = null;
+        this._materialVariationDebug = normalizeMaterialVariationDebugConfig(null);
         this._catalogBuildingConfigId = '';
         this.onSelectedBuildingLayersChange = null;
         this.onSelectedBuildingMaterialVariationSeedChange = null;
+        this.onMaterialVariationDebugChange = null;
 
         this.root = document.createElement('div');
         this.root.className = 'ui-hud-root building-fab-hud';
@@ -1254,11 +1256,104 @@ export class BuildingFabricationUI {
         this.materialVariationSeedHint.textContent = 'When disabled, the seed is derived from the building footprint.';
         this.materialVariationSeedSection.body.appendChild(this.materialVariationSeedHint);
 
+        this.materialVariationDebugSection = makeDetailsSection('Material variation debug', { open: false });
+        this.materialVariationDebugResetBtn = document.createElement('button');
+        this.materialVariationDebugResetBtn.type = 'button';
+        this.materialVariationDebugResetBtn.className = 'building-fab-details-reset';
+        applyMaterialSymbolToButton(this.materialVariationDebugResetBtn, { name: 'restart_alt', label: 'Reset to defaults', size: 'sm' });
+        this.materialVariationDebugSection.summary.appendChild(this.materialVariationDebugResetBtn);
+
+        const makeDebugToggle = (label) => {
+            const toggle = document.createElement('label');
+            toggle.className = 'building-fab-toggle building-fab-toggle-wide';
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            const text = document.createElement('span');
+            text.textContent = label;
+            toggle.appendChild(input);
+            toggle.appendChild(text);
+            return { toggle, input, text };
+        };
+
+        const debugMasterLabel = document.createElement('div');
+        debugMasterLabel.className = 'ui-section-label';
+        debugMasterLabel.textContent = 'Master';
+        this.materialVariationDebugSection.body.appendChild(debugMasterLabel);
+
+        const dbgUseMatVar = makeDebugToggle('Enable mat-var injection (USE_MATVAR)');
+        this.materialVariationDebugUseMatVarInput = dbgUseMatVar.input;
+        this.materialVariationDebugSection.body.appendChild(dbgUseMatVar.toggle);
+
+        const debugUvLabel = document.createElement('div');
+        debugUvLabel.className = 'ui-section-label';
+        debugUvLabel.textContent = 'UV transforms';
+        this.materialVariationDebugSection.body.appendChild(debugUvLabel);
+
+        const dbgStair = makeDebugToggle('Stair shift UV');
+        this.materialVariationDebugUvStairInput = dbgStair.input;
+        this.materialVariationDebugSection.body.appendChild(dbgStair.toggle);
+
+        const dbgAntiOffset = makeDebugToggle('Anti-tiling offset');
+        this.materialVariationDebugUvAntiOffsetInput = dbgAntiOffset.input;
+        this.materialVariationDebugSection.body.appendChild(dbgAntiOffset.toggle);
+
+        const dbgAntiRot = makeDebugToggle('Anti-tiling rotation');
+        this.materialVariationDebugUvAntiRotationInput = dbgAntiRot.input;
+        this.materialVariationDebugSection.body.appendChild(dbgAntiRot.toggle);
+
+        const dbgWarp = makeDebugToggle('UV warp (quality)');
+        this.materialVariationDebugUvWarpInput = dbgWarp.input;
+        this.materialVariationDebugSection.body.appendChild(dbgWarp.toggle);
+
+        const debugContribLabel = document.createElement('div');
+        debugContribLabel.className = 'ui-section-label';
+        debugContribLabel.textContent = 'Contributions';
+        this.materialVariationDebugSection.body.appendChild(debugContribLabel);
+
+        const dbgRough = makeDebugToggle('Roughness contribution');
+        this.materialVariationDebugContribRoughnessInput = dbgRough.input;
+        this.materialVariationDebugSection.body.appendChild(dbgRough.toggle);
+
+        const dbgColor = makeDebugToggle('Tint/value/saturation contribution');
+        this.materialVariationDebugContribColorInput = dbgColor.input;
+        this.materialVariationDebugSection.body.appendChild(dbgColor.toggle);
+
+        const dbgOrm = makeDebugToggle('Use AO/ORM remap');
+        this.materialVariationDebugUseOrmInput = dbgOrm.input;
+        this.materialVariationDebugSection.body.appendChild(dbgOrm.toggle);
+
+        const dbgNormFactor = makeDebugToggle('Normal factor contribution');
+        this.materialVariationDebugContribNormalFactorInput = dbgNormFactor.input;
+        this.materialVariationDebugSection.body.appendChild(dbgNormFactor.toggle);
+
+        const debugNormalLabel = document.createElement('div');
+        debugNormalLabel.className = 'ui-section-label';
+        debugNormalLabel.textContent = 'Normal map handling';
+        this.materialVariationDebugSection.body.appendChild(debugNormalLabel);
+
+        const dbgBasis = makeDebugToggle('Use original UVs for tangent basis');
+        this.materialVariationDebugBasisOriginalUvInput = dbgBasis.input;
+        this.materialVariationDebugSection.body.appendChild(dbgBasis.toggle);
+
+        const dbgFlipY = makeDebugToggle('Flip normal Y (green channel)');
+        this.materialVariationDebugFlipNormalYInput = dbgFlipY.input;
+        this.materialVariationDebugSection.body.appendChild(dbgFlipY.toggle);
+
+        this.materialVariationDebugHint = document.createElement('div');
+        this.materialVariationDebugHint.className = 'building-fab-hint';
+        this.materialVariationDebugHint.textContent = 'Debug-only, session-only shader overrides (not saved into building data).';
+        this.materialVariationDebugSection.body.appendChild(this.materialVariationDebugHint);
+
+        this.materialVariationDebugReadout = document.createElement('div');
+        this.materialVariationDebugReadout.className = 'building-fab-hint building-fab-debug-readout';
+        this.materialVariationDebugSection.body.appendChild(this.materialVariationDebugReadout);
+
         this.layersList = document.createElement('div');
         this.layersList.className = 'building-fab-layer-list';
 
         this.propsPanel.appendChild(this.layersStatus);
         this.propsPanel.appendChild(this.materialVariationSeedSection.details);
+        this.propsPanel.appendChild(this.materialVariationDebugSection.details);
         this.propsPanel.appendChild(this.layersList);
 
         const floorsSection = makeDetailsSection('Floors', { open: true });
@@ -1545,6 +1640,12 @@ export class BuildingFabricationUI {
         this._onStreetWindowSpacerExtrudeDistanceNumberInput = () => this._setStreetWindowSpacerExtrudeDistanceFromUi(this.streetWindowSpacerExtrudeDistanceNumber.value);
         this._onMaterialVariationSeedOverrideChange = () => this._setMaterialVariationSeedOverrideFromUi(this.materialVariationSeedToggleInput.checked);
         this._onMaterialVariationSeedNumberChange = () => this._setMaterialVariationSeedFromUi(this.materialVariationSeedNumber.value);
+        this._onMaterialVariationDebugChange = () => this._setMaterialVariationDebugFromUi();
+        this._onMaterialVariationDebugReset = (e) => {
+            e?.preventDefault?.();
+            e?.stopPropagation?.();
+            this._resetMaterialVariationDebugFromUi();
+        };
         this._onHideSelectionBorderChange = () => this._setHideSelectionBorderFromUi(this.hideSelectionBorderInput.checked);
         this._onViewModeClick = (e) => {
             const btn = e?.target?.closest?.('.building-fab-view-mode');
@@ -1638,6 +1739,10 @@ export class BuildingFabricationUI {
 
     getTemplateMaterialVariationSeed() {
         return Number.isFinite(this._templateMaterialVariationSeed) ? this._templateMaterialVariationSeed : null;
+    }
+
+    getMaterialVariationDebugConfig() {
+        return { ...this._materialVariationDebug };
     }
 
     setFloorHeight(height) {
@@ -2083,6 +2188,105 @@ export class BuildingFabricationUI {
         this._setActiveMaterialVariationSeed(next);
         this._syncMaterialVariationSeedPanel();
         this._notifySelectedMaterialVariationSeedChanged();
+    }
+
+    _notifyMaterialVariationDebugChanged() {
+        if (typeof this.onMaterialVariationDebugChange !== 'function') return;
+        this.onMaterialVariationDebugChange({ ...this._materialVariationDebug });
+    }
+
+    _formatMaterialVariationDebugReadout(debugConfig) {
+        const dbg = debugConfig && typeof debugConfig === 'object' ? debugConfig : normalizeMaterialVariationDebugConfig(null);
+        const onOff = (value) => (value ? 'on' : 'off');
+        const basis = dbg.basisUsesOriginalUv ? 'original' : 'transformed';
+        return [
+            `USE_MATVAR: ${onOff(dbg.useMatVarDefine)}`,
+            `UV: stair=${onOff(dbg.uvStairShift)} antiOffset=${onOff(dbg.uvAntiOffset)} antiRot=${onOff(dbg.uvAntiRotation)} warp=${onOff(dbg.uvWarp)}`,
+            `Contrib: rough=${onOff(dbg.contribRoughness)} color=${onOff(dbg.contribColor)} orm=${onOff(dbg.useOrm)} normalFactor=${onOff(dbg.contribNormalFactor)}`,
+            `Normal: basis=${basis} flipY=${onOff(dbg.flipNormalY)}`
+        ].join('\n');
+    }
+
+    _syncMaterialVariationDebugPanel() {
+        const allow = !!this._enabled;
+        const dbg = this._materialVariationDebug;
+
+        if (this.materialVariationDebugUseMatVarInput) {
+            this.materialVariationDebugUseMatVarInput.checked = !!dbg.useMatVarDefine;
+            this.materialVariationDebugUseMatVarInput.disabled = !allow;
+        }
+        if (this.materialVariationDebugUvStairInput) {
+            this.materialVariationDebugUvStairInput.checked = !!dbg.uvStairShift;
+            this.materialVariationDebugUvStairInput.disabled = !allow;
+        }
+        if (this.materialVariationDebugUvAntiOffsetInput) {
+            this.materialVariationDebugUvAntiOffsetInput.checked = !!dbg.uvAntiOffset;
+            this.materialVariationDebugUvAntiOffsetInput.disabled = !allow;
+        }
+        if (this.materialVariationDebugUvAntiRotationInput) {
+            this.materialVariationDebugUvAntiRotationInput.checked = !!dbg.uvAntiRotation;
+            this.materialVariationDebugUvAntiRotationInput.disabled = !allow;
+        }
+        if (this.materialVariationDebugUvWarpInput) {
+            this.materialVariationDebugUvWarpInput.checked = !!dbg.uvWarp;
+            this.materialVariationDebugUvWarpInput.disabled = !allow;
+        }
+
+        if (this.materialVariationDebugContribRoughnessInput) {
+            this.materialVariationDebugContribRoughnessInput.checked = !!dbg.contribRoughness;
+            this.materialVariationDebugContribRoughnessInput.disabled = !allow;
+        }
+        if (this.materialVariationDebugContribColorInput) {
+            this.materialVariationDebugContribColorInput.checked = !!dbg.contribColor;
+            this.materialVariationDebugContribColorInput.disabled = !allow;
+        }
+        if (this.materialVariationDebugUseOrmInput) {
+            this.materialVariationDebugUseOrmInput.checked = !!dbg.useOrm;
+            this.materialVariationDebugUseOrmInput.disabled = !allow;
+        }
+        if (this.materialVariationDebugContribNormalFactorInput) {
+            this.materialVariationDebugContribNormalFactorInput.checked = !!dbg.contribNormalFactor;
+            this.materialVariationDebugContribNormalFactorInput.disabled = !allow;
+        }
+
+        if (this.materialVariationDebugBasisOriginalUvInput) {
+            this.materialVariationDebugBasisOriginalUvInput.checked = !!dbg.basisUsesOriginalUv;
+            this.materialVariationDebugBasisOriginalUvInput.disabled = !allow;
+        }
+        if (this.materialVariationDebugFlipNormalYInput) {
+            this.materialVariationDebugFlipNormalYInput.checked = !!dbg.flipNormalY;
+            this.materialVariationDebugFlipNormalYInput.disabled = !allow;
+        }
+
+        if (this.materialVariationDebugResetBtn) this.materialVariationDebugResetBtn.disabled = !allow;
+        if (this.materialVariationDebugReadout) this.materialVariationDebugReadout.textContent = this._formatMaterialVariationDebugReadout(dbg);
+    }
+
+    _setMaterialVariationDebugFromUi() {
+        if (!this._enabled) return;
+        const next = normalizeMaterialVariationDebugConfig({
+            useMatVarDefine: !!this.materialVariationDebugUseMatVarInput?.checked,
+            uvStairShift: !!this.materialVariationDebugUvStairInput?.checked,
+            uvAntiOffset: !!this.materialVariationDebugUvAntiOffsetInput?.checked,
+            uvAntiRotation: !!this.materialVariationDebugUvAntiRotationInput?.checked,
+            uvWarp: !!this.materialVariationDebugUvWarpInput?.checked,
+            contribRoughness: !!this.materialVariationDebugContribRoughnessInput?.checked,
+            contribColor: !!this.materialVariationDebugContribColorInput?.checked,
+            useOrm: !!this.materialVariationDebugUseOrmInput?.checked,
+            contribNormalFactor: !!this.materialVariationDebugContribNormalFactorInput?.checked,
+            basisUsesOriginalUv: !!this.materialVariationDebugBasisOriginalUvInput?.checked,
+            flipNormalY: !!this.materialVariationDebugFlipNormalYInput?.checked
+        });
+        this._materialVariationDebug = next;
+        this._syncMaterialVariationDebugPanel();
+        this._notifyMaterialVariationDebugChanged();
+    }
+
+    _resetMaterialVariationDebugFromUi() {
+        if (!this._enabled) return;
+        this._materialVariationDebug = normalizeMaterialVariationDebugConfig(MATERIAL_VARIATION_DEBUG_DEFAULT);
+        this._syncMaterialVariationDebugPanel();
+        this._notifyMaterialVariationDebugChanged();
     }
 
     _syncLayersPanel() {
@@ -12217,6 +12421,7 @@ export class BuildingFabricationUI {
         const allowStreetWindowSpacer = allowStreetWindows && this._streetWindowSpacerEnabled;
         this._syncLayersPanel();
         this._syncMaterialVariationSeedPanel();
+        this._syncMaterialVariationDebugPanel();
 
         if (this.windowFrameWidthRow) this.windowFrameWidthRow.classList.toggle('hidden', !showWindowParams);
         if (this.windowFrameColorRow) this.windowFrameColorRow.classList.toggle('hidden', !showWindowParams);
@@ -13903,6 +14108,18 @@ export class BuildingFabricationUI {
         this.stylePickButton.addEventListener('click', this._onStylePickClick);
         this.materialVariationSeedToggleInput.addEventListener('change', this._onMaterialVariationSeedOverrideChange);
         this.materialVariationSeedNumber.addEventListener('change', this._onMaterialVariationSeedNumberChange);
+        this.materialVariationDebugResetBtn.addEventListener('click', this._onMaterialVariationDebugReset);
+        this.materialVariationDebugUseMatVarInput.addEventListener('change', this._onMaterialVariationDebugChange);
+        this.materialVariationDebugUvStairInput.addEventListener('change', this._onMaterialVariationDebugChange);
+        this.materialVariationDebugUvAntiOffsetInput.addEventListener('change', this._onMaterialVariationDebugChange);
+        this.materialVariationDebugUvAntiRotationInput.addEventListener('change', this._onMaterialVariationDebugChange);
+        this.materialVariationDebugUvWarpInput.addEventListener('change', this._onMaterialVariationDebugChange);
+        this.materialVariationDebugContribRoughnessInput.addEventListener('change', this._onMaterialVariationDebugChange);
+        this.materialVariationDebugContribColorInput.addEventListener('change', this._onMaterialVariationDebugChange);
+        this.materialVariationDebugUseOrmInput.addEventListener('change', this._onMaterialVariationDebugChange);
+        this.materialVariationDebugContribNormalFactorInput.addEventListener('change', this._onMaterialVariationDebugChange);
+        this.materialVariationDebugBasisOriginalUvInput.addEventListener('change', this._onMaterialVariationDebugChange);
+        this.materialVariationDebugFlipNormalYInput.addEventListener('change', this._onMaterialVariationDebugChange);
         this.hideSelectionBorderInput.addEventListener('change', this._onHideSelectionBorderChange);
         this.viewModeRow.addEventListener('click', this._onViewModeClick);
         this.addRoadBtn.addEventListener('click', this._onAddRoad);
@@ -14001,6 +14218,18 @@ export class BuildingFabricationUI {
         this.stylePickButton.removeEventListener('click', this._onStylePickClick);
         this.materialVariationSeedToggleInput.removeEventListener('change', this._onMaterialVariationSeedOverrideChange);
         this.materialVariationSeedNumber.removeEventListener('change', this._onMaterialVariationSeedNumberChange);
+        this.materialVariationDebugResetBtn.removeEventListener('click', this._onMaterialVariationDebugReset);
+        this.materialVariationDebugUseMatVarInput.removeEventListener('change', this._onMaterialVariationDebugChange);
+        this.materialVariationDebugUvStairInput.removeEventListener('change', this._onMaterialVariationDebugChange);
+        this.materialVariationDebugUvAntiOffsetInput.removeEventListener('change', this._onMaterialVariationDebugChange);
+        this.materialVariationDebugUvAntiRotationInput.removeEventListener('change', this._onMaterialVariationDebugChange);
+        this.materialVariationDebugUvWarpInput.removeEventListener('change', this._onMaterialVariationDebugChange);
+        this.materialVariationDebugContribRoughnessInput.removeEventListener('change', this._onMaterialVariationDebugChange);
+        this.materialVariationDebugContribColorInput.removeEventListener('change', this._onMaterialVariationDebugChange);
+        this.materialVariationDebugUseOrmInput.removeEventListener('change', this._onMaterialVariationDebugChange);
+        this.materialVariationDebugContribNormalFactorInput.removeEventListener('change', this._onMaterialVariationDebugChange);
+        this.materialVariationDebugBasisOriginalUvInput.removeEventListener('change', this._onMaterialVariationDebugChange);
+        this.materialVariationDebugFlipNormalYInput.removeEventListener('change', this._onMaterialVariationDebugChange);
         this.hideSelectionBorderInput.removeEventListener('change', this._onHideSelectionBorderChange);
         this.viewModeRow.removeEventListener('click', this._onViewModeClick);
         this.addRoadBtn.removeEventListener('click', this._onAddRoad);
