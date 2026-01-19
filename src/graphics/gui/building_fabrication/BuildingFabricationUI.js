@@ -4334,6 +4334,42 @@ export class BuildingFabricationUI {
 	                    )
 	                });
 	                brickLayoutGroup.body.appendChild(mortarWidthRow.row);
+
+	                const brickOffsetXRow = makeRangeRow('Layout offset X (cells)');
+	                brickOffsetXRow.range.min = '-10';
+	                brickOffsetXRow.range.max = '10';
+	                brickOffsetXRow.range.step = '0.01';
+	                brickOffsetXRow.number.min = '-10';
+	                brickOffsetXRow.number.max = '10';
+	                brickOffsetXRow.number.step = '0.01';
+	                brickOffsetXRow.range.value = String(brickCfg?.offsetX ?? 0.0);
+	                brickOffsetXRow.number.value = formatFloat(brickCfg?.offsetX ?? 0.0, 2);
+	                applyRangeRowMeta(brickOffsetXRow, {
+	                    tooltip: tip(
+	                        'Shifts the brick grid horizontally for this section (in brick cell units).',
+	                        'Use small values (0–1) to de-sync sections without changing brick scale.',
+	                        '0 keeps the original alignment.'
+	                    )
+	                });
+	                brickLayoutGroup.body.appendChild(brickOffsetXRow.row);
+
+	                const brickOffsetYRow = makeRangeRow('Layout offset Y (cells)');
+	                brickOffsetYRow.range.min = '-10';
+	                brickOffsetYRow.range.max = '10';
+	                brickOffsetYRow.range.step = '0.01';
+	                brickOffsetYRow.number.min = '-10';
+	                brickOffsetYRow.number.max = '10';
+	                brickOffsetYRow.number.step = '0.01';
+	                brickOffsetYRow.range.value = String(brickCfg?.offsetY ?? 0.0);
+	                brickOffsetYRow.number.value = formatFloat(brickCfg?.offsetY ?? 0.0, 2);
+	                applyRangeRowMeta(brickOffsetYRow, {
+	                    tooltip: tip(
+	                        'Shifts the brick grid vertically for this section (in brick cell units).',
+	                        'Use small values (0–1) to de-sync sections without changing brick scale.',
+	                        '0 keeps the original alignment.'
+	                    )
+	                });
+	                brickLayoutGroup.body.appendChild(brickOffsetYRow.row);
 	                wallMatVarBrickGroup.body.appendChild(brickLayoutGroup.details);
 
 	                const stairGroup = makeDetailsSection('Stair shift', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:stair` });
@@ -5501,6 +5537,10 @@ export class BuildingFabricationUI {
 	                    bricksPerTileYRow.number.disabled = bricksPerTileYRow.range.disabled;
 	                    mortarWidthRow.range.disabled = !allow || !enabled;
 	                    mortarWidthRow.number.disabled = mortarWidthRow.range.disabled;
+	                    brickOffsetXRow.range.disabled = !allow || !enabled;
+	                    brickOffsetXRow.number.disabled = brickOffsetXRow.range.disabled;
+	                    brickOffsetYRow.range.disabled = !allow || !enabled;
+	                    brickOffsetYRow.number.disabled = brickOffsetYRow.range.disabled;
 
 	                    stairToggle.input.disabled = !allow || !enabled;
 	                    stairStrengthRow.range.disabled = !allow || !enabled || !stairToggle.input.checked;
@@ -6559,6 +6599,38 @@ export class BuildingFabricationUI {
 	                    layer.materialVariation.brick.mortarWidth = next;
 	                    mortarWidthRow.range.value = String(next);
 	                    mortarWidthRow.number.value = formatFloat(next, 2);
+	                    this._notifySelectedLayersChanged();
+	                });
+
+	                brickOffsetXRow.range.addEventListener('input', () => {
+	                    const next = clamp(brickOffsetXRow.range.value, -10.0, 10.0);
+	                    layer.materialVariation.brick ??= {};
+	                    layer.materialVariation.brick.offsetX = next;
+	                    brickOffsetXRow.number.value = formatFloat(next, 2);
+	                    this._notifySelectedLayersChanged();
+	                });
+	                brickOffsetXRow.number.addEventListener('change', () => {
+	                    const next = clamp(brickOffsetXRow.number.value, -10.0, 10.0);
+	                    layer.materialVariation.brick ??= {};
+	                    layer.materialVariation.brick.offsetX = next;
+	                    brickOffsetXRow.range.value = String(next);
+	                    brickOffsetXRow.number.value = formatFloat(next, 2);
+	                    this._notifySelectedLayersChanged();
+	                });
+
+	                brickOffsetYRow.range.addEventListener('input', () => {
+	                    const next = clamp(brickOffsetYRow.range.value, -10.0, 10.0);
+	                    layer.materialVariation.brick ??= {};
+	                    layer.materialVariation.brick.offsetY = next;
+	                    brickOffsetYRow.number.value = formatFloat(next, 2);
+	                    this._notifySelectedLayersChanged();
+	                });
+	                brickOffsetYRow.number.addEventListener('change', () => {
+	                    const next = clamp(brickOffsetYRow.number.value, -10.0, 10.0);
+	                    layer.materialVariation.brick ??= {};
+	                    layer.materialVariation.brick.offsetY = next;
+	                    brickOffsetYRow.range.value = String(next);
+	                    brickOffsetYRow.number.value = formatFloat(next, 2);
 	                    this._notifySelectedLayersChanged();
 	                });
 	
@@ -9364,6 +9436,42 @@ export class BuildingFabricationUI {
 	                    )
 	                });
 	                roofBrickLayoutGroup.body.appendChild(roofMortarWidthRow.row);
+
+	                const roofBrickOffsetXRow = makeRangeRow('Layout offset X (cells)');
+	                roofBrickOffsetXRow.range.min = '-10';
+	                roofBrickOffsetXRow.range.max = '10';
+	                roofBrickOffsetXRow.range.step = '0.01';
+	                roofBrickOffsetXRow.number.min = '-10';
+	                roofBrickOffsetXRow.number.max = '10';
+	                roofBrickOffsetXRow.number.step = '0.01';
+	                roofBrickOffsetXRow.range.value = String(roofBrickCfg?.offsetX ?? 0.0);
+	                roofBrickOffsetXRow.number.value = formatFloat(roofBrickCfg?.offsetX ?? 0.0, 2);
+	                applyRangeRowMeta(roofBrickOffsetXRow, {
+	                    tooltip: tip(
+	                        'Shifts the brick grid horizontally for this roof section (in brick cell units).',
+	                        'Use small values (0–1) to de-sync sections without changing brick scale.',
+	                        '0 keeps the original alignment.'
+	                    )
+	                });
+	                roofBrickLayoutGroup.body.appendChild(roofBrickOffsetXRow.row);
+
+	                const roofBrickOffsetYRow = makeRangeRow('Layout offset Y (cells)');
+	                roofBrickOffsetYRow.range.min = '-10';
+	                roofBrickOffsetYRow.range.max = '10';
+	                roofBrickOffsetYRow.range.step = '0.01';
+	                roofBrickOffsetYRow.number.min = '-10';
+	                roofBrickOffsetYRow.number.max = '10';
+	                roofBrickOffsetYRow.number.step = '0.01';
+	                roofBrickOffsetYRow.range.value = String(roofBrickCfg?.offsetY ?? 0.0);
+	                roofBrickOffsetYRow.number.value = formatFloat(roofBrickCfg?.offsetY ?? 0.0, 2);
+	                applyRangeRowMeta(roofBrickOffsetYRow, {
+	                    tooltip: tip(
+	                        'Shifts the brick grid vertically for this roof section (in brick cell units).',
+	                        'Use small values (0–1) to de-sync sections without changing brick scale.',
+	                        '0 keeps the original alignment.'
+	                    )
+	                });
+	                roofBrickLayoutGroup.body.appendChild(roofBrickOffsetYRow.row);
 	                roofMatVarBrickGroup.body.appendChild(roofBrickLayoutGroup.details);
 
 		                const roofStairGroup = makeDetailsSection('Stair shift', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:stair` });
@@ -10530,6 +10638,10 @@ export class BuildingFabricationUI {
 	                    roofBricksPerTileYRow.number.disabled = roofBricksPerTileYRow.range.disabled;
 	                    roofMortarWidthRow.range.disabled = !allow || !enabled;
 	                    roofMortarWidthRow.number.disabled = roofMortarWidthRow.range.disabled;
+	                    roofBrickOffsetXRow.range.disabled = !allow || !enabled;
+	                    roofBrickOffsetXRow.number.disabled = roofBrickOffsetXRow.range.disabled;
+	                    roofBrickOffsetYRow.range.disabled = !allow || !enabled;
+	                    roofBrickOffsetYRow.number.disabled = roofBrickOffsetYRow.range.disabled;
 
 	                    roofPerBrickToggle.input.disabled = !allow || !enabled;
 	                    roofPerBrickStrengthRow.range.disabled = !allow || !enabled || !roofPerBrickToggle.input.checked;
@@ -11580,6 +11692,38 @@ export class BuildingFabricationUI {
                     layer.roof.materialVariation.brick.mortarWidth = next;
                     roofMortarWidthRow.range.value = String(next);
                     roofMortarWidthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofBrickOffsetXRow.range.addEventListener('input', () => {
+                    const next = clamp(roofBrickOffsetXRow.range.value, -10.0, 10.0);
+                    layer.roof.materialVariation.brick ??= {};
+                    layer.roof.materialVariation.brick.offsetX = next;
+                    roofBrickOffsetXRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofBrickOffsetXRow.number.addEventListener('change', () => {
+                    const next = clamp(roofBrickOffsetXRow.number.value, -10.0, 10.0);
+                    layer.roof.materialVariation.brick ??= {};
+                    layer.roof.materialVariation.brick.offsetX = next;
+                    roofBrickOffsetXRow.range.value = String(next);
+                    roofBrickOffsetXRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofBrickOffsetYRow.range.addEventListener('input', () => {
+                    const next = clamp(roofBrickOffsetYRow.range.value, -10.0, 10.0);
+                    layer.roof.materialVariation.brick ??= {};
+                    layer.roof.materialVariation.brick.offsetY = next;
+                    roofBrickOffsetYRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofBrickOffsetYRow.number.addEventListener('change', () => {
+                    const next = clamp(roofBrickOffsetYRow.number.value, -10.0, 10.0);
+                    layer.roof.materialVariation.brick ??= {};
+                    layer.roof.materialVariation.brick.offsetY = next;
+                    roofBrickOffsetYRow.range.value = String(next);
+                    roofBrickOffsetYRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
 

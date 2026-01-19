@@ -2,7 +2,7 @@
 // Applies deterministic, composable procedural material variation to MeshStandardMaterial via shader injection.
 import * as THREE from 'three';
 
-const MATVAR_SHADER_VERSION = 11;
+const MATVAR_SHADER_VERSION = 12;
 const MATVAR_MACRO_LAYERS_MAX = 4;
 
 const EPS = 1e-6;
@@ -250,6 +250,8 @@ export function getDefaultMaterialVariationPreset(root = MATERIAL_VARIATION_ROOT
             brick: {
                 bricksPerTileX: 6.0,
                 bricksPerTileY: 3.0,
+                offsetX: 0.0,
+                offsetY: 0.0,
                 mortarWidth: 0.08,
                 perBrick: { enabled: false, strength: 0.0, scale: 1.0, hueDegrees: 0.0, value: 0.06, saturation: 0.05, roughness: 0.1, normal: 0.0 },
                 mortar: { enabled: false, strength: 0.0, scale: 1.0, hueDegrees: 0.0, value: -0.12, saturation: -0.05, roughness: 0.22, normal: 0.0 }
@@ -322,6 +324,8 @@ export function getDefaultMaterialVariationPreset(root = MATERIAL_VARIATION_ROOT
         brick: {
             bricksPerTileX: 6.0,
             bricksPerTileY: 3.0,
+            offsetX: 0.0,
+            offsetY: 0.0,
             mortarWidth: 0.08,
             perBrick: { enabled: false, strength: 0.0, scale: 1.0, hueDegrees: 0.0, value: 0.06, saturation: 0.05, roughness: 0.12, normal: 0.0 },
             mortar: { enabled: false, strength: 0.0, scale: 1.0, hueDegrees: 0.0, value: -0.14, saturation: -0.06, roughness: 0.26, normal: 0.0 }
@@ -534,6 +538,8 @@ export function normalizeMaterialVariationConfig(input, { root = MATERIAL_VARIAT
     const brickPreset = preset.brick ?? {};
     const bricksPerTileX = clamp(brick.bricksPerTileX ?? brick.bricksX ?? brickPreset.bricksPerTileX ?? 6.0, 0.25, 200.0);
     const bricksPerTileY = clamp(brick.bricksPerTileY ?? brick.bricksY ?? brickPreset.bricksPerTileY ?? 3.0, 0.25, 200.0);
+    const brickOffsetX = clamp(brick.offsetX ?? brick.offsetU ?? brick.phaseX ?? brickPreset.offsetX ?? 0.0, -1000.0, 1000.0);
+    const brickOffsetY = clamp(brick.offsetY ?? brick.offsetV ?? brick.phaseY ?? brickPreset.offsetY ?? 0.0, -1000.0, 1000.0);
     const mortarWidth = clamp(brick.mortarWidth ?? brick.mortar ?? brickPreset.mortarWidth ?? 0.08, 0.0, 0.49);
     const perBrick = normalizeLayerLike(brick.perBrick ?? brick.brick ?? brickPreset.perBrick, brickPreset.perBrick, { enabledDefault: false });
     const mortar = normalizeLayerLike(brick.mortar ?? brickPreset.mortar, brickPreset.mortar, { enabledDefault: false });
@@ -598,6 +604,8 @@ export function normalizeMaterialVariationConfig(input, { root = MATERIAL_VARIAT
         brick: {
             bricksPerTileX,
             bricksPerTileY,
+            offsetX: brickOffsetX,
+            offsetY: brickOffsetY,
             mortarWidth,
             perBrick,
             mortar
@@ -769,6 +777,7 @@ function buildUniformBundle({
         brick1: new THREE.Vector4(brick?.mortarWidth ?? 0.08, perBrickHue, mortarHue, 0.0),
         brick2: new THREE.Vector4(perBrick?.value ?? 0.0, perBrick?.saturation ?? 0.0, perBrick?.roughness ?? 0.0, perBrick?.normal ?? 0.0),
         brick3: new THREE.Vector4(mortar?.value ?? 0.0, mortar?.saturation ?? 0.0, mortar?.roughness ?? 0.0, mortar?.normal ?? 0.0),
+        brickLayout: new THREE.Vector4(brick?.offsetX ?? 0.0, brick?.offsetY ?? 0.0, 0.0, 0.0),
 
         wearTop: new THREE.Vector4(wearTop?.enabled ? wearTop.intensity : 0.0, wearTop?.scale ?? 1.0, wearTop?.width ?? 0.3, wearTopHue),
         wearTop2: new THREE.Vector4(wearTop?.value ?? 0.0, wearTop?.saturation ?? 0.0, wearTop?.roughness ?? 0.0, wearTop?.normal ?? 0.0),
@@ -821,6 +830,7 @@ function injectMatVarShader(material, shader) {
     shader.uniforms.uMatVarBrick1 = { value: cfg.uniforms.brick1 };
     shader.uniforms.uMatVarBrick2 = { value: cfg.uniforms.brick2 };
     shader.uniforms.uMatVarBrick3 = { value: cfg.uniforms.brick3 };
+    shader.uniforms.uMatVarBrickLayout = { value: cfg.uniforms.brickLayout };
     shader.uniforms.uMatVarWearTop = { value: cfg.uniforms.wearTop };
     shader.uniforms.uMatVarWearTop2 = { value: cfg.uniforms.wearTop2 };
     shader.uniforms.uMatVarWearBottom = { value: cfg.uniforms.wearBottom };
@@ -906,6 +916,7 @@ function injectMatVarShader(material, shader) {
         'uniform vec4 uMatVarBrick1;',
         'uniform vec4 uMatVarBrick2;',
         'uniform vec4 uMatVarBrick3;',
+        'uniform vec4 uMatVarBrickLayout;',
         'uniform vec4 uMatVarWearTop;',
         'uniform vec4 uMatVarWearTop2;',
         'uniform vec4 uMatVarWearBottom;',
@@ -1179,9 +1190,12 @@ function injectMatVarShader(material, shader) {
             'float brickStrength = uMatVarBrick0.x * mvIntensity;',
             'float mortarStrength = uMatVarBrick0.y * mvIntensity;',
             'if (brickStrength > 0.0 || mortarStrength > 0.0) {',
-            'vec2 buv = mvMapUv * vec2(max(0.25, uMatVarBrick0.z), max(0.25, uMatVarBrick0.w));',
+            'vec2 buv = mvMapUv * vec2(max(0.25, uMatVarBrick0.z), max(0.25, uMatVarBrick0.w)) + uMatVarBrickLayout.xy;',
             'vec2 cell = floor(buv);',
             'vec2 f = fract(buv);',
+            'vec2 db = fwidth(buv);',
+            'float brickPx = max(db.x, db.y);',
+            'float brickFade = 1.0 - smoothstep(0.5, 1.5, brickPx);',
             'float mw = clamp(uMatVarBrick1.x, 0.0, 0.49);',
             'vec2 edge = min(f, 1.0 - f);',
             'float aa = fwidth(f.x) * 1.5 + 1e-6;',
@@ -1189,9 +1203,10 @@ function injectMatVarShader(material, shader) {
             'float my = 1.0 - smoothstep(mw, mw + aa, edge.y);',
             'float mortarMask = max(mx, my);',
             'float brickMask = 1.0 - mortarMask;',
-            'if (brickStrength > 0.0) {',
+            'float brickStrengthAA = brickStrength * brickFade;',
+            'if (brickStrengthAA > 0.0) {',
             'float r = mvHash12(cell + vec2(mvSeedOA * 11.3, mvSeedOB * 19.7));',
-            'float brickVar = (r * 2.0 - 1.0) * brickStrength;',
+            'float brickVar = (r * 2.0 - 1.0) * brickStrengthAA;',
             'mvApplyLayer(mvColor, mvRough, matVarNormalFactor, brickVar * brickMask, uMatVarBrick2, uMatVarBrick1.y);',
             '}',
             'if (mortarStrength > 0.0) {',
@@ -1521,6 +1536,8 @@ export function updateMaterialVariationOnMeshStandardMaterial(material, { seed, 
     cfg.uniforms.brick1.copy(uniforms.brick1);
     cfg.uniforms.brick2.copy(uniforms.brick2);
     cfg.uniforms.brick3.copy(uniforms.brick3);
+    if (cfg.uniforms.brickLayout?.copy) cfg.uniforms.brickLayout.copy(uniforms.brickLayout);
+    else cfg.uniforms.brickLayout = uniforms.brickLayout;
     cfg.uniforms.wearTop.copy(uniforms.wearTop);
     cfg.uniforms.wearTop2.copy(uniforms.wearTop2);
     cfg.uniforms.wearBottom.copy(uniforms.wearBottom);
@@ -1558,6 +1575,7 @@ export function updateMaterialVariationOnMeshStandardMaterial(material, { seed, 
     if (shaderUniforms?.uMatVarBrick1?.value) shaderUniforms.uMatVarBrick1.value = cfg.uniforms.brick1;
     if (shaderUniforms?.uMatVarBrick2?.value) shaderUniforms.uMatVarBrick2.value = cfg.uniforms.brick2;
     if (shaderUniforms?.uMatVarBrick3?.value) shaderUniforms.uMatVarBrick3.value = cfg.uniforms.brick3;
+    if (shaderUniforms?.uMatVarBrickLayout?.value) shaderUniforms.uMatVarBrickLayout.value = cfg.uniforms.brickLayout;
     if (shaderUniforms?.uMatVarWearTop?.value) shaderUniforms.uMatVarWearTop.value = cfg.uniforms.wearTop;
     if (shaderUniforms?.uMatVarWearTop2?.value) shaderUniforms.uMatVarWearTop2.value = cfg.uniforms.wearTop2;
     if (shaderUniforms?.uMatVarWearBottom?.value) shaderUniforms.uMatVarWearBottom.value = cfg.uniforms.wearBottom;

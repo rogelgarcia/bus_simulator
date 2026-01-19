@@ -164,7 +164,7 @@ async function runTests() {
 
     // ========== Material Variation Tests ==========
     const THREE = await import('three');
-    const { applyMaterialVariationToMeshStandardMaterial, MATERIAL_VARIATION_ROOT } = await import('/src/graphics/assets3d/materials/MaterialVariationSystem.js');
+    const { applyMaterialVariationToMeshStandardMaterial, normalizeMaterialVariationConfig, MATERIAL_VARIATION_ROOT } = await import('/src/graphics/assets3d/materials/MaterialVariationSystem.js');
 
     test('MaterialVariationSystem: normal map shader supports mat-var debug toggles', () => {
         const mat = new THREE.MeshStandardMaterial();
@@ -209,6 +209,61 @@ async function runTests() {
             shader.fragmentShader.includes('vec3 q0perp=cross(N,q0);') && shader.fragmentShader.includes('float scale=(det==0.0)?0.0:faceDirection*inversesqrt(det);'),
             'Expected mvPerturbNormal2Arb to use the cross-product tangent basis (matches Three.js).'
         );
+    });
+
+    test('MaterialVariationSystem: brick layout normalization keeps legacy fields compatible', () => {
+        const normalized = normalizeMaterialVariationConfig(
+            {
+                brick: { bricksX: 8, bricksY: 4, mortar: 0.12 }
+            },
+            { root: MATERIAL_VARIATION_ROOT.WALL }
+        );
+
+        assertNear(normalized.brick.bricksPerTileX, 8, 1e-6, 'Expected bricksX to map to bricksPerTileX.');
+        assertNear(normalized.brick.bricksPerTileY, 4, 1e-6, 'Expected bricksY to map to bricksPerTileY.');
+        assertNear(normalized.brick.mortarWidth, 0.12, 1e-6, 'Expected mortar to map to mortarWidth.');
+        assertNear(normalized.brick.offsetX, 0.0, 1e-6, 'Expected offsetX default to 0.');
+        assertNear(normalized.brick.offsetY, 0.0, 1e-6, 'Expected offsetY default to 0.');
+    });
+
+    test('MaterialVariationSystem: brick layout offsets flow into uniforms and shader uses stable hash inputs', () => {
+        const mat = new THREE.MeshStandardMaterial();
+        mat.map = new THREE.Texture();
+
+        applyMaterialVariationToMeshStandardMaterial(mat, {
+            seed: 1,
+            seedOffset: 0,
+            heightMin: 0,
+            heightMax: 1,
+            config: {
+                enabled: true,
+                brick: {
+                    offsetU: 0.25,
+                    offsetV: -0.5,
+                    perBrick: { enabled: true, strength: 1.0 }
+                }
+            },
+            root: MATERIAL_VARIATION_ROOT.WALL
+        });
+
+        const cfg = mat.userData.materialVariationConfig;
+        assertTrue(cfg.uniforms.brickLayout?.isVector4, 'Expected brickLayout uniforms to be a vec4.');
+        assertNear(cfg.uniforms.brickLayout.x, 0.25, 1e-6, 'Expected offsetU to map to brickLayout.x.');
+        assertNear(cfg.uniforms.brickLayout.y, -0.5, 1e-6, 'Expected offsetV to map to brickLayout.y.');
+
+        const shader = {
+            uniforms: {},
+            vertexShader: '#include <common>\nvoid main(){\n#include <begin_vertex>\n}\n',
+            fragmentShader: '#include <common>\n#include <map_fragment>\n#include <roughnessmap_fragment>\n'
+        };
+
+        mat.onBeforeCompile(shader, null);
+
+        assertTrue(shader.uniforms.uMatVarBrickLayout?.value?.isVector4, 'Expected uMatVarBrickLayout to be injected as a vec4 uniform.');
+        assertTrue(shader.fragmentShader.includes('uMatVarBrickLayout.xy'), 'Expected brick layout offsets to affect brick UVs.');
+        assertTrue(shader.fragmentShader.includes('float r = mvHash12(cell + vec2'), 'Expected per-brick randomization to hash stable cell IDs.');
+        assertTrue(shader.fragmentShader.includes('brickFade = 1.0 - smoothstep'), 'Expected per-brick variation to fade at distance to reduce flicker.');
+        assertFalse(shader.fragmentShader.includes('mvHash12(buv'), 'Expected per-brick hash input to avoid unstable raw UVs.');
     });
 
     // ========== Bus Catalog Tests ==========
