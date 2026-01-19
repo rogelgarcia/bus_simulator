@@ -3881,7 +3881,7 @@ async function runTests() {
             assertEqual((a.indices?.length ?? 0), Math.max(0, (a.vertices.length - 2) * 3), 'Expected N-2 triangulation indices.');
         });
 
-	        test('RoadEngineCompute: manual corner junction cuts segments and emits junction surface (AI 82)', () => {
+        test('RoadEngineCompute: manual corner junction cuts segments and emits junction surface (AI 82)', () => {
 	            const roads = [
 	                {
 	                    id: 'r1',
@@ -3921,6 +3921,58 @@ async function runTests() {
 
             const surface = (out?.primitives ?? []).find((p) => p?.kind === 'junction_surface' && p?.junctionId === junction.id) ?? null;
             assertTrue(!!surface, 'Expected a junction_surface primitive for the corner junction.');
+        });
+
+        test('RoadEngineCompute: TAT exposes build tangents for hover debugging', () => {
+            const roads = [
+                {
+                    id: 'h',
+                    lanesF: 2,
+                    lanesB: 2,
+                    points: [
+                        { id: 'h0', tileX: -20, tileY: 0, offsetU: 0, offsetV: 0, tangentFactor: 1 },
+                        { id: 'h1', tileX: 20, tileY: 0, offsetU: 0, offsetV: 0, tangentFactor: 1 }
+                    ]
+                },
+                {
+                    id: 'd',
+                    lanesF: 2,
+                    lanesB: 2,
+                    points: [
+                        { id: 'd0', tileX: -20, tileY: -20, offsetU: 0, offsetV: 0, tangentFactor: 1 },
+                        { id: 'd1', tileX: 20, tileY: 20, offsetU: 0, offsetV: 0, tangentFactor: 1 }
+                    ]
+                }
+            ];
+
+            const settings = {
+                origin: { x: 0, z: 0 },
+                tileSize: 1,
+                laneWidth: 1,
+                marginFactor: 0,
+                trim: { enabled: true, threshold: 0.001 },
+                junctions: { autoCreate: true, filletRadiusFactor: 1, minThreshold: 0 }
+            };
+
+            const out = computeRoadEngineEdges({ roads, settings });
+            const tats = (out?.junctions ?? []).flatMap((j) => (j?.tat ?? []));
+            const withArc = tats.filter((t) => (t?.arc?.radius ?? 0) > 1e-6 && (t?.arc?.spanAng ?? 0) > 1e-6);
+            assertTrue(withArc.length > 0, 'Expected at least one TAT arc.');
+            for (const t of withArc) {
+                assertTrue((t?.arc?.spanAng ?? 0) <= Math.PI + 1e-6, 'Expected TAT arc span to be a minor arc (<= π).');
+            }
+
+            const withBuild = withArc.find((t) => Array.isArray(t?.buildTangents) && t.buildTangents.length === 2) ?? null;
+            assertTrue(!!withBuild, 'Expected at least one TAT arc to include buildTangents.');
+            for (const line of withBuild.buildTangents) {
+                const ox = line?.origin?.x;
+                const oz = line?.origin?.z;
+                const dx = line?.dir?.x;
+                const dz = line?.dir?.z;
+                assertTrue(Number.isFinite(ox) && Number.isFinite(oz), 'Expected build tangent origin.');
+                assertTrue(Number.isFinite(dx) && Number.isFinite(dz), 'Expected build tangent dir.');
+                assertTrue(Math.hypot(dx, dz) > 0.8, 'Expected build tangent dir to be normalized-ish.');
+            }
         });
     } catch (e) {
         console.log('⏭️  Road engine tests skipped:', e.message);

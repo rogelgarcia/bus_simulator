@@ -106,6 +106,7 @@ function baseLineOpacityForKind(kind) {
 
 function baseLineRenderOrderForKind(kind) {
     switch (kind) {
+        case 'junction_tat_build_tangent': return 37;
         case 'junction_tat_tangent':
         case 'junction_tat_arc': return 36;
         case 'junction_connector': return 35;
@@ -3339,7 +3340,7 @@ export class RoadDebuggerView {
         const hover = this._hover ?? {};
         const junctionId = hover?.junctionId ?? null;
         const tatId = hover?.tatId ?? null;
-        const enabled = !!junctionId && !!tatId && !(this._junctionDebug?.tat === true);
+        const enabled = !!junctionId && !!tatId;
         const key = enabled ? `${junctionId}|${tatId}` : '';
         if (!force && key === this._hoverTatOverlayKey) return;
         this._hoverTatOverlayKey = key;
@@ -3356,9 +3357,9 @@ export class RoadDebuggerView {
 
         this._syncLineMaterialResolution();
         const lineY = this._groundY + 0.03;
-        const chord = Math.max(0.35, (Number(this._laneWidth) || 4.8) * 0.18);
+        const chord = Math.max(0.12, (Number(this._laneWidth) || 4.8) * 0.03);
 
-        const makeLine = (points, kind) => {
+        const makeLine = (points, { kind, color = 0x34c759, linewidth = baseLineWidthForKind(kind), opacity = 0.95 } = {}) => {
             const pts = Array.isArray(points) ? points.filter(Boolean) : [];
             if (pts.length < 2) return;
             const positions = [];
@@ -3370,13 +3371,14 @@ export class RoadDebuggerView {
             const geo = new LineGeometry();
             geo.setPositions(positions);
 
-            const mat = ensureMapEntry(this._materials.lineHover, kind, () => {
+            const matKey = `${kind}|${String(color)}`;
+            const mat = ensureMapEntry(this._materials.lineHover, matKey, () => {
                 const material = new LineMaterial({
-                    color: 0x34c759,
-                    linewidth: baseLineWidthForKind(kind),
+                    color,
+                    linewidth,
                     worldUnits: false,
                     transparent: true,
-                    opacity: 0.95,
+                    opacity,
                     depthTest: false,
                     depthWrite: false
                 });
@@ -3392,17 +3394,36 @@ export class RoadDebuggerView {
             group.add(line);
         };
 
+        const buildTangents = Array.isArray(tat?.buildTangents) ? tat.buildTangents : [];
+        if (buildTangents.length) {
+            const laneWidth = Number(this._laneWidth) || 4.8;
+            const maxLen = Math.max(2, laneWidth * 3);
+            const minLen = Math.max(1, laneWidth * 0.8);
+            for (const line of buildTangents) {
+                const origin = line?.origin ?? null;
+                const dir = line?.dir ?? null;
+                if (!origin || !dir) continue;
+                const rawLen = Number(line?.length);
+                const len = Number.isFinite(rawLen) && rawLen > 1e-6 ? Math.min(maxLen, Math.max(minLen, rawLen)) : maxLen;
+                const end = { x: Number(origin.x) + (Number(dir.x) || 0) * len, z: Number(origin.z) + (Number(dir.z) || 0) * len };
+                makeLine([origin, end], { kind: 'junction_tat_build_tangent', color: 0x93c5fd, linewidth: 1, opacity: 0.82 });
+            }
+        }
+
         for (const seg of tat?.tangents ?? []) {
             const a = seg?.a ?? null;
             const b = seg?.b ?? null;
             if (!a || !b) continue;
-            makeLine([a, b], 'junction_tat_tangent');
+            makeLine([a, b], { kind: 'junction_tat_tangent' });
         }
 
         const arc = tat?.arc ?? null;
         if (arc?.center && Number.isFinite(arc.radius) && arc.radius > 1e-6 && Number.isFinite(arc.startAng) && Number.isFinite(arc.spanAng) && arc.spanAng > 1e-6) {
             const arcLen = Math.abs(Number(arc.spanAng) || 0) * (Number(arc.radius) || 0);
-            const segments = Math.max(6, Math.min(96, Math.ceil(arcLen / chord)));
+            const span = Math.abs(Number(arc.spanAng) || 0);
+            const chordSegments = Math.ceil(arcLen / chord);
+            const angleSegments = Math.ceil(span / (Math.PI / 24));
+            const segments = Math.max(8, Math.min(96, Math.max(chordSegments, angleSegments)));
             const pts = sampleArcXZ({
                 center: arc.center,
                 radius: arc.radius,
@@ -3411,7 +3432,7 @@ export class RoadDebuggerView {
                 ccw: arc.ccw !== false,
                 segments
             });
-            makeLine(pts, 'junction_tat_arc');
+            makeLine(pts, { kind: 'junction_tat_arc' });
         }
     }
 

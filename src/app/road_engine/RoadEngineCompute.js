@@ -719,8 +719,52 @@ function buildDegree2JunctionSurfaceXZ({ junctionId, endpoints, laneWidth, fille
         ? { a0: 'left', a1: 'right', b0: 'right', b1: 'left' }
         : { a0: 'left', a1: 'left', b0: 'right', b1: 'right' };
 
-    const chord = Math.max(0.35, (Number(laneWidth) || 4.8) * 0.18);
+    const chord = Math.max(0.12, (Number(laneWidth) || 4.8) * 0.03);
     const junctionCenter = centroid([e0?.world, e1?.world].filter(Boolean));
+    const centerHint = (() => {
+        const p0 = e0?.world ?? null;
+        const p1 = e1?.world ?? null;
+        if (!p0 || !p1) return null;
+        const hit = lineIntersectionXZ(p0, d0In, p1, d1In);
+        if (!hit) return null;
+        const turnCos = Math.max(-1, Math.min(1, dot2(d0In, d1In)));
+        const turnAngle = Math.acos(turnCos);
+        const t0 = Number(hit?.t) || 0;
+        const t1 = Number(hit?.u) || 0;
+        if (!(t0 > 1e-6 && t1 > 1e-6)) return null;
+        const distToMiter = Math.abs(t0 - t1) <= 1e-4 ? (t0 + t1) * 0.5 : Math.min(t0, t1);
+        const radius = (turnAngle > 1e-6 && turnAngle < Math.PI - 1e-6) ? distToMiter * Math.tan(turnAngle * 0.5) : 0;
+        if (!(radius > 1e-6)) return null;
+
+        const n0 = rightNormalXZ(d0In);
+        const n1 = rightNormalXZ(d1In);
+        const options0 = [n0, { x: -n0.x, z: -n0.z }];
+        const options1 = [n1, { x: -n1.x, z: -n1.z }];
+
+        let best = null;
+        let bestErr = Infinity;
+        let bestCenterDist = Infinity;
+        for (const out0 of options0) {
+            for (const out1 of options1) {
+                const candidate = computeEdgeFilletArcXZ({ p0, dir0: d0In, out0, p1, dir1: d1In, out1, radius });
+                if (!candidate?.center || !candidate?.tangent0 || !candidate?.tangent1) continue;
+                const err = distXZ(candidate.tangent0, p0) + distXZ(candidate.tangent1, p1);
+                const centerDist = junctionCenter ? distXZ(candidate.center, junctionCenter) : 0;
+                if (err < bestErr - 1e-6) {
+                    best = candidate;
+                    bestErr = err;
+                    bestCenterDist = centerDist;
+                    continue;
+                }
+                if (Math.abs(err - bestErr) <= 1e-6 && centerDist < bestCenterDist - 1e-6) {
+                    best = candidate;
+                    bestCenterDist = centerDist;
+                }
+            }
+        }
+
+        return best?.center ?? null;
+    })();
 
     const buildTat = ({ aSide, bSide }) => {
         const p0 = getEdgePoint(e0, aSide);
@@ -730,7 +774,25 @@ function buildDegree2JunctionSurfaceXZ({ junctionId, endpoints, laneWidth, fille
         const turnAngle = Math.acos(turnCos);
         const d0 = Number(hit?.t) || 0;
         const d1 = Number(hit?.u) || 0;
-        const d = (d0 > 1e-6 && d1 > 1e-6) ? Math.min(d0, d1) : 0;
+        const buildTangents = hit
+            ? [
+                {
+                    origin: { x: Number(p0.x) || 0, z: Number(p0.z) || 0 },
+                    dir: { x: Number(d0In.x) || 0, z: Number(d0In.z) || 0 },
+                    miter: { x: Number(hit.x) || 0, z: Number(hit.z) || 0 },
+                    length: Math.abs(Number(hit.t) || 0)
+                },
+                {
+                    origin: { x: Number(p1.x) || 0, z: Number(p1.z) || 0 },
+                    dir: { x: Number(d1In.x) || 0, z: Number(d1In.z) || 0 },
+                    miter: { x: Number(hit.x) || 0, z: Number(hit.z) || 0 },
+                    length: Math.abs(Number(hit.u) || 0)
+                }
+            ]
+            : null;
+        const d = (d0 > 1e-6 && d1 > 1e-6)
+            ? (Math.abs(d0 - d1) <= 1e-4 ? (d0 + d1) * 0.5 : Math.min(d0, d1))
+            : 0;
         const radius = (d > 1e-6 && turnAngle > 1e-6 && turnAngle < Math.PI - 1e-6)
             ? d * Math.tan(turnAngle * 0.5)
             : 0;
@@ -742,15 +804,24 @@ function buildDegree2JunctionSurfaceXZ({ junctionId, endpoints, laneWidth, fille
             const options1 = [n1, { x: -n1.x, z: -n1.z }];
 
             let best = null;
-            let bestScore = Infinity;
+            let bestErr = Infinity;
+            let bestCenterScore = Infinity;
             for (const out0 of options0) {
                 for (const out1 of options1) {
                     const candidate = computeEdgeFilletArcXZ({ p0, dir0: d0In, out0, p1, dir1: d1In, out1, radius });
                     if (!candidate?.center || !candidate?.tangent0 || !candidate?.tangent1) continue;
-                    const score = distXZ(candidate.tangent0, p0) + distXZ(candidate.tangent1, p1) + distXZ(candidate.center, junctionCenter) * 0.001;
-                    if (score < bestScore - 1e-9) {
+                    const err = distXZ(candidate.tangent0, p0) + distXZ(candidate.tangent1, p1);
+                    const hint = centerHint ?? junctionCenter ?? null;
+                    const centerScore = hint ? distXZ(candidate.center, hint) : 0;
+                    if (err < bestErr - 1e-6) {
                         best = candidate;
-                        bestScore = score;
+                        bestErr = err;
+                        bestCenterScore = centerScore;
+                        continue;
+                    }
+                    if (Math.abs(err - bestErr) <= 1e-6 && centerScore < bestCenterScore - 1e-6) {
+                        best = candidate;
+                        bestCenterScore = centerScore;
                     }
                 }
             }
@@ -821,6 +892,7 @@ function buildDegree2JunctionSurfaceXZ({ junctionId, endpoints, laneWidth, fille
             bSide,
             tangents,
             arc: arcRec,
+            buildTangents,
             points,
             a: { x: Number(p0?.x) || 0, z: Number(p0?.z) || 0 },
             b: { x: Number(p1?.x) || 0, z: Number(p1?.z) || 0 }
@@ -865,7 +937,8 @@ function buildDegree2JunctionSurfaceXZ({ junctionId, endpoints, laneWidth, fille
             bEndpointId: t.bEndpointId,
             bSide: t.bSide,
             tangents: t.tangents,
-            arc: t.arc
+            arc: t.arc,
+            buildTangents: t.buildTangents ?? null
         }))
     };
 }
@@ -879,37 +952,11 @@ function chooseFilletNormalTowardCenter(dir, point, center) {
     return dot2(left, toCenter) >= 0 ? left : { x: -left.x, z: -left.z };
 }
 
-function fitFilletArcXZ({ p0, dir0, out0, p1, dir1, out1, radiusMax }) {
-    const max = Number(radiusMax) || 0;
-    if (!(max > 1e-6)) return null;
-    let lo = 0;
-    let hi = max;
-    let best = null;
-    for (let iter = 0; iter < 22; iter++) {
-        const r = (lo + hi) * 0.5;
-        if (!(r > 1e-6)) break;
-        const arc = computeEdgeFilletArcXZ({ p0, dir0, out0, p1, dir1, out1, radius: r });
-        if (arc) {
-            const t0 = arc.tangent0 ?? null;
-            const t1 = arc.tangent1 ?? null;
-            const s0 = t0 ? dot2({ x: (t0.x ?? 0) - (p0.x ?? 0), z: (t0.z ?? 0) - (p0.z ?? 0) }, dir0) : -1;
-            const s1 = t1 ? dot2({ x: (t1.x ?? 0) - (p1.x ?? 0), z: (t1.z ?? 0) - (p1.z ?? 0) }, dir1) : -1;
-            if (s0 >= -1e-4 && s1 >= -1e-4) {
-                best = arc;
-                lo = r;
-                continue;
-            }
-        }
-        hi = r;
-    }
-    return best;
-}
-
 function buildJunctionBoundaryFilletsXZ({ junctionId, orderedEndpoints, center, laneWidth, filletRadiusFactor }) {
     const ordered = Array.isArray(orderedEndpoints) ? orderedEndpoints.filter(Boolean) : [];
     if (ordered.length < 2) return null;
     const baseFactor = Number.isFinite(filletRadiusFactor) ? Math.max(0, Math.min(1, Number(filletRadiusFactor))) : 1;
-    const chord = Math.max(0.35, (Number(laneWidth) || 4.8) * 0.18);
+    const chord = Math.max(0.12, (Number(laneWidth) || 4.8) * 0.03);
     const junctionCenter = { x: Number(center?.x) || 0, z: Number(center?.z) || 0 };
 
     const buildAttempt = (factor) => {
@@ -928,42 +975,93 @@ function buildJunctionBoundaryFilletsXZ({ junctionId, orderedEndpoints, center, 
         };
 
         const buildJoin = ({ aEndpoint, aSide, aPoint, aTangentDir, bEndpoint, bSide, bPoint, bTangentDir }) => {
-            const maxRadius = Math.max(0, Math.min(Number(aEndpoint?.connectRadius) || 0, Number(bEndpoint?.connectRadius) || 0) * factor);
-            const dir0 = normalizeVecXZ(aTangentDir);
-            const dir1 = normalizeVecXZ(bTangentDir);
-            if (!dir0 || !dir1) return null;
-            const baseOut0 = chooseFilletNormalTowardCenter(dir0, aPoint, junctionCenter);
-            const baseOut1 = chooseFilletNormalTowardCenter(dir1, bPoint, junctionCenter);
-
-            const outOptions0 = [baseOut0, { x: -baseOut0.x, z: -baseOut0.z }];
-            const outOptions1 = [baseOut1, { x: -baseOut1.x, z: -baseOut1.z }];
+            const dirLine0 = normalizeVecXZ(aTangentDir);
+            const dirLine1 = normalizeVecXZ(bTangentDir);
             let arc = null;
-            for (const out0 of outOptions0) {
-                for (const out1 of outOptions1) {
-                    const candidate = fitFilletArcXZ({
-                        p0: aPoint,
-                        dir0,
-                        out0,
-                        p1: bPoint,
-                        dir1,
-                        out1,
-                        radiusMax: maxRadius
-                    });
-                    if (!candidate?.center) continue;
-                    if (!arc) {
-                        arc = candidate;
-                        continue;
-                    }
-                    const bestRadius = Number(arc.radius) || 0;
-                    const nextRadius = Number(candidate.radius) || 0;
-                    const bestCenterDist = distXZ(arc.center, junctionCenter);
-                    const nextCenterDist = distXZ(candidate.center, junctionCenter);
-                    if (nextRadius > bestRadius + 1e-6) {
-                        arc = candidate;
-                        continue;
-                    }
-                    if (Math.abs(nextRadius - bestRadius) <= 1e-6 && nextCenterDist < bestCenterDist - 1e-6) {
-                        arc = candidate;
+            let buildTangents = null;
+            if (dirLine0 && dirLine1 && factor > 1e-6) {
+                const hit = lineIntersectionXZ(aPoint, dirLine0, bPoint, dirLine1);
+                const dir0 = hit ? normalizeVecXZ({ x: (Number(hit.x) || 0) - (Number(aPoint?.x) || 0), z: (Number(hit.z) || 0) - (Number(aPoint?.z) || 0) }) : null;
+                const dir1 = hit ? normalizeVecXZ({ x: (Number(hit.x) || 0) - (Number(bPoint?.x) || 0), z: (Number(hit.z) || 0) - (Number(bPoint?.z) || 0) }) : null;
+                if (hit && dir0 && dir1) {
+                    const t0 = Math.hypot((Number(hit.x) || 0) - (Number(aPoint?.x) || 0), (Number(hit.z) || 0) - (Number(aPoint?.z) || 0));
+                    const t1 = Math.hypot((Number(hit.x) || 0) - (Number(bPoint?.x) || 0), (Number(hit.z) || 0) - (Number(bPoint?.z) || 0));
+                    buildTangents = [
+                        {
+                            origin: { x: Number(aPoint.x) || 0, z: Number(aPoint.z) || 0 },
+                            dir: { x: Number(dir0.x) || 0, z: Number(dir0.z) || 0 },
+                            miter: { x: Number(hit.x) || 0, z: Number(hit.z) || 0 },
+                            length: Number.isFinite(t0) ? t0 : 0
+                        },
+                        {
+                            origin: { x: Number(bPoint.x) || 0, z: Number(bPoint.z) || 0 },
+                            dir: { x: Number(dir1.x) || 0, z: Number(dir1.z) || 0 },
+                            miter: { x: Number(hit.x) || 0, z: Number(hit.z) || 0 },
+                            length: Number.isFinite(t1) ? t1 : 0
+                        }
+                    ];
+                    const turnCos = Math.max(-1, Math.min(1, dot2(dir0, dir1)));
+                    const turnAngle = Math.acos(turnCos);
+                    const distToMiter = (t0 > 1e-6 && t1 > 1e-6)
+                        ? (Math.abs(t0 - t1) <= 1e-4 ? (t0 + t1) * 0.5 : Math.min(t0, t1))
+                        : 0;
+                    const radiusGeom = (distToMiter > 1e-6 && turnAngle > 1e-6 && turnAngle < Math.PI - 1e-6)
+                        ? distToMiter * Math.tan(turnAngle * 0.5)
+                        : 0;
+                    const radius = radiusGeom * Math.max(0, Math.min(1, Number(factor) || 0));
+                    if (radius > 1e-6) {
+                        const baseOut0 = chooseFilletNormalTowardCenter(dir0, aPoint, junctionCenter);
+                        const baseOut1 = chooseFilletNormalTowardCenter(dir1, bPoint, junctionCenter);
+                        const outOptions0 = [baseOut0, { x: -baseOut0.x, z: -baseOut0.z }];
+                        const outOptions1 = [baseOut1, { x: -baseOut1.x, z: -baseOut1.z }];
+                        let best = null;
+                        let bestSide = -1;
+                        let bestErr = Infinity;
+                        let bestMid = Infinity;
+                        for (const out0 of outOptions0) {
+                            for (const out1 of outOptions1) {
+                                const candidate = computeEdgeFilletArcXZ({ p0: aPoint, dir0, out0, p1: bPoint, dir1, out1, radius });
+                                if (!candidate?.center || !candidate?.tangent0 || !candidate?.tangent1) continue;
+                                const s0 = dot2({ x: (Number(candidate.tangent0.x) || 0) - (Number(aPoint?.x) || 0), z: (Number(candidate.tangent0.z) || 0) - (Number(aPoint?.z) || 0) }, dir0);
+                                const s1 = dot2({ x: (Number(candidate.tangent1.x) || 0) - (Number(bPoint?.x) || 0), z: (Number(candidate.tangent1.z) || 0) - (Number(bPoint?.z) || 0) }, dir1);
+                                if (s0 < -1e-4 || s1 < -1e-4) continue;
+                                const err = distXZ(candidate.tangent0, aPoint) + distXZ(candidate.tangent1, bPoint);
+                                const span = Number(candidate.spanAng) || 0;
+                                const arcRadius = Number(candidate.radius) || radius;
+                                const midDir = candidate.ccw !== false ? 1 : -1;
+                                const midAng = Number(candidate.startAng) + midDir * span * 0.5;
+                                const midPoint = { x: Number(candidate.center.x) + Math.cos(midAng) * arcRadius, z: Number(candidate.center.z) + Math.sin(midAng) * arcRadius };
+                                const midDist = distXZ(midPoint, junctionCenter);
+
+                                const side0 = cross2(dir0, { x: (Number(junctionCenter.x) || 0) - (Number(aPoint?.x) || 0), z: (Number(junctionCenter.z) || 0) - (Number(aPoint?.z) || 0) });
+                                const side1 = cross2(dir1, { x: (Number(junctionCenter.x) || 0) - (Number(bPoint?.x) || 0), z: (Number(junctionCenter.z) || 0) - (Number(bPoint?.z) || 0) });
+                                const cSide0 = cross2(dir0, { x: (Number(candidate.center.x) || 0) - (Number(aPoint?.x) || 0), z: (Number(candidate.center.z) || 0) - (Number(aPoint?.z) || 0) });
+                                const cSide1 = cross2(dir1, { x: (Number(candidate.center.x) || 0) - (Number(bPoint?.x) || 0), z: (Number(candidate.center.z) || 0) - (Number(bPoint?.z) || 0) });
+                                const sideOk0 = Math.abs(side0) <= 1e-8 || Math.abs(cSide0) <= 1e-8 || side0 * cSide0 >= 0;
+                                const sideOk1 = Math.abs(side1) <= 1e-8 || Math.abs(cSide1) <= 1e-8 || side1 * cSide1 >= 0;
+                                const sideScore = (sideOk0 ? 1 : 0) + (sideOk1 ? 1 : 0);
+
+                                if (sideScore > bestSide) {
+                                    best = candidate;
+                                    bestSide = sideScore;
+                                    bestErr = err;
+                                    bestMid = midDist;
+                                    continue;
+                                }
+                                if (sideScore < bestSide) continue;
+                                if (err < bestErr - 1e-6) {
+                                    best = candidate;
+                                    bestErr = err;
+                                    bestMid = midDist;
+                                    continue;
+                                }
+                                if (Math.abs(err - bestErr) <= 1e-6 && midDist < bestMid - 1e-6) {
+                                    best = candidate;
+                                    bestMid = midDist;
+                                }
+                            }
+                        }
+                        arc = best;
                     }
                 }
             }
@@ -1032,7 +1130,8 @@ function buildJunctionBoundaryFilletsXZ({ junctionId, orderedEndpoints, center, 
                     bEndpointId: bEndpoint?.id ?? null,
                     bSide,
                     tangents,
-                    arc: arcRec
+                    arc: arcRec,
+                    buildTangents
                 }
             };
         };
@@ -1622,16 +1721,25 @@ export function computeRoadEngineEdges({ roads = [], settings = {} } = {}) {
             const maxFilletRadius = Math.max(0, radius * Math.max(0, Math.min(1, Number(junctionFilletRadiusFactor) || 0)));
             const local = maxFilletRadius * Math.tan(cornerAngle * 0.5) * Math.max(0, Number(junctionThresholdFactor) || 0);
             const cutDistance = Math.min(junctionMaxThreshold, Math.max(0, local));
-            corner.cutDistance = cutDistance;
+            const minKeep = Math.max(0, snapStep);
+            const inLen = Number(inSeg?.length) || 0;
+            const outLen = Number(outSeg?.length) || 0;
+            const inMax = inLen > 1e-6 ? Math.max(0, inLen - minKeep) : 0;
+            const outMax = outLen > 1e-6 ? Math.max(0, outLen - minKeep) : 0;
+            const dist = (inSeg && outSeg)
+                ? Math.max(0, Math.min(cutDistance, inMax, outMax))
+                : Math.max(0, cutDistance);
+            corner.cutDistance = dist;
 
-            const pushCut = (seg, mode) => {
+            const pushCut = (seg, mode, appliedDistance) => {
                 if (!seg) return;
                 const len = Number(seg.length) || 0;
                 if (!(len > 1e-6)) return;
-                const minKeep = Math.max(0, snapStep);
-                const dist = Math.max(0, Math.min(cutDistance, Math.max(0, len - minKeep)));
-                if (!(dist > 1e-6)) return;
-                const t = clamp01(dist / len);
+                const keep = Math.max(0, snapStep);
+                const max = Math.max(0, len - keep);
+                const distFinal = Math.max(0, Math.min(Number(appliedDistance) || 0, max));
+                if (!(distFinal > 1e-6)) return;
+                const t = clamp01(distFinal / len);
                 const interval = mode === 'start'
                     ? { t0: 0, t1: t }
                     : { t0: clamp01(1 - t), t1: 1 };
@@ -1640,8 +1748,13 @@ export function computeRoadEngineEdges({ roads = [], settings = {} } = {}) {
                 intervalsBySeg.get(seg.id).push({ ...interval, sourceIds: [cornerId] });
             };
 
-            pushCut(inSeg, 'end');
-            pushCut(outSeg, 'start');
+            if (inSeg && outSeg) {
+                pushCut(inSeg, 'end', dist);
+                pushCut(outSeg, 'start', dist);
+            } else {
+                pushCut(inSeg, 'end', cutDistance);
+                pushCut(outSeg, 'start', cutDistance);
+            }
         }
 
         for (const seg of segments) {
@@ -2157,7 +2270,7 @@ export function computeRoadEngineEdges({ roads = [], settings = {} } = {}) {
             }
 
             if (junctionsSettings.debug?.tat && tat.length) {
-                const chord = Math.max(0.35, (Number(resolvedSettings.laneWidth) || 4.8) * 0.18);
+                const chord = Math.max(0.12, (Number(resolvedSettings.laneWidth) || 4.8) * 0.03);
                 for (const item of tat) {
                     const tatId = item?.id ?? null;
                     if (!tatId) continue;
