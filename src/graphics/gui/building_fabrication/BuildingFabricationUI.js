@@ -2569,13 +2569,15 @@ export class BuildingFabricationUI {
             if (!src) return true;
             const keys = Object.keys(src);
             for (const key of keys) {
-                if (key !== 'enabled' && key !== 'seedOffset') return false;
+                if (key !== 'enabled' && key !== 'seedOffset' && key !== 'normalMap') return false;
             }
             return true;
         };
 
-        const createDisabledMaterialVariationConfig = (root, { seedOffset = 0 } = {}) => {
+        const createDisabledMaterialVariationConfig = (root, { seedOffset = 0, normalMap = null } = {}) => {
             const preset = getDefaultMaterialVariationPreset(root);
+            const srcNormalMap = normalMap && typeof normalMap === 'object' ? normalMap : null;
+            const presetNormalMap = preset.normalMap && typeof preset.normalMap === 'object' ? preset.normalMap : {};
             return {
                 enabled: true,
                 seedOffset: clampInt(seedOffset, -9999, 9999),
@@ -2585,6 +2587,11 @@ export class BuildingFabricationUI {
                 objectSpaceScale: preset.objectSpaceScale,
                 globalIntensity: preset.globalIntensity,
                 aoAmount: preset.aoAmount,
+                normalMap: {
+                    flipX: srcNormalMap?.flipX === undefined ? !!presetNormalMap.flipX : !!srcNormalMap.flipX,
+                    flipY: srcNormalMap?.flipY === undefined ? !!presetNormalMap.flipY : !!srcNormalMap.flipY,
+                    flipZ: srcNormalMap?.flipZ === undefined ? !!presetNormalMap.flipZ : !!srcNormalMap.flipZ
+                },
                 macroLayers: [{ enabled: false }, { enabled: false }, { enabled: false }, { enabled: false }],
                 streaks: { enabled: false },
                 exposure: { enabled: false },
@@ -3157,6 +3164,54 @@ export class BuildingFabricationUI {
                     )
                 });
                 wallMatVarAdvancedGroup.body.appendChild(objectScaleRow.row);
+
+                const wallMatVarNormalMapGroup = makeDetailsSection('Normal map', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:normalMap` });
+                applyTooltip(
+                    wallMatVarNormalMapGroup.label,
+                    tip(
+                        'Per-layer normal map channel fixes.',
+                        'Typical: flip Y (green) if the normal map is authored for a different convention (DirectX vs OpenGL).',
+                        'Use with care: flipping X/Z can make lighting look inside-out.'
+                    )
+                );
+
+                const wallMatVarNormalFlipXToggle = makeToggleRow('Flip normal X (red)');
+                wallMatVarNormalFlipXToggle.input.checked = !!wallMatVarNormalized.normalMap?.flipX;
+                wallMatVarNormalFlipXToggle.input.disabled = !allow || !wallMatVarNormalized.enabled;
+                applyToggleRowMeta(wallMatVarNormalFlipXToggle, {
+                    tooltip: tip(
+                        'Flips the red channel of the normal map.',
+                        'Use if lighting looks mirrored left/right.',
+                        'Not commonly needed for standard OpenGL normal maps.'
+                    )
+                });
+                wallMatVarNormalMapGroup.body.appendChild(wallMatVarNormalFlipXToggle.toggle);
+
+                const wallMatVarNormalFlipYToggle = makeToggleRow('Flip normal Y (green)');
+                wallMatVarNormalFlipYToggle.input.checked = !!wallMatVarNormalized.normalMap?.flipY;
+                wallMatVarNormalFlipYToggle.input.disabled = !allow || !wallMatVarNormalized.enabled;
+                applyToggleRowMeta(wallMatVarNormalFlipYToggle, {
+                    tooltip: tip(
+                        'Flips the green channel of the normal map.',
+                        'Typical: enable when using DirectX-authored normal maps.',
+                        'If shading becomes worse, turn it back off.'
+                    )
+                });
+                wallMatVarNormalMapGroup.body.appendChild(wallMatVarNormalFlipYToggle.toggle);
+
+                const wallMatVarNormalFlipZToggle = makeToggleRow('Flip normal Z (blue)');
+                wallMatVarNormalFlipZToggle.input.checked = !!wallMatVarNormalized.normalMap?.flipZ;
+                wallMatVarNormalFlipZToggle.input.disabled = !allow || !wallMatVarNormalized.enabled;
+                applyToggleRowMeta(wallMatVarNormalFlipZToggle, {
+                    tooltip: tip(
+                        'Flips the blue channel of the normal map.',
+                        'Rarely needed.',
+                        'If enabled, lighting can look inverted.'
+                    )
+                });
+                wallMatVarNormalMapGroup.body.appendChild(wallMatVarNormalFlipZToggle.toggle);
+
+                wallMatVarAdvancedGroup.body.appendChild(wallMatVarNormalMapGroup.details);
 
                 const macro0 = wallMatVarNormalized.macroLayers?.[0] ?? null;
                 const macroGroup = makeDetailsSection('Macro layer 1', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:macro0` });
@@ -5326,6 +5381,9 @@ export class BuildingFabricationUI {
 	                    scaleRow.number.disabled = scaleRow.range.disabled;
                         objectScaleRow.range.disabled = !allow || !enabled || !objectSpace;
                         objectScaleRow.number.disabled = objectScaleRow.range.disabled;
+                        wallMatVarNormalFlipXToggle.input.disabled = !allow || !enabled;
+                        wallMatVarNormalFlipYToggle.input.disabled = !allow || !enabled;
+                        wallMatVarNormalFlipZToggle.input.disabled = !allow || !enabled;
 	                    aoAmountRow.range.disabled = !allow || !enabled;
 	                    aoAmountRow.number.disabled = aoAmountRow.range.disabled;
 
@@ -5555,7 +5613,10 @@ export class BuildingFabricationUI {
                     const wasEnabled = !!layer.materialVariation.enabled;
                     if (nextEnabled && !wasEnabled && isMinimalMaterialVariationConfig(layer.materialVariation)) {
                         const prevSeedOffset = clampInt(layer.materialVariation.seedOffset ?? 0, -9999, 9999);
-                        layer.materialVariation = createDisabledMaterialVariationConfig(MATERIAL_VARIATION_ROOT.WALL, { seedOffset: prevSeedOffset });
+                        const prevNormalMap = layer.materialVariation.normalMap && typeof layer.materialVariation.normalMap === 'object'
+                            ? { ...layer.materialVariation.normalMap }
+                            : null;
+                        layer.materialVariation = createDisabledMaterialVariationConfig(MATERIAL_VARIATION_ROOT.WALL, { seedOffset: prevSeedOffset, normalMap: prevNormalMap });
                         this._renderLayersPanel();
                         this._notifySelectedLayersChanged();
                         return;
@@ -5636,6 +5697,22 @@ export class BuildingFabricationUI {
                     layer.materialVariation.objectSpaceScale = next;
                     objectScaleRow.range.value = String(next);
                     objectScaleRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                wallMatVarNormalFlipXToggle.input.addEventListener('change', () => {
+                    layer.materialVariation.normalMap ??= {};
+                    layer.materialVariation.normalMap.flipX = !!wallMatVarNormalFlipXToggle.input.checked;
+                    this._notifySelectedLayersChanged();
+                });
+                wallMatVarNormalFlipYToggle.input.addEventListener('change', () => {
+                    layer.materialVariation.normalMap ??= {};
+                    layer.materialVariation.normalMap.flipY = !!wallMatVarNormalFlipYToggle.input.checked;
+                    this._notifySelectedLayersChanged();
+                });
+                wallMatVarNormalFlipZToggle.input.addEventListener('change', () => {
+                    layer.materialVariation.normalMap ??= {};
+                    layer.materialVariation.normalMap.flipZ = !!wallMatVarNormalFlipZToggle.input.checked;
                     this._notifySelectedLayersChanged();
                 });
 
@@ -8114,6 +8191,54 @@ export class BuildingFabricationUI {
                 });
                 roofMatVarAdvancedGroup.body.appendChild(roofObjectScaleRow.row);
 
+                const roofMatVarNormalMapGroup = makeDetailsSection('Normal map', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:normalMap` });
+                applyTooltip(
+                    roofMatVarNormalMapGroup.label,
+                    tip(
+                        'Per-layer normal map channel fixes.',
+                        'Typical: flip Y (green) if the normal map is authored for a different convention (DirectX vs OpenGL).',
+                        'Use with care: flipping X/Z can make lighting look inside-out.'
+                    )
+                );
+
+                const roofMatVarNormalFlipXToggle = makeToggleRow('Flip normal X (red)');
+                roofMatVarNormalFlipXToggle.input.checked = !!roofMatVarNormalized.normalMap?.flipX;
+                roofMatVarNormalFlipXToggle.input.disabled = !allow || !roofMatVarNormalized.enabled;
+                applyToggleRowMeta(roofMatVarNormalFlipXToggle, {
+                    tooltip: tip(
+                        'Flips the red channel of the normal map.',
+                        'Use if lighting looks mirrored left/right.',
+                        'Not commonly needed for standard OpenGL normal maps.'
+                    )
+                });
+                roofMatVarNormalMapGroup.body.appendChild(roofMatVarNormalFlipXToggle.toggle);
+
+                const roofMatVarNormalFlipYToggle = makeToggleRow('Flip normal Y (green)');
+                roofMatVarNormalFlipYToggle.input.checked = !!roofMatVarNormalized.normalMap?.flipY;
+                roofMatVarNormalFlipYToggle.input.disabled = !allow || !roofMatVarNormalized.enabled;
+                applyToggleRowMeta(roofMatVarNormalFlipYToggle, {
+                    tooltip: tip(
+                        'Flips the green channel of the normal map.',
+                        'Typical: enable when using DirectX-authored normal maps.',
+                        'If shading becomes worse, turn it back off.'
+                    )
+                });
+                roofMatVarNormalMapGroup.body.appendChild(roofMatVarNormalFlipYToggle.toggle);
+
+                const roofMatVarNormalFlipZToggle = makeToggleRow('Flip normal Z (blue)');
+                roofMatVarNormalFlipZToggle.input.checked = !!roofMatVarNormalized.normalMap?.flipZ;
+                roofMatVarNormalFlipZToggle.input.disabled = !allow || !roofMatVarNormalized.enabled;
+                applyToggleRowMeta(roofMatVarNormalFlipZToggle, {
+                    tooltip: tip(
+                        'Flips the blue channel of the normal map.',
+                        'Rarely needed.',
+                        'If enabled, lighting can look inverted.'
+                    )
+                });
+                roofMatVarNormalMapGroup.body.appendChild(roofMatVarNormalFlipZToggle.toggle);
+
+                roofMatVarAdvancedGroup.body.appendChild(roofMatVarNormalMapGroup.details);
+
                 const roofMacro0 = roofMatVarNormalized.macroLayers?.[0] ?? null;
                 const roofMacroGroup = makeDetailsSection('Macro layer 1', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:macro0` });
                 applyTooltip(
@@ -10285,6 +10410,9 @@ export class BuildingFabricationUI {
 	                    roofScaleRow.number.disabled = roofScaleRow.range.disabled;
                         roofObjectScaleRow.range.disabled = !allow || !enabled || !objectSpace;
                         roofObjectScaleRow.number.disabled = roofObjectScaleRow.range.disabled;
+                        roofMatVarNormalFlipXToggle.input.disabled = !allow || !enabled;
+                        roofMatVarNormalFlipYToggle.input.disabled = !allow || !enabled;
+                        roofMatVarNormalFlipZToggle.input.disabled = !allow || !enabled;
 	                    roofAoAmountRow.range.disabled = !allow || !enabled;
 	                    roofAoAmountRow.number.disabled = roofAoAmountRow.range.disabled;
 
@@ -10514,7 +10642,10 @@ export class BuildingFabricationUI {
                     const wasEnabled = !!layer.roof.materialVariation.enabled;
                     if (nextEnabled && !wasEnabled && isMinimalMaterialVariationConfig(layer.roof.materialVariation)) {
                         const prevSeedOffset = clampInt(layer.roof.materialVariation.seedOffset ?? 0, -9999, 9999);
-                        layer.roof.materialVariation = createDisabledMaterialVariationConfig(MATERIAL_VARIATION_ROOT.SURFACE, { seedOffset: prevSeedOffset });
+                        const prevNormalMap = layer.roof.materialVariation.normalMap && typeof layer.roof.materialVariation.normalMap === 'object'
+                            ? { ...layer.roof.materialVariation.normalMap }
+                            : null;
+                        layer.roof.materialVariation = createDisabledMaterialVariationConfig(MATERIAL_VARIATION_ROOT.SURFACE, { seedOffset: prevSeedOffset, normalMap: prevNormalMap });
                         this._renderLayersPanel();
                         this._notifySelectedLayersChanged();
                         return;
@@ -10595,6 +10726,22 @@ export class BuildingFabricationUI {
                     layer.roof.materialVariation.objectSpaceScale = next;
                     roofObjectScaleRow.range.value = String(next);
                     roofObjectScaleRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofMatVarNormalFlipXToggle.input.addEventListener('change', () => {
+                    layer.roof.materialVariation.normalMap ??= {};
+                    layer.roof.materialVariation.normalMap.flipX = !!roofMatVarNormalFlipXToggle.input.checked;
+                    this._notifySelectedLayersChanged();
+                });
+                roofMatVarNormalFlipYToggle.input.addEventListener('change', () => {
+                    layer.roof.materialVariation.normalMap ??= {};
+                    layer.roof.materialVariation.normalMap.flipY = !!roofMatVarNormalFlipYToggle.input.checked;
+                    this._notifySelectedLayersChanged();
+                });
+                roofMatVarNormalFlipZToggle.input.addEventListener('change', () => {
+                    layer.roof.materialVariation.normalMap ??= {};
+                    layer.roof.materialVariation.normalMap.flipZ = !!roofMatVarNormalFlipZToggle.input.checked;
                     this._notifySelectedLayersChanged();
                 });
                 roofMacroToggle.input.addEventListener('change', () => {

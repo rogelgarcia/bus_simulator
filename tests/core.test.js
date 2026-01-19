@@ -176,7 +176,7 @@ async function runTests() {
             seedOffset: 0,
             heightMin: 0,
             heightMax: 1,
-            config: { enabled: true },
+            config: { enabled: true, normalMap: { flipY: true } },
             root: MATERIAL_VARIATION_ROOT.WALL
         });
 
@@ -188,7 +188,11 @@ async function runTests() {
 
         mat.onBeforeCompile(shader, null);
 
+        assertTrue(shader.uniforms.uMatVarNormalMap?.value?.isVector4, 'Expected uMatVarNormalMap to be injected as a vec4 uniform.');
+        assertEqual(shader.uniforms.uMatVarNormalMap.value.y, 1, 'Expected normalMap.flipY to be encoded into uMatVarNormalMap.y.');
+
         assertTrue(shader.fragmentShader.includes('mvMatVarUvRotation'), 'Expected anti-tiling rotation to be applied to normal vectors.');
+        assertTrue(shader.fragmentShader.includes('uMatVarNormalMap'), 'Expected normal-map flip config uniform to be referenced by the shader.');
         assertTrue(
             shader.fragmentShader.includes('uniform vec4 uMatVarDebug0;') && shader.fragmentShader.includes('uniform vec4 uMatVarDebug1;') && shader.fragmentShader.includes('uniform vec4 uMatVarDebug2;'),
             'Expected mat-var debug uniforms to be injected.'

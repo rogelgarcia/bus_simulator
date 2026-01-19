@@ -2,7 +2,7 @@
 // Applies deterministic, composable procedural material variation to MeshStandardMaterial via shader injection.
 import * as THREE from 'three';
 
-const MATVAR_SHADER_VERSION = 10;
+const MATVAR_SHADER_VERSION = 11;
 const MATVAR_MACRO_LAYERS_MAX = 4;
 
 const EPS = 1e-6;
@@ -218,6 +218,7 @@ export function getDefaultMaterialVariationPreset(root = MATERIAL_VARIATION_ROOT
             roughnessAmount: 0.18,
             normalAmount: 0.2,
             aoAmount: 0.45,
+            normalMap: { flipX: false, flipY: false, flipZ: false },
             macroLayers: [
                 { enabled: true, intensity: 0.9, scale: 0.22, hueDegrees: 0.0, value: 0.1, saturation: 0.06, roughness: 0.18, normal: 0.18 },
                 { enabled: true, intensity: 0.55, scale: 3.0, hueDegrees: 0.0, value: 0.07, saturation: 0.05, roughness: 0.22, normal: 0.25 },
@@ -287,6 +288,7 @@ export function getDefaultMaterialVariationPreset(root = MATERIAL_VARIATION_ROOT
         roughnessAmount: 0.22,
         normalAmount: 0.28,
         aoAmount: 0.6,
+        normalMap: { flipX: false, flipY: false, flipZ: false },
         macroLayers: [
             { enabled: true, intensity: 1.0, scale: 0.2, hueDegrees: 0.0, value: 0.12, saturation: 0.08, roughness: 0.22, normal: 0.18 },
             { enabled: true, intensity: 0.75, scale: 3.0, hueDegrees: 0.0, value: 0.08, saturation: 0.06, roughness: 0.28, normal: 0.3 },
@@ -346,6 +348,9 @@ export function getDefaultMaterialVariationPreset(root = MATERIAL_VARIATION_ROOT
 export function normalizeMaterialVariationConfig(input, { root = MATERIAL_VARIATION_ROOT.WALL } = {}) {
     const preset = getDefaultMaterialVariationPreset(root);
     const cfg = (input && typeof input === 'object') ? input : {};
+
+    const normalMap = (cfg.normalMap && typeof cfg.normalMap === 'object') ? cfg.normalMap : {};
+    const presetNormalMap = (preset.normalMap && typeof preset.normalMap === 'object') ? preset.normalMap : {};
 
     const macro = cfg.macro ?? {};
     const roughnessVariation = cfg.roughnessVariation ?? {};
@@ -546,6 +551,11 @@ export function normalizeMaterialVariationConfig(input, { root = MATERIAL_VARIAT
         roughnessAmount: clamp(cfg.roughnessAmount ?? preset.roughnessAmount, 0.0, 2.0),
         normalAmount: clamp(cfg.normalAmount ?? preset.normalAmount, 0.0, 4.0),
         aoAmount: clamp(cfg.aoAmount ?? preset.aoAmount, 0.0, 1.0),
+        normalMap: {
+            flipX: normalMap.flipX === undefined ? !!presetNormalMap.flipX : !!normalMap.flipX,
+            flipY: normalMap.flipY === undefined ? !!presetNormalMap.flipY : !!normalMap.flipY,
+            flipZ: normalMap.flipZ === undefined ? !!presetNormalMap.flipZ : !!normalMap.flipZ
+        },
         macroLayers,
         wearTop: derivedWearTop,
         wearBottom: derivedWearBottom,
@@ -698,6 +708,10 @@ function buildUniformBundle({
     const antiRot = clamp(cfg.antiTiling.rotationDegrees, 0.0, 180.0) * (Math.PI / 180);
     const antiMode = cfg.antiTiling.mode === 'quality' ? 1 : 0;
     const macroLayers = Array.isArray(cfg.macroLayers) ? cfg.macroLayers : [];
+    const normalMapCfg = cfg.normalMap ?? {};
+    const flipX = !!normalMapCfg.flipX;
+    const flipY = !!normalMapCfg.flipY;
+    const flipZ = !!normalMapCfg.flipZ;
     const macro0 = macroLayers[0] ?? null;
     const macro1 = macroLayers[1] ?? null;
     const macro2 = macroLayers[2] ?? null;
@@ -735,6 +749,7 @@ function buildUniformBundle({
         config0: new THREE.Vector4(safeSeed, safeSeedOffset, cfg.enabled ? cfg.globalIntensity : 0, spaceMode),
         config1: new THREE.Vector4(cfg.worldSpaceScale, cfg.objectSpaceScale, heightLo, heightHi),
         global1: new THREE.Vector4(cfg.aoAmount, 0.0, seedToFloat01(safeSeed), seedToFloat01(safeSeed ^ 0x9e3779b9)),
+        normalMap: new THREE.Vector4(flipX ? 1 : 0, flipY ? 1 : 0, flipZ ? 1 : 0, 0.0),
 
         macro0: new THREE.Vector4(macro0?.enabled ? macro0.intensity : 0.0, macro0?.scale ?? 1.0, macro0Hue, 0.0),
         macro0b: new THREE.Vector4(macro0?.value ?? 0.0, macro0?.saturation ?? 0.0, macro0?.roughness ?? 0.0, macro0?.normal ?? 0.0),
@@ -788,6 +803,7 @@ function injectMatVarShader(material, shader) {
     shader.uniforms.uMatVarConfig0 = { value: cfg.uniforms.config0 };
     shader.uniforms.uMatVarConfig1 = { value: cfg.uniforms.config1 };
     shader.uniforms.uMatVarGlobal1 = { value: cfg.uniforms.global1 };
+    shader.uniforms.uMatVarNormalMap = { value: cfg.uniforms.normalMap };
     shader.uniforms.uMatVarMacro0 = { value: cfg.uniforms.macro0 };
     shader.uniforms.uMatVarMacro0B = { value: cfg.uniforms.macro0b };
     shader.uniforms.uMatVarMacro1 = { value: cfg.uniforms.macro1 };
@@ -872,6 +888,7 @@ function injectMatVarShader(material, shader) {
         'uniform vec4 uMatVarConfig0;',
         'uniform vec4 uMatVarConfig1;',
         'uniform vec4 uMatVarGlobal1;',
+        'uniform vec4 uMatVarNormalMap;',
         'uniform vec4 uMatVarMacro0;',
         'uniform vec4 uMatVarMacro0B;',
         'uniform vec4 uMatVarMacro1;',
@@ -1291,6 +1308,12 @@ function injectMatVarShader(material, shader) {
             '#ifdef OBJECTSPACE_NORMALMAP',
             'vec2 mvNormUv = mvMatVarUv( vNormalMapUv );',
             'vec3 normalTex = texture2D( normalMap, mvNormUv ).xyz * 2.0 - 1.0;',
+            'float mvFlipX = step(0.5,uMatVarNormalMap.x);',
+            'float mvFlipY = max(step(0.5,uMatVarNormalMap.y), step(0.5,uMatVarDebug2.y));',
+            'float mvFlipZ = step(0.5,uMatVarNormalMap.z);',
+            'if(mvFlipX>0.5) normalTex.x = -normalTex.x;',
+            'if(mvFlipY>0.5) normalTex.y = -normalTex.y;',
+            'if(mvFlipZ>0.5) normalTex.z = -normalTex.z;',
             '#ifdef FLIP_SIDED',
             'normalTex = -normalTex;',
             '#endif',
@@ -1302,8 +1325,12 @@ function injectMatVarShader(material, shader) {
             'vec2 mvNormUv = mvMatVarUv( vNormalMapUv );',
             'float mvNormRot = mvMatVarUvRotation( vNormalMapUv );',
             'vec3 normalTex = texture2D( normalMap, mvNormUv ).xyz * 2.0 - 1.0;',
-            'float mvFlipY = step(0.5,uMatVarDebug2.y);',
+            'float mvFlipX = step(0.5,uMatVarNormalMap.x);',
+            'float mvFlipY = max(step(0.5,uMatVarNormalMap.y), step(0.5,uMatVarDebug2.y));',
+            'float mvFlipZ = step(0.5,uMatVarNormalMap.z);',
+            'if(mvFlipX>0.5) normalTex.x = -normalTex.x;',
             'if(mvFlipY>0.5) normalTex.y = -normalTex.y;',
+            'if(mvFlipZ>0.5) normalTex.z = -normalTex.z;',
             'float mvNormFactor = mix(1.0, matVarNormalFactor, step(0.5,uMatVarDebug1.w));',
             'normalTex.xy *= normalScale * mvNormFactor;',
             'float mvUseOrigUv = step(0.5,uMatVarDebug2.x);',
@@ -1475,6 +1502,8 @@ export function updateMaterialVariationOnMeshStandardMaterial(material, { seed, 
     cfg.uniforms.config0.copy(uniforms.config0);
     cfg.uniforms.config1.copy(uniforms.config1);
     cfg.uniforms.global1.copy(uniforms.global1);
+    if (cfg.uniforms.normalMap?.copy) cfg.uniforms.normalMap.copy(uniforms.normalMap);
+    else cfg.uniforms.normalMap = uniforms.normalMap;
     cfg.uniforms.macro0.copy(uniforms.macro0);
     cfg.uniforms.macro0b.copy(uniforms.macro0b);
     cfg.uniforms.macro1.copy(uniforms.macro1);
@@ -1511,6 +1540,7 @@ export function updateMaterialVariationOnMeshStandardMaterial(material, { seed, 
     if (shaderUniforms?.uMatVarConfig0?.value) shaderUniforms.uMatVarConfig0.value = cfg.uniforms.config0;
     if (shaderUniforms?.uMatVarConfig1?.value) shaderUniforms.uMatVarConfig1.value = cfg.uniforms.config1;
     if (shaderUniforms?.uMatVarGlobal1?.value) shaderUniforms.uMatVarGlobal1.value = cfg.uniforms.global1;
+    if (shaderUniforms?.uMatVarNormalMap?.value) shaderUniforms.uMatVarNormalMap.value = cfg.uniforms.normalMap;
     if (shaderUniforms?.uMatVarMacro0?.value) shaderUniforms.uMatVarMacro0.value = cfg.uniforms.macro0;
     if (shaderUniforms?.uMatVarMacro0B?.value) shaderUniforms.uMatVarMacro0B.value = cfg.uniforms.macro0b;
     if (shaderUniforms?.uMatVarMacro1?.value) shaderUniforms.uMatVarMacro1.value = cfg.uniforms.macro1;
