@@ -7682,17 +7682,17 @@ export class BuildingFabricationUI {
                 roofTilingController.mount(layerSection.body);
                 this._layerMiniControllers.push(roofTilingController);
 
-                const roofMatVarGroup = makeDetailsSection('Material variation', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:roof:matvar` });
+                const roofMatVarGroup = makeDetailsSection('Material variation', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar` });
                 layer.roof.materialVariation ??= { enabled: false, seedOffset: 0 };
                 const roofMatVarNormalized = normalizeMaterialVariationConfig(layer.roof.materialVariation, { root: MATERIAL_VARIATION_ROOT.SURFACE });
 
-                const roofMatVarBasicsGroup = makeDetailsSection('Basics', { open: true, nested: true, key: `${scopeKey}:layer:${layerId}:roof:matvar:basics` });
-                const roofMatVarMacroGroup = makeDetailsSection('Macro variation', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:roof:matvar:macro` });
-                const roofMatVarMidGroup = makeDetailsSection('Mid variation (patches)', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:roof:matvar:mid` });
-                const roofMatVarMicroGroup = makeDetailsSection('Micro variation (surface response)', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:roof:matvar:micro` });
-                const roofMatVarWeatherGroup = makeDetailsSection('Weathering', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:roof:matvar:weather` });
-                const roofMatVarBrickGroup = makeDetailsSection('Brick-specific', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:roof:matvar:brick` });
-                const roofMatVarAdvancedGroup = makeDetailsSection('Advanced', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:roof:matvar:advanced` });
+                const roofMatVarBasicsGroup = makeDetailsSection('Basics', { open: true, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:basics` });
+                const roofMatVarMacroGroup = makeDetailsSection('Macro variation', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:macro` });
+                const roofMatVarMidGroup = makeDetailsSection('Mid variation (patches)', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:mid` });
+                const roofMatVarMicroGroup = makeDetailsSection('Micro variation (surface response)', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:micro` });
+                const roofMatVarWeatherGroup = makeDetailsSection('Weathering', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:weather` });
+                const roofMatVarBrickGroup = makeDetailsSection('Brick-specific', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:brick` });
+                const roofMatVarAdvancedGroup = makeDetailsSection('Advanced', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:advanced` });
 
                 roofMatVarGroup.body.appendChild(roofMatVarBasicsGroup.details);
                 roofMatVarGroup.body.appendChild(roofMatVarMacroGroup.details);
@@ -7911,7 +7911,7 @@ export class BuildingFabricationUI {
                 roofMatVarAdvancedGroup.body.appendChild(roofObjectScaleRow.row);
 
                 const roofMacro0 = roofMatVarNormalized.macroLayers?.[0] ?? null;
-                const roofMacroGroup = makeDetailsSection('Macro layer 1', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:roof:matvar:macro0` });
+                const roofMacroGroup = makeDetailsSection('Macro layer 1', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:macro0` });
                 applyTooltip(
                     roofMacroGroup.label,
                     tip(
@@ -8063,7 +8063,7 @@ export class BuildingFabricationUI {
                 roofMatVarMacroGroup.body.appendChild(roofMacroGroup.details);
 
                 const roofWearBottom = roofMatVarNormalized.wearBottom ?? null;
-                const roofGrimeGroup = makeDetailsSection('Bottom wear', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:roof:matvar:wearBottom` });
+                const roofGrimeGroup = makeDetailsSection('Bottom wear', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:wearBottom` });
                 applyTooltip(
                     roofGrimeGroup.label,
                     tip(
@@ -8231,7 +8231,7 @@ export class BuildingFabricationUI {
                 roofGrimeGroup.body.appendChild(roofGrimeNormalRow.row);
                 roofMatVarWeatherGroup.body.appendChild(roofGrimeGroup.details);
 
-	                const roofStreaksGroup = makeDetailsSection('Streaks', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:roof:matvar:streaks` });
+	                const roofStreaksGroup = makeDetailsSection('Streaks', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:streaks` });
 	                applyTooltip(
 	                    roofStreaksGroup.label,
 	                    tip(
@@ -8417,7 +8417,7 @@ export class BuildingFabricationUI {
 	                roofMatVarWeatherGroup.body.appendChild(roofStreaksGroup.details);
 
 		                const roofExposure = roofMatVarNormalized.exposure ?? null;
-		                const roofExposureGroup = makeDetailsSection('Orientation exposure', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:roof:matvar:exposure` });
+		                const roofExposureGroup = makeDetailsSection('Orientation exposure', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:exposure` });
 		                applyTooltip(
 		                    roofExposureGroup.label,
 		                    tip(
@@ -8569,7 +8569,7 @@ export class BuildingFabricationUI {
 	                roofMatVarWeatherGroup.body.appendChild(roofExposureGroup.details);
 
 		                const roofWearSide = roofMatVarNormalized.wearSide ?? null;
-		                const roofEdgeGroup = makeDetailsSection('Side wear (vertical edges)', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:roof:matvar:wearSide` });
+		                const roofEdgeGroup = makeDetailsSection('Side wear (vertical edges)', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:wearSide` });
 		                applyTooltip(
 		                    roofEdgeGroup.label,
 		                    tip(
@@ -8738,7 +8738,7 @@ export class BuildingFabricationUI {
                 roofMatVarWeatherGroup.body.appendChild(roofEdgeGroup.details);
 
 	                const roofWearTop = roofMatVarNormalized.wearTop ?? null;
-	                const roofDustGroup = makeDetailsSection('Top wear', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:roof:matvar:wearTop` });
+	                const roofDustGroup = makeDetailsSection('Top wear', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:wearTop` });
 	                applyTooltip(
 	                    roofDustGroup.label,
 	                    tip(
@@ -8910,6 +8910,7 @@ export class BuildingFabricationUI {
 	                    allow,
 	                    detailsOpenByKey: this._detailsOpenByKey,
 	                    detailsKey: `${scopeKey}:layer:${layerId}:roof:matvar:anti`,
+                        nested: false,
 	                    parentEnabled: !!layer.roof.materialVariation.enabled,
 	                    normalizedAntiTiling: roofMatVarNormalized.antiTiling,
 	                    targetMaterialVariation: layer.roof.materialVariation,
@@ -8968,7 +8969,7 @@ export class BuildingFabricationUI {
 	                this._layerMiniControllers.push(roofAntiController);
 
 	                const roofBrickCfg = roofMatVarNormalized.brick ?? null;
-	                const roofBrickLayoutGroup = makeDetailsSection('Brick layout', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:roof:matvar:brickLayout` });
+	                const roofBrickLayoutGroup = makeDetailsSection('Brick layout', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:brickLayout` });
 	                applyTooltip(
 	                    roofBrickLayoutGroup.label,
 	                    tip(
@@ -9036,7 +9037,7 @@ export class BuildingFabricationUI {
 	                roofBrickLayoutGroup.body.appendChild(roofMortarWidthRow.row);
 	                roofMatVarBrickGroup.body.appendChild(roofBrickLayoutGroup.details);
 
-		                const roofStairGroup = makeDetailsSection('Stair shift', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:roof:matvar:stair` });
+		                const roofStairGroup = makeDetailsSection('Stair shift', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:stair` });
 		                applyTooltip(
 		                    roofStairGroup.label,
 	                    tip(
@@ -9231,7 +9232,7 @@ export class BuildingFabricationUI {
 	                roofMatVarBrickGroup.body.appendChild(roofStairGroup.details);
 
 	                const roofPerBrick = roofBrickCfg?.perBrick ?? null;
-	                const roofPerBrickGroup = makeDetailsSection('Per-brick variation', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:roof:matvar:perBrick` });
+	                const roofPerBrickGroup = makeDetailsSection('Per-brick variation', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:perBrick` });
 	                applyTooltip(
 	                    roofPerBrickGroup.label,
 	                    tip(
@@ -9364,7 +9365,7 @@ export class BuildingFabricationUI {
 	                roofMatVarBrickGroup.body.appendChild(roofPerBrickGroup.details);
 
 	                const roofMortar = roofBrickCfg?.mortar ?? null;
-	                const roofMortarGroup = makeDetailsSection('Mortar variation', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:roof:matvar:mortar` });
+	                const roofMortarGroup = makeDetailsSection('Mortar variation', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:mortar` });
 	                applyTooltip(
 	                    roofMortarGroup.label,
 	                    tip(
@@ -9497,7 +9498,7 @@ export class BuildingFabricationUI {
 	                roofMatVarBrickGroup.body.appendChild(roofMortarGroup.details);
 
 	                const roofMacro1 = roofMatVarNormalized.macroLayers?.[1] ?? null;
-	                const roofDetailGroup = makeDetailsSection('Macro layer 2', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:roof:matvar:macro1` });
+	                const roofDetailGroup = makeDetailsSection('Macro layer 2', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:macro1` });
 	                applyTooltip(
 	                    roofDetailGroup.label,
 	                    tip(
@@ -9648,7 +9649,7 @@ export class BuildingFabricationUI {
                 roofMatVarMacroGroup.body.appendChild(roofDetailGroup.details);
 
 	                const roofMacro2 = roofMatVarNormalized.macroLayers?.[2] ?? null;
-	                const roofMacro2Group = makeDetailsSection('Macro layer 3', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:roof:matvar:macro2` });
+	                const roofMacro2Group = makeDetailsSection('Macro layer 3', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:macro2` });
 	                applyTooltip(
 	                    roofMacro2Group.label,
 	                    tip(
@@ -9819,7 +9820,7 @@ export class BuildingFabricationUI {
 	                roofMatVarMidGroup.body.appendChild(roofMacro2Group.details);
 
 		                const roofMicro0 = roofMatVarNormalized.macroLayers?.[3] ?? null;
-		                const roofMicroGroup = makeDetailsSection('Micro roughness', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:roof:matvar:micro0` });
+		                const roofMicroGroup = makeDetailsSection('Micro roughness', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:micro0` });
 		                applyTooltip(
 		                    roofMicroGroup.label,
 		                    tip(
@@ -9918,7 +9919,7 @@ export class BuildingFabricationUI {
 	                roofMatVarMicroGroup.body.appendChild(roofMicroGroup.details);
 
 		                const roofCracksLayer = roofMatVarNormalized.cracksLayer ?? null;
-		                const roofCracksGroup = makeDetailsSection('Cracks', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:roof:matvar:cracks` });
+		                const roofCracksGroup = makeDetailsSection('Cracks', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:cracks` });
 		                const roofCracksToggle = makeToggleRow('Enable cracks');
 	                roofCracksToggle.input.checked = !!roofCracksLayer?.enabled;
 	                roofCracksToggle.input.disabled = !allow || !roofMatVarNormalized.enabled;

@@ -203,7 +203,7 @@ export class RoadDebuggerView {
         };
 
         this._junctionEnabled = true;
-        this._autoJunctionEnabled = true;
+        this._autoJunctionEnabled = false;
         this._junctionThresholdFactor = 1.5;
         this._junctionFilletRadiusFactor = 1;
         this._junctionDebug = {

@@ -1022,6 +1022,7 @@ function buildJunctionBoundaryFilletsXZ({ junctionId, orderedEndpoints, center, 
                                 const s0 = dot2({ x: (Number(candidate.tangent0.x) || 0) - (Number(aPoint?.x) || 0), z: (Number(candidate.tangent0.z) || 0) - (Number(aPoint?.z) || 0) }, dir0);
                                 const s1 = dot2({ x: (Number(candidate.tangent1.x) || 0) - (Number(bPoint?.x) || 0), z: (Number(candidate.tangent1.z) || 0) - (Number(bPoint?.z) || 0) }, dir1);
                                 if (s0 < -1e-4 || s1 < -1e-4) continue;
+                                if (s0 > t0 + 1e-4 || s1 > t1 + 1e-4) continue;
                                 const err = distXZ(candidate.tangent0, aPoint) + distXZ(candidate.tangent1, bPoint);
                                 const span = Number(candidate.spanAng) || 0;
                                 const arcRadius = Number(candidate.radius) || radius;

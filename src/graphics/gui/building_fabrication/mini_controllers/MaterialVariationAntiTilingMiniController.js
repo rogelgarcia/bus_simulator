@@ -9,6 +9,7 @@ export function createMaterialVariationAntiTilingMiniController({
     allow = true,
     detailsOpenByKey = null,
     detailsKey = null,
+    nested = true,
     parentEnabled = true,
     normalizedAntiTiling,
     targetMaterialVariation,
@@ -30,7 +31,7 @@ export function createMaterialVariationAntiTilingMiniController({
     }
 
     const onChangeFn = typeof onChange === 'function' ? onChange : null;
-    const section = createDetailsSection('Anti-tiling', { open: false, nested: true, key: detailsKey, detailsOpenByKey });
+    const section = createDetailsSection('Anti-tiling', { open: false, nested: !!nested, key: detailsKey, detailsOpenByKey });
 
     if (tooltips.group) applyTooltip(section.label, tooltips.group);
 
