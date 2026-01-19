@@ -94,6 +94,29 @@ async function runTests() {
         assertEqual(bus.listenerCount('b'), 0, 'Should have 0 listeners for b.');
     });
 
+    // ========== Building Fabrication Mini Controller Utils ==========
+    const { clampNumber, clampInt, formatFixed } = await import('/src/graphics/gui/building_fabrication/mini_controllers/RangeNumberUtils.js');
+
+    test('RangeNumberUtils: clampNumber clamps and defaults', () => {
+        assertEqual(clampNumber(5, 0, 10), 5, 'Expected 5 to stay in range.');
+        assertEqual(clampNumber(-1, 0, 10), 0, 'Expected below-min to clamp to min.');
+        assertEqual(clampNumber(11, 0, 10), 10, 'Expected above-max to clamp to max.');
+        assertEqual(clampNumber('abc', 2, 10), 2, 'Expected non-numeric to clamp to min.');
+    });
+
+    test('RangeNumberUtils: clampInt rounds and clamps', () => {
+        assertEqual(clampInt(4.6, 0, 10), 5, 'Expected rounding to nearest int.');
+        assertEqual(clampInt(-9, 0, 10), 0, 'Expected below-min to clamp to min.');
+        assertEqual(clampInt(99, 0, 10), 10, 'Expected above-max to clamp to max.');
+        assertEqual(clampInt('abc', 7, 10), 7, 'Expected non-numeric to clamp to min.');
+    });
+
+    test('RangeNumberUtils: formatFixed formats and handles non-finite', () => {
+        assertEqual(formatFixed(1.234, 2), '1.23', 'Expected fixed formatting.');
+        assertEqual(formatFixed(1.234, -1), '1', 'Expected negative digits to clamp to 0.');
+        assertEqual(formatFixed(Infinity, 2), '', 'Expected non-finite to return empty.');
+    });
+
     // ========== VehicleManager Tests ==========
     const { VehicleManager } = await import('/src/app/core/VehicleManager.js');
 
@@ -137,6 +160,39 @@ async function runTests() {
         manager.addVehicle({ userData: {} }, {}, {});
         manager.addVehicle({ userData: {} }, {}, {});
         assertEqual(manager.count, 2, 'Should have 2 vehicles.');
+    });
+
+    // ========== Material Variation Tests ==========
+    const THREE = await import('three');
+    const { applyMaterialVariationToMeshStandardMaterial, MATERIAL_VARIATION_ROOT } = await import('/src/graphics/assets3d/materials/MaterialVariationSystem.js');
+
+    test('MaterialVariationSystem: normal map shader uses stable UV basis', () => {
+        const mat = new THREE.MeshStandardMaterial();
+        mat.normalMap = new THREE.Texture();
+        mat.normalScale.set(1, 1);
+
+        applyMaterialVariationToMeshStandardMaterial(mat, {
+            seed: 1,
+            seedOffset: 0,
+            heightMin: 0,
+            heightMax: 1,
+            config: { enabled: true },
+            root: MATERIAL_VARIATION_ROOT.WALL
+        });
+
+        const shader = {
+            uniforms: {},
+            vertexShader: '#include <common>\nvoid main(){\n#include <begin_vertex>\n}\n',
+            fragmentShader: '#include <common>\n#include <normal_fragment_maps>\n#include <map_fragment>\n#include <roughnessmap_fragment>\n'
+        };
+
+        mat.onBeforeCompile(shader, null);
+
+        assertTrue(shader.fragmentShader.includes('mvMatVarUvRotation'), 'Expected anti-tiling rotation to be applied to normal vectors.');
+        assertTrue(
+            shader.fragmentShader.includes('mvPerturbNormal2Arb( -vViewPosition, normal, normalTex, faceDirection, vNormalMapUv )'),
+            'Expected mvPerturbNormal2Arb to use the original normal-map UVs for a stable tangent basis.'
+        );
     });
 
     // ========== Bus Catalog Tests ==========
@@ -754,7 +810,6 @@ async function runTests() {
     const { solveConnectorPath } = await import('/src/app/geometry/ConnectorPathSolver.js');
     const { createGeneratorConfig } = await import('/src/graphics/assets3d/generators/GeneratorParams.js');
     const { createCityConfig } = await import('/src/app/city/CityConfig.js');
-    const THREE = await import('three');
     const { runRoadConnectionDebuggerTests } = await import('/tests/road_connection_debugger.test.js');
 
     test('ConnectorPathSolver: reaches end pose within epsilon', () => {
@@ -3972,6 +4027,50 @@ async function runTests() {
                 assertTrue(Number.isFinite(ox) && Number.isFinite(oz), 'Expected build tangent origin.');
                 assertTrue(Number.isFinite(dx) && Number.isFinite(dz), 'Expected build tangent dir.');
                 assertTrue(Math.hypot(dx, dz) > 0.8, 'Expected build tangent dir to be normalized-ish.');
+            }
+
+            for (const junction of out?.junctions ?? []) {
+                const endpoints = Array.isArray(junction?.endpoints) ? junction.endpoints : [];
+                if (!endpoints.length) continue;
+                for (const tat of junction?.tat ?? []) {
+                    const buildTangents = Array.isArray(tat?.buildTangents) ? tat.buildTangents : [];
+                    if (!buildTangents.length) continue;
+                    for (const line of buildTangents) {
+                        const origin = line?.origin ?? null;
+                        const dir = line?.dir ?? null;
+                        if (!origin || !dir) continue;
+                        const ox = Number(origin.x) || 0;
+                        const oz = Number(origin.z) || 0;
+                        const dx = Number(dir.x) || 0;
+                        const dz = Number(dir.z) || 0;
+
+                        let best = null;
+                        let bestDist = Infinity;
+                        for (const ep of endpoints) {
+                            const left = ep?.leftEdge ?? null;
+                            if (left) {
+                                const d = Math.hypot((Number(left.x) || 0) - ox, (Number(left.z) || 0) - oz);
+                                if (d < bestDist) {
+                                    best = ep;
+                                    bestDist = d;
+                                }
+                            }
+                            const right = ep?.rightEdge ?? null;
+                            if (right) {
+                                const d = Math.hypot((Number(right.x) || 0) - ox, (Number(right.z) || 0) - oz);
+                                if (d < bestDist) {
+                                    best = ep;
+                                    bestDist = d;
+                                }
+                            }
+                        }
+
+                        assertTrue(bestDist < 1e-3, 'Expected build tangent to originate from a junction endpoint edge.');
+                        const epDir = best?.dirOut ?? null;
+                        const dot = epDir ? Math.abs(dx * (Number(epDir.x) || 0) + dz * (Number(epDir.z) || 0)) : 0;
+                        assertTrue(dot > 0.7, 'Expected build tangent direction to align with road edge direction.');
+                    }
+                }
             }
         });
     } catch (e) {

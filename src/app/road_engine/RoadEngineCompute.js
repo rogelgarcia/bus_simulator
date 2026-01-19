@@ -964,11 +964,8 @@ function buildJunctionBoundaryFilletsXZ({ junctionId, orderedEndpoints, center, 
         const seamDir = (endpoint) => {
             const id = endpoint?.id ?? null;
             if (id && seamDirMemo.has(id)) return seamDirMemo.get(id);
-            const left = endpoint?.leftEdge ?? null;
-            const right = endpoint?.rightEdge ?? null;
-            const dir = (left && right)
-                ? normalizeVecXZ({ x: (Number(right.x) || 0) - (Number(left.x) || 0), z: (Number(right.z) || 0) - (Number(left.z) || 0) })
-                : null;
+            const dirOut = endpoint?.dirOut ?? null;
+            const dir = dirOut ? normalizeVecXZ({ x: Number(dirOut.x) || 0, z: Number(dirOut.z) || 0 }) : null;
             const out = dir ? { x: dir.x, z: dir.z } : null;
             if (id) seamDirMemo.set(id, out);
             return out;

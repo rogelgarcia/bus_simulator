@@ -48,6 +48,16 @@
 - Avoid putting css styling in JS files. Use CSS files and import classes instead. One CSS per screen. And also a global (for reusable components)
 - Make the components reuse the classes from the global CSS file and from the specific screen CSS file whenever possible.
 
+**GUI / DOM Construction (Vanilla JS)**
+- Prefer reusable “row factories” / “mini controllers” over repeating `document.createElement` boilerplate for common UI patterns.
+- For repeated patterns (label + control rows, material pickers, toggle rows, range+number rows, details sections), create a small controller/factory under the relevant screen folder (e.g. `src/graphics/gui/<screen>/mini_controllers/`).
+- Controllers should be:
+  - Declarative to call (configure in one concise statement rather than many imperative assignments).
+  - Consistent in DOM structure and CSS classes (match existing screen styles).
+  - Leak-safe (provide `destroy()` to remove event listeners/popups when unmounted).
+  - Testable where possible (pure helpers live outside controllers and can be covered by `tests/core.test.js`).
+- Avoid introducing a DOM framework unless it’s a deliberate project-level decision (the project currently uses direct ES modules in the browser without a build step).
+
 **Icons:**
 - Use Material Symbols Outlined glyphs for all UI icons (via `.ui-icon` / `createMaterialSymbolIcon()`), not ad-hoc SVGs or mixed icon sets.
 
