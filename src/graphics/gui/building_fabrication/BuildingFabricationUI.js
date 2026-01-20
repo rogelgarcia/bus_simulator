@@ -7,7 +7,7 @@ import { BELT_COURSE_COLOR, getBeltCourseColorOptions, isBeltCourseColor } from 
 import { ROOF_COLOR, getRoofColorOptions, isRoofColor } from '../../../app/buildings/RoofColor.js';
 import { PickerPopup } from '../shared/PickerPopup.js';
 import { applyMaterialSymbolToButton } from '../shared/materialSymbols.js';
-import { WINDOW_TYPE, getDefaultWindowParams, getWindowTypeOptions, isWindowTypeId } from '../../assets3d/generators/buildings/WindowTextureGenerator.js';
+import { WINDOW_TYPE, getDefaultWindowParams, isWindowTypeId } from '../../assets3d/generators/buildings/WindowTextureGenerator.js';
 import { normalizeWindowParams, normalizeWindowTypeIdOrLegacyStyle } from '../../assets3d/generators/buildings/WindowTypeCompatibility.js';
 import { getPbrMaterialOptionsForBuildings } from '../../assets3d/materials/PbrMaterialCatalog.js';
 import { LAYER_TYPE, cloneBuildingLayers, createDefaultFloorLayer, createDefaultRoofLayer, normalizeBuildingLayers } from '../../assets3d/generators/building_fabrication/BuildingFabricationTypes.js';
@@ -15,6 +15,8 @@ import { getBuildingConfigs } from '../../content3d/catalogs/BuildingConfigCatal
 import { createTextureTilingMiniController } from './mini_controllers/TextureTilingMiniController.js';
 import { createMaterialPickerRowController } from './mini_controllers/MaterialPickerRowController.js';
 import { createMaterialVariationUIController } from './MaterialVariationUIController.js';
+import { createWindowUIController } from './WindowUIController.js';
+import { createWallsUIController } from './WallsUIController.js';
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -136,7 +138,6 @@ export class BuildingFabricationUI {
         this._buildingType = 'business';
         this._buildingStyle = BUILDING_STYLE.DEFAULT;
         this._buildingStyleOptions = getBuildingStyleOptions();
-        this._windowTypeOptions = getWindowTypeOptions();
         this._streetEnabled = false;
         this._streetFloors = 0;
         this._streetFloorHeight = this._floorHeight;
@@ -154,15 +155,6 @@ export class BuildingFabricationUI {
         this._topBeltColor = BELT_COURSE_COLOR.OFFWHITE;
         this._roofColorOptions = getRoofColorOptions();
         this._roofColor = ROOF_COLOR.DEFAULT;
-        this._windowParamColorOptions = [
-            { id: 'offwhite', label: 'Off-white', hex: 0xdfe7f2 },
-            { id: 'beige', label: 'Beige', hex: 0xd9c4a1 },
-            { id: 'brown', label: 'Brown', hex: 0x6a4c3b },
-            { id: 'warm', label: 'Warm', hex: 0xffcc78 },
-            { id: 'blue', label: 'Blue', hex: 0x1d5c8d },
-            { id: 'navy', label: 'Navy', hex: 0x061a2c },
-            { id: 'dark', label: 'Dark', hex: 0x0a101a }
-        ];
         this._windowTypeId = WINDOW_TYPE.STYLE_DEFAULT;
         this._windowParams = getDefaultWindowParams(this._windowTypeId);
         this._windowWidth = 2.2;
@@ -765,292 +757,6 @@ export class BuildingFabricationUI {
         this.roofColorPickText = roofColorRow.text;
         this.roofColorStatus = roofColorRow.status;
 
-        const windowStyleRow = makeMaterialPickerRow('Window', { status: true, onPick: () => this._openWindowTypePicker() });
-        this.windowStyleRow = windowStyleRow.row;
-        this.windowStyleLabel = windowStyleRow.label;
-        this.windowStylePicker = windowStyleRow.picker;
-        this.windowStylePickButton = windowStyleRow.button;
-        this.windowStylePickThumb = windowStyleRow.thumb;
-        this.windowStylePickText = windowStyleRow.text;
-        this.windowStyleStatus = windowStyleRow.status;
-
-        const streetWindowStyleRow = makeMaterialPickerRow('Window', { status: true, onPick: () => this._openStreetWindowTypePicker() });
-        this.streetWindowStyleRow = streetWindowStyleRow.row;
-        this.streetWindowStyleLabel = streetWindowStyleRow.label;
-        this.streetWindowStylePicker = streetWindowStyleRow.picker;
-        this.streetWindowStylePickButton = streetWindowStyleRow.button;
-        this.streetWindowStylePickThumb = streetWindowStyleRow.thumb;
-        this.streetWindowStylePickText = streetWindowStyleRow.text;
-        this.streetWindowStyleStatus = streetWindowStyleRow.status;
-
-        const widthRow = makeRangeRow('Window width (m)');
-        this.windowWidthRow = widthRow.row;
-        this.windowWidthRange = widthRow.range;
-        this.windowWidthNumber = widthRow.number;
-        this.windowWidthRange.min = '0.3';
-        this.windowWidthRange.max = '12';
-        this.windowWidthRange.step = '0.1';
-        this.windowWidthNumber.min = '0.3';
-        this.windowWidthNumber.max = '12';
-        this.windowWidthNumber.step = '0.1';
-
-        const gapRow = makeRangeRow('Window spacing (m)');
-        this.windowGapRow = gapRow.row;
-        this.windowGapRange = gapRow.range;
-        this.windowGapNumber = gapRow.number;
-        this.windowGapRange.min = '0';
-        this.windowGapRange.max = '24';
-        this.windowGapRange.step = '0.1';
-        this.windowGapNumber.min = '0';
-        this.windowGapNumber.max = '24';
-        this.windowGapNumber.step = '0.1';
-
-        const heightRow = makeRangeRow('Window height (m)');
-        this.windowHeightRow = heightRow.row;
-        this.windowHeightRange = heightRow.range;
-        this.windowHeightNumber = heightRow.number;
-        this.windowHeightRange.min = '0.3';
-        this.windowHeightRange.max = '10';
-        this.windowHeightRange.step = '0.1';
-        this.windowHeightNumber.min = '0.3';
-        this.windowHeightNumber.max = '10';
-        this.windowHeightNumber.step = '0.1';
-
-        const yRow = makeRangeRow('Window y (m)');
-        this.windowYRow = yRow.row;
-        this.windowYRange = yRow.range;
-        this.windowYNumber = yRow.number;
-        this.windowYRange.min = '0';
-        this.windowYRange.max = '12';
-        this.windowYRange.step = '0.1';
-        this.windowYNumber.min = '0';
-        this.windowYNumber.max = '12';
-        this.windowYNumber.step = '0.1';
-
-        const makeParamColorRow = (labelText, onPick) => {
-            const ctrl = makeMaterialPickerRow(labelText, { onPick });
-            return { row: ctrl.row, btn: ctrl.button, thumb: ctrl.thumb, text: ctrl.text };
-        };
-
-        const windowFrameWidthRow = makeRangeRow('Frame width');
-        this.windowFrameWidthRow = windowFrameWidthRow.row;
-        this.windowFrameWidthRange = windowFrameWidthRow.range;
-        this.windowFrameWidthNumber = windowFrameWidthRow.number;
-        this.windowFrameWidthRange.min = '0.02';
-        this.windowFrameWidthRange.max = '0.2';
-        this.windowFrameWidthRange.step = '0.01';
-        this.windowFrameWidthNumber.min = '0.02';
-        this.windowFrameWidthNumber.max = '0.2';
-        this.windowFrameWidthNumber.step = '0.01';
-
-        const windowFrameColorRow = makeParamColorRow('Frame color', () => this._openWindowFrameColorPicker());
-        this.windowFrameColorRow = windowFrameColorRow.row;
-        this.windowFrameColorPickButton = windowFrameColorRow.btn;
-        this.windowFrameColorPickThumb = windowFrameColorRow.thumb;
-        this.windowFrameColorPickText = windowFrameColorRow.text;
-
-        const windowGlassTopRow = makeParamColorRow('Glass top', () => this._openWindowGlassTopPicker());
-        this.windowGlassTopRow = windowGlassTopRow.row;
-        this.windowGlassTopPickButton = windowGlassTopRow.btn;
-        this.windowGlassTopPickThumb = windowGlassTopRow.thumb;
-        this.windowGlassTopPickText = windowGlassTopRow.text;
-
-        const windowGlassBottomRow = makeParamColorRow('Glass bottom', () => this._openWindowGlassBottomPicker());
-        this.windowGlassBottomRow = windowGlassBottomRow.row;
-        this.windowGlassBottomPickButton = windowGlassBottomRow.btn;
-        this.windowGlassBottomPickThumb = windowGlassBottomRow.thumb;
-        this.windowGlassBottomPickText = windowGlassBottomRow.text;
-
-        const wallInsetRow = makeRangeRow('Wall inset (m)');
-        this.wallInsetRow = wallInsetRow.row;
-        this.wallInsetRange = wallInsetRow.range;
-        this.wallInsetNumber = wallInsetRow.number;
-        this.wallInsetRange.min = '0';
-        this.wallInsetRange.max = '4';
-        this.wallInsetRange.step = '0.05';
-        this.wallInsetNumber.min = '0';
-        this.wallInsetNumber.max = '4';
-        this.wallInsetNumber.step = '0.05';
-
-        this.windowSpacerToggle = document.createElement('label');
-        this.windowSpacerToggle.className = 'building-fab-toggle building-fab-toggle-wide';
-        this.windowSpacerInput = document.createElement('input');
-        this.windowSpacerInput.type = 'checkbox';
-        this.windowSpacerInput.checked = this._windowSpacerEnabled;
-        this.windowSpacerText = document.createElement('span');
-        this.windowSpacerText.textContent = 'Window spacer';
-        this.windowSpacerToggle.appendChild(this.windowSpacerInput);
-        this.windowSpacerToggle.appendChild(this.windowSpacerText);
-
-        const windowSpacerEveryRow = makeRangeRow('Spacer every (windows)');
-        this.windowSpacerEveryRow = windowSpacerEveryRow.row;
-        this.windowSpacerEveryRange = windowSpacerEveryRow.range;
-        this.windowSpacerEveryNumber = windowSpacerEveryRow.number;
-        this.windowSpacerEveryRange.min = '1';
-        this.windowSpacerEveryRange.max = '99';
-        this.windowSpacerEveryRange.step = '1';
-        this.windowSpacerEveryNumber.min = '1';
-        this.windowSpacerEveryNumber.max = '99';
-        this.windowSpacerEveryNumber.step = '1';
-
-        const windowSpacerWidthRow = makeRangeRow('Spacer width (m)');
-        this.windowSpacerWidthRow = windowSpacerWidthRow.row;
-        this.windowSpacerWidthRange = windowSpacerWidthRow.range;
-        this.windowSpacerWidthNumber = windowSpacerWidthRow.number;
-        this.windowSpacerWidthRange.min = '0.1';
-        this.windowSpacerWidthRange.max = '10';
-        this.windowSpacerWidthRange.step = '0.1';
-        this.windowSpacerWidthNumber.min = '0.1';
-        this.windowSpacerWidthNumber.max = '10';
-        this.windowSpacerWidthNumber.step = '0.1';
-
-        this.windowSpacerExtrudeToggle = document.createElement('label');
-        this.windowSpacerExtrudeToggle.className = 'building-fab-toggle building-fab-toggle-wide';
-        this.windowSpacerExtrudeInput = document.createElement('input');
-        this.windowSpacerExtrudeInput.type = 'checkbox';
-        this.windowSpacerExtrudeInput.checked = this._windowSpacerExtrude;
-        this.windowSpacerExtrudeText = document.createElement('span');
-        this.windowSpacerExtrudeText.textContent = 'Spacer extrude';
-        this.windowSpacerExtrudeToggle.appendChild(this.windowSpacerExtrudeInput);
-        this.windowSpacerExtrudeToggle.appendChild(this.windowSpacerExtrudeText);
-
-        const windowSpacerExtrudeRow = makeRangeRow('Spacer extrude (m)');
-        this.windowSpacerExtrudeDistanceRow = windowSpacerExtrudeRow.row;
-        this.windowSpacerExtrudeDistanceRange = windowSpacerExtrudeRow.range;
-        this.windowSpacerExtrudeDistanceNumber = windowSpacerExtrudeRow.number;
-        this.windowSpacerExtrudeDistanceRange.min = '0';
-        this.windowSpacerExtrudeDistanceRange.max = '1';
-        this.windowSpacerExtrudeDistanceRange.step = '0.01';
-        this.windowSpacerExtrudeDistanceNumber.min = '0';
-        this.windowSpacerExtrudeDistanceNumber.max = '1';
-        this.windowSpacerExtrudeDistanceNumber.step = '0.01';
-
-        const streetWidthRow = makeRangeRow('Window width (m)');
-        this.streetWindowWidthRow = streetWidthRow.row;
-        this.streetWindowWidthRange = streetWidthRow.range;
-        this.streetWindowWidthNumber = streetWidthRow.number;
-        this.streetWindowWidthRange.min = '0.3';
-        this.streetWindowWidthRange.max = '12';
-        this.streetWindowWidthRange.step = '0.1';
-        this.streetWindowWidthNumber.min = '0.3';
-        this.streetWindowWidthNumber.max = '12';
-        this.streetWindowWidthNumber.step = '0.1';
-
-        const streetGapRow = makeRangeRow('Window spacing (m)');
-        this.streetWindowGapRow = streetGapRow.row;
-        this.streetWindowGapRange = streetGapRow.range;
-        this.streetWindowGapNumber = streetGapRow.number;
-        this.streetWindowGapRange.min = '0';
-        this.streetWindowGapRange.max = '24';
-        this.streetWindowGapRange.step = '0.1';
-        this.streetWindowGapNumber.min = '0';
-        this.streetWindowGapNumber.max = '24';
-        this.streetWindowGapNumber.step = '0.1';
-
-        const streetHeight2Row = makeRangeRow('Window height (m)');
-        this.streetWindowHeightRow = streetHeight2Row.row;
-        this.streetWindowHeightRange = streetHeight2Row.range;
-        this.streetWindowHeightNumber = streetHeight2Row.number;
-        this.streetWindowHeightRange.min = '0.3';
-        this.streetWindowHeightRange.max = '10';
-        this.streetWindowHeightRange.step = '0.1';
-        this.streetWindowHeightNumber.min = '0.3';
-        this.streetWindowHeightNumber.max = '10';
-        this.streetWindowHeightNumber.step = '0.1';
-
-        const streetYRow = makeRangeRow('Window y (m)');
-        this.streetWindowYRow = streetYRow.row;
-        this.streetWindowYRange = streetYRow.range;
-        this.streetWindowYNumber = streetYRow.number;
-        this.streetWindowYRange.min = '0';
-        this.streetWindowYRange.max = '12';
-        this.streetWindowYRange.step = '0.1';
-        this.streetWindowYNumber.min = '0';
-        this.streetWindowYNumber.max = '12';
-        this.streetWindowYNumber.step = '0.1';
-
-        const streetWindowFrameWidthRow = makeRangeRow('Frame width');
-        this.streetWindowFrameWidthRow = streetWindowFrameWidthRow.row;
-        this.streetWindowFrameWidthRange = streetWindowFrameWidthRow.range;
-        this.streetWindowFrameWidthNumber = streetWindowFrameWidthRow.number;
-        this.streetWindowFrameWidthRange.min = '0.02';
-        this.streetWindowFrameWidthRange.max = '0.2';
-        this.streetWindowFrameWidthRange.step = '0.01';
-        this.streetWindowFrameWidthNumber.min = '0.02';
-        this.streetWindowFrameWidthNumber.max = '0.2';
-        this.streetWindowFrameWidthNumber.step = '0.01';
-
-        const streetWindowFrameColorRow = makeParamColorRow('Frame color', () => this._openStreetWindowFrameColorPicker());
-        this.streetWindowFrameColorRow = streetWindowFrameColorRow.row;
-        this.streetWindowFrameColorPickButton = streetWindowFrameColorRow.btn;
-        this.streetWindowFrameColorPickThumb = streetWindowFrameColorRow.thumb;
-        this.streetWindowFrameColorPickText = streetWindowFrameColorRow.text;
-
-        const streetWindowGlassTopRow = makeParamColorRow('Glass top', () => this._openStreetWindowGlassTopPicker());
-        this.streetWindowGlassTopRow = streetWindowGlassTopRow.row;
-        this.streetWindowGlassTopPickButton = streetWindowGlassTopRow.btn;
-        this.streetWindowGlassTopPickThumb = streetWindowGlassTopRow.thumb;
-        this.streetWindowGlassTopPickText = streetWindowGlassTopRow.text;
-
-        const streetWindowGlassBottomRow = makeParamColorRow('Glass bottom', () => this._openStreetWindowGlassBottomPicker());
-        this.streetWindowGlassBottomRow = streetWindowGlassBottomRow.row;
-        this.streetWindowGlassBottomPickButton = streetWindowGlassBottomRow.btn;
-        this.streetWindowGlassBottomPickThumb = streetWindowGlassBottomRow.thumb;
-        this.streetWindowGlassBottomPickText = streetWindowGlassBottomRow.text;
-
-        this.streetWindowSpacerToggle = document.createElement('label');
-        this.streetWindowSpacerToggle.className = 'building-fab-toggle building-fab-toggle-wide';
-        this.streetWindowSpacerInput = document.createElement('input');
-        this.streetWindowSpacerInput.type = 'checkbox';
-        this.streetWindowSpacerInput.checked = this._streetWindowSpacerEnabled;
-        this.streetWindowSpacerText = document.createElement('span');
-        this.streetWindowSpacerText.textContent = 'Window spacer';
-        this.streetWindowSpacerToggle.appendChild(this.streetWindowSpacerInput);
-        this.streetWindowSpacerToggle.appendChild(this.streetWindowSpacerText);
-
-        const streetWindowSpacerEveryRow = makeRangeRow('Spacer every (windows)');
-        this.streetWindowSpacerEveryRow = streetWindowSpacerEveryRow.row;
-        this.streetWindowSpacerEveryRange = streetWindowSpacerEveryRow.range;
-        this.streetWindowSpacerEveryNumber = streetWindowSpacerEveryRow.number;
-        this.streetWindowSpacerEveryRange.min = '1';
-        this.streetWindowSpacerEveryRange.max = '99';
-        this.streetWindowSpacerEveryRange.step = '1';
-        this.streetWindowSpacerEveryNumber.min = '1';
-        this.streetWindowSpacerEveryNumber.max = '99';
-        this.streetWindowSpacerEveryNumber.step = '1';
-
-        const streetWindowSpacerWidthRow = makeRangeRow('Spacer width (m)');
-        this.streetWindowSpacerWidthRow = streetWindowSpacerWidthRow.row;
-        this.streetWindowSpacerWidthRange = streetWindowSpacerWidthRow.range;
-        this.streetWindowSpacerWidthNumber = streetWindowSpacerWidthRow.number;
-        this.streetWindowSpacerWidthRange.min = '0.1';
-        this.streetWindowSpacerWidthRange.max = '10';
-        this.streetWindowSpacerWidthRange.step = '0.1';
-        this.streetWindowSpacerWidthNumber.min = '0.1';
-        this.streetWindowSpacerWidthNumber.max = '10';
-        this.streetWindowSpacerWidthNumber.step = '0.1';
-
-        this.streetWindowSpacerExtrudeToggle = document.createElement('label');
-        this.streetWindowSpacerExtrudeToggle.className = 'building-fab-toggle building-fab-toggle-wide';
-        this.streetWindowSpacerExtrudeInput = document.createElement('input');
-        this.streetWindowSpacerExtrudeInput.type = 'checkbox';
-        this.streetWindowSpacerExtrudeInput.checked = this._streetWindowSpacerExtrude;
-        this.streetWindowSpacerExtrudeText = document.createElement('span');
-        this.streetWindowSpacerExtrudeText.textContent = 'Spacer extrude';
-        this.streetWindowSpacerExtrudeToggle.appendChild(this.streetWindowSpacerExtrudeInput);
-        this.streetWindowSpacerExtrudeToggle.appendChild(this.streetWindowSpacerExtrudeText);
-
-        const streetWindowSpacerExtrudeRow = makeRangeRow('Spacer extrude (m)');
-        this.streetWindowSpacerExtrudeDistanceRow = streetWindowSpacerExtrudeRow.row;
-        this.streetWindowSpacerExtrudeDistanceRange = streetWindowSpacerExtrudeRow.range;
-        this.streetWindowSpacerExtrudeDistanceNumber = streetWindowSpacerExtrudeRow.number;
-        this.streetWindowSpacerExtrudeDistanceRange.min = '0';
-        this.streetWindowSpacerExtrudeDistanceRange.max = '1';
-        this.streetWindowSpacerExtrudeDistanceRange.step = '0.01';
-        this.streetWindowSpacerExtrudeDistanceNumber.min = '0';
-        this.streetWindowSpacerExtrudeDistanceNumber.max = '1';
-        this.streetWindowSpacerExtrudeDistanceNumber.step = '0.01';
-
         const makeDetailsSection = (title, { open = true } = {}) => {
             const details = document.createElement('details');
             details.className = 'building-fab-details';
@@ -1109,6 +815,103 @@ export class BuildingFabricationUI {
             onDebugChanged: (cfg) => this.onMaterialVariationDebugChange?.({ ...cfg })
         });
 
+        this._windowUI = createWindowUIController({
+            pickerPopup: this._pickerPopup,
+            detailsOpenByKey: this._detailsOpenByKey,
+            clamp,
+            clampInt,
+            formatFloat,
+            setMaterialThumbToTexture,
+            setMaterialThumbToColor,
+            getWindowTypeId: () => this._windowTypeId,
+            setWindowTypeId: (typeId) => { this._windowTypeId = typeId; },
+            getWindowParams: () => this._windowParams,
+            setWindowParams: (params) => { this._windowParams = params; },
+            getWindowWidth: () => this._windowWidth,
+            setWindowWidth: (v) => { this._windowWidth = v; },
+            getWindowGap: () => this._windowGap,
+            setWindowGap: (v) => { this._windowGap = v; },
+            getWindowHeight: () => this._windowHeight,
+            setWindowHeight: (v) => { this._windowHeight = v; },
+            getWindowY: () => this._windowY,
+            setWindowY: (v) => { this._windowY = v; },
+            getWindowSpacerEnabled: () => this._windowSpacerEnabled,
+            setWindowSpacerEnabled: (v) => { this._windowSpacerEnabled = v; },
+            getWindowSpacerEvery: () => this._windowSpacerEvery,
+            setWindowSpacerEvery: (v) => { this._windowSpacerEvery = v; },
+            getWindowSpacerWidth: () => this._windowSpacerWidth,
+            setWindowSpacerWidth: (v) => { this._windowSpacerWidth = v; },
+            getWindowSpacerExtrude: () => this._windowSpacerExtrude,
+            setWindowSpacerExtrude: (v) => { this._windowSpacerExtrude = v; },
+            getWindowSpacerExtrudeDistance: () => this._windowSpacerExtrudeDistance,
+            setWindowSpacerExtrudeDistance: (v) => { this._windowSpacerExtrudeDistance = v; },
+            getStreetWindowTypeId: () => this._streetWindowTypeId,
+            setStreetWindowTypeId: (typeId) => { this._streetWindowTypeId = typeId; },
+            getStreetWindowParams: () => this._streetWindowParams,
+            setStreetWindowParams: (params) => { this._streetWindowParams = params; },
+            getStreetWindowWidth: () => this._streetWindowWidth,
+            setStreetWindowWidth: (v) => { this._streetWindowWidth = v; },
+            getStreetWindowGap: () => this._streetWindowGap,
+            setStreetWindowGap: (v) => { this._streetWindowGap = v; },
+            getStreetWindowHeight: () => this._streetWindowHeight,
+            setStreetWindowHeight: (v) => { this._streetWindowHeight = v; },
+            getStreetWindowY: () => this._streetWindowY,
+            setStreetWindowY: (v) => { this._streetWindowY = v; },
+            getStreetWindowSpacerEnabled: () => this._streetWindowSpacerEnabled,
+            setStreetWindowSpacerEnabled: (v) => { this._streetWindowSpacerEnabled = v; },
+            getStreetWindowSpacerEvery: () => this._streetWindowSpacerEvery,
+            setStreetWindowSpacerEvery: (v) => { this._streetWindowSpacerEvery = v; },
+            getStreetWindowSpacerWidth: () => this._streetWindowSpacerWidth,
+            setStreetWindowSpacerWidth: (v) => { this._streetWindowSpacerWidth = v; },
+            getStreetWindowSpacerExtrude: () => this._streetWindowSpacerExtrude,
+            setStreetWindowSpacerExtrude: (v) => { this._streetWindowSpacerExtrude = v; },
+            getStreetWindowSpacerExtrudeDistance: () => this._streetWindowSpacerExtrudeDistance,
+            setStreetWindowSpacerExtrudeDistance: (v) => { this._streetWindowSpacerExtrudeDistance = v; },
+            requestSync: () => this._syncPropertyWidgets(),
+            onWindowStyleChange: (v) => this.onWindowStyleChange?.(v),
+            onWindowFrameWidthChange: (v) => this.onWindowFrameWidthChange?.(v),
+            onWindowFrameColorChange: (v) => this.onWindowFrameColorChange?.(v),
+            onWindowGlassTopChange: (v) => this.onWindowGlassTopChange?.(v),
+            onWindowGlassBottomChange: (v) => this.onWindowGlassBottomChange?.(v),
+            onWindowWidthChange: (v) => this.onWindowWidthChange?.(v),
+            onWindowGapChange: (v) => this.onWindowGapChange?.(v),
+            onWindowHeightChange: (v) => this.onWindowHeightChange?.(v),
+            onWindowYChange: (v) => this.onWindowYChange?.(v),
+            onWindowSpacerEnabledChange: (v) => this.onWindowSpacerEnabledChange?.(v),
+            onWindowSpacerEveryChange: (v) => this.onWindowSpacerEveryChange?.(v),
+            onWindowSpacerWidthChange: (v) => this.onWindowSpacerWidthChange?.(v),
+            onWindowSpacerExtrudeChange: (v) => this.onWindowSpacerExtrudeChange?.(v),
+            onWindowSpacerExtrudeDistanceChange: (v) => this.onWindowSpacerExtrudeDistanceChange?.(v),
+            onStreetWindowStyleChange: (v) => this.onStreetWindowStyleChange?.(v),
+            onStreetWindowFrameWidthChange: (v) => this.onStreetWindowFrameWidthChange?.(v),
+            onStreetWindowFrameColorChange: (v) => this.onStreetWindowFrameColorChange?.(v),
+            onStreetWindowGlassTopChange: (v) => this.onStreetWindowGlassTopChange?.(v),
+            onStreetWindowGlassBottomChange: (v) => this.onStreetWindowGlassBottomChange?.(v),
+            onStreetWindowWidthChange: (v) => this.onStreetWindowWidthChange?.(v),
+            onStreetWindowGapChange: (v) => this.onStreetWindowGapChange?.(v),
+            onStreetWindowHeightChange: (v) => this.onStreetWindowHeightChange?.(v),
+            onStreetWindowYChange: (v) => this.onStreetWindowYChange?.(v),
+            onStreetWindowSpacerEnabledChange: (v) => this.onStreetWindowSpacerEnabledChange?.(v),
+            onStreetWindowSpacerEveryChange: (v) => this.onStreetWindowSpacerEveryChange?.(v),
+            onStreetWindowSpacerWidthChange: (v) => this.onStreetWindowSpacerWidthChange?.(v),
+            onStreetWindowSpacerExtrudeChange: (v) => this.onStreetWindowSpacerExtrudeChange?.(v),
+            onStreetWindowSpacerExtrudeDistanceChange: (v) => this.onStreetWindowSpacerExtrudeDistanceChange?.(v)
+        });
+
+        this._wallsUI = createWallsUIController({
+            detailsOpenByKey: this._detailsOpenByKey,
+            clamp,
+            formatFloat,
+            setMaterialThumbToTexture,
+            setMaterialThumbToColor,
+            getWallInset: () => this._wallInset,
+            setWallInset: (v) => { this._wallInset = v; },
+            onWallInsetChange: (v) => this.onWallInsetChange?.(v),
+            appendWallMaterialVariationUI: (args) => this._materialVariationUI.appendWallMaterialVariationUI(args),
+            requestReRenderLayersPanel: () => this._renderLayersPanel(),
+            registerLayerMiniController: (ctrl) => this._layerMiniControllers.push(ctrl)
+        });
+
         this.layersList = document.createElement('div');
         this.layersList.className = 'building-fab-layer-list';
 
@@ -1118,23 +921,11 @@ export class BuildingFabricationUI {
 
         const floorsSection = makeDetailsSection('Floors', { open: true });
         floorsSection.body.appendChild(this.styleRow);
-        floorsSection.body.appendChild(this.windowStyleRow);
+        this._windowUI.mountFloorsWindowStyle(floorsSection.body);
         floorsSection.body.appendChild(this.floorRow);
         floorsSection.body.appendChild(this.floorHeightRow);
-        floorsSection.body.appendChild(this.wallInsetRow);
-        floorsSection.body.appendChild(this.windowWidthRow);
-        floorsSection.body.appendChild(this.windowGapRow);
-        floorsSection.body.appendChild(this.windowHeightRow);
-        floorsSection.body.appendChild(this.windowYRow);
-        floorsSection.body.appendChild(this.windowFrameWidthRow);
-        floorsSection.body.appendChild(this.windowFrameColorRow);
-        floorsSection.body.appendChild(this.windowGlassTopRow);
-        floorsSection.body.appendChild(this.windowGlassBottomRow);
-        floorsSection.body.appendChild(this.windowSpacerToggle);
-        floorsSection.body.appendChild(this.windowSpacerEveryRow);
-        floorsSection.body.appendChild(this.windowSpacerWidthRow);
-        floorsSection.body.appendChild(this.windowSpacerExtrudeToggle);
-        floorsSection.body.appendChild(this.windowSpacerExtrudeDistanceRow);
+        this._wallsUI.mountWallInset(floorsSection.body);
+        this._windowUI.mountFloorsWindowControls(floorsSection.body);
 
         const streetSection = makeDetailsSection('Street floors', { open: true });
         streetSection.summary.appendChild(this.streetEnabledToggle);
@@ -1142,22 +933,10 @@ export class BuildingFabricationUI {
         this.streetEnabledInput.addEventListener('click', (e) => e.stopPropagation());
 
         streetSection.body.appendChild(this.streetStyleRow);
-        streetSection.body.appendChild(this.streetWindowStyleRow);
+        this._windowUI.mountStreetWindowStyle(streetSection.body);
         streetSection.body.appendChild(this.streetFloorsRow);
         streetSection.body.appendChild(this.streetHeightRow);
-        streetSection.body.appendChild(this.streetWindowWidthRow);
-        streetSection.body.appendChild(this.streetWindowGapRow);
-        streetSection.body.appendChild(this.streetWindowHeightRow);
-        streetSection.body.appendChild(this.streetWindowYRow);
-        streetSection.body.appendChild(this.streetWindowFrameWidthRow);
-        streetSection.body.appendChild(this.streetWindowFrameColorRow);
-        streetSection.body.appendChild(this.streetWindowGlassTopRow);
-        streetSection.body.appendChild(this.streetWindowGlassBottomRow);
-        streetSection.body.appendChild(this.streetWindowSpacerToggle);
-        streetSection.body.appendChild(this.streetWindowSpacerEveryRow);
-        streetSection.body.appendChild(this.streetWindowSpacerWidthRow);
-        streetSection.body.appendChild(this.streetWindowSpacerExtrudeToggle);
-        streetSection.body.appendChild(this.streetWindowSpacerExtrudeDistanceRow);
+        this._windowUI.mountStreetWindowControls(streetSection.body);
         streetSection.body.appendChild(this.beltCourseToggle);
         streetSection.body.appendChild(this.beltStatus);
         streetSection.body.appendChild(this.beltColorRow);
@@ -1329,29 +1108,6 @@ export class BuildingFabricationUI {
         this._onFloorNumberInput = () => this._setFloorCountFromUi(this.floorNumber.value);
         this._onFloorHeightRangeInput = () => this._setFloorHeightFromUi(this.floorHeightRange.value);
         this._onFloorHeightNumberInput = () => this._setFloorHeightFromUi(this.floorHeightNumber.value);
-        this._onWallInsetRangeInput = () => this._setWallInsetFromUi(this.wallInsetRange.value);
-        this._onWallInsetNumberInput = () => this._setWallInsetFromUi(this.wallInsetNumber.value);
-        this._onWindowWidthRangeInput = () => this._setWindowWidthFromUi(this.windowWidthRange.value);
-        this._onWindowWidthNumberInput = () => this._setWindowWidthFromUi(this.windowWidthNumber.value);
-        this._onWindowGapRangeInput = () => this._setWindowGapFromUi(this.windowGapRange.value);
-        this._onWindowGapNumberInput = () => this._setWindowGapFromUi(this.windowGapNumber.value);
-        this._onWindowHeightRangeInput = () => this._setWindowHeightFromUi(this.windowHeightRange.value);
-        this._onWindowHeightNumberInput = () => this._setWindowHeightFromUi(this.windowHeightNumber.value);
-        this._onWindowYRangeInput = () => this._setWindowYFromUi(this.windowYRange.value);
-        this._onWindowYNumberInput = () => this._setWindowYFromUi(this.windowYNumber.value);
-        this._onWindowFrameWidthRangeInput = () => this._setWindowFrameWidthFromUi(this.windowFrameWidthRange.value);
-        this._onWindowFrameWidthNumberInput = () => this._setWindowFrameWidthFromUi(this.windowFrameWidthNumber.value);
-        this._onWindowFrameColorPickClick = () => this._openWindowFrameColorPicker();
-        this._onWindowGlassTopPickClick = () => this._openWindowGlassTopPicker();
-        this._onWindowGlassBottomPickClick = () => this._openWindowGlassBottomPicker();
-        this._onWindowSpacerEnabledChange = () => this._setWindowSpacerEnabledFromUi(this.windowSpacerInput.checked);
-        this._onWindowSpacerEveryRangeInput = () => this._setWindowSpacerEveryFromUi(this.windowSpacerEveryRange.value);
-        this._onWindowSpacerEveryNumberInput = () => this._setWindowSpacerEveryFromUi(this.windowSpacerEveryNumber.value);
-        this._onWindowSpacerWidthRangeInput = () => this._setWindowSpacerWidthFromUi(this.windowSpacerWidthRange.value);
-        this._onWindowSpacerWidthNumberInput = () => this._setWindowSpacerWidthFromUi(this.windowSpacerWidthNumber.value);
-        this._onWindowSpacerExtrudeChange = () => this._setWindowSpacerExtrudeFromUi(this.windowSpacerExtrudeInput.checked);
-        this._onWindowSpacerExtrudeDistanceRangeInput = () => this._setWindowSpacerExtrudeDistanceFromUi(this.windowSpacerExtrudeDistanceRange.value);
-        this._onWindowSpacerExtrudeDistanceNumberInput = () => this._setWindowSpacerExtrudeDistanceFromUi(this.windowSpacerExtrudeDistanceNumber.value);
         this._onStreetEnabledChange = () => this._setStreetEnabledFromUi(this.streetEnabledInput.checked);
         this._onStreetFloorsRangeInput = () => this._setStreetFloorsFromUi(this.streetFloorsRange.value);
         this._onStreetFloorsNumberInput = () => this._setStreetFloorsFromUi(this.streetFloorsNumber.value);
@@ -1371,33 +1127,10 @@ export class BuildingFabricationUI {
         this._onTopBeltInnerWidthNumberInput = () => this._setTopBeltInnerWidthFromUi(this.topBeltInnerWidthNumber.value);
         this._onTopBeltHeightRangeInput = () => this._setTopBeltHeightFromUi(this.topBeltHeightRange.value);
         this._onTopBeltHeightNumberInput = () => this._setTopBeltHeightFromUi(this.topBeltHeightNumber.value);
-        this._onWindowStylePickClick = () => this._openWindowTypePicker();
         this._onRoofColorPickClick = () => this._openRoofColorPicker();
         this._onTopBeltColorPickClick = () => this._openTopBeltColorPicker();
         this._onTypeSelectChange = () => this._setBuildingTypeFromUi(this.typeSelect.value);
         this._onStylePickClick = () => this._openBuildingStylePicker();
-        this._onStreetWindowStylePickClick = () => this._openStreetWindowTypePicker();
-        this._onStreetWindowWidthRangeInput = () => this._setStreetWindowWidthFromUi(this.streetWindowWidthRange.value);
-        this._onStreetWindowWidthNumberInput = () => this._setStreetWindowWidthFromUi(this.streetWindowWidthNumber.value);
-        this._onStreetWindowGapRangeInput = () => this._setStreetWindowGapFromUi(this.streetWindowGapRange.value);
-        this._onStreetWindowGapNumberInput = () => this._setStreetWindowGapFromUi(this.streetWindowGapNumber.value);
-        this._onStreetWindowHeightRangeInput = () => this._setStreetWindowHeightFromUi(this.streetWindowHeightRange.value);
-        this._onStreetWindowHeightNumberInput = () => this._setStreetWindowHeightFromUi(this.streetWindowHeightNumber.value);
-        this._onStreetWindowYRangeInput = () => this._setStreetWindowYFromUi(this.streetWindowYRange.value);
-        this._onStreetWindowYNumberInput = () => this._setStreetWindowYFromUi(this.streetWindowYNumber.value);
-        this._onStreetWindowFrameWidthRangeInput = () => this._setStreetWindowFrameWidthFromUi(this.streetWindowFrameWidthRange.value);
-        this._onStreetWindowFrameWidthNumberInput = () => this._setStreetWindowFrameWidthFromUi(this.streetWindowFrameWidthNumber.value);
-        this._onStreetWindowFrameColorPickClick = () => this._openStreetWindowFrameColorPicker();
-        this._onStreetWindowGlassTopPickClick = () => this._openStreetWindowGlassTopPicker();
-        this._onStreetWindowGlassBottomPickClick = () => this._openStreetWindowGlassBottomPicker();
-        this._onStreetWindowSpacerEnabledChange = () => this._setStreetWindowSpacerEnabledFromUi(this.streetWindowSpacerInput.checked);
-        this._onStreetWindowSpacerEveryRangeInput = () => this._setStreetWindowSpacerEveryFromUi(this.streetWindowSpacerEveryRange.value);
-        this._onStreetWindowSpacerEveryNumberInput = () => this._setStreetWindowSpacerEveryFromUi(this.streetWindowSpacerEveryNumber.value);
-        this._onStreetWindowSpacerWidthRangeInput = () => this._setStreetWindowSpacerWidthFromUi(this.streetWindowSpacerWidthRange.value);
-        this._onStreetWindowSpacerWidthNumberInput = () => this._setStreetWindowSpacerWidthFromUi(this.streetWindowSpacerWidthNumber.value);
-        this._onStreetWindowSpacerExtrudeChange = () => this._setStreetWindowSpacerExtrudeFromUi(this.streetWindowSpacerExtrudeInput.checked);
-        this._onStreetWindowSpacerExtrudeDistanceRangeInput = () => this._setStreetWindowSpacerExtrudeDistanceFromUi(this.streetWindowSpacerExtrudeDistanceRange.value);
-        this._onStreetWindowSpacerExtrudeDistanceNumberInput = () => this._setStreetWindowSpacerExtrudeDistanceFromUi(this.streetWindowSpacerExtrudeDistanceNumber.value);
         this._onHideSelectionBorderChange = () => this._setHideSelectionBorderFromUi(this.hideSelectionBorderInput.checked);
         this._onViewModeClick = (e) => {
             const btn = e?.target?.closest?.('.building-fab-view-mode');
@@ -1443,6 +1176,8 @@ export class BuildingFabricationUI {
     }
 
     unmount() {
+        this._windowUI?.dispose?.();
+        this._wallsUI?.dispose?.();
         for (const ctrl of this._pickerRowControllers) ctrl?.destroy?.();
         this._pickerRowControllers.length = 0;
         this._pickerPopup?.dispose?.();
@@ -1992,6 +1727,7 @@ export class BuildingFabricationUI {
 
         const allow = !!this._enabled;
         const scopeKey = this._selectedBuildingId ? `building:${this._selectedBuildingId}` : 'template';
+        const notifySelectedLayersChanged = this._notifySelectedLayersChanged.bind(this);
 
         const bindDetailsState = (details, key, { open = true } = {}) => {
             if (!details || typeof key !== 'string' || !key) return;
@@ -2088,7 +1824,6 @@ export class BuildingFabricationUI {
             }))
         ];
         const getWallTextureOption = (id) => wallTextureDefs.find((opt) => opt?.id === id) ?? null;
-        const getWindowOption = (id) => (this._windowTypeOptions ?? []).find((opt) => opt?.id === id) ?? null;
         const getBeltColorOption = (id) => (this._beltCourseColorOptions ?? []).find((opt) => opt?.id === id) ?? null;
         const getRoofColorOption = (id) => (this._roofColorOptions ?? []).find((opt) => opt?.id === id) ?? null;
 
@@ -2169,29 +1904,6 @@ export class BuildingFabricationUI {
                     const next = parseMaterialPickerId(opt?.id);
                     if (!next) return;
                     onSelect(next);
-                }
-            });
-        };
-
-        const openWindowPicker = (layer, picker) => {
-            const options = (this._windowTypeOptions ?? []).map((opt) => ({
-                id: opt.id,
-                label: opt.label,
-                kind: 'texture',
-                previewUrl: opt.previewUrl
-            }));
-            this._pickerPopup.open({
-                title: 'Window type',
-                sections: [{ label: 'Types', options }],
-                selectedId: layer?.windows?.typeId || WINDOW_TYPE.STYLE_DEFAULT,
-                onSelect: (opt) => {
-                    layer.windows.typeId = opt.id;
-                    const found = getWindowOption(layer.windows.typeId) ?? null;
-                    const label = found?.label ?? layer.windows.typeId;
-                    picker.text.textContent = label;
-                    setMaterialThumbToTexture(picker.thumb, found?.previewUrl ?? '', label);
-                    layer.windows.params = { ...getDefaultWindowParams(layer.windows.typeId), ...(layer.windows.params ?? {}) };
-                    this._notifySelectedLayersChanged();
                 }
             });
         };
@@ -2344,73 +2056,17 @@ export class BuildingFabricationUI {
                 });
                 planGroup.body.appendChild(insetRow.row);
 
-                const wallsGroup = makeDetailsSection('Walls', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls` });
-                const wallMaterialPicker = makePickerRow('Wall material');
-                const wallMaterial = layer?.material ?? { kind: 'texture', id: layer?.style ?? BUILDING_STYLE.DEFAULT };
-                if (wallMaterial?.kind === 'color') {
-                    const colorId = typeof wallMaterial.id === 'string' && wallMaterial.id ? wallMaterial.id : BELT_COURSE_COLOR.OFFWHITE;
-                    const found = getBeltColorOption(colorId) ?? null;
-                    const label = found?.label ?? colorId;
-                    wallMaterialPicker.text.textContent = label;
-                    setMaterialThumbToColor(wallMaterialPicker.thumb, found?.hex ?? 0xffffff);
-                } else {
-                    const styleId = typeof wallMaterial?.id === 'string' && wallMaterial.id ? wallMaterial.id : (layer?.style ?? BUILDING_STYLE.DEFAULT);
-                    const found = getWallTextureOption(styleId) ?? null;
-                    const label = found?.label ?? styleId;
-                    wallMaterialPicker.text.textContent = label;
-                    setMaterialThumbToTexture(wallMaterialPicker.thumb, found?.wallTextureUrl ?? '', label);
-                }
-                wallMaterialPicker.button.disabled = !allow;
-                wallMaterialPicker.button.addEventListener('click', () => {
-                    openMaterialPicker({
-                        title: 'Wall material',
-                        material: layer.material ?? wallMaterial,
-                        textureOptions: wallTextureMaterialOptions,
-                        colorOptions: beltColorMaterialOptions,
-                        onSelect: (spec) => {
-                            layer.material = spec;
-                            if (spec.kind === 'texture') layer.style = spec.id;
-
-                            if (spec.kind === 'color') {
-                                const found = getBeltColorOption(spec.id) ?? null;
-                                const label = found?.label ?? spec.id;
-                                wallMaterialPicker.text.textContent = label;
-                                setMaterialThumbToColor(wallMaterialPicker.thumb, found?.hex ?? 0xffffff);
-                            } else {
-                                const found = getWallTextureOption(spec.id) ?? null;
-                                const label = found?.label ?? spec.id;
-                                wallMaterialPicker.text.textContent = label;
-                                setMaterialThumbToTexture(wallMaterialPicker.thumb, found?.wallTextureUrl ?? '', label);
-                            }
-                            this._notifySelectedLayersChanged();
-                        }
-                    });
-                });
-                wallsGroup.body.appendChild(wallMaterialPicker.row);
-
-                const wallTilingController = createTextureTilingMiniController({
-                    mode: 'details',
-                    title: 'Texture tiling',
-                    detailsOpenByKey: this._detailsOpenByKey,
-                    detailsKey: `${scopeKey}:layer:${layerId}:walls:tiling`,
-                    allow,
-                    tiling: (layer.tiling ??= {}),
-                    defaults: { tileMeters: 2.0 },
-                    hintText: 'Overrides the material tile size in meters.',
-                    onChange: () => this._notifySelectedLayersChanged()
-                });
-                wallTilingController.mount(wallsGroup.body);
-                this._layerMiniControllers.push(wallTilingController);
-
-                this._materialVariationUI.appendWallMaterialVariationUI({
-                    parent: wallsGroup.body,
+                const wallsGroup = this._wallsUI.appendLayerWallsUI({
                     allow,
                     scopeKey,
                     layerId,
                     layer,
-                    onChange: () => this._notifySelectedLayersChanged(),
-                    onReRender: () => this._renderLayersPanel(),
-                    registerMiniController: (ctrl) => this._layerMiniControllers.push(ctrl)
+                    openMaterialPicker,
+                    textureMaterialOptions: wallTextureMaterialOptions,
+                    colorMaterialOptions: beltColorMaterialOptions,
+                    getWallTextureOption,
+                    getWallColorOption: getBeltColorOption,
+                    onChange: notifySelectedLayersChanged
                 });
 
                 const beltGroup = makeDetailsSection('Belt', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:belt` });
@@ -2523,375 +2179,18 @@ export class BuildingFabricationUI {
                 });
                 beltGroup.body.appendChild(beltMaterialPicker.row);
 
-                const windowsGroup = makeDetailsSection('Windows', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:windows` });
-                const windowsToggle = makeToggleRow('Enable windows');
-                windowsToggle.input.checked = !!layer?.windows?.enabled;
-                windowsToggle.input.disabled = !allow;
-                windowsGroup.body.appendChild(windowsToggle.toggle);
-
-                const windowPicker = makePickerRow('Window type');
-                const winTypeId = layer?.windows?.typeId ?? WINDOW_TYPE.STYLE_DEFAULT;
-                const winFound = getWindowOption(winTypeId) ?? null;
-                const winLabel = winFound?.label ?? winTypeId;
-                windowPicker.text.textContent = winLabel;
-                setMaterialThumbToTexture(windowPicker.thumb, winFound?.previewUrl ?? '', winLabel);
-                windowPicker.button.disabled = !allow || !layer?.windows?.enabled;
-                windowPicker.button.addEventListener('click', () => openWindowPicker(layer, windowPicker));
-                windowsGroup.body.appendChild(windowPicker.row);
-
-                const winWidthRow = makeRangeRow('Window width (m)');
-                winWidthRow.range.min = '0.3';
-                winWidthRow.range.max = '12';
-                winWidthRow.range.step = '0.1';
-                winWidthRow.number.min = '0.3';
-                winWidthRow.number.max = '12';
-                winWidthRow.number.step = '0.1';
-                winWidthRow.range.value = String(layer?.windows?.width ?? 2.2);
-                winWidthRow.number.value = formatFloat(layer?.windows?.width ?? 2.2, 1);
-                winWidthRow.range.disabled = !allow || !layer?.windows?.enabled;
-                winWidthRow.number.disabled = !allow || !layer?.windows?.enabled;
-                winWidthRow.range.addEventListener('input', () => {
-                    const next = clamp(winWidthRow.range.value, 0.3, 12.0);
-                    layer.windows.width = next;
-                    winWidthRow.number.value = formatFloat(next, 1);
-                    this._notifySelectedLayersChanged();
-                });
-                winWidthRow.number.addEventListener('change', () => {
-                    const next = clamp(winWidthRow.number.value, 0.3, 12.0);
-                    layer.windows.width = next;
-                    winWidthRow.range.value = String(next);
-                    winWidthRow.number.value = formatFloat(next, 1);
-                    this._notifySelectedLayersChanged();
-                });
-                windowsGroup.body.appendChild(winWidthRow.row);
-
-                const winSpacingRow = makeRangeRow('Window spacing (m)');
-                winSpacingRow.range.min = '0';
-                winSpacingRow.range.max = '24';
-                winSpacingRow.range.step = '0.1';
-                winSpacingRow.number.min = '0';
-                winSpacingRow.number.max = '24';
-                winSpacingRow.number.step = '0.1';
-                winSpacingRow.range.value = String(layer?.windows?.spacing ?? 1.6);
-                winSpacingRow.number.value = formatFloat(layer?.windows?.spacing ?? 1.6, 1);
-                winSpacingRow.range.disabled = !allow || !layer?.windows?.enabled;
-                winSpacingRow.number.disabled = !allow || !layer?.windows?.enabled;
-                winSpacingRow.range.addEventListener('input', () => {
-                    const next = clamp(winSpacingRow.range.value, 0.0, 24.0);
-                    layer.windows.spacing = next;
-                    winSpacingRow.number.value = formatFloat(next, 1);
-                    this._notifySelectedLayersChanged();
-                });
-                winSpacingRow.number.addEventListener('change', () => {
-                    const next = clamp(winSpacingRow.number.value, 0.0, 24.0);
-                    layer.windows.spacing = next;
-                    winSpacingRow.range.value = String(next);
-                    winSpacingRow.number.value = formatFloat(next, 1);
-                    this._notifySelectedLayersChanged();
-                });
-                windowsGroup.body.appendChild(winSpacingRow.row);
-
-                const winHeightRow = makeRangeRow('Window height (m)');
-                winHeightRow.range.min = '0.3';
-                winHeightRow.range.max = '10';
-                winHeightRow.range.step = '0.1';
-                winHeightRow.number.min = '0.3';
-                winHeightRow.number.max = '10';
-                winHeightRow.number.step = '0.1';
-                winHeightRow.range.value = String(layer?.windows?.height ?? 1.4);
-                winHeightRow.number.value = formatFloat(layer?.windows?.height ?? 1.4, 1);
-                winHeightRow.range.disabled = !allow || !layer?.windows?.enabled;
-                winHeightRow.number.disabled = !allow || !layer?.windows?.enabled;
-                winHeightRow.range.addEventListener('input', () => {
-                    const next = clamp(winHeightRow.range.value, 0.3, 10.0);
-                    layer.windows.height = next;
-                    winHeightRow.number.value = formatFloat(next, 1);
-                    this._notifySelectedLayersChanged();
-                });
-                winHeightRow.number.addEventListener('change', () => {
-                    const next = clamp(winHeightRow.number.value, 0.3, 10.0);
-                    layer.windows.height = next;
-                    winHeightRow.range.value = String(next);
-                    winHeightRow.number.value = formatFloat(next, 1);
-                    this._notifySelectedLayersChanged();
-                });
-                windowsGroup.body.appendChild(winHeightRow.row);
-
-                const winSillRow = makeRangeRow('Sill height (m)');
-                winSillRow.range.min = '0';
-                winSillRow.range.max = '12';
-                winSillRow.range.step = '0.1';
-                winSillRow.number.min = '0';
-                winSillRow.number.max = '12';
-                winSillRow.number.step = '0.1';
-                winSillRow.range.value = String(layer?.windows?.sillHeight ?? 1.0);
-                winSillRow.number.value = formatFloat(layer?.windows?.sillHeight ?? 1.0, 1);
-                winSillRow.range.disabled = !allow || !layer?.windows?.enabled;
-                winSillRow.number.disabled = !allow || !layer?.windows?.enabled;
-                winSillRow.range.addEventListener('input', () => {
-                    const next = clamp(winSillRow.range.value, 0.0, 12.0);
-                    layer.windows.sillHeight = next;
-                    winSillRow.number.value = formatFloat(next, 1);
-                    this._notifySelectedLayersChanged();
-                });
-                winSillRow.number.addEventListener('change', () => {
-                    const next = clamp(winSillRow.number.value, 0.0, 12.0);
-                    layer.windows.sillHeight = next;
-                    winSillRow.range.value = String(next);
-                    winSillRow.number.value = formatFloat(next, 1);
-                    this._notifySelectedLayersChanged();
-                });
-                windowsGroup.body.appendChild(winSillRow.row);
-
-                layer.windows.fakeDepth ??= { enabled: false, strength: 0.06, insetStrength: 0.25 };
-                const fakeDepthToggle = makeToggleRow('Fake depth (parallax)');
-                fakeDepthToggle.input.checked = !!layer?.windows?.fakeDepth?.enabled;
-                fakeDepthToggle.input.disabled = !allow || !layer?.windows?.enabled;
-                windowsGroup.body.appendChild(fakeDepthToggle.toggle);
-
-                const fakeDepthStrengthRow = makeRangeRow('Fake depth strength');
-                fakeDepthStrengthRow.range.min = '0';
-                fakeDepthStrengthRow.range.max = '0.25';
-                fakeDepthStrengthRow.range.step = '0.01';
-                fakeDepthStrengthRow.number.min = '0';
-                fakeDepthStrengthRow.number.max = '0.25';
-                fakeDepthStrengthRow.number.step = '0.01';
-                fakeDepthStrengthRow.range.value = String(layer?.windows?.fakeDepth?.strength ?? 0.06);
-                fakeDepthStrengthRow.number.value = formatFloat(layer?.windows?.fakeDepth?.strength ?? 0.06, 2);
-                fakeDepthStrengthRow.range.disabled = !allow || !layer?.windows?.enabled || !layer?.windows?.fakeDepth?.enabled;
-                fakeDepthStrengthRow.number.disabled = fakeDepthStrengthRow.range.disabled;
-                fakeDepthStrengthRow.range.addEventListener('input', () => {
-                    const next = clamp(fakeDepthStrengthRow.range.value, 0.0, 0.25);
-                    layer.windows.fakeDepth.strength = next;
-                    fakeDepthStrengthRow.number.value = formatFloat(next, 2);
-                    this._notifySelectedLayersChanged();
-                });
-                fakeDepthStrengthRow.number.addEventListener('change', () => {
-                    const next = clamp(fakeDepthStrengthRow.number.value, 0.0, 0.25);
-                    layer.windows.fakeDepth.strength = next;
-                    fakeDepthStrengthRow.range.value = String(next);
-                    fakeDepthStrengthRow.number.value = formatFloat(next, 2);
-                    this._notifySelectedLayersChanged();
-                });
-                windowsGroup.body.appendChild(fakeDepthStrengthRow.row);
-
-                const fakeDepthInsetRow = makeRangeRow('Inset / recess');
-                fakeDepthInsetRow.range.min = '0';
-                fakeDepthInsetRow.range.max = '1';
-                fakeDepthInsetRow.range.step = '0.01';
-                fakeDepthInsetRow.number.min = '0';
-                fakeDepthInsetRow.number.max = '1';
-                fakeDepthInsetRow.number.step = '0.01';
-                fakeDepthInsetRow.range.value = String(layer?.windows?.fakeDepth?.insetStrength ?? 0.25);
-                fakeDepthInsetRow.number.value = formatFloat(layer?.windows?.fakeDepth?.insetStrength ?? 0.25, 2);
-                fakeDepthInsetRow.range.disabled = !allow || !layer?.windows?.enabled || !layer?.windows?.fakeDepth?.enabled;
-                fakeDepthInsetRow.number.disabled = fakeDepthInsetRow.range.disabled;
-                fakeDepthInsetRow.range.addEventListener('input', () => {
-                    const next = clamp(fakeDepthInsetRow.range.value, 0.0, 1.0);
-                    layer.windows.fakeDepth.insetStrength = next;
-                    fakeDepthInsetRow.number.value = formatFloat(next, 2);
-                    this._notifySelectedLayersChanged();
-                });
-                fakeDepthInsetRow.number.addEventListener('change', () => {
-                    const next = clamp(fakeDepthInsetRow.number.value, 0.0, 1.0);
-                    layer.windows.fakeDepth.insetStrength = next;
-                    fakeDepthInsetRow.range.value = String(next);
-                    fakeDepthInsetRow.number.value = formatFloat(next, 2);
-                    this._notifySelectedLayersChanged();
-                });
-                windowsGroup.body.appendChild(fakeDepthInsetRow.row);
-
-                const columnsGroup = makeDetailsSection('Space columns', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:space_columns` });
-                const colsToggle = makeToggleRow('Enable space columns');
-                colsToggle.input.checked = !!layer?.windows?.spaceColumns?.enabled;
-                colsToggle.input.disabled = !allow || !layer?.windows?.enabled;
-                columnsGroup.body.appendChild(colsToggle.toggle);
-
-                const colsEveryRow = makeRangeRow('Every N windows');
-                colsEveryRow.range.min = '1';
-                colsEveryRow.range.max = '99';
-                colsEveryRow.range.step = '1';
-                colsEveryRow.number.min = '1';
-                colsEveryRow.number.max = '99';
-                colsEveryRow.number.step = '1';
-                colsEveryRow.range.value = String(layer?.windows?.spaceColumns?.every ?? 4);
-                colsEveryRow.number.value = String(layer?.windows?.spaceColumns?.every ?? 4);
-                colsEveryRow.range.disabled = !allow || !layer?.windows?.enabled || !layer?.windows?.spaceColumns?.enabled;
-                colsEveryRow.number.disabled = colsEveryRow.range.disabled;
-                colsEveryRow.range.addEventListener('input', () => {
-                    const next = clampInt(colsEveryRow.range.value, 1, 99);
-                    layer.windows.spaceColumns.every = next;
-                    colsEveryRow.number.value = String(next);
-                    this._notifySelectedLayersChanged();
-                });
-                colsEveryRow.number.addEventListener('change', () => {
-                    const next = clampInt(colsEveryRow.number.value, 1, 99);
-                    layer.windows.spaceColumns.every = next;
-                    colsEveryRow.range.value = String(next);
-                    colsEveryRow.number.value = String(next);
-                    this._notifySelectedLayersChanged();
-                });
-                columnsGroup.body.appendChild(colsEveryRow.row);
-
-                const colsWidthRow = makeRangeRow('Column width (m)');
-                colsWidthRow.range.min = '0.1';
-                colsWidthRow.range.max = '10';
-                colsWidthRow.range.step = '0.1';
-                colsWidthRow.number.min = '0.1';
-                colsWidthRow.number.max = '10';
-                colsWidthRow.number.step = '0.1';
-                colsWidthRow.range.value = String(layer?.windows?.spaceColumns?.width ?? 0.9);
-                colsWidthRow.number.value = formatFloat(layer?.windows?.spaceColumns?.width ?? 0.9, 1);
-                colsWidthRow.range.disabled = !allow || !layer?.windows?.enabled || !layer?.windows?.spaceColumns?.enabled;
-                colsWidthRow.number.disabled = colsWidthRow.range.disabled;
-                colsWidthRow.range.addEventListener('input', () => {
-                    const next = clamp(colsWidthRow.range.value, 0.1, 10.0);
-                    layer.windows.spaceColumns.width = next;
-                    colsWidthRow.number.value = formatFloat(next, 1);
-                    this._notifySelectedLayersChanged();
-                });
-                colsWidthRow.number.addEventListener('change', () => {
-                    const next = clamp(colsWidthRow.number.value, 0.1, 10.0);
-                    layer.windows.spaceColumns.width = next;
-                    colsWidthRow.range.value = String(next);
-                    colsWidthRow.number.value = formatFloat(next, 1);
-                    this._notifySelectedLayersChanged();
-                });
-                columnsGroup.body.appendChild(colsWidthRow.row);
-
-                const colsMaterialPicker = makePickerRow('Column material');
-                const colsMaterial = layer?.windows?.spaceColumns?.material ?? { kind: 'color', id: BELT_COURSE_COLOR.OFFWHITE };
-                if (colsMaterial?.kind === 'texture') {
-                    const styleId = typeof colsMaterial.id === 'string' && colsMaterial.id ? colsMaterial.id : BUILDING_STYLE.DEFAULT;
-                    const found = getStyleOption(styleId) ?? null;
-                    const label = found?.label ?? styleId;
-                    colsMaterialPicker.text.textContent = label;
-                    setMaterialThumbToTexture(colsMaterialPicker.thumb, found?.wallTextureUrl ?? '', label);
-                } else {
-                    const colorId = typeof colsMaterial?.id === 'string' && colsMaterial.id ? colsMaterial.id : BELT_COURSE_COLOR.OFFWHITE;
-                    const found = getBeltColorOption(colorId) ?? null;
-                    const label = found?.label ?? colorId;
-                    colsMaterialPicker.text.textContent = label;
-                    setMaterialThumbToColor(colsMaterialPicker.thumb, found?.hex ?? 0xffffff);
-                }
-                colsMaterialPicker.button.disabled = !allow || !layer?.windows?.enabled || !layer?.windows?.spaceColumns?.enabled;
-                colsMaterialPicker.button.addEventListener('click', () => {
-                    openMaterialPicker({
-                        title: 'Column material',
-                        material: layer.windows.spaceColumns.material ?? colsMaterial,
-                        textureOptions: textureMaterialOptions,
-                        colorOptions: beltColorMaterialOptions,
-                        onSelect: (spec) => {
-                            layer.windows.spaceColumns.material = spec;
-                            if (spec.kind === 'color') {
-                                const found = getBeltColorOption(spec.id) ?? null;
-                                const label = found?.label ?? spec.id;
-                                colsMaterialPicker.text.textContent = label;
-                                setMaterialThumbToColor(colsMaterialPicker.thumb, found?.hex ?? 0xffffff);
-                            } else {
-                                const found = getStyleOption(spec.id) ?? null;
-                                const label = found?.label ?? spec.id;
-                                colsMaterialPicker.text.textContent = label;
-                                setMaterialThumbToTexture(colsMaterialPicker.thumb, found?.wallTextureUrl ?? '', label);
-                            }
-                            this._notifySelectedLayersChanged();
-                        }
-                    });
-                });
-                columnsGroup.body.appendChild(colsMaterialPicker.row);
-
-                const colsExtrudeToggle = makeToggleRow('Extrude columns');
-                colsExtrudeToggle.input.checked = !!layer?.windows?.spaceColumns?.extrude;
-                colsExtrudeToggle.input.disabled = !allow || !layer?.windows?.enabled || !layer?.windows?.spaceColumns?.enabled;
-                columnsGroup.body.appendChild(colsExtrudeToggle.toggle);
-
-                const colsExtrudeRow = makeRangeRow('Extrude distance (m)');
-                colsExtrudeRow.range.min = '0';
-                colsExtrudeRow.range.max = '1';
-                colsExtrudeRow.range.step = '0.01';
-                colsExtrudeRow.number.min = '0';
-                colsExtrudeRow.number.max = '1';
-                colsExtrudeRow.number.step = '0.01';
-                colsExtrudeRow.range.value = String(layer?.windows?.spaceColumns?.extrudeDistance ?? 0.12);
-                colsExtrudeRow.number.value = formatFloat(layer?.windows?.spaceColumns?.extrudeDistance ?? 0.12, 2);
-                colsExtrudeRow.range.disabled = !allow || !layer?.windows?.enabled || !layer?.windows?.spaceColumns?.enabled || !layer?.windows?.spaceColumns?.extrude;
-                colsExtrudeRow.number.disabled = colsExtrudeRow.range.disabled;
-                colsExtrudeRow.range.addEventListener('input', () => {
-                    const next = clamp(colsExtrudeRow.range.value, 0.0, 1.0);
-                    layer.windows.spaceColumns.extrudeDistance = next;
-                    colsExtrudeRow.number.value = formatFloat(next, 2);
-                    this._notifySelectedLayersChanged();
-                });
-                colsExtrudeRow.number.addEventListener('change', () => {
-                    const next = clamp(colsExtrudeRow.number.value, 0.0, 1.0);
-                    layer.windows.spaceColumns.extrudeDistance = next;
-                    colsExtrudeRow.range.value = String(next);
-                    colsExtrudeRow.number.value = formatFloat(next, 2);
-                    this._notifySelectedLayersChanged();
-                });
-                columnsGroup.body.appendChild(colsExtrudeRow.row);
-
-                colsToggle.input.addEventListener('change', () => {
-                    layer.windows.spaceColumns.enabled = !!colsToggle.input.checked;
-                    const enabled = layer.windows.enabled && layer.windows.spaceColumns.enabled;
-                    colsEveryRow.range.disabled = !allow || !enabled;
-                    colsEveryRow.number.disabled = colsEveryRow.range.disabled;
-                    colsWidthRow.range.disabled = !allow || !enabled;
-                    colsWidthRow.number.disabled = colsWidthRow.range.disabled;
-                    colsMaterialPicker.button.disabled = !allow || !enabled;
-                    colsExtrudeToggle.input.disabled = !allow || !enabled;
-                    colsExtrudeRow.range.disabled = !allow || !enabled || !layer.windows.spaceColumns.extrude;
-                    colsExtrudeRow.number.disabled = colsExtrudeRow.range.disabled;
-                    this._notifySelectedLayersChanged();
-                });
-
-                colsExtrudeToggle.input.addEventListener('change', () => {
-                    layer.windows.spaceColumns.extrude = !!colsExtrudeToggle.input.checked;
-                    const enabled = layer.windows.enabled && layer.windows.spaceColumns.enabled && layer.windows.spaceColumns.extrude;
-                    colsExtrudeRow.range.disabled = !allow || !enabled;
-                    colsExtrudeRow.number.disabled = colsExtrudeRow.range.disabled;
-                    this._notifySelectedLayersChanged();
-                });
-
-                fakeDepthToggle.input.addEventListener('change', () => {
-                    layer.windows.fakeDepth.enabled = !!fakeDepthToggle.input.checked;
-                    const enabled = layer.windows.enabled && layer.windows.fakeDepth.enabled;
-                    fakeDepthStrengthRow.range.disabled = !allow || !enabled;
-                    fakeDepthStrengthRow.number.disabled = fakeDepthStrengthRow.range.disabled;
-                    fakeDepthInsetRow.range.disabled = !allow || !enabled;
-                    fakeDepthInsetRow.number.disabled = fakeDepthInsetRow.range.disabled;
-                    this._notifySelectedLayersChanged();
-                });
-
-                windowsToggle.input.addEventListener('change', () => {
-                    layer.windows.enabled = !!windowsToggle.input.checked;
-                    const winEnabled = layer.windows.enabled;
-                    windowPicker.button.disabled = !allow || !winEnabled;
-                    winWidthRow.range.disabled = !allow || !winEnabled;
-                    winWidthRow.number.disabled = winWidthRow.range.disabled;
-                    winSpacingRow.range.disabled = !allow || !winEnabled;
-                    winSpacingRow.number.disabled = winSpacingRow.range.disabled;
-                    winHeightRow.range.disabled = !allow || !winEnabled;
-                    winHeightRow.number.disabled = winHeightRow.range.disabled;
-                    winSillRow.range.disabled = !allow || !winEnabled;
-                    winSillRow.number.disabled = winSillRow.range.disabled;
-                    fakeDepthToggle.input.disabled = !allow || !winEnabled;
-                    const fakeEnabled = winEnabled && layer.windows.fakeDepth.enabled;
-                    fakeDepthStrengthRow.range.disabled = !allow || !fakeEnabled;
-                    fakeDepthStrengthRow.number.disabled = fakeDepthStrengthRow.range.disabled;
-                    fakeDepthInsetRow.range.disabled = !allow || !fakeEnabled;
-                    fakeDepthInsetRow.number.disabled = fakeDepthInsetRow.range.disabled;
-                    colsToggle.input.disabled = !allow || !winEnabled;
-                    const colsEnabled = winEnabled && layer.windows.spaceColumns.enabled;
-                    colsEveryRow.range.disabled = !allow || !colsEnabled;
-                    colsEveryRow.number.disabled = colsEveryRow.range.disabled;
-                    colsWidthRow.range.disabled = !allow || !colsEnabled;
-                    colsWidthRow.number.disabled = colsWidthRow.range.disabled;
-                    colsMaterialPicker.button.disabled = !allow || !colsEnabled;
-                    colsExtrudeToggle.input.disabled = !allow || !colsEnabled;
-                    colsExtrudeRow.range.disabled = !allow || !colsEnabled || !layer.windows.spaceColumns.extrude;
-                    colsExtrudeRow.number.disabled = colsExtrudeRow.range.disabled;
-                    this._notifySelectedLayersChanged();
+                const { windowsGroup, columnsGroup } = this._windowUI.appendLayerWindowsUI({
+                    parent: null,
+                    allow,
+                    scopeKey,
+                    layerId,
+                    layer,
+                    openMaterialPicker,
+                    textureMaterialOptions,
+                    beltColorMaterialOptions,
+                    getStyleOption,
+                    getBeltColorOption,
+                    onChange: notifySelectedLayersChanged
                 });
 
                 const doorsGroup = makeDetailsSection('Doors', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:doors` });
@@ -2981,7 +2280,7 @@ export class BuildingFabricationUI {
                     tiling: (layer.roof.tiling ??= {}),
                     defaults: { tileMeters: 4.0 },
                     hintText: 'Overrides the material tile size in meters.',
-                    onChange: () => this._notifySelectedLayersChanged()
+                    onChange: notifySelectedLayersChanged
                 });
                 roofTilingController.mount(layerSection.body);
                 this._layerMiniControllers.push(roofTilingController);
@@ -2992,7 +2291,7 @@ export class BuildingFabricationUI {
                     scopeKey,
                     layerId,
                     layer,
-                    onChange: () => this._notifySelectedLayersChanged(),
+                    onChange: notifySelectedLayersChanged,
                     onReRender: () => this._renderLayersPanel(),
                     registerMiniController: (ctrl) => this._layerMiniControllers.push(ctrl)
                 });
@@ -3145,27 +2444,12 @@ export class BuildingFabricationUI {
         const allowStreetStyle = allow && this._streetEnabled && this._streetFloors > 0;
         const allowStreetFloors = allow;
         const allowStreetWindows = allow && this._streetFloors > 0;
-        const showWindowParams = hasSelected && this._isParametricWindowType(this._windowTypeId);
-        const showStreetWindowParams = hasSelected
-            && allowStreetWindows
-            && this._isParametricWindowType(this._streetWindowTypeId);
-        const allowWindowParams = allow && showWindowParams;
-        const allowStreetWindowParams = allowStreetWindows && showStreetWindowParams;
         const allowBelt = allow && this._streetFloors < this._floorCount;
         const allowTopBelt = allow && this._topBeltEnabled;
-        const allowWindowSpacer = allow && this._windowSpacerEnabled;
-        const allowStreetWindowSpacer = allowStreetWindows && this._streetWindowSpacerEnabled;
         this._syncLayersPanel();
         this._materialVariationUI?.sync?.();
-
-        if (this.windowFrameWidthRow) this.windowFrameWidthRow.classList.toggle('hidden', !showWindowParams);
-        if (this.windowFrameColorRow) this.windowFrameColorRow.classList.toggle('hidden', !showWindowParams);
-        if (this.windowGlassTopRow) this.windowGlassTopRow.classList.toggle('hidden', !showWindowParams);
-        if (this.windowGlassBottomRow) this.windowGlassBottomRow.classList.toggle('hidden', !showWindowParams);
-        if (this.streetWindowFrameWidthRow) this.streetWindowFrameWidthRow.classList.toggle('hidden', !showStreetWindowParams);
-        if (this.streetWindowFrameColorRow) this.streetWindowFrameColorRow.classList.toggle('hidden', !showStreetWindowParams);
-        if (this.streetWindowGlassTopRow) this.streetWindowGlassTopRow.classList.toggle('hidden', !showStreetWindowParams);
-        if (this.streetWindowGlassBottomRow) this.streetWindowGlassBottomRow.classList.toggle('hidden', !showStreetWindowParams);
+        this._windowUI?.sync?.({ hasSelected, allow, allowStreetWindows });
+        this._wallsUI?.syncGlobal?.({ hasSelected, allow });
 
         this.deleteBuildingBtn.disabled = !allow;
         if (this.exportBuildingBtn) this.exportBuildingBtn.disabled = !this._enabled;
@@ -3173,20 +2457,16 @@ export class BuildingFabricationUI {
         if (this.loadCatalogBtn) this.loadCatalogBtn.disabled = !this._enabled || !this._catalogBuildingConfigId;
         this.typeSelect.disabled = !allow;
         this._syncBuildingStyleButtons({ allow });
-        this._syncWindowStyleButtons({ allow });
         this.floorRange.disabled = !allow;
         this.floorNumber.disabled = !allow;
         this.floorHeightRange.disabled = !allow;
         this.floorHeightNumber.disabled = !allow;
-        this.wallInsetRange.disabled = !allow;
-        this.wallInsetNumber.disabled = !allow;
         this.streetEnabledInput.disabled = !allow;
         this.streetFloorsRange.disabled = !allowStreetFloors;
         this.streetFloorsNumber.disabled = !allowStreetFloors;
         this.streetHeightRange.disabled = !allowStreetStyle;
         this.streetHeightNumber.disabled = !allowStreetStyle;
         this._syncStreetStyleButtons({ allow: allowStreetStyle });
-        this._syncStreetWindowStyleButtons({ allow: allowStreetWindows });
         this.beltCourseInput.disabled = !allowBelt;
         this._syncBeltCourseColorButtons({ allow: allowBelt && this._beltCourseEnabled });
         this.beltMarginRange.disabled = !allowBelt || !this._beltCourseEnabled;
@@ -3202,48 +2482,6 @@ export class BuildingFabricationUI {
         this.topBeltHeightNumber.disabled = !allowTopBelt;
         this._syncTopBeltColorButtons({ allow: allowTopBelt });
         this._syncRoofColorButtons({ allow });
-        this.windowWidthRange.disabled = !allow;
-        this.windowWidthNumber.disabled = !allow;
-        this.windowGapRange.disabled = !allow;
-        this.windowGapNumber.disabled = !allow;
-        this.windowHeightRange.disabled = !allow;
-        this.windowHeightNumber.disabled = !allow;
-        this.windowYRange.disabled = !allow;
-        this.windowYNumber.disabled = !allow;
-        this.windowFrameWidthRange.disabled = !allowWindowParams;
-        this.windowFrameWidthNumber.disabled = !allowWindowParams;
-        this.windowFrameColorPickButton.disabled = !allowWindowParams;
-        this.windowGlassTopPickButton.disabled = !allowWindowParams;
-        this.windowGlassBottomPickButton.disabled = !allowWindowParams;
-        this.windowSpacerInput.disabled = !allow;
-        this.windowSpacerEveryRange.disabled = !allowWindowSpacer;
-        this.windowSpacerEveryNumber.disabled = !allowWindowSpacer;
-        this.windowSpacerWidthRange.disabled = !allowWindowSpacer;
-        this.windowSpacerWidthNumber.disabled = !allowWindowSpacer;
-        this.windowSpacerExtrudeInput.disabled = !allowWindowSpacer;
-        this.windowSpacerExtrudeDistanceRange.disabled = !allowWindowSpacer || !this._windowSpacerExtrude;
-        this.windowSpacerExtrudeDistanceNumber.disabled = !allowWindowSpacer || !this._windowSpacerExtrude;
-        this.streetWindowWidthRange.disabled = !allowStreetWindows;
-        this.streetWindowWidthNumber.disabled = !allowStreetWindows;
-        this.streetWindowGapRange.disabled = !allowStreetWindows;
-        this.streetWindowGapNumber.disabled = !allowStreetWindows;
-        this.streetWindowHeightRange.disabled = !allowStreetWindows;
-        this.streetWindowHeightNumber.disabled = !allowStreetWindows;
-        this.streetWindowYRange.disabled = !allowStreetWindows;
-        this.streetWindowYNumber.disabled = !allowStreetWindows;
-        this.streetWindowFrameWidthRange.disabled = !allowStreetWindowParams;
-        this.streetWindowFrameWidthNumber.disabled = !allowStreetWindowParams;
-        this.streetWindowFrameColorPickButton.disabled = !allowStreetWindowParams;
-        this.streetWindowGlassTopPickButton.disabled = !allowStreetWindowParams;
-        this.streetWindowGlassBottomPickButton.disabled = !allowStreetWindowParams;
-        this.streetWindowSpacerInput.disabled = !allowStreetWindows;
-        this.streetWindowSpacerEveryRange.disabled = !allowStreetWindowSpacer;
-        this.streetWindowSpacerEveryNumber.disabled = !allowStreetWindowSpacer;
-        this.streetWindowSpacerWidthRange.disabled = !allowStreetWindowSpacer;
-        this.streetWindowSpacerWidthNumber.disabled = !allowStreetWindowSpacer;
-        this.streetWindowSpacerExtrudeInput.disabled = !allowStreetWindowSpacer;
-        this.streetWindowSpacerExtrudeDistanceRange.disabled = !allowStreetWindowSpacer || !this._streetWindowSpacerExtrude;
-        this.streetWindowSpacerExtrudeDistanceNumber.disabled = !allowStreetWindowSpacer || !this._streetWindowSpacerExtrude;
 
         if (!hasSelected) {
             this.typeSelect.value = 'business';
@@ -3259,23 +2497,6 @@ export class BuildingFabricationUI {
             this.streetHeightRange.value = '1.0';
             this.streetHeightNumber.value = '';
             this._syncStreetStyleButtons({ allow: false });
-            this._syncStreetWindowStyleButtons({ allow: false });
-            this.streetWindowWidthRange.value = '0.3';
-            this.streetWindowWidthNumber.value = '';
-            this.streetWindowGapRange.value = '0';
-            this.streetWindowGapNumber.value = '';
-            this.streetWindowHeightRange.value = '0.3';
-            this.streetWindowHeightNumber.value = '';
-            this.streetWindowYRange.value = '0';
-            this.streetWindowYNumber.value = '';
-            this.streetWindowSpacerInput.checked = false;
-            this.streetWindowSpacerEveryRange.value = '1';
-            this.streetWindowSpacerEveryNumber.value = '';
-            this.streetWindowSpacerWidthRange.value = '0.1';
-            this.streetWindowSpacerWidthNumber.value = '';
-            this.streetWindowSpacerExtrudeInput.checked = false;
-            this.streetWindowSpacerExtrudeDistanceRange.value = '0';
-            this.streetWindowSpacerExtrudeDistanceNumber.value = '';
 
             this.beltCourseInput.checked = false;
             this.beltMarginRange.value = '0';
@@ -3298,26 +2519,6 @@ export class BuildingFabricationUI {
 
             this._syncRoofColorButtons({ allow: false });
             this.roofColorStatus.textContent = '';
-            this.wallInsetRange.value = '0';
-            this.wallInsetNumber.value = '';
-
-            this._syncWindowStyleButtons({ allow: false });
-            this.windowWidthRange.value = '0.3';
-            this.windowWidthNumber.value = '';
-            this.windowGapRange.value = '0';
-            this.windowGapNumber.value = '';
-            this.windowHeightRange.value = '0.3';
-            this.windowHeightNumber.value = '';
-            this.windowYRange.value = '0';
-            this.windowYNumber.value = '';
-            this.windowSpacerInput.checked = false;
-            this.windowSpacerEveryRange.value = '1';
-            this.windowSpacerEveryNumber.value = '';
-            this.windowSpacerWidthRange.value = '0.1';
-            this.windowSpacerWidthNumber.value = '';
-            this.windowSpacerExtrudeInput.checked = false;
-            this.windowSpacerExtrudeDistanceRange.value = '0';
-            this.windowSpacerExtrudeDistanceNumber.value = '';
             this._syncBuildingStyleButtons({ allow: false });
             return;
         }
@@ -3338,42 +2539,6 @@ export class BuildingFabricationUI {
         this.streetHeightRange.value = String(this._streetFloorHeight);
         this.streetHeightNumber.value = formatFloat(this._streetFloorHeight, 1);
         this._syncStreetStyleButtons({ allow: allowStreetStyle });
-        this._syncStreetWindowStyleButtons({ allow: allowStreetWindows });
-        const streetWindowParams = { ...getDefaultWindowParams(this._streetWindowTypeId), ...(this._streetWindowParams ?? {}) };
-        const streetWindowFrameWidth = clamp(streetWindowParams.frameWidth, 0.02, 0.2);
-        const streetWindowFrameColor = Number.isFinite(streetWindowParams.frameColor) ? streetWindowParams.frameColor : 0xffffff;
-        const streetWindowGlassTop = Number.isFinite(streetWindowParams.glassTop) ? streetWindowParams.glassTop : 0x94d9ff;
-        const streetWindowGlassBottom = Number.isFinite(streetWindowParams.glassBottom) ? streetWindowParams.glassBottom : 0x12507a;
-        const streetWindowFrameLabel = (this._windowParamColorOptions ?? []).find((c) => c.hex === streetWindowFrameColor)?.label
-            ?? `#${streetWindowFrameColor.toString(16).padStart(6, '0')}`;
-        const streetWindowGlassTopLabel = (this._windowParamColorOptions ?? []).find((c) => c.hex === streetWindowGlassTop)?.label
-            ?? `#${streetWindowGlassTop.toString(16).padStart(6, '0')}`;
-        const streetWindowGlassBottomLabel = (this._windowParamColorOptions ?? []).find((c) => c.hex === streetWindowGlassBottom)?.label
-            ?? `#${streetWindowGlassBottom.toString(16).padStart(6, '0')}`;
-        this.streetWindowFrameWidthRange.value = String(streetWindowFrameWidth);
-        this.streetWindowFrameWidthNumber.value = formatFloat(streetWindowFrameWidth, 2);
-        if (this.streetWindowFrameColorPickText) this.streetWindowFrameColorPickText.textContent = streetWindowFrameLabel;
-        if (this.streetWindowGlassTopPickText) this.streetWindowGlassTopPickText.textContent = streetWindowGlassTopLabel;
-        if (this.streetWindowGlassBottomPickText) this.streetWindowGlassBottomPickText.textContent = streetWindowGlassBottomLabel;
-        setMaterialThumbToColor(this.streetWindowFrameColorPickThumb, streetWindowFrameColor);
-        setMaterialThumbToColor(this.streetWindowGlassTopPickThumb, streetWindowGlassTop);
-        setMaterialThumbToColor(this.streetWindowGlassBottomPickThumb, streetWindowGlassBottom);
-        this.streetWindowWidthRange.value = String(this._streetWindowWidth);
-        this.streetWindowWidthNumber.value = formatFloat(this._streetWindowWidth, 1);
-        this.streetWindowGapRange.value = String(this._streetWindowGap);
-        this.streetWindowGapNumber.value = formatFloat(this._streetWindowGap, 1);
-        this.streetWindowHeightRange.value = String(this._streetWindowHeight);
-        this.streetWindowHeightNumber.value = formatFloat(this._streetWindowHeight, 1);
-        this.streetWindowYRange.value = String(this._streetWindowY);
-        this.streetWindowYNumber.value = formatFloat(this._streetWindowY, 1);
-        this.streetWindowSpacerInput.checked = this._streetWindowSpacerEnabled;
-        this.streetWindowSpacerEveryRange.value = String(this._streetWindowSpacerEvery);
-        this.streetWindowSpacerEveryNumber.value = String(this._streetWindowSpacerEvery);
-        this.streetWindowSpacerWidthRange.value = String(this._streetWindowSpacerWidth);
-        this.streetWindowSpacerWidthNumber.value = formatFloat(this._streetWindowSpacerWidth, 1);
-        this.streetWindowSpacerExtrudeInput.checked = this._streetWindowSpacerExtrude;
-        this.streetWindowSpacerExtrudeDistanceRange.value = String(this._streetWindowSpacerExtrudeDistance);
-        this.streetWindowSpacerExtrudeDistanceNumber.value = formatFloat(this._streetWindowSpacerExtrudeDistance, 2);
 
         this.beltCourseInput.checked = this._beltCourseEnabled;
         this.beltMarginRange.value = String(this._beltCourseMargin);
@@ -3387,43 +2552,6 @@ export class BuildingFabricationUI {
             this.beltStatus.textContent = '';
         }
 
-        this._syncWindowStyleButtons({ allow });
-        const windowParams = { ...getDefaultWindowParams(this._windowTypeId), ...(this._windowParams ?? {}) };
-        const windowFrameWidth = clamp(windowParams.frameWidth, 0.02, 0.2);
-        const windowFrameColor = Number.isFinite(windowParams.frameColor) ? windowParams.frameColor : 0xffffff;
-        const windowGlassTop = Number.isFinite(windowParams.glassTop) ? windowParams.glassTop : 0x94d9ff;
-        const windowGlassBottom = Number.isFinite(windowParams.glassBottom) ? windowParams.glassBottom : 0x12507a;
-        const windowFrameLabel = (this._windowParamColorOptions ?? []).find((c) => c.hex === windowFrameColor)?.label
-            ?? `#${windowFrameColor.toString(16).padStart(6, '0')}`;
-        const windowGlassTopLabel = (this._windowParamColorOptions ?? []).find((c) => c.hex === windowGlassTop)?.label
-            ?? `#${windowGlassTop.toString(16).padStart(6, '0')}`;
-        const windowGlassBottomLabel = (this._windowParamColorOptions ?? []).find((c) => c.hex === windowGlassBottom)?.label
-            ?? `#${windowGlassBottom.toString(16).padStart(6, '0')}`;
-        this.windowFrameWidthRange.value = String(windowFrameWidth);
-        this.windowFrameWidthNumber.value = formatFloat(windowFrameWidth, 2);
-        if (this.windowFrameColorPickText) this.windowFrameColorPickText.textContent = windowFrameLabel;
-        if (this.windowGlassTopPickText) this.windowGlassTopPickText.textContent = windowGlassTopLabel;
-        if (this.windowGlassBottomPickText) this.windowGlassBottomPickText.textContent = windowGlassBottomLabel;
-        setMaterialThumbToColor(this.windowFrameColorPickThumb, windowFrameColor);
-        setMaterialThumbToColor(this.windowGlassTopPickThumb, windowGlassTop);
-        setMaterialThumbToColor(this.windowGlassBottomPickThumb, windowGlassBottom);
-        this.windowWidthRange.value = String(this._windowWidth);
-        this.windowWidthNumber.value = formatFloat(this._windowWidth, 1);
-        this.windowGapRange.value = String(this._windowGap);
-        this.windowGapNumber.value = formatFloat(this._windowGap, 1);
-        this.windowHeightRange.value = String(this._windowHeight);
-        this.windowHeightNumber.value = formatFloat(this._windowHeight, 1);
-        this.windowYRange.value = String(this._windowY);
-        this.windowYNumber.value = formatFloat(this._windowY, 1);
-        this.windowSpacerInput.checked = this._windowSpacerEnabled;
-        this.windowSpacerEveryRange.value = String(this._windowSpacerEvery);
-        this.windowSpacerEveryNumber.value = String(this._windowSpacerEvery);
-        this.windowSpacerWidthRange.value = String(this._windowSpacerWidth);
-        this.windowSpacerWidthNumber.value = formatFloat(this._windowSpacerWidth, 1);
-        this.windowSpacerExtrudeInput.checked = this._windowSpacerExtrude;
-        this.windowSpacerExtrudeDistanceRange.value = String(this._windowSpacerExtrudeDistance);
-        this.windowSpacerExtrudeDistanceNumber.value = formatFloat(this._windowSpacerExtrudeDistance, 2);
-
         this.topBeltInput.checked = this._topBeltEnabled;
         this._syncTopBeltColorButtons({ allow: allowTopBelt });
         this.topBeltWidthRange.value = String(this._topBeltWidth);
@@ -3432,8 +2560,6 @@ export class BuildingFabricationUI {
         this.topBeltInnerWidthNumber.value = formatFloat(this._topBeltInnerWidth, 1);
         this.topBeltHeightRange.value = String(this._topBeltHeight);
         this.topBeltHeightNumber.value = formatFloat(this._topBeltHeight, 2);
-        this.wallInsetRange.value = String(this._wallInset);
-        this.wallInsetNumber.value = formatFloat(this._wallInset, 2);
     }
 
     setSelectedCount(count) {
@@ -3602,225 +2728,6 @@ export class BuildingFabricationUI {
         this.floorHeightRange.value = String(next);
         this.floorHeightNumber.value = formatFloat(next, 1);
         if (changed) this.onFloorHeightChange?.(next);
-    }
-
-    _setWallInsetFromUi(raw) {
-        const next = clamp(raw, 0.0, 4.0);
-        const changed = Math.abs(next - this._wallInset) >= 1e-6;
-        this._wallInset = next;
-        this.wallInsetRange.value = String(next);
-        this.wallInsetNumber.value = formatFloat(next, 2);
-        if (changed) this.onWallInsetChange?.(next);
-    }
-
-    _setWindowWidthFromUi(raw) {
-        const next = clamp(raw, 0.3, 12.0);
-        const changed = Math.abs(next - this._windowWidth) >= 1e-6;
-        this._windowWidth = next;
-        this.windowWidthRange.value = String(next);
-        this.windowWidthNumber.value = formatFloat(next, 1);
-        if (changed) this.onWindowWidthChange?.(next);
-    }
-
-    _setWindowGapFromUi(raw) {
-        const next = clamp(raw, 0.0, 24.0);
-        const changed = Math.abs(next - this._windowGap) >= 1e-6;
-        this._windowGap = next;
-        this.windowGapRange.value = String(next);
-        this.windowGapNumber.value = formatFloat(next, 1);
-        if (changed) this.onWindowGapChange?.(next);
-    }
-
-    _setWindowHeightFromUi(raw) {
-        const next = clamp(raw, 0.3, 10.0);
-        const changed = Math.abs(next - this._windowHeight) >= 1e-6;
-        this._windowHeight = next;
-        this.windowHeightRange.value = String(next);
-        this.windowHeightNumber.value = formatFloat(next, 1);
-        if (changed) this.onWindowHeightChange?.(next);
-    }
-
-    _setWindowYFromUi(raw) {
-        const next = clamp(raw, 0.0, 12.0);
-        const changed = Math.abs(next - this._windowY) >= 1e-6;
-        this._windowY = next;
-        this.windowYRange.value = String(next);
-        this.windowYNumber.value = formatFloat(next, 1);
-        if (changed) this.onWindowYChange?.(next);
-    }
-
-    _isParametricWindowType(typeId) {
-        const id = isWindowTypeId(typeId) ? typeId : WINDOW_TYPE.STYLE_DEFAULT;
-        return id === WINDOW_TYPE.ARCH_V1 || id === WINDOW_TYPE.MODERN_V1;
-    }
-
-    _setWindowFrameWidthFromUi(raw) {
-        const next = clamp(raw, 0.02, 0.2);
-        const prev = Number(this._windowParams?.frameWidth) || 0;
-        const changed = Math.abs(next - prev) >= 1e-6;
-        this._windowParams = { ...(this._windowParams ?? {}), frameWidth: next };
-        this.windowFrameWidthRange.value = String(next);
-        this.windowFrameWidthNumber.value = formatFloat(next, 2);
-        if (changed) this.onWindowFrameWidthChange?.(next);
-    }
-
-    _setStreetWindowFrameWidthFromUi(raw) {
-        const next = clamp(raw, 0.02, 0.2);
-        const prev = Number(this._streetWindowParams?.frameWidth) || 0;
-        const changed = Math.abs(next - prev) >= 1e-6;
-        this._streetWindowParams = { ...(this._streetWindowParams ?? {}), frameWidth: next };
-        this.streetWindowFrameWidthRange.value = String(next);
-        this.streetWindowFrameWidthNumber.value = formatFloat(next, 2);
-        if (changed) this.onStreetWindowFrameWidthChange?.(next);
-    }
-
-    _openWindowParamColorPicker({ title, selectedHex, onPick } = {}) {
-        if (typeof onPick !== 'function') return;
-        const options = (this._windowParamColorOptions ?? []).map((c) => ({
-            id: c.id,
-            label: c.label,
-            kind: 'color',
-            hex: c.hex
-        }));
-        const selected = (this._windowParamColorOptions ?? []).find((c) => c.hex === selectedHex)?.id ?? null;
-        this._pickerPopup.open({
-            title: title || 'Select color',
-            sections: [{ label: 'Colors', options }],
-            selectedId: selected,
-            onSelect: (opt) => onPick(opt?.hex)
-        });
-    }
-
-    _openWindowFrameColorPicker() {
-        const hex = Number(this._windowParams?.frameColor);
-        this._openWindowParamColorPicker({
-            title: 'Frame color',
-            selectedHex: Number.isFinite(hex) ? hex : null,
-            onPick: (pickedHex) => {
-                if (!Number.isFinite(pickedHex)) return;
-                this._windowParams = { ...(this._windowParams ?? {}), frameColor: pickedHex };
-                this.onWindowFrameColorChange?.(pickedHex);
-                this._syncPropertyWidgets();
-            }
-        });
-    }
-
-    _openWindowGlassTopPicker() {
-        const hex = Number(this._windowParams?.glassTop);
-        this._openWindowParamColorPicker({
-            title: 'Glass top',
-            selectedHex: Number.isFinite(hex) ? hex : null,
-            onPick: (pickedHex) => {
-                if (!Number.isFinite(pickedHex)) return;
-                this._windowParams = { ...(this._windowParams ?? {}), glassTop: pickedHex };
-                this.onWindowGlassTopChange?.(pickedHex);
-                this._syncPropertyWidgets();
-            }
-        });
-    }
-
-    _openWindowGlassBottomPicker() {
-        const hex = Number(this._windowParams?.glassBottom);
-        this._openWindowParamColorPicker({
-            title: 'Glass bottom',
-            selectedHex: Number.isFinite(hex) ? hex : null,
-            onPick: (pickedHex) => {
-                if (!Number.isFinite(pickedHex)) return;
-                this._windowParams = { ...(this._windowParams ?? {}), glassBottom: pickedHex };
-                this.onWindowGlassBottomChange?.(pickedHex);
-                this._syncPropertyWidgets();
-            }
-        });
-    }
-
-    _openStreetWindowFrameColorPicker() {
-        const hex = Number(this._streetWindowParams?.frameColor);
-        this._openWindowParamColorPicker({
-            title: 'Street frame color',
-            selectedHex: Number.isFinite(hex) ? hex : null,
-            onPick: (pickedHex) => {
-                if (!Number.isFinite(pickedHex)) return;
-                this._streetWindowParams = { ...(this._streetWindowParams ?? {}), frameColor: pickedHex };
-                this.onStreetWindowFrameColorChange?.(pickedHex);
-                this._syncPropertyWidgets();
-            }
-        });
-    }
-
-    _openStreetWindowGlassTopPicker() {
-        const hex = Number(this._streetWindowParams?.glassTop);
-        this._openWindowParamColorPicker({
-            title: 'Street glass top',
-            selectedHex: Number.isFinite(hex) ? hex : null,
-            onPick: (pickedHex) => {
-                if (!Number.isFinite(pickedHex)) return;
-                this._streetWindowParams = { ...(this._streetWindowParams ?? {}), glassTop: pickedHex };
-                this.onStreetWindowGlassTopChange?.(pickedHex);
-                this._syncPropertyWidgets();
-            }
-        });
-    }
-
-    _openStreetWindowGlassBottomPicker() {
-        const hex = Number(this._streetWindowParams?.glassBottom);
-        this._openWindowParamColorPicker({
-            title: 'Street glass bottom',
-            selectedHex: Number.isFinite(hex) ? hex : null,
-            onPick: (pickedHex) => {
-                if (!Number.isFinite(pickedHex)) return;
-                this._streetWindowParams = { ...(this._streetWindowParams ?? {}), glassBottom: pickedHex };
-                this.onStreetWindowGlassBottomChange?.(pickedHex);
-                this._syncPropertyWidgets();
-            }
-        });
-    }
-
-    _setWindowSpacerEnabledFromUi(raw) {
-        const next = !!raw;
-        const changed = next !== this._windowSpacerEnabled;
-        this._windowSpacerEnabled = next;
-        this.windowSpacerInput.checked = next;
-        this._syncPropertyWidgets();
-        if (changed) this.onWindowSpacerEnabledChange?.(next);
-    }
-
-    _setWindowSpacerEveryFromUi(raw) {
-        const next = clampInt(raw, 1, 99);
-        const changed = next !== this._windowSpacerEvery;
-        this._windowSpacerEvery = next;
-        this.windowSpacerEveryRange.value = String(next);
-        this.windowSpacerEveryNumber.value = String(next);
-        this._syncPropertyWidgets();
-        if (changed) this.onWindowSpacerEveryChange?.(next);
-    }
-
-    _setWindowSpacerWidthFromUi(raw) {
-        const next = clamp(raw, 0.1, 10.0);
-        const changed = Math.abs(next - this._windowSpacerWidth) >= 1e-6;
-        this._windowSpacerWidth = next;
-        this.windowSpacerWidthRange.value = String(next);
-        this.windowSpacerWidthNumber.value = formatFloat(next, 1);
-        this._syncPropertyWidgets();
-        if (changed) this.onWindowSpacerWidthChange?.(next);
-    }
-
-    _setWindowSpacerExtrudeFromUi(raw) {
-        const next = !!raw;
-        const changed = next !== this._windowSpacerExtrude;
-        this._windowSpacerExtrude = next;
-        this.windowSpacerExtrudeInput.checked = next;
-        this._syncPropertyWidgets();
-        if (changed) this.onWindowSpacerExtrudeChange?.(next);
-    }
-
-    _setWindowSpacerExtrudeDistanceFromUi(raw) {
-        const next = clamp(raw, 0.0, 1.0);
-        const changed = Math.abs(next - this._windowSpacerExtrudeDistance) >= 1e-6;
-        this._windowSpacerExtrudeDistance = next;
-        this.windowSpacerExtrudeDistanceRange.value = String(next);
-        this.windowSpacerExtrudeDistanceNumber.value = formatFloat(next, 2);
-        this._syncPropertyWidgets();
-        if (changed) this.onWindowSpacerExtrudeDistanceChange?.(next);
     }
 
     _setBuildingTypeFromUi(raw) {
@@ -4173,180 +3080,6 @@ export class BuildingFabricationUI {
         this._openRoofColorPicker();
     }
 
-    _setWindowStyleFromUi(raw) {
-        const typeId = normalizeWindowTypeIdOrLegacyStyle(raw);
-        const changed = typeId !== this._windowTypeId;
-        this._windowTypeId = typeId;
-        this._windowParams = getDefaultWindowParams(typeId);
-        this._syncWindowStyleButtons({ allow: true });
-        this._syncPropertyWidgets();
-        if (changed) this.onWindowStyleChange?.(typeId);
-    }
-
-    _setStreetWindowStyleFromUi(raw) {
-        const typeId = normalizeWindowTypeIdOrLegacyStyle(raw);
-        const changed = typeId !== this._streetWindowTypeId;
-        this._streetWindowTypeId = typeId;
-        this._streetWindowParams = getDefaultWindowParams(typeId);
-        this._syncStreetWindowStyleButtons({ allow: true });
-        this._syncPropertyWidgets();
-        if (changed) this.onStreetWindowStyleChange?.(typeId);
-    }
-
-    _setStreetWindowWidthFromUi(raw) {
-        const next = clamp(raw, 0.3, 12.0);
-        const changed = Math.abs(next - this._streetWindowWidth) >= 1e-6;
-        this._streetWindowWidth = next;
-        this.streetWindowWidthRange.value = String(next);
-        this.streetWindowWidthNumber.value = formatFloat(next, 1);
-        if (changed) this.onStreetWindowWidthChange?.(next);
-    }
-
-    _setStreetWindowGapFromUi(raw) {
-        const next = clamp(raw, 0.0, 24.0);
-        const changed = Math.abs(next - this._streetWindowGap) >= 1e-6;
-        this._streetWindowGap = next;
-        this.streetWindowGapRange.value = String(next);
-        this.streetWindowGapNumber.value = formatFloat(next, 1);
-        if (changed) this.onStreetWindowGapChange?.(next);
-    }
-
-    _setStreetWindowHeightFromUi(raw) {
-        const next = clamp(raw, 0.3, 10.0);
-        const changed = Math.abs(next - this._streetWindowHeight) >= 1e-6;
-        this._streetWindowHeight = next;
-        this.streetWindowHeightRange.value = String(next);
-        this.streetWindowHeightNumber.value = formatFloat(next, 1);
-        if (changed) this.onStreetWindowHeightChange?.(next);
-    }
-
-    _setStreetWindowYFromUi(raw) {
-        const next = clamp(raw, 0.0, 12.0);
-        const changed = Math.abs(next - this._streetWindowY) >= 1e-6;
-        this._streetWindowY = next;
-        this.streetWindowYRange.value = String(next);
-        this.streetWindowYNumber.value = formatFloat(next, 1);
-        if (changed) this.onStreetWindowYChange?.(next);
-    }
-
-    _setStreetWindowSpacerEnabledFromUi(raw) {
-        const next = !!raw;
-        const changed = next !== this._streetWindowSpacerEnabled;
-        this._streetWindowSpacerEnabled = next;
-        this.streetWindowSpacerInput.checked = next;
-        this._syncPropertyWidgets();
-        if (changed) this.onStreetWindowSpacerEnabledChange?.(next);
-    }
-
-    _setStreetWindowSpacerEveryFromUi(raw) {
-        const next = clampInt(raw, 1, 99);
-        const changed = next !== this._streetWindowSpacerEvery;
-        this._streetWindowSpacerEvery = next;
-        this.streetWindowSpacerEveryRange.value = String(next);
-        this.streetWindowSpacerEveryNumber.value = String(next);
-        this._syncPropertyWidgets();
-        if (changed) this.onStreetWindowSpacerEveryChange?.(next);
-    }
-
-    _setStreetWindowSpacerWidthFromUi(raw) {
-        const next = clamp(raw, 0.1, 10.0);
-        const changed = Math.abs(next - this._streetWindowSpacerWidth) >= 1e-6;
-        this._streetWindowSpacerWidth = next;
-        this.streetWindowSpacerWidthRange.value = String(next);
-        this.streetWindowSpacerWidthNumber.value = formatFloat(next, 1);
-        this._syncPropertyWidgets();
-        if (changed) this.onStreetWindowSpacerWidthChange?.(next);
-    }
-
-    _setStreetWindowSpacerExtrudeFromUi(raw) {
-        const next = !!raw;
-        const changed = next !== this._streetWindowSpacerExtrude;
-        this._streetWindowSpacerExtrude = next;
-        this.streetWindowSpacerExtrudeInput.checked = next;
-        this._syncPropertyWidgets();
-        if (changed) this.onStreetWindowSpacerExtrudeChange?.(next);
-    }
-
-    _setStreetWindowSpacerExtrudeDistanceFromUi(raw) {
-        const next = clamp(raw, 0.0, 1.0);
-        const changed = Math.abs(next - this._streetWindowSpacerExtrudeDistance) >= 1e-6;
-        this._streetWindowSpacerExtrudeDistance = next;
-        this.streetWindowSpacerExtrudeDistanceRange.value = String(next);
-        this.streetWindowSpacerExtrudeDistanceNumber.value = formatFloat(next, 2);
-        this._syncPropertyWidgets();
-        if (changed) this.onStreetWindowSpacerExtrudeDistanceChange?.(next);
-    }
-
-    _renderWindowStyleOptions() {
-        if (!this.windowStyleGrid) return;
-        this.windowStyleGrid.textContent = '';
-
-        for (const styleOpt of this._windowStyleOptions ?? []) {
-            const id = typeof styleOpt?.id === 'string' ? styleOpt.id : '';
-            if (!id) continue;
-            const label = typeof styleOpt?.label === 'string' ? styleOpt.label : id;
-            const previewUrl = typeof styleOpt?.previewUrl === 'string' ? styleOpt.previewUrl : '';
-
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'building-fab-texture-option';
-            btn.dataset.styleId = id;
-            btn.title = label;
-            btn.setAttribute('aria-label', label);
-
-            if (!previewUrl) {
-                const placeholder = document.createElement('div');
-                placeholder.className = 'building-fab-texture-default';
-                placeholder.textContent = label;
-                btn.appendChild(placeholder);
-            } else {
-                const img = document.createElement('img');
-                img.className = 'building-fab-texture-img';
-                img.alt = label;
-                img.loading = 'lazy';
-                img.src = previewUrl;
-                btn.appendChild(img);
-            }
-
-            this.windowStyleGrid.appendChild(btn);
-        }
-    }
-
-    _renderStreetWindowStyleOptions() {
-        if (!this.streetWindowStyleGrid) return;
-        this.streetWindowStyleGrid.textContent = '';
-
-        for (const styleOpt of this._windowStyleOptions ?? []) {
-            const id = typeof styleOpt?.id === 'string' ? styleOpt.id : '';
-            if (!id) continue;
-            const label = typeof styleOpt?.label === 'string' ? styleOpt.label : id;
-            const previewUrl = typeof styleOpt?.previewUrl === 'string' ? styleOpt.previewUrl : '';
-
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'building-fab-texture-option';
-            btn.dataset.styleId = id;
-            btn.title = label;
-            btn.setAttribute('aria-label', label);
-
-            if (!previewUrl) {
-                const placeholder = document.createElement('div');
-                placeholder.className = 'building-fab-texture-default';
-                placeholder.textContent = label;
-                btn.appendChild(placeholder);
-            } else {
-                const img = document.createElement('img');
-                img.className = 'building-fab-texture-img';
-                img.alt = label;
-                img.loading = 'lazy';
-                img.src = previewUrl;
-                btn.appendChild(img);
-            }
-
-            this.streetWindowStyleGrid.appendChild(btn);
-        }
-    }
-
     _renderStreetStyleOptions() {
         if (!this.streetStyleGrid) return;
         this.streetStyleGrid.textContent = '';
@@ -4446,35 +3179,6 @@ export class BuildingFabricationUI {
         });
     }
 
-    _syncWindowStyleButtons({ allow } = {}) {
-        const enabled = !!allow;
-        const selected = this._windowTypeId || WINDOW_TYPE.STYLE_DEFAULT;
-        const found = (this._windowTypeOptions ?? []).find((opt) => opt?.id === selected) ?? null;
-        const label = found?.label ?? selected;
-        const url = typeof found?.previewUrl === 'string' ? found.previewUrl : '';
-
-        if (this.windowStylePickButton) this.windowStylePickButton.disabled = !enabled;
-        if (this.windowStylePickText) this.windowStylePickText.textContent = label;
-        setMaterialThumbToTexture(this.windowStylePickThumb, url, label);
-        this.windowStyleStatus.textContent = enabled ? '' : 'Select a building to change windows.';
-    }
-
-    _openWindowTypePicker() {
-        if (this.windowStylePickButton?.disabled) return;
-        const options = (this._windowTypeOptions ?? []).map((opt) => ({
-            id: opt.id,
-            label: opt.label,
-            kind: 'texture',
-            previewUrl: opt.previewUrl
-        }));
-        this._pickerPopup.open({
-            title: 'Window type',
-            sections: [{ label: 'Types', options }],
-            selectedId: this._windowTypeId || WINDOW_TYPE.STYLE_DEFAULT,
-            onSelect: (opt) => this._setWindowStyleFromUi(opt.id)
-        });
-    }
-
     _syncStreetStyleButtons({ allow } = {}) {
         const enabled = !!allow;
         const selected = this._streetStyle || BUILDING_STYLE.DEFAULT;
@@ -4504,35 +3208,6 @@ export class BuildingFabricationUI {
         });
     }
 
-    _syncStreetWindowStyleButtons({ allow } = {}) {
-        const enabled = !!allow;
-        const selected = this._streetWindowTypeId || WINDOW_TYPE.STYLE_DEFAULT;
-        const found = (this._windowTypeOptions ?? []).find((opt) => opt?.id === selected) ?? null;
-        const label = found?.label ?? selected;
-        const url = typeof found?.previewUrl === 'string' ? found.previewUrl : '';
-
-        if (this.streetWindowStylePickButton) this.streetWindowStylePickButton.disabled = !enabled;
-        if (this.streetWindowStylePickText) this.streetWindowStylePickText.textContent = label;
-        setMaterialThumbToTexture(this.streetWindowStylePickThumb, url, label);
-        this.streetWindowStyleStatus.textContent = enabled ? '' : 'Select a building and enable street floors.';
-    }
-
-    _openStreetWindowTypePicker() {
-        if (this.streetWindowStylePickButton?.disabled) return;
-        const options = (this._windowTypeOptions ?? []).map((opt) => ({
-            id: opt.id,
-            label: opt.label,
-            kind: 'texture',
-            previewUrl: opt.previewUrl
-        }));
-        this._pickerPopup.open({
-            title: 'Street window type',
-            sections: [{ label: 'Types', options }],
-            selectedId: this._streetWindowTypeId || WINDOW_TYPE.STYLE_DEFAULT,
-            onSelect: (opt) => this._setStreetWindowStyleFromUi(opt.id)
-        });
-    }
-
     _handleBuildingStyleGridClick(e) {
         const btn = e?.target?.closest?.('.building-fab-texture-option');
         if (!btn || !this.styleGrid?.contains(btn)) return;
@@ -4541,28 +3216,12 @@ export class BuildingFabricationUI {
         this._setBuildingStyleFromUi(raw);
     }
 
-    _handleWindowStyleGridClick(e) {
-        const btn = e?.target?.closest?.('.building-fab-texture-option');
-        if (!btn || !this.windowStyleGrid?.contains(btn)) return;
-        if (btn.disabled) return;
-        const raw = btn.dataset?.styleId ?? '';
-        this._setWindowStyleFromUi(raw);
-    }
-
     _handleStreetStyleGridClick(e) {
         const btn = e?.target?.closest?.('.building-fab-texture-option');
         if (!btn || !this.streetStyleGrid?.contains(btn)) return;
         if (btn.disabled) return;
         const raw = btn.dataset?.styleId ?? '';
         this._setStreetStyleFromUi(raw);
-    }
-
-    _handleStreetWindowStyleGridClick(e) {
-        const btn = e?.target?.closest?.('.building-fab-texture-option');
-        if (!btn || !this.streetWindowStyleGrid?.contains(btn)) return;
-        if (btn.disabled) return;
-        const raw = btn.dataset?.styleId ?? '';
-        this._setStreetWindowStyleFromUi(raw);
     }
 
     _setRoadModeFromUi(enabled) {
@@ -4770,8 +3429,6 @@ export class BuildingFabricationUI {
         this.floorNumber.addEventListener('input', this._onFloorNumberInput);
         this.floorHeightRange.addEventListener('input', this._onFloorHeightRangeInput);
         this.floorHeightNumber.addEventListener('input', this._onFloorHeightNumberInput);
-        this.wallInsetRange.addEventListener('input', this._onWallInsetRangeInput);
-        this.wallInsetNumber.addEventListener('input', this._onWallInsetNumberInput);
         this.streetEnabledInput.addEventListener('change', this._onStreetEnabledChange);
         this.streetFloorsRange.addEventListener('input', this._onStreetFloorsRangeInput);
         this.streetFloorsNumber.addEventListener('input', this._onStreetFloorsNumberInput);
@@ -4789,42 +3446,8 @@ export class BuildingFabricationUI {
         this.topBeltInnerWidthNumber.addEventListener('input', this._onTopBeltInnerWidthNumberInput);
         this.topBeltHeightRange.addEventListener('input', this._onTopBeltHeightRangeInput);
         this.topBeltHeightNumber.addEventListener('input', this._onTopBeltHeightNumberInput);
-        this.windowWidthRange.addEventListener('input', this._onWindowWidthRangeInput);
-        this.windowWidthNumber.addEventListener('input', this._onWindowWidthNumberInput);
-        this.windowGapRange.addEventListener('input', this._onWindowGapRangeInput);
-        this.windowGapNumber.addEventListener('input', this._onWindowGapNumberInput);
-        this.windowHeightRange.addEventListener('input', this._onWindowHeightRangeInput);
-        this.windowHeightNumber.addEventListener('input', this._onWindowHeightNumberInput);
-        this.windowYRange.addEventListener('input', this._onWindowYRangeInput);
-        this.windowYNumber.addEventListener('input', this._onWindowYNumberInput);
-        this.windowFrameWidthRange.addEventListener('input', this._onWindowFrameWidthRangeInput);
-        this.windowFrameWidthNumber.addEventListener('input', this._onWindowFrameWidthNumberInput);
-        this.windowSpacerInput.addEventListener('change', this._onWindowSpacerEnabledChange);
-        this.windowSpacerEveryRange.addEventListener('input', this._onWindowSpacerEveryRangeInput);
-        this.windowSpacerEveryNumber.addEventListener('input', this._onWindowSpacerEveryNumberInput);
-        this.windowSpacerWidthRange.addEventListener('input', this._onWindowSpacerWidthRangeInput);
-        this.windowSpacerWidthNumber.addEventListener('input', this._onWindowSpacerWidthNumberInput);
-        this.windowSpacerExtrudeInput.addEventListener('change', this._onWindowSpacerExtrudeChange);
-        this.windowSpacerExtrudeDistanceRange.addEventListener('input', this._onWindowSpacerExtrudeDistanceRangeInput);
-        this.windowSpacerExtrudeDistanceNumber.addEventListener('input', this._onWindowSpacerExtrudeDistanceNumberInput);
-        this.streetWindowWidthRange.addEventListener('input', this._onStreetWindowWidthRangeInput);
-        this.streetWindowWidthNumber.addEventListener('input', this._onStreetWindowWidthNumberInput);
-        this.streetWindowGapRange.addEventListener('input', this._onStreetWindowGapRangeInput);
-        this.streetWindowGapNumber.addEventListener('input', this._onStreetWindowGapNumberInput);
-        this.streetWindowHeightRange.addEventListener('input', this._onStreetWindowHeightRangeInput);
-        this.streetWindowHeightNumber.addEventListener('input', this._onStreetWindowHeightNumberInput);
-        this.streetWindowYRange.addEventListener('input', this._onStreetWindowYRangeInput);
-        this.streetWindowYNumber.addEventListener('input', this._onStreetWindowYNumberInput);
-        this.streetWindowFrameWidthRange.addEventListener('input', this._onStreetWindowFrameWidthRangeInput);
-        this.streetWindowFrameWidthNumber.addEventListener('input', this._onStreetWindowFrameWidthNumberInput);
-        this.streetWindowSpacerInput.addEventListener('change', this._onStreetWindowSpacerEnabledChange);
-        this.streetWindowSpacerEveryRange.addEventListener('input', this._onStreetWindowSpacerEveryRangeInput);
-        this.streetWindowSpacerEveryNumber.addEventListener('input', this._onStreetWindowSpacerEveryNumberInput);
-        this.streetWindowSpacerWidthRange.addEventListener('input', this._onStreetWindowSpacerWidthRangeInput);
-        this.streetWindowSpacerWidthNumber.addEventListener('input', this._onStreetWindowSpacerWidthNumberInput);
-        this.streetWindowSpacerExtrudeInput.addEventListener('change', this._onStreetWindowSpacerExtrudeChange);
-        this.streetWindowSpacerExtrudeDistanceRange.addEventListener('input', this._onStreetWindowSpacerExtrudeDistanceRangeInput);
-        this.streetWindowSpacerExtrudeDistanceNumber.addEventListener('input', this._onStreetWindowSpacerExtrudeDistanceNumberInput);
+        this._wallsUI?.bind?.();
+        this._windowUI?.bind?.();
         this.typeSelect.addEventListener('change', this._onTypeSelectChange);
         this.loadCatalogSelect.addEventListener('change', this._onLoadCatalogSelectChange);
         this.loadCatalogBtn.addEventListener('click', this._onLoadCatalogBtnClick);
@@ -4854,8 +3477,6 @@ export class BuildingFabricationUI {
         this.floorNumber.removeEventListener('input', this._onFloorNumberInput);
         this.floorHeightRange.removeEventListener('input', this._onFloorHeightRangeInput);
         this.floorHeightNumber.removeEventListener('input', this._onFloorHeightNumberInput);
-        this.wallInsetRange.removeEventListener('input', this._onWallInsetRangeInput);
-        this.wallInsetNumber.removeEventListener('input', this._onWallInsetNumberInput);
         this.streetEnabledInput.removeEventListener('change', this._onStreetEnabledChange);
         this.streetFloorsRange.removeEventListener('input', this._onStreetFloorsRangeInput);
         this.streetFloorsNumber.removeEventListener('input', this._onStreetFloorsNumberInput);
@@ -4876,51 +3497,9 @@ export class BuildingFabricationUI {
         this.topBeltInnerWidthNumber.removeEventListener('input', this._onTopBeltInnerWidthNumberInput);
         this.topBeltHeightRange.removeEventListener('input', this._onTopBeltHeightRangeInput);
         this.topBeltHeightNumber.removeEventListener('input', this._onTopBeltHeightNumberInput);
+        this._wallsUI?.unbind?.();
         this.roofColorPickButton.removeEventListener('click', this._onRoofColorPickClick);
-        this.windowStylePickButton.removeEventListener('click', this._onWindowStylePickClick);
-        this.windowWidthRange.removeEventListener('input', this._onWindowWidthRangeInput);
-        this.windowWidthNumber.removeEventListener('input', this._onWindowWidthNumberInput);
-        this.windowGapRange.removeEventListener('input', this._onWindowGapRangeInput);
-        this.windowGapNumber.removeEventListener('input', this._onWindowGapNumberInput);
-        this.windowHeightRange.removeEventListener('input', this._onWindowHeightRangeInput);
-        this.windowHeightNumber.removeEventListener('input', this._onWindowHeightNumberInput);
-        this.windowYRange.removeEventListener('input', this._onWindowYRangeInput);
-        this.windowYNumber.removeEventListener('input', this._onWindowYNumberInput);
-        this.windowFrameWidthRange.removeEventListener('input', this._onWindowFrameWidthRangeInput);
-        this.windowFrameWidthNumber.removeEventListener('input', this._onWindowFrameWidthNumberInput);
-        this.windowFrameColorPickButton.removeEventListener('click', this._onWindowFrameColorPickClick);
-        this.windowGlassTopPickButton.removeEventListener('click', this._onWindowGlassTopPickClick);
-        this.windowGlassBottomPickButton.removeEventListener('click', this._onWindowGlassBottomPickClick);
-        this.windowSpacerInput.removeEventListener('change', this._onWindowSpacerEnabledChange);
-        this.windowSpacerEveryRange.removeEventListener('input', this._onWindowSpacerEveryRangeInput);
-        this.windowSpacerEveryNumber.removeEventListener('input', this._onWindowSpacerEveryNumberInput);
-        this.windowSpacerWidthRange.removeEventListener('input', this._onWindowSpacerWidthRangeInput);
-        this.windowSpacerWidthNumber.removeEventListener('input', this._onWindowSpacerWidthNumberInput);
-        this.windowSpacerExtrudeInput.removeEventListener('change', this._onWindowSpacerExtrudeChange);
-        this.windowSpacerExtrudeDistanceRange.removeEventListener('input', this._onWindowSpacerExtrudeDistanceRangeInput);
-        this.windowSpacerExtrudeDistanceNumber.removeEventListener('input', this._onWindowSpacerExtrudeDistanceNumberInput);
-        this.streetWindowStylePickButton.removeEventListener('click', this._onStreetWindowStylePickClick);
-        this.streetWindowWidthRange.removeEventListener('input', this._onStreetWindowWidthRangeInput);
-        this.streetWindowWidthNumber.removeEventListener('input', this._onStreetWindowWidthNumberInput);
-        this.streetWindowGapRange.removeEventListener('input', this._onStreetWindowGapRangeInput);
-        this.streetWindowGapNumber.removeEventListener('input', this._onStreetWindowGapNumberInput);
-        this.streetWindowHeightRange.removeEventListener('input', this._onStreetWindowHeightRangeInput);
-        this.streetWindowHeightNumber.removeEventListener('input', this._onStreetWindowHeightNumberInput);
-        this.streetWindowYRange.removeEventListener('input', this._onStreetWindowYRangeInput);
-        this.streetWindowYNumber.removeEventListener('input', this._onStreetWindowYNumberInput);
-        this.streetWindowFrameWidthRange.removeEventListener('input', this._onStreetWindowFrameWidthRangeInput);
-        this.streetWindowFrameWidthNumber.removeEventListener('input', this._onStreetWindowFrameWidthNumberInput);
-        this.streetWindowFrameColorPickButton.removeEventListener('click', this._onStreetWindowFrameColorPickClick);
-        this.streetWindowGlassTopPickButton.removeEventListener('click', this._onStreetWindowGlassTopPickClick);
-        this.streetWindowGlassBottomPickButton.removeEventListener('click', this._onStreetWindowGlassBottomPickClick);
-        this.streetWindowSpacerInput.removeEventListener('change', this._onStreetWindowSpacerEnabledChange);
-        this.streetWindowSpacerEveryRange.removeEventListener('input', this._onStreetWindowSpacerEveryRangeInput);
-        this.streetWindowSpacerEveryNumber.removeEventListener('input', this._onStreetWindowSpacerEveryNumberInput);
-        this.streetWindowSpacerWidthRange.removeEventListener('input', this._onStreetWindowSpacerWidthRangeInput);
-        this.streetWindowSpacerWidthNumber.removeEventListener('input', this._onStreetWindowSpacerWidthNumberInput);
-        this.streetWindowSpacerExtrudeInput.removeEventListener('change', this._onStreetWindowSpacerExtrudeChange);
-        this.streetWindowSpacerExtrudeDistanceRange.removeEventListener('input', this._onStreetWindowSpacerExtrudeDistanceRangeInput);
-        this.streetWindowSpacerExtrudeDistanceNumber.removeEventListener('input', this._onStreetWindowSpacerExtrudeDistanceNumberInput);
+        this._windowUI?.unbind?.();
         this.typeSelect.removeEventListener('change', this._onTypeSelectChange);
         this.loadCatalogSelect.removeEventListener('change', this._onLoadCatalogSelectChange);
         this.loadCatalogBtn.removeEventListener('click', this._onLoadCatalogBtnClick);

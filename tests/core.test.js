@@ -98,6 +98,9 @@ async function runTests() {
     const { clampNumber, clampInt, formatFixed } = await import('/src/graphics/gui/building_fabrication/mini_controllers/RangeNumberUtils.js');
     const { createMaterialPickerRowController } = await import('/src/graphics/gui/building_fabrication/mini_controllers/MaterialPickerRowController.js');
     const { createMaterialVariationUIController } = await import('/src/graphics/gui/building_fabrication/MaterialVariationUIController.js');
+    const { createWindowUIController } = await import('/src/graphics/gui/building_fabrication/WindowUIController.js');
+    const { createWallsUIController } = await import('/src/graphics/gui/building_fabrication/WallsUIController.js');
+    const { WINDOW_TYPE: WINDOW_TYPE_LOCAL, getDefaultWindowParams: getDefaultWindowParamsLocal } = await import('/src/graphics/assets3d/generators/buildings/WindowTextureGenerator.js');
 
     test('RangeNumberUtils: clampNumber clamps and defaults', () => {
         assertEqual(clampNumber(5, 0, 10), 5, 'Expected 5 to stay in range.');
@@ -274,6 +277,116 @@ async function runTests() {
         strengthRange.value = '0.5';
         strengthRange.dispatchEvent(new Event('input'));
         assertTrue(calls >= 2, 'Expected changing anti-tiling strength to call onChange.');
+    });
+
+    test('WindowUIController: width change calls callback and unbind stops', () => {
+        let windowTypeId = WINDOW_TYPE_LOCAL.STYLE_DEFAULT;
+        let windowParams = getDefaultWindowParamsLocal(windowTypeId);
+        let windowWidth = 2.2;
+        let windowGap = 1.6;
+        let windowHeight = 1.4;
+        let windowY = 1.0;
+        let windowSpacerEnabled = false;
+        let windowSpacerEvery = 4;
+        let windowSpacerWidth = 0.9;
+        let windowSpacerExtrude = false;
+        let windowSpacerExtrudeDistance = 0.12;
+
+        let calls = 0;
+        const ctrl = createWindowUIController({
+            pickerPopup: { open: () => {} },
+            detailsOpenByKey: new Map(),
+            clamp: clampNumber,
+            clampInt,
+            formatFloat: (v, digits) => formatFixed(v, digits),
+            setMaterialThumbToTexture: () => {},
+            setMaterialThumbToColor: () => {},
+            getWindowTypeId: () => windowTypeId,
+            setWindowTypeId: (v) => { windowTypeId = v; },
+            getWindowParams: () => windowParams,
+            setWindowParams: (v) => { windowParams = v; },
+            getWindowWidth: () => windowWidth,
+            setWindowWidth: (v) => { windowWidth = v; },
+            getWindowGap: () => windowGap,
+            setWindowGap: (v) => { windowGap = v; },
+            getWindowHeight: () => windowHeight,
+            setWindowHeight: (v) => { windowHeight = v; },
+            getWindowY: () => windowY,
+            setWindowY: (v) => { windowY = v; },
+            getWindowSpacerEnabled: () => windowSpacerEnabled,
+            setWindowSpacerEnabled: (v) => { windowSpacerEnabled = v; },
+            getWindowSpacerEvery: () => windowSpacerEvery,
+            setWindowSpacerEvery: (v) => { windowSpacerEvery = v; },
+            getWindowSpacerWidth: () => windowSpacerWidth,
+            setWindowSpacerWidth: (v) => { windowSpacerWidth = v; },
+            getWindowSpacerExtrude: () => windowSpacerExtrude,
+            setWindowSpacerExtrude: (v) => { windowSpacerExtrude = v; },
+            getWindowSpacerExtrudeDistance: () => windowSpacerExtrudeDistance,
+            setWindowSpacerExtrudeDistance: (v) => { windowSpacerExtrudeDistance = v; },
+            requestSync: () => {},
+            onWindowWidthChange: () => { calls++; }
+        });
+
+        const root = document.createElement('div');
+        ctrl.mountFloorsWindowControls(root);
+        ctrl.bind();
+        ctrl.sync({ hasSelected: true, allow: true, allowStreetWindows: true });
+
+        const widthLabel = Array.from(root.querySelectorAll('.building-fab-row-label'))
+            .find((el) => el.textContent === 'Window width (m)');
+        assertTrue(!!widthLabel, 'Expected window width row label.');
+        const widthRange = widthLabel.parentElement?.querySelector('input[type="range"]');
+        assertTrue(!!widthRange, 'Expected window width range input.');
+
+        const before = calls;
+        widthRange.value = '3.1';
+        widthRange.dispatchEvent(new Event('input'));
+        assertTrue(calls === before + 1, 'Expected width change to call callback.');
+        assertNear(windowWidth, 3.1, 1e-6, 'Expected window width state to update.');
+
+        ctrl.unbind();
+        const beforeUnbound = calls;
+        widthRange.value = '4.2';
+        widthRange.dispatchEvent(new Event('input'));
+        assertEqual(calls, beforeUnbound, 'Expected unbind to stop callbacks.');
+    });
+
+    test('WallsUIController: wall inset change calls callback and unbind stops', () => {
+        let wallInset = 0.0;
+        let calls = 0;
+        const ctrl = createWallsUIController({
+            detailsOpenByKey: new Map(),
+            clamp: clampNumber,
+            formatFloat: (v, digits) => formatFixed(v, digits),
+            setMaterialThumbToTexture: () => {},
+            setMaterialThumbToColor: () => {},
+            getWallInset: () => wallInset,
+            setWallInset: (v) => { wallInset = v; },
+            onWallInsetChange: () => { calls++; }
+        });
+
+        const root = document.createElement('div');
+        ctrl.mountWallInset(root);
+        ctrl.bind();
+        ctrl.syncGlobal({ hasSelected: true, allow: true });
+
+        const insetLabel = Array.from(root.querySelectorAll('.building-fab-row-label'))
+            .find((el) => el.textContent === 'Wall inset (m)');
+        assertTrue(!!insetLabel, 'Expected wall inset row label.');
+        const insetRange = insetLabel.parentElement?.querySelector('input[type="range"]');
+        assertTrue(!!insetRange, 'Expected wall inset range input.');
+
+        const before = calls;
+        insetRange.value = '1.5';
+        insetRange.dispatchEvent(new Event('input'));
+        assertTrue(calls === before + 1, 'Expected inset change to call callback.');
+        assertNear(wallInset, 1.5, 1e-6, 'Expected wall inset state to update.');
+
+        ctrl.unbind();
+        const beforeUnbound = calls;
+        insetRange.value = '2.2';
+        insetRange.dispatchEvent(new Event('input'));
+        assertEqual(calls, beforeUnbound, 'Expected unbind to stop callbacks.');
     });
 
     // ========== VehicleManager Tests ==========
