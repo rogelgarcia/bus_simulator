@@ -35,17 +35,31 @@ export function createToggleRowController({
         row.input.disabled = !!nextDisabled;
     };
 
-    const dispose = () => {
+    const setEnabled = (nextEnabled) => {
+        setDisabled(!nextEnabled);
+    };
+
+    const sync = ({ checked: nextChecked = null, enabled = null, disabled: syncDisabled = null } = {}) => {
+        if (nextChecked !== null) setChecked(nextChecked);
+        if (typeof enabled === 'boolean') setEnabled(enabled);
+        if (typeof syncDisabled === 'boolean') setDisabled(syncDisabled);
+    };
+
+    const destroy = () => {
         row.input.removeEventListener('change', handleChange);
     };
 
     return {
+        row: row.toggle,
+        root: row.toggle,
         toggle: row.toggle,
         input: row.input,
         text: row.text,
         setChecked,
+        setEnabled,
         setDisabled,
-        dispose
+        sync,
+        destroy,
+        dispose: destroy
     };
 }
-

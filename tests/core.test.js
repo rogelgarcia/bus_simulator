@@ -96,6 +96,7 @@ async function runTests() {
 
     // ========== Building Fabrication Mini Controller Utils ==========
     const { clampNumber, clampInt, formatFixed } = await import('/src/graphics/gui/building_fabrication/mini_controllers/RangeNumberUtils.js');
+    const { createMaterialPickerRowController } = await import('/src/graphics/gui/building_fabrication/mini_controllers/MaterialPickerRowController.js');
 
     test('RangeNumberUtils: clampNumber clamps and defaults', () => {
         assertEqual(clampNumber(5, 0, 10), 5, 'Expected 5 to stay in range.');
@@ -115,6 +116,47 @@ async function runTests() {
         assertEqual(formatFixed(1.234, 2), '1.23', 'Expected fixed formatting.');
         assertEqual(formatFixed(1.234, -1), '1', 'Expected negative digits to clamp to 0.');
         assertEqual(formatFixed(Infinity, 2), '', 'Expected non-finite to return empty.');
+    });
+
+    test('MaterialPickerRowController: builds expected DOM', () => {
+        const ctrl = createMaterialPickerRowController({
+            label: 'Material',
+            text: 'Bricks',
+            status: true,
+            statusText: 'Ready'
+        });
+
+        assertTrue(ctrl.row.classList.contains('building-fab-row'), 'Expected row to have building-fab-row class.');
+        assertTrue(ctrl.row.classList.contains('building-fab-row-texture'), 'Expected row to have building-fab-row-texture class.');
+        assertEqual(ctrl.label.textContent, 'Material', 'Expected label text to match.');
+        assertTrue(ctrl.picker.classList.contains('building-fab-texture-picker'), 'Expected picker container class.');
+        assertTrue(ctrl.picker.classList.contains('building-fab-material-picker'), 'Expected picker container class.');
+        assertEqual(ctrl.text.textContent, 'Bricks', 'Expected text node to match.');
+        assertEqual(ctrl.status.textContent, 'Ready', 'Expected status text to match.');
+        ctrl.destroy();
+    });
+
+    test('MaterialPickerRowController: onPick respects disabled and destroy', () => {
+        let calls = 0;
+        const ctrl = createMaterialPickerRowController({
+            label: 'Pick',
+            onPick: () => { calls++; }
+        });
+
+        ctrl.button.click();
+        assertEqual(calls, 1, 'Expected click to invoke onPick.');
+
+        ctrl.setDisabled(true);
+        ctrl.button.click();
+        assertEqual(calls, 1, 'Expected disabled click to do nothing.');
+
+        ctrl.setDisabled(false);
+        ctrl.button.click();
+        assertEqual(calls, 2, 'Expected re-enabled click to invoke onPick.');
+
+        ctrl.destroy();
+        ctrl.button.click();
+        assertEqual(calls, 2, 'Expected destroy to remove click handler.');
     });
 
     // ========== VehicleManager Tests ==========

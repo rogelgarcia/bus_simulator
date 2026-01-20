@@ -71,19 +71,32 @@ export function createRangeNumberRowController({
         row.number.disabled = off;
     };
 
-    const dispose = () => {
+    const setEnabled = (nextEnabled) => {
+        setDisabled(!nextEnabled);
+    };
+
+    const sync = ({ value: nextValue = null, enabled = null, disabled: syncDisabled = null } = {}) => {
+        if (nextValue !== null) setValue(nextValue);
+        if (typeof enabled === 'boolean') setEnabled(enabled);
+        if (typeof syncDisabled === 'boolean') setDisabled(syncDisabled);
+    };
+
+    const destroy = () => {
         row.range.removeEventListener('input', handleRangeInput);
         row.number.removeEventListener('change', handleNumberChange);
     };
 
     return {
         row: row.row,
+        root: row.row,
         label: row.label,
         range: row.range,
         number: row.number,
         setValue,
+        setEnabled,
         setDisabled,
-        dispose
+        sync,
+        destroy,
+        dispose: destroy
     };
 }
-

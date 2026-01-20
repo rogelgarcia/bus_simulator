@@ -15,6 +15,7 @@ import { LAYER_TYPE, cloneBuildingLayers, createDefaultFloorLayer, createDefault
 import { getBuildingConfigs } from '../../content3d/catalogs/BuildingConfigCatalog.js';
 import { createTextureTilingMiniController } from './mini_controllers/TextureTilingMiniController.js';
 import { createMaterialVariationAntiTilingMiniController } from './mini_controllers/MaterialVariationAntiTilingMiniController.js';
+import { createMaterialPickerRowController } from './mini_controllers/MaterialPickerRowController.js';
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -193,6 +194,7 @@ export class BuildingFabricationUI {
         this._hoveredRoadRow = null;
         this._roadRemoveButtons = [];
         this._pickerPopup = new PickerPopup();
+        this._pickerRowControllers = [];
         this._detailsOpenByKey = new Map();
 
         this._templateLayers = normalizeBuildingLayers([
@@ -569,30 +571,20 @@ export class BuildingFabricationUI {
         this.typeRow.appendChild(this.typeLabel);
         this.typeRow.appendChild(this.typeSelect);
 
-        this.styleRow = document.createElement('div');
-        this.styleRow.className = 'building-fab-row building-fab-row-texture';
-        this.styleLabel = document.createElement('div');
-        this.styleLabel.className = 'building-fab-row-label';
-        this.styleLabel.textContent = 'Style';
-        this.stylePicker = document.createElement('div');
-        this.stylePicker.className = 'building-fab-texture-picker building-fab-material-picker';
-        this.stylePickButton = document.createElement('button');
-        this.stylePickButton.type = 'button';
-        this.stylePickButton.className = 'building-fab-material-button';
-        this.stylePickThumb = document.createElement('div');
-        this.stylePickThumb.className = 'building-fab-material-thumb';
-        this.stylePickText = document.createElement('div');
-        this.stylePickText.className = 'building-fab-material-text';
-        this.stylePickText.textContent = '';
-        this.stylePickButton.appendChild(this.stylePickThumb);
-        this.stylePickButton.appendChild(this.stylePickText);
-        this.styleStatus = document.createElement('div');
-        this.styleStatus.className = 'building-fab-texture-status';
-        this.styleStatus.textContent = '';
-        this.stylePicker.appendChild(this.stylePickButton);
-        this.stylePicker.appendChild(this.styleStatus);
-        this.styleRow.appendChild(this.styleLabel);
-        this.styleRow.appendChild(this.stylePicker);
+        const makeMaterialPickerRow = (labelText, { status = false, onPick = null } = {}) => {
+            const ctrl = createMaterialPickerRowController({ label: labelText, status, onPick });
+            this._pickerRowControllers.push(ctrl);
+            return ctrl;
+        };
+
+        const styleRow = makeMaterialPickerRow('Style', { status: true, onPick: () => this._openBuildingStylePicker() });
+        this.styleRow = styleRow.row;
+        this.styleLabel = styleRow.label;
+        this.stylePicker = styleRow.picker;
+        this.stylePickButton = styleRow.button;
+        this.stylePickThumb = styleRow.thumb;
+        this.stylePickText = styleRow.text;
+        this.styleStatus = styleRow.status;
 
         this.propsPanel.appendChild(this.propsTitle);
         this.propsPanel.appendChild(this.nameRow);
@@ -654,30 +646,14 @@ export class BuildingFabricationUI {
         this.streetHeightNumber.max = '12.0';
         this.streetHeightNumber.step = '0.1';
 
-        this.streetStyleRow = document.createElement('div');
-        this.streetStyleRow.className = 'building-fab-row building-fab-row-texture';
-        this.streetStyleLabel = document.createElement('div');
-        this.streetStyleLabel.className = 'building-fab-row-label';
-        this.streetStyleLabel.textContent = 'Street style';
-        this.streetStylePicker = document.createElement('div');
-        this.streetStylePicker.className = 'building-fab-texture-picker building-fab-material-picker';
-        this.streetStylePickButton = document.createElement('button');
-        this.streetStylePickButton.type = 'button';
-        this.streetStylePickButton.className = 'building-fab-material-button';
-        this.streetStylePickThumb = document.createElement('div');
-        this.streetStylePickThumb.className = 'building-fab-material-thumb';
-        this.streetStylePickText = document.createElement('div');
-        this.streetStylePickText.className = 'building-fab-material-text';
-        this.streetStylePickText.textContent = '';
-        this.streetStylePickButton.appendChild(this.streetStylePickThumb);
-        this.streetStylePickButton.appendChild(this.streetStylePickText);
-        this.streetStyleStatus = document.createElement('div');
-        this.streetStyleStatus.className = 'building-fab-texture-status';
-        this.streetStyleStatus.textContent = '';
-        this.streetStylePicker.appendChild(this.streetStylePickButton);
-        this.streetStylePicker.appendChild(this.streetStyleStatus);
-        this.streetStyleRow.appendChild(this.streetStyleLabel);
-        this.streetStyleRow.appendChild(this.streetStylePicker);
+        const streetStyleRow = makeMaterialPickerRow('Street style', { status: true, onPick: () => this._openStreetStylePicker() });
+        this.streetStyleRow = streetStyleRow.row;
+        this.streetStyleLabel = streetStyleRow.label;
+        this.streetStylePicker = streetStyleRow.picker;
+        this.streetStylePickButton = streetStyleRow.button;
+        this.streetStylePickThumb = streetStyleRow.thumb;
+        this.streetStylePickText = streetStyleRow.text;
+        this.streetStyleStatus = streetStyleRow.status;
 
         this.beltCourseToggle = document.createElement('label');
         this.beltCourseToggle.className = 'building-fab-toggle building-fab-toggle-wide';
@@ -764,130 +740,50 @@ export class BuildingFabricationUI {
         this.topBeltHeightNumber.max = '1.2';
         this.topBeltHeightNumber.step = '0.01';
 
-        this.beltColorRow = document.createElement('div');
-        this.beltColorRow.className = 'building-fab-row building-fab-row-texture';
-        this.beltColorLabel = document.createElement('div');
-        this.beltColorLabel.className = 'building-fab-row-label';
-        this.beltColorLabel.textContent = 'Belt color';
-        this.beltColorPicker = document.createElement('div');
-        this.beltColorPicker.className = 'building-fab-texture-picker building-fab-material-picker';
-        this.beltColorPickButton = document.createElement('button');
-        this.beltColorPickButton.type = 'button';
-        this.beltColorPickButton.className = 'building-fab-material-button';
-        this.beltColorPickThumb = document.createElement('div');
-        this.beltColorPickThumb.className = 'building-fab-material-thumb';
-        this.beltColorPickText = document.createElement('div');
-        this.beltColorPickText.className = 'building-fab-material-text';
-        this.beltColorPickText.textContent = '';
-        this.beltColorPickButton.appendChild(this.beltColorPickThumb);
-        this.beltColorPickButton.appendChild(this.beltColorPickText);
-        this.beltColorStatus = document.createElement('div');
-        this.beltColorStatus.className = 'building-fab-texture-status';
-        this.beltColorStatus.textContent = '';
-        this.beltColorPicker.appendChild(this.beltColorPickButton);
-        this.beltColorPicker.appendChild(this.beltColorStatus);
-        this.beltColorRow.appendChild(this.beltColorLabel);
-        this.beltColorRow.appendChild(this.beltColorPicker);
+        const beltColorRow = makeMaterialPickerRow('Belt color', { status: true, onPick: () => this._openBeltCourseColorPicker() });
+        this.beltColorRow = beltColorRow.row;
+        this.beltColorLabel = beltColorRow.label;
+        this.beltColorPicker = beltColorRow.picker;
+        this.beltColorPickButton = beltColorRow.button;
+        this.beltColorPickThumb = beltColorRow.thumb;
+        this.beltColorPickText = beltColorRow.text;
+        this.beltColorStatus = beltColorRow.status;
 
-        this.topBeltColorRow = document.createElement('div');
-        this.topBeltColorRow.className = 'building-fab-row building-fab-row-texture';
-        this.topBeltColorLabel = document.createElement('div');
-        this.topBeltColorLabel.className = 'building-fab-row-label';
-        this.topBeltColorLabel.textContent = 'Roof belt color';
-        this.topBeltColorPicker = document.createElement('div');
-        this.topBeltColorPicker.className = 'building-fab-texture-picker building-fab-material-picker';
-        this.topBeltColorPickButton = document.createElement('button');
-        this.topBeltColorPickButton.type = 'button';
-        this.topBeltColorPickButton.className = 'building-fab-material-button';
-        this.topBeltColorPickThumb = document.createElement('div');
-        this.topBeltColorPickThumb.className = 'building-fab-material-thumb';
-        this.topBeltColorPickText = document.createElement('div');
-        this.topBeltColorPickText.className = 'building-fab-material-text';
-        this.topBeltColorPickText.textContent = '';
-        this.topBeltColorPickButton.appendChild(this.topBeltColorPickThumb);
-        this.topBeltColorPickButton.appendChild(this.topBeltColorPickText);
-        this.topBeltColorStatus = document.createElement('div');
-        this.topBeltColorStatus.className = 'building-fab-texture-status';
-        this.topBeltColorStatus.textContent = '';
-        this.topBeltColorPicker.appendChild(this.topBeltColorPickButton);
-        this.topBeltColorPicker.appendChild(this.topBeltColorStatus);
-        this.topBeltColorRow.appendChild(this.topBeltColorLabel);
-        this.topBeltColorRow.appendChild(this.topBeltColorPicker);
+        const topBeltColorRow = makeMaterialPickerRow('Roof belt color', { status: true, onPick: () => this._openTopBeltColorPicker() });
+        this.topBeltColorRow = topBeltColorRow.row;
+        this.topBeltColorLabel = topBeltColorRow.label;
+        this.topBeltColorPicker = topBeltColorRow.picker;
+        this.topBeltColorPickButton = topBeltColorRow.button;
+        this.topBeltColorPickThumb = topBeltColorRow.thumb;
+        this.topBeltColorPickText = topBeltColorRow.text;
+        this.topBeltColorStatus = topBeltColorRow.status;
 
-        this.roofColorRow = document.createElement('div');
-        this.roofColorRow.className = 'building-fab-row building-fab-row-texture';
-        this.roofColorLabel = document.createElement('div');
-        this.roofColorLabel.className = 'building-fab-row-label';
-        this.roofColorLabel.textContent = 'Roof color';
-        this.roofColorPicker = document.createElement('div');
-        this.roofColorPicker.className = 'building-fab-texture-picker building-fab-material-picker';
-        this.roofColorPickButton = document.createElement('button');
-        this.roofColorPickButton.type = 'button';
-        this.roofColorPickButton.className = 'building-fab-material-button';
-        this.roofColorPickThumb = document.createElement('div');
-        this.roofColorPickThumb.className = 'building-fab-material-thumb';
-        this.roofColorPickText = document.createElement('div');
-        this.roofColorPickText.className = 'building-fab-material-text';
-        this.roofColorPickText.textContent = '';
-        this.roofColorPickButton.appendChild(this.roofColorPickThumb);
-        this.roofColorPickButton.appendChild(this.roofColorPickText);
-        this.roofColorStatus = document.createElement('div');
-        this.roofColorStatus.className = 'building-fab-texture-status';
-        this.roofColorStatus.textContent = '';
-        this.roofColorPicker.appendChild(this.roofColorPickButton);
-        this.roofColorPicker.appendChild(this.roofColorStatus);
-        this.roofColorRow.appendChild(this.roofColorLabel);
-        this.roofColorRow.appendChild(this.roofColorPicker);
+        const roofColorRow = makeMaterialPickerRow('Roof color', { status: true, onPick: () => this._openRoofColorPicker() });
+        this.roofColorRow = roofColorRow.row;
+        this.roofColorLabel = roofColorRow.label;
+        this.roofColorPicker = roofColorRow.picker;
+        this.roofColorPickButton = roofColorRow.button;
+        this.roofColorPickThumb = roofColorRow.thumb;
+        this.roofColorPickText = roofColorRow.text;
+        this.roofColorStatus = roofColorRow.status;
 
-        this.windowStyleRow = document.createElement('div');
-        this.windowStyleRow.className = 'building-fab-row building-fab-row-texture';
-        this.windowStyleLabel = document.createElement('div');
-        this.windowStyleLabel.className = 'building-fab-row-label';
-        this.windowStyleLabel.textContent = 'Window';
-        this.windowStylePicker = document.createElement('div');
-        this.windowStylePicker.className = 'building-fab-texture-picker building-fab-material-picker';
-        this.windowStylePickButton = document.createElement('button');
-        this.windowStylePickButton.type = 'button';
-        this.windowStylePickButton.className = 'building-fab-material-button';
-        this.windowStylePickThumb = document.createElement('div');
-        this.windowStylePickThumb.className = 'building-fab-material-thumb';
-        this.windowStylePickText = document.createElement('div');
-        this.windowStylePickText.className = 'building-fab-material-text';
-        this.windowStylePickText.textContent = '';
-        this.windowStylePickButton.appendChild(this.windowStylePickThumb);
-        this.windowStylePickButton.appendChild(this.windowStylePickText);
-        this.windowStyleStatus = document.createElement('div');
-        this.windowStyleStatus.className = 'building-fab-texture-status';
-        this.windowStyleStatus.textContent = '';
-        this.windowStylePicker.appendChild(this.windowStylePickButton);
-        this.windowStylePicker.appendChild(this.windowStyleStatus);
-        this.windowStyleRow.appendChild(this.windowStyleLabel);
-        this.windowStyleRow.appendChild(this.windowStylePicker);
+        const windowStyleRow = makeMaterialPickerRow('Window', { status: true, onPick: () => this._openWindowTypePicker() });
+        this.windowStyleRow = windowStyleRow.row;
+        this.windowStyleLabel = windowStyleRow.label;
+        this.windowStylePicker = windowStyleRow.picker;
+        this.windowStylePickButton = windowStyleRow.button;
+        this.windowStylePickThumb = windowStyleRow.thumb;
+        this.windowStylePickText = windowStyleRow.text;
+        this.windowStyleStatus = windowStyleRow.status;
 
-        this.streetWindowStyleRow = document.createElement('div');
-        this.streetWindowStyleRow.className = 'building-fab-row building-fab-row-texture';
-        this.streetWindowStyleLabel = document.createElement('div');
-        this.streetWindowStyleLabel.className = 'building-fab-row-label';
-        this.streetWindowStyleLabel.textContent = 'Window';
-        this.streetWindowStylePicker = document.createElement('div');
-        this.streetWindowStylePicker.className = 'building-fab-texture-picker building-fab-material-picker';
-        this.streetWindowStylePickButton = document.createElement('button');
-        this.streetWindowStylePickButton.type = 'button';
-        this.streetWindowStylePickButton.className = 'building-fab-material-button';
-        this.streetWindowStylePickThumb = document.createElement('div');
-        this.streetWindowStylePickThumb.className = 'building-fab-material-thumb';
-        this.streetWindowStylePickText = document.createElement('div');
-        this.streetWindowStylePickText.className = 'building-fab-material-text';
-        this.streetWindowStylePickText.textContent = '';
-        this.streetWindowStylePickButton.appendChild(this.streetWindowStylePickThumb);
-        this.streetWindowStylePickButton.appendChild(this.streetWindowStylePickText);
-        this.streetWindowStyleStatus = document.createElement('div');
-        this.streetWindowStyleStatus.className = 'building-fab-texture-status';
-        this.streetWindowStyleStatus.textContent = '';
-        this.streetWindowStylePicker.appendChild(this.streetWindowStylePickButton);
-        this.streetWindowStylePicker.appendChild(this.streetWindowStyleStatus);
-        this.streetWindowStyleRow.appendChild(this.streetWindowStyleLabel);
-        this.streetWindowStyleRow.appendChild(this.streetWindowStylePicker);
+        const streetWindowStyleRow = makeMaterialPickerRow('Window', { status: true, onPick: () => this._openStreetWindowTypePicker() });
+        this.streetWindowStyleRow = streetWindowStyleRow.row;
+        this.streetWindowStyleLabel = streetWindowStyleRow.label;
+        this.streetWindowStylePicker = streetWindowStyleRow.picker;
+        this.streetWindowStylePickButton = streetWindowStyleRow.button;
+        this.streetWindowStylePickThumb = streetWindowStyleRow.thumb;
+        this.streetWindowStylePickText = streetWindowStyleRow.text;
+        this.streetWindowStyleStatus = streetWindowStyleRow.status;
 
         const widthRow = makeRangeRow('Window width (m)');
         this.windowWidthRow = widthRow.row;
@@ -933,28 +829,9 @@ export class BuildingFabricationUI {
         this.windowYNumber.max = '12';
         this.windowYNumber.step = '0.1';
 
-        const makeParamColorRow = (labelText) => {
-            const row = document.createElement('div');
-            row.className = 'building-fab-row building-fab-row-texture';
-            const label = document.createElement('div');
-            label.className = 'building-fab-row-label';
-            label.textContent = labelText;
-            const picker = document.createElement('div');
-            picker.className = 'building-fab-texture-picker building-fab-material-picker';
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'building-fab-material-button';
-            const thumb = document.createElement('div');
-            thumb.className = 'building-fab-material-thumb';
-            const text = document.createElement('div');
-            text.className = 'building-fab-material-text';
-            text.textContent = '';
-            btn.appendChild(thumb);
-            btn.appendChild(text);
-            picker.appendChild(btn);
-            row.appendChild(label);
-            row.appendChild(picker);
-            return { row, btn, thumb, text };
+        const makeParamColorRow = (labelText, onPick) => {
+            const ctrl = makeMaterialPickerRow(labelText, { onPick });
+            return { row: ctrl.row, btn: ctrl.button, thumb: ctrl.thumb, text: ctrl.text };
         };
 
         const windowFrameWidthRow = makeRangeRow('Frame width');
@@ -968,19 +845,19 @@ export class BuildingFabricationUI {
         this.windowFrameWidthNumber.max = '0.2';
         this.windowFrameWidthNumber.step = '0.01';
 
-        const windowFrameColorRow = makeParamColorRow('Frame color');
+        const windowFrameColorRow = makeParamColorRow('Frame color', () => this._openWindowFrameColorPicker());
         this.windowFrameColorRow = windowFrameColorRow.row;
         this.windowFrameColorPickButton = windowFrameColorRow.btn;
         this.windowFrameColorPickThumb = windowFrameColorRow.thumb;
         this.windowFrameColorPickText = windowFrameColorRow.text;
 
-        const windowGlassTopRow = makeParamColorRow('Glass top');
+        const windowGlassTopRow = makeParamColorRow('Glass top', () => this._openWindowGlassTopPicker());
         this.windowGlassTopRow = windowGlassTopRow.row;
         this.windowGlassTopPickButton = windowGlassTopRow.btn;
         this.windowGlassTopPickThumb = windowGlassTopRow.thumb;
         this.windowGlassTopPickText = windowGlassTopRow.text;
 
-        const windowGlassBottomRow = makeParamColorRow('Glass bottom');
+        const windowGlassBottomRow = makeParamColorRow('Glass bottom', () => this._openWindowGlassBottomPicker());
         this.windowGlassBottomRow = windowGlassBottomRow.row;
         this.windowGlassBottomPickButton = windowGlassBottomRow.btn;
         this.windowGlassBottomPickThumb = windowGlassBottomRow.thumb;
@@ -1105,19 +982,19 @@ export class BuildingFabricationUI {
         this.streetWindowFrameWidthNumber.max = '0.2';
         this.streetWindowFrameWidthNumber.step = '0.01';
 
-        const streetWindowFrameColorRow = makeParamColorRow('Frame color');
+        const streetWindowFrameColorRow = makeParamColorRow('Frame color', () => this._openStreetWindowFrameColorPicker());
         this.streetWindowFrameColorRow = streetWindowFrameColorRow.row;
         this.streetWindowFrameColorPickButton = streetWindowFrameColorRow.btn;
         this.streetWindowFrameColorPickThumb = streetWindowFrameColorRow.thumb;
         this.streetWindowFrameColorPickText = streetWindowFrameColorRow.text;
 
-        const streetWindowGlassTopRow = makeParamColorRow('Glass top');
+        const streetWindowGlassTopRow = makeParamColorRow('Glass top', () => this._openStreetWindowGlassTopPicker());
         this.streetWindowGlassTopRow = streetWindowGlassTopRow.row;
         this.streetWindowGlassTopPickButton = streetWindowGlassTopRow.btn;
         this.streetWindowGlassTopPickThumb = streetWindowGlassTopRow.thumb;
         this.streetWindowGlassTopPickText = streetWindowGlassTopRow.text;
 
-        const streetWindowGlassBottomRow = makeParamColorRow('Glass bottom');
+        const streetWindowGlassBottomRow = makeParamColorRow('Glass bottom', () => this._openStreetWindowGlassBottomPicker());
         this.streetWindowGlassBottomRow = streetWindowGlassBottomRow.row;
         this.streetWindowGlassBottomPickButton = streetWindowGlassBottomRow.btn;
         this.streetWindowGlassBottomPickThumb = streetWindowGlassBottomRow.thumb;
@@ -1691,6 +1568,8 @@ export class BuildingFabricationUI {
     }
 
     unmount() {
+        for (const ctrl of this._pickerRowControllers) ctrl?.destroy?.();
+        this._pickerRowControllers.length = 0;
         this._pickerPopup?.dispose?.();
         for (const ctrl of this._layerMiniControllers) ctrl?.dispose?.();
         this._layerMiniControllers.length = 0;
@@ -14804,23 +14683,18 @@ export class BuildingFabricationUI {
         this.streetFloorsNumber.addEventListener('input', this._onStreetFloorsNumberInput);
         this.streetHeightRange.addEventListener('input', this._onStreetHeightRangeInput);
         this.streetHeightNumber.addEventListener('input', this._onStreetHeightNumberInput);
-        this.streetStylePickButton.addEventListener('click', this._onStreetStylePickClick);
         this.beltCourseInput.addEventListener('change', this._onBeltCourseEnabledChange);
         this.beltMarginRange.addEventListener('input', this._onBeltMarginRangeInput);
         this.beltMarginNumber.addEventListener('input', this._onBeltMarginNumberInput);
         this.beltHeightRange.addEventListener('input', this._onBeltHeightRangeInput);
         this.beltHeightNumber.addEventListener('input', this._onBeltHeightNumberInput);
-        this.beltColorPickButton.addEventListener('click', this._onBeltColorPickClick);
         this.topBeltInput.addEventListener('change', this._onTopBeltEnabledChange);
-        this.topBeltColorPickButton.addEventListener('click', this._onTopBeltColorPickClick);
         this.topBeltWidthRange.addEventListener('input', this._onTopBeltWidthRangeInput);
         this.topBeltWidthNumber.addEventListener('input', this._onTopBeltWidthNumberInput);
         this.topBeltInnerWidthRange.addEventListener('input', this._onTopBeltInnerWidthRangeInput);
         this.topBeltInnerWidthNumber.addEventListener('input', this._onTopBeltInnerWidthNumberInput);
         this.topBeltHeightRange.addEventListener('input', this._onTopBeltHeightRangeInput);
         this.topBeltHeightNumber.addEventListener('input', this._onTopBeltHeightNumberInput);
-        this.roofColorPickButton.addEventListener('click', this._onRoofColorPickClick);
-        this.windowStylePickButton.addEventListener('click', this._onWindowStylePickClick);
         this.windowWidthRange.addEventListener('input', this._onWindowWidthRangeInput);
         this.windowWidthNumber.addEventListener('input', this._onWindowWidthNumberInput);
         this.windowGapRange.addEventListener('input', this._onWindowGapRangeInput);
@@ -14831,9 +14705,6 @@ export class BuildingFabricationUI {
         this.windowYNumber.addEventListener('input', this._onWindowYNumberInput);
         this.windowFrameWidthRange.addEventListener('input', this._onWindowFrameWidthRangeInput);
         this.windowFrameWidthNumber.addEventListener('input', this._onWindowFrameWidthNumberInput);
-        this.windowFrameColorPickButton.addEventListener('click', this._onWindowFrameColorPickClick);
-        this.windowGlassTopPickButton.addEventListener('click', this._onWindowGlassTopPickClick);
-        this.windowGlassBottomPickButton.addEventListener('click', this._onWindowGlassBottomPickClick);
         this.windowSpacerInput.addEventListener('change', this._onWindowSpacerEnabledChange);
         this.windowSpacerEveryRange.addEventListener('input', this._onWindowSpacerEveryRangeInput);
         this.windowSpacerEveryNumber.addEventListener('input', this._onWindowSpacerEveryNumberInput);
@@ -14842,7 +14713,6 @@ export class BuildingFabricationUI {
         this.windowSpacerExtrudeInput.addEventListener('change', this._onWindowSpacerExtrudeChange);
         this.windowSpacerExtrudeDistanceRange.addEventListener('input', this._onWindowSpacerExtrudeDistanceRangeInput);
         this.windowSpacerExtrudeDistanceNumber.addEventListener('input', this._onWindowSpacerExtrudeDistanceNumberInput);
-        this.streetWindowStylePickButton.addEventListener('click', this._onStreetWindowStylePickClick);
         this.streetWindowWidthRange.addEventListener('input', this._onStreetWindowWidthRangeInput);
         this.streetWindowWidthNumber.addEventListener('input', this._onStreetWindowWidthNumberInput);
         this.streetWindowGapRange.addEventListener('input', this._onStreetWindowGapRangeInput);
@@ -14853,9 +14723,6 @@ export class BuildingFabricationUI {
         this.streetWindowYNumber.addEventListener('input', this._onStreetWindowYNumberInput);
         this.streetWindowFrameWidthRange.addEventListener('input', this._onStreetWindowFrameWidthRangeInput);
         this.streetWindowFrameWidthNumber.addEventListener('input', this._onStreetWindowFrameWidthNumberInput);
-        this.streetWindowFrameColorPickButton.addEventListener('click', this._onStreetWindowFrameColorPickClick);
-        this.streetWindowGlassTopPickButton.addEventListener('click', this._onStreetWindowGlassTopPickClick);
-        this.streetWindowGlassBottomPickButton.addEventListener('click', this._onStreetWindowGlassBottomPickClick);
         this.streetWindowSpacerInput.addEventListener('change', this._onStreetWindowSpacerEnabledChange);
         this.streetWindowSpacerEveryRange.addEventListener('input', this._onStreetWindowSpacerEveryRangeInput);
         this.streetWindowSpacerEveryNumber.addEventListener('input', this._onStreetWindowSpacerEveryNumberInput);
@@ -14867,7 +14734,6 @@ export class BuildingFabricationUI {
         this.typeSelect.addEventListener('change', this._onTypeSelectChange);
         this.loadCatalogSelect.addEventListener('change', this._onLoadCatalogSelectChange);
         this.loadCatalogBtn.addEventListener('click', this._onLoadCatalogBtnClick);
-        this.stylePickButton.addEventListener('click', this._onStylePickClick);
         this.materialVariationSeedToggleInput.addEventListener('change', this._onMaterialVariationSeedOverrideChange);
         this.materialVariationSeedNumber.addEventListener('change', this._onMaterialVariationSeedNumberChange);
         this.materialVariationDebugResetBtn.addEventListener('click', this._onMaterialVariationDebugReset);
