@@ -1863,7 +1863,7 @@ export function createMaterialVariationUIController({
                     'Too much: unnecessary cost when not needed.'
                 )
             },
-            onChange: () => this._notifySelectedLayersChanged()
+            onChange
         });
         antiController.mount(wallMatVarGroup.body, { before: wallMatVarMacroGroup.details });
         registerMiniController(antiController);
@@ -6631,7 +6631,7 @@ export function createMaterialVariationUIController({
                      'Too much: unnecessary cost when not needed.'
                  )
              },
-             onChange: () => this._notifySelectedLayersChanged()
+             onChange
          });
          roofAntiController.mount(roofMatVarGroup.body, { before: roofMatVarMacroGroup.details });
          registerMiniController(roofAntiController);

@@ -233,6 +233,49 @@ async function runTests() {
         assertEqual(debugCalls, beforeUnbound, 'Expected unbind to stop notifications.');
     });
 
+    test('MaterialVariationUIController: anti-tiling changes call onChange', () => {
+        let calls = 0;
+        const ctrl = createMaterialVariationUIController({
+            detailsOpenByKey: new Map(),
+            getAllow: () => true,
+            getHasSelected: () => true,
+            getSeed: () => null,
+            setSeed: () => {},
+            notifySeedChanged: () => {},
+            onDebugChanged: () => {}
+        });
+
+        const parent = document.createElement('div');
+        const layer = { materialVariation: { enabled: true, seedOffset: 0 } };
+        ctrl.appendWallMaterialVariationUI({
+            parent,
+            allow: true,
+            scopeKey: 'test',
+            layerId: '0',
+            layer,
+            onChange: () => { calls++; },
+            onReRender: () => {},
+            registerMiniController: () => {}
+        });
+
+        const antiToggle = Array.from(parent.querySelectorAll('label input[type="checkbox"]'))
+            .find((input) => input.parentElement?.textContent?.includes('Enable anti-tiling'));
+        assertTrue(!!antiToggle, 'Expected anti-tiling toggle to exist.');
+
+        antiToggle.checked = true;
+        antiToggle.dispatchEvent(new Event('change'));
+        assertTrue(calls >= 1, 'Expected enabling anti-tiling to call onChange.');
+
+        const antiDetails = antiToggle.closest('details');
+        assertTrue(!!antiDetails, 'Expected anti-tiling details section.');
+        const strengthRange = antiDetails.querySelector('input[type="range"]');
+        assertTrue(!!strengthRange, 'Expected anti-tiling strength range to exist.');
+
+        strengthRange.value = '0.5';
+        strengthRange.dispatchEvent(new Event('input'));
+        assertTrue(calls >= 2, 'Expected changing anti-tiling strength to call onChange.');
+    });
+
     // ========== VehicleManager Tests ==========
     const { VehicleManager } = await import('/src/app/core/VehicleManager.js');
 
