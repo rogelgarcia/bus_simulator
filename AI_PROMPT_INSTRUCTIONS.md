@@ -7,11 +7,11 @@ This file contains guidelines for creating effective AI prompts for code modific
 Every prompt must be saved as its own file using this naming scheme:
 
 - New prompt: `AI_##_SUBJECT_title`
-- Completed prompt: `AI_##_DONE_SUBJECT_title_DONE`
+- Completed prompt: `AI_DONE_##_SUBJECT_title_DONE`
 
 Rules:
 - `##` is the numeric prompt id (keep it stable).
-- Completed prompts include `DONE` near the front and at the end (`AI_##_DONE_..._DONE`).
+- Completed prompts include `DONE` near the front and at the end (`AI_DONE_##_..._DONE`).
 - `SUBJECT` is the *problem space* and must be uppercase, one of:
   - `ROADS`
   - `VEHICLES`
@@ -33,7 +33,7 @@ Rules:
 
 Examples:
 - `AI_82_ROADS_manual_junction_authoring`
-- `AI_82_DONE_ROADS_manual_junction_authoring_DONE`
+- `AI_DONE_82_ROADS_manual_junction_authoring_DONE`
 
 ## Prompt Structure
 
@@ -82,7 +82,7 @@ Tasks:
 
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line
-- Also rename the AI file to `AI_##_DONE_SUBJECT_title_DONE`
+- Also rename the AI file to `AI_DONE_##_SUBJECT_title_DONE`
 - Provide a summary of the changes made in the AI document (very high level, one liner for each change)
 ```
 
