@@ -97,6 +97,7 @@ async function runTests() {
     // ========== Building Fabrication Mini Controller Utils ==========
     const { clampNumber, clampInt, formatFixed } = await import('/src/graphics/gui/building_fabrication/mini_controllers/RangeNumberUtils.js');
     const { createMaterialPickerRowController } = await import('/src/graphics/gui/building_fabrication/mini_controllers/MaterialPickerRowController.js');
+    const { createMaterialVariationUIController } = await import('/src/graphics/gui/building_fabrication/MaterialVariationUIController.js');
 
     test('RangeNumberUtils: clampNumber clamps and defaults', () => {
         assertEqual(clampNumber(5, 0, 10), 5, 'Expected 5 to stay in range.');
@@ -157,6 +158,79 @@ async function runTests() {
         ctrl.destroy();
         ctrl.button.click();
         assertEqual(calls, 2, 'Expected destroy to remove click handler.');
+    });
+
+    test('MaterialVariationUIController: seed override toggles and syncs', () => {
+        let seed = null;
+        let seedNotified = 0;
+        const ctrl = createMaterialVariationUIController({
+            detailsOpenByKey: new Map(),
+            getAllow: () => true,
+            getHasSelected: () => false,
+            getSeed: () => seed,
+            setSeed: (next) => { seed = next; },
+            notifySeedChanged: () => { seedNotified++; },
+            onDebugChanged: () => {}
+        });
+
+        const root = document.createElement('div');
+        ctrl.mount(root);
+        ctrl.bind();
+        ctrl.sync();
+
+        const toggle = ctrl.seedSection.details.querySelector('input[type=\"checkbox\"]');
+        const number = ctrl.seedSection.details.querySelector('input[type=\"number\"]');
+        assertTrue(!!toggle, 'Expected seed checkbox to exist.');
+        assertTrue(!!number, 'Expected seed number input to exist.');
+
+        assertFalse(toggle.checked, 'Expected seed override to start disabled.');
+        assertTrue(number.disabled, 'Expected seed number to be disabled when override off.');
+
+        toggle.checked = true;
+        toggle.dispatchEvent(new Event('change'));
+        assertEqual(seed, 0, 'Expected enabling override to set seed to 0 when none set.');
+        assertEqual(seedNotified, 1, 'Expected seed notification.');
+        assertFalse(number.disabled, 'Expected seed number to be enabled when override on.');
+
+        toggle.checked = false;
+        toggle.dispatchEvent(new Event('change'));
+        assertEqual(seed, null, 'Expected disabling override to clear seed.');
+        assertEqual(seedNotified, 2, 'Expected seed notification on disable.');
+        assertTrue(number.disabled, 'Expected seed number to be disabled when override off.');
+
+        ctrl.unbind();
+    });
+
+    test('MaterialVariationUIController: debug change notifies and unbind stops', () => {
+        let debugCalls = 0;
+        const ctrl = createMaterialVariationUIController({
+            detailsOpenByKey: new Map(),
+            getAllow: () => true,
+            getHasSelected: () => false,
+            getSeed: () => null,
+            setSeed: () => {},
+            notifySeedChanged: () => {},
+            onDebugChanged: () => { debugCalls++; }
+        });
+
+        const root = document.createElement('div');
+        ctrl.mount(root);
+        ctrl.bind();
+        ctrl.sync();
+
+        const firstToggle = ctrl.debugSection.details.querySelector('label input[type=\"checkbox\"]');
+        assertTrue(!!firstToggle, 'Expected a debug checkbox to exist.');
+
+        const before = debugCalls;
+        firstToggle.checked = !firstToggle.checked;
+        firstToggle.dispatchEvent(new Event('change'));
+        assertTrue(debugCalls === before + 1, 'Expected debug change to notify.');
+
+        ctrl.unbind();
+        const beforeUnbound = debugCalls;
+        firstToggle.checked = !firstToggle.checked;
+        firstToggle.dispatchEvent(new Event('change'));
+        assertEqual(debugCalls, beforeUnbound, 'Expected unbind to stop notifications.');
     });
 
     // ========== VehicleManager Tests ==========
