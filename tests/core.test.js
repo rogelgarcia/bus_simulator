@@ -164,7 +164,7 @@ async function runTests() {
 
     // ========== Material Variation Tests ==========
     const THREE = await import('three');
-    const { applyMaterialVariationToMeshStandardMaterial, normalizeMaterialVariationConfig, MATERIAL_VARIATION_ROOT } = await import('/src/graphics/assets3d/materials/MaterialVariationSystem.js');
+    const { applyMaterialVariationToMeshStandardMaterial, normalizeMaterialVariationConfig: normalizeMatVarConfig, MATERIAL_VARIATION_ROOT } = await import('/src/graphics/assets3d/materials/MaterialVariationSystem.js');
 
     test('MaterialVariationSystem: normal map shader supports mat-var debug toggles', () => {
         const mat = new THREE.MeshStandardMaterial();
@@ -212,18 +212,24 @@ async function runTests() {
     });
 
     test('MaterialVariationSystem: brick layout normalization keeps legacy fields compatible', () => {
-        const normalized = normalizeMaterialVariationConfig(
+        const normalized = normalizeMatVarConfig(
             {
                 brick: { bricksX: 8, bricksY: 4, mortar: 0.12 }
             },
             { root: MATERIAL_VARIATION_ROOT.WALL }
         );
 
-        assertNear(normalized.brick.bricksPerTileX, 8, 1e-6, 'Expected bricksX to map to bricksPerTileX.');
-        assertNear(normalized.brick.bricksPerTileY, 4, 1e-6, 'Expected bricksY to map to bricksPerTileY.');
-        assertNear(normalized.brick.mortarWidth, 0.12, 1e-6, 'Expected mortar to map to mortarWidth.');
-        assertNear(normalized.brick.offsetX, 0.0, 1e-6, 'Expected offsetX default to 0.');
-        assertNear(normalized.brick.offsetY, 0.0, 1e-6, 'Expected offsetY default to 0.');
+        assertNear(normalized.brick.perBrick.layout.bricksPerTileX, 8, 1e-6, 'Expected bricksX to map to perBrick.layout.bricksPerTileX.');
+        assertNear(normalized.brick.perBrick.layout.bricksPerTileY, 4, 1e-6, 'Expected bricksY to map to perBrick.layout.bricksPerTileY.');
+        assertNear(normalized.brick.perBrick.layout.mortarWidth, 0.12, 1e-6, 'Expected mortar to map to perBrick.layout.mortarWidth.');
+        assertNear(normalized.brick.perBrick.layout.offsetX, 0.0, 1e-6, 'Expected perBrick.layout.offsetX default to 0.');
+        assertNear(normalized.brick.perBrick.layout.offsetY, 0.0, 1e-6, 'Expected perBrick.layout.offsetY default to 0.');
+
+        assertNear(normalized.brick.mortar.layout.bricksPerTileX, 8, 1e-6, 'Expected legacy bricksX to default mortar.layout.bricksPerTileX.');
+        assertNear(normalized.brick.mortar.layout.bricksPerTileY, 4, 1e-6, 'Expected legacy bricksY to default mortar.layout.bricksPerTileY.');
+        assertNear(normalized.brick.mortar.layout.mortarWidth, 0.12, 1e-6, 'Expected legacy mortar to default mortar.layout.mortarWidth.');
+        assertNear(normalized.brick.mortar.layout.offsetX, 0.0, 1e-6, 'Expected mortar.layout.offsetX default to 0.');
+        assertNear(normalized.brick.mortar.layout.offsetY, 0.0, 1e-6, 'Expected mortar.layout.offsetY default to 0.');
     });
 
     test('MaterialVariationSystem: brick layout offsets flow into uniforms and shader uses stable hash inputs', () => {
@@ -238,9 +244,11 @@ async function runTests() {
             config: {
                 enabled: true,
                 brick: {
-                    offsetU: 0.25,
-                    offsetV: -0.5,
-                    perBrick: { enabled: true, strength: 1.0 }
+                    perBrick: {
+                        enabled: true,
+                        strength: 1.0,
+                        layout: { offsetU: 0.25, offsetV: -0.5 }
+                    }
                 }
             },
             root: MATERIAL_VARIATION_ROOT.WALL
@@ -248,8 +256,10 @@ async function runTests() {
 
         const cfg = mat.userData.materialVariationConfig;
         assertTrue(cfg.uniforms.brickLayout?.isVector4, 'Expected brickLayout uniforms to be a vec4.');
-        assertNear(cfg.uniforms.brickLayout.x, 0.25, 1e-6, 'Expected offsetU to map to brickLayout.x.');
-        assertNear(cfg.uniforms.brickLayout.y, -0.5, 1e-6, 'Expected offsetV to map to brickLayout.y.');
+        assertNear(cfg.uniforms.brickLayout.x, 0.25, 1e-6, 'Expected perBrick.layout.offsetU to map to brickLayout.x.');
+        assertNear(cfg.uniforms.brickLayout.y, -0.5, 1e-6, 'Expected perBrick.layout.offsetV to map to brickLayout.y.');
+        assertNear(cfg.uniforms.brickLayout.z, 0.0, 1e-6, 'Expected mortar.layout.offsetX to default to 0.');
+        assertNear(cfg.uniforms.brickLayout.w, 0.0, 1e-6, 'Expected mortar.layout.offsetY to default to 0.');
 
         const shader = {
             uniforms: {},
@@ -260,6 +270,7 @@ async function runTests() {
         mat.onBeforeCompile(shader, null);
 
         assertTrue(shader.uniforms.uMatVarBrickLayout?.value?.isVector4, 'Expected uMatVarBrickLayout to be injected as a vec4 uniform.');
+        assertTrue(shader.uniforms.uMatVarBrickTiles2?.value?.isVector4, 'Expected uMatVarBrickTiles2 to be injected as a vec4 uniform.');
         assertTrue(shader.fragmentShader.includes('uMatVarBrickLayout.xy'), 'Expected brick layout offsets to affect brick UVs.');
         assertTrue(shader.fragmentShader.includes('float r = mvHash12(cell + vec2'), 'Expected per-brick randomization to hash stable cell IDs.');
         assertTrue(shader.fragmentShader.includes('brickFade = 1.0 - smoothstep'), 'Expected per-brick variation to fade at distance to reduce flicker.');

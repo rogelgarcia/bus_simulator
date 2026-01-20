@@ -2576,6 +2576,14 @@ export class BuildingFabricationUI {
 
         const createDisabledMaterialVariationConfig = (root, { seedOffset = 0, normalMap = null } = {}) => {
             const preset = getDefaultMaterialVariationPreset(root);
+            const presetBrick = preset.brick && typeof preset.brick === 'object' ? preset.brick : {};
+            const brickBaseLayout = {
+                bricksPerTileX: presetBrick.bricksPerTileX ?? 6.0,
+                bricksPerTileY: presetBrick.bricksPerTileY ?? 3.0,
+                mortarWidth: presetBrick.mortarWidth ?? 0.08,
+                offsetX: presetBrick.offsetX ?? 0.0,
+                offsetY: presetBrick.offsetY ?? 0.0
+            };
             const srcNormalMap = normalMap && typeof normalMap === 'object' ? normalMap : null;
             const presetNormalMap = preset.normalMap && typeof preset.normalMap === 'object' ? preset.normalMap : {};
             return {
@@ -2602,9 +2610,8 @@ export class BuildingFabricationUI {
                 antiTiling: { enabled: false },
                 stairShift: { enabled: false },
                 brick: {
-                    ...(preset.brick ?? {}),
-                    perBrick: { enabled: false },
-                    mortar: { enabled: false }
+                    perBrick: { enabled: false, layout: { ...brickBaseLayout } },
+                    mortar: { enabled: false, layout: { ...brickBaseLayout } }
                 }
             };
         };
@@ -4268,109 +4275,6 @@ export class BuildingFabricationUI {
                 this._layerMiniControllers.push(antiController);
 
 	                const brickCfg = wallMatVarNormalized.brick ?? null;
-	                const brickLayoutGroup = makeDetailsSection('Brick layout', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:brickLayout` });
-	                applyTooltip(
-	                    brickLayoutGroup.label,
-	                    tip(
-	                        'Brick grid layout used by brick/mortar strategies.',
-	                        'Set bricks per tile to match your base texture.',
-	                        'Too much: wrong values make mortar lines drift.'
-	                    )
-	                );
-
-	                const bricksPerTileXRow = makeRangeRow('Bricks per tile X');
-	                bricksPerTileXRow.range.min = '0.25';
-	                bricksPerTileXRow.range.max = '200';
-	                bricksPerTileXRow.range.step = '0.25';
-	                bricksPerTileXRow.number.min = '0.25';
-	                bricksPerTileXRow.number.max = '200';
-	                bricksPerTileXRow.number.step = '0.25';
-	                bricksPerTileXRow.range.value = String(brickCfg?.bricksPerTileX ?? 6.0);
-	                bricksPerTileXRow.number.value = formatFloat(brickCfg?.bricksPerTileX ?? 6.0, 2);
-	                applyRangeRowMeta(bricksPerTileXRow, {
-	                    mustHave: true,
-	                    tooltip: tip(
-	                        'Brick count across one UV tile (U/X).',
-	                        'Typical: 5–10 depending on texture.',
-	                        'Too much: very high values become noisy.'
-	                    )
-	                });
-	                brickLayoutGroup.body.appendChild(bricksPerTileXRow.row);
-
-	                const bricksPerTileYRow = makeRangeRow('Bricks per tile Y');
-	                bricksPerTileYRow.range.min = '0.25';
-	                bricksPerTileYRow.range.max = '200';
-	                bricksPerTileYRow.range.step = '0.25';
-	                bricksPerTileYRow.number.min = '0.25';
-	                bricksPerTileYRow.number.max = '200';
-	                bricksPerTileYRow.number.step = '0.25';
-	                bricksPerTileYRow.range.value = String(brickCfg?.bricksPerTileY ?? 3.0);
-	                bricksPerTileYRow.number.value = formatFloat(brickCfg?.bricksPerTileY ?? 3.0, 2);
-	                applyRangeRowMeta(bricksPerTileYRow, {
-	                    mustHave: true,
-	                    tooltip: tip(
-	                        'Brick count across one UV tile (V/Y).',
-	                        'Typical: 2–6 depending on texture.',
-	                        'Too much: wrong values misalign the grid.'
-	                    )
-	                });
-	                brickLayoutGroup.body.appendChild(bricksPerTileYRow.row);
-
-	                const mortarWidthRow = makeRangeRow('Mortar width');
-	                mortarWidthRow.range.min = '0';
-	                mortarWidthRow.range.max = '0.49';
-	                mortarWidthRow.range.step = '0.01';
-	                mortarWidthRow.number.min = '0';
-	                mortarWidthRow.number.max = '0.49';
-	                mortarWidthRow.number.step = '0.01';
-	                mortarWidthRow.range.value = String(brickCfg?.mortarWidth ?? 0.08);
-	                mortarWidthRow.number.value = formatFloat(brickCfg?.mortarWidth ?? 0.08, 2);
-	                applyRangeRowMeta(mortarWidthRow, {
-	                    mustHave: true,
-	                    tooltip: tip(
-	                        'Thickness of mortar lines (as a fraction of a brick cell).',
-	                        'Typical: 0.04–0.12.',
-	                        'Too much: mortar dominates and bricks disappear.'
-	                    )
-	                });
-	                brickLayoutGroup.body.appendChild(mortarWidthRow.row);
-
-	                const brickOffsetXRow = makeRangeRow('Layout offset X (cells)');
-	                brickOffsetXRow.range.min = '-10';
-	                brickOffsetXRow.range.max = '10';
-	                brickOffsetXRow.range.step = '0.01';
-	                brickOffsetXRow.number.min = '-10';
-	                brickOffsetXRow.number.max = '10';
-	                brickOffsetXRow.number.step = '0.01';
-	                brickOffsetXRow.range.value = String(brickCfg?.offsetX ?? 0.0);
-	                brickOffsetXRow.number.value = formatFloat(brickCfg?.offsetX ?? 0.0, 2);
-	                applyRangeRowMeta(brickOffsetXRow, {
-	                    tooltip: tip(
-	                        'Shifts the brick grid horizontally for this section (in brick cell units).',
-	                        'Use small values (0–1) to de-sync sections without changing brick scale.',
-	                        '0 keeps the original alignment.'
-	                    )
-	                });
-	                brickLayoutGroup.body.appendChild(brickOffsetXRow.row);
-
-	                const brickOffsetYRow = makeRangeRow('Layout offset Y (cells)');
-	                brickOffsetYRow.range.min = '-10';
-	                brickOffsetYRow.range.max = '10';
-	                brickOffsetYRow.range.step = '0.01';
-	                brickOffsetYRow.number.min = '-10';
-	                brickOffsetYRow.number.max = '10';
-	                brickOffsetYRow.number.step = '0.01';
-	                brickOffsetYRow.range.value = String(brickCfg?.offsetY ?? 0.0);
-	                brickOffsetYRow.number.value = formatFloat(brickCfg?.offsetY ?? 0.0, 2);
-	                applyRangeRowMeta(brickOffsetYRow, {
-	                    tooltip: tip(
-	                        'Shifts the brick grid vertically for this section (in brick cell units).',
-	                        'Use small values (0–1) to de-sync sections without changing brick scale.',
-	                        '0 keeps the original alignment.'
-	                    )
-	                });
-	                brickLayoutGroup.body.appendChild(brickOffsetYRow.row);
-	                wallMatVarBrickGroup.body.appendChild(brickLayoutGroup.details);
 
 	                const stairGroup = makeDetailsSection('Stair shift', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:stair` });
 	                applyTooltip(
@@ -4590,6 +4494,109 @@ export class BuildingFabricationUI {
 	                });
 	                perBrickGroup.body.appendChild(perBrickToggle.toggle);
 
+                    const perBrickLayout = perBrick?.layout ?? null;
+                    const perBrickLayoutGroup = makeDetailsSection('Layout', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:perBrick:layout` });
+                    applyTooltip(
+                        perBrickLayoutGroup.label,
+                        tip(
+                            'Brick grid layout used for per-brick variation only.',
+                            'Use this to de-sync sections without affecting mortar.',
+                            'Keep values close to your base texture brick scale.'
+                        )
+                    );
+
+                    const perBrickBricksPerTileXRow = makeRangeRow('Bricks per tile X');
+                    perBrickBricksPerTileXRow.range.min = '0.25';
+                    perBrickBricksPerTileXRow.range.max = '200';
+                    perBrickBricksPerTileXRow.range.step = '0.25';
+                    perBrickBricksPerTileXRow.number.min = '0.25';
+                    perBrickBricksPerTileXRow.number.max = '200';
+                    perBrickBricksPerTileXRow.number.step = '0.25';
+                    perBrickBricksPerTileXRow.range.value = String(perBrickLayout?.bricksPerTileX ?? 6.0);
+                    perBrickBricksPerTileXRow.number.value = formatFloat(perBrickLayout?.bricksPerTileX ?? 6.0, 2);
+                    applyRangeRowMeta(perBrickBricksPerTileXRow, {
+                        tooltip: tip(
+                            'Brick count across one UV tile (U/X) for per-brick variation.',
+                            'Typical: 5–10 depending on texture.',
+                            'Too much: very high values become noisy.'
+                        )
+                    });
+                    perBrickLayoutGroup.body.appendChild(perBrickBricksPerTileXRow.row);
+
+                    const perBrickBricksPerTileYRow = makeRangeRow('Bricks per tile Y');
+                    perBrickBricksPerTileYRow.range.min = '0.25';
+                    perBrickBricksPerTileYRow.range.max = '200';
+                    perBrickBricksPerTileYRow.range.step = '0.25';
+                    perBrickBricksPerTileYRow.number.min = '0.25';
+                    perBrickBricksPerTileYRow.number.max = '200';
+                    perBrickBricksPerTileYRow.number.step = '0.25';
+                    perBrickBricksPerTileYRow.range.value = String(perBrickLayout?.bricksPerTileY ?? 3.0);
+                    perBrickBricksPerTileYRow.number.value = formatFloat(perBrickLayout?.bricksPerTileY ?? 3.0, 2);
+                    applyRangeRowMeta(perBrickBricksPerTileYRow, {
+                        tooltip: tip(
+                            'Brick count across one UV tile (V/Y) for per-brick variation.',
+                            'Typical: 2–6 depending on texture.',
+                            'Too much: wrong values misalign the grid.'
+                        )
+                    });
+                    perBrickLayoutGroup.body.appendChild(perBrickBricksPerTileYRow.row);
+
+                    const perBrickMortarWidthRow = makeRangeRow('Mortar width');
+                    perBrickMortarWidthRow.range.min = '0';
+                    perBrickMortarWidthRow.range.max = '0.49';
+                    perBrickMortarWidthRow.range.step = '0.01';
+                    perBrickMortarWidthRow.number.min = '0';
+                    perBrickMortarWidthRow.number.max = '0.49';
+                    perBrickMortarWidthRow.number.step = '0.01';
+                    perBrickMortarWidthRow.range.value = String(perBrickLayout?.mortarWidth ?? 0.08);
+                    perBrickMortarWidthRow.number.value = formatFloat(perBrickLayout?.mortarWidth ?? 0.08, 2);
+                    applyRangeRowMeta(perBrickMortarWidthRow, {
+                        tooltip: tip(
+                            'Thickness of mortar lines (as a fraction of a brick cell) for per-brick masking.',
+                            'Typical: 0.04–0.12.',
+                            'Too much: bricks get masked away.'
+                        )
+                    });
+                    perBrickLayoutGroup.body.appendChild(perBrickMortarWidthRow.row);
+
+                    const perBrickOffsetXRow = makeRangeRow('Layout offset X (cells)');
+                    perBrickOffsetXRow.range.min = '-10';
+                    perBrickOffsetXRow.range.max = '10';
+                    perBrickOffsetXRow.range.step = '0.01';
+                    perBrickOffsetXRow.number.min = '-10';
+                    perBrickOffsetXRow.number.max = '10';
+                    perBrickOffsetXRow.number.step = '0.01';
+                    perBrickOffsetXRow.range.value = String(perBrickLayout?.offsetX ?? 0.0);
+                    perBrickOffsetXRow.number.value = formatFloat(perBrickLayout?.offsetX ?? 0.0, 2);
+                    applyRangeRowMeta(perBrickOffsetXRow, {
+                        tooltip: tip(
+                            'Shifts the per-brick cell grid horizontally (in brick cell units).',
+                            'Use small values (0–1) to de-sync sections.',
+                            '0 keeps the original alignment.'
+                        )
+                    });
+                    perBrickLayoutGroup.body.appendChild(perBrickOffsetXRow.row);
+
+                    const perBrickOffsetYRow = makeRangeRow('Layout offset Y (cells)');
+                    perBrickOffsetYRow.range.min = '-10';
+                    perBrickOffsetYRow.range.max = '10';
+                    perBrickOffsetYRow.range.step = '0.01';
+                    perBrickOffsetYRow.number.min = '-10';
+                    perBrickOffsetYRow.number.max = '10';
+                    perBrickOffsetYRow.number.step = '0.01';
+                    perBrickOffsetYRow.range.value = String(perBrickLayout?.offsetY ?? 0.0);
+                    perBrickOffsetYRow.number.value = formatFloat(perBrickLayout?.offsetY ?? 0.0, 2);
+                    applyRangeRowMeta(perBrickOffsetYRow, {
+                        tooltip: tip(
+                            'Shifts the per-brick cell grid vertically (in brick cell units).',
+                            'Use small values (0–1) to de-sync sections.',
+                            '0 keeps the original alignment.'
+                        )
+                    });
+                    perBrickLayoutGroup.body.appendChild(perBrickOffsetYRow.row);
+
+                    perBrickGroup.body.appendChild(perBrickLayoutGroup.details);
+
 	                const perBrickStrengthRow = makeRangeRow('Strength');
 	                perBrickStrengthRow.range.min = '0';
 	                perBrickStrengthRow.range.max = '2';
@@ -4722,6 +4729,109 @@ export class BuildingFabricationUI {
 	                    )
 	                });
 	                mortarGroup.body.appendChild(mortarToggle.toggle);
+
+                    const mortarLayout = mortar?.layout ?? null;
+                    const mortarLayoutGroup = makeDetailsSection('Layout', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:walls:matvar:mortar:layout` });
+                    applyTooltip(
+                        mortarLayoutGroup.label,
+                        tip(
+                            'Brick grid layout used for mortar variation only.',
+                            'Lets mortar lines vary without affecting per-brick variation.',
+                            'Keep values close to your base texture brick scale.'
+                        )
+                    );
+
+                    const mortarBricksPerTileXRow = makeRangeRow('Bricks per tile X');
+                    mortarBricksPerTileXRow.range.min = '0.25';
+                    mortarBricksPerTileXRow.range.max = '200';
+                    mortarBricksPerTileXRow.range.step = '0.25';
+                    mortarBricksPerTileXRow.number.min = '0.25';
+                    mortarBricksPerTileXRow.number.max = '200';
+                    mortarBricksPerTileXRow.number.step = '0.25';
+                    mortarBricksPerTileXRow.range.value = String(mortarLayout?.bricksPerTileX ?? 6.0);
+                    mortarBricksPerTileXRow.number.value = formatFloat(mortarLayout?.bricksPerTileX ?? 6.0, 2);
+                    applyRangeRowMeta(mortarBricksPerTileXRow, {
+                        tooltip: tip(
+                            'Brick count across one UV tile (U/X) for mortar variation.',
+                            'Typical: 5–10 depending on texture.',
+                            'Too much: very high values become noisy.'
+                        )
+                    });
+                    mortarLayoutGroup.body.appendChild(mortarBricksPerTileXRow.row);
+
+                    const mortarBricksPerTileYRow = makeRangeRow('Bricks per tile Y');
+                    mortarBricksPerTileYRow.range.min = '0.25';
+                    mortarBricksPerTileYRow.range.max = '200';
+                    mortarBricksPerTileYRow.range.step = '0.25';
+                    mortarBricksPerTileYRow.number.min = '0.25';
+                    mortarBricksPerTileYRow.number.max = '200';
+                    mortarBricksPerTileYRow.number.step = '0.25';
+                    mortarBricksPerTileYRow.range.value = String(mortarLayout?.bricksPerTileY ?? 3.0);
+                    mortarBricksPerTileYRow.number.value = formatFloat(mortarLayout?.bricksPerTileY ?? 3.0, 2);
+                    applyRangeRowMeta(mortarBricksPerTileYRow, {
+                        tooltip: tip(
+                            'Brick count across one UV tile (V/Y) for mortar variation.',
+                            'Typical: 2–6 depending on texture.',
+                            'Too much: wrong values misalign the grid.'
+                        )
+                    });
+                    mortarLayoutGroup.body.appendChild(mortarBricksPerTileYRow.row);
+
+                    const mortarMortarWidthRow = makeRangeRow('Mortar width');
+                    mortarMortarWidthRow.range.min = '0';
+                    mortarMortarWidthRow.range.max = '0.49';
+                    mortarMortarWidthRow.range.step = '0.01';
+                    mortarMortarWidthRow.number.min = '0';
+                    mortarMortarWidthRow.number.max = '0.49';
+                    mortarMortarWidthRow.number.step = '0.01';
+                    mortarMortarWidthRow.range.value = String(mortarLayout?.mortarWidth ?? 0.08);
+                    mortarMortarWidthRow.number.value = formatFloat(mortarLayout?.mortarWidth ?? 0.08, 2);
+                    applyRangeRowMeta(mortarMortarWidthRow, {
+                        tooltip: tip(
+                            'Thickness of mortar lines (as a fraction of a brick cell) for mortar variation.',
+                            'Typical: 0.04–0.12.',
+                            'Too much: mortar dominates and bricks disappear.'
+                        )
+                    });
+                    mortarLayoutGroup.body.appendChild(mortarMortarWidthRow.row);
+
+                    const mortarOffsetXRow = makeRangeRow('Layout offset X (cells)');
+                    mortarOffsetXRow.range.min = '-10';
+                    mortarOffsetXRow.range.max = '10';
+                    mortarOffsetXRow.range.step = '0.01';
+                    mortarOffsetXRow.number.min = '-10';
+                    mortarOffsetXRow.number.max = '10';
+                    mortarOffsetXRow.number.step = '0.01';
+                    mortarOffsetXRow.range.value = String(mortarLayout?.offsetX ?? 0.0);
+                    mortarOffsetXRow.number.value = formatFloat(mortarLayout?.offsetX ?? 0.0, 2);
+                    applyRangeRowMeta(mortarOffsetXRow, {
+                        tooltip: tip(
+                            'Shifts the mortar cell grid horizontally (in brick cell units).',
+                            'Use small values (0–1) to de-sync sections.',
+                            '0 keeps the original alignment.'
+                        )
+                    });
+                    mortarLayoutGroup.body.appendChild(mortarOffsetXRow.row);
+
+                    const mortarOffsetYRow = makeRangeRow('Layout offset Y (cells)');
+                    mortarOffsetYRow.range.min = '-10';
+                    mortarOffsetYRow.range.max = '10';
+                    mortarOffsetYRow.range.step = '0.01';
+                    mortarOffsetYRow.number.min = '-10';
+                    mortarOffsetYRow.number.max = '10';
+                    mortarOffsetYRow.number.step = '0.01';
+                    mortarOffsetYRow.range.value = String(mortarLayout?.offsetY ?? 0.0);
+                    mortarOffsetYRow.number.value = formatFloat(mortarLayout?.offsetY ?? 0.0, 2);
+                    applyRangeRowMeta(mortarOffsetYRow, {
+                        tooltip: tip(
+                            'Shifts the mortar cell grid vertically (in brick cell units).',
+                            'Use small values (0–1) to de-sync sections.',
+                            '0 keeps the original alignment.'
+                        )
+                    });
+                    mortarLayoutGroup.body.appendChild(mortarOffsetYRow.row);
+
+                    mortarGroup.body.appendChild(mortarLayoutGroup.details);
 
 	                const mortarStrengthRow = makeRangeRow('Strength');
 	                mortarStrengthRow.range.min = '0';
@@ -5531,17 +5641,6 @@ export class BuildingFabricationUI {
 
                     antiController.syncDisabled({ allow, parentEnabled: enabled });
 
-	                    bricksPerTileXRow.range.disabled = !allow || !enabled;
-	                    bricksPerTileXRow.number.disabled = bricksPerTileXRow.range.disabled;
-	                    bricksPerTileYRow.range.disabled = !allow || !enabled;
-	                    bricksPerTileYRow.number.disabled = bricksPerTileYRow.range.disabled;
-	                    mortarWidthRow.range.disabled = !allow || !enabled;
-	                    mortarWidthRow.number.disabled = mortarWidthRow.range.disabled;
-	                    brickOffsetXRow.range.disabled = !allow || !enabled;
-	                    brickOffsetXRow.number.disabled = brickOffsetXRow.range.disabled;
-	                    brickOffsetYRow.range.disabled = !allow || !enabled;
-	                    brickOffsetYRow.number.disabled = brickOffsetYRow.range.disabled;
-
 	                    stairToggle.input.disabled = !allow || !enabled;
 	                    stairStrengthRow.range.disabled = !allow || !enabled || !stairToggle.input.checked;
 	                    stairStrengthRow.number.disabled = stairStrengthRow.range.disabled;
@@ -5560,6 +5659,16 @@ export class BuildingFabricationUI {
 	                    stairDirSelect.disabled = !allow || !enabled || !stairToggle.input.checked;
 
 	                    perBrickToggle.input.disabled = !allow || !enabled;
+	                    perBrickBricksPerTileXRow.range.disabled = !allow || !enabled || !perBrickToggle.input.checked;
+	                    perBrickBricksPerTileXRow.number.disabled = perBrickBricksPerTileXRow.range.disabled;
+	                    perBrickBricksPerTileYRow.range.disabled = !allow || !enabled || !perBrickToggle.input.checked;
+	                    perBrickBricksPerTileYRow.number.disabled = perBrickBricksPerTileYRow.range.disabled;
+	                    perBrickMortarWidthRow.range.disabled = !allow || !enabled || !perBrickToggle.input.checked;
+	                    perBrickMortarWidthRow.number.disabled = perBrickMortarWidthRow.range.disabled;
+	                    perBrickOffsetXRow.range.disabled = !allow || !enabled || !perBrickToggle.input.checked;
+	                    perBrickOffsetXRow.number.disabled = perBrickOffsetXRow.range.disabled;
+	                    perBrickOffsetYRow.range.disabled = !allow || !enabled || !perBrickToggle.input.checked;
+	                    perBrickOffsetYRow.number.disabled = perBrickOffsetYRow.range.disabled;
 	                    perBrickStrengthRow.range.disabled = !allow || !enabled || !perBrickToggle.input.checked;
 	                    perBrickStrengthRow.number.disabled = perBrickStrengthRow.range.disabled;
 	                    perBrickHueRow.range.disabled = !allow || !enabled || !perBrickToggle.input.checked;
@@ -5574,6 +5683,16 @@ export class BuildingFabricationUI {
 	                    perBrickNormalRow.number.disabled = perBrickNormalRow.range.disabled;
 
 	                    mortarToggle.input.disabled = !allow || !enabled;
+	                    mortarBricksPerTileXRow.range.disabled = !allow || !enabled || !mortarToggle.input.checked;
+	                    mortarBricksPerTileXRow.number.disabled = mortarBricksPerTileXRow.range.disabled;
+	                    mortarBricksPerTileYRow.range.disabled = !allow || !enabled || !mortarToggle.input.checked;
+	                    mortarBricksPerTileYRow.number.disabled = mortarBricksPerTileYRow.range.disabled;
+	                    mortarMortarWidthRow.range.disabled = !allow || !enabled || !mortarToggle.input.checked;
+	                    mortarMortarWidthRow.number.disabled = mortarMortarWidthRow.range.disabled;
+	                    mortarOffsetXRow.range.disabled = !allow || !enabled || !mortarToggle.input.checked;
+	                    mortarOffsetXRow.number.disabled = mortarOffsetXRow.range.disabled;
+	                    mortarOffsetYRow.range.disabled = !allow || !enabled || !mortarToggle.input.checked;
+	                    mortarOffsetYRow.number.disabled = mortarOffsetYRow.range.disabled;
 	                    mortarStrengthRow.range.disabled = !allow || !enabled || !mortarToggle.input.checked;
 	                    mortarStrengthRow.number.disabled = mortarStrengthRow.range.disabled;
 	                    mortarHueRow.range.disabled = !allow || !enabled || !mortarToggle.input.checked;
@@ -6553,86 +6672,6 @@ export class BuildingFabricationUI {
                     dustNormalRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
-
-	                bricksPerTileXRow.range.addEventListener('input', () => {
-	                    const next = clamp(bricksPerTileXRow.range.value, 0.25, 200.0);
-	                    layer.materialVariation.brick ??= {};
-	                    layer.materialVariation.brick.bricksPerTileX = next;
-	                    bricksPerTileXRow.number.value = formatFloat(next, 2);
-	                    this._notifySelectedLayersChanged();
-	                });
-	                bricksPerTileXRow.number.addEventListener('change', () => {
-	                    const next = clamp(bricksPerTileXRow.number.value, 0.25, 200.0);
-	                    layer.materialVariation.brick ??= {};
-	                    layer.materialVariation.brick.bricksPerTileX = next;
-	                    bricksPerTileXRow.range.value = String(next);
-	                    bricksPerTileXRow.number.value = formatFloat(next, 2);
-	                    this._notifySelectedLayersChanged();
-	                });
-
-	                bricksPerTileYRow.range.addEventListener('input', () => {
-	                    const next = clamp(bricksPerTileYRow.range.value, 0.25, 200.0);
-	                    layer.materialVariation.brick ??= {};
-	                    layer.materialVariation.brick.bricksPerTileY = next;
-	                    bricksPerTileYRow.number.value = formatFloat(next, 2);
-	                    this._notifySelectedLayersChanged();
-	                });
-	                bricksPerTileYRow.number.addEventListener('change', () => {
-	                    const next = clamp(bricksPerTileYRow.number.value, 0.25, 200.0);
-	                    layer.materialVariation.brick ??= {};
-	                    layer.materialVariation.brick.bricksPerTileY = next;
-	                    bricksPerTileYRow.range.value = String(next);
-	                    bricksPerTileYRow.number.value = formatFloat(next, 2);
-	                    this._notifySelectedLayersChanged();
-	                });
-
-	                mortarWidthRow.range.addEventListener('input', () => {
-	                    const next = clamp(mortarWidthRow.range.value, 0.0, 0.49);
-	                    layer.materialVariation.brick ??= {};
-	                    layer.materialVariation.brick.mortarWidth = next;
-	                    mortarWidthRow.number.value = formatFloat(next, 2);
-	                    this._notifySelectedLayersChanged();
-	                });
-	                mortarWidthRow.number.addEventListener('change', () => {
-	                    const next = clamp(mortarWidthRow.number.value, 0.0, 0.49);
-	                    layer.materialVariation.brick ??= {};
-	                    layer.materialVariation.brick.mortarWidth = next;
-	                    mortarWidthRow.range.value = String(next);
-	                    mortarWidthRow.number.value = formatFloat(next, 2);
-	                    this._notifySelectedLayersChanged();
-	                });
-
-	                brickOffsetXRow.range.addEventListener('input', () => {
-	                    const next = clamp(brickOffsetXRow.range.value, -10.0, 10.0);
-	                    layer.materialVariation.brick ??= {};
-	                    layer.materialVariation.brick.offsetX = next;
-	                    brickOffsetXRow.number.value = formatFloat(next, 2);
-	                    this._notifySelectedLayersChanged();
-	                });
-	                brickOffsetXRow.number.addEventListener('change', () => {
-	                    const next = clamp(brickOffsetXRow.number.value, -10.0, 10.0);
-	                    layer.materialVariation.brick ??= {};
-	                    layer.materialVariation.brick.offsetX = next;
-	                    brickOffsetXRow.range.value = String(next);
-	                    brickOffsetXRow.number.value = formatFloat(next, 2);
-	                    this._notifySelectedLayersChanged();
-	                });
-
-	                brickOffsetYRow.range.addEventListener('input', () => {
-	                    const next = clamp(brickOffsetYRow.range.value, -10.0, 10.0);
-	                    layer.materialVariation.brick ??= {};
-	                    layer.materialVariation.brick.offsetY = next;
-	                    brickOffsetYRow.number.value = formatFloat(next, 2);
-	                    this._notifySelectedLayersChanged();
-	                });
-	                brickOffsetYRow.number.addEventListener('change', () => {
-	                    const next = clamp(brickOffsetYRow.number.value, -10.0, 10.0);
-	                    layer.materialVariation.brick ??= {};
-	                    layer.materialVariation.brick.offsetY = next;
-	                    brickOffsetYRow.range.value = String(next);
-	                    brickOffsetYRow.number.value = formatFloat(next, 2);
-	                    this._notifySelectedLayersChanged();
-	                });
 	
 	                stairToggle.input.addEventListener('change', () => {
 	                    layer.materialVariation.stairShift ??= {};
@@ -6754,6 +6793,106 @@ export class BuildingFabricationUI {
 	                    this._notifySelectedLayersChanged();
 	                });
 
+	                perBrickBricksPerTileXRow.range.addEventListener('input', () => {
+	                    const next = clamp(perBrickBricksPerTileXRow.range.value, 0.25, 200.0);
+	                    layer.materialVariation.brick ??= {};
+	                    layer.materialVariation.brick.perBrick ??= {};
+	                    layer.materialVariation.brick.perBrick.layout ??= {};
+	                    layer.materialVariation.brick.perBrick.layout.bricksPerTileX = next;
+	                    perBrickBricksPerTileXRow.number.value = formatFloat(next, 2);
+	                    this._notifySelectedLayersChanged();
+	                });
+	                perBrickBricksPerTileXRow.number.addEventListener('change', () => {
+	                    const next = clamp(perBrickBricksPerTileXRow.number.value, 0.25, 200.0);
+	                    layer.materialVariation.brick ??= {};
+	                    layer.materialVariation.brick.perBrick ??= {};
+	                    layer.materialVariation.brick.perBrick.layout ??= {};
+	                    layer.materialVariation.brick.perBrick.layout.bricksPerTileX = next;
+	                    perBrickBricksPerTileXRow.range.value = String(next);
+	                    perBrickBricksPerTileXRow.number.value = formatFloat(next, 2);
+	                    this._notifySelectedLayersChanged();
+	                });
+
+	                perBrickBricksPerTileYRow.range.addEventListener('input', () => {
+	                    const next = clamp(perBrickBricksPerTileYRow.range.value, 0.25, 200.0);
+	                    layer.materialVariation.brick ??= {};
+	                    layer.materialVariation.brick.perBrick ??= {};
+	                    layer.materialVariation.brick.perBrick.layout ??= {};
+	                    layer.materialVariation.brick.perBrick.layout.bricksPerTileY = next;
+	                    perBrickBricksPerTileYRow.number.value = formatFloat(next, 2);
+	                    this._notifySelectedLayersChanged();
+	                });
+	                perBrickBricksPerTileYRow.number.addEventListener('change', () => {
+	                    const next = clamp(perBrickBricksPerTileYRow.number.value, 0.25, 200.0);
+	                    layer.materialVariation.brick ??= {};
+	                    layer.materialVariation.brick.perBrick ??= {};
+	                    layer.materialVariation.brick.perBrick.layout ??= {};
+	                    layer.materialVariation.brick.perBrick.layout.bricksPerTileY = next;
+	                    perBrickBricksPerTileYRow.range.value = String(next);
+	                    perBrickBricksPerTileYRow.number.value = formatFloat(next, 2);
+	                    this._notifySelectedLayersChanged();
+	                });
+
+	                perBrickMortarWidthRow.range.addEventListener('input', () => {
+	                    const next = clamp(perBrickMortarWidthRow.range.value, 0.0, 0.49);
+	                    layer.materialVariation.brick ??= {};
+	                    layer.materialVariation.brick.perBrick ??= {};
+	                    layer.materialVariation.brick.perBrick.layout ??= {};
+	                    layer.materialVariation.brick.perBrick.layout.mortarWidth = next;
+	                    perBrickMortarWidthRow.number.value = formatFloat(next, 2);
+	                    this._notifySelectedLayersChanged();
+	                });
+	                perBrickMortarWidthRow.number.addEventListener('change', () => {
+	                    const next = clamp(perBrickMortarWidthRow.number.value, 0.0, 0.49);
+	                    layer.materialVariation.brick ??= {};
+	                    layer.materialVariation.brick.perBrick ??= {};
+	                    layer.materialVariation.brick.perBrick.layout ??= {};
+	                    layer.materialVariation.brick.perBrick.layout.mortarWidth = next;
+	                    perBrickMortarWidthRow.range.value = String(next);
+	                    perBrickMortarWidthRow.number.value = formatFloat(next, 2);
+	                    this._notifySelectedLayersChanged();
+	                });
+
+	                perBrickOffsetXRow.range.addEventListener('input', () => {
+	                    const next = clamp(perBrickOffsetXRow.range.value, -10.0, 10.0);
+	                    layer.materialVariation.brick ??= {};
+	                    layer.materialVariation.brick.perBrick ??= {};
+	                    layer.materialVariation.brick.perBrick.layout ??= {};
+	                    layer.materialVariation.brick.perBrick.layout.offsetX = next;
+	                    perBrickOffsetXRow.number.value = formatFloat(next, 2);
+	                    this._notifySelectedLayersChanged();
+	                });
+	                perBrickOffsetXRow.number.addEventListener('change', () => {
+	                    const next = clamp(perBrickOffsetXRow.number.value, -10.0, 10.0);
+	                    layer.materialVariation.brick ??= {};
+	                    layer.materialVariation.brick.perBrick ??= {};
+	                    layer.materialVariation.brick.perBrick.layout ??= {};
+	                    layer.materialVariation.brick.perBrick.layout.offsetX = next;
+	                    perBrickOffsetXRow.range.value = String(next);
+	                    perBrickOffsetXRow.number.value = formatFloat(next, 2);
+	                    this._notifySelectedLayersChanged();
+	                });
+
+	                perBrickOffsetYRow.range.addEventListener('input', () => {
+	                    const next = clamp(perBrickOffsetYRow.range.value, -10.0, 10.0);
+	                    layer.materialVariation.brick ??= {};
+	                    layer.materialVariation.brick.perBrick ??= {};
+	                    layer.materialVariation.brick.perBrick.layout ??= {};
+	                    layer.materialVariation.brick.perBrick.layout.offsetY = next;
+	                    perBrickOffsetYRow.number.value = formatFloat(next, 2);
+	                    this._notifySelectedLayersChanged();
+	                });
+	                perBrickOffsetYRow.number.addEventListener('change', () => {
+	                    const next = clamp(perBrickOffsetYRow.number.value, -10.0, 10.0);
+	                    layer.materialVariation.brick ??= {};
+	                    layer.materialVariation.brick.perBrick ??= {};
+	                    layer.materialVariation.brick.perBrick.layout ??= {};
+	                    layer.materialVariation.brick.perBrick.layout.offsetY = next;
+	                    perBrickOffsetYRow.range.value = String(next);
+	                    perBrickOffsetYRow.number.value = formatFloat(next, 2);
+	                    this._notifySelectedLayersChanged();
+	                });
+
 	                perBrickStrengthRow.range.addEventListener('input', () => {
 	                    const next = clamp(perBrickStrengthRow.range.value, 0.0, 2.0);
 	                    layer.materialVariation.brick ??= {};
@@ -6867,6 +7006,106 @@ export class BuildingFabricationUI {
 	                    layer.materialVariation.brick.mortar ??= {};
 	                    layer.materialVariation.brick.mortar.enabled = !!mortarToggle.input.checked;
 	                    syncMatVarEnabled();
+	                    this._notifySelectedLayersChanged();
+	                });
+
+	                mortarBricksPerTileXRow.range.addEventListener('input', () => {
+	                    const next = clamp(mortarBricksPerTileXRow.range.value, 0.25, 200.0);
+	                    layer.materialVariation.brick ??= {};
+	                    layer.materialVariation.brick.mortar ??= {};
+	                    layer.materialVariation.brick.mortar.layout ??= {};
+	                    layer.materialVariation.brick.mortar.layout.bricksPerTileX = next;
+	                    mortarBricksPerTileXRow.number.value = formatFloat(next, 2);
+	                    this._notifySelectedLayersChanged();
+	                });
+	                mortarBricksPerTileXRow.number.addEventListener('change', () => {
+	                    const next = clamp(mortarBricksPerTileXRow.number.value, 0.25, 200.0);
+	                    layer.materialVariation.brick ??= {};
+	                    layer.materialVariation.brick.mortar ??= {};
+	                    layer.materialVariation.brick.mortar.layout ??= {};
+	                    layer.materialVariation.brick.mortar.layout.bricksPerTileX = next;
+	                    mortarBricksPerTileXRow.range.value = String(next);
+	                    mortarBricksPerTileXRow.number.value = formatFloat(next, 2);
+	                    this._notifySelectedLayersChanged();
+	                });
+
+	                mortarBricksPerTileYRow.range.addEventListener('input', () => {
+	                    const next = clamp(mortarBricksPerTileYRow.range.value, 0.25, 200.0);
+	                    layer.materialVariation.brick ??= {};
+	                    layer.materialVariation.brick.mortar ??= {};
+	                    layer.materialVariation.brick.mortar.layout ??= {};
+	                    layer.materialVariation.brick.mortar.layout.bricksPerTileY = next;
+	                    mortarBricksPerTileYRow.number.value = formatFloat(next, 2);
+	                    this._notifySelectedLayersChanged();
+	                });
+	                mortarBricksPerTileYRow.number.addEventListener('change', () => {
+	                    const next = clamp(mortarBricksPerTileYRow.number.value, 0.25, 200.0);
+	                    layer.materialVariation.brick ??= {};
+	                    layer.materialVariation.brick.mortar ??= {};
+	                    layer.materialVariation.brick.mortar.layout ??= {};
+	                    layer.materialVariation.brick.mortar.layout.bricksPerTileY = next;
+	                    mortarBricksPerTileYRow.range.value = String(next);
+	                    mortarBricksPerTileYRow.number.value = formatFloat(next, 2);
+	                    this._notifySelectedLayersChanged();
+	                });
+
+	                mortarMortarWidthRow.range.addEventListener('input', () => {
+	                    const next = clamp(mortarMortarWidthRow.range.value, 0.0, 0.49);
+	                    layer.materialVariation.brick ??= {};
+	                    layer.materialVariation.brick.mortar ??= {};
+	                    layer.materialVariation.brick.mortar.layout ??= {};
+	                    layer.materialVariation.brick.mortar.layout.mortarWidth = next;
+	                    mortarMortarWidthRow.number.value = formatFloat(next, 2);
+	                    this._notifySelectedLayersChanged();
+	                });
+	                mortarMortarWidthRow.number.addEventListener('change', () => {
+	                    const next = clamp(mortarMortarWidthRow.number.value, 0.0, 0.49);
+	                    layer.materialVariation.brick ??= {};
+	                    layer.materialVariation.brick.mortar ??= {};
+	                    layer.materialVariation.brick.mortar.layout ??= {};
+	                    layer.materialVariation.brick.mortar.layout.mortarWidth = next;
+	                    mortarMortarWidthRow.range.value = String(next);
+	                    mortarMortarWidthRow.number.value = formatFloat(next, 2);
+	                    this._notifySelectedLayersChanged();
+	                });
+
+	                mortarOffsetXRow.range.addEventListener('input', () => {
+	                    const next = clamp(mortarOffsetXRow.range.value, -10.0, 10.0);
+	                    layer.materialVariation.brick ??= {};
+	                    layer.materialVariation.brick.mortar ??= {};
+	                    layer.materialVariation.brick.mortar.layout ??= {};
+	                    layer.materialVariation.brick.mortar.layout.offsetX = next;
+	                    mortarOffsetXRow.number.value = formatFloat(next, 2);
+	                    this._notifySelectedLayersChanged();
+	                });
+	                mortarOffsetXRow.number.addEventListener('change', () => {
+	                    const next = clamp(mortarOffsetXRow.number.value, -10.0, 10.0);
+	                    layer.materialVariation.brick ??= {};
+	                    layer.materialVariation.brick.mortar ??= {};
+	                    layer.materialVariation.brick.mortar.layout ??= {};
+	                    layer.materialVariation.brick.mortar.layout.offsetX = next;
+	                    mortarOffsetXRow.range.value = String(next);
+	                    mortarOffsetXRow.number.value = formatFloat(next, 2);
+	                    this._notifySelectedLayersChanged();
+	                });
+
+	                mortarOffsetYRow.range.addEventListener('input', () => {
+	                    const next = clamp(mortarOffsetYRow.range.value, -10.0, 10.0);
+	                    layer.materialVariation.brick ??= {};
+	                    layer.materialVariation.brick.mortar ??= {};
+	                    layer.materialVariation.brick.mortar.layout ??= {};
+	                    layer.materialVariation.brick.mortar.layout.offsetY = next;
+	                    mortarOffsetYRow.number.value = formatFloat(next, 2);
+	                    this._notifySelectedLayersChanged();
+	                });
+	                mortarOffsetYRow.number.addEventListener('change', () => {
+	                    const next = clamp(mortarOffsetYRow.number.value, -10.0, 10.0);
+	                    layer.materialVariation.brick ??= {};
+	                    layer.materialVariation.brick.mortar ??= {};
+	                    layer.materialVariation.brick.mortar.layout ??= {};
+	                    layer.materialVariation.brick.mortar.layout.offsetY = next;
+	                    mortarOffsetYRow.range.value = String(next);
+	                    mortarOffsetYRow.number.value = formatFloat(next, 2);
 	                    this._notifySelectedLayersChanged();
 	                });
 
@@ -9370,109 +9609,6 @@ export class BuildingFabricationUI {
 	                this._layerMiniControllers.push(roofAntiController);
 
 	                const roofBrickCfg = roofMatVarNormalized.brick ?? null;
-	                const roofBrickLayoutGroup = makeDetailsSection('Brick layout', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:brickLayout` });
-	                applyTooltip(
-	                    roofBrickLayoutGroup.label,
-	                    tip(
-	                        'Brick grid layout used by brick/mortar strategies.',
-	                        'Set bricks per tile to match your base texture.',
-	                        'Too much: wrong values make mortar lines drift.'
-	                    )
-	                );
-
-	                const roofBricksPerTileXRow = makeRangeRow('Bricks per tile X');
-	                roofBricksPerTileXRow.range.min = '0.25';
-	                roofBricksPerTileXRow.range.max = '200';
-	                roofBricksPerTileXRow.range.step = '0.25';
-	                roofBricksPerTileXRow.number.min = '0.25';
-	                roofBricksPerTileXRow.number.max = '200';
-	                roofBricksPerTileXRow.number.step = '0.25';
-	                roofBricksPerTileXRow.range.value = String(roofBrickCfg?.bricksPerTileX ?? 6.0);
-	                roofBricksPerTileXRow.number.value = formatFloat(roofBrickCfg?.bricksPerTileX ?? 6.0, 2);
-	                applyRangeRowMeta(roofBricksPerTileXRow, {
-	                    mustHave: true,
-	                    tooltip: tip(
-	                        'Brick count across one UV tile (U/X).',
-	                        'Typical: 5–10 depending on texture.',
-	                        'Too much: very high values become noisy.'
-	                    )
-	                });
-	                roofBrickLayoutGroup.body.appendChild(roofBricksPerTileXRow.row);
-
-	                const roofBricksPerTileYRow = makeRangeRow('Bricks per tile Y');
-	                roofBricksPerTileYRow.range.min = '0.25';
-	                roofBricksPerTileYRow.range.max = '200';
-	                roofBricksPerTileYRow.range.step = '0.25';
-	                roofBricksPerTileYRow.number.min = '0.25';
-	                roofBricksPerTileYRow.number.max = '200';
-	                roofBricksPerTileYRow.number.step = '0.25';
-	                roofBricksPerTileYRow.range.value = String(roofBrickCfg?.bricksPerTileY ?? 3.0);
-	                roofBricksPerTileYRow.number.value = formatFloat(roofBrickCfg?.bricksPerTileY ?? 3.0, 2);
-	                applyRangeRowMeta(roofBricksPerTileYRow, {
-	                    mustHave: true,
-	                    tooltip: tip(
-	                        'Brick count across one UV tile (V/Y).',
-	                        'Typical: 2–6 depending on texture.',
-	                        'Too much: wrong values misalign the grid.'
-	                    )
-	                });
-	                roofBrickLayoutGroup.body.appendChild(roofBricksPerTileYRow.row);
-
-	                const roofMortarWidthRow = makeRangeRow('Mortar width');
-	                roofMortarWidthRow.range.min = '0';
-	                roofMortarWidthRow.range.max = '0.49';
-	                roofMortarWidthRow.range.step = '0.01';
-	                roofMortarWidthRow.number.min = '0';
-	                roofMortarWidthRow.number.max = '0.49';
-	                roofMortarWidthRow.number.step = '0.01';
-	                roofMortarWidthRow.range.value = String(roofBrickCfg?.mortarWidth ?? 0.08);
-	                roofMortarWidthRow.number.value = formatFloat(roofBrickCfg?.mortarWidth ?? 0.08, 2);
-	                applyRangeRowMeta(roofMortarWidthRow, {
-	                    mustHave: true,
-	                    tooltip: tip(
-	                        'Thickness of mortar lines (as a fraction of a brick cell).',
-	                        'Typical: 0.04–0.12.',
-	                        'Too much: mortar dominates and bricks disappear.'
-	                    )
-	                });
-	                roofBrickLayoutGroup.body.appendChild(roofMortarWidthRow.row);
-
-	                const roofBrickOffsetXRow = makeRangeRow('Layout offset X (cells)');
-	                roofBrickOffsetXRow.range.min = '-10';
-	                roofBrickOffsetXRow.range.max = '10';
-	                roofBrickOffsetXRow.range.step = '0.01';
-	                roofBrickOffsetXRow.number.min = '-10';
-	                roofBrickOffsetXRow.number.max = '10';
-	                roofBrickOffsetXRow.number.step = '0.01';
-	                roofBrickOffsetXRow.range.value = String(roofBrickCfg?.offsetX ?? 0.0);
-	                roofBrickOffsetXRow.number.value = formatFloat(roofBrickCfg?.offsetX ?? 0.0, 2);
-	                applyRangeRowMeta(roofBrickOffsetXRow, {
-	                    tooltip: tip(
-	                        'Shifts the brick grid horizontally for this roof section (in brick cell units).',
-	                        'Use small values (0–1) to de-sync sections without changing brick scale.',
-	                        '0 keeps the original alignment.'
-	                    )
-	                });
-	                roofBrickLayoutGroup.body.appendChild(roofBrickOffsetXRow.row);
-
-	                const roofBrickOffsetYRow = makeRangeRow('Layout offset Y (cells)');
-	                roofBrickOffsetYRow.range.min = '-10';
-	                roofBrickOffsetYRow.range.max = '10';
-	                roofBrickOffsetYRow.range.step = '0.01';
-	                roofBrickOffsetYRow.number.min = '-10';
-	                roofBrickOffsetYRow.number.max = '10';
-	                roofBrickOffsetYRow.number.step = '0.01';
-	                roofBrickOffsetYRow.range.value = String(roofBrickCfg?.offsetY ?? 0.0);
-	                roofBrickOffsetYRow.number.value = formatFloat(roofBrickCfg?.offsetY ?? 0.0, 2);
-	                applyRangeRowMeta(roofBrickOffsetYRow, {
-	                    tooltip: tip(
-	                        'Shifts the brick grid vertically for this roof section (in brick cell units).',
-	                        'Use small values (0–1) to de-sync sections without changing brick scale.',
-	                        '0 keeps the original alignment.'
-	                    )
-	                });
-	                roofBrickLayoutGroup.body.appendChild(roofBrickOffsetYRow.row);
-	                roofMatVarBrickGroup.body.appendChild(roofBrickLayoutGroup.details);
 
 		                const roofStairGroup = makeDetailsSection('Stair shift', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:stair` });
 		                applyTooltip(
@@ -9691,6 +9827,109 @@ export class BuildingFabricationUI {
 	                });
 	                roofPerBrickGroup.body.appendChild(roofPerBrickToggle.toggle);
 
+                    const roofPerBrickLayout = roofPerBrick?.layout ?? null;
+                    const roofPerBrickLayoutGroup = makeDetailsSection('Layout', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:perBrick:layout` });
+                    applyTooltip(
+                        roofPerBrickLayoutGroup.label,
+                        tip(
+                            'Brick grid layout used for per-brick variation only.',
+                            'Use this to de-sync sections without affecting mortar.',
+                            'Keep values close to your base texture brick scale.'
+                        )
+                    );
+
+                    const roofPerBrickBricksPerTileXRow = makeRangeRow('Bricks per tile X');
+                    roofPerBrickBricksPerTileXRow.range.min = '0.25';
+                    roofPerBrickBricksPerTileXRow.range.max = '200';
+                    roofPerBrickBricksPerTileXRow.range.step = '0.25';
+                    roofPerBrickBricksPerTileXRow.number.min = '0.25';
+                    roofPerBrickBricksPerTileXRow.number.max = '200';
+                    roofPerBrickBricksPerTileXRow.number.step = '0.25';
+                    roofPerBrickBricksPerTileXRow.range.value = String(roofPerBrickLayout?.bricksPerTileX ?? 6.0);
+                    roofPerBrickBricksPerTileXRow.number.value = formatFloat(roofPerBrickLayout?.bricksPerTileX ?? 6.0, 2);
+                    applyRangeRowMeta(roofPerBrickBricksPerTileXRow, {
+                        tooltip: tip(
+                            'Brick count across one UV tile (U/X) for per-brick variation.',
+                            'Typical: 5–10 depending on texture.',
+                            'Too much: very high values become noisy.'
+                        )
+                    });
+                    roofPerBrickLayoutGroup.body.appendChild(roofPerBrickBricksPerTileXRow.row);
+
+                    const roofPerBrickBricksPerTileYRow = makeRangeRow('Bricks per tile Y');
+                    roofPerBrickBricksPerTileYRow.range.min = '0.25';
+                    roofPerBrickBricksPerTileYRow.range.max = '200';
+                    roofPerBrickBricksPerTileYRow.range.step = '0.25';
+                    roofPerBrickBricksPerTileYRow.number.min = '0.25';
+                    roofPerBrickBricksPerTileYRow.number.max = '200';
+                    roofPerBrickBricksPerTileYRow.number.step = '0.25';
+                    roofPerBrickBricksPerTileYRow.range.value = String(roofPerBrickLayout?.bricksPerTileY ?? 3.0);
+                    roofPerBrickBricksPerTileYRow.number.value = formatFloat(roofPerBrickLayout?.bricksPerTileY ?? 3.0, 2);
+                    applyRangeRowMeta(roofPerBrickBricksPerTileYRow, {
+                        tooltip: tip(
+                            'Brick count across one UV tile (V/Y) for per-brick variation.',
+                            'Typical: 2–6 depending on texture.',
+                            'Too much: wrong values misalign the grid.'
+                        )
+                    });
+                    roofPerBrickLayoutGroup.body.appendChild(roofPerBrickBricksPerTileYRow.row);
+
+                    const roofPerBrickMortarWidthRow = makeRangeRow('Mortar width');
+                    roofPerBrickMortarWidthRow.range.min = '0';
+                    roofPerBrickMortarWidthRow.range.max = '0.49';
+                    roofPerBrickMortarWidthRow.range.step = '0.01';
+                    roofPerBrickMortarWidthRow.number.min = '0';
+                    roofPerBrickMortarWidthRow.number.max = '0.49';
+                    roofPerBrickMortarWidthRow.number.step = '0.01';
+                    roofPerBrickMortarWidthRow.range.value = String(roofPerBrickLayout?.mortarWidth ?? 0.08);
+                    roofPerBrickMortarWidthRow.number.value = formatFloat(roofPerBrickLayout?.mortarWidth ?? 0.08, 2);
+                    applyRangeRowMeta(roofPerBrickMortarWidthRow, {
+                        tooltip: tip(
+                            'Thickness of mortar lines (as a fraction of a brick cell) for per-brick masking.',
+                            'Typical: 0.04–0.12.',
+                            'Too much: bricks get masked away.'
+                        )
+                    });
+                    roofPerBrickLayoutGroup.body.appendChild(roofPerBrickMortarWidthRow.row);
+
+                    const roofPerBrickOffsetXRow = makeRangeRow('Layout offset X (cells)');
+                    roofPerBrickOffsetXRow.range.min = '-10';
+                    roofPerBrickOffsetXRow.range.max = '10';
+                    roofPerBrickOffsetXRow.range.step = '0.01';
+                    roofPerBrickOffsetXRow.number.min = '-10';
+                    roofPerBrickOffsetXRow.number.max = '10';
+                    roofPerBrickOffsetXRow.number.step = '0.01';
+                    roofPerBrickOffsetXRow.range.value = String(roofPerBrickLayout?.offsetX ?? 0.0);
+                    roofPerBrickOffsetXRow.number.value = formatFloat(roofPerBrickLayout?.offsetX ?? 0.0, 2);
+                    applyRangeRowMeta(roofPerBrickOffsetXRow, {
+                        tooltip: tip(
+                            'Shifts the per-brick cell grid horizontally (in brick cell units).',
+                            'Use small values (0–1) to de-sync sections.',
+                            '0 keeps the original alignment.'
+                        )
+                    });
+                    roofPerBrickLayoutGroup.body.appendChild(roofPerBrickOffsetXRow.row);
+
+                    const roofPerBrickOffsetYRow = makeRangeRow('Layout offset Y (cells)');
+                    roofPerBrickOffsetYRow.range.min = '-10';
+                    roofPerBrickOffsetYRow.range.max = '10';
+                    roofPerBrickOffsetYRow.range.step = '0.01';
+                    roofPerBrickOffsetYRow.number.min = '-10';
+                    roofPerBrickOffsetYRow.number.max = '10';
+                    roofPerBrickOffsetYRow.number.step = '0.01';
+                    roofPerBrickOffsetYRow.range.value = String(roofPerBrickLayout?.offsetY ?? 0.0);
+                    roofPerBrickOffsetYRow.number.value = formatFloat(roofPerBrickLayout?.offsetY ?? 0.0, 2);
+                    applyRangeRowMeta(roofPerBrickOffsetYRow, {
+                        tooltip: tip(
+                            'Shifts the per-brick cell grid vertically (in brick cell units).',
+                            'Use small values (0–1) to de-sync sections.',
+                            '0 keeps the original alignment.'
+                        )
+                    });
+                    roofPerBrickLayoutGroup.body.appendChild(roofPerBrickOffsetYRow.row);
+
+                    roofPerBrickGroup.body.appendChild(roofPerBrickLayoutGroup.details);
+
 	                const roofPerBrickStrengthRow = makeRangeRow('Strength');
 	                roofPerBrickStrengthRow.range.min = '0';
 	                roofPerBrickStrengthRow.range.max = '2';
@@ -9823,6 +10062,109 @@ export class BuildingFabricationUI {
 	                    )
 	                });
 	                roofMortarGroup.body.appendChild(roofMortarToggle.toggle);
+
+                    const roofMortarLayout = roofMortar?.layout ?? null;
+                    const roofMortarLayoutGroup = makeDetailsSection('Layout', { open: false, nested: false, key: `${scopeKey}:layer:${layerId}:roof:matvar:mortar:layout` });
+                    applyTooltip(
+                        roofMortarLayoutGroup.label,
+                        tip(
+                            'Brick grid layout used for mortar variation only.',
+                            'Lets mortar lines vary without affecting per-brick variation.',
+                            'Keep values close to your base texture brick scale.'
+                        )
+                    );
+
+                    const roofMortarBricksPerTileXRow = makeRangeRow('Bricks per tile X');
+                    roofMortarBricksPerTileXRow.range.min = '0.25';
+                    roofMortarBricksPerTileXRow.range.max = '200';
+                    roofMortarBricksPerTileXRow.range.step = '0.25';
+                    roofMortarBricksPerTileXRow.number.min = '0.25';
+                    roofMortarBricksPerTileXRow.number.max = '200';
+                    roofMortarBricksPerTileXRow.number.step = '0.25';
+                    roofMortarBricksPerTileXRow.range.value = String(roofMortarLayout?.bricksPerTileX ?? 6.0);
+                    roofMortarBricksPerTileXRow.number.value = formatFloat(roofMortarLayout?.bricksPerTileX ?? 6.0, 2);
+                    applyRangeRowMeta(roofMortarBricksPerTileXRow, {
+                        tooltip: tip(
+                            'Brick count across one UV tile (U/X) for mortar variation.',
+                            'Typical: 5–10 depending on texture.',
+                            'Too much: very high values become noisy.'
+                        )
+                    });
+                    roofMortarLayoutGroup.body.appendChild(roofMortarBricksPerTileXRow.row);
+
+                    const roofMortarBricksPerTileYRow = makeRangeRow('Bricks per tile Y');
+                    roofMortarBricksPerTileYRow.range.min = '0.25';
+                    roofMortarBricksPerTileYRow.range.max = '200';
+                    roofMortarBricksPerTileYRow.range.step = '0.25';
+                    roofMortarBricksPerTileYRow.number.min = '0.25';
+                    roofMortarBricksPerTileYRow.number.max = '200';
+                    roofMortarBricksPerTileYRow.number.step = '0.25';
+                    roofMortarBricksPerTileYRow.range.value = String(roofMortarLayout?.bricksPerTileY ?? 3.0);
+                    roofMortarBricksPerTileYRow.number.value = formatFloat(roofMortarLayout?.bricksPerTileY ?? 3.0, 2);
+                    applyRangeRowMeta(roofMortarBricksPerTileYRow, {
+                        tooltip: tip(
+                            'Brick count across one UV tile (V/Y) for mortar variation.',
+                            'Typical: 2–6 depending on texture.',
+                            'Too much: wrong values misalign the grid.'
+                        )
+                    });
+                    roofMortarLayoutGroup.body.appendChild(roofMortarBricksPerTileYRow.row);
+
+                    const roofMortarMortarWidthRow = makeRangeRow('Mortar width');
+                    roofMortarMortarWidthRow.range.min = '0';
+                    roofMortarMortarWidthRow.range.max = '0.49';
+                    roofMortarMortarWidthRow.range.step = '0.01';
+                    roofMortarMortarWidthRow.number.min = '0';
+                    roofMortarMortarWidthRow.number.max = '0.49';
+                    roofMortarMortarWidthRow.number.step = '0.01';
+                    roofMortarMortarWidthRow.range.value = String(roofMortarLayout?.mortarWidth ?? 0.08);
+                    roofMortarMortarWidthRow.number.value = formatFloat(roofMortarLayout?.mortarWidth ?? 0.08, 2);
+                    applyRangeRowMeta(roofMortarMortarWidthRow, {
+                        tooltip: tip(
+                            'Thickness of mortar lines (as a fraction of a brick cell) for mortar variation.',
+                            'Typical: 0.04–0.12.',
+                            'Too much: mortar dominates and bricks disappear.'
+                        )
+                    });
+                    roofMortarLayoutGroup.body.appendChild(roofMortarMortarWidthRow.row);
+
+                    const roofMortarOffsetXRow = makeRangeRow('Layout offset X (cells)');
+                    roofMortarOffsetXRow.range.min = '-10';
+                    roofMortarOffsetXRow.range.max = '10';
+                    roofMortarOffsetXRow.range.step = '0.01';
+                    roofMortarOffsetXRow.number.min = '-10';
+                    roofMortarOffsetXRow.number.max = '10';
+                    roofMortarOffsetXRow.number.step = '0.01';
+                    roofMortarOffsetXRow.range.value = String(roofMortarLayout?.offsetX ?? 0.0);
+                    roofMortarOffsetXRow.number.value = formatFloat(roofMortarLayout?.offsetX ?? 0.0, 2);
+                    applyRangeRowMeta(roofMortarOffsetXRow, {
+                        tooltip: tip(
+                            'Shifts the mortar cell grid horizontally (in brick cell units).',
+                            'Use small values (0–1) to de-sync sections.',
+                            '0 keeps the original alignment.'
+                        )
+                    });
+                    roofMortarLayoutGroup.body.appendChild(roofMortarOffsetXRow.row);
+
+                    const roofMortarOffsetYRow = makeRangeRow('Layout offset Y (cells)');
+                    roofMortarOffsetYRow.range.min = '-10';
+                    roofMortarOffsetYRow.range.max = '10';
+                    roofMortarOffsetYRow.range.step = '0.01';
+                    roofMortarOffsetYRow.number.min = '-10';
+                    roofMortarOffsetYRow.number.max = '10';
+                    roofMortarOffsetYRow.number.step = '0.01';
+                    roofMortarOffsetYRow.range.value = String(roofMortarLayout?.offsetY ?? 0.0);
+                    roofMortarOffsetYRow.number.value = formatFloat(roofMortarLayout?.offsetY ?? 0.0, 2);
+                    applyRangeRowMeta(roofMortarOffsetYRow, {
+                        tooltip: tip(
+                            'Shifts the mortar cell grid vertically (in brick cell units).',
+                            'Use small values (0–1) to de-sync sections.',
+                            '0 keeps the original alignment.'
+                        )
+                    });
+                    roofMortarLayoutGroup.body.appendChild(roofMortarOffsetYRow.row);
+
+                    roofMortarGroup.body.appendChild(roofMortarLayoutGroup.details);
 
 	                const roofMortarStrengthRow = makeRangeRow('Strength');
 	                roofMortarStrengthRow.range.min = '0';
@@ -10632,18 +10974,17 @@ export class BuildingFabricationUI {
 
                     roofAntiController.syncDisabled({ allow, parentEnabled: enabled });
 
-	                    roofBricksPerTileXRow.range.disabled = !allow || !enabled;
-	                    roofBricksPerTileXRow.number.disabled = roofBricksPerTileXRow.range.disabled;
-	                    roofBricksPerTileYRow.range.disabled = !allow || !enabled;
-	                    roofBricksPerTileYRow.number.disabled = roofBricksPerTileYRow.range.disabled;
-	                    roofMortarWidthRow.range.disabled = !allow || !enabled;
-	                    roofMortarWidthRow.number.disabled = roofMortarWidthRow.range.disabled;
-	                    roofBrickOffsetXRow.range.disabled = !allow || !enabled;
-	                    roofBrickOffsetXRow.number.disabled = roofBrickOffsetXRow.range.disabled;
-	                    roofBrickOffsetYRow.range.disabled = !allow || !enabled;
-	                    roofBrickOffsetYRow.number.disabled = roofBrickOffsetYRow.range.disabled;
-
 	                    roofPerBrickToggle.input.disabled = !allow || !enabled;
+	                    roofPerBrickBricksPerTileXRow.range.disabled = !allow || !enabled || !roofPerBrickToggle.input.checked;
+	                    roofPerBrickBricksPerTileXRow.number.disabled = roofPerBrickBricksPerTileXRow.range.disabled;
+	                    roofPerBrickBricksPerTileYRow.range.disabled = !allow || !enabled || !roofPerBrickToggle.input.checked;
+	                    roofPerBrickBricksPerTileYRow.number.disabled = roofPerBrickBricksPerTileYRow.range.disabled;
+	                    roofPerBrickMortarWidthRow.range.disabled = !allow || !enabled || !roofPerBrickToggle.input.checked;
+	                    roofPerBrickMortarWidthRow.number.disabled = roofPerBrickMortarWidthRow.range.disabled;
+	                    roofPerBrickOffsetXRow.range.disabled = !allow || !enabled || !roofPerBrickToggle.input.checked;
+	                    roofPerBrickOffsetXRow.number.disabled = roofPerBrickOffsetXRow.range.disabled;
+	                    roofPerBrickOffsetYRow.range.disabled = !allow || !enabled || !roofPerBrickToggle.input.checked;
+	                    roofPerBrickOffsetYRow.number.disabled = roofPerBrickOffsetYRow.range.disabled;
 	                    roofPerBrickStrengthRow.range.disabled = !allow || !enabled || !roofPerBrickToggle.input.checked;
 	                    roofPerBrickStrengthRow.number.disabled = roofPerBrickStrengthRow.range.disabled;
 	                    roofPerBrickHueRow.range.disabled = !allow || !enabled || !roofPerBrickToggle.input.checked;
@@ -10658,6 +10999,16 @@ export class BuildingFabricationUI {
 	                    roofPerBrickNormalRow.number.disabled = roofPerBrickNormalRow.range.disabled;
 
 	                    roofMortarToggle.input.disabled = !allow || !enabled;
+	                    roofMortarBricksPerTileXRow.range.disabled = !allow || !enabled || !roofMortarToggle.input.checked;
+	                    roofMortarBricksPerTileXRow.number.disabled = roofMortarBricksPerTileXRow.range.disabled;
+	                    roofMortarBricksPerTileYRow.range.disabled = !allow || !enabled || !roofMortarToggle.input.checked;
+	                    roofMortarBricksPerTileYRow.number.disabled = roofMortarBricksPerTileYRow.range.disabled;
+	                    roofMortarMortarWidthRow.range.disabled = !allow || !enabled || !roofMortarToggle.input.checked;
+	                    roofMortarMortarWidthRow.number.disabled = roofMortarMortarWidthRow.range.disabled;
+	                    roofMortarOffsetXRow.range.disabled = !allow || !enabled || !roofMortarToggle.input.checked;
+	                    roofMortarOffsetXRow.number.disabled = roofMortarOffsetXRow.range.disabled;
+	                    roofMortarOffsetYRow.range.disabled = !allow || !enabled || !roofMortarToggle.input.checked;
+	                    roofMortarOffsetYRow.number.disabled = roofMortarOffsetYRow.range.disabled;
 	                    roofMortarStrengthRow.range.disabled = !allow || !enabled || !roofMortarToggle.input.checked;
 	                    roofMortarStrengthRow.number.disabled = roofMortarStrengthRow.range.disabled;
 	                    roofMortarHueRow.range.disabled = !allow || !enabled || !roofMortarToggle.input.checked;
@@ -11647,91 +11998,111 @@ export class BuildingFabricationUI {
                     this._notifySelectedLayersChanged();
                 });
 
-                roofBricksPerTileXRow.range.addEventListener('input', () => {
-                    const next = clamp(roofBricksPerTileXRow.range.value, 0.25, 200.0);
-                    layer.roof.materialVariation.brick ??= {};
-                    layer.roof.materialVariation.brick.bricksPerTileX = next;
-                    roofBricksPerTileXRow.number.value = formatFloat(next, 2);
-                    this._notifySelectedLayersChanged();
-                });
-                roofBricksPerTileXRow.number.addEventListener('change', () => {
-                    const next = clamp(roofBricksPerTileXRow.number.value, 0.25, 200.0);
-                    layer.roof.materialVariation.brick ??= {};
-                    layer.roof.materialVariation.brick.bricksPerTileX = next;
-                    roofBricksPerTileXRow.range.value = String(next);
-                    roofBricksPerTileXRow.number.value = formatFloat(next, 2);
-                    this._notifySelectedLayersChanged();
-                });
-
-                roofBricksPerTileYRow.range.addEventListener('input', () => {
-                    const next = clamp(roofBricksPerTileYRow.range.value, 0.25, 200.0);
-                    layer.roof.materialVariation.brick ??= {};
-                    layer.roof.materialVariation.brick.bricksPerTileY = next;
-                    roofBricksPerTileYRow.number.value = formatFloat(next, 2);
-                    this._notifySelectedLayersChanged();
-                });
-                roofBricksPerTileYRow.number.addEventListener('change', () => {
-                    const next = clamp(roofBricksPerTileYRow.number.value, 0.25, 200.0);
-                    layer.roof.materialVariation.brick ??= {};
-                    layer.roof.materialVariation.brick.bricksPerTileY = next;
-                    roofBricksPerTileYRow.range.value = String(next);
-                    roofBricksPerTileYRow.number.value = formatFloat(next, 2);
-                    this._notifySelectedLayersChanged();
-                });
-
-                roofMortarWidthRow.range.addEventListener('input', () => {
-                    const next = clamp(roofMortarWidthRow.range.value, 0.0, 0.49);
-                    layer.roof.materialVariation.brick ??= {};
-                    layer.roof.materialVariation.brick.mortarWidth = next;
-                    roofMortarWidthRow.number.value = formatFloat(next, 2);
-                    this._notifySelectedLayersChanged();
-                });
-                roofMortarWidthRow.number.addEventListener('change', () => {
-                    const next = clamp(roofMortarWidthRow.number.value, 0.0, 0.49);
-                    layer.roof.materialVariation.brick ??= {};
-                    layer.roof.materialVariation.brick.mortarWidth = next;
-                    roofMortarWidthRow.range.value = String(next);
-                    roofMortarWidthRow.number.value = formatFloat(next, 2);
-                    this._notifySelectedLayersChanged();
-                });
-
-                roofBrickOffsetXRow.range.addEventListener('input', () => {
-                    const next = clamp(roofBrickOffsetXRow.range.value, -10.0, 10.0);
-                    layer.roof.materialVariation.brick ??= {};
-                    layer.roof.materialVariation.brick.offsetX = next;
-                    roofBrickOffsetXRow.number.value = formatFloat(next, 2);
-                    this._notifySelectedLayersChanged();
-                });
-                roofBrickOffsetXRow.number.addEventListener('change', () => {
-                    const next = clamp(roofBrickOffsetXRow.number.value, -10.0, 10.0);
-                    layer.roof.materialVariation.brick ??= {};
-                    layer.roof.materialVariation.brick.offsetX = next;
-                    roofBrickOffsetXRow.range.value = String(next);
-                    roofBrickOffsetXRow.number.value = formatFloat(next, 2);
-                    this._notifySelectedLayersChanged();
-                });
-
-                roofBrickOffsetYRow.range.addEventListener('input', () => {
-                    const next = clamp(roofBrickOffsetYRow.range.value, -10.0, 10.0);
-                    layer.roof.materialVariation.brick ??= {};
-                    layer.roof.materialVariation.brick.offsetY = next;
-                    roofBrickOffsetYRow.number.value = formatFloat(next, 2);
-                    this._notifySelectedLayersChanged();
-                });
-                roofBrickOffsetYRow.number.addEventListener('change', () => {
-                    const next = clamp(roofBrickOffsetYRow.number.value, -10.0, 10.0);
-                    layer.roof.materialVariation.brick ??= {};
-                    layer.roof.materialVariation.brick.offsetY = next;
-                    roofBrickOffsetYRow.range.value = String(next);
-                    roofBrickOffsetYRow.number.value = formatFloat(next, 2);
-                    this._notifySelectedLayersChanged();
-                });
-
                 roofPerBrickToggle.input.addEventListener('change', () => {
                     layer.roof.materialVariation.brick ??= {};
                     layer.roof.materialVariation.brick.perBrick ??= {};
                     layer.roof.materialVariation.brick.perBrick.enabled = !!roofPerBrickToggle.input.checked;
                     syncRoofMatVarEnabled();
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofPerBrickBricksPerTileXRow.range.addEventListener('input', () => {
+                    const next = clamp(roofPerBrickBricksPerTileXRow.range.value, 0.25, 200.0);
+                    layer.roof.materialVariation.brick ??= {};
+                    layer.roof.materialVariation.brick.perBrick ??= {};
+                    layer.roof.materialVariation.brick.perBrick.layout ??= {};
+                    layer.roof.materialVariation.brick.perBrick.layout.bricksPerTileX = next;
+                    roofPerBrickBricksPerTileXRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofPerBrickBricksPerTileXRow.number.addEventListener('change', () => {
+                    const next = clamp(roofPerBrickBricksPerTileXRow.number.value, 0.25, 200.0);
+                    layer.roof.materialVariation.brick ??= {};
+                    layer.roof.materialVariation.brick.perBrick ??= {};
+                    layer.roof.materialVariation.brick.perBrick.layout ??= {};
+                    layer.roof.materialVariation.brick.perBrick.layout.bricksPerTileX = next;
+                    roofPerBrickBricksPerTileXRow.range.value = String(next);
+                    roofPerBrickBricksPerTileXRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofPerBrickBricksPerTileYRow.range.addEventListener('input', () => {
+                    const next = clamp(roofPerBrickBricksPerTileYRow.range.value, 0.25, 200.0);
+                    layer.roof.materialVariation.brick ??= {};
+                    layer.roof.materialVariation.brick.perBrick ??= {};
+                    layer.roof.materialVariation.brick.perBrick.layout ??= {};
+                    layer.roof.materialVariation.brick.perBrick.layout.bricksPerTileY = next;
+                    roofPerBrickBricksPerTileYRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofPerBrickBricksPerTileYRow.number.addEventListener('change', () => {
+                    const next = clamp(roofPerBrickBricksPerTileYRow.number.value, 0.25, 200.0);
+                    layer.roof.materialVariation.brick ??= {};
+                    layer.roof.materialVariation.brick.perBrick ??= {};
+                    layer.roof.materialVariation.brick.perBrick.layout ??= {};
+                    layer.roof.materialVariation.brick.perBrick.layout.bricksPerTileY = next;
+                    roofPerBrickBricksPerTileYRow.range.value = String(next);
+                    roofPerBrickBricksPerTileYRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofPerBrickMortarWidthRow.range.addEventListener('input', () => {
+                    const next = clamp(roofPerBrickMortarWidthRow.range.value, 0.0, 0.49);
+                    layer.roof.materialVariation.brick ??= {};
+                    layer.roof.materialVariation.brick.perBrick ??= {};
+                    layer.roof.materialVariation.brick.perBrick.layout ??= {};
+                    layer.roof.materialVariation.brick.perBrick.layout.mortarWidth = next;
+                    roofPerBrickMortarWidthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofPerBrickMortarWidthRow.number.addEventListener('change', () => {
+                    const next = clamp(roofPerBrickMortarWidthRow.number.value, 0.0, 0.49);
+                    layer.roof.materialVariation.brick ??= {};
+                    layer.roof.materialVariation.brick.perBrick ??= {};
+                    layer.roof.materialVariation.brick.perBrick.layout ??= {};
+                    layer.roof.materialVariation.brick.perBrick.layout.mortarWidth = next;
+                    roofPerBrickMortarWidthRow.range.value = String(next);
+                    roofPerBrickMortarWidthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofPerBrickOffsetXRow.range.addEventListener('input', () => {
+                    const next = clamp(roofPerBrickOffsetXRow.range.value, -10.0, 10.0);
+                    layer.roof.materialVariation.brick ??= {};
+                    layer.roof.materialVariation.brick.perBrick ??= {};
+                    layer.roof.materialVariation.brick.perBrick.layout ??= {};
+                    layer.roof.materialVariation.brick.perBrick.layout.offsetX = next;
+                    roofPerBrickOffsetXRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofPerBrickOffsetXRow.number.addEventListener('change', () => {
+                    const next = clamp(roofPerBrickOffsetXRow.number.value, -10.0, 10.0);
+                    layer.roof.materialVariation.brick ??= {};
+                    layer.roof.materialVariation.brick.perBrick ??= {};
+                    layer.roof.materialVariation.brick.perBrick.layout ??= {};
+                    layer.roof.materialVariation.brick.perBrick.layout.offsetX = next;
+                    roofPerBrickOffsetXRow.range.value = String(next);
+                    roofPerBrickOffsetXRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofPerBrickOffsetYRow.range.addEventListener('input', () => {
+                    const next = clamp(roofPerBrickOffsetYRow.range.value, -10.0, 10.0);
+                    layer.roof.materialVariation.brick ??= {};
+                    layer.roof.materialVariation.brick.perBrick ??= {};
+                    layer.roof.materialVariation.brick.perBrick.layout ??= {};
+                    layer.roof.materialVariation.brick.perBrick.layout.offsetY = next;
+                    roofPerBrickOffsetYRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofPerBrickOffsetYRow.number.addEventListener('change', () => {
+                    const next = clamp(roofPerBrickOffsetYRow.number.value, -10.0, 10.0);
+                    layer.roof.materialVariation.brick ??= {};
+                    layer.roof.materialVariation.brick.perBrick ??= {};
+                    layer.roof.materialVariation.brick.perBrick.layout ??= {};
+                    layer.roof.materialVariation.brick.perBrick.layout.offsetY = next;
+                    roofPerBrickOffsetYRow.range.value = String(next);
+                    roofPerBrickOffsetYRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
                 roofPerBrickStrengthRow.range.addEventListener('input', () => {
@@ -11847,6 +12218,106 @@ export class BuildingFabricationUI {
                     layer.roof.materialVariation.brick.mortar ??= {};
                     layer.roof.materialVariation.brick.mortar.enabled = !!roofMortarToggle.input.checked;
                     syncRoofMatVarEnabled();
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofMortarBricksPerTileXRow.range.addEventListener('input', () => {
+                    const next = clamp(roofMortarBricksPerTileXRow.range.value, 0.25, 200.0);
+                    layer.roof.materialVariation.brick ??= {};
+                    layer.roof.materialVariation.brick.mortar ??= {};
+                    layer.roof.materialVariation.brick.mortar.layout ??= {};
+                    layer.roof.materialVariation.brick.mortar.layout.bricksPerTileX = next;
+                    roofMortarBricksPerTileXRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofMortarBricksPerTileXRow.number.addEventListener('change', () => {
+                    const next = clamp(roofMortarBricksPerTileXRow.number.value, 0.25, 200.0);
+                    layer.roof.materialVariation.brick ??= {};
+                    layer.roof.materialVariation.brick.mortar ??= {};
+                    layer.roof.materialVariation.brick.mortar.layout ??= {};
+                    layer.roof.materialVariation.brick.mortar.layout.bricksPerTileX = next;
+                    roofMortarBricksPerTileXRow.range.value = String(next);
+                    roofMortarBricksPerTileXRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofMortarBricksPerTileYRow.range.addEventListener('input', () => {
+                    const next = clamp(roofMortarBricksPerTileYRow.range.value, 0.25, 200.0);
+                    layer.roof.materialVariation.brick ??= {};
+                    layer.roof.materialVariation.brick.mortar ??= {};
+                    layer.roof.materialVariation.brick.mortar.layout ??= {};
+                    layer.roof.materialVariation.brick.mortar.layout.bricksPerTileY = next;
+                    roofMortarBricksPerTileYRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofMortarBricksPerTileYRow.number.addEventListener('change', () => {
+                    const next = clamp(roofMortarBricksPerTileYRow.number.value, 0.25, 200.0);
+                    layer.roof.materialVariation.brick ??= {};
+                    layer.roof.materialVariation.brick.mortar ??= {};
+                    layer.roof.materialVariation.brick.mortar.layout ??= {};
+                    layer.roof.materialVariation.brick.mortar.layout.bricksPerTileY = next;
+                    roofMortarBricksPerTileYRow.range.value = String(next);
+                    roofMortarBricksPerTileYRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofMortarMortarWidthRow.range.addEventListener('input', () => {
+                    const next = clamp(roofMortarMortarWidthRow.range.value, 0.0, 0.49);
+                    layer.roof.materialVariation.brick ??= {};
+                    layer.roof.materialVariation.brick.mortar ??= {};
+                    layer.roof.materialVariation.brick.mortar.layout ??= {};
+                    layer.roof.materialVariation.brick.mortar.layout.mortarWidth = next;
+                    roofMortarMortarWidthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofMortarMortarWidthRow.number.addEventListener('change', () => {
+                    const next = clamp(roofMortarMortarWidthRow.number.value, 0.0, 0.49);
+                    layer.roof.materialVariation.brick ??= {};
+                    layer.roof.materialVariation.brick.mortar ??= {};
+                    layer.roof.materialVariation.brick.mortar.layout ??= {};
+                    layer.roof.materialVariation.brick.mortar.layout.mortarWidth = next;
+                    roofMortarMortarWidthRow.range.value = String(next);
+                    roofMortarMortarWidthRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofMortarOffsetXRow.range.addEventListener('input', () => {
+                    const next = clamp(roofMortarOffsetXRow.range.value, -10.0, 10.0);
+                    layer.roof.materialVariation.brick ??= {};
+                    layer.roof.materialVariation.brick.mortar ??= {};
+                    layer.roof.materialVariation.brick.mortar.layout ??= {};
+                    layer.roof.materialVariation.brick.mortar.layout.offsetX = next;
+                    roofMortarOffsetXRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofMortarOffsetXRow.number.addEventListener('change', () => {
+                    const next = clamp(roofMortarOffsetXRow.number.value, -10.0, 10.0);
+                    layer.roof.materialVariation.brick ??= {};
+                    layer.roof.materialVariation.brick.mortar ??= {};
+                    layer.roof.materialVariation.brick.mortar.layout ??= {};
+                    layer.roof.materialVariation.brick.mortar.layout.offsetX = next;
+                    roofMortarOffsetXRow.range.value = String(next);
+                    roofMortarOffsetXRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+
+                roofMortarOffsetYRow.range.addEventListener('input', () => {
+                    const next = clamp(roofMortarOffsetYRow.range.value, -10.0, 10.0);
+                    layer.roof.materialVariation.brick ??= {};
+                    layer.roof.materialVariation.brick.mortar ??= {};
+                    layer.roof.materialVariation.brick.mortar.layout ??= {};
+                    layer.roof.materialVariation.brick.mortar.layout.offsetY = next;
+                    roofMortarOffsetYRow.number.value = formatFloat(next, 2);
+                    this._notifySelectedLayersChanged();
+                });
+                roofMortarOffsetYRow.number.addEventListener('change', () => {
+                    const next = clamp(roofMortarOffsetYRow.number.value, -10.0, 10.0);
+                    layer.roof.materialVariation.brick ??= {};
+                    layer.roof.materialVariation.brick.mortar ??= {};
+                    layer.roof.materialVariation.brick.mortar.layout ??= {};
+                    layer.roof.materialVariation.brick.mortar.layout.offsetY = next;
+                    roofMortarOffsetYRow.range.value = String(next);
+                    roofMortarOffsetYRow.number.value = formatFloat(next, 2);
                     this._notifySelectedLayersChanged();
                 });
 
