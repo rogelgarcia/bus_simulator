@@ -772,59 +772,302 @@ function computeCenterlineTrimForPolyline(polyline, { laneWidth, crosswalkEndKey
     return { startTrim, endTrim };
 }
 
-function buildLaneDividerLineSegmentsFromSegments(segments, { laneWidth, markingY, crosswalkEndKeys = new Set() } = {}) {
-    const out = [];
+function buildLaneDividerLineSegmentsFromSegments(segments, junctions, { laneWidth, markingY, crosswalkEndKeys = new Set() } = {}) {
     const segs = Array.isArray(segments) ? segments : [];
-    for (const seg of segs) {
-        const dir = seg?.dir ?? null;
-        const right = seg?.right ?? null;
-        const lw = Math.max(EPS, clampNumber(seg?.laneWidth, clampNumber(laneWidth, LANE_WIDTH_BASE)));
-        const lanesF = clampInt(seg?.lanesF ?? 0, 0, 99);
-        const lanesB = clampInt(seg?.lanesB ?? 0, 0, 99);
-        const pieces = Array.isArray(seg?.keptPieces) ? seg.keptPieces : [];
-        if (!dir || !right || !pieces.length) continue;
+    const juncs = Array.isArray(junctions) ? junctions : [];
+    const out = [];
 
-        const offsets = [];
-        for (let i = 1; i < lanesF; i++) offsets.push(i * lw);
-        for (let i = 1; i < lanesB; i++) offsets.push(-i * lw);
+    const baseLaneWidth = Math.max(EPS, clampNumber(laneWidth, LANE_WIDTH_BASE));
+    const chord = Math.max(0.08, baseLaneWidth * 0.02);
+    const dash = baseLaneWidth * 0.7;
+    const gap = baseLaneWidth * 0.35;
+    const y = clampNumber(markingY, 0);
 
-        if (!offsets.length) continue;
+    const nodePosByKey = new Map();
+    const pieceInfoById = new Map();
+    const adjacency = new Map();
+    const junctionCurveByEdge = new Map();
 
-        const dash = lw * 0.7;
-        const gap = lw * 0.35;
-        const step = dash + gap;
-        const crosswalkTrim = lw * 0.88;
-        const y = clampNumber(markingY, 0);
+    const addNeighbor = (a, b) => {
+        if (!adjacency.has(a)) adjacency.set(a, []);
+        const list = adjacency.get(a);
+        if (!list.includes(b)) list.push(b);
+    };
 
-        for (const piece of pieces) {
-            const a = piece?.aWorld ?? null;
-            const b = piece?.bWorld ?? null;
-            if (!a || !b) continue;
-            const len = Number(piece?.length) || distXZ(a, b);
-            if (!(len > EPS)) continue;
+    const offsetPoint = (world, right, offset) => ({
+        x: (Number(world?.x) || 0) + (Number(right?.x) || 0) * offset,
+        z: (Number(world?.z) || 0) + (Number(right?.z) || 0) * offset
+    });
 
-            const baseInset = Math.min(lw * 0.3, len * 0.18);
-            const startKey = piece?.id ? `${piece.id}|a` : null;
-            const endKey = piece?.id ? `${piece.id}|b` : null;
-            const startInset = startKey && crosswalkEndKeys.has(startKey) ? Math.max(baseInset, crosswalkTrim) : baseInset;
-            const endInset = endKey && crosswalkEndKeys.has(endKey) ? Math.max(baseInset, crosswalkTrim) : baseInset;
-            const usable = Math.max(0, len - startInset - endInset);
-            if (!(usable > EPS) || !(step > EPS)) continue;
+    const appendUnique = (list, p, tol = 1e-6) => {
+        const x = Number(p?.x) || 0;
+        const z = Number(p?.z) || 0;
+        const last = list[list.length - 1] ?? null;
+        if (last && distSq(last, { x, z }) <= tol * tol) return;
+        list.push({ x, z });
+    };
 
-            for (const offset of offsets) {
-                const base = {
-                    x: (Number(a.x) || 0) + (Number(dir.x) || 0) * startInset + (Number(right.x) || 0) * offset,
-                    z: (Number(a.z) || 0) + (Number(dir.z) || 0) * startInset + (Number(right.z) || 0) * offset
-                };
-                for (let t = 0; t < usable - EPS; t += step) {
-                    const t0 = t;
-                    const t1 = Math.min(t + dash, usable);
-                    const p0 = { x: base.x + (Number(dir.x) || 0) * t0, z: base.z + (Number(dir.z) || 0) * t0 };
-                    const p1 = { x: base.x + (Number(dir.x) || 0) * t1, z: base.z + (Number(dir.z) || 0) * t1 };
-                    appendLineSegment(out, p0, p1, y);
+    const dotXZ = (a, b) => (Number(a?.x) || 0) * (Number(b?.x) || 0) + (Number(a?.z) || 0) * (Number(b?.z) || 0);
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    const normalizeVecXZ = (v) => {
+        const x = Number(v?.x) || 0;
+        const z = Number(v?.z) || 0;
+        const len = Math.hypot(x, z);
+        if (!(len > EPS)) return null;
+        const inv = 1 / len;
+        return { x: x * inv, z: z * inv };
+    };
+
+    const buildDegree2Curve = (aEndpoint, bEndpoint, aKey, bKey, centerHint) => {
+        const aPos = nodePosByKey.get(aKey) ?? null;
+        const bPos = nodePosByKey.get(bKey) ?? null;
+        if (!aPos || !bPos) return null;
+
+        const dist = distXZ(aPos, bPos);
+        if (!(dist > 1e-6)) return null;
+
+        const p0 = { x: Number(aPos.x) || 0, z: Number(aPos.z) || 0 };
+        const p1 = { x: Number(bPos.x) || 0, z: Number(bPos.z) || 0 };
+
+        const aIn = normalizeVecXZ({ x: -(Number(aEndpoint?.dirOut?.x) || 0), z: -(Number(aEndpoint?.dirOut?.z) || 0) });
+        const bIn = normalizeVecXZ({ x: -(Number(bEndpoint?.dirOut?.x) || 0), z: -(Number(bEndpoint?.dirOut?.z) || 0) });
+        const fallback0 = normalizeVecXZ({ x: p1.x - p0.x, z: p1.z - p0.z });
+        const fallback1 = normalizeVecXZ({ x: p0.x - p1.x, z: p0.z - p1.z });
+        const dir0 = aIn ?? fallback0;
+        const dir1 = bIn ?? fallback1;
+        if (!dir0 || !dir1) return [p0, p1];
+
+        const alignment = clamp(dotXZ(dir0, dir1), -1, 1);
+        const angle = Math.acos(alignment);
+        if (!(angle > 0.12)) return [p0, p1];
+
+        const hit = lineIntersectionXZ(p0, dir0, p1, dir1);
+        const t0 = Number(hit?.t) || 0;
+        const t1 = Number(hit?.u) || 0;
+        const d = (t0 > 1e-6 && t1 > 1e-6)
+            ? (Math.abs(t0 - t1) <= 1e-4 ? (t0 + t1) * 0.5 : Math.min(t0, t1))
+            : 0;
+        const radius = (d > 1e-6 && angle > 1e-6 && angle < Math.PI - 1e-6)
+            ? d * Math.tan(angle * 0.5)
+            : 0;
+        if (!(radius > 1e-6)) return [p0, p1];
+
+        const n0 = rightNormalXZ(dir0);
+        const n1 = rightNormalXZ(dir1);
+        const options0 = [n0, { x: -n0.x, z: -n0.z }];
+        const options1 = [n1, { x: -n1.x, z: -n1.z }];
+
+        let best = null;
+        let bestErr = Infinity;
+        let bestCenterScore = Infinity;
+        for (const out0 of options0) {
+            for (const out1 of options1) {
+                const candidate = computeEdgeFilletArcXZ({ p0, dir0, out0, p1, dir1, out1, radius });
+                if (!candidate?.center || !candidate?.tangent0 || !candidate?.tangent1) continue;
+                const err = distXZ(candidate.tangent0, p0) + distXZ(candidate.tangent1, p1);
+                const hint = centerHint ?? null;
+                const centerScore = hint ? distXZ(candidate.center, hint) : 0;
+                if (err < bestErr - 1e-6) {
+                    best = candidate;
+                    bestErr = err;
+                    bestCenterScore = centerScore;
+                    continue;
+                }
+                if (Math.abs(err - bestErr) <= 1e-6 && centerScore < bestCenterScore - 1e-6) {
+                    best = candidate;
+                    bestCenterScore = centerScore;
                 }
             }
         }
+
+        if (!best?.center) return [p0, p1];
+
+        const span = Number(best.spanAng) || 0;
+        const arcRadius = Number(best.radius) || 0;
+        if (!(span > 1e-6) || !(arcRadius > 1e-6)) return [p0, p1];
+
+        const arcLen = Math.abs(span) * arcRadius;
+        const segments = clampInt(Math.ceil(arcLen / chord), 6, 96);
+        const arcPoints = sampleArcXZ({
+            center: best.center,
+            radius: arcRadius,
+            startAng: Number(best.startAng) || 0,
+            spanAng: span,
+            ccw: best.ccw !== false,
+            segments
+        });
+
+        const points = [];
+        appendUnique(points, p0);
+        if (best.tangent0) appendUnique(points, best.tangent0);
+        for (const p of arcPoints) appendUnique(points, p);
+        if (best.tangent1) appendUnique(points, best.tangent1);
+        appendUnique(points, p1);
+        return points.length >= 2 ? points : [p0, p1];
+    };
+
+    const nodeKey = (pieceId, end, dividerId) => `${pieceId}|${end}|${dividerId}`;
+    const baseKeyFromNodeKey = (key) => {
+        const parts = String(key ?? '').split('|');
+        if (parts.length < 3) return null;
+        return `${parts[0]}|${parts[1]}`;
+    };
+
+    for (const seg of segs) {
+        const right = seg?.right ?? null;
+        const lanesF = clampInt(seg?.lanesF ?? 0, 0, 99);
+        const lanesB = clampInt(seg?.lanesB ?? 0, 0, 99);
+        const pieces = Array.isArray(seg?.keptPieces) ? seg.keptPieces : [];
+        if (!right || !pieces.length) continue;
+
+        for (const piece of pieces) {
+            const pid = piece?.id ?? null;
+            const aWorld = piece?.aWorld ?? null;
+            const bWorld = piece?.bWorld ?? null;
+            if (!pid || !aWorld || !bWorld) continue;
+            pieceInfoById.set(pid, { seg });
+
+            for (let i = 1; i < lanesF; i++) {
+                const dividerId = `F${i}`;
+                const offset = i * baseLaneWidth;
+                const a = nodeKey(pid, 'a', dividerId);
+                const b = nodeKey(pid, 'b', dividerId);
+                nodePosByKey.set(a, offsetPoint(aWorld, right, offset));
+                nodePosByKey.set(b, offsetPoint(bWorld, right, offset));
+                addNeighbor(a, b);
+                addNeighbor(b, a);
+            }
+
+            for (let i = 1; i < lanesB; i++) {
+                const dividerId = `B${i}`;
+                const offset = -i * baseLaneWidth;
+                const a = nodeKey(pid, 'a', dividerId);
+                const b = nodeKey(pid, 'b', dividerId);
+                nodePosByKey.set(a, offsetPoint(aWorld, right, offset));
+                nodePosByKey.set(b, offsetPoint(bWorld, right, offset));
+                addNeighbor(a, b);
+                addNeighbor(b, a);
+            }
+        }
+    }
+
+    for (const junction of juncs) {
+        const endpoints = Array.isArray(junction?.endpoints) ? junction.endpoints : [];
+        if (endpoints.length !== 2) continue;
+        const aEndpoint = endpoints[0] ?? null;
+        const bEndpoint = endpoints[1] ?? null;
+        const aPid = aEndpoint?.pieceId ?? null;
+        const bPid = bEndpoint?.pieceId ?? null;
+        const aEnd = aEndpoint?.end ?? null;
+        const bEnd = bEndpoint?.end ?? null;
+        if (!aPid || !bPid || (aEnd !== 'a' && aEnd !== 'b') || (bEnd !== 'a' && bEnd !== 'b')) continue;
+
+        const segA = pieceInfoById.get(aPid)?.seg ?? null;
+        const segB = pieceInfoById.get(bPid)?.seg ?? null;
+        if (!segA || !segB) continue;
+
+        const lanesFA = clampInt(segA?.lanesF ?? 0, 0, 99);
+        const lanesBA = clampInt(segA?.lanesB ?? 0, 0, 99);
+        const lanesFB = clampInt(segB?.lanesF ?? 0, 0, 99);
+        const lanesBB = clampInt(segB?.lanesB ?? 0, 0, 99);
+
+        const swapped = aEnd === bEnd;
+
+        const addJunctionEdge = (aDivider, bDivider, count) => {
+            for (let i = 1; i < count; i++) {
+                const aKey = nodeKey(aPid, aEnd, `${aDivider}${i}`);
+                const bKey = nodeKey(bPid, bEnd, `${bDivider}${i}`);
+                if (!nodePosByKey.has(aKey) || !nodePosByKey.has(bKey)) continue;
+                const curve = buildDegree2Curve(aEndpoint, bEndpoint, aKey, bKey, junction?.center ?? null);
+                if (Array.isArray(curve) && curve.length >= 2) {
+                    const normalized = curve.map((p) => ({ x: Number(p?.x) || 0, z: Number(p?.z) || 0 }));
+                    junctionCurveByEdge.set(`${aKey}|${bKey}`, normalized);
+                    junctionCurveByEdge.set(`${bKey}|${aKey}`, normalized.slice().reverse());
+                }
+                addNeighbor(aKey, bKey);
+                addNeighbor(bKey, aKey);
+            }
+        };
+
+        if (!swapped) {
+            addJunctionEdge('F', 'F', Math.min(lanesFA, lanesFB));
+            addJunctionEdge('B', 'B', Math.min(lanesBA, lanesBB));
+        } else {
+            addJunctionEdge('F', 'B', Math.min(lanesFA, lanesBB));
+            addJunctionEdge('B', 'F', Math.min(lanesBA, lanesFB));
+        }
+    }
+
+    const keys = Array.from(nodePosByKey.keys()).sort();
+    const visited = new Set();
+
+    for (const startKey of keys) {
+        if (visited.has(startKey)) continue;
+
+        const stack = [startKey];
+        const component = new Set();
+        while (stack.length) {
+            const k = stack.pop();
+            if (component.has(k)) continue;
+            component.add(k);
+            const neighbors = adjacency.get(k) ?? [];
+            for (const n of neighbors) {
+                if (component.has(n)) continue;
+                stack.push(n);
+            }
+        }
+
+        const componentKeys = Array.from(component).sort();
+        for (const k of componentKeys) visited.add(k);
+
+        const deg1 = componentKeys.filter((k) => (adjacency.get(k) ?? []).length === 1).sort();
+        const chosenStart = deg1[0] ?? componentKeys[0];
+        if (!chosenStart) continue;
+
+        const orderedKeys = [];
+        let prev = null;
+        let curr = chosenStart;
+        const guardMax = Math.max(8, componentKeys.length + 4);
+        let guard = 0;
+        while (curr && guard++ < guardMax) {
+            orderedKeys.push(curr);
+            const neighbors = adjacency.get(curr) ?? [];
+            let next = null;
+            for (const n of neighbors) {
+                if (n !== prev) {
+                    next = n;
+                    break;
+                }
+            }
+            if (!next || next === chosenStart) {
+                if (next === chosenStart) orderedKeys.push(chosenStart);
+                break;
+            }
+            prev = curr;
+            curr = next;
+        }
+
+        const points = [];
+        let prevKey = null;
+        for (const k of orderedKeys) {
+            const p = nodePosByKey.get(k) ?? null;
+            if (!p) continue;
+            if (prevKey && points.length) {
+                const curve = junctionCurveByEdge.get(`${prevKey}|${k}`) ?? null;
+                if (Array.isArray(curve) && curve.length >= 3) {
+                    for (let i = 1; i < curve.length - 1; i++) {
+                        const cp = curve[i];
+                        points.push({ x: Number(cp?.x) || 0, z: Number(cp?.z) || 0, key: null });
+                    }
+                }
+            }
+            points.push({ x: Number(p.x) || 0, z: Number(p.z) || 0, key: baseKeyFromNodeKey(k) });
+            prevKey = k;
+        }
+
+        if (points.length < 2) continue;
+        const trim = computeCenterlineTrimForPolyline(points, { laneWidth: baseLaneWidth, crosswalkEndKeys });
+        appendDashedPolylineSegments(out, points, { startTrim: trim.startTrim, endTrim: trim.endTrim, dash, gap, y });
     }
 
     return out;
@@ -888,11 +1131,11 @@ function buildArrowMeshesFromSegments(segments, { laneWidth, arrowY, arrowTangen
                     );
                 }
 
-                const local = [
-                    [tailX, bodyHalf], [bodyX, bodyHalf], [bodyX, -bodyHalf],
-                    [tailX, bodyHalf], [bodyX, -bodyHalf], [tailX, -bodyHalf],
-                    [tipX, 0], [bodyX, headHalf], [bodyX, -headHalf]
-                ];
+	                const local = [
+	                    [tailX, bodyHalf], [bodyX, -bodyHalf], [bodyX, bodyHalf],
+	                    [tailX, bodyHalf], [tailX, -bodyHalf], [bodyX, -bodyHalf],
+	                    [tipX, 0], [bodyX, headHalf], [bodyX, -headHalf]
+	                ];
 
                 for (const v of local) {
                     const lx = v[0];
@@ -949,7 +1192,7 @@ export function buildRoadMarkingsMeshDataFromRoadEngineDerived(derived, options 
         });
     }
 
-    const dividerSegments = buildLaneDividerLineSegmentsFromSegments(segments, { laneWidth, markingY, crosswalkEndKeys });
+    const dividerSegments = buildLaneDividerLineSegmentsFromSegments(segments, junctions, { laneWidth, markingY, crosswalkEndKeys });
     whiteLineSegments.push(...dividerSegments);
 
     const crosswalkPositions = buildCrosswalkTrianglesFromJunctions(junctions, { laneWidth, crosswalkY });

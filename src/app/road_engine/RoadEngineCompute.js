@@ -1606,6 +1606,23 @@ export function computeRoadEngineEdges({ roads = [], settings = {} } = {}) {
         const threshold = Math.max(0, Number(trim.threshold) || 0);
         const pad = threshold * 0.5;
         const snapStep = resolvedSettings.tileSize / 10;
+        const clampJoinDistance = (value) => Math.min(junctionMaxThreshold, Math.max(0, Number(value) || 0));
+        const pushEndpointCut = (seg, mode, appliedDistance, sourceId) => {
+            if (!seg) return;
+            const len = Number(seg.length) || 0;
+            if (!(len > 1e-6)) return;
+            const keep = Math.max(0, snapStep);
+            const max = Math.max(0, len - keep);
+            const distFinal = Math.max(0, Math.min(clampJoinDistance(appliedDistance), max));
+            if (!(distFinal > 1e-6)) return;
+            const t = clamp01(distFinal / len);
+            const interval = mode === 'start'
+                ? { t0: 0, t1: t }
+                : { t0: clamp01(1 - t), t1: 1 };
+            if (!(interval.t1 > interval.t0 + 1e-9)) return;
+            if (!intervalsBySeg.has(seg.id)) intervalsBySeg.set(seg.id, []);
+            intervalsBySeg.get(seg.id).push({ ...interval, sourceIds: [sourceId] });
+        };
 
         const expanded = segments.map((seg) => {
             const left = (seg?.asphaltObb?.halfWidthLeft ?? 0) + pad;
@@ -1657,7 +1674,29 @@ export function computeRoadEngineEdges({ roads = [], settings = {} } = {}) {
                     const bDir = bSeg?.dir ?? null;
                     if (aDir && bDir) {
                         const cos = Math.abs(dot2(aDir, bDir));
-                        if (cos >= 0.999) continue;
+                        if (cos >= 0.999) {
+                            const sharedPointId = (aSeg.aPointId === bSeg.aPointId || aSeg.aPointId === bSeg.bPointId)
+                                ? aSeg.aPointId
+                                : ((aSeg.bPointId === bSeg.aPointId || aSeg.bPointId === bSeg.bPointId) ? aSeg.bPointId : null);
+                            if (sharedPointId) {
+                                const radius = Math.max(
+                                    Number(aSeg?.asphaltObb?.halfWidthLeft) || 0,
+                                    Number(aSeg?.asphaltObb?.halfWidthRight) || 0,
+                                    Number(bSeg?.asphaltObb?.halfWidthLeft) || 0,
+                                    Number(bSeg?.asphaltObb?.halfWidthRight) || 0
+                                );
+                                const cutDistance = Math.max(snapStep, radius * 0.5);
+                                const ids = [String(aSeg.id ?? ''), String(bSeg.id ?? '')].sort(compareString);
+                                const sourceId = stableHashId('ov_touch_', `${ids[0]}|${ids[1]}|${sharedPointId}`);
+
+                                // TODO: Shared-endpoint straight joins (especially with mismatched widths) may need ribbon-style transitions; for now we trim and let junction surfaces fill the gap.
+                                if (aSeg.aPointId === sharedPointId) pushEndpointCut(aSeg, 'start', cutDistance, sourceId);
+                                if (aSeg.bPointId === sharedPointId) pushEndpointCut(aSeg, 'end', cutDistance, sourceId);
+                                if (bSeg.aPointId === sharedPointId) pushEndpointCut(bSeg, 'start', cutDistance, sourceId);
+                                if (bSeg.bPointId === sharedPointId) pushEndpointCut(bSeg, 'end', cutDistance, sourceId);
+                            }
+                            continue;
+                        }
                     }
                 }
 
@@ -2451,26 +2490,71 @@ export function computeRoadEngineEdges({ roads = [], settings = {} } = {}) {
             .slice()
             .sort((a, b) => compareString(a?.id, b?.id));
 
-        const overlapGroups = new Map();
+        const overlapIdsByEndpointId = new Map();
+        const endpointIdsByOverlapId = new Map();
         for (const ep of eligibleForAuto) {
             const sources = Array.isArray(ep?.sourceIds) ? ep.sourceIds.filter((v) => typeof v === 'string' && v.trim()).map((v) => v.trim()) : [];
             const overlapIds = sources.filter((v) => v.startsWith('ov_')).sort(compareString);
             if (!overlapIds.length) continue;
-            const key = overlapIds.join('|');
-            if (!overlapGroups.has(key)) overlapGroups.set(key, new Set());
-            overlapGroups.get(key).add(ep.id);
+            const uniq = Array.from(new Set(overlapIds));
+            overlapIdsByEndpointId.set(ep.id, uniq);
+            for (const overlapId of uniq) {
+                if (!endpointIdsByOverlapId.has(overlapId)) endpointIdsByOverlapId.set(overlapId, new Set());
+                endpointIdsByOverlapId.get(overlapId).add(ep.id);
+            }
         }
 
-        const overlapKeys = Array.from(overlapGroups.keys()).sort(compareString);
-        for (const key of overlapKeys) {
-            const endpointIds = Array.from(overlapGroups.get(key) ?? []).filter((id) => !usedEndpointIds.has(id)).sort(compareString);
-            if (endpointIds.length < 2) continue;
+        const adjacency = new Map();
+        const ensureAdj = (id) => {
+            if (!adjacency.has(id)) adjacency.set(id, new Set());
+            return adjacency.get(id);
+        };
+        for (const idsSet of endpointIdsByOverlapId.values()) {
+            const ids = Array.from(idsSet).sort(compareString);
+            if (ids.length < 2) continue;
+            for (let i = 0; i < ids.length; i++) {
+                for (let j = i + 1; j < ids.length; j++) {
+                    ensureAdj(ids[i]).add(ids[j]);
+                    ensureAdj(ids[j]).add(ids[i]);
+                }
+            }
+        }
 
-            const id = stableHashId('junc_', `ovset:${key}`);
+        const overlapVisited = new Set();
+        const overlapSeeds = Array.from(adjacency.keys()).sort(compareString);
+        for (const seed of overlapSeeds) {
+            if (usedEndpointIds.has(seed)) continue;
+            if (overlapVisited.has(seed)) continue;
+
+            const component = [];
+            const overlapSet = new Set();
+            const stack = [seed];
+            overlapVisited.add(seed);
+
+            while (stack.length) {
+                const currentId = stack.pop();
+                if (usedEndpointIds.has(currentId)) continue;
+                component.push(currentId);
+                for (const overlapId of overlapIdsByEndpointId.get(currentId) ?? []) overlapSet.add(overlapId);
+
+                const neighbors = adjacency.get(currentId) ?? null;
+                if (!neighbors) continue;
+                for (const nextId of neighbors) {
+                    if (overlapVisited.has(nextId)) continue;
+                    overlapVisited.add(nextId);
+                    stack.push(nextId);
+                }
+            }
+
+            if (component.length < 2 || overlapSet.size < 1) continue;
+            component.sort(compareString);
+            const overlapKey = Array.from(overlapSet).sort(compareString).join('|');
+
+            const id = stableHashId('junc_', `ovset:${overlapKey}`);
             if (junctionIdSet.has(id)) continue;
             if (suppressedAutoJunctionIds.has(id)) continue;
 
-            const endpoints = endpointIds.map((cid) => endpointById.get(cid)).filter(Boolean);
+            const endpoints = component.map((cid) => endpointById.get(cid)).filter(Boolean);
             if (endpoints.length < 2) continue;
 
             const legacyEndpointIds = endpoints.map((e) => e.legacyId).sort(compareString);
@@ -2481,7 +2565,7 @@ export function computeRoadEngineEdges({ roads = [], settings = {} } = {}) {
                 id,
                 legacyId,
                 source: 'auto',
-                candidateIds: endpointIds,
+                candidateIds: component,
                 endpoints,
                 asphaltVisible
             });

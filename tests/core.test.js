@@ -4379,8 +4379,8 @@ async function runTests() {
             }
         });
 
-        test('RoadEngineCompute: trims shared-endpoint junctions (T-intersection)', () => {
-            const sharedPoint = { id: 'node', tileX: 0, tileY: 0, offsetU: 0, offsetV: 0, tangentFactor: 1 };
+	        test('RoadEngineCompute: trims shared-endpoint junctions (T-intersection)', () => {
+	            const sharedPoint = { id: 'node', tileX: 0, tileY: 0, offsetU: 0, offsetV: 0, tangentFactor: 1 };
 
             const roads = [
                 {
@@ -4431,13 +4431,117 @@ async function runTests() {
             assertTrue(uniq.size > 1, 'Expected endpoints to be offset after trimming (roads recede from node).');
             for (const p of endpointWorlds) {
                 assertTrue(Math.hypot(Number(p.x) || 0, Number(p.z) || 0) > 0.25, 'Expected no endpoint to remain at the shared node location.');
-            }
-        });
+	            }
+	        });
 
-        test('RoadEngineCompute: TAT exposes build tangents for hover debugging', () => {
-            const roads = [
-                {
-                    id: 'h',
+	        test('RoadEngineCompute: trims shared-endpoint collinear joins (touch join)', () => {
+	            const sharedPoint = { id: 'node', tileX: 0, tileY: 0, offsetU: 0, offsetV: 0, tangentFactor: 1 };
+
+	            const roads = [
+	                {
+	                    id: 'left',
+	                    lanesF: 2,
+	                    lanesB: 2,
+	                    points: [
+	                        { id: 'left0', tileX: -20, tileY: 0, offsetU: 0, offsetV: 0, tangentFactor: 1 },
+	                        sharedPoint
+	                    ]
+	                },
+	                {
+	                    id: 'right',
+	                    lanesF: 3,
+	                    lanesB: 3,
+	                    points: [
+	                        sharedPoint,
+	                        { id: 'right1', tileX: 20, tileY: 0, offsetU: 0, offsetV: 0, tangentFactor: 1 }
+	                    ]
+	                }
+	            ];
+
+	            const settings = {
+	                origin: { x: 0, z: 0 },
+	                tileSize: 1,
+	                laneWidth: 1,
+	                marginFactor: 0,
+	                trim: { enabled: true, threshold: 0.1 },
+	                junctions: { enabled: true, autoCreate: true, filletRadiusFactor: 1, minThreshold: 0 }
+	            };
+
+	            const out = computeRoadEngineEdges({ roads, settings });
+	            assertEqual(out?.junctions?.length ?? 0, 1, 'Expected a single auto junction at the shared collinear endpoint.');
+	            const junction = out?.junctions?.[0] ?? null;
+	            assertEqual(junction?.endpoints?.length ?? 0, 2, 'Expected a degree-2 junction (2 endpoints).');
+
+	            const endpoints = junction?.endpoints ?? [];
+	            assertTrue(endpoints.every((e) => (e?.sourceIds ?? []).some((v) => typeof v === 'string' && v.startsWith('ov_touch_'))), 'Expected endpoints to include ov_touch_ sourceIds.');
+
+	            const endpointWorlds = endpoints.map((e) => e?.world).filter(Boolean);
+	            assertTrue(endpointWorlds.some((p) => (p?.x ?? 0) < -0.25) && endpointWorlds.some((p) => (p?.x ?? 0) > 0.25), 'Expected endpoints on both sides of the shared point.');
+	            for (const p of endpointWorlds) {
+	                assertTrue(Math.hypot(Number(p.x) || 0, Number(p.z) || 0) > 0.25, 'Expected endpoints to be offset after trimming (roads recede from node).');
+	            }
+
+	            const surface = (out?.primitives ?? []).find((p) => p?.kind === 'junction_surface' && p?.junctionId === junction.id) ?? null;
+	            assertTrue(!!surface, 'Expected a junction_surface primitive for the touch join.');
+	            assertTrue((surface?.points?.length ?? 0) >= 3, 'Expected a junction surface polygon.');
+	        });
+
+	        test('RoadEngineCompute: overlap junction merges overlap-connected components', () => {
+	            const sharedPoint = { id: 'node', tileX: 0, tileY: 0, offsetU: 0, offsetV: 0, tangentFactor: 1 };
+
+	            const roads = [
+	                {
+	                    id: 'east',
+	                    lanesF: 2,
+	                    lanesB: 2,
+	                    points: [
+	                        sharedPoint,
+	                        { id: 'east1', tileX: 20, tileY: 0, offsetU: 0, offsetV: 0, tangentFactor: 1 }
+	                    ]
+	                },
+	                {
+	                    id: 'north',
+	                    lanesF: 2,
+	                    lanesB: 2,
+	                    points: [
+	                        sharedPoint,
+	                        { id: 'north1', tileX: 0, tileY: 20, offsetU: 0, offsetV: 0, tangentFactor: 1 }
+	                    ]
+	                },
+	                {
+	                    id: 'diag',
+	                    lanesF: 2,
+	                    lanesB: 2,
+	                    points: [
+	                        sharedPoint,
+	                        { id: 'diag1', tileX: 20, tileY: 20, offsetU: 0, offsetV: 0, tangentFactor: 1 }
+	                    ]
+	                }
+	            ];
+
+	            const settings = {
+	                origin: { x: 0, z: 0 },
+	                tileSize: 1,
+	                laneWidth: 1,
+	                marginFactor: 0,
+	                trim: { enabled: true, threshold: 0.1 },
+	                junctions: { enabled: true, autoCreate: true, filletRadiusFactor: 1, minThreshold: 0, maxThreshold: 0 }
+	            };
+
+	            const out = computeRoadEngineEdges({ roads, settings });
+	            assertEqual(out?.junctions?.length ?? 0, 1, 'Expected a single overlap-based auto junction for 3 connected endpoints.');
+	            const junction = out?.junctions?.[0] ?? null;
+	            assertEqual(junction?.endpoints?.length ?? 0, 3, 'Expected 3 endpoints merged into one junction.');
+
+	            const overlapCounts = (junction?.endpoints ?? []).map((e) => (e?.sourceIds ?? []).filter((v) => typeof v === 'string' && v.startsWith('ov_')).length);
+	            assertTrue(overlapCounts.every((n) => n >= 1), 'Expected all junction endpoints to include ov_ sourceIds.');
+	            assertTrue(overlapCounts.some((n) => n >= 2), 'Expected at least one endpoint to carry multiple overlap ids (requires component merge).');
+	        });
+
+	        test('RoadEngineCompute: TAT exposes build tangents for hover debugging', () => {
+	            const roads = [
+	                {
+	                    id: 'h',
                     lanesF: 2,
                     lanesB: 2,
                     points: [
@@ -4824,9 +4928,9 @@ async function runTests() {
             assertEqual(out.yellowLineSegments.length, 0, 'Expected no centerline segments without road network data.');
         });
 
-        test('RoadMarkingsBuilder: centerline through degree-2 junction follows arc (AI 158)', () => {
-            const derived = {
-                segments: [
+	        test('RoadMarkingsBuilder: centerline through degree-2 junction follows arc (AI 158)', () => {
+	            const derived = {
+	                segments: [
                     {
                         id: 'seg0',
                         roadId: 'r0',
@@ -4878,12 +4982,86 @@ async function runTests() {
                 if (!(len > 1e-6)) continue;
                 angles.add(Math.round(Math.atan2(dz, dx) * 10) / 10);
             }
-            assertTrue(angles.size > 4, 'Expected multiple segment angles for curved centerline.');
-        });
+	            assertTrue(angles.size > 4, 'Expected multiple segment angles for curved centerline.');
+	        });
 
-        test('RoadMarkingsBuilder: emits crosswalk stripes for 3-way junctions (AI 158)', () => {
-            const derived = {
-                segments: [],
+	        test('RoadMarkingsBuilder: lane dividers through degree-2 junction follow arc and lane-count matching', () => {
+	            const derived = {
+	                segments: [
+	                    {
+	                        id: 'seg0',
+	                        roadId: 'r0',
+	                        dir: { x: 1, z: 0 },
+	                        right: { x: 0, z: -1 },
+	                        lanesF: 2,
+	                        lanesB: 0,
+	                        laneWidth: 4.8,
+	                        keptPieces: [
+	                            { id: 'p0', roadId: 'r0', segmentId: 'seg0', aWorld: { x: -10, z: 0 }, bWorld: { x: -2, z: 0 }, length: 8 }
+	                        ]
+	                    },
+	                    {
+	                        id: 'seg1',
+	                        roadId: 'r1',
+	                        dir: { x: 0, z: 1 },
+	                        right: { x: 1, z: 0 },
+	                        lanesF: 3,
+	                        lanesB: 0,
+	                        laneWidth: 4.8,
+	                        keptPieces: [
+	                            { id: 'p1', roadId: 'r1', segmentId: 'seg1', aWorld: { x: 0, z: 2 }, bWorld: { x: 0, z: 10 }, length: 8 }
+	                        ]
+	                    }
+	                ],
+	                junctions: [
+	                    {
+	                        id: 'j2',
+	                        center: { x: 0, z: 0 },
+	                        endpoints: [
+	                            { pieceId: 'p0', end: 'b', world: { x: -2, z: 0 }, dirOut: { x: -1, z: 0 } },
+	                            { pieceId: 'p1', end: 'a', world: { x: 0, z: 2 }, dirOut: { x: 0, z: 1 } }
+	                        ]
+	                    }
+	                ],
+	                primitives: []
+	            };
+
+	            const out = buildRoadMarkingsMeshDataFromRoadEngineDerived(derived, { laneWidth: 4.8, markingY: 0 });
+	            assertTrue(out?.whiteLineSegments instanceof Float32Array, 'Expected Float32Array whiteLineSegments.');
+	            assertTrue(out.whiteLineSegments.length > 0, 'Expected lane divider segments in whiteLineSegments.');
+
+	            const segs = out.whiteLineSegments;
+	            const anglesNear48 = new Set();
+	            const anglesNear96 = new Set();
+	            let countNear96 = 0;
+
+	            for (let i = 0; i + 5 < segs.length; i += 6) {
+	                const x0 = Number(segs[i]) || 0;
+	                const z0 = Number(segs[i + 2]) || 0;
+	                const x1 = Number(segs[i + 3]) || 0;
+	                const z1 = Number(segs[i + 5]) || 0;
+	                const dx = x1 - x0;
+	                const dz = z1 - z0;
+	                const len = Math.hypot(dx, dz);
+	                if (!(len > 1e-6)) continue;
+	                const ang = Math.round(Math.atan2(dz, dx) * 10) / 10;
+	                const midX = (x0 + x1) * 0.5;
+
+	                if (midX > 3 && midX < 6) anglesNear48.add(ang);
+	                if (midX > 8 && midX < 11) {
+	                    anglesNear96.add(ang);
+	                    countNear96++;
+	                }
+	            }
+
+	            assertTrue(anglesNear48.size > 4, 'Expected multiple segment angles for curved lane divider across degree-2 junction.');
+	            assertTrue(countNear96 > 0, 'Expected an extra lane divider line at ~2*laneWidth (x≈9.6).');
+	            assertTrue(anglesNear96.size <= 2, 'Expected the extra lane divider to remain straight (no continuation across junction).');
+	        });
+
+	        test('RoadMarkingsBuilder: emits crosswalk stripes for 3-way junctions (AI 158)', () => {
+	            const derived = {
+	                segments: [],
                 primitives: [],
                 junctions: [
                     {
@@ -5652,16 +5830,36 @@ async function runTests() {
                 let foundForward = false;
                 let foundBackward = false;
 
-                for (let a = 0; a < arrowCount; a++) {
-                    const base = a * 9;
-                    const tip = readV(base + 6);
-                    const t0 = readV(base + 0);
-                    const t3 = readV(base + 3);
-                    const t5 = readV(base + 5);
-                    const tail = {
-                        x: (t0.x + t3.x + t5.x) / 3,
-                        z: (t0.z + t3.z + t5.z) / 3
-                    };
+	                for (let a = 0; a < arrowCount; a++) {
+	                    const base = a * 9;
+	                    const tip = readV(base + 6);
+	                    const triSign = (offset) => {
+	                        const v0 = readV(base + offset);
+	                        const v1 = readV(base + offset + 1);
+	                        const v2 = readV(base + offset + 2);
+	                        const abx = v1.x - v0.x;
+	                        const abz = v1.z - v0.z;
+	                        const acx = v2.x - v0.x;
+	                        const acz = v2.z - v0.z;
+	                        const ny = abz * acx - abx * acz;
+	                        return Math.sign(ny);
+	                    };
+	                    const sign0 = triSign(0);
+	                    const sign1 = triSign(3);
+	                    const sign2 = triSign(6);
+	                    assertTrue(sign2 !== 0 && sign0 === sign2 && sign1 === sign2, 'Expected arrow body triangles to share winding with the arrow head.');
+
+	                    let tailX = 0;
+	                    let tailZ = 0;
+	                    for (let k = 0; k < 6; k++) {
+	                        const v = readV(base + k);
+	                        tailX += v.x;
+	                        tailZ += v.z;
+	                    }
+	                    const tail = {
+	                        x: tailX / 6,
+	                        z: tailZ / 6
+	                    };
 
 	                    const arrowDirX = tip.x - tail.x;
 	                    const arrowDirZ = tip.z - tail.z;
@@ -5735,16 +5933,20 @@ async function runTests() {
 
                 let foundForward = false;
                 let foundBackward = false;
-                for (let a = 0; a < arrowCount; a++) {
-                    const base = a * 9;
-                    const tip = readV(base + 6);
-                    const t0 = readV(base + 0);
-                    const t3 = readV(base + 3);
-                    const t5 = readV(base + 5);
-                    const tail = {
-                        x: (t0.x + t3.x + t5.x) / 3,
-                        z: (t0.z + t3.z + t5.z) / 3
-                    };
+	                for (let a = 0; a < arrowCount; a++) {
+	                    const base = a * 9;
+	                    const tip = readV(base + 6);
+	                    let tailX = 0;
+	                    let tailZ = 0;
+	                    for (let k = 0; k < 6; k++) {
+	                        const v = readV(base + k);
+	                        tailX += v.x;
+	                        tailZ += v.z;
+	                    }
+	                    const tail = {
+	                        x: tailX / 6,
+	                        z: tailZ / 6
+	                    };
 
 	                    const arrowDirX = tip.x - tail.x;
 	                    const arrowDirZ = tip.z - tail.z;
@@ -5816,16 +6018,20 @@ async function runTests() {
 
                 let foundForward = false;
                 let foundBackward = false;
-                for (let a = 0; a < arrowCount; a++) {
-                    const base = a * 9;
-                    const tip = readV(base + 6);
-                    const t0 = readV(base + 0);
-                    const t3 = readV(base + 3);
-                    const t5 = readV(base + 5);
-                    const tail = {
-                        x: (t0.x + t3.x + t5.x) / 3,
-                        z: (t0.z + t3.z + t5.z) / 3
-                    };
+	                for (let a = 0; a < arrowCount; a++) {
+	                    const base = a * 9;
+	                    const tip = readV(base + 6);
+	                    let tailX = 0;
+	                    let tailZ = 0;
+	                    for (let k = 0; k < 6; k++) {
+	                        const v = readV(base + k);
+	                        tailX += v.x;
+	                        tailZ += v.z;
+	                    }
+	                    const tail = {
+	                        x: tailX / 6,
+	                        z: tailZ / 6
+	                    };
 
 	                    const arrowDirX = tip.x - tail.x;
 	                    const arrowDirZ = tip.z - tail.z;
@@ -5905,16 +6111,20 @@ async function runTests() {
                     return { x: Number(positions[i]) || 0, y: Number(positions[i + 1]) || 0, z: Number(positions[i + 2]) || 0 };
                 };
 
-                for (let a = 0; a < arrowCount; a++) {
-                    const base = a * 9;
-                    const tip = readV(base + 6);
-                    const t0 = readV(base + 0);
-                    const t3 = readV(base + 3);
-                    const t5 = readV(base + 5);
-                    const tail = {
-                        x: (t0.x + t3.x + t5.x) / 3,
-                        z: (t0.z + t3.z + t5.z) / 3
-                    };
+	                for (let a = 0; a < arrowCount; a++) {
+	                    const base = a * 9;
+	                    const tip = readV(base + 6);
+	                    let tailX = 0;
+	                    let tailZ = 0;
+	                    for (let k = 0; k < 6; k++) {
+	                        const v = readV(base + k);
+	                        tailX += v.x;
+	                        tailZ += v.z;
+	                    }
+	                    const tail = {
+	                        x: tailX / 6,
+	                        z: tailZ / 6
+	                    };
                     const centerX = (tip.x + tail.x) * 0.5;
                     const centerZ = (tip.z + tail.z) * 0.5;
 
@@ -6290,16 +6500,20 @@ async function runTests() {
                     return { x: Number(positions[i]) || 0, y: Number(positions[i + 1]) || 0, z: Number(positions[i + 2]) || 0 };
                 };
 
-                for (let a = 0; a < arrowCount; a++) {
-                    const base = a * 9;
-                    const tip = readV(base + 6);
-                    const t0 = readV(base + 0);
-                    const t3 = readV(base + 3);
-                    const t5 = readV(base + 5);
-                    const tail = {
-                        x: (t0.x + t3.x + t5.x) / 3,
-                        z: (t0.z + t3.z + t5.z) / 3
-                    };
+	                for (let a = 0; a < arrowCount; a++) {
+	                    const base = a * 9;
+	                    const tip = readV(base + 6);
+	                    let tailX = 0;
+	                    let tailZ = 0;
+	                    for (let k = 0; k < 6; k++) {
+	                        const v = readV(base + k);
+	                        tailX += v.x;
+	                        tailZ += v.z;
+	                    }
+	                    const tail = {
+	                        x: tailX / 6,
+	                        z: tailZ / 6
+	                    };
 
                     const arrowDirX = tip.x - tail.x;
                     const arrowDirZ = tip.z - tail.z;
