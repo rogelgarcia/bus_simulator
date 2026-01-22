@@ -4332,6 +4332,108 @@ async function runTests() {
             assertTrue(!!surface, 'Expected a junction_surface primitive for the corner junction.');
         });
 
+        test('RoadEngineCompute: degree-2 junction keeps endpoint edges when fillet < 1', () => {
+            const roads = [
+                {
+                    id: 'a',
+                    lanesF: 2,
+                    lanesB: 2,
+                    points: [
+                        { id: 'a0', tileX: 0, tileY: 0, offsetU: 0, offsetV: 0, tangentFactor: 1 },
+                        { id: 'a1', tileX: 12, tileY: 0, offsetU: 0, offsetV: 0, tangentFactor: 1 }
+                    ]
+                },
+                {
+                    id: 'b',
+                    lanesF: 2,
+                    lanesB: 2,
+                    points: [
+                        { id: 'b0', tileX: 0, tileY: 0, offsetU: 0, offsetV: 0, tangentFactor: 1 },
+                        { id: 'b1', tileX: 0, tileY: 12, offsetU: 0, offsetV: 0, tangentFactor: 1 }
+                    ]
+                }
+            ];
+
+            const settings = {
+                origin: { x: 0, z: 0 },
+                tileSize: 1,
+                laneWidth: 1,
+                marginFactor: 0,
+                junctions: { enabled: true, autoCreate: true, filletRadiusFactor: 0.35, minThreshold: 0 }
+            };
+
+            const out = computeRoadEngineEdges({ roads, settings });
+            assertEqual(out?.junctions?.length ?? 0, 1, 'Expected a single auto junction at the shared endpoint.');
+
+            const junction = out?.junctions?.[0] ?? null;
+            assertTrue(!!junction, 'Expected a junction record.');
+            assertEqual(junction?.endpoints?.length ?? 0, 2, 'Expected a degree-2 junction (2 endpoints).');
+
+            const surfacePoints = Array.isArray(junction?.surface?.points) ? junction.surface.points : [];
+            assertTrue(surfacePoints.length >= 3, 'Expected a junction surface polygon.');
+
+            const includesPoint = (target) => surfacePoints.some((p) => Math.hypot((p.x ?? 0) - (target?.x ?? 0), (p.z ?? 0) - (target?.z ?? 0)) <= 1e-6);
+            for (const ep of junction.endpoints ?? []) {
+                assertTrue(includesPoint(ep?.leftEdge), 'Expected junction surface to include endpoint leftEdge.');
+                assertTrue(includesPoint(ep?.rightEdge), 'Expected junction surface to include endpoint rightEdge.');
+            }
+        });
+
+        test('RoadEngineCompute: trims shared-endpoint junctions (T-intersection)', () => {
+            const sharedPoint = { id: 'node', tileX: 0, tileY: 0, offsetU: 0, offsetV: 0, tangentFactor: 1 };
+
+            const roads = [
+                {
+                    id: 'east',
+                    lanesF: 2,
+                    lanesB: 2,
+                    points: [
+                        sharedPoint,
+                        { id: 'east1', tileX: 20, tileY: 0, offsetU: 0, offsetV: 0, tangentFactor: 1 }
+                    ]
+                },
+                {
+                    id: 'north',
+                    lanesF: 2,
+                    lanesB: 2,
+                    points: [
+                        sharedPoint,
+                        { id: 'north1', tileX: 0, tileY: 20, offsetU: 0, offsetV: 0, tangentFactor: 1 }
+                    ]
+                },
+                {
+                    id: 'south',
+                    lanesF: 2,
+                    lanesB: 2,
+                    points: [
+                        { id: 'south0', tileX: 0, tileY: -20, offsetU: 0, offsetV: 0, tangentFactor: 1 },
+                        sharedPoint
+                    ]
+                }
+            ];
+
+            const settings = {
+                origin: { x: 0, z: 0 },
+                tileSize: 1,
+                laneWidth: 1,
+                marginFactor: 0,
+                trim: { enabled: true, threshold: 0.1 },
+                junctions: { enabled: true, autoCreate: true, filletRadiusFactor: 1, minThreshold: 0 }
+            };
+
+            const out = computeRoadEngineEdges({ roads, settings });
+            assertEqual(out?.junctions?.length ?? 0, 1, 'Expected a single auto junction at the shared endpoint.');
+            const junction = out?.junctions?.[0] ?? null;
+            assertEqual(junction?.endpoints?.length ?? 0, 3, 'Expected a T-junction (3 endpoints).');
+
+            const endpointWorlds = (junction?.endpoints ?? []).map((e) => e?.world).filter(Boolean);
+            const uniq = new Set(endpointWorlds.map((p) => `${Number(p.x).toFixed(6)},${Number(p.z).toFixed(6)}`));
+            assertTrue(uniq.size > 1, 'Expected endpoints to be offset after trimming (roads recede from node).');
+            for (const p of endpointWorlds) {
+                assertTrue(Math.hypot(Number(p.x) || 0, Number(p.z) || 0) > 0.25, 'Expected no endpoint to remain at the shared node location.');
+            }
+        });
+
         test('RoadEngineCompute: TAT exposes build tangents for hover debugging', () => {
             const roads = [
                 {
@@ -4639,6 +4741,54 @@ async function runTests() {
         });
     } catch (e) {
         console.log('⏭️  Road decoration tests skipped:', e.message);
+    }
+
+    // ========== Road Engine Global Roads Tests (AI 149) ==========
+    try {
+        const { CityMap } = await import('/src/app/city/CityMap.js');
+        const { City } = await import('/src/app/city/City.js');
+        const { createGeneratorConfig } = await import('/src/graphics/assets3d/generators/GeneratorParams.js');
+        const { getCityMaterials } = await import('/src/graphics/assets3d/textures/CityMaterials.js');
+        const { createRoadEngineRoads } = await import('/src/graphics/visuals/city/RoadEngineRoads.js');
+
+        test('RoadEngineRoads: renders CityMap roads using RoadEngine compute (AI 149)', () => {
+            const map = new CityMap({ width: 6, height: 6, tileSize: 24, origin: { x: 0, z: 0 } });
+            map.addRoadSegment({ a: [0, 1], b: [5, 1], lanesF: 2, lanesB: 1, tag: 'test' });
+            map.addRoadSegment({ a: [2, 0], b: [2, 5], lanesF: 1, lanesB: 1, tag: 'test' });
+            map.finalize({ seed: 't' });
+
+            const config = createGeneratorConfig({ render: { roadMode: 'normal' } });
+            const materials = getCityMaterials();
+            const roads = createRoadEngineRoads({ map, config, materials });
+
+            assertTrue(roads?.group?.isGroup === true, 'Expected roads.group to be a THREE.Group.');
+            assertEqual(roads?.debug?.source, 'road_engine', 'Expected road debug source to be road_engine.');
+            assertTrue((roads?.debug?.derived?.segments?.length ?? 0) > 0, 'Expected derived segments from RoadEngine.');
+            assertTrue((roads?.debug?.edges?.length ?? 0) > 0, 'Expected debug edges for RoadGraph overlay.');
+            assertTrue((roads?.debug?.intersections?.length ?? 0) > 0, 'Expected intersection polygons from junction surfaces.');
+        });
+
+        test('City: uses RoadEngine roads pipeline (AI 149)', () => {
+            const mapSpec = {
+                version: 1,
+                seed: 't',
+                width: 6,
+                height: 6,
+                tileSize: 24,
+                origin: { x: 0, z: 0 },
+                roads: [
+                    { a: [0, 1], b: [5, 1], lanesF: 2, lanesB: 1, tag: 'test' },
+                    { a: [2, 0], b: [2, 5], lanesF: 1, lanesB: 1, tag: 'test' }
+                ],
+                buildings: []
+            };
+
+            const city = new City({ size: 120, tileMeters: 2, mapTileSize: 24, seed: 't', mapSpec, generatorConfig: { render: { treesEnabled: false } } });
+            assertEqual(city?.roads?.debug?.source, 'road_engine', 'Expected City roads to come from RoadEngine pipeline.');
+            assertTrue((city?.roads?.debug?.derived?.segments?.length ?? 0) > 0, 'Expected City to have derived RoadEngine segments.');
+        });
+    } catch (e) {
+        console.log('⏭️  Road engine global road tests skipped:', e.message);
     }
 
     // ========== Road Markings + Traffic Controls Tests (AI 158/159) ==========

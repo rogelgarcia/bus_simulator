@@ -23,8 +23,7 @@ import { createAdjustedEndRingMarkers } from '../graphics/visuals/city/AdjustedE
 import { createAdjustedEndOriginMarkers } from '../graphics/visuals/city/AdjustedEndOriginMarkers.js';
 import { createHoverOutlineLine } from '../graphics/visuals/city/HoverOutlineLine.js';
 import { RoadGraphDebugOverlay } from '../graphics/visuals/city/RoadGraphDebugOverlay.js';
-import { createRoadNetworkFromWorldSegments } from '../app/city/roads/RoadNetwork.js';
-import { generateRoadsFromRoadNetwork } from '../graphics/assets3d/generators/road2/CenterlineRoadGenerator.js';
+import { createRoadEngineRoads } from '../graphics/visuals/city/RoadEngineRoads.js';
 import { createToolCameraController, getTopDownToolCameraHomeDirection } from '../graphics/engine3d/camera/ToolCameraPrefab.js';
 
 function clamp(v, a, b) {
@@ -153,7 +152,20 @@ export class MapDebuggerState {
         };
         this._roadRenderMode = 'debug';
         this._treesEnabled = false;
-        this._cityOptions.generatorConfig = { render: { roadMode: this._roadRenderMode, treesEnabled: this._treesEnabled } };
+        this._junctionThresholdFactor = 1.5;
+        this._junctionFilletRadiusFactor = 1;
+        this._junctionMinThreshold = 7.2;
+        this._junctionMaxThreshold = Infinity;
+        this._cityOptions.generatorConfig = {
+            render: { roadMode: this._roadRenderMode, treesEnabled: this._treesEnabled },
+            road: {
+                junctions: {
+                    thresholdFactor: this._junctionThresholdFactor,
+                    filletRadiusFactor: this._junctionFilletRadiusFactor,
+                    minThreshold: this._junctionMinThreshold
+                }
+            }
+        };
 
         this._spec = null;
         this._citySpecId = null;
@@ -331,6 +343,10 @@ export class MapDebuggerState {
             roadDirectionLinesEnabled: this._roadDirectionLinesDebugEnabled,
             roadEndpointsEnabled: this._roadEndpointsDebugEnabled,
             roadRenderMode: this._roadRenderMode,
+            junctionThresholdFactor: this._junctionThresholdFactor,
+            junctionFilletRadiusFactor: this._junctionFilletRadiusFactor,
+            junctionMinThreshold: this._junctionMinThreshold,
+            junctionMaxThreshold: this._junctionMaxThreshold,
             onConnectorDebugToggle: (enabled) => this._setConnectorDebugEnabled(enabled),
             onHoverOutlineToggle: (enabled) => this._setHoverOutlineEnabled(enabled),
             onCollisionDebugToggle: (enabled) => this._setCollisionDebugEnabled(enabled),
@@ -340,7 +356,8 @@ export class MapDebuggerState {
             onRoadCenterlineToggle: (enabled) => this._setRoadCenterlineDebugEnabled(enabled),
             onRoadDirectionLinesToggle: (enabled) => this._setRoadDirectionLinesDebugEnabled(enabled),
             onRoadEndpointsToggle: (enabled) => this._setRoadEndpointsDebugEnabled(enabled),
-            onRoadRenderModeChange: (mode) => this._setRoadRenderMode(mode)
+            onRoadRenderModeChange: (mode) => this._setRoadRenderMode(mode),
+            onJunctionParamsChange: (params) => this._setJunctionParams(params)
         });
         this.debugsPanel.attach(this.uiRoot);
         this.debugsPanel.root.classList.remove('hidden');
@@ -1982,7 +1999,9 @@ export class MapDebuggerState {
         const previewMaterials = baseMats ? {
             road: baseMats.road?.clone?.() ?? baseMats.road,
             curb: baseMats.curb?.clone?.() ?? baseMats.curb,
-            sidewalk: baseMats.sidewalk?.clone?.() ?? baseMats.sidewalk
+            sidewalk: baseMats.sidewalk?.clone?.() ?? baseMats.sidewalk,
+            laneWhite: baseMats.laneWhite?.clone?.() ?? baseMats.laneWhite,
+            laneYellow: baseMats.laneYellow?.clone?.() ?? baseMats.laneYellow
         } : {};
 
         const previewLift = ROAD_SURFACE_LIFT + 0.001;
@@ -1990,24 +2009,29 @@ export class MapDebuggerState {
         for (let i = 0; i + 1 < draft.length; i++) {
             const aTile = draft[i];
             const bTile = draft[i + 1];
-            const aWorld = map.tileToWorldCenter(aTile.x | 0, aTile.y | 0);
-            const bWorld = map.tileToWorldCenter(bTile.x | 0, bTile.y | 0);
-            const network = createRoadNetworkFromWorldSegments([{
-                sourceId: `draft:${i}`,
-                tag,
-                rendered: true,
-                lanesF,
-                lanesB,
-                a: { x: aWorld.x, z: aWorld.z },
-                b: { x: bWorld.x, z: bWorld.z }
-            }], { origin, tileSize, seed: 'draft' });
-            const roads = generateRoadsFromRoadNetwork({ network, config, materials: previewMaterials });
+            const draftRoads = [
+                {
+                    id: `draft_${i}`,
+                    name: tag,
+                    lanesF,
+                    lanesB,
+                    points: [
+                        { tileX: aTile.x | 0, tileY: aTile.y | 0, offsetU: 0, offsetV: 0, tangentFactor: 1 },
+                        { tileX: bTile.x | 0, tileY: bTile.y | 0, offsetU: 0, offsetV: 0, tangentFactor: 1 }
+                    ]
+                }
+            ];
+            const roads = createRoadEngineRoads({
+                map,
+                roads: draftRoads,
+                config,
+                materials: previewMaterials,
+                options: { includeCurbs: false, includeSidewalks: false, includeMarkings: false, includeDebug: false }
+            });
             const segmentGroup = roads?.group ?? null;
             if (!segmentGroup) continue;
             segmentGroup.name = `RoadDraftPreviewSegment_${i}`;
             segmentGroup.position.y += previewLift;
-            if (roads.sidewalk) roads.sidewalk.visible = false;
-            if (roads.curbBlocks) roads.curbBlocks.visible = false;
             group.add(segmentGroup);
         }
     }
@@ -2509,6 +2533,54 @@ export class MapDebuggerState {
         const render = { ...(current.render ?? {}), roadMode: next, treesEnabled: this._treesEnabled };
         this._cityOptions.generatorConfig = { ...current, render };
         this.debugsPanel?.setRoadRenderMode(this._roadRenderMode);
+        this._applySpec(this._spec, { resetCamera: false });
+    }
+
+    _setJunctionParams(params) {
+        const thresholdFactor = Number(params?.thresholdFactor);
+        const filletRadiusFactor = Number(params?.filletRadiusFactor);
+        const minThreshold = Number(params?.minThreshold);
+        const maxThreshold = params?.maxThreshold === null || params?.maxThreshold === undefined
+            ? Infinity
+            : Number(params.maxThreshold);
+        if (!Number.isFinite(thresholdFactor) || !Number.isFinite(filletRadiusFactor)) return;
+        if (!Number.isFinite(minThreshold)) return;
+        if (maxThreshold !== Infinity && !Number.isFinite(maxThreshold)) return;
+
+        const nextThresholdFactor = Math.max(0, thresholdFactor);
+        const nextFilletRadiusFactor = Math.max(0, Math.min(1, filletRadiusFactor));
+        const nextMinThreshold = Math.max(0, minThreshold);
+        const nextMaxThreshold = maxThreshold === Infinity ? Infinity : Math.max(nextMinThreshold, maxThreshold);
+
+        if (
+            nextThresholdFactor === this._junctionThresholdFactor
+            && nextFilletRadiusFactor === this._junctionFilletRadiusFactor
+            && nextMinThreshold === this._junctionMinThreshold
+            && nextMaxThreshold === this._junctionMaxThreshold
+        ) return;
+
+        this._junctionThresholdFactor = nextThresholdFactor;
+        this._junctionFilletRadiusFactor = nextFilletRadiusFactor;
+        this._junctionMinThreshold = nextMinThreshold;
+        this._junctionMaxThreshold = nextMaxThreshold;
+        this.debugsPanel?.setJunctionThresholdFactor(nextThresholdFactor);
+        this.debugsPanel?.setJunctionFilletRadiusFactor(nextFilletRadiusFactor);
+        this.debugsPanel?.setJunctionMinThreshold(nextMinThreshold);
+        this.debugsPanel?.setJunctionMaxThreshold(nextMaxThreshold);
+
+        const current = this._cityOptions.generatorConfig ?? {};
+        const road = { ...(current.road ?? {}) };
+        const junctions = {
+            ...(road.junctions ?? {}),
+            thresholdFactor: nextThresholdFactor,
+            filletRadiusFactor: nextFilletRadiusFactor,
+            minThreshold: nextMinThreshold
+        };
+        if (Number.isFinite(nextMaxThreshold)) junctions.maxThreshold = nextMaxThreshold;
+        else delete junctions.maxThreshold;
+        road.junctions = junctions;
+        this._cityOptions.generatorConfig = { ...current, road };
+
         this._applySpec(this._spec, { resetCamera: false });
     }
 

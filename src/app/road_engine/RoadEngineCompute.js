@@ -702,6 +702,8 @@ function buildDegree2JunctionSurfaceXZ({ junctionId, endpoints, laneWidth, fille
     const e1 = eps[1];
     if (!e0?.leftEdge || !e0?.rightEdge || !e1?.leftEdge || !e1?.rightEdge) return null;
 
+    const factor = Number.isFinite(filletRadiusFactor) ? Math.max(0, Math.min(1, Number(filletRadiusFactor))) : 1;
+
     const d0In = normalizeVecXZ({ x: -(Number(e0?.dirOut?.x) || 0), z: -(Number(e0?.dirOut?.z) || 0) });
     const d1In = normalizeVecXZ({ x: -(Number(e1?.dirOut?.x) || 0), z: -(Number(e1?.dirOut?.z) || 0) });
     if (!d0In || !d1In) return null;
@@ -733,7 +735,7 @@ function buildDegree2JunctionSurfaceXZ({ junctionId, endpoints, laneWidth, fille
         const t1 = Number(hit?.u) || 0;
         if (!(t0 > 1e-6 && t1 > 1e-6)) return null;
         const distToMiter = Math.abs(t0 - t1) <= 1e-4 ? (t0 + t1) * 0.5 : Math.min(t0, t1);
-        const radius = (turnAngle > 1e-6 && turnAngle < Math.PI - 1e-6) ? distToMiter * Math.tan(turnAngle * 0.5) : 0;
+        const radius = (turnAngle > 1e-6 && turnAngle < Math.PI - 1e-6) ? distToMiter * Math.tan(turnAngle * 0.5) * factor : 0;
         if (!(radius > 1e-6)) return null;
 
         const n0 = rightNormalXZ(d0In);
@@ -794,7 +796,7 @@ function buildDegree2JunctionSurfaceXZ({ junctionId, endpoints, laneWidth, fille
             ? (Math.abs(d0 - d1) <= 1e-4 ? (d0 + d1) * 0.5 : Math.min(d0, d1))
             : 0;
         const radius = (d > 1e-6 && turnAngle > 1e-6 && turnAngle < Math.PI - 1e-6)
-            ? d * Math.tan(turnAngle * 0.5)
+            ? d * Math.tan(turnAngle * 0.5) * factor
             : 0;
         let arc = null;
         if (radius > 1e-6) {
@@ -911,10 +913,21 @@ function buildDegree2JunctionSurfaceXZ({ junctionId, endpoints, laneWidth, fille
     inner.type = 'inner';
 
     const poly = [];
-    for (const p of outer.points ?? []) appendUniquePoint(poly, p);
+    const appendTatForward = (out, tat) => {
+        appendUniquePoint(out, tat.a);
+        for (const p of tat.points ?? []) appendUniquePoint(out, p);
+        appendUniquePoint(out, tat.b);
+    };
+    const appendTatReverse = (out, tat) => {
+        appendUniquePoint(out, tat.b);
+        const rev = (tat.points ?? []).slice().reverse();
+        for (const p of rev) appendUniquePoint(out, p);
+        appendUniquePoint(out, tat.a);
+    };
+
+    appendTatForward(poly, outer);
     appendUniquePoint(poly, inner.b);
-    const innerRev = (inner.points ?? []).slice().reverse();
-    for (const p of innerRev) appendUniquePoint(poly, p);
+    appendTatReverse(poly, inner);
     appendUniquePoint(poly, outer.a);
 
     const cleaned = [];
@@ -1634,7 +1647,19 @@ export function computeRoadEngineEdges({ roads = [], settings = {} } = {}) {
             if (!aStrip) continue;
             for (let j = i + 1; j < sortedSegs.length; j++) {
                 const bSeg = sortedSegs[j];
-                if (aSeg.aPointId === bSeg.aPointId || aSeg.aPointId === bSeg.bPointId || aSeg.bPointId === bSeg.aPointId || aSeg.bPointId === bSeg.bPointId) continue;
+                const sharesEndpoint = aSeg.aPointId === bSeg.aPointId
+                    || aSeg.aPointId === bSeg.bPointId
+                    || aSeg.bPointId === bSeg.aPointId
+                    || aSeg.bPointId === bSeg.bPointId;
+                if (sharesEndpoint) {
+                    if (aSeg.roadId === bSeg.roadId) continue;
+                    const aDir = aSeg?.dir ?? null;
+                    const bDir = bSeg?.dir ?? null;
+                    if (aDir && bDir) {
+                        const cos = Math.abs(dot2(aDir, bDir));
+                        if (cos >= 0.999) continue;
+                    }
+                }
 
                 const bStrip = expandedById.get(bSeg.id);
                 if (!bStrip) continue;

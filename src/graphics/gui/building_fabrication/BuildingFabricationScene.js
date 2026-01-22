@@ -19,7 +19,7 @@ import {
 } from '../../assets3d/generators/buildings/WindowTypeCompatibility.js';
 import { createGeneratorConfig } from '../../assets3d/generators/GeneratorParams.js';
 import { createGradientSkyDome } from '../../assets3d/generators/SkyGenerator.js';
-import { generateRoads } from '../../assets3d/generators/RoadGenerator.js';
+import { createRoadEngineRoads } from '../../visuals/city/RoadEngineRoads.js';
 import { BuildingWallTextureCache, buildBuildingVisualParts } from '../../assets3d/generators/buildings/BuildingGenerator.js';
 import { buildBuildingFabricationVisualParts } from '../../assets3d/generators/building_fabrication/BuildingFabricationGenerator.js';
 import { cloneBuildingLayers, createDefaultFloorLayer, createDefaultRoofLayer, normalizeBuildingLayers } from '../../assets3d/generators/building_fabrication/BuildingFabricationTypes.js';
@@ -1563,7 +1563,7 @@ export class BuildingFabricationScene {
             laneYellow: base.laneYellow.clone()
         };
 
-        this.roads = generateRoads({
+        this.roads = createRoadEngineRoads({
             map: this.map,
             config: this.generatorConfig,
             materials

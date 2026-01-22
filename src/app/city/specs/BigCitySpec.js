@@ -1,7 +1,34 @@
 // src/app/city/specs/BigCitySpec.js
 // Big City layout spec (source: city_spec_bigcity.json).
 
-export const BIG_CITY_SPEC = Object.freeze(
+function tileToWorldPoint(tile, origin, tileSize) {
+    const x = tile?.[0] | 0;
+    const y = tile?.[1] | 0;
+    const org = origin && Number.isFinite(origin.x) && Number.isFinite(origin.z) ? origin : { x: 0, z: 0 };
+    const ts = Number.isFinite(tileSize) ? tileSize : 1;
+    return { x: org.x + x * ts, z: org.z + y * ts };
+}
+
+function convertLegacyRoadSegmentsToPolyline(spec) {
+    const tileSize = Number.isFinite(spec?.tileSize) ? spec.tileSize : 1;
+    const originRaw = spec?.origin;
+    const origin = originRaw && Number.isFinite(originRaw.x) && Number.isFinite(originRaw.z) ? originRaw : { x: 0, z: 0 };
+
+    const roadsIn = Array.isArray(spec?.roads) ? spec.roads : [];
+    const roadsOut = roadsIn.map((road) => {
+        if (Array.isArray(road?.points) && road.points.length >= 2) return road;
+        if (!Array.isArray(road?.a) || !Array.isArray(road?.b)) return road;
+        const { a, b, ...rest } = road;
+        return {
+            ...rest,
+            points: [tileToWorldPoint(a, origin, tileSize), tileToWorldPoint(b, origin, tileSize)]
+        };
+    });
+
+    return { ...spec, roads: roadsOut };
+}
+
+const BIG_CITY_SPEC_SOURCE = Object.freeze(
     {
         "version": 1,
         "seed": "x",
@@ -1116,6 +1143,8 @@ export const BIG_CITY_SPEC = Object.freeze(
         ]
     }
 );
+
+export const BIG_CITY_SPEC = Object.freeze(convertLegacyRoadSegmentsToPolyline(BIG_CITY_SPEC_SOURCE));
 
 export function createBigCitySpec() {
     return BIG_CITY_SPEC;

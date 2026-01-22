@@ -6,7 +6,7 @@ import { createCityConfig } from './CityConfig.js';
 import { CityMap } from './CityMap.js';
 import { CityRNG } from './CityRNG.js';
 import { getCityMaterials } from '../../graphics/assets3d/textures/CityMaterials.js';
-import { generateRoads } from '../../graphics/assets3d/generators/RoadGenerator.js';
+import { createRoadEngineRoads } from '../../graphics/visuals/city/RoadEngineRoads.js';
 import { createGradientSkyDome } from '../../graphics/assets3d/generators/SkyGenerator.js';
 import { createGeneratorConfig } from '../../graphics/assets3d/generators/GeneratorParams.js';
 import { BuildingWallTextureCache, buildBuildingVisualParts } from '../../graphics/assets3d/generators/buildings/BuildingGenerator.js';
@@ -88,7 +88,7 @@ export class City {
         this.group.add(this.world.group);
 
         this.materials = getCityMaterials();
-        this.roads = generateRoads({ map: this.map, config: this.generatorConfig, materials: this.materials });
+        this.roads = createRoadEngineRoads({ map: this.map, config: this.generatorConfig, materials: this.materials });
         this.group.add(this.roads.group);
 
         this.trafficControls = null;

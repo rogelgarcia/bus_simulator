@@ -19,6 +19,7 @@ import { attachEvents, detachEvents, handleKeyDown, handleKeyUp, handlePointerDo
 import { setupUI, destroyUI } from './RoadDebuggerUI.js';
 import { RoadDebuggerPicking } from './RoadDebuggerPicking.js';
 import { createTrafficControlProps } from '../../visuals/city/TrafficControlProps.js';
+import { createRoadMarkingsMeshesFromData } from '../../visuals/city/RoadMarkingsMeshes.js';
 import { computeRoadTrafficControlPlacementsFromRoadEngineDerived, ROAD_TRAFFIC_CONTROL } from '../../../app/road_decoration/traffic_controls/RoadTrafficControlPlacement.js';
 
 function clampInt(v, lo, hi) {
@@ -3594,92 +3595,51 @@ export class RoadDebuggerView {
                 }
             );
 
-            const buildThickLineMesh = (segments, material, { type, renderOrder }) => {
-                const segs = segments ?? null;
-                if (!segs?.length) return;
-
-                const width = Math.max(0.02, laneWidth * 0.07);
-                const half = width * 0.5;
-                const positions = [];
-                for (let i = 0; i + 5 < segs.length; i += 6) {
-                    const x0 = Number(segs[i]) || 0;
-                    const y0 = Number(segs[i + 1]) || 0;
-                    const z0 = Number(segs[i + 2]) || 0;
-                    const x1 = Number(segs[i + 3]) || 0;
-                    const y1 = Number(segs[i + 4]) || 0;
-                    const z1 = Number(segs[i + 5]) || 0;
-                    const dx = x1 - x0;
-                    const dz = z1 - z0;
-                    const len = Math.hypot(dx, dz);
-                    if (!(len > 1e-6)) continue;
-                    const inv = 1 / len;
-                    const nx = dz * inv;
-                    const nz = -dx * inv;
-
-                    const ax0 = x0 + nx * half;
-                    const az0 = z0 + nz * half;
-                    const bx0 = x0 - nx * half;
-                    const bz0 = z0 - nz * half;
-                    const ax1 = x1 + nx * half;
-                    const az1 = z1 + nz * half;
-                    const bx1 = x1 - nx * half;
-                    const bz1 = z1 - nz * half;
-
-                    positions.push(
-                        ax0, y0, az0,
-                        bx0, y0, bz0,
-                        bx1, y1, bz1,
-                        ax0, y0, az0,
-                        bx1, y1, bz1,
-                        ax1, y1, az1
-                    );
+            const meshes = createRoadMarkingsMeshesFromData(data, {
+                laneWidth,
+                materials: {
+                    white: this._materials.arrow,
+                    yellow: this._materials.markingYellow,
+                    crosswalk: this._materials.arrow,
+                    arrow: this._materials.arrow,
+                    arrowTangent: this._materials.arrowTangent
+                },
+                renderOrder: {
+                    white: 1,
+                    yellow: 1.1,
+                    crosswalk: 1.5,
+                    arrow: 2,
+                    arrowTangent: 3
+                },
+                includeArrowTangents: this._arrowTangentDebugEnabled === true,
+                userData: {
+                    white: { type: 'lane_markings_white' },
+                    yellow: { type: 'lane_markings_centerline' },
+                    crosswalk: { type: 'crosswalks' },
+                    arrow: { type: 'lane_arrows' },
+                    arrowTangent: { type: 'arrow_tangents' }
                 }
+            });
 
-                if (!positions.length) return;
-                const geo = new THREE.BufferGeometry();
-                geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
-                geo.computeBoundingSphere();
-                const mesh = new THREE.Mesh(geo, material);
-                mesh.userData = { type };
-                mesh.renderOrder = renderOrder;
-                markingsGroup.add(mesh);
-                this._markingLines.push(mesh);
-            };
-
-            buildThickLineMesh(data?.whiteLineSegments, this._materials.arrow, { type: 'lane_markings_white', renderOrder: 1 });
-            buildThickLineMesh(data?.yellowLineSegments, this._materials.markingYellow, { type: 'lane_markings_centerline', renderOrder: 1.1 });
-
-            if (data?.crosswalkPositions?.length) {
-                const geo = new THREE.BufferGeometry();
-                geo.setAttribute('position', new THREE.BufferAttribute(data.crosswalkPositions, 3));
-                geo.computeBoundingSphere();
-                const mesh = new THREE.Mesh(geo, this._materials.arrow);
-                mesh.userData = { type: 'crosswalks' };
-                mesh.renderOrder = 1.5;
-                markingsGroup.add(mesh);
-                this._crosswalkMeshes.push(mesh);
+            if (meshes.markingsWhite) {
+                markingsGroup.add(meshes.markingsWhite);
+                this._markingLines.push(meshes.markingsWhite);
             }
-
-            if (data?.arrowPositions?.length) {
-                const geo = new THREE.BufferGeometry();
-                geo.setAttribute('position', new THREE.BufferAttribute(data.arrowPositions, 3));
-                geo.computeBoundingSphere();
-                const mesh = new THREE.Mesh(geo, this._materials.arrow);
-                mesh.userData = { type: 'lane_arrows' };
-                mesh.renderOrder = 2;
-                markingsGroup.add(mesh);
-                this._arrowMeshes.push(mesh);
+            if (meshes.markingsYellow) {
+                markingsGroup.add(meshes.markingsYellow);
+                this._markingLines.push(meshes.markingsYellow);
             }
-
-            if (data?.arrowTangentSegments?.length) {
-                const geo = new THREE.BufferGeometry();
-                geo.setAttribute('position', new THREE.BufferAttribute(data.arrowTangentSegments, 3));
-                geo.computeBoundingSphere();
-                const lines = new THREE.LineSegments(geo, this._materials.arrowTangent);
-                lines.userData = { type: 'arrow_tangents' };
-                lines.renderOrder = 3;
-                markingsGroup.add(lines);
-                this._arrowTangentLines.push(lines);
+            if (meshes.crosswalks) {
+                markingsGroup.add(meshes.crosswalks);
+                this._crosswalkMeshes.push(meshes.crosswalks);
+            }
+            if (meshes.arrows) {
+                markingsGroup.add(meshes.arrows);
+                this._arrowMeshes.push(meshes.arrows);
+            }
+            if (meshes.arrowTangents) {
+                markingsGroup.add(meshes.arrowTangents);
+                this._arrowTangentLines.push(meshes.arrowTangents);
             }
         }
 
