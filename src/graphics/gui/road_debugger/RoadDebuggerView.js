@@ -8,12 +8,18 @@ import { createCityConfig } from '../../../app/city/CityConfig.js';
 import { sampleArcXZ } from '../../../app/geometry/RoadEdgeFillet.js';
 import { computeRoadEngineEdges } from '../../../app/road_engine/RoadEngineCompute.js';
 import { buildRoadEnginePolygonMeshData, triangulateSimplePolygonXZ } from '../../../app/road_engine/RoadEngineMeshData.js';
+import { getDefaultRoadDecorationPipeline } from '../../../app/road_decoration/RoadDecorationPipeline.js';
+import { buildRoadCurbMeshDataFromRoadEnginePrimitives } from '../../../app/road_decoration/curbs/RoadCurbBuilder.js';
+import { buildRoadMarkingsMeshDataFromRoadEngineDerived } from '../../../app/road_decoration/markings/RoadMarkingsBuilder.js';
+import { buildRoadSidewalkMeshDataFromRoadEnginePrimitives } from '../../../app/road_decoration/sidewalks/RoadSidewalkBuilder.js';
 import { clampRoadDebuggerTileOffsetForMap, normalizeRoadDebuggerTileOffsetForMap } from '../../../app/road_debugger/RoadDebuggerTileOffset.js';
 import { validateRoadDebuggerIssues } from '../../../app/road_debugger/RoadDebuggerValidation.js';
 import { setupScene, disposeScene } from './RoadDebuggerScene.js';
 import { attachEvents, detachEvents, handleKeyDown, handleKeyUp, handlePointerDown, handlePointerMove, handlePointerUp, setupCamera, updateCamera } from './RoadDebuggerInput.js';
 import { setupUI, destroyUI } from './RoadDebuggerUI.js';
 import { RoadDebuggerPicking } from './RoadDebuggerPicking.js';
+import { createTrafficControlProps } from '../../visuals/city/TrafficControlProps.js';
+import { computeRoadTrafficControlPlacementsFromRoadEngineDerived, ROAD_TRAFFIC_CONTROL } from '../../../app/road_decoration/traffic_controls/RoadTrafficControlPlacement.js';
 
 function clampInt(v, lo, hi) {
     const n = Number(v);
@@ -152,6 +158,8 @@ export class RoadDebuggerView {
         this.scene = engine.scene;
         this.camera = engine.camera;
 
+        this._cameraRestore = null;
+
         this.root = null;
         this.world = null;
 
@@ -203,7 +211,7 @@ export class RoadDebuggerView {
         };
 
         this._junctionEnabled = true;
-        this._autoJunctionEnabled = false;
+        this._autoJunctionEnabled = true;
         this._junctionThresholdFactor = 1.5;
         this._junctionFilletRadiusFactor = 1;
         this._junctionDebug = {
@@ -238,6 +246,8 @@ export class RoadDebuggerView {
         this._hoverCubeGeo = null;
         this._approachMarkerMesh = null;
         this._approachMarkerGeo = null;
+        this._trafficControlMarkerMesh = null;
+        this._trafficControlMarkerGeo = null;
 
         this._hoverTatGroup = null;
         this._hoverTatOverlayKey = '';
@@ -258,6 +268,7 @@ export class RoadDebuggerView {
         this._hoverIssueId = null;
         this._selectedIssueId = null;
         this._derived = null;
+        this._decorationPipeline = getDefaultRoadDecorationPipeline();
 
         this._keys = {
             ArrowUp: false,
@@ -296,6 +307,10 @@ export class RoadDebuggerView {
 
         this._overlayRoot = null;
         this._asphaltGroup = null;
+        this._curbsGroup = null;
+        this._sidewalksGroup = null;
+        this._stopSignsGroup = null;
+        this._trafficLightsGroup = null;
         this._markingsGroup = null;
         this._debugGroup = null;
         this._highlightGroup = null;
@@ -305,9 +320,12 @@ export class RoadDebuggerView {
         this._overlayPoints = [];
         this._asphaltMeshes = [];
         this._junctionSurfaceMeshes = [];
+        this._curbMeshes = [];
+        this._sidewalkMeshes = [];
         this._markingLines = [];
         this._arrowMeshes = [];
         this._arrowTangentLines = [];
+        this._crosswalkMeshes = [];
         this._controlPointMeshes = [];
         this._segmentPickMeshes = [];
         this._junctionPickMeshes = [];
@@ -315,6 +333,8 @@ export class RoadDebuggerView {
         this._junctionTatPickMeshes = [];
         this._junctionCandidateMeshes = [];
         this._junctionCandidatePickMeshes = [];
+        this._meshWireframeEnabled = false;
+        this._worldLayers = null;
         this._materials = {
             lineBase: new Map(),
             lineHover: new Map(),
@@ -335,9 +355,12 @@ export class RoadDebuggerView {
             snapHighlight: new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.34, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
             draftFirstTileMarker: new THREE.MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.85, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
             draftHoverTileMarker: new THREE.MeshBasicMaterial({ color: 0x93c5fd, transparent: true, opacity: 0.75, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
-            asphaltBase: new THREE.MeshBasicMaterial({ color: 0x111827, transparent: true, opacity: 0.96, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
-            markingLine: new THREE.LineBasicMaterial({ color: 0xf8fafc, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false }),
-            arrow: new THREE.MeshBasicMaterial({ color: 0xf8fafc, transparent: true, opacity: 0.97, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
+            asphaltBase: new THREE.MeshBasicMaterial({ color: 0x111827, transparent: false, opacity: 1.0, depthTest: true, depthWrite: true, side: THREE.DoubleSide }),
+            curbBase: new THREE.MeshStandardMaterial({ color: 0x6f6f6f, roughness: 1.0, metalness: 0.0, transparent: false, opacity: 1.0, depthTest: true, depthWrite: true, side: THREE.DoubleSide }),
+            sidewalkBase: new THREE.MeshStandardMaterial({ color: 0x9ca3af, roughness: 1.0, metalness: 0.0, transparent: false, opacity: 1.0, depthTest: true, depthWrite: true, side: THREE.DoubleSide }),
+            markingLine: new THREE.LineBasicMaterial({ color: 0xf8fafc, transparent: false, opacity: 1.0, depthTest: true, depthWrite: true }),
+            arrow: new THREE.MeshBasicMaterial({ color: 0xf8fafc, transparent: false, opacity: 1.0, depthTest: true, depthWrite: true, side: THREE.DoubleSide }),
+            markingYellow: new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: false, opacity: 1.0, depthTest: true, depthWrite: true, side: THREE.DoubleSide }),
             arrowTangent: new THREE.LineBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.95, depthTest: false, depthWrite: false }),
             debugRawAsphalt: new THREE.MeshBasicMaterial({ color: 0x60a5fa, transparent: true, opacity: 0.38, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
             debugStrip: new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.36, depthTest: false, depthWrite: false, side: THREE.DoubleSide }),
@@ -376,6 +399,9 @@ export class RoadDebuggerView {
 
     enter() {
         if (this.root) return;
+        if (!this._cameraRestore && this.camera?.isPerspectiveCamera) {
+            this._cameraRestore = { near: this.camera.near, far: this.camera.far };
+        }
         setupCamera(this);
         setupScene(this);
         this._ensureSnapHighlight();
@@ -398,6 +424,12 @@ export class RoadDebuggerView {
         this._clearOverlays();
         disposeScene(this);
         this._disposeResources();
+        if (this._cameraRestore && this.camera?.isPerspectiveCamera) {
+            this.camera.near = this._cameraRestore.near;
+            this.camera.far = this._cameraRestore.far;
+            this.camera.updateProjectionMatrix?.();
+        }
+        this._cameraRestore = null;
     }
 
     update(dt) {
@@ -419,8 +451,32 @@ export class RoadDebuggerView {
         if (edges !== null) this._renderOptions.edges = !!edges;
         if (points !== null) this._renderOptions.points = !!points;
         if (asphalt !== null) this._renderOptions.asphalt = !!asphalt;
-        if (markings !== null) this._renderOptions.markings = !!markings;
+        if (markings !== null) {
+            const next = !!markings;
+            this._renderOptions.markings = next;
+            const step = (this._decorationPipeline ?? []).find((candidate) => candidate?.id === 'markings') ?? null;
+            if (step) step.enabled = next;
+        }
         this._rebuildPipeline();
+    }
+
+    getDecorationPipeline() {
+        const steps = Array.isArray(this._decorationPipeline) ? this._decorationPipeline : [];
+        return steps.map((step) => ({ ...step }));
+    }
+
+    toggleDecorationPipelineStep(stepId) {
+        const id = typeof stepId === 'string' ? stepId.trim() : '';
+        if (!id) return false;
+        const steps = Array.isArray(this._decorationPipeline) ? this._decorationPipeline : [];
+        const step = steps.find((candidate) => candidate?.id === id) ?? null;
+        if (!step) return false;
+        step.enabled = !(step.enabled === true);
+        if (id === 'markings') this._renderOptions.markings = step.enabled === true;
+        this._rebuildOverlaysFromDerived();
+        this._applyHighlights();
+        this.ui?.sync?.();
+        return true;
     }
 
     _edgeLineWidthScale() {
@@ -488,6 +544,18 @@ export class RoadDebuggerView {
         return this._arrowTangentDebugEnabled === true;
     }
 
+    setMeshWireframeEnabled(enabled) {
+        const next = !!enabled;
+        if (this._meshWireframeEnabled === next) return;
+        this._meshWireframeEnabled = next;
+        this._applyMeshWireframeToOverlays();
+        this.ui?.sync?.();
+    }
+
+    getMeshWireframeEnabled() {
+        return this._meshWireframeEnabled === true;
+    }
+
     setTrimThresholdFactor(value) {
         const next = clamp(value, 0, 5);
         if (Math.abs((this._trimThresholdFactor ?? 0) - next) < 1e-9) return;
@@ -517,6 +585,69 @@ export class RoadDebuggerView {
 
     getTrimDebugOptions() {
         return { ...this._trimDebug };
+    }
+
+    _applyMeshWireframeToOverlays() {
+        const enabled = this._meshWireframeEnabled === true;
+        const applyMaterial = (material) => {
+            if (!material) return;
+            if (Array.isArray(material)) {
+                for (const m of material) {
+                    if (!m) continue;
+                    if ('wireframe' in m) m.wireframe = enabled;
+                }
+                return;
+            }
+            if ('wireframe' in material) material.wireframe = enabled;
+        };
+
+        applyMaterial(this._materials.asphaltBase);
+        applyMaterial(this._materials.curbBase);
+        applyMaterial(this._materials.sidewalkBase);
+        applyMaterial(this._materials.arrow);
+        applyMaterial(this._materials.markingYellow);
+
+        const applyGroup = (group) => {
+            group?.traverse?.((child) => {
+                if (!child?.isMesh) return;
+                applyMaterial(child.material);
+            });
+        };
+
+        applyGroup(this._asphaltGroup);
+        applyGroup(this._curbsGroup);
+        applyGroup(this._sidewalksGroup);
+        applyGroup(this._stopSignsGroup);
+        applyGroup(this._trafficLightsGroup);
+        applyGroup(this._markingsGroup);
+    }
+
+    _applyOpaqueMaterialsToWorld() {
+        const applyMaterial = (material) => {
+            if (!material) return;
+            if (Array.isArray(material)) {
+                for (const entry of material) applyMaterial(entry);
+                return;
+            }
+            if ('transparent' in material) material.transparent = false;
+            if ('opacity' in material) material.opacity = 1.0;
+            if ('depthTest' in material) material.depthTest = true;
+            if ('depthWrite' in material) material.depthWrite = true;
+        };
+
+        const applyGroup = (group) => {
+            group?.traverse?.((child) => {
+                if (!child?.isMesh) return;
+                applyMaterial(child.material);
+            });
+        };
+
+        applyGroup(this._asphaltGroup);
+        applyGroup(this._curbsGroup);
+        applyGroup(this._sidewalksGroup);
+        applyGroup(this._stopSignsGroup);
+        applyGroup(this._trafficLightsGroup);
+        applyGroup(this._markingsGroup);
     }
 
     setJunctionEnabled(enabled) {
@@ -1449,7 +1580,8 @@ export class RoadDebuggerView {
             this._ensureDraftHoverTileMarker();
             const mesh = this._draftHoverTileMarkerMesh;
             if (mesh) {
-                mesh.position.set(endX, this._groundY + 0.021, endZ);
+                const markerY = this._worldLayers?.markerY ?? (this._groundY + 0.021);
+                mesh.position.set(endX, markerY, endZ);
                 this._setDraftHoverTileMarkerVisible(true);
             }
         } else {
@@ -1463,7 +1595,7 @@ export class RoadDebuggerView {
         }
 
         const start = this._schemaPointWorld(last);
-        const y = this._groundY + 0.041;
+        const y = this._worldLayers?.lineY ?? (this._groundY + 0.041);
 
         this._ensureDraftPreviewLine();
         const line = this._draftPreviewLine;
@@ -1785,6 +1917,7 @@ export class RoadDebuggerView {
             laneWidth: Number(this._laneWidth) || 4.8,
             marginFactor: Number.isFinite(this._marginFactor) ? Number(this._marginFactor) : 0.1,
             snapEnabled: this._snapEnabled !== false,
+            autoJunctionEnabled: this._autoJunctionEnabled === true,
             roads: payload.roads,
             draft: payload.draft,
             mergedConnectorIds: Array.from(this._mergedConnectorIds ?? []).filter((id) => typeof id === 'string' && id.trim()).sort(),
@@ -1805,6 +1938,7 @@ export class RoadDebuggerView {
         this._laneWidth = parsed.laneWidth;
         this._marginFactor = parsed.marginFactor;
         this._snapEnabled = parsed.snapEnabled;
+        this._autoJunctionEnabled = parsed.autoJunctionEnabled === true;
         this._mergedConnectorIds = new Set(parsed.mergedConnectorIds ?? []);
         this._authoredJunctions = parsed.junctions ?? [];
         this._hiddenJunctionIds = new Set(parsed.hiddenJunctionIds ?? []);
@@ -2161,6 +2295,7 @@ export class RoadDebuggerView {
         const laneWidth = Number(obj?.laneWidth) || this._laneWidth || 4.8;
         const marginFactor = Number.isFinite(obj?.marginFactor) ? Number(obj.marginFactor) : (Number.isFinite(this._marginFactor) ? this._marginFactor : 0.1);
         const snapEnabled = obj?.snapEnabled === undefined ? (this._snapEnabled !== false) : !!obj.snapEnabled;
+        const autoJunctionEnabled = obj?.autoJunctionEnabled === undefined ? (this._autoJunctionEnabled === true) : !!obj.autoJunctionEnabled;
         const mergedConnectorIds = Array.isArray(obj?.mergedConnectorIds)
             ? obj.mergedConnectorIds.filter((id) => typeof id === 'string' && id.trim()).sort()
             : [];
@@ -2188,7 +2323,7 @@ export class RoadDebuggerView {
             ? obj.suppressedAutoJunctionIds.filter((id) => typeof id === 'string' && id.trim()).map((id) => id.trim()).sort()
             : [];
 
-        return { roads, draft, laneWidth, marginFactor, snapEnabled, mergedConnectorIds, junctions, hiddenJunctionIds, suppressedAutoJunctionIds };
+        return { roads, draft, laneWidth, marginFactor, snapEnabled, autoJunctionEnabled, mergedConnectorIds, junctions, hiddenJunctionIds, suppressedAutoJunctionIds };
     }
 
     _resolveCounters() {
@@ -2220,7 +2355,8 @@ export class RoadDebuggerView {
 
         const mesh = new THREE.Mesh(geo, this._materials.snapHighlight);
         mesh.visible = false;
-        mesh.position.set(0, this._groundY + 0.011, 0);
+        const markerY = this._worldLayers?.markerY ?? (this._groundY + 0.011);
+        mesh.position.set(0, markerY, 0);
         mesh.frustumCulled = false;
         mesh.renderOrder = -100;
         mesh.userData = { type: 'snap_highlight' };
@@ -2235,7 +2371,8 @@ export class RoadDebuggerView {
         }
         this._ensureSnapHighlight();
         if (!this._snapHighlightMesh) return;
-        this._snapHighlightMesh.position.set(Number(worldX) || 0, this._groundY + 0.011, Number(worldZ) || 0);
+        const markerY = this._worldLayers?.markerY ?? (this._groundY + 0.011);
+        this._snapHighlightMesh.position.set(Number(worldX) || 0, markerY, Number(worldZ) || 0);
         this._setSnapHighlightVisible(true);
     }
 
@@ -2306,7 +2443,8 @@ export class RoadDebuggerView {
             return;
         }
 
-        cube.position.set(Number(w.x) || 0, this._groundY + 0.06, Number(w.z) || 0);
+        const baseY = this._worldLayers?.pointY ?? (this._groundY + 0.04);
+        cube.position.set(Number(w.x) || 0, baseY + 0.02, Number(w.z) || 0);
         this._setHoverCubeVisible(true);
     }
 
@@ -2396,7 +2534,8 @@ export class RoadDebuggerView {
         const oz = Number(this._origin?.z) || 0;
         const tx = Number(first.tileX) || 0;
         const ty = Number(first.tileY) || 0;
-        mesh.position.set(ox + tx * tileSize, this._groundY + 0.021, oz + ty * tileSize);
+        const markerY = this._worldLayers?.markerY ?? (this._groundY + 0.021);
+        mesh.position.set(ox + tx * tileSize, markerY, oz + ty * tileSize);
         this._setDraftFirstTileMarkerVisible(true);
     }
 
@@ -2459,8 +2598,106 @@ export class RoadDebuggerView {
         if (!mesh) return;
         const isSelected = !!selApproach && selApproach === approachId;
         mesh.material = isSelected ? this._materials.approachMarkerSelected : this._materials.approachMarkerHover;
-        mesh.position.set(Number(w.x) || 0, this._groundY + 0.024, Number(w.z) || 0);
+        const markerY = this._worldLayers?.markerY ?? (this._groundY + 0.024);
+        mesh.position.set(Number(w.x) || 0, markerY, Number(w.z) || 0);
         this._setApproachMarkerVisible(true);
+    }
+
+    _ensureTrafficControlMarker() {
+        if (this._trafficControlMarkerMesh) return;
+        if (!this.root) return;
+        const tileSize = Number(this._tileSize) || 24;
+        const outer = Math.max(1.5, tileSize * 0.08);
+        const inner = Math.max(0.9, outer * 0.7);
+
+        const shape = new THREE.Shape();
+        shape.moveTo(-outer, -outer);
+        shape.lineTo(outer, -outer);
+        shape.lineTo(outer, outer);
+        shape.lineTo(-outer, outer);
+        shape.lineTo(-outer, -outer);
+
+        const hole = new THREE.Path();
+        hole.moveTo(-inner, -inner);
+        hole.lineTo(-inner, inner);
+        hole.lineTo(inner, inner);
+        hole.lineTo(inner, -inner);
+        hole.lineTo(-inner, -inner);
+        shape.holes.push(hole);
+
+        const geo = new THREE.ShapeGeometry(shape);
+        geo.rotateX(-Math.PI * 0.5);
+        this._trafficControlMarkerGeo = geo;
+
+        const mesh = new THREE.Mesh(geo, this._materials.approachMarkerHover);
+        mesh.visible = false;
+        mesh.frustumCulled = false;
+        mesh.renderOrder = 125;
+        mesh.userData = { type: 'junction_traffic_control_marker' };
+        this._trafficControlMarkerMesh = mesh;
+        this.root.add(mesh);
+    }
+
+    _setTrafficControlMarkerVisible(visible) {
+        if (!this._trafficControlMarkerMesh) return;
+        this._trafficControlMarkerMesh.visible = !!visible;
+    }
+
+    _syncTrafficControlMarker() {
+        const derived = this._derived ?? null;
+        if (!derived) {
+            this._setTrafficControlMarkerVisible(false);
+            return;
+        }
+
+        const hover = this._hover ?? {};
+        const junctionId = hover?.junctionId ?? null;
+        const approachId = hover?.approachId ?? null;
+        if (!junctionId || !approachId) {
+            this._setTrafficControlMarkerVisible(false);
+            return;
+        }
+
+        const candidates = [];
+        if (this._stopSignsGroup?.visible) candidates.push(this._stopSignsGroup);
+        if (this._trafficLightsGroup?.visible) candidates.push(this._trafficLightsGroup);
+        if (!candidates.length) {
+            this._setTrafficControlMarkerVisible(false);
+            return;
+        }
+
+        const stack = [];
+        for (const group of candidates) {
+            for (const child of group?.children ?? []) stack.push(child);
+        }
+
+        let target = null;
+        while (stack.length) {
+            const node = stack.pop();
+            if (!node) continue;
+            const tc = node?.userData?.trafficControl ?? null;
+            if (tc && tc.corner === approachId) {
+                target = node;
+                break;
+            }
+            for (const child of node?.children ?? []) stack.push(child);
+        }
+
+        if (!target) {
+            this._setTrafficControlMarkerVisible(false);
+            return;
+        }
+
+        const pos = new THREE.Vector3();
+        target.getWorldPosition(pos);
+
+        this._ensureTrafficControlMarker();
+        const mesh = this._trafficControlMarkerMesh;
+        if (!mesh) return;
+        mesh.material = this._materials.approachMarkerHover;
+        const markerY = this._worldLayers?.markerY ?? (this._groundY + 0.024);
+        mesh.position.set(pos.x, markerY, pos.z);
+        this._setTrafficControlMarkerVisible(true);
     }
 
     _pickAtPointer() {
@@ -2574,6 +2811,23 @@ export class RoadDebuggerView {
     _clearOverlays() {
         if (this._overlayRoot) {
             this.root?.remove?.(this._overlayRoot);
+            const ownedMaterials = new Set();
+            const registerMaterial = (mat) => {
+                if (!mat) return;
+                if (Array.isArray(mat)) {
+                    for (const m of mat) registerMaterial(m);
+                    return;
+                }
+                ownedMaterials.add(mat);
+            };
+            for (const value of Object.values(this._materials ?? {})) {
+                if (!value) continue;
+                if (value instanceof Map) {
+                    for (const mat of value.values()) registerMaterial(mat);
+                    continue;
+                }
+                registerMaterial(value);
+            }
             this._overlayRoot.traverse((child) => {
                 if (!child?.geometry?.dispose) return;
                 if (child.geometry === this._sphereGeo) return;
@@ -2581,9 +2835,26 @@ export class RoadDebuggerView {
                 if (child.geometry === this._junctionCandidateRingGeo) return;
                 child.geometry.dispose();
             });
+            this._overlayRoot.traverse((child) => {
+                const mat = child?.material ?? null;
+                if (!mat) return;
+                if (Array.isArray(mat)) {
+                    for (const entry of mat) {
+                        if (!entry?.dispose || ownedMaterials.has(entry)) continue;
+                        entry.dispose();
+                    }
+                    return;
+                }
+                if (!mat?.dispose || ownedMaterials.has(mat)) return;
+                mat.dispose();
+            });
             this._overlayRoot = null;
         }
         this._asphaltGroup = null;
+        this._curbsGroup = null;
+        this._sidewalksGroup = null;
+        this._stopSignsGroup = null;
+        this._trafficLightsGroup = null;
         this._markingsGroup = null;
         this._debugGroup = null;
         this._highlightGroup = null;
@@ -2591,9 +2862,12 @@ export class RoadDebuggerView {
         this._overlayPoints = [];
         this._asphaltMeshes = [];
         this._junctionSurfaceMeshes = [];
+        this._curbMeshes = [];
+        this._sidewalkMeshes = [];
         this._markingLines = [];
         this._arrowMeshes = [];
         this._arrowTangentLines = [];
+        this._crosswalkMeshes = [];
         this._controlPointMeshes = [];
         this._segmentPickMeshes = [];
         this._junctionPickMeshes = [];
@@ -2601,6 +2875,7 @@ export class RoadDebuggerView {
         this._junctionTatPickMeshes = [];
         this._junctionCandidateMeshes = [];
         this._junctionCandidatePickMeshes = [];
+        this._worldLayers = null;
     }
 
     _rebuildOverlaysFromDerived() {
@@ -2619,9 +2894,38 @@ export class RoadDebuggerView {
         overlay.add(asphaltGroup);
         this._asphaltGroup = asphaltGroup;
 
+        const curbsGroup = new THREE.Group();
+        curbsGroup.name = 'RoadDebuggerCurbs';
+        const curbStep = (this._decorationPipeline ?? []).find((step) => step?.id === 'curbs') ?? null;
+        curbsGroup.visible = curbStep?.enabled === true;
+        overlay.add(curbsGroup);
+        this._curbsGroup = curbsGroup;
+
+        const sidewalksGroup = new THREE.Group();
+        sidewalksGroup.name = 'RoadDebuggerSidewalks';
+        const sidewalkStep = (this._decorationPipeline ?? []).find((step) => step?.id === 'sidewalks') ?? null;
+        sidewalksGroup.visible = sidewalkStep?.enabled === true;
+        overlay.add(sidewalksGroup);
+        this._sidewalksGroup = sidewalksGroup;
+
+        const stopSignsGroup = new THREE.Group();
+        stopSignsGroup.name = 'RoadDebuggerStopSigns';
+        const stopSignsStep = (this._decorationPipeline ?? []).find((step) => step?.id === 'stop_signs') ?? null;
+        stopSignsGroup.visible = stopSignsStep?.enabled === true;
+        overlay.add(stopSignsGroup);
+        this._stopSignsGroup = stopSignsGroup;
+
+        const trafficLightsGroup = new THREE.Group();
+        trafficLightsGroup.name = 'RoadDebuggerTrafficLights';
+        const trafficLightsStep = (this._decorationPipeline ?? []).find((step) => step?.id === 'traffic_lights') ?? null;
+        trafficLightsGroup.visible = trafficLightsStep?.enabled === true;
+        overlay.add(trafficLightsGroup);
+        this._trafficLightsGroup = trafficLightsGroup;
+
         const markingsGroup = new THREE.Group();
         markingsGroup.name = 'RoadDebuggerMarkings';
-        markingsGroup.visible = this._renderOptions.markings === true;
+        const markingsStep = (this._decorationPipeline ?? []).find((step) => step?.id === 'markings') ?? null;
+        markingsGroup.visible = markingsStep?.enabled === true;
         overlay.add(markingsGroup);
         this._markingsGroup = markingsGroup;
 
@@ -2660,15 +2964,39 @@ export class RoadDebuggerView {
         pickGroup.name = 'RoadDebuggerPickMeshes';
         overlay.add(pickGroup);
 
-        const lineY = this._groundY + 0.03;
-        const pointY = this._groundY + 0.04;
-        const asphaltY = this._groundY + 0.012;
-        const markingY = this._groundY + 0.016;
-        const arrowY = this._groundY + 0.017;
-        const debugY0 = this._groundY + 0.013;
-        const debugY1 = this._groundY + 0.014;
-        const debugY2 = this._groundY + 0.015;
-        const pickY = this._groundY + 0.02;
+        const laneWidth = Number(this._laneWidth) || 4.8;
+        const curbThickness = Math.max(0.01, laneWidth * 0.1);
+        const curbHeight = Math.max(0.02, laneWidth * 0.2);
+        const sidewalkWidth = Math.max(0.01, laneWidth * (1.875 / 4.8));
+        const sidewalkLift = Math.max(0, laneWidth * (0.001 / 4.8));
+
+        const layerEps = Math.max(0.004, laneWidth * 0.0015);
+        const asphaltY = this._groundY + Math.max(0.04, laneWidth * 0.0125);
+        const markingY = asphaltY + layerEps;
+        const arrowY = markingY + layerEps * 0.6;
+        const lineY = asphaltY + layerEps * 2.5;
+        const pointY = asphaltY + layerEps * 4.0;
+        const debugY0 = asphaltY + layerEps * 0.2;
+        const debugY1 = asphaltY + layerEps * 0.3;
+        const debugY2 = asphaltY + layerEps * 0.4;
+        const pickY = asphaltY + Math.max(0.03, layerEps * 3);
+        const markerY = arrowY + layerEps * 1.2;
+
+        this._worldLayers = {
+            laneWidth,
+            curbThickness,
+            curbHeight,
+            sidewalkWidth,
+            sidewalkLift,
+            layerEps,
+            asphaltY,
+            markingY,
+            arrowY,
+            markerY,
+            lineY,
+            pointY,
+            pickY
+        };
 
         const primitives = this._derived?.primitives ?? [];
         const schemaRoads = this._getRoadsForPipeline({ includeDraft: true });
@@ -2699,6 +3027,57 @@ export class RoadDebuggerView {
             return v !== false;
         };
 
+        if (stopSignsGroup.visible || trafficLightsGroup.visible) {
+            const trafficSegments = (this._derived?.segments ?? []).filter((seg) => seg && isRoadVisible(seg?.roadId));
+            const trafficJunctions = [];
+            for (const junction of derivedJunctions) {
+                const jid = junction?.id ?? null;
+                if (!jid) continue;
+                if (!isJunctionVisible(jid)) continue;
+                const endpointsRaw = Array.isArray(junction?.endpoints) ? junction.endpoints : [];
+                const endpoints = endpointsRaw.filter((ep) => ep?.roadId && isRoadVisible(ep.roadId));
+                trafficJunctions.push({ ...junction, endpoints });
+            }
+
+            const placements = computeRoadTrafficControlPlacementsFromRoadEngineDerived(
+                { segments: trafficSegments, junctions: trafficJunctions },
+                {
+                    laneWidth,
+                    tileSize: this._tileSize,
+                    asphaltY,
+                    curbThickness,
+                    curbHeight,
+                    sidewalkWidth,
+                    sidewalkLift,
+                    trafficLightLaneThreshold: 3
+                }
+            );
+
+            if (stopSignsGroup.visible) {
+                const stopPlacements = placements.filter((p) => p?.kind === ROAD_TRAFFIC_CONTROL.STOP_SIGN);
+                if (stopPlacements.length) {
+                    const props = createTrafficControlProps({ placements: stopPlacements, useSolidMaterials: true });
+                    const group = props?.group ?? null;
+                    if (group) {
+                        group.name = 'RoadDebuggerStopSignProps';
+                        stopSignsGroup.add(group);
+                    }
+                }
+            }
+
+            if (trafficLightsGroup.visible) {
+                const lightPlacements = placements.filter((p) => p?.kind === ROAD_TRAFFIC_CONTROL.TRAFFIC_LIGHT);
+                if (lightPlacements.length) {
+                    const props = createTrafficControlProps({ placements: lightPlacements, useSolidMaterials: true });
+                    const group = props?.group ?? null;
+                    if (group) {
+                        group.name = 'RoadDebuggerTrafficLightProps';
+                        trafficLightsGroup.add(group);
+                    }
+                }
+            }
+        }
+
         const polygonMeshData = buildRoadEnginePolygonMeshData(primitives);
         const polygonMeshById = new Map();
         for (const mesh of polygonMeshData) {
@@ -2728,6 +3107,78 @@ export class RoadDebuggerView {
             geo.computeBoundingSphere();
             return geo;
         };
+
+        if (curbsGroup.visible) {
+            const curbPrimitives = [];
+            for (const prim of primitives) {
+                if (!prim || prim.type !== 'polygon') continue;
+                const kind = prim.kind ?? null;
+                if (kind !== 'asphalt_piece' && kind !== 'junction_surface') continue;
+                const roadId = prim.roadId ?? null;
+                const junctionId = prim.junctionId ?? null;
+                if (roadId && !isRoadVisible(roadId)) continue;
+                if (!roadId && junctionId && !isJunctionVisible(junctionId)) continue;
+                curbPrimitives.push(prim);
+            }
+
+            const curbData = buildRoadCurbMeshDataFromRoadEnginePrimitives(curbPrimitives, {
+                surfaceY: asphaltY,
+                curbThickness,
+                curbHeight,
+                curbExtraHeight: 0,
+                curbSink: 0,
+                boundaryEpsilon: 1e-4,
+                miterLimit: 4
+            });
+            if (curbData?.positions?.length) {
+                const geo = new THREE.BufferGeometry();
+                geo.setAttribute('position', new THREE.BufferAttribute(curbData.positions, 3));
+                geo.computeVertexNormals();
+                geo.computeBoundingSphere();
+                const mesh = new THREE.Mesh(geo, this._materials.curbBase);
+                mesh.userData = { type: 'curbs' };
+                mesh.renderOrder = 0.5;
+                curbsGroup.add(mesh);
+                this._curbMeshes.push(mesh);
+            }
+        }
+
+        if (sidewalksGroup.visible) {
+            const sidewalkPrimitives = [];
+            for (const prim of primitives) {
+                if (!prim || prim.type !== 'polygon') continue;
+                const kind = prim.kind ?? null;
+                if (kind !== 'asphalt_piece' && kind !== 'junction_surface') continue;
+                const roadId = prim.roadId ?? null;
+                const junctionId = prim.junctionId ?? null;
+                if (roadId && !isRoadVisible(roadId)) continue;
+                if (!roadId && junctionId && !isJunctionVisible(junctionId)) continue;
+                sidewalkPrimitives.push(prim);
+            }
+
+            const sidewalkData = buildRoadSidewalkMeshDataFromRoadEnginePrimitives(sidewalkPrimitives, {
+                surfaceY: asphaltY,
+                curbThickness,
+                curbHeight,
+                curbExtraHeight: 0,
+                sidewalkWidth,
+                sidewalkLift,
+                startFromCurb: curbsGroup.visible,
+                boundaryEpsilon: 1e-4,
+                miterLimit: 4
+            });
+            if (sidewalkData?.positions?.length) {
+                const geo = new THREE.BufferGeometry();
+                geo.setAttribute('position', new THREE.BufferAttribute(sidewalkData.positions, 3));
+                geo.computeVertexNormals();
+                geo.computeBoundingSphere();
+                const mesh = new THREE.Mesh(geo, this._materials.sidewalkBase);
+                mesh.userData = { type: 'sidewalks' };
+                mesh.renderOrder = 0.6;
+                sidewalksGroup.add(mesh);
+                this._sidewalkMeshes.push(mesh);
+            }
+        }
 
         const makePickStripGeometry = (a, b, width, y) => {
             const ax = Number(a?.x) || 0;
@@ -3099,144 +3550,142 @@ export class RoadDebuggerView {
             }
         }
 
-        const markingPositions = [];
-        const arrowPositions = [];
-        const arrowTangentPositions = [];
+        if (markingsGroup.visible) {
+            const markingsSegments = [];
+            for (const seg of this._derived?.segments ?? []) {
+                if (!seg) continue;
+                if (!isRoadVisible(seg?.roadId)) continue;
+                markingsSegments.push(seg);
+            }
 
-        const segs = this._derived?.segments ?? [];
-        for (const seg of segs) {
-            if (!isRoadVisible(seg?.roadId)) continue;
-            const dir = seg?.dir ?? null;
-            const right = seg?.right ?? null;
-            const laneWidth = Number(seg?.laneWidth) || Number(this._laneWidth) || 4.8;
-            const lanesF = clampInt(seg?.lanesF ?? 0, 0, 99);
-            const lanesB = clampInt(seg?.lanesB ?? 0, 0, 99);
-            const pieces = Array.isArray(seg?.keptPieces) ? seg.keptPieces : [];
-            if (dir && right && (laneWidth > 1e-6) && pieces.length) {
-                const offsets = [0];
-                for (let i = 1; i < lanesF; i++) offsets.push(i * laneWidth);
-                for (let i = 1; i < lanesB; i++) offsets.push(-i * laneWidth);
-                if (lanesF > 0) offsets.push(lanesF * laneWidth);
-                if (lanesB > 0) offsets.push(-lanesB * laneWidth);
+            const markingsPrimitives = [];
+            for (const prim of primitives) {
+                if (!prim || prim.type !== 'polygon') continue;
+                const kind = prim.kind ?? null;
+                if (kind !== 'asphalt_piece' && kind !== 'junction_surface') continue;
+                const roadId = prim.roadId ?? null;
+                const junctionId = prim.junctionId ?? null;
+                if (roadId && !isRoadVisible(roadId)) continue;
+                if (!roadId && junctionId && !isJunctionVisible(junctionId)) continue;
+                markingsPrimitives.push(prim);
+            }
 
-                for (const piece of pieces) {
-                    const a = piece?.aWorld ?? null;
-                    const b = piece?.bWorld ?? null;
-                    if (!a || !b) continue;
-                    const len = Number(piece?.length) || 0;
-                    if (!(len > 1e-6)) continue;
+            const markingsJunctions = [];
+            for (const junction of derivedJunctions) {
+                const jid = junction?.id ?? null;
+                if (!jid) continue;
+                if (!isJunctionVisible(jid)) continue;
+                const endpointsRaw = Array.isArray(junction?.endpoints) ? junction.endpoints : [];
+                const endpoints = endpointsRaw.filter((ep) => !ep?.roadId || isRoadVisible(ep.roadId));
+                markingsJunctions.push({ ...junction, endpoints });
+            }
 
-                    const dash = laneWidth * 0.7;
-                    const gap = laneWidth * 0.35;
-                    const inset = Math.min(laneWidth * 0.3, len * 0.18);
-                    const usable = Math.max(0, len - inset * 2);
-
-                    for (const offset of offsets) {
-                        if (!(usable > 1e-6)) continue;
-                        const baseX = (Number(a.x) || 0) + (Number(dir.x) || 0) * inset + (Number(right.x) || 0) * offset;
-                        const baseZ = (Number(a.z) || 0) + (Number(dir.z) || 0) * inset + (Number(right.z) || 0) * offset;
-                        const step = dash + gap;
-                        if (!(step > 1e-6)) continue;
-                        for (let t = 0; t < usable - 1e-6; t += step) {
-                            const t0 = t;
-                            const t1 = Math.min(t + dash, usable);
-                            const sx = baseX + (Number(dir.x) || 0) * t0;
-                            const sz = baseZ + (Number(dir.z) || 0) * t0;
-                            const ex = baseX + (Number(dir.x) || 0) * t1;
-                            const ez = baseZ + (Number(dir.z) || 0) * t1;
-                            markingPositions.push(sx, markingY, sz, ex, markingY, ez);
-                        }
-                    }
-
-                    const baseArrowLen = laneWidth * 0.85;
-                    const maxArrowLen = len * 0.65;
-                    const arrowLen = Math.min(baseArrowLen, maxArrowLen);
-                    if (arrowLen > laneWidth * 0.25) {
-                        const scale = arrowLen / baseArrowLen;
-                        const headLen = arrowLen * 0.35;
-                        const bodyHalf = laneWidth * 0.10 * scale;
-                        const headHalf = laneWidth * 0.22 * scale;
-                        const tailX = -arrowLen * 0.5;
-                        const bodyX = arrowLen * 0.5 - headLen;
-                        const tipX = arrowLen * 0.5;
-
-                        const midX = (Number(a.x) || 0) + (Number(dir.x) || 0) * (len * 0.5);
-                        const midZ = (Number(a.z) || 0) + (Number(dir.z) || 0) * (len * 0.5);
-
-                        const laneOffsets = [];
-                        for (let i = 0; i < lanesF; i++) laneOffsets.push({ offset: (i + 0.5) * laneWidth, dirX: dir.x, dirZ: dir.z });
-                        for (let i = 0; i < lanesB; i++) laneOffsets.push({ offset: -(i + 0.5) * laneWidth, dirX: -dir.x, dirZ: -dir.z });
-
-                        for (const lane of laneOffsets) {
-                            const cx = midX + (Number(right.x) || 0) * lane.offset;
-                            const cz = midZ + (Number(right.z) || 0) * lane.offset;
-                            const fx = Number(lane.dirX) || 0;
-                            const fz = Number(lane.dirZ) || 0;
-                            const rx = fz;
-                            const rz = -fx;
-
-                            if (this._arrowTangentDebugEnabled) {
-                                const tangentLen = arrowLen * 0.75;
-                                const y = arrowY + 0.003;
-                                arrowTangentPositions.push(
-                                    cx, y, cz,
-                                    cx + fx * tangentLen, y, cz + fz * tangentLen
-                                );
-                            }
-
-                            const local = [
-                                [tailX, bodyHalf], [bodyX, bodyHalf], [bodyX, -bodyHalf],
-                                [tailX, bodyHalf], [bodyX, -bodyHalf], [tailX, -bodyHalf],
-                                [tipX, 0], [bodyX, headHalf], [bodyX, -headHalf]
-                            ];
-
-                            for (const v of local) {
-                                const lx = v[0];
-                                const lz = v[1];
-                                const wx = cx + fx * lx + rx * lz;
-                                const wz = cz + fz * lx + rz * lz;
-                                arrowPositions.push(wx, arrowY, wz);
-                            }
-                        }
-                    }
+            const paintLift = Math.max(0.001, layerEps * 0.15);
+            const data = buildRoadMarkingsMeshDataFromRoadEngineDerived(
+                { segments: markingsSegments, junctions: markingsJunctions, primitives: markingsPrimitives },
+                {
+                    laneWidth,
+                    markingY,
+                    arrowY,
+                    arrowTangentY: arrowY + paintLift,
+                    crosswalkY: markingY + paintLift,
+                    boundaryEpsilon: 1e-4,
+                    includeArrowTangents: this._arrowTangentDebugEnabled === true
                 }
+            );
+
+            const buildThickLineMesh = (segments, material, { type, renderOrder }) => {
+                const segs = segments ?? null;
+                if (!segs?.length) return;
+
+                const width = Math.max(0.02, laneWidth * 0.07);
+                const half = width * 0.5;
+                const positions = [];
+                for (let i = 0; i + 5 < segs.length; i += 6) {
+                    const x0 = Number(segs[i]) || 0;
+                    const y0 = Number(segs[i + 1]) || 0;
+                    const z0 = Number(segs[i + 2]) || 0;
+                    const x1 = Number(segs[i + 3]) || 0;
+                    const y1 = Number(segs[i + 4]) || 0;
+                    const z1 = Number(segs[i + 5]) || 0;
+                    const dx = x1 - x0;
+                    const dz = z1 - z0;
+                    const len = Math.hypot(dx, dz);
+                    if (!(len > 1e-6)) continue;
+                    const inv = 1 / len;
+                    const nx = dz * inv;
+                    const nz = -dx * inv;
+
+                    const ax0 = x0 + nx * half;
+                    const az0 = z0 + nz * half;
+                    const bx0 = x0 - nx * half;
+                    const bz0 = z0 - nz * half;
+                    const ax1 = x1 + nx * half;
+                    const az1 = z1 + nz * half;
+                    const bx1 = x1 - nx * half;
+                    const bz1 = z1 - nz * half;
+
+                    positions.push(
+                        ax0, y0, az0,
+                        bx0, y0, bz0,
+                        bx1, y1, bz1,
+                        ax0, y0, az0,
+                        bx1, y1, bz1,
+                        ax1, y1, az1
+                    );
+                }
+
+                if (!positions.length) return;
+                const geo = new THREE.BufferGeometry();
+                geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+                geo.computeBoundingSphere();
+                const mesh = new THREE.Mesh(geo, material);
+                mesh.userData = { type };
+                mesh.renderOrder = renderOrder;
+                markingsGroup.add(mesh);
+                this._markingLines.push(mesh);
+            };
+
+            buildThickLineMesh(data?.whiteLineSegments, this._materials.arrow, { type: 'lane_markings_white', renderOrder: 1 });
+            buildThickLineMesh(data?.yellowLineSegments, this._materials.markingYellow, { type: 'lane_markings_centerline', renderOrder: 1.1 });
+
+            if (data?.crosswalkPositions?.length) {
+                const geo = new THREE.BufferGeometry();
+                geo.setAttribute('position', new THREE.BufferAttribute(data.crosswalkPositions, 3));
+                geo.computeBoundingSphere();
+                const mesh = new THREE.Mesh(geo, this._materials.arrow);
+                mesh.userData = { type: 'crosswalks' };
+                mesh.renderOrder = 1.5;
+                markingsGroup.add(mesh);
+                this._crosswalkMeshes.push(mesh);
+            }
+
+            if (data?.arrowPositions?.length) {
+                const geo = new THREE.BufferGeometry();
+                geo.setAttribute('position', new THREE.BufferAttribute(data.arrowPositions, 3));
+                geo.computeBoundingSphere();
+                const mesh = new THREE.Mesh(geo, this._materials.arrow);
+                mesh.userData = { type: 'lane_arrows' };
+                mesh.renderOrder = 2;
+                markingsGroup.add(mesh);
+                this._arrowMeshes.push(mesh);
+            }
+
+            if (data?.arrowTangentSegments?.length) {
+                const geo = new THREE.BufferGeometry();
+                geo.setAttribute('position', new THREE.BufferAttribute(data.arrowTangentSegments, 3));
+                geo.computeBoundingSphere();
+                const lines = new THREE.LineSegments(geo, this._materials.arrowTangent);
+                lines.userData = { type: 'arrow_tangents' };
+                lines.renderOrder = 3;
+                markingsGroup.add(lines);
+                this._arrowTangentLines.push(lines);
             }
         }
 
-        if (markingPositions.length) {
-            const geo = new THREE.BufferGeometry();
-            geo.setAttribute('position', new THREE.Float32BufferAttribute(markingPositions, 3));
-            geo.computeBoundingSphere();
-            const lines = new THREE.LineSegments(geo, this._materials.markingLine);
-            lines.userData = { type: 'lane_markings' };
-            lines.renderOrder = 1;
-            markingsGroup.add(lines);
-            this._markingLines.push(lines);
-        }
-
-        if (arrowPositions.length) {
-            const geo = new THREE.BufferGeometry();
-            geo.setAttribute('position', new THREE.Float32BufferAttribute(arrowPositions, 3));
-            geo.computeBoundingSphere();
-            const mesh = new THREE.Mesh(geo, this._materials.arrow);
-            mesh.userData = { type: 'lane_arrows' };
-            mesh.renderOrder = 2;
-            markingsGroup.add(mesh);
-            this._arrowMeshes.push(mesh);
-        }
-
-        if (arrowTangentPositions.length) {
-            const geo = new THREE.BufferGeometry();
-            geo.setAttribute('position', new THREE.Float32BufferAttribute(arrowTangentPositions, 3));
-            geo.computeBoundingSphere();
-            const lines = new THREE.LineSegments(geo, this._materials.arrowTangent);
-            lines.userData = { type: 'arrow_tangents' };
-            lines.renderOrder = 3;
-            markingsGroup.add(lines);
-            this._arrowTangentLines.push(lines);
-        }
-
         this._applyDistanceScaledEdgeLineWidths();
+        this._applyOpaqueMaterialsToWorld();
+        this._applyMeshWireframeToOverlays();
         this._rebuildSelectionHighlight();
     }
 
@@ -3276,6 +3725,9 @@ export class RoadDebuggerView {
         this._approachMarkerGeo?.dispose?.();
         this._approachMarkerGeo = null;
         this._approachMarkerMesh = null;
+        this._trafficControlMarkerGeo?.dispose?.();
+        this._trafficControlMarkerGeo = null;
+        this._trafficControlMarkerMesh = null;
     }
 
     _rebuildSelectionHighlight() {
@@ -3738,6 +4190,7 @@ export class RoadDebuggerView {
 
         this._rebuildSelectionHighlight();
         this._syncApproachMarker();
+        this._syncTrafficControlMarker();
         this._syncHoverCube();
     }
 }

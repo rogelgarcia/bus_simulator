@@ -91,6 +91,14 @@ function cameraCenter(view) {
 export function setupCamera(view) {
     const cam = view.camera;
     const size = Number.isFinite(view?._worldSize) ? view._worldSize : 220;
+    if (cam?.isPerspectiveCamera) {
+        const near = Math.max(0.5, size * 0.005);
+        const far = Math.max(near + 50, size * 3.2);
+        const changed = Math.abs((cam.near ?? 0) - near) > 1e-9 || Math.abs((cam.far ?? 0) - far) > 1e-9;
+        cam.near = near;
+        cam.far = far;
+        if (changed) cam.updateProjectionMatrix?.();
+    }
     const fovRad = (cam.fov * Math.PI) / 180;
     const aspect = cam.aspect || 1;
     const hFov = 2 * Math.atan(Math.tan(fovRad * 0.5) * aspect);

@@ -66,7 +66,10 @@ export function setupScene(view) {
     sun.position.set(80, 140, 60);
     group.add(sun);
 
+    const size = Number.isFinite(view?._worldSize) ? view._worldSize : 800;
+    const skyRadius = Math.max(600, size * 2.2);
     const sky = createGradientSkyDome({
+        radius: skyRadius,
         top: '#2f7fe8',
         horizon: '#eaf7ff',
         sunDir: sun.position.clone().normalize(),
@@ -91,6 +94,20 @@ export function setupScene(view) {
 
     view.world = world;
     view._gridLines = world?.gridLines ?? null;
+
+    const applyDepthBias = (material) => {
+        if (!material) return;
+        if (Array.isArray(material)) {
+            for (const entry of material) applyDepthBias(entry);
+            return;
+        }
+        material.polygonOffset = true;
+        material.polygonOffsetFactor = 2;
+        material.polygonOffsetUnits = 8;
+    };
+
+    applyDepthBias(world?.floor?.material ?? null);
+    applyDepthBias(world?.groundTiles?.material ?? null);
 
     view._hemi = hemi;
     view._sun = sun;

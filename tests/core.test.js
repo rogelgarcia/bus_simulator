@@ -4431,6 +4431,411 @@ async function runTests() {
         console.log('⏭️  Road engine tests skipped:', e.message);
     }
 
+    // ========== Road Decoration Tests (AI 156/157) ==========
+    try {
+        const { buildRoadCurbMeshDataFromRoadEnginePrimitives } = await import('/src/app/road_decoration/curbs/RoadCurbBuilder.js');
+        const { buildRoadSidewalkMeshDataFromRoadEnginePrimitives } = await import('/src/app/road_decoration/sidewalks/RoadSidewalkBuilder.js');
+
+        test('RoadCurbBuilder: builds curb strip triangles for a square asphalt polygon (AI 156)', () => {
+            const primitives = [
+                {
+                    type: 'polygon',
+                    id: 'p0',
+                    kind: 'asphalt_piece',
+                    roadId: 'road1',
+                    segmentId: 'seg1',
+                    points: [
+                        { x: 0, z: 0 },
+                        { x: 2, z: 0 },
+                        { x: 2, z: 1 },
+                        { x: 0, z: 1 }
+                    ]
+                }
+            ];
+
+            const out = buildRoadCurbMeshDataFromRoadEnginePrimitives(primitives, {
+                surfaceY: 0,
+                curbThickness: 0.5,
+                curbHeight: 0.2,
+                curbExtraHeight: 0,
+                curbSink: 0,
+                boundaryEpsilon: 1e-6
+            });
+
+            assertTrue(out?.positions instanceof Float32Array, 'Expected Float32Array positions.');
+            assertEqual(out.positions.length, 288, 'Expected 4 edges × (top/bottom/inner/outer) quads × 2 triangles.');
+        });
+
+        test('RoadCurbBuilder: ignores non-asphalt polygons (AI 156)', () => {
+            const primitives = [
+                {
+                    type: 'polygon',
+                    id: 'p0',
+                    kind: 'trim_overlap',
+                    roadId: 'road1',
+                    segmentId: 'seg1',
+                    points: [
+                        { x: 0, z: 0 },
+                        { x: 1, z: 0 },
+                        { x: 1, z: 1 },
+                        { x: 0, z: 1 }
+                    ]
+                }
+            ];
+            const out = buildRoadCurbMeshDataFromRoadEnginePrimitives(primitives, { surfaceY: 0 });
+            assertEqual(out.positions.length, 0, 'Expected no curb output for non-asphalt kinds.');
+        });
+
+        test('RoadSidewalkBuilder: builds sidewalk strip triangles for a square asphalt polygon (AI 157)', () => {
+            const primitives = [
+                {
+                    type: 'polygon',
+                    id: 'p0',
+                    kind: 'asphalt_piece',
+                    roadId: 'road1',
+                    segmentId: 'seg1',
+                    points: [
+                        { x: 0, z: 0 },
+                        { x: 2, z: 0 },
+                        { x: 2, z: 1 },
+                        { x: 0, z: 1 }
+                    ]
+                }
+            ];
+
+            const out = buildRoadSidewalkMeshDataFromRoadEnginePrimitives(primitives, {
+                surfaceY: 0,
+                curbThickness: 0.5,
+                curbHeight: 0.25,
+                curbExtraHeight: 0,
+                sidewalkWidth: 1.0,
+                sidewalkLift: 0.01,
+                startFromCurb: true,
+                boundaryEpsilon: 1e-6
+            });
+
+            assertTrue(out?.positions instanceof Float32Array, 'Expected Float32Array positions.');
+            assertEqual(out.positions.length, 216, 'Expected 4 edges × (top + inner + outer) quads × 2 triangles.');
+        });
+
+        test('RoadCurbBuilder: offsets inner holes outward (into the hole) (AI 156)', () => {
+            const primitives = [
+                {
+                    type: 'polygon',
+                    id: 'ring_bottom',
+                    kind: 'asphalt_piece',
+                    roadId: 'road1',
+                    segmentId: 'seg1',
+                    points: [{ x: 0, z: 0 }, { x: 10, z: 0 }, { x: 10, z: 3 }, { x: 0, z: 3 }]
+                },
+                {
+                    type: 'polygon',
+                    id: 'ring_top',
+                    kind: 'asphalt_piece',
+                    roadId: 'road1',
+                    segmentId: 'seg1',
+                    points: [{ x: 0, z: 7 }, { x: 10, z: 7 }, { x: 10, z: 10 }, { x: 0, z: 10 }]
+                },
+                {
+                    type: 'polygon',
+                    id: 'ring_left',
+                    kind: 'asphalt_piece',
+                    roadId: 'road1',
+                    segmentId: 'seg1',
+                    points: [{ x: 0, z: 3 }, { x: 3, z: 3 }, { x: 3, z: 7 }, { x: 0, z: 7 }]
+                },
+                {
+                    type: 'polygon',
+                    id: 'ring_right',
+                    kind: 'asphalt_piece',
+                    roadId: 'road1',
+                    segmentId: 'seg1',
+                    points: [{ x: 7, z: 3 }, { x: 10, z: 3 }, { x: 10, z: 7 }, { x: 7, z: 7 }]
+                }
+            ];
+
+            const out = buildRoadCurbMeshDataFromRoadEnginePrimitives(primitives, {
+                surfaceY: 0,
+                curbThickness: 0.5,
+                curbHeight: 0.2,
+                curbExtraHeight: 0,
+                curbSink: 0,
+                boundaryEpsilon: 1e-6
+            });
+
+            assertTrue(out?.positions instanceof Float32Array, 'Expected Float32Array positions.');
+            const cx = 5;
+            const cz = 5;
+            let minDist = Infinity;
+            for (let i = 0; i < out.positions.length; i += 3) {
+                const x = out.positions[i];
+                const z = out.positions[i + 2];
+                const d = Math.hypot(x - cx, z - cz);
+                if (d < minDist) minDist = d;
+            }
+
+            assertTrue(minDist < 2.6, `Expected curb strip to extend into hole (minDist=${minDist}).`);
+        });
+
+        test('RoadSidewalkBuilder: offsets inner holes outward (into the hole) (AI 157)', () => {
+            const primitives = [
+                {
+                    type: 'polygon',
+                    id: 'ring_bottom',
+                    kind: 'asphalt_piece',
+                    roadId: 'road1',
+                    segmentId: 'seg1',
+                    points: [{ x: 0, z: 0 }, { x: 10, z: 0 }, { x: 10, z: 3 }, { x: 0, z: 3 }]
+                },
+                {
+                    type: 'polygon',
+                    id: 'ring_top',
+                    kind: 'asphalt_piece',
+                    roadId: 'road1',
+                    segmentId: 'seg1',
+                    points: [{ x: 0, z: 7 }, { x: 10, z: 7 }, { x: 10, z: 10 }, { x: 0, z: 10 }]
+                },
+                {
+                    type: 'polygon',
+                    id: 'ring_left',
+                    kind: 'asphalt_piece',
+                    roadId: 'road1',
+                    segmentId: 'seg1',
+                    points: [{ x: 0, z: 3 }, { x: 3, z: 3 }, { x: 3, z: 7 }, { x: 0, z: 7 }]
+                },
+                {
+                    type: 'polygon',
+                    id: 'ring_right',
+                    kind: 'asphalt_piece',
+                    roadId: 'road1',
+                    segmentId: 'seg1',
+                    points: [{ x: 7, z: 3 }, { x: 10, z: 3 }, { x: 10, z: 7 }, { x: 7, z: 7 }]
+                }
+            ];
+
+            const out = buildRoadSidewalkMeshDataFromRoadEnginePrimitives(primitives, {
+                surfaceY: 0,
+                curbThickness: 0.5,
+                curbHeight: 0.25,
+                curbExtraHeight: 0,
+                sidewalkWidth: 1.0,
+                sidewalkLift: 0.01,
+                startFromCurb: true,
+                boundaryEpsilon: 1e-6
+            });
+
+            assertTrue(out?.positions instanceof Float32Array, 'Expected Float32Array positions.');
+            const cx = 5;
+            const cz = 5;
+            let minDist = Infinity;
+            for (let i = 0; i < out.positions.length; i += 3) {
+                const x = out.positions[i];
+                const z = out.positions[i + 2];
+                const d = Math.hypot(x - cx, z - cz);
+                if (d < minDist) minDist = d;
+            }
+
+            assertTrue(minDist < 2.6, `Expected sidewalk strip to extend into hole (minDist=${minDist}).`);
+        });
+    } catch (e) {
+        console.log('⏭️  Road decoration tests skipped:', e.message);
+    }
+
+    // ========== Road Markings + Traffic Controls Tests (AI 158/159) ==========
+    try {
+        const { buildRoadMarkingsMeshDataFromRoadEngineDerived } = await import('/src/app/road_decoration/markings/RoadMarkingsBuilder.js');
+        const { computeRoadTrafficControlPlacementsFromRoadEngineDerived, ROAD_TRAFFIC_CONTROL } = await import('/src/app/road_decoration/traffic_controls/RoadTrafficControlPlacement.js');
+
+        test('RoadMarkingsBuilder: draws a border loop for a square asphalt polygon (AI 158)', () => {
+            const derived = {
+                segments: [],
+                junctions: [],
+                primitives: [
+                    {
+                        type: 'polygon',
+                        id: 'p0',
+                        kind: 'asphalt_piece',
+                        roadId: 'road1',
+                        segmentId: 'seg1',
+                        points: [
+                            { x: 0, z: 0 },
+                            { x: 10, z: 0 },
+                            { x: 10, z: 10 },
+                            { x: 0, z: 10 }
+                        ]
+                    }
+                ]
+            };
+
+            const out = buildRoadMarkingsMeshDataFromRoadEngineDerived(derived, { laneWidth: 4.8, markingY: 0, boundaryEpsilon: 1e-6 });
+            assertTrue(out?.whiteLineSegments instanceof Float32Array, 'Expected Float32Array whiteLineSegments.');
+            assertTrue(out?.yellowLineSegments instanceof Float32Array, 'Expected Float32Array yellowLineSegments.');
+            assertEqual(out.whiteLineSegments.length, 24, 'Expected 4 border segments (8 points).');
+            assertEqual(out.yellowLineSegments.length, 0, 'Expected no centerline segments without road network data.');
+        });
+
+        test('RoadMarkingsBuilder: centerline through degree-2 junction follows arc (AI 158)', () => {
+            const derived = {
+                segments: [
+                    {
+                        id: 'seg0',
+                        roadId: 'r0',
+                        dir: { x: 1, z: 0 },
+                        right: { x: 0, z: -1 },
+                        lanesF: 1,
+                        lanesB: 1,
+                        laneWidth: 4.8,
+                        keptPieces: [
+                            { id: 'p0', roadId: 'r0', segmentId: 'seg0', aWorld: { x: -10, z: 0 }, bWorld: { x: -2, z: 0 }, length: 8 }
+                        ]
+                    },
+                    {
+                        id: 'seg1',
+                        roadId: 'r0',
+                        dir: { x: 0, z: 1 },
+                        right: { x: 1, z: 0 },
+                        lanesF: 1,
+                        lanesB: 1,
+                        laneWidth: 4.8,
+                        keptPieces: [
+                            { id: 'p1', roadId: 'r0', segmentId: 'seg1', aWorld: { x: 0, z: 2 }, bWorld: { x: 0, z: 10 }, length: 8 }
+                        ]
+                    }
+                ],
+                junctions: [
+                    {
+                        id: 'j2',
+                        center: { x: 0, z: 0 },
+                        endpoints: [
+                            { pieceId: 'p0', end: 'b', world: { x: -2, z: 0 }, dirOut: { x: -1, z: 0 } },
+                            { pieceId: 'p1', end: 'a', world: { x: 0, z: 2 }, dirOut: { x: 0, z: 1 } }
+                        ]
+                    }
+                ],
+                primitives: []
+            };
+
+            const out = buildRoadMarkingsMeshDataFromRoadEngineDerived(derived, { laneWidth: 4.8, markingY: 0 });
+            assertTrue(out?.yellowLineSegments instanceof Float32Array, 'Expected Float32Array yellowLineSegments.');
+            assertTrue(out.yellowLineSegments.length > 60, 'Expected centerline segments through curved junction.');
+
+            const angles = new Set();
+            const segs = out.yellowLineSegments;
+            for (let i = 0; i + 5 < segs.length; i += 6) {
+                const dx = (Number(segs[i + 3]) || 0) - (Number(segs[i]) || 0);
+                const dz = (Number(segs[i + 5]) || 0) - (Number(segs[i + 2]) || 0);
+                const len = Math.hypot(dx, dz);
+                if (!(len > 1e-6)) continue;
+                angles.add(Math.round(Math.atan2(dz, dx) * 10) / 10);
+            }
+            assertTrue(angles.size > 4, 'Expected multiple segment angles for curved centerline.');
+        });
+
+        test('RoadMarkingsBuilder: emits crosswalk stripes for 3-way junctions (AI 158)', () => {
+            const derived = {
+                segments: [],
+                primitives: [],
+                junctions: [
+                    {
+                        id: 'j1',
+                        center: { x: 0, z: 0 },
+                        endpoints: [
+                            { id: 'epN', roadId: 'rN', segmentId: 'segN', pieceId: 'pN', end: 'a', world: { x: 0, z: 0 }, dirOut: { x: 0, z: 1 }, rightOut: { x: 1, z: 0 }, widthLeft: 5, widthRight: 5 },
+                            { id: 'epE', roadId: 'rE', segmentId: 'segE', pieceId: 'pE', end: 'a', world: { x: 0, z: 0 }, dirOut: { x: 1, z: 0 }, rightOut: { x: 0, z: -1 }, widthLeft: 0, widthRight: 0 },
+                            { id: 'epW', roadId: 'rW', segmentId: 'segW', pieceId: 'pW', end: 'a', world: { x: 0, z: 0 }, dirOut: { x: -1, z: 0 }, rightOut: { x: 0, z: 1 }, widthLeft: 0, widthRight: 0 }
+                        ]
+                    }
+                ]
+            };
+
+            const laneWidth = 4.8;
+            const out = buildRoadMarkingsMeshDataFromRoadEngineDerived(derived, { laneWidth, crosswalkY: 0.2 });
+            assertTrue(out?.crosswalkPositions instanceof Float32Array, 'Expected Float32Array crosswalkPositions.');
+            assertTrue(out.crosswalkPositions.length > 0, 'Expected crosswalk triangles.');
+            assertEqual(out.crosswalkPositions.length % 9, 0, 'Expected triangle list positions.');
+            assertTrue(Math.abs(out.crosswalkPositions[1] - 0.2) < 1e-6, 'Expected crosswalkY to be applied.');
+
+            const stripeDepth = laneWidth * 0.1;
+            const stripeGap = laneWidth * 0.06;
+            const stripeStep = stripeDepth + stripeGap;
+            const edgeInset = laneWidth * (0.33 / 4.8);
+            const span = Math.max(0, 5 - edgeInset) + Math.max(0, 5 - edgeInset);
+            const stripeCount = Math.max(1, Math.floor((span + stripeGap) / stripeStep));
+            assertEqual(out.crosswalkPositions.length, stripeCount * 18, 'Expected stripes to repeat across road width.');
+
+            let minX = Infinity;
+            let maxX = -Infinity;
+            let minZ = Infinity;
+            let maxZ = -Infinity;
+            for (let i = 0; i < 18; i += 3) {
+                const x = out.crosswalkPositions[i];
+                const z = out.crosswalkPositions[i + 2];
+                minX = Math.min(minX, x);
+                maxX = Math.max(maxX, x);
+                minZ = Math.min(minZ, z);
+                maxZ = Math.max(maxZ, z);
+            }
+            assertTrue((maxZ - minZ) > (maxX - minX) * 3, 'Expected crosswalk stripes to align with road flow.');
+        });
+
+        test('RoadTrafficControlPlacement: 4-way crossings with 3+ lane road yield traffic lights (AI 159)', () => {
+            const derived = {
+                segments: [
+                    { id: 'segN', roadId: 'rN', dir: { x: 0, z: 1 }, lanesF: 1, lanesB: 1 },
+                    { id: 'segS', roadId: 'rS', dir: { x: 0, z: -1 }, lanesF: 2, lanesB: 1 },
+                    { id: 'segE', roadId: 'rE', dir: { x: 1, z: 0 }, lanesF: 1, lanesB: 1 },
+                    { id: 'segW', roadId: 'rW', dir: { x: -1, z: 0 }, lanesF: 1, lanesB: 1 }
+                ],
+                junctions: [
+                    {
+                        id: 'j4',
+                        center: { x: 0, z: 0 },
+                        endpoints: [
+                            { id: 'epN', roadId: 'rN', segmentId: 'segN', world: { x: 0, z: 0 }, dirOut: { x: 0, z: 1 }, rightOut: { x: 1, z: 0 }, widthLeft: 5, widthRight: 5 },
+                            { id: 'epS', roadId: 'rS', segmentId: 'segS', world: { x: 0, z: 0 }, dirOut: { x: 0, z: -1 }, rightOut: { x: -1, z: 0 }, widthLeft: 5, widthRight: 5 },
+                            { id: 'epE', roadId: 'rE', segmentId: 'segE', world: { x: 0, z: 0 }, dirOut: { x: 1, z: 0 }, rightOut: { x: 0, z: -1 }, widthLeft: 5, widthRight: 5 },
+                            { id: 'epW', roadId: 'rW', segmentId: 'segW', world: { x: 0, z: 0 }, dirOut: { x: -1, z: 0 }, rightOut: { x: 0, z: 1 }, widthLeft: 5, widthRight: 5 }
+                        ]
+                    }
+                ]
+            };
+
+            const placements = computeRoadTrafficControlPlacementsFromRoadEngineDerived(derived, { laneWidth: 4.8, asphaltY: 0.02, curbHeight: 0.17, trafficLightLaneThreshold: 3 });
+            const lights = placements.filter((p) => p?.kind === ROAD_TRAFFIC_CONTROL.TRAFFIC_LIGHT);
+            const stops = placements.filter((p) => p?.kind === ROAD_TRAFFIC_CONTROL.STOP_SIGN);
+            assertEqual(lights.length, 4, 'Expected one traffic light placement per approach.');
+            assertEqual(stops.length, 0, 'Expected no stop signs when traffic lights are selected.');
+        });
+
+        test('RoadTrafficControlPlacement: T-junction stop sign only on stem approach (AI 159)', () => {
+            const derived = {
+                segments: [
+                    { id: 'segN', roadId: 'rN', dir: { x: 0, z: 1 }, lanesF: 1, lanesB: 1 },
+                    { id: 'segS', roadId: 'rS', dir: { x: 0, z: -1 }, lanesF: 1, lanesB: 1 },
+                    { id: 'segE', roadId: 'rE', dir: { x: 1, z: 0 }, lanesF: 1, lanesB: 1 }
+                ],
+                junctions: [
+                    {
+                        id: 'jT',
+                        center: { x: 0, z: 0 },
+                        endpoints: [
+                            { id: 'epN', roadId: 'rN', segmentId: 'segN', world: { x: 0, z: 0 }, dirOut: { x: 0, z: 1 }, rightOut: { x: 1, z: 0 }, widthLeft: 5, widthRight: 5 },
+                            { id: 'epS', roadId: 'rS', segmentId: 'segS', world: { x: 0, z: 0 }, dirOut: { x: 0, z: -1 }, rightOut: { x: -1, z: 0 }, widthLeft: 5, widthRight: 5 },
+                            { id: 'epE', roadId: 'rE', segmentId: 'segE', world: { x: 0, z: 0 }, dirOut: { x: 1, z: 0 }, rightOut: { x: 0, z: -1 }, widthLeft: 5, widthRight: 5 }
+                        ]
+                    }
+                ]
+            };
+
+            const placements = computeRoadTrafficControlPlacementsFromRoadEngineDerived(derived, { laneWidth: 4.8, asphaltY: 0.02, curbHeight: 0.17, trafficLightLaneThreshold: 3 });
+            const stops = placements.filter((p) => p?.kind === ROAD_TRAFFIC_CONTROL.STOP_SIGN);
+            assertEqual(stops.length, 1, 'Expected exactly one stop sign on the stem approach.');
+            assertEqual(stops[0]?.corner, 'epE', 'Expected stop sign to be placed on the stem endpoint.');
+        });
+    } catch (e) {
+        console.log('⏭️  Road markings/traffic controls tests skipped:', e.message);
+    }
+
     // ========== Road Debugger Authoring Tests (Task 55) ==========
     try {
         const { RoadDebuggerView } = await import('/src/graphics/gui/road_debugger/RoadDebuggerView.js');
@@ -4791,6 +5196,7 @@ async function runTests() {
             };
 
             const viewA = new RoadDebuggerView(engineA, { uiEnabled: false });
+            viewA.setAutoJunctionEnabled(false);
             viewA.startRoadDraft();
             viewA.addDraftPointByTile(0, 1);
             viewA.addDraftPointByTile(4, 1);
@@ -4942,11 +5348,11 @@ async function runTests() {
             }
         });
 
-	        test('RoadDebugger: markings toggle controls arrow/marking visibility', () => {
-	            const engine = {
-	                canvas: document.createElement('canvas'),
-	                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
-	                scene: new THREE.Scene(),
+        test('RoadDebugger: markings pipeline toggle controls arrow/marking visibility', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
                 clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
             };
 
@@ -4955,30 +5361,54 @@ async function runTests() {
             try {
                 view.startRoadDraft();
                 view.addDraftPointByTile(0, 0);
-	                view.addDraftPointByTile(1, 0);
-	                view.finishRoadDraft();
+                view.addDraftPointByTile(1, 0);
+                view.finishRoadDraft();
 
-	                const rows = Array.from(document.querySelectorAll('.road-debugger-row'));
-	                const markingsRow = rows.find((r) => r.textContent.includes('Markings')) ?? null;
-	                assertTrue(!!markingsRow, 'Expected Markings toggle row.');
-	                const input = markingsRow.querySelector('input[type="checkbox"]');
-	                assertTrue(!!input, 'Expected Markings checkbox input.');
+                const button = document.querySelector('.road-debugger-decoration-btn[data-step-id="markings"]');
+                assertTrue(!!button, 'Expected markings pipeline button.');
 
-	                assertTrue(view._markingsGroup?.visible !== false, 'Expected markings to be visible by default.');
+                assertTrue(view._markingsGroup?.visible !== false, 'Expected markings to be visible by default.');
 
-	                input.checked = false;
-	                input.dispatchEvent(new Event('change'));
-	                assertTrue(view._markingsGroup?.visible === false, 'Expected markings group to be hidden after toggle off.');
+                button.dispatchEvent(new Event('click'));
+                assertTrue(view._markingsGroup?.visible === false, 'Expected markings group to be hidden after toggle off.');
 
-	                input.checked = true;
-	                input.dispatchEvent(new Event('change'));
-	                assertTrue(view._markingsGroup?.visible === true, 'Expected markings group to be visible after toggle on.');
-	                assertTrue((view._markingLines?.length ?? 0) > 0, 'Expected lane marking line object.');
-	                assertTrue((view._arrowMeshes?.length ?? 0) > 0, 'Expected lane arrow mesh object.');
-	            } finally {
-	                view.exit();
-	            }
-	        });
+                button.dispatchEvent(new Event('click'));
+                assertTrue(view._markingsGroup?.visible === true, 'Expected markings group to be visible after toggle on.');
+                assertTrue((view._markingLines?.length ?? 0) > 0, 'Expected lane marking object.');
+                assertTrue((view._arrowMeshes?.length ?? 0) > 0, 'Expected lane arrow mesh object.');
+            } finally {
+                view.exit();
+            }
+        });
+
+        test('RoadDebugger: hovering approach renders traffic control marker when controls are visible', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); }
+            };
+
+            const view = new RoadDebuggerView(engine, { uiEnabled: true });
+            view.enter();
+            try {
+                const stopSigns = view._stopSignsGroup ?? null;
+                assertTrue(!!stopSigns, 'Expected stop signs group to exist.');
+                stopSigns.visible = true;
+
+                const instance = new THREE.Group();
+                instance.userData.trafficControl = { kind: 'stop_sign', corner: 'ep_test', approach: 'seg_test' };
+                instance.position.set(10, 0.5, 20);
+                stopSigns.add(instance);
+
+                view.setHoverApproach('j_test', 'ep_test');
+                assertTrue(view._trafficControlMarkerMesh?.visible === true, 'Expected traffic control marker to be visible on hover.');
+                assertNear(Number(view._trafficControlMarkerMesh?.position?.x) || 0, 10, 1e-6, 'Expected marker X to match traffic control.');
+                assertNear(Number(view._trafficControlMarkerMesh?.position?.z) || 0, 20, 1e-6, 'Expected marker Z to match traffic control.');
+            } finally {
+                view.exit();
+            }
+        });
 
 	        test('RoadDebugger: distance-scaled edge thickness is automatic (Task 89)', () => {
             const engine = {

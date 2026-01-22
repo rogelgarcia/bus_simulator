@@ -7,13 +7,13 @@ const DEFAULT_PIPELINE = Object.freeze([
         label: 'Markings',
         icon: 'edit_road',
         tooltip: 'Lane/center/corner markings (center line, lane dividers, edge lines, turn/corner markings).',
-        enabled: false
+        enabled: true
     }),
     Object.freeze({
         id: 'curbs',
         label: 'Curbs',
         icon: 'rounded_corner',
-        tooltip: 'Curb geometry along road edges (placeholder).',
+        tooltip: 'Curb geometry along road edges.',
         enabled: false
     }),
     Object.freeze({
@@ -41,7 +41,7 @@ const DEFAULT_PIPELINE = Object.freeze([
         id: 'sidewalks',
         label: 'Sidewalks',
         icon: 'sidewalk',
-        tooltip: 'Sidewalks, shoulders, and road-side widths (placeholder).',
+        tooltip: 'Sidewalk geometry along road edges.',
         enabled: false
     }),
     Object.freeze({
@@ -126,4 +126,3 @@ export function resolveRoadDecorationPipeline(input) {
         enabled: enabledById.has(step.id) ? enabledById.get(step.id) : !!step.enabled
     }));
 }
-

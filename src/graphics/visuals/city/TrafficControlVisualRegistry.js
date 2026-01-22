@@ -7,6 +7,14 @@ function applySolidMaterials(asset) {
     const solid = asset?.materials?.solid ?? null;
     if (!mesh || !solid) return;
     mesh.material = solid;
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const material of materials) {
+        if (!material) continue;
+        if ('transparent' in material) material.transparent = false;
+        if ('opacity' in material) material.opacity = 1.0;
+        if ('depthTest' in material) material.depthTest = true;
+        if ('depthWrite' in material) material.depthWrite = true;
+    }
 }
 
 function setTrafficLightArmLength(asset, armLength) {
@@ -69,4 +77,3 @@ export function createTrafficControlVisualAsset(kind, { useSolidMaterials = true
     if (useSolidMaterials) applySolidMaterials(asset);
     return { spec, asset };
 }
-

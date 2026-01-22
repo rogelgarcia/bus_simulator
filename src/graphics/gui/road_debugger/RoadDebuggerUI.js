@@ -685,10 +685,11 @@ export function setupUI(view) {
     const gridRow = makeToggleRow('Grid');
     gridRow.row.title = 'Show the world tile grid (visual reference for snapping and offsets).';
 
+    const wireframeRow = makeToggleRow('Wireframe');
+    wireframeRow.row.title = 'Render mesh surfaces in wireframe (debug).';
+
     const asphaltRow = makeToggleRow('Asphalt');
     asphaltRow.row.title = 'Render the asphalt surface polygons (uses trimmed kept pieces).';
-    const markingsRow = makeToggleRow('Markings');
-    markingsRow.row.title = 'Render lane markings and direction arrows along kept asphalt pieces.';
     const arrowTangentRow = makeToggleRow('Arrow tangents');
     arrowTangentRow.row.title = 'Render short tangent lines at lane arrow centers to validate orientation.';
     const dividerRow = makeToggleRow('Divider');
@@ -718,8 +719,8 @@ export function setupUI(view) {
     roadsLogical.appendChild(makeVizSubhead('Logical'));
     const roadsLogicalGrid = document.createElement('div');
     roadsLogicalGrid.className = 'road-debugger-toggle-grid';
+    roadsLogicalGrid.appendChild(wireframeRow.row);
     roadsLogicalGrid.appendChild(asphaltRow.row);
-    roadsLogicalGrid.appendChild(markingsRow.row);
     roadsLogical.appendChild(roadsLogicalGrid);
     roadsPanel.appendChild(roadsLogical);
 
@@ -1388,8 +1389,8 @@ export function setupUI(view) {
     };
 
     const onGridChange = () => view.setGridEnabled(gridRow.input.checked);
+    const onWireframeChange = () => view.setMeshWireframeEnabled?.(wireframeRow.input.checked);
     const onAsphaltChange = () => view.setRenderOptions({ asphalt: asphaltRow.input.checked });
-    const onMarkingsChange = () => view.setRenderOptions({ markings: markingsRow.input.checked });
     const onArrowTangentChange = () => view.setArrowTangentDebugEnabled?.(arrowTangentRow.input.checked);
     const onDividerChange = () => view.setRenderOptions({ centerline: dividerRow.input.checked });
     const onDirCenterChange = () => view.setRenderOptions({ directionCenterlines: dirCenterRow.input.checked });
@@ -1622,8 +1623,8 @@ export function setupUI(view) {
     window.addEventListener('resize', onResize);
 
     gridRow.input.addEventListener('change', onGridChange);
+    wireframeRow.input.addEventListener('change', onWireframeChange);
     asphaltRow.input.addEventListener('change', onAsphaltChange);
-    markingsRow.input.addEventListener('change', onMarkingsChange);
     arrowTangentRow.input.addEventListener('change', onArrowTangentChange);
     dividerRow.input.addEventListener('change', onDividerChange);
     dirCenterRow.input.addEventListener('change', onDirCenterChange);
@@ -2026,8 +2027,8 @@ export function setupUI(view) {
         gridPanel.classList.toggle('is-active', vizMode === 'grid');
 
         gridRow.input.checked = view._gridEnabled !== false;
+        wireframeRow.input.checked = view.getMeshWireframeEnabled?.() ?? view._meshWireframeEnabled === true;
         asphaltRow.input.checked = view._renderOptions?.asphalt !== false;
-        markingsRow.input.checked = view._renderOptions?.markings === true;
         arrowTangentRow.input.checked = view.getArrowTangentDebugEnabled?.() ?? view._arrowTangentDebugEnabled === true;
         dividerRow.input.checked = view._renderOptions?.centerline !== false;
         dirCenterRow.input.checked = view._renderOptions?.directionCenterlines !== false;
@@ -2713,8 +2714,8 @@ export function setupUI(view) {
             selectionRect.style.display = 'none';
         },
         gridToggle: gridRow.input,
+        wireframeToggle: wireframeRow.input,
         asphaltToggle: asphaltRow.input,
-        markingsToggle: markingsRow.input,
         arrowTangentToggle: arrowTangentRow.input,
         dividerToggle: dividerRow.input,
         dirCenterToggle: dirCenterRow.input,
@@ -2774,8 +2775,8 @@ export function setupUI(view) {
         tangentNumber,
         sync,
         _onGridChange: onGridChange,
+        _onWireframeChange: onWireframeChange,
         _onAsphaltChange: onAsphaltChange,
-        _onMarkingsChange: onMarkingsChange,
         _onArrowTangentChange: onArrowTangentChange,
         _onDividerChange: onDividerChange,
         _onDirCenterChange: onDirCenterChange,
@@ -2842,8 +2843,8 @@ export function destroyUI(view) {
     ui.helpBtn?.removeEventListener?.('click', ui._onHelp);
     ui.helpClose?.removeEventListener?.('click', ui._onHelpClose);
     ui.gridToggle?.removeEventListener?.('change', ui._onGridChange);
+    ui.wireframeToggle?.removeEventListener?.('change', ui._onWireframeChange);
     ui.asphaltToggle?.removeEventListener?.('change', ui._onAsphaltChange);
-    ui.markingsToggle?.removeEventListener?.('change', ui._onMarkingsChange);
     ui.arrowTangentToggle?.removeEventListener?.('change', ui._onArrowTangentChange);
     ui.dividerToggle?.removeEventListener?.('change', ui._onDividerChange);
     ui.dirCenterToggle?.removeEventListener?.('change', ui._onDirCenterChange);
