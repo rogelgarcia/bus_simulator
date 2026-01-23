@@ -867,12 +867,3 @@ export function getSignAssetById(signId) {
     if (!asset) throw new Error(`[SignAssets] Unknown sign id: ${signId}`);
     return asset;
 }
-
-export function resolveSignAssetModulePath(signId) {
-    const id = typeof signId === 'string' ? signId : '';
-    const parts = id.split('.');
-    if (parts.length !== 3 || parts[0] !== 'sign') return null;
-    const atlasId = parts[1];
-    const token = parts[2];
-    return `/src/graphics/assets3d/textures/signs/${atlasId}/sign_${atlasId}_${token}.js`;
-}
