@@ -143,7 +143,13 @@ export function triangulateSimplePolygonXZ(points, { epsilon = 1e-6 } = {}) {
     const eps = Number.isFinite(Number(epsilon)) ? Number(epsilon) : 1e-6;
     const vertices = cleanPolygon(points, Math.max(EPS, eps));
     if (vertices.length < 3) return { vertices, indices: [] };
-    return { vertices, indices: triangulateEarClip(vertices, Math.max(EPS, eps)) };
+    const indices = triangulateEarClip(vertices, Math.max(EPS, eps));
+    for (let i = 0; i + 2 < indices.length; i += 3) {
+        const tmp = indices[i + 1];
+        indices[i + 1] = indices[i + 2];
+        indices[i + 2] = tmp;
+    }
+    return { vertices, indices };
 }
 
 export function buildRoadEnginePolygonMeshData(primitives, { epsilon = 1e-6 } = {}) {
@@ -166,4 +172,3 @@ export function buildRoadEnginePolygonMeshData(primitives, { epsilon = 1e-6 } = 
     }
     return out;
 }
-

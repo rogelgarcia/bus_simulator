@@ -327,8 +327,8 @@ export function buildRoadCurbMeshDataFromRoadEnginePrimitives(primitives, {
             const aoBot = { x: ao.x, y: bottomY, z: ao.z };
             const boBot = { x: bo.x, y: bottomY, z: bo.z };
 
-            pushQuad(positions, aTop, aoTop, boTop, bTop);
-            pushQuad(positions, aBot, bBot, boBot, aoBot);
+            pushQuad(positions, aTop, bTop, boTop, aoTop);
+            pushQuad(positions, aBot, aoBot, boBot, bBot);
             pushQuad(positions, aBot, bBot, bTop, aTop);
             pushQuad(positions, aoBot, aoTop, boTop, boBot);
         }

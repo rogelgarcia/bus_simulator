@@ -17,6 +17,15 @@ function clampNumber(value, fallback) {
     return Number.isFinite(n) ? n : fallback;
 }
 
+function applyTextureColorSpace(tex, { srgb = true } = {}) {
+    if (!tex) return;
+    if ('colorSpace' in tex) {
+        tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+        return;
+    }
+    if ('encoding' in tex) tex.encoding = srgb ? THREE.sRGBEncoding : THREE.LinearEncoding;
+}
+
 function resolveRoadConfig(config) {
     const cfg = config && typeof config === 'object' ? config : {};
     const road = cfg.road && typeof cfg.road === 'object' ? cfg.road : {};
@@ -33,6 +42,23 @@ function resolveMaterials(materials, { debugMode = false } = {}) {
     const laneWhite = base.laneWhite ?? new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.35, metalness: 0.0 });
     const laneYellow = base.laneYellow ?? new THREE.MeshStandardMaterial({ color: 0xf2d34f, roughness: 0.35, metalness: 0.0 });
 
+    const ensureDecalMaterial = (mat, opts) => {
+        if (!mat) return mat;
+        const factor = clampNumber(opts?.factor, 0);
+        const units = clampNumber(opts?.units, -1);
+        mat.transparent = true;
+        mat.opacity = 1.0;
+        mat.depthWrite = false;
+        mat.blending = THREE.NoBlending;
+        mat.polygonOffset = true;
+        mat.polygonOffsetFactor = factor;
+        mat.polygonOffsetUnits = units;
+        return mat;
+    };
+
+    ensureDecalMaterial(laneWhite);
+    ensureDecalMaterial(laneYellow);
+
     if (!debugMode) return { road, sidewalk, curb, laneWhite, laneYellow };
 
     const toBasic = (mat) => {
@@ -48,13 +74,194 @@ function resolveMaterials(materials, { debugMode = false } = {}) {
         return out;
     };
 
+    const toDecalBasic = (mat) => {
+        const c = mat?.color?.getHex?.() ?? 0xffffff;
+        const out = new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 1.0 });
+        out.toneMapped = false;
+        out.depthWrite = false;
+        out.blending = THREE.NoBlending;
+        if (mat?.side != null) out.side = mat.side;
+        const factor = clampNumber(mat?.polygonOffsetFactor, 0);
+        const units = clampNumber(mat?.polygonOffsetUnits, -1);
+        out.polygonOffset = true;
+        out.polygonOffsetFactor = factor;
+        out.polygonOffsetUnits = units;
+        return out;
+    };
+
     return {
         road: toBasic(road),
         sidewalk: toBasic(sidewalk),
         curb: toBasic(curb),
-        laneWhite: toBasic(laneWhite),
-        laneYellow: toBasic(laneYellow)
+        laneWhite: toDecalBasic(laneWhite),
+        laneYellow: toDecalBasic(laneYellow)
     };
+}
+
+function nextPow2(value) {
+    const n = Math.max(1, Math.ceil(Number(value) || 1));
+    return 2 ** Math.ceil(Math.log2(n));
+}
+
+function clampPow2(value, { min = 512, max = 4096 } = {}) {
+    const lo = Math.max(1, nextPow2(min));
+    const hi = Math.max(lo, nextPow2(max));
+    const v = nextPow2(value);
+    return Math.min(hi, Math.max(lo, v));
+}
+
+function getMapBoundsXZ(map) {
+    const tileSize = Math.max(EPS, clampNumber(map?.tileSize, 1));
+    const width = Math.max(1, Math.trunc(map?.width ?? 1));
+    const height = Math.max(1, Math.trunc(map?.height ?? 1));
+    const origin = map?.origin ?? { x: 0, z: 0 };
+
+    const half = tileSize * 0.5;
+    const minX = clampNumber(origin?.x, 0) - half;
+    const minZ = clampNumber(origin?.z, 0) - half;
+    const sizeX = width * tileSize;
+    const sizeZ = height * tileSize;
+
+    return { minX, minZ, sizeX, sizeZ };
+}
+
+function createRoadMarkingsTexture(markings, { bounds, laneWidth = 4.8, lineWidthMeters = null, pixelsPerMeter = 6, maxSize = 4096 } = {}) {
+    const b = bounds && typeof bounds === 'object' ? bounds : null;
+    if (!b) return null;
+    const sizeX = clampNumber(b.sizeX, 0);
+    const sizeZ = clampNumber(b.sizeZ, 0);
+    if (!(sizeX > EPS) || !(sizeZ > EPS)) return null;
+
+    const ppm = Math.max(0.1, clampNumber(pixelsPerMeter, 6));
+    const canvasW = clampPow2(sizeX * ppm, { min: 512, max: maxSize });
+    const canvasH = clampPow2(sizeZ * ppm, { min: 512, max: maxSize });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = canvasW;
+    canvas.height = canvasH;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    const scaleX = canvasW / sizeX;
+    const scaleZ = canvasH / sizeZ;
+    const pxPerMeter = Math.min(scaleX, scaleZ);
+
+    const lw = Math.max(EPS, clampNumber(laneWidth, 4.8));
+    const widthMeters = Math.max(0.02, clampNumber(lineWidthMeters, lw * 0.07));
+    const lineWidthPx = Math.max(1, widthMeters * pxPerMeter);
+
+    const toX = (x) => (clampNumber(x, 0) - b.minX) * scaleX;
+    const toY = (z) => (clampNumber(z, 0) - b.minZ) * scaleZ;
+
+    const drawSegments = (segments, color) => {
+        const arr = segments instanceof Float32Array ? segments : (Array.isArray(segments) ? new Float32Array(segments) : null);
+        if (!arr?.length) return;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = lineWidthPx;
+        ctx.lineCap = 'butt';
+        ctx.lineJoin = 'miter';
+        ctx.beginPath();
+        for (let i = 0; i + 5 < arr.length; i += 6) {
+            const x0 = toX(arr[i]);
+            const y0 = toY(arr[i + 2]);
+            const x1 = toX(arr[i + 3]);
+            const y1 = toY(arr[i + 5]);
+            ctx.moveTo(x0, y0);
+            ctx.lineTo(x1, y1);
+        }
+        ctx.stroke();
+    };
+
+    const drawTriangles = (positions, color) => {
+        const arr = positions instanceof Float32Array ? positions : (Array.isArray(positions) ? new Float32Array(positions) : null);
+        if (!arr?.length) return;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        for (let i = 0; i + 8 < arr.length; i += 9) {
+            ctx.moveTo(toX(arr[i]), toY(arr[i + 2]));
+            ctx.lineTo(toX(arr[i + 3]), toY(arr[i + 5]));
+            ctx.lineTo(toX(arr[i + 6]), toY(arr[i + 8]));
+            ctx.closePath();
+        }
+        ctx.fill();
+    };
+
+    ctx.clearRect(0, 0, canvasW, canvasH);
+
+    drawSegments(markings?.yellowLineSegments ?? null, '#f2d34f');
+    drawSegments(markings?.whiteLineSegments ?? null, '#f2f2f2');
+    drawTriangles(markings?.crosswalkPositions ?? null, '#f2f2f2');
+    drawTriangles(markings?.arrowPositions ?? null, '#f2f2f2');
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.name = 'RoadMarkingsTexture';
+    tex.flipY = false;
+    tex.anisotropy = 16;
+    tex.generateMipmaps = false;
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    applyTextureColorSpace(tex, { srgb: true });
+    tex.needsUpdate = true;
+    return tex;
+}
+
+function createAsphaltMaterialWithMarkings(baseMaterial, { markingsTexture = null, bounds = null } = {}) {
+    if (!baseMaterial || !markingsTexture || !bounds) return baseMaterial;
+
+    const minX = clampNumber(bounds?.minX, 0);
+    const minZ = clampNumber(bounds?.minZ, 0);
+    const sizeX = clampNumber(bounds?.sizeX, 1);
+    const sizeZ = clampNumber(bounds?.sizeZ, 1);
+    const invX = sizeX > EPS ? 1 / sizeX : 1;
+    const invZ = sizeZ > EPS ? 1 / sizeZ : 1;
+
+    const mat = baseMaterial.clone();
+    mat.userData = { ...(mat.userData ?? {}), roadMarkingsOverlay: true };
+
+    const prevOnBeforeCompile = mat.onBeforeCompile;
+    mat.onBeforeCompile = (shader) => {
+        prevOnBeforeCompile?.(shader);
+        shader.extensions = shader.extensions || {};
+        shader.extensions.derivatives = true;
+        shader.uniforms.uRoadMarkingsMap = { value: markingsTexture };
+        shader.uniforms.uRoadMarkingsMin = { value: new THREE.Vector2(minX, minZ) };
+        shader.uniforms.uRoadMarkingsInvSize = { value: new THREE.Vector2(invX, invZ) };
+
+        shader.vertexShader = shader.vertexShader.replace(
+            '#include <common>',
+            '#include <common>\nvarying vec3 vRoadMarkingsWorldPos;'
+        );
+        shader.vertexShader = shader.vertexShader.replace(
+            '#include <worldpos_vertex>',
+            '#include <worldpos_vertex>\nvRoadMarkingsWorldPos = worldPosition.xyz;'
+        );
+
+        shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <common>',
+            '#include <common>\nuniform sampler2D uRoadMarkingsMap;\nuniform vec2 uRoadMarkingsMin;\nuniform vec2 uRoadMarkingsInvSize;\nvarying vec3 vRoadMarkingsWorldPos;'
+        );
+        shader.fragmentShader = shader.fragmentShader.replace(
+            'vec4 diffuseColor = vec4( diffuse, opacity );',
+            [
+                'vec4 diffuseColor = vec4( diffuse, opacity );',
+                'vec2 roadUv = (vRoadMarkingsWorldPos.xz - uRoadMarkingsMin) * uRoadMarkingsInvSize;',
+                'roadUv = clamp(roadUv, 0.0, 1.0);',
+                'vec4 roadMark = texture2D(uRoadMarkingsMap, roadUv);',
+                'float a = roadMark.a;',
+                'float w = fwidth(a);',
+                'float mask = smoothstep(0.5 - w, 0.5 + w, a);',
+                'diffuseColor.rgb = mix(diffuseColor.rgb, roadMark.rgb, mask);'
+            ].join('\n')
+        );
+    };
+
+    mat.customProgramCacheKey = () => 'AsphaltWithMarkings_v2';
+    mat.needsUpdate = true;
+
+    return mat;
 }
 
 function buildCombinedPolygonGeometry(polygonMeshData, y) {
@@ -320,6 +527,7 @@ export function createRoadEngineRoads({
     const includeMarkings = opt.includeMarkings !== false;
     const includeJunctions = opt.includeJunctions !== false;
     const includeDebug = opt.includeDebug !== false;
+    const markingsMode = (opt.markingsMode === 'baked') ? 'baked' : 'meshes';
 
     const laneWidth = Math.max(EPS, clampNumber(roadCfg?.laneWidth, 4.8));
     const shoulder = Math.max(0, clampNumber(roadCfg?.shoulder, 0.525));
@@ -328,13 +536,11 @@ export function createRoadEngineRoads({
     const baseRoadY = clampNumber(roadCfg?.surfaceY, 0.02);
     const groundY = clampNumber(groundCfg?.surfaceY, baseRoadY);
 
-    const asphaltLift = Math.max(0.001, laneWidth * 0.0005);
-    const asphaltY = baseRoadY + asphaltLift;
-    const markingLift = Math.max(0.001, clampNumber(roadCfg?.markings?.lift, 0.003));
-    const markingY = asphaltY + markingLift;
-    const paintLift = Math.max(0.0005, markingLift * 0.25);
-    const arrowY = markingY + paintLift;
-    const crosswalkY = markingY + paintLift;
+    const asphaltY = groundY;
+    const markingsLift = Math.max(0, clampNumber(roadCfg?.markings?.lift, 0));
+    const markingY = asphaltY + markingsLift;
+    const arrowY = markingY;
+    const crosswalkY = markingY;
 
     const curbThickness = Math.max(0, clampNumber(roadCfg?.curb?.thickness, 0.48));
     const curbHeight = Math.max(0, clampNumber(roadCfg?.curb?.height, 0.17));
@@ -392,13 +598,45 @@ export function createRoadEngineRoads({
     const primitives = Array.isArray(derived?.primitives) ? derived.primitives : [];
     const asphaltPolys = primitives.filter((p) => p?.type === 'polygon' && (p.kind === 'asphalt_piece' || p.kind === 'junction_surface'));
 
+    let markings = null;
+    let markingsTexture = null;
+    const useMarkingMeshes = includeMarkings && (markingsMode === 'meshes' || debugMode);
+    const useMarkingTexture = includeMarkings && !useMarkingMeshes;
+
+    if (includeMarkings) {
+        markings = buildRoadMarkingsMeshDataFromRoadEngineDerived(derived, {
+            laneWidth,
+            markingY,
+            arrowY,
+            crosswalkY,
+            boundaryEpsilon: 1e-4
+        });
+
+        if (useMarkingTexture && map) {
+            const bounds = getMapBoundsXZ(map);
+            const markingsCfg = (roadCfg?.markings && typeof roadCfg.markings === 'object') ? roadCfg.markings : null;
+            const markingsLineWidth = clampNumber(markingsCfg?.lineWidth, null);
+            const markingsPixelsPerMeter = Math.max(0.1, clampNumber(opt.markingsTexturePixelsPerMeter, 6));
+            const markingsMaxSize = Math.max(256, Math.trunc(clampNumber(opt.markingsTextureMaxSize, 4096)));
+            markingsTexture = createRoadMarkingsTexture(markings, {
+                bounds,
+                laneWidth,
+                lineWidthMeters: markingsLineWidth,
+                pixelsPerMeter: markingsPixelsPerMeter,
+                maxSize: markingsMaxSize
+            });
+            if (markingsTexture) {
+                mats.road = createAsphaltMaterialWithMarkings(mats.road, { markingsTexture, bounds });
+            }
+        }
+    }
+
     const polygonMeshData = buildRoadEnginePolygonMeshData(asphaltPolys);
     const geo = buildCombinedPolygonGeometry(polygonMeshData, asphaltY);
     const asphaltMesh = geo ? new THREE.Mesh(geo, mats.road) : null;
     if (asphaltMesh) {
         asphaltMesh.name = 'Asphalt';
         asphaltMesh.receiveShadow = true;
-        asphaltMesh.renderOrder = 0;
         group.add(asphaltMesh);
     }
 
@@ -421,7 +659,6 @@ export function createRoadEngineRoads({
             curbMesh = new THREE.Mesh(curbGeo, mats.curb);
             curbMesh.name = 'CurbBlocks';
             curbMesh.receiveShadow = true;
-            curbMesh.renderOrder = 0.5;
             group.add(curbMesh);
         }
     }
@@ -445,30 +682,18 @@ export function createRoadEngineRoads({
             sidewalkMesh = new THREE.Mesh(sidewalkGeo, mats.sidewalk);
             sidewalkMesh.name = 'Sidewalk';
             sidewalkMesh.receiveShadow = true;
-            sidewalkMesh.renderOrder = 0.75;
             group.add(sidewalkMesh);
         }
     }
 
     const markingsGroup = new THREE.Group();
     markingsGroup.name = 'Markings';
-    markingsGroup.renderOrder = 1;
     group.add(markingsGroup);
 
-    let markings = null;
-    if (includeMarkings) {
-        markings = buildRoadMarkingsMeshDataFromRoadEngineDerived(derived, {
-            laneWidth,
-            markingY,
-            arrowY,
-            crosswalkY,
-            boundaryEpsilon: 1e-4
-        });
-
+    if (useMarkingMeshes && markings) {
         const meshes = createRoadMarkingsMeshesFromData(markings, {
             laneWidth,
-            materials: { white: mats.laneWhite, yellow: mats.laneYellow },
-            renderOrder: { white: 1.1, yellow: 1.15, crosswalk: 1.2, arrow: 1.25 }
+            materials: { white: mats.laneWhite, yellow: mats.laneYellow }
         });
 
         if (meshes.markingsWhite) markingsGroup.add(meshes.markingsWhite);

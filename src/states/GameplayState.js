@@ -222,7 +222,7 @@ export class GameplayState {
         this.engine.context.selectedBus = this.busModel;
 
         // Position anchor on road
-        const roadY = this.city?.genConfig?.road?.surfaceY ?? 0;
+        const roadY = this.city?.generatorConfig?.ground?.surfaceY ?? this.city?.generatorConfig?.road?.surfaceY ?? 0;
         this.busAnchor.position.set(0, roadY, 0);
         this.busAnchor.rotation.set(0, 0, 0);
         snapToGroundY(this.busAnchor, roadY);

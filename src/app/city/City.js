@@ -32,6 +32,7 @@ export class City {
             fogColor: '#dff3ff',
             fogNear: 80,
             fogFar: 900,
+            cameraNear: 0.5,
             cameraFar: 2500
         };
 
@@ -175,12 +176,14 @@ export class City {
         this._restore = {
             bg: engine.scene.background,
             fog: engine.scene.fog,
+            near: engine.camera.near,
             far: engine.camera.far
         };
 
         engine.scene.background = null;
         engine.scene.fog = new THREE.Fog(this.config.fogColor, this.config.fogNear, this.config.fogFar);
 
+        engine.camera.near = Math.max(engine.camera.near, this.config.cameraNear);
         engine.camera.far = Math.max(engine.camera.far, this.config.cameraFar);
         engine.camera.updateProjectionMatrix();
 
@@ -196,6 +199,7 @@ export class City {
         if (this._restore) {
             engine.scene.background = this._restore.bg ?? null;
             engine.scene.fog = this._restore.fog ?? null;
+            engine.camera.near = this._restore.near ?? engine.camera.near;
             engine.camera.far = this._restore.far ?? engine.camera.far;
             engine.camera.updateProjectionMatrix();
         }

@@ -41,11 +41,12 @@ export function createCityWorld({
         roughness: 1.0,
         metalness: 0.0
     });
+    floorMat.polygonOffset = true;
+    floorMat.polygonOffsetFactor = 1;
+    floorMat.polygonOffsetUnits = 1;
 
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.name = 'CityFloor';
-    // Put the base grass plane slightly below the shared surface to avoid z-fighting with asphalt.
-    // The instanced grass tiles still sit on the true surface Y.
     floor.position.y = computedGroundY - FLOOR_EPS;
     floor.receiveShadow = true;
     floor.renderOrder = -30;
@@ -64,6 +65,9 @@ export function createCityWorld({
             roughness: 1.0,
             metalness: 0.0
         });
+        tilesMat.polygonOffset = true;
+        tilesMat.polygonOffsetFactor = 1;
+        tilesMat.polygonOffsetUnits = 1;
 
         groundTiles = new THREE.InstancedMesh(tileGeo, tilesMat, map.width * map.height);
         groundTiles.name = 'GroundTiles';

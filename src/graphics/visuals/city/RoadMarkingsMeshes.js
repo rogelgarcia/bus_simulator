@@ -103,7 +103,6 @@ export function createRoadMarkingsMeshesFromData(
     } = {}
 ) {
     const mats = materials && typeof materials === 'object' ? materials : {};
-    const orders = renderOrder && typeof renderOrder === 'object' ? renderOrder : {};
     const meta = userData && typeof userData === 'object' ? userData : {};
 
     const whiteMat = mats.white ?? mats.arrow ?? null;
@@ -111,6 +110,13 @@ export function createRoadMarkingsMeshesFromData(
     const crosswalkMat = mats.crosswalk ?? whiteMat;
     const arrowMat = mats.arrow ?? whiteMat;
     const arrowTangentMat = mats.arrowTangent ?? null;
+    const orders = renderOrder && typeof renderOrder === 'object' ? renderOrder : null;
+
+    const applyRenderOrder = (mesh, key) => {
+        if (!mesh || !orders || !Object.prototype.hasOwnProperty.call(orders, key)) return;
+        const n = Number(orders[key]);
+        if (Number.isFinite(n)) mesh.renderOrder = n;
+    };
 
     const out = {
         markingsWhite: null,
@@ -127,7 +133,7 @@ export function createRoadMarkingsMeshesFromData(
             const mesh = new THREE.Mesh(geo, whiteMat);
             mesh.name = 'MarkingsWhite';
             mesh.userData = meta.white != null ? meta.white : { type: 'lane_markings_white' };
-            mesh.renderOrder = clampNumber(orders.white, 1.1);
+            applyRenderOrder(mesh, 'white');
             out.markingsWhite = mesh;
         }
     }
@@ -139,7 +145,7 @@ export function createRoadMarkingsMeshesFromData(
             const mesh = new THREE.Mesh(geo, yellowMat);
             mesh.name = 'MarkingsYellow';
             mesh.userData = meta.yellow != null ? meta.yellow : { type: 'lane_markings_centerline' };
-            mesh.renderOrder = clampNumber(orders.yellow, 1.15);
+            applyRenderOrder(mesh, 'yellow');
             out.markingsYellow = mesh;
         }
     }
@@ -151,7 +157,7 @@ export function createRoadMarkingsMeshesFromData(
             const mesh = new THREE.Mesh(geo, crosswalkMat);
             mesh.name = 'Crosswalks';
             mesh.userData = meta.crosswalk != null ? meta.crosswalk : { type: 'crosswalks' };
-            mesh.renderOrder = clampNumber(orders.crosswalk, 1.2);
+            applyRenderOrder(mesh, 'crosswalk');
             out.crosswalks = mesh;
         }
     }
@@ -163,7 +169,7 @@ export function createRoadMarkingsMeshesFromData(
             const mesh = new THREE.Mesh(geo, arrowMat);
             mesh.name = 'LaneArrows';
             mesh.userData = meta.arrow != null ? meta.arrow : { type: 'lane_arrows' };
-            mesh.renderOrder = clampNumber(orders.arrow, 1.25);
+            applyRenderOrder(mesh, 'arrow');
             out.arrows = mesh;
         }
     }
@@ -177,10 +183,9 @@ export function createRoadMarkingsMeshesFromData(
         const lines = new THREE.LineSegments(geo, arrowTangentMat);
         lines.name = 'ArrowTangents';
         lines.userData = meta.arrowTangent != null ? meta.arrowTangent : { type: 'arrow_tangents' };
-        lines.renderOrder = clampNumber(orders.arrowTangent, 3);
+        applyRenderOrder(lines, 'arrowTangent');
         out.arrowTangents = lines;
     }
 
     return out;
 }
-

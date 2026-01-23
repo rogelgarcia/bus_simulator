@@ -332,7 +332,7 @@ export function buildRoadSidewalkMeshDataFromRoadEnginePrimitives(primitives, {
             const aoBot = { x: ao.x, y: baseY, z: ao.z };
             const boBot = { x: bo.x, y: baseY, z: bo.z };
 
-            pushQuad(positions, aTop, aoTop, boTop, bTop);
+            pushQuad(positions, aTop, bTop, boTop, aoTop);
             pushQuad(positions, aBot, bBot, bTop, aTop);
             pushQuad(positions, aoBot, aoTop, boTop, boBot);
         }

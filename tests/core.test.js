@@ -94,6 +94,162 @@ async function runTests() {
         assertEqual(bus.listenerCount('b'), 0, 'Should have 0 listeners for b.');
     });
 
+    // ========== RoadEngineMeshData Tests ==========
+    const { triangulateSimplePolygonXZ } = await import('/src/app/road_engine/RoadEngineMeshData.js');
+    const { buildRoadCurbMeshDataFromRoadEnginePrimitives } = await import('/src/app/road_decoration/curbs/RoadCurbBuilder.js');
+    const { buildRoadSidewalkMeshDataFromRoadEnginePrimitives } = await import('/src/app/road_decoration/sidewalks/RoadSidewalkBuilder.js');
+
+    test('RoadEngineMeshData: triangulation faces +Y', () => {
+        const square = [
+            { x: 0, z: 0 },
+            { x: 10, z: 0 },
+            { x: 10, z: 10 },
+            { x: 0, z: 10 }
+        ];
+
+        const cases = [square, square.slice().reverse()];
+        for (const pts of cases) {
+            const { vertices, indices } = triangulateSimplePolygonXZ(pts);
+            assertTrue(indices.length >= 3, 'Expected triangle indices.');
+            for (let i = 0; i + 2 < indices.length; i += 3) {
+                const a = vertices[indices[i]];
+                const b = vertices[indices[i + 1]];
+                const c = vertices[indices[i + 2]];
+                const y = (b.z - a.z) * (c.x - a.x) - (b.x - a.x) * (c.z - a.z);
+                assertTrue(y > 1e-9, `Expected +Y facing triangle, got ${y}.`);
+            }
+        }
+    });
+
+    test('RoadCurbBuilder: top faces +Y', () => {
+        const prims = [{
+            type: 'polygon',
+            kind: 'asphalt_piece',
+            points: [
+                { x: 0, z: 0 },
+                { x: 10, z: 0 },
+                { x: 10, z: 10 },
+                { x: 0, z: 10 }
+            ]
+        }];
+
+        const surfaceY = 0;
+        const curbHeight = 0.2;
+        const curbExtraHeight = 0.1;
+        const curbSink = 0.15;
+        const topY = surfaceY + curbHeight + curbExtraHeight;
+        const bottomY = surfaceY - curbSink;
+
+        const data = buildRoadCurbMeshDataFromRoadEnginePrimitives(prims, {
+            surfaceY,
+            curbThickness: 0.5,
+            curbHeight,
+            curbExtraHeight,
+            curbSink
+        });
+
+        const positions = data?.positions ?? null;
+        assertTrue(positions && positions.length > 0, 'Expected curb positions.');
+
+        let topTris = 0;
+        let bottomTris = 0;
+        const eps = 1e-6;
+        for (let i = 0; i + 8 < positions.length; i += 9) {
+            const ax = positions[i];
+            const ay = positions[i + 1];
+            const az = positions[i + 2];
+            const bx = positions[i + 3];
+            const by = positions[i + 4];
+            const bz = positions[i + 5];
+            const cx = positions[i + 6];
+            const cy = positions[i + 7];
+            const cz = positions[i + 8];
+
+            const abx = bx - ax;
+            const aby = by - ay;
+            const abz = bz - az;
+            const acx = cx - ax;
+            const acy = cy - ay;
+            const acz = cz - az;
+            const ny = abz * acx - abx * acz;
+
+            const isTop = Math.abs(ay - topY) <= eps && Math.abs(by - topY) <= eps && Math.abs(cy - topY) <= eps;
+            const isBottom = Math.abs(ay - bottomY) <= eps && Math.abs(by - bottomY) <= eps && Math.abs(cy - bottomY) <= eps;
+
+            if (isTop) {
+                topTris += 1;
+                assertTrue(ny > 1e-9, `Expected curb top face +Y, got ${ny}.`);
+            }
+
+            if (isBottom) {
+                bottomTris += 1;
+                assertTrue(ny < -1e-9, `Expected curb bottom face -Y, got ${ny}.`);
+            }
+        }
+
+        assertTrue(topTris > 0, 'Expected curb top triangles.');
+        assertTrue(bottomTris > 0, 'Expected curb bottom triangles.');
+    });
+
+    test('RoadSidewalkBuilder: top faces +Y', () => {
+        const prims = [{
+            type: 'polygon',
+            kind: 'asphalt_piece',
+            points: [
+                { x: 0, z: 0 },
+                { x: 10, z: 0 },
+                { x: 10, z: 10 },
+                { x: 0, z: 10 }
+            ]
+        }];
+
+        const surfaceY = 0;
+        const curbHeight = 0.2;
+        const curbExtraHeight = 0.1;
+        const sidewalkLift = 0.05;
+        const topY = surfaceY + curbHeight + curbExtraHeight + sidewalkLift;
+
+        const data = buildRoadSidewalkMeshDataFromRoadEnginePrimitives(prims, {
+            surfaceY,
+            curbThickness: 0.5,
+            curbHeight,
+            curbExtraHeight,
+            sidewalkWidth: 1.2,
+            sidewalkLift
+        });
+
+        const positions = data?.positions ?? null;
+        assertTrue(positions && positions.length > 0, 'Expected sidewalk positions.');
+
+        let topTris = 0;
+        const eps = 1e-6;
+        for (let i = 0; i + 8 < positions.length; i += 9) {
+            const ax = positions[i];
+            const ay = positions[i + 1];
+            const az = positions[i + 2];
+            const bx = positions[i + 3];
+            const by = positions[i + 4];
+            const bz = positions[i + 5];
+            const cx = positions[i + 6];
+            const cy = positions[i + 7];
+            const cz = positions[i + 8];
+
+            const isTop = Math.abs(ay - topY) <= eps && Math.abs(by - topY) <= eps && Math.abs(cy - topY) <= eps;
+            if (!isTop) continue;
+
+            const abx = bx - ax;
+            const abz = bz - az;
+            const acx = cx - ax;
+            const acz = cz - az;
+            const ny = abz * acx - abx * acz;
+
+            topTris += 1;
+            assertTrue(ny > 1e-9, `Expected sidewalk top face +Y, got ${ny}.`);
+        }
+
+        assertTrue(topTris > 0, 'Expected sidewalk top triangles.');
+    });
+
     // ========== Building Fabrication Mini Controller Utils ==========
     const { clampNumber, clampInt, formatFixed } = await import('/src/graphics/gui/building_fabrication/mini_controllers/RangeNumberUtils.js');
     const { createMaterialPickerRowController } = await import('/src/graphics/gui/building_fabrication/mini_controllers/MaterialPickerRowController.js');
@@ -4142,6 +4298,12 @@ async function runTests() {
             assertTrue((roads?.debug?.derived?.segments?.length ?? 0) > 0, 'Expected derived segments from RoadEngine.');
             assertTrue((roads?.debug?.edges?.length ?? 0) > 0, 'Expected debug edges for RoadGraph overlay.');
             assertTrue((roads?.debug?.intersections?.length ?? 0) > 0, 'Expected intersection polygons from junction surfaces.');
+
+            const asphalt = roads?.group?.getObjectByName?.('Asphalt') ?? null;
+            assertTrue(asphalt?.isMesh === true, 'Expected an Asphalt mesh.');
+
+            const white = roads?.group?.getObjectByName?.('MarkingsWhite') ?? null;
+            assertTrue(white?.isMesh === true, 'Expected MarkingsWhite mesh in default mode.');
         });
 
         test('City: uses RoadEngine roads pipeline (AI 149)', () => {
