@@ -4331,9 +4331,14 @@ async function runTests() {
     }
 
     // ========== Road Markings + Traffic Controls Tests (AI 158/159) ==========
-    try {
-        const { buildRoadMarkingsMeshDataFromRoadEngineDerived } = await import('/src/app/road_decoration/markings/RoadMarkingsBuilder.js');
-        const { computeRoadTrafficControlPlacementsFromRoadEngineDerived, ROAD_TRAFFIC_CONTROL } = await import('/src/app/road_decoration/traffic_controls/RoadTrafficControlPlacement.js');
+	    try {
+	        const { buildRoadMarkingsMeshDataFromRoadEngineDerived } = await import('/src/app/road_decoration/markings/RoadMarkingsBuilder.js');
+	        const { computeRoadTrafficControlPlacementsFromRoadEngineDerived, ROAD_TRAFFIC_CONTROL } = await import('/src/app/road_decoration/traffic_controls/RoadTrafficControlPlacement.js');
+	        const { createCityConfig } = await import('/src/app/city/CityConfig.js');
+	        const { CityMap } = await import('/src/app/city/CityMap.js');
+	        const { BIG_CITY_SPEC } = await import('/src/app/city/specs/BigCitySpec.js');
+	        const { buildRoadEngineRoadsFromCityMap } = await import('/src/app/road_engine/RoadEngineCityMapAdapter.js');
+	        const { computeRoadEngineEdges } = await import('/src/app/road_engine/RoadEngineCompute.js');
 
         test('RoadMarkingsBuilder: draws a border loop for a square asphalt polygon (AI 158)', () => {
             const derived = {
@@ -4570,10 +4575,10 @@ async function runTests() {
             assertEqual(stops.length, 0, 'Expected no stop signs when traffic lights are selected.');
         });
 
-        test('RoadTrafficControlPlacement: T-junction stop sign only on stem approach (AI 159)', () => {
-            const derived = {
-                segments: [
-                    { id: 'segN', roadId: 'rN', dir: { x: 0, z: 1 }, lanesF: 1, lanesB: 1 },
+	        test('RoadTrafficControlPlacement: T-junction stop sign only on stem approach (AI 159)', () => {
+	            const derived = {
+	                segments: [
+	                    { id: 'segN', roadId: 'rN', dir: { x: 0, z: 1 }, lanesF: 1, lanesB: 1 },
                     { id: 'segS', roadId: 'rS', dir: { x: 0, z: -1 }, lanesF: 1, lanesB: 1 },
                     { id: 'segE', roadId: 'rE', dir: { x: 1, z: 0 }, lanesF: 1, lanesB: 1 }
                 ],
@@ -4592,12 +4597,99 @@ async function runTests() {
 
             const placements = computeRoadTrafficControlPlacementsFromRoadEngineDerived(derived, { laneWidth: 4.8, asphaltY: 0.02, curbHeight: 0.17, trafficLightLaneThreshold: 3 });
             const stops = placements.filter((p) => p?.kind === ROAD_TRAFFIC_CONTROL.STOP_SIGN);
-            assertEqual(stops.length, 1, 'Expected exactly one stop sign on the stem approach.');
-            assertEqual(stops[0]?.corner, 'epE', 'Expected stop sign to be placed on the stem endpoint.');
-        });
-    } catch (e) {
-        console.log('⏭️  Road markings/traffic controls tests skipped:', e.message);
-    }
+	            assertEqual(stops.length, 1, 'Expected exactly one stop sign on the stem approach.');
+	            assertEqual(stops[0]?.corner, 'epE', 'Expected stop sign to be placed on the stem endpoint.');
+	        });
+
+	        test('RoadTrafficControlPlacement: Big City tile 6:14 selects traffic lights and places them on sidewalks (AI 178)', () => {
+	            const cfg = createCityConfig({ size: 600, mapTileSize: 24, seed: 'bigcity-ai178-test' });
+	            const map = CityMap.fromSpec(BIG_CITY_SPEC, cfg);
+	            const roads = buildRoadEngineRoadsFromCityMap(map);
+
+	            const laneWidth = 4.8;
+	            const derived = computeRoadEngineEdges({
+	                roads,
+	                settings: {
+	                    origin: map.origin,
+	                    tileSize: map.tileSize,
+	                    laneWidth,
+	                    marginFactor: 0.1,
+	                    flags: { centerline: false, directionCenterlines: false, laneEdges: false, asphaltEdges: false, markers: false, asphaltObb: false },
+	                    trim: { enabled: true, threshold: laneWidth * 0.5 },
+	                    junctions: { enabled: true, autoCreate: true, filletRadiusFactor: 0.9 }
+	                }
+	            });
+
+	            const asphaltY = 0.02;
+	            const curbThickness = 0.48;
+	            const curbHeight = 0.17;
+	            const sidewalkWidth = 1.875;
+	            const sidewalkLift = 0.001;
+	            const sidewalkY = asphaltY + curbHeight + sidewalkLift;
+
+	            const placements = computeRoadTrafficControlPlacementsFromRoadEngineDerived(derived, {
+	                laneWidth,
+	                tileSize: map.tileSize,
+	                asphaltY,
+	                curbThickness,
+	                curbHeight,
+	                sidewalkWidth,
+	                sidewalkLift,
+	                trafficLightLaneThreshold: 3
+	            });
+
+	            const target = { x: map.origin.x + 6 * map.tileSize, z: map.origin.z + 14 * map.tileSize };
+	            const radius = map.tileSize * 1.25;
+
+	            const lightsNear = placements.filter((p) => {
+	                if (p?.kind !== ROAD_TRAFFIC_CONTROL.TRAFFIC_LIGHT) return false;
+	                const pos = p?.position ?? null;
+	                if (!pos) return false;
+	                const dx = (Number(pos.x) || 0) - target.x;
+	                const dz = (Number(pos.z) || 0) - target.z;
+	                return Math.hypot(dx, dz) <= radius + 1e-6;
+	            });
+
+	            const stopsNear = placements.filter((p) => {
+	                if (p?.kind !== ROAD_TRAFFIC_CONTROL.STOP_SIGN) return false;
+	                const pos = p?.position ?? null;
+	                if (!pos) return false;
+	                const dx = (Number(pos.x) || 0) - target.x;
+	                const dz = (Number(pos.z) || 0) - target.z;
+	                return Math.hypot(dx, dz) <= radius + 1e-6;
+	            });
+
+	            assertEqual(lightsNear.length, 4, 'Expected 4 traffic lights near tile 6:14.');
+	            assertEqual(stopsNear.length, 0, 'Expected no stop signs near tile 6:14 when traffic lights are selected.');
+
+	            const endpointById = new Map();
+	            const junctions = Array.isArray(derived?.junctions) ? derived.junctions : [];
+	            for (const junction of junctions) {
+	                for (const ep of Array.isArray(junction?.endpoints) ? junction.endpoints : []) {
+	                    if (ep?.id) endpointById.set(ep.id, ep);
+	                }
+	            }
+
+	            for (const placement of lightsNear) {
+	                const pos = placement.position;
+	                assertNear(pos.y, sidewalkY, 1e-6, 'Expected traffic light y to be on the sidewalk surface.');
+
+	                const cornerId = placement?.corner ?? null;
+	                const ep = cornerId ? endpointById.get(cornerId) : null;
+	                assertTrue(!!ep?.world && !!ep?.rightOut, 'Expected matching endpoint with rightOut for traffic light placement.');
+
+	                const vx = (Number(pos.x) || 0) - (Number(ep.world.x) || 0);
+	                const vz = (Number(pos.z) || 0) - (Number(ep.world.z) || 0);
+	                const rightOut = ep.rightOut;
+	                const lateral = vx * (Number(rightOut.x) || 0) + vz * (Number(rightOut.z) || 0);
+
+	                const half = Math.max(0, Number(ep?.widthRight) || 0, Number(ep?.widthLeft) || 0);
+	                assertTrue(lateral > half + curbThickness + 0.05, 'Expected traffic light to be placed beyond the curb (on sidewalk).');
+	            }
+	        });
+	    } catch (e) {
+	        console.log('⏭️  Road markings/traffic controls tests skipped:', e.message);
+	    }
 
     // ========== Road Debugger Authoring Tests (Task 55) ==========
     try {

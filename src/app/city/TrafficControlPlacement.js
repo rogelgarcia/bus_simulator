@@ -100,17 +100,63 @@ function rightNormalXZ(dir) {
 
 function isTrafficLightNode(incidents, threshold) {
     const t = Number.isFinite(threshold) ? Math.max(1, threshold | 0) : DEFAULT_TRAFFIC_LIGHT_LANE_THRESHOLD;
-    if (incidents.length !== 4) return false;
-    for (const inc of incidents) {
-        if ((inc?.laneOut ?? 0) < t) return false;
+    const list = Array.isArray(incidents) ? incidents : [];
+
+    if (list.length === 4) {
+        for (const inc of list) {
+            if ((inc?.laneOut ?? 0) < t) return false;
+        }
+        const sorted = list.slice().sort((a, b) => (a.angle ?? 0) - (b.angle ?? 0));
+        const a0 = sorted[0]?.dirOut ?? null;
+        const a1 = sorted[1]?.dirOut ?? null;
+        const a2 = sorted[2]?.dirOut ?? null;
+        const a3 = sorted[3]?.dirOut ?? null;
+        if (!a0 || !a1 || !a2 || !a3) return false;
+        return dotXZ(a0, a2) < -0.6 && dotXZ(a1, a3) < -0.6;
     }
-    const sorted = incidents.slice().sort((a, b) => (a.angle ?? 0) - (b.angle ?? 0));
-    const a0 = sorted[0]?.dirOut ?? null;
-    const a1 = sorted[1]?.dirOut ?? null;
-    const a2 = sorted[2]?.dirOut ?? null;
-    const a3 = sorted[3]?.dirOut ?? null;
-    if (!a0 || !a1 || !a2 || !a3) return false;
-    return dotXZ(a0, a2) < -0.6 && dotXZ(a1, a3) < -0.6;
+
+    if (list.length !== 3) return false;
+
+    let bestPair = null;
+    let bestDot = Infinity;
+    for (let i = 0; i < list.length; i++) {
+        const a = list[i]?.dirOut ?? null;
+        if (!a) continue;
+        for (let j = i + 1; j < list.length; j++) {
+            const b = list[j]?.dirOut ?? null;
+            if (!b) continue;
+            const d = dotXZ(a, b);
+            if (d < bestDot - 1e-9) {
+                bestDot = d;
+                bestPair = { i, j };
+            }
+        }
+    }
+
+    if (!bestPair || !(bestDot < -0.6)) return false;
+
+    const stemIndex = [0, 1, 2].find((k) => k !== bestPair.i && k !== bestPair.j);
+    if (!Number.isInteger(stemIndex)) return false;
+
+    const mainA = list[bestPair.i] ?? null;
+    const mainB = list[bestPair.j] ?? null;
+    const stem = list[stemIndex] ?? null;
+    if (!mainA?.dirOut || !mainB?.dirOut || !stem?.dirOut) return false;
+
+    const stemAlign = Math.abs(dotXZ(stem.dirOut, mainA.dirOut));
+    if (stemAlign > 0.45) return false;
+
+    const hasTwoWayAtLeast = (inc, threshold) => {
+        const lanesF = Number(inc?.lanesF) || 0;
+        const lanesB = Number(inc?.lanesB) || 0;
+        const th = Number.isFinite(threshold) ? Math.max(0, threshold | 0) : 0;
+        return lanesF >= th && lanesB >= th;
+    };
+
+    if (!hasTwoWayAtLeast(mainA, 3)) return false;
+    if (!hasTwoWayAtLeast(mainB, 3)) return false;
+    if (!hasTwoWayAtLeast(stem, 2)) return false;
+    return true;
 }
 
 export function computeTrafficControlPlacements({
@@ -168,11 +214,16 @@ export function computeTrafficControlPlacements({
                 if (!(halfWidth > 0)) continue;
                 if (halfWidth > maxHalfWidth) maxHalfWidth = halfWidth;
 
+                const lanesF = Number(edge?.lanesF) || 0;
+                const lanesB = Number(edge?.lanesB) || 0;
+
                 incidents.push({
                     edgeId: edge.id,
                     dirOut,
                     angle: Math.atan2(dirOut.z, dirOut.x),
                     laneOut: laneCountOutForEdgeAtNode(edge, node.id),
+                    lanesF,
+                    lanesB,
                     totalLanes,
                     halfWidth
                 });

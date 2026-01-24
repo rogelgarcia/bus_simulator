@@ -60,6 +60,13 @@ function negateXZ(v) {
     return { x: -(Number(v?.x) || 0), z: -(Number(v?.z) || 0) };
 }
 
+function canonicalizeDirXZ(dir) {
+    const n = normalizeDirXZ(dir);
+    if (!n) return null;
+    if (n.x < -EPS || (Math.abs(n.x) <= EPS && n.z < -EPS)) return negateXZ(n);
+    return n;
+}
+
 function compareString(a, b) {
     const aa = String(a ?? '');
     const bb = String(b ?? '');
@@ -108,6 +115,13 @@ function segmentTotalLanes(seg) {
     return lanesF + lanesB;
 }
 
+function endpointApproachHalfWidth(ep, seg, laneWidth) {
+    const wr = Number(ep?.widthRight) || 0;
+    const wl = Number(ep?.widthLeft) || 0;
+    const fallback = laneWidth * segmentTotalLanes(seg) * 0.5;
+    return Math.max(0, wr, wl, fallback);
+}
+
 function approachLaneCountForEndpoint(ep, seg) {
     const dirOut = normalizeDirXZ(ep?.dirOut ?? null);
     const segDir = normalizeDirXZ(seg?.dir ?? null);
@@ -128,6 +142,123 @@ function computeTrafficLightArmLength({ laneWidth, scale, sideOffset, lanesAppro
     const desiredReachWorld = Math.max(0, offset - laneCenterFromCenter);
     const desired = desiredReachWorld / s;
     return clamp(desired, 0.8, 4.2);
+}
+
+function junctionCenterXZ(junction, endpoints) {
+    if (junction?.center && Number.isFinite(junction.center.x) && Number.isFinite(junction.center.z)) {
+        return { x: junction.center.x, z: junction.center.z };
+    }
+    const eps = Array.isArray(endpoints) ? endpoints : [];
+    if (!eps.length) return { x: 0, z: 0 };
+    let sx = 0;
+    let sz = 0;
+    let count = 0;
+    for (const ep of eps) {
+        const w = ep?.world ?? null;
+        if (!w) continue;
+        sx += Number(w.x) || 0;
+        sz += Number(w.z) || 0;
+        count += 1;
+    }
+    if (!count) return { x: 0, z: 0 };
+    const inv = 1 / count;
+    return { x: sx * inv, z: sz * inv };
+}
+
+function buildRoadIdSet(endpoints) {
+    const set = new Set();
+    for (const ep of Array.isArray(endpoints) ? endpoints : []) {
+        const id = ep?.roadId ?? null;
+        if (id) set.add(id);
+    }
+    return set;
+}
+
+function intersectSets(a, b) {
+    const out = new Set();
+    const aa = a instanceof Set ? a : new Set();
+    const bb = b instanceof Set ? b : new Set();
+    const [small, large] = aa.size <= bb.size ? [aa, bb] : [bb, aa];
+    for (const v of small) if (large.has(v)) out.add(v);
+    return out;
+}
+
+function computeTJunctionSignature(endpoints) {
+    const list = Array.isArray(endpoints) ? endpoints : [];
+    if (list.length !== 3) return null;
+    const stemIndex = isTJunctionByDirections(list);
+    if (stemIndex === null) return null;
+    const stemDir = normalizeDirXZ(list[stemIndex]?.dirOut ?? null);
+    if (!stemDir) return null;
+    const through = [0, 1, 2].filter((i) => i !== stemIndex);
+    const axisDir = canonicalizeDirXZ(list[through[0]]?.dirOut ?? null) ?? canonicalizeDirXZ(list[through[1]]?.dirOut ?? null);
+    if (!axisDir) return null;
+    return { stemIndex, throughIndices: through, axisDir, stemDir };
+}
+
+function buildSplitCrossingEndpoints(metaA, metaB, sharedRoadIds) {
+    const shared = sharedRoadIds instanceof Set ? sharedRoadIds : new Set();
+    const aSig = metaA?.sig ?? null;
+    const bSig = metaB?.sig ?? null;
+    const aEndpoints = metaA?.endpoints ?? [];
+    const bEndpoints = metaB?.endpoints ?? [];
+    if (!aSig || !bSig) return null;
+    if (aEndpoints.length !== 3 || bEndpoints.length !== 3) return null;
+    if (!shared.size) return null;
+
+    const axisDir = aSig.axisDir;
+    const axisCandidatesRaw = [
+        aEndpoints[aSig.throughIndices[0]],
+        aEndpoints[aSig.throughIndices[1]],
+        bEndpoints[bSig.throughIndices[0]],
+        bEndpoints[bSig.throughIndices[1]]
+    ].filter(Boolean);
+
+    const axisCandidates = [];
+    const axisSeen = new Set();
+    for (const ep of axisCandidatesRaw) {
+        if (!ep?.id || axisSeen.has(ep.id)) continue;
+        if (!shared.has(ep.roadId)) continue;
+        axisSeen.add(ep.id);
+        axisCandidates.push(ep);
+    }
+    if (axisCandidates.length < 2) return null;
+
+    let pos = null;
+    let neg = null;
+    let posDot = -Infinity;
+    let negDot = Infinity;
+    for (const ep of axisCandidates) {
+        const dir = normalizeDirXZ(ep?.dirOut ?? null);
+        if (!dir) continue;
+        const d = dotXZ(dir, axisDir);
+        if (d > posDot + 1e-9 || (Math.abs(d - posDot) <= 1e-9 && compareString(ep.id, pos?.id) < 0)) {
+            pos = ep;
+            posDot = d;
+        }
+        if (d < negDot - 1e-9 || (Math.abs(d - negDot) <= 1e-9 && compareString(ep.id, neg?.id) < 0)) {
+            neg = ep;
+            negDot = d;
+        }
+    }
+    if (!pos || !neg) return null;
+    if (pos.id === neg.id) return null;
+    if (!(posDot > 0.55) || !(negDot < -0.55)) return null;
+
+    const stemA = aEndpoints[aSig.stemIndex] ?? null;
+    const stemB = bEndpoints[bSig.stemIndex] ?? null;
+    if (!stemA?.id || !stemB?.id) return null;
+    if (stemA.id === stemB.id) return null;
+    if (shared.has(stemA.roadId) || shared.has(stemB.roadId)) return null;
+
+    const merged = [pos, neg, stemA, stemB];
+    const unique = new Map();
+    for (const ep of merged) {
+        if (!ep?.id) return null;
+        if (unique.has(ep.id)) return null;
+        unique.set(ep.id, ep);
+    }
+    return Array.from(unique.values()).sort((a, b) => compareString(a?.id, b?.id));
 }
 
 export function computeRoadTrafficControlPlacementsFromRoadEngineDerived(derived, options = {}) {
@@ -153,11 +284,75 @@ export function computeRoadTrafficControlPlacementsFromRoadEngineDerived(derived
     const placements = [];
 
     const sortedJunctions = junctions.slice().sort((a, b) => compareString(a?.id, b?.id));
+
+    const mergeDistance = Math.max(tileSize * 0.6, laneWidth * 2.5);
+    const overrideEndpointsByJunctionId = new Map();
+    const suppressedJunctionIds = new Set();
+    const tCandidates = [];
+
     for (const junction of sortedJunctions) {
         const jid = junction?.id ?? null;
         if (!jid) continue;
-
         const endpointsRaw = Array.isArray(junction?.endpoints) ? junction.endpoints : [];
+        const endpoints = endpointsRaw.filter((ep) => ep?.dirOut && ep?.rightOut && ep?.world && ep?.segmentId);
+        if (endpoints.length !== 3) continue;
+        const sig = computeTJunctionSignature(endpoints);
+        if (!sig) continue;
+        tCandidates.push({
+            id: jid,
+            junction,
+            endpoints,
+            sig,
+            center: junctionCenterXZ(junction, endpoints),
+            roadIds: buildRoadIdSet(endpoints)
+        });
+    }
+
+    for (let i = 0; i < tCandidates.length; i++) {
+        const a = tCandidates[i];
+        if (suppressedJunctionIds.has(a.id)) continue;
+        if (overrideEndpointsByJunctionId.has(a.id)) continue;
+
+        let best = null;
+        for (let j = i + 1; j < tCandidates.length; j++) {
+            const b = tCandidates[j];
+            if (suppressedJunctionIds.has(b.id)) continue;
+            if (overrideEndpointsByJunctionId.has(b.id)) continue;
+            const dist = Math.hypot((a.center.x - b.center.x) || 0, (a.center.z - b.center.z) || 0);
+            if (!(dist <= mergeDistance + 1e-6)) continue;
+
+            const sharedRoadIds = intersectSets(a.roadIds, b.roadIds);
+            if (!sharedRoadIds.size) continue;
+
+            const axisDot = dotXZ(a.sig.axisDir, b.sig.axisDir);
+            if (!(axisDot > 0.85)) continue;
+
+            const stemDot = dotXZ(a.sig.stemDir, b.sig.stemDir);
+            if (!(stemDot < -0.6)) continue;
+
+            if (Math.abs(dotXZ(a.sig.stemDir, a.sig.axisDir)) > 0.45) continue;
+            if (Math.abs(dotXZ(b.sig.stemDir, a.sig.axisDir)) > 0.45) continue;
+
+            const mergedEndpoints = buildSplitCrossingEndpoints(a, b, sharedRoadIds);
+            if (!mergedEndpoints) continue;
+
+            if (!best || dist < best.dist - 1e-6 || (Math.abs(dist - best.dist) <= 1e-6 && compareString(b.id, best.b.id) < 0)) {
+                best = { b, dist, mergedEndpoints };
+            }
+        }
+
+        if (!best) continue;
+        overrideEndpointsByJunctionId.set(a.id, best.mergedEndpoints);
+        suppressedJunctionIds.add(best.b.id);
+    }
+
+    for (const junction of sortedJunctions) {
+        const jid = junction?.id ?? null;
+        if (!jid) continue;
+        if (suppressedJunctionIds.has(jid)) continue;
+
+        const overrideEndpoints = overrideEndpointsByJunctionId.get(jid) ?? null;
+        const endpointsRaw = overrideEndpoints ?? (Array.isArray(junction?.endpoints) ? junction.endpoints : []);
         const endpoints = endpointsRaw.filter((ep) => ep?.dirOut && ep?.rightOut && ep?.world && ep?.segmentId);
         const degree = endpoints.length;
         if (degree < 3) continue;
@@ -212,7 +407,7 @@ export function computeRoadTrafficControlPlacementsFromRoadEngineDerived(derived
             if (!dirOut || !rightOut || !world) return;
 
             const side = rightOut;
-            const approachHalfWidth = Math.max(0, Number(ep?.widthRight) || 0);
+            const approachHalfWidth = endpointApproachHalfWidth(ep, entry?.seg ?? null, laneWidth);
             const sideOffset = approachHalfWidth + curbThickness + poleInset;
             const posXZ = addXZ(addXZ(world, scaleXZ(dirOut, cornerAlong)), scaleXZ(side, sideOffset));
 
@@ -237,7 +432,7 @@ export function computeRoadTrafficControlPlacementsFromRoadEngineDerived(derived
             if (!dirOut || !rightOut || !world) return;
 
             const side = rightOut;
-            const approachHalfWidth = Math.max(0, Number(ep?.widthRight) || 0);
+            const approachHalfWidth = endpointApproachHalfWidth(ep, entry?.seg ?? null, laneWidth);
             const sideOffset = approachHalfWidth + curbThickness + poleInset;
             const posXZ = addXZ(addXZ(world, scaleXZ(dirOut, cornerAlong)), scaleXZ(side, sideOffset));
 
