@@ -20,6 +20,8 @@ import { VehicleController } from '../app/vehicle/VehicleController.js';
 import { InputManager } from '../app/input/InputManager.js';
 import { createVehicleFromBus } from '../app/vehicle/createVehicle.js';
 import { GameplayDebugPanel } from '../graphics/gui/gameplay/GameplayDebugPanel.js';
+import { getSelectableSceneShortcuts } from './SceneShortcutRegistry.js';
+import { SetupUIController } from '../graphics/gui/setup/SetupUIController.js';
 
 // Camera tuning
 const CAMERA_TUNE = {
@@ -152,6 +154,10 @@ export class GameplayState {
 
         this._debugPanel = null;
         this._debugEnabled = false;
+
+        this._setupUi = new SetupUIController();
+
+        this._pausedByOverlay = false;
     }
 
     enter() {
@@ -289,6 +295,8 @@ export class GameplayState {
     }
 
     exit() {
+        this._closeSetupOverlay({ restoreInput: false });
+
         window.removeEventListener('keydown', this._onKeyDown);
         const canvas = this.engine?.renderer?.domElement;
         if (canvas) {
@@ -336,6 +344,45 @@ export class GameplayState {
         this.city = null;
 
         this.engine.clearScene();
+    }
+
+    pause() {
+        if (this._pausedByOverlay) return;
+        this._pausedByOverlay = true;
+
+        this._closeSetupOverlay({ restoreInput: false });
+
+        window.removeEventListener('keydown', this._onKeyDown);
+        const canvas = this.engine?.renderer?.domElement;
+        if (canvas) {
+            canvas.removeEventListener('pointerdown', this._onPointerDown);
+        }
+        window.removeEventListener('pointermove', this._onPointerMove);
+        window.removeEventListener('pointerup', this._onPointerUp);
+        window.removeEventListener('pointercancel', this._onPointerUp);
+
+        this.inputManager?.reset?.();
+        this.inputManager?.detach?.();
+        this.hud?.hide?.();
+        document.activeElement?.blur?.();
+    }
+
+    resume() {
+        if (!this._pausedByOverlay) return;
+        this._pausedByOverlay = false;
+
+        this.hud?.show?.();
+        this.inputManager?.reset?.();
+        this.inputManager?.attach?.();
+
+        window.addEventListener('keydown', this._onKeyDown, { passive: false });
+        const canvas = this.engine?.renderer?.domElement;
+        if (canvas) {
+            canvas.addEventListener('pointerdown', this._onPointerDown, { passive: false });
+        }
+        window.addEventListener('pointermove', this._onPointerMove, { passive: false });
+        window.addEventListener('pointerup', this._onPointerUp, { passive: false });
+        window.addEventListener('pointercancel', this._onPointerUp, { passive: false });
     }
 
     update(dt) {
@@ -401,6 +448,14 @@ export class GameplayState {
         const drag = this._cameraDrag;
         if (!drag.hasOverride || !this.busModel) return false;
         if (drag.active) {
+            this._applyManualCamera();
+            return true;
+        }
+
+        if (this.sm?.isOverlayOpen?.('options')) {
+            drag.idleTime = 0;
+            drag.returning = false;
+            drag.returnElapsed = 0;
             this._applyManualCamera();
             return true;
         }
@@ -524,6 +579,14 @@ export class GameplayState {
     }
 
     _handleKeyDown(e) {
+        if (this._setupUi?.isOpen?.()) return;
+
+        if (e.code === 'KeyQ') {
+            e.preventDefault();
+            this._openSetupOverlay();
+            return;
+        }
+
         if (e.code === 'Escape') {
             e.preventDefault();
             this.sm.go('welcome');
@@ -539,5 +602,49 @@ export class GameplayState {
             e.preventDefault();
             this._cameraTour?.start();
         }
+    }
+
+    _openSetupOverlay() {
+        if (!this._setupUi || this._setupUi.isOpen()) return;
+
+        this.inputManager?.reset?.();
+        this.inputManager?.detach?.();
+        this.hud?.hide?.();
+
+        this._cameraTour?.stop?.(true);
+        this._cameraDrag.active = false;
+        this._cameraDrag.pointerId = null;
+        this._cameraDrag.idleTime = 0;
+
+        const scenes = getSelectableSceneShortcuts().map((scene) => ({
+            key: scene.key,
+            label: scene.label,
+            state: scene.id
+        }));
+
+        this._setupUi.open({
+            mode: 'overlay',
+            sceneItems: scenes,
+            closeItem: { key: 'Q', label: 'Close overlay' },
+            currentStateId: this.sm?.currentName ?? null,
+            currentStateLabel: 'Gameplay',
+            onSelectState: (state) => {
+                const id = typeof state === 'string' ? state : '';
+                if (!id) return;
+                this._closeSetupOverlay({ restoreInput: false });
+                this.sm.go(id);
+            },
+            onRequestClose: () => this._closeSetupOverlay()
+        });
+    }
+
+    _closeSetupOverlay({ restoreInput = true } = {}) {
+        if (!this._setupUi?.isOpen?.()) return;
+        this._setupUi.close();
+        if (!restoreInput) return;
+
+        this.hud?.show?.();
+        this.inputManager?.reset?.();
+        this.inputManager?.attach?.();
     }
 }

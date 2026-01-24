@@ -43,7 +43,7 @@ async function attachFailFastConsole({ page }) {
 
 test('Harness: boots and exposes __testHooks', async ({ page }) => {
     const getErrors = await attachFailFastConsole({ page });
-    await page.goto('/tests/headless/harness/index.html?ibl=0');
+    await page.goto('/tests/headless/harness/index.html?ibl=0&bloom=0');
     await page.waitForFunction(() => window.__testHooks && window.__testHooks.version === 1);
     const scenarios = await page.evaluate(() => window.__testHooks.listScenarios());
     expect(scenarios).toContain('empty');
@@ -52,7 +52,7 @@ test('Harness: boots and exposes __testHooks', async ({ page }) => {
 
 test('Harness: loads scenarios deterministically', async ({ page }) => {
     const getErrors = await attachFailFastConsole({ page });
-    await page.goto('/tests/headless/harness/index.html?ibl=0');
+    await page.goto('/tests/headless/harness/index.html?ibl=0&bloom=0');
     await page.waitForFunction(() => window.__testHooks);
 
     const run = async (seed) => page.evaluate(async (s) => {

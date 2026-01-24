@@ -8,6 +8,23 @@ html, body {
     font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
 }
 
+:root {
+    --options-dock-width: 560px;
+}
+
+body.options-dock-open #game-canvas {
+    width: auto;
+    right: var(--options-dock-width);
+}
+
+body.options-dock-open .ui-hud-root {
+    right: var(--options-dock-width);
+}
+
+body.options-dock-open .ui-layer:not(.options-layer) {
+    right: var(--options-dock-width);
+}
+
 /* Canvas always full screen (3D scenes) */
 #game-canvas {
     position: fixed;

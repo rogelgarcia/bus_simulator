@@ -30,7 +30,7 @@ export class GameHUD {
         this.wheelWidget = new SteeringWheelWidget({ title: "Wheel (270°)" });
 
         this.pedalsWidget = new PedalWidget({ title: "Controls", leftLabel: "Accel", rightLabel: "Brake" });
-        this.pedalsWidget.keysHint.textContent = "Keys: ←/→ steer, ↑ throttle, ↓ brake";
+        this.pedalsWidget.keysHint.textContent = "Keys: ←/→ steer, ↑ throttle, ↓ brake, Q setup";
 
         this.speedGauge = new GaugeWidget({ label: "Speed", min: 0, max: 140, units: "km/h", angleRangeDeg: 240 });
         this.rpmGauge = new GaugeWidget({ label: "RPM", min: 0, max: 8000, units: "rpm", angleRangeDeg: 240 });

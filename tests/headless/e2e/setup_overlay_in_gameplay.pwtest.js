@@ -1,4 +1,4 @@
-// Headless browser tests: basic UI/debugger smoke.
+// Headless browser tests: setup overlay in gameplay should not hide the canvas.
 import test, { expect } from '@playwright/test';
 
 async function attachFailFastConsole({ page }) {
@@ -41,24 +41,41 @@ async function attachFailFastConsole({ page }) {
     };
 }
 
-test('UI: Map Debugger mounts without crashing', async ({ page }) => {
+test('UI: Setup overlay opens during gameplay without hiding canvas', async ({ page }) => {
     const getErrors = await attachFailFastConsole({ page });
     await page.goto('/index.html?ibl=0&bloom=0&coreTests=0');
     await page.waitForSelector('#ui-welcome:not(.hidden)');
+    await page.keyboard.press('Enter');
+
+    await page.waitForSelector('#ui-select:not(.hidden)');
+    await page.keyboard.press('G');
+
+    await page.waitForSelector('#hud-game:not(.hidden)');
+
     await page.keyboard.press('Q');
-    await page.waitForSelector('#ui-setup:not(.hidden)');
-    await page.keyboard.press('1');
-    await page.waitForSelector('.map-debugger-ui-root');
+    await page.waitForSelector('#ui-setup.is-overlay:not(.hidden)');
+
+    const canvasState = await page.evaluate(() => {
+        const canvas = document.getElementById('game-canvas');
+        const opacity = canvas ? Number.parseFloat(getComputedStyle(canvas).opacity) : null;
+        return {
+            hasSetupBg: document.body.classList.contains('setup-bg'),
+            opacity
+        };
+    });
+    expect(canvasState.hasSetupBg).toBe(false);
+    expect(canvasState.opacity).not.toBeNull();
+    expect(canvasState.opacity).toBeGreaterThan(0.5);
+
+    await page.click('#setup-collapse');
+    await page.waitForSelector('#ui-setup.is-collapsed');
+    await page.click('#setup-collapse');
+    await page.waitForSelector('#ui-setup.is-overlay:not(.is-collapsed)');
+
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('#ui-setup.hidden');
+    await page.waitForSelector('#hud-game:not(.hidden)');
+
     expect(await getErrors()).toEqual([]);
 });
 
-test('UI: Road Debugger mounts without crashing', async ({ page }) => {
-    const getErrors = await attachFailFastConsole({ page });
-    await page.goto('/index.html?ibl=0&bloom=0&coreTests=0');
-    await page.waitForSelector('#ui-welcome:not(.hidden)');
-    await page.keyboard.press('Q');
-    await page.waitForSelector('#ui-setup:not(.hidden)');
-    await page.keyboard.press('7');
-    await page.waitForSelector('.road-debugger-ui');
-    expect(await getErrors()).toEqual([]);
-});

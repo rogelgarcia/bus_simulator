@@ -3,6 +3,11 @@ import * as THREE from 'three';
 import { SimulationContext } from './SimulationContext.js';
 import { applyIBLIntensity, applyIBLToScene, loadIBLTexture } from '../../graphics/lighting/IBL.js';
 import { getResolvedLightingSettings } from '../../graphics/lighting/LightingSettings.js';
+import { getResolvedBloomSettings, sanitizeBloomSettings } from '../../graphics/visuals/postprocessing/BloomSettings.js';
+import { BloomPipeline } from '../../graphics/visuals/postprocessing/BloomPipeline.js';
+import { getResolvedColorGradingSettings, sanitizeColorGradingSettings } from '../../graphics/visuals/postprocessing/ColorGradingSettings.js';
+import { getColorGradingPresetById } from '../../graphics/visuals/postprocessing/ColorGradingPresets.js';
+import { is3dLutSupported, loadCubeLut3DTexture } from '../../graphics/visuals/postprocessing/ColorGradingCubeLutLoader.js';
 
 export class GameEngine {
     constructor({
@@ -27,7 +32,8 @@ export class GameEngine {
             ...(rendererOptions ?? {})
         });
 
-        const resolvedPixelRatio = Number.isFinite(pixelRatio) ? Math.max(0.1, pixelRatio) : Math.min(devicePixelRatio, 2);
+        this._pixelRatioOverride = Number.isFinite(pixelRatio) ? Math.max(0.1, pixelRatio) : null;
+        const resolvedPixelRatio = this._pixelRatioOverride ?? Math.min(devicePixelRatio, 2);
         this.renderer.setPixelRatio(resolvedPixelRatio);
 
         // ✅ CRITICAL: correct output color space (otherwise things look dark/flat)
@@ -57,6 +63,26 @@ export class GameEngine {
 
         this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 500);
         this.camera.position.set(0, 4, 14);
+
+        this._post = {
+            pipeline: null
+        };
+
+        this._bloom = {
+            settings: getResolvedBloomSettings()
+        };
+
+        this._colorGrading = {
+            settings: getResolvedColorGradingSettings(),
+            lut: null,
+            lutPresetId: null,
+            lutPromise: null,
+            status: 'off',
+            lastError: null
+        };
+
+        this._applyBloomSettings(this._bloom.settings);
+        this._applyColorGradingSettings(this._colorGrading.settings);
 
         this._ibl = null;
         this._iblPromise = null;
@@ -91,6 +117,248 @@ export class GameEngine {
 
     get lightingSettings() {
         return this._lighting;
+    }
+
+    setLightingSettings(settings) {
+        const src = settings && typeof settings === 'object' ? settings : null;
+        const prev = this._lighting ?? getResolvedLightingSettings({ includeUrlOverrides: false });
+
+        const clamp = (value, min, max, fallback) => {
+            const num = Number(value);
+            if (!Number.isFinite(num)) return fallback;
+            return Math.max(min, Math.min(max, num));
+        };
+
+        const next = {
+            exposure: clamp(src?.exposure ?? prev.exposure, 0.1, 5, prev.exposure),
+            hemiIntensity: clamp(src?.hemiIntensity ?? prev.hemiIntensity, 0, 5, prev.hemiIntensity),
+            sunIntensity: clamp(src?.sunIntensity ?? prev.sunIntensity, 0, 10, prev.sunIntensity),
+            ibl: {
+                ...(prev.ibl ?? {}),
+                enabled: src?.ibl?.enabled !== undefined ? !!src.ibl.enabled : !!prev.ibl?.enabled,
+                envMapIntensity: clamp(src?.ibl?.envMapIntensity ?? prev.ibl?.envMapIntensity, 0, 5, prev.ibl?.envMapIntensity ?? 0.25),
+                setBackground: src?.ibl?.setBackground !== undefined ? !!src.ibl.setBackground : !!prev.ibl?.setBackground
+            }
+        };
+
+        this._lighting = next;
+        this.renderer.toneMappingExposure = next.exposure;
+
+        if (!this._ibl) {
+            this._initIBL();
+            return;
+        }
+
+        const ibl = next.ibl ?? null;
+        this._ibl.config = { ...(this._ibl.config ?? {}), ...(ibl ?? {}) };
+
+        if (!ibl?.enabled) {
+            applyIBLToScene(this.scene, null, { enabled: false, setBackground: false });
+            return;
+        }
+
+        if (this._ibl.envMap) {
+            applyIBLToScene(this.scene, this._ibl.envMap, this._ibl.config);
+            applyIBLIntensity(this.scene, this._ibl.config, { force: true });
+            return;
+        }
+
+        const requestedUrl = typeof this._ibl.config?.hdrUrl === 'string' ? this._ibl.config.hdrUrl : null;
+        this._iblPromise = loadIBLTexture(this.renderer, this._ibl.config).then((envMap) => {
+            const currentUrl = typeof this._ibl?.config?.hdrUrl === 'string' ? this._ibl.config.hdrUrl : null;
+            const stillWants = !!this._ibl?.config?.enabled && (!requestedUrl || requestedUrl === currentUrl);
+            if (!stillWants) return null;
+            this._ibl.envMap = envMap;
+            if (envMap) {
+                applyIBLToScene(this.scene, envMap, this._ibl.config);
+                applyIBLIntensity(this.scene, this._ibl.config, { force: true });
+            }
+            return envMap;
+        }).catch((err) => {
+            console.warn('[IBL] Failed to load HDR environment map:', err);
+            return null;
+        });
+    }
+
+    get bloomSettings() {
+        return this._bloom?.settings ?? null;
+    }
+
+    get isBloomEnabled() {
+        return !!this._bloom?.settings?.enabled;
+    }
+
+    get isPostProcessingActive() {
+        return !!this._post?.pipeline;
+    }
+
+    getBloomDebugInfo() {
+        if (!this._post?.pipeline) {
+            return { enabled: !!this._bloom?.settings?.enabled, ...(this._bloom?.settings ?? {}) };
+        }
+        return this._post.pipeline.getDebugInfo();
+    }
+
+    get colorGradingSettings() {
+        return this._colorGrading?.settings ?? null;
+    }
+
+    getColorGradingDebugInfo() {
+        const s = this._colorGrading?.settings ?? null;
+        const status = this._colorGrading?.status ?? 'off';
+        const supported = is3dLutSupported(this.renderer);
+        const requestedPreset = typeof s?.preset === 'string' ? s.preset : 'off';
+        const intensity = Number.isFinite(s?.intensity) ? s.intensity : 0;
+        const hasLut = !!this._colorGrading?.lut;
+        const active = requestedPreset !== 'off' && intensity > 0 && hasLut;
+        const lastError = typeof this._colorGrading?.lastError === 'string' ? this._colorGrading.lastError : null;
+        return {
+            enabled: active,
+            requestedPreset,
+            intensity,
+            supported,
+            hasLut,
+            status,
+            lastError
+        };
+    }
+
+    _syncPixelRatio() {
+        if (!this.renderer) return;
+        if (this._pixelRatioOverride !== null) {
+            this._post?.pipeline?.setPixelRatio?.(this._pixelRatioOverride);
+            return;
+        }
+
+        const next = Math.min(devicePixelRatio, 2);
+        const current = this.renderer.getPixelRatio?.() ?? next;
+        if (Math.abs(current - next) <= 1e-6) return;
+
+        this.renderer.setPixelRatio(next);
+        this._post?.pipeline?.setPixelRatio?.(next);
+    }
+
+    _syncPostProcessingSize() {
+        if (!this._post?.pipeline || !this.renderer) return;
+        const size = new THREE.Vector2();
+        this.renderer.getSize(size);
+        this._post.pipeline.setSize(size.x, size.y);
+    }
+
+    _applyBloomSettings(settings) {
+        if (!this._bloom) return;
+        const next = sanitizeBloomSettings(settings);
+        this._bloom.settings = next;
+        this._syncPostProcessingPipeline();
+    }
+
+    _applyColorGradingSettings(settings) {
+        if (!this._colorGrading) return;
+        const next = sanitizeColorGradingSettings(settings);
+        this._colorGrading.settings = next;
+
+        const preset = getColorGradingPresetById(next.preset);
+        const wants = preset?.id && preset.id !== 'off' && next.intensity > 0;
+        if (!wants) {
+            this._colorGrading.status = 'off';
+            this._colorGrading.lastError = null;
+            this._colorGrading.lut = null;
+            this._colorGrading.lutPresetId = null;
+            this._colorGrading.lutPromise = null;
+            this._syncPostProcessingPipeline();
+            return;
+        }
+
+        if (!is3dLutSupported(this.renderer)) {
+            this._colorGrading.status = 'unsupported';
+            this._colorGrading.lastError = 'WebGL2 is required for 3D LUT color grading';
+            this._colorGrading.lut = null;
+            this._colorGrading.lutPresetId = null;
+            this._colorGrading.lutPromise = null;
+            console.warn('[ColorGrading] WebGL2 is required for LUT color grading; falling back to Off.');
+            this._syncPostProcessingPipeline();
+            return;
+        }
+
+        if (!preset?.cubeUrl) {
+            this._colorGrading.status = 'missing_preset';
+            this._colorGrading.lastError = `Missing LUT url for preset "${preset?.id ?? next.preset}"`;
+            this._colorGrading.lut = null;
+            this._colorGrading.lutPresetId = null;
+            this._colorGrading.lutPromise = null;
+            console.warn('[ColorGrading] Missing LUT url for preset:', preset?.id ?? next.preset);
+            this._syncPostProcessingPipeline();
+            return;
+        }
+
+        if (this._colorGrading.lut && this._colorGrading.lutPresetId === preset.id) {
+            this._colorGrading.status = 'ready';
+            this._colorGrading.lastError = null;
+            this._syncPostProcessingPipeline();
+            return;
+        }
+
+        this._colorGrading.status = 'loading';
+        this._colorGrading.lastError = null;
+        this._colorGrading.lut = null;
+        this._colorGrading.lutPresetId = preset.id;
+
+        const promise = loadCubeLut3DTexture(preset.cubeUrl).then((tex) => {
+            const current = getColorGradingPresetById(this._colorGrading?.settings?.preset);
+            const stillWants = current?.id === preset.id && this._colorGrading?.settings?.intensity > 0;
+            if (!stillWants) return null;
+            this._colorGrading.status = 'ready';
+            this._colorGrading.lut = tex;
+            this._syncPostProcessingPipeline();
+            return tex;
+        }).catch((err) => {
+            const current = getColorGradingPresetById(this._colorGrading?.settings?.preset);
+            const stillWants = current?.id === preset.id && this._colorGrading?.settings?.intensity > 0;
+            if (!stillWants) return null;
+            const message = err?.message ?? String(err ?? 'Failed to load LUT');
+            this._colorGrading.status = 'error';
+            this._colorGrading.lastError = message;
+            this._colorGrading.lut = null;
+            this._colorGrading.lutPresetId = preset.id;
+            console.warn('[ColorGrading] Failed to load LUT:', message);
+            this._syncPostProcessingPipeline();
+            return null;
+        });
+
+        this._colorGrading.lutPromise = promise;
+        this._syncPostProcessingPipeline();
+    }
+
+    _syncPostProcessingPipeline() {
+        const bloomEnabled = !!this._bloom?.settings?.enabled;
+        const preset = getColorGradingPresetById(this._colorGrading?.settings?.preset);
+        const gradingRequested = preset?.id && preset.id !== 'off' && (this._colorGrading?.settings?.intensity > 0);
+        const wantsPipeline = bloomEnabled || gradingRequested;
+
+        if (!wantsPipeline) {
+            if (this._post.pipeline) {
+                this._post.pipeline.dispose();
+                this._post.pipeline = null;
+            }
+            return;
+        }
+
+        if (!this._post.pipeline) {
+            this._post.pipeline = new BloomPipeline({
+                renderer: this.renderer,
+                scene: this.scene,
+                camera: this.camera,
+                settings: this._bloom?.settings ?? null
+            });
+            this._post.pipeline.setPixelRatio(this.renderer.getPixelRatio?.() ?? 1);
+            this._syncPostProcessingSize();
+        }
+
+        this._post.pipeline.setSettings(this._bloom?.settings ?? null);
+        this._post.pipeline.setColorGrading({
+            lutTexture: this._colorGrading?.lut ?? null,
+            intensity: this._colorGrading?.settings?.intensity ?? 0
+        });
     }
 
     _initIBL() {
@@ -132,12 +400,30 @@ export class GameEngine {
         this._initIBL();
     }
 
+    reloadBloomSettings() {
+        this._applyBloomSettings(getResolvedBloomSettings());
+    }
+
+    reloadColorGradingSettings() {
+        this._applyColorGradingSettings(getResolvedColorGradingSettings());
+    }
+
+    setBloomSettings(settings) {
+        this._applyBloomSettings(settings);
+    }
+
+    setColorGradingSettings(settings) {
+        this._applyColorGradingSettings(settings);
+    }
+
     restart({ startState = 'welcome' } = {}) {
         const sm = this._stateMachine ?? null;
         if (sm) sm.go(startState);
         if (this._contextProxy && 'city' in this._contextProxy) this._contextProxy.city = null;
         this.clearScene();
         this.reloadLightingSettings();
+        this.reloadBloomSettings();
+        this.reloadColorGradingSettings();
     }
 
     /**
@@ -154,6 +440,13 @@ export class GameEngine {
     }
 
     resize() {
+        const rect = this.canvas?.getBoundingClientRect?.() ?? null;
+        const width = Number.isFinite(rect?.width) ? rect.width : null;
+        const height = Number.isFinite(rect?.height) ? rect.height : null;
+        if (width && height) {
+            this.setViewportSize(width, height);
+            return;
+        }
         this.setViewportSize(window.innerWidth, window.innerHeight);
     }
 
@@ -162,9 +455,11 @@ export class GameEngine {
         const hNum = Number(height);
         const w = Math.max(1, Math.floor(Number.isFinite(wNum) ? wNum : 1));
         const h = Math.max(1, Math.floor(Number.isFinite(hNum) ? hNum : 1));
+        this._syncPixelRatio();
         this.renderer.setSize(w, h, false);
         this.camera.aspect = w / h;
         this.camera.updateProjectionMatrix();
+        this._post?.pipeline?.setSize?.(w, h);
     }
 
     clearScene() {
@@ -215,17 +510,23 @@ export class GameEngine {
             }
         }
 
-        if (render) this.renderer.render(this.scene, this.camera);
+        if (render) {
+            if (this._post?.pipeline) this._post.pipeline.render(stepDt);
+            else this.renderer.render(this.scene, this.camera);
+        }
     }
 
     renderFrame() {
-        this.renderer.render(this.scene, this.camera);
+        if (this._post?.pipeline) this._post.pipeline.render();
+        else this.renderer.render(this.scene, this.camera);
     }
 
     dispose() {
         this.stop();
         if (this._autoResize) window.removeEventListener('resize', this._onResize);
         this.simulation?.dispose?.();
+        this._post?.pipeline?.dispose?.();
+        if (this._post) this._post.pipeline = null;
         this.renderer?.dispose?.();
     }
 

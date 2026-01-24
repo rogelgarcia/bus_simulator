@@ -95,6 +95,18 @@ async function runTests() {
         assertEqual(bus.listenerCount('b'), 0, 'Should have 0 listeners for b.');
     });
 
+    // ========== Post-processing Settings ==========
+    const { getDefaultResolvedBloomSettings } = await import('/src/graphics/visuals/postprocessing/BloomSettings.js');
+
+    test('BloomSettings: default enabled', () => {
+        const d = getDefaultResolvedBloomSettings();
+        assertTrue(d && typeof d === 'object', 'Expected bloom defaults object.');
+        assertTrue(d.enabled === true, 'Bloom should be enabled by default.');
+        assertTrue(Number.isFinite(d.strength), 'Expected bloom strength to be finite.');
+        assertTrue(Number.isFinite(d.radius), 'Expected bloom radius to be finite.');
+        assertTrue(Number.isFinite(d.threshold), 'Expected bloom threshold to be finite.');
+    });
+
     // ========== RoadEngineMeshData Tests ==========
     const { triangulateSimplePolygonXZ } = await import('/src/app/road_engine/RoadEngineMeshData.js');
     const { buildRoadCurbMeshDataFromRoadEnginePrimitives } = await import('/src/app/road_decoration/curbs/RoadCurbBuilder.js');

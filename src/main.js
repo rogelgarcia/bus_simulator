@@ -51,7 +51,7 @@ window.addEventListener('keydown', (e) => {
     const key = e.key;
     const is0 = code === 'Digit0' || code === 'Numpad0' || key === '0';
     if (!is0) return;
-    if (sm.currentName === 'options') return;
+    if (sm.currentName === 'options' || sm.isOverlayOpen('options')) return;
     e.preventDefault();
-    sm.go('options', { returnTo: sm.currentName || 'welcome' });
+    sm.pushOverlay('options', { returnTo: sm.currentName || 'welcome' });
 }, { passive: false, capture: true });

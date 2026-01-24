@@ -1,4 +1,4 @@
-// Headless browser tests: basic UI/debugger smoke.
+// Headless browser tests: LUT color grading should not break harness boot.
 import test, { expect } from '@playwright/test';
 
 async function attachFailFastConsole({ page }) {
@@ -41,24 +41,36 @@ async function attachFailFastConsole({ page }) {
     };
 }
 
-test('UI: Map Debugger mounts without crashing', async ({ page }) => {
+test('Harness: LUT color grading warm preset loads without crashing', async ({ page }) => {
     const getErrors = await attachFailFastConsole({ page });
-    await page.goto('/index.html?ibl=0&bloom=0&coreTests=0');
-    await page.waitForSelector('#ui-welcome:not(.hidden)');
-    await page.keyboard.press('Q');
-    await page.waitForSelector('#ui-setup:not(.hidden)');
-    await page.keyboard.press('1');
-    await page.waitForSelector('.map-debugger-ui-root');
+    await page.goto('/tests/headless/harness/index.html?ibl=0&bloom=0&grade=warm&gradeIntensity=1');
+    await page.waitForFunction(() => window.__testHooks && window.__testHooks.version === 1);
+
+    await page.evaluate(async () => {
+        window.__testHooks.setViewport(960, 540);
+        await window.__testHooks.loadScenario('city_straight_road', { seed: 'grade-smoke' });
+        window.__testHooks.step(20, { render: true });
+    });
+
+    await page.waitForFunction(() => {
+        const info = window.__testHooks.getColorGradingDebugInfo?.();
+        return info && info.requestedPreset === 'warm';
+    });
+
+    const info = await page.evaluate(() => window.__testHooks.getColorGradingDebugInfo?.() ?? null);
+    expect(info).not.toBeNull();
+    expect(info.requestedPreset).toBe('warm');
+    expect(info.intensity).toBe(1);
+
+    if (info.supported) {
+        await page.waitForFunction(() => window.__testHooks.getColorGradingDebugInfo?.().status === 'ready', null, { timeout: 5000 });
+        const ready = await page.evaluate(() => window.__testHooks.getColorGradingDebugInfo?.() ?? null);
+        expect(ready.hasLut).toBe(true);
+        expect(ready.enabled).toBe(true);
+    } else {
+        expect(info.enabled).toBe(false);
+    }
+
     expect(await getErrors()).toEqual([]);
 });
 
-test('UI: Road Debugger mounts without crashing', async ({ page }) => {
-    const getErrors = await attachFailFastConsole({ page });
-    await page.goto('/index.html?ibl=0&bloom=0&coreTests=0');
-    await page.waitForSelector('#ui-welcome:not(.hidden)');
-    await page.keyboard.press('Q');
-    await page.waitForSelector('#ui-setup:not(.hidden)');
-    await page.keyboard.press('7');
-    await page.waitForSelector('.road-debugger-ui');
-    expect(await getErrors()).toEqual([]);
-});

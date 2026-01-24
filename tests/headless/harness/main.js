@@ -249,6 +249,14 @@ function getMetrics() {
     };
 }
 
+function getBloomDebugInfo() {
+    return state.engine?.getBloomDebugInfo?.() ?? null;
+}
+
+function getColorGradingDebugInfo() {
+    return state.engine?.getColorGradingDebugInfo?.() ?? null;
+}
+
 function init() {
     if (!canvas) throw new Error('Missing #harness-canvas');
     state.engine = new GameEngine({
@@ -293,6 +301,8 @@ window.__testHooks = {
     measurePerformance,
     renderFrame,
     getMetrics,
+    getBloomDebugInfo,
+    getColorGradingDebugInfo,
     assert,
     pass,
     fail

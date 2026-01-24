@@ -3,19 +3,35 @@
 .options-layer {
     pointer-events: auto;
     z-index: 200;
-    background: rgba(0, 0, 0, 0.55);
-    backdrop-filter: blur(10px);
-    padding: 18px;
+    left: auto;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: var(--options-dock-width);
+    justify-content: stretch;
+    align-items: stretch;
+    background: rgba(10, 14, 20, 0.92);
+    border-left: 1px solid rgba(255,255,255,0.12);
+    backdrop-filter: none;
+    padding: 0;
     box-sizing: border-box;
 }
 
 .options-panel {
-    width: min(760px, calc(100vw - 36px));
-    max-height: calc(100vh - 36px);
+    width: 100%;
+    max-width: none;
+    max-height: none;
     overflow: hidden;
     display: flex;
     flex-direction: column;
     gap: 12px;
+    background: transparent;
+    backdrop-filter: none;
+    flex: 1 1 auto;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 16px;
 }
 
 .options-header {
@@ -66,6 +82,7 @@
 
 .options-body {
     overflow: auto;
+    overflow-x: hidden;
     padding-right: 6px;
     display: flex;
     flex-direction: column;
@@ -93,18 +110,20 @@
 
 .options-row {
     display: grid;
-    grid-template-columns: 240px 1fr;
+    grid-template-columns: minmax(0, 200px) minmax(0, 1fr);
     gap: 10px;
     align-items: center;
 }
 
 .options-row-wide {
-    grid-template-columns: 240px 1fr;
+    grid-template-columns: minmax(0, 200px) minmax(0, 1fr);
 }
 
 .options-row-label {
     font-size: 12px;
     opacity: 0.92;
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .options-row-control {
@@ -112,10 +131,12 @@
     align-items: center;
     justify-content: flex-end;
     gap: 10px;
+    min-width: 0;
 }
 
 .options-row-control-wide {
     justify-content: stretch;
+    flex-wrap: wrap;
 }
 
 .options-toggle {
@@ -126,16 +147,55 @@
 
 .options-range {
     width: 100%;
-    flex: 1 1 auto;
+    max-width: 100%;
+    min-width: 140px;
+    flex: 1 1 180px;
 }
 
 .options-number {
-    width: 92px;
+    width: 80px;
+    flex: 0 0 auto;
     padding: 8px 10px;
     border-radius: 10px;
     border: 1px solid rgba(255,255,255,0.14);
     background: rgba(0,0,0,0.25);
     color: #e9f2ff;
+}
+
+.options-choice-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.options-choice-btn {
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(0,0,0,0.18);
+    color: #e9f2ff;
+    cursor: pointer;
+    font-weight: 800;
+    font-size: 12px;
+    min-width: 0;
+    text-align: center;
+}
+
+.options-choice-btn:hover {
+    background: rgba(0,0,0,0.28);
+}
+
+.options-choice-btn.is-active {
+    background: rgba(100, 210, 255, 0.18);
+    border-color: rgba(100, 210, 255, 0.38);
+}
+
+.options-choice-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
 }
 
 .options-footer {
@@ -200,5 +260,9 @@
     .options-row-control {
         justify-content: stretch;
     }
-}
 
+    .options-range {
+        width: 100%;
+        flex: 1 1 auto;
+    }
+}

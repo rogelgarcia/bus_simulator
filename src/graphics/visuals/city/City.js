@@ -13,6 +13,8 @@ import { BuildingWallTextureCache, buildBuildingVisualParts } from '../../assets
 import { buildBuildingFabricationVisualParts } from '../../assets3d/generators/building_fabrication/BuildingFabricationGenerator.js';
 import { getCityMaterials } from '../../assets3d/textures/CityMaterials.js';
 import { getResolvedLightingSettings } from '../../lighting/LightingSettings.js';
+import { getResolvedSunFlareSettings } from '../sun/SunFlareSettings.js';
+import { SunFlareRig } from '../sun/SunFlareRig.js';
 import { createRoadEngineRoads } from './RoadEngineRoads.js';
 import { createTrafficControlProps } from './TrafficControlProps.js';
 
@@ -70,6 +72,13 @@ export class City {
             sunIntensity: 0.28
         });
         this.group.add(this.sky);
+
+        this.sunFlare = null;
+        if (typeof window !== 'undefined') {
+            const sunFlareSettings = getResolvedSunFlareSettings();
+            this.sunFlare = new SunFlareRig({ light: this.sun, settings: sunFlareSettings });
+            this.group.add(this.sunFlare.group);
+        }
 
         const resolvedSeed = mapSpec?.seed ?? seed;
         this.genConfig = createCityConfig({ size, tileMeters, mapTileSize, seed: resolvedSeed });
@@ -211,6 +220,7 @@ export class City {
 
     update(engine) {
         this.sky.position.copy(engine.camera.position);
+        this.sunFlare?.update?.(engine);
     }
 }
 

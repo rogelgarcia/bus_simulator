@@ -41,6 +41,8 @@ export function getCityMaterials() {
         depthWrite: false
     }), { factor: 0, units: -1 });
     laneWhite.blending = THREE.NoBlending;
+    if (!laneWhite.userData) laneWhite.userData = {};
+    laneWhite.userData.bloomExclude = true;
 
     const laneYellow = applyPolygonOffset(new THREE.MeshStandardMaterial({
         color: 0xf2d34f,
@@ -51,6 +53,8 @@ export function getCityMaterials() {
         depthWrite: false
     }), { factor: 0, units: -1 });
     laneYellow.blending = THREE.NoBlending;
+    if (!laneYellow.userData) laneYellow.userData = {};
+    laneYellow.userData.bloomExclude = true;
 
     _cached = { road, sidewalk, curb, laneWhite, laneYellow };
     return _cached;

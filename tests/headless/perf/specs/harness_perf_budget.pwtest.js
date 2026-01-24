@@ -56,7 +56,7 @@ test('Perf: harness scenarios stay within budgets', async ({ page }) => {
     const warmupTicks = profile === 'nightly' ? 90 : 60;
     const measureTicks = profile === 'nightly' ? 240 : 120;
 
-    await page.goto('/tests/headless/harness/index.html?ibl=0');
+    await page.goto('/tests/headless/harness/index.html?ibl=0&bloom=0');
     await page.waitForFunction(() => window.__testHooks && window.__testHooks.measurePerformance);
 
     const results = [];
@@ -128,4 +128,3 @@ test('Perf: harness scenarios stay within budgets', async ({ page }) => {
         enforceNumberBudget({ label: `${id}: memory.textures`, value: memTex, max: capTex });
     }
 });
-

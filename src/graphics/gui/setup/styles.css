@@ -30,6 +30,15 @@ body.setup-bg #game-canvas {
     box-sizing: border-box;
 }
 
+.setup-layer.is-overlay {
+    justify-content: flex-end;
+    background: transparent;
+}
+
+.setup-layer.is-overlay.is-collapsed {
+    background: transparent;
+}
+
 .setup-frame {
     pointer-events: auto;
     color: #f7fbff;
@@ -47,6 +56,10 @@ body.setup-bg #game-canvas {
     box-sizing: border-box;
 }
 
+.setup-layer.is-overlay .setup-frame {
+    font-size: clamp(13px, 1.05vw, 16px);
+}
+
 .setup-border {
     white-space: pre;
     font-weight: 700;
@@ -57,6 +70,10 @@ body.setup-bg #game-canvas {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     letter-spacing: 0;
     line-height: 1;
+}
+
+.setup-layer.is-overlay .setup-border {
+    opacity: 0.78;
 }
 
 .setup-border-top,
@@ -86,6 +103,54 @@ body.setup-bg #game-canvas {
     box-sizing: border-box;
 }
 
+.setup-panel {
+    position: relative;
+}
+
+.setup-layer.is-overlay .setup-panel {
+    padding: 14px 16px;
+    gap: 14px;
+    background: rgba(10, 14, 20, 0.28);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 14px;
+    backdrop-filter: none;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.34);
+}
+
+.setup-layer.is-overlay .setup-frame {
+    margin-left: auto;
+}
+
+.setup-layer.is-overlay.is-collapsed .setup-panel {
+    padding: 12px 14px;
+    gap: 0;
+}
+
+.setup-collapse-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.16);
+    background: rgba(0,0,0,0.16);
+    color: inherit;
+    cursor: pointer;
+    padding: 0;
+    display: grid;
+    place-items: center;
+}
+
+.setup-collapse-btn:hover {
+    background: rgba(0,0,0,0.24);
+}
+
+.setup-collapse-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
 .setup-title {
     text-align: center;
     font-size: 1.2em;
@@ -95,10 +160,18 @@ body.setup-bg #game-canvas {
     text-shadow: 0 0 18px rgba(255,255,255,0.28);
 }
 
+.setup-layer.is-overlay .setup-title {
+    text-shadow: 0 0 14px rgba(255,255,255,0.22);
+}
+
 .setup-subtitle {
     text-align: center;
     font-size: 0.86em;
     opacity: 0.78;
+}
+
+.setup-layer.is-overlay.is-collapsed .setup-subtitle {
+    display: none;
 }
 
 .setup-menu {
@@ -123,6 +196,11 @@ body.setup-bg #game-canvas {
     padding-top: 24px;
 }
 
+.setup-layer.is-overlay.is-collapsed .setup-menu,
+.setup-layer.is-overlay.is-collapsed .setup-menu-back {
+    display: none;
+}
+
 .setup-option-row {
     display: grid;
     grid-template-columns: 3ch 1fr;
@@ -132,12 +210,22 @@ body.setup-bg #game-canvas {
     min-width: 0;
 }
 
+.setup-layer.is-overlay .setup-option-row {
+    grid-template-columns: 2ch 1fr;
+    column-gap: 12px;
+}
+
 .setup-option-indicator {
     display: inline-block;
     width: 3ch;
     text-align: center;
     color: #ffffff;
     opacity: 0.85;
+}
+
+.setup-layer.is-overlay .setup-option-indicator {
+    width: 2ch;
+    opacity: 0.75;
 }
 
 .setup-option-row.is-selected .setup-option-indicator {
@@ -157,6 +245,11 @@ body.setup-bg #game-canvas {
     box-sizing: border-box;
 }
 
+.setup-layer.is-overlay .setup-option {
+    border-color: rgba(255,255,255,0.7);
+    padding: 8px 10px;
+}
+
 .setup-option-box {
     display: flex;
     align-items: baseline;
@@ -168,8 +261,18 @@ body.setup-bg #game-canvas {
     box-sizing: border-box;
 }
 
+.setup-layer.is-overlay .setup-option-box {
+    gap: 12px;
+    padding: 6px 10px;
+    background: rgba(21, 58, 156, 0.45);
+}
+
 .setup-option:hover .setup-option-box {
     background: #1c43b0;
+}
+
+.setup-layer.is-overlay .setup-option:hover .setup-option-box {
+    background: rgba(28, 67, 176, 0.55);
 }
 
 .setup-option:focus-visible {
@@ -181,9 +284,17 @@ body.setup-bg #game-canvas {
     color: #ffffff;
 }
 
+.setup-layer.is-overlay .setup-option.is-selected .setup-option-box {
+    background: rgba(47, 86, 201, 0.68);
+}
+
 .setup-option-num {
     font-weight: 700;
     min-width: 4ch;
+}
+
+.setup-layer.is-overlay .setup-option-num {
+    min-width: 3ch;
 }
 
 .setup-option-label {
@@ -196,4 +307,8 @@ body.setup-bg #game-canvas {
     text-align: center;
     font-size: 0.8em;
     opacity: 0.72;
+}
+
+.setup-layer.is-overlay.is-collapsed .setup-footer {
+    display: none;
 }
