@@ -209,6 +209,17 @@
     transition: opacity 0.35s ease;
 }
 
+.map-debugger-controls-panel.is-minimized .map-debugger-controls-columns {
+    display: none;
+}
+
+.map-debugger-controls-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
 .map-debugger-controls-title,
 .city-debugs-title {
     font-size: 12px;
@@ -216,6 +227,46 @@
     text-transform: uppercase;
     font-weight: 700;
     opacity: 0.85;
+}
+
+.map-debugger-controls-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.9);
+    cursor: pointer;
+}
+
+.map-debugger-controls-icon-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.map-debugger-controls-icon-btn:active {
+    transform: translateY(1px);
+}
+
+.map-debugger-controls-icon-btn:focus-visible {
+    outline: none;
+    border-color: rgba(63, 212, 110, 0.85);
+    box-shadow: 0 0 0 3px rgba(63, 212, 110, 0.15);
+}
+
+.map-debugger-controls-columns {
+    display: grid;
+    grid-template-columns: repeat(2, max-content);
+    column-gap: 18px;
+    align-items: start;
+}
+
+.map-debugger-controls-column {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 .map-debugger-controls,
@@ -251,6 +302,26 @@
     column-gap: 12px;
     align-items: center;
     font-size: 12px;
+}
+
+.map-debugger-mode-inputs {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.map-debugger-controls-range {
+    width: 140px;
+    accent-color: rgba(63, 212, 110, 0.9);
+}
+
+.map-debugger-controls-infinity {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 4px;
+    color: rgba(255, 255, 255, 0.75);
+    user-select: none;
 }
 
 .map-debugger-mode-label,
@@ -331,6 +402,16 @@
 .city-debugs-toggle-switch {
     color: rgba(255, 255, 255, 0.8);
     white-space: nowrap;
+}
+
+@media (max-width: 520px) {
+    .map-debugger-controls-panel {
+        width: min(540px, calc(100vw - 24px));
+    }
+
+    .map-debugger-controls-columns {
+        grid-template-columns: 1fr;
+    }
 }
 
 .city-debugs-legend {

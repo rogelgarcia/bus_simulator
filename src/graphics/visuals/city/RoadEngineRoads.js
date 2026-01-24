@@ -568,6 +568,12 @@ export function createRoadEngineRoads({
         if (Number.isFinite(maxThreshold)) junctionSettings.maxThreshold = maxThreshold;
     }
 
+    const trimCfg = (roadCfg?.trim && typeof roadCfg.trim === 'object') ? roadCfg.trim : null;
+    let trimThresholdFactor = Number(trimCfg?.thresholdFactor);
+    if (!Number.isFinite(trimThresholdFactor)) trimThresholdFactor = 0.1;
+    trimThresholdFactor = Math.max(0, trimThresholdFactor);
+    const trimSettings = { enabled: true, threshold: laneWidth * trimThresholdFactor };
+
     const roadSchema = Array.isArray(roads)
         ? roads
         : (map ? buildRoadEngineRoadsFromCityMap(map) : []);
@@ -588,7 +594,7 @@ export function createRoadEngineRoads({
                 asphaltObb: false
             },
             junctions: junctionSettings,
-            trim: { enabled: true }
+            trim: trimSettings
         }
     });
 

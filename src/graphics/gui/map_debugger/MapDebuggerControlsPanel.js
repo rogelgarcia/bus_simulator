@@ -1,5 +1,34 @@
 // src/graphics/gui/map_debugger/MapDebuggerControlsPanel.js
 // Controls map debugger toggles and render mode switches.
+import { applyMaterialSymbolToButton } from '../shared/materialSymbols.js';
+
+function clampNumber(value, lo, hi, fallback) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(lo, Math.min(hi, n));
+}
+
+function setNumberFieldValue(input, value) {
+    if (!input) return;
+    const v = Number(value);
+    if (!Number.isFinite(v)) return;
+    input.value = String(v);
+}
+
+function setRangeFieldValue(input, value) {
+    if (!input) return;
+    const v = Number(value);
+    if (!Number.isFinite(v)) return;
+    input.value = String(v);
+}
+
+function setRangeNumberPair({ range, number, value, lo, hi } = {}) {
+    const v = clampNumber(value, lo, hi, lo);
+    setRangeFieldValue(range, v);
+    setNumberFieldValue(number, v);
+    return v;
+}
+
 export class MapDebuggerControlsPanel {
     constructor({
         connectorDebugEnabled = true,
@@ -12,6 +41,7 @@ export class MapDebuggerControlsPanel {
         roadDirectionLinesEnabled = true,
         roadEndpointsEnabled = true,
         roadRenderMode = 'debug',
+        trimThresholdFactor = 0.1,
         junctionThresholdFactor = 1.5,
         junctionFilletRadiusFactor = 1,
         junctionMinThreshold = 7.2,
@@ -26,14 +56,25 @@ export class MapDebuggerControlsPanel {
         onRoadDirectionLinesToggle = null,
         onRoadEndpointsToggle = null,
         onRoadRenderModeChange = null,
+        onTrimThresholdFactorChange = null,
         onJunctionParamsChange = null
     } = {}) {
         this.root = document.createElement('div');
         this.root.className = 'map-debugger-controls-panel hidden';
 
+        this.header = document.createElement('div');
+        this.header.className = 'map-debugger-controls-header';
+
         this.title = document.createElement('div');
         this.title.className = 'map-debugger-controls-title';
         this.title.textContent = 'Map Debugger';
+
+        this.minimizeBtn = document.createElement('button');
+        this.minimizeBtn.type = 'button';
+        this.minimizeBtn.className = 'map-debugger-controls-icon-btn';
+
+        this.header.appendChild(this.title);
+        this.header.appendChild(this.minimizeBtn);
 
         this.controls = document.createElement('div');
         this.controls.className = 'map-debugger-controls';
@@ -170,6 +211,42 @@ export class MapDebuggerControlsPanel {
         this.displaySection.appendChild(this.displayTitle);
         this.displaySection.appendChild(this.displayRow);
 
+        this.crossingsSection = document.createElement('div');
+        this.crossingsSection.className = 'map-debugger-section';
+        this.crossingsTitle = document.createElement('div');
+        this.crossingsTitle.className = 'map-debugger-section-title';
+        this.crossingsTitle.textContent = 'Crossings';
+        this.crossingsSection.appendChild(this.crossingsTitle);
+
+        this.trimThresholdRow = document.createElement('div');
+        this.trimThresholdRow.className = 'map-debugger-mode-row';
+        this.trimThresholdRow.title = 'Crossing trim threshold for near-overlaps (as a fraction of laneWidth). Higher values treat close strips as overlapping.';
+        this.trimThresholdLabel = document.createElement('span');
+        this.trimThresholdLabel.className = 'map-debugger-mode-label';
+        this.trimThresholdLabel.textContent = 'threshold × laneWidth:';
+        this.trimThresholdInputs = document.createElement('div');
+        this.trimThresholdInputs.className = 'map-debugger-mode-inputs';
+        this.trimThresholdRange = document.createElement('input');
+        this.trimThresholdRange.type = 'range';
+        this.trimThresholdRange.min = '0';
+        this.trimThresholdRange.max = '5';
+        this.trimThresholdRange.step = '0.01';
+        this.trimThresholdRange.className = 'map-debugger-controls-range';
+        this.trimThresholdInput = document.createElement('input');
+        this.trimThresholdInput.type = 'number';
+        this.trimThresholdInput.min = '0';
+        this.trimThresholdInput.max = '5';
+        this.trimThresholdInput.step = '0.01';
+        this.trimThresholdInput.className = 'map-debugger-controls-input';
+        const initialTrimFactor = clampNumber(trimThresholdFactor, 0, 5, 0.1);
+        this.trimThresholdRange.value = String(initialTrimFactor);
+        this.trimThresholdInput.value = String(initialTrimFactor);
+        this.trimThresholdInputs.appendChild(this.trimThresholdRange);
+        this.trimThresholdInputs.appendChild(this.trimThresholdInput);
+        this.trimThresholdRow.appendChild(this.trimThresholdLabel);
+        this.trimThresholdRow.appendChild(this.trimThresholdInputs);
+        this.crossingsSection.appendChild(this.trimThresholdRow);
+
         this.junctionSection = document.createElement('div');
         this.junctionSection.className = 'map-debugger-section';
         this.junctionTitle = document.createElement('div');
@@ -182,15 +259,26 @@ export class MapDebuggerControlsPanel {
         this.junctionMinThresholdLabel = document.createElement('span');
         this.junctionMinThresholdLabel.className = 'map-debugger-mode-label';
         this.junctionMinThresholdLabel.textContent = 'Min threshold (m):';
+        this.junctionMinThresholdInputs = document.createElement('div');
+        this.junctionMinThresholdInputs.className = 'map-debugger-mode-inputs';
+        this.junctionMinThresholdRange = document.createElement('input');
+        this.junctionMinThresholdRange.type = 'range';
+        this.junctionMinThresholdRange.min = '0';
+        this.junctionMinThresholdRange.max = '40';
+        this.junctionMinThresholdRange.step = '0.1';
+        this.junctionMinThresholdRange.className = 'map-debugger-controls-range';
         this.junctionMinThresholdInput = document.createElement('input');
         this.junctionMinThresholdInput.type = 'number';
         this.junctionMinThresholdInput.min = '0';
         this.junctionMinThresholdInput.step = '0.1';
         this.junctionMinThresholdInput.className = 'map-debugger-controls-input';
-        const minThresholdValue = Number(junctionMinThreshold);
-        this.junctionMinThresholdInput.value = Number.isFinite(minThresholdValue) ? String(minThresholdValue) : '7.2';
+        const minThresholdValue = clampNumber(junctionMinThreshold, 0, 40, 7.2);
+        this.junctionMinThresholdRange.value = String(minThresholdValue);
+        this.junctionMinThresholdInput.value = String(minThresholdValue);
+        this.junctionMinThresholdInputs.appendChild(this.junctionMinThresholdRange);
+        this.junctionMinThresholdInputs.appendChild(this.junctionMinThresholdInput);
         this.junctionMinThresholdRow.appendChild(this.junctionMinThresholdLabel);
-        this.junctionMinThresholdRow.appendChild(this.junctionMinThresholdInput);
+        this.junctionMinThresholdRow.appendChild(this.junctionMinThresholdInputs);
         this.junctionSection.appendChild(this.junctionMinThresholdRow);
 
         this.junctionMaxThresholdRow = document.createElement('div');
@@ -198,18 +286,46 @@ export class MapDebuggerControlsPanel {
         this.junctionMaxThresholdLabel = document.createElement('span');
         this.junctionMaxThresholdLabel.className = 'map-debugger-mode-label';
         this.junctionMaxThresholdLabel.textContent = 'Max threshold (m):';
+        this.junctionMaxThresholdInputs = document.createElement('div');
+        this.junctionMaxThresholdInputs.className = 'map-debugger-mode-inputs';
+        this.junctionMaxThresholdRange = document.createElement('input');
+        this.junctionMaxThresholdRange.type = 'range';
+        this.junctionMaxThresholdRange.min = '0';
+        this.junctionMaxThresholdRange.max = '200';
+        this.junctionMaxThresholdRange.step = '0.1';
+        this.junctionMaxThresholdRange.className = 'map-debugger-controls-range';
         this.junctionMaxThresholdInput = document.createElement('input');
         this.junctionMaxThresholdInput.type = 'number';
         this.junctionMaxThresholdInput.min = '0';
         this.junctionMaxThresholdInput.step = '0.1';
         this.junctionMaxThresholdInput.placeholder = '∞';
         this.junctionMaxThresholdInput.className = 'map-debugger-controls-input';
+        this.junctionMaxInfinityLabel = document.createElement('label');
+        this.junctionMaxInfinityLabel.className = 'map-debugger-controls-infinity';
+        this.junctionMaxInfinityInput = document.createElement('input');
+        this.junctionMaxInfinityInput.type = 'checkbox';
+        this.junctionMaxInfinityText = document.createElement('span');
+        this.junctionMaxInfinityText.textContent = '∞';
+        this.junctionMaxInfinityLabel.appendChild(this.junctionMaxInfinityInput);
+        this.junctionMaxInfinityLabel.appendChild(this.junctionMaxInfinityText);
         const maxThresholdValue = junctionMaxThreshold === null || junctionMaxThreshold === undefined
             ? Number.NaN
             : Number(junctionMaxThreshold);
-        this.junctionMaxThresholdInput.value = Number.isFinite(maxThresholdValue) ? String(maxThresholdValue) : '';
+        this._junctionMaxLastFinite = Number.isFinite(maxThresholdValue) ? maxThresholdValue : 200;
+        if (Number.isFinite(maxThresholdValue)) {
+            this.junctionMaxThresholdRange.value = String(clampNumber(maxThresholdValue, 0, 200, 0));
+            this.junctionMaxThresholdInput.value = String(maxThresholdValue);
+            this.junctionMaxInfinityInput.checked = false;
+        } else {
+            this.junctionMaxThresholdRange.value = String(clampNumber(this._junctionMaxLastFinite, 0, 200, 200));
+            this.junctionMaxThresholdInput.value = '';
+            this.junctionMaxInfinityInput.checked = true;
+        }
+        this.junctionMaxThresholdInputs.appendChild(this.junctionMaxThresholdRange);
+        this.junctionMaxThresholdInputs.appendChild(this.junctionMaxThresholdInput);
+        this.junctionMaxThresholdInputs.appendChild(this.junctionMaxInfinityLabel);
         this.junctionMaxThresholdRow.appendChild(this.junctionMaxThresholdLabel);
-        this.junctionMaxThresholdRow.appendChild(this.junctionMaxThresholdInput);
+        this.junctionMaxThresholdRow.appendChild(this.junctionMaxThresholdInputs);
         this.junctionSection.appendChild(this.junctionMaxThresholdRow);
 
         this.junctionThresholdRow = document.createElement('div');
@@ -217,15 +333,26 @@ export class MapDebuggerControlsPanel {
         this.junctionThresholdLabel = document.createElement('span');
         this.junctionThresholdLabel.className = 'map-debugger-mode-label';
         this.junctionThresholdLabel.textContent = 'Threshold factor:';
+        this.junctionThresholdInputs = document.createElement('div');
+        this.junctionThresholdInputs.className = 'map-debugger-mode-inputs';
+        this.junctionThresholdRange = document.createElement('input');
+        this.junctionThresholdRange.type = 'range';
+        this.junctionThresholdRange.min = '0';
+        this.junctionThresholdRange.max = '5';
+        this.junctionThresholdRange.step = '0.05';
+        this.junctionThresholdRange.className = 'map-debugger-controls-range';
         this.junctionThresholdInput = document.createElement('input');
         this.junctionThresholdInput.type = 'number';
         this.junctionThresholdInput.min = '0';
-        this.junctionThresholdInput.step = '0.1';
+        this.junctionThresholdInput.step = '0.05';
         this.junctionThresholdInput.className = 'map-debugger-controls-input';
-        const thresholdValue = Number(junctionThresholdFactor);
-        this.junctionThresholdInput.value = Number.isFinite(thresholdValue) ? String(thresholdValue) : '1.5';
+        const thresholdValue = clampNumber(junctionThresholdFactor, 0, 5, 1.5);
+        this.junctionThresholdRange.value = String(thresholdValue);
+        this.junctionThresholdInput.value = String(thresholdValue);
+        this.junctionThresholdInputs.appendChild(this.junctionThresholdRange);
+        this.junctionThresholdInputs.appendChild(this.junctionThresholdInput);
         this.junctionThresholdRow.appendChild(this.junctionThresholdLabel);
-        this.junctionThresholdRow.appendChild(this.junctionThresholdInput);
+        this.junctionThresholdRow.appendChild(this.junctionThresholdInputs);
         this.junctionSection.appendChild(this.junctionThresholdRow);
 
         this.junctionFilletRow = document.createElement('div');
@@ -233,22 +360,45 @@ export class MapDebuggerControlsPanel {
         this.junctionFilletLabel = document.createElement('span');
         this.junctionFilletLabel.className = 'map-debugger-mode-label';
         this.junctionFilletLabel.textContent = 'Fillet factor:';
+        this.junctionFilletInputs = document.createElement('div');
+        this.junctionFilletInputs.className = 'map-debugger-mode-inputs';
+        this.junctionFilletRange = document.createElement('input');
+        this.junctionFilletRange.type = 'range';
+        this.junctionFilletRange.min = '0';
+        this.junctionFilletRange.max = '1';
+        this.junctionFilletRange.step = '0.01';
+        this.junctionFilletRange.className = 'map-debugger-controls-range';
         this.junctionFilletInput = document.createElement('input');
         this.junctionFilletInput.type = 'number';
         this.junctionFilletInput.min = '0';
         this.junctionFilletInput.max = '1';
-        this.junctionFilletInput.step = '0.05';
+        this.junctionFilletInput.step = '0.01';
         this.junctionFilletInput.className = 'map-debugger-controls-input';
-        const filletValue = Number(junctionFilletRadiusFactor);
-        this.junctionFilletInput.value = Number.isFinite(filletValue) ? String(filletValue) : '1';
+        const filletValue = clampNumber(junctionFilletRadiusFactor, 0, 1, 1);
+        this.junctionFilletRange.value = String(filletValue);
+        this.junctionFilletInput.value = String(filletValue);
+        this.junctionFilletInputs.appendChild(this.junctionFilletRange);
+        this.junctionFilletInputs.appendChild(this.junctionFilletInput);
         this.junctionFilletRow.appendChild(this.junctionFilletLabel);
-        this.junctionFilletRow.appendChild(this.junctionFilletInput);
+        this.junctionFilletRow.appendChild(this.junctionFilletInputs);
         this.junctionSection.appendChild(this.junctionFilletRow);
 
-        this.root.appendChild(this.title);
-        this.root.appendChild(this.controls);
-        this.root.appendChild(this.displaySection);
-        this.root.appendChild(this.junctionSection);
+        this.columns = document.createElement('div');
+        this.columns.className = 'map-debugger-controls-columns';
+        this.leftColumn = document.createElement('div');
+        this.leftColumn.className = 'map-debugger-controls-column';
+        this.rightColumn = document.createElement('div');
+        this.rightColumn.className = 'map-debugger-controls-column';
+
+        this.leftColumn.appendChild(this.controls);
+        this.leftColumn.appendChild(this.displaySection);
+        this.rightColumn.appendChild(this.crossingsSection);
+        this.rightColumn.appendChild(this.junctionSection);
+        this.columns.appendChild(this.leftColumn);
+        this.columns.appendChild(this.rightColumn);
+
+        this.root.appendChild(this.header);
+        this.root.appendChild(this.columns);
 
         this._onConnectorDebugToggle = onConnectorDebugToggle;
         this._onHoverOutlineToggle = onHoverOutlineToggle;
@@ -260,10 +410,20 @@ export class MapDebuggerControlsPanel {
         this._onRoadDirectionLinesToggle = onRoadDirectionLinesToggle;
         this._onRoadEndpointsToggle = onRoadEndpointsToggle;
         this._onRoadRenderModeChange = onRoadRenderModeChange;
+        this._onTrimThresholdFactorChange = onTrimThresholdFactorChange;
         this._onJunctionParamsChange = onJunctionParamsChange;
         this._junctionEmitTimer = 0;
+        this._trimEmitTimer = 0;
+        this._minimized = false;
+
+        this._syncMinimizeUi();
 
         this._setRoadRenderMode(roadRenderMode);
+
+        this.minimizeBtn.addEventListener('click', () => {
+            this._minimized = !this._minimized;
+            this._syncMinimizeUi();
+        });
 
         this.connectorToggleInput.addEventListener('change', () => {
             if (this._onConnectorDebugToggle) this._onConnectorDebugToggle(this.connectorToggleInput.checked);
@@ -301,15 +461,73 @@ export class MapDebuggerControlsPanel {
             if (this._onRoadEndpointsToggle) this._onRoadEndpointsToggle(this.roadEndpointsToggleInput.checked);
         });
 
-        this.junctionMinThresholdInput.addEventListener('input', () => this._queueJunctionParamsChange());
-        this.junctionMaxThresholdInput.addEventListener('input', () => this._queueJunctionParamsChange());
-        this.junctionThresholdInput.addEventListener('input', () => this._queueJunctionParamsChange());
-        this.junctionFilletInput.addEventListener('input', () => this._queueJunctionParamsChange());
+        this.trimThresholdRange.addEventListener('input', () => {
+            const next = setRangeNumberPair({ range: this.trimThresholdRange, number: this.trimThresholdInput, value: this.trimThresholdRange.value, lo: 0, hi: 5 });
+            this._queueTrimThresholdFactorChange(next);
+        });
+        this.trimThresholdInput.addEventListener('change', () => {
+            const next = setRangeNumberPair({ range: this.trimThresholdRange, number: this.trimThresholdInput, value: this.trimThresholdInput.value, lo: 0, hi: 5 });
+            this._emitTrimThresholdFactorChange(next);
+        });
 
-        this.junctionMinThresholdInput.addEventListener('change', () => this._emitJunctionParamsChange());
-        this.junctionMaxThresholdInput.addEventListener('change', () => this._emitJunctionParamsChange());
-        this.junctionThresholdInput.addEventListener('change', () => this._emitJunctionParamsChange());
-        this.junctionFilletInput.addEventListener('change', () => this._emitJunctionParamsChange());
+        this.junctionMinThresholdRange.addEventListener('input', () => {
+            setRangeNumberPair({ range: this.junctionMinThresholdRange, number: this.junctionMinThresholdInput, value: this.junctionMinThresholdRange.value, lo: 0, hi: 40 });
+            this._queueJunctionParamsChange();
+        });
+        this.junctionMinThresholdInput.addEventListener('change', () => {
+            setRangeNumberPair({ range: this.junctionMinThresholdRange, number: this.junctionMinThresholdInput, value: this.junctionMinThresholdInput.value, lo: 0, hi: 40 });
+            this._emitJunctionParamsChange();
+        });
+
+        this.junctionMaxThresholdRange.addEventListener('input', () => {
+            this.junctionMaxInfinityInput.checked = false;
+            const next = setRangeNumberPair({ range: this.junctionMaxThresholdRange, number: this.junctionMaxThresholdInput, value: this.junctionMaxThresholdRange.value, lo: 0, hi: 200 });
+            this._junctionMaxLastFinite = next;
+            this._queueJunctionParamsChange();
+        });
+        this.junctionMaxThresholdInput.addEventListener('change', () => {
+            const raw = typeof this.junctionMaxThresholdInput.value === 'string' ? this.junctionMaxThresholdInput.value.trim() : '';
+            if (!raw) {
+                this.junctionMaxInfinityInput.checked = true;
+                this._emitJunctionParamsChange();
+                return;
+            }
+            this.junctionMaxInfinityInput.checked = false;
+            const next = setRangeNumberPair({ range: this.junctionMaxThresholdRange, number: this.junctionMaxThresholdInput, value: raw, lo: 0, hi: 200 });
+            this._junctionMaxLastFinite = next;
+            this._emitJunctionParamsChange();
+        });
+        this.junctionMaxInfinityInput.addEventListener('change', () => {
+            const enabled = this.junctionMaxInfinityInput.checked;
+            if (enabled) {
+                this.junctionMaxThresholdInput.value = '';
+                this._emitJunctionParamsChange();
+                return;
+            }
+            const minValue = Number(this.junctionMinThresholdInput?.value);
+            const fallback = Number.isFinite(minValue) ? minValue : 0;
+            const next = setRangeNumberPair({ range: this.junctionMaxThresholdRange, number: this.junctionMaxThresholdInput, value: this._junctionMaxLastFinite || fallback, lo: 0, hi: 200 });
+            this._junctionMaxLastFinite = next;
+            this._emitJunctionParamsChange();
+        });
+
+        this.junctionThresholdRange.addEventListener('input', () => {
+            setRangeNumberPair({ range: this.junctionThresholdRange, number: this.junctionThresholdInput, value: this.junctionThresholdRange.value, lo: 0, hi: 5 });
+            this._queueJunctionParamsChange();
+        });
+        this.junctionThresholdInput.addEventListener('change', () => {
+            setRangeNumberPair({ range: this.junctionThresholdRange, number: this.junctionThresholdInput, value: this.junctionThresholdInput.value, lo: 0, hi: 5 });
+            this._emitJunctionParamsChange();
+        });
+
+        this.junctionFilletRange.addEventListener('input', () => {
+            setRangeNumberPair({ range: this.junctionFilletRange, number: this.junctionFilletInput, value: this.junctionFilletRange.value, lo: 0, hi: 1 });
+            this._queueJunctionParamsChange();
+        });
+        this.junctionFilletInput.addEventListener('change', () => {
+            setRangeNumberPair({ range: this.junctionFilletRange, number: this.junctionFilletInput, value: this.junctionFilletInput.value, lo: 0, hi: 1 });
+            this._emitJunctionParamsChange();
+        });
 
         this.modeToggle.addEventListener('click', () => {
             const next = this._roadRenderMode === 'debug' ? 'normal' : 'debug';
@@ -370,31 +588,47 @@ export class MapDebuggerControlsPanel {
         this._setRoadRenderMode(mode);
     }
 
+    setTrimThresholdFactor(value) {
+        if (!this.trimThresholdRange || !this.trimThresholdInput) return;
+        const v = clampNumber(value, 0, 5, 0.1);
+        this.trimThresholdRange.value = String(v);
+        this.trimThresholdInput.value = String(v);
+    }
+
     setJunctionThresholdFactor(value) {
-        if (!this.junctionThresholdInput) return;
-        const v = Number(value);
-        if (!Number.isFinite(v)) return;
+        if (!this.junctionThresholdRange || !this.junctionThresholdInput) return;
+        const v = clampNumber(value, 0, 5, 1.5);
+        this.junctionThresholdRange.value = String(v);
         this.junctionThresholdInput.value = String(v);
     }
 
     setJunctionFilletRadiusFactor(value) {
-        if (!this.junctionFilletInput) return;
-        const v = Number(value);
-        if (!Number.isFinite(v)) return;
+        if (!this.junctionFilletRange || !this.junctionFilletInput) return;
+        const v = clampNumber(value, 0, 1, 1);
+        this.junctionFilletRange.value = String(v);
         this.junctionFilletInput.value = String(v);
     }
 
     setJunctionMinThreshold(value) {
-        if (!this.junctionMinThresholdInput) return;
-        const v = Number(value);
-        if (!Number.isFinite(v)) return;
+        if (!this.junctionMinThresholdRange || !this.junctionMinThresholdInput) return;
+        const v = clampNumber(value, 0, 40, 7.2);
+        this.junctionMinThresholdRange.value = String(v);
         this.junctionMinThresholdInput.value = String(v);
     }
 
     setJunctionMaxThreshold(value) {
-        if (!this.junctionMaxThresholdInput) return;
         const v = Number(value);
-        this.junctionMaxThresholdInput.value = Number.isFinite(v) ? String(v) : '';
+        if (!this.junctionMaxThresholdRange || !this.junctionMaxThresholdInput || !this.junctionMaxInfinityInput) return;
+        if (!Number.isFinite(v)) {
+            this.junctionMaxInfinityInput.checked = true;
+            this.junctionMaxThresholdInput.value = '';
+            this.junctionMaxThresholdRange.value = String(clampNumber(this._junctionMaxLastFinite, 0, 200, 200));
+            return;
+        }
+        this.junctionMaxInfinityInput.checked = false;
+        this._junctionMaxLastFinite = v;
+        this.junctionMaxThresholdRange.value = String(clampNumber(v, 0, 200, 0));
+        this.junctionMaxThresholdInput.value = String(v);
     }
 
     setOnConnectorDebugToggle(fn) {
@@ -437,6 +671,10 @@ export class MapDebuggerControlsPanel {
         this._onRoadRenderModeChange = fn;
     }
 
+    setOnTrimThresholdFactorChange(fn) {
+        this._onTrimThresholdFactorChange = fn;
+    }
+
     setOnJunctionParamsChange(fn) {
         this._onJunctionParamsChange = fn;
     }
@@ -459,7 +697,19 @@ export class MapDebuggerControlsPanel {
             clearTimeout(this._junctionEmitTimer);
             this._junctionEmitTimer = 0;
         }
+        if (this._trimEmitTimer) {
+            clearTimeout(this._trimEmitTimer);
+            this._trimEmitTimer = 0;
+        }
         if (this.root.isConnected) this.root.remove();
+    }
+
+    _syncMinimizeUi() {
+        this.root.classList.toggle('is-minimized', this._minimized);
+        applyMaterialSymbolToButton(this.minimizeBtn, this._minimized
+            ? { name: 'expand_less', label: 'Expand Map Debugger panel', size: 'sm' }
+            : { name: 'expand_more', label: 'Minimize Map Debugger panel', size: 'sm' }
+        );
     }
 
     _setRoadRenderMode(mode) {
@@ -495,6 +745,25 @@ export class MapDebuggerControlsPanel {
         this._junctionEmitTimer = setTimeout(() => {
             this._junctionEmitTimer = 0;
             this._emitJunctionParamsChange();
+        }, 120);
+    }
+
+    _emitTrimThresholdFactorChange(value) {
+        if (!this._onTrimThresholdFactorChange) return;
+        if (this._trimEmitTimer) {
+            clearTimeout(this._trimEmitTimer);
+            this._trimEmitTimer = 0;
+        }
+        const next = clampNumber(value, 0, 5, 0.1);
+        this._onTrimThresholdFactorChange(next);
+    }
+
+    _queueTrimThresholdFactorChange(value) {
+        if (!this._onTrimThresholdFactorChange) return;
+        if (this._trimEmitTimer) clearTimeout(this._trimEmitTimer);
+        this._trimEmitTimer = setTimeout(() => {
+            this._trimEmitTimer = 0;
+            this._emitTrimThresholdFactorChange(value);
         }, 120);
     }
 }

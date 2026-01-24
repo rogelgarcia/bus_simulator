@@ -227,6 +227,12 @@ export const ROAD_DEFAULTS = {
     surfaceY: 0.02,
     laneWidth: 4.8,
     shoulder: 0.525,
+    trim: {
+        thresholdFactor: 0.5
+    },
+    junctions: {
+        filletRadiusFactor: 0.9
+    },
     sidewalk: {
         extraWidth: 1.875,
         lift: 0.001,

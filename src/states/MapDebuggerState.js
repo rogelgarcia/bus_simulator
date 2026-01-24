@@ -153,12 +153,16 @@ export class MapDebuggerState {
         this._roadRenderMode = 'debug';
         this._treesEnabled = false;
         this._junctionThresholdFactor = 1.5;
-        this._junctionFilletRadiusFactor = 1;
+        this._junctionFilletRadiusFactor = 0.9;
         this._junctionMinThreshold = 7.2;
         this._junctionMaxThreshold = Infinity;
+        this._trimThresholdFactor = 0.5;
         this._cityOptions.generatorConfig = {
             render: { roadMode: this._roadRenderMode, treesEnabled: this._treesEnabled },
             road: {
+                trim: {
+                    thresholdFactor: this._trimThresholdFactor
+                },
                 junctions: {
                     thresholdFactor: this._junctionThresholdFactor,
                     filletRadiusFactor: this._junctionFilletRadiusFactor,
@@ -343,6 +347,7 @@ export class MapDebuggerState {
             roadDirectionLinesEnabled: this._roadDirectionLinesDebugEnabled,
             roadEndpointsEnabled: this._roadEndpointsDebugEnabled,
             roadRenderMode: this._roadRenderMode,
+            trimThresholdFactor: this._trimThresholdFactor,
             junctionThresholdFactor: this._junctionThresholdFactor,
             junctionFilletRadiusFactor: this._junctionFilletRadiusFactor,
             junctionMinThreshold: this._junctionMinThreshold,
@@ -357,6 +362,7 @@ export class MapDebuggerState {
             onRoadDirectionLinesToggle: (enabled) => this._setRoadDirectionLinesDebugEnabled(enabled),
             onRoadEndpointsToggle: (enabled) => this._setRoadEndpointsDebugEnabled(enabled),
             onRoadRenderModeChange: (mode) => this._setRoadRenderMode(mode),
+            onTrimThresholdFactorChange: (factor) => this._setTrimThresholdFactor(factor),
             onJunctionParamsChange: (params) => this._setJunctionParams(params)
         });
         this.debugsPanel.attach(this.uiRoot);
@@ -2579,6 +2585,23 @@ export class MapDebuggerState {
         if (Number.isFinite(nextMaxThreshold)) junctions.maxThreshold = nextMaxThreshold;
         else delete junctions.maxThreshold;
         road.junctions = junctions;
+        this._cityOptions.generatorConfig = { ...current, road };
+
+        this._applySpec(this._spec, { resetCamera: false });
+    }
+
+    _setTrimThresholdFactor(factor) {
+        const raw = Number(factor);
+        if (!Number.isFinite(raw)) return;
+        const next = Math.max(0, Math.min(5, raw));
+        if (next === this._trimThresholdFactor) return;
+
+        this._trimThresholdFactor = next;
+        this.debugsPanel?.setTrimThresholdFactor(next);
+
+        const current = this._cityOptions.generatorConfig ?? {};
+        const road = { ...(current.road ?? {}) };
+        road.trim = { ...(road.trim ?? {}), thresholdFactor: next };
         this._cityOptions.generatorConfig = { ...current, road };
 
         this._applySpec(this._spec, { resetCamera: false });

@@ -337,7 +337,7 @@ const BIG_CITY_SPEC_SOURCE = Object.freeze(
             {
                 "a": [
                     6,
-                    13
+                    14
                 ],
                 "b": [
                     6,
@@ -349,13 +349,15 @@ const BIG_CITY_SPEC_SOURCE = Object.freeze(
                 "rendered": true
             },
             {
-                "a": [
-                    6,
-                    13
-                ],
-                "b": [
-                    9,
-                    9
+                "points": [
+                    {
+                        "x": -144,
+                        "z": 35.88
+                    },
+                    {
+                        "x": -72,
+                        "z": -72
+                    }
                 ],
                 "lanesF": 2,
                 "lanesB": 2,
