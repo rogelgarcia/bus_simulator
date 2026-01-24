@@ -40,6 +40,19 @@ export function createRangeRow(labelText) {
     return { row, label, range, number };
 }
 
+export function createSelectRow(labelText) {
+    const row = document.createElement('div');
+    row.className = 'building-fab-row building-fab-row-wide';
+    const label = document.createElement('div');
+    label.className = 'building-fab-row-label';
+    label.textContent = labelText;
+    const select = document.createElement('select');
+    select.className = 'building-fab-select';
+    row.appendChild(label);
+    row.appendChild(select);
+    return { row, label, select };
+}
+
 export function createToggleRow(labelText, { wide = true, extraClassName = '' } = {}) {
     const toggle = document.createElement('label');
     toggle.className = `building-fab-toggle${wide ? ' building-fab-toggle-wide' : ''}${extraClassName ? ` ${extraClassName}` : ''}`;
@@ -95,4 +108,3 @@ export function createHint(text) {
     hint.textContent = text;
     return hint;
 }
-
