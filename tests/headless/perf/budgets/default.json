@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "tolerance": {
+    "timingPct": 0.25,
+    "callsPct": 0.2,
+    "trianglesPct": 0.2
+  },
+  "caps": {
+    "timing": {
+      "avgFrameMsMax": 40,
+      "p95FrameMsMax": 70
+    },
+    "renderer": {
+      "callsMax": 1500,
+      "trianglesMax": 2500000,
+      "memoryGeometriesMax": 20000,
+      "memoryTexturesMax": 12000
+    }
+  },
+  "baselines": {}
+}
+

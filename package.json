@@ -1,0 +1,22 @@
+{
+  "name": "bus-simulator",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:node": "node --test tests/node/**/*.test.js",
+    "test:node:unit": "node --test tests/node/unit/**/*.test.js",
+    "test:node:sim": "node --test tests/node/sim/**/*.test.js",
+    "test:assets": "node --test tests/node/assets/**/*.test.js",
+    "test:headless": "playwright test -c tests/headless/e2e/playwright.config.mjs",
+    "test:headless:headed": "HEADLESS=0 playwright test -c tests/headless/e2e/playwright.config.mjs --headed",
+    "test:visual": "playwright test -c tests/headless/visual/visual.config.mjs",
+    "test:visual:headed": "HEADLESS=0 playwright test -c tests/headless/visual/visual.config.mjs --headed",
+    "test:visual:update": "playwright test -c tests/headless/visual/visual.config.mjs --update-snapshots",
+    "test:perf": "playwright test -c tests/headless/perf/perf.config.mjs",
+    "test:perf:headed": "HEADLESS=0 playwright test -c tests/headless/perf/perf.config.mjs --headed",
+    "test:perf:update": "UPDATE_PERF_BASELINES=1 playwright test -c tests/headless/perf/perf.config.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.41.2"
+  }
+}

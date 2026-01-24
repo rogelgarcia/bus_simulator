@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Bus Sim - Deterministic Harness</title>
+    <style>
+        html, body { margin: 0; padding: 0; height: 100%; background: #0b0f16; overflow: hidden; }
+        #harness-canvas { width: 100%; height: 100%; display: block; }
+        #harness-ui { position: fixed; left: 12px; top: 12px; right: 12px; pointer-events: none; font-family: ui-monospace, Menlo, Monaco, Consolas, monospace; }
+        #harness-status { display: inline-block; padding: 6px 10px; border-radius: 8px; background: rgba(0,0,0,0.55); color: #d8e2ff; border: 1px solid rgba(255,255,255,0.15); }
+        #harness-status[data-status="pass"] { color: #b7ffcf; border-color: rgba(183,255,207,0.35); }
+        #harness-status[data-status="fail"] { color: #ffb7b7; border-color: rgba(255,183,183,0.35); }
+        #harness-log { margin: 10px 0 0; padding: 10px; max-width: 900px; white-space: pre-wrap; background: rgba(0,0,0,0.35); border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); color: #c9d6ff; }
+    </style>
+
+    <script type="importmap">
+        {
+          "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+            "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+            "@dimforge/rapier3d-compat": "https://cdn.skypack.dev/pin/@dimforge/rapier3d-compat@v0.19.3-Hmo5REaX4aU99UROofMk/mode=imports/optimized/@dimforge/rapier3d-compat.js"
+          }
+        }
+    </script>
+</head>
+<body>
+<canvas id="harness-canvas"></canvas>
+<div id="harness-ui">
+    <div id="harness-status" data-status="idle">HARNESS: IDLE</div>
+    <pre id="harness-log"></pre>
+</div>
+<script type="module" src="./main.js"></script>
+</body>
+</html>
+

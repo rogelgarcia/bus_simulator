@@ -5,8 +5,17 @@ import { applyIBLIntensity, applyIBLToScene, loadIBLTexture } from '../../graphi
 import { getResolvedLightingSettings } from '../../graphics/lighting/LightingSettings.js';
 
 export class GameEngine {
-    constructor({ canvas }) {
+    constructor({
+        canvas,
+        autoResize = true,
+        deterministic = false,
+        pixelRatio = null,
+        size = null,
+        rendererOptions = null
+    }) {
         this.canvas = canvas;
+        this._autoResize = !!autoResize;
+        this._deterministic = !!deterministic;
 
         // Helps in modern Three versions
         if (THREE.ColorManagement) THREE.ColorManagement.enabled = true;
@@ -14,11 +23,12 @@ export class GameEngine {
         this.renderer = new THREE.WebGLRenderer({
             canvas,
             antialias: true,
-            alpha: true
+            alpha: true,
+            ...(rendererOptions ?? {})
         });
 
-        this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-        this.renderer.setSize(window.innerWidth, window.innerHeight, false);
+        const resolvedPixelRatio = Number.isFinite(pixelRatio) ? Math.max(0.1, pixelRatio) : Math.min(devicePixelRatio, 2);
+        this.renderer.setPixelRatio(resolvedPixelRatio);
 
         // ✅ CRITICAL: correct output color space (otherwise things look dark/flat)
         if ('outputColorSpace' in this.renderer) {
@@ -50,6 +60,7 @@ export class GameEngine {
 
         this._ibl = null;
         this._iblPromise = null;
+        this._iblAutoScanEnabled = !this._deterministic;
         this._initIBL();
 
         // ✅ SimulationContext owns EventBus, VehicleManager, PhysicsController
@@ -70,8 +81,12 @@ export class GameEngine {
         this._lastT = 0;
 
         this._onResize = () => this.resize();
-        window.addEventListener('resize', this._onResize, { passive: true });
-        this.resize();
+        if (this._autoResize) window.addEventListener('resize', this._onResize, { passive: true });
+        if (size && Number.isFinite(size.width) && Number.isFinite(size.height)) {
+            this.setViewportSize(size.width, size.height);
+        } else {
+            this.resize();
+        }
     }
 
     get lightingSettings() {
@@ -139,8 +154,14 @@ export class GameEngine {
     }
 
     resize() {
-        const w = window.innerWidth;
-        const h = window.innerHeight;
+        this.setViewportSize(window.innerWidth, window.innerHeight);
+    }
+
+    setViewportSize(width, height) {
+        const wNum = Number(width);
+        const hNum = Number(height);
+        const w = Math.max(1, Math.floor(Number.isFinite(wNum) ? wNum : 1));
+        const h = Math.max(1, Math.floor(Number.isFinite(hNum) ? hNum : 1));
         this.renderer.setSize(w, h, false);
         this.camera.aspect = w / h;
         this.camera.updateProjectionMatrix();
@@ -161,33 +182,60 @@ export class GameEngine {
         this._running = false;
     }
 
-    _tick(t) {
-        if (!this._running) return;
+    setIBLAutoScanEnabled(enabled) {
+        this._iblAutoScanEnabled = !!enabled;
+        if (!this._iblAutoScanEnabled && this._ibl) this._ibl.scanUntilMs = 0;
+    }
 
-        const dt = Math.min((t - this._lastT) / 1000, 0.05);
-        this._lastT = t;
+    applyCurrentIBLIntensity({ force = true } = {}) {
+        if (!this._ibl?.envMap) return;
+        applyIBLIntensity(this.scene, this._ibl.config, { force: !!force });
+    }
 
-        this._stateMachine?.update(dt);
+    updateFrame(dt, { render = true, nowMs = null } = {}) {
+        const stepDt = Number.isFinite(dt) ? dt : 0;
+        const now = Number.isFinite(nowMs) ? nowMs : performance.now();
+
+        this._stateMachine?.update(stepDt);
 
         if (this._ibl?.envMap) {
             const state = this._stateMachine?.current ?? null;
-            const now = performance.now();
             if (state !== this._ibl.lastState) {
                 this._ibl.lastState = state;
                 applyIBLToScene(this.scene, this._ibl.envMap, this._ibl.config);
-                this._ibl.scanUntilMs = now + this._ibl.scanDurationMs;
-                this._ibl.nextScanMs = 0;
+                if (this._iblAutoScanEnabled) {
+                    this._ibl.scanUntilMs = now + this._ibl.scanDurationMs;
+                    this._ibl.nextScanMs = 0;
+                }
             }
 
-            if (now < this._ibl.scanUntilMs && now >= this._ibl.nextScanMs) {
+            if (this._iblAutoScanEnabled && now < this._ibl.scanUntilMs && now >= this._ibl.nextScanMs) {
                 applyIBLIntensity(this.scene, this._ibl.config, { force: false });
                 this._ibl.nextScanMs = now + this._ibl.scanIntervalMs;
             }
         }
 
+        if (render) this.renderer.render(this.scene, this.camera);
+    }
+
+    renderFrame() {
         this.renderer.render(this.scene, this.camera);
+    }
+
+    dispose() {
+        this.stop();
+        if (this._autoResize) window.removeEventListener('resize', this._onResize);
+        this.simulation?.dispose?.();
+        this.renderer?.dispose?.();
+    }
+
+    _tick(t) {
+        if (!this._running) return;
+
+        const dt = Math.min((t - this._lastT) / 1000, 0.05);
+        this._lastT = t;
+        this.updateFrame(dt, { render: true, nowMs: t });
 
         requestAnimationFrame((tt) => this._tick(tt));
     }
 }
-

@@ -77,8 +77,9 @@
 </script>
 
 <script type="module" src="./src/main.js"></script>
-
-<!-- Automated tests (runs on page load, check console for results) -->
-<script type="module" src="./tests/core.test.js"></script>
+<script type="module">
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('coreTests')) import('./tests/core.test.js');
+</script>
 </body>
 </html>
