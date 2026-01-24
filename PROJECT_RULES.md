@@ -70,9 +70,7 @@
 ## AI Guidance
 
 **Commits:**
-- Only commit when explicitly asked by the user
-- Never commit automatically after making changes
-- If committing, use a short, one-line, imperative commit message (sentence case).
+- Don't commit. Don't play with git. Unless explicitly requested, never create or modify git commits.
 - AI files are in gitignore, don't worry about them.
 
 **Tasks:**
