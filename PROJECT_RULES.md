@@ -66,6 +66,7 @@
 - Tests run in the browser via `tests/core.test.js`; check the console for pass/fail output.
 - Add new tests near related sections and keep naming descriptive (e.g., `System: behavior should ...`).
 - If adding new modules, ensure they are importable from the browser (relative import paths).
+- Expanded testing policy and conventions: `TESTING_RULES.md`
 
 ## AI Guidance
 
