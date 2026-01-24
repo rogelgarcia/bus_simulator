@@ -66,26 +66,51 @@
 
 <!-- Import map (so browser can resolve "three") -->
 <script type="importmap">
-    {
-      "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
-        "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
-        "@dimforge/rapier3d-compat": "https://cdn.skypack.dev/pin/@dimforge/rapier3d-compat@v0.19.3-Hmo5REaX4aU99UROofMk/mode=imports/optimized/@dimforge/rapier3d-compat.js"
-      }
-    }
-</script>
+	    {
+	      "imports": {
+	        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+	        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+	        "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+	        "@dimforge/rapier3d-compat": "https://cdn.skypack.dev/pin/@dimforge/rapier3d-compat@v0.19.3-Hmo5REaX4aU99UROofMk/mode=imports/optimized/@dimforge/rapier3d-compat.js",
+	        "/src/": "./src/",
+	        "/tests/": "./tests/"
+	      }
+	    }
+	</script>
 
 <script type="module" src="./src/main.js"></script>
-<script type="module">
-    const params = new URLSearchParams(window.location.search);
-    const raw = params.get('coreTests');
-    const normalized = raw === null ? null : String(raw).trim().toLowerCase();
-    const forced = normalized === null ? null : !(['0', 'false', 'no', 'off'].includes(normalized));
-    const host = String(window.location.hostname || '').toLowerCase();
-    const isDevHost = host === 'localhost' || host === '127.0.0.1';
-    const shouldRun = forced ?? isDevHost;
-    if (shouldRun) import('./tests/core.test.js');
-</script>
+	<script type="module">
+	    const params = new URLSearchParams(window.location.search);
+	    const raw = params.get('coreTests');
+	    const normalized = raw === null ? null : String(raw).trim().toLowerCase();
+	    const forced = normalized === null ? null : !(['0', 'false', 'no', 'off'].includes(normalized));
+	    const host = String(window.location.hostname || '').toLowerCase();
+	    const protocol = String(window.location.protocol || '').toLowerCase();
+	    const isDevHost = (() => {
+	        if (protocol === 'file:') return true;
+	        if (!host) return true;
+	        if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host === '::1') return true;
+	        if (host.endsWith('.localhost')) return true;
+
+	        const m = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+	        if (!m) return false;
+	        const a = Number(m[1]);
+	        const b = Number(m[2]);
+	        if (a === 10) return true;
+	        if (a === 192 && b === 168) return true;
+	        if (a === 172 && b >= 16 && b <= 31) return true;
+	        if (a === 169 && b === 254) return true;
+	        return false;
+	    })();
+	    const shouldRun = forced ?? isDevHost;
+	    if (shouldRun) {
+	        import('./tests/core.test.js').catch((err) => {
+	            console.error('[CoreTests] Failed to load tests/core.test.js', err);
+	            const message = err?.message ?? String(err);
+	            if (!Array.isArray(window.__testFatals)) window.__testFatals = [];
+	            window.__testFatals.push({ name: 'CoreTests', message });
+	        });
+	    }
+	</script>
 </body>
 </html>

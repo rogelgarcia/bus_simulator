@@ -31,7 +31,7 @@ This doc is the expanded testing policy and conventions for this repo. `PROJECT_
 
 ## “Tests are explicit”
 
-- Core tests run on `localhost` / `127.0.0.1` by default (dev convenience).
+- Core tests run on local/dev hosts by default (ex: `localhost`, `127.0.0.1`, `::1`, private LAN IPs).
 - Disable with `?coreTests=0`, or force enable with `?coreTests=1`.
 
 ## Deterministic harness

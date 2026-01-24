@@ -21,6 +21,8 @@ const DEFAULT_VARIANT = '1k';
 
 const MATERIAL_META_OVERRIDES = Object.freeze({});
 
+const _previewUrlCache = new Map();
+
 function toTitle(slug) {
     return String(slug || '')
         .split('_')
@@ -83,6 +85,14 @@ function makePreviewUrl({ id, label }) {
     } catch {
         return null;
     }
+}
+
+function getCachedPreviewUrl({ id, label }) {
+    const key = `${String(id || '')}|${String(label || '')}`;
+    if (_previewUrlCache.has(key)) return _previewUrlCache.get(key) ?? null;
+    const url = makePreviewUrl({ id, label });
+    _previewUrlCache.set(key, url);
+    return url;
 }
 
 const MATERIALS = Object.freeze([
@@ -236,10 +246,13 @@ export function resolvePbrMaterialUrls(materialId) {
 export function getPbrMaterialOptions() {
     return MATERIALS.map((entry) => {
         const meta = getPbrMaterialMeta(entry.id);
+        const label = entry.label || toTitle(entry.id.slice(PBR_ID_PREFIX.length));
+        const urls = resolvePbrMaterialUrls(entry.id);
+        const previewUrl = urls.baseColorUrl ?? getCachedPreviewUrl({ id: entry.id, label });
         return {
             id: entry.id,
-            label: entry.label || toTitle(entry.id.slice(PBR_ID_PREFIX.length)),
-            previewUrl: makePreviewUrl({ id: entry.id, label: entry.label || toTitle(entry.id.slice(PBR_ID_PREFIX.length)) }),
+            label,
+            previewUrl,
             root: entry.root,
             buildingEligible: !!entry.buildingEligible,
             tileMeters: meta?.tileMeters ?? null,

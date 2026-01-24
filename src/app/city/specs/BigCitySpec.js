@@ -1,5 +1,6 @@
 // src/app/city/specs/BigCitySpec.js
-// Big City layout spec (source: city_spec_bigcity.json).
+// Big City layout spec (source of truth: this JS module; JSON export is generated).
+// @ts-check
 
 function tileToWorldPoint(tile, origin, tileSize) {
     const x = tile?.[0] | 0;
@@ -28,7 +29,7 @@ function convertLegacyRoadSegmentsToPolyline(spec) {
     return { ...spec, roads: roadsOut };
 }
 
-const BIG_CITY_SPEC_SOURCE = Object.freeze(
+export const BIG_CITY_SPEC_SOURCE = Object.freeze(
     {
         "version": 1,
         "seed": "x",

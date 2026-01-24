@@ -18,6 +18,28 @@ import { createMaterialVariationUIController } from './MaterialVariationUIContro
 import { createWindowUIController } from './WindowUIController.js';
 import { createWallsUIController } from './WallsUIController.js';
 
+const _warnedThumbUrls = new Set();
+
+function isDevHost() {
+    if (typeof window === 'undefined') return false;
+    const host = String(window.location.hostname || '').toLowerCase();
+    const protocol = String(window.location.protocol || '').toLowerCase();
+    if (protocol === 'file:') return true;
+    if (!host) return true;
+    if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host === '::1') return true;
+    if (host.endsWith('.localhost')) return true;
+
+    const m = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+    if (!m) return false;
+    const a = Number(m[1]);
+    const b = Number(m[2]);
+    if (a === 10) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 169 && b === 254) return true;
+    return false;
+}
+
 function clamp(value, min, max) {
     const num = Number(value);
     if (!Number.isFinite(num)) return min;
@@ -46,13 +68,25 @@ function setMaterialThumbToTexture(thumb, url, label) {
     thumb.style.backgroundRepeat = '';
     thumb.style.backgroundPosition = '';
     thumb.style.color = '';
+    thumb.classList.remove('has-image');
 
     if (typeof url === 'string' && url) {
         const img = document.createElement('img');
         img.className = 'building-fab-material-thumb-img';
         img.alt = label || '';
         img.loading = 'lazy';
+        img.addEventListener('error', () => {
+            const failedUrl = img.currentSrc || url;
+            if (isDevHost() && failedUrl && !_warnedThumbUrls.has(failedUrl)) {
+                _warnedThumbUrls.add(failedUrl);
+                console.warn(`[BuildingFabricationUI] Thumbnail failed to load: ${failedUrl}`);
+            }
+            thumb.classList.remove('has-image');
+            thumb.textContent = label || '';
+            thumb.style.color = '#e9f2ff';
+        }, { once: true });
         img.src = url;
+        thumb.classList.add('has-image');
         thumb.appendChild(img);
         return;
     }

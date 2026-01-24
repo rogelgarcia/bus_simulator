@@ -3,6 +3,7 @@
 // Runs on page load, prints errors at the end
 
 const errors = [];
+if (typeof window !== 'undefined') window.__testErrors = errors;
 
 function test(name, fn) {
     try {
@@ -7752,5 +7753,11 @@ async function runTests() {
 
 // Run tests when module loads
 runTests().catch(err => {
-    console.error('Test runner failed:', err);
+    console.error('[CoreTests] Test runner failed:', err);
+    const message = err?.message ?? String(err);
+    if (typeof window !== 'undefined') {
+        if (!Array.isArray(window.__testFatals)) window.__testFatals = [];
+        window.__testFatals.push({ name: 'CoreTests', message });
+        window.__testErrors = errors;
+    }
 });

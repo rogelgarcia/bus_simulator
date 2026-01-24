@@ -15,6 +15,28 @@ function normalizeOptions(options) {
         .filter((opt) => !!opt.id);
 }
 
+const _warnedPreviewUrls = new Set();
+
+function isDevHost() {
+    if (typeof window === 'undefined') return false;
+    const host = String(window.location.hostname || '').toLowerCase();
+    const protocol = String(window.location.protocol || '').toLowerCase();
+    if (protocol === 'file:') return true;
+    if (!host) return true;
+    if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host === '::1') return true;
+    if (host.endsWith('.localhost')) return true;
+
+    const m = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+    if (!m) return false;
+    const a = Number(m[1]);
+    const b = Number(m[2]);
+    if (a === 10) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 169 && b === 254) return true;
+    return false;
+}
+
 export class PickerPopup {
     constructor() {
         this.overlay = document.createElement('div');
@@ -197,6 +219,16 @@ export class PickerPopup {
                 img.className = 'ui-picker-thumb-img';
                 img.alt = opt.label || opt.id;
                 img.loading = 'lazy';
+                thumb.classList.add('has-image');
+                img.addEventListener('error', () => {
+                    const url = img.currentSrc || opt.previewUrl || '';
+                    if (isDevHost() && url && !_warnedPreviewUrls.has(url)) {
+                        _warnedPreviewUrls.add(url);
+                        console.warn(`[PickerPopup] Preview image failed to load: ${url}`);
+                    }
+                    thumb.classList.remove('has-image');
+                    thumb.textContent = opt.label || opt.id;
+                }, { once: true });
                 img.src = opt.previewUrl;
                 thumb.appendChild(img);
             } else {
@@ -213,4 +245,3 @@ export class PickerPopup {
         }
     }
 }
-
