@@ -43,7 +43,7 @@ async function attachFailFastConsole({ page }) {
 
 test('UI: Map Debugger mounts without crashing', async ({ page }) => {
     const getErrors = await attachFailFastConsole({ page });
-    await page.goto('/index.html?ibl=0');
+    await page.goto('/index.html?ibl=0&coreTests=0');
     await page.waitForSelector('#ui-welcome:not(.hidden)');
     await page.keyboard.press('Q');
     await page.waitForSelector('#ui-setup:not(.hidden)');
@@ -54,7 +54,7 @@ test('UI: Map Debugger mounts without crashing', async ({ page }) => {
 
 test('UI: Road Debugger mounts without crashing', async ({ page }) => {
     const getErrors = await attachFailFastConsole({ page });
-    await page.goto('/index.html?ibl=0');
+    await page.goto('/index.html?ibl=0&coreTests=0');
     await page.waitForSelector('#ui-welcome:not(.hidden)');
     await page.keyboard.press('Q');
     await page.waitForSelector('#ui-setup:not(.hidden)');

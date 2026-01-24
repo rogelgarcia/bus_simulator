@@ -31,8 +31,8 @@ This doc is the expanded testing policy and conventions for this repo. `PROJECT_
 
 ## “Tests are explicit”
 
-- Don’t run tests automatically on normal game boot.
-- Test entry points should be explicit (ex: the deterministic harness page or dedicated runner commands).
+- Core tests run on `localhost` / `127.0.0.1` by default (dev convenience).
+- Disable with `?coreTests=0`, or force enable with `?coreTests=1`.
 
 ## Deterministic harness
 
