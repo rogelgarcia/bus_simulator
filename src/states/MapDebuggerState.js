@@ -3,7 +3,7 @@
 // Design: Draft road preview renders segment-by-segment (no joins) for stability; later work can reintroduce connected polyline joins.
 import * as THREE from 'three';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
-import { getSharedCity } from '../app/city/City.js';
+import { getSharedCity } from '../graphics/visuals/city/City.js';
 import { createCityConfig } from '../app/city/CityConfig.js';
 import { CityMap, TILE } from '../app/city/CityMap.js';
 import { CITY_SPEC_REGISTRY, DEFAULT_CITY_SPEC_ID, createCitySpecById } from '../app/city/specs/CitySpecRegistry.js';

@@ -4278,7 +4278,7 @@ async function runTests() {
     // ========== Road Engine Global Roads Tests (AI 149) ==========
     try {
         const { CityMap } = await import('/src/app/city/CityMap.js');
-        const { City } = await import('/src/app/city/City.js');
+        const { City } = await import('/src/graphics/visuals/city/City.js');
         const { createGeneratorConfig } = await import('/src/graphics/assets3d/generators/GeneratorParams.js');
         const { getCityMaterials } = await import('/src/graphics/assets3d/textures/CityMaterials.js');
         const { createRoadEngineRoads } = await import('/src/graphics/visuals/city/RoadEngineRoads.js');

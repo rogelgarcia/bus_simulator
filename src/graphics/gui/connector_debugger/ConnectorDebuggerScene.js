@@ -2,7 +2,7 @@
 // Builds and updates the 3D scene elements for the connector debugger.
 import * as THREE from 'three';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
-import { City } from '../../../app/city/City.js';
+import { City } from '../../visuals/city/City.js';
 import { createCityConfig } from '../../../app/city/CityConfig.js';
 import { solveConnectorPath } from '../../../app/geometry/ConnectorPathSolver.js';
 import { getCityMaterials } from '../../assets3d/textures/CityMaterials.js';

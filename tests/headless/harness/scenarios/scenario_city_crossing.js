@@ -1,5 +1,5 @@
 // City scenario: simple perpendicular crossing.
-import { City } from '/src/app/city/City.js';
+import { City } from '/src/graphics/visuals/city/City.js';
 import { createHarnessCitySpec } from './ScenarioCitySpec.js';
 import { createCityMetrics } from './ScenarioMetrics.js';
 

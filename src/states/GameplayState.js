@@ -10,7 +10,7 @@
  * - PhysicsController via SimulationContext
  */
 import * as THREE from 'three';
-import { getSharedCity } from '../app/city/City.js';
+import { getSharedCity } from '../graphics/visuals/city/City.js';
 import { createBigCitySpec } from '../app/city/specs/BigCitySpec.js';
 import { fadeIn } from '../graphics/gui/shared/utils/screenFade.js';
 import { GameHUD } from '../graphics/gui/gameplay/GameHUD.js';

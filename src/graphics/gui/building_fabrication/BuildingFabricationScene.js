@@ -6,7 +6,7 @@ import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 
 import { CityMap, TILE } from '../../../app/city/CityMap.js';
-import { createCityWorld } from '../../../app/city/CityWorld.js';
+import { createCityWorld } from '../../assets3d/generators/TerrainGenerator.js';
 import { BUILDING_STYLE, isBuildingStyle } from '../../../app/buildings/BuildingStyle.js';
 import { WINDOW_STYLE, isWindowStyle } from '../../../app/buildings/WindowStyle.js';
 import { BELT_COURSE_COLOR, isBeltCourseColor } from '../../../app/buildings/BeltCourseColor.js';

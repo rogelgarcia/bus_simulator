@@ -1,19 +1,20 @@
-// src/app/city/City.js
+// src/graphics/visuals/city/City.js
 // Builds and manages the city scene
+// @ts-check
 import * as THREE from 'three';
-import { createCityWorld } from './CityWorld.js';
-import { createCityConfig } from './CityConfig.js';
-import { CityMap } from './CityMap.js';
-import { CityRNG } from './CityRNG.js';
-import { getCityMaterials } from '../../graphics/assets3d/textures/CityMaterials.js';
-import { createRoadEngineRoads } from '../../graphics/visuals/city/RoadEngineRoads.js';
-import { createGradientSkyDome } from '../../graphics/assets3d/generators/SkyGenerator.js';
-import { createGeneratorConfig } from '../../graphics/assets3d/generators/GeneratorParams.js';
-import { BuildingWallTextureCache, buildBuildingVisualParts } from '../../graphics/assets3d/generators/buildings/BuildingGenerator.js';
-import { buildBuildingFabricationVisualParts } from '../../graphics/assets3d/generators/building_fabrication/BuildingFabricationGenerator.js';
-import { computeTrafficControlPlacements } from './TrafficControlPlacement.js';
-import { createTrafficControlProps } from '../../graphics/visuals/city/TrafficControlProps.js';
-import { getResolvedLightingSettings } from '../../graphics/lighting/LightingSettings.js';
+import { createCityConfig } from '../../../app/city/CityConfig.js';
+import { CityMap } from '../../../app/city/CityMap.js';
+import { CityRNG } from '../../../app/city/CityRNG.js';
+import { computeTrafficControlPlacements } from '../../../app/city/TrafficControlPlacement.js';
+import { createCityWorld } from '../../assets3d/generators/TerrainGenerator.js';
+import { createGeneratorConfig } from '../../assets3d/generators/GeneratorParams.js';
+import { createGradientSkyDome } from '../../assets3d/generators/SkyGenerator.js';
+import { BuildingWallTextureCache, buildBuildingVisualParts } from '../../assets3d/generators/buildings/BuildingGenerator.js';
+import { buildBuildingFabricationVisualParts } from '../../assets3d/generators/building_fabrication/BuildingFabricationGenerator.js';
+import { getCityMaterials } from '../../assets3d/textures/CityMaterials.js';
+import { getResolvedLightingSettings } from '../../lighting/LightingSettings.js';
+import { createRoadEngineRoads } from './RoadEngineRoads.js';
+import { createTrafficControlProps } from './TrafficControlProps.js';
 
 export class City {
     constructor(options = {}) {
