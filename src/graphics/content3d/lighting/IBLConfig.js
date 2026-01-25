@@ -3,7 +3,7 @@
 import { DEFAULT_IBL_ID, getIblEntryById } from '../catalogs/IBLCatalog.js';
 
 export const IBL_DEFAULTS = Object.freeze({
-    enabled: true,
+    enabled: false,
     envMapIntensity: 0.25,
     iblId: DEFAULT_IBL_ID,
     setBackground: false,

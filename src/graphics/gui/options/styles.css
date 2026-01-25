@@ -139,10 +139,65 @@
     flex-wrap: wrap;
 }
 
+.options-toggle-switch {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    cursor: pointer;
+}
+
 .options-toggle {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    pointer-events: none;
+}
+
+.options-toggle-ui {
+    width: 44px;
+    height: 24px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.18);
+    background: rgba(0,0,0,0.22);
+    box-sizing: border-box;
+    padding: 2px;
+    display: inline-flex;
+    align-items: center;
+    transition: background 120ms ease, border-color 120ms ease;
+}
+
+.options-toggle-ui::after {
+    content: '';
     width: 18px;
     height: 18px;
-    accent-color: rgba(100, 210, 255, 0.9);
+    border-radius: 999px;
+    background: rgba(233, 242, 255, 0.92);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.45);
+    transform: translateX(0);
+    transition: transform 120ms ease, background 120ms ease;
+}
+
+.options-toggle:checked + .options-toggle-ui {
+    background: rgba(100, 210, 255, 0.22);
+    border-color: rgba(100, 210, 255, 0.5);
+}
+
+.options-toggle:checked + .options-toggle-ui::after {
+    transform: translateX(20px);
+    background: rgba(234, 247, 255, 0.98);
+}
+
+.options-toggle:focus-visible + .options-toggle-ui {
+    outline: 2px solid rgba(100, 210, 255, 0.55);
+    outline-offset: 2px;
+}
+
+.options-toggle:disabled + .options-toggle-ui {
+    opacity: 0.5;
+    cursor: default;
 }
 
 .options-range {

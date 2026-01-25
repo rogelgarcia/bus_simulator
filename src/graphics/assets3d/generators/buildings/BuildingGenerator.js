@@ -8,7 +8,7 @@ import { BUILDING_STYLE, isBuildingStyle } from '../../../../app/buildings/Build
 import { WINDOW_STYLE, isWindowStyle } from '../../../../app/buildings/WindowStyle.js';
 import { resolveBeltCourseColorHex } from '../../../../app/buildings/BeltCourseColor.js';
 import { resolveRoofColorHex } from '../../../../app/buildings/RoofColor.js';
-import { WINDOW_TYPE, getWindowTexture, getWindowTypeOptions } from './WindowTextureGenerator.js';
+import { WINDOW_TYPE, getWindowGlassMaskTexture, getWindowTexture, getWindowTypeOptions } from './WindowTextureGenerator.js';
 import { getLegacyWindowStyleTexture, windowTypeIdFromLegacyWindowStyle } from './WindowTypeCompatibility.js';
 import {
     getBuildingStyleOptions as getBuildingStyleOptionsFromCatalog,
@@ -35,12 +35,30 @@ function clampInt(value, min, max) {
     return Math.max(min, Math.min(max, rounded));
 }
 
+function disableIblOnMaterial(mat) {
+    if (!mat || !('envMapIntensity' in mat)) return;
+    mat.userData = mat.userData ?? {};
+    mat.userData.iblNoAutoEnvMapIntensity = true;
+    mat.envMapIntensity = 0;
+    mat.needsUpdate = true;
+}
+
 function q(value) {
     return Math.round(value * QUANT);
 }
 
 function uq(value) {
     return value / QUANT;
+}
+
+function hashUint32(x) {
+    let v = (Number.isFinite(x) ? x : 0) >>> 0;
+    v ^= v >>> 16;
+    v = Math.imul(v, 0x7feb352d);
+    v ^= v >>> 15;
+    v = Math.imul(v, 0x846ca68b);
+    v ^= v >>> 16;
+    return v >>> 0;
 }
 
 function signedArea(points) {
@@ -988,6 +1006,7 @@ export function buildBuildingVisualParts({
     roof = null,
     walls = null,
     windows = null,
+    windowVisuals = null,
     street = null,
     beltCourse = null,
     topBelt = null
@@ -1076,12 +1095,14 @@ export function buildBuildingVisualParts({
         roughness: 0.85,
         metalness: 0.05
     });
+    disableIblOnMaterial(roofMatTemplate);
 
     const wallMatTemplate = new THREE.MeshStandardMaterial({
         color: baseColorHex,
         roughness: 0.85,
         metalness: 0.05
     });
+    disableIblOnMaterial(wallMatTemplate);
 
     const legacyUrl = (typeof legacyWallTextureUrl === 'string' && legacyWallTextureUrl) ? legacyWallTextureUrl : null;
     const wallUrls = resolveBuildingStyleWallMaterialUrls(style);
@@ -1126,7 +1147,7 @@ export function buildBuildingVisualParts({
                 root: MATERIAL_VARIATION_ROOT.WALL
             });
         }
-        mat.needsUpdate = true;
+        disableIblOnMaterial(mat);
         return mat;
     };
 
@@ -1360,7 +1381,7 @@ export function buildBuildingVisualParts({
         const upperDesiredWindowY = clamp(win.y, 0, 12);
 
         const cornerEps = clamp(win.cornerEps, 0.01, 2.0);
-        const offset = clamp(win.offset, 0.01, 0.2);
+        const offset = clamp(win.offset, 0.0, 0.2);
 
         const streetWin = streetCfg?.windows ?? null;
         const streetWindowWidth = Number.isFinite(streetWin?.width) ? clamp(streetWin.width, 0.3, 12) : upperWindowWidth;
@@ -1391,7 +1412,7 @@ export function buildBuildingVisualParts({
 
         const makeWindowMaterial = ({ typeId, params, styleId, windowWidth, windowHeight } = {}) => {
             const wantsAlpha = typeId === WINDOW_TYPE.ARCH_V1;
-            return new THREE.MeshStandardMaterial({
+            const mat = new THREE.MeshStandardMaterial({
                 color: 0xffffff,
                 map: typeId ? getWindowTexture({ typeId, params, windowWidth, windowHeight }) : getBuildingWindowTextureForStyle(styleId),
                 roughness: 0.4,
@@ -1401,6 +1422,10 @@ export function buildBuildingVisualParts({
                 transparent: wantsAlpha,
                 alphaTest: wantsAlpha ? 0.01 : 0.0
             });
+            mat.polygonOffset = true;
+            mat.polygonOffsetFactor = -1;
+            mat.polygonOffsetUnits = -1;
+            return mat;
         };
         const upperWindowMat = makeWindowMaterial({
             typeId: upperWindowTypeId,
@@ -1409,7 +1434,12 @@ export function buildBuildingVisualParts({
             windowWidth: upperWindowWidth,
             windowHeight: upperDesiredWindowHeight
         });
-        const streetWindowMat = (streetWindowTypeId === upperWindowTypeId && streetWindowStyle === upperWindowStyle && streetWindowParams === upperWindowParams && streetWindowWidth === upperWindowWidth && streetDesiredWindowHeight === upperDesiredWindowHeight)
+        const streetUsesUpperMat = streetWindowTypeId === upperWindowTypeId
+            && streetWindowStyle === upperWindowStyle
+            && streetWindowParams === upperWindowParams
+            && streetWindowWidth === upperWindowWidth
+            && streetDesiredWindowHeight === upperDesiredWindowHeight;
+        const streetWindowMat = streetUsesUpperMat
             ? upperWindowMat
             : makeWindowMaterial({
                 typeId: streetWindowTypeId,
@@ -1421,6 +1451,110 @@ export function buildBuildingVisualParts({
 
         windowsGroup = new THREE.Group();
         windowsGroup.name = 'windows';
+        windowsGroup.userData = windowsGroup.userData ?? {};
+        const windowVisualsObj = windowVisuals && typeof windowVisuals === 'object' ? windowVisuals : null;
+        const reflectiveObj = windowVisualsObj?.reflective && typeof windowVisualsObj.reflective === 'object' ? windowVisualsObj.reflective : {};
+        const reflectiveEnabled = reflectiveObj.enabled !== undefined ? !!reflectiveObj.enabled : true;
+        const glassObj = reflectiveObj.glass && typeof reflectiveObj.glass === 'object' ? reflectiveObj.glass : {};
+        const glassColorHex = Number.isFinite(glassObj.colorHex) ? ((Number(glassObj.colorHex) >>> 0) & 0xffffff) : 0xffffff;
+        const glassMetalness = Number.isFinite(glassObj.metalness) ? glassObj.metalness : 0.0;
+        const glassRoughness = Number.isFinite(glassObj.roughness) ? glassObj.roughness : 0.02;
+        const glassTransmission = Number.isFinite(glassObj.transmission) ? glassObj.transmission : 0.0;
+        const glassIor = Number.isFinite(glassObj.ior) ? glassObj.ior : 2.2;
+        const glassEnvMapIntensity = Number.isFinite(glassObj.envMapIntensity) ? glassObj.envMapIntensity : 4.0;
+
+        windowsGroup.userData.buildingWindowVisuals = Object.freeze({
+            reflective: Object.freeze({
+                enabled: reflectiveEnabled,
+                glass: Object.freeze({
+                    colorHex: glassColorHex,
+                    metalness: glassMetalness,
+                    roughness: glassRoughness,
+                    transmission: glassTransmission,
+                    ior: glassIor,
+                    envMapIntensity: glassEnvMapIntensity
+                })
+            })
+        });
+
+        const glassLift = 0.02;
+        const makeGlassMaterial = (alphaMap) => {
+            const wantsTransmission = glassTransmission > 0.01;
+            const mat = new THREE.MeshPhysicalMaterial({
+                color: glassColorHex,
+                metalness: glassMetalness,
+                roughness: glassRoughness,
+                transmission: wantsTransmission ? glassTransmission : 0.0,
+                ior: glassIor,
+                envMapIntensity: glassEnvMapIntensity,
+                opacity: wantsTransmission ? 1.0 : 0.55
+            });
+            mat.transparent = true;
+            mat.alphaMap = alphaMap ?? null;
+            mat.alphaTest = 0.5;
+            mat.depthWrite = false;
+            mat.polygonOffset = true;
+            mat.polygonOffsetFactor = -1;
+            mat.polygonOffsetUnits = -1;
+            mat.userData = mat.userData ?? {};
+            mat.userData.iblEnvMapIntensityScale = glassEnvMapIntensity;
+            return mat;
+        };
+
+        let upperGlassMat = null;
+        let streetGlassMat = null;
+        if (reflectiveEnabled) {
+            const upperMaskTypeId = upperWindowTypeId ? upperWindowTypeId : windowTypeIdFromLegacyWindowStyle(upperWindowStyle);
+            upperGlassMat = makeGlassMaterial(getWindowGlassMaskTexture({
+                typeId: upperMaskTypeId,
+                params: upperWindowParams,
+                windowWidth: upperWindowWidth,
+                windowHeight: upperDesiredWindowHeight
+            }));
+
+            if (streetUsesUpperMat) {
+                streetGlassMat = upperGlassMat;
+            } else {
+                const streetMaskTypeId = streetWindowTypeId ? streetWindowTypeId : windowTypeIdFromLegacyWindowStyle(streetWindowStyle);
+                streetGlassMat = makeGlassMaterial(getWindowGlassMaskTexture({
+                    typeId: streetMaskTypeId,
+                    params: streetWindowParams,
+                    windowWidth: streetWindowWidth,
+                    windowHeight: streetDesiredWindowHeight
+                }));
+            }
+        }
+
+        const planeGeoCache = new Map();
+        const getPlaneGeometry = (width, height) => {
+            const w = Number(width) || 1;
+            const h = Number(height) || 1;
+            const key = `${q(w)}|${q(h)}`;
+            let geo = planeGeoCache.get(key);
+            if (!geo) {
+                geo = new THREE.PlaneGeometry(w, h);
+                planeGeoCache.set(key, geo);
+            }
+            return geo;
+        };
+
+        const instancedBuckets = new Map();
+        const addWindowInstance = ({ geometry, material, x, y, z, yaw, renderOrder }) => {
+            if (!geometry || !material) return;
+            const ro = Number.isFinite(renderOrder) ? renderOrder : 0;
+            const key = `${geometry.uuid}|${material.uuid}|ro:${ro}`;
+            let bucket = instancedBuckets.get(key);
+            if (!bucket) {
+                bucket = {
+                    geometry,
+                    material,
+                    renderOrder: ro,
+                    transforms: []
+                };
+                instancedBuckets.set(key, bucket);
+            }
+            bucket.transforms.push(Number(x) || 0, Number(y) || 0, Number(z) || 0, Number(yaw) || 0);
+        };
 
         for (const loop of wallOuterLoops) {
             if (!loop || loop.length < 2) continue;
@@ -1481,13 +1615,21 @@ export function buildBuildingVisualParts({
                             const cx = a.x + tx * centerDist + nx * offset;
                             const cz = a.z + tz * centerDist + nz * offset;
 
-                            const geo = new THREE.PlaneGeometry(windowWidth, windowHeight);
-                            const mesh = new THREE.Mesh(geo, windowMat);
-                            mesh.position.set(cx, y, cz);
-                            mesh.rotation.set(0, yaw, 0);
-                            mesh.castShadow = false;
-                            mesh.receiveShadow = false;
-                            windowsGroup.add(mesh);
+                            const geo = getPlaneGeometry(windowWidth, windowHeight);
+                            addWindowInstance({ geometry: geo, material: windowMat, x: cx, y, z: cz, yaw, renderOrder: 0 });
+
+                            const glassMat = reflectiveEnabled ? (isStreetFloor ? streetGlassMat : upperGlassMat) : null;
+                            if (glassMat) {
+                                addWindowInstance({
+                                    geometry: geo,
+                                    material: glassMat,
+                                    x: cx + nx * glassLift,
+                                    y,
+                                    z: cz + nz * glassLift,
+                                    yaw,
+                                    renderOrder: 1
+                                });
+                            }
                         }
                     }
 
@@ -1509,6 +1651,46 @@ export function buildBuildingVisualParts({
                         }
                     }
                 }
+            }
+        }
+
+        if (instancedBuckets.size) {
+            const dummy = new THREE.Object3D();
+            const orderedBuckets = Array.from(instancedBuckets.values()).sort((a, b) => {
+                const ro = a.renderOrder - b.renderOrder;
+                if (ro) return ro;
+                const ma = a.material?.uuid ?? '';
+                const mb = b.material?.uuid ?? '';
+                if (ma < mb) return -1;
+                if (ma > mb) return 1;
+                const ga = a.geometry?.uuid ?? '';
+                const gb = b.geometry?.uuid ?? '';
+                if (ga < gb) return -1;
+                if (ga > gb) return 1;
+                return 0;
+            });
+            for (const bucket of orderedBuckets) {
+                const transforms = bucket.transforms;
+                const count = Math.floor(transforms.length / 4);
+                if (!count) continue;
+
+                const mesh = new THREE.InstancedMesh(bucket.geometry, bucket.material, count);
+                mesh.castShadow = false;
+                mesh.receiveShadow = false;
+                mesh.renderOrder = bucket.renderOrder;
+                mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+
+                for (let i = 0; i < count; i++) {
+                    const idx = i * 4;
+                    dummy.position.set(transforms[idx], transforms[idx + 1], transforms[idx + 2]);
+                    dummy.rotation.set(0, transforms[idx + 3], 0);
+                    dummy.updateMatrix();
+                    mesh.setMatrixAt(i, dummy.matrix);
+                }
+                mesh.instanceMatrix.needsUpdate = true;
+                mesh.computeBoundingBox();
+                mesh.computeBoundingSphere();
+                windowsGroup.add(mesh);
             }
         }
     }
@@ -1564,6 +1746,7 @@ export function buildBuildingVisualParts({
                 roughness: 0.9,
                 metalness: 0.0
             });
+            disableIblOnMaterial(mat);
             const geo = new THREE.BoxGeometry(w, h, d);
             beltCourseMesh = new THREE.Mesh(geo, mat);
             beltCourseMesh.position.set(cx, y, cz);
@@ -1620,6 +1803,7 @@ export function buildBuildingVisualParts({
                 roughness: 0.9,
                 metalness: 0.0
             });
+            disableIblOnMaterial(mat);
 
             const geo = new THREE.ExtrudeGeometry(shape, {
                 depth: h,

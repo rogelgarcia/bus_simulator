@@ -98,13 +98,93 @@ async function runTests() {
     // ========== Post-processing Settings ==========
     const { getDefaultResolvedBloomSettings } = await import('/src/graphics/visuals/postprocessing/BloomSettings.js');
 
-    test('BloomSettings: default enabled', () => {
+    test('BloomSettings: default disabled', () => {
         const d = getDefaultResolvedBloomSettings();
         assertTrue(d && typeof d === 'object', 'Expected bloom defaults object.');
-        assertTrue(d.enabled === true, 'Bloom should be enabled by default.');
+        assertTrue(d.enabled === false, 'Bloom should be disabled by default.');
         assertTrue(Number.isFinite(d.strength), 'Expected bloom strength to be finite.');
         assertTrue(Number.isFinite(d.radius), 'Expected bloom radius to be finite.');
         assertTrue(Number.isFinite(d.threshold), 'Expected bloom threshold to be finite.');
+    });
+
+    // ========== Building Window Visuals Settings ==========
+    const { getDefaultResolvedBuildingWindowVisualsSettings } = await import('/src/graphics/visuals/buildings/BuildingWindowVisualsSettings.js');
+
+    test('BuildingWindowVisualsSettings: default reflective disabled', () => {
+        const d = getDefaultResolvedBuildingWindowVisualsSettings();
+        assertTrue(d && typeof d === 'object', 'Expected building window visuals defaults object.');
+        assertTrue(d.reflective && typeof d.reflective === 'object', 'Expected reflective object.');
+        assertTrue(d.reflective.enabled === false, 'Reflective building windows should be disabled by default.');
+        assertTrue(d.reflective.glass && typeof d.reflective.glass === 'object', 'Expected reflective.glass object.');
+        assertEqual(d.reflective.glass.colorHex, 0xffffff, 'Expected default glass color hex.');
+        assertNear(d.reflective.glass.metalness, 0.0, 1e-6, 'Expected default glass metalness.');
+        assertNear(d.reflective.glass.roughness, 0.02, 1e-6, 'Expected default glass roughness.');
+        assertNear(d.reflective.glass.transmission, 0.0, 1e-6, 'Expected default glass transmission.');
+        assertNear(d.reflective.glass.ior, 2.2, 1e-6, 'Expected default glass ior.');
+        assertNear(d.reflective.glass.envMapIntensity, 4.0, 1e-6, 'Expected default glass envMapIntensity.');
+    });
+
+    // ========== Building Materials / IBL ==========
+    const { buildBuildingVisualParts: buildBuildingVisualPartsForIbl } = await import('/src/graphics/assets3d/generators/buildings/BuildingGenerator.js');
+    const { buildBuildingFabricationVisualParts: buildBuildingFabricationVisualPartsForIbl } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationGenerator.js');
+
+    const makeTinyMap = ({ width = 1, height = 1, tileSize = 2 } = {}) => {
+        const w = Math.max(1, Math.floor(width));
+        const h = Math.max(1, Math.floor(height));
+        const size = Number(tileSize) || 2;
+        return {
+            tileSize: size,
+            kind: new Uint8Array(w * h),
+            inBounds: (x, y) => x >= 0 && x < w && y >= 0 && y < h,
+            index: (x, y) => x + y * w,
+            tileToWorldCenter: (x, y) => ({ x: (x + 0.5) * size, z: (y + 0.5) * size })
+        };
+    };
+
+    const assertMaterialsOptOutOfIbl = (parts, label) => {
+        assertTrue(parts && typeof parts === 'object', `${label}: Expected parts object.`);
+        assertTrue(Array.isArray(parts.solidMeshes) && parts.solidMeshes.length > 0, `${label}: Expected solidMeshes.`);
+        for (const mesh of parts.solidMeshes) {
+            const matList = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+            for (const mat of matList) {
+                if (!mat || !('envMapIntensity' in mat)) continue;
+                assertTrue(mat.userData?.iblNoAutoEnvMapIntensity === true, `${label}: Expected iblNoAutoEnvMapIntensity.`);
+                assertNear(mat.envMapIntensity, 0.0, 1e-6, `${label}: Expected envMapIntensity 0.`);
+            }
+        }
+    };
+
+    test('BuildingGenerator: walls opt out of IBL', () => {
+        const map = makeTinyMap({ width: 1, height: 1, tileSize: 2 });
+        const parts = buildBuildingVisualPartsForIbl({
+            map,
+            tiles: [{ x: 0, y: 0 }],
+            tileSize: 2,
+            floors: 1,
+            floorHeight: 3,
+            textureCache: null,
+            renderer: null,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            windows: { enabled: false }
+        });
+        assertMaterialsOptOutOfIbl(parts, 'BuildingGenerator');
+    });
+
+    test('BuildingFabricationGenerator: walls opt out of IBL', () => {
+        const map = makeTinyMap({ width: 1, height: 1, tileSize: 2 });
+        const parts = buildBuildingFabricationVisualPartsForIbl({
+            map,
+            tiles: [{ x: 0, y: 0 }],
+            tileSize: 2,
+            layers: [
+                { type: 'floor', floors: 1, floorHeight: 3, windows: { enabled: false }, belt: { enabled: false } },
+                { type: 'roof', ring: { enabled: false } }
+            ],
+            textureCache: null,
+            renderer: null,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false }
+        });
+        assertMaterialsOptOutOfIbl(parts, 'BuildingFabricationGenerator');
     });
 
     // ========== RoadEngineMeshData Tests ==========

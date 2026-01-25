@@ -4,6 +4,7 @@
 import { OptionsUI } from '../graphics/gui/options/OptionsUI.js';
 import { saveLightingSettings } from '../graphics/lighting/LightingSettings.js';
 import { saveBloomSettings } from '../graphics/visuals/postprocessing/BloomSettings.js';
+import { getResolvedBuildingWindowVisualsSettings, saveBuildingWindowVisualsSettings } from '../graphics/visuals/buildings/BuildingWindowVisualsSettings.js';
 import { saveColorGradingSettings } from '../graphics/visuals/postprocessing/ColorGradingSettings.js';
 import { getResolvedSunFlareSettings, saveSunFlareSettings } from '../graphics/visuals/sun/SunFlareSettings.js';
 
@@ -48,6 +49,7 @@ export class OptionsState {
         const grading = this.engine?.colorGradingSettings ?? null;
         const gradingDebug = this.engine?.getColorGradingDebugInfo?.() ?? null;
         const sunFlare = getResolvedSunFlareSettings();
+        const buildingWindowVisuals = getResolvedBuildingWindowVisualsSettings();
 
         this._original = {
             lighting: lighting && typeof lighting === 'object' ? JSON.parse(JSON.stringify(lighting)) : null,
@@ -84,6 +86,21 @@ export class OptionsState {
                     intensity: grading.intensity
                 }
                 : null,
+            initialBuildingWindowVisuals: buildingWindowVisuals && typeof buildingWindowVisuals === 'object'
+                ? {
+                    reflective: {
+                        enabled: buildingWindowVisuals.reflective?.enabled,
+                        glass: {
+                            colorHex: buildingWindowVisuals.reflective?.glass?.colorHex,
+                            metalness: buildingWindowVisuals.reflective?.glass?.metalness,
+                            roughness: buildingWindowVisuals.reflective?.glass?.roughness,
+                            transmission: buildingWindowVisuals.reflective?.glass?.transmission,
+                            ior: buildingWindowVisuals.reflective?.glass?.ior,
+                            envMapIntensity: buildingWindowVisuals.reflective?.glass?.envMapIntensity
+                        }
+                    }
+                }
+                : null,
             initialSunFlare: sunFlare && typeof sunFlare === 'object'
                 ? {
                     enabled: sunFlare.enabled,
@@ -93,6 +110,12 @@ export class OptionsState {
                 : null,
             initialPostProcessingActive: postActive,
             initialColorGradingDebug: gradingDebug,
+            getIblDebugInfo: () => this.engine?.getIBLDebugInfo?.() ?? null,
+            getPostProcessingDebugInfo: () => ({
+                postActive: !!this.engine?.isPostProcessingActive,
+                bloom: this.engine?.getBloomDebugInfo?.() ?? null,
+                colorGrading: this.engine?.getColorGradingDebugInfo?.() ?? null
+            }),
             onCancel: () => this._cancel(),
             onLiveChange: (draft) => this._applyDraft(draft),
             onSave: (draft) => this._save(draft)
@@ -125,6 +148,7 @@ export class OptionsState {
         saveLightingSettings(draft?.lighting ?? null);
         saveBloomSettings(draft?.bloom ?? null);
         saveColorGradingSettings(draft?.colorGrading ?? null);
+        saveBuildingWindowVisualsSettings(draft?.buildingWindowVisuals ?? null);
         saveSunFlareSettings(draft?.sunFlare ?? null);
         if (this._overlay) {
             this.sm.popOverlay();

@@ -144,7 +144,7 @@ export function createDefaultWindowSpec({
         sillHeight: clamp(sillHeight, 0.0, 12.0),
         spacing: clamp(spacing, 0.0, 24.0),
         cornerEps: clamp(cornerEps, 0.01, 2.0),
-        offset: clamp(offset, 0.01, 0.2),
+        offset: clamp(offset, 0.0, 0.2),
         fakeDepth: normalizeWindowFakeDepthConfig(fakeDepth),
         spaceColumns: {
             enabled: !!cols.enabled,

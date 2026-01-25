@@ -27,6 +27,7 @@ import { getCityMaterials } from '../../assets3d/textures/CityMaterials.js';
 import { createRoadHighlightMesh } from '../../visuals/city/RoadHighlightMesh.js';
 import { ToolCameraController } from '../../engine3d/camera/ToolCameraController.js';
 import { getBuildingConfigById } from '../../content3d/catalogs/BuildingConfigCatalog.js';
+import { getResolvedBuildingWindowVisualsSettings } from '../../visuals/buildings/BuildingWindowVisualsSettings.js';
 import { updateMaterialVariationDebugOnMeshStandardMaterial } from '../../assets3d/materials/MaterialVariationSystem.js';
 
 const QUANT = 1000;
@@ -243,6 +244,7 @@ export class BuildingFabricationScene {
 
         this._lineResolution = new THREE.Vector2();
         this._wallTextures = new BuildingWallTextureCache({ renderer: this.engine?.renderer ?? null });
+        this._buildingWindowVisuals = getResolvedBuildingWindowVisualsSettings();
         this._materialVariationDebug = null;
     }
 
@@ -2656,6 +2658,7 @@ export class BuildingFabricationScene {
                 materialVariationSeed: building.materialVariationSeed,
                 textureCache: this._wallTextures,
                 renderer: this.engine?.renderer ?? null,
+                windowVisuals: this._buildingWindowVisuals,
                 colors: { line: BUILDING_LINE_COLOR, border: BUILDING_BORDER_COLOR },
                 overlays: { wire: true, floorplan: true, border: true, floorDivisions: true },
                 walls: {
@@ -2673,6 +2676,7 @@ export class BuildingFabricationScene {
                 style: building.style,
                 textureCache: this._wallTextures,
                 renderer: this.engine?.renderer ?? null,
+                windowVisuals: this._buildingWindowVisuals,
                 colors: { line: BUILDING_LINE_COLOR, border: BUILDING_BORDER_COLOR },
                 overlays: { wire: true, floorplan: true, border: true, floorDivisions: true },
                 roof: {

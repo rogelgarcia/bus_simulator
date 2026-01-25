@@ -5,6 +5,7 @@ import { getDefaultResolvedLightingSettings } from '../../lighting/LightingSetti
 import { getDefaultResolvedBloomSettings } from '../../visuals/postprocessing/BloomSettings.js';
 import { getDefaultResolvedColorGradingSettings } from '../../visuals/postprocessing/ColorGradingSettings.js';
 import { getColorGradingPresetOptions } from '../../visuals/postprocessing/ColorGradingPresets.js';
+import { getDefaultResolvedBuildingWindowVisualsSettings } from '../../visuals/buildings/BuildingWindowVisualsSettings.js';
 import { getDefaultResolvedSunFlareSettings } from '../../visuals/sun/SunFlareSettings.js';
 import { getSunFlarePresetOptions } from '../../visuals/sun/SunFlarePresets.js';
 
@@ -26,16 +27,21 @@ function makeToggleRow({ label, value = false, onChange }) {
     const left = makeEl('div', 'options-row-label', label);
     const right = makeEl('div', 'options-row-control');
 
+    const wrap = makeEl('label', 'options-toggle-switch');
     const toggle = document.createElement('input');
     toggle.type = 'checkbox';
     toggle.checked = !!value;
     toggle.className = 'options-toggle';
     toggle.addEventListener('change', () => onChange?.(!!toggle.checked));
 
-    right.appendChild(toggle);
+    const ui = makeEl('span', 'options-toggle-ui');
+    wrap.appendChild(toggle);
+    wrap.appendChild(ui);
+
+    right.appendChild(wrap);
     row.appendChild(left);
     row.appendChild(right);
-    return { row, toggle };
+    return { row, toggle, ui, wrap };
 }
 
 function makeSelectRow({ label, value = '', options = [], onChange }) {
@@ -169,9 +175,12 @@ export class OptionsUI {
         initialLighting = null,
         initialBloom = null,
         initialColorGrading = null,
+        initialBuildingWindowVisuals = null,
         initialSunFlare = null,
         initialPostProcessingActive = null,
         initialColorGradingDebug = null,
+        getIblDebugInfo = null,
+        getPostProcessingDebugInfo = null,
         onCancel = null,
         onLiveChange = null,
         onSave = null
@@ -179,6 +188,11 @@ export class OptionsUI {
         this.onCancel = onCancel;
         this.onLiveChange = onLiveChange;
         this.onSave = onSave;
+        this._getIblDebugInfo = typeof getIblDebugInfo === 'function' ? getIblDebugInfo : null;
+        this._getPostProcessingDebugInfo = typeof getPostProcessingDebugInfo === 'function' ? getPostProcessingDebugInfo : null;
+        this._iblDebugEls = null;
+        this._postDebugEls = null;
+        this._debugInterval = null;
         this._initialPostProcessingActive = initialPostProcessingActive !== null ? !!initialPostProcessingActive : null;
         this._initialColorGradingDebug = initialColorGradingDebug && typeof initialColorGradingDebug === 'object'
             ? JSON.parse(JSON.stringify(initialColorGradingDebug))
@@ -241,6 +255,9 @@ export class OptionsUI {
         this._draftColorGrading = initialColorGrading && typeof initialColorGrading === 'object'
             ? JSON.parse(JSON.stringify(initialColorGrading))
             : null;
+        this._draftBuildingWindowVisuals = initialBuildingWindowVisuals && typeof initialBuildingWindowVisuals === 'object'
+            ? JSON.parse(JSON.stringify(initialBuildingWindowVisuals))
+            : null;
         this._draftSunFlare = initialSunFlare && typeof initialSunFlare === 'object'
             ? JSON.parse(JSON.stringify(initialSunFlare))
             : null;
@@ -256,9 +273,11 @@ export class OptionsUI {
     mount() {
         if (!this.root.isConnected) document.body.appendChild(this.root);
         this.panel?.focus?.();
+        this._startDebugRefresh();
     }
 
     unmount() {
+        this._stopDebugRefresh();
         this.root.remove();
     }
 
@@ -270,16 +289,109 @@ export class OptionsUI {
     }
 
     _renderTab() {
+        this._iblDebugEls = null;
+        this._postDebugEls = null;
         this.body.textContent = '';
         if (this._tab === 'lighting') return this._renderLightingTab();
-        return this._renderPlaceholderTab();
+        return this._renderGameplayTab();
     }
 
-    _renderPlaceholderTab() {
-        const wrap = makeEl('div', 'options-placeholder');
-        wrap.appendChild(makeEl('div', 'options-placeholder-title', 'Coming soon'));
-        wrap.appendChild(makeEl('div', 'options-placeholder-text', 'Additional settings will live here.'));
-        this.body.appendChild(wrap);
+    _startDebugRefresh() {
+        if (this._debugInterval) return;
+        if (!this._getIblDebugInfo && !this._getPostProcessingDebugInfo) return;
+        this._debugInterval = window.setInterval(() => this._refreshDebug(), 250);
+    }
+
+    _stopDebugRefresh() {
+        if (!this._debugInterval) return;
+        window.clearInterval(this._debugInterval);
+        this._debugInterval = null;
+    }
+
+    _refreshDebug() {
+        this._refreshIblDebug();
+        this._refreshPostProcessingDebug();
+    }
+
+    _refreshIblDebug() {
+        const els = this._iblDebugEls;
+        if (!els || !this._getIblDebugInfo) return;
+
+        const info = this._getIblDebugInfo() ?? null;
+        const enabled = !!info?.enabled;
+        const envLoaded = !!info?.envMapLoaded;
+        const fallback = !!info?.usingFallbackEnvMap;
+        const sceneEnv = !!info?.sceneHasEnvironment;
+        const sceneMatch = !!info?.sceneEnvironmentMatches;
+        const hdrUrl = typeof info?.hdrUrl === 'string' ? info.hdrUrl : null;
+        const intensity = Number.isFinite(info?.envMapIntensity) ? Number(info.envMapIntensity) : null;
+
+        els.envMap.textContent = !enabled ? 'Disabled' : (envLoaded ? (fallback ? 'Loaded (fallback)' : 'Loaded') : 'Loading…');
+        els.sceneEnv.textContent = sceneEnv ? 'Set' : 'Null';
+        els.sceneMatch.textContent = sceneMatch ? 'Yes' : 'No';
+        els.hdrUrl.textContent = hdrUrl ?? '-';
+        els.intensity.textContent = intensity !== null ? intensity.toFixed(2) : '-';
+    }
+
+    _refreshPostProcessingDebug() {
+        const els = this._postDebugEls;
+        if (!els || !this._getPostProcessingDebugInfo) return;
+
+        const info = this._getPostProcessingDebugInfo() ?? null;
+        const postActive = !!info?.postActive;
+        els.pipeline.textContent = postActive ? 'On (composer)' : 'Off (direct)';
+
+        const bloom = info?.bloom ?? null;
+        if (bloom && typeof bloom === 'object') {
+            const enabled = !!bloom.enabled;
+            const strength = Number.isFinite(bloom.strength) ? bloom.strength : null;
+            const threshold = Number.isFinite(bloom.threshold) ? bloom.threshold : null;
+            els.bloom.textContent = enabled
+                ? `On${strength !== null ? ` (strength ${strength.toFixed(2)})` : ''}${threshold !== null ? ` (threshold ${threshold.toFixed(2)})` : ''}`
+                : 'Off';
+        } else {
+            els.bloom.textContent = '-';
+        }
+
+        const grade = info?.colorGrading ?? null;
+        if (grade && typeof grade === 'object') {
+            const requested = String(grade.requestedPreset ?? 'off');
+            const intensity = Number.isFinite(grade.intensity) ? grade.intensity : 0;
+            const status = String(grade.status ?? 'off');
+            const supported = grade.supported !== undefined ? !!grade.supported : true;
+            const hasLut = !!grade.hasLut;
+            if (!supported) {
+                els.grading.textContent = 'Unsupported (WebGL2 required)';
+            } else if (requested === 'off' || intensity <= 0) {
+                els.grading.textContent = 'Off';
+            } else if (!hasLut && status === 'loading') {
+                els.grading.textContent = `${requested} (${intensity.toFixed(2)}) (loading)`;
+            } else if (!hasLut && status === 'error') {
+                els.grading.textContent = `${requested} (${intensity.toFixed(2)}) (error)`;
+            } else {
+                els.grading.textContent = `${requested} (${intensity.toFixed(2)})`;
+            }
+        } else {
+            els.grading.textContent = '-';
+        }
+    }
+
+    _ensureDraftBuildingWindowVisuals() {
+        if (this._draftBuildingWindowVisuals) return;
+        const d = getDefaultResolvedBuildingWindowVisualsSettings();
+        this._draftBuildingWindowVisuals = {
+            reflective: {
+                enabled: d.reflective.enabled,
+                glass: {
+                    colorHex: d.reflective.glass?.colorHex,
+                    metalness: d.reflective.glass?.metalness,
+                    roughness: d.reflective.glass?.roughness,
+                    transmission: d.reflective.glass?.transmission,
+                    ior: d.reflective.glass?.ior,
+                    envMapIntensity: d.reflective.glass?.envMapIntensity
+                }
+            }
+        };
     }
 
     _ensureDraftLighting() {
@@ -325,6 +437,105 @@ export class OptionsUI {
             preset: d.preset,
             strength: d.strength
         };
+    }
+
+    _renderGameplayTab() {
+        this._ensureDraftBuildingWindowVisuals();
+        this._ensureDraftLighting();
+
+        const sectionBuildings = makeEl('div', 'options-section');
+        sectionBuildings.appendChild(makeEl('div', 'options-section-title', 'Buildings'));
+
+        const d = this._draftBuildingWindowVisuals;
+        const glass = d.reflective.glass ?? (d.reflective.glass = {});
+        const emit = () => this._emitLiveChange();
+        const controls = {
+            reflective: makeToggleRow({
+                label: 'Reflective building windows',
+                value: d.reflective.enabled,
+                onChange: (v) => { d.reflective.enabled = v; emit(); }
+            }),
+            glassEnvMapIntensity: makeNumberSliderRow({
+                label: 'Window glass envMapIntensity',
+                value: glass.envMapIntensity ?? 4.0,
+                min: 0,
+                max: 5,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { glass.envMapIntensity = v; emit(); }
+            }),
+            glassRoughness: makeNumberSliderRow({
+                label: 'Window glass roughness',
+                value: glass.roughness ?? 0.02,
+                min: 0,
+                max: 1,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { glass.roughness = v; emit(); }
+            }),
+            glassTransmission: makeNumberSliderRow({
+                label: 'Window glass transmission',
+                value: glass.transmission ?? 0.0,
+                min: 0,
+                max: 1,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { glass.transmission = v; emit(); }
+            }),
+            glassIor: makeNumberSliderRow({
+                label: 'Window glass ior',
+                value: glass.ior ?? 2.2,
+                min: 1,
+                max: 2.5,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { glass.ior = v; emit(); }
+            }),
+            glassMetalness: makeNumberSliderRow({
+                label: 'Window glass metalness',
+                value: glass.metalness ?? 0.0,
+                min: 0,
+                max: 1,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { glass.metalness = v; emit(); }
+            })
+        };
+
+        sectionBuildings.appendChild(controls.reflective.row);
+        sectionBuildings.appendChild(controls.glassEnvMapIntensity.row);
+        sectionBuildings.appendChild(controls.glassRoughness.row);
+        sectionBuildings.appendChild(controls.glassTransmission.row);
+        sectionBuildings.appendChild(controls.glassIor.row);
+        sectionBuildings.appendChild(controls.glassMetalness.row);
+
+        const syncReflectiveEnabled = (enabled) => {
+            const off = !enabled;
+            for (const entry of [
+                controls.glassEnvMapIntensity,
+                controls.glassRoughness,
+                controls.glassTransmission,
+                controls.glassIor,
+                controls.glassMetalness
+            ]) {
+                entry.range.disabled = off;
+                entry.number.disabled = off;
+            }
+        };
+        syncReflectiveEnabled(!!d.reflective.enabled);
+        controls.reflective.toggle.addEventListener('change', () => syncReflectiveEnabled(!!controls.reflective.toggle.checked));
+
+        if (!this._draftLighting?.ibl?.enabled) {
+            const warn = makeEl('div', 'options-note');
+            warn.textContent = 'IBL is disabled. Reflective windows need IBL (Lighting tab) to show reflections.';
+            sectionBuildings.appendChild(warn);
+        }
+
+        const note = makeEl('div', 'options-note');
+        note.textContent = 'Building window visuals apply when buildings are (re)generated. Save, then rebuild the scene (re-enter Gameplay/Map Debugger/Building Fabrication) or reload.';
+
+        this.body.appendChild(sectionBuildings);
+        this.body.appendChild(note);
     }
 
     _renderLightingTab() {
@@ -424,25 +635,26 @@ export class OptionsUI {
                 digits: 2,
                 onChange: (v) => { bloom.threshold = v; emit(); }
             }),
-            sunFlareEnabled: makeToggleRow({
-                label: 'Sun flare (lens flare)',
-                value: sunFlare.enabled,
-                onChange: (v) => { sunFlare.enabled = v; emit(); }
-            }),
             sunFlarePreset: makeChoiceRow({
-                label: 'Sun flare preset',
-                value: sunFlare.preset,
-                options: getSunFlarePresetOptions(),
-                onChange: (v) => { sunFlare.preset = v; emit(); }
-            }),
-            sunFlareStrength: makeNumberSliderRow({
-                label: 'Sun flare strength',
-                value: sunFlare.strength,
-                min: 0,
-                max: 2,
-                step: 0.01,
-                digits: 2,
-                onChange: (v) => { sunFlare.strength = v; emit(); }
+                label: 'Sun flare',
+                value: sunFlare.enabled ? sunFlare.preset : 'off',
+                options: [
+                    { id: 'off', label: 'Off' },
+                    ...getSunFlarePresetOptions()
+                ],
+                onChange: (v) => {
+                    const id = String(v ?? '').trim().toLowerCase();
+                    if (id === 'off') {
+                        sunFlare.enabled = false;
+                        emit();
+                        return;
+                    }
+                    sunFlare.enabled = true;
+                    sunFlare.preset = id;
+                    if (id === 'cinematic') sunFlare.strength = 1.1;
+                    else if (id === 'subtle') sunFlare.strength = 0.65;
+                    emit();
+                }
             }),
             gradePreset: makeChoiceRow({
                 label: 'Color grading (LUT)',
@@ -469,36 +681,67 @@ export class OptionsUI {
         sectionIbl.appendChild(controls.iblIntensity.row);
         sectionIbl.appendChild(controls.iblBackground.row);
 
+        let iblStatusSection = null;
+        if (this._getIblDebugInfo) {
+            iblStatusSection = makeEl('div', 'options-section');
+            iblStatusSection.appendChild(makeEl('div', 'options-section-title', 'IBL Status'));
+            const rowEnvMap = makeValueRow({ label: 'Env map', value: '-' });
+            const rowIntensity = makeValueRow({ label: 'Config intensity', value: '-' });
+            const rowSceneEnv = makeValueRow({ label: 'Scene.environment', value: '-' });
+            const rowSceneMatch = makeValueRow({ label: 'Env matches loaded', value: '-' });
+            const rowHdrUrl = makeValueRow({ label: 'HDR URL', value: '-' });
+            iblStatusSection.appendChild(rowEnvMap.row);
+            iblStatusSection.appendChild(rowIntensity.row);
+            iblStatusSection.appendChild(rowSceneEnv.row);
+            iblStatusSection.appendChild(rowSceneMatch.row);
+            iblStatusSection.appendChild(rowHdrUrl.row);
+            this._iblDebugEls = {
+                envMap: rowEnvMap.text,
+                intensity: rowIntensity.text,
+                sceneEnv: rowSceneEnv.text,
+                sceneMatch: rowSceneMatch.text,
+                hdrUrl: rowHdrUrl.text
+            };
+        }
+
         sectionLighting.appendChild(controls.exposure.row);
         sectionLighting.appendChild(controls.hemi.row);
         sectionLighting.appendChild(controls.sun.row);
 
         const sectionPost = makeEl('div', 'options-section');
         sectionPost.appendChild(makeEl('div', 'options-section-title', 'Post-processing'));
-        if (this._initialPostProcessingActive !== null) {
-            sectionPost.appendChild(makeValueRow({
-                label: 'Post-processing pipeline (active now)',
-                value: this._initialPostProcessingActive ? 'On (composer)' : 'Off (direct)'
-            }).row);
-        }
-        if (this._initialColorGradingDebug) {
-            const requested = String(this._initialColorGradingDebug.requestedPreset ?? 'off');
-            const intensity = Number.isFinite(this._initialColorGradingDebug.intensity) ? this._initialColorGradingDebug.intensity : 0;
-            const hasLut = !!this._initialColorGradingDebug.hasLut;
-            sectionPost.appendChild(makeValueRow({
-                label: 'Color grading (active now)',
-                value: (requested === 'off' || intensity <= 0)
-                    ? 'Off'
-                    : `${requested} (${intensity.toFixed(2)})${hasLut ? '' : ' (loading)'}`
-            }).row);
+        if (this._getPostProcessingDebugInfo) {
+            const pipelineRow = makeValueRow({ label: 'Post-processing pipeline', value: '-' });
+            const bloomRow = makeValueRow({ label: 'Bloom (active now)', value: '-' });
+            const gradeRow = makeValueRow({ label: 'Color grading (active now)', value: '-' });
+            sectionPost.appendChild(pipelineRow.row);
+            sectionPost.appendChild(bloomRow.row);
+            sectionPost.appendChild(gradeRow.row);
+            this._postDebugEls = { pipeline: pipelineRow.text, bloom: bloomRow.text, grading: gradeRow.text };
+        } else {
+            if (this._initialPostProcessingActive !== null) {
+                sectionPost.appendChild(makeValueRow({
+                    label: 'Post-processing pipeline (active now)',
+                    value: this._initialPostProcessingActive ? 'On (composer)' : 'Off (direct)'
+                }).row);
+            }
+            if (this._initialColorGradingDebug) {
+                const requested = String(this._initialColorGradingDebug.requestedPreset ?? 'off');
+                const intensity = Number.isFinite(this._initialColorGradingDebug.intensity) ? this._initialColorGradingDebug.intensity : 0;
+                const hasLut = !!this._initialColorGradingDebug.hasLut;
+                sectionPost.appendChild(makeValueRow({
+                    label: 'Color grading (active now)',
+                    value: (requested === 'off' || intensity <= 0)
+                        ? 'Off'
+                        : `${requested} (${intensity.toFixed(2)})${hasLut ? '' : ' (loading)'}`
+                }).row);
+            }
         }
         sectionPost.appendChild(controls.bloomEnabled.row);
         sectionPost.appendChild(controls.bloomStrength.row);
         sectionPost.appendChild(controls.bloomRadius.row);
         sectionPost.appendChild(controls.bloomThreshold.row);
-        sectionPost.appendChild(controls.sunFlareEnabled.row);
         sectionPost.appendChild(controls.sunFlarePreset.row);
-        sectionPost.appendChild(controls.sunFlareStrength.row);
         sectionPost.appendChild(controls.gradePreset.row);
         sectionPost.appendChild(controls.gradeIntensity.row);
 
@@ -521,24 +764,18 @@ export class OptionsUI {
         };
         syncGradeEnabled(controls.gradePreset.getValue());
 
-        const syncSunFlareEnabled = (enabled) => {
-            const off = !enabled;
-            controls.sunFlarePreset.setDisabled(off);
-            controls.sunFlareStrength.range.disabled = off;
-            controls.sunFlareStrength.number.disabled = off;
-        };
-        syncSunFlareEnabled(!!sunFlare.enabled);
-        controls.sunFlareEnabled.toggle.addEventListener('change', () => syncSunFlareEnabled(!!controls.sunFlareEnabled.toggle.checked));
-
         const note = makeEl('div', 'options-note');
         note.textContent = 'URL params override saved settings (e.g. ibl, iblIntensity, iblBackground, bloom, sunFlare, grade). Bloom affects only bright pixels; raise threshold to reduce glow.';
 
         this.body.appendChild(sectionIbl);
+        if (iblStatusSection) this.body.appendChild(iblStatusSection);
         this.body.appendChild(sectionLighting);
         this.body.appendChild(sectionPost);
         this.body.appendChild(note);
 
         this._lightingControls = controls;
+        this._refreshIblDebug();
+        this._refreshPostProcessingDebug();
     }
 
     resetToDefaults() {
@@ -574,11 +811,27 @@ export class OptionsUI {
             preset: sunFlare.preset,
             strength: sunFlare.strength
         };
+
+        const windowVisuals = getDefaultResolvedBuildingWindowVisualsSettings();
+        this._draftBuildingWindowVisuals = {
+            reflective: {
+                enabled: windowVisuals.reflective.enabled,
+                glass: {
+                    colorHex: windowVisuals.reflective.glass?.colorHex,
+                    metalness: windowVisuals.reflective.glass?.metalness,
+                    roughness: windowVisuals.reflective.glass?.roughness,
+                    transmission: windowVisuals.reflective.glass?.transmission,
+                    ior: windowVisuals.reflective.glass?.ior,
+                    envMapIntensity: windowVisuals.reflective.glass?.envMapIntensity
+                }
+            }
+        };
         this._renderTab();
         this._emitLiveChange();
     }
 
     getDraft() {
+        this._ensureDraftBuildingWindowVisuals();
         this._ensureDraftLighting();
         this._ensureDraftBloom();
         this._ensureDraftColorGrading();
@@ -586,6 +839,7 @@ export class OptionsUI {
         const d = this._draftLighting;
         const bloom = this._draftBloom;
         const grade = this._draftColorGrading;
+        const windowVisuals = this._draftBuildingWindowVisuals;
         const sunFlare = this._draftSunFlare;
         return {
             lighting: {
@@ -607,6 +861,19 @@ export class OptionsUI {
             colorGrading: {
                 preset: String(grade.preset ?? 'off'),
                 intensity: grade.intensity
+            },
+            buildingWindowVisuals: {
+                reflective: {
+                    enabled: !!windowVisuals.reflective.enabled,
+                    glass: {
+                        colorHex: windowVisuals.reflective?.glass?.colorHex,
+                        metalness: windowVisuals.reflective?.glass?.metalness,
+                        roughness: windowVisuals.reflective?.glass?.roughness,
+                        transmission: windowVisuals.reflective?.glass?.transmission,
+                        ior: windowVisuals.reflective?.glass?.ior,
+                        envMapIntensity: windowVisuals.reflective?.glass?.envMapIntensity
+                    }
+                }
             },
             sunFlare: {
                 enabled: !!sunFlare.enabled,

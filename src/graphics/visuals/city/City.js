@@ -13,6 +13,7 @@ import { BuildingWallTextureCache, buildBuildingVisualParts } from '../../assets
 import { buildBuildingFabricationVisualParts } from '../../assets3d/generators/building_fabrication/BuildingFabricationGenerator.js';
 import { getCityMaterials } from '../../assets3d/textures/CityMaterials.js';
 import { getResolvedLightingSettings } from '../../lighting/LightingSettings.js';
+import { getResolvedBuildingWindowVisualsSettings } from '../buildings/BuildingWindowVisualsSettings.js';
 import { getResolvedSunFlareSettings } from '../sun/SunFlareSettings.js';
 import { SunFlareRig } from '../sun/SunFlareRig.js';
 import { createRoadEngineRoads } from './RoadEngineRoads.js';
@@ -48,6 +49,7 @@ export class City {
         this.group.add(originAxes);
 
         const lighting = getResolvedLightingSettings();
+        const buildingWindowVisuals = getResolvedBuildingWindowVisualsSettings();
 
         this.hemi = new THREE.HemisphereLight(0xffffff, 0x2a3b1f, lighting.hemiIntensity);
         this.hemi.position.set(0, 100, 0);
@@ -135,6 +137,7 @@ export class City {
                         materialVariationSeed: entry.materialVariationSeed,
                         textureCache: textures,
                         renderer: null,
+                        windowVisuals: buildingWindowVisuals,
                         overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
                         walls: { inset: wallInset }
                     })
@@ -149,6 +152,7 @@ export class City {
                         style: entry.style,
                         textureCache: textures,
                         renderer: null,
+                        windowVisuals: buildingWindowVisuals,
                         overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
                         walls: { inset: wallInset },
                         windows: windowsEnabled ? {
@@ -158,7 +162,7 @@ export class City {
                             height: windowsSpec.height,
                             y: windowsSpec.y,
                             cornerEps: 0.12,
-                            offset: 0.05
+                            offset: 0.005
                         } : null
                     });
                 if (!parts) continue;

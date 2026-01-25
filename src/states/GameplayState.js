@@ -44,6 +44,9 @@ const CAMERA_DRAG = {
     returnEaseSec: 0.5
 };
 
+// Manual camera drag state lives in `this._cameraDrag` and auto-returns after `CAMERA_DRAG.idleReturnSec`.
+// While the Options overlay is open, pointer controls stay active and idle return is suppressed.
+
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
 export function getGameplayCityOptions() {
@@ -158,6 +161,7 @@ export class GameplayState {
         this._setupUi = new SetupUIController();
 
         this._pausedByOverlay = false;
+        this._pauseKeepsCameraInput = false;
     }
 
     enter() {
@@ -346,20 +350,23 @@ export class GameplayState {
         this.engine.clearScene();
     }
 
-    pause() {
+    pause({ nextName = null } = {}) {
         if (this._pausedByOverlay) return;
         this._pausedByOverlay = true;
+        this._pauseKeepsCameraInput = nextName === 'options';
 
         this._closeSetupOverlay({ restoreInput: false });
 
         window.removeEventListener('keydown', this._onKeyDown);
-        const canvas = this.engine?.renderer?.domElement;
-        if (canvas) {
-            canvas.removeEventListener('pointerdown', this._onPointerDown);
+        if (!this._pauseKeepsCameraInput) {
+            const canvas = this.engine?.renderer?.domElement;
+            if (canvas) {
+                canvas.removeEventListener('pointerdown', this._onPointerDown);
+            }
+            window.removeEventListener('pointermove', this._onPointerMove);
+            window.removeEventListener('pointerup', this._onPointerUp);
+            window.removeEventListener('pointercancel', this._onPointerUp);
         }
-        window.removeEventListener('pointermove', this._onPointerMove);
-        window.removeEventListener('pointerup', this._onPointerUp);
-        window.removeEventListener('pointercancel', this._onPointerUp);
 
         this.inputManager?.reset?.();
         this.inputManager?.detach?.();
@@ -376,13 +383,16 @@ export class GameplayState {
         this.inputManager?.attach?.();
 
         window.addEventListener('keydown', this._onKeyDown, { passive: false });
-        const canvas = this.engine?.renderer?.domElement;
-        if (canvas) {
-            canvas.addEventListener('pointerdown', this._onPointerDown, { passive: false });
+        if (!this._pauseKeepsCameraInput) {
+            const canvas = this.engine?.renderer?.domElement;
+            if (canvas) {
+                canvas.addEventListener('pointerdown', this._onPointerDown, { passive: false });
+            }
+            window.addEventListener('pointermove', this._onPointerMove, { passive: false });
+            window.addEventListener('pointerup', this._onPointerUp, { passive: false });
+            window.addEventListener('pointercancel', this._onPointerUp, { passive: false });
         }
-        window.addEventListener('pointermove', this._onPointerMove, { passive: false });
-        window.addEventListener('pointerup', this._onPointerUp, { passive: false });
-        window.addEventListener('pointercancel', this._onPointerUp, { passive: false });
+        this._pauseKeepsCameraInput = false;
     }
 
     update(dt) {

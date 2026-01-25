@@ -21,7 +21,7 @@ function configureAtlasTexture(tex) {
     tex.wrapT = THREE.ClampToEdgeWrapping;
     tex.anisotropy = 16;
     applyTextureColorSpace(tex, { srgb: true });
-    tex.needsUpdate = true;
+    if (tex.image) tex.needsUpdate = true;
 }
 
 function getOrCreateEntry(atlasId) {

@@ -71,6 +71,8 @@ function createFallbackEnvMap(renderer) {
     const envMap = pmrem.fromScene(new RoomEnvironment()).texture;
     pmrem.dispose();
     applyHdrColorSpace(envMap);
+    envMap.userData = envMap.userData ?? {};
+    envMap.userData.iblFallback = true;
     return envMap;
 }
 
@@ -131,17 +133,47 @@ export async function loadIBLTexture(renderer, overrides = {}) {
     return entry.promise;
 }
 
-function applyEnvMapIntensityToMaterial(mat, intensity, { force = false } = {}) {
+function applyEnvMapIntensityToMaterial(mat, intensity, { force = false, envMap = undefined } = {}) {
     if (!mat || !('envMapIntensity' in mat)) return;
     const userData = mat.userData ?? (mat.userData = {});
 
     if (userData.iblNoAutoEnvMapIntensity) return;
+
+    if (envMap !== undefined && ('envMap' in mat)) {
+        const managed = !!userData._iblManagedEnvMap;
+        const nextEnv = envMap ?? null;
+
+        if (nextEnv) {
+            if (mat.envMap !== nextEnv && (!mat.envMap || managed)) {
+                mat.envMap = nextEnv;
+                userData._iblManagedEnvMap = true;
+                mat.needsUpdate = true;
+            }
+        } else if (managed) {
+            if (mat.envMap) {
+                mat.envMap = null;
+                mat.needsUpdate = true;
+            }
+            delete userData._iblManagedEnvMap;
+        }
+    }
 
     if (Number.isFinite(userData.iblEnvMapIntensity)) {
         if (mat.envMapIntensity !== userData.iblEnvMapIntensity) {
             mat.envMapIntensity = userData.iblEnvMapIntensity;
             mat.needsUpdate = true;
         }
+        return;
+    }
+
+    if (Number.isFinite(userData.iblEnvMapIntensityScale)) {
+        const scale = Math.max(0, Number(userData.iblEnvMapIntensityScale));
+        const scaled = intensity * scale;
+        const prevAuto = userData._iblAutoEnvMapIntensity;
+        if (!force && prevAuto === scaled) return;
+        mat.envMapIntensity = scaled;
+        userData._iblAutoEnvMapIntensity = scaled;
+        mat.needsUpdate = true;
         return;
     }
 
@@ -153,33 +185,87 @@ function applyEnvMapIntensityToMaterial(mat, intensity, { force = false } = {}) 
     mat.needsUpdate = true;
 }
 
+function markMaterialsForEnvMapUpdate(root) {
+    root?.traverse?.((obj) => {
+        if (!obj?.isMesh) return;
+        const mat = obj.material ?? null;
+        if (Array.isArray(mat)) {
+            for (const entry of mat) {
+                if (entry && ('envMapIntensity' in entry)) entry.needsUpdate = true;
+            }
+            return;
+        }
+        if (mat && ('envMapIntensity' in mat)) mat.needsUpdate = true;
+    });
+}
+
+function syncMaterialEnvMapFromScene(root, envMap) {
+    const nextEnv = envMap ?? null;
+    root?.traverse?.((obj) => {
+        if (!obj?.isMesh) return;
+        const mat = obj.material ?? null;
+        const mats = Array.isArray(mat) ? mat : [mat];
+        for (const entry of mats) {
+            if (!entry) continue;
+            if (!('envMapIntensity' in entry) || !('envMap' in entry)) continue;
+            const userData = entry.userData ?? (entry.userData = {});
+            const managed = !!userData._iblManagedEnvMap;
+
+            if (nextEnv) {
+                if (entry.envMap === nextEnv) continue;
+                if (entry.envMap && !managed) continue;
+                entry.envMap = nextEnv;
+                userData._iblManagedEnvMap = true;
+                entry.needsUpdate = true;
+                continue;
+            }
+
+            if (!managed) continue;
+            if (!entry.envMap) {
+                delete userData._iblManagedEnvMap;
+                continue;
+            }
+            entry.envMap = null;
+            delete userData._iblManagedEnvMap;
+            entry.needsUpdate = true;
+        }
+    });
+}
+
 export function applyIBLToScene(scene, envMap, overrides = {}) {
     if (!scene) return;
     const enabled = overrides?.enabled ?? true;
     const setBackground = overrides?.setBackground ?? false;
 
     if (!enabled || !envMap) {
+        const changed = !!scene.environment;
         if (scene.environment) scene.environment = null;
         if (scene.background) scene.background = null;
+        syncMaterialEnvMapFromScene(scene, null);
+        if (changed) markMaterialsForEnvMapUpdate(scene);
         return;
     }
 
+    const changed = scene.environment !== envMap;
     scene.environment = envMap;
     scene.background = setBackground ? envMap : null;
+    syncMaterialEnvMapFromScene(scene, envMap);
+    if (changed) markMaterialsForEnvMapUpdate(scene);
 }
 
 export function applyIBLIntensity(root, overrides = {}, { force = false } = {}) {
     const enabled = overrides?.enabled ?? true;
     if (!enabled) return;
     const intensity = Number.isFinite(overrides?.envMapIntensity) ? overrides.envMapIntensity : DEFAULT_ENV_MAP_INTENSITY;
+    const envMap = root?.isScene ? (root.environment ?? null) : undefined;
 
     root?.traverse?.((obj) => {
         if (!obj?.isMesh) return;
         const mat = obj.material ?? null;
         if (Array.isArray(mat)) {
-            for (const entry of mat) applyEnvMapIntensityToMaterial(entry, intensity, { force });
+            for (const entry of mat) applyEnvMapIntensityToMaterial(entry, intensity, { force, envMap });
         } else {
-            applyEnvMapIntensityToMaterial(mat, intensity, { force });
+            applyEnvMapIntensityToMaterial(mat, intensity, { force, envMap });
         }
     });
 }

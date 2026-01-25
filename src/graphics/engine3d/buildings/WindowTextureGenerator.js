@@ -12,6 +12,8 @@ import {
 
 const QUANT = 1000;
 const _textureCache = new Map();
+const _glassMaskCache = new Map();
+const _interiorEmissiveCache = new Map();
 const _previewUrlCache = new Map();
 
 export { WINDOW_TYPE, isWindowTypeId };
@@ -326,6 +328,96 @@ export function getWindowTexture({ typeId, params, windowWidth = 1, windowHeight
     return tex;
 }
 
+export function getWindowGlassMaskTexture({ typeId, params, windowWidth = 1, windowHeight = 1 } = {}) {
+    const t = normalizeWindowTypeId(typeId);
+    const baseKey = buildCacheKey(t, params, { windowWidth, windowHeight });
+    const key = `glassMask|${baseKey}`;
+    const cached = _glassMaskCache.get(key);
+    if (cached) return cached;
+
+    let tex;
+    const def = getWindowTypeDefinition(t);
+    const paramSpec = getWindowTypeParamSpec(t);
+    if (def?.renderKind === 'arch_v1' && paramSpec) {
+        const p = normalizeParamsFromSpec(paramSpec, params);
+        const aspect = (Number(windowHeight) || 1) / Math.max(0.01, Number(windowWidth) || 1);
+        const hPx = Math.max(64, Math.min(512, Math.round(256 * aspect)));
+        const canvas = buildArchedGlassMaskCanvas({
+            width: 256,
+            height: hPx,
+            frameWidth: p.frameWidth
+        });
+        tex = canvasToTexture(canvas, { srgb: false });
+    } else if (def?.renderKind === 'modern_v1' && paramSpec) {
+        const p = normalizeParamsFromSpec(paramSpec, params);
+        const aspect = (Number(windowHeight) || 1) / Math.max(0.01, Number(windowWidth) || 1);
+        const hPx = Math.max(64, Math.min(512, Math.round(256 * aspect)));
+        const canvas = buildModernGlassMaskCanvas({
+            width: 256,
+            height: hPx,
+            frameWidth: p.frameWidth
+        });
+        tex = canvasToTexture(canvas, { srgb: false });
+    } else {
+        const canvas = buildLegacyStyleGlassMaskCanvas({ size: 256 });
+        tex = canvasToTexture(canvas, { srgb: false });
+    }
+
+    _glassMaskCache.set(key, tex);
+    return tex;
+}
+
+export function getWindowInteriorEmissiveTexture({
+    typeId,
+    params,
+    windowWidth = 1,
+    windowHeight = 1,
+    patternIndex = 0
+} = {}) {
+    const t = normalizeWindowTypeId(typeId);
+    const baseKey = buildCacheKey(t, params, { windowWidth, windowHeight });
+    const p = Number.isFinite(Number(patternIndex)) ? (Number(patternIndex) | 0) : 0;
+    const key = `interiorEmissive|${baseKey}|p:${p}`;
+    const cached = _interiorEmissiveCache.get(key);
+    if (cached) return cached;
+
+    let tex;
+    const def = getWindowTypeDefinition(t);
+    const paramSpec = getWindowTypeParamSpec(t);
+    if (def?.renderKind === 'arch_v1' && paramSpec) {
+        const normalized = normalizeParamsFromSpec(paramSpec, params);
+        const aspect = (Number(windowHeight) || 1) / Math.max(0.01, Number(windowWidth) || 1);
+        const hPx = Math.max(64, Math.min(512, Math.round(256 * aspect)));
+        const canvas = buildArchedInteriorEmissiveCanvas({
+            width: 256,
+            height: hPx,
+            frameWidth: normalized.frameWidth,
+            seed: hashStringToUint32(`${key}|arch`)
+        });
+        tex = canvasToTexture(canvas, { srgb: true });
+    } else if (def?.renderKind === 'modern_v1' && paramSpec) {
+        const normalized = normalizeParamsFromSpec(paramSpec, params);
+        const aspect = (Number(windowHeight) || 1) / Math.max(0.01, Number(windowWidth) || 1);
+        const hPx = Math.max(64, Math.min(512, Math.round(256 * aspect)));
+        const canvas = buildModernInteriorEmissiveCanvas({
+            width: 256,
+            height: hPx,
+            frameWidth: normalized.frameWidth,
+            seed: hashStringToUint32(`${key}|modern`)
+        });
+        tex = canvasToTexture(canvas, { srgb: true });
+    } else {
+        const canvas = buildLegacyStyleInteriorEmissiveCanvas({
+            size: 256,
+            seed: hashStringToUint32(`${key}|legacy`)
+        });
+        tex = canvasToTexture(canvas, { srgb: true });
+    }
+
+    _interiorEmissiveCache.set(key, tex);
+    return tex;
+}
+
 function normalizeParamsFromSpec(paramSpec, params) {
     const p = params && typeof params === 'object' ? params : {};
     const out = {};
@@ -344,4 +436,226 @@ function normalizeParamsFromSpec(paramSpec, params) {
     }
 
     return out;
+}
+
+function buildLegacyStyleGlassMaskCanvas({ size = 256 } = {}) {
+    const { c, ctx } = makeCanvas(size, size);
+    if (!ctx) return c;
+
+    const w = size;
+    const h = size;
+
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, w, h);
+
+    const frame = Math.max(10, Math.round(size * 0.06));
+    const x = frame;
+    const y = frame;
+    const iw = Math.max(1, w - frame * 2);
+    const ih = Math.max(1, h - frame * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x, y, iw, ih);
+    return c;
+}
+
+function buildModernGlassMaskCanvas({ width = 256, height = 256, frameWidth = 0.06 } = {}) {
+    const w = Math.max(32, Math.round(width));
+    const h = Math.max(32, Math.round(height));
+    const { c, ctx } = makeCanvas(w, h);
+    if (!ctx) return c;
+
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, w, h);
+
+    const fw = Math.max(2, Math.round(Math.min(w, h) * frameWidth));
+    const ix = fw;
+    const iy = fw;
+    const iw = Math.max(1, w - fw * 2);
+    const ih = Math.max(1, h - fw * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(ix, iy, iw, ih);
+    return c;
+}
+
+function buildArchedGlassMaskCanvas({ width = 256, height = 256, frameWidth = 0.06 } = {}) {
+    const w = Math.max(64, Math.round(width));
+    const h = Math.max(64, Math.round(height));
+    const { c, ctx } = makeCanvas(w, h);
+    if (!ctx) return c;
+
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, w, h);
+
+    const fw = Math.max(2, Math.round(Math.min(w, h) * frameWidth));
+    const outerRadius = (w * 0.5);
+    const innerRadius = Math.max(2, outerRadius - fw);
+    const innerArchHeight = innerRadius;
+    const innerRectHeight = Math.max(0, (h - fw) - innerArchHeight);
+
+    const innerPath = new Path2D();
+    innerPath.moveTo(fw, innerArchHeight + fw);
+    innerPath.arc(w * 0.5, innerArchHeight + fw, innerRadius, Math.PI, 0, false);
+    innerPath.lineTo(w - fw, fw + innerArchHeight + innerRectHeight);
+    innerPath.lineTo(fw, fw + innerArchHeight + innerRectHeight);
+    innerPath.closePath();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fill(innerPath);
+    return c;
+}
+
+function hashStringToUint32(text) {
+    const str = typeof text === 'string' ? text : '';
+    let hash = 2166136261;
+    for (let i = 0; i < str.length; i++) {
+        hash ^= str.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+}
+
+function makeRng(seed) {
+    let t = (Number.isFinite(seed) ? seed : 0) >>> 0;
+    return () => {
+        t += 0x6D2B79F5;
+        let x = t;
+        x = Math.imul(x ^ (x >>> 15), x | 1);
+        x ^= x + Math.imul(x ^ (x >>> 7), x | 61);
+        return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+function buildLegacyStyleInteriorEmissiveCanvas({ size = 256, seed = 0 } = {}) {
+    const { c, ctx } = makeCanvas(size, size);
+    if (!ctx) return c;
+
+    const w = size;
+    const h = size;
+    const rng = makeRng(seed);
+
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, w, h);
+
+    const frame = Math.max(10, Math.round(size * 0.06));
+    const x0 = frame;
+    const y0 = frame;
+    const iw = Math.max(1, w - frame * 2);
+    const ih = Math.max(1, h - frame * 2);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x0, y0, iw, ih);
+    ctx.clip();
+
+    paintInteriorPattern(ctx, { x: x0, y: y0, w: iw, h: ih, rng });
+
+    ctx.restore();
+    return c;
+}
+
+function buildModernInteriorEmissiveCanvas({ width = 256, height = 256, frameWidth = 0.06, seed = 0 } = {}) {
+    const w = Math.max(32, Math.round(width));
+    const h = Math.max(32, Math.round(height));
+    const { c, ctx } = makeCanvas(w, h);
+    if (!ctx) return c;
+
+    const rng = makeRng(seed);
+
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, w, h);
+
+    const fw = Math.max(2, Math.round(Math.min(w, h) * frameWidth));
+    const ix = fw;
+    const iy = fw;
+    const iw = Math.max(1, w - fw * 2);
+    const ih = Math.max(1, h - fw * 2);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(ix, iy, iw, ih);
+    ctx.clip();
+
+    paintInteriorPattern(ctx, { x: ix, y: iy, w: iw, h: ih, rng });
+
+    ctx.restore();
+    return c;
+}
+
+function buildArchedInteriorEmissiveCanvas({ width = 256, height = 256, frameWidth = 0.06, seed = 0 } = {}) {
+    const w = Math.max(64, Math.round(width));
+    const h = Math.max(64, Math.round(height));
+    const { c, ctx } = makeCanvas(w, h);
+    if (!ctx) return c;
+
+    const rng = makeRng(seed);
+
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, w, h);
+
+    const fw = Math.max(2, Math.round(Math.min(w, h) * frameWidth));
+    const outerRadius = (w * 0.5);
+    const innerRadius = Math.max(2, outerRadius - fw);
+    const innerArchHeight = innerRadius;
+    const innerRectHeight = Math.max(0, (h - fw) - innerArchHeight);
+
+    const innerPath = new Path2D();
+    innerPath.moveTo(fw, innerArchHeight + fw);
+    innerPath.arc(w * 0.5, innerArchHeight + fw, innerRadius, Math.PI, 0, false);
+    innerPath.lineTo(w - fw, fw + innerArchHeight + innerRectHeight);
+    innerPath.lineTo(fw, fw + innerArchHeight + innerRectHeight);
+    innerPath.closePath();
+
+    ctx.save();
+    ctx.clip(innerPath);
+
+    const ix = fw;
+    const iy = fw;
+    const iw = Math.max(1, w - fw * 2);
+    const ih = Math.max(1, h - fw * 2);
+    paintInteriorPattern(ctx, { x: ix, y: iy, w: iw, h: ih, rng });
+
+    ctx.restore();
+    return c;
+}
+
+function paintInteriorPattern(ctx, { x, y, w, h, rng }) {
+    const baseGrad = ctx.createLinearGradient(0, y, 0, y + h);
+    baseGrad.addColorStop(0, 'rgba(255,255,255,0.10)');
+    baseGrad.addColorStop(1, 'rgba(255,255,255,0.04)');
+    ctx.fillStyle = baseGrad;
+    ctx.fillRect(x, y, w, h);
+
+    const patchCount = 2 + Math.floor(rng() * 5);
+    for (let i = 0; i < patchCount; i++) {
+        const pw = w * (0.18 + rng() * 0.65);
+        const ph = h * (0.12 + rng() * 0.65);
+        const px = x + rng() * Math.max(1, w - pw);
+        const py = y + rng() * Math.max(1, h - ph);
+        const brightness = 0.45 + rng() * 0.55;
+        ctx.fillStyle = `rgba(255,255,255,${brightness.toFixed(3)})`;
+        ctx.fillRect(px, py, pw, ph);
+    }
+
+    if (rng() < 0.65) {
+        const stripeCount = 3 + Math.floor(rng() * 7);
+        const stripeW = Math.max(1, w / Math.max(4, stripeCount * 2));
+        ctx.globalAlpha = 0.15 + rng() * 0.18;
+        ctx.fillStyle = '#ffffff';
+        for (let i = 0; i < stripeCount; i++) {
+            const sx = x + (i + 0.2 + rng() * 0.4) * (w / stripeCount);
+            ctx.fillRect(sx, y, stripeW, h);
+        }
+        ctx.globalAlpha = 1.0;
+    }
+
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = '#ffffff';
+    const speckCount = 10 + Math.floor(rng() * 20);
+    for (let i = 0; i < speckCount; i++) {
+        const px = x + rng() * w;
+        const py = y + rng() * h;
+        const s = 1 + Math.floor(rng() * 3);
+        ctx.fillRect(px, py, s, s);
+    }
+    ctx.globalAlpha = 1.0;
 }

@@ -62,7 +62,15 @@ export function loadSavedLightingSettings() {
     const raw = storage.getItem(STORAGE_KEY);
     if (!raw) return null;
     try {
-        return sanitizeLightingSettings(JSON.parse(raw));
+        const saved = sanitizeLightingSettings(JSON.parse(raw));
+        const isLegacyDefault = saved.exposure === LIGHTING_DEFAULTS.exposure
+            && saved.hemiIntensity === LIGHTING_DEFAULTS.hemiIntensity
+            && saved.sunIntensity === LIGHTING_DEFAULTS.sunIntensity
+            && saved.ibl.enabled === true
+            && saved.ibl.envMapIntensity === LIGHTING_DEFAULTS.ibl.envMapIntensity
+            && saved.ibl.setBackground === LIGHTING_DEFAULTS.ibl.setBackground;
+        if (isLegacyDefault) saved.ibl.enabled = LIGHTING_DEFAULTS.ibl.enabled;
+        return saved;
     } catch {
         return null;
     }

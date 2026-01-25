@@ -32,7 +32,7 @@ function configureFlareTexture(tex) {
     tex.minFilter = THREE.LinearFilter;
     tex.magFilter = THREE.LinearFilter;
     applyTextureColorSpace(tex, { srgb: true });
-    tex.needsUpdate = true;
+    if (tex.image) tex.needsUpdate = true;
 }
 
 const SUN_FLARE_TEXTURE_URLS = Object.freeze({

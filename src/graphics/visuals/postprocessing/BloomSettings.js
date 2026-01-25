@@ -5,10 +5,10 @@
 const STORAGE_KEY = 'bus_sim.bloom.v3';
 
 export const BLOOM_DEFAULTS = Object.freeze({
-    enabled: true,
-    strength: 0.3,
-    radius: 0.15,
-    threshold: 0.92
+    enabled: false,
+    strength: 0.22,
+    radius: 0.12,
+    threshold: 1.05
 });
 
 function clamp(value, min, max, fallback) {

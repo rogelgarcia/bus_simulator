@@ -17,12 +17,12 @@ function clamp(value, min, max, fallback) {
 
 function sanitizeBloomRuntimeSettings(settings) {
     const src = settings && typeof settings === 'object' ? settings : {};
-    const enabled = src.enabled !== undefined ? !!src.enabled : true;
+    const enabled = src.enabled !== undefined ? !!src.enabled : false;
     return {
         enabled,
-        strength: enabled ? clamp(src.strength, 0, 3, 0.3) : 0,
-        radius: clamp(src.radius, 0, 1, 0.15),
-        threshold: clamp(src.threshold, 0, 5, 0.92),
+        strength: enabled ? clamp(src.strength, 0, 3, 0.22) : 0,
+        radius: clamp(src.radius, 0, 1, 0.12),
+        threshold: clamp(src.threshold, 0, 5, 1.05),
         mode: 'full'
     };
 }

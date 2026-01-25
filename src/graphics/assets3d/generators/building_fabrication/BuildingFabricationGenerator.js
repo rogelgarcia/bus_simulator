@@ -8,7 +8,7 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { ROOF_COLOR, resolveRoofColorHex } from '../../../../app/buildings/RoofColor.js';
 import { resolveBeltCourseColorHex } from '../../../../app/buildings/BeltCourseColor.js';
 import { BUILDING_STYLE } from '../../../../app/buildings/BuildingStyle.js';
-import { WINDOW_TYPE, getDefaultWindowParams, getWindowTexture, isWindowTypeId } from '../buildings/WindowTextureGenerator.js';
+import { WINDOW_TYPE, getDefaultWindowParams, getWindowGlassMaskTexture, getWindowTexture, isWindowTypeId } from '../buildings/WindowTextureGenerator.js';
 import { computeBuildingLoopsFromTiles, offsetOrthogonalLoopXZ, resolveBuildingStyleWallMaterialUrls } from '../buildings/BuildingGenerator.js';
 import { LAYER_TYPE, normalizeBuildingLayers } from './BuildingFabricationTypes.js';
 import { applyMaterialVariationToMeshStandardMaterial, computeMaterialVariationSeedFromTiles, MATERIAL_VARIATION_ROOT } from '../../materials/MaterialVariationSystem.js';
@@ -16,6 +16,7 @@ import { applyUvTilingToMeshStandardMaterial } from '../../materials/MaterialUvT
 import { getPbrMaterialTileMeters, isPbrMaterialId, tryGetPbrMaterialIdFromUrl } from '../../materials/PbrMaterialCatalog.js';
 
 const EPS = 1e-6;
+const QUANT = 1000;
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -28,6 +29,28 @@ function clampInt(value, min, max) {
     if (!Number.isFinite(num)) return min;
     const rounded = Math.round(num);
     return Math.max(min, Math.min(max, rounded));
+}
+
+function q(value) {
+    return Math.round(Number(value) * QUANT);
+}
+
+function disableIblOnMaterial(mat) {
+    if (!mat || !('envMapIntensity' in mat)) return;
+    mat.userData = mat.userData ?? {};
+    mat.userData.iblNoAutoEnvMapIntensity = true;
+    mat.envMapIntensity = 0;
+    mat.needsUpdate = true;
+}
+
+function hashUint32(x) {
+    let v = (Number.isFinite(x) ? x : 0) >>> 0;
+    v ^= v >>> 16;
+    v = Math.imul(v, 0x7feb352d);
+    v ^= v >>> 15;
+    v = Math.imul(v, 0x846ca68b);
+    v ^= v >>> 16;
+    return v >>> 0;
 }
 
 function resolvePbrTileMetersFromUrls(urls, styleId) {
@@ -473,7 +496,7 @@ function makeWallMaterial({ style, baseColorHex, textureCache }) {
         mat.metalness = 0.0;
     }
 
-    mat.needsUpdate = true;
+    disableIblOnMaterial(mat);
     return mat;
 }
 
@@ -518,17 +541,19 @@ function makeTextureMaterialFromBuildingStyle({
         if (tex) mat.roughnessMap = tex;
     }
 
-    mat.needsUpdate = true;
+    disableIblOnMaterial(mat);
     return mat;
 }
 
 function makeWallMaterialFromSpec({ material, baseColorHex, textureCache }) {
     if (material?.kind === 'color') {
-        return new THREE.MeshStandardMaterial({
+        const mat = new THREE.MeshStandardMaterial({
             color: resolveBeltCourseColorHex(material.id),
             roughness: 0.85,
             metalness: 0.05
         });
+        disableIblOnMaterial(mat);
+        return mat;
     }
 
     const style = material?.kind === 'texture' ? material.id : BUILDING_STYLE.DEFAULT;
@@ -546,11 +571,13 @@ function makeBeltLikeMaterialFromSpec({ material, baseColorHex, textureCache }) 
         });
     }
 
-    return new THREE.MeshStandardMaterial({
+    const mat = new THREE.MeshStandardMaterial({
         color: resolveBeltCourseColorHex(material?.id),
         roughness: 0.9,
         metalness: 0.0
     });
+    disableIblOnMaterial(mat);
+    return mat;
 }
 
 function makeRoofSurfaceMaterialFromSpec({ material, baseColorHex, textureCache }) {
@@ -567,7 +594,7 @@ function makeRoofSurfaceMaterialFromSpec({ material, baseColorHex, textureCache 
         });
     }
 
-    return new THREE.MeshStandardMaterial({
+    const mat = new THREE.MeshStandardMaterial({
         color: resolveRoofColorHex(material?.id, baseColorHex),
         roughness: 0.85,
         metalness: 0.05,
@@ -575,6 +602,8 @@ function makeRoofSurfaceMaterialFromSpec({ material, baseColorHex, textureCache 
         polygonOffsetFactor: -2,
         polygonOffsetUnits: -2
     });
+    disableIblOnMaterial(mat);
+    return mat;
 }
 
 function makeWindowMaterial({ typeId, params, windowWidth, windowHeight, fakeDepth } = {}) {
@@ -591,6 +620,9 @@ function makeWindowMaterial({ typeId, params, windowWidth, windowHeight, fakeDep
         transparent: wantsAlpha,
         alphaTest: wantsAlpha ? 0.01 : 0.0
     });
+    mat.polygonOffset = true;
+    mat.polygonOffsetFactor = -1;
+    mat.polygonOffsetUnits = -1;
 
     const fd = fakeDepth && typeof fakeDepth === 'object' ? fakeDepth : null;
     const enabled = !!fd?.enabled;
@@ -764,6 +796,7 @@ export function buildBuildingFabricationVisualParts({
     materialVariationSeed = null,
     textureCache = null,
     renderer = null,
+    windowVisuals = null,
     colors = null,
     overlays = null,
     walls = null
@@ -800,6 +833,86 @@ export function buildBuildingFabricationVisualParts({
 
     const windowsGroup = new THREE.Group();
     windowsGroup.name = 'windows';
+    windowsGroup.userData = windowsGroup.userData ?? {};
+    const windowVisualsObj = windowVisuals && typeof windowVisuals === 'object' ? windowVisuals : null;
+    const reflectiveObj = windowVisualsObj?.reflective && typeof windowVisualsObj.reflective === 'object' ? windowVisualsObj.reflective : {};
+    const reflectiveEnabled = reflectiveObj.enabled !== undefined ? !!reflectiveObj.enabled : true;
+    const glassObj = reflectiveObj.glass && typeof reflectiveObj.glass === 'object' ? reflectiveObj.glass : {};
+    const glassColorHex = Number.isFinite(glassObj.colorHex) ? ((Number(glassObj.colorHex) >>> 0) & 0xffffff) : 0xffffff;
+    const glassMetalness = Number.isFinite(glassObj.metalness) ? glassObj.metalness : 0.0;
+    const glassRoughness = Number.isFinite(glassObj.roughness) ? glassObj.roughness : 0.02;
+    const glassTransmission = Number.isFinite(glassObj.transmission) ? glassObj.transmission : 0.0;
+    const glassIor = Number.isFinite(glassObj.ior) ? glassObj.ior : 2.2;
+    const glassEnvMapIntensity = Number.isFinite(glassObj.envMapIntensity) ? glassObj.envMapIntensity : 4.0;
+
+    windowsGroup.userData.buildingWindowVisuals = Object.freeze({
+        reflective: Object.freeze({
+            enabled: reflectiveEnabled,
+            glass: Object.freeze({
+                colorHex: glassColorHex,
+                metalness: glassMetalness,
+                roughness: glassRoughness,
+                transmission: glassTransmission,
+                ior: glassIor,
+                envMapIntensity: glassEnvMapIntensity
+            })
+        })
+    });
+
+    const glassLift = 0.02;
+    const makeGlassMaterial = (alphaMap) => {
+        const wantsTransmission = glassTransmission > 0.01;
+        const mat = new THREE.MeshPhysicalMaterial({
+            color: glassColorHex,
+            metalness: glassMetalness,
+            roughness: glassRoughness,
+            transmission: wantsTransmission ? glassTransmission : 0.0,
+            ior: glassIor,
+            envMapIntensity: glassEnvMapIntensity,
+            opacity: wantsTransmission ? 1.0 : 0.55
+        });
+        mat.transparent = true;
+        mat.alphaMap = alphaMap ?? null;
+        mat.alphaTest = 0.5;
+        mat.depthWrite = false;
+        mat.polygonOffset = true;
+        mat.polygonOffsetFactor = -1;
+        mat.polygonOffsetUnits = -1;
+        mat.userData = mat.userData ?? {};
+        mat.userData.iblEnvMapIntensityScale = glassEnvMapIntensity;
+        return mat;
+    };
+
+    const planeGeoCache = new Map();
+    const getPlaneGeometry = (width, height) => {
+        const w = Number(width) || 1;
+        const h = Number(height) || 1;
+        const key = `${q(w)}|${q(h)}`;
+        let geo = planeGeoCache.get(key);
+        if (!geo) {
+            geo = new THREE.PlaneGeometry(w, h);
+            planeGeoCache.set(key, geo);
+        }
+        return geo;
+    };
+
+    const instancedBuckets = new Map();
+    const addWindowInstance = ({ geometry, material, x, y, z, yaw, renderOrder }) => {
+        if (!geometry || !material) return;
+        const ro = Number.isFinite(renderOrder) ? renderOrder : 0;
+        const key = `${geometry.uuid}|${material.uuid}|ro:${ro}`;
+        let bucket = instancedBuckets.get(key);
+        if (!bucket) {
+            bucket = {
+                geometry,
+                material,
+                renderOrder: ro,
+                transforms: []
+            };
+            instancedBuckets.set(key, bucket);
+        }
+        bucket.transforms.push(Number(x) || 0, Number(y) || 0, Number(z) || 0, Number(yaw) || 0);
+    };
 
     const beltsGroup = new THREE.Group();
     beltsGroup.name = 'belts';
@@ -812,6 +925,7 @@ export function buildBuildingFabricationVisualParts({
         roughness: 0.85,
         metalness: 0.05
     });
+    disableIblOnMaterial(roofMatTemplate);
 
     let currentLoops = footprintLoops;
     let yCursor = baseY;
@@ -899,8 +1013,8 @@ export function buildBuildingFabricationVisualParts({
                 textureCache
             });
 
-            const windowOffset = 0.05;
-            const cornerEps = 0.12;
+            const windowOffset = clamp(winCfg?.offset, 0.0, 0.2);
+            const cornerEps = clamp(winCfg?.cornerEps, 0.01, 2.0);
 
             const windowMat = winEnabled ? makeWindowMaterial({
                 typeId: winTypeId,
@@ -909,6 +1023,13 @@ export function buildBuildingFabricationVisualParts({
                 windowHeight: winDesiredHeight,
                 fakeDepth: winFakeDepth
             }) : null;
+
+            const windowGlassMat = (reflectiveEnabled && winEnabled && windowMat) ? makeGlassMaterial(getWindowGlassMaskTexture({
+                typeId: winTypeId,
+                params: winParams,
+                windowWidth: winWidth,
+                windowHeight: winDesiredHeight
+            })) : null;
 
             const windowRuns = [];
             if (winEnabled && windowMat && wallOuter.length) {
@@ -1063,13 +1184,20 @@ export function buildBuildingFabricationVisualParts({
                                 const cx = a.x + tx * centerDist + nx * windowOffset;
                                 const cz = a.z + tz * centerDist + nz * windowOffset;
 
-                                const geo = new THREE.PlaneGeometry(winWidth, windowHeight);
-                                const mesh = new THREE.Mesh(geo, windowMat);
-                                mesh.position.set(cx, y, cz);
-                                mesh.rotation.set(0, yaw, 0);
-                                mesh.castShadow = false;
-                                mesh.receiveShadow = false;
-                                windowsGroup.add(mesh);
+                                const geo = getPlaneGeometry(winWidth, windowHeight);
+                                addWindowInstance({ geometry: geo, material: windowMat, x: cx, y, z: cz, yaw, renderOrder: 0 });
+
+                                if (windowGlassMat) {
+                                    addWindowInstance({
+                                        geometry: geo,
+                                        material: windowGlassMat,
+                                        x: cx + nx * glassLift,
+                                        y,
+                                        z: cz + nz * glassLift,
+                                        yaw,
+                                        renderOrder: 1
+                                    });
+                                }
                             }
                         }
                     }
@@ -1252,6 +1380,46 @@ export function buildBuildingFabricationVisualParts({
             const nextLayer = safeLayers[layerIndex + 1] ?? null;
             const hasFloorsAboveRoof = nextLayer?.type === LAYER_TYPE.FLOOR;
             if (!hasFloorsAboveRoof) yCursor += ringHeight;
+        }
+    }
+
+    if (instancedBuckets.size) {
+        const dummy = new THREE.Object3D();
+        const orderedBuckets = Array.from(instancedBuckets.values()).sort((a, b) => {
+            const ro = a.renderOrder - b.renderOrder;
+            if (ro) return ro;
+            const ma = a.material?.uuid ?? '';
+            const mb = b.material?.uuid ?? '';
+            if (ma < mb) return -1;
+            if (ma > mb) return 1;
+            const ga = a.geometry?.uuid ?? '';
+            const gb = b.geometry?.uuid ?? '';
+            if (ga < gb) return -1;
+            if (ga > gb) return 1;
+            return 0;
+        });
+        for (const bucket of orderedBuckets) {
+            const transforms = bucket.transforms;
+            const count = Math.floor(transforms.length / 4);
+            if (!count) continue;
+
+            const mesh = new THREE.InstancedMesh(bucket.geometry, bucket.material, count);
+            mesh.castShadow = false;
+            mesh.receiveShadow = false;
+            mesh.renderOrder = bucket.renderOrder;
+            mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+
+            for (let i = 0; i < count; i++) {
+                const idx = i * 4;
+                dummy.position.set(transforms[idx], transforms[idx + 1], transforms[idx + 2]);
+                dummy.rotation.set(0, transforms[idx + 3], 0);
+                dummy.updateMatrix();
+                mesh.setMatrixAt(i, dummy.matrix);
+            }
+            mesh.instanceMatrix.needsUpdate = true;
+            mesh.computeBoundingBox();
+            mesh.computeBoundingSphere();
+            windowsGroup.add(mesh);
         }
     }
 

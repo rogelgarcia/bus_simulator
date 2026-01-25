@@ -199,6 +199,25 @@ export class GameEngine {
         return this._post.pipeline.getDebugInfo();
     }
 
+    getIBLDebugInfo() {
+        const config = this._ibl?.config ?? this._lighting?.ibl ?? null;
+        const envMap = this._ibl?.envMap ?? null;
+        const sceneEnv = this.scene?.environment ?? null;
+        const sceneBg = this.scene?.background ?? null;
+        return {
+            enabled: !!config?.enabled,
+            envMapIntensity: Number.isFinite(config?.envMapIntensity) ? config.envMapIntensity : null,
+            setBackground: !!config?.setBackground,
+            hdrUrl: typeof config?.hdrUrl === 'string' ? config.hdrUrl : null,
+            iblId: typeof config?.iblId === 'string' ? config.iblId : null,
+            envMapLoaded: !!envMap,
+            usingFallbackEnvMap: !!envMap?.userData?.iblFallback,
+            sceneHasEnvironment: !!sceneEnv,
+            sceneEnvironmentMatches: !!envMap && sceneEnv === envMap,
+            sceneHasBackground: !!sceneBg
+        };
+    }
+
     get colorGradingSettings() {
         return this._colorGrading?.settings ?? null;
     }
@@ -375,7 +394,7 @@ export class GameEngine {
 
         this._iblPromise = loadIBLTexture(this.renderer, config).then((envMap) => {
             this._ibl.envMap = envMap;
-            if (envMap) {
+            if (envMap && !envMap?.userData?.iblFallback) {
                 applyIBLToScene(this.scene, envMap, config);
                 const now = performance.now();
                 this._ibl.scanUntilMs = now + this._ibl.scanDurationMs;
