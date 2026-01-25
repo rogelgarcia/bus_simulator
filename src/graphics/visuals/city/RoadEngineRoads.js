@@ -9,6 +9,9 @@ import { buildRoadCurbMeshDataFromRoadEnginePrimitives } from '../../../app/road
 import { buildRoadSidewalkMeshDataFromRoadEnginePrimitives } from '../../../app/road_decoration/sidewalks/RoadSidewalkBuilder.js';
 import { buildRoadMarkingsMeshDataFromRoadEngineDerived } from '../../../app/road_decoration/markings/RoadMarkingsBuilder.js';
 import { createRoadMarkingsMeshesFromData } from './RoadMarkingsMeshes.js';
+import { applyRoadSurfaceVariationToMeshStandardMaterial } from '../../assets3d/materials/RoadSurfaceVariationSystem.js';
+import { getResolvedAsphaltNoiseSettings } from './AsphaltNoiseSettings.js';
+import { applyAsphaltRoadVisualsToMeshStandardMaterial } from './AsphaltRoadVisuals.js';
 
 const EPS = 1e-9;
 
@@ -125,6 +128,18 @@ function getMapBoundsXZ(map) {
     return { minX, minZ, sizeX, sizeZ };
 }
 
+function hashStringToVec2(str) {
+    const s = String(str ?? '');
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+    }
+    const a = ((h >>> 0) & 0xffff) / 65535;
+    const b = ((h >>> 16) & 0xffff) / 65535;
+    return new THREE.Vector2(a * 512.0, b * 512.0);
+}
+
 function createRoadMarkingsTexture(markings, { bounds, laneWidth = 4.8, lineWidthMeters = null, pixelsPerMeter = 6, maxSize = 4096 } = {}) {
     const b = bounds && typeof bounds === 'object' ? bounds : null;
     if (!b) return null;
@@ -208,7 +223,15 @@ function createRoadMarkingsTexture(markings, { bounds, laneWidth = 4.8, lineWidt
     return tex;
 }
 
-function createAsphaltMaterialWithMarkings(baseMaterial, { markingsTexture = null, bounds = null } = {}) {
+function createAsphaltMaterialWithMarkings(
+    baseMaterial,
+    {
+        markingsTexture = null,
+        bounds = null,
+        markingsVisuals = null,
+        markingsSeed = null
+    } = {}
+) {
     if (!baseMaterial || !markingsTexture || !bounds) return baseMaterial;
 
     const minX = clampNumber(bounds?.minX, 0);
@@ -221,14 +244,30 @@ function createAsphaltMaterialWithMarkings(baseMaterial, { markingsTexture = nul
     const mat = baseMaterial.clone();
     mat.userData = { ...(mat.userData ?? {}), roadMarkingsOverlay: true };
 
-    const prevOnBeforeCompile = mat.onBeforeCompile;
-    mat.onBeforeCompile = (shader) => {
-        prevOnBeforeCompile?.(shader);
+    const mv = markingsVisuals && typeof markingsVisuals === 'object' ? markingsVisuals : {};
+    const markingsScale = Math.max(0.001, clampNumber(mv.scale, 1.4));
+    const markingsColorStrength = Math.max(0.0, clampNumber(mv.colorStrength, 0.12));
+    const markingsRoughnessStrength = Math.max(0.0, clampNumber(mv.roughnessStrength, 0.26));
+    const markingsDirtyStrength = Math.max(0.0, clampNumber(mv.dirtyStrength, 0.35));
+    const markingsEdgeBreakStrength = Math.max(0.0, clampNumber(mv.edgeBreakStrength, 0.14));
+    const markingsBaseRoughness = clampNumber(mv.baseRoughness, 0.55);
+    const seedVec2 = markingsSeed?.isVector2 ? markingsSeed.clone() : hashStringToVec2(String(markingsSeed ?? 'markings'));
+
+    const prevOnBeforeCompile = typeof mat.onBeforeCompile === 'function' ? mat.onBeforeCompile.bind(mat) : null;
+    mat.onBeforeCompile = (shader, renderer) => {
+        if (prevOnBeforeCompile) prevOnBeforeCompile(shader, renderer);
         shader.extensions = shader.extensions || {};
         shader.extensions.derivatives = true;
         shader.uniforms.uRoadMarkingsMap = { value: markingsTexture };
         shader.uniforms.uRoadMarkingsMin = { value: new THREE.Vector2(minX, minZ) };
         shader.uniforms.uRoadMarkingsInvSize = { value: new THREE.Vector2(invX, invZ) };
+        shader.uniforms.uRoadMarkingsVarScale = { value: markingsScale };
+        shader.uniforms.uRoadMarkingsVarColorStrength = { value: markingsColorStrength };
+        shader.uniforms.uRoadMarkingsVarRoughnessStrength = { value: markingsRoughnessStrength };
+        shader.uniforms.uRoadMarkingsVarDirtyStrength = { value: markingsDirtyStrength };
+        shader.uniforms.uRoadMarkingsVarEdgeBreakStrength = { value: markingsEdgeBreakStrength };
+        shader.uniforms.uRoadMarkingsBaseRoughness = { value: markingsBaseRoughness };
+        shader.uniforms.uRoadMarkingsVarSeed = { value: seedVec2 };
 
         shader.vertexShader = shader.vertexShader.replace(
             '#include <common>',
@@ -241,7 +280,42 @@ function createAsphaltMaterialWithMarkings(baseMaterial, { markingsTexture = nul
 
         shader.fragmentShader = shader.fragmentShader.replace(
             '#include <common>',
-            '#include <common>\nuniform sampler2D uRoadMarkingsMap;\nuniform vec2 uRoadMarkingsMin;\nuniform vec2 uRoadMarkingsInvSize;\nvarying vec3 vRoadMarkingsWorldPos;'
+            [
+                '#include <common>',
+                'uniform sampler2D uRoadMarkingsMap;',
+                'uniform vec2 uRoadMarkingsMin;',
+                'uniform vec2 uRoadMarkingsInvSize;',
+                'uniform float uRoadMarkingsVarScale;',
+                'uniform float uRoadMarkingsVarColorStrength;',
+                'uniform float uRoadMarkingsVarRoughnessStrength;',
+                'uniform float uRoadMarkingsVarDirtyStrength;',
+                'uniform float uRoadMarkingsVarEdgeBreakStrength;',
+                'uniform float uRoadMarkingsBaseRoughness;',
+                'uniform vec2 uRoadMarkingsVarSeed;',
+                'varying vec3 vRoadMarkingsWorldPos;',
+                'float roadMarkingsVarHash12(vec2 p){',
+                'vec3 p3 = fract(vec3(p.xyx) * 0.1031);',
+                'p3 += dot(p3, p3.yzx + 33.33);',
+                'return fract((p3.x + p3.y) * p3.z);',
+                '}',
+                'float roadMarkingsVarNoise(vec2 p){',
+                'vec2 i = floor(p);',
+                'vec2 f = fract(p);',
+                'float a = roadMarkingsVarHash12(i);',
+                'float b = roadMarkingsVarHash12(i + vec2(1.0, 0.0));',
+                'float c = roadMarkingsVarHash12(i + vec2(0.0, 1.0));',
+                'float d = roadMarkingsVarHash12(i + vec2(1.0, 1.0));',
+                'vec2 u = f * f * (3.0 - 2.0 * f);',
+                'return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;',
+                '}',
+                'float roadMarkingsVarFbm(vec2 p){',
+                'mat2 r = mat2(0.80, -0.60, 0.60, 0.80);',
+                'p = r * p;',
+                'float n1 = roadMarkingsVarNoise(p);',
+                'float n2 = roadMarkingsVarNoise(p * 2.07 + vec2(21.1, 5.7));',
+                'return n1 * 0.68 + n2 * 0.32;',
+                '}'
+            ].join('\n')
         );
         shader.fragmentShader = shader.fragmentShader.replace(
             'vec4 diffuseColor = vec4( diffuse, opacity );',
@@ -250,15 +324,34 @@ function createAsphaltMaterialWithMarkings(baseMaterial, { markingsTexture = nul
                 'vec2 roadUv = (vRoadMarkingsWorldPos.xz - uRoadMarkingsMin) * uRoadMarkingsInvSize;',
                 'roadUv = clamp(roadUv, 0.0, 1.0);',
                 'vec4 roadMark = texture2D(uRoadMarkingsMap, roadUv);',
+                'float roadMarkingsVar = roadMarkingsVarFbm((vRoadMarkingsWorldPos.xz + uRoadMarkingsVarSeed) * uRoadMarkingsVarScale);',
+                'float roadMarkingsVarSigned = (roadMarkingsVar - 0.5) * 2.0;',
+                'vec3 roadMarkRgb = roadMark.rgb;',
+                'roadMarkRgb *= (1.0 + uRoadMarkingsVarColorStrength * roadMarkingsVarSigned);',
+                'roadMarkRgb = mix(roadMarkRgb, diffuseColor.rgb, clamp(uRoadMarkingsVarDirtyStrength, 0.0, 1.0) * roadMarkingsVar);',
                 'float a = roadMark.a;',
                 'float w = fwidth(a);',
-                'float mask = smoothstep(0.5 - w, 0.5 + w, a);',
-                'diffuseColor.rgb = mix(diffuseColor.rgb, roadMark.rgb, mask);'
+                'float edgeJitter = roadMarkingsVarSigned * uRoadMarkingsVarEdgeBreakStrength;',
+                'float roadMarkingsMask = smoothstep(0.5 - w, 0.5 + w, a + edgeJitter);',
+                'diffuseColor.rgb = mix(diffuseColor.rgb, roadMarkRgb, roadMarkingsMask);'
+            ].join('\n')
+        );
+
+        shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <metalnessmap_fragment>',
+            [
+                '#include <metalnessmap_fragment>',
+                'float roadMarkingsRough = clamp(uRoadMarkingsBaseRoughness + uRoadMarkingsVarRoughnessStrength * roadMarkingsVarSigned, 0.0, 1.0);',
+                'roughnessFactor = mix(roughnessFactor, roadMarkingsRough, roadMarkingsMask);'
             ].join('\n')
         );
     };
 
-    mat.customProgramCacheKey = () => 'AsphaltWithMarkings_v2';
+    const prevCacheKey = typeof mat.customProgramCacheKey === 'function' ? mat.customProgramCacheKey.bind(mat) : null;
+    mat.customProgramCacheKey = () => {
+        const prev = prevCacheKey ? prevCacheKey() : '';
+        return `${prev}|AsphaltWithMarkings_v3`;
+    };
     mat.needsUpdate = true;
 
     return mat;
@@ -278,6 +371,7 @@ function buildCombinedPolygonGeometry(polygonMeshData, y) {
     if (!totalVerts || !totalIndices) return null;
 
     const positions = new Float32Array(totalVerts * 3);
+    const uvs = new Float32Array(totalVerts * 2);
     const use32 = totalVerts > 65535;
     const indices = use32 ? new Uint32Array(totalIndices) : new Uint16Array(totalIndices);
 
@@ -291,9 +385,15 @@ function buildCombinedPolygonGeometry(polygonMeshData, y) {
         for (let i = 0; i < vertices.length; i++) {
             const p = vertices[i];
             const base = (vOffset + i) * 3;
-            positions[base] = Number(p?.x) || 0;
+            const x = Number(p?.x) || 0;
+            const z = Number(p?.z) || 0;
+            positions[base] = x;
             positions[base + 1] = y;
-            positions[base + 2] = Number(p?.z) || 0;
+            positions[base + 2] = z;
+
+            const uvBase = (vOffset + i) * 2;
+            uvs[uvBase] = x;
+            uvs[uvBase + 1] = z;
         }
 
         for (let i = 0; i < inds.length; i++) {
@@ -306,6 +406,7 @@ function buildCombinedPolygonGeometry(polygonMeshData, y) {
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
     geo.setIndex(new THREE.BufferAttribute(indices, 1));
     geo.computeVertexNormals();
     geo.computeBoundingSphere();
@@ -521,6 +622,38 @@ export function createRoadEngineRoads({
     const debugMode = (render?.roadMode ?? null) === 'debug';
     const mats = resolveMaterials(materials, { debugMode });
 
+    const roadVisuals = (roadCfg?.visuals && typeof roadCfg.visuals === 'object') ? roadCfg.visuals : null;
+    const asphaltVisuals = (roadVisuals?.asphalt && typeof roadVisuals.asphalt === 'object') ? roadVisuals.asphalt : null;
+    const markingsVisuals = (roadVisuals?.markings && typeof roadVisuals.markings === 'object') ? roadVisuals.markings : null;
+    const roadSeed = map?.roadNetwork?.seed ?? null;
+    const seedVec2 = hashStringToVec2(String(roadSeed ?? 'roads'));
+    const asphaltNoise = getResolvedAsphaltNoiseSettings();
+
+    if (!debugMode) {
+        const asphaltEnabled = asphaltVisuals?.enabled !== false;
+        if (asphaltEnabled) {
+            applyAsphaltRoadVisualsToMeshStandardMaterial(mats.road, {
+                asphaltNoise,
+                seed: roadSeed ?? 'roads',
+                baseColorHex: 0x2b2b2b,
+                baseRoughness: 0.95
+            });
+        }
+
+        const markingsEnabled = markingsVisuals?.enabled !== false;
+        if (markingsEnabled) {
+            const cfg = {
+                scale: clampNumber(markingsVisuals?.scale, 1.4),
+                colorStrength: clampNumber(markingsVisuals?.colorStrength, 0.12),
+                dirtyStrength: clampNumber(markingsVisuals?.dirtyStrength, 0.35),
+                roughnessStrength: clampNumber(markingsVisuals?.roughnessStrength, 0.26),
+                seed: seedVec2
+            };
+            applyRoadSurfaceVariationToMeshStandardMaterial(mats.laneWhite, cfg);
+            applyRoadSurfaceVariationToMeshStandardMaterial(mats.laneYellow, cfg);
+        }
+    }
+
     const opt = options && typeof options === 'object' ? options : {};
     const includeCurbs = opt.includeCurbs !== false;
     const includeSidewalks = opt.includeSidewalks !== false;
@@ -632,7 +765,12 @@ export function createRoadEngineRoads({
                 maxSize: markingsMaxSize
             });
             if (markingsTexture) {
-                mats.road = createAsphaltMaterialWithMarkings(mats.road, { markingsTexture, bounds });
+                mats.road = createAsphaltMaterialWithMarkings(mats.road, {
+                    markingsTexture,
+                    bounds,
+                    markingsVisuals,
+                    markingsSeed: seedVec2
+                });
             }
         }
     }

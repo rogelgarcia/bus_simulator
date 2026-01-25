@@ -7,18 +7,20 @@ export async function bootHarness(page, { query = '?ibl=0&bloom=0' } = {}) {
 export async function renderGoldenFrame(page, {
     scenarioId,
     seed,
+    scenarioOptions = null,
     viewport = { width: 960, height: 540 },
     warmupTicks = 30,
     dt = 1 / 60
 }) {
     return page.evaluate(async (args) => {
-        const { scenarioId, seed, viewport, warmupTicks, dt } = args;
+        const { scenarioId, seed, scenarioOptions, viewport, warmupTicks, dt } = args;
         window.__testHooks.setViewport(viewport.width, viewport.height);
-        await window.__testHooks.loadScenario(scenarioId, { seed });
+        const opts = scenarioOptions && typeof scenarioOptions === 'object' ? scenarioOptions : {};
+        await window.__testHooks.loadScenario(scenarioId, { ...opts, seed });
         window.__testHooks.setFixedDt(dt);
         window.__testHooks.step(warmupTicks, { render: true });
         return window.__testHooks.getMetrics();
-    }, { scenarioId, seed, viewport, warmupTicks, dt });
+    }, { scenarioId, seed, scenarioOptions, viewport, warmupTicks, dt });
 }
 
 export function screenshotName({ scenarioId, seed, width, height }) {

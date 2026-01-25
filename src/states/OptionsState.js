@@ -2,8 +2,10 @@
 // In-game options overlay state (tabbed, persisted settings).
 
 import { OptionsUI } from '../graphics/gui/options/OptionsUI.js';
+import { applyAsphaltRoadVisualsToMeshStandardMaterial } from '../graphics/visuals/city/AsphaltRoadVisuals.js';
 import { saveLightingSettings } from '../graphics/lighting/LightingSettings.js';
 import { saveBloomSettings } from '../graphics/visuals/postprocessing/BloomSettings.js';
+import { getResolvedAsphaltNoiseSettings, saveAsphaltNoiseSettings } from '../graphics/visuals/city/AsphaltNoiseSettings.js';
 import { getResolvedBuildingWindowVisualsSettings, saveBuildingWindowVisualsSettings } from '../graphics/visuals/buildings/BuildingWindowVisualsSettings.js';
 import { saveColorGradingSettings } from '../graphics/visuals/postprocessing/ColorGradingSettings.js';
 import { getResolvedSunFlareSettings, saveSunFlareSettings } from '../graphics/visuals/sun/SunFlareSettings.js';
@@ -50,12 +52,14 @@ export class OptionsState {
         const gradingDebug = this.engine?.getColorGradingDebugInfo?.() ?? null;
         const sunFlare = getResolvedSunFlareSettings();
         const buildingWindowVisuals = getResolvedBuildingWindowVisualsSettings();
+        const asphaltNoise = getResolvedAsphaltNoiseSettings();
 
         this._original = {
             lighting: lighting && typeof lighting === 'object' ? JSON.parse(JSON.stringify(lighting)) : null,
             bloom: bloom && typeof bloom === 'object' ? JSON.parse(JSON.stringify(bloom)) : null,
             colorGrading: grading && typeof grading === 'object' ? JSON.parse(JSON.stringify(grading)) : null,
-            sunFlare: sunFlare && typeof sunFlare === 'object' ? JSON.parse(JSON.stringify(sunFlare)) : null
+            sunFlare: sunFlare && typeof sunFlare === 'object' ? JSON.parse(JSON.stringify(sunFlare)) : null,
+            asphaltNoise: asphaltNoise && typeof asphaltNoise === 'object' ? JSON.parse(JSON.stringify(asphaltNoise)) : null
         };
 
         this._ui = new OptionsUI({
@@ -98,6 +102,28 @@ export class OptionsState {
                             ior: buildingWindowVisuals.reflective?.glass?.ior,
                             envMapIntensity: buildingWindowVisuals.reflective?.glass?.envMapIntensity
                         }
+                    }
+                }
+                : null,
+            initialAsphaltNoise: asphaltNoise && typeof asphaltNoise === 'object'
+                ? {
+                    coarse: {
+                        albedo: asphaltNoise.coarse?.albedo,
+                        roughness: asphaltNoise.coarse?.roughness,
+                        scale: asphaltNoise.coarse?.scale,
+                        colorStrength: asphaltNoise.coarse?.colorStrength,
+                        dirtyStrength: asphaltNoise.coarse?.dirtyStrength,
+                        roughnessStrength: asphaltNoise.coarse?.roughnessStrength
+                    },
+                    fine: {
+                        albedo: asphaltNoise.fine?.albedo,
+                        roughness: asphaltNoise.fine?.roughness,
+                        normal: asphaltNoise.fine?.normal,
+                        scale: asphaltNoise.fine?.scale,
+                        colorStrength: asphaltNoise.fine?.colorStrength,
+                        dirtyStrength: asphaltNoise.fine?.dirtyStrength,
+                        roughnessStrength: asphaltNoise.fine?.roughnessStrength,
+                        normalStrength: asphaltNoise.fine?.normalStrength
                     }
                 }
                 : null,
@@ -150,6 +176,7 @@ export class OptionsState {
         saveColorGradingSettings(draft?.colorGrading ?? null);
         saveBuildingWindowVisualsSettings(draft?.buildingWindowVisuals ?? null);
         saveSunFlareSettings(draft?.sunFlare ?? null);
+        saveAsphaltNoiseSettings(draft?.asphaltNoise ?? null);
         if (this._overlay) {
             this.sm.popOverlay();
             return;
@@ -169,6 +196,7 @@ export class OptionsState {
         const bloom = d?.bloom ?? null;
         const grading = d?.colorGrading ?? null;
         const sunFlare = d?.sunFlare ?? null;
+        const asphaltNoise = d?.asphaltNoise ?? null;
 
         this.engine?.setLightingSettings?.(lighting ?? null);
         if (bloom) this.engine?.setBloomSettings?.(bloom);
@@ -181,6 +209,16 @@ export class OptionsState {
         }
         if (sunFlare && city?.sunFlare?.setSettings) {
             city.sunFlare.setSettings(sunFlare);
+        }
+
+        if (asphaltNoise && city?.materials?.road) {
+            const roadSeed = city?.map?.roadNetwork?.seed ?? 'roads';
+            applyAsphaltRoadVisualsToMeshStandardMaterial(city.materials.road, {
+                asphaltNoise,
+                seed: roadSeed,
+                baseColorHex: 0x2b2b2b,
+                baseRoughness: 0.95
+            });
         }
     }
 

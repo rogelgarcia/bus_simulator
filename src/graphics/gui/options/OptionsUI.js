@@ -6,6 +6,7 @@ import { getDefaultResolvedBloomSettings } from '../../visuals/postprocessing/Bl
 import { getDefaultResolvedColorGradingSettings } from '../../visuals/postprocessing/ColorGradingSettings.js';
 import { getColorGradingPresetOptions } from '../../visuals/postprocessing/ColorGradingPresets.js';
 import { getDefaultResolvedBuildingWindowVisualsSettings } from '../../visuals/buildings/BuildingWindowVisualsSettings.js';
+import { getDefaultResolvedAsphaltNoiseSettings } from '../../visuals/city/AsphaltNoiseSettings.js';
 import { getDefaultResolvedSunFlareSettings } from '../../visuals/sun/SunFlareSettings.js';
 import { getSunFlarePresetOptions } from '../../visuals/sun/SunFlarePresets.js';
 
@@ -176,6 +177,7 @@ export class OptionsUI {
         initialBloom = null,
         initialColorGrading = null,
         initialBuildingWindowVisuals = null,
+        initialAsphaltNoise = null,
         initialSunFlare = null,
         initialPostProcessingActive = null,
         initialColorGradingDebug = null,
@@ -212,7 +214,8 @@ export class OptionsUI {
         this.tabs = makeEl('div', 'options-tabs');
         this.tabButtons = {
             lighting: makeEl('button', 'options-tab', 'Lighting'),
-            gameplay: makeEl('button', 'options-tab', 'Gameplay')
+            asphalt: makeEl('button', 'options-tab', 'Asphalt'),
+            buildings: makeEl('button', 'options-tab', 'Buildings')
         };
 
         for (const [key, btn] of Object.entries(this.tabButtons)) {
@@ -245,7 +248,9 @@ export class OptionsUI {
         this.panel.appendChild(this.footer);
         this.root.appendChild(this.panel);
 
-        this._tab = initialTab === 'gameplay' ? 'gameplay' : 'lighting';
+        this._tab = (initialTab === 'buildings' || initialTab === 'gameplay')
+            ? 'buildings'
+            : (initialTab === 'asphalt' ? 'asphalt' : 'lighting');
         this._draftLighting = initialLighting && typeof initialLighting === 'object'
             ? JSON.parse(JSON.stringify(initialLighting))
             : null;
@@ -257,6 +262,9 @@ export class OptionsUI {
             : null;
         this._draftBuildingWindowVisuals = initialBuildingWindowVisuals && typeof initialBuildingWindowVisuals === 'object'
             ? JSON.parse(JSON.stringify(initialBuildingWindowVisuals))
+            : null;
+        this._draftAsphaltNoise = initialAsphaltNoise && typeof initialAsphaltNoise === 'object'
+            ? JSON.parse(JSON.stringify(initialAsphaltNoise))
             : null;
         this._draftSunFlare = initialSunFlare && typeof initialSunFlare === 'object'
             ? JSON.parse(JSON.stringify(initialSunFlare))
@@ -282,7 +290,9 @@ export class OptionsUI {
     }
 
     setTab(key) {
-        const next = key === 'gameplay' ? 'gameplay' : 'lighting';
+        const next = (key === 'buildings' || key === 'gameplay')
+            ? 'buildings'
+            : (key === 'asphalt' ? 'asphalt' : 'lighting');
         this._tab = next;
         for (const [k, btn] of Object.entries(this.tabButtons)) btn.classList.toggle('is-active', k === next);
         this._renderTab();
@@ -293,7 +303,8 @@ export class OptionsUI {
         this._postDebugEls = null;
         this.body.textContent = '';
         if (this._tab === 'lighting') return this._renderLightingTab();
-        return this._renderGameplayTab();
+        if (this._tab === 'asphalt') return this._renderAsphaltTab();
+        return this._renderBuildingsTab();
     }
 
     _startDebugRefresh() {
@@ -376,6 +387,15 @@ export class OptionsUI {
         }
     }
 
+    _ensureDraftAsphaltNoise() {
+        if (this._draftAsphaltNoise) return;
+        const d = getDefaultResolvedAsphaltNoiseSettings();
+        this._draftAsphaltNoise = {
+            coarse: { ...d.coarse },
+            fine: { ...d.fine }
+        };
+    }
+
     _ensureDraftBuildingWindowVisuals() {
         if (this._draftBuildingWindowVisuals) return;
         const d = getDefaultResolvedBuildingWindowVisualsSettings();
@@ -439,7 +459,157 @@ export class OptionsUI {
         };
     }
 
-    _renderGameplayTab() {
+    _renderAsphaltTab() {
+        this._ensureDraftAsphaltNoise();
+
+        const d = this._draftAsphaltNoise;
+        const coarse = d.coarse ?? (d.coarse = {});
+        const fine = d.fine ?? (d.fine = {});
+        const emit = () => this._emitLiveChange();
+
+        const sectionCoarse = makeEl('div', 'options-section');
+        sectionCoarse.appendChild(makeEl('div', 'options-section-title', 'Coarse'));
+
+        const coarseControls = {
+            albedo: makeToggleRow({
+                label: 'Coarse affects albedo',
+                value: coarse.albedo,
+                onChange: (v) => { coarse.albedo = v; emit(); }
+            }),
+            roughness: makeToggleRow({
+                label: 'Coarse affects roughness',
+                value: coarse.roughness,
+                onChange: (v) => { coarse.roughness = v; emit(); }
+            }),
+            scale: makeNumberSliderRow({
+                label: 'Coarse scale',
+                value: coarse.scale ?? 0.07,
+                min: 0.001,
+                max: 5,
+                step: 0.001,
+                digits: 3,
+                onChange: (v) => { coarse.scale = v; emit(); }
+            }),
+            colorStrength: makeNumberSliderRow({
+                label: 'Coarse color strength',
+                value: coarse.colorStrength ?? 0.18,
+                min: 0,
+                max: 0.5,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { coarse.colorStrength = v; emit(); }
+            }),
+            dirtyStrength: makeNumberSliderRow({
+                label: 'Coarse dirty strength',
+                value: coarse.dirtyStrength ?? 0.18,
+                min: 0,
+                max: 1,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { coarse.dirtyStrength = v; emit(); }
+            }),
+            roughnessStrength: makeNumberSliderRow({
+                label: 'Coarse roughness strength',
+                value: coarse.roughnessStrength ?? 0.28,
+                min: 0,
+                max: 0.5,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { coarse.roughnessStrength = v; emit(); }
+            })
+        };
+
+        sectionCoarse.appendChild(coarseControls.albedo.row);
+        sectionCoarse.appendChild(coarseControls.roughness.row);
+        sectionCoarse.appendChild(coarseControls.scale.row);
+        sectionCoarse.appendChild(coarseControls.colorStrength.row);
+        sectionCoarse.appendChild(coarseControls.dirtyStrength.row);
+        sectionCoarse.appendChild(coarseControls.roughnessStrength.row);
+
+        const sectionFine = makeEl('div', 'options-section');
+        sectionFine.appendChild(makeEl('div', 'options-section-title', 'Fine'));
+
+        const fineControls = {
+            albedo: makeToggleRow({
+                label: 'Fine affects albedo',
+                value: fine.albedo,
+                onChange: (v) => { fine.albedo = v; emit(); }
+            }),
+            roughness: makeToggleRow({
+                label: 'Fine affects roughness',
+                value: fine.roughness,
+                onChange: (v) => { fine.roughness = v; emit(); }
+            }),
+            normal: makeToggleRow({
+                label: 'Fine affects normal',
+                value: fine.normal,
+                onChange: (v) => { fine.normal = v; emit(); }
+            }),
+            scale: makeNumberSliderRow({
+                label: 'Fine scale',
+                value: fine.scale ?? 12.0,
+                min: 0.1,
+                max: 15,
+                step: 0.1,
+                digits: 1,
+                onChange: (v) => { fine.scale = v; emit(); }
+            }),
+            colorStrength: makeNumberSliderRow({
+                label: 'Fine color strength',
+                value: fine.colorStrength ?? 0.06,
+                min: 0,
+                max: 0.5,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { fine.colorStrength = v; emit(); }
+            }),
+            dirtyStrength: makeNumberSliderRow({
+                label: 'Fine dirty strength',
+                value: fine.dirtyStrength ?? 0.0,
+                min: 0,
+                max: 1,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { fine.dirtyStrength = v; emit(); }
+            }),
+            roughnessStrength: makeNumberSliderRow({
+                label: 'Fine roughness strength',
+                value: fine.roughnessStrength ?? 0.16,
+                min: 0,
+                max: 0.5,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { fine.roughnessStrength = v; emit(); }
+            }),
+            normalStrength: makeNumberSliderRow({
+                label: 'Fine normal strength',
+                value: fine.normalStrength ?? 0.35,
+                min: 0,
+                max: 2,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { fine.normalStrength = v; emit(); }
+            })
+        };
+
+        sectionFine.appendChild(fineControls.albedo.row);
+        sectionFine.appendChild(fineControls.roughness.row);
+        sectionFine.appendChild(fineControls.normal.row);
+        sectionFine.appendChild(fineControls.scale.row);
+        sectionFine.appendChild(fineControls.colorStrength.row);
+        sectionFine.appendChild(fineControls.dirtyStrength.row);
+        sectionFine.appendChild(fineControls.roughnessStrength.row);
+        sectionFine.appendChild(fineControls.normalStrength.row);
+
+        const note = makeEl('div', 'options-note');
+        note.textContent = 'Coarse drives large-area variation; Fine adds grain. Changes apply live to road asphalt materials.';
+
+        this.body.appendChild(sectionCoarse);
+        this.body.appendChild(sectionFine);
+        this.body.appendChild(note);
+    }
+
+    _renderBuildingsTab() {
         this._ensureDraftBuildingWindowVisuals();
         this._ensureDraftLighting();
 
@@ -826,11 +996,18 @@ export class OptionsUI {
                 }
             }
         };
+
+        const asphaltNoise = getDefaultResolvedAsphaltNoiseSettings();
+        this._draftAsphaltNoise = {
+            coarse: { ...asphaltNoise.coarse },
+            fine: { ...asphaltNoise.fine }
+        };
         this._renderTab();
         this._emitLiveChange();
     }
 
     getDraft() {
+        this._ensureDraftAsphaltNoise();
         this._ensureDraftBuildingWindowVisuals();
         this._ensureDraftLighting();
         this._ensureDraftBloom();
@@ -839,6 +1016,7 @@ export class OptionsUI {
         const d = this._draftLighting;
         const bloom = this._draftBloom;
         const grade = this._draftColorGrading;
+        const asphaltNoise = this._draftAsphaltNoise;
         const windowVisuals = this._draftBuildingWindowVisuals;
         const sunFlare = this._draftSunFlare;
         return {
@@ -861,6 +1039,26 @@ export class OptionsUI {
             colorGrading: {
                 preset: String(grade.preset ?? 'off'),
                 intensity: grade.intensity
+            },
+            asphaltNoise: {
+                coarse: {
+                    albedo: !!asphaltNoise.coarse?.albedo,
+                    roughness: !!asphaltNoise.coarse?.roughness,
+                    scale: asphaltNoise.coarse?.scale,
+                    colorStrength: asphaltNoise.coarse?.colorStrength,
+                    dirtyStrength: asphaltNoise.coarse?.dirtyStrength,
+                    roughnessStrength: asphaltNoise.coarse?.roughnessStrength
+                },
+                fine: {
+                    albedo: !!asphaltNoise.fine?.albedo,
+                    roughness: !!asphaltNoise.fine?.roughness,
+                    normal: !!asphaltNoise.fine?.normal,
+                    scale: asphaltNoise.fine?.scale,
+                    colorStrength: asphaltNoise.fine?.colorStrength,
+                    dirtyStrength: asphaltNoise.fine?.dirtyStrength,
+                    roughnessStrength: asphaltNoise.fine?.roughnessStrength,
+                    normalStrength: asphaltNoise.fine?.normalStrength
+                }
             },
             buildingWindowVisuals: {
                 reflective: {

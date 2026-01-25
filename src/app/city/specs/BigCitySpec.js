@@ -335,29 +335,31 @@ export const BIG_CITY_SPEC_SOURCE = Object.freeze(
                 "tag": "road",
                 "rendered": true
             },
-            {
-                "a": [
-                    6,
-                    14
-                ],
-                "b": [
-                    6,
-                    17
-                ],
-                "lanesF": 2,
-                "lanesB": 2,
-                "tag": "road",
-                "rendered": true
-            },
-            {
-                "points": [
-                    {
-                        "x": -144,
-                        "z": 35.88
-                    },
-                    {
-                        "x": -72,
-                        "z": -72
+	            {
+	                "points": [
+	                    {
+	                        "x": -144,
+	                        "z": 18
+	                    },
+	                    {
+	                        "x": -144,
+	                        "z": 114
+	                    }
+	                ],
+	                "lanesF": 2,
+	                "lanesB": 2,
+	                "tag": "road",
+	                "rendered": true
+	            },
+	            {
+	                "points": [
+	                    {
+	                        "x": -144,
+	                        "z": 18
+	                    },
+	                    {
+	                        "x": -72,
+	                        "z": -72
                     }
                 ],
                 "lanesF": 2,

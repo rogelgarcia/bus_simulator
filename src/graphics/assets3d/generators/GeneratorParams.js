@@ -249,6 +249,24 @@ export const ROAD_DEFAULTS = {
         edgeInset: 0.33,
         lift: 0.003
     },
+    visuals: {
+        asphalt: {
+            enabled: true,
+            scale: 0.07,
+            colorStrength: 0.18,
+            dirtyStrength: 0.18,
+            roughnessStrength: 0.28
+        },
+        markings: {
+            enabled: true,
+            scale: 1.4,
+            colorStrength: 0.12,
+            roughnessStrength: 0.26,
+            dirtyStrength: 0.35,
+            edgeBreakStrength: 0.14,
+            baseRoughness: 0.55
+        }
+    },
     curb: {
         thickness: 0.48,
         height: 0.17,
