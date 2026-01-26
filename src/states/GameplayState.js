@@ -158,6 +158,8 @@ export class GameplayState {
         this._debugPanel = null;
         this._debugEnabled = false;
 
+        this._iblProbe = null;
+
         this._setupUi = new SetupUIController();
 
         this._pausedByOverlay = false;
@@ -237,6 +239,21 @@ export class GameplayState {
         this.busAnchor.rotation.set(0, 0, 0);
         snapToGroundY(this.busAnchor, roadY);
         this.engine.scene.add(this.busAnchor);
+
+        const probeGeo = new THREE.SphereGeometry(1, 64, 32);
+        const probeMat = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            metalness: 1.0,
+            roughness: 0.18
+        });
+        const probe = new THREE.Mesh(probeGeo, probeMat);
+        probe.position.set(0, roadY + 4, 0);
+        probe.castShadow = true;
+        probe.receiveShadow = true;
+        probe.name = 'ibl_probe_sphere';
+        this.engine.scene.add(probe);
+        this._iblProbe = probe;
+        this.engine.applyCurrentIBLIntensity?.({ force: true });
 
         // Enable shadows
         this.busAnchor.traverse((o) => {
@@ -336,6 +353,17 @@ export class GameplayState {
         if (this.busAnchor) {
             if (this.busModel) this.busAnchor.remove(this.busModel);
             this.engine.scene.remove(this.busAnchor);
+        }
+        if (this._iblProbe) {
+            this.engine.scene.remove(this._iblProbe);
+            this._iblProbe.geometry?.dispose?.();
+            const mat = this._iblProbe.material ?? null;
+            if (Array.isArray(mat)) {
+                for (const entry of mat) entry?.dispose?.();
+            } else {
+                mat?.dispose?.();
+            }
+            this._iblProbe = null;
         }
         this.busAnchor = null;
         this.busModel = null;

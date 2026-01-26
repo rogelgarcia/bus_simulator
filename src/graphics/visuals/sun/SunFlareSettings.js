@@ -7,7 +7,13 @@ const STORAGE_KEY = 'bus_sim.sunFlare.v1';
 export const SUN_FLARE_DEFAULTS = Object.freeze({
     enabled: true,
     preset: 'subtle',
-    strength: 0.65
+    strength: 0.65,
+    components: Object.freeze({
+        core: true,
+        halo: true,
+        starburst: true,
+        ghosting: true
+    })
 });
 
 function clamp(value, min, max, fallback) {
@@ -48,10 +54,19 @@ function readUrlParamString(params, key, fallback) {
 export function sanitizeSunFlareSettings(input) {
     const src = input && typeof input === 'object' ? input : {};
     const enabled = src.enabled !== undefined ? !!src.enabled : SUN_FLARE_DEFAULTS.enabled;
+    const rawComponents = src.components && typeof src.components === 'object' ? src.components : {};
+    const componentsDefaults = SUN_FLARE_DEFAULTS.components ?? {};
+    const components = {
+        core: rawComponents.core !== undefined ? !!rawComponents.core : !!componentsDefaults.core,
+        halo: rawComponents.halo !== undefined ? !!rawComponents.halo : !!componentsDefaults.halo,
+        starburst: rawComponents.starburst !== undefined ? !!rawComponents.starburst : !!componentsDefaults.starburst,
+        ghosting: rawComponents.ghosting !== undefined ? !!rawComponents.ghosting : !!componentsDefaults.ghosting
+    };
     return {
         enabled,
         preset: normalizePresetId(src.preset, SUN_FLARE_DEFAULTS.preset),
-        strength: clamp(src.strength ?? SUN_FLARE_DEFAULTS.strength, 0, 2, SUN_FLARE_DEFAULTS.strength)
+        strength: clamp(src.strength ?? SUN_FLARE_DEFAULTS.strength, 0, 2, SUN_FLARE_DEFAULTS.strength),
+        components
     };
 }
 
@@ -110,4 +125,3 @@ export function getResolvedSunFlareSettings({ includeUrlOverrides = true } = {})
 export function getDefaultResolvedSunFlareSettings() {
     return sanitizeSunFlareSettings(SUN_FLARE_DEFAULTS);
 }
-

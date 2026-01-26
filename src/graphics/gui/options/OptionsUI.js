@@ -8,7 +8,7 @@ import { getColorGradingPresetOptions } from '../../visuals/postprocessing/Color
 import { getDefaultResolvedBuildingWindowVisualsSettings } from '../../visuals/buildings/BuildingWindowVisualsSettings.js';
 import { getDefaultResolvedAsphaltNoiseSettings } from '../../visuals/city/AsphaltNoiseSettings.js';
 import { getDefaultResolvedSunFlareSettings } from '../../visuals/sun/SunFlareSettings.js';
-import { getSunFlarePresetOptions } from '../../visuals/sun/SunFlarePresets.js';
+import { getSunFlarePresetById, getSunFlarePresetOptions } from '../../visuals/sun/SunFlarePresets.js';
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -324,25 +324,47 @@ export class OptionsUI {
         this._refreshPostProcessingDebug();
     }
 
-    _refreshIblDebug() {
-        const els = this._iblDebugEls;
-        if (!els || !this._getIblDebugInfo) return;
+	    _refreshIblDebug() {
+	        const els = this._iblDebugEls;
+	        if (!els || !this._getIblDebugInfo) return;
 
-        const info = this._getIblDebugInfo() ?? null;
-        const enabled = !!info?.enabled;
-        const envLoaded = !!info?.envMapLoaded;
-        const fallback = !!info?.usingFallbackEnvMap;
-        const sceneEnv = !!info?.sceneHasEnvironment;
-        const sceneMatch = !!info?.sceneEnvironmentMatches;
-        const hdrUrl = typeof info?.hdrUrl === 'string' ? info.hdrUrl : null;
-        const intensity = Number.isFinite(info?.envMapIntensity) ? Number(info.envMapIntensity) : null;
+	        const info = this._getIblDebugInfo() ?? null;
+	        const enabled = !!info?.enabled;
+	        const envLoaded = !!info?.envMapLoaded;
+	        const fallback = !!info?.usingFallbackEnvMap;
+	        const wantsBg = !!info?.setBackground;
+	        const hasBgTex = !!info?.hasBackgroundTexture;
+	        const sceneEnv = !!info?.sceneHasEnvironment;
+	        const sceneMatch = !!info?.sceneEnvironmentMatches;
+	        const bgMode = String(info?.sceneBackgroundMode ?? 'none');
+	        const hdrUrl = typeof info?.hdrUrl === 'string' ? info.hdrUrl : null;
+	        const envMapHdrUrl = typeof info?.envMapHdrUrl === 'string' ? info.envMapHdrUrl : null;
+	        const userDataKeys = Array.isArray(info?.envMapUserDataKeys) ? info.envMapUserDataKeys : null;
+	        const intensity = Number.isFinite(info?.envMapIntensity) ? Number(info.envMapIntensity) : null;
+	        const probeFound = !!info?.probeFound;
+	        const probeHasEnvMap = !!info?.probeHasEnvMap;
+	        const probeMatches = !!info?.probeEnvMapMatchesScene;
+	        const probeIntensity = Number.isFinite(info?.probeEnvMapIntensity) ? Number(info.probeEnvMapIntensity) : null;
 
-        els.envMap.textContent = !enabled ? 'Disabled' : (envLoaded ? (fallback ? 'Loaded (fallback)' : 'Loaded') : 'Loading…');
-        els.sceneEnv.textContent = sceneEnv ? 'Set' : 'Null';
-        els.sceneMatch.textContent = sceneMatch ? 'Yes' : 'No';
-        els.hdrUrl.textContent = hdrUrl ?? '-';
-        els.intensity.textContent = intensity !== null ? intensity.toFixed(2) : '-';
-    }
+	        els.envMap.textContent = !enabled ? 'Disabled' : (envLoaded ? (fallback ? 'Loaded (fallback)' : 'Loaded') : 'Loading…');
+	        els.sceneEnv.textContent = sceneEnv ? 'Set' : 'Null';
+	        els.sceneMatch.textContent = sceneMatch ? 'Yes' : 'No';
+	        els.sceneBg.textContent = bgMode === 'hdr' ? 'HDR' : (bgMode === 'other' ? 'Set (non-HDR)' : (bgMode === 'non-texture' ? 'Set (non-texture)' : 'Null'));
+	        els.bgConfig.textContent = wantsBg ? (hasBgTex ? 'On (HDR ready)' : 'On (missing HDR tex)') : 'Off';
+	        els.envUserData.textContent = envLoaded
+	            ? `${envMapHdrUrl ? 'iblHdrUrl' : '-'}${userDataKeys?.length ? ` · ${userDataKeys.join(',')}` : ''}`
+	            : '-';
+	        els.hdrUrl.textContent = hdrUrl ?? '-';
+	        els.intensity.textContent = intensity !== null ? intensity.toFixed(2) : '-';
+	        if (els.probeEnvMap) {
+	            els.probeEnvMap.textContent = !probeFound
+	                ? 'Missing'
+	                : (probeHasEnvMap ? (probeMatches ? 'Set (matches scene)' : 'Set') : 'Null');
+	        }
+	        if (els.probeIntensity) {
+	            els.probeIntensity.textContent = probeIntensity !== null ? probeIntensity.toFixed(2) : (probeFound ? '-' : 'Missing');
+	        }
+	    }
 
     _refreshPostProcessingDebug() {
         const els = this._postDebugEls;
@@ -450,13 +472,25 @@ export class OptionsUI {
     }
 
     _ensureDraftSunFlare() {
-        if (this._draftSunFlare) return;
         const d = getDefaultResolvedSunFlareSettings();
-        this._draftSunFlare = {
-            enabled: d.enabled,
-            preset: d.preset,
-            strength: d.strength
-        };
+        if (!this._draftSunFlare) {
+            this._draftSunFlare = {
+                enabled: d.enabled,
+                preset: d.preset,
+                strength: d.strength,
+                components: { ...(d.components ?? {}) }
+            };
+            return;
+        }
+
+        const s = this._draftSunFlare;
+        if (!s.components || typeof s.components !== 'object') s.components = { ...(d.components ?? {}) };
+        const c = s.components;
+        const defaults = d.components ?? {};
+        if (c.core === undefined) c.core = !!defaults.core;
+        if (c.halo === undefined) c.halo = !!defaults.halo;
+        if (c.starburst === undefined) c.starburst = !!defaults.starburst;
+        if (c.ghosting === undefined) c.ghosting = !!defaults.ghosting;
     }
 
     _renderAsphaltTab() {
@@ -726,6 +760,7 @@ export class OptionsUI {
         const sunFlare = this._draftSunFlare;
         const emit = () => this._emitLiveChange();
         let syncGradeEnabled = () => {};
+        let syncSunFlareControls = () => {};
         const controls = {
             iblEnabled: makeToggleRow({
                 label: 'IBL enabled',
@@ -816,6 +851,8 @@ export class OptionsUI {
                     const id = String(v ?? '').trim().toLowerCase();
                     if (id === 'off') {
                         sunFlare.enabled = false;
+                        sunFlare.components = { core: false, halo: false, starburst: false, ghosting: false };
+                        syncSunFlareControls();
                         emit();
                         return;
                     }
@@ -823,8 +860,40 @@ export class OptionsUI {
                     sunFlare.preset = id;
                     if (id === 'cinematic') sunFlare.strength = 1.1;
                     else if (id === 'subtle') sunFlare.strength = 0.65;
+                    const preset = getSunFlarePresetById(id);
+                    if (preset?.components) sunFlare.components = { ...preset.components };
+                    syncSunFlareControls();
                     emit();
                 }
+            }),
+            sunFlareStrength: makeNumberSliderRow({
+                label: 'Sun flare strength',
+                value: sunFlare.strength,
+                min: 0,
+                max: 2,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { sunFlare.strength = v; emit(); }
+            }),
+            sunFlareCore: makeToggleRow({
+                label: 'Flare core',
+                value: sunFlare.components?.core,
+                onChange: (v) => { sunFlare.components.core = v; emit(); }
+            }),
+            sunFlareHalo: makeToggleRow({
+                label: 'Flare halo/waves',
+                value: sunFlare.components?.halo,
+                onChange: (v) => { sunFlare.components.halo = v; emit(); }
+            }),
+            sunFlareStarburst: makeToggleRow({
+                label: 'Flare starburst',
+                value: sunFlare.components?.starburst,
+                onChange: (v) => { sunFlare.components.starburst = v; emit(); }
+            }),
+            sunFlareGhosting: makeToggleRow({
+                label: 'Flare ghosting',
+                value: sunFlare.components?.ghosting,
+                onChange: (v) => { sunFlare.components.ghosting = v; emit(); }
             }),
             gradePreset: makeChoiceRow({
                 label: 'Color grading (LUT)',
@@ -851,28 +920,43 @@ export class OptionsUI {
         sectionIbl.appendChild(controls.iblIntensity.row);
         sectionIbl.appendChild(controls.iblBackground.row);
 
-        let iblStatusSection = null;
-        if (this._getIblDebugInfo) {
-            iblStatusSection = makeEl('div', 'options-section');
-            iblStatusSection.appendChild(makeEl('div', 'options-section-title', 'IBL Status'));
-            const rowEnvMap = makeValueRow({ label: 'Env map', value: '-' });
-            const rowIntensity = makeValueRow({ label: 'Config intensity', value: '-' });
-            const rowSceneEnv = makeValueRow({ label: 'Scene.environment', value: '-' });
-            const rowSceneMatch = makeValueRow({ label: 'Env matches loaded', value: '-' });
-            const rowHdrUrl = makeValueRow({ label: 'HDR URL', value: '-' });
-            iblStatusSection.appendChild(rowEnvMap.row);
-            iblStatusSection.appendChild(rowIntensity.row);
-            iblStatusSection.appendChild(rowSceneEnv.row);
-            iblStatusSection.appendChild(rowSceneMatch.row);
-            iblStatusSection.appendChild(rowHdrUrl.row);
-            this._iblDebugEls = {
-                envMap: rowEnvMap.text,
-                intensity: rowIntensity.text,
-                sceneEnv: rowSceneEnv.text,
-                sceneMatch: rowSceneMatch.text,
-                hdrUrl: rowHdrUrl.text
-            };
-        }
+	        let iblStatusSection = null;
+	        if (this._getIblDebugInfo) {
+	            iblStatusSection = makeEl('div', 'options-section');
+	            iblStatusSection.appendChild(makeEl('div', 'options-section-title', 'IBL Status'));
+	            const rowEnvMap = makeValueRow({ label: 'Env map', value: '-' });
+	            const rowIntensity = makeValueRow({ label: 'Config intensity', value: '-' });
+	            const rowSceneEnv = makeValueRow({ label: 'Scene.environment', value: '-' });
+	            const rowSceneBg = makeValueRow({ label: 'Scene.background', value: '-' });
+	            const rowBgConfig = makeValueRow({ label: 'Config setBackground', value: '-' });
+	            const rowEnvUserData = makeValueRow({ label: 'Env userData', value: '-' });
+	            const rowSceneMatch = makeValueRow({ label: 'Env matches loaded', value: '-' });
+	            const rowProbeEnvMap = makeValueRow({ label: 'Probe envMap', value: '-' });
+	            const rowProbeIntensity = makeValueRow({ label: 'Probe envMapIntensity', value: '-' });
+	            const rowHdrUrl = makeValueRow({ label: 'HDR URL', value: '-' });
+	            iblStatusSection.appendChild(rowEnvMap.row);
+	            iblStatusSection.appendChild(rowIntensity.row);
+	            iblStatusSection.appendChild(rowSceneEnv.row);
+	            iblStatusSection.appendChild(rowSceneBg.row);
+	            iblStatusSection.appendChild(rowBgConfig.row);
+	            iblStatusSection.appendChild(rowEnvUserData.row);
+	            iblStatusSection.appendChild(rowSceneMatch.row);
+	            iblStatusSection.appendChild(rowProbeEnvMap.row);
+	            iblStatusSection.appendChild(rowProbeIntensity.row);
+	            iblStatusSection.appendChild(rowHdrUrl.row);
+	            this._iblDebugEls = {
+	                envMap: rowEnvMap.text,
+	                intensity: rowIntensity.text,
+	                sceneEnv: rowSceneEnv.text,
+	                sceneBg: rowSceneBg.text,
+	                bgConfig: rowBgConfig.text,
+	                envUserData: rowEnvUserData.text,
+	                sceneMatch: rowSceneMatch.text,
+	                probeEnvMap: rowProbeEnvMap.text,
+	                probeIntensity: rowProbeIntensity.text,
+	                hdrUrl: rowHdrUrl.text
+	            };
+	        }
 
         sectionLighting.appendChild(controls.exposure.row);
         sectionLighting.appendChild(controls.hemi.row);
@@ -912,6 +996,11 @@ export class OptionsUI {
         sectionPost.appendChild(controls.bloomRadius.row);
         sectionPost.appendChild(controls.bloomThreshold.row);
         sectionPost.appendChild(controls.sunFlarePreset.row);
+        sectionPost.appendChild(controls.sunFlareStrength.row);
+        sectionPost.appendChild(controls.sunFlareCore.row);
+        sectionPost.appendChild(controls.sunFlareHalo.row);
+        sectionPost.appendChild(controls.sunFlareStarburst.row);
+        sectionPost.appendChild(controls.sunFlareGhosting.row);
         sectionPost.appendChild(controls.gradePreset.row);
         sectionPost.appendChild(controls.gradeIntensity.row);
 
@@ -933,6 +1022,25 @@ export class OptionsUI {
             controls.gradeIntensity.number.disabled = off;
         };
         syncGradeEnabled(controls.gradePreset.getValue());
+
+        syncSunFlareControls = () => {
+            const enabled = !!sunFlare.enabled;
+            const disabled = !enabled;
+            controls.sunFlareStrength.range.disabled = disabled;
+            controls.sunFlareStrength.number.disabled = disabled;
+            for (const entry of [controls.sunFlareCore, controls.sunFlareHalo, controls.sunFlareStarburst, controls.sunFlareGhosting]) {
+                entry.toggle.disabled = disabled;
+            }
+            controls.sunFlareCore.toggle.checked = !!sunFlare.components?.core;
+            controls.sunFlareHalo.toggle.checked = !!sunFlare.components?.halo;
+            controls.sunFlareStarburst.toggle.checked = !!sunFlare.components?.starburst;
+            controls.sunFlareGhosting.toggle.checked = !!sunFlare.components?.ghosting;
+
+            const strength = Number.isFinite(sunFlare.strength) ? sunFlare.strength : 0;
+            controls.sunFlareStrength.range.value = String(strength);
+            controls.sunFlareStrength.number.value = String(strength.toFixed(2));
+        };
+        syncSunFlareControls();
 
         const note = makeEl('div', 'options-note');
         note.textContent = 'URL params override saved settings (e.g. ibl, iblIntensity, iblBackground, bloom, sunFlare, grade). Bloom affects only bright pixels; raise threshold to reduce glow.';
@@ -979,7 +1087,8 @@ export class OptionsUI {
         this._draftSunFlare = {
             enabled: sunFlare.enabled,
             preset: sunFlare.preset,
-            strength: sunFlare.strength
+            strength: sunFlare.strength,
+            components: { ...(sunFlare.components ?? {}) }
         };
 
         const windowVisuals = getDefaultResolvedBuildingWindowVisualsSettings();
@@ -1076,7 +1185,13 @@ export class OptionsUI {
             sunFlare: {
                 enabled: !!sunFlare.enabled,
                 preset: String(sunFlare.preset ?? 'subtle'),
-                strength: sunFlare.strength
+                strength: sunFlare.strength,
+                components: {
+                    core: !!sunFlare.components?.core,
+                    halo: !!sunFlare.components?.halo,
+                    starburst: !!sunFlare.components?.starburst,
+                    ghosting: !!sunFlare.components?.ghosting
+                }
             }
         };
     }

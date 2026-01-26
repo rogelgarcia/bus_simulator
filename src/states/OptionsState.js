@@ -131,7 +131,8 @@ export class OptionsState {
                 ? {
                     enabled: sunFlare.enabled,
                     preset: sunFlare.preset,
-                    strength: sunFlare.strength
+                    strength: sunFlare.strength,
+                    components: sunFlare.components ?? null
                 }
                 : null,
             initialPostProcessingActive: postActive,

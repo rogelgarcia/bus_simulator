@@ -18,6 +18,11 @@ python3 -m http.server 8000
 
 Open `index.html` in a modern browser.
 
+### Tools
+
+- Atmosphere Debug: open `debug_tools/atmosphere_debug.html` (e.g. `http://localhost:8000/debug_tools/atmosphere_debug.html`)
+- Sky gradient debug: add `?skyDebug=1` to draw stop markers (e.g. `http://localhost:8000/index.html?skyDebug=1`)
+
 > If your assets (like `.glb`) don’t load when opened via `file://`, serve the folder as a static site (any simple static server works).
 
 ---

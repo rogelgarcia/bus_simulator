@@ -434,6 +434,10 @@ export class RoadDebuggerView {
     }
 
     update(dt) {
+        const bg = this.scene?.background ?? null;
+        const bgIsTexture = !!bg && !!bg.isTexture;
+        const wantsIblBackground = !!this.engine?.lightingSettings?.ibl?.setBackground;
+        if (this._sky) this._sky.visible = !(wantsIblBackground && bgIsTexture);
         updateCamera(this, dt);
     }
 

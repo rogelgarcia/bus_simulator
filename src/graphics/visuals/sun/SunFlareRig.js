@@ -37,6 +37,7 @@ function configureFlareTexture(tex) {
 
 const SUN_FLARE_TEXTURE_URLS = Object.freeze({
     core: new URL('../../../../assets/public/lensflare/sun_core.svg', import.meta.url).href,
+    halo: new URL('../../../../assets/public/lensflare/sun_halo.svg', import.meta.url).href,
     star: new URL('../../../../assets/public/lensflare/sun_star.svg', import.meta.url).href,
     ghost: new URL('../../../../assets/public/lensflare/sun_ghost.svg', import.meta.url).href
 });
@@ -48,10 +49,12 @@ function getOrCreateSunFlareTextures() {
     const loader = new THREE.TextureLoader();
     const textures = {
         core: loader.load(SUN_FLARE_TEXTURE_URLS.core),
+        halo: loader.load(SUN_FLARE_TEXTURE_URLS.halo),
         star: loader.load(SUN_FLARE_TEXTURE_URLS.star),
         ghost: loader.load(SUN_FLARE_TEXTURE_URLS.ghost)
     };
     configureFlareTexture(textures.core);
+    configureFlareTexture(textures.halo);
     configureFlareTexture(textures.star);
     configureFlareTexture(textures.ghost);
     _cachedTextures = textures;
@@ -77,6 +80,12 @@ export class SunFlareRig {
         this._preset = getSunFlarePresetById(settings?.preset);
         this._strength = Number.isFinite(settings?.strength) ? clamp(settings.strength, 0, 2) : 1;
         this._enabled = settings?.enabled !== undefined ? !!settings.enabled : true;
+        this._components = {
+            core: settings?.components?.core !== undefined ? !!settings.components.core : true,
+            halo: settings?.components?.halo !== undefined ? !!settings.components.halo : true,
+            starburst: settings?.components?.starburst !== undefined ? !!settings.components.starburst : true,
+            ghosting: settings?.components?.ghosting !== undefined ? !!settings.components.ghosting : true
+        };
 
         this._sunDir = new THREE.Vector3();
         this._sunWorldPos = new THREE.Vector3();
@@ -105,7 +114,15 @@ export class SunFlareRig {
         const preset = this._preset;
         if (!preset) return;
 
-        const makeSprite = (textureKey, { sizePx, intensity = 1, color = '#ffffff', kind = 'ghost', distance = 0 }) => {
+        const makeSprite = (textureKey, {
+            sizePx,
+            intensity = 1,
+            color = '#ffffff',
+            component = 'ghosting',
+            distance = 0,
+            depthTest = false,
+            renderOrder = 960
+        } = {}) => {
             const tex = this._textures?.[textureKey] ?? null;
             if (!tex) return;
             const mat = new THREE.SpriteMaterial({
@@ -113,7 +130,7 @@ export class SunFlareRig {
                 color: new THREE.Color(color),
                 transparent: true,
                 opacity: 1,
-                depthTest: kind === 'core',
+                depthTest,
                 depthWrite: false,
                 blending: THREE.AdditiveBlending,
                 toneMapped: false
@@ -121,11 +138,11 @@ export class SunFlareRig {
             const sprite = new THREE.Sprite(mat);
             sprite.frustumCulled = false;
             sprite.visible = false;
-            sprite.renderOrder = kind === 'core' ? 950 : 960;
+            sprite.renderOrder = renderOrder;
             this.group.add(sprite);
             this._sprites.push({
                 sprite,
-                kind,
+                component,
                 sizePx: Math.max(1, sizePx | 0),
                 distance: clamp(distance, 0, 1),
                 intensity: Number(intensity) || 0,
@@ -133,10 +150,11 @@ export class SunFlareRig {
             });
         };
 
-        makeSprite('core', { ...preset.core, kind: 'core', distance: 0 });
-        makeSprite('star', { ...preset.star, kind: 'ghost', distance: 0 });
+        makeSprite('halo', { ...preset.halo, component: 'halo', distance: 0, depthTest: false, renderOrder: 940 });
+        makeSprite('core', { ...preset.core, component: 'core', distance: 0, depthTest: true, renderOrder: 950 });
+        makeSprite('star', { ...preset.starburst, component: 'starburst', distance: 0, depthTest: false, renderOrder: 955 });
         for (const ghost of Array.isArray(preset.ghosts) ? preset.ghosts : []) {
-            makeSprite('ghost', { ...ghost, kind: 'ghost' });
+            makeSprite('ghost', { ...ghost, component: 'ghosting', depthTest: false, renderOrder: 960 });
         }
     }
 
@@ -147,6 +165,13 @@ export class SunFlareRig {
 
         this._enabled = src.enabled !== undefined ? !!src.enabled : this._enabled;
         this._strength = Number.isFinite(src.strength) ? clamp(src.strength, 0, 2) : this._strength;
+        if (src.components && typeof src.components === 'object') {
+            const c = src.components;
+            if (c.core !== undefined) this._components.core = !!c.core;
+            if (c.halo !== undefined) this._components.halo = !!c.halo;
+            if (c.starburst !== undefined) this._components.starburst = !!c.starburst;
+            if (c.ghosting !== undefined) this._components.ghosting = !!c.ghosting;
+        }
 
         if (presetChanged) {
             this._preset = getSunFlarePresetById(nextPresetId);
@@ -191,14 +216,15 @@ export class SunFlareRig {
             const sprite = entry.sprite;
             if (!sprite) continue;
 
-            const localIntensity = entry.intensity * intensity;
+            const componentEnabled = this._components?.[entry.component] !== false;
+            const localIntensity = componentEnabled ? (entry.intensity * intensity) : 0;
             sprite.visible = localIntensity > 1e-4;
             if (!sprite.visible) continue;
 
             const mat = sprite.material;
             if (mat?.color) mat.color.copy(entry.baseColor).multiplyScalar(localIntensity);
 
-            if (entry.kind === 'core') {
+            if (entry.component === 'core' || entry.component === 'halo' || entry.component === 'starburst') {
                 sprite.position.copy(this._sunWorldPos);
             } else if (entry.distance <= 0) {
                 sprite.position.copy(this._sunWorldPos);

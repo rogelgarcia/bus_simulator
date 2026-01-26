@@ -73,6 +73,7 @@ function writeBoolStorage(key, value) {
  * @property {string} key
  * @property {string} label
  * @property {string} state
+ * @property {string=} description
  */
 
 /**
@@ -144,7 +145,12 @@ export class SetupUIController {
         this._scenes = Array.isArray(sceneItems)
             ? sceneItems
                 .filter((v) => v && typeof v === 'object')
-                .map((v) => ({ key: normalizeKey(v.key), label: String(v.label ?? ''), state: String(v.state ?? '') }))
+                .map((v) => ({
+                    key: normalizeKey(v.key),
+                    label: String(v.label ?? ''),
+                    state: String(v.state ?? ''),
+                    description: String(v.description ?? '')
+                }))
                 .filter((v) => v.key && v.label && v.state)
             : [];
 
@@ -321,10 +327,22 @@ export class SetupUIController {
             label.className = 'setup-option-label';
             label.textContent = String(option.label ?? '');
 
+            const text = document.createElement('span');
+            text.className = 'setup-option-text';
+            text.appendChild(label);
+
+            const descText = String(option.description ?? '').trim();
+            if (descText) {
+                const desc = document.createElement('span');
+                desc.className = 'setup-option-desc';
+                desc.textContent = descText;
+                text.appendChild(desc);
+            }
+
             const box = document.createElement('span');
             box.className = 'setup-option-box';
             box.appendChild(num);
-            box.appendChild(label);
+            box.appendChild(text);
 
             button.appendChild(box);
 
@@ -517,4 +535,3 @@ export class SetupUIController {
         };
     }
 }
-

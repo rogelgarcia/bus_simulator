@@ -47,7 +47,11 @@ function makeEmptyGridMap(view) {
 
 export function setupScene(view) {
     if (view?.scene) {
-        view.scene.background = null;
+        const lighting = view?.engine?.lightingSettings ?? getResolvedLightingSettings();
+        const bg = view.scene.background ?? null;
+        const bgIsTexture = !!bg && !!bg.isTexture;
+        const wantsIblBackground = !!lighting?.ibl?.setBackground;
+        if (!wantsIblBackground || !bgIsTexture) view.scene.background = null;
         view.scene.fog = null;
     }
 
@@ -70,11 +74,13 @@ export function setupScene(view) {
     const skyRadius = Math.max(600, size * 2.2);
     const sky = createGradientSkyDome({
         radius: skyRadius,
-        top: '#2f7fe8',
-        horizon: '#eaf7ff',
         sunDir: sun.position.clone().normalize(),
         sunIntensity: 0.28
     });
+    const bg = view?.scene?.background ?? null;
+    const bgIsTexture = !!bg && !!bg.isTexture;
+    const wantsIblBackground = !!lighting?.ibl?.setBackground;
+    sky.visible = !(wantsIblBackground && bgIsTexture);
     group.add(sky);
 
     const groundY = Number.isFinite(view?._groundY) ? view._groundY : 0;

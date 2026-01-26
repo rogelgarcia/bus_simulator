@@ -303,6 +303,25 @@ body.setup-bg #game-canvas {
     letter-spacing: 0.08em;
 }
 
+.setup-option-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.setup-layer.is-overlay .setup-option-text {
+    gap: 3px;
+}
+
+.setup-option-desc {
+    font-size: 0.78em;
+    font-weight: 600;
+    opacity: 0.78;
+    letter-spacing: 0.03em;
+    text-transform: none;
+}
+
 .setup-footer {
     text-align: center;
     font-size: 0.8em;

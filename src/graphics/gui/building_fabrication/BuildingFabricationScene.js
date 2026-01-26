@@ -18,7 +18,7 @@ import {
     normalizeWindowTypeIdOrLegacyStyle
 } from '../../assets3d/generators/buildings/WindowTypeCompatibility.js';
 import { createGeneratorConfig } from '../../assets3d/generators/GeneratorParams.js';
-import { createGradientSkyDome } from '../../assets3d/generators/SkyGenerator.js';
+import { NATURAL_SKY_GRADIENT, createGradientSkyDome } from '../../assets3d/generators/SkyGenerator.js';
 import { createRoadEngineRoads } from '../../visuals/city/RoadEngineRoads.js';
 import { BuildingWallTextureCache, buildBuildingVisualParts } from '../../assets3d/generators/buildings/BuildingGenerator.js';
 import { buildBuildingFabricationVisualParts } from '../../assets3d/generators/building_fabrication/BuildingFabricationGenerator.js';
@@ -261,8 +261,12 @@ export class BuildingFabricationScene {
         };
 
         const span = this.tileSize * this.gridSize;
-        this.scene.background = null;
-        this.scene.fog = new THREE.Fog(0xdff3ff, Math.max(40, span * 0.5), Math.max(240, span * 3.2));
+        this._syncSkyVisibility();
+        const bg = this.scene.background ?? null;
+        const bgIsTexture = !!bg && !!bg.isTexture;
+        const wantsIblBackground = !!this.engine?.lightingSettings?.ibl?.setBackground;
+        if (!wantsIblBackground || !bgIsTexture) this.scene.background = null;
+        this.scene.fog = new THREE.Fog(NATURAL_SKY_GRADIENT.fogColor, Math.max(40, span * 0.5), Math.max(240, span * 3.2));
 
         if (this.camera && Number.isFinite(this.camera.far)) {
             this.camera.far = Math.max(this.camera.far, 2500);
@@ -327,6 +331,7 @@ export class BuildingFabricationScene {
     }
 
     update(dt = 0) {
+        this._syncSkyVisibility();
         this.controls?.update?.(dt);
         if (this.sky && this.camera) {
             this.sky.position.copy(this.camera.position);
@@ -1516,12 +1521,19 @@ export class BuildingFabricationScene {
     _buildSky() {
         if (!this.sun) return;
         this.sky = createGradientSkyDome({
-            top: '#2f7fe8',
-            horizon: '#eaf7ff',
             sunDir: this.sun.position.clone().normalize(),
             sunIntensity: 0.28
         });
         this.root.add(this.sky);
+        this._syncSkyVisibility();
+    }
+
+    _syncSkyVisibility() {
+        const wantsIblBackground = !!this.engine?.lightingSettings?.ibl?.setBackground;
+        const bg = this.scene?.background ?? null;
+        const bgIsTexture = !!bg && !!bg.isTexture;
+        const showSky = !(wantsIblBackground && bgIsTexture);
+        if (this.sky) this.sky.visible = showSky;
     }
 
     _buildMap() {

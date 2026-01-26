@@ -8,7 +8,7 @@ import { CityRNG } from '../../../app/city/CityRNG.js';
 import { computeTrafficControlPlacements } from '../../../app/city/TrafficControlPlacement.js';
 import { createCityWorld } from '../../assets3d/generators/TerrainGenerator.js';
 import { createGeneratorConfig } from '../../assets3d/generators/GeneratorParams.js';
-import { createGradientSkyDome } from '../../assets3d/generators/SkyGenerator.js';
+import { NATURAL_SKY_GRADIENT, createGradientSkyDome } from '../../assets3d/generators/SkyGenerator.js';
 import { BuildingWallTextureCache, buildBuildingVisualParts } from '../../assets3d/generators/buildings/BuildingGenerator.js';
 import { buildBuildingFabricationVisualParts } from '../../assets3d/generators/building_fabrication/BuildingFabricationGenerator.js';
 import { getCityMaterials } from '../../assets3d/textures/CityMaterials.js';
@@ -33,7 +33,7 @@ export class City {
         this.config = {
             size,
             tileMeters,
-            fogColor: '#dff3ff',
+            fogColor: NATURAL_SKY_GRADIENT.fogColor,
             fogNear: 80,
             fogFar: 900,
             cameraNear: 0.5,
@@ -68,8 +68,6 @@ export class City {
         this.group.add(this.sun);
 
         this.sky = createGradientSkyDome({
-            top: '#2f7fe8',
-            horizon: '#eaf7ff',
             sunDir: this.sun.position.clone().normalize(),
             sunIntensity: 0.28
         });
@@ -194,7 +192,11 @@ export class City {
             far: engine.camera.far
         };
 
-        engine.scene.background = null;
+        this._syncSkyVisibility(engine);
+        const bg = engine.scene.background ?? null;
+        const bgIsTexture = !!bg && !!bg.isTexture;
+        const wantsIblBackground = !!engine?.lightingSettings?.ibl?.setBackground;
+        if (!wantsIblBackground || !bgIsTexture) engine.scene.background = null;
         engine.scene.fog = new THREE.Fog(this.config.fogColor, this.config.fogNear, this.config.fogFar);
 
         engine.camera.near = Math.max(engine.camera.near, this.config.cameraNear);
@@ -224,7 +226,16 @@ export class City {
 
     update(engine) {
         this.sky.position.copy(engine.camera.position);
+        this._syncSkyVisibility(engine);
         this.sunFlare?.update?.(engine);
+    }
+
+    _syncSkyVisibility(engine) {
+        const wantsIblBackground = !!engine?.lightingSettings?.ibl?.setBackground;
+        const bg = engine?.scene?.background ?? null;
+        const bgIsTexture = !!bg && !!bg.isTexture;
+        const showSky = !(wantsIblBackground && bgIsTexture);
+        if (this.sky) this.sky.visible = showSky;
     }
 }
 

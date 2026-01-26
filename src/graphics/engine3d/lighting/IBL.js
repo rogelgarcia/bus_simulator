@@ -5,6 +5,7 @@ import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 const DEFAULT_ENV_MAP_INTENSITY = 0.25;
 const _cacheByRenderer = new WeakMap();
+const _backgroundByHdrUrl = new Map();
 const GIT_LFS_POINTER_PREFIX = 'version https://git-lfs.github.com/spec/v1';
 
 function getRendererCache(renderer) {
@@ -21,7 +22,7 @@ function getCacheEntry(renderer, cacheKey) {
     const key = typeof cacheKey === 'string' ? cacheKey : '';
     let entry = cache.get(key);
     if (!entry) {
-        entry = { envMap: null, promise: null, warned: false };
+        entry = { envMap: null, hdrTexture: null, promise: null, warned: false };
         cache.set(key, entry);
     }
     return entry;
@@ -34,6 +35,24 @@ function applyHdrColorSpace(tex) {
         return;
     }
     if ('encoding' in tex) tex.encoding = THREE.LinearEncoding;
+}
+
+function createDataTextureFromParsed(parsed) {
+    const width = Number(parsed?.width) || 0;
+    const height = Number(parsed?.height) || 0;
+    const data = parsed?.data ?? null;
+    if (!(width > 0) || !(height > 0) || !data) {
+        throw new Error('[IBL] Failed to parse HDR buffer');
+    }
+
+    const type = parsed?.type ?? THREE.HalfFloatType ?? THREE.UnsignedByteType;
+    const tex = new THREE.DataTexture(data, width, height, THREE.RGBAFormat, type);
+    tex.flipY = true;
+    tex.generateMipmaps = false;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.needsUpdate = true;
+    return tex;
 }
 
 function decodeAsciiPrefix(buffer, maxBytes = 96) {
@@ -66,6 +85,30 @@ async function fetchArrayBuffer(url) {
     return res.arrayBuffer();
 }
 
+export async function loadIBLBackgroundTexture(hdrUrl) {
+    const url = typeof hdrUrl === 'string' ? hdrUrl : '';
+    if (!url) return null;
+
+    const cached = _backgroundByHdrUrl.get(url) ?? null;
+    if (cached && cached.isTexture) return cached;
+
+    const buffer = await fetchArrayBuffer(url);
+    if (isGitLfsPointerBuffer(buffer)) {
+        throw new Error(`HDRI at ${url} is a Git LFS pointer. Run git lfs pull to download assets.`);
+    }
+
+    const loader = new RGBELoader();
+    if (THREE.HalfFloatType) loader.setDataType(THREE.HalfFloatType);
+    const parsed = loader.parse(buffer);
+    const hdr = parsed?.isTexture ? parsed : createDataTextureFromParsed(parsed);
+    hdr.mapping = THREE.EquirectangularReflectionMapping;
+    applyHdrColorSpace(hdr);
+    hdr.needsUpdate = true;
+
+    _backgroundByHdrUrl.set(url, hdr);
+    return hdr;
+}
+
 function createFallbackEnvMap(renderer) {
     const pmrem = new THREE.PMREMGenerator(renderer);
     const envMap = pmrem.fromScene(new RoomEnvironment()).texture;
@@ -73,6 +116,7 @@ function createFallbackEnvMap(renderer) {
     applyHdrColorSpace(envMap);
     envMap.userData = envMap.userData ?? {};
     envMap.userData.iblFallback = true;
+    envMap.__iblFallback = true;
     return envMap;
 }
 
@@ -92,24 +136,23 @@ export async function loadIBLTexture(renderer, overrides = {}) {
             const pmrem = new THREE.PMREMGenerator(renderer);
             pmrem.compileEquirectangularShader?.();
 
-            const buffer = await fetchArrayBuffer(hdrUrl);
-            if (isGitLfsPointerBuffer(buffer)) {
-                throw new Error(`HDRI at ${hdrUrl} is a Git LFS pointer. Run git lfs pull to download assets.`);
-            }
-
-            const loader = new RGBELoader();
-            if (THREE.HalfFloatType) loader.setDataType(THREE.HalfFloatType);
-            const hdr = loader.parse(buffer);
-            hdr.mapping = THREE.EquirectangularReflectionMapping;
-            applyHdrColorSpace(hdr);
+            const hdr = await loadIBLBackgroundTexture(hdrUrl);
+            if (!hdr) throw new Error('[IBL] Missing HDR background texture');
 
             const envMap = pmrem.fromEquirectangular(hdr).texture;
-            hdr.dispose();
             pmrem.dispose();
             applyHdrColorSpace(envMap);
 
+            entry.hdrTexture = hdr;
             entry.envMap = envMap;
             entry.promise = null;
+
+            envMap.userData = envMap.userData ?? {};
+            envMap.userData.iblBackgroundTexture = hdr;
+            envMap.userData.iblHdrUrl = hdrUrl;
+            envMap.__iblBackgroundTexture = hdr;
+            envMap.__iblHdrUrl = hdrUrl;
+
             return envMap;
         } catch (err) {
             if (!entry.warned) {
@@ -124,6 +167,9 @@ export async function loadIBLTexture(renderer, overrides = {}) {
             }
 
             const envMap = createFallbackEnvMap(renderer);
+            envMap.userData = envMap.userData ?? {};
+            envMap.userData.iblHdrUrl = hdrUrl;
+            envMap.__iblHdrUrl = hdrUrl;
             entry.envMap = envMap;
             entry.promise = null;
             return envMap;
@@ -131,6 +177,22 @@ export async function loadIBLTexture(renderer, overrides = {}) {
     });
 
     return entry.promise;
+}
+
+export function getIBLBackgroundTexture(envMap, overrides = {}) {
+    const direct = envMap?.userData?.iblBackgroundTexture ?? null;
+    if (direct && direct.isTexture) return direct;
+
+    const directProp = envMap?.__iblBackgroundTexture ?? null;
+    if (directProp && directProp.isTexture) return directProp;
+
+    const hdrUrl = typeof overrides?.hdrUrl === 'string' ? overrides.hdrUrl : '';
+    if (hdrUrl) {
+        const cached = _backgroundByHdrUrl.get(hdrUrl) ?? null;
+        if (cached && cached.isTexture) return cached;
+    }
+
+    return null;
 }
 
 function applyEnvMapIntensityToMaterial(mat, intensity, { force = false, envMap = undefined } = {}) {
@@ -236,6 +298,7 @@ export function applyIBLToScene(scene, envMap, overrides = {}) {
     if (!scene) return;
     const enabled = overrides?.enabled ?? true;
     const setBackground = overrides?.setBackground ?? false;
+    const hdrUrl = typeof overrides?.hdrUrl === 'string' ? overrides.hdrUrl : '';
 
     if (!enabled || !envMap) {
         const changed = !!scene.environment;
@@ -247,8 +310,19 @@ export function applyIBLToScene(scene, envMap, overrides = {}) {
     }
 
     const changed = scene.environment !== envMap;
+    if (hdrUrl) {
+        envMap.userData = envMap.userData ?? {};
+        envMap.userData.iblHdrUrl = hdrUrl;
+        envMap.__iblHdrUrl = hdrUrl;
+    }
     scene.environment = envMap;
-    scene.background = setBackground ? envMap : null;
+    const backgroundTex = setBackground ? getIBLBackgroundTexture(envMap, overrides) : null;
+    if (backgroundTex && backgroundTex.isTexture) {
+        envMap.userData = envMap.userData ?? {};
+        envMap.userData.iblBackgroundTexture = backgroundTex;
+        envMap.__iblBackgroundTexture = backgroundTex;
+    }
+    scene.background = backgroundTex && backgroundTex.isTexture ? backgroundTex : null;
     syncMaterialEnvMapFromScene(scene, envMap);
     if (changed) markMaterialsForEnvMapUpdate(scene);
 }

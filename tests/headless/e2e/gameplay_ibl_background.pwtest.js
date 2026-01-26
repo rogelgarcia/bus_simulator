@@ -1,4 +1,4 @@
-// Headless browser tests: setup overlay in gameplay should not hide the canvas.
+// Headless browser tests: Gameplay IBL + background toggles should affect scene state.
 import test, { expect } from '@playwright/test';
 
 async function attachFailFastConsole({ page }) {
@@ -41,41 +41,59 @@ async function attachFailFastConsole({ page }) {
     };
 }
 
-test('UI: Setup overlay opens during gameplay without hiding canvas', async ({ page }) => {
-    test.setTimeout(120_000);
+function rowByLabel(page, label) {
+    return page.locator('.options-row', {
+        has: page.locator('.options-row-label', { hasText: label })
+    });
+}
+
+async function setToggle(page, label, desired) {
+    await page.evaluate(({ label, desired }) => {
+        const rows = Array.from(document.querySelectorAll('.options-row'));
+        const row = rows.find((el) => el.querySelector('.options-row-label')?.textContent?.trim() === label);
+        const toggle = row?.querySelector('input[type="checkbox"]') ?? null;
+        if (!toggle) throw new Error(`Missing toggle: ${label}`);
+        const next = !!desired;
+        if (toggle.checked === next) return;
+        toggle.checked = next;
+        toggle.dispatchEvent(new Event('change', { bubbles: true }));
+    }, { label, desired: !!desired });
+}
+
+async function setNumber(page, label, value) {
+    const input = rowByLabel(page, label).locator('input[type="number"]');
+    await expect(input).toHaveCount(1);
+    await input.fill(String(value));
+}
+
+test('Gameplay: enabling IBL + background updates IBL status', async ({ page }) => {
     const getErrors = await attachFailFastConsole({ page });
+    await page.setViewportSize({ width: 960, height: 540 });
+
     await page.goto('/index.html?ibl=0&bloom=0&coreTests=0');
     await page.waitForSelector('#ui-welcome:not(.hidden)');
     await page.keyboard.press('Enter');
 
     await page.waitForSelector('#ui-select:not(.hidden)');
     await page.keyboard.press('G');
-
     await page.waitForSelector('#hud-game:not(.hidden)');
 
-    await page.keyboard.press('Q');
-    await page.waitForSelector('#ui-setup.is-overlay:not(.hidden)');
+    await page.keyboard.press('0');
+    await page.waitForSelector('#ui-options');
 
-    const canvasState = await page.evaluate(() => {
-        const canvas = document.getElementById('game-canvas');
-        const opacity = canvas ? Number.parseFloat(getComputedStyle(canvas).opacity) : null;
-        return {
-            hasSetupBg: document.body.classList.contains('setup-bg'),
-            opacity
-        };
-    });
-    expect(canvasState.hasSetupBg).toBe(false);
-    expect(canvasState.opacity).not.toBeNull();
-    expect(canvasState.opacity).toBeGreaterThan(0.5);
+    await setToggle(page, 'IBL enabled', true);
+    await setToggle(page, 'IBL background (setBackground)', true);
+    await setNumber(page, 'IBL intensity (envMapIntensity)', 1.5);
 
-    await page.click('#setup-collapse');
-    await page.waitForSelector('#ui-setup.is-collapsed');
-    await page.click('#setup-collapse');
-    await page.waitForSelector('#ui-setup.is-overlay:not(.is-collapsed)');
+    const envRow = rowByLabel(page, 'Env map').locator('div').last();
+    const sceneEnvRow = rowByLabel(page, 'Scene.environment').locator('div').last();
+    const sceneBgRow = rowByLabel(page, 'Scene.background').locator('div').last();
+    const matchRow = rowByLabel(page, 'Env matches loaded').locator('div').last();
 
-    await page.keyboard.press('Escape');
-    await page.waitForSelector('#ui-setup.hidden', { state: 'attached' });
-    await page.waitForSelector('#hud-game:not(.hidden)');
+    await expect(envRow).toHaveText(/Loaded/, { timeout: 30_000 });
+    await expect(sceneEnvRow).toHaveText('Set');
+    await expect(sceneBgRow).toHaveText('HDR');
+    await expect(matchRow).toHaveText('Yes');
 
     expect(await getErrors()).toEqual([]);
 });

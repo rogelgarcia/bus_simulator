@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Atmosphere Debug</title>
+    <link rel="icon" href="../favicon.ico" />
+    <link rel="stylesheet" href="../src/graphics/gui/shared/styles.css" />
+    <link rel="stylesheet" href="../src/graphics/gui/options/styles.css" />
+    <link rel="stylesheet" href="../src/graphics/gui/atmosphere_debugger/styles.css" />
+</head>
+<body>
+<canvas id="game-canvas"></canvas>
+
+<script type="importmap">
+	    {
+	      "imports": {
+	        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+	        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+	        "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+	        "@dimforge/rapier3d-compat": "https://cdn.skypack.dev/pin/@dimforge/rapier3d-compat@v0.19.3-Hmo5REaX4aU99UROofMk/mode=imports/optimized/@dimforge/rapier3d-compat.js",
+	        "/src/": "../src/",
+	        "/tests/": "../tests/"
+	      }
+	    }
+	</script>
+
+<script type="module" src="../src/graphics/gui/atmosphere_debugger/main.js"></script>
+</body>
+</html>
