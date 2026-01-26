@@ -247,11 +247,11 @@ export class GameplayState {
             roughness: 0.18
         });
         const probe = new THREE.Mesh(probeGeo, probeMat);
-        probe.position.set(0, roadY + 4, 0);
+        probe.position.set(0, 4, 0);
         probe.castShadow = true;
         probe.receiveShadow = true;
         probe.name = 'ibl_probe_sphere';
-        this.engine.scene.add(probe);
+        this.busAnchor.add(probe);
         this._iblProbe = probe;
         this.engine.applyCurrentIBLIntensity?.({ force: true });
 
@@ -355,7 +355,7 @@ export class GameplayState {
             this.engine.scene.remove(this.busAnchor);
         }
         if (this._iblProbe) {
-            this.engine.scene.remove(this._iblProbe);
+            this._iblProbe.removeFromParent?.();
             this._iblProbe.geometry?.dispose?.();
             const mat = this._iblProbe.material ?? null;
             if (Array.isArray(mat)) {

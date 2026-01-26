@@ -6,6 +6,10 @@ The standalone Atmosphere Debugger (`/debug_tools/atmosphere_debug.html`) showed
 
 This was fixed by converting the parsed data into a `THREE.DataTexture` with the same settings as `RGBELoader.load(...)`, then feeding that texture into `PMREMGenerator.fromEquirectangular(...)`.
 
+Later, gameplay-specific issues surfaced:
+- Gameplay needed Atmosphere-style semantics: “IBL enabled” affects objects only, while “HDR background” affects only the background.
+- Gameplay’s IBL probe sphere was reported as “black” even when the sky/background changed.
+
 ## What we expected vs what we saw
 
 **Expected:**
@@ -74,6 +78,16 @@ Applied in:
 - `src/graphics/gui/atmosphere_debugger/AtmosphereDebuggerHdri.js`
 - `src/graphics/engine3d/lighting/IBL.js` (shared IBL path also used `parse()`)
 
+### Ensure PMREM env maps use CubeUV reflection mapping
+
+To avoid “env map is set but reflections look black/incorrect” edge cases, we now explicitly set:
+
+- `envMap.mapping = THREE.CubeUVReflectionMapping`
+
+Applied in:
+- `src/graphics/engine3d/lighting/IBL.js`
+- `src/graphics/gui/atmosphere_debugger/AtmosphereDebuggerHdri.js`
+
 ## Headless regression test
 
 We added a Playwright e2e test:
@@ -105,9 +119,55 @@ To make gameplay behave like the Atmosphere Debugger:
 - Keep (or re-load) the raw HDR texture alongside the PMREM env map.
 - When `setBackground` is enabled, set `scene.background` to that HDR texture.
 
+Gameplay also needed to decouple background from IBL:
+- “IBL enabled” toggles `scene.environment` (object lighting/reflections).
+- “HDR background” toggles `scene.background` (sky only).
+
+Previously, disabling IBL cleared the background because `applyIBLToScene(..., enabled: false)` clears `scene.background`. Gameplay now re-applies the HDR background (when enabled) even if IBL is off, matching Atmosphere Debugger behavior.
+
 Headless check:
 
 `tests/headless/e2e/gameplay_ibl_background.pwtest.js`
+
+## Gameplay bug: IBL envMap was a function (not a Texture)
+
+One of the trickiest gameplay regressions was: the **sky/background could change**, but the **probe sphere stayed black** (no HDR reflections), and the Options panel showed `Env mapping: -`.
+
+The root cause was a subtle async mistake in the shared IBL loader (`loadIBLTexture(...)`):
+
+- We assigned `entry.promise = (async () => { ... })` but **forgot to invoke it** (`()`)
+- Because `loadIBLTexture` is itself `async`, the returned promise resolved to an **`AsyncFunction` object**
+- That function object got stored as the “envMap” and applied to `scene.environment`, so:
+  - `scene.background` worked (it uses the raw HDR texture path)
+  - but IBL/reflections did nothing (envMap was not a `THREE.Texture`)
+
+Fix: invoke the async IIFE so `entry.promise` is a real Promise:
+
+```js
+entry.promise = (async () => { ... })();
+```
+
+To make this easier to spot next time, the gameplay Options → Lighting → IBL Status section now also displays:
+- `Env isTexture` / `Env type`
+- `Probe env isTexture` / `Probe env type`
+
+## Gameplay note: probe sphere expectations
+
+Gameplay includes an IBL probe sphere (`ibl_probe_sphere`) as a quick “is the environment map working?” indicator.
+
+- It reflects the **HDRI environment** (`scene.environment`), not the in-game buildings/roads (no raytraced reflections).
+- It is attached to the bus anchor so it stays near the player camera.
+- If it looks black, open Options → Lighting → IBL Status and check:
+  - `Env map` is `Loaded`
+  - `Scene.environment` is `Set`
+  - `Probe envMap` is `Set (matches scene)`
+  - `Probe envMapIntensity` matches the configured intensity
+  - `Probe screen` is not marked `(off)`
+  - `Probe visible` is `Yes` (ray-to-center check; if `No`, you’re sampling/looking through other geometry)
+
+Headless check:
+
+`tests/headless/e2e/gameplay_ibl_probe_reflection.pwtest.js`
 
 ## Debug checklist (if this ever regresses)
 
@@ -115,3 +175,4 @@ Headless check:
 - Confirm the HDR asset is present (not a Git LFS pointer). If it is a pointer, run `git lfs pull`.
 - If you change Three.js versions, re-check `RGBELoader.parse()` return type and verify PMREM still accepts the texture you create.
 - For headless verification, prefer `WebGLRenderingContext.readPixels` over `drawImage/getImageData` when sampling WebGL output.
+- Some city/building materials intentionally disable auto IBL intensity (`iblNoAutoEnvMapIntensity` / `envMapIntensity = 0`). When isolating IBL (sun/hemi = 0), use the probe sphere (or another known PBR test mesh) instead of sampling building walls.

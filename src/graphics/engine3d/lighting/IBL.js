@@ -113,6 +113,7 @@ function createFallbackEnvMap(renderer) {
     const pmrem = new THREE.PMREMGenerator(renderer);
     const envMap = pmrem.fromScene(new RoomEnvironment()).texture;
     pmrem.dispose();
+    if (THREE.CubeUVReflectionMapping) envMap.mapping = THREE.CubeUVReflectionMapping;
     applyHdrColorSpace(envMap);
     envMap.userData = envMap.userData ?? {};
     envMap.userData.iblFallback = true;
@@ -141,6 +142,7 @@ export async function loadIBLTexture(renderer, overrides = {}) {
 
             const envMap = pmrem.fromEquirectangular(hdr).texture;
             pmrem.dispose();
+            if (THREE.CubeUVReflectionMapping) envMap.mapping = THREE.CubeUVReflectionMapping;
             applyHdrColorSpace(envMap);
 
             entry.hdrTexture = hdr;
@@ -174,7 +176,7 @@ export async function loadIBLTexture(renderer, overrides = {}) {
             entry.promise = null;
             return envMap;
         }
-    });
+    })();
 
     return entry.promise;
 }

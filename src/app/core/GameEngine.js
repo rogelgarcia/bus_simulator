@@ -86,6 +86,7 @@ export class GameEngine {
 
         this._ibl = null;
         this._iblPromise = null;
+        this._iblBackground = { url: null, promise: null };
         this._iblAutoScanEnabled = !this._deterministic;
         this._initIBL();
 
@@ -154,6 +155,7 @@ export class GameEngine {
 
         if (!ibl?.enabled) {
             applyIBLToScene(this.scene, null, { enabled: false, setBackground: false });
+            this._ensureIblBackground();
             return;
         }
 
@@ -164,6 +166,7 @@ export class GameEngine {
             return;
         }
 
+        this._ensureIblBackground();
         const requestedUrl = typeof this._ibl.config?.hdrUrl === 'string' ? this._ibl.config.hdrUrl : null;
         this._iblPromise = loadIBLTexture(this.renderer, this._ibl.config).then((envMap) => {
             const currentUrl = typeof this._ibl?.config?.hdrUrl === 'string' ? this._ibl.config.hdrUrl : null;
@@ -207,7 +210,7 @@ export class GameEngine {
         const sceneEnv = this.scene?.environment ?? null;
         const sceneBg = this.scene?.background ?? null;
         const bgIsTexture = !!sceneBg && !!sceneBg.isTexture;
-        const expectedBg = envMap ? getIBLBackgroundTexture(envMap, config) : null;
+        const expectedBg = getIBLBackgroundTexture(envMap, config);
         const hasExpectedBg = !!expectedBg && !!expectedBg.isTexture;
         const bgMatchesHdr = !!expectedBg && sceneBg === expectedBg;
 
@@ -218,6 +221,75 @@ export class GameEngine {
         const probeHasEnvMap = !!probeEnvMap;
         const probeEnvMapIntensity = Number.isFinite(probeMat?.envMapIntensity) ? probeMat.envMapIntensity : null;
         const probeEnvMatchesScene = !!probeEnvMap && probeEnvMap === sceneEnv;
+        const probeMaterialType = typeof probeMat?.type === 'string' ? probeMat.type : null;
+        const probeMetalness = Number.isFinite(probeMat?.metalness) ? probeMat.metalness : null;
+        const probeRoughness = Number.isFinite(probeMat?.roughness) ? probeMat.roughness : null;
+        const envMapIsTexture = !!envMap?.isTexture;
+        const envMapType = envMap ? (envMap.constructor?.name ?? null) : null;
+        const probeEnvMapIsTexture = !!probeEnvMap?.isTexture;
+        const probeEnvMapType = probeEnvMap ? (probeEnvMap.constructor?.name ?? null) : null;
+
+        const mappingLabel = (mapping) => {
+            const m = mapping ?? null;
+            if (m === null || m === undefined) return null;
+            if (THREE.CubeUVReflectionMapping !== undefined && m === THREE.CubeUVReflectionMapping) return 'CubeUV';
+            if (THREE.CubeReflectionMapping !== undefined && m === THREE.CubeReflectionMapping) return 'Cube';
+            if (THREE.EquirectangularReflectionMapping !== undefined && m === THREE.EquirectangularReflectionMapping) return 'Equirectangular';
+            if (THREE.EquirectangularRefractionMapping !== undefined && m === THREE.EquirectangularRefractionMapping) return 'Equirectangular (refract)';
+            return String(m);
+        };
+
+        const envMapMapping = mappingLabel(envMap?.mapping);
+        const probeEnvMapMapping = mappingLabel(probeEnvMap?.mapping);
+
+        let probeScreenUv = null;
+        let probeVisible = null;
+        let probeScreenRadius = null;
+        if (probe && this.camera) {
+            const worldPos = new THREE.Vector3();
+            probe.getWorldPosition(worldPos);
+            const ndcPos = worldPos.clone().project(this.camera);
+            const u = (ndcPos.x + 1) / 2;
+            const v = (1 - ndcPos.y) / 2;
+            const ndcZ = ndcPos.z;
+            const inView = ndcZ >= -1 && ndcZ <= 1 && u >= 0 && u <= 1 && v >= 0 && v <= 1;
+            probeScreenUv = { u, v, ndcZ, inView };
+
+            const sphere = probe.geometry?.boundingSphere ?? null;
+            const radiusWorld = sphere?.radius && Number.isFinite(sphere.radius) ? sphere.radius : 1;
+            const scale = probe.scale?.x && Number.isFinite(probe.scale.x) ? probe.scale.x : 1;
+            const r = radiusWorld * scale;
+            if (r > 0) {
+                const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0).normalize();
+                const edgeNdc = worldPos.clone().addScaledVector(right, r).project(this.camera);
+                const u2 = (edgeNdc.x + 1) / 2;
+                const v2 = (1 - edgeNdc.y) / 2;
+                probeScreenRadius = Number.isFinite(u2) && Number.isFinite(v2) ? Math.hypot(u2 - u, v2 - v) : null;
+            }
+
+            if (inView) {
+                const ndc = new THREE.Vector2((u * 2) - 1, 1 - (v * 2));
+                const ray = new THREE.Raycaster();
+                ray.setFromCamera(ndc, this.camera);
+                const camPos = this.camera.getWorldPosition(new THREE.Vector3());
+                const dist = camPos.distanceTo(worldPos);
+                ray.far = dist + r * 1.05;
+                const hits = ray.intersectObjects(this.scene?.children ?? [], true);
+                const firstVisible = Array.isArray(hits)
+                    ? hits.find((h) => {
+                        const obj = h?.object ?? null;
+                        if (!obj) return false;
+                        let cur = obj;
+                        while (cur) {
+                            if (cur.visible === false) return false;
+                            cur = cur.parent ?? null;
+                        }
+                        return true;
+                    })?.object
+                    : null;
+                probeVisible = !!firstVisible && firstVisible === probe;
+            }
+        }
 
         const userData = envMap?.userData ?? null;
         const userDataKeys = userData && typeof userData === 'object' ? Object.keys(userData) : null;
@@ -233,6 +305,9 @@ export class GameEngine {
             iblId: typeof config?.iblId === 'string' ? config.iblId : null,
             envMapLoaded: !!envMap,
             usingFallbackEnvMap: fallbackFlag,
+            envMapIsTexture,
+            envMapType,
+            envMapMapping,
             hasBackgroundTexture: hasExpectedBg,
             envMapHdrUrl,
             envMapUserDataKeys: userDataKeys,
@@ -242,8 +317,17 @@ export class GameEngine {
             sceneBackgroundMode: !sceneBg ? 'none' : (bgMatchesHdr ? 'hdr' : (bgIsTexture ? 'other' : 'non-texture')),
             probeFound: !!probe,
             probeHasEnvMap,
+            probeEnvMapIsTexture,
+            probeEnvMapType,
+            probeEnvMapMapping,
             probeEnvMapMatchesScene: probeEnvMatchesScene,
-            probeEnvMapIntensity
+            probeEnvMapIntensity,
+            probeMaterialType,
+            probeMetalness,
+            probeRoughness,
+            probeScreenUv,
+            probeScreenRadius,
+            probeVisible
         };
     }
 
@@ -421,18 +505,18 @@ export class GameEngine {
             scanDurationMs: 2000
         };
 
-        this._iblPromise = loadIBLTexture(this.renderer, config).then((envMap) => {
-            this._ibl.envMap = envMap;
-            if (envMap && !envMap?.userData?.iblFallback) {
-                applyIBLToScene(this.scene, envMap, config);
-                const now = performance.now();
-                this._ibl.scanUntilMs = now + this._ibl.scanDurationMs;
-                this._ibl.nextScanMs = 0;
-                applyIBLIntensity(this.scene, config, { force: true });
-                this._ensureIblBackground();
-            }
-            return envMap;
-        }).catch((err) => {
+	        this._iblPromise = loadIBLTexture(this.renderer, config).then((envMap) => {
+	            this._ibl.envMap = envMap;
+	            if (envMap) {
+	                applyIBLToScene(this.scene, envMap, config);
+	                const now = performance.now();
+	                this._ibl.scanUntilMs = now + this._ibl.scanDurationMs;
+	                this._ibl.nextScanMs = 0;
+	                applyIBLIntensity(this.scene, config, { force: true });
+	                this._ensureIblBackground();
+	            }
+	            return envMap;
+	        }).catch((err) => {
             console.warn('[IBL] Failed to load HDR environment map:', err);
             this._ibl.envMap = null;
             return null;
@@ -441,22 +525,56 @@ export class GameEngine {
 
     _ensureIblBackground() {
         const config = this._ibl?.config ?? null;
-        const envMap = this._ibl?.envMap ?? null;
-        if (!config?.enabled || !config?.setBackground || !envMap) return;
+        const city = this._contextProxy?.city ?? null;
+        const cityAttached = !!city?.group && city.group.parent === this.scene;
+        if (!config?.setBackground) {
+            if (cityAttached) {
+                const bg = this.scene?.background ?? null;
+                if (bg && bg.isTexture) this.scene.background = null;
+            }
+            return;
+        }
+        if (!cityAttached) return;
         const hdrUrl = typeof config?.hdrUrl === 'string' ? config.hdrUrl : '';
         if (!hdrUrl) return;
 
+        const envMap = this._ibl?.envMap ?? null;
         const existing = getIBLBackgroundTexture(envMap, config);
         if (existing && existing.isTexture) {
-            if (this.scene?.background !== existing) applyIBLToScene(this.scene, envMap, config);
+            if (this.scene?.background !== existing) this.scene.background = existing;
             return;
         }
 
-        loadIBLBackgroundTexture(hdrUrl).then((hdrTex) => {
-            const stillWants = !!this._ibl?.config?.enabled && !!this._ibl?.config?.setBackground && this._ibl?.envMap === envMap;
-            if (!stillWants || !hdrTex) return;
-            applyIBLToScene(this.scene, envMap, this._ibl.config);
+        const inflight = this._iblBackground?.promise ?? null;
+        if (inflight && this._iblBackground?.url === hdrUrl) return;
+
+        const requestedUrl = hdrUrl;
+        const promise = loadIBLBackgroundTexture(requestedUrl);
+        this._iblBackground = { url: requestedUrl, promise };
+        promise.then((hdrTex) => {
+            if (this._iblBackground?.url === requestedUrl) {
+                this._iblBackground.promise = null;
+            }
+            const stillWants = !!this._ibl?.config?.setBackground && this._ibl?.config?.hdrUrl === requestedUrl;
+            const stillAttached = this._contextProxy?.city?.group?.parent === this.scene;
+            if (!stillWants || !stillAttached || !hdrTex) return;
+
+            const envNow = this._ibl?.envMap ?? null;
+            if (envNow) {
+                envNow.userData = envNow.userData ?? {};
+                envNow.userData.iblBackgroundTexture = hdrTex;
+                envNow.__iblBackgroundTexture = hdrTex;
+            }
+
+            if (this._ibl?.config?.enabled && envNow) {
+                applyIBLToScene(this.scene, envNow, this._ibl.config);
+                return;
+            }
+            this.scene.background = hdrTex;
         }).catch((err) => {
+            if (this._iblBackground?.url === requestedUrl) {
+                this._iblBackground.promise = null;
+            }
             console.warn('[IBL] Failed to load HDR background texture:', err);
         });
     }
@@ -563,6 +681,7 @@ export class GameEngine {
         const now = Number.isFinite(nowMs) ? nowMs : performance.now();
 
         this._stateMachine?.update(stepDt);
+        this._ensureIblBackground();
 
         if (this._ibl?.envMap) {
             const state = this._stateMachine?.current ?? null;

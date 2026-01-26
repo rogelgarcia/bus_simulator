@@ -341,28 +341,96 @@ export class OptionsUI {
 	        const envMapHdrUrl = typeof info?.envMapHdrUrl === 'string' ? info.envMapHdrUrl : null;
 	        const userDataKeys = Array.isArray(info?.envMapUserDataKeys) ? info.envMapUserDataKeys : null;
 	        const intensity = Number.isFinite(info?.envMapIntensity) ? Number(info.envMapIntensity) : null;
+	        const envIsTexture = info?.envMapIsTexture !== undefined ? !!info.envMapIsTexture : null;
+	        const envType = typeof info?.envMapType === 'string' ? info.envMapType : null;
+	        const envMapMapping = typeof info?.envMapMapping === 'string' ? info.envMapMapping : null;
 	        const probeFound = !!info?.probeFound;
 	        const probeHasEnvMap = !!info?.probeHasEnvMap;
 	        const probeMatches = !!info?.probeEnvMapMatchesScene;
+	        const probeEnvIsTexture = info?.probeEnvMapIsTexture !== undefined ? !!info.probeEnvMapIsTexture : null;
+	        const probeEnvType = typeof info?.probeEnvMapType === 'string' ? info.probeEnvMapType : null;
+	        const probeEnvMapMapping = typeof info?.probeEnvMapMapping === 'string' ? info.probeEnvMapMapping : null;
 	        const probeIntensity = Number.isFinite(info?.probeEnvMapIntensity) ? Number(info.probeEnvMapIntensity) : null;
+	        const probeMaterialType = typeof info?.probeMaterialType === 'string' ? info.probeMaterialType : null;
+	        const probeMetalness = Number.isFinite(info?.probeMetalness) ? Number(info.probeMetalness) : null;
+	        const probeRoughness = Number.isFinite(info?.probeRoughness) ? Number(info.probeRoughness) : null;
+	        const probeScreenUv = info?.probeScreenUv ?? null;
+	        const probeVisible = info?.probeVisible !== undefined ? !!info.probeVisible : null;
+	        const probeScreenRadius = Number.isFinite(info?.probeScreenRadius) ? Number(info.probeScreenRadius) : null;
 
-	        els.envMap.textContent = !enabled ? 'Disabled' : (envLoaded ? (fallback ? 'Loaded (fallback)' : 'Loaded') : 'Loading…');
+	        const invalidEnv = envLoaded && envIsTexture === false;
+	        els.envMap.textContent = !enabled
+	            ? 'Disabled'
+	            : (envLoaded
+	                ? (invalidEnv ? 'Loaded (invalid type)' : (fallback ? 'Loaded (fallback)' : 'Loaded'))
+	                : 'Loading…');
 	        els.sceneEnv.textContent = sceneEnv ? 'Set' : 'Null';
 	        els.sceneMatch.textContent = sceneMatch ? 'Yes' : 'No';
 	        els.sceneBg.textContent = bgMode === 'hdr' ? 'HDR' : (bgMode === 'other' ? 'Set (non-HDR)' : (bgMode === 'non-texture' ? 'Set (non-texture)' : 'Null'));
 	        els.bgConfig.textContent = wantsBg ? (hasBgTex ? 'On (HDR ready)' : 'On (missing HDR tex)') : 'Off';
+	        if (els.envIsTexture) {
+	            els.envIsTexture.textContent = !enabled ? '-' : (envLoaded ? (envIsTexture === null ? '-' : (envIsTexture ? 'Yes' : 'No')) : '-');
+	        }
+	        if (els.envType) els.envType.textContent = !enabled ? '-' : (envLoaded ? (envType ?? '-') : '-');
+	        if (els.envMapMapping) els.envMapMapping.textContent = envLoaded ? (envMapMapping ?? '-') : '-';
 	        els.envUserData.textContent = envLoaded
 	            ? `${envMapHdrUrl ? 'iblHdrUrl' : '-'}${userDataKeys?.length ? ` · ${userDataKeys.join(',')}` : ''}`
 	            : '-';
 	        els.hdrUrl.textContent = hdrUrl ?? '-';
 	        els.intensity.textContent = intensity !== null ? intensity.toFixed(2) : '-';
 	        if (els.probeEnvMap) {
-	            els.probeEnvMap.textContent = !probeFound
+	            if (!probeFound) {
+	                els.probeEnvMap.textContent = 'Missing';
+	            } else if (!probeHasEnvMap) {
+	                els.probeEnvMap.textContent = 'Null';
+	            } else if (probeEnvIsTexture === false) {
+	                els.probeEnvMap.textContent = 'Set (invalid type)';
+	            } else {
+	                els.probeEnvMap.textContent = probeMatches ? 'Set (matches scene)' : 'Set';
+	            }
+	        }
+	        if (els.probeEnvIsTexture) {
+	            els.probeEnvIsTexture.textContent = !probeFound
 	                ? 'Missing'
-	                : (probeHasEnvMap ? (probeMatches ? 'Set (matches scene)' : 'Set') : 'Null');
+	                : (probeHasEnvMap ? (probeEnvIsTexture === null ? '-' : (probeEnvIsTexture ? 'Yes' : 'No')) : 'Null');
+	        }
+	        if (els.probeEnvType) {
+	            els.probeEnvType.textContent = !probeFound
+	                ? 'Missing'
+	                : (probeHasEnvMap ? (probeEnvType ?? '-') : 'Null');
+	        }
+	        if (els.probeEnvMapMapping) {
+	            els.probeEnvMapMapping.textContent = !probeFound ? 'Missing' : (probeHasEnvMap ? (probeEnvMapMapping ?? '-') : 'Null');
+	        }
+	        if (els.probeMaterial) {
+	            if (!probeFound) {
+	                els.probeMaterial.textContent = 'Missing';
+	            } else {
+	                const bits = [];
+	                if (probeMaterialType) bits.push(probeMaterialType);
+	                if (probeMetalness !== null) bits.push(`m${probeMetalness.toFixed(2)}`);
+	                if (probeRoughness !== null) bits.push(`r${probeRoughness.toFixed(2)}`);
+	                els.probeMaterial.textContent = bits.length ? bits.join(' ') : '-';
+	            }
 	        }
 	        if (els.probeIntensity) {
 	            els.probeIntensity.textContent = probeIntensity !== null ? probeIntensity.toFixed(2) : (probeFound ? '-' : 'Missing');
+	        }
+	        if (els.probeScreen) {
+	            const u = Number(probeScreenUv?.u);
+	            const v = Number(probeScreenUv?.v);
+	            const inView = probeScreenUv?.inView !== undefined ? !!probeScreenUv.inView : null;
+	            els.probeScreen.textContent = !probeFound
+	                ? 'Missing'
+	                : (Number.isFinite(u) && Number.isFinite(v)
+	                    ? `${u.toFixed(3)},${v.toFixed(3)}${inView === false ? ' (off)' : ''}`
+	                    : '-');
+	        }
+	        if (els.probeVisible) {
+	            els.probeVisible.textContent = !probeFound ? 'Missing' : (probeVisible === null ? '-' : (probeVisible ? 'Yes' : 'No'));
+	        }
+	        if (els.probeRadius) {
+	            els.probeRadius.textContent = !probeFound ? 'Missing' : (probeScreenRadius !== null ? probeScreenRadius.toFixed(4) : '-');
 	        }
 	    }
 
@@ -761,12 +829,12 @@ export class OptionsUI {
         const emit = () => this._emitLiveChange();
         let syncGradeEnabled = () => {};
         let syncSunFlareControls = () => {};
-        const controls = {
-            iblEnabled: makeToggleRow({
-                label: 'IBL enabled',
-                value: d.ibl.enabled,
-                onChange: (v) => { d.ibl.enabled = v; emit(); }
-            }),
+	        const controls = {
+	            iblEnabled: makeToggleRow({
+	                label: 'IBL enabled',
+	                value: d.ibl.enabled,
+	                onChange: (v) => { d.ibl.enabled = v; emit(); }
+	            }),
             iblIntensity: makeNumberSliderRow({
                 label: 'IBL intensity (envMapIntensity)',
                 value: d.ibl.envMapIntensity,
@@ -776,11 +844,11 @@ export class OptionsUI {
                 digits: 2,
                 onChange: (v) => { d.ibl.envMapIntensity = v; emit(); }
             }),
-            iblBackground: makeToggleRow({
-                label: 'IBL background (setBackground)',
-                value: d.ibl.setBackground,
-                onChange: (v) => { d.ibl.setBackground = v; emit(); }
-            }),
+	            iblBackground: makeToggleRow({
+	                label: 'HDR background',
+	                value: d.ibl.setBackground,
+	                onChange: (v) => { d.ibl.setBackground = v; emit(); }
+	            }),
             exposure: makeNumberSliderRow({
                 label: 'Tone mapping exposure',
                 value: d.exposure,
@@ -928,21 +996,41 @@ export class OptionsUI {
 	            const rowIntensity = makeValueRow({ label: 'Config intensity', value: '-' });
 	            const rowSceneEnv = makeValueRow({ label: 'Scene.environment', value: '-' });
 	            const rowSceneBg = makeValueRow({ label: 'Scene.background', value: '-' });
-	            const rowBgConfig = makeValueRow({ label: 'Config setBackground', value: '-' });
+	            const rowBgConfig = makeValueRow({ label: 'Config HDR background', value: '-' });
+	            const rowEnvIsTexture = makeValueRow({ label: 'Env isTexture', value: '-' });
+	            const rowEnvType = makeValueRow({ label: 'Env type', value: '-' });
+	            const rowEnvMapMapping = makeValueRow({ label: 'Env mapping', value: '-' });
 	            const rowEnvUserData = makeValueRow({ label: 'Env userData', value: '-' });
 	            const rowSceneMatch = makeValueRow({ label: 'Env matches loaded', value: '-' });
 	            const rowProbeEnvMap = makeValueRow({ label: 'Probe envMap', value: '-' });
+	            const rowProbeEnvIsTexture = makeValueRow({ label: 'Probe env isTexture', value: '-' });
+	            const rowProbeEnvType = makeValueRow({ label: 'Probe env type', value: '-' });
+	            const rowProbeEnvMapMapping = makeValueRow({ label: 'Probe env mapping', value: '-' });
+	            const rowProbeMaterial = makeValueRow({ label: 'Probe material', value: '-' });
 	            const rowProbeIntensity = makeValueRow({ label: 'Probe envMapIntensity', value: '-' });
+	            const rowProbeScreen = makeValueRow({ label: 'Probe screen', value: '-' });
+	            const rowProbeVisible = makeValueRow({ label: 'Probe visible', value: '-' });
+	            const rowProbeRadius = makeValueRow({ label: 'Probe radius', value: '-' });
 	            const rowHdrUrl = makeValueRow({ label: 'HDR URL', value: '-' });
 	            iblStatusSection.appendChild(rowEnvMap.row);
 	            iblStatusSection.appendChild(rowIntensity.row);
 	            iblStatusSection.appendChild(rowSceneEnv.row);
 	            iblStatusSection.appendChild(rowSceneBg.row);
 	            iblStatusSection.appendChild(rowBgConfig.row);
+	            iblStatusSection.appendChild(rowEnvIsTexture.row);
+	            iblStatusSection.appendChild(rowEnvType.row);
+	            iblStatusSection.appendChild(rowEnvMapMapping.row);
 	            iblStatusSection.appendChild(rowEnvUserData.row);
 	            iblStatusSection.appendChild(rowSceneMatch.row);
 	            iblStatusSection.appendChild(rowProbeEnvMap.row);
+	            iblStatusSection.appendChild(rowProbeEnvIsTexture.row);
+	            iblStatusSection.appendChild(rowProbeEnvType.row);
+	            iblStatusSection.appendChild(rowProbeEnvMapMapping.row);
+	            iblStatusSection.appendChild(rowProbeMaterial.row);
 	            iblStatusSection.appendChild(rowProbeIntensity.row);
+	            iblStatusSection.appendChild(rowProbeScreen.row);
+	            iblStatusSection.appendChild(rowProbeVisible.row);
+	            iblStatusSection.appendChild(rowProbeRadius.row);
 	            iblStatusSection.appendChild(rowHdrUrl.row);
 	            this._iblDebugEls = {
 	                envMap: rowEnvMap.text,
@@ -950,10 +1038,20 @@ export class OptionsUI {
 	                sceneEnv: rowSceneEnv.text,
 	                sceneBg: rowSceneBg.text,
 	                bgConfig: rowBgConfig.text,
+	                envIsTexture: rowEnvIsTexture.text,
+	                envType: rowEnvType.text,
+	                envMapMapping: rowEnvMapMapping.text,
 	                envUserData: rowEnvUserData.text,
 	                sceneMatch: rowSceneMatch.text,
 	                probeEnvMap: rowProbeEnvMap.text,
+	                probeEnvIsTexture: rowProbeEnvIsTexture.text,
+	                probeEnvType: rowProbeEnvType.text,
+	                probeEnvMapMapping: rowProbeEnvMapMapping.text,
+	                probeMaterial: rowProbeMaterial.text,
 	                probeIntensity: rowProbeIntensity.text,
+	                probeScreen: rowProbeScreen.text,
+	                probeVisible: rowProbeVisible.text,
+	                probeRadius: rowProbeRadius.text,
 	                hdrUrl: rowHdrUrl.text
 	            };
 	        }

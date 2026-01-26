@@ -155,6 +155,7 @@ export async function loadHdriEnvironment(renderer, hdrUrl) {
     pmrem.compileEquirectangularShader?.();
     const envMap = pmrem.fromEquirectangular(hdr).texture;
     pmrem.dispose();
+    if (THREE.CubeUVReflectionMapping) envMap.mapping = THREE.CubeUVReflectionMapping;
     applyHdrColorSpace(envMap);
 
     return { hdrTexture: hdr, envMap, sunDirection };

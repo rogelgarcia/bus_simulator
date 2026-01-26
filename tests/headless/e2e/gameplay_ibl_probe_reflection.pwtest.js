@@ -118,6 +118,28 @@ function maxLuma(result) {
     return Math.max(...Object.values(pts).map((p) => Number(p?.luma) || 0));
 }
 
+function clamp01(v) {
+    const num = Number(v);
+    if (!Number.isFinite(num)) return 0;
+    return Math.min(1, Math.max(0, num));
+}
+
+function parseProbeScreenUv(text) {
+    const m = String(text ?? '').trim().match(/(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
+    if (!m) return null;
+    const u = Number(m[1]);
+    const v = Number(m[2]);
+    if (!Number.isFinite(u) || !Number.isFinite(v)) return null;
+    return { u, v };
+}
+
+function parseNumber(text) {
+    const m = String(text ?? '').match(/-?\d+(?:\.\d+)?/);
+    if (!m) return null;
+    const n = Number(m[0]);
+    return Number.isFinite(n) ? n : null;
+}
+
 test('Gameplay: IBL lights the probe sphere', async ({ page }) => {
     const getErrors = await attachFailFastConsole({ page });
     await page.setViewportSize({ width: 960, height: 540 });
@@ -136,37 +158,84 @@ test('Gameplay: IBL lights the probe sphere', async ({ page }) => {
     await setNumber(page, 'Sun intensity', 0);
     await setNumber(page, 'Hemisphere intensity', 0);
     await setNumber(page, 'IBL intensity (envMapIntensity)', 5);
-    await setToggle(page, 'IBL background (setBackground)', true);
+    await setToggle(page, 'HDR background', true);
 
-    const probePoints = [
-        { id: 'p1', u: 0.50, v: 0.40 },
-        { id: 'p2', u: 0.50, v: 0.42 },
-        { id: 'p3', u: 0.50, v: 0.45 },
-        { id: 'p4', u: 0.47, v: 0.43 },
-        { id: 'p5', u: 0.53, v: 0.43 },
-        { id: 'p6', u: 0.48, v: 0.45 },
-        { id: 'p7', u: 0.52, v: 0.45 }
-    ];
+    const probeScreenRow = rowByLabel(page, 'Probe screen').locator('div').last();
+    const probeVisibleRow = rowByLabel(page, 'Probe visible').locator('div').last();
+    const probeRadiusRow = rowByLabel(page, 'Probe radius').locator('div').last();
+    await expect(probeScreenRow).toHaveText(/,/, { timeout: 30_000 });
+    await expect(probeVisibleRow).toHaveText(/Yes/, { timeout: 30_000 });
 
     await setToggle(page, 'IBL enabled', false);
-    await waitFrames(page, 4);
-    const iblOff = await readPixels(page, { samplePoints: probePoints });
+    await waitFrames(page, 20);
+
+    const offScreenText = await probeScreenRow.textContent();
+    const offUv = parseProbeScreenUv(offScreenText);
+    expect(offUv).not.toBeNull();
+    const offRadiusText = await probeRadiusRow.textContent();
+    const offRadius = parseNumber(offRadiusText);
+    expect(offRadius).not.toBeNull();
+    const rOff = Math.max(0.003, Math.min(0.05, offRadius * 0.35));
+    const offU = clamp01(offUv.u);
+    const offV = clamp01(offUv.v);
+    const offPoints = [
+        { id: 'c', u: offU, v: offV },
+        { id: 'u1', u: clamp01(offU + rOff), v: offV },
+        { id: 'u2', u: clamp01(offU - rOff), v: offV },
+        { id: 'v1', u: offU, v: clamp01(offV + rOff) },
+        { id: 'v2', u: offU, v: clamp01(offV - rOff) },
+        { id: 'd1', u: clamp01(offU + rOff * 0.75), v: clamp01(offV + rOff * 0.75) },
+        { id: 'd2', u: clamp01(offU - rOff * 0.75), v: clamp01(offV + rOff * 0.75) },
+        { id: 'd3', u: clamp01(offU + rOff * 0.75), v: clamp01(offV - rOff * 0.75) },
+        { id: 'd4', u: clamp01(offU - rOff * 0.75), v: clamp01(offV - rOff * 0.75) }
+    ];
+    const iblOff = await readPixels(page, { samplePoints: offPoints });
     expect(iblOff.ok).toBe(true);
 
     await setToggle(page, 'IBL enabled', true);
 
     const envRow = rowByLabel(page, 'Env map').locator('div').last();
+    const envIsTextureRow = rowByLabel(page, 'Env isTexture').locator('div').last();
+    const envMappingRow = rowByLabel(page, 'Env mapping').locator('div').last();
     const probeEnvRow = rowByLabel(page, 'Probe envMap').locator('div').last();
+    const probeEnvIsTextureRow = rowByLabel(page, 'Probe env isTexture').locator('div').last();
+    const probeEnvMappingRow = rowByLabel(page, 'Probe env mapping').locator('div').last();
     const probeIntensityRow = rowByLabel(page, 'Probe envMapIntensity').locator('div').last();
 
     await expect(envRow).toHaveText(/Loaded/, { timeout: 30_000 });
+    await expect(envIsTextureRow).toHaveText('Yes');
+    await expect(envMappingRow).toHaveText('CubeUV');
     await expect(probeEnvRow).toHaveText(/Set/, { timeout: 30_000 });
+    await expect(probeEnvIsTextureRow).toHaveText('Yes');
+    await expect(probeEnvMappingRow).toHaveText('CubeUV');
     await expect(probeIntensityRow).toHaveText(/5\.00|4\.99|5\.0/, { timeout: 30_000 });
 
-    await waitFrames(page, 8);
-    const iblOn = await readPixels(page, { samplePoints: probePoints });
+    await waitFrames(page, 20);
+    const onScreenText = await probeScreenRow.textContent();
+    const onUv = parseProbeScreenUv(onScreenText);
+    expect(onUv).not.toBeNull();
+    const onRadiusText = await probeRadiusRow.textContent();
+    const onRadius = parseNumber(onRadiusText);
+    expect(onRadius).not.toBeNull();
+    const rOn = Math.max(0.003, Math.min(0.05, onRadius * 0.35));
+    const onU = clamp01(onUv.u);
+    const onV = clamp01(onUv.v);
+    const onPoints = [
+        { id: 'c', u: onU, v: onV },
+        { id: 'u1', u: clamp01(onU + rOn), v: onV },
+        { id: 'u2', u: clamp01(onU - rOn), v: onV },
+        { id: 'v1', u: onU, v: clamp01(onV + rOn) },
+        { id: 'v2', u: onU, v: clamp01(onV - rOn) },
+        { id: 'd1', u: clamp01(onU + rOn * 0.75), v: clamp01(onV + rOn * 0.75) },
+        { id: 'd2', u: clamp01(onU - rOn * 0.75), v: clamp01(onV + rOn * 0.75) },
+        { id: 'd3', u: clamp01(onU + rOn * 0.75), v: clamp01(onV - rOn * 0.75) },
+        { id: 'd4', u: clamp01(onU - rOn * 0.75), v: clamp01(onV - rOn * 0.75) }
+    ];
+    const iblOn = await readPixels(page, { samplePoints: onPoints });
     expect(iblOn.ok).toBe(true);
 
-    expect(maxLuma(iblOn)).toBeGreaterThan(maxLuma(iblOff) + 0.02);
+    const offMax = maxLuma(iblOff);
+    const onMax = maxLuma(iblOn);
+    expect(onMax, `IBL on max luma ${onMax.toFixed(4)} should exceed IBL off ${offMax.toFixed(4)} (probeUv ${onU.toFixed(3)},${onV.toFixed(3)} r=${rOn.toFixed(4)})`).toBeGreaterThan(offMax + 0.01);
     expect(await getErrors()).toEqual([]);
 });

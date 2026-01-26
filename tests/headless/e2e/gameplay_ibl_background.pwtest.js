@@ -82,18 +82,28 @@ test('Gameplay: enabling IBL + background updates IBL status', async ({ page }) 
     await page.waitForSelector('#ui-options');
 
     await setToggle(page, 'IBL enabled', true);
-    await setToggle(page, 'IBL background (setBackground)', true);
+    await setToggle(page, 'HDR background', true);
     await setNumber(page, 'IBL intensity (envMapIntensity)', 1.5);
 
     const envRow = rowByLabel(page, 'Env map').locator('div').last();
+    const envIsTextureRow = rowByLabel(page, 'Env isTexture').locator('div').last();
+    const envMappingRow = rowByLabel(page, 'Env mapping').locator('div').last();
     const sceneEnvRow = rowByLabel(page, 'Scene.environment').locator('div').last();
     const sceneBgRow = rowByLabel(page, 'Scene.background').locator('div').last();
     const matchRow = rowByLabel(page, 'Env matches loaded').locator('div').last();
 
     await expect(envRow).toHaveText(/Loaded/, { timeout: 30_000 });
+    await expect(envIsTextureRow).toHaveText('Yes');
+    await expect(envMappingRow).toHaveText('CubeUV');
     await expect(sceneEnvRow).toHaveText('Set');
     await expect(sceneBgRow).toHaveText('HDR');
     await expect(matchRow).toHaveText('Yes');
+
+    await setToggle(page, 'IBL enabled', false);
+
+    await expect(envRow).toHaveText('Disabled', { timeout: 15_000 });
+    await expect(sceneEnvRow).toHaveText('Null');
+    await expect(sceneBgRow).toHaveText('HDR');
 
     expect(await getErrors()).toEqual([]);
 });
