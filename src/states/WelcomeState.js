@@ -94,15 +94,17 @@ export class WelcomeState {
         const isSpace = code === 'Space' || key === ' ' || key === 'Spacebar';
         const isG = code === 'KeyG' || key === 'g' || key === 'G';
         const isQ = code === 'KeyQ' || key === 'q' || key === 'Q';
+        const is8 = code === 'Digit8' || code === 'Numpad8' || key === '8';
 
         const typed = typeof key === 'string' ? key.toUpperCase() : '';
         const scene = getSceneShortcutByKey(typed);
 
-        if (isEnter || isSpace || scene || isG || isQ) e.preventDefault();
+        if (isEnter || isSpace || scene || isG || isQ || is8) e.preventDefault();
 
         if (scene) return this._goScene(scene.id);
         if (isG) return this._garage();
         if (isQ) return this._setup();
+        if (is8) return window.location.assign(new URL('debug_tools/asphalt_debug.html', window.location.href).toString());
         if (isEnter || isSpace) return this._start();
     }
 }

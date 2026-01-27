@@ -17,6 +17,7 @@ Rules:
   - `VEHICLES`
   - `TRAFFIC`
   - `BUILDINGS`
+  - `WINDOWS`
   - `PEDESTRIANS`
   - `COLLISION`
   - `CITY`
@@ -28,6 +29,10 @@ Rules:
   - `REPORTS`
   - `REFACTOR`
   - `PROJECTMAINTENANCE`
+  - `TESTS`
+  - `DOCUMENTATION`
+  - `ATMOSPHERE`
+  - `UI`
 - `title` is lowercase, words separated by `_`.
 - Prefer no file extension (match existing `AI_*` files in the repo).
 

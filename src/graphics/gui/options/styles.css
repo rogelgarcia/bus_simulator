@@ -8,6 +8,7 @@
     right: 0;
     bottom: 0;
     width: var(--options-dock-width);
+    --options-number-width: 92px;
     justify-content: stretch;
     align-items: stretch;
     background: rgba(10, 14, 20, 0.92);
@@ -97,7 +98,7 @@
     padding: 10px 12px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
 }
 
 .options-section-title {
@@ -137,6 +138,7 @@
 .options-row-control-wide {
     justify-content: stretch;
     flex-wrap: wrap;
+    row-gap: 6px;
 }
 
 .options-toggle-switch {
@@ -201,20 +203,28 @@
 }
 
 .options-range {
-    width: 100%;
     max-width: 100%;
-    min-width: 140px;
-    flex: 1 1 180px;
+    min-width: 160px;
+    flex: 1 1 0;
 }
 
 .options-number {
-    width: 80px;
+    width: var(--options-number-width);
     flex: 0 0 auto;
     padding: 8px 10px;
     border-radius: 10px;
     border: 1px solid rgba(255,255,255,0.14);
     background: rgba(0,0,0,0.25);
     color: #e9f2ff;
+    box-sizing: border-box;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.options-range:focus-visible,
+.options-number:focus-visible {
+    outline: 2px solid rgba(100, 210, 255, 0.55);
+    outline-offset: 2px;
 }
 
 .options-choice-group {
@@ -314,10 +324,5 @@
 
     .options-row-control {
         justify-content: stretch;
-    }
-
-    .options-range {
-        width: 100%;
-        flex: 1 1 auto;
     }
 }

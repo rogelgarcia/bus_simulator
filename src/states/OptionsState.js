@@ -3,6 +3,8 @@
 
 import { OptionsUI } from '../graphics/gui/options/OptionsUI.js';
 import { applyAsphaltRoadVisualsToMeshStandardMaterial } from '../graphics/visuals/city/AsphaltRoadVisuals.js';
+import { applyAsphaltEdgeWearVisualsToMeshStandardMaterial } from '../graphics/visuals/city/AsphaltEdgeWearVisuals.js';
+import { applyAsphaltMarkingsNoiseVisualsToMeshStandardMaterial } from '../graphics/visuals/city/AsphaltMarkingsNoiseVisuals.js';
 import { saveLightingSettings } from '../graphics/lighting/LightingSettings.js';
 import { saveBloomSettings } from '../graphics/visuals/postprocessing/BloomSettings.js';
 import { getResolvedAsphaltNoiseSettings, saveAsphaltNoiseSettings } from '../graphics/visuals/city/AsphaltNoiseSettings.js';
@@ -124,6 +126,41 @@ export class OptionsState {
                         dirtyStrength: asphaltNoise.fine?.dirtyStrength,
                         roughnessStrength: asphaltNoise.fine?.roughnessStrength,
                         normalStrength: asphaltNoise.fine?.normalStrength
+                    },
+                    markings: {
+                        enabled: asphaltNoise.markings?.enabled,
+                        colorStrength: asphaltNoise.markings?.colorStrength,
+                        roughnessStrength: asphaltNoise.markings?.roughnessStrength,
+                        debug: asphaltNoise.markings?.debug
+                    },
+                    color: {
+                        value: asphaltNoise.color?.value,
+                        warmCool: asphaltNoise.color?.warmCool,
+                        saturation: asphaltNoise.color?.saturation
+                    },
+                    livedIn: {
+                        edgeDirt: {
+                            enabled: asphaltNoise.livedIn?.edgeDirt?.enabled,
+                            strength: asphaltNoise.livedIn?.edgeDirt?.strength,
+                            width: asphaltNoise.livedIn?.edgeDirt?.width,
+                            scale: asphaltNoise.livedIn?.edgeDirt?.scale
+                        },
+                        cracks: {
+                            enabled: asphaltNoise.livedIn?.cracks?.enabled,
+                            strength: asphaltNoise.livedIn?.cracks?.strength,
+                            scale: asphaltNoise.livedIn?.cracks?.scale
+                        },
+                        patches: {
+                            enabled: asphaltNoise.livedIn?.patches?.enabled,
+                            strength: asphaltNoise.livedIn?.patches?.strength,
+                            scale: asphaltNoise.livedIn?.patches?.scale,
+                            coverage: asphaltNoise.livedIn?.patches?.coverage
+                        },
+                        tireWear: {
+                            enabled: asphaltNoise.livedIn?.tireWear?.enabled,
+                            strength: asphaltNoise.livedIn?.tireWear?.strength,
+                            scale: asphaltNoise.livedIn?.tireWear?.scale
+                        }
                     }
                 }
                 : null,
@@ -214,12 +251,67 @@ export class OptionsState {
 
         if (asphaltNoise && city?.materials?.road) {
             const roadSeed = city?.map?.roadNetwork?.seed ?? 'roads';
-            applyAsphaltRoadVisualsToMeshStandardMaterial(city.materials.road, {
+            const mats = new Set();
+            if (city.materials.road?.isMeshStandardMaterial) mats.add(city.materials.road);
+            if (city.roads?.asphalt?.material?.isMeshStandardMaterial) mats.add(city.roads.asphalt.material);
+            for (const mat of mats) {
+                applyAsphaltRoadVisualsToMeshStandardMaterial(mat, {
+                    asphaltNoise,
+                    seed: roadSeed,
+                    baseColorHex: 0x2b2b2b,
+                    baseRoughness: 0.95
+                });
+            }
+
+            applyAsphaltMarkingsNoiseVisualsToMeshStandardMaterial(city.materials.laneWhite, {
                 asphaltNoise,
-                seed: roadSeed,
-                baseColorHex: 0x2b2b2b,
-                baseRoughness: 0.95
+                asphaltFineRoughnessMap: city.materials.road?.roughnessMap ?? null,
+                asphaltFineScale: asphaltNoise?.fine?.scale,
+                asphaltFineBaseRoughness: 0.95,
+                asphaltFineRoughnessStrength: asphaltNoise?.fine?.roughnessStrength
             });
+            applyAsphaltMarkingsNoiseVisualsToMeshStandardMaterial(city.materials.laneYellow, {
+                asphaltNoise,
+                asphaltFineRoughnessMap: city.materials.road?.roughnessMap ?? null,
+                asphaltFineScale: asphaltNoise?.fine?.scale,
+                asphaltFineBaseRoughness: 0.95,
+                asphaltFineRoughnessStrength: asphaltNoise?.fine?.roughnessStrength
+            });
+
+            for (const mat of mats) {
+                const cfg = mat?.userData?.roadMarkingsAsphaltNoiseConfig ?? null;
+                if (!cfg) continue;
+                cfg.enabled = asphaltNoise?.markings?.enabled === true;
+                cfg.debug = asphaltNoise?.markings?.debug === true;
+                cfg.colorStrength = cfg.enabled ? Math.max(0.0, Math.min(0.5, Number(asphaltNoise?.markings?.colorStrength) || 0)) : 0.0;
+                cfg.roughnessStrength = cfg.enabled ? Math.max(0.0, Math.min(0.5, Number(asphaltNoise?.markings?.roughnessStrength) || 0)) : 0.0;
+                cfg.fineScale = Math.max(0.1, Math.min(15.0, Number(asphaltNoise?.fine?.scale) || 12.0));
+                cfg.fineBaseRoughness = Math.max(0.0, Math.min(1.0, Number(mat?.userData?.asphaltRoadBase?.roughness) || 0.95));
+                cfg.fineRoughnessStrength = (asphaltNoise?.fine?.roughness !== false && mat?.roughnessMap)
+                    ? Math.max(0.0, Math.min(0.5, Number(asphaltNoise?.fine?.roughnessStrength) || 0))
+                    : 0.0;
+
+                const uniforms = cfg.shaderUniforms ?? null;
+                if (!uniforms) continue;
+                if (uniforms.uRoadMarkingsAsphaltNoiseEnabled) uniforms.uRoadMarkingsAsphaltNoiseEnabled.value = cfg.enabled ? 1.0 : 0.0;
+                if (uniforms.uRoadMarkingsAsphaltNoiseColorStrength) uniforms.uRoadMarkingsAsphaltNoiseColorStrength.value = cfg.colorStrength;
+                if (uniforms.uRoadMarkingsAsphaltNoiseRoughnessStrength) uniforms.uRoadMarkingsAsphaltNoiseRoughnessStrength.value = cfg.roughnessStrength;
+                if (uniforms.uRoadMarkingsAsphaltNoiseDebug) uniforms.uRoadMarkingsAsphaltNoiseDebug.value = cfg.debug ? 1.0 : 0.0;
+                if (uniforms.uRoadMarkingsAsphaltFineScale) uniforms.uRoadMarkingsAsphaltFineScale.value = cfg.fineScale;
+                if (uniforms.uRoadMarkingsAsphaltFineBaseRoughness) uniforms.uRoadMarkingsAsphaltFineBaseRoughness.value = cfg.fineBaseRoughness;
+                if (uniforms.uRoadMarkingsAsphaltFineRoughnessStrength) uniforms.uRoadMarkingsAsphaltFineRoughnessStrength.value = cfg.fineRoughnessStrength;
+            }
+
+            const edgeMats = new Set();
+            if (city.materials.roadEdgeWear?.isMeshStandardMaterial) edgeMats.add(city.materials.roadEdgeWear);
+            if (city.roads?.asphaltEdgeWear?.material?.isMeshStandardMaterial) edgeMats.add(city.roads.asphaltEdgeWear.material);
+            for (const mat of edgeMats) {
+                applyAsphaltEdgeWearVisualsToMeshStandardMaterial(mat, {
+                    asphaltNoise,
+                    seed: roadSeed,
+                    maxWidth: 1.25
+                });
+            }
         }
     }
 

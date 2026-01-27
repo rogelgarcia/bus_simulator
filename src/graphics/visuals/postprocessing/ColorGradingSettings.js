@@ -4,9 +4,14 @@
 
 const STORAGE_KEY = 'bus_sim.colorGrading.v1';
 
-export const COLOR_GRADING_DEFAULTS = Object.freeze({
+const LEGACY_COLOR_GRADING_DEFAULTS_V1 = Object.freeze({
     preset: 'off',
     intensity: 1.0
+});
+
+export const COLOR_GRADING_DEFAULTS = Object.freeze({
+    preset: 'off',
+    intensity: 0.24
 });
 
 function clamp(value, min, max, fallback) {
@@ -50,7 +55,18 @@ export function loadSavedColorGradingSettings() {
     const raw = storage.getItem(STORAGE_KEY);
     if (!raw) return null;
     try {
-        return sanitizeColorGradingSettings(JSON.parse(raw));
+        const saved = sanitizeColorGradingSettings(JSON.parse(raw));
+        const isLegacyDefault = saved.preset === LEGACY_COLOR_GRADING_DEFAULTS_V1.preset
+            && saved.intensity === LEGACY_COLOR_GRADING_DEFAULTS_V1.intensity;
+        if (!isLegacyDefault) return saved;
+
+        const migrated = sanitizeColorGradingSettings(COLOR_GRADING_DEFAULTS);
+        try {
+            storage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+        } catch {
+            // ignore storage write failures
+        }
+        return migrated;
     } catch {
         return null;
     }
@@ -97,4 +113,3 @@ export function getResolvedColorGradingSettings({ includeUrlOverrides = true } =
 export function getDefaultResolvedColorGradingSettings() {
     return sanitizeColorGradingSettings(COLOR_GRADING_DEFAULTS);
 }
-

@@ -4,13 +4,15 @@ import { scenarioCityStraightRoad } from './scenario_city_straight_road.js';
 import { scenarioCityCrossing } from './scenario_city_crossing.js';
 import { scenarioRoadSurfaceVariationCompare } from './scenario_road_surface_variation_compare.js';
 import { scenarioAsphaltNoiseDebug } from './scenario_asphalt_noise_debug.js';
+import { scenarioRoadMarkingsTexturedAsphalt } from './scenario_road_markings_textured_asphalt.js';
 
 const REGISTRY = new Map([
     [scenarioEmpty.id, scenarioEmpty],
     [scenarioCityStraightRoad.id, scenarioCityStraightRoad],
     [scenarioCityCrossing.id, scenarioCityCrossing],
     [scenarioRoadSurfaceVariationCompare.id, scenarioRoadSurfaceVariationCompare],
-    [scenarioAsphaltNoiseDebug.id, scenarioAsphaltNoiseDebug]
+    [scenarioAsphaltNoiseDebug.id, scenarioAsphaltNoiseDebug],
+    [scenarioRoadMarkingsTexturedAsphalt.id, scenarioRoadMarkingsTexturedAsphalt]
 ]);
 
 export function listScenarioIds() {

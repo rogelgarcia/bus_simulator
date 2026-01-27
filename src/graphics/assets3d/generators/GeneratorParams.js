@@ -1,4 +1,5 @@
 // src/graphics/assets3d/generators/GeneratorParams.js
+import { ROAD_MARKING_WHITE_TARGET_SUN_HEX, ROAD_MARKING_YELLOW_TARGET_SUN_HEX } from '../materials/RoadMarkingsColors.js';
 function isObj(v) {
     return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
@@ -247,7 +248,7 @@ export const ROAD_DEFAULTS = {
     markings: {
         lineWidth: 0.18,
         edgeInset: 0.33,
-        lift: 0.003
+        lift: 0.01
     },
     visuals: {
         asphalt: {
@@ -259,6 +260,8 @@ export const ROAD_DEFAULTS = {
         },
         markings: {
             enabled: true,
+            whiteColorHex: ROAD_MARKING_WHITE_TARGET_SUN_HEX,
+            yellowColorHex: ROAD_MARKING_YELLOW_TARGET_SUN_HEX,
             scale: 1.4,
             colorStrength: 0.12,
             roughnessStrength: 0.26,

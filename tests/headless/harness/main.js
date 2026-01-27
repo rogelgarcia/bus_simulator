@@ -240,6 +240,16 @@ function getMetrics() {
         seed: state.seed,
         fixedDt: state.fixedDt,
         nowMs: state.nowMs,
+        camera: state.engine?.camera ? {
+            near: Number.isFinite(state.engine.camera.near) ? state.engine.camera.near : null,
+            far: Number.isFinite(state.engine.camera.far) ? state.engine.camera.far : null,
+            layersMask: Number.isFinite(state.engine.camera.layers?.mask) ? state.engine.camera.layers.mask : null,
+            position: state.engine.camera.position ? {
+                x: state.engine.camera.position.x ?? 0,
+                y: state.engine.camera.position.y ?? 0,
+                z: state.engine.camera.position.z ?? 0
+            } : null
+        } : null,
         scenario: state.scenario?.getMetrics?.() ?? null,
         renderer: info ? {
             memory: info.memory,
@@ -255,6 +265,52 @@ function getBloomDebugInfo() {
 
 function getColorGradingDebugInfo() {
     return state.engine?.getColorGradingDebugInfo?.() ?? null;
+}
+
+function getSceneObjectStatsByName(name) {
+    const target = String(name ?? '');
+    const out = { name: target, count: 0, visibleCount: 0, types: {} };
+    if (!target || !state.engine?.scene) return out;
+    state.engine.scene.traverse((obj) => {
+        if (!obj || obj.name !== target) return;
+        out.count += 1;
+        if (obj.visible !== false) out.visibleCount += 1;
+        const type = String(obj.type ?? obj.constructor?.name ?? 'Object3D');
+        out.types[type] = (out.types[type] || 0) + 1;
+    });
+    return out;
+}
+
+function setSceneObjectVisibleByName(name, visible) {
+    const target = String(name ?? '');
+    if (!target || !state.engine?.scene) return 0;
+    const next = visible !== false;
+    let count = 0;
+    state.engine.scene.traverse((obj) => {
+        if (!obj || obj.name !== target) return;
+        obj.visible = next;
+        count += 1;
+    });
+    return count;
+}
+
+function setRoadMarkingsOverlayEnabled(enabled) {
+    const next = enabled !== false;
+    if (!state.engine?.scene) return 0;
+    let count = 0;
+    state.engine.scene.traverse((obj) => {
+        const mat = obj?.material ?? null;
+        if (!mat) return;
+        const mats = Array.isArray(mat) ? mat : [mat];
+        for (const m of mats) {
+            if (!m?.userData?.roadMarkingsOverlay) continue;
+            m.userData.roadMarkingsOverlayEnabled = next;
+            const uniforms = m.userData.roadMarkingsOverlayUniforms ?? null;
+            if (uniforms?.uRoadMarkingsEnabled) uniforms.uRoadMarkingsEnabled.value = next ? 1.0 : 0.0;
+            count += 1;
+        }
+    });
+    return count;
 }
 
 function init() {
@@ -303,6 +359,9 @@ window.__testHooks = {
     getMetrics,
     getBloomDebugInfo,
     getColorGradingDebugInfo,
+    getSceneObjectStatsByName,
+    setSceneObjectVisibleByName,
+    setRoadMarkingsOverlayEnabled,
     assert,
     pass,
     fail

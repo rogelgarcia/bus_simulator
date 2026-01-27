@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Road Markings Calibration</title>
+    <link rel="icon" href="../favicon.ico" />
+    <link rel="stylesheet" href="../src/graphics/gui/shared/styles.css" />
+    <link rel="stylesheet" href="../src/graphics/gui/options/styles.css" />
+</head>
+<body>
+<canvas id="game-canvas"></canvas>
+
+<div class="ui-layer options-layer" id="ui-road-markings-calibration">
+    <div class="ui-panel is-interactive options-panel">
+        <div class="options-header">
+            <div class="options-title">Road Markings Calibration</div>
+            <div class="options-subtitle">Press Esc to return to Welcome</div>
+        </div>
+        <div class="options-body">
+            <div class="options-section">
+                <div class="options-section-title">Settings</div>
+                <div id="calib-settings"></div>
+            </div>
+            <div class="options-section">
+                <div class="options-section-title">Measured (sRGB)</div>
+                <div id="calib-results"></div>
+            </div>
+            <div class="options-note">
+                URL params: <code>exposure</code>, <code>sunIntensity</code>, <code>hemiIntensity</code>.
+            </div>
+        </div>
+        <div class="options-footer">
+            <button class="options-btn options-btn-primary" id="calib-sample" type="button">Sample Colors</button>
+        </div>
+    </div>
+</div>
+
+<script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+        "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+        "/src/": "../src/"
+      }
+    }
+</script>
+
+<script type="module">
+    import * as THREE from 'three';
+    import { ROAD_MARKING_WHITE_TARGET_SUN_HEX, ROAD_MARKING_YELLOW_TARGET_SUN_HEX, hexToCssColor } from '/src/graphics/assets3d/materials/RoadMarkingsColors.js';
+
+    document.body.classList.add('options-dock-open');
+
+    const canvas = document.getElementById('game-canvas');
+    const settingsEl = document.getElementById('calib-settings');
+    const resultsEl = document.getElementById('calib-results');
+    const sampleBtn = document.getElementById('calib-sample');
+
+    const params = new URLSearchParams(window.location.search);
+    const readNumber = (key, fallback) => {
+        if (!params.has(key)) return fallback;
+        const n = Number(params.get(key));
+        return Number.isFinite(n) ? n : fallback;
+    };
+
+    const exposure = readNumber('exposure', 1.6);
+    const sunIntensity = readNumber('sunIntensity', 1.2);
+    const hemiIntensity = readNumber('hemiIntensity', 0.85);
+
+    if (THREE.ColorManagement) THREE.ColorManagement.enabled = true;
+
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer.setPixelRatio(1);
+    const rect0 = canvas.getBoundingClientRect();
+    renderer.setSize(Math.max(1, Math.floor(rect0.width)), Math.max(1, Math.floor(rect0.height)), false);
+    if ('outputColorSpace' in renderer) renderer.outputColorSpace = THREE.SRGBColorSpace;
+    else renderer.outputEncoding = THREE.sRGBEncoding;
+    if ('useLegacyLights' in renderer) renderer.useLegacyLights = true;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = exposure;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#0b0f16');
+
+    const camera = new THREE.PerspectiveCamera(55, rect0.width / Math.max(1, rect0.height), 0.1, 500);
+    camera.position.set(0, 2.4, 6.4);
+    camera.lookAt(0, 0, 0);
+
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x2a3b1f, hemiIntensity);
+    hemi.position.set(0, 100, 0);
+    scene.add(hemi);
+
+    const sun = new THREE.DirectionalLight(0xffffff, sunIntensity);
+    sun.position.set(80, 140, 60);
+    sun.target.position.set(0, 0, 0);
+    scene.add(sun);
+    scene.add(sun.target);
+
+    const groundGeo = new THREE.PlaneGeometry(18, 10, 1, 1);
+    groundGeo.rotateX(-Math.PI / 2);
+    const groundMat = new THREE.MeshStandardMaterial({ color: 0x2b2b2b, roughness: 0.95, metalness: 0.0 });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.position.y = -0.02;
+    scene.add(ground);
+
+    const markGeo = new THREE.PlaneGeometry(4.6, 1.3, 1, 1);
+    markGeo.rotateX(-Math.PI / 2);
+
+    const markRoughness = 0.55;
+    const yellowMat = new THREE.MeshStandardMaterial({ color: ROAD_MARKING_YELLOW_TARGET_SUN_HEX, roughness: markRoughness, metalness: 0.0 });
+    const whiteMat = new THREE.MeshStandardMaterial({ color: ROAD_MARKING_WHITE_TARGET_SUN_HEX, roughness: markRoughness, metalness: 0.0 });
+
+    const yellow = new THREE.Mesh(markGeo, yellowMat);
+    yellow.position.set(-2.7, 0.002, 0.0);
+    scene.add(yellow);
+
+    const white = new THREE.Mesh(markGeo, whiteMat);
+    white.position.set(2.7, 0.002, 0.0);
+    scene.add(white);
+
+    const tmp = new THREE.Vector3();
+    const ndc = new THREE.Vector3();
+
+    function getDrawSize() {
+        const size = new THREE.Vector2();
+        renderer.getDrawingBufferSize(size);
+        return { w: Math.max(1, Math.floor(size.x)), h: Math.max(1, Math.floor(size.y)) };
+    }
+
+    function sampleAverageSrgbHexAtWorldPos(worldPos, { size = 7 } = {}) {
+        const { w, h } = getDrawSize();
+        ndc.copy(worldPos).project(camera);
+
+        const cx = Math.round((ndc.x * 0.5 + 0.5) * (w - 1));
+        const cy = Math.round((ndc.y * 0.5 + 0.5) * (h - 1));
+
+        const s = Math.max(1, Math.floor(size));
+        const half = Math.floor(s / 2);
+        const x0 = Math.max(0, Math.min(w - s, cx - half));
+        const y0 = Math.max(0, Math.min(h - s, cy - half));
+
+        const gl = renderer.getContext();
+        const pixels = new Uint8Array(s * s * 4);
+        gl.readPixels(x0, y0, s, s, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+        let r = 0;
+        let g = 0;
+        let b = 0;
+        const n = s * s;
+        for (let i = 0; i < pixels.length; i += 4) {
+            r += pixels[i];
+            g += pixels[i + 1];
+            b += pixels[i + 2];
+        }
+        r = Math.round(r / n);
+        g = Math.round(g / n);
+        b = Math.round(b / n);
+        return {
+            hex: `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`,
+            sample: { x: cx, y: cy, size: s }
+        };
+    }
+
+    function render() {
+        renderer.render(scene, camera);
+    }
+
+    function appendTextRow(parent, label, value) {
+        const row = document.createElement('div');
+        row.className = 'options-row';
+        const left = document.createElement('div');
+        left.className = 'options-row-label';
+        left.textContent = label;
+        const right = document.createElement('div');
+        right.className = 'options-row-control';
+        const text = document.createElement('div');
+        text.textContent = value;
+        right.appendChild(text);
+        row.appendChild(left);
+        row.appendChild(right);
+        parent.appendChild(row);
+    }
+
+    function updateSettingsUi() {
+        settingsEl.textContent = '';
+        appendTextRow(settingsEl, 'Exposure', exposure.toFixed(2));
+        appendTextRow(settingsEl, 'Sun intensity', sunIntensity.toFixed(2));
+        appendTextRow(settingsEl, 'Hemi intensity', hemiIntensity.toFixed(2));
+        appendTextRow(settingsEl, 'Tone mapping', 'ACESFilmic');
+        appendTextRow(settingsEl, 'Output', 'sRGB');
+        appendTextRow(settingsEl, 'Yellow target', hexToCssColor(ROAD_MARKING_YELLOW_TARGET_SUN_HEX).toUpperCase());
+        appendTextRow(settingsEl, 'White target', hexToCssColor(ROAD_MARKING_WHITE_TARGET_SUN_HEX).toUpperCase());
+        appendTextRow(settingsEl, 'Mark roughness', markRoughness.toFixed(2));
+    }
+
+    function updateResultsUi({ yellow: y, white: w }) {
+        resultsEl.textContent = '';
+        appendTextRow(resultsEl, 'Yellow measured', y.hex.toUpperCase());
+        appendTextRow(resultsEl, 'Yellow sample', `${y.sample.x},${y.sample.y} (avg ${y.sample.size}x${y.sample.size})`);
+        appendTextRow(resultsEl, 'White measured', w.hex.toUpperCase());
+        appendTextRow(resultsEl, 'White sample', `${w.sample.x},${w.sample.y} (avg ${w.sample.size}x${w.sample.size})`);
+    }
+
+    function sample() {
+        render();
+        const yellowSample = sampleAverageSrgbHexAtWorldPos(yellow.getWorldPosition(tmp), { size: 9 });
+        const whiteSample = sampleAverageSrgbHexAtWorldPos(white.getWorldPosition(tmp), { size: 9 });
+        updateResultsUi({ yellow: yellowSample, white: whiteSample });
+    }
+
+    function onResize() {
+        const rect = canvas.getBoundingClientRect();
+        renderer.setSize(Math.max(1, Math.floor(rect.width)), Math.max(1, Math.floor(rect.height)), false);
+        camera.aspect = rect.width / Math.max(1, rect.height);
+        camera.updateProjectionMatrix();
+        render();
+        sample();
+    }
+
+    window.addEventListener('resize', onResize, { passive: true });
+    sampleBtn.addEventListener('click', sample);
+
+    window.addEventListener('keydown', (e) => {
+        if (e?.code !== 'Escape' && e?.key !== 'Escape') return;
+        e.preventDefault();
+        window.location.assign(new URL('../index.html', window.location.href).toString());
+    }, { passive: false });
+
+    updateSettingsUi();
+    onResize();
+</script>
+</body>
+</html>

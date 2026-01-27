@@ -8,10 +8,23 @@ export const DEBUG_TOOL_REGISTRY = Object.freeze([
         label: 'Atmosphere',
         description: 'HDR background + IBL look-dev scene',
         href: 'debug_tools/atmosphere_debug.html'
+    }),
+    Object.freeze({
+        id: 'road_markings_calibration',
+        key: '2',
+        label: 'Road Markings',
+        description: 'Calibrate marking colors under sun/exposure',
+        href: 'debug_tools/road_markings_calibration.html'
+    }),
+    Object.freeze({
+        id: 'asphalt_debug',
+        key: '3',
+        label: 'Asphalt',
+        description: 'Road asphalt + noise + markings (gameplay engine)',
+        href: 'debug_tools/asphalt_debug.html'
     })
 ]);
 
 export function getDebugToolShortcuts() {
     return DEBUG_TOOL_REGISTRY;
 }
-

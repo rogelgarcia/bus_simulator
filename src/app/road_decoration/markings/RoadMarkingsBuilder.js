@@ -6,6 +6,7 @@ import { computeEdgeFilletArcXZ, lineIntersectionXZ, sampleArcXZ } from '../../g
 const EPS = 1e-9;
 const LANE_WIDTH_BASE = 4.8;
 const MARKING_EDGE_INSET_BASE = 0.33;
+const ARROW_NO_MARK_INSET_FACTOR = 0.75;
 
 function clampNumber(value, fallback) {
     const n = Number(value);
@@ -286,6 +287,95 @@ function offsetLoop(points, offset, { miterLimit = 4, epsilon = 1e-6 } = {}) {
     }
 
     return normalizePointList(out, { epsilon: eps, forceCcw: false });
+}
+
+function computeLoopAabb(points) {
+    const pts = Array.isArray(points) ? points : [];
+    let minX = Infinity;
+    let minZ = Infinity;
+    let maxX = -Infinity;
+    let maxZ = -Infinity;
+    for (const p of pts) {
+        const x = Number(p?.x) || 0;
+        const z = Number(p?.z) || 0;
+        if (x < minX) minX = x;
+        if (z < minZ) minZ = z;
+        if (x > maxX) maxX = x;
+        if (z > maxZ) maxZ = z;
+    }
+    if (!Number.isFinite(minX) || !Number.isFinite(minZ) || !Number.isFinite(maxX) || !Number.isFinite(maxZ)) {
+        return { minX: 0, minZ: 0, maxX: 0, maxZ: 0 };
+    }
+    return { minX, minZ, maxX, maxZ };
+}
+
+function aabbContainsXZ(aabb, x, z) {
+    const bb = aabb && typeof aabb === 'object' ? aabb : null;
+    if (!bb) return false;
+    const px = Number(x) || 0;
+    const pz = Number(z) || 0;
+    return px >= (Number(bb.minX) || 0)
+        && px <= (Number(bb.maxX) || 0)
+        && pz >= (Number(bb.minZ) || 0)
+        && pz <= (Number(bb.maxZ) || 0);
+}
+
+function pointInPolygonXZ(x, z, polygon) {
+    const pts = Array.isArray(polygon) ? polygon : [];
+    const n = pts.length;
+    if (n < 3) return false;
+    const px = Number(x) || 0;
+    const pz = Number(z) || 0;
+    let inside = false;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+        const xi = Number(pts[i]?.x) || 0;
+        const zi = Number(pts[i]?.z) || 0;
+        const xj = Number(pts[j]?.x) || 0;
+        const zj = Number(pts[j]?.z) || 0;
+        const cond = (zi > pz) !== (zj > pz);
+        if (!cond) continue;
+        const denom = zj - zi;
+        if (Math.abs(denom) <= 1e-12) continue;
+        const t = (pz - zi) / denom;
+        const xCross = xi + (xj - xi) * t;
+        if (px < xCross) inside = !inside;
+    }
+    return inside;
+}
+
+function collectAsphaltPolygonsFromPrimitives(primitives) {
+    const polys = [];
+    const list = Array.isArray(primitives) ? primitives : [];
+    for (const prim of list) {
+        if (!prim || prim.type !== 'polygon') continue;
+        const kind = prim.kind ?? null;
+        if (kind !== 'asphalt_piece' && kind !== 'junction_surface') continue;
+        const pts = Array.isArray(prim.points) ? prim.points : [];
+        polys.push(pts);
+    }
+    return polys;
+}
+
+function buildAsphaltNoMarkZonesFromPrimitives(primitives, { laneWidth, boundaryEpsilon } = {}) {
+    const polys = collectAsphaltPolygonsFromPrimitives(primitives);
+    if (!polys.length) return [];
+
+    const eps = Math.max(EPS, clampNumber(boundaryEpsilon, 1e-4));
+    const loops = buildBoundaryLoops(polys, { epsilon: eps });
+    if (!loops.length) return [];
+
+    const lw = Math.max(EPS, clampNumber(laneWidth, LANE_WIDTH_BASE));
+    const edgeInset = lw * (MARKING_EDGE_INSET_BASE / LANE_WIDTH_BASE);
+    const insetDist = edgeInset * ARROW_NO_MARK_INSET_FACTOR;
+
+    const zones = [];
+    for (const loop of loops) {
+        const inset = insetDist > EPS ? offsetLoop(loop, -insetDist, { epsilon: eps, miterLimit: 4 }) : loop;
+        const points = inset.length >= 3 ? inset : loop;
+        if (points.length < 3) continue;
+        zones.push({ points, aabb: computeLoopAabb(points) });
+    }
+    return zones;
 }
 
 function appendLineSegment(out, a, b, y) {
@@ -1073,13 +1163,32 @@ function buildLaneDividerLineSegmentsFromSegments(segments, junctions, { laneWid
     return out;
 }
 
-function buildArrowMeshesFromSegments(segments, { laneWidth, arrowY, arrowTangentY, includeArrowTangents = false } = {}) {
+function buildArrowMeshesFromSegments(segments, { laneWidth, arrowY, arrowTangentY, includeArrowTangents = false, noMarkZones = null } = {}) {
     const arrowPositions = [];
     const tangentSegments = [];
     const segs = Array.isArray(segments) ? segments : [];
+    const zones = Array.isArray(noMarkZones) ? noMarkZones : null;
+    const useNoMarkZones = !!(zones && zones.length);
 
     const y = clampNumber(arrowY, 0);
     const tangentY = clampNumber(arrowTangentY, y);
+
+    let skippedNoMark = 0;
+
+    const findZone = (x, z) => {
+        if (!useNoMarkZones) return null;
+        for (const zone of zones) {
+            if (!aabbContainsXZ(zone?.aabb, x, z)) continue;
+            if (pointInPolygonXZ(x, z, zone?.points ?? null)) return zone;
+        }
+        return null;
+    };
+
+    const zoneContains = (zone, x, z) => {
+        if (!zone) return false;
+        if (!aabbContainsXZ(zone?.aabb, x, z)) return false;
+        return pointInPolygonXZ(x, z, zone?.points ?? null);
+    };
 
     for (const seg of segs) {
         const dir = seg?.dir ?? null;
@@ -1123,6 +1232,51 @@ function buildArrowMeshesFromSegments(segments, { laneWidth, arrowY, arrowTangen
                 const rx = fz;
                 const rz = -fx;
 
+	                const local = [
+	                    [tailX, bodyHalf], [bodyX, -bodyHalf], [bodyX, bodyHalf],
+	                    [tailX, bodyHalf], [tailX, -bodyHalf], [bodyX, -bodyHalf],
+	                    [tipX, 0], [bodyX, headHalf], [bodyX, -headHalf]
+	                ];
+
+                const zone = useNoMarkZones ? findZone(cx, cz) : null;
+                if (useNoMarkZones && !zone) {
+                    skippedNoMark += 1;
+                    continue;
+                }
+
+                const verts = [];
+                for (const v of local) {
+                    const lx = v[0];
+                    const lz = v[1];
+                    const wx = cx + fx * lx + rx * lz;
+                    const wz = cz + fz * lx + rz * lz;
+                    verts.push([wx, wz]);
+                }
+
+                if (useNoMarkZones) {
+                    const triangles = [[0, 1, 2], [3, 4, 5], [6, 7, 8]];
+                    let ok = true;
+                    for (const tri of triangles) {
+                        const a = verts[tri[0]];
+                        const b = verts[tri[1]];
+                        const c = verts[tri[2]];
+                        const ax = a[0]; const az = a[1];
+                        const bx = b[0]; const bz = b[1];
+                        const cx2 = c[0]; const cz2 = c[1];
+                        if (!zoneContains(zone, ax, az) || !zoneContains(zone, bx, bz) || !zoneContains(zone, cx2, cz2)) { ok = false; break; }
+                        const abx = (ax + bx) * 0.5; const abz = (az + bz) * 0.5;
+                        const bcx = (bx + cx2) * 0.5; const bcz = (bz + cz2) * 0.5;
+                        const cax = (cx2 + ax) * 0.5; const caz = (cz2 + az) * 0.5;
+                        if (!zoneContains(zone, abx, abz) || !zoneContains(zone, bcx, bcz) || !zoneContains(zone, cax, caz)) { ok = false; break; }
+                        const centX = (ax + bx + cx2) / 3; const centZ = (az + bz + cz2) / 3;
+                        if (!zoneContains(zone, centX, centZ)) { ok = false; break; }
+                    }
+                    if (!ok) {
+                        skippedNoMark += 1;
+                        continue;
+                    }
+                }
+
                 if (includeArrowTangents) {
                     const tangentLen = arrowLen * 0.75;
                     tangentSegments.push(
@@ -1131,24 +1285,12 @@ function buildArrowMeshesFromSegments(segments, { laneWidth, arrowY, arrowTangen
                     );
                 }
 
-	                const local = [
-	                    [tailX, bodyHalf], [bodyX, -bodyHalf], [bodyX, bodyHalf],
-	                    [tailX, bodyHalf], [tailX, -bodyHalf], [bodyX, -bodyHalf],
-	                    [tipX, 0], [bodyX, headHalf], [bodyX, -headHalf]
-	                ];
-
-                for (const v of local) {
-                    const lx = v[0];
-                    const lz = v[1];
-                    const wx = cx + fx * lx + rx * lz;
-                    const wz = cz + fz * lx + rz * lz;
-                    arrowPositions.push(wx, y, wz);
-                }
+                for (const v of verts) arrowPositions.push(v[0], y, v[1]);
             }
         }
     }
 
-    return { arrowPositions, arrowTangentSegments: tangentSegments };
+    return { arrowPositions, arrowTangentSegments: tangentSegments, skippedNoMark };
 }
 
 export function buildRoadMarkingsMeshDataFromRoadEngineDerived(derived, options = {}) {
@@ -1197,11 +1339,13 @@ export function buildRoadMarkingsMeshDataFromRoadEngineDerived(derived, options 
 
     const crosswalkPositions = buildCrosswalkTrianglesFromJunctions(junctions, { laneWidth, crosswalkY });
 
+    const noMarkZones = buildAsphaltNoMarkZonesFromPrimitives(primitives, { laneWidth, boundaryEpsilon });
     const arrows = buildArrowMeshesFromSegments(segments, {
         laneWidth,
         arrowY,
         arrowTangentY,
-        includeArrowTangents
+        includeArrowTangents,
+        noMarkZones
     });
 
     return {
@@ -1209,6 +1353,7 @@ export function buildRoadMarkingsMeshDataFromRoadEngineDerived(derived, options 
         yellowLineSegments: new Float32Array(yellowLineSegments),
         arrowPositions: new Float32Array(arrows.arrowPositions),
         arrowTangentSegments: new Float32Array(arrows.arrowTangentSegments),
-        crosswalkPositions: new Float32Array(crosswalkPositions)
+        crosswalkPositions: new Float32Array(crosswalkPositions),
+        arrowsSkippedNoMarkZone: arrows.skippedNoMark
     };
 }

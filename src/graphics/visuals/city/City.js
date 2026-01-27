@@ -37,7 +37,7 @@ export class City {
             fogNear: 80,
             fogFar: 900,
             cameraNear: 0.5,
-            cameraFar: 2500
+            cameraFar: 1800
         };
 
         this.group = new THREE.Group();

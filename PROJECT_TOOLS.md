@@ -11,3 +11,4 @@ Registry of scripts under `tools/`. When adding a new tool, register it here.
 | redirectExportDetector | `tools/redirect_export_detector/` | Detect redirect re-export shim modules | `node tools/redirect_export_detector/run.mjs` |
 | pbrMaterialImporter | `tools/pbr_material_importer/` | Import and normalize PBR materials from `downloads/` into local-only `assets/public/pbr/` | `python3 tools/pbr_material_importer/run.py` |
 | citySpecExporter | `tools/city_spec_exporter/` | Export authoritative JS city specs to JSON under `tests/artifacts/` | `node tools/city_spec_exporter/run.mjs` |
+| optionsPresets | `tools/options_presets/` | Export/import Options presets and promote to defaults | `node tools/options_presets/promote_to_defaults.mjs path/to/preset.json --write` |

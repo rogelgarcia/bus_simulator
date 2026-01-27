@@ -1,18 +1,37 @@
 // src/graphics/lighting/LightingSettings.js
 // Persisted global lighting settings (IBL + exposure + common light intensities).
 
-import { getIBLConfig, IBL_DEFAULTS } from './IBL.js';
+import { getIBLConfig, IBL_DEFAULTS } from '../content3d/lighting/IBLConfig.js';
 
 const STORAGE_KEY = 'bus_sim.lighting.v1';
 
-export const LIGHTING_DEFAULTS = Object.freeze({
+const LEGACY_LIGHTING_DEFAULTS_V1 = Object.freeze({
     exposure: 1.6,
     hemiIntensity: 0.85,
     sunIntensity: 1.2,
     ibl: {
-        enabled: IBL_DEFAULTS.enabled,
+        enabled: false,
         envMapIntensity: IBL_DEFAULTS.envMapIntensity,
         setBackground: IBL_DEFAULTS.setBackground
+    }
+});
+
+const LEGACY_LIGHTING_DEFAULTS_V0 = Object.freeze({
+    ...LEGACY_LIGHTING_DEFAULTS_V1,
+    ibl: {
+        ...LEGACY_LIGHTING_DEFAULTS_V1.ibl,
+        enabled: true
+    }
+});
+
+export const LIGHTING_DEFAULTS = Object.freeze({
+    exposure: 1.14,
+    hemiIntensity: 0.92,
+    sunIntensity: 1.64,
+    ibl: {
+        enabled: true,
+        envMapIntensity: 0.3,
+        setBackground: true
     }
 });
 
@@ -39,7 +58,7 @@ function readUrlParamBool(params, key, fallback) {
     return fallback;
 }
 
-function sanitizeLightingSettings(input) {
+export function sanitizeLightingSettings(input) {
     const src = input && typeof input === 'object' ? input : {};
     const ibl = src.ibl && typeof src.ibl === 'object' ? src.ibl : {};
 
@@ -63,14 +82,28 @@ export function loadSavedLightingSettings() {
     if (!raw) return null;
     try {
         const saved = sanitizeLightingSettings(JSON.parse(raw));
-        const isLegacyDefault = saved.exposure === LIGHTING_DEFAULTS.exposure
-            && saved.hemiIntensity === LIGHTING_DEFAULTS.hemiIntensity
-            && saved.sunIntensity === LIGHTING_DEFAULTS.sunIntensity
-            && saved.ibl.enabled === true
-            && saved.ibl.envMapIntensity === LIGHTING_DEFAULTS.ibl.envMapIntensity
-            && saved.ibl.setBackground === LIGHTING_DEFAULTS.ibl.setBackground;
-        if (isLegacyDefault) saved.ibl.enabled = LIGHTING_DEFAULTS.ibl.enabled;
-        return saved;
+        const isLegacyDefault = (saved.exposure === LEGACY_LIGHTING_DEFAULTS_V1.exposure
+            && saved.hemiIntensity === LEGACY_LIGHTING_DEFAULTS_V1.hemiIntensity
+            && saved.sunIntensity === LEGACY_LIGHTING_DEFAULTS_V1.sunIntensity
+            && saved.ibl.enabled === LEGACY_LIGHTING_DEFAULTS_V1.ibl.enabled
+            && saved.ibl.envMapIntensity === LEGACY_LIGHTING_DEFAULTS_V1.ibl.envMapIntensity
+            && saved.ibl.setBackground === LEGACY_LIGHTING_DEFAULTS_V1.ibl.setBackground)
+            || (saved.exposure === LEGACY_LIGHTING_DEFAULTS_V0.exposure
+                && saved.hemiIntensity === LEGACY_LIGHTING_DEFAULTS_V0.hemiIntensity
+                && saved.sunIntensity === LEGACY_LIGHTING_DEFAULTS_V0.sunIntensity
+                && saved.ibl.enabled === LEGACY_LIGHTING_DEFAULTS_V0.ibl.enabled
+                && saved.ibl.envMapIntensity === LEGACY_LIGHTING_DEFAULTS_V0.ibl.envMapIntensity
+                && saved.ibl.setBackground === LEGACY_LIGHTING_DEFAULTS_V0.ibl.setBackground);
+
+        if (!isLegacyDefault) return saved;
+
+        const migrated = sanitizeLightingSettings(LIGHTING_DEFAULTS);
+        try {
+            storage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+        } catch {
+            // ignore storage write failures
+        }
+        return migrated;
     } catch {
         return null;
     }

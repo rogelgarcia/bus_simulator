@@ -6,12 +6,16 @@ import { computeRoadEngineEdges } from '../../../app/road_engine/RoadEngineCompu
 import { buildRoadEnginePolygonMeshData } from '../../../app/road_engine/RoadEngineMeshData.js';
 import { buildRoadEngineRoadsFromCityMap } from '../../../app/road_engine/RoadEngineCityMapAdapter.js';
 import { buildRoadCurbMeshDataFromRoadEnginePrimitives } from '../../../app/road_decoration/curbs/RoadCurbBuilder.js';
+import { buildRoadAsphaltEdgeWearMeshDataFromRoadEnginePrimitives } from '../../../app/road_decoration/wear/RoadAsphaltEdgeWearBuilder.js';
 import { buildRoadSidewalkMeshDataFromRoadEnginePrimitives } from '../../../app/road_decoration/sidewalks/RoadSidewalkBuilder.js';
 import { buildRoadMarkingsMeshDataFromRoadEngineDerived } from '../../../app/road_decoration/markings/RoadMarkingsBuilder.js';
 import { createRoadMarkingsMeshesFromData } from './RoadMarkingsMeshes.js';
 import { applyRoadSurfaceVariationToMeshStandardMaterial } from '../../assets3d/materials/RoadSurfaceVariationSystem.js';
+import { hexToCssColor, ROAD_MARKING_WHITE_TARGET_SUN_HEX, ROAD_MARKING_YELLOW_TARGET_SUN_HEX } from '../../assets3d/materials/RoadMarkingsColors.js';
 import { getResolvedAsphaltNoiseSettings } from './AsphaltNoiseSettings.js';
 import { applyAsphaltRoadVisualsToMeshStandardMaterial } from './AsphaltRoadVisuals.js';
+import { applyAsphaltMarkingsNoiseVisualsToMeshStandardMaterial } from './AsphaltMarkingsNoiseVisuals.js';
+import { applyAsphaltEdgeWearVisualsToMeshStandardMaterial } from './AsphaltEdgeWearVisuals.js';
 
 const EPS = 1e-9;
 
@@ -40,15 +44,23 @@ function resolveRoadConfig(config) {
 function resolveMaterials(materials, { debugMode = false } = {}) {
     const base = materials && typeof materials === 'object' ? materials : {};
     const road = base.road ?? new THREE.MeshStandardMaterial({ color: 0x2b2b2b, roughness: 0.95, metalness: 0.0 });
+    const roadEdgeWear = base.roadEdgeWear ?? new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 1.0, metalness: 0.0, transparent: true, opacity: 1.0, depthWrite: false });
     const sidewalk = base.sidewalk ?? new THREE.MeshStandardMaterial({ color: 0x8f8f8f, roughness: 1.0, metalness: 0.0 });
     const curb = base.curb ?? new THREE.MeshStandardMaterial({ color: 0x7a7a7a, roughness: 0.9, metalness: 0.0 });
-    const laneWhite = base.laneWhite ?? new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.35, metalness: 0.0 });
-    const laneYellow = base.laneYellow ?? new THREE.MeshStandardMaterial({ color: 0xf2d34f, roughness: 0.35, metalness: 0.0 });
+    const laneWhite = base.laneWhite ?? new THREE.MeshStandardMaterial({ color: ROAD_MARKING_WHITE_TARGET_SUN_HEX, roughness: 0.55, metalness: 0.0 });
+    const laneYellow = base.laneYellow ?? new THREE.MeshStandardMaterial({ color: ROAD_MARKING_YELLOW_TARGET_SUN_HEX, roughness: 0.55, metalness: 0.0 });
 
     const ensureDecalMaterial = (mat, opts) => {
         if (!mat) return mat;
-        const factor = clampNumber(opts?.factor, 0);
-        const units = clampNumber(opts?.units, -1);
+        const relative = opts?.relativeTo ?? null;
+        let factor = clampNumber(opts?.factor, -3);
+        let units = clampNumber(opts?.units, -16);
+        if (relative?.polygonOffset) {
+            const relFactor = clampNumber(relative?.polygonOffsetFactor, 0);
+            const relUnits = clampNumber(relative?.polygonOffsetUnits, 0);
+            factor = Math.min(factor, relFactor - 2);
+            units = Math.min(units, relUnits - 4);
+        }
         mat.transparent = true;
         mat.opacity = 1.0;
         mat.depthWrite = false;
@@ -59,10 +71,10 @@ function resolveMaterials(materials, { debugMode = false } = {}) {
         return mat;
     };
 
-    ensureDecalMaterial(laneWhite);
-    ensureDecalMaterial(laneYellow);
+    ensureDecalMaterial(laneWhite, { relativeTo: road, factor: -1, units: -16 });
+    ensureDecalMaterial(laneYellow, { relativeTo: road, factor: -1, units: -16 });
 
-    if (!debugMode) return { road, sidewalk, curb, laneWhite, laneYellow };
+    if (!debugMode) return { road, roadEdgeWear, sidewalk, curb, laneWhite, laneYellow };
 
     const toBasic = (mat) => {
         const c = mat?.color?.getHex?.() ?? 0xffffff;
@@ -94,6 +106,7 @@ function resolveMaterials(materials, { debugMode = false } = {}) {
 
     return {
         road: toBasic(road),
+        roadEdgeWear: toDecalBasic(roadEdgeWear),
         sidewalk: toBasic(sidewalk),
         curb: toBasic(curb),
         laneWhite: toDecalBasic(laneWhite),
@@ -140,7 +153,15 @@ function hashStringToVec2(str) {
     return new THREE.Vector2(a * 512.0, b * 512.0);
 }
 
-function createRoadMarkingsTexture(markings, { bounds, laneWidth = 4.8, lineWidthMeters = null, pixelsPerMeter = 6, maxSize = 4096 } = {}) {
+function createRoadMarkingsTexture(markings, {
+    bounds,
+    laneWidth = 4.8,
+    lineWidthMeters = null,
+    pixelsPerMeter = 6,
+    maxSize = 4096,
+    whiteColorHex = ROAD_MARKING_WHITE_TARGET_SUN_HEX,
+    yellowColorHex = ROAD_MARKING_YELLOW_TARGET_SUN_HEX
+} = {}) {
     const b = bounds && typeof bounds === 'object' ? bounds : null;
     if (!b) return null;
     const sizeX = clampNumber(b.sizeX, 0);
@@ -172,19 +193,56 @@ function createRoadMarkingsTexture(markings, { bounds, laneWidth = 4.8, lineWidt
     const drawSegments = (segments, color) => {
         const arr = segments instanceof Float32Array ? segments : (Array.isArray(segments) ? new Float32Array(segments) : null);
         if (!arr?.length) return;
+        const eps = 1e-4;
         ctx.strokeStyle = color;
         ctx.lineWidth = lineWidthPx;
         ctx.lineCap = 'butt';
         ctx.lineJoin = 'miter';
+        ctx.miterLimit = 2.5;
         ctx.beginPath();
+
+        let has = false;
+        let startX = 0;
+        let startZ = 0;
+        let prevX = 0;
+        let prevZ = 0;
+
+        const closeIfLoop = () => {
+            if (!has) return;
+            if (Math.abs(prevX - startX) <= eps && Math.abs(prevZ - startZ) <= eps) ctx.closePath();
+        };
+
         for (let i = 0; i + 5 < arr.length; i += 6) {
-            const x0 = toX(arr[i]);
-            const y0 = toY(arr[i + 2]);
-            const x1 = toX(arr[i + 3]);
-            const y1 = toY(arr[i + 5]);
-            ctx.moveTo(x0, y0);
-            ctx.lineTo(x1, y1);
+            const x0w = Number(arr[i]) || 0;
+            const z0w = Number(arr[i + 2]) || 0;
+            const x1w = Number(arr[i + 3]) || 0;
+            const z1w = Number(arr[i + 5]) || 0;
+
+            if (!has) {
+                has = true;
+                startX = x0w;
+                startZ = z0w;
+                prevX = x1w;
+                prevZ = z1w;
+                ctx.moveTo(toX(x0w), toY(z0w));
+                ctx.lineTo(toX(x1w), toY(z1w));
+                continue;
+            }
+
+            const connects = Math.abs(x0w - prevX) <= eps && Math.abs(z0w - prevZ) <= eps;
+            if (!connects) {
+                closeIfLoop();
+                startX = x0w;
+                startZ = z0w;
+                ctx.moveTo(toX(x0w), toY(z0w));
+            }
+
+            ctx.lineTo(toX(x1w), toY(z1w));
+            prevX = x1w;
+            prevZ = z1w;
         }
+
+        closeIfLoop();
         ctx.stroke();
     };
 
@@ -204,10 +262,12 @@ function createRoadMarkingsTexture(markings, { bounds, laneWidth = 4.8, lineWidt
 
     ctx.clearRect(0, 0, canvasW, canvasH);
 
-    drawSegments(markings?.yellowLineSegments ?? null, '#f2d34f');
-    drawSegments(markings?.whiteLineSegments ?? null, '#f2f2f2');
-    drawTriangles(markings?.crosswalkPositions ?? null, '#f2f2f2');
-    drawTriangles(markings?.arrowPositions ?? null, '#f2f2f2');
+    const yellowCss = hexToCssColor(yellowColorHex);
+    const whiteCss = hexToCssColor(whiteColorHex);
+    drawSegments(markings?.yellowLineSegments ?? null, yellowCss);
+    drawSegments(markings?.whiteLineSegments ?? null, whiteCss);
+    drawTriangles(markings?.crosswalkPositions ?? null, whiteCss);
+    drawTriangles(markings?.arrowPositions ?? null, whiteCss);
 
     const tex = new THREE.CanvasTexture(canvas);
     tex.name = 'RoadMarkingsTexture';
@@ -229,7 +289,9 @@ function createAsphaltMaterialWithMarkings(
         markingsTexture = null,
         bounds = null,
         markingsVisuals = null,
-        markingsSeed = null
+        markingsSeed = null,
+        asphaltNoise = null,
+        markingsDebug = null
     } = {}
 ) {
     if (!baseMaterial || !markingsTexture || !bounds) return baseMaterial;
@@ -243,6 +305,12 @@ function createAsphaltMaterialWithMarkings(
 
     const mat = baseMaterial.clone();
     mat.userData = { ...(mat.userData ?? {}), roadMarkingsOverlay: true };
+    if (!Object.prototype.hasOwnProperty.call(mat.userData, 'roadMarkingsOverlayEnabled')) {
+        mat.userData.roadMarkingsOverlayEnabled = true;
+    }
+    if (markingsDebug && typeof markingsDebug === 'object') {
+        mat.userData.roadMarkingsOverlayDebug = { ...markingsDebug };
+    }
 
     const mv = markingsVisuals && typeof markingsVisuals === 'object' ? markingsVisuals : {};
     const markingsScale = Math.max(0.001, clampNumber(mv.scale, 1.4));
@@ -253,11 +321,39 @@ function createAsphaltMaterialWithMarkings(
     const markingsBaseRoughness = clampNumber(mv.baseRoughness, 0.55);
     const seedVec2 = markingsSeed?.isVector2 ? markingsSeed.clone() : hashStringToVec2(String(markingsSeed ?? 'markings'));
 
+    const asphaltCfg = asphaltNoise && typeof asphaltNoise === 'object' ? asphaltNoise : null;
+    const markingsNoise = asphaltCfg?.markings && typeof asphaltCfg.markings === 'object' ? asphaltCfg.markings : null;
+    const asphaltMarkingsEnabled = markingsNoise?.enabled === true;
+    const asphaltMarkingsDebug = markingsNoise?.debug === true;
+    const asphaltMarkingsColorStrength = asphaltMarkingsEnabled
+        ? Math.max(0.0, Math.min(0.5, clampNumber(markingsNoise?.colorStrength, 0.025)))
+        : 0.0;
+    const asphaltMarkingsRoughnessStrength = asphaltMarkingsEnabled
+        ? Math.max(0.0, Math.min(0.5, clampNumber(markingsNoise?.roughnessStrength, 0.09)))
+        : 0.0;
+    const asphaltFineScale = Math.max(0.1, Math.min(15, clampNumber(asphaltCfg?.fine?.scale, 12.0)));
+    const asphaltFineBaseRoughness = Math.max(0.0, Math.min(1.0, clampNumber(baseMaterial?.userData?.asphaltRoadBase?.roughness, 0.95)));
+    const asphaltFineRoughnessStrength = (asphaltCfg?.fine?.roughness !== false && baseMaterial?.roughnessMap)
+        ? Math.max(0.0, Math.min(0.5, clampNumber(asphaltCfg?.fine?.roughnessStrength, 0.16)))
+        : 0.0;
+
+    mat.userData.roadMarkingsAsphaltNoiseConfig = {
+        enabled: asphaltMarkingsEnabled,
+        debug: asphaltMarkingsDebug,
+        colorStrength: asphaltMarkingsColorStrength,
+        roughnessStrength: asphaltMarkingsRoughnessStrength,
+        fineScale: asphaltFineScale,
+        fineBaseRoughness: asphaltFineBaseRoughness,
+        fineRoughnessStrength: asphaltFineRoughnessStrength,
+        shaderUniforms: null
+    };
+
     const prevOnBeforeCompile = typeof mat.onBeforeCompile === 'function' ? mat.onBeforeCompile.bind(mat) : null;
     mat.onBeforeCompile = (shader, renderer) => {
         if (prevOnBeforeCompile) prevOnBeforeCompile(shader, renderer);
         shader.extensions = shader.extensions || {};
         shader.extensions.derivatives = true;
+        shader.uniforms.uRoadMarkingsEnabled = { value: mat.userData?.roadMarkingsOverlayEnabled === false ? 0.0 : 1.0 };
         shader.uniforms.uRoadMarkingsMap = { value: markingsTexture };
         shader.uniforms.uRoadMarkingsMin = { value: new THREE.Vector2(minX, minZ) };
         shader.uniforms.uRoadMarkingsInvSize = { value: new THREE.Vector2(invX, invZ) };
@@ -268,6 +364,15 @@ function createAsphaltMaterialWithMarkings(
         shader.uniforms.uRoadMarkingsVarEdgeBreakStrength = { value: markingsEdgeBreakStrength };
         shader.uniforms.uRoadMarkingsBaseRoughness = { value: markingsBaseRoughness };
         shader.uniforms.uRoadMarkingsVarSeed = { value: seedVec2 };
+
+        const asphaltMarkingsCfg = mat.userData?.roadMarkingsAsphaltNoiseConfig ?? null;
+        shader.uniforms.uRoadMarkingsAsphaltNoiseEnabled = { value: asphaltMarkingsCfg?.enabled ? 1.0 : 0.0 };
+        shader.uniforms.uRoadMarkingsAsphaltNoiseColorStrength = { value: clampNumber(asphaltMarkingsCfg?.colorStrength, 0.0) };
+        shader.uniforms.uRoadMarkingsAsphaltNoiseRoughnessStrength = { value: clampNumber(asphaltMarkingsCfg?.roughnessStrength, 0.0) };
+        shader.uniforms.uRoadMarkingsAsphaltNoiseDebug = { value: asphaltMarkingsCfg?.debug ? 1.0 : 0.0 };
+        shader.uniforms.uRoadMarkingsAsphaltFineScale = { value: clampNumber(asphaltMarkingsCfg?.fineScale, 12.0) };
+        shader.uniforms.uRoadMarkingsAsphaltFineBaseRoughness = { value: clampNumber(asphaltMarkingsCfg?.fineBaseRoughness, 0.95) };
+        shader.uniforms.uRoadMarkingsAsphaltFineRoughnessStrength = { value: clampNumber(asphaltMarkingsCfg?.fineRoughnessStrength, 0.0) };
 
         shader.vertexShader = shader.vertexShader.replace(
             '#include <common>',
@@ -282,6 +387,7 @@ function createAsphaltMaterialWithMarkings(
             '#include <common>',
             [
                 '#include <common>',
+                'uniform float uRoadMarkingsEnabled;',
                 'uniform sampler2D uRoadMarkingsMap;',
                 'uniform vec2 uRoadMarkingsMin;',
                 'uniform vec2 uRoadMarkingsInvSize;',
@@ -292,7 +398,31 @@ function createAsphaltMaterialWithMarkings(
                 'uniform float uRoadMarkingsVarEdgeBreakStrength;',
                 'uniform float uRoadMarkingsBaseRoughness;',
                 'uniform vec2 uRoadMarkingsVarSeed;',
+                'uniform float uRoadMarkingsAsphaltNoiseEnabled;',
+                'uniform float uRoadMarkingsAsphaltNoiseColorStrength;',
+                'uniform float uRoadMarkingsAsphaltNoiseRoughnessStrength;',
+                'uniform float uRoadMarkingsAsphaltNoiseDebug;',
+                'uniform float uRoadMarkingsAsphaltFineScale;',
+                'uniform float uRoadMarkingsAsphaltFineBaseRoughness;',
+                'uniform float uRoadMarkingsAsphaltFineRoughnessStrength;',
                 'varying vec3 vRoadMarkingsWorldPos;',
+                'float roadMarkingsAsphaltNoiseSigned = 0.0;',
+                'float roadMarkingsVarSigned = 0.0;',
+                'float roadMarkingsMask = 0.0;',
+                'float roadMarkingsRoughTarget = 0.0;',
+                'float roadMarkingsAsphaltNoiseCompute(vec2 worldXZ){',
+                'float active = max(uRoadMarkingsAsphaltNoiseEnabled, uRoadMarkingsAsphaltNoiseDebug);',
+                'if (active < 0.5) return 0.0;',
+                'float denom = max(1e-5, uRoadMarkingsAsphaltFineRoughnessStrength);',
+                'if (uRoadMarkingsAsphaltFineRoughnessStrength <= 1e-5) return 0.0;',
+                '#ifdef USE_ROUGHNESSMAP',
+                'float r = texture2D(roughnessMap, worldXZ * uRoadMarkingsAsphaltFineScale).r;',
+                'float s = (r - uRoadMarkingsAsphaltFineBaseRoughness) / denom;',
+                'return clamp(s, -1.0, 1.0);',
+                '#else',
+                'return 0.0;',
+                '#endif',
+                '}',
                 'float roadMarkingsVarHash12(vec2 p){',
                 'vec3 p3 = fract(vec3(p.xyx) * 0.1031);',
                 'p3 += dot(p3, p3.yzx + 33.33);',
@@ -318,39 +448,47 @@ function createAsphaltMaterialWithMarkings(
             ].join('\n')
         );
         shader.fragmentShader = shader.fragmentShader.replace(
-            'vec4 diffuseColor = vec4( diffuse, opacity );',
+            '#include <color_fragment>',
             [
-                'vec4 diffuseColor = vec4( diffuse, opacity );',
+                '#include <color_fragment>',
                 'vec2 roadUv = (vRoadMarkingsWorldPos.xz - uRoadMarkingsMin) * uRoadMarkingsInvSize;',
                 'roadUv = clamp(roadUv, 0.0, 1.0);',
+                'roadUv.y = 1.0 - roadUv.y;',
                 'vec4 roadMark = texture2D(uRoadMarkingsMap, roadUv);',
                 'float roadMarkingsVar = roadMarkingsVarFbm((vRoadMarkingsWorldPos.xz + uRoadMarkingsVarSeed) * uRoadMarkingsVarScale);',
-                'float roadMarkingsVarSigned = (roadMarkingsVar - 0.5) * 2.0;',
+                'roadMarkingsVarSigned = (roadMarkingsVar - 0.5) * 2.0;',
+                'roadMarkingsAsphaltNoiseSigned = roadMarkingsAsphaltNoiseCompute(vRoadMarkingsWorldPos.xz);',
                 'vec3 roadMarkRgb = roadMark.rgb;',
                 'roadMarkRgb *= (1.0 + uRoadMarkingsVarColorStrength * roadMarkingsVarSigned);',
+                'roadMarkRgb *= (1.0 + uRoadMarkingsAsphaltNoiseColorStrength * roadMarkingsAsphaltNoiseSigned);',
                 'roadMarkRgb = mix(roadMarkRgb, diffuseColor.rgb, clamp(uRoadMarkingsVarDirtyStrength, 0.0, 1.0) * roadMarkingsVar);',
+                'if (uRoadMarkingsAsphaltNoiseDebug > 0.5) roadMarkRgb = vec3(0.5 + 0.5 * roadMarkingsAsphaltNoiseSigned);',
                 'float a = roadMark.a;',
                 'float w = fwidth(a);',
                 'float edgeJitter = roadMarkingsVarSigned * uRoadMarkingsVarEdgeBreakStrength;',
-                'float roadMarkingsMask = smoothstep(0.5 - w, 0.5 + w, a + edgeJitter);',
+                'roadMarkingsMask = uRoadMarkingsEnabled * smoothstep(0.5 - w, 0.5 + w, a + edgeJitter);',
                 'diffuseColor.rgb = mix(diffuseColor.rgb, roadMarkRgb, roadMarkingsMask);'
             ].join('\n')
         );
 
         shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <metalnessmap_fragment>',
+            '#include <roughnessmap_fragment>',
             [
-                '#include <metalnessmap_fragment>',
-                'float roadMarkingsRough = clamp(uRoadMarkingsBaseRoughness + uRoadMarkingsVarRoughnessStrength * roadMarkingsVarSigned, 0.0, 1.0);',
-                'roughnessFactor = mix(roughnessFactor, roadMarkingsRough, roadMarkingsMask);'
+                '#include <roughnessmap_fragment>',
+                'roadMarkingsRoughTarget = clamp(uRoadMarkingsBaseRoughness + uRoadMarkingsVarRoughnessStrength * roadMarkingsVarSigned + uRoadMarkingsAsphaltNoiseRoughnessStrength * roadMarkingsAsphaltNoiseSigned, 0.0, 1.0);',
+                'roughnessFactor = mix(roughnessFactor, roadMarkingsRoughTarget, roadMarkingsMask);'
             ].join('\n')
         );
+
+        mat.userData.roadMarkingsOverlayUniforms = shader.uniforms;
+        mat.userData.roadMarkingsOverlayShaderPatched = shader.fragmentShader.includes('roadMarkingsMask =') || shader.fragmentShader.includes('roadMarkingsMask=');
+        if (asphaltMarkingsCfg) asphaltMarkingsCfg.shaderUniforms = shader.uniforms;
     };
 
     const prevCacheKey = typeof mat.customProgramCacheKey === 'function' ? mat.customProgramCacheKey.bind(mat) : null;
     mat.customProgramCacheKey = () => {
         const prev = prevCacheKey ? prevCacheKey() : '';
-        return `${prev}|AsphaltWithMarkings_v3`;
+        return `${prev}|AsphaltWithMarkings_v4`;
     };
     mat.needsUpdate = true;
 
@@ -625,12 +763,20 @@ export function createRoadEngineRoads({
     const roadVisuals = (roadCfg?.visuals && typeof roadCfg.visuals === 'object') ? roadCfg.visuals : null;
     const asphaltVisuals = (roadVisuals?.asphalt && typeof roadVisuals.asphalt === 'object') ? roadVisuals.asphalt : null;
     const markingsVisuals = (roadVisuals?.markings && typeof roadVisuals.markings === 'object') ? roadVisuals.markings : null;
+    const asphaltEnabled = !debugMode && asphaltVisuals?.enabled !== false;
+    const markingsWhiteColorHex = Number.isFinite(markingsVisuals?.whiteColorHex)
+        ? (Number(markingsVisuals.whiteColorHex) >>> 0) & 0xffffff
+        : ROAD_MARKING_WHITE_TARGET_SUN_HEX;
+    const markingsYellowColorHex = Number.isFinite(markingsVisuals?.yellowColorHex)
+        ? (Number(markingsVisuals.yellowColorHex) >>> 0) & 0xffffff
+        : ROAD_MARKING_YELLOW_TARGET_SUN_HEX;
+    const markingsBaseRoughness = Math.max(0, Math.min(1, clampNumber(markingsVisuals?.baseRoughness, 0.55)));
     const roadSeed = map?.roadNetwork?.seed ?? null;
     const seedVec2 = hashStringToVec2(String(roadSeed ?? 'roads'));
     const asphaltNoise = getResolvedAsphaltNoiseSettings();
+    const edgeWearMaxWidth = 1.25;
 
     if (!debugMode) {
-        const asphaltEnabled = asphaltVisuals?.enabled !== false;
         if (asphaltEnabled) {
             applyAsphaltRoadVisualsToMeshStandardMaterial(mats.road, {
                 asphaltNoise,
@@ -638,7 +784,17 @@ export function createRoadEngineRoads({
                 baseColorHex: 0x2b2b2b,
                 baseRoughness: 0.95
             });
+            applyAsphaltEdgeWearVisualsToMeshStandardMaterial(mats.roadEdgeWear, {
+                asphaltNoise,
+                seed: roadSeed ?? 'roads',
+                maxWidth: edgeWearMaxWidth
+            });
         }
+
+        if (mats.laneWhite?.color?.setHex) mats.laneWhite.color.setHex(markingsWhiteColorHex);
+        if (mats.laneYellow?.color?.setHex) mats.laneYellow.color.setHex(markingsYellowColorHex);
+        if (mats.laneWhite?.isMeshStandardMaterial) mats.laneWhite.roughness = markingsBaseRoughness;
+        if (mats.laneYellow?.isMeshStandardMaterial) mats.laneYellow.roughness = markingsBaseRoughness;
 
         const markingsEnabled = markingsVisuals?.enabled !== false;
         if (markingsEnabled) {
@@ -652,6 +808,21 @@ export function createRoadEngineRoads({
             applyRoadSurfaceVariationToMeshStandardMaterial(mats.laneWhite, cfg);
             applyRoadSurfaceVariationToMeshStandardMaterial(mats.laneYellow, cfg);
         }
+
+        applyAsphaltMarkingsNoiseVisualsToMeshStandardMaterial(mats.laneWhite, {
+            asphaltNoise,
+            asphaltFineRoughnessMap: mats.road?.roughnessMap ?? null,
+            asphaltFineScale: asphaltNoise?.fine?.scale,
+            asphaltFineBaseRoughness: 0.95,
+            asphaltFineRoughnessStrength: asphaltNoise?.fine?.roughnessStrength
+        });
+        applyAsphaltMarkingsNoiseVisualsToMeshStandardMaterial(mats.laneYellow, {
+            asphaltNoise,
+            asphaltFineRoughnessMap: mats.road?.roughnessMap ?? null,
+            asphaltFineScale: asphaltNoise?.fine?.scale,
+            asphaltFineBaseRoughness: 0.95,
+            asphaltFineRoughnessStrength: asphaltNoise?.fine?.roughnessStrength
+        });
     }
 
     const opt = options && typeof options === 'object' ? options : {};
@@ -670,7 +841,7 @@ export function createRoadEngineRoads({
     const groundY = clampNumber(groundCfg?.surfaceY, baseRoadY);
 
     const asphaltY = groundY;
-    const markingsLift = Math.max(0, clampNumber(roadCfg?.markings?.lift, 0));
+    const markingsLift = Math.max(0.01, clampNumber(roadCfg?.markings?.lift, 0.01));
     const markingY = asphaltY + markingsLift;
     const arrowY = markingY;
     const crosswalkY = markingY;
@@ -762,14 +933,24 @@ export function createRoadEngineRoads({
                 laneWidth,
                 lineWidthMeters: markingsLineWidth,
                 pixelsPerMeter: markingsPixelsPerMeter,
-                maxSize: markingsMaxSize
+                maxSize: markingsMaxSize,
+                whiteColorHex: markingsWhiteColorHex,
+                yellowColorHex: markingsYellowColorHex
             });
             if (markingsTexture) {
+                const markingsDebug = {
+                    whiteLineSegments: markings?.whiteLineSegments?.length ?? 0,
+                    yellowLineSegments: markings?.yellowLineSegments?.length ?? 0,
+                    crosswalkPositions: markings?.crosswalkPositions?.length ?? 0,
+                    arrowPositions: markings?.arrowPositions?.length ?? 0
+                };
                 mats.road = createAsphaltMaterialWithMarkings(mats.road, {
                     markingsTexture,
                     bounds,
                     markingsVisuals,
-                    markingsSeed: seedVec2
+                    markingsSeed: seedVec2,
+                    asphaltNoise,
+                    markingsDebug
                 });
             }
         }
@@ -782,6 +963,28 @@ export function createRoadEngineRoads({
         asphaltMesh.name = 'Asphalt';
         asphaltMesh.receiveShadow = true;
         group.add(asphaltMesh);
+    }
+
+    let asphaltEdgeWearMesh = null;
+    if (asphaltEnabled && asphaltPolys.length) {
+        const edgeWearData = buildRoadAsphaltEdgeWearMeshDataFromRoadEnginePrimitives(asphaltPolys, {
+            surfaceY: asphaltY,
+            lift: 0.0009,
+            maxWidth: edgeWearMaxWidth,
+            boundaryEpsilon: 1e-4,
+            miterLimit: 4
+        });
+        if (edgeWearData?.positions?.length) {
+            const edgeGeo = new THREE.BufferGeometry();
+            edgeGeo.setAttribute('position', new THREE.BufferAttribute(edgeWearData.positions, 3));
+            edgeGeo.setAttribute('uv', new THREE.BufferAttribute(edgeWearData.uvs, 2));
+            edgeGeo.computeVertexNormals();
+            edgeGeo.computeBoundingSphere();
+            asphaltEdgeWearMesh = new THREE.Mesh(edgeGeo, mats.roadEdgeWear);
+            asphaltEdgeWearMesh.name = 'AsphaltEdgeWear';
+            asphaltEdgeWearMesh.renderOrder = 2;
+            group.add(asphaltEdgeWearMesh);
+        }
     }
 
     let curbMesh = null;
@@ -835,15 +1038,67 @@ export function createRoadEngineRoads({
     group.add(markingsGroup);
 
     if (useMarkingMeshes && markings) {
+        const getBaseOrder = () => Math.max(
+            clampNumber(asphaltMesh?.renderOrder, 0),
+            clampNumber(asphaltEdgeWearMesh?.renderOrder, 0)
+        ) + 1;
+
+    const syncDecalMaterial = (mat, { relativeTo } = {}) => {
+            if (!mat) return;
+            const rel = relativeTo ?? null;
+            let factor = -3;
+            let units = -16;
+            if (rel?.polygonOffset) {
+                const relFactor = clampNumber(rel?.polygonOffsetFactor, 0);
+                const relUnits = clampNumber(rel?.polygonOffsetUnits, 0);
+                factor = Math.min(factor, relFactor - 2);
+                units = Math.min(units, relUnits - 4);
+            }
+            mat.transparent = true;
+            mat.opacity = 1.0;
+            mat.depthWrite = false;
+            mat.blending = THREE.NoBlending;
+            mat.polygonOffset = true;
+            mat.polygonOffsetFactor = factor;
+            mat.polygonOffsetUnits = units;
+        };
+
+        const syncMarkings = (meshesRef) => {
+            const baseOrder = getBaseOrder();
+            const markMeshes = [
+                meshesRef?.markingsWhite ?? null,
+                meshesRef?.markingsYellow ?? null,
+                meshesRef?.crosswalks ?? null,
+                meshesRef?.arrows ?? null
+            ].filter(Boolean);
+            for (const mesh of markMeshes) mesh.renderOrder = baseOrder;
+
+            const roadMat = asphaltMesh?.material ?? null;
+            syncDecalMaterial(mats.laneWhite, { relativeTo: roadMat });
+            syncDecalMaterial(mats.laneYellow, { relativeTo: roadMat });
+        };
+
+        const baseOrder = getBaseOrder();
         const meshes = createRoadMarkingsMeshesFromData(markings, {
             laneWidth,
-            materials: { white: mats.laneWhite, yellow: mats.laneYellow }
+            materials: { white: mats.laneWhite, yellow: mats.laneYellow },
+            renderOrder: { white: baseOrder, yellow: baseOrder, crosswalk: baseOrder, arrow: baseOrder }
         });
 
         if (meshes.markingsWhite) markingsGroup.add(meshes.markingsWhite);
         if (meshes.markingsYellow) markingsGroup.add(meshes.markingsYellow);
         if (meshes.crosswalks) markingsGroup.add(meshes.crosswalks);
         if (meshes.arrows) markingsGroup.add(meshes.arrows);
+
+        syncMarkings(meshes);
+        const driver = meshes.markingsWhite ?? meshes.markingsYellow ?? meshes.crosswalks ?? meshes.arrows ?? null;
+        if (driver) {
+            const prev = typeof driver.onBeforeRender === 'function' ? driver.onBeforeRender.bind(driver) : null;
+            driver.onBeforeRender = (...args) => {
+                if (prev) prev(...args);
+                syncMarkings(meshes);
+            };
+        }
     }
 
     const debug = includeDebug ? {
@@ -861,6 +1116,7 @@ export function createRoadEngineRoads({
     return {
         group,
         asphalt: asphaltMesh,
+        asphaltEdgeWear: asphaltEdgeWearMesh,
         curbBlocks: curbMesh,
         sidewalk: sidewalkMesh,
         markingsWhite: markingsGroup.getObjectByName('MarkingsWhite') ?? null,

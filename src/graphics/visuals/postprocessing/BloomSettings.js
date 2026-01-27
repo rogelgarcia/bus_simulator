@@ -4,11 +4,18 @@
 
 const STORAGE_KEY = 'bus_sim.bloom.v3';
 
-export const BLOOM_DEFAULTS = Object.freeze({
+const LEGACY_BLOOM_DEFAULTS_V3 = Object.freeze({
     enabled: false,
     strength: 0.22,
     radius: 0.12,
     threshold: 1.05
+});
+
+export const BLOOM_DEFAULTS = Object.freeze({
+    enabled: false,
+    strength: 0.02,
+    radius: 0.05,
+    threshold: 5
 });
 
 function clamp(value, min, max, fallback) {
@@ -53,7 +60,20 @@ export function loadSavedBloomSettings() {
     const raw = storage.getItem(STORAGE_KEY);
     if (!raw) return null;
     try {
-        return sanitizeBloomSettings(JSON.parse(raw));
+        const saved = sanitizeBloomSettings(JSON.parse(raw));
+        const isLegacyDefault = saved.enabled === LEGACY_BLOOM_DEFAULTS_V3.enabled
+            && saved.strength === LEGACY_BLOOM_DEFAULTS_V3.strength
+            && saved.radius === LEGACY_BLOOM_DEFAULTS_V3.radius
+            && saved.threshold === LEGACY_BLOOM_DEFAULTS_V3.threshold;
+        if (!isLegacyDefault) return saved;
+
+        const migrated = sanitizeBloomSettings(BLOOM_DEFAULTS);
+        try {
+            storage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+        } catch {
+            // ignore storage write failures
+        }
+        return migrated;
     } catch {
         return null;
     }

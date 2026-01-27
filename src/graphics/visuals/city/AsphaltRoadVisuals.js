@@ -28,18 +28,72 @@ function hashSeedToU32(seed) {
     return h >>> 0;
 }
 
+function clamp01(value) {
+    return clamp(value, 0, 1);
+}
+
+function hexToRgb01(hex) {
+    const safe = (Number(hex) >>> 0) & 0xffffff;
+    return {
+        r: ((safe >> 16) & 0xff) / 255,
+        g: ((safe >> 8) & 0xff) / 255,
+        b: (safe & 0xff) / 255
+    };
+}
+
+function rgb01ToHex({ r, g, b }) {
+    const rr = Math.round(clamp01(r) * 255) & 0xff;
+    const gg = Math.round(clamp01(g) * 255) & 0xff;
+    const bb = Math.round(clamp01(b) * 255) & 0xff;
+    return (rr << 16) | (gg << 8) | bb;
+}
+
+function applyAsphaltColorControlsToHex(baseColorHex, color) {
+    const c = color && typeof color === 'object' ? color : {};
+    const value = clamp(c.value ?? c.brightness ?? 0, -0.35, 0.35);
+    const warmCool = clamp(c.warmCool ?? c.tint ?? 0, -0.25, 0.25);
+    const saturation = clamp(c.saturation ?? 0, -0.5, 0.5);
+
+    let { r, g, b } = hexToRgb01(baseColorHex);
+
+    const t = Math.abs(warmCool);
+    if (t > 1e-6) {
+        const warm = { r: 1.08, g: 1.02, b: 0.92 };
+        const cool = { r: 0.92, g: 0.98, b: 1.08 };
+        const m = warmCool >= 0 ? warm : cool;
+        r *= 1 + (m.r - 1) * t;
+        g *= 1 + (m.g - 1) * t;
+        b *= 1 + (m.b - 1) * t;
+    }
+
+    const sat = 1 + saturation;
+    if (Math.abs(sat - 1) > 1e-6) {
+        const l = r * 0.2126 + g * 0.7152 + b * 0.0722;
+        r = l + (r - l) * sat;
+        g = l + (g - l) * sat;
+        b = l + (b - l) * sat;
+    }
+
+    const mul = 1 + value;
+    if (Math.abs(mul - 1) > 1e-6) {
+        r *= mul;
+        g *= mul;
+        b *= mul;
+    }
+
+    return rgb01ToHex({ r, g, b });
+}
+
 function ensureAsphaltBase(material, { baseColorHex, baseRoughness }) {
     material.userData = material.userData ?? {};
-    if (!material.userData.asphaltRoadBase) {
-        material.userData.asphaltRoadBase = {
-            colorHex: (Number(baseColorHex) >>> 0) & 0xffffff,
-            roughness: clamp(baseRoughness, 0.0, 1.0)
-        };
-    }
+    const base = material.userData.asphaltRoadBase ?? {};
+    base.colorHex = (Number(baseColorHex) >>> 0) & 0xffffff;
+    base.roughness = clamp(baseRoughness, 0.0, 1.0);
+    material.userData.asphaltRoadBase = base;
     return material.userData.asphaltRoadBase;
 }
 
-function buildRoadCoarseMaterialVariationConfig({ coarse, basePreset }) {
+function buildRoadCoarseMaterialVariationConfig({ coarse, livedIn, basePreset }) {
     const preset = basePreset && typeof basePreset === 'object'
         ? JSON.parse(JSON.stringify(basePreset))
         : getDefaultMaterialVariationPreset(MATERIAL_VARIATION_ROOT.SURFACE);
@@ -84,15 +138,67 @@ function buildRoadCoarseMaterialVariationConfig({ coarse, basePreset }) {
         });
     }
 
+    const lived = livedIn && typeof livedIn === 'object' ? livedIn : {};
+
+    if (Array.isArray(preset.macroLayers) && preset.macroLayers.length >= 4) {
+        const patches = lived.patches && typeof lived.patches === 'object' ? lived.patches : null;
+        const patchesEnabled = patches?.enabled !== false;
+        const patchesStrength = clamp(patches?.strength, 0.0, 1.0);
+        const patchesScale = clamp(patches?.scale, 0.001, 50.0);
+        const patchesCoverage = clamp(patches?.coverage, 0.0, 1.0);
+        if (patchesEnabled && patchesStrength > 1e-6) {
+            const layer = preset.macroLayers[2] && typeof preset.macroLayers[2] === 'object' ? { ...preset.macroLayers[2] } : {};
+            layer.enabled = true;
+            layer.intensity = patchesStrength;
+            layer.scale = patchesScale;
+            layer.coverage = patchesCoverage;
+            layer.value = -0.08;
+            layer.saturation = -0.02;
+            layer.roughness = -0.14;
+            layer.normal = 0.0;
+            preset.macroLayers[2] = layer;
+        } else if (preset.macroLayers[2] && typeof preset.macroLayers[2] === 'object') {
+            preset.macroLayers[2] = { ...preset.macroLayers[2], enabled: false, intensity: 0.0 };
+        }
+
+        const tireWear = lived.tireWear && typeof lived.tireWear === 'object' ? lived.tireWear : null;
+        const tireWearEnabled = tireWear?.enabled !== false;
+        const tireWearStrength = clamp(tireWear?.strength, 0.0, 1.0);
+        const tireWearScale = clamp(tireWear?.scale, 0.001, 50.0);
+        if (tireWearEnabled && tireWearStrength > 1e-6) {
+            const layer = preset.macroLayers[3] && typeof preset.macroLayers[3] === 'object' ? { ...preset.macroLayers[3] } : {};
+            layer.enabled = true;
+            layer.intensity = tireWearStrength;
+            layer.scale = tireWearScale;
+            layer.value = 0.0;
+            layer.saturation = 0.0;
+            layer.roughness = -0.18;
+            layer.normal = 0.0;
+            preset.macroLayers[3] = layer;
+        } else if (preset.macroLayers[3] && typeof preset.macroLayers[3] === 'object') {
+            preset.macroLayers[3] = { ...preset.macroLayers[3], enabled: false, intensity: 0.0 };
+        }
+    }
+
+    const cracks = lived.cracks && typeof lived.cracks === 'object' ? lived.cracks : null;
+    const cracksEnabled = cracks?.enabled !== false;
+    const cracksStrength = clamp(cracks?.strength, 0.0, 1.0);
+    const cracksScale = clamp(cracks?.scale, 0.01, 80.0);
     if (preset.cracks && typeof preset.cracks === 'object') {
-        preset.cracks = {
-            ...preset.cracks,
-            enabled: aoScale > 0.01,
-            intensity: (Number(preset.cracks.intensity) || 0) * clamp(aoScale, 0, 1)
-        };
-        preset.cracks.value = clamp((Number(preset.cracks.value) || 0) * vScale, -0.5, 0.5);
-        preset.cracks.roughness = clamp((Number(preset.cracks.roughness) || 0) * rScale, -0.5, 0.5);
-        preset.cracks.normal = 0.0;
+        if (cracksEnabled && cracksStrength > 1e-6) {
+            preset.cracks = {
+                ...preset.cracks,
+                enabled: true,
+                strength: cracksStrength,
+                scale: cracksScale,
+                value: -0.12,
+                saturation: -0.05,
+                roughness: 0.22,
+                normal: 0.0
+            };
+        } else {
+            preset.cracks = { ...preset.cracks, enabled: false, strength: 0.0 };
+        }
     }
 
     return preset;
@@ -184,7 +290,8 @@ export function applyAsphaltRoadVisualsToMeshStandardMaterial(
     const settings = sanitizeAsphaltNoiseSettings(asphaltNoise);
     const base = ensureAsphaltBase(material, { baseColorHex, baseRoughness });
 
-    applyFineTextures(material, settings.fine, { baseColorHex: base.colorHex, baseRoughness: base.roughness, seed });
+    const colorHex = applyAsphaltColorControlsToHex(base.colorHex, settings.color);
+    applyFineTextures(material, settings.fine, { baseColorHex: colorHex, baseRoughness: base.roughness, seed });
 
     const coarse = settings.coarse;
     const coarseAlbedo = coarse?.albedo !== false;
@@ -194,6 +301,7 @@ export function applyAsphaltRoadVisualsToMeshStandardMaterial(
     if (coarseAlbedo || coarseRoughness || hasMatVar) {
         const config = buildRoadCoarseMaterialVariationConfig({
             coarse,
+            livedIn: settings.livedIn,
             basePreset: getDefaultMaterialVariationPreset(MATERIAL_VARIATION_ROOT.SURFACE)
         });
         updateMaterialVariationOnMeshStandardMaterial(material, {

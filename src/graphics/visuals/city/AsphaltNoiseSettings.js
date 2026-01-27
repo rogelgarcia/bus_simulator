@@ -1,10 +1,10 @@
 // src/graphics/visuals/city/AsphaltNoiseSettings.js
-// Persisted asphalt shader noise controls (coarse + fine).
+// Persisted asphalt road visuals controls (noise + art direction + lived-in overlays).
 // @ts-check
 
 const STORAGE_KEY = 'bus_sim.asphaltNoise.v1';
 
-export const ASPHALT_NOISE_DEFAULTS = Object.freeze({
+const LEGACY_ASPHALT_NOISE_DEFAULTS_V1 = Object.freeze({
     coarse: Object.freeze({
         albedo: true,
         roughness: true,
@@ -22,6 +22,97 @@ export const ASPHALT_NOISE_DEFAULTS = Object.freeze({
         dirtyStrength: 0.0,
         roughnessStrength: 0.16,
         normalStrength: 0.35
+    }),
+    markings: Object.freeze({
+        enabled: false,
+        colorStrength: 0.025,
+        roughnessStrength: 0.09,
+        debug: false
+    }),
+    color: Object.freeze({
+        value: 0.0,
+        warmCool: 0.0,
+        saturation: 0.0
+    }),
+    livedIn: Object.freeze({
+        edgeDirt: Object.freeze({
+            enabled: true,
+            strength: 0.18,
+            width: 0.65,
+            scale: 0.55
+        }),
+        cracks: Object.freeze({
+            enabled: true,
+            strength: 0.12,
+            scale: 3.2
+        }),
+        patches: Object.freeze({
+            enabled: true,
+            strength: 0.1,
+            scale: 4.0,
+            coverage: 0.84
+        }),
+        tireWear: Object.freeze({
+            enabled: true,
+            strength: 0.1,
+            scale: 1.6
+        })
+    })
+});
+
+export const ASPHALT_NOISE_DEFAULTS = Object.freeze({
+    coarse: Object.freeze({
+        albedo: false,
+        roughness: false,
+        scale: 0.226,
+        colorStrength: 0.16,
+        dirtyStrength: 0.34,
+        roughnessStrength: 0.1
+    }),
+    fine: Object.freeze({
+        albedo: true,
+        roughness: false,
+        normal: true,
+        scale: 0.4,
+        colorStrength: 0.23,
+        dirtyStrength: 0.49,
+        roughnessStrength: 0.29,
+        normalStrength: 0.32
+    }),
+    markings: Object.freeze({
+        enabled: false,
+        colorStrength: 0.025,
+        roughnessStrength: 0.09,
+        debug: false
+    }),
+    color: Object.freeze({
+        value: 0.0,
+        warmCool: 0.0,
+        saturation: 0.0
+    }),
+    livedIn: Object.freeze({
+        edgeDirt: Object.freeze({
+            enabled: true,
+            strength: 0.18,
+            width: 0.65,
+            scale: 0.55
+        }),
+        cracks: Object.freeze({
+            enabled: true,
+            strength: 0.12,
+            scale: 3.2
+        }),
+        patches: Object.freeze({
+            enabled: true,
+            strength: 0.1,
+            scale: 4.0,
+            coverage: 0.84
+        }),
+        tireWear: Object.freeze({
+            enabled: true,
+            strength: 0.1,
+            scale: 1.6
+        })
     })
 });
 
@@ -66,10 +157,65 @@ function sanitizeAsphaltNoiseLayerSettings(input, defaults, { scaleMax = 10.0, i
     return out;
 }
 
+function sanitizeAsphaltColorSettings(input, defaults) {
+    const src = input && typeof input === 'object' ? input : {};
+    const d = defaults && typeof defaults === 'object' ? defaults : {};
+    return {
+        value: clamp(src.value ?? src.brightness ?? d.value, -0.35, 0.35, d.value ?? 0),
+        warmCool: clamp(src.warmCool ?? src.tint ?? d.warmCool, -0.25, 0.25, d.warmCool ?? 0),
+        saturation: clamp(src.saturation ?? d.saturation, -0.5, 0.5, d.saturation ?? 0)
+    };
+}
+
+function sanitizeAsphaltMarkingsSettings(input, defaults) {
+    const src = input && typeof input === 'object' ? input : {};
+    const d = defaults && typeof defaults === 'object' ? defaults : {};
+    return {
+        enabled: src.enabled !== undefined ? !!src.enabled : !!d.enabled,
+        colorStrength: clamp(src.colorStrength ?? d.colorStrength, 0.0, 0.5, d.colorStrength ?? 0.025),
+        roughnessStrength: clamp(src.roughnessStrength ?? d.roughnessStrength, 0.0, 0.5, d.roughnessStrength ?? 0.09),
+        debug: src.debug !== undefined ? !!src.debug : !!d.debug
+    };
+}
+
+function sanitizeAsphaltLivedInLayerSettings(input, defaults, { includeCoverage = false, includeWidth = false } = {}) {
+    const src = input && typeof input === 'object' ? input : {};
+    const d = defaults && typeof defaults === 'object' ? defaults : {};
+    const out = {
+        enabled: src.enabled !== undefined ? !!src.enabled : !!d.enabled,
+        strength: clamp(src.strength ?? src.intensity ?? d.strength, 0.0, 1.0, d.strength ?? 0),
+        scale: clamp(src.scale ?? d.scale, 0.001, 50.0, d.scale ?? 1.0)
+    };
+
+    if (includeCoverage) {
+        out.coverage = clamp(src.coverage ?? src.patchCoverage ?? d.coverage, 0.0, 1.0, d.coverage ?? 0.84);
+    }
+
+    if (includeWidth) {
+        out.width = clamp(src.width ?? d.width, 0.0, 2.0, d.width ?? 0.65);
+    }
+
+    return out;
+}
+
+function sanitizeAsphaltLivedInSettings(input, defaults) {
+    const src = input && typeof input === 'object' ? input : {};
+    const d = defaults && typeof defaults === 'object' ? defaults : {};
+    return {
+        edgeDirt: sanitizeAsphaltLivedInLayerSettings(src.edgeDirt, d.edgeDirt, { includeWidth: true }),
+        cracks: sanitizeAsphaltLivedInLayerSettings(src.cracks, d.cracks),
+        patches: sanitizeAsphaltLivedInLayerSettings(src.patches, d.patches, { includeCoverage: true }),
+        tireWear: sanitizeAsphaltLivedInLayerSettings(src.tireWear, d.tireWear)
+    };
+}
+
 export function sanitizeAsphaltNoiseSettings(input) {
     const src = input && typeof input === 'object' ? input : {};
     const coarseIn = src.coarse && typeof src.coarse === 'object' ? src.coarse : null;
     const fineIn = src.fine && typeof src.fine === 'object' ? src.fine : null;
+    const markingsIn = src.markings && typeof src.markings === 'object' ? src.markings : null;
+    const colorIn = src.color && typeof src.color === 'object' ? src.color : null;
+    const livedInIn = src.livedIn && typeof src.livedIn === 'object' ? src.livedIn : null;
 
     const legacy = {
         albedo: src.albedo,
@@ -79,7 +225,10 @@ export function sanitizeAsphaltNoiseSettings(input) {
 
     return {
         coarse: sanitizeAsphaltNoiseLayerSettings(coarseMerged, ASPHALT_NOISE_DEFAULTS.coarse, { scaleMax: 10.0 }),
-        fine: sanitizeAsphaltNoiseLayerSettings(fineIn, ASPHALT_NOISE_DEFAULTS.fine, { scaleMax: 15.0, includeNormal: true })
+        fine: sanitizeAsphaltNoiseLayerSettings(fineIn, ASPHALT_NOISE_DEFAULTS.fine, { scaleMax: 15.0, includeNormal: true }),
+        markings: sanitizeAsphaltMarkingsSettings(markingsIn, ASPHALT_NOISE_DEFAULTS.markings),
+        color: sanitizeAsphaltColorSettings(colorIn, ASPHALT_NOISE_DEFAULTS.color),
+        livedIn: sanitizeAsphaltLivedInSettings(livedInIn, ASPHALT_NOISE_DEFAULTS.livedIn)
     };
 }
 
@@ -90,7 +239,18 @@ export function loadSavedAsphaltNoiseSettings() {
     const raw = storage.getItem(STORAGE_KEY);
     if (!raw) return null;
     try {
-        return sanitizeAsphaltNoiseSettings(JSON.parse(raw));
+        const saved = sanitizeAsphaltNoiseSettings(JSON.parse(raw));
+        const legacy = sanitizeAsphaltNoiseSettings(LEGACY_ASPHALT_NOISE_DEFAULTS_V1);
+        const isLegacyDefault = JSON.stringify(saved) === JSON.stringify(legacy);
+        if (!isLegacyDefault) return saved;
+
+        const migrated = sanitizeAsphaltNoiseSettings(ASPHALT_NOISE_DEFAULTS);
+        try {
+            storage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+        } catch {
+            // ignore storage write failures
+        }
+        return migrated;
     } catch {
         return null;
     }

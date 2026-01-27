@@ -29,10 +29,10 @@ test('SunFlareSettings: sanitize clamps and normalizes', () => {
         preset: 'cinematic',
         strength: 2,
         components: {
-            core: true,
-            halo: true,
-            starburst: true,
-            ghosting: true
+            core: false,
+            halo: false,
+            starburst: false,
+            ghosting: false
         }
     });
 });

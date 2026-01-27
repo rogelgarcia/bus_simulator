@@ -9,6 +9,12 @@ import { getDefaultResolvedBuildingWindowVisualsSettings } from '../../visuals/b
 import { getDefaultResolvedAsphaltNoiseSettings } from '../../visuals/city/AsphaltNoiseSettings.js';
 import { getDefaultResolvedSunFlareSettings } from '../../visuals/sun/SunFlareSettings.js';
 import { getSunFlarePresetById, getSunFlarePresetOptions } from '../../visuals/sun/SunFlarePresets.js';
+import {
+    applyOptionsPresetToDraft,
+    createOptionsPresetFromDraft,
+    parseOptionsPresetJson,
+    stringifyOptionsPreset
+} from './OptionsPreset.js';
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -170,8 +176,59 @@ function makeValueRow({ label, value = '' }) {
     return { row, text };
 }
 
+function downloadTextFile(filename, text) {
+    const name = typeof filename === 'string' && filename.trim() ? filename.trim() : 'bus_sim_options_preset.json';
+    const payload = typeof text === 'string' ? text : '';
+    const blob = new Blob([payload], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+}
+
+async function copyTextToClipboard(text) {
+    const payload = typeof text === 'string' ? text : '';
+    if (!payload) return false;
+
+    const clipboard = navigator?.clipboard ?? null;
+    if (clipboard?.writeText) {
+        try {
+            await clipboard.writeText(payload);
+            return true;
+        } catch {}
+    }
+
+    const el = document.createElement('textarea');
+    el.value = payload;
+    el.setAttribute('readonly', 'readonly');
+    el.style.position = 'fixed';
+    el.style.left = '-9999px';
+    el.style.top = '-9999px';
+    document.body.appendChild(el);
+    el.select();
+    let ok = false;
+    try {
+        ok = document.execCommand('copy');
+    } catch {}
+    el.remove();
+    return ok;
+}
+
+function formatIncludedGroups(includes) {
+    const src = includes && typeof includes === 'object' ? includes : {};
+    const keys = ['lighting', 'bloom', 'colorGrading', 'sunFlare', 'buildingWindowVisuals', 'asphaltNoise'];
+    const enabled = keys.filter((k) => src[k] !== false);
+    return enabled.length ? enabled.join(', ') : '(none)';
+}
+
 export class OptionsUI {
     constructor({
+        visibleTabs = null,
         initialTab = 'lighting',
         initialLighting = null,
         initialBloom = null,
@@ -183,6 +240,8 @@ export class OptionsUI {
         initialColorGradingDebug = null,
         getIblDebugInfo = null,
         getPostProcessingDebugInfo = null,
+        titleText = 'Options',
+        subtitleText = '0 opens options · Esc closes',
         onCancel = null,
         onLiveChange = null,
         onSave = null
@@ -206,39 +265,63 @@ export class OptionsUI {
         this.panel = makeEl('div', 'ui-panel is-interactive options-panel');
 
         const header = makeEl('div', 'options-header');
-        const title = makeEl('div', 'options-title', 'Options');
-        const subtitle = makeEl('div', 'options-subtitle', '0 opens options · Esc closes');
+        const title = makeEl('div', 'options-title', titleText);
+        const subtitle = makeEl('div', 'options-subtitle', subtitleText);
         header.appendChild(title);
         header.appendChild(subtitle);
 
         this.tabs = makeEl('div', 'options-tabs');
-        this.tabButtons = {
-            lighting: makeEl('button', 'options-tab', 'Lighting'),
-            asphalt: makeEl('button', 'options-tab', 'Asphalt'),
-            buildings: makeEl('button', 'options-tab', 'Buildings')
+        this._visibleTabs = (() => {
+            if (!Array.isArray(visibleTabs)) return ['lighting', 'asphalt', 'buildings'];
+            const out = [];
+            for (const entry of visibleTabs) {
+                const raw = String(entry ?? '').toLowerCase();
+                const key = raw === 'gameplay' ? 'buildings' : raw;
+                if (key !== 'lighting' && key !== 'asphalt' && key !== 'buildings') continue;
+                if (out.includes(key)) continue;
+                out.push(key);
+            }
+            return out.length ? out : ['lighting', 'asphalt', 'buildings'];
+        })();
+
+        const TAB_LABELS = {
+            lighting: 'Lighting',
+            asphalt: 'Asphalt',
+            buildings: 'Buildings'
         };
 
-        for (const [key, btn] of Object.entries(this.tabButtons)) {
+        this.tabButtons = {};
+        for (const key of this._visibleTabs) {
+            const btn = makeEl('button', 'options-tab', TAB_LABELS[key] ?? key);
             btn.type = 'button';
             btn.addEventListener('click', () => this.setTab(key));
             this.tabs.appendChild(btn);
+            this.tabButtons[key] = btn;
         }
 
         this.body = makeEl('div', 'options-body');
 
         this.footer = makeEl('div', 'options-footer');
         this.resetBtn = makeEl('button', 'options-btn', 'Reset');
+        this.importBtn = makeEl('button', 'options-btn', 'Import');
+        this.exportBtn = makeEl('button', 'options-btn', 'Export');
         this.cancelBtn = makeEl('button', 'options-btn', 'Cancel');
         this.saveBtn = makeEl('button', 'options-btn options-btn-primary', 'Save');
         this.resetBtn.type = 'button';
+        this.importBtn.type = 'button';
+        this.exportBtn.type = 'button';
         this.cancelBtn.type = 'button';
         this.saveBtn.type = 'button';
 
         this.resetBtn.addEventListener('click', () => this.resetToDefaults());
+        this.importBtn.addEventListener('click', () => this._importPresetFromFile());
+        this.exportBtn.addEventListener('click', () => this._exportPreset());
         this.cancelBtn.addEventListener('click', () => this.onCancel?.());
         this.saveBtn.addEventListener('click', () => this.onSave?.(this.getDraft()));
 
         this.footer.appendChild(this.resetBtn);
+        this.footer.appendChild(this.importBtn);
+        this.footer.appendChild(this.exportBtn);
         this.footer.appendChild(this.cancelBtn);
         this.footer.appendChild(this.saveBtn);
 
@@ -248,9 +331,10 @@ export class OptionsUI {
         this.panel.appendChild(this.footer);
         this.root.appendChild(this.panel);
 
-        this._tab = (initialTab === 'buildings' || initialTab === 'gameplay')
+        const desiredTab = (initialTab === 'buildings' || initialTab === 'gameplay')
             ? 'buildings'
             : (initialTab === 'asphalt' ? 'asphalt' : 'lighting');
+        this._tab = this._visibleTabs.includes(desiredTab) ? desiredTab : (this._visibleTabs[0] ?? desiredTab);
         this._draftLighting = initialLighting && typeof initialLighting === 'object'
             ? JSON.parse(JSON.stringify(initialLighting))
             : null;
@@ -274,6 +358,69 @@ export class OptionsUI {
         this.setTab(this._tab);
     }
 
+    _setDraftFromFullDraft(fullDraft) {
+        const d = fullDraft && typeof fullDraft === 'object' ? fullDraft : null;
+        if (!d) return;
+        if (d.lighting) this._draftLighting = JSON.parse(JSON.stringify(d.lighting));
+        if (d.bloom) this._draftBloom = JSON.parse(JSON.stringify(d.bloom));
+        if (d.colorGrading) this._draftColorGrading = JSON.parse(JSON.stringify(d.colorGrading));
+        if (d.sunFlare) this._draftSunFlare = JSON.parse(JSON.stringify(d.sunFlare));
+        if (d.buildingWindowVisuals) this._draftBuildingWindowVisuals = JSON.parse(JSON.stringify(d.buildingWindowVisuals));
+        if (d.asphaltNoise) this._draftAsphaltNoise = JSON.parse(JSON.stringify(d.asphaltNoise));
+    }
+
+    async _exportPreset() {
+        const name = typeof window?.prompt === 'function'
+            ? (window.prompt('Options preset name (optional)', '') ?? '')
+            : '';
+        const safeName = String(name || '').trim();
+        const draft = this.getDraft();
+        const preset = createOptionsPresetFromDraft(draft, { name: safeName || null });
+        const json = stringifyOptionsPreset(preset);
+        const fileName = safeName
+            ? `bus_sim_options_preset_${safeName.replace(/[^a-z0-9_-]+/gi, '_').replace(/^_+|_+$/g, '').toLowerCase()}.json`
+            : 'bus_sim_options_preset.json';
+
+        downloadTextFile(fileName, json);
+        const copied = await copyTextToClipboard(json);
+        const groups = formatIncludedGroups(preset.includes);
+        window.alert(`Exported options preset.\n\nIncludes: ${groups}\nDownloaded: ${fileName}\nCopied to clipboard: ${copied ? 'yes' : 'no'}`);
+    }
+
+    _importPresetFromFile() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'application/json,.json';
+        input.addEventListener('change', async () => {
+            const file = input.files?.[0] ?? null;
+            if (!file) return;
+            let text = '';
+            try {
+                text = await file.text();
+            } catch {
+                window.alert('Failed to read preset file.');
+                return;
+            }
+
+            let preset;
+            try {
+                preset = parseOptionsPresetJson(text);
+            } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err ?? 'Unknown error');
+                window.alert(`Preset import failed: ${msg}`);
+                return;
+            }
+
+            const merged = applyOptionsPresetToDraft(this.getDraft(), preset);
+            this._setDraftFromFullDraft(merged);
+            this._renderTab();
+            this._emitLiveChange();
+            const groups = formatIncludedGroups(preset.includes);
+            window.alert(`Imported options preset.\n\nApplied: ${groups}`);
+        });
+        input.click();
+    }
+
     _emitLiveChange() {
         this.onLiveChange?.(this.getDraft());
     }
@@ -290,9 +437,10 @@ export class OptionsUI {
     }
 
     setTab(key) {
-        const next = (key === 'buildings' || key === 'gameplay')
+        const desired = (key === 'buildings' || key === 'gameplay')
             ? 'buildings'
             : (key === 'asphalt' ? 'asphalt' : 'lighting');
+        const next = this._visibleTabs.includes(desired) ? desired : (this._visibleTabs[0] ?? desired);
         this._tab = next;
         for (const [k, btn] of Object.entries(this.tabButtons)) btn.classList.toggle('is-active', k === next);
         this._renderTab();
@@ -478,12 +626,83 @@ export class OptionsUI {
     }
 
     _ensureDraftAsphaltNoise() {
-        if (this._draftAsphaltNoise) return;
-        const d = getDefaultResolvedAsphaltNoiseSettings();
-        this._draftAsphaltNoise = {
-            coarse: { ...d.coarse },
-            fine: { ...d.fine }
-        };
+        const defaults = getDefaultResolvedAsphaltNoiseSettings();
+
+	        if (!this._draftAsphaltNoise) {
+	            this._draftAsphaltNoise = {
+	                coarse: { ...defaults.coarse },
+	                fine: { ...defaults.fine },
+	                markings: { ...defaults.markings },
+	                color: { ...defaults.color },
+	                livedIn: JSON.parse(JSON.stringify(defaults.livedIn ?? {}))
+	            };
+	            return;
+	        }
+
+        const d = this._draftAsphaltNoise;
+
+        if (!d.coarse || typeof d.coarse !== 'object') d.coarse = { ...defaults.coarse };
+        const coarse = d.coarse;
+        if (coarse.albedo === undefined) coarse.albedo = defaults.coarse.albedo;
+        if (coarse.roughness === undefined) coarse.roughness = defaults.coarse.roughness;
+        if (coarse.scale === undefined) coarse.scale = defaults.coarse.scale;
+        if (coarse.colorStrength === undefined) coarse.colorStrength = defaults.coarse.colorStrength;
+        if (coarse.dirtyStrength === undefined) coarse.dirtyStrength = defaults.coarse.dirtyStrength;
+        if (coarse.roughnessStrength === undefined) coarse.roughnessStrength = defaults.coarse.roughnessStrength;
+
+	        if (!d.fine || typeof d.fine !== 'object') d.fine = { ...defaults.fine };
+	        const fine = d.fine;
+	        if (fine.albedo === undefined) fine.albedo = defaults.fine.albedo;
+	        if (fine.roughness === undefined) fine.roughness = defaults.fine.roughness;
+	        if (fine.normal === undefined) fine.normal = defaults.fine.normal;
+	        if (fine.scale === undefined) fine.scale = defaults.fine.scale;
+	        if (fine.colorStrength === undefined) fine.colorStrength = defaults.fine.colorStrength;
+	        if (fine.dirtyStrength === undefined) fine.dirtyStrength = defaults.fine.dirtyStrength;
+	        if (fine.roughnessStrength === undefined) fine.roughnessStrength = defaults.fine.roughnessStrength;
+	        if (fine.normalStrength === undefined) fine.normalStrength = defaults.fine.normalStrength;
+
+	        if (!d.markings || typeof d.markings !== 'object') d.markings = { ...defaults.markings };
+	        const markings = d.markings;
+	        if (markings.enabled === undefined) markings.enabled = defaults.markings?.enabled ?? false;
+	        if (markings.colorStrength === undefined) markings.colorStrength = defaults.markings?.colorStrength ?? 0.025;
+	        if (markings.roughnessStrength === undefined) markings.roughnessStrength = defaults.markings?.roughnessStrength ?? 0.09;
+	        if (markings.debug === undefined) markings.debug = defaults.markings?.debug ?? false;
+
+        if (!d.color || typeof d.color !== 'object') d.color = { ...defaults.color };
+        const color = d.color;
+        if (color.value === undefined) color.value = defaults.color?.value ?? 0;
+        if (color.warmCool === undefined) color.warmCool = defaults.color?.warmCool ?? 0;
+        if (color.saturation === undefined) color.saturation = defaults.color?.saturation ?? 0;
+
+        if (!d.livedIn || typeof d.livedIn !== 'object') d.livedIn = JSON.parse(JSON.stringify(defaults.livedIn ?? {}));
+        const livedIn = d.livedIn;
+        const livedInDefaults = defaults.livedIn ?? {};
+
+        if (!livedIn.edgeDirt || typeof livedIn.edgeDirt !== 'object') livedIn.edgeDirt = { ...(livedInDefaults.edgeDirt ?? {}) };
+        const edgeDirt = livedIn.edgeDirt;
+        if (edgeDirt.enabled === undefined) edgeDirt.enabled = livedInDefaults.edgeDirt?.enabled;
+        if (edgeDirt.strength === undefined) edgeDirt.strength = livedInDefaults.edgeDirt?.strength;
+        if (edgeDirt.width === undefined) edgeDirt.width = livedInDefaults.edgeDirt?.width;
+        if (edgeDirt.scale === undefined) edgeDirt.scale = livedInDefaults.edgeDirt?.scale;
+
+        if (!livedIn.cracks || typeof livedIn.cracks !== 'object') livedIn.cracks = { ...(livedInDefaults.cracks ?? {}) };
+        const cracks = livedIn.cracks;
+        if (cracks.enabled === undefined) cracks.enabled = livedInDefaults.cracks?.enabled;
+        if (cracks.strength === undefined) cracks.strength = livedInDefaults.cracks?.strength;
+        if (cracks.scale === undefined) cracks.scale = livedInDefaults.cracks?.scale;
+
+        if (!livedIn.patches || typeof livedIn.patches !== 'object') livedIn.patches = { ...(livedInDefaults.patches ?? {}) };
+        const patches = livedIn.patches;
+        if (patches.enabled === undefined) patches.enabled = livedInDefaults.patches?.enabled;
+        if (patches.strength === undefined) patches.strength = livedInDefaults.patches?.strength;
+        if (patches.scale === undefined) patches.scale = livedInDefaults.patches?.scale;
+        if (patches.coverage === undefined) patches.coverage = livedInDefaults.patches?.coverage;
+
+        if (!livedIn.tireWear || typeof livedIn.tireWear !== 'object') livedIn.tireWear = { ...(livedInDefaults.tireWear ?? {}) };
+        const tireWear = livedIn.tireWear;
+        if (tireWear.enabled === undefined) tireWear.enabled = livedInDefaults.tireWear?.enabled;
+        if (tireWear.strength === undefined) tireWear.strength = livedInDefaults.tireWear?.strength;
+        if (tireWear.scale === undefined) tireWear.scale = livedInDefaults.tireWear?.scale;
     }
 
     _ensureDraftBuildingWindowVisuals() {
@@ -564,9 +783,16 @@ export class OptionsUI {
     _renderAsphaltTab() {
         this._ensureDraftAsphaltNoise();
 
-        const d = this._draftAsphaltNoise;
-        const coarse = d.coarse ?? (d.coarse = {});
-        const fine = d.fine ?? (d.fine = {});
+	        const d = this._draftAsphaltNoise;
+	        const coarse = d.coarse ?? (d.coarse = {});
+	        const fine = d.fine ?? (d.fine = {});
+	        const markings = d.markings ?? (d.markings = {});
+	        const color = d.color ?? (d.color = {});
+	        const livedIn = d.livedIn ?? (d.livedIn = {});
+	        const edgeDirt = livedIn.edgeDirt ?? (livedIn.edgeDirt = {});
+	        const cracks = livedIn.cracks ?? (livedIn.cracks = {});
+	        const patches = livedIn.patches ?? (livedIn.patches = {});
+	        const tireWear = livedIn.tireWear ?? (livedIn.tireWear = {});
         const emit = () => this._emitLiveChange();
 
         const sectionCoarse = makeEl('div', 'options-section');
@@ -699,17 +925,241 @@ export class OptionsUI {
         sectionFine.appendChild(fineControls.normal.row);
         sectionFine.appendChild(fineControls.scale.row);
         sectionFine.appendChild(fineControls.colorStrength.row);
-        sectionFine.appendChild(fineControls.dirtyStrength.row);
-        sectionFine.appendChild(fineControls.roughnessStrength.row);
-        sectionFine.appendChild(fineControls.normalStrength.row);
+	        sectionFine.appendChild(fineControls.dirtyStrength.row);
+	        sectionFine.appendChild(fineControls.roughnessStrength.row);
+	        sectionFine.appendChild(fineControls.normalStrength.row);
+
+	        const sectionMarkings = makeEl('div', 'options-section');
+	        sectionMarkings.appendChild(makeEl('div', 'options-section-title', 'Markings'));
+
+	        const markingsControls = {
+	            enabled: makeToggleRow({
+	                label: 'Apply asphalt noise to markings',
+	                value: markings.enabled,
+	                onChange: (v) => { markings.enabled = v; emit(); }
+	            }),
+	            colorStrength: makeNumberSliderRow({
+	                label: 'Markings noise color strength',
+	                value: markings.colorStrength ?? 0.025,
+	                min: 0,
+	                max: 0.5,
+	                step: 0.005,
+	                digits: 3,
+	                onChange: (v) => { markings.colorStrength = v; emit(); }
+	            }),
+	            roughnessStrength: makeNumberSliderRow({
+	                label: 'Markings noise roughness strength',
+	                value: markings.roughnessStrength ?? 0.09,
+	                min: 0,
+	                max: 0.5,
+	                step: 0.005,
+	                digits: 3,
+	                onChange: (v) => { markings.roughnessStrength = v; emit(); }
+	            }),
+	            debug: makeToggleRow({
+	                label: 'Debug: show markings noise',
+	                value: markings.debug,
+	                onChange: (v) => { markings.debug = v; emit(); }
+	            })
+	        };
+
+	        const setMarkingsControlsEnabled = (enabled) => {
+	            const off = !enabled;
+	            markingsControls.colorStrength.range.disabled = off;
+	            markingsControls.colorStrength.number.disabled = off;
+	            markingsControls.roughnessStrength.range.disabled = off;
+	            markingsControls.roughnessStrength.number.disabled = off;
+	        };
+
+	        setMarkingsControlsEnabled(!!markings.enabled);
+	        markingsControls.enabled.toggle.addEventListener('change', () => setMarkingsControlsEnabled(!!markingsControls.enabled.toggle.checked));
+
+	        sectionMarkings.appendChild(markingsControls.enabled.row);
+	        sectionMarkings.appendChild(markingsControls.colorStrength.row);
+	        sectionMarkings.appendChild(markingsControls.roughnessStrength.row);
+	        sectionMarkings.appendChild(markingsControls.debug.row);
+
+	        const sectionColor = makeEl('div', 'options-section');
+	        sectionColor.appendChild(makeEl('div', 'options-section-title', 'Color'));
+
+        const colorControls = {
+            value: makeNumberSliderRow({
+                label: 'Asphalt value (bright/dark)',
+                value: color.value ?? 0,
+                min: -0.35,
+                max: 0.35,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { color.value = v; emit(); }
+            }),
+            warmCool: makeNumberSliderRow({
+                label: 'Warm/cool tint',
+                value: color.warmCool ?? 0,
+                min: -0.25,
+                max: 0.25,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { color.warmCool = v; emit(); }
+            }),
+            saturation: makeNumberSliderRow({
+                label: 'Saturation',
+                value: color.saturation ?? 0,
+                min: -0.5,
+                max: 0.5,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { color.saturation = v; emit(); }
+            })
+        };
+
+        sectionColor.appendChild(colorControls.value.row);
+        sectionColor.appendChild(colorControls.warmCool.row);
+        sectionColor.appendChild(colorControls.saturation.row);
+
+        const sectionLivedIn = makeEl('div', 'options-section');
+        sectionLivedIn.appendChild(makeEl('div', 'options-section-title', 'Lived-in'));
+
+        const livedInControls = {
+            edgeDirtEnabled: makeToggleRow({
+                label: 'Edge dirt',
+                value: edgeDirt.enabled,
+                onChange: (v) => { edgeDirt.enabled = v; emit(); }
+            }),
+            edgeDirtStrength: makeNumberSliderRow({
+                label: 'Edge dirt strength',
+                value: edgeDirt.strength ?? 0.18,
+                min: 0,
+                max: 1,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { edgeDirt.strength = v; emit(); }
+            }),
+            edgeDirtWidth: makeNumberSliderRow({
+                label: 'Edge dirt width (m)',
+                value: edgeDirt.width ?? 0.65,
+                min: 0,
+                max: 1.25,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { edgeDirt.width = v; emit(); }
+            }),
+            edgeDirtScale: makeNumberSliderRow({
+                label: 'Edge dirt scale',
+                value: edgeDirt.scale ?? 0.55,
+                min: 0.05,
+                max: 10,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { edgeDirt.scale = v; emit(); }
+            }),
+
+            cracksEnabled: makeToggleRow({
+                label: 'Cracks',
+                value: cracks.enabled,
+                onChange: (v) => { cracks.enabled = v; emit(); }
+            }),
+            cracksStrength: makeNumberSliderRow({
+                label: 'Cracks strength',
+                value: cracks.strength ?? 0.12,
+                min: 0,
+                max: 1,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { cracks.strength = v; emit(); }
+            }),
+            cracksScale: makeNumberSliderRow({
+                label: 'Cracks scale',
+                value: cracks.scale ?? 3.2,
+                min: 0.1,
+                max: 25,
+                step: 0.1,
+                digits: 1,
+                onChange: (v) => { cracks.scale = v; emit(); }
+            }),
+
+            patchesEnabled: makeToggleRow({
+                label: 'Patch repairs',
+                value: patches.enabled,
+                onChange: (v) => { patches.enabled = v; emit(); }
+            }),
+            patchesStrength: makeNumberSliderRow({
+                label: 'Patch strength',
+                value: patches.strength ?? 0.1,
+                min: 0,
+                max: 1,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { patches.strength = v; emit(); }
+            }),
+            patchesScale: makeNumberSliderRow({
+                label: 'Patch scale',
+                value: patches.scale ?? 4.0,
+                min: 0.1,
+                max: 25,
+                step: 0.1,
+                digits: 1,
+                onChange: (v) => { patches.scale = v; emit(); }
+            }),
+            patchesCoverage: makeNumberSliderRow({
+                label: 'Patch coverage',
+                value: patches.coverage ?? 0.84,
+                min: 0,
+                max: 1,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { patches.coverage = v; emit(); }
+            }),
+
+            tireWearEnabled: makeToggleRow({
+                label: 'Tire wear / polish',
+                value: tireWear.enabled,
+                onChange: (v) => { tireWear.enabled = v; emit(); }
+            }),
+            tireWearStrength: makeNumberSliderRow({
+                label: 'Tire wear strength',
+                value: tireWear.strength ?? 0.1,
+                min: 0,
+                max: 1,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { tireWear.strength = v; emit(); }
+            }),
+            tireWearScale: makeNumberSliderRow({
+                label: 'Tire wear scale',
+                value: tireWear.scale ?? 1.6,
+                min: 0.1,
+                max: 25,
+                step: 0.1,
+                digits: 1,
+                onChange: (v) => { tireWear.scale = v; emit(); }
+            })
+        };
+
+        sectionLivedIn.appendChild(livedInControls.edgeDirtEnabled.row);
+        sectionLivedIn.appendChild(livedInControls.edgeDirtStrength.row);
+        sectionLivedIn.appendChild(livedInControls.edgeDirtWidth.row);
+        sectionLivedIn.appendChild(livedInControls.edgeDirtScale.row);
+        sectionLivedIn.appendChild(livedInControls.cracksEnabled.row);
+        sectionLivedIn.appendChild(livedInControls.cracksStrength.row);
+        sectionLivedIn.appendChild(livedInControls.cracksScale.row);
+        sectionLivedIn.appendChild(livedInControls.patchesEnabled.row);
+        sectionLivedIn.appendChild(livedInControls.patchesStrength.row);
+        sectionLivedIn.appendChild(livedInControls.patchesScale.row);
+        sectionLivedIn.appendChild(livedInControls.patchesCoverage.row);
+        sectionLivedIn.appendChild(livedInControls.tireWearEnabled.row);
+        sectionLivedIn.appendChild(livedInControls.tireWearStrength.row);
+        sectionLivedIn.appendChild(livedInControls.tireWearScale.row);
 
         const note = makeEl('div', 'options-note');
-        note.textContent = 'Coarse drives large-area variation; Fine adds grain. Changes apply live to road asphalt materials.';
+        note.textContent = 'Coarse drives large-area breakup; Fine adds grain. Color and lived-in overlays help tune realism without swapping textures.';
 
-        this.body.appendChild(sectionCoarse);
-        this.body.appendChild(sectionFine);
-        this.body.appendChild(note);
-    }
+	        this.body.appendChild(sectionCoarse);
+	        this.body.appendChild(sectionFine);
+	        this.body.appendChild(sectionMarkings);
+	        this.body.appendChild(sectionColor);
+	        this.body.appendChild(sectionLivedIn);
+	        this.body.appendChild(note);
+	    }
 
     _renderBuildingsTab() {
         this._ensureDraftBuildingWindowVisuals();
@@ -1204,11 +1654,14 @@ export class OptionsUI {
             }
         };
 
-        const asphaltNoise = getDefaultResolvedAsphaltNoiseSettings();
-        this._draftAsphaltNoise = {
-            coarse: { ...asphaltNoise.coarse },
-            fine: { ...asphaltNoise.fine }
-        };
+	        const asphaltNoise = getDefaultResolvedAsphaltNoiseSettings();
+	        this._draftAsphaltNoise = {
+	            coarse: { ...asphaltNoise.coarse },
+	            fine: { ...asphaltNoise.fine },
+	            markings: { ...asphaltNoise.markings },
+	            color: { ...asphaltNoise.color },
+	            livedIn: JSON.parse(JSON.stringify(asphaltNoise.livedIn ?? {}))
+	        };
         this._renderTab();
         this._emitLiveChange();
     }
@@ -1265,6 +1718,41 @@ export class OptionsUI {
                     dirtyStrength: asphaltNoise.fine?.dirtyStrength,
                     roughnessStrength: asphaltNoise.fine?.roughnessStrength,
                     normalStrength: asphaltNoise.fine?.normalStrength
+                },
+                color: {
+                    value: asphaltNoise.color?.value,
+                    warmCool: asphaltNoise.color?.warmCool,
+                    saturation: asphaltNoise.color?.saturation
+                },
+                markings: {
+                    enabled: !!asphaltNoise.markings?.enabled,
+                    colorStrength: asphaltNoise.markings?.colorStrength,
+                    roughnessStrength: asphaltNoise.markings?.roughnessStrength,
+                    debug: !!asphaltNoise.markings?.debug
+                },
+                livedIn: {
+                    edgeDirt: {
+                        enabled: !!asphaltNoise.livedIn?.edgeDirt?.enabled,
+                        strength: asphaltNoise.livedIn?.edgeDirt?.strength,
+                        width: asphaltNoise.livedIn?.edgeDirt?.width,
+                        scale: asphaltNoise.livedIn?.edgeDirt?.scale
+                    },
+                    cracks: {
+                        enabled: !!asphaltNoise.livedIn?.cracks?.enabled,
+                        strength: asphaltNoise.livedIn?.cracks?.strength,
+                        scale: asphaltNoise.livedIn?.cracks?.scale
+                    },
+                    patches: {
+                        enabled: !!asphaltNoise.livedIn?.patches?.enabled,
+                        strength: asphaltNoise.livedIn?.patches?.strength,
+                        scale: asphaltNoise.livedIn?.patches?.scale,
+                        coverage: asphaltNoise.livedIn?.patches?.coverage
+                    },
+                    tireWear: {
+                        enabled: !!asphaltNoise.livedIn?.tireWear?.enabled,
+                        strength: asphaltNoise.livedIn?.tireWear?.strength,
+                        scale: asphaltNoise.livedIn?.tireWear?.scale
+                    }
                 }
             },
             buildingWindowVisuals: {

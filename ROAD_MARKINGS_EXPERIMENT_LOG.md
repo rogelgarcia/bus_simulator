@@ -108,3 +108,66 @@ These are related changes made while chasing the regressions:
 
 **User follow-up**
 - ✅ Problem fixed (markings no longer z-fight with asphalt).
+
+---
+
+## 2026-01-27 — Fix: markings hidden by custom asphalt materials (polygonOffset / render order)
+
+**User-reported effect**
+- In gameplay: markings are not visible.
+- In city view: markings become visible only when asphalt is disabled (suggesting asphalt is occluding/overdrawing).
+- User notes they are using custom asphalt materials with roughness/normal maps (not default configs).
+
+**Implementation (key changes)**
+- Make decal-style markings materials always “win” against asphalt polygon offsets:
+  - `resolveMaterials()` now forces stronger lane marking `polygonOffsetFactor/Units` (defaults `-1/-4`) and, when asphalt uses polygonOffset, pushes markings further forward (`factor - 2`, `units - 4`) (`src/graphics/visuals/city/RoadEngineRoads.js`).
+- Ensure markings don’t rely on external config defaults for depth separation:
+  - Enforced a minimum `road.markings.lift` of `0.003` meters (even if config sets `0`) (`src/graphics/visuals/city/RoadEngineRoads.js`).
+- Ensure markings draw after asphalt/edge wear even if asphalt ends up in the transparent pass:
+  - Markings mesh `renderOrder` now resolves to `max(asphalt, edgeWear) + 1` (`src/graphics/visuals/city/RoadEngineRoads.js`).
+- Harden against external runtime tweaks:
+  - Markings now re-sync `renderOrder` + decal `polygonOffset` every frame via `onBeforeRender`, so if gameplay code later changes asphalt render order or polygon offset, markings still render on top (`src/graphics/visuals/city/RoadEngineRoads.js`).
+
+**Tests**
+- Added a Playwright headless E2E guard that asserts markings change rendered pixels by toggling the `Markings` group visibility:
+  - `tests/headless/e2e/road_markings_visible.pwtest.js`
+
+**Follow-up (2026-01-27)**
+- Headless captures showed diffs dominated by async grass texture loads, and markings still appeared missing.
+- Increased default physical separation and decal depth bias:
+  - Default `road.markings.lift` raised to `0.01` (and runtime min enforced) to reduce z-fighting at city camera depths.
+  - Markings decal `polygonOffsetUnits` strengthened from `-4` → `-16` to bias depth-test decisively in favor of markings.
+
+---
+
+## 2026-01-27 — Root cause: shader compilation failures (markings “exist” but don’t render)
+
+**Why this entry exists**
+- After the depth/polygonOffset tweaks above, the **headless repro still showed `changedPixels = 0`** when toggling markings in `city_straight_road`.
+- Even when asphalt was hidden and markings materials were forced to bright colors + depthTest disabled, pixels did not change.
+- That evidence suggested the issue was not “occluded by asphalt” but “not rendering / program invalid”.
+
+**Deterministic repro + guard**
+- Added headless regression test:
+  - `tests/headless/e2e/road_markings_visible.pwtest.js`
+- Added deterministic scenario mirroring gameplay asphalt maps:
+  - `tests/headless/harness/scenarios/scenario_road_markings_textured_asphalt.js`
+
+**Key discovery**
+- Capturing the browser console during the failing headless run showed shader compilation failures:
+  1. `AsphaltEdgeWearVisuals` used `vUv` without guaranteeing `vUv` exists (missing `USE_UV`) → `'vUv' : undeclared identifier`.
+  2. `AsphaltMarkingsNoiseVisuals` injected GLSL using local variable name `active`, which is treated as reserved/illegal on the target GLSL compiler (ANGLE) → `'active' : Illegal use of reserved word`.
+  3. `AsphaltMarkingsNoiseVisuals` (and similar injectors) could be applied repeatedly before the first successful compile (e.g., while dragging sliders), stacking `onBeforeCompile` wrappers and producing duplicated shader declarations → `'vAsphaltMarkingsWorldPos' : redefinition`.
+- These failures lead to invalid WebGL programs (`useProgram: program not valid`) and the markings toggle no longer affected pixels.
+
+**Fix (final)**
+- `src/graphics/visuals/city/AsphaltEdgeWearVisuals.js`: force UV varyings by setting `mat.defines.USE_UV = 1` for the injected material.
+- `src/graphics/visuals/city/AsphaltMarkingsNoiseVisuals.js`: rename injected GLSL local `active` → `enabledFlag`.
+- `src/graphics/visuals/city/AsphaltMarkingsNoiseVisuals.js` + `src/graphics/visuals/city/AsphaltEdgeWearVisuals.js`: make shader injection idempotent and ensure `onBeforeCompile` is installed only once per material.
+
+**Verification**
+- `npm run -s test:headless -- road_markings_visible.pwtest.js` now passes (both scenarios show a strong pixel diff when markings are toggled).
+- `npm run -s test:headless -- gameplay_asphalt_markings_noise_no_shader_errors.pwtest.js` verifies that changing markings noise options in gameplay does not produce shader compile errors.
+
+**Deep dive**
+- Full writeup: `ROAD_MARKINGS_ISSUE_ANALYSIS.md`

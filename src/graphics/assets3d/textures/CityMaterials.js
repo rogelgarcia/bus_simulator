@@ -1,6 +1,7 @@
 // src/graphics/assets3d/textures/CityMaterials.js
 // Defines shared city materials (roads, sidewalks, curbs, markings).
 import * as THREE from 'three';
+import { ROAD_MARKING_WHITE_TARGET_SUN_HEX, ROAD_MARKING_YELLOW_TARGET_SUN_HEX } from '../materials/RoadMarkingsColors.js';
 
 let _cached = null;
 
@@ -20,6 +21,18 @@ export function getCityMaterials() {
         metalness: 0.0
     });
 
+    const roadEdgeWear = applyPolygonOffset(new THREE.MeshStandardMaterial({
+        color: 0x141414,
+        roughness: 1.0,
+        metalness: 0.0,
+        transparent: true,
+        opacity: 1.0,
+        depthWrite: false
+    }), { factor: 0, units: -2 });
+    roadEdgeWear.blending = THREE.NormalBlending;
+    if (!roadEdgeWear.userData) roadEdgeWear.userData = {};
+    roadEdgeWear.userData.bloomExclude = true;
+
     const sidewalk = new THREE.MeshStandardMaterial({
         color: 0x8f8f8f,
         roughness: 1.0,
@@ -33,8 +46,8 @@ export function getCityMaterials() {
     });
 
     const laneWhite = applyPolygonOffset(new THREE.MeshStandardMaterial({
-        color: 0xf2f2f2,
-        roughness: 0.35,
+        color: ROAD_MARKING_WHITE_TARGET_SUN_HEX,
+        roughness: 0.55,
         metalness: 0.0,
         transparent: true,
         opacity: 1.0,
@@ -45,8 +58,8 @@ export function getCityMaterials() {
     laneWhite.userData.bloomExclude = true;
 
     const laneYellow = applyPolygonOffset(new THREE.MeshStandardMaterial({
-        color: 0xf2d34f,
-        roughness: 0.35,
+        color: ROAD_MARKING_YELLOW_TARGET_SUN_HEX,
+        roughness: 0.55,
         metalness: 0.0,
         transparent: true,
         opacity: 1.0,
@@ -56,6 +69,6 @@ export function getCityMaterials() {
     if (!laneYellow.userData) laneYellow.userData = {};
     laneYellow.userData.bloomExclude = true;
 
-    _cached = { road, sidewalk, curb, laneWhite, laneYellow };
+    _cached = { road, roadEdgeWear, sidewalk, curb, laneWhite, laneYellow };
     return _cached;
 }

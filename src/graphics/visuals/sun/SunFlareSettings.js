@@ -4,7 +4,7 @@
 
 const STORAGE_KEY = 'bus_sim.sunFlare.v1';
 
-export const SUN_FLARE_DEFAULTS = Object.freeze({
+const LEGACY_SUN_FLARE_DEFAULTS_V1 = Object.freeze({
     enabled: true,
     preset: 'subtle',
     strength: 0.65,
@@ -13,6 +13,18 @@ export const SUN_FLARE_DEFAULTS = Object.freeze({
         halo: true,
         starburst: true,
         ghosting: true
+    })
+});
+
+export const SUN_FLARE_DEFAULTS = Object.freeze({
+    enabled: false,
+    preset: 'cinematic',
+    strength: 1.1,
+    components: Object.freeze({
+        core: false,
+        halo: false,
+        starburst: false,
+        ghosting: false
     })
 });
 
@@ -77,7 +89,23 @@ export function loadSavedSunFlareSettings() {
     const raw = storage.getItem(STORAGE_KEY);
     if (!raw) return null;
     try {
-        return sanitizeSunFlareSettings(JSON.parse(raw));
+        const saved = sanitizeSunFlareSettings(JSON.parse(raw));
+        const isLegacyDefault = saved.enabled === LEGACY_SUN_FLARE_DEFAULTS_V1.enabled
+            && saved.preset === LEGACY_SUN_FLARE_DEFAULTS_V1.preset
+            && saved.strength === LEGACY_SUN_FLARE_DEFAULTS_V1.strength
+            && saved.components?.core === LEGACY_SUN_FLARE_DEFAULTS_V1.components.core
+            && saved.components?.halo === LEGACY_SUN_FLARE_DEFAULTS_V1.components.halo
+            && saved.components?.starburst === LEGACY_SUN_FLARE_DEFAULTS_V1.components.starburst
+            && saved.components?.ghosting === LEGACY_SUN_FLARE_DEFAULTS_V1.components.ghosting;
+        if (!isLegacyDefault) return saved;
+
+        const migrated = sanitizeSunFlareSettings(SUN_FLARE_DEFAULTS);
+        try {
+            storage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+        } catch {
+            // ignore storage write failures
+        }
+        return migrated;
     } catch {
         return null;
     }
