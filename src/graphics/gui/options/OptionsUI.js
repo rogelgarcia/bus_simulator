@@ -1178,7 +1178,7 @@ export class OptionsUI {
                 onChange: (v) => { d.reflective.enabled = v; emit(); }
             }),
             glassEnvMapIntensity: makeNumberSliderRow({
-                label: 'Window glass envMapIntensity',
+                label: 'Window glass reflection intensity',
                 value: glass.envMapIntensity ?? 4.0,
                 min: 0,
                 max: 5,
@@ -1254,7 +1254,7 @@ export class OptionsUI {
         }
 
         const note = makeEl('div', 'options-note');
-        note.textContent = 'Building window visuals apply when buildings are (re)generated. Save, then rebuild the scene (re-enter Gameplay/Map Debugger/Building Fabrication) or reload.';
+        note.textContent = 'Changes apply live to the current scene. Save to persist. If you still don’t see reflections, reload (to regenerate buildings/materials).';
 
         this.body.appendChild(sectionBuildings);
         this.body.appendChild(note);
@@ -1299,6 +1299,11 @@ export class OptionsUI {
 	                value: d.ibl.setBackground,
 	                onChange: (v) => { d.ibl.setBackground = v; emit(); }
 	            }),
+            iblProbeSphere: makeToggleRow({
+                label: 'Show IBL probe sphere',
+                value: !!d.ibl.showProbeSphere,
+                onChange: (v) => { d.ibl.showProbeSphere = v; emit(); }
+            }),
             exposure: makeNumberSliderRow({
                 label: 'Tone mapping exposure',
                 value: d.exposure,
@@ -1437,9 +1442,10 @@ export class OptionsUI {
         sectionIbl.appendChild(controls.iblEnabled.row);
         sectionIbl.appendChild(controls.iblIntensity.row);
         sectionIbl.appendChild(controls.iblBackground.row);
+        sectionIbl.appendChild(controls.iblProbeSphere.row);
 
-	        let iblStatusSection = null;
-	        if (this._getIblDebugInfo) {
+        let iblStatusSection = null;
+        if (this._getIblDebugInfo) {
 	            iblStatusSection = makeEl('div', 'options-section');
 	            iblStatusSection.appendChild(makeEl('div', 'options-section-title', 'IBL Status'));
 	            const rowEnvMap = makeValueRow({ label: 'Env map', value: '-' });
@@ -1613,7 +1619,8 @@ export class OptionsUI {
             ibl: {
                 enabled: d.ibl.enabled,
                 envMapIntensity: d.ibl.envMapIntensity,
-                setBackground: d.ibl.setBackground
+                setBackground: d.ibl.setBackground,
+                showProbeSphere: false
             }
         };
 
@@ -1687,7 +1694,8 @@ export class OptionsUI {
                 ibl: {
                     enabled: !!d.ibl.enabled,
                     envMapIntensity: d.ibl.envMapIntensity,
-                    setBackground: !!d.ibl.setBackground
+                    setBackground: !!d.ibl.setBackground,
+                    showProbeSphere: !!d.ibl.showProbeSphere
                 }
             },
             bloom: {

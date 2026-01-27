@@ -251,6 +251,7 @@ export class GameplayState {
         probe.castShadow = true;
         probe.receiveShadow = true;
         probe.name = 'ibl_probe_sphere';
+        probe.visible = false;
         this.busAnchor.add(probe);
         this._iblProbe = probe;
         this.engine.applyCurrentIBLIntensity?.({ force: true });

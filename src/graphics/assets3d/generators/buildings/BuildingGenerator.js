@@ -1422,6 +1422,7 @@ export function buildBuildingVisualParts({
                 transparent: wantsAlpha,
                 alphaTest: wantsAlpha ? 0.01 : 0.0
             });
+            disableIblOnMaterial(mat);
             mat.polygonOffset = true;
             mat.polygonOffsetFactor = -1;
             mat.polygonOffsetUnits = -1;
@@ -1454,7 +1455,7 @@ export function buildBuildingVisualParts({
         windowsGroup.userData = windowsGroup.userData ?? {};
         const windowVisualsObj = windowVisuals && typeof windowVisuals === 'object' ? windowVisuals : null;
         const reflectiveObj = windowVisualsObj?.reflective && typeof windowVisualsObj.reflective === 'object' ? windowVisualsObj.reflective : {};
-        const reflectiveEnabled = reflectiveObj.enabled !== undefined ? !!reflectiveObj.enabled : true;
+        const reflectiveEnabled = reflectiveObj.enabled !== undefined ? !!reflectiveObj.enabled : false;
         const glassObj = reflectiveObj.glass && typeof reflectiveObj.glass === 'object' ? reflectiveObj.glass : {};
         const glassColorHex = Number.isFinite(glassObj.colorHex) ? ((Number(glassObj.colorHex) >>> 0) & 0xffffff) : 0xffffff;
         const glassMetalness = Number.isFinite(glassObj.metalness) ? glassObj.metalness : 0.0;
@@ -1487,7 +1488,7 @@ export function buildBuildingVisualParts({
                 transmission: wantsTransmission ? glassTransmission : 0.0,
                 ior: glassIor,
                 envMapIntensity: glassEnvMapIntensity,
-                opacity: wantsTransmission ? 1.0 : 0.55
+                opacity: wantsTransmission ? 1.0 : 0.85
             });
             mat.transparent = true;
             mat.alphaMap = alphaMap ?? null;
@@ -1498,32 +1499,26 @@ export function buildBuildingVisualParts({
             mat.polygonOffsetUnits = -1;
             mat.userData = mat.userData ?? {};
             mat.userData.iblEnvMapIntensityScale = glassEnvMapIntensity;
+            mat.userData.buildingWindowGlass = true;
             return mat;
         };
 
-        let upperGlassMat = null;
-        let streetGlassMat = null;
-        if (reflectiveEnabled) {
-            const upperMaskTypeId = upperWindowTypeId ? upperWindowTypeId : windowTypeIdFromLegacyWindowStyle(upperWindowStyle);
-            upperGlassMat = makeGlassMaterial(getWindowGlassMaskTexture({
-                typeId: upperMaskTypeId,
-                params: upperWindowParams,
-                windowWidth: upperWindowWidth,
-                windowHeight: upperDesiredWindowHeight
-            }));
+        const upperMaskTypeId = upperWindowTypeId ? upperWindowTypeId : windowTypeIdFromLegacyWindowStyle(upperWindowStyle);
+        const upperGlassMat = makeGlassMaterial(getWindowGlassMaskTexture({
+            typeId: upperMaskTypeId,
+            params: upperWindowParams,
+            windowWidth: upperWindowWidth,
+            windowHeight: upperDesiredWindowHeight
+        }));
 
-            if (streetUsesUpperMat) {
-                streetGlassMat = upperGlassMat;
-            } else {
-                const streetMaskTypeId = streetWindowTypeId ? streetWindowTypeId : windowTypeIdFromLegacyWindowStyle(streetWindowStyle);
-                streetGlassMat = makeGlassMaterial(getWindowGlassMaskTexture({
-                    typeId: streetMaskTypeId,
-                    params: streetWindowParams,
-                    windowWidth: streetWindowWidth,
-                    windowHeight: streetDesiredWindowHeight
-                }));
-            }
-        }
+        const streetGlassMat = streetUsesUpperMat
+            ? upperGlassMat
+            : makeGlassMaterial(getWindowGlassMaskTexture({
+                typeId: streetWindowTypeId ? streetWindowTypeId : windowTypeIdFromLegacyWindowStyle(streetWindowStyle),
+                params: streetWindowParams,
+                windowWidth: streetWindowWidth,
+                windowHeight: streetDesiredWindowHeight
+            }));
 
         const planeGeoCache = new Map();
         const getPlaneGeometry = (width, height) => {
@@ -1618,18 +1613,16 @@ export function buildBuildingVisualParts({
                             const geo = getPlaneGeometry(windowWidth, windowHeight);
                             addWindowInstance({ geometry: geo, material: windowMat, x: cx, y, z: cz, yaw, renderOrder: 0 });
 
-                            const glassMat = reflectiveEnabled ? (isStreetFloor ? streetGlassMat : upperGlassMat) : null;
-                            if (glassMat) {
-                                addWindowInstance({
-                                    geometry: geo,
-                                    material: glassMat,
-                                    x: cx + nx * glassLift,
-                                    y,
-                                    z: cz + nz * glassLift,
-                                    yaw,
-                                    renderOrder: 1
-                                });
-                            }
+                            const glassMat = isStreetFloor ? streetGlassMat : upperGlassMat;
+                            addWindowInstance({
+                                geometry: geo,
+                                material: glassMat,
+                                x: cx + nx * glassLift,
+                                y,
+                                z: cz + nz * glassLift,
+                                yaw,
+                                renderOrder: 1
+                            });
                         }
                     }
 
@@ -1678,6 +1671,9 @@ export function buildBuildingVisualParts({
                 mesh.castShadow = false;
                 mesh.receiveShadow = false;
                 mesh.renderOrder = bucket.renderOrder;
+                if (bucket.material?.userData?.buildingWindowGlass === true) {
+                    mesh.visible = reflectiveEnabled;
+                }
                 mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
 
                 for (let i = 0; i < count; i++) {

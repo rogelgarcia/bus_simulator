@@ -8,7 +8,8 @@ import { applyAsphaltMarkingsNoiseVisualsToMeshStandardMaterial } from '../graph
 import { saveLightingSettings } from '../graphics/lighting/LightingSettings.js';
 import { saveBloomSettings } from '../graphics/visuals/postprocessing/BloomSettings.js';
 import { getResolvedAsphaltNoiseSettings, saveAsphaltNoiseSettings } from '../graphics/visuals/city/AsphaltNoiseSettings.js';
-import { getResolvedBuildingWindowVisualsSettings, saveBuildingWindowVisualsSettings } from '../graphics/visuals/buildings/BuildingWindowVisualsSettings.js';
+import { getResolvedBuildingWindowVisualsSettings, sanitizeBuildingWindowVisualsSettings, saveBuildingWindowVisualsSettings } from '../graphics/visuals/buildings/BuildingWindowVisualsSettings.js';
+import { applyBuildingWindowVisualsToCityMeshes } from '../graphics/visuals/buildings/BuildingWindowVisualsRuntime.js';
 import { saveColorGradingSettings } from '../graphics/visuals/postprocessing/ColorGradingSettings.js';
 import { getResolvedSunFlareSettings, saveSunFlareSettings } from '../graphics/visuals/sun/SunFlareSettings.js';
 
@@ -52,6 +53,8 @@ export class OptionsState {
         const postActive = this.engine?.isPostProcessingActive ?? false;
         const grading = this.engine?.colorGradingSettings ?? null;
         const gradingDebug = this.engine?.getColorGradingDebugInfo?.() ?? null;
+        const probe = this.engine?.scene?.getObjectByName?.('ibl_probe_sphere') ?? null;
+        const showProbeSphere = probe ? probe.visible !== false : false;
         const sunFlare = getResolvedSunFlareSettings();
         const buildingWindowVisuals = getResolvedBuildingWindowVisualsSettings();
         const asphaltNoise = getResolvedAsphaltNoiseSettings();
@@ -60,9 +63,15 @@ export class OptionsState {
             lighting: lighting && typeof lighting === 'object' ? JSON.parse(JSON.stringify(lighting)) : null,
             bloom: bloom && typeof bloom === 'object' ? JSON.parse(JSON.stringify(bloom)) : null,
             colorGrading: grading && typeof grading === 'object' ? JSON.parse(JSON.stringify(grading)) : null,
+            buildingWindowVisuals: buildingWindowVisuals && typeof buildingWindowVisuals === 'object'
+                ? JSON.parse(JSON.stringify(buildingWindowVisuals))
+                : null,
             sunFlare: sunFlare && typeof sunFlare === 'object' ? JSON.parse(JSON.stringify(sunFlare)) : null,
             asphaltNoise: asphaltNoise && typeof asphaltNoise === 'object' ? JSON.parse(JSON.stringify(asphaltNoise)) : null
         };
+        if (this._original.lighting?.ibl && typeof this._original.lighting.ibl === 'object') {
+            this._original.lighting.ibl.showProbeSphere = showProbeSphere;
+        }
 
         this._ui = new OptionsUI({
             initialTab: 'lighting',
@@ -74,7 +83,8 @@ export class OptionsState {
                     ibl: {
                         enabled: lighting.ibl?.enabled,
                         envMapIntensity: lighting.ibl?.envMapIntensity,
-                        setBackground: lighting.ibl?.setBackground
+                        setBackground: lighting.ibl?.setBackground,
+                        showProbeSphere
                     }
                 }
                 : null,
@@ -233,12 +243,16 @@ export class OptionsState {
         const lighting = d?.lighting ?? null;
         const bloom = d?.bloom ?? null;
         const grading = d?.colorGrading ?? null;
+        const buildingWindowVisuals = d?.buildingWindowVisuals ?? null;
         const sunFlare = d?.sunFlare ?? null;
         const asphaltNoise = d?.asphaltNoise ?? null;
 
         this.engine?.setLightingSettings?.(lighting ?? null);
         if (bloom) this.engine?.setBloomSettings?.(bloom);
         if (grading) this.engine?.setColorGradingSettings?.(grading);
+        const desiredProbeVisible = lighting?.ibl?.showProbeSphere !== undefined ? !!lighting.ibl.showProbeSphere : false;
+        const probe = this.engine?.scene?.getObjectByName?.('ibl_probe_sphere') ?? null;
+        if (probe) probe.visible = desiredProbeVisible;
 
         const city = this.engine?.context?.city ?? null;
         if (lighting && city) {
@@ -312,6 +326,15 @@ export class OptionsState {
                     maxWidth: 1.25
                 });
             }
+        }
+
+        if (city?.buildings?.group && buildingWindowVisuals) {
+            const sanitized = sanitizeBuildingWindowVisualsSettings(buildingWindowVisuals);
+            const iblEnabled = !!this.engine?.lightingSettings?.ibl?.enabled && !!this.engine?.scene?.environment;
+            const baseEnvMapIntensity = Number.isFinite(this.engine?.lightingSettings?.ibl?.envMapIntensity)
+                ? this.engine.lightingSettings.ibl.envMapIntensity
+                : 0.25;
+            applyBuildingWindowVisualsToCityMeshes(city.buildings.group, sanitized, { iblEnabled, baseEnvMapIntensity });
         }
     }
 

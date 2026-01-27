@@ -655,8 +655,7 @@ function makeWindowMaterial({ typeId, params, windowWidth, windowHeight, fakeDep
         transparent: wantsAlpha,
         alphaTest: wantsAlpha ? 0.01 : 0.0
     });
-    mat.userData = mat.userData ?? {};
-    mat.userData.iblEnvMapIntensityScale = 3.0;
+    disableIblOnMaterial(mat);
     if (normalMap && mat.normalScale) mat.normalScale.set(normalStrength, normalStrength);
     mat.polygonOffset = true;
     mat.polygonOffsetFactor = -1;
@@ -890,7 +889,7 @@ export function buildBuildingFabricationVisualParts({
     windowsGroup.userData = windowsGroup.userData ?? {};
     const windowVisualsObj = windowVisuals && typeof windowVisuals === 'object' ? windowVisuals : null;
     const reflectiveObj = windowVisualsObj?.reflective && typeof windowVisualsObj.reflective === 'object' ? windowVisualsObj.reflective : {};
-    const reflectiveEnabled = reflectiveObj.enabled !== undefined ? !!reflectiveObj.enabled : true;
+    const reflectiveEnabled = reflectiveObj.enabled !== undefined ? !!reflectiveObj.enabled : false;
     const glassObj = reflectiveObj.glass && typeof reflectiveObj.glass === 'object' ? reflectiveObj.glass : {};
     const glassColorHex = Number.isFinite(glassObj.colorHex) ? ((Number(glassObj.colorHex) >>> 0) & 0xffffff) : 0xffffff;
     const glassMetalness = Number.isFinite(glassObj.metalness) ? glassObj.metalness : 0.0;
@@ -923,7 +922,7 @@ export function buildBuildingFabricationVisualParts({
             transmission: wantsTransmission ? glassTransmission : 0.0,
             ior: glassIor,
             envMapIntensity: glassEnvMapIntensity,
-            opacity: wantsTransmission ? 1.0 : 0.55
+            opacity: wantsTransmission ? 1.0 : 0.85
         });
         mat.transparent = true;
         mat.alphaMap = alphaMap ?? null;
@@ -934,6 +933,7 @@ export function buildBuildingFabricationVisualParts({
         mat.polygonOffsetUnits = -1;
         mat.userData = mat.userData ?? {};
         mat.userData.iblEnvMapIntensityScale = glassEnvMapIntensity;
+        mat.userData.buildingWindowGlass = true;
         return mat;
     };
 
@@ -1080,7 +1080,7 @@ export function buildBuildingFabricationVisualParts({
                 pbr: winPbr
             }) : null;
 
-            const windowGlassMat = (reflectiveEnabled && winEnabled && windowMat) ? makeGlassMaterial(getWindowGlassMaskTexture({
+            const windowGlassMat = (winEnabled && windowMat) ? makeGlassMaterial(getWindowGlassMaskTexture({
                 typeId: winTypeId,
                 params: winParams,
                 windowWidth: winWidth,
@@ -1463,6 +1463,9 @@ export function buildBuildingFabricationVisualParts({
             mesh.castShadow = false;
             mesh.receiveShadow = false;
             mesh.renderOrder = bucket.renderOrder;
+            if (bucket.material?.userData?.buildingWindowGlass === true) {
+                mesh.visible = reflectiveEnabled;
+            }
             mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
 
             for (let i = 0; i < count; i++) {
