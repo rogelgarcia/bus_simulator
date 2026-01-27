@@ -29,6 +29,11 @@ export const BLUE_BELT_TOWER_BUILDING_CONFIG = Object.freeze({
                     "enabled": true,
                     "typeId": "window.style.light_blue",
                     "params": {},
+                    "fakeDepth": {
+                        "enabled": true,
+                        "strength": 0.06,
+                        "insetStrength": 0.25
+                    },
                     "width": 2.2,
                     "height": 3.1,
                     "sillHeight": 0.8,

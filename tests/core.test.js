@@ -2129,6 +2129,20 @@ async function runTests() {
         }
     });
 
+    test('BuildingCatalog: windows enable fake depth by default', () => {
+        const all = getBuildingConfigs();
+        for (const cfg of all) {
+            for (const layer of cfg?.layers ?? []) {
+                const win = layer?.windows ?? null;
+                if (!win?.enabled) continue;
+                assertTrue(!!win.fakeDepth, `Expected windows.fakeDepth on ${cfg?.id ?? '(missing id)'}:${layer?.id ?? '(missing layer id)'}.`);
+                assertTrue(!!win.fakeDepth.enabled, `Expected windows.fakeDepth.enabled on ${cfg?.id ?? '(missing id)'}:${layer?.id ?? '(missing layer id)'}.`);
+                assertEqual(win.fakeDepth.strength, 0.06, `Expected windows.fakeDepth.strength default on ${cfg?.id ?? '(missing id)'}:${layer?.id ?? '(missing layer id)'}.`);
+                assertEqual(win.fakeDepth.insetStrength, 0.25, `Expected windows.fakeDepth.insetStrength default on ${cfg?.id ?? '(missing id)'}:${layer?.id ?? '(missing layer id)'}.`);
+            }
+        }
+    });
+
     test('BuildingCatalog: converted configs preserve legacy fields', () => {
         const brick = getBuildingConfigById('brick_midrise');
         assertTrue(!!brick, 'Expected brick_midrise in catalog.');

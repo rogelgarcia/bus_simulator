@@ -29,6 +29,11 @@ export const GOV_CENTER_BUILDING_CONFIG = Object.freeze({
                     "enabled": true,
                     "typeId": "window.style.dark",
                     "params": {},
+                    "fakeDepth": {
+                        "enabled": true,
+                        "strength": 0.06,
+                        "insetStrength": 0.25
+                    },
                     "width": 2.7,
                     "height": 5.6,
                     "sillHeight": 0,
@@ -114,6 +119,11 @@ export const GOV_CENTER_BUILDING_CONFIG = Object.freeze({
                     "enabled": true,
                     "typeId": "window.style.dark",
                     "params": {},
+                    "fakeDepth": {
+                        "enabled": true,
+                        "strength": 0.06,
+                        "insetStrength": 0.25
+                    },
                     "width": 2.1,
                     "height": 2.4,
                     "sillHeight": 0.6,

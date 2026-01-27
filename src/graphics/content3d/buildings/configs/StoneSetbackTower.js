@@ -34,6 +34,11 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
                         "glassTop": 1063258,
                         "glassBottom": 399916
                     },
+                    "fakeDepth": {
+                        "enabled": true,
+                        "strength": 0.06,
+                        "insetStrength": 0.25
+                    },
                     "width": 2.5,
                     "height": 3,
                     "sillHeight": 1,
@@ -103,6 +108,11 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
                         "frameColor": 14673906,
                         "glassTop": 1063258,
                         "glassBottom": 399916
+                    },
+                    "fakeDepth": {
+                        "enabled": true,
+                        "strength": 0.06,
+                        "insetStrength": 0.25
                     },
                     "width": 2.5,
                     "height": 3,

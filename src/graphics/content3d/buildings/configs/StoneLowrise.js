@@ -29,6 +29,11 @@ export const STONE_LOWRISE_BUILDING_CONFIG = Object.freeze({
                     enabled: true,
                     typeId: 'window.style.default',
                     params: {},
+                    fakeDepth: {
+                        enabled: true,
+                        strength: 0.06,
+                        insetStrength: 0.25
+                    },
                     width: 1.8,
                     height: 1.2,
                     sillHeight: 0.9,
