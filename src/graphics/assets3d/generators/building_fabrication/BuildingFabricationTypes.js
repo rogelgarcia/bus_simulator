@@ -37,6 +37,29 @@ function normalizeWindowFakeDepthConfig(value) {
     return { enabled, strength, insetStrength };
 }
 
+function normalizeWindowPbrConfig(value) {
+    const src = value && typeof value === 'object' ? value : {};
+    const normal = src.normal && typeof src.normal === 'object' ? src.normal : {};
+    const roughness = src.roughness && typeof src.roughness === 'object' ? src.roughness : {};
+    const border = src.border && typeof src.border === 'object' ? src.border : {};
+
+    return {
+        normal: {
+            enabled: normal.enabled === undefined ? true : !!normal.enabled,
+            strength: clamp(normal.strength ?? 0.85, 0.0, 2.0)
+        },
+        roughness: {
+            enabled: roughness.enabled === undefined ? true : !!roughness.enabled,
+            contrast: clamp(roughness.contrast ?? 1.0, 0.0, 4.0)
+        },
+        border: {
+            enabled: border.enabled === undefined ? true : !!border.enabled,
+            thickness: clamp(border.thickness ?? 0.018, 0.0, 0.12),
+            strength: clamp(border.strength ?? 0.35, 0.0, 1.0)
+        }
+    };
+}
+
 function normalizeTilingConfig(value, { defaultTileMeters = 2.0 } = {}) {
     const src = value && typeof value === 'object' ? value : {};
     const enabled = !!src.enabled;
@@ -129,6 +152,7 @@ export function createDefaultWindowSpec({
     offset = 0.01,
     enabled = true,
     fakeDepth = null,
+    pbr = null,
     spaceColumns = null
 } = {}) {
     const safeTypeId = isWindowTypeId(typeId) ? typeId : WINDOW_TYPE.STYLE_DEFAULT;
@@ -146,6 +170,7 @@ export function createDefaultWindowSpec({
         cornerEps: clamp(cornerEps, 0.01, 2.0),
         offset: clamp(offset, 0.0, 0.2),
         fakeDepth: normalizeWindowFakeDepthConfig(fakeDepth),
+        pbr: normalizeWindowPbrConfig(pbr),
         spaceColumns: {
             enabled: !!cols.enabled,
             every: clampInt(cols.every ?? cols.everyN ?? cols.after ?? 4, 1, 99),
@@ -343,6 +368,7 @@ export function cloneBuildingLayers(layers) {
             const columns = windows?.spaceColumns ?? {};
             const columnsMaterial = columns?.material ?? null;
             const fakeDepth = windows?.fakeDepth ?? null;
+            const pbr = windows?.pbr ?? null;
             const material = layer?.material ?? null;
             const tiling = layer?.tiling ?? null;
             const materialVariation = layer?.materialVariation ?? null;
@@ -360,6 +386,7 @@ export function cloneBuildingLayers(layers) {
                     ...windows,
                     params: { ...(windows?.params ?? {}) },
                     fakeDepth: fakeDepth ? deepClone(fakeDepth) : fakeDepth,
+                    pbr: pbr ? deepClone(pbr) : pbr,
                     spaceColumns: {
                         ...columns,
                         material: columnsMaterial ? { ...columnsMaterial } : columnsMaterial

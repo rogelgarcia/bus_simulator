@@ -8,7 +8,15 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { ROOF_COLOR, resolveRoofColorHex } from '../../../../app/buildings/RoofColor.js';
 import { resolveBeltCourseColorHex } from '../../../../app/buildings/BeltCourseColor.js';
 import { BUILDING_STYLE } from '../../../../app/buildings/BuildingStyle.js';
-import { WINDOW_TYPE, getDefaultWindowParams, getWindowGlassMaskTexture, getWindowTexture, isWindowTypeId } from '../buildings/WindowTextureGenerator.js';
+import {
+    WINDOW_TYPE,
+    getDefaultWindowParams,
+    getWindowGlassMaskTexture,
+    getWindowNormalMapTexture,
+    getWindowRoughnessMapTexture,
+    getWindowTexture,
+    isWindowTypeId
+} from '../buildings/WindowTextureGenerator.js';
 import { computeBuildingLoopsFromTiles, offsetOrthogonalLoopXZ, resolveBuildingStyleWallMaterialUrls } from '../buildings/BuildingGenerator.js';
 import { LAYER_TYPE, normalizeBuildingLayers } from './BuildingFabricationTypes.js';
 import { applyMaterialVariationToMeshStandardMaterial, computeMaterialVariationSeedFromTiles, MATERIAL_VARIATION_ROOT } from '../../materials/MaterialVariationSystem.js';
@@ -606,20 +614,50 @@ function makeRoofSurfaceMaterialFromSpec({ material, baseColorHex, textureCache 
     return mat;
 }
 
-function makeWindowMaterial({ typeId, params, windowWidth, windowHeight, fakeDepth } = {}) {
+function makeWindowMaterial({ typeId, params, windowWidth, windowHeight, fakeDepth, pbr } = {}) {
     const safeTypeId = isWindowTypeId(typeId) ? typeId : WINDOW_TYPE.STYLE_DEFAULT;
     const safeParams = { ...getDefaultWindowParams(safeTypeId), ...(params ?? {}) };
     const wantsAlpha = safeTypeId === WINDOW_TYPE.ARCH_V1;
+    const pbrCfg = pbr && typeof pbr === 'object' ? pbr : {};
+    const normalCfg = pbrCfg?.normal && typeof pbrCfg.normal === 'object' ? pbrCfg.normal : {};
+    const roughCfg = pbrCfg?.roughness && typeof pbrCfg.roughness === 'object' ? pbrCfg.roughness : {};
+    const borderCfg = pbrCfg?.border && typeof pbrCfg.border === 'object' ? pbrCfg.border : {};
+    const normalEnabled = normalCfg.enabled === undefined ? true : !!normalCfg.enabled;
+    const normalStrength = clamp(normalCfg.strength ?? 0.85, 0.0, 2.0);
+    const roughEnabled = roughCfg.enabled === undefined ? true : !!roughCfg.enabled;
+    const roughnessContrast = clamp(roughCfg.contrast ?? 1.0, 0.0, 4.0);
+
+    const normalMap = normalEnabled ? getWindowNormalMapTexture({
+        typeId: safeTypeId,
+        params: safeParams,
+        windowWidth,
+        windowHeight,
+        border: borderCfg
+    }) : null;
+
+    const roughnessMap = roughEnabled ? getWindowRoughnessMapTexture({
+        typeId: safeTypeId,
+        params: safeParams,
+        windowWidth,
+        windowHeight,
+        roughness: { contrast: roughnessContrast }
+    }) : null;
+
     const mat = new THREE.MeshStandardMaterial({
         color: 0xffffff,
         map: getWindowTexture({ typeId: safeTypeId, params: safeParams, windowWidth, windowHeight }),
-        roughness: 0.4,
+        normalMap,
+        roughnessMap,
+        roughness: roughnessMap ? 1.0 : 0.4,
         metalness: 0.0,
         emissive: new THREE.Color(0x0b1f34),
         emissiveIntensity: 0.35,
         transparent: wantsAlpha,
         alphaTest: wantsAlpha ? 0.01 : 0.0
     });
+    mat.userData = mat.userData ?? {};
+    mat.userData.iblEnvMapIntensityScale = 3.0;
+    if (normalMap && mat.normalScale) mat.normalScale.set(normalStrength, normalStrength);
     mat.polygonOffset = true;
     mat.polygonOffsetFactor = -1;
     mat.polygonOffsetUnits = -1;
@@ -642,12 +680,29 @@ function makeWindowMaterial({ typeId, params, windowWidth, windowHeight, fakeDep
                 '#include <common>',
                 `#include <common>
 uniform vec4 uWinFakeDepth;
+#ifdef USE_NORMALMAP
+vec3 mvWinPerturbNormal2Arb(vec3 eye_pos, vec3 surf_norm, vec3 mapN, float faceDirection, vec2 uv){
+    vec3 q0 = dFdx( eye_pos.xyz );
+    vec3 q1 = dFdy( eye_pos.xyz );
+    vec2 st0 = dFdx( uv.st );
+    vec2 st1 = dFdy( uv.st );
+    vec3 N = normalize( surf_norm );
+    vec3 q0perp = cross( N, q0 );
+    vec3 q1perp = cross( q1, N );
+    vec3 T = q1perp * st0.x + q0perp * st1.x;
+    vec3 B = q1perp * st0.y + q0perp * st1.y;
+    float det = max( dot( T, T ), dot( B, B ) );
+    float scale = (det == 0.0) ? 0.0 : faceDirection * inversesqrt( det );
+    return normalize( T * ( mapN.x * scale ) + B * ( mapN.y * scale ) + N * mapN.z );
+}
+#endif
 `
             );
 
             shader.fragmentShader = shader.fragmentShader.replace(
                 'vec4 diffuseColor = vec4( diffuse, opacity );',
                 `vec4 diffuseColor = vec4( diffuse, opacity );
+vec2 mvWinUv = vec2(0.0);
 float mvWinOcclusion = 0.0;`
             );
 
@@ -656,7 +711,7 @@ float mvWinOcclusion = 0.0;`
                 `#ifdef USE_MAP
 {
 vec2 mvUvBase = vMapUv;
-vec2 mvUv = mvUvBase;
+mvWinUv = mvUvBase;
 vec3 mvNormal = normalize(vNormal);
 vec3 mvViewDir = normalize(vViewPosition);
 vec3 mvUp = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
@@ -676,8 +731,8 @@ float mvInterior = mvInX * mvInY;
 
 vec2 mvParDir = mvViewTS.xy / max(0.35, mvViewTS.z);
 float mvDepth = clamp(uWinFakeDepth.x, 0.0, 0.25);
-mvUv = mix(mvUv, mvUvBase - mvParDir * mvDepth, mvInterior);
-mvUv = clamp(mvUv, vec2(0.0), vec2(1.0));
+mvWinUv = mix(mvWinUv, mvUvBase - mvParDir * mvDepth, mvInterior);
+mvWinUv = clamp(mvWinUv, vec2(0.0), vec2(1.0));
 
 float mvInset = clamp(uWinFakeDepth.y, 0.0, 1.0);
 float mvEdgeDist = min(min(mvUvBase.x, 1.0 - mvUvBase.x), min(mvUvBase.y, 1.0 - mvUvBase.y));
@@ -688,7 +743,7 @@ float mvInnerDist = max(0.0, min(mvDx, mvDy));
 float mvInnerOcc = (1.0 - smoothstep(0.0, 0.12, mvInnerDist)) * mvInterior;
 mvWinOcclusion = clamp(mvInset * (mvInnerOcc * 0.65 + mvOuterOcc * 0.35), 0.0, 1.0);
 
-vec4 texelColor = texture2D(map, mvUv);
+vec4 texelColor = texture2D(map, mvWinUv);
 diffuseColor *= texelColor;
 diffuseColor.rgb *= (1.0 - mvWinOcclusion * 0.35);
 }
@@ -697,25 +752,24 @@ diffuseColor.rgb *= (1.0 - mvWinOcclusion * 0.35);
 
             shader.fragmentShader = shader.fragmentShader.replace(
                 '#include <normal_fragment_maps>',
-                `#include <normal_fragment_maps>
-#ifdef USE_MAP
-{
-float mvFrame = clamp(uWinFakeDepth.z, 0.0, 0.45);
-float mvAspect = max(0.1, uWinFakeDepth.w);
-float mvFrameU = mvFrame * min(1.0, mvAspect);
-float mvFrameV = mvFrame * min(1.0, 1.0 / mvAspect);
-float mvBlur = 0.02;
-float mvInX = smoothstep(mvFrameU, mvFrameU + mvBlur, vMapUv.x) * (1.0 - smoothstep(1.0 - mvFrameU - mvBlur, 1.0 - mvFrameU, vMapUv.x));
-float mvInY = smoothstep(mvFrameV, mvFrameV + mvBlur, vMapUv.y) * (1.0 - smoothstep(1.0 - mvFrameV - mvBlur, 1.0 - mvFrameV, vMapUv.y));
-float mvInterior = mvInX * mvInY;
-vec2 mvP = (vMapUv - vec2(0.5)) * 2.0;
-float mvAmt = clamp(uWinFakeDepth.y, 0.0, 1.0) * 0.12 * mvInterior;
-vec3 mvUp = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
-vec3 mvTanU = cross(mvUp, normal);
-mvTanU /= max(1e-5, length(mvTanU));
-vec3 mvTanV = normalize(cross(normal, mvTanU));
-normal = normalize(normal + mvTanU * (-mvP.x) * mvAmt + mvTanV * (-mvP.y) * mvAmt);
-}
+                `#ifdef USE_NORMALMAP
+vec3 mvNormalTex = texture2D( normalMap, mvWinUv ).xyz * 2.0 - 1.0;
+mvNormalTex.xy *= normalScale;
+#ifdef USE_TANGENT
+normal = normalize( vTBN * mvNormalTex );
+#else
+normal = mvWinPerturbNormal2Arb( -vViewPosition, normal, mvNormalTex, faceDirection, mvWinUv );
+#endif
+#endif
+`
+            );
+
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <roughnessmap_fragment>',
+                `float roughnessFactor = roughness;
+#ifdef USE_ROUGHNESSMAP
+vec4 mvRoughnessTexel = texture2D( roughnessMap, mvWinUv );
+roughnessFactor *= mvRoughnessTexel.g;
 #endif`
             );
 
@@ -1000,6 +1054,7 @@ export function buildBuildingFabricationVisualParts({
             const winTypeId = typeof winCfg?.typeId === 'string' ? winCfg.typeId : WINDOW_TYPE.STYLE_DEFAULT;
             const winParams = winCfg?.params ?? null;
             const winFakeDepth = winCfg?.fakeDepth ?? null;
+            const winPbr = winCfg?.pbr ?? null;
 
             const columns = winCfg?.spaceColumns ?? null;
             const colsEnabled = !!columns?.enabled;
@@ -1021,7 +1076,8 @@ export function buildBuildingFabricationVisualParts({
                 params: winParams,
                 windowWidth: winWidth,
                 windowHeight: winDesiredHeight,
-                fakeDepth: winFakeDepth
+                fakeDepth: winFakeDepth,
+                pbr: winPbr
             }) : null;
 
             const windowGlassMat = (reflectiveEnabled && winEnabled && windowMat) ? makeGlassMaterial(getWindowGlassMaskTexture({

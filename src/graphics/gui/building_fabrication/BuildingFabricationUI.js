@@ -2213,7 +2213,7 @@ export class BuildingFabricationUI {
                 });
                 beltGroup.body.appendChild(beltMaterialPicker.row);
 
-                const { windowsGroup, columnsGroup } = this._windowUI.appendLayerWindowsUI({
+                const { windowsGroup, pbrGroup, columnsGroup } = this._windowUI.appendLayerWindowsUI({
                     parent: null,
                     allow,
                     scopeKey,
@@ -2238,6 +2238,7 @@ export class BuildingFabricationUI {
                 layerSection.body.appendChild(wallsGroup.details);
                 layerSection.body.appendChild(beltGroup.details);
                 layerSection.body.appendChild(windowsGroup.details);
+                layerSection.body.appendChild(pbrGroup.details);
                 layerSection.body.appendChild(columnsGroup.details);
                 layerSection.body.appendChild(doorsGroup.details);
             } else {

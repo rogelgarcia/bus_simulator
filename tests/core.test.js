@@ -1473,7 +1473,13 @@ async function runTests() {
     const { offsetOrthogonalLoopXZ } = await import('/src/graphics/assets3d/generators/buildings/BuildingGenerator.js');
     const { buildBuildingFabricationVisualParts } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationGenerator.js');
     const { createDefaultFloorLayer, createDefaultRoofLayer } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationTypes.js');
-    const { WINDOW_TYPE, getWindowTypeOptions, getWindowTexture } = await import('/src/graphics/assets3d/generators/buildings/WindowTextureGenerator.js');
+    const {
+        WINDOW_TYPE,
+        getWindowNormalMapTexture,
+        getWindowRoughnessMapTexture,
+        getWindowTypeOptions,
+        getWindowTexture
+    } = await import('/src/graphics/assets3d/generators/buildings/WindowTextureGenerator.js');
 
     test('BuildingFabricationUI: view toggles live in view panel', () => {
         const ui = new BuildingFabricationUI();
@@ -1559,6 +1565,10 @@ async function runTests() {
         const ui = new BuildingFabricationUI();
         const building = { id: 'building_test', layers: ui.getTemplateLayers() };
         ui.setSelectedBuilding(building);
+
+        const pbrNormalText = Array.from(ui.root.querySelectorAll('.building-fab-toggle span'))
+            .find((el) => el.textContent?.trim() === 'Runtime normal map');
+        assertTrue(!!pbrNormalText, 'Window PBR normal toggle should exist.');
 
         const toggleText = Array.from(ui.root.querySelectorAll('.building-fab-toggle span'))
             .find((el) => el.textContent?.trim() === 'Fake depth (parallax)');
@@ -1740,6 +1750,64 @@ async function runTests() {
         const mat = meshes[0]?.material ?? null;
         assertTrue(!!mat, 'Expected a window material.');
         assertTrue(!!mat.transparent, 'Arched window material should be transparent.');
+    });
+
+    test('BuildingFabricationGenerator: fake-depth window shader declares roughnessFactor for roughness map', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+
+        const layers = [
+            createDefaultFloorLayer({
+                floors: 1,
+                floorHeight: 3.0,
+                windows: { enabled: true, fakeDepth: { enabled: true } }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!parts, 'Expected visual parts.');
+        assertTrue(!!parts.windows, 'Expected windows group.');
+
+        const meshes = parts.windows?.children?.filter?.((m) => m?.isMesh) ?? [];
+        assertTrue(meshes.length > 0, 'Expected at least 1 window mesh.');
+
+        const mat = meshes[0]?.material ?? null;
+        assertTrue(typeof mat?.onBeforeCompile === 'function', 'Expected fake-depth window material to patch shaders.');
+
+        const shader = {
+            uniforms: {},
+            vertexShader: '#include <common>\nvoid main(){\n#include <begin_vertex>\n}\n',
+            fragmentShader: '#include <common>\nvec4 diffuseColor = vec4( diffuse, opacity );\n#include <map_fragment>\n#include <normal_fragment_maps>\n#include <roughnessmap_fragment>\n#include <emissivemap_fragment>\n'
+        };
+
+        mat.onBeforeCompile(shader, null);
+        assertTrue(shader.fragmentShader.includes('mvWinPerturbNormal2Arb'), 'Expected window normal mapping helper to be injected (avoids Three.js signature mismatches).');
+        assertTrue(shader.fragmentShader.includes('float roughnessFactor = roughness'), 'Expected roughnessFactor to be declared for roughness map sampling.');
+        assertTrue(shader.fragmentShader.includes('texture2D( roughnessMap, mvWinUv )'), 'Expected roughness map to sample parallax UVs.');
     });
 
     test('BuildingFabricationGenerator: belt extrusion can extend beyond footprint', () => {
@@ -2542,6 +2610,24 @@ async function runTests() {
         const g0 = getWindowTexture({ typeId: WINDOW_TYPE.STYLE_GREEN });
         const g1 = getWindowTexture({ typeId: WINDOW_TYPE.STYLE_GREEN });
         assertTrue(g0 === g1, 'Expected Green window textures to be cached.');
+    });
+
+    test('WindowTextureGenerator: provides runtime normal/roughness maps with caching', () => {
+        const border = { enabled: true, thickness: 0.018, strength: 0.35 };
+        const n0 = getWindowNormalMapTexture({ typeId: WINDOW_TYPE.STYLE_LIGHT_BLUE, border });
+        const n1 = getWindowNormalMapTexture({ typeId: WINDOW_TYPE.STYLE_LIGHT_BLUE, border });
+        assertTrue(n0 === n1, 'Expected window normal maps to be cached.');
+        if ('colorSpace' in n0) assertEqual(n0.colorSpace, THREE.NoColorSpace, 'Expected window normal map to be linear.');
+        else assertEqual(n0.encoding, THREE.LinearEncoding, 'Expected window normal map to be linear.');
+
+        const r0 = getWindowRoughnessMapTexture({ typeId: WINDOW_TYPE.STYLE_LIGHT_BLUE, roughness: { contrast: 1.0 } });
+        const r1 = getWindowRoughnessMapTexture({ typeId: WINDOW_TYPE.STYLE_LIGHT_BLUE, roughness: { contrast: 1.0 } });
+        assertTrue(r0 === r1, 'Expected window roughness maps to be cached.');
+        if ('colorSpace' in r0) assertEqual(r0.colorSpace, THREE.NoColorSpace, 'Expected window roughness map to be linear.');
+        else assertEqual(r0.encoding, THREE.LinearEncoding, 'Expected window roughness map to be linear.');
+
+        const n2 = getWindowNormalMapTexture({ typeId: WINDOW_TYPE.STYLE_LIGHT_BLUE, border: { ...border, thickness: 0.02 } });
+        assertFalse(n0 === n2, 'Expected window normal map to vary by border parameters.');
     });
 
     test('TextureInspectorCatalog: includes Light Blue and Green window entries', () => {
@@ -7838,6 +7924,18 @@ async function runTests() {
         assertFalse(floor.windows.fakeDepth.enabled, 'Expected windows fakeDepth disabled by default.');
         assertTrue(Number.isFinite(floor.windows.fakeDepth.strength), 'Expected windows fakeDepth strength to be a number.');
         assertTrue(Number.isFinite(floor.windows.fakeDepth.insetStrength), 'Expected windows fakeDepth insetStrength to be a number.');
+
+        assertTrue(!!floor.windows?.pbr, 'Expected windows.pbr config.');
+        assertTrue(!!floor.windows.pbr.normal, 'Expected windows.pbr.normal config.');
+        assertTrue(!!floor.windows.pbr.normal.enabled, 'Expected windows.pbr.normal enabled by default.');
+        assertTrue(Number.isFinite(floor.windows.pbr.normal.strength), 'Expected windows.pbr.normal.strength to be a number.');
+        assertTrue(!!floor.windows.pbr.roughness, 'Expected windows.pbr.roughness config.');
+        assertTrue(!!floor.windows.pbr.roughness.enabled, 'Expected windows.pbr.roughness enabled by default.');
+        assertTrue(Number.isFinite(floor.windows.pbr.roughness.contrast), 'Expected windows.pbr.roughness.contrast to be a number.');
+        assertTrue(!!floor.windows.pbr.border, 'Expected windows.pbr.border config.');
+        assertTrue(!!floor.windows.pbr.border.enabled, 'Expected windows.pbr.border enabled by default.');
+        assertTrue(Number.isFinite(floor.windows.pbr.border.thickness), 'Expected windows.pbr.border.thickness to be a number.');
+        assertTrue(Number.isFinite(floor.windows.pbr.border.strength), 'Expected windows.pbr.border.strength to be a number.');
     });
 
     test('BuildingFabricationTypes: cloneBuildingLayers deep clones mat-var and tiling', () => {
@@ -7883,6 +7981,32 @@ async function runTests() {
         cloned[0].windows.fakeDepth.insetStrength = 0.9;
         assertEqual(original[0].windows.fakeDepth.strength, 0.12, 'Expected window fakeDepth to be cloned (no shared refs).');
         assertEqual(original[0].windows.fakeDepth.insetStrength, 0.4, 'Expected window fakeDepth to be cloned (no shared refs).');
+    });
+
+    test('BuildingFabricationTypes: cloneBuildingLayers clones window pbr config', () => {
+        const original = [
+            createDefaultFloorLayer({
+                windows: {
+                    pbr: {
+                        normal: { enabled: true, strength: 0.7 },
+                        roughness: { enabled: true, contrast: 1.25 },
+                        border: { enabled: true, thickness: 0.02, strength: 0.45 }
+                    }
+                }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+
+        const cloned = cloneBuildingLayers(original);
+        cloned[0].windows.pbr.normal.strength = 1.3;
+        cloned[0].windows.pbr.roughness.contrast = 2.0;
+        cloned[0].windows.pbr.border.thickness = 0.08;
+        cloned[0].windows.pbr.border.strength = 0.9;
+
+        assertEqual(original[0].windows.pbr.normal.strength, 0.7, 'Expected window pbr.normal to be cloned (no shared refs).');
+        assertEqual(original[0].windows.pbr.roughness.contrast, 1.25, 'Expected window pbr.roughness to be cloned (no shared refs).');
+        assertEqual(original[0].windows.pbr.border.thickness, 0.02, 'Expected window pbr.border to be cloned (no shared refs).');
+        assertEqual(original[0].windows.pbr.border.strength, 0.45, 'Expected window pbr.border to be cloned (no shared refs).');
     });
 
     // ========== InspectorRoomLightUtils Tests ==========

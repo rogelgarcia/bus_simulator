@@ -186,6 +186,7 @@ export class InspectorRoomUI {
         this.onPreviewModeChange = null;
         this.onTextureSizeChange = null;
         this.onTileGapChange = null;
+        this.onWindowPbrChange = null;
 
         this.onAxisLabelsToggle = null;
         this.onAxisLinesToggle = null;
@@ -235,6 +236,59 @@ export class InspectorRoomUI {
         };
         this._onTileGapRange = () => this._setTileGapFromUi(this.tileGapRange.value);
         this._onTileGapNumber = () => this._setTileGapFromUi(this.tileGapNumber.value);
+
+        this._onWindowPbrToggle = () => {
+            this._syncWindowPbrWidgets();
+            this.onWindowPbrChange?.(this.getWindowPbrConfig());
+        };
+        this._onWindowNormalStrengthRange = () => {
+            const next = clamp(this.windowNormalStrengthRange.value, 0, 2);
+            this.windowNormalStrengthRange.value = String(next);
+            this.windowNormalStrengthNumber.value = formatFloat(next, 2);
+            this._onWindowPbrToggle();
+        };
+        this._onWindowNormalStrengthNumber = () => {
+            const next = clamp(this.windowNormalStrengthNumber.value, 0, 2);
+            this.windowNormalStrengthRange.value = String(next);
+            this.windowNormalStrengthNumber.value = formatFloat(next, 2);
+            this._onWindowPbrToggle();
+        };
+        this._onWindowRoughnessContrastRange = () => {
+            const next = clamp(this.windowRoughnessContrastRange.value, 0, 4);
+            this.windowRoughnessContrastRange.value = String(next);
+            this.windowRoughnessContrastNumber.value = formatFloat(next, 2);
+            this._onWindowPbrToggle();
+        };
+        this._onWindowRoughnessContrastNumber = () => {
+            const next = clamp(this.windowRoughnessContrastNumber.value, 0, 4);
+            this.windowRoughnessContrastRange.value = String(next);
+            this.windowRoughnessContrastNumber.value = formatFloat(next, 2);
+            this._onWindowPbrToggle();
+        };
+        this._onWindowBorderThicknessRange = () => {
+            const next = clamp(this.windowBorderThicknessRange.value, 0, 0.12);
+            this.windowBorderThicknessRange.value = String(next);
+            this.windowBorderThicknessNumber.value = formatFloat(next, 3);
+            this._onWindowPbrToggle();
+        };
+        this._onWindowBorderThicknessNumber = () => {
+            const next = clamp(this.windowBorderThicknessNumber.value, 0, 0.12);
+            this.windowBorderThicknessRange.value = String(next);
+            this.windowBorderThicknessNumber.value = formatFloat(next, 3);
+            this._onWindowPbrToggle();
+        };
+        this._onWindowBorderStrengthRange = () => {
+            const next = clamp(this.windowBorderStrengthRange.value, 0, 1);
+            this.windowBorderStrengthRange.value = String(next);
+            this.windowBorderStrengthNumber.value = formatFloat(next, 2);
+            this._onWindowPbrToggle();
+        };
+        this._onWindowBorderStrengthNumber = () => {
+            const next = clamp(this.windowBorderStrengthNumber.value, 0, 1);
+            this.windowBorderStrengthRange.value = String(next);
+            this.windowBorderStrengthNumber.value = formatFloat(next, 2);
+            this._onWindowPbrToggle();
+        };
 
         this._onLabelsToggle = () => {
             this._axisLabelsEnabled = !this._axisLabelsEnabled;
@@ -402,6 +456,7 @@ export class InspectorRoomUI {
             this.itemNameValue.textContent = safeCollection ? `${name || '-'} (${safeCollection})` : (name || '-');
             this._selectedExtra = extra;
             this._syncTextureSummary();
+            this._syncWindowPbrVisibility();
         } else {
             this.itemNameValue.textContent = name || '-';
         }
@@ -533,6 +588,63 @@ export class InspectorRoomUI {
         const text = String(next);
         this.tileGapRange.value = text;
         this.tileGapNumber.value = text;
+    }
+
+    setWindowPbrConfig(config) {
+        const src = config && typeof config === 'object' ? config : {};
+        const normal = src.normal && typeof src.normal === 'object' ? src.normal : {};
+        const roughness = src.roughness && typeof src.roughness === 'object' ? src.roughness : {};
+        const border = src.border && typeof src.border === 'object' ? src.border : {};
+
+        const normalEnabled = normal.enabled === undefined ? true : !!normal.enabled;
+        const normalStrength = clamp(normal.strength ?? 0.85, 0, 2);
+        const roughEnabled = roughness.enabled === undefined ? true : !!roughness.enabled;
+        const roughContrast = clamp(roughness.contrast ?? 1.0, 0, 4);
+        const borderEnabled = border.enabled === undefined ? true : !!border.enabled;
+        const borderThickness = clamp(border.thickness ?? 0.018, 0, 0.12);
+        const borderStrength = clamp(border.strength ?? 0.35, 0, 1);
+
+        this.windowNormalEnabled.checked = normalEnabled;
+        this.windowNormalStrengthRange.value = String(normalStrength);
+        this.windowNormalStrengthNumber.value = formatFloat(normalStrength, 2);
+
+        this.windowRoughnessEnabled.checked = roughEnabled;
+        this.windowRoughnessContrastRange.value = String(roughContrast);
+        this.windowRoughnessContrastNumber.value = formatFloat(roughContrast, 2);
+
+        this.windowBorderEnabled.checked = borderEnabled;
+        this.windowBorderThicknessRange.value = String(borderThickness);
+        this.windowBorderThicknessNumber.value = formatFloat(borderThickness, 3);
+        this.windowBorderStrengthRange.value = String(borderStrength);
+        this.windowBorderStrengthNumber.value = formatFloat(borderStrength, 2);
+
+        this._syncWindowPbrWidgets();
+    }
+
+    getWindowPbrConfig() {
+        const normalEnabled = !!this.windowNormalEnabled.checked;
+        const normalStrength = clamp(this.windowNormalStrengthRange.value, 0, 2);
+        const roughEnabled = !!this.windowRoughnessEnabled.checked;
+        const roughContrast = clamp(this.windowRoughnessContrastRange.value, 0, 4);
+        const borderEnabled = !!this.windowBorderEnabled.checked;
+        const borderThickness = clamp(this.windowBorderThicknessRange.value, 0, 0.12);
+        const borderStrength = clamp(this.windowBorderStrengthRange.value, 0, 1);
+
+        return {
+            normal: {
+                enabled: normalEnabled,
+                strength: normalStrength
+            },
+            roughness: {
+                enabled: roughEnabled,
+                contrast: roughContrast
+            },
+            border: {
+                enabled: borderEnabled,
+                thickness: borderThickness,
+                strength: borderStrength
+            }
+        };
     }
 
     setAxisLegendState({ labelsEnabled, axisLinesEnabled, axesAlwaysVisible, gridEnabled, planeEnabled, measurementsEnabled } = {}) {
@@ -855,6 +967,100 @@ export class InspectorRoomUI {
         gapRow.appendChild(this.tileGapControls);
         this.tileGapRow = gapRow;
 
+        this.windowPbrSection = document.createElement('div');
+        this.windowPbrSection.className = 'hidden';
+
+        this.windowPbrLabel = document.createElement('div');
+        this.windowPbrLabel.className = 'ui-section-label';
+        this.windowPbrLabel.textContent = 'Window PBR';
+        this.windowPbrSection.appendChild(this.windowPbrLabel);
+
+        const makeToggleRow = (labelText, toggleText) => {
+            const row = document.createElement('div');
+            row.className = 'inspector-room-row';
+            const lab = document.createElement('div');
+            lab.className = 'inspector-room-row-label';
+            lab.textContent = labelText;
+            const body = document.createElement('div');
+            body.className = 'inspector-room-row-body';
+            const toggle = document.createElement('label');
+            toggle.className = 'inspector-room-toggle inspector-room-toggle-inline';
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            const text = document.createElement('span');
+            text.textContent = toggleText;
+            toggle.appendChild(input);
+            toggle.appendChild(text);
+            body.appendChild(toggle);
+            row.appendChild(lab);
+            row.appendChild(body);
+            return { row, input };
+        };
+
+        const makeRangeRow = (labelText, { min, max, step, value, digits = 2 } = {}) => {
+            const row = document.createElement('div');
+            row.className = 'inspector-room-row';
+            const lab = document.createElement('div');
+            lab.className = 'inspector-room-row-label';
+            lab.textContent = labelText;
+            const controls = document.createElement('div');
+            controls.className = 'inspector-room-gap-controls';
+            const range = document.createElement('input');
+            range.type = 'range';
+            range.className = 'inspector-room-range';
+            range.min = String(min ?? 0);
+            range.max = String(max ?? 1);
+            range.step = String(step ?? 0.01);
+            range.value = String(value ?? 0);
+            const number = document.createElement('input');
+            number.type = 'number';
+            number.className = 'inspector-room-number';
+            number.min = range.min;
+            number.max = range.max;
+            number.step = range.step;
+            number.value = formatFloat(value ?? 0, digits);
+            controls.appendChild(range);
+            controls.appendChild(number);
+            row.appendChild(lab);
+            row.appendChild(controls);
+            return { row, range, number };
+        };
+
+        const winNormalToggle = makeToggleRow('Normals', 'Enabled');
+        this.windowNormalEnabled = winNormalToggle.input;
+        this.windowNormalEnabled.checked = true;
+        this.windowPbrSection.appendChild(winNormalToggle.row);
+
+        const winNormalStrength = makeRangeRow('Normal intensity', { min: 0, max: 2, step: 0.01, value: 0.85, digits: 2 });
+        this.windowNormalStrengthRange = winNormalStrength.range;
+        this.windowNormalStrengthNumber = winNormalStrength.number;
+        this.windowPbrSection.appendChild(winNormalStrength.row);
+
+        const winRoughToggle = makeToggleRow('Roughness', 'Enabled');
+        this.windowRoughnessEnabled = winRoughToggle.input;
+        this.windowRoughnessEnabled.checked = true;
+        this.windowPbrSection.appendChild(winRoughToggle.row);
+
+        const winRoughContrast = makeRangeRow('Roughness contrast', { min: 0, max: 4, step: 0.05, value: 1.0, digits: 2 });
+        this.windowRoughnessContrastRange = winRoughContrast.range;
+        this.windowRoughnessContrastNumber = winRoughContrast.number;
+        this.windowPbrSection.appendChild(winRoughContrast.row);
+
+        const winBorderToggle = makeToggleRow('Border lip', 'Enabled');
+        this.windowBorderEnabled = winBorderToggle.input;
+        this.windowBorderEnabled.checked = true;
+        this.windowPbrSection.appendChild(winBorderToggle.row);
+
+        const winBorderThickness = makeRangeRow('Lip width', { min: 0, max: 0.12, step: 0.001, value: 0.018, digits: 3 });
+        this.windowBorderThicknessRange = winBorderThickness.range;
+        this.windowBorderThicknessNumber = winBorderThickness.number;
+        this.windowPbrSection.appendChild(winBorderThickness.row);
+
+        const winBorderStrength = makeRangeRow('Lip depth', { min: 0, max: 1, step: 0.01, value: 0.35, digits: 2 });
+        this.windowBorderStrengthRange = winBorderStrength.range;
+        this.windowBorderStrengthNumber = winBorderStrength.number;
+        this.windowPbrSection.appendChild(winBorderStrength.row);
+
         this.textureSummary = document.createElement('textarea');
         this.textureSummary.className = 'inspector-room-summary';
         this.textureSummary.rows = 2;
@@ -871,6 +1077,7 @@ export class InspectorRoomUI {
         this.textureSection.appendChild(modeRow);
         this.textureSection.appendChild(sizeRow);
         this.textureSection.appendChild(gapRow);
+        this.textureSection.appendChild(this.windowPbrSection);
         this.textureSection.appendChild(this.textureSummary);
         this.textureSection.appendChild(this.textureCopyBtn);
     }
@@ -1187,6 +1394,7 @@ export class InspectorRoomUI {
         this.meshSection.classList.toggle('hidden', mode !== 'meshes');
         this.textureSection.classList.toggle('hidden', mode !== 'textures');
         if (mode !== 'textures') this._selectedExtra = null;
+        this._syncWindowPbrVisibility();
     }
 
     _renderSchemaControls(panel, groupApi, { title = null, isChild = false, getValue, setValue, collapsible = false } = {}) {
@@ -1406,6 +1614,29 @@ export class InspectorRoomUI {
         if (this.tileGapRow) this.tileGapRow.classList.toggle('hidden', !tiled);
     }
 
+    _syncWindowPbrVisibility() {
+        const visible = this.getMode() === 'textures' && this._selectedExtra?.kind === 'window';
+        if (this.windowPbrSection) this.windowPbrSection.classList.toggle('hidden', !visible);
+    }
+
+    _syncWindowPbrWidgets() {
+        const normalEnabled = !!this.windowNormalEnabled.checked;
+        const roughEnabled = !!this.windowRoughnessEnabled.checked;
+        const borderEnabled = !!this.windowBorderEnabled.checked;
+
+        this.windowNormalStrengthRange.disabled = !normalEnabled;
+        this.windowNormalStrengthNumber.disabled = !normalEnabled;
+
+        this.windowRoughnessContrastRange.disabled = !roughEnabled;
+        this.windowRoughnessContrastNumber.disabled = !roughEnabled;
+
+        this.windowBorderEnabled.disabled = !normalEnabled;
+        this.windowBorderThicknessRange.disabled = !normalEnabled || !borderEnabled;
+        this.windowBorderThicknessNumber.disabled = this.windowBorderThicknessRange.disabled;
+        this.windowBorderStrengthRange.disabled = !normalEnabled || !borderEnabled;
+        this.windowBorderStrengthNumber.disabled = this.windowBorderStrengthRange.disabled;
+    }
+
     _syncAxisLegendState() {
         this.axisLegend.classList.toggle('labels-off', !this._axisLabelsEnabled);
         this.axisLegend.classList.toggle('lines-off', !this._axisLinesEnabled);
@@ -1548,6 +1779,18 @@ export class InspectorRoomUI {
         this.tileGapRange.addEventListener('input', this._onTileGapRange);
         this.tileGapNumber.addEventListener('change', this._onTileGapNumber);
 
+        this.windowNormalEnabled.addEventListener('change', this._onWindowPbrToggle);
+        this.windowNormalStrengthRange.addEventListener('input', this._onWindowNormalStrengthRange);
+        this.windowNormalStrengthNumber.addEventListener('change', this._onWindowNormalStrengthNumber);
+        this.windowRoughnessEnabled.addEventListener('change', this._onWindowPbrToggle);
+        this.windowRoughnessContrastRange.addEventListener('input', this._onWindowRoughnessContrastRange);
+        this.windowRoughnessContrastNumber.addEventListener('change', this._onWindowRoughnessContrastNumber);
+        this.windowBorderEnabled.addEventListener('change', this._onWindowPbrToggle);
+        this.windowBorderThicknessRange.addEventListener('input', this._onWindowBorderThicknessRange);
+        this.windowBorderThicknessNumber.addEventListener('change', this._onWindowBorderThicknessNumber);
+        this.windowBorderStrengthRange.addEventListener('input', this._onWindowBorderStrengthRange);
+        this.windowBorderStrengthNumber.addEventListener('change', this._onWindowBorderStrengthNumber);
+
         this.labelsBtn.addEventListener('click', this._onLabelsToggle);
         this.axisLinesBtn.addEventListener('click', this._onAxisLinesToggle);
         this.axisAlwaysBtn.addEventListener('click', this._onAxisAlwaysToggle);
@@ -1600,6 +1843,18 @@ export class InspectorRoomUI {
         this.textureHeightMeters.removeEventListener('change', this._onTextureSize);
         this.tileGapRange.removeEventListener('input', this._onTileGapRange);
         this.tileGapNumber.removeEventListener('change', this._onTileGapNumber);
+
+        this.windowNormalEnabled.removeEventListener('change', this._onWindowPbrToggle);
+        this.windowNormalStrengthRange.removeEventListener('input', this._onWindowNormalStrengthRange);
+        this.windowNormalStrengthNumber.removeEventListener('change', this._onWindowNormalStrengthNumber);
+        this.windowRoughnessEnabled.removeEventListener('change', this._onWindowPbrToggle);
+        this.windowRoughnessContrastRange.removeEventListener('input', this._onWindowRoughnessContrastRange);
+        this.windowRoughnessContrastNumber.removeEventListener('change', this._onWindowRoughnessContrastNumber);
+        this.windowBorderEnabled.removeEventListener('change', this._onWindowPbrToggle);
+        this.windowBorderThicknessRange.removeEventListener('input', this._onWindowBorderThicknessRange);
+        this.windowBorderThicknessNumber.removeEventListener('change', this._onWindowBorderThicknessNumber);
+        this.windowBorderStrengthRange.removeEventListener('input', this._onWindowBorderStrengthRange);
+        this.windowBorderStrengthNumber.removeEventListener('change', this._onWindowBorderStrengthNumber);
 
         this.labelsBtn.removeEventListener('click', this._onLabelsToggle);
         this.axisLinesBtn.removeEventListener('click', this._onAxisLinesToggle);

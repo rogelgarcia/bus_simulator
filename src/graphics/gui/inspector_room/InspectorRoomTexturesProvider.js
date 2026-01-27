@@ -2,6 +2,7 @@
 // Texture inspection content provider for the Inspector Room.
 import * as THREE from 'three';
 import { resolveBuildingStyleWallMaterialUrls } from '../../assets3d/generators/buildings/BuildingGenerator.js';
+import { getWindowNormalMapTexture, getWindowRoughnessMapTexture } from '../../assets3d/generators/buildings/WindowTextureGenerator.js';
 import { getPbrMaterialMeta, getPbrMaterialTileMeters, resolvePbrMaterialUrls } from '../../assets3d/materials/PbrMaterialCatalog.js';
 import { getSignAlphaMaskTextureById } from '../../assets3d/textures/signs/SignAlphaMaskCache.js';
 import {
@@ -29,6 +30,39 @@ function clamp(value, min, max) {
     const num = Number(value);
     if (!Number.isFinite(num)) return min;
     return Math.max(min, Math.min(max, num));
+}
+
+function deepClone(value) {
+    if (Array.isArray(value)) return value.map((entry) => deepClone(entry));
+    if (value && typeof value === 'object') {
+        const out = {};
+        for (const [k, v] of Object.entries(value)) out[k] = deepClone(v);
+        return out;
+    }
+    return value;
+}
+
+function normalizeWindowPbrConfig(value) {
+    const src = value && typeof value === 'object' ? value : {};
+    const normal = src.normal && typeof src.normal === 'object' ? src.normal : {};
+    const roughness = src.roughness && typeof src.roughness === 'object' ? src.roughness : {};
+    const border = src.border && typeof src.border === 'object' ? src.border : {};
+
+    return {
+        normal: {
+            enabled: normal.enabled === undefined ? true : !!normal.enabled,
+            strength: clamp(normal.strength ?? 0.85, 0.0, 2.0)
+        },
+        roughness: {
+            enabled: roughness.enabled === undefined ? true : !!roughness.enabled,
+            contrast: clamp(roughness.contrast ?? 1.0, 0.0, 4.0)
+        },
+        border: {
+            enabled: border.enabled === undefined ? true : !!border.enabled,
+            thickness: clamp(border.thickness ?? 0.018, 0.0, 0.12),
+            strength: clamp(border.strength ?? 0.35, 0.0, 1.0)
+        }
+    };
 }
 
 function normalizeRealWorldSizeMeters({ widthMeters, heightMeters } = {}, { fallbackWidthMeters = DEFAULT_REAL_WORLD_SIZE_METERS, fallbackHeightMeters = DEFAULT_REAL_WORLD_SIZE_METERS } = {}) {
@@ -203,6 +237,7 @@ export class InspectorRoomTexturesProvider {
         this._previewNormalMap = null;
         this._previewRoughnessMap = null;
         this._previewAlphaMap = null;
+        this._previewNormalScale = 0.9;
 
         this._tileGroup = null;
         this._tileGeo = null;
@@ -222,6 +257,8 @@ export class InspectorRoomTexturesProvider {
         this._baseColor = 0xffffff;
         this._previewMode = 'single';
         this._tileGap = 0.0;
+
+        this._windowPbr = normalizeWindowPbrConfig(null);
     }
 
     getId() {
@@ -397,6 +434,8 @@ export class InspectorRoomTexturesProvider {
         let extra = null;
         if (entry.kind === 'sign') {
             extra = { kind: 'sign', atlas: entry.atlasLabel ?? entry.atlasId ?? '-', rectPx: entry.rectPx ?? null, uv: entry.uv ?? null };
+        } else if (entry.kind === 'window') {
+            extra = { kind: 'window', style: entry.style ?? '-' };
         } else if (entry.kind === 'building_wall') {
             extra = { kind: 'building_wall', style: entry.style ?? '-' };
         } else if (entry.kind === 'pbr_material') {
@@ -452,6 +491,19 @@ export class InspectorRoomTexturesProvider {
 
     getTileGap() {
         return this._tileGap;
+    }
+
+    getWindowPbrConfig() {
+        return deepClone(this._windowPbr);
+    }
+
+    setWindowPbrConfig(value) {
+        this._windowPbr = normalizeWindowPbrConfig(value);
+        const entry = getTextureInspectorEntryById(this._textureId);
+        if (entry?.kind !== 'window') return;
+        this._applyWindowPbrMaps(entry);
+        this._syncPreviewWrap();
+        this._syncPreviewMaps();
     }
 
     getSelectedRealWorldSizeMeters() {
@@ -640,13 +692,39 @@ export class InspectorRoomTexturesProvider {
         this._previewTexture = preview;
         this._previewNormalMap = null;
         this._previewRoughnessMap = null;
+        this._previewNormalScale = 0.9;
         this._previewAlphaMap = entry?.kind === 'sign' ? getSignAlphaMaskTextureById(entry?.id) : null;
+        if (entry?.kind === 'window') this._applyWindowPbrMaps(entry);
         this._syncPreviewWrap();
         this._syncPreviewMaps();
     }
 
+    _applyWindowPbrMaps(entry) {
+        if (!entry || entry.kind !== 'window') return;
+
+        this._previewNormalMap?.dispose?.();
+        this._previewRoughnessMap?.dispose?.();
+        this._previewNormalMap = null;
+        this._previewRoughnessMap = null;
+
+        const style = typeof entry.style === 'string' && entry.style ? entry.style : 'default';
+        const typeId = `window.style.${style}`;
+        const pbr = this._windowPbr ?? normalizeWindowPbrConfig(null);
+
+        this._previewNormalScale = clamp(pbr?.normal?.strength ?? 0.85, 0.0, 2.0);
+
+        const wrap = this._previewMode === 'tiled' ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+        this._previewNormalMap = pbr?.normal?.enabled
+            ? clonePreviewTexture(getWindowNormalMapTexture({ typeId, border: pbr?.border ?? null }), { wrap })
+            : null;
+        this._previewRoughnessMap = pbr?.roughness?.enabled
+            ? clonePreviewTexture(getWindowRoughnessMapTexture({ typeId, roughness: pbr?.roughness ?? null }), { wrap })
+            : null;
+    }
+
     _setBuildingWallMaterial(entry) {
         this._disposePreviewTexture();
+        this._previewNormalScale = 0.9;
 
         const token = ++this._loadToken;
         const urls = resolveBuildingStyleWallMaterialUrls(entry?.style);
@@ -700,6 +778,7 @@ export class InspectorRoomTexturesProvider {
 
     _setPbrMaterial(entry) {
         this._disposePreviewTexture();
+        this._previewNormalScale = 0.9;
 
         const token = ++this._loadToken;
         const urls = resolvePbrMaterialUrls(entry?.materialId);
@@ -806,7 +885,10 @@ export class InspectorRoomTexturesProvider {
             this._overlayMat.alphaTest = maps.overlay.alphaMap ? 0.5 : 0;
             this._overlayMat.roughness = roughness;
             this._overlayMat.metalness = metalness;
-            if (hasPbr && this._overlayMat.normalScale) this._overlayMat.normalScale.set(0.9, 0.9);
+            if (hasPbr && this._overlayMat.normalScale) {
+                const ns = clamp(this._previewNormalScale, 0.0, 2.0);
+                this._overlayMat.normalScale.set(ns, ns);
+            }
             this._overlayMat.needsUpdate = true;
         }
 
@@ -818,7 +900,10 @@ export class InspectorRoomTexturesProvider {
             this._tileMat.alphaTest = maps.tile.alphaMap ? 0.5 : 0;
             this._tileMat.roughness = roughness;
             this._tileMat.metalness = metalness;
-            if (hasPbr && this._tileMat.normalScale) this._tileMat.normalScale.set(0.9, 0.9);
+            if (hasPbr && this._tileMat.normalScale) {
+                const ns = clamp(this._previewNormalScale, 0.0, 2.0);
+                this._tileMat.normalScale.set(ns, ns);
+            }
             this._tileMat.needsUpdate = true;
         }
     }

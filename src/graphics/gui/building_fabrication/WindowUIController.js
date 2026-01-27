@@ -1266,6 +1266,139 @@ export function createWindowUIController({
         });
         windowsGroup.body.appendChild(fakeDepthInsetRow.row);
 
+        layer.windows.pbr ??= {
+            normal: { enabled: true, strength: 0.85 },
+            roughness: { enabled: true, contrast: 1.0 },
+            border: { enabled: true, thickness: 0.018, strength: 0.35 }
+        };
+
+        const pbrGroup = createDetailsSection('Window PBR', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:window_pbr`, detailsOpenByKey });
+
+        const pbrNormalToggle = createToggleRow('Runtime normal map', { wide: true });
+        pbrNormalToggle.input.checked = !!layer?.windows?.pbr?.normal?.enabled;
+        pbrNormalToggle.input.disabled = !allow || !layer?.windows?.enabled;
+        pbrGroup.body.appendChild(pbrNormalToggle.toggle);
+
+        const pbrNormalStrengthRow = createRangeRow('Normal intensity');
+        pbrNormalStrengthRow.range.min = '0';
+        pbrNormalStrengthRow.range.max = '2';
+        pbrNormalStrengthRow.range.step = '0.01';
+        pbrNormalStrengthRow.number.min = '0';
+        pbrNormalStrengthRow.number.max = '2';
+        pbrNormalStrengthRow.number.step = '0.01';
+        pbrNormalStrengthRow.range.value = String(layer?.windows?.pbr?.normal?.strength ?? 0.85);
+        pbrNormalStrengthRow.number.value = formatFloatFn(layer?.windows?.pbr?.normal?.strength ?? 0.85, 2);
+        pbrNormalStrengthRow.range.disabled = !allow || !layer?.windows?.enabled || !layer?.windows?.pbr?.normal?.enabled;
+        pbrNormalStrengthRow.number.disabled = pbrNormalStrengthRow.range.disabled;
+        pbrNormalStrengthRow.range.addEventListener('input', () => {
+            const next = clampFn(pbrNormalStrengthRow.range.value, 0.0, 2.0);
+            layer.windows.pbr.normal.strength = next;
+            pbrNormalStrengthRow.number.value = formatFloatFn(next, 2);
+            onChangeFn();
+        });
+        pbrNormalStrengthRow.number.addEventListener('change', () => {
+            const next = clampFn(pbrNormalStrengthRow.number.value, 0.0, 2.0);
+            layer.windows.pbr.normal.strength = next;
+            pbrNormalStrengthRow.range.value = String(next);
+            pbrNormalStrengthRow.number.value = formatFloatFn(next, 2);
+            onChangeFn();
+        });
+        pbrGroup.body.appendChild(pbrNormalStrengthRow.row);
+
+        const pbrRoughToggle = createToggleRow('Runtime roughness map', { wide: true });
+        pbrRoughToggle.input.checked = !!layer?.windows?.pbr?.roughness?.enabled;
+        pbrRoughToggle.input.disabled = !allow || !layer?.windows?.enabled;
+        pbrGroup.body.appendChild(pbrRoughToggle.toggle);
+
+        const pbrRoughContrastRow = createRangeRow('Roughness contrast');
+        pbrRoughContrastRow.range.min = '0';
+        pbrRoughContrastRow.range.max = '4';
+        pbrRoughContrastRow.range.step = '0.05';
+        pbrRoughContrastRow.number.min = '0';
+        pbrRoughContrastRow.number.max = '4';
+        pbrRoughContrastRow.number.step = '0.05';
+        pbrRoughContrastRow.range.value = String(layer?.windows?.pbr?.roughness?.contrast ?? 1.0);
+        pbrRoughContrastRow.number.value = formatFloatFn(layer?.windows?.pbr?.roughness?.contrast ?? 1.0, 2);
+        pbrRoughContrastRow.range.disabled = !allow || !layer?.windows?.enabled || !layer?.windows?.pbr?.roughness?.enabled;
+        pbrRoughContrastRow.number.disabled = pbrRoughContrastRow.range.disabled;
+        pbrRoughContrastRow.range.addEventListener('input', () => {
+            const next = clampFn(pbrRoughContrastRow.range.value, 0.0, 4.0);
+            layer.windows.pbr.roughness.contrast = next;
+            pbrRoughContrastRow.number.value = formatFloatFn(next, 2);
+            onChangeFn();
+        });
+        pbrRoughContrastRow.number.addEventListener('change', () => {
+            const next = clampFn(pbrRoughContrastRow.number.value, 0.0, 4.0);
+            layer.windows.pbr.roughness.contrast = next;
+            pbrRoughContrastRow.range.value = String(next);
+            pbrRoughContrastRow.number.value = formatFloatFn(next, 2);
+            onChangeFn();
+        });
+        pbrGroup.body.appendChild(pbrRoughContrastRow.row);
+
+        const pbrBorderToggle = createToggleRow('Embedded border lip', { wide: true });
+        pbrBorderToggle.input.checked = !!layer?.windows?.pbr?.border?.enabled;
+        pbrBorderToggle.input.disabled = !allow || !layer?.windows?.enabled || !layer?.windows?.pbr?.normal?.enabled;
+        pbrGroup.body.appendChild(pbrBorderToggle.toggle);
+
+        const pbrBorderThicknessRow = createRangeRow('Lip width');
+        pbrBorderThicknessRow.range.min = '0';
+        pbrBorderThicknessRow.range.max = '0.12';
+        pbrBorderThicknessRow.range.step = '0.001';
+        pbrBorderThicknessRow.number.min = '0';
+        pbrBorderThicknessRow.number.max = '0.12';
+        pbrBorderThicknessRow.number.step = '0.001';
+        pbrBorderThicknessRow.range.value = String(layer?.windows?.pbr?.border?.thickness ?? 0.018);
+        pbrBorderThicknessRow.number.value = formatFloatFn(layer?.windows?.pbr?.border?.thickness ?? 0.018, 3);
+        pbrBorderThicknessRow.range.disabled = !allow
+            || !layer?.windows?.enabled
+            || !layer?.windows?.pbr?.normal?.enabled
+            || !layer?.windows?.pbr?.border?.enabled;
+        pbrBorderThicknessRow.number.disabled = pbrBorderThicknessRow.range.disabled;
+        pbrBorderThicknessRow.range.addEventListener('input', () => {
+            const next = clampFn(pbrBorderThicknessRow.range.value, 0.0, 0.12);
+            layer.windows.pbr.border.thickness = next;
+            pbrBorderThicknessRow.number.value = formatFloatFn(next, 3);
+            onChangeFn();
+        });
+        pbrBorderThicknessRow.number.addEventListener('change', () => {
+            const next = clampFn(pbrBorderThicknessRow.number.value, 0.0, 0.12);
+            layer.windows.pbr.border.thickness = next;
+            pbrBorderThicknessRow.range.value = String(next);
+            pbrBorderThicknessRow.number.value = formatFloatFn(next, 3);
+            onChangeFn();
+        });
+        pbrGroup.body.appendChild(pbrBorderThicknessRow.row);
+
+        const pbrBorderStrengthRow = createRangeRow('Lip depth');
+        pbrBorderStrengthRow.range.min = '0';
+        pbrBorderStrengthRow.range.max = '1';
+        pbrBorderStrengthRow.range.step = '0.01';
+        pbrBorderStrengthRow.number.min = '0';
+        pbrBorderStrengthRow.number.max = '1';
+        pbrBorderStrengthRow.number.step = '0.01';
+        pbrBorderStrengthRow.range.value = String(layer?.windows?.pbr?.border?.strength ?? 0.35);
+        pbrBorderStrengthRow.number.value = formatFloatFn(layer?.windows?.pbr?.border?.strength ?? 0.35, 2);
+        pbrBorderStrengthRow.range.disabled = !allow
+            || !layer?.windows?.enabled
+            || !layer?.windows?.pbr?.normal?.enabled
+            || !layer?.windows?.pbr?.border?.enabled;
+        pbrBorderStrengthRow.number.disabled = pbrBorderStrengthRow.range.disabled;
+        pbrBorderStrengthRow.range.addEventListener('input', () => {
+            const next = clampFn(pbrBorderStrengthRow.range.value, 0.0, 1.0);
+            layer.windows.pbr.border.strength = next;
+            pbrBorderStrengthRow.number.value = formatFloatFn(next, 2);
+            onChangeFn();
+        });
+        pbrBorderStrengthRow.number.addEventListener('change', () => {
+            const next = clampFn(pbrBorderStrengthRow.number.value, 0.0, 1.0);
+            layer.windows.pbr.border.strength = next;
+            pbrBorderStrengthRow.range.value = String(next);
+            pbrBorderStrengthRow.number.value = formatFloatFn(next, 2);
+            onChangeFn();
+        });
+        pbrGroup.body.appendChild(pbrBorderStrengthRow.row);
+
         const columnsGroup = createDetailsSection('Space columns', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:space_columns`, detailsOpenByKey });
         const colsToggle = createToggleRow('Enable space columns', { wide: true });
         colsToggle.input.checked = !!layer?.windows?.spaceColumns?.enabled;
@@ -1419,6 +1552,40 @@ export function createWindowUIController({
             onChangeFn();
         });
 
+        pbrNormalToggle.input.addEventListener('change', () => {
+            layer.windows.pbr.normal.enabled = !!pbrNormalToggle.input.checked;
+            const enabled = layer.windows.enabled && layer.windows.pbr.normal.enabled;
+            pbrNormalStrengthRow.range.disabled = !allow || !enabled;
+            pbrNormalStrengthRow.number.disabled = pbrNormalStrengthRow.range.disabled;
+
+            const borderToggleEnabled = layer.windows.enabled && layer.windows.pbr.normal.enabled;
+            pbrBorderToggle.input.disabled = !allow || !borderToggleEnabled;
+            const borderEnabled = borderToggleEnabled && layer.windows.pbr.border.enabled;
+            pbrBorderThicknessRow.range.disabled = !allow || !borderEnabled;
+            pbrBorderThicknessRow.number.disabled = pbrBorderThicknessRow.range.disabled;
+            pbrBorderStrengthRow.range.disabled = !allow || !borderEnabled;
+            pbrBorderStrengthRow.number.disabled = pbrBorderStrengthRow.range.disabled;
+            onChangeFn();
+        });
+
+        pbrRoughToggle.input.addEventListener('change', () => {
+            layer.windows.pbr.roughness.enabled = !!pbrRoughToggle.input.checked;
+            const enabled = layer.windows.enabled && layer.windows.pbr.roughness.enabled;
+            pbrRoughContrastRow.range.disabled = !allow || !enabled;
+            pbrRoughContrastRow.number.disabled = pbrRoughContrastRow.range.disabled;
+            onChangeFn();
+        });
+
+        pbrBorderToggle.input.addEventListener('change', () => {
+            layer.windows.pbr.border.enabled = !!pbrBorderToggle.input.checked;
+            const enabled = layer.windows.enabled && layer.windows.pbr.normal.enabled && layer.windows.pbr.border.enabled;
+            pbrBorderThicknessRow.range.disabled = !allow || !enabled;
+            pbrBorderThicknessRow.number.disabled = pbrBorderThicknessRow.range.disabled;
+            pbrBorderStrengthRow.range.disabled = !allow || !enabled;
+            pbrBorderStrengthRow.number.disabled = pbrBorderStrengthRow.range.disabled;
+            onChangeFn();
+        });
+
         fakeDepthToggle.input.addEventListener('change', () => {
             layer.windows.fakeDepth.enabled = !!fakeDepthToggle.input.checked;
             const enabled = layer.windows.enabled && layer.windows.fakeDepth.enabled;
@@ -1441,6 +1608,20 @@ export function createWindowUIController({
             winHeightRow.number.disabled = winHeightRow.range.disabled;
             winSillRow.range.disabled = !allow || !winEnabled;
             winSillRow.number.disabled = winSillRow.range.disabled;
+            pbrNormalToggle.input.disabled = !allow || !winEnabled;
+            const pbrNormalEnabled = winEnabled && layer.windows.pbr.normal.enabled;
+            pbrNormalStrengthRow.range.disabled = !allow || !pbrNormalEnabled;
+            pbrNormalStrengthRow.number.disabled = pbrNormalStrengthRow.range.disabled;
+            pbrRoughToggle.input.disabled = !allow || !winEnabled;
+            const pbrRoughEnabled = winEnabled && layer.windows.pbr.roughness.enabled;
+            pbrRoughContrastRow.range.disabled = !allow || !pbrRoughEnabled;
+            pbrRoughContrastRow.number.disabled = pbrRoughContrastRow.range.disabled;
+            pbrBorderToggle.input.disabled = !allow || !pbrNormalEnabled;
+            const pbrBorderEnabled = pbrNormalEnabled && layer.windows.pbr.border.enabled;
+            pbrBorderThicknessRow.range.disabled = !allow || !pbrBorderEnabled;
+            pbrBorderThicknessRow.number.disabled = pbrBorderThicknessRow.range.disabled;
+            pbrBorderStrengthRow.range.disabled = !allow || !pbrBorderEnabled;
+            pbrBorderStrengthRow.number.disabled = pbrBorderStrengthRow.range.disabled;
             fakeDepthToggle.input.disabled = !allow || !winEnabled;
             const fakeEnabled = winEnabled && layer.windows.fakeDepth.enabled;
             fakeDepthStrengthRow.range.disabled = !allow || !fakeEnabled;
@@ -1462,10 +1643,11 @@ export function createWindowUIController({
 
         if (parent) {
             parent.appendChild(windowsGroup.details);
+            parent.appendChild(pbrGroup.details);
             parent.appendChild(columnsGroup.details);
         }
 
-        return { windowsGroup, columnsGroup };
+        return { windowsGroup, pbrGroup, columnsGroup };
     };
 
     return {

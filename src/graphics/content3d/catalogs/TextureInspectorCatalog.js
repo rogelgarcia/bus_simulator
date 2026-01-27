@@ -2,7 +2,7 @@
 // Defines a stable texture catalog for inspector scenes.
 import { WINDOW_STYLE } from '../../../app/buildings/WindowStyle.js';
 import { BUILDING_STYLE } from '../../../app/buildings/BuildingStyle.js';
-import { getBuildingWindowTextureForStyle } from '../../assets3d/generators/buildings/BuildingGenerator.js';
+import { getWindowTexture } from '../../assets3d/generators/buildings/WindowTextureGenerator.js';
 import { getSignAssetById, getSignAssets } from '../../assets3d/textures/signs/SignAssets.js';
 import { getPbrMaterialOptions } from './PbrMaterialCatalog.js';
 
@@ -118,7 +118,10 @@ export function getTextureInspectorEntryById(textureId) {
 export function getTextureInspectorTextureById(textureId) {
     const entry = getTextureInspectorEntryById(textureId);
     if (!entry) return null;
-    if (entry.kind === 'window') return getBuildingWindowTextureForStyle(entry.style);
+    if (entry.kind === 'window') {
+        const style = typeof entry.style === 'string' ? entry.style : WINDOW_STYLE.DEFAULT;
+        return getWindowTexture({ typeId: `window.style.${style}` });
+    }
     if (entry.kind === 'sign') return getSignAssetById(entry.id).getAtlasTexture();
     return null;
 }

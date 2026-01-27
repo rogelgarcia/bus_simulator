@@ -230,6 +230,11 @@ export class InspectorRoomView {
             this.textures.setTileGap(gap);
             this.ui.setTileGap(this.textures.getTileGap());
         };
+        this.ui.onWindowPbrChange = (config) => {
+            if (this._active !== this.textures) return;
+            this.textures.setWindowPbrConfig?.(config);
+            this.ui.setWindowPbrConfig?.(this.textures.getWindowPbrConfig?.() ?? null);
+        };
 
         this.ui.onAxisLabelsToggle = () => this._syncViewportOverlays();
         this.ui.onMeasurementsToggle = () => this._syncViewportOverlays();
@@ -529,6 +534,7 @@ export class InspectorRoomView {
             this.ui.setSelectedItemId(provider.getSelectedTextureId?.() ?? null);
             this.ui.setSelectedItemMeta(provider.getSelectedTextureMeta?.() ?? {});
             this.ui.setTextureRealWorldSizeMeters(provider.getSelectedRealWorldSizeMeters?.() ?? {});
+            this.ui.setWindowPbrConfig?.(provider.getWindowPbrConfig?.() ?? null);
         } else {
             this.ui.setItemOptions(provider.getMeshOptions?.() ?? []);
             this.ui.setSelectedItemId(provider.getSelectedMeshId?.() ?? null);
@@ -640,6 +646,7 @@ export class InspectorRoomView {
             this.ui.setSelectedItemId(provider.getSelectedTextureId?.() ?? null);
             this.ui.setSelectedItemMeta(provider.getSelectedTextureMeta?.() ?? {});
             this.ui.setTextureRealWorldSizeMeters(provider.getSelectedRealWorldSizeMeters?.() ?? {});
+            this.ui.setWindowPbrConfig?.(provider.getWindowPbrConfig?.() ?? null);
             this._selection.textures = {
                 collectionId: provider.getSelectedCollectionId?.() ?? null,
                 itemId: provider.getSelectedTextureId?.() ?? null
@@ -671,6 +678,7 @@ export class InspectorRoomView {
             this.ui.setSelectedItemId(provider.getSelectedTextureId?.() ?? null);
             this.ui.setSelectedItemMeta(provider.getSelectedTextureMeta?.() ?? {});
             this.ui.setTextureRealWorldSizeMeters(provider.getSelectedRealWorldSizeMeters?.() ?? {});
+            this.ui.setWindowPbrConfig?.(provider.getWindowPbrConfig?.() ?? null);
             this._selection.textures = {
                 collectionId: provider.getSelectedCollectionId?.() ?? null,
                 itemId: provider.getSelectedTextureId?.() ?? null
@@ -703,6 +711,7 @@ export class InspectorRoomView {
             this.ui.setSelectedItemId(provider.getSelectedTextureId?.() ?? null);
             this.ui.setSelectedItemMeta(provider.getSelectedTextureMeta?.() ?? {});
             this.ui.setTextureRealWorldSizeMeters(provider.getSelectedRealWorldSizeMeters?.() ?? {});
+            this.ui.setWindowPbrConfig?.(provider.getWindowPbrConfig?.() ?? null);
             this._selection.textures.itemId = provider.getSelectedTextureId?.() ?? null;
         } else {
             provider.setSelectedMeshIndex?.(index);

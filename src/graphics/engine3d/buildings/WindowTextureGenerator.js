@@ -14,12 +14,24 @@ const QUANT = 1000;
 const _textureCache = new Map();
 const _glassMaskCache = new Map();
 const _interiorEmissiveCache = new Map();
+const _normalMapCache = new Map();
+const _roughnessMapCache = new Map();
 const _previewUrlCache = new Map();
 
 export { WINDOW_TYPE, isWindowTypeId };
 
 function q(value) {
     return Math.round(Number(value) * QUANT);
+}
+
+function clamp(value, min, max) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return min;
+    return Math.max(min, Math.min(max, num));
+}
+
+function clamp01(value) {
+    return clamp(value, 0.0, 1.0);
 }
 
 function applyTextureColorSpace(tex, { srgb = true } = {}) {
@@ -257,6 +269,400 @@ function buildCacheKey(typeId, params, { windowWidth = 1, windowHeight = 1 } = {
     return `${t}|legacy`;
 }
 
+function resolveWindowRenderSize({ baseSize = 256, windowWidth = 1, windowHeight = 1, minPx = 64, maxPx = 512 } = {}) {
+    const w = Math.max(32, Math.round(Number(baseSize) || 256));
+    const aspect = (Number(windowHeight) || 1) / Math.max(0.01, Number(windowWidth) || 1);
+    const h = Math.max(minPx, Math.min(maxPx, Math.round(w * aspect)));
+    return { w, h };
+}
+
+function grayByte(value01) {
+    const g = Math.max(0, Math.min(255, Math.round(clamp01(value01) * 255)));
+    return `rgb(${g},${g},${g})`;
+}
+
+function smoothstep01(t) {
+    const x = clamp01(t);
+    return x * x * (3.0 - 2.0 * x);
+}
+
+function applyBorderLipHeightRamp(canvas, { thicknessPx = 0, delta = 0.0 } = {}) {
+    const c = canvas ?? null;
+    const w = c?.width ?? 0;
+    const h = c?.height ?? 0;
+    if (!(w > 0 && h > 0)) return;
+    const tPx = Math.max(0, thicknessPx | 0);
+    const d = clamp(Number(delta) || 0.0, 0.0, 1.0);
+    if (!(tPx > 0) || !(d > 1e-6)) return;
+
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    const img = ctx.getImageData(0, 0, w, h);
+    const data = img.data;
+    const idx = (x, y) => ((y * w + x) << 2);
+
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const edgeDist = Math.min(x, y, (w - 1) - x, (h - 1) - y);
+            if (edgeDist >= tPx) continue;
+            const t = smoothstep01(1.0 - edgeDist / Math.max(1, tPx));
+            const o = idx(x, y);
+            const base = data[o] / 255.0;
+            const next = clamp01(base + d * t);
+            const g = Math.round(next * 255);
+            data[o] = g;
+            data[o + 1] = g;
+            data[o + 2] = g;
+        }
+    }
+
+    ctx.putImageData(img, 0, 0);
+}
+
+function buildLegacyStyleHeightCanvas(typeId, { size = 256, borderEnabled = false, borderThickness = 0.018, borderStrength = 0.35 } = {}) {
+    const { c, ctx } = makeCanvas(size, size);
+    if (!ctx) return c;
+
+    const w = size;
+    const h = size;
+
+    const glassH = 0.42;
+    const gridH = 0.64;
+    const frameH = 0.78;
+    const borderDelta = clamp01(borderStrength) * 0.14;
+
+    ctx.fillStyle = grayByte(frameH);
+    ctx.fillRect(0, 0, w, h);
+
+    const frame = Math.max(10, Math.round(size * 0.06));
+    const ix = frame;
+    const iy = frame;
+    const iw = Math.max(1, w - frame * 2);
+    const ih = Math.max(1, h - frame * 2);
+
+    ctx.fillStyle = grayByte(glassH);
+    ctx.fillRect(ix, iy, iw, ih);
+
+    ctx.strokeStyle = grayByte(gridH);
+    ctx.lineWidth = 2;
+
+    if (typeId === WINDOW_TYPE.STYLE_GRID) {
+        const step = Math.max(12, Math.round(size / 12));
+        for (let i = step; i < size; i += step) {
+            ctx.beginPath();
+            ctx.moveTo(i + 0.5, iy);
+            ctx.lineTo(i + 0.5, iy + ih);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(ix, i + 0.5);
+            ctx.lineTo(ix + iw, i + 0.5);
+            ctx.stroke();
+        }
+    } else {
+        ctx.beginPath();
+        ctx.moveTo(w * 0.5, iy + 1);
+        ctx.lineTo(w * 0.5, iy + ih - 1);
+        ctx.moveTo(ix + 1, h * 0.5);
+        ctx.lineTo(ix + iw - 1, h * 0.5);
+        ctx.stroke();
+    }
+
+    if (borderEnabled) {
+        const tPx = Math.round(size * clamp(borderThickness, 0.0, 0.12));
+        applyBorderLipHeightRamp(c, { thicknessPx: tPx, delta: borderDelta });
+    }
+
+    return c;
+}
+
+function buildModernHeightCanvas({ width = 256, height = 256, frameWidth = 0.06, borderEnabled = false, borderThickness = 0.018, borderStrength = 0.35 } = {}) {
+    const w = Math.max(32, Math.round(width));
+    const h = Math.max(32, Math.round(height));
+    const { c, ctx } = makeCanvas(w, h);
+    if (!ctx) return c;
+
+    const glassH = 0.42;
+    const gridH = 0.64;
+    const frameH = 0.78;
+    const borderDelta = clamp01(borderStrength) * 0.14;
+
+    ctx.fillStyle = grayByte(frameH);
+    ctx.fillRect(0, 0, w, h);
+
+    const fw = Math.max(2, Math.round(Math.min(w, h) * frameWidth));
+    const ix = fw;
+    const iy = fw;
+    const iw = Math.max(1, w - fw * 2);
+    const ih = Math.max(1, h - fw * 2);
+
+    ctx.fillStyle = grayByte(glassH);
+    ctx.fillRect(ix, iy, iw, ih);
+
+    ctx.strokeStyle = grayByte(gridH);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(ix + iw * 0.5, iy + 1);
+    ctx.lineTo(ix + iw * 0.5, iy + ih - 1);
+    ctx.stroke();
+
+    if (borderEnabled) {
+        const tPx = Math.round(Math.min(w, h) * clamp(borderThickness, 0.0, 0.12));
+        applyBorderLipHeightRamp(c, { thicknessPx: tPx, delta: borderDelta });
+    }
+
+    return c;
+}
+
+function buildArchedHeightCanvas({ width = 256, height = 256, frameWidth = 0.06, borderEnabled = false, borderThickness = 0.018, borderStrength = 0.35 } = {}) {
+    const w = Math.max(64, Math.round(width));
+    const h = Math.max(64, Math.round(height));
+    const { c, ctx } = makeCanvas(w, h);
+    if (!ctx) return c;
+
+    const glassH = 0.42;
+    const frameH = 0.78;
+    const borderDelta = clamp01(borderStrength) * 0.14;
+
+    ctx.fillStyle = grayByte(frameH);
+    ctx.fillRect(0, 0, w, h);
+
+    const fw = Math.max(2, Math.round(Math.min(w, h) * frameWidth));
+    const outerRadius = (w * 0.5);
+    const innerRadius = Math.max(2, outerRadius - fw);
+    const innerArchHeight = innerRadius;
+    const innerRectHeight = Math.max(0, (h - fw) - innerArchHeight);
+
+    const innerPath = new Path2D();
+    innerPath.moveTo(fw, innerArchHeight + fw);
+    innerPath.arc(w * 0.5, innerArchHeight + fw, innerRadius, Math.PI, 0, false);
+    innerPath.lineTo(w - fw, fw + innerArchHeight + innerRectHeight);
+    innerPath.lineTo(fw, fw + innerArchHeight + innerRectHeight);
+    innerPath.closePath();
+
+    ctx.fillStyle = grayByte(glassH);
+    ctx.fill(innerPath);
+
+    if (borderEnabled) {
+        const tPx = Math.round(Math.min(w, h) * clamp(borderThickness, 0.0, 0.12));
+        applyBorderLipHeightRamp(c, { thicknessPx: tPx, delta: borderDelta });
+    }
+
+    return c;
+}
+
+function buildNormalMapCanvasFromHeightCanvas(heightCanvas, { strength = 2.25 } = {}) {
+    const src = heightCanvas ?? null;
+    const w = src?.width ?? 0;
+    const h = src?.height ?? 0;
+    if (!(w > 0 && h > 0)) return heightCanvas;
+
+    const srcCtx = src.getContext('2d');
+    if (!srcCtx) return heightCanvas;
+    const srcImg = srcCtx.getImageData(0, 0, w, h);
+    const srcData = srcImg.data;
+
+    const out = document.createElement('canvas');
+    out.width = w;
+    out.height = h;
+    const outCtx = out.getContext('2d');
+    if (!outCtx) return out;
+    const outImg = outCtx.createImageData(w, h);
+    const outData = outImg.data;
+
+    const s = clamp(Number(strength) || 2.25, 0.0, 25.0);
+    const idxAt = (x, y) => ((y * w + x) << 2);
+    const hAt = (x, y) => {
+        const xx = Math.max(0, Math.min(w - 1, x));
+        const yy = Math.max(0, Math.min(h - 1, y));
+        return srcData[idxAt(xx, yy)] / 255.0;
+    };
+
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const tl = hAt(x - 1, y - 1);
+            const t = hAt(x, y - 1);
+            const tr = hAt(x + 1, y - 1);
+            const l = hAt(x - 1, y);
+            const r = hAt(x + 1, y);
+            const bl = hAt(x - 1, y + 1);
+            const b = hAt(x, y + 1);
+            const br = hAt(x + 1, y + 1);
+
+            const dx = (tr + 2.0 * r + br) - (tl + 2.0 * l + bl);
+            const dy = (bl + 2.0 * b + br) - (tl + 2.0 * t + tr);
+
+            let nx = -dx * s;
+            let ny = -dy * s;
+            let nz = 1.0;
+            const len = Math.max(1e-6, Math.sqrt(nx * nx + ny * ny + nz * nz));
+            nx /= len;
+            ny /= len;
+            nz /= len;
+
+            const o = idxAt(x, y);
+            outData[o] = Math.round((nx * 0.5 + 0.5) * 255);
+            outData[o + 1] = Math.round((-ny * 0.5 + 0.5) * 255);
+            outData[o + 2] = Math.round((nz * 0.5 + 0.5) * 255);
+            outData[o + 3] = 255;
+        }
+    }
+
+    outCtx.putImageData(outImg, 0, 0);
+    return out;
+}
+
+function buildLegacyStyleRoughnessCanvas(typeId, { size = 256, contrast = 1.0 } = {}) {
+    const { c, ctx } = makeCanvas(size, size);
+    if (!ctx) return c;
+
+    const w = size;
+    const h = size;
+
+    const glassR = 0.03;
+    const gridR = 0.32;
+    const frameR = 0.8;
+
+    ctx.fillStyle = grayByte(frameR);
+    ctx.fillRect(0, 0, w, h);
+
+    const frame = Math.max(10, Math.round(size * 0.06));
+    const ix = frame;
+    const iy = frame;
+    const iw = Math.max(1, w - frame * 2);
+    const ih = Math.max(1, h - frame * 2);
+    ctx.fillStyle = grayByte(glassR);
+    ctx.fillRect(ix, iy, iw, ih);
+
+    ctx.strokeStyle = grayByte(gridR);
+    ctx.lineWidth = 2;
+    if (typeId === WINDOW_TYPE.STYLE_GRID) {
+        const step = Math.max(12, Math.round(size / 12));
+        for (let i = step; i < size; i += step) {
+            ctx.beginPath();
+            ctx.moveTo(i + 0.5, iy);
+            ctx.lineTo(i + 0.5, iy + ih);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(ix, i + 0.5);
+            ctx.lineTo(ix + iw, i + 0.5);
+            ctx.stroke();
+        }
+    } else {
+        ctx.beginPath();
+        ctx.moveTo(w * 0.5, iy + 1);
+        ctx.lineTo(w * 0.5, iy + ih - 1);
+        ctx.moveTo(ix + 1, h * 0.5);
+        ctx.lineTo(ix + iw - 1, h * 0.5);
+        ctx.stroke();
+    }
+
+    const cVal = clamp(Number(contrast) || 1.0, 0.0, 4.0);
+    if (Math.abs(cVal - 1.0) < 1e-6) return c;
+
+    const img = ctx.getImageData(0, 0, w, h);
+    const data = img.data;
+    for (let i = 0; i < data.length; i += 4) {
+        const v = data[i] / 255.0;
+        const vv = clamp01(0.5 + (v - 0.5) * cVal);
+        const g = Math.round(vv * 255);
+        data[i] = g;
+        data[i + 1] = g;
+        data[i + 2] = g;
+    }
+    ctx.putImageData(img, 0, 0);
+
+    return c;
+}
+
+function buildModernRoughnessCanvas({ width = 256, height = 256, frameWidth = 0.06, contrast = 1.0 } = {}) {
+    const w = Math.max(32, Math.round(width));
+    const h = Math.max(32, Math.round(height));
+    const { c, ctx } = makeCanvas(w, h);
+    if (!ctx) return c;
+
+    const glassR = 0.03;
+    const gridR = 0.32;
+    const frameR = 0.8;
+
+    ctx.fillStyle = grayByte(frameR);
+    ctx.fillRect(0, 0, w, h);
+
+    const fw = Math.max(2, Math.round(Math.min(w, h) * frameWidth));
+    const ix = fw;
+    const iy = fw;
+    const iw = Math.max(1, w - fw * 2);
+    const ih = Math.max(1, h - fw * 2);
+    ctx.fillStyle = grayByte(glassR);
+    ctx.fillRect(ix, iy, iw, ih);
+
+    ctx.strokeStyle = grayByte(gridR);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(ix + iw * 0.5, iy + 1);
+    ctx.lineTo(ix + iw * 0.5, iy + ih - 1);
+    ctx.stroke();
+
+    const cVal = clamp(Number(contrast) || 1.0, 0.0, 4.0);
+    if (Math.abs(cVal - 1.0) < 1e-6) return c;
+
+    const img = ctx.getImageData(0, 0, w, h);
+    const data = img.data;
+    for (let i = 0; i < data.length; i += 4) {
+        const v = data[i] / 255.0;
+        const vv = clamp01(0.5 + (v - 0.5) * cVal);
+        const g = Math.round(vv * 255);
+        data[i] = g;
+        data[i + 1] = g;
+        data[i + 2] = g;
+    }
+    ctx.putImageData(img, 0, 0);
+    return c;
+}
+
+function buildArchedRoughnessCanvas({ width = 256, height = 256, frameWidth = 0.06, contrast = 1.0 } = {}) {
+    const w = Math.max(64, Math.round(width));
+    const h = Math.max(64, Math.round(height));
+    const { c, ctx } = makeCanvas(w, h);
+    if (!ctx) return c;
+
+    const glassR = 0.03;
+    const frameR = 0.8;
+    ctx.fillStyle = grayByte(frameR);
+    ctx.fillRect(0, 0, w, h);
+
+    const fw = Math.max(2, Math.round(Math.min(w, h) * frameWidth));
+    const outerRadius = (w * 0.5);
+    const innerRadius = Math.max(2, outerRadius - fw);
+    const innerArchHeight = innerRadius;
+    const innerRectHeight = Math.max(0, (h - fw) - innerArchHeight);
+
+    const innerPath = new Path2D();
+    innerPath.moveTo(fw, innerArchHeight + fw);
+    innerPath.arc(w * 0.5, innerArchHeight + fw, innerRadius, Math.PI, 0, false);
+    innerPath.lineTo(w - fw, fw + innerArchHeight + innerRectHeight);
+    innerPath.lineTo(fw, fw + innerArchHeight + innerRectHeight);
+    innerPath.closePath();
+
+    ctx.fillStyle = grayByte(glassR);
+    ctx.fill(innerPath);
+
+    const cVal = clamp(Number(contrast) || 1.0, 0.0, 4.0);
+    if (Math.abs(cVal - 1.0) < 1e-6) return c;
+
+    const img = ctx.getImageData(0, 0, w, h);
+    const data = img.data;
+    for (let i = 0; i < data.length; i += 4) {
+        const v = data[i] / 255.0;
+        const vv = clamp01(0.5 + (v - 0.5) * cVal);
+        const g = Math.round(vv * 255);
+        data[i] = g;
+        data[i + 1] = g;
+        data[i + 2] = g;
+    }
+    ctx.putImageData(img, 0, 0);
+    return c;
+}
+
 export function getWindowTypeOptions() {
     const types = listWindowTypeIds();
 
@@ -325,6 +731,113 @@ export function getWindowTexture({ typeId, params, windowWidth = 1, windowHeight
     }
 
     _textureCache.set(key, tex);
+    return tex;
+}
+
+export function getWindowNormalMapTexture({
+    typeId,
+    params,
+    windowWidth = 1,
+    windowHeight = 1,
+    border = null
+} = {}) {
+    const t = normalizeWindowTypeId(typeId);
+    const baseKey = buildCacheKey(t, params, { windowWidth, windowHeight });
+
+    const b = border && typeof border === 'object' ? border : {};
+    const borderEnabled = !!b.enabled;
+    const borderThickness = clamp(b.thickness ?? b.width ?? 0.018, 0.0, 0.12);
+    const borderStrength = clamp(b.strength ?? 0.35, 0.0, 1.0);
+
+    const key = `normal_v1|${baseKey}|be:${borderEnabled ? 1 : 0}|bt:${q(borderThickness)}|bs:${q(borderStrength)}`;
+    const cached = _normalMapCache.get(key);
+    if (cached) return cached;
+
+    const def = getWindowTypeDefinition(t);
+    const paramSpec = getWindowTypeParamSpec(t);
+
+    let heightCanvas;
+    if (def?.renderKind === 'arch_v1' && paramSpec) {
+        const p = normalizeParamsFromSpec(paramSpec, params);
+        const { w, h } = resolveWindowRenderSize({ baseSize: 256, windowWidth, windowHeight });
+        heightCanvas = buildArchedHeightCanvas({
+            width: w,
+            height: h,
+            frameWidth: p.frameWidth,
+            borderEnabled,
+            borderThickness,
+            borderStrength
+        });
+    } else if (def?.renderKind === 'modern_v1' && paramSpec) {
+        const p = normalizeParamsFromSpec(paramSpec, params);
+        const { w, h } = resolveWindowRenderSize({ baseSize: 256, windowWidth, windowHeight });
+        heightCanvas = buildModernHeightCanvas({
+            width: w,
+            height: h,
+            frameWidth: p.frameWidth,
+            borderEnabled,
+            borderThickness,
+            borderStrength
+        });
+    } else {
+        heightCanvas = buildLegacyStyleHeightCanvas(t, { size: 256, borderEnabled, borderThickness, borderStrength });
+    }
+
+    const normalCanvas = buildNormalMapCanvasFromHeightCanvas(heightCanvas, { strength: 2.25 });
+    const tex = canvasToTexture(normalCanvas, { srgb: false });
+    tex.userData = tex.userData ?? {};
+    tex.userData.windowNormal = true;
+    _normalMapCache.set(key, tex);
+    return tex;
+}
+
+export function getWindowRoughnessMapTexture({
+    typeId,
+    params,
+    windowWidth = 1,
+    windowHeight = 1,
+    roughness = null
+} = {}) {
+    const t = normalizeWindowTypeId(typeId);
+    const baseKey = buildCacheKey(t, params, { windowWidth, windowHeight });
+
+    const r = roughness && typeof roughness === 'object' ? roughness : {};
+    const contrast = clamp(r.contrast ?? 1.0, 0.0, 4.0);
+
+    const key = `rough_v1|${baseKey}|c:${q(contrast)}`;
+    const cached = _roughnessMapCache.get(key);
+    if (cached) return cached;
+
+    const def = getWindowTypeDefinition(t);
+    const paramSpec = getWindowTypeParamSpec(t);
+
+    let canvas;
+    if (def?.renderKind === 'arch_v1' && paramSpec) {
+        const p = normalizeParamsFromSpec(paramSpec, params);
+        const { w, h } = resolveWindowRenderSize({ baseSize: 256, windowWidth, windowHeight });
+        canvas = buildArchedRoughnessCanvas({
+            width: w,
+            height: h,
+            frameWidth: p.frameWidth,
+            contrast
+        });
+    } else if (def?.renderKind === 'modern_v1' && paramSpec) {
+        const p = normalizeParamsFromSpec(paramSpec, params);
+        const { w, h } = resolveWindowRenderSize({ baseSize: 256, windowWidth, windowHeight });
+        canvas = buildModernRoughnessCanvas({
+            width: w,
+            height: h,
+            frameWidth: p.frameWidth,
+            contrast
+        });
+    } else {
+        canvas = buildLegacyStyleRoughnessCanvas(t, { size: 256, contrast });
+    }
+
+    const tex = canvasToTexture(canvas, { srgb: false });
+    tex.userData = tex.userData ?? {};
+    tex.userData.windowRoughness = true;
+    _roughnessMapCache.set(key, tex);
     return tex;
 }
 
