@@ -1,0 +1,116 @@
+/* src/graphics/gui/sun_bloom_debugger/styles.css */
+
+.sunbloom-hud {
+    position: fixed;
+    left: 16px;
+    top: 16px;
+    z-index: 80;
+    pointer-events: none;
+    white-space: pre;
+    font-size: 12px;
+    line-height: 1.35;
+    max-width: min(560px, calc(100vw - 32px));
+}
+
+.sunbloom-hud.is-hidden {
+    display: none;
+}
+
+.options-select {
+    width: 100%;
+    max-width: 100%;
+    min-width: 220px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(0,0,0,0.25);
+    color: #e9f2ff;
+}
+
+.options-select:focus-visible {
+    outline: 2px solid rgba(100, 210, 255, 0.55);
+    outline-offset: 2px;
+}
+
+.sunbloom-tab-row {
+    display: flex;
+    gap: 10px;
+    padding: 12px 16px 0 16px;
+}
+
+.sunbloom-tab-btn {
+    flex: 1;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(0,0,0,0.14);
+    color: #e9f2ff;
+    cursor: pointer;
+    font-weight: 900;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.sunbloom-tab-btn:hover {
+    background: rgba(0,0,0,0.22);
+}
+
+.sunbloom-tab-btn.is-active {
+    background: rgba(0,0,0,0.34);
+    border-color: rgba(100, 210, 255, 0.55);
+}
+
+.sunbloom-tab-btn:focus-visible {
+    outline: 2px solid rgba(100, 210, 255, 0.55);
+    outline-offset: 2px;
+}
+
+.sunbloom-tab-panel {
+    display: none;
+}
+
+.sunbloom-tab-panel.is-active {
+    display: block;
+}
+
+.sunbloom-tool-note {
+    font-size: 12px;
+    opacity: 0.78;
+    line-height: 1.4;
+    white-space: pre-wrap;
+}
+
+.sunbloom-action-row {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.sunbloom-action-btn {
+    padding: 8px 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(0,0,0,0.14);
+    color: #e9f2ff;
+    cursor: pointer;
+    font-weight: 900;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.sunbloom-action-btn:hover {
+    background: rgba(0,0,0,0.22);
+}
+
+.sunbloom-action-btn:focus-visible {
+    outline: 2px solid rgba(100, 210, 255, 0.55);
+    outline-offset: 2px;
+}
+
+.sunbloom-action-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}

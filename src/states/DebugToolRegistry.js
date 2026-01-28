@@ -22,6 +22,13 @@ export const DEBUG_TOOL_REGISTRY = Object.freeze([
         label: 'Asphalt',
         description: 'Road asphalt + noise + markings (gameplay engine)',
         href: 'debug_tools/asphalt_debug.html'
+    }),
+    Object.freeze({
+        id: 'sun_bloom_debug',
+        key: '4',
+        label: 'Sun Bloom',
+        description: 'Sun-only bloom / glare look-dev scene',
+        href: 'debug_tools/sun_bloom_debug.html'
     })
 ]);
 
