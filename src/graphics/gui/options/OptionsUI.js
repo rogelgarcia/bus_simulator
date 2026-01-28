@@ -3,6 +3,7 @@
 
 import { getDefaultResolvedLightingSettings } from '../../lighting/LightingSettings.js';
 import { getDefaultResolvedBloomSettings } from '../../visuals/postprocessing/BloomSettings.js';
+import { getDefaultResolvedSunBloomSettings } from '../../visuals/postprocessing/SunBloomSettings.js';
 import { getDefaultResolvedColorGradingSettings } from '../../visuals/postprocessing/ColorGradingSettings.js';
 import { getColorGradingPresetOptions } from '../../visuals/postprocessing/ColorGradingPresets.js';
 import { getDefaultResolvedBuildingWindowVisualsSettings } from '../../visuals/buildings/BuildingWindowVisualsSettings.js';
@@ -272,7 +273,7 @@ async function copyTextToClipboard(text) {
 
 function formatIncludedGroups(includes) {
     const src = includes && typeof includes === 'object' ? includes : {};
-    const keys = ['lighting', 'bloom', 'colorGrading', 'sunFlare', 'buildingWindowVisuals', 'asphaltNoise'];
+    const keys = ['lighting', 'bloom', 'sunBloom', 'colorGrading', 'sunFlare', 'buildingWindowVisuals', 'asphaltNoise'];
     const enabled = keys.filter((k) => src[k] !== false);
     return enabled.length ? enabled.join(', ') : '(none)';
 }
@@ -284,6 +285,7 @@ export class OptionsUI {
         initialLighting = null,
         initialAtmosphere = null,
         initialBloom = null,
+        initialSunBloom = null,
         initialColorGrading = null,
         initialBuildingWindowVisuals = null,
         initialAsphaltNoise = null,
@@ -324,20 +326,21 @@ export class OptionsUI {
 
         this.tabs = makeEl('div', 'options-tabs');
         this._visibleTabs = (() => {
-            if (!Array.isArray(visibleTabs)) return ['lighting', 'asphalt', 'buildings'];
+            if (!Array.isArray(visibleTabs)) return ['lighting', 'sun_bloom', 'asphalt', 'buildings'];
             const out = [];
             for (const entry of visibleTabs) {
                 const raw = String(entry ?? '').toLowerCase();
-                const key = raw === 'gameplay' ? 'buildings' : raw;
-                if (key !== 'lighting' && key !== 'asphalt' && key !== 'buildings') continue;
+                const key = raw === 'gameplay' ? 'buildings' : (raw === 'sunbloom' ? 'sun_bloom' : raw);
+                if (key !== 'lighting' && key !== 'sun_bloom' && key !== 'asphalt' && key !== 'buildings') continue;
                 if (out.includes(key)) continue;
                 out.push(key);
             }
-            return out.length ? out : ['lighting', 'asphalt', 'buildings'];
+            return out.length ? out : ['lighting', 'sun_bloom', 'asphalt', 'buildings'];
         })();
 
         const TAB_LABELS = {
             lighting: 'Lighting',
+            sun_bloom: 'Sun Bloom',
             asphalt: 'Asphalt',
             buildings: 'Buildings'
         };
@@ -385,7 +388,7 @@ export class OptionsUI {
 
         const desiredTab = (initialTab === 'buildings' || initialTab === 'gameplay')
             ? 'buildings'
-            : (initialTab === 'asphalt' ? 'asphalt' : 'lighting');
+            : (initialTab === 'asphalt' ? 'asphalt' : (initialTab === 'sun_bloom' || initialTab === 'sunbloom' ? 'sun_bloom' : 'lighting'));
         this._tab = this._visibleTabs.includes(desiredTab) ? desiredTab : (this._visibleTabs[0] ?? desiredTab);
         this._draftLighting = initialLighting && typeof initialLighting === 'object'
             ? JSON.parse(JSON.stringify(initialLighting))
@@ -395,6 +398,9 @@ export class OptionsUI {
             : null;
         this._draftBloom = initialBloom && typeof initialBloom === 'object'
             ? JSON.parse(JSON.stringify(initialBloom))
+            : null;
+        this._draftSunBloom = initialSunBloom && typeof initialSunBloom === 'object'
+            ? JSON.parse(JSON.stringify(initialSunBloom))
             : null;
         this._draftColorGrading = initialColorGrading && typeof initialColorGrading === 'object'
             ? JSON.parse(JSON.stringify(initialColorGrading))
@@ -419,6 +425,7 @@ export class OptionsUI {
         if (d.lighting) this._draftLighting = JSON.parse(JSON.stringify(d.lighting));
         if (d.atmosphere) this._draftAtmosphere = JSON.parse(JSON.stringify(d.atmosphere));
         if (d.bloom) this._draftBloom = JSON.parse(JSON.stringify(d.bloom));
+        if (d.sunBloom) this._draftSunBloom = JSON.parse(JSON.stringify(d.sunBloom));
         if (d.colorGrading) this._draftColorGrading = JSON.parse(JSON.stringify(d.colorGrading));
         if (d.sunFlare) this._draftSunFlare = JSON.parse(JSON.stringify(d.sunFlare));
         if (d.buildingWindowVisuals) this._draftBuildingWindowVisuals = JSON.parse(JSON.stringify(d.buildingWindowVisuals));
@@ -495,7 +502,7 @@ export class OptionsUI {
     setTab(key) {
         const desired = (key === 'buildings' || key === 'gameplay')
             ? 'buildings'
-            : (key === 'asphalt' ? 'asphalt' : 'lighting');
+            : (key === 'asphalt' ? 'asphalt' : (key === 'sun_bloom' || key === 'sunbloom' ? 'sun_bloom' : 'lighting'));
         const next = this._visibleTabs.includes(desired) ? desired : (this._visibleTabs[0] ?? desired);
         this._tab = next;
         for (const [k, btn] of Object.entries(this.tabButtons)) btn.classList.toggle('is-active', k === next);
@@ -507,6 +514,7 @@ export class OptionsUI {
         this._postDebugEls = null;
         this.body.textContent = '';
         if (this._tab === 'lighting') return this._renderLightingTab();
+        if (this._tab === 'sun_bloom') return this._renderSunBloomTab();
         if (this._tab === 'asphalt') return this._renderAsphaltTab();
         return this._renderBuildingsTab();
     }
@@ -809,6 +817,12 @@ export class OptionsUI {
             radius: d.radius,
             threshold: d.threshold
         };
+    }
+
+    _ensureDraftSunBloom() {
+        if (this._draftSunBloom) return;
+        const d = getDefaultResolvedSunBloomSettings();
+        this._draftSunBloom = JSON.parse(JSON.stringify(d));
     }
 
     _ensureDraftColorGrading() {
@@ -1319,6 +1333,257 @@ export class OptionsUI {
         note.textContent = 'Changes apply live to the current scene. Save to persist. If you still don’t see reflections, reload (to regenerate buildings/materials).';
 
         this.body.appendChild(sectionBuildings);
+        this.body.appendChild(note);
+    }
+
+    _renderSunBloomTab() {
+        this._ensureDraftSunBloom();
+        const sunBloom = this._draftSunBloom;
+        const emit = () => this._emitLiveChange();
+
+        const sectionBloom = makeEl('div', 'options-section');
+        sectionBloom.appendChild(makeEl('div', 'options-section-title', 'Sun Bloom'));
+
+        const controls = {
+            enabled: makeToggleRow({
+                label: 'Enabled',
+                value: !!sunBloom.enabled,
+                onChange: (v) => { sunBloom.enabled = v; emit(); }
+            }),
+            mode: makeChoiceRow({
+                label: 'Mode',
+                value: String(sunBloom.mode ?? 'occlusion'),
+                options: [
+                    { id: 'occlusion', label: 'Occlusion-aware' },
+                    { id: 'selective', label: 'Selective (no occlusion)' }
+                ],
+                onChange: (v) => { sunBloom.mode = v; emit(); }
+            }),
+            brightnessOnly: makeToggleRow({
+                label: 'Brightness-only',
+                value: sunBloom.brightnessOnly !== false,
+                onChange: (v) => { sunBloom.brightnessOnly = v; emit(); }
+            }),
+            strength: makeNumberSliderRow({
+                label: 'Strength',
+                value: sunBloom.strength ?? 0.9,
+                min: 0,
+                max: 5,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { sunBloom.strength = v; emit(); }
+            }),
+            radius: makeNumberSliderRow({
+                label: 'Radius',
+                value: sunBloom.radius ?? 0.25,
+                min: 0,
+                max: 1,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { sunBloom.radius = v; emit(); }
+            }),
+            threshold: makeNumberSliderRow({
+                label: 'Threshold (HDR)',
+                value: sunBloom.threshold ?? 1.05,
+                min: 0,
+                max: 5,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { sunBloom.threshold = v; emit(); }
+            }),
+            discRadiusDeg: makeNumberSliderRow({
+                label: 'Disc radius (°)',
+                value: sunBloom.discRadiusDeg ?? 0.55,
+                min: 0.05,
+                max: 6,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { sunBloom.discRadiusDeg = v; emit(); }
+            }),
+            discIntensity: makeNumberSliderRow({
+                label: 'Disc intensity',
+                value: sunBloom.discIntensity ?? 25,
+                min: 0,
+                max: 200,
+                step: 0.1,
+                digits: 1,
+                onChange: (v) => { sunBloom.discIntensity = v; emit(); }
+            }),
+            discFalloff: makeNumberSliderRow({
+                label: 'Disc falloff',
+                value: sunBloom.discFalloff ?? 2.2,
+                min: 0.5,
+                max: 10,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { sunBloom.discFalloff = v; emit(); }
+            }),
+            raysEnabled: makeToggleRow({
+                label: 'Rays (starburst)',
+                value: !!sunBloom.raysEnabled,
+                onChange: (v) => { sunBloom.raysEnabled = v; emit(); }
+            }),
+            raysIntensity: makeNumberSliderRow({
+                label: 'Rays intensity',
+                value: sunBloom.raysIntensity ?? 0.85,
+                min: 0,
+                max: 6,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { sunBloom.raysIntensity = v; emit(); }
+            }),
+            raysSizePx: makeNumberSliderRow({
+                label: 'Rays size (px)',
+                value: sunBloom.raysSizePx ?? 950,
+                min: 64,
+                max: 2400,
+                step: 1,
+                digits: 0,
+                onChange: (v) => { sunBloom.raysSizePx = v; emit(); }
+            }),
+            raysCount: makeNumberSliderRow({
+                label: 'Ray count',
+                value: sunBloom.raysCount ?? 48,
+                min: 3,
+                max: 256,
+                step: 1,
+                digits: 0,
+                onChange: (v) => { sunBloom.raysCount = v; emit(); }
+            }),
+            raysLength: makeNumberSliderRow({
+                label: 'Ray length',
+                value: sunBloom.raysLength ?? 0.95,
+                min: 0,
+                max: 1.6,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { sunBloom.raysLength = v; emit(); }
+            }),
+            raysLengthJitter: makeNumberSliderRow({
+                label: 'Length jitter',
+                value: sunBloom.raysLengthJitter ?? 0.45,
+                min: 0,
+                max: 1.0,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { sunBloom.raysLengthJitter = v; emit(); }
+            }),
+            raysBaseWidthDeg: makeNumberSliderRow({
+                label: 'Base width (°)',
+                value: sunBloom.raysBaseWidthDeg ?? 1.6,
+                min: 0,
+                max: 12,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { sunBloom.raysBaseWidthDeg = v; emit(); }
+            }),
+            raysTipWidthDeg: makeNumberSliderRow({
+                label: 'Tip width (°)',
+                value: sunBloom.raysTipWidthDeg ?? 0.28,
+                min: 0,
+                max: 12,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { sunBloom.raysTipWidthDeg = v; emit(); }
+            }),
+            raysSoftnessDeg: makeNumberSliderRow({
+                label: 'Softness (°)',
+                value: sunBloom.raysSoftnessDeg ?? 0.9,
+                min: 0,
+                max: 12,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { sunBloom.raysSoftnessDeg = v; emit(); }
+            }),
+            raysCoreGlow: makeNumberSliderRow({
+                label: 'Core glow',
+                value: sunBloom.raysCoreGlow ?? 0.35,
+                min: 0,
+                max: 2.0,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { sunBloom.raysCoreGlow = v; emit(); }
+            }),
+            raysOuterGlow: makeNumberSliderRow({
+                label: 'Outer glow',
+                value: sunBloom.raysOuterGlow ?? 0.18,
+                min: 0,
+                max: 2.0,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { sunBloom.raysOuterGlow = v; emit(); }
+            }),
+            raysRotationDeg: makeNumberSliderRow({
+                label: 'Rays rotation (°)',
+                value: sunBloom.raysRotationDeg ?? 0,
+                min: -360,
+                max: 360,
+                step: 1,
+                digits: 0,
+                onChange: (v) => { sunBloom.raysRotationDeg = v; emit(); }
+            })
+        };
+
+        sectionBloom.appendChild(controls.enabled.row);
+        sectionBloom.appendChild(controls.mode.row);
+        sectionBloom.appendChild(controls.brightnessOnly.row);
+        sectionBloom.appendChild(controls.strength.row);
+        sectionBloom.appendChild(controls.radius.row);
+        sectionBloom.appendChild(controls.threshold.row);
+        sectionBloom.appendChild(controls.discRadiusDeg.row);
+        sectionBloom.appendChild(controls.discIntensity.row);
+        sectionBloom.appendChild(controls.discFalloff.row);
+
+        const sectionRays = makeEl('div', 'options-section');
+        sectionRays.appendChild(makeEl('div', 'options-section-title', 'Sun Rays (Starburst)'));
+        sectionRays.appendChild(controls.raysEnabled.row);
+        sectionRays.appendChild(controls.raysIntensity.row);
+        sectionRays.appendChild(controls.raysSizePx.row);
+        sectionRays.appendChild(controls.raysCount.row);
+        sectionRays.appendChild(controls.raysLength.row);
+        sectionRays.appendChild(controls.raysLengthJitter.row);
+        sectionRays.appendChild(controls.raysBaseWidthDeg.row);
+        sectionRays.appendChild(controls.raysTipWidthDeg.row);
+        sectionRays.appendChild(controls.raysSoftnessDeg.row);
+        sectionRays.appendChild(controls.raysCoreGlow.row);
+        sectionRays.appendChild(controls.raysOuterGlow.row);
+        sectionRays.appendChild(controls.raysRotationDeg.row);
+
+        const syncEnabled = (enabled) => {
+            const off = !enabled;
+            controls.mode.setDisabled(off);
+            controls.brightnessOnly.toggle.disabled = off;
+            for (const ctrl of [controls.strength, controls.radius, controls.threshold, controls.discRadiusDeg, controls.discIntensity, controls.discFalloff]) {
+                ctrl.range.disabled = off;
+                ctrl.number.disabled = off;
+            }
+            controls.raysEnabled.toggle.disabled = off;
+            for (const ctrl of [
+                controls.raysIntensity,
+                controls.raysSizePx,
+                controls.raysCount,
+                controls.raysLength,
+                controls.raysLengthJitter,
+                controls.raysBaseWidthDeg,
+                controls.raysTipWidthDeg,
+                controls.raysSoftnessDeg,
+                controls.raysCoreGlow,
+                controls.raysOuterGlow,
+                controls.raysRotationDeg
+            ]) {
+                ctrl.range.disabled = off || !controls.raysEnabled.toggle.checked;
+                ctrl.number.disabled = off || !controls.raysEnabled.toggle.checked;
+            }
+        };
+        syncEnabled(!!sunBloom.enabled);
+        controls.enabled.toggle.addEventListener('change', () => syncEnabled(!!controls.enabled.toggle.checked));
+        controls.raysEnabled.toggle.addEventListener('change', () => syncEnabled(!!controls.enabled.toggle.checked));
+
+        const note = makeEl('div', 'options-note');
+        note.textContent = 'Sun bloom uses a physical emitter mesh so buildings/trees can occlude the glow. Rays are a procedural starburst that follows the sun and respects scene depth.';
+
+        this.body.appendChild(sectionBloom);
+        this.body.appendChild(sectionRays);
         this.body.appendChild(note);
     }
 
@@ -1917,6 +2182,8 @@ export class OptionsUI {
             threshold: bloom.threshold
         };
 
+        this._draftSunBloom = JSON.parse(JSON.stringify(getDefaultResolvedSunBloomSettings()));
+
         const grade = getDefaultResolvedColorGradingSettings();
         this._draftColorGrading = {
             preset: grade.preset,
@@ -1964,11 +2231,13 @@ export class OptionsUI {
         this._ensureDraftLighting();
         this._ensureDraftAtmosphere();
         this._ensureDraftBloom();
+        this._ensureDraftSunBloom();
         this._ensureDraftColorGrading();
         this._ensureDraftSunFlare();
         const d = this._draftLighting;
         const atmo = this._draftAtmosphere;
         const bloom = this._draftBloom;
+        const sunBloom = this._draftSunBloom;
         const grade = this._draftColorGrading;
         const asphaltNoise = this._draftAsphaltNoise;
         const windowVisuals = this._draftBuildingWindowVisuals;
@@ -1992,6 +2261,7 @@ export class OptionsUI {
                 radius: bloom.radius,
                 threshold: bloom.threshold
             },
+            sunBloom: JSON.parse(JSON.stringify(sunBloom)),
             colorGrading: {
                 preset: String(grade.preset ?? 'off'),
                 intensity: grade.intensity

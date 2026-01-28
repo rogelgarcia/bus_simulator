@@ -15,6 +15,7 @@ import { getResolvedAsphaltNoiseSettings, saveAsphaltNoiseSettings } from '../..
 import { getResolvedBuildingWindowVisualsSettings, saveBuildingWindowVisualsSettings } from '../../../visuals/buildings/BuildingWindowVisualsSettings.js';
 import { saveLightingSettings } from '../../../lighting/LightingSettings.js';
 import { saveBloomSettings } from '../../../visuals/postprocessing/BloomSettings.js';
+import { saveSunBloomSettings } from '../../../visuals/postprocessing/SunBloomSettings.js';
 import { saveColorGradingSettings } from '../../../visuals/postprocessing/ColorGradingSettings.js';
 import { getResolvedSunFlareSettings, saveSunFlareSettings } from '../../../visuals/sun/SunFlareSettings.js';
 
@@ -189,6 +190,7 @@ export class AsphaltDebuggerView {
     _save(draft) {
         saveLightingSettings(draft?.lighting ?? null);
         saveBloomSettings(draft?.bloom ?? null);
+        saveSunBloomSettings(draft?.sunBloom ?? null);
         saveColorGradingSettings(draft?.colorGrading ?? null);
         saveBuildingWindowVisualsSettings(draft?.buildingWindowVisuals ?? null);
         saveSunFlareSettings(draft?.sunFlare ?? null);
@@ -199,12 +201,14 @@ export class AsphaltDebuggerView {
         const d = draft && typeof draft === 'object' ? draft : null;
         const lighting = d?.lighting ?? null;
         const bloom = d?.bloom ?? null;
+        const sunBloom = d?.sunBloom ?? null;
         const grading = d?.colorGrading ?? null;
         const sunFlare = d?.sunFlare ?? null;
         const asphaltNoise = d?.asphaltNoise ?? null;
 
         this.engine?.setLightingSettings?.(lighting ?? null);
         if (bloom) this.engine?.setBloomSettings?.(bloom);
+        if (sunBloom) this.engine?.setSunBloomSettings?.(sunBloom);
         if (grading) this.engine?.setColorGradingSettings?.(grading);
 
         const city = this.city ?? null;
@@ -215,6 +219,12 @@ export class AsphaltDebuggerView {
 
         if (sunFlare && city?.sunFlare?.setSettings) {
             city.sunFlare.setSettings(sunFlare);
+        }
+        if (sunBloom && city?.sunBloom?.setSettings) {
+            city.sunBloom.setSettings(sunBloom);
+        }
+        if (sunBloom && city?.sunRays?.setSettings) {
+            city.sunRays.setSettings(sunBloom);
         }
 
         if (!asphaltNoise || !city?.materials?.road) return;

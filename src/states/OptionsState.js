@@ -7,6 +7,7 @@ import { applyAsphaltEdgeWearVisualsToMeshStandardMaterial } from '../graphics/v
 import { applyAsphaltMarkingsNoiseVisualsToMeshStandardMaterial } from '../graphics/visuals/city/AsphaltMarkingsNoiseVisuals.js';
 import { saveLightingSettings } from '../graphics/lighting/LightingSettings.js';
 import { saveBloomSettings } from '../graphics/visuals/postprocessing/BloomSettings.js';
+import { saveSunBloomSettings } from '../graphics/visuals/postprocessing/SunBloomSettings.js';
 import { getResolvedAsphaltNoiseSettings, saveAsphaltNoiseSettings } from '../graphics/visuals/city/AsphaltNoiseSettings.js';
 import { getResolvedBuildingWindowVisualsSettings, sanitizeBuildingWindowVisualsSettings, saveBuildingWindowVisualsSettings } from '../graphics/visuals/buildings/BuildingWindowVisualsSettings.js';
 import { applyBuildingWindowVisualsToCityMeshes } from '../graphics/visuals/buildings/BuildingWindowVisualsRuntime.js';
@@ -52,6 +53,7 @@ export class OptionsState {
         const lighting = this.engine?.lightingSettings ?? null;
         const atmosphere = this.engine?.atmosphereSettings ?? null;
         const bloom = this.engine?.bloomSettings ?? null;
+        const sunBloom = this.engine?.sunBloomSettings ?? null;
         const postActive = this.engine?.isPostProcessingActive ?? false;
         const grading = this.engine?.colorGradingSettings ?? null;
         const gradingDebug = this.engine?.getColorGradingDebugInfo?.() ?? null;
@@ -65,6 +67,7 @@ export class OptionsState {
             lighting: lighting && typeof lighting === 'object' ? JSON.parse(JSON.stringify(lighting)) : null,
             atmosphere: atmosphere && typeof atmosphere === 'object' ? JSON.parse(JSON.stringify(atmosphere)) : null,
             bloom: bloom && typeof bloom === 'object' ? JSON.parse(JSON.stringify(bloom)) : null,
+            sunBloom: sunBloom && typeof sunBloom === 'object' ? JSON.parse(JSON.stringify(sunBloom)) : null,
             colorGrading: grading && typeof grading === 'object' ? JSON.parse(JSON.stringify(grading)) : null,
             buildingWindowVisuals: buildingWindowVisuals && typeof buildingWindowVisuals === 'object'
                 ? JSON.parse(JSON.stringify(buildingWindowVisuals))
@@ -190,10 +193,12 @@ export class OptionsState {
                 : null,
             initialPostProcessingActive: postActive,
             initialColorGradingDebug: gradingDebug,
+            initialSunBloom: sunBloom && typeof sunBloom === 'object' ? JSON.parse(JSON.stringify(sunBloom)) : null,
             getIblDebugInfo: () => this.engine?.getIBLDebugInfo?.() ?? null,
             getPostProcessingDebugInfo: () => ({
                 postActive: !!this.engine?.isPostProcessingActive,
                 bloom: this.engine?.getBloomDebugInfo?.() ?? null,
+                sunBloom: this.engine?.getSunBloomDebugInfo?.() ?? null,
                 colorGrading: this.engine?.getColorGradingDebugInfo?.() ?? null
             }),
             onCancel: () => this._cancel(),
@@ -228,6 +233,7 @@ export class OptionsState {
         saveLightingSettings(draft?.lighting ?? null);
         saveAtmosphereSettings(draft?.atmosphere ?? null);
         saveBloomSettings(draft?.bloom ?? null);
+        saveSunBloomSettings(draft?.sunBloom ?? null);
         saveColorGradingSettings(draft?.colorGrading ?? null);
         saveBuildingWindowVisualsSettings(draft?.buildingWindowVisuals ?? null);
         saveSunFlareSettings(draft?.sunFlare ?? null);
@@ -250,6 +256,7 @@ export class OptionsState {
         const lighting = d?.lighting ?? null;
         const atmosphere = d?.atmosphere ?? null;
         const bloom = d?.bloom ?? null;
+        const sunBloom = d?.sunBloom ?? null;
         const grading = d?.colorGrading ?? null;
         const buildingWindowVisuals = d?.buildingWindowVisuals ?? null;
         const sunFlare = d?.sunFlare ?? null;
@@ -258,6 +265,7 @@ export class OptionsState {
         this.engine?.setLightingSettings?.(lighting ?? null);
         this.engine?.setAtmosphereSettings?.(atmosphere ?? null);
         if (bloom) this.engine?.setBloomSettings?.(bloom);
+        if (sunBloom) this.engine?.setSunBloomSettings?.(sunBloom);
         if (grading) this.engine?.setColorGradingSettings?.(grading);
         const desiredProbeVisible = lighting?.ibl?.showProbeSphere !== undefined ? !!lighting.ibl.showProbeSphere : false;
         const probe = this.engine?.scene?.getObjectByName?.('ibl_probe_sphere') ?? null;
@@ -270,6 +278,12 @@ export class OptionsState {
         }
         if (sunFlare && city?.sunFlare?.setSettings) {
             city.sunFlare.setSettings(sunFlare);
+        }
+        if (sunBloom && city?.sunBloom?.setSettings) {
+            city.sunBloom.setSettings(sunBloom);
+        }
+        if (sunBloom && city?.sunRays?.setSettings) {
+            city.sunRays.setSettings(sunBloom);
         }
 
         if (asphaltNoise && city?.materials?.road) {

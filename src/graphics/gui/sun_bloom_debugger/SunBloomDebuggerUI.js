@@ -852,6 +852,174 @@ export class SunBloomDebuggerUI {
         sectionBloom.appendChild(this._controls.sunDiscFalloff.row);
         sectionBloom.appendChild(this._controls.sunBloomDebugView.row);
 
+        const sectionRays = makeEl('div', 'options-section');
+        sectionRays.appendChild(makeEl('div', 'options-section-title', 'Sun Rays (Starburst)'));
+
+        this._controls.sunRaysEnabled = makeToggleRow({
+            label: 'Rays enabled',
+            value: this._draft.sunRaysEnabled ?? true,
+            onChange: (v) => {
+                this._draft.sunRaysEnabled = v;
+                this._emit();
+            }
+        });
+
+        this._controls.sunRaysIntensity = makeNumberSliderRow({
+            label: 'Rays intensity',
+            value: this._draft.sunRaysIntensity ?? 0.85,
+            min: 0,
+            max: 6,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                this._draft.sunRaysIntensity = v;
+                this._emit();
+            }
+        });
+
+        this._controls.sunRaysSizePx = makeNumberSliderRow({
+            label: 'Rays size (px)',
+            value: this._draft.sunRaysSizePx ?? 950,
+            min: 64,
+            max: 2400,
+            step: 1,
+            digits: 0,
+            onChange: (v) => {
+                this._draft.sunRaysSizePx = v;
+                this._emit();
+            }
+        });
+
+        this._controls.sunRaysCount = makeNumberSliderRow({
+            label: 'Ray count',
+            value: this._draft.sunRaysCount ?? 48,
+            min: 3,
+            max: 256,
+            step: 1,
+            digits: 0,
+            onChange: (v) => {
+                this._draft.sunRaysCount = v;
+                this._emit();
+            }
+        });
+
+        this._controls.sunRaysLength = makeNumberSliderRow({
+            label: 'Ray length',
+            value: this._draft.sunRaysLength ?? 0.95,
+            min: 0,
+            max: 1.6,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                this._draft.sunRaysLength = v;
+                this._emit();
+            }
+        });
+
+        this._controls.sunRaysLengthJitter = makeNumberSliderRow({
+            label: 'Length jitter',
+            value: this._draft.sunRaysLengthJitter ?? 0.45,
+            min: 0,
+            max: 1.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                this._draft.sunRaysLengthJitter = v;
+                this._emit();
+            }
+        });
+
+        this._controls.sunRaysBaseWidthDeg = makeNumberSliderRow({
+            label: 'Base width (°)',
+            value: this._draft.sunRaysBaseWidthDeg ?? 1.6,
+            min: 0,
+            max: 12,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                this._draft.sunRaysBaseWidthDeg = v;
+                this._emit();
+            }
+        });
+
+        this._controls.sunRaysTipWidthDeg = makeNumberSliderRow({
+            label: 'Tip width (°)',
+            value: this._draft.sunRaysTipWidthDeg ?? 0.28,
+            min: 0,
+            max: 12,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                this._draft.sunRaysTipWidthDeg = v;
+                this._emit();
+            }
+        });
+
+        this._controls.sunRaysSoftnessDeg = makeNumberSliderRow({
+            label: 'Softness (°)',
+            value: this._draft.sunRaysSoftnessDeg ?? 0.9,
+            min: 0,
+            max: 12,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                this._draft.sunRaysSoftnessDeg = v;
+                this._emit();
+            }
+        });
+
+        this._controls.sunRaysCoreGlow = makeNumberSliderRow({
+            label: 'Core glow',
+            value: this._draft.sunRaysCoreGlow ?? 0.35,
+            min: 0,
+            max: 2.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                this._draft.sunRaysCoreGlow = v;
+                this._emit();
+            }
+        });
+
+        this._controls.sunRaysOuterGlow = makeNumberSliderRow({
+            label: 'Outer glow',
+            value: this._draft.sunRaysOuterGlow ?? 0.18,
+            min: 0,
+            max: 2.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                this._draft.sunRaysOuterGlow = v;
+                this._emit();
+            }
+        });
+
+        this._controls.sunRaysRotationDeg = makeNumberSliderRow({
+            label: 'Rotation (°)',
+            value: this._draft.sunRaysRotationDeg ?? 0,
+            min: -360,
+            max: 360,
+            step: 1,
+            digits: 0,
+            onChange: (v) => {
+                this._draft.sunRaysRotationDeg = v;
+                this._emit();
+            }
+        });
+
+        sectionRays.appendChild(this._controls.sunRaysEnabled.row);
+        sectionRays.appendChild(this._controls.sunRaysIntensity.row);
+        sectionRays.appendChild(this._controls.sunRaysSizePx.row);
+        sectionRays.appendChild(this._controls.sunRaysCount.row);
+        sectionRays.appendChild(this._controls.sunRaysLength.row);
+        sectionRays.appendChild(this._controls.sunRaysLengthJitter.row);
+        sectionRays.appendChild(this._controls.sunRaysBaseWidthDeg.row);
+        sectionRays.appendChild(this._controls.sunRaysTipWidthDeg.row);
+        sectionRays.appendChild(this._controls.sunRaysSoftnessDeg.row);
+        sectionRays.appendChild(this._controls.sunRaysCoreGlow.row);
+        sectionRays.appendChild(this._controls.sunRaysOuterGlow.row);
+        sectionRays.appendChild(this._controls.sunRaysRotationDeg.row);
+
         const sectionOcc = makeEl('div', 'options-section');
         sectionOcc.appendChild(makeEl('div', 'options-section-title', 'Occluder Harness'));
 
@@ -995,6 +1163,7 @@ export class SunBloomDebuggerUI {
 
         this._tabSunBloomEl.appendChild(sectionVar);
         this._tabSunBloomEl.appendChild(sectionBloom);
+        this._tabSunBloomEl.appendChild(sectionRays);
         this._tabSunBloomEl.appendChild(sectionOcc);
         this._tabSunBloomEl.appendChild(sectionCam);
         this._tabSunBloomEl.appendChild(note);
@@ -1048,6 +1217,7 @@ export class SunBloomDebuggerUI {
         if (this._controls.sunBloomEnabled?.toggle) this._controls.sunBloomEnabled.toggle.checked = !!d.sunBloomEnabled;
         if (this._controls.sunBloomBrightnessOnly?.toggle) this._controls.sunBloomBrightnessOnly.toggle.checked = !!d.sunBloomBrightnessOnly;
         if (this._controls.sunBloomShowEmitter?.toggle) this._controls.sunBloomShowEmitter.toggle.checked = !!d.sunBloomShowEmitter;
+        if (this._controls.sunRaysEnabled?.toggle) this._controls.sunRaysEnabled.toggle.checked = !!d.sunRaysEnabled;
         if (this._controls.occluderEnabled?.toggle) this._controls.occluderEnabled.toggle.checked = !!d.occluderEnabled;
         if (this._controls.sunBloomDebugView?.select) this._controls.sunBloomDebugView.select.value = String(d.sunBloomDebugView ?? 'final');
         if (this._controls.cameraPreset?.select) this._controls.cameraPreset.select.value = String(d.cameraPreset ?? 'default');
@@ -1093,6 +1263,17 @@ export class SunBloomDebuggerUI {
         setSlider(this._controls.sunDiscRadiusDeg, clamp(d.sunDiscRadiusDeg ?? 0.55, 0.05, 6).toFixed?.(2) ?? 0.55);
         setSlider(this._controls.sunDiscIntensity, clamp(d.sunDiscIntensity ?? 25, 0, 200).toFixed?.(1) ?? 25);
         setSlider(this._controls.sunDiscFalloff, clamp(d.sunDiscFalloff ?? 2.2, 0.5, 10).toFixed?.(2) ?? 2.2);
+        setSlider(this._controls.sunRaysIntensity, clamp(d.sunRaysIntensity ?? 0.85, 0, 6).toFixed?.(2) ?? 0.85);
+        setSlider(this._controls.sunRaysSizePx, clamp(d.sunRaysSizePx ?? 950, 64, 2400).toFixed?.(0) ?? 950);
+        setSlider(this._controls.sunRaysCount, clamp(d.sunRaysCount ?? 48, 3, 256).toFixed?.(0) ?? 48);
+        setSlider(this._controls.sunRaysLength, clamp(d.sunRaysLength ?? 0.95, 0, 1.6).toFixed?.(2) ?? 0.95);
+        setSlider(this._controls.sunRaysLengthJitter, clamp(d.sunRaysLengthJitter ?? 0.45, 0, 1.0).toFixed?.(2) ?? 0.45);
+        setSlider(this._controls.sunRaysBaseWidthDeg, clamp(d.sunRaysBaseWidthDeg ?? 1.6, 0, 12).toFixed?.(2) ?? 1.6);
+        setSlider(this._controls.sunRaysTipWidthDeg, clamp(d.sunRaysTipWidthDeg ?? 0.28, 0, 12).toFixed?.(2) ?? 0.28);
+        setSlider(this._controls.sunRaysSoftnessDeg, clamp(d.sunRaysSoftnessDeg ?? 0.9, 0, 12).toFixed?.(2) ?? 0.9);
+        setSlider(this._controls.sunRaysCoreGlow, clamp(d.sunRaysCoreGlow ?? 0.35, 0, 2.0).toFixed?.(2) ?? 0.35);
+        setSlider(this._controls.sunRaysOuterGlow, clamp(d.sunRaysOuterGlow ?? 0.18, 0, 2.0).toFixed?.(2) ?? 0.18);
+        setSlider(this._controls.sunRaysRotationDeg, clamp(d.sunRaysRotationDeg ?? 0, -360, 360).toFixed?.(0) ?? 0);
         setSlider(this._controls.occluderOffsetX, clamp(d.occluderOffsetX ?? 0, -1, 1).toFixed?.(3) ?? 0);
         setSlider(this._controls.occluderOffsetY, clamp(d.occluderOffsetY ?? 0, -1, 1).toFixed?.(3) ?? 0);
         setSlider(this._controls.occluderDistance, clamp(d.occluderDistance ?? 60, 2, 250).toFixed?.(1) ?? 60);
@@ -1114,4 +1295,3 @@ export class SunBloomDebuggerUI {
         this.hud.classList.toggle('is-hidden', !visible);
     }
 }
-

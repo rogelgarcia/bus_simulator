@@ -5,10 +5,11 @@ import { applyIBLIntensity, applyIBLToScene, getIBLBackgroundTexture, loadIBLBac
 import { getResolvedLightingSettings } from '../../graphics/lighting/LightingSettings.js';
 import { getResolvedAtmosphereSettings, sanitizeAtmosphereSettings } from '../../graphics/visuals/atmosphere/AtmosphereSettings.js';
 import { getResolvedBloomSettings, sanitizeBloomSettings } from '../../graphics/visuals/postprocessing/BloomSettings.js';
-import { BloomPipeline } from '../../graphics/visuals/postprocessing/BloomPipeline.js';
+import { PostProcessingPipeline } from '../../graphics/visuals/postprocessing/PostProcessingPipeline.js';
 import { getResolvedColorGradingSettings, sanitizeColorGradingSettings } from '../../graphics/visuals/postprocessing/ColorGradingSettings.js';
 import { getColorGradingPresetById } from '../../graphics/visuals/postprocessing/ColorGradingPresets.js';
 import { is3dLutSupported, loadCubeLut3DTexture } from '../../graphics/visuals/postprocessing/ColorGradingCubeLutLoader.js';
+import { getResolvedSunBloomSettings, sanitizeSunBloomSettings } from '../../graphics/visuals/postprocessing/SunBloomSettings.js';
 
 export class GameEngine {
     constructor({
@@ -74,6 +75,10 @@ export class GameEngine {
             settings: getResolvedBloomSettings()
         };
 
+        this._sunBloom = {
+            settings: getResolvedSunBloomSettings()
+        };
+
         this._colorGrading = {
             settings: getResolvedColorGradingSettings(),
             lut: null,
@@ -84,6 +89,7 @@ export class GameEngine {
         };
 
         this._applyBloomSettings(this._bloom.settings);
+        this._applySunBloomSettings(this._sunBloom.settings);
         this._applyColorGradingSettings(this._colorGrading.settings);
 
         this._ibl = null;
@@ -211,8 +217,16 @@ export class GameEngine {
         return this._bloom?.settings ?? null;
     }
 
+    get sunBloomSettings() {
+        return this._sunBloom?.settings ?? null;
+    }
+
     get isBloomEnabled() {
         return !!this._bloom?.settings?.enabled;
+    }
+
+    get isSunBloomEnabled() {
+        return !!this._sunBloom?.settings?.enabled;
     }
 
     get isPostProcessingActive() {
@@ -220,10 +234,33 @@ export class GameEngine {
     }
 
     getBloomDebugInfo() {
-        if (!this._post?.pipeline) {
-            return { enabled: !!this._bloom?.settings?.enabled, ...(this._bloom?.settings ?? {}) };
-        }
-        return this._post.pipeline.getDebugInfo();
+        const s = this._bloom?.settings ?? null;
+        if (!this._post?.pipeline) return { enabled: !!s?.enabled, ...(s ?? {}) };
+
+        const info = this._post.pipeline.getDebugInfo?.() ?? null;
+        const p = info?.globalBloom ?? null;
+        return {
+            enabled: !!p?.enabled,
+            strength: p?.strength ?? (s?.strength ?? 0),
+            radius: p?.radius ?? (s?.radius ?? 0),
+            threshold: p?.threshold ?? (s?.threshold ?? 0)
+        };
+    }
+
+    getSunBloomDebugInfo() {
+        const s = this._sunBloom?.settings ?? null;
+        if (!this._post?.pipeline) return { enabled: !!s?.enabled, ...(s ?? {}) };
+
+        const info = this._post.pipeline.getDebugInfo?.() ?? null;
+        const p = info?.sunBloom ?? null;
+        return {
+            enabled: !!p?.enabled,
+            mode: p?.mode ?? (s?.mode ?? 'occlusion'),
+            strength: p?.strength ?? (s?.strength ?? 0),
+            radius: p?.radius ?? (s?.radius ?? 0),
+            threshold: p?.threshold ?? (s?.threshold ?? 0),
+            brightnessOnly: p?.brightnessOnly ?? (s?.brightnessOnly ?? true)
+        };
     }
 
     getIBLDebugInfo() {
@@ -406,6 +443,13 @@ export class GameEngine {
         this._syncPostProcessingPipeline();
     }
 
+    _applySunBloomSettings(settings) {
+        if (!this._sunBloom) return;
+        const next = sanitizeSunBloomSettings(settings);
+        this._sunBloom.settings = next;
+        this._syncPostProcessingPipeline();
+    }
+
     _applyColorGradingSettings(settings) {
         if (!this._colorGrading) return;
         const next = sanitizeColorGradingSettings(settings);
@@ -485,9 +529,10 @@ export class GameEngine {
 
     _syncPostProcessingPipeline() {
         const bloomEnabled = !!this._bloom?.settings?.enabled;
+        const sunBloomEnabled = !!this._sunBloom?.settings?.enabled;
         const preset = getColorGradingPresetById(this._colorGrading?.settings?.preset);
         const gradingRequested = preset?.id && preset.id !== 'off' && (this._colorGrading?.settings?.intensity > 0);
-        const wantsPipeline = bloomEnabled || gradingRequested;
+        const wantsPipeline = bloomEnabled || sunBloomEnabled || gradingRequested;
 
         if (!wantsPipeline) {
             if (this._post.pipeline) {
@@ -498,17 +543,21 @@ export class GameEngine {
         }
 
         if (!this._post.pipeline) {
-            this._post.pipeline = new BloomPipeline({
+            this._post.pipeline = new PostProcessingPipeline({
                 renderer: this.renderer,
                 scene: this.scene,
                 camera: this.camera,
-                settings: this._bloom?.settings ?? null
+                bloom: this._bloom?.settings ?? null,
+                sunBloom: this._sunBloom?.settings ?? null
             });
             this._post.pipeline.setPixelRatio(this.renderer.getPixelRatio?.() ?? 1);
             this._syncPostProcessingSize();
         }
 
-        this._post.pipeline.setSettings(this._bloom?.settings ?? null);
+        this._post.pipeline.setSettings({
+            bloom: this._bloom?.settings ?? null,
+            sunBloom: this._sunBloom?.settings ?? null
+        });
         this._post.pipeline.setColorGrading({
             lutTexture: this._colorGrading?.lut ?? null,
             intensity: this._colorGrading?.settings?.intensity ?? 0
@@ -615,12 +664,20 @@ export class GameEngine {
         this._applyBloomSettings(getResolvedBloomSettings());
     }
 
+    reloadSunBloomSettings() {
+        this._applySunBloomSettings(getResolvedSunBloomSettings());
+    }
+
     reloadColorGradingSettings() {
         this._applyColorGradingSettings(getResolvedColorGradingSettings());
     }
 
     setBloomSettings(settings) {
         this._applyBloomSettings(settings);
+    }
+
+    setSunBloomSettings(settings) {
+        this._applySunBloomSettings(settings);
     }
 
     setColorGradingSettings(settings) {
@@ -634,6 +691,7 @@ export class GameEngine {
         this.clearScene();
         this.reloadLightingSettings();
         this.reloadBloomSettings();
+        this.reloadSunBloomSettings();
         this.reloadColorGradingSettings();
     }
 

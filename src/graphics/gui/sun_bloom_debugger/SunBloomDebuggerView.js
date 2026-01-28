@@ -33,10 +33,67 @@ function clamp(value, min, max) {
     return Math.max(min, Math.min(max, num));
 }
 
+function smoothstep(edge0, edge1, x) {
+    const t = clamp((Number(x) - edge0) / Math.max(1e-6, edge1 - edge0), 0, 1);
+    return t * t * (3 - 2 * t);
+}
+
 function isInteractiveElement(target) {
     const tag = target?.tagName;
     if (!tag) return false;
     return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || target?.isContentEditable;
+}
+
+const OCCLUDER_LOCAL_CORNERS = Object.freeze([
+    new THREE.Vector3(-0.5, -0.5, -0.3),
+    new THREE.Vector3(0.5, -0.5, -0.3),
+    new THREE.Vector3(0.5, 0.5, -0.3),
+    new THREE.Vector3(-0.5, 0.5, -0.3),
+    new THREE.Vector3(-0.5, -0.5, 0.3),
+    new THREE.Vector3(0.5, -0.5, 0.3),
+    new THREE.Vector3(0.5, 0.5, 0.3),
+    new THREE.Vector3(-0.5, 0.5, 0.3)
+]);
+
+function cross2(o, a, b) {
+    return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+}
+
+function convexHull2D(points) {
+    const pts = Array.isArray(points) ? points.filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y)) : [];
+    if (pts.length <= 1) return pts.slice();
+    pts.sort((p, q) => (p.x - q.x) || (p.y - q.y));
+
+    const lower = [];
+    for (const p of pts) {
+        while (lower.length >= 2 && cross2(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+        lower.push(p);
+    }
+    const upper = [];
+    for (let i = pts.length - 1; i >= 0; i--) {
+        const p = pts[i];
+        while (upper.length >= 2 && cross2(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+        upper.push(p);
+    }
+    upper.pop();
+    lower.pop();
+    return lower.concat(upper);
+}
+
+function pointInConvexPolygon2D(pt, poly) {
+    const n = Array.isArray(poly) ? poly.length : 0;
+    if (n < 3) return false;
+    let hasPos = false;
+    let hasNeg = false;
+    for (let i = 0; i < n; i++) {
+        const a = poly[i];
+        const b = poly[(i + 1) % n];
+        const c = (b.x - a.x) * (pt.y - a.y) - (b.y - a.y) * (pt.x - a.x);
+        if (c > 0) hasPos = true;
+        else if (c < 0) hasNeg = true;
+        if (hasPos && hasNeg) return false;
+    }
+    return true;
 }
 
 function applyTextureColorSpace(tex, { srgb = true } = {}) {
@@ -148,6 +205,107 @@ function createSunDiscEmitter() {
     return mesh;
 }
 
+function createSunRaysStarburst() {
+    const geo = new THREE.PlaneGeometry(1, 1, 1, 1);
+    const mat = new THREE.ShaderMaterial({
+        uniforms: {
+            uIntensity: { value: 0.85 },
+            uRayCount: { value: 48.0 },
+            uRayLength: { value: 0.95 },
+            uLengthJitter: { value: 0.45 },
+            uBaseWidthRad: { value: (1.6 * Math.PI) / 180 },
+            uTipWidthRad: { value: (0.28 * Math.PI) / 180 },
+            uSoftnessRad: { value: (0.9 * Math.PI) / 180 },
+            uCoreGlow: { value: 0.35 },
+            uOuterGlow: { value: 0.18 },
+            uRotationRad: { value: 0.0 },
+            uSeed: { value: 0.0 },
+            uColor: { value: new THREE.Color('#fff2d6') }
+        },
+        vertexShader: `
+            varying vec2 vUv;
+            void main() {
+                vUv = uv;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform float uIntensity;
+            uniform float uRayCount;
+            uniform float uRayLength;
+            uniform float uLengthJitter;
+            uniform float uBaseWidthRad;
+            uniform float uTipWidthRad;
+            uniform float uSoftnessRad;
+            uniform float uCoreGlow;
+            uniform float uOuterGlow;
+            uniform float uRotationRad;
+            uniform float uSeed;
+            uniform vec3 uColor;
+
+            varying vec2 vUv;
+
+            float hash11(float x) {
+                return fract(sin(x * 127.1 + uSeed * 311.7) * 43758.5453123);
+            }
+
+            void main() {
+                vec2 p = vUv * 2.0 - 1.0;
+                float r = length(p);
+                float r01 = clamp(r, 0.0, 1.0);
+
+                // Fade out outside the unit circle to avoid square corners.
+                float circleFade = 1.0 - smoothstep(1.0, 1.08, r);
+
+                float ang = atan(p.y, p.x) + uRotationRad;
+                if (ang < 0.0) ang += 6.28318530718;
+
+                float n = max(3.0, floor(uRayCount + 0.5));
+                float cell = 6.28318530718 / n;
+                float idx = floor(ang / cell);
+                float center = (idx + 0.5) * cell;
+
+                float dAng = abs(ang - center);
+                dAng = min(dAng, 6.28318530718 - dAng);
+
+                float rnd = hash11(idx + 1.0);
+                float len = max(0.02, uRayLength * mix(1.0 - uLengthJitter, 1.0 + uLengthJitter, rnd));
+
+                float t = smoothstep(0.0, max(1e-3, len), r01);
+                float width = mix(uBaseWidthRad, uTipWidthRad, t);
+
+                float rayMask = 1.0 - smoothstep(width, width + uSoftnessRad, dAng);
+                float radialMask = 1.0 - smoothstep(len, len + 0.06, r01);
+
+                // Rays are bold at the base, thinner and dimmer towards the tip.
+                float baseBoost = pow(max(0.0, 1.0 - r01 / max(1e-3, len)), 0.25);
+                float tipFade = 1.0 - smoothstep(len * 0.75, len, r01);
+                float rays = rayMask * radialMask * baseBoost * tipFade;
+
+                float core = exp(-r01 * r01 * 18.0) * uCoreGlow;
+                float halo = exp(-r01 * r01 * 2.8) * uOuterGlow;
+
+                float a = (rays + core + halo) * uIntensity * circleFade;
+                vec3 col = uColor * a;
+                gl_FragColor = vec4(col, a);
+            }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthTest: true,
+        depthWrite: false,
+        toneMapped: false
+    });
+
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.name = 'sun_rays_starburst';
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 948;
+    mesh.layers.set(0);
+    mesh.layers.enable(BLOOM_LAYER_ID);
+    return mesh;
+}
+
 export class SunBloomDebuggerView {
     constructor({ canvas } = {}) {
         this.canvas = canvas;
@@ -172,6 +330,12 @@ export class SunBloomDebuggerView {
         this._sunEmitter = null;
         this._sunWorldPos = new THREE.Vector3();
         this._sunNdc = new THREE.Vector3();
+
+        this._sunRays = null;
+        this._sunRaysMat = null;
+        this._sunRaysViewport = new THREE.Vector2();
+        this._sunVisible = { ndcX: 0, ndcY: 0, fraction: 1, ringVis: 0 };
+        this._sunDiscRadiusNdc = 0;
 
         this._occluder = null;
         this._tmpV3 = new THREE.Vector3();
@@ -292,6 +456,18 @@ export class SunBloomDebuggerView {
             sunDiscRadiusDeg: 0.55,
             sunDiscIntensity: 25,
             sunDiscFalloff: 2.2,
+            sunRaysEnabled: true,
+            sunRaysIntensity: 0.85,
+            sunRaysSizePx: 950,
+            sunRaysCount: 48,
+            sunRaysLength: 0.95,
+            sunRaysLengthJitter: 0.45,
+            sunRaysBaseWidthDeg: 1.6,
+            sunRaysTipWidthDeg: 0.28,
+            sunRaysSoftnessDeg: 0.9,
+            sunRaysCoreGlow: 0.35,
+            sunRaysOuterGlow: 0.18,
+            sunRaysRotationDeg: 0,
             occluderEnabled: true,
             occluderOffsetX: 0,
             occluderOffsetY: 0,
@@ -376,6 +552,14 @@ export class SunBloomDebuggerView {
             this._sunEmitter.material?.dispose?.();
         }
         this._sunEmitter = null;
+
+        if (this._sunRays) {
+            this._root?.remove?.(this._sunRays);
+            this._sunRays.geometry?.dispose?.();
+            this._sunRays.material?.dispose?.();
+        }
+        this._sunRays = null;
+        this._sunRaysMat = null;
 
         if (this._occluder) {
             this._root?.remove?.(this._occluder);
@@ -485,6 +669,11 @@ export class SunBloomDebuggerView {
         this._root.add(emitter);
         this._sunEmitter = emitter;
 
+        const rays = createSunRaysStarburst();
+        this._root.add(rays);
+        this._sunRays = rays;
+        this._sunRaysMat = rays.material;
+
         const occGeo = new THREE.BoxGeometry(1, 1, 0.6);
         const occMat = new THREE.MeshStandardMaterial({ color: 0x121418, roughness: 0.95, metalness: 0.0 });
         const occluder = new THREE.Mesh(occGeo, occMat);
@@ -533,7 +722,7 @@ export class SunBloomDebuggerView {
             settings: {
                 ...(flareSettings ?? {}),
                 enabled: true,
-                components: { core: true, halo: true, starburst: true, ghosting: true }
+                components: { core: true, halo: true, starburst: false, ghosting: true }
             }
         });
         this._root.add(flare.group);
@@ -800,6 +989,21 @@ export class SunBloomDebuggerView {
             this._sunEmitter.visible = !!this._settings.sunBloomShowEmitter;
         }
 
+        if (this._sunRaysMat?.uniforms) {
+            const u = this._sunRaysMat.uniforms;
+            u.uIntensity.value = clamp(this._settings.sunRaysIntensity ?? 0.85, 0, 6);
+            u.uRayCount.value = clamp(this._settings.sunRaysCount ?? 48, 3, 256);
+            u.uRayLength.value = clamp(this._settings.sunRaysLength ?? 0.95, 0, 1.6);
+            u.uLengthJitter.value = clamp(this._settings.sunRaysLengthJitter ?? 0.45, 0, 1.0);
+            u.uBaseWidthRad.value = (clamp(this._settings.sunRaysBaseWidthDeg ?? 1.6, 0, 12) * Math.PI) / 180;
+            u.uTipWidthRad.value = (clamp(this._settings.sunRaysTipWidthDeg ?? 0.28, 0, 12) * Math.PI) / 180;
+            u.uSoftnessRad.value = (clamp(this._settings.sunRaysSoftnessDeg ?? 0.9, 0, 12) * Math.PI) / 180;
+            u.uCoreGlow.value = clamp(this._settings.sunRaysCoreGlow ?? 0.35, 0, 2.0);
+            u.uOuterGlow.value = clamp(this._settings.sunRaysOuterGlow ?? 0.18, 0, 2.0);
+            u.uRotationRad.value = (clamp(this._settings.sunRaysRotationDeg ?? 0, -360, 360) * Math.PI) / 180;
+        }
+        if (this._sunRays) this._sunRays.visible = !!this._settings.sunRaysEnabled;
+
         post.bloomPass.strength = clamp(this._settings.sunBloomStrength ?? 0.9, 0, 5);
         post.bloomPass.radius = clamp(this._settings.sunBloomRadius ?? 0.25, 0, 1);
         post.bloomPass.threshold = clamp(this._settings.sunBloomThreshold ?? 1.05, 0, 5);
@@ -895,6 +1099,7 @@ export class SunBloomDebuggerView {
         if (this._sky) this._sky.position.copy(camera.position);
 
         this._updateSunEmitter();
+        this._updateSunRays();
         this._updateOccluder();
         this._flare?.update?.({ camera, renderer });
 
@@ -929,6 +1134,107 @@ export class SunBloomDebuggerView {
         emitter.updateMatrixWorld?.();
 
         this._sunNdc.copy(this._sunWorldPos).project(camera);
+
+        const sample = this._tmpRay.copy(this._sunWorldPos);
+        sample.add(this._tmpV3.set(1, 0, 0).applyQuaternion(camera.quaternion).multiplyScalar(radius));
+        sample.project(camera);
+        this._sunDiscRadiusNdc = Math.max(0, Math.hypot(sample.x - this._sunNdc.x, sample.y - this._sunNdc.y));
+    }
+
+    _computeSunVisibleNdc() {
+        const camera = this.camera;
+        if (!camera) return { ndcX: 0, ndcY: 0, fraction: 0, ringVis: 0 };
+
+        const sx = Number(this._sunNdc.x) || 0;
+        const sy = Number(this._sunNdc.y) || 0;
+        const sz = Number(this._sunNdc.z) || 0;
+        const r = Math.max(0, Number(this._sunDiscRadiusNdc) || 0);
+
+        const edge = Math.max(Math.abs(sx), Math.abs(sy));
+        const inFront = sz >= -1 && sz <= 1;
+        const edgeFade = 1 - smoothstep(0.92, 1.02, edge);
+        const camForward = this._tmpV3.set(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
+        const sunDir = this._tmpRay.copy(this._sunWorldPos).sub(camera.position).normalize();
+        const forwardFade = smoothstep(0.02, 0.10, camForward.dot(sunDir));
+        const ringVis = inFront ? (edgeFade * forwardFade) : 0;
+
+        if (ringVis <= 1e-4 || r <= 1e-6) return { ndcX: sx, ndcY: sy, fraction: 0, ringVis };
+
+        const minX = sx - r;
+        const maxX = sx + r;
+        const minY = sy - r;
+        const maxY = sy + r;
+        const intersectsScreen = maxX >= -1 && minX <= 1 && maxY >= -1 && minY <= 1;
+        if (!intersectsScreen) return { ndcX: sx, ndcY: sy, fraction: 0, ringVis };
+
+        const occ = this._occluder;
+        const occEnabled = !!this._settings?.occluderEnabled && !!occ?.visible;
+        if (!occEnabled) return { ndcX: sx, ndcY: sy, fraction: 1, ringVis };
+
+        const pts = [];
+        for (const corner of OCCLUDER_LOCAL_CORNERS) {
+            const wp = this._tmpV3.copy(corner).applyMatrix4(occ.matrixWorld);
+            wp.project(camera);
+            if (!Number.isFinite(wp.x) || !Number.isFinite(wp.y)) continue;
+            pts.push({ x: wp.x, y: wp.y });
+        }
+        const hull = convexHull2D(pts);
+        if (hull.length < 3) return { ndcX: sx, ndcY: sy, fraction: 1, ringVis };
+
+        const N = 26;
+        let total = 0;
+        let vis = 0;
+        let sumX = 0;
+        let sumY = 0;
+        for (let iy = 0; iy < N; iy++) {
+            const fy = ((iy + 0.5) / N) * 2 - 1;
+            const y = sy + fy * r;
+            const dy = y - sy;
+            for (let ix = 0; ix < N; ix++) {
+                const fx = ((ix + 0.5) / N) * 2 - 1;
+                const x = sx + fx * r;
+                const dx = x - sx;
+                if (dx * dx + dy * dy > r * r) continue;
+                total++;
+                const occluded = pointInConvexPolygon2D({ x, y }, hull);
+                if (occluded) continue;
+                vis++;
+                sumX += x;
+                sumY += y;
+            }
+        }
+
+        if (!total || !vis) return { ndcX: sx, ndcY: sy, fraction: 0, ringVis };
+        return { ndcX: sumX / vis, ndcY: sumY / vis, fraction: vis / total, ringVis };
+    }
+
+    _updateSunRays() {
+        const rays = this._sunRays;
+        const camera = this.camera;
+        const renderer = this.renderer;
+        if (!rays || !camera || !renderer) return;
+
+        const vis = this._computeSunVisibleNdc();
+        this._sunVisible = vis;
+        const show = !!this._settings?.sunRaysEnabled && vis.ringVis > 0.01 && vis.fraction > 0.01;
+        rays.visible = show;
+        if (!show) return;
+
+        const worldPos = this._tmpV3.set(vis.ndcX, vis.ndcY, this._sunNdc.z).unproject(camera);
+        rays.position.copy(worldPos);
+        rays.quaternion.copy(camera.quaternion);
+
+        renderer.getSize(this._sunRaysViewport);
+        const viewportH = Math.max(1, this._sunRaysViewport.y || 720);
+        const fovRad = (Number.isFinite(camera.fov) ? camera.fov : 55) * (Math.PI / 180);
+        const tanHalfFov = Math.tan(fovRad * 0.5);
+        const dToCam = rays.position.distanceTo(camera.position);
+        const worldUnitsPerPixel = (2 * dToCam * tanHalfFov) / viewportH;
+        const sizePx = clamp(this._settings?.sunRaysSizePx ?? 950, 64, 2400);
+        const sizeFactor = Math.sqrt(clamp(vis.fraction, 0, 1));
+        const s = sizePx * worldUnitsPerPixel * sizeFactor;
+        rays.scale.set(s, s, 1);
+        rays.updateMatrixWorld?.();
     }
 
     _updateOccluder() {

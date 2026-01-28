@@ -17,6 +17,9 @@ import { azimuthElevationDegToDir } from '../atmosphere/SunDirection.js';
 import { getResolvedBuildingWindowVisualsSettings } from '../buildings/BuildingWindowVisualsSettings.js';
 import { getResolvedSunFlareSettings } from '../sun/SunFlareSettings.js';
 import { SunFlareRig } from '../sun/SunFlareRig.js';
+import { SunBloomRig } from '../sun/SunBloomRig.js';
+import { getResolvedSunBloomSettings } from '../postprocessing/SunBloomSettings.js';
+import { SunRaysRig } from '../sun/SunRaysRig.js';
 import { createRoadEngineRoads } from './RoadEngineRoads.js';
 import { createTrafficControlProps } from './TrafficControlProps.js';
 
@@ -79,6 +82,20 @@ export class City {
             const sunFlareSettings = getResolvedSunFlareSettings();
             this.sunFlare = new SunFlareRig({ light: this.sun, settings: sunFlareSettings });
             this.group.add(this.sunFlare.group);
+        }
+
+        this.sunBloom = null;
+        if (typeof window !== 'undefined') {
+            const sunBloomSettings = getResolvedSunBloomSettings();
+            this.sunBloom = new SunBloomRig({ light: this.sun, sky: this.sky, settings: sunBloomSettings });
+            this.group.add(this.sunBloom.group);
+        }
+
+        this.sunRays = null;
+        if (typeof window !== 'undefined') {
+            const sunBloomSettings = getResolvedSunBloomSettings();
+            this.sunRays = new SunRaysRig({ light: this.sun, sky: this.sky, settings: sunBloomSettings });
+            this.group.add(this.sunRays.group);
         }
 
         const resolvedSeed = mapSpec?.seed ?? seed;
@@ -231,6 +248,8 @@ export class City {
         this.sky.position.copy(engine.camera.position);
         this._syncSkyVisibility(engine);
         this.sunFlare?.update?.(engine);
+        this.sunBloom?.update?.(engine);
+        this.sunRays?.update?.(engine);
     }
 
     _applyAtmosphere(engine) {

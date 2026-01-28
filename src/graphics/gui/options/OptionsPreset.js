@@ -4,6 +4,7 @@
 
 import { LIGHTING_DEFAULTS, sanitizeLightingSettings } from '../../lighting/LightingSettings.js';
 import { BLOOM_DEFAULTS, sanitizeBloomSettings } from '../../visuals/postprocessing/BloomSettings.js';
+import { SUN_BLOOM_DEFAULTS, sanitizeSunBloomSettings } from '../../visuals/postprocessing/SunBloomSettings.js';
 import { COLOR_GRADING_DEFAULTS, sanitizeColorGradingSettings } from '../../visuals/postprocessing/ColorGradingSettings.js';
 import { BUILDING_WINDOW_VISUALS_DEFAULTS, sanitizeBuildingWindowVisualsSettings } from '../../visuals/buildings/BuildingWindowVisualsSettings.js';
 import { ASPHALT_NOISE_DEFAULTS, sanitizeAsphaltNoiseSettings } from '../../visuals/city/AsphaltNoiseSettings.js';
@@ -15,6 +16,7 @@ export const OPTIONS_PRESET_VERSION = 1;
 const GROUPS = Object.freeze([
     'lighting',
     'bloom',
+    'sunBloom',
     'colorGrading',
     'sunFlare',
     'buildingWindowVisuals',
@@ -48,6 +50,7 @@ function getDefaultSettings() {
     return {
         lighting: sanitizeLightingSettings(LIGHTING_DEFAULTS),
         bloom: sanitizeBloomSettings(BLOOM_DEFAULTS),
+        sunBloom: sanitizeSunBloomSettings(SUN_BLOOM_DEFAULTS),
         colorGrading: sanitizeColorGradingSettings(COLOR_GRADING_DEFAULTS),
         sunFlare: sanitizeSunFlareSettings(SUN_FLARE_DEFAULTS),
         buildingWindowVisuals: sanitizeBuildingWindowVisualsSettings(BUILDING_WINDOW_VISUALS_DEFAULTS),
@@ -62,6 +65,7 @@ function sanitizeSettings(input) {
     return {
         lighting: sanitizeLightingSettings(normalized.lighting ?? defaults.lighting),
         bloom: sanitizeBloomSettings(normalized.bloom ?? defaults.bloom),
+        sunBloom: sanitizeSunBloomSettings(normalized.sunBloom ?? defaults.sunBloom),
         colorGrading: sanitizeColorGradingSettings(normalized.colorGrading ?? defaults.colorGrading),
         sunFlare: sanitizeSunFlareSettings(normalized.sunFlare ?? defaults.sunFlare),
         buildingWindowVisuals: sanitizeBuildingWindowVisualsSettings(normalized.buildingWindowVisuals ?? defaults.buildingWindowVisuals),
@@ -89,6 +93,16 @@ function normalizeSettingsBooleans(src) {
 
     const bloom = src.bloom && typeof src.bloom === 'object' ? src.bloom : null;
     if (bloom) out.bloom = { ...bloom, enabled: parseLooseBool(bloom.enabled, bloom.enabled) };
+
+    const sunBloom = src.sunBloom && typeof src.sunBloom === 'object' ? src.sunBloom : null;
+    if (sunBloom) {
+        out.sunBloom = {
+            ...sunBloom,
+            enabled: parseLooseBool(sunBloom.enabled, sunBloom.enabled),
+            brightnessOnly: parseLooseBool(sunBloom.brightnessOnly, sunBloom.brightnessOnly),
+            raysEnabled: parseLooseBool(sunBloom.raysEnabled, sunBloom.raysEnabled)
+        };
+    }
 
     if (src.colorGrading && typeof src.colorGrading === 'object') out.colorGrading = { ...src.colorGrading };
 
@@ -251,6 +265,7 @@ export function applyOptionsPresetToDraft(draft, preset) {
 
     if (includes.lighting) out.lighting = settings.lighting;
     if (includes.bloom) out.bloom = settings.bloom;
+    if (includes.sunBloom) out.sunBloom = settings.sunBloom;
     if (includes.colorGrading) out.colorGrading = settings.colorGrading;
     if (includes.sunFlare) out.sunFlare = settings.sunFlare;
     if (includes.buildingWindowVisuals) out.buildingWindowVisuals = settings.buildingWindowVisuals;
