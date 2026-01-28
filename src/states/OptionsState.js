@@ -12,6 +12,7 @@ import { getResolvedBuildingWindowVisualsSettings, sanitizeBuildingWindowVisuals
 import { applyBuildingWindowVisualsToCityMeshes } from '../graphics/visuals/buildings/BuildingWindowVisualsRuntime.js';
 import { saveColorGradingSettings } from '../graphics/visuals/postprocessing/ColorGradingSettings.js';
 import { getResolvedSunFlareSettings, saveSunFlareSettings } from '../graphics/visuals/sun/SunFlareSettings.js';
+import { saveAtmosphereSettings } from '../graphics/visuals/atmosphere/AtmosphereSettings.js';
 
 function isEditableTarget(target) {
     const el = target && typeof target === 'object' ? target : null;
@@ -49,6 +50,7 @@ export class OptionsState {
         document.activeElement?.blur?.();
 
         const lighting = this.engine?.lightingSettings ?? null;
+        const atmosphere = this.engine?.atmosphereSettings ?? null;
         const bloom = this.engine?.bloomSettings ?? null;
         const postActive = this.engine?.isPostProcessingActive ?? false;
         const grading = this.engine?.colorGradingSettings ?? null;
@@ -61,6 +63,7 @@ export class OptionsState {
 
         this._original = {
             lighting: lighting && typeof lighting === 'object' ? JSON.parse(JSON.stringify(lighting)) : null,
+            atmosphere: atmosphere && typeof atmosphere === 'object' ? JSON.parse(JSON.stringify(atmosphere)) : null,
             bloom: bloom && typeof bloom === 'object' ? JSON.parse(JSON.stringify(bloom)) : null,
             colorGrading: grading && typeof grading === 'object' ? JSON.parse(JSON.stringify(grading)) : null,
             buildingWindowVisuals: buildingWindowVisuals && typeof buildingWindowVisuals === 'object'
@@ -87,6 +90,9 @@ export class OptionsState {
                         showProbeSphere
                     }
                 }
+                : null,
+            initialAtmosphere: atmosphere && typeof atmosphere === 'object'
+                ? JSON.parse(JSON.stringify(atmosphere))
                 : null,
             initialBloom: bloom && typeof bloom === 'object'
                 ? {
@@ -220,6 +226,7 @@ export class OptionsState {
 
     _save(draft) {
         saveLightingSettings(draft?.lighting ?? null);
+        saveAtmosphereSettings(draft?.atmosphere ?? null);
         saveBloomSettings(draft?.bloom ?? null);
         saveColorGradingSettings(draft?.colorGrading ?? null);
         saveBuildingWindowVisualsSettings(draft?.buildingWindowVisuals ?? null);
@@ -241,6 +248,7 @@ export class OptionsState {
     _applyDraft(draft) {
         const d = draft && typeof draft === 'object' ? draft : null;
         const lighting = d?.lighting ?? null;
+        const atmosphere = d?.atmosphere ?? null;
         const bloom = d?.bloom ?? null;
         const grading = d?.colorGrading ?? null;
         const buildingWindowVisuals = d?.buildingWindowVisuals ?? null;
@@ -248,6 +256,7 @@ export class OptionsState {
         const asphaltNoise = d?.asphaltNoise ?? null;
 
         this.engine?.setLightingSettings?.(lighting ?? null);
+        this.engine?.setAtmosphereSettings?.(atmosphere ?? null);
         if (bloom) this.engine?.setBloomSettings?.(bloom);
         if (grading) this.engine?.setColorGradingSettings?.(grading);
         const desiredProbeVisible = lighting?.ibl?.showProbeSphere !== undefined ? !!lighting.ibl.showProbeSphere : false;

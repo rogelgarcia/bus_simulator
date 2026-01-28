@@ -21,6 +21,8 @@ import { RoadDebuggerPicking } from './RoadDebuggerPicking.js';
 import { createTrafficControlProps } from '../../visuals/city/TrafficControlProps.js';
 import { createRoadMarkingsMeshesFromData } from '../../visuals/city/RoadMarkingsMeshes.js';
 import { computeRoadTrafficControlPlacementsFromRoadEngineDerived, ROAD_TRAFFIC_CONTROL } from '../../../app/road_decoration/traffic_controls/RoadTrafficControlPlacement.js';
+import { applyAtmosphereToSkyDome, shouldShowSkyDome } from '../../assets3d/generators/SkyGenerator.js';
+import { azimuthElevationDegToDir } from '../../visuals/atmosphere/SunDirection.js';
 
 function clampInt(v, lo, hi) {
     const n = Number(v);
@@ -434,11 +436,35 @@ export class RoadDebuggerView {
     }
 
     update(dt) {
+        this._applyAtmosphere();
         const bg = this.scene?.background ?? null;
-        const bgIsTexture = !!bg && !!bg.isTexture;
         const wantsIblBackground = !!this.engine?.lightingSettings?.ibl?.setBackground;
-        if (this._sky) this._sky.visible = !(wantsIblBackground && bgIsTexture);
+        if (this._sky) {
+            this._sky.visible = shouldShowSkyDome({
+                skyIblBackgroundMode: this.engine?.atmosphereSettings?.sky?.iblBackgroundMode ?? 'ibl',
+                lightingIblSetBackground: wantsIblBackground,
+                sceneBackground: bg
+            });
+            if (this.camera) this._sky.position.copy(this.camera.position);
+        }
         updateCamera(this, dt);
+    }
+
+    _applyAtmosphere() {
+        const atmo = this.engine?.atmosphereSettings ?? null;
+        if (!atmo) return;
+
+        const azimuthDeg = atmo?.sun?.azimuthDeg ?? null;
+        const elevationDeg = atmo?.sun?.elevationDeg ?? null;
+        if (this._sun && Number.isFinite(azimuthDeg) && Number.isFinite(elevationDeg)) {
+            const dir = azimuthElevationDegToDir(azimuthDeg, elevationDeg);
+            const dist = this._sun.position.length() > 1e-6 ? this._sun.position.length() : 200;
+            this._sun.position.copy(dir).multiplyScalar(dist);
+            this._sun.target.position.set(0, 0, 0);
+            this._sun.target.updateMatrixWorld?.();
+        }
+
+        applyAtmosphereToSkyDome(this._sky, atmo, { sunDir: this._sun?.position ?? null });
     }
 
     setGridEnabled(enabled) {

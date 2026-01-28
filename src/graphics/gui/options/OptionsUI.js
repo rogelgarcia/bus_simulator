@@ -9,6 +9,7 @@ import { getDefaultResolvedBuildingWindowVisualsSettings } from '../../visuals/b
 import { getDefaultResolvedAsphaltNoiseSettings } from '../../visuals/city/AsphaltNoiseSettings.js';
 import { getDefaultResolvedSunFlareSettings } from '../../visuals/sun/SunFlareSettings.js';
 import { getSunFlarePresetById, getSunFlarePresetOptions } from '../../visuals/sun/SunFlarePresets.js';
+import { getDefaultResolvedAtmosphereSettings } from '../../visuals/atmosphere/AtmosphereSettings.js';
 import {
     applyOptionsPresetToDraft,
     createOptionsPresetFromDraft,
@@ -165,6 +166,56 @@ function makeNumberSliderRow({ label, value = 0, min = 0, max = 1, step = 0.01, 
     return { row, range, number };
 }
 
+function normalizeHexColor(value) {
+    const raw = typeof value === 'string' ? value.trim() : '';
+    if (!raw) return null;
+    const v = raw.startsWith('#') ? raw.slice(1) : (raw.toLowerCase().startsWith('0x') ? raw.slice(2) : raw);
+    if (v.length === 3 && /^[0-9a-fA-F]{3}$/.test(v)) {
+        const r = v[0];
+        const g = v[1];
+        const b = v[2];
+        return `#${r}${r}${g}${g}${b}${b}`.toUpperCase();
+    }
+    if (v.length === 6 && /^[0-9a-fA-F]{6}$/.test(v)) return `#${v}`.toUpperCase();
+    return null;
+}
+
+function makeColorRow({ label, value = '#FFFFFF', onChange }) {
+    const row = makeEl('div', 'options-row options-row-wide');
+    const left = makeEl('div', 'options-row-label', label);
+    const right = makeEl('div', 'options-row-control options-row-control-wide');
+
+    const color = document.createElement('input');
+    color.type = 'color';
+    color.className = 'options-color';
+
+    const text = document.createElement('input');
+    text.type = 'text';
+    text.className = 'options-number';
+
+    const initial = normalizeHexColor(value) ?? '#FFFFFF';
+    color.value = initial;
+    text.value = initial;
+
+    const emit = (raw) => {
+        const normalized = normalizeHexColor(raw);
+        if (!normalized) return;
+        color.value = normalized;
+        text.value = normalized;
+        onChange?.(normalized);
+    };
+
+    color.addEventListener('input', () => emit(color.value));
+    text.addEventListener('change', () => emit(text.value));
+    text.addEventListener('blur', () => emit(text.value));
+
+    right.appendChild(color);
+    right.appendChild(text);
+    row.appendChild(left);
+    row.appendChild(right);
+    return { row, color, text };
+}
+
 function makeValueRow({ label, value = '' }) {
     const row = makeEl('div', 'options-row');
     const left = makeEl('div', 'options-row-label', label);
@@ -231,6 +282,7 @@ export class OptionsUI {
         visibleTabs = null,
         initialTab = 'lighting',
         initialLighting = null,
+        initialAtmosphere = null,
         initialBloom = null,
         initialColorGrading = null,
         initialBuildingWindowVisuals = null,
@@ -338,6 +390,9 @@ export class OptionsUI {
         this._draftLighting = initialLighting && typeof initialLighting === 'object'
             ? JSON.parse(JSON.stringify(initialLighting))
             : null;
+        this._draftAtmosphere = initialAtmosphere && typeof initialAtmosphere === 'object'
+            ? JSON.parse(JSON.stringify(initialAtmosphere))
+            : null;
         this._draftBloom = initialBloom && typeof initialBloom === 'object'
             ? JSON.parse(JSON.stringify(initialBloom))
             : null;
@@ -362,6 +417,7 @@ export class OptionsUI {
         const d = fullDraft && typeof fullDraft === 'object' ? fullDraft : null;
         if (!d) return;
         if (d.lighting) this._draftLighting = JSON.parse(JSON.stringify(d.lighting));
+        if (d.atmosphere) this._draftAtmosphere = JSON.parse(JSON.stringify(d.atmosphere));
         if (d.bloom) this._draftBloom = JSON.parse(JSON.stringify(d.bloom));
         if (d.colorGrading) this._draftColorGrading = JSON.parse(JSON.stringify(d.colorGrading));
         if (d.sunFlare) this._draftSunFlare = JSON.parse(JSON.stringify(d.sunFlare));
@@ -736,6 +792,12 @@ export class OptionsUI {
                 setBackground: d.ibl.setBackground
             }
         };
+    }
+
+    _ensureDraftAtmosphere() {
+        if (this._draftAtmosphere) return;
+        const d = getDefaultResolvedAtmosphereSettings();
+        this._draftAtmosphere = JSON.parse(JSON.stringify(d));
     }
 
     _ensureDraftBloom() {
@@ -1262,6 +1324,7 @@ export class OptionsUI {
 
     _renderLightingTab() {
         this._ensureDraftLighting();
+        this._ensureDraftAtmosphere();
         this._ensureDraftBloom();
         this._ensureDraftColorGrading();
         this._ensureDraftSunFlare();
@@ -1272,7 +1335,11 @@ export class OptionsUI {
         const sectionLighting = makeEl('div', 'options-section');
         sectionLighting.appendChild(makeEl('div', 'options-section-title', 'Renderer + Lights'));
 
+        const sectionAtmosphere = makeEl('div', 'options-section');
+        sectionAtmosphere.appendChild(makeEl('div', 'options-section-title', 'Atmosphere / Sky'));
+
         const d = this._draftLighting;
+        const atmo = this._draftAtmosphere;
         const bloom = this._draftBloom;
         const grading = this._draftColorGrading;
         const sunFlare = this._draftSunFlare;
@@ -1330,6 +1397,196 @@ export class OptionsUI {
                 step: 0.01,
                 digits: 2,
                 onChange: (v) => { d.sunIntensity = v; emit(); }
+            }),
+            sunAzimuthDeg: makeNumberSliderRow({
+                label: 'Sun azimuth (°)',
+                value: atmo.sun.azimuthDeg,
+                min: 0,
+                max: 360,
+                step: 1,
+                digits: 0,
+                onChange: (v) => { atmo.sun.azimuthDeg = v; emit(); }
+            }),
+            sunElevationDeg: makeNumberSliderRow({
+                label: 'Sun elevation (°)',
+                value: atmo.sun.elevationDeg,
+                min: 0,
+                max: 89,
+                step: 1,
+                digits: 0,
+                onChange: (v) => { atmo.sun.elevationDeg = v; emit(); }
+            }),
+            skyBgMode: makeChoiceRow({
+                label: 'Background priority',
+                value: atmo.sky.iblBackgroundMode,
+                options: [
+                    { id: 'ibl', label: 'IBL (HDR background)' },
+                    { id: 'gradient', label: 'Gradient (force sky)' }
+                ],
+                onChange: (v) => { atmo.sky.iblBackgroundMode = v; emit(); }
+            }),
+            skyHorizon: makeColorRow({
+                label: 'Sky horizon',
+                value: atmo.sky.horizonColor,
+                onChange: (v) => { atmo.sky.horizonColor = v; emit(); }
+            }),
+            skyZenith: makeColorRow({
+                label: 'Sky zenith',
+                value: atmo.sky.zenithColor,
+                onChange: (v) => { atmo.sky.zenithColor = v; emit(); }
+            }),
+            skyGround: makeColorRow({
+                label: 'Sky ground',
+                value: atmo.sky.groundColor,
+                onChange: (v) => { atmo.sky.groundColor = v; emit(); }
+            }),
+            skyExposure: makeNumberSliderRow({
+                label: 'Sky exposure',
+                value: atmo.sky.exposure,
+                min: 0,
+                max: 8,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { atmo.sky.exposure = v; emit(); }
+            }),
+            skyCurve: makeNumberSliderRow({
+                label: 'Sky curve',
+                value: atmo.sky.curve,
+                min: 0.05,
+                max: 8,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { atmo.sky.curve = v; emit(); }
+            }),
+            skyDither: makeNumberSliderRow({
+                label: 'Sky dither',
+                value: atmo.sky.ditherStrength,
+                min: 0,
+                max: 2,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { atmo.sky.ditherStrength = v; emit(); }
+            }),
+            hazeEnabled: makeToggleRow({
+                label: 'Horizon haze',
+                value: atmo.haze.enabled,
+                onChange: (v) => { atmo.haze.enabled = v; emit(); }
+            }),
+            hazeIntensity: makeNumberSliderRow({
+                label: 'Haze intensity',
+                value: atmo.haze.intensity,
+                min: 0,
+                max: 4,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { atmo.haze.intensity = v; emit(); }
+            }),
+            hazeThickness: makeNumberSliderRow({
+                label: 'Haze thickness',
+                value: atmo.haze.thickness,
+                min: 0.02,
+                max: 1,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { atmo.haze.thickness = v; emit(); }
+            }),
+            hazeCurve: makeNumberSliderRow({
+                label: 'Haze curve',
+                value: atmo.haze.curve,
+                min: 0.1,
+                max: 8,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { atmo.haze.curve = v; emit(); }
+            }),
+            glareEnabled: makeToggleRow({
+                label: 'Sun glare',
+                value: atmo.glare.enabled,
+                onChange: (v) => { atmo.glare.enabled = v; emit(); }
+            }),
+            glareIntensity: makeNumberSliderRow({
+                label: 'Glare intensity',
+                value: atmo.glare.intensity,
+                min: 0,
+                max: 20,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { atmo.glare.intensity = v; emit(); }
+            }),
+            glareSigma: makeNumberSliderRow({
+                label: 'Glare size (σ °)',
+                value: atmo.glare.sigmaDeg,
+                min: 0.25,
+                max: 60,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { atmo.glare.sigmaDeg = v; emit(); }
+            }),
+            glarePower: makeNumberSliderRow({
+                label: 'Glare power',
+                value: atmo.glare.power,
+                min: 0.2,
+                max: 6,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { atmo.glare.power = v; emit(); }
+            }),
+            discEnabled: makeToggleRow({
+                label: 'Sun disc',
+                value: atmo.disc.enabled,
+                onChange: (v) => { atmo.disc.enabled = v; emit(); }
+            }),
+            discIntensity: makeNumberSliderRow({
+                label: 'Disc intensity',
+                value: atmo.disc.intensity,
+                min: 0,
+                max: 50,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { atmo.disc.intensity = v; emit(); }
+            }),
+            discSigma: makeNumberSliderRow({
+                label: 'Disc size (σ °)',
+                value: atmo.disc.sigmaDeg,
+                min: 0.05,
+                max: 5,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { atmo.disc.sigmaDeg = v; emit(); }
+            }),
+            discCoreIntensity: makeNumberSliderRow({
+                label: 'Disc core intensity',
+                value: atmo.disc.coreIntensity,
+                min: 0,
+                max: 50,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { atmo.disc.coreIntensity = v; emit(); }
+            }),
+            discCoreSigma: makeNumberSliderRow({
+                label: 'Disc core size (σ °)',
+                value: atmo.disc.coreSigmaDeg,
+                min: 0.02,
+                max: 5,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { atmo.disc.coreSigmaDeg = v; emit(); }
+            }),
+            skyDebugMode: makeChoiceRow({
+                label: 'Sky debug',
+                value: atmo.debug.mode,
+                options: [
+                    { id: 'full', label: 'Full' },
+                    { id: 'baseline', label: 'Baseline' },
+                    { id: 'glare', label: 'Glare' },
+                    { id: 'disc', label: 'Disc' }
+                ],
+                onChange: (v) => { atmo.debug.mode = v; emit(); }
+            }),
+            skySunRing: makeToggleRow({
+                label: 'Show sun ring',
+                value: atmo.debug.showSunRing,
+                onChange: (v) => { atmo.debug.showSunRing = v; emit(); }
             }),
             bloomEnabled: makeToggleRow({
                 label: 'Bloom (glow)',
@@ -1516,6 +1773,31 @@ export class OptionsUI {
         sectionLighting.appendChild(controls.hemi.row);
         sectionLighting.appendChild(controls.sun.row);
 
+        sectionAtmosphere.appendChild(controls.sunAzimuthDeg.row);
+        sectionAtmosphere.appendChild(controls.sunElevationDeg.row);
+        sectionAtmosphere.appendChild(controls.skyBgMode.row);
+        sectionAtmosphere.appendChild(controls.skyHorizon.row);
+        sectionAtmosphere.appendChild(controls.skyZenith.row);
+        sectionAtmosphere.appendChild(controls.skyGround.row);
+        sectionAtmosphere.appendChild(controls.skyExposure.row);
+        sectionAtmosphere.appendChild(controls.skyCurve.row);
+        sectionAtmosphere.appendChild(controls.skyDither.row);
+        sectionAtmosphere.appendChild(controls.hazeEnabled.row);
+        sectionAtmosphere.appendChild(controls.hazeIntensity.row);
+        sectionAtmosphere.appendChild(controls.hazeThickness.row);
+        sectionAtmosphere.appendChild(controls.hazeCurve.row);
+        sectionAtmosphere.appendChild(controls.glareEnabled.row);
+        sectionAtmosphere.appendChild(controls.glareIntensity.row);
+        sectionAtmosphere.appendChild(controls.glareSigma.row);
+        sectionAtmosphere.appendChild(controls.glarePower.row);
+        sectionAtmosphere.appendChild(controls.discEnabled.row);
+        sectionAtmosphere.appendChild(controls.discIntensity.row);
+        sectionAtmosphere.appendChild(controls.discSigma.row);
+        sectionAtmosphere.appendChild(controls.discCoreIntensity.row);
+        sectionAtmosphere.appendChild(controls.discCoreSigma.row);
+        sectionAtmosphere.appendChild(controls.skyDebugMode.row);
+        sectionAtmosphere.appendChild(controls.skySunRing.row);
+
         const sectionPost = makeEl('div', 'options-section');
         sectionPost.appendChild(makeEl('div', 'options-section-title', 'Post-processing'));
         if (this._getPostProcessingDebugInfo) {
@@ -1602,6 +1884,7 @@ export class OptionsUI {
         this.body.appendChild(sectionIbl);
         if (iblStatusSection) this.body.appendChild(iblStatusSection);
         this.body.appendChild(sectionLighting);
+        this.body.appendChild(sectionAtmosphere);
         this.body.appendChild(sectionPost);
         this.body.appendChild(note);
 
@@ -1623,6 +1906,8 @@ export class OptionsUI {
                 showProbeSphere: false
             }
         };
+
+        this._draftAtmosphere = JSON.parse(JSON.stringify(getDefaultResolvedAtmosphereSettings()));
 
         const bloom = getDefaultResolvedBloomSettings();
         this._draftBloom = {
@@ -1677,10 +1962,12 @@ export class OptionsUI {
         this._ensureDraftAsphaltNoise();
         this._ensureDraftBuildingWindowVisuals();
         this._ensureDraftLighting();
+        this._ensureDraftAtmosphere();
         this._ensureDraftBloom();
         this._ensureDraftColorGrading();
         this._ensureDraftSunFlare();
         const d = this._draftLighting;
+        const atmo = this._draftAtmosphere;
         const bloom = this._draftBloom;
         const grade = this._draftColorGrading;
         const asphaltNoise = this._draftAsphaltNoise;
@@ -1698,6 +1985,7 @@ export class OptionsUI {
                     showProbeSphere: !!d.ibl.showProbeSphere
                 }
             },
+            atmosphere: JSON.parse(JSON.stringify(atmo)),
             bloom: {
                 enabled: !!bloom.enabled,
                 strength: bloom.strength,

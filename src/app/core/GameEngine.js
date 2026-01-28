@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { SimulationContext } from './SimulationContext.js';
 import { applyIBLIntensity, applyIBLToScene, getIBLBackgroundTexture, loadIBLBackgroundTexture, loadIBLTexture } from '../../graphics/lighting/IBL.js';
 import { getResolvedLightingSettings } from '../../graphics/lighting/LightingSettings.js';
+import { getResolvedAtmosphereSettings, sanitizeAtmosphereSettings } from '../../graphics/visuals/atmosphere/AtmosphereSettings.js';
 import { getResolvedBloomSettings, sanitizeBloomSettings } from '../../graphics/visuals/postprocessing/BloomSettings.js';
 import { BloomPipeline } from '../../graphics/visuals/postprocessing/BloomPipeline.js';
 import { getResolvedColorGradingSettings, sanitizeColorGradingSettings } from '../../graphics/visuals/postprocessing/ColorGradingSettings.js';
@@ -58,6 +59,7 @@ export class GameEngine {
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
         this._lighting = getResolvedLightingSettings();
         this.renderer.toneMappingExposure = this._lighting.exposure;
+        this._atmosphere = getResolvedAtmosphereSettings();
 
         this.scene = new THREE.Scene();
 
@@ -118,6 +120,10 @@ export class GameEngine {
 
     get lightingSettings() {
         return this._lighting;
+    }
+
+    get atmosphereSettings() {
+        return this._atmosphere;
     }
 
     setLightingSettings(settings) {
@@ -183,6 +189,22 @@ export class GameEngine {
             console.warn('[IBL] Failed to load HDR environment map:', err);
             return null;
         });
+    }
+
+    setAtmosphereSettings(settings) {
+        const src = settings && typeof settings === 'object' ? settings : null;
+        const prev = this._atmosphere ?? getResolvedAtmosphereSettings({ includeUrlOverrides: false });
+
+        const merged = {
+            sun: { ...(prev.sun ?? {}), ...(src?.sun ?? {}) },
+            sky: { ...(prev.sky ?? {}), ...(src?.sky ?? {}) },
+            haze: { ...(prev.haze ?? {}), ...(src?.haze ?? {}) },
+            glare: { ...(prev.glare ?? {}), ...(src?.glare ?? {}) },
+            disc: { ...(prev.disc ?? {}), ...(src?.disc ?? {}) },
+            debug: { ...(prev.debug ?? {}), ...(src?.debug ?? {}) }
+        };
+
+        this._atmosphere = sanitizeAtmosphereSettings(merged);
     }
 
     get bloomSettings() {

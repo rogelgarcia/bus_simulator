@@ -2,6 +2,7 @@
 // Shared inspection room environment with grid, plane, lighting, and camera controls.
 import * as THREE from 'three';
 import { createToolCameraController } from '../../engine3d/camera/ToolCameraPrefab.js';
+import { applyAtmosphereToSkyDome, createGradientSkyDome, shouldShowSkyDome } from '../../assets3d/generators/SkyGenerator.js';
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -125,6 +126,15 @@ export class InspectorRoomScene {
         this.sun.shadow.camera.far = 80;
         this.root.add(this.sun);
 
+        this.sky = createGradientSkyDome({
+            atmosphere: this.engine?.atmosphereSettings ?? null,
+            sunDir: this.sun.position.clone().normalize(),
+            sunIntensity: 0.28
+        });
+        this.root.add(this.sky);
+        this._applyAtmosphere();
+        this._syncSkyVisibility();
+
         this._syncPlane();
         this._syncGrid();
         this._syncAxes();
@@ -211,6 +221,13 @@ export class InspectorRoomScene {
         if (this.hemi) {
             this.root?.remove?.(this.hemi);
             this.hemi = null;
+        }
+
+        if (this.sky) {
+            this.root?.remove?.(this.sky);
+            this.sky.geometry?.dispose?.();
+            this.sky.material?.dispose?.();
+            this.sky = null;
         }
 
         if (this.sun) {
@@ -305,8 +322,28 @@ export class InspectorRoomScene {
         if (this.root && this.scene && this.scene.background !== this._backgroundColor) {
             this.scene.background = this._backgroundColor;
         }
+        this._applyAtmosphere();
+        this._syncSkyVisibility();
+        if (this.sky && this.camera) this.sky.position.copy(this.camera.position);
         if (this._cameraTween) this._tickCameraTween(dt);
         this.controls?.update?.(dt);
+    }
+
+    _applyAtmosphere() {
+        const atmo = this.engine?.atmosphereSettings ?? null;
+        if (!atmo) return;
+
+        applyAtmosphereToSkyDome(this.sky, atmo, { sunDir: this.sun?.position ?? null });
+    }
+
+    _syncSkyVisibility() {
+        const wantsIblBackground = !!this.engine?.lightingSettings?.ibl?.setBackground;
+        const showSky = shouldShowSkyDome({
+            skyIblBackgroundMode: this.engine?.atmosphereSettings?.sky?.iblBackgroundMode ?? 'ibl',
+            lightingIblSetBackground: wantsIblBackground,
+            sceneBackground: this.scene?.background ?? null
+        });
+        if (this.sky) this.sky.visible = showSky;
     }
 
     setUiRoot(uiRoot) {

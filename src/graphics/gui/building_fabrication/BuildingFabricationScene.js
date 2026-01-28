@@ -18,7 +18,7 @@ import {
     normalizeWindowTypeIdOrLegacyStyle
 } from '../../assets3d/generators/buildings/WindowTypeCompatibility.js';
 import { createGeneratorConfig } from '../../assets3d/generators/GeneratorParams.js';
-import { NATURAL_SKY_GRADIENT, createGradientSkyDome } from '../../assets3d/generators/SkyGenerator.js';
+import { applyAtmosphereToSkyDome, createGradientSkyDome, shouldShowSkyDome } from '../../assets3d/generators/SkyGenerator.js';
 import { createRoadEngineRoads } from '../../visuals/city/RoadEngineRoads.js';
 import { BuildingWallTextureCache, buildBuildingVisualParts } from '../../assets3d/generators/buildings/BuildingGenerator.js';
 import { buildBuildingFabricationVisualParts } from '../../assets3d/generators/building_fabrication/BuildingFabricationGenerator.js';
@@ -28,6 +28,7 @@ import { createRoadHighlightMesh } from '../../visuals/city/RoadHighlightMesh.js
 import { ToolCameraController } from '../../engine3d/camera/ToolCameraController.js';
 import { getBuildingConfigById } from '../../content3d/catalogs/BuildingConfigCatalog.js';
 import { getResolvedBuildingWindowVisualsSettings } from '../../visuals/buildings/BuildingWindowVisualsSettings.js';
+import { azimuthElevationDegToDir } from '../../visuals/atmosphere/SunDirection.js';
 import { updateMaterialVariationDebugOnMeshStandardMaterial } from '../../assets3d/materials/MaterialVariationSystem.js';
 
 const QUANT = 1000;
@@ -266,7 +267,8 @@ export class BuildingFabricationScene {
         const bgIsTexture = !!bg && !!bg.isTexture;
         const wantsIblBackground = !!this.engine?.lightingSettings?.ibl?.setBackground;
         if (!wantsIblBackground || !bgIsTexture) this.scene.background = null;
-        this.scene.fog = new THREE.Fog(NATURAL_SKY_GRADIENT.fogColor, Math.max(40, span * 0.5), Math.max(240, span * 3.2));
+        const fogColor = this.engine?.atmosphereSettings?.sky?.horizonColor ?? '#EAF9FF';
+        this.scene.fog = new THREE.Fog(fogColor, Math.max(40, span * 0.5), Math.max(240, span * 3.2));
 
         if (this.camera && Number.isFinite(this.camera.far)) {
             this.camera.far = Math.max(this.camera.far, 2500);
@@ -282,6 +284,7 @@ export class BuildingFabricationScene {
         this._buildSelectionPreview();
         this._setupRoadHighlight();
         this._buildCamera();
+        this._applyAtmosphere();
     }
 
     dispose() {
@@ -331,6 +334,7 @@ export class BuildingFabricationScene {
     }
 
     update(dt = 0) {
+        this._applyAtmosphere();
         this._syncSkyVisibility();
         this.controls?.update?.(dt);
         if (this.sky && this.camera) {
@@ -1521,6 +1525,7 @@ export class BuildingFabricationScene {
     _buildSky() {
         if (!this.sun) return;
         this.sky = createGradientSkyDome({
+            atmosphere: this.engine?.atmosphereSettings ?? null,
             sunDir: this.sun.position.clone().normalize(),
             sunIntensity: 0.28
         });
@@ -1528,11 +1533,34 @@ export class BuildingFabricationScene {
         this._syncSkyVisibility();
     }
 
+    _applyAtmosphere() {
+        const atmo = this.engine?.atmosphereSettings ?? null;
+        if (!atmo) return;
+
+        const azimuthDeg = atmo?.sun?.azimuthDeg ?? null;
+        const elevationDeg = atmo?.sun?.elevationDeg ?? null;
+        if (this.sun && Number.isFinite(azimuthDeg) && Number.isFinite(elevationDeg)) {
+            const dir = azimuthElevationDegToDir(azimuthDeg, elevationDeg);
+            const dist = this.sun.position.length() > 1e-6 ? this.sun.position.length() : 200;
+            this.sun.position.copy(dir).multiplyScalar(dist);
+            this.sun.target.position.set(0, 0, 0);
+            this.sun.target.updateMatrixWorld?.();
+        }
+
+        applyAtmosphereToSkyDome(this.sky, atmo, { sunDir: this.sun?.position ?? null });
+
+        const fog = this.scene?.fog ?? null;
+        const fogColor = atmo?.sky?.horizonColor ?? null;
+        if (fog?.isFog && typeof fogColor === 'string' && fogColor) fog.color.set(fogColor);
+    }
+
     _syncSkyVisibility() {
         const wantsIblBackground = !!this.engine?.lightingSettings?.ibl?.setBackground;
-        const bg = this.scene?.background ?? null;
-        const bgIsTexture = !!bg && !!bg.isTexture;
-        const showSky = !(wantsIblBackground && bgIsTexture);
+        const showSky = shouldShowSkyDome({
+            skyIblBackgroundMode: this.engine?.atmosphereSettings?.sky?.iblBackgroundMode ?? 'ibl',
+            lightingIblSetBackground: wantsIblBackground,
+            sceneBackground: this.scene?.background ?? null
+        });
         if (this.sky) this.sky.visible = showSky;
     }
 

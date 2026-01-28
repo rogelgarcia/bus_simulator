@@ -1,7 +1,7 @@
 // src/graphics/gui/road_debugger/RoadDebuggerScene.js
 // Builds and disposes the Road Debugger environment (grass, sky, lights, grid).
 import * as THREE from 'three';
-import { createGradientSkyDome } from '../../assets3d/generators/SkyGenerator.js';
+import { createGradientSkyDome, shouldShowSkyDome } from '../../assets3d/generators/SkyGenerator.js';
 import { createCityWorld } from '../../assets3d/generators/TerrainGenerator.js';
 import { getResolvedLightingSettings } from '../../lighting/LightingSettings.js';
 
@@ -74,13 +74,17 @@ export function setupScene(view) {
     const skyRadius = Math.max(600, size * 2.2);
     const sky = createGradientSkyDome({
         radius: skyRadius,
+        atmosphere: view?.engine?.atmosphereSettings ?? null,
         sunDir: sun.position.clone().normalize(),
         sunIntensity: 0.28
     });
     const bg = view?.scene?.background ?? null;
-    const bgIsTexture = !!bg && !!bg.isTexture;
     const wantsIblBackground = !!lighting?.ibl?.setBackground;
-    sky.visible = !(wantsIblBackground && bgIsTexture);
+    sky.visible = shouldShowSkyDome({
+        skyIblBackgroundMode: view?.engine?.atmosphereSettings?.sky?.iblBackgroundMode ?? 'ibl',
+        lightingIblSetBackground: wantsIblBackground,
+        sceneBackground: bg
+    });
     group.add(sky);
 
     const groundY = Number.isFinite(view?._groundY) ? view._groundY : 0;

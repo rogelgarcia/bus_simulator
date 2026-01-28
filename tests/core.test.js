@@ -107,6 +107,67 @@ async function runTests() {
         assertTrue(Number.isFinite(d.threshold), 'Expected bloom threshold to be finite.');
     });
 
+    // ========== Atmosphere / Sky ==========
+    const { shouldShowSkyDome } = await import('/src/graphics/assets3d/generators/SkyGenerator.js');
+    const { getDefaultResolvedAtmosphereSettings, getResolvedAtmosphereSettings } = await import('/src/graphics/visuals/atmosphere/AtmosphereSettings.js');
+
+    test('Atmosphere: defaults are stable', () => {
+        const d = getDefaultResolvedAtmosphereSettings();
+        assertTrue(d && typeof d === 'object', 'Expected atmosphere defaults object.');
+        assertTrue(d.sun && typeof d.sun === 'object', 'Expected sun object.');
+        assertNear(d.sun.azimuthDeg, 45, 1e-6, 'Expected default sun azimuth.');
+        assertNear(d.sun.elevationDeg, 35, 1e-6, 'Expected default sun elevation.');
+
+        assertTrue(d.sky && typeof d.sky === 'object', 'Expected sky object.');
+        assertEqual(d.sky.horizonColor, '#EAF9FF', 'Expected default horizon color.');
+        assertEqual(d.sky.zenithColor, '#7BCFFF', 'Expected default zenith color.');
+        assertEqual(d.sky.groundColor, '#EAF9FF', 'Expected default ground color.');
+        assertNear(d.sky.curve, 1.0, 1e-6, 'Expected default curve 1.0.');
+        assertNear(d.sky.exposure, 1.0, 1e-6, 'Expected default sky exposure 1.0.');
+        assertTrue(Number.isFinite(d.sky.ditherStrength), 'Expected ditherStrength to be finite.');
+        assertTrue(d.sky.iblBackgroundMode === 'ibl' || d.sky.iblBackgroundMode === 'gradient', 'Expected valid iblBackgroundMode.');
+
+        assertTrue(d.haze && typeof d.haze === 'object', 'Expected haze object.');
+        assertTrue(d.glare && typeof d.glare === 'object', 'Expected glare object.');
+        assertTrue(d.disc && typeof d.disc === 'object', 'Expected disc object.');
+        assertTrue(d.debug && typeof d.debug === 'object', 'Expected debug object.');
+    });
+
+    test('Atmosphere: shouldShowSkyDome respects IBL background mode', () => {
+        const texBg = { isTexture: true };
+        const plainBg = { isTexture: false };
+
+        assertFalse(shouldShowSkyDome({ skyIblBackgroundMode: 'ibl', lightingIblSetBackground: true, sceneBackground: texBg }), 'IBL mode should hide sky over HDR background.');
+        assertTrue(shouldShowSkyDome({ skyIblBackgroundMode: 'ibl', lightingIblSetBackground: true, sceneBackground: plainBg }), 'IBL mode should show sky when background not texture.');
+        assertTrue(shouldShowSkyDome({ skyIblBackgroundMode: 'ibl', lightingIblSetBackground: false, sceneBackground: texBg }), 'IBL mode should show sky when IBL bg disabled.');
+        assertTrue(shouldShowSkyDome({ skyIblBackgroundMode: 'gradient', lightingIblSetBackground: true, sceneBackground: texBg }), 'Gradient mode should always show sky.');
+    });
+
+    test('Atmosphere: url overrides apply', () => {
+        const originalUrl = window.location.href;
+        history.replaceState(
+            {},
+            '',
+            `${window.location.pathname}?sunAzimuth=123&sunElevation=20&skyHorizon=%23ff0000&skyZenith=00ff00&skyGround=0000ff&skyCurve=2&skyExposure=1.5&skyDither=0.5&skyBg=gradient&skyHaze=0&skyGlare=0&skyDisc=0&skyMode=baseline&skySunRing=1`
+        );
+        const d = getResolvedAtmosphereSettings({ includeUrlOverrides: true });
+        assertNear(d.sun.azimuthDeg, 123, 1e-6, 'Expected overridden sun azimuth.');
+        assertNear(d.sun.elevationDeg, 20, 1e-6, 'Expected overridden sun elevation.');
+        assertEqual(d.sky.horizonColor.toLowerCase(), '#ff0000', 'Expected overridden horizon color.');
+        assertEqual(d.sky.zenithColor.toLowerCase(), '#00ff00', 'Expected overridden zenith color.');
+        assertEqual(d.sky.groundColor.toLowerCase(), '#0000ff', 'Expected overridden ground color.');
+        assertNear(d.sky.curve, 2.0, 1e-6, 'Expected overridden curve.');
+        assertNear(d.sky.exposure, 1.5, 1e-6, 'Expected overridden sky exposure.');
+        assertNear(d.sky.ditherStrength, 0.5, 1e-6, 'Expected overridden ditherStrength.');
+        assertEqual(d.sky.iblBackgroundMode, 'gradient', 'Expected overridden background mode.');
+        assertEqual(d.haze.enabled, false, 'Expected haze disabled.');
+        assertEqual(d.glare.enabled, false, 'Expected glare disabled.');
+        assertEqual(d.disc.enabled, false, 'Expected disc disabled.');
+        assertEqual(d.debug.mode, 'baseline', 'Expected debug mode baseline.');
+        assertEqual(d.debug.showSunRing, true, 'Expected sun ring enabled.');
+        history.replaceState({}, '', originalUrl);
+    });
+
     // ========== Building Window Visuals Settings ==========
     const { getDefaultResolvedBuildingWindowVisualsSettings } = await import('/src/graphics/visuals/buildings/BuildingWindowVisualsSettings.js');
 

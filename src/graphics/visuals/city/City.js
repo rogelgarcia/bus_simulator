@@ -8,11 +8,12 @@ import { CityRNG } from '../../../app/city/CityRNG.js';
 import { computeTrafficControlPlacements } from '../../../app/city/TrafficControlPlacement.js';
 import { createCityWorld } from '../../assets3d/generators/TerrainGenerator.js';
 import { createGeneratorConfig } from '../../assets3d/generators/GeneratorParams.js';
-import { NATURAL_SKY_GRADIENT, createGradientSkyDome } from '../../assets3d/generators/SkyGenerator.js';
+import { applyAtmosphereToSkyDome, createGradientSkyDome, shouldShowSkyDome } from '../../assets3d/generators/SkyGenerator.js';
 import { BuildingWallTextureCache, buildBuildingVisualParts } from '../../assets3d/generators/buildings/BuildingGenerator.js';
 import { buildBuildingFabricationVisualParts } from '../../assets3d/generators/building_fabrication/BuildingFabricationGenerator.js';
 import { getCityMaterials } from '../../assets3d/textures/CityMaterials.js';
 import { getResolvedLightingSettings } from '../../lighting/LightingSettings.js';
+import { azimuthElevationDegToDir } from '../atmosphere/SunDirection.js';
 import { getResolvedBuildingWindowVisualsSettings } from '../buildings/BuildingWindowVisualsSettings.js';
 import { getResolvedSunFlareSettings } from '../sun/SunFlareSettings.js';
 import { SunFlareRig } from '../sun/SunFlareRig.js';
@@ -33,7 +34,7 @@ export class City {
         this.config = {
             size,
             tileMeters,
-            fogColor: NATURAL_SKY_GRADIENT.fogColor,
+            fogColor: '#EAF9FF',
             fogNear: 80,
             fogFar: 900,
             cameraNear: 0.5,
@@ -193,6 +194,7 @@ export class City {
         };
 
         this._syncSkyVisibility(engine);
+        this._applyAtmosphere(engine);
         const bg = engine.scene.background ?? null;
         const bgIsTexture = !!bg && !!bg.isTexture;
         const wantsIblBackground = !!engine?.lightingSettings?.ibl?.setBackground;
@@ -225,16 +227,41 @@ export class City {
     }
 
     update(engine) {
+        this._applyAtmosphere(engine);
         this.sky.position.copy(engine.camera.position);
         this._syncSkyVisibility(engine);
         this.sunFlare?.update?.(engine);
     }
 
+    _applyAtmosphere(engine) {
+        const atmo = engine?.atmosphereSettings ?? null;
+        if (!atmo) return;
+
+        const azimuthDeg = atmo?.sun?.azimuthDeg ?? null;
+        const elevationDeg = atmo?.sun?.elevationDeg ?? null;
+        if (this.sun && Number.isFinite(azimuthDeg) && Number.isFinite(elevationDeg)) {
+            const dir = azimuthElevationDegToDir(azimuthDeg, elevationDeg);
+            const dist = this.sun.position.length() > 1e-6 ? this.sun.position.length() : 200;
+            this.sun.position.copy(dir).multiplyScalar(dist);
+            this.sun.target.position.set(0, 0, 0);
+            this.sun.target.updateMatrixWorld?.();
+        }
+
+        applyAtmosphereToSkyDome(this.sky, atmo, { sunDir: this.sun?.position ?? null });
+
+        const fogColor = atmo?.sky?.horizonColor ?? null;
+        if (typeof fogColor === 'string' && fogColor) this.config.fogColor = fogColor;
+        const fog = engine?.scene?.fog ?? null;
+        if (fog?.isFog && typeof fogColor === 'string' && fogColor) fog.color.set(fogColor);
+    }
+
     _syncSkyVisibility(engine) {
         const wantsIblBackground = !!engine?.lightingSettings?.ibl?.setBackground;
-        const bg = engine?.scene?.background ?? null;
-        const bgIsTexture = !!bg && !!bg.isTexture;
-        const showSky = !(wantsIblBackground && bgIsTexture);
+        const showSky = shouldShowSkyDome({
+            skyIblBackgroundMode: engine?.atmosphereSettings?.sky?.iblBackgroundMode ?? 'ibl',
+            lightingIblSetBackground: wantsIblBackground,
+            sceneBackground: engine?.scene?.background ?? null
+        });
         if (this.sky) this.sky.visible = showSky;
     }
 }

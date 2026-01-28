@@ -6,7 +6,10 @@ import { createToolCameraController } from '../../engine3d/camera/ToolCameraPref
 import { applyIBLIntensity, applyIBLToScene } from '../../lighting/IBL.js';
 import { DEFAULT_IBL_ID, getIblEntryById, getIblOptions } from '../../content3d/catalogs/IBLCatalog.js';
 import { getResolvedLightingSettings } from '../../lighting/LightingSettings.js';
+import { applyAtmosphereToSkyDome, createGradientSkyDome, shouldShowSkyDome } from '../../assets3d/generators/SkyGenerator.js';
 import { getPbrMaterialTileMeters } from '../../assets3d/materials/PbrMaterialCatalog.js';
+import { getResolvedAtmosphereSettings, sanitizeAtmosphereSettings } from '../../visuals/atmosphere/AtmosphereSettings.js';
+import { azimuthElevationDegToDir, dirToAzimuthElevationDeg } from '../../visuals/atmosphere/SunDirection.js';
 import { AtmosphereDebuggerUI } from './AtmosphereDebuggerUI.js';
 import { loadHdriEnvironment } from './AtmosphereDebuggerHdri.js';
 
@@ -44,35 +47,6 @@ function makePbrMapUrls(slug) {
     };
 }
 
-function dirToAzimuthElevationDeg(dir) {
-    const d = dir?.isVector3 ? dir : null;
-    if (!d) return { azimuthDeg: 45, elevationDeg: 35 };
-    const x = Number(d.x);
-    const y = Number(d.y);
-    const z = Number(d.z);
-    const len = Math.hypot(x, y, z);
-    if (!(len > 1e-8)) return { azimuthDeg: 45, elevationDeg: 35 };
-    const nx = x / len;
-    const ny = y / len;
-    const nz = z / len;
-    const elevation = Math.asin(clamp(ny, -1, 1));
-    const azimuth = Math.atan2(nz, nx);
-    const azimuthDeg = ((azimuth * 180) / Math.PI + 360) % 360;
-    const elevationDeg = clamp((elevation * 180) / Math.PI, 0, 89);
-    return { azimuthDeg, elevationDeg };
-}
-
-function azimuthElevationDegToDir(azimuthDeg, elevationDeg) {
-    const az = (Number(azimuthDeg) * Math.PI) / 180;
-    const el = (Number(elevationDeg) * Math.PI) / 180;
-    const cosEl = Math.cos(el);
-    return new THREE.Vector3(
-        Math.cos(az) * cosEl,
-        Math.sin(el),
-        Math.sin(az) * cosEl
-    ).normalize();
-}
-
 export class AtmosphereDebuggerView {
     constructor({ canvas } = {}) {
         this.canvas = canvas;
@@ -92,6 +66,7 @@ export class AtmosphereDebuggerView {
 
         this._hemi = null;
         this._sun = null;
+        this._sky = null;
 
         this._env = null;
         this._loadingEnv = null;
@@ -147,6 +122,7 @@ export class AtmosphereDebuggerView {
         this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 500);
 
         const lighting = getResolvedLightingSettings({ includeUrlOverrides: true });
+        const atmosphere = getResolvedAtmosphereSettings({ includeUrlOverrides: true });
         const initialIblId = lighting?.ibl?.iblId ?? DEFAULT_IBL_ID;
         const initialHdrEntry = getIblEntryById(initialIblId) ?? getIblEntryById(DEFAULT_IBL_ID);
 
@@ -158,8 +134,30 @@ export class AtmosphereDebuggerView {
             exposure: lighting?.exposure ?? 1.6,
             sunIntensity: lighting?.sunIntensity ?? 1.2,
             hemiIntensity: lighting?.hemiIntensity ?? 0.85,
-            sunAzimuthDeg: 45,
-            sunElevationDeg: 35
+            sunAzimuthDeg: atmosphere?.sun?.azimuthDeg ?? 45,
+            sunElevationDeg: atmosphere?.sun?.elevationDeg ?? 35,
+            skyBgMode: atmosphere?.sky?.iblBackgroundMode ?? 'ibl',
+            skyHorizonColor: atmosphere?.sky?.horizonColor ?? '#EAF9FF',
+            skyZenithColor: atmosphere?.sky?.zenithColor ?? '#7BCFFF',
+            skyGroundColor: atmosphere?.sky?.groundColor ?? (atmosphere?.sky?.horizonColor ?? '#EAF9FF'),
+            skyExposure: atmosphere?.sky?.exposure ?? 1.0,
+            skyCurve: atmosphere?.sky?.curve ?? 1.0,
+            skyDither: atmosphere?.sky?.ditherStrength ?? 0.85,
+            hazeEnabled: atmosphere?.haze?.enabled ?? true,
+            hazeIntensity: atmosphere?.haze?.intensity ?? 0.22,
+            hazeThickness: atmosphere?.haze?.thickness ?? 0.22,
+            hazeCurve: atmosphere?.haze?.curve ?? 1.6,
+            glareEnabled: atmosphere?.glare?.enabled ?? true,
+            glareIntensity: atmosphere?.glare?.intensity ?? 0.95,
+            glareSigmaDeg: atmosphere?.glare?.sigmaDeg ?? 10,
+            glarePower: atmosphere?.glare?.power ?? 1.0,
+            discEnabled: atmosphere?.disc?.enabled ?? true,
+            discIntensity: atmosphere?.disc?.intensity ?? 4.0,
+            discSigmaDeg: atmosphere?.disc?.sigmaDeg ?? 0.22,
+            discCoreIntensity: atmosphere?.disc?.coreIntensity ?? 2.5,
+            discCoreSigmaDeg: atmosphere?.disc?.coreSigmaDeg ?? 0.06,
+            skyDebugMode: atmosphere?.debug?.mode ?? 'full',
+            skySunRing: atmosphere?.debug?.showSunRing ?? false
         };
         this._settings = { ...initialSettings };
 
@@ -230,6 +228,13 @@ export class AtmosphereDebuggerView {
             for (const tex of this._floorTex) tex?.dispose?.();
         }
 
+        if (this._sky) {
+            this._root?.remove?.(this._sky);
+            this._sky.geometry?.dispose?.();
+            this._sky.material?.dispose?.();
+        }
+        this._sky = null;
+
         if (this._hemi) this._root?.remove?.(this._hemi);
         if (this._sun) {
             this._root?.remove?.(this._sun);
@@ -291,6 +296,14 @@ export class AtmosphereDebuggerView {
         this._root.add(sun.target);
         this._root.add(sun);
         this._sun = sun;
+
+        const sky = createGradientSkyDome({
+            radius: 450,
+            atmosphere: null,
+            sunIntensity: 0.28
+        });
+        this._root.add(sky);
+        this._sky = sky;
 
         const sphereGeo = new THREE.SphereGeometry(1, 64, 32);
 
@@ -462,19 +475,58 @@ export class AtmosphereDebuggerView {
         const scene = this.scene;
         if (!renderer || !scene || !hemi || !sun) return;
 
-        const exposure = clamp(next.exposure ?? 1.6, 0.1, 5);
+        const exposure = clamp(this._settings.exposure ?? 1.6, 0.1, 5);
         renderer.toneMappingExposure = exposure;
 
-        hemi.intensity = clamp(next.hemiIntensity ?? 0.85, 0, 5);
-        sun.intensity = clamp(next.sunIntensity ?? 1.2, 0, 10);
+        hemi.intensity = clamp(this._settings.hemiIntensity ?? 0.85, 0, 5);
+        sun.intensity = clamp(this._settings.sunIntensity ?? 1.2, 0, 10);
 
-        const sunDir = azimuthElevationDegToDir(next.sunAzimuthDeg ?? 45, next.sunElevationDeg ?? 35);
+        const atmo = sanitizeAtmosphereSettings({
+            sun: {
+                azimuthDeg: this._settings.sunAzimuthDeg,
+                elevationDeg: this._settings.sunElevationDeg
+            },
+            sky: {
+                horizonColor: this._settings.skyHorizonColor,
+                zenithColor: this._settings.skyZenithColor,
+                groundColor: this._settings.skyGroundColor,
+                curve: this._settings.skyCurve,
+                exposure: this._settings.skyExposure,
+                ditherStrength: this._settings.skyDither,
+                iblBackgroundMode: this._settings.skyBgMode
+            },
+            haze: {
+                enabled: this._settings.hazeEnabled,
+                intensity: this._settings.hazeIntensity,
+                thickness: this._settings.hazeThickness,
+                curve: this._settings.hazeCurve
+            },
+            glare: {
+                enabled: this._settings.glareEnabled,
+                intensity: this._settings.glareIntensity,
+                sigmaDeg: this._settings.glareSigmaDeg,
+                power: this._settings.glarePower
+            },
+            disc: {
+                enabled: this._settings.discEnabled,
+                intensity: this._settings.discIntensity,
+                sigmaDeg: this._settings.discSigmaDeg,
+                coreIntensity: this._settings.discCoreIntensity,
+                coreSigmaDeg: this._settings.discCoreSigmaDeg
+            },
+            debug: {
+                mode: this._settings.skyDebugMode,
+                showSunRing: this._settings.skySunRing
+            }
+        });
+
+        const sunDir = azimuthElevationDegToDir(atmo.sun.azimuthDeg, atmo.sun.elevationDeg);
         sun.position.copy(sunDir).multiplyScalar(120);
         sun.target.position.set(0, 0, 0);
         sun.target.updateMatrixWorld?.();
 
-        const iblEnabled = !!next.iblEnabled;
-        const envMapIntensity = clamp(next.envMapIntensity ?? 0.25, 0, 5);
+        const iblEnabled = !!this._settings.iblEnabled;
+        const envMapIntensity = clamp(this._settings.envMapIntensity ?? 0.25, 0, 5);
 
         if (this._env?.envMap) {
             applyIBLToScene(scene, this._env.envMap, { enabled: iblEnabled, setBackground: false });
@@ -483,13 +535,22 @@ export class AtmosphereDebuggerView {
             applyIBLToScene(scene, null, { enabled: false, setBackground: false });
         }
 
-        scene.background = (next.backgroundEnabled && this._env?.hdrTexture) ? this._env.hdrTexture : null;
+        scene.background = (this._settings.backgroundEnabled && this._env?.hdrTexture) ? this._env.hdrTexture : null;
+
+        if (this._sky) {
+            applyAtmosphereToSkyDome(this._sky, atmo, { sunDir: sun.position });
+            this._sky.visible = shouldShowSkyDome({
+                skyIblBackgroundMode: atmo?.sky?.iblBackgroundMode ?? 'ibl',
+                lightingIblSetBackground: !!this._settings.backgroundEnabled,
+                sceneBackground: scene.background ?? null
+            });
+        }
 
         const hdrLabel = getIblEntryById(desiredIblId)?.label ?? '-';
         const hud = [
             `HDR: ${hdrLabel}`,
             `Exposure: ${exposure.toFixed(2)}`,
-            `Sun: az ${Math.round(Number(next.sunAzimuthDeg) || 0)}° el ${Math.round(Number(next.sunElevationDeg) || 0)}°`,
+            `Sun: az ${Math.round(Number(atmo.sun.azimuthDeg) || 0)}° el ${Math.round(Number(atmo.sun.elevationDeg) || 0)}°`,
             `IBL: ${iblEnabled ? 'on' : 'off'} · Env: ${envMapIntensity.toFixed(2)}`
         ].join('\n');
         this._ui?.setHudText?.(hud);
@@ -530,6 +591,7 @@ export class AtmosphereDebuggerView {
 
         this._updateCameraFromKeys(dt);
         this.controls?.update?.(dt);
+        if (this._sky) this._sky.position.copy(camera.position);
 
         renderer.render(scene, camera);
         this._raf = requestAnimationFrame((ts) => this._tick(ts));
