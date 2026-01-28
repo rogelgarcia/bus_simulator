@@ -19,6 +19,7 @@ import { getResolvedSunFlareSettings } from '../../visuals/sun/SunFlareSettings.
 import { SunFlareRig } from '../../visuals/sun/SunFlareRig.js';
 import { SunBloomDebuggerUI } from './SunBloomDebuggerUI.js';
 import { loadHdriEnvironment } from '../atmosphere_debugger/AtmosphereDebuggerHdri.js';
+import { getOrCreateGpuFrameTimer } from '../../engine3d/perf/GpuFrameTimer.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const BLOOM_LAYER_ID = 1;
@@ -362,6 +363,7 @@ export class SunBloomDebuggerView {
 
         this._raf = 0;
         this._lastT = 0;
+        this._gpuFrameTimer = null;
 
         this._keys = {
             ArrowUp: false,
@@ -404,6 +406,7 @@ export class SunBloomDebuggerView {
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
 
         this.renderer = renderer;
+        this._gpuFrameTimer = getOrCreateGpuFrameTimer(renderer);
         this.scene = new THREE.Scene();
         this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 1200);
 
@@ -1105,11 +1108,18 @@ export class SunBloomDebuggerView {
         this._updateOccluder();
         this._flare?.update?.({ camera, renderer });
 
+        const gpuTimer = this._gpuFrameTimer;
+        gpuTimer?.beginFrame?.();
         const t0 = performance.now();
-        this._renderActiveVariation();
-        const t1 = performance.now();
-        this._perf.lastMs = t1 - t0;
-        this._perf.emaMs = this._perf.emaMs ? (this._perf.emaMs * 0.9 + this._perf.lastMs * 0.1) : this._perf.lastMs;
+        try {
+            this._renderActiveVariation();
+        } finally {
+            const t1 = performance.now();
+            this._perf.lastMs = t1 - t0;
+            this._perf.emaMs = this._perf.emaMs ? (this._perf.emaMs * 0.9 + this._perf.lastMs * 0.1) : this._perf.lastMs;
+            gpuTimer?.endFrame?.();
+            gpuTimer?.poll?.();
+        }
 
         const onFrame = this.onFrame;
         if (typeof onFrame === 'function') onFrame({ dt, nowMs: now, renderer });

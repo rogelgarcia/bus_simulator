@@ -57,6 +57,7 @@
     import * as THREE from 'three';
     import { ROAD_MARKING_WHITE_TARGET_SUN_HEX, ROAD_MARKING_YELLOW_TARGET_SUN_HEX, hexToCssColor } from '/src/graphics/assets3d/materials/RoadMarkingsColors.js';
     import { ensureGlobalPerfBar } from '/src/graphics/gui/perf_bar/PerfBar.js';
+    import { getOrCreateGpuFrameTimer } from '/src/graphics/engine3d/perf/GpuFrameTimer.js';
 
     document.body.classList.add('options-dock-open');
     const perfBar = ensureGlobalPerfBar();
@@ -81,6 +82,7 @@
 
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     perfBar.setRenderer(renderer);
+    const gpuTimer = getOrCreateGpuFrameTimer(renderer);
     renderer.setPixelRatio(1);
     const rect0 = canvas.getBoundingClientRect();
     renderer.setSize(Math.max(1, Math.floor(rect0.width)), Math.max(1, Math.floor(rect0.height)), false);
@@ -173,7 +175,13 @@
     }
 
     function render() {
-        renderer.render(scene, camera);
+        gpuTimer.beginFrame();
+        try {
+            renderer.render(scene, camera);
+        } finally {
+            gpuTimer.endFrame();
+            gpuTimer.poll();
+        }
         perfBar.onFrame({ nowMs: performance.now(), renderer });
     }
 

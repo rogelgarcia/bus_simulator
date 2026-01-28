@@ -3,6 +3,7 @@
 // @ts-check
 
 import { applyMaterialSymbolToButton } from '../shared/materialSymbols.js';
+import { getOrCreateGpuFrameTimer } from '../../engine3d/perf/GpuFrameTimer.js';
 
 const GLOBAL_CLASS_ENABLED = 'perf-bar-enabled';
 const GLOBAL_CLASS_HIDDEN = 'perf-bar-hidden';
@@ -120,6 +121,7 @@ export class PerfBar {
 
         this._renderer = null;
         this._rendererInfo = null;
+        this._gpuFrameTimer = null;
 
         this._frame = {
             lastNowMs: 0,
@@ -129,6 +131,7 @@ export class PerfBar {
 
         this._els = {
             fpsText: null,
+            gpuMsText: null,
             renderText: null,
             memoryText: null,
             gpuText: null,
@@ -181,6 +184,10 @@ export class PerfBar {
         fps.className = 'ui-perf-bar-item ui-perf-bar-fps';
         fps.textContent = 'FPS: -- (-- ms)';
 
+        const gpuMs = document.createElement('div');
+        gpuMs.className = 'ui-perf-bar-item ui-perf-bar-gpu-ms';
+        gpuMs.textContent = 'GPUms: N/A';
+
         const render = document.createElement('div');
         render.className = 'ui-perf-bar-item ui-perf-bar-render';
         render.textContent = 'Calls: -- · Tris: -- · Lines: -- · Pts: --';
@@ -194,6 +201,7 @@ export class PerfBar {
         gpu.textContent = 'GPU: N/A';
 
         left.appendChild(fps);
+        left.appendChild(gpuMs);
         left.appendChild(render);
         left.appendChild(memory);
         left.appendChild(gpu);
@@ -225,6 +233,7 @@ export class PerfBar {
 
         this.root = root;
         this._els.fpsText = fps;
+        this._els.gpuMsText = gpuMs;
         this._els.renderText = render;
         this._els.memoryText = memory;
         this._els.gpuText = gpu;
@@ -274,6 +283,7 @@ export class PerfBar {
     setRenderer(renderer) {
         this._renderer = renderer ?? null;
         this._rendererInfo = this._renderer ? getRendererInfo(this._renderer) : null;
+        this._gpuFrameTimer = this._renderer ? getOrCreateGpuFrameTimer(this._renderer) : null;
         this._renderStatic();
     }
 
@@ -308,9 +318,10 @@ export class PerfBar {
         if (!this.root) return;
 
         const fpsEl = this._els.fpsText;
+        const gpuMsEl = this._els.gpuMsText;
         const renderEl = this._els.renderText;
         const memoryEl = this._els.memoryText;
-        if (!fpsEl || !renderEl || !memoryEl) return;
+        if (!fpsEl || !gpuMsEl || !renderEl || !memoryEl) return;
 
         const ms = Number.isFinite(this._frame.emaMs) ? this._frame.emaMs : 0;
         const fps = ms > 1e-3 ? 1000 / ms : 0;
@@ -320,6 +331,11 @@ export class PerfBar {
         fpsEl.textContent = fpsLabel !== null && msLabel !== null
             ? `FPS: ${fpsLabel} (${msLabel} ms)`
             : 'FPS: -- (-- ms)';
+
+        const gpuMs = this._gpuFrameTimer?.getLastMs?.() ?? null;
+        gpuMsEl.textContent = Number.isFinite(gpuMs)
+            ? `GPUms: ${gpuMs.toFixed(1)}ms`
+            : 'GPUms: N/A';
 
         const warn = fpsLabel !== null && fpsLabel < this._fpsWarnBelow;
         this.root.classList.toggle('is-warn', warn);

@@ -12,6 +12,7 @@ import { getResolvedAtmosphereSettings, sanitizeAtmosphereSettings } from '../..
 import { azimuthElevationDegToDir, dirToAzimuthElevationDeg } from '../../visuals/atmosphere/SunDirection.js';
 import { AtmosphereDebuggerUI } from './AtmosphereDebuggerUI.js';
 import { loadHdriEnvironment } from './AtmosphereDebuggerHdri.js';
+import { getOrCreateGpuFrameTimer } from '../../engine3d/perf/GpuFrameTimer.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const PBR_FLOOR_ID = 'pbr.rocky_terrain_02';
@@ -78,6 +79,7 @@ export class AtmosphereDebuggerView {
 
         this._raf = 0;
         this._lastT = 0;
+        this._gpuFrameTimer = null;
 
         this._keys = {
             ArrowUp: false,
@@ -120,6 +122,7 @@ export class AtmosphereDebuggerView {
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
 
         this.renderer = renderer;
+        this._gpuFrameTimer = getOrCreateGpuFrameTimer(renderer);
         this.scene = new THREE.Scene();
         this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 500);
 
@@ -595,7 +598,14 @@ export class AtmosphereDebuggerView {
         this.controls?.update?.(dt);
         if (this._sky) this._sky.position.copy(camera.position);
 
-        renderer.render(scene, camera);
+        const gpuTimer = this._gpuFrameTimer;
+        gpuTimer?.beginFrame?.();
+        try {
+            renderer.render(scene, camera);
+        } finally {
+            gpuTimer?.endFrame?.();
+            gpuTimer?.poll?.();
+        }
         const onFrame = this.onFrame;
         if (typeof onFrame === 'function') onFrame({ dt, nowMs: now, renderer });
         this._raf = requestAnimationFrame((ts) => this._tick(ts));

@@ -10,6 +10,7 @@ import { getResolvedColorGradingSettings, sanitizeColorGradingSettings } from '.
 import { getColorGradingPresetById } from '../../graphics/visuals/postprocessing/ColorGradingPresets.js';
 import { is3dLutSupported, loadCubeLut3DTexture } from '../../graphics/visuals/postprocessing/ColorGradingCubeLutLoader.js';
 import { getResolvedSunBloomSettings, sanitizeSunBloomSettings } from '../../graphics/visuals/postprocessing/SunBloomSettings.js';
+import { getOrCreateGpuFrameTimer } from '../../graphics/engine3d/perf/GpuFrameTimer.js';
 
 export class GameEngine {
     constructor({
@@ -123,6 +124,8 @@ export class GameEngine {
         } else {
             this.resize();
         }
+
+        this._gpuFrameTimer = getOrCreateGpuFrameTimer(this.renderer);
     }
 
     get lightingSettings() {
@@ -818,8 +821,15 @@ export class GameEngine {
 
         if (!render) return;
 
-        if (this._post?.pipeline) this._post.pipeline.render(stepDt);
-        else this.renderer.render(this.scene, this.camera);
+        const gpuTimer = this._gpuFrameTimer;
+        gpuTimer?.beginFrame?.();
+        try {
+            if (this._post?.pipeline) this._post.pipeline.render(stepDt);
+            else this.renderer.render(this.scene, this.camera);
+        } finally {
+            gpuTimer?.endFrame?.();
+            gpuTimer?.poll?.();
+        }
 
         if (!this._frameListeners.size) return;
         for (const fn of this._frameListeners) {
