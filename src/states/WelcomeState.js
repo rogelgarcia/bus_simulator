@@ -1,6 +1,14 @@
 // src/states/WelcomeState.js
 import { getSceneShortcutByKey } from './SceneShortcutRegistry.js';
 
+function isEditableTarget(target) {
+    const el = target && typeof target === 'object' ? target : null;
+    if (!el) return false;
+    const tag = String(el.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+    return !!el.isContentEditable;
+}
+
 export class WelcomeState {
     constructor(engine, sm) {
         this.engine = engine;
@@ -58,6 +66,10 @@ export class WelcomeState {
         this.sm.go('setup');
     }
 
+    _setupDebugs() {
+        this.sm.go('setup', { initialMenu: 'debugs' });
+    }
+
     _startTestErrorWidget() {
         if (!this.testErrorWidget) return;
         this._refreshTestErrorWidget();
@@ -87,6 +99,7 @@ export class WelcomeState {
     }
 
     _handleKeyDown(e) {
+        if (isEditableTarget(e.target)) return;
         const code = e.code;
         const key = e.key;
 
@@ -104,7 +117,7 @@ export class WelcomeState {
         if (scene) return this._goScene(scene.id);
         if (isG) return this._garage();
         if (isQ) return this._setup();
-        if (is8) return window.location.assign(new URL('debug_tools/asphalt_debug.html', window.location.href).toString());
+        if (is8) return this._setupDebugs();
         if (isEnter || isSpace) return this._start();
     }
 }

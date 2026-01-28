@@ -16,7 +16,7 @@ export class SetupState {
         this._ui = new SetupUIController();
     }
 
-    enter() {
+    enter(params = {}) {
         document.body.classList.remove('splash-bg');
         document.body.classList.add('setup-bg');
 
@@ -24,6 +24,12 @@ export class SetupState {
         if (this.uiWelcome) this.uiWelcome.classList.add('hidden');
 
         this.engine.clearScene();
+        const initialMenu = typeof params?.initialMenu === 'string' ? params.initialMenu.trim().toLowerCase() : '';
+        const wantsDebugs = initialMenu === 'debugs';
+        if (wantsDebugs) {
+            this._openDebugsMenu({ returnToWelcome: true });
+            return;
+        }
         this._openMainMenu();
     }
 
@@ -62,7 +68,7 @@ export class SetupState {
         });
     }
 
-    _openDebugsMenu() {
+    _openDebugsMenu({ returnToWelcome = false } = {}) {
         const tools = getDebugToolShortcuts().map((tool) => ({
             key: tool.key,
             label: tool.label,
@@ -70,12 +76,19 @@ export class SetupState {
             state: tool.href
         }));
 
+        if (!tools.length) {
+            console.warn('[SetupState] No debug tools registered.');
+            if (returnToWelcome) this.sm.go('welcome');
+            else this._openMainMenu();
+            return;
+        }
+
         this._ui.open({
             mode: 'state',
             sceneItems: tools,
             closeItem: { key: 'Q', label: 'Back' },
             onSelectState: (href) => this._navigateToDebugTool(href),
-            onRequestClose: () => this._openMainMenu()
+            onRequestClose: () => (returnToWelcome ? this.sm.go('welcome') : this._openMainMenu())
         });
     }
 

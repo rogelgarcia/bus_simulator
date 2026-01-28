@@ -29,6 +29,21 @@ function deepClone(value) {
     return value;
 }
 
+export const WALL_BASE_MATERIAL_DEFAULT = Object.freeze({
+    tintHex: 0xffffff,
+    roughness: 0.85,
+    normalStrength: 0.9
+});
+
+export function normalizeWallBaseMaterialConfig(value) {
+    const src = value && typeof value === 'object' ? value : {};
+    const tintRaw = src.tintHex ?? src.tint ?? src.albedoTint ?? src.albedoTintHex ?? WALL_BASE_MATERIAL_DEFAULT.tintHex;
+    const tintHex = Number.isFinite(tintRaw) ? ((Number(tintRaw) >>> 0) & 0xffffff) : WALL_BASE_MATERIAL_DEFAULT.tintHex;
+    const roughness = clamp(src.roughness ?? WALL_BASE_MATERIAL_DEFAULT.roughness, 0.0, 1.0);
+    const normalStrength = clamp(src.normalStrength ?? src.normal ?? WALL_BASE_MATERIAL_DEFAULT.normalStrength, 0.0, 2.0);
+    return { tintHex, roughness, normalStrength };
+}
+
 function normalizeWindowFakeDepthConfig(value) {
     const src = value && typeof value === 'object' ? value : {};
     const enabled = !!src.enabled;
@@ -194,6 +209,7 @@ export function createDefaultFloorLayer({
     planOffset = 0.0,
     style = BUILDING_STYLE.DEFAULT,
     material = null,
+    wallBase = null,
     belt = null,
     windows = null,
     tiling = null,
@@ -213,6 +229,7 @@ export function createDefaultFloorLayer({
         : safeStyle;
     const tilingCfg = normalizeTilingConfig(tiling, { defaultTileMeters: 2.0 });
     const matVarCfg = normalizeMaterialVariationConfig(materialVariation, { defaultEnabled: false, defaultSeedOffset: 0 });
+    const wallBaseCfg = normalizeWallBaseMaterialConfig(wallBase ?? null);
     return {
         id: typeof id === 'string' && id ? id : createLayerId('floor'),
         type: LAYER_TYPE.FLOOR,
@@ -221,6 +238,7 @@ export function createDefaultFloorLayer({
         planOffset: clamp(planOffset, -8.0, 8.0),
         style: derivedStyle,
         material: wallMaterial,
+        wallBase: wallBaseCfg,
         tiling: tilingCfg,
         materialVariation: matVarCfg,
         belt: {
@@ -370,12 +388,14 @@ export function cloneBuildingLayers(layers) {
             const fakeDepth = windows?.fakeDepth ?? null;
             const pbr = windows?.pbr ?? null;
             const material = layer?.material ?? null;
+            const wallBase = layer?.wallBase ?? null;
             const tiling = layer?.tiling ?? null;
             const materialVariation = layer?.materialVariation ?? null;
 
             out.push({
                 ...layer,
                 material: material ? { ...material } : material,
+                wallBase: wallBase ? deepClone(wallBase) : wallBase,
                 tiling: tiling ? deepClone(tiling) : tiling,
                 materialVariation: materialVariation ? deepClone(materialVariation) : materialVariation,
                 belt: {

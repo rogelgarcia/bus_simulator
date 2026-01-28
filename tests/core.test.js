@@ -1548,12 +1548,44 @@ async function runTests() {
         console.error(`❌ Assets: public assets served: ${e?.message || e}`);
     }
 
+    test('Welcome: debug shortcut hint is visible', () => {
+        const welcome = document.getElementById('ui-welcome');
+        assertTrue(!!welcome, 'Expected #ui-welcome to exist.');
+        const text = String(welcome.textContent ?? '');
+        assertTrue(text.includes('8: Debugs'), 'Expected welcome screen to mention "8: Debugs".');
+    });
+
+    test('WelcomeState: pressing 8 opens setup debugs menu', async () => {
+        const { WelcomeState } = await import('/src/states/WelcomeState.js');
+        const calls = [];
+        const engine = { canvas: document.getElementById('game-canvas'), clearScene: () => {} };
+        const sm = { go: (name, params) => calls.push({ name, params }) };
+        const state = new WelcomeState(engine, sm);
+        state._handleKeyDown({
+            code: 'Digit8',
+            key: '8',
+            target: document.body,
+            preventDefault: () => {}
+        });
+        assertEqual(calls.length, 1, 'Expected one state transition.');
+        assertEqual(calls[0].name, 'setup', 'Expected transition to setup.');
+        assertEqual(calls[0].params?.initialMenu, 'debugs', 'Expected initialMenu=debugs.');
+    });
+
+    test('TreeGenerator: resolves tree quality', async () => {
+        const { getResolvedTreeQuality } = await import('/src/graphics/assets3d/generators/TreeGenerator.js');
+        assertEqual(getResolvedTreeQuality({ quality: 'desktop' }), 'desktop', 'Expected desktop quality passthrough.');
+        assertEqual(getResolvedTreeQuality({ quality: 'mobile' }), 'mobile', 'Expected mobile quality passthrough.');
+        const auto = getResolvedTreeQuality({ quality: 'auto' });
+        assertTrue(auto === 'desktop' || auto === 'mobile', 'Expected auto to resolve to desktop or mobile.');
+    });
+
     // ========== Building Fabrication UI Tests ==========
     const { BuildingFabricationUI } = await import('/src/graphics/gui/building_fabrication/BuildingFabricationUI.js');
     const { BuildingFabricationScene, getHighestIndex3x2FootprintTileIds } = await import('/src/graphics/gui/building_fabrication/BuildingFabricationScene.js');
     const { offsetOrthogonalLoopXZ } = await import('/src/graphics/assets3d/generators/buildings/BuildingGenerator.js');
     const { buildBuildingFabricationVisualParts } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationGenerator.js');
-    const { createDefaultFloorLayer, createDefaultRoofLayer } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationTypes.js');
+    const { WALL_BASE_MATERIAL_DEFAULT, createDefaultFloorLayer, createDefaultRoofLayer } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationTypes.js');
     const {
         WINDOW_TYPE,
         getWindowNormalMapTexture,
@@ -1561,6 +1593,20 @@ async function runTests() {
         getWindowTypeOptions,
         getWindowTexture
     } = await import('/src/graphics/assets3d/generators/buildings/WindowTextureGenerator.js');
+
+    test('BuildingFabricationTypes: wall base material defaults/clamping', () => {
+        const layer = createDefaultFloorLayer({
+            wallBase: { tintHex: 0x12345678, roughness: -5, normalStrength: 999 }
+        });
+        assertEqual(layer.wallBase.tintHex, 0x345678, 'Expected tintHex to be masked to 24-bit.');
+        assertEqual(layer.wallBase.roughness, 0, 'Expected roughness clamped to [0..1].');
+        assertEqual(layer.wallBase.normalStrength, 2, 'Expected normalStrength clamped to [0..2].');
+
+        const defaults = createDefaultFloorLayer().wallBase;
+        assertEqual(defaults.tintHex, WALL_BASE_MATERIAL_DEFAULT.tintHex, 'Expected default tintHex.');
+        assertEqual(defaults.roughness, WALL_BASE_MATERIAL_DEFAULT.roughness, 'Expected default roughness.');
+        assertEqual(defaults.normalStrength, WALL_BASE_MATERIAL_DEFAULT.normalStrength, 'Expected default normalStrength.');
+    });
 
     test('BuildingFabricationUI: view toggles live in view panel', () => {
         const ui = new BuildingFabricationUI();

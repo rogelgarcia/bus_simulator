@@ -8,8 +8,10 @@ import { TREE_CONFIG } from './TreeConfig.js';
 
 const TAU = Math.PI * 2;
 
+const TREE_QUALITY_STORAGE_KEY = 'bus_sim.tree_quality.v1';
+
 const TREE_DEFAULTS = {
-    quality: 'mobile',
+    quality: 'auto',
     density: 0.5,
     clearance: 4,
     jitter: 0.7,
@@ -43,9 +45,100 @@ const templateCache = { desktop: null, mobile: null };
 const promiseCache = { desktop: null, mobile: null };
 let treeMaterials = null;
 
-function getQuality(value) {
+function normalizeQuality(value) {
     const v = String(value ?? '').toLowerCase();
-    return v === 'desktop' ? 'desktop' : 'mobile';
+    if (v === 'desktop') return 'desktop';
+    if (v === 'mobile') return 'mobile';
+    return 'auto';
+}
+
+function isProbablyMobileDevice() {
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+    const ua = String(navigator.userAgent || '').toLowerCase();
+    if (/\b(mobi|mobile|android|iphone|ipod|ipad)\b/.test(ua)) return true;
+
+    const points = Number(navigator.maxTouchPoints) || 0;
+    const coarse = typeof window.matchMedia === 'function'
+        ? window.matchMedia('(pointer: coarse)').matches
+        : false;
+    if (points >= 2 && coarse) return true;
+    return false;
+}
+
+function computeAutoQuality() {
+    if (typeof navigator !== 'undefined') {
+        const saveData = !!navigator.connection?.saveData;
+        const mem = Number(navigator.deviceMemory);
+        const cores = Number(navigator.hardwareConcurrency);
+        if (saveData) return 'mobile';
+        if (Number.isFinite(mem) && mem > 0 && mem < 6) return 'mobile';
+        if (Number.isFinite(cores) && cores > 0 && cores <= 4) return 'mobile';
+    }
+    if (isProbablyMobileDevice()) return 'mobile';
+    return 'desktop';
+}
+
+function readStorageQuality() {
+    if (typeof window === 'undefined') return null;
+    const storage = window.localStorage;
+    if (!storage) return null;
+    try {
+        const raw = storage.getItem(TREE_QUALITY_STORAGE_KEY);
+        if (raw === null) return null;
+        const v = normalizeQuality(raw);
+        return v;
+    } catch {
+        return null;
+    }
+}
+
+function readUrlQuality() {
+    if (typeof window === 'undefined') return null;
+    const search = window.location?.search ?? '';
+    if (!search) return null;
+    try {
+        const params = new URLSearchParams(search);
+        const raw = params.get('treeQuality');
+        if (!raw) return null;
+        return normalizeQuality(raw);
+    } catch {
+        return null;
+    }
+}
+
+function writeStorageQuality(value) {
+    if (typeof window === 'undefined') return;
+    const storage = window.localStorage;
+    if (!storage) return;
+    try {
+        storage.setItem(TREE_QUALITY_STORAGE_KEY, normalizeQuality(value));
+    } catch {
+        // ignore
+    }
+}
+
+let _primedPreference = false;
+function primeTreeQualityPreference() {
+    if (_primedPreference) return;
+    _primedPreference = true;
+    const q = readUrlQuality();
+    if (q) writeStorageQuality(q);
+}
+
+export function getResolvedTreeQuality({ quality = null } = {}) {
+    primeTreeQualityPreference();
+    const q = normalizeQuality(quality);
+    if (q === 'desktop' || q === 'mobile') return q;
+
+    const stored = readStorageQuality();
+    if (stored === 'desktop' || stored === 'mobile') return stored;
+    return computeAutoQuality();
+}
+
+function getQuality(value) {
+    const q = normalizeQuality(value);
+    if (q === 'desktop' || q === 'mobile') return q;
+    return computeAutoQuality();
 }
 
 function getTreeEntries(quality) {
@@ -437,8 +530,8 @@ export function loadTreeMaterials() {
     return ensureMaterials();
 }
 
-export function loadTreeTemplates(quality = 'mobile') {
-    const q = getQuality(quality);
+export function loadTreeTemplates(quality = 'auto') {
+    const q = getResolvedTreeQuality({ quality });
     const entries = getTreeEntries(q);
     return loadTreeAssets(q, entries);
 }
@@ -455,7 +548,7 @@ export function createTreeField({ map = null, rng = null, groundY = 0, config = 
     };
 
     const sink = Math.max(0, params.sink ?? 0);
-    const quality = getQuality(params.quality);
+    const quality = getResolvedTreeQuality({ quality: params.quality });
     const entries = getTreeEntries(quality);
     if (!entries.length) return { group, placements: [] };
     const placements = buildPlacements({

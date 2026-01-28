@@ -1942,6 +1942,22 @@ export class BuildingFabricationUI {
             });
         };
 
+        const openColorPicker = ({ title = 'Select color', options = [], selectedHex = null, onPick = null } = {}) => {
+            if (typeof onPick !== 'function') return;
+            const list = (Array.isArray(options) ? options : [])
+                .filter((opt) => opt && opt.kind === 'color' && Number.isFinite(opt.hex));
+            const selected = Number(selectedHex);
+            const selectedId = Number.isFinite(selected)
+                ? (list.find((opt) => opt.hex === selected)?.id ?? null)
+                : null;
+            this._pickerPopup.open({
+                title,
+                sections: [{ label: 'Colors', options: list }],
+                selectedId,
+                onSelect: (opt) => onPick(opt)
+            });
+        };
+
         const textureMaterialOptions = makeTextureMaterialOptions();
         const wallTextureMaterialOptions = makeWallTextureMaterialOptions();
         const beltColorMaterialOptions = makeBeltColorMaterialOptions();
@@ -2096,6 +2112,7 @@ export class BuildingFabricationUI {
                     layerId,
                     layer,
                     openMaterialPicker,
+                    openColorPicker,
                     textureMaterialOptions: wallTextureMaterialOptions,
                     colorMaterialOptions: beltColorMaterialOptions,
                     getWallTextureOption,

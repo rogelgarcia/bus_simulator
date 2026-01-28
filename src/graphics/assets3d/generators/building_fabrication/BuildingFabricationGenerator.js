@@ -553,11 +553,16 @@ function makeTextureMaterialFromBuildingStyle({
     return mat;
 }
 
-function makeWallMaterialFromSpec({ material, baseColorHex, textureCache }) {
+function makeWallMaterialFromSpec({ material, baseColorHex, textureCache, wallBase }) {
+    const base = wallBase && typeof wallBase === 'object' ? wallBase : null;
+    const roughness = Number.isFinite(base?.roughness) ? base.roughness : 0.85;
+    const normalStrength = Number.isFinite(base?.normalStrength) ? base.normalStrength : 0.9;
+    const tintHex = Number.isFinite(base?.tintHex) ? ((Number(base.tintHex) >>> 0) & 0xffffff) : 0xffffff;
+
     if (material?.kind === 'color') {
         const mat = new THREE.MeshStandardMaterial({
             color: resolveBeltCourseColorHex(material.id),
-            roughness: 0.85,
+            roughness,
             metalness: 0.05
         });
         disableIblOnMaterial(mat);
@@ -565,7 +570,11 @@ function makeWallMaterialFromSpec({ material, baseColorHex, textureCache }) {
     }
 
     const style = material?.kind === 'texture' ? material.id : BUILDING_STYLE.DEFAULT;
-    return makeWallMaterial({ style, baseColorHex, textureCache });
+    const mat = makeWallMaterial({ style, baseColorHex, textureCache, roughness, metalness: 0.05 });
+    if (mat?.map) mat.color.setHex(tintHex);
+    if (mat?.normalScale) mat.normalScale.set(normalStrength, normalStrength);
+    mat.roughness = roughness;
+    return mat;
 }
 
 function makeBeltLikeMaterialFromSpec({ material, baseColorHex, textureCache }) {
@@ -996,7 +1005,12 @@ export function buildBuildingFabricationVisualParts({
 
             const floors = clampInt(layer.floors, 0, 99);
             const floorHeight = clamp(layer.floorHeight, 1.0, 12.0);
-            const wallMat = makeWallMaterialFromSpec({ material: layer.material, baseColorHex, textureCache });
+            const wallMat = makeWallMaterialFromSpec({
+                material: layer.material,
+                baseColorHex,
+                textureCache,
+                wallBase: layer?.wallBase ?? null
+            });
             const wallStyleId = layer.material?.kind === 'texture' ? layer.material.id : null;
             const wallUrls = wallStyleId ? resolveBuildingStyleWallMaterialUrls(wallStyleId) : null;
             const wallTiling = layer?.tiling ?? null;

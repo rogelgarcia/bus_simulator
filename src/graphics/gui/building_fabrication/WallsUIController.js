@@ -2,9 +2,11 @@
 // Walls UI controller for building fabrication HUD.
 import { BUILDING_STYLE } from '../../../app/buildings/BuildingStyle.js';
 import { BELT_COURSE_COLOR } from '../../../app/buildings/BeltCourseColor.js';
+import { WALL_BASE_MATERIAL_DEFAULT } from '../../assets3d/generators/building_fabrication/BuildingFabricationTypes.js';
 import { createMaterialPickerRowController } from './mini_controllers/MaterialPickerRowController.js';
-import { createRangeRow } from './mini_controllers/UiMiniControlPrimitives.js';
+import { createDetailsSection, createHint, createRangeRow } from './mini_controllers/UiMiniControlPrimitives.js';
 import { createTextureTilingMiniController } from './mini_controllers/TextureTilingMiniController.js';
+import { applyMaterialSymbolToButton } from '../shared/materialSymbols.js';
 
 export function createWallsUIController({
     detailsOpenByKey = null,
@@ -117,6 +119,7 @@ export function createWallsUIController({
         layerId = null,
         layer = null,
         openMaterialPicker = null,
+        openColorPicker = null,
         textureMaterialOptions = [],
         colorMaterialOptions = [],
         getWallTextureOption = null,
@@ -157,6 +160,7 @@ export function createWallsUIController({
         const getTexOpt = typeof getWallTextureOption === 'function' ? getWallTextureOption : () => null;
         const getColorOpt = typeof getWallColorOption === 'function' ? getWallColorOption : () => null;
         const picker = createMaterialPickerRowController({ label: 'Wall material' });
+        const openColorPickerFn = typeof openColorPicker === 'function' ? openColorPicker : null;
 
         const fallbackStyleId = typeof layerObj?.style === 'string' ? layerObj.style : BUILDING_STYLE.DEFAULT;
         const wallMaterial = layerObj?.material ?? { kind: 'texture', id: fallbackStyleId };
@@ -200,6 +204,130 @@ export function createWallsUIController({
         body.appendChild(picker.row);
 
         if (layerObj) {
+            layerObj.wallBase ??= { ...WALL_BASE_MATERIAL_DEFAULT };
+
+            const wallBaseGroup = createDetailsSection('Wall base material', {
+                open: false,
+                nested: true,
+                key: `${scopeKey}:layer:${id}:walls:base`,
+                detailsOpenByKey: detailsMap
+            });
+            const wallBaseResetBtn = document.createElement('button');
+            wallBaseResetBtn.type = 'button';
+            wallBaseResetBtn.className = 'building-fab-details-reset';
+            wallBaseResetBtn.disabled = !canEdit;
+            applyMaterialSymbolToButton(wallBaseResetBtn, { name: 'restart_alt', label: 'Reset to defaults', size: 'sm' });
+            wallBaseResetBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!canEdit) return;
+                layerObj.wallBase = { ...WALL_BASE_MATERIAL_DEFAULT };
+                syncWallBaseUi();
+                onChangeFn();
+            });
+            wallBaseGroup.summary.appendChild(wallBaseResetBtn);
+
+            wallBaseGroup.body.appendChild(createHint('These controls affect the full wall surface (before material variation).'));
+
+            const tintPicker = createMaterialPickerRowController({
+                label: 'Wall albedo tint',
+                onPick: () => {
+                    if (!canEdit) return;
+                    if (!openColorPickerFn) return;
+                    if (layerObj?.material?.kind === 'color') return;
+                    const options = [
+                        { id: 'wall_tint:white', label: 'White (no tint)', kind: 'color', hex: 0xffffff },
+                        ...(Array.isArray(colorMaterialOptions) ? colorMaterialOptions : [])
+                    ].filter((opt) => opt && opt.kind === 'color' && Number.isFinite(opt.hex));
+                    const selectedHex = Number(layerObj.wallBase?.tintHex);
+                    openColorPickerFn({
+                        title: 'Wall albedo tint',
+                        options,
+                        selectedHex: Number.isFinite(selectedHex) ? selectedHex : 0xffffff,
+                        onPick: (picked) => {
+                            const hex = Number(picked?.hex);
+                            if (!Number.isFinite(hex)) return;
+                            layerObj.wallBase.tintHex = (hex >>> 0) & 0xffffff;
+                            syncWallBaseUi();
+                            onChangeFn();
+                        }
+                    });
+                }
+            });
+
+            const wallRoughnessRow = createRangeRow('Wall roughness');
+            wallRoughnessRow.range.min = '0';
+            wallRoughnessRow.range.max = '1';
+            wallRoughnessRow.range.step = '0.01';
+            wallRoughnessRow.number.min = '0';
+            wallRoughnessRow.number.max = '1';
+            wallRoughnessRow.number.step = '0.01';
+
+            const wallNormalRow = createRangeRow('Wall normal strength');
+            wallNormalRow.range.min = '0';
+            wallNormalRow.range.max = '2';
+            wallNormalRow.range.step = '0.01';
+            wallNormalRow.number.min = '0';
+            wallNormalRow.number.max = '2';
+            wallNormalRow.number.step = '0.01';
+
+            const setWallRoughnessFromUi = (raw) => {
+                const next = clampFn(raw, 0.0, 1.0);
+                layerObj.wallBase.roughness = next;
+                wallRoughnessRow.range.value = String(next);
+                wallRoughnessRow.number.value = formatFloatFn(next, 2);
+                onChangeFn();
+            };
+
+            const setWallNormalFromUi = (raw) => {
+                const next = clampFn(raw, 0.0, 2.0);
+                layerObj.wallBase.normalStrength = next;
+                wallNormalRow.range.value = String(next);
+                wallNormalRow.number.value = formatFloatFn(next, 2);
+                onChangeFn();
+            };
+
+            const syncWallBaseUi = () => {
+                layerObj.wallBase ??= { ...WALL_BASE_MATERIAL_DEFAULT };
+                const tintHex = Number.isFinite(layerObj.wallBase?.tintHex) ? ((Number(layerObj.wallBase.tintHex) >>> 0) & 0xffffff) : 0xffffff;
+                const options = [
+                    { id: 'wall_tint:white', label: 'White (no tint)', kind: 'color', hex: 0xffffff },
+                    ...(Array.isArray(colorMaterialOptions) ? colorMaterialOptions : [])
+                ].filter((opt) => opt && opt.kind === 'color' && Number.isFinite(opt.hex));
+                const labelText = options.find((opt) => opt.hex === tintHex)?.label
+                    ?? `#${tintHex.toString(16).padStart(6, '0')}`;
+                tintPicker.text.textContent = labelText;
+                thumbColorFn(tintPicker.thumb, tintHex);
+
+                const textured = layerObj?.material?.kind !== 'color';
+                tintPicker.button.disabled = !canEdit || !textured || !openColorPickerFn;
+
+                const rough = clampFn(layerObj.wallBase?.roughness ?? WALL_BASE_MATERIAL_DEFAULT.roughness, 0.0, 1.0);
+                wallRoughnessRow.range.disabled = !canEdit;
+                wallRoughnessRow.number.disabled = !canEdit;
+                wallRoughnessRow.range.value = String(rough);
+                wallRoughnessRow.number.value = formatFloatFn(rough, 2);
+
+                const normal = clampFn(layerObj.wallBase?.normalStrength ?? WALL_BASE_MATERIAL_DEFAULT.normalStrength, 0.0, 2.0);
+                wallNormalRow.range.disabled = !canEdit;
+                wallNormalRow.number.disabled = !canEdit;
+                wallNormalRow.range.value = String(normal);
+                wallNormalRow.number.value = formatFloatFn(normal, 2);
+
+                wallBaseResetBtn.disabled = !canEdit;
+            };
+
+            wallRoughnessRow.range.addEventListener('input', () => setWallRoughnessFromUi(wallRoughnessRow.range.value));
+            wallRoughnessRow.number.addEventListener('input', () => setWallRoughnessFromUi(wallRoughnessRow.number.value));
+            wallNormalRow.range.addEventListener('input', () => setWallNormalFromUi(wallNormalRow.range.value));
+            wallNormalRow.number.addEventListener('input', () => setWallNormalFromUi(wallNormalRow.number.value));
+
+            syncWallBaseUi();
+            wallBaseGroup.body.appendChild(tintPicker.row);
+            wallBaseGroup.body.appendChild(wallRoughnessRow.row);
+            wallBaseGroup.body.appendChild(wallNormalRow.row);
+            body.appendChild(wallBaseGroup.details);
+
             const wallTilingController = createTextureTilingMiniController({
                 mode: 'details',
                 title: 'Texture tiling',
