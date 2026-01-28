@@ -1511,9 +1511,13 @@ async function runTests() {
 
     // ========== Public Assets Tests ==========
     try {
-        const [mainResp, grassResp] = await Promise.all([
+        const [mainResp, grassResp, grassBaseResp, grassNormalResp, grassRoughResp, grassAoResp] = await Promise.all([
             fetch('/assets/public/main.png', { method: 'HEAD' }),
-            fetch('/assets/public/grass.png', { method: 'HEAD' })
+            fetch('/assets/public/grass.png', { method: 'HEAD' }),
+            fetch('/assets/public/pbr/grass_004/basecolor.png', { method: 'HEAD' }),
+            fetch('/assets/public/pbr/grass_004/normal_gl.png', { method: 'HEAD' }),
+            fetch('/assets/public/pbr/grass_004/roughness.png', { method: 'HEAD' }),
+            fetch('/assets/public/pbr/grass_004/ao.png', { method: 'HEAD' })
         ]);
 
         test('Assets: public main.png served', () => {
@@ -1522,6 +1526,22 @@ async function runTests() {
 
         test('Assets: public grass.png served', () => {
             assertTrue(grassResp.ok, 'Expected /assets/public/grass.png to be served.');
+        });
+
+        test('Assets: grass_004 PBR basecolor served', () => {
+            assertTrue(grassBaseResp.ok, 'Expected /assets/public/pbr/grass_004/basecolor.png to be served.');
+        });
+
+        test('Assets: grass_004 PBR normal served', () => {
+            assertTrue(grassNormalResp.ok, 'Expected /assets/public/pbr/grass_004/normal_gl.png to be served.');
+        });
+
+        test('Assets: grass_004 PBR roughness served', () => {
+            assertTrue(grassRoughResp.ok, 'Expected /assets/public/pbr/grass_004/roughness.png to be served.');
+        });
+
+        test('Assets: grass_004 PBR AO served', () => {
+            assertTrue(grassAoResp.ok, 'Expected /assets/public/pbr/grass_004/ao.png to be served.');
         });
     } catch (e) {
         errors.push({ name: 'Assets: public assets served', error: e?.message || e });
