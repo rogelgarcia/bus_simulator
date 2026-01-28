@@ -1007,6 +1007,7 @@ export function buildBuildingVisualParts({
     walls = null,
     windows = null,
     windowVisuals = null,
+    windowVisualsIsOverride = false,
     street = null,
     beltCourse = null,
     topBelt = null
@@ -1458,15 +1459,27 @@ export function buildBuildingVisualParts({
         const reflectiveEnabled = reflectiveObj.enabled !== undefined ? !!reflectiveObj.enabled : false;
         const glassObj = reflectiveObj.glass && typeof reflectiveObj.glass === 'object' ? reflectiveObj.glass : {};
         const glassColorHex = Number.isFinite(glassObj.colorHex) ? ((Number(glassObj.colorHex) >>> 0) & 0xffffff) : 0xffffff;
-        const glassMetalness = Number.isFinite(glassObj.metalness) ? glassObj.metalness : 0.0;
-        const glassRoughness = Number.isFinite(glassObj.roughness) ? glassObj.roughness : 0.02;
-        const glassTransmission = Number.isFinite(glassObj.transmission) ? glassObj.transmission : 0.0;
-        const glassIor = Number.isFinite(glassObj.ior) ? glassObj.ior : 2.2;
-        const glassEnvMapIntensity = Number.isFinite(glassObj.envMapIntensity) ? glassObj.envMapIntensity : 4.0;
+        const glassMetalness = Number.isFinite(glassObj.metalness) ? clamp(glassObj.metalness, 0.0, 1.0) : 0.0;
+        const glassRoughness = Number.isFinite(glassObj.roughness) ? clamp(glassObj.roughness, 0.0, 1.0) : 0.02;
+        const glassTransmission = Number.isFinite(glassObj.transmission) ? clamp(glassObj.transmission, 0.0, 1.0) : 0.0;
+        const glassIor = Number.isFinite(glassObj.ior) ? clamp(glassObj.ior, 1.0, 2.5) : 2.2;
+        const glassEnvMapIntensity = Number.isFinite(glassObj.envMapIntensity) ? clamp(glassObj.envMapIntensity, 0.0, 5.0) : 4.0;
+
+        const wantsTransmission = glassTransmission > 0.01;
+        const opacityDefault = wantsTransmission ? 1.0 : 0.85;
+        const glassOpacity = Number.isFinite(reflectiveObj.opacity)
+            ? clamp(reflectiveObj.opacity, 0.0, 1.0)
+            : opacityDefault;
+        const offsetRaw = reflectiveObj.layerOffset ?? reflectiveObj.offset;
+        const glassLift = Number.isFinite(offsetRaw)
+            ? clamp(offsetRaw, -0.1, 0.1)
+            : 0.02;
 
         windowsGroup.userData.buildingWindowVisuals = Object.freeze({
             reflective: Object.freeze({
                 enabled: reflectiveEnabled,
+                opacity: glassOpacity,
+                layerOffset: glassLift,
                 glass: Object.freeze({
                     colorHex: glassColorHex,
                     metalness: glassMetalness,
@@ -1478,9 +1491,7 @@ export function buildBuildingVisualParts({
             })
         });
 
-        const glassLift = 0.02;
         const makeGlassMaterial = (alphaMap) => {
-            const wantsTransmission = glassTransmission > 0.01;
             const mat = new THREE.MeshPhysicalMaterial({
                 color: glassColorHex,
                 metalness: glassMetalness,
@@ -1488,7 +1499,7 @@ export function buildBuildingVisualParts({
                 transmission: wantsTransmission ? glassTransmission : 0.0,
                 ior: glassIor,
                 envMapIntensity: glassEnvMapIntensity,
-                opacity: wantsTransmission ? 1.0 : 0.85
+                opacity: glassOpacity
             });
             mat.transparent = true;
             mat.alphaMap = alphaMap ?? null;
@@ -1500,6 +1511,8 @@ export function buildBuildingVisualParts({
             mat.userData = mat.userData ?? {};
             mat.userData.iblEnvMapIntensityScale = glassEnvMapIntensity;
             mat.userData.buildingWindowGlass = true;
+            mat.userData.buildingWindowGlassOverride = !!windowVisualsIsOverride;
+            mat.userData.buildingWindowGlassEnabled = reflectiveEnabled;
             return mat;
         };
 
@@ -1672,7 +1685,7 @@ export function buildBuildingVisualParts({
                 mesh.receiveShadow = false;
                 mesh.renderOrder = bucket.renderOrder;
                 if (bucket.material?.userData?.buildingWindowGlass === true) {
-                    mesh.visible = reflectiveEnabled;
+                    mesh.visible = bucket.material.userData.buildingWindowGlassEnabled !== false;
                 }
                 mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
 

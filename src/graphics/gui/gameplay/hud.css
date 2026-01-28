@@ -11,7 +11,7 @@
 
 #hud-game {
     position: fixed;
-    inset: 0;
+    inset: var(--global-top-bar-height, 0px) 0 0 0;
     z-index: 4;
     pointer-events: none;
     font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
@@ -21,7 +21,7 @@
 #hud-game.hidden { display: none !important; }
 
 .hud-cluster {
-    position: fixed;
+    position: absolute;
     display: flex;
     gap: 12px;
     padding: 12px;

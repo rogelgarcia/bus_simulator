@@ -91,13 +91,15 @@ export function applyBuildingWindowVisualsToCityMeshes(root, settings, { iblEnab
 
         const material = obj.material ?? null;
         const mats = Array.isArray(material) ? material : [material];
-        let hasGlass = false;
+        let hasGlobalGlass = false;
         for (const mat of mats) {
             if (!looksLikeWindowGlassMaterial(mat)) continue;
-            hasGlass = true;
+            const ud = isObject(mat.userData) ? mat.userData : null;
+            if (ud?.buildingWindowGlassOverride === true) continue;
+            hasGlobalGlass = true;
             glassMaterials.add(mat);
         }
-        if (!hasGlass) return;
+        if (!hasGlobalGlass) return;
         obj.visible = reflectiveEnabled;
         glassMeshes++;
     });
@@ -108,4 +110,3 @@ export function applyBuildingWindowVisualsToCityMeshes(root, settings, { iblEnab
 
     return { glassMeshes, glassMaterials: glassMaterials.size };
 }
-

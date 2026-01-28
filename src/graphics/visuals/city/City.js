@@ -142,6 +142,9 @@ export class City {
                 const hasLayers = Array.isArray(entry?.layers) && entry.layers.length;
                 const windowsSpec = entry?.windows ?? null;
                 const windowsEnabled = !!windowsSpec && typeof windowsSpec === 'object';
+                const overrideWindowVisuals = entry?.windowVisuals ?? null;
+                const resolvedWindowVisuals = overrideWindowVisuals ?? buildingWindowVisuals;
+                const windowVisualsIsOverride = !!overrideWindowVisuals && typeof overrideWindowVisuals === 'object';
                 const parts = hasLayers
                     ? buildBuildingFabricationVisualParts({
                         map: this.map,
@@ -153,7 +156,8 @@ export class City {
                         materialVariationSeed: entry.materialVariationSeed,
                         textureCache: textures,
                         renderer: null,
-                        windowVisuals: buildingWindowVisuals,
+                        windowVisuals: resolvedWindowVisuals,
+                        windowVisualsIsOverride,
                         overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
                         walls: { inset: wallInset }
                     })
@@ -168,7 +172,8 @@ export class City {
                         style: entry.style,
                         textureCache: textures,
                         renderer: null,
-                        windowVisuals: buildingWindowVisuals,
+                        windowVisuals: resolvedWindowVisuals,
+                        windowVisualsIsOverride,
                         overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
                         walls: { inset: wallInset },
                         windows: windowsEnabled ? {

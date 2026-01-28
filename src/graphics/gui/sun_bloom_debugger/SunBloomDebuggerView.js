@@ -310,6 +310,8 @@ export class SunBloomDebuggerView {
     constructor({ canvas } = {}) {
         this.canvas = canvas;
 
+        this.onFrame = null;
+
         this.renderer = null;
         this.scene = null;
         this.camera = null;
@@ -1109,6 +1111,8 @@ export class SunBloomDebuggerView {
         this._perf.lastMs = t1 - t0;
         this._perf.emaMs = this._perf.emaMs ? (this._perf.emaMs * 0.9 + this._perf.lastMs * 0.1) : this._perf.lastMs;
 
+        const onFrame = this.onFrame;
+        if (typeof onFrame === 'function') onFrame({ dt, nowMs: now, renderer });
         this._raf = requestAnimationFrame((ts) => this._tick(ts));
     }
 

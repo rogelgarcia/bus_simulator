@@ -2,14 +2,20 @@
 // Standalone Asphalt Debug tool entry point.
 
 import { AsphaltDebuggerView } from './view/AsphaltDebuggerView.js';
+import { ensureGlobalPerfBar } from '../perf_bar/PerfBar.js';
 
 const canvas = document.getElementById('game-canvas');
 if (!canvas) throw new Error('[AsphaltDebugger] Missing canvas#game-canvas');
 
 document.body.classList.add('options-dock-open');
 
+const perfBar = ensureGlobalPerfBar();
+
 const view = new AsphaltDebuggerView({ canvas });
-view.start().catch((err) => {
+view.start().then(() => {
+    if (view.engine?.renderer) perfBar.setRenderer(view.engine.renderer);
+    if (view.engine?.addFrameListener) view.engine.addFrameListener((frame) => perfBar.onFrame(frame));
+}).catch((err) => {
     console.error('[AsphaltDebugger] Failed to start', err);
 });
 
@@ -25,4 +31,3 @@ window.addEventListener('beforeunload', () => {
     window.removeEventListener('keydown', onKeyDown);
     view.destroy();
 }, { passive: true });
-

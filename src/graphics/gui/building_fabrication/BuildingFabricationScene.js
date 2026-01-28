@@ -62,6 +62,16 @@ function clampInt(value, min, max) {
     return Math.max(min, Math.min(max, rounded));
 }
 
+function deepClone(value) {
+    if (Array.isArray(value)) return value.map((entry) => deepClone(entry));
+    if (value && typeof value === 'object') {
+        const out = {};
+        for (const [k, v] of Object.entries(value)) out[k] = deepClone(v);
+        return out;
+    }
+    return value;
+}
+
 function q(value) {
     return Math.round(value * QUANT);
 }
@@ -671,6 +681,24 @@ export class BuildingFabricationScene {
         const next = clamp(inset, 0.0, 4.0);
         if (Math.abs(next - (Number(building.wallInset) || 0)) < 1e-6) return false;
         building.wallInset = next;
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedBuildingWindowVisuals(windowVisuals) {
+        const building = this.getSelectedBuilding();
+        if (!building) return false;
+        const next = windowVisuals && typeof windowVisuals === 'object' ? deepClone(windowVisuals) : null;
+        const cur = building.windowVisuals ?? null;
+        if (next === null && cur === null) return false;
+        if (next !== null && cur !== null) {
+            try {
+                if (JSON.stringify(cur) === JSON.stringify(next)) return false;
+            } catch {
+                // Treat as changed.
+            }
+        }
+        building.windowVisuals = next;
         this._rebuildBuildingMesh(building);
         return true;
     }
@@ -1331,7 +1359,7 @@ export class BuildingFabricationScene {
         this._syncTileVisuals();
     }
 
-    createBuildingsFromSelection({ floors, floorHeight, layers = null, materialVariationSeed = null } = {}) {
+    createBuildingsFromSelection({ floors, floorHeight, layers = null, materialVariationSeed = null, windowVisuals = null } = {}) {
         if (!this.root) return;
         if (!this._selectedTiles.size) return;
 
@@ -1373,7 +1401,8 @@ export class BuildingFabricationScene {
         for (const cluster of clusters) {
             const created = this._createBuilding(cluster, clampedFloors, clampedFloorHeight, {
                 layers: resolvedLayers ? cloneBuildingLayers(resolvedLayers) : null,
-                materialVariationSeed
+                materialVariationSeed,
+                windowVisuals
             });
             const size = created?.tiles?.size ?? 0;
             if (created && size >= bestSize) {
@@ -1446,7 +1475,8 @@ export class BuildingFabricationScene {
             windowHeight: win?.height,
             windowY: win?.y,
             layers: resolvedLayers,
-            materialVariationSeed: Number.isFinite(cfg?.materialVariationSeed) ? cfg.materialVariationSeed : null
+            materialVariationSeed: Number.isFinite(cfg?.materialVariationSeed) ? cfg.materialVariationSeed : null,
+            windowVisuals: cfg?.windowVisuals ?? null
         });
 
         this._syncTileVisuals();
@@ -1945,7 +1975,8 @@ export class BuildingFabricationScene {
         streetWindowSpacerExtrude = false,
         streetWindowSpacerExtrudeDistance = 0.12,
         layers = null,
-        materialVariationSeed = null
+        materialVariationSeed = null,
+        windowVisuals = null
     } = {}) {
         const group = new THREE.Group();
         const baseName = typeof id === 'string' ? id.trim() : '';
@@ -2125,6 +2156,7 @@ export class BuildingFabricationScene {
             roofColor: isRoofColor(roofColor) ? roofColor : ROOF_COLOR.DEFAULT,
             wallInset: clamp(wallInset, 0.0, 4.0),
             materialVariationSeed: Number.isFinite(materialVariationSeed) ? clampInt(materialVariationSeed, 0, 4294967295) : null,
+            windowVisuals: windowVisuals ? deepClone(windowVisuals) : null,
             baseColorHex: null,
             tiles: new Set(tileIds),
             floors,
@@ -2297,6 +2329,7 @@ export class BuildingFabricationScene {
                 windowParams: building.windowParams,
                 layers: cloneBuildingLayers(building.layers),
                 materialVariationSeed: building.materialVariationSeed,
+                windowVisuals: building.windowVisuals ? deepClone(building.windowVisuals) : null,
                 streetEnabled: building.streetEnabled,
                 streetFloors: building.streetFloors,
                 streetFloorHeight: building.streetFloorHeight,
@@ -2686,6 +2719,10 @@ export class BuildingFabricationScene {
             if (meta) tiles.push([meta.x, meta.y]);
         }
 
+        const overrideWindowVisuals = building?.windowVisuals ?? null;
+        const resolvedWindowVisuals = overrideWindowVisuals ?? this._buildingWindowVisuals;
+        const windowVisualsIsOverride = !!overrideWindowVisuals && typeof overrideWindowVisuals === 'object';
+
         const useLayers = Array.isArray(building.layers) && building.layers.length;
         const parts = useLayers
             ? buildBuildingFabricationVisualParts({
@@ -2698,7 +2735,8 @@ export class BuildingFabricationScene {
                 materialVariationSeed: building.materialVariationSeed,
                 textureCache: this._wallTextures,
                 renderer: this.engine?.renderer ?? null,
-                windowVisuals: this._buildingWindowVisuals,
+                windowVisuals: resolvedWindowVisuals,
+                windowVisualsIsOverride,
                 colors: { line: BUILDING_LINE_COLOR, border: BUILDING_BORDER_COLOR },
                 overlays: { wire: true, floorplan: true, border: true, floorDivisions: true },
                 walls: {
@@ -2716,7 +2754,8 @@ export class BuildingFabricationScene {
                 style: building.style,
                 textureCache: this._wallTextures,
                 renderer: this.engine?.renderer ?? null,
-                windowVisuals: this._buildingWindowVisuals,
+                windowVisuals: resolvedWindowVisuals,
+                windowVisualsIsOverride,
                 colors: { line: BUILDING_LINE_COLOR, border: BUILDING_BORDER_COLOR },
                 overlays: { wire: true, floorplan: true, border: true, floorDivisions: true },
                 roof: {

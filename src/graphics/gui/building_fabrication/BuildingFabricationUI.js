@@ -10,8 +10,9 @@ import { applyMaterialSymbolToButton } from '../shared/materialSymbols.js';
 import { WINDOW_TYPE, getDefaultWindowParams, isWindowTypeId } from '../../assets3d/generators/buildings/WindowTextureGenerator.js';
 import { normalizeWindowParams, normalizeWindowTypeIdOrLegacyStyle } from '../../assets3d/generators/buildings/WindowTypeCompatibility.js';
 import { getPbrMaterialOptionsForBuildings } from '../../assets3d/materials/PbrMaterialCatalog.js';
-import { LAYER_TYPE, cloneBuildingLayers, createDefaultFloorLayer, createDefaultRoofLayer, normalizeBuildingLayers } from '../../assets3d/generators/building_fabrication/BuildingFabricationTypes.js';
+import { LAYER_TYPE, cloneBuildingLayers, createDefaultFloorLayer, createDefaultRoofLayer, normalizeBuildingLayers, normalizeBuildingWindowVisualsConfig } from '../../assets3d/generators/building_fabrication/BuildingFabricationTypes.js';
 import { getBuildingConfigs } from '../../content3d/catalogs/BuildingConfigCatalog.js';
+import { getResolvedBuildingWindowVisualsSettings } from '../../visuals/buildings/BuildingWindowVisualsSettings.js';
 import { createTextureTilingMiniController } from './mini_controllers/TextureTilingMiniController.js';
 import { createMaterialPickerRowController } from './mini_controllers/MaterialPickerRowController.js';
 import { createMaterialVariationUIController } from './MaterialVariationUIController.js';
@@ -51,6 +52,16 @@ function clampInt(value, min, max) {
     if (!Number.isFinite(num)) return min;
     const rounded = Math.round(num);
     return Math.max(min, Math.min(max, rounded));
+}
+
+function deepClone(value) {
+    if (Array.isArray(value)) return value.map((entry) => deepClone(entry));
+    if (value && typeof value === 'object') {
+        const out = {};
+        for (const [k, v] of Object.entries(value)) out[k] = deepClone(v);
+        return out;
+    }
+    return value;
 }
 
 function formatFloat(value, digits = 1) {
@@ -221,6 +232,9 @@ export class BuildingFabricationUI {
         this._pickerPopup = new PickerPopup();
         this._pickerRowControllers = [];
         this._detailsOpenByKey = new Map();
+        this._globalWindowVisuals = getResolvedBuildingWindowVisualsSettings();
+        this._templateWindowVisuals = null;
+        this._selectedWindowVisuals = null;
 
         this._templateLayers = normalizeBuildingLayers([
             createDefaultFloorLayer({
@@ -269,6 +283,7 @@ export class BuildingFabricationUI {
         this._catalogBuildingConfigId = '';
         this.onSelectedBuildingLayersChange = null;
         this.onSelectedBuildingMaterialVariationSeedChange = null;
+        this.onSelectedBuildingWindowVisualsChange = null;
         this.onMaterialVariationDebugChange = null;
 
         this.root = document.createElement('div');
@@ -1260,6 +1275,12 @@ export class BuildingFabricationUI {
         return cloneBuildingLayers(this._templateLayers);
     }
 
+    getTemplateWindowVisuals() {
+        return this._templateWindowVisuals && typeof this._templateWindowVisuals === 'object'
+            ? deepClone(this._templateWindowVisuals)
+            : null;
+    }
+
     getTemplateMaterialVariationSeed() {
         return Number.isFinite(this._templateMaterialVariationSeed) ? this._templateMaterialVariationSeed : null;
     }
@@ -1626,6 +1647,9 @@ export class BuildingFabricationUI {
         this._selectedMaterialVariationSeed = hasSelected && Number.isFinite(building?.materialVariationSeed)
             ? clampInt(building.materialVariationSeed, 0, 4294967295)
             : null;
+        this._selectedWindowVisuals = hasSelected && building?.windowVisuals && typeof building.windowVisuals === 'object'
+            ? normalizeBuildingWindowVisualsConfig(deepClone(building.windowVisuals))
+            : null;
         this._syncLayersPanel();
         this._renderLayersPanel();
         this._syncPropertyWidgets();
@@ -1668,6 +1692,15 @@ export class BuildingFabricationUI {
         if (!this._selectedBuildingId) return;
         if (typeof this.onSelectedBuildingMaterialVariationSeedChange !== 'function') return;
         this.onSelectedBuildingMaterialVariationSeedChange(this._selectedMaterialVariationSeed);
+    }
+
+    _notifySelectedWindowVisualsChanged() {
+        if (!this._selectedBuildingId) return;
+        if (typeof this.onSelectedBuildingWindowVisualsChange !== 'function') return;
+        const cfg = this._selectedWindowVisuals && typeof this._selectedWindowVisuals === 'object'
+            ? deepClone(this._selectedWindowVisuals)
+            : null;
+        this.onSelectedBuildingWindowVisualsChange(cfg);
     }
 
     _syncLayersPanel() {
@@ -1843,6 +1876,201 @@ export class BuildingFabricationUI {
             row.appendChild(picker);
             return { row, button, thumb, text };
 	        };
+
+        this._globalWindowVisuals = getResolvedBuildingWindowVisualsSettings();
+        const globalWindowVisuals = this._globalWindowVisuals;
+        const hasSelectedBuilding = !!this._selectedBuildingId;
+
+        const getActiveBuildingWindowVisuals = () => (
+            hasSelectedBuilding ? this._selectedWindowVisuals : this._templateWindowVisuals
+        );
+
+        const setActiveBuildingWindowVisuals = (next) => {
+            if (hasSelectedBuilding) {
+                this._selectedWindowVisuals = next && typeof next === 'object' ? normalizeBuildingWindowVisualsConfig(next) : null;
+                this._notifySelectedWindowVisualsChanged();
+                return;
+            }
+            this._templateWindowVisuals = next && typeof next === 'object' ? normalizeBuildingWindowVisualsConfig(next) : null;
+        };
+
+        const buildingReflections = makeDetailsSection('Window reflections (building)', { open: false, key: `${scopeKey}:building:window_reflections` });
+        const buildingReflectionsOverrideToggle = makeToggleRow('Override global window reflections');
+        buildingReflectionsOverrideToggle.input.checked = !!getActiveBuildingWindowVisuals();
+        buildingReflectionsOverrideToggle.input.disabled = !allow;
+        buildingReflections.body.appendChild(buildingReflectionsOverrideToggle.toggle);
+
+        const buildingReflectionsHint = document.createElement('div');
+        buildingReflectionsHint.className = 'building-fab-hint';
+        buildingReflections.body.appendChild(buildingReflectionsHint);
+
+        const buildingReflectionsEnabledToggle = makeToggleRow('Reflective glass');
+        buildingReflections.body.appendChild(buildingReflectionsEnabledToggle.toggle);
+
+        const buildingReflectionsOpacityRow = makeRangeRow('Glass opacity');
+        buildingReflectionsOpacityRow.range.min = '0';
+        buildingReflectionsOpacityRow.range.max = '1';
+        buildingReflectionsOpacityRow.range.step = '0.01';
+        buildingReflectionsOpacityRow.number.min = '0';
+        buildingReflectionsOpacityRow.number.max = '1';
+        buildingReflectionsOpacityRow.number.step = '0.01';
+        buildingReflections.body.appendChild(buildingReflectionsOpacityRow.row);
+
+        const buildingReflectionsOffsetRow = makeRangeRow('Glass layer offset (m)');
+        buildingReflectionsOffsetRow.range.min = '-0.1';
+        buildingReflectionsOffsetRow.range.max = '0.1';
+        buildingReflectionsOffsetRow.range.step = '0.001';
+        buildingReflectionsOffsetRow.number.min = '-0.1';
+        buildingReflectionsOffsetRow.number.max = '0.1';
+        buildingReflectionsOffsetRow.number.step = '0.001';
+        buildingReflections.body.appendChild(buildingReflectionsOffsetRow.row);
+
+        const buildingReflectionsEnvMapIntensityRow = makeRangeRow('Window glass reflection intensity');
+        buildingReflectionsEnvMapIntensityRow.range.min = '0';
+        buildingReflectionsEnvMapIntensityRow.range.max = '5';
+        buildingReflectionsEnvMapIntensityRow.range.step = '0.01';
+        buildingReflectionsEnvMapIntensityRow.number.min = '0';
+        buildingReflectionsEnvMapIntensityRow.number.max = '5';
+        buildingReflectionsEnvMapIntensityRow.number.step = '0.01';
+        buildingReflections.body.appendChild(buildingReflectionsEnvMapIntensityRow.row);
+
+        const buildingReflectionsRoughnessRow = makeRangeRow('Window glass roughness');
+        buildingReflectionsRoughnessRow.range.min = '0';
+        buildingReflectionsRoughnessRow.range.max = '1';
+        buildingReflectionsRoughnessRow.range.step = '0.01';
+        buildingReflectionsRoughnessRow.number.min = '0';
+        buildingReflectionsRoughnessRow.number.max = '1';
+        buildingReflectionsRoughnessRow.number.step = '0.01';
+        buildingReflections.body.appendChild(buildingReflectionsRoughnessRow.row);
+
+        const buildingReflectionsTransmissionRow = makeRangeRow('Window glass transmission');
+        buildingReflectionsTransmissionRow.range.min = '0';
+        buildingReflectionsTransmissionRow.range.max = '1';
+        buildingReflectionsTransmissionRow.range.step = '0.01';
+        buildingReflectionsTransmissionRow.number.min = '0';
+        buildingReflectionsTransmissionRow.number.max = '1';
+        buildingReflectionsTransmissionRow.number.step = '0.01';
+        buildingReflections.body.appendChild(buildingReflectionsTransmissionRow.row);
+
+        const buildingReflectionsIorRow = makeRangeRow('Window glass ior');
+        buildingReflectionsIorRow.range.min = '1';
+        buildingReflectionsIorRow.range.max = '2.5';
+        buildingReflectionsIorRow.range.step = '0.01';
+        buildingReflectionsIorRow.number.min = '1';
+        buildingReflectionsIorRow.number.max = '2.5';
+        buildingReflectionsIorRow.number.step = '0.01';
+        buildingReflections.body.appendChild(buildingReflectionsIorRow.row);
+
+        const buildingReflectionsMetalnessRow = makeRangeRow('Window glass metalness');
+        buildingReflectionsMetalnessRow.range.min = '0';
+        buildingReflectionsMetalnessRow.range.max = '1';
+        buildingReflectionsMetalnessRow.range.step = '0.01';
+        buildingReflectionsMetalnessRow.number.min = '0';
+        buildingReflectionsMetalnessRow.number.max = '1';
+        buildingReflectionsMetalnessRow.number.step = '0.01';
+        buildingReflections.body.appendChild(buildingReflectionsMetalnessRow.row);
+
+        const ensureBuildingWindowVisualsOverride = () => {
+            const existing = getActiveBuildingWindowVisuals();
+            const base = globalWindowVisuals && typeof globalWindowVisuals === 'object' ? globalWindowVisuals : {};
+            const normalized = normalizeBuildingWindowVisualsConfig(existing && typeof existing === 'object' ? existing : base);
+            if (hasSelectedBuilding) this._selectedWindowVisuals = normalized;
+            else this._templateWindowVisuals = normalized;
+            return normalized;
+        };
+
+        const syncBuildingWindowReflectionsUi = () => {
+            const overrideEnabled = !!getActiveBuildingWindowVisuals();
+            const effective = normalizeBuildingWindowVisualsConfig((overrideEnabled ? getActiveBuildingWindowVisuals() : globalWindowVisuals) ?? {});
+            const reflectiveEnabled = !!effective?.reflective?.enabled;
+
+            buildingReflectionsOverrideToggle.input.checked = overrideEnabled;
+            buildingReflectionsHint.textContent = overrideEnabled
+                ? 'Override: base reflections for floors (unless a floor overrides).'
+                : 'Inheriting global window reflections.';
+
+            buildingReflectionsEnabledToggle.input.checked = reflectiveEnabled;
+
+            buildingReflectionsOpacityRow.range.value = String(effective?.reflective?.opacity ?? 0.85);
+            buildingReflectionsOpacityRow.number.value = formatFloat(effective?.reflective?.opacity ?? 0.85, 2);
+            buildingReflectionsOffsetRow.range.value = String(effective?.reflective?.layerOffset ?? 0.02);
+            buildingReflectionsOffsetRow.number.value = formatFloat(effective?.reflective?.layerOffset ?? 0.02, 3);
+
+            buildingReflectionsEnvMapIntensityRow.range.value = String(effective?.reflective?.glass?.envMapIntensity ?? 4.0);
+            buildingReflectionsEnvMapIntensityRow.number.value = formatFloat(effective?.reflective?.glass?.envMapIntensity ?? 4.0, 2);
+            buildingReflectionsRoughnessRow.range.value = String(effective?.reflective?.glass?.roughness ?? 0.02);
+            buildingReflectionsRoughnessRow.number.value = formatFloat(effective?.reflective?.glass?.roughness ?? 0.02, 2);
+            buildingReflectionsTransmissionRow.range.value = String(effective?.reflective?.glass?.transmission ?? 0.0);
+            buildingReflectionsTransmissionRow.number.value = formatFloat(effective?.reflective?.glass?.transmission ?? 0.0, 2);
+            buildingReflectionsIorRow.range.value = String(effective?.reflective?.glass?.ior ?? 2.2);
+            buildingReflectionsIorRow.number.value = formatFloat(effective?.reflective?.glass?.ior ?? 2.2, 2);
+            buildingReflectionsMetalnessRow.range.value = String(effective?.reflective?.glass?.metalness ?? 0.0);
+            buildingReflectionsMetalnessRow.number.value = formatFloat(effective?.reflective?.glass?.metalness ?? 0.0, 2);
+
+            const canEditOverride = allow && overrideEnabled;
+            buildingReflectionsEnabledToggle.input.disabled = !canEditOverride;
+
+            const canEditFields = canEditOverride && reflectiveEnabled;
+            for (const row of [
+                buildingReflectionsOpacityRow,
+                buildingReflectionsOffsetRow,
+                buildingReflectionsEnvMapIntensityRow,
+                buildingReflectionsRoughnessRow,
+                buildingReflectionsTransmissionRow,
+                buildingReflectionsIorRow,
+                buildingReflectionsMetalnessRow
+            ]) {
+                row.range.disabled = !canEditFields;
+                row.number.disabled = row.range.disabled;
+            }
+        };
+
+        const bindBuildingReflectionsRow = (row, { min, max, digits, apply } = {}) => {
+            row.range.addEventListener('input', () => {
+                const cfg = ensureBuildingWindowVisualsOverride();
+                const next = clamp(row.range.value, min, max);
+                apply(cfg, next);
+                row.number.value = formatFloat(next, digits);
+                if (hasSelectedBuilding) this._notifySelectedWindowVisualsChanged();
+            });
+            row.number.addEventListener('change', () => {
+                const cfg = ensureBuildingWindowVisualsOverride();
+                const next = clamp(row.number.value, min, max);
+                apply(cfg, next);
+                row.range.value = String(next);
+                row.number.value = formatFloat(next, digits);
+                if (hasSelectedBuilding) this._notifySelectedWindowVisualsChanged();
+                this._renderLayersPanel();
+            });
+        };
+
+        buildingReflectionsOverrideToggle.input.addEventListener('change', () => {
+            if (buildingReflectionsOverrideToggle.input.checked) {
+                ensureBuildingWindowVisualsOverride();
+                if (hasSelectedBuilding) this._notifySelectedWindowVisualsChanged();
+            } else {
+                setActiveBuildingWindowVisuals(null);
+            }
+            this._renderLayersPanel();
+        });
+
+        buildingReflectionsEnabledToggle.input.addEventListener('change', () => {
+            const cfg = ensureBuildingWindowVisualsOverride();
+            cfg.reflective.enabled = !!buildingReflectionsEnabledToggle.input.checked;
+            if (hasSelectedBuilding) this._notifySelectedWindowVisualsChanged();
+            this._renderLayersPanel();
+        });
+
+        bindBuildingReflectionsRow(buildingReflectionsOpacityRow, { min: 0.0, max: 1.0, digits: 2, apply: (cfg, v) => { cfg.reflective.opacity = v; } });
+        bindBuildingReflectionsRow(buildingReflectionsOffsetRow, { min: -0.1, max: 0.1, digits: 3, apply: (cfg, v) => { cfg.reflective.layerOffset = v; } });
+        bindBuildingReflectionsRow(buildingReflectionsEnvMapIntensityRow, { min: 0.0, max: 5.0, digits: 2, apply: (cfg, v) => { cfg.reflective.glass.envMapIntensity = v; } });
+        bindBuildingReflectionsRow(buildingReflectionsRoughnessRow, { min: 0.0, max: 1.0, digits: 2, apply: (cfg, v) => { cfg.reflective.glass.roughness = v; } });
+        bindBuildingReflectionsRow(buildingReflectionsTransmissionRow, { min: 0.0, max: 1.0, digits: 2, apply: (cfg, v) => { cfg.reflective.glass.transmission = v; } });
+        bindBuildingReflectionsRow(buildingReflectionsIorRow, { min: 1.0, max: 2.5, digits: 2, apply: (cfg, v) => { cfg.reflective.glass.ior = v; } });
+        bindBuildingReflectionsRow(buildingReflectionsMetalnessRow, { min: 0.0, max: 1.0, digits: 2, apply: (cfg, v) => { cfg.reflective.glass.metalness = v; } });
+
+        syncBuildingWindowReflectionsUi();
+        this.layersList.appendChild(buildingReflections.details);
 
         const getStyleOption = (id) => (this._buildingStyleOptions ?? []).find((opt) => opt?.id === id) ?? null;
         const wallTextureDefs = [
@@ -2131,6 +2359,7 @@ export class BuildingFabricationUI {
                     beltExtrudeRow.range.disabled = !allow || !layer.belt.enabled;
                     beltExtrudeRow.number.disabled = !allow || !layer.belt.enabled;
                     beltMaterialPicker.button.disabled = !allow || !layer.belt.enabled;
+                    beltTilingController.syncDisabled();
                     this._notifySelectedLayersChanged();
                 });
                 beltGroup.body.appendChild(beltToggle.toggle);
@@ -2193,7 +2422,7 @@ export class BuildingFabricationUI {
                 const beltMaterial = layer?.belt?.material ?? { kind: 'color', id: BELT_COURSE_COLOR.OFFWHITE };
                 if (beltMaterial?.kind === 'texture') {
                     const styleId = typeof beltMaterial.id === 'string' && beltMaterial.id ? beltMaterial.id : BUILDING_STYLE.DEFAULT;
-                    const found = getStyleOption(styleId) ?? null;
+                    const found = getWallTextureOption(styleId) ?? null;
                     const label = found?.label ?? styleId;
                     beltMaterialPicker.text.textContent = label;
                     setMaterialThumbToTexture(beltMaterialPicker.thumb, found?.wallTextureUrl ?? '', label);
@@ -2209,7 +2438,7 @@ export class BuildingFabricationUI {
                     openMaterialPicker({
                         title: 'Belt material',
                         material: layer.belt.material ?? beltMaterial,
-                        textureOptions: textureMaterialOptions,
+                        textureOptions: wallTextureMaterialOptions,
                         colorOptions: beltColorMaterialOptions,
                         onSelect: (spec) => {
                             layer.belt.material = spec;
@@ -2219,7 +2448,7 @@ export class BuildingFabricationUI {
                                 beltMaterialPicker.text.textContent = label;
                                 setMaterialThumbToColor(beltMaterialPicker.thumb, found?.hex ?? 0xffffff);
                             } else {
-                                const found = getStyleOption(spec.id) ?? null;
+                                const found = getWallTextureOption(spec.id) ?? null;
                                 const label = found?.label ?? spec.id;
                                 beltMaterialPicker.text.textContent = label;
                                 setMaterialThumbToTexture(beltMaterialPicker.thumb, found?.wallTextureUrl ?? '', label);
@@ -2230,17 +2459,49 @@ export class BuildingFabricationUI {
                 });
                 beltGroup.body.appendChild(beltMaterialPicker.row);
 
-                const { windowsGroup, pbrGroup, columnsGroup } = this._windowUI.appendLayerWindowsUI({
+                const beltTilingController = createTextureTilingMiniController({
+                    mode: 'inline',
+                    title: 'Texture tiling',
+                    allow,
+                    isActive: () => !!layer?.belt?.enabled,
+                    tiling: (layer.belt.tiling ??= {}),
+                    defaults: { tileMeters: 2.0 },
+                    hintText: 'Overrides the material tile size in meters.',
+                    onChange: notifySelectedLayersChanged
+                });
+                beltTilingController.mount(beltGroup.body);
+                this._layerMiniControllers.push(beltTilingController);
+
+                const baseWindowVisualsForFloors = hasSelectedBuilding
+                    ? (this._selectedWindowVisuals ?? globalWindowVisuals)
+                    : (this._templateWindowVisuals ?? globalWindowVisuals);
+                const baseWindowVisualsLabel = hasSelectedBuilding
+                    ? (this._selectedWindowVisuals ? 'building' : 'global')
+                    : (this._templateWindowVisuals ? 'template' : 'global');
+
+                const { windowsGroup, reflectionsGroup, pbrGroup, columnsGroup } = this._windowUI.appendLayerWindowsUI({
                     parent: null,
                     allow,
                     scopeKey,
                     layerId,
                     layer,
+                    baseWindowVisuals: baseWindowVisualsForFloors,
+                    baseWindowVisualsLabel,
+                    onCopyWindowVisualsToAllFloors: (cfg) => {
+                        const next = cfg && typeof cfg === 'object' ? cfg : null;
+                        for (const entry of layers) {
+                            if (entry?.type !== LAYER_TYPE.FLOOR) continue;
+                            entry.windows ??= {};
+                            entry.windows.windowVisuals = next ? deepClone(next) : null;
+                        }
+                        this._renderLayersPanel();
+                    },
                     openMaterialPicker,
-                    textureMaterialOptions,
+                    textureMaterialOptions: wallTextureMaterialOptions,
                     beltColorMaterialOptions,
-                    getStyleOption,
+                    getStyleOption: getWallTextureOption,
                     getBeltColorOption,
+                    registerMiniController: (ctrl) => this._layerMiniControllers.push(ctrl),
                     onChange: notifySelectedLayersChanged
                 });
 
@@ -2255,6 +2516,7 @@ export class BuildingFabricationUI {
                 layerSection.body.appendChild(wallsGroup.details);
                 layerSection.body.appendChild(beltGroup.details);
                 layerSection.body.appendChild(windowsGroup.details);
+                layerSection.body.appendChild(reflectionsGroup.details);
                 layerSection.body.appendChild(pbrGroup.details);
                 layerSection.body.appendChild(columnsGroup.details);
                 layerSection.body.appendChild(doorsGroup.details);
@@ -2287,7 +2549,7 @@ export class BuildingFabricationUI {
                 const roofMaterial = layer?.roof?.material ?? { kind: 'color', id: layer?.roof?.color ?? ROOF_COLOR.DEFAULT };
                 if (roofMaterial?.kind === 'texture') {
                     const styleId = typeof roofMaterial.id === 'string' && roofMaterial.id ? roofMaterial.id : BUILDING_STYLE.DEFAULT;
-                    const found = getStyleOption(styleId) ?? null;
+                    const found = getWallTextureOption(styleId) ?? null;
                     const label = found?.label ?? styleId;
                     roofMaterialPicker.text.textContent = label;
                     setMaterialThumbToTexture(roofMaterialPicker.thumb, found?.wallTextureUrl ?? '', label);
@@ -2303,7 +2565,7 @@ export class BuildingFabricationUI {
                     openMaterialPicker({
                         title: 'Roof material',
                         material: layer.roof.material ?? roofMaterial,
-                        textureOptions: textureMaterialOptions,
+                        textureOptions: wallTextureMaterialOptions,
                         colorOptions: roofColorMaterialOptions,
                         onSelect: (spec) => {
                             layer.roof.material = spec;
@@ -2315,7 +2577,7 @@ export class BuildingFabricationUI {
                                 roofMaterialPicker.text.textContent = label;
                                 setMaterialThumbToColor(roofMaterialPicker.thumb, found?.hex ?? 0xffffff, { isDefaultRoof: spec.id === ROOF_COLOR.DEFAULT });
                             } else {
-                                const found = getStyleOption(spec.id) ?? null;
+                                const found = getWallTextureOption(spec.id) ?? null;
                                 const label = found?.label ?? spec.id;
                                 roofMaterialPicker.text.textContent = label;
                                 setMaterialThumbToTexture(roofMaterialPicker.thumb, found?.wallTextureUrl ?? '', label);
@@ -2435,7 +2697,7 @@ export class BuildingFabricationUI {
                 const ringMaterial = layer?.ring?.material ?? { kind: 'color', id: BELT_COURSE_COLOR.OFFWHITE };
                 if (ringMaterial?.kind === 'texture') {
                     const styleId = typeof ringMaterial.id === 'string' && ringMaterial.id ? ringMaterial.id : BUILDING_STYLE.DEFAULT;
-                    const found = getStyleOption(styleId) ?? null;
+                    const found = getWallTextureOption(styleId) ?? null;
                     const label = found?.label ?? styleId;
                     ringMaterialPicker.text.textContent = label;
                     setMaterialThumbToTexture(ringMaterialPicker.thumb, found?.wallTextureUrl ?? '', label);
@@ -2451,7 +2713,7 @@ export class BuildingFabricationUI {
                     openMaterialPicker({
                         title: 'Ring material',
                         material: layer.ring.material ?? ringMaterial,
-                        textureOptions: textureMaterialOptions,
+                        textureOptions: wallTextureMaterialOptions,
                         colorOptions: beltColorMaterialOptions,
                         onSelect: (spec) => {
                             layer.ring.material = spec;
@@ -2461,7 +2723,7 @@ export class BuildingFabricationUI {
                                 ringMaterialPicker.text.textContent = label;
                                 setMaterialThumbToColor(ringMaterialPicker.thumb, found?.hex ?? 0xffffff);
                             } else {
-                                const found = getStyleOption(spec.id) ?? null;
+                                const found = getWallTextureOption(spec.id) ?? null;
                                 const label = found?.label ?? spec.id;
                                 ringMaterialPicker.text.textContent = label;
                                 setMaterialThumbToTexture(ringMaterialPicker.thumb, found?.wallTextureUrl ?? '', label);
@@ -2471,6 +2733,19 @@ export class BuildingFabricationUI {
                     });
                 });
                 layerSection.body.appendChild(ringMaterialPicker.row);
+
+                const ringTilingController = createTextureTilingMiniController({
+                    mode: 'inline',
+                    title: 'Texture tiling',
+                    allow,
+                    isActive: () => !!layer?.ring?.enabled,
+                    tiling: (layer.ring.tiling ??= {}),
+                    defaults: { tileMeters: 2.0 },
+                    hintText: 'Overrides the material tile size in meters.',
+                    onChange: notifySelectedLayersChanged
+                });
+                ringTilingController.mount(layerSection.body);
+                this._layerMiniControllers.push(ringTilingController);
 
                 ringToggle.input.addEventListener('change', () => {
                     layer.ring.enabled = !!ringToggle.input.checked;
@@ -2482,6 +2757,7 @@ export class BuildingFabricationUI {
                     ringHeightRow.range.disabled = !allow || !enabled;
                     ringHeightRow.number.disabled = ringHeightRow.range.disabled;
                     ringMaterialPicker.button.disabled = !allow || !enabled;
+                    ringTilingController.syncDisabled();
                     this._notifySelectedLayersChanged();
                 });
             }

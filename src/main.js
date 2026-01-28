@@ -14,6 +14,7 @@ import { BuildingFabricationState } from './states/BuildingFabricationState.js';
 import { InspectorRoomState } from './states/InspectorRoomState.js';
 import { RoadDebuggerState } from './states/RoadDebuggerState.js';
 import { OptionsState } from './states/OptionsState.js';
+import { ensureGlobalPerfBar } from './graphics/gui/perf_bar/PerfBar.js';
 
 function isEditableTarget(target) {
     const el = target && typeof target === 'object' ? target : null;
@@ -23,9 +24,13 @@ function isEditableTarget(target) {
     return !!el.isContentEditable;
 }
 
+const perfBar = ensureGlobalPerfBar();
+
 const canvas = document.getElementById('game-canvas');
 
 const engine = new GameEngine({ canvas });
+perfBar.setRenderer(engine.renderer);
+engine.addFrameListener((frame) => perfBar.onFrame(frame));
 const sm = new StateMachine();
 
 sm.register('welcome', new WelcomeState(engine, sm));

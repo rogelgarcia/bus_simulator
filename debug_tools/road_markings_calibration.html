@@ -5,7 +5,11 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Road Markings Calibration</title>
     <link rel="icon" href="../favicon.ico" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
     <link rel="stylesheet" href="../src/graphics/gui/shared/styles.css" />
+    <link rel="stylesheet" href="../src/graphics/gui/perf_bar/styles.css" />
     <link rel="stylesheet" href="../src/graphics/gui/options/styles.css" />
 </head>
 <body>
@@ -50,8 +54,10 @@
 <script type="module">
     import * as THREE from 'three';
     import { ROAD_MARKING_WHITE_TARGET_SUN_HEX, ROAD_MARKING_YELLOW_TARGET_SUN_HEX, hexToCssColor } from '/src/graphics/assets3d/materials/RoadMarkingsColors.js';
+    import { ensureGlobalPerfBar } from '/src/graphics/gui/perf_bar/PerfBar.js';
 
     document.body.classList.add('options-dock-open');
+    const perfBar = ensureGlobalPerfBar();
 
     const canvas = document.getElementById('game-canvas');
     const settingsEl = document.getElementById('calib-settings');
@@ -72,6 +78,7 @@
     if (THREE.ColorManagement) THREE.ColorManagement.enabled = true;
 
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    perfBar.setRenderer(renderer);
     renderer.setPixelRatio(1);
     const rect0 = canvas.getBoundingClientRect();
     renderer.setSize(Math.max(1, Math.floor(rect0.width)), Math.max(1, Math.floor(rect0.height)), false);
@@ -165,6 +172,7 @@
 
     function render() {
         renderer.render(scene, camera);
+        perfBar.onFrame({ nowMs: performance.now(), renderer });
     }
 
     function appendTextRow(parent, label, value) {

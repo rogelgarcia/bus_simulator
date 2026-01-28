@@ -70,6 +70,70 @@ function resolvePbrTileMetersFromUrls(urls, styleId) {
     return (Number.isFinite(t) && t > EPS) ? t : 1.0;
 }
 
+function computeUvTilingParams({ tiling, urls, styleId } = {}) {
+    const cfg = tiling && typeof tiling === 'object' ? tiling : null;
+    const uvEnabled = !!cfg?.uvEnabled;
+    const offsetU = uvEnabled ? clamp(cfg?.offsetU, -10.0, 10.0) : 0.0;
+    const offsetV = uvEnabled ? clamp(cfg?.offsetV, -10.0, 10.0) : 0.0;
+    const rotationDegrees = uvEnabled ? clamp(cfg?.rotationDegrees, -180.0, 180.0) : 0.0;
+
+    let scaleU = 1.0;
+    let scaleV = 1.0;
+    if (cfg?.enabled) {
+        const baseTileMeters = resolvePbrTileMetersFromUrls(urls, styleId);
+        const desiredTileMetersU = clamp(cfg?.tileMetersU ?? cfg?.tileMeters, 0.1, 100.0);
+        const desiredTileMetersV = clamp(cfg?.tileMetersV ?? cfg?.tileMeters, 0.01, 100.0);
+        scaleU = baseTileMeters / desiredTileMetersU;
+        scaleV = baseTileMeters / desiredTileMetersV;
+    }
+
+    const apply = uvEnabled
+        || Math.abs(scaleU - 1.0) > 1e-6
+        || Math.abs(scaleV - 1.0) > 1e-6;
+
+    return { apply, scaleU, scaleV, offsetU, offsetV, rotationDegrees };
+}
+
+function resolveBuildingWindowReflectiveConfig(windowVisuals) {
+    const windowVisualsObj = windowVisuals && typeof windowVisuals === 'object' ? windowVisuals : null;
+    const reflectiveObj = windowVisualsObj?.reflective && typeof windowVisualsObj.reflective === 'object'
+        ? windowVisualsObj.reflective
+        : {};
+    const enabled = reflectiveObj.enabled !== undefined ? !!reflectiveObj.enabled : false;
+    const glassObj = reflectiveObj.glass && typeof reflectiveObj.glass === 'object' ? reflectiveObj.glass : {};
+
+    const colorHex = Number.isFinite(glassObj.colorHex) ? ((Number(glassObj.colorHex) >>> 0) & 0xffffff) : 0xffffff;
+    const metalness = Number.isFinite(glassObj.metalness) ? clamp(glassObj.metalness, 0.0, 1.0) : 0.0;
+    const roughness = Number.isFinite(glassObj.roughness) ? clamp(glassObj.roughness, 0.0, 1.0) : 0.02;
+    const transmission = Number.isFinite(glassObj.transmission) ? clamp(glassObj.transmission, 0.0, 1.0) : 0.0;
+    const ior = Number.isFinite(glassObj.ior) ? clamp(glassObj.ior, 1.0, 2.5) : 2.2;
+    const envMapIntensity = Number.isFinite(glassObj.envMapIntensity) ? clamp(glassObj.envMapIntensity, 0.0, 5.0) : 4.0;
+
+    const wantsTransmission = transmission > 0.01;
+    const opacityDefault = wantsTransmission ? 1.0 : 0.85;
+    const opacity = Number.isFinite(reflectiveObj.opacity)
+        ? clamp(reflectiveObj.opacity, 0.0, 1.0)
+        : opacityDefault;
+    const offsetRaw = reflectiveObj.layerOffset ?? reflectiveObj.offset;
+    const layerOffset = Number.isFinite(offsetRaw)
+        ? clamp(offsetRaw, -0.1, 0.1)
+        : 0.02;
+
+    return {
+        enabled,
+        opacity,
+        layerOffset,
+        glass: {
+            colorHex,
+            metalness,
+            roughness,
+            transmission,
+            ior,
+            envMapIntensity
+        }
+    };
+}
+
 function signedArea(points) {
     let sum = 0;
     const n = points.length;
@@ -859,6 +923,7 @@ export function buildBuildingFabricationVisualParts({
     textureCache = null,
     renderer = null,
     windowVisuals = null,
+    windowVisualsIsOverride = false,
     colors = null,
     overlays = null,
     walls = null
@@ -896,42 +961,36 @@ export function buildBuildingFabricationVisualParts({
     const windowsGroup = new THREE.Group();
     windowsGroup.name = 'windows';
     windowsGroup.userData = windowsGroup.userData ?? {};
-    const windowVisualsObj = windowVisuals && typeof windowVisuals === 'object' ? windowVisuals : null;
-    const reflectiveObj = windowVisualsObj?.reflective && typeof windowVisualsObj.reflective === 'object' ? windowVisualsObj.reflective : {};
-    const reflectiveEnabled = reflectiveObj.enabled !== undefined ? !!reflectiveObj.enabled : false;
-    const glassObj = reflectiveObj.glass && typeof reflectiveObj.glass === 'object' ? reflectiveObj.glass : {};
-    const glassColorHex = Number.isFinite(glassObj.colorHex) ? ((Number(glassObj.colorHex) >>> 0) & 0xffffff) : 0xffffff;
-    const glassMetalness = Number.isFinite(glassObj.metalness) ? glassObj.metalness : 0.0;
-    const glassRoughness = Number.isFinite(glassObj.roughness) ? glassObj.roughness : 0.02;
-    const glassTransmission = Number.isFinite(glassObj.transmission) ? glassObj.transmission : 0.0;
-    const glassIor = Number.isFinite(glassObj.ior) ? glassObj.ior : 2.2;
-    const glassEnvMapIntensity = Number.isFinite(glassObj.envMapIntensity) ? glassObj.envMapIntensity : 4.0;
+    const baseReflectiveCfg = resolveBuildingWindowReflectiveConfig(windowVisuals);
+    const baseVisualsOverride = !!windowVisualsIsOverride;
 
     windowsGroup.userData.buildingWindowVisuals = Object.freeze({
         reflective: Object.freeze({
-            enabled: reflectiveEnabled,
+            enabled: baseReflectiveCfg.enabled,
+            opacity: baseReflectiveCfg.opacity,
+            layerOffset: baseReflectiveCfg.layerOffset,
             glass: Object.freeze({
-                colorHex: glassColorHex,
-                metalness: glassMetalness,
-                roughness: glassRoughness,
-                transmission: glassTransmission,
-                ior: glassIor,
-                envMapIntensity: glassEnvMapIntensity
+                colorHex: baseReflectiveCfg.glass.colorHex,
+                metalness: baseReflectiveCfg.glass.metalness,
+                roughness: baseReflectiveCfg.glass.roughness,
+                transmission: baseReflectiveCfg.glass.transmission,
+                ior: baseReflectiveCfg.glass.ior,
+                envMapIntensity: baseReflectiveCfg.glass.envMapIntensity
             })
         })
     });
 
-    const glassLift = 0.02;
-    const makeGlassMaterial = (alphaMap) => {
-        const wantsTransmission = glassTransmission > 0.01;
+    const makeGlassMaterial = (alphaMap, reflectiveCfg = null, { isOverride = false } = {}) => {
+        const cfg = reflectiveCfg && typeof reflectiveCfg === 'object' ? reflectiveCfg : baseReflectiveCfg;
+        const wantsTransmission = cfg.glass.transmission > 0.01;
         const mat = new THREE.MeshPhysicalMaterial({
-            color: glassColorHex,
-            metalness: glassMetalness,
-            roughness: glassRoughness,
-            transmission: wantsTransmission ? glassTransmission : 0.0,
-            ior: glassIor,
-            envMapIntensity: glassEnvMapIntensity,
-            opacity: wantsTransmission ? 1.0 : 0.85
+            color: cfg.glass.colorHex,
+            metalness: cfg.glass.metalness,
+            roughness: cfg.glass.roughness,
+            transmission: wantsTransmission ? cfg.glass.transmission : 0.0,
+            ior: cfg.glass.ior,
+            envMapIntensity: cfg.glass.envMapIntensity,
+            opacity: cfg.opacity
         });
         mat.transparent = true;
         mat.alphaMap = alphaMap ?? null;
@@ -941,8 +1000,10 @@ export function buildBuildingFabricationVisualParts({
         mat.polygonOffsetFactor = -1;
         mat.polygonOffsetUnits = -1;
         mat.userData = mat.userData ?? {};
-        mat.userData.iblEnvMapIntensityScale = glassEnvMapIntensity;
+        mat.userData.iblEnvMapIntensityScale = cfg.glass.envMapIntensity;
         mat.userData.buildingWindowGlass = true;
+        mat.userData.buildingWindowGlassOverride = !!isOverride;
+        mat.userData.buildingWindowGlassEnabled = !!cfg.enabled;
         return mat;
     };
 
@@ -1014,23 +1075,14 @@ export function buildBuildingFabricationVisualParts({
             const wallStyleId = layer.material?.kind === 'texture' ? layer.material.id : null;
             const wallUrls = wallStyleId ? resolveBuildingStyleWallMaterialUrls(wallStyleId) : null;
             const wallTiling = layer?.tiling ?? null;
-            const wallUvEnabled = !!wallTiling?.uvEnabled;
-            const wallUvOffsetU = wallUvEnabled ? clamp(wallTiling?.offsetU, -10.0, 10.0) : 0.0;
-            const wallUvOffsetV = wallUvEnabled ? clamp(wallTiling?.offsetV, -10.0, 10.0) : 0.0;
-            const wallUvRotationDegrees = wallUvEnabled ? clamp(wallTiling?.rotationDegrees, -180.0, 180.0) : 0.0;
-
-            let wallUvScale = 1.0;
-            if (wallTiling?.enabled && (Number(wallTiling?.tileMeters) || 0) > EPS) {
-                const baseTileMeters = resolvePbrTileMetersFromUrls(wallUrls, wallStyleId);
-                const desiredTileMeters = clamp(wallTiling.tileMeters, 0.1, 100.0);
-                wallUvScale = baseTileMeters / desiredTileMeters;
-            }
-            if (wallUvEnabled || Math.abs(wallUvScale - 1.0) > 1e-6) {
+            const wallUvCfg = computeUvTilingParams({ tiling: wallTiling, urls: wallUrls, styleId: wallStyleId });
+            if (wallUvCfg.apply) {
                 applyUvTilingToMeshStandardMaterial(wallMat, {
-                    scale: wallUvScale,
-                    offsetU: wallUvOffsetU,
-                    offsetV: wallUvOffsetV,
-                    rotationDegrees: wallUvRotationDegrees
+                    scaleU: wallUvCfg.scaleU,
+                    scaleV: wallUvCfg.scaleV,
+                    offsetU: wallUvCfg.offsetU,
+                    offsetV: wallUvCfg.offsetV,
+                    rotationDegrees: wallUvCfg.rotationDegrees
                 });
             }
 
@@ -1058,6 +1110,21 @@ export function buildBuildingFabricationVisualParts({
                 baseColorHex,
                 textureCache
             });
+            const beltStyleId = beltCfg.material?.kind === 'texture' ? beltCfg.material.id : null;
+            const beltUrls = beltStyleId ? resolveBuildingStyleWallMaterialUrls(beltStyleId) : null;
+            const beltTiling = beltCfg?.tiling ?? null;
+            if (beltStyleId) {
+                const beltUvCfg = computeUvTilingParams({ tiling: beltTiling, urls: beltUrls, styleId: beltStyleId });
+                if (beltUvCfg.apply) {
+                    applyUvTilingToMeshStandardMaterial(beltMat, {
+                        scaleU: beltUvCfg.scaleU,
+                        scaleV: beltUvCfg.scaleV,
+                        offsetU: beltUvCfg.offsetU,
+                        offsetV: beltUvCfg.offsetV,
+                        rotationDegrees: beltUvCfg.rotationDegrees
+                    });
+                }
+            }
 
             const winCfg = layer.windows ?? null;
             const winEnabled = !!winCfg?.enabled;
@@ -1069,6 +1136,7 @@ export function buildBuildingFabricationVisualParts({
             const winParams = winCfg?.params ?? null;
             const winFakeDepth = winCfg?.fakeDepth ?? null;
             const winPbr = winCfg?.pbr ?? null;
+            const winVisualsOverride = winCfg?.windowVisuals ?? null;
 
             const columns = winCfg?.spaceColumns ?? null;
             const colsEnabled = !!columns?.enabled;
@@ -1081,6 +1149,21 @@ export function buildBuildingFabricationVisualParts({
                 baseColorHex,
                 textureCache
             });
+            const colsStyleId = columns?.material?.kind === 'texture' ? columns.material.id : null;
+            const colsUrls = colsStyleId ? resolveBuildingStyleWallMaterialUrls(colsStyleId) : null;
+            const colsTiling = columns?.tiling ?? null;
+            if (colsStyleId) {
+                const colsUvCfg = computeUvTilingParams({ tiling: colsTiling, urls: colsUrls, styleId: colsStyleId });
+                if (colsUvCfg.apply) {
+                    applyUvTilingToMeshStandardMaterial(colsMat, {
+                        scaleU: colsUvCfg.scaleU,
+                        scaleV: colsUvCfg.scaleV,
+                        offsetU: colsUvCfg.offsetU,
+                        offsetV: colsUvCfg.offsetV,
+                        rotationDegrees: colsUvCfg.rotationDegrees
+                    });
+                }
+            }
 
             const windowOffset = clamp(winCfg?.offset, 0.0, 0.2);
             const cornerEps = clamp(winCfg?.cornerEps, 0.01, 2.0);
@@ -1094,12 +1177,15 @@ export function buildBuildingFabricationVisualParts({
                 pbr: winPbr
             }) : null;
 
+            const reflectiveCfg = winVisualsOverride ? resolveBuildingWindowReflectiveConfig(winVisualsOverride) : baseReflectiveCfg;
+            const glassLift = reflectiveCfg.layerOffset;
+            const glassIsOverride = baseVisualsOverride || !!winVisualsOverride;
             const windowGlassMat = (winEnabled && windowMat) ? makeGlassMaterial(getWindowGlassMaskTexture({
                 typeId: winTypeId,
                 params: winParams,
                 windowWidth: winWidth,
                 windowHeight: winDesiredHeight
-            })) : null;
+            }), reflectiveCfg, { isOverride: glassIsOverride }) : null;
 
             const windowRuns = [];
             if (winEnabled && windowMat && wallOuter.length) {
@@ -1351,23 +1437,14 @@ export function buildBuildingFabricationVisualParts({
             const roofStyleId = roofCfg.material?.kind === 'texture' ? roofCfg.material.id : null;
             const roofUrls = roofStyleId ? resolveBuildingStyleWallMaterialUrls(roofStyleId) : null;
             const roofTiling = roofCfg?.tiling ?? null;
-            const roofUvEnabled = !!roofTiling?.uvEnabled;
-            const roofUvOffsetU = roofUvEnabled ? clamp(roofTiling?.offsetU, -10.0, 10.0) : 0.0;
-            const roofUvOffsetV = roofUvEnabled ? clamp(roofTiling?.offsetV, -10.0, 10.0) : 0.0;
-            const roofUvRotationDegrees = roofUvEnabled ? clamp(roofTiling?.rotationDegrees, -180.0, 180.0) : 0.0;
-
-            let roofUvScale = 1.0;
-            if (roofTiling?.enabled && (Number(roofTiling?.tileMeters) || 0) > EPS) {
-                const baseTileMeters = resolvePbrTileMetersFromUrls(roofUrls, roofStyleId);
-                const desiredTileMeters = clamp(roofTiling.tileMeters, 0.1, 100.0);
-                roofUvScale = baseTileMeters / desiredTileMeters;
-            }
-            if (roofUvEnabled || Math.abs(roofUvScale - 1.0) > 1e-6) {
+            const roofUvCfg = computeUvTilingParams({ tiling: roofTiling, urls: roofUrls, styleId: roofStyleId });
+            if (roofUvCfg.apply) {
                 applyUvTilingToMeshStandardMaterial(roofMat, {
-                    scale: roofUvScale,
-                    offsetU: roofUvOffsetU,
-                    offsetV: roofUvOffsetV,
-                    rotationDegrees: roofUvRotationDegrees
+                    scaleU: roofUvCfg.scaleU,
+                    scaleV: roofUvCfg.scaleV,
+                    offsetU: roofUvCfg.offsetU,
+                    offsetV: roofUvCfg.offsetV,
+                    rotationDegrees: roofUvCfg.rotationDegrees
                 });
             }
 
@@ -1416,6 +1493,21 @@ export function buildBuildingFabricationVisualParts({
                     baseColorHex,
                     textureCache
                 });
+                const ringStyleId = ring?.material?.kind === 'texture' ? ring.material.id : null;
+                const ringUrls = ringStyleId ? resolveBuildingStyleWallMaterialUrls(ringStyleId) : null;
+                const ringTiling = ring?.tiling ?? null;
+                if (ringStyleId) {
+                    const ringUvCfg = computeUvTilingParams({ tiling: ringTiling, urls: ringUrls, styleId: ringStyleId });
+                    if (ringUvCfg.apply) {
+                        applyUvTilingToMeshStandardMaterial(ringMat, {
+                            scaleU: ringUvCfg.scaleU,
+                            scaleV: ringUvCfg.scaleV,
+                            offsetU: ringUvCfg.offsetU,
+                            offsetV: ringUvCfg.offsetV,
+                            rotationDegrees: ringUvCfg.rotationDegrees
+                        });
+                    }
+                }
 
                 for (const outerLoop of planOuter) {
                     if (!outerLoop || outerLoop.length < 3) continue;
@@ -1478,7 +1570,7 @@ export function buildBuildingFabricationVisualParts({
             mesh.receiveShadow = false;
             mesh.renderOrder = bucket.renderOrder;
             if (bucket.material?.userData?.buildingWindowGlass === true) {
-                mesh.visible = reflectiveEnabled;
+                mesh.visible = bucket.material.userData.buildingWindowGlassEnabled !== false;
             }
             mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
 

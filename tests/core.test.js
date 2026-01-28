@@ -1514,10 +1514,10 @@ async function runTests() {
         const [mainResp, grassResp, grassBaseResp, grassNormalResp, grassRoughResp, grassAoResp] = await Promise.all([
             fetch('/assets/public/main.png', { method: 'HEAD' }),
             fetch('/assets/public/grass.png', { method: 'HEAD' }),
-            fetch('/assets/public/pbr/grass_004/basecolor.png', { method: 'HEAD' }),
-            fetch('/assets/public/pbr/grass_004/normal_gl.png', { method: 'HEAD' }),
-            fetch('/assets/public/pbr/grass_004/roughness.png', { method: 'HEAD' }),
-            fetch('/assets/public/pbr/grass_004/ao.png', { method: 'HEAD' })
+            fetch('/assets/public/pbr/grass_001/basecolor.png', { method: 'HEAD' }),
+            fetch('/assets/public/pbr/grass_001/normal_gl.png', { method: 'HEAD' }),
+            fetch('/assets/public/pbr/grass_001/roughness.png', { method: 'HEAD' }),
+            fetch('/assets/public/pbr/grass_001/ao.png', { method: 'HEAD' })
         ]);
 
         test('Assets: public main.png served', () => {
@@ -1528,20 +1528,20 @@ async function runTests() {
             assertTrue(grassResp.ok, 'Expected /assets/public/grass.png to be served.');
         });
 
-        test('Assets: grass_004 PBR basecolor served', () => {
-            assertTrue(grassBaseResp.ok, 'Expected /assets/public/pbr/grass_004/basecolor.png to be served.');
+        test('Assets: grass_001 PBR basecolor served', () => {
+            assertTrue(grassBaseResp.ok, 'Expected /assets/public/pbr/grass_001/basecolor.png to be served.');
         });
 
-        test('Assets: grass_004 PBR normal served', () => {
-            assertTrue(grassNormalResp.ok, 'Expected /assets/public/pbr/grass_004/normal_gl.png to be served.');
+        test('Assets: grass_001 PBR normal served', () => {
+            assertTrue(grassNormalResp.ok, 'Expected /assets/public/pbr/grass_001/normal_gl.png to be served.');
         });
 
-        test('Assets: grass_004 PBR roughness served', () => {
-            assertTrue(grassRoughResp.ok, 'Expected /assets/public/pbr/grass_004/roughness.png to be served.');
+        test('Assets: grass_001 PBR roughness served', () => {
+            assertTrue(grassRoughResp.ok, 'Expected /assets/public/pbr/grass_001/roughness.png to be served.');
         });
 
-        test('Assets: grass_004 PBR AO served', () => {
-            assertTrue(grassAoResp.ok, 'Expected /assets/public/pbr/grass_004/ao.png to be served.');
+        test('Assets: grass_001 PBR AO served', () => {
+            assertTrue(grassAoResp.ok, 'Expected /assets/public/pbr/grass_001/ao.png to be served.');
         });
     } catch (e) {
         errors.push({ name: 'Assets: public assets served', error: e?.message || e });
@@ -1553,6 +1553,19 @@ async function runTests() {
         assertTrue(!!welcome, 'Expected #ui-welcome to exist.');
         const text = String(welcome.textContent ?? '');
         assertTrue(text.includes('8: Debugs'), 'Expected welcome screen to mention "8: Debugs".');
+    });
+
+    test('PerfBar: present and canvas respects top inset', () => {
+        const bar = document.getElementById('ui-perf-bar');
+        assertTrue(!!bar, 'Expected #ui-perf-bar to exist.');
+
+        const canvas = document.getElementById('game-canvas');
+        assertTrue(!!canvas, 'Expected #game-canvas to exist.');
+
+        const hRaw = getComputedStyle(document.body).getPropertyValue('--global-top-bar-height');
+        const h = Number.parseFloat(hRaw) || 0;
+        const rect = canvas.getBoundingClientRect();
+        assertNear(rect.top, h, 1.0, 'Expected canvas top to match --global-top-bar-height.');
     });
 
     test('WelcomeState: pressing 8 opens setup debugs menu', async () => {
@@ -1585,7 +1598,7 @@ async function runTests() {
     const { BuildingFabricationScene, getHighestIndex3x2FootprintTileIds } = await import('/src/graphics/gui/building_fabrication/BuildingFabricationScene.js');
     const { offsetOrthogonalLoopXZ } = await import('/src/graphics/assets3d/generators/buildings/BuildingGenerator.js');
     const { buildBuildingFabricationVisualParts } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationGenerator.js');
-    const { WALL_BASE_MATERIAL_DEFAULT, createDefaultFloorLayer, createDefaultRoofLayer } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationTypes.js');
+    const { WALL_BASE_MATERIAL_DEFAULT, createDefaultFloorLayer, createDefaultRoofLayer, normalizeBuildingWindowVisualsConfig } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationTypes.js');
     const {
         WINDOW_TYPE,
         getWindowNormalMapTexture,
@@ -1606,6 +1619,35 @@ async function runTests() {
         assertEqual(defaults.tintHex, WALL_BASE_MATERIAL_DEFAULT.tintHex, 'Expected default tintHex.');
         assertEqual(defaults.roughness, WALL_BASE_MATERIAL_DEFAULT.roughness, 'Expected default roughness.');
         assertEqual(defaults.normalStrength, WALL_BASE_MATERIAL_DEFAULT.normalStrength, 'Expected default normalStrength.');
+    });
+
+    test('BuildingFabricationTypes: windows.windowVisuals defaults to inherit', () => {
+        const floor = createDefaultFloorLayer();
+        assertTrue(!!floor.windows, 'Expected windows config.');
+        assertEqual(floor.windows.windowVisuals, null, 'Expected windows.windowVisuals to default to null (inherit).');
+    });
+
+    test('BuildingFabricationTypes: windowVisuals normalization defaults/clamping', () => {
+        const a = normalizeBuildingWindowVisualsConfig({
+            reflective: {
+                enabled: true,
+                opacity: 5,
+                layerOffset: 99,
+                glass: { transmission: 0.5 }
+            }
+        });
+        assertTrue(a.reflective.enabled === true, 'Expected reflective enabled.');
+        assertNear(a.reflective.opacity, 1.0, 1e-6, 'Expected default/clamped opacity when transmission > 0.');
+        assertNear(a.reflective.layerOffset, 0.1, 1e-6, 'Expected layerOffset clamped to max.');
+
+        const b = normalizeBuildingWindowVisualsConfig({
+            reflective: {
+                enabled: true,
+                glass: { transmission: 0.0 }
+            }
+        });
+        assertNear(b.reflective.opacity, 0.85, 1e-6, 'Expected opacity default 0.85 when transmission is 0.');
+        assertNear(b.reflective.layerOffset, 0.02, 1e-6, 'Expected layerOffset default 0.02.');
     });
 
     test('BuildingFabricationUI: view toggles live in view panel', () => {
@@ -8024,6 +8066,10 @@ async function runTests() {
         assertTrue(!!floor.tiling, 'Expected floor tiling config.');
         assertFalse(floor.tiling.enabled, 'Expected floor tiling disabled by default.');
         assertTrue(Number.isFinite(floor.tiling.tileMeters), 'Expected floor tileMeters to be a number.');
+        assertTrue(Number.isFinite(floor.tiling.tileMetersU), 'Expected floor tileMetersU to be a number.');
+        assertTrue(Number.isFinite(floor.tiling.tileMetersV), 'Expected floor tileMetersV to be a number.');
+        assertEqual(floor.tiling.tileMetersU, floor.tiling.tileMeters, 'Expected floor tileMetersU to default to tileMeters.');
+        assertEqual(floor.tiling.tileMetersV, floor.tiling.tileMeters, 'Expected floor tileMetersV to default to tileMeters.');
         assertFalse(floor.tiling.uvEnabled, 'Expected floor UV transform disabled by default.');
         assertEqual(floor.tiling.offsetU, 0.0, 'Expected floor UV offsetU default 0.');
         assertEqual(floor.tiling.offsetV, 0.0, 'Expected floor UV offsetV default 0.');
@@ -8036,6 +8082,10 @@ async function runTests() {
         assertTrue(!!roof.roof?.tiling, 'Expected roof tiling config.');
         assertFalse(roof.roof.tiling.enabled, 'Expected roof tiling disabled by default.');
         assertTrue(Number.isFinite(roof.roof.tiling.tileMeters), 'Expected roof tileMeters to be a number.');
+        assertTrue(Number.isFinite(roof.roof.tiling.tileMetersU), 'Expected roof tileMetersU to be a number.');
+        assertTrue(Number.isFinite(roof.roof.tiling.tileMetersV), 'Expected roof tileMetersV to be a number.');
+        assertEqual(roof.roof.tiling.tileMetersU, roof.roof.tiling.tileMeters, 'Expected roof tileMetersU to default to tileMeters.');
+        assertEqual(roof.roof.tiling.tileMetersV, roof.roof.tiling.tileMeters, 'Expected roof tileMetersV to default to tileMeters.');
         assertFalse(roof.roof.tiling.uvEnabled, 'Expected roof UV transform disabled by default.');
         assertEqual(roof.roof.tiling.offsetU, 0.0, 'Expected roof UV offsetU default 0.');
         assertEqual(roof.roof.tiling.offsetV, 0.0, 'Expected roof UV offsetV default 0.');
@@ -8043,6 +8093,49 @@ async function runTests() {
         assertTrue(!!roof.roof?.materialVariation, 'Expected roof materialVariation config.');
         assertFalse(roof.roof.materialVariation.enabled, 'Expected roof materialVariation disabled by default.');
         assertTrue(Number.isFinite(roof.roof.materialVariation.seedOffset), 'Expected roof seedOffset to be a number.');
+    });
+
+    test('BuildingFabricationTypes: belt/ring/columns include tiling defaults', () => {
+        const floor = createDefaultFloorLayer();
+        assertTrue(!!floor.belt?.tiling, 'Expected belt tiling config.');
+        assertFalse(floor.belt.tiling.enabled, 'Expected belt tiling disabled by default.');
+        assertTrue(Number.isFinite(floor.belt.tiling.tileMeters), 'Expected belt tileMeters to be a number.');
+        assertTrue(Number.isFinite(floor.belt.tiling.tileMetersU), 'Expected belt tileMetersU to be a number.');
+        assertTrue(Number.isFinite(floor.belt.tiling.tileMetersV), 'Expected belt tileMetersV to be a number.');
+
+        assertTrue(!!floor.windows?.spaceColumns?.tiling, 'Expected windows.spaceColumns tiling config.');
+        assertFalse(floor.windows.spaceColumns.tiling.enabled, 'Expected columns tiling disabled by default.');
+        assertTrue(Number.isFinite(floor.windows.spaceColumns.tiling.tileMeters), 'Expected columns tileMeters to be a number.');
+        assertTrue(Number.isFinite(floor.windows.spaceColumns.tiling.tileMetersU), 'Expected columns tileMetersU to be a number.');
+        assertTrue(Number.isFinite(floor.windows.spaceColumns.tiling.tileMetersV), 'Expected columns tileMetersV to be a number.');
+
+        const roof = createDefaultRoofLayer();
+        assertTrue(!!roof.ring?.tiling, 'Expected ring tiling config.');
+        assertFalse(roof.ring.tiling.enabled, 'Expected ring tiling disabled by default.');
+        assertTrue(Number.isFinite(roof.ring.tiling.tileMeters), 'Expected ring tileMeters to be a number.');
+        assertTrue(Number.isFinite(roof.ring.tiling.tileMetersU), 'Expected ring tileMetersU to be a number.');
+        assertTrue(Number.isFinite(roof.ring.tiling.tileMetersV), 'Expected ring tileMetersV to be a number.');
+    });
+
+    test('BuildingFabricationTypes: belt/roof/ring/columns accept PBR texture ids', () => {
+        const id = 'pbr.brick_wall_11';
+        const floor = createDefaultFloorLayer({
+            belt: { enabled: true, material: { kind: 'texture', id } },
+            windows: { spaceColumns: { enabled: true, material: { kind: 'texture', id } } }
+        });
+        assertEqual(floor.belt.material?.kind, 'texture', 'Expected belt material kind=texture.');
+        assertEqual(floor.belt.material?.id, id, 'Expected belt material to accept PBR id.');
+        assertEqual(floor.windows.spaceColumns.material?.kind, 'texture', 'Expected columns material kind=texture.');
+        assertEqual(floor.windows.spaceColumns.material?.id, id, 'Expected columns material to accept PBR id.');
+
+        const roof = createDefaultRoofLayer({
+            ring: { enabled: true, material: { kind: 'texture', id } },
+            roof: { material: { kind: 'texture', id } }
+        });
+        assertEqual(roof.ring.material?.kind, 'texture', 'Expected ring material kind=texture.');
+        assertEqual(roof.ring.material?.id, id, 'Expected ring material to accept PBR id.');
+        assertEqual(roof.roof.material?.kind, 'texture', 'Expected roof material kind=texture.');
+        assertEqual(roof.roof.material?.id, id, 'Expected roof material to accept PBR id.');
     });
 
     test('BuildingFabricationTypes: windows include fake depth defaults', () => {
@@ -8069,13 +8162,16 @@ async function runTests() {
         const original = [
             createDefaultFloorLayer({
                 tiling: { enabled: true, tileMeters: 3.5, uvEnabled: true, offsetU: 0.25, offsetV: -0.15, rotationDegrees: 45 },
-                materialVariation: { enabled: true, seedOffset: 7, macro: { enabled: true, intensity: 1.2 } }
+                materialVariation: { enabled: true, seedOffset: 7, macro: { enabled: true, intensity: 1.2 } },
+                belt: { tiling: { enabled: true, tileMetersU: 2.0, tileMetersV: 5.0 } },
+                windows: { spaceColumns: { tiling: { enabled: true, tileMetersU: 1.5, tileMetersV: 3.0, uvEnabled: true, offsetU: 0.1, offsetV: 0.2 } } }
             }),
             createDefaultRoofLayer({
                 roof: {
                     tiling: { enabled: true, tileMeters: 5.0, uvEnabled: true, offsetU: -0.2, offsetV: 0.33, rotationDegrees: -30 },
                     materialVariation: { enabled: true, seedOffset: 9, grime: { enabled: true, strength: 0.25 } }
-                }
+                },
+                ring: { tiling: { enabled: true, tileMetersU: 4.0, tileMetersV: 6.0 } }
             })
         ];
 
@@ -8083,16 +8179,22 @@ async function runTests() {
         cloned[0].tiling.tileMeters = 9.0;
         cloned[0].tiling.offsetU = 0.99;
         cloned[0].materialVariation.seedOffset = 123;
+        cloned[0].belt.tiling.tileMetersU = 9.0;
+        cloned[0].windows.spaceColumns.tiling.offsetU = 9.0;
         cloned[1].roof.tiling.tileMeters = 9.0;
         cloned[1].roof.tiling.rotationDegrees = 90;
         cloned[1].roof.materialVariation.seedOffset = 456;
+        cloned[1].ring.tiling.tileMetersV = 9.0;
 
         assertEqual(original[0].tiling.tileMeters, 3.5, 'Expected floor tiling to be cloned (no shared refs).');
         assertEqual(original[0].tiling.offsetU, 0.25, 'Expected floor tiling UV fields to be cloned (no shared refs).');
         assertEqual(original[0].materialVariation.seedOffset, 7, 'Expected floor materialVariation to be cloned (no shared refs).');
+        assertEqual(original[0].belt.tiling.tileMetersU, 2.0, 'Expected belt tiling to be cloned (no shared refs).');
+        assertEqual(original[0].windows.spaceColumns.tiling.offsetU, 0.1, 'Expected columns tiling to be cloned (no shared refs).');
         assertEqual(original[1].roof.tiling.tileMeters, 5.0, 'Expected roof tiling to be cloned (no shared refs).');
         assertEqual(original[1].roof.tiling.rotationDegrees, -30, 'Expected roof tiling UV fields to be cloned (no shared refs).');
         assertEqual(original[1].roof.materialVariation.seedOffset, 9, 'Expected roof materialVariation to be cloned (no shared refs).');
+        assertEqual(original[1].ring.tiling.tileMetersV, 6.0, 'Expected ring tiling to be cloned (no shared refs).');
     });
 
     test('BuildingFabricationTypes: cloneBuildingLayers clones window fakeDepth', () => {
@@ -8134,6 +8236,31 @@ async function runTests() {
         assertEqual(original[0].windows.pbr.roughness.contrast, 1.25, 'Expected window pbr.roughness to be cloned (no shared refs).');
         assertEqual(original[0].windows.pbr.border.thickness, 0.02, 'Expected window pbr.border to be cloned (no shared refs).');
         assertEqual(original[0].windows.pbr.border.strength, 0.45, 'Expected window pbr.border to be cloned (no shared refs).');
+    });
+
+    test('BuildingFabricationTypes: cloneBuildingLayers clones window windowVisuals', () => {
+        const original = [
+            createDefaultFloorLayer({
+                windows: {
+                    windowVisuals: {
+                        reflective: {
+                            enabled: true,
+                            opacity: 0.9,
+                            layerOffset: 0.05,
+                            glass: { envMapIntensity: 3.0, transmission: 0.5 }
+                        }
+                    }
+                }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+
+        const cloned = cloneBuildingLayers(original);
+        cloned[0].windows.windowVisuals.reflective.glass.envMapIntensity = 9.0;
+        cloned[0].windows.windowVisuals.reflective.layerOffset = -0.05;
+
+        assertEqual(original[0].windows.windowVisuals.reflective.glass.envMapIntensity, 3.0, 'Expected windowVisuals to be cloned (no shared refs).');
+        assertEqual(original[0].windows.windowVisuals.reflective.layerOffset, 0.05, 'Expected windowVisuals to be cloned (no shared refs).');
     });
 
     // ========== InspectorRoomLightUtils Tests ==========

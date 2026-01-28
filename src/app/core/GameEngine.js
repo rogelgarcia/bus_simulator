@@ -114,6 +114,7 @@ export class GameEngine {
         this._stateMachine = null;
         this._running = false;
         this._lastT = 0;
+        this._frameListeners = new Set();
 
         this._onResize = () => this.resize();
         if (this._autoResize) window.addEventListener('resize', this._onResize, { passive: true });
@@ -414,14 +415,39 @@ export class GameEngine {
         };
     }
 
-    _syncPixelRatio() {
+    _syncPixelRatio(width = null, height = null) {
         if (!this.renderer) return;
-        if (this._pixelRatioOverride !== null) {
-            this._post?.pipeline?.setPixelRatio?.(this._pixelRatioOverride);
-            return;
+        const w = Number(width);
+        const h = Number(height);
+
+        const requested = this._pixelRatioOverride !== null
+            ? this._pixelRatioOverride
+            : Math.min(devicePixelRatio, 2);
+
+        let next = requested;
+        const gl = this.renderer.getContext?.() ?? null;
+        if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0 && gl?.getParameter) {
+            const maxRenderbufferSize = Number(gl.getParameter(gl.MAX_RENDERBUFFER_SIZE));
+            const maxTextureSize = Number(gl.getParameter(gl.MAX_TEXTURE_SIZE));
+            const maxViewportDims = gl.getParameter(gl.MAX_VIEWPORT_DIMS);
+            const maxViewportWidth = Number(maxViewportDims?.[0]);
+            const maxViewportHeight = Number(maxViewportDims?.[1]);
+
+            const candidates = [
+                maxRenderbufferSize,
+                maxTextureSize,
+                maxViewportWidth,
+                maxViewportHeight
+            ].filter((value) => Number.isFinite(value) && value > 0);
+
+            const maxDim = candidates.length ? Math.min(...candidates) : null;
+            if (Number.isFinite(maxDim) && maxDim > 0) {
+                const maxPixelRatio = Math.min(maxDim / w, maxDim / h);
+                next = Math.min(requested, maxPixelRatio);
+            }
         }
 
-        const next = Math.min(devicePixelRatio, 2);
+        next = Math.max(0.1, next);
         const current = this.renderer.getPixelRatio?.() ?? next;
         if (Math.abs(current - next) <= 1e-6) return;
 
@@ -708,6 +734,16 @@ export class GameEngine {
         this._stateMachine = sm;
     }
 
+    addFrameListener(fn) {
+        if (typeof fn !== 'function') throw new Error('[GameEngine] addFrameListener expects a function');
+        this._frameListeners.add(fn);
+        return () => this._frameListeners.delete(fn);
+    }
+
+    removeFrameListener(fn) {
+        this._frameListeners.delete(fn);
+    }
+
     resize() {
         const rect = this.canvas?.getBoundingClientRect?.() ?? null;
         const width = Number.isFinite(rect?.width) ? rect.width : null;
@@ -724,7 +760,7 @@ export class GameEngine {
         const hNum = Number(height);
         const w = Math.max(1, Math.floor(Number.isFinite(wNum) ? wNum : 1));
         const h = Math.max(1, Math.floor(Number.isFinite(hNum) ? hNum : 1));
-        this._syncPixelRatio();
+        this._syncPixelRatio(w, h);
         this.renderer.setSize(w, h, false);
         this.camera.aspect = w / h;
         this.camera.updateProjectionMatrix();
@@ -780,9 +816,19 @@ export class GameEngine {
             }
         }
 
-        if (render) {
-            if (this._post?.pipeline) this._post.pipeline.render(stepDt);
-            else this.renderer.render(this.scene, this.camera);
+        if (!render) return;
+
+        if (this._post?.pipeline) this._post.pipeline.render(stepDt);
+        else this.renderer.render(this.scene, this.camera);
+
+        if (!this._frameListeners.size) return;
+        for (const fn of this._frameListeners) {
+            try {
+                fn({ dt: stepDt, nowMs: now, renderer: this.renderer, engine: this });
+            } catch (err) {
+                console.warn('[GameEngine] Frame listener error:', err);
+                this._frameListeners.delete(fn);
+            }
         }
     }
 

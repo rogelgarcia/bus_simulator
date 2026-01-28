@@ -2,14 +2,20 @@
 // Standalone Sun Bloom Debug tool entry point.
 
 import { SunBloomDebuggerView } from './SunBloomDebuggerView.js';
+import { ensureGlobalPerfBar } from '../perf_bar/PerfBar.js';
 
 const canvas = document.getElementById('game-canvas');
 if (!canvas) throw new Error('[SunBloomDebugger] Missing canvas#game-canvas');
 
 document.body.classList.add('options-dock-open');
 
+const perfBar = ensureGlobalPerfBar();
+
 const view = new SunBloomDebuggerView({ canvas });
-view.start().catch((err) => {
+view.start().then(() => {
+    if (view.renderer) perfBar.setRenderer(view.renderer);
+    view.onFrame = (frame) => perfBar.onFrame(frame);
+}).catch((err) => {
     console.error('[SunBloomDebugger] Failed to start', err);
 });
 
@@ -30,4 +36,3 @@ window.addEventListener('beforeunload', () => {
     window.removeEventListener('keydown', onKeyDown);
     view.destroy();
 }, { passive: true });
-

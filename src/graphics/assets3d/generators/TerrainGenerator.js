@@ -29,12 +29,6 @@ function configureRepeatTexture(tex, { repeats = 1, srgb = true, anisotropy = 16
     return tex;
 }
 
-function loadTexture(loader, url) {
-    return new Promise((resolve, reject) => {
-        loader.load(url, (tex) => resolve(tex), undefined, reject);
-    });
-}
-
 export function createCityWorld({
     size = 800,
     tileMeters = 2,
@@ -165,80 +159,38 @@ export function createCityWorld({
     ensureUv2(tileGeo);
 
     const legacyGrassUrl = new URL('../../../../assets/public/grass.png', import.meta.url);
-    const grassPbrDir = new URL('../../../../assets/public/pbr/grass_004/', import.meta.url);
-    const grassPbrUrls = Object.freeze({
-        baseColor: new URL('basecolor.png', grassPbrDir).href,
-        normal: new URL('normal_gl.png', grassPbrDir).href,
-        roughness: new URL('roughness.png', grassPbrDir).href,
-        ao: new URL('ao.png', grassPbrDir).href
-    });
     const loader = new THREE.TextureLoader();
 
     const worldRepeats = Math.max(1, size / Math.max(0.1, tileMeters));
     const tileRepeats = map ? Math.max(1, map.tileSize / Math.max(0.1, tileMeters)) : null;
 
-    Promise.all([
-        loadTexture(loader, grassPbrUrls.baseColor),
-        loadTexture(loader, grassPbrUrls.normal),
-        loadTexture(loader, grassPbrUrls.roughness),
-        loadTexture(loader, grassPbrUrls.ao)
-    ])
-        .then(([baseColor, normal, roughness, ao]) => {
-            const mat = floor.material;
-            configureRepeatTexture(baseColor, { repeats: worldRepeats, srgb: true });
-            configureRepeatTexture(normal, { repeats: worldRepeats, srgb: false });
-            configureRepeatTexture(roughness, { repeats: worldRepeats, srgb: false });
-            configureRepeatTexture(ao, { repeats: worldRepeats, srgb: false });
+    loader.load(
+        legacyGrassUrl.href,
+        (tex) => {
+            configureRepeatTexture(tex, { repeats: worldRepeats, srgb: true });
 
-            mat.map = baseColor;
-            mat.normalMap = normal;
-            mat.roughnessMap = roughness;
-            mat.aoMap = ao;
-            mat.roughness = 1.0;
-            mat.metalness = 0.0;
-            mat.needsUpdate = true;
+            floor.material.map = tex;
+            floor.material.normalMap = null;
+            floor.material.roughnessMap = null;
+            floor.material.aoMap = null;
+            floor.material.roughness = 1.0;
+            floor.material.metalness = 0.0;
+            floor.material.needsUpdate = true;
 
             if (tilesMat && tileRepeats) {
-                const b2 = configureRepeatTexture(baseColor.clone(), { repeats: tileRepeats, srgb: true });
-                const n2 = configureRepeatTexture(normal.clone(), { repeats: tileRepeats, srgb: false });
-                const r2 = configureRepeatTexture(roughness.clone(), { repeats: tileRepeats, srgb: false });
-                const a2 = configureRepeatTexture(ao.clone(), { repeats: tileRepeats, srgb: false });
-
-                tilesMat.map = b2;
-                tilesMat.normalMap = n2;
-                tilesMat.roughnessMap = r2;
-                tilesMat.aoMap = a2;
+                const t2 = configureRepeatTexture(tex.clone(), { repeats: tileRepeats, srgb: true });
+                tilesMat.map = t2;
+                tilesMat.normalMap = null;
+                tilesMat.roughnessMap = null;
+                tilesMat.aoMap = null;
                 tilesMat.roughness = 1.0;
                 tilesMat.metalness = 0.0;
                 tilesMat.needsUpdate = true;
             }
-        })
-        .catch((err) => {
-            console.warn('[CityWorld] Failed to load grass PBR set, falling back to legacy grass texture:', err);
-            loader.load(
-                legacyGrassUrl.href,
-                (tex) => {
-                    configureRepeatTexture(tex, { repeats: worldRepeats, srgb: true });
-
-                    floor.material.map = tex;
-                    floor.material.normalMap = null;
-                    floor.material.roughnessMap = null;
-                    floor.material.aoMap = null;
-                    floor.material.needsUpdate = true;
-
-                    if (tilesMat && tileRepeats) {
-                        const t2 = configureRepeatTexture(tex.clone(), { repeats: tileRepeats, srgb: true });
-                        tilesMat.map = t2;
-                        tilesMat.normalMap = null;
-                        tilesMat.roughnessMap = null;
-                        tilesMat.aoMap = null;
-                        tilesMat.needsUpdate = true;
-                    }
-                },
-                undefined,
-                (e2) => console.warn('[CityWorld] Failed to load legacy grass texture:', legacyGrassUrl.href, e2)
-            );
-        });
+        },
+        undefined,
+        (e2) => console.warn('[CityWorld] Failed to load legacy grass texture:', legacyGrassUrl.href, e2)
+    );
 
     return { group, floor, groundTiles, gridLines, trees };
 }

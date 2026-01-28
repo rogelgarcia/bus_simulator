@@ -11,6 +11,7 @@ export function createTextureTilingMiniController({
     detailsOpenByKey = null,
     detailsKey = null,
     allow = true,
+    isActive = null,
     tiling,
     defaults = {},
     hintText = '',
@@ -19,6 +20,8 @@ export function createTextureTilingMiniController({
     const cfg = tiling && typeof tiling === 'object' ? tiling : {};
     cfg.enabled ??= false;
     cfg.tileMeters ??= Number.isFinite(defaults.tileMeters) ? defaults.tileMeters : 2.0;
+    cfg.tileMetersU ??= Number.isFinite(cfg.tileMetersU) ? cfg.tileMetersU : cfg.tileMeters;
+    cfg.tileMetersV ??= Number.isFinite(cfg.tileMetersV) ? cfg.tileMetersV : cfg.tileMeters;
     cfg.uvEnabled ??= false;
     cfg.offsetU ??= 0.0;
     cfg.offsetV ??= 0.0;
@@ -55,23 +58,41 @@ export function createTextureTilingMiniController({
     else nodes.push(tileOverrideToggle.toggle);
     disposables.push(tileOverrideToggle);
 
-    const tileMetersRow = createRangeNumberRowController({
-        label: 'Tile meters',
+    const tileMetersURow = createRangeNumberRowController({
+        label: 'Tile meters U',
         min: 0.25,
         max: 20,
         step: 0.25,
-        value: cfg.tileMeters,
+        value: cfg.tileMetersU,
         disabled: !allow || !cfg.enabled,
         formatNumber: (v) => formatFixed(v, 2),
         clamp: (v) => clampNumber(v, 0.25, 20.0),
         onChange: (next) => {
-            cfg.tileMeters = next;
+            cfg.tileMetersU = next;
             onChangeFn?.();
         }
     });
-    if (body) body.appendChild(tileMetersRow.row);
-    else nodes.push(tileMetersRow.row);
-    disposables.push(tileMetersRow);
+    if (body) body.appendChild(tileMetersURow.row);
+    else nodes.push(tileMetersURow.row);
+    disposables.push(tileMetersURow);
+
+    const tileMetersVRow = createRangeNumberRowController({
+        label: 'Tile meters V',
+        min: 0.01,
+        max: 20,
+        step: 0.01,
+        value: cfg.tileMetersV,
+        disabled: !allow || !cfg.enabled,
+        formatNumber: (v) => formatFixed(v, 2),
+        clamp: (v) => clampNumber(v, 0.01, 20.0),
+        onChange: (next) => {
+            cfg.tileMetersV = next;
+            onChangeFn?.();
+        }
+    });
+    if (body) body.appendChild(tileMetersVRow.row);
+    else nodes.push(tileMetersVRow.row);
+    disposables.push(tileMetersVRow);
 
     const uvToggle = createToggleRowController({
         label: 'Enable UV transform',
@@ -148,12 +169,14 @@ export function createTextureTilingMiniController({
     }
 
     const syncDisabled = () => {
-        tileOverrideToggle.setDisabled(!allow);
-        uvToggle.setDisabled(!allow);
-        tileMetersRow.setDisabled(!allow || !cfg.enabled);
-        offsetURow.setDisabled(!allow || !cfg.uvEnabled);
-        offsetVRow.setDisabled(!allow || !cfg.uvEnabled);
-        rotationRow.setDisabled(!allow || !cfg.uvEnabled);
+        const active = typeof isActive === 'function' ? !!isActive() : true;
+        tileOverrideToggle.setDisabled(!allow || !active);
+        uvToggle.setDisabled(!allow || !active);
+        tileMetersURow.setDisabled(!allow || !active || !cfg.enabled);
+        tileMetersVRow.setDisabled(!allow || !active || !cfg.enabled);
+        offsetURow.setDisabled(!allow || !active || !cfg.uvEnabled);
+        offsetVRow.setDisabled(!allow || !active || !cfg.uvEnabled);
+        rotationRow.setDisabled(!allow || !active || !cfg.uvEnabled);
     };
 
     syncDisabled();

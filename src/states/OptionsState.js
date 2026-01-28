@@ -40,8 +40,10 @@ export class OptionsState {
         this._returnTo = prev && prev !== 'options' ? prev : 'welcome';
         this._overlay = !!params?.overlay;
 
-        document.body.classList.add('options-dock-open');
-        requestAnimationFrame(() => this.engine?.resize?.());
+        if (!this._overlay) {
+            document.body.classList.add('options-dock-open');
+            requestAnimationFrame(() => this.engine?.resize?.());
+        }
 
         if (!this._overlay) {
             document.body.classList.remove('splash-bg');
@@ -215,8 +217,10 @@ export class OptionsState {
         this._ui?.unmount?.();
         this._ui = null;
         this._original = null;
-        document.body.classList.remove('options-dock-open');
-        requestAnimationFrame(() => this.engine?.resize?.());
+        if (!this._overlay) {
+            document.body.classList.remove('options-dock-open');
+            requestAnimationFrame(() => this.engine?.resize?.());
+        }
         document.activeElement?.blur?.();
     }
 

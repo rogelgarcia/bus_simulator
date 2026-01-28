@@ -13,8 +13,7 @@ html, body {
 }
 
 body.options-dock-open #game-canvas {
-    width: auto;
-    right: var(--options-dock-width);
+    width: calc(100% - var(--options-dock-width));
 }
 
 body.options-dock-open .ui-hud-root {
@@ -28,7 +27,8 @@ body.options-dock-open .ui-layer:not(.options-layer) {
 /* Canvas always full screen (3D scenes) */
 #game-canvas {
     position: fixed;
-    inset: 0;
+    top: 0;
+    left: 0;
     width: 100%;
     height: 100%;
     display: block;

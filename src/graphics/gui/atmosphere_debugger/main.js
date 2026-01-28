@@ -2,14 +2,20 @@
 // Standalone Atmosphere Debug tool entry point.
 
 import { AtmosphereDebuggerView } from './AtmosphereDebuggerView.js';
+import { ensureGlobalPerfBar } from '../perf_bar/PerfBar.js';
 
 const canvas = document.getElementById('game-canvas');
 if (!canvas) throw new Error('[AtmosphereDebugger] Missing canvas#game-canvas');
 
 document.body.classList.add('options-dock-open');
 
+const perfBar = ensureGlobalPerfBar();
+
 const view = new AtmosphereDebuggerView({ canvas });
-view.start().catch((err) => {
+view.start().then(() => {
+    if (view.renderer) perfBar.setRenderer(view.renderer);
+    view.onFrame = (frame) => perfBar.onFrame(frame);
+}).catch((err) => {
     console.error('[AtmosphereDebugger] Failed to start', err);
 });
 

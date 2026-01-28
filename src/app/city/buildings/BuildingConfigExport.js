@@ -1,7 +1,7 @@
 // src/app/city/buildings/BuildingConfigExport.js
 // Helpers for exporting building fabrication layers as city building config modules.
 import { BUILDING_STYLE, isBuildingStyle } from '../../buildings/BuildingStyle.js';
-import { LAYER_TYPE, normalizeBuildingLayers } from '../../../graphics/assets3d/generators/building_fabrication/BuildingFabricationTypes.js';
+import { LAYER_TYPE, normalizeBuildingLayers, normalizeBuildingWindowVisualsConfig } from '../../../graphics/assets3d/generators/building_fabrication/BuildingFabricationTypes.js';
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -89,7 +89,8 @@ export function createCityBuildingConfigFromFabrication({
     name,
     layers,
     wallInset = 0.0,
-    materialVariationSeed = null
+    materialVariationSeed = null,
+    windowVisuals = null
 } = {}) {
     const safeId = sanitizeBuildingConfigId(id);
     const safeName = sanitizeBuildingConfigName(name, { fallback: buildingConfigIdToDisplayName(safeId) });
@@ -110,6 +111,7 @@ export function createCityBuildingConfigFromFabrication({
 
     if (inset > 1e-6) cfg.wallInset = inset;
     if (seed !== null) cfg.materialVariationSeed = seed;
+    if (windowVisuals && typeof windowVisuals === 'object') cfg.windowVisuals = normalizeBuildingWindowVisualsConfig(windowVisuals);
     return cfg;
 }
 
@@ -139,6 +141,12 @@ export function serializeCityBuildingConfigToEsModule(config, { exportConstName 
 
     const wallInset = Number.isFinite(cfg.wallInset) ? clamp(cfg.wallInset, 0.0, 4.0) : null;
     const seed = Number.isFinite(cfg.materialVariationSeed) ? clampInt(cfg.materialVariationSeed, 0, 4294967295) : null;
+    const windowVisuals = cfg.windowVisuals && typeof cfg.windowVisuals === 'object' ? cfg.windowVisuals : null;
+    const windowVisualsLines = windowVisuals ? [
+        '    windowVisuals: Object.freeze(',
+        indentLines(JSON.stringify(windowVisuals, null, 4), 8),
+        '    ),'
+    ] : [];
 
     const lines = [
         `// src/graphics/content3d/buildings/configs/${baseName}.js`,
@@ -155,6 +163,7 @@ export function serializeCityBuildingConfigToEsModule(config, { exportConstName 
         `    floorHeight: ${clamp(cfg.floorHeight ?? 3, 1.0, 12.0)},`,
         `    style: ${JSON.stringify(isBuildingStyle(cfg.style) ? cfg.style : BUILDING_STYLE.DEFAULT)},`,
         ...windowsLines,
+        ...windowVisualsLines,
         '});',
         '',
         `export default ${constName};`,

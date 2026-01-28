@@ -4,7 +4,9 @@ import { BUILDING_STYLE } from '../../../app/buildings/BuildingStyle.js';
 import { BELT_COURSE_COLOR } from '../../../app/buildings/BeltCourseColor.js';
 import { WINDOW_TYPE, getDefaultWindowParams, getWindowTypeOptions } from '../../assets3d/generators/buildings/WindowTextureGenerator.js';
 import { normalizeWindowTypeIdOrLegacyStyle } from '../../assets3d/generators/buildings/WindowTypeCompatibility.js';
+import { normalizeBuildingWindowVisualsConfig } from '../../assets3d/generators/building_fabrication/BuildingFabricationTypes.js';
 import { createMaterialPickerRowController } from './mini_controllers/MaterialPickerRowController.js';
+import { createTextureTilingMiniController } from './mini_controllers/TextureTilingMiniController.js';
 import { createDetailsSection, createRangeRow, createToggleRow } from './mini_controllers/UiMiniControlPrimitives.js';
 
 export function createWindowUIController({
@@ -1053,17 +1055,23 @@ export function createWindowUIController({
         scopeKey = 'template',
         layerId = 'layer_0',
         layer,
+        baseWindowVisuals = null,
+        baseWindowVisualsLabel = 'global',
+        onCopyWindowVisualsToAllFloors = null,
         openMaterialPicker = null,
         textureMaterialOptions = [],
         beltColorMaterialOptions = [],
         getStyleOption = null,
         getBeltColorOption = null,
+        registerMiniController = null,
         onChange = null
     } = {}) => {
         const onChangeFn = typeof onChange === 'function' ? onChange : () => {};
         const styleOptionFn = typeof getStyleOption === 'function' ? getStyleOption : () => null;
         const beltColorOptionFn = typeof getBeltColorOption === 'function' ? getBeltColorOption : () => null;
+        const registerMini = typeof registerMiniController === 'function' ? registerMiniController : null;
         const openMaterialPickerFn = typeof openMaterialPicker === 'function' ? openMaterialPicker : null;
+        const copyToAllFloorsFn = typeof onCopyWindowVisualsToAllFloors === 'function' ? onCopyWindowVisualsToAllFloors : null;
 
         const windowsGroup = createDetailsSection('Windows', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:windows`, detailsOpenByKey });
         const windowsToggle = createToggleRow('Enable windows', { wide: true });
@@ -1265,6 +1273,252 @@ export function createWindowUIController({
             onChangeFn();
         });
         windowsGroup.body.appendChild(fakeDepthInsetRow.row);
+
+        const reflectionsGroup = createDetailsSection('Window reflections', { open: false, nested: true, key: `${scopeKey}:layer:${layerId}:window_reflections`, detailsOpenByKey });
+        const reflectionsOverrideToggle = createToggleRow('Override window reflections', { wide: true });
+        reflectionsOverrideToggle.input.checked = !!(layer?.windows?.windowVisuals && typeof layer.windows.windowVisuals === 'object');
+        reflectionsOverrideToggle.input.disabled = !allow || !layer?.windows?.enabled;
+        reflectionsGroup.body.appendChild(reflectionsOverrideToggle.toggle);
+
+        const reflectionsHint = document.createElement('div');
+        reflectionsHint.className = 'building-fab-hint';
+        reflectionsGroup.body.appendChild(reflectionsHint);
+
+        const cloneJson = (value) => {
+            try {
+                return JSON.parse(JSON.stringify(value));
+            } catch {
+                return value;
+            }
+        };
+
+        const getEffectiveWindowVisuals = () => {
+            const override = layer?.windows?.windowVisuals && typeof layer.windows.windowVisuals === 'object'
+                ? layer.windows.windowVisuals
+                : null;
+            const source = override ? override : baseWindowVisuals;
+            return normalizeBuildingWindowVisualsConfig(source);
+        };
+
+        const ensureWindowVisualsOverride = () => {
+            const base = baseWindowVisuals && typeof baseWindowVisuals === 'object' ? baseWindowVisuals : {};
+            const existing = layer?.windows?.windowVisuals && typeof layer.windows.windowVisuals === 'object'
+                ? layer.windows.windowVisuals
+                : base;
+            const normalized = normalizeBuildingWindowVisualsConfig(existing);
+            layer.windows.windowVisuals = normalized;
+            return normalized;
+        };
+
+        const reflectionsEnabledToggle = createToggleRow('Reflective glass', { wide: true });
+        reflectionsGroup.body.appendChild(reflectionsEnabledToggle.toggle);
+
+        const reflectionsOpacityRow = createRangeRow('Glass opacity');
+        reflectionsOpacityRow.range.min = '0';
+        reflectionsOpacityRow.range.max = '1';
+        reflectionsOpacityRow.range.step = '0.01';
+        reflectionsOpacityRow.number.min = '0';
+        reflectionsOpacityRow.number.max = '1';
+        reflectionsOpacityRow.number.step = '0.01';
+        reflectionsGroup.body.appendChild(reflectionsOpacityRow.row);
+
+        const reflectionsOffsetRow = createRangeRow('Glass layer offset (m)');
+        reflectionsOffsetRow.range.min = '-0.1';
+        reflectionsOffsetRow.range.max = '0.1';
+        reflectionsOffsetRow.range.step = '0.001';
+        reflectionsOffsetRow.number.min = '-0.1';
+        reflectionsOffsetRow.number.max = '0.1';
+        reflectionsOffsetRow.number.step = '0.001';
+        reflectionsGroup.body.appendChild(reflectionsOffsetRow.row);
+
+        const reflectionsEnvMapIntensityRow = createRangeRow('Window glass reflection intensity');
+        reflectionsEnvMapIntensityRow.range.min = '0';
+        reflectionsEnvMapIntensityRow.range.max = '5';
+        reflectionsEnvMapIntensityRow.range.step = '0.01';
+        reflectionsEnvMapIntensityRow.number.min = '0';
+        reflectionsEnvMapIntensityRow.number.max = '5';
+        reflectionsEnvMapIntensityRow.number.step = '0.01';
+        reflectionsGroup.body.appendChild(reflectionsEnvMapIntensityRow.row);
+
+        const reflectionsRoughnessRow = createRangeRow('Window glass roughness');
+        reflectionsRoughnessRow.range.min = '0';
+        reflectionsRoughnessRow.range.max = '1';
+        reflectionsRoughnessRow.range.step = '0.01';
+        reflectionsRoughnessRow.number.min = '0';
+        reflectionsRoughnessRow.number.max = '1';
+        reflectionsRoughnessRow.number.step = '0.01';
+        reflectionsGroup.body.appendChild(reflectionsRoughnessRow.row);
+
+        const reflectionsTransmissionRow = createRangeRow('Window glass transmission');
+        reflectionsTransmissionRow.range.min = '0';
+        reflectionsTransmissionRow.range.max = '1';
+        reflectionsTransmissionRow.range.step = '0.01';
+        reflectionsTransmissionRow.number.min = '0';
+        reflectionsTransmissionRow.number.max = '1';
+        reflectionsTransmissionRow.number.step = '0.01';
+        reflectionsGroup.body.appendChild(reflectionsTransmissionRow.row);
+
+        const reflectionsIorRow = createRangeRow('Window glass ior');
+        reflectionsIorRow.range.min = '1';
+        reflectionsIorRow.range.max = '2.5';
+        reflectionsIorRow.range.step = '0.01';
+        reflectionsIorRow.number.min = '1';
+        reflectionsIorRow.number.max = '2.5';
+        reflectionsIorRow.number.step = '0.01';
+        reflectionsGroup.body.appendChild(reflectionsIorRow.row);
+
+        const reflectionsMetalnessRow = createRangeRow('Window glass metalness');
+        reflectionsMetalnessRow.range.min = '0';
+        reflectionsMetalnessRow.range.max = '1';
+        reflectionsMetalnessRow.range.step = '0.01';
+        reflectionsMetalnessRow.number.min = '0';
+        reflectionsMetalnessRow.number.max = '1';
+        reflectionsMetalnessRow.number.step = '0.01';
+        reflectionsGroup.body.appendChild(reflectionsMetalnessRow.row);
+
+        const reflectionsCopyBtn = document.createElement('button');
+        reflectionsCopyBtn.type = 'button';
+        reflectionsCopyBtn.className = 'building-fab-layer-btn';
+        reflectionsCopyBtn.textContent = 'Copy settings to all floors';
+        reflectionsGroup.body.appendChild(reflectionsCopyBtn);
+
+        const syncWindowReflectionsUi = () => {
+            const winEnabled = !!layer?.windows?.enabled;
+            const overrideEnabled = reflectionsOverrideToggle.input.checked;
+
+            reflectionsHint.textContent = overrideEnabled
+                ? 'Override: per-floor window reflections.'
+                : `Inheriting ${String(baseWindowVisualsLabel || 'global')} window reflections.`;
+
+            const effective = getEffectiveWindowVisuals();
+            const reflectiveEnabled = !!effective?.reflective?.enabled;
+
+            reflectionsEnabledToggle.input.checked = reflectiveEnabled;
+
+            reflectionsOpacityRow.range.value = String(effective?.reflective?.opacity ?? 0.85);
+            reflectionsOpacityRow.number.value = formatFloatFn(effective?.reflective?.opacity ?? 0.85, 2);
+            reflectionsOffsetRow.range.value = String(effective?.reflective?.layerOffset ?? 0.02);
+            reflectionsOffsetRow.number.value = formatFloatFn(effective?.reflective?.layerOffset ?? 0.02, 3);
+
+            reflectionsEnvMapIntensityRow.range.value = String(effective?.reflective?.glass?.envMapIntensity ?? 4.0);
+            reflectionsEnvMapIntensityRow.number.value = formatFloatFn(effective?.reflective?.glass?.envMapIntensity ?? 4.0, 2);
+            reflectionsRoughnessRow.range.value = String(effective?.reflective?.glass?.roughness ?? 0.02);
+            reflectionsRoughnessRow.number.value = formatFloatFn(effective?.reflective?.glass?.roughness ?? 0.02, 2);
+            reflectionsTransmissionRow.range.value = String(effective?.reflective?.glass?.transmission ?? 0.0);
+            reflectionsTransmissionRow.number.value = formatFloatFn(effective?.reflective?.glass?.transmission ?? 0.0, 2);
+            reflectionsIorRow.range.value = String(effective?.reflective?.glass?.ior ?? 2.2);
+            reflectionsIorRow.number.value = formatFloatFn(effective?.reflective?.glass?.ior ?? 2.2, 2);
+            reflectionsMetalnessRow.range.value = String(effective?.reflective?.glass?.metalness ?? 0.0);
+            reflectionsMetalnessRow.number.value = formatFloatFn(effective?.reflective?.glass?.metalness ?? 0.0, 2);
+
+            const canEditOverride = allow && winEnabled && overrideEnabled;
+            reflectionsOverrideToggle.input.disabled = !allow || !winEnabled;
+            reflectionsEnabledToggle.input.disabled = !canEditOverride;
+
+            const canEditFields = canEditOverride && reflectiveEnabled;
+            for (const row of [
+                reflectionsOpacityRow,
+                reflectionsOffsetRow,
+                reflectionsEnvMapIntensityRow,
+                reflectionsRoughnessRow,
+                reflectionsTransmissionRow,
+                reflectionsIorRow,
+                reflectionsMetalnessRow
+            ]) {
+                row.range.disabled = !canEditFields;
+                row.number.disabled = row.range.disabled;
+            }
+
+            reflectionsCopyBtn.disabled = !canEditOverride || !copyToAllFloorsFn;
+        };
+
+        reflectionsOverrideToggle.input.addEventListener('change', () => {
+            const enabled = !!reflectionsOverrideToggle.input.checked;
+            if (enabled) {
+                ensureWindowVisualsOverride();
+            } else {
+                layer.windows.windowVisuals = null;
+            }
+            syncWindowReflectionsUi();
+            onChangeFn();
+        });
+
+        reflectionsEnabledToggle.input.addEventListener('change', () => {
+            const cfg = ensureWindowVisualsOverride();
+            cfg.reflective.enabled = !!reflectionsEnabledToggle.input.checked;
+            syncWindowReflectionsUi();
+            onChangeFn();
+        });
+
+        const bindReflectionRow = (row, { min, max, digits, getValue, setValue } = {}) => {
+            row.range.addEventListener('input', () => {
+                const cfg = ensureWindowVisualsOverride();
+                const next = clampFn(row.range.value, min, max);
+                setValue(cfg, next);
+                row.number.value = formatFloatFn(next, digits);
+                onChangeFn();
+            });
+            row.number.addEventListener('change', () => {
+                const cfg = ensureWindowVisualsOverride();
+                const next = clampFn(row.number.value, min, max);
+                setValue(cfg, next);
+                row.range.value = String(next);
+                row.number.value = formatFloatFn(next, digits);
+                onChangeFn();
+            });
+        };
+
+        bindReflectionRow(reflectionsOpacityRow, {
+            min: 0.0,
+            max: 1.0,
+            digits: 2,
+            setValue: (cfg, v) => { cfg.reflective.opacity = v; }
+        });
+        bindReflectionRow(reflectionsOffsetRow, {
+            min: -0.1,
+            max: 0.1,
+            digits: 3,
+            setValue: (cfg, v) => { cfg.reflective.layerOffset = v; }
+        });
+        bindReflectionRow(reflectionsEnvMapIntensityRow, {
+            min: 0.0,
+            max: 5.0,
+            digits: 2,
+            setValue: (cfg, v) => { cfg.reflective.glass.envMapIntensity = v; }
+        });
+        bindReflectionRow(reflectionsRoughnessRow, {
+            min: 0.0,
+            max: 1.0,
+            digits: 2,
+            setValue: (cfg, v) => { cfg.reflective.glass.roughness = v; }
+        });
+        bindReflectionRow(reflectionsTransmissionRow, {
+            min: 0.0,
+            max: 1.0,
+            digits: 2,
+            setValue: (cfg, v) => { cfg.reflective.glass.transmission = v; }
+        });
+        bindReflectionRow(reflectionsIorRow, {
+            min: 1.0,
+            max: 2.5,
+            digits: 2,
+            setValue: (cfg, v) => { cfg.reflective.glass.ior = v; }
+        });
+        bindReflectionRow(reflectionsMetalnessRow, {
+            min: 0.0,
+            max: 1.0,
+            digits: 2,
+            setValue: (cfg, v) => { cfg.reflective.glass.metalness = v; }
+        });
+
+        reflectionsCopyBtn.addEventListener('click', () => {
+            if (!copyToAllFloorsFn) return;
+            const cfg = ensureWindowVisualsOverride();
+            copyToAllFloorsFn(cloneJson(cfg));
+            onChangeFn();
+        });
+
+        syncWindowReflectionsUi();
 
         layer.windows.pbr ??= {
             normal: { enabled: true, strength: 0.85 },
@@ -1499,6 +1753,19 @@ export function createWindowUIController({
         });
         columnsGroup.body.appendChild(colsMaterialPicker.row);
 
+        const colsTilingController = createTextureTilingMiniController({
+            mode: 'inline',
+            title: 'Texture tiling',
+            allow,
+            isActive: () => !!layer?.windows?.enabled && !!layer?.windows?.spaceColumns?.enabled,
+            tiling: (layer.windows.spaceColumns.tiling ??= {}),
+            defaults: { tileMeters: 2.0 },
+            hintText: 'Overrides the material tile size in meters.',
+            onChange: onChangeFn
+        });
+        colsTilingController.mount(columnsGroup.body);
+        registerMini?.(colsTilingController);
+
         const colsExtrudeToggle = createToggleRow('Extrude columns', { wide: true });
         colsExtrudeToggle.input.checked = !!layer?.windows?.spaceColumns?.extrude;
         colsExtrudeToggle.input.disabled = !allow || !layer?.windows?.enabled || !layer?.windows?.spaceColumns?.enabled;
@@ -1541,6 +1808,7 @@ export function createWindowUIController({
             colsExtrudeToggle.input.disabled = !allow || !enabled;
             colsExtrudeRow.range.disabled = !allow || !enabled || !layer.windows.spaceColumns.extrude;
             colsExtrudeRow.number.disabled = colsExtrudeRow.range.disabled;
+            colsTilingController.syncDisabled();
             onChangeFn();
         });
 
@@ -1638,16 +1906,19 @@ export function createWindowUIController({
             colsExtrudeToggle.input.disabled = !allow || !colsEnabled;
             colsExtrudeRow.range.disabled = !allow || !colsEnabled || !layer.windows.spaceColumns.extrude;
             colsExtrudeRow.number.disabled = colsExtrudeRow.range.disabled;
+            colsTilingController.syncDisabled();
+            syncWindowReflectionsUi();
             onChangeFn();
         });
 
         if (parent) {
             parent.appendChild(windowsGroup.details);
+            parent.appendChild(reflectionsGroup.details);
             parent.appendChild(pbrGroup.details);
             parent.appendChild(columnsGroup.details);
         }
 
-        return { windowsGroup, pbrGroup, columnsGroup };
+        return { windowsGroup, reflectionsGroup, pbrGroup, columnsGroup };
     };
 
     return {

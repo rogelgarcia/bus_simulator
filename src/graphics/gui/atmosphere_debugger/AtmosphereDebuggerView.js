@@ -51,6 +51,8 @@ export class AtmosphereDebuggerView {
     constructor({ canvas } = {}) {
         this.canvas = canvas;
 
+        this.onFrame = null;
+
         this.renderer = null;
         this.scene = null;
         this.camera = null;
@@ -594,6 +596,8 @@ export class AtmosphereDebuggerView {
         if (this._sky) this._sky.position.copy(camera.position);
 
         renderer.render(scene, camera);
+        const onFrame = this.onFrame;
+        if (typeof onFrame === 'function') onFrame({ dt, nowMs: now, renderer });
         this._raf = requestAnimationFrame((ts) => this._tick(ts));
     }
 
