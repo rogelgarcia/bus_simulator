@@ -6,7 +6,6 @@ import { applyMaterialSymbolToButton } from '../shared/materialSymbols.js';
 
 const GLOBAL_CLASS_ENABLED = 'perf-bar-enabled';
 const GLOBAL_CLASS_HIDDEN = 'perf-bar-hidden';
-const STORAGE_KEY = 'bus_sim_perf_bar_v1';
 
 function clamp(value, min, max, fallback) {
     const n = Number(value);
@@ -22,21 +21,6 @@ function formatCount(value) {
     if (abs >= 100_000) return `${Math.round(n / 1000)}k`;
     if (abs >= 10_000) return `${(n / 1000).toFixed(1)}k`;
     return `${Math.round(n)}`;
-}
-
-function safeStorageGet(key) {
-    try {
-        return window?.localStorage?.getItem?.(key) ?? null;
-    } catch {
-        return null;
-    }
-}
-
-function safeStorageSet(key, value) {
-    try {
-        window?.localStorage?.setItem?.(key, value);
-    } catch {
-    }
 }
 
 function tryGetWebGLDebugInfo(gl) {
@@ -82,31 +66,57 @@ function getRendererInfo(renderer) {
     return base;
 }
 
+function simplifyGpuLabel(label) {
+    let s = typeof label === 'string' ? label.trim() : '';
+    if (!s) return '';
+
+    const angle = s.match(/^ANGLE\s*\((.*)\)\s*$/i);
+    if (angle && angle[1]) s = angle[1].trim();
+
+    const parts = s.split(',').map((p) => p.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+        const gpuLike = parts.find((p) => /(geforce|rtx|gtx|radeon|intel|iris|uhd|apple|adreno|mali|powervr|tesla|quadro)/i.test(p));
+        s = gpuLike ?? parts[1];
+    }
+
+    const cutTokens = ['Direct3D', 'D3D', 'OpenGL', 'Vulkan', 'Metal'];
+    for (const token of cutTokens) {
+        const idx = s.toLowerCase().indexOf(token.toLowerCase());
+        if (idx > 0) {
+            s = s.slice(0, idx).trim();
+            break;
+        }
+    }
+
+    s = s.replace(/\b(vs|ps|fs|gs|cs)_[0-9_]+\b/gi, ' ');
+    s = s.replace(/\bLaptop GPU\b/gi, ' ');
+    s = s.replace(/\/PCIe\/SSE2\b/gi, ' ');
+    s = s.replace(/\/SSE2\b/gi, ' ');
+    s = s.replace(/\s+/g, ' ').trim();
+
+    return s;
+}
+
 function formatRendererLabel(info) {
     const i = info && typeof info === 'object' ? info : null;
     const api = typeof i?.api === 'string' && i.api ? i.api : 'WebGL';
-    const renderer = typeof i?.renderer === 'string' && i.renderer ? i.renderer : '';
-    const vendor = typeof i?.vendor === 'string' && i.vendor ? i.vendor : '';
+    const rendererRaw = typeof i?.renderer === 'string' && i.renderer ? i.renderer : '';
+    const vendorRaw = typeof i?.vendor === 'string' && i.vendor ? i.vendor : '';
 
-    const parts = [];
-    parts.push(api);
-    if (renderer) parts.push(renderer);
-    else if (vendor) parts.push(vendor);
-    return parts.join(' · ');
+    const gpu = simplifyGpuLabel(rendererRaw) || simplifyGpuLabel(vendorRaw);
+    return gpu ? `${api} · ${gpu}` : api;
 }
 
 export class PerfBar {
     constructor({
-        storageKey = STORAGE_KEY,
         fpsWarnBelow = 30,
         updateIntervalMs = 250
     } = {}) {
-        this._storageKey = typeof storageKey === 'string' && storageKey.trim() ? storageKey.trim() : STORAGE_KEY;
         this._fpsWarnBelow = clamp(fpsWarnBelow, 5, 240, 30);
         this._updateIntervalMs = clamp(updateIntervalMs, 50, 2000, 250);
 
         this.root = null;
-        this._detailOpen = false;
+        this._hidden = false;
 
         this._renderer = null;
         this._rendererInfo = null;
@@ -119,12 +129,13 @@ export class PerfBar {
 
         this._els = {
             fpsText: null,
-            statsText: null,
+            renderText: null,
+            memoryText: null,
             gpuText: null,
-            details: null,
-            detailsBody: null,
-            btnDetails: null,
-            btnHide: null
+            btnToggle: null,
+            iconToggle: null,
+            btnDockToggle: null,
+            iconDockToggle: null
         };
 
         this._onDocKeyDown = (e) => {
@@ -155,74 +166,78 @@ export class PerfBar {
 
         const left = document.createElement('div');
         left.className = 'ui-perf-bar-left';
+        left.addEventListener('wheel', (e) => {
+            if (!e) return;
+            if (left.scrollWidth <= left.clientWidth) return;
+            const dx = Number.isFinite(e.deltaX) ? e.deltaX : 0;
+            const dy = Number.isFinite(e.deltaY) ? e.deltaY : 0;
+            const delta = Math.abs(dy) >= Math.abs(dx) ? dy : dx;
+            if (!delta) return;
+            e.preventDefault();
+            left.scrollLeft += delta;
+        }, { passive: false });
 
         const fps = document.createElement('div');
         fps.className = 'ui-perf-bar-item ui-perf-bar-fps';
         fps.textContent = 'FPS: -- (-- ms)';
 
-        const stats = document.createElement('div');
-        stats.className = 'ui-perf-bar-item ui-perf-bar-stats';
-        stats.textContent = 'Calls: -- · Tris: --';
+        const render = document.createElement('div');
+        render.className = 'ui-perf-bar-item ui-perf-bar-render';
+        render.textContent = 'Calls: -- · Tris: -- · Lines: -- · Pts: --';
 
-        left.appendChild(fps);
-        left.appendChild(stats);
-
-        const right = document.createElement('div');
-        right.className = 'ui-perf-bar-right';
+        const memory = document.createElement('div');
+        memory.className = 'ui-perf-bar-item ui-perf-bar-memory';
+        memory.textContent = 'Geo: -- · Tex: -- · Progs: --';
 
         const gpu = document.createElement('div');
         gpu.className = 'ui-perf-bar-item ui-perf-bar-gpu';
         gpu.textContent = 'GPU: N/A';
 
-        const btnDetails = document.createElement('button');
-        btnDetails.className = 'ui-perf-bar-btn';
-        btnDetails.type = 'button';
-        applyMaterialSymbolToButton(btnDetails, { name: 'expand_more', label: 'Toggle details', size: 'sm' });
+        left.appendChild(fps);
+        left.appendChild(render);
+        left.appendChild(memory);
+        left.appendChild(gpu);
 
-        const btnHide = document.createElement('button');
-        btnHide.className = 'ui-perf-bar-btn';
-        btnHide.type = 'button';
-        applyMaterialSymbolToButton(btnHide, { name: 'visibility_off', label: 'Hide bar (Ctrl+Shift+P to toggle)', size: 'sm' });
+        const right = document.createElement('div');
+        right.className = 'ui-perf-bar-right';
 
-        right.appendChild(gpu);
-        right.appendChild(btnDetails);
-        right.appendChild(btnHide);
-
-        const details = document.createElement('div');
-        details.className = 'ui-perf-bar-details hidden';
-
-        const detailsHeader = document.createElement('div');
-        detailsHeader.className = 'ui-perf-bar-details-header';
-        detailsHeader.textContent = 'Performance details';
-
-        const detailsBody = document.createElement('div');
-        detailsBody.className = 'ui-perf-bar-details-body';
-
-        details.appendChild(detailsHeader);
-        details.appendChild(detailsBody);
+        const btnToggle = document.createElement('button');
+        btnToggle.className = 'ui-perf-bar-btn ui-perf-bar-toggle';
+        btnToggle.type = 'button';
+        const iconToggle = applyMaterialSymbolToButton(btnToggle, { name: 'visibility_off', label: 'Hide performance bar', size: 'sm' });
+        btnToggle.removeAttribute('title');
 
         root.appendChild(left);
         root.appendChild(right);
-        root.appendChild(details);
+        right.appendChild(btnToggle);
 
         const first = host.firstChild;
         if (first) host.insertBefore(root, first);
         else host.appendChild(root);
 
+        const btnDockToggle = document.createElement('button');
+        btnDockToggle.id = 'ui-perf-bar-dock-toggle';
+        btnDockToggle.className = 'ui-perf-bar-dock-btn hidden';
+        btnDockToggle.type = 'button';
+        const iconDockToggle = applyMaterialSymbolToButton(btnDockToggle, { name: 'visibility', label: 'Show performance bar', size: 'sm' });
+        btnDockToggle.removeAttribute('title');
+        document.body.appendChild(btnDockToggle);
+
         this.root = root;
         this._els.fpsText = fps;
-        this._els.statsText = stats;
+        this._els.renderText = render;
+        this._els.memoryText = memory;
         this._els.gpuText = gpu;
-        this._els.details = details;
-        this._els.detailsBody = detailsBody;
-        this._els.btnDetails = btnDetails;
-        this._els.btnHide = btnHide;
+        this._els.btnToggle = btnToggle;
+        this._els.iconToggle = iconToggle;
+        this._els.btnDockToggle = btnDockToggle;
+        this._els.iconDockToggle = iconDockToggle;
 
-        btnDetails.addEventListener('click', () => this.setDetailsOpen(!this._detailOpen), { passive: true });
-        btnHide.addEventListener('click', () => this.setHidden(true), { passive: true });
+        btnToggle.addEventListener('click', () => this.setHidden(!this.isHidden()), { passive: true });
+        btnDockToggle.addEventListener('click', () => this.setHidden(false), { passive: true });
 
         document.body.classList.add(GLOBAL_CLASS_ENABLED);
-        this.setHidden(this.isHidden());
+        this.setHidden(false);
         window.addEventListener('keydown', this._onDocKeyDown, { passive: false, capture: true });
 
         this._renderStatic();
@@ -233,43 +248,33 @@ export class PerfBar {
         if (!this.root) return;
         window.removeEventListener('keydown', this._onDocKeyDown, { capture: true });
         this.root.remove();
+        this._els.btnDockToggle?.remove();
         this.root = null;
         this._renderer = null;
         this._rendererInfo = null;
     }
 
     isHidden() {
-        const raw = safeStorageGet(this._storageKey);
-        if (!raw) return false;
-        const v = String(raw).trim().toLowerCase();
-        return v === '0' || v === 'false' || v === 'no' || v === 'off' ? false : v === 'hidden';
+        return this._hidden;
     }
 
     setHidden(hidden) {
         const wantHidden = !!hidden;
-        safeStorageSet(this._storageKey, wantHidden ? 'hidden' : 'visible');
+        this._hidden = wantHidden;
         document.body.classList.toggle(GLOBAL_CLASS_HIDDEN, wantHidden);
         if (this.root) this.root.classList.toggle('hidden', wantHidden);
+        this._els.btnDockToggle?.classList.toggle('hidden', !wantHidden);
+        const iconMain = this._els.iconToggle;
+        const iconDock = this._els.iconDockToggle;
+        if (iconMain) iconMain.textContent = wantHidden ? 'visibility' : 'visibility_off';
+        if (iconDock) iconDock.textContent = wantHidden ? 'visibility' : 'visibility_off';
         requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
-    }
-
-    setDetailsOpen(open) {
-        const want = !!open;
-        this._detailOpen = want;
-        const btn = this._els.btnDetails;
-        if (btn) {
-            const icon = btn.querySelector('.ui-icon');
-            if (icon) icon.classList.toggle('is-active', want);
-        }
-        this._els.details?.classList.toggle('hidden', !want);
-        if (want) this._renderDetails();
     }
 
     setRenderer(renderer) {
         this._renderer = renderer ?? null;
         this._rendererInfo = this._renderer ? getRendererInfo(this._renderer) : null;
         this._renderStatic();
-        if (this._detailOpen) this._renderDetails();
     }
 
     onFrame({ dt, nowMs, renderer } = {}) {
@@ -289,7 +294,6 @@ export class PerfBar {
         if (now - this._frame.lastUpdateMs < this._updateIntervalMs) return;
         this._frame.lastUpdateMs = now;
         this._renderLive();
-        if (this._detailOpen) this._renderDetails();
     }
 
     _renderStatic() {
@@ -304,8 +308,9 @@ export class PerfBar {
         if (!this.root) return;
 
         const fpsEl = this._els.fpsText;
-        const statsEl = this._els.statsText;
-        if (!fpsEl || !statsEl) return;
+        const renderEl = this._els.renderText;
+        const memoryEl = this._els.memoryText;
+        if (!fpsEl || !renderEl || !memoryEl) return;
 
         const ms = Number.isFinite(this._frame.emaMs) ? this._frame.emaMs : 0;
         const fps = ms > 1e-3 ? 1000 / ms : 0;
@@ -323,56 +328,24 @@ export class PerfBar {
         const render = info?.render ?? null;
         const calls = render?.calls ?? null;
         const tris = render?.triangles ?? null;
+        const lines = render?.lines ?? null;
+        const points = render?.points ?? null;
 
         const callsText = Number.isFinite(calls) ? `${Math.round(calls)}` : 'N/A';
         const trisText = Number.isFinite(tris) ? formatCount(tris) : 'N/A';
-        statsEl.textContent = `Calls: ${callsText} · Tris: ${trisText}`;
-    }
+        const linesText = Number.isFinite(lines) ? formatCount(lines) : 'N/A';
+        const pointsText = Number.isFinite(points) ? formatCount(points) : 'N/A';
+        renderEl.textContent = `Calls: ${callsText} · Tris: ${trisText} · Lines: ${linesText} · Pts: ${pointsText}`;
 
-    _renderDetails() {
-        const body = this._els.detailsBody;
-        if (!body) return;
-
-        const info = this._renderer?.info ?? null;
-        const render = info?.render ?? null;
         const memory = info?.memory ?? null;
         const programs = Array.isArray(info?.programs) ? info.programs : null;
+        const geoms = memory?.geometries ?? null;
+        const tex = memory?.textures ?? null;
 
-        const calls = render?.calls;
-        const tris = render?.triangles;
-        const lines = render?.lines;
-        const points = render?.points;
-
-        const geoms = memory?.geometries;
-        const tex = memory?.textures;
-
-        const list = [
-            { k: 'FPS avg', v: this._frame.emaMs ? `${Math.round(1000 / this._frame.emaMs)} (${this._frame.emaMs.toFixed(1)} ms)` : 'N/A' },
-            { k: 'Draw calls', v: Number.isFinite(calls) ? `${Math.round(calls)}` : 'N/A' },
-            { k: 'Triangles', v: Number.isFinite(tris) ? `${formatCount(tris)}` : 'N/A' },
-            { k: 'Lines', v: Number.isFinite(lines) ? `${formatCount(lines)}` : 'N/A' },
-            { k: 'Points', v: Number.isFinite(points) ? `${formatCount(points)}` : 'N/A' },
-            { k: 'Geometries', v: Number.isFinite(geoms) ? `${Math.round(geoms)}` : 'N/A' },
-            { k: 'Textures', v: Number.isFinite(tex) ? `${Math.round(tex)}` : 'N/A' },
-            { k: 'Programs', v: programs ? `${programs.length}` : 'N/A' },
-            { k: 'Renderer', v: this._rendererInfo ? formatRendererLabel(this._rendererInfo) : 'N/A' },
-            { k: 'Version', v: typeof this._rendererInfo?.version === 'string' && this._rendererInfo.version ? this._rendererInfo.version : 'N/A' }
-        ];
-
-        body.textContent = '';
-        for (const row of list) {
-            const div = document.createElement('div');
-            div.className = 'ui-perf-bar-details-row';
-            const k = document.createElement('div');
-            k.className = 'ui-perf-bar-details-key';
-            k.textContent = row.k;
-            const v = document.createElement('div');
-            v.className = 'ui-perf-bar-details-value';
-            v.textContent = row.v;
-            div.appendChild(k);
-            div.appendChild(v);
-            body.appendChild(div);
-        }
+        const geomsText = Number.isFinite(geoms) ? `${Math.round(geoms)}` : 'N/A';
+        const texText = Number.isFinite(tex) ? `${Math.round(tex)}` : 'N/A';
+        const programsText = programs ? `${programs.length}` : 'N/A';
+        memoryEl.textContent = `Geo: ${geomsText} · Tex: ${texText} · Progs: ${programsText}`;
     }
 }
 

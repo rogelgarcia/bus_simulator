@@ -59,7 +59,14 @@ body.perf-bar-enabled .ui-picker-overlay {
 
 .ui-perf-bar-left {
     flex: 1;
-    overflow: hidden;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.ui-perf-bar-left::-webkit-scrollbar {
+    display: none;
 }
 
 .ui-perf-bar-right {
@@ -69,12 +76,6 @@ body.perf-bar-enabled .ui-picker-overlay {
 .ui-perf-bar-item {
     white-space: nowrap;
     opacity: 0.96;
-}
-
-.ui-perf-bar-gpu {
-    max-width: min(520px, 40vw);
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 .ui-perf-bar-btn {
@@ -94,50 +95,25 @@ body.perf-bar-enabled .ui-picker-overlay {
     background: rgba(0, 0, 0, 0.22);
 }
 
-.ui-perf-bar-details {
-    position: absolute;
-    top: calc(var(--global-top-bar-height) + 6px);
-    right: 10px;
-    width: min(520px, calc(100vw - 20px));
-    max-height: min(420px, calc(100vh - var(--global-top-bar-height) - 14px));
-    overflow: auto;
-    padding: 10px 12px 12px;
-    border-radius: 14px;
+.ui-perf-bar-dock-btn {
+    position: fixed;
+    top: 6px;
+    right: 6px;
+    z-index: 330;
+    height: 22px;
+    width: 30px;
+    border-radius: 10px;
     border: 1px solid rgba(255, 255, 255, 0.14);
-    background: rgba(10, 14, 20, 0.86);
-    box-shadow: 0 18px 56px rgba(0, 0, 0, 0.55);
-    backdrop-filter: blur(10px);
-    pointer-events: auto;
-}
-
-.ui-perf-bar-details-header {
-    font-weight: 900;
-    font-size: 12px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    margin-bottom: 10px;
-    opacity: 0.92;
-}
-
-.ui-perf-bar-details-body {
-    display: grid;
-    gap: 6px;
-}
-
-.ui-perf-bar-details-row {
-    display: grid;
-    grid-template-columns: 140px 1fr;
-    gap: 10px;
+    background: rgba(0, 0, 0, 0.12);
+    color: rgba(233, 242, 255, 0.92);
+    cursor: pointer;
+    display: inline-flex;
     align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+    user-select: none;
 }
 
-.ui-perf-bar-details-key {
-    opacity: 0.78;
-    font-weight: 800;
-}
-
-.ui-perf-bar-details-value {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+.ui-perf-bar-dock-btn:hover {
+    background: rgba(0, 0, 0, 0.22);
 }

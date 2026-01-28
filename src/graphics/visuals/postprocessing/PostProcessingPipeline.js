@@ -296,24 +296,36 @@ export class PostProcessingPipeline {
     }
 
     render(deltaTime = undefined) {
+        const info = this.renderer?.info ?? null;
+        const canCapture = !!info && typeof info.reset === 'function' && 'autoReset' in info;
+        const prevAutoReset = canCapture ? info.autoReset : null;
+        if (canCapture) {
+            info.autoReset = false;
+            info.reset();
+        }
+
         const globalBloomOn = !!this._globalBloom?.enabled && (this._globalBloom?.strength > 0);
         const sunBloomOn = !!this._sunBloom?.enabled && (this._sunBloom?.strength > 0);
         const gradeOn = !!this._colorGrading?.enabled;
         const wantsPipeline = globalBloomOn || sunBloomOn || gradeOn;
 
-        if (!wantsPipeline) {
-            this.renderer.render(this.scene, this.camera);
-            return;
+        try {
+            if (!wantsPipeline) {
+                this.renderer.render(this.scene, this.camera);
+                return;
+            }
+
+            if (globalBloomOn) this._renderGlobalBloom(deltaTime);
+            if (sunBloomOn) this._renderSunBloom(deltaTime);
+
+            const mat = this.compositePass?.material ?? null;
+            if (mat?.uniforms?.uGlobalBloomTexture) mat.uniforms.uGlobalBloomTexture.value = globalBloomOn ? (this._globalBloomComposer.renderTarget2?.texture ?? this._blackTex) : this._blackTex;
+            if (mat?.uniforms?.uSunBloomTexture) mat.uniforms.uSunBloomTexture.value = sunBloomOn ? (this._sunBloomComposer.renderTarget2?.texture ?? this._blackTex) : this._blackTex;
+
+            this.composer.render(deltaTime);
+        } finally {
+            if (canCapture) info.autoReset = prevAutoReset;
         }
-
-        if (globalBloomOn) this._renderGlobalBloom(deltaTime);
-        if (sunBloomOn) this._renderSunBloom(deltaTime);
-
-        const mat = this.compositePass?.material ?? null;
-        if (mat?.uniforms?.uGlobalBloomTexture) mat.uniforms.uGlobalBloomTexture.value = globalBloomOn ? (this._globalBloomComposer.renderTarget2?.texture ?? this._blackTex) : this._blackTex;
-        if (mat?.uniforms?.uSunBloomTexture) mat.uniforms.uSunBloomTexture.value = sunBloomOn ? (this._sunBloomComposer.renderTarget2?.texture ?? this._blackTex) : this._blackTex;
-
-        this.composer.render(deltaTime);
     }
 
     dispose() {
