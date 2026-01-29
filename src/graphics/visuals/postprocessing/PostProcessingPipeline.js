@@ -4,17 +4,137 @@
 
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { createColorGradingPass, setColorGradingPassState } from './ColorGradingPass.js';
 import { SUN_BLOOM_LAYER, SUN_BLOOM_LAYER_ID } from '../sun/SunBloomLayers.js';
+import { sanitizeAntiAliasingSettings } from './AntiAliasingSettings.js';
 
 function clamp(value, min, max, fallback) {
     const num = Number(value);
     if (!Number.isFinite(num)) return fallback;
     return Math.max(min, Math.min(max, num));
+}
+
+function getMsaaSupportInfo(renderer) {
+    const caps = renderer?.capabilities ?? null;
+    const isWebGL2 = !!caps?.isWebGL2;
+    const maxSamples = Number.isFinite(caps?.maxSamples) ? Number(caps.maxSamples) : 0;
+    return {
+        supported: isWebGL2 && maxSamples > 0,
+        maxSamples: Math.max(0, Math.floor(maxSamples))
+    };
+}
+
+function setComposerSamples(composer, samples) {
+    const c = composer ?? null;
+    const rt1 = c?.renderTarget1 ?? null;
+    const rt2 = c?.renderTarget2 ?? null;
+    if (!rt1 || !rt2) return false;
+    if (!('samples' in rt1) || !('samples' in rt2)) return false;
+    const next = Math.max(0, Math.floor(Number(samples) || 0));
+    const prev1 = Math.max(0, Math.floor(Number(rt1.samples) || 0));
+    const prev2 = Math.max(0, Math.floor(Number(rt2.samples) || 0));
+    if (prev1 === next && prev2 === next) return true;
+
+    rt1.samples = next;
+    rt2.samples = next;
+
+    // Important: three.js render target GPU resources are not guaranteed to reconfigure
+    // correctly just by changing `.samples` after first use. Force a re-init.
+    rt1.dispose?.();
+    rt2.dispose?.();
+    return true;
+}
+
+function createTunableFxaaShader() {
+    const src = FXAAShader ?? null;
+    const fragmentShader = typeof src?.fragmentShader === 'string' ? src.fragmentShader : '';
+    let out = fragmentShader.replace(/-100(?:\.0+)?/g, '-16.0');
+    out = out.replace(
+        /uniform\\s+vec2\\s+resolution\\s*;/,
+        (match) => `${match}\n\tuniform float edgeThreshold;`
+    );
+    out = out.replace(
+        /const\\s+float\\s+edgeDetectionQuality\\s*=\\s*([0-9.]+)\\s*;/,
+        'const float edgeDetectionQuality = edgeThreshold;'
+    );
+
+    return {
+        ...src,
+        uniforms: {
+            ...(src?.uniforms ?? {}),
+            edgeThreshold: { value: 0.2 }
+        },
+        fragmentShader: out || fragmentShader
+    };
+}
+
+function getShaderMaterials(container) {
+    const out = [];
+    const c = container && typeof container === 'object' ? container : null;
+    if (!c) return out;
+
+    for (const value of Object.values(c)) {
+        if (value && typeof value === 'object' && value.isShaderMaterial) out.push(value);
+    }
+
+    return out;
+}
+
+function setToneMappedForPassMaterials(pass, toneMapped) {
+    for (const mat of getShaderMaterials(pass)) {
+        mat.toneMapped = !!toneMapped;
+    }
+}
+
+function setComposerRenderTargetColorSpace(composer, colorSpace) {
+    const c = composer ?? null;
+    const rt1 = c?.renderTarget1 ?? null;
+    const rt2 = c?.renderTarget2 ?? null;
+    const tex1 = rt1?.texture ?? null;
+    const tex2 = rt2?.texture ?? null;
+    if (!tex1 || !tex2) return;
+    if (!('colorSpace' in tex1) || !('colorSpace' in tex2)) return;
+    const cs = colorSpace ?? null;
+    if (cs) {
+        tex1.colorSpace = cs;
+        tex2.colorSpace = cs;
+    }
+}
+
+function applySmaaDefines(pass, { threshold, maxSearchSteps, maxSearchStepsDiag, cornerRounding } = {}) {
+    const p = pass && typeof pass === 'object' ? pass : null;
+    if (!p) return;
+
+    const materials = getShaderMaterials(p);
+
+    for (const mat of materials) {
+        const defines = mat?.defines ?? null;
+        if (!defines || typeof defines !== 'object') continue;
+
+        let changed = false;
+        if ('SMAA_THRESHOLD' in defines && Number.isFinite(threshold)) {
+            defines.SMAA_THRESHOLD = Number(threshold);
+            changed = true;
+        }
+        if ('SMAA_MAX_SEARCH_STEPS' in defines && Number.isFinite(maxSearchSteps)) {
+            defines.SMAA_MAX_SEARCH_STEPS = Math.max(0, Math.floor(Number(maxSearchSteps)));
+            changed = true;
+        }
+        if ('SMAA_MAX_SEARCH_STEPS_DIAG' in defines && Number.isFinite(maxSearchStepsDiag)) {
+            defines.SMAA_MAX_SEARCH_STEPS_DIAG = Math.max(0, Math.floor(Number(maxSearchStepsDiag)));
+            changed = true;
+        }
+        if ('SMAA_CORNER_ROUNDING' in defines && Number.isFinite(cornerRounding)) {
+            defines.SMAA_CORNER_ROUNDING = Math.max(0, Math.floor(Number(cornerRounding)));
+            changed = true;
+        }
+        if (changed) mat.needsUpdate = true;
+    }
 }
 
 function sanitizeGlobalBloomRuntimeSettings(settings) {
@@ -68,15 +188,15 @@ function makeCompositePass({ globalBloomTexture, sunBloomTexture } = {}) {
             float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 
             void main() {
-                vec3 base = texture2D(baseTexture, vUv).rgb;
+                vec4 base = texture2D(baseTexture, vUv);
                 vec3 bloom = texture2D(uGlobalBloomTexture, vUv).rgb;
                 vec3 sun = texture2D(uSunBloomTexture, vUv).rgb;
                 if (uSunBrightnessOnly > 0.5) {
                     float y = luma(sun);
                     sun = vec3(y);
                 }
-                vec3 outColor = base + bloom + sun;
-                gl_FragColor = vec4(outColor, 1.0);
+                vec3 outColor = base.rgb + bloom + sun;
+                gl_FragColor = vec4(outColor, base.a);
             }
         `,
         depthWrite: false,
@@ -97,6 +217,28 @@ function createBlackTexture() {
     return tex;
 }
 
+const OUTPUT_COLORSPACE_SHADER = Object.freeze({
+    uniforms: {
+        tDiffuse: { value: null }
+    },
+    vertexShader: `
+        varying vec2 vUv;
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    `,
+    fragmentShader: `
+        uniform sampler2D tDiffuse;
+        varying vec2 vUv;
+
+        void main() {
+            gl_FragColor = texture2D(tDiffuse, vUv);
+            #include <colorspace_fragment>
+        }
+    `
+});
+
 export class PostProcessingPipeline {
     constructor({
         renderer,
@@ -104,7 +246,8 @@ export class PostProcessingPipeline {
         camera,
         bloom = null,
         sunBloom = null,
-        colorGrading = null
+        colorGrading = null,
+        antiAliasing = null
     } = {}) {
         if (!renderer) throw new Error('[PostProcessingPipeline] renderer is required');
         if (!scene) throw new Error('[PostProcessingPipeline] scene is required');
@@ -113,20 +256,32 @@ export class PostProcessingPipeline {
         this.renderer = renderer;
         this.scene = scene;
         this.camera = camera;
+        this._pixelRatio = 1;
+        this._size = { w: 1, h: 1 };
 
         this._blackTex = createBlackTexture();
 
         this._globalBloom = sanitizeGlobalBloomRuntimeSettings(bloom);
         this._sunBloom = sanitizeSunBloomRuntimeSettings(sunBloom);
         this._colorGrading = { enabled: false, intensity: 0, lutTexture: null };
+        this._antiAliasing = {
+            requested: sanitizeAntiAliasingSettings(antiAliasing),
+            activeMode: 'off',
+            msaaSupported: false,
+            msaaMaxSamples: 0,
+            msaaSamples: 0
+        };
 
         this._darkMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
         this._materialCache = new Map();
         this._hidden = [];
 
+        const linearColorSpace = THREE.LinearSRGBColorSpace ?? THREE.NoColorSpace;
+
         // Global bloom composer (full scene)
         this._globalBloomComposer = new EffectComposer(renderer);
         this._globalBloomComposer.renderToScreen = false;
+        setComposerRenderTargetColorSpace(this._globalBloomComposer, linearColorSpace);
         this._globalBloomRenderPass = new RenderPass(scene, camera);
         this._globalBloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), this._globalBloom.strength, this._globalBloom.radius, this._globalBloom.threshold);
         this._globalBloomComposer.addPass(this._globalBloomRenderPass);
@@ -135,6 +290,7 @@ export class PostProcessingPipeline {
         // Sun bloom composer (selective/occlusion-aware)
         this._sunBloomComposer = new EffectComposer(renderer);
         this._sunBloomComposer.renderToScreen = false;
+        setComposerRenderTargetColorSpace(this._sunBloomComposer, linearColorSpace);
         this._sunBloomRenderPass = new RenderPass(scene, camera);
         this._sunBloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), this._sunBloom.strength, this._sunBloom.radius, this._sunBloom.threshold);
         this._sunBloomComposer.addPass(this._sunBloomRenderPass);
@@ -143,6 +299,7 @@ export class PostProcessingPipeline {
         // Final composer
         this.composer = new EffectComposer(renderer);
         this.composer.renderToScreen = true;
+        setComposerRenderTargetColorSpace(this.composer, linearColorSpace);
         this.renderPass = new RenderPass(scene, camera);
 
         this.compositePass = makeCompositePass({
@@ -151,31 +308,119 @@ export class PostProcessingPipeline {
         });
 
         this.colorGradingPass = createColorGradingPass();
-        this.outputPass = new OutputPass();
+        if (this.colorGradingPass?.material) this.colorGradingPass.material.toneMapped = false;
+
+        this.smaaPass = new SMAAPass(1, 1);
+        this.smaaPass.enabled = false;
+        setToneMappedForPassMaterials(this.smaaPass, false);
+
+        this.fxaaPass = new ShaderPass(createTunableFxaaShader());
+        this.fxaaPass.enabled = false;
+        if (this.fxaaPass?.material) this.fxaaPass.material.toneMapped = false;
+
+        this.outputPass = new ShaderPass(OUTPUT_COLORSPACE_SHADER);
+        if (this.outputPass?.material) this.outputPass.material.toneMapped = false;
+
         this.composer.addPass(this.renderPass);
         this.composer.addPass(this.compositePass);
         this.composer.addPass(this.colorGradingPass);
+        this.composer.addPass(this.smaaPass);
+        this.composer.addPass(this.fxaaPass);
         this.composer.addPass(this.outputPass);
 
         this.setSettings({ bloom, sunBloom });
         this.setColorGrading(colorGrading);
+        this.setAntiAliasing(antiAliasing);
     }
 
     setPixelRatio(pixelRatio) {
         const pr = clamp(pixelRatio, 0.1, 8, 1);
+        this._pixelRatio = pr;
         this.composer?.setPixelRatio?.(pr);
         this._globalBloomComposer?.setPixelRatio?.(pr);
         this._sunBloomComposer?.setPixelRatio?.(pr);
+        this._syncAaPassSizes();
     }
 
     setSize(width, height) {
         const w = Math.max(1, Math.floor(Number(width)));
         const h = Math.max(1, Math.floor(Number(height)));
+        this._size.w = w;
+        this._size.h = h;
         this.composer.setSize(w, h);
         this._globalBloomComposer.setSize(w, h);
         this._sunBloomComposer.setSize(w, h);
         this._globalBloomPass?.setSize?.(w, h);
         this._sunBloomPass?.setSize?.(w, h);
+        this._syncAaPassSizes();
+    }
+
+    _syncAaPassSizes() {
+        const w = this._size?.w ?? 1;
+        const h = this._size?.h ?? 1;
+        const pr = this._pixelRatio ?? 1;
+        const pxW = Math.max(1, Math.floor(w * pr));
+        const pxH = Math.max(1, Math.floor(h * pr));
+
+        const updateFxaaResolution = (pass) => {
+            const uniforms = pass?.material?.uniforms ?? null;
+            if (uniforms?.resolution?.value?.set) uniforms.resolution.value.set(1 / pxW, 1 / pxH);
+        };
+        updateFxaaResolution(this.fxaaPass);
+
+        if (this.smaaPass?.setSize) this.smaaPass.setSize(pxW, pxH);
+    }
+
+    setAntiAliasing(antiAliasing) {
+        const requested = sanitizeAntiAliasingSettings(antiAliasing);
+        const msaaInfo = getMsaaSupportInfo(this.renderer);
+        const requestedMode = requested?.mode ?? 'off';
+        const requestedMsaaSamples = requested?.msaa?.samples ?? 0;
+
+        let activeMode = requestedMode;
+        let msaaSamples = 0;
+
+        if (requestedMode === 'msaa') {
+            if (!msaaInfo.supported || requestedMsaaSamples <= 0) {
+                activeMode = 'off';
+            } else {
+                msaaSamples = Math.min(requestedMsaaSamples, msaaInfo.maxSamples);
+                if (msaaSamples <= 0) activeMode = 'off';
+            }
+        }
+
+        this._antiAliasing = {
+            requested,
+            activeMode,
+            msaaSupported: msaaInfo.supported,
+            msaaMaxSamples: msaaInfo.maxSamples,
+            msaaSamples
+        };
+
+        const enableSmaa = activeMode === 'smaa';
+        const enableFxaa = activeMode === 'fxaa';
+        this.smaaPass.enabled = enableSmaa;
+        this.fxaaPass.enabled = enableFxaa;
+
+        if (enableSmaa) {
+            const smaa = requested?.smaa ?? null;
+            const defs = {
+                threshold: smaa?.threshold,
+                maxSearchSteps: smaa?.maxSearchSteps,
+                maxSearchStepsDiag: smaa?.maxSearchStepsDiag,
+                cornerRounding: smaa?.cornerRounding
+            };
+            applySmaaDefines(this.smaaPass, defs);
+        }
+
+        const fxaaUniforms = (pass) => pass?.material?.uniforms ?? null;
+        const fxaa = requested?.fxaa ?? null;
+        const edgeThreshold = clamp(fxaa?.edgeThreshold, 0.02, 0.5, 0.2);
+        if (fxaaUniforms(this.fxaaPass)?.edgeThreshold) fxaaUniforms(this.fxaaPass).edgeThreshold.value = edgeThreshold;
+
+        setComposerSamples(this.composer, activeMode === 'msaa' ? msaaSamples : 0);
+        this._syncAaPassSizes();
+        this.setSize(this._size.w, this._size.h);
     }
 
     setSettings({ bloom = null, sunBloom = null } = {}) {
@@ -212,6 +457,13 @@ export class PostProcessingPipeline {
         return {
             globalBloomEnabled: !!this._globalBloom?.enabled,
             sunBloomEnabled: !!this._sunBloom?.enabled,
+            antiAliasing: {
+                mode: this._antiAliasing?.activeMode ?? 'off',
+                requestedMode: this._antiAliasing?.requested?.mode ?? 'off',
+                msaaSupported: !!this._antiAliasing?.msaaSupported,
+                msaaMaxSamples: this._antiAliasing?.msaaMaxSamples ?? 0,
+                msaaSamples: this._antiAliasing?.msaaSamples ?? 0
+            },
             globalBloom: { ...(this._globalBloom ?? {}) },
             sunBloom: { ...(this._sunBloom ?? {}) }
         };
@@ -307,7 +559,8 @@ export class PostProcessingPipeline {
         const globalBloomOn = !!this._globalBloom?.enabled && (this._globalBloom?.strength > 0);
         const sunBloomOn = !!this._sunBloom?.enabled && (this._sunBloom?.strength > 0);
         const gradeOn = !!this._colorGrading?.enabled;
-        const wantsPipeline = globalBloomOn || sunBloomOn || gradeOn;
+        const aaMode = this._antiAliasing?.activeMode ?? 'off';
+        const wantsPipeline = globalBloomOn || sunBloomOn || gradeOn || aaMode !== 'off';
 
         try {
             if (!wantsPipeline) {
@@ -317,6 +570,10 @@ export class PostProcessingPipeline {
 
             if (globalBloomOn) this._renderGlobalBloom(deltaTime);
             if (sunBloomOn) this._renderSunBloom(deltaTime);
+
+            // Avoid running the composite pass when both bloom layers are disabled;
+            // even a "no-op" shader pass can subtly change output (alpha/dither/color space).
+            this.compositePass.enabled = globalBloomOn || sunBloomOn;
 
             const mat = this.compositePass?.material ?? null;
             if (mat?.uniforms?.uGlobalBloomTexture) mat.uniforms.uGlobalBloomTexture.value = globalBloomOn ? (this._globalBloomComposer.renderTarget2?.texture ?? this._blackTex) : this._blackTex;
@@ -331,7 +588,9 @@ export class PostProcessingPipeline {
     dispose() {
         this._globalBloomPass?.dispose?.();
         this._sunBloomPass?.dispose?.();
-        this.outputPass?.dispose?.();
+        this.smaaPass?.dispose?.();
+        this.fxaaPass?.material?.dispose?.();
+        this.outputPass?.material?.dispose?.();
         this.compositePass?.material?.dispose?.();
         this.colorGradingPass?.material?.dispose?.();
 

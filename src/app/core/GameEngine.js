@@ -4,6 +4,7 @@ import { SimulationContext } from './SimulationContext.js';
 import { applyIBLIntensity, applyIBLToScene, getIBLBackgroundTexture, loadIBLBackgroundTexture, loadIBLTexture } from '../../graphics/lighting/IBL.js';
 import { getResolvedLightingSettings } from '../../graphics/lighting/LightingSettings.js';
 import { getResolvedAtmosphereSettings, sanitizeAtmosphereSettings } from '../../graphics/visuals/atmosphere/AtmosphereSettings.js';
+import { getResolvedAntiAliasingSettings, sanitizeAntiAliasingSettings } from '../../graphics/visuals/postprocessing/AntiAliasingSettings.js';
 import { getResolvedBloomSettings, sanitizeBloomSettings } from '../../graphics/visuals/postprocessing/BloomSettings.js';
 import { PostProcessingPipeline } from '../../graphics/visuals/postprocessing/PostProcessingPipeline.js';
 import { getResolvedColorGradingSettings, sanitizeColorGradingSettings } from '../../graphics/visuals/postprocessing/ColorGradingSettings.js';
@@ -80,6 +81,10 @@ export class GameEngine {
             settings: getResolvedSunBloomSettings()
         };
 
+        this._antiAliasing = {
+            settings: getResolvedAntiAliasingSettings()
+        };
+
         this._colorGrading = {
             settings: getResolvedColorGradingSettings(),
             lut: null,
@@ -89,6 +94,7 @@ export class GameEngine {
             lastError: null
         };
 
+        this._applyAntiAliasingSettings(this._antiAliasing.settings);
         this._applyBloomSettings(this._bloom.settings);
         this._applySunBloomSettings(this._sunBloom.settings);
         this._applyColorGradingSettings(this._colorGrading.settings);
@@ -221,6 +227,10 @@ export class GameEngine {
         return this._bloom?.settings ?? null;
     }
 
+    get antiAliasingSettings() {
+        return this._antiAliasing?.settings ?? null;
+    }
+
     get sunBloomSettings() {
         return this._sunBloom?.settings ?? null;
     }
@@ -264,6 +274,46 @@ export class GameEngine {
             radius: p?.radius ?? (s?.radius ?? 0),
             threshold: p?.threshold ?? (s?.threshold ?? 0),
             brightnessOnly: p?.brightnessOnly ?? (s?.brightnessOnly ?? true)
+        };
+    }
+
+    getAntiAliasingDebugInfo() {
+        const requested = this._antiAliasing?.settings ?? null;
+        const requestedMode = typeof requested?.mode === 'string' ? requested.mode : 'off';
+        const requestedSamples = Number.isFinite(requested?.msaa?.samples) ? Number(requested.msaa.samples) : 0;
+
+        const caps = this.renderer?.capabilities ?? null;
+        const maxSamples = Number.isFinite(caps?.maxSamples) ? Number(caps.maxSamples) : 0;
+        const msaaSupported = !!caps?.isWebGL2 && maxSamples > 0;
+
+        const gl = this.renderer?.getContext?.() ?? null;
+        const nativeAntialias = !!gl?.getContextAttributes?.()?.antialias;
+
+        if (!this._post?.pipeline) {
+            return {
+                pipelineActive: false,
+                requestedMode,
+                activeMode: nativeAntialias ? 'native_msaa' : 'off',
+                nativeAntialias,
+                msaaSupported,
+                msaaMaxSamples: Math.max(0, Math.floor(maxSamples)),
+                msaaRequestedSamples: requestedSamples,
+                msaaActiveSamples: 0
+            };
+        }
+
+        const info = this._post.pipeline.getDebugInfo?.() ?? null;
+        const aa = info?.antiAliasing ?? null;
+        const activeMode = typeof aa?.mode === 'string' ? aa.mode : 'off';
+        return {
+            pipelineActive: true,
+            requestedMode: typeof aa?.requestedMode === 'string' ? aa.requestedMode : requestedMode,
+            activeMode,
+            nativeAntialias,
+            msaaSupported: aa?.msaaSupported !== undefined ? !!aa.msaaSupported : msaaSupported,
+            msaaMaxSamples: Number.isFinite(aa?.msaaMaxSamples) ? Number(aa.msaaMaxSamples) : Math.max(0, Math.floor(maxSamples)),
+            msaaRequestedSamples: requestedSamples,
+            msaaActiveSamples: Number.isFinite(aa?.msaaSamples) ? Number(aa.msaaSamples) : 0
         };
     }
 
@@ -465,6 +515,13 @@ export class GameEngine {
         this._post.pipeline.setSize(size.x, size.y);
     }
 
+    _applyAntiAliasingSettings(settings) {
+        if (!this._antiAliasing) return;
+        const next = sanitizeAntiAliasingSettings(settings);
+        this._antiAliasing.settings = next;
+        this._syncPostProcessingPipeline();
+    }
+
     _applyBloomSettings(settings) {
         if (!this._bloom) return;
         const next = sanitizeBloomSettings(settings);
@@ -561,7 +618,11 @@ export class GameEngine {
         const sunBloomEnabled = !!this._sunBloom?.settings?.enabled;
         const preset = getColorGradingPresetById(this._colorGrading?.settings?.preset);
         const gradingRequested = preset?.id && preset.id !== 'off' && (this._colorGrading?.settings?.intensity > 0);
-        const wantsPipeline = bloomEnabled || sunBloomEnabled || gradingRequested;
+        const aa = this._antiAliasing?.settings ?? null;
+        const aaMode = typeof aa?.mode === 'string' ? aa.mode : 'off';
+        const aaWantsPipeline = aaMode === 'fxaa' || aaMode === 'smaa';
+
+        const wantsPipeline = bloomEnabled || sunBloomEnabled || gradingRequested || aaWantsPipeline;
 
         if (!wantsPipeline) {
             if (this._post.pipeline) {
@@ -577,7 +638,8 @@ export class GameEngine {
                 scene: this.scene,
                 camera: this.camera,
                 bloom: this._bloom?.settings ?? null,
-                sunBloom: this._sunBloom?.settings ?? null
+                sunBloom: this._sunBloom?.settings ?? null,
+                antiAliasing: this._antiAliasing?.settings ?? null
             });
             this._post.pipeline.setPixelRatio(this.renderer.getPixelRatio?.() ?? 1);
             this._syncPostProcessingSize();
@@ -587,6 +649,7 @@ export class GameEngine {
             bloom: this._bloom?.settings ?? null,
             sunBloom: this._sunBloom?.settings ?? null
         });
+        this._post.pipeline.setAntiAliasing(this._antiAliasing?.settings ?? null);
         this._post.pipeline.setColorGrading({
             lutTexture: this._colorGrading?.lut ?? null,
             intensity: this._colorGrading?.settings?.intensity ?? 0
@@ -693,6 +756,10 @@ export class GameEngine {
         this._applyBloomSettings(getResolvedBloomSettings());
     }
 
+    reloadAntiAliasingSettings() {
+        this._applyAntiAliasingSettings(getResolvedAntiAliasingSettings());
+    }
+
     reloadSunBloomSettings() {
         this._applySunBloomSettings(getResolvedSunBloomSettings());
     }
@@ -703,6 +770,10 @@ export class GameEngine {
 
     setBloomSettings(settings) {
         this._applyBloomSettings(settings);
+    }
+
+    setAntiAliasingSettings(settings) {
+        this._applyAntiAliasingSettings(settings);
     }
 
     setSunBloomSettings(settings) {
@@ -719,6 +790,7 @@ export class GameEngine {
         if (this._contextProxy && 'city' in this._contextProxy) this._contextProxy.city = null;
         this.clearScene();
         this.reloadLightingSettings();
+        this.reloadAntiAliasingSettings();
         this.reloadBloomSettings();
         this.reloadSunBloomSettings();
         this.reloadColorGradingSettings();

@@ -2,6 +2,7 @@
 // Tabbed Options UI overlay with persisted lighting controls.
 
 import { getDefaultResolvedLightingSettings } from '../../lighting/LightingSettings.js';
+import { getDefaultResolvedAntiAliasingSettings } from '../../visuals/postprocessing/AntiAliasingSettings.js';
 import { getDefaultResolvedBloomSettings } from '../../visuals/postprocessing/BloomSettings.js';
 import { getDefaultResolvedSunBloomSettings } from '../../visuals/postprocessing/SunBloomSettings.js';
 import { getDefaultResolvedColorGradingSettings } from '../../visuals/postprocessing/ColorGradingSettings.js';
@@ -120,6 +121,7 @@ function makeChoiceRow({ label, value = '', options = [], onChange }) {
         row,
         group,
         buttons: Array.from(buttons.values()),
+        getButton: (id) => buttons.get(String(id ?? '')) ?? null,
         getValue: () => current,
         setValue: (id) => setActive(id),
         setDisabled: (disabled) => {
@@ -273,7 +275,7 @@ async function copyTextToClipboard(text) {
 
 function formatIncludedGroups(includes) {
     const src = includes && typeof includes === 'object' ? includes : {};
-    const keys = ['lighting', 'bloom', 'sunBloom', 'colorGrading', 'sunFlare', 'buildingWindowVisuals', 'asphaltNoise'];
+    const keys = ['lighting', 'antiAliasing', 'bloom', 'sunBloom', 'colorGrading', 'sunFlare', 'buildingWindowVisuals', 'asphaltNoise'];
     const enabled = keys.filter((k) => src[k] !== false);
     return enabled.length ? enabled.join(', ') : '(none)';
 }
@@ -284,6 +286,7 @@ export class OptionsUI {
         initialTab = 'lighting',
         initialLighting = null,
         initialAtmosphere = null,
+        initialAntiAliasing = null,
         initialBloom = null,
         initialSunBloom = null,
         initialColorGrading = null,
@@ -294,6 +297,7 @@ export class OptionsUI {
         initialColorGradingDebug = null,
         getIblDebugInfo = null,
         getPostProcessingDebugInfo = null,
+        getAntiAliasingDebugInfo = null,
         titleText = 'Options',
         subtitleText = '0 opens options · Esc closes',
         onCancel = null,
@@ -305,8 +309,10 @@ export class OptionsUI {
         this.onSave = onSave;
         this._getIblDebugInfo = typeof getIblDebugInfo === 'function' ? getIblDebugInfo : null;
         this._getPostProcessingDebugInfo = typeof getPostProcessingDebugInfo === 'function' ? getPostProcessingDebugInfo : null;
+        this._getAntiAliasingDebugInfo = typeof getAntiAliasingDebugInfo === 'function' ? getAntiAliasingDebugInfo : null;
         this._iblDebugEls = null;
         this._postDebugEls = null;
+        this._aaDebugEls = null;
         this._debugInterval = null;
         this._initialPostProcessingActive = initialPostProcessingActive !== null ? !!initialPostProcessingActive : null;
         this._initialColorGradingDebug = initialColorGradingDebug && typeof initialColorGradingDebug === 'object'
@@ -326,19 +332,20 @@ export class OptionsUI {
 
         this.tabs = makeEl('div', 'options-tabs');
         this._visibleTabs = (() => {
-            if (!Array.isArray(visibleTabs)) return ['lighting', 'sun_bloom', 'asphalt', 'buildings'];
+            if (!Array.isArray(visibleTabs)) return ['lighting', 'graphics', 'sun_bloom', 'asphalt', 'buildings'];
             const out = [];
             for (const entry of visibleTabs) {
                 const raw = String(entry ?? '').toLowerCase();
                 const key = raw === 'gameplay' ? 'buildings' : (raw === 'sunbloom' ? 'sun_bloom' : raw);
-                if (key !== 'lighting' && key !== 'sun_bloom' && key !== 'asphalt' && key !== 'buildings') continue;
+                if (key !== 'lighting' && key !== 'graphics' && key !== 'sun_bloom' && key !== 'asphalt' && key !== 'buildings') continue;
                 if (out.includes(key)) continue;
                 out.push(key);
             }
-            return out.length ? out : ['lighting', 'sun_bloom', 'asphalt', 'buildings'];
+            return out.length ? out : ['lighting', 'graphics', 'sun_bloom', 'asphalt', 'buildings'];
         })();
 
         const TAB_LABELS = {
+            graphics: 'Graphics',
             lighting: 'Lighting',
             sun_bloom: 'Sun Bloom',
             asphalt: 'Asphalt',
@@ -388,13 +395,20 @@ export class OptionsUI {
 
         const desiredTab = (initialTab === 'buildings' || initialTab === 'gameplay')
             ? 'buildings'
-            : (initialTab === 'asphalt' ? 'asphalt' : (initialTab === 'sun_bloom' || initialTab === 'sunbloom' ? 'sun_bloom' : 'lighting'));
+            : (initialTab === 'graphics'
+                ? 'graphics'
+                : (initialTab === 'asphalt'
+                    ? 'asphalt'
+                    : (initialTab === 'sun_bloom' || initialTab === 'sunbloom' ? 'sun_bloom' : 'lighting')));
         this._tab = this._visibleTabs.includes(desiredTab) ? desiredTab : (this._visibleTabs[0] ?? desiredTab);
         this._draftLighting = initialLighting && typeof initialLighting === 'object'
             ? JSON.parse(JSON.stringify(initialLighting))
             : null;
         this._draftAtmosphere = initialAtmosphere && typeof initialAtmosphere === 'object'
             ? JSON.parse(JSON.stringify(initialAtmosphere))
+            : null;
+        this._draftAntiAliasing = initialAntiAliasing && typeof initialAntiAliasing === 'object'
+            ? JSON.parse(JSON.stringify(initialAntiAliasing))
             : null;
         this._draftBloom = initialBloom && typeof initialBloom === 'object'
             ? JSON.parse(JSON.stringify(initialBloom))
@@ -424,6 +438,7 @@ export class OptionsUI {
         if (!d) return;
         if (d.lighting) this._draftLighting = JSON.parse(JSON.stringify(d.lighting));
         if (d.atmosphere) this._draftAtmosphere = JSON.parse(JSON.stringify(d.atmosphere));
+        if (d.antiAliasing) this._draftAntiAliasing = JSON.parse(JSON.stringify(d.antiAliasing));
         if (d.bloom) this._draftBloom = JSON.parse(JSON.stringify(d.bloom));
         if (d.sunBloom) this._draftSunBloom = JSON.parse(JSON.stringify(d.sunBloom));
         if (d.colorGrading) this._draftColorGrading = JSON.parse(JSON.stringify(d.colorGrading));
@@ -502,7 +517,9 @@ export class OptionsUI {
     setTab(key) {
         const desired = (key === 'buildings' || key === 'gameplay')
             ? 'buildings'
-            : (key === 'asphalt' ? 'asphalt' : (key === 'sun_bloom' || key === 'sunbloom' ? 'sun_bloom' : 'lighting'));
+            : (key === 'graphics'
+                ? 'graphics'
+                : (key === 'asphalt' ? 'asphalt' : (key === 'sun_bloom' || key === 'sunbloom' ? 'sun_bloom' : 'lighting')));
         const next = this._visibleTabs.includes(desired) ? desired : (this._visibleTabs[0] ?? desired);
         this._tab = next;
         for (const [k, btn] of Object.entries(this.tabButtons)) btn.classList.toggle('is-active', k === next);
@@ -512,7 +529,9 @@ export class OptionsUI {
     _renderTab() {
         this._iblDebugEls = null;
         this._postDebugEls = null;
+        this._aaDebugEls = null;
         this.body.textContent = '';
+        if (this._tab === 'graphics') return this._renderGraphicsTab();
         if (this._tab === 'lighting') return this._renderLightingTab();
         if (this._tab === 'sun_bloom') return this._renderSunBloomTab();
         if (this._tab === 'asphalt') return this._renderAsphaltTab();
@@ -521,7 +540,7 @@ export class OptionsUI {
 
     _startDebugRefresh() {
         if (this._debugInterval) return;
-        if (!this._getIblDebugInfo && !this._getPostProcessingDebugInfo) return;
+        if (!this._getIblDebugInfo && !this._getPostProcessingDebugInfo && !this._getAntiAliasingDebugInfo) return;
         this._debugInterval = window.setInterval(() => this._refreshDebug(), 250);
     }
 
@@ -534,6 +553,7 @@ export class OptionsUI {
     _refreshDebug() {
         this._refreshIblDebug();
         this._refreshPostProcessingDebug();
+        this._refreshAntiAliasingDebug();
     }
 
 	    _refreshIblDebug() {
@@ -689,6 +709,40 @@ export class OptionsUI {
         }
     }
 
+    _refreshAntiAliasingDebug() {
+        const els = this._aaDebugEls;
+        if (!els || !this._getAntiAliasingDebugInfo) return;
+
+        const info = this._getAntiAliasingDebugInfo() ?? null;
+        const pipelineActive = info?.pipelineActive !== undefined ? !!info.pipelineActive : false;
+        const requestedMode = String(info?.requestedMode ?? 'off');
+        const activeMode = String(info?.activeMode ?? 'off');
+        const nativeAntialias = info?.nativeAntialias !== undefined ? !!info.nativeAntialias : null;
+
+        if (els.pipeline) els.pipeline.textContent = pipelineActive ? 'On (composer)' : 'Off (direct)';
+        if (els.native) els.native.textContent = nativeAntialias === null ? '-' : (nativeAntialias ? 'On' : 'Off');
+
+        const activeLabel = requestedMode !== activeMode ? `${activeMode} (requested ${requestedMode})` : activeMode;
+        if (els.active) els.active.textContent = activeLabel;
+
+        const msaaSupported = info?.msaaSupported !== undefined ? !!info.msaaSupported : false;
+        const maxSamples = Number.isFinite(info?.msaaMaxSamples) ? Number(info.msaaMaxSamples) : 0;
+        const activeSamples = Number.isFinite(info?.msaaActiveSamples) ? Number(info.msaaActiveSamples) : 0;
+
+        if (!els.msaa) return;
+        if (!msaaSupported) {
+            els.msaa.textContent = 'Not supported (WebGL2 required)';
+            return;
+        }
+        if (!pipelineActive) {
+            els.msaa.textContent = `Inactive (pipeline off, max ${maxSamples || '?'})`;
+            return;
+        }
+        els.msaa.textContent = activeMode === 'msaa'
+            ? `Active (${activeSamples || '?'}×, max ${maxSamples || '?'})`
+            : `Supported (max ${maxSamples || '?'})`;
+    }
+
     _ensureDraftAsphaltNoise() {
         const defaults = getDefaultResolvedAsphaltNoiseSettings();
 
@@ -806,6 +860,33 @@ export class OptionsUI {
         if (this._draftAtmosphere) return;
         const d = getDefaultResolvedAtmosphereSettings();
         this._draftAtmosphere = JSON.parse(JSON.stringify(d));
+    }
+
+    _ensureDraftAntiAliasing() {
+        const defaults = getDefaultResolvedAntiAliasingSettings();
+
+        if (!this._draftAntiAliasing) {
+            this._draftAntiAliasing = JSON.parse(JSON.stringify(defaults));
+            return;
+        }
+
+        const d = this._draftAntiAliasing;
+
+        if (d.mode === undefined) d.mode = defaults.mode;
+
+        if (!d.msaa || typeof d.msaa !== 'object') d.msaa = { ...defaults.msaa };
+        if (d.msaa.samples === undefined) d.msaa.samples = defaults.msaa.samples;
+
+        if (!d.smaa || typeof d.smaa !== 'object') d.smaa = { ...defaults.smaa };
+        if (d.smaa.preset === undefined) d.smaa.preset = defaults.smaa.preset;
+        if (d.smaa.threshold === undefined) d.smaa.threshold = defaults.smaa.threshold;
+        if (d.smaa.maxSearchSteps === undefined) d.smaa.maxSearchSteps = defaults.smaa.maxSearchSteps;
+        if (d.smaa.maxSearchStepsDiag === undefined) d.smaa.maxSearchStepsDiag = defaults.smaa.maxSearchStepsDiag;
+        if (d.smaa.cornerRounding === undefined) d.smaa.cornerRounding = defaults.smaa.cornerRounding;
+
+        if (!d.fxaa || typeof d.fxaa !== 'object') d.fxaa = { ...defaults.fxaa };
+        if (d.fxaa.preset === undefined) d.fxaa.preset = defaults.fxaa.preset;
+        if (d.fxaa.edgeThreshold === undefined) d.fxaa.edgeThreshold = defaults.fxaa.edgeThreshold;
     }
 
     _ensureDraftBloom() {
@@ -1587,6 +1668,286 @@ export class OptionsUI {
         this.body.appendChild(note);
     }
 
+    _renderGraphicsTab() {
+        this._ensureDraftAntiAliasing();
+        const aa = this._draftAntiAliasing;
+        const emit = () => this._emitLiveChange();
+
+        const info = this._getAntiAliasingDebugInfo?.() ?? null;
+        const msaaSupported = info?.msaaSupported !== undefined ? !!info.msaaSupported : true;
+        const msaaMaxSamples = Number.isFinite(info?.msaaMaxSamples) ? Number(info.msaaMaxSamples) : 0;
+
+        const sectionStatus = makeEl('div', 'options-section');
+        sectionStatus.appendChild(makeEl('div', 'options-section-title', 'Status'));
+        const status = {
+            pipeline: makeValueRow({ label: 'Pipeline', value: '-' }),
+            active: makeValueRow({ label: 'Active AA', value: '-' }),
+            native: makeValueRow({ label: 'Native MSAA', value: '-' }),
+            msaa: makeValueRow({ label: 'MSAA (pipeline)', value: '-' })
+        };
+        sectionStatus.appendChild(status.pipeline.row);
+        sectionStatus.appendChild(status.active.row);
+        sectionStatus.appendChild(status.native.row);
+        sectionStatus.appendChild(status.msaa.row);
+
+        this._aaDebugEls = {
+            pipeline: status.pipeline.text,
+            active: status.active.text,
+            native: status.native.text,
+            msaa: status.msaa.text
+        };
+
+        const sectionAa = makeEl('div', 'options-section');
+        sectionAa.appendChild(makeEl('div', 'options-section-title', 'Anti-aliasing'));
+
+        const mode = makeChoiceRow({
+            label: 'Mode',
+            value: aa.mode,
+            options: [
+                { id: 'off', label: 'Off' },
+                { id: 'msaa', label: 'MSAA' },
+                { id: 'smaa', label: 'SMAA' },
+                { id: 'fxaa', label: 'FXAA' }
+            ],
+            onChange: (v) => {
+                aa.mode = v;
+                emit();
+                syncEnabled();
+            }
+        });
+
+        const msaaSamples = makeChoiceRow({
+            label: 'MSAA samples',
+            value: String(aa.msaa?.samples ?? 2),
+            options: [
+                { id: '2', label: '2×' },
+                { id: '4', label: '4×' },
+                { id: '8', label: '8×' }
+            ],
+            onChange: (v) => {
+                aa.msaa.samples = Number(v);
+                emit();
+            }
+        });
+
+        const SMAA_PRESETS = {
+            low: { threshold: 0.15, maxSearchSteps: 8, maxSearchStepsDiag: 4, cornerRounding: 25 },
+            medium: { threshold: 0.1, maxSearchSteps: 16, maxSearchStepsDiag: 8, cornerRounding: 25 },
+            high: { threshold: 0.075, maxSearchSteps: 24, maxSearchStepsDiag: 12, cornerRounding: 25 },
+            ultra: { threshold: 0.05, maxSearchSteps: 32, maxSearchStepsDiag: 16, cornerRounding: 25 }
+        };
+
+        const smaaPreset = makeSelectRow({
+            label: 'SMAA preset',
+            value: String(aa.smaa?.preset ?? 'medium'),
+            options: [
+                { id: 'low', label: 'Low' },
+                { id: 'medium', label: 'Medium' },
+                { id: 'high', label: 'High' },
+                { id: 'ultra', label: 'Ultra' },
+                { id: 'custom', label: 'Custom' }
+            ],
+            onChange: (v) => {
+                aa.smaa.preset = v;
+                const preset = SMAA_PRESETS[v] ?? null;
+                if (preset) {
+                    aa.smaa.threshold = preset.threshold;
+                    aa.smaa.maxSearchSteps = preset.maxSearchSteps;
+                    aa.smaa.maxSearchStepsDiag = preset.maxSearchStepsDiag;
+                    aa.smaa.cornerRounding = preset.cornerRounding;
+                    smaaThreshold.range.value = String(preset.threshold);
+                    smaaThreshold.number.value = String(preset.threshold.toFixed(2));
+                    smaaSearch.range.value = String(preset.maxSearchSteps);
+                    smaaSearch.number.value = String(preset.maxSearchSteps);
+                    smaaSearchDiag.range.value = String(preset.maxSearchStepsDiag);
+                    smaaSearchDiag.number.value = String(preset.maxSearchStepsDiag);
+                    smaaCorner.range.value = String(preset.cornerRounding);
+                    smaaCorner.number.value = String(preset.cornerRounding);
+                }
+                emit();
+            }
+        });
+
+        const smaaThreshold = makeNumberSliderRow({
+            label: 'SMAA threshold',
+            value: aa.smaa?.threshold ?? 0.1,
+            min: 0.02,
+            max: 0.2,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                aa.smaa.threshold = v;
+                aa.smaa.preset = 'custom';
+                smaaPreset.select.value = 'custom';
+                emit();
+            }
+        });
+
+        const smaaSearch = makeNumberSliderRow({
+            label: 'SMAA search steps',
+            value: aa.smaa?.maxSearchSteps ?? 16,
+            min: 4,
+            max: 32,
+            step: 1,
+            digits: 0,
+            onChange: (v) => {
+                aa.smaa.maxSearchSteps = Math.round(v);
+                aa.smaa.preset = 'custom';
+                smaaPreset.select.value = 'custom';
+                emit();
+            }
+        });
+
+        const smaaSearchDiag = makeNumberSliderRow({
+            label: 'SMAA diag steps',
+            value: aa.smaa?.maxSearchStepsDiag ?? 8,
+            min: 0,
+            max: 16,
+            step: 1,
+            digits: 0,
+            onChange: (v) => {
+                aa.smaa.maxSearchStepsDiag = Math.round(v);
+                aa.smaa.preset = 'custom';
+                smaaPreset.select.value = 'custom';
+                emit();
+            }
+        });
+
+        const smaaCorner = makeNumberSliderRow({
+            label: 'SMAA corner rounding',
+            value: aa.smaa?.cornerRounding ?? 25,
+            min: 0,
+            max: 100,
+            step: 1,
+            digits: 0,
+            onChange: (v) => {
+                aa.smaa.cornerRounding = Math.round(v);
+                aa.smaa.preset = 'custom';
+                smaaPreset.select.value = 'custom';
+                emit();
+            }
+        });
+
+        const FXAA_PRESETS = {
+            sharp: { edgeThreshold: 0.28 },
+            balanced: { edgeThreshold: 0.2 },
+            soft: { edgeThreshold: 0.12 }
+        };
+
+        const fxaaPreset = makeSelectRow({
+            label: 'FXAA preset',
+            value: String(aa.fxaa?.preset ?? 'balanced'),
+            options: [
+                { id: 'sharp', label: 'Sharp' },
+                { id: 'balanced', label: 'Balanced' },
+                { id: 'soft', label: 'Soft' },
+                { id: 'custom', label: 'Custom' }
+            ],
+            onChange: (v) => {
+                aa.fxaa.preset = v;
+                const preset = FXAA_PRESETS[v] ?? null;
+                if (preset) {
+                    aa.fxaa.edgeThreshold = preset.edgeThreshold;
+                    fxaaThreshold.range.value = String(preset.edgeThreshold);
+                    fxaaThreshold.number.value = String(preset.edgeThreshold.toFixed(2));
+                }
+                emit();
+            }
+        });
+
+        const fxaaThreshold = makeNumberSliderRow({
+            label: 'FXAA edge threshold',
+            value: aa.fxaa?.edgeThreshold ?? 0.2,
+            min: 0.05,
+            max: 0.35,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                aa.fxaa.edgeThreshold = v;
+                aa.fxaa.preset = 'custom';
+                fxaaPreset.select.value = 'custom';
+                emit();
+            }
+        });
+
+        const msaaNote = makeEl('div', 'options-note');
+        msaaNote.textContent = !msaaSupported
+            ? 'MSAA is not supported on this device/browser (WebGL2 required).'
+            : `MSAA smooths geometry edges in the post-processing pipeline. Higher samples cost GPU time + VRAM. (max ${msaaMaxSamples || '?'})`;
+
+        const smaaNote = makeEl('div', 'options-note');
+        smaaNote.textContent = 'SMAA is a high quality post-process AA. Lower threshold detects more edges (smoother, slightly blurrier).';
+
+        const fxaaNote = makeEl('div', 'options-note');
+        fxaaNote.textContent = 'FXAA is a fast post-process AA. Higher threshold keeps more detail but reduces smoothing.';
+
+        const syncEnabled = () => {
+            const current = String(aa.mode ?? 'off');
+            if (!msaaSupported && current === 'msaa') {
+                aa.mode = 'off';
+                mode.setValue('off');
+                emit();
+            }
+
+            const msaaActive = current === 'msaa' && msaaSupported;
+            const smaaActive = current === 'smaa';
+            const fxaaActive = current === 'fxaa';
+
+            const max = msaaMaxSamples > 0 ? msaaMaxSamples : 8;
+            const allow2 = msaaSupported && max >= 2;
+            const allow4 = msaaSupported && max >= 4;
+            const allow8 = msaaSupported && max >= 8;
+            msaaSamples.setDisabled(!msaaActive);
+            const btn2 = msaaSamples.getButton('2');
+            const btn4 = msaaSamples.getButton('4');
+            const btn8 = msaaSamples.getButton('8');
+            if (btn2) btn2.disabled = !msaaActive || !allow2;
+            if (btn4) btn4.disabled = !msaaActive || !allow4;
+            if (btn8) btn8.disabled = !msaaActive || !allow8;
+            if (msaaActive) {
+                if (allow8 && aa.msaa.samples > 8) aa.msaa.samples = 8;
+                else if (!allow8 && allow4 && aa.msaa.samples > 4) aa.msaa.samples = 4;
+                else if (!allow4 && allow2 && aa.msaa.samples > 2) aa.msaa.samples = 2;
+                if (!allow2) aa.msaa.samples = 0;
+                msaaSamples.setValue(String(aa.msaa.samples));
+            }
+
+            smaaPreset.select.disabled = !smaaActive;
+            fxaaPreset.select.disabled = !fxaaActive;
+
+            for (const row of [smaaThreshold, smaaSearch, smaaSearchDiag, smaaCorner]) {
+                row.range.disabled = !smaaActive;
+                row.number.disabled = !smaaActive;
+            }
+            fxaaThreshold.range.disabled = !fxaaActive;
+            fxaaThreshold.number.disabled = !fxaaActive;
+        };
+
+        const msaaBtn = mode.getButton('msaa');
+        if (msaaBtn) msaaBtn.disabled = !msaaSupported;
+
+        sectionAa.appendChild(mode.row);
+        sectionAa.appendChild(msaaSamples.row);
+        sectionAa.appendChild(msaaNote);
+        sectionAa.appendChild(makeEl('div', 'options-section-title', 'SMAA'));
+        sectionAa.appendChild(smaaPreset.row);
+        sectionAa.appendChild(smaaThreshold.row);
+        sectionAa.appendChild(smaaSearch.row);
+        sectionAa.appendChild(smaaSearchDiag.row);
+        sectionAa.appendChild(smaaCorner.row);
+        sectionAa.appendChild(smaaNote);
+        sectionAa.appendChild(makeEl('div', 'options-section-title', 'FXAA'));
+        sectionAa.appendChild(fxaaPreset.row);
+        sectionAa.appendChild(fxaaThreshold.row);
+        sectionAa.appendChild(fxaaNote);
+
+        syncEnabled();
+
+        this.body.appendChild(sectionStatus);
+        this.body.appendChild(sectionAa);
+        this._refreshAntiAliasingDebug();
+    }
+
     _renderLightingTab() {
         this._ensureDraftLighting();
         this._ensureDraftAtmosphere();
@@ -2174,6 +2535,8 @@ export class OptionsUI {
 
         this._draftAtmosphere = JSON.parse(JSON.stringify(getDefaultResolvedAtmosphereSettings()));
 
+        this._draftAntiAliasing = JSON.parse(JSON.stringify(getDefaultResolvedAntiAliasingSettings()));
+
         const bloom = getDefaultResolvedBloomSettings();
         this._draftBloom = {
             enabled: bloom.enabled,
@@ -2230,12 +2593,14 @@ export class OptionsUI {
         this._ensureDraftBuildingWindowVisuals();
         this._ensureDraftLighting();
         this._ensureDraftAtmosphere();
+        this._ensureDraftAntiAliasing();
         this._ensureDraftBloom();
         this._ensureDraftSunBloom();
         this._ensureDraftColorGrading();
         this._ensureDraftSunFlare();
         const d = this._draftLighting;
         const atmo = this._draftAtmosphere;
+        const antiAliasing = this._draftAntiAliasing;
         const bloom = this._draftBloom;
         const sunBloom = this._draftSunBloom;
         const grade = this._draftColorGrading;
@@ -2255,6 +2620,21 @@ export class OptionsUI {
                 }
             },
             atmosphere: JSON.parse(JSON.stringify(atmo)),
+            antiAliasing: {
+                mode: String(antiAliasing?.mode ?? 'off'),
+                msaa: { samples: antiAliasing?.msaa?.samples },
+                smaa: {
+                    preset: String(antiAliasing?.smaa?.preset ?? 'medium'),
+                    threshold: antiAliasing?.smaa?.threshold,
+                    maxSearchSteps: antiAliasing?.smaa?.maxSearchSteps,
+                    maxSearchStepsDiag: antiAliasing?.smaa?.maxSearchStepsDiag,
+                    cornerRounding: antiAliasing?.smaa?.cornerRounding
+                },
+                fxaa: {
+                    preset: String(antiAliasing?.fxaa?.preset ?? 'balanced'),
+                    edgeThreshold: antiAliasing?.fxaa?.edgeThreshold
+                }
+            },
             bloom: {
                 enabled: !!bloom.enabled,
                 strength: bloom.strength,

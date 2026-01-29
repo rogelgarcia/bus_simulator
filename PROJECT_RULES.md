@@ -26,7 +26,7 @@
 
 **Tasks:**
 These are the ones from AI prompt files.
-- Even if explicitly requested, never start prompts whose filename indicates DONE (`AI_DONE_##_..._DONE`) without double confirming with the user.
+- Even if explicitly requested, never start prompts whose filename indicates DONE (`AI_DONE_##_..._DONE.md`) without double confirming with the user.
 
 **AI Prompt naming:**
 - Follow `AI_PROMPT_INSTRUCTIONS.md` (naming, template, and completion steps).

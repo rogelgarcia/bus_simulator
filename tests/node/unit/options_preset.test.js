@@ -69,3 +69,23 @@ test('OptionsPreset: applyOptionsPresetToDraft respects includes', () => {
     assert.equal(merged.lighting.exposure, 3);
     assert.equal(merged.bloom.enabled, false);
 });
+
+test('OptionsPreset: antiAliasing is included and sanitized', () => {
+    const preset = createOptionsPresetFromDraft({
+        antiAliasing: {
+            mode: 'FXAA',
+            msaa: { samples: 999 },
+            smaa: { preset: 'ULTRA', threshold: -1, maxSearchSteps: 999, maxSearchStepsDiag: -1, cornerRounding: 999 },
+            fxaa: { preset: 'sharp', edgeThreshold: 999 }
+        }
+    });
+
+    assert.equal(preset.settings.antiAliasing.mode, 'fxaa');
+    assert.equal(preset.settings.antiAliasing.msaa.samples, 8);
+    assert.equal(preset.settings.antiAliasing.smaa.preset, 'ultra');
+    assert.equal(preset.settings.antiAliasing.smaa.threshold, 0.01);
+    assert.equal(preset.settings.antiAliasing.smaa.maxSearchSteps, 64);
+    assert.equal(preset.settings.antiAliasing.smaa.maxSearchStepsDiag, 0);
+    assert.equal(preset.settings.antiAliasing.smaa.cornerRounding, 100);
+    assert.equal(preset.settings.antiAliasing.fxaa.edgeThreshold, 0.5);
+});

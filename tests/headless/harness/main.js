@@ -267,6 +267,15 @@ function getColorGradingDebugInfo() {
     return state.engine?.getColorGradingDebugInfo?.() ?? null;
 }
 
+function getAntiAliasingDebugInfo() {
+    return state.engine?.getAntiAliasingDebugInfo?.() ?? null;
+}
+
+function setAntiAliasingSettings(settings) {
+    state.engine?.setAntiAliasingSettings?.(settings);
+    return true;
+}
+
 function getSceneObjectStatsByName(name) {
     const target = String(name ?? '');
     const out = { name: target, count: 0, visibleCount: 0, types: {} };
@@ -359,6 +368,8 @@ window.__testHooks = {
     getMetrics,
     getBloomDebugInfo,
     getColorGradingDebugInfo,
+    getAntiAliasingDebugInfo,
+    setAntiAliasingSettings,
     getSceneObjectStatsByName,
     setSceneObjectVisibleByName,
     setRoadMarkingsOverlayEnabled,

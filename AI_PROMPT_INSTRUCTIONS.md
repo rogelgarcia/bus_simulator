@@ -6,12 +6,12 @@ This file contains guidelines for creating effective AI prompts for code modific
 
 Every prompt must be saved as its own file using this naming scheme:
 
-- New prompt: `AI_##_SUBJECT_title`
-- Completed prompt: `AI_DONE_##_SUBJECT_title_DONE`
+- New prompt: `AI_##_SUBJECT_title.md`
+- Completed prompt: `AI_DONE_##_SUBJECT_title_DONE.md`
 
 Rules:
 - `##` is the numeric prompt id (keep it stable).
-- Completed prompts include `DONE` near the front and at the end (`AI_DONE_##_..._DONE`).
+- Completed prompts include `DONE` near the front and at the end (`AI_DONE_##_..._DONE.md`).
 - `SUBJECT` is the *problem space* and must be uppercase, one of:
   - `ROADS`
   - `VEHICLES`
@@ -34,11 +34,11 @@ Rules:
   - `ATMOSPHERE`
   - `UI`
 - `title` is lowercase, words separated by `_`.
-- Prefer no file extension (match existing `AI_*` files in the repo).
+- Use the `.md` extension.
 
 Examples:
-- `AI_82_ROADS_manual_junction_authoring`
-- `AI_DONE_82_ROADS_manual_junction_authoring_DONE`
+- `AI_82_ROADS_manual_junction_authoring.md`
+- `AI_DONE_82_ROADS_manual_junction_authoring_DONE.md`
 
 ## Prompt Structure
 
@@ -87,7 +87,7 @@ Tasks:
 
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line
-- Also rename the AI file to `AI_DONE_##_SUBJECT_title_DONE`
+- Also rename the AI file to `AI_DONE_##_SUBJECT_title_DONE.md`
 - Provide a summary of the changes made in the AI document (very high level, one liner for each change)
 ```
 
@@ -98,6 +98,6 @@ Tasks:
 3. **Focus on Behavior**: Describe what the system should do, not how it should be coded
 4. **Keep It Simple**: The AI has repository access - just describe what you need
 5. **Trust the AI**: It will retrieve necessary files, determine implementation details, and follow project conventions automatically
-6. **Save the Request**: Store the complete request in a file for reference using `AI_##_SUBJECT_title`.
+6. **Save the Request**: Store the complete request in a file for reference using `AI_##_SUBJECT_title.md`.
 7. **New file**: Always create a new file for each request. Unless expecitely stated in the last message that it is to update an existing request.
 8. **Request improvement**: Try to understand the nature of the user request and add inference of nice to have features when translating the user request to the document.

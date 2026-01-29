@@ -6,6 +6,7 @@ import { applyAsphaltRoadVisualsToMeshStandardMaterial } from '../graphics/visua
 import { applyAsphaltEdgeWearVisualsToMeshStandardMaterial } from '../graphics/visuals/city/AsphaltEdgeWearVisuals.js';
 import { applyAsphaltMarkingsNoiseVisualsToMeshStandardMaterial } from '../graphics/visuals/city/AsphaltMarkingsNoiseVisuals.js';
 import { saveLightingSettings } from '../graphics/lighting/LightingSettings.js';
+import { saveAntiAliasingSettings } from '../graphics/visuals/postprocessing/AntiAliasingSettings.js';
 import { saveBloomSettings } from '../graphics/visuals/postprocessing/BloomSettings.js';
 import { saveSunBloomSettings } from '../graphics/visuals/postprocessing/SunBloomSettings.js';
 import { getResolvedAsphaltNoiseSettings, saveAsphaltNoiseSettings } from '../graphics/visuals/city/AsphaltNoiseSettings.js';
@@ -54,6 +55,7 @@ export class OptionsState {
 
         const lighting = this.engine?.lightingSettings ?? null;
         const atmosphere = this.engine?.atmosphereSettings ?? null;
+        const antiAliasing = this.engine?.antiAliasingSettings ?? null;
         const bloom = this.engine?.bloomSettings ?? null;
         const sunBloom = this.engine?.sunBloomSettings ?? null;
         const postActive = this.engine?.isPostProcessingActive ?? false;
@@ -68,6 +70,7 @@ export class OptionsState {
         this._original = {
             lighting: lighting && typeof lighting === 'object' ? JSON.parse(JSON.stringify(lighting)) : null,
             atmosphere: atmosphere && typeof atmosphere === 'object' ? JSON.parse(JSON.stringify(atmosphere)) : null,
+            antiAliasing: antiAliasing && typeof antiAliasing === 'object' ? JSON.parse(JSON.stringify(antiAliasing)) : null,
             bloom: bloom && typeof bloom === 'object' ? JSON.parse(JSON.stringify(bloom)) : null,
             sunBloom: sunBloom && typeof sunBloom === 'object' ? JSON.parse(JSON.stringify(sunBloom)) : null,
             colorGrading: grading && typeof grading === 'object' ? JSON.parse(JSON.stringify(grading)) : null,
@@ -106,6 +109,9 @@ export class OptionsState {
                     radius: bloom.radius,
                     threshold: bloom.threshold
                 }
+                : null,
+            initialAntiAliasing: antiAliasing && typeof antiAliasing === 'object'
+                ? JSON.parse(JSON.stringify(antiAliasing))
                 : null,
             initialColorGrading: grading && typeof grading === 'object'
                 ? {
@@ -203,6 +209,7 @@ export class OptionsState {
                 sunBloom: this.engine?.getSunBloomDebugInfo?.() ?? null,
                 colorGrading: this.engine?.getColorGradingDebugInfo?.() ?? null
             }),
+            getAntiAliasingDebugInfo: () => this.engine?.getAntiAliasingDebugInfo?.() ?? null,
             onCancel: () => this._cancel(),
             onLiveChange: (draft) => this._applyDraft(draft),
             onSave: (draft) => this._save(draft)
@@ -235,6 +242,7 @@ export class OptionsState {
 
     _save(draft) {
         saveLightingSettings(draft?.lighting ?? null);
+        saveAntiAliasingSettings(draft?.antiAliasing ?? null);
         saveAtmosphereSettings(draft?.atmosphere ?? null);
         saveBloomSettings(draft?.bloom ?? null);
         saveSunBloomSettings(draft?.sunBloom ?? null);
@@ -259,6 +267,7 @@ export class OptionsState {
         const d = draft && typeof draft === 'object' ? draft : null;
         const lighting = d?.lighting ?? null;
         const atmosphere = d?.atmosphere ?? null;
+        const antiAliasing = d?.antiAliasing ?? null;
         const bloom = d?.bloom ?? null;
         const sunBloom = d?.sunBloom ?? null;
         const grading = d?.colorGrading ?? null;
@@ -267,6 +276,7 @@ export class OptionsState {
         const asphaltNoise = d?.asphaltNoise ?? null;
 
         this.engine?.setLightingSettings?.(lighting ?? null);
+        if (antiAliasing) this.engine?.setAntiAliasingSettings?.(antiAliasing);
         this.engine?.setAtmosphereSettings?.(atmosphere ?? null);
         if (bloom) this.engine?.setBloomSettings?.(bloom);
         if (sunBloom) this.engine?.setSunBloomSettings?.(sunBloom);

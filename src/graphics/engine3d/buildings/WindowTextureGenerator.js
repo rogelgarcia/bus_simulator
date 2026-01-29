@@ -43,11 +43,13 @@ function applyTextureColorSpace(tex, { srgb = true } = {}) {
     if ('encoding' in tex) tex.encoding = srgb ? THREE.sRGBEncoding : THREE.LinearEncoding;
 }
 
-function makeCanvas(width, height) {
+function makeCanvas(width, height, { willReadFrequently = true } = {}) {
     const c = document.createElement('canvas');
     c.width = width;
     c.height = height;
-    const ctx = c.getContext('2d');
+    const ctx = willReadFrequently
+        ? c.getContext('2d', { willReadFrequently: true })
+        : c.getContext('2d');
     return { c, ctx };
 }
 
@@ -295,7 +297,7 @@ function applyBorderLipHeightRamp(canvas, { thicknessPx = 0, delta = 0.0 } = {})
     const d = clamp(Number(delta) || 0.0, 0.0, 1.0);
     if (!(tPx > 0) || !(d > 1e-6)) return;
 
-    const ctx = c.getContext('2d');
+    const ctx = c.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
     const img = ctx.getImageData(0, 0, w, h);
     const data = img.data;
@@ -456,7 +458,7 @@ function buildNormalMapCanvasFromHeightCanvas(heightCanvas, { strength = 2.25 } 
     const h = src?.height ?? 0;
     if (!(w > 0 && h > 0)) return heightCanvas;
 
-    const srcCtx = src.getContext('2d');
+    const srcCtx = src.getContext('2d', { willReadFrequently: true });
     if (!srcCtx) return heightCanvas;
     const srcImg = srcCtx.getImageData(0, 0, w, h);
     const srcData = srcImg.data;

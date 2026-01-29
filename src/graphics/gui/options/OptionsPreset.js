@@ -3,6 +3,7 @@
 // @ts-check
 
 import { LIGHTING_DEFAULTS, sanitizeLightingSettings } from '../../lighting/LightingSettings.js';
+import { ANTIALIASING_DEFAULTS, sanitizeAntiAliasingSettings } from '../../visuals/postprocessing/AntiAliasingSettings.js';
 import { BLOOM_DEFAULTS, sanitizeBloomSettings } from '../../visuals/postprocessing/BloomSettings.js';
 import { SUN_BLOOM_DEFAULTS, sanitizeSunBloomSettings } from '../../visuals/postprocessing/SunBloomSettings.js';
 import { COLOR_GRADING_DEFAULTS, sanitizeColorGradingSettings } from '../../visuals/postprocessing/ColorGradingSettings.js';
@@ -15,6 +16,7 @@ export const OPTIONS_PRESET_VERSION = 1;
 
 const GROUPS = Object.freeze([
     'lighting',
+    'antiAliasing',
     'bloom',
     'sunBloom',
     'colorGrading',
@@ -49,6 +51,7 @@ function sanitizeIncludes(input) {
 function getDefaultSettings() {
     return {
         lighting: sanitizeLightingSettings(LIGHTING_DEFAULTS),
+        antiAliasing: sanitizeAntiAliasingSettings(ANTIALIASING_DEFAULTS),
         bloom: sanitizeBloomSettings(BLOOM_DEFAULTS),
         sunBloom: sanitizeSunBloomSettings(SUN_BLOOM_DEFAULTS),
         colorGrading: sanitizeColorGradingSettings(COLOR_GRADING_DEFAULTS),
@@ -64,6 +67,7 @@ function sanitizeSettings(input) {
     const defaults = getDefaultSettings();
     return {
         lighting: sanitizeLightingSettings(normalized.lighting ?? defaults.lighting),
+        antiAliasing: sanitizeAntiAliasingSettings(normalized.antiAliasing ?? defaults.antiAliasing),
         bloom: sanitizeBloomSettings(normalized.bloom ?? defaults.bloom),
         sunBloom: sanitizeSunBloomSettings(normalized.sunBloom ?? defaults.sunBloom),
         colorGrading: sanitizeColorGradingSettings(normalized.colorGrading ?? defaults.colorGrading),
@@ -90,6 +94,8 @@ function normalizeSettingsBooleans(src) {
                 : ibl
         };
     }
+
+    if (src.antiAliasing && typeof src.antiAliasing === 'object') out.antiAliasing = { ...src.antiAliasing };
 
     const bloom = src.bloom && typeof src.bloom === 'object' ? src.bloom : null;
     if (bloom) out.bloom = { ...bloom, enabled: parseLooseBool(bloom.enabled, bloom.enabled) };
@@ -264,6 +270,7 @@ export function applyOptionsPresetToDraft(draft, preset) {
     const settings = p.settings ?? {};
 
     if (includes.lighting) out.lighting = settings.lighting;
+    if (includes.antiAliasing) out.antiAliasing = settings.antiAliasing;
     if (includes.bloom) out.bloom = settings.bloom;
     if (includes.sunBloom) out.sunBloom = settings.sunBloom;
     if (includes.colorGrading) out.colorGrading = settings.colorGrading;
