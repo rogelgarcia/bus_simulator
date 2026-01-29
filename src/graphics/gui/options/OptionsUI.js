@@ -877,6 +877,13 @@ export class OptionsUI {
         if (!d.msaa || typeof d.msaa !== 'object') d.msaa = { ...defaults.msaa };
         if (d.msaa.samples === undefined) d.msaa.samples = defaults.msaa.samples;
 
+        if (!d.taa || typeof d.taa !== 'object') d.taa = { ...defaults.taa };
+        if (d.taa.preset === undefined) d.taa.preset = defaults.taa.preset;
+        if (d.taa.historyStrength === undefined) d.taa.historyStrength = defaults.taa.historyStrength;
+        if (d.taa.jitter === undefined) d.taa.jitter = defaults.taa.jitter;
+        if (d.taa.sharpen === undefined) d.taa.sharpen = defaults.taa.sharpen;
+        if (d.taa.clampStrength === undefined) d.taa.clampStrength = defaults.taa.clampStrength;
+
         if (!d.smaa || typeof d.smaa !== 'object') d.smaa = { ...defaults.smaa };
         if (d.smaa.preset === undefined) d.smaa.preset = defaults.smaa.preset;
         if (d.smaa.threshold === undefined) d.smaa.threshold = defaults.smaa.threshold;
@@ -1706,6 +1713,7 @@ export class OptionsUI {
             options: [
                 { id: 'off', label: 'Off' },
                 { id: 'msaa', label: 'MSAA' },
+                { id: 'taa', label: 'TAA' },
                 { id: 'smaa', label: 'SMAA' },
                 { id: 'fxaa', label: 'FXAA' }
             ],
@@ -1717,7 +1725,7 @@ export class OptionsUI {
         });
 
         const msaaSamples = makeChoiceRow({
-            label: 'MSAA samples',
+            label: 'Samples',
             value: String(aa.msaa?.samples ?? 2),
             options: [
                 { id: '2', label: '2×' },
@@ -1729,6 +1737,112 @@ export class OptionsUI {
                 emit();
             }
         });
+
+        const msaaNote = makeEl('div', 'options-note');
+        msaaNote.textContent = !msaaSupported
+            ? 'MSAA is not supported on this device/browser (WebGL2 required).'
+            : `MSAA smooths geometry edges in the post-processing pipeline. Higher samples cost GPU time + VRAM. (max ${msaaMaxSamples || '?'})`;
+
+        const TAA_PRESETS = {
+            low: { historyStrength: 0.8, jitter: 0.75, sharpen: 0.1, clampStrength: 0.7 },
+            medium: { historyStrength: 0.85, jitter: 0.9, sharpen: 0.12, clampStrength: 0.75 },
+            high: { historyStrength: 0.9, jitter: 1.0, sharpen: 0.15, clampStrength: 0.8 },
+            ultra: { historyStrength: 0.94, jitter: 1.0, sharpen: 0.2, clampStrength: 0.9 }
+        };
+
+        const taaPreset = makeSelectRow({
+            label: 'TAA preset',
+            value: String(aa.taa?.preset ?? 'high'),
+            options: [
+                { id: 'low', label: 'Low' },
+                { id: 'medium', label: 'Medium' },
+                { id: 'high', label: 'High' },
+                { id: 'ultra', label: 'Ultra' },
+                { id: 'custom', label: 'Custom' }
+            ],
+            onChange: (v) => {
+                aa.taa.preset = v;
+                const preset = TAA_PRESETS[v] ?? null;
+                if (preset) {
+                    aa.taa.historyStrength = preset.historyStrength;
+                    aa.taa.jitter = preset.jitter;
+                    aa.taa.sharpen = preset.sharpen;
+                    aa.taa.clampStrength = preset.clampStrength;
+                    taaHistory.range.value = String(preset.historyStrength);
+                    taaHistory.number.value = String(preset.historyStrength.toFixed(2));
+                    taaJitter.range.value = String(preset.jitter);
+                    taaJitter.number.value = String(preset.jitter.toFixed(2));
+                    taaSharpen.range.value = String(preset.sharpen);
+                    taaSharpen.number.value = String(preset.sharpen.toFixed(2));
+                    taaClamp.range.value = String(preset.clampStrength);
+                    taaClamp.number.value = String(preset.clampStrength.toFixed(2));
+                }
+                emit();
+            }
+        });
+
+        const taaHistory = makeNumberSliderRow({
+            label: 'History strength',
+            value: aa.taa?.historyStrength ?? 0.9,
+            min: 0,
+            max: 0.98,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                aa.taa.historyStrength = v;
+                aa.taa.preset = 'custom';
+                taaPreset.select.value = 'custom';
+                emit();
+            }
+        });
+
+        const taaJitter = makeNumberSliderRow({
+            label: 'Jitter amount',
+            value: aa.taa?.jitter ?? 1.0,
+            min: 0,
+            max: 1,
+            step: 0.05,
+            digits: 2,
+            onChange: (v) => {
+                aa.taa.jitter = v;
+                aa.taa.preset = 'custom';
+                taaPreset.select.value = 'custom';
+                emit();
+            }
+        });
+
+        const taaSharpen = makeNumberSliderRow({
+            label: 'Sharpen',
+            value: aa.taa?.sharpen ?? 0.15,
+            min: 0,
+            max: 1,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                aa.taa.sharpen = v;
+                aa.taa.preset = 'custom';
+                taaPreset.select.value = 'custom';
+                emit();
+            }
+        });
+
+        const taaClamp = makeNumberSliderRow({
+            label: 'Ghosting clamp',
+            value: aa.taa?.clampStrength ?? 0.8,
+            min: 0,
+            max: 1,
+            step: 0.05,
+            digits: 2,
+            onChange: (v) => {
+                aa.taa.clampStrength = v;
+                aa.taa.preset = 'custom';
+                taaPreset.select.value = 'custom';
+                emit();
+            }
+        });
+
+        const taaNote = makeEl('div', 'options-note');
+        taaNote.textContent = 'TAA accumulates previous frames for smoother thin details. Higher history increases stability but can ghost on motion. Use clamp + lower history to reduce trails.';
 
         const SMAA_PRESETS = {
             low: { threshold: 0.15, maxSearchSteps: 8, maxSearchStepsDiag: 4, cornerRounding: 25 },
@@ -1870,16 +1984,40 @@ export class OptionsUI {
             }
         });
 
-        const msaaNote = makeEl('div', 'options-note');
-        msaaNote.textContent = !msaaSupported
-            ? 'MSAA is not supported on this device/browser (WebGL2 required).'
-            : `MSAA smooths geometry edges in the post-processing pipeline. Higher samples cost GPU time + VRAM. (max ${msaaMaxSamples || '?'})`;
-
         const smaaNote = makeEl('div', 'options-note');
         smaaNote.textContent = 'SMAA is a high quality post-process AA. Lower threshold detects more edges (smoother, slightly blurrier).';
 
         const fxaaNote = makeEl('div', 'options-note');
         fxaaNote.textContent = 'FXAA is a fast post-process AA. Higher threshold keeps more detail but reduces smoothing.';
+
+        const msaaSection = makeEl('div');
+        msaaSection.appendChild(makeEl('div', 'options-section-title', 'MSAA'));
+        msaaSection.appendChild(msaaSamples.row);
+        msaaSection.appendChild(msaaNote);
+
+        const taaSection = makeEl('div');
+        taaSection.appendChild(makeEl('div', 'options-section-title', 'TAA'));
+        taaSection.appendChild(taaPreset.row);
+        taaSection.appendChild(taaHistory.row);
+        taaSection.appendChild(taaJitter.row);
+        taaSection.appendChild(taaSharpen.row);
+        taaSection.appendChild(taaClamp.row);
+        taaSection.appendChild(taaNote);
+
+        const smaaSection = makeEl('div');
+        smaaSection.appendChild(makeEl('div', 'options-section-title', 'SMAA'));
+        smaaSection.appendChild(smaaPreset.row);
+        smaaSection.appendChild(smaaThreshold.row);
+        smaaSection.appendChild(smaaSearch.row);
+        smaaSection.appendChild(smaaSearchDiag.row);
+        smaaSection.appendChild(smaaCorner.row);
+        smaaSection.appendChild(smaaNote);
+
+        const fxaaSection = makeEl('div');
+        fxaaSection.appendChild(makeEl('div', 'options-section-title', 'FXAA'));
+        fxaaSection.appendChild(fxaaPreset.row);
+        fxaaSection.appendChild(fxaaThreshold.row);
+        fxaaSection.appendChild(fxaaNote);
 
         const syncEnabled = () => {
             const current = String(aa.mode ?? 'off');
@@ -1890,8 +2028,14 @@ export class OptionsUI {
             }
 
             const msaaActive = current === 'msaa' && msaaSupported;
+            const taaActive = current === 'taa';
             const smaaActive = current === 'smaa';
             const fxaaActive = current === 'fxaa';
+
+            msaaSection.classList.toggle('hidden', !msaaActive);
+            taaSection.classList.toggle('hidden', !taaActive);
+            smaaSection.classList.toggle('hidden', !smaaActive);
+            fxaaSection.classList.toggle('hidden', !fxaaActive);
 
             const max = msaaMaxSamples > 0 ? msaaMaxSamples : 8;
             const allow2 = msaaSupported && max >= 2;
@@ -1909,7 +2053,13 @@ export class OptionsUI {
                 else if (!allow8 && allow4 && aa.msaa.samples > 4) aa.msaa.samples = 4;
                 else if (!allow4 && allow2 && aa.msaa.samples > 2) aa.msaa.samples = 2;
                 if (!allow2) aa.msaa.samples = 0;
-                msaaSamples.setValue(String(aa.msaa.samples));
+                    msaaSamples.setValue(String(aa.msaa.samples));
+            }
+
+            taaPreset.select.disabled = !taaActive;
+            for (const row of [taaHistory, taaJitter, taaSharpen, taaClamp]) {
+                row.range.disabled = !taaActive;
+                row.number.disabled = !taaActive;
             }
 
             smaaPreset.select.disabled = !smaaActive;
@@ -1927,19 +2077,10 @@ export class OptionsUI {
         if (msaaBtn) msaaBtn.disabled = !msaaSupported;
 
         sectionAa.appendChild(mode.row);
-        sectionAa.appendChild(msaaSamples.row);
-        sectionAa.appendChild(msaaNote);
-        sectionAa.appendChild(makeEl('div', 'options-section-title', 'SMAA'));
-        sectionAa.appendChild(smaaPreset.row);
-        sectionAa.appendChild(smaaThreshold.row);
-        sectionAa.appendChild(smaaSearch.row);
-        sectionAa.appendChild(smaaSearchDiag.row);
-        sectionAa.appendChild(smaaCorner.row);
-        sectionAa.appendChild(smaaNote);
-        sectionAa.appendChild(makeEl('div', 'options-section-title', 'FXAA'));
-        sectionAa.appendChild(fxaaPreset.row);
-        sectionAa.appendChild(fxaaThreshold.row);
-        sectionAa.appendChild(fxaaNote);
+        sectionAa.appendChild(msaaSection);
+        sectionAa.appendChild(taaSection);
+        sectionAa.appendChild(smaaSection);
+        sectionAa.appendChild(fxaaSection);
 
         syncEnabled();
 
@@ -2623,6 +2764,13 @@ export class OptionsUI {
             antiAliasing: {
                 mode: String(antiAliasing?.mode ?? 'off'),
                 msaa: { samples: antiAliasing?.msaa?.samples },
+                taa: {
+                    preset: String(antiAliasing?.taa?.preset ?? 'high'),
+                    historyStrength: antiAliasing?.taa?.historyStrength,
+                    jitter: antiAliasing?.taa?.jitter,
+                    sharpen: antiAliasing?.taa?.sharpen,
+                    clampStrength: antiAliasing?.taa?.clampStrength
+                },
                 smaa: {
                     preset: String(antiAliasing?.smaa?.preset ?? 'medium'),
                     threshold: antiAliasing?.smaa?.threshold,

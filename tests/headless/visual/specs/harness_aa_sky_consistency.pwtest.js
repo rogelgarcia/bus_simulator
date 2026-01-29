@@ -47,7 +47,7 @@ function maxChannelDelta(a, b) {
     );
 }
 
-test('Visual: SMAA/FXAA should not shift sky average color', async ({ page }) => {
+test('Visual: TAA/SMAA/FXAA should not shift sky average color', async ({ page }) => {
     await bootHarness(page, { query: '?ibl=0&bloom=0&sunBloom=0&grade=off' });
 
     await page.evaluate(() => window.__testHooks.setAntiAliasingSettings({ mode: 'off' }));
@@ -63,6 +63,11 @@ test('Visual: SMAA/FXAA should not shift sky average color', async ({ page }) =>
     const baseline = await sampleSkyAverage(page);
     expect(baseline).not.toBeNull();
 
+    await page.evaluate(() => window.__testHooks.setAntiAliasingSettings({ mode: 'taa' }));
+    await page.evaluate(() => window.__testHooks.step(12, { render: true }));
+    const taa = await sampleSkyAverage(page);
+    expect(taa).not.toBeNull();
+
     await page.evaluate(() => window.__testHooks.setAntiAliasingSettings({ mode: 'smaa' }));
     await page.evaluate(() => window.__testHooks.step(5, { render: true }));
     const smaa = await sampleSkyAverage(page);
@@ -73,7 +78,7 @@ test('Visual: SMAA/FXAA should not shift sky average color', async ({ page }) =>
     const fxaa = await sampleSkyAverage(page);
     expect(fxaa).not.toBeNull();
 
+    expect(maxChannelDelta(baseline, taa)).toBeLessThanOrEqual(3);
     expect(maxChannelDelta(baseline, smaa)).toBeLessThanOrEqual(3);
     expect(maxChannelDelta(baseline, fxaa)).toBeLessThanOrEqual(3);
 });
-

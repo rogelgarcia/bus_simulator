@@ -620,7 +620,7 @@ export class GameEngine {
         const gradingRequested = preset?.id && preset.id !== 'off' && (this._colorGrading?.settings?.intensity > 0);
         const aa = this._antiAliasing?.settings ?? null;
         const aaMode = typeof aa?.mode === 'string' ? aa.mode : 'off';
-        const aaWantsPipeline = aaMode === 'fxaa' || aaMode === 'smaa';
+        const aaWantsPipeline = aaMode === 'fxaa' || aaMode === 'smaa' || aaMode === 'taa';
 
         const wantsPipeline = bloomEnabled || sunBloomEnabled || gradingRequested || aaWantsPipeline;
 

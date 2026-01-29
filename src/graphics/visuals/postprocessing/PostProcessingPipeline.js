@@ -12,11 +12,61 @@ import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { createColorGradingPass, setColorGradingPassState } from './ColorGradingPass.js';
 import { SUN_BLOOM_LAYER, SUN_BLOOM_LAYER_ID } from '../sun/SunBloomLayers.js';
 import { sanitizeAntiAliasingSettings } from './AntiAliasingSettings.js';
+import { TemporalAAPass } from './TemporalAAPass.js';
 
 function clamp(value, min, max, fallback) {
     const num = Number(value);
     if (!Number.isFinite(num)) return fallback;
     return Math.max(min, Math.min(max, num));
+}
+
+function halton(index, base) {
+    let i = Math.max(0, Math.floor(Number(index) || 0));
+    let f = 1;
+    let r = 0;
+    while (i > 0) {
+        f /= base;
+        r += f * (i % base);
+        i = Math.floor(i / base);
+    }
+    return r;
+}
+
+function getJitterOffsetPx(index, strength) {
+    const k = clamp(strength, 0, 1, 0);
+    if (k <= 0) return { x: 0, y: 0 };
+    const i = (Math.max(0, Math.floor(Number(index) || 0)) % 8) + 1;
+    return {
+        x: (halton(i, 2) - 0.5) * k,
+        y: (halton(i, 3) - 0.5) * k
+    };
+}
+
+function cloneCameraView(view) {
+    const v = view && typeof view === 'object' ? view : null;
+    if (!v) return null;
+    return {
+        enabled: !!v.enabled,
+        fullWidth: Number.isFinite(v.fullWidth) ? v.fullWidth : null,
+        fullHeight: Number.isFinite(v.fullHeight) ? v.fullHeight : null,
+        offsetX: Number.isFinite(v.offsetX) ? v.offsetX : 0,
+        offsetY: Number.isFinite(v.offsetY) ? v.offsetY : 0,
+        width: Number.isFinite(v.width) ? v.width : null,
+        height: Number.isFinite(v.height) ? v.height : null
+    };
+}
+
+function restoreCameraView(camera, view) {
+    const cam = camera ?? null;
+    if (!cam) return;
+
+    const v = view && typeof view === 'object' ? view : null;
+    if (v?.enabled && Number.isFinite(v.fullWidth) && Number.isFinite(v.fullHeight) && Number.isFinite(v.width) && Number.isFinite(v.height)) {
+        cam.setViewOffset(v.fullWidth, v.fullHeight, v.offsetX ?? 0, v.offsetY ?? 0, v.width, v.height);
+    } else {
+        cam.clearViewOffset();
+    }
+    cam.updateProjectionMatrix();
 }
 
 function getMsaaSupportInfo(renderer) {
@@ -258,6 +308,7 @@ export class PostProcessingPipeline {
         this.camera = camera;
         this._pixelRatio = 1;
         this._size = { w: 1, h: 1 };
+        this._taaJitterIndex = 0;
 
         this._blackTex = createBlackTexture();
 
@@ -310,6 +361,9 @@ export class PostProcessingPipeline {
         this.colorGradingPass = createColorGradingPass();
         if (this.colorGradingPass?.material) this.colorGradingPass.material.toneMapped = false;
 
+        this.taaPass = new TemporalAAPass({ colorSpace: linearColorSpace });
+        this.taaPass.enabled = false;
+
         this.smaaPass = new SMAAPass(1, 1);
         this.smaaPass.enabled = false;
         setToneMappedForPassMaterials(this.smaaPass, false);
@@ -324,6 +378,7 @@ export class PostProcessingPipeline {
         this.composer.addPass(this.renderPass);
         this.composer.addPass(this.compositePass);
         this.composer.addPass(this.colorGradingPass);
+        this.composer.addPass(this.taaPass);
         this.composer.addPass(this.smaaPass);
         this.composer.addPass(this.fxaaPass);
         this.composer.addPass(this.outputPass);
@@ -369,9 +424,11 @@ export class PostProcessingPipeline {
         updateFxaaResolution(this.fxaaPass);
 
         if (this.smaaPass?.setSize) this.smaaPass.setSize(pxW, pxH);
+        if (this.taaPass?.setSize) this.taaPass.setSize(pxW, pxH);
     }
 
     setAntiAliasing(antiAliasing) {
+        const prevActiveMode = this._antiAliasing?.activeMode ?? 'off';
         const requested = sanitizeAntiAliasingSettings(antiAliasing);
         const msaaInfo = getMsaaSupportInfo(this.renderer);
         const requestedMode = requested?.mode ?? 'off';
@@ -397,10 +454,22 @@ export class PostProcessingPipeline {
             msaaSamples
         };
 
+        if (prevActiveMode !== activeMode && (prevActiveMode === 'taa' || activeMode === 'taa')) {
+            this._taaJitterIndex = 0;
+            this.taaPass?.resetHistory?.();
+        }
+
+        const enableTaa = activeMode === 'taa';
         const enableSmaa = activeMode === 'smaa';
         const enableFxaa = activeMode === 'fxaa';
+        this.taaPass.enabled = enableTaa;
         this.smaaPass.enabled = enableSmaa;
         this.fxaaPass.enabled = enableFxaa;
+
+        if (enableTaa) {
+            const taa = requested?.taa ?? null;
+            this.taaPass?.setSettings?.(taa);
+        }
 
         if (enableSmaa) {
             const smaa = requested?.smaa ?? null;
@@ -560,7 +629,22 @@ export class PostProcessingPipeline {
         const sunBloomOn = !!this._sunBloom?.enabled && (this._sunBloom?.strength > 0);
         const gradeOn = !!this._colorGrading?.enabled;
         const aaMode = this._antiAliasing?.activeMode ?? 'off';
+        const taa = aaMode === 'taa' ? (this._antiAliasing?.requested?.taa ?? null) : null;
+        const taaJitterStrength = taa ? clamp(taa.jitter, 0, 1, 0) : 0;
+        const jitterApplied = aaMode === 'taa' && taaJitterStrength > 0;
         const wantsPipeline = globalBloomOn || sunBloomOn || gradeOn || aaMode !== 'off';
+
+        const prevView = jitterApplied ? cloneCameraView(this.camera?.view) : null;
+        if (jitterApplied) {
+            const w = this._size?.w ?? 1;
+            const h = this._size?.h ?? 1;
+            const pr = this._pixelRatio ?? 1;
+            const pxW = Math.max(1, Math.floor(w * pr));
+            const pxH = Math.max(1, Math.floor(h * pr));
+            const jitter = getJitterOffsetPx(this._taaJitterIndex, taaJitterStrength);
+            this.camera.setViewOffset(pxW, pxH, jitter.x, jitter.y, pxW, pxH);
+            this.camera.updateProjectionMatrix();
+        }
 
         try {
             if (!wantsPipeline) {
@@ -581,6 +665,8 @@ export class PostProcessingPipeline {
 
             this.composer.render(deltaTime);
         } finally {
+            if (jitterApplied) restoreCameraView(this.camera, prevView);
+            if (aaMode === 'taa') this._taaJitterIndex += 1;
             if (canCapture) info.autoReset = prevAutoReset;
         }
     }
@@ -588,6 +674,7 @@ export class PostProcessingPipeline {
     dispose() {
         this._globalBloomPass?.dispose?.();
         this._sunBloomPass?.dispose?.();
+        this.taaPass?.dispose?.();
         this.smaaPass?.dispose?.();
         this.fxaaPass?.material?.dispose?.();
         this.outputPass?.material?.dispose?.();
