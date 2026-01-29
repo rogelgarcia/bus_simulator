@@ -356,8 +356,8 @@ export class ToolCameraController {
         this.canvas.addEventListener('pointerup', this._onPointerUp, { capture: true });
         this.canvas.addEventListener('pointercancel', this._onPointerCancel, { capture: true });
         this.canvas.addEventListener('wheel', this._onWheel, { passive: false, capture: true });
-        this.canvas.addEventListener('contextmenu', this._onContextMenu, { capture: true });
-        window.addEventListener('contextmenu', this._onContextMenuWindow, { capture: true });
+        this.canvas.addEventListener('contextmenu', this._onContextMenu, { passive: false, capture: true });
+        window.addEventListener('contextmenu', this._onContextMenuWindow, { passive: false, capture: true });
         window.addEventListener('keydown', this._onKeyDown);
     }
 

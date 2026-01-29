@@ -1191,9 +1191,9 @@ export class OptionsUI {
             }),
             edgeDirtStrength: makeNumberSliderRow({
                 label: 'Edge dirt strength',
-                value: edgeDirt.strength ?? 0.18,
+                value: edgeDirt.strength ?? 0.35,
                 min: 0,
-                max: 1,
+                max: 4,
                 step: 0.01,
                 digits: 2,
                 onChange: (v) => { edgeDirt.strength = v; emit(); }
@@ -1202,7 +1202,7 @@ export class OptionsUI {
                 label: 'Edge dirt width (m)',
                 value: edgeDirt.width ?? 0.65,
                 min: 0,
-                max: 1.25,
+                max: 2.5,
                 step: 0.01,
                 digits: 2,
                 onChange: (v) => { edgeDirt.width = v; emit(); }
@@ -1224,9 +1224,9 @@ export class OptionsUI {
             }),
             cracksStrength: makeNumberSliderRow({
                 label: 'Cracks strength',
-                value: cracks.strength ?? 0.12,
+                value: cracks.strength ?? 0.25,
                 min: 0,
-                max: 1,
+                max: 4,
                 step: 0.01,
                 digits: 2,
                 onChange: (v) => { cracks.strength = v; emit(); }
@@ -1248,9 +1248,9 @@ export class OptionsUI {
             }),
             patchesStrength: makeNumberSliderRow({
                 label: 'Patch strength',
-                value: patches.strength ?? 0.1,
+                value: patches.strength ?? 0.2,
                 min: 0,
-                max: 1,
+                max: 4,
                 step: 0.01,
                 digits: 2,
                 onChange: (v) => { patches.strength = v; emit(); }
@@ -1281,9 +1281,9 @@ export class OptionsUI {
             }),
             tireWearStrength: makeNumberSliderRow({
                 label: 'Tire wear strength',
-                value: tireWear.strength ?? 0.1,
+                value: tireWear.strength ?? 0.25,
                 min: 0,
-                max: 1,
+                max: 4,
                 step: 0.01,
                 digits: 2,
                 onChange: (v) => { tireWear.strength = v; emit(); }

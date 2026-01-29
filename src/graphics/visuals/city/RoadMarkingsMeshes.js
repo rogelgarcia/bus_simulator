@@ -22,12 +22,34 @@ function buildUpNormals(positionArray) {
     return normals;
 }
 
+function buildWorldUvs(positionArray) {
+    const positions = positionArray instanceof Float32Array ? positionArray : null;
+    if (!positions || positions.length % 3 !== 0) return null;
+    const verts = positions.length / 3;
+    const uvs = new Float32Array(verts * 2);
+    for (let i = 0; i < verts; i++) {
+        const x = positions[i * 3];
+        const z = positions[i * 3 + 2];
+        uvs[i * 2] = x;
+        uvs[i * 2 + 1] = z;
+    }
+    return uvs;
+}
+
 function addUpNormals(geo) {
     if (!geo || geo.getAttribute?.('normal')) return;
     const pos = geo.getAttribute?.('position') ?? null;
     const normals = buildUpNormals(pos?.array ?? null);
     if (!normals) return;
     geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+}
+
+function addWorldUvs(geo) {
+    if (!geo || geo.getAttribute?.('uv')) return;
+    const pos = geo.getAttribute?.('position') ?? null;
+    const uvs = buildWorldUvs(pos?.array ?? null);
+    if (!uvs) return;
+    geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
 }
 
 function buildThickLinePositions(lineSegments, { halfWidth }) {
@@ -80,6 +102,7 @@ function buildTriangleGeometryFromPositions(positionArray) {
     if (!positions?.length) return null;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    addWorldUvs(geo);
     addUpNormals(geo);
     geo.computeBoundingSphere();
     return geo;

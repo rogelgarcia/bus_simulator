@@ -333,7 +333,8 @@ function createAsphaltMaterialWithMarkings(
         : 0.0;
     const asphaltFineScale = Math.max(0.1, Math.min(15, clampNumber(asphaltCfg?.fine?.scale, 12.0)));
     const asphaltFineBaseRoughness = Math.max(0.0, Math.min(1.0, clampNumber(baseMaterial?.userData?.asphaltRoadBase?.roughness, 0.95)));
-    const asphaltFineRoughnessStrength = (asphaltCfg?.fine?.roughness !== false && baseMaterial?.roughnessMap)
+    const asphaltFineRoughnessMap = baseMaterial?.userData?.asphaltFineTextures?.roughnessMap ?? baseMaterial?.roughnessMap ?? null;
+    const asphaltFineRoughnessStrength = asphaltFineRoughnessMap?.isTexture
         ? Math.max(0.0, Math.min(0.5, clampNumber(asphaltCfg?.fine?.roughnessStrength, 0.16)))
         : 0.0;
 
@@ -345,6 +346,7 @@ function createAsphaltMaterialWithMarkings(
         fineScale: asphaltFineScale,
         fineBaseRoughness: asphaltFineBaseRoughness,
         fineRoughnessStrength: asphaltFineRoughnessStrength,
+        fineRoughnessMap: asphaltFineRoughnessMap?.isTexture ? asphaltFineRoughnessMap : null,
         shaderUniforms: null
     };
 
@@ -373,6 +375,7 @@ function createAsphaltMaterialWithMarkings(
         shader.uniforms.uRoadMarkingsAsphaltFineScale = { value: clampNumber(asphaltMarkingsCfg?.fineScale, 12.0) };
         shader.uniforms.uRoadMarkingsAsphaltFineBaseRoughness = { value: clampNumber(asphaltMarkingsCfg?.fineBaseRoughness, 0.95) };
         shader.uniforms.uRoadMarkingsAsphaltFineRoughnessStrength = { value: clampNumber(asphaltMarkingsCfg?.fineRoughnessStrength, 0.0) };
+        shader.uniforms.uRoadMarkingsAsphaltFineRoughnessMap = { value: asphaltMarkingsCfg?.fineRoughnessMap ?? null };
 
         shader.vertexShader = shader.vertexShader.replace(
             '#include <common>',
@@ -405,6 +408,7 @@ function createAsphaltMaterialWithMarkings(
                 'uniform float uRoadMarkingsAsphaltFineScale;',
                 'uniform float uRoadMarkingsAsphaltFineBaseRoughness;',
                 'uniform float uRoadMarkingsAsphaltFineRoughnessStrength;',
+                'uniform sampler2D uRoadMarkingsAsphaltFineRoughnessMap;',
                 'varying vec3 vRoadMarkingsWorldPos;',
                 'float roadMarkingsAsphaltNoiseSigned = 0.0;',
                 'float roadMarkingsVarSigned = 0.0;',
@@ -415,13 +419,10 @@ function createAsphaltMaterialWithMarkings(
                 'if (active < 0.5) return 0.0;',
                 'float denom = max(1e-5, uRoadMarkingsAsphaltFineRoughnessStrength);',
                 'if (uRoadMarkingsAsphaltFineRoughnessStrength <= 1e-5) return 0.0;',
-                '#ifdef USE_ROUGHNESSMAP',
-                'float r = texture2D(roughnessMap, worldXZ * uRoadMarkingsAsphaltFineScale).r;',
+                'vec2 uv = worldXZ * uRoadMarkingsAsphaltFineScale;',
+                'float r = texture2D(uRoadMarkingsAsphaltFineRoughnessMap, uv).r;',
                 'float s = (r - uRoadMarkingsAsphaltFineBaseRoughness) / denom;',
                 'return clamp(s, -1.0, 1.0);',
-                '#else',
-                'return 0.0;',
-                '#endif',
                 '}',
                 'float roadMarkingsVarHash12(vec2 p){',
                 'vec3 p3 = fract(vec3(p.xyx) * 0.1031);',
@@ -488,7 +489,7 @@ function createAsphaltMaterialWithMarkings(
     const prevCacheKey = typeof mat.customProgramCacheKey === 'function' ? mat.customProgramCacheKey.bind(mat) : null;
     mat.customProgramCacheKey = () => {
         const prev = prevCacheKey ? prevCacheKey() : '';
-        return `${prev}|AsphaltWithMarkings_v4`;
+        return `${prev}|AsphaltWithMarkings_v5`;
     };
     mat.needsUpdate = true;
 
@@ -753,6 +754,8 @@ export function createRoadEngineRoads({
     materials = null,
     options = null
 } = {}) {
+    const opt = options && typeof options === 'object' ? options : {};
+
     const { road: roadCfg, ground: groundCfg, render } = resolveRoadConfig(config);
     const tileSize = Math.max(EPS, clampNumber(map?.tileSize, 1));
     const origin = map?.origin ?? { x: 0, z: 0 };
@@ -773,8 +776,8 @@ export function createRoadEngineRoads({
     const markingsBaseRoughness = Math.max(0, Math.min(1, clampNumber(markingsVisuals?.baseRoughness, 0.55)));
     const roadSeed = map?.roadNetwork?.seed ?? null;
     const seedVec2 = hashStringToVec2(String(roadSeed ?? 'roads'));
-    const asphaltNoise = getResolvedAsphaltNoiseSettings();
-    const edgeWearMaxWidth = 1.25;
+    const asphaltNoise = opt.asphaltNoise ?? getResolvedAsphaltNoiseSettings();
+    const edgeWearMaxWidth = 2.5;
 
     if (!debugMode) {
         if (asphaltEnabled) {
@@ -809,23 +812,27 @@ export function createRoadEngineRoads({
             applyRoadSurfaceVariationToMeshStandardMaterial(mats.laneYellow, cfg);
         }
 
+        const fineRoughnessMap = mats.road?.userData?.asphaltFineTextures?.roughnessMap ?? mats.road?.roughnessMap ?? null;
+        const fineNormalMap = mats.road?.userData?.asphaltFineTextures?.normalMap ?? mats.road?.normalMap ?? null;
         applyAsphaltMarkingsNoiseVisualsToMeshStandardMaterial(mats.laneWhite, {
             asphaltNoise,
-            asphaltFineRoughnessMap: mats.road?.roughnessMap ?? null,
+            asphaltFineRoughnessMap: fineRoughnessMap,
+            asphaltFineNormalMap: fineNormalMap,
             asphaltFineScale: asphaltNoise?.fine?.scale,
             asphaltFineBaseRoughness: 0.95,
-            asphaltFineRoughnessStrength: asphaltNoise?.fine?.roughnessStrength
+            asphaltFineRoughnessStrength: asphaltNoise?.fine?.roughnessStrength,
+            asphaltFineNormalStrength: asphaltNoise?.fine?.normalStrength
         });
         applyAsphaltMarkingsNoiseVisualsToMeshStandardMaterial(mats.laneYellow, {
             asphaltNoise,
-            asphaltFineRoughnessMap: mats.road?.roughnessMap ?? null,
+            asphaltFineRoughnessMap: fineRoughnessMap,
+            asphaltFineNormalMap: fineNormalMap,
             asphaltFineScale: asphaltNoise?.fine?.scale,
             asphaltFineBaseRoughness: 0.95,
-            asphaltFineRoughnessStrength: asphaltNoise?.fine?.roughnessStrength
+            asphaltFineRoughnessStrength: asphaltNoise?.fine?.roughnessStrength,
+            asphaltFineNormalStrength: asphaltNoise?.fine?.normalStrength
         });
     }
-
-    const opt = options && typeof options === 'object' ? options : {};
     const includeCurbs = opt.includeCurbs !== false;
     const includeSidewalks = opt.includeSidewalks !== false;
     const includeMarkings = opt.includeMarkings !== false;

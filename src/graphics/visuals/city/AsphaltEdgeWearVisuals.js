@@ -35,8 +35,8 @@ function buildAsphaltEdgeWearConfig({ asphaltNoise, seed, maxWidth }) {
 
     return {
         enabled,
-        strength: enabled ? clamp(edge?.strength, 0.0, 1.0, 0.0) : 0.0,
-        width: enabled ? clamp(edge?.width, 0.0, 2.0, 0.0) : 0.0,
+        strength: enabled ? clamp(edge?.strength, 0.0, 4.0, 0.0) : 0.0,
+        width: enabled ? clamp(edge?.width, 0.0, 3.0, 0.0) : 0.0,
         scale: clamp(edge?.scale, 0.001, 50.0, 0.55),
         maxWidth: clamp(maxWidth, 0.05, 5.0, 1.25),
         seed: hashStringToVec2(String(seed ?? 'roads')),
@@ -123,7 +123,7 @@ function injectAsphaltEdgeWearShader(material, shader) {
                 'float n = asphaltEdgeWearFbm((vAsphaltEdgeWearWorldPos.xz + uAsphaltEdgeWearSeed * 100.0) * uAsphaltEdgeWearScale);',
                 'asphaltEdgeWearVarSigned = (n - 0.5) * 2.0;',
                 'float breakup = 0.65 + 0.35 * n;',
-                'asphaltEdgeWearMask = clamp(uAsphaltEdgeWearStrength, 0.0, 1.0) * edge * breakup;',
+                'asphaltEdgeWearMask = clamp(uAsphaltEdgeWearStrength * edge * breakup, 0.0, 1.0);',
                 '}',
                 'diffuseColor.a *= asphaltEdgeWearMask;',
                 '#endif'
@@ -137,7 +137,7 @@ function injectAsphaltEdgeWearShader(material, shader) {
             [
                 '#include <metalnessmap_fragment>',
                 '#ifdef USE_ASPHALT_EDGE_WEAR',
-                'float edgeRough = asphaltEdgeWearMask * (0.12 + 0.08 * asphaltEdgeWearVarSigned);',
+                'float edgeRough = asphaltEdgeWearMask * (0.18 + 0.12 * asphaltEdgeWearVarSigned);',
                 'roughnessFactor = clamp(roughnessFactor + edgeRough, 0.0, 1.0);',
                 '#endif'
             ].join('\n')

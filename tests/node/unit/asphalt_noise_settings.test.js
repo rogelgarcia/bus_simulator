@@ -66,7 +66,7 @@ test('AsphaltNoiseSettings: sanitize clamps scale per layer', () => {
     assert.equal(s.color.value, 0.35);
     assert.equal(s.color.warmCool, -0.25);
     assert.equal(s.color.saturation, 0.5);
-    assert.equal(s.livedIn.edgeDirt.width, 2);
+    assert.equal(s.livedIn.edgeDirt.width, 3);
     assert.equal(s.livedIn.patches.coverage, 0);
 });
 

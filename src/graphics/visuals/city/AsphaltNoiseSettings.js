@@ -93,24 +93,24 @@ export const ASPHALT_NOISE_DEFAULTS = Object.freeze({
     livedIn: Object.freeze({
         edgeDirt: Object.freeze({
             enabled: true,
-            strength: 0.18,
+            strength: 0.35,
             width: 0.65,
             scale: 0.55
         }),
         cracks: Object.freeze({
             enabled: true,
-            strength: 0.12,
+            strength: 0.25,
             scale: 3.2
         }),
         patches: Object.freeze({
             enabled: true,
-            strength: 0.1,
+            strength: 0.2,
             scale: 4.0,
             coverage: 0.84
         }),
         tireWear: Object.freeze({
             enabled: true,
-            strength: 0.1,
+            strength: 0.25,
             scale: 1.6
         })
     })
@@ -183,7 +183,7 @@ function sanitizeAsphaltLivedInLayerSettings(input, defaults, { includeCoverage 
     const d = defaults && typeof defaults === 'object' ? defaults : {};
     const out = {
         enabled: src.enabled !== undefined ? !!src.enabled : !!d.enabled,
-        strength: clamp(src.strength ?? src.intensity ?? d.strength, 0.0, 1.0, d.strength ?? 0),
+        strength: clamp(src.strength ?? src.intensity ?? d.strength, 0.0, 4.0, d.strength ?? 0),
         scale: clamp(src.scale ?? d.scale, 0.001, 50.0, d.scale ?? 1.0)
     };
 
@@ -192,7 +192,7 @@ function sanitizeAsphaltLivedInLayerSettings(input, defaults, { includeCoverage 
     }
 
     if (includeWidth) {
-        out.width = clamp(src.width ?? d.width, 0.0, 2.0, d.width ?? 0.65);
+        out.width = clamp(src.width ?? d.width, 0.0, 3.0, d.width ?? 0.65);
     }
 
     return out;

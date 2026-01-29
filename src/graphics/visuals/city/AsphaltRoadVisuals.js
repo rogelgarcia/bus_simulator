@@ -143,7 +143,7 @@ function buildRoadCoarseMaterialVariationConfig({ coarse, livedIn, basePreset })
     if (Array.isArray(preset.macroLayers) && preset.macroLayers.length >= 4) {
         const patches = lived.patches && typeof lived.patches === 'object' ? lived.patches : null;
         const patchesEnabled = patches?.enabled !== false;
-        const patchesStrength = clamp(patches?.strength, 0.0, 1.0);
+        const patchesStrength = clamp(patches?.strength, 0.0, 4.0);
         const patchesScale = clamp(patches?.scale, 0.001, 50.0);
         const patchesCoverage = clamp(patches?.coverage, 0.0, 1.0);
         if (patchesEnabled && patchesStrength > 1e-6) {
@@ -152,10 +152,10 @@ function buildRoadCoarseMaterialVariationConfig({ coarse, livedIn, basePreset })
             layer.intensity = patchesStrength;
             layer.scale = patchesScale;
             layer.coverage = patchesCoverage;
-            layer.value = -0.08;
-            layer.saturation = -0.02;
-            layer.roughness = -0.14;
-            layer.normal = 0.0;
+            layer.value = -0.14;
+            layer.saturation = -0.04;
+            layer.roughness = -0.28;
+            layer.normal = -0.25;
             preset.macroLayers[2] = layer;
         } else if (preset.macroLayers[2] && typeof preset.macroLayers[2] === 'object') {
             preset.macroLayers[2] = { ...preset.macroLayers[2], enabled: false, intensity: 0.0 };
@@ -163,17 +163,17 @@ function buildRoadCoarseMaterialVariationConfig({ coarse, livedIn, basePreset })
 
         const tireWear = lived.tireWear && typeof lived.tireWear === 'object' ? lived.tireWear : null;
         const tireWearEnabled = tireWear?.enabled !== false;
-        const tireWearStrength = clamp(tireWear?.strength, 0.0, 1.0);
+        const tireWearStrength = clamp(tireWear?.strength, 0.0, 4.0);
         const tireWearScale = clamp(tireWear?.scale, 0.001, 50.0);
         if (tireWearEnabled && tireWearStrength > 1e-6) {
             const layer = preset.macroLayers[3] && typeof preset.macroLayers[3] === 'object' ? { ...preset.macroLayers[3] } : {};
             layer.enabled = true;
             layer.intensity = tireWearStrength;
             layer.scale = tireWearScale;
-            layer.value = 0.0;
-            layer.saturation = 0.0;
-            layer.roughness = -0.18;
-            layer.normal = 0.0;
+            layer.value = -0.05;
+            layer.saturation = -0.02;
+            layer.roughness = -0.42;
+            layer.normal = -0.5;
             preset.macroLayers[3] = layer;
         } else if (preset.macroLayers[3] && typeof preset.macroLayers[3] === 'object') {
             preset.macroLayers[3] = { ...preset.macroLayers[3], enabled: false, intensity: 0.0 };
@@ -182,7 +182,7 @@ function buildRoadCoarseMaterialVariationConfig({ coarse, livedIn, basePreset })
 
     const cracks = lived.cracks && typeof lived.cracks === 'object' ? lived.cracks : null;
     const cracksEnabled = cracks?.enabled !== false;
-    const cracksStrength = clamp(cracks?.strength, 0.0, 1.0);
+    const cracksStrength = clamp(cracks?.strength, 0.0, 4.0);
     const cracksScale = clamp(cracks?.scale, 0.01, 80.0);
     if (preset.cracks && typeof preset.cracks === 'object') {
         if (cracksEnabled && cracksStrength > 1e-6) {
@@ -191,10 +191,10 @@ function buildRoadCoarseMaterialVariationConfig({ coarse, livedIn, basePreset })
                 enabled: true,
                 strength: cracksStrength,
                 scale: cracksScale,
-                value: -0.12,
-                saturation: -0.05,
-                roughness: 0.22,
-                normal: 0.0
+                value: -0.24,
+                saturation: -0.08,
+                roughness: 0.38,
+                normal: 1.25
             };
         } else {
             preset.cracks = { ...preset.cracks, enabled: false, strength: 0.0 };
@@ -213,6 +213,7 @@ function applyFineTextures(material, fine, { baseColorHex, baseRoughness, seed }
         if (material.map) material.map = null;
         if (material.roughnessMap) material.roughnessMap = null;
         if (material.normalMap) material.normalMap = null;
+        if (material.userData?.asphaltFineTextures) material.userData.asphaltFineTextures = null;
         material.color.setHex(baseColorHex);
         material.roughness = clamp(baseRoughness, 0.0, 1.0);
         material.needsUpdate = true;
@@ -228,6 +229,8 @@ function applyFineTextures(material, fine, { baseColorHex, baseRoughness, seed }
         dirtyStrength: fine?.dirtyStrength,
         roughnessStrength: wantsRoughness ? fine?.roughnessStrength : 0
     });
+    material.userData = material.userData ?? {};
+    material.userData.asphaltFineTextures = textures;
 
     if (wantsAlbedo) {
         material.map = textures.map;
@@ -297,11 +300,26 @@ export function applyAsphaltRoadVisualsToMeshStandardMaterial(
     const coarseAlbedo = coarse?.albedo !== false;
     const coarseRoughness = coarse?.roughness !== false;
 
+    const lived = settings.livedIn ?? null;
+    const cracksActive = !!lived?.cracks?.enabled && lived.cracks.strength > 1e-6;
+    const patchesActive = !!lived?.patches?.enabled && lived.patches.strength > 1e-6;
+    const tireWearActive = !!lived?.tireWear?.enabled && lived.tireWear.strength > 1e-6;
+    const livedInActive = cracksActive || patchesActive || tireWearActive;
+    const livedInColorActive = cracksActive || patchesActive;
+    const livedInRoughnessActive = livedInActive;
+
+    const coarseForConfig = {
+        ...coarse,
+        colorStrength: coarseAlbedo ? coarse?.colorStrength : 0.0,
+        dirtyStrength: coarseAlbedo ? coarse?.dirtyStrength : 0.0,
+        roughnessStrength: coarseRoughness ? coarse?.roughnessStrength : 0.0
+    };
+
     const hasMatVar = !!material.userData?.materialVariationConfig;
-    if (coarseAlbedo || coarseRoughness || hasMatVar) {
+    if (coarseAlbedo || coarseRoughness || livedInActive || hasMatVar) {
         const config = buildRoadCoarseMaterialVariationConfig({
-            coarse,
-            livedIn: settings.livedIn,
+            coarse: coarseForConfig,
+            livedIn: lived,
             basePreset: getDefaultMaterialVariationPreset(MATERIAL_VARIATION_ROOT.SURFACE)
         });
         updateMaterialVariationOnMeshStandardMaterial(material, {
@@ -312,8 +330,8 @@ export function applyAsphaltRoadVisualsToMeshStandardMaterial(
             config,
             root: MATERIAL_VARIATION_ROOT.SURFACE,
             debug: {
-                contribColor: coarseAlbedo,
-                contribRoughness: coarseRoughness,
+                contribColor: coarseAlbedo || livedInColorActive,
+                contribRoughness: coarseRoughness || livedInRoughnessActive,
                 useOrm: true
             }
         });

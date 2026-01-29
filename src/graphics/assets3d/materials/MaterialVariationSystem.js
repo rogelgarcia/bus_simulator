@@ -2,7 +2,7 @@
 // Applies deterministic, composable procedural material variation to MeshStandardMaterial via shader injection.
 import * as THREE from 'three';
 
-const MATVAR_SHADER_VERSION = 14;
+const MATVAR_SHADER_VERSION = 15;
 const MATVAR_MACRO_LAYERS_MAX = 4;
 
 const EPS = 1e-6;
@@ -1100,6 +1100,16 @@ function injectMatVarShader(material, shader) {
         'float off=mix(o0,o1,blendT);',
         'return (uMatVarStair.w<0.5)?(uv+vec2(off,0.0)):(uv+vec2(0.0,off));',
         '}',
+        'vec3 mvPerturbNormalArb(vec3 eye_pos, vec3 surf_norm, vec2 dHdxy){',
+        'vec3 q0=dFdx(eye_pos.xyz);',
+        'vec3 q1=dFdy(eye_pos.xyz);',
+        'vec3 N=normalize(surf_norm);',
+        'vec3 R1=cross(q1,N);',
+        'vec3 R2=cross(N,q0);',
+        'float fDet=dot(q0,R1);',
+        'vec3 vGrad=sign(fDet)*(dHdxy.x*R1+dHdxy.y*R2);',
+        'return normalize(abs(fDet)*N-vGrad);',
+        '}',
         '#ifdef USE_NORMALMAP',
         'vec3 mvPerturbNormal2Arb(vec3 eye_pos, vec3 surf_norm, vec3 mapN, float faceDirection, vec2 uv){',
         'vec3 q0=dFdx(eye_pos.xyz);',
@@ -1152,6 +1162,7 @@ function injectMatVarShader(material, shader) {
             'matVarAoTex = 1.0;',
             'matVarRoughFactor = roughness;',
             'matVarNormalFactor = 1.0;',
+            'matVarBumpHeight = 0.0;',
             'mvHasEffect = 0.0;',
             '#ifdef USE_ROUGHNESSMAP',
             'if(step(0.5,uMatVarDebug1.z)>0.5){',
@@ -1335,8 +1346,10 @@ function injectMatVarShader(material, shader) {
             'float crackStrength = uMatVarCracks.x * mvIntensity;',
             'if (crackStrength > 0.0) {',
             'float c = mvFbmRidged(mvP * uMatVarCracks.y + vec2(mvSeedOB * 53.9, mvSeedOA * 44.1));',
-            'float crack = smoothstep(0.62, 0.95, c) * crackStrength;',
+            'float crackMask = smoothstep(0.62, 0.95, c);',
+            'float crack = crackMask * crackStrength;',
             'mvApplyLayer(mvColor, mvRough, matVarNormalFactor, crack, uMatVarCracks2, uMatVarCracks.z);',
+            'matVarBumpHeight += (-crackMask) * crackStrength * uMatVarCracks2.w * 0.04;',
             '}',
             'if (mvHasEffect > 0.5) {',
             'float dbgR=step(0.5,uMatVarDebug1.x);',
@@ -1400,6 +1413,9 @@ function injectMatVarShader(material, shader) {
             '#ifdef USE_BUMPMAP',
             'normal = perturbNormalArb( -vViewPosition, normal, dHdxy_fwd() );',
             '#endif',
+            'if (abs(matVarBumpHeight) > 1e-6) {',
+            'normal = mvPerturbNormalArb( -vViewPosition, normal, vec2(dFdx(matVarBumpHeight), dFdy(matVarBumpHeight)) );',
+            '}',
             '#else',
             '#include <normal_fragment_maps>',
             '#endif'
@@ -1439,6 +1455,7 @@ function injectMatVarShader(material, shader) {
             'float matVarAoTex = 1.0;',
             'float matVarRoughFactor = roughness;',
             'float matVarNormalFactor = 1.0;',
+            'float matVarBumpHeight = 0.0;',
             '#endif'
         ].join('\n')
     );
@@ -1469,6 +1486,8 @@ function ensureMatVarConfigOnMaterial(material, config) {
     const mat = material;
     mat.userData = mat.userData ?? {};
     mat.userData.materialVariationConfig = config;
+    mat.extensions = mat.extensions ?? {};
+    mat.extensions.derivatives = true;
 
     mat.defines = mat.defines ?? {};
     const debug = normalizeMaterialVariationDebugConfig(config?.debug);

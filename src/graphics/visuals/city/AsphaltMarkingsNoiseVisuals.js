@@ -14,9 +14,11 @@ function clamp(value, min, max, fallback) {
 function buildAsphaltMarkingsNoiseConfig({
     asphaltNoise,
     asphaltFineRoughnessMap,
+    asphaltFineNormalMap,
     asphaltFineScale,
     asphaltFineBaseRoughness,
-    asphaltFineRoughnessStrength
+    asphaltFineRoughnessStrength,
+    asphaltFineNormalStrength
 } = {}) {
     const settings = sanitizeAsphaltNoiseSettings(asphaltNoise);
     const markings = settings?.markings && typeof settings.markings === 'object' ? settings.markings : {};
@@ -24,12 +26,13 @@ function buildAsphaltMarkingsNoiseConfig({
     const debug = markings.debug === true;
 
     const map = asphaltFineRoughnessMap?.isTexture ? asphaltFineRoughnessMap : null;
+    const normalMap = (settings?.fine?.normal !== false && asphaltFineNormalMap?.isTexture) ? asphaltFineNormalMap : null;
     const fineScaleResolved = clamp(asphaltFineScale ?? settings?.fine?.scale, 0.1, 15.0, 12.0);
     const fineBaseRough = clamp(asphaltFineBaseRoughness, 0.0, 1.0, 0.95);
-    const fineRoughStrengthRaw = (settings?.fine?.roughness !== false)
-        ? clamp(asphaltFineRoughnessStrength ?? settings?.fine?.roughnessStrength, 0.0, 0.5, 0.16)
-        : 0.0;
+    const fineRoughStrengthRaw = clamp(asphaltFineRoughnessStrength ?? settings?.fine?.roughnessStrength, 0.0, 0.5, 0.16);
     const fineRoughStrength = map ? fineRoughStrengthRaw : 0.0;
+    const normalStrengthRaw = clamp(asphaltFineNormalStrength ?? settings?.fine?.normalStrength, 0.0, 2.0, 0.35);
+    const normalStrength = (enabled && normalMap) ? clamp(normalStrengthRaw * 0.55, 0.0, 1.0, 0.18) : 0.0;
 
     const active = !!(map && fineRoughStrength > 1e-6 && (enabled || debug));
 
@@ -43,8 +46,23 @@ function buildAsphaltMarkingsNoiseConfig({
         fineBaseRoughness: fineBaseRough,
         fineRoughnessStrength: fineRoughStrength,
         fineRoughnessMap: map,
+        normalMap,
+        normalStrength,
         shaderUniforms: null
     };
+}
+
+function ensureAsphaltMarkingsNoiseBase(material) {
+    const mat = material;
+    mat.userData = mat.userData ?? {};
+    const existing = mat.userData.asphaltMarkingsNoiseBase ?? null;
+    if (existing && typeof existing === 'object') return existing;
+    const base = {
+        normalMap: mat.normalMap ?? null,
+        normalScale: mat.normalScale?.isVector2 && typeof mat.normalScale.clone === 'function' ? mat.normalScale.clone() : null
+    };
+    mat.userData.asphaltMarkingsNoiseBase = base;
+    return base;
 }
 
 function injectAsphaltMarkingsNoiseShader(material, shader) {
@@ -152,6 +170,8 @@ function ensureAsphaltMarkingsNoiseConfigOnMaterial(material, config) {
     cfg.fineBaseRoughness = config.fineBaseRoughness;
     cfg.fineRoughnessStrength = config.fineRoughnessStrength;
     cfg.fineRoughnessMap = config.fineRoughnessMap;
+    cfg.normalMap = config.normalMap;
+    cfg.normalStrength = config.normalStrength;
     mat.userData.asphaltMarkingsNoiseConfig = cfg;
 
     const u = cfg.shaderUniforms ?? null;
@@ -165,6 +185,21 @@ function ensureAsphaltMarkingsNoiseConfigOnMaterial(material, config) {
         if (u.uAsphaltMarkingsFineRoughnessStrength) u.uAsphaltMarkingsFineRoughnessStrength.value = cfg.fineRoughnessStrength;
         if (u.uAsphaltMarkingsFineRoughnessMap) u.uAsphaltMarkingsFineRoughnessMap.value = cfg.fineRoughnessMap;
     }
+
+    const base = ensureAsphaltMarkingsNoiseBase(mat);
+    const wantsNormal = cfg.enabled && cfg.normalMap?.isTexture && cfg.normalStrength > 1e-6;
+    const prevHadNormal = !!mat.normalMap;
+    if (wantsNormal) {
+        mat.normalMap = cfg.normalMap;
+        mat.extensions = mat.extensions ?? {};
+        mat.extensions.derivatives = true;
+        if (mat.normalScale?.set) mat.normalScale.set(cfg.normalStrength, cfg.normalStrength);
+    } else {
+        mat.normalMap = base.normalMap;
+        if (base.normalScale?.isVector2 && typeof mat.normalScale?.copy === 'function') mat.normalScale.copy(base.normalScale);
+    }
+    const nextHadNormal = !!mat.normalMap;
+    if (prevHadNormal !== nextHadNormal) mat.needsUpdate = true;
 
     if (mat.userData.asphaltMarkingsNoiseInjected === true) return;
 
@@ -190,9 +225,11 @@ export function applyAsphaltMarkingsNoiseVisualsToMeshStandardMaterial(
     {
         asphaltNoise,
         asphaltFineRoughnessMap = null,
+        asphaltFineNormalMap = null,
         asphaltFineScale = null,
         asphaltFineBaseRoughness = 0.95,
-        asphaltFineRoughnessStrength = null
+        asphaltFineRoughnessStrength = null,
+        asphaltFineNormalStrength = null
     } = {}
 ) {
     if (!material?.isMeshStandardMaterial) return material;
@@ -200,9 +237,11 @@ export function applyAsphaltMarkingsNoiseVisualsToMeshStandardMaterial(
     const cfg = buildAsphaltMarkingsNoiseConfig({
         asphaltNoise,
         asphaltFineRoughnessMap,
+        asphaltFineNormalMap,
         asphaltFineScale,
         asphaltFineBaseRoughness,
-        asphaltFineRoughnessStrength
+        asphaltFineRoughnessStrength,
+        asphaltFineNormalStrength
     });
     const wasInjected = material.userData?.asphaltMarkingsNoiseInjected === true;
     ensureAsphaltMarkingsNoiseConfigOnMaterial(material, cfg);

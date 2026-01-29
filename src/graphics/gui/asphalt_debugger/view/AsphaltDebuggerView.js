@@ -242,19 +242,25 @@ export class AsphaltDebuggerView {
             });
         }
 
+        const asphaltFineRoughnessMap = city.materials.road?.userData?.asphaltFineTextures?.roughnessMap ?? city.materials.road?.roughnessMap ?? null;
+        const asphaltFineNormalMap = city.materials.road?.userData?.asphaltFineTextures?.normalMap ?? city.materials.road?.normalMap ?? null;
         applyAsphaltMarkingsNoiseVisualsToMeshStandardMaterial(city.materials.laneWhite, {
             asphaltNoise,
-            asphaltFineRoughnessMap: city.materials.road?.roughnessMap ?? null,
+            asphaltFineRoughnessMap,
+            asphaltFineNormalMap,
             asphaltFineScale: asphaltNoise?.fine?.scale,
             asphaltFineBaseRoughness: 0.95,
-            asphaltFineRoughnessStrength: asphaltNoise?.fine?.roughnessStrength
+            asphaltFineRoughnessStrength: asphaltNoise?.fine?.roughnessStrength,
+            asphaltFineNormalStrength: asphaltNoise?.fine?.normalStrength
         });
         applyAsphaltMarkingsNoiseVisualsToMeshStandardMaterial(city.materials.laneYellow, {
             asphaltNoise,
-            asphaltFineRoughnessMap: city.materials.road?.roughnessMap ?? null,
+            asphaltFineRoughnessMap,
+            asphaltFineNormalMap,
             asphaltFineScale: asphaltNoise?.fine?.scale,
             asphaltFineBaseRoughness: 0.95,
-            asphaltFineRoughnessStrength: asphaltNoise?.fine?.roughnessStrength
+            asphaltFineRoughnessStrength: asphaltNoise?.fine?.roughnessStrength,
+            asphaltFineNormalStrength: asphaltNoise?.fine?.normalStrength
         });
 
         const edgeMats = new Set();
@@ -264,7 +270,7 @@ export class AsphaltDebuggerView {
             applyAsphaltEdgeWearVisualsToMeshStandardMaterial(mat, {
                 asphaltNoise,
                 seed: roadSeed,
-                maxWidth: 1.25
+                maxWidth: 2.5
             });
         }
     }

@@ -36,6 +36,13 @@ export const DEBUG_TOOL_REGISTRY = Object.freeze([
         label: 'Markings AA',
         description: 'Lane markings AA + occlusion debugger',
         href: 'debug_tools/markings_aa_debug.html'
+    }),
+    Object.freeze({
+        id: 'window_mesh_debug',
+        key: '6',
+        label: 'Window Mesh',
+        description: 'Procedural window mesh (frame/glass/shade/interior)',
+        href: 'debug_tools/window_mesh_debug.html'
     })
 ]);
 
