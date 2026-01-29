@@ -42,3 +42,6 @@ old_prompts/
 # Test artifacts (generated outputs only)
 tests/artifacts/
 !tests/artifacts/.gitignore
+
+# Local-only test selection (used by tools/run_selected_test)
+tests/.selected_test

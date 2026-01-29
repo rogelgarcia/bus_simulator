@@ -248,6 +248,78 @@ async function runTests() {
         assertMaterialsOptOutOfIbl(parts, 'BuildingFabricationGenerator');
     });
 
+    // ========== Building Footprints / Roads ==========
+    const { CityMap } = await import('/src/app/city/CityMap.js');
+    const { createGeneratorConfig } = await import('/src/graphics/assets3d/generators/GeneratorParams.js');
+    const { computeBuildingLoopsFromTiles } = await import('/src/graphics/assets3d/generators/buildings/BuildingGenerator.js');
+
+    test('BuildingGenerator: shrinks footprints away from roads + sidewalks', () => {
+        const tileSize = 24;
+        const map = new CityMap({ width: 6, height: 6, tileSize, origin: { x: 0, z: 0 } });
+        map.addRoadSegment({ a: [0, 2], b: [5, 2], lanesF: 3, lanesB: 3, id: 0, tag: 'test' });
+        map.finalize({ seed: 'test' });
+
+        const generatorConfig = createGeneratorConfig({});
+        const loops = computeBuildingLoopsFromTiles({
+            map,
+            tiles: [[2, 3]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0
+        });
+        assertTrue(Array.isArray(loops) && loops.length > 0, 'Expected footprint loops.');
+
+        const roadA = map.tileToWorldCenter(0, 2);
+        const roadB = map.tileToWorldCenter(5, 2);
+        const ax = roadA.x;
+        const az = roadA.z;
+        const bx = roadB.x;
+        const bz = roadB.z;
+
+        const roadCfg = generatorConfig.road;
+        const forbiddenRadius = 3 * roadCfg.laneWidth + roadCfg.shoulder + roadCfg.curb.thickness + roadCfg.sidewalk.extraWidth;
+
+        const distSqPointToSegmentXZ = (px, pz, ax, az, bx, bz) => {
+            const abx = bx - ax;
+            const abz = bz - az;
+            const apx = px - ax;
+            const apz = pz - az;
+            const denom = abx * abx + abz * abz;
+            if (denom <= 1e-9) return apx * apx + apz * apz;
+            let t = (apx * abx + apz * abz) / denom;
+            if (t < 0) t = 0;
+            else if (t > 1) t = 1;
+            const cx = ax + abx * t;
+            const cz = az + abz * t;
+            const dx = px - cx;
+            const dz = pz - cz;
+            return dx * dx + dz * dz;
+        };
+
+        let minDist = Infinity;
+        for (const loop of loops) {
+            const pts = Array.isArray(loop) ? loop : [];
+            const n = pts.length;
+            for (let i = 0; i < n; i++) {
+                const a = pts[i];
+                const b = pts[(i + 1) % n];
+                const samples = [
+                    { x: a.x, z: a.z },
+                    { x: (a.x + b.x) * 0.5, z: (a.z + b.z) * 0.5 }
+                ];
+                for (const p of samples) {
+                    const d = Math.sqrt(distSqPointToSegmentXZ(p.x, p.z, ax, az, bx, bz));
+                    if (d < minDist) minDist = d;
+                }
+            }
+        }
+
+        assertTrue(
+            minDist >= forbiddenRadius - 1e-3,
+            `Expected footprint outside road+sidewalk radius. minDist=${minDist} radius=${forbiddenRadius}`
+        );
+    });
+
     // ========== RoadEngineMeshData Tests ==========
     const { triangulateSimplePolygonXZ } = await import('/src/app/road_engine/RoadEngineMeshData.js');
     const { buildRoadCurbMeshDataFromRoadEnginePrimitives } = await import('/src/app/road_decoration/curbs/RoadCurbBuilder.js');
@@ -1469,15 +1541,14 @@ async function runTests() {
         });
     } catch (e) {
         console.log('⏭️  createVehicleFromBus tests skipped:', e.message);
-    }
-
-    const { solveConnectorPath } = await import('/src/app/geometry/ConnectorPathSolver.js');
-    const { createGeneratorConfig } = await import('/src/graphics/assets3d/generators/GeneratorParams.js');
-    const { createCityConfig } = await import('/src/app/city/CityConfig.js');
-
-    test('ConnectorPathSolver: reaches end pose within epsilon', () => {
-        const genConfig = createGeneratorConfig();
-        const cityConfig = createCityConfig();
+	    }
+	
+	    const { solveConnectorPath } = await import('/src/app/geometry/ConnectorPathSolver.js');
+	    const { createCityConfig } = await import('/src/app/city/CityConfig.js');
+	
+	    test('ConnectorPathSolver: reaches end pose within epsilon', () => {
+	        const genConfig = createGeneratorConfig();
+	        const cityConfig = createCityConfig();
         const tileSize = cityConfig.map.tileSize;
         const radius = genConfig.road?.curves?.turnRadius ?? 4.2;
         const posEps = tileSize * 1e-3;
@@ -2283,14 +2354,13 @@ async function runTests() {
 
         const small = getHighestIndex3x2FootprintTileIds(2);
         assertEqual(small.length, 0, 'Expected empty footprint for small grids.');
-    });
-
-    // ========== City Building Config Tests ==========
-    const { CityMap } = await import('/src/app/city/CityMap.js');
-    const { getBuildingConfigById, getBuildingConfigs } = await import('/src/app/city/buildings/index.js');
-    const { createDemoCitySpec } = await import('/src/app/city/specs/DemoCitySpec.js');
-    const { BIG_CITY_SPEC, createBigCitySpec } = await import('/src/app/city/specs/BigCitySpec.js');
-    const { getGameplayCityOptions } = await import('/src/states/GameplayState.js');
+	    });
+	
+	    // ========== City Building Config Tests ==========
+	    const { getBuildingConfigById, getBuildingConfigs } = await import('/src/app/city/buildings/index.js');
+	    const { createDemoCitySpec } = await import('/src/app/city/specs/DemoCitySpec.js');
+	    const { BIG_CITY_SPEC, createBigCitySpec } = await import('/src/app/city/specs/BigCitySpec.js');
+	    const { getGameplayCityOptions } = await import('/src/states/GameplayState.js');
     const { createCityBuildingConfigFromFabrication, serializeCityBuildingConfigToEsModule } = await import('/src/app/city/buildings/BuildingConfigExport.js');
     const { BUILDING_STYLE } = await import('/src/app/buildings/BuildingStyle.js');
     const { BELT_COURSE_COLOR } = await import('/src/app/buildings/BeltCourseColor.js');
@@ -2706,7 +2776,7 @@ async function runTests() {
         assertEqual(map.buildings[0].tiles[1][0], 1);
     });
 
-    const { computeEvenWindowLayout, computeBuildingLoopsFromTiles, buildBuildingVisualParts, getWindowStyleOptions } = await import('/src/graphics/assets3d/generators/buildings/BuildingGenerator.js');
+	    const { computeEvenWindowLayout, buildBuildingVisualParts, getWindowStyleOptions } = await import('/src/graphics/assets3d/generators/buildings/BuildingGenerator.js');
     const { createTreeField } = await import('/src/graphics/assets3d/generators/TreeGenerator.js');
     const { CityRNG } = await import('/src/app/city/CityRNG.js');
     const {
@@ -8325,6 +8395,8 @@ async function runTests() {
 
     // Expose errors globally for easy inspection
     window.__testErrors = errors;
+    window.__coreTestsFailed = errors.length;
+    window.__coreTestsDone = true;
 }
 
 // Run tests when module loads
@@ -8335,5 +8407,7 @@ runTests().catch(err => {
         if (!Array.isArray(window.__testFatals)) window.__testFatals = [];
         window.__testFatals.push({ name: 'CoreTests', message });
         window.__testErrors = errors;
+        window.__coreTestsFailed = errors.length;
+        window.__coreTestsDone = true;
     }
 });

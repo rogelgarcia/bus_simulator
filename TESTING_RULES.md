@@ -23,11 +23,56 @@ This doc is the expanded testing policy and conventions for this repo. `PROJECT_
 - Node asset/pipeline validation: `tests/node/assets/`
   - Shared fixtures/helpers: `tests/shared/`
 
+## Standardized runner (AI/dev iteration)
+
+Prefer the stable runner command instead of ad-hoc inline test commands:
+
+- Run: `node tools/run_selected_test/run.mjs`
+- Select: edit `tests/.selected_test` (gitignored) and re-run the same command.
+
+Common targets:
+
+- `smoke` (fastest meaningful subset)
+- `core` (runs `tests/core.test.js` headlessly and fails on console test failures)
+- `node`, `node:unit`, `node:sim`, `assets`
+- `tests/headless/e2e/<spec>.pwtest.js`
+- `tests/headless/visual/specs/<spec>.pwtest.js`
+- `tests/headless/perf/specs/<spec>.pwtest.js`
+
 ## Artifacts and baselines
 
 - Generated outputs (screenshots, traces, logs, reports) go under `tests/artifacts/` and must be gitignored.
 - Baselines/fixtures/budgets/specs are committed under their respective `tests/**` folders (never under `tests/artifacts/`).
 - Baseline updates must be explicit (command/flag), never automatic.
+
+## Regression Debugging Playbook (headless + bisect)
+
+When a rendering regression is hard to reproduce or isolate, use this deterministic workflow (no guessy/manual-only debugging).
+
+1) Create a **deterministic headless reproduction**
+   - Prefer the harness: add a minimal scenario under `tests/headless/harness/scenarios/` and register it.
+   - Add a headless test that clearly fails (E2E/visual/perf, depending on the signal you need).
+   - Re-run the *same* target repeatedly (recommended: `node tools/run_selected_test/run.mjs` with `tests/.selected_test` pointing at the failing spec).
+
+2) Create a **debug tool** (preferred)
+   - Add a dedicated debug scene/UI that exposes the suspected subsystem(s) and can be driven by the headless test.
+   - Keep it minimal and deterministic (fixed seeds, fixed camera, fixed resolution when applicable).
+
+3) Isolate by **systematic feature toggling** (binary search / stepwise disable)
+   - Disable one feature/subsystem at a time, then re-run the same headless test after each change.
+   - If disabling *all* suspects doesn’t fix it, add features back in a controlled order and re-run each time until the root cause is identified.
+   - Suggested “add back” order: base rendering → materials → decals/markings → post-processing → variations/noise → debug overlays.
+
+4) Do **not delete code** while isolating
+   - Use reversible gates (feature flags, query params, debug settings) so changes are easy to undo or keep as optional debug switches.
+
+5) Document every step (durable “research log”)
+   - Create a Markdown research log with the test plan, each toggle change, and the pass/fail result.
+   - Reference artifacts by path under `tests/artifacts/` (don’t commit artifacts; keep committed baselines/specs separate as described above).
+   - Template: `debug_tools/regression_debugging/RESEARCH_LOG_TEMPLATE.md`
+
+Example (style):
+- “Markings not visible” regression: start from an existing failing spec (e.g. `tests/headless/e2e/road_markings_visible.pwtest.js` or a new minimal visual spec), then bisect road material/markings/post-processing toggles while re-running the same headless target and logging results.
 
 ## “Tests are explicit”
 

@@ -29,6 +29,13 @@ export const DEBUG_TOOL_REGISTRY = Object.freeze([
         label: 'Sun Bloom',
         description: 'Sun-only bloom / glare look-dev scene',
         href: 'debug_tools/sun_bloom_debug.html'
+    }),
+    Object.freeze({
+        id: 'markings_aa_debug',
+        key: '5',
+        label: 'Markings AA',
+        description: 'Lane markings AA + occlusion debugger',
+        href: 'debug_tools/markings_aa_debug.html'
     })
 ]);
 

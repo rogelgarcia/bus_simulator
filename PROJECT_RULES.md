@@ -13,7 +13,9 @@
 
 ## Testing
 
-- Tests run in the browser via `tests/core.test.js`; check the console for pass/fail output.
+- During AI/dev iteration, prefer the standardized runner: `node tools/run_selected_test/run.mjs` (reads `tests/.selected_test`) instead of ad-hoc long inline test commands.
+- Browser-run console tests live in `tests/core.test.js` (can be run by opening `index.html` locally and checking the console, or by selecting `core` in `tests/.selected_test`).
+- For hard-to-reproduce rendering regressions, follow `TESTING_RULES.md` → “Regression Debugging Playbook (headless + bisect)” (create a deterministic headless repro, then bisect with repeated test runs and a research log).
 - Add new tests near related sections and keep naming descriptive (e.g., `System: behavior should ...`).
 - If adding new modules, ensure they are importable from the browser (relative import paths).
 - Expanded testing policy and conventions: `TESTING_RULES.md`

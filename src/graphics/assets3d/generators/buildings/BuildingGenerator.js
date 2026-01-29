@@ -21,6 +21,7 @@ import { applyMaterialVariationToMeshStandardMaterial, computeMaterialVariationS
 
 const EPS = 1e-6;
 const QUANT = 1000;
+const ROAD_FORBIDDEN_SEGMENTS_CACHE = new WeakMap();
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -544,6 +545,182 @@ function buildingFootprintMargins({ tileSize, occupyRatio, generatorConfig }) {
     return { baseMargin, roadMargin };
 }
 
+function resolveRoadForbiddenDistanceConfig({ generatorConfig, tileSize }) {
+    const roadCfg = generatorConfig?.road ?? {};
+    const laneWidth = clamp(roadCfg?.laneWidth ?? 4.8, 0.1, 1000);
+    const shoulder = clamp(roadCfg?.shoulder ?? 0.525, 0, 1000);
+    const curbThickness = clamp(roadCfg?.curb?.thickness ?? 0.48, 0, 1000);
+    const sidewalkWidth = clamp(roadCfg?.sidewalk?.extraWidth ?? 1.875, 0, 1000);
+
+    const pad = Math.max(0.02, laneWidth * 0.004);
+    const stepTile = Math.max(0.1, Number(tileSize) || 24);
+    const sampleStep = Math.max(0.25, Math.min(laneWidth, stepTile * 0.25));
+    const minFootprintExtent = Math.max(1.0, Math.min(laneWidth * 0.5, stepTile * 0.08));
+
+    const key = `lw:${q(laneWidth)}|sh:${q(shoulder)}|curb:${q(curbThickness)}|sw:${q(sidewalkWidth)}|pad:${q(pad)}`;
+    return { laneWidth, shoulder, curbThickness, sidewalkWidth, pad, sampleStep, minFootprintExtent, key };
+}
+
+function distSqPointToSegmentXZ(px, pz, ax, az, bx, bz) {
+    const abx = bx - ax;
+    const abz = bz - az;
+    const apx = px - ax;
+    const apz = pz - az;
+    const denom = abx * abx + abz * abz;
+    if (!(denom > EPS)) {
+        const dx = apx;
+        const dz = apz;
+        return dx * dx + dz * dz;
+    }
+    let t = (apx * abx + apz * abz) / denom;
+    if (t < 0) t = 0;
+    else if (t > 1) t = 1;
+    const cx = ax + abx * t;
+    const cz = az + abz * t;
+    const dx = px - cx;
+    const dz = pz - cz;
+    return dx * dx + dz * dz;
+}
+
+function getRoadForbiddenSegments(map, cfg) {
+    const m = map ?? null;
+    if (!m) return [];
+
+    const cached = ROAD_FORBIDDEN_SEGMENTS_CACHE.get(m) ?? null;
+    if (cached?.key === cfg.key && Array.isArray(cached?.segments)) return cached.segments;
+
+    const laneWidth = cfg.laneWidth;
+    const shoulder = cfg.shoulder;
+    const curbThickness = cfg.curbThickness;
+    const sidewalkWidth = cfg.sidewalkWidth;
+    const pad = cfg.pad;
+
+    const edges = m.roadNetwork?.getEdges?.();
+    const segmentsIn = Array.isArray(edges) ? edges : [];
+    const segments = [];
+
+    for (const edge of segmentsIn) {
+        const cl = edge?.centerline ?? null;
+        const a = cl?.a ?? null;
+        const b = cl?.b ?? null;
+        const ax = Number(a?.x);
+        const az = Number.isFinite(a?.z) ? Number(a.z) : Number(a?.y);
+        const bx = Number(b?.x);
+        const bz = Number.isFinite(b?.z) ? Number(b.z) : Number(b?.y);
+        if (!Number.isFinite(ax) || !Number.isFinite(az) || !Number.isFinite(bx) || !Number.isFinite(bz)) continue;
+
+        const lanesF = clampInt(edge?.lanesF, 0, 99);
+        const lanesB = clampInt(edge?.lanesB, 0, 99);
+        const lanesMax = Math.max(lanesF, lanesB);
+        const r = Math.max(0, lanesMax * laneWidth + shoulder + curbThickness + sidewalkWidth + pad);
+        if (!(r > EPS)) continue;
+
+        const minX = Math.min(ax, bx) - r;
+        const maxX = Math.max(ax, bx) + r;
+        const minZ = Math.min(az, bz) - r;
+        const maxZ = Math.max(az, bz) + r;
+        segments.push({ ax, az, bx, bz, rSq: r * r, minX, maxX, minZ, maxZ });
+    }
+
+    ROAD_FORBIDDEN_SEGMENTS_CACHE.set(m, { key: cfg.key, segments });
+    return segments;
+}
+
+function loopsBoundsXZ(loops) {
+    const list = Array.isArray(loops) ? loops : [];
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+
+    for (const loop of list) {
+        if (!Array.isArray(loop)) continue;
+        for (const p of loop) {
+            const x = Number(p?.x);
+            const z = Number.isFinite(p?.z) ? Number(p.z) : Number(p?.y);
+            if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (z < minZ) minZ = z;
+            if (z > maxZ) maxZ = z;
+        }
+    }
+
+    if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minZ) || !Number.isFinite(maxZ)) return null;
+    return { minX, maxX, minZ, maxZ };
+}
+
+function loopSamplePointsXZ(loop, step) {
+    const pts = Array.isArray(loop) ? loop : [];
+    const n = pts.length;
+    if (n < 2) return [];
+
+    const out = [];
+    const s = Math.max(0.05, Number(step) || 0);
+
+    for (let i = 0; i < n; i++) {
+        const a = pts[i];
+        const b = pts[(i + 1) % n];
+        if (!a || !b) continue;
+        const ax = Number(a.x);
+        const az = Number.isFinite(a.z) ? Number(a.z) : Number(a.y);
+        const bx = Number(b.x);
+        const bz = Number.isFinite(b.z) ? Number(b.z) : Number(b.y);
+        if (!Number.isFinite(ax) || !Number.isFinite(az) || !Number.isFinite(bx) || !Number.isFinite(bz)) continue;
+
+        out.push({ x: ax, z: az });
+
+        const dx = bx - ax;
+        const dz = bz - az;
+        const len = Math.hypot(dx, dz);
+        if (!(len > s)) {
+            out.push({ x: (ax + bx) * 0.5, z: (az + bz) * 0.5 });
+            continue;
+        }
+
+        const count = Math.min(24, Math.max(1, Math.ceil(len / s)));
+        for (let k = 1; k < count; k++) {
+            const t = k / count;
+            out.push({ x: ax + dx * t, z: az + dz * t });
+        }
+    }
+
+    return out;
+}
+
+function loopsOverlapForbiddenRoadArea(loops, forbiddenSegments, { sampleStep }) {
+    if (!Array.isArray(forbiddenSegments) || forbiddenSegments.length === 0) return false;
+
+    const list = Array.isArray(loops) ? loops : [];
+    const step = Math.max(0.25, Number(sampleStep) || 0);
+
+    for (const loop of list) {
+        const samples = loopSamplePointsXZ(loop, step);
+        for (const p of samples) {
+            const px = p.x;
+            const pz = p.z;
+
+            for (const seg of forbiddenSegments) {
+                if (px < seg.minX || px > seg.maxX || pz < seg.minZ || pz > seg.maxZ) continue;
+                const dSq = distSqPointToSegmentXZ(px, pz, seg.ax, seg.az, seg.bx, seg.bz);
+                if (dSq <= seg.rSq) return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+function insetLoopsXZ(loops, inset) {
+    const d = clamp(inset, 0, 1000);
+    if (!(d > EPS)) return loops;
+
+    return (loops ?? [])
+        .map((loop) => offsetOrthogonalLoopXZ(loop, d))
+        .map((loop) => simplifyLoopXZ(loop))
+        .filter((loop) => Array.isArray(loop) && loop.length >= 3);
+}
+
 function computeBuildingBaseAndSidewalk({ generatorConfig, floorHeight }) {
     const roadCfg = generatorConfig?.road ?? {};
     const baseRoadY = Number.isFinite(roadCfg.surfaceY) ? roadCfg.surfaceY : 0;
@@ -907,7 +1084,36 @@ export function computeBuildingLoopsFromTiles({
         .map((loop) => simplifyLoopXZ(loop))
         .filter((loop) => Array.isArray(loop) && loop.length >= 3);
 
-    return simplified;
+    if (!simplified.length) return simplified;
+
+    const distCfg = resolveRoadForbiddenDistanceConfig({ generatorConfig, tileSize: size });
+    const forbidden = getRoadForbiddenSegments(map, distCfg);
+    if (!forbidden.length) return simplified;
+    if (!loopsOverlapForbiddenRoadArea(simplified, forbidden, { sampleStep: distCfg.sampleStep })) return simplified;
+
+    const bounds = loopsBoundsXZ(simplified);
+    if (!bounds) return [];
+    const w = bounds.maxX - bounds.minX;
+    const d = bounds.maxZ - bounds.minZ;
+    const maxInset = Math.max(0, 0.5 * (Math.min(w, d) - distCfg.minFootprintExtent));
+    if (!(maxInset > EPS)) return [];
+
+    let inset = Math.min(maxInset, 0.1);
+    for (let i = 0; i < 24; i++) {
+        const candidate = insetLoopsXZ(simplified, inset);
+        const candidateBounds = loopsBoundsXZ(candidate);
+        if (candidate.length && candidateBounds) {
+            const cw = candidateBounds.maxX - candidateBounds.minX;
+            const cd = candidateBounds.maxZ - candidateBounds.minZ;
+            const okSize = cw >= distCfg.minFootprintExtent && cd >= distCfg.minFootprintExtent;
+            if (okSize && !loopsOverlapForbiddenRoadArea(candidate, forbidden, { sampleStep: distCfg.sampleStep })) return candidate;
+        }
+
+        if (inset >= maxInset - 1e-6) break;
+        inset = Math.min(maxInset, inset * 1.5);
+    }
+
+    return [];
 }
 
 export function applyWallTextureToGroup({

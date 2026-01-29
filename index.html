@@ -114,6 +114,8 @@
 	            const message = err?.message ?? String(err);
 	            if (!Array.isArray(window.__testFatals)) window.__testFatals = [];
 	            window.__testFatals.push({ name: 'CoreTests', message });
+	            window.__coreTestsFailed = 1;
+	            window.__coreTestsDone = true;
 	        });
 	    }
 	</script>
