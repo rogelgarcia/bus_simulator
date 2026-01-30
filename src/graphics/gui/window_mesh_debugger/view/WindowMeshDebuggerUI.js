@@ -263,6 +263,8 @@ export class WindowMeshDebuggerUI {
             wallMaterialId: String(initialWallMaterialId ?? defaultWall),
             wallRoughness: 0.85,
             wallNormalIntensity: 1.0,
+            wallCutWidthLerp: 1.0,
+            wallCutHeightLerp: 1.0,
             ibl: {
                 enabled: true,
                 envMapIntensity: 0.25,
@@ -398,6 +400,36 @@ export class WindowMeshDebuggerUI {
         });
         section.appendChild(wallNormalIntensityRow.row);
         this._controls.wallNormalIntensity = wallNormalIntensityRow;
+
+        const wallCutWidthRow = makeNumberSliderRow({
+            label: 'Wall Cut Width (0=Outer · 1=Inner)',
+            value: this._state.wallCutWidthLerp,
+            min: 0.0,
+            max: 1.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                this._state.wallCutWidthLerp = v;
+                this._emit();
+            }
+        });
+        section.appendChild(wallCutWidthRow.row);
+        this._controls.wallCutWidth = wallCutWidthRow;
+
+        const wallCutHeightRow = makeNumberSliderRow({
+            label: 'Wall Cut Height (0=Outer · 1=Inner)',
+            value: this._state.wallCutHeightLerp,
+            min: 0.0,
+            max: 1.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                this._state.wallCutHeightLerp = v;
+                this._emit();
+            }
+        });
+        section.appendChild(wallCutHeightRow.row);
+        this._controls.wallCutHeight = wallCutHeightRow;
 
         const renderModeRow = makeChoiceRow({
             label: 'Render Mode',

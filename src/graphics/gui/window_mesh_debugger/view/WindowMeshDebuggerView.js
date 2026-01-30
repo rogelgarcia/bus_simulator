@@ -168,7 +168,7 @@ function buildWindowOutline(out, { centerX = 0, centerY = 0, width, height, want
     buildArchedOutline(out, { x0, x1, y0, yTop, yChord, archRise, curveSegments, reverse });
 }
 
-function buildWallMaterialGeometryWithHoles({ width, height, depth, settings, instances, curveSegments = 24 } = {}) {
+function buildWallMaterialGeometryWithHoles({ width, height, depth, settings, instances, wallCut, curveSegments = 24 } = {}) {
     const w = Math.max(0.01, Number(width) || 1);
     const h = Math.max(0.01, Number(height) || 1);
     const d = Math.max(0.01, Number(depth) || 0.5);
@@ -180,17 +180,25 @@ function buildWallMaterialGeometryWithHoles({ width, height, depth, settings, in
     const list = Array.isArray(instances) ? instances : [];
     if (s && list.length) {
         const fw = Number(s?.frame?.width) || 0;
-        const innerWidth = Math.max(EPS, (Number(s?.width) || 0) - fw * 2);
-        const innerHeight = Math.max(EPS, (Number(s?.height) || 0) - fw * 2);
+        const cutSrc = wallCut && typeof wallCut === 'object' ? wallCut : {};
+        const cutX = clamp(cutSrc.x, 0.0, 1.0, 1.0);
+        const cutY = clamp(cutSrc.y, 0.0, 1.0, 1.0);
+
+        const baseWidth = Number(s?.width) || 0;
+        const baseHeight = Number(s?.height) || 0;
+        const cutWidth = Math.max(EPS, baseWidth - fw * 2 * cutX);
+        const cutHeight = Math.max(EPS, baseHeight - fw * 2 * cutY);
 
         const wantsArch = !!s?.arch?.enabled;
-        const outerArchRise = wantsArch ? ((Number(s?.arch?.heightRatio) || 0) * (Number(s?.width) || 0)) : 0;
+        const archRatio = Number(s?.arch?.heightRatio) || 0;
+        const outerArchRise = wantsArch ? (archRatio * baseWidth) : 0;
         const innerWantsArch = wantsArch && outerArchRise > EPS;
-        const innerArchRise = innerWantsArch ? ((Number(s?.arch?.heightRatio) || 0) * innerWidth) : 0;
-        const archRise = innerWantsArch ? Math.min(innerArchRise, Math.max(0, innerHeight - fw)) : 0;
+        const archRiseCandidate = innerWantsArch ? (archRatio * cutWidth) : 0;
+        const archRise = Math.min(archRiseCandidate, Math.max(0, cutHeight - fw * cutY));
+        const cutWantsArch = innerWantsArch && archRise > EPS;
 
-        const halfW = innerWidth * 0.5;
-        const halfH = innerHeight * 0.5;
+        const halfW = cutWidth * 0.5;
+        const halfH = cutHeight * 0.5;
         for (const entry of list) {
             const p = entry?.position && typeof entry.position === 'object' ? entry.position : entry;
             const cx = Number(p?.x) || 0;
@@ -204,9 +212,9 @@ function buildWallMaterialGeometryWithHoles({ width, height, depth, settings, in
             buildWindowOutline(hole, {
                 centerX: cx,
                 centerY: cy,
-                width: innerWidth,
-                height: innerHeight,
-                wantsArch: innerWantsArch,
+                width: cutWidth,
+                height: cutHeight,
+                wantsArch: cutWantsArch,
                 archRise,
                 curveSegments,
                 reverse: true
@@ -562,7 +570,11 @@ export class WindowMeshDebuggerView {
 
         this._disposeWindowGroup();
         const instances = this._makeDemoInstances(s);
-        this._rebuildWallGeometry({ settings: s, instances });
+        this._rebuildWallGeometry({
+            settings: s,
+            instances,
+            wallCut: { x: state?.wallCutWidthLerp, y: state?.wallCutHeightLerp }
+        });
         this._applyWallMaterial(String(state?.wallMaterialId ?? ''), {
             roughness: state?.wallRoughness,
             normalIntensity: state?.wallNormalIntensity
@@ -584,7 +596,7 @@ export class WindowMeshDebuggerView {
         void this._applyIblState(state?.ibl);
     }
 
-    _rebuildWallGeometry({ settings, instances }) {
+    _rebuildWallGeometry({ settings, instances, wallCut }) {
         const wall = this._wall;
         if (!wall) return;
 
@@ -594,12 +606,17 @@ export class WindowMeshDebuggerView {
         const h = Number(settings?.height) || 0;
         const archEnabled = !!settings?.arch?.enabled;
         const archRatio = Number(settings?.arch?.heightRatio) || 0;
+        const cutSrc = wallCut && typeof wallCut === 'object' ? wallCut : {};
+        const cutX = clamp(cutSrc.x, 0.0, 1.0, 1.0);
+        const cutY = clamp(cutSrc.y, 0.0, 1.0, 1.0);
         const key = [
             `ww:${Math.round(w * 1000)}`,
             `wh:${Math.round(h * 1000)}`,
             `fw:${Math.round(fw * 1000)}`,
             `arch:${archEnabled ? 1 : 0}`,
             `ar:${Math.round(archRatio * 1000)}`,
+            `cx:${Math.round(cutX * 1000)}`,
+            `cy:${Math.round(cutY * 1000)}`,
             `n:${Array.isArray(instances) ? instances.length : 0}`
         ].join('|');
         if (key === this._wallHoleKey) return;
@@ -611,6 +628,7 @@ export class WindowMeshDebuggerView {
             depth,
             settings,
             instances,
+            wallCut: { x: cutX, y: cutY },
             curveSegments: 28
         });
         wall.geometry?.dispose?.();
