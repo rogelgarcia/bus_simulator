@@ -396,6 +396,12 @@ export class WindowMeshDebuggerView {
         this._resize();
         this._lastT = performance.now();
         this._raf = requestAnimationFrame((t) => this._tick(t));
+
+        requestAnimationFrame(() => {
+            const state = this._ui?.getState?.();
+            if (state) this._applyUiState(state);
+            this._resize();
+        });
     }
 
     destroy() {
