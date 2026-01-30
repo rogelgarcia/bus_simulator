@@ -218,7 +218,7 @@ export const WINDOW_MESH_DEFAULTS = Object.freeze({
     }),
     glass: Object.freeze({
         opacity: 0.85,
-        tintHex: 0xffffff,
+        tintHex: 0x1c1c21,
         reflection: Object.freeze({
             metalness: 0.0,
             roughness: 0.02,

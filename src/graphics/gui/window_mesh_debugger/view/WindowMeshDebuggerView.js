@@ -387,7 +387,7 @@ export class WindowMeshDebuggerView {
         this._buildScene();
         const initialState = ui.getState();
         this._applyUiState(initialState);
-        await this._applyIblState(initialState?.ibl, { force: true });
+        void this._applyIblState(initialState?.ibl, { force: true });
 
         window.addEventListener('resize', this._onResize, { passive: true });
         window.addEventListener('keydown', this._onKeyDown, { passive: false });
