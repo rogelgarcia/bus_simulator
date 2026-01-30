@@ -27,6 +27,16 @@ function isEditableTarget(target) {
 const perfBar = ensureGlobalPerfBar();
 
 const canvas = document.getElementById('game-canvas');
+const viewport = document.getElementById('game-viewport');
+
+if (viewport) {
+    viewport.addEventListener('contextmenu', (e) => {
+        if (!e) return;
+        if (isEditableTarget(e.target) || isEditableTarget(document.activeElement)) return;
+        e.preventDefault();
+        e.stopImmediatePropagation?.();
+    }, { passive: false, capture: true });
+}
 
 const engine = new GameEngine({ canvas });
 perfBar.setRenderer(engine.renderer);

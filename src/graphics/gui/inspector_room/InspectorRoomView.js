@@ -235,6 +235,11 @@ export class InspectorRoomView {
             this.textures.setWindowPbrConfig?.(config);
             this.ui.setWindowPbrConfig?.(this.textures.getWindowPbrConfig?.() ?? null);
         };
+        this.ui.onPbrMaterialPreviewChange = (config) => {
+            if (this._active !== this.textures) return;
+            this.textures.setPbrMaterialPreviewConfig?.(config);
+            this.ui.setPbrMaterialPreviewConfig?.(this.textures.getPbrMaterialPreviewConfig?.() ?? null);
+        };
 
         this.ui.onAxisLabelsToggle = () => this._syncViewportOverlays();
         this.ui.onMeasurementsToggle = () => this._syncViewportOverlays();
@@ -339,6 +344,8 @@ export class InspectorRoomView {
         this.ui.onPreviewModeChange = null;
         this.ui.onTextureSizeChange = null;
         this.ui.onTileGapChange = null;
+        this.ui.onWindowPbrChange = null;
+        this.ui.onPbrMaterialPreviewChange = null;
         this.ui.onAxisLabelsToggle = null;
         this.ui.onAxisLinesToggle = null;
         this.ui.onAxisAlwaysVisibleToggle = null;
@@ -535,6 +542,7 @@ export class InspectorRoomView {
             this.ui.setSelectedItemMeta(provider.getSelectedTextureMeta?.() ?? {});
             this.ui.setTextureRealWorldSizeMeters(provider.getSelectedRealWorldSizeMeters?.() ?? {});
             this.ui.setWindowPbrConfig?.(provider.getWindowPbrConfig?.() ?? null);
+            this.ui.setPbrMaterialPreviewConfig?.(provider.getPbrMaterialPreviewConfig?.() ?? null);
         } else {
             this.ui.setItemOptions(provider.getMeshOptions?.() ?? []);
             this.ui.setSelectedItemId(provider.getSelectedMeshId?.() ?? null);
@@ -624,6 +632,7 @@ export class InspectorRoomView {
             this.ui.setTextureRealWorldSizeMeters(this.textures.getSelectedRealWorldSizeMeters());
             this.ui.setTileGap(0.0);
             this.textures.setTileGap(0.0);
+            this.ui.setPbrMaterialPreviewConfig?.(this.textures.getPbrMaterialPreviewConfig?.() ?? null);
         }
     }
 
@@ -647,6 +656,7 @@ export class InspectorRoomView {
             this.ui.setSelectedItemMeta(provider.getSelectedTextureMeta?.() ?? {});
             this.ui.setTextureRealWorldSizeMeters(provider.getSelectedRealWorldSizeMeters?.() ?? {});
             this.ui.setWindowPbrConfig?.(provider.getWindowPbrConfig?.() ?? null);
+            this.ui.setPbrMaterialPreviewConfig?.(provider.getPbrMaterialPreviewConfig?.() ?? null);
             this._selection.textures = {
                 collectionId: provider.getSelectedCollectionId?.() ?? null,
                 itemId: provider.getSelectedTextureId?.() ?? null
@@ -679,6 +689,7 @@ export class InspectorRoomView {
             this.ui.setSelectedItemMeta(provider.getSelectedTextureMeta?.() ?? {});
             this.ui.setTextureRealWorldSizeMeters(provider.getSelectedRealWorldSizeMeters?.() ?? {});
             this.ui.setWindowPbrConfig?.(provider.getWindowPbrConfig?.() ?? null);
+            this.ui.setPbrMaterialPreviewConfig?.(provider.getPbrMaterialPreviewConfig?.() ?? null);
             this._selection.textures = {
                 collectionId: provider.getSelectedCollectionId?.() ?? null,
                 itemId: provider.getSelectedTextureId?.() ?? null
@@ -712,6 +723,7 @@ export class InspectorRoomView {
             this.ui.setSelectedItemMeta(provider.getSelectedTextureMeta?.() ?? {});
             this.ui.setTextureRealWorldSizeMeters(provider.getSelectedRealWorldSizeMeters?.() ?? {});
             this.ui.setWindowPbrConfig?.(provider.getWindowPbrConfig?.() ?? null);
+            this.ui.setPbrMaterialPreviewConfig?.(provider.getPbrMaterialPreviewConfig?.() ?? null);
             this._selection.textures.itemId = provider.getSelectedTextureId?.() ?? null;
         } else {
             provider.setSelectedMeshIndex?.(index);

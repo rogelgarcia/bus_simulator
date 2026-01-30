@@ -187,7 +187,7 @@ export const TREE_CONFIG = {
         {
             "name": "SM_H_Tree_4.FBX",
             "rot": [
-                0,
+                -1.570796,
                 0,
                 0
             ],

@@ -166,6 +166,7 @@ export class WindowMeshGenerator {
         const interiorMesh = new THREE.InstancedMesh(openingGeo, mats.interiorMat, count);
         interiorMesh.castShadow = false;
         interiorMesh.receiveShadow = false;
+        interiorMesh.renderOrder = 0;
         interiorMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         interiorLayer.add(interiorMesh);
 
@@ -174,6 +175,7 @@ export class WindowMeshGenerator {
         const shadeMesh = new THREE.InstancedMesh(openingGeo, mats.shadeMat, count);
         shadeMesh.castShadow = false;
         shadeMesh.receiveShadow = false;
+        shadeMesh.renderOrder = 1;
         shadeMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         shadeLayer.add(shadeMesh);
 
@@ -188,7 +190,7 @@ export class WindowMeshGenerator {
 
         const glassZ = s.frame.depth + s.glass.zOffset;
         const shadeZ = glassZ + s.shade.zOffset;
-        const interiorZ = glassZ + Math.min(-0.02, s.shade.enabled ? (s.shade.zOffset - 0.004) : -0.02);
+        const interiorZ = glassZ + Math.min(-0.02, s.shade.enabled ? (s.shade.zOffset - 0.02) : -0.02);
         glassMesh.position.z = glassZ;
         shadeMesh.position.z = shadeZ;
         interiorMesh.position.z = interiorZ;

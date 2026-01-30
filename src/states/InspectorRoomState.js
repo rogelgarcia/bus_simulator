@@ -14,9 +14,26 @@ export class InspectorRoomState {
 
         this.view = null;
         this._uiBound = false;
+        this._prevSunBloomSettings = null;
+        this._prevColorGradingSettings = null;
     }
 
     enter() {
+        // Inspector Room expects neutral presentation; temporarily disable sun bloom.
+        // Must not persist: restore previous settings on exit.
+        const sunBloom = this.engine?.sunBloomSettings ?? null;
+        this._prevSunBloomSettings = sunBloom && typeof sunBloom === 'object'
+            ? JSON.parse(JSON.stringify(sunBloom))
+            : null;
+        this.engine?.setSunBloomSettings?.({ ...(this._prevSunBloomSettings ?? {}), enabled: false });
+
+        // Also disable LUT color grading for this screen (must not persist).
+        const grading = this.engine?.colorGradingSettings ?? null;
+        this._prevColorGradingSettings = grading && typeof grading === 'object'
+            ? JSON.parse(JSON.stringify(grading))
+            : null;
+        this.engine?.setColorGradingSettings?.({ ...(this._prevColorGradingSettings ?? {}), intensity: 0 });
+
         const appCanvas = document.getElementById('game-canvas');
         this._uiBound = !!(appCanvas && this.engine?.canvas === appCanvas);
 
@@ -41,6 +58,20 @@ export class InspectorRoomState {
         this.view?.exit();
         this.view = null;
 
+        if (this._prevSunBloomSettings && this.engine?.setSunBloomSettings) {
+            this.engine.setSunBloomSettings(this._prevSunBloomSettings);
+        } else {
+            this.engine?.reloadSunBloomSettings?.();
+        }
+        this._prevSunBloomSettings = null;
+
+        if (this._prevColorGradingSettings && this.engine?.setColorGradingSettings) {
+            this.engine.setColorGradingSettings(this._prevColorGradingSettings);
+        } else {
+            this.engine?.reloadColorGradingSettings?.();
+        }
+        this._prevColorGradingSettings = null;
+
         this.engine.clearScene();
         this._uiBound = false;
     }
@@ -49,4 +80,3 @@ export class InspectorRoomState {
         this.view?.update(dt);
     }
 }
-

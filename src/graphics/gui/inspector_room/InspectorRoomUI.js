@@ -187,6 +187,7 @@ export class InspectorRoomUI {
         this.onTextureSizeChange = null;
         this.onTileGapChange = null;
         this.onWindowPbrChange = null;
+        this.onPbrMaterialPreviewChange = null;
 
         this.onAxisLabelsToggle = null;
         this.onAxisLinesToggle = null;
@@ -288,6 +289,71 @@ export class InspectorRoomUI {
             this.windowBorderStrengthRange.value = String(next);
             this.windowBorderStrengthNumber.value = formatFloat(next, 2);
             this._onWindowPbrToggle();
+        };
+
+        this._onPbrMaterialToggle = () => {
+            this._syncPbrMaterialWidgets();
+            this.onPbrMaterialPreviewChange?.(this.getPbrMaterialPreviewConfig());
+        };
+        this._onPbrAlbedoIntensityRange = () => {
+            const next = clamp(this.pbrAlbedoIntensityRange.value, 0, 2);
+            this.pbrAlbedoIntensityRange.value = String(next);
+            this.pbrAlbedoIntensityNumber.value = formatFloat(next, 2);
+            this._onPbrMaterialToggle();
+        };
+        this._onPbrAlbedoIntensityNumber = () => {
+            const next = clamp(this.pbrAlbedoIntensityNumber.value, 0, 2);
+            this.pbrAlbedoIntensityRange.value = String(next);
+            this.pbrAlbedoIntensityNumber.value = formatFloat(next, 2);
+            this._onPbrMaterialToggle();
+        };
+        this._onPbrNormalIntensityRange = () => {
+            const next = clamp(this.pbrNormalIntensityRange.value, 0, 2);
+            this.pbrNormalIntensityRange.value = String(next);
+            this.pbrNormalIntensityNumber.value = formatFloat(next, 2);
+            this._onPbrMaterialToggle();
+        };
+        this._onPbrNormalIntensityNumber = () => {
+            const next = clamp(this.pbrNormalIntensityNumber.value, 0, 2);
+            this.pbrNormalIntensityRange.value = String(next);
+            this.pbrNormalIntensityNumber.value = formatFloat(next, 2);
+            this._onPbrMaterialToggle();
+        };
+        this._onPbrAoIntensityRange = () => {
+            const next = clamp(this.pbrAoIntensityRange.value, 0, 2);
+            this.pbrAoIntensityRange.value = String(next);
+            this.pbrAoIntensityNumber.value = formatFloat(next, 2);
+            this._onPbrMaterialToggle();
+        };
+        this._onPbrAoIntensityNumber = () => {
+            const next = clamp(this.pbrAoIntensityNumber.value, 0, 2);
+            this.pbrAoIntensityRange.value = String(next);
+            this.pbrAoIntensityNumber.value = formatFloat(next, 2);
+            this._onPbrMaterialToggle();
+        };
+        this._onPbrRoughnessRange = () => {
+            const next = clamp(this.pbrRoughnessRange.value, 0, 1);
+            this.pbrRoughnessRange.value = String(next);
+            this.pbrRoughnessNumber.value = formatFloat(next, 2);
+            this._onPbrMaterialToggle();
+        };
+        this._onPbrRoughnessNumber = () => {
+            const next = clamp(this.pbrRoughnessNumber.value, 0, 1);
+            this.pbrRoughnessRange.value = String(next);
+            this.pbrRoughnessNumber.value = formatFloat(next, 2);
+            this._onPbrMaterialToggle();
+        };
+        this._onPbrMetalnessRange = () => {
+            const next = clamp(this.pbrMetalnessRange.value, 0, 1);
+            this.pbrMetalnessRange.value = String(next);
+            this.pbrMetalnessNumber.value = formatFloat(next, 2);
+            this._onPbrMaterialToggle();
+        };
+        this._onPbrMetalnessNumber = () => {
+            const next = clamp(this.pbrMetalnessNumber.value, 0, 1);
+            this.pbrMetalnessRange.value = String(next);
+            this.pbrMetalnessNumber.value = formatFloat(next, 2);
+            this._onPbrMaterialToggle();
         };
 
         this._onLabelsToggle = () => {
@@ -456,6 +522,7 @@ export class InspectorRoomUI {
             this.itemNameValue.textContent = safeCollection ? `${name || '-'} (${safeCollection})` : (name || '-');
             this._selectedExtra = extra;
             this._syncTextureSummary();
+            this._syncPbrMaterialVisibility();
             this._syncWindowPbrVisibility();
         } else {
             this.itemNameValue.textContent = name || '-';
@@ -588,6 +655,68 @@ export class InspectorRoomUI {
         const text = String(next);
         this.tileGapRange.value = text;
         this.tileGapNumber.value = text;
+    }
+
+    setPbrMaterialPreviewConfig(config) {
+        const src = config && typeof config === 'object' ? config : {};
+        const albedo = src.albedo && typeof src.albedo === 'object' ? src.albedo : {};
+        const normal = src.normal && typeof src.normal === 'object' ? src.normal : {};
+        const orm = src.orm && typeof src.orm === 'object' ? src.orm : {};
+
+        const albedoEnabled = albedo.enabled === undefined ? true : !!albedo.enabled;
+        const albedoIntensity = clamp(albedo.intensity ?? 1.0, 0, 2);
+        const normalEnabled = normal.enabled === undefined ? true : !!normal.enabled;
+        const normalIntensity = clamp(normal.intensity ?? 0.9, 0, 2);
+        const ormEnabled = orm.enabled === undefined ? true : !!orm.enabled;
+        const aoIntensity = clamp(orm.aoIntensity ?? 1.0, 0, 2);
+        const roughness = clamp(orm.roughness ?? 1.0, 0, 1);
+        const metalness = clamp(orm.metalness ?? 1.0, 0, 1);
+
+        this.pbrAlbedoEnabled.checked = albedoEnabled;
+        this.pbrAlbedoIntensityRange.value = String(albedoIntensity);
+        this.pbrAlbedoIntensityNumber.value = formatFloat(albedoIntensity, 2);
+
+        this.pbrNormalEnabled.checked = normalEnabled;
+        this.pbrNormalIntensityRange.value = String(normalIntensity);
+        this.pbrNormalIntensityNumber.value = formatFloat(normalIntensity, 2);
+
+        this.pbrOrmEnabled.checked = ormEnabled;
+        this.pbrAoIntensityRange.value = String(aoIntensity);
+        this.pbrAoIntensityNumber.value = formatFloat(aoIntensity, 2);
+        this.pbrRoughnessRange.value = String(roughness);
+        this.pbrRoughnessNumber.value = formatFloat(roughness, 2);
+        this.pbrMetalnessRange.value = String(metalness);
+        this.pbrMetalnessNumber.value = formatFloat(metalness, 2);
+
+        this._syncPbrMaterialWidgets();
+    }
+
+    getPbrMaterialPreviewConfig() {
+        const albedoEnabled = !!this.pbrAlbedoEnabled.checked;
+        const albedoIntensity = clamp(this.pbrAlbedoIntensityRange.value, 0, 2);
+        const normalEnabled = !!this.pbrNormalEnabled.checked;
+        const normalIntensity = clamp(this.pbrNormalIntensityRange.value, 0, 2);
+        const ormEnabled = !!this.pbrOrmEnabled.checked;
+        const aoIntensity = clamp(this.pbrAoIntensityRange.value, 0, 2);
+        const roughness = clamp(this.pbrRoughnessRange.value, 0, 1);
+        const metalness = clamp(this.pbrMetalnessRange.value, 0, 1);
+
+        return {
+            albedo: {
+                enabled: albedoEnabled,
+                intensity: albedoIntensity
+            },
+            normal: {
+                enabled: normalEnabled,
+                intensity: normalIntensity
+            },
+            orm: {
+                enabled: ormEnabled,
+                aoIntensity,
+                roughness,
+                metalness
+            }
+        };
     }
 
     setWindowPbrConfig(config) {
@@ -967,14 +1096,6 @@ export class InspectorRoomUI {
         gapRow.appendChild(this.tileGapControls);
         this.tileGapRow = gapRow;
 
-        this.windowPbrSection = document.createElement('div');
-        this.windowPbrSection.className = 'hidden';
-
-        this.windowPbrLabel = document.createElement('div');
-        this.windowPbrLabel.className = 'ui-section-label';
-        this.windowPbrLabel.textContent = 'Window PBR';
-        this.windowPbrSection.appendChild(this.windowPbrLabel);
-
         const makeToggleRow = (labelText, toggleText) => {
             const row = document.createElement('div');
             row.className = 'inspector-room-row';
@@ -1025,6 +1146,62 @@ export class InspectorRoomUI {
             row.appendChild(controls);
             return { row, range, number };
         };
+
+        this.pbrMaterialSection = document.createElement('div');
+        this.pbrMaterialSection.className = 'hidden';
+
+        this.pbrMaterialLabel = document.createElement('div');
+        this.pbrMaterialLabel.className = 'ui-section-label';
+        this.pbrMaterialLabel.textContent = 'PBR Material';
+        this.pbrMaterialSection.appendChild(this.pbrMaterialLabel);
+
+        const pbrAlbedoToggle = makeToggleRow('Albedo map', 'Enabled');
+        this.pbrAlbedoEnabled = pbrAlbedoToggle.input;
+        this.pbrAlbedoEnabled.checked = true;
+        this.pbrMaterialSection.appendChild(pbrAlbedoToggle.row);
+
+        const pbrAlbedoIntensity = makeRangeRow('Albedo intensity', { min: 0, max: 2, step: 0.01, value: 1.0, digits: 2 });
+        this.pbrAlbedoIntensityRange = pbrAlbedoIntensity.range;
+        this.pbrAlbedoIntensityNumber = pbrAlbedoIntensity.number;
+        this.pbrMaterialSection.appendChild(pbrAlbedoIntensity.row);
+
+        const pbrNormalToggle = makeToggleRow('Normals', 'Enabled');
+        this.pbrNormalEnabled = pbrNormalToggle.input;
+        this.pbrNormalEnabled.checked = true;
+        this.pbrMaterialSection.appendChild(pbrNormalToggle.row);
+
+        const pbrNormalIntensity = makeRangeRow('Normal intensity', { min: 0, max: 2, step: 0.01, value: 0.9, digits: 2 });
+        this.pbrNormalIntensityRange = pbrNormalIntensity.range;
+        this.pbrNormalIntensityNumber = pbrNormalIntensity.number;
+        this.pbrMaterialSection.appendChild(pbrNormalIntensity.row);
+
+        const pbrOrmToggle = makeToggleRow('ORM (AO/R/M)', 'Enabled');
+        this.pbrOrmEnabled = pbrOrmToggle.input;
+        this.pbrOrmEnabled.checked = true;
+        this.pbrMaterialSection.appendChild(pbrOrmToggle.row);
+
+        const pbrAoIntensity = makeRangeRow('AO intensity', { min: 0, max: 2, step: 0.01, value: 1.0, digits: 2 });
+        this.pbrAoIntensityRange = pbrAoIntensity.range;
+        this.pbrAoIntensityNumber = pbrAoIntensity.number;
+        this.pbrMaterialSection.appendChild(pbrAoIntensity.row);
+
+        const pbrRoughness = makeRangeRow('Roughness', { min: 0, max: 1, step: 0.01, value: 1.0, digits: 2 });
+        this.pbrRoughnessRange = pbrRoughness.range;
+        this.pbrRoughnessNumber = pbrRoughness.number;
+        this.pbrMaterialSection.appendChild(pbrRoughness.row);
+
+        const pbrMetalness = makeRangeRow('Metalness', { min: 0, max: 1, step: 0.01, value: 1.0, digits: 2 });
+        this.pbrMetalnessRange = pbrMetalness.range;
+        this.pbrMetalnessNumber = pbrMetalness.number;
+        this.pbrMaterialSection.appendChild(pbrMetalness.row);
+
+        this.windowPbrSection = document.createElement('div');
+        this.windowPbrSection.className = 'hidden';
+
+        this.windowPbrLabel = document.createElement('div');
+        this.windowPbrLabel.className = 'ui-section-label';
+        this.windowPbrLabel.textContent = 'Window PBR';
+        this.windowPbrSection.appendChild(this.windowPbrLabel);
 
         const winNormalToggle = makeToggleRow('Normals', 'Enabled');
         this.windowNormalEnabled = winNormalToggle.input;
@@ -1077,6 +1254,7 @@ export class InspectorRoomUI {
         this.textureSection.appendChild(modeRow);
         this.textureSection.appendChild(sizeRow);
         this.textureSection.appendChild(gapRow);
+        this.textureSection.appendChild(this.pbrMaterialSection);
         this.textureSection.appendChild(this.windowPbrSection);
         this.textureSection.appendChild(this.textureSummary);
         this.textureSection.appendChild(this.textureCopyBtn);
@@ -1394,6 +1572,7 @@ export class InspectorRoomUI {
         this.meshSection.classList.toggle('hidden', mode !== 'meshes');
         this.textureSection.classList.toggle('hidden', mode !== 'textures');
         if (mode !== 'textures') this._selectedExtra = null;
+        this._syncPbrMaterialVisibility();
         this._syncWindowPbrVisibility();
     }
 
@@ -1614,6 +1793,30 @@ export class InspectorRoomUI {
         if (this.tileGapRow) this.tileGapRow.classList.toggle('hidden', !tiled);
     }
 
+    _syncPbrMaterialVisibility() {
+        const visible = this.getMode() === 'textures' && this._selectedExtra?.kind === 'pbr_material';
+        if (this.pbrMaterialSection) this.pbrMaterialSection.classList.toggle('hidden', !visible);
+    }
+
+    _syncPbrMaterialWidgets() {
+        const albedoEnabled = !!this.pbrAlbedoEnabled.checked;
+        const normalEnabled = !!this.pbrNormalEnabled.checked;
+        const ormEnabled = !!this.pbrOrmEnabled.checked;
+
+        this.pbrAlbedoIntensityRange.disabled = !albedoEnabled;
+        this.pbrAlbedoIntensityNumber.disabled = !albedoEnabled;
+
+        this.pbrNormalIntensityRange.disabled = !normalEnabled;
+        this.pbrNormalIntensityNumber.disabled = !normalEnabled;
+
+        this.pbrAoIntensityRange.disabled = !ormEnabled;
+        this.pbrAoIntensityNumber.disabled = !ormEnabled;
+        this.pbrRoughnessRange.disabled = !ormEnabled;
+        this.pbrRoughnessNumber.disabled = !ormEnabled;
+        this.pbrMetalnessRange.disabled = !ormEnabled;
+        this.pbrMetalnessNumber.disabled = !ormEnabled;
+    }
+
     _syncWindowPbrVisibility() {
         const visible = this.getMode() === 'textures' && this._selectedExtra?.kind === 'window';
         if (this.windowPbrSection) this.windowPbrSection.classList.toggle('hidden', !visible);
@@ -1779,6 +1982,20 @@ export class InspectorRoomUI {
         this.tileGapRange.addEventListener('input', this._onTileGapRange);
         this.tileGapNumber.addEventListener('change', this._onTileGapNumber);
 
+        this.pbrAlbedoEnabled.addEventListener('change', this._onPbrMaterialToggle);
+        this.pbrAlbedoIntensityRange.addEventListener('input', this._onPbrAlbedoIntensityRange);
+        this.pbrAlbedoIntensityNumber.addEventListener('change', this._onPbrAlbedoIntensityNumber);
+        this.pbrNormalEnabled.addEventListener('change', this._onPbrMaterialToggle);
+        this.pbrNormalIntensityRange.addEventListener('input', this._onPbrNormalIntensityRange);
+        this.pbrNormalIntensityNumber.addEventListener('change', this._onPbrNormalIntensityNumber);
+        this.pbrOrmEnabled.addEventListener('change', this._onPbrMaterialToggle);
+        this.pbrAoIntensityRange.addEventListener('input', this._onPbrAoIntensityRange);
+        this.pbrAoIntensityNumber.addEventListener('change', this._onPbrAoIntensityNumber);
+        this.pbrRoughnessRange.addEventListener('input', this._onPbrRoughnessRange);
+        this.pbrRoughnessNumber.addEventListener('change', this._onPbrRoughnessNumber);
+        this.pbrMetalnessRange.addEventListener('input', this._onPbrMetalnessRange);
+        this.pbrMetalnessNumber.addEventListener('change', this._onPbrMetalnessNumber);
+
         this.windowNormalEnabled.addEventListener('change', this._onWindowPbrToggle);
         this.windowNormalStrengthRange.addEventListener('input', this._onWindowNormalStrengthRange);
         this.windowNormalStrengthNumber.addEventListener('change', this._onWindowNormalStrengthNumber);
@@ -1843,6 +2060,20 @@ export class InspectorRoomUI {
         this.textureHeightMeters.removeEventListener('change', this._onTextureSize);
         this.tileGapRange.removeEventListener('input', this._onTileGapRange);
         this.tileGapNumber.removeEventListener('change', this._onTileGapNumber);
+
+        this.pbrAlbedoEnabled.removeEventListener('change', this._onPbrMaterialToggle);
+        this.pbrAlbedoIntensityRange.removeEventListener('input', this._onPbrAlbedoIntensityRange);
+        this.pbrAlbedoIntensityNumber.removeEventListener('change', this._onPbrAlbedoIntensityNumber);
+        this.pbrNormalEnabled.removeEventListener('change', this._onPbrMaterialToggle);
+        this.pbrNormalIntensityRange.removeEventListener('input', this._onPbrNormalIntensityRange);
+        this.pbrNormalIntensityNumber.removeEventListener('change', this._onPbrNormalIntensityNumber);
+        this.pbrOrmEnabled.removeEventListener('change', this._onPbrMaterialToggle);
+        this.pbrAoIntensityRange.removeEventListener('input', this._onPbrAoIntensityRange);
+        this.pbrAoIntensityNumber.removeEventListener('change', this._onPbrAoIntensityNumber);
+        this.pbrRoughnessRange.removeEventListener('input', this._onPbrRoughnessRange);
+        this.pbrRoughnessNumber.removeEventListener('change', this._onPbrRoughnessNumber);
+        this.pbrMetalnessRange.removeEventListener('input', this._onPbrMetalnessRange);
+        this.pbrMetalnessNumber.removeEventListener('change', this._onPbrMetalnessNumber);
 
         this.windowNormalEnabled.removeEventListener('change', this._onWindowPbrToggle);
         this.windowNormalStrengthRange.removeEventListener('input', this._onWindowNormalStrengthRange);

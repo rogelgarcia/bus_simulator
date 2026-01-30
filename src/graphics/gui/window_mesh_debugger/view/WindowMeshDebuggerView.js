@@ -64,10 +64,29 @@ function setupRepeat(tex, repeat) {
     tex.offset.set(Number.isFinite(ox) ? ox : 0, Number.isFinite(oy) ? oy : 0);
 }
 
+function applyWallPlanarUvs(geo, { width, height }) {
+    const g = geo?.isBufferGeometry ? geo : null;
+    const pos = g?.attributes?.position;
+    if (!pos?.isBufferAttribute) return;
+
+    const w = Math.max(1e-6, Number(width) || 1);
+    const h = Math.max(1e-6, Number(height) || 1);
+    const arr = new Float32Array(pos.count * 2);
+    for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i);
+        const y = pos.getY(i);
+        arr[i * 2] = x / w + 0.5;
+        arr[i * 2 + 1] = y / h + 0.5;
+    }
+
+    const uvAttr = new THREE.BufferAttribute(arr, 2);
+    g.setAttribute('uv', uvAttr);
+    g.setAttribute('uv2', new THREE.BufferAttribute(arr.slice(0), 2));
+}
+
 function buildWallMaterialGeometry({ width, height, depth }) {
     const geo = new THREE.BoxGeometry(width, height, depth);
-    const uv = geo.attributes.uv;
-    if (uv?.isBufferAttribute) geo.setAttribute('uv2', new THREE.BufferAttribute(uv.array, 2));
+    applyWallPlanarUvs(geo, { width, height });
     geo.computeVertexNormals();
     geo.computeBoundingBox();
     return geo;
@@ -230,8 +249,7 @@ function buildWallMaterialGeometryWithHoles({ width, height, depth, settings, in
         curveSegments: Math.max(6, curveSegments | 0)
     });
     geo.translate(0, 0, -d * 0.5);
-    const uv = geo.attributes.uv;
-    if (uv?.isBufferAttribute) geo.setAttribute('uv2', new THREE.BufferAttribute(uv.array, 2));
+    applyWallPlanarUvs(geo, { width: w, height: h });
     geo.computeVertexNormals();
     geo.computeBoundingBox();
     return geo;

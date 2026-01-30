@@ -7,6 +7,7 @@ import { scenarioAsphaltNoiseDebug } from './scenario_asphalt_noise_debug.js';
 import { scenarioRoadMarkingsTexturedAsphalt } from './scenario_road_markings_textured_asphalt.js';
 import { scenarioRoadMarkingsAsphaltNoiseToggle } from './scenario_road_markings_asphalt_noise_toggle.js';
 import { scenarioRoadLivedInWearToggle } from './scenario_road_lived_in_wear_toggle.js';
+import { scenarioWindowMeshShadeVisibility } from './scenario_window_mesh_shade_visibility.js';
 
 const REGISTRY = new Map([
     [scenarioEmpty.id, scenarioEmpty],
@@ -16,7 +17,8 @@ const REGISTRY = new Map([
     [scenarioAsphaltNoiseDebug.id, scenarioAsphaltNoiseDebug],
     [scenarioRoadMarkingsTexturedAsphalt.id, scenarioRoadMarkingsTexturedAsphalt],
     [scenarioRoadMarkingsAsphaltNoiseToggle.id, scenarioRoadMarkingsAsphaltNoiseToggle],
-    [scenarioRoadLivedInWearToggle.id, scenarioRoadLivedInWearToggle]
+    [scenarioRoadLivedInWearToggle.id, scenarioRoadLivedInWearToggle],
+    [scenarioWindowMeshShadeVisibility.id, scenarioWindowMeshShadeVisibility]
 ]);
 
 export function listScenarioIds() {

@@ -236,7 +236,7 @@ function getOrCreateInteriorAtlasTexture({ url, cols, rows } = {}) {
     return tex;
 }
 
-function patchShadeShader(mat, { fabricScaleX, fabricScaleY, fabricIntensity }) {
+function patchShadeShader(mat, { fabricScaleX, fabricScaleY, fabricIntensity, openingHeight }) {
     mat.userData = mat.userData ?? {};
     mat.userData.windowShade = true;
     mat.customProgramCacheKey = () => 'window_shade_v1';
@@ -244,18 +244,25 @@ function patchShadeShader(mat, { fabricScaleX, fabricScaleY, fabricIntensity }) 
     mat.onBeforeCompile = (shader) => {
         shader.uniforms.uShadeFabricScale = { value: new THREE.Vector2(Number(fabricScaleX) || 1.0, Number(fabricScaleY) || 1.0) };
         shader.uniforms.uShadeFabricIntensity = { value: Number(fabricIntensity) || 0.0 };
+        const h = Math.max(1e-4, Number(openingHeight) || 1.0);
+        shader.uniforms.uShadeYMin = { value: -h * 0.5 };
+        shader.uniforms.uShadeInvHeight = { value: 1.0 / h };
 
         shader.vertexShader = shader.vertexShader.replace(
             '#include <common>',
             `#include <common>
 attribute float instanceShadeCoverage;
-varying float vShadeCoverage;`
+uniform float uShadeYMin;
+uniform float uShadeInvHeight;
+varying float vShadeCoverage;
+varying float vShadeV;`
         );
 
         shader.vertexShader = shader.vertexShader.replace(
             '#include <begin_vertex>',
             `#include <begin_vertex>
-vShadeCoverage = instanceShadeCoverage;`
+vShadeCoverage = instanceShadeCoverage;
+vShadeV = clamp((position.y - uShadeYMin) * uShadeInvHeight, 0.0, 1.0);`
         );
 
         shader.fragmentShader = shader.fragmentShader.replace(
@@ -263,7 +270,8 @@ vShadeCoverage = instanceShadeCoverage;`
             `#include <common>
 uniform vec2 uShadeFabricScale;
 uniform float uShadeFabricIntensity;
-varying float vShadeCoverage;`
+varying float vShadeCoverage;
+varying float vShadeV;`
         );
 
         shader.fragmentShader = shader.fragmentShader.replace(
@@ -282,7 +290,7 @@ diffuseColor.rgb *= f;
             `vec4 diffuseColor = vec4( diffuse, opacity );
 if (vShadeCoverage <= 0.001) discard;
 float cutoff = 1.0 - clamp(vShadeCoverage, 0.0, 1.0);
-if (vUv.y < cutoff) discard;`
+if (vShadeV < cutoff) discard;`
         );
     };
 }
@@ -436,10 +444,12 @@ export function createWindowMeshMaterials(settings, { renderer = null } = {}) {
     disableIblOnMaterial(shadeMat);
     shadeMat.side = THREE.DoubleSide;
     const aspect = s.height / Math.max(0.01, s.width);
+    const openingHeight = Math.max(0.01, s.height - s.frame.width * 2);
     patchShadeShader(shadeMat, {
         fabricScaleX: s.shade.fabric.scale,
         fabricScaleY: s.shade.fabric.scale * aspect,
-        fabricIntensity: s.shade.fabric.intensity
+        fabricIntensity: s.shade.fabric.intensity,
+        openingHeight
     });
     shadeMat.needsUpdate = true;
 

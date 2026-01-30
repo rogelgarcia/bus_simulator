@@ -283,12 +283,12 @@ export function sanitizeWindowMeshSettings(input) {
     const muntinsEnabled = muntinSrc.enabled !== undefined ? !!muntinSrc.enabled : WINDOW_MESH_DEFAULTS.muntins.enabled;
     const columns = clampInt(muntinSrc.columns, 1, 12, WINDOW_MESH_DEFAULTS.muntins.columns);
     const rows = clampInt(muntinSrc.rows, 1, 12, WINDOW_MESH_DEFAULTS.muntins.rows);
-    const muntinWidth = clamp(muntinSrc.width ?? muntinSrc.muntinWidth, 0.002, 0.6, WINDOW_MESH_DEFAULTS.muntins.width);
-    const muntinDepth = clamp(muntinSrc.depth ?? muntinSrc.muntinDepth, 0.0, 1.25, WINDOW_MESH_DEFAULTS.muntins.depth);
+    const muntinWidth = clamp(muntinSrc.width ?? muntinSrc.muntinWidth, 0.002, 3.0, WINDOW_MESH_DEFAULTS.muntins.width);
+    const muntinDepth = clamp(muntinSrc.depth ?? muntinSrc.muntinDepth, 0.0, 6.25, WINDOW_MESH_DEFAULTS.muntins.depth);
     const inset = clamp(muntinSrc.inset, 0.0, 0.2, WINDOW_MESH_DEFAULTS.muntins.inset);
     const uvOffSrc = muntinSrc.uvOffset && typeof muntinSrc.uvOffset === 'object' ? muntinSrc.uvOffset : muntinSrc;
-    const uvOffsetX = clamp(uvOffSrc.x ?? uvOffSrc.uvOffsetX, -5.0, 5.0, WINDOW_MESH_DEFAULTS.muntins.uvOffset.x);
-    const uvOffsetY = clamp(uvOffSrc.y ?? uvOffSrc.uvOffsetY, -5.0, 5.0, WINDOW_MESH_DEFAULTS.muntins.uvOffset.y);
+    const uvOffsetX = clamp(uvOffSrc.x ?? uvOffSrc.uvOffsetX, -25.0, 25.0, WINDOW_MESH_DEFAULTS.muntins.uvOffset.x);
+    const uvOffsetY = clamp(uvOffSrc.y ?? uvOffSrc.uvOffsetY, -25.0, 25.0, WINDOW_MESH_DEFAULTS.muntins.uvOffset.y);
     const muntinColorHexRaw = muntinSrc.colorHex ?? muntinSrc.color;
     const muntinColorHex = muntinColorHexRaw === null
         ? null

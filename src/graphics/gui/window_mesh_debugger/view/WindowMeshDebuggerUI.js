@@ -401,36 +401,6 @@ export class WindowMeshDebuggerUI {
         section.appendChild(wallNormalIntensityRow.row);
         this._controls.wallNormalIntensity = wallNormalIntensityRow;
 
-        const wallCutWidthRow = makeNumberSliderRow({
-            label: 'Wall Cut Width (0=Outer · 1=Inner)',
-            value: this._state.wallCutWidthLerp,
-            min: 0.0,
-            max: 1.0,
-            step: 0.01,
-            digits: 2,
-            onChange: (v) => {
-                this._state.wallCutWidthLerp = v;
-                this._emit();
-            }
-        });
-        section.appendChild(wallCutWidthRow.row);
-        this._controls.wallCutWidth = wallCutWidthRow;
-
-        const wallCutHeightRow = makeNumberSliderRow({
-            label: 'Wall Cut Height (0=Outer · 1=Inner)',
-            value: this._state.wallCutHeightLerp,
-            min: 0.0,
-            max: 1.0,
-            step: 0.01,
-            digits: 2,
-            onChange: (v) => {
-                this._state.wallCutHeightLerp = v;
-                this._emit();
-            }
-        });
-        section.appendChild(wallCutHeightRow.row);
-        this._controls.wallCutHeight = wallCutHeightRow;
-
         const renderModeRow = makeChoiceRow({
             label: 'Render Mode',
             value: this._state.renderMode,
@@ -609,6 +579,36 @@ export class WindowMeshDebuggerUI {
             }
         }).row);
 
+        const wallCutWidthRow = makeNumberSliderRow({
+            label: 'Wall Cut Width (0=Outer · 1=Inner)',
+            value: this._state.wallCutWidthLerp,
+            min: 0.0,
+            max: 1.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                this._state.wallCutWidthLerp = v;
+                this._emit();
+            }
+        });
+        section.appendChild(wallCutWidthRow.row);
+        this._controls.wallCutWidth = wallCutWidthRow;
+
+        const wallCutHeightRow = makeNumberSliderRow({
+            label: 'Wall Cut Height (0=Outer · 1=Inner)',
+            value: this._state.wallCutHeightLerp,
+            min: 0.0,
+            max: 1.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                this._state.wallCutHeightLerp = v;
+                this._emit();
+            }
+        });
+        section.appendChild(wallCutHeightRow.row);
+        this._controls.wallCutHeight = wallCutHeightRow;
+
         section.appendChild(makeNumberSliderRow({
             label: 'Frame Depth (m)',
             value: s0.frame.depth,
@@ -714,7 +714,7 @@ export class WindowMeshDebuggerUI {
             label: 'Width (m)',
             value: s0.muntins.width,
             min: 0.002,
-            max: 0.6,
+            max: 3.0,
             step: 0.001,
             digits: 3,
             onChange: (v) => {
@@ -727,7 +727,7 @@ export class WindowMeshDebuggerUI {
             label: 'Depth (m)',
             value: s0.muntins.depth,
             min: 0.0,
-            max: 1.25,
+            max: 6.25,
             step: 0.001,
             digits: 3,
             onChange: (v) => {
@@ -752,8 +752,8 @@ export class WindowMeshDebuggerUI {
         section.appendChild(makeNumberSliderRow({
             label: 'UV Offset X',
             value: s0.muntins.uvOffset.x,
-            min: -5.0,
-            max: 5.0,
+            min: -25.0,
+            max: 25.0,
             step: 0.01,
             digits: 2,
             onChange: (v) => {
@@ -765,8 +765,8 @@ export class WindowMeshDebuggerUI {
         section.appendChild(makeNumberSliderRow({
             label: 'UV Offset Y',
             value: s0.muntins.uvOffset.y,
-            min: -5.0,
-            max: 5.0,
+            min: -25.0,
+            max: 25.0,
             step: 0.01,
             digits: 2,
             onChange: (v) => {

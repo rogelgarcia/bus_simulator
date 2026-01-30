@@ -65,6 +65,30 @@ function normalizeWindowPbrConfig(value) {
     };
 }
 
+function normalizePbrMaterialPreviewConfig(value) {
+    const src = value && typeof value === 'object' ? value : {};
+    const albedo = src.albedo && typeof src.albedo === 'object' ? src.albedo : {};
+    const normal = src.normal && typeof src.normal === 'object' ? src.normal : {};
+    const orm = src.orm && typeof src.orm === 'object' ? src.orm : {};
+
+    return {
+        albedo: {
+            enabled: albedo.enabled === undefined ? true : !!albedo.enabled,
+            intensity: clamp(albedo.intensity ?? 1.0, 0.0, 2.0)
+        },
+        normal: {
+            enabled: normal.enabled === undefined ? true : !!normal.enabled,
+            intensity: clamp(normal.intensity ?? 0.9, 0.0, 2.0)
+        },
+        orm: {
+            enabled: orm.enabled === undefined ? true : !!orm.enabled,
+            aoIntensity: clamp(orm.aoIntensity ?? 1.0, 0.0, 2.0),
+            roughness: clamp(orm.roughness ?? 1.0, 0.0, 1.0),
+            metalness: clamp(orm.metalness ?? 1.0, 0.0, 1.0)
+        }
+    };
+}
+
 function normalizeRealWorldSizeMeters({ widthMeters, heightMeters } = {}, { fallbackWidthMeters = DEFAULT_REAL_WORLD_SIZE_METERS, fallbackHeightMeters = DEFAULT_REAL_WORLD_SIZE_METERS } = {}) {
     const fw = Number(fallbackWidthMeters);
     const fh = Number(fallbackHeightMeters);
@@ -142,17 +166,27 @@ function clonePreviewTexture(tex, { offset = null, repeat = null, wrap = THREE.C
     return clone;
 }
 
-export function buildTexturePreviewMaterialMaps({ previewMode = 'single', baseTex = null, normalTex = null, ormTex = null, alphaTex = null } = {}) {
+export function buildTexturePreviewMaterialMaps({
+    previewMode = 'single',
+    baseTex = null,
+    normalTex = null,
+    roughnessTex = null,
+    metalnessTex = null,
+    aoTex = null,
+    alphaTex = null
+} = {}) {
     const tiled = previewMode === 'tiled';
     const maps = {
         map: baseTex ?? null,
         normalMap: normalTex ?? null,
-        roughnessMap: ormTex ?? null,
+        aoMap: aoTex ?? null,
+        roughnessMap: roughnessTex ?? null,
+        metalnessMap: metalnessTex ?? null,
         alphaMap: alphaTex ?? null
     };
 
     return {
-        overlay: tiled ? { map: null, normalMap: null, roughnessMap: null, alphaMap: null } : maps,
+        overlay: tiled ? { map: null, normalMap: null, aoMap: null, roughnessMap: null, metalnessMap: null, alphaMap: null } : maps,
         tile: maps
     };
 }
@@ -259,6 +293,8 @@ export class InspectorRoomTexturesProvider {
         this._tileGap = 0.0;
 
         this._windowPbr = normalizeWindowPbrConfig(null);
+        this._pbrMaterialPreview = normalizePbrMaterialPreviewConfig(null);
+        this._scratchTint = new THREE.Color();
     }
 
     getId() {
@@ -463,12 +499,23 @@ export class InspectorRoomTexturesProvider {
         const next = Number.isFinite(hex) ? hex : 0xffffff;
         this._baseColor = next;
         this.room?.setPlaneBaseColor?.(next);
-        if (this._overlayMat) this._overlayMat.color.setHex(next);
-        if (this._tileMat) this._tileMat.color.setHex(next);
+        this._applyPreviewTint();
     }
 
     getBaseColorHex() {
         return this._baseColor;
+    }
+
+    getPbrMaterialPreviewConfig() {
+        return deepClone(this._pbrMaterialPreview);
+    }
+
+    setPbrMaterialPreviewConfig(value) {
+        this._pbrMaterialPreview = normalizePbrMaterialPreviewConfig(value);
+        this._applyPreviewTint();
+        const entry = getTextureInspectorEntryById(this._textureId);
+        if (entry?.kind !== 'pbr_material') return;
+        this._syncPreviewMaps();
     }
 
     setPreviewModeId(modeId) {
@@ -504,6 +551,18 @@ export class InspectorRoomTexturesProvider {
         this._applyWindowPbrMaps(entry);
         this._syncPreviewWrap();
         this._syncPreviewMaps();
+    }
+
+    _applyPreviewTint() {
+        const entry = getTextureInspectorEntryById(this._textureId);
+        const isPbrMaterial = entry?.kind === 'pbr_material';
+        const intensity = isPbrMaterial ? (this._pbrMaterialPreview?.albedo?.intensity ?? 1.0) : 1.0;
+        const k = clamp(intensity, 0.0, 2.0);
+        this._scratchTint.setHex(this._baseColor);
+        if (Math.abs(k - 1.0) > 1e-6) this._scratchTint.multiplyScalar(k);
+
+        if (this._overlayMat?.color) this._overlayMat.color.copy(this._scratchTint);
+        if (this._tileMat?.color) this._tileMat.color.copy(this._scratchTint);
     }
 
     getSelectedRealWorldSizeMeters() {
@@ -860,34 +919,66 @@ export class InspectorRoomTexturesProvider {
     }
 
     _syncPreviewMaps() {
-        const tex = this._previewTexture ?? null;
-        const normalMap = this._previewNormalMap ?? null;
-        const roughnessMap = this._previewRoughnessMap ?? null;
+        const entry = getTextureInspectorEntryById(this._textureId);
+        const kind = entry?.kind ?? null;
 
-        const alphaMap = this._previewAlphaMap ?? null;
-        const hasPbr = !!normalMap || !!roughnessMap;
-        const roughness = roughnessMap ? 1.0 : 0.85;
-        const metalness = roughnessMap ? 0.0 : 0.05;
+        const baseTex = this._previewTexture ?? null;
+        const normalTex = this._previewNormalMap ?? null;
+        const pbrTex = this._previewRoughnessMap ?? null;
+        const alphaTex = this._previewAlphaMap ?? null;
+
+        const isPbrMaterial = kind === 'pbr_material';
+
+        const pbrCfg = isPbrMaterial ? (this._pbrMaterialPreview ?? normalizePbrMaterialPreviewConfig(null)) : null;
+        const wantsAlbedoMap = isPbrMaterial ? !!pbrCfg?.albedo?.enabled : true;
+        const wantsNormalMap = isPbrMaterial ? !!pbrCfg?.normal?.enabled : true;
+        const wantsOrmMap = isPbrMaterial ? !!pbrCfg?.orm?.enabled : true;
+
+        const effectiveBaseTex = wantsAlbedoMap ? baseTex : null;
+        const effectiveNormalTex = wantsNormalMap ? normalTex : null;
+
+        const effectiveRoughnessTex = isPbrMaterial ? (wantsOrmMap ? pbrTex : null) : pbrTex;
+        const effectiveMetalnessTex = isPbrMaterial ? (wantsOrmMap ? pbrTex : null) : null;
+        const effectiveAoTex = isPbrMaterial ? (wantsOrmMap ? pbrTex : null) : null;
+
+        const hasPbr = !!effectiveNormalTex || !!effectiveRoughnessTex || !!effectiveMetalnessTex || !!effectiveAoTex;
+
+        const roughness = isPbrMaterial
+            ? clamp(pbrCfg?.orm?.roughness ?? 1.0, 0.0, 1.0)
+            : (effectiveRoughnessTex ? 1.0 : 0.85);
+        const metalness = isPbrMaterial
+            ? clamp(pbrCfg?.orm?.metalness ?? 1.0, 0.0, 1.0)
+            : (effectiveRoughnessTex ? 0.0 : 0.05);
+        const aoIntensity = isPbrMaterial
+            ? clamp(pbrCfg?.orm?.aoIntensity ?? 1.0, 0.0, 2.0)
+            : 1.0;
+        const normalIntensity = isPbrMaterial
+            ? clamp(pbrCfg?.normal?.intensity ?? 0.9, 0.0, 2.0)
+            : clamp(this._previewNormalScale, 0.0, 2.0);
 
         const maps = buildTexturePreviewMaterialMaps({
             previewMode: this._previewMode,
-            baseTex: tex,
-            normalTex: normalMap,
-            ormTex: roughnessMap,
-            alphaTex: alphaMap
+            baseTex: effectiveBaseTex,
+            normalTex: effectiveNormalTex,
+            roughnessTex: effectiveRoughnessTex,
+            metalnessTex: effectiveMetalnessTex,
+            aoTex: effectiveAoTex,
+            alphaTex
         });
 
         if (this._overlayMat) {
             this._overlayMat.map = maps.overlay.map;
             this._overlayMat.normalMap = maps.overlay.normalMap;
+            this._overlayMat.aoMap = maps.overlay.aoMap;
             this._overlayMat.roughnessMap = maps.overlay.roughnessMap;
+            this._overlayMat.metalnessMap = maps.overlay.metalnessMap;
             this._overlayMat.alphaMap = maps.overlay.alphaMap;
             this._overlayMat.alphaTest = maps.overlay.alphaMap ? 0.5 : 0;
             this._overlayMat.roughness = roughness;
             this._overlayMat.metalness = metalness;
+            if ('aoMapIntensity' in this._overlayMat) this._overlayMat.aoMapIntensity = aoIntensity;
             if (hasPbr && this._overlayMat.normalScale) {
-                const ns = clamp(this._previewNormalScale, 0.0, 2.0);
-                this._overlayMat.normalScale.set(ns, ns);
+                this._overlayMat.normalScale.set(normalIntensity, normalIntensity);
             }
             this._overlayMat.needsUpdate = true;
         }
@@ -895,17 +986,21 @@ export class InspectorRoomTexturesProvider {
         if (this._tileMat) {
             this._tileMat.map = maps.tile.map;
             this._tileMat.normalMap = maps.tile.normalMap;
+            this._tileMat.aoMap = maps.tile.aoMap;
             this._tileMat.roughnessMap = maps.tile.roughnessMap;
+            this._tileMat.metalnessMap = maps.tile.metalnessMap;
             this._tileMat.alphaMap = maps.tile.alphaMap;
             this._tileMat.alphaTest = maps.tile.alphaMap ? 0.5 : 0;
             this._tileMat.roughness = roughness;
             this._tileMat.metalness = metalness;
+            if ('aoMapIntensity' in this._tileMat) this._tileMat.aoMapIntensity = aoIntensity;
             if (hasPbr && this._tileMat.normalScale) {
-                const ns = clamp(this._previewNormalScale, 0.0, 2.0);
-                this._tileMat.normalScale.set(ns, ns);
+                this._tileMat.normalScale.set(normalIntensity, normalIntensity);
             }
             this._tileMat.needsUpdate = true;
         }
+
+        if (isPbrMaterial) this._applyPreviewTint();
     }
 
     _configureUrlTexture(tex, { srgb = true } = {}) {
@@ -964,7 +1059,9 @@ export class InspectorRoomTexturesProvider {
             this._overlayMat.alphaMap = null;
             this._overlayMat.alphaTest = 0;
             this._overlayMat.normalMap = null;
+            this._overlayMat.aoMap = null;
             this._overlayMat.roughnessMap = null;
+            this._overlayMat.metalnessMap = null;
             this._overlayMat.needsUpdate = true;
         }
         if (this._tileMat) {
@@ -972,7 +1069,9 @@ export class InspectorRoomTexturesProvider {
             this._tileMat.alphaMap = null;
             this._tileMat.alphaTest = 0;
             this._tileMat.normalMap = null;
+            this._tileMat.aoMap = null;
             this._tileMat.roughnessMap = null;
+            this._tileMat.metalnessMap = null;
             this._tileMat.needsUpdate = true;
         }
     }

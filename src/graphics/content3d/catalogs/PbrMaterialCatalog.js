@@ -100,6 +100,8 @@ const MATERIALS = Object.freeze([
     Object.freeze({ id: makeId('brick_crosswalk'), label: 'Brick Crosswalk', root: 'surface', buildingEligible: false }),
     Object.freeze({ id: makeId('clay_roof_tiles_02'), label: 'Clay Roof Tiles 02', root: 'surface', buildingEligible: false }),
     Object.freeze({ id: makeId('coast_sand_rocks_02'), label: 'Coast Sand Rocks 02', root: 'surface', buildingEligible: false }),
+    Object.freeze({ id: makeId('grass_001'), label: 'Grass 001', root: 'surface', buildingEligible: false }),
+    Object.freeze({ id: makeId('grass_004'), label: 'Grass 004', root: 'surface', buildingEligible: false }),
     Object.freeze({ id: makeId('patterned_concrete_pavers'), label: 'Patterned Concrete Pavers', root: 'surface', buildingEligible: false }),
     Object.freeze({ id: makeId('patterned_paving'), label: 'Patterned Paving', root: 'surface', buildingEligible: false }),
     Object.freeze({ id: makeId('red_slate_roof_tiles_01'), label: 'Red Slate Roof Tiles 01', root: 'surface', buildingEligible: false }),
