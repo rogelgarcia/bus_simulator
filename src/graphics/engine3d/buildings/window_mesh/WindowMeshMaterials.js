@@ -307,13 +307,13 @@ function patchInteriorShader(mat, { openingAspect, imageAspect, uvZoom, parallax
     mat.userData.windowInterior = true;
     mat.customProgramCacheKey = () => 'window_interior_v4';
 
-    mat.onBeforeCompile = (shader) => {
-        shader.uniforms.uInteriorOpeningAspect = { value: Number(openingAspect) || 1.0 };
-        shader.uniforms.uInteriorImageAspect = { value: Number(imageAspect) || 1.0 };
-        shader.uniforms.uInteriorUvZoom = { value: Number(uvZoom) || 1.0 };
-        shader.uniforms.uInteriorParallax = { value: Number(parallaxStrength) || 0.0 };
-        shader.uniforms.uInteriorParallaxScale = { value: new THREE.Vector2(Number(parallaxScale?.x) || 1.0, Number(parallaxScale?.y) || 1.0) };
-        shader.uniforms.uInteriorUvPan = { value: new THREE.Vector2(Number(uvPan?.x) || 0.0, Number(uvPan?.y) || 0.0) };
+	    mat.onBeforeCompile = (shader) => {
+	        shader.uniforms.uInteriorOpeningAspect = { value: Number(openingAspect) || 1.0 };
+	        shader.uniforms.uInteriorImageAspect = { value: Number(imageAspect) || 1.0 };
+	        shader.uniforms.uInteriorUvZoom = { value: Number(uvZoom) || 1.0 };
+	        shader.uniforms.uInteriorParallax = { value: Number(parallaxStrength) || 0.0 };
+	        shader.uniforms.uInteriorParallaxScale = { value: new THREE.Vector2(Number(parallaxScale?.x ?? 1.0), Number(parallaxScale?.y ?? 1.0)) };
+	        shader.uniforms.uInteriorUvPan = { value: new THREE.Vector2(Number(uvPan?.x) || 0.0, Number(uvPan?.y) || 0.0) };
 
         shader.vertexShader = shader.vertexShader.replace(
             '#include <common>',
@@ -409,8 +409,8 @@ vec3 mvTanV = normalize(cross(mvNormal, mvTanU));
 vec3 mvViewTS = vec3(dot(mvViewDir, mvTanU), dot(mvViewDir, mvTanV), dot(mvViewDir, mvNormal));
 
 vec2 parDir = mvViewTS.xy / max(0.35, mvViewTS.z);
-uvLocal -= (parDir / uvScale) * (clamp(uInteriorParallax, 0.0, 1.0) * max(vec2(1e-3), uInteriorParallaxScale));
-uvLocal = clamp(uvLocal, vec2(0.0), vec2(1.0));
+	uvLocal -= (parDir / uvScale) * (clamp(uInteriorParallax, 0.0, 1.0) * max(vec2(0.0), uInteriorParallaxScale));
+	uvLocal = clamp(uvLocal, vec2(0.0), vec2(1.0));
 
 float flipX = step(0.5, vInteriorFlipX);
 uvLocal.x = mix(uvLocal.x, 1.0 - uvLocal.x, flipX);

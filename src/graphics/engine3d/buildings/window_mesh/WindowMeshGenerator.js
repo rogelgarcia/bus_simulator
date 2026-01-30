@@ -205,12 +205,12 @@ export class WindowMeshGenerator {
         glassMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         glassLayer.add(glassMesh);
 
-        const glassZ = s.frame.depth + s.glass.zOffset;
-        const shadeZ = glassZ + s.shade.zOffset;
-        const interiorZ = glassZ + Math.min(-0.02, s.shade.enabled ? (s.shade.zOffset - 0.02) : -0.02);
-        glassMesh.position.z = glassZ;
-        shadeMesh.position.z = shadeZ;
-        if (interiorMesh) interiorMesh.position.z = interiorZ;
+	        const glassZ = s.frame.depth + s.glass.zOffset;
+	        const shadeZ = glassZ + s.shade.zOffset;
+	        const interiorZ = glassZ + Math.min(-0.02, s.shade.enabled ? (s.shade.zOffset - 0.02) : -0.02) + s.interior.zOffset;
+	        glassMesh.position.z = glassZ;
+	        shadeMesh.position.z = shadeZ;
+	        if (interiorMesh) interiorMesh.position.z = interiorZ;
 
         const frameInsetZ = -Number(s.frame.inset || 0);
         frameLayer.position.z = frameInsetZ;

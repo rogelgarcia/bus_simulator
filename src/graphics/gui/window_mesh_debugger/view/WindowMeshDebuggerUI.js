@@ -1171,24 +1171,37 @@ export class WindowMeshDebuggerUI {
             }
         }).row);
 
-        section.appendChild(makeNumberSliderRow({
-            label: 'Parallax Depth (m)',
-            value: s0.interior.parallaxDepthMeters,
-            min: 0.0,
-            max: 50.0,
-            step: 0.1,
-            digits: 1,
-            onChange: (v) => {
-                const s = this._state.settings;
-                this._setSettings({ interior: { ...s.interior, parallaxDepthMeters: v } });
-            }
-        }).row);
+	        section.appendChild(makeNumberSliderRow({
+	            label: 'Parallax Depth (m)',
+	            value: s0.interior.parallaxDepthMeters,
+	            min: 0.0,
+	            max: 50.0,
+	            step: 0.1,
+	            digits: 1,
+	            onChange: (v) => {
+	                const s = this._state.settings;
+	                this._setSettings({ interior: { ...s.interior, parallaxDepthMeters: v } });
+	            }
+	        }).row);
 
-        section.appendChild(makeNumberSliderRow({
-            label: 'Interior Zoom',
-            value: s0.interior.uvZoom,
-            min: 0.25,
-            max: 10.0,
+	        section.appendChild(makeNumberSliderRow({
+	            label: 'Plane Z Offset (m)',
+	            value: s0.interior.zOffset,
+	            min: -1.0,
+	            max: 1.0,
+	            step: 0.001,
+	            digits: 3,
+	            onChange: (v) => {
+	                const s = this._state.settings;
+	                this._setSettings({ interior: { ...s.interior, zOffset: v } });
+	            }
+	        }).row);
+
+	        section.appendChild(makeNumberSliderRow({
+	            label: 'Interior Zoom',
+	            value: s0.interior.uvZoom,
+	            min: 0.25,
+	            max: 10.0,
             step: 0.01,
             digits: 2,
             onChange: (v) => {
@@ -1210,29 +1223,29 @@ export class WindowMeshDebuggerUI {
             }
         }).row);
 
-        section.appendChild(makeNumberSliderRow({
-            label: 'Parallax Offset X Scale',
-            value: s0.interior.parallaxScale.x,
-            min: 0.1,
-            max: 10.0,
-            step: 0.01,
-            digits: 2,
-            onChange: (v) => {
-                const s = this._state.settings;
+	        section.appendChild(makeNumberSliderRow({
+	            label: 'Parallax Offset X Scale',
+	            value: s0.interior.parallaxScale.x,
+	            min: 0.0,
+	            max: 10.0,
+	            step: 0.01,
+	            digits: 2,
+	            onChange: (v) => {
+	                const s = this._state.settings;
                 const ps = s.interior.parallaxScale;
                 this._setSettings({ interior: { ...s.interior, parallaxScale: { ...ps, x: v } } });
             }
         }).row);
 
-        section.appendChild(makeNumberSliderRow({
-            label: 'Parallax Offset Y Scale',
-            value: s0.interior.parallaxScale.y,
-            min: 0.1,
-            max: 10.0,
-            step: 0.01,
-            digits: 2,
-            onChange: (v) => {
-                const s = this._state.settings;
+	        section.appendChild(makeNumberSliderRow({
+	            label: 'Parallax Offset Y Scale',
+	            value: s0.interior.parallaxScale.y,
+	            min: 0.0,
+	            max: 10.0,
+	            step: 0.01,
+	            digits: 2,
+	            onChange: (v) => {
+	                const s = this._state.settings;
                 const ps = s.interior.parallaxScale;
                 this._setSettings({ interior: { ...s.interior, parallaxScale: { ...ps, y: v } } });
             }

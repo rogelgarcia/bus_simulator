@@ -59,8 +59,9 @@ export const scenarioWindowMeshInteriorParallax = {
         const parallaxDepthMeters = clampNumber(options?.parallaxDepthMeters, 0.0, 50.0, 12.0);
         const uvZoom = clampNumber(options?.uvZoom, 0.25, 20.0, base?.interior?.uvZoom ?? 1.0);
         const imageAspect = clampNumber(options?.imageAspect, 0.25, 4.0, base?.interior?.imageAspect ?? 1.0);
-        const parallaxScaleX = clampNumber(options?.parallaxScaleX, 0.1, 10.0, base?.interior?.parallaxScale?.x ?? 1.0);
-        const parallaxScaleY = clampNumber(options?.parallaxScaleY, 0.1, 10.0, base?.interior?.parallaxScale?.y ?? 1.0);
+        const parallaxScaleX = clampNumber(options?.parallaxScaleX, 0.0, 10.0, base?.interior?.parallaxScale?.x ?? 1.0);
+        const parallaxScaleY = clampNumber(options?.parallaxScaleY, 0.0, 10.0, base?.interior?.parallaxScale?.y ?? 1.0);
+        const interiorZOffset = clampNumber(options?.interiorZOffset, -1.0, 1.0, base?.interior?.zOffset ?? 0.0);
         const glassOpacity = clampNumber(options?.glassOpacity, 0.0, 1.0, 0.0);
         const emissiveIntensity = clampNumber(options?.emissiveIntensity, 0.0, 5.0, base?.interior?.emissiveIntensity ?? 0.0);
         const uvPanX = clampNumber(options?.uvPanX, -2.0, 2.0, 0.0);
@@ -84,6 +85,7 @@ export const scenarioWindowMeshInteriorParallax = {
                 imageAspect,
                 parallaxDepthMeters,
                 parallaxScale: { x: parallaxScaleX, y: parallaxScaleY },
+                zOffset: interiorZOffset,
                 emissiveIntensity,
                 tintVariation: {
                     hueShiftDeg: { min: 0.0, max: 0.0 },
@@ -132,6 +134,8 @@ export const scenarioWindowMeshInteriorParallax = {
             return { tag, width, height, complete };
         };
 
+        const interiorMesh = layers?.interior?.children?.find((m) => !!m && m.isInstancedMesh) ?? null;
+
         return {
             update(_dt, { nowMs } = {}) {
                 const t = (Number(nowMs) || 0) / 1000;
@@ -152,6 +156,7 @@ export const scenarioWindowMeshInteriorParallax = {
                         imageAspect,
                         parallaxScaleX,
                         parallaxScaleY,
+                        interiorZOffset,
                         glassOpacity,
                         emissiveIntensity,
                         uvPanX,
@@ -168,7 +173,8 @@ export const scenarioWindowMeshInteriorParallax = {
                         z: engine.camera.position.z
                     },
                     objects: {
-                        windowGroupChildren: windowGroup.children.length
+                        windowGroupChildren: windowGroup.children.length,
+                        interiorPlaneLocalZ: interiorMesh ? interiorMesh.position.z : null
                     }
                 };
             },

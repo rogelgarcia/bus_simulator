@@ -134,27 +134,29 @@ test('Window mesh: interior atlas loads and parallax changes pixels', async ({ p
             return null;
         };
 
-        const render = async ({
-            parallaxDepthMeters,
-            uvZoom = 1.0,
-            imageAspect = 1.0,
-            parallaxScaleX = 1.0,
-            parallaxScaleY = 1.0,
-            cameraAmplitudeX = 0.45,
-            cameraAmplitudeY = 0.0
-        }) => {
-            await window.__testHooks.loadScenario('window_mesh_interior_parallax', {
-                seed: 'interior-parallax',
+	        const render = async ({
+	            parallaxDepthMeters,
+	            uvZoom = 1.0,
+	            imageAspect = 1.0,
+	            parallaxScaleX = 1.0,
+	            parallaxScaleY = 1.0,
+	            interiorZOffset = 0.0,
+	            cameraAmplitudeX = 0.45,
+	            cameraAmplitudeY = 0.0
+	        }) => {
+	            await window.__testHooks.loadScenario('window_mesh_interior_parallax', {
+	                seed: 'interior-parallax',
                 atlasId: 'window_interior_atlas.residential_4x4',
                 parallaxDepthMeters,
-                uvZoom,
-                imageAspect,
-                parallaxScaleX,
-                parallaxScaleY,
-                glassOpacity: 0.0,
-                cameraAmplitudeX,
-                cameraAmplitudeY,
-                cameraSpeed: 1.1
+	                uvZoom,
+	                imageAspect,
+	                parallaxScaleX,
+	                parallaxScaleY,
+	                interiorZOffset,
+	                glassOpacity: 0.0,
+	                cameraAmplitudeX,
+	                cameraAmplitudeY,
+	                cameraSpeed: 1.1
             });
 
             const atlas = await waitForAtlas();
@@ -162,15 +164,16 @@ test('Window mesh: interior atlas loads and parallax changes pixels', async ({ p
 
             window.__testHooks.step(45, { render: true });
             window.__testHooks.renderFrame();
-            const metrics = window.__testHooks.getMetrics();
-            const luma = grabLuma();
-            return {
-                atlas,
-                cameraX: Number(metrics?.scenario?.camera?.x) || 0,
-                uvBounds: metrics?.scenario?.uvBounds ?? null,
-                luma,
-                stats: stats(luma),
-                whiteFrac: fractionAbove(luma, 245)
+	            const metrics = window.__testHooks.getMetrics();
+	            const luma = grabLuma();
+	            return {
+	                atlas,
+	                cameraX: Number(metrics?.scenario?.camera?.x) || 0,
+	                interiorPlaneLocalZ: Number(metrics?.scenario?.objects?.interiorPlaneLocalZ) || 0,
+	                uvBounds: metrics?.scenario?.uvBounds ?? null,
+	                luma,
+	                stats: stats(luma),
+	                whiteFrac: fractionAbove(luma, 245)
             };
         };
 
@@ -179,24 +182,26 @@ test('Window mesh: interior atlas loads and parallax changes pixels', async ({ p
         const deepParallax = await render({ parallaxDepthMeters: 25.0, uvZoom: 1.0, imageAspect: 1.0 });
         const zoomed = await render({ parallaxDepthMeters: 0.0, uvZoom: 2.0, imageAspect: 1.0 });
         const aspectWide = await render({ parallaxDepthMeters: 0.0, uvZoom: 1.0, imageAspect: 1.6 });
-        const yParallaxSmall = await render({
-            parallaxDepthMeters: 12.0,
-            parallaxScaleX: 0.1,
-            parallaxScaleY: 0.1,
-            cameraAmplitudeX: 0.0,
-            cameraAmplitudeY: 0.45
-        });
-        const yParallaxLarge = await render({
-            parallaxDepthMeters: 12.0,
-            parallaxScaleX: 0.1,
-            parallaxScaleY: 2.0,
-            cameraAmplitudeX: 0.0,
-            cameraAmplitudeY: 0.45
-        });
+	        const yParallaxSmall = await render({
+	            parallaxDepthMeters: 12.0,
+	            parallaxScaleX: 0.0,
+	            parallaxScaleY: 0.0,
+	            cameraAmplitudeX: 0.0,
+	            cameraAmplitudeY: 0.45
+	        });
+	        const yParallaxLarge = await render({
+	            parallaxDepthMeters: 12.0,
+	            parallaxScaleX: 0.0,
+	            parallaxScaleY: 2.0,
+	            cameraAmplitudeX: 0.0,
+	            cameraAmplitudeY: 0.45
+	        });
+	        const planeNear = await render({ parallaxDepthMeters: 12.0, interiorZOffset: 0.5 });
+	        const planeFar = await render({ parallaxDepthMeters: 12.0, interiorZOffset: -0.5 });
 
-        return {
-            viewport,
-            roi,
+	        return {
+	            viewport,
+	            roi,
             noParallax: {
                 atlas: noParallax.atlas,
                 cameraX: noParallax.cameraX,
@@ -239,22 +244,30 @@ test('Window mesh: interior atlas loads and parallax changes pixels', async ({ p
                 whiteFrac: yParallaxSmall.whiteFrac,
                 uvBounds: yParallaxSmall.uvBounds
             },
-            yParallaxLarge: {
-                atlas: yParallaxLarge.atlas,
-                cameraX: yParallaxLarge.cameraX,
-                stats: yParallaxLarge.stats,
-                whiteFrac: yParallaxLarge.whiteFrac,
-                uvBounds: yParallaxLarge.uvBounds
-            },
-            diff: {
-                meanAbsLuma: meanAbsDiff(noParallax.luma, parallax.luma),
-                meanAbsLumaDeep: meanAbsDiff(parallax.luma, deepParallax.luma),
-                meanAbsLumaZoom: meanAbsDiff(noParallax.luma, zoomed.luma),
-                meanAbsLumaAspect: meanAbsDiff(noParallax.luma, aspectWide.luma),
-                meanAbsLumaParallaxYScale: meanAbsDiff(yParallaxSmall.luma, yParallaxLarge.luma)
-            }
-        };
-    });
+	            yParallaxLarge: {
+	                atlas: yParallaxLarge.atlas,
+	                cameraX: yParallaxLarge.cameraX,
+	                interiorPlaneLocalZ: yParallaxLarge.interiorPlaneLocalZ,
+	                stats: yParallaxLarge.stats,
+	                whiteFrac: yParallaxLarge.whiteFrac,
+	                uvBounds: yParallaxLarge.uvBounds
+	            },
+	            planeNear: {
+	                interiorPlaneLocalZ: planeNear.interiorPlaneLocalZ
+	            },
+	            planeFar: {
+	                interiorPlaneLocalZ: planeFar.interiorPlaneLocalZ
+	            },
+	            diff: {
+	                meanAbsLuma: meanAbsDiff(noParallax.luma, parallax.luma),
+	                meanAbsLumaDeep: meanAbsDiff(parallax.luma, deepParallax.luma),
+	                meanAbsLumaZoom: meanAbsDiff(noParallax.luma, zoomed.luma),
+	                meanAbsLumaAspect: meanAbsDiff(noParallax.luma, aspectWide.luma),
+	                meanAbsLumaParallaxYScale: meanAbsDiff(yParallaxSmall.luma, yParallaxLarge.luma),
+	                interiorPlaneZSpan: Math.abs(planeNear.interiorPlaneLocalZ - planeFar.interiorPlaneLocalZ)
+	            }
+	        };
+	    });
 
     expect(result.noParallax.atlas.width).toBe(1024);
     expect(result.noParallax.atlas.height).toBe(1024);
@@ -281,8 +294,10 @@ test('Window mesh: interior atlas loads and parallax changes pixels', async ({ p
     expect(result.yParallaxLarge.whiteFrac).toBeLessThan(0.35);
     expect(result.diff.meanAbsLuma).toBeGreaterThan(2);
     expect(result.diff.meanAbsLumaDeep).toBeGreaterThan(0.5);
-    expect(result.diff.meanAbsLumaZoom).toBeGreaterThan(2);
-    expect(result.diff.meanAbsLumaAspect).toBeGreaterThan(0.5);
-    expect(result.diff.meanAbsLumaParallaxYScale).toBeGreaterThan(0.5);
-    expect(await getIssues()).toEqual([]);
-});
+	    expect(result.diff.meanAbsLumaZoom).toBeGreaterThan(2);
+	    expect(result.diff.meanAbsLumaAspect).toBeGreaterThan(0.5);
+	    expect(result.diff.meanAbsLumaParallaxYScale).toBeGreaterThan(0.5);
+	    expect(result.diff.interiorPlaneZSpan).toBeGreaterThan(0.9);
+	    expect(result.diff.interiorPlaneZSpan).toBeLessThan(1.1);
+	    expect(await getIssues()).toEqual([]);
+	});

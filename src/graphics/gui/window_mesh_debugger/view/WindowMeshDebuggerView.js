@@ -512,7 +512,6 @@ export class WindowMeshDebuggerView {
             tex.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy?.() ?? 16);
             applyTextureColorSpace(tex, { srgb: !!srgb });
             setupRepeat(tex, repeat);
-            tex.needsUpdate = true;
             this._groundTexCache.set(safeUrl, tex);
             return tex;
         };
@@ -772,7 +771,6 @@ export class WindowMeshDebuggerView {
             tex.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy?.() ?? 16);
             applyTextureColorSpace(tex, { srgb: !!srgb });
             setupRepeat(tex, wallRepeat);
-            tex.needsUpdate = true;
             this._wallTexCache.set(safeUrl, tex);
             return tex;
         };
