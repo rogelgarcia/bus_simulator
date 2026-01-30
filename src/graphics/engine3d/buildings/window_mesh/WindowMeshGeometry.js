@@ -132,6 +132,32 @@ function buildFrameGeometry({ settings, curveSegments }) {
     return geo;
 }
 
+function applyPlanarUv01(geo) {
+    const g = geo?.isBufferGeometry ? geo : null;
+    const pos = g?.attributes?.position;
+    if (!pos?.isBufferAttribute) return;
+
+    g.computeBoundingBox();
+    const box = g.boundingBox;
+    if (!box) return;
+
+    const minX = Number(box.min.x) || 0;
+    const maxX = Number(box.max.x) || 0;
+    const minY = Number(box.min.y) || 0;
+    const maxY = Number(box.max.y) || 0;
+    const invW = 1.0 / Math.max(EPS, maxX - minX);
+    const invH = 1.0 / Math.max(EPS, maxY - minY);
+
+    const uv = new Float32Array(pos.count * 2);
+    for (let i = 0; i < pos.count; i++) {
+        uv[i * 2] = (pos.getX(i) - minX) * invW;
+        uv[i * 2 + 1] = (pos.getY(i) - minY) * invH;
+    }
+
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    g.setAttribute('uv2', new THREE.BufferAttribute(uv.slice(0), 2));
+}
+
 function buildOpeningGeometry({ settings, curveSegments }) {
     const s = sanitizeWindowMeshSettings(settings);
 
@@ -158,6 +184,7 @@ function buildOpeningGeometry({ settings, curveSegments }) {
     });
 
     const geo = new THREE.ShapeGeometry(shape, Math.max(6, curveSegments | 0));
+    applyPlanarUv01(geo);
     geo.computeVertexNormals();
     geo.computeBoundingBox();
     return geo;
@@ -284,4 +311,3 @@ export function buildWindowMeshGeometryBundle(settings, { curveSegments = 24 } =
 
     return { frame, opening, muntins, joinBar };
 }
-

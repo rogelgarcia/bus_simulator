@@ -617,6 +617,13 @@ export class WindowMeshDebuggerView {
         }
 
         this._applyRenderMode(renderMode);
+        this._ui?.setInteriorOverlayData?.({
+            seed,
+            atlasId: s?.interior?.atlasId ?? '',
+            cols: s?.interior?.atlas?.cols ?? 0,
+            rows: s?.interior?.atlas?.rows ?? 0,
+            items: group.userData?.instanceVariations ?? []
+        });
         void this._applyIblState(state?.ibl);
     }
 

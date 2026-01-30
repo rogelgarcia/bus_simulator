@@ -295,6 +295,9 @@ export class WindowMeshDebuggerUI {
         this.root.appendChild(this.panel);
 
         this._controls = {};
+        this._interiorOverlayEnabled = false;
+        this._interiorOverlayData = null;
+        this._interiorOverlayPre = null;
 
         this._buildSceneSection({ wallOptions });
         this._buildLayersSection();
@@ -327,6 +330,11 @@ export class WindowMeshDebuggerUI {
         return deepClone(this._state);
     }
 
+    setInteriorOverlayData(data) {
+        this._interiorOverlayData = data && typeof data === 'object' ? data : null;
+        this._renderInteriorOverlay();
+    }
+
     _emit() {
         if (this._isSetting) return;
         this._onChange?.(this.getState());
@@ -335,6 +343,42 @@ export class WindowMeshDebuggerUI {
     _setSettings(patch) {
         this._state.settings = sanitizeWindowMeshSettings({ ...this._state.settings, ...(patch ?? {}) });
         this._emit();
+    }
+
+    _renderInteriorOverlay() {
+        const pre = this._interiorOverlayPre;
+        if (!pre) return;
+
+        const enabled = !!this._interiorOverlayEnabled;
+        pre.classList.toggle('hidden', !enabled);
+        if (!enabled) return;
+
+        const src = this._interiorOverlayData && typeof this._interiorOverlayData === 'object' ? this._interiorOverlayData : null;
+        if (!src) {
+            pre.textContent = 'Interior overlay data unavailable.';
+            return;
+        }
+
+        const seed = String(src.seed ?? '');
+        const atlasId = String(src.atlasId ?? '');
+        const cols = Number(src.cols) || 0;
+        const rows = Number(src.rows) || 0;
+        const items = Array.isArray(src.items) ? src.items : [];
+
+        const lines = [];
+        if (seed) lines.push(`Seed: ${seed}`);
+        if (atlasId) lines.push(`Atlas: ${atlasId}${cols && rows ? ` (${cols}x${rows})` : ''}`);
+        for (const item of items) {
+            const id = String(item?.id ?? '');
+            const cell = item?.interiorCell && typeof item.interiorCell === 'object' ? item.interiorCell : {};
+            const col = Math.max(0, Number(cell.col) || 0);
+            const row = Math.max(0, Number(cell.row) || 0);
+            const idx = cols > 0 ? row * cols + col : 0;
+            const flipX = item?.interiorFlipX ? ' flipX' : '';
+            lines.push(`${id}: cell ${col},${row}${cols && rows ? ` (idx ${idx})` : ''}${flipX}`);
+        }
+
+        pre.textContent = lines.join('\n');
     }
 
     _buildSection(title) {
@@ -499,6 +543,34 @@ export class WindowMeshDebuggerUI {
         add('glass', 'Glass');
         add('shade', 'Shade');
         add('interior', 'Interior');
+
+        const presetRow = makeEl('div', 'options-row options-row-wide');
+        presetRow.appendChild(makeEl('div', 'options-row-label', 'Preset'));
+        const presetControl = makeEl('div', 'options-row-control options-row-control-wide');
+        const presetButtons = makeEl('div', 'options-choice-group');
+
+        const applyPreset = (next) => {
+            this._state.layers = { ...this._state.layers, ...(next ?? {}) };
+            for (const [key, value] of Object.entries(next ?? {})) {
+                const ctrl = this._controls[`layer_${key}`];
+                if (ctrl?.toggle) ctrl.toggle.checked = !!value;
+            }
+            this._emit();
+        };
+
+        const btnAll = makeEl('button', 'options-choice-btn', 'All');
+        btnAll.type = 'button';
+        btnAll.addEventListener('click', () => applyPreset({ frame: true, muntins: true, glass: true, shade: true, interior: true }));
+        presetButtons.appendChild(btnAll);
+
+        const btnInteriorOnly = makeEl('button', 'options-choice-btn', 'Interior Only');
+        btnInteriorOnly.type = 'button';
+        btnInteriorOnly.addEventListener('click', () => applyPreset({ frame: false, muntins: false, glass: false, shade: false, interior: true }));
+        presetButtons.appendChild(btnInteriorOnly);
+
+        presetControl.appendChild(presetButtons);
+        presetRow.appendChild(presetControl);
+        section.appendChild(presetRow);
     }
 
     _buildSizeSection() {
@@ -1103,12 +1175,105 @@ export class WindowMeshDebuggerUI {
             label: 'Parallax Depth (m)',
             value: s0.interior.parallaxDepthMeters,
             min: 0.0,
-            max: 12.0,
+            max: 50.0,
             step: 0.1,
             digits: 1,
             onChange: (v) => {
                 const s = this._state.settings;
                 this._setSettings({ interior: { ...s.interior, parallaxDepthMeters: v } });
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Interior Zoom',
+            value: s0.interior.uvZoom,
+            min: 0.25,
+            max: 10.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                const s = this._state.settings;
+                this._setSettings({ interior: { ...s.interior, uvZoom: v } });
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Interior Aspect (W/H)',
+            value: s0.interior.imageAspect,
+            min: 0.25,
+            max: 4.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                const s = this._state.settings;
+                this._setSettings({ interior: { ...s.interior, imageAspect: v } });
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Parallax Offset X Scale',
+            value: s0.interior.parallaxScale.x,
+            min: 0.1,
+            max: 10.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                const s = this._state.settings;
+                const ps = s.interior.parallaxScale;
+                this._setSettings({ interior: { ...s.interior, parallaxScale: { ...ps, x: v } } });
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Parallax Offset Y Scale',
+            value: s0.interior.parallaxScale.y,
+            min: 0.1,
+            max: 10.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                const s = this._state.settings;
+                const ps = s.interior.parallaxScale;
+                this._setSettings({ interior: { ...s.interior, parallaxScale: { ...ps, y: v } } });
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Emissive Intensity',
+            value: s0.interior.emissiveIntensity,
+            min: 0.0,
+            max: 3.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                const s = this._state.settings;
+                this._setSettings({ interior: { ...s.interior, emissiveIntensity: v } });
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'UV Pan X',
+            value: s0.interior.uvPan.x,
+            min: -2.0,
+            max: 2.0,
+            step: 0.001,
+            digits: 3,
+            onChange: (v) => {
+                const s = this._state.settings;
+                this._setSettings({ interior: { ...s.interior, uvPan: { ...s.interior.uvPan, x: v } } });
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'UV Pan Y',
+            value: s0.interior.uvPan.y,
+            min: -2.0,
+            max: 2.0,
+            step: 0.001,
+            digits: 3,
+            onChange: (v) => {
+                const s = this._state.settings;
+                this._setSettings({ interior: { ...s.interior, uvPan: { ...s.interior.uvPan, y: v } } });
             }
         }).row);
 
@@ -1196,5 +1361,20 @@ export class WindowMeshDebuggerUI {
                 this._setSettings({ interior: { ...s.interior, tintVariation: { ...t, brightnessMul: { ...t.brightnessMul, max: v } } } });
             }
         }).row);
+
+        const overlayToggle = makeToggleRow({
+            label: 'Cell Overlay',
+            value: this._interiorOverlayEnabled,
+            onChange: (v) => {
+                this._interiorOverlayEnabled = !!v;
+                this._renderInteriorOverlay();
+            }
+        });
+        section.appendChild(overlayToggle.row);
+
+        const pre = document.createElement('pre');
+        pre.className = 'options-note hidden';
+        section.appendChild(pre);
+        this._interiorOverlayPre = pre;
     }
 }

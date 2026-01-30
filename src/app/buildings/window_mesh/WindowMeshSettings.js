@@ -163,7 +163,12 @@ function normalizeShadeCoverage(value, fallback) {
  * @property {boolean} randomizeCell
  * @property {{col:number,row:number}} cell
  * @property {boolean} randomFlipX
+ * @property {{x:number,y:number}} uvPan
+ * @property {number} uvZoom
+ * @property {number} imageAspect
  * @property {number} parallaxDepthMeters
+ * @property {{x:number,y:number}} parallaxScale
+ * @property {number} emissiveIntensity
  * @property {WindowMeshInteriorTintVariationSettings} tintVariation
  */
 
@@ -249,7 +254,12 @@ export const WINDOW_MESH_DEFAULTS = Object.freeze({
         randomizeCell: true,
         cell: Object.freeze({ col: 0, row: 0 }),
         randomFlipX: true,
+        uvPan: Object.freeze({ x: 0.0, y: 0.0 }),
+        uvZoom: 1.0,
+        imageAspect: 1.0,
         parallaxDepthMeters: 3.0,
+        parallaxScale: Object.freeze({ x: 1.0, y: 1.0 }),
+        emissiveIntensity: 0.0,
         tintVariation: Object.freeze({
             hueShiftDeg: Object.freeze({ min: -8.0, max: 8.0 }),
             saturationMul: Object.freeze({ min: 0.92, max: 1.08 }),
@@ -335,7 +345,18 @@ export function sanitizeWindowMeshSettings(input) {
     const cellCol = clampInt(cellSrc.col ?? cellSrc.cellCol, 0, atlasCols - 1, WINDOW_MESH_DEFAULTS.interior.cell.col);
     const cellRow = clampInt(cellSrc.row ?? cellSrc.cellRow, 0, atlasRows - 1, WINDOW_MESH_DEFAULTS.interior.cell.row);
     const randomFlipX = interiorSrc.randomFlipX !== undefined ? !!interiorSrc.randomFlipX : WINDOW_MESH_DEFAULTS.interior.randomFlipX;
+    const panSrc = interiorSrc.uvPan && typeof interiorSrc.uvPan === 'object'
+        ? interiorSrc.uvPan
+        : (interiorSrc.uvOffset && typeof interiorSrc.uvOffset === 'object' ? interiorSrc.uvOffset : interiorSrc);
+    const uvPanX = clamp(panSrc.x ?? panSrc.uvPanX, -2.0, 2.0, WINDOW_MESH_DEFAULTS.interior.uvPan.x);
+    const uvPanY = clamp(panSrc.y ?? panSrc.uvPanY, -2.0, 2.0, WINDOW_MESH_DEFAULTS.interior.uvPan.y);
+    const uvZoom = clamp(interiorSrc.uvZoom ?? interiorSrc.zoom, 0.25, 20.0, WINDOW_MESH_DEFAULTS.interior.uvZoom);
+    const imageAspect = clamp(interiorSrc.imageAspect ?? interiorSrc.aspect, 0.25, 4.0, WINDOW_MESH_DEFAULTS.interior.imageAspect);
     const parallaxDepthMeters = clamp(interiorSrc.parallaxDepthMeters ?? interiorSrc.depth, 0.0, 50.0, WINDOW_MESH_DEFAULTS.interior.parallaxDepthMeters);
+    const parScaleSrc = interiorSrc.parallaxScale && typeof interiorSrc.parallaxScale === 'object' ? interiorSrc.parallaxScale : interiorSrc;
+    const parallaxScaleX = clamp(parScaleSrc.x ?? parScaleSrc.parallaxScaleX, 0.1, 10.0, WINDOW_MESH_DEFAULTS.interior.parallaxScale.x);
+    const parallaxScaleY = clamp(parScaleSrc.y ?? parScaleSrc.parallaxScaleY, 0.1, 10.0, WINDOW_MESH_DEFAULTS.interior.parallaxScale.y);
+    const emissiveIntensity = clamp(interiorSrc.emissiveIntensity, 0.0, 5.0, WINDOW_MESH_DEFAULTS.interior.emissiveIntensity);
     const tintSrc = interiorSrc.tintVariation && typeof interiorSrc.tintVariation === 'object' ? interiorSrc.tintVariation : {};
     const hueShiftDeg = normalizeRange2(tintSrc.hueShiftDeg, {
         min: -180.0,
@@ -409,7 +430,12 @@ export function sanitizeWindowMeshSettings(input) {
             randomizeCell,
             cell: { col: cellCol, row: cellRow },
             randomFlipX,
+            uvPan: { x: uvPanX, y: uvPanY },
+            uvZoom,
+            imageAspect,
             parallaxDepthMeters,
+            parallaxScale: { x: parallaxScaleX, y: parallaxScaleY },
+            emissiveIntensity,
             tintVariation: { hueShiftDeg, saturationMul, brightnessMul }
         }
     };

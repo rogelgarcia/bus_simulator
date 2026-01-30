@@ -102,6 +102,7 @@ export class WindowMeshGenerator {
         const rows = Math.max(1, s.interior.atlas.rows | 0);
         const uvScaleX = 1 / cols;
         const uvScaleY = 1 / rows;
+        const instanceVariations = [];
 
         for (let i = 0; i < count; i++) {
             const entry = list[i];
@@ -123,6 +124,18 @@ export class WindowMeshGenerator {
             interiorTint[i * 3] = (Number(tint.hueShiftDeg) || 0) / 360.0;
             interiorTint[i * 3 + 1] = Number.isFinite(tint.saturationMul) ? tint.saturationMul : 1.0;
             interiorTint[i * 3 + 2] = Number.isFinite(tint.brightnessMul) ? tint.brightnessMul : 1.0;
+
+            instanceVariations.push(Object.freeze({
+                id,
+                shadeCoverage: shadeCoverage[i],
+                interiorCell: Object.freeze({ col: c, row: r }),
+                interiorFlipX: !!v.interiorFlipX,
+                interiorTint: Object.freeze({
+                    hueShiftDeg: Number(tint.hueShiftDeg) || 0,
+                    saturationMul: Number.isFinite(tint.saturationMul) ? tint.saturationMul : 1.0,
+                    brightnessMul: Number.isFinite(tint.brightnessMul) ? tint.brightnessMul : 1.0
+                })
+            }));
         }
 
         openingGeo.setAttribute('instanceShadeCoverage', new THREE.InstancedBufferAttribute(shadeCoverage, 1));
@@ -161,14 +174,18 @@ export class WindowMeshGenerator {
             muntinsLayer.add(muntinsMesh);
         }
 
-        const interiorLayer = new THREE.Group();
-        interiorLayer.name = 'interior';
-        const interiorMesh = new THREE.InstancedMesh(openingGeo, mats.interiorMat, count);
-        interiorMesh.castShadow = false;
-        interiorMesh.receiveShadow = false;
-        interiorMesh.renderOrder = 0;
-        interiorMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-        interiorLayer.add(interiorMesh);
+        let interiorLayer = null;
+        let interiorMesh = null;
+        if (s.interior.enabled) {
+            interiorLayer = new THREE.Group();
+            interiorLayer.name = 'interior';
+            interiorMesh = new THREE.InstancedMesh(openingGeo, mats.interiorMat, count);
+            interiorMesh.castShadow = false;
+            interiorMesh.receiveShadow = false;
+            interiorMesh.renderOrder = 0;
+            interiorMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            interiorLayer.add(interiorMesh);
+        }
 
         const shadeLayer = new THREE.Group();
         shadeLayer.name = 'shade';
@@ -193,14 +210,14 @@ export class WindowMeshGenerator {
         const interiorZ = glassZ + Math.min(-0.02, s.shade.enabled ? (s.shade.zOffset - 0.02) : -0.02);
         glassMesh.position.z = glassZ;
         shadeMesh.position.z = shadeZ;
-        interiorMesh.position.z = interiorZ;
+        if (interiorMesh) interiorMesh.position.z = interiorZ;
 
         const frameInsetZ = -Number(s.frame.inset || 0);
         frameLayer.position.z = frameInsetZ;
         muntinsLayer.position.z = frameInsetZ;
         glassLayer.position.z = frameInsetZ;
         shadeLayer.position.z = frameInsetZ;
-        interiorLayer.position.z = frameInsetZ;
+        if (interiorLayer) interiorLayer.position.z = frameInsetZ;
 
         frameMesh.renderOrder = 3;
         if (muntinsMesh) muntinsMesh.renderOrder = 3;
@@ -215,7 +232,7 @@ export class WindowMeshGenerator {
             frameMesh.setMatrixAt(i, dummy.matrix);
             if (group.userData._joinMesh) group.userData._joinMesh.setMatrixAt(i, dummy.matrix);
             muntinsMesh?.setMatrixAt(i, dummy.matrix);
-            interiorMesh.setMatrixAt(i, dummy.matrix);
+            interiorMesh?.setMatrixAt(i, dummy.matrix);
             shadeMesh.setMatrixAt(i, dummy.matrix);
             glassMesh.setMatrixAt(i, dummy.matrix);
         }
@@ -223,11 +240,11 @@ export class WindowMeshGenerator {
         frameMesh.instanceMatrix.needsUpdate = true;
         if (group.userData._joinMesh) group.userData._joinMesh.instanceMatrix.needsUpdate = true;
         if (muntinsMesh) muntinsMesh.instanceMatrix.needsUpdate = true;
-        interiorMesh.instanceMatrix.needsUpdate = true;
+        if (interiorMesh) interiorMesh.instanceMatrix.needsUpdate = true;
         shadeMesh.instanceMatrix.needsUpdate = true;
         glassMesh.instanceMatrix.needsUpdate = true;
 
-        group.add(interiorLayer);
+        if (interiorLayer) group.add(interiorLayer);
         group.add(shadeLayer);
         group.add(frameLayer);
         if (muntinsMesh) group.add(muntinsLayer);
@@ -241,6 +258,7 @@ export class WindowMeshGenerator {
             interior: interiorLayer
         });
 
+        group.userData.instanceVariations = Object.freeze(instanceVariations);
         group.userData.materials = Object.freeze({ ...mats });
         group.userData.geometryKey = getWindowMeshGeometryKey(s, { curveSegments: this.curveSegments });
 

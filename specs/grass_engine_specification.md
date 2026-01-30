@@ -18,11 +18,6 @@ The system MUST:
 - Accept area configuration (density, color) as input from an external system
 - Minimize GPU overhead for real-time rendering
 
-The system MUST NOT:
-
-- Handle wind animation (grass is static)
-- Determine where grass is placed (that's the placement system's job)
-- Render tall foliage or vegetation (only low ground grass)
 
 ---
 

@@ -2050,6 +2050,25 @@ async function runTests() {
         assertTrue(shader.fragmentShader.includes('texture2D( roughnessMap, mvWinUv )'), 'Expected roughness map to sample parallax UVs.');
     });
 
+    const { createWindowMeshMaterials } = await import('/src/graphics/engine3d/buildings/window_mesh/WindowMeshMaterials.js');
+    const { getDefaultWindowMeshSettings } = await import('/src/app/buildings/window_mesh/index.js');
+
+    test('WindowMeshMaterials: interior shader avoids mapTexelToLinear', () => {
+        const mats = createWindowMeshMaterials(getDefaultWindowMeshSettings());
+        const mat = mats?.interiorMat ?? null;
+        assertTrue(typeof mat?.onBeforeCompile === 'function', 'Expected interior material to patch shaders.');
+
+        const shader = {
+            uniforms: {},
+            vertexShader: '#include <common>\\nvoid main(){\\n#include <begin_vertex>\\n}\\n',
+            fragmentShader: '#include <common>\\nvec4 diffuseColor = vec4( diffuse, opacity );\\n#include <map_fragment>\\n'
+        };
+        mat.onBeforeCompile(shader, null);
+        assertFalse(shader.fragmentShader.includes('mapTexelToLinear'), 'Interior shader should not reference mapTexelToLinear.');
+        assertTrue(shader.fragmentShader.includes('winSrgbToLinear'), 'Expected interior shader to define winSrgbToLinear.');
+        assertTrue(shader.fragmentShader.includes('uInteriorParallax'), 'Expected interior shader to reference uInteriorParallax.');
+    });
+
     test('BuildingFabricationGenerator: belt extrusion can extend beyond footprint', () => {
         const tileSize = 10;
         const map = {

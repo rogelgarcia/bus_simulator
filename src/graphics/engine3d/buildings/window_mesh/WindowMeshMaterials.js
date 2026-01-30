@@ -201,8 +201,13 @@ function getOrCreateInteriorAtlasTexture({ url, cols, rows } = {}) {
     const cached = _atlasCache.get(key) ?? null;
     if (cached?.texture) return cached.texture;
 
-    const placeholderCanvas = makeProceduralInteriorAtlas({ cols: Math.max(1, cols | 0), rows: Math.max(1, rows | 0), size: 512 });
-    const tex = new THREE.CanvasTexture(placeholderCanvas);
+    const placeholderSize = safeUrl ? 1024 : 512;
+    const placeholderCanvas = makeProceduralInteriorAtlas({
+        cols: Math.max(1, cols | 0),
+        rows: Math.max(1, rows | 0),
+        size: placeholderSize
+    });
+    const tex = new THREE.Texture(placeholderCanvas);
     tex.wrapS = THREE.ClampToEdgeWrapping;
     tex.wrapT = THREE.ClampToEdgeWrapping;
     tex.anisotropy = 8;
@@ -228,8 +233,10 @@ function getOrCreateInteriorAtlasTexture({ url, cols, rows } = {}) {
             );
         }).then((loaded) => {
             if (!loaded || !loaded.image) return;
+            tex.flipY = loaded.flipY;
             tex.image = loaded.image;
             tex.needsUpdate = true;
+            loaded.dispose?.();
         });
     }
 
@@ -295,13 +302,18 @@ if (vShadeV < cutoff) discard;`
     };
 }
 
-function patchInteriorShader(mat, { parallaxStrength }) {
+function patchInteriorShader(mat, { openingAspect, imageAspect, uvZoom, parallaxStrength, parallaxScale, uvPan }) {
     mat.userData = mat.userData ?? {};
     mat.userData.windowInterior = true;
-    mat.customProgramCacheKey = () => 'window_interior_v1';
+    mat.customProgramCacheKey = () => 'window_interior_v4';
 
     mat.onBeforeCompile = (shader) => {
+        shader.uniforms.uInteriorOpeningAspect = { value: Number(openingAspect) || 1.0 };
+        shader.uniforms.uInteriorImageAspect = { value: Number(imageAspect) || 1.0 };
+        shader.uniforms.uInteriorUvZoom = { value: Number(uvZoom) || 1.0 };
         shader.uniforms.uInteriorParallax = { value: Number(parallaxStrength) || 0.0 };
+        shader.uniforms.uInteriorParallaxScale = { value: new THREE.Vector2(Number(parallaxScale?.x) || 1.0, Number(parallaxScale?.y) || 1.0) };
+        shader.uniforms.uInteriorUvPan = { value: new THREE.Vector2(Number(uvPan?.x) || 0.0, Number(uvPan?.y) || 0.0) };
 
         shader.vertexShader = shader.vertexShader.replace(
             '#include <common>',
@@ -313,7 +325,9 @@ attribute vec3 instanceInteriorTint;
 varying vec2 vInteriorUvOffset;
 varying vec2 vInteriorUvScale;
 varying float vInteriorFlipX;
-varying vec3 vInteriorTint;`
+varying vec3 vInteriorTint;
+varying vec3 vInteriorTanU;
+varying vec3 vInteriorTanV;`
         );
 
         shader.vertexShader = shader.vertexShader.replace(
@@ -322,17 +336,34 @@ varying vec3 vInteriorTint;`
 vInteriorUvOffset = instanceInteriorUvOffset;
 vInteriorUvScale = instanceInteriorUvScale;
 vInteriorFlipX = instanceInteriorFlipX;
-vInteriorTint = instanceInteriorTint;`
+vInteriorTint = instanceInteriorTint;
+
+vec3 tanU = vec3(1.0, 0.0, 0.0);
+vec3 tanV = vec3(0.0, 1.0, 0.0);
+#ifdef USE_INSTANCING
+mat3 instMat3 = mat3(instanceMatrix);
+tanU = instMat3 * tanU;
+tanV = instMat3 * tanV;
+#endif
+vInteriorTanU = normalize(normalMatrix * tanU);
+vInteriorTanV = normalize(normalMatrix * tanV);`
         );
 
         shader.fragmentShader = shader.fragmentShader.replace(
             '#include <common>',
             `#include <common>
+uniform float uInteriorOpeningAspect;
+uniform float uInteriorImageAspect;
+uniform float uInteriorUvZoom;
 uniform float uInteriorParallax;
+uniform vec2 uInteriorParallaxScale;
+uniform vec2 uInteriorUvPan;
 varying vec2 vInteriorUvOffset;
 varying vec2 vInteriorUvScale;
 varying float vInteriorFlipX;
 varying vec3 vInteriorTint;
+varying vec3 vInteriorTanU;
+varying vec3 vInteriorTanV;
 
 vec3 rgb2hsv(vec3 c){
     vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
@@ -347,31 +378,46 @@ vec3 hsv2rgb(vec3 c){
     vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
     vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
     return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
+vec3 winSrgbToLinear(vec3 c){
+    vec3 lo = c / 12.92;
+    vec3 hi = pow((c + 0.055) / 1.055, vec3(2.4));
+    return mix(lo, hi, step(vec3(0.04045), c));
 }`
         );
 
         shader.fragmentShader = shader.fragmentShader.replace(
             '#include <map_fragment>',
             `#ifdef USE_MAP
-vec2 uvLocal = vMapUv;
+float openingAspect = max(1e-4, uInteriorOpeningAspect);
+float imageAspect = max(1e-4, uInteriorImageAspect);
+float zoom = max(1e-4, uInteriorUvZoom);
+float rel = openingAspect / imageAspect;
+vec2 coverScale = vec2(1.0, 1.0);
+coverScale.y = rel > 1.0 ? rel : 1.0;
+coverScale.x = rel < 1.0 ? (1.0 / max(1e-4, rel)) : 1.0;
+vec2 uvScale = coverScale * zoom;
+vec2 uvLocal = (vMapUv - vec2(0.5)) / uvScale + vec2(0.5) + uInteriorUvPan;
 
 vec3 mvNormal = normalize(vNormal);
 vec3 mvViewDir = normalize(vViewPosition);
-vec3 mvUp = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
-vec3 mvTanU = cross(mvUp, mvNormal);
+vec3 mvTanU = vInteriorTanU;
+mvTanU -= mvNormal * dot(mvNormal, mvTanU);
 mvTanU /= max(1e-5, length(mvTanU));
 vec3 mvTanV = normalize(cross(mvNormal, mvTanU));
 vec3 mvViewTS = vec3(dot(mvViewDir, mvTanU), dot(mvViewDir, mvTanV), dot(mvViewDir, mvNormal));
 
 vec2 parDir = mvViewTS.xy / max(0.35, mvViewTS.z);
-uvLocal = clamp(uvLocal - parDir * clamp(uInteriorParallax, 0.0, 0.25), vec2(0.0), vec2(1.0));
+uvLocal -= (parDir / uvScale) * (clamp(uInteriorParallax, 0.0, 1.0) * max(vec2(1e-3), uInteriorParallaxScale));
+uvLocal = clamp(uvLocal, vec2(0.0), vec2(1.0));
 
 float flipX = step(0.5, vInteriorFlipX);
 uvLocal.x = mix(uvLocal.x, 1.0 - uvLocal.x, flipX);
 
 vec2 atlasUv = vInteriorUvOffset + uvLocal * vInteriorUvScale;
 vec4 texelColor = texture2D(map, atlasUv);
-texelColor = mapTexelToLinear(texelColor);
+texelColor = vec4(winSrgbToLinear(texelColor.rgb), texelColor.a);
 
 vec3 hsv = rgb2hsv(texelColor.rgb);
 hsv.x = fract(hsv.x + vInteriorTint.x);
@@ -387,6 +433,10 @@ diffuseColor *= texelColor;
 
 export function createWindowMeshMaterials(settings, { renderer = null } = {}) {
     const s = sanitizeWindowMeshSettings(settings);
+
+    const openingWidth = Math.max(0.01, s.width - s.frame.width * 2);
+    const openingHeight = Math.max(0.01, s.height - s.frame.width * 2);
+    const openingAspect = openingWidth / openingHeight;
 
     const frameBevel = s.frame.bevel;
     const frameNormalMap = (frameBevel.size > 0.001) ? getBevelNormalTexture(frameBevel) : null;
@@ -444,7 +494,6 @@ export function createWindowMeshMaterials(settings, { renderer = null } = {}) {
     disableIblOnMaterial(shadeMat);
     shadeMat.side = THREE.DoubleSide;
     const aspect = s.height / Math.max(0.01, s.width);
-    const openingHeight = Math.max(0.01, s.height - s.frame.width * 2);
     patchShadeShader(shadeMat, {
         fabricScaleX: s.shade.fabric.scale,
         fabricScaleY: s.shade.fabric.scale * aspect,
@@ -465,12 +514,19 @@ export function createWindowMeshMaterials(settings, { renderer = null } = {}) {
         roughness: 1.0,
         metalness: 0.0,
         emissive: new THREE.Color(0xffffff),
-        emissiveIntensity: 0.6
+        emissiveIntensity: s.interior.emissiveIntensity
     });
     disableIblOnMaterial(interiorMat);
     interiorMat.side = THREE.DoubleSide;
-    const parallaxStrength = clamp((s.interior.parallaxDepthMeters || 0) / 50.0, 0.0, 0.25);
-    patchInteriorShader(interiorMat, { parallaxStrength });
+    const parallaxStrength = clamp((s.interior.parallaxDepthMeters || 0) / 50.0, 0.0, 1.0);
+    patchInteriorShader(interiorMat, {
+        openingAspect,
+        imageAspect: s.interior.imageAspect,
+        uvZoom: s.interior.uvZoom,
+        parallaxStrength,
+        parallaxScale: s.interior.parallaxScale,
+        uvPan: s.interior.uvPan
+    });
     interiorMat.needsUpdate = true;
 
     return {
