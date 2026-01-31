@@ -153,7 +153,7 @@ export class InspectorRoomScene {
             rotateSpeed: 0.9,
             panSpeed: 0.9,
             zoomSpeed: 1.0,
-            minDistance: Math.max(0.15, this._focus.radius * 0.35),
+            minDistance: Math.max(0.02, this._focus.radius * 0.02),
             maxDistance: Math.max(5, this._focus.radius * 80),
             minPolarAngle: 0.001,
             maxPolarAngle: Math.PI - 0.001,
@@ -509,8 +509,8 @@ export class InspectorRoomScene {
         this._focus.radius = nextRadius;
 
         if (this.controls) {
-            const r = Math.max(0.15, Number(nextRadius) || 1);
-            this.controls.minDistance = Math.max(0.15, r * 0.35);
+            const r = Math.max(0.001, Number(nextRadius) || 1);
+            this.controls.minDistance = Math.max(0.02, r * 0.02);
             this.controls.maxDistance = Math.max(5, r * 80);
         }
 
@@ -560,6 +560,115 @@ export class InspectorRoomScene {
             toPosition: pos,
             toTarget: center,
             toUp: up,
+            duration: clamp(duration, 0.05, 2.5)
+        });
+    }
+
+    focusObjectToCoverage(object3d, { coverage = 0.8, duration = 0.22, instant = false } = {}) {
+        if (!this.controls || !this.camera) return;
+        const obj = object3d && typeof object3d === 'object' ? object3d : null;
+        if (!obj) return;
+
+        obj.updateWorldMatrix?.(true, true);
+        const box = new THREE.Box3().setFromObject(obj);
+        if (box.isEmpty()) return;
+
+        const target = new THREE.Vector3();
+        box.getCenter(target);
+
+        const dir = this.camera.position.clone().sub(target);
+        if (dir.lengthSq() < 1e-8) dir.set(1, 0.75, 1);
+        dir.normalize();
+
+        const desiredCoverage = clamp(Number(coverage), 0.05, 0.95);
+        const minDistance = Math.max(0.01, Number(this.controls.minDistance) || 0.01);
+        const maxDistance = Math.max(minDistance, Number(this.controls.maxDistance) || minDistance);
+
+        const corners = [
+            new THREE.Vector3(box.min.x, box.min.y, box.min.z),
+            new THREE.Vector3(box.min.x, box.min.y, box.max.z),
+            new THREE.Vector3(box.min.x, box.max.y, box.min.z),
+            new THREE.Vector3(box.min.x, box.max.y, box.max.z),
+            new THREE.Vector3(box.max.x, box.min.y, box.min.z),
+            new THREE.Vector3(box.max.x, box.min.y, box.max.z),
+            new THREE.Vector3(box.max.x, box.max.y, box.min.z),
+            new THREE.Vector3(box.max.x, box.max.y, box.max.z)
+        ];
+
+        const scratch = new THREE.PerspectiveCamera(
+            Number(this.camera.fov) || 55,
+            Number(this.camera.aspect) || 1,
+            Number(this.camera.near) || 0.1,
+            Number(this.camera.far) || 500
+        );
+        scratch.up.copy(this.camera.up);
+        scratch.updateProjectionMatrix();
+
+        const projected = new THREE.Vector3();
+        const coverageAtDistance = (distance) => {
+            scratch.position.copy(target).addScaledVector(dir, distance);
+            scratch.up.copy(this.camera.up);
+            scratch.lookAt(target);
+            scratch.updateMatrixWorld(true);
+
+            let minX = Infinity;
+            let maxX = -Infinity;
+            let minY = Infinity;
+            let maxY = -Infinity;
+
+            for (const corner of corners) {
+                projected.copy(corner).project(scratch);
+                const x = projected.x;
+                const y = projected.y;
+                if (!(Number.isFinite(x) && Number.isFinite(y))) return Infinity;
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+
+            const width = maxX - minX;
+            const height = maxY - minY;
+            if (!(Number.isFinite(width) && Number.isFinite(height))) return Infinity;
+            return 0.5 * Math.max(width, height);
+        };
+
+        const coverageMin = coverageAtDistance(minDistance);
+        const coverageMax = coverageAtDistance(maxDistance);
+
+        let distance = clamp(this._getFitDistance(), minDistance, maxDistance);
+        if (coverageMin <= desiredCoverage) {
+            distance = minDistance;
+        } else if (coverageMax >= desiredCoverage) {
+            distance = maxDistance;
+        } else {
+            let lo = minDistance;
+            let hi = maxDistance;
+            for (let i = 0; i < 26; i++) {
+                const mid = (lo + hi) * 0.5;
+                const c = coverageAtDistance(mid);
+                if (c >= desiredCoverage) lo = mid;
+                else hi = mid;
+            }
+            distance = (lo + hi) * 0.5;
+        }
+
+        const toPosition = target.clone().add(dir.clone().multiplyScalar(distance));
+        const toTarget = target.clone();
+        const toUp = this.camera.up.clone();
+
+        if (instant) {
+            this._applyCameraPose({ position: toPosition, target: toTarget, up: toUp });
+            return;
+        }
+
+        this._startCameraTween({
+            fromPosition: this.camera.position.clone(),
+            fromTarget: this.controls?.target?.clone?.() ?? toTarget.clone(),
+            fromUp: this.camera.up.clone(),
+            toPosition,
+            toTarget,
+            toUp,
             duration: clamp(duration, 0.05, 2.5)
         });
     }

@@ -1,4 +1,4 @@
-// src/graphics/gui/grass_debugger/view/GrassBladeInspectorPopup.js
+// src/graphics/gui/terrain_debugger/view/GrassBladeInspectorPopup.js
 // Popup viewport for inspecting grass blade/tuft geometry with a separate renderer.
 // @ts-check
 

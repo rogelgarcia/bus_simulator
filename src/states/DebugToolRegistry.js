@@ -38,11 +38,18 @@ export const DEBUG_TOOL_REGISTRY = Object.freeze([
         href: 'debug_tools/window_mesh_debug.html'
     }),
     Object.freeze({
-        id: 'grass_debug',
+        id: 'terrain_debug',
         key: '6',
-        label: 'Grass',
+        label: 'Terrain',
         description: 'Terrain + IBL + ground material look-dev',
-        href: 'debug_tools/grass_debug.html'
+        href: 'debug_tools/terrain_debug.html'
+    }),
+    Object.freeze({
+        id: 'grass_lod_debug',
+        key: '7',
+        label: 'Grass',
+        description: 'Grass LOD experiments + blade inspector',
+        href: 'debug_tools/grass_lod_debug.html'
     })
 ]);
 

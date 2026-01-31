@@ -7,6 +7,8 @@ import * as StopSignMeshV1 from '../../assets3d/procedural_meshes/meshes/StopSig
 import * as TrafficLightPoleMeshV1 from '../procedural_meshes/meshes/TrafficLightPoleMesh_v1.js';
 import * as TrafficLightHeadMeshV1 from '../procedural_meshes/meshes/TrafficLightHeadMesh_v1.js';
 import * as TrafficLightMeshV1 from '../procedural_meshes/meshes/TrafficLightMesh_v1.js';
+import * as SoccerGrassBladeMeshV1 from '../procedural_meshes/meshes/SoccerGrassBladeMesh_v1.js';
+import * as SoccerGrassBladeHiResMeshV1 from '../procedural_meshes/meshes/SoccerGrassBladeHiResMesh_v1.js';
 
 export const PROCEDURAL_MESH = Object.freeze({
     BALL_V1: BallMeshV1.MESH_ID,
@@ -15,16 +17,20 @@ export const PROCEDURAL_MESH = Object.freeze({
     TRAFFIC_LIGHT_HEAD_V1: TrafficLightHeadMeshV1.MESH_ID,
     TRAFFIC_LIGHT_V1: TrafficLightMeshV1.MESH_ID,
     STOP_SIGN_PLATE_V1: StopSignPlateMeshV1.MESH_ID,
-    STOP_SIGN_V1: StopSignMeshV1.MESH_ID
+    STOP_SIGN_V1: StopSignMeshV1.MESH_ID,
+    SOCCER_GRASS_BLADE_V1: SoccerGrassBladeMeshV1.MESH_ID,
+    SOCCER_GRASS_BLADE_HIRES_V1: SoccerGrassBladeHiResMeshV1.MESH_ID
 });
 
 export const PROCEDURAL_MESH_COLLECTION = Object.freeze({
     DEBUG: 'mesh_collection.debug',
+    FOLIAGE: 'mesh_collection.foliage',
     URBAN: 'mesh_collection.urban'
 });
 
 export const PROCEDURAL_MESH_COLLECTIONS = Object.freeze([
     { id: PROCEDURAL_MESH_COLLECTION.URBAN, label: 'Urban' },
+    { id: PROCEDURAL_MESH_COLLECTION.FOLIAGE, label: 'Foliage' },
     { id: PROCEDURAL_MESH_COLLECTION.DEBUG, label: 'Debug' }
 ]);
 
@@ -35,7 +41,9 @@ const MESH_MODULES = [
     TrafficLightHeadMeshV1,
     TrafficLightMeshV1,
     StopSignPlateMeshV1,
-    StopSignMeshV1
+    StopSignMeshV1,
+    SoccerGrassBladeMeshV1,
+    SoccerGrassBladeHiResMeshV1
 ];
 
 const MESH_BY_ID = new Map(MESH_MODULES.map((mesh) => [mesh.MESH_ID, mesh]));
@@ -47,7 +55,9 @@ const COLLECTION_BY_MESH_ID = new Map([
     [PROCEDURAL_MESH.STOP_SIGN_V1, PROCEDURAL_MESH_COLLECTION.URBAN],
     [PROCEDURAL_MESH.TRAFFIC_LIGHT_POLE_V1, PROCEDURAL_MESH_COLLECTION.URBAN],
     [PROCEDURAL_MESH.TRAFFIC_LIGHT_HEAD_V1, PROCEDURAL_MESH_COLLECTION.URBAN],
-    [PROCEDURAL_MESH.TRAFFIC_LIGHT_V1, PROCEDURAL_MESH_COLLECTION.URBAN]
+    [PROCEDURAL_MESH.TRAFFIC_LIGHT_V1, PROCEDURAL_MESH_COLLECTION.URBAN],
+    [PROCEDURAL_MESH.SOCCER_GRASS_BLADE_V1, PROCEDURAL_MESH_COLLECTION.FOLIAGE],
+    [PROCEDURAL_MESH.SOCCER_GRASS_BLADE_HIRES_V1, PROCEDURAL_MESH_COLLECTION.FOLIAGE]
 ]);
 
 export function getProceduralMeshCollectionId(meshId) {

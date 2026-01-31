@@ -1,4 +1,4 @@
-/* src/graphics/gui/grass_debugger/styles.css */
+/* src/graphics/gui/terrain_debugger/styles.css */
 
 .ui-grass-inspector-overlay {
     position: fixed;
@@ -98,40 +98,4 @@
     .ui-grass-inspector-controls {
         max-width: none;
     }
-}
-
-.ui-grass-debugger-distance-panel {
-    position: fixed;
-    left: 14px;
-    bottom: 14px;
-    z-index: 120;
-    min-width: 0;
-    max-width: min(360px, calc(100vw - 28px));
-    padding: 10px 12px;
-    font-size: 12px;
-    line-height: 1.2;
-    font-variant-numeric: tabular-nums;
-}
-
-.ui-grass-debugger-distance-row {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 12px;
-}
-
-.ui-grass-debugger-distance-row + .ui-grass-debugger-distance-row {
-    margin-top: 6px;
-}
-
-.ui-grass-debugger-distance-label {
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 0.4px;
-    text-transform: uppercase;
-    opacity: 0.78;
-}
-
-.ui-grass-debugger-distance-value {
-    font-weight: 900;
 }

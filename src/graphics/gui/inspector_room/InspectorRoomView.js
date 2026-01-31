@@ -145,6 +145,15 @@ export class InspectorRoomView {
         this._pointerDown = null;
         this._pointerMoved = false;
 
+        this._keys = {
+            ArrowUp: false,
+            ArrowDown: false,
+            ArrowLeft: false,
+            ArrowRight: false,
+            ShiftLeft: false,
+            ShiftRight: false
+        };
+
         const stored = readStoredSelection();
         this._selection = stored ?? {
             mode: 'meshes',
@@ -156,6 +165,7 @@ export class InspectorRoomView {
         this.onExit = null;
 
         this._onKeyDown = (e) => this._handleKeyDown(e);
+        this._onKeyUp = (e) => this._handleKeyUp(e);
         this._onContextMenu = (e) => this._handleContextMenu(e);
         this._onPointerMove = (e) => this._handlePointerMove(e);
         this._onPointerDown = (e) => this._handlePointerDown(e);
@@ -259,6 +269,7 @@ export class InspectorRoomView {
             this.room.setPlaneVisible(enabled);
             this.ui.setAxisLegendState({ planeEnabled: this.room.getPlaneVisible() });
         };
+        this.ui.onFocusSubject = () => this._focusSubject();
 
         this.ui.onLightChange = (light) => {
             this.room.setLightPosition(light);
@@ -311,6 +322,7 @@ export class InspectorRoomView {
         if (storedLight) this._persistLightFromUi();
 
         window.addEventListener('keydown', this._onKeyDown, { passive: false });
+        window.addEventListener('keyup', this._onKeyUp, { passive: false });
         this.canvas.addEventListener('contextmenu', this._onContextMenu, { passive: false });
         this.canvas.addEventListener('pointermove', this._onPointerMove, { passive: true });
         this.canvas.addEventListener('pointerdown', this._onPointerDown, { passive: true });
@@ -325,6 +337,7 @@ export class InspectorRoomView {
         }
 
         window.removeEventListener('keydown', this._onKeyDown);
+        window.removeEventListener('keyup', this._onKeyUp);
         this.canvas.removeEventListener('contextmenu', this._onContextMenu);
         this.canvas.removeEventListener('pointermove', this._onPointerMove);
         this.canvas.removeEventListener('pointerdown', this._onPointerDown);
@@ -358,6 +371,7 @@ export class InspectorRoomView {
         this.ui.onLightIntensityChange = null;
         this.ui.onLightColorChange = null;
         this.ui.onCameraPreset = null;
+        this.ui.onFocusSubject = null;
 
         this.ui.unmount();
         this.room.setUiRoot(null);
@@ -367,14 +381,49 @@ export class InspectorRoomView {
         this.room.dispose();
 
         this._clearMeshSelection();
+        for (const key of Object.keys(this._keys)) this._keys[key] = false;
     }
 
     update(dt) {
+        this._updateCameraFromKeys(dt);
         this.room.update(dt);
         this.meshes.update();
         this.textures.update();
         this._syncLightMapBasis();
         this._syncViewportOverlays();
+    }
+
+    _updateCameraFromKeys(dt) {
+        const controls = this.room?.controls ?? null;
+        const camera = this.engine?.camera ?? null;
+        if (!controls || !controls.enabled || !camera) return;
+
+        const moveX = (this._keys.ArrowRight ? 1 : 0) - (this._keys.ArrowLeft ? 1 : 0);
+        const moveZ = (this._keys.ArrowDown ? 1 : 0) - (this._keys.ArrowUp ? 1 : 0);
+        if (!moveX && !moveZ) return;
+
+        const orbit = controls.getOrbit?.() ?? null;
+        const radius = Number(orbit?.radius) || 1;
+        const baseSpeed = clamp(radius * 1.1, 0.35, 28);
+        const fast = this._keys.ShiftLeft || this._keys.ShiftRight;
+        const speed = baseSpeed * (fast ? 3 : 1) * Math.max(0, Number(dt) || 0);
+
+        const forward = new THREE.Vector3();
+        camera.getWorldDirection(forward);
+        if (forward.lengthSq() < 1e-8) return;
+        forward.normalize();
+
+        const right = forward.clone().cross(UP);
+        if (right.lengthSq() < 1e-8) return;
+        right.normalize();
+
+        const move = new THREE.Vector3();
+        move.addScaledVector(right, moveX);
+        move.addScaledVector(forward, moveZ);
+        if (move.lengthSq() < 1e-8) return;
+        move.normalize().multiplyScalar(speed);
+
+        controls.panWorld?.(move.x, move.y, move.z);
     }
 
     _syncLightMapBasis() {
@@ -484,11 +533,32 @@ export class InspectorRoomView {
         if (code === 'Escape' || key === 'Escape') {
             e.preventDefault();
             this.onExit?.();
+            return;
+        }
+
+        if (code in this._keys) {
+            if (isInteractiveElement(e.target) || isInteractiveElement(document.activeElement)) return;
+            e.preventDefault();
+            this._keys[code] = true;
+        }
+    }
+
+    _handleKeyUp(e) {
+        const code = e.code;
+        if (code in this._keys) {
+            e.preventDefault();
+            this._keys[code] = false;
         }
     }
 
     _handleContextMenu(e) {
         e.preventDefault();
+    }
+
+    _focusSubject() {
+        const provider = this._active ?? null;
+        const object3d = provider?.getMeasurementObject3d?.() ?? null;
+        this.room.focusObjectToCoverage?.(object3d, { coverage: 0.8, duration: 0.22 });
     }
 
     _setMode(modeId, { user = false, instantCamera = false } = {}) {

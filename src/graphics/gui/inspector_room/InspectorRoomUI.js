@@ -195,6 +195,7 @@ export class InspectorRoomUI {
         this.onGridToggle = null;
         this.onPlaneToggle = null;
         this.onMeasurementsToggle = null;
+        this.onFocusSubject = null;
 
         this.onLightChange = null;
         this.onLightMarkerToggle = null;
@@ -386,6 +387,7 @@ export class InspectorRoomUI {
             this._syncAxisLegendState();
             this.onMeasurementsToggle?.(this._measurementsEnabled);
         };
+        this._onFocusSubject = () => this.onFocusSubject?.();
 
         this._onLightMarker = () => {
             this._lightMarkerEnabled = !this._lightMarkerEnabled;
@@ -1281,6 +1283,11 @@ export class InspectorRoomUI {
         this.axisActions = document.createElement('div');
         this.axisActions.className = 'inspector-room-axis-actions';
 
+        this.focusBtn = document.createElement('button');
+        this.focusBtn.type = 'button';
+        this.focusBtn.className = 'inspector-room-mini-btn';
+        applyMaterialSymbolToButton(this.focusBtn, { name: 'center_focus_strong', label: 'Focus subject', size: 'sm' });
+
         this.labelsBtn = document.createElement('button');
         this.labelsBtn.type = 'button';
         this.labelsBtn.className = 'inspector-room-mini-btn';
@@ -1315,6 +1322,7 @@ export class InspectorRoomUI {
         this.measureBtn.className = 'inspector-room-mini-btn';
         applyMaterialSymbolToButton(this.measureBtn, { name: 'straighten', label: 'Toggle measurements', size: 'sm' });
 
+        this.axisActions.appendChild(this.focusBtn);
         this.axisActions.appendChild(this.labelsBtn);
         this.axisActions.appendChild(this.axisLinesBtn);
         this.axisActions.appendChild(this.axisAlwaysBtn);
@@ -1580,6 +1588,24 @@ export class InspectorRoomUI {
         const schema = groupApi?.schema ?? null;
         if (!schema) return;
 
+        const clampHex = (value, fallbackHex) => {
+            const n = Number(value);
+            if (!Number.isFinite(n)) return fallbackHex;
+            return (n >>> 0) & 0xffffff;
+        };
+
+        const colorHexToCss = (hex) => `#${clampHex(hex, 0xffffff).toString(16).padStart(6, '0')}`;
+
+        const cssToColorHex = (css, fallbackHex) => {
+            const raw = typeof css === 'string' ? css.trim() : '';
+            if (!raw) return fallbackHex;
+            const s = raw.startsWith('#') ? raw.slice(1) : raw;
+            if (!/^[0-9a-fA-F]{6}$/.test(s)) return fallbackHex;
+            const parsed = Number.parseInt(s, 16);
+            if (!Number.isFinite(parsed)) return fallbackHex;
+            return parsed & 0xffffff;
+        };
+
         const container = document.createElement('div');
         container.className = isChild ? 'inspector-room-controls-group' : 'inspector-room-controls-root';
 
@@ -1645,6 +1671,41 @@ export class InspectorRoomUI {
                     select.value = getValue(propId) ?? select.value;
                 });
                 control.appendChild(select);
+            } else if (prop?.type === 'color') {
+                const wrap = document.createElement('div');
+                wrap.className = 'inspector-room-control-color';
+
+                const picker = document.createElement('input');
+                picker.type = 'color';
+                picker.className = 'inspector-room-control-color-picker';
+
+                const value = document.createElement('div');
+                value.className = 'inspector-room-control-color-value';
+
+                const defaultHex = clampHex(prop.defaultValue, 0xffffff);
+                const readHex = () => {
+                    const current = getValue(propId);
+                    if (typeof current === 'string') return cssToColorHex(current, defaultHex);
+                    return clampHex(current ?? defaultHex, defaultHex);
+                };
+
+                const sync = () => {
+                    const next = cssToColorHex(picker.value, defaultHex);
+                    setValue(propId, next);
+                    const applied = readHex();
+                    picker.value = colorHexToCss(applied);
+                    value.textContent = picker.value.toUpperCase();
+                };
+
+                const initial = readHex();
+                picker.value = colorHexToCss(initial);
+                value.textContent = picker.value.toUpperCase();
+                picker.addEventListener('input', sync);
+                picker.addEventListener('change', sync);
+
+                wrap.appendChild(picker);
+                wrap.appendChild(value);
+                control.appendChild(wrap);
             } else if (prop?.type === 'number') {
                 const wrap = document.createElement('div');
                 wrap.className = 'inspector-room-control-number';
@@ -2014,6 +2075,7 @@ export class InspectorRoomUI {
         this.gridBtn.addEventListener('click', this._onGridToggle);
         this.planeBtn.addEventListener('click', this._onPlaneToggle);
         this.measureBtn.addEventListener('click', this._onMeasurementsToggle);
+        this.focusBtn.addEventListener('click', this._onFocusSubject);
 
         this.lightMarkerBtn.addEventListener('click', this._onLightMarker);
         this.lightEnabledBtn.addEventListener('click', this._onLightEnabled);
@@ -2093,6 +2155,7 @@ export class InspectorRoomUI {
         this.gridBtn.removeEventListener('click', this._onGridToggle);
         this.planeBtn.removeEventListener('click', this._onPlaneToggle);
         this.measureBtn.removeEventListener('click', this._onMeasurementsToggle);
+        this.focusBtn.removeEventListener('click', this._onFocusSubject);
 
         this.lightMarkerBtn.removeEventListener('click', this._onLightMarker);
         this.lightEnabledBtn.removeEventListener('click', this._onLightEnabled);

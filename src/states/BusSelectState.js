@@ -334,6 +334,7 @@ export class BusSelectState {
         const code = e.code;
         const key = e.key;
 
+        const isEsc = code === 'Escape' || key === 'Escape' || key === 'Esc';
         const isLeft =
             code === 'ArrowLeft' || key === 'ArrowLeft' || code === 'KeyA' || key === 'a' || key === 'A';
         const isRight =
@@ -343,7 +344,12 @@ export class BusSelectState {
         const isSpace = code === 'Space' || key === ' ' || key === 'Spacebar';
         const isG = code === 'KeyG' || key === 'g' || key === 'G';
 
-        if (isLeft || isRight || isEnter || isSpace || isG) e.preventDefault();
+        if (isEsc || isLeft || isRight || isEnter || isSpace || isG) e.preventDefault();
+
+        if (isEsc) {
+            this.sm.go('welcome');
+            return;
+        }
 
         if (isLeft) this._moveActive(-1);
         if (isRight) this._moveActive(1);

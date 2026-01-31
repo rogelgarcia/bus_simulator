@@ -1619,11 +1619,11 @@ async function runTests() {
         console.error(`❌ Assets: public assets served: ${e?.message || e}`);
     }
 
-    test('Welcome: debug shortcut hint is visible', () => {
+    test('Welcome: debug shortcut hint is hidden', () => {
         const welcome = document.getElementById('ui-welcome');
         assertTrue(!!welcome, 'Expected #ui-welcome to exist.');
         const text = String(welcome.textContent ?? '');
-        assertTrue(text.includes('8: Debugs'), 'Expected welcome screen to mention "8: Debugs".');
+        assertFalse(text.includes('8: Debugs'), 'Expected welcome screen to NOT mention "8: Debugs".');
     });
 
     test('PerfBar: present and canvas respects top inset', () => {

@@ -1,4 +1,4 @@
-// src/graphics/gui/grass_debugger/view/GrassLodInspectorPopup.js
+// src/graphics/gui/terrain_debugger/view/GrassLodInspectorPopup.js
 // Popup viewport for inspecting and editing a single grass LOD tier with a separate renderer.
 // @ts-check
 
@@ -658,4 +658,3 @@ export class GrassLodInspectorPopup {
         o.radius = clamp(o.radius * factor, 0.15, 20.0, o.radius);
     }
 }
-

@@ -4,7 +4,8 @@
 export const RIG_PROPERTY_TYPE = Object.freeze({
     ENUM: 'enum',
     NUMBER: 'number',
-    BOOLEAN: 'boolean'
+    BOOLEAN: 'boolean',
+    COLOR: 'color'
 });
 
 export function createEnumProperty({ id, label, options, defaultValue } = {}) {
@@ -66,6 +67,47 @@ export function createBooleanProperty({ id, label, defaultValue = false } = {}) 
     });
 }
 
+export function normalizeColorHex(value, fallback = 0xffffff) {
+    const parseHex = (input) => {
+        if (typeof input === 'number') {
+            if (!Number.isFinite(input)) return null;
+            return (input >>> 0) & 0xffffff;
+        }
+
+        if (typeof input !== 'string') return null;
+        let s = input.trim();
+        if (!s) return null;
+        if (s.startsWith('#')) s = s.slice(1);
+        if (s.startsWith('0x') || s.startsWith('0X')) s = s.slice(2);
+        if (!/^[0-9a-fA-F]{6}$/.test(s)) return null;
+        const parsed = Number.parseInt(s, 16);
+        if (!Number.isFinite(parsed)) return null;
+        return (parsed >>> 0) & 0xffffff;
+    };
+
+    const direct = parseHex(value);
+    if (direct !== null) return direct;
+
+    const fallbackHex = parseHex(fallback);
+    if (fallbackHex !== null) return fallbackHex;
+
+    return 0xffffff;
+}
+
+export function createColorProperty({ id, label, defaultValue = 0xffffff } = {}) {
+    const safeId = typeof id === 'string' ? id : '';
+    if (!safeId) throw new Error('[RigSchema] Color property id must be a non-empty string.');
+    const safeLabel = typeof label === 'string' && label ? label : safeId;
+    const safeDefault = normalizeColorHex(defaultValue, 0xffffff);
+
+    return Object.freeze({
+        type: RIG_PROPERTY_TYPE.COLOR,
+        id: safeId,
+        label: safeLabel,
+        defaultValue: safeDefault
+    });
+}
+
 export function normalizeEnumValue(value, options, fallback) {
     const id = typeof value === 'string' ? value : '';
     const list = Array.isArray(options) ? options : [];
@@ -93,4 +135,3 @@ export function isRigApi(api) {
         && typeof api.getValue === 'function'
         && typeof api.setValue === 'function';
 }
-
