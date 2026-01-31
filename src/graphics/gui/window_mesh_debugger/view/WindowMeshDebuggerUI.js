@@ -786,14 +786,14 @@ export class WindowMeshDebuggerUI {
         const presetControl = makeEl('div', 'options-row-control options-row-control-wide');
         const presetButtons = makeEl('div', 'options-choice-group');
 
-        const applyArchPreset = ({ meetsRectangleFrame, topPieceMode, clipVerticalMuntinsToRectWhenNoTopPiece }) => {
+        const applyArchPreset = ({ meetsRectangleFrame, topPieceMode: presetTopPieceMode, clipVerticalMuntinsToRectWhenNoTopPiece }) => {
             const s = this._state.settings;
             this._setSettings({
                 arch: {
                     ...s.arch,
                     enabled: true,
                     meetsRectangleFrame: !!meetsRectangleFrame,
-                    topPieceMode: String(topPieceMode ?? s.arch.topPieceMode),
+                    topPieceMode: String(presetTopPieceMode ?? s.arch.topPieceMode),
                     clipVerticalMuntinsToRectWhenNoTopPiece: !!clipVerticalMuntinsToRectWhenNoTopPiece
                 },
                 muntins: { ...s.muntins, enabled: true, columns: 2, rows: 2 }

@@ -114,6 +114,25 @@ function isInteractiveElement(target) {
     return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || target?.isContentEditable;
 }
 
+function isTextEditingElement(target) {
+    const tag = target?.tagName;
+    if (!tag) return false;
+    if (target?.isContentEditable) return true;
+    if (tag === 'TEXTAREA') return true;
+    if (tag !== 'INPUT') return false;
+
+    const type = String(target.type ?? '').toLowerCase();
+    if (!type) return true;
+    return (
+        type === 'text'
+        || type === 'search'
+        || type === 'email'
+        || type === 'password'
+        || type === 'url'
+        || type === 'tel'
+    );
+}
+
 function applyTextureColorSpace(tex, { srgb = true } = {}) {
     if (!tex) return;
     if ('colorSpace' in tex) {
@@ -1084,10 +1103,10 @@ export class GrassDebuggerView {
 
     _handleKey(e, isDown) {
         if (!e) return;
-        if (isInteractiveElement(e.target) || isInteractiveElement(document.activeElement)) return;
         const code = e.code;
         if (!(code in this._keys)) return;
-        e.preventDefault();
+        if (isDown && (isTextEditingElement(e.target) || isTextEditingElement(document.activeElement))) return;
+        if (isDown) e.preventDefault();
         this._keys[code] = !!isDown;
     }
 
@@ -1601,6 +1620,7 @@ export class GrassDebuggerView {
         if (ui && this._grassEngine && t - (this._grassStatsLastMs || 0) > 250) {
             this._grassStatsLastMs = t;
             ui.setGrassStats?.(this._grassEngine.getStats());
+            ui.setGrassLodDebugInfo?.(this._grassEngine.getLodDebugInfo());
         }
 
         const gpuTimer = this._gpuFrameTimer;

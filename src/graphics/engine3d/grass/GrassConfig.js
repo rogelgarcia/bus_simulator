@@ -110,7 +110,8 @@ export function createDefaultGrassEngineConfig() {
             }
         },
         debug: {
-            showLodRings: true
+            showLodRings: true,
+            showLodAngleScaledRings: false
         },
         field: makeDefaultField(),
         exclusion: {
@@ -203,7 +204,8 @@ export function sanitizeGrassEngineConfig(input) {
 
     const debugSrc = src.debug && typeof src.debug === 'object' ? src.debug : {};
     const debug = {
-        showLodRings: debugSrc.showLodRings !== false
+        showLodRings: debugSrc.showLodRings !== false,
+        showLodAngleScaledRings: debugSrc.showLodAngleScaledRings === true
     };
 
     const resolveLegacyField = () => {

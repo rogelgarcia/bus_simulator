@@ -420,6 +420,8 @@ export class GrassEngine {
         };
 
         this._lodRings = null;
+        this._lodAngleScaledRings = null;
+        this._lodDebugInfo = { viewAngleDeg: 0, angleScale: 1, masterActiveByAngle: false };
 
         this._tmpFrustum = new THREE.Frustum();
         this._tmpMatrix = new THREE.Matrix4();
@@ -516,6 +518,10 @@ export class GrassEngine {
             this._lodRings?.removeFromParent?.();
             this._lodRings = this._buildLodRings();
             if (this._lodRings) this.group.add(this._lodRings);
+
+            this._lodAngleScaledRings?.removeFromParent?.();
+            this._lodAngleScaledRings = this._buildAngleScaledLodRings();
+            if (this._lodAngleScaledRings) this.group.add(this._lodAngleScaledRings);
         }
         this._lodRingsKey = nextRingsKey;
     }
@@ -558,15 +564,47 @@ export class GrassEngine {
         };
     }
 
+    getLodDebugInfo() {
+        const d = this._lodDebugInfo ?? {};
+        return {
+            viewAngleDeg: Number(d.viewAngleDeg) || 0,
+            angleScale: Number(d.angleScale) || 1,
+            masterActiveByAngle: !!d.masterActiveByAngle
+        };
+    }
+
     update({ camera } = {}) {
         const cfg = this._config;
+        const cam = camera?.isCamera ? camera : null;
+        let viewAngleDeg = 0;
+        let angleScale = 1;
+        if (cam) {
+            cam.getWorldDirection(this._tmpCamDir);
+            viewAngleDeg = THREE.MathUtils.radToDeg(Math.asin(clamp(Math.abs(this._tmpCamDir.y), 0, 1, 0)));
+
+            const grazingDeg = clamp(cfg?.lod?.angle?.grazingDeg, 0.0, 89.0, 12.0);
+            const topDownDeg = clamp(cfg?.lod?.angle?.topDownDeg, grazingDeg + 0.01, 90.0, 70.0);
+            const angleT = clamp((viewAngleDeg - grazingDeg) / (topDownDeg - grazingDeg), 0.0, 1.0, 0.0);
+            const scaleG = clamp(cfg?.lod?.angle?.grazingDistanceScale, 0.1, 10.0, 0.78);
+            const scaleT = clamp(cfg?.lod?.angle?.topDownDistanceScale, 0.1, 10.0, 1.22);
+            angleScale = scaleG + (scaleT - scaleG) * angleT;
+
+            const enableMaster = cfg?.lod?.enableMaster !== false;
+            const masterMaxDeg = clamp(cfg?.lod?.angle?.masterMaxDeg, 0.0, 89.0, 18.0);
+            const masterDist = Math.max(0, Number(cfg?.lod?.distances?.master) || 0);
+            this._lodDebugInfo.viewAngleDeg = viewAngleDeg;
+            this._lodDebugInfo.angleScale = angleScale;
+            this._lodDebugInfo.masterActiveByAngle = enableMaster && viewAngleDeg <= masterMaxDeg && masterDist > EPS;
+        }
+
         if (!cfg.enabled) {
             this.group.visible = false;
+            this._updateLodRings({ camera: cam });
+            this._updateAngleScaledLodRings({ camera: cam, viewAngleDeg, angleScale });
             return;
         }
         this.group.visible = true;
 
-        const cam = camera?.isCamera ? camera : null;
         const terrainGrid = this._terrainGrid;
         const terrainGeo = this._terrainMesh?.geometry;
         const posAttr = terrainGeo?.attributes?.position ?? null;
@@ -585,14 +623,6 @@ export class GrassEngine {
         const anyDensity = baseDensity > EPS;
 
         const cutoff = Math.max(0, Number(cfg?.lod?.distances?.cutoff) || 0);
-        cam.getWorldDirection(this._tmpCamDir);
-        const viewAngleDeg = THREE.MathUtils.radToDeg(Math.asin(clamp(Math.abs(this._tmpCamDir.y), 0, 1, 0)));
-        const grazingDeg = clamp(cfg?.lod?.angle?.grazingDeg, 0.0, 89.0, 12.0);
-        const topDownDeg = clamp(cfg?.lod?.angle?.topDownDeg, grazingDeg + 0.01, 90.0, 70.0);
-        const angleT = clamp((viewAngleDeg - grazingDeg) / (topDownDeg - grazingDeg), 0.0, 1.0, 0.0);
-        const scaleG = clamp(cfg?.lod?.angle?.grazingDistanceScale, 0.1, 10.0, 0.78);
-        const scaleT = clamp(cfg?.lod?.angle?.topDownDistanceScale, 0.1, 10.0, 1.22);
-        const angleScale = scaleG + (scaleT - scaleG) * angleT;
 
         const tierIntervals = this._getTierActiveIntervals(viewAngleDeg);
         const exclusionRects = this._getExpandedExclusionRects();
@@ -661,6 +691,7 @@ export class GrassEngine {
         }
 
         this._updateLodRings({ camera: cam });
+        this._updateAngleScaledLodRings({ camera: cam, viewAngleDeg, angleScale });
     }
 
     _syncLodShaderState() {
@@ -1150,12 +1181,23 @@ export class GrassEngine {
             this._lodRings.removeFromParent();
             this._lodRings = null;
         }
+
+        if (this._lodAngleScaledRings) {
+            this._lodAngleScaledRings.traverse((c) => {
+                c?.geometry?.dispose?.();
+                c?.material?.dispose?.();
+            });
+            this._lodAngleScaledRings.removeFromParent();
+            this._lodAngleScaledRings = null;
+        }
     }
 
     _rebuildDebugOverlays() {
         this._disposeDebugOverlays();
         this._lodRings = this._buildLodRings();
         if (this._lodRings) this.group.add(this._lodRings);
+        this._lodAngleScaledRings = this._buildAngleScaledLodRings();
+        if (this._lodAngleScaledRings) this.group.add(this._lodAngleScaledRings);
         this._lodRingsKey = this._getLodRingsKey(this._config);
     }
 
@@ -1214,6 +1256,60 @@ export class GrassEngine {
         return group;
     }
 
+    _buildAngleScaledLodRings() {
+        const cfg = this._config;
+        const d = cfg.lod?.distances ?? null;
+        if (!d) return null;
+
+        const tiers = [
+            ...(cfg.lod?.enableMaster !== false ? [{ tier: 'master', dist: Math.max(0, Number(d.master) || 0) }] : []),
+            { tier: 'near', dist: Math.max(0, Number(d.near) || 0) },
+            { tier: 'mid', dist: Math.max(0, Number(d.mid) || 0) },
+            { tier: 'far', dist: Math.max(0, Number(d.far) || 0) },
+            { tier: 'cutoff', dist: Math.max(0, Number(d.cutoff) || 0) }
+        ].filter((t) => (Number(t.dist) || 0) > EPS);
+        if (!tiers.length) return null;
+
+        const group = new THREE.Group();
+        group.name = 'GrassLodAngleScaledRings';
+        group.visible = !!cfg.debug?.showLodAngleScaledRings;
+
+        const segments = 128;
+        const makeRing = ({ color, tier, baseDistance }) => {
+            const pts = [];
+            for (let i = 0; i <= segments; i++) {
+                const t = (i / segments) * Math.PI * 2;
+                pts.push(new THREE.Vector3(Math.cos(t), 0, Math.sin(t)));
+            }
+            const geo = new THREE.BufferGeometry().setFromPoints(pts);
+            const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.85 });
+            const line = new THREE.Line(geo, mat);
+            line.frustumCulled = false;
+            line.renderOrder = 21;
+            line.userData = line.userData ?? {};
+            line.userData.baseDistance = Number(baseDistance) || 0;
+            line.userData.tier = String(tier ?? '');
+            return line;
+        };
+
+        const colors = {
+            master: 0xdddddd,
+            near: 0x76d37a,
+            mid: 0x58a7ff,
+            far: 0xffb84a,
+            cutoff: 0xff5c63
+        };
+
+        for (const entry of tiers) {
+            const tier = String(entry.tier ?? '');
+            const baseDistance = Math.max(0, Number(entry.dist) || 0);
+            const color = colors[tier] ?? 0xffffff;
+            group.add(makeRing({ color, tier, baseDistance }));
+        }
+
+        return group;
+    }
+
     _updateLodRings({ camera } = {}) {
         const rings = this._lodRings;
         if (!rings) return;
@@ -1223,5 +1319,47 @@ export class GrassEngine {
         const cam = camera?.isCamera ? camera : null;
         if (!cam) return;
         rings.position.set(cam.position.x, (this._terrainGrid?.minY ?? 0) + 0.05, cam.position.z);
+    }
+
+    _updateAngleScaledLodRings({ camera, viewAngleDeg = null, angleScale = null } = {}) {
+        const rings = this._lodAngleScaledRings;
+        if (!rings) return;
+        rings.visible = !!this._config.debug?.showLodAngleScaledRings;
+        if (!rings.visible) return;
+
+        const cam = camera?.isCamera ? camera : null;
+        if (!cam) return;
+        rings.position.set(cam.position.x, (this._terrainGrid?.minY ?? 0) + 0.12, cam.position.z);
+
+        const cfg = this._config;
+        let viewAngle = Number(viewAngleDeg);
+        let scale = Number(angleScale);
+        if (!(Number.isFinite(viewAngle) && Number.isFinite(scale) && scale > EPS)) {
+            cam.getWorldDirection(this._tmpCamDir);
+            viewAngle = THREE.MathUtils.radToDeg(Math.asin(clamp(Math.abs(this._tmpCamDir.y), 0, 1, 0)));
+
+            const grazingDeg = clamp(cfg?.lod?.angle?.grazingDeg, 0.0, 89.0, 12.0);
+            const topDownDeg = clamp(cfg?.lod?.angle?.topDownDeg, grazingDeg + 0.01, 90.0, 70.0);
+            const angleT = clamp((viewAngle - grazingDeg) / (topDownDeg - grazingDeg), 0.0, 1.0, 0.0);
+            const scaleG = clamp(cfg?.lod?.angle?.grazingDistanceScale, 0.1, 10.0, 0.78);
+            const scaleT = clamp(cfg?.lod?.angle?.topDownDistanceScale, 0.1, 10.0, 1.22);
+            scale = scaleG + (scaleT - scaleG) * angleT;
+        }
+
+        const invScale = 1 / Math.max(EPS, scale);
+
+        const enableMaster = cfg?.lod?.enableMaster !== false;
+        const masterMaxDeg = clamp(cfg?.lod?.angle?.masterMaxDeg, 0.0, 89.0, 18.0);
+        const masterDist = Math.max(0, Number(cfg?.lod?.distances?.master) || 0);
+        const masterAllowedByAngle = enableMaster && viewAngle <= masterMaxDeg && masterDist > EPS;
+
+        for (const child of rings.children) {
+            if (!child?.isLine) continue;
+            const base = Math.max(0, Number(child.userData?.baseDistance) || 0);
+            const tier = String(child.userData?.tier ?? '');
+            if (tier === 'master') child.visible = masterAllowedByAngle;
+            const r = base * invScale;
+            child.scale.set(r, 1, r);
+        }
     }
 }

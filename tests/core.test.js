@@ -2375,15 +2375,16 @@ async function runTests() {
         assertEqual(small.length, 0, 'Expected empty footprint for small grids.');
 	    });
 	
-	    // ========== City Building Config Tests ==========
-	    const { getBuildingConfigById, getBuildingConfigs } = await import('/src/app/city/buildings/index.js');
-	    const { createDemoCitySpec } = await import('/src/app/city/specs/DemoCitySpec.js');
-	    const { BIG_CITY_SPEC, createBigCitySpec } = await import('/src/app/city/specs/BigCitySpec.js');
-	    const { getGameplayCityOptions } = await import('/src/states/GameplayState.js');
-    const { createCityBuildingConfigFromFabrication, serializeCityBuildingConfigToEsModule } = await import('/src/app/city/buildings/BuildingConfigExport.js');
-    const { BUILDING_STYLE } = await import('/src/app/buildings/BuildingStyle.js');
-    const { BELT_COURSE_COLOR } = await import('/src/app/buildings/BeltCourseColor.js');
-    const { ROOF_COLOR, resolveRoofColorHex } = await import('/src/app/buildings/RoofColor.js');
+		    // ========== City Building Config Tests ==========
+		    const { getBuildingConfigById, getBuildingConfigs } = await import('/src/app/city/buildings/index.js');
+		    const { createDemoCitySpec } = await import('/src/app/city/specs/DemoCitySpec.js');
+		    const { BIG_CITY_SPEC, createBigCitySpec } = await import('/src/app/city/specs/BigCitySpec.js');
+		    const { BIG_CITY_2_SPEC, createBigCity2Spec } = await import('/src/app/city/specs/BigCity2Spec.js');
+		    const { getGameplayCityOptions } = await import('/src/states/GameplayState.js');
+	    const { createCityBuildingConfigFromFabrication, serializeCityBuildingConfigToEsModule } = await import('/src/app/city/buildings/BuildingConfigExport.js');
+	    const { BUILDING_STYLE } = await import('/src/app/buildings/BuildingStyle.js');
+	    const { BELT_COURSE_COLOR } = await import('/src/app/buildings/BeltCourseColor.js');
+	    const { ROOF_COLOR, resolveRoofColorHex } = await import('/src/app/buildings/RoofColor.js');
 
     test('BuildingCatalog: includes new tower configs', () => {
         const blue = getBuildingConfigById('blue_belt_tower');
@@ -2500,25 +2501,25 @@ async function runTests() {
         assertTrue(Array.isArray(BIG_CITY_SPEC.buildings) && BIG_CITY_SPEC.buildings.length > 0, 'Expected buildings list.');
     });
 
-    test('BigCitySpec: compatible with CityMap.fromSpec', () => {
-        const cfg = createCityConfig({ size: 600, mapTileSize: 24, seed: 'bigcity-spec-test' });
-        const spec = createBigCitySpec(cfg);
-        const map = CityMap.fromSpec(spec, cfg);
-        assertEqual(map.width, spec.width, 'Expected map width from spec.');
-        assertEqual(map.height, spec.height, 'Expected map height from spec.');
-        assertEqual(map.tileSize, spec.tileSize, 'Expected map tileSize from spec.');
-        assertEqual(map.roadSegments.length, spec.roads.length, 'Expected roadSegments count to match spec.');
-        assertTrue(Array.isArray(map.buildings) && map.buildings.length > 0, 'Expected buildings generated from spec.');
-    });
+	    test('BigCitySpec: compatible with CityMap.fromSpec', () => {
+	        const cfg = createCityConfig({ size: 600, mapTileSize: 24, seed: 'bigcity-spec-test' });
+	        const spec = createBigCitySpec(cfg);
+	        const map = CityMap.fromSpec(spec, cfg);
+	        assertEqual(map.width, spec.width, 'Expected map width from spec.');
+	        assertEqual(map.height, spec.height, 'Expected map height from spec.');
+	        assertEqual(map.tileSize, spec.tileSize, 'Expected map tileSize from spec.');
+	        assertEqual(map.roadSegments.length, spec.roads.length, 'Expected roadSegments count to match spec.');
+	        assertTrue(Array.isArray(map.buildings) && map.buildings.length > 0, 'Expected buildings generated from spec.');
+	    });
 
-    test('GameplayState: uses Big City spec by default', () => {
-        assertTrue(typeof getGameplayCityOptions === 'function', 'Expected getGameplayCityOptions export.');
-        const options = getGameplayCityOptions();
-        assertTrue(!!options && typeof options === 'object', 'Expected gameplay city options.');
-        assertTrue(options.mapSpec === BIG_CITY_SPEC, 'Expected gameplay mapSpec to be Big City spec.');
-        assertEqual(options.mapTileSize, BIG_CITY_SPEC.tileSize, 'Expected gameplay mapTileSize from spec.');
-        assertEqual(options.size, BIG_CITY_SPEC.tileSize * BIG_CITY_SPEC.width, 'Expected gameplay size to match spec.');
-    });
+	    test('GameplayState: uses Big City 2 spec by default', () => {
+	        assertTrue(typeof getGameplayCityOptions === 'function', 'Expected getGameplayCityOptions export.');
+	        const options = getGameplayCityOptions();
+	        assertTrue(!!options && typeof options === 'object', 'Expected gameplay city options.');
+	        assertTrue(options.mapSpec === BIG_CITY_2_SPEC, 'Expected gameplay mapSpec to be Big City 2 spec.');
+	        assertEqual(options.mapTileSize, BIG_CITY_2_SPEC.tileSize, 'Expected gameplay mapTileSize from spec.');
+	        assertEqual(options.size, BIG_CITY_2_SPEC.tileSize * BIG_CITY_2_SPEC.width, 'Expected gameplay size to match spec.');
+	    });
 
     test('DemoCitySpec: extracted demo spec module is importable', () => {
         assertTrue(typeof createDemoCitySpec === 'function', 'Expected createDemoCitySpec export.');

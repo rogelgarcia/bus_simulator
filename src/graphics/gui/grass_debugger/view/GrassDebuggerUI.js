@@ -21,6 +21,13 @@ function makeEl(tag, className, text) {
     return el;
 }
 
+function applyTooltip(node, text) {
+    const el = node && typeof node === 'object' ? node : null;
+    const t = typeof text === 'string' ? text.trim() : '';
+    if (!el || !t) return;
+    el.title = t;
+}
+
 function isInteractiveElement(target) {
     const tag = target?.tagName;
     if (!tag) return false;
@@ -38,7 +45,7 @@ function normalizeHexColor(value) {
     return `#${m[1].toUpperCase()}`;
 }
 
-function makeToggleRow({ label, value = false, onChange }) {
+function makeToggleRow({ label, value = false, tooltip = '', onChange }) {
     const row = makeEl('div', 'options-row');
     const left = makeEl('div', 'options-row-label', label);
     const right = makeEl('div', 'options-row-control');
@@ -55,10 +62,12 @@ function makeToggleRow({ label, value = false, onChange }) {
     right.appendChild(wrap);
     row.appendChild(left);
     row.appendChild(right);
+    applyTooltip(left, tooltip);
+    applyTooltip(toggle, tooltip);
     return { row, toggle };
 }
 
-function makeSelectRow({ label, value = '', options = [], onChange }) {
+function makeSelectRow({ label, value = '', options = [], tooltip = '', onChange }) {
     const row = makeEl('div', 'options-row');
     const left = makeEl('div', 'options-row-label', label);
     const right = makeEl('div', 'options-row-control');
@@ -80,10 +89,12 @@ function makeSelectRow({ label, value = '', options = [], onChange }) {
     right.appendChild(select);
     row.appendChild(left);
     row.appendChild(right);
+    applyTooltip(left, tooltip);
+    applyTooltip(select, tooltip);
     return { row, select };
 }
 
-function makeChoiceRow({ label, value = '', options = [], onChange }) {
+function makeChoiceRow({ label, value = '', options = [], tooltip = '', onChange }) {
     const row = makeEl('div', 'options-row options-row-wide');
     const left = makeEl('div', 'options-row-label', label);
     const right = makeEl('div', 'options-row-control options-row-control-wide');
@@ -105,6 +116,7 @@ function makeChoiceRow({ label, value = '', options = [], onChange }) {
         if (!id) continue;
         const btn = makeEl('button', 'options-choice-btn', text);
         btn.type = 'button';
+        applyTooltip(btn, tooltip);
         btn.addEventListener('click', () => {
             setActive(id);
             onChange?.(id);
@@ -119,6 +131,8 @@ function makeChoiceRow({ label, value = '', options = [], onChange }) {
     right.appendChild(group);
     row.appendChild(left);
     row.appendChild(right);
+    applyTooltip(left, tooltip);
+    applyTooltip(group, tooltip);
     return {
         row,
         group,
@@ -131,7 +145,7 @@ function makeChoiceRow({ label, value = '', options = [], onChange }) {
     };
 }
 
-function makeNumberSliderRow({ label, value = 0, min = 0, max = 1, step = 0.01, digits = 2, onChange }) {
+function makeNumberSliderRow({ label, value = 0, min = 0, max = 1, step = 0.01, digits = 2, tooltip = '', onChange }) {
     const row = makeEl('div', 'options-row options-row-wide');
     const left = makeEl('div', 'options-row-label', label);
     const right = makeEl('div', 'options-row-control options-row-control-wide');
@@ -166,10 +180,13 @@ function makeNumberSliderRow({ label, value = 0, min = 0, max = 1, step = 0.01, 
     right.appendChild(number);
     row.appendChild(left);
     row.appendChild(right);
+    applyTooltip(left, tooltip);
+    applyTooltip(range, tooltip);
+    applyTooltip(number, tooltip);
     return { row, range, number };
 }
 
-function makeTextRow({ label, value = '', placeholder = '', onChange }) {
+function makeTextRow({ label, value = '', placeholder = '', tooltip = '', onChange }) {
     const row = makeEl('div', 'options-row options-row-wide');
     const left = makeEl('div', 'options-row-label', label);
     const right = makeEl('div', 'options-row-control options-row-control-wide');
@@ -186,10 +203,12 @@ function makeTextRow({ label, value = '', placeholder = '', onChange }) {
     right.appendChild(input);
     row.appendChild(left);
     row.appendChild(right);
+    applyTooltip(left, tooltip);
+    applyTooltip(input, tooltip);
     return { row, input };
 }
 
-function makeColorRow({ label, value = '#FFFFFF', onChange }) {
+function makeColorRow({ label, value = '#FFFFFF', tooltip = '', onChange }) {
     const row = makeEl('div', 'options-row options-row-wide');
     const left = makeEl('div', 'options-row-label', label);
     const right = makeEl('div', 'options-row-control options-row-control-wide');
@@ -222,10 +241,13 @@ function makeColorRow({ label, value = '#FFFFFF', onChange }) {
     right.appendChild(text);
     row.appendChild(left);
     row.appendChild(right);
+    applyTooltip(left, tooltip);
+    applyTooltip(color, tooltip);
+    applyTooltip(text, tooltip);
     return { row, color, text };
 }
 
-function makeButtonRow({ label, text = 'Action', onClick }) {
+function makeButtonRow({ label, text = 'Action', tooltip = '', onClick }) {
     const row = makeEl('div', 'options-row');
     const left = makeEl('div', 'options-row-label', label);
     const right = makeEl('div', 'options-row-control');
@@ -235,6 +257,8 @@ function makeButtonRow({ label, text = 'Action', onClick }) {
     right.appendChild(btn);
     row.appendChild(left);
     row.appendChild(right);
+    applyTooltip(left, tooltip);
+    applyTooltip(btn, tooltip);
     return { row, btn };
 }
 
@@ -263,7 +287,7 @@ function setOptionsThumbToTexture(thumb, url, label) {
     thumb.textContent = typeof label === 'string' ? label : '';
 }
 
-function makeGroundMaterialPickerRow({ label, onPick }) {
+function makeGroundMaterialPickerRow({ label, tooltip = '', onPick }) {
     const row = makeEl('div', 'options-row options-row-wide');
     const left = makeEl('div', 'options-row-label', label);
     const right = makeEl('div', 'options-row-control options-row-control-wide');
@@ -281,6 +305,8 @@ function makeGroundMaterialPickerRow({ label, onPick }) {
     right.appendChild(btn);
     row.appendChild(left);
     row.appendChild(right);
+    applyTooltip(left, tooltip);
+    applyTooltip(btn, tooltip);
     return { row, btn, thumb, textEl };
 }
 
@@ -1967,6 +1993,25 @@ export class GrassDebuggerUI {
         }
     }
 
+    setGrassLodDebugInfo({ viewAngleDeg = null, angleScale = null, masterActiveByAngle = false } = {}) {
+        const note = this._controls?.grassLodDebugInfo ?? null;
+        if (!note) return;
+
+        const angle = Number(viewAngleDeg);
+        const scale = Number(angleScale);
+        if (!(Number.isFinite(angle) && Number.isFinite(scale))) {
+            note.textContent = 'View angle: (n/a) · AngleScale: (n/a)';
+            return;
+        }
+
+        const parts = [
+            `View angle: ${angle.toFixed(1)}°`,
+            `AngleScale: ${scale.toFixed(2)}`,
+            `Master: ${masterActiveByAngle ? 'active' : 'inactive'}`
+        ];
+        note.textContent = parts.join(' · ');
+    }
+
     setFlyoverActive(active) {
         const isActive = !!active;
         const flyover = this._controls?.flyoverToggle ?? null;
@@ -1992,6 +2037,169 @@ export class GrassDebuggerUI {
 
     _buildGrassTab() {
         const grass = this._state.grass;
+        const tip = (...lines) => lines.filter((l) => l !== null && l !== undefined).join('\n');
+
+        const lodTips = {
+            masterEnabled: tip(
+                'Enables the Master (highest quality) LOD tier.',
+                '',
+                'Master is only used when:',
+                '• Master Enabled is ON',
+                '• Master Dist > 0',
+                '• View angle ≤ Master Max Angle',
+                '• Field → Allow Master is ON',
+                '• LOD Render Mode → Master is not "None"',
+                '',
+                'When Master is inactive, Near is used at close range instead.'
+            ),
+            force: tip(
+                'Overrides automatic LOD selection.',
+                '',
+                'Auto: choose/blend tiers by distance & view angle.',
+                'Master/Near/Mid/Far: force a tier everywhere (may be remapped if disallowed).',
+                'None: disables grass rendering.',
+                '',
+                'Note: Field → Force LOD (if not Auto) overrides this.'
+            ),
+            masterDist: tip(
+                'Distance where Master fades into Near (± Transition).',
+                '',
+                'Compared against EFFECTIVE distance:',
+                'EffectiveDistance = WorldDistance × AngleScale',
+                '(AngleScale depends on Grazing/Top-down settings below).',
+                '',
+                'Only applies when Master is active (see Master Enabled + Master Max Angle).'
+            ),
+            nearEnd: tip(
+                'End of Near tier. Near blends into Mid around this distance (± Transition).',
+                '',
+                'Compared against EFFECTIVE distance:',
+                'EffectiveDistance = WorldDistance × AngleScale'
+            ),
+            midEnd: tip(
+                'End of Mid tier. Mid blends into Far around this distance (± Transition).',
+                '',
+                'Compared against EFFECTIVE distance:',
+                'EffectiveDistance = WorldDistance × AngleScale'
+            ),
+            farEnd: tip(
+                'Start of Far fade-out.',
+                '',
+                'Far becomes dominant after Mid End, then begins fading out at Far End and reaches 0 at Cutoff.',
+                'This fade uses the [Far End → Cutoff] interval (Transition does not apply).',
+                '',
+                'Compared against EFFECTIVE distance:',
+                'EffectiveDistance = WorldDistance × AngleScale'
+            ),
+            cutoff: tip(
+                'End of grass visibility.',
+                '',
+                'At/after Cutoff the Far tier weight becomes 0.',
+                'If Cutoff == Far End, grass ends abruptly (no fade).',
+                '',
+                'Compared against EFFECTIVE distance:',
+                'EffectiveDistance = WorldDistance × AngleScale'
+            ),
+            transition: tip(
+                'Blend width for tier transitions (meters).',
+                '',
+                'Used as ±Transition around:',
+                '• Master Dist',
+                '• Near End',
+                '• Mid End',
+                '',
+                'Not used for the Far→Cutoff fade (that uses Far End → Cutoff).'
+            ),
+            grazingAngle: tip(
+                'Lower bound of the AngleScale interpolation range.',
+                '',
+                'View angle is derived from the camera look direction:',
+                '0° = looking at the horizon (grazing)',
+                '90° = looking straight down/up (top-down)',
+                '',
+                'At/below this view angle, AngleScale = Grazing Dist Scale.'
+            ),
+            topDownAngle: tip(
+                'Upper bound of the AngleScale interpolation range.',
+                '',
+                'View angle is derived from the camera look direction:',
+                '0° = looking at the horizon (grazing)',
+                '90° = looking straight down/up (top-down)',
+                '',
+                'At/above this view angle, AngleScale = Top-down Dist Scale.'
+            ),
+            masterMaxAngle: tip(
+                'Disables the Master tier when looking too top-down.',
+                '',
+                'If ViewAngleDeg > Master Max Angle, Master weight becomes 0 and Near starts at 0m.',
+                'Use this to avoid expensive 3D tufts when looking downward.'
+            ),
+            grazingScale: tip(
+                'AngleScale used near the horizon (grazing views).',
+                '',
+                'EffectiveDistance = WorldDistance × AngleScale.',
+                '',
+                'Smaller (<1): pushes LOD transitions farther out (more detail for longer).',
+                'Larger (>1): pulls transitions closer in (more aggressive LOD).'
+            ),
+            topDownScale: tip(
+                'AngleScale used for top-down views.',
+                '',
+                'EffectiveDistance = WorldDistance × AngleScale.',
+                '',
+                'Smaller (<1): pushes LOD transitions farther out (more detail for longer).',
+                'Larger (>1): pulls transitions closer in (more aggressive LOD).'
+            ),
+            renderMode: tip(
+                'Chooses the geometry strategy for this LOD tier.',
+                '',
+                '3D Tuft: true 3D blades (most expensive, best close-up).',
+                'Star: 3 intersecting quads (cheaper).',
+                'Cross: 2 intersecting quads (cheaper).',
+                'Cross (Sparse): same geometry as Cross, intended to be used with a lower density multiplier.',
+                'None: disables this tier (it is treated as disallowed).'
+            ),
+            inspect: tip(
+                'Opens a popup inspector for this LOD tier.',
+                '',
+                'Use it to tweak render mode, density, and blade/tuft/material parameters.',
+                'Click Save to write changes back into the main Grass config.'
+            ),
+            densityMul: tip(
+                'Multiplier applied on top of Field Density (tufts/m²) and Global Mul.',
+                'Approx instances ≈ fieldDensity × globalMul × tierMul × area.',
+                '',
+                'Counts are cumulative per patch:',
+                'Far ≤ Mid ≤ Near ≤ Master (when Master Enabled).',
+                'So setting Near Mul below Mid Mul has no effect.'
+            ),
+            fieldForce: tip(
+                'Per-field LOD override.',
+                '',
+                'If not Auto, this overrides the global LOD Force setting.',
+                'Useful for testing tiers without changing the global config.'
+            ),
+            fieldAllow: tip(
+                'Allows/disallows specific tiers for this field.',
+                '',
+                'If a tier is disallowed (or its Render Mode is "None"), its weight is reassigned to the nearest allowed tier.',
+                'If you disable all tiers, Near is automatically re-enabled.'
+            ),
+            debugBaseRings: tip(
+                'Draws the configured LOD distance thresholds as rings centered on the camera.',
+                '',
+                'These are the raw distances in the LOD section.',
+                'Actual transitions use EFFECTIVE distance (distance × AngleScale), so boundaries can shift with view angle.',
+                '',
+                'Tip: enable "Angle-scaled LOD Rings" to see the current world-space boundaries.'
+            ),
+            debugAngleScaledRings: tip(
+                'Draws LOD rings converted back into world distance for the CURRENT camera view angle.',
+                '',
+                'Rings are scaled by 1/AngleScale, so they move as you look up/down.',
+                'This visualizes how Grazing/Top-down scales affect LOD distances.'
+            )
+        };
 
         const engineSection = this._buildSection('grass', 'Engine');
         engineSection.appendChild(makeToggleRow({
@@ -2153,8 +2361,10 @@ export class GrassDebuggerUI {
         bladeSection.appendChild(makeEl('div', 'options-note', 'Height Mult scales Field Height Min/Max.'));
 
         const lodSection = this._buildSection('grass', 'LOD');
+        lodSection.appendChild(makeEl('div', 'options-note', 'Tip: hover labels for detailed LOD explanations.'));
         lodSection.appendChild(makeToggleRow({
             label: 'Master Enabled',
+            tooltip: lodTips.masterEnabled,
             value: grass.lod.enableMaster,
             onChange: (v) => {
                 grass.lod.enableMaster = !!v;
@@ -2164,6 +2374,7 @@ export class GrassDebuggerUI {
 
         const forceLodRow = makeSelectRow({
             label: 'Force LOD',
+            tooltip: lodTips.force,
             value: grass.lod.force,
             options: [
                 { id: 'auto', label: 'Auto' },
@@ -2182,6 +2393,7 @@ export class GrassDebuggerUI {
 
         lodSection.appendChild(makeNumberSliderRow({
             label: 'Master Dist (m)',
+            tooltip: lodTips.masterDist,
             value: grass.lod.distances.master,
             min: 0,
             max: 50,
@@ -2194,6 +2406,7 @@ export class GrassDebuggerUI {
         }).row);
         lodSection.appendChild(makeNumberSliderRow({
             label: 'Near End (m)',
+            tooltip: lodTips.nearEnd,
             value: grass.lod.distances.near,
             min: 5,
             max: 500,
@@ -2206,6 +2419,7 @@ export class GrassDebuggerUI {
         }).row);
         lodSection.appendChild(makeNumberSliderRow({
             label: 'Mid End (m)',
+            tooltip: lodTips.midEnd,
             value: grass.lod.distances.mid,
             min: 10,
             max: 2000,
@@ -2218,6 +2432,7 @@ export class GrassDebuggerUI {
         }).row);
         lodSection.appendChild(makeNumberSliderRow({
             label: 'Far End (m)',
+            tooltip: lodTips.farEnd,
             value: grass.lod.distances.far,
             min: 20,
             max: 5000,
@@ -2230,6 +2445,7 @@ export class GrassDebuggerUI {
         }).row);
         lodSection.appendChild(makeNumberSliderRow({
             label: 'Cutoff (m)',
+            tooltip: lodTips.cutoff,
             value: grass.lod.distances.cutoff,
             min: 20,
             max: 8000,
@@ -2242,6 +2458,7 @@ export class GrassDebuggerUI {
         }).row);
         lodSection.appendChild(makeNumberSliderRow({
             label: 'Transition (m)',
+            tooltip: lodTips.transition,
             value: grass.lod.transitionWidthMeters,
             min: 0.1,
             max: 100,
@@ -2255,6 +2472,7 @@ export class GrassDebuggerUI {
 
         lodSection.appendChild(makeNumberSliderRow({
             label: 'Grazing Angle (°)',
+            tooltip: lodTips.grazingAngle,
             value: grass.lod.angle.grazingDeg,
             min: 0,
             max: 60,
@@ -2267,6 +2485,7 @@ export class GrassDebuggerUI {
         }).row);
         lodSection.appendChild(makeNumberSliderRow({
             label: 'Top-down Angle (°)',
+            tooltip: lodTips.topDownAngle,
             value: grass.lod.angle.topDownDeg,
             min: 10,
             max: 90,
@@ -2279,6 +2498,7 @@ export class GrassDebuggerUI {
         }).row);
         lodSection.appendChild(makeNumberSliderRow({
             label: 'Master Max Angle (°)',
+            tooltip: lodTips.masterMaxAngle,
             value: grass.lod.angle.masterMaxDeg,
             min: 0,
             max: 60,
@@ -2291,6 +2511,7 @@ export class GrassDebuggerUI {
         }).row);
         lodSection.appendChild(makeNumberSliderRow({
             label: 'Grazing Dist Scale',
+            tooltip: lodTips.grazingScale,
             value: grass.lod.angle.grazingDistanceScale,
             min: 0.2,
             max: 3.0,
@@ -2303,6 +2524,7 @@ export class GrassDebuggerUI {
         }).row);
         lodSection.appendChild(makeNumberSliderRow({
             label: 'Top-down Dist Scale',
+            tooltip: lodTips.topDownScale,
             value: grass.lod.angle.topDownDistanceScale,
             min: 0.2,
             max: 3.0,
@@ -2328,6 +2550,7 @@ export class GrassDebuggerUI {
         ];
         const renderMasterRow = makeSelectRow({
             label: 'Master',
+            tooltip: lodTips.renderMode,
             value: lodModes.master,
             options: modeOptions,
             onChange: (v) => {
@@ -2340,6 +2563,7 @@ export class GrassDebuggerUI {
 
         const renderNearRow = makeSelectRow({
             label: 'Near',
+            tooltip: lodTips.renderMode,
             value: lodModes.near,
             options: modeOptions,
             onChange: (v) => {
@@ -2352,6 +2576,7 @@ export class GrassDebuggerUI {
 
         const renderMidRow = makeSelectRow({
             label: 'Mid',
+            tooltip: lodTips.renderMode,
             value: lodModes.mid,
             options: modeOptions,
             onChange: (v) => {
@@ -2364,6 +2589,7 @@ export class GrassDebuggerUI {
 
         const renderFarRow = makeSelectRow({
             label: 'Far',
+            tooltip: lodTips.renderMode,
             value: lodModes.far,
             options: modeOptions,
             onChange: (v) => {
@@ -2378,27 +2604,32 @@ export class GrassDebuggerUI {
         lodInspectorSection.appendChild(makeButtonRow({
             label: 'Master',
             text: 'Inspect',
+            tooltip: lodTips.inspect,
             onClick: () => this._onInspectGrassLod?.('master')
         }).row);
         lodInspectorSection.appendChild(makeButtonRow({
             label: 'Near',
             text: 'Inspect',
+            tooltip: lodTips.inspect,
             onClick: () => this._onInspectGrassLod?.('near')
         }).row);
         lodInspectorSection.appendChild(makeButtonRow({
             label: 'Mid',
             text: 'Inspect',
+            tooltip: lodTips.inspect,
             onClick: () => this._onInspectGrassLod?.('mid')
         }).row);
         lodInspectorSection.appendChild(makeButtonRow({
             label: 'Far',
             text: 'Inspect',
+            tooltip: lodTips.inspect,
             onClick: () => this._onInspectGrassLod?.('far')
         }).row);
 
         const lodDensitySection = this._buildSection('grass', 'LOD Density');
         const densityMasterRow = makeNumberSliderRow({
             label: 'Master Mul',
+            tooltip: lodTips.densityMul,
             value: grass.density.masterMul,
             min: 0.0,
             max: 8.0,
@@ -2414,6 +2645,7 @@ export class GrassDebuggerUI {
 
         const densityNearRow = makeNumberSliderRow({
             label: 'Near Mul',
+            tooltip: lodTips.densityMul,
             value: grass.density.nearMul,
             min: 0.0,
             max: 8.0,
@@ -2429,6 +2661,7 @@ export class GrassDebuggerUI {
 
         const densityMidRow = makeNumberSliderRow({
             label: 'Mid Mul',
+            tooltip: lodTips.densityMul,
             value: grass.density.midMul,
             min: 0.0,
             max: 8.0,
@@ -2444,6 +2677,7 @@ export class GrassDebuggerUI {
 
         const densityFarRow = makeNumberSliderRow({
             label: 'Far Mul',
+            tooltip: lodTips.densityMul,
             value: grass.density.farMul,
             min: 0.0,
             max: 8.0,
@@ -2556,6 +2790,7 @@ export class GrassDebuggerUI {
         this._controls.grassFieldHeightMax = fieldHeightMaxRow;
         fieldSection.appendChild(makeSelectRow({
             label: 'Force LOD',
+            tooltip: lodTips.fieldForce,
             value: grass?.field?.lod?.force ?? 'auto',
             options: [
                 { id: 'auto', label: 'Auto' },
@@ -2574,6 +2809,7 @@ export class GrassDebuggerUI {
         const fieldAllow = grass?.field?.lod?.allow ?? {};
         fieldSection.appendChild(makeToggleRow({
             label: 'Allow Master',
+            tooltip: lodTips.fieldAllow,
             value: !!fieldAllow.master,
             onChange: (v) => {
                 grass.field.lod.allow.master = !!v;
@@ -2582,6 +2818,7 @@ export class GrassDebuggerUI {
         }).row);
         fieldSection.appendChild(makeToggleRow({
             label: 'Allow Near',
+            tooltip: lodTips.fieldAllow,
             value: !!fieldAllow.near,
             onChange: (v) => {
                 grass.field.lod.allow.near = !!v;
@@ -2590,6 +2827,7 @@ export class GrassDebuggerUI {
         }).row);
         fieldSection.appendChild(makeToggleRow({
             label: 'Allow Mid',
+            tooltip: lodTips.fieldAllow,
             value: !!fieldAllow.mid,
             onChange: (v) => {
                 grass.field.lod.allow.mid = !!v;
@@ -2598,6 +2836,7 @@ export class GrassDebuggerUI {
         }).row);
         fieldSection.appendChild(makeToggleRow({
             label: 'Allow Far',
+            tooltip: lodTips.fieldAllow,
             value: !!fieldAllow.far,
             onChange: (v) => {
                 grass.field.lod.allow.far = !!v;
@@ -2630,12 +2869,25 @@ export class GrassDebuggerUI {
         const debugSection = this._buildSection('grass', 'Debug');
         debugSection.appendChild(makeToggleRow({
             label: 'LOD Rings',
+            tooltip: lodTips.debugBaseRings,
             value: grass.debug.showLodRings,
             onChange: (v) => {
                 grass.debug.showLodRings = !!v;
                 this._emit();
             }
         }).row);
+        debugSection.appendChild(makeToggleRow({
+            label: 'Angle-scaled LOD Rings',
+            tooltip: lodTips.debugAngleScaledRings,
+            value: !!grass.debug.showLodAngleScaledRings,
+            onChange: (v) => {
+                grass.debug.showLodAngleScaledRings = !!v;
+                this._emit();
+            }
+        }).row);
+
+        this._controls.grassLodDebugInfo = makeEl('div', 'options-note', 'View angle: (n/a) · AngleScale: (n/a)');
+        debugSection.appendChild(this._controls.grassLodDebugInfo);
 
         const statsSection = this._buildSection('grass', 'Stats');
         this._controls.grassStatsInstances = makeEl('div', 'options-note', 'Instances: (disabled)');

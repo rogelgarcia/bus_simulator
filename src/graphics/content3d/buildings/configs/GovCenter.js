@@ -66,8 +66,8 @@ export const GOV_CENTER_BUILDING_CONFIG = Object.freeze({
                     "offset": 0.01,
                     "fakeDepth": {
                         "enabled": true,
-                        "strength": 0.03,
-                        "insetStrength": 0.53
+                        "strength": 0.06,
+                        "insetStrength": 0.25
                     },
                     "pbr": {
                         "normal": {
@@ -275,7 +275,7 @@ export const GOV_CENTER_BUILDING_CONFIG = Object.freeze({
                     "offset": 0.01,
                     "fakeDepth": {
                         "enabled": true,
-                        "strength": 0.17,
+                        "strength": 0.06,
                         "insetStrength": 0.25
                     },
                     "pbr": {
