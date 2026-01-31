@@ -4,6 +4,7 @@
 
 import { createDemoCitySpec } from './DemoCitySpec.js';
 import { createBigCitySpec } from './BigCitySpec.js';
+import { createBigCity2Spec } from './BigCity2Spec.js';
 
 export const DEFAULT_CITY_SPEC_ID = 'demo';
 
@@ -17,6 +18,11 @@ export const CITY_SPEC_REGISTRY = Object.freeze([
         id: 'bigcity',
         label: 'Big City',
         createSpec: () => createBigCitySpec()
+    }),
+    Object.freeze({
+        id: 'bigcity2',
+        label: 'Big City 2',
+        createSpec: () => createBigCity2Spec()
     })
 ]);
 
@@ -31,4 +37,3 @@ export function createCitySpecById(id, config) {
     const spec = entry.createSpec(config);
     return spec && typeof spec === 'object' ? spec : null;
 }
-

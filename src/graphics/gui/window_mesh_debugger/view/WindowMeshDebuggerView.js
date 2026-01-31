@@ -11,6 +11,7 @@ import { resolvePbrMaterialUrls } from '../../../content3d/catalogs/PbrMaterialC
 import { WindowMeshGenerator } from '../../../assets3d/generators/buildings/WindowMeshGenerator.js';
 import { getDefaultWindowMeshSettings } from '../../../../app/buildings/window_mesh/index.js';
 import { WindowMeshDebuggerUI } from './WindowMeshDebuggerUI.js';
+import { WindowMeshDecorationsRig } from './WindowMeshDecorationsRig.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const WALL_SPEC = Object.freeze({
@@ -284,6 +285,7 @@ export class WindowMeshDebuggerView {
 
         this._windowGenerator = null;
         this._windowGroup = null;
+        this._decorations = null;
         this._normalMat = null;
 
         this._ground = null;
@@ -385,6 +387,10 @@ export class WindowMeshDebuggerView {
         this._normalMat = new THREE.MeshNormalMaterial({ wireframe: false });
 
         this._buildScene();
+
+        this._decorations = new WindowMeshDecorationsRig({ renderer, texLoader: this._texLoader });
+        this.scene.add(this._decorations.group);
+
         const initialState = ui.getState();
         this._applyUiState(initialState);
         void this._applyIblState(initialState?.ibl, { force: true });
@@ -416,6 +422,12 @@ export class WindowMeshDebuggerView {
 
         this.controls?.dispose?.();
         this.controls = null;
+
+        if (this._decorations) {
+            this.scene?.remove?.(this._decorations.group);
+            this._decorations.dispose();
+            this._decorations = null;
+        }
 
         this._disposeWindowGroup();
         this._windowGenerator?.dispose?.();
@@ -606,6 +618,23 @@ export class WindowMeshDebuggerView {
         this._windowGroup = group;
         this.scene.add(group);
 
+        this._decorations?.update({ wallFrontZ: this._wallSpec.frontZ, windowSettings: s, instances }, state?.decoration);
+
+        const iblEnabled = state?.ibl?.enabled !== undefined ? !!state.ibl.enabled : true;
+        const iblIntensity = clamp(state?.ibl?.envMapIntensity, 0.0, 5.0, 0.25);
+        applyIBLIntensity(this.scene, { enabled: iblEnabled, envMapIntensity: iblIntensity }, { force: true });
+
+        if (state?.debug?.bevelExaggerate) {
+            const mats = group.userData?.materials ?? null;
+            const factor = 2.5;
+            if (mats && typeof mats === 'object') {
+                const uniq = new Set([mats.frameMat, mats.muntinMat]);
+                for (const mat of uniq) {
+                    if (mat?.normalScale?.multiplyScalar) mat.normalScale.multiplyScalar(factor);
+                }
+            }
+        }
+
         const layerRefs = group.userData?.layers ?? null;
         if (layerRefs) {
             if (layerRefs.frame) layerRefs.frame.visible = layers.frame !== false;
@@ -616,6 +645,7 @@ export class WindowMeshDebuggerView {
         }
 
         this._applyRenderMode(renderMode);
+        this._decorations?.setRenderMode(renderMode, this._normalMat);
         this._ui?.setInteriorOverlayData?.({
             seed,
             atlasId: s?.interior?.atlasId ?? '',

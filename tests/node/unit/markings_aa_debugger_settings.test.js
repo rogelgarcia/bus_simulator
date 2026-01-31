@@ -51,7 +51,7 @@ test('MarkingsAADebuggerSettings: sanitize clamps + normalizes', () => {
 test('DebugToolRegistry: markings AA debugger is registered and loadable', () => {
     const entry = DEBUG_TOOL_REGISTRY.find((tool) => tool?.id === 'markings_aa_debug') ?? null;
     assert.ok(entry, 'Expected DebugToolRegistry entry for markings_aa_debug');
-    assert.equal(entry.key, '5');
+    assert.equal(entry.key, '4');
     assert.equal(entry.href, 'debug_tools/markings_aa_debug.html');
 
     const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));

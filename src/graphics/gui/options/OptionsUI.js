@@ -295,6 +295,7 @@ export class OptionsUI {
         initialSunFlare = null,
         initialPostProcessingActive = null,
         initialColorGradingDebug = null,
+        markingsCalibration = null,
         getIblDebugInfo = null,
         getPostProcessingDebugInfo = null,
         getAntiAliasingDebugInfo = null,
@@ -429,6 +430,18 @@ export class OptionsUI {
             ? JSON.parse(JSON.stringify(initialSunFlare))
             : null;
         this._lightingControls = null;
+        this._markingsCalibration = (() => {
+            const cfg = markingsCalibration && typeof markingsCalibration === 'object' ? markingsCalibration : null;
+            const onSample = typeof cfg?.onSample === 'function' ? cfg.onSample : null;
+            if (!onSample) return null;
+            return {
+                targetYellow: typeof cfg?.targetYellow === 'string' ? cfg.targetYellow : null,
+                targetWhite: typeof cfg?.targetWhite === 'string' ? cfg.targetWhite : null,
+                noteText: typeof cfg?.noteText === 'string' ? cfg.noteText : null,
+                onSample,
+                state: { collapsed: cfg?.collapsedByDefault !== false, sampling: false, status: 'Ready', yellow: null, white: null }
+            };
+        })();
 
         this.setTab(this._tab);
     }
@@ -1143,6 +1156,134 @@ export class OptionsUI {
 	        sectionMarkings.appendChild(markingsControls.roughnessStrength.row);
 	        sectionMarkings.appendChild(markingsControls.debug.row);
 
+	        const sectionMarkingsCalibration = (() => {
+	            const cfg = this._markingsCalibration;
+	            if (!cfg) return null;
+
+	            const state = cfg.state ?? (cfg.state = {});
+	            let collapsed = state.collapsed !== undefined ? !!state.collapsed : true;
+
+	            const section = makeEl('div', 'options-section');
+	            const header = makeEl('div', 'options-section-header');
+	            header.setAttribute('role', 'button');
+	            header.tabIndex = 0;
+
+	            const title = makeEl('div', 'options-section-title', 'Markings Calibration');
+	            const collapseBtn = makeEl('button', 'options-btn options-btn-small options-icon-btn', collapsed ? '▸' : '▾');
+	            collapseBtn.type = 'button';
+
+	            const applyCollapsed = () => {
+	                section.classList.toggle('is-collapsed', collapsed);
+	                collapseBtn.textContent = collapsed ? '▸' : '▾';
+	                collapseBtn.title = collapsed ? 'Expand' : 'Collapse';
+	                collapseBtn.setAttribute('aria-label', collapsed ? 'Expand' : 'Collapse');
+	            };
+
+	            const toggleCollapsed = () => {
+	                collapsed = !collapsed;
+	                state.collapsed = collapsed;
+	                applyCollapsed();
+	            };
+
+	            collapseBtn.addEventListener('click', () => toggleCollapsed());
+	            header.addEventListener('click', (e) => {
+	                const btn = e?.target?.closest?.('button');
+	                if (btn && header.contains(btn)) return;
+	                toggleCollapsed();
+	            });
+	            header.addEventListener('keydown', (e) => {
+	                const key = e?.key ?? '';
+	                if (key !== 'Enter' && key !== ' ') return;
+	                e.preventDefault?.();
+	                toggleCollapsed();
+	            });
+
+	            header.appendChild(title);
+	            header.appendChild(collapseBtn);
+	            section.appendChild(header);
+
+	            const targetYellow = String(cfg.targetYellow ?? '-').toUpperCase();
+	            const targetWhite = String(cfg.targetWhite ?? '-').toUpperCase();
+	            const statusRow = makeValueRow({ label: 'Status', value: String(state.status ?? 'Ready') });
+	            const targetYellowRow = makeValueRow({ label: 'Yellow target', value: targetYellow });
+	            const targetWhiteRow = makeValueRow({ label: 'White target', value: targetWhite });
+	            const measuredYellowRow = makeValueRow({ label: 'Yellow measured', value: String(state.yellow?.hex ?? '-').toUpperCase() });
+	            const yellowSampleRow = makeValueRow({ label: 'Yellow sample', value: state.yellow?.sample ? `${state.yellow.sample.x},${state.yellow.sample.y} (avg ${state.yellow.sample.size}x${state.yellow.sample.size})` : '-' });
+	            const measuredWhiteRow = makeValueRow({ label: 'White measured', value: String(state.white?.hex ?? '-').toUpperCase() });
+	            const whiteSampleRow = makeValueRow({ label: 'White sample', value: state.white?.sample ? `${state.white.sample.x},${state.white.sample.y} (avg ${state.white.sample.size}x${state.white.sample.size})` : '-' });
+
+	            const sampleRow = makeEl('div', 'options-row');
+	            const sampleLabel = makeEl('div', 'options-row-label', 'Sample');
+	            const sampleControl = makeEl('div', 'options-row-control');
+	            const sampleBtn = makeEl('button', 'options-btn options-btn-primary', 'Sample Colors');
+	            sampleBtn.type = 'button';
+	            sampleControl.appendChild(sampleBtn);
+	            sampleRow.appendChild(sampleLabel);
+	            sampleRow.appendChild(sampleControl);
+
+	            const setBusy = (busy) => {
+	                const on = !!busy;
+	                state.sampling = on;
+	                sampleBtn.disabled = on;
+	                sampleBtn.textContent = on ? 'Sampling…' : 'Sample Colors';
+	            };
+
+	            const setStatus = (text) => {
+	                state.status = String(text ?? '');
+	                statusRow.text.textContent = state.status;
+	            };
+
+	            const syncResults = () => {
+	                measuredYellowRow.text.textContent = String(state.yellow?.hex ?? '-').toUpperCase();
+	                yellowSampleRow.text.textContent = state.yellow?.sample
+	                    ? `${state.yellow.sample.x},${state.yellow.sample.y} (avg ${state.yellow.sample.size}x${state.yellow.sample.size})`
+	                    : '-';
+	                measuredWhiteRow.text.textContent = String(state.white?.hex ?? '-').toUpperCase();
+	                whiteSampleRow.text.textContent = state.white?.sample
+	                    ? `${state.white.sample.x},${state.white.sample.y} (avg ${state.white.sample.size}x${state.white.sample.size})`
+	                    : '-';
+	            };
+
+	            sampleBtn.addEventListener('click', async () => {
+	                if (state.sampling) return;
+	                setBusy(true);
+	                setStatus('Sampling…');
+	                try {
+	                    const res = await Promise.resolve(cfg.onSample());
+	                    if (!res || typeof res !== 'object') throw new Error('Sampling returned no result.');
+	                    if (!res.yellow || !res.white) throw new Error('Missing measured colors.');
+	                    state.yellow = res.yellow;
+	                    state.white = res.white;
+	                    setStatus('OK');
+	                    syncResults();
+	                } catch (err) {
+	                    const msg = err instanceof Error ? err.message : String(err ?? 'Unknown error');
+	                    console.error('[OptionsUI] Markings calibration sample failed', err);
+	                    setStatus(`Error: ${msg}`);
+	                } finally {
+	                    setBusy(false);
+	                }
+	            });
+
+	            const note = makeEl('div', 'options-note');
+	            note.textContent = cfg.noteText || 'Samples on-screen sRGB at fixed points on the lane markings (uses current lighting + tone mapping).';
+
+	            section.appendChild(statusRow.row);
+	            section.appendChild(targetYellowRow.row);
+	            section.appendChild(targetWhiteRow.row);
+	            section.appendChild(measuredYellowRow.row);
+	            section.appendChild(yellowSampleRow.row);
+	            section.appendChild(measuredWhiteRow.row);
+	            section.appendChild(whiteSampleRow.row);
+	            section.appendChild(sampleRow);
+	            section.appendChild(note);
+
+	            applyCollapsed();
+	            setBusy(!!state.sampling);
+	            syncResults();
+	            return section;
+	        })();
+
 	        const sectionColor = makeEl('div', 'options-section');
 	        sectionColor.appendChild(makeEl('div', 'options-section-title', 'Color'));
 
@@ -1320,6 +1461,7 @@ export class OptionsUI {
 	        this.body.appendChild(sectionCoarse);
 	        this.body.appendChild(sectionFine);
 	        this.body.appendChild(sectionMarkings);
+	        if (sectionMarkingsCalibration) this.body.appendChild(sectionMarkingsCalibration);
 	        this.body.appendChild(sectionColor);
 	        this.body.appendChild(sectionLivedIn);
 	        this.body.appendChild(note);

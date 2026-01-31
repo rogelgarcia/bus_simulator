@@ -15,6 +15,7 @@ import { InspectorRoomState } from './states/InspectorRoomState.js';
 import { RoadDebuggerState } from './states/RoadDebuggerState.js';
 import { OptionsState } from './states/OptionsState.js';
 import { ensureGlobalPerfBar } from './graphics/gui/perf_bar/PerfBar.js';
+import { installViewportContextMenuBlocker } from './graphics/gui/shared/utils/viewportContextMenuBlocker.js';
 
 function isEditableTarget(target) {
     const el = target && typeof target === 'object' ? target : null;
@@ -29,14 +30,7 @@ const perfBar = ensureGlobalPerfBar();
 const canvas = document.getElementById('game-canvas');
 const viewport = document.getElementById('game-viewport');
 
-if (viewport) {
-    viewport.addEventListener('contextmenu', (e) => {
-        if (!e) return;
-        if (isEditableTarget(e.target) || isEditableTarget(document.activeElement)) return;
-        e.preventDefault();
-        e.stopImmediatePropagation?.();
-    }, { passive: false, capture: true });
-}
+if (viewport) installViewportContextMenuBlocker(viewport);
 
 const engine = new GameEngine({ canvas });
 perfBar.setRenderer(engine.renderer);

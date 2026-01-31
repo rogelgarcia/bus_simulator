@@ -13,6 +13,7 @@ import { applyAsphaltEdgeWearVisualsToMeshStandardMaterial } from '../../../visu
 import { applyAsphaltMarkingsNoiseVisualsToMeshStandardMaterial } from '../../../visuals/city/AsphaltMarkingsNoiseVisuals.js';
 import { getResolvedAsphaltNoiseSettings, saveAsphaltNoiseSettings } from '../../../visuals/city/AsphaltNoiseSettings.js';
 import { getResolvedBuildingWindowVisualsSettings, saveBuildingWindowVisualsSettings } from '../../../visuals/buildings/BuildingWindowVisualsSettings.js';
+import { ROAD_MARKING_WHITE_TARGET_SUN_HEX, ROAD_MARKING_YELLOW_TARGET_SUN_HEX, hexToCssColor } from '../../../assets3d/materials/RoadMarkingsColors.js';
 import { saveLightingSettings } from '../../../lighting/LightingSettings.js';
 import { saveBloomSettings } from '../../../visuals/postprocessing/BloomSettings.js';
 import { saveSunBloomSettings } from '../../../visuals/postprocessing/SunBloomSettings.js';
@@ -45,6 +46,78 @@ function makeStraightRoadSpec({ config, seed }) {
         ],
         buildings: []
     };
+}
+
+function clamp(value, min, max, fallback = min) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(min, Math.min(max, n));
+}
+
+function getDrawSize(renderer) {
+    const size = new THREE.Vector2();
+    renderer.getDrawingBufferSize(size);
+    return { w: Math.max(1, Math.floor(size.x)), h: Math.max(1, Math.floor(size.y)) };
+}
+
+function sampleAverageSrgbHexAtWorldPos(renderer, camera, worldPos, { size = 7 } = {}) {
+    const { w, h } = getDrawSize(renderer);
+    const ndc = worldPos.clone().project(camera);
+
+    const cx = Math.round((ndc.x * 0.5 + 0.5) * (w - 1));
+    const cy = Math.round((ndc.y * 0.5 + 0.5) * (h - 1));
+
+    const s = Math.max(1, Math.floor(size));
+    const half = Math.floor(s / 2);
+    const x0 = Math.max(0, Math.min(w - s, cx - half));
+    const y0 = Math.max(0, Math.min(h - s, cy - half));
+
+    const gl = renderer.getContext();
+    const pixels = new Uint8Array(s * s * 4);
+    gl.readPixels(x0, y0, s, s, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    const n = s * s;
+    for (let i = 0; i < pixels.length; i += 4) {
+        r += pixels[i];
+        g += pixels[i + 1];
+        b += pixels[i + 2];
+    }
+    r = Math.round(r / n);
+    g = Math.round(g / n);
+    b = Math.round(b / n);
+    return {
+        hex: `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`,
+        sample: { x: cx, y: cy, size: s }
+    };
+}
+
+function getMeshTriangleCentroidWorld(mesh, { sampleTriangleIndex = 0.5 } = {}) {
+    const m = mesh?.isMesh ? mesh : null;
+    const geo = m?.geometry ?? null;
+    const posAttr = geo?.getAttribute?.('position') ?? geo?.attributes?.position ?? null;
+    if (!posAttr || !posAttr.isBufferAttribute || posAttr.itemSize !== 3) return null;
+    const arr = posAttr.array;
+    const vertCount = posAttr.count | 0;
+    if (!arr || vertCount < 3) return null;
+
+    const triCount = Math.floor(vertCount / 3);
+    const triIdx = clamp(sampleTriangleIndex, 0, 1, 0.5);
+    const t = Math.max(0, Math.min(triCount - 1, Math.floor(triCount * triIdx)));
+    const v0 = t * 3;
+    const i0 = v0 * 3;
+    const i1 = (v0 + 1) * 3;
+    const i2 = (v0 + 2) * 3;
+
+    const cx = (arr[i0] + arr[i1] + arr[i2]) / 3;
+    const cy = (arr[i0 + 1] + arr[i1 + 1] + arr[i2 + 1]) / 3;
+    const cz = (arr[i0 + 2] + arr[i1 + 2] + arr[i2 + 2]) / 3;
+
+    const out = new THREE.Vector3(cx, cy, cz);
+    m.updateMatrixWorld?.(true);
+    return out.applyMatrix4(m.matrixWorld);
 }
 
 export class AsphaltDebuggerView {
@@ -118,6 +191,12 @@ export class AsphaltDebuggerView {
             initialSunFlare: sunFlare,
             initialPostProcessingActive: postActive,
             initialColorGradingDebug: gradingDebug,
+            markingsCalibration: {
+                targetYellow: hexToCssColor(ROAD_MARKING_YELLOW_TARGET_SUN_HEX).toUpperCase(),
+                targetWhite: hexToCssColor(ROAD_MARKING_WHITE_TARGET_SUN_HEX).toUpperCase(),
+                noteText: 'Samples lane marking meshes (fixed camera pose; uses current lighting + tone mapping).',
+                onSample: () => this._sampleMarkingsCalibration()
+            },
             getIblDebugInfo: () => engine.getIBLDebugInfo?.() ?? null,
             getPostProcessingDebugInfo: () => ({
                 postActive: !!engine.isPostProcessingActive,
@@ -272,6 +351,52 @@ export class AsphaltDebuggerView {
                 seed: roadSeed,
                 maxWidth: 2.5
             });
+        }
+    }
+
+    _sampleMarkingsCalibration() {
+        const engine = this.engine;
+        const city = this.city;
+        const controls = this.controls;
+        const renderer = engine?.renderer ?? null;
+        const camera = engine?.camera ?? null;
+        if (!renderer || !camera || !city?.roads) throw new Error('Missing renderer/camera/city roads.');
+
+        const yellowMesh = city.roads.markingsYellow ?? null;
+        const whiteMesh = city.roads.markingsWhite ?? null;
+        const yellowPos = getMeshTriangleCentroidWorld(yellowMesh, { sampleTriangleIndex: 0.5 });
+        const whitePos = getMeshTriangleCentroidWorld(whiteMesh, { sampleTriangleIndex: 0.5 });
+        if (!yellowPos || !whitePos) throw new Error('Missing lane marking meshes (yellow/white).');
+
+        const prevPosition = camera.position.clone();
+        const prevTarget = controls?.target?.clone?.() ?? new THREE.Vector3(0, 0, 0);
+
+        try {
+            const focus = yellowPos.clone().add(whitePos).multiplyScalar(0.5);
+            const dir = new THREE.Vector3(0.0, 0.33, 1.0).normalize();
+            const dist = 18;
+            const position = focus.clone().addScaledVector(dir, dist);
+            position.y = Math.max(position.y, focus.y + 2.5);
+
+            if (controls?.setLookAt) controls.setLookAt({ position, target: focus });
+            else {
+                camera.position.copy(position);
+                camera.lookAt(focus);
+                camera.updateMatrixWorld?.();
+            }
+
+            engine.updateFrame(0, { render: true, nowMs: performance.now() });
+
+            const yellow = sampleAverageSrgbHexAtWorldPos(renderer, camera, yellowPos, { size: 9 });
+            const white = sampleAverageSrgbHexAtWorldPos(renderer, camera, whitePos, { size: 9 });
+            return { yellow, white };
+        } finally {
+            if (controls?.setLookAt) controls.setLookAt({ position: prevPosition, target: prevTarget });
+            else {
+                camera.position.copy(prevPosition);
+                camera.lookAt(prevTarget);
+                camera.updateMatrixWorld?.();
+            }
         }
     }
 }

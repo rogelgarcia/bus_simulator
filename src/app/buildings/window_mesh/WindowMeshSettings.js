@@ -51,11 +51,25 @@ export const WINDOW_SHADE_COVERAGE = Object.freeze({
     PCT_100: 1.0
 });
 
+export const WINDOW_SHADE_DIRECTION = Object.freeze({
+    TOP_TO_BOTTOM: 'top_to_bottom',
+    LEFT_TO_RIGHT: 'left_to_right',
+    RIGHT_TO_LEFT: 'right_to_left',
+    RANDOM_LR: 'random_lr'
+});
+
 const COVERAGE_VALUES = Object.freeze([
     WINDOW_SHADE_COVERAGE.NONE,
     WINDOW_SHADE_COVERAGE.PCT_20,
     WINDOW_SHADE_COVERAGE.PCT_50,
     WINDOW_SHADE_COVERAGE.PCT_100
+]);
+
+const SHADE_DIRECTION_VALUES = Object.freeze([
+    WINDOW_SHADE_DIRECTION.TOP_TO_BOTTOM,
+    WINDOW_SHADE_DIRECTION.LEFT_TO_RIGHT,
+    WINDOW_SHADE_DIRECTION.RIGHT_TO_LEFT,
+    WINDOW_SHADE_DIRECTION.RANDOM_LR
 ]);
 
 function normalizeShadeCoverage(value, fallback) {
@@ -74,11 +88,36 @@ function normalizeShadeCoverage(value, fallback) {
     return fallback;
 }
 
+function normalizeShadeDirection(value, fallback) {
+    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (raw) {
+        for (const v of SHADE_DIRECTION_VALUES) {
+            if (raw === v) return v;
+        }
+    }
+
+    if (raw === 'top' || raw === 'top-to-bottom' || raw === 'top_to_bottom' || raw === 'vertical') {
+        return WINDOW_SHADE_DIRECTION.TOP_TO_BOTTOM;
+    }
+    if (raw === 'left' || raw === 'left-to-right' || raw === 'left_to_right' || raw === 'ltr') {
+        return WINDOW_SHADE_DIRECTION.LEFT_TO_RIGHT;
+    }
+    if (raw === 'right' || raw === 'right-to-left' || raw === 'right_to_left' || raw === 'rtl') {
+        return WINDOW_SHADE_DIRECTION.RIGHT_TO_LEFT;
+    }
+    if (raw === 'random' || raw === 'random-lr' || raw === 'random_lr') {
+        return WINDOW_SHADE_DIRECTION.RANDOM_LR;
+    }
+    return fallback;
+}
+
 /**
  * @typedef {Object} WindowMeshArchSettings
  * @property {boolean} enabled
  * @property {number} heightRatio
  * @property {boolean} meetsRectangleFrame
+ * @property {'frame'|'muntin'} topPieceMode
+ * @property {boolean} clipVerticalMuntinsToRectWhenNoTopPiece
  */
 
 /**
@@ -88,12 +127,21 @@ function normalizeShadeCoverage(value, fallback) {
  */
 
 /**
+ * @typedef {Object} WindowMeshPbrSettings
+ * @property {number} roughness
+ * @property {number} metalness
+ * @property {number} envMapIntensity
+ * @property {number} normalStrength
+ */
+
+/**
  * @typedef {Object} WindowMeshFrameSettings
  * @property {number} width
  * @property {number} depth
  * @property {number} inset
  * @property {number} colorHex
  * @property {WindowMeshBevelSettings} bevel
+ * @property {WindowMeshPbrSettings} material
  */
 
 /**
@@ -101,12 +149,14 @@ function normalizeShadeCoverage(value, fallback) {
  * @property {boolean} enabled
  * @property {number} columns
  * @property {number} rows
- * @property {number} width
+ * @property {number} verticalWidth
+ * @property {number} horizontalWidth
  * @property {number} depth
  * @property {number} inset
  * @property {{x:number,y:number}} uvOffset
  * @property {number|null} colorHex
  * @property {{inherit:boolean, bevel:WindowMeshBevelSettings}} bevel
+ * @property {{inheritFromFrame:boolean, pbr:WindowMeshPbrSettings}} material
  */
 
 /**
@@ -137,6 +187,7 @@ function normalizeShadeCoverage(value, fallback) {
  * @property {boolean} enabled
  * @property {number} coverage
  * @property {boolean} randomizeCoverage
+ * @property {string} direction
  * @property {number} colorHex
  * @property {WindowMeshShadeFabricSettings} fabric
  * @property {number} zOffset
@@ -193,7 +244,9 @@ export const WINDOW_MESH_DEFAULTS = Object.freeze({
     arch: Object.freeze({
         enabled: false,
         heightRatio: 0.25,
-        meetsRectangleFrame: true
+        meetsRectangleFrame: true,
+        topPieceMode: 'frame',
+        clipVerticalMuntinsToRectWhenNoTopPiece: true
     }),
     frame: Object.freeze({
         width: 0.085,
@@ -203,13 +256,20 @@ export const WINDOW_MESH_DEFAULTS = Object.freeze({
         bevel: Object.freeze({
             size: 0.3,
             roundness: 0.65
+        }),
+        material: Object.freeze({
+            roughness: 0.72,
+            metalness: 0.0,
+            envMapIntensity: 0.0,
+            normalStrength: 0.6
         })
     }),
     muntins: Object.freeze({
         enabled: false,
         columns: 2,
         rows: 2,
-        width: 0.03,
+        verticalWidth: 0.03,
+        horizontalWidth: 0.03,
         depth: 0.06,
         inset: 0.012,
         uvOffset: Object.freeze({ x: 0.0, y: 0.0 }),
@@ -219,6 +279,15 @@ export const WINDOW_MESH_DEFAULTS = Object.freeze({
             bevel: Object.freeze({
                 size: 0.3,
                 roundness: 0.65
+            })
+        }),
+        material: Object.freeze({
+            inheritFromFrame: false,
+            pbr: Object.freeze({
+                roughness: 0.72,
+                metalness: 0.0,
+                envMapIntensity: 0.0,
+                normalStrength: 0.55
             })
         })
     }),
@@ -238,6 +307,7 @@ export const WINDOW_MESH_DEFAULTS = Object.freeze({
         enabled: true,
         coverage: WINDOW_SHADE_COVERAGE.NONE,
         randomizeCoverage: true,
+        direction: WINDOW_SHADE_DIRECTION.TOP_TO_BOTTOM,
         colorHex: 0xf3f1ea,
         fabric: Object.freeze({
             scale: 7.0,
@@ -281,6 +351,11 @@ export function sanitizeWindowMeshSettings(input) {
     const meetsRectangleFrame = archSrc.meetsRectangleFrame !== undefined
         ? !!archSrc.meetsRectangleFrame
         : WINDOW_MESH_DEFAULTS.arch.meetsRectangleFrame;
+    const topPieceModeRaw = typeof archSrc.topPieceMode === 'string' ? archSrc.topPieceMode.trim().toLowerCase() : '';
+    const topPieceMode = topPieceModeRaw === 'muntin' ? 'muntin' : WINDOW_MESH_DEFAULTS.arch.topPieceMode;
+    const clipVerticalMuntinsToRectWhenNoTopPiece = archSrc.clipVerticalMuntinsToRectWhenNoTopPiece !== undefined
+        ? !!archSrc.clipVerticalMuntinsToRectWhenNoTopPiece
+        : WINDOW_MESH_DEFAULTS.arch.clipVerticalMuntinsToRectWhenNoTopPiece;
 
     const frameSrc = src.frame && typeof src.frame === 'object' ? src.frame : {};
     const frameWidth = clamp(frameSrc.width, 0.005, Math.min(0.5, width * 0.45), WINDOW_MESH_DEFAULTS.frame.width);
@@ -290,12 +365,29 @@ export function sanitizeWindowMeshSettings(input) {
     const frameBevelSize = clamp(frameBevelSrc.size, 0.0, 1.0, WINDOW_MESH_DEFAULTS.frame.bevel.size);
     const frameRoundness = clamp(frameBevelSrc.roundness, 0.0, 1.0, WINDOW_MESH_DEFAULTS.frame.bevel.roundness);
     const frameColorHex = normalizeHexColor(frameSrc.colorHex ?? frameSrc.color, WINDOW_MESH_DEFAULTS.frame.colorHex);
+    const frameMatSrc = frameSrc.material && typeof frameSrc.material === 'object' ? frameSrc.material : {};
+    const frameRoughness = clamp(frameMatSrc.roughness, 0.0, 1.0, WINDOW_MESH_DEFAULTS.frame.material.roughness);
+    const frameMetalness = clamp(frameMatSrc.metalness, 0.0, 1.0, WINDOW_MESH_DEFAULTS.frame.material.metalness);
+    const frameEnvMapIntensity = clamp(frameMatSrc.envMapIntensity, 0.0, 8.0, WINDOW_MESH_DEFAULTS.frame.material.envMapIntensity);
+    const frameNormalStrength = clamp(frameMatSrc.normalStrength, 0.0, 5.0, WINDOW_MESH_DEFAULTS.frame.material.normalStrength);
 
     const muntinSrc = src.muntins && typeof src.muntins === 'object' ? src.muntins : {};
     const muntinsEnabled = muntinSrc.enabled !== undefined ? !!muntinSrc.enabled : WINDOW_MESH_DEFAULTS.muntins.enabled;
     const columns = clampInt(muntinSrc.columns, 1, 12, WINDOW_MESH_DEFAULTS.muntins.columns);
     const rows = clampInt(muntinSrc.rows, 1, 12, WINDOW_MESH_DEFAULTS.muntins.rows);
-    const muntinWidth = clamp(muntinSrc.width ?? muntinSrc.muntinWidth, 0.002, 3.0, WINDOW_MESH_DEFAULTS.muntins.width);
+    const legacyWidth = clamp(muntinSrc.width ?? muntinSrc.muntinWidth, 0.002, 3.0, WINDOW_MESH_DEFAULTS.muntins.verticalWidth);
+    const muntinVerticalWidth = clamp(
+        muntinSrc.verticalWidth ?? muntinSrc.widthX ?? muntinSrc.muntinWidthVertical,
+        0.002,
+        3.0,
+        legacyWidth
+    );
+    const muntinHorizontalWidth = clamp(
+        muntinSrc.horizontalWidth ?? muntinSrc.widthY ?? muntinSrc.muntinWidthHorizontal,
+        0.002,
+        3.0,
+        legacyWidth
+    );
     const muntinDepth = clamp(muntinSrc.depth ?? muntinSrc.muntinDepth, 0.0, 6.25, WINDOW_MESH_DEFAULTS.muntins.depth);
     const inset = clamp(muntinSrc.inset, 0.0, 0.2, WINDOW_MESH_DEFAULTS.muntins.inset);
     const uvOffSrc = muntinSrc.uvOffset && typeof muntinSrc.uvOffset === 'object' ? muntinSrc.uvOffset : muntinSrc;
@@ -311,6 +403,15 @@ export function sanitizeWindowMeshSettings(input) {
     const muntinBevelInner = muntinBevelSrc.bevel && typeof muntinBevelSrc.bevel === 'object' ? muntinBevelSrc.bevel : muntinBevelSrc;
     const muntinBevelSize = clamp(muntinBevelInner.size, 0.0, 1.0, WINDOW_MESH_DEFAULTS.muntins.bevel.bevel.size);
     const muntinRoundness = clamp(muntinBevelInner.roundness, 0.0, 1.0, WINDOW_MESH_DEFAULTS.muntins.bevel.bevel.roundness);
+    const muntinMatSrc = muntinSrc.material && typeof muntinSrc.material === 'object' ? muntinSrc.material : {};
+    const muntinMaterialInheritFromFrame = muntinMatSrc.inheritFromFrame !== undefined
+        ? !!muntinMatSrc.inheritFromFrame
+        : WINDOW_MESH_DEFAULTS.muntins.material.inheritFromFrame;
+    const muntinPbrSrc = muntinMatSrc.pbr && typeof muntinMatSrc.pbr === 'object' ? muntinMatSrc.pbr : muntinMatSrc;
+    const muntinRoughness = clamp(muntinPbrSrc.roughness, 0.0, 1.0, WINDOW_MESH_DEFAULTS.muntins.material.pbr.roughness);
+    const muntinMetalness = clamp(muntinPbrSrc.metalness, 0.0, 1.0, WINDOW_MESH_DEFAULTS.muntins.material.pbr.metalness);
+    const muntinEnvMapIntensity = clamp(muntinPbrSrc.envMapIntensity, 0.0, 8.0, WINDOW_MESH_DEFAULTS.muntins.material.pbr.envMapIntensity);
+    const muntinNormalStrength = clamp(muntinPbrSrc.normalStrength, 0.0, 5.0, WINDOW_MESH_DEFAULTS.muntins.material.pbr.normalStrength);
 
     const glassSrc = src.glass && typeof src.glass === 'object' ? src.glass : {};
     const glassOpacity = clamp(glassSrc.opacity, 0.0, 1.0, WINDOW_MESH_DEFAULTS.glass.opacity);
@@ -327,6 +428,10 @@ export function sanitizeWindowMeshSettings(input) {
     const shadeEnabled = shadeSrc.enabled !== undefined ? !!shadeSrc.enabled : WINDOW_MESH_DEFAULTS.shade.enabled;
     const coverage = normalizeShadeCoverage(shadeSrc.coverage, WINDOW_MESH_DEFAULTS.shade.coverage);
     const randomizeCoverage = shadeSrc.randomizeCoverage !== undefined ? !!shadeSrc.randomizeCoverage : WINDOW_MESH_DEFAULTS.shade.randomizeCoverage;
+    const direction = normalizeShadeDirection(
+        shadeSrc.direction ?? shadeSrc.directionMode ?? shadeSrc.mode,
+        WINDOW_MESH_DEFAULTS.shade.direction
+    );
     const shadeColorHex = normalizeHexColor(shadeSrc.colorHex ?? shadeSrc.color, WINDOW_MESH_DEFAULTS.shade.colorHex);
     const fabricSrc = shadeSrc.fabric && typeof shadeSrc.fabric === 'object' ? shadeSrc.fabric : shadeSrc;
     const fabricScale = clamp(fabricSrc.scale ?? fabricSrc.textureScale, 0.1, 40.0, WINDOW_MESH_DEFAULTS.shade.fabric.scale);
@@ -392,25 +497,43 @@ export function sanitizeWindowMeshSettings(input) {
         arch: {
             enabled: archOk,
             heightRatio: archHeightRatio,
-            meetsRectangleFrame
+            meetsRectangleFrame,
+            topPieceMode,
+            clipVerticalMuntinsToRectWhenNoTopPiece
         },
         frame: {
             width: frameWidth,
             depth: frameDepth,
             inset: frameInset,
             colorHex: frameColorHex,
-            bevel: { size: frameBevelSize, roundness: frameRoundness }
+            bevel: { size: frameBevelSize, roundness: frameRoundness },
+            material: {
+                roughness: frameRoughness,
+                metalness: frameMetalness,
+                envMapIntensity: frameEnvMapIntensity,
+                normalStrength: frameNormalStrength
+            }
         },
         muntins: {
             enabled: muntinsEnabled && (columns > 1 || rows > 1),
             columns,
             rows,
-            width: muntinWidth,
+            verticalWidth: muntinVerticalWidth,
+            horizontalWidth: muntinHorizontalWidth,
             depth: muntinDepth,
             inset,
             uvOffset: { x: uvOffsetX, y: uvOffsetY },
             colorHex: muntinColorHex,
-            bevel: { inherit: muntinBevelInherit, bevel: { size: muntinBevelSize, roundness: muntinRoundness } }
+            bevel: { inherit: muntinBevelInherit, bevel: { size: muntinBevelSize, roundness: muntinRoundness } },
+            material: {
+                inheritFromFrame: muntinMaterialInheritFromFrame,
+                pbr: {
+                    roughness: muntinRoughness,
+                    metalness: muntinMetalness,
+                    envMapIntensity: muntinEnvMapIntensity,
+                    normalStrength: muntinNormalStrength
+                }
+            }
         },
         glass: {
             opacity: glassOpacity,
@@ -422,6 +545,7 @@ export function sanitizeWindowMeshSettings(input) {
             enabled: shadeEnabled,
             coverage,
             randomizeCoverage,
+            direction,
             colorHex: shadeColorHex,
             fabric: { scale: fabricScale, intensity: fabricIntensity },
             zOffset: shadeZOffset

@@ -3,7 +3,7 @@
 // @ts-check
 
 import * as THREE from 'three';
-import { sanitizeWindowMeshSettings } from '../../../../app/buildings/window_mesh/WindowMeshSettings.js';
+import { sanitizeWindowMeshSettings, WINDOW_SHADE_DIRECTION } from '../../../../app/buildings/window_mesh/WindowMeshSettings.js';
 import { computeWindowMeshInstanceVariationFromSanitized } from '../../../../app/buildings/window_mesh/WindowMeshVariation.js';
 import { buildWindowMeshGeometryBundle, getWindowMeshGeometryKey } from './WindowMeshGeometry.js';
 import { createWindowMeshMaterials, disposeWindowMeshMaterialCaches } from './WindowMeshMaterials.js';
@@ -93,6 +93,7 @@ export class WindowMeshGenerator {
         const openingGeo = bundle.opening.clone();
         group.userData.ownedGeometries = Object.freeze([openingGeo]);
         const shadeCoverage = new Float32Array(count);
+        const shadeFlipX = new Float32Array(count);
         const interiorUvOffset = new Float32Array(count * 2);
         const interiorUvScale = new Float32Array(count * 2);
         const interiorFlipX = new Float32Array(count);
@@ -110,6 +111,8 @@ export class WindowMeshGenerator {
             const v = computeWindowMeshInstanceVariationFromSanitized({ settings: s, seed, id });
 
             shadeCoverage[i] = Number.isFinite(v.shadeCoverage) ? v.shadeCoverage : 0.0;
+            const shadeDir = String(v.shadeDirection ?? s.shade.direction ?? '');
+            shadeFlipX[i] = (shadeDir === WINDOW_SHADE_DIRECTION.TOP_TO_BOTTOM || shadeDir === WINDOW_SHADE_DIRECTION.RIGHT_TO_LEFT) ? 1.0 : 0.0;
 
             const cell = v.interiorCell ?? { col: 0, row: 0 };
             const c = Math.max(0, Math.min(cols - 1, cell.col | 0));
@@ -128,6 +131,7 @@ export class WindowMeshGenerator {
             instanceVariations.push(Object.freeze({
                 id,
                 shadeCoverage: shadeCoverage[i],
+                shadeDirection: shadeDir,
                 interiorCell: Object.freeze({ col: c, row: r }),
                 interiorFlipX: !!v.interiorFlipX,
                 interiorTint: Object.freeze({
@@ -139,6 +143,7 @@ export class WindowMeshGenerator {
         }
 
         openingGeo.setAttribute('instanceShadeCoverage', new THREE.InstancedBufferAttribute(shadeCoverage, 1));
+        openingGeo.setAttribute('instanceShadeFlipX', new THREE.InstancedBufferAttribute(shadeFlipX, 1));
         openingGeo.setAttribute('instanceInteriorUvOffset', new THREE.InstancedBufferAttribute(interiorUvOffset, 2));
         openingGeo.setAttribute('instanceInteriorUvScale', new THREE.InstancedBufferAttribute(interiorUvScale, 2));
         openingGeo.setAttribute('instanceInteriorFlipX', new THREE.InstancedBufferAttribute(interiorFlipX, 1));
@@ -154,15 +159,6 @@ export class WindowMeshGenerator {
         frameMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         frameLayer.add(frameMesh);
 
-        if (bundle.joinBar) {
-            const joinMesh = new THREE.InstancedMesh(bundle.joinBar, mats.frameMat, count);
-            joinMesh.castShadow = true;
-            joinMesh.receiveShadow = true;
-            joinMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-            frameLayer.add(joinMesh);
-            group.userData._joinMesh = joinMesh;
-        }
-
         const muntinsLayer = new THREE.Group();
         muntinsLayer.name = 'muntins';
         let muntinsMesh = null;
@@ -172,6 +168,18 @@ export class WindowMeshGenerator {
             muntinsMesh.receiveShadow = true;
             muntinsMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
             muntinsLayer.add(muntinsMesh);
+        }
+
+        if (bundle.joinBar) {
+            const joinLayer = bundle.joinBarLayer === 'muntins' ? 'muntins' : 'frame';
+            const joinMat = joinLayer === 'muntins' ? mats.muntinMat : mats.frameMat;
+            const joinMesh = new THREE.InstancedMesh(bundle.joinBar, joinMat, count);
+            joinMesh.castShadow = true;
+            joinMesh.receiveShadow = true;
+            joinMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            if (joinLayer === 'muntins') muntinsLayer.add(joinMesh);
+            else frameLayer.add(joinMesh);
+            group.userData._joinMesh = joinMesh;
         }
 
         let interiorLayer = null;
@@ -221,6 +229,7 @@ export class WindowMeshGenerator {
 
         frameMesh.renderOrder = 3;
         if (muntinsMesh) muntinsMesh.renderOrder = 3;
+        if (group.userData._joinMesh) group.userData._joinMesh.renderOrder = 3;
 
         for (let i = 0; i < count; i++) {
             const entry = list[i];
@@ -247,7 +256,7 @@ export class WindowMeshGenerator {
         if (interiorLayer) group.add(interiorLayer);
         group.add(shadeLayer);
         group.add(frameLayer);
-        if (muntinsMesh) group.add(muntinsLayer);
+        if (muntinsLayer.children.length) group.add(muntinsLayer);
         group.add(glassLayer);
 
         group.userData.layers = Object.freeze({

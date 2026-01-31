@@ -2,7 +2,7 @@
 // Docked Options-style panel for the Window Mesh Debugger.
 // @ts-check
 
-import { getDefaultWindowMeshSettings, sanitizeWindowMeshSettings, WINDOW_SHADE_COVERAGE } from '../../../../app/buildings/window_mesh/index.js';
+import { getDefaultWindowMeshSettings, sanitizeWindowMeshSettings, WINDOW_SHADE_COVERAGE, WINDOW_SHADE_DIRECTION } from '../../../../app/buildings/window_mesh/index.js';
 import { DEFAULT_IBL_ID, getIblOptions } from '../../../content3d/catalogs/IBLCatalog.js';
 import { getPbrMaterialOptionsForBuildings } from '../../../content3d/catalogs/PbrMaterialCatalog.js';
 import { getWindowInteriorAtlasOptions } from '../../../content3d/catalogs/WindowInteriorAtlasCatalog.js';
@@ -254,6 +254,7 @@ export class WindowMeshDebuggerUI {
 
         const defaults = getDefaultWindowMeshSettings();
         const initial = sanitizeWindowMeshSettings({ ...defaults, ...(initialSettings ?? {}) });
+        const initialLinkMuntinThickness = Math.abs(Number(initial.muntins.verticalWidth) - Number(initial.muntins.horizontalWidth)) < 1e-6;
 
         const wallOptions = getPbrMaterialOptionsForBuildings();
         const defaultWall = wallOptions[0]?.id ?? '';
@@ -273,6 +274,62 @@ export class WindowMeshDebuggerUI {
             },
             renderMode: 'solid',
             layers: { frame: true, muntins: true, glass: true, shade: true, interior: true },
+            decoration: {
+                sill: {
+                    enabled: false,
+                    widthScale: 1.15,
+                    height: 0.07,
+                    depth: 0.18,
+                    gap: 0.0,
+                    offset: { x: 0.0, y: 0.0, z: 0.002 },
+                    shadows: { cast: true, receive: true },
+                    material: {
+                        mode: 'pbr',
+                        materialId: String(defaultWall),
+                        colorHex: 0xf2f2f2,
+                        roughness: 0.85,
+                        metalness: 0.0,
+                        normalStrength: 1.0,
+                        uv: { repeatU: 1.0, repeatV: 1.0, offsetU: 0.0, offsetV: 0.0, rotationDeg: 0.0 }
+                    }
+                },
+                header: {
+                    enabled: false,
+                    widthScale: 1.1,
+                    height: 0.06,
+                    depth: 0.12,
+                    gap: 0.03,
+                    offset: { x: 0.0, y: 0.0, z: 0.002 },
+                    shadows: { cast: true, receive: true },
+                    material: {
+                        mode: 'pbr',
+                        materialId: String(defaultWall),
+                        colorHex: 0xf2f2f2,
+                        roughness: 0.85,
+                        metalness: 0.0,
+                        normalStrength: 1.0,
+                        uv: { repeatU: 1.0, repeatV: 1.0, offsetU: 0.0, offsetV: 0.0, rotationDeg: 0.0 }
+                    }
+                },
+                trim: {
+                    enabled: false,
+                    bandWidth: 0.08,
+                    innerGap: 0.005,
+                    depth: 0.04,
+                    offset: { x: 0.0, y: 0.0, z: 0.002 },
+                    shadows: { cast: true, receive: true },
+                    material: {
+                        mode: 'match_frame',
+                        materialId: String(defaultWall),
+                        colorHex: 0xf2f2f2,
+                        roughness: 0.75,
+                        metalness: 0.0,
+                        normalStrength: 1.0,
+                        uv: { repeatU: 1.0, repeatV: 1.0, offsetU: 0.0, offsetV: 0.0, rotationDeg: 0.0 }
+                    }
+                }
+            },
+            debug: { bevelExaggerate: false, linkMuntinThickness: initialLinkMuntinThickness },
             settings: initial
         };
 
@@ -306,6 +363,7 @@ export class WindowMeshDebuggerUI {
         this._buildMuntinsSection();
         this._buildGlassSection();
         this._buildShadeSection();
+        this._buildDecorationSection({ wallOptions });
         this._buildInteriorSection();
 
         this._onKeyDown = (e) => {
@@ -515,6 +573,50 @@ export class WindowMeshDebuggerUI {
         section.appendChild(iblIntensityRow.row);
         this._controls.iblIntensity = iblIntensityRow;
 
+        const iblPresetRow = makeEl('div', 'options-row options-row-wide');
+        iblPresetRow.appendChild(makeEl('div', 'options-row-label', 'IBL Preset'));
+        const iblPresetControl = makeEl('div', 'options-row-control options-row-control-wide');
+        const iblPresetButtons = makeEl('div', 'options-choice-group');
+
+        const syncIblUi = () => {
+            const disabled = !this._state.ibl.enabled;
+            iblIdRow.select.disabled = disabled;
+            iblBackgroundRow.toggle.disabled = disabled;
+            iblIntensityRow.range.disabled = disabled;
+            iblIntensityRow.number.disabled = disabled;
+        };
+
+        const applyIblPreset = ({ enabled, envMapIntensity }) => {
+            this._state.ibl.enabled = enabled !== undefined ? !!enabled : this._state.ibl.enabled;
+            this._state.ibl.envMapIntensity = clamp(envMapIntensity, 0.0, 5.0, this._state.ibl.envMapIntensity);
+
+            iblEnabledRow.toggle.checked = this._state.ibl.enabled;
+            const v = this._state.ibl.envMapIntensity;
+            iblIntensityRow.range.value = String(v);
+            iblIntensityRow.number.value = String(v.toFixed(2));
+            syncIblUi();
+            this._emit();
+        };
+
+        const btnIblSoft = makeEl('button', 'options-choice-btn', 'Soft');
+        btnIblSoft.type = 'button';
+        btnIblSoft.addEventListener('click', () => applyIblPreset({ enabled: true, envMapIntensity: 0.25 }));
+        iblPresetButtons.appendChild(btnIblSoft);
+
+        const btnIblHigh = makeEl('button', 'options-choice-btn', 'High Contrast');
+        btnIblHigh.type = 'button';
+        btnIblHigh.addEventListener('click', () => applyIblPreset({ enabled: true, envMapIntensity: 1.5 }));
+        iblPresetButtons.appendChild(btnIblHigh);
+
+        const btnIblOff = makeEl('button', 'options-choice-btn', 'Off');
+        btnIblOff.type = 'button';
+        btnIblOff.addEventListener('click', () => applyIblPreset({ enabled: false }));
+        iblPresetButtons.appendChild(btnIblOff);
+
+        iblPresetControl.appendChild(iblPresetButtons);
+        iblPresetRow.appendChild(iblPresetControl);
+        section.appendChild(iblPresetRow);
+
         const iblDisabled = !this._state.ibl.enabled;
         iblIdRow.select.disabled = iblDisabled;
         iblBackgroundRow.toggle.disabled = iblDisabled;
@@ -563,6 +665,11 @@ export class WindowMeshDebuggerUI {
         btnAll.addEventListener('click', () => applyPreset({ frame: true, muntins: true, glass: true, shade: true, interior: true }));
         presetButtons.appendChild(btnAll);
 
+        const btnGlassOnly = makeEl('button', 'options-choice-btn', 'Glass Only');
+        btnGlassOnly.type = 'button';
+        btnGlassOnly.addEventListener('click', () => applyPreset({ frame: false, muntins: false, glass: true, shade: false, interior: false }));
+        presetButtons.appendChild(btnGlassOnly);
+
         const btnInteriorOnly = makeEl('button', 'options-choice-btn', 'Interior Only');
         btnInteriorOnly.type = 'button';
         btnInteriorOnly.addEventListener('click', () => applyPreset({ frame: false, muntins: false, glass: false, shade: false, interior: true }));
@@ -576,6 +683,20 @@ export class WindowMeshDebuggerUI {
     _buildSizeSection() {
         const section = this._buildSection('Size');
         const s0 = this._state.settings;
+
+        const syncArchControls = (archEnabledRow, archRatioRow, meetsRectRow, topPieceModeRow, clipVerticalRow) => {
+            const s = this._state.settings;
+            const arch = s?.arch ?? {};
+            const enabled = !!arch.enabled;
+            const meetsRect = !!arch.meetsRectangleFrame;
+
+            archEnabledRow.toggle.disabled = false;
+            archRatioRow.range.disabled = !enabled;
+            archRatioRow.number.disabled = !enabled;
+            meetsRectRow.toggle.disabled = !enabled;
+            topPieceModeRow.setDisabled(!enabled || !meetsRect);
+            clipVerticalRow.toggle.disabled = !enabled || meetsRect;
+        };
 
         const width = makeNumberSliderRow({
             label: 'Width (m)',
@@ -605,6 +726,7 @@ export class WindowMeshDebuggerUI {
             onChange: (v) => {
                 const s = this._state.settings;
                 this._setSettings({ arch: { ...s.arch, enabled: v } });
+                syncArchControls(archEnabled, archRatio, meetsRect, topPieceMode, clipVertical);
             }
         });
         section.appendChild(archEnabled.row);
@@ -619,6 +741,7 @@ export class WindowMeshDebuggerUI {
             onChange: (v) => {
                 const s = this._state.settings;
                 this._setSettings({ arch: { ...s.arch, heightRatio: v } });
+                syncArchControls(archEnabled, archRatio, meetsRect, topPieceMode, clipVertical);
             }
         });
         section.appendChild(archRatio.row);
@@ -629,14 +752,101 @@ export class WindowMeshDebuggerUI {
             onChange: (v) => {
                 const s = this._state.settings;
                 this._setSettings({ arch: { ...s.arch, meetsRectangleFrame: v } });
+                syncArchControls(archEnabled, archRatio, meetsRect, topPieceMode, clipVertical);
             }
         });
         section.appendChild(meetsRect.row);
+
+        const topPieceMode = makeChoiceRow({
+            label: 'Arch Top Piece Mode',
+            value: s0.arch.topPieceMode,
+            options: [
+                { id: 'frame', label: 'Frame' },
+                { id: 'muntin', label: 'Muntin' }
+            ],
+            onChange: (id) => {
+                const s = this._state.settings;
+                this._setSettings({ arch: { ...s.arch, topPieceMode: id } });
+            }
+        });
+        section.appendChild(topPieceMode.row);
+
+        const clipVertical = makeToggleRow({
+            label: 'No Verticals In Arch (No Top Piece)',
+            value: s0.arch.clipVerticalMuntinsToRectWhenNoTopPiece,
+            onChange: (v) => {
+                const s = this._state.settings;
+                this._setSettings({ arch: { ...s.arch, clipVerticalMuntinsToRectWhenNoTopPiece: v } });
+            }
+        });
+        section.appendChild(clipVertical.row);
+
+        const presetRow = makeEl('div', 'options-row options-row-wide');
+        presetRow.appendChild(makeEl('div', 'options-row-label', 'Arch Presets'));
+        const presetControl = makeEl('div', 'options-row-control options-row-control-wide');
+        const presetButtons = makeEl('div', 'options-choice-group');
+
+        const applyArchPreset = ({ meetsRectangleFrame, topPieceMode, clipVerticalMuntinsToRectWhenNoTopPiece }) => {
+            const s = this._state.settings;
+            this._setSettings({
+                arch: {
+                    ...s.arch,
+                    enabled: true,
+                    meetsRectangleFrame: !!meetsRectangleFrame,
+                    topPieceMode: String(topPieceMode ?? s.arch.topPieceMode),
+                    clipVerticalMuntinsToRectWhenNoTopPiece: !!clipVerticalMuntinsToRectWhenNoTopPiece
+                },
+                muntins: { ...s.muntins, enabled: true, columns: 2, rows: 2 }
+            });
+            syncArchControls(archEnabled, archRatio, meetsRect, topPieceMode, clipVertical);
+        };
+
+        const btn2x2Frame = makeEl('button', 'options-choice-btn', '2x2 Top=Frame');
+        btn2x2Frame.type = 'button';
+        btn2x2Frame.addEventListener('click', () => applyArchPreset({
+            meetsRectangleFrame: true,
+            topPieceMode: 'frame',
+            clipVerticalMuntinsToRectWhenNoTopPiece: true
+        }));
+        presetButtons.appendChild(btn2x2Frame);
+
+        const btn2x2Muntin = makeEl('button', 'options-choice-btn', '2x2 Top=Muntin');
+        btn2x2Muntin.type = 'button';
+        btn2x2Muntin.addEventListener('click', () => applyArchPreset({
+            meetsRectangleFrame: true,
+            topPieceMode: 'muntin',
+            clipVerticalMuntinsToRectWhenNoTopPiece: true
+        }));
+        presetButtons.appendChild(btn2x2Muntin);
+
+        const btn2x2NoTop = makeEl('button', 'options-choice-btn', '2x2 No Top');
+        btn2x2NoTop.type = 'button';
+        btn2x2NoTop.addEventListener('click', () => applyArchPreset({
+            meetsRectangleFrame: false,
+            topPieceMode: 'muntin',
+            clipVerticalMuntinsToRectWhenNoTopPiece: true
+        }));
+        presetButtons.appendChild(btn2x2NoTop);
+
+        presetControl.appendChild(presetButtons);
+        presetRow.appendChild(presetControl);
+        section.appendChild(presetRow);
+
+        syncArchControls(archEnabled, archRatio, meetsRect, topPieceMode, clipVertical);
     }
 
     _buildFrameSection() {
         const section = this._buildSection('Frame');
         const s0 = this._state.settings;
+
+        section.appendChild(makeToggleRow({
+            label: 'Bevel Exaggerate',
+            value: this._state.debug.bevelExaggerate,
+            onChange: (v) => {
+                this._state.debug.bevelExaggerate = !!v;
+                this._emit();
+            }
+        }).row);
 
         section.appendChild(makeNumberSliderRow({
             label: 'Frame Width (m)',
@@ -717,6 +927,58 @@ export class WindowMeshDebuggerUI {
         }).row);
 
         section.appendChild(makeNumberSliderRow({
+            label: 'Roughness',
+            value: s0.frame.material.roughness,
+            min: 0.0,
+            max: 1.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                const s = this._state.settings;
+                this._setSettings({ frame: { ...s.frame, material: { ...s.frame.material, roughness: v } } });
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Metalness',
+            value: s0.frame.material.metalness,
+            min: 0.0,
+            max: 1.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                const s = this._state.settings;
+                this._setSettings({ frame: { ...s.frame, material: { ...s.frame.material, metalness: v } } });
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'EnvMap Intensity',
+            value: s0.frame.material.envMapIntensity,
+            min: 0.0,
+            max: 8.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                const s = this._state.settings;
+                this._setSettings({ frame: { ...s.frame, material: { ...s.frame.material, envMapIntensity: v } } });
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Normal Strength',
+            value: s0.frame.material.normalStrength,
+            min: 0.0,
+            max: 5.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                const s = this._state.settings;
+                this._setSettings({ frame: { ...s.frame, material: { ...s.frame.material, normalStrength: v } } });
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
             label: 'Bevel Size',
             value: s0.frame.bevel.size,
             min: 0.0,
@@ -782,18 +1044,66 @@ export class WindowMeshDebuggerUI {
             }
         }).row);
 
-        section.appendChild(makeNumberSliderRow({
-            label: 'Width (m)',
-            value: s0.muntins.width,
+        section.appendChild(makeToggleRow({
+            label: 'Link Thickness',
+            value: this._state.debug.linkMuntinThickness,
+            onChange: (v) => {
+                this._state.debug.linkMuntinThickness = !!v;
+                if (!this._state.debug.linkMuntinThickness) return;
+                const s = this._state.settings;
+                const next = clamp(s.muntins.verticalWidth, 0.002, 3.0);
+                this._setSettings({ muntins: { ...s.muntins, verticalWidth: next, horizontalWidth: next } });
+                verticalWidthRow.range.value = String(next);
+                verticalWidthRow.number.value = String(next.toFixed(3));
+                horizontalWidthRow.range.value = String(next);
+                horizontalWidthRow.number.value = String(next.toFixed(3));
+            }
+        }).row);
+
+        let horizontalWidthRow = null;
+        const verticalWidthRow = makeNumberSliderRow({
+            label: 'Vertical Width (m)',
+            value: s0.muntins.verticalWidth,
             min: 0.002,
             max: 3.0,
             step: 0.001,
             digits: 3,
             onChange: (v) => {
                 const s = this._state.settings;
-                this._setSettings({ muntins: { ...s.muntins, width: v } });
+                if (this._state.debug.linkMuntinThickness) {
+                    this._setSettings({ muntins: { ...s.muntins, verticalWidth: v, horizontalWidth: v } });
+                    if (horizontalWidthRow) {
+                        const next = clamp(v, 0.002, 3.0);
+                        horizontalWidthRow.range.value = String(next);
+                        horizontalWidthRow.number.value = String(next.toFixed(3));
+                    }
+                    return;
+                }
+                this._setSettings({ muntins: { ...s.muntins, verticalWidth: v } });
             }
-        }).row);
+        });
+        section.appendChild(verticalWidthRow.row);
+
+        horizontalWidthRow = makeNumberSliderRow({
+            label: 'Horizontal Height (m)',
+            value: s0.muntins.horizontalWidth,
+            min: 0.002,
+            max: 3.0,
+            step: 0.001,
+            digits: 3,
+            onChange: (v) => {
+                const s = this._state.settings;
+                if (this._state.debug.linkMuntinThickness) {
+                    this._setSettings({ muntins: { ...s.muntins, verticalWidth: v, horizontalWidth: v } });
+                    const next = clamp(v, 0.002, 3.0);
+                    verticalWidthRow.range.value = String(next);
+                    verticalWidthRow.number.value = String(next.toFixed(3));
+                    return;
+                }
+                this._setSettings({ muntins: { ...s.muntins, horizontalWidth: v } });
+            }
+        });
+        section.appendChild(horizontalWidthRow.row);
 
         section.appendChild(makeNumberSliderRow({
             label: 'Depth (m)',
@@ -865,6 +1175,110 @@ export class WindowMeshDebuggerUI {
                 this._setSettings({ muntins: { ...s.muntins, colorHex: colorHexFromHexString(hex) } });
             }
         }).row);
+
+        const materialInherit = makeToggleRow({
+            label: 'Material Inherit',
+            value: s0.muntins.material.inheritFromFrame,
+            onChange: (v) => {
+                const s = this._state.settings;
+                const framePbr = s.frame.material;
+                const m = s.muntins.material;
+                const next = v
+                    ? {
+                        ...m,
+                        inheritFromFrame: true,
+                        pbr: {
+                            ...m.pbr,
+                            roughness: framePbr.roughness,
+                            metalness: framePbr.metalness,
+                            envMapIntensity: framePbr.envMapIntensity,
+                            normalStrength: framePbr.normalStrength
+                        }
+                    }
+                    : { ...m, inheritFromFrame: false };
+                this._setSettings({ muntins: { ...s.muntins, material: next } });
+                const disabled = !!v;
+                roughnessRow.range.disabled = disabled;
+                roughnessRow.number.disabled = disabled;
+                metalnessRow.range.disabled = disabled;
+                metalnessRow.number.disabled = disabled;
+                envMapRow.range.disabled = disabled;
+                envMapRow.number.disabled = disabled;
+                normalStrengthRow.range.disabled = disabled;
+                normalStrengthRow.number.disabled = disabled;
+            }
+        });
+        section.appendChild(materialInherit.row);
+
+        const roughnessRow = makeNumberSliderRow({
+            label: 'Roughness',
+            value: s0.muntins.material.inheritFromFrame ? s0.frame.material.roughness : s0.muntins.material.pbr.roughness,
+            min: 0.0,
+            max: 1.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                const s = this._state.settings;
+                const m = s.muntins.material;
+                this._setSettings({ muntins: { ...s.muntins, material: { ...m, pbr: { ...m.pbr, roughness: v } } } });
+            }
+        });
+        section.appendChild(roughnessRow.row);
+
+        const metalnessRow = makeNumberSliderRow({
+            label: 'Metalness',
+            value: s0.muntins.material.inheritFromFrame ? s0.frame.material.metalness : s0.muntins.material.pbr.metalness,
+            min: 0.0,
+            max: 1.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                const s = this._state.settings;
+                const m = s.muntins.material;
+                this._setSettings({ muntins: { ...s.muntins, material: { ...m, pbr: { ...m.pbr, metalness: v } } } });
+            }
+        });
+        section.appendChild(metalnessRow.row);
+
+        const envMapRow = makeNumberSliderRow({
+            label: 'EnvMap Intensity',
+            value: s0.muntins.material.inheritFromFrame ? s0.frame.material.envMapIntensity : s0.muntins.material.pbr.envMapIntensity,
+            min: 0.0,
+            max: 8.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                const s = this._state.settings;
+                const m = s.muntins.material;
+                this._setSettings({ muntins: { ...s.muntins, material: { ...m, pbr: { ...m.pbr, envMapIntensity: v } } } });
+            }
+        });
+        section.appendChild(envMapRow.row);
+
+        const normalStrengthRow = makeNumberSliderRow({
+            label: 'Normal Strength',
+            value: s0.muntins.material.inheritFromFrame ? s0.frame.material.normalStrength : s0.muntins.material.pbr.normalStrength,
+            min: 0.0,
+            max: 5.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                const s = this._state.settings;
+                const m = s.muntins.material;
+                this._setSettings({ muntins: { ...s.muntins, material: { ...m, pbr: { ...m.pbr, normalStrength: v } } } });
+            }
+        });
+        section.appendChild(normalStrengthRow.row);
+
+        const materialDisabled = s0.muntins.material.inheritFromFrame;
+        roughnessRow.range.disabled = materialDisabled;
+        roughnessRow.number.disabled = materialDisabled;
+        metalnessRow.range.disabled = materialDisabled;
+        metalnessRow.number.disabled = materialDisabled;
+        envMapRow.range.disabled = materialDisabled;
+        envMapRow.number.disabled = materialDisabled;
+        normalStrengthRow.range.disabled = materialDisabled;
+        normalStrengthRow.number.disabled = materialDisabled;
 
         section.appendChild(makeToggleRow({
             label: 'Bevel Inherit',
@@ -1025,6 +1439,21 @@ export class WindowMeshDebuggerUI {
             }
         }).row);
 
+        section.appendChild(makeChoiceRow({
+            label: 'Direction',
+            value: String(s0.shade.direction ?? WINDOW_SHADE_DIRECTION.TOP_TO_BOTTOM),
+            options: [
+                { id: WINDOW_SHADE_DIRECTION.TOP_TO_BOTTOM, label: 'Top \u2192 Bottom' },
+                { id: WINDOW_SHADE_DIRECTION.LEFT_TO_RIGHT, label: 'Left \u2192 Right' },
+                { id: WINDOW_SHADE_DIRECTION.RIGHT_TO_LEFT, label: 'Right \u2192 Left' },
+                { id: WINDOW_SHADE_DIRECTION.RANDOM_LR, label: 'Random L\u2194R (seeded)' }
+            ],
+            onChange: (id) => {
+                const s = this._state.settings;
+                this._setSettings({ shade: { ...s.shade, direction: String(id ?? WINDOW_SHADE_DIRECTION.TOP_TO_BOTTOM) } });
+            }
+        }).row);
+
         const coverageRow = makeChoiceRow({
             label: 'Coverage',
             value: String(s0.shade.coverage),
@@ -1099,6 +1528,563 @@ export class WindowMeshDebuggerUI {
                 this._setSettings({ shade: { ...s.shade, zOffset: v } });
             }
         }).row);
+    }
+
+    _buildDecorationSection({ wallOptions }) {
+        const section = this._buildSection('Decoration');
+        const pbrOptions = (Array.isArray(wallOptions) ? wallOptions : getPbrMaterialOptionsForBuildings())
+            .map((o) => ({ id: o.id, label: o.label }));
+
+        const buildMaterialControls = (labelPrefix, decoKey) => {
+            const d0 = this._state.decoration?.[decoKey] ?? {};
+            const mat0 = d0.material ?? {};
+            const uv0 = mat0.uv ?? {};
+
+            section.appendChild(makeChoiceRow({
+                label: `${labelPrefix} Material`,
+                value: String(mat0.mode ?? 'pbr'),
+                options: [
+                    { id: 'pbr', label: 'PBR' },
+                    { id: 'solid', label: 'Solid Color' },
+                    { id: 'match_frame', label: 'Match Frame' }
+                ],
+                onChange: (id) => {
+                    const block = this._state.decoration?.[decoKey];
+                    if (!block) return;
+                    block.material = { ...(block.material ?? {}), mode: String(id ?? 'pbr') };
+                    this._emit();
+                }
+            }).row);
+
+            section.appendChild(makeSelectRow({
+                label: `${labelPrefix} PBR`,
+                value: String(mat0.materialId ?? ''),
+                options: pbrOptions,
+                onChange: (id) => {
+                    const block = this._state.decoration?.[decoKey];
+                    if (!block) return;
+                    block.material = { ...(block.material ?? {}), materialId: String(id ?? '') };
+                    this._emit();
+                }
+            }).row);
+
+            section.appendChild(makeColorRow({
+                label: `${labelPrefix} Color`,
+                value: hexFromColorHex(mat0.colorHex),
+                onChange: (hex) => {
+                    const block = this._state.decoration?.[decoKey];
+                    if (!block) return;
+                    block.material = { ...(block.material ?? {}), colorHex: colorHexFromHexString(hex) };
+                    this._emit();
+                }
+            }).row);
+
+            section.appendChild(makeNumberSliderRow({
+                label: `${labelPrefix} Roughness`,
+                value: mat0.roughness ?? 0.85,
+                min: 0.0,
+                max: 1.0,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => {
+                    const block = this._state.decoration?.[decoKey];
+                    if (!block) return;
+                    block.material = { ...(block.material ?? {}), roughness: v };
+                    this._emit();
+                }
+            }).row);
+
+            section.appendChild(makeNumberSliderRow({
+                label: `${labelPrefix} Metalness`,
+                value: mat0.metalness ?? 0.0,
+                min: 0.0,
+                max: 1.0,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => {
+                    const block = this._state.decoration?.[decoKey];
+                    if (!block) return;
+                    block.material = { ...(block.material ?? {}), metalness: v };
+                    this._emit();
+                }
+            }).row);
+
+            section.appendChild(makeNumberSliderRow({
+                label: `${labelPrefix} Normal Strength`,
+                value: mat0.normalStrength ?? 1.0,
+                min: 0.0,
+                max: 5.0,
+                step: 0.05,
+                digits: 2,
+                onChange: (v) => {
+                    const block = this._state.decoration?.[decoKey];
+                    if (!block) return;
+                    block.material = { ...(block.material ?? {}), normalStrength: v };
+                    this._emit();
+                }
+            }).row);
+
+            section.appendChild(makeNumberSliderRow({
+                label: `${labelPrefix} UV Repeat U`,
+                value: uv0.repeatU ?? 1.0,
+                min: 0.05,
+                max: 20.0,
+                step: 0.05,
+                digits: 2,
+                onChange: (v) => {
+                    const block = this._state.decoration?.[decoKey];
+                    if (!block) return;
+                    const m = block.material ?? {};
+                    const uv = m.uv ?? {};
+                    block.material = { ...m, uv: { ...uv, repeatU: v } };
+                    this._emit();
+                }
+            }).row);
+
+            section.appendChild(makeNumberSliderRow({
+                label: `${labelPrefix} UV Repeat V`,
+                value: uv0.repeatV ?? 1.0,
+                min: 0.05,
+                max: 20.0,
+                step: 0.05,
+                digits: 2,
+                onChange: (v) => {
+                    const block = this._state.decoration?.[decoKey];
+                    if (!block) return;
+                    const m = block.material ?? {};
+                    const uv = m.uv ?? {};
+                    block.material = { ...m, uv: { ...uv, repeatV: v } };
+                    this._emit();
+                }
+            }).row);
+
+            section.appendChild(makeNumberSliderRow({
+                label: `${labelPrefix} UV Offset U`,
+                value: uv0.offsetU ?? 0.0,
+                min: -5.0,
+                max: 5.0,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => {
+                    const block = this._state.decoration?.[decoKey];
+                    if (!block) return;
+                    const m = block.material ?? {};
+                    const uv = m.uv ?? {};
+                    block.material = { ...m, uv: { ...uv, offsetU: v } };
+                    this._emit();
+                }
+            }).row);
+
+            section.appendChild(makeNumberSliderRow({
+                label: `${labelPrefix} UV Offset V`,
+                value: uv0.offsetV ?? 0.0,
+                min: -5.0,
+                max: 5.0,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => {
+                    const block = this._state.decoration?.[decoKey];
+                    if (!block) return;
+                    const m = block.material ?? {};
+                    const uv = m.uv ?? {};
+                    block.material = { ...m, uv: { ...uv, offsetV: v } };
+                    this._emit();
+                }
+            }).row);
+
+            section.appendChild(makeNumberSliderRow({
+                label: `${labelPrefix} UV Rotation`,
+                value: uv0.rotationDeg ?? 0.0,
+                min: -180.0,
+                max: 180.0,
+                step: 1.0,
+                digits: 0,
+                onChange: (v) => {
+                    const block = this._state.decoration?.[decoKey];
+                    if (!block) return;
+                    const m = block.material ?? {};
+                    const uv = m.uv ?? {};
+                    block.material = { ...m, uv: { ...uv, rotationDeg: v } };
+                    this._emit();
+                }
+            }).row);
+        };
+
+        const buildShadowControls = (labelPrefix, decoKey) => {
+            const d0 = this._state.decoration?.[decoKey] ?? {};
+            const s0 = d0.shadows ?? {};
+
+            section.appendChild(makeToggleRow({
+                label: `${labelPrefix} Cast Shadow`,
+                value: s0.cast !== false,
+                onChange: (v) => {
+                    const block = this._state.decoration?.[decoKey];
+                    if (!block) return;
+                    block.shadows = { ...(block.shadows ?? {}), cast: !!v };
+                    this._emit();
+                }
+            }).row);
+
+            section.appendChild(makeToggleRow({
+                label: `${labelPrefix} Receive Shadow`,
+                value: s0.receive !== false,
+                onChange: (v) => {
+                    const block = this._state.decoration?.[decoKey];
+                    if (!block) return;
+                    block.shadows = { ...(block.shadows ?? {}), receive: !!v };
+                    this._emit();
+                }
+            }).row);
+        };
+
+        const addTitle = (title) => {
+            section.appendChild(makeEl('div', 'options-section-title', title));
+        };
+
+        addTitle('Sill');
+        section.appendChild(makeToggleRow({
+            label: 'Sill Enabled',
+            value: !!this._state.decoration?.sill?.enabled,
+            onChange: (v) => {
+                const block = this._state.decoration?.sill;
+                if (!block) return;
+                block.enabled = !!v;
+                this._emit();
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Sill Width Scale',
+            value: this._state.decoration?.sill?.widthScale ?? 1.15,
+            min: 0.5,
+            max: 2.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                const block = this._state.decoration?.sill;
+                if (!block) return;
+                block.widthScale = v;
+                this._emit();
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Sill Height (m)',
+            value: this._state.decoration?.sill?.height ?? 0.07,
+            min: 0.005,
+            max: 0.6,
+            step: 0.005,
+            digits: 3,
+            onChange: (v) => {
+                const block = this._state.decoration?.sill;
+                if (!block) return;
+                block.height = v;
+                this._emit();
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Sill Depth (m)',
+            value: this._state.decoration?.sill?.depth ?? 0.18,
+            min: 0.01,
+            max: 1.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                const block = this._state.decoration?.sill;
+                if (!block) return;
+                block.depth = v;
+                this._emit();
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Sill Gap From Window (m)',
+            value: this._state.decoration?.sill?.gap ?? 0.0,
+            min: -0.25,
+            max: 0.5,
+            step: 0.005,
+            digits: 3,
+            onChange: (v) => {
+                const block = this._state.decoration?.sill;
+                if (!block) return;
+                block.gap = v;
+                this._emit();
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Sill Offset X (m)',
+            value: this._state.decoration?.sill?.offset?.x ?? 0.0,
+            min: -2.0,
+            max: 2.0,
+            step: 0.005,
+            digits: 3,
+            onChange: (v) => {
+                const block = this._state.decoration?.sill;
+                if (!block) return;
+                block.offset = { ...(block.offset ?? {}), x: v };
+                this._emit();
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Sill Offset Y (m)',
+            value: this._state.decoration?.sill?.offset?.y ?? 0.0,
+            min: -2.0,
+            max: 2.0,
+            step: 0.005,
+            digits: 3,
+            onChange: (v) => {
+                const block = this._state.decoration?.sill;
+                if (!block) return;
+                block.offset = { ...(block.offset ?? {}), y: v };
+                this._emit();
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Sill Offset Z (m)',
+            value: this._state.decoration?.sill?.offset?.z ?? 0.002,
+            min: -0.25,
+            max: 0.25,
+            step: 0.001,
+            digits: 3,
+            onChange: (v) => {
+                const block = this._state.decoration?.sill;
+                if (!block) return;
+                block.offset = { ...(block.offset ?? {}), z: v };
+                this._emit();
+            }
+        }).row);
+
+        buildShadowControls('Sill', 'sill');
+        buildMaterialControls('Sill', 'sill');
+
+        addTitle('Header / Lintel');
+        section.appendChild(makeToggleRow({
+            label: 'Header Enabled',
+            value: !!this._state.decoration?.header?.enabled,
+            onChange: (v) => {
+                const block = this._state.decoration?.header;
+                if (!block) return;
+                block.enabled = !!v;
+                this._emit();
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Header Width Scale',
+            value: this._state.decoration?.header?.widthScale ?? 1.1,
+            min: 0.5,
+            max: 2.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                const block = this._state.decoration?.header;
+                if (!block) return;
+                block.widthScale = v;
+                this._emit();
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Header Height (m)',
+            value: this._state.decoration?.header?.height ?? 0.06,
+            min: 0.005,
+            max: 0.6,
+            step: 0.005,
+            digits: 3,
+            onChange: (v) => {
+                const block = this._state.decoration?.header;
+                if (!block) return;
+                block.height = v;
+                this._emit();
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Header Depth (m)',
+            value: this._state.decoration?.header?.depth ?? 0.12,
+            min: 0.01,
+            max: 1.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                const block = this._state.decoration?.header;
+                if (!block) return;
+                block.depth = v;
+                this._emit();
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Header Gap From Window (m)',
+            value: this._state.decoration?.header?.gap ?? 0.03,
+            min: -0.25,
+            max: 0.8,
+            step: 0.005,
+            digits: 3,
+            onChange: (v) => {
+                const block = this._state.decoration?.header;
+                if (!block) return;
+                block.gap = v;
+                this._emit();
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Header Offset X (m)',
+            value: this._state.decoration?.header?.offset?.x ?? 0.0,
+            min: -2.0,
+            max: 2.0,
+            step: 0.005,
+            digits: 3,
+            onChange: (v) => {
+                const block = this._state.decoration?.header;
+                if (!block) return;
+                block.offset = { ...(block.offset ?? {}), x: v };
+                this._emit();
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Header Offset Y (m)',
+            value: this._state.decoration?.header?.offset?.y ?? 0.0,
+            min: -2.0,
+            max: 2.0,
+            step: 0.005,
+            digits: 3,
+            onChange: (v) => {
+                const block = this._state.decoration?.header;
+                if (!block) return;
+                block.offset = { ...(block.offset ?? {}), y: v };
+                this._emit();
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Header Offset Z (m)',
+            value: this._state.decoration?.header?.offset?.z ?? 0.002,
+            min: -0.25,
+            max: 0.25,
+            step: 0.001,
+            digits: 3,
+            onChange: (v) => {
+                const block = this._state.decoration?.header;
+                if (!block) return;
+                block.offset = { ...(block.offset ?? {}), z: v };
+                this._emit();
+            }
+        }).row);
+
+        buildShadowControls('Header', 'header');
+        buildMaterialControls('Header', 'header');
+
+        addTitle('Trim / Casing');
+        section.appendChild(makeToggleRow({
+            label: 'Trim Enabled',
+            value: !!this._state.decoration?.trim?.enabled,
+            onChange: (v) => {
+                const block = this._state.decoration?.trim;
+                if (!block) return;
+                block.enabled = !!v;
+                this._emit();
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Trim Band Width (m)',
+            value: this._state.decoration?.trim?.bandWidth ?? 0.08,
+            min: 0.0,
+            max: 0.6,
+            step: 0.005,
+            digits: 3,
+            onChange: (v) => {
+                const block = this._state.decoration?.trim;
+                if (!block) return;
+                block.bandWidth = v;
+                this._emit();
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Trim Inner Gap (m)',
+            value: this._state.decoration?.trim?.innerGap ?? 0.005,
+            min: 0.0,
+            max: 0.1,
+            step: 0.001,
+            digits: 3,
+            onChange: (v) => {
+                const block = this._state.decoration?.trim;
+                if (!block) return;
+                block.innerGap = v;
+                this._emit();
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Trim Depth (m)',
+            value: this._state.decoration?.trim?.depth ?? 0.04,
+            min: 0.001,
+            max: 1.0,
+            step: 0.005,
+            digits: 3,
+            onChange: (v) => {
+                const block = this._state.decoration?.trim;
+                if (!block) return;
+                block.depth = v;
+                this._emit();
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Trim Offset X (m)',
+            value: this._state.decoration?.trim?.offset?.x ?? 0.0,
+            min: -2.0,
+            max: 2.0,
+            step: 0.005,
+            digits: 3,
+            onChange: (v) => {
+                const block = this._state.decoration?.trim;
+                if (!block) return;
+                block.offset = { ...(block.offset ?? {}), x: v };
+                this._emit();
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Trim Offset Y (m)',
+            value: this._state.decoration?.trim?.offset?.y ?? 0.0,
+            min: -2.0,
+            max: 2.0,
+            step: 0.005,
+            digits: 3,
+            onChange: (v) => {
+                const block = this._state.decoration?.trim;
+                if (!block) return;
+                block.offset = { ...(block.offset ?? {}), y: v };
+                this._emit();
+            }
+        }).row);
+
+        section.appendChild(makeNumberSliderRow({
+            label: 'Trim Offset Z (m)',
+            value: this._state.decoration?.trim?.offset?.z ?? 0.002,
+            min: -0.25,
+            max: 0.25,
+            step: 0.001,
+            digits: 3,
+            onChange: (v) => {
+                const block = this._state.decoration?.trim;
+                if (!block) return;
+                block.offset = { ...(block.offset ?? {}), z: v };
+                this._emit();
+            }
+        }).row);
+
+        buildShadowControls('Trim', 'trim');
+        buildMaterialControls('Trim', 'trim');
     }
 
     _buildInteriorSection() {

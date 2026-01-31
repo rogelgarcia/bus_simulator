@@ -206,16 +206,20 @@ function buildMuntinsGeometry({ settings, curveSegments }) {
     const outerArchRise = wantsArch ? (s.arch.heightRatio * w) : 0.0;
     const innerWantsArch = wantsArch && outerArchRise > EPS;
     const innerArchRise = innerWantsArch ? (s.arch.heightRatio * innerWidth) : 0.0;
-    const rectHeight = innerWantsArch ? Math.max(EPS, innerHeight - innerArchRise) : innerHeight;
+    const openingArchRise = innerWantsArch ? Math.min(innerArchRise, Math.max(0, innerHeight - fw)) : 0.0;
+    const rectHeight = openingArchRise > EPS ? Math.max(EPS, innerHeight - openingArchRise) : innerHeight;
 
     const x0 = -innerWidth * 0.5;
     const x1 = innerWidth * 0.5;
     const y0 = -innerHeight * 0.5;
-    const y1 = y0 + rectHeight;
+    const yTop = innerHeight * 0.5;
+    const yChord = openingArchRise > EPS ? (yTop - openingArchRise) : yTop;
+    const y1 = openingArchRise > EPS ? yChord : (y0 + rectHeight);
 
     const cols = Math.max(1, s.muntins.columns | 0);
     const rows = Math.max(1, s.muntins.rows | 0);
-    const mw = Math.max(EPS, s.muntins.width);
+    const mwV = Math.max(EPS, s.muntins.verticalWidth);
+    const mwH = Math.max(EPS, s.muntins.horizontalWidth);
     const md = Math.max(EPS, s.muntins.depth);
     const inset = Math.max(0, s.muntins.inset);
     const offX = (s.muntins.uvOffset.x || 0) * (innerWidth / cols) * 0.25;
@@ -226,21 +230,46 @@ function buildMuntinsGeometry({ settings, curveSegments }) {
 
     /** @type {THREE.BufferGeometry[]} */
     const parts = [];
+    const clipVerticalToChord = openingArchRise > EPS && (s.arch.meetsRectangleFrame || s.arch.clipVerticalMuntinsToRectWhenNoTopPiece);
 
     const paneW = innerWidth / cols;
     for (let c = 1; c < cols; c++) {
         const x = x0 + paneW * c + offX;
-        if (x <= x0 + mw * 0.5 + EPS || x >= x1 - mw * 0.5 - EPS) continue;
-        const geo = new THREE.BoxGeometry(mw, rectHeight, md);
-        geo.translate(x, y0 + rectHeight * 0.5, centerZ);
-        parts.push(geo);
+        if (x <= x0 + mwV * 0.5 + EPS || x >= x1 - mwV * 0.5 - EPS) continue;
+        if (openingArchRise > EPS && !clipVerticalToChord) {
+            const wSpan = innerWidth;
+            const hRise = openingArchRise;
+            const R = (wSpan * wSpan) / (8 * hRise) + hRise / 2;
+            const cx = 0;
+            const cy = yChord + hRise - R;
+            const arcYAt = (xp) => {
+                const dx = xp - cx;
+                const inner = R * R - dx * dx;
+                if (!(inner > 0)) return yChord;
+                return cy + Math.sqrt(inner);
+            };
+            const xA = Math.max(x0, Math.min(x1, x - mwV * 0.5));
+            const xB = Math.max(x0, Math.min(x1, x + mwV * 0.5));
+            const yA = arcYAt(xA);
+            const yB = arcYAt(xB);
+            const yMax = Math.max(yChord, Math.min(yA, yB));
+            const height = Math.max(EPS, yMax - y0);
+            const geo = new THREE.BoxGeometry(mwV, height, md);
+            geo.translate(x, y0 + height * 0.5, centerZ);
+            parts.push(geo);
+        } else {
+            const height = Math.max(EPS, yChord - y0);
+            const geo = new THREE.BoxGeometry(mwV, height, md);
+            geo.translate(x, y0 + height * 0.5, centerZ);
+            parts.push(geo);
+        }
     }
 
     const paneH = rectHeight / rows;
     for (let r = 1; r < rows; r++) {
         const y = y0 + paneH * r + offY;
-        if (y <= y0 + mw * 0.5 + EPS || y >= y1 - mw * 0.5 - EPS) continue;
-        const geo = new THREE.BoxGeometry(innerWidth, mw, md);
+        if (y <= y0 + mwH * 0.5 + EPS || y >= y1 - mwH * 0.5 - EPS) continue;
+        const geo = new THREE.BoxGeometry(innerWidth, mwH, md);
         geo.translate(0, y, centerZ);
         parts.push(geo);
     }
@@ -256,6 +285,39 @@ function buildMuntinsGeometry({ settings, curveSegments }) {
 function buildArchMeetRectJoinGeometry({ settings }) {
     const s = sanitizeWindowMeshSettings(settings);
     if (!s.arch.enabled || !s.arch.meetsRectangleFrame) return null;
+
+    if (s.arch.topPieceMode === 'muntin') {
+        const w = s.width;
+        const h = s.height;
+        const fw = s.frame.width;
+        const frameDepth = s.frame.depth;
+
+        const outerArchRise = s.arch.heightRatio * w;
+        if (!(outerArchRise > EPS)) return null;
+
+        const innerWidth = Math.max(EPS, w - fw * 2);
+        const innerHeight = Math.max(EPS, h - fw * 2);
+        const innerArchRise = s.arch.heightRatio * innerWidth;
+        const openingArchRise = Math.min(innerArchRise, Math.max(0, innerHeight - fw));
+        if (!(openingArchRise > EPS)) return null;
+
+        const yTop = innerHeight * 0.5;
+        const yChord = yTop - openingArchRise;
+
+        const mw = Math.max(EPS, s.muntins.horizontalWidth);
+        const md = Math.max(EPS, s.muntins.depth);
+        const inset = Math.max(0, s.muntins.inset);
+        const frontZ = frameDepth - inset;
+        const centerZ = frontZ - md * 0.5;
+
+        const geo = new THREE.BoxGeometry(innerWidth, mw, md);
+        geo.translate(0, yChord - mw * 0.5, centerZ);
+        geo.computeVertexNormals();
+        geo.computeBoundingBox();
+        geo.userData = geo.userData ?? {};
+        geo.userData.windowJoinBarLayer = 'muntins';
+        return geo;
+    }
 
     const w = s.width;
     const h = s.height;
@@ -273,6 +335,8 @@ function buildArchMeetRectJoinGeometry({ settings }) {
     geo.translate(0, yChord - fw * 0.5, depth * 0.5);
     geo.computeVertexNormals();
     geo.computeBoundingBox();
+    geo.userData = geo.userData ?? {};
+    geo.userData.windowJoinBarLayer = 'frame';
     return geo;
 }
 
@@ -289,12 +353,15 @@ export function getWindowMeshGeometryKey(settings, { curveSegments = 24 } = {}) 
         `arch:${a.enabled ? 1 : 0}`,
         `ahr:${q(a.heightRatio)}`,
         `join:${a.meetsRectangleFrame ? 1 : 0}`,
+        `jmode:${a.topPieceMode === 'muntin' ? 'm' : 'f'}`,
+        `clipv:${a.clipVerticalMuntinsToRectWhenNoTopPiece ? 1 : 0}`,
         `fw:${q(f.width)}`,
         `fd:${q(f.depth)}`,
         `m:${m.enabled ? 1 : 0}`,
         `mc:${m.columns | 0}`,
         `mr:${m.rows | 0}`,
-        `mw:${q(m.width)}`,
+        `mwv:${q(m.verticalWidth)}`,
+        `mwh:${q(m.horizontalWidth)}`,
         `md:${q(m.depth)}`,
         `mi:${q(m.inset)}`,
         `mox:${q(m.uvOffset.x)}`,
@@ -309,5 +376,6 @@ export function buildWindowMeshGeometryBundle(settings, { curveSegments = 24 } =
     const muntins = buildMuntinsGeometry({ settings, curveSegments });
     const joinBar = buildArchMeetRectJoinGeometry({ settings });
 
-    return { frame, opening, muntins, joinBar };
+    const joinBarLayer = joinBar?.userData?.windowJoinBarLayer === 'muntins' ? 'muntins' : (joinBar ? 'frame' : null);
+    return { frame, opening, muntins, joinBar, joinBarLayer };
 }

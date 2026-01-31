@@ -6,6 +6,7 @@ import {
     sanitizeWindowMeshSettings,
     computeWindowMeshInstanceVariation,
     computeWindowMeshInstanceVariationFromSanitized,
+    WINDOW_SHADE_DIRECTION,
     WINDOW_INTERIOR_ATLAS_ID
 } from '../../../src/app/buildings/window_mesh/index.js';
 
@@ -25,11 +26,31 @@ test('WindowMeshSettings: muntins enabled requires grid divisions', () => {
     assert.equal(s.muntins.enabled, false);
 });
 
+test('WindowMeshSettings: shade direction defaults to top-to-bottom', () => {
+    const s = sanitizeWindowMeshSettings({
+        shade: { direction: 'nope' }
+    });
+    assert.equal(s.shade.direction, WINDOW_SHADE_DIRECTION.TOP_TO_BOTTOM);
+});
+
 test('WindowMeshVariation: same seed+id is deterministic', () => {
     const settings = getDefaultWindowMeshSettings();
     const a = computeWindowMeshInstanceVariation({ settings, seed: 'seed', id: 'f0_c0' });
     const b = computeWindowMeshInstanceVariation({ settings, seed: 'seed', id: 'f0_c0' });
     assert.deepEqual(a, b);
+});
+
+test('WindowMeshVariation: random L/R shade direction is deterministic', () => {
+    const defaults = getDefaultWindowMeshSettings();
+    const settings = sanitizeWindowMeshSettings({
+        ...defaults,
+        shade: { ...defaults.shade, direction: WINDOW_SHADE_DIRECTION.RANDOM_LR, randomizeCoverage: false, coverage: 0.5 }
+    });
+
+    const a = computeWindowMeshInstanceVariationFromSanitized({ settings, seed: 'seed', id: 'f0_c0' });
+    const b = computeWindowMeshInstanceVariationFromSanitized({ settings, seed: 'seed', id: 'f0_c0' });
+    assert.equal(a.shadeDirection, b.shadeDirection);
+    assert.ok([WINDOW_SHADE_DIRECTION.LEFT_TO_RIGHT, WINDOW_SHADE_DIRECTION.RIGHT_TO_LEFT].includes(a.shadeDirection));
 });
 
 test('WindowMeshVariation: output stays in expected ranges', () => {
@@ -52,6 +73,11 @@ test('WindowMeshVariation: output stays in expected ranges', () => {
 
     const v = computeWindowMeshInstanceVariationFromSanitized({ settings, seed: 'seed', id: 'f1_c2' });
     assert.ok([0.0, 0.2, 0.5, 1.0].includes(v.shadeCoverage));
+    assert.ok([
+        WINDOW_SHADE_DIRECTION.TOP_TO_BOTTOM,
+        WINDOW_SHADE_DIRECTION.LEFT_TO_RIGHT,
+        WINDOW_SHADE_DIRECTION.RIGHT_TO_LEFT
+    ].includes(v.shadeDirection));
     assert.ok(Number.isInteger(v.interiorCell.col) && v.interiorCell.col >= 0 && v.interiorCell.col < 4);
     assert.ok(Number.isInteger(v.interiorCell.row) && v.interiorCell.row >= 0 && v.interiorCell.row < 4);
     assert.ok(typeof v.interiorFlipX === 'boolean');

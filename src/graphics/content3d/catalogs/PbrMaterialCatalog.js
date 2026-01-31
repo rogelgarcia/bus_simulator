@@ -44,6 +44,28 @@ function normalizeVariant(value) {
     return id ? id : null;
 }
 
+function normalizeMapFiles(value) {
+    const src = value && typeof value === 'object' ? value : null;
+    if (!src) return null;
+
+    const out = {};
+    const add = (key) => {
+        const v = typeof src[key] === 'string' ? src[key].trim() : '';
+        if (!v) return;
+        out[key] = v;
+    };
+
+    add('baseColor');
+    add('normal');
+    add('orm');
+    add('ao');
+    add('roughness');
+    add('metalness');
+    add('displacement');
+
+    return Object.keys(out).length ? out : null;
+}
+
 function makePreviewUrl({ id, label }) {
     if (typeof document === 'undefined') return null;
     const slug = String(id || '').startsWith(PBR_ID_PREFIX) ? String(id).slice(PBR_ID_PREFIX.length) : String(id || '');
@@ -99,13 +121,69 @@ const MATERIALS = Object.freeze([
     Object.freeze({ id: makeId('asphalt_02'), label: 'Asphalt 02', root: 'surface', buildingEligible: false }),
     Object.freeze({ id: makeId('brick_crosswalk'), label: 'Brick Crosswalk', root: 'surface', buildingEligible: false }),
     Object.freeze({ id: makeId('clay_roof_tiles_02'), label: 'Clay Roof Tiles 02', root: 'surface', buildingEligible: false }),
-    Object.freeze({ id: makeId('coast_sand_rocks_02'), label: 'Coast Sand Rocks 02', root: 'surface', buildingEligible: false }),
-    Object.freeze({ id: makeId('grass_001'), label: 'Grass 001', root: 'surface', buildingEligible: false }),
-    Object.freeze({ id: makeId('grass_004'), label: 'Grass 004', root: 'surface', buildingEligible: false }),
+    Object.freeze({ id: makeId('coast_sand_rocks_02'), label: 'Coast Sand Rocks 02', root: 'surface', buildingEligible: false, groundEligible: true }),
+    Object.freeze({ id: makeId('forrest_ground_01'), label: 'Forest Ground 01', root: 'surface', buildingEligible: false, groundEligible: true }),
+    Object.freeze({ id: makeId('gravelly_sand'), label: 'Gravelly Sand', root: 'surface', buildingEligible: false, groundEligible: true }),
+    Object.freeze({
+        id: makeId('grass_001'),
+        label: 'Grass 001',
+        root: 'surface',
+        buildingEligible: false,
+        groundEligible: true,
+        mapFiles: Object.freeze({
+            baseColor: 'basecolor.png',
+            normal: 'normal_gl.png',
+            ao: 'ao.png',
+            roughness: 'roughness.png',
+            displacement: 'displacement.png'
+        })
+    }),
+    Object.freeze({
+        id: makeId('grass_004'),
+        label: 'Grass 004',
+        root: 'surface',
+        buildingEligible: false,
+        groundEligible: true,
+        mapFiles: Object.freeze({
+            baseColor: 'basecolor.png',
+            normal: 'normal_gl.png',
+            ao: 'ao.png',
+            roughness: 'roughness.png',
+            displacement: 'displacement.png'
+        })
+    }),
+    Object.freeze({
+        id: makeId('grass_005'),
+        label: 'Grass 005',
+        root: 'surface',
+        buildingEligible: false,
+        groundEligible: true,
+        mapFiles: Object.freeze({
+            baseColor: 'basecolor.png',
+            normal: 'normal_gl.png',
+            ao: 'ao.png',
+            roughness: 'roughness.png',
+            displacement: 'displacement.png'
+        })
+    }),
+    Object.freeze({
+        id: makeId('ground_037'),
+        label: 'Ground 037',
+        root: 'surface',
+        buildingEligible: false,
+        groundEligible: true,
+        mapFiles: Object.freeze({
+            baseColor: 'basecolor.png',
+            normal: 'normal_gl.png',
+            ao: 'ao.png',
+            roughness: 'roughness.png',
+            displacement: 'displacement.png'
+        })
+    }),
     Object.freeze({ id: makeId('patterned_concrete_pavers'), label: 'Patterned Concrete Pavers', root: 'surface', buildingEligible: false }),
     Object.freeze({ id: makeId('patterned_paving'), label: 'Patterned Paving', root: 'surface', buildingEligible: false }),
     Object.freeze({ id: makeId('red_slate_roof_tiles_01'), label: 'Red Slate Roof Tiles 01', root: 'surface', buildingEligible: false }),
-    Object.freeze({ id: makeId('rocky_terrain_02'), label: 'Rocky Terrain 02', root: 'surface', buildingEligible: false }),
+    Object.freeze({ id: makeId('rocky_terrain_02'), label: 'Rocky Terrain 02', root: 'surface', buildingEligible: false, groundEligible: true }),
 
     Object.freeze({ id: makeId('brick_wall_11'), label: 'Brick Wall 11', root: 'wall', buildingEligible: true }),
     Object.freeze({ id: makeId('brick_wall_13'), label: 'Brick Wall 13', root: 'wall', buildingEligible: true }),
@@ -174,15 +252,19 @@ export function getPbrMaterialMeta(materialId) {
         : [preferredVariant];
     if (!variants.includes(preferredVariant)) variants.unshift(preferredVariant);
 
+    const mapFiles = normalizeMapFiles(override?.mapFiles ?? def.mapFiles) ?? null;
+    const maps = Object.keys(mapFiles ?? MAPS);
+
     return {
         id: def.id,
         label: getPbrMaterialLabel(def.id),
         root,
         buildingEligible: !!def.buildingEligible,
+        groundEligible: !!def.groundEligible,
         tileMeters,
         preferredVariant,
         variants,
-        maps: Object.keys(MAPS)
+        maps
     };
 }
 
@@ -235,13 +317,44 @@ export function tryGetPbrMaterialIdFromUrl(url) {
 
 export function resolvePbrMaterialUrls(materialId) {
     const def = getPbrMaterialDefinition(materialId);
-    if (!def) return { baseColorUrl: null, normalUrl: null, ormUrl: null };
-    if (!getPbrAssetsEnabled()) return { baseColorUrl: null, normalUrl: null, ormUrl: null };
+    if (!def) {
+        return {
+            baseColorUrl: null,
+            normalUrl: null,
+            ormUrl: null,
+            aoUrl: null,
+            roughnessUrl: null,
+            metalnessUrl: null,
+            displacementUrl: null
+        };
+    }
+    if (!getPbrAssetsEnabled()) {
+        return {
+            baseColorUrl: null,
+            normalUrl: null,
+            ormUrl: null,
+            aoUrl: null,
+            roughnessUrl: null,
+            metalnessUrl: null,
+            displacementUrl: null
+        };
+    }
     const dir = new URL(`${def.id.slice(PBR_ID_PREFIX.length)}/`, PBR_BASE_URL);
+
+    const files = normalizeMapFiles(def.mapFiles) ?? MAPS;
+    const urlOrNull = (file) => {
+        const f = typeof file === 'string' ? file.trim() : '';
+        return f ? new URL(f, dir).toString() : null;
+    };
+
     return {
-        baseColorUrl: new URL(MAPS.baseColor, dir).toString(),
-        normalUrl: new URL(MAPS.normal, dir).toString(),
-        ormUrl: new URL(MAPS.orm, dir).toString()
+        baseColorUrl: urlOrNull(files.baseColor),
+        normalUrl: urlOrNull(files.normal),
+        ormUrl: urlOrNull(files.orm),
+        aoUrl: urlOrNull(files.ao),
+        roughnessUrl: urlOrNull(files.roughness),
+        metalnessUrl: urlOrNull(files.metalness),
+        displacementUrl: urlOrNull(files.displacement)
     };
 }
 
@@ -257,6 +370,7 @@ export function getPbrMaterialOptions() {
             previewUrl,
             root: entry.root,
             buildingEligible: !!entry.buildingEligible,
+            groundEligible: !!entry.groundEligible,
             tileMeters: meta?.tileMeters ?? null,
             preferredVariant: meta?.preferredVariant ?? null,
             variants: meta?.variants ?? null,
@@ -269,6 +383,10 @@ export function getPbrMaterialOptionsForBuildings() {
     return getPbrMaterialOptions().filter((entry) => (
         entry.buildingEligible && !String(entry.id).toLowerCase().includes('grass')
     ));
+}
+
+export function getPbrMaterialOptionsForGround() {
+    return getPbrMaterialOptions().filter((entry) => entry.groundEligible);
 }
 
 export function isPbrBuildingWallMaterialId(materialId) {

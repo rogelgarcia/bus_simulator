@@ -101,12 +101,59 @@
     gap: 8px;
 }
 
+.options-section.is-collapsed > :not(.options-section-header) {
+    display: none;
+}
+
+.options-section-header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.options-section-header:focus-visible {
+    outline: 2px solid rgba(100, 210, 255, 0.55);
+    outline-offset: 2px;
+    border-radius: 12px;
+}
+
 .options-section-title {
     font-size: 12px;
     font-weight: 900;
     opacity: 0.92;
     letter-spacing: 0.04em;
     text-transform: uppercase;
+}
+
+.options-layer-header {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.options-layer-header-top {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: start;
+    gap: 8px 10px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.options-layer-header-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    align-items: center;
+}
+
+.options-layer-summary {
+    grid-column: 1 / -1;
+    font-size: 12px;
+    opacity: 0.72;
 }
 
 .options-row {
@@ -292,6 +339,70 @@
     cursor: pointer;
     font-weight: 800;
     font-size: 12px;
+}
+
+.options-btn-small {
+    padding: 6px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+}
+
+.options-icon-btn {
+    min-width: 30px;
+    padding: 6px 8px;
+    line-height: 1;
+    font-size: 16px;
+    display: inline-grid;
+    place-items: center;
+}
+
+.options-material-picker {
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    width: min(320px, 100%);
+    text-align: left;
+    padding: 7px 10px;
+}
+
+.options-material-thumb {
+    width: 46px;
+    height: 46px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(0,0,0,0.18);
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    font-weight: 900;
+    font-size: 11px;
+    line-height: 1.1;
+    padding: 6px;
+    text-transform: uppercase;
+    opacity: 0.92;
+}
+
+.options-material-thumb.has-image {
+    padding: 0;
+}
+
+.options-material-thumb-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transform: scale(1.2);
+    transform-origin: center;
+}
+
+.options-material-text {
+    font-weight: 900;
+    font-size: 12px;
+    line-height: 1.15;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .options-btn:hover {

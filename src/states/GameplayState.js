@@ -12,6 +12,7 @@
 import * as THREE from 'three';
 import { getSharedCity } from '../graphics/visuals/city/City.js';
 import { createBigCitySpec } from '../app/city/specs/BigCitySpec.js';
+import { createBigCity2Spec } from '../app/city/specs/BigCity2Spec.js';
 import { fadeIn } from '../graphics/gui/shared/utils/screenFade.js';
 import { GameHUD } from '../graphics/gui/gameplay/GameHUD.js';
 import { GameplayCameraTour } from '../graphics/gui/gameplay/GameplayCameraTour.js';
@@ -49,8 +50,45 @@ const CAMERA_DRAG = {
 
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
+function normalizeCityParam(value) {
+    if (typeof value !== 'string') return '';
+    return value.trim().toLowerCase().replaceAll('_', '').replaceAll('-', '');
+}
+
+function resolveCityIdFromUrl() {
+    if (typeof window === 'undefined') return null;
+
+    const params = new URLSearchParams(window.location.search);
+    const key = normalizeCityParam(params.get('city') ?? params.get('citySpec') ?? params.get('citySpecId'));
+    if (!key) return null;
+
+    if (key === 'bigcity' || key === 'city1' || key === '1') return 'bigcity';
+    if (key === 'bigcity2' || key === 'bigcitytwo' || key === 'city2' || key === '2') return 'bigcity2';
+    return null;
+}
+
+function isValidGameplayCitySpec(spec) {
+    if (!spec || typeof spec !== 'object') return false;
+    if (!Number.isFinite(spec.tileSize) || !Number.isFinite(spec.width)) return false;
+    if (!Array.isArray(spec.roads) || spec.roads.length < 1) return false;
+    return true;
+}
+
 export function getGameplayCityOptions() {
-    const mapSpec = createBigCitySpec();
+    const requestedCityId = resolveCityIdFromUrl();
+    const cityId = requestedCityId === 'bigcity' ? 'bigcity' : 'bigcity2';
+
+    let mapSpec = null;
+    try {
+        mapSpec = cityId === 'bigcity' ? createBigCitySpec() : createBigCity2Spec();
+        if (!isValidGameplayCitySpec(mapSpec)) {
+            throw new Error(`Invalid city spec shape for '${cityId}'`);
+        }
+    } catch (err) {
+        console.warn(`[GameplayState] Failed to load '${cityId}', falling back to 'bigcity'.`, err);
+        mapSpec = createBigCitySpec();
+    }
+
     const mapTileSize = Number.isFinite(mapSpec?.tileSize) ? mapSpec.tileSize : 24;
     const mapWidth = Number.isFinite(mapSpec?.width) ? mapSpec.width : 25;
     const seed = typeof mapSpec?.seed === 'string' ? mapSpec.seed : 'x';

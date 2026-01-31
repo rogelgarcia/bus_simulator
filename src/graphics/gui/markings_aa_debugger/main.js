@@ -3,9 +3,13 @@
 
 import { MarkingsAADebuggerView } from './MarkingsAADebuggerView.js';
 import { ensureGlobalPerfBar } from '../perf_bar/PerfBar.js';
+import { installViewportContextMenuBlocker } from '../shared/utils/viewportContextMenuBlocker.js';
 
 const canvas = document.getElementById('game-canvas');
 if (!canvas) throw new Error('[MarkingsAADebugger] Missing canvas#game-canvas');
+
+const viewport = document.getElementById('game-viewport');
+const viewportContextMenuBlocker = viewport ? installViewportContextMenuBlocker(viewport) : null;
 
 document.body.classList.add('options-dock-open');
 
@@ -29,6 +33,6 @@ const onKeyDown = (e) => {
 window.addEventListener('keydown', onKeyDown, { passive: false });
 window.addEventListener('beforeunload', () => {
     window.removeEventListener('keydown', onKeyDown);
+    viewportContextMenuBlocker?.dispose?.();
     view.destroy();
 }, { passive: true });
-

@@ -170,18 +170,24 @@ export function buildTexturePreviewMaterialMaps({
     previewMode = 'single',
     baseTex = null,
     normalTex = null,
+    ormTex = null,
     roughnessTex = null,
     metalnessTex = null,
     aoTex = null,
     alphaTex = null
 } = {}) {
     const tiled = previewMode === 'tiled';
+
+    const effectiveRoughnessTex = roughnessTex ?? ormTex ?? null;
+    const effectiveMetalnessTex = metalnessTex ?? ormTex ?? null;
+    const effectiveAoTex = aoTex ?? ormTex ?? null;
+
     const maps = {
         map: baseTex ?? null,
         normalMap: normalTex ?? null,
-        aoMap: aoTex ?? null,
-        roughnessMap: roughnessTex ?? null,
-        metalnessMap: metalnessTex ?? null,
+        aoMap: effectiveAoTex,
+        roughnessMap: effectiveRoughnessTex,
+        metalnessMap: effectiveMetalnessTex,
         alphaMap: alphaTex ?? null
     };
 

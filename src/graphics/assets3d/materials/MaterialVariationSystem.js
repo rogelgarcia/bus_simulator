@@ -2,8 +2,9 @@
 // Applies deterministic, composable procedural material variation to MeshStandardMaterial via shader injection.
 import * as THREE from 'three';
 
-const MATVAR_SHADER_VERSION = 15;
+const MATVAR_SHADER_VERSION = 17;
 const MATVAR_MACRO_LAYERS_MAX = 4;
+const MATVAR_ANTI_LAYERS_MAX = 4;
 
 const EPS = 1e-6;
 
@@ -117,6 +118,28 @@ function normalizeTilesForSeed(tiles) {
 
 function normalizeSignedAmount(value, fallback = 0, { min = -4.0, max = 4.0 } = {}) {
     return clamp(value ?? fallback, min, max);
+}
+
+function normalizeAntiTilingLayerLike(value, preset = null, { enabledDefault = true } = {}) {
+    const src = value && typeof value === 'object' ? value : {};
+    const p = preset && typeof preset === 'object' ? preset : {};
+    const enabled = src.enabled === undefined ? !!enabledDefault : !!src.enabled;
+    const mode = (src.mode ?? p.mode) === 'quality' ? 'quality' : 'fast';
+    const rotationDegrees = src.rotationDegrees ?? src.rotation ?? src.rotationAmount ?? p.rotationDegrees ?? 0.0;
+    const cellSize = src.cellSize ?? src.macroCellSize ?? p.cellSize ?? 1.0;
+    const blendWidth = src.blendWidth ?? src.transitionSoftness ?? src.edgeFade ?? p.blendWidth ?? p.edgeFade ?? 0.18;
+    const offsetU = src.offsetU ?? src.offsetAmountU ?? src.jitterU ?? p.offsetU ?? 0.0;
+    const offsetV = src.offsetV ?? src.offsetAmountV ?? src.jitterV ?? src.tileJitter ?? p.offsetV ?? p.tileJitter ?? 0.0;
+    return {
+        enabled,
+        mode,
+        strength: clamp(src.strength ?? p.strength ?? 0.65, 0.0, 12.0),
+        cellSize: clamp(cellSize, 0.25, 20.0),
+        blendWidth: clamp(blendWidth, 0.0, 0.49),
+        offsetU: clamp(offsetU, -4.0, 4.0),
+        offsetV: clamp(offsetV, -4.0, 4.0),
+        rotationDegrees: clamp(rotationDegrees, 0.0, 180.0)
+    };
 }
 
 function normalizeLayerLike(value, preset = null, { enabledDefault = true } = {}) {
@@ -384,14 +407,22 @@ export function normalizeMaterialVariationConfig(input, { root = MATERIAL_VARIAT
     const stairShift = cfg.stairShift ?? {};
     const detail = cfg.detail ?? {};
     const cracks = cfg.cracks ?? {};
-
-    const antiMode = antiTiling.mode === 'quality' ? 'quality' : 'fast';
     const presetAnti = preset.antiTiling ?? {};
-    const antiRotationDegrees = antiTiling.rotationDegrees ?? antiTiling.rotation ?? antiTiling.rotationAmount ?? presetAnti.rotationDegrees ?? 0.0;
-    const antiCellSize = antiTiling.cellSize ?? antiTiling.macroCellSize ?? presetAnti.cellSize ?? 1.0;
-    const antiBlendWidth = antiTiling.blendWidth ?? antiTiling.transitionSoftness ?? antiTiling.edgeFade ?? presetAnti.blendWidth ?? presetAnti.edgeFade ?? 0.18;
-    const antiOffsetU = antiTiling.offsetU ?? antiTiling.offsetAmountU ?? antiTiling.jitterU ?? presetAnti.offsetU ?? 0.0;
-    const antiOffsetV = antiTiling.offsetV ?? antiTiling.offsetAmountV ?? antiTiling.jitterV ?? antiTiling.tileJitter ?? presetAnti.offsetV ?? presetAnti.tileJitter ?? 0.0;
+    const antiTilingLayersRaw = Array.isArray(cfg.antiTilingLayers) && cfg.antiTilingLayers.length ? cfg.antiTilingLayers : null;
+    const antiTilingLayers = [];
+    if (antiTilingLayersRaw) {
+        for (let i = 0; i < MATVAR_ANTI_LAYERS_MAX; i++) {
+            const srcLayer = antiTilingLayersRaw[i] ?? null;
+            const enabledDefault = i === 0 ? !!presetAnti.enabled : false;
+            antiTilingLayers.push(normalizeAntiTilingLayerLike(srcLayer, presetAnti, { enabledDefault }));
+        }
+    } else {
+        antiTilingLayers.push(normalizeAntiTilingLayerLike(antiTiling, presetAnti, { enabledDefault: !!presetAnti.enabled }));
+        for (let i = 1; i < MATVAR_ANTI_LAYERS_MAX; i++) {
+            antiTilingLayers.push(normalizeAntiTilingLayerLike(null, presetAnti, { enabledDefault: false }));
+        }
+    }
+    const normalizedAntiTiling = antiTilingLayers[0];
 
     const macroLayersRaw = Array.isArray(cfg.macroLayers) ? cfg.macroLayers : null;
     const presetMacroLayers = Array.isArray(preset.macroLayers) ? preset.macroLayers : [];
@@ -559,6 +590,45 @@ export function normalizeMaterialVariationConfig(input, { root = MATERIAL_VARIAT
     const perBrickLayout = normalizeBrickLayout(perBrickSrc?.layout ?? perBrickSrc?.brickLayout ?? perBrickSrc, baseBrickLayout);
     const mortarLayout = normalizeBrickLayout(mortarSrc?.layout ?? mortarSrc?.brickLayout ?? mortarSrc, baseBrickLayout);
 
+    const texBlendRaw = cfg.texBlend ?? cfg.textureBlend ?? cfg.distanceBlend ?? null;
+    const texBlendSrc = texBlendRaw && typeof texBlendRaw === 'object' ? texBlendRaw : {};
+    const texBlendEnabled = !!texBlendSrc.enabled;
+
+    const makeVec2 = (value, fallback = null) => {
+        const src = value && typeof value === 'object' ? value : null;
+        const fb = fallback && typeof fallback === 'object' ? fallback : null;
+        const fx = Number(fb?.x);
+        const fy = Number(fb?.y);
+        const x = Number.isFinite(src?.x) ? Number(src.x) : (Number.isFinite(fx) ? fx : 0);
+        const y = Number.isFinite(src?.y) ? Number(src.y) : (Number.isFinite(fy) ? fy : 0);
+        return { x, y };
+    };
+
+    const microTilingRaw = makeVec2(texBlendSrc.microTiling ?? texBlendSrc.nearTiling ?? null, { x: 1.0, y: 1.0 });
+    const macroTilingRaw = makeVec2(texBlendSrc.macroTiling ?? texBlendSrc.farTiling ?? null, microTilingRaw);
+    const texOffsetRaw = makeVec2(texBlendSrc.offset ?? texBlendSrc.uvOffset ?? null, { x: 0.0, y: 0.0 });
+
+    const microTiling = { x: clamp(microTilingRaw.x, 0.001, 1000.0), y: clamp(microTilingRaw.y, 0.001, 1000.0) };
+    const macroTiling = { x: clamp(macroTilingRaw.x, 0.001, 1000.0), y: clamp(macroTilingRaw.y, 0.001, 1000.0) };
+    const texOffset = { x: clamp(texOffsetRaw.x, -1000.0, 1000.0), y: clamp(texOffsetRaw.y, -1000.0, 1000.0) };
+
+    const rotationDegrees = texBlendSrc.rotationDegrees ?? texBlendSrc.rotationDeg ?? null;
+    const rotationRadians = Number.isFinite(texBlendSrc.rotationRadians)
+        ? Number(texBlendSrc.rotationRadians)
+        : (Number.isFinite(rotationDegrees) ? (Number(rotationDegrees) * (Math.PI / 180)) : (Number(texBlendSrc.rotation) || 0.0));
+
+    const blendStartMetersRaw = Number(texBlendSrc.blendStartMeters ?? texBlendSrc.blendStart ?? 0.0);
+    const blendEndMetersRaw = Number(texBlendSrc.blendEndMeters ?? texBlendSrc.blendEnd ?? 0.0);
+    const blendStartMeters = clamp(Math.min(blendStartMetersRaw, blendEndMetersRaw), 0.0, 50000.0);
+    const blendEndMeters = clamp(Math.max(blendStartMetersRaw, blendEndMetersRaw), 0.0, 50000.0);
+
+    const macroWeight = clamp(texBlendSrc.macroWeight ?? texBlendSrc.weight ?? 1.0, 0.0, 1.0);
+    const debugView = String(texBlendSrc.debugView ?? texBlendSrc.view ?? 'blended');
+    const debugMode = debugView === 'macro' ? 2 : (debugView === 'micro' ? 1 : 0);
+
+    const variationNearIntensity = clamp(texBlendSrc.variationNearIntensity ?? texBlendSrc.nearVariationIntensity ?? texBlendSrc.nearIntensity ?? 1.0, 0.0, 20.0);
+    const variationFarIntensity = clamp(texBlendSrc.variationFarIntensity ?? texBlendSrc.farVariationIntensity ?? texBlendSrc.farIntensity ?? 1.0, 0.0, 20.0);
+
     return {
         enabled: cfg.enabled === undefined ? !!preset.enabled : !!cfg.enabled,
         root: normalizeRoot(cfg.root ?? preset.root),
@@ -576,6 +646,19 @@ export function normalizeMaterialVariationConfig(input, { root = MATERIAL_VARIAT
             flipX: normalMap.flipX === undefined ? !!presetNormalMap.flipX : !!normalMap.flipX,
             flipY: normalMap.flipY === undefined ? !!presetNormalMap.flipY : !!normalMap.flipY,
             flipZ: normalMap.flipZ === undefined ? !!presetNormalMap.flipZ : !!normalMap.flipZ
+        },
+        texBlend: {
+            enabled: texBlendEnabled,
+            microTiling,
+            macroTiling,
+            offset: texOffset,
+            rotationRadians,
+            blendStartMeters,
+            blendEndMeters,
+            macroWeight,
+            debugMode,
+            variationNearIntensity,
+            variationFarIntensity
         },
         macroLayers,
         wearTop: derivedWearTop,
@@ -672,16 +755,8 @@ export function normalizeMaterialVariationConfig(input, { root = MATERIAL_VARIAT
             strength: clamp(efflorescence.strength ?? preset.efflorescence.strength, 0.0, 12.0),
             scale: clamp(efflorescence.scale ?? preset.efflorescence.scale, 0.01, 50.0)
         },
-        antiTiling: {
-            enabled: antiTiling.enabled === undefined ? !!preset.antiTiling.enabled : !!antiTiling.enabled,
-            mode: antiMode,
-            strength: clamp(antiTiling.strength ?? presetAnti.strength ?? 0.65, 0.0, 12.0),
-            cellSize: clamp(antiCellSize, 0.25, 20.0),
-            blendWidth: clamp(antiBlendWidth, 0.0, 0.49),
-            offsetU: clamp(antiOffsetU, -4.0, 4.0),
-            offsetV: clamp(antiOffsetV, -4.0, 4.0),
-            rotationDegrees: clamp(antiRotationDegrees, 0.0, 180.0)
-        },
+        antiTiling: normalizedAntiTiling,
+        antiTilingLayers,
         stairShift: {
             mode: stairMode,
             enabled: stairShift.enabled === undefined ? !!preset.stairShift?.enabled : !!stairShift.enabled,
@@ -723,8 +798,6 @@ function buildUniformBundle({
     const heightHi = Math.max(hMin, hMax);
 
     const spaceMode = cfg.space === MATERIAL_VARIATION_SPACE.OBJECT ? 1 : 0;
-    const antiRot = clamp(cfg.antiTiling.rotationDegrees, 0.0, 180.0) * (Math.PI / 180);
-    const antiMode = cfg.antiTiling.mode === 'quality' ? 1 : 0;
     const macroLayers = Array.isArray(cfg.macroLayers) ? cfg.macroLayers : [];
     const normalMapCfg = cfg.normalMap ?? {};
     const flipX = !!normalMapCfg.flipX;
@@ -765,11 +838,72 @@ function buildUniformBundle({
     const stairMode = cfg.stairShift?.mode;
     const stairModeCode = stairMode === 'random' ? 2 : (stairMode === 'alternate' ? 1 : (stairMode === 'pattern3' ? 3 : 0));
 
+    const antiLayers = Array.isArray(cfg.antiTilingLayers) ? cfg.antiTilingLayers : [];
+    const antiFallback = Object.freeze({ enabled: false, mode: 'fast', strength: 0.0, cellSize: 1.0, blendWidth: 0.2, offsetU: 0.0, offsetV: 0.0, rotationDegrees: 0.0 });
+    const getAntiLayer = (index) => {
+        const layer = antiLayers[index];
+        return layer && typeof layer === 'object' ? layer : antiFallback;
+    };
+
+    const makeAntiUniforms = (layer, seedBias) => {
+        const rot = clamp(layer.rotationDegrees, 0.0, 180.0) * (Math.PI / 180);
+        const mode = layer.mode === 'quality' ? 1 : 0;
+        const strength = layer.enabled ? layer.strength : 0.0;
+        const cellSize = Number.isFinite(layer.cellSize) ? layer.cellSize : 1.0;
+        const blendWidth = Number.isFinite(layer.blendWidth) ? layer.blendWidth : 0.2;
+        const offsetU = Number.isFinite(layer.offsetU) ? layer.offsetU : 0.0;
+        const offsetV = Number.isFinite(layer.offsetV) ? layer.offsetV : 0.0;
+        return {
+            anti: new THREE.Vector4(strength, cellSize, blendWidth, rot),
+            anti2: new THREE.Vector4(offsetU, offsetV, mode, seedBias)
+        };
+    };
+
+    const anti0 = makeAntiUniforms(getAntiLayer(0), 0.0);
+    const anti1 = makeAntiUniforms(getAntiLayer(1), 19.19);
+    const anti2 = makeAntiUniforms(getAntiLayer(2), 38.38);
+    const anti3 = makeAntiUniforms(getAntiLayer(3), 57.57);
+
+    const texBlend = cfg.texBlend && typeof cfg.texBlend === 'object' ? cfg.texBlend : {};
+    const microTiling = texBlend.microTiling ?? { x: 1.0, y: 1.0 };
+    const macroTiling = texBlend.macroTiling ?? microTiling;
+    const texOffset = texBlend.offset ?? { x: 0.0, y: 0.0 };
+
+    const texBlend0 = new THREE.Vector4(
+        clamp(microTiling?.x ?? 1.0, 0.001, 1000.0),
+        clamp(microTiling?.y ?? 1.0, 0.001, 1000.0),
+        clamp(macroTiling?.x ?? microTiling?.x ?? 1.0, 0.001, 1000.0),
+        clamp(macroTiling?.y ?? microTiling?.y ?? 1.0, 0.001, 1000.0)
+    );
+
+    const texBlend1 = new THREE.Vector4(
+        clamp(texBlend.blendStartMeters ?? 0.0, 0.0, 50000.0),
+        clamp(texBlend.blendEndMeters ?? 0.0, 0.0, 50000.0),
+        clamp(texBlend.macroWeight ?? 1.0, 0.0, 1.0),
+        clamp(texBlend.debugMode ?? 0.0, 0.0, 2.0)
+    );
+
+    const texUv = new THREE.Vector4(
+        clamp(texOffset?.x ?? 0.0, -1000.0, 1000.0),
+        clamp(texOffset?.y ?? 0.0, -1000.0, 1000.0),
+        Number.isFinite(texBlend.rotationRadians) ? Number(texBlend.rotationRadians) : 0.0,
+        texBlend.enabled ? 1.0 : 0.0
+    );
+
+    const varIntensityNF = new THREE.Vector2(
+        clamp(texBlend.variationNearIntensity ?? 1.0, 0.0, 20.0),
+        clamp(texBlend.variationFarIntensity ?? 1.0, 0.0, 20.0)
+    );
+
     return {
         config0: new THREE.Vector4(safeSeed, safeSeedOffset, cfg.enabled ? cfg.globalIntensity : 0, spaceMode),
         config1: new THREE.Vector4(cfg.worldSpaceScale, cfg.objectSpaceScale, heightLo, heightHi),
         global1: new THREE.Vector4(cfg.aoAmount, 0.0, seedToFloat01(safeSeed), seedToFloat01(safeSeed ^ 0x9e3779b9)),
         normalMap: new THREE.Vector4(flipX ? 1 : 0, flipY ? 1 : 0, flipZ ? 1 : 0, 0.0),
+        texBlend0,
+        texBlend1,
+        texUv,
+        varIntensityNF,
 
         macro0: new THREE.Vector4(macro0?.enabled ? macro0.intensity : 0.0, macro0?.scale ?? 1.0, macro0Hue, 0.0),
         macro0b: new THREE.Vector4(macro0?.value ?? 0.0, macro0?.saturation ?? 0.0, macro0?.roughness ?? 0.0, macro0?.normal ?? 0.0),
@@ -812,8 +946,14 @@ function buildUniformBundle({
         cracks: new THREE.Vector4(cracks?.enabled ? cracks.intensity : 0.0, cracks?.scale ?? 1.0, cracksHue, 0.0),
         cracks2: new THREE.Vector4(cracks?.value ?? 0.0, cracks?.saturation ?? 0.0, cracks?.roughness ?? 0.0, cracks?.normal ?? 0.0),
 
-        anti: new THREE.Vector4(cfg.antiTiling.enabled ? cfg.antiTiling.strength : 0, cfg.antiTiling.cellSize, cfg.antiTiling.blendWidth, antiRot),
-        anti2: new THREE.Vector4(cfg.antiTiling.offsetU, cfg.antiTiling.offsetV, antiMode, 0),
+        anti: anti0.anti,
+        anti2: anti0.anti2,
+        antiL1: anti1.anti,
+        antiL1b: anti1.anti2,
+        antiL2: anti2.anti,
+        antiL2b: anti2.anti2,
+        antiL3: anti3.anti,
+        antiL3b: anti3.anti2,
         stair: new THREE.Vector4(cfg.stairShift.enabled ? cfg.stairShift.strength : 0, cfg.stairShift.stepSize, cfg.stairShift.shift, cfg.stairShift.direction === 'vertical' ? 1 : 0),
         stair2: new THREE.Vector4(cfg.stairShift.blendWidth ?? 0.0, stairModeCode, cfg.stairShift.patternA ?? 0.4, cfg.stairShift.patternB ?? 0.8),
     };
@@ -836,6 +976,10 @@ function injectMatVarShader(material, shader) {
     shader.uniforms.uMatVarConfig1 = { value: cfg.uniforms.config1 };
     shader.uniforms.uMatVarGlobal1 = { value: cfg.uniforms.global1 };
     shader.uniforms.uMatVarNormalMap = { value: cfg.uniforms.normalMap };
+    shader.uniforms.uMatVarTexBlend0 = { value: cfg.uniforms.texBlend0 };
+    shader.uniforms.uMatVarTexBlend1 = { value: cfg.uniforms.texBlend1 };
+    shader.uniforms.uMatVarTexUv = { value: cfg.uniforms.texUv };
+    shader.uniforms.uMatVarVarIntensityNF = { value: cfg.uniforms.varIntensityNF };
     shader.uniforms.uMatVarMacro0 = { value: cfg.uniforms.macro0 };
     shader.uniforms.uMatVarMacro0B = { value: cfg.uniforms.macro0b };
     shader.uniforms.uMatVarMacro1 = { value: cfg.uniforms.macro1 };
@@ -865,6 +1009,18 @@ function injectMatVarShader(material, shader) {
     shader.uniforms.uMatVarCracks2 = { value: cfg.uniforms.cracks2 };
     shader.uniforms.uMatVarAnti = { value: cfg.uniforms.anti };
     shader.uniforms.uMatVarAnti2 = { value: cfg.uniforms.anti2 };
+    cfg.uniforms.antiL1 = cfg.uniforms.antiL1 ?? new THREE.Vector4(0.0, 1.0, 0.2, 0.0);
+    cfg.uniforms.antiL1b = cfg.uniforms.antiL1b ?? new THREE.Vector4(0.0, 0.0, 0.0, 19.19);
+    cfg.uniforms.antiL2 = cfg.uniforms.antiL2 ?? new THREE.Vector4(0.0, 1.0, 0.2, 0.0);
+    cfg.uniforms.antiL2b = cfg.uniforms.antiL2b ?? new THREE.Vector4(0.0, 0.0, 0.0, 38.38);
+    cfg.uniforms.antiL3 = cfg.uniforms.antiL3 ?? new THREE.Vector4(0.0, 1.0, 0.2, 0.0);
+    cfg.uniforms.antiL3b = cfg.uniforms.antiL3b ?? new THREE.Vector4(0.0, 0.0, 0.0, 57.57);
+    shader.uniforms.uMatVarAntiL1 = { value: cfg.uniforms.antiL1 };
+    shader.uniforms.uMatVarAntiL1B = { value: cfg.uniforms.antiL1b };
+    shader.uniforms.uMatVarAntiL2 = { value: cfg.uniforms.antiL2 };
+    shader.uniforms.uMatVarAntiL2B = { value: cfg.uniforms.antiL2b };
+    shader.uniforms.uMatVarAntiL3 = { value: cfg.uniforms.antiL3 };
+    shader.uniforms.uMatVarAntiL3B = { value: cfg.uniforms.antiL3b };
     shader.uniforms.uMatVarStair = { value: cfg.uniforms.stair };
     shader.uniforms.uMatVarStair2 = { value: cfg.uniforms.stair2 };
     shader.uniforms.uMatVarDebug0 = { value: cfg.debugUniforms.debug0 };
@@ -923,6 +1079,10 @@ function injectMatVarShader(material, shader) {
         'uniform vec4 uMatVarConfig1;',
         'uniform vec4 uMatVarGlobal1;',
         'uniform vec4 uMatVarNormalMap;',
+        'uniform vec4 uMatVarTexBlend0;',
+        'uniform vec4 uMatVarTexBlend1;',
+        'uniform vec4 uMatVarTexUv;',
+        'uniform vec2 uMatVarVarIntensityNF;',
         'uniform vec4 uMatVarMacro0;',
         'uniform vec4 uMatVarMacro0B;',
         'uniform vec4 uMatVarMacro1;',
@@ -952,6 +1112,12 @@ function injectMatVarShader(material, shader) {
         'uniform vec4 uMatVarCracks2;',
         'uniform vec4 uMatVarAnti;',
         'uniform vec4 uMatVarAnti2;',
+        'uniform vec4 uMatVarAntiL1;',
+        'uniform vec4 uMatVarAntiL1B;',
+        'uniform vec4 uMatVarAntiL2;',
+        'uniform vec4 uMatVarAntiL2B;',
+        'uniform vec4 uMatVarAntiL3;',
+        'uniform vec4 uMatVarAntiL3B;',
         'uniform vec4 uMatVarStair;',
         'uniform vec4 uMatVarStair2;',
         'uniform vec4 uMatVarDebug0;',
@@ -985,23 +1151,23 @@ function injectMatVarShader(material, shader) {
         'if(dbgN>0.5&&abs(ch.w)>1e-6) normalFactor += mask * ch.w;',
         '}',
         'float mvSmooth01(float x){return x*x*(3.0-2.0*x);}',
-        'vec3 mvAntiTiling(vec2 uv){',
+        'vec3 mvAntiTilingLayer(vec2 uv, vec4 antiCfg, vec4 antiCfg2){',
         'float mvEnabled=step(1e-6,uMatVarConfig0.z);',
-        'float anti=uMatVarAnti.x*mvEnabled;',
+        'float anti=antiCfg.x*mvEnabled;',
         'float dbgOffset=step(0.5,uMatVarDebug0.y);',
         'float dbgRot=step(0.5,uMatVarDebug0.z);',
         'float dbgWarp=step(0.5,uMatVarDebug0.w);',
         'anti*=step(0.5,dbgOffset+dbgRot);',
         'if(anti<=0.0) return vec3(uv,0.0);',
-        'float quality=step(0.5,uMatVarAnti2.z);',
-        'float cellSize=max(0.001,uMatVarAnti.y);',
+        'float quality=step(0.5,antiCfg2.z);',
+        'float cellSize=max(0.001,antiCfg.y);',
         'vec2 cellUv=uv/cellSize;',
         'vec2 cell=floor(cellUv);',
         'vec2 f=fract(cellUv);',
-        'float bw=clamp(uMatVarAnti.z,0.0,0.49);',
+        'float bw=clamp(antiCfg.z,0.0,0.49);',
         'vec2 t=clamp((f-bw)/max(1e-5,1.0-2.0*bw),0.0,1.0);',
         't=vec2(mvSmooth01(t.x),mvSmooth01(t.y));',
-        'float seedOffset=uMatVarConfig0.y;',
+        'float seedOffset=uMatVarConfig0.y+antiCfg2.w;',
         'float seedOA=fract(uMatVarGlobal1.z+seedOffset*0.013);',
         'float seedOB=fract(uMatVarGlobal1.w+seedOffset*0.017);',
         'vec2 c00=cell;',
@@ -1016,14 +1182,14 @@ function injectMatVarShader(material, shader) {
         'vec4 r10=vec4(mvHash12(c10+vec2(seedOA*91.7,seedOB*53.3)),mvHash22(c10+vec2(seedOB*17.3,seedOA*29.1)),0.0);',
         'vec4 r01=vec4(mvHash12(c01+vec2(seedOA*91.7,seedOB*53.3)),mvHash22(c01+vec2(seedOB*17.3,seedOA*29.1)),0.0);',
         'vec4 r11=vec4(mvHash12(c11+vec2(seedOA*91.7,seedOB*53.3)),mvHash22(c11+vec2(seedOB*17.3,seedOA*29.1)),0.0);',
-        'float a00=(r00.x*2.0-1.0)*uMatVarAnti.w*anti*quality*dbgRot;',
-        'float a10=(r10.x*2.0-1.0)*uMatVarAnti.w*anti*quality*dbgRot;',
-        'float a01=(r01.x*2.0-1.0)*uMatVarAnti.w*anti*quality*dbgRot;',
-        'float a11=(r11.x*2.0-1.0)*uMatVarAnti.w*anti*quality*dbgRot;',
-        'vec2 o00=(r00.yz*2.0-1.0)*uMatVarAnti2.xy*anti*dbgOffset;',
-        'vec2 o10=(r10.yz*2.0-1.0)*uMatVarAnti2.xy*anti*dbgOffset;',
-        'vec2 o01=(r01.yz*2.0-1.0)*uMatVarAnti2.xy*anti*dbgOffset;',
-        'vec2 o11=(r11.yz*2.0-1.0)*uMatVarAnti2.xy*anti*dbgOffset;',
+        'float a00=(r00.x*2.0-1.0)*antiCfg.w*anti*quality*dbgRot;',
+        'float a10=(r10.x*2.0-1.0)*antiCfg.w*anti*quality*dbgRot;',
+        'float a01=(r01.x*2.0-1.0)*antiCfg.w*anti*quality*dbgRot;',
+        'float a11=(r11.x*2.0-1.0)*antiCfg.w*anti*quality*dbgRot;',
+        'vec2 o00=(r00.yz*2.0-1.0)*antiCfg2.xy*anti*dbgOffset;',
+        'vec2 o10=(r10.yz*2.0-1.0)*antiCfg2.xy*anti*dbgOffset;',
+        'vec2 o01=(r01.yz*2.0-1.0)*antiCfg2.xy*anti*dbgOffset;',
+        'vec2 o11=(r11.yz*2.0-1.0)*antiCfg2.xy*anti*dbgOffset;',
         'vec2 p00=f00-0.5;',
         'vec2 p10=f10-0.5;',
         'vec2 p01=f01-0.5;',
@@ -1046,10 +1212,10 @@ function injectMatVarShader(material, shader) {
 	        'float w11=t.x*t.y;',
 	        'vec2 uv2=uv00*w00+uv10*w10+uv01*w01+uv11*w11;',
 	        'float ang=a00*w00+a10*w10+a01*w01+a11*w11;',
-	        'if(uMatVarAnti2.z>0.5&&dbgWarp>0.5){',
-	        'float n1=mvFbm2(uv*0.11+vec2(seedOB*13.1,seedOA*17.9));',
-	        'float n2=mvFbm2(uv*0.13+vec2(seedOA*9.7,seedOB*21.3));',
-	        'vec2 warp=(vec2(n1,n2)*2.0-1.0)*uMatVarAnti2.xy*1.2*anti;',
+	        'if(antiCfg2.z>0.5&&dbgWarp>0.5){',
+		        'float n1=mvFbm2(uv*0.11+vec2(seedOB*13.1,seedOA*17.9));',
+		        'float n2=mvFbm2(uv*0.13+vec2(seedOA*9.7,seedOB*21.3));',
+		        'vec2 warp=(vec2(n1,n2)*2.0-1.0)*antiCfg2.xy*1.2*anti;',
         'uv2+=warp;',
         '}',
         'return vec3(uv2,ang);',
@@ -1129,16 +1295,57 @@ function injectMatVarShader(material, shader) {
         '#endif',
         'vec2 mvMatVarUv(vec2 uv){',
         '#ifdef USE_MATVAR',
-        'uv = mvStairShiftUv(uv);vec3 a=mvAntiTiling(uv);return a.xy;',
+        'uv = mvStairShiftUv(uv);vec3 a=mvAntiTilingLayer(uv,uMatVarAnti,uMatVarAnti2);uv=a.xy;a=mvAntiTilingLayer(uv,uMatVarAntiL1,uMatVarAntiL1B);uv=a.xy;a=mvAntiTilingLayer(uv,uMatVarAntiL2,uMatVarAntiL2B);uv=a.xy;a=mvAntiTilingLayer(uv,uMatVarAntiL3,uMatVarAntiL3B);uv=a.xy;return uv;',
         '#else',
         'return uv;',
         '#endif',
         '}',
         'float mvMatVarUvRotation(vec2 uv){',
         '#ifdef USE_MATVAR',
-        'uv = mvStairShiftUv(uv);vec3 a=mvAntiTiling(uv);return a.z;',
+        'uv = mvStairShiftUv(uv);float ang=0.0;vec3 a=mvAntiTilingLayer(uv,uMatVarAnti,uMatVarAnti2);uv=a.xy;ang+=a.z;a=mvAntiTilingLayer(uv,uMatVarAntiL1,uMatVarAntiL1B);uv=a.xy;ang+=a.z;a=mvAntiTilingLayer(uv,uMatVarAntiL2,uMatVarAntiL2B);uv=a.xy;ang+=a.z;a=mvAntiTilingLayer(uv,uMatVarAntiL3,uMatVarAntiL3B);uv=a.xy;ang+=a.z;return ang;',
         '#else',
         'return 0.0;',
+        '#endif',
+        '}',
+        'float mvTexBlendT(){',
+        '#ifdef USE_MATVAR_TEXBLEND',
+        'float mode = uMatVarTexBlend1.w;',
+        'if (mode > 1.5) return 1.0;',
+        'if (mode > 0.5) return 0.0;',
+        'float startD = uMatVarTexBlend1.x;',
+        'float endD = uMatVarTexBlend1.y;',
+        'float d = length(vViewPosition);',
+        'float t = (abs(endD - startD) < 1e-6) ? step(startD, d) : smoothstep(startD, endD, d);',
+        'return clamp(t * uMatVarTexBlend1.z, 0.0, 1.0);',
+        '#else',
+        'return 0.0;',
+        '#endif',
+        '}',
+        'vec2 mvTexRotate(vec2 uv, float rot){',
+        'float c = cos(rot);',
+        'float s = sin(rot);',
+        'return mat2(c, -s, s, c) * uv;',
+        '}',
+        'vec2 mvTexMacroUv(vec2 uvMicro){',
+        'vec2 off = uMatVarTexUv.xy;',
+        'float rot = uMatVarTexUv.z;',
+        'vec2 microT = uMatVarTexBlend0.xy;',
+        'vec2 macroT = uMatVarTexBlend0.zw;',
+        'vec2 uv = uvMicro - off;',
+        'if (abs(rot) > 1e-6) uv = mvTexRotate(uv, -rot);',
+        'uv /= max(vec2(1e-6), microT);',
+        'uv *= macroT;',
+        'if (abs(rot) > 1e-6) uv = mvTexRotate(uv, rot);',
+        'uv += off;',
+        'return uv;',
+        '}',
+        'vec4 mvMatVarSampleTexture2D(sampler2D tex, vec2 uvMicro){',
+        '#ifdef USE_MATVAR_TEXBLEND',
+        'vec4 a = texture2D(tex, mvMatVarUv(uvMicro));',
+        'vec4 b = texture2D(tex, mvMatVarUv(mvTexMacroUv(uvMicro)));',
+        'return mix(a, b, mvTexBlendT());',
+        '#else',
+        'return texture2D(tex, mvMatVarUv(uvMicro));',
         '#endif',
         '}'
     ].join('\n');
@@ -1148,17 +1355,8 @@ function injectMatVarShader(material, shader) {
     shader.fragmentShader = shader.fragmentShader.replace(
         '#include <map_fragment>',
         [
-            '#ifdef USE_MATVAR',
-            '#ifdef USE_MAP',
-            'vec2 mvMapUv = mvMatVarUv( vMapUv );',
-            '#define vMapUv mvMapUv',
-            '#endif',
-            '#endif',
             '#include <map_fragment>',
             '#ifdef USE_MATVAR',
-            '#ifdef USE_MAP',
-            '#undef vMapUv',
-            '#endif',
             'matVarAoTex = 1.0;',
             'matVarRoughFactor = roughness;',
             'matVarNormalFactor = 1.0;',
@@ -1166,13 +1364,14 @@ function injectMatVarShader(material, shader) {
             'mvHasEffect = 0.0;',
             '#ifdef USE_ROUGHNESSMAP',
             'if(step(0.5,uMatVarDebug1.z)>0.5){',
-            'vec4 matVarOrm = texture2D( roughnessMap, mvMatVarUv( vRoughnessMapUv ) );',
+            'vec4 matVarOrm = mvMatVarSampleTexture2D( roughnessMap, vRoughnessMapUv );',
             'matVarAoTex = matVarOrm.r;',
             'matVarRoughFactor *= matVarOrm.g;',
             '}',
             '#endif',
             'float mvSeedOffset = uMatVarConfig0.y;',
             'float mvIntensity = uMatVarConfig0.z;',
+            'mvIntensity *= mix(uMatVarVarIntensityNF.x, uMatVarVarIntensityNF.y, mvTexBlendT());',
             'if (mvIntensity > 0.0) {',
             'float mvSpaceMode = uMatVarConfig0.w;',
             'vec3 mvPos = mix(vMatVarWorldPos, vMatVarObjectPos, step(0.5, mvSpaceMode));',
@@ -1223,6 +1422,7 @@ function injectMatVarShader(material, shader) {
             'mvApplyLayer(mvColor, mvRough, matVarNormalFactor, m, uMatVarMacro3B, uMatVarMacro3.z);',
             '}',
             '#ifdef USE_MAP',
+            'vec2 mvMapUv = mvMatVarUv( vMapUv );',
             'float brickStrength = uMatVarBrick0.x * mvIntensity;',
             'if (brickStrength > 0.0) {',
             'vec2 buv = mvMapUv * vec2(max(0.25, uMatVarBrick0.z), max(0.25, uMatVarBrick0.w)) + uMatVarBrickLayout.xy;',
@@ -1373,8 +1573,7 @@ function injectMatVarShader(material, shader) {
             '#ifdef USE_MATVAR',
             '#ifdef USE_NORMALMAP',
             '#ifdef OBJECTSPACE_NORMALMAP',
-            'vec2 mvNormUv = mvMatVarUv( vNormalMapUv );',
-            'vec3 normalTex = texture2D( normalMap, mvNormUv ).xyz * 2.0 - 1.0;',
+            'vec3 normalTex = mvMatVarSampleTexture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;',
             'float mvFlipX = step(0.5,uMatVarNormalMap.x);',
             'float mvFlipY = max(step(0.5,uMatVarNormalMap.y), step(0.5,uMatVarDebug2.y));',
             'float mvFlipZ = step(0.5,uMatVarNormalMap.z);',
@@ -1391,7 +1590,7 @@ function injectMatVarShader(material, shader) {
             '#else',
             'vec2 mvNormUv = mvMatVarUv( vNormalMapUv );',
             'float mvNormRot = mvMatVarUvRotation( vNormalMapUv );',
-            'vec3 normalTex = texture2D( normalMap, mvNormUv ).xyz * 2.0 - 1.0;',
+            'vec3 normalTex = mvMatVarSampleTexture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;',
             'float mvFlipX = step(0.5,uMatVarNormalMap.x);',
             'float mvFlipY = max(step(0.5,uMatVarNormalMap.y), step(0.5,uMatVarDebug2.y));',
             'float mvFlipZ = step(0.5,uMatVarNormalMap.z);',
@@ -1424,27 +1623,27 @@ function injectMatVarShader(material, shader) {
 
     shader.fragmentShader = shader.fragmentShader.replace(
         /(texture2D|texture)\s*\(\s*map\s*,\s*vMapUv\s*\)/g,
-        '$1( map, mvMatVarUv( vMapUv ) )'
+        'mvMatVarSampleTexture2D( map, vMapUv )'
     );
     shader.fragmentShader = shader.fragmentShader.replace(
         /(texture2D|texture)\s*\(\s*normalMap\s*,\s*vNormalMapUv\s*\)/g,
-        '$1( normalMap, mvMatVarUv( vNormalMapUv ) )'
+        'mvMatVarSampleTexture2D( normalMap, vNormalMapUv )'
     );
     shader.fragmentShader = shader.fragmentShader.replace(
         /(texture2D|texture)\s*\(\s*aoMap\s*,\s*vAoMapUv\s*\)/g,
-        '$1( aoMap, mvMatVarUv( vAoMapUv ) )'
+        'mvMatVarSampleTexture2D( aoMap, vAoMapUv )'
     );
     shader.fragmentShader = shader.fragmentShader.replace(
         /(texture2D|texture)\s*\(\s*metalnessMap\s*,\s*vMetalnessMapUv\s*\)/g,
-        '$1( metalnessMap, mvMatVarUv( vMetalnessMapUv ) )'
+        'mvMatVarSampleTexture2D( metalnessMap, vMetalnessMapUv )'
     );
     shader.fragmentShader = shader.fragmentShader.replace(
         /(texture2D|texture)\s*\(\s*roughnessMap\s*,\s*vRoughnessMapUv\s*\)/g,
-        '$1( roughnessMap, mvMatVarUv( vRoughnessMapUv ) )'
+        'mvMatVarSampleTexture2D( roughnessMap, vRoughnessMapUv )'
     );
     shader.fragmentShader = shader.fragmentShader.replace(
         /(texture2D|texture)\s*\(\s*emissiveMap\s*,\s*vEmissiveMapUv\s*\)/g,
-        '$1( emissiveMap, mvMatVarUv( vEmissiveMapUv ) )'
+        'mvMatVarSampleTexture2D( emissiveMap, vEmissiveMapUv )'
     );
 
     shader.fragmentShader = shader.fragmentShader.replace(
@@ -1500,6 +1699,9 @@ function ensureMatVarConfigOnMaterial(material, config) {
     if (debug.useMatVarDefine && config?.cornerDist) mat.defines.USE_MATVAR_CORNERDIST = 1;
     else delete mat.defines.USE_MATVAR_CORNERDIST;
 
+    if (debug.useMatVarDefine && config?.normalized?.texBlend?.enabled) mat.defines.USE_MATVAR_TEXBLEND = 1;
+    else delete mat.defines.USE_MATVAR_TEXBLEND;
+
     const prevCacheKey = typeof mat.customProgramCacheKey === 'function' ? mat.customProgramCacheKey.bind(mat) : null;
     mat.customProgramCacheKey = () => {
         const prev = prevCacheKey ? prevCacheKey() : '';
@@ -1548,7 +1750,7 @@ export function updateMaterialVariationOnMeshStandardMaterial(material, { seed, 
     const nextDebugUniforms = nextDebug ? buildDebugUniformBundle(nextDebug) : null;
 
     const cfg = material.userData?.materialVariationConfig ?? null;
-    if (!cfg || !cfg.uniforms?.macro0 || !cfg.uniforms?.wearTop || !cfg.uniforms?.macro3) {
+    if (!cfg || !cfg.uniforms?.macro0 || !cfg.uniforms?.wearTop || !cfg.uniforms?.macro3 || !cfg.uniforms?.antiL1 || !cfg.uniforms?.antiL2 || !cfg.uniforms?.antiL3) {
         const nextCornerDist = cornerDist === undefined ? !!cfg?.cornerDist : !!cornerDist;
         applyMaterialVariationToMeshStandardMaterial(material, {
             seed,
@@ -1572,11 +1774,30 @@ export function updateMaterialVariationOnMeshStandardMaterial(material, { seed, 
         else delete material.defines.USE_MATVAR_CORNERDIST;
         material.needsUpdate = true;
     }
+
+    const debugForTexBlend = nextDebug ?? cfg.debug ?? null;
+    const wantsTexBlend = !!debugForTexBlend?.useMatVarDefine && !!normalized?.texBlend?.enabled;
+    const hasTexBlend = material.defines?.USE_MATVAR_TEXBLEND !== undefined;
+    if (hasTexBlend !== wantsTexBlend) {
+        material.defines = material.defines ?? {};
+        if (wantsTexBlend) material.defines.USE_MATVAR_TEXBLEND = 1;
+        else delete material.defines.USE_MATVAR_TEXBLEND;
+        material.needsUpdate = true;
+    }
+
     cfg.uniforms.config0.copy(uniforms.config0);
     cfg.uniforms.config1.copy(uniforms.config1);
     cfg.uniforms.global1.copy(uniforms.global1);
     if (cfg.uniforms.normalMap?.copy) cfg.uniforms.normalMap.copy(uniforms.normalMap);
     else cfg.uniforms.normalMap = uniforms.normalMap;
+    if (cfg.uniforms.texBlend0?.copy) cfg.uniforms.texBlend0.copy(uniforms.texBlend0);
+    else cfg.uniforms.texBlend0 = uniforms.texBlend0;
+    if (cfg.uniforms.texBlend1?.copy) cfg.uniforms.texBlend1.copy(uniforms.texBlend1);
+    else cfg.uniforms.texBlend1 = uniforms.texBlend1;
+    if (cfg.uniforms.texUv?.copy) cfg.uniforms.texUv.copy(uniforms.texUv);
+    else cfg.uniforms.texUv = uniforms.texUv;
+    if (cfg.uniforms.varIntensityNF?.copy) cfg.uniforms.varIntensityNF.copy(uniforms.varIntensityNF);
+    else cfg.uniforms.varIntensityNF = uniforms.varIntensityNF;
     cfg.uniforms.macro0.copy(uniforms.macro0);
     cfg.uniforms.macro0b.copy(uniforms.macro0b);
     cfg.uniforms.macro1.copy(uniforms.macro1);
@@ -1608,6 +1829,18 @@ export function updateMaterialVariationOnMeshStandardMaterial(material, { seed, 
     cfg.uniforms.cracks2.copy(uniforms.cracks2);
     cfg.uniforms.anti.copy(uniforms.anti);
     cfg.uniforms.anti2.copy(uniforms.anti2);
+    if (cfg.uniforms.antiL1?.copy) cfg.uniforms.antiL1.copy(uniforms.antiL1);
+    else cfg.uniforms.antiL1 = uniforms.antiL1;
+    if (cfg.uniforms.antiL1b?.copy) cfg.uniforms.antiL1b.copy(uniforms.antiL1b);
+    else cfg.uniforms.antiL1b = uniforms.antiL1b;
+    if (cfg.uniforms.antiL2?.copy) cfg.uniforms.antiL2.copy(uniforms.antiL2);
+    else cfg.uniforms.antiL2 = uniforms.antiL2;
+    if (cfg.uniforms.antiL2b?.copy) cfg.uniforms.antiL2b.copy(uniforms.antiL2b);
+    else cfg.uniforms.antiL2b = uniforms.antiL2b;
+    if (cfg.uniforms.antiL3?.copy) cfg.uniforms.antiL3.copy(uniforms.antiL3);
+    else cfg.uniforms.antiL3 = uniforms.antiL3;
+    if (cfg.uniforms.antiL3b?.copy) cfg.uniforms.antiL3b.copy(uniforms.antiL3b);
+    else cfg.uniforms.antiL3b = uniforms.antiL3b;
     if (cfg.uniforms.stair?.copy) cfg.uniforms.stair.copy(uniforms.stair);
     else cfg.uniforms.stair = uniforms.stair;
     if (cfg.uniforms.stair2?.copy) cfg.uniforms.stair2.copy(uniforms.stair2);
@@ -1618,6 +1851,10 @@ export function updateMaterialVariationOnMeshStandardMaterial(material, { seed, 
     if (shaderUniforms?.uMatVarConfig1?.value) shaderUniforms.uMatVarConfig1.value = cfg.uniforms.config1;
     if (shaderUniforms?.uMatVarGlobal1?.value) shaderUniforms.uMatVarGlobal1.value = cfg.uniforms.global1;
     if (shaderUniforms?.uMatVarNormalMap?.value) shaderUniforms.uMatVarNormalMap.value = cfg.uniforms.normalMap;
+    if (shaderUniforms?.uMatVarTexBlend0?.value) shaderUniforms.uMatVarTexBlend0.value = cfg.uniforms.texBlend0;
+    if (shaderUniforms?.uMatVarTexBlend1?.value) shaderUniforms.uMatVarTexBlend1.value = cfg.uniforms.texBlend1;
+    if (shaderUniforms?.uMatVarTexUv?.value) shaderUniforms.uMatVarTexUv.value = cfg.uniforms.texUv;
+    if (shaderUniforms?.uMatVarVarIntensityNF?.value) shaderUniforms.uMatVarVarIntensityNF.value = cfg.uniforms.varIntensityNF;
     if (shaderUniforms?.uMatVarMacro0?.value) shaderUniforms.uMatVarMacro0.value = cfg.uniforms.macro0;
     if (shaderUniforms?.uMatVarMacro0B?.value) shaderUniforms.uMatVarMacro0B.value = cfg.uniforms.macro0b;
     if (shaderUniforms?.uMatVarMacro1?.value) shaderUniforms.uMatVarMacro1.value = cfg.uniforms.macro1;
@@ -1647,6 +1884,12 @@ export function updateMaterialVariationOnMeshStandardMaterial(material, { seed, 
     if (shaderUniforms?.uMatVarCracks2?.value) shaderUniforms.uMatVarCracks2.value = cfg.uniforms.cracks2;
     if (shaderUniforms?.uMatVarAnti?.value) shaderUniforms.uMatVarAnti.value = cfg.uniforms.anti;
     if (shaderUniforms?.uMatVarAnti2?.value) shaderUniforms.uMatVarAnti2.value = cfg.uniforms.anti2;
+    if (shaderUniforms?.uMatVarAntiL1?.value) shaderUniforms.uMatVarAntiL1.value = cfg.uniforms.antiL1;
+    if (shaderUniforms?.uMatVarAntiL1B?.value) shaderUniforms.uMatVarAntiL1B.value = cfg.uniforms.antiL1b;
+    if (shaderUniforms?.uMatVarAntiL2?.value) shaderUniforms.uMatVarAntiL2.value = cfg.uniforms.antiL2;
+    if (shaderUniforms?.uMatVarAntiL2B?.value) shaderUniforms.uMatVarAntiL2B.value = cfg.uniforms.antiL2b;
+    if (shaderUniforms?.uMatVarAntiL3?.value) shaderUniforms.uMatVarAntiL3.value = cfg.uniforms.antiL3;
+    if (shaderUniforms?.uMatVarAntiL3B?.value) shaderUniforms.uMatVarAntiL3B.value = cfg.uniforms.antiL3b;
     if (shaderUniforms?.uMatVarStair?.value) shaderUniforms.uMatVarStair.value = cfg.uniforms.stair;
     if (shaderUniforms?.uMatVarStair2?.value) shaderUniforms.uMatVarStair2.value = cfg.uniforms.stair2;
     if (nextDebugUniforms) {
@@ -1666,6 +1909,8 @@ export function updateMaterialVariationOnMeshStandardMaterial(material, { seed, 
             else delete material.defines.USE_MATVAR;
             if (wantsMatVar && cfg.cornerDist) material.defines.USE_MATVAR_CORNERDIST = 1;
             else delete material.defines.USE_MATVAR_CORNERDIST;
+            if (wantsMatVar && cfg.normalized?.texBlend?.enabled) material.defines.USE_MATVAR_TEXBLEND = 1;
+            else delete material.defines.USE_MATVAR_TEXBLEND;
             material.needsUpdate = true;
         }
     }
@@ -1694,13 +1939,21 @@ export function updateMaterialVariationDebugOnMeshStandardMaterial(material, deb
     const wantsMatVar = !!cfg.debug?.useMatVarDefine;
     const hasMatVar = material.defines?.USE_MATVAR !== undefined;
     const wantsCornerDist = wantsMatVar && !!cfg.cornerDist;
+    const wantsTexBlend = wantsMatVar && !!cfg.normalized?.texBlend?.enabled;
+    const hasTexBlend = material.defines?.USE_MATVAR_TEXBLEND !== undefined;
 
-    if (hasMatVar !== wantsMatVar || (material.defines?.USE_MATVAR_CORNERDIST !== undefined) !== wantsCornerDist) {
+    if (
+        hasMatVar !== wantsMatVar ||
+        (material.defines?.USE_MATVAR_CORNERDIST !== undefined) !== wantsCornerDist ||
+        hasTexBlend !== wantsTexBlend
+    ) {
         material.defines = material.defines ?? {};
         if (wantsMatVar) material.defines.USE_MATVAR = 1;
         else delete material.defines.USE_MATVAR;
         if (wantsCornerDist) material.defines.USE_MATVAR_CORNERDIST = 1;
         else delete material.defines.USE_MATVAR_CORNERDIST;
+        if (wantsTexBlend) material.defines.USE_MATVAR_TEXBLEND = 1;
+        else delete material.defines.USE_MATVAR_TEXBLEND;
         material.needsUpdate = true;
     }
 }

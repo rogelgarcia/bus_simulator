@@ -16,28 +16,89 @@ export const GOV_CENTER_BUILDING_CONFIG = Object.freeze({
                     "kind": "texture",
                     "id": "pbr.plaster_brick_pattern"
                 },
+                "wallBase": {
+                    "tintHex": 16777215,
+                    "roughness": 0.85,
+                    "normalStrength": 0.9
+                },
+                "tiling": {
+                    "enabled": false,
+                    "tileMeters": 2,
+                    "tileMetersU": 2,
+                    "tileMetersV": 2,
+                    "uvEnabled": false,
+                    "offsetU": 0,
+                    "offsetV": 0,
+                    "rotationDegrees": 0
+                },
+                "materialVariation": {
+                    "enabled": false,
+                    "seedOffset": 0
+                },
                 "belt": {
                     "enabled": false,
-                    "height": 0.18,
-                    "extrusion": 0,
+                    "height": 0.31,
+                    "extrusion": 1.34,
                     "material": {
                         "kind": "color",
                         "id": "offwhite"
+                    },
+                    "tiling": {
+                        "enabled": false,
+                        "tileMeters": 2,
+                        "tileMetersU": 2,
+                        "tileMetersV": 2,
+                        "uvEnabled": false,
+                        "offsetU": 0,
+                        "offsetV": 0,
+                        "rotationDegrees": 0
                     }
                 },
                 "windows": {
                     "enabled": true,
                     "typeId": "window.style.dark",
                     "params": {},
-                    "fakeDepth": {
-                        "enabled": true,
-                        "strength": 0.06,
-                        "insetStrength": 0.25
-                    },
                     "width": 2.7,
                     "height": 5.6,
-                    "sillHeight": 0,
+                    "sillHeight": 0.1,
                     "spacing": 0,
+                    "cornerEps": 0.01,
+                    "offset": 0.01,
+                    "fakeDepth": {
+                        "enabled": true,
+                        "strength": 0.03,
+                        "insetStrength": 0.53
+                    },
+                    "pbr": {
+                        "normal": {
+                            "enabled": true,
+                            "strength": 1.44
+                        },
+                        "roughness": {
+                            "enabled": true,
+                            "contrast": 0.9
+                        },
+                        "border": {
+                            "enabled": true,
+                            "thickness": 0.018,
+                            "strength": 0.65
+                        }
+                    },
+                    "windowVisuals": {
+                        "reflective": {
+                            "enabled": true,
+                            "opacity": 0.82,
+                            "layerOffset": 0,
+                            "glass": {
+                                "colorHex": 16777215,
+                                "metalness": 1,
+                                "roughness": 0.1,
+                                "transmission": 0,
+                                "ior": 2.2,
+                                "envMapIntensity": 0.22
+                            }
+                        }
+                    },
                     "spaceColumns": {
                         "enabled": false,
                         "every": 4,
@@ -45,6 +106,16 @@ export const GOV_CENTER_BUILDING_CONFIG = Object.freeze({
                         "material": {
                             "kind": "color",
                             "id": "offwhite"
+                        },
+                        "tiling": {
+                            "enabled": false,
+                            "tileMeters": 2,
+                            "tileMetersU": 2,
+                            "tileMetersV": 2,
+                            "uvEnabled": false,
+                            "offsetU": 0,
+                            "offsetV": 0,
+                            "rotationDegrees": 0
                         },
                         "extrude": false,
                         "extrudeDistance": 0.12
@@ -62,6 +133,16 @@ export const GOV_CENTER_BUILDING_CONFIG = Object.freeze({
                     "material": {
                         "kind": "color",
                         "id": "offwhite"
+                    },
+                    "tiling": {
+                        "enabled": false,
+                        "tileMeters": 2,
+                        "tileMetersU": 2,
+                        "tileMetersV": 2,
+                        "uvEnabled": false,
+                        "offsetU": 0,
+                        "offsetV": 0,
+                        "rotationDegrees": 0
                     }
                 },
                 "roof": {
@@ -69,6 +150,20 @@ export const GOV_CENTER_BUILDING_CONFIG = Object.freeze({
                     "material": {
                         "kind": "color",
                         "id": "default"
+                    },
+                    "tiling": {
+                        "enabled": false,
+                        "tileMeters": 4,
+                        "tileMetersU": 4,
+                        "tileMetersV": 4,
+                        "uvEnabled": false,
+                        "offsetU": 0,
+                        "offsetV": 0,
+                        "rotationDegrees": 0
+                    },
+                    "materialVariation": {
+                        "enabled": false,
+                        "seedOffset": 0
                     },
                     "color": "default"
                 }
@@ -78,19 +173,43 @@ export const GOV_CENTER_BUILDING_CONFIG = Object.freeze({
                 "type": "roof",
                 "ring": {
                     "enabled": true,
-                    "innerRadius": 4.55,
+                    "innerRadius": 2.4,
                     "outerRadius": 1.5,
                     "height": 2,
                     "material": {
                         "kind": "color",
                         "id": "offwhite"
+                    },
+                    "tiling": {
+                        "enabled": false,
+                        "tileMeters": 2,
+                        "tileMetersU": 2,
+                        "tileMetersV": 2,
+                        "uvEnabled": false,
+                        "offsetU": 0,
+                        "offsetV": 0,
+                        "rotationDegrees": 0
                     }
                 },
                 "roof": {
                     "type": "Asphalt",
                     "material": {
-                        "kind": "color",
-                        "id": "default"
+                        "kind": "texture",
+                        "id": "cement"
+                    },
+                    "tiling": {
+                        "enabled": false,
+                        "tileMeters": 4,
+                        "tileMetersU": 4,
+                        "tileMetersV": 4,
+                        "uvEnabled": false,
+                        "offsetU": 0,
+                        "offsetV": 0,
+                        "rotationDegrees": 0
+                    },
+                    "materialVariation": {
+                        "enabled": false,
+                        "seedOffset": 0
                     },
                     "color": "default"
                 }
@@ -106,35 +225,106 @@ export const GOV_CENTER_BUILDING_CONFIG = Object.freeze({
                     "kind": "texture",
                     "id": "pbr.plaster_brick_pattern"
                 },
+                "wallBase": {
+                    "tintHex": 16777215,
+                    "roughness": 0.85,
+                    "normalStrength": 0.9
+                },
+                "tiling": {
+                    "enabled": false,
+                    "tileMeters": 2,
+                    "tileMetersU": 2,
+                    "tileMetersV": 2,
+                    "uvEnabled": false,
+                    "offsetU": 0,
+                    "offsetV": 0,
+                    "rotationDegrees": 0
+                },
+                "materialVariation": {
+                    "enabled": false,
+                    "seedOffset": 0
+                },
                 "belt": {
                     "enabled": true,
                     "height": 0.18,
-                    "extrusion": 0,
+                    "extrusion": 0.1,
                     "material": {
-                        "kind": "color",
-                        "id": "offwhite"
+                        "kind": "texture",
+                        "id": "pbr.plastered_wall_02"
+                    },
+                    "tiling": {
+                        "enabled": false,
+                        "tileMeters": 2,
+                        "tileMetersU": 2,
+                        "tileMetersV": 2,
+                        "uvEnabled": false,
+                        "offsetU": 0,
+                        "offsetV": 0,
+                        "rotationDegrees": 0
                     }
                 },
                 "windows": {
                     "enabled": true,
                     "typeId": "window.style.dark",
                     "params": {},
-                    "fakeDepth": {
-                        "enabled": true,
-                        "strength": 0.06,
-                        "insetStrength": 0.25
-                    },
                     "width": 2.1,
                     "height": 2.4,
-                    "sillHeight": 0.6,
+                    "sillHeight": 0.4,
                     "spacing": 1.1,
+                    "cornerEps": 0.01,
+                    "offset": 0.01,
+                    "fakeDepth": {
+                        "enabled": true,
+                        "strength": 0.17,
+                        "insetStrength": 0.25
+                    },
+                    "pbr": {
+                        "normal": {
+                            "enabled": true,
+                            "strength": 0.85
+                        },
+                        "roughness": {
+                            "enabled": true,
+                            "contrast": 1
+                        },
+                        "border": {
+                            "enabled": true,
+                            "thickness": 0.018,
+                            "strength": 0.35
+                        }
+                    },
+                    "windowVisuals": {
+                        "reflective": {
+                            "enabled": true,
+                            "opacity": 0.52,
+                            "layerOffset": 0.007,
+                            "glass": {
+                                "colorHex": 16777215,
+                                "metalness": 1,
+                                "roughness": 0.14,
+                                "transmission": 0,
+                                "ior": 1.91,
+                                "envMapIntensity": 0.64
+                            }
+                        }
+                    },
                     "spaceColumns": {
                         "enabled": true,
                         "every": 4,
                         "width": 1.6,
                         "material": {
-                            "kind": "color",
-                            "id": "offwhite"
+                            "kind": "texture",
+                            "id": "stone_1"
+                        },
+                        "tiling": {
+                            "enabled": true,
+                            "tileMeters": 2,
+                            "tileMetersU": 0.25,
+                            "tileMetersV": 0.99,
+                            "uvEnabled": false,
+                            "offsetU": 0.22,
+                            "offsetV": 0.81,
+                            "rotationDegrees": 0
                         },
                         "extrude": true,
                         "extrudeDistance": 0.96
@@ -152,6 +342,16 @@ export const GOV_CENTER_BUILDING_CONFIG = Object.freeze({
                     "material": {
                         "kind": "color",
                         "id": "offwhite"
+                    },
+                    "tiling": {
+                        "enabled": false,
+                        "tileMeters": 2,
+                        "tileMetersU": 2,
+                        "tileMetersV": 2,
+                        "uvEnabled": false,
+                        "offsetU": 0,
+                        "offsetV": 0,
+                        "rotationDegrees": 0
                     }
                 },
                 "roof": {
@@ -159,6 +359,20 @@ export const GOV_CENTER_BUILDING_CONFIG = Object.freeze({
                     "material": {
                         "kind": "color",
                         "id": "default"
+                    },
+                    "tiling": {
+                        "enabled": false,
+                        "tileMeters": 4,
+                        "tileMetersU": 4,
+                        "tileMetersV": 4,
+                        "uvEnabled": false,
+                        "offsetU": 0,
+                        "offsetV": 0,
+                        "rotationDegrees": 0
+                    },
+                    "materialVariation": {
+                        "enabled": false,
+                        "seedOffset": 0
                     },
                     "color": "default"
                 }
@@ -172,7 +386,7 @@ export const GOV_CENTER_BUILDING_CONFIG = Object.freeze({
         width: 2.7,
         gap: 0,
         height: 5.6,
-        y: 0
+        y: 0.1
     }),
 });
 

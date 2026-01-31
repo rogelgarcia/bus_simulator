@@ -3,7 +3,7 @@
 // @ts-check
 
 import * as THREE from 'three';
-import { sanitizeWindowMeshSettings } from '../../../../app/buildings/window_mesh/WindowMeshSettings.js';
+import { sanitizeWindowMeshSettings, WINDOW_SHADE_DIRECTION } from '../../../../app/buildings/window_mesh/WindowMeshSettings.js';
 import { getWindowInteriorAtlasById } from '../../../content3d/catalogs/WindowInteriorAtlasCatalog.js';
 
 const QUANT = 1000;
@@ -128,11 +128,14 @@ function makeBevelNormalTexture({ bevelSize = 0.3, roundness = 0.65, size = 128,
     return tex;
 }
 
-function getBevelNormalTexture({ bevelSize, roundness }) {
-    const key = `bevel|b:${q(bevelSize)}|r:${q(roundness)}`;
+function getBevelNormalTexture(bevel) {
+    const src = bevel && typeof bevel === 'object' ? bevel : {};
+    const b = clamp(src.size, 0.0, 1.0);
+    const r = clamp(src.roundness, 0.0, 1.0);
+    const key = `bevel|b:${q(b)}|r:${q(r)}`;
     const cached = _bevelNormalCache.get(key);
     if (cached) return cached;
-    const tex = makeBevelNormalTexture({ bevelSize, roundness, size: 128, strength: 2.25 });
+    const tex = makeBevelNormalTexture({ bevelSize: b, roundness: r, size: 128, strength: 2.25 });
     _bevelNormalCache.set(key, tex);
     return tex;
 }
@@ -243,25 +246,35 @@ function getOrCreateInteriorAtlasTexture({ url, cols, rows } = {}) {
     return tex;
 }
 
-function patchShadeShader(mat, { fabricScaleX, fabricScaleY, fabricIntensity, openingHeight }) {
+function patchShadeShader(mat, { fabricScaleX, fabricScaleY, fabricIntensity, openingWidth, openingHeight, shadeAxis }) {
     mat.userData = mat.userData ?? {};
     mat.userData.windowShade = true;
-    mat.customProgramCacheKey = () => 'window_shade_v1';
+    mat.customProgramCacheKey = () => 'window_shade_v2';
 
     mat.onBeforeCompile = (shader) => {
         shader.uniforms.uShadeFabricScale = { value: new THREE.Vector2(Number(fabricScaleX) || 1.0, Number(fabricScaleY) || 1.0) };
         shader.uniforms.uShadeFabricIntensity = { value: Number(fabricIntensity) || 0.0 };
+        shader.uniforms.uShadeAxis = { value: Number(shadeAxis) || 0.0 };
+
+        const w = Math.max(1e-4, Number(openingWidth) || 1.0);
         const h = Math.max(1e-4, Number(openingHeight) || 1.0);
+        shader.uniforms.uShadeXMin = { value: -w * 0.5 };
         shader.uniforms.uShadeYMin = { value: -h * 0.5 };
+        shader.uniforms.uShadeInvWidth = { value: 1.0 / w };
         shader.uniforms.uShadeInvHeight = { value: 1.0 / h };
 
         shader.vertexShader = shader.vertexShader.replace(
             '#include <common>',
             `#include <common>
 attribute float instanceShadeCoverage;
+attribute float instanceShadeFlipX;
+uniform float uShadeXMin;
 uniform float uShadeYMin;
+uniform float uShadeInvWidth;
 uniform float uShadeInvHeight;
 varying float vShadeCoverage;
+varying float vShadeFlipX;
+varying float vShadeU;
 varying float vShadeV;`
         );
 
@@ -269,6 +282,8 @@ varying float vShadeV;`
             '#include <begin_vertex>',
             `#include <begin_vertex>
 vShadeCoverage = instanceShadeCoverage;
+vShadeFlipX = instanceShadeFlipX;
+vShadeU = clamp((position.x - uShadeXMin) * uShadeInvWidth, 0.0, 1.0);
 vShadeV = clamp((position.y - uShadeYMin) * uShadeInvHeight, 0.0, 1.0);`
         );
 
@@ -277,7 +292,10 @@ vShadeV = clamp((position.y - uShadeYMin) * uShadeInvHeight, 0.0, 1.0);`
             `#include <common>
 uniform vec2 uShadeFabricScale;
 uniform float uShadeFabricIntensity;
+uniform float uShadeAxis;
 varying float vShadeCoverage;
+varying float vShadeFlipX;
+varying float vShadeU;
 varying float vShadeV;`
         );
 
@@ -295,9 +313,13 @@ diffuseColor.rgb *= f;
         shader.fragmentShader = shader.fragmentShader.replace(
             'vec4 diffuseColor = vec4( diffuse, opacity );',
             `vec4 diffuseColor = vec4( diffuse, opacity );
-if (vShadeCoverage <= 0.001) discard;
-float cutoff = 1.0 - clamp(vShadeCoverage, 0.0, 1.0);
-if (vShadeV < cutoff) discard;`
+float cov = clamp(vShadeCoverage, 0.0, 1.0);
+if (cov <= 0.001) discard;
+float axis = step(0.5, clamp(uShadeAxis, 0.0, 1.0));
+float coord = mix(vShadeV, vShadeU, axis);
+float flip = step(0.5, vShadeFlipX);
+coord = mix(coord, 1.0 - coord, flip);
+if (coord > cov) discard;`
         );
     };
 }
@@ -440,30 +462,56 @@ export function createWindowMeshMaterials(settings, { renderer = null } = {}) {
 
     const frameBevel = s.frame.bevel;
     const frameNormalMap = (frameBevel.size > 0.001) ? getBevelNormalTexture(frameBevel) : null;
+    const framePbr = s.frame.material ?? {};
+    const frameEnvMapIntensity = Number(framePbr.envMapIntensity) || 0;
+    const frameNormalStrength = Number(framePbr.normalStrength) || 0;
 
     const frameMat = new THREE.MeshStandardMaterial({
         color: s.frame.colorHex,
-        roughness: 0.72,
-        metalness: 0.0,
+        roughness: clamp(framePbr.roughness, 0.0, 1.0),
+        metalness: clamp(framePbr.metalness, 0.0, 1.0),
         normalMap: frameNormalMap
     });
-    disableIblOnMaterial(frameMat);
-    if (frameNormalMap && frameMat.normalScale) frameMat.normalScale.set(0.6, 0.6);
+    if (frameEnvMapIntensity <= 1e-6) disableIblOnMaterial(frameMat);
+    else {
+        frameMat.userData = frameMat.userData ?? {};
+        frameMat.userData.iblEnvMapIntensity = frameEnvMapIntensity;
+    }
+    if (frameNormalMap && frameMat.normalScale) frameMat.normalScale.set(frameNormalStrength, frameNormalStrength);
 
     let muntinMat = frameMat;
     if (s.muntins.enabled) {
         const colorHex = s.muntins.colorHex === null ? s.frame.colorHex : s.muntins.colorHex;
         const bevel = s.muntins.bevel.inherit ? frameBevel : s.muntins.bevel.bevel;
         const normalMap = (bevel.size > 0.001) ? getBevelNormalTexture(bevel) : null;
-        if (colorHex !== s.frame.colorHex || normalMap !== frameNormalMap) {
+        const muntinPbr = s.muntins.material?.inheritFromFrame ? framePbr : (s.muntins.material?.pbr ?? {});
+        const muntinRoughness = clamp(muntinPbr.roughness, 0.0, 1.0);
+        const muntinMetalness = clamp(muntinPbr.metalness, 0.0, 1.0);
+        const muntinEnvMapIntensity = Number(muntinPbr.envMapIntensity) || 0;
+        const muntinNormalStrength = Number(muntinPbr.normalStrength) || 0;
+
+        const wantsOwnMat = (
+            colorHex !== s.frame.colorHex
+            || normalMap !== frameNormalMap
+            || Math.abs(muntinRoughness - clamp(framePbr.roughness, 0.0, 1.0)) > 1e-6
+            || Math.abs(muntinMetalness - clamp(framePbr.metalness, 0.0, 1.0)) > 1e-6
+            || Math.abs(muntinEnvMapIntensity - frameEnvMapIntensity) > 1e-6
+            || Math.abs(muntinNormalStrength - frameNormalStrength) > 1e-6
+        );
+
+        if (wantsOwnMat) {
             muntinMat = new THREE.MeshStandardMaterial({
                 color: colorHex,
-                roughness: 0.72,
-                metalness: 0.0,
+                roughness: muntinRoughness,
+                metalness: muntinMetalness,
                 normalMap
             });
-            disableIblOnMaterial(muntinMat);
-            if (normalMap && muntinMat.normalScale) muntinMat.normalScale.set(0.55, 0.55);
+            if (muntinEnvMapIntensity <= 1e-6) disableIblOnMaterial(muntinMat);
+            else {
+                muntinMat.userData = muntinMat.userData ?? {};
+                muntinMat.userData.iblEnvMapIntensity = muntinEnvMapIntensity;
+            }
+            if (normalMap && muntinMat.normalScale) muntinMat.normalScale.set(muntinNormalStrength, muntinNormalStrength);
         }
     }
 
@@ -474,6 +522,7 @@ export function createWindowMeshMaterials(settings, { renderer = null } = {}) {
         roughness: glassRefl.roughness,
         transmission: glassRefl.transmission,
         ior: glassRefl.ior,
+        thickness: 0.01,
         opacity: s.glass.opacity,
         transparent: true
     });
@@ -494,11 +543,14 @@ export function createWindowMeshMaterials(settings, { renderer = null } = {}) {
     disableIblOnMaterial(shadeMat);
     shadeMat.side = THREE.DoubleSide;
     const aspect = s.height / Math.max(0.01, s.width);
+    const shadeAxis = s.shade.direction === WINDOW_SHADE_DIRECTION.TOP_TO_BOTTOM ? 0.0 : 1.0;
     patchShadeShader(shadeMat, {
         fabricScaleX: s.shade.fabric.scale,
         fabricScaleY: s.shade.fabric.scale * aspect,
         fabricIntensity: s.shade.fabric.intensity,
-        openingHeight
+        openingWidth,
+        openingHeight,
+        shadeAxis
     });
     shadeMat.needsUpdate = true;
 

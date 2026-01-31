@@ -2,7 +2,7 @@
 // Deterministic, per-window variations derived from seed + id (renderer-agnostic).
 // @ts-check
 
-import { sanitizeWindowMeshSettings, WINDOW_SHADE_COVERAGE } from './WindowMeshSettings.js';
+import { sanitizeWindowMeshSettings, WINDOW_SHADE_COVERAGE, WINDOW_SHADE_DIRECTION } from './WindowMeshSettings.js';
 
 function fnv1a32FromString(text) {
     const str = String(text ?? '');
@@ -48,6 +48,14 @@ function resolveShadeCoverage({ settings, seedKey }) {
     const rng = makeRng(`${seedKey}|shade_coverage`);
     const v = pick(rng, [0.0, 0.2, 0.5, 1.0]);
     return Number.isFinite(v) ? v : shade.coverage;
+}
+
+function resolveShadeDirection({ settings, seedKey }) {
+    const shade = settings.shade;
+    const dir = shade.direction;
+    if (dir !== WINDOW_SHADE_DIRECTION.RANDOM_LR) return dir;
+    const rng = makeRng(`${seedKey}|shade_dir_lr`);
+    return rng() < 0.5 ? WINDOW_SHADE_DIRECTION.LEFT_TO_RIGHT : WINDOW_SHADE_DIRECTION.RIGHT_TO_LEFT;
 }
 
 function resolveInteriorCell({ settings, seedKey }) {
@@ -96,6 +104,7 @@ function resolveInteriorTint({ settings, seedKey }) {
 /**
  * @typedef {Object} WindowMeshInstanceVariation
  * @property {number} shadeCoverage
+ * @property {string} shadeDirection
  * @property {{col:number,row:number}} interiorCell
  * @property {boolean} interiorFlipX
  * @property {{hueShiftDeg:number,saturationMul:number,brightnessMul:number}} interiorTint
@@ -113,6 +122,7 @@ export function computeWindowMeshInstanceVariationFromSanitized({ settings, seed
     const seedKey = `${String(seed ?? '')}|${String(id ?? '')}|v:${safeSettings?.version ?? 1}`;
     return {
         shadeCoverage: resolveShadeCoverage({ settings: safeSettings, seedKey }),
+        shadeDirection: resolveShadeDirection({ settings: safeSettings, seedKey }),
         interiorCell: resolveInteriorCell({ settings: safeSettings, seedKey }),
         interiorFlipX: resolveInteriorFlipX({ settings: safeSettings, seedKey }),
         interiorTint: resolveInteriorTint({ settings: safeSettings, seedKey })

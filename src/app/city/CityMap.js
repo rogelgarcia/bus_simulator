@@ -22,6 +22,20 @@ const ANGLE_SNAP_DEG = 15;
 const ANGLE_SNAP_RAD = ANGLE_SNAP_DEG * DEG_TO_RAD;
 const ANGLE_SNAP_EPS = 1e-6;
 
+const BRICK_MIDRISE_CONFIG_ID = 'brick_midrise';
+const BRICK_MIDRISE_2_CONFIG_ID = 'brick_midrise_2';
+
+const BRICK_MIDRISE_VARIANT_OVERRIDE = (() => {
+    if (typeof window === 'undefined') return null;
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get('brickMidriseVariant');
+    const v = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+    if (!v || v === 'auto') return null;
+    if (v === '1' || v === 'brick_midrise') return BRICK_MIDRISE_CONFIG_ID;
+    if (v === '2' || v === 'brick_midrise_2') return BRICK_MIDRISE_2_CONFIG_ID;
+    return null;
+})();
+
 function clampInt(v, lo, hi) {
     return Math.max(lo, Math.min(hi, v | 0));
 }
@@ -79,6 +93,55 @@ function rasterizeLine(x0, y0, x1, y1) {
     }
 
     return tiles;
+}
+
+function fnv1a32FromString(text, seed = 0x811c9dc5) {
+    const str = String(text ?? '');
+    let h = (Number(seed) >>> 0) || 0x811c9dc5;
+    for (let i = 0; i < str.length; i++) {
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h >>> 0;
+}
+
+function getFootprintHashKeyFromTiles(tiles) {
+    const list = Array.isArray(tiles) ? tiles : [];
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    let sumX = 0;
+    let sumY = 0;
+    let n = 0;
+    for (let i = 0; i < list.length; i++) {
+        const entry = list[i];
+        if (!Array.isArray(entry) || entry.length < 2) continue;
+        const x = entry[0] | 0;
+        const y = entry[1] | 0;
+        n++;
+        sumX += x;
+        sumY += y;
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+    }
+    if (!n || !Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) return 'tiles:none';
+    return `tiles:n=${n}|bb=${minX},${minY},${maxX},${maxY}|sum=${sumX},${sumY}`;
+}
+
+function resolveBrickMidriseVariantConfigId(configId, { mapSeed, buildingId, tiles } = {}) {
+    if (configId !== BRICK_MIDRISE_CONFIG_ID) return configId;
+    if (BRICK_MIDRISE_VARIANT_OVERRIDE === BRICK_MIDRISE_CONFIG_ID) return BRICK_MIDRISE_CONFIG_ID;
+    if (BRICK_MIDRISE_VARIANT_OVERRIDE === BRICK_MIDRISE_2_CONFIG_ID) return BRICK_MIDRISE_2_CONFIG_ID;
+    if (!getBuildingConfigById(BRICK_MIDRISE_2_CONFIG_ID)) return BRICK_MIDRISE_CONFIG_ID;
+
+    const seed = String(mapSeed ?? '');
+    const id = typeof buildingId === 'string' ? buildingId : '';
+    const tilesKey = getFootprintHashKeyFromTiles(tiles);
+    const h = fnv1a32FromString(`${seed}|${BRICK_MIDRISE_CONFIG_ID}|${id}|${tilesKey}`);
+    return (h & 1) ? BRICK_MIDRISE_2_CONFIG_ID : BRICK_MIDRISE_CONFIG_ID;
 }
 
 export class CityMap {
@@ -565,6 +628,7 @@ export class CityMap {
     static _buildingsFromSpec(buildingsSpec, map) {
         const list = Array.isArray(buildingsSpec) ? buildingsSpec : [];
         const out = [];
+        const mapSeed = map?.roadNetwork?.seed ?? null;
 
         const clampIntLocal = (v, lo, hi) => Math.max(lo, Math.min(hi, Number(v) | 0));
         const clampLocal = (v, lo, hi) => Math.max(lo, Math.min(hi, Number(v) || lo));
@@ -582,8 +646,43 @@ export class CityMap {
             if (!raw) continue;
 
             const id = (typeof raw.id === 'string' && raw.id) ? raw.id : `building_${i + 1}`;
-            const configId = typeof raw.configId === 'string' ? raw.configId : null;
-            const config = configId ? getBuildingConfigById(configId) : null;
+
+            const tilesIn = Array.isArray(raw.tiles ?? raw.footprintTiles) ? (raw.tiles ?? raw.footprintTiles) : [];
+            const accepted = [];
+            const acceptedSet = new Set();
+
+            for (let t = 0; t < tilesIn.length; t++) {
+                const entry = tilesIn[t];
+                let x = null;
+                let y = null;
+                if (Array.isArray(entry) && entry.length >= 2) {
+                    x = entry[0];
+                    y = entry[1];
+                } else if (entry && Number.isFinite(entry.x) && Number.isFinite(entry.y)) {
+                    x = entry.x;
+                    y = entry.y;
+                }
+
+                if (!Number.isFinite(x) || !Number.isFinite(y)) break;
+                const tx = x | 0;
+                const ty = y | 0;
+
+                if (!map.inBounds(tx, ty)) break;
+                if (map.kind[map.index(tx, ty)] === TILE.ROAD) break;
+
+                const key = `${tx},${ty}`;
+                if (acceptedSet.has(key)) continue;
+                if (accepted.length > 0 && !isAdjacentToSet(tx, ty, acceptedSet)) break;
+
+                acceptedSet.add(key);
+                accepted.push([tx, ty]);
+            }
+
+            if (!accepted.length) continue;
+
+            const rawConfigId = typeof raw.configId === 'string' ? raw.configId : null;
+            const resolvedConfigId = resolveBrickMidriseVariantConfigId(rawConfigId, { mapSeed, buildingId: id, tiles: accepted });
+            const config = resolvedConfigId ? getBuildingConfigById(resolvedConfigId) : null;
             const design = config && typeof config === 'object' ? config : raw;
 
             const designLayers = Array.isArray(design.layers) ? design.layers : null;
@@ -642,38 +741,6 @@ export class CityMap {
                 ? clampLocal(windowsRaw.y, 0.0, Math.max(0.0, floorHeight - (windowHeight ?? 0.3)))
                 : null;
 
-            const tilesIn = Array.isArray(raw.tiles ?? raw.footprintTiles) ? (raw.tiles ?? raw.footprintTiles) : [];
-            const accepted = [];
-            const acceptedSet = new Set();
-
-            for (let t = 0; t < tilesIn.length; t++) {
-                const entry = tilesIn[t];
-                let x = null;
-                let y = null;
-                if (Array.isArray(entry) && entry.length >= 2) {
-                    x = entry[0];
-                    y = entry[1];
-                } else if (entry && Number.isFinite(entry.x) && Number.isFinite(entry.y)) {
-                    x = entry.x;
-                    y = entry.y;
-                }
-
-                if (!Number.isFinite(x) || !Number.isFinite(y)) break;
-                const tx = x | 0;
-                const ty = y | 0;
-
-                if (!map.inBounds(tx, ty)) break;
-                if (map.kind[map.index(tx, ty)] === TILE.ROAD) break;
-
-                const key = `${tx},${ty}`;
-                if (acceptedSet.has(key)) continue;
-                if (accepted.length > 0 && !isAdjacentToSet(tx, ty, acceptedSet)) break;
-
-                acceptedSet.add(key);
-                accepted.push([tx, ty]);
-            }
-
-            if (!accepted.length) continue;
             out.push({
                 id,
                 configId: config?.id ?? null,

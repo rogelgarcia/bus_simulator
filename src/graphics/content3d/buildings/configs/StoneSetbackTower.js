@@ -16,13 +16,42 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
                     "kind": "texture",
                     "id": "pbr.patterned_concrete_wall"
                 },
+                "wallBase": {
+                    "tintHex": 16777215,
+                    "roughness": 0.85,
+                    "normalStrength": 0.9
+                },
+                "tiling": {
+                    "enabled": false,
+                    "tileMeters": 2,
+                    "tileMetersU": 2,
+                    "tileMetersV": 2,
+                    "uvEnabled": false,
+                    "offsetU": 0,
+                    "offsetV": 0,
+                    "rotationDegrees": 0
+                },
+                "materialVariation": {
+                    "enabled": false,
+                    "seedOffset": 0
+                },
                 "belt": {
                     "enabled": true,
                     "height": 0.18,
-                    "extrusion": 0.48,
+                    "extrusion": 0.5,
                     "material": {
-                        "kind": "color",
-                        "id": "offwhite"
+                        "kind": "texture",
+                        "id": "pbr.painted_plaster_wall"
+                    },
+                    "tiling": {
+                        "enabled": false,
+                        "tileMeters": 2,
+                        "tileMetersU": 2,
+                        "tileMetersV": 2,
+                        "uvEnabled": false,
+                        "offsetU": 0,
+                        "offsetV": 0,
+                        "rotationDegrees": 0
                     }
                 },
                 "windows": {
@@ -34,17 +63,47 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
                         "glassTop": 1063258,
                         "glassBottom": 399916
                     },
-                    "fakeDepth": {
-                        "enabled": true,
-                        "strength": 0.06,
-                        "insetStrength": 0.25
-                    },
                     "width": 2.5,
                     "height": 3,
                     "sillHeight": 1,
                     "spacing": 1.8,
                     "cornerEps": 0.01,
                     "offset": 0.01,
+                    "fakeDepth": {
+                        "enabled": true,
+                        "strength": 0.06,
+                        "insetStrength": 0.25
+                    },
+                    "pbr": {
+                        "normal": {
+                            "enabled": true,
+                            "strength": 0.85
+                        },
+                        "roughness": {
+                            "enabled": true,
+                            "contrast": 1
+                        },
+                        "border": {
+                            "enabled": true,
+                            "thickness": 0.018,
+                            "strength": 0.35
+                        }
+                    },
+                    "windowVisuals": {
+                        "reflective": {
+                            "enabled": true,
+                            "opacity": 0.96,
+                            "layerOffset": 0.02,
+                            "glass": {
+                                "colorHex": 16777215,
+                                "metalness": 1,
+                                "roughness": 0.19,
+                                "transmission": 0,
+                                "ior": 1.91,
+                                "envMapIntensity": 0.28
+                            }
+                        }
+                    },
                     "spaceColumns": {
                         "enabled": true,
                         "every": 2,
@@ -52,6 +111,16 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
                         "material": {
                             "kind": "texture",
                             "id": "pbr.patterned_concrete_wall"
+                        },
+                        "tiling": {
+                            "enabled": true,
+                            "tileMeters": 2,
+                            "tileMetersU": 11.75,
+                            "tileMetersV": 2.79,
+                            "uvEnabled": true,
+                            "offsetU": -2.54,
+                            "offsetV": -1.93,
+                            "rotationDegrees": 0
                         },
                         "extrude": true,
                         "extrudeDistance": 0.47
@@ -67,8 +136,18 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
                     "outerRadius": 0.4,
                     "height": 2,
                     "material": {
-                        "kind": "color",
-                        "id": "offwhite"
+                        "kind": "texture",
+                        "id": "pbr.plastered_wall_02"
+                    },
+                    "tiling": {
+                        "enabled": true,
+                        "tileMeters": 2,
+                        "tileMetersU": 4.25,
+                        "tileMetersV": 3.33,
+                        "uvEnabled": true,
+                        "offsetU": -0.85,
+                        "offsetV": -0.03,
+                        "rotationDegrees": -90
                     }
                 },
                 "roof": {
@@ -76,6 +155,20 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
                     "material": {
                         "kind": "texture",
                         "id": "cement"
+                    },
+                    "tiling": {
+                        "enabled": false,
+                        "tileMeters": 4,
+                        "tileMetersU": 4,
+                        "tileMetersV": 4,
+                        "uvEnabled": false,
+                        "offsetU": 0,
+                        "offsetV": 0,
+                        "rotationDegrees": 0
+                    },
+                    "materialVariation": {
+                        "enabled": false,
+                        "seedOffset": 0
                     },
                     "color": "default"
                 }
@@ -91,6 +184,25 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
                     "kind": "texture",
                     "id": "pbr.patterned_concrete_wall"
                 },
+                "wallBase": {
+                    "tintHex": 16777215,
+                    "roughness": 0.85,
+                    "normalStrength": 0.9
+                },
+                "tiling": {
+                    "enabled": false,
+                    "tileMeters": 2,
+                    "tileMetersU": 2,
+                    "tileMetersV": 2,
+                    "uvEnabled": false,
+                    "offsetU": 0,
+                    "offsetV": 0,
+                    "rotationDegrees": 0
+                },
+                "materialVariation": {
+                    "enabled": false,
+                    "seedOffset": 0
+                },
                 "belt": {
                     "enabled": true,
                     "height": 0.18,
@@ -98,6 +210,16 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
                     "material": {
                         "kind": "color",
                         "id": "offwhite"
+                    },
+                    "tiling": {
+                        "enabled": false,
+                        "tileMeters": 2,
+                        "tileMetersU": 2,
+                        "tileMetersV": 2,
+                        "uvEnabled": false,
+                        "offsetU": 0,
+                        "offsetV": 0,
+                        "rotationDegrees": 0
                     }
                 },
                 "windows": {
@@ -109,17 +231,47 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
                         "glassTop": 1063258,
                         "glassBottom": 399916
                     },
-                    "fakeDepth": {
-                        "enabled": true,
-                        "strength": 0.06,
-                        "insetStrength": 0.25
-                    },
                     "width": 2.5,
                     "height": 3,
                     "sillHeight": 1,
                     "spacing": 4.9,
                     "cornerEps": 0.01,
                     "offset": 0.01,
+                    "fakeDepth": {
+                        "enabled": true,
+                        "strength": 0.06,
+                        "insetStrength": 0.25
+                    },
+                    "pbr": {
+                        "normal": {
+                            "enabled": true,
+                            "strength": 0.85
+                        },
+                        "roughness": {
+                            "enabled": true,
+                            "contrast": 1
+                        },
+                        "border": {
+                            "enabled": true,
+                            "thickness": 0.018,
+                            "strength": 0.35
+                        }
+                    },
+                    "windowVisuals": {
+                        "reflective": {
+                            "enabled": false,
+                            "opacity": 1,
+                            "layerOffset": 0.02,
+                            "glass": {
+                                "colorHex": 16777215,
+                                "metalness": 0.95,
+                                "roughness": 0.07,
+                                "transmission": 0.82,
+                                "ior": 1.91,
+                                "envMapIntensity": 0.33
+                            }
+                        }
+                    },
                     "spaceColumns": {
                         "enabled": false,
                         "every": 2,
@@ -127,6 +279,16 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
                         "material": {
                             "kind": "color",
                             "id": "offwhite"
+                        },
+                        "tiling": {
+                            "enabled": false,
+                            "tileMeters": 2,
+                            "tileMetersU": 2,
+                            "tileMetersV": 2,
+                            "uvEnabled": false,
+                            "offsetU": 0,
+                            "offsetV": 0,
+                            "rotationDegrees": 0
                         },
                         "extrude": true,
                         "extrudeDistance": 0.47
@@ -144,6 +306,16 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
                     "material": {
                         "kind": "texture",
                         "id": "pbr.patterned_concrete_wall"
+                    },
+                    "tiling": {
+                        "enabled": false,
+                        "tileMeters": 2,
+                        "tileMetersU": 2,
+                        "tileMetersV": 2,
+                        "uvEnabled": false,
+                        "offsetU": 0,
+                        "offsetV": 0,
+                        "rotationDegrees": 0
                     }
                 },
                 "roof": {
@@ -151,6 +323,20 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
                     "material": {
                         "kind": "texture",
                         "id": "cement"
+                    },
+                    "tiling": {
+                        "enabled": false,
+                        "tileMeters": 4,
+                        "tileMetersU": 4,
+                        "tileMetersV": 4,
+                        "uvEnabled": false,
+                        "offsetU": 0,
+                        "offsetV": 0,
+                        "rotationDegrees": 0
+                    },
+                    "materialVariation": {
+                        "enabled": false,
+                        "seedOffset": 0
                     },
                     "color": "default"
                 }
@@ -166,6 +352,16 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
                     "material": {
                         "kind": "color",
                         "id": "offwhite"
+                    },
+                    "tiling": {
+                        "enabled": false,
+                        "tileMeters": 2,
+                        "tileMetersU": 2,
+                        "tileMetersV": 2,
+                        "uvEnabled": false,
+                        "offsetU": 0,
+                        "offsetV": 0,
+                        "rotationDegrees": 0
                     }
                 },
                 "roof": {
@@ -173,6 +369,20 @@ export const STONE_SETBACK_TOWER_BUILDING_CONFIG = Object.freeze({
                     "material": {
                         "kind": "texture",
                         "id": "cement"
+                    },
+                    "tiling": {
+                        "enabled": false,
+                        "tileMeters": 4,
+                        "tileMetersU": 4,
+                        "tileMetersV": 4,
+                        "uvEnabled": false,
+                        "offsetU": 0,
+                        "offsetV": 0,
+                        "rotationDegrees": 0
+                    },
+                    "materialVariation": {
+                        "enabled": false,
+                        "seedOffset": 0
                     },
                     "color": "default"
                 }
