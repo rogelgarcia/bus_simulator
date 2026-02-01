@@ -9,7 +9,7 @@ import { applyIBLIntensity, applyIBLToScene, loadIBLTexture } from '../../../lig
 import { DEFAULT_IBL_ID, getIblEntryById } from '../../../content3d/catalogs/IBLCatalog.js';
 import { resolvePbrMaterialUrls } from '../../../content3d/catalogs/PbrMaterialCatalog.js';
 import { WindowMeshGenerator } from '../../../assets3d/generators/buildings/WindowMeshGenerator.js';
-import { getDefaultWindowMeshSettings } from '../../../../app/buildings/window_mesh/index.js';
+import { getDefaultWindowMeshSettings, sanitizeWindowMeshSettings } from '../../../../app/buildings/window_mesh/index.js';
 import { WindowMeshDebuggerUI } from './WindowMeshDebuggerUI.js';
 import { WindowMeshDecorationsRig } from './WindowMeshDecorationsRig.js';
 
@@ -36,6 +36,10 @@ function clamp(value, min, max, fallback) {
     const fb = fallback === undefined ? min : fallback;
     if (!Number.isFinite(num)) return fb;
     return Math.max(min, Math.min(max, num));
+}
+
+function deepClone(obj) {
+    return obj && typeof obj === 'object' ? JSON.parse(JSON.stringify(obj)) : obj;
 }
 
 function isInteractiveElement(target) {
@@ -269,9 +273,25 @@ function makeWallMaterial() {
 }
 
 export class WindowMeshDebuggerView {
-    constructor({ canvas } = {}) {
+    constructor({
+        canvas,
+        uiParent = null,
+        uiEmbedded = false,
+        uiTitle = null,
+        uiSubtitle = null,
+        initialSettings = null,
+        onSettingsChange = null,
+        onClose = null
+    } = {}) {
         this.canvas = canvas;
         this.onFrame = null;
+        this._uiParent = uiParent ?? null;
+        this._uiEmbedded = !!uiEmbedded;
+        this._uiTitle = typeof uiTitle === 'string' ? uiTitle : null;
+        this._uiSubtitle = typeof uiSubtitle === 'string' ? uiSubtitle : null;
+        this._initialSettings = initialSettings && typeof initialSettings === 'object' ? sanitizeWindowMeshSettings(initialSettings) : null;
+        this._onSettingsChange = typeof onSettingsChange === 'function' ? onSettingsChange : null;
+        this._onClose = typeof onClose === 'function' ? onClose : null;
 
         this.renderer = null;
         this._gpuFrameTimer = null;
@@ -352,14 +372,21 @@ export class WindowMeshDebuggerView {
         this.scene = new THREE.Scene();
         this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 500);
 
-        const initialSettings = getDefaultWindowMeshSettings();
+        const initialSettings = this._initialSettings ? sanitizeWindowMeshSettings(this._initialSettings) : getDefaultWindowMeshSettings();
 
         const ui = new WindowMeshDebuggerUI({
+            title: this._uiTitle ?? undefined,
+            subtitle: this._uiSubtitle ?? undefined,
+            embedded: this._uiEmbedded,
             initialSettings,
-            onChange: (state) => this._applyUiState(state)
+            onChange: (state) => {
+                this._applyUiState(state);
+                this._onSettingsChange?.(deepClone(state?.settings));
+            },
+            onClose: this._onClose
         });
         this._ui = ui;
-        ui.mount();
+        ui.mount({ parent: this._uiParent });
 
         this.canvas.addEventListener('contextmenu', this._onContextMenu, { passive: false, capture: true });
 

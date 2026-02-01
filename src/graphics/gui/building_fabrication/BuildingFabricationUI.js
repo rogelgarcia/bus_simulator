@@ -172,13 +172,11 @@ export class BuildingFabricationUI {
         this.gridMax = clampInt(gridMax, this.gridMin, 99);
         this._gridSize = clampInt(gridSize, this.gridMin, this.gridMax);
 
-        this._buildingModeEnabled = false;
         this._roadModeEnabled = false;
         this._wireframeEnabled = false;
         this._floorDivisionsEnabled = false;
         this._floorplanEnabled = false;
         this._enabled = true;
-        this._hideSelectionBorder = false;
         this._selectedBuildingId = null;
         this._buildingType = 'business';
         this._buildingStyle = BUILDING_STYLE.DEFAULT;
@@ -222,8 +220,6 @@ export class BuildingFabricationUI {
         this._streetWindowSpacerWidth = 0.9;
         this._streetWindowSpacerExtrude = false;
         this._streetWindowSpacerExtrudeDistance = 0.12;
-        this._hoveredBuildingRow = null;
-        this._selectedTileCount = 0;
         this._roadStartTileId = null;
         this._layerMiniControllers = [];
         this._hoveredRoadId = null;
@@ -235,6 +231,15 @@ export class BuildingFabricationUI {
         this._globalWindowVisuals = getResolvedBuildingWindowVisualsSettings();
         this._templateWindowVisuals = null;
         this._selectedWindowVisuals = null;
+        this._faceIds = ['A', 'B', 'C', 'D'];
+        this._selectedFaceId = 'A';
+        this._faceMirrorLockEnabled = true;
+        this._selectedFacade = null;
+        this._faceLengthMeters = null;
+        this._faceValidation = null;
+        this._faceWindowDefinitions = null;
+        this._faceBayUiById = new Map();
+        this._faceBayLayoutKey = '';
 
         this._templateLayers = normalizeBuildingLayers([
             createDefaultFloorLayer({
@@ -305,9 +310,6 @@ export class BuildingFabricationUI {
         this.roadsPanel = document.createElement('div');
         this.roadsPanel.className = 'ui-panel is-interactive building-fab-panel building-fab-roads-panel';
 
-        this.buildingsPanel = document.createElement('div');
-        this.buildingsPanel.className = 'ui-panel is-interactive building-fab-panel building-fab-buildings-panel';
-
         this.toastPanel = document.createElement('div');
         this.toastPanel.className = 'ui-panel is-interactive building-fab-panel building-fab-toast-panel hidden';
 
@@ -320,21 +322,17 @@ export class BuildingFabricationUI {
 
         this.hint = document.createElement('div');
         this.hint.className = 'building-fab-hint';
-        this.hint.textContent = 'Start a new construction on the left, then follow the steps.';
+        this.hint.textContent = 'Edit the building properties on the right, or load a building config.';
 
         this.counts = document.createElement('div');
         this.counts.className = 'building-fab-counts';
-        this.selectedCountEl = document.createElement('div');
-        this.selectedCountEl.className = 'building-fab-count';
-        this.buildingCountEl = document.createElement('div');
-        this.buildingCountEl.className = 'building-fab-count';
+        this.footprintCountEl = document.createElement('div');
+        this.footprintCountEl.className = 'building-fab-count';
         this.roadCountEl = document.createElement('div');
         this.roadCountEl.className = 'building-fab-count';
-        this.counts.appendChild(this.selectedCountEl);
-        this.counts.appendChild(this.buildingCountEl);
+        this.counts.appendChild(this.footprintCountEl);
         this.counts.appendChild(this.roadCountEl);
-        this.setSelectedCount(0);
-        this.setBuildingCount(0);
+        this.setFootprintTileCount(0);
         this.setRoadCount(0);
 
         this.createSection = document.createElement('div');
@@ -426,13 +424,7 @@ export class BuildingFabricationUI {
         this.addRoadBtn.className = 'building-fab-btn building-fab-btn-road';
         this.addRoadBtn.textContent = 'Create Road';
 
-        this.startBuildingBtn = document.createElement('button');
-        this.startBuildingBtn.type = 'button';
-        this.startBuildingBtn.className = 'building-fab-btn building-fab-btn-primary building-fab-btn-start-building';
-        this.startBuildingBtn.textContent = 'Create Building';
-
         this.createActions.appendChild(this.addRoadBtn);
-        this.createActions.appendChild(this.startBuildingBtn);
 
         this.createSection.appendChild(this.createTitle);
         this.createSection.appendChild(this.createActions);
@@ -453,24 +445,12 @@ export class BuildingFabricationUI {
         this.cancelModeBtn.className = 'building-fab-btn';
         this.cancelModeBtn.textContent = 'Cancel';
 
-        this.clearSelBtn = document.createElement('button');
-        this.clearSelBtn.type = 'button';
-        this.clearSelBtn.className = 'building-fab-btn';
-        this.clearSelBtn.textContent = 'Clear selection';
-
-        this.buildBtn = document.createElement('button');
-        this.buildBtn.type = 'button';
-        this.buildBtn.className = 'building-fab-btn building-fab-btn-primary';
-        this.buildBtn.textContent = 'Build';
-
         this.roadDoneBtn = document.createElement('button');
         this.roadDoneBtn.type = 'button';
         this.roadDoneBtn.className = 'building-fab-btn building-fab-btn-primary hidden';
         this.roadDoneBtn.textContent = 'Done';
 
         this.toastActions.appendChild(this.cancelModeBtn);
-        this.toastActions.appendChild(this.clearSelBtn);
-        this.toastActions.appendChild(this.buildBtn);
         this.toastActions.appendChild(this.roadDoneBtn);
 
         this.toastPanel.appendChild(this.toastTitle);
@@ -498,25 +478,6 @@ export class BuildingFabricationUI {
 
         this.viewPanel.appendChild(this.viewTitle);
         this.viewPanel.appendChild(this.viewModeRow);
-
-        this.viewOptionsRow = document.createElement('div');
-        this.viewOptionsRow.className = 'building-fab-toggle-row building-fab-view-options';
-
-        this.hideSelectionBorderToggle = document.createElement('label');
-        this.hideSelectionBorderToggle.className = 'building-fab-toggle';
-
-        this.hideSelectionBorderInput = document.createElement('input');
-        this.hideSelectionBorderInput.type = 'checkbox';
-        this.hideSelectionBorderInput.checked = this._hideSelectionBorder;
-
-        this.hideSelectionBorderText = document.createElement('span');
-        this.hideSelectionBorderText.textContent = 'Hide selection border';
-
-        this.hideSelectionBorderToggle.appendChild(this.hideSelectionBorderInput);
-        this.hideSelectionBorderToggle.appendChild(this.hideSelectionBorderText);
-        this.viewOptionsRow.appendChild(this.hideSelectionBorderToggle);
-
-        this.viewPanel.appendChild(this.viewOptionsRow);
         this.viewPanel.appendChild(this.resetBtn);
 
         this.propsTitle = document.createElement('div');
@@ -530,7 +491,7 @@ export class BuildingFabricationUI {
         this.nameLabel.textContent = 'Name';
         this.nameValue = document.createElement('div');
         this.nameValue.className = 'building-fab-selected-building';
-        this.nameValue.textContent = 'No building selected.';
+        this.nameValue.textContent = '';
         this.nameRow.appendChild(this.nameLabel);
         this.nameRow.appendChild(this.nameValue);
 
@@ -596,12 +557,6 @@ export class BuildingFabricationUI {
         this.loadCatalogRow.appendChild(this.loadCatalogSelect);
         this.loadCatalogRow.appendChild(this.loadCatalogBtn);
 
-        this.deleteBuildingBtn = document.createElement('button');
-        this.deleteBuildingBtn.type = 'button';
-        this.deleteBuildingBtn.className = 'building-fab-btn building-fab-btn-danger';
-        this.deleteBuildingBtn.textContent = 'Delete selected building';
-        this.deleteBuildingBtn.disabled = true;
-
         this.exportBuildingBtn = document.createElement('button');
         this.exportBuildingBtn.type = 'button';
         this.exportBuildingBtn.className = 'building-fab-btn building-fab-btn-road building-fab-btn-export';
@@ -629,7 +584,6 @@ export class BuildingFabricationUI {
         this.propsPanel.appendChild(this.nameRow);
         this.propsPanel.appendChild(this.typeRow);
         this.propsPanel.appendChild(this.loadCatalogRow);
-        this.propsPanel.appendChild(this.deleteBuildingBtn);
         this.propsPanel.appendChild(this.exportBuildingBtn);
 
         const makeRangeRow = (label) => {
@@ -823,6 +777,111 @@ export class BuildingFabricationUI {
             return { details, summary, body, label };
         };
 
+        const faceSection = makeDetailsSection('Face Editor', { open: true });
+        faceSection.details.classList.add('building-fab-face-editor');
+
+        const faceHint = document.createElement('div');
+        faceHint.className = 'building-fab-hint';
+        faceHint.textContent = 'Select a face (A–D) and adjust facade defaults. Mirror lock keeps opposite faces in sync.';
+        faceSection.body.appendChild(faceHint);
+
+        this.faceSelectRow = document.createElement('div');
+        this.faceSelectRow.className = 'building-fab-row building-fab-row-wide';
+        this.faceSelectLabel = document.createElement('div');
+        this.faceSelectLabel.className = 'building-fab-row-label';
+        this.faceSelectLabel.textContent = 'Face';
+
+        this.faceButtons = document.createElement('div');
+        this.faceButtons.className = 'building-fab-face-buttons';
+        this._faceButtonById = new Map();
+        for (const faceId of this._faceIds) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'building-fab-face-button';
+            btn.textContent = faceId;
+            btn.dataset.faceId = faceId;
+            this.faceButtons.appendChild(btn);
+            this._faceButtonById.set(faceId, btn);
+        }
+
+        this.faceSelectRow.appendChild(this.faceSelectLabel);
+        this.faceSelectRow.appendChild(this.faceButtons);
+        faceSection.body.appendChild(this.faceSelectRow);
+
+        this.faceMirrorLockToggle = document.createElement('label');
+        this.faceMirrorLockToggle.className = 'building-fab-toggle building-fab-toggle-wide';
+        this.faceMirrorLockInput = document.createElement('input');
+        this.faceMirrorLockInput.type = 'checkbox';
+        this.faceMirrorLockInput.checked = this._faceMirrorLockEnabled;
+        this.faceMirrorLockText = document.createElement('span');
+        this.faceMirrorLockText.textContent = 'Mirror lock (A=C, B=D)';
+        this.faceMirrorLockToggle.appendChild(this.faceMirrorLockInput);
+        this.faceMirrorLockToggle.appendChild(this.faceMirrorLockText);
+        faceSection.body.appendChild(this.faceMirrorLockToggle);
+
+        const faceWallRow = makeMaterialPickerRow('Wall material', { status: true, onPick: () => this._openFaceWallMaterialPicker() });
+        this.faceWallMaterialRow = faceWallRow.row;
+        this.faceWallMaterialPickButton = faceWallRow.button;
+        this.faceWallMaterialPickThumb = faceWallRow.thumb;
+        this.faceWallMaterialPickText = faceWallRow.text;
+        this.faceWallMaterialStatus = faceWallRow.status;
+        faceSection.body.appendChild(this.faceWallMaterialRow);
+
+        const faceDepthRow = makeRangeRow('Depth offset (m)');
+        this.faceDepthOffsetRow = faceDepthRow.row;
+        this.faceDepthOffsetRange = faceDepthRow.range;
+        this.faceDepthOffsetNumber = faceDepthRow.number;
+        this.faceDepthOffsetRange.min = '-2';
+        this.faceDepthOffsetRange.max = '2';
+        this.faceDepthOffsetRange.step = '0.05';
+        this.faceDepthOffsetNumber.min = '-2';
+        this.faceDepthOffsetNumber.max = '2';
+        this.faceDepthOffsetNumber.step = '0.05';
+        faceSection.body.appendChild(this.faceDepthOffsetRow);
+
+        this.faceBaysLabel = document.createElement('div');
+        this.faceBaysLabel.className = 'ui-section-label is-tight';
+        this.faceBaysLabel.textContent = 'Bays';
+        faceSection.body.appendChild(this.faceBaysLabel);
+
+        this.faceBaysMeta = document.createElement('div');
+        this.faceBaysMeta.className = 'building-fab-texture-status building-fab-face-bays-meta';
+        this.faceBaysMeta.textContent = '';
+        faceSection.body.appendChild(this.faceBaysMeta);
+
+        this.faceBaysSolverMeta = document.createElement('div');
+        this.faceBaysSolverMeta.className = 'building-fab-texture-status building-fab-face-bays-meta';
+        this.faceBaysSolverMeta.textContent = '';
+        faceSection.body.appendChild(this.faceBaysSolverMeta);
+
+        this.faceBaysActions = document.createElement('div');
+        this.faceBaysActions.className = 'building-fab-layer-actions building-fab-face-bays-actions';
+
+        this.faceAddBayBtn = document.createElement('button');
+        this.faceAddBayBtn.type = 'button';
+        this.faceAddBayBtn.className = 'building-fab-layer-btn';
+        this.faceAddBayBtn.textContent = '+ Bay';
+
+        this.faceAddPaddingBtn = document.createElement('button');
+        this.faceAddPaddingBtn.type = 'button';
+        this.faceAddPaddingBtn.className = 'building-fab-layer-btn';
+        this.faceAddPaddingBtn.textContent = '+ Padding';
+
+        this.faceBaysActions.appendChild(this.faceAddBayBtn);
+        this.faceBaysActions.appendChild(this.faceAddPaddingBtn);
+        faceSection.body.appendChild(this.faceBaysActions);
+
+        this.faceBaysWarnings = document.createElement('div');
+        this.faceBaysWarnings.className = 'building-fab-bay-warnings';
+        this.faceBaysWarnings.textContent = '';
+        faceSection.body.appendChild(this.faceBaysWarnings);
+
+        this.faceBaysList = document.createElement('div');
+        this.faceBaysList.className = 'building-fab-bay-list';
+        faceSection.body.appendChild(this.faceBaysList);
+
+        this.propsPanel.appendChild(faceSection.details);
+
         this.layersActions = document.createElement('div');
         this.layersActions.className = 'building-fab-layer-actions building-fab-layer-actions-bar';
         this.layersActions.addEventListener('click', (e) => e.stopPropagation());
@@ -852,7 +911,7 @@ export class BuildingFabricationUI {
 
         this.layersStatus = document.createElement('div');
         this.layersStatus.className = 'building-fab-hint building-fab-layer-status';
-        this.layersStatus.textContent = 'Edit the template layers, then create a building.';
+        this.layersStatus.textContent = 'Edit layers for the current building.';
 
         this._materialVariationUI = createMaterialVariationUIController({
             detailsOpenByKey: this._detailsOpenByKey,
@@ -1008,22 +1067,11 @@ export class BuildingFabricationUI {
         streetSection.details.classList.add('hidden');
         roofSection.details.classList.add('hidden');
 
-        this.buildingsTitle = document.createElement('div');
-        this.buildingsTitle.className = 'ui-title';
-        this.buildingsTitle.textContent = 'Buildings';
-
-        this.buildingsList = document.createElement('div');
-        this.buildingsList.className = 'building-fab-building-list';
-
-        this.buildingsPanel.appendChild(this.buildingsTitle);
-        this.buildingsPanel.appendChild(this.buildingsList);
-
         this.panel.appendChild(this.title);
         this.panel.appendChild(this.createSection);
 
         this.leftStack.appendChild(this.viewPanel);
         this.leftStack.appendChild(this.panel);
-        this.leftStack.appendChild(this.buildingsPanel);
         this.leftStack.appendChild(this.roadsPanel);
         this.root.appendChild(this.leftStack);
         this.root.appendChild(this.propsPanel);
@@ -1086,11 +1134,6 @@ export class BuildingFabricationUI {
         this.resetOverlay.appendChild(this.resetPanel);
         this.root.appendChild(this.resetOverlay);
 
-        this.onBuildingModeChange = null;
-        this.onBuildBuildings = null;
-        this.onClearSelection = null;
-        this.onSelectBuilding = null;
-        this.onDeleteSelectedBuilding = null;
         this.onLoadBuildingConfigFromCatalog = null;
         this.onExportBuildingConfig = null;
         this.onReset = null;
@@ -1102,7 +1145,6 @@ export class BuildingFabricationUI {
         this.onWireframeChange = null;
         this.onFloorDivisionsChange = null;
         this.onFloorplanChange = null;
-        this.onHideSelectionBorderChange = null;
         this.onBuildingTypeChange = null;
         this.onBuildingStyleChange = null;
         this.onFloorCountChange = null;
@@ -1150,6 +1192,25 @@ export class BuildingFabricationUI {
         this.onStreetWindowSpacerWidthChange = null;
         this.onStreetWindowSpacerExtrudeChange = null;
         this.onStreetWindowSpacerExtrudeDistanceChange = null;
+        this.onFaceSelect = null;
+        this.onFaceMirrorLockChange = null;
+        this.onFaceWallMaterialChange = null;
+        this.onFaceDepthOffsetChange = null;
+        this.onFaceAddBay = null;
+        this.onFaceAddPadding = null;
+        this.onFaceFacadeItemRemove = null;
+        this.onFaceFacadeItemMove = null;
+        this.onFaceFacadeItemWidthChange = null;
+        this.onFaceFacadeBayWallMaterialOverrideChange = null;
+        this.onFaceFacadeBayDepthOffsetChange = null;
+        this.onFaceFacadeBayWedgeAngleDegChange = null;
+        this.onFaceFacadeBayWindowEnabledChange = null;
+        this.onFaceFacadeBayWindowDefinitionChange = null;
+        this.onFaceFacadeBayWindowNewDefinition = null;
+        this.onFaceFacadeBayWindowEdit = null;
+        this.onFaceFacadeBayWindowWidthOverrideChange = null;
+        this.onFaceFacadeBayWindowHeightOverrideChange = null;
+        this.onFaceFacadeBayWindowFloorSkipChange = null;
 
         this._bound = false;
 
@@ -1180,7 +1241,18 @@ export class BuildingFabricationUI {
         this._onTopBeltColorPickClick = () => this._openTopBeltColorPicker();
         this._onTypeSelectChange = () => this._setBuildingTypeFromUi(this.typeSelect.value);
         this._onStylePickClick = () => this._openBuildingStylePicker();
-        this._onHideSelectionBorderChange = () => this._setHideSelectionBorderFromUi(this.hideSelectionBorderInput.checked);
+        this._onFaceButtonsClick = (e) => {
+            const btn = e?.target?.closest?.('.building-fab-face-button');
+            if (!btn || !this.faceButtons?.contains(btn)) return;
+            if (btn.disabled) return;
+            const faceId = btn.dataset?.faceId ?? null;
+            this._setSelectedFaceIdFromUi(faceId);
+        };
+        this._onFaceMirrorLockChange = () => this._setFaceMirrorLockFromUi(this.faceMirrorLockInput.checked);
+        this._onFaceDepthOffsetRangeInput = () => this._setFaceDepthOffsetFromUi(this.faceDepthOffsetRange.value);
+        this._onFaceDepthOffsetNumberInput = () => this._setFaceDepthOffsetFromUi(this.faceDepthOffsetNumber.value);
+        this._onFaceAddBayClick = () => this.onFaceAddBay?.();
+        this._onFaceAddPaddingClick = () => this.onFaceAddPadding?.();
         this._onViewModeClick = (e) => {
             const btn = e?.target?.closest?.('.building-fab-view-mode');
             if (!btn || !this.viewModeRow?.contains(btn)) return;
@@ -1189,14 +1261,10 @@ export class BuildingFabricationUI {
             this._setViewModeFromUi(mode);
         };
         this._onAddRoad = () => this._toggleRoadModeFromUi();
-        this._onStartBuilding = () => this._toggleBuildingModeFromUi();
         this._onCancelMode = () => this._cancelActiveModeFromUi();
-        this._onBuild = () => this.onBuildBuildings?.();
         this._onLoadCatalogSelectChange = () => this._setCatalogBuildingConfigFromUi(this.loadCatalogSelect.value, { autoLoad: true });
         this._onLoadCatalogBtnClick = () => this._loadCatalogBuildingConfigFromUi();
         this._onExportBuildingConfig = () => this.onExportBuildingConfig?.();
-        this._onClearSelection = () => this.onClearSelection?.();
-        this._onDeleteSelectedBuilding = () => this.onDeleteSelectedBuilding?.();
         this._onRoadDone = () => this.onRoadDone?.();
         this._onReset = () => this._openResetDialog();
         this._onResetOverlayClick = (e) => {
@@ -1240,8 +1308,6 @@ export class BuildingFabricationUI {
         const on = !!enabled;
         this._enabled = on;
         this.cancelModeBtn.disabled = !on;
-        this.buildBtn.disabled = !on || !this._buildingModeEnabled || this._selectedTileCount <= 0;
-        this.clearSelBtn.disabled = !on || !this._buildingModeEnabled || this._selectedTileCount <= 0;
         this.roadDoneBtn.disabled = !on;
         for (const btn of this._roadRemoveButtons) btn.disabled = !on;
         this._syncCreatePanelControls();
@@ -1251,7 +1317,6 @@ export class BuildingFabricationUI {
         this.propsPanel.classList.toggle('is-disabled', !on);
         this.roadsPanel.classList.toggle('is-disabled', !on);
         this.toastPanel.classList.toggle('is-disabled', !on);
-        this.buildingsPanel.classList.toggle('is-disabled', !on);
     }
 
     getFloorCount() {
@@ -1309,21 +1374,6 @@ export class BuildingFabricationUI {
         if (this.resetGridNumber) this.resetGridNumber.value = String(next);
     }
 
-    getBuildingModeEnabled() {
-        return this._buildingModeEnabled;
-    }
-
-    setBuildingModeEnabled(enabled) {
-        const next = !!enabled;
-        if (next === this._buildingModeEnabled) return;
-        if (next) this.setRoadModeEnabled(false);
-        this._buildingModeEnabled = next;
-        this.startBuildingBtn.classList.toggle('is-active', next);
-        this.buildBtn.disabled = !next || this._selectedTileCount <= 0;
-        this.clearSelBtn.disabled = !next || this._selectedTileCount <= 0;
-        this._syncHint();
-    }
-
     getRoadModeEnabled() {
         return this._roadModeEnabled;
     }
@@ -1331,7 +1381,6 @@ export class BuildingFabricationUI {
     setRoadModeEnabled(enabled) {
         const next = !!enabled;
         if (next === this._roadModeEnabled) return;
-        if (next) this.setBuildingModeEnabled(false);
         this._roadModeEnabled = next;
         this.addRoadBtn.classList.toggle('is-active', next);
         if (!next) this._roadStartTileId = null;
@@ -1408,17 +1457,6 @@ export class BuildingFabricationUI {
             this._floorplanEnabled = false;
         }
         this._syncViewControls();
-    }
-
-    getHideSelectionBorder() {
-        return this._hideSelectionBorder;
-    }
-
-    setHideSelectionBorder(hidden) {
-        const next = !!hidden;
-        if (next === this._hideSelectionBorder) return;
-        this._hideSelectionBorder = next;
-        if (this.hideSelectionBorderInput) this.hideSelectionBorderInput.checked = next;
     }
 
     setSelectedBuilding(building) {
@@ -1637,7 +1675,7 @@ export class BuildingFabricationUI {
         }
         this._selectedBuildingId = nextId;
         if (!hasSelected) {
-            this.nameValue.textContent = 'No building selected.';
+            this.nameValue.textContent = 'No building loaded.';
         } else {
             this.nameValue.textContent = nextId;
         }
@@ -1654,6 +1692,29 @@ export class BuildingFabricationUI {
         this._renderLayersPanel();
         this._syncPropertyWidgets();
         this._syncHint();
+    }
+
+    setFaceEditorState(state) {
+        const src = state && typeof state === 'object' ? state : {};
+        const ids = Array.isArray(src.faceIds) ? src.faceIds.filter((id) => typeof id === 'string' && id) : null;
+        if (ids && ids.length) this._faceIds = ids.slice();
+
+        const rawSelected = typeof src.selectedFaceId === 'string' ? src.selectedFaceId : null;
+        const selected = rawSelected && this._faceIds.includes(rawSelected) ? rawSelected : (this._faceIds[0] ?? 'A');
+        this._selectedFaceId = selected;
+        this._faceMirrorLockEnabled = !!src.mirrorLockEnabled;
+        this._faceLengthMeters = Number.isFinite(src.faceLengthMeters) ? src.faceLengthMeters : null;
+        this._faceValidation = src.validation && typeof src.validation === 'object' ? deepClone(src.validation) : null;
+        this._generationWarnings = Array.isArray(src.generationWarnings)
+            ? src.generationWarnings.map((w) => String(w))
+            : [];
+        this._facadeSolverDebug = src.facadeSolverDebug && typeof src.facadeSolverDebug === 'object'
+            ? deepClone(src.facadeSolverDebug)
+            : null;
+        this._selectedFacade = src.facade && typeof src.facade === 'object' ? deepClone(src.facade) : null;
+        this._faceWindowDefinitions = src.windowDefinitions && typeof src.windowDefinitions === 'object' ? deepClone(src.windowDefinitions) : null;
+
+        this._syncFaceEditorUi();
     }
 
     _getActiveLayers() {
@@ -1707,8 +1768,8 @@ export class BuildingFabricationUI {
         if (!this.layersStatus) return;
         const hasSelected = !!this._selectedBuildingId;
         this.layersStatus.textContent = hasSelected
-            ? 'Edit layers for the selected building.'
-            : 'Edit the template layers, then create a building.';
+            ? 'Edit layers for the current building.'
+            : 'No building loaded. Reset the scene to start over.';
 
         const allow = !!this._enabled;
         if (this.addFloorLayerBtn) this.addFloorLayerBtn.disabled = !allow;
@@ -2766,6 +2827,679 @@ export class BuildingFabricationUI {
         }
     }
 
+    _syncFaceEditorUi({ hasSelected = null, allow = null } = {}) {
+        const has = hasSelected === null ? !!this._selectedBuildingId : !!hasSelected;
+        const canEdit = allow === null ? (!!this._enabled && has) : !!allow;
+        const facade = this._selectedFacade && typeof this._selectedFacade === 'object' ? this._selectedFacade : null;
+        const faceLength = Number.isFinite(this._faceLengthMeters) ? this._faceLengthMeters : null;
+        const canEditFacade = canEdit && !!facade;
+        const canEditBays = canEditFacade && Number.isFinite(faceLength) && faceLength > 1e-6;
+
+        if (this._faceButtonById instanceof Map) {
+            for (const [faceId, btn] of this._faceButtonById.entries()) {
+                if (!btn) continue;
+                btn.disabled = !canEdit;
+                btn.classList.toggle('is-active', faceId === this._selectedFaceId);
+            }
+        }
+
+        if (this.faceMirrorLockInput) {
+            this.faceMirrorLockInput.disabled = !canEdit;
+            this.faceMirrorLockInput.checked = !!this._faceMirrorLockEnabled;
+        }
+
+        if (this.faceWallMaterialPickButton) this.faceWallMaterialPickButton.disabled = !canEditFacade;
+
+        if (!canEditFacade) {
+            if (this.faceWallMaterialPickText) this.faceWallMaterialPickText.textContent = '—';
+            setMaterialThumbToTexture(this.faceWallMaterialPickThumb, '', '');
+            if (this.faceWallMaterialStatus) {
+                this.faceWallMaterialStatus.textContent = canEdit ? 'No facade loaded.' : 'Select a building to edit facades.';
+            }
+        } else {
+            if (this.faceWallMaterialStatus) this.faceWallMaterialStatus.textContent = '';
+
+            const wallMaterial = facade?.wallMaterial ?? null;
+            const wallTextureDefs = [
+                ...(this._buildingStyleOptions ?? []).map((opt) => ({
+                    id: opt.id,
+                    label: opt.label,
+                    wallTextureUrl: opt.wallTextureUrl ?? null
+                })),
+                ...getPbrMaterialOptionsForBuildings().map((opt) => ({
+                    id: opt.id,
+                    label: opt.label,
+                    wallTextureUrl: opt.previewUrl ?? null
+                }))
+            ];
+
+            if (wallMaterial?.kind === 'color') {
+                const colorId = typeof wallMaterial.id === 'string' && wallMaterial.id ? wallMaterial.id : BELT_COURSE_COLOR.OFFWHITE;
+                const found = (this._beltCourseColorOptions ?? []).find((opt) => opt?.id === colorId) ?? null;
+                const label = found?.label ?? colorId;
+                if (this.faceWallMaterialPickText) this.faceWallMaterialPickText.textContent = label;
+                setMaterialThumbToColor(this.faceWallMaterialPickThumb, found?.hex ?? 0xffffff);
+            } else {
+                const styleId = typeof wallMaterial?.id === 'string' && wallMaterial.id ? wallMaterial.id : BUILDING_STYLE.DEFAULT;
+                const found = wallTextureDefs.find((opt) => opt?.id === styleId) ?? null;
+                const label = found?.label ?? styleId;
+                if (this.faceWallMaterialPickText) this.faceWallMaterialPickText.textContent = label;
+                setMaterialThumbToTexture(this.faceWallMaterialPickThumb, found?.wallTextureUrl ?? '', label);
+            }
+        }
+
+        if (!canEditFacade) {
+            if (this.faceDepthOffsetRange) this.faceDepthOffsetRange.disabled = true;
+            if (this.faceDepthOffsetNumber) this.faceDepthOffsetNumber.disabled = true;
+            if (this.faceDepthOffsetRange) this.faceDepthOffsetRange.value = '0';
+            if (this.faceDepthOffsetNumber) this.faceDepthOffsetNumber.value = '';
+        } else {
+            const depth = clamp(facade.depthOffset ?? 0, -2.0, 2.0);
+            if (this.faceDepthOffsetRange) this.faceDepthOffsetRange.disabled = !canEditFacade;
+            if (this.faceDepthOffsetNumber) this.faceDepthOffsetNumber.disabled = !canEditFacade;
+            if (this.faceDepthOffsetRange) this.faceDepthOffsetRange.value = String(depth);
+            if (this.faceDepthOffsetNumber) this.faceDepthOffsetNumber.value = formatFloat(depth, 2);
+        }
+
+        if (this.faceAddBayBtn) this.faceAddBayBtn.disabled = !canEditBays;
+        if (this.faceAddPaddingBtn) this.faceAddPaddingBtn.disabled = !canEditBays;
+
+        if (this.faceBaysMeta) {
+            if (!canEditFacade) {
+                this.faceBaysMeta.textContent = canEdit ? 'No facade loaded.' : 'Select a building to edit.';
+            } else if (!Number.isFinite(faceLength)) {
+                this.faceBaysMeta.textContent = 'Face length unavailable.';
+            } else {
+                this.faceBaysMeta.textContent = `Face length: ${formatFloat(faceLength, 2)}m`;
+            }
+        }
+
+        if (this.faceBaysSolverMeta) {
+            const dbg = this._facadeSolverDebug && typeof this._facadeSolverDebug === 'object' ? this._facadeSolverDebug : null;
+            if (!canEditFacade || !dbg) {
+                this.faceBaysSolverMeta.textContent = '';
+            } else {
+                const refLen = Number.isFinite(dbg?.referenceFaceLengthMeters) ? dbg.referenceFaceLengthMeters : null;
+                const groups = Array.isArray(dbg?.debug?.groupRepeats) ? dbg.debug.groupRepeats : [];
+                const locals = Array.isArray(dbg?.debug?.localRepeats) ? dbg.debug.localRepeats : [];
+                const extras = Array.isArray(dbg?.debug?.centerOutAssignments) ? dbg.debug.centerOutAssignments : [];
+
+                const groupStr = groups.length
+                    ? groups.map((g) => `${String(g?.groupId ?? '?')}=${Number(g?.repeats) || 0}`).join(', ')
+                    : '—';
+
+                const localStr = locals.length
+                    ? locals.map((l) => {
+                        const gid = String(l?.groupId ?? '?');
+                        const tid = String(l?.templateId ?? '?');
+                        const counts = Array.isArray(l?.counts) ? l.counts.map((c) => Number(c) || 0).join(',') : '';
+                        return `${gid}/${tid}=[${counts}]`;
+                    }).join(' ')
+                    : '—';
+
+                const extrasStr = extras.length
+                    ? extras.map((e) => `${String(e?.groupId ?? '?')}/${String(e?.templateId ?? '?')}@${(Number(e?.instanceIndex) || 0) + 1}`).join(', ')
+                    : '—';
+
+                const refStr = Number.isFinite(refLen) ? `ref ${formatFloat(refLen, 2)}m` : 'ref —';
+                this.faceBaysSolverMeta.textContent = `Solver: ${refStr} | groups ${groupStr} | locals ${localStr} | extras ${extrasStr}`;
+            }
+        }
+
+        this._syncFaceBaysList({ canEditBays, facade, faceLength });
+    }
+
+    _syncFaceBaysList({ canEditBays = false, facade = null, faceLength = null } = {}) {
+        const layout = facade?.layout ?? null;
+        const items = Array.isArray(layout?.items) ? layout.items : [];
+
+        const faceWarnings = Array.isArray(this._faceValidation?.warnings) ? this._faceValidation.warnings : [];
+        const genWarnings = Array.isArray(this._generationWarnings) ? this._generationWarnings : [];
+        const warnings = [...faceWarnings, ...genWarnings].filter(Boolean);
+        if (this.faceBaysWarnings) {
+            this.faceBaysWarnings.textContent = '';
+            this.faceBaysWarnings.classList.toggle('hidden', !canEditBays || warnings.length === 0);
+            if (canEditBays && warnings.length) {
+                for (const w of warnings) {
+                    const row = document.createElement('div');
+                    row.className = 'building-fab-bay-warning';
+                    row.textContent = String(w);
+                    this.faceBaysWarnings.appendChild(row);
+                }
+            }
+        }
+
+        const nextKey = this._getFaceBayLayoutKey(items);
+        const needsRebuild = nextKey !== this._faceBayLayoutKey;
+        this._faceBayLayoutKey = nextKey;
+
+        if (needsRebuild) {
+            this._rebuildFaceBaysList({ items });
+        }
+
+        this._syncFaceBaysListValues({ canEditBays, facade, faceLength, items });
+    }
+
+    _getFaceBayLayoutKey(items) {
+        const faceId = this._selectedFaceId;
+        const list = Array.isArray(items) ? items : [];
+        return `${faceId}|${list.map((it) => `${String(it?.id ?? '')}:${String(it?.type ?? '')}`).join('|')}`;
+    }
+
+    _rebuildFaceBaysList({ items = [] } = {}) {
+        this._faceBayUiById.clear();
+        if (this.faceBaysList) this.faceBaysList.textContent = '';
+
+        const list = Array.isArray(items) ? items : [];
+        if (!list.length || !this.faceBaysList) return;
+
+        for (const it of list) {
+            const itemId = typeof it?.id === 'string' ? it.id : '';
+            if (!itemId) continue;
+            const itemType = it?.type === 'padding' ? 'padding' : 'bay';
+
+            const details = document.createElement('details');
+            details.className = 'building-fab-details building-fab-bay-item';
+
+            const key = `face:${this._selectedFaceId}:bay:${itemId}`;
+            const stored = this._detailsOpenByKey.get(key);
+            details.open = typeof stored === 'boolean' ? stored : false;
+            this._detailsOpenByKey.set(key, details.open);
+            details.addEventListener('toggle', () => {
+                this._detailsOpenByKey.set(key, details.open);
+            });
+
+            const summary = document.createElement('summary');
+            summary.className = 'building-fab-details-summary';
+
+            const label = document.createElement('span');
+            label.className = 'building-fab-details-title';
+            label.textContent = itemType === 'padding' ? `Padding · ${itemId}` : `Bay · ${itemId}`;
+            summary.appendChild(label);
+
+            const actions = document.createElement('div');
+            actions.className = 'building-fab-layer-row-actions';
+            actions.addEventListener('click', (e) => e.stopPropagation());
+
+            const makeActionBtn = (text) => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'building-fab-layer-action';
+                btn.textContent = text;
+                return btn;
+            };
+
+            const upBtn = makeActionBtn('Up');
+            const downBtn = makeActionBtn('Down');
+            const delBtn = makeActionBtn('Remove');
+
+            upBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.onFaceFacadeItemMove?.(itemId, 'up');
+            });
+            downBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.onFaceFacadeItemMove?.(itemId, 'down');
+            });
+            delBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.onFaceFacadeItemRemove?.(itemId);
+            });
+
+            actions.appendChild(upBtn);
+            actions.appendChild(downBtn);
+            actions.appendChild(delBtn);
+            summary.appendChild(actions);
+
+            details.appendChild(summary);
+
+            const body = document.createElement('div');
+            body.className = 'building-fab-details-body';
+
+            const makeRangeRow = (rowLabel) => {
+                const row = document.createElement('div');
+                row.className = 'building-fab-row';
+                const l = document.createElement('div');
+                l.className = 'building-fab-row-label';
+                l.textContent = rowLabel;
+                const range = document.createElement('input');
+                range.type = 'range';
+                range.className = 'building-fab-range';
+                const number = document.createElement('input');
+                number.type = 'number';
+                number.className = 'building-fab-number';
+                row.appendChild(l);
+                row.appendChild(range);
+                row.appendChild(number);
+                return { row, range, number };
+            };
+
+            const widthRow = makeRangeRow('Width (m)');
+            widthRow.range.min = '0';
+            widthRow.range.max = '1';
+            widthRow.range.step = '0.05';
+            widthRow.number.min = '0';
+            widthRow.number.max = '1';
+            widthRow.number.step = '0.05';
+            widthRow.range.addEventListener('input', () => this.onFaceFacadeItemWidthChange?.(itemId, widthRow.range.value));
+            widthRow.number.addEventListener('change', () => this.onFaceFacadeItemWidthChange?.(itemId, widthRow.number.value));
+            body.appendChild(widthRow.row);
+
+            let materialPicker = null;
+            let depthRow = null;
+            let wedgeToggle = null;
+            let wedgeAngleSelect = null;
+            let windowToggle = null;
+            let windowDefSelect = null;
+            let windowNewDefBtn = null;
+            let windowEditBtn = null;
+            let windowWidthInput = null;
+            let windowHeightInput = null;
+            let windowFloorSkipInput = null;
+
+            if (itemType === 'bay') {
+                materialPicker = document.createElement('div');
+                materialPicker.className = 'building-fab-row building-fab-row-texture';
+                const matLabel = document.createElement('div');
+                matLabel.className = 'building-fab-row-label';
+                matLabel.textContent = 'Wall material';
+                const picker = document.createElement('div');
+                picker.className = 'building-fab-texture-picker building-fab-material-picker';
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'building-fab-material-button';
+                const thumb = document.createElement('div');
+                thumb.className = 'building-fab-material-thumb';
+                const text = document.createElement('div');
+                text.className = 'building-fab-material-text';
+                button.appendChild(thumb);
+                button.appendChild(text);
+                picker.appendChild(button);
+                materialPicker.appendChild(matLabel);
+                materialPicker.appendChild(picker);
+                body.appendChild(materialPicker);
+                button.addEventListener('click', () => this._openFaceBayWallMaterialPicker(itemId));
+
+                depthRow = makeRangeRow('Depth offset (m)');
+                depthRow.range.min = '-2';
+                depthRow.range.max = '2';
+                depthRow.range.step = '0.05';
+                depthRow.number.min = '-2';
+                depthRow.number.max = '2';
+                depthRow.number.step = '0.05';
+                depthRow.range.addEventListener('input', () => this.onFaceFacadeBayDepthOffsetChange?.(itemId, depthRow.range.value));
+                depthRow.number.addEventListener('change', () => this.onFaceFacadeBayDepthOffsetChange?.(itemId, depthRow.number.value));
+                body.appendChild(depthRow.row);
+
+                wedgeToggle = document.createElement('label');
+                wedgeToggle.className = 'building-fab-toggle building-fab-toggle-wide';
+                const wedgeInput = document.createElement('input');
+                wedgeInput.type = 'checkbox';
+                const wedgeText = document.createElement('span');
+                wedgeText.textContent = 'Wedge side faces';
+                wedgeToggle.appendChild(wedgeInput);
+                wedgeToggle.appendChild(wedgeText);
+                body.appendChild(wedgeToggle);
+
+                const wedgeAngleRow = document.createElement('div');
+                wedgeAngleRow.className = 'building-fab-row building-fab-row-wide';
+                const wedgeAngleLabel = document.createElement('div');
+                wedgeAngleLabel.className = 'building-fab-row-label';
+                wedgeAngleLabel.textContent = 'Wedge angle';
+                wedgeAngleSelect = document.createElement('select');
+                wedgeAngleSelect.className = 'building-fab-select';
+                for (const deg of [15, 30, 45, 60, 75]) {
+                    const opt = document.createElement('option');
+                    opt.value = String(deg);
+                    opt.textContent = `${deg}°`;
+                    wedgeAngleSelect.appendChild(opt);
+                }
+                wedgeAngleRow.appendChild(wedgeAngleLabel);
+                wedgeAngleRow.appendChild(wedgeAngleSelect);
+                body.appendChild(wedgeAngleRow);
+
+                wedgeInput.addEventListener('change', () => {
+                    const wants = !!wedgeInput.checked;
+                    const angle = wants ? Number(wedgeAngleSelect.value) || 15 : 0;
+                    this.onFaceFacadeBayWedgeAngleDegChange?.(itemId, angle);
+                });
+                wedgeAngleSelect.addEventListener('change', () => {
+                    const angle = Number(wedgeAngleSelect.value) || 15;
+                    this.onFaceFacadeBayWedgeAngleDegChange?.(itemId, angle);
+                });
+
+                windowToggle = document.createElement('label');
+                windowToggle.className = 'building-fab-toggle building-fab-toggle-wide';
+                const windowInput = document.createElement('input');
+                windowInput.type = 'checkbox';
+                const windowText = document.createElement('span');
+                windowText.textContent = 'Window feature';
+                windowToggle.appendChild(windowInput);
+                windowToggle.appendChild(windowText);
+                body.appendChild(windowToggle);
+
+                const windowDefRow = document.createElement('div');
+                windowDefRow.className = 'building-fab-row building-fab-row-wide';
+                const windowDefLabel = document.createElement('div');
+                windowDefLabel.className = 'building-fab-row-label';
+                windowDefLabel.textContent = 'Window definition';
+                const windowDefControls = document.createElement('div');
+                windowDefControls.className = 'building-fab-bay-window-def-controls';
+                windowDefSelect = document.createElement('select');
+                windowDefSelect.className = 'building-fab-select';
+                windowNewDefBtn = document.createElement('button');
+                windowNewDefBtn.type = 'button';
+                windowNewDefBtn.className = 'building-fab-layer-btn';
+                windowNewDefBtn.textContent = 'New';
+                windowDefControls.appendChild(windowDefSelect);
+                windowDefControls.appendChild(windowNewDefBtn);
+                windowDefRow.appendChild(windowDefLabel);
+                windowDefRow.appendChild(windowDefControls);
+                body.appendChild(windowDefRow);
+
+                windowEditBtn = document.createElement('button');
+                windowEditBtn.type = 'button';
+                windowEditBtn.className = 'building-fab-layer-btn building-fab-bay-window-edit-btn';
+                windowEditBtn.textContent = 'Fabricate / Edit Window…';
+                body.appendChild(windowEditBtn);
+
+                const makeNumberOnlyRow = (rowLabel, { placeholder = '' } = {}) => {
+                    const row = document.createElement('div');
+                    row.className = 'building-fab-row building-fab-row-wide';
+                    const l = document.createElement('div');
+                    l.className = 'building-fab-row-label';
+                    l.textContent = rowLabel;
+                    const input = document.createElement('input');
+                    input.type = 'number';
+                    input.className = 'building-fab-number';
+                    if (placeholder) input.placeholder = placeholder;
+                    row.appendChild(l);
+                    row.appendChild(input);
+                    return { row, input };
+                };
+
+                const winWidthRow = makeNumberOnlyRow('Window width override (m)', { placeholder: 'inherit' });
+                winWidthRow.input.min = '0.1';
+                winWidthRow.input.max = '9999';
+                winWidthRow.input.step = '0.1';
+                windowWidthInput = winWidthRow.input;
+                body.appendChild(winWidthRow.row);
+
+                const winHeightRow = makeNumberOnlyRow('Window height override (m)', { placeholder: 'inherit' });
+                winHeightRow.input.min = '0.1';
+                winHeightRow.input.max = '99';
+                winHeightRow.input.step = '0.1';
+                windowHeightInput = winHeightRow.input;
+                body.appendChild(winHeightRow.row);
+
+                const floorSkipRow = makeNumberOnlyRow('Window floor skip', { placeholder: '1' });
+                floorSkipRow.input.min = '1';
+                floorSkipRow.input.max = '99';
+                floorSkipRow.input.step = '1';
+                windowFloorSkipInput = floorSkipRow.input;
+                body.appendChild(floorSkipRow.row);
+
+                windowInput.addEventListener('change', () => {
+                    this.onFaceFacadeBayWindowEnabledChange?.(itemId, !!windowInput.checked);
+                });
+                windowDefSelect.addEventListener('change', () => {
+                    this.onFaceFacadeBayWindowDefinitionChange?.(itemId, windowDefSelect.value);
+                });
+                windowNewDefBtn.addEventListener('click', () => {
+                    this.onFaceFacadeBayWindowNewDefinition?.(itemId);
+                });
+                windowEditBtn.addEventListener('click', () => {
+                    this.onFaceFacadeBayWindowEdit?.(itemId);
+                });
+                windowWidthInput.addEventListener('change', () => {
+                    this.onFaceFacadeBayWindowWidthOverrideChange?.(itemId, windowWidthInput.value);
+                });
+                windowHeightInput.addEventListener('change', () => {
+                    this.onFaceFacadeBayWindowHeightOverrideChange?.(itemId, windowHeightInput.value);
+                });
+                windowFloorSkipInput.addEventListener('change', () => {
+                    this.onFaceFacadeBayWindowFloorSkipChange?.(itemId, windowFloorSkipInput.value);
+                });
+
+                materialPicker._thumb = thumb;
+                materialPicker._text = text;
+                materialPicker._button = button;
+                wedgeToggle._input = wedgeInput;
+                windowToggle._input = windowInput;
+            } else {
+                const hint = document.createElement('div');
+                hint.className = 'building-fab-hint building-fab-bay-padding-hint';
+                hint.textContent = 'Padding renders as regular wall at regular depth.';
+                body.appendChild(hint);
+            }
+
+            const status = document.createElement('div');
+            status.className = 'building-fab-texture-status building-fab-bay-status';
+            status.textContent = '';
+            body.appendChild(status);
+
+            details.appendChild(body);
+            this.faceBaysList.appendChild(details);
+
+            this._faceBayUiById.set(itemId, {
+                itemType,
+                details,
+                label,
+                upBtn,
+                downBtn,
+                delBtn,
+                widthRange: widthRow.range,
+                widthNumber: widthRow.number,
+                materialPicker,
+                depthRange: depthRow?.range ?? null,
+                depthNumber: depthRow?.number ?? null,
+                wedgeToggle,
+                wedgeAngleSelect,
+                windowToggle,
+                windowDefSelect,
+                windowNewDefBtn,
+                windowEditBtn,
+                windowWidthInput,
+                windowHeightInput,
+                windowFloorSkipInput,
+                status
+            });
+        }
+    }
+
+    _syncFaceBaysListValues({ canEditBays = false, facade = null, faceLength = null, items = [] } = {}) {
+        const length = Number(faceLength);
+        const hasLength = Number.isFinite(length) && length > 1e-6;
+        const list = Array.isArray(items) ? items : [];
+
+        const validationItems = Array.isArray(this._faceValidation?.items) ? this._faceValidation.items : [];
+        const validationById = new Map(validationItems.map((entry) => [entry?.id ?? '', entry]));
+
+        const bayCount = list.filter((it) => it?.type !== 'padding').length;
+
+        const wallTextureDefs = [
+            ...(this._buildingStyleOptions ?? []).map((opt) => ({
+                id: opt.id,
+                label: opt.label,
+                wallTextureUrl: opt.wallTextureUrl ?? null
+            })),
+            ...getPbrMaterialOptionsForBuildings().map((opt) => ({
+                id: opt.id,
+                label: opt.label,
+                wallTextureUrl: opt.previewUrl ?? null
+            }))
+        ];
+
+        const resolveWallTextureOpt = (id) => wallTextureDefs.find((opt) => opt?.id === id) ?? null;
+        const resolveColorOpt = (id) => (this._beltCourseColorOptions ?? []).find((opt) => opt?.id === id) ?? null;
+
+        for (const [idx, it] of list.entries()) {
+            const itemId = typeof it?.id === 'string' ? it.id : '';
+            const ui = this._faceBayUiById.get(itemId) ?? null;
+            if (!ui) continue;
+
+            const v = validationById.get(itemId) ?? null;
+            const widthMeters = hasLength ? (v?.widthMeters ?? (clamp(it?.widthFrac, 0, 1) * length)) : 0;
+            const minWidthMeters = hasLength ? (v?.minWidthMeters ?? 0) : 0;
+
+            if (ui.label) {
+                const typeLabel = ui.itemType === 'padding' ? 'Padding' : 'Bay';
+                ui.label.textContent = hasLength
+                    ? `${typeLabel} · ${itemId} · ${formatFloat(widthMeters, 2)}m`
+                    : `${typeLabel} · ${itemId}`;
+            }
+
+            const atTop = idx === 0;
+            const atBottom = idx === list.length - 1;
+            ui.upBtn.disabled = !canEditBays || atTop;
+            ui.downBtn.disabled = !canEditBays || atBottom;
+            ui.delBtn.disabled = !canEditBays || list.length <= 1 || (ui.itemType === 'bay' && bayCount <= 1);
+
+            if (ui.widthRange) {
+                ui.widthRange.disabled = !canEditBays || !hasLength;
+                ui.widthNumber.disabled = ui.widthRange.disabled;
+                ui.widthRange.max = hasLength ? String(length) : '1';
+                ui.widthNumber.max = hasLength ? String(length) : '1';
+                if (Number.isFinite(minWidthMeters) && minWidthMeters > 0) {
+                    ui.widthRange.min = String(minWidthMeters);
+                    ui.widthNumber.min = String(minWidthMeters);
+                } else {
+                    ui.widthRange.min = '0';
+                    ui.widthNumber.min = '0';
+                }
+                ui.widthRange.value = hasLength ? String(clamp(widthMeters, 0, length)) : '0';
+                ui.widthNumber.value = hasLength ? formatFloat(widthMeters, 2) : '';
+            }
+
+            if (ui.itemType === 'bay' && ui.materialPicker) {
+                const button = ui.materialPicker._button ?? null;
+                const thumb = ui.materialPicker._thumb ?? null;
+                const text = ui.materialPicker._text ?? null;
+                if (button) button.disabled = !canEditBays;
+
+                const override = it?.wallMaterialOverride ?? null;
+                const inherited = facade?.wallMaterial ?? null;
+                const effective = override && typeof override === 'object' ? override : inherited;
+
+                if (effective?.kind === 'color') {
+                    const colorId = typeof effective.id === 'string' && effective.id ? effective.id : BELT_COURSE_COLOR.OFFWHITE;
+                    const found = resolveColorOpt(colorId) ?? null;
+                    const label = found?.label ?? colorId;
+                    if (text) text.textContent = override ? label : `Inherit · ${label}`;
+                    setMaterialThumbToColor(thumb, found?.hex ?? 0xffffff);
+                } else {
+                    const styleId = typeof effective?.id === 'string' && effective.id ? effective.id : BUILDING_STYLE.DEFAULT;
+                    const found = resolveWallTextureOpt(styleId) ?? null;
+                    const label = found?.label ?? styleId;
+                    if (text) text.textContent = override ? label : `Inherit · ${label}`;
+                    setMaterialThumbToTexture(thumb, found?.wallTextureUrl ?? '', label);
+                }
+            }
+
+            if (ui.itemType === 'bay') {
+                const depth = clamp(it?.depthOffset ?? 0, -2.0, 2.0);
+                if (ui.depthRange) {
+                    ui.depthRange.disabled = !canEditBays;
+                    ui.depthNumber.disabled = ui.depthRange.disabled;
+                    ui.depthRange.value = String(depth);
+                    ui.depthNumber.value = formatFloat(depth, 2);
+                }
+
+                const wedgeAngleDeg = clampInt(it?.wedgeAngleDeg ?? 0, 0, 75);
+                const wedgeEnabled = wedgeAngleDeg > 0;
+                const wedgeInput = ui.wedgeToggle?._input ?? null;
+                if (wedgeInput) {
+                    wedgeInput.disabled = !canEditBays;
+                    wedgeInput.checked = wedgeEnabled;
+                }
+                if (ui.wedgeAngleSelect) {
+                    ui.wedgeAngleSelect.disabled = !canEditBays || !wedgeEnabled;
+                    const value = wedgeEnabled ? String(wedgeAngleDeg) : ui.wedgeAngleSelect.value;
+                    if (wedgeEnabled) ui.wedgeAngleSelect.value = value;
+                }
+
+                const windowFeature = it?.features?.window ?? null;
+                const hasWindow = windowFeature && typeof windowFeature === 'object';
+                const windowInput = ui.windowToggle?._input ?? null;
+                if (windowInput) {
+                    windowInput.disabled = !canEditBays;
+                    windowInput.checked = hasWindow;
+                }
+
+                const defs = Array.isArray(this._faceWindowDefinitions?.items) ? this._faceWindowDefinitions.items : [];
+                const defOptions = defs
+                    .map((d) => ({
+                        id: typeof d?.id === 'string' ? d.id : '',
+                        label: typeof d?.label === 'string' ? d.label : ''
+                    }))
+                    .filter((opt) => !!opt.id);
+
+                const currentDefId = hasWindow && typeof windowFeature?.defId === 'string' ? windowFeature.defId : '';
+                if (ui.windowDefSelect) {
+                    const key = defOptions.map((o) => `${o.id}:${o.label}`).join('|');
+                    if (ui.windowDefSelect.dataset.key !== key) {
+                        ui.windowDefSelect.dataset.key = key;
+                        ui.windowDefSelect.textContent = '';
+                        const placeholder = document.createElement('option');
+                        placeholder.value = '';
+                        placeholder.textContent = 'Select…';
+                        ui.windowDefSelect.appendChild(placeholder);
+                        for (const opt of defOptions) {
+                            const el = document.createElement('option');
+                            el.value = opt.id;
+                            el.textContent = opt.label || opt.id;
+                            ui.windowDefSelect.appendChild(el);
+                        }
+                    }
+                    if (currentDefId && !defOptions.some((o) => o.id === currentDefId)) {
+                        const missing = ui.windowDefSelect.querySelector(`option[value="${CSS.escape(currentDefId)}"]`) ?? null;
+                        if (!missing) {
+                            const el = document.createElement('option');
+                            el.value = currentDefId;
+                            el.textContent = `Missing · ${currentDefId}`;
+                            ui.windowDefSelect.appendChild(el);
+                        }
+                    }
+                    ui.windowDefSelect.disabled = !canEditBays || !hasWindow || defOptions.length === 0;
+                    ui.windowDefSelect.value = currentDefId || '';
+                }
+
+                if (ui.windowNewDefBtn) ui.windowNewDefBtn.disabled = !canEditBays || !hasWindow;
+                if (ui.windowEditBtn) ui.windowEditBtn.disabled = !canEditBays || !hasWindow || !currentDefId;
+
+                if (ui.windowWidthInput) {
+                    ui.windowWidthInput.disabled = !canEditBays || !hasWindow || !hasLength;
+                    const w = Number(windowFeature?.widthMeters);
+                    ui.windowWidthInput.value = (hasWindow && Number.isFinite(w)) ? formatFloat(w, 2) : '';
+                }
+                if (ui.windowHeightInput) {
+                    ui.windowHeightInput.disabled = !canEditBays || !hasWindow;
+                    const h = Number(windowFeature?.heightMeters);
+                    ui.windowHeightInput.value = (hasWindow && Number.isFinite(h)) ? formatFloat(h, 2) : '';
+                }
+                if (ui.windowFloorSkipInput) {
+                    ui.windowFloorSkipInput.disabled = !canEditBays || !hasWindow;
+                    const skip = clampInt(windowFeature?.floorSkip ?? 1, 1, 99);
+                    ui.windowFloorSkipInput.value = hasWindow ? String(skip) : '';
+                }
+            }
+
+            if (ui.status) {
+                if (!hasLength) {
+                    ui.status.textContent = '';
+                } else if (Number.isFinite(minWidthMeters) && minWidthMeters > 0) {
+                    if (widthMeters + 1e-6 < minWidthMeters) {
+                        ui.status.textContent = `Invalid: width ${formatFloat(widthMeters, 2)}m < min ${formatFloat(minWidthMeters, 2)}m.`;
+                    } else {
+                        ui.status.textContent = `Min width: ${formatFloat(minWidthMeters, 2)}m`;
+                    }
+                } else {
+                    ui.status.textContent = '';
+                }
+            }
+        }
+    }
+
     _syncPropertyWidgets() {
         const hasSelected = !!this._selectedBuildingId;
         const allow = !!this._enabled && hasSelected;
@@ -2778,8 +3512,8 @@ export class BuildingFabricationUI {
         this._materialVariationUI?.sync?.();
         this._windowUI?.sync?.({ hasSelected, allow, allowStreetWindows });
         this._wallsUI?.syncGlobal?.({ hasSelected, allow });
+        this._syncFaceEditorUi({ hasSelected, allow });
 
-        this.deleteBuildingBtn.disabled = !allow;
         if (this.exportBuildingBtn) this.exportBuildingBtn.disabled = !this._enabled;
         if (this.loadCatalogSelect) this.loadCatalogSelect.disabled = !this._enabled;
         if (this.loadCatalogBtn) this.loadCatalogBtn.disabled = !this._enabled || !this._catalogBuildingConfigId;
@@ -2890,18 +3624,9 @@ export class BuildingFabricationUI {
         this.topBeltHeightNumber.value = formatFloat(this._topBeltHeight, 2);
     }
 
-    setSelectedCount(count) {
+    setFootprintTileCount(count) {
         const safe = clampInt(count, 0, 9999);
-        this._selectedTileCount = safe;
-        this.selectedCountEl.textContent = `Selected: ${safe}`;
-        if (this.buildBtn) this.buildBtn.disabled = !this._buildingModeEnabled || safe <= 0;
-        if (this.clearSelBtn) this.clearSelBtn.disabled = !this._buildingModeEnabled || safe <= 0;
-        this._syncToast();
-    }
-
-    setBuildingCount(count) {
-        const safe = clampInt(count, 0, 9999);
-        this.buildingCountEl.textContent = `Buildings: ${safe}`;
+        this.footprintCountEl.textContent = `Footprint tiles: ${safe}`;
     }
 
     setRoadCount(count) {
@@ -2996,50 +3721,6 @@ export class BuildingFabricationUI {
         }
     }
 
-    setBuildings(buildings = [], { selectedBuildingId = null } = {}) {
-        const list = Array.isArray(buildings) ? buildings : [];
-        const selectedId = typeof selectedBuildingId === 'string' ? selectedBuildingId : this._selectedBuildingId;
-
-        this.buildingsList.textContent = '';
-        this._hoveredBuildingRow = null;
-
-        if (!list.length) {
-            const empty = document.createElement('div');
-            empty.className = 'building-fab-building-empty';
-            empty.textContent = 'No buildings yet.';
-            this.buildingsList.appendChild(empty);
-            return;
-        }
-
-        for (const building of list) {
-            const id = typeof building?.id === 'string' ? building.id : null;
-            if (!id) continue;
-
-            const row = document.createElement('div');
-            row.className = `building-fab-building-item${id === selectedId ? ' is-selected' : ''}`;
-
-            const tiles = Number.isFinite(building?.tileCount) ? building.tileCount : null;
-            const floors = Number.isFinite(building?.floors) ? building.floors : null;
-
-            const label = document.createElement('div');
-            label.className = 'building-fab-building-item-label';
-            const parts = [`${id}`];
-            if (tiles !== null) parts.push(`${tiles} tiles`);
-            if (floors !== null) parts.push(`${floors} floors`);
-            label.textContent = parts.join(' • ');
-
-            row.appendChild(label);
-
-            row.addEventListener('click', () => {
-                if (this._roadModeEnabled || this._buildingModeEnabled) return;
-                const next = id === selectedId ? null : id;
-                this.onSelectBuilding?.(next);
-            });
-
-            this.buildingsList.appendChild(row);
-        }
-    }
-
     _setFloorCountFromUi(raw) {
         const next = clampInt(raw, this.floorMin, this.floorMax);
         const changed = next !== this._floorCount;
@@ -3067,6 +3748,77 @@ export class BuildingFabricationUI {
         this._buildingType = safe;
         this.typeSelect.value = safe;
         if (changed) this.onBuildingTypeChange?.(safe);
+    }
+
+    _setSelectedFaceIdFromUi(raw) {
+        const faceId = typeof raw === 'string' ? raw : '';
+        const next = this._faceIds.includes(faceId) ? faceId : (this._faceIds[0] ?? 'A');
+        if (next === this._selectedFaceId) return;
+        this._selectedFaceId = next;
+        this._syncFaceEditorUi();
+        this.onFaceSelect?.(next);
+    }
+
+    _setFaceMirrorLockFromUi(raw) {
+        const next = !!raw;
+        if (next === this._faceMirrorLockEnabled) return;
+        this._faceMirrorLockEnabled = next;
+        if (this.faceMirrorLockInput) this.faceMirrorLockInput.checked = next;
+        this._syncFaceEditorUi();
+        this.onFaceMirrorLockChange?.(next);
+    }
+
+    _setFaceWallMaterialFromUi(materialSpec) {
+        const facade = this._selectedFacade && typeof this._selectedFacade === 'object' ? this._selectedFacade : null;
+        if (!facade) return;
+        if (!materialSpec || typeof materialSpec !== 'object') return;
+        const kind = materialSpec.kind;
+        const id = materialSpec.id;
+        if ((kind !== 'texture' && kind !== 'color') || typeof id !== 'string' || !id) return;
+
+        const current = facade.wallMaterial ?? null;
+        if (current?.kind === kind && current?.id === id) return;
+        facade.wallMaterial = { kind, id };
+        this._syncFaceEditorUi();
+        this.onFaceWallMaterialChange?.({ kind, id });
+    }
+
+    _setFaceBayWallMaterialOverrideFromUi(itemId, materialSpec) {
+        const id = typeof itemId === 'string' ? itemId : '';
+        if (!id) return;
+        const facade = this._selectedFacade && typeof this._selectedFacade === 'object' ? this._selectedFacade : null;
+        const items = Array.isArray(facade?.layout?.items) ? facade.layout.items : null;
+        const bay = items?.find?.((it) => it?.id === id) ?? null;
+        if (!facade || !bay || bay.type === 'padding') return;
+
+        let next = null;
+        if (materialSpec !== null && materialSpec !== undefined) {
+            if (!materialSpec || typeof materialSpec !== 'object') return;
+            const kind = materialSpec.kind;
+            const matId = materialSpec.id;
+            if ((kind !== 'texture' && kind !== 'color') || typeof matId !== 'string' || !matId) return;
+            next = { kind, id: matId };
+        }
+
+        const prev = bay.wallMaterialOverride ?? null;
+        const changed = (prev?.kind ?? null) !== (next?.kind ?? null) || (prev?.id ?? null) !== (next?.id ?? null);
+        if (!changed) return;
+
+        bay.wallMaterialOverride = next;
+        this._syncFaceEditorUi();
+        this.onFaceFacadeBayWallMaterialOverrideChange?.(id, next ? { ...next } : null);
+    }
+
+    _setFaceDepthOffsetFromUi(raw) {
+        const facade = this._selectedFacade && typeof this._selectedFacade === 'object' ? this._selectedFacade : null;
+        if (!facade) return;
+        const next = clamp(raw, -2.0, 2.0);
+        const prev = Number(facade.depthOffset) || 0;
+        const changed = Math.abs(next - prev) >= 1e-6;
+        facade.depthOffset = next;
+        if (this.faceDepthOffsetRange) this.faceDepthOffsetRange.value = String(next);
+        if (this.faceDepthOffsetNumber) this.faceDepthOffsetNumber.value = formatFloat(next, 2);
+        if (changed) this.onFaceDepthOffsetChange?.(next);
     }
 
     _setCatalogBuildingConfigFromUi(raw, { autoLoad = false } = {}) {
@@ -3491,6 +4243,173 @@ export class BuildingFabricationUI {
         this.styleStatus.textContent = enabled ? '' : 'Select a building to change style.';
     }
 
+    _openFaceWallMaterialPicker() {
+        if (this.faceWallMaterialPickButton?.disabled) return;
+
+        const facade = this._selectedFacade && typeof this._selectedFacade === 'object' ? this._selectedFacade : null;
+        const current = facade?.wallMaterial ?? null;
+
+        const wallTextureDefs = [
+            ...(this._buildingStyleOptions ?? []).map((opt) => ({
+                id: opt.id,
+                label: opt.label,
+                wallTextureUrl: opt.wallTextureUrl ?? null
+            })),
+            ...getPbrMaterialOptionsForBuildings().map((opt) => ({
+                id: opt.id,
+                label: opt.label,
+                wallTextureUrl: opt.previewUrl ?? null
+            }))
+        ];
+
+        const textureOptions = wallTextureDefs.map((opt) => ({
+            id: `texture:${opt.id}`,
+            label: opt.label,
+            kind: 'texture',
+            previewUrl: opt.wallTextureUrl
+        }));
+
+        const colorOptions = (this._beltCourseColorOptions ?? []).map((opt) => ({
+            id: `color:${opt.id}`,
+            label: opt.label,
+            kind: 'color',
+            hex: opt.hex
+        }));
+
+        const kind = current?.kind;
+        const id = current?.id;
+        const selectedId = (kind === 'texture' || kind === 'color') && typeof id === 'string' && id
+            ? `${kind}:${id}`
+            : null;
+
+        const parseMaterialPickerId = (value) => {
+            if (typeof value !== 'string' || !value) return null;
+            const idx = value.indexOf(':');
+            if (idx <= 0) return null;
+            const k = value.slice(0, idx);
+            const v = value.slice(idx + 1);
+            if (!v) return null;
+            if (k !== 'texture' && k !== 'color') return null;
+            return { kind: k, id: v };
+        };
+
+        this._pickerPopup.open({
+            title: 'Wall material',
+            sections: [
+                { label: 'Texture', options: textureOptions },
+                { label: 'Color', options: colorOptions }
+            ],
+            selectedId,
+            onSelect: (opt) => {
+                const next = parseMaterialPickerId(opt?.id);
+                if (!next) return;
+                this._setFaceWallMaterialFromUi(next);
+            }
+        });
+    }
+
+    _openFaceBayWallMaterialPicker(itemId) {
+        const id = typeof itemId === 'string' ? itemId : '';
+        if (!id) return;
+        if (!this._enabled) return;
+
+        const facade = this._selectedFacade && typeof this._selectedFacade === 'object' ? this._selectedFacade : null;
+        const items = Array.isArray(facade?.layout?.items) ? facade.layout.items : null;
+        const bay = items?.find?.((it) => it?.id === id) ?? null;
+        if (!bay || bay.type === 'padding') return;
+
+        const override = bay?.wallMaterialOverride ?? null;
+        const inherited = facade?.wallMaterial ?? null;
+
+        const wallTextureDefs = [
+            ...(this._buildingStyleOptions ?? []).map((opt) => ({
+                id: opt.id,
+                label: opt.label,
+                wallTextureUrl: opt.wallTextureUrl ?? null
+            })),
+            ...getPbrMaterialOptionsForBuildings().map((opt) => ({
+                id: opt.id,
+                label: opt.label,
+                wallTextureUrl: opt.previewUrl ?? null
+            }))
+        ];
+
+        const resolveWallTextureOpt = (texId) => wallTextureDefs.find((opt) => opt?.id === texId) ?? null;
+        const resolveColorOpt = (colorId) => (this._beltCourseColorOptions ?? []).find((opt) => opt?.id === colorId) ?? null;
+
+        const inheritOpt = (() => {
+            if (inherited?.kind === 'color') {
+                const colorId = typeof inherited.id === 'string' && inherited.id ? inherited.id : BELT_COURSE_COLOR.OFFWHITE;
+                const found = resolveColorOpt(colorId) ?? null;
+                return {
+                    id: 'inherit',
+                    label: `Inherit · ${found?.label ?? colorId}`,
+                    kind: 'color',
+                    hex: found?.hex ?? 0xffffff
+                };
+            }
+            const texId = typeof inherited?.id === 'string' && inherited.id ? inherited.id : BUILDING_STYLE.DEFAULT;
+            const found = resolveWallTextureOpt(texId) ?? null;
+            return {
+                id: 'inherit',
+                label: `Inherit · ${found?.label ?? texId}`,
+                kind: 'texture',
+                previewUrl: found?.wallTextureUrl ?? null
+            };
+        })();
+
+        const textureOptions = wallTextureDefs.map((opt) => ({
+            id: `texture:${opt.id}`,
+            label: opt.label,
+            kind: 'texture',
+            previewUrl: opt.wallTextureUrl
+        }));
+
+        const colorOptions = (this._beltCourseColorOptions ?? []).map((opt) => ({
+            id: `color:${opt.id}`,
+            label: opt.label,
+            kind: 'color',
+            hex: opt.hex
+        }));
+
+        const kind = override?.kind;
+        const currentId = override?.id;
+        const selectedId = (kind === 'texture' || kind === 'color') && typeof currentId === 'string' && currentId
+            ? `${kind}:${currentId}`
+            : 'inherit';
+
+        const parseMaterialPickerId = (value) => {
+            if (typeof value !== 'string' || !value) return null;
+            const idx = value.indexOf(':');
+            if (idx <= 0) return null;
+            const k = value.slice(0, idx);
+            const v = value.slice(idx + 1);
+            if (!v) return null;
+            if (k !== 'texture' && k !== 'color') return null;
+            return { kind: k, id: v };
+        };
+
+        this._pickerPopup.open({
+            title: 'Bay wall material',
+            sections: [
+                { label: 'Inherit', options: [inheritOpt] },
+                { label: 'Texture', options: textureOptions },
+                { label: 'Color', options: colorOptions }
+            ],
+            selectedId,
+            onSelect: (opt) => {
+                const picked = opt?.id ?? '';
+                if (picked === 'inherit') {
+                    this._setFaceBayWallMaterialOverrideFromUi(id, null);
+                    return;
+                }
+                const next = parseMaterialPickerId(picked);
+                if (!next) return;
+                this._setFaceBayWallMaterialOverrideFromUi(id, next);
+            }
+        });
+    }
+
     _openBuildingStylePicker() {
         if (this.stylePickButton?.disabled) return;
         const options = (this._buildingStyleOptions ?? []).map((opt) => ({
@@ -3556,7 +4475,6 @@ export class BuildingFabricationUI {
         const next = !!enabled;
         if (next === this._roadModeEnabled) return;
         this._roadModeEnabled = next;
-        if (next) this.setBuildingModeEnabled(false);
         this._roadStartTileId = null;
         this._syncHint();
         this.onRoadModeChange?.(next);
@@ -3567,35 +4485,10 @@ export class BuildingFabricationUI {
         this.addRoadBtn.classList.toggle('is-active', this._roadModeEnabled);
     }
 
-    _setBuildingModeFromUi(enabled) {
-        const next = !!enabled;
-        if (next === this._buildingModeEnabled) return;
-        if (next) this.setRoadModeEnabled(false);
-        this._buildingModeEnabled = next;
-        this.startBuildingBtn.classList.toggle('is-active', next);
-        this.buildBtn.disabled = !next || this._selectedTileCount <= 0;
-        this.clearSelBtn.disabled = !next || this._selectedTileCount <= 0;
-        this._syncHint();
-        this.onBuildingModeChange?.(next);
-    }
-
-    _toggleBuildingModeFromUi() {
-        this._setBuildingModeFromUi(!this._buildingModeEnabled);
-    }
-
     _cancelActiveModeFromUi() {
-        if (this._buildingModeEnabled) {
-            this._setBuildingModeFromUi(false);
-            return;
-        }
-
-        if (this._roadModeEnabled) {
-            if (this.onRoadCancel) {
-                this.onRoadCancel();
-            } else {
-                this._setRoadModeFromUi(false);
-            }
-        }
+        if (!this._roadModeEnabled) return;
+        if (this.onRoadCancel) this.onRoadCancel();
+        else this._setRoadModeFromUi(false);
     }
 
     _setViewModeFromUi(mode) {
@@ -3622,62 +4515,32 @@ export class BuildingFabricationUI {
         this._syncViewControls();
     }
 
-    _setHideSelectionBorderFromUi(checked) {
-        const next = !!checked;
-        const changed = next !== this._hideSelectionBorder;
-        this._hideSelectionBorder = next;
-        this.hideSelectionBorderInput.checked = next;
-        if (changed) this.onHideSelectionBorderChange?.(next);
-    }
-
     _syncToast() {
         if (!this.toastPanel || !this.toastText || !this.toastTitle || !this.cancelModeBtn) return;
 
-        const show = this._roadModeEnabled || this._buildingModeEnabled;
+        const show = this._roadModeEnabled;
         this.toastPanel.classList.toggle('hidden', !show);
         if (!show) return;
 
-        if (this._roadModeEnabled) {
-            this.toastTitle.textContent = 'Create Road';
-            this.cancelModeBtn.textContent = 'Cancel segment';
+        this.toastTitle.textContent = 'Create Road';
+        this.cancelModeBtn.textContent = 'Cancel segment';
 
-            const start = this._roadStartTileId;
-            this.toastText.textContent = start
-                ? `Select end tile (start: ${start}).`
-                : 'Select start tile.';
+        const start = this._roadStartTileId;
+        this.toastText.textContent = start
+            ? `Select end tile (start: ${start}).`
+            : 'Select start tile.';
 
-            this.clearSelBtn?.classList.add('hidden');
-            this.buildBtn?.classList.add('hidden');
-            this.roadDoneBtn?.classList.remove('hidden');
-            if (this.cancelModeBtn) this.cancelModeBtn.disabled = !this._enabled || !start;
-            return;
-        }
-
-        if (this._buildingModeEnabled) {
-            this.toastTitle.textContent = 'Create Building';
-            this.cancelModeBtn.textContent = 'Cancel building';
-            if (this.cancelModeBtn) this.cancelModeBtn.disabled = !this._enabled;
-
-            const count = Number.isFinite(this._selectedTileCount) ? this._selectedTileCount : 0;
-            this.toastText.textContent = count > 0
-                ? `Select tiles (click to add/remove). Selected: ${count}.`
-                : 'Select tiles (click to add/remove).';
-
-            this.clearSelBtn?.classList.remove('hidden');
-            this.buildBtn?.classList.remove('hidden');
-            this.roadDoneBtn?.classList.add('hidden');
-            if (this.buildBtn) this.buildBtn.disabled = count <= 0;
-            if (this.clearSelBtn) this.clearSelBtn.disabled = count <= 0;
-        }
+        this.roadDoneBtn?.classList.remove('hidden');
+        if (this.cancelModeBtn) this.cancelModeBtn.disabled = !this._enabled || !start;
     }
 
     _syncHint() {
-        if (this._roadModeEnabled || this._buildingModeEnabled) {
+        if (this._roadModeEnabled) {
             this.hint.textContent = 'Follow the popup steps at the bottom of the screen.';
         } else if (this._selectedBuildingId) {
-            this.hint.textContent = 'Select an existing building, or create a new one.';
+            this.hint.textContent = 'Editing building.';
         } else {
-            this.hint.textContent = 'Create a road or building, then select it to edit properties.';
+            this.hint.textContent = 'No building loaded. Reset the scene to start over.';
         }
 
         this._syncCreatePanelControls();
@@ -3687,12 +4550,11 @@ export class BuildingFabricationUI {
 
     _syncCreatePanelControls() {
         if (!this.panel) return;
-        const creating = this._roadModeEnabled || this._buildingModeEnabled;
+        const creating = this._roadModeEnabled;
         const allow = this._enabled && !creating;
         const disable = !allow;
 
         this.addRoadBtn.disabled = disable;
-        this.startBuildingBtn.disabled = disable;
 
         this.panel.classList.toggle('is-disabled', !this._enabled || creating);
     }
@@ -3700,7 +4562,7 @@ export class BuildingFabricationUI {
     _syncViewControls() {
         if (!this.viewPanel) return;
 
-        const creating = this._roadModeEnabled || this._buildingModeEnabled;
+        const creating = this._roadModeEnabled;
         const allowReset = this._enabled && !creating;
         const disableView = !this._enabled;
 
@@ -3708,7 +4570,6 @@ export class BuildingFabricationUI {
             if (!btn) continue;
             btn.disabled = disableView;
         }
-        if (this.hideSelectionBorderInput) this.hideSelectionBorderInput.disabled = disableView;
         this.resetBtn.disabled = !allowReset;
 
         this._syncViewModeButtons();
@@ -3719,7 +4580,7 @@ export class BuildingFabricationUI {
     _openResetDialog() {
         if (!this.resetOverlay || !this.resetGridNumber) return;
         if (!this._enabled) return;
-        const creating = this._roadModeEnabled || this._buildingModeEnabled;
+        const creating = this._roadModeEnabled;
         if (creating) return;
 
         this.resetGridNumber.value = String(this._gridSize);
@@ -3780,14 +4641,15 @@ export class BuildingFabricationUI {
         this.loadCatalogSelect.addEventListener('change', this._onLoadCatalogSelectChange);
         this.loadCatalogBtn.addEventListener('click', this._onLoadCatalogBtnClick);
         this._materialVariationUI?.bind?.();
-        this.hideSelectionBorderInput.addEventListener('change', this._onHideSelectionBorderChange);
+        this.faceButtons.addEventListener('click', this._onFaceButtonsClick);
+        this.faceMirrorLockInput.addEventListener('change', this._onFaceMirrorLockChange);
+        this.faceDepthOffsetRange.addEventListener('input', this._onFaceDepthOffsetRangeInput);
+        this.faceDepthOffsetNumber.addEventListener('input', this._onFaceDepthOffsetNumberInput);
+        this.faceAddBayBtn.addEventListener('click', this._onFaceAddBayClick);
+        this.faceAddPaddingBtn.addEventListener('click', this._onFaceAddPaddingClick);
         this.viewModeRow.addEventListener('click', this._onViewModeClick);
         this.addRoadBtn.addEventListener('click', this._onAddRoad);
-        this.startBuildingBtn.addEventListener('click', this._onStartBuilding);
         this.cancelModeBtn.addEventListener('click', this._onCancelMode);
-        this.buildBtn.addEventListener('click', this._onBuild);
-        this.clearSelBtn.addEventListener('click', this._onClearSelection);
-        this.deleteBuildingBtn.addEventListener('click', this._onDeleteSelectedBuilding);
         this.exportBuildingBtn.addEventListener('click', this._onExportBuildingConfig);
         this.resetBtn.addEventListener('click', this._onReset);
         this.roadDoneBtn.addEventListener('click', this._onRoadDone);
@@ -3833,14 +4695,15 @@ export class BuildingFabricationUI {
         this.loadCatalogBtn.removeEventListener('click', this._onLoadCatalogBtnClick);
         this.stylePickButton.removeEventListener('click', this._onStylePickClick);
         this._materialVariationUI?.unbind?.();
-        this.hideSelectionBorderInput.removeEventListener('change', this._onHideSelectionBorderChange);
+        this.faceButtons.removeEventListener('click', this._onFaceButtonsClick);
+        this.faceMirrorLockInput.removeEventListener('change', this._onFaceMirrorLockChange);
+        this.faceDepthOffsetRange.removeEventListener('input', this._onFaceDepthOffsetRangeInput);
+        this.faceDepthOffsetNumber.removeEventListener('input', this._onFaceDepthOffsetNumberInput);
+        this.faceAddBayBtn.removeEventListener('click', this._onFaceAddBayClick);
+        this.faceAddPaddingBtn.removeEventListener('click', this._onFaceAddPaddingClick);
         this.viewModeRow.removeEventListener('click', this._onViewModeClick);
         this.addRoadBtn.removeEventListener('click', this._onAddRoad);
-        this.startBuildingBtn.removeEventListener('click', this._onStartBuilding);
         this.cancelModeBtn.removeEventListener('click', this._onCancelMode);
-        this.buildBtn.removeEventListener('click', this._onBuild);
-        this.clearSelBtn.removeEventListener('click', this._onClearSelection);
-        this.deleteBuildingBtn.removeEventListener('click', this._onDeleteSelectedBuilding);
         this.exportBuildingBtn.removeEventListener('click', this._onExportBuildingConfig);
         this.resetBtn.removeEventListener('click', this._onReset);
         this.roadDoneBtn.removeEventListener('click', this._onRoadDone);

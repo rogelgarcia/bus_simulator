@@ -1,7 +1,7 @@
 // src/graphics/gui/window_mesh_debugger/main.js
 // Standalone Window Mesh Debugger tool entry point.
 
-import { WindowMeshDebuggerView } from './view/WindowMeshDebuggerView.js';
+import { WindowFabricationView } from '../window_fabrication/WindowFabricationView.js';
 import { ensureGlobalPerfBar } from '../perf_bar/PerfBar.js';
 import { installViewportContextMenuBlocker } from '../shared/utils/viewportContextMenuBlocker.js';
 
@@ -15,7 +15,7 @@ document.body.classList.add('options-dock-open');
 
 const perfBar = ensureGlobalPerfBar();
 
-const view = new WindowMeshDebuggerView({ canvas });
+const view = new WindowFabricationView({ canvas });
 view.start().then(() => {
     if (view.renderer) perfBar.setRenderer(view.renderer);
     view.onFrame = ({ dt, nowMs }) => perfBar.onFrame({ dt, nowMs });

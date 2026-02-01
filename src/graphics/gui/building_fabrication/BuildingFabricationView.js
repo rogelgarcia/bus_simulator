@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { BuildingFabricationScene } from './BuildingFabricationScene.js';
 import { BuildingFabricationUI } from './BuildingFabricationUI.js';
+import { WindowFabricationPopup } from './WindowFabricationPopup.js';
 import {
     buildingConfigIdToFileBaseName,
     createCityBuildingConfigFromFabrication,
@@ -34,6 +35,7 @@ export class BuildingFabricationView {
         this._moveDir = new THREE.Vector3();
         this._moveForward = new THREE.Vector3();
         this._moveRight = new THREE.Vector3();
+        this._windowFabricationPopup = new WindowFabricationPopup();
 
         this._onPointerMove = (e) => this._handlePointerMove(e);
         this._onPointerDown = (e) => this._handlePointerDown(e);
@@ -53,63 +55,20 @@ export class BuildingFabricationView {
         this.ui.setWireframeEnabled(false);
         this.ui.setFloorDivisionsEnabled(false);
         this.ui.setFloorplanEnabled(false);
-        this.ui.setRoadModeEnabled(false);
-        this.ui.setBuildingModeEnabled(false);
-        this.ui.setSelectedBuilding(null);
+        this.ui.setRoadModeEnabled(this.scene.getRoadModeEnabled());
+        this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
+        this.ui.setFaceEditorState(this.scene.getFaceEditorState());
         this._syncUiCounts();
         this._syncRoadList();
-        this._syncBuildings();
-
-        this.ui.onBuildingModeChange = (enabled) => {
-            this.scene.setBuildingModeEnabled(enabled);
-            this.ui.setBuildingModeEnabled(this.scene.getBuildingModeEnabled());
-            this.ui.setRoadModeEnabled(this.scene.getRoadModeEnabled());
-            this._syncUiCounts();
-            this._syncBuildings();
-        };
-
-        this.ui.onBuildBuildings = () => {
-            this.scene.createBuildingsFromSelection({
-                floors: this.ui.getFloorCount(),
-                floorHeight: this.ui.getFloorHeight(),
-                layers: this.ui.getTemplateLayers(),
-                materialVariationSeed: this.ui.getTemplateMaterialVariationSeed(),
-                windowVisuals: this.ui.getTemplateWindowVisuals()
-            });
-            this.ui.setBuildingModeEnabled(this.scene.getBuildingModeEnabled());
-            this._syncUiCounts();
-            this._syncBuildings();
-        };
-
-        this.ui.onClearSelection = () => {
-            this.scene.clearSelection();
-            this._syncUiCounts();
-        };
-
-        this.ui.onSelectBuilding = (buildingId) => {
-            this.scene.setSelectedBuildingId(buildingId);
-            const selected = this.scene.getSelectedBuilding();
-            this.ui.setSelectedBuilding(selected);
-            if (selected) this.ui.setFloorCount(selected.floors);
-            this._syncBuildings();
-        };
-
-        this.ui.onDeleteSelectedBuilding = () => {
-            if (this.scene.removeSelectedBuilding()) {
-                this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
-                this._syncUiCounts();
-                this._syncBuildings();
-            }
-        };
+        this._syncBuilding();
 
         this.ui.onLoadBuildingConfigFromCatalog = (configId) => {
             const created = this.scene.loadBuildingConfigFromCatalog(configId);
             if (!created) return;
             this.ui.setRoadModeEnabled(this.scene.getRoadModeEnabled());
-            this.ui.setBuildingModeEnabled(this.scene.getBuildingModeEnabled());
             this._syncUiCounts();
             this._syncRoadStatus();
-            this._syncBuildings();
+            this._syncBuilding();
         };
 
         this.ui.onReset = (gridSize) => {
@@ -117,21 +76,19 @@ export class BuildingFabricationView {
             this.ui.setGridSize(this.scene.getGridSize());
             this.ui.setFloorHeight(this.scene.getFloorHeight());
             this.ui.setRoadModeEnabled(this.scene.getRoadModeEnabled());
-            this.ui.setBuildingModeEnabled(this.scene.getBuildingModeEnabled());
             this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
             this._syncUiCounts();
             this._syncRoadStatus();
             this._syncRoadList();
-            this._syncBuildings();
+            this._syncBuilding();
         };
 
         this.ui.onRoadModeChange = (enabled) => {
             this.scene.setRoadModeEnabled(enabled);
             this.ui.setRoadModeEnabled(this.scene.getRoadModeEnabled());
-            this.ui.setBuildingModeEnabled(this.scene.getBuildingModeEnabled());
             this._syncRoadStatus();
             this._syncUiCounts();
-            this._syncBuildings();
+            this._syncBuilding();
         };
 
         this.ui.onRoadCancel = () => {
@@ -144,20 +101,18 @@ export class BuildingFabricationView {
 
             this.scene.setRoadModeEnabled(false);
             this.ui.setRoadModeEnabled(this.scene.getRoadModeEnabled());
-            this.ui.setBuildingModeEnabled(this.scene.getBuildingModeEnabled());
             this._syncRoadStatus();
             this._syncRoadList();
-            this._syncBuildings();
+            this._syncBuilding();
             this._syncUiCounts();
         };
 
         this.ui.onRoadDone = () => {
             this.scene.setRoadModeEnabled(false);
             this.ui.setRoadModeEnabled(this.scene.getRoadModeEnabled());
-            this.ui.setBuildingModeEnabled(this.scene.getBuildingModeEnabled());
             this._syncRoadStatus();
             this._syncRoadList();
-            this._syncBuildings();
+            this._syncBuilding();
             this._syncUiCounts();
         };
 
@@ -165,7 +120,7 @@ export class BuildingFabricationView {
             if (this.scene.removeRoad(roadId)) {
                 this._syncUiCounts();
                 this._syncRoadList();
-                this._syncBuildings();
+                this._syncBuilding();
             }
         };
 
@@ -185,85 +140,200 @@ export class BuildingFabricationView {
             this.scene.setShowFloorplan(enabled);
         };
 
-        this.scene.setHideSelectionBorder(this.ui.getHideSelectionBorder());
-        this.ui.onHideSelectionBorderChange = (hidden) => {
-            this.scene.setHideSelectionBorder(hidden);
+        this.ui.onFaceSelect = (faceId) => {
+            this.scene.setSelectedFaceId(faceId);
+            this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+        };
+
+        this.ui.onFaceMirrorLockChange = (enabled) => {
+            this.scene.setFaceMirrorLockEnabled(enabled);
+            this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+        };
+
+        this.ui.onFaceWallMaterialChange = (materialSpec) => {
+            if (this.scene.setSelectedFaceWallMaterial(materialSpec)) {
+                this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+            }
+        };
+
+        this.ui.onFaceDepthOffsetChange = (value) => {
+            if (this.scene.setSelectedFaceDepthOffset(value)) {
+                this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+            }
+        };
+
+        this.ui.onFaceAddBay = () => {
+            if (this.scene.addSelectedFaceFacadeBay()) {
+                this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+            }
+        };
+
+        this.ui.onFaceAddPadding = () => {
+            if (this.scene.addSelectedFaceFacadePadding()) {
+                this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+            }
+        };
+
+        this.ui.onFaceFacadeItemRemove = (itemId) => {
+            if (this.scene.removeSelectedFaceFacadeItem(itemId)) {
+                this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+            }
+        };
+
+        this.ui.onFaceFacadeItemMove = (itemId, direction) => {
+            if (this.scene.moveSelectedFaceFacadeItem(itemId, direction)) {
+                this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+            }
+        };
+
+        this.ui.onFaceFacadeItemWidthChange = (itemId, widthMeters) => {
+            this.scene.setSelectedFaceFacadeItemWidth(itemId, widthMeters);
+            this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+        };
+
+        this.ui.onFaceFacadeBayWallMaterialOverrideChange = (itemId, materialSpec) => {
+            this.scene.setSelectedFaceFacadeBayWallMaterialOverride(itemId, materialSpec);
+            this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+        };
+
+        this.ui.onFaceFacadeBayDepthOffsetChange = (itemId, value) => {
+            this.scene.setSelectedFaceFacadeBayDepthOffset(itemId, value);
+            this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+        };
+
+        this.ui.onFaceFacadeBayWedgeAngleDegChange = (itemId, angleDeg) => {
+            this.scene.setSelectedFaceFacadeBayWedgeAngleDeg(itemId, angleDeg);
+            this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+        };
+
+        this.ui.onFaceFacadeBayWindowEnabledChange = (itemId, enabled) => {
+            this.scene.setSelectedFaceFacadeBayWindowEnabled(itemId, enabled);
+            this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+        };
+
+        this.ui.onFaceFacadeBayWindowDefinitionChange = (itemId, windowDefId) => {
+            this.scene.setSelectedFaceFacadeBayWindowDefinition(itemId, windowDefId);
+            this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+        };
+
+        this.ui.onFaceFacadeBayWindowNewDefinition = (itemId) => {
+            const newId = this.scene.createSelectedBuildingWindowDefinition();
+            if (!newId) return;
+            this.scene.setSelectedFaceFacadeBayWindowEnabled(itemId, true);
+            this.scene.setSelectedFaceFacadeBayWindowDefinition(itemId, newId);
+            this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+        };
+
+        this.ui.onFaceFacadeBayWindowWidthOverrideChange = (itemId, widthMeters) => {
+            this.scene.setSelectedFaceFacadeBayWindowWidthOverride(itemId, widthMeters);
+            this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+        };
+
+        this.ui.onFaceFacadeBayWindowHeightOverrideChange = (itemId, heightMeters) => {
+            this.scene.setSelectedFaceFacadeBayWindowHeightOverride(itemId, heightMeters);
+            this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+        };
+
+        this.ui.onFaceFacadeBayWindowFloorSkipChange = (itemId, floorSkip) => {
+            this.scene.setSelectedFaceFacadeBayWindowFloorSkip(itemId, floorSkip);
+            this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+        };
+
+        this.ui.onFaceFacadeBayWindowEdit = (itemId) => {
+            const faceState = this.scene.getFaceEditorState();
+            const items = Array.isArray(faceState?.facade?.layout?.items) ? faceState.facade.layout.items : [];
+            const bay = items.find((it) => it?.id === itemId) ?? null;
+            const win = bay?.features?.window ?? null;
+            const defId = typeof win?.defId === 'string' ? win.defId : '';
+            if (!defId) return;
+
+            const defs = Array.isArray(faceState?.windowDefinitions?.items) ? faceState.windowDefinitions.items : [];
+            const def = defs.find((d) => d?.id === defId) ?? null;
+            const settings = def?.settings && typeof def.settings === 'object' ? def.settings : null;
+            if (!settings) return;
+
+            this._windowFabricationPopup.open({
+                title: def?.label ? `${def.label}` : defId,
+                initialSettings: settings,
+                onSettingsChange: (nextSettings) => {
+                    this.scene.setSelectedBuildingWindowDefinitionSettings(defId, nextSettings);
+                    this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+                }
+            });
         };
 
         this.ui.onFloorHeightChange = (height) => {
             if (this.scene.setSelectedBuildingFloorHeight(height)) {
                 this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
-                this._syncBuildings();
+                this._syncBuilding();
             }
         };
 
         this.ui.onFloorCountChange = (floors) => {
             if (this.scene.setSelectedBuildingFloors(floors)) {
                 this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
-                this._syncBuildings();
+                this._syncBuilding();
             }
         };
 
         this.ui.onBuildingTypeChange = (type) => {
             if (this.scene.setSelectedBuildingType(type)) {
-                this._syncBuildings();
+                this._syncBuilding();
             }
         };
 
         this.ui.onBuildingStyleChange = (style) => {
             if (this.scene.setSelectedBuildingStyle(style)) {
                 this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
-                this._syncBuildings();
+                this._syncBuilding();
             }
         };
 
         this.ui.onWallInsetChange = (inset) => {
             if (this.scene.setSelectedBuildingWallInset(inset)) {
                 this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
-                this._syncBuildings();
+                this._syncBuilding();
             }
         };
 
         this.ui.onWindowStyleChange = (style) => {
             if (this.scene.setSelectedBuildingWindowStyle(style)) {
                 this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
-                this._syncBuildings();
+                this._syncBuilding();
             }
         };
 
         this.ui.onWindowFrameWidthChange = (value) => {
             if (this.scene.setSelectedBuildingWindowFrameWidth(value)) {
                 this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
-                this._syncBuildings();
+                this._syncBuilding();
             }
         };
 
         this.ui.onWindowFrameColorChange = (hex) => {
             if (this.scene.setSelectedBuildingWindowFrameColor(hex)) {
                 this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
-                this._syncBuildings();
+                this._syncBuilding();
             }
         };
 
         this.ui.onSelectedBuildingLayersChange = (layers) => {
             if (this.scene.setSelectedBuildingLayers(layers)) {
-                const selected = this.scene.getSelectedBuilding();
-                this.ui.setBuildings(this.scene.getBuildings(), { selectedBuildingId: selected?.id ?? null });
-                if (selected) this.ui.setFloorCount(selected.floors);
+                this._syncBuilding();
             }
         };
 
         this.ui.onSelectedBuildingMaterialVariationSeedChange = (seed) => {
             if (this.scene.setSelectedBuildingMaterialVariationSeed(seed)) {
                 this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
-                this._syncBuildings();
+                this._syncBuilding();
             }
         };
 
         this.ui.onSelectedBuildingWindowVisualsChange = (windowVisuals) => {
             if (this.scene.setSelectedBuildingWindowVisuals(windowVisuals)) {
                 this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
-                this._syncBuildings();
+                this._syncBuilding();
             }
         };
 
@@ -294,7 +364,16 @@ export class BuildingFabricationView {
                 ? selected.materialVariationSeed
                 : this.ui.getTemplateMaterialVariationSeed();
             const windowVisuals = selected?.windowVisuals ?? this.ui.getTemplateWindowVisuals();
-            const cfg = createCityBuildingConfigFromFabrication({ id, name, layers, wallInset, materialVariationSeed, windowVisuals });
+            const cfg = createCityBuildingConfigFromFabrication({
+                id,
+                name,
+                layers,
+                wallInset,
+                materialVariationSeed,
+                windowVisuals,
+                facades: selected?.facades ?? null,
+                windowDefinitions: selected?.windowDefinitions ?? null
+            });
             const fileBaseName = buildingConfigIdToFileBaseName(cfg.id);
             const source = serializeCityBuildingConfigToEsModule(cfg, { fileBaseName });
 
@@ -591,6 +670,8 @@ export class BuildingFabricationView {
     }
 
     exit() {
+        this._windowFabricationPopup?.close?.();
+
         this.canvas.removeEventListener('pointermove', this._onPointerMove);
         this.canvas.removeEventListener('pointerdown', this._onPointerDown);
         this.canvas.removeEventListener('pointerup', this._onPointerUp);
@@ -598,11 +679,6 @@ export class BuildingFabricationView {
         window.removeEventListener('keydown', this._onKeyDown);
         window.removeEventListener('keyup', this._onKeyUp);
 
-        this.ui.onBuildingModeChange = null;
-        this.ui.onBuildBuildings = null;
-        this.ui.onClearSelection = null;
-        this.ui.onSelectBuilding = null;
-        this.ui.onDeleteSelectedBuilding = null;
         this.ui.onReset = null;
         this.ui.onRoadModeChange = null;
         this.ui.onRoadCancel = null;
@@ -617,7 +693,6 @@ export class BuildingFabricationView {
         this.ui.onBuildingTypeChange = null;
         this.ui.onBuildingStyleChange = null;
         this.ui.onWallInsetChange = null;
-        this.ui.onHideSelectionBorderChange = null;
         this.ui.onStreetEnabledChange = null;
         this.ui.onStreetFloorsChange = null;
         this.ui.onStreetFloorHeightChange = null;
@@ -752,8 +827,9 @@ export class BuildingFabricationView {
     }
 
     _syncUiCounts() {
-        this.ui.setSelectedCount(this.scene.getSelectedCount());
-        this.ui.setBuildingCount(this.scene.getBuildingCount());
+        const building = this.scene.getSelectedBuilding();
+        const footprintTiles = building?.tiles?.size ?? 0;
+        this.ui.setFootprintTileCount(footprintTiles);
         this.ui.setRoadCount(this.scene.getRoadTileCount());
     }
 
@@ -765,11 +841,15 @@ export class BuildingFabricationView {
         this.ui.setRoads(this.scene.getRoadSegments());
     }
 
-    _syncBuildings() {
+    _syncBuilding() {
         const selected = this.scene.getSelectedBuilding();
         this.ui.setSelectedBuilding(selected);
-        this.ui.setBuildings(this.scene.getBuildings(), { selectedBuildingId: selected?.id ?? null });
+        this.ui.setFaceEditorState(this.scene.getFaceEditorState());
         if (selected) this.ui.setFloorCount(selected.floors);
+    }
+
+    _syncBuildings() {
+        this._syncBuilding();
     }
 
     _setPointerFromEvent(event) {
@@ -799,8 +879,8 @@ export class BuildingFabricationView {
         if (tileId !== this._hoveredTile) {
             this._hoveredTile = tileId;
             this.scene.setHoveredTile(tileId);
-            this.canvas.classList.toggle('cursor-pointer', !!tileId);
         }
+        this.canvas.classList.toggle('cursor-pointer', this.scene.getRoadModeEnabled() && !!tileId);
     }
 
     _handlePointerDown(event) {
@@ -824,18 +904,11 @@ export class BuildingFabricationView {
         if (this.scene.getRoadModeEnabled()) {
             this.scene.handleRoadTileClick(tileId);
             this.ui.setRoadModeEnabled(this.scene.getRoadModeEnabled());
-            this.ui.setBuildingModeEnabled(this.scene.getBuildingModeEnabled());
             this._syncRoadStatus();
             this._syncRoadList();
-            this._syncBuildings();
-        } else if (this.scene.getBuildingModeEnabled()) {
-            this.scene.toggleTileSelection(tileId);
-        } else {
-            this.scene.selectBuildingByTileId(tileId);
-            this._syncBuildings();
+            this._syncBuilding();
+            this._syncUiCounts();
         }
-
-        this._syncUiCounts();
     }
 
     _handlePointerLeave() {

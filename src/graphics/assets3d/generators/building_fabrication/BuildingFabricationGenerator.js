@@ -22,9 +22,14 @@ import { LAYER_TYPE, normalizeBuildingLayers } from './BuildingFabricationTypes.
 import { applyMaterialVariationToMeshStandardMaterial, computeMaterialVariationSeedFromTiles, MATERIAL_VARIATION_ROOT } from '../../materials/MaterialVariationSystem.js';
 import { applyUvTilingToMeshStandardMaterial } from '../../materials/MaterialUvTilingSystem.js';
 import { getPbrMaterialTileMeters, isPbrMaterialId, tryGetPbrMaterialIdFromUrl } from '../../materials/PbrMaterialCatalog.js';
+import { solveFacadeLayoutFillPattern } from './FacadeLayoutFillSolver.js';
 
 const EPS = 1e-6;
 const QUANT = 1000;
+const WEDGE_ANGLE_STEP_DEG = 15;
+const WEDGE_ANGLE_MAX_DEG = 75;
+const FACADE_DEPTH_MIN_M = -2.0;
+const FACADE_DEPTH_MAX_M = 2.0;
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -37,6 +42,17 @@ function clampInt(value, min, max) {
     if (!Number.isFinite(num)) return min;
     const rounded = Math.round(num);
     return Math.max(min, Math.min(max, rounded));
+}
+
+function clampFacadeDepthMeters(value) {
+    return clamp(value, FACADE_DEPTH_MIN_M, FACADE_DEPTH_MAX_M);
+}
+
+function normalizeWedgeAngleDeg(value) {
+    const raw = Number(value) || 0;
+    if (!(raw > 0)) return 0;
+    const clamped = clamp(raw, 0, WEDGE_ANGLE_MAX_DEG);
+    return clampInt(clamped / WEDGE_ANGLE_STEP_DEG, 0, Math.round(WEDGE_ANGLE_MAX_DEG / WEDGE_ANGLE_STEP_DEG)) * WEDGE_ANGLE_STEP_DEG;
 }
 
 function q(value) {
@@ -912,6 +928,364 @@ function appendWirePositions(dst, geometry, yShift) {
     }
 }
 
+function appendWirePositionsTransformed(dst, geometry, matrix) {
+    if (!geometry || !matrix) return;
+    const arr = geometry.attributes?.position?.array;
+    if (!arr) return;
+    const v = new THREE.Vector3();
+    for (let i = 0; i < arr.length; i += 3) {
+        v.set(arr[i], arr[i + 1], arr[i + 2]).applyMatrix4(matrix);
+        dst.push(v.x, v.y, v.z);
+    }
+}
+
+function pointsEqualXZ(a, b, tol = 1e-6) {
+    if (!a || !b) return false;
+    return Math.abs(a.x - b.x) <= tol && Math.abs(a.z - b.z) <= tol;
+}
+
+function appendPointIfChanged(points, p, tol = 1e-6) {
+    const list = Array.isArray(points) ? points : null;
+    if (!list || !p) return;
+    const last = list[list.length - 1] ?? null;
+    if (last && pointsEqualXZ(last, p, tol)) return;
+    list.push(p);
+}
+
+function computeLoopBoundsXZ(loop) {
+    const pts = Array.isArray(loop) ? loop : [];
+    if (!pts.length) return null;
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (const p of pts) {
+        if (!p) continue;
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.z < minZ) minZ = p.z;
+        if (p.z > maxZ) maxZ = p.z;
+    }
+    if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minZ) || !Number.isFinite(maxZ)) return null;
+    return { minX, maxX, minZ, maxZ };
+}
+
+function isRectLikeLoopXZ(loop, { minX, maxX, minZ, maxZ }, { tol = 1e-4 } = {}) {
+    const pts = Array.isArray(loop) ? loop : [];
+    if (pts.length < 4) return false;
+    if (!(maxX - minX > EPS) || !(maxZ - minZ > EPS)) return false;
+
+    let hasMinX = false;
+    let hasMaxX = false;
+    let hasMinZ = false;
+    let hasMaxZ = false;
+    for (let i = 0; i < pts.length; i++) {
+        const a = pts[i];
+        const b = pts[(i + 1) % pts.length];
+        if (!a || !b) continue;
+        const dx = Math.abs(a.x - b.x);
+        const dz = Math.abs(a.z - b.z);
+        if (!(dx <= tol || dz <= tol)) return false;
+
+        if (Math.abs(a.x - minX) <= tol && Math.abs(b.x - minX) <= tol) hasMinX = true;
+        if (Math.abs(a.x - maxX) <= tol && Math.abs(b.x - maxX) <= tol) hasMaxX = true;
+        if (Math.abs(a.z - minZ) <= tol && Math.abs(b.z - minZ) <= tol) hasMinZ = true;
+        if (Math.abs(a.z - maxZ) <= tol && Math.abs(b.z - maxZ) <= tol) hasMaxZ = true;
+    }
+
+    return hasMinX && hasMaxX && hasMinZ && hasMaxZ;
+}
+
+function simplifyLoopConsecutiveCollinearXZ(loop, { tol = 1e-6 } = {}) {
+    const pts = Array.isArray(loop) ? loop : [];
+    if (pts.length < 4) return loop;
+
+    const out = [];
+    for (const p of pts) appendPointIfChanged(out, p, tol);
+    if (out.length < 4) return loop;
+
+    const simplified = [];
+    for (let i = 0; i < out.length; i++) {
+        const prev = out[(i - 1 + out.length) % out.length];
+        const curr = out[i];
+        const next = out[(i + 1) % out.length];
+        if (!prev || !curr || !next) continue;
+
+        const a = normalize2({ x: curr.x - prev.x, z: curr.z - prev.z });
+        const b = normalize2({ x: next.x - curr.x, z: next.z - curr.z });
+        if (!(a.len > EPS) || !(b.len > EPS)) continue;
+
+        const collinear = Math.abs(cross2(a, b)) < 1e-6 && dot2(a, b) > 0.999;
+        if (collinear) continue;
+        appendPointIfChanged(simplified, curr, tol);
+    }
+    return simplified.length >= 4 ? simplified : out;
+}
+
+function resolveFacadeLayoutItems(facade) {
+    const list = Array.isArray(facade?.layout?.items) ? facade.layout.items : [];
+    return list.filter((it) => it && typeof it === 'object');
+}
+
+function normalizeLayoutWidthFracs(items, { warnings = null, faceId = '' } = {}) {
+    const list = Array.isArray(items) ? items : [];
+    let sum = 0;
+    const fracs = list.map((it) => {
+        const next = clamp(it?.widthFrac, 0, 1);
+        sum += next;
+        return next;
+    });
+
+    if (!(sum > EPS)) {
+        if (warnings) warnings.push(`${faceId || 'Facade'}: layout has no width (sum=0).`);
+        return list.map((_it, idx) => ({ ...list[idx], widthFrac: 1 / Math.max(1, list.length) }));
+    }
+
+    if (Math.abs(sum - 1.0) > 1e-3 && warnings) warnings.push(`${faceId || 'Facade'}: layout widths sum to ${sum.toFixed(4)} (expected 1.0).`);
+    return list.map((it, idx) => ({ ...it, widthFrac: fracs[idx] / sum }));
+}
+
+function resolveFacadeWallMaterialSpec({ layerMaterial, facadeMaterial, bayMaterialOverride }) {
+    const bay = bayMaterialOverride && typeof bayMaterialOverride === 'object' ? bayMaterialOverride : null;
+    if (bay && (bay.kind === 'texture' || bay.kind === 'color') && typeof bay.id === 'string' && bay.id) return bay;
+    const facade = facadeMaterial && typeof facadeMaterial === 'object' ? facadeMaterial : null;
+    if (facade && (facade.kind === 'texture' || facade.kind === 'color') && typeof facade.id === 'string' && facade.id) return facade;
+    const layer = layerMaterial && typeof layerMaterial === 'object' ? layerMaterial : null;
+    if (layer && (layer.kind === 'texture' || layer.kind === 'color') && typeof layer.id === 'string' && layer.id) return layer;
+    return null;
+}
+
+function pointOnRectFacade({ faceId, minX, maxX, minZ, maxZ, u, depth }) {
+    const d = Number(depth) || 0;
+    const t = Number(u) || 0;
+    switch (faceId) {
+        case 'A': return { x: minX + t, y: 0, z: maxZ + d };
+        case 'B': return { x: maxX + d, y: 0, z: maxZ - t };
+        case 'C': return { x: maxX - t, y: 0, z: minZ - d };
+        case 'D': return { x: minX - d, y: 0, z: minZ + t };
+        default: return { x: minX + t, y: 0, z: maxZ + d };
+    }
+}
+
+function buildRectFacadeFaceProfile({
+    faceId,
+    minX,
+    maxX,
+    minZ,
+    maxZ,
+    facade,
+    layerMaterial,
+    faceLengthMeters,
+    warnings
+}) {
+    const faceLength = Number(faceLengthMeters) || 0;
+    if (!(faceLength > EPS)) {
+        if (warnings) warnings.push(`${faceId}: face length is invalid.`);
+        return { points: [], startDepth: 0.0, endDepth: 0.0, strips: [] };
+    }
+
+    const baseDepth = clampFacadeDepthMeters(facade?.depthOffset ?? 0.0);
+    const rawItems = resolveFacadeLayoutItems(facade);
+    const items = normalizeLayoutWidthFracs(rawItems.length ? rawItems : [{ type: 'padding', id: `${faceId}_pad`, widthFrac: 1.0 }], { warnings, faceId });
+
+    const strips = [];
+    const points = [];
+    let uCursor = 0.0;
+    let currentDepth = null;
+
+    for (let i = 0; i < items.length; i++) {
+        const it = items[i] ?? {};
+        const type = it?.type === 'padding' ? 'padding' : 'bay';
+        const id = typeof it?.id === 'string' && it.id ? it.id : `${faceId}_${type}_${i + 1}`;
+
+        const frac = clamp(it?.widthFrac, 0, 1);
+        const w = (i === items.length - 1) ? (faceLength - uCursor) : (frac * faceLength);
+        const widthMeters = Math.max(0, w);
+        const u0 = uCursor;
+        const u1 = uCursor + widthMeters;
+        uCursor = u1;
+
+        const isBay = type === 'bay';
+        const deltaDepth = isBay ? clampFacadeDepthMeters(it?.depthOffset ?? 0.0) : 0.0;
+        const wedgeAngleDeg = isBay ? normalizeWedgeAngleDeg(it?.wedgeAngleDeg) : 0;
+        const wantsWedge = isBay && wedgeAngleDeg > 0 && Math.abs(deltaDepth) > EPS;
+
+        if (isBay && wedgeAngleDeg > 0 && !(Math.abs(deltaDepth) > EPS) && warnings) {
+            warnings.push(`${faceId}:${id}: wedge angle set but depth is 0.`);
+        }
+
+        const boundaryDepth = baseDepth + (isBay && !wantsWedge ? deltaDepth : 0.0);
+        if (!points.length) {
+            appendPointIfChanged(points, pointOnRectFacade({ faceId, minX, maxX, minZ, maxZ, u: u0, depth: boundaryDepth }));
+            currentDepth = boundaryDepth;
+        } else if (currentDepth !== null && Math.abs(currentDepth - boundaryDepth) > 1e-6) {
+            appendPointIfChanged(points, pointOnRectFacade({ faceId, minX, maxX, minZ, maxZ, u: u0, depth: boundaryDepth }));
+            currentDepth = boundaryDepth;
+        }
+
+        let frontU0 = u0;
+        let frontU1 = u1;
+        if (wantsWedge) {
+            const absDepth = Math.abs(deltaDepth);
+            const rad = wedgeAngleDeg * (Math.PI / 180);
+            const tan = Math.tan(rad);
+            const dx = tan > EPS ? (absDepth / tan) : (widthMeters * 0.5);
+            const f0 = u0 + dx;
+            const f1 = u1 - dx;
+            if (f1 <= f0 + 1e-6) {
+                if (warnings) warnings.push(`${faceId}:${id}: wedge too narrow for depth (${widthMeters.toFixed(2)}m @ ${wedgeAngleDeg}°).`);
+            } else {
+                frontU0 = f0;
+                frontU1 = f1;
+            }
+        }
+
+        const resolvedMaterial = resolveFacadeWallMaterialSpec({
+            layerMaterial,
+            facadeMaterial: facade?.wallMaterial ?? null,
+            bayMaterialOverride: isBay ? (it?.wallMaterialOverride ?? null) : null
+        });
+
+        const frontDepth = baseDepth + (isBay ? deltaDepth : 0.0);
+        strips.push({ faceId, id, type, u0, u1, frontU0, frontU1, depth: frontDepth, material: resolvedMaterial });
+
+        if (wantsWedge && frontU1 > frontU0 + EPS) {
+            const dFront = baseDepth + deltaDepth;
+            appendPointIfChanged(points, pointOnRectFacade({ faceId, minX, maxX, minZ, maxZ, u: frontU0, depth: dFront }));
+            appendPointIfChanged(points, pointOnRectFacade({ faceId, minX, maxX, minZ, maxZ, u: frontU1, depth: dFront }));
+            appendPointIfChanged(points, pointOnRectFacade({ faceId, minX, maxX, minZ, maxZ, u: u1, depth: baseDepth }));
+            currentDepth = baseDepth;
+            continue;
+        }
+
+        const dRect = baseDepth + (isBay ? deltaDepth : 0.0);
+        appendPointIfChanged(points, pointOnRectFacade({ faceId, minX, maxX, minZ, maxZ, u: u1, depth: dRect }));
+        currentDepth = dRect;
+    }
+
+    const startDepth = points.length ? (
+        faceId === 'A' || faceId === 'C'
+            ? (faceId === 'A' ? (points[0].z - maxZ) : (minZ - points[0].z))
+            : (faceId === 'B' ? (points[0].x - maxX) : (minX - points[0].x))
+    ) : 0.0;
+
+    const last = points[points.length - 1] ?? null;
+    const endDepth = last ? (
+        faceId === 'A' || faceId === 'C'
+            ? (faceId === 'A' ? (last.z - maxZ) : (minZ - last.z))
+            : (faceId === 'B' ? (last.x - maxX) : (minX - last.x))
+    ) : startDepth;
+
+    return { points, startDepth, endDepth, strips };
+}
+
+function computeRectFacadeSilhouette({
+    wallOuter,
+    facades,
+    layerMaterial,
+    warnings
+} = {}) {
+    const outerList = Array.isArray(wallOuter) ? wallOuter : [];
+    const main = outerList[0] ?? null;
+    if (!main || main.length < 3) return null;
+
+    const bounds = computeLoopBoundsXZ(main);
+    if (!bounds) return null;
+
+    if (!isRectLikeLoopXZ(main, bounds)) {
+        if (warnings) warnings.push('Facade silhouette: building footprint is not a simple axis-aligned rectangle (A–D).');
+        return null;
+    }
+
+    const { minX, maxX, minZ, maxZ } = bounds;
+    const faceLengthX = maxX - minX;
+    const faceLengthZ = maxZ - minZ;
+
+    const fac = facades && typeof facades === 'object' ? facades : null;
+    const getFacade = (id) => (fac?.[id] && typeof fac[id] === 'object') ? fac[id] : null;
+
+    const A = buildRectFacadeFaceProfile({
+        faceId: 'A',
+        minX,
+        maxX,
+        minZ,
+        maxZ,
+        facade: getFacade('A'),
+        layerMaterial,
+        faceLengthMeters: faceLengthX,
+        warnings
+    });
+    const B = buildRectFacadeFaceProfile({
+        faceId: 'B',
+        minX,
+        maxX,
+        minZ,
+        maxZ,
+        facade: getFacade('B'),
+        layerMaterial,
+        faceLengthMeters: faceLengthZ,
+        warnings
+    });
+    const C = buildRectFacadeFaceProfile({
+        faceId: 'C',
+        minX,
+        maxX,
+        minZ,
+        maxZ,
+        facade: getFacade('C'),
+        layerMaterial,
+        faceLengthMeters: faceLengthX,
+        warnings
+    });
+    const D = buildRectFacadeFaceProfile({
+        faceId: 'D',
+        minX,
+        maxX,
+        minZ,
+        maxZ,
+        facade: getFacade('D'),
+        layerMaterial,
+        faceLengthMeters: faceLengthZ,
+        warnings
+    });
+
+    if (!A.points.length || !B.points.length || !C.points.length || !D.points.length) {
+        if (warnings) warnings.push('Facade silhouette: missing face profiles.');
+        return null;
+    }
+
+    const loop = [];
+    for (const p of A.points) appendPointIfChanged(loop, p);
+
+    appendPointIfChanged(loop, { x: maxX + B.startDepth, y: 0, z: maxZ + A.endDepth });
+    appendPointIfChanged(loop, { x: maxX + B.startDepth, y: 0, z: maxZ });
+    for (let i = 1; i < B.points.length; i++) appendPointIfChanged(loop, B.points[i]);
+
+    appendPointIfChanged(loop, { x: maxX + B.endDepth, y: 0, z: minZ - C.startDepth });
+    appendPointIfChanged(loop, { x: maxX, y: 0, z: minZ - C.startDepth });
+    for (let i = 1; i < C.points.length; i++) appendPointIfChanged(loop, C.points[i]);
+
+    appendPointIfChanged(loop, { x: minX - D.startDepth, y: 0, z: minZ - C.endDepth });
+    appendPointIfChanged(loop, { x: minX - D.startDepth, y: 0, z: minZ });
+    for (let i = 1; i < D.points.length; i++) appendPointIfChanged(loop, D.points[i]);
+
+    appendPointIfChanged(loop, { x: minX - D.endDepth, y: 0, z: maxZ + A.startDepth });
+
+    const simplified = simplifyLoopConsecutiveCollinearXZ(loop);
+    if (!simplified || simplified.length < 4) {
+        if (warnings) warnings.push('Facade silhouette: produced invalid loop.');
+        return null;
+    }
+
+    const area = signedArea(simplified);
+    const finalLoop = area < 0 ? simplified.slice().reverse() : simplified;
+    return {
+        bounds,
+        loop: finalLoop,
+        strips: [...A.strips, ...B.strips, ...C.strips, ...D.strips]
+    };
+}
+
 export function buildBuildingFabricationVisualParts({
     map,
     tiles,
@@ -924,6 +1298,8 @@ export function buildBuildingFabricationVisualParts({
     renderer = null,
     windowVisuals = null,
     windowVisualsIsOverride = false,
+    facades = null,
+    windowDefinitions = null,
     colors = null,
     overlays = null,
     walls = null
@@ -957,6 +1333,8 @@ export function buildBuildingFabricationVisualParts({
     const solidMeshes = [];
     const wirePositions = [];
     const floorPositions = [];
+    const warnings = [];
+    const facadeSolverDebug = {};
 
     const windowsGroup = new THREE.Group();
     windowsGroup.name = 'windows';
@@ -1055,6 +1433,51 @@ export function buildBuildingFabricationVisualParts({
     let yCursor = baseY;
     let firstFloorPendingExtra = extraFirstFloor;
 
+    const facadeSpec = facades && typeof facades === 'object' ? facades : null;
+    const wantsFacadeSilhouette = !!facadeSpec && ['A', 'B', 'C', 'D'].some((id) => !!facadeSpec?.[id]);
+    const wantsFacadePatterns = wantsFacadeSilhouette && ['A', 'B', 'C', 'D'].some((id) => !!facadeSpec?.[id]?.layout?.pattern);
+
+    const facadePatternTopologyByFaceId = new Map();
+    if (wantsFacadePatterns) {
+        let minFaceLengthX = Infinity;
+        let minFaceLengthZ = Infinity;
+        let probeLoops = footprintLoops;
+
+        for (const layer of safeLayers) {
+            if (layer?.type !== LAYER_TYPE.FLOOR) continue;
+            const planOffset = clamp(layer?.planOffset ?? 0.0, -8.0, 8.0);
+            const { all: planLoops } = applyPlanOffset({ loops: probeLoops, offset: planOffset });
+            const { outer: wallOuter } = applyWallInset({ loops: planLoops, inset: wallInset });
+            const main = Array.isArray(wallOuter) ? wallOuter[0] : null;
+            const bounds = main ? computeLoopBoundsXZ(main) : null;
+            if (bounds && isRectLikeLoopXZ(main, bounds)) {
+                minFaceLengthX = Math.min(minFaceLengthX, bounds.maxX - bounds.minX);
+                minFaceLengthZ = Math.min(minFaceLengthZ, bounds.maxZ - bounds.minZ);
+            }
+            probeLoops = planLoops.length ? planLoops : probeLoops;
+        }
+
+        for (const faceId of ['A', 'B', 'C', 'D']) {
+            const facade = facadeSpec?.[faceId] ?? null;
+            const pattern = facade?.layout?.pattern ?? null;
+            if (!pattern || typeof pattern !== 'object') continue;
+            const refLen = (faceId === 'A' || faceId === 'C') ? minFaceLengthX : minFaceLengthZ;
+            if (!Number.isFinite(refLen) || !(refLen > EPS)) continue;
+            const res = solveFacadeLayoutFillPattern({
+                pattern,
+                faceLengthMeters: refLen,
+                topology: null,
+                warnings
+            });
+            if (res?.topology) facadePatternTopologyByFaceId.set(faceId, res.topology);
+            facadeSolverDebug[faceId] = {
+                referenceFaceLengthMeters: refLen,
+                debug: res?.debug ?? null,
+                topology: res?.topology ?? null
+            };
+        }
+    }
+
     for (let layerIndex = 0; layerIndex < safeLayers.length; layerIndex++) {
         const layer = safeLayers[layerIndex];
         const type = layer?.type;
@@ -1063,6 +1486,9 @@ export function buildBuildingFabricationVisualParts({
             const { outer: planOuter, holes: planHoles, all: planLoops } = applyPlanOffset({ loops: currentLoops, offset: planOffset });
 
             const { outer: wallOuter, holes: wallHoles } = applyWallInset({ loops: planLoops, inset: wallInset });
+            let wallOuterFacade = wallOuter;
+            let facadeBounds = null;
+            let facadeStrips = null;
 
             const floors = clampInt(layer.floors, 0, 99);
             const floorHeight = clamp(layer.floorHeight, 1.0, 12.0);
@@ -1099,12 +1525,65 @@ export function buildBuildingFabricationVisualParts({
                 });
             }
 
+            if (wantsFacadeSilhouette && wallOuter.length) {
+                let resolvedFacadeSpec = facadeSpec;
+                const hasTopo = facadePatternTopologyByFaceId.size > 0;
+                if (hasTopo) {
+                    const main = wallOuter[0] ?? null;
+                    const bounds = main ? computeLoopBoundsXZ(main) : null;
+                    if (bounds && isRectLikeLoopXZ(main, bounds)) {
+                        const faceLengthX = bounds.maxX - bounds.minX;
+                        const faceLengthZ = bounds.maxZ - bounds.minZ;
+                        const next = {};
+                        for (const faceId of ['A', 'B', 'C', 'D']) {
+                            const srcFacade = (resolvedFacadeSpec?.[faceId] && typeof resolvedFacadeSpec[faceId] === 'object')
+                                ? resolvedFacadeSpec[faceId]
+                                : null;
+                            const pattern = srcFacade?.layout?.pattern ?? null;
+                            const topology = facadePatternTopologyByFaceId.get(faceId) ?? null;
+                            if (pattern && topology && Number.isFinite(faceLengthX) && Number.isFinite(faceLengthZ)) {
+                                const len = (faceId === 'A' || faceId === 'C') ? faceLengthX : faceLengthZ;
+                                const solved = solveFacadeLayoutFillPattern({
+                                    pattern,
+                                    faceLengthMeters: len,
+                                    topology,
+                                    warnings
+                                });
+                                next[faceId] = {
+                                    ...srcFacade,
+                                    layout: {
+                                        ...(srcFacade?.layout ?? {}),
+                                        items: Array.isArray(solved?.items) ? solved.items : (srcFacade?.layout?.items ?? [])
+                                    }
+                                };
+                            } else if (srcFacade) {
+                                next[faceId] = srcFacade;
+                            }
+                        }
+                        resolvedFacadeSpec = next;
+                    }
+                }
+                const res = computeRectFacadeSilhouette({
+                    wallOuter,
+                    facades: resolvedFacadeSpec,
+                    layerMaterial: layer.material,
+                    warnings
+                });
+                if (res?.loop?.length) {
+                    wallOuterFacade = [res.loop];
+                    facadeBounds = res.bounds ?? null;
+                    facadeStrips = Array.isArray(res.strips) ? res.strips : null;
+                } else {
+                    warnings.push('Facade silhouette: falling back to inset wall loop.');
+                }
+            }
+
             const beltCfg = layer.belt ?? {};
             const beltEnabled = !!beltCfg.enabled;
             const beltHeight = beltEnabled ? clamp(beltCfg.height, 0.02, 1.2) : 0.0;
             const beltExtrusion = beltEnabled ? clamp(beltCfg.extrusion, 0.0, 4.0) : 0.0;
-            const beltOffset = wallInset - beltExtrusion;
-            const { outer: beltOuter, holes: beltHoles } = applyPlanOffset({ loops: planLoops, offset: beltOffset });
+            const beltOuter = wallOuterFacade.map((loop) => (beltExtrusion > EPS ? offsetOrthogonalLoopXZ(loop, -beltExtrusion) : loop));
+            const beltHoles = wallHoles;
             const beltMat = makeBeltLikeMaterialFromSpec({
                 material: beltCfg.material,
                 baseColorHex,
@@ -1188,8 +1667,8 @@ export function buildBuildingFabricationVisualParts({
             }), reflectiveCfg, { isOverride: glassIsOverride }) : null;
 
             const windowRuns = [];
-            if (winEnabled && windowMat && wallOuter.length) {
-                for (const loop of wallOuter) {
+            if (winEnabled && windowMat && wallOuterFacade.length) {
+                for (const loop of wallOuterFacade) {
                     if (!loop || loop.length < 2) continue;
                     const runs = buildExteriorRunsFromLoop(loop);
                     for (const run of runs) {
@@ -1245,7 +1724,7 @@ export function buildBuildingFabricationVisualParts({
                 }
 
                 if (totalWallHeight > EPS) {
-                    for (const outerLoop of wallOuter) {
+                    for (const outerLoop of wallOuterFacade) {
                         if (!outerLoop || outerLoop.length < 3) continue;
                         const shape = buildShapeFromLoops({ outerLoop, holeLoops: wallHoles });
                         let geo = new THREE.ExtrudeGeometry(shape, {
@@ -1270,6 +1749,130 @@ export function buildBuildingFabricationVisualParts({
                             const edgeGeo = new THREE.EdgesGeometry(geo, 1);
                             appendWirePositions(wirePositions, edgeGeo, layerStartY);
                             edgeGeo.dispose();
+                        }
+                    }
+
+                    if (wantsFacadeSilhouette && facadeBounds && Array.isArray(facadeStrips) && facadeStrips.length) {
+                        const materialKey = (spec) => {
+                            const m = spec && typeof spec === 'object' ? spec : null;
+                            const kind = m?.kind;
+                            const id = typeof m?.id === 'string' ? m.id : '';
+                            return (kind === 'texture' || kind === 'color') && id ? `${kind}:${id}` : '';
+                        };
+                        const baseKey = materialKey(layer.material);
+                        const cache = new Map();
+                        const getFacadeMaterial = (materialSpec) => {
+                            const key = materialKey(materialSpec);
+                            if (!key) return null;
+                            const existing = cache.get(key) ?? null;
+                            if (existing) return existing;
+
+                            const mat = makeWallMaterialFromSpec({
+                                material: materialSpec,
+                                baseColorHex,
+                                textureCache,
+                                wallBase: layer?.wallBase ?? null
+                            });
+
+                            const styleId = materialSpec?.kind === 'texture' ? materialSpec.id : null;
+                            if (styleId) {
+                                const urls = resolveBuildingStyleWallMaterialUrls(styleId);
+                                const uvCfg = computeUvTilingParams({ tiling: wallTiling, urls, styleId });
+                                if (uvCfg.apply) {
+                                    applyUvTilingToMeshStandardMaterial(mat, {
+                                        scaleU: uvCfg.scaleU,
+                                        scaleV: uvCfg.scaleV,
+                                        offsetU: uvCfg.offsetU,
+                                        offsetV: uvCfg.offsetV,
+                                        rotationDegrees: uvCfg.rotationDegrees
+                                    });
+                                }
+                            }
+
+                            if (wallMatVar?.enabled) {
+                                applyMaterialVariationToMeshStandardMaterial(mat, {
+                                    seed: matVarSeed,
+                                    seedOffset: clampInt(wallMatVar?.seedOffset ?? 0, -9999, 9999),
+                                    heightMin: baseY,
+                                    heightMax: matVarHeightMax,
+                                    config: wallMatVar,
+                                    root: MATERIAL_VARIATION_ROOT.WALL,
+                                    cornerDist: true
+                                });
+                            }
+
+                            cache.set(key, mat);
+                            return mat;
+                        };
+
+                        const { minX, maxX, minZ, maxZ } = facadeBounds;
+                        const yCenter = layerStartY + totalWallHeight * 0.5;
+                        const yOffset = layerStartY - baseY;
+                        const lift = 0.002;
+
+                        for (const strip of facadeStrips) {
+                            const faceId = strip?.faceId;
+                            const resolvedSpec = strip?.material ?? null;
+                            const key = materialKey(resolvedSpec);
+                            if (!key || (baseKey && key === baseKey)) continue;
+                            const u0 = Number(strip?.frontU0) || 0;
+                            const u1 = Number(strip?.frontU1) || 0;
+                            const w = u1 - u0;
+                            if (!(w > 1e-5)) continue;
+                            const uMid = (u0 + u1) * 0.5;
+                            const depth = Number(strip?.depth) || 0;
+
+                            let cx = 0;
+                            let cz = 0;
+                            let yaw = 0;
+                            if (faceId === 'A') {
+                                cx = minX + uMid;
+                                cz = maxZ + depth + lift;
+                                yaw = 0;
+                            } else if (faceId === 'B') {
+                                cx = maxX + depth + lift;
+                                cz = maxZ - uMid;
+                                yaw = -Math.PI / 2;
+                            } else if (faceId === 'C') {
+                                cx = maxX - uMid;
+                                cz = minZ - depth - lift;
+                                yaw = Math.PI;
+                            } else if (faceId === 'D') {
+                                cx = minX - depth - lift;
+                                cz = minZ + uMid;
+                                yaw = Math.PI / 2;
+                            } else continue;
+
+                            const mat = getFacadeMaterial(resolvedSpec);
+                            if (!mat) continue;
+
+                            const geo = new THREE.PlaneGeometry(w, totalWallHeight);
+                            const uv = geo.getAttribute('uv');
+                            if (uv?.getX && uv?.getY && uv?.setX && uv?.setY) {
+                                for (let i = 0; i < uv.count; i++) {
+                                    uv.setX(i, uv.getX(i) * w);
+                                    uv.setY(i, uv.getY(i) * totalWallHeight + yOffset);
+                                }
+                                uv.needsUpdate = true;
+                            }
+                            geo.computeVertexNormals();
+
+                            const mesh = new THREE.Mesh(geo, mat);
+                            mesh.position.set(cx, yCenter, cz);
+                            mesh.rotation.set(0, yaw, 0);
+                            mesh.castShadow = true;
+                            mesh.receiveShadow = true;
+                            mesh.userData = mesh.userData ?? {};
+                            mesh.userData.buildingFacadeFaceId = faceId;
+                            mesh.userData.buildingFacadeItemId = strip?.id ?? null;
+                            solidMeshes.push(mesh);
+
+                            if (showWire) {
+                                mesh.updateMatrix();
+                                const edgeGeo = new THREE.EdgesGeometry(geo, 1);
+                                appendWirePositionsTransformed(wirePositions, edgeGeo, mesh.matrix);
+                                edgeGeo.dispose();
+                            }
                         }
                     }
                 }
@@ -1460,10 +2063,64 @@ export function buildBuildingFabricationVisualParts({
                 });
             }
 
-            const { outer: planOuter, holes: planHoles } = splitLoops(currentLoops);
-            for (const outerLoop of planOuter) {
+            const { outer: roofWallOuter, holes: roofWallHoles } = applyWallInset({ loops: currentLoops, inset: wallInset });
+
+            let roofOuter = roofWallOuter;
+            let roofHoles = roofWallHoles;
+            if (wantsFacadeSilhouette && roofWallOuter.length) {
+                let resolvedFacadeSpec = facadeSpec;
+                const hasTopo = facadePatternTopologyByFaceId.size > 0;
+                if (hasTopo) {
+                    const main = roofWallOuter[0] ?? null;
+                    const bounds = main ? computeLoopBoundsXZ(main) : null;
+                    if (bounds && isRectLikeLoopXZ(main, bounds)) {
+                        const faceLengthX = bounds.maxX - bounds.minX;
+                        const faceLengthZ = bounds.maxZ - bounds.minZ;
+                        const next = {};
+                        for (const faceId of ['A', 'B', 'C', 'D']) {
+                            const srcFacade = (resolvedFacadeSpec?.[faceId] && typeof resolvedFacadeSpec[faceId] === 'object')
+                                ? resolvedFacadeSpec[faceId]
+                                : null;
+                            const pattern = srcFacade?.layout?.pattern ?? null;
+                            const topology = facadePatternTopologyByFaceId.get(faceId) ?? null;
+                            if (pattern && topology && Number.isFinite(faceLengthX) && Number.isFinite(faceLengthZ)) {
+                                const len = (faceId === 'A' || faceId === 'C') ? faceLengthX : faceLengthZ;
+                                const solved = solveFacadeLayoutFillPattern({
+                                    pattern,
+                                    faceLengthMeters: len,
+                                    topology,
+                                    warnings
+                                });
+                                next[faceId] = {
+                                    ...srcFacade,
+                                    layout: {
+                                        ...(srcFacade?.layout ?? {}),
+                                        items: Array.isArray(solved?.items) ? solved.items : (srcFacade?.layout?.items ?? [])
+                                    }
+                                };
+                            } else if (srcFacade) {
+                                next[faceId] = srcFacade;
+                            }
+                        }
+                        resolvedFacadeSpec = next;
+                    }
+                }
+                const res = computeRectFacadeSilhouette({
+                    wallOuter: roofWallOuter,
+                    facades: resolvedFacadeSpec,
+                    layerMaterial: null,
+                    warnings
+                });
+                if (res?.loop?.length) {
+                    roofOuter = [res.loop];
+                } else {
+                    warnings.push('Roof silhouette: falling back to inset wall loop.');
+                }
+            }
+
+            for (const outerLoop of roofOuter) {
                 if (!outerLoop || outerLoop.length < 3) continue;
-                const shape = buildShapeFromLoops({ outerLoop, holeLoops: planHoles });
+                const shape = buildShapeFromLoops({ outerLoop, holeLoops: roofHoles });
                 const geo = new THREE.ShapeGeometry(shape);
                 geo.rotateX(-Math.PI / 2);
                 geo.computeVertexNormals();
@@ -1509,7 +2166,7 @@ export function buildBuildingFabricationVisualParts({
                     }
                 }
 
-                for (const outerLoop of planOuter) {
+                for (const outerLoop of roofOuter) {
                     if (!outerLoop || outerLoop.length < 3) continue;
                     const outerLoopExpanded = outerRadius > EPS ? offsetOrthogonalLoopXZ(outerLoop, -outerRadius) : outerLoop;
                     const innerLoopInset = innerRadius > EPS ? offsetOrthogonalLoopXZ(outerLoop, innerRadius) : outerLoop;
@@ -1667,6 +2324,8 @@ export function buildBuildingFabricationVisualParts({
     return {
         baseColorHex,
         solidMeshes,
+        warnings: warnings.length ? warnings.slice() : null,
+        facadeSolverDebug: Object.keys(facadeSolverDebug).length ? facadeSolverDebug : null,
         wire,
         plan,
         border,

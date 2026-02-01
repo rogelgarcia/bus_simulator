@@ -23,6 +23,11 @@ import { createRoadEngineRoads } from '../../visuals/city/RoadEngineRoads.js';
 import { BuildingWallTextureCache, buildBuildingVisualParts } from '../../assets3d/generators/buildings/BuildingGenerator.js';
 import { buildBuildingFabricationVisualParts } from '../../assets3d/generators/building_fabrication/BuildingFabricationGenerator.js';
 import { cloneBuildingLayers, createDefaultFloorLayer, createDefaultRoofLayer, normalizeBuildingLayers } from '../../assets3d/generators/building_fabrication/BuildingFabricationTypes.js';
+import {
+    createLegacyWindowSpacingFacadeFillPattern,
+    createLegacyWindowSpacingOnlyFacadeFillPattern,
+    solveFacadeLayoutFillPattern
+} from '../../assets3d/generators/building_fabrication/FacadeLayoutFillSolver.js';
 import { getCityMaterials } from '../../assets3d/textures/CityMaterials.js';
 import { createRoadHighlightMesh } from '../../visuals/city/RoadHighlightMesh.js';
 import { ToolCameraController } from '../../engine3d/camera/ToolCameraController.js';
@@ -30,6 +35,7 @@ import { getBuildingConfigById } from '../../content3d/catalogs/BuildingConfigCa
 import { getResolvedBuildingWindowVisualsSettings } from '../../visuals/buildings/BuildingWindowVisualsSettings.js';
 import { azimuthElevationDegToDir } from '../../visuals/atmosphere/SunDirection.js';
 import { updateMaterialVariationDebugOnMeshStandardMaterial } from '../../assets3d/materials/MaterialVariationSystem.js';
+import { getDefaultWindowMeshSettings, sanitizeWindowMeshSettings } from '../../../app/buildings/window_mesh/index.js';
 
 const QUANT = 1000;
 const ROAD_LANES_F = 1;
@@ -48,6 +54,16 @@ const ROAD_HIGHLIGHT_PAD_TILE_FRACTION = 0.18;
 const ROAD_HIGHLIGHT_PAD_LANE_FACTOR = 0.6;
 const ROAD_HIGHLIGHT_PAD_CURB_FACTOR = 2.4;
 const ROAD_HIGHLIGHT_PAD_MIN = 1.2;
+
+const FACE_IDS_RECT = Object.freeze(['A', 'B', 'C', 'D']);
+const FACE_HIGHLIGHT_COLOR = 0x64d2ff;
+const FACE_HIGHLIGHT_OPACITY = 0.85;
+const FACE_HIGHLIGHT_LINEWIDTH = 6;
+const FACE_HIGHLIGHT_Y_LIFT = 0.075;
+const MIN_FACADE_BAY_WIDTH_M = 1.0;
+const MIN_FACADE_PADDING_WIDTH_M = 0.25;
+const WEDGE_ANGLE_STEP_DEG = 15;
+const WEDGE_ANGLE_MAX_DEG = 75;
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -131,16 +147,16 @@ function tileIdFromXY(x, y) {
     return `${x},${y}`;
 }
 
-export function getHighestIndex3x2FootprintTileIds(gridSize) {
+export function getCentered2x1FootprintTileIds(gridSize) {
     const size = Math.round(Number(gridSize));
-    if (!Number.isFinite(size) || size < 3) return [];
+    if (!Number.isFinite(size) || size < 1) return [];
 
-    const footprintW = 3;
-    const footprintH = 2;
+    const footprintW = 2;
+    const footprintH = 1;
     if (size < footprintW || size < footprintH) return [];
 
-    const startX = size - footprintW;
-    const startY = size - footprintH;
+    const startX = Math.floor((size - footprintW) * 0.5);
+    const startY = Math.floor((size - footprintH) * 0.5);
     const tiles = [];
     for (let y = startY; y < startY + footprintH; y++) {
         for (let x = startX; x < startX + footprintW; x++) {
@@ -148,6 +164,27 @@ export function getHighestIndex3x2FootprintTileIds(gridSize) {
         }
     }
     return tiles;
+}
+
+function isFaceId(faceId) {
+    return faceId === 'A' || faceId === 'B' || faceId === 'C' || faceId === 'D';
+}
+
+function getMirroredFaceId(faceId) {
+    switch (faceId) {
+        case 'A': return 'C';
+        case 'C': return 'A';
+        case 'B': return 'D';
+        case 'D': return 'B';
+        default: return null;
+    }
+}
+
+function normalizeWedgeAngleDeg(value) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return 0;
+    const snapped = Math.round(num / WEDGE_ANGLE_STEP_DEG) * WEDGE_ANGLE_STEP_DEG;
+    return clampInt(snapped, 0, WEDGE_ANGLE_MAX_DEG);
 }
 
 function normalizeDir(x, y) {
@@ -238,8 +275,6 @@ export class BuildingFabricationScene {
         this._selectionPlanGroup = null;
 
         this._selectedBuildingId = null;
-        this._hoveredBuildingId = null;
-        this._hideSelectionBorder = false;
 
         this._roadModeEnabled = false;
         this._roadStartTileId = null;
@@ -257,6 +292,9 @@ export class BuildingFabricationScene {
         this._wallTextures = new BuildingWallTextureCache({ renderer: this.engine?.renderer ?? null });
         this._buildingWindowVisuals = getResolvedBuildingWindowVisualsSettings();
         this._materialVariationDebug = null;
+
+        this._selectedFaceId = 'A';
+        this._faceMirrorLockEnabled = true;
     }
 
     enter() {
@@ -295,6 +333,7 @@ export class BuildingFabricationScene {
         this._setupRoadHighlight();
         this._buildCamera();
         this._applyAtmosphere();
+        this._resetToSingleBuilding();
     }
 
     dispose() {
@@ -442,6 +481,578 @@ export class BuildingFabricationScene {
         return this._buildings.find((b) => b.id === this._selectedBuildingId) ?? null;
     }
 
+    getFaceIds() {
+        return FACE_IDS_RECT.slice();
+    }
+
+    getSelectedFaceId() {
+        return this._selectedFaceId;
+    }
+
+    setSelectedFaceId(faceId) {
+        const next = isFaceId(faceId) ? faceId : 'A';
+        if (next === this._selectedFaceId) return;
+        this._selectedFaceId = next;
+        this._syncSelectedBuildingFaceHighlight();
+    }
+
+    getFaceMirrorLockEnabled() {
+        return this._faceMirrorLockEnabled;
+    }
+
+    setFaceMirrorLockEnabled(enabled) {
+        const next = !!enabled;
+        if (next === this._faceMirrorLockEnabled) return;
+        this._faceMirrorLockEnabled = next;
+
+        if (!next) return;
+        const building = this.getSelectedBuilding();
+        if (!building?.facades) return;
+
+        const preferred = this._selectedFaceId;
+        const resolvePreferred = (a, b) => (preferred === a || preferred === b) ? preferred : a;
+
+        const syncPair = (a, b) => {
+            const sourceId = resolvePreferred(a, b);
+            const dstId = sourceId === a ? b : a;
+            const src = building.facades[sourceId];
+            if (!src) return;
+            building.facades[dstId] = deepClone(src);
+        };
+
+        syncPair('A', 'C');
+        syncPair('B', 'D');
+    }
+
+    getFaceEditorState() {
+        const building = this.getSelectedBuilding();
+        const selectedFaceId = this._selectedFaceId;
+        const facade = building?.facades?.[selectedFaceId] ?? null;
+        const faceLengthMeters = building ? this._getFaceLengthMeters(building, selectedFaceId) : null;
+        const validation = facade && Number.isFinite(faceLengthMeters)
+            ? this._validateFacadeLayout(facade, faceLengthMeters, { building })
+            : null;
+        return {
+            faceIds: this.getFaceIds(),
+            selectedFaceId,
+            mirrorLockEnabled: this._faceMirrorLockEnabled,
+            faceLengthMeters: Number.isFinite(faceLengthMeters) ? faceLengthMeters : null,
+            validation: validation ? deepClone(validation) : null,
+            generationWarnings: Array.isArray(building?.generationWarnings) ? building.generationWarnings.slice() : null,
+            facadeSolverDebug: building?.generationFacadeSolverDebug?.[selectedFaceId] ?? null,
+            facade: facade ? deepClone(facade) : null,
+            windowDefinitions: building?.windowDefinitions ? deepClone(building.windowDefinitions) : null
+        };
+    }
+
+    setSelectedFaceWallMaterial(materialSpec) {
+        const building = this.getSelectedBuilding();
+        if (!building?.facades) return false;
+        const faceId = this._selectedFaceId;
+        const current = building.facades[faceId] ?? null;
+        if (!current) return false;
+        if (!materialSpec || typeof materialSpec !== 'object') return false;
+        const kind = materialSpec.kind;
+        const id = materialSpec.id;
+        if ((kind !== 'texture' && kind !== 'color') || typeof id !== 'string' || !id) return false;
+
+        current.wallMaterial = deepClone({ kind, id });
+        this._syncMirroredFacadeIfLocked(building, faceId);
+        return true;
+    }
+
+    setSelectedFaceDepthOffset(offset) {
+        const building = this.getSelectedBuilding();
+        if (!building?.facades) return false;
+        const faceId = this._selectedFaceId;
+        const current = building.facades[faceId] ?? null;
+        if (!current) return false;
+        const next = clamp(offset, -2.0, 2.0);
+        if (Math.abs(next - (Number(current.depthOffset) || 0)) < 1e-6) return false;
+        current.depthOffset = next;
+        this._syncMirroredFacadeIfLocked(building, faceId);
+        return true;
+    }
+
+    addSelectedFaceFacadeBay({ type = 'bay' } = {}) {
+        return this._addSelectedFaceLayoutItem({ type });
+    }
+
+    addSelectedFaceFacadePadding() {
+        return this._addSelectedFaceLayoutItem({ type: 'padding' });
+    }
+
+    removeSelectedFaceFacadeItem(itemId) {
+        const building = this.getSelectedBuilding();
+        if (!building?.facades) return false;
+        const faceId = this._selectedFaceId;
+        const facade = building.facades[faceId] ?? null;
+        const layout = facade?.layout ?? null;
+        const items = Array.isArray(layout?.items) ? layout.items : null;
+        if (!facade || !items || !items.length) return false;
+
+        const idx = items.findIndex((it) => it?.id === itemId);
+        if (idx < 0) return false;
+
+        if (items.length <= 1) return false;
+
+        const removing = items[idx];
+        const isBay = removing?.type === 'bay';
+        if (isBay) {
+            const bayCount = items.filter((it) => it?.type === 'bay').length;
+            if (bayCount <= 1) return false;
+        }
+
+        const removedFrac = clamp(removing?.widthFrac, 0, 1);
+        const leftIdx = idx - 1;
+        const hadRight = idx + 1 < items.length;
+        items.splice(idx, 1);
+
+        if (items.length === 1) {
+            items[0].widthFrac = 1.0;
+            this._syncMirroredFacadeIfLocked(building, faceId);
+            return true;
+        }
+
+        if (leftIdx >= 0 && hadRight) {
+            const shareLeft = removedFrac * 0.5;
+            const shareRight = removedFrac - shareLeft;
+            items[leftIdx].widthFrac = clamp((Number(items[leftIdx].widthFrac) || 0) + shareLeft, 0, 1);
+            items[idx].widthFrac = clamp((Number(items[idx].widthFrac) || 0) + shareRight, 0, 1);
+        } else if (leftIdx >= 0) {
+            items[leftIdx].widthFrac = clamp((Number(items[leftIdx].widthFrac) || 0) + removedFrac, 0, 1);
+        } else {
+            items[0].widthFrac = clamp((Number(items[0].widthFrac) || 0) + removedFrac, 0, 1);
+        }
+
+        this._normalizeLayoutWidthFractions(items);
+        this._syncMirroredFacadeIfLocked(building, faceId);
+        return true;
+    }
+
+    moveSelectedFaceFacadeItem(itemId, direction) {
+        const dir = direction === 'down' ? 'down' : 'up';
+        const building = this.getSelectedBuilding();
+        if (!building?.facades) return false;
+        const faceId = this._selectedFaceId;
+        const facade = building.facades[faceId] ?? null;
+        const items = Array.isArray(facade?.layout?.items) ? facade.layout.items : null;
+        if (!items || items.length < 2) return false;
+
+        const idx = items.findIndex((it) => it?.id === itemId);
+        if (idx < 0) return false;
+        const nextIdx = dir === 'down' ? idx + 1 : idx - 1;
+        if (nextIdx < 0 || nextIdx >= items.length) return false;
+
+        const tmp = items[idx];
+        items[idx] = items[nextIdx];
+        items[nextIdx] = tmp;
+        this._syncMirroredFacadeIfLocked(building, faceId);
+        return true;
+    }
+
+    setSelectedFaceFacadeItemWidth(itemId, widthMeters) {
+        const building = this.getSelectedBuilding();
+        if (!building?.facades) return false;
+        const faceId = this._selectedFaceId;
+        const facade = building.facades[faceId] ?? null;
+        const items = Array.isArray(facade?.layout?.items) ? facade.layout.items : null;
+        if (!items || !items.length) return false;
+
+        const faceLength = this._getFaceLengthMeters(building, faceId);
+        if (!Number.isFinite(faceLength) || faceLength <= EPS) return false;
+
+        const idx = items.findIndex((it) => it?.id === itemId);
+        if (idx < 0) return false;
+        if (items.length === 1) return false;
+
+        const minFracs = items.map((it) => this._minWidthMetersForLayoutItem(it, faceLength, { building }) / faceLength);
+        const minFrac = clamp(minFracs[idx], 0, 1);
+        let sumOthersMin = 0;
+        for (let i = 0; i < minFracs.length; i++) {
+            if (i === idx) continue;
+            sumOthersMin += clamp(minFracs[i], 0, 1);
+        }
+        const maxFrac = clamp(1.0 - sumOthersMin, minFrac, 1.0);
+
+        const desired = clamp(widthMeters, 0, faceLength);
+        const nextFracRaw = desired / faceLength;
+        const nextFrac = clamp(nextFracRaw, minFrac, maxFrac);
+
+        const currentFrac = clamp(items[idx]?.widthFrac, 0, 1);
+        if (Math.abs(nextFrac - currentFrac) < 1e-8) return false;
+
+        const delta = nextFrac - currentFrac;
+        items[idx].widthFrac = nextFrac;
+
+        const leftIndices = [];
+        const rightIndices = [];
+        for (let i = idx - 1; i >= 0; i--) leftIndices.push(i);
+        for (let i = idx + 1; i < items.length; i++) rightIndices.push(i);
+
+        const shrink = (indices, amount) => {
+            let remaining = amount;
+            for (const j of indices) {
+                if (!(remaining > 1e-10)) break;
+                const cur = clamp(items[j]?.widthFrac, 0, 1);
+                const min = clamp(minFracs[j], 0, 1);
+                const avail = cur - min;
+                if (!(avail > 1e-10)) continue;
+                const take = Math.min(avail, remaining);
+                items[j].widthFrac = cur - take;
+                remaining -= take;
+            }
+            return remaining;
+        };
+
+        if (delta > 0) {
+            let remaining = delta;
+            if (leftIndices.length && rightIndices.length) {
+                const half = remaining * 0.5;
+                const remLeft = shrink(leftIndices, half);
+                const remRight = shrink(rightIndices, half);
+                remaining = remLeft + remRight;
+            } else if (leftIndices.length) {
+                remaining = shrink(leftIndices, remaining);
+            } else if (rightIndices.length) {
+                remaining = shrink(rightIndices, remaining);
+            }
+
+            if (remaining > 1e-8) {
+                const cap = (indices) => indices.reduce((sum, j) => sum + Math.max(0, clamp(items[j]?.widthFrac, 0, 1) - clamp(minFracs[j], 0, 1)), 0);
+                const capLeft = cap(leftIndices);
+                const capRight = cap(rightIndices);
+                if (capLeft >= capRight) {
+                    remaining = shrink(leftIndices, remaining);
+                    remaining = shrink(rightIndices, remaining);
+                } else {
+                    remaining = shrink(rightIndices, remaining);
+                    remaining = shrink(leftIndices, remaining);
+                }
+            }
+
+            if (remaining > 1e-6) {
+                const back = delta - remaining;
+                items[idx].widthFrac = currentFrac + back;
+            }
+        } else {
+            const extra = -delta;
+            const left = idx - 1;
+            const right = idx + 1;
+            if (left >= 0 && right < items.length) {
+                const shareLeft = extra * 0.5;
+                const shareRight = extra - shareLeft;
+                items[left].widthFrac = clamp((Number(items[left].widthFrac) || 0) + shareLeft, 0, 1);
+                items[right].widthFrac = clamp((Number(items[right].widthFrac) || 0) + shareRight, 0, 1);
+            } else if (left >= 0) {
+                items[left].widthFrac = clamp((Number(items[left].widthFrac) || 0) + extra, 0, 1);
+            } else if (right < items.length) {
+                items[right].widthFrac = clamp((Number(items[right].widthFrac) || 0) + extra, 0, 1);
+            }
+        }
+
+        this._normalizeLayoutWidthFractions(items);
+        this._syncMirroredFacadeIfLocked(building, faceId);
+        return true;
+    }
+
+    setSelectedFaceFacadeBayWallMaterialOverride(itemId, materialSpec) {
+        const building = this.getSelectedBuilding();
+        if (!building?.facades) return false;
+        const faceId = this._selectedFaceId;
+        const facade = building.facades[faceId] ?? null;
+        const items = Array.isArray(facade?.layout?.items) ? facade.layout.items : null;
+        if (!items) return false;
+
+        const bay = items.find((it) => it?.id === itemId) ?? null;
+        if (!bay || bay.type !== 'bay') return false;
+
+        let next = null;
+        if (materialSpec !== null && materialSpec !== undefined) {
+            if (!materialSpec || typeof materialSpec !== 'object') return false;
+            const kind = materialSpec.kind;
+            const id = materialSpec.id;
+            if ((kind !== 'texture' && kind !== 'color') || typeof id !== 'string' || !id) return false;
+            next = { kind, id };
+        }
+
+        const prev = bay.wallMaterialOverride ?? null;
+        const changed = (prev?.kind ?? null) !== (next?.kind ?? null) || (prev?.id ?? null) !== (next?.id ?? null);
+        if (!changed) return false;
+
+        bay.wallMaterialOverride = next ? deepClone(next) : null;
+        this._syncMirroredFacadeIfLocked(building, faceId);
+        return true;
+    }
+
+    setSelectedFaceFacadeBayDepthOffset(itemId, offset) {
+        const building = this.getSelectedBuilding();
+        if (!building?.facades) return false;
+        const faceId = this._selectedFaceId;
+        const facade = building.facades[faceId] ?? null;
+        const items = Array.isArray(facade?.layout?.items) ? facade.layout.items : null;
+        if (!items) return false;
+
+        const bay = items.find((it) => it?.id === itemId) ?? null;
+        if (!bay || bay.type !== 'bay') return false;
+
+        const next = clamp(offset, -2.0, 2.0);
+        const prev = Number(bay.depthOffset) || 0;
+        if (Math.abs(next - prev) < 1e-6) return false;
+        bay.depthOffset = next;
+
+        const faceLength = this._getFaceLengthMeters(building, faceId);
+        if (Number.isFinite(faceLength) && faceLength > EPS) {
+            const required = this._minWidthMetersForLayoutItem(bay, faceLength, { building });
+            const width = this._getLayoutItemWidthMeters(bay, faceLength);
+            if (width + 1e-6 < required) {
+                this.setSelectedFaceFacadeItemWidth(itemId, required);
+            }
+        }
+
+        this._syncMirroredFacadeIfLocked(building, faceId);
+        return true;
+    }
+
+    setSelectedFaceFacadeBayWedgeAngleDeg(itemId, wedgeAngleDeg) {
+        const building = this.getSelectedBuilding();
+        if (!building?.facades) return false;
+        const faceId = this._selectedFaceId;
+        const facade = building.facades[faceId] ?? null;
+        const items = Array.isArray(facade?.layout?.items) ? facade.layout.items : null;
+        if (!items) return false;
+
+        const bay = items.find((it) => it?.id === itemId) ?? null;
+        if (!bay || bay.type !== 'bay') return false;
+
+        const next = normalizeWedgeAngleDeg(wedgeAngleDeg);
+        const prev = normalizeWedgeAngleDeg(bay.wedgeAngleDeg);
+        if (next === prev) return false;
+        bay.wedgeAngleDeg = next;
+
+        const faceLength = this._getFaceLengthMeters(building, faceId);
+        if (Number.isFinite(faceLength) && faceLength > EPS) {
+            const required = this._minWidthMetersForLayoutItem(bay, faceLength, { building });
+            const width = this._getLayoutItemWidthMeters(bay, faceLength);
+            if (width + 1e-6 < required) {
+                this.setSelectedFaceFacadeItemWidth(itemId, required);
+            }
+        }
+
+        this._syncMirroredFacadeIfLocked(building, faceId);
+        return true;
+    }
+
+    createSelectedBuildingWindowDefinition({ cloneFromId = null } = {}) {
+        const building = this.getSelectedBuilding();
+        if (!building) return null;
+
+        building.windowDefinitions ??= {};
+        const lib = building.windowDefinitions;
+        lib.items ??= [];
+        lib.nextWindowIndex = clampInt(lib.nextWindowIndex ?? 1, 1, 9999);
+
+        const existing = new Set();
+        for (const entry of lib.items) {
+            const id = typeof entry?.id === 'string' ? entry.id : '';
+            if (id) existing.add(id);
+        }
+
+        let idx = lib.nextWindowIndex;
+        let id = '';
+        while (idx < 100000) {
+            const candidate = `win_${idx}`;
+            if (!existing.has(candidate)) {
+                id = candidate;
+                break;
+            }
+            idx += 1;
+        }
+        if (!id) return null;
+
+        lib.nextWindowIndex = idx + 1;
+
+        const cloneSource = typeof cloneFromId === 'string' && cloneFromId
+            ? (lib.items.find((d) => d?.id === cloneFromId) ?? null)
+            : null;
+        const settingsSrc = cloneSource?.settings && typeof cloneSource.settings === 'object'
+            ? deepClone(cloneSource.settings)
+            : getDefaultWindowMeshSettings();
+
+        lib.items.push({
+            id,
+            label: `Window ${idx}`,
+            settings: sanitizeWindowMeshSettings(settingsSrc)
+        });
+        return id;
+    }
+
+    setSelectedBuildingWindowDefinitionSettings(windowDefId, settings) {
+        const building = this.getSelectedBuilding();
+        if (!building?.windowDefinitions?.items) return false;
+        const id = typeof windowDefId === 'string' ? windowDefId : '';
+        if (!id) return false;
+
+        const entry = building.windowDefinitions.items.find((d) => d?.id === id) ?? null;
+        if (!entry) return false;
+
+        const next = sanitizeWindowMeshSettings(settings);
+        entry.settings = deepClone(next);
+        return true;
+    }
+
+    setSelectedFaceFacadeBayWindowEnabled(itemId, enabled) {
+        const wants = !!enabled;
+        const building = this.getSelectedBuilding();
+        if (!building?.facades) return false;
+        const faceId = this._selectedFaceId;
+        const facade = building.facades[faceId] ?? null;
+        const items = Array.isArray(facade?.layout?.items) ? facade.layout.items : null;
+        if (!items) return false;
+
+        const bay = items.find((it) => it?.id === itemId) ?? null;
+        if (!bay || bay.type !== 'bay') return false;
+        bay.features ??= {};
+
+        const cur = bay.features?.window ?? null;
+        const has = cur && typeof cur === 'object';
+        if (!wants && !has) return false;
+
+        if (!wants) {
+            delete bay.features.window;
+            this._syncMirroredFacadeIfLocked(building, faceId);
+            return true;
+        }
+
+        const defs = Array.isArray(building?.windowDefinitions?.items) ? building.windowDefinitions.items : [];
+        let defId = typeof cur?.defId === 'string' ? cur.defId : '';
+        if (!defId || !defs.some((d) => d?.id === defId)) {
+            defId = typeof defs[0]?.id === 'string' ? defs[0].id : '';
+        }
+        if (!defId) {
+            defId = this.createSelectedBuildingWindowDefinition() ?? '';
+        }
+        if (!defId) return false;
+
+        bay.features.window = {
+            defId,
+            widthMeters: null,
+            heightMeters: null,
+            floorSkip: 1
+        };
+
+        this._syncMirroredFacadeIfLocked(building, faceId);
+        return true;
+    }
+
+    setSelectedFaceFacadeBayWindowDefinition(itemId, windowDefId) {
+        const building = this.getSelectedBuilding();
+        if (!building?.facades) return false;
+        const faceId = this._selectedFaceId;
+        const facade = building.facades[faceId] ?? null;
+        const items = Array.isArray(facade?.layout?.items) ? facade.layout.items : null;
+        if (!items) return false;
+
+        const bay = items.find((it) => it?.id === itemId) ?? null;
+        if (!bay || bay.type !== 'bay') return false;
+
+        const win = bay?.features?.window ?? null;
+        if (!win || typeof win !== 'object') return false;
+
+        const nextId = typeof windowDefId === 'string' ? windowDefId : '';
+        if (!nextId) return false;
+        const defs = Array.isArray(building?.windowDefinitions?.items) ? building.windowDefinitions.items : [];
+        if (!defs.some((d) => d?.id === nextId)) return false;
+
+        if (win.defId === nextId) return false;
+        win.defId = nextId;
+        this._syncMirroredFacadeIfLocked(building, faceId);
+        return true;
+    }
+
+    setSelectedFaceFacadeBayWindowWidthOverride(itemId, widthMeters) {
+        const building = this.getSelectedBuilding();
+        if (!building?.facades) return false;
+        const faceId = this._selectedFaceId;
+        const facade = building.facades[faceId] ?? null;
+        const items = Array.isArray(facade?.layout?.items) ? facade.layout.items : null;
+        if (!items) return false;
+
+        const bay = items.find((it) => it?.id === itemId) ?? null;
+        if (!bay || bay.type !== 'bay') return false;
+
+        const win = bay?.features?.window ?? null;
+        if (!win || typeof win !== 'object') return false;
+
+        const raw = widthMeters === '' ? null : widthMeters;
+        const num = Number(raw);
+        const faceLength = this._getFaceLengthMeters(building, faceId);
+        const max = Number.isFinite(faceLength) && faceLength > EPS ? faceLength : 9999;
+        const next = Number.isFinite(num) ? clamp(num, 0.1, max) : null;
+
+        const prev = Number.isFinite(win.widthMeters) ? win.widthMeters : null;
+        if ((prev === null && next === null) || (prev !== null && next !== null && Math.abs(prev - next) < 1e-6)) return false;
+
+        win.widthMeters = next;
+
+        if (Number.isFinite(faceLength) && faceLength > EPS) {
+            const required = this._minWidthMetersForLayoutItem(bay, faceLength, { building });
+            const width = this._getLayoutItemWidthMeters(bay, faceLength);
+            if (width + 1e-6 < required) this.setSelectedFaceFacadeItemWidth(itemId, required);
+        }
+
+        this._syncMirroredFacadeIfLocked(building, faceId);
+        return true;
+    }
+
+    setSelectedFaceFacadeBayWindowHeightOverride(itemId, heightMeters) {
+        const building = this.getSelectedBuilding();
+        if (!building?.facades) return false;
+        const faceId = this._selectedFaceId;
+        const facade = building.facades[faceId] ?? null;
+        const items = Array.isArray(facade?.layout?.items) ? facade.layout.items : null;
+        if (!items) return false;
+
+        const bay = items.find((it) => it?.id === itemId) ?? null;
+        if (!bay || bay.type !== 'bay') return false;
+
+        const win = bay?.features?.window ?? null;
+        if (!win || typeof win !== 'object') return false;
+
+        const raw = heightMeters === '' ? null : heightMeters;
+        const num = Number(raw);
+        const next = Number.isFinite(num) ? clamp(num, 0.1, 99) : null;
+
+        const prev = Number.isFinite(win.heightMeters) ? win.heightMeters : null;
+        if ((prev === null && next === null) || (prev !== null && next !== null && Math.abs(prev - next) < 1e-6)) return false;
+
+        win.heightMeters = next;
+        this._syncMirroredFacadeIfLocked(building, faceId);
+        return true;
+    }
+
+    setSelectedFaceFacadeBayWindowFloorSkip(itemId, floorSkip) {
+        const building = this.getSelectedBuilding();
+        if (!building?.facades) return false;
+        const faceId = this._selectedFaceId;
+        const facade = building.facades[faceId] ?? null;
+        const items = Array.isArray(facade?.layout?.items) ? facade.layout.items : null;
+        if (!items) return false;
+
+        const bay = items.find((it) => it?.id === itemId) ?? null;
+        if (!bay || bay.type !== 'bay') return false;
+
+        const win = bay?.features?.window ?? null;
+        if (!win || typeof win !== 'object') return false;
+
+        const next = clampInt(floorSkip ?? 1, 1, 99);
+        const prev = clampInt(win.floorSkip ?? 1, 1, 99);
+        if (next === prev) return false;
+        win.floorSkip = next;
+        this._syncMirroredFacadeIfLocked(building, faceId);
+        return true;
+    }
+
     getBuildings() {
         return this._buildings.map((b) => ({
             id: b.id,
@@ -521,17 +1132,6 @@ export class BuildingFabricationScene {
         };
     }
 
-    getHideSelectionBorder() {
-        return this._hideSelectionBorder;
-    }
-
-    setHideSelectionBorder(hidden) {
-        const next = !!hidden;
-        if (next === this._hideSelectionBorder) return;
-        this._hideSelectionBorder = next;
-        this._syncBuildingBorders();
-    }
-
     setMaterialVariationDebugConfig(debugConfig) {
         const next = debugConfig && typeof debugConfig === 'object' ? { ...debugConfig } : null;
         this._materialVariationDebug = next;
@@ -554,21 +1154,10 @@ export class BuildingFabricationScene {
         });
     }
 
-    _updateHoveredBuildingId() {
-        const tileId = this._hoveredTile;
-        const hovered = (!this._roadModeEnabled && !this._buildingModeEnabled && tileId)
-            ? (this._buildingsByTile.get(tileId)?.id ?? null)
-            : null;
-        const changed = hovered !== this._hoveredBuildingId;
-        this._hoveredBuildingId = hovered;
-        return changed;
-    }
-
     setHoveredTile(tileId) {
         const next = tileId || null;
         if (next === this._hoveredTile) return;
         this._hoveredTile = next;
-        if (this._updateHoveredBuildingId()) this._syncBuildingBorders();
         this._syncTileVisuals();
     }
 
@@ -581,10 +1170,8 @@ export class BuildingFabricationScene {
         this._buildingModeEnabled = next;
         this._selectedTiles.clear();
         this._selectedBuildingId = null;
-        this._updateHoveredBuildingId();
         this._syncSelectionPreview();
         this._syncModeVisibility();
-        this._syncBuildingBorders();
         this._syncTileVisuals();
     }
 
@@ -592,7 +1179,7 @@ export class BuildingFabricationScene {
         const next = typeof buildingId === 'string' ? buildingId : null;
         if (next === this._selectedBuildingId) return;
         this._selectedBuildingId = next;
-        this._syncBuildingBorders();
+        this._syncSelectedBuildingFaceHighlight();
         this._syncTileVisuals();
     }
 
@@ -606,7 +1193,6 @@ export class BuildingFabricationScene {
         if (!building) return false;
         this._removeBuilding(building);
         this._selectedBuildingId = null;
-        this._syncBuildingBorders();
         this._syncTileVisuals();
         return true;
     }
@@ -1229,8 +1815,6 @@ export class BuildingFabricationScene {
         this._roadStartTileId = null;
         this._roadEndTileId = null;
         this._syncModeVisibility();
-        this._updateHoveredBuildingId();
-        this._syncBuildingBorders();
         this._syncTileVisuals();
     }
 
@@ -1298,6 +1882,7 @@ export class BuildingFabricationScene {
         this._roadIdCounter = 0;
         this._clearBuildings();
         this._rebuildScene({ keepMode: true });
+        this._resetToSingleBuilding();
     }
 
     setFloorHeight(height) {
@@ -1305,6 +1890,76 @@ export class BuildingFabricationScene {
         if (Math.abs(next - this.floorHeight) < 1e-6) return;
         this.floorHeight = next;
         this._rebuildBuildings();
+    }
+
+    _findBestCenteredRectFootprintTileIds(footprintW, footprintH) {
+        if (!this.map) return [];
+        const size = this.gridSize;
+        const w = clampInt(footprintW, 1, size);
+        const h = clampInt(footprintH, 1, size);
+        if (size < w || size < h) return [];
+
+        const centerX = (size - 1) * 0.5;
+        const centerY = (size - 1) * 0.5;
+
+        let bestTileIds = null;
+        let bestDist2 = Number.POSITIVE_INFINITY;
+
+        for (let y = 0; y <= size - h; y++) {
+            for (let x = 0; x <= size - w; x++) {
+                const tileIds = [];
+                let ok = true;
+
+                for (let dy = 0; dy < h && ok; dy++) {
+                    for (let dx = 0; dx < w; dx++) {
+                        const tileId = tileIdFromXY(x + dx, y + dy);
+                        const meta = this._tileById.get(tileId);
+                        if (!meta) {
+                            ok = false;
+                            break;
+                        }
+                        if (this.map.kind[meta.idx] === TILE.ROAD) {
+                            ok = false;
+                            break;
+                        }
+                        tileIds.push(tileId);
+                    }
+                }
+
+                if (!ok) continue;
+
+                const footprintCenterX = x + (w - 1) * 0.5;
+                const footprintCenterY = y + (h - 1) * 0.5;
+                const dx = footprintCenterX - centerX;
+                const dy = footprintCenterY - centerY;
+                const dist2 = dx * dx + dy * dy;
+
+                if (dist2 < bestDist2) {
+                    bestDist2 = dist2;
+                    bestTileIds = tileIds;
+                }
+            }
+        }
+
+        return bestTileIds ?? [];
+    }
+
+    _getDefaultSingleBuildingFootprintTileIds() {
+        const primary = this._findBestCenteredRectFootprintTileIds(2, 1);
+        if (primary.length) return primary;
+        return this._findBestCenteredRectFootprintTileIds(1, 1);
+    }
+
+    _resetToSingleBuilding({ floors = 8, floorHeight = null, createOptions = null } = {}) {
+        if (!this.root) return null;
+        this._clearBuildings();
+
+        const tileIds = this._getDefaultSingleBuildingFootprintTileIds();
+        if (!tileIds.length) return null;
+
+        const created = this._createBuilding(tileIds, floors, floorHeight ?? this.floorHeight, createOptions ?? {});
+        this.setSelectedBuildingId(created?.id ?? null);
+        return created;
     }
 
     _syncBuildingRenderMode(building) {
@@ -1327,16 +1982,136 @@ export class BuildingFabricationScene {
 
     _syncBuildingBorder(building) {
         if (!building?.borderGroup) return;
-        const hovered = !!this._hoveredBuildingId && building.id === this._hoveredBuildingId;
-        const selected = !!this._selectedBuildingId && building.id === this._selectedBuildingId;
-        const showSelected = selected && !this._hideSelectionBorder;
-        building.borderGroup.visible = hovered || showSelected;
+        building.borderGroup.visible = false;
     }
 
     _syncBuildingBorders() {
         for (const building of this._buildings) {
             this._syncBuildingBorder(building);
         }
+    }
+
+    _syncSelectedBuildingFaceHighlight() {
+        for (const building of this._buildings) {
+            this._syncFaceHighlight(building);
+        }
+    }
+
+    _syncFaceHighlight(building) {
+        const group = building?.faceHighlightGroup ?? null;
+        if (!group) return;
+
+        for (const child of [...group.children]) {
+            child.removeFromParent();
+            disposeObject3D(child);
+        }
+
+        const isSelected = !!this._selectedBuildingId && building?.id === this._selectedBuildingId;
+        const faceId = this._selectedFaceId;
+        if (!isSelected || !isFaceId(faceId) || !building?.tiles?.size) {
+            group.visible = false;
+            return;
+        }
+
+        const rects = this._rectsForBuildingTiles(building.tiles);
+        const loops = this._loopsFromRects(rects);
+        if (!loops.length) {
+            group.visible = false;
+            return;
+        }
+
+        let outer = loops[0];
+        let bestArea = Math.abs(signedArea(outer));
+        for (let i = 1; i < loops.length; i++) {
+            const loop = loops[i];
+            const area = Math.abs(signedArea(loop));
+            if (area > bestArea) {
+                bestArea = area;
+                outer = loop;
+            }
+        }
+
+        if (!outer || outer.length < 2) {
+            group.visible = false;
+            return;
+        }
+
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minZ = Infinity;
+        let maxZ = -Infinity;
+        for (const p of outer) {
+            if (!p) continue;
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.z < minZ) minZ = p.z;
+            if (p.z > maxZ) maxZ = p.z;
+        }
+        if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minZ) || !Number.isFinite(maxZ)) {
+            group.visible = false;
+            return;
+        }
+
+        const groundY = this.generatorConfig?.ground?.surfaceY ?? this.generatorConfig?.road?.surfaceY ?? 0;
+        const roadCfg = this.generatorConfig?.road ?? {};
+        const baseRoadY = Number.isFinite(roadCfg?.surfaceY) ? roadCfg.surfaceY : (Number.isFinite(groundY) ? groundY : 0);
+        const sidewalkWidth = Number.isFinite(roadCfg?.sidewalk?.extraWidth) ? roadCfg.sidewalk.extraWidth : 0;
+        const curbHeight = Number.isFinite(roadCfg?.curb?.height) ? roadCfg.curb.height : 0;
+        const curbExtra = Number.isFinite(roadCfg?.curb?.extraHeight) ? roadCfg.curb.extraHeight : 0;
+        const sidewalkLift = Number.isFinite(roadCfg?.sidewalk?.lift) ? roadCfg.sidewalk.lift : 0;
+        const sidewalkY = baseRoadY + curbHeight + curbExtra + sidewalkLift;
+        const base = sidewalkWidth > EPS ? sidewalkY : baseRoadY;
+        const y = base + FACE_HIGHLIGHT_Y_LIFT;
+
+        const tol = 1e-4;
+        const positions = [];
+
+        const wantsSegment = (a, b) => {
+            if (!a || !b) return false;
+            switch (faceId) {
+                case 'A': return Math.abs(a.z - maxZ) <= tol && Math.abs(b.z - maxZ) <= tol;
+                case 'C': return Math.abs(a.z - minZ) <= tol && Math.abs(b.z - minZ) <= tol;
+                case 'B': return Math.abs(a.x - maxX) <= tol && Math.abs(b.x - maxX) <= tol;
+                case 'D': return Math.abs(a.x - minX) <= tol && Math.abs(b.x - minX) <= tol;
+                default: return false;
+            }
+        };
+
+        for (let i = 0; i < outer.length; i++) {
+            const a = outer[i];
+            const b = outer[(i + 1) % outer.length];
+            if (!wantsSegment(a, b)) continue;
+            positions.push(a.x, y, a.z, b.x, y, b.z);
+        }
+
+        if (!positions.length) {
+            group.visible = false;
+            return;
+        }
+
+        const geo = new LineSegmentsGeometry();
+        geo.setPositions(positions);
+
+        const mat = new LineMaterial({
+            color: FACE_HIGHLIGHT_COLOR,
+            linewidth: FACE_HIGHLIGHT_LINEWIDTH,
+            worldUnits: false,
+            transparent: true,
+            opacity: FACE_HIGHLIGHT_OPACITY,
+            depthTest: false,
+            depthWrite: false
+        });
+
+        if (this.engine?.renderer) {
+            const size = this.engine.renderer.getSize(this._lineResolution);
+            mat.resolution.set(size.x, size.y);
+        }
+
+        const line = new LineSegments2(geo, mat);
+        line.renderOrder = 146;
+        line.frustumCulled = false;
+        group.add(line);
+        group.visible = true;
     }
 
     clearSelection() {
@@ -1363,6 +2138,14 @@ export class BuildingFabricationScene {
         if (!this.root) return;
         if (!this._selectedTiles.size) return;
 
+        const selection = new Set(this._selectedTiles);
+        const clusters = this._clusterTiles(selection);
+        if (!clusters.length) return;
+
+        clusters.sort((a, b) => b.size - a.size);
+        const main = clusters[0];
+        if (!main?.size) return;
+
         const resolvedLayers = Array.isArray(layers) && layers.length
             ? cloneBuildingLayers(layers)
             : null;
@@ -1385,37 +2168,20 @@ export class BuildingFabricationScene {
                 clampedFloorHeight = clamp(first.floorHeight, 1.0, 12.0);
             }
         }
-        const selection = new Set(this._selectedTiles);
-        const overlaps = new Set();
-        for (const tileId of selection) {
-            const existing = this._buildingsByTile.get(tileId);
-            if (existing) overlaps.add(existing);
-        }
-        for (const building of overlaps) {
-            this._removeBuilding(building);
-        }
-
-        const clusters = this._clusterTiles(selection);
-        let best = null;
-        let bestSize = 0;
-        for (const cluster of clusters) {
-            const created = this._createBuilding(cluster, clampedFloors, clampedFloorHeight, {
-                layers: resolvedLayers ? cloneBuildingLayers(resolvedLayers) : null,
-                materialVariationSeed,
-                windowVisuals
-            });
-            const size = created?.tiles?.size ?? 0;
-            if (created && size >= bestSize) {
-                best = created;
-                bestSize = size;
-            }
-        }
 
         this._selectedTiles.clear();
         this._syncSelectionPreview();
-        this._syncTileVisuals();
         this.setBuildingModeEnabled(false);
-        if (best?.id) this.setSelectedBuildingId(best.id);
+
+        this._clearBuildings();
+        const created = this._createBuilding(main, clampedFloors, clampedFloorHeight, {
+            layers: resolvedLayers ? cloneBuildingLayers(resolvedLayers) : null,
+            materialVariationSeed,
+            windowVisuals
+        });
+
+        this._syncTileVisuals();
+        if (created?.id) this.setSelectedBuildingId(created.id);
     }
 
     loadBuildingConfigFromCatalog(configId) {
@@ -1423,18 +2189,6 @@ export class BuildingFabricationScene {
 
         const cfg = getBuildingConfigById(configId);
         if (!cfg) return null;
-
-        const tileIds = getHighestIndex3x2FootprintTileIds(this.gridSize);
-        if (!tileIds.length) return null;
-
-        const overlaps = new Set();
-        for (const tileId of tileIds) {
-            const existing = this._buildingsByTile.get(tileId);
-            if (existing) overlaps.add(existing);
-        }
-        for (const building of overlaps) {
-            this._removeBuilding(building);
-        }
 
         const resolvedLayers = Array.isArray(cfg.layers) && cfg.layers.length
             ? cloneBuildingLayers(cfg.layers)
@@ -1460,28 +2214,98 @@ export class BuildingFabricationScene {
         const style = isBuildingStyle(cfg.style) ? cfg.style : BUILDING_STYLE.DEFAULT;
         const win = cfg.windows && typeof cfg.windows === 'object' ? cfg.windows : null;
         const wallInset = Number.isFinite(cfg.wallInset) ? cfg.wallInset : 0.0;
+        const importedFacades = cfg.facades && typeof cfg.facades === 'object' ? deepClone(cfg.facades) : null;
+        const importedWindowDefinitions = cfg.windowDefinitions && typeof cfg.windowDefinitions === 'object'
+            ? deepClone(cfg.windowDefinitions)
+            : null;
+
+        let nextFacades = importedFacades;
+        let nextWindowDefinitions = importedWindowDefinitions;
+
+        if (!nextFacades && resolvedLayers) {
+            const firstFloor = resolvedLayers.find((layer) => layer?.type === 'floor') ?? null;
+            const winCfg = firstFloor?.windows ?? null;
+            const spacing = Number.isFinite(winCfg?.spacing) ? winCfg.spacing : (Number.isFinite(win?.gap) ? win.gap : null);
+            const widthMeters = Number.isFinite(winCfg?.width) ? winCfg.width : (Number.isFinite(win?.width) ? win.width : null);
+            const heightMeters = Number.isFinite(winCfg?.height) ? winCfg.height : (Number.isFinite(win?.height) ? win.height : null);
+
+            if (!!winCfg?.enabled && Number.isFinite(spacing) && Number.isFinite(widthMeters)) {
+                const cols = winCfg?.spaceColumns ?? null;
+                const wantsColumns = !!cols?.enabled && clampInt(cols?.every ?? 0, 0, 99) > 0 && (Number(cols?.width) || 0) > EPS;
+
+                const pattern = wantsColumns
+                    ? createLegacyWindowSpacingFacadeFillPattern({
+                        windowWidthMeters: widthMeters,
+                        spacingMeters: spacing,
+                        columnsEvery: cols?.every ?? 4,
+                        columnWidthMeters: cols?.width ?? 0.9
+                    })
+                    : createLegacyWindowSpacingOnlyFacadeFillPattern({
+                        windowWidthMeters: widthMeters,
+                        spacingMeters: spacing,
+                        maxWindows: 9999
+                    });
+
+                const wallMaterial = firstFloor?.material && typeof firstFloor.material === 'object'
+                    ? deepClone(firstFloor.material)
+                    : { kind: 'texture', id: style };
+
+                const makeFacade = () => ({
+                    wallMaterial,
+                    depthOffset: 0.0,
+                    layout: {
+                        pattern: deepClone(pattern),
+                        nextBayIndex: 1,
+                        nextPaddingIndex: 1,
+                        items: []
+                    }
+                });
+
+                nextFacades = {
+                    A: makeFacade(),
+                    B: makeFacade(),
+                    C: makeFacade(),
+                    D: makeFacade()
+                };
+
+                if (!nextWindowDefinitions && Number.isFinite(heightMeters)) {
+                    const settings = getDefaultWindowMeshSettings();
+                    settings.width = clamp(widthMeters, 0.2, 12.0);
+                    settings.height = clamp(heightMeters, 0.2, 12.0);
+                    nextWindowDefinitions = {
+                        nextWindowIndex: 2,
+                        items: [{
+                            id: 'win_1',
+                            label: 'Window 1',
+                            settings: sanitizeWindowMeshSettings(settings)
+                        }]
+                    };
+                }
+            }
+        }
 
         this._selectedTiles.clear();
         this._syncSelectionPreview();
         this.setRoadModeEnabled(false);
         this.setBuildingModeEnabled(false);
-
-        const created = this._createBuilding(tileIds, floors, floorHeight, {
-            id: typeof cfg.id === 'string' ? cfg.id : null,
-            style,
-            wallInset,
-            windowWidth: win?.width,
-            windowGap: win?.gap,
-            windowHeight: win?.height,
-            windowY: win?.y,
-            layers: resolvedLayers,
-            materialVariationSeed: Number.isFinite(cfg?.materialVariationSeed) ? cfg.materialVariationSeed : null,
-            windowVisuals: cfg?.windowVisuals ?? null
+        return this._resetToSingleBuilding({
+            floors,
+            floorHeight,
+            createOptions: {
+                id: typeof cfg.id === 'string' ? cfg.id : null,
+                style,
+                wallInset,
+                windowWidth: win?.width,
+                windowGap: win?.gap,
+                windowHeight: win?.height,
+                windowY: win?.y,
+                layers: resolvedLayers,
+                materialVariationSeed: Number.isFinite(cfg?.materialVariationSeed) ? cfg.materialVariationSeed : null,
+                windowVisuals: cfg?.windowVisuals ?? null,
+                facades: nextFacades,
+                windowDefinitions: nextWindowDefinitions
+            }
         });
-
-        this._syncTileVisuals();
-        if (created?.id) this.setSelectedBuildingId(created.id);
-        return created;
     }
 
     handleRoadTileClick(tileId) {
@@ -1527,6 +2351,7 @@ export class BuildingFabricationScene {
         this._selectedBuildingId = null;
         this._clearBuildings();
         this._rebuildScene({ keepCamera: true, keepMode: true });
+        this._resetToSingleBuilding();
     }
 
     _buildLights() {
@@ -1976,7 +2801,9 @@ export class BuildingFabricationScene {
         streetWindowSpacerExtrudeDistance = 0.12,
         layers = null,
         materialVariationSeed = null,
-        windowVisuals = null
+        windowVisuals = null,
+        facades = null,
+        windowDefinitions = null
     } = {}) {
         const group = new THREE.Group();
         const baseName = typeof id === 'string' ? id.trim() : '';
@@ -2005,6 +2832,8 @@ export class BuildingFabricationScene {
         planGroup.name = 'floorplan';
         const borderGroup = new THREE.Group();
         borderGroup.name = 'selection_border';
+        const faceHighlightGroup = new THREE.Group();
+        faceHighlightGroup.name = 'face_highlight';
         const windowsGroup = new THREE.Group();
         windowsGroup.name = 'windows';
 
@@ -2014,6 +2843,7 @@ export class BuildingFabricationScene {
         group.add(floorsGroup);
         group.add(planGroup);
         group.add(borderGroup);
+        group.add(faceHighlightGroup);
         group.add(windowsGroup);
 
         const clampedFloorHeight = clamp(Number.isFinite(floorHeight) ? floorHeight : this.floorHeight, 1.0, 12.0);
@@ -2149,6 +2979,54 @@ export class BuildingFabricationScene {
         const resolvedLayers = Array.isArray(layers) && layers.length
             ? cloneBuildingLayers(layers)
             : normalizeBuildingLayers(null, { fallback: fallbackLayers });
+
+        const firstFloorLayer = resolvedLayers.find((layer) => layer?.type === 'floor') ?? null;
+        const defaultWallMaterial = firstFloorLayer?.material && typeof firstFloorLayer.material === 'object'
+            ? deepClone(firstFloorLayer.material)
+            : { kind: 'texture', id: safeStyle };
+        const defaultFacade = {
+            wallMaterial: defaultWallMaterial,
+            depthOffset: 0.0,
+            layout: {
+                nextBayIndex: 2,
+                nextPaddingIndex: 1,
+                items: [{
+                    type: 'bay',
+                    id: 'bay_1',
+                    widthFrac: 1.0,
+                    minWidthMeters: MIN_FACADE_BAY_WIDTH_M,
+                    wallMaterialOverride: null,
+                    depthOffset: 0.0,
+                    wedgeAngleDeg: 0,
+                    features: {}
+                }]
+            }
+        };
+
+        const defaultWindowDefinitions = {
+            nextWindowIndex: 2,
+            items: [{
+                id: 'win_1',
+                label: 'Window 1',
+                settings: getDefaultWindowMeshSettings()
+            }]
+        };
+
+        const resolvedWindowDefinitions = windowDefinitions && typeof windowDefinitions === 'object'
+            ? deepClone(windowDefinitions)
+            : deepClone(defaultWindowDefinitions);
+
+        const resolvedFacadesRaw = facades && typeof facades === 'object'
+            ? deepClone(facades)
+            : null;
+
+        const resolvedFacades = {
+            A: resolvedFacadesRaw?.A ?? deepClone(defaultFacade),
+            B: resolvedFacadesRaw?.B ?? deepClone(defaultFacade),
+            C: resolvedFacadesRaw?.C ?? deepClone(defaultFacade),
+            D: resolvedFacadesRaw?.D ?? deepClone(defaultFacade)
+        };
+
         const building = {
             id: group.name,
             type,
@@ -2157,8 +3035,10 @@ export class BuildingFabricationScene {
             wallInset: clamp(wallInset, 0.0, 4.0),
             materialVariationSeed: Number.isFinite(materialVariationSeed) ? clampInt(materialVariationSeed, 0, 4294967295) : null,
             windowVisuals: windowVisuals ? deepClone(windowVisuals) : null,
+            windowDefinitions: resolvedWindowDefinitions,
             baseColorHex: null,
             tiles: new Set(tileIds),
+            facades: resolvedFacades,
             floors,
             floorHeight: clampedFloorHeight,
             streetEnabled: !!streetEnabled,
@@ -2210,8 +3090,11 @@ export class BuildingFabricationScene {
             floorsGroup,
             planGroup,
             borderGroup,
+            faceHighlightGroup,
             windowsGroup
         };
+
+        this._seedFacadeLayoutItemsFromPatterns(building);
 
         this._buildings.push(building);
         for (const tileId of building.tiles) this._buildingsByTile.set(tileId, building);
@@ -2221,6 +3104,260 @@ export class BuildingFabricationScene {
         this._syncBuildingBorder(building);
         building.group.visible = !this._roadModeEnabled;
         return building;
+    }
+
+    _seedFacadeLayoutItemsFromPatterns(building) {
+        const facades = building?.facades && typeof building.facades === 'object' ? building.facades : null;
+        if (!facades) return;
+        for (const faceId of FACE_IDS_RECT) {
+            const facade = facades?.[faceId] ?? null;
+            const pattern = facade?.layout?.pattern ?? null;
+            if (!pattern || typeof pattern !== 'object') continue;
+            const len = this._getFaceLengthMeters(building, faceId);
+            if (!Number.isFinite(len) || !(len > EPS)) continue;
+            const res = solveFacadeLayoutFillPattern({ pattern, faceLengthMeters: len, topology: null, warnings: null });
+            if (Array.isArray(res?.items) && res.items.length) {
+                facade.layout ??= {};
+                facade.layout.items = res.items;
+            }
+        }
+    }
+
+    _syncMirroredFacadeIfLocked(building, faceId) {
+        if (!this._faceMirrorLockEnabled) return;
+        const srcId = isFaceId(faceId) ? faceId : this._selectedFaceId;
+        const otherId = getMirroredFaceId(srcId);
+        if (!otherId) return;
+        if (!building?.facades?.[srcId]) return;
+        building.facades[otherId] = deepClone(building.facades[srcId]);
+    }
+
+    _getBuildingFootprintOuterLoop(building) {
+        if (!building?.tiles?.size) return null;
+        const rects = this._rectsForBuildingTiles(building.tiles);
+        const loops = this._loopsFromRects(rects);
+        if (!loops.length) return null;
+
+        let outer = loops[0];
+        let bestArea = Math.abs(signedArea(outer));
+        for (let i = 1; i < loops.length; i++) {
+            const loop = loops[i];
+            const area = Math.abs(signedArea(loop));
+            if (area > bestArea) {
+                bestArea = area;
+                outer = loop;
+            }
+        }
+        return outer?.length ? outer : null;
+    }
+
+    _getFaceLengthMeters(building, faceId) {
+        const loop = this._getBuildingFootprintOuterLoop(building);
+        if (!loop) return null;
+
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minZ = Infinity;
+        let maxZ = -Infinity;
+        for (const p of loop) {
+            if (!p) continue;
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.z < minZ) minZ = p.z;
+            if (p.z > maxZ) maxZ = p.z;
+        }
+        if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minZ) || !Number.isFinite(maxZ)) return null;
+
+        if (faceId === 'A' || faceId === 'C') return maxX - minX;
+        if (faceId === 'B' || faceId === 'D') return maxZ - minZ;
+        return null;
+    }
+
+    _getLayoutItemWidthMeters(item, faceLength) {
+        const frac = clamp(item?.widthFrac, 0, 1);
+        return frac * faceLength;
+    }
+
+    _minWidthMetersForLayoutItem(item, faceLength, { building = null } = {}) {
+        const kind = item?.type;
+        const baseMin = clamp(item?.minWidthMeters, 0, faceLength);
+        if (kind !== 'bay') return baseMin > 0 ? baseMin : MIN_FACADE_PADDING_WIDTH_M;
+
+        let required = baseMin > 0 ? baseMin : MIN_FACADE_BAY_WIDTH_M;
+
+        const windowFeature = item?.features?.window ?? null;
+        if (windowFeature && typeof windowFeature === 'object') {
+            let windowWidth = Number.isFinite(windowFeature?.widthMeters) ? windowFeature.widthMeters : null;
+            if (!Number.isFinite(windowWidth)) {
+                const defId = typeof windowFeature?.defId === 'string' ? windowFeature.defId : '';
+                const defs = Array.isArray(building?.windowDefinitions?.items) ? building.windowDefinitions.items : [];
+                const def = defId ? (defs.find((d) => d?.id === defId) ?? null) : null;
+                windowWidth = Number(def?.settings?.width);
+            }
+            if (Number.isFinite(windowWidth)) required = Math.max(required, clamp(windowWidth, 0, faceLength));
+        }
+
+        const absDepth = Math.abs(Number(item?.depthOffset) || 0);
+        const angleDeg = normalizeWedgeAngleDeg(item?.wedgeAngleDeg);
+        if (absDepth > EPS && angleDeg > 0) {
+            const rad = angleDeg * (Math.PI / 180);
+            const tan = Math.tan(rad);
+            const wedgeMin = tan > EPS ? (DOUBLE * absDepth / tan) : faceLength;
+            required = Math.max(required, wedgeMin);
+        }
+
+        return clamp(required, 0, faceLength);
+    }
+
+    _validateFacadeLayout(facade, faceLengthMeters, { building = null } = {}) {
+        const faceLength = Number(faceLengthMeters);
+        if (!Number.isFinite(faceLength) || faceLength <= EPS) return { ok: false, warnings: ['Face length is invalid.'], items: [] };
+
+        const layout = facade?.layout ?? null;
+        const items = Array.isArray(layout?.items) ? layout.items : [];
+        if (!items.length) {
+            return { ok: false, warnings: ['No bays defined.'], items: [] };
+        }
+
+        const warnings = [];
+        const sumFrac = items.reduce((sum, it) => sum + (Number(it?.widthFrac) || 0), 0);
+        if (Math.abs(sumFrac - 1.0) > 1e-3) warnings.push(`Layout widths sum to ${(sumFrac || 0).toFixed(4)} (expected 1.0).`);
+
+        const bayCount = items.filter((it) => it?.type === 'bay').length;
+        if (bayCount === 0) warnings.push('Layout contains no bays (only padding).');
+
+        const defs = Array.isArray(building?.windowDefinitions?.items) ? building.windowDefinitions.items : [];
+        const defById = new Map(defs.map((d) => [d?.id ?? '', d]));
+
+        const itemInfo = items.map((it) => {
+            const id = typeof it?.id === 'string' ? it.id : '';
+            const type = it?.type === 'padding' ? 'padding' : 'bay';
+            const widthMeters = this._getLayoutItemWidthMeters(it, faceLength);
+            const minWidthMeters = this._minWidthMetersForLayoutItem(it, faceLength, { building });
+            if (widthMeters + 1e-6 < minWidthMeters) {
+                warnings.push(`${id || type}: width ${widthMeters.toFixed(2)}m < min ${minWidthMeters.toFixed(2)}m.`);
+            }
+            if (type === 'bay') {
+                const windowFeature = it?.features?.window ?? null;
+                if (windowFeature && typeof windowFeature === 'object') {
+                    const defId = typeof windowFeature?.defId === 'string' ? windowFeature.defId : '';
+                    if (!defId) {
+                        warnings.push(`${id || type}: window feature is enabled but no definition is selected.`);
+                    } else if (!defById.has(defId)) {
+                        warnings.push(`${id || type}: window definition "${defId}" not found.`);
+                    }
+
+                    const floorSkipRaw = windowFeature?.floorSkip;
+                    const floorSkipRawNum = Number(floorSkipRaw);
+                    if (floorSkipRaw !== undefined && floorSkipRaw !== null) {
+                        const isInt = Number.isFinite(floorSkipRawNum) && Math.abs(floorSkipRawNum - Math.round(floorSkipRawNum)) < 1e-6;
+                        if (!isInt || floorSkipRawNum < 1) warnings.push(`${id || type}: window floorSkip must be an integer >= 1.`);
+                    }
+
+                    const def = defId ? (defById.get(defId) ?? null) : null;
+                    const defWidth = Number(def?.settings?.width);
+                    const overrideWidth = Number.isFinite(windowFeature?.widthMeters) ? windowFeature.widthMeters : null;
+                    const windowWidth = Number.isFinite(overrideWidth)
+                        ? clamp(overrideWidth, 0, faceLength)
+                        : (Number.isFinite(defWidth) ? clamp(defWidth, 0, faceLength) : null);
+                    if (Number.isFinite(windowWidth) && windowWidth > widthMeters + 1e-6) {
+                        warnings.push(`${id || type}: window width ${windowWidth.toFixed(2)}m exceeds bay width ${widthMeters.toFixed(2)}m (will be omitted).`);
+                    }
+                }
+
+                const angleDeg = normalizeWedgeAngleDeg(it?.wedgeAngleDeg);
+                const absDepth = Math.abs(Number(it?.depthOffset) || 0);
+                if (angleDeg > 0 && !(absDepth > EPS)) warnings.push(`${id || type}: wedge angle set but depth is 0.`);
+            }
+            return { id, type, widthMeters, minWidthMeters };
+        });
+
+        return { ok: warnings.length === 0, warnings, items: itemInfo };
+    }
+
+    _normalizeLayoutWidthFractions(items) {
+        if (!Array.isArray(items) || !items.length) return;
+        let sum = 0;
+        for (const it of items) {
+            const next = clamp(it?.widthFrac, 0, 1);
+            if (it) it.widthFrac = next;
+            sum += next;
+        }
+        if (!(sum > EPS)) {
+            for (const it of items) if (it) it.widthFrac = 1 / items.length;
+            return;
+        }
+        for (const it of items) if (it) it.widthFrac = (Number(it.widthFrac) || 0) / sum;
+    }
+
+    _addSelectedFaceLayoutItem({ type = 'bay' } = {}) {
+        const kind = type === 'padding' ? 'padding' : 'bay';
+        const building = this.getSelectedBuilding();
+        if (!building?.facades) return false;
+        const faceId = this._selectedFaceId;
+        const facade = building.facades[faceId] ?? null;
+        if (!facade) return false;
+
+        facade.layout ??= {};
+        facade.layout.items ??= [];
+        facade.layout.nextBayIndex = clampInt(facade.layout.nextBayIndex ?? 1, 1, 9999);
+        facade.layout.nextPaddingIndex = clampInt(facade.layout.nextPaddingIndex ?? 1, 1, 9999);
+
+        const items = facade.layout.items;
+        if (!items.length) {
+            const id = kind === 'padding' ? `pad_${facade.layout.nextPaddingIndex++}` : `bay_${facade.layout.nextBayIndex++}`;
+            items.push(kind === 'padding'
+                ? { type: 'padding', id, widthFrac: 1.0, minWidthMeters: MIN_FACADE_PADDING_WIDTH_M }
+                : {
+                    type: 'bay',
+                    id,
+                    widthFrac: 1.0,
+                    minWidthMeters: MIN_FACADE_BAY_WIDTH_M,
+                    wallMaterialOverride: null,
+                    depthOffset: 0.0,
+                    wedgeAngleDeg: 0,
+                    features: {}
+                });
+            this._syncMirroredFacadeIfLocked(building, faceId);
+            return true;
+        }
+
+        const faceLength = this._getFaceLengthMeters(building, faceId);
+        if (!Number.isFinite(faceLength) || faceLength <= EPS) return false;
+
+        const donorIndex = items.length - 1;
+        const donor = items[donorIndex];
+        const donorMin = this._minWidthMetersForLayoutItem(donor, faceLength, { building }) / faceLength;
+
+        const baseMin = kind === 'padding' ? MIN_FACADE_PADDING_WIDTH_M : MIN_FACADE_BAY_WIDTH_M;
+        const minFracNew = clamp(baseMin / faceLength, 0, 1);
+
+        const donorFrac = clamp(donor?.widthFrac, 0, 1);
+        const maxDonate = donorFrac - clamp(donorMin, 0, 1);
+        if (maxDonate + 1e-8 < minFracNew) return false;
+
+        const desired = Math.max(minFracNew, donorFrac * 0.25);
+        const newFrac = clamp(desired, minFracNew, maxDonate);
+        donor.widthFrac = donorFrac - newFrac;
+
+        const id = kind === 'padding' ? `pad_${facade.layout.nextPaddingIndex++}` : `bay_${facade.layout.nextBayIndex++}`;
+        const nextItem = kind === 'padding'
+            ? { type: 'padding', id, widthFrac: newFrac, minWidthMeters: MIN_FACADE_PADDING_WIDTH_M }
+            : {
+                type: 'bay',
+                id,
+                widthFrac: newFrac,
+                minWidthMeters: MIN_FACADE_BAY_WIDTH_M,
+                wallMaterialOverride: null,
+                depthOffset: 0.0,
+                wedgeAngleDeg: 0,
+                features: {}
+            };
+        items.push(nextItem);
+
+        this._normalizeLayoutWidthFractions(items);
+        this._syncMirroredFacadeIfLocked(building, faceId);
+        return true;
     }
 
     _getCameraFocusTarget() {
@@ -2281,6 +3418,17 @@ export class BuildingFabricationScene {
         this._rebuildBuildings();
     }
 
+    _relocateBuildingToDefaultFootprint(building) {
+        if (!building) return false;
+        const tileIds = this._getDefaultSingleBuildingFootprintTileIds();
+        if (!tileIds.length) return false;
+        building.tiles = new Set(tileIds);
+        for (const tileId of building.tiles) {
+            this._buildingsByTile.set(tileId, building);
+        }
+        return true;
+    }
+
     _trimBuildingTilesForRoad(building, roadTileIds) {
         if (!building || !roadTileIds || !roadTileIds.size) return;
 
@@ -2300,13 +3448,13 @@ export class BuildingFabricationScene {
         }
 
         if (!remaining.size) {
-            this._removeBuilding(building);
+            if (!this._relocateBuildingToDefaultFootprint(building)) this._removeBuilding(building);
             return;
         }
 
         const clusters = this._clusterTiles(remaining);
         if (!clusters.length) {
-            this._removeBuilding(building);
+            if (!this._relocateBuildingToDefaultFootprint(building)) this._removeBuilding(building);
             return;
         }
 
@@ -2316,55 +3464,6 @@ export class BuildingFabricationScene {
         building.tiles = main;
         for (const tileId of building.tiles) {
             this._buildingsByTile.set(tileId, building);
-        }
-
-        for (let i = 1; i < clusters.length; i++) {
-            this._createBuilding(clusters[i], building.floors, building.floorHeight, {
-                type: building.type,
-                style: building.style,
-                roofColor: building.roofColor,
-                wallInset: building.wallInset,
-                windowStyle: building.windowStyle,
-                windowTypeId: building.windowTypeId,
-                windowParams: building.windowParams,
-                layers: cloneBuildingLayers(building.layers),
-                materialVariationSeed: building.materialVariationSeed,
-                windowVisuals: building.windowVisuals ? deepClone(building.windowVisuals) : null,
-                streetEnabled: building.streetEnabled,
-                streetFloors: building.streetFloors,
-                streetFloorHeight: building.streetFloorHeight,
-                streetStyle: building.streetStyle,
-                beltCourseEnabled: building.beltCourseEnabled,
-                beltCourseMargin: building.beltCourseMargin,
-                beltCourseHeight: building.beltCourseHeight,
-                beltCourseColor: building.beltCourseColor,
-                topBeltEnabled: building.topBeltEnabled,
-                topBeltWidth: building.topBeltWidth,
-                topBeltHeight: building.topBeltHeight,
-                topBeltInnerWidth: building.topBeltInnerWidth,
-                topBeltColor: building.topBeltColor,
-                windowSpacerEnabled: building.windowSpacerEnabled,
-                windowSpacerEvery: building.windowSpacerEvery,
-                windowSpacerWidth: building.windowSpacerWidth,
-                windowSpacerExtrude: building.windowSpacerExtrude,
-                windowSpacerExtrudeDistance: building.windowSpacerExtrudeDistance,
-                windowWidth: building.windowWidth,
-                windowGap: building.windowGap,
-                windowHeight: building.windowHeight,
-                windowY: building.windowY,
-                streetWindowStyle: building.streetWindowStyle,
-                streetWindowTypeId: building.streetWindowTypeId,
-                streetWindowParams: building.streetWindowParams,
-                streetWindowSpacerEnabled: building.streetWindowSpacerEnabled,
-                streetWindowSpacerEvery: building.streetWindowSpacerEvery,
-                streetWindowSpacerWidth: building.streetWindowSpacerWidth,
-                streetWindowSpacerExtrude: building.streetWindowSpacerExtrude,
-                streetWindowSpacerExtrudeDistance: building.streetWindowSpacerExtrudeDistance,
-                streetWindowWidth: building.streetWindowWidth,
-                streetWindowGap: building.streetWindowGap,
-                streetWindowHeight: building.streetWindowHeight,
-                streetWindowY: building.streetWindowY
-            });
         }
     }
 
@@ -2737,6 +3836,8 @@ export class BuildingFabricationScene {
                 renderer: this.engine?.renderer ?? null,
                 windowVisuals: resolvedWindowVisuals,
                 windowVisualsIsOverride,
+                facades: building.facades ?? null,
+                windowDefinitions: building.windowDefinitions ?? null,
                 colors: { line: BUILDING_LINE_COLOR, border: BUILDING_BORDER_COLOR },
                 overlays: { wire: true, floorplan: true, border: true, floorDivisions: true },
                 walls: {
@@ -2822,6 +3923,10 @@ export class BuildingFabricationScene {
         if (!parts) return;
 
         building.baseColorHex = parts.baseColorHex;
+        building.generationWarnings = Array.isArray(parts.warnings) ? parts.warnings.slice() : null;
+        building.generationFacadeSolverDebug = parts?.facadeSolverDebug && typeof parts.facadeSolverDebug === 'object'
+            ? deepClone(parts.facadeSolverDebug)
+            : null;
         for (const mesh of parts.solidMeshes) building.solidGroup.add(mesh);
         if (parts.beltCourse) building.featuresGroup.add(parts.beltCourse);
         if (parts.topBelt) building.featuresGroup.add(parts.topBelt);
@@ -2833,15 +3938,14 @@ export class BuildingFabricationScene {
 
         this._syncBuildingRenderMode(building);
         this._syncBuildingBorder(building);
+        this._syncFaceHighlight(building);
         this._applyMaterialVariationDebugToObject(building.group);
     }
 
     _syncTileVisuals() {
         const roadColor = new THREE.Color(0x0a84ff);
         const occupiedColor = new THREE.Color(0x2ec27e);
-        const selectedColor = new THREE.Color(0xffd60a);
         const hoveredColor = new THREE.Color(0xffffff);
-        const selectedBuildingColor = new THREE.Color(0x64d2ff);
         const startColor = new THREE.Color(0xbf5af2);
         const endColor = new THREE.Color(0xff3b30);
 
@@ -2850,10 +3954,6 @@ export class BuildingFabricationScene {
             const meta = this._tileById.get(tileId);
             const isRoad = !!meta && !!this.map && this.map.kind[meta.idx] === TILE.ROAD;
             const occupied = this._buildingsByTile.has(tileId);
-            const selectedBuilding = this._selectedBuildingId
-                ? this._buildingsByTile.get(tileId)?.id === this._selectedBuildingId
-                : false;
-            const selected = this._selectedTiles.has(tileId);
             const hovered = this._hoveredTile === tileId;
             const isStart = this._roadStartTileId === tileId;
             const isEnd = this._roadEndTileId === tileId;
@@ -2869,16 +3969,6 @@ export class BuildingFabricationScene {
             if (occupied) {
                 color = occupiedColor;
                 opacity = Math.max(opacity, 0.12);
-            }
-
-            if (selectedBuilding) {
-                color = selectedBuildingColor;
-                opacity = Math.max(opacity, 0.26);
-            }
-
-            if (selected) {
-                color = selectedColor;
-                opacity = Math.max(opacity, this._buildingModeEnabled ? 0.38 : 0.20);
             }
 
             if (hovered) {

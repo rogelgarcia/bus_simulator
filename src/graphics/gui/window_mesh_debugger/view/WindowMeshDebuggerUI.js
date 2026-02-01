@@ -244,12 +244,17 @@ function deepClone(obj) {
 
 export class WindowMeshDebuggerUI {
     constructor({
+        title = 'Window Mesh Debugger',
+        subtitle = 'Arrow/WASD move · Shift fast · RMB orbit · MMB pan · Wheel zoom · F frame · R reset · Esc back',
+        embedded = false,
         initialSettings,
         initialSeed = 'window-debug',
         initialWallMaterialId = null,
-        onChange
+        onChange,
+        onClose = null
     } = {}) {
         this._onChange = typeof onChange === 'function' ? onChange : null;
+        this._onClose = typeof onClose === 'function' ? onClose : null;
         this._isSetting = false;
 
         const defaults = getDefaultWindowMeshSettings();
@@ -333,18 +338,25 @@ export class WindowMeshDebuggerUI {
             settings: initial
         };
 
-        this.root = makeEl('div', 'ui-layer options-layer');
+        const rootClass = embedded ? 'options-layer is-embedded' : 'ui-layer options-layer';
+        this.root = makeEl('div', rootClass);
         this.root.id = 'ui-window-mesh-debugger';
 
         this.panel = makeEl('div', 'ui-panel is-interactive options-panel');
 
         const header = makeEl('div', 'options-header');
-        header.appendChild(makeEl('div', 'options-title', 'Window Mesh Debugger'));
-        header.appendChild(makeEl(
-            'div',
-            'options-subtitle',
-            'Arrow/WASD move · Shift fast · RMB orbit · MMB pan · Wheel zoom · F frame · R reset · Esc back'
-        ));
+        const headerTop = makeEl('div', 'options-header-top');
+        headerTop.appendChild(makeEl('div', 'options-title', String(title ?? 'Window Mesh Debugger')));
+        if (this._onClose) {
+            const closeBtn = makeEl('button', 'options-close-btn', 'Close');
+            closeBtn.type = 'button';
+            closeBtn.addEventListener('click', () => this._onClose?.());
+            headerTop.appendChild(closeBtn);
+        }
+        header.appendChild(headerTop);
+        if (typeof subtitle === 'string' && subtitle.trim()) {
+            header.appendChild(makeEl('div', 'options-subtitle', subtitle.trim()));
+        }
         this.panel.appendChild(header);
 
         this.body = makeEl('div', 'options-body');
@@ -375,8 +387,9 @@ export class WindowMeshDebuggerUI {
         window.addEventListener('keydown', this._onKeyDown, { passive: false });
     }
 
-    mount() {
-        document.body.appendChild(this.root);
+    mount({ parent = null } = {}) {
+        const host = parent?.appendChild ? parent : document.body;
+        host.appendChild(this.root);
     }
 
     unmount() {

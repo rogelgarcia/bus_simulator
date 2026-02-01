@@ -41,6 +41,48 @@
     gap: 4px;
 }
 
+.options-header-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.options-close-btn {
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(0,0,0,0.18);
+    color: #e9f2ff;
+    cursor: pointer;
+    font-weight: 800;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.options-close-btn:hover {
+    background: rgba(0,0,0,0.28);
+}
+
+.options-layer.is-embedded {
+    position: relative;
+    inset: auto;
+    width: auto;
+    left: auto;
+    right: auto;
+    top: auto;
+    bottom: auto;
+    z-index: auto;
+    background: transparent;
+    border: none;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
 .options-title {
     font-weight: 900;
     letter-spacing: 0.08em;

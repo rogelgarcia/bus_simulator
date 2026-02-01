@@ -1666,7 +1666,7 @@ async function runTests() {
 
     // ========== Building Fabrication UI Tests ==========
     const { BuildingFabricationUI } = await import('/src/graphics/gui/building_fabrication/BuildingFabricationUI.js');
-    const { BuildingFabricationScene, getHighestIndex3x2FootprintTileIds } = await import('/src/graphics/gui/building_fabrication/BuildingFabricationScene.js');
+    const { BuildingFabricationScene, getCentered2x1FootprintTileIds } = await import('/src/graphics/gui/building_fabrication/BuildingFabricationScene.js');
     const { offsetOrthogonalLoopXZ } = await import('/src/graphics/assets3d/generators/buildings/BuildingGenerator.js');
     const { buildBuildingFabricationVisualParts } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationGenerator.js');
     const { WALL_BASE_MATERIAL_DEFAULT, createDefaultFloorLayer, createDefaultRoofLayer, normalizeBuildingWindowVisualsConfig } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationTypes.js');
@@ -1783,13 +1783,20 @@ async function runTests() {
         const building = { id: 'building_test', layers: ui.getTemplateLayers() };
         ui.setSelectedBuilding(building);
 
-        const label = Array.from(ui.root.querySelectorAll('.building-fab-row-label'))
-            .find((el) => el.textContent?.trim() === 'Wall material');
-        assertTrue(!!label, 'Wall material row should exist.');
-        const row = label.closest('.building-fab-row') ?? null;
-        assertTrue(!!row, 'Wall material row wrapper should exist.');
-        const btn = row.querySelector('button.building-fab-material-button') ?? null;
-        assertTrue(!!btn, 'Wall material button should exist.');
+        const labels = Array.from(ui.root.querySelectorAll('.building-fab-row-label'))
+            .filter((el) => el.textContent?.trim() === 'Wall material');
+        assertTrue(labels.length > 0, 'Wall material row should exist.');
+
+        let btn = null;
+        for (const label of labels) {
+            const row = label.closest('.building-fab-row') ?? null;
+            const candidate = row?.querySelector('button.building-fab-material-button') ?? null;
+            if (candidate && !candidate.disabled) {
+                btn = candidate;
+                break;
+            }
+        }
+        assertTrue(!!btn, 'Expected an enabled Wall material button.');
 
         btn.click();
 
@@ -1799,6 +1806,130 @@ async function runTests() {
         const tabBtns = tabs.querySelectorAll('button.ui-picker-tab');
         assertEqual(tabBtns.length, 2, 'Picker should show 2 tabs.');
         ui._pickerPopup?.close?.();
+    });
+
+    test('BuildingFabricationUI: face editor renders A-D + mirror lock', () => {
+        const ui = new BuildingFabricationUI();
+        ui.setSelectedBuilding({ id: 'building_test', layers: ui.getTemplateLayers() });
+        ui.setFaceEditorState({
+            faceIds: ['A', 'B', 'C', 'D'],
+            selectedFaceId: 'C',
+            mirrorLockEnabled: true,
+            facade: { wallMaterial: { kind: 'texture', id: 'pbr.brick_wall_11' }, depthOffset: 0.5 }
+        });
+
+        const faceEditor = ui.root.querySelector('.building-fab-face-editor');
+        assertTrue(!!faceEditor, 'Face editor section should exist.');
+
+        const faceButtons = Array.from(faceEditor.querySelectorAll('button.building-fab-face-button'))
+            .map((btn) => btn.textContent?.trim())
+            .filter(Boolean);
+        assertEqual(faceButtons.join(''), 'ABCD', 'Expected face buttons A-D.');
+
+        const active = faceEditor.querySelector('button.building-fab-face-button.is-active');
+        assertEqual(active?.textContent?.trim(), 'C', 'Expected selected face button to be C.');
+
+        const mirrorLabel = Array.from(faceEditor.querySelectorAll('.building-fab-toggle span'))
+            .find((el) => String(el.textContent || '').includes('Mirror lock'));
+        assertTrue(!!mirrorLabel, 'Mirror lock toggle should exist.');
+        const mirrorInput = mirrorLabel?.closest('label')?.querySelector('input[type=\"checkbox\"]') ?? null;
+        assertTrue(!!mirrorInput, 'Mirror lock checkbox should exist.');
+        assertTrue(mirrorInput.checked, 'Mirror lock should be checked.');
+    });
+
+    test('BuildingFabricationUI: face editor shows bay layout controls', () => {
+        const ui = new BuildingFabricationUI();
+        ui.setSelectedBuilding({ id: 'building_test', layers: ui.getTemplateLayers() });
+        ui.setFaceEditorState({
+            faceIds: ['A', 'B', 'C', 'D'],
+            selectedFaceId: 'A',
+            mirrorLockEnabled: false,
+            faceLengthMeters: 48,
+            validation: {
+                warnings: [],
+                items: [{ id: 'bay_1', type: 'bay', widthMeters: 48, minWidthMeters: 1 }]
+            },
+            facade: {
+                wallMaterial: { kind: 'texture', id: 'pbr.brick_wall_11' },
+                depthOffset: 0.0,
+                layout: {
+                    items: [{
+                        type: 'bay',
+                        id: 'bay_1',
+                        widthFrac: 1.0,
+                        wallMaterialOverride: null,
+                        depthOffset: 0.0,
+                        wedgeAngleDeg: 0,
+                        features: {}
+                    }]
+                }
+            }
+        });
+
+        const faceEditor = ui.root.querySelector('.building-fab-face-editor');
+        assertTrue(!!faceEditor, 'Face editor section should exist.');
+
+        const addBayBtn = Array.from(faceEditor.querySelectorAll('button'))
+            .find((btn) => btn.textContent?.trim() === '+ Bay');
+        assertTrue(!!addBayBtn, '+ Bay button should exist.');
+
+        const addPaddingBtn = Array.from(faceEditor.querySelectorAll('button'))
+            .find((btn) => btn.textContent?.trim() === '+ Padding');
+        assertTrue(!!addPaddingBtn, '+ Padding button should exist.');
+
+        const bayList = faceEditor.querySelector('.building-fab-bay-list');
+        assertTrue(!!bayList, 'Bay list should exist.');
+        const bayTitle = Array.from(bayList.querySelectorAll('.building-fab-details-title'))
+            .find((el) => String(el.textContent || '').includes('Bay · bay_1'));
+        assertTrue(!!bayTitle, 'Expected bay_1 to render in the bay list.');
+    });
+
+    test('BuildingFabricationUI: bay window feature controls render', () => {
+        const ui = new BuildingFabricationUI();
+        ui.setSelectedBuilding({ id: 'building_test', layers: ui.getTemplateLayers() });
+        ui.setFaceEditorState({
+            faceIds: ['A', 'B', 'C', 'D'],
+            selectedFaceId: 'A',
+            mirrorLockEnabled: false,
+            faceLengthMeters: 48,
+            validation: {
+                warnings: [],
+                items: [{ id: 'bay_1', type: 'bay', widthMeters: 48, minWidthMeters: 1 }]
+            },
+            windowDefinitions: {
+                nextWindowIndex: 2,
+                items: [{ id: 'win_1', label: 'Window 1', settings: { width: 1.2, height: 1.6 } }]
+            },
+            facade: {
+                wallMaterial: { kind: 'texture', id: 'pbr.brick_wall_11' },
+                depthOffset: 0.0,
+                layout: {
+                    items: [{
+                        type: 'bay',
+                        id: 'bay_1',
+                        widthFrac: 1.0,
+                        wallMaterialOverride: null,
+                        depthOffset: 0.0,
+                        wedgeAngleDeg: 0,
+                        features: {}
+                    }]
+                }
+            }
+        });
+
+        const faceEditor = ui.root.querySelector('.building-fab-face-editor');
+        assertTrue(!!faceEditor, 'Face editor section should exist.');
+
+        const bayList = faceEditor.querySelector('.building-fab-bay-list');
+        assertTrue(!!bayList, 'Bay list should exist.');
+
+        const windowFeatureLabel = Array.from(bayList.querySelectorAll('label.building-fab-toggle span'))
+            .find((el) => el.textContent?.trim() === 'Window feature');
+        assertTrue(!!windowFeatureLabel, 'Expected a Window feature toggle in the bay details.');
+
+        const editBtn = Array.from(bayList.querySelectorAll('button'))
+            .find((btn) => String(btn.textContent || '').includes('Fabricate / Edit Window'));
+        assertTrue(!!editBtn, 'Expected a Fabricate / Edit Window button in the bay details.');
     });
 
     test('BuildingFabricationUI: windows fake depth controls toggle and disable sliders', () => {
@@ -1879,7 +2010,10 @@ async function runTests() {
         const ui = new BuildingFabricationUI();
         ui.setRoadModeEnabled(true);
         assertFalse(ui.roadDoneBtn.classList.contains('hidden'), 'Done button should be visible in road mode.');
-        assertTrue(ui.buildBtn.classList.contains('hidden'), 'Build button should be hidden in road mode.');
+        assertTrue(ui.buildBtn === undefined, 'Build button should be removed.');
+        const buildButton = Array.from(ui.root.querySelectorAll('button'))
+            .find((btn) => btn.textContent?.trim() === 'Build');
+        assertFalse(!!buildButton, 'Build button should not exist.');
     });
 
     test('BuildingGenerator: offsetOrthogonalLoopXZ offsets collinear points', () => {
@@ -2127,6 +2261,120 @@ async function runTests() {
         assertTrue(beltD > floorD + extrusion * 1.5, 'Expected belt to extend outward in Z.');
     });
 
+    test('BuildingFabricationGenerator: bay silhouette affects walls/belts/roof rings', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+
+        const extrusion = 0.25;
+        const layers = [
+            createDefaultFloorLayer({
+                floors: 1,
+                floorHeight: 3.0,
+                belt: { enabled: true, height: 0.2, extrusion },
+                windows: { enabled: false }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: true, outerRadius: 0.0, innerRadius: 0.5, height: 0.4 } })
+        ];
+
+        const baseMat = layers[0]?.material ?? { kind: 'texture', id: 'pbr.brick_wall_11' };
+        const makePadding = (id, widthFrac) => ({ type: 'padding', id, widthFrac, minWidthMeters: 0.25 });
+        const makeBay = (id, widthFrac, depthOffset) => ({
+            type: 'bay',
+            id,
+            widthFrac,
+            minWidthMeters: 1.0,
+            wallMaterialOverride: null,
+            depthOffset,
+            wedgeAngleDeg: 0,
+            features: {}
+        });
+
+        const facades = {
+            A: {
+                wallMaterial: baseMat,
+                depthOffset: 0.0,
+                layout: {
+                    items: [
+                        makePadding('pad_1', 0.25),
+                        makeBay('bay_1', 0.5, 1.0),
+                        makePadding('pad_2', 0.25)
+                    ]
+                }
+            },
+            B: { wallMaterial: baseMat, depthOffset: 0.0, layout: { items: [makePadding('pad_b', 1.0)] } },
+            C: { wallMaterial: baseMat, depthOffset: 0.0, layout: { items: [makePadding('pad_c', 1.0)] } },
+            D: { wallMaterial: baseMat, depthOffset: 0.0, layout: { items: [makePadding('pad_d', 1.0)] } }
+        };
+
+        const baseParts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!baseParts, 'Expected base visual parts.');
+
+        const bayParts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            facades,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!bayParts, 'Expected bay visual parts.');
+
+        const findWallMesh = (parts) => (parts.solidMeshes ?? []).find((m) => (
+            m?.isMesh && Array.isArray(m.material) && m.material.length === 2
+        )) ?? null;
+
+        const wall0 = findWallMesh(baseParts);
+        const wall1 = findWallMesh(bayParts);
+        assertTrue(!!wall0, 'Expected a base wall mesh.');
+        assertTrue(!!wall1, 'Expected a bay wall mesh.');
+
+        const box0 = new THREE.Box3().setFromObject(wall0);
+        const box1 = new THREE.Box3().setFromObject(wall1);
+        assertTrue(box1.max.z > box0.max.z + 0.9, 'Expected bay depth to increase wall max Z.');
+
+        const belt0 = baseParts.beltCourse?.children?.find?.((m) => m?.isMesh) ?? null;
+        const belt1 = bayParts.beltCourse?.children?.find?.((m) => m?.isMesh) ?? null;
+        assertTrue(!!belt0 && !!belt1, 'Expected belt meshes.');
+
+        const beltBox0 = new THREE.Box3().setFromObject(belt0);
+        const beltBox1 = new THREE.Box3().setFromObject(belt1);
+        assertTrue(beltBox1.max.z > beltBox0.max.z + 0.9, 'Expected bay depth to affect belt silhouette.');
+
+        const ring0 = baseParts.topBelt?.children?.find?.((m) => m?.isMesh) ?? null;
+        const ring1 = bayParts.topBelt?.children?.find?.((m) => m?.isMesh) ?? null;
+        assertTrue(!!ring0 && !!ring1, 'Expected roof ring meshes.');
+
+        const ringBox0 = new THREE.Box3().setFromObject(ring0);
+        const ringBox1 = new THREE.Box3().setFromObject(ring1);
+        assertTrue(ringBox1.max.z > ringBox0.max.z + 0.9, 'Expected bay depth to affect roof ring silhouette.');
+    });
+
     test('BuildingFabricationGenerator: wall texture UVs are continuous across floors', () => {
         const tileSize = 10;
         const map = {
@@ -2366,18 +2614,291 @@ async function runTests() {
         assertTrue(roadMargin > baseMargin, 'Road margin should be larger than base margin.');
     });
 
-    test('BuildingFabricationScene: highest index 3x2 footprint is deterministic', () => {
-        const tiles = getHighestIndex3x2FootprintTileIds(5);
-        assertEqual(tiles.length, 6, 'Expected 3x2 footprint tile count.');
-        assertEqual(tiles.join('|'), '2,3|3,3|4,3|2,4|3,4|4,4', 'Expected top-right 3x2 footprint.');
+    test('BuildingFabricationScene: centered 2x1 footprint is deterministic', () => {
+        const tiles = getCentered2x1FootprintTileIds(5);
+        assertEqual(tiles.length, 2, 'Expected 2x1 footprint tile count.');
+        assertEqual(tiles.join('|'), '1,2|2,2', 'Expected centered 2x1 footprint.');
 
-        const small = getHighestIndex3x2FootprintTileIds(2);
-        assertEqual(small.length, 0, 'Expected empty footprint for small grids.');
+        const small = getCentered2x1FootprintTileIds(1);
+        assertEqual(small.length, 0, 'Expected empty footprint for 1x1 grids.');
 	    });
-	
-		    // ========== City Building Config Tests ==========
-		    const { getBuildingConfigById, getBuildingConfigs } = await import('/src/app/city/buildings/index.js');
-		    const { createDemoCitySpec } = await import('/src/app/city/specs/DemoCitySpec.js');
+
+    test('BuildingFabricationScene: face mirror lock syncs opposite facades', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(),
+            canvas: document.createElement('canvas')
+        };
+        const scene = new BuildingFabricationScene(engine);
+
+        const building = {
+            id: 'building_test',
+            tiles: new Set(),
+            facades: {
+                A: { wallMaterial: { kind: 'texture', id: 'pbr.brick_wall_11' }, depthOffset: 0.0 },
+                B: { wallMaterial: { kind: 'texture', id: 'pbr.brick_wall_11' }, depthOffset: 0.0 },
+                C: { wallMaterial: { kind: 'texture', id: 'pbr.brick_wall_11' }, depthOffset: 0.0 },
+                D: { wallMaterial: { kind: 'texture', id: 'pbr.brick_wall_11' }, depthOffset: 0.0 }
+            }
+        };
+        scene._buildings.push(building);
+        scene._selectedBuildingId = building.id;
+
+        scene.setSelectedFaceId('A');
+        scene.setSelectedFaceDepthOffset(0.75);
+        assertNear(building.facades.A.depthOffset, 0.75, 1e-6, 'Expected A depthOffset to change.');
+        assertNear(building.facades.C.depthOffset, 0.75, 1e-6, 'Expected C depthOffset to mirror A.');
+
+        scene.setFaceMirrorLockEnabled(false);
+        scene.setSelectedFaceId('B');
+        scene.setSelectedFaceDepthOffset(-0.5);
+        assertNear(building.facades.B.depthOffset, -0.5, 1e-6, 'Expected B depthOffset to change.');
+        assertNear(building.facades.D.depthOffset, 0.0, 1e-6, 'Expected D depthOffset to remain unchanged when unlocked.');
+
+        scene.setFaceMirrorLockEnabled(true);
+        assertNear(building.facades.D.depthOffset, -0.5, 1e-6, 'Expected D depthOffset to sync from B when enabling mirror lock.');
+    });
+
+    test('BuildingFabricationScene: facade layout resize/add padding/wedge snaps', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(),
+            canvas: document.createElement('canvas')
+        };
+        const scene = new BuildingFabricationScene(engine, { tileSize: 24, occupyRatio: 1.0 });
+
+        const a = '0,0';
+        const b = '1,0';
+        scene._tileById.set(a, { x: 0, y: 0, center: new THREE.Vector3(12, 0, 12) });
+        scene._tileById.set(b, { x: 1, y: 0, center: new THREE.Vector3(36, 0, 12) });
+
+        const makeBay = (id, widthFrac) => ({
+            type: 'bay',
+            id,
+            widthFrac,
+            minWidthMeters: 1.0,
+            wallMaterialOverride: null,
+            depthOffset: 0.0,
+            wedgeAngleDeg: 0
+        });
+
+        const building = {
+            id: 'building_test',
+            tiles: new Set([a, b]),
+            facades: {
+                A: {
+                    wallMaterial: { kind: 'texture', id: 'pbr.brick_wall_11' },
+                    depthOffset: 0.0,
+                    layout: {
+                        nextBayIndex: 4,
+                        nextPaddingIndex: 1,
+                        items: [
+                            makeBay('bay_1', 0.375),
+                            makeBay('bay_2', 0.25),
+                            makeBay('bay_3', 0.375)
+                        ]
+                    }
+                }
+            }
+        };
+
+        scene._buildings.push(building);
+        scene._selectedBuildingId = building.id;
+        scene.setSelectedFaceId('A');
+
+        const faceLength = scene._getFaceLengthMeters(building, 'A');
+        assertNear(faceLength, 48, 1e-6, 'Expected A face length for 2x1 footprint.');
+
+        assertTrue(scene.setSelectedFaceFacadeItemWidth('bay_2', 18), 'Expected bay_2 width edit to apply.');
+        const items = building.facades.A.layout.items;
+        const byId = (id) => items.find((it) => it?.id === id) ?? null;
+        assertNear(byId('bay_1').widthFrac * faceLength, 15, 1e-6, 'Expected bay_1 to shrink (center-anchored).');
+        assertNear(byId('bay_2').widthFrac * faceLength, 18, 1e-6, 'Expected bay_2 width to update.');
+        assertNear(byId('bay_3').widthFrac * faceLength, 15, 1e-6, 'Expected bay_3 to shrink (center-anchored).');
+
+        assertTrue(scene.addSelectedFaceFacadePadding(), 'Expected adding padding to succeed.');
+        const pad = items.find((it) => it?.type === 'padding') ?? null;
+        assertTrue(!!pad, 'Expected a padding item to exist.');
+        assertEqual(pad.id, 'pad_1', 'Expected padding id to start at pad_1.');
+
+        assertTrue(scene.setSelectedFaceFacadeItemWidth('bay_2', 2), 'Expected bay_2 to shrink for wedge test.');
+        assertTrue(scene.setSelectedFaceFacadeBayDepthOffset('bay_2', 2), 'Expected bay_2 depth to update.');
+        assertTrue(scene.setSelectedFaceFacadeBayWedgeAngleDeg('bay_2', 23), 'Expected wedge angle update to apply.');
+        assertEqual(byId('bay_2').wedgeAngleDeg, 30, 'Expected wedge angle to snap to 15° steps.');
+
+        const expectedWedgeMin = 4 / Math.tan(Math.PI / 6);
+        const bay2Width = byId('bay_2').widthFrac * faceLength;
+        assertTrue(bay2Width + 1e-6 >= expectedWedgeMin, `Expected bay_2 width >= wedge min (${expectedWedgeMin.toFixed(3)}m).`);
+    });
+
+    test('BuildingFabricationScene: bay window feature clamps bay min width', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(),
+            canvas: document.createElement('canvas')
+        };
+        const scene = new BuildingFabricationScene(engine, { tileSize: 24, occupyRatio: 1.0 });
+
+        const a = '0,0';
+        const b = '1,0';
+        scene._tileById.set(a, { x: 0, y: 0, center: new THREE.Vector3(12, 0, 12) });
+        scene._tileById.set(b, { x: 1, y: 0, center: new THREE.Vector3(36, 0, 12) });
+
+        const makeBay = (id, widthFrac) => ({
+            type: 'bay',
+            id,
+            widthFrac,
+            minWidthMeters: 1.0,
+            wallMaterialOverride: null,
+            depthOffset: 0.0,
+            wedgeAngleDeg: 0,
+            features: {}
+        });
+
+        const building = {
+            id: 'building_test',
+            tiles: new Set([a, b]),
+            windowDefinitions: {
+                nextWindowIndex: 2,
+                items: [{
+                    id: 'win_1',
+                    label: 'Window 1',
+                    settings: { width: 12, height: 2 }
+                }]
+            },
+            facades: {
+                A: {
+                    wallMaterial: { kind: 'texture', id: 'pbr.brick_wall_11' },
+                    depthOffset: 0.0,
+                    layout: {
+                        nextBayIndex: 4,
+                        nextPaddingIndex: 1,
+                        items: [
+                            makeBay('bay_1', 0.25),
+                            makeBay('bay_2', 0.5),
+                            makeBay('bay_3', 0.25)
+                        ]
+                    }
+                }
+            }
+        };
+
+        scene._buildings.push(building);
+        scene._selectedBuildingId = building.id;
+        scene.setSelectedFaceId('A');
+
+        const faceLength = scene._getFaceLengthMeters(building, 'A');
+        assertNear(faceLength, 48, 1e-6, 'Expected A face length for 2x1 footprint.');
+
+        assertTrue(scene.setSelectedFaceFacadeBayWindowEnabled('bay_2', true), 'Expected enabling bay window feature to succeed.');
+        scene.setSelectedFaceFacadeItemWidth('bay_2', 5);
+
+        const items = building.facades.A.layout.items;
+        const bay2 = items.find((it) => it?.id === 'bay_2') ?? null;
+        assertTrue(!!bay2, 'Expected bay_2 to exist.');
+        assertTrue(bay2.widthFrac * faceLength + 1e-6 >= 12, 'Expected bay_2 to remain at least window min width.');
+
+        scene.setSelectedFaceFacadeBayWindowFloorSkip('bay_2', 0);
+        const win = bay2.features?.window ?? null;
+        assertEqual(win?.floorSkip ?? null, 1, 'Expected floorSkip to clamp to 1.');
+    });
+
+    // ========== Facade Layout Solver Tests ==========
+    const {
+        solveFacadeLayoutFillPattern,
+        createLegacyWindowSpacingFacadeFillPattern
+    } = await import('/src/graphics/assets3d/generators/building_fabrication/FacadeLayoutFillSolver.js');
+
+    test('FacadeLayoutFillSolver: center-out local repeats are deterministic', () => {
+        const pattern = {
+            type: 'fill',
+            ordering: 'centerOut',
+            items: [{
+                type: 'group',
+                groupId: 'g',
+                repeat: { minRepeats: 4, maxRepeats: 4 },
+                ordering: 'centerOut',
+                items: [{
+                    type: 'bay',
+                    templateId: 'win',
+                    width: { minMeters: 1, maxMeters: 1 },
+                    repeat: { min: 1, max: 3 }
+                }]
+            }]
+        };
+
+        const res1 = solveFacadeLayoutFillPattern({ pattern, faceLengthMeters: 6, warnings: [] });
+        const local1 = (res1.debug?.localRepeats ?? []).find((l) => l?.groupId === 'g' && l?.templateId === 'win') ?? null;
+        assertEqual(local1?.counts?.join(',') ?? '', '1,2,2,1', 'Expected center-out extras to distribute across middle groups.');
+
+        const assigns1 = (res1.debug?.centerOutAssignments ?? []).map((a) => a?.instanceIndex ?? null).filter((v) => v !== null);
+        assertEqual(assigns1.join(','), '1,2', 'Expected first extras to go to the two center groups (left tie-break).');
+
+        const ids1 = (res1.items ?? []).map((it) => it?.id ?? '').join('|');
+        const res2 = solveFacadeLayoutFillPattern({ pattern, faceLengthMeters: 6, warnings: [] });
+        const ids2 = (res2.items ?? []).map((it) => it?.id ?? '').join('|');
+        assertEqual(ids2, ids1, 'Expected deterministic ids for repeated runs.');
+        assertEqual(
+            JSON.stringify(res2.debug?.centerOutAssignments ?? []),
+            JSON.stringify(res1.debug?.centerOutAssignments ?? []),
+            'Expected deterministic extra assignment order.'
+        );
+    });
+
+    test('FacadeLayoutFillSolver: topology can be reused across lengths', () => {
+        const pattern = {
+            type: 'fill',
+            ordering: 'centerOut',
+            items: [{
+                type: 'group',
+                groupId: 'g',
+                repeat: { minRepeats: 4, maxRepeats: 4 },
+                ordering: 'centerOut',
+                items: [{
+                    type: 'bay',
+                    templateId: 'win',
+                    width: { minMeters: 1, maxMeters: 2 },
+                    repeat: { min: 2, max: 2 }
+                }]
+            }]
+        };
+
+        const resA = solveFacadeLayoutFillPattern({ pattern, faceLengthMeters: 10, warnings: [] });
+        assertTrue(Array.isArray(resA.items) && resA.items.length === 8, 'Expected 8 resolved bays for 4 groups × 2 windows.');
+        const idsA = resA.items.map((it) => it.id).join('|');
+
+        const resB = solveFacadeLayoutFillPattern({ pattern, faceLengthMeters: 14, topology: resA.topology, warnings: [] });
+        assertTrue(Array.isArray(resB.items) && resB.items.length === 8, 'Expected stable bay count when reusing topology.');
+        const idsB = resB.items.map((it) => it.id).join('|');
+        assertEqual(idsB, idsA, 'Expected stable ids/order when reusing topology.');
+    });
+
+    test('FacadeLayoutFillSolver: legacy spacing conversion uses half-margins and no trailing column', () => {
+        const spacing = 1.6;
+        const pattern = createLegacyWindowSpacingFacadeFillPattern({
+            windowWidthMeters: 1.8,
+            spacingMeters: spacing,
+            columnsEvery: 4,
+            columnWidthMeters: 0.9
+        });
+        assertTrue(!!pattern && typeof pattern === 'object', 'Expected legacy facade fill pattern object.');
+
+        const half = spacing * 0.5;
+        const full = pattern.items?.find((it) => it?.type === 'group' && it?.groupId === 'full') ?? null;
+        const fullWin = full?.items?.find((it) => it?.templateId === 'win') ?? null;
+        assertNear(fullWin?.marginLeft ?? null, half, 1e-6, 'Expected marginLeft to equal half spacing.');
+        assertNear(fullWin?.marginRight ?? null, half, 1e-6, 'Expected marginRight to equal half spacing.');
+
+        const res = solveFacadeLayoutFillPattern({ pattern, faceLengthMeters: 40, warnings: [] });
+        assertTrue(Array.isArray(res.items) && res.items.length > 0, 'Expected solved layout items.');
+        const last = res.items[res.items.length - 1] ?? null;
+        assertTrue(last?.type === 'bay', 'Expected last item to be a window bay (no trailing column).');
+        assertTrue(typeof last?.id === 'string' && last.id.includes('win'), 'Expected last item id to be a window template.');
+    });
+		
+			    // ========== City Building Config Tests ==========
+			    const { getBuildingConfigById, getBuildingConfigs } = await import('/src/app/city/buildings/index.js');
+			    const { createDemoCitySpec } = await import('/src/app/city/specs/DemoCitySpec.js');
 		    const { BIG_CITY_SPEC, createBigCitySpec } = await import('/src/app/city/specs/BigCitySpec.js');
 		    const { BIG_CITY_2_SPEC, createBigCity2Spec } = await import('/src/app/city/specs/BigCity2Spec.js');
 		    const { getGameplayCityOptions } = await import('/src/states/GameplayState.js');

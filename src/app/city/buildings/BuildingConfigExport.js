@@ -90,7 +90,9 @@ export function createCityBuildingConfigFromFabrication({
     layers,
     wallInset = 0.0,
     materialVariationSeed = null,
-    windowVisuals = null
+    windowVisuals = null,
+    facades = null,
+    windowDefinitions = null
 } = {}) {
     const safeId = sanitizeBuildingConfigId(id);
     const safeName = sanitizeBuildingConfigName(name, { fallback: buildingConfigIdToDisplayName(safeId) });
@@ -112,6 +114,8 @@ export function createCityBuildingConfigFromFabrication({
     if (inset > 1e-6) cfg.wallInset = inset;
     if (seed !== null) cfg.materialVariationSeed = seed;
     if (windowVisuals && typeof windowVisuals === 'object') cfg.windowVisuals = normalizeBuildingWindowVisualsConfig(windowVisuals);
+    if (facades && typeof facades === 'object') cfg.facades = facades;
+    if (windowDefinitions && typeof windowDefinitions === 'object') cfg.windowDefinitions = windowDefinitions;
     return cfg;
 }
 
@@ -142,9 +146,21 @@ export function serializeCityBuildingConfigToEsModule(config, { exportConstName 
     const wallInset = Number.isFinite(cfg.wallInset) ? clamp(cfg.wallInset, 0.0, 4.0) : null;
     const seed = Number.isFinite(cfg.materialVariationSeed) ? clampInt(cfg.materialVariationSeed, 0, 4294967295) : null;
     const windowVisuals = cfg.windowVisuals && typeof cfg.windowVisuals === 'object' ? cfg.windowVisuals : null;
+    const facades = cfg.facades && typeof cfg.facades === 'object' ? cfg.facades : null;
+    const windowDefinitions = cfg.windowDefinitions && typeof cfg.windowDefinitions === 'object' ? cfg.windowDefinitions : null;
     const windowVisualsLines = windowVisuals ? [
         '    windowVisuals: Object.freeze(',
         indentLines(JSON.stringify(windowVisuals, null, 4), 8),
+        '    ),'
+    ] : [];
+    const facadesLines = facades ? [
+        '    facades: Object.freeze(',
+        indentLines(JSON.stringify(facades, null, 4), 8),
+        '    ),'
+    ] : [];
+    const windowDefinitionsLines = windowDefinitions ? [
+        '    windowDefinitions: Object.freeze(',
+        indentLines(JSON.stringify(windowDefinitions, null, 4), 8),
         '    ),'
     ] : [];
 
@@ -163,6 +179,8 @@ export function serializeCityBuildingConfigToEsModule(config, { exportConstName 
         `    floorHeight: ${clamp(cfg.floorHeight ?? 3, 1.0, 12.0)},`,
         `    style: ${JSON.stringify(isBuildingStyle(cfg.style) ? cfg.style : BUILDING_STYLE.DEFAULT)},`,
         ...windowsLines,
+        ...facadesLines,
+        ...windowDefinitionsLines,
         ...windowVisualsLines,
         '});',
         '',

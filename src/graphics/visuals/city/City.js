@@ -158,6 +158,8 @@ export class City {
                         renderer: null,
                         windowVisuals: resolvedWindowVisuals,
                         windowVisualsIsOverride,
+                        facades: entry.facades ?? null,
+                        windowDefinitions: entry.windowDefinitions ?? null,
                         overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
                         walls: { inset: wallInset }
                     })
@@ -187,6 +189,9 @@ export class City {
                         } : null
                     });
                 if (!parts) continue;
+                if (Array.isArray(parts.warnings) && parts.warnings.length) {
+                    console.warn(`[City] Building "${entry.id ?? 'building'}":`, parts.warnings);
+                }
 
                 const buildingGroup = new THREE.Group();
                 buildingGroup.name = entry.id ?? 'building';

@@ -11,6 +11,10 @@
   - Code style, comments policy, GUI/CSS rules, naming conventions
   - Architecture rules (validation boundaries, no junk-drawer utils, no silent fallbacks, etc.)
 
+## Specifications
+
+Project specifications are stored in `specs/`. When writing a new specification (or updating an existing spec) as a Markdown document, it should be created/kept in the `specs/` folder.
+
 ## Testing
 
 - During AI/dev iteration, prefer the standardized runner: `node tools/run_selected_test/run.mjs` (reads `tests/.selected_test`) instead of ad-hoc long inline test commands.
