@@ -3,9 +3,11 @@
 import * as THREE from 'three';
 import {
     clampNumber,
+    createBooleanProperty,
     createColorProperty,
     createEnumProperty,
     createNumberProperty,
+    normalizeBooleanValue,
     normalizeEnumValue,
     normalizeColorHex
 } from '../../../../app/prefabs/PrefabParamsSchema.js';
@@ -44,12 +46,18 @@ function smoothstep(edge0, edge1, x) {
     return t * t * (3 - 2 * t);
 }
 
-function hexToRgb01(hex) {
+function srgb01ToLinear01(v) {
+    const x = clamp(v, 0, 1);
+    if (x <= 0.04045) return x / 12.92;
+    return Math.pow((x + 0.055) / 1.055, 2.4);
+}
+
+function hexToRgbLinear01(hex) {
     const h = Number.isFinite(Number(hex)) ? (Number(hex) >>> 0) & 0xffffff : 0xffffff;
     return {
-        r: ((h >> 16) & 0xff) / 255,
-        g: ((h >> 8) & 0xff) / 255,
-        b: (h & 0xff) / 255
+        r: srgb01ToLinear01(((h >> 16) & 0xff) / 255),
+        g: srgb01ToLinear01(((h >> 8) & 0xff) / 255),
+        b: srgb01ToLinear01((h & 0xff) / 255)
     };
 }
 
@@ -60,8 +68,9 @@ function applyBladeGradientVertexColors(geometry, { baseColorHex, tipColorHex } 
     const tByVertex = geo.userData?._bladeGradientT ?? null;
     if (!tByVertex || !Number.isFinite(tByVertex.length) || tByVertex.length <= 0) return;
 
-    const base = hexToRgb01(baseColorHex);
-    const tip = hexToRgb01(tipColorHex);
+    // Vertex colors are interpreted as linear in Three.js shaders. Convert from sRGB hex.
+    const base = hexToRgbLinear01(baseColorHex);
+    const tip = hexToRgbLinear01(tipColorHex);
 
     const attr = geo.getAttribute?.('color') ?? null;
     const needsNew = !attr || !attr.isBufferAttribute || attr.itemSize !== 3 || attr.count !== tByVertex.length;
@@ -272,22 +281,26 @@ function buildHiResGeometry({
 function makeBladeMaterial({
     roughness = 0.7,
     metalness = 0.0,
+    specularIntensity = 0.15,
     edgeTintHex = 0xe7d46b,
     edgeTintStrength = 0.65,
+    edgeTintEnabled = true,
     grazingShine = 0.2,
     grazingShineRoughness = 0.25,
+    grazingShineEnabled = true,
     wireframe = false
 } = {}) {
     const r = Number.isFinite(roughness) ? roughness : 0.7;
     const m = Number.isFinite(metalness) ? metalness : 0.0;
-    const s = clamp(edgeTintStrength, 0, 1);
-    const coat = clamp(grazingShine, 0, 1);
+    const spec = clamp(specularIntensity, 0, 1);
+    const s = edgeTintEnabled ? clamp(edgeTintStrength, 0, 1) : 0;
+    const coat = grazingShineEnabled ? clamp(grazingShine, 0, 1) : 0;
     const coatRough = clamp(grazingShineRoughness, 0, 1);
     return new THREE.MeshPhysicalMaterial({
         color: 0xffffff,
         metalness: m,
         roughness: r,
-        specularIntensity: 0.35,
+        specularIntensity: spec,
         ior: 1.3,
         sheen: s,
         sheenColor: edgeTintHex,
@@ -439,6 +452,15 @@ export function createAsset() {
         defaultValue: 0.0
     });
 
+    const specularIntensityProp = createNumberProperty({
+        id: 'specularIntensity',
+        label: 'Specular intensity',
+        min: 0,
+        max: 1,
+        step: 0.01,
+        defaultValue: 0.15
+    });
+
     const curvatureProp = createNumberProperty({
         id: 'curvature',
         label: 'Curvature',
@@ -463,6 +485,12 @@ export function createAsset() {
         defaultValue: 0xe7d46b
     });
 
+    const edgeTintEnabledProp = createBooleanProperty({
+        id: 'edgeTintEnabled',
+        label: 'Edge tint enabled',
+        defaultValue: true
+    });
+
     const edgeTintStrengthProp = createNumberProperty({
         id: 'edgeTintStrength',
         label: 'Edge tint strength',
@@ -470,6 +498,12 @@ export function createAsset() {
         max: 1,
         step: 0.01,
         defaultValue: 0.4
+    });
+
+    const grazingShineEnabledProp = createBooleanProperty({
+        id: 'grazingShineEnabled',
+        label: 'Grazing shine enabled',
+        defaultValue: true
     });
 
     const grazingShineProp = createNumberProperty({
@@ -530,10 +564,13 @@ export function createAsset() {
     const semanticMaterial = makeBladeMaterial({
         metalness: metalnessProp.defaultValue,
         roughness: roughnessProp.defaultValue,
+        specularIntensity: specularIntensityProp.defaultValue,
         edgeTintHex: edgeTintProp.defaultValue,
         edgeTintStrength: edgeTintStrengthProp.defaultValue,
+        edgeTintEnabled: edgeTintEnabledProp.defaultValue,
         grazingShine: grazingShineProp.defaultValue,
         grazingShineRoughness: grazingShineRoughnessProp.defaultValue,
+        grazingShineEnabled: grazingShineEnabledProp.defaultValue,
         wireframe: false
     });
 
@@ -565,10 +602,13 @@ export function createAsset() {
         tipRoundness: tipRoundnessProp.defaultValue,
         roughness: roughnessProp.defaultValue,
         metalness: metalnessProp.defaultValue,
+        specularIntensity: specularIntensityProp.defaultValue,
         curvature: curvatureProp.defaultValue,
         bladeBendDegrees: bladeBendProp.defaultValue,
         edgeTintHex: edgeTintProp.defaultValue,
+        edgeTintEnabled: edgeTintEnabledProp.defaultValue,
         edgeTintStrength: edgeTintStrengthProp.defaultValue,
+        grazingShineEnabled: grazingShineEnabledProp.defaultValue,
         grazingShine: grazingShineProp.defaultValue,
         grazingShineRoughness: grazingShineRoughnessProp.defaultValue,
         yawDegrees: yawProp.defaultValue,
@@ -613,10 +653,13 @@ export function createAsset() {
                 tipRoundnessProp,
                 roughnessProp,
                 metalnessProp,
+                specularIntensityProp,
                 curvatureProp,
                 bladeBendProp,
+                edgeTintEnabledProp,
                 edgeTintProp,
                 edgeTintStrengthProp,
+                grazingShineEnabledProp,
                 grazingShineProp,
                 grazingShineRoughnessProp,
                 yawProp,
@@ -637,10 +680,13 @@ export function createAsset() {
             if (propId === 'tipRoundness') return params.tipRoundness;
             if (propId === 'roughness') return params.roughness;
             if (propId === 'metalness') return params.metalness;
+            if (propId === 'specularIntensity') return params.specularIntensity;
             if (propId === 'curvature') return params.curvature;
             if (propId === 'bladeBendDegrees') return params.bladeBendDegrees;
             if (propId === 'edgeTintHex') return params.edgeTintHex;
+            if (propId === 'edgeTintEnabled') return params.edgeTintEnabled;
             if (propId === 'edgeTintStrength') return params.edgeTintStrength;
+            if (propId === 'grazingShineEnabled') return params.grazingShineEnabled;
             if (propId === 'grazingShine') return params.grazingShine;
             if (propId === 'grazingShineRoughness') return params.grazingShineRoughness;
             if (propId === 'yawDegrees') return params.yawDegrees;
@@ -751,6 +797,15 @@ export function createAsset() {
                 return;
             }
 
+            if (propId === 'specularIntensity') {
+                const next = clampNumber(value, specularIntensityProp);
+                if (Math.abs(next - params.specularIntensity) < 1e-9) return;
+                params.specularIntensity = next;
+                semanticMaterial.specularIntensity = clamp(next, 0, 1);
+                semanticMaterial.needsUpdate = true;
+                return;
+            }
+
             if (propId === 'curvature') {
                 const next = clampNumber(value, curvatureProp);
                 if (Math.abs(next - params.curvature) < 1e-9) return;
@@ -767,6 +822,15 @@ export function createAsset() {
                 return;
             }
 
+            if (propId === 'edgeTintEnabled') {
+                const next = normalizeBooleanValue(value);
+                if (next === params.edgeTintEnabled) return;
+                params.edgeTintEnabled = next;
+                semanticMaterial.sheen = params.edgeTintEnabled ? clamp(params.edgeTintStrength, 0, 1) : 0;
+                semanticMaterial.needsUpdate = true;
+                return;
+            }
+
             if (propId === 'edgeTintHex') {
                 const next = normalizeColorHex(value, edgeTintProp.defaultValue);
                 if (next === params.edgeTintHex) return;
@@ -780,7 +844,16 @@ export function createAsset() {
                 const next = clampNumber(value, edgeTintStrengthProp);
                 if (Math.abs(next - params.edgeTintStrength) < 1e-9) return;
                 params.edgeTintStrength = next;
-                semanticMaterial.sheen = clamp(next, 0, 1);
+                semanticMaterial.sheen = params.edgeTintEnabled ? clamp(next, 0, 1) : 0;
+                semanticMaterial.needsUpdate = true;
+                return;
+            }
+
+            if (propId === 'grazingShineEnabled') {
+                const next = normalizeBooleanValue(value);
+                if (next === params.grazingShineEnabled) return;
+                params.grazingShineEnabled = next;
+                semanticMaterial.clearcoat = params.grazingShineEnabled ? clamp(params.grazingShine, 0, 1) : 0;
                 semanticMaterial.needsUpdate = true;
                 return;
             }
@@ -789,7 +862,7 @@ export function createAsset() {
                 const next = clampNumber(value, grazingShineProp);
                 if (Math.abs(next - params.grazingShine) < 1e-9) return;
                 params.grazingShine = next;
-                semanticMaterial.clearcoat = clamp(next, 0, 1);
+                semanticMaterial.clearcoat = params.grazingShineEnabled ? clamp(next, 0, 1) : 0;
                 semanticMaterial.needsUpdate = true;
                 return;
             }
