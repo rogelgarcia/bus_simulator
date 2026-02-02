@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { SimulationContext } from './SimulationContext.js';
 import { applyIBLIntensity, applyIBLToScene, getIBLBackgroundTexture, loadIBLBackgroundTexture, loadIBLTexture } from '../../graphics/lighting/IBL.js';
 import { getResolvedLightingSettings } from '../../graphics/lighting/LightingSettings.js';
+import { getResolvedShadowSettings, getShadowQualityPreset, sanitizeShadowSettings } from '../../graphics/lighting/ShadowSettings.js';
 import { getResolvedAtmosphereSettings, sanitizeAtmosphereSettings } from '../../graphics/visuals/atmosphere/AtmosphereSettings.js';
 import { getResolvedAntiAliasingSettings, sanitizeAntiAliasingSettings } from '../../graphics/visuals/postprocessing/AntiAliasingSettings.js';
 import { getResolvedBloomSettings, sanitizeBloomSettings } from '../../graphics/visuals/postprocessing/BloomSettings.js';
@@ -54,9 +55,10 @@ export class GameEngine {
             this.renderer.useLegacyLights = true;
         }
 
-        // ✅ Shadows
-        this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this._shadows = {
+            settings: getResolvedShadowSettings()
+        };
+        this._applyShadowSettings(this._shadows.settings);
 
         // ✅ Tone mapping
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -132,6 +134,10 @@ export class GameEngine {
         }
 
         this._gpuFrameTimer = getOrCreateGpuFrameTimer(this.renderer);
+    }
+
+    get shadowSettings() {
+        return this._shadows?.settings ?? null;
     }
 
     get lightingSettings() {
@@ -515,6 +521,25 @@ export class GameEngine {
         this._post.pipeline.setSize(size.x, size.y);
     }
 
+    _applyShadowSettings(settings) {
+        if (!this._shadows) return;
+        const next = sanitizeShadowSettings(settings);
+        this._shadows.settings = next;
+
+        const preset = getShadowQualityPreset(next.quality);
+        const enabled = !!preset.enabled;
+        const type = preset.shadowMapType === 'pcf' ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+
+        if (this.renderer.shadowMap.enabled !== enabled) {
+            this.renderer.shadowMap.enabled = enabled;
+            if ('needsUpdate' in this.renderer.shadowMap) this.renderer.shadowMap.needsUpdate = true;
+        }
+        if (enabled && this.renderer.shadowMap.type !== type) {
+            this.renderer.shadowMap.type = type;
+            if ('needsUpdate' in this.renderer.shadowMap) this.renderer.shadowMap.needsUpdate = true;
+        }
+    }
+
     _applyAntiAliasingSettings(settings) {
         if (!this._antiAliasing) return;
         const next = sanitizeAntiAliasingSettings(settings);
@@ -752,6 +777,10 @@ export class GameEngine {
         this._initIBL();
     }
 
+    reloadShadowSettings() {
+        this._applyShadowSettings(getResolvedShadowSettings());
+    }
+
     reloadBloomSettings() {
         this._applyBloomSettings(getResolvedBloomSettings());
     }
@@ -766,6 +795,10 @@ export class GameEngine {
 
     reloadColorGradingSettings() {
         this._applyColorGradingSettings(getResolvedColorGradingSettings());
+    }
+
+    setShadowSettings(settings) {
+        this._applyShadowSettings(settings);
     }
 
     setBloomSettings(settings) {
@@ -789,6 +822,7 @@ export class GameEngine {
         if (sm) sm.go(startState);
         if (this._contextProxy && 'city' in this._contextProxy) this._contextProxy.city = null;
         this.clearScene();
+        this.reloadShadowSettings();
         this.reloadLightingSettings();
         this.reloadAntiAliasingSettings();
         this.reloadBloomSettings();

@@ -6,6 +6,7 @@ import { applyAsphaltRoadVisualsToMeshStandardMaterial } from '../graphics/visua
 import { applyAsphaltEdgeWearVisualsToMeshStandardMaterial } from '../graphics/visuals/city/AsphaltEdgeWearVisuals.js';
 import { applyAsphaltMarkingsNoiseVisualsToMeshStandardMaterial } from '../graphics/visuals/city/AsphaltMarkingsNoiseVisuals.js';
 import { saveLightingSettings } from '../graphics/lighting/LightingSettings.js';
+import { getResolvedShadowSettings, saveShadowSettings } from '../graphics/lighting/ShadowSettings.js';
 import { saveAntiAliasingSettings } from '../graphics/visuals/postprocessing/AntiAliasingSettings.js';
 import { saveBloomSettings } from '../graphics/visuals/postprocessing/BloomSettings.js';
 import { saveSunBloomSettings } from '../graphics/visuals/postprocessing/SunBloomSettings.js';
@@ -55,6 +56,7 @@ export class OptionsState {
 
         const lighting = this.engine?.lightingSettings ?? null;
         const atmosphere = this.engine?.atmosphereSettings ?? null;
+        const shadows = this.engine?.shadowSettings ?? getResolvedShadowSettings();
         const antiAliasing = this.engine?.antiAliasingSettings ?? null;
         const bloom = this.engine?.bloomSettings ?? null;
         const sunBloom = this.engine?.sunBloomSettings ?? null;
@@ -70,6 +72,7 @@ export class OptionsState {
         this._original = {
             lighting: lighting && typeof lighting === 'object' ? JSON.parse(JSON.stringify(lighting)) : null,
             atmosphere: atmosphere && typeof atmosphere === 'object' ? JSON.parse(JSON.stringify(atmosphere)) : null,
+            shadows: shadows && typeof shadows === 'object' ? JSON.parse(JSON.stringify(shadows)) : null,
             antiAliasing: antiAliasing && typeof antiAliasing === 'object' ? JSON.parse(JSON.stringify(antiAliasing)) : null,
             bloom: bloom && typeof bloom === 'object' ? JSON.parse(JSON.stringify(bloom)) : null,
             sunBloom: sunBloom && typeof sunBloom === 'object' ? JSON.parse(JSON.stringify(sunBloom)) : null,
@@ -191,6 +194,7 @@ export class OptionsState {
                     }
                 }
                 : null,
+            initialShadows: shadows && typeof shadows === 'object' ? JSON.parse(JSON.stringify(shadows)) : null,
             initialSunFlare: sunFlare && typeof sunFlare === 'object'
                 ? {
                     enabled: sunFlare.enabled,
@@ -242,6 +246,7 @@ export class OptionsState {
 
     _save(draft) {
         saveLightingSettings(draft?.lighting ?? null);
+        saveShadowSettings(draft?.shadows ?? null);
         saveAntiAliasingSettings(draft?.antiAliasing ?? null);
         saveAtmosphereSettings(draft?.atmosphere ?? null);
         saveBloomSettings(draft?.bloom ?? null);
@@ -267,6 +272,7 @@ export class OptionsState {
         const d = draft && typeof draft === 'object' ? draft : null;
         const lighting = d?.lighting ?? null;
         const atmosphere = d?.atmosphere ?? null;
+        const shadows = d?.shadows ?? null;
         const antiAliasing = d?.antiAliasing ?? null;
         const bloom = d?.bloom ?? null;
         const sunBloom = d?.sunBloom ?? null;
@@ -275,6 +281,7 @@ export class OptionsState {
         const sunFlare = d?.sunFlare ?? null;
         const asphaltNoise = d?.asphaltNoise ?? null;
 
+        this.engine?.setShadowSettings?.(shadows ?? null);
         this.engine?.setLightingSettings?.(lighting ?? null);
         if (antiAliasing) this.engine?.setAntiAliasingSettings?.(antiAliasing);
         this.engine?.setAtmosphereSettings?.(atmosphere ?? null);
@@ -290,6 +297,7 @@ export class OptionsState {
             if (city?.hemi) city.hemi.intensity = lighting.hemiIntensity;
             if (city?.sun) city.sun.intensity = lighting.sunIntensity;
         }
+        if (city?.applyShadowSettings) city.applyShadowSettings(this.engine);
         if (sunFlare && city?.sunFlare?.setSettings) {
             city.sunFlare.setSettings(sunFlare);
         }

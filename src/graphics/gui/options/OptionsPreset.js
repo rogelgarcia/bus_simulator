@@ -3,6 +3,7 @@
 // @ts-check
 
 import { LIGHTING_DEFAULTS, sanitizeLightingSettings } from '../../lighting/LightingSettings.js';
+import { SHADOW_DEFAULTS, sanitizeShadowSettings } from '../../lighting/ShadowSettings.js';
 import { ANTIALIASING_DEFAULTS, sanitizeAntiAliasingSettings } from '../../visuals/postprocessing/AntiAliasingSettings.js';
 import { BLOOM_DEFAULTS, sanitizeBloomSettings } from '../../visuals/postprocessing/BloomSettings.js';
 import { SUN_BLOOM_DEFAULTS, sanitizeSunBloomSettings } from '../../visuals/postprocessing/SunBloomSettings.js';
@@ -16,6 +17,7 @@ export const OPTIONS_PRESET_VERSION = 1;
 
 const GROUPS = Object.freeze([
     'lighting',
+    'shadows',
     'antiAliasing',
     'bloom',
     'sunBloom',
@@ -51,6 +53,7 @@ function sanitizeIncludes(input) {
 function getDefaultSettings() {
     return {
         lighting: sanitizeLightingSettings(LIGHTING_DEFAULTS),
+        shadows: sanitizeShadowSettings(SHADOW_DEFAULTS),
         antiAliasing: sanitizeAntiAliasingSettings(ANTIALIASING_DEFAULTS),
         bloom: sanitizeBloomSettings(BLOOM_DEFAULTS),
         sunBloom: sanitizeSunBloomSettings(SUN_BLOOM_DEFAULTS),
@@ -67,6 +70,7 @@ function sanitizeSettings(input) {
     const defaults = getDefaultSettings();
     return {
         lighting: sanitizeLightingSettings(normalized.lighting ?? defaults.lighting),
+        shadows: sanitizeShadowSettings(normalized.shadows ?? defaults.shadows),
         antiAliasing: sanitizeAntiAliasingSettings(normalized.antiAliasing ?? defaults.antiAliasing),
         bloom: sanitizeBloomSettings(normalized.bloom ?? defaults.bloom),
         sunBloom: sanitizeSunBloomSettings(normalized.sunBloom ?? defaults.sunBloom),
@@ -94,6 +98,8 @@ function normalizeSettingsBooleans(src) {
                 : ibl
         };
     }
+
+    if (src.shadows && typeof src.shadows === 'object') out.shadows = { ...src.shadows };
 
     if (src.antiAliasing && typeof src.antiAliasing === 'object') out.antiAliasing = { ...src.antiAliasing };
 
@@ -270,6 +276,7 @@ export function applyOptionsPresetToDraft(draft, preset) {
     const settings = p.settings ?? {};
 
     if (includes.lighting) out.lighting = settings.lighting;
+    if (includes.shadows) out.shadows = settings.shadows;
     if (includes.antiAliasing) out.antiAliasing = settings.antiAliasing;
     if (includes.bloom) out.bloom = settings.bloom;
     if (includes.sunBloom) out.sunBloom = settings.sunBloom;

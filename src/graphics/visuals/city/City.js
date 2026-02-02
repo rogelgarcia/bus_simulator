@@ -13,6 +13,7 @@ import { BuildingWallTextureCache, buildBuildingVisualParts } from '../../assets
 import { buildBuildingFabricationVisualParts } from '../../assets3d/generators/building_fabrication/BuildingFabricationGenerator.js';
 import { getCityMaterials } from '../../assets3d/textures/CityMaterials.js';
 import { getResolvedLightingSettings } from '../../lighting/LightingSettings.js';
+import { getResolvedShadowSettings, getShadowQualityPreset } from '../../lighting/ShadowSettings.js';
 import { azimuthElevationDegToDir } from '../atmosphere/SunDirection.js';
 import { getResolvedBuildingWindowVisualsSettings } from '../buildings/BuildingWindowVisualsSettings.js';
 import { getResolvedSunFlareSettings } from '../sun/SunFlareSettings.js';
@@ -22,6 +23,32 @@ import { getResolvedSunBloomSettings } from '../postprocessing/SunBloomSettings.
 import { SunRaysRig } from '../sun/SunRaysRig.js';
 import { createRoadEngineRoads } from './RoadEngineRoads.js';
 import { createTrafficControlProps } from './TrafficControlProps.js';
+
+const MATERIAL_SHADOW_SIDE_ORIGINAL = new WeakMap();
+
+function applyShadowSideToObject(root, shadowSide) {
+    if (!root?.traverse) return;
+
+    root.traverse((o) => {
+        if (!o || !o.isMesh || !o.material || !o.castShadow) return;
+
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const mat of mats) {
+            if (!mat || typeof mat !== 'object' || !('shadowSide' in mat)) continue;
+
+            if (shadowSide !== null && shadowSide !== undefined) {
+                if (!MATERIAL_SHADOW_SIDE_ORIGINAL.has(mat)) MATERIAL_SHADOW_SIDE_ORIGINAL.set(mat, mat.shadowSide ?? null);
+                mat.shadowSide = shadowSide;
+                continue;
+            }
+
+            if (MATERIAL_SHADOW_SIDE_ORIGINAL.has(mat)) {
+                mat.shadowSide = MATERIAL_SHADOW_SIDE_ORIGINAL.get(mat);
+                MATERIAL_SHADOW_SIDE_ORIGINAL.delete(mat);
+            }
+        }
+    });
+}
 
 export class City {
     constructor(options = {}) {
@@ -65,10 +92,14 @@ export class City {
         this.sun.shadow.mapSize.set(2048, 2048);
         this.sun.shadow.camera.near = 1;
         this.sun.shadow.camera.far = 600;
-        this.sun.shadow.camera.left = -220;
-        this.sun.shadow.camera.right = 220;
-        this.sun.shadow.camera.top = 220;
-        this.sun.shadow.camera.bottom = -220;
+        const halfSize = Math.max(50, size * 0.5);
+        const padding = Math.max(20, Math.min(80, halfSize * 0.1));
+        const half = halfSize + padding;
+        this.sun.shadow.camera.left = -half;
+        this.sun.shadow.camera.right = half;
+        this.sun.shadow.camera.top = half;
+        this.sun.shadow.camera.bottom = -half;
+        this.sun.shadow.camera.updateProjectionMatrix();
         this.group.add(this.sun);
 
         this.sky = createGradientSkyDome({
@@ -233,6 +264,7 @@ export class City {
         engine.camera.updateProjectionMatrix();
 
         engine.scene.add(this.group);
+        this.applyShadowSettings(engine);
         this._attached = true;
     }
 
@@ -240,6 +272,7 @@ export class City {
         if (!this._attached) return;
 
         engine.scene.remove(this.group);
+        applyShadowSideToObject(this.group, null);
 
         if (this._restore) {
             engine.scene.background = this._restore.bg ?? null;
@@ -251,6 +284,36 @@ export class City {
 
         this._restore = null;
         this._attached = false;
+    }
+
+    applyShadowSettings(engine) {
+        const renderer = engine?.renderer ?? null;
+        const settings = engine?.shadowSettings ?? getResolvedShadowSettings();
+        const preset = getShadowQualityPreset(settings?.quality);
+        const enabled = !!preset.enabled;
+
+        if (this.sun) {
+            this.sun.castShadow = enabled;
+            this.sun.shadow.bias = preset.bias;
+            if ('normalBias' in this.sun.shadow) this.sun.shadow.normalBias = preset.normalBias;
+            if ('radius' in this.sun.shadow) this.sun.shadow.radius = preset.radius;
+
+            if (enabled && preset.mapSize > 0) {
+                const capsMax = Number.isFinite(renderer?.capabilities?.maxTextureSize)
+                    ? Math.max(256, Math.floor(renderer.capabilities.maxTextureSize))
+                    : preset.mapSize;
+                const size = Math.max(256, Math.min(preset.mapSize, 4096, capsMax));
+                const current = this.sun.shadow.mapSize;
+                if (current?.x !== size || current?.y !== size) {
+                    this.sun.shadow.mapSize.set(size, size);
+                    if (this.sun.shadow.map?.dispose) this.sun.shadow.map.dispose();
+                    this.sun.shadow.map = null;
+                }
+            }
+        }
+
+        const wantsTwoSided = enabled && preset.twoSidedCasting;
+        applyShadowSideToObject(this.group, wantsTwoSided ? THREE.DoubleSide : null);
     }
 
     update(engine) {

@@ -205,6 +205,67 @@ function normalizeMaterialSpec(
     return safeFallback;
 }
 
+const FACE_IDS = Object.freeze(['A', 'B', 'C', 'D']);
+
+function isFaceId(faceId) {
+    return faceId === 'A' || faceId === 'B' || faceId === 'C' || faceId === 'D';
+}
+
+function normalizeFaceLinkingConfig(value) {
+    const src = value && typeof value === 'object' ? value : null;
+    const links = src?.links && typeof src.links === 'object' ? src.links : null;
+    if (!links) return null;
+
+    const out = {};
+    for (const [slave, master] of Object.entries(links)) {
+        if (!isFaceId(slave) || !isFaceId(master) || slave === master) continue;
+        out[slave] = master;
+    }
+    return Object.keys(out).length ? { links: out } : null;
+}
+
+function normalizeFaceMaterialConfigs(value, { layerDefaults, faceLinking }) {
+    const src = value && typeof value === 'object' ? value : null;
+    if (!src) return null;
+
+    const defaults = layerDefaults && typeof layerDefaults === 'object' ? layerDefaults : null;
+    if (!defaults) return null;
+
+    const slaveFaces = new Set();
+    const links = faceLinking?.links && typeof faceLinking.links === 'object' ? faceLinking.links : null;
+    if (links) {
+        for (const [slave, master] of Object.entries(links)) {
+            if (!isFaceId(slave) || !isFaceId(master) || slave === master) continue;
+            slaveFaces.add(slave);
+        }
+    }
+
+    const out = {};
+    for (const faceId of FACE_IDS) {
+        if (slaveFaces.has(faceId)) continue;
+
+        const cfg = src?.[faceId];
+        if (!cfg || typeof cfg !== 'object') continue;
+
+        out[faceId] = {
+            material: normalizeMaterialSpec(cfg?.material, {
+                fallback: defaults.material,
+                allowColorId: isBeltCourseColor,
+                allowTextureId: (id) => isBuildingStyle(id) || isPbrBuildingWallMaterialId(id),
+                stringKind: 'texture'
+            }),
+            wallBase: normalizeWallBaseMaterialConfig(cfg?.wallBase ?? defaults.wallBase),
+            tiling: normalizeTilingConfig(cfg?.tiling ?? defaults.tiling, { defaultTileMeters: 2.0 }),
+            materialVariation: normalizeMaterialVariationConfig(cfg?.materialVariation ?? defaults.materialVariation, {
+                defaultEnabled: !!defaults.materialVariation?.enabled,
+                defaultSeedOffset: Number(defaults.materialVariation?.seedOffset) || 0
+            })
+        };
+    }
+
+    return Object.keys(out).length ? out : null;
+}
+
 let _nextLayerId = 1;
 
 export function createLayerId(prefix = 'layer') {
@@ -282,7 +343,9 @@ export function createDefaultFloorLayer({
     belt = null,
     windows = null,
     tiling = null,
-    materialVariation = null
+    materialVariation = null,
+    faceLinking = null,
+    faceMaterials = null
 } = {}) {
     const b = belt ?? {};
     const styleId = typeof style === 'string' ? style : '';
@@ -299,7 +362,13 @@ export function createDefaultFloorLayer({
     const tilingCfg = normalizeTilingConfig(tiling, { defaultTileMeters: 2.0 });
     const matVarCfg = normalizeMaterialVariationConfig(materialVariation, { defaultEnabled: false, defaultSeedOffset: 0 });
     const wallBaseCfg = normalizeWallBaseMaterialConfig(wallBase ?? null);
-    return {
+    const faceLinkingCfg = normalizeFaceLinkingConfig(faceLinking);
+    const faceMaterialsCfg = normalizeFaceMaterialConfigs(faceMaterials, {
+        layerDefaults: { material: wallMaterial, wallBase: wallBaseCfg, tiling: tilingCfg, materialVariation: matVarCfg },
+        faceLinking: faceLinkingCfg
+    });
+
+    const out = {
         id: typeof id === 'string' && id ? id : createLayerId('floor'),
         type: LAYER_TYPE.FLOOR,
         floors: clampInt(floors, 1, 99),
@@ -324,6 +393,10 @@ export function createDefaultFloorLayer({
         },
         windows: windows ? createDefaultWindowSpec(windows) : createDefaultWindowSpec()
     };
+
+    if (faceLinkingCfg) out.faceLinking = faceLinkingCfg;
+    if (faceMaterialsCfg) out.faceMaterials = faceMaterialsCfg;
+    return out;
 }
 
 export function createDefaultRoofLayer({
@@ -430,11 +503,13 @@ export function normalizeBuildingLayers(layers, { fallback = null } = {}) {
     for (const layer of list) {
         const type = layer?.type;
         if (type === LAYER_TYPE.FLOOR) {
-            next.push(createDefaultFloorLayer(layer));
+            const windowsMissing = layer && typeof layer === 'object' && layer.windows === undefined;
+            next.push(createDefaultFloorLayer(windowsMissing ? { ...layer, windows: { enabled: false } } : layer));
             continue;
         }
         if (type === LAYER_TYPE.ROOF) {
-            next.push(createDefaultRoofLayer(layer));
+            const ringMissing = layer && typeof layer === 'object' && layer.ring === undefined;
+            next.push(createDefaultRoofLayer(ringMissing ? { ...layer, ring: { enabled: false } } : layer));
             continue;
         }
     }
@@ -465,9 +540,13 @@ export function cloneBuildingLayers(layers) {
             const wallBase = layer?.wallBase ?? null;
             const tiling = layer?.tiling ?? null;
             const materialVariation = layer?.materialVariation ?? null;
+            const faceLinking = layer?.faceLinking ?? null;
+            const faceMaterials = layer?.faceMaterials ?? null;
 
             out.push({
                 ...layer,
+                faceLinking: faceLinking ? deepClone(faceLinking) : faceLinking,
+                faceMaterials: faceMaterials ? deepClone(faceMaterials) : faceMaterials,
                 material: material ? { ...material } : material,
                 wallBase: wallBase ? deepClone(wallBase) : wallBase,
                 tiling: tiling ? deepClone(tiling) : tiling,

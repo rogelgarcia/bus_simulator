@@ -1,4 +1,4 @@
-# Building Fabrication — Floorplan / Topology Specification
+# Building v2 — Floorplan / Topology Specification
 
 Status: **Proposed (draft)**  
 Scope: **Footprint topology + face identity rules** (no implementation details)
@@ -112,7 +112,7 @@ Note: how the initial “corner[0]” is chosen is an editor/authoring concern. 
 - Bay layouts partition the face length along the face’s local `u` axis; they do not alter the footprint.
 - Bay depth (extrude/inset), wedge angles, and segment content affect geometry generation on that face, but do not create additional logical faces.
 
-For detailed facade layout and fitting behavior, see `specs/BUILDING_FABRICATION_FACADE_LAYOUT_SPEC.md`.
+For detailed facade layout and fitting behavior, see `specs/buildings/BUILDING_2_FACADE_LAYOUT_SPEC.md`.
 
 ---
 
@@ -123,4 +123,3 @@ The system MUST validate and surface errors/warnings rather than silently fallin
 - Hard error if applicable layers do not share identical footprint topology (corner count/order).
 - Hard error if a footprint is invalid (self-intersection, collapsed edges, etc.).
 - Warning if an edge/face is too short to reasonably host authored bays/features (exact thresholds are implementation-defined).
-

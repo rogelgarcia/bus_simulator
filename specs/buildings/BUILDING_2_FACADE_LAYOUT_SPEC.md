@@ -1,4 +1,4 @@
-# Building Fabrication — Facade Layout Specification (Bays)
+# Building v2 — Facade Layout Specification (Bays)
 
 This document specifies the **Facade Layout** model used to author building exteriors as a **2D facade description** (per face), which can later be converted into **3D building geometry** across multiple faces and layers.
 
@@ -17,6 +17,8 @@ The system MUST:
   - **Fixed** (absolute meters), or
   - **Flexible** (min/preferred/max + grow/shrink weights).
 - Support **repeatable groups** of bays (pattern repeats) that expand “if it fits”.
+- Support **local repetition ranges** inside groups (e.g., a “window slot” that repeats `min..max` times per group).
+- Support deterministic ordering when distributing extra local repeats (default: **center-out**).
 - Allow **per-layer reflow** (faces can be different lengths per layer) while keeping:
   - the **same bay topology** across layers (same bay ids/order), and
   - the same **group repeat counts** across layers.
@@ -58,14 +60,15 @@ The facade layout is authored in `(u, v)` and later mapped into 3D space for eac
 
 ---
 
-## 3. Layer model and the “faces must match” constraint
+## 3. Floor layer model and the “faces must match” constraint
 
-Buildings are defined in vertical **Layers** (floor layers and roof layers). This facade model targets vertical walls (typically from floor layers).
+Buildings are defined in vertical **Layers** (floor layers and roof layers). This facade model targets vertical walls (typically from **floor layers**).
 
 ### 3.1 Applicability
 
-- A `FacadeSpec` is authored per `faceId` and applies to a set of layers (by default: all floor layers).
-- A layer MAY override facade defaults (materials, window types), but MUST NOT change bay topology (ids/order/count).
+- A `FacadeSpec` is authored per **floor layer** and per `faceId`.
+- A floor layer owns its own face configuration; face master/slave linking is defined per floor layer (see §4.2).
+- Within a floor layer, a face MAY be linked (slave) to another face (master) so it inherits the master’s authored facade layout for that floor layer.
 
 ### 3.2 Topology invariants
 
@@ -83,7 +86,6 @@ This is a conceptual schema; concrete serialization can be JSON/ES module later.
 ### 4.1 BuildingSpec
 
 - `layers: LayerSpec[]`
-- `facades: Record<FaceId, FacadeSpec>`
 - `defaults?: BuildingFacadeDefaults`
 
 ### 4.2 LayerSpec (for facade concerns)
@@ -94,16 +96,47 @@ This is a conceptual schema; concrete serialization can be JSON/ES module later.
   - `floors: int`
   - `floorHeight: meters`
   - `planOffset: meters`
+  - `facades: Record<FaceId, FacadeSpec>` (facade authored per face for this floor layer)
+  - `faceLinking?: FaceLinkingSpec`
   - (Optional) other layer properties (belts/roof/etc) are out of scope for this facade doc except where they affect vertical extents.
 
 ### 4.3 FacadeSpec
 
 - `faceId: FaceId` (e.g. `"A"`)
-- `appliesToLayers: 'allFloorLayers' | string[]` (list of layer ids)
 - `cornerPolicy: CornerPolicy`
 - `layout: FacadeLayout`
 - `defaults: FacadeDefaults`
 - `validation: FacadeValidationRules`
+
+### 4.4 FaceLinkingSpec (master/slave per floor layer)
+
+Face linking is an authoring concept used to reuse a single facade design across multiple faces within the **same floor layer**.
+
+**FaceLinkingSpec**
+
+- `links: Record<FaceId, FaceId>`
+  - key: a **slave** face id
+  - value: the **master** face id it is linked to
+
+Rules:
+- A face MUST NOT be both a master and a slave in a way that creates cycles (no loops).
+- A linked (slave) face uses the master’s authored `FacadeSpec` for this floor layer (effective equivalence).
+
+### 4.5 BF2 (current) serialization snapshot (groups)
+
+Building Fabrication 2 currently stores a pragmatic subset of the conceptual `FacadeLayout` using:
+
+- `facade.layout.bays.items: FacadeBaySpec[]` — the authored bay list in left→right order.
+- `facade.layout.groups.items?: FacadeBayGroupSpec[]` — repeatable bay groups by membership reference (no duplication).
+
+**FacadeBayGroupSpec**
+- `id: string` (stable per face)
+- `bayIds: string[]` (must reference `bays.items[*].id`)
+- `repeat?: { minRepeats?: number, maxRepeats?: number | 'auto' }` (UI does not expose this yet; defaults to repeat-if-fits)
+
+Constraints:
+- `bayIds` MUST be **contiguous** in `bays.items` order.
+- Groups MUST NOT overlap (a bay may belong to at most one group).
 
 ---
 
@@ -113,7 +146,7 @@ This is a conceptual schema; concrete serialization can be JSON/ES module later.
 
 `FacadeLayout` is an ordered list of `LayoutItem`:
 
-- `LayoutItem = BayItem | GroupItem`
+- `LayoutItem = BayItem | GroupItem | RepeatItem`
 
 ### 5.2 BayItem
 
@@ -146,6 +179,18 @@ Groups allow pattern authoring without manually listing many bays.
 - `repeat: GroupRepeatSpec`
 - `items: LayoutItem[]` (typically bays; nesting is allowed but SHOULD be kept shallow)
 
+### 5.4 RepeatItem (local repetition range)
+
+Repeat items allow expressing “a thing repeats inside the group”, e.g. “windows repeat 3–6 times before a column”.
+
+**RepeatItem**
+
+- `type: 'repeat'`
+- `repeatId: string` (stable within the face; MUST be unique per face)
+- `label?: string`
+- `repeat: LocalRepeatSpec`
+- `items: LayoutItem[]` (typically a single bay; nesting SHOULD be kept shallow)
+
 ---
 
 ## 6. Bay sizing model
@@ -170,6 +215,9 @@ Each bay MUST be either fixed or flexible.
 
 Flexible bays participate in distributing extra/deficit length after repeats are expanded.
 
+UI note (non-normative):
+- Some authoring UIs may present “max = ∞”. A concrete serialization may encode this as `max = null` and treat it as “unbounded” at solve time.
+
 ### 6.2 Suggested defaults (non-normative)
 
 - A “normal window bay” might be `flex` with:
@@ -190,17 +238,17 @@ Flexible bays participate in distributing extra/deficit length after repeats are
 - `maxRepeats: int | 'auto'`
 - `fitMetric: 'min' | 'preferred'`
 - `repeatCountPolicy: 'global' | 'pinned'`
-  - `global`: compute one repeat count shared by all applicable layers of this face.
+  - `global`: compute one repeat count for this face within the floor layer.
   - `pinned`: repeat count is fixed by authoring (`pinnedRepeats`).
 - `pinnedRepeats?: int` (required when `repeatCountPolicy === 'pinned'`)
 - `remainder: RemainderPolicy`
 
 ### 7.2 Global repeat count requirement (continuity)
 
-To keep bay topology aligned across layers:
+To keep bay topology aligned within a floor layer:
 
-- All repeat counts MUST be resolved **once per face** and MUST be shared across all layers to which the facade applies.
-- When `repeatCountPolicy = 'global'`, the solver MUST use the most restrictive layer face length (see §9.2).
+- All repeat counts MUST be resolved **once per face** (per floor layer).
+- When `repeatCountPolicy = 'global'`, the solver MUST ensure the resolved repeat counts are feasible for the floor layer face length (see §9.2).
 
 ### 7.3 RemainderPolicy
 
@@ -211,6 +259,18 @@ Defines how leftover length is handled after expanding repeats.
   - `center/left/right`: treat remainder as “gap” space (padding) placed accordingly.
 
 For this system, `flexReflow` SHOULD be the default.
+
+### 7.4 LocalRepeatSpec (repeat range inside a group)
+
+Local repeats define how a `RepeatItem` expands within a group instance.
+
+- `minRepeats: int` (>= 0)
+- `maxRepeats: int | 'auto'` (>= `minRepeats`)
+- `distributionOrder: 'centerOut' | 'leftToRight' | 'rightToLeft'`
+
+Rules:
+- Local repeat counts MUST be resolved globally per face (shared across applicable layers) so bay topology stays identical across layers.
+- When extra local repeats are assigned across multiple group instances, `centerOut` MUST allocate extras from the center of the face outward deterministically (with stable tie-breaks for even counts).
 
 ---
 
@@ -305,7 +365,10 @@ If `joinContinuously` is true, the generator SHOULD create a single continuous m
 
 ## 9. Layout solving (per face, per layer)
 
-This section defines the deterministic fitting algorithm.
+This section defines the high-level inputs/outputs for solving.
+
+The canonical deterministic **v0** fitting algorithm (repeat groups center-out, apply per-bay `expandPreference` local repetition, then expand remainder with clamp/redistribute and deterministic tie-breaks) is specified in:
+- `specs/buildings/BUILDING_2_FACADE_FILL_SOLVER_SPEC.md`
 
 ### 9.1 Inputs
 
@@ -317,16 +380,8 @@ For a given face `F` and layer `K`:
 - `Lusable(F, K) = max(0, L(F, K) - Cstart(F) - Cend(F))`.
 
 ### 9.2 Resolve repeat counts (global per face)
-
-When a group uses `repeatCountPolicy = 'global'`:
-
-1. Compute `LminUsable(F)` as the minimum `Lusable(F, K)` across all layers to which the facade applies.
-2. For each repeatable group, compute the group’s `metricWidth` based on `fitMetric`:
-   - `min`: sum of `min` widths (or fixed widths) of all bays in the group.
-   - `preferred`: sum of `preferred` (or fixed) widths.
-3. Expand repeats to the maximum `N` such that the full layout’s metric sum fits within `LminUsable(F)`, clamped to `[minRepeats, maxRepeats]`.
-
-This produces a single repeat count `N` used for every applicable layer for that face.
+Repeat counts MUST be resolved deterministically per face, shared across applicable layers, according to the canonical algorithm in:
+- `specs/buildings/BUILDING_2_FACADE_FILL_SOLVER_SPEC.md`
 
 ### 9.3 Expand layout into a flat bay list
 
@@ -334,25 +389,11 @@ After resolving group repeat counts, flatten the facade layout into a bay list:
 
 - `baysExpanded(F) = [bay0, bay1, ...]`
 
-This list MUST be identical (ids/order/count) across layers for the face.
+This list defines the bay topology for the face in this floor layer.
 
 ### 9.4 Solve bay widths per layer (reflow)
-
-For each layer `K`, solve widths so that the bays fill `Lusable(F, K)`:
-
-1. Initialize:
-   - fixed bays: `w = width`
-   - flex bays: `w = preferred`
-2. Compute `sumW = Σ w`.
-3. Compute `delta = Lusable - sumW`.
-4. If `delta > 0` (need to grow):
-   - Distribute `delta` across flex bays proportionally to `growWeight`,
-   - Respecting `max` constraints (bays stop growing at max; remaining delta is redistributed).
-5. If `delta < 0` (need to shrink):
-   - Distribute `-delta` across flex bays proportionally to `shrinkWeight`,
-   - Respecting `min` constraints (bays stop shrinking at min; remaining deficit is redistributed).
-6. If constraints prevent a solution (e.g., even all flex bays at min are too wide):
-   - Apply `overflowPolicy` (see §9.5).
+Widths are solved per layer, respecting min/max constraints, using equal distribution with clamp + redistribution and center-out tie-breaks as specified in:
+- `specs/buildings/BUILDING_2_FACADE_FILL_SOLVER_SPEC.md`
 
 ### 9.5 Overflow policy (invalid vs auto-fix)
 
@@ -384,9 +425,23 @@ These resolved intervals are the “2D facade” result used for geometry genera
 
 ### 10.1 BayDepthSpec
 
+Bay depth MAY be authored as either a **uniform offset** or **per-edge offsets**.
+
+**Uniform offset**
 - `mode: 'offset'`
 - `offset: meters` (negative inset, positive extrude)
-- `blendAtEdges?: 'step' | 'miter' | 'bevel'` (controls joins between adjacent bays)
+
+**Per-edge offsets (BF2 v0 UI)**
+- `mode: 'edgeOffsets'`
+- `left: meters` (depth at the bay’s `uStart` edge)
+- `right: meters` (depth at the bay’s `uEnd` edge)
+- `linked?: boolean` (authoring convenience; when `true`/omitted, `left` and `right` are treated as equal)
+
+Orientation rule:
+- `Left`/`Right` are defined relative to the face’s `u` direction (`u=0` at face start corner → `u=L` at face end corner).
+
+Future (non-normative):
+- `blendAtEdges?: 'step' | 'miter' | 'bevel'` can control joins between adjacent bays with different depths.
 
 ### 10.2 Depth stacking (author intent)
 
@@ -485,4 +540,3 @@ This increases authoring power while keeping deterministic fitting rules.
 2. **Default remainder policy:** whether leftover length should always reflow, or sometimes become padding gaps.
 3. **Per-face vs per-layer overrides:** what overrides are allowed without breaking continuity (materials, window types, depth).
 4. **Corner cap styling:** whether caps are a simple post, or derived from adjacent bay materials.
-

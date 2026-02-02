@@ -13,7 +13,7 @@
 
 ## Specifications
 
-Project specifications are stored in `specs/`. When writing a new specification (or updating an existing spec) as a Markdown document, it should be created/kept in the `specs/` folder.
+Project specifications are stored in `specs/` (use subfolders when appropriate). Building-related specifications live in `specs/buildings/`. Any AI prompt or change that modifies the building specification/model must update one or more relevant specs under `specs/buildings/`.
 
 ## Testing
 

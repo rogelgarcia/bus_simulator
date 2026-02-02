@@ -10,7 +10,8 @@ function normalizeOptions(options) {
             label: typeof opt.label === 'string' ? opt.label : '',
             kind: opt.kind === 'color' ? 'color' : 'texture',
             hex: Number.isFinite(opt.hex) ? opt.hex : null,
-            previewUrl: typeof opt.previewUrl === 'string' ? opt.previewUrl : null
+            previewUrl: typeof opt.previewUrl === 'string' ? opt.previewUrl : null,
+            disabled: !!opt.disabled
         }))
         .filter((opt) => !!opt.id);
 }
@@ -206,6 +207,7 @@ export class PickerPopup {
             btn.dataset.id = opt.id;
             btn.setAttribute('aria-label', opt.label || opt.id);
             btn.title = opt.label || opt.id;
+            btn.disabled = !!opt.disabled;
             btn.classList.toggle('is-selected', opt.id === this._selectedId);
             btn.setAttribute('aria-pressed', opt.id === this._selectedId ? 'true' : 'false');
 

@@ -36,6 +36,11 @@ export const SCENE_SHORTCUT_REGISTRY = Object.freeze([
         id: 'road_debugger',
         label: 'Road Debugger',
         key: '7'
+    },
+    {
+        id: 'building_fabrication2',
+        label: 'Building Fabrication 2',
+        key: '9'
     }
 ]);
 

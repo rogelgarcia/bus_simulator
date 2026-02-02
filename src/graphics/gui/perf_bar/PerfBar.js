@@ -129,6 +129,8 @@ export class PerfBar {
             lastUpdateMs: 0
         };
 
+        this._forceUpdate = false;
+
         this._els = {
             fpsText: null,
             gpuMsText: null,
@@ -154,6 +156,10 @@ export class PerfBar {
             e.preventDefault();
             this.setHidden(!this.isHidden());
         };
+    }
+
+    requestUpdate() {
+        this._forceUpdate = true;
     }
 
     mount(parent = document.body) {
@@ -301,7 +307,8 @@ export class PerfBar {
             this._frame.emaMs = this._frame.emaMs ? (this._frame.emaMs * (1 - alpha) + frameMs * alpha) : frameMs;
         }
 
-        if (now - this._frame.lastUpdateMs < this._updateIntervalMs) return;
+        if (!this._forceUpdate && now - this._frame.lastUpdateMs < this._updateIntervalMs) return;
+        this._forceUpdate = false;
         this._frame.lastUpdateMs = now;
         this._renderLive();
     }

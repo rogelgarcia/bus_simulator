@@ -2,6 +2,7 @@
 // Tabbed Options UI overlay with persisted lighting controls.
 
 import { getDefaultResolvedLightingSettings } from '../../lighting/LightingSettings.js';
+import { getDefaultResolvedShadowSettings } from '../../lighting/ShadowSettings.js';
 import { getDefaultResolvedAntiAliasingSettings } from '../../visuals/postprocessing/AntiAliasingSettings.js';
 import { getDefaultResolvedBloomSettings } from '../../visuals/postprocessing/BloomSettings.js';
 import { getDefaultResolvedSunBloomSettings } from '../../visuals/postprocessing/SunBloomSettings.js';
@@ -275,7 +276,7 @@ async function copyTextToClipboard(text) {
 
 function formatIncludedGroups(includes) {
     const src = includes && typeof includes === 'object' ? includes : {};
-    const keys = ['lighting', 'antiAliasing', 'bloom', 'sunBloom', 'colorGrading', 'sunFlare', 'buildingWindowVisuals', 'asphaltNoise'];
+    const keys = ['lighting', 'shadows', 'antiAliasing', 'bloom', 'sunBloom', 'colorGrading', 'sunFlare', 'buildingWindowVisuals', 'asphaltNoise'];
     const enabled = keys.filter((k) => src[k] !== false);
     return enabled.length ? enabled.join(', ') : '(none)';
 }
@@ -286,6 +287,7 @@ export class OptionsUI {
         initialTab = 'lighting',
         initialLighting = null,
         initialAtmosphere = null,
+        initialShadows = null,
         initialAntiAliasing = null,
         initialBloom = null,
         initialSunBloom = null,
@@ -408,6 +410,9 @@ export class OptionsUI {
         this._draftAtmosphere = initialAtmosphere && typeof initialAtmosphere === 'object'
             ? JSON.parse(JSON.stringify(initialAtmosphere))
             : null;
+        this._draftShadows = initialShadows && typeof initialShadows === 'object'
+            ? JSON.parse(JSON.stringify(initialShadows))
+            : null;
         this._draftAntiAliasing = initialAntiAliasing && typeof initialAntiAliasing === 'object'
             ? JSON.parse(JSON.stringify(initialAntiAliasing))
             : null;
@@ -451,6 +456,7 @@ export class OptionsUI {
         if (!d) return;
         if (d.lighting) this._draftLighting = JSON.parse(JSON.stringify(d.lighting));
         if (d.atmosphere) this._draftAtmosphere = JSON.parse(JSON.stringify(d.atmosphere));
+        if (d.shadows) this._draftShadows = JSON.parse(JSON.stringify(d.shadows));
         if (d.antiAliasing) this._draftAntiAliasing = JSON.parse(JSON.stringify(d.antiAliasing));
         if (d.bloom) this._draftBloom = JSON.parse(JSON.stringify(d.bloom));
         if (d.sunBloom) this._draftSunBloom = JSON.parse(JSON.stringify(d.sunBloom));
@@ -873,6 +879,12 @@ export class OptionsUI {
         if (this._draftAtmosphere) return;
         const d = getDefaultResolvedAtmosphereSettings();
         this._draftAtmosphere = JSON.parse(JSON.stringify(d));
+    }
+
+    _ensureDraftShadows() {
+        if (this._draftShadows) return;
+        const d = getDefaultResolvedShadowSettings();
+        this._draftShadows = JSON.parse(JSON.stringify(d));
     }
 
     _ensureDraftAntiAliasing() {
@@ -1819,7 +1831,9 @@ export class OptionsUI {
 
     _renderGraphicsTab() {
         this._ensureDraftAntiAliasing();
+        this._ensureDraftShadows();
         const aa = this._draftAntiAliasing;
+        const shadows = this._draftShadows;
         const emit = () => this._emitLiveChange();
 
         const info = this._getAntiAliasingDebugInfo?.() ?? null;
@@ -2226,7 +2240,33 @@ export class OptionsUI {
 
         syncEnabled();
 
+        const sectionShadows = makeEl('div', 'options-section');
+        sectionShadows.appendChild(makeEl('div', 'options-section-title', 'Shadows'));
+
+        const shadowQuality = makeChoiceRow({
+            label: 'Shadow quality',
+            value: String(shadows?.quality ?? 'medium'),
+            options: [
+                { id: 'off', label: 'Off' },
+                { id: 'low', label: 'Low' },
+                { id: 'medium', label: 'Medium' },
+                { id: 'high', label: 'High' },
+                { id: 'ultra', label: 'Ultra' }
+            ],
+            onChange: (v) => {
+                shadows.quality = v;
+                emit();
+            }
+        });
+
+        const shadowNote = makeEl('div', 'options-note');
+        shadowNote.textContent = 'Applied immediately. Higher presets increase GPU cost and VRAM usage.';
+
+        sectionShadows.appendChild(shadowQuality.row);
+        sectionShadows.appendChild(shadowNote);
+
         this.body.appendChild(sectionStatus);
+        this.body.appendChild(sectionShadows);
         this.body.appendChild(sectionAa);
         this._refreshAntiAliasingDebug();
     }
@@ -2818,6 +2858,8 @@ export class OptionsUI {
 
         this._draftAtmosphere = JSON.parse(JSON.stringify(getDefaultResolvedAtmosphereSettings()));
 
+        this._draftShadows = JSON.parse(JSON.stringify(getDefaultResolvedShadowSettings()));
+
         this._draftAntiAliasing = JSON.parse(JSON.stringify(getDefaultResolvedAntiAliasingSettings()));
 
         const bloom = getDefaultResolvedBloomSettings();
@@ -2876,6 +2918,7 @@ export class OptionsUI {
         this._ensureDraftBuildingWindowVisuals();
         this._ensureDraftLighting();
         this._ensureDraftAtmosphere();
+        this._ensureDraftShadows();
         this._ensureDraftAntiAliasing();
         this._ensureDraftBloom();
         this._ensureDraftSunBloom();
@@ -2883,6 +2926,7 @@ export class OptionsUI {
         this._ensureDraftSunFlare();
         const d = this._draftLighting;
         const atmo = this._draftAtmosphere;
+        const shadows = this._draftShadows;
         const antiAliasing = this._draftAntiAliasing;
         const bloom = this._draftBloom;
         const sunBloom = this._draftSunBloom;
@@ -2903,6 +2947,9 @@ export class OptionsUI {
                 }
             },
             atmosphere: JSON.parse(JSON.stringify(atmo)),
+            shadows: {
+                quality: String(shadows?.quality ?? 'medium')
+            },
             antiAliasing: {
                 mode: String(antiAliasing?.mode ?? 'off'),
                 msaa: { samples: antiAliasing?.msaa?.samples },

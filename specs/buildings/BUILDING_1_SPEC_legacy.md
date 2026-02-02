@@ -1,3 +1,12 @@
+# Building v1 — Building Fabrication Specification (Legacy)
+
+Status: **Legacy / frozen**  
+Scope: **Original building fabrication model and rules**
+
+This is the original (v1) building fabrication specification. Building v2 (facade/bay) is the forward path; v1 inputs must be converted to v2 and rendered via the v2 engine.
+
+---
+
 The building fabrication will follow this specification:
 
 - The building will be created in layers, starting from the foundation up to the roof. As oposed to fixed number of floors, the building will be defined in layers that can have multiple floors each.
