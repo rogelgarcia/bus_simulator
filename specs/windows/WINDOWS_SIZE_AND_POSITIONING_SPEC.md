@@ -54,6 +54,12 @@ These define the overall window footprint size used for:
 - frame sizing reference
 - glass aperture baseline (after subtracting frame widths)
 
+### 2.2 Door note (opening kind)
+
+When `openingKind = door`, sizing remains compatible with the same controls; however:
+- Door presets typically set `frameBottomWidth = 0` (no bottom frame piece).
+- Any future “snap to floor” behavior is out of scope for this spec and can be introduced later as a separate positioning rule.
+
 ---
 
 ## 3. Frame Size

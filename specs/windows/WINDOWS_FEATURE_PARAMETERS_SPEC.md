@@ -12,6 +12,17 @@ This spec defines feature-specific parameters that are not covered by:
 
 ## 1. Feature Enablement (canonical keys)
 
+### 1.1 Opening kind (window vs door)
+
+Window fabrication MUST support an “opening kind” parameter:
+- `openingKind` (enum): `window | door`
+
+Rules:
+- Default: `openingKind = window`
+- This is a high-level preset selector that:
+  - applies a set of default feature enablement settings, and
+  - hides controls/tabs that are not relevant for the chosen kind (see `specs/windows/WINDOWS_BUILDER_TABS_AND_CONTROL_REUSE_SPEC.md`).
+
 The window system MUST support enable toggles for each feature tab:
 - `frameEnabled`
 - `muntinsEnabled`
@@ -27,6 +38,24 @@ The window system MUST support enable toggles for each feature tab:
 Rules:
 - Disabling a feature MUST keep its configuration values (do not delete/reset).
 - If a feature is disabled, its parameters MUST NOT affect output geometry/materials.
+
+### 1.2 Door preset rules (first pass)
+
+When `openingKind = door`, the system MUST apply these preset rules:
+- Force-disable:
+  - `sillEnabled = false`
+  - `balconyEnabled = false`
+- Default-disable (but user may re-enable later if desired):
+  - `lintelEnabled = false`
+  - `trimEnabled = false`
+
+Rationale:
+- Doors typically do not use a window sill or balcony.
+- Lintel/trim may exist for some door styles, but are not required in first pass and should be opt-in.
+
+Note:
+- “Force-disable” means the UI must hide the feature and the engine must ignore it while in door mode.
+- “Default-disable” means the feature remains available but starts off.
 
 ---
 

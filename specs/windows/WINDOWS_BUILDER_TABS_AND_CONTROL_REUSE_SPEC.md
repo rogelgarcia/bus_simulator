@@ -34,6 +34,17 @@ The Window Builder UI MUST:
 
 ## 2. Tab Model
 
+### 2.0 Opening kind selector (window vs door)
+
+The Window Builder MUST support an `openingKind` selector (`window | door`) as defined in `specs/windows/WINDOWS_FEATURE_PARAMETERS_SPEC.md`.
+
+Rules:
+- `openingKind` MAY be provided by the caller (e.g., a “Create Door” tool) and applied as the initial preset.
+- The UI MUST also expose an “Opening kind” control (first pass) so users can switch between `window` and `door`.
+
+When `openingKind = door`:
+- Tabs and controls that are not relevant MUST be hidden (see §2.4).
+
 ### 2.1 Tab list and ordering
 
 Tabs MUST be shown in this order:
@@ -70,6 +81,14 @@ Disabled feature tabs MUST:
 - remain visible in the tab bar (so users see what’s available)
 - have disabled styling
 - ignore pointer/keyboard activation (no tab switch)
+
+### 2.4 Door mode UI hiding rules
+
+When `openingKind = door`, the UI MUST hide (not just disable):
+- The **Sill** tab and all Sill controls.
+- The **Balcony** tab and all Balcony controls.
+
+Additionally, in door mode the default-disable features (Lintel, Trim) remain visible but start disabled unless the user explicitly enables them (see `specs/windows/WINDOWS_FEATURE_PARAMETERS_SPEC.md`).
 
 ---
 

@@ -152,6 +152,9 @@ The **Materials/Finish** global tab MUST:
 - Compose material control sections grouped by feature (Frame, Muntins, Glass, Shade, Sill, Balcony, Lintel, Trim, Interior).
 - Reuse the same control section instances as the feature tabs (no duplicate UI).
 
+Visibility rule:
+- If a feature is not applicable due to `openingKind` (e.g., Sill/Balcony for doors) or is force-disabled, the corresponding material sections MUST be hidden.
+
 Sill and Lintel controls MUST include:
 - Feature-level material selection
 - Optional per-face override controls (with linked-face behavior per §4.3)
