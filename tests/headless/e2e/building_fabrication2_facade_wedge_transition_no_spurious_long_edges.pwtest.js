@@ -1,4 +1,4 @@
-// Headless browser tests: BF2 facade mesh silhouette simplification.
+// Headless browser tests: BF2 facade wedge transition topology.
 import test, { expect } from '@playwright/test';
 
 async function attachFailFastConsole({ page }) {
@@ -41,7 +41,7 @@ async function attachFailFastConsole({ page }) {
     };
 }
 
-test('BF2: facade silhouette should not explode triangles on micro depth noise', async ({ page }) => {
+test('BF2: straight→wedge transition should not create long cross-bay edges', async ({ page }) => {
     const getErrors = await attachFailFastConsole({ page });
     await page.goto('/index.html?ibl=0&bloom=0&coreTests=0');
 
@@ -70,24 +70,15 @@ test('BF2: facade silhouette should not explode triangles on micro depth noise',
         cfg.facades[layerId] ??= {};
         const layerFacades = cfg.facades[layerId];
 
-        const buildNoisyItems = (count) => {
-            const items = [];
-            for (let i = 0; i < count; i++) {
-                const noise = ((i % 3) - 1) * 0.00005;
-                const depth = 0.2 + noise;
-                items.push({
-                    type: 'bay',
-                    id: `bay_${i + 1}`,
-                    widthFrac: 1,
-                    depth: { left: depth, right: depth }
-                });
+        layerFacades.A = {
+            depthOffset: 0,
+            layout: {
+                items: [
+                    { type: 'bay', id: 'bay_straight', widthFrac: 0.5, depth: { left: 0.2, right: 0.2 } },
+                    { type: 'bay', id: 'bay_wedge', widthFrac: 0.5, depth: { left: 0.2, right: 0.6, linked: false } }
+                ]
             }
-            return items;
         };
-
-        const items = buildNoisyItems(200);
-        layerFacades.A = { depthOffset: 0, layout: { items } };
-        layerFacades.B = { depthOffset: 0, layout: { items } };
 
         const loaded = view.scene?.loadBuildingConfig?.(cfg, { preserveCamera: true });
         if (!loaded) throw new Error('loadBuildingConfig failed');
@@ -102,21 +93,68 @@ test('BF2: facade silhouette should not explode triangles on micro depth noise',
             if (!obj?.isMesh) return;
             if (obj.userData?.buildingFab2Role === 'wall') wallMesh = obj;
         });
+        if (!wallMesh?.geometry) throw new Error('Missing wall mesh');
 
-        const geo = wallMesh?.geometry ?? null;
-        const pos = geo?.attributes?.position ?? null;
+        wallMesh.updateMatrixWorld(true);
+        wallMesh.geometry.computeBoundingBox?.();
+        const box = wallMesh.geometry.boundingBox?.clone?.()?.applyMatrix4?.(wallMesh.matrixWorld) ?? null;
+        if (!box) throw new Error('Missing wall bbox');
+
+        const geo = wallMesh.geometry;
+        const pos = geo.getAttribute?.('position') ?? null;
         const arr = pos?.array ?? null;
-        const count = Number(pos?.count) || 0;
-        if (!arr || !(count > 0)) throw new Error('Missing wall mesh geometry');
+        const vCount = Number(pos?.count) || 0;
+        if (!arr || !(vCount > 0)) throw new Error('Missing wall positions');
 
-        let nonFinite = 0;
-        for (let i = 0; i < arr.length; i++) {
-            if (!Number.isFinite(arr[i])) nonFinite++;
+        const idxArr = geo.index?.array ?? null;
+        const triCount = idxArr ? Math.floor(idxArr.length / 3) : Math.floor(vCount / 3);
+        const m = wallMesh.matrixWorld?.elements ?? null;
+        if (!m) throw new Error('Missing wall matrix');
+
+        const toWorld = (idx) => {
+            const o = idx * 3;
+            const x = arr[o];
+            const y = arr[o + 1];
+            const z = arr[o + 2];
+            const wx = m[0] * x + m[4] * y + m[8] * z + m[12];
+            const wy = m[1] * x + m[5] * y + m[9] * z + m[13];
+            const wz = m[2] * x + m[6] * y + m[10] * z + m[14];
+            return { x: wx, y: wy, z: wz };
+        };
+
+        const zThreshold = box.min.z + (box.max.z - box.min.z) * 0.6;
+        const faceLenEstimate = box.max.x - box.min.x;
+        const edgeLenLimit = faceLenEstimate * 0.75;
+
+        let maxPlanEdgeLen = 0;
+        const getIdx = (i) => (idxArr ? (idxArr[i] ?? 0) : i);
+
+        for (let t = 0; t < triCount; t++) {
+            const i0 = getIdx(t * 3);
+            const i1 = getIdx(t * 3 + 1);
+            const i2 = getIdx(t * 3 + 2);
+            if (i0 < 0 || i1 < 0 || i2 < 0 || i0 >= vCount || i1 >= vCount || i2 >= vCount) continue;
+
+            const a = toWorld(i0);
+            const b = toWorld(i1);
+            const c = toWorld(i2);
+            const edges = [
+                [a, b],
+                [b, c],
+                [c, a]
+            ];
+            for (const [p, q] of edges) {
+                if (p.z <= zThreshold || q.z <= zThreshold) continue;
+                const len = Math.hypot(p.x - q.x, p.z - q.z);
+                if (len > maxPlanEdgeLen) maxPlanEdgeLen = len;
+            }
         }
-        return { triangles: count / 3, nonFinite };
+
+        return { faceLenEstimate, edgeLenLimit, maxPlanEdgeLen };
     });
 
-    expect(res.nonFinite).toBe(0);
-    expect(res.triangles).toBeLessThan(2000);
+    expect(res.faceLenEstimate).toBeGreaterThan(1);
+    expect(res.maxPlanEdgeLen).toBeLessThan(res.edgeLenLimit + 1e-4);
     expect(await getErrors()).toEqual([]);
 });
+

@@ -1,4 +1,4 @@
-// Headless browser tests: BF2 corner resolution strategy.
+// Headless browser tests: BF2 facade negative depth should not shift orthogonal faces.
 import test, { expect } from '@playwright/test';
 
 async function attachFailFastConsole({ page }) {
@@ -41,18 +41,7 @@ async function attachFailFastConsole({ page }) {
     };
 }
 
-function buildCornerConflictItems({ startDepth, endDepth }) {
-    return [
-        {
-            type: 'bay',
-            id: 'bay_1',
-            widthFrac: 1,
-            depth: { left: startDepth, right: endDepth, linked: false }
-        }
-    ];
-}
-
-test('BF2: corner joins trim/extend without shifting orthogonal axis', async ({ page }) => {
+test('BF2: negative face depth on A changes Z only (no X shift)', async ({ page }) => {
     const getErrors = await attachFailFastConsole({ page });
     await page.goto('/index.html?ibl=0&bloom=0&coreTests=0');
 
@@ -65,7 +54,7 @@ test('BF2: corner joins trim/extend without shifting orthogonal axis', async ({ 
     await page.locator('.building-fab2-create-btn').click();
     await page.waitForSelector('.building-fab2-layer-group.is-floor');
 
-    const delta = await page.evaluate(({ baselineItems, changedItems }) => {
+    const delta = await page.evaluate(() => {
         const view = window.__busSim?.sm?.current?.view ?? null;
         if (!view) throw new Error('Missing BF2 view');
 
@@ -76,6 +65,10 @@ test('BF2: corner joins trim/extend without shifting orthogonal axis', async ({ 
         const floor = layers.find((l) => l?.type === 'floor') ?? null;
         const layerId = typeof floor?.id === 'string' ? floor.id : '';
         if (!layerId) throw new Error('Missing floor layer id');
+
+        cfg.facades ??= {};
+        cfg.facades[layerId] ??= {};
+        const layerFacades = cfg.facades[layerId];
 
         const getWallBounds = () => {
             const building = view.scene?._building ?? null;
@@ -95,53 +88,45 @@ test('BF2: corner joins trim/extend without shifting orthogonal axis', async ({ 
             const arr = pos?.array ?? null;
             if (!arr) throw new Error('Missing wall positions');
 
+            let minX = Infinity;
             let maxX = -Infinity;
+            let minZ = Infinity;
             let maxZ = -Infinity;
             for (let i = 0; i < arr.length; i += 3) {
                 const x = arr[i];
                 const z = arr[i + 2];
+                if (x < minX) minX = x;
                 if (x > maxX) maxX = x;
+                if (z < minZ) minZ = z;
                 if (z > maxZ) maxZ = z;
             }
-            return { maxX, maxZ };
+            return { minX, maxX, minZ, maxZ };
         };
 
-        cfg.facades ??= {};
-        cfg.facades[layerId] ??= {};
-        const layerFacades = cfg.facades[layerId];
-
-        layerFacades.A = { depthOffset: 0, layout: { items: baselineItems } };
-        layerFacades.B = {
-            depthOffset: 0,
-            layout: {
-                items: [
-                    {
-                        type: 'bay',
-                        id: 'bay_b',
-                        widthFrac: 1,
-                        depth: { left: -0.2, right: 0.0, linked: false }
-                    }
-                ]
-            }
-        };
+        layerFacades.A = { depthOffset: 0, layout: { items: [{ type: 'padding', widthFrac: 1 }] } };
+        layerFacades.B = { depthOffset: 0, layout: { items: [{ type: 'padding', widthFrac: 1 }] } };
+        layerFacades.C = { depthOffset: 0, layout: { items: [{ type: 'padding', widthFrac: 1 }] } };
+        layerFacades.D = { depthOffset: 0, layout: { items: [{ type: 'padding', widthFrac: 1 }] } };
 
         const loaded1 = view.scene?.loadBuildingConfig?.(cfg, { preserveCamera: true });
         if (!loaded1) throw new Error('loadBuildingConfig failed (baseline)');
         const b1 = getWallBounds();
 
-        layerFacades.A = { depthOffset: 0, layout: { items: changedItems } };
+        layerFacades.A = { depthOffset: -0.5, layout: { items: [{ type: 'padding', widthFrac: 1 }] } };
         const loaded2 = view.scene?.loadBuildingConfig?.(cfg, { preserveCamera: true });
         if (!loaded2) throw new Error('loadBuildingConfig failed (changed)');
         const b2 = getWallBounds();
 
-        return { dx: b2.maxX - b1.maxX, dz: b2.maxZ - b1.maxZ };
-    }, {
-        baselineItems: buildCornerConflictItems({ startDepth: 0.0, endDepth: 0.0 }),
-        changedItems: buildCornerConflictItems({ startDepth: 0.0, endDepth: 0.5 })
+        return {
+            dxMin: b2.minX - b1.minX,
+            dxMax: b2.maxX - b1.maxX,
+            dzMin: b2.minZ - b1.minZ,
+            dzMax: b2.maxZ - b1.maxZ
+        };
     });
-
-    expect(Math.abs(delta.dx)).toBeLessThan(0.05);
-    expect(delta.dz).toBeGreaterThan(0.45);
-    expect(delta.dz).toBeLessThan(0.55);
+    expect(Math.abs(delta.dxMin)).toBeLessThan(1e-3);
+    expect(Math.abs(delta.dxMax)).toBeLessThan(1e-3);
+    expect(delta.dzMax).toBeLessThan(-0.45);
+    expect(delta.dzMax).toBeGreaterThan(-0.55);
     expect(await getErrors()).toEqual([]);
 });

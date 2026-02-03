@@ -122,8 +122,7 @@ To prevent repetition across a building:
 
 The following are explicitly not part of the window mesh:
 
-- **Window sill**: Handled by the building geometry
-- **Exterior trim**: Handled by the building geometry
+- **Window sill / exterior trim / lintel**: This was historically handled by building geometry, but is now considered part of the window system in `specs/windows/` (sill/trim/lintel features).
 - **LOD variants**: To be added later
 - **Animation**: Windows are static (no opening, no shade movement)
 - **Bus windows**: This specification is for building windows only

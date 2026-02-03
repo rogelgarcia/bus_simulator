@@ -1047,7 +1047,17 @@ function injectMatVarShader(material, shader) {
         [
             '#include <worldpos_vertex>',
             '#ifdef USE_MATVAR',
-            'vMatVarWorldPos = worldPosition.xyz;',
+            // three.js may only define `worldPosition` inside `#if defined( USE_SHADOWMAP ) || ...` blocks.
+            // Compute our own world position to avoid relying on those conditional declarations.
+            'vec4 matVarWorldPosition = vec4( transformed, 1.0 );',
+            '#ifdef USE_BATCHING',
+            'matVarWorldPosition = batchingMatrix * matVarWorldPosition;',
+            '#endif',
+            '#ifdef USE_INSTANCING',
+            'matVarWorldPosition = instanceMatrix * matVarWorldPosition;',
+            '#endif',
+            'matVarWorldPosition = modelMatrix * matVarWorldPosition;',
+            'vMatVarWorldPos = matVarWorldPosition.xyz;',
             'vMatVarObjectPos = transformed;',
             '#ifdef USE_MATVAR_CORNERDIST',
             'vMatVarCornerDist = matVarCornerDist;',

@@ -13,7 +13,13 @@
 
 ## Specifications
 
-Project specifications are stored in `specs/` (use subfolders when appropriate). Building-related specifications live in `specs/buildings/`. Any AI prompt or change that modifies the building specification/model must update one or more relevant specs under `specs/buildings/`.
+Project specifications are stored in `specs/` (use subfolders when appropriate).
+
+Domain specs should live in dedicated subfolders (examples):
+- Buildings: `specs/buildings/`
+- Windows: `specs/windows/`
+
+Any AI prompt or change that modifies a specification/model MUST update one or more relevant specs under `specs/` (in the appropriate subfolder, or at top-level if the spec is global).
 
 ## Testing
 
