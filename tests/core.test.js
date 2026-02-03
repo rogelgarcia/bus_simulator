@@ -2345,8 +2345,8 @@ async function runTests() {
         });
         assertTrue(!!bayParts, 'Expected bay visual parts.');
 
-        const findWallMesh = (parts) => (parts.solidMeshes ?? []).find((m) => (
-            m?.isMesh && Array.isArray(m.material) && m.material.length === 2
+        const findWallMesh = (parts) => (parts?.solidMeshes ?? []).find((m) => (
+            m?.isMesh && m?.userData?.buildingFab2Role === 'wall'
         )) ?? null;
 
         const wall0 = findWallMesh(baseParts);

@@ -104,9 +104,19 @@ This is a conceptual schema; concrete serialization can be JSON/ES module later.
 
 - `faceId: FaceId` (e.g. `"A"`)
 - `cornerPolicy: CornerPolicy`
+- `cornerCutouts?: CornerCutoutsSpec`
 - `layout: FacadeLayout`
 - `defaults: FacadeDefaults`
 - `validation: FacadeValidationRules`
+
+**CornerCutoutsSpec**
+
+- `startMeters: meters` (>= 0) — desired cut length at the face start corner (along `t(F)` into the face interior)
+- `endMeters: meters` (>= 0) — desired cut length at the face end corner (along `t(F)` into the face interior)
+
+Notes:
+- Corner cutouts are a **tangent-only** concept and do not change depth (`n(F)`).
+- The mesh generator clamps the cut lengths based on feasibility near the corner (see `specs/buildings/BUILDING_2_FACADE_MESH_CONSTRUCTION_PHASES_SPEC.md`).
 
 ### 4.4 FaceLinkingSpec (master/slave per floor layer)
 
@@ -484,6 +494,14 @@ A corner cap is a vertical element that:
 - spans the wall vertical extent,
 - occupies the reserved corner widths on both adjacent faces,
 - is generated as a continuous mesh (no seams between layers).
+
+### 11.4 Corner cutouts (tangent-only)
+
+Corner cutouts are an optional authoring signal used to remove wall area near corners (primarily to support future corner windows).
+
+- Expressed via `FacadeSpec.cornerCutouts`.
+- Cut lengths are applied along face tangents (`u` axis), not along depth.
+- The generator clamps cut lengths based on feasibility near the corner (default `minBayWidth = 0.1m`) and applies deterministic precedence when both faces compete for an unstable corner configuration (odd faces win).
 
 ---
 

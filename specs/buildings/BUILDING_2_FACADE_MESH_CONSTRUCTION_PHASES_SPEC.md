@@ -20,8 +20,10 @@ The facade mesh generator MUST:
 - **Be deterministic**: identical inputs produce identical topology and vertex ordering (within floating-point tolerance).
 - **Be rotation-agnostic**: no hardcoded axis assumptions (faces may be at any angle).
 - **Use normal-only depth**: authored depth affects geometry only along each face’s outward normal in the ground plane.
+- **Treat corner cutouts as tangent-only trims**: when enabled, corner cutouts consume face length along `t(F)` near corners (not along `n(F)`), and are applied as a distinct phase from depth/bay extrusion.
 - **Compute a stable minimum perimeter first**: before generating bay extrusion geometry, compute a top-down **minimum perimeter** (stable core outline) via per-face baseline depths and corner resolution. After this phase, the core perimeter is treated as stable.
 - **Use positive-only bay extrusion**: bays MUST NOT inset/shrink geometry after the minimum perimeter is computed. Bay extrusion depth is **non-negative** and applied outward from the minimum perimeter.
+- **Keep roof/top triangulation isolated from bay vertices**: the roof/top surface MUST be generated from the **minimum perimeter** (`MinPerimeterLoop`) only. Roof triangles MUST NOT reference bay breakpoint/extrusion vertices, and roof triangulation MUST NOT be performed over a combined “all vertices” pool.
 - **Be symmetric when mirrored**: opposite/mirrored faces with mirrored inputs produce symmetric topology (no arbitrary triangulation diagonals).
 - **Make corners explicit**: corner coupling is expected, but corner behavior MUST be deterministic and governed by a **pluggable corner strategy**.
 - **Avoid overlapping duplicate surfaces**: bays MUST partition a face into segments that **share vertices/edges**. The generator MUST NOT create coplanar “overlay” faces for bays (no duplicate edges hidden by polygon offset).
@@ -83,6 +85,26 @@ If the authored intent includes “wedge-like” behavior (different depth at th
 In this spec’s default model:
 - The **minimum perimeter** is constructed using `dMin(F)` (Phase 3).
 - All **bay extrusion** geometry is built using `e(F, u) >= 0` (Phase 4).
+
+### 2.6 Corner cutouts (tangent-only)
+
+Corner cutouts are a separate concept from depth:
+
+- Depth affects geometry along `n(F)` (normal-only).
+- Corner cutouts affect geometry along `t(F)` (tangent-only trims), removing wall area near corners as an L-shaped opening/void region.
+
+For each footprint corner `C` shared by faces `Fprev` (ends at `C`) and `Fnext` (starts at `C`), define:
+
+- `wantCutPrev` (meters): desired cut length into `Fprev` from the corner along `t(Fprev)` (toward the face interior).
+- `wantCutNext` (meters): desired cut length into `Fnext` from the corner along `t(Fnext)` (toward the face interior).
+
+The corner cut solver MUST:
+
+- Treat inputs as non-negative.
+- Compute per-face feasibility maxima (`maxCutPrev`, `maxCutNext`) that preserve a minimum segment width (normative default `minBayWidth = 0.1m`) on the corner-adjacent segment.
+- Resolve `cutPrev`, `cutNext` deterministically (clamp + deterministic precedence when further reductions are necessary).
+
+Corner cutouts MUST NOT move any geometry along `n(F)`; they only consume length along `t(F)` at the corner ends.
 
 ---
 
@@ -229,6 +251,7 @@ For each face `F`, generate its wall mesh using deterministic topology:
 
 5) Generate **top caps** for positive extrusions (roof is stable):
    - The base roof/top surface is generated from the **minimum perimeter** (`MinPerimeterLoop`) and does not change due to bays.
+   - Roof/top surface triangulation MUST use only `MinPerimeterLoop` vertices (bay breakpoint/extrusion vertices MUST NOT be included).
    - For each face segment with any positive extrusion, generate a top cap in the horizontal plane at the roof height:
      - If `e0 > 0` and `e1 > 0`: cap is a quad between the baseline edge and the extruded edge.
      - If exactly one of `e0`, `e1` is `> 0`: cap is a triangle (wedge cap).
@@ -240,10 +263,37 @@ For each face `F`, generate its wall mesh using deterministic topology:
    - If the model indicates continuity across layers, vertical stitching MUST preserve watertightness at layer boundaries.
 
 **Invariant:** Generic polygon triangulation SHOULD NOT be used for primary face surfaces; the topology MUST be driven by explicit breakpoints and per-segment quads/triangles.
+**Invariant:** For any non-roof surface group (face walls, returns, bay caps, corner patches), triangles MUST NOT connect vertices belonging to non-adjacent faces. “Adjacency” here means:
+- same face, or
+- adjacent faces that share a corner (and only within the corner patch region).
 
-### Phase 5: Corner stitching / patching and watertightness rules
+### Phase 5: Corner cutouts, stitching / patching, and watertightness rules
 
-Corners are stitched using explicit corner outputs from Phase 3, and bay extrusion ownership rules:
+#### 5.1 Corner cutouts (tangent-only)
+
+After Phases 1–4 have produced stable face-local breakpoints and a resolved outline:
+
+1) Gather corner cut wants:
+   - For each corner, gather `(wantCutPrev, wantCutNext)` from the two adjacent faces (authoring-level inputs; source is implementation-defined).
+
+2) Compute per-face max cuts:
+   - Determine `maxCutPrev` and `maxCutNext` such that the corner-adjacent segment on each face retains at least `minBayWidth` (default `0.1m`).
+
+3) Resolve cut lengths (single pass):
+   - `cutPrev = clamp(wantCutPrev, 0, maxCutPrev)`
+   - `cutNext = clamp(wantCutNext, 0, maxCutNext)`
+   - If additional reductions are required (e.g., due to degenerate corner geometry), reduce the losing face first using deterministic precedence:
+     - Odd faces win over even faces (A/C/E… win over B/D/F…).
+
+4) Apply to geometry:
+   - Wall mesh generation MUST not create wall faces within the cut intervals:
+     - On `Fprev`, remove the interval `[L(Fprev) - cutPrev, L(Fprev)]`.
+     - On `Fnext`, remove the interval `[0, cutNext]`.
+   - The resulting corner opening boundary MUST be deterministic and free of overlapping coplanar duplicates.
+
+#### 5.2 Corner stitching / patching
+
+Corners are stitched using explicit corner outputs from Phase 3, bay extrusion ownership rules, and (when enabled) resolved corner cutouts:
 
 - The corner strategy output MUST provide enough data to connect adjacent face meshes without gaps/overlaps.
 - If both adjacent faces request positive bay extrusion right up to a corner, the corner policy MUST be deterministic:
@@ -362,6 +412,10 @@ The generator MUST treat the following as invalid (hard error or warning dependi
 - Invalid mesh:
   - non-finite vertex data,
   - degenerate triangles/quads beyond tolerance.
+- Invalid topology coupling:
+  - non-roof triangles that connect vertices from non-adjacent faces,
+  - roof triangles that reference non-`MinPerimeterLoop` vertices (bay breakpoint/extrusion vertices),
+  - triangles that cross outline boundaries due to unconstrained triangulation of mixed vertex sets.
 
 ### 6.2 Required behavior on invalid input
 
@@ -389,7 +443,9 @@ An implementation is considered compliant with this spec if:
 - Rotating a building in the world does not change the correctness of depth application (depth stays normal-only in each face frame).
 - Mirrored faces (e.g., A vs C) with mirrored bay/depth inputs produce symmetric topology (same diagonal pattern and breakpoint structure).
 - A stable **minimum perimeter** is computed first and is not affected by later bay extrusion geometry.
+- The roof/top surface is triangulated only from `MinPerimeterLoop` vertices (bay vertices do not pollute the roof).
 - Bay extrusion is positive-only (`e >= 0`) and does not shrink/inset geometry after the minimum perimeter is computed.
 - Wedge-like depth transitions do not create spurious long diagonals across multiple bays; topology is driven by explicit breakpoints and deterministic per-segment caps/returns.
 - Corners are watertight (no gaps/overlaps) across mixed extrusion combinations (flat vs wedge vs square), with deterministic corner ownership (e.g., odd wins over even).
+- Non-roof triangles never connect vertices from non-adjacent faces (only same-face or adjacent-corner patch connectivity is allowed).
 - The generator reports invalid inputs explicitly and uses deterministic cleanup/fallback behavior.

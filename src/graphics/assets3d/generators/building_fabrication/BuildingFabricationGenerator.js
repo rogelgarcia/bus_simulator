@@ -772,7 +772,32 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
         const faceId = a.faceId;
         if (overrides && a.kind === 'profile' && b.kind === 'profile' && faceId && faceId === b.faceId) {
             const segKey = facadeStripSegmentKey(faceId, a.u, a.depth, b.u, b.depth);
-            const ovr = overrides.get(segKey) ?? null;
+            let ovr = overrides.get(segKey) ?? null;
+
+            if (!ovr) {
+                const ranges = overrides.get(`__ranges__:${faceId}`) ?? null;
+                if (Array.isArray(ranges)) {
+                    const uA = Number(a.u) || 0;
+                    const uB = Number(b.u) || 0;
+                    const uMin = Math.min(uA, uB);
+                    const uMax = Math.max(uA, uB);
+                    const tol = 1e-4;
+                    if (Math.abs(uB - uA) > tol) {
+                        for (const r of ranges) {
+                            if (!r || typeof r !== 'object') continue;
+                            const ru0 = Number(r.u0) || 0;
+                            const ru1 = Number(r.u1) || 0;
+                            const rMin = Math.min(ru0, ru1);
+                            const rMax = Math.max(ru0, ru1);
+                            if (uMin + tol < rMin) continue;
+                            if (uMax - tol > rMax) continue;
+                            ovr = r;
+                            break;
+                        }
+                    }
+                }
+            }
+
             if (ovr) {
                 matIndex = clampInt(ovr.materialIndex, 0, 9999);
                 const u0 = Number(ovr.u0) || 0;
@@ -1685,6 +1710,197 @@ function computeQuadFacadeSilhouette({
         return qf(vx * tx + vz * tz);
     };
 
+    const resolveCornerCutWants = (facade) => {
+        const src = facade && typeof facade === 'object' ? facade : null;
+        const cfg = (src?.cornerCutouts && typeof src.cornerCutouts === 'object')
+            ? src.cornerCutouts
+            : ((src?.cornerCut && typeof src.cornerCut === 'object') ? src.cornerCut : null);
+
+        const startRaw = cfg?.startMeters ?? cfg?.start ?? null;
+        const endRaw = cfg?.endMeters ?? cfg?.end ?? null;
+        const start = clamp(Number(startRaw) || 0, 0, 9999);
+        const end = clamp(Number(endRaw) || 0, 0, 9999);
+        return { start, end };
+    };
+
+    const sampleProfileDepthAtU = (list, u) => {
+        const pts = Array.isArray(list) ? list : [];
+        const uu = Number(u) || 0;
+        if (!pts.length) return 0;
+
+        const u0 = Number(pts[0]?.u) || 0;
+        const d0 = Number(pts[0]?.depth) || 0;
+        if (uu <= u0) return qf(d0);
+
+        for (let i = 1; i < pts.length; i++) {
+            const p = pts[i];
+            if (!p || typeof p !== 'object') continue;
+            const u1 = Number(p.u) || 0;
+            const d1 = Number(p.depth) || 0;
+            if (uu <= u1 + EPS) {
+                const prev = pts[i - 1];
+                const ua = Number(prev?.u) || 0;
+                const da = Number(prev?.depth) || 0;
+                const ub = u1;
+                const db = d1;
+                const t = (ub - ua) > EPS ? clamp((uu - ua) / (ub - ua), 0, 1) : 0;
+                return qf(da + (db - da) * t);
+            }
+        }
+
+        const last = pts[pts.length - 1];
+        return qf(Number(last?.depth) || 0);
+    };
+
+    const isOddWinnerFaceId = (faceId) => {
+        const id = typeof faceId === 'string' ? faceId : '';
+        const code = id ? (id.charCodeAt(0) - 65) : 0;
+        return (code % 2) === 0;
+    };
+
+    const minCornerCutBayWidth = 0.1;
+    const cornerCutEps = 1e-4;
+
+    const computeMaxCutStart = ({ prof, uStartJoin, uEndJoin }) => {
+        const list = Array.isArray(prof?.profile) ? prof.profile : [];
+        let nextU = uEndJoin;
+        for (const p of list) {
+            if (!p || typeof p !== 'object') continue;
+            const u = Number(p.u) || 0;
+            if (u > uStartJoin + pointTol) {
+                nextU = Math.min(nextU, u);
+                break;
+            }
+        }
+        const segW = Math.max(0, nextU - uStartJoin);
+        return Math.max(0, segW - minCornerCutBayWidth);
+    };
+
+    const computeMaxCutEnd = ({ prof, uStartJoin, uEndJoin }) => {
+        const list = Array.isArray(prof?.profile) ? prof.profile : [];
+        let prevU = uStartJoin;
+        for (let i = list.length - 1; i >= 0; i--) {
+            const p = list[i];
+            if (!p || typeof p !== 'object') continue;
+            const u = Number(p.u) || 0;
+            if (u < uEndJoin - pointTol) {
+                prevU = Math.max(prevU, u);
+                break;
+            }
+        }
+        const segW = Math.max(0, uEndJoin - prevU);
+        return Math.max(0, segW - minCornerCutBayWidth);
+    };
+
+    const facadeA = getFacade('A');
+    const facadeB = getFacade('B');
+    const facadeC = getFacade('C');
+    const facadeD = getFacade('D');
+    const cutWantsByFaceId = {
+        A: resolveCornerCutWants(facadeA),
+        B: resolveCornerCutWants(facadeB),
+        C: resolveCornerCutWants(facadeC),
+        D: resolveCornerCutWants(facadeD)
+    };
+
+    const faceInfoByFaceId = {
+        A: { faceId: 'A', frame: frames.A, prof: A, startJoin: joinDA, endJoin: joinAB, startCornerId: 'DA', endCornerId: 'AB' },
+        B: { faceId: 'B', frame: frames.B, prof: B, startJoin: joinAB, endJoin: joinBC, startCornerId: 'AB', endCornerId: 'BC' },
+        C: { faceId: 'C', frame: frames.C, prof: C, startJoin: joinBC, endJoin: joinCD, startCornerId: 'BC', endCornerId: 'CD' },
+        D: { faceId: 'D', frame: frames.D, prof: D, startJoin: joinCD, endJoin: joinDA, startCornerId: 'CD', endCornerId: 'DA' }
+    };
+
+    for (const faceId of ['A', 'B', 'C', 'D']) {
+        const info = faceInfoByFaceId[faceId];
+        const f = info?.frame ?? null;
+        const prof = info?.prof ?? null;
+        const startDepth = qf(Number(prof?.startDepth) || 0);
+        const endDepth = qf(Number(prof?.endDepth) || startDepth);
+        info.uStartJoin = getUAtJoin(f, startDepth, info.startJoin);
+        info.uEndJoin = getUAtJoin(f, endDepth, info.endJoin);
+        info.maxCutStart = computeMaxCutStart(info);
+        info.maxCutEnd = computeMaxCutEnd(info);
+    }
+
+    const resolveCornerCut = (cornerId, prevFaceId, nextFaceId) => {
+        const prev = faceInfoByFaceId[prevFaceId];
+        const next = faceInfoByFaceId[nextFaceId];
+        if (!prev || !next) return { cutPrev: 0, cutNext: 0, q: null };
+
+        const wantPrev = Number(cutWantsByFaceId?.[prevFaceId]?.end) || 0;
+        const wantNext = Number(cutWantsByFaceId?.[nextFaceId]?.start) || 0;
+        const maxPrev = Number(prev.maxCutEnd) || 0;
+        const maxNext = Number(next.maxCutStart) || 0;
+
+        let cutPrev = qf(clamp(wantPrev, 0, maxPrev));
+        let cutNext = qf(clamp(wantNext, 0, maxNext));
+        if (!(cutPrev > cornerCutEps) && !(cutNext > cornerCutEps)) return { cutPrev: 0, cutNext: 0, q: null };
+
+        const computeQ = (cp, cn) => {
+            const uPrev = qf((Number(prev.uEndJoin) || 0) - (Number(cp) || 0));
+            const uNext = qf((Number(next.uStartJoin) || 0) + (Number(cn) || 0));
+            if (!(uPrev > (Number(prev.uStartJoin) || 0) + minEdge)) return null;
+            if (!(uNext < (Number(next.uEndJoin) || 0) - minEdge)) return null;
+
+            const usePrevJoin = (Number(cp) || 0) <= cornerCutEps;
+            const useNextJoin = (Number(cn) || 0) <= cornerCutEps;
+
+            const dPrev = usePrevJoin ? qf(Number(prev.prof.endDepth) || 0) : sampleProfileDepthAtU(prev.prof.profile, uPrev);
+            const dNext = useNextJoin ? qf(Number(next.prof.startDepth) || 0) : sampleProfileDepthAtU(next.prof.profile, uNext);
+            const pPrev = usePrevJoin ? { x: qf(prev.endJoin.x), y: 0, z: qf(prev.endJoin.z) } : pointOnFacadeFrame({ frame: prev.frame, u: uPrev, depth: dPrev });
+            const pNext = useNextJoin ? { x: qf(next.startJoin.x), y: 0, z: qf(next.startJoin.z) } : pointOnFacadeFrame({ frame: next.frame, u: uNext, depth: dNext });
+
+            const r = next.frame?.t ?? null;
+            const s = prev.frame?.t ?? null;
+            if (!r || !s) return null;
+
+            const q = intersectLines2(pPrev, r, pNext, { x: -Number(s.x) || 0, z: -Number(s.z) || 0 });
+            if (!q) return null;
+
+            const qx = qf(q.x);
+            const qz = qf(q.z);
+            const d0 = Math.hypot(qx - pPrev.x, qz - pPrev.z);
+            const d1 = Math.hypot(qx - pNext.x, qz - pNext.z);
+            if (!(d0 > minEdge) || !(d1 > minEdge)) return null;
+            return { x: qx, y: 0, z: qz, cornerId };
+        };
+
+        let q = computeQ(cutPrev, cutNext);
+        if (!q && cutPrev > cornerCutEps && cutNext > cornerCutEps) {
+            const winner = isOddWinnerFaceId(prevFaceId) ? prevFaceId : nextFaceId;
+            if (winner === prevFaceId) cutNext = 0;
+            else cutPrev = 0;
+            q = computeQ(cutPrev, cutNext);
+        }
+
+        if (!q) {
+            if (warnings) warnings.push(`Facade silhouette: corner cutout "${cornerId}" could not be resolved.`);
+            return { cutPrev: 0, cutNext: 0, q: null };
+        }
+
+        return { cutPrev, cutNext, q };
+    };
+
+    const cornerCuts = {
+        AB: resolveCornerCut('AB', 'A', 'B'),
+        BC: resolveCornerCut('BC', 'B', 'C'),
+        CD: resolveCornerCut('CD', 'C', 'D'),
+        DA: resolveCornerCut('DA', 'D', 'A')
+    };
+
+    const cutStartByFaceId = {
+        A: qf(Number(cornerCuts.DA.cutNext) || 0),
+        B: qf(Number(cornerCuts.AB.cutNext) || 0),
+        C: qf(Number(cornerCuts.BC.cutNext) || 0),
+        D: qf(Number(cornerCuts.CD.cutNext) || 0)
+    };
+    const cutEndByFaceId = {
+        A: qf(Number(cornerCuts.AB.cutPrev) || 0),
+        B: qf(Number(cornerCuts.BC.cutPrev) || 0),
+        C: qf(Number(cornerCuts.CD.cutPrev) || 0),
+        D: qf(Number(cornerCuts.DA.cutPrev) || 0)
+    };
+
     const buildTrimmedFaceWorldPoints = ({
         faceId,
         profile,
@@ -1692,7 +1908,11 @@ function computeQuadFacadeSilhouette({
         startCornerId,
         endCornerId,
         startJoin,
-        endJoin
+        endJoin,
+        uStartJoin,
+        uEndJoin,
+        cutStartMeters,
+        cutEndMeters
     }) => {
         const f = frame && typeof frame === 'object' ? frame : null;
         const prof = profile && typeof profile === 'object' ? profile : null;
@@ -1700,49 +1920,57 @@ function computeQuadFacadeSilhouette({
         const list = Array.isArray(prof.profile) ? prof.profile : [];
         if (!list.length) return null;
 
-        const startDepth = qf(Number(prof.startDepth) || 0);
-        const endDepth = qf(Number(prof.endDepth) || startDepth);
         const faceLength = Number(prof.faceLength) || 0;
         if (!(faceLength > minEdge)) return null;
 
-        const uStartJoin = getUAtJoin(f, startDepth, startJoin);
-        const uEndJoin = getUAtJoin(f, endDepth, endJoin);
-        if (!(uEndJoin > uStartJoin + minEdge)) {
-            if (warnings) warnings.push(`Facade silhouette: face ${faceId} collapsed after corner joins (uStart=${uStartJoin.toFixed(3)}, uEnd=${uEndJoin.toFixed(3)}).`);
+        const wantsStartJoin = (Number(cutStartMeters) || 0) <= cornerCutEps;
+        const wantsEndJoin = (Number(cutEndMeters) || 0) <= cornerCutEps;
+        const uStart = qf((Number(uStartJoin) || 0) + (wantsStartJoin ? 0 : (Number(cutStartMeters) || 0)));
+        const uEnd = qf((Number(uEndJoin) || 0) - (wantsEndJoin ? 0 : (Number(cutEndMeters) || 0)));
+        if (!(uEnd > uStart + minEdge)) {
+            if (warnings) warnings.push(`Facade silhouette: face ${faceId} collapsed after corner trims (uStart=${uStart.toFixed(3)}, uEnd=${uEnd.toFixed(3)}).`);
             return null;
         }
 
+        const joinStartDepth = qf(Number(prof.startDepth) || 0);
+        const joinEndDepth = qf(Number(prof.endDepth) || joinStartDepth);
+        const startDepth = wantsStartJoin ? joinStartDepth : sampleProfileDepthAtU(list, uStart);
+        const endDepth = wantsEndJoin ? joinEndDepth : sampleProfileDepthAtU(list, uEnd);
+
         const pts = [];
+        const startWorld = wantsStartJoin
+            ? { x: qf(startJoin.x), y: 0, z: qf(startJoin.z) }
+            : pointOnFacadeFrame({ frame: f, u: uStart, depth: startDepth });
+        const endWorld = wantsEndJoin
+            ? { x: qf(endJoin.x), y: 0, z: qf(endJoin.z) }
+            : pointOnFacadeFrame({ frame: f, u: uEnd, depth: endDepth });
+
         pts.push({
-            x: qf(startJoin.x),
-            y: 0,
-            z: qf(startJoin.z),
+            ...startWorld,
             kind: 'profile',
             faceId,
-            u: uStartJoin,
+            u: uStart,
             depth: startDepth,
-            cornerId: startCornerId
+            ...(wantsStartJoin ? { cornerId: startCornerId } : {})
         });
 
         for (const p of list) {
             if (!p || typeof p !== 'object') continue;
             const u = Number(p.u) || 0;
             if (!(u > pointTol && u < faceLength - pointTol)) continue;
-            if (!(u > uStartJoin + pointTol && u < uEndJoin - pointTol)) continue;
+            if (!(u > uStart + pointTol && u < uEnd - pointTol)) continue;
             const d = qf(Number(p.depth) || 0);
             const world = pointOnFacadeFrame({ frame: f, u, depth: d });
             appendPointIfChanged(pts, { ...world, kind: 'profile', faceId, u: qf(u), depth: d }, pointTol);
         }
 
         appendPointIfChanged(pts, {
-            x: qf(endJoin.x),
-            y: 0,
-            z: qf(endJoin.z),
+            ...endWorld,
             kind: 'profile',
             faceId,
-            u: uEndJoin,
+            u: uEnd,
             depth: endDepth,
-            cornerId: endCornerId
+            ...(wantsEndJoin ? { cornerId: endCornerId } : {})
         }, pointTol);
         return pts;
     };
@@ -1754,7 +1982,11 @@ function computeQuadFacadeSilhouette({
         startCornerId: 'DA',
         endCornerId: 'AB',
         startJoin: joinDA,
-        endJoin: joinAB
+        endJoin: joinAB,
+        uStartJoin: faceInfoByFaceId.A.uStartJoin,
+        uEndJoin: faceInfoByFaceId.A.uEndJoin,
+        cutStartMeters: cutStartByFaceId.A,
+        cutEndMeters: cutEndByFaceId.A
     });
     const Bpts = buildTrimmedFaceWorldPoints({
         faceId: 'B',
@@ -1763,7 +1995,11 @@ function computeQuadFacadeSilhouette({
         startCornerId: 'AB',
         endCornerId: 'BC',
         startJoin: joinAB,
-        endJoin: joinBC
+        endJoin: joinBC,
+        uStartJoin: faceInfoByFaceId.B.uStartJoin,
+        uEndJoin: faceInfoByFaceId.B.uEndJoin,
+        cutStartMeters: cutStartByFaceId.B,
+        cutEndMeters: cutEndByFaceId.B
     });
     const Cpts = buildTrimmedFaceWorldPoints({
         faceId: 'C',
@@ -1772,7 +2008,11 @@ function computeQuadFacadeSilhouette({
         startCornerId: 'BC',
         endCornerId: 'CD',
         startJoin: joinBC,
-        endJoin: joinCD
+        endJoin: joinCD,
+        uStartJoin: faceInfoByFaceId.C.uStartJoin,
+        uEndJoin: faceInfoByFaceId.C.uEndJoin,
+        cutStartMeters: cutStartByFaceId.C,
+        cutEndMeters: cutEndByFaceId.C
     });
     const Dpts = buildTrimmedFaceWorldPoints({
         faceId: 'D',
@@ -1781,7 +2021,11 @@ function computeQuadFacadeSilhouette({
         startCornerId: 'CD',
         endCornerId: 'DA',
         startJoin: joinCD,
-        endJoin: joinDA
+        endJoin: joinDA,
+        uStartJoin: faceInfoByFaceId.D.uStartJoin,
+        uEndJoin: faceInfoByFaceId.D.uEndJoin,
+        cutStartMeters: cutStartByFaceId.D,
+        cutEndMeters: cutEndByFaceId.D
     });
 
     if (!Apts || !Bpts || !Cpts || !Dpts) return null;
@@ -1808,11 +2052,26 @@ function computeQuadFacadeSilhouette({
         }
     }
 
+    const cutPoint = (cornerId) => {
+        const p = cornerCuts?.[cornerId]?.q ?? null;
+        if (!p || typeof p !== 'object') return null;
+        return { x: qf(p.x), y: 0, z: qf(p.z), kind: 'corner_cut' };
+    };
+
+    const cutAB = cutPoint('AB');
+    const cutBC = cutPoint('BC');
+    const cutCD = cutPoint('CD');
+    const cutDA = cutPoint('DA');
+
     const loopDetail = [
         ...Apts,
+        ...(cutAB ? [cutAB] : []),
         ...Bpts,
+        ...(cutBC ? [cutBC] : []),
         ...Cpts,
-        ...Dpts
+        ...(cutCD ? [cutCD] : []),
+        ...Dpts,
+        ...(cutDA ? [cutDA] : [])
     ];
 
     const simplified = simplifyLoopConsecutiveCollinearXZ(loopDetail, { tol: pointTol, minEdge });
@@ -2524,6 +2783,14 @@ export function buildBuildingFabricationVisualParts({
                                 const materialIndex = getFacadeMaterialIndex({ materialSpec: resolvedSpec, wallBase, tiling, materialVariation });
                                 const segKey = facadeStripSegmentKey(faceId, u0, depth0, u1, depth1);
                                 facadeWallSegmentOverrides.set(segKey, { materialIndex, faceId, u0, u1, uvStart });
+
+                                const rangeKey = `__ranges__:${faceId}`;
+                                const ranges = facadeWallSegmentOverrides.get(rangeKey);
+                                if (Array.isArray(ranges)) {
+                                    ranges.push({ materialIndex, faceId, u0, u1, uvStart });
+                                } else if (ranges === undefined) {
+                                    facadeWallSegmentOverrides.set(rangeKey, [{ materialIndex, faceId, u0, u1, uvStart }]);
+                                }
                             }
 
                             prevIsBayForUv = isBayStrip;
@@ -2593,10 +2860,16 @@ export function buildBuildingFabricationVisualParts({
 
                         const capY = layerStartY + totalWallHeight;
                         const outerDetail = Array.isArray(facadeLoopDetail) ? facadeLoopDetail : null;
+                        const baseLoopCore = baseJoinByCornerId ? [
+                            baseJoinByCornerId.AB,
+                            baseJoinByCornerId.BC,
+                            baseJoinByCornerId.CD,
+                            baseJoinByCornerId.DA
+                        ] : null;
                         const baseDetail = outerDetail ? outerDetail.map(basePointForFacade) : null;
-                        const baseLoop = baseDetail
-                            ? simplifyLoopConsecutiveCollinearXZ(baseDetail, { tol: 1e-4, minEdge: 1e-3 })
-                            : null;
+                        const baseLoop = baseLoopCore
+                            ? baseLoopCore
+                            : (baseDetail ? simplifyLoopConsecutiveCollinearXZ(baseDetail, { tol: 1e-4, minEdge: 1e-3 }) : null);
 
                         if (baseLoop && baseLoop.length >= 3) {
                             const baseArea = signedArea(baseLoop);
@@ -2611,6 +2884,9 @@ export function buildBuildingFabricationVisualParts({
                             baseMesh.castShadow = true;
                             baseMesh.receiveShadow = true;
                             baseMesh.position.y = capY;
+                            baseMesh.userData = baseMesh.userData ?? {};
+                            baseMesh.userData.buildingFab2Role = 'roof';
+                            baseMesh.userData.buildingFab2RoofKind = 'core';
                             solidMeshes.push(baseMesh);
 
                             if (showWire) {
@@ -2706,6 +2982,9 @@ export function buildBuildingFabricationVisualParts({
                                 ringMesh.castShadow = true;
                                 ringMesh.receiveShadow = true;
                                 ringMesh.position.y = capY;
+                                ringMesh.userData = ringMesh.userData ?? {};
+                                ringMesh.userData.buildingFab2Role = 'roof';
+                                ringMesh.userData.buildingFab2RoofKind = 'cap_band';
                                 solidMeshes.push(ringMesh);
 
                                 if (showWire) {
@@ -3080,6 +3359,7 @@ export function buildBuildingFabricationVisualParts({
 
             let roofOuter = roofWallOuter;
             let roofHoles = roofWallHoles;
+            let roofSurfaceOuter = roofOuter;
             const roofSourceLayerId = typeof lastFloorLayer?.id === 'string' ? lastFloorLayer.id : '';
             const roofFacadeSpec = globalFacadeSpec
                 ? globalFacadeSpec
@@ -3158,13 +3438,23 @@ export function buildBuildingFabricationVisualParts({
                     });
                     if (res?.loop?.length) {
                         roofOuter = [res.loop];
+                        const depthMins = res?.depthMinsByFaceId ?? null;
+                        if (depthMins) {
+                            const joinAB = cornerJoinPointWithDepths(frames.A, depthMins.A ?? 0, frames.B, depthMins.B ?? 0, frames.A.end);
+                            const joinBC = cornerJoinPointWithDepths(frames.B, depthMins.B ?? 0, frames.C, depthMins.C ?? 0, frames.B.end);
+                            const joinCD = cornerJoinPointWithDepths(frames.C, depthMins.C ?? 0, frames.D, depthMins.D ?? 0, frames.C.end);
+                            const joinDA = cornerJoinPointWithDepths(frames.D, depthMins.D ?? 0, frames.A, depthMins.A ?? 0, frames.D.end);
+                            const coreLoop = [joinAB, joinBC, joinCD, joinDA];
+                            const area = signedArea(coreLoop);
+                            roofSurfaceOuter = [area < 0 ? coreLoop.slice().reverse() : coreLoop];
+                        }
                     } else {
                         warnings.push('Roof silhouette: falling back to inset wall loop.');
                     }
                 }
             }
 
-            for (const outerLoop of roofOuter) {
+            for (const outerLoop of roofSurfaceOuter) {
                 if (!outerLoop || outerLoop.length < 3) continue;
                 const shape = buildShapeFromLoops({ outerLoop, holeLoops: roofHoles });
                 const geo = new THREE.ShapeGeometry(shape);
@@ -3175,6 +3465,9 @@ export function buildBuildingFabricationVisualParts({
                 mesh.castShadow = true;
                 mesh.receiveShadow = true;
                 mesh.position.y = yCursor + 0.002;
+                mesh.userData = mesh.userData ?? {};
+                mesh.userData.buildingFab2Role = 'roof';
+                mesh.userData.buildingFab2RoofKind = 'surface';
                 solidMeshes.push(mesh);
 
                 if (showWire) {
@@ -3262,6 +3555,7 @@ export function buildBuildingFabricationVisualParts({
 
         let roofOuter = roofWallOuter;
         let roofHoles = roofWallHoles;
+        let roofSurfaceOuter = roofOuter;
         const roofSourceLayerId = typeof topFloorLayer?.id === 'string' ? topFloorLayer.id : '';
         const roofFacadeSpec = globalFacadeSpec
             ? globalFacadeSpec
@@ -3340,13 +3634,23 @@ export function buildBuildingFabricationVisualParts({
                 });
                 if (res?.loop?.length) {
                     roofOuter = [res.loop];
+                    const depthMins = res?.depthMinsByFaceId ?? null;
+                    if (depthMins) {
+                        const joinAB = cornerJoinPointWithDepths(frames.A, depthMins.A ?? 0, frames.B, depthMins.B ?? 0, frames.A.end);
+                        const joinBC = cornerJoinPointWithDepths(frames.B, depthMins.B ?? 0, frames.C, depthMins.C ?? 0, frames.B.end);
+                        const joinCD = cornerJoinPointWithDepths(frames.C, depthMins.C ?? 0, frames.D, depthMins.D ?? 0, frames.C.end);
+                        const joinDA = cornerJoinPointWithDepths(frames.D, depthMins.D ?? 0, frames.A, depthMins.A ?? 0, frames.D.end);
+                        const coreLoop = [joinAB, joinBC, joinCD, joinDA];
+                        const area = signedArea(coreLoop);
+                        roofSurfaceOuter = [area < 0 ? coreLoop.slice().reverse() : coreLoop];
+                    }
                 } else {
                     warnings.push('Roof silhouette: falling back to inset wall loop.');
                 }
             }
         }
 
-        for (const outerLoop of roofOuter) {
+        for (const outerLoop of roofSurfaceOuter) {
             if (!outerLoop || outerLoop.length < 3) continue;
             const shape = buildShapeFromLoops({ outerLoop, holeLoops: roofHoles });
             const geo = new THREE.ShapeGeometry(shape);
@@ -3357,6 +3661,9 @@ export function buildBuildingFabricationVisualParts({
             mesh.castShadow = true;
             mesh.receiveShadow = true;
             mesh.position.y = yCursor + 0.002;
+            mesh.userData = mesh.userData ?? {};
+            mesh.userData.buildingFab2Role = 'roof';
+            mesh.userData.buildingFab2RoofKind = 'surface';
             solidMeshes.push(mesh);
 
             if (showWire) {
