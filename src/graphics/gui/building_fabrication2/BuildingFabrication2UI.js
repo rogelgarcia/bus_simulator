@@ -5,11 +5,12 @@ import { getBeltCourseColorOptions } from '../../../app/buildings/BeltCourseColo
 import { getBuildingStyleOptions } from '../../assets3d/generators/buildings/BuildingGenerator.js';
 import { getPbrMaterialOptionsForBuildings } from '../../assets3d/materials/PbrMaterialCatalog.js';
 import { appendMaterialVariationLayerUI } from '../building_fabrication/MaterialVariationLayerUI.js';
-import { createMaterialPickerRowController } from '../building_fabrication/mini_controllers/MaterialPickerRowController.js';
 import { createTextureTilingMiniController } from '../building_fabrication/mini_controllers/TextureTilingMiniController.js';
 import { createDetailsSection, createHint, createRangeRow } from '../building_fabrication/mini_controllers/UiMiniControlPrimitives.js';
 import { applyMaterialSymbolToButton, createMaterialSymbolIcon } from '../shared/materialSymbols.js';
-import { PickerPopup } from '../shared/PickerPopup.js';
+import { MaterialPickerPopupController } from '../shared/material_picker/MaterialPickerPopupController.js';
+import { createMaterialPickerRowController } from '../shared/material_picker/MaterialPickerRowController.js';
+import { setMaterialThumbToColor, setMaterialThumbToTexture } from '../shared/material_picker/materialThumb.js';
 
 const PAGE_SIZE = 6;
 const FACE_IDS = Object.freeze(['A', 'B', 'C', 'D']);
@@ -103,52 +104,6 @@ function normalizeLockedToByFace(value) {
     return out;
 }
 
-function setMaterialThumbToTexture(thumb, url, label) {
-    if (!thumb) return;
-    thumb.textContent = '';
-    thumb.innerHTML = '';
-    thumb.style.background = 'rgba(0,0,0,0.2)';
-    thumb.style.backgroundImage = '';
-    thumb.style.backgroundSize = '';
-    thumb.style.backgroundRepeat = '';
-    thumb.style.backgroundPosition = '';
-    thumb.style.color = '';
-    thumb.classList.remove('has-image');
-
-    if (typeof url === 'string' && url) {
-        const img = document.createElement('img');
-        img.className = 'building-fab-material-thumb-img';
-        img.alt = label || '';
-        img.loading = 'lazy';
-        img.addEventListener('error', () => {
-            thumb.classList.remove('has-image');
-            thumb.textContent = label || '';
-            thumb.style.color = '#e9f2ff';
-        }, { once: true });
-        img.src = url;
-        thumb.classList.add('has-image');
-        thumb.appendChild(img);
-        return;
-    }
-
-    thumb.textContent = label || '';
-    thumb.style.color = '#e9f2ff';
-}
-
-function setMaterialThumbToColor(thumb, hex) {
-    if (!thumb) return;
-    thumb.textContent = '';
-    thumb.innerHTML = '';
-    thumb.style.background = 'rgba(0,0,0,0.2)';
-    thumb.style.backgroundImage = '';
-    thumb.style.backgroundSize = '';
-    thumb.style.backgroundRepeat = '';
-    thumb.style.backgroundPosition = '';
-
-    const safe = Number.isFinite(hex) ? hex : 0xffffff;
-    thumb.style.background = `#${safe.toString(16).padStart(6, '0')}`;
-}
-
 function parseMaterialPickerId(value) {
     if (typeof value !== 'string' || !value) return null;
     const idx = value.indexOf(':');
@@ -178,7 +133,7 @@ export class BuildingFabrication2UI {
         this.rightPanel = document.createElement('div');
         this.rightPanel.className = 'ui-panel is-interactive building-fab2-panel building-fab2-right-panel';
 
-        this._pickerPopup = new PickerPopup();
+        this._materialPickerPopup = new MaterialPickerPopupController();
         this._buildingStyleOptions = getBuildingStyleOptions();
         this._beltCourseColorOptions = getBeltCourseColorOptions();
         this._wallTextureDefs = [
@@ -665,7 +620,7 @@ export class BuildingFabrication2UI {
         this.closeLinkPopup();
         this.closeGroupingPanel();
         this.closeSidePanel();
-        this._pickerPopup?.dispose?.();
+        this._materialPickerPopup?.dispose?.();
         this._unbind();
         if (this.loadOverlay.isConnected) this.loadOverlay.remove();
         if (this.linkOverlay.isConnected) this.linkOverlay.remove();
@@ -1031,7 +986,7 @@ export class BuildingFabrication2UI {
                         const selectedId = current ? `${current.kind}:${current.id}` : null;
                         const label = Number.isInteger(bayIndex) ? `Bay ${bayIndex + 1}` : 'Bay';
 
-                        this._pickerPopup.open({
+                        this._materialPickerPopup.open({
                             title: `Wall material · ${label} · Face ${masterFaceId ?? ''}`.trim(),
                             sections: [
                                 { label: 'Texture', options: this._baseWallTexturePickerOptions },
@@ -1122,7 +1077,7 @@ export class BuildingFabrication2UI {
                         const tintHex = Number.isFinite(wallBaseProxy.tintHex) ? ((Number(wallBaseProxy.tintHex) >>> 0) & 0xffffff) : 0xffffff;
                         const selectedId = options.find((o) => o?.hex === tintHex)?.id ?? null;
 
-                        this._pickerPopup.open({
+                        this._materialPickerPopup.open({
                             title: 'Wall albedo tint',
                             sections: [{ label: 'Colors', options }],
                             selectedId,
@@ -1229,7 +1184,7 @@ export class BuildingFabrication2UI {
                     const current = resolveFaceMaterial();
                     const selectedId = current ? `${current.kind}:${current.id}` : null;
 
-                    this._pickerPopup.open({
+                    this._materialPickerPopup.open({
                         title: `Wall material · Face ${masterFaceId ?? ''}`.trim(),
                         sections: [
                             { label: 'Texture', options: this._baseWallTexturePickerOptions },
@@ -1271,7 +1226,7 @@ export class BuildingFabrication2UI {
                     const tintHex = Number.isFinite(cfg.wallBase?.tintHex) ? ((Number(cfg.wallBase.tintHex) >>> 0) & 0xffffff) : 0xffffff;
                     const selectedId = options.find((o) => o?.hex === tintHex)?.id ?? null;
 
-                    this._pickerPopup.open({
+                    this._materialPickerPopup.open({
                         title: 'Wall albedo tint',
                         sections: [{ label: 'Colors', options }],
                         selectedId,
@@ -2387,7 +2342,7 @@ export class BuildingFabrication2UI {
 	                        }
 
 	                        const selectedId = linkedFromBayId ? `baylink:${linkedFromBayId}` : 'baylink:none';
-	                        this._pickerPopup.open({
+	                        this._materialPickerPopup.open({
 	                            title: `Link bay · Face ${configFaceId}`,
 	                            sections: [{ label: 'Bays', options }],
 	                            selectedId,

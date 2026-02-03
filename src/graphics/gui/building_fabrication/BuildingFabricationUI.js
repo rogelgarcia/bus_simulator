@@ -5,8 +5,9 @@ import { BUILDING_STYLE, isBuildingStyle } from '../../../app/buildings/Building
 import { WINDOW_STYLE, isWindowStyle } from '../../../app/buildings/WindowStyle.js';
 import { BELT_COURSE_COLOR, getBeltCourseColorOptions, isBeltCourseColor } from '../../../app/buildings/BeltCourseColor.js';
 import { ROOF_COLOR, getRoofColorOptions, isRoofColor } from '../../../app/buildings/RoofColor.js';
-import { PickerPopup } from '../shared/PickerPopup.js';
+import { MaterialPickerPopupController } from '../shared/material_picker/MaterialPickerPopupController.js';
 import { applyMaterialSymbolToButton } from '../shared/materialSymbols.js';
+import { setMaterialThumbToColor, setMaterialThumbToTexture as setMaterialThumbToTextureBase } from '../shared/material_picker/materialThumb.js';
 import { WINDOW_TYPE, getDefaultWindowParams, isWindowTypeId } from '../../assets3d/generators/buildings/WindowTextureGenerator.js';
 import { normalizeWindowParams, normalizeWindowTypeIdOrLegacyStyle } from '../../assets3d/generators/buildings/WindowTypeCompatibility.js';
 import { getPbrMaterialOptionsForBuildings } from '../../assets3d/materials/PbrMaterialCatalog.js';
@@ -19,26 +20,8 @@ import { createMaterialVariationUIController } from './MaterialVariationUIContro
 import { createWindowUIController } from './WindowUIController.js';
 import { createWallsUIController } from './WallsUIController.js';
 
-const _warnedThumbUrls = new Set();
-
-function isDevHost() {
-    if (typeof window === 'undefined') return false;
-    const host = String(window.location.hostname || '').toLowerCase();
-    const protocol = String(window.location.protocol || '').toLowerCase();
-    if (protocol === 'file:') return true;
-    if (!host) return true;
-    if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host === '::1') return true;
-    if (host.endsWith('.localhost')) return true;
-
-    const m = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
-    if (!m) return false;
-    const a = Number(m[1]);
-    const b = Number(m[2]);
-    if (a === 10) return true;
-    if (a === 192 && b === 168) return true;
-    if (a === 172 && b >= 16 && b <= 31) return true;
-    if (a === 169 && b === 254) return true;
-    return false;
+function setMaterialThumbToTexture(thumb, url, label) {
+    setMaterialThumbToTextureBase(thumb, url, label, { warnTag: 'BuildingFabricationUI' });
 }
 
 function clamp(value, min, max) {
@@ -68,62 +51,6 @@ function formatFloat(value, digits = 1) {
     const num = Number(value);
     if (!Number.isFinite(num)) return '';
     return num.toFixed(digits);
-}
-
-function setMaterialThumbToTexture(thumb, url, label) {
-    if (!thumb) return;
-    thumb.textContent = '';
-    thumb.style.background = 'rgba(0,0,0,0.2)';
-    thumb.style.backgroundImage = '';
-    thumb.style.backgroundSize = '';
-    thumb.style.backgroundRepeat = '';
-    thumb.style.backgroundPosition = '';
-    thumb.style.color = '';
-    thumb.classList.remove('has-image');
-
-    if (typeof url === 'string' && url) {
-        const img = document.createElement('img');
-        img.className = 'building-fab-material-thumb-img';
-        img.alt = label || '';
-        img.loading = 'lazy';
-        img.addEventListener('error', () => {
-            const failedUrl = img.currentSrc || url;
-            if (isDevHost() && failedUrl && !_warnedThumbUrls.has(failedUrl)) {
-                _warnedThumbUrls.add(failedUrl);
-                console.warn(`[BuildingFabricationUI] Thumbnail failed to load: ${failedUrl}`);
-            }
-            thumb.classList.remove('has-image');
-            thumb.textContent = label || '';
-            thumb.style.color = '#e9f2ff';
-        }, { once: true });
-        img.src = url;
-        thumb.classList.add('has-image');
-        thumb.appendChild(img);
-        return;
-    }
-
-    thumb.textContent = label || '';
-    thumb.style.color = '#e9f2ff';
-}
-
-function setMaterialThumbToColor(thumb, hex, { isDefaultRoof = false } = {}) {
-    if (!thumb) return;
-    thumb.textContent = '';
-    thumb.innerHTML = '';
-    thumb.style.background = 'rgba(0,0,0,0.2)';
-    thumb.style.backgroundImage = '';
-    thumb.style.backgroundSize = '';
-    thumb.style.backgroundRepeat = '';
-    thumb.style.backgroundPosition = '';
-
-    if (isDefaultRoof) {
-        thumb.style.backgroundImage = 'repeating-linear-gradient(45deg, rgba(255,255,255,0.85), rgba(255,255,255,0.85) 6px, rgba(0,0,0,0.12) 6px, rgba(0,0,0,0.12) 12px)';
-        thumb.style.backgroundSize = 'auto';
-        return;
-    }
-
-    const safe = Number.isFinite(hex) ? hex : 0xffffff;
-    thumb.style.background = `#${safe.toString(16).padStart(6, '0')}`;
 }
 
 function buildRoofDefaultPreviewUrl({ size = 96 } = {}) {
@@ -225,7 +152,7 @@ export class BuildingFabricationUI {
         this._hoveredRoadId = null;
         this._hoveredRoadRow = null;
         this._roadRemoveButtons = [];
-        this._pickerPopup = new PickerPopup();
+        this._pickerPopup = new MaterialPickerPopupController();
         this._pickerRowControllers = [];
         this._detailsOpenByKey = new Map();
         this._globalWindowVisuals = getResolvedBuildingWindowVisualsSettings();

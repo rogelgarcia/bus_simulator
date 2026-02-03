@@ -5,7 +5,9 @@
 import { DEFAULT_IBL_ID, getIblOptions } from '../../../content3d/catalogs/IBLCatalog.js';
 import { getPbrMaterialOptionsForGround } from '../../../content3d/catalogs/PbrMaterialCatalog.js';
 import { createDefaultGrassEngineConfig } from '../../../engine3d/grass/GrassConfig.js';
-import { PickerPopup } from '../../shared/PickerPopup.js';
+import { MaterialPickerPopupController } from '../../shared/material_picker/MaterialPickerPopupController.js';
+import { createMaterialPickerRowController } from '../../shared/material_picker/MaterialPickerRowController.js';
+import { setMaterialThumbToTexture } from '../../shared/material_picker/materialThumb.js';
 
 function clamp(value, min, max, fallback) {
     const num = Number(value);
@@ -262,54 +264,6 @@ function makeButtonRow({ label, text = 'Action', tooltip = '', onClick }) {
     return { row, btn };
 }
 
-function setOptionsThumbToTexture(thumb, url, label) {
-    if (!thumb) return;
-    thumb.textContent = '';
-    thumb.classList.remove('has-image');
-    thumb.replaceChildren();
-
-    const safeUrl = typeof url === 'string' ? url : '';
-    if (safeUrl) {
-        const img = document.createElement('img');
-        img.className = 'options-material-thumb-img';
-        img.alt = typeof label === 'string' ? label : '';
-        img.loading = 'lazy';
-        img.addEventListener('error', () => {
-            thumb.classList.remove('has-image');
-            thumb.textContent = typeof label === 'string' ? label : '';
-        }, { once: true });
-        img.src = safeUrl;
-        thumb.classList.add('has-image');
-        thumb.appendChild(img);
-        return;
-    }
-
-    thumb.textContent = typeof label === 'string' ? label : '';
-}
-
-function makeGroundMaterialPickerRow({ label, tooltip = '', onPick }) {
-    const row = makeEl('div', 'options-row options-row-wide');
-    const left = makeEl('div', 'options-row-label', label);
-    const right = makeEl('div', 'options-row-control options-row-control-wide');
-
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'options-btn options-btn-primary options-material-picker';
-
-    const thumb = makeEl('div', 'options-material-thumb');
-    const textEl = makeEl('div', 'options-material-text');
-    btn.appendChild(thumb);
-    btn.appendChild(textEl);
-    btn.addEventListener('click', () => onPick?.());
-
-    right.appendChild(btn);
-    row.appendChild(left);
-    row.appendChild(right);
-    applyTooltip(left, tooltip);
-    applyTooltip(btn, tooltip);
-    return { row, btn, thumb, textEl };
-}
-
 function getPatternTypeLabel(type) {
     const t = String(type ?? 'linear');
     if (t === 'contrast') return 'Noise (Contrast)';
@@ -455,7 +409,7 @@ export class TerrainDebuggerUI {
         this.root = makeEl('div', 'ui-layer options-layer');
         this.root.id = 'ui-terrain-debugger';
 
-        this._pickerPopup = new PickerPopup();
+        this._materialPickerPopup = new MaterialPickerPopupController();
 
         this.panel = makeEl('div', 'ui-panel is-interactive options-panel');
 
@@ -518,8 +472,8 @@ export class TerrainDebuggerUI {
 
     unmount() {
         window.removeEventListener('keydown', this._onKeyDown);
-        this._pickerPopup?.dispose?.();
-        this._pickerPopup = null;
+        this._materialPickerPopup?.dispose?.();
+        this._materialPickerPopup = null;
         this.root.remove();
     }
 
@@ -1073,10 +1027,7 @@ export class TerrainDebuggerUI {
 
     _buildTerrainTab() {
         const section = this._buildSection('terrain', 'Ground');
-        const groundRow = makeGroundMaterialPickerRow({
-            label: 'Material',
-            onPick: () => this._openGroundMaterialPicker()
-        });
+        const groundRow = createMaterialPickerRowController({ label: 'Material', onPick: () => this._openGroundMaterialPicker() });
         section.appendChild(groundRow.row);
         this._controls.groundMaterialPicker = groundRow;
         this._syncGroundMaterialPicker();
@@ -2905,13 +2856,13 @@ export class TerrainDebuggerUI {
         const options = getPbrMaterialOptionsForGround();
         const found = options.find((opt) => opt?.id === id) ?? options[0] ?? null;
         const label = found?.label ?? id ?? '';
-        picker.textEl.textContent = label;
-        setOptionsThumbToTexture(picker.thumb, found?.previewUrl ?? '', label);
+        picker.text.textContent = label;
+        setMaterialThumbToTexture(picker.thumb, found?.previewUrl ?? '', label);
     }
 
     _openGroundMaterialPicker() {
         const picker = this._controls?.groundMaterialPicker ?? null;
-        if (!picker || picker.btn?.disabled) return;
+        if (!picker || picker.button?.disabled) return;
 
         const options = getPbrMaterialOptionsForGround().map((opt) => ({
             id: opt.id,
@@ -2920,7 +2871,7 @@ export class TerrainDebuggerUI {
             previewUrl: opt.previewUrl ?? null
         }));
 
-        this._pickerPopup?.open?.({
+        this._materialPickerPopup?.open?.({
             title: 'Ground material',
             sections: [{ label: 'Ground', options }],
             selectedId: String(this._state?.terrain?.groundMaterialId ?? ''),
