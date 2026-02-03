@@ -3,8 +3,10 @@
 // @ts-check
 
 import { DEFAULT_WINDOW_INTERIOR_ATLAS_ID, getWindowInteriorAtlasLayoutById } from './WindowInteriorAtlasLayoutCatalog.js';
+import { DEFAULT_PARALLAX_INTERIOR_PRESET_ID, resolveParallaxInteriorPresetInteriorConfig } from './ParallaxInteriorPresetCatalog.js';
 
 const VERSION = 1;
+const WARNED_UNKNOWN_PARALLAX_INTERIOR_PRESETS = new Set();
 
 function clamp(value, min, max, fallback) {
     const num = Number(value);
@@ -209,6 +211,7 @@ function normalizeShadeDirection(value, fallback) {
 /**
  * @typedef {Object} WindowMeshInteriorSettings
  * @property {boolean} enabled
+ * @property {string|null} parallaxInteriorPresetId
  * @property {string} atlasId
  * @property {WindowMeshInteriorAtlasLayoutSettings} atlas
  * @property {boolean} randomizeCell
@@ -317,6 +320,7 @@ export const WINDOW_MESH_DEFAULTS = Object.freeze({
     }),
 	    interior: Object.freeze({
 	        enabled: true,
+            parallaxInteriorPresetId: DEFAULT_PARALLAX_INTERIOR_PRESET_ID,
 	        atlasId: DEFAULT_WINDOW_INTERIOR_ATLAS_ID,
 	        atlas: Object.freeze({
 	            cols: 4,
@@ -440,8 +444,17 @@ export function sanitizeWindowMeshSettings(input) {
 
     const interiorSrc = src.interior && typeof src.interior === 'object' ? src.interior : {};
     const interiorEnabled = interiorSrc.enabled !== undefined ? !!interiorSrc.enabled : WINDOW_MESH_DEFAULTS.interior.enabled;
+    const presetIdRaw = interiorSrc.parallaxInteriorPresetId ?? interiorSrc.parallaxInteriorId ?? null;
+    const presetIdCandidate = typeof presetIdRaw === 'string' ? presetIdRaw : '';
+    const presetInterior = presetIdCandidate ? resolveParallaxInteriorPresetInteriorConfig(presetIdCandidate) : null;
+    const presetId = presetInterior ? presetIdCandidate : null;
+    if (!presetInterior && presetIdCandidate && !WARNED_UNKNOWN_PARALLAX_INTERIOR_PRESETS.has(presetIdCandidate)) {
+        WARNED_UNKNOWN_PARALLAX_INTERIOR_PRESETS.add(presetIdCandidate);
+        console.warn(`[WindowMeshSettings] Unknown parallax interior preset id "${presetIdCandidate}".`);
+    }
+
     const atlasSrc = interiorSrc.atlas && typeof interiorSrc.atlas === 'object' ? interiorSrc.atlas : {};
-    const atlasIdRaw = interiorSrc.atlasId ?? atlasSrc.atlasId ?? atlasSrc.id ?? atlasSrc.atlas ?? null;
+    const atlasIdRaw = presetInterior?.atlasId ?? interiorSrc.atlasId ?? atlasSrc.atlasId ?? atlasSrc.id ?? atlasSrc.atlas ?? null;
     const atlasIdCandidate = typeof atlasIdRaw === 'string' ? atlasIdRaw : '';
     const atlasLayout = getWindowInteriorAtlasLayoutById(atlasIdCandidate) ?? getWindowInteriorAtlasLayoutById(DEFAULT_WINDOW_INTERIOR_ATLAS_ID);
     const atlasId = atlasLayout?.id ?? DEFAULT_WINDOW_INTERIOR_ATLAS_ID;
@@ -457,9 +470,9 @@ export function sanitizeWindowMeshSettings(input) {
         : (interiorSrc.uvOffset && typeof interiorSrc.uvOffset === 'object' ? interiorSrc.uvOffset : interiorSrc);
     const uvPanX = clamp(panSrc.x ?? panSrc.uvPanX, -2.0, 2.0, WINDOW_MESH_DEFAULTS.interior.uvPan.x);
     const uvPanY = clamp(panSrc.y ?? panSrc.uvPanY, -2.0, 2.0, WINDOW_MESH_DEFAULTS.interior.uvPan.y);
-	    const uvZoom = clamp(interiorSrc.uvZoom ?? interiorSrc.zoom, 0.25, 20.0, WINDOW_MESH_DEFAULTS.interior.uvZoom);
+	    const uvZoom = clamp(presetInterior?.uvZoom ?? interiorSrc.uvZoom ?? interiorSrc.zoom, 0.25, 20.0, WINDOW_MESH_DEFAULTS.interior.uvZoom);
 	    const imageAspect = clamp(interiorSrc.imageAspect ?? interiorSrc.aspect, 0.25, 4.0, WINDOW_MESH_DEFAULTS.interior.imageAspect);
-	    const parallaxDepthMeters = clamp(interiorSrc.parallaxDepthMeters ?? interiorSrc.depth, 0.0, 50.0, WINDOW_MESH_DEFAULTS.interior.parallaxDepthMeters);
+	    const parallaxDepthMeters = clamp(presetInterior?.parallaxDepthMeters ?? interiorSrc.parallaxDepthMeters ?? interiorSrc.depth, 0.0, 50.0, WINDOW_MESH_DEFAULTS.interior.parallaxDepthMeters);
 	    const parScaleSrc = interiorSrc.parallaxScale && typeof interiorSrc.parallaxScale === 'object' ? interiorSrc.parallaxScale : interiorSrc;
 	    const parallaxScaleX = clamp(parScaleSrc.x ?? parScaleSrc.parallaxScaleX, 0.0, 10.0, WINDOW_MESH_DEFAULTS.interior.parallaxScale.x);
 	    const parallaxScaleY = clamp(parScaleSrc.y ?? parScaleSrc.parallaxScaleY, 0.0, 10.0, WINDOW_MESH_DEFAULTS.interior.parallaxScale.y);
@@ -552,6 +565,7 @@ export function sanitizeWindowMeshSettings(input) {
         },
 	        interior: {
 	            enabled: interiorEnabled,
+                parallaxInteriorPresetId: presetId,
 	            atlasId,
 	            atlas: { cols: atlasCols, rows: atlasRows },
 	            randomizeCell,

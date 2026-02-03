@@ -7,7 +7,8 @@ import {
     computeWindowMeshInstanceVariation,
     computeWindowMeshInstanceVariationFromSanitized,
     WINDOW_SHADE_DIRECTION,
-    WINDOW_INTERIOR_ATLAS_ID
+    WINDOW_INTERIOR_ATLAS_ID,
+    PARALLAX_INTERIOR_PRESET_ID
 } from '../../../src/app/buildings/window_mesh/index.js';
 
 test('WindowMeshSettings: arch disables when it cannot fit', () => {
@@ -84,4 +85,21 @@ test('WindowMeshVariation: output stays in expected ranges', () => {
     assert.ok(v.interiorTint.hueShiftDeg >= -5 && v.interiorTint.hueShiftDeg <= 5);
     assert.ok(v.interiorTint.saturationMul >= 0.9 && v.interiorTint.saturationMul <= 1.1);
     assert.ok(v.interiorTint.brightnessMul >= 0.8 && v.interiorTint.brightnessMul <= 1.2);
+});
+
+test('WindowMeshSettings: parallax interior presets override atlas/depth/zoom', () => {
+    const s = sanitizeWindowMeshSettings({
+        interior: {
+            enabled: true,
+            parallaxInteriorPresetId: PARALLAX_INTERIOR_PRESET_ID.OFFICE,
+            atlasId: WINDOW_INTERIOR_ATLAS_ID.PROCEDURAL,
+            uvZoom: 9,
+            parallaxDepthMeters: 0
+        }
+    });
+
+    assert.equal(s.interior.parallaxInteriorPresetId, PARALLAX_INTERIOR_PRESET_ID.OFFICE);
+    assert.equal(s.interior.atlasId, WINDOW_INTERIOR_ATLAS_ID.OFFICE_4X4);
+    assert.equal(s.interior.uvZoom, 1.6);
+    assert.equal(s.interior.parallaxDepthMeters, 20.0);
 });

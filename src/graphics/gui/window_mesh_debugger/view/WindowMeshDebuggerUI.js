@@ -2,7 +2,13 @@
 // Docked Options-style panel for the Window Mesh Debugger.
 // @ts-check
 
-import { getDefaultWindowMeshSettings, sanitizeWindowMeshSettings, WINDOW_SHADE_COVERAGE, WINDOW_SHADE_DIRECTION } from '../../../../app/buildings/window_mesh/index.js';
+import {
+    getDefaultWindowMeshSettings,
+    sanitizeWindowMeshSettings,
+    WINDOW_SHADE_COVERAGE,
+    WINDOW_SHADE_DIRECTION,
+    getParallaxInteriorPresetOptions
+} from '../../../../app/buildings/window_mesh/index.js';
 import { DEFAULT_IBL_ID, getIblOptions } from '../../../content3d/catalogs/IBLCatalog.js';
 import { getPbrMaterialOptionsForBuildings } from '../../../content3d/catalogs/PbrMaterialCatalog.js';
 import { getWindowInteriorAtlasOptions } from '../../../content3d/catalogs/WindowInteriorAtlasCatalog.js';
@@ -2103,8 +2109,11 @@ export class WindowMeshDebuggerUI {
     _buildInteriorSection() {
         const section = this._buildSection('Interior');
         const s0 = this._state.settings;
-        const atlasOptions = getWindowInteriorAtlasOptions({ includeProcedural: true });
-        const initialAtlasId = String(s0.interior.atlasId ?? atlasOptions[0]?.id ?? '');
+        const CUSTOM_PRESET_ID = '__custom__';
+        const presetOptions = getParallaxInteriorPresetOptions();
+        const presetId = typeof s0.interior.parallaxInteriorPresetId === 'string' && s0.interior.parallaxInteriorPresetId
+            ? s0.interior.parallaxInteriorPresetId
+            : CUSTOM_PRESET_ID;
 
         section.appendChild(makeToggleRow({
             label: 'Enabled',
@@ -2115,18 +2124,85 @@ export class WindowMeshDebuggerUI {
             }
         }).row);
 
-        section.appendChild(makeSelectRow({
+        const presetRow = makeSelectRow({
+            label: 'Parallax Interior',
+            value: presetId,
+            options: [
+                { id: CUSTOM_PRESET_ID, label: 'Custom (manual)' },
+                ...presetOptions
+            ],
+            onChange: (id) => {
+                const selected = String(id ?? '');
+                const s = this._state.settings;
+                this._setSettings({
+                    interior: {
+                        ...s.interior,
+                        parallaxInteriorPresetId: selected === CUSTOM_PRESET_ID ? null : selected
+                    }
+                });
+                syncPresetLocks();
+            }
+        });
+        section.appendChild(presetRow.row);
+
+        let advancedCollapsed = true;
+        const advanced = makeEl('div', 'options-section');
+        const advancedHeader = makeEl('div', 'options-section-header');
+        advancedHeader.setAttribute('role', 'button');
+        advancedHeader.tabIndex = 0;
+        const advancedTitle = makeEl('div', 'options-section-title', 'Advanced');
+        const advancedBtn = makeEl('button', 'options-btn options-btn-small options-icon-btn', advancedCollapsed ? '▸' : '▾');
+        advancedBtn.type = 'button';
+
+        const applyAdvancedCollapsed = () => {
+            advanced.classList.toggle('is-collapsed', advancedCollapsed);
+            advancedBtn.textContent = advancedCollapsed ? '▸' : '▾';
+            advancedBtn.title = advancedCollapsed ? 'Expand' : 'Collapse';
+            advancedBtn.setAttribute('aria-label', advancedCollapsed ? 'Expand' : 'Collapse');
+        };
+
+        const toggleAdvancedCollapsed = () => {
+            advancedCollapsed = !advancedCollapsed;
+            applyAdvancedCollapsed();
+        };
+
+        advancedBtn.addEventListener('click', () => toggleAdvancedCollapsed());
+        advancedHeader.addEventListener('click', (e) => {
+            const btn = e?.target?.closest?.('button');
+            if (btn && advancedHeader.contains(btn)) return;
+            toggleAdvancedCollapsed();
+        });
+        advancedHeader.addEventListener('keydown', (e) => {
+            const key = e?.key ?? '';
+            if (key !== 'Enter' && key !== ' ') return;
+            e.preventDefault?.();
+            toggleAdvancedCollapsed();
+        });
+
+        advancedHeader.appendChild(advancedTitle);
+        advancedHeader.appendChild(advancedBtn);
+        advanced.appendChild(advancedHeader);
+
+        const note = makeEl('div', 'options-note', 'Atlas/depth/zoom are controlled by the preset. Select Custom to override.');
+        advanced.appendChild(note);
+
+        const atlasOptions = getWindowInteriorAtlasOptions({ includeProcedural: true });
+        const lockedControls = [];
+
+        const atlasRow = makeSelectRow({
             label: 'Atlas',
-            value: initialAtlasId,
+            value: String(s0.interior.atlasId ?? atlasOptions[0]?.id ?? ''),
             options: atlasOptions,
             onChange: (id) => {
                 const s = this._state.settings;
                 const selected = String(id ?? '');
                 this._setSettings({ interior: { ...s.interior, atlasId: selected } });
             }
-        }).row);
+        });
+        advanced.appendChild(atlasRow.row);
+        lockedControls.push(atlasRow.select);
 
-        section.appendChild(makeToggleRow({
+        advanced.appendChild(makeToggleRow({
             label: 'Randomize Cell',
             value: s0.interior.randomizeCell,
             onChange: (v) => {
@@ -2135,7 +2211,7 @@ export class WindowMeshDebuggerUI {
             }
         }).row);
 
-        section.appendChild(makeNumberSliderRow({
+        advanced.appendChild(makeNumberSliderRow({
             label: 'Cell Col',
             value: s0.interior.cell.col,
             min: 0,
@@ -2148,7 +2224,7 @@ export class WindowMeshDebuggerUI {
             }
         }).row);
 
-        section.appendChild(makeNumberSliderRow({
+        advanced.appendChild(makeNumberSliderRow({
             label: 'Cell Row',
             value: s0.interior.cell.row,
             min: 0,
@@ -2161,7 +2237,7 @@ export class WindowMeshDebuggerUI {
             }
         }).row);
 
-        section.appendChild(makeToggleRow({
+        advanced.appendChild(makeToggleRow({
             label: 'Random Flip X',
             value: s0.interior.randomFlipX,
             onChange: (v) => {
@@ -2170,46 +2246,50 @@ export class WindowMeshDebuggerUI {
             }
         }).row);
 
-	        section.appendChild(makeNumberSliderRow({
-	            label: 'Parallax Depth (m)',
-	            value: s0.interior.parallaxDepthMeters,
-	            min: 0.0,
-	            max: 50.0,
-	            step: 0.1,
-	            digits: 1,
-	            onChange: (v) => {
-	                const s = this._state.settings;
-	                this._setSettings({ interior: { ...s.interior, parallaxDepthMeters: v } });
-	            }
-	        }).row);
+        const parallaxDepthRow = makeNumberSliderRow({
+            label: 'Parallax Depth (m)',
+            value: s0.interior.parallaxDepthMeters,
+            min: 0.0,
+            max: 50.0,
+            step: 0.1,
+            digits: 1,
+            onChange: (v) => {
+                const s = this._state.settings;
+                this._setSettings({ interior: { ...s.interior, parallaxDepthMeters: v } });
+            }
+        });
+        advanced.appendChild(parallaxDepthRow.row);
+        lockedControls.push(parallaxDepthRow.range, parallaxDepthRow.number);
 
-	        section.appendChild(makeNumberSliderRow({
-	            label: 'Plane Z Offset (m)',
-	            value: s0.interior.zOffset,
-	            min: -1.0,
-	            max: 1.0,
-	            step: 0.001,
-	            digits: 3,
-	            onChange: (v) => {
-	                const s = this._state.settings;
-	                this._setSettings({ interior: { ...s.interior, zOffset: v } });
-	            }
-	        }).row);
+        advanced.appendChild(makeNumberSliderRow({
+            label: 'Plane Z Offset (m)',
+            value: s0.interior.zOffset,
+            min: -1.0,
+            max: 1.0,
+            step: 0.001,
+            digits: 3,
+            onChange: (v) => {
+                const s = this._state.settings;
+                this._setSettings({ interior: { ...s.interior, zOffset: v } });
+            }
+        }).row);
 
-	        section.appendChild(makeNumberSliderRow({
-	            label: 'Interior Zoom',
-	            value: s0.interior.uvZoom,
-	            min: 0.25,
-	            max: 10.0,
+        const zoomRow = makeNumberSliderRow({
+            label: 'Interior Zoom',
+            value: s0.interior.uvZoom,
+            min: 0.25,
+            max: 10.0,
             step: 0.01,
             digits: 2,
             onChange: (v) => {
                 const s = this._state.settings;
                 this._setSettings({ interior: { ...s.interior, uvZoom: v } });
             }
-        }).row);
+        });
+        advanced.appendChild(zoomRow.row);
+        lockedControls.push(zoomRow.range, zoomRow.number);
 
-        section.appendChild(makeNumberSliderRow({
+        advanced.appendChild(makeNumberSliderRow({
             label: 'Interior Aspect (W/H)',
             value: s0.interior.imageAspect,
             min: 0.25,
@@ -2222,7 +2302,7 @@ export class WindowMeshDebuggerUI {
             }
         }).row);
 
-	        section.appendChild(makeNumberSliderRow({
+	        advanced.appendChild(makeNumberSliderRow({
 	            label: 'Parallax Offset X Scale',
 	            value: s0.interior.parallaxScale.x,
 	            min: 0.0,
@@ -2236,7 +2316,7 @@ export class WindowMeshDebuggerUI {
             }
         }).row);
 
-	        section.appendChild(makeNumberSliderRow({
+	        advanced.appendChild(makeNumberSliderRow({
 	            label: 'Parallax Offset Y Scale',
 	            value: s0.interior.parallaxScale.y,
 	            min: 0.0,
@@ -2250,7 +2330,7 @@ export class WindowMeshDebuggerUI {
             }
         }).row);
 
-        section.appendChild(makeNumberSliderRow({
+        advanced.appendChild(makeNumberSliderRow({
             label: 'Emissive Intensity',
             value: s0.interior.emissiveIntensity,
             min: 0.0,
@@ -2263,7 +2343,7 @@ export class WindowMeshDebuggerUI {
             }
         }).row);
 
-        section.appendChild(makeNumberSliderRow({
+        advanced.appendChild(makeNumberSliderRow({
             label: 'UV Pan X',
             value: s0.interior.uvPan.x,
             min: -2.0,
@@ -2276,7 +2356,7 @@ export class WindowMeshDebuggerUI {
             }
         }).row);
 
-        section.appendChild(makeNumberSliderRow({
+        advanced.appendChild(makeNumberSliderRow({
             label: 'UV Pan Y',
             value: s0.interior.uvPan.y,
             min: -2.0,
@@ -2290,7 +2370,7 @@ export class WindowMeshDebuggerUI {
         }).row);
 
         const t0 = s0.interior.tintVariation;
-        section.appendChild(makeNumberSliderRow({
+        advanced.appendChild(makeNumberSliderRow({
             label: 'Hue Shift Min (deg)',
             value: t0.hueShiftDeg.min,
             min: -180.0,
@@ -2304,7 +2384,7 @@ export class WindowMeshDebuggerUI {
             }
         }).row);
 
-        section.appendChild(makeNumberSliderRow({
+        advanced.appendChild(makeNumberSliderRow({
             label: 'Hue Shift Max (deg)',
             value: t0.hueShiftDeg.max,
             min: -180.0,
@@ -2318,7 +2398,7 @@ export class WindowMeshDebuggerUI {
             }
         }).row);
 
-        section.appendChild(makeNumberSliderRow({
+        advanced.appendChild(makeNumberSliderRow({
             label: 'Sat Mul Min',
             value: t0.saturationMul.min,
             min: 0.0,
@@ -2332,7 +2412,7 @@ export class WindowMeshDebuggerUI {
             }
         }).row);
 
-        section.appendChild(makeNumberSliderRow({
+        advanced.appendChild(makeNumberSliderRow({
             label: 'Sat Mul Max',
             value: t0.saturationMul.max,
             min: 0.0,
@@ -2346,7 +2426,7 @@ export class WindowMeshDebuggerUI {
             }
         }).row);
 
-        section.appendChild(makeNumberSliderRow({
+        advanced.appendChild(makeNumberSliderRow({
             label: 'Bri Mul Min',
             value: t0.brightnessMul.min,
             min: 0.0,
@@ -2360,7 +2440,7 @@ export class WindowMeshDebuggerUI {
             }
         }).row);
 
-        section.appendChild(makeNumberSliderRow({
+        advanced.appendChild(makeNumberSliderRow({
             label: 'Bri Mul Max',
             value: t0.brightnessMul.max,
             min: 0.0,
@@ -2373,6 +2453,31 @@ export class WindowMeshDebuggerUI {
                 this._setSettings({ interior: { ...s.interior, tintVariation: { ...t, brightnessMul: { ...t.brightnessMul, max: v } } } });
             }
         }).row);
+
+        const syncPresetLocks = () => {
+            const hasPreset = !!this._state.settings?.interior?.parallaxInteriorPresetId;
+            note.textContent = hasPreset
+                ? 'Atlas/depth/zoom are controlled by the preset. Select Custom to override.'
+                : 'Custom mode: adjust atlas/depth/zoom directly (legacy/manual).';
+
+            const cur = this._state.settings?.interior ?? null;
+            if (cur) {
+                atlasRow.select.value = String(cur.atlasId ?? atlasRow.select.value);
+                parallaxDepthRow.range.value = String(Number(cur.parallaxDepthMeters ?? 0).toFixed(1));
+                parallaxDepthRow.number.value = String(Number(cur.parallaxDepthMeters ?? 0).toFixed(1));
+                zoomRow.range.value = String(Number(cur.uvZoom ?? 1).toFixed(2));
+                zoomRow.number.value = String(Number(cur.uvZoom ?? 1).toFixed(2));
+            }
+
+            for (const el of lockedControls) {
+                if (!el) continue;
+                el.disabled = hasPreset;
+            }
+        };
+
+        applyAdvancedCollapsed();
+        syncPresetLocks();
+        section.appendChild(advanced);
 
         const overlayToggle = makeToggleRow({
             label: 'Cell Overlay',
