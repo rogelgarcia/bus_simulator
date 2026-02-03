@@ -3258,7 +3258,94 @@ export function buildBuildingFabricationVisualParts({
             textureCache
         });
 
-        const { outer: roofOuter, holes: roofHoles } = applyWallInset({ loops: currentLoops, inset: wallInset });
+        const { outer: roofWallOuter, holes: roofWallHoles } = applyWallInset({ loops: currentLoops, inset: wallInset });
+
+        let roofOuter = roofWallOuter;
+        let roofHoles = roofWallHoles;
+        const roofSourceLayerId = typeof topFloorLayer?.id === 'string' ? topFloorLayer.id : '';
+        const roofFacadeSpec = globalFacadeSpec
+            ? globalFacadeSpec
+            : ((roofSourceLayerId && facadesByLayerId?.[roofSourceLayerId] && typeof facadesByLayerId[roofSourceLayerId] === 'object')
+                ? facadesByLayerId[roofSourceLayerId]
+                : null);
+        const wantsRoofFacadeSilhouette = !!roofFacadeSpec && ['A', 'B', 'C', 'D'].some((id) => !!roofFacadeSpec?.[id]);
+
+        if (wantsRoofFacadeSilhouette && roofWallOuter.length) {
+            const main = roofWallOuter[0] ?? null;
+            const frames = main ? computeQuadFacadeFramesFromLoop(main, { warnings }) : null;
+            if (frames) {
+                const links = topFloorLayer?.faceLinking?.links && typeof topFloorLayer.faceLinking.links === 'object'
+                    ? topFloorLayer.faceLinking.links
+                    : null;
+                const resolveMasterFaceId = (faceId) => {
+                    const seen = new Set();
+                    let cur = faceId;
+                    for (let i = 0; i < 8; i++) {
+                        if (seen.has(cur)) break;
+                        seen.add(cur);
+                        const next = links?.[cur] ?? null;
+                        if (next === null || next === undefined) return cur;
+                        if (next === cur) return cur;
+                        cur = next;
+                    }
+                    return faceId;
+                };
+
+                const next = {};
+                for (const faceId of ['A', 'B', 'C', 'D']) {
+                    const masterFaceId = resolveMasterFaceId(faceId);
+                    const srcFacade = (roofFacadeSpec?.[masterFaceId] && typeof roofFacadeSpec[masterFaceId] === 'object')
+                        ? roofFacadeSpec[masterFaceId]
+                        : null;
+                    if (!srcFacade) continue;
+
+                    const srcLayout = srcFacade?.layout && typeof srcFacade.layout === 'object' ? srcFacade.layout : null;
+                    const len = Number(frames?.[faceId]?.length) || 0;
+
+                    const bays = Array.isArray(srcLayout?.bays?.items) ? srcLayout.bays.items : null;
+                    const groups = Array.isArray(srcLayout?.groups?.items) ? srcLayout.groups.items : null;
+                    const hasBays = !!bays && bays.length > 0;
+                    const bayItems = hasBays ? solveFacadeBaysLayout({ bays, groups, faceLengthMeters: len, warnings }) : null;
+
+                    let solvedPatternItems = null;
+                    if (!hasBays) {
+                        const pattern = srcLayout?.pattern ?? null;
+                        if (pattern && typeof pattern === 'object') {
+                            const topology = facadePatternTopologyByFaceId.get(masterFaceId) ?? null;
+                            const solved = solveFacadeLayoutFillPattern({
+                                pattern,
+                                faceLengthMeters: len,
+                                topology: globalFacadeSpec ? topology : null,
+                                warnings
+                            });
+                            solvedPatternItems = Array.isArray(solved?.items) ? solved.items : null;
+                        }
+                    }
+
+                    const base = { ...srcFacade };
+                    const layout = (base.layout && typeof base.layout === 'object') ? { ...base.layout } : {};
+                    if (Array.isArray(bayItems)) layout.items = bayItems;
+                    else if (Array.isArray(solvedPatternItems)) layout.items = solvedPatternItems;
+                    base.layout = layout;
+
+                    next[faceId] = base;
+                }
+
+                const res = computeQuadFacadeSilhouette({
+                    wallOuter: roofWallOuter,
+                    facades: next,
+                    layerMaterial: null,
+                    warnings,
+                    cornerStrategy: resolvedCornerStrategy
+                });
+                if (res?.loop?.length) {
+                    roofOuter = [res.loop];
+                } else {
+                    warnings.push('Roof silhouette: falling back to inset wall loop.');
+                }
+            }
+        }
+
         for (const outerLoop of roofOuter) {
             if (!outerLoop || outerLoop.length < 3) continue;
             const shape = buildShapeFromLoops({ outerLoop, holeLoops: roofHoles });
