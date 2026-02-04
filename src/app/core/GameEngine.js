@@ -6,6 +6,7 @@ import { getResolvedLightingSettings } from '../../graphics/lighting/LightingSet
 import { getResolvedShadowSettings, getShadowQualityPreset, sanitizeShadowSettings } from '../../graphics/lighting/ShadowSettings.js';
 import { getResolvedAtmosphereSettings, sanitizeAtmosphereSettings } from '../../graphics/visuals/atmosphere/AtmosphereSettings.js';
 import { getResolvedAntiAliasingSettings, sanitizeAntiAliasingSettings } from '../../graphics/visuals/postprocessing/AntiAliasingSettings.js';
+import { getResolvedAmbientOcclusionSettings, sanitizeAmbientOcclusionSettings } from '../../graphics/visuals/postprocessing/AmbientOcclusionSettings.js';
 import { getResolvedBloomSettings, sanitizeBloomSettings } from '../../graphics/visuals/postprocessing/BloomSettings.js';
 import { PostProcessingPipeline } from '../../graphics/visuals/postprocessing/PostProcessingPipeline.js';
 import { getResolvedColorGradingSettings, sanitizeColorGradingSettings } from '../../graphics/visuals/postprocessing/ColorGradingSettings.js';
@@ -13,6 +14,8 @@ import { getColorGradingPresetById } from '../../graphics/visuals/postprocessing
 import { is3dLutSupported, loadCubeLut3DTexture } from '../../graphics/visuals/postprocessing/ColorGradingCubeLutLoader.js';
 import { getResolvedSunBloomSettings, sanitizeSunBloomSettings } from '../../graphics/visuals/postprocessing/SunBloomSettings.js';
 import { getOrCreateGpuFrameTimer } from '../../graphics/engine3d/perf/GpuFrameTimer.js';
+import { getResolvedVehicleMotionDebugSettings, sanitizeVehicleMotionDebugSettings } from '../vehicle/VehicleMotionDebugSettings.js';
+import { getResolvedVehicleVisualSmoothingSettings, sanitizeVehicleVisualSmoothingSettings } from '../vehicle/VehicleVisualSmoothingSettings.js';
 
 export class GameEngine {
     constructor({
@@ -79,6 +82,10 @@ export class GameEngine {
             settings: getResolvedBloomSettings()
         };
 
+        this._ambientOcclusion = {
+            settings: getResolvedAmbientOcclusionSettings()
+        };
+
         this._sunBloom = {
             settings: getResolvedSunBloomSettings()
         };
@@ -97,6 +104,7 @@ export class GameEngine {
         };
 
         this._applyAntiAliasingSettings(this._antiAliasing.settings);
+        this._applyAmbientOcclusionSettings(this._ambientOcclusion.settings);
         this._applyBloomSettings(this._bloom.settings);
         this._applySunBloomSettings(this._sunBloom.settings);
         this._applyColorGradingSettings(this._colorGrading.settings);
@@ -124,6 +132,24 @@ export class GameEngine {
         this._running = false;
         this._lastT = 0;
         this._frameListeners = new Set();
+
+        this._frameTiming = {
+            nowMs: 0,
+            rawDt: Number.NaN,
+            clampedDt: Number.NaN,
+            dt: 0,
+            fps: 0,
+            synthetic: null
+        };
+
+        this._vehicleMotionDebug = {
+            settings: getResolvedVehicleMotionDebugSettings(),
+            frameIndex: 0
+        };
+
+        this._vehicleVisualSmoothing = {
+            settings: getResolvedVehicleVisualSmoothingSettings()
+        };
 
         this._onResize = () => this.resize();
         if (this._autoResize) window.addEventListener('resize', this._onResize, { passive: true });
@@ -237,6 +263,10 @@ export class GameEngine {
         return this._antiAliasing?.settings ?? null;
     }
 
+    get ambientOcclusionSettings() {
+        return this._ambientOcclusion?.settings ?? null;
+    }
+
     get sunBloomSettings() {
         return this._sunBloom?.settings ?? null;
     }
@@ -280,6 +310,17 @@ export class GameEngine {
             radius: p?.radius ?? (s?.radius ?? 0),
             threshold: p?.threshold ?? (s?.threshold ?? 0),
             brightnessOnly: p?.brightnessOnly ?? (s?.brightnessOnly ?? true)
+        };
+    }
+
+    getAmbientOcclusionDebugInfo() {
+        const s = this._ambientOcclusion?.settings ?? null;
+        if (!this._post?.pipeline) return { mode: s?.mode ?? 'off', ...(s ?? {}) };
+
+        const info = this._post.pipeline.getDebugInfo?.() ?? null;
+        const ao = info?.ambientOcclusion ?? null;
+        return {
+            mode: ao?.mode ?? (s?.mode ?? 'off')
         };
     }
 
@@ -547,6 +588,13 @@ export class GameEngine {
         this._syncPostProcessingPipeline();
     }
 
+    _applyAmbientOcclusionSettings(settings) {
+        if (!this._ambientOcclusion) return;
+        const next = sanitizeAmbientOcclusionSettings(settings);
+        this._ambientOcclusion.settings = next;
+        this._syncPostProcessingPipeline();
+    }
+
     _applyBloomSettings(settings) {
         if (!this._bloom) return;
         const next = sanitizeBloomSettings(settings);
@@ -647,7 +695,11 @@ export class GameEngine {
         const aaMode = typeof aa?.mode === 'string' ? aa.mode : 'off';
         const aaWantsPipeline = aaMode === 'fxaa' || aaMode === 'smaa' || aaMode === 'taa';
 
-        const wantsPipeline = bloomEnabled || sunBloomEnabled || gradingRequested || aaWantsPipeline;
+        const ao = this._ambientOcclusion?.settings ?? null;
+        const aoMode = typeof ao?.mode === 'string' ? ao.mode : 'off';
+        const aoWantsPipeline = aoMode === 'ssao' || aoMode === 'gtao';
+
+        const wantsPipeline = bloomEnabled || sunBloomEnabled || gradingRequested || aaWantsPipeline || aoWantsPipeline;
 
         if (!wantsPipeline) {
             if (this._post.pipeline) {
@@ -663,6 +715,7 @@ export class GameEngine {
                 scene: this.scene,
                 camera: this.camera,
                 bloom: this._bloom?.settings ?? null,
+                ambientOcclusion: this._ambientOcclusion?.settings ?? null,
                 sunBloom: this._sunBloom?.settings ?? null,
                 antiAliasing: this._antiAliasing?.settings ?? null
             });
@@ -674,6 +727,7 @@ export class GameEngine {
             bloom: this._bloom?.settings ?? null,
             sunBloom: this._sunBloom?.settings ?? null
         });
+        this._post.pipeline.setAmbientOcclusion(this._ambientOcclusion?.settings ?? null);
         this._post.pipeline.setAntiAliasing(this._antiAliasing?.settings ?? null);
         this._post.pipeline.setColorGrading({
             lutTexture: this._colorGrading?.lut ?? null,
@@ -789,6 +843,10 @@ export class GameEngine {
         this._applyAntiAliasingSettings(getResolvedAntiAliasingSettings());
     }
 
+    reloadAmbientOcclusionSettings() {
+        this._applyAmbientOcclusionSettings(getResolvedAmbientOcclusionSettings());
+    }
+
     reloadSunBloomSettings() {
         this._applySunBloomSettings(getResolvedSunBloomSettings());
     }
@@ -809,6 +867,10 @@ export class GameEngine {
         this._applyAntiAliasingSettings(settings);
     }
 
+    setAmbientOcclusionSettings(settings) {
+        this._applyAmbientOcclusionSettings(settings);
+    }
+
     setSunBloomSettings(settings) {
         this._applySunBloomSettings(settings);
     }
@@ -825,9 +887,11 @@ export class GameEngine {
         this.reloadShadowSettings();
         this.reloadLightingSettings();
         this.reloadAntiAliasingSettings();
+        this.reloadAmbientOcclusionSettings();
         this.reloadBloomSettings();
         this.reloadSunBloomSettings();
         this.reloadColorGradingSettings();
+        this.reloadVehicleVisualSmoothingSettings();
     }
 
     /**
@@ -905,6 +969,15 @@ export class GameEngine {
         const stepDt = Number.isFinite(dt) ? dt : 0;
         const now = Number.isFinite(nowMs) ? nowMs : performance.now();
 
+        const timing = this._frameTiming;
+        if (timing) {
+            timing.nowMs = now;
+            timing.dt = stepDt;
+            timing.fps = stepDt > 1e-9 ? 1 / stepDt : 0;
+            if (!Number.isFinite(timing.rawDt)) timing.rawDt = stepDt;
+            if (!Number.isFinite(timing.clampedDt)) timing.clampedDt = stepDt;
+        }
+
         this._stateMachine?.update(stepDt);
         this._ensureIblBackground();
 
@@ -965,10 +1038,114 @@ export class GameEngine {
     _tick(t) {
         if (!this._running) return;
 
-        const dt = Math.min((t - this._lastT) / 1000, 0.05);
+        const rawDt = (t - this._lastT) / 1000;
+        const clampedDt = Math.min(rawDt, 0.05);
+        let dt = clampedDt;
+
+        const debug = this._vehicleMotionDebug?.settings ?? null;
+        const synthetic = debug?.syntheticDt ?? null;
+        let syntheticInfo = null;
+
         this._lastT = t;
+        if (synthetic?.enabled === true && typeof synthetic.pattern === 'string' && synthetic.pattern !== 'off') {
+            const idx = this._vehicleMotionDebug.frameIndex = (this._vehicleMotionDebug.frameIndex + 1) >>> 0;
+            const pattern = synthetic.pattern;
+            const mode = typeof synthetic.mode === 'string' ? synthetic.mode : 'dt';
+            const stallMs = Number.isFinite(synthetic.stallMs) ? Math.max(0, Math.min(200, Math.round(synthetic.stallMs))) : 34;
+
+            if (mode === 'dt') {
+                // Note: this *changes simulation time* (can speed up/slow down). It's useful for surfacing timing bugs.
+                if (pattern === 'steady20') {
+                    dt = 0.05;
+                } else if (pattern === 'steady30') {
+                    dt = 1 / 30;
+                } else if (pattern === 'alt60_20') {
+                    dt = (idx % 2 === 0) ? (1 / 60) : 0.05;
+                } else if (pattern === 'alt60_30') {
+                    dt = (idx % 2 === 0) ? (1 / 60) : (1 / 30);
+                } else if (pattern === 'alt60_40') {
+                    dt = (idx % 2 === 0) ? (1 / 60) : (1 / 40);
+                } else if (pattern === 'spike20') {
+                    dt = (idx % 10 === 0) ? 0.05 : (1 / 60);
+                }
+                dt = Math.min(dt, 0.05);
+                syntheticInfo = { kind: 'dtPattern', pattern, mode };
+            } else if (mode === 'stall') {
+                // Busy-wait to create real frame-time spikes without changing dt directly.
+                const wantsStall = (() => {
+                    if (pattern === 'steady20') return true;
+                    if (pattern === 'steady30') return true;
+                    if (pattern === 'alt60_20') return (idx % 2 === 1);
+                    if (pattern === 'alt60_30') return (idx % 2 === 1);
+                    if (pattern === 'alt60_40') return (idx % 2 === 1);
+                    if (pattern === 'spike20') return (idx % 10 === 0);
+                    return false;
+                })();
+
+                if (wantsStall && stallMs > 0) {
+                    const start = performance.now();
+                    while (performance.now() - start < stallMs) {}
+                }
+
+                syntheticInfo = { kind: 'stall', pattern, mode, stallMs };
+            }
+        }
+
+        if (this._frameTiming) {
+            this._frameTiming.nowMs = t;
+            this._frameTiming.rawDt = rawDt;
+            this._frameTiming.clampedDt = clampedDt;
+            this._frameTiming.dt = dt;
+            this._frameTiming.fps = dt > 1e-9 ? 1 / dt : 0;
+            this._frameTiming.synthetic = syntheticInfo;
+        }
         this.updateFrame(dt, { render: true, nowMs: t });
 
         requestAnimationFrame((tt) => this._tick(tt));
+    }
+
+    get frameTimingDebugInfo() {
+        return this._frameTiming ?? null;
+    }
+
+    get vehicleMotionDebugSettings() {
+        return this._vehicleMotionDebug?.settings ?? null;
+    }
+
+    setVehicleMotionDebugSettings(settings) {
+        if (!this._vehicleMotionDebug) return;
+        this._vehicleMotionDebug.settings = sanitizeVehicleMotionDebugSettings(settings);
+    }
+
+    reloadVehicleMotionDebugSettings() {
+        this.setVehicleMotionDebugSettings(getResolvedVehicleMotionDebugSettings());
+    }
+
+    get vehicleVisualSmoothingSettings() {
+        return this._vehicleVisualSmoothing?.settings ?? null;
+    }
+
+    setVehicleVisualSmoothingSettings(settings) {
+        if (!this._vehicleVisualSmoothing) return;
+        this._vehicleVisualSmoothing.settings = sanitizeVehicleVisualSmoothingSettings(settings);
+    }
+
+    reloadVehicleVisualSmoothingSettings() {
+        this.setVehicleVisualSmoothingSettings(getResolvedVehicleVisualSmoothingSettings());
+    }
+
+    getPhysicsLoopDebugInfo() {
+        const loop = this.simulation?.physics?.loop ?? null;
+        if (!loop) return null;
+        const fixedDt = Number.isFinite(loop.fixedDt) ? loop.fixedDt : null;
+        const accum = Number.isFinite(loop.accum) ? loop.accum : null;
+        const alpha = fixedDt && accum !== null ? Math.max(0, Math.min(1, accum / fixedDt)) : null;
+        return {
+            fixedDt,
+            maxSubSteps: Number.isFinite(loop.maxSubSteps) ? loop.maxSubSteps : null,
+            accum,
+            alpha,
+            subStepsLastFrame: Number.isFinite(loop.lastSubSteps) ? loop.lastSubSteps : null
+        };
     }
 }

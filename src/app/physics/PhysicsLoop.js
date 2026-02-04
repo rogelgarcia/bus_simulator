@@ -5,6 +5,9 @@ export class PhysicsLoop {
         this.maxSubSteps = maxSubSteps;
         this.accum = 0;
         this.systems = new Set();
+        this.lastSubSteps = 0;
+        this.lastDt = 0;
+        this.lastAlpha = 0;
     }
 
     add(system) {
@@ -24,6 +27,7 @@ export class PhysicsLoop {
     update(dt) {
         // clamp dt to avoid spiral-of-death when tab is backgrounded
         dt = Math.min(Math.max(dt ?? 0, 0), 0.1);
+        this.lastDt = dt;
 
         this.accum += dt;
 
@@ -36,9 +40,11 @@ export class PhysicsLoop {
             this.accum -= this.fixedDt;
             steps++;
         }
+        this.lastSubSteps = steps;
 
         // optional interpolation hook (not used yet)
         const alpha = this.fixedDt > 0 ? this.accum / this.fixedDt : 0;
+        this.lastAlpha = alpha;
         for (const s of this.systems) {
             if (typeof s.interpolate === 'function') s.interpolate(alpha);
         }

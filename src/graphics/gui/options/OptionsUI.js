@@ -4,6 +4,7 @@
 import { getDefaultResolvedLightingSettings } from '../../lighting/LightingSettings.js';
 import { getDefaultResolvedShadowSettings } from '../../lighting/ShadowSettings.js';
 import { getDefaultResolvedAntiAliasingSettings } from '../../visuals/postprocessing/AntiAliasingSettings.js';
+import { getDefaultResolvedAmbientOcclusionSettings } from '../../visuals/postprocessing/AmbientOcclusionSettings.js';
 import { getDefaultResolvedBloomSettings } from '../../visuals/postprocessing/BloomSettings.js';
 import { getDefaultResolvedSunBloomSettings } from '../../visuals/postprocessing/SunBloomSettings.js';
 import { getDefaultResolvedColorGradingSettings } from '../../visuals/postprocessing/ColorGradingSettings.js';
@@ -276,7 +277,7 @@ async function copyTextToClipboard(text) {
 
 function formatIncludedGroups(includes) {
     const src = includes && typeof includes === 'object' ? includes : {};
-    const keys = ['lighting', 'shadows', 'antiAliasing', 'bloom', 'sunBloom', 'colorGrading', 'sunFlare', 'buildingWindowVisuals', 'asphaltNoise'];
+    const keys = ['lighting', 'shadows', 'antiAliasing', 'ambientOcclusion', 'bloom', 'sunBloom', 'colorGrading', 'sunFlare', 'buildingWindowVisuals', 'asphaltNoise', 'vehicleVisualSmoothing'];
     const enabled = keys.filter((k) => src[k] !== false);
     return enabled.length ? enabled.join(', ') : '(none)';
 }
@@ -289,6 +290,7 @@ export class OptionsUI {
         initialAtmosphere = null,
         initialShadows = null,
         initialAntiAliasing = null,
+        initialAmbientOcclusion = null,
         initialBloom = null,
         initialSunBloom = null,
         initialColorGrading = null,
@@ -297,10 +299,13 @@ export class OptionsUI {
         initialSunFlare = null,
         initialPostProcessingActive = null,
         initialColorGradingDebug = null,
+        initialVehicleMotionDebug = null,
+        initialVehicleVisualSmoothing = null,
         markingsCalibration = null,
         getIblDebugInfo = null,
         getPostProcessingDebugInfo = null,
         getAntiAliasingDebugInfo = null,
+        getVehicleMotionDebugInfo = null,
         titleText = 'Options',
         subtitleText = '0 opens options · Esc closes',
         onCancel = null,
@@ -313,9 +318,11 @@ export class OptionsUI {
         this._getIblDebugInfo = typeof getIblDebugInfo === 'function' ? getIblDebugInfo : null;
         this._getPostProcessingDebugInfo = typeof getPostProcessingDebugInfo === 'function' ? getPostProcessingDebugInfo : null;
         this._getAntiAliasingDebugInfo = typeof getAntiAliasingDebugInfo === 'function' ? getAntiAliasingDebugInfo : null;
+        this._getVehicleMotionDebugInfo = typeof getVehicleMotionDebugInfo === 'function' ? getVehicleMotionDebugInfo : null;
         this._iblDebugEls = null;
         this._postDebugEls = null;
         this._aaDebugEls = null;
+        this._vehicleDebugEls = null;
         this._debugInterval = null;
         this._initialPostProcessingActive = initialPostProcessingActive !== null ? !!initialPostProcessingActive : null;
         this._initialColorGradingDebug = initialColorGradingDebug && typeof initialColorGradingDebug === 'object'
@@ -335,16 +342,22 @@ export class OptionsUI {
 
         this.tabs = makeEl('div', 'options-tabs');
         this._visibleTabs = (() => {
-            if (!Array.isArray(visibleTabs)) return ['lighting', 'graphics', 'sun_bloom', 'asphalt', 'buildings'];
+            const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+            const wantsDebugTab = params ? (params.get('debug') === 'true' || params.get('debugOptions') === 'true') : false;
+            const base = ['lighting', 'graphics', 'sun_bloom', 'asphalt', 'buildings'];
+            if (wantsDebugTab) base.push('debug');
+            if (!Array.isArray(visibleTabs)) return base;
             const out = [];
             for (const entry of visibleTabs) {
                 const raw = String(entry ?? '').toLowerCase();
                 const key = raw === 'gameplay' ? 'buildings' : (raw === 'sunbloom' ? 'sun_bloom' : raw);
-                if (key !== 'lighting' && key !== 'graphics' && key !== 'sun_bloom' && key !== 'asphalt' && key !== 'buildings') continue;
+                if (key !== 'lighting' && key !== 'graphics' && key !== 'sun_bloom' && key !== 'asphalt' && key !== 'buildings' && key !== 'debug') continue;
                 if (out.includes(key)) continue;
                 out.push(key);
             }
-            return out.length ? out : ['lighting', 'graphics', 'sun_bloom', 'asphalt', 'buildings'];
+            if (!out.length) return base;
+            if (wantsDebugTab && !out.includes('debug')) out.push('debug');
+            return out;
         })();
 
         const TAB_LABELS = {
@@ -352,7 +365,8 @@ export class OptionsUI {
             lighting: 'Lighting',
             sun_bloom: 'Sun Bloom',
             asphalt: 'Asphalt',
-            buildings: 'Buildings'
+            buildings: 'Buildings',
+            debug: 'Debug'
         };
 
         this.tabButtons = {};
@@ -416,6 +430,9 @@ export class OptionsUI {
         this._draftAntiAliasing = initialAntiAliasing && typeof initialAntiAliasing === 'object'
             ? JSON.parse(JSON.stringify(initialAntiAliasing))
             : null;
+        this._draftAmbientOcclusion = initialAmbientOcclusion && typeof initialAmbientOcclusion === 'object'
+            ? JSON.parse(JSON.stringify(initialAmbientOcclusion))
+            : null;
         this._draftBloom = initialBloom && typeof initialBloom === 'object'
             ? JSON.parse(JSON.stringify(initialBloom))
             : null;
@@ -433,6 +450,12 @@ export class OptionsUI {
             : null;
         this._draftSunFlare = initialSunFlare && typeof initialSunFlare === 'object'
             ? JSON.parse(JSON.stringify(initialSunFlare))
+            : null;
+        this._draftVehicleMotionDebug = initialVehicleMotionDebug && typeof initialVehicleMotionDebug === 'object'
+            ? JSON.parse(JSON.stringify(initialVehicleMotionDebug))
+            : null;
+        this._draftVehicleVisualSmoothing = initialVehicleVisualSmoothing && typeof initialVehicleVisualSmoothing === 'object'
+            ? JSON.parse(JSON.stringify(initialVehicleVisualSmoothing))
             : null;
         this._lightingControls = null;
         this._markingsCalibration = (() => {
@@ -458,12 +481,15 @@ export class OptionsUI {
         if (d.atmosphere) this._draftAtmosphere = JSON.parse(JSON.stringify(d.atmosphere));
         if (d.shadows) this._draftShadows = JSON.parse(JSON.stringify(d.shadows));
         if (d.antiAliasing) this._draftAntiAliasing = JSON.parse(JSON.stringify(d.antiAliasing));
+        if (d.ambientOcclusion) this._draftAmbientOcclusion = JSON.parse(JSON.stringify(d.ambientOcclusion));
         if (d.bloom) this._draftBloom = JSON.parse(JSON.stringify(d.bloom));
         if (d.sunBloom) this._draftSunBloom = JSON.parse(JSON.stringify(d.sunBloom));
         if (d.colorGrading) this._draftColorGrading = JSON.parse(JSON.stringify(d.colorGrading));
         if (d.sunFlare) this._draftSunFlare = JSON.parse(JSON.stringify(d.sunFlare));
         if (d.buildingWindowVisuals) this._draftBuildingWindowVisuals = JSON.parse(JSON.stringify(d.buildingWindowVisuals));
         if (d.asphaltNoise) this._draftAsphaltNoise = JSON.parse(JSON.stringify(d.asphaltNoise));
+        if (d.vehicleMotionDebug) this._draftVehicleMotionDebug = JSON.parse(JSON.stringify(d.vehicleMotionDebug));
+        if (d.vehicleVisualSmoothing) this._draftVehicleVisualSmoothing = JSON.parse(JSON.stringify(d.vehicleVisualSmoothing));
     }
 
     async _exportPreset() {
@@ -534,7 +560,9 @@ export class OptionsUI {
     }
 
     setTab(key) {
-        const desired = (key === 'buildings' || key === 'gameplay')
+        const desired = (key === 'debug')
+            ? 'debug'
+            : (key === 'buildings' || key === 'gameplay')
             ? 'buildings'
             : (key === 'graphics'
                 ? 'graphics'
@@ -549,17 +577,19 @@ export class OptionsUI {
         this._iblDebugEls = null;
         this._postDebugEls = null;
         this._aaDebugEls = null;
+        this._vehicleDebugEls = null;
         this.body.textContent = '';
         if (this._tab === 'graphics') return this._renderGraphicsTab();
         if (this._tab === 'lighting') return this._renderLightingTab();
         if (this._tab === 'sun_bloom') return this._renderSunBloomTab();
         if (this._tab === 'asphalt') return this._renderAsphaltTab();
+        if (this._tab === 'debug') return this._renderDebugTab();
         return this._renderBuildingsTab();
     }
 
     _startDebugRefresh() {
         if (this._debugInterval) return;
-        if (!this._getIblDebugInfo && !this._getPostProcessingDebugInfo && !this._getAntiAliasingDebugInfo) return;
+        if (!this._getIblDebugInfo && !this._getPostProcessingDebugInfo && !this._getAntiAliasingDebugInfo && !this._getVehicleMotionDebugInfo) return;
         this._debugInterval = window.setInterval(() => this._refreshDebug(), 250);
     }
 
@@ -573,6 +603,7 @@ export class OptionsUI {
         this._refreshIblDebug();
         this._refreshPostProcessingDebug();
         this._refreshAntiAliasingDebug();
+        this._refreshVehicleMotionDebug();
     }
 
 	    _refreshIblDebug() {
@@ -762,6 +793,51 @@ export class OptionsUI {
             : `Supported (max ${maxSamples || '?'})`;
     }
 
+    _refreshVehicleMotionDebug() {
+        const els = this._vehicleDebugEls;
+        if (!els || !this._getVehicleMotionDebugInfo) return;
+
+        const info = this._getVehicleMotionDebugInfo() ?? null;
+        const timing = info?.timing ?? null;
+        const physics = info?.physicsLoop ?? null;
+        const anchor = info?.anchor ?? null;
+        const loco = info?.locomotion ?? null;
+        const diff = info?.diff ?? null;
+        const screen = info?.screen ?? null;
+
+        if (els.dt) els.dt.textContent = timing && Number.isFinite(timing.dt) ? timing.dt.toFixed(4) : '-';
+        if (els.fps) els.fps.textContent = timing && Number.isFinite(timing.fps) ? timing.fps.toFixed(1) : '-';
+        if (els.rawDt) els.rawDt.textContent = timing && Number.isFinite(timing.rawDt) ? timing.rawDt.toFixed(4) : '-';
+        if (els.synthetic) els.synthetic.textContent = timing?.synthetic?.pattern ?? 'off';
+
+        if (els.fixedDt) els.fixedDt.textContent = physics && Number.isFinite(physics.fixedDt) ? physics.fixedDt.toFixed(4) : '-';
+        if (els.subSteps) els.subSteps.textContent = physics?.subStepsLastFrame !== null && physics?.subStepsLastFrame !== undefined ? String(physics.subStepsLastFrame) : '-';
+        if (els.alpha) els.alpha.textContent = physics && Number.isFinite(physics.alpha) ? physics.alpha.toFixed(3) : '-';
+
+        if (els.anchorPos) {
+            els.anchorPos.textContent = anchor && Number.isFinite(anchor.x) && Number.isFinite(anchor.y) && Number.isFinite(anchor.z)
+                ? `${anchor.x.toFixed(3)}, ${anchor.y.toFixed(3)}, ${anchor.z.toFixed(3)}`
+                : '-';
+        }
+        if (els.anchorYaw) els.anchorYaw.textContent = anchor && Number.isFinite(anchor.yaw) ? `${(anchor.yaw * 180 / Math.PI).toFixed(1)}°` : '-';
+
+        if (els.locoPos) {
+            const p = loco?.position ?? null;
+            els.locoPos.textContent = p && Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z)
+                ? `${p.x.toFixed(3)}, ${p.y.toFixed(3)}, ${p.z.toFixed(3)}`
+                : '-';
+        }
+        if (els.locoSpeed) els.locoSpeed.textContent = Number.isFinite(loco?.speed) ? `${Number(loco.speed).toFixed(2)} m/s` : '-';
+
+        if (els.posErr) els.posErr.textContent = Number.isFinite(diff?.dist) ? `${Number(diff.dist).toFixed(3)} m` : '-';
+        if (els.yawErr) els.yawErr.textContent = Number.isFinite(diff?.yawErrDeg) ? `${Number(diff.yawErrDeg).toFixed(2)}°` : '-';
+        if (els.screenPos) {
+            els.screenPos.textContent = screen && Number.isFinite(screen.x) && Number.isFinite(screen.y)
+                ? `${Number(screen.x).toFixed(1)}, ${Number(screen.y).toFixed(1)}`
+                : '-';
+        }
+    }
+
     _ensureDraftAsphaltNoise() {
         const defaults = getDefaultResolvedAsphaltNoiseSettings();
 
@@ -921,6 +997,29 @@ export class OptionsUI {
         if (d.fxaa.edgeThreshold === undefined) d.fxaa.edgeThreshold = defaults.fxaa.edgeThreshold;
     }
 
+    _ensureDraftAmbientOcclusion() {
+        const defaults = getDefaultResolvedAmbientOcclusionSettings();
+
+        if (!this._draftAmbientOcclusion) {
+            this._draftAmbientOcclusion = JSON.parse(JSON.stringify(defaults));
+            return;
+        }
+
+        const d = this._draftAmbientOcclusion;
+        if (d.mode === undefined) d.mode = defaults.mode;
+
+        if (!d.ssao || typeof d.ssao !== 'object') d.ssao = { ...defaults.ssao };
+        if (d.ssao.intensity === undefined) d.ssao.intensity = defaults.ssao.intensity;
+        if (d.ssao.radius === undefined) d.ssao.radius = defaults.ssao.radius;
+        if (d.ssao.quality === undefined) d.ssao.quality = defaults.ssao.quality;
+
+        if (!d.gtao || typeof d.gtao !== 'object') d.gtao = { ...defaults.gtao };
+        if (d.gtao.intensity === undefined) d.gtao.intensity = defaults.gtao.intensity;
+        if (d.gtao.radius === undefined) d.gtao.radius = defaults.gtao.radius;
+        if (d.gtao.quality === undefined) d.gtao.quality = defaults.gtao.quality;
+        if (d.gtao.denoise === undefined) d.gtao.denoise = defaults.gtao.denoise;
+    }
+
     _ensureDraftBloom() {
         if (this._draftBloom) return;
         const d = getDefaultResolvedBloomSettings();
@@ -967,6 +1066,80 @@ export class OptionsUI {
         if (c.halo === undefined) c.halo = !!defaults.halo;
         if (c.starburst === undefined) c.starburst = !!defaults.starburst;
         if (c.ghosting === undefined) c.ghosting = !!defaults.ghosting;
+    }
+
+    _ensureDraftVehicleMotionDebug() {
+        if (!this._draftVehicleMotionDebug) {
+            this._draftVehicleMotionDebug = {
+                enabled: false,
+                overlay: true,
+                logSpikes: false,
+                logCameraCatchup: false,
+                logCameraLag: false,
+                logCameraEvents: false,
+                logCameraTargetMismatch: false,
+                logGate: { minScreenPx: 3 },
+                camera: { freeze: false },
+                backStep: { minProjMeters: 0.05 },
+                cameraCatchup: { minDfwdMeters: 0.05, minCameraMoveMeters: 0.01, minCamBusDistDropMeters: 0.05 },
+                cameraLag: { minBusStepMeters: 0.2, maxCamStepRatio: 0.55 },
+                cameraTargetMismatch: { minAnchorMatrixErrMeters: 0.02 },
+                spike: { maxDistMeters: 0.9, maxYawDeg: 25, maxScreenPx: 18 },
+                syntheticDt: { enabled: false, pattern: 'off', mode: 'stall', stallMs: 34 }
+            };
+            return;
+        }
+
+        const d = this._draftVehicleMotionDebug;
+        if (d.enabled === undefined) d.enabled = false;
+        if (d.overlay === undefined) d.overlay = true;
+        if (d.logSpikes === undefined) d.logSpikes = false;
+        if (d.logCameraCatchup === undefined) d.logCameraCatchup = false;
+        if (d.logCameraLag === undefined) d.logCameraLag = false;
+        if (d.logCameraEvents === undefined) d.logCameraEvents = false;
+        if (d.logCameraTargetMismatch === undefined) d.logCameraTargetMismatch = false;
+        if (!d.logGate || typeof d.logGate !== 'object') d.logGate = { minScreenPx: 3 };
+        if (d.logGate.minScreenPx === undefined) d.logGate.minScreenPx = 3;
+        if (!d.camera || typeof d.camera !== 'object') d.camera = { freeze: false };
+        if (d.camera.freeze === undefined) d.camera.freeze = false;
+        if (!d.backStep || typeof d.backStep !== 'object') d.backStep = { minProjMeters: 0.05 };
+        if (d.backStep.minProjMeters === undefined) d.backStep.minProjMeters = 0.05;
+        if (!d.cameraCatchup || typeof d.cameraCatchup !== 'object') d.cameraCatchup = { minDfwdMeters: 0.05, minCameraMoveMeters: 0.01, minCamBusDistDropMeters: 0.05 };
+        if (d.cameraCatchup.minDfwdMeters === undefined) d.cameraCatchup.minDfwdMeters = 0.05;
+        if (d.cameraCatchup.minCameraMoveMeters === undefined) d.cameraCatchup.minCameraMoveMeters = 0.01;
+        if (d.cameraCatchup.minCamBusDistDropMeters === undefined) d.cameraCatchup.minCamBusDistDropMeters = 0.05;
+        if (!d.cameraLag || typeof d.cameraLag !== 'object') d.cameraLag = { minBusStepMeters: 0.2, maxCamStepRatio: 0.55 };
+        if (d.cameraLag.minBusStepMeters === undefined) d.cameraLag.minBusStepMeters = 0.2;
+        if (d.cameraLag.maxCamStepRatio === undefined) d.cameraLag.maxCamStepRatio = 0.55;
+        if (!d.cameraTargetMismatch || typeof d.cameraTargetMismatch !== 'object') d.cameraTargetMismatch = { minAnchorMatrixErrMeters: 0.02 };
+        if (d.cameraTargetMismatch.minAnchorMatrixErrMeters === undefined) d.cameraTargetMismatch.minAnchorMatrixErrMeters = 0.02;
+        if (!d.spike || typeof d.spike !== 'object') d.spike = { maxDistMeters: 0.9, maxYawDeg: 25, maxScreenPx: 18 };
+        if (d.spike.maxDistMeters === undefined) d.spike.maxDistMeters = 0.9;
+        if (d.spike.maxYawDeg === undefined) d.spike.maxYawDeg = 25;
+        if (d.spike.maxScreenPx === undefined) d.spike.maxScreenPx = 18;
+        if (!d.syntheticDt || typeof d.syntheticDt !== 'object') d.syntheticDt = { enabled: false, pattern: 'off', mode: 'stall', stallMs: 34 };
+        if (d.syntheticDt.enabled === undefined) d.syntheticDt.enabled = false;
+        if (d.syntheticDt.pattern === undefined) d.syntheticDt.pattern = 'off';
+        if (d.syntheticDt.mode === undefined) d.syntheticDt.mode = 'stall';
+        if (d.syntheticDt.stallMs === undefined) d.syntheticDt.stallMs = 34;
+    }
+
+    _ensureDraftVehicleVisualSmoothing() {
+        if (!this._draftVehicleVisualSmoothing) {
+            this._draftVehicleVisualSmoothing = {
+                enabled: false,
+                catchupFactor: 1.6,
+                maxLagMeters: 2.0,
+                nominalFps: 60
+            };
+            return;
+        }
+
+        const d = this._draftVehicleVisualSmoothing;
+        if (d.enabled === undefined) d.enabled = false;
+        if (d.catchupFactor === undefined) d.catchupFactor = 1.6;
+        if (d.maxLagMeters === undefined) d.maxLagMeters = 2.0;
+        if (d.nominalFps === undefined) d.nominalFps = 60;
     }
 
     _renderAsphaltTab() {
@@ -1831,9 +2004,13 @@ export class OptionsUI {
 
     _renderGraphicsTab() {
         this._ensureDraftAntiAliasing();
+        this._ensureDraftAmbientOcclusion();
         this._ensureDraftShadows();
+        this._ensureDraftVehicleVisualSmoothing();
         const aa = this._draftAntiAliasing;
+        const ao = this._draftAmbientOcclusion;
         const shadows = this._draftShadows;
+        const motion = this._draftVehicleVisualSmoothing;
         const emit = () => this._emitLiveChange();
 
         const info = this._getAntiAliasingDebugInfo?.() ?? null;
@@ -1846,12 +2023,14 @@ export class OptionsUI {
             pipeline: makeValueRow({ label: 'Pipeline', value: '-' }),
             active: makeValueRow({ label: 'Active AA', value: '-' }),
             native: makeValueRow({ label: 'Native MSAA', value: '-' }),
-            msaa: makeValueRow({ label: 'MSAA (pipeline)', value: '-' })
+            msaa: makeValueRow({ label: 'MSAA (pipeline)', value: '-' }),
+            ao: makeValueRow({ label: 'AO', value: '-' })
         };
         sectionStatus.appendChild(status.pipeline.row);
         sectionStatus.appendChild(status.active.row);
         sectionStatus.appendChild(status.native.row);
         sectionStatus.appendChild(status.msaa.row);
+        sectionStatus.appendChild(status.ao.row);
 
         this._aaDebugEls = {
             pipeline: status.pipeline.text,
@@ -1859,6 +2038,12 @@ export class OptionsUI {
             native: status.native.text,
             msaa: status.msaa.text
         };
+
+        const updateAoStatus = () => {
+            const mode = String(ao?.mode ?? 'off');
+            status.ao.text.textContent = mode === 'off' ? 'Off' : mode.toUpperCase();
+        };
+        updateAoStatus();
 
         const sectionAa = makeEl('div', 'options-section');
         sectionAa.appendChild(makeEl('div', 'options-section-title', 'Anti-aliasing'));
@@ -2265,10 +2450,467 @@ export class OptionsUI {
         sectionShadows.appendChild(shadowQuality.row);
         sectionShadows.appendChild(shadowNote);
 
+        const sectionAo = makeEl('div', 'options-section');
+        sectionAo.appendChild(makeEl('div', 'options-section-title', 'Ambient Occlusion'));
+
+        const aoMode = makeChoiceRow({
+            label: 'Mode',
+            value: String(ao?.mode ?? 'off'),
+            options: [
+                { id: 'off', label: 'Off' },
+                { id: 'ssao', label: 'SSAO' },
+                { id: 'gtao', label: 'GTAO' }
+            ],
+            onChange: (v) => {
+                ao.mode = v;
+                emit();
+                syncAoControls();
+                updateAoStatus();
+            }
+        });
+
+        const ssaoIntensity = makeNumberSliderRow({
+            label: 'SSAO intensity',
+            value: ao?.ssao?.intensity ?? 0.35,
+            min: 0,
+            max: 2,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => { ao.ssao.intensity = v; emit(); }
+        });
+
+        const ssaoRadius = makeNumberSliderRow({
+            label: 'SSAO radius',
+            value: ao?.ssao?.radius ?? 8,
+            min: 0.1,
+            max: 64,
+            step: 0.1,
+            digits: 1,
+            onChange: (v) => { ao.ssao.radius = v; emit(); }
+        });
+
+        const ssaoQuality = makeChoiceRow({
+            label: 'SSAO quality',
+            value: String(ao?.ssao?.quality ?? 'medium'),
+            options: [
+                { id: 'low', label: 'Low' },
+                { id: 'medium', label: 'Medium' },
+                { id: 'high', label: 'High' }
+            ],
+            onChange: (v) => { ao.ssao.quality = v; emit(); }
+        });
+
+        const gtaoIntensity = makeNumberSliderRow({
+            label: 'GTAO intensity',
+            value: ao?.gtao?.intensity ?? 0.35,
+            min: 0,
+            max: 2,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => { ao.gtao.intensity = v; emit(); }
+        });
+
+        const gtaoRadius = makeNumberSliderRow({
+            label: 'GTAO radius',
+            value: ao?.gtao?.radius ?? 0.25,
+            min: 0.05,
+            max: 8,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => { ao.gtao.radius = v; emit(); }
+        });
+
+        const gtaoQuality = makeChoiceRow({
+            label: 'GTAO quality',
+            value: String(ao?.gtao?.quality ?? 'medium'),
+            options: [
+                { id: 'low', label: 'Low' },
+                { id: 'medium', label: 'Medium' },
+                { id: 'high', label: 'High' }
+            ],
+            onChange: (v) => { ao.gtao.quality = v; emit(); }
+        });
+
+        const gtaoDenoise = makeToggleRow({
+            label: 'GTAO denoise',
+            value: ao?.gtao?.denoise !== false,
+            onChange: (v) => { ao.gtao.denoise = v; emit(); }
+        });
+
+        const aoNote = makeEl('div', 'options-note');
+        aoNote.textContent = 'AO adds subtle contact occlusion. SSAO is cheaper; GTAO is cleaner and can be denoised. Low quality reduces resolution and sample count.';
+
+        sectionAo.appendChild(aoMode.row);
+        sectionAo.appendChild(ssaoIntensity.row);
+        sectionAo.appendChild(ssaoRadius.row);
+        sectionAo.appendChild(ssaoQuality.row);
+        sectionAo.appendChild(gtaoIntensity.row);
+        sectionAo.appendChild(gtaoRadius.row);
+        sectionAo.appendChild(gtaoQuality.row);
+        sectionAo.appendChild(gtaoDenoise.row);
+        sectionAo.appendChild(aoNote);
+
+        const syncAoControls = () => {
+            const mode = String(ao?.mode ?? 'off');
+            const ssaoOn = mode === 'ssao';
+            const gtaoOn = mode === 'gtao';
+
+            for (const ctrl of [ssaoIntensity, ssaoRadius]) {
+                ctrl.range.disabled = !ssaoOn;
+                ctrl.number.disabled = !ssaoOn;
+            }
+            ssaoQuality.setDisabled(!ssaoOn);
+
+            for (const ctrl of [gtaoIntensity, gtaoRadius]) {
+                ctrl.range.disabled = !gtaoOn;
+                ctrl.number.disabled = !gtaoOn;
+            }
+            gtaoQuality.setDisabled(!gtaoOn);
+            gtaoDenoise.toggle.disabled = !gtaoOn;
+        };
+        syncAoControls();
+
         this.body.appendChild(sectionStatus);
+
+        const sectionMotion = makeEl('div', 'options-section');
+        sectionMotion.appendChild(makeEl('div', 'options-section-title', 'Motion'));
+
+        const smoothingEnabled = makeToggleRow({
+            label: 'Vehicle visual smoothing',
+            value: motion?.enabled === true,
+            onChange: (v) => { motion.enabled = v; emit(); syncMotion(); }
+        });
+
+        const smoothingCatchup = makeNumberSliderRow({
+            label: 'Catch-up factor',
+            value: motion?.catchupFactor ?? 1.6,
+            min: 1.0,
+            max: 6.0,
+            step: 0.1,
+            digits: 1,
+            onChange: (v) => { motion.catchupFactor = v; emit(); }
+        });
+
+        const smoothingMaxLag = makeNumberSliderRow({
+            label: 'Max lag (m) before snap',
+            value: motion?.maxLagMeters ?? 2.0,
+            min: 0.1,
+            max: 20.0,
+            step: 0.1,
+            digits: 1,
+            onChange: (v) => { motion.maxLagMeters = v; emit(); }
+        });
+
+        const motionNote = makeEl('div', 'options-note');
+        motionNote.textContent = 'Reduces one-frame bus "pops" under uneven FPS by smoothing the rendered bus position (visual-only). May add slight visual lag during frame spikes.';
+
+        const syncMotion = () => {
+            const on = motion?.enabled === true;
+            for (const row of [smoothingCatchup, smoothingMaxLag]) {
+                row.range.disabled = !on;
+                row.number.disabled = !on;
+            }
+        };
+        syncMotion();
+        smoothingEnabled.toggle.addEventListener('change', () => syncMotion());
+
+        sectionMotion.appendChild(smoothingEnabled.row);
+        sectionMotion.appendChild(smoothingCatchup.row);
+        sectionMotion.appendChild(smoothingMaxLag.row);
+        sectionMotion.appendChild(motionNote);
+
+        this.body.appendChild(sectionMotion);
         this.body.appendChild(sectionShadows);
+        this.body.appendChild(sectionAo);
         this.body.appendChild(sectionAa);
         this._refreshAntiAliasingDebug();
+    }
+
+    _renderDebugTab() {
+        this._ensureDraftVehicleMotionDebug();
+        const dbg = this._draftVehicleMotionDebug;
+        const logGate = dbg.logGate ?? (dbg.logGate = {});
+        const camera = dbg.camera ?? (dbg.camera = {});
+        const backStep = dbg.backStep ?? (dbg.backStep = {});
+        const cameraCatchup = dbg.cameraCatchup ?? (dbg.cameraCatchup = {});
+        const cameraLag = dbg.cameraLag ?? (dbg.cameraLag = {});
+        const cameraTargetMismatch = dbg.cameraTargetMismatch ?? (dbg.cameraTargetMismatch = {});
+        const spike = dbg.spike ?? (dbg.spike = {});
+        const syntheticDt = dbg.syntheticDt ?? (dbg.syntheticDt = {});
+        const emit = () => this._emitLiveChange();
+
+        const sectionVehicle = makeEl('div', 'options-section');
+        sectionVehicle.appendChild(makeEl('div', 'options-section-title', 'Vehicle motion'));
+
+        const controls = {
+            freezeCamera: makeToggleRow({
+                label: 'Freeze camera (debug)',
+                value: camera.freeze === true,
+                onChange: (v) => { camera.freeze = v; emit(); }
+            }),
+            enabled: makeToggleRow({
+                label: 'Enable vehicle motion debug',
+                value: dbg.enabled,
+                onChange: (v) => { dbg.enabled = v; emit(); }
+            }),
+            overlay: makeToggleRow({
+                label: 'Overlay',
+                value: dbg.overlay !== false,
+                onChange: (v) => { dbg.overlay = v; emit(); }
+            }),
+            logSpikes: makeToggleRow({
+                label: 'Console log backsteps',
+                value: dbg.logSpikes === true,
+                onChange: (v) => { dbg.logSpikes = v; emit(); }
+            }),
+            logCatchup: makeToggleRow({
+                label: 'Console log camera catch-up',
+                value: dbg.logCameraCatchup === true,
+                onChange: (v) => { dbg.logCameraCatchup = v; emit(); }
+            }),
+            logLag: makeToggleRow({
+                label: 'Console log camera lag',
+                value: dbg.logCameraLag === true,
+                onChange: (v) => { dbg.logCameraLag = v; emit(); }
+            }),
+            logCameraEvents: makeToggleRow({
+                label: 'Console log camera events',
+                value: dbg.logCameraEvents === true,
+                onChange: (v) => { dbg.logCameraEvents = v; emit(); }
+            }),
+            logCameraTargetMismatch: makeToggleRow({
+                label: 'Console log camera target mismatch',
+                value: dbg.logCameraTargetMismatch === true,
+                onChange: (v) => { dbg.logCameraTargetMismatch = v; emit(); }
+            }),
+            logMinScreenPx: makeNumberSliderRow({
+                label: 'Log gate: min bus screen delta (px)',
+                value: logGate.minScreenPx ?? 3,
+                min: 0,
+                max: 100,
+                step: 1,
+                digits: 0,
+                onChange: (v) => { logGate.minScreenPx = v; emit(); }
+            }),
+            backStep: makeNumberSliderRow({
+                label: 'Backstep threshold: proj (m)',
+                value: backStep.minProjMeters ?? 0.05,
+                min: 0,
+                max: 2,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { backStep.minProjMeters = v; emit(); }
+            }),
+            catchupDfwd: makeNumberSliderRow({
+                label: 'Catch-up threshold: cam→bus dfwd (m)',
+                value: cameraCatchup.minDfwdMeters ?? 0.05,
+                min: 0,
+                max: 2,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { cameraCatchup.minDfwdMeters = v; emit(); }
+            }),
+            catchupCamMove: makeNumberSliderRow({
+                label: 'Catch-up min camera move (m)',
+                value: cameraCatchup.minCameraMoveMeters ?? 0.01,
+                min: 0,
+                max: 1,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { cameraCatchup.minCameraMoveMeters = v; emit(); }
+            }),
+            catchupDistDrop: makeNumberSliderRow({
+                label: 'Catch-up threshold: cam↔bus dist drop (m)',
+                value: cameraCatchup.minCamBusDistDropMeters ?? 0.05,
+                min: 0,
+                max: 2,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { cameraCatchup.minCamBusDistDropMeters = v; emit(); }
+            }),
+            lagBusStep: makeNumberSliderRow({
+                label: 'Lag threshold: bus step (m)',
+                value: cameraLag.minBusStepMeters ?? 0.2,
+                min: 0,
+                max: 2,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { cameraLag.minBusStepMeters = v; emit(); }
+            }),
+            lagRatio: makeNumberSliderRow({
+                label: 'Lag threshold: cam/bus step ratio',
+                value: cameraLag.maxCamStepRatio ?? 0.55,
+                min: 0,
+                max: 1,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { cameraLag.maxCamStepRatio = v; emit(); }
+            }),
+            targetMatrixErr: makeNumberSliderRow({
+                label: 'Target mismatch threshold: anchor matrix err (m)',
+                value: cameraTargetMismatch.minAnchorMatrixErrMeters ?? 0.02,
+                min: 0,
+                max: 2,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { cameraTargetMismatch.minAnchorMatrixErrMeters = v; emit(); }
+            }),
+            maxDist: makeNumberSliderRow({
+                label: 'Spike threshold: dist (m)',
+                value: spike.maxDistMeters ?? 0.9,
+                min: 0.05,
+                max: 5,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => { spike.maxDistMeters = v; emit(); }
+            }),
+            maxYaw: makeNumberSliderRow({
+                label: 'Spike threshold: yaw (deg)',
+                value: spike.maxYawDeg ?? 25,
+                min: 1,
+                max: 180,
+                step: 1,
+                digits: 0,
+                onChange: (v) => { spike.maxYawDeg = v; emit(); }
+            }),
+            maxScreen: makeNumberSliderRow({
+                label: 'Spike threshold: screen (px)',
+                value: spike.maxScreenPx ?? 18,
+                min: 1,
+                max: 300,
+                step: 1,
+                digits: 0,
+                onChange: (v) => { spike.maxScreenPx = v; emit(); }
+            }),
+            syntheticEnabled: makeToggleRow({
+                label: 'Synthetic low/uneven FPS (dt forcing)',
+                value: syntheticDt.enabled === true,
+                onChange: (v) => {
+                    syntheticDt.enabled = v;
+                    if (v && (!syntheticDt.pattern || syntheticDt.pattern === 'off')) syntheticDt.pattern = 'alt60_20';
+                    if (!v) syntheticDt.pattern = syntheticDt.pattern ?? 'off';
+                    emit();
+                    syncSynthetic();
+                }
+            }),
+            syntheticMode: makeSelectRow({
+                label: 'Synthetic mode',
+                value: String(syntheticDt.mode ?? 'dt'),
+                options: [
+                    { id: 'stall', label: 'Stall (real dt spikes, real-time)' },
+                    { id: 'dt', label: 'Force dt (changes sim speed)' }
+                ],
+                onChange: (v) => { syntheticDt.mode = v; emit(); }
+            }),
+            syntheticStallMs: makeNumberSliderRow({
+                label: 'Stall ms (when pattern stalls)',
+                value: syntheticDt.stallMs ?? 34,
+                min: 0,
+                max: 120,
+                step: 1,
+                digits: 0,
+                onChange: (v) => { syntheticDt.stallMs = v; emit(); }
+            }),
+            syntheticPattern: makeSelectRow({
+                label: 'Synthetic dt pattern',
+                value: String(syntheticDt.pattern ?? 'off'),
+                options: [
+                    { id: 'off', label: 'Off' },
+                    { id: 'steady20', label: 'Steady 20 FPS (dt=0.05)' },
+                    { id: 'steady30', label: 'Steady 30 FPS (dt=1/30)' },
+                    { id: 'alt60_20', label: 'Alternate 60/20 FPS' },
+                    { id: 'alt60_30', label: 'Alternate 60/30 FPS' },
+                    { id: 'alt60_40', label: 'Alternate 60/40 FPS' },
+                    { id: 'spike20', label: 'Mostly 60 FPS, spike 20 FPS' }
+                ],
+                onChange: (v) => {
+                    syntheticDt.pattern = v;
+                    syntheticDt.enabled = v !== 'off';
+                    emit();
+                    syncSynthetic();
+                }
+            })
+        };
+
+        const syncSynthetic = () => {
+            const on = dbg.enabled === true && syntheticDt.enabled === true;
+            controls.syntheticPattern.select.disabled = !on;
+            controls.syntheticMode.select.disabled = !on;
+            controls.syntheticStallMs.range.disabled = !on;
+            controls.syntheticStallMs.number.disabled = !on;
+        };
+        syncSynthetic();
+        controls.enabled.toggle.addEventListener('change', () => syncSynthetic());
+
+        sectionVehicle.appendChild(controls.enabled.row);
+        sectionVehicle.appendChild(controls.freezeCamera.row);
+        sectionVehicle.appendChild(controls.overlay.row);
+        sectionVehicle.appendChild(controls.logSpikes.row);
+        sectionVehicle.appendChild(controls.logCatchup.row);
+        sectionVehicle.appendChild(controls.logLag.row);
+        sectionVehicle.appendChild(controls.logCameraEvents.row);
+        sectionVehicle.appendChild(controls.logCameraTargetMismatch.row);
+        sectionVehicle.appendChild(controls.logMinScreenPx.row);
+        sectionVehicle.appendChild(controls.backStep.row);
+        sectionVehicle.appendChild(controls.catchupDfwd.row);
+        sectionVehicle.appendChild(controls.catchupCamMove.row);
+        sectionVehicle.appendChild(controls.catchupDistDrop.row);
+        sectionVehicle.appendChild(controls.lagBusStep.row);
+        sectionVehicle.appendChild(controls.lagRatio.row);
+        sectionVehicle.appendChild(controls.targetMatrixErr.row);
+        sectionVehicle.appendChild(controls.maxDist.row);
+        sectionVehicle.appendChild(controls.maxYaw.row);
+        sectionVehicle.appendChild(controls.maxScreen.row);
+        sectionVehicle.appendChild(controls.syntheticEnabled.row);
+        sectionVehicle.appendChild(controls.syntheticMode.row);
+        sectionVehicle.appendChild(controls.syntheticStallMs.row);
+        sectionVehicle.appendChild(controls.syntheticPattern.row);
+
+        const sectionReadouts = makeEl('div', 'options-section');
+        sectionReadouts.appendChild(makeEl('div', 'options-section-title', 'Readouts'));
+        const r = {
+            dt: makeValueRow({ label: 'Render dt', value: '-' }),
+            fps: makeValueRow({ label: 'Estimated FPS', value: '-' }),
+            rawDt: makeValueRow({ label: 'Raw dt (pre-clamp)', value: '-' }),
+            synthetic: makeValueRow({ label: 'Synthetic dt pattern', value: '-' }),
+            fixedDt: makeValueRow({ label: 'Physics fixedDt', value: '-' }),
+            subSteps: makeValueRow({ label: 'Physics substeps', value: '-' }),
+            alpha: makeValueRow({ label: 'Physics alpha', value: '-' }),
+            anchorPos: makeValueRow({ label: 'Bus anchor (world)', value: '-' }),
+            anchorYaw: makeValueRow({ label: 'Bus yaw (world)', value: '-' }),
+            locoPos: makeValueRow({ label: 'Physics locomotion pos', value: '-' }),
+            locoSpeed: makeValueRow({ label: 'Physics speed', value: '-' }),
+            posErr: makeValueRow({ label: 'Render vs physics posErr', value: '-' }),
+            yawErr: makeValueRow({ label: 'Render vs physics yawErr', value: '-' }),
+            screenPos: makeValueRow({ label: 'Bus screen pos (px)', value: '-' })
+        };
+        for (const row of Object.values(r)) sectionReadouts.appendChild(row.row);
+
+        this._vehicleDebugEls = {
+            dt: r.dt.text,
+            fps: r.fps.text,
+            rawDt: r.rawDt.text,
+            synthetic: r.synthetic.text,
+            fixedDt: r.fixedDt.text,
+            subSteps: r.subSteps.text,
+            alpha: r.alpha.text,
+            anchorPos: r.anchorPos.text,
+            anchorYaw: r.anchorYaw.text,
+            locoPos: r.locoPos.text,
+            locoSpeed: r.locoSpeed.text,
+            posErr: r.posErr.text,
+            yawErr: r.yawErr.text,
+            screenPos: r.screenPos.text
+        };
+
+        const note = makeEl('div', 'options-note');
+        note.textContent = 'Debug tab is gated by URL params: ?debug=true (or ?debugOptions=true). Synthetic mode "Stall" simulates frame-time spikes without changing simulation speed.';
+
+        this.body.appendChild(sectionVehicle);
+        this.body.appendChild(sectionReadouts);
+        this.body.appendChild(note);
+
+        this._refreshVehicleMotionDebug();
     }
 
     _renderLightingTab() {
@@ -2862,6 +3504,8 @@ export class OptionsUI {
 
         this._draftAntiAliasing = JSON.parse(JSON.stringify(getDefaultResolvedAntiAliasingSettings()));
 
+        this._draftAmbientOcclusion = JSON.parse(JSON.stringify(getDefaultResolvedAmbientOcclusionSettings()));
+
         const bloom = getDefaultResolvedBloomSettings();
         this._draftBloom = {
             enabled: bloom.enabled,
@@ -2909,6 +3553,28 @@ export class OptionsUI {
 	            color: { ...asphaltNoise.color },
 	            livedIn: JSON.parse(JSON.stringify(asphaltNoise.livedIn ?? {}))
 	        };
+
+        this._draftVehicleMotionDebug = {
+            enabled: false,
+            overlay: true,
+            logSpikes: false,
+            logCameraCatchup: false,
+            logCameraLag: false,
+            logCameraEvents: false,
+            camera: { freeze: false },
+            backStep: { minProjMeters: 0.05 },
+            cameraCatchup: { minDfwdMeters: 0.05, minCameraMoveMeters: 0.01, minCamBusDistDropMeters: 0.05 },
+            cameraLag: { minBusStepMeters: 0.2, maxCamStepRatio: 0.55 },
+            spike: { maxDistMeters: 0.9, maxYawDeg: 25, maxScreenPx: 18 },
+            syntheticDt: { enabled: false, pattern: 'off', mode: 'stall', stallMs: 34 }
+        };
+
+        this._draftVehicleVisualSmoothing = {
+            enabled: false,
+            catchupFactor: 1.6,
+            maxLagMeters: 2.0,
+            nominalFps: 60
+        };
         this._renderTab();
         this._emitLiveChange();
     }
@@ -2920,20 +3586,26 @@ export class OptionsUI {
         this._ensureDraftAtmosphere();
         this._ensureDraftShadows();
         this._ensureDraftAntiAliasing();
+        this._ensureDraftAmbientOcclusion();
         this._ensureDraftBloom();
         this._ensureDraftSunBloom();
         this._ensureDraftColorGrading();
         this._ensureDraftSunFlare();
+        this._ensureDraftVehicleMotionDebug();
+        this._ensureDraftVehicleVisualSmoothing();
         const d = this._draftLighting;
         const atmo = this._draftAtmosphere;
         const shadows = this._draftShadows;
         const antiAliasing = this._draftAntiAliasing;
+        const ambientOcclusion = this._draftAmbientOcclusion;
         const bloom = this._draftBloom;
         const sunBloom = this._draftSunBloom;
         const grade = this._draftColorGrading;
         const asphaltNoise = this._draftAsphaltNoise;
         const windowVisuals = this._draftBuildingWindowVisuals;
         const sunFlare = this._draftSunFlare;
+        const vehicleMotionDebug = this._draftVehicleMotionDebug;
+        const vehicleVisualSmoothing = this._draftVehicleVisualSmoothing;
         return {
             lighting: {
                 exposure: d.exposure,
@@ -2970,6 +3642,20 @@ export class OptionsUI {
                 fxaa: {
                     preset: String(antiAliasing?.fxaa?.preset ?? 'balanced'),
                     edgeThreshold: antiAliasing?.fxaa?.edgeThreshold
+                }
+            },
+            ambientOcclusion: {
+                mode: String(ambientOcclusion?.mode ?? 'off'),
+                ssao: {
+                    intensity: ambientOcclusion?.ssao?.intensity,
+                    radius: ambientOcclusion?.ssao?.radius,
+                    quality: String(ambientOcclusion?.ssao?.quality ?? 'medium')
+                },
+                gtao: {
+                    intensity: ambientOcclusion?.gtao?.intensity,
+                    radius: ambientOcclusion?.gtao?.radius,
+                    quality: String(ambientOcclusion?.gtao?.quality ?? 'medium'),
+                    denoise: !!ambientOcclusion?.gtao?.denoise
                 }
             },
             bloom: {
@@ -3061,6 +3747,47 @@ export class OptionsUI {
                     starburst: !!sunFlare.components?.starburst,
                     ghosting: !!sunFlare.components?.ghosting
                 }
+            },
+            vehicleMotionDebug: {
+                enabled: !!vehicleMotionDebug.enabled,
+                overlay: vehicleMotionDebug.overlay !== false,
+                logSpikes: vehicleMotionDebug.logSpikes === true,
+                logCameraCatchup: vehicleMotionDebug.logCameraCatchup === true,
+                logCameraLag: vehicleMotionDebug.logCameraLag === true,
+                logCameraEvents: vehicleMotionDebug.logCameraEvents === true,
+                logCameraTargetMismatch: vehicleMotionDebug.logCameraTargetMismatch === true,
+                logGate: { minScreenPx: vehicleMotionDebug.logGate?.minScreenPx },
+                camera: { freeze: vehicleMotionDebug.camera?.freeze === true },
+                backStep: { minProjMeters: vehicleMotionDebug.backStep?.minProjMeters },
+                cameraCatchup: {
+                    minDfwdMeters: vehicleMotionDebug.cameraCatchup?.minDfwdMeters,
+                    minCameraMoveMeters: vehicleMotionDebug.cameraCatchup?.minCameraMoveMeters,
+                    minCamBusDistDropMeters: vehicleMotionDebug.cameraCatchup?.minCamBusDistDropMeters
+                },
+                cameraLag: {
+                    minBusStepMeters: vehicleMotionDebug.cameraLag?.minBusStepMeters,
+                    maxCamStepRatio: vehicleMotionDebug.cameraLag?.maxCamStepRatio
+                },
+                cameraTargetMismatch: {
+                    minAnchorMatrixErrMeters: vehicleMotionDebug.cameraTargetMismatch?.minAnchorMatrixErrMeters
+                },
+                spike: {
+                    maxDistMeters: vehicleMotionDebug.spike?.maxDistMeters,
+                    maxYawDeg: vehicleMotionDebug.spike?.maxYawDeg,
+                    maxScreenPx: vehicleMotionDebug.spike?.maxScreenPx
+                },
+                syntheticDt: {
+                    enabled: vehicleMotionDebug.syntheticDt?.enabled === true,
+                    pattern: String(vehicleMotionDebug.syntheticDt?.pattern ?? 'off'),
+                    mode: String(vehicleMotionDebug.syntheticDt?.mode ?? 'stall'),
+                    stallMs: vehicleMotionDebug.syntheticDt?.stallMs
+                }
+            },
+            vehicleVisualSmoothing: {
+                enabled: !!vehicleVisualSmoothing.enabled,
+                catchupFactor: vehicleVisualSmoothing.catchupFactor,
+                maxLagMeters: vehicleVisualSmoothing.maxLagMeters,
+                nominalFps: vehicleVisualSmoothing.nominalFps
             }
         };
     }

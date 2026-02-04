@@ -10,6 +10,7 @@ import { scenarioRoadLivedInWearToggle } from './scenario_road_lived_in_wear_tog
 import { scenarioWindowMeshShadeVisibility } from './scenario_window_mesh_shade_visibility.js';
 import { scenarioWindowMeshInteriorParallax } from './scenario_window_mesh_interior_parallax.js';
 import { scenarioGrassBladeHiresShine } from './scenario_grass_blade_hires_shine.js';
+import { scenarioVehicleMotionFlickerProbe } from './scenario_vehicle_motion_flicker_probe.js';
 
 const REGISTRY = new Map([
     [scenarioEmpty.id, scenarioEmpty],
@@ -22,7 +23,8 @@ const REGISTRY = new Map([
     [scenarioRoadLivedInWearToggle.id, scenarioRoadLivedInWearToggle],
     [scenarioWindowMeshShadeVisibility.id, scenarioWindowMeshShadeVisibility],
     [scenarioWindowMeshInteriorParallax.id, scenarioWindowMeshInteriorParallax],
-    [scenarioGrassBladeHiresShine.id, scenarioGrassBladeHiresShine]
+    [scenarioGrassBladeHiresShine.id, scenarioGrassBladeHiresShine],
+    [scenarioVehicleMotionFlickerProbe.id, scenarioVehicleMotionFlickerProbe]
 ]);
 
 export function listScenarioIds() {

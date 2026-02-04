@@ -107,6 +107,71 @@ async function runTests() {
         assertTrue(Number.isFinite(d.threshold), 'Expected bloom threshold to be finite.');
     });
 
+    // ========== Vehicle Motion Debug Settings ==========
+    const { getDefaultResolvedVehicleMotionDebugSettings, sanitizeVehicleMotionDebugSettings } = await import('/src/app/vehicle/VehicleMotionDebugSettings.js');
+
+    test('VehicleMotionDebugSettings: default disabled', () => {
+        const d = getDefaultResolvedVehicleMotionDebugSettings();
+        assertTrue(d && typeof d === 'object', 'Expected vehicle motion debug defaults object.');
+        assertEqual(d.enabled, false, 'Expected debug disabled by default.');
+        assertEqual(d.overlay, true, 'Expected overlay enabled by default.');
+        assertEqual(d.logSpikes, false, 'Expected console logging off by default.');
+        assertTrue(d.camera && typeof d.camera === 'object', 'Expected camera debug config.');
+        assertEqual(d.camera.freeze, false, 'Expected camera not frozen by default.');
+        assertTrue(d.backStep && typeof d.backStep === 'object', 'Expected backStep config.');
+        assertTrue(Number.isFinite(d.backStep.minProjMeters), 'Expected backStep.minProjMeters finite.');
+        assertTrue(d.cameraCatchup && typeof d.cameraCatchup === 'object', 'Expected cameraCatchup config.');
+        assertTrue(Number.isFinite(d.cameraCatchup.minDfwdMeters), 'Expected cameraCatchup.minDfwdMeters finite.');
+        assertTrue(Number.isFinite(d.cameraCatchup.minCameraMoveMeters), 'Expected cameraCatchup.minCameraMoveMeters finite.');
+        assertTrue(Number.isFinite(d.cameraCatchup.minCamBusDistDropMeters), 'Expected cameraCatchup.minCamBusDistDropMeters finite.');
+        assertTrue(d.cameraLag && typeof d.cameraLag === 'object', 'Expected cameraLag config.');
+        assertTrue(Number.isFinite(d.cameraLag.minBusStepMeters), 'Expected cameraLag.minBusStepMeters finite.');
+        assertTrue(Number.isFinite(d.cameraLag.maxCamStepRatio), 'Expected cameraLag.maxCamStepRatio finite.');
+        assertEqual(d.logCameraEvents, false, 'Expected camera event logging off by default.');
+        assertEqual(d.logCameraTargetMismatch, false, 'Expected camera target mismatch logging off by default.');
+        assertTrue(d.logGate && typeof d.logGate === 'object', 'Expected logGate config.');
+        assertTrue(Number.isFinite(d.logGate.minScreenPx), 'Expected logGate.minScreenPx finite.');
+        assertTrue(d.cameraTargetMismatch && typeof d.cameraTargetMismatch === 'object', 'Expected cameraTargetMismatch config.');
+        assertTrue(Number.isFinite(d.cameraTargetMismatch.minAnchorMatrixErrMeters), 'Expected minAnchorMatrixErrMeters finite.');
+        assertTrue(d.spike && typeof d.spike === 'object', 'Expected spike config.');
+        assertTrue(Number.isFinite(d.spike.maxDistMeters), 'Expected maxDistMeters to be finite.');
+        assertTrue(Number.isFinite(d.spike.maxYawDeg), 'Expected maxYawDeg to be finite.');
+        assertTrue(Number.isFinite(d.spike.maxScreenPx), 'Expected maxScreenPx to be finite.');
+        assertTrue(d.syntheticDt && typeof d.syntheticDt === 'object', 'Expected syntheticDt config.');
+        assertTrue(typeof d.syntheticDt.mode === 'string', 'Expected syntheticDt.mode string.');
+        assertTrue(Number.isFinite(d.syntheticDt.stallMs), 'Expected syntheticDt.stallMs finite.');
+    });
+
+    test('VehicleMotionDebugSettings: sanitize clamps thresholds', () => {
+        const d = sanitizeVehicleMotionDebugSettings({
+            enabled: true,
+            spike: { maxDistMeters: 999, maxYawDeg: 999 }
+        });
+        assertEqual(d.enabled, true, 'Expected enabled.');
+        assertTrue(d.spike.maxDistMeters <= 10, 'Expected maxDistMeters clamped.');
+        assertTrue(d.spike.maxYawDeg <= 180, 'Expected maxYawDeg clamped.');
+    });
+
+    // ========== Vehicle Visual Smoothing Settings ==========
+    const { getDefaultResolvedVehicleVisualSmoothingSettings, sanitizeVehicleVisualSmoothingSettings } = await import('/src/app/vehicle/VehicleVisualSmoothingSettings.js');
+
+    test('VehicleVisualSmoothingSettings: default disabled', () => {
+        const d = getDefaultResolvedVehicleVisualSmoothingSettings();
+        assertTrue(d && typeof d === 'object', 'Expected vehicle visual smoothing defaults object.');
+        assertEqual(d.enabled, false, 'Expected smoothing disabled by default.');
+        assertTrue(Number.isFinite(d.catchupFactor), 'Expected catchupFactor finite.');
+        assertTrue(Number.isFinite(d.maxLagMeters), 'Expected maxLagMeters finite.');
+        assertTrue(Number.isFinite(d.nominalFps), 'Expected nominalFps finite.');
+    });
+
+    test('VehicleVisualSmoothingSettings: sanitize clamps values', () => {
+        const d = sanitizeVehicleVisualSmoothingSettings({ enabled: true, catchupFactor: 999, maxLagMeters: 999, nominalFps: 999 });
+        assertEqual(d.enabled, true, 'Expected enabled.');
+        assertTrue(d.catchupFactor <= 6.0, 'Expected catchupFactor clamped.');
+        assertTrue(d.maxLagMeters <= 20.0, 'Expected maxLagMeters clamped.');
+        assertTrue(d.nominalFps <= 240, 'Expected nominalFps clamped.');
+    });
+
     // ========== Atmosphere / Sky ==========
     const { shouldShowSkyDome } = await import('/src/graphics/assets3d/generators/SkyGenerator.js');
     const { getDefaultResolvedAtmosphereSettings, getResolvedAtmosphereSettings } = await import('/src/graphics/visuals/atmosphere/AtmosphereSettings.js');

@@ -8,10 +8,13 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { createColorGradingPass, setColorGradingPassState } from './ColorGradingPass.js';
 import { SUN_BLOOM_LAYER, SUN_BLOOM_LAYER_ID } from '../sun/SunBloomLayers.js';
 import { sanitizeAntiAliasingSettings } from './AntiAliasingSettings.js';
+import { sanitizeAmbientOcclusionSettings } from './AmbientOcclusionSettings.js';
 import { TemporalAAPass } from './TemporalAAPass.js';
 
 function clamp(value, min, max, fallback) {
@@ -295,6 +298,7 @@ export class PostProcessingPipeline {
         scene,
         camera,
         bloom = null,
+        ambientOcclusion = null,
         sunBloom = null,
         colorGrading = null,
         antiAliasing = null
@@ -314,7 +318,9 @@ export class PostProcessingPipeline {
 
         this._globalBloom = sanitizeGlobalBloomRuntimeSettings(bloom);
         this._sunBloom = sanitizeSunBloomRuntimeSettings(sunBloom);
+        this._ambientOcclusion = sanitizeAmbientOcclusionSettings(ambientOcclusion);
         this._colorGrading = { enabled: false, intensity: 0, lutTexture: null };
+        this._ao = { mode: 'off', pass: null };
         this._antiAliasing = {
             requested: sanitizeAntiAliasingSettings(antiAliasing),
             activeMode: 'off',
@@ -376,6 +382,7 @@ export class PostProcessingPipeline {
         if (this.outputPass?.material) this.outputPass.material.toneMapped = false;
 
         this.composer.addPass(this.renderPass);
+        this._syncAmbientOcclusionPass();
         this.composer.addPass(this.compositePass);
         this.composer.addPass(this.colorGradingPass);
         this.composer.addPass(this.taaPass);
@@ -384,6 +391,7 @@ export class PostProcessingPipeline {
         this.composer.addPass(this.outputPass);
 
         this.setSettings({ bloom, sunBloom });
+        this.setAmbientOcclusion(ambientOcclusion);
         this.setColorGrading(colorGrading);
         this.setAntiAliasing(antiAliasing);
     }
@@ -395,6 +403,7 @@ export class PostProcessingPipeline {
         this._globalBloomComposer?.setPixelRatio?.(pr);
         this._sunBloomComposer?.setPixelRatio?.(pr);
         this._syncAaPassSizes();
+        this._syncAoPassSizes();
     }
 
     setSize(width, height) {
@@ -408,6 +417,7 @@ export class PostProcessingPipeline {
         this._globalBloomPass?.setSize?.(w, h);
         this._sunBloomPass?.setSize?.(w, h);
         this._syncAaPassSizes();
+        this._syncAoPassSizes();
     }
 
     _syncAaPassSizes() {
@@ -425,6 +435,168 @@ export class PostProcessingPipeline {
 
         if (this.smaaPass?.setSize) this.smaaPass.setSize(pxW, pxH);
         if (this.taaPass?.setSize) this.taaPass.setSize(pxW, pxH);
+    }
+
+    _getAoPixelSize() {
+        const w = this._size?.w ?? 1;
+        const h = this._size?.h ?? 1;
+        const pr = this._pixelRatio ?? 1;
+        const pxW = Math.max(1, Math.floor(w * pr));
+        const pxH = Math.max(1, Math.floor(h * pr));
+
+        const mode = this._ambientOcclusion?.mode ?? 'off';
+        const quality = mode === 'ssao'
+            ? (this._ambientOcclusion?.ssao?.quality ?? 'medium')
+            : (this._ambientOcclusion?.gtao?.quality ?? 'medium');
+        const scale = quality === 'low' ? 0.5 : (quality === 'medium' ? 0.75 : 1.0);
+
+        return {
+            w: Math.max(1, Math.floor(pxW * scale)),
+            h: Math.max(1, Math.floor(pxH * scale))
+        };
+    }
+
+    _syncAoPassSizes() {
+        const pass = this._ao?.pass ?? null;
+        if (!pass?.setSize) return;
+        const size = this._getAoPixelSize();
+        pass.setSize(size.w, size.h);
+    }
+
+    _removeComposerPass(pass) {
+        if (!pass) return;
+        const passes = this.composer?.passes ?? null;
+        if (!Array.isArray(passes)) return;
+        const idx = passes.indexOf(pass);
+        if (idx >= 0) passes.splice(idx, 1);
+    }
+
+    _getSsaoKernelSize(quality) {
+        const q = typeof quality === 'string' ? quality : 'medium';
+        if (q === 'low') return 8;
+        if (q === 'high') return 32;
+        return 16;
+    }
+
+    _getGtaoSampleCount(quality) {
+        const q = typeof quality === 'string' ? quality : 'medium';
+        if (q === 'low') return 8;
+        if (q === 'high') return 24;
+        return 16;
+    }
+
+    _getGtaoDenoiseRadius(quality) {
+        const q = typeof quality === 'string' ? quality : 'medium';
+        if (q === 'low') return 4;
+        if (q === 'high') return 8;
+        return 6;
+    }
+
+    _syncAmbientOcclusionPass() {
+        const settings = this._ambientOcclusion ?? null;
+        const nextMode = typeof settings?.mode === 'string' ? settings.mode : 'off';
+        const prevMode = this._ao?.mode ?? 'off';
+        const prevPass = this._ao?.pass ?? null;
+
+        if (prevPass && prevMode !== nextMode) {
+            this._removeComposerPass(prevPass);
+            prevPass.dispose?.();
+            this._ao.pass = null;
+            this._ao.mode = 'off';
+        }
+
+        if (nextMode === 'off') {
+            if (this._ao.pass) {
+                this._removeComposerPass(this._ao.pass);
+                this._ao.pass.dispose?.();
+                this._ao.pass = null;
+                this._ao.mode = 'off';
+            }
+            return;
+        }
+
+        if (!this._ao.pass) {
+            const size = this._getAoPixelSize();
+            const passes = this.composer?.passes ?? [];
+            const renderIdx = passes.indexOf(this.renderPass);
+            const insertAt = renderIdx >= 0 ? renderIdx + 1 : 1;
+
+            if (nextMode === 'ssao') {
+                const ssao = settings?.ssao ?? null;
+                const kernelSize = this._getSsaoKernelSize(ssao?.quality);
+                const pass = new SSAOPass(this.scene, this.camera, size.w, size.h, kernelSize);
+                pass.enabled = true;
+                if ('output' in pass && SSAOPass?.OUTPUT?.Default !== undefined) pass.output = SSAOPass.OUTPUT.Default;
+                passes.splice(Math.max(0, Math.min(insertAt, passes.length)), 0, pass);
+                this._ao.pass = pass;
+                this._ao.mode = 'ssao';
+            } else if (nextMode === 'gtao') {
+                const pass = new GTAOPass(this.scene, this.camera, size.w, size.h);
+                pass.enabled = true;
+                passes.splice(Math.max(0, Math.min(insertAt, passes.length)), 0, pass);
+                this._ao.pass = pass;
+                this._ao.mode = 'gtao';
+            }
+        }
+
+        const pass = this._ao.pass;
+        if (!pass) return;
+
+        if (nextMode === 'ssao') {
+            const ssao = settings?.ssao ?? null;
+            if ('kernelRadius' in pass) pass.kernelRadius = clamp(ssao?.radius, 0.1, 64, 8);
+            if ('minDistance' in pass) pass.minDistance = 0.01;
+            if ('maxDistance' in pass) pass.maxDistance = 0.15;
+            if ('aoClamp' in pass) pass.aoClamp = 0.25;
+            if ('lumInfluence' in pass) pass.lumInfluence = 0.7;
+            if ('aoIntensity' in pass) pass.aoIntensity = clamp(ssao?.intensity, 0, 2, 0.35);
+            if ('kernelSize' in pass) pass.kernelSize = this._getSsaoKernelSize(ssao?.quality);
+            if ('output' in pass && SSAOPass?.OUTPUT?.Default !== undefined) pass.output = SSAOPass.OUTPUT.Default;
+            this._syncAoPassSizes();
+            return;
+        }
+
+        if (nextMode === 'gtao') {
+            const gtao = settings?.gtao ?? null;
+            const quality = gtao?.quality ?? 'medium';
+            const samples = this._getGtaoSampleCount(quality);
+            const denoise = gtao?.denoise !== false;
+
+            if ('blendIntensity' in pass) pass.blendIntensity = clamp(gtao?.intensity, 0, 2, 0.35);
+
+            const aoParams = {
+                radius: clamp(gtao?.radius, 0.05, 8, 0.25),
+                distanceExponent: 1.0,
+                thickness: 1.0,
+                scale: 1.0,
+                samples,
+                distanceFallOff: 1.0,
+                screenSpaceRadius: false
+            };
+            pass.updateGtaoMaterial?.(aoParams);
+
+            const pdParams = {
+                lumaPhi: 10.0,
+                depthPhi: 2.0,
+                normalPhi: 3.0,
+                radius: this._getGtaoDenoiseRadius(quality),
+                radiusExponent: 1.0,
+                rings: 2,
+                samples
+            };
+            pass.updatePdMaterial?.(pdParams);
+
+            if ('output' in pass && GTAOPass?.OUTPUT) {
+                pass.output = denoise && GTAOPass.OUTPUT.Denoise !== undefined ? GTAOPass.OUTPUT.Denoise : GTAOPass.OUTPUT.Default;
+            }
+
+            this._syncAoPassSizes();
+        }
+    }
+
+    setAmbientOcclusion(ambientOcclusion) {
+        this._ambientOcclusion = sanitizeAmbientOcclusionSettings(ambientOcclusion);
+        this._syncAmbientOcclusionPass();
     }
 
     setAntiAliasing(antiAliasing) {
@@ -526,6 +698,9 @@ export class PostProcessingPipeline {
         return {
             globalBloomEnabled: !!this._globalBloom?.enabled,
             sunBloomEnabled: !!this._sunBloom?.enabled,
+            ambientOcclusion: {
+                mode: this._ambientOcclusion?.mode ?? 'off'
+            },
             antiAliasing: {
                 mode: this._antiAliasing?.activeMode ?? 'off',
                 requestedMode: this._antiAliasing?.requested?.mode ?? 'off',
@@ -627,12 +802,14 @@ export class PostProcessingPipeline {
 
         const globalBloomOn = !!this._globalBloom?.enabled && (this._globalBloom?.strength > 0);
         const sunBloomOn = !!this._sunBloom?.enabled && (this._sunBloom?.strength > 0);
+        const aoMode = this._ambientOcclusion?.mode ?? 'off';
+        const aoOn = aoMode === 'ssao' || aoMode === 'gtao';
         const gradeOn = !!this._colorGrading?.enabled;
         const aaMode = this._antiAliasing?.activeMode ?? 'off';
         const taa = aaMode === 'taa' ? (this._antiAliasing?.requested?.taa ?? null) : null;
         const taaJitterStrength = taa ? clamp(taa.jitter, 0, 1, 0) : 0;
         const jitterApplied = aaMode === 'taa' && taaJitterStrength > 0;
-        const wantsPipeline = globalBloomOn || sunBloomOn || gradeOn || aaMode !== 'off';
+        const wantsPipeline = globalBloomOn || sunBloomOn || aoOn || gradeOn || aaMode !== 'off';
 
         const prevView = jitterApplied ? cloneCameraView(this.camera?.view) : null;
         if (jitterApplied) {
@@ -674,6 +851,7 @@ export class PostProcessingPipeline {
     dispose() {
         this._globalBloomPass?.dispose?.();
         this._sunBloomPass?.dispose?.();
+        this._ao?.pass?.dispose?.();
         this.taaPass?.dispose?.();
         this.smaaPass?.dispose?.();
         this.fxaaPass?.material?.dispose?.();

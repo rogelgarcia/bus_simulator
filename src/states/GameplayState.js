@@ -21,6 +21,7 @@ import { VehicleController } from '../app/vehicle/VehicleController.js';
 import { InputManager } from '../app/input/InputManager.js';
 import { createVehicleFromBus } from '../app/vehicle/createVehicle.js';
 import { GameplayDebugPanel } from '../graphics/gui/gameplay/GameplayDebugPanel.js';
+import { VehicleMotionDebugOverlay } from '../graphics/gui/debug/VehicleMotionDebugOverlay.js';
 import { getSelectableSceneShortcuts } from './SceneShortcutRegistry.js';
 import { SetupUIController } from '../graphics/gui/setup/SetupUIController.js';
 
@@ -169,6 +170,10 @@ export class GameplayState {
         this._tmpForward = new THREE.Vector3();
         this._tmpDesired = new THREE.Vector3();
         this._tmpTarget = new THREE.Vector3();
+        this._tmpDebugQ = new THREE.Quaternion();
+        this._tmpDebugForward = new THREE.Vector3();
+        this._tmpDebugDesired = new THREE.Vector3();
+        this._tmpDebugTarget = new THREE.Vector3();
         this._busCenterBox = new THREE.Box3();
         this._busCenter = new THREE.Vector3();
         this._cameraTour = null;
@@ -195,8 +200,34 @@ export class GameplayState {
 
         this._debugPanel = null;
         this._debugEnabled = false;
+        this._vehicleMotionDebugOverlay = null;
 
         this._iblProbe = null;
+
+        this._cameraMotionDebug = {
+            mode: 'init',
+            chase: { desired: { x: 0, y: 0, z: 0 }, alpha: 0 },
+            manual: {
+                hasOverride: false,
+                active: false,
+                returning: false,
+                idleTime: 0,
+                returnElapsed: 0,
+                returnDuration: CAMERA_DRAG.returnDurationSec,
+                applied: false,
+                anchorPos: { x: 0, y: 0, z: 0 },
+                anchorMatrixPos: { x: 0, y: 0, z: 0 },
+                anchorMatrixNeedsUpdate: null,
+                anchorMatrixErr: null,
+                busModelMatrixPos: { x: 0, y: 0, z: 0 },
+                busModelMatrixNeedsUpdate: null,
+                appliedTarget: { x: 0, y: 0, z: 0 },
+                appliedOffset: { x: 0, y: 0, z: 0 },
+                appliedCamera: { x: 0, y: 0, z: 0 }
+            },
+            desired: { x: 0, y: 0, z: 0 },
+            target: { x: 0, y: 0, z: 0 }
+        };
 
         this._setupUi = new SetupUIController();
 
@@ -235,6 +266,9 @@ export class GameplayState {
         this.hud = new GameHUD({ mode: 'bus' });
         this.hud.show();
         this.gameLoop.setUI(this.hud);
+
+        this._vehicleMotionDebugOverlay = new VehicleMotionDebugOverlay();
+        this._vehicleMotionDebugOverlay.attach(document.body);
 
         const params = new URLSearchParams(window.location.search);
         this._debugEnabled = params.get('debug') === 'true';
@@ -316,7 +350,9 @@ export class GameplayState {
         this._debugPanel?.log(`physics.addVehicle(${this.vehicle.id})`);
 
         // Create vehicle controller
-        this.vehicleController = new VehicleController(this.vehicle.id, sim.physics, sim.events);
+        this.vehicleController = new VehicleController(this.vehicle.id, sim.physics, sim.events, {
+            getVisualSmoothingSettings: () => this.engine?.vehicleVisualSmoothingSettings ?? null
+        });
         this.vehicleController.setVehicleApi(this.vehicle.api, this.vehicle.anchor);
         this.gameLoop.addVehicleController(this.vehicleController);
 
@@ -383,6 +419,9 @@ export class GameplayState {
         // Cleanup HUD
         this.hud?.destroy();
         this.hud = null;
+
+        this._vehicleMotionDebugOverlay?.destroy?.();
+        this._vehicleMotionDebugOverlay = null;
 
         this._debugPanel?.destroy();
         this._debugPanel = null;
@@ -463,15 +502,100 @@ export class GameplayState {
     }
 
     update(dt) {
+        const debugSettings = this.engine?.vehicleMotionDebugSettings ?? null;
+        const freezeCamera = debugSettings?.camera?.freeze === true;
+        const manualDebug = this._cameraMotionDebug?.manual ?? null;
+        if (manualDebug) {
+            manualDebug.applied = false;
+            manualDebug.anchorMatrixNeedsUpdate = null;
+            manualDebug.anchorMatrixErr = null;
+            manualDebug.busModelMatrixNeedsUpdate = null;
+        }
+
         // Run game loop (handles input, physics, controllers, world, UI)
         this.gameLoop?.update(dt);
 
         // Update chase camera
-        const touring = this._cameraTour?.update(dt) ?? false;
-        if (!touring) {
-            const manual = this._updateManualCamera(dt);
-            if (!manual) this._updateChaseCamera(dt);
+        let cameraMode = freezeCamera ? 'frozen' : 'none';
+        if (!freezeCamera) {
+            const touring = this._cameraTour?.update(dt) ?? false;
+            if (touring) {
+                cameraMode = 'tour';
+            } else {
+                const manual = this._updateManualCamera(dt);
+                if (manual) {
+                    cameraMode = 'manual';
+                } else {
+                    cameraMode = 'chase';
+                    this._updateChaseCamera(dt);
+                }
+            }
         }
+
+        // Debug: compute chase target/desired regardless of active mode.
+        if (this.busAnchor) {
+            this._tmpDebugTarget.copy(this.busAnchor.position);
+            this._tmpDebugTarget.y += this._chase.lookY;
+
+            this.busAnchor.getWorldQuaternion(this._tmpDebugQ);
+            this._tmpDebugForward.set(0, 0, 1).applyQuaternion(this._tmpDebugQ);
+            this._tmpDebugForward.y = 0;
+            if (this._tmpDebugForward.lengthSq() > 1e-8) this._tmpDebugForward.normalize();
+            else this._tmpDebugForward.set(0, 0, 1);
+
+            this._tmpDebugDesired.copy(this.busAnchor.position);
+            this._tmpDebugDesired.addScaledVector(this._tmpDebugForward, -this._chase.distance);
+            this._tmpDebugDesired.y += this._chase.height;
+        }
+
+        const cam = this.engine?.camera ?? null;
+        const target = this._getBusCenter();
+        this._cameraMotionDebug.mode = cameraMode;
+        if (target) {
+            this._cameraMotionDebug.target.x = target.x;
+            this._cameraMotionDebug.target.y = target.y;
+            this._cameraMotionDebug.target.z = target.z;
+        }
+        if (this.busAnchor) {
+            this._cameraMotionDebug.chase.desired.x = this._tmpDebugDesired.x;
+            this._cameraMotionDebug.chase.desired.y = this._tmpDebugDesired.y;
+            this._cameraMotionDebug.chase.desired.z = this._tmpDebugDesired.z;
+            const sharp = Number.isFinite(CAMERA_TUNE.followSharpness) ? CAMERA_TUNE.followSharpness : 7.0;
+            const safeDt = Math.max(0, Number(dt) || 0);
+            this._cameraMotionDebug.chase.alpha = 1 - Math.exp(-safeDt * sharp);
+        }
+        const drag = this._cameraDrag;
+        this._cameraMotionDebug.manual.hasOverride = !!drag.hasOverride;
+        this._cameraMotionDebug.manual.active = !!drag.active;
+        this._cameraMotionDebug.manual.returning = !!drag.returning;
+        this._cameraMotionDebug.manual.idleTime = Number.isFinite(drag.idleTime) ? drag.idleTime : 0;
+        this._cameraMotionDebug.manual.returnElapsed = Number.isFinite(drag.returnElapsed) ? drag.returnElapsed : 0;
+        if (cameraMode === 'chase') {
+            this._cameraMotionDebug.desired.x = this._tmpDesired.x;
+            this._cameraMotionDebug.desired.y = this._tmpDesired.y;
+            this._cameraMotionDebug.desired.z = this._tmpDesired.z;
+        } else if (cam?.position) {
+            this._cameraMotionDebug.desired.x = cam.position.x;
+            this._cameraMotionDebug.desired.y = cam.position.y;
+            this._cameraMotionDebug.desired.z = cam.position.z;
+        }
+        const loco = this.engine?.simulation?.physics?.getVehicleState?.('player')?.locomotion ?? null;
+        const canvas = this.engine?.renderer?.domElement ?? null;
+        const vpW = Number(canvas?.clientWidth ?? canvas?.width ?? 0);
+        const vpH = Number(canvas?.clientHeight ?? canvas?.height ?? 0);
+        this._vehicleMotionDebugOverlay?.update?.({
+            nowMs: this.engine?.frameTimingDebugInfo?.nowMs ?? null,
+            dt,
+            timing: this.engine?.frameTimingDebugInfo ?? null,
+            physicsLoop: this.engine?.getPhysicsLoopDebugInfo?.() ?? null,
+            anchor: this.busAnchor,
+            locomotion: loco,
+            visualSmoothing: this.engine?.vehicleVisualSmoothingSettings ?? null,
+            cameraMotion: this._cameraMotionDebug,
+            camera: this.engine?.camera ?? null,
+            viewport: { width: vpW, height: vpH },
+            settings: debugSettings
+        });
     }
 
     _updateTelemetry() {
@@ -515,10 +639,60 @@ export class GameplayState {
 
     _applyManualCamera() {
         const cam = this.engine.camera;
+        const manualDebug = this._cameraMotionDebug?.manual ?? null;
+        if (manualDebug) {
+            const anchor = this.busAnchor ?? null;
+            const anchorPos = anchor?.position ?? null;
+            if (anchorPos) {
+                manualDebug.anchorPos.x = anchorPos.x;
+                manualDebug.anchorPos.y = anchorPos.y;
+                manualDebug.anchorPos.z = anchorPos.z;
+            }
+            const anchorMw = anchor?.matrixWorld?.elements ?? null;
+            if (anchorMw) {
+                manualDebug.anchorMatrixPos.x = anchorMw[12];
+                manualDebug.anchorMatrixPos.y = anchorMw[13];
+                manualDebug.anchorMatrixPos.z = anchorMw[14];
+                manualDebug.anchorMatrixNeedsUpdate = anchor?.matrixWorldNeedsUpdate === true ? true : anchor?.matrixWorldNeedsUpdate === false ? false : null;
+                if (anchorPos) {
+                    const ex = anchorPos.x - anchorMw[12];
+                    const ey = anchorPos.y - anchorMw[13];
+                    const ez = anchorPos.z - anchorMw[14];
+                    manualDebug.anchorMatrixErr = Math.hypot(ex, ey, ez);
+                } else {
+                    manualDebug.anchorMatrixErr = null;
+                }
+            }
+            const model = this.busModel ?? null;
+            const modelMw = model?.matrixWorld?.elements ?? null;
+            if (modelMw) {
+                manualDebug.busModelMatrixPos.x = modelMw[12];
+                manualDebug.busModelMatrixPos.y = modelMw[13];
+                manualDebug.busModelMatrixPos.z = modelMw[14];
+                manualDebug.busModelMatrixNeedsUpdate = model?.matrixWorldNeedsUpdate === true ? true : model?.matrixWorldNeedsUpdate === false ? false : null;
+            }
+            manualDebug.appliedOffset.x = this._cameraDrag.offset.x;
+            manualDebug.appliedOffset.y = this._cameraDrag.offset.y;
+            manualDebug.appliedOffset.z = this._cameraDrag.offset.z;
+        }
         const target = this._getBusCenter();
-        if (!target) return;
+        if (!target) {
+            if (manualDebug) manualDebug.applied = false;
+            return;
+        }
+        if (manualDebug) {
+            manualDebug.applied = true;
+            manualDebug.appliedTarget.x = target.x;
+            manualDebug.appliedTarget.y = target.y;
+            manualDebug.appliedTarget.z = target.z;
+        }
         cam.position.copy(target).add(this._cameraDrag.offset);
         cam.lookAt(target);
+        if (manualDebug) {
+            manualDebug.appliedCamera.x = cam.position.x;
+            manualDebug.appliedCamera.y = cam.position.y;
+            manualDebug.appliedCamera.z = cam.position.z;
+        }
     }
 
     _updateManualCamera(dt) {

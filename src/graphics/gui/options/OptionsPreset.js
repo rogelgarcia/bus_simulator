@@ -5,12 +5,14 @@
 import { LIGHTING_DEFAULTS, sanitizeLightingSettings } from '../../lighting/LightingSettings.js';
 import { SHADOW_DEFAULTS, sanitizeShadowSettings } from '../../lighting/ShadowSettings.js';
 import { ANTIALIASING_DEFAULTS, sanitizeAntiAliasingSettings } from '../../visuals/postprocessing/AntiAliasingSettings.js';
+import { AMBIENT_OCCLUSION_DEFAULTS, sanitizeAmbientOcclusionSettings } from '../../visuals/postprocessing/AmbientOcclusionSettings.js';
 import { BLOOM_DEFAULTS, sanitizeBloomSettings } from '../../visuals/postprocessing/BloomSettings.js';
 import { SUN_BLOOM_DEFAULTS, sanitizeSunBloomSettings } from '../../visuals/postprocessing/SunBloomSettings.js';
 import { COLOR_GRADING_DEFAULTS, sanitizeColorGradingSettings } from '../../visuals/postprocessing/ColorGradingSettings.js';
 import { BUILDING_WINDOW_VISUALS_DEFAULTS, sanitizeBuildingWindowVisualsSettings } from '../../visuals/buildings/BuildingWindowVisualsSettings.js';
 import { ASPHALT_NOISE_DEFAULTS, sanitizeAsphaltNoiseSettings } from '../../visuals/city/AsphaltNoiseSettings.js';
 import { SUN_FLARE_DEFAULTS, sanitizeSunFlareSettings } from '../../visuals/sun/SunFlareSettings.js';
+import { VEHICLE_VISUAL_SMOOTHING_DEFAULTS, sanitizeVehicleVisualSmoothingSettings } from '../../../app/vehicle/VehicleVisualSmoothingSettings.js';
 
 export const OPTIONS_PRESET_SCHEMA_ID = 'bus_sim.options_preset';
 export const OPTIONS_PRESET_VERSION = 1;
@@ -19,12 +21,14 @@ const GROUPS = Object.freeze([
     'lighting',
     'shadows',
     'antiAliasing',
+    'ambientOcclusion',
     'bloom',
     'sunBloom',
     'colorGrading',
     'sunFlare',
     'buildingWindowVisuals',
-    'asphaltNoise'
+    'asphaltNoise',
+    'vehicleVisualSmoothing'
 ]);
 
 function parseLooseBool(value, fallback) {
@@ -55,12 +59,14 @@ function getDefaultSettings() {
         lighting: sanitizeLightingSettings(LIGHTING_DEFAULTS),
         shadows: sanitizeShadowSettings(SHADOW_DEFAULTS),
         antiAliasing: sanitizeAntiAliasingSettings(ANTIALIASING_DEFAULTS),
+        ambientOcclusion: sanitizeAmbientOcclusionSettings(AMBIENT_OCCLUSION_DEFAULTS),
         bloom: sanitizeBloomSettings(BLOOM_DEFAULTS),
         sunBloom: sanitizeSunBloomSettings(SUN_BLOOM_DEFAULTS),
         colorGrading: sanitizeColorGradingSettings(COLOR_GRADING_DEFAULTS),
         sunFlare: sanitizeSunFlareSettings(SUN_FLARE_DEFAULTS),
         buildingWindowVisuals: sanitizeBuildingWindowVisualsSettings(BUILDING_WINDOW_VISUALS_DEFAULTS),
-        asphaltNoise: sanitizeAsphaltNoiseSettings(ASPHALT_NOISE_DEFAULTS)
+        asphaltNoise: sanitizeAsphaltNoiseSettings(ASPHALT_NOISE_DEFAULTS),
+        vehicleVisualSmoothing: sanitizeVehicleVisualSmoothingSettings(VEHICLE_VISUAL_SMOOTHING_DEFAULTS)
     };
 }
 
@@ -72,12 +78,14 @@ function sanitizeSettings(input) {
         lighting: sanitizeLightingSettings(normalized.lighting ?? defaults.lighting),
         shadows: sanitizeShadowSettings(normalized.shadows ?? defaults.shadows),
         antiAliasing: sanitizeAntiAliasingSettings(normalized.antiAliasing ?? defaults.antiAliasing),
+        ambientOcclusion: sanitizeAmbientOcclusionSettings(normalized.ambientOcclusion ?? defaults.ambientOcclusion),
         bloom: sanitizeBloomSettings(normalized.bloom ?? defaults.bloom),
         sunBloom: sanitizeSunBloomSettings(normalized.sunBloom ?? defaults.sunBloom),
         colorGrading: sanitizeColorGradingSettings(normalized.colorGrading ?? defaults.colorGrading),
         sunFlare: sanitizeSunFlareSettings(normalized.sunFlare ?? defaults.sunFlare),
         buildingWindowVisuals: sanitizeBuildingWindowVisualsSettings(normalized.buildingWindowVisuals ?? defaults.buildingWindowVisuals),
-        asphaltNoise: sanitizeAsphaltNoiseSettings(normalized.asphaltNoise ?? defaults.asphaltNoise)
+        asphaltNoise: sanitizeAsphaltNoiseSettings(normalized.asphaltNoise ?? defaults.asphaltNoise),
+        vehicleVisualSmoothing: sanitizeVehicleVisualSmoothingSettings(normalized.vehicleVisualSmoothing ?? defaults.vehicleVisualSmoothing)
     };
 }
 
@@ -102,6 +110,15 @@ function normalizeSettingsBooleans(src) {
     if (src.shadows && typeof src.shadows === 'object') out.shadows = { ...src.shadows };
 
     if (src.antiAliasing && typeof src.antiAliasing === 'object') out.antiAliasing = { ...src.antiAliasing };
+
+    const ambientOcclusion = src.ambientOcclusion && typeof src.ambientOcclusion === 'object' ? src.ambientOcclusion : null;
+    if (ambientOcclusion) {
+        const gtao = ambientOcclusion.gtao && typeof ambientOcclusion.gtao === 'object' ? ambientOcclusion.gtao : null;
+        out.ambientOcclusion = {
+            ...ambientOcclusion,
+            gtao: gtao ? { ...gtao, denoise: parseLooseBool(gtao.denoise, gtao.denoise) } : gtao
+        };
+    }
 
     const bloom = src.bloom && typeof src.bloom === 'object' ? src.bloom : null;
     if (bloom) out.bloom = { ...bloom, enabled: parseLooseBool(bloom.enabled, bloom.enabled) };
@@ -188,6 +205,14 @@ function normalizeSettingsBooleans(src) {
                     tireWear: tireWear ? { ...tireWear, enabled: parseLooseBool(tireWear.enabled, tireWear.enabled) } : tireWear
                 }
                 : livedIn
+        };
+    }
+
+    const vehicleVisualSmoothing = src.vehicleVisualSmoothing && typeof src.vehicleVisualSmoothing === 'object' ? src.vehicleVisualSmoothing : null;
+    if (vehicleVisualSmoothing) {
+        out.vehicleVisualSmoothing = {
+            ...vehicleVisualSmoothing,
+            enabled: parseLooseBool(vehicleVisualSmoothing.enabled, vehicleVisualSmoothing.enabled)
         };
     }
 
@@ -278,12 +303,14 @@ export function applyOptionsPresetToDraft(draft, preset) {
     if (includes.lighting) out.lighting = settings.lighting;
     if (includes.shadows) out.shadows = settings.shadows;
     if (includes.antiAliasing) out.antiAliasing = settings.antiAliasing;
+    if (includes.ambientOcclusion) out.ambientOcclusion = settings.ambientOcclusion;
     if (includes.bloom) out.bloom = settings.bloom;
     if (includes.sunBloom) out.sunBloom = settings.sunBloom;
     if (includes.colorGrading) out.colorGrading = settings.colorGrading;
     if (includes.sunFlare) out.sunFlare = settings.sunFlare;
     if (includes.buildingWindowVisuals) out.buildingWindowVisuals = settings.buildingWindowVisuals;
     if (includes.asphaltNoise) out.asphaltNoise = settings.asphaltNoise;
+    if (includes.vehicleVisualSmoothing) out.vehicleVisualSmoothing = settings.vehicleVisualSmoothing;
 
     return out;
 }

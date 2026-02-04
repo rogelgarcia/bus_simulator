@@ -87,6 +87,30 @@ body.options-dock-open .ui-layer:not(.options-layer) {
     pointer-events: auto;
 }
 
+.vehicle-motion-debug-overlay {
+    position: fixed;
+    left: 12px;
+    top: calc(var(--global-top-bar-height, 0px) + 12px);
+    z-index: 260;
+    pointer-events: none;
+    user-select: none;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(255,255,255,0.14);
+    color: rgba(233, 242, 255, 0.95);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 11px;
+    line-height: 1.25;
+    white-space: pre;
+    max-width: min(560px, calc(100vw - 24px));
+}
+
+.vehicle-motion-debug-overlay-pre {
+    margin: 0;
+    white-space: pre;
+}
+
 .ui-picker-overlay {
     position: fixed;
     inset: 0;
