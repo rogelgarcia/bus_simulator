@@ -350,9 +350,7 @@ export class GameplayState {
         this._debugPanel?.log(`physics.addVehicle(${this.vehicle.id})`);
 
         // Create vehicle controller
-        this.vehicleController = new VehicleController(this.vehicle.id, sim.physics, sim.events, {
-            getVisualSmoothingSettings: () => this.engine?.vehicleVisualSmoothingSettings ?? null
-        });
+        this.vehicleController = new VehicleController(this.vehicle.id, sim.physics, sim.events);
         this.vehicleController.setVehicleApi(this.vehicle.api, this.vehicle.anchor);
         this.gameLoop.addVehicleController(this.vehicleController);
 
@@ -590,7 +588,6 @@ export class GameplayState {
             physicsLoop: this.engine?.getPhysicsLoopDebugInfo?.() ?? null,
             anchor: this.busAnchor,
             locomotion: loco,
-            visualSmoothing: this.engine?.vehicleVisualSmoothingSettings ?? null,
             cameraMotion: this._cameraMotionDebug,
             camera: this.engine?.camera ?? null,
             viewport: { width: vpW, height: vpH },
@@ -625,6 +622,7 @@ export class GameplayState {
 
     _getBusCenter() {
         if (!this.busModel) return null;
+        if (this.busAnchor?.updateMatrixWorld) this.busAnchor.updateMatrixWorld(true);
         this._busCenterBox.setFromObject(this.busModel);
         if (this._busCenterBox.isEmpty()) {
             this.busModel.getWorldPosition(this._busCenter);
@@ -639,6 +637,7 @@ export class GameplayState {
 
     _applyManualCamera() {
         const cam = this.engine.camera;
+        if (this.busAnchor?.updateMatrixWorld) this.busAnchor.updateMatrixWorld(true);
         const manualDebug = this._cameraMotionDebug?.manual ?? null;
         if (manualDebug) {
             const anchor = this.busAnchor ?? null;

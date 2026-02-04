@@ -153,7 +153,6 @@ export class VehicleMotionDebugOverlay {
         physicsLoop = null,
         anchor = null,
         locomotion = null,
-        visualSmoothing = null,
         cameraMotion = null,
         camera = null,
         viewport = null,
@@ -204,15 +203,6 @@ export class VehicleMotionDebugOverlay {
         const locoDz = pose && locoPos && Number.isFinite(locoPos.z) ? pose.z - locoPos.z : null;
         const locoDist = (locoDx !== null && locoDz !== null) ? Math.hypot(locoDx, locoDz) : null;
         const locoYawErr = (locoYaw !== null && pose) ? (normalizeAngleRad(pose.yaw - locoYaw) * (180 / Math.PI)) : null;
-        const smoothingSnap = visualSmoothing && typeof visualSmoothing === 'object'
-            ? {
-                enabled: visualSmoothing.enabled === true,
-                catchupFactor: Number.isFinite(visualSmoothing.catchupFactor) ? Number(visualSmoothing.catchupFactor) : null,
-                maxLagMeters: Number.isFinite(visualSmoothing.maxLagMeters) ? Number(visualSmoothing.maxLagMeters) : null,
-                nominalFps: Number.isFinite(visualSmoothing.nominalFps) ? Number(visualSmoothing.nominalFps) : null
-            }
-            : null;
-
         const maxDist = Number.isFinite(settings?.spike?.maxDistMeters) ? settings.spike.maxDistMeters : null;
         const maxYawDeg = Number.isFinite(settings?.spike?.maxYawDeg) ? settings.spike.maxYawDeg : null;
         const maxScreenPx = Number.isFinite(settings?.spike?.maxScreenPx) ? settings.spike.maxScreenPx : null;
@@ -425,9 +415,6 @@ export class VehicleMotionDebugOverlay {
         if (locoDist !== null || locoYawErr !== null) {
             lines.push(`render-vs-physics: posErr ${fmt(locoDist, 3)}m  yawErr ${fmt(locoYawErr, 2)}°`);
         }
-        if (smoothingSnap?.enabled) {
-            lines.push(`visual smoothing: ON  posErr ${fmt(locoDist, 3)}m`);
-        }
         if (wallDt !== null) {
             lines.push(`wall dt: ${fmt(wallDt, 4)}`);
         }
@@ -543,7 +530,6 @@ export class VehicleMotionDebugOverlay {
                 anchorStep: { dist, dx, dz, projFwd, travelProj },
                 physicsStep: { dist: locoDistStep, projFwd: locoProjFwd, travelProj: locoTravelProj },
                 renderVsPhysics: { posErr: locoDist, yawErrDeg: locoYawErr },
-                visualSmoothing: smoothingSnap,
                 screenPx: sdist,
                 timing: timing && typeof timing === 'object'
                     ? {
@@ -573,7 +559,6 @@ export class VehicleMotionDebugOverlay {
                 anchorStep: { dist, dx, dz, projFwd, travelProj },
                 physicsStep: { dist: locoDistStep, projFwd: locoProjFwd, travelProj: locoTravelProj },
                 renderVsPhysics: { posErr: locoDist, yawErrDeg: locoYawErr },
-                visualSmoothing: smoothingSnap,
                 screenPx: sdist,
                 timing: timing && typeof timing === 'object'
                     ? {

@@ -152,24 +152,31 @@ async function runTests() {
         assertTrue(d.spike.maxYawDeg <= 180, 'Expected maxYawDeg clamped.');
     });
 
-    // ========== Vehicle Visual Smoothing Settings ==========
-    const { getDefaultResolvedVehicleVisualSmoothingSettings, sanitizeVehicleVisualSmoothingSettings } = await import('/src/app/vehicle/VehicleVisualSmoothingSettings.js');
+    // ========== Camera Targeting (Regression) ==========
+    const THREE = await import('three');
+    const { GameplayState } = await import('/src/states/GameplayState.js');
 
-    test('VehicleVisualSmoothingSettings: default disabled', () => {
-        const d = getDefaultResolvedVehicleVisualSmoothingSettings();
-        assertTrue(d && typeof d === 'object', 'Expected vehicle visual smoothing defaults object.');
-        assertEqual(d.enabled, false, 'Expected smoothing disabled by default.');
-        assertTrue(Number.isFinite(d.catchupFactor), 'Expected catchupFactor finite.');
-        assertTrue(Number.isFinite(d.maxLagMeters), 'Expected maxLagMeters finite.');
-        assertTrue(Number.isFinite(d.nominalFps), 'Expected nominalFps finite.');
-    });
+    test('GameplayState: _getBusCenter updates world matrices (prevents manual camera stale target)', () => {
+        const engineStub = { camera: new THREE.PerspectiveCamera() };
+        const smStub = {};
+        const state = new GameplayState(engineStub, smStub);
 
-    test('VehicleVisualSmoothingSettings: sanitize clamps values', () => {
-        const d = sanitizeVehicleVisualSmoothingSettings({ enabled: true, catchupFactor: 999, maxLagMeters: 999, nominalFps: 999 });
-        assertEqual(d.enabled, true, 'Expected enabled.');
-        assertTrue(d.catchupFactor <= 6.0, 'Expected catchupFactor clamped.');
-        assertTrue(d.maxLagMeters <= 20.0, 'Expected maxLagMeters clamped.');
-        assertTrue(d.nominalFps <= 240, 'Expected nominalFps clamped.');
+        const anchor = new THREE.Group();
+        const model = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 6), new THREE.MeshBasicMaterial());
+        anchor.add(model);
+        state.busAnchor = anchor;
+        state.busModel = model;
+
+        anchor.position.set(0, 0, 0);
+        anchor.updateMatrixWorld(true);
+        const c0 = state._getBusCenter();
+        assertTrue(c0 && typeof c0 === 'object', 'Expected bus center.');
+
+        anchor.position.z = 10;
+        // Do NOT update matrices; _getBusCenter must handle it.
+        const c1 = state._getBusCenter();
+        assertTrue(Number.isFinite(c1?.z), 'Expected finite center.z');
+        assertTrue(Math.abs(c1.z - 10) < 1e-3, `Expected center.z≈10, got ${c1.z}`);
     });
 
     // ========== Atmosphere / Sky ==========
@@ -881,9 +888,8 @@ async function runTests() {
         assertEqual(manager.count, 2, 'Should have 2 vehicles.');
     });
 
-    // ========== Material Variation Tests ==========
-    const THREE = await import('three');
-    const { applyMaterialVariationToMeshStandardMaterial, normalizeMaterialVariationConfig: normalizeMatVarConfig, MATERIAL_VARIATION_ROOT } = await import('/src/graphics/assets3d/materials/MaterialVariationSystem.js');
+	    // ========== Material Variation Tests ==========
+	    const { applyMaterialVariationToMeshStandardMaterial, normalizeMaterialVariationConfig: normalizeMatVarConfig, MATERIAL_VARIATION_ROOT } = await import('/src/graphics/assets3d/materials/MaterialVariationSystem.js');
 
     test('MaterialVariationSystem: normal map shader supports mat-var debug toggles', () => {
         const mat = new THREE.MeshStandardMaterial();

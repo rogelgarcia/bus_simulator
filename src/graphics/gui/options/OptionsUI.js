@@ -277,7 +277,7 @@ async function copyTextToClipboard(text) {
 
 function formatIncludedGroups(includes) {
     const src = includes && typeof includes === 'object' ? includes : {};
-    const keys = ['lighting', 'shadows', 'antiAliasing', 'ambientOcclusion', 'bloom', 'sunBloom', 'colorGrading', 'sunFlare', 'buildingWindowVisuals', 'asphaltNoise', 'vehicleVisualSmoothing'];
+    const keys = ['lighting', 'shadows', 'antiAliasing', 'ambientOcclusion', 'bloom', 'sunBloom', 'colorGrading', 'sunFlare', 'buildingWindowVisuals', 'asphaltNoise'];
     const enabled = keys.filter((k) => src[k] !== false);
     return enabled.length ? enabled.join(', ') : '(none)';
 }
@@ -300,7 +300,6 @@ export class OptionsUI {
         initialPostProcessingActive = null,
         initialColorGradingDebug = null,
         initialVehicleMotionDebug = null,
-        initialVehicleVisualSmoothing = null,
         markingsCalibration = null,
         getIblDebugInfo = null,
         getPostProcessingDebugInfo = null,
@@ -454,9 +453,6 @@ export class OptionsUI {
         this._draftVehicleMotionDebug = initialVehicleMotionDebug && typeof initialVehicleMotionDebug === 'object'
             ? JSON.parse(JSON.stringify(initialVehicleMotionDebug))
             : null;
-        this._draftVehicleVisualSmoothing = initialVehicleVisualSmoothing && typeof initialVehicleVisualSmoothing === 'object'
-            ? JSON.parse(JSON.stringify(initialVehicleVisualSmoothing))
-            : null;
         this._lightingControls = null;
         this._markingsCalibration = (() => {
             const cfg = markingsCalibration && typeof markingsCalibration === 'object' ? markingsCalibration : null;
@@ -489,7 +485,6 @@ export class OptionsUI {
         if (d.buildingWindowVisuals) this._draftBuildingWindowVisuals = JSON.parse(JSON.stringify(d.buildingWindowVisuals));
         if (d.asphaltNoise) this._draftAsphaltNoise = JSON.parse(JSON.stringify(d.asphaltNoise));
         if (d.vehicleMotionDebug) this._draftVehicleMotionDebug = JSON.parse(JSON.stringify(d.vehicleMotionDebug));
-        if (d.vehicleVisualSmoothing) this._draftVehicleVisualSmoothing = JSON.parse(JSON.stringify(d.vehicleVisualSmoothing));
     }
 
     async _exportPreset() {
@@ -1122,24 +1117,6 @@ export class OptionsUI {
         if (d.syntheticDt.pattern === undefined) d.syntheticDt.pattern = 'off';
         if (d.syntheticDt.mode === undefined) d.syntheticDt.mode = 'stall';
         if (d.syntheticDt.stallMs === undefined) d.syntheticDt.stallMs = 34;
-    }
-
-    _ensureDraftVehicleVisualSmoothing() {
-        if (!this._draftVehicleVisualSmoothing) {
-            this._draftVehicleVisualSmoothing = {
-                enabled: false,
-                catchupFactor: 1.6,
-                maxLagMeters: 2.0,
-                nominalFps: 60
-            };
-            return;
-        }
-
-        const d = this._draftVehicleVisualSmoothing;
-        if (d.enabled === undefined) d.enabled = false;
-        if (d.catchupFactor === undefined) d.catchupFactor = 1.6;
-        if (d.maxLagMeters === undefined) d.maxLagMeters = 2.0;
-        if (d.nominalFps === undefined) d.nominalFps = 60;
     }
 
     _renderAsphaltTab() {
@@ -2006,11 +1983,9 @@ export class OptionsUI {
         this._ensureDraftAntiAliasing();
         this._ensureDraftAmbientOcclusion();
         this._ensureDraftShadows();
-        this._ensureDraftVehicleVisualSmoothing();
         const aa = this._draftAntiAliasing;
         const ao = this._draftAmbientOcclusion;
         const shadows = this._draftShadows;
-        const motion = this._draftVehicleVisualSmoothing;
         const emit = () => this._emitLiveChange();
 
         const info = this._getAntiAliasingDebugInfo?.() ?? null;
@@ -2571,55 +2546,6 @@ export class OptionsUI {
         syncAoControls();
 
         this.body.appendChild(sectionStatus);
-
-        const sectionMotion = makeEl('div', 'options-section');
-        sectionMotion.appendChild(makeEl('div', 'options-section-title', 'Motion'));
-
-        const smoothingEnabled = makeToggleRow({
-            label: 'Vehicle visual smoothing',
-            value: motion?.enabled === true,
-            onChange: (v) => { motion.enabled = v; emit(); syncMotion(); }
-        });
-
-        const smoothingCatchup = makeNumberSliderRow({
-            label: 'Catch-up factor',
-            value: motion?.catchupFactor ?? 1.6,
-            min: 1.0,
-            max: 6.0,
-            step: 0.1,
-            digits: 1,
-            onChange: (v) => { motion.catchupFactor = v; emit(); }
-        });
-
-        const smoothingMaxLag = makeNumberSliderRow({
-            label: 'Max lag (m) before snap',
-            value: motion?.maxLagMeters ?? 2.0,
-            min: 0.1,
-            max: 20.0,
-            step: 0.1,
-            digits: 1,
-            onChange: (v) => { motion.maxLagMeters = v; emit(); }
-        });
-
-        const motionNote = makeEl('div', 'options-note');
-        motionNote.textContent = 'Reduces one-frame bus "pops" under uneven FPS by smoothing the rendered bus position (visual-only). May add slight visual lag during frame spikes.';
-
-        const syncMotion = () => {
-            const on = motion?.enabled === true;
-            for (const row of [smoothingCatchup, smoothingMaxLag]) {
-                row.range.disabled = !on;
-                row.number.disabled = !on;
-            }
-        };
-        syncMotion();
-        smoothingEnabled.toggle.addEventListener('change', () => syncMotion());
-
-        sectionMotion.appendChild(smoothingEnabled.row);
-        sectionMotion.appendChild(smoothingCatchup.row);
-        sectionMotion.appendChild(smoothingMaxLag.row);
-        sectionMotion.appendChild(motionNote);
-
-        this.body.appendChild(sectionMotion);
         this.body.appendChild(sectionShadows);
         this.body.appendChild(sectionAo);
         this.body.appendChild(sectionAa);
@@ -3568,13 +3494,6 @@ export class OptionsUI {
             spike: { maxDistMeters: 0.9, maxYawDeg: 25, maxScreenPx: 18 },
             syntheticDt: { enabled: false, pattern: 'off', mode: 'stall', stallMs: 34 }
         };
-
-        this._draftVehicleVisualSmoothing = {
-            enabled: false,
-            catchupFactor: 1.6,
-            maxLagMeters: 2.0,
-            nominalFps: 60
-        };
         this._renderTab();
         this._emitLiveChange();
     }
@@ -3592,7 +3511,6 @@ export class OptionsUI {
         this._ensureDraftColorGrading();
         this._ensureDraftSunFlare();
         this._ensureDraftVehicleMotionDebug();
-        this._ensureDraftVehicleVisualSmoothing();
         const d = this._draftLighting;
         const atmo = this._draftAtmosphere;
         const shadows = this._draftShadows;
@@ -3605,7 +3523,6 @@ export class OptionsUI {
         const windowVisuals = this._draftBuildingWindowVisuals;
         const sunFlare = this._draftSunFlare;
         const vehicleMotionDebug = this._draftVehicleMotionDebug;
-        const vehicleVisualSmoothing = this._draftVehicleVisualSmoothing;
         return {
             lighting: {
                 exposure: d.exposure,
@@ -3782,12 +3699,6 @@ export class OptionsUI {
                     mode: String(vehicleMotionDebug.syntheticDt?.mode ?? 'stall'),
                     stallMs: vehicleMotionDebug.syntheticDt?.stallMs
                 }
-            },
-            vehicleVisualSmoothing: {
-                enabled: !!vehicleVisualSmoothing.enabled,
-                catchupFactor: vehicleVisualSmoothing.catchupFactor,
-                maxLagMeters: vehicleVisualSmoothing.maxLagMeters,
-                nominalFps: vehicleVisualSmoothing.nominalFps
             }
         };
     }

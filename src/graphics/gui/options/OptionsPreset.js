@@ -12,7 +12,6 @@ import { COLOR_GRADING_DEFAULTS, sanitizeColorGradingSettings } from '../../visu
 import { BUILDING_WINDOW_VISUALS_DEFAULTS, sanitizeBuildingWindowVisualsSettings } from '../../visuals/buildings/BuildingWindowVisualsSettings.js';
 import { ASPHALT_NOISE_DEFAULTS, sanitizeAsphaltNoiseSettings } from '../../visuals/city/AsphaltNoiseSettings.js';
 import { SUN_FLARE_DEFAULTS, sanitizeSunFlareSettings } from '../../visuals/sun/SunFlareSettings.js';
-import { VEHICLE_VISUAL_SMOOTHING_DEFAULTS, sanitizeVehicleVisualSmoothingSettings } from '../../../app/vehicle/VehicleVisualSmoothingSettings.js';
 
 export const OPTIONS_PRESET_SCHEMA_ID = 'bus_sim.options_preset';
 export const OPTIONS_PRESET_VERSION = 1;
@@ -27,8 +26,7 @@ const GROUPS = Object.freeze([
     'colorGrading',
     'sunFlare',
     'buildingWindowVisuals',
-    'asphaltNoise',
-    'vehicleVisualSmoothing'
+    'asphaltNoise'
 ]);
 
 function parseLooseBool(value, fallback) {
@@ -65,8 +63,7 @@ function getDefaultSettings() {
         colorGrading: sanitizeColorGradingSettings(COLOR_GRADING_DEFAULTS),
         sunFlare: sanitizeSunFlareSettings(SUN_FLARE_DEFAULTS),
         buildingWindowVisuals: sanitizeBuildingWindowVisualsSettings(BUILDING_WINDOW_VISUALS_DEFAULTS),
-        asphaltNoise: sanitizeAsphaltNoiseSettings(ASPHALT_NOISE_DEFAULTS),
-        vehicleVisualSmoothing: sanitizeVehicleVisualSmoothingSettings(VEHICLE_VISUAL_SMOOTHING_DEFAULTS)
+        asphaltNoise: sanitizeAsphaltNoiseSettings(ASPHALT_NOISE_DEFAULTS)
     };
 }
 
@@ -84,8 +81,7 @@ function sanitizeSettings(input) {
         colorGrading: sanitizeColorGradingSettings(normalized.colorGrading ?? defaults.colorGrading),
         sunFlare: sanitizeSunFlareSettings(normalized.sunFlare ?? defaults.sunFlare),
         buildingWindowVisuals: sanitizeBuildingWindowVisualsSettings(normalized.buildingWindowVisuals ?? defaults.buildingWindowVisuals),
-        asphaltNoise: sanitizeAsphaltNoiseSettings(normalized.asphaltNoise ?? defaults.asphaltNoise),
-        vehicleVisualSmoothing: sanitizeVehicleVisualSmoothingSettings(normalized.vehicleVisualSmoothing ?? defaults.vehicleVisualSmoothing)
+        asphaltNoise: sanitizeAsphaltNoiseSettings(normalized.asphaltNoise ?? defaults.asphaltNoise)
     };
 }
 
@@ -208,14 +204,6 @@ function normalizeSettingsBooleans(src) {
         };
     }
 
-    const vehicleVisualSmoothing = src.vehicleVisualSmoothing && typeof src.vehicleVisualSmoothing === 'object' ? src.vehicleVisualSmoothing : null;
-    if (vehicleVisualSmoothing) {
-        out.vehicleVisualSmoothing = {
-            ...vehicleVisualSmoothing,
-            enabled: parseLooseBool(vehicleVisualSmoothing.enabled, vehicleVisualSmoothing.enabled)
-        };
-    }
-
     return out;
 }
 
@@ -310,7 +298,6 @@ export function applyOptionsPresetToDraft(draft, preset) {
     if (includes.sunFlare) out.sunFlare = settings.sunFlare;
     if (includes.buildingWindowVisuals) out.buildingWindowVisuals = settings.buildingWindowVisuals;
     if (includes.asphaltNoise) out.asphaltNoise = settings.asphaltNoise;
-    if (includes.vehicleVisualSmoothing) out.vehicleVisualSmoothing = settings.vehicleVisualSmoothing;
 
     return out;
 }

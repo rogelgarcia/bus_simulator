@@ -18,7 +18,6 @@ import { saveColorGradingSettings } from '../graphics/visuals/postprocessing/Col
 import { getResolvedSunFlareSettings, saveSunFlareSettings } from '../graphics/visuals/sun/SunFlareSettings.js';
 import { saveAtmosphereSettings } from '../graphics/visuals/atmosphere/AtmosphereSettings.js';
 import { getResolvedVehicleMotionDebugSettings, saveVehicleMotionDebugSettings } from '../app/vehicle/VehicleMotionDebugSettings.js';
-import { getResolvedVehicleVisualSmoothingSettings, saveVehicleVisualSmoothingSettings } from '../app/vehicle/VehicleVisualSmoothingSettings.js';
 
 function isEditableTarget(target) {
     const el = target && typeof target === 'object' ? target : null;
@@ -73,7 +72,6 @@ export class OptionsState {
         const buildingWindowVisuals = getResolvedBuildingWindowVisualsSettings();
         const asphaltNoise = getResolvedAsphaltNoiseSettings();
         const vehicleMotionDebug = this.engine?.vehicleMotionDebugSettings ?? getResolvedVehicleMotionDebugSettings();
-        const vehicleVisualSmoothing = this.engine?.vehicleVisualSmoothingSettings ?? getResolvedVehicleVisualSmoothingSettings();
 
         this._original = {
             lighting: lighting && typeof lighting === 'object' ? JSON.parse(JSON.stringify(lighting)) : null,
@@ -91,9 +89,6 @@ export class OptionsState {
             asphaltNoise: asphaltNoise && typeof asphaltNoise === 'object' ? JSON.parse(JSON.stringify(asphaltNoise)) : null,
             vehicleMotionDebug: vehicleMotionDebug && typeof vehicleMotionDebug === 'object'
                 ? JSON.parse(JSON.stringify(vehicleMotionDebug))
-                : null,
-            vehicleVisualSmoothing: vehicleVisualSmoothing && typeof vehicleVisualSmoothing === 'object'
-                ? JSON.parse(JSON.stringify(vehicleVisualSmoothing))
                 : null
         };
         if (this._original.lighting?.ibl && typeof this._original.lighting.ibl === 'object') {
@@ -225,9 +220,6 @@ export class OptionsState {
             initialVehicleMotionDebug: vehicleMotionDebug && typeof vehicleMotionDebug === 'object'
                 ? JSON.parse(JSON.stringify(vehicleMotionDebug))
                 : null,
-            initialVehicleVisualSmoothing: vehicleVisualSmoothing && typeof vehicleVisualSmoothing === 'object'
-                ? JSON.parse(JSON.stringify(vehicleVisualSmoothing))
-                : null,
             getIblDebugInfo: () => this.engine?.getIBLDebugInfo?.() ?? null,
             getPostProcessingDebugInfo: () => ({
                 postActive: !!this.engine?.isPostProcessingActive,
@@ -281,7 +273,6 @@ export class OptionsState {
         saveSunFlareSettings(draft?.sunFlare ?? null);
         saveAsphaltNoiseSettings(draft?.asphaltNoise ?? null);
         saveVehicleMotionDebugSettings(draft?.vehicleMotionDebug ?? null);
-        saveVehicleVisualSmoothingSettings(draft?.vehicleVisualSmoothing ?? null);
         if (this._overlay) {
             this.sm.popOverlay();
             return;
@@ -309,7 +300,6 @@ export class OptionsState {
         const sunFlare = d?.sunFlare ?? null;
         const asphaltNoise = d?.asphaltNoise ?? null;
         const vehicleMotionDebug = d?.vehicleMotionDebug ?? null;
-        const vehicleVisualSmoothing = d?.vehicleVisualSmoothing ?? null;
 
         this.engine?.setShadowSettings?.(shadows ?? null);
         this.engine?.setLightingSettings?.(lighting ?? null);
@@ -320,7 +310,6 @@ export class OptionsState {
         if (sunBloom) this.engine?.setSunBloomSettings?.(sunBloom);
         if (grading) this.engine?.setColorGradingSettings?.(grading);
         if (vehicleMotionDebug) this.engine?.setVehicleMotionDebugSettings?.(vehicleMotionDebug);
-        if (vehicleVisualSmoothing) this.engine?.setVehicleVisualSmoothingSettings?.(vehicleVisualSmoothing);
         const desiredProbeVisible = lighting?.ibl?.showProbeSphere !== undefined ? !!lighting.ibl.showProbeSphere : false;
         const probe = this.engine?.scene?.getObjectByName?.('ibl_probe_sphere') ?? null;
         if (probe) probe.visible = desiredProbeVisible;

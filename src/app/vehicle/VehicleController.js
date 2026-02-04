@@ -53,8 +53,6 @@ export class VehicleController {
         this._api = options.api ?? null;
         this._anchor = options.anchor ?? null;
         this._lastWheelSpin = 0;
-        this._getVisualSmoothingSettings = typeof options.getVisualSmoothingSettings === 'function' ? options.getVisualSmoothingSettings : null;
-        this._visualPose = null;
 
         // Subscribe to input events
         this._unsubInput = this.eventBus.on('input:controls', (e) => {
@@ -75,7 +73,6 @@ export class VehicleController {
         this._api = api;
         this._anchor = anchor;
         this._lastWheelSpin = 0;
-        this._visualPose = null;
     }
 
     /**
@@ -170,8 +167,6 @@ export class VehicleController {
         // Apply locomotion state (position, yaw, steering, wheel spin)
         if (state.locomotion) {
             const loco = state.locomotion;
-            const smoothing = this._getVisualSmoothingSettings ? (this._getVisualSmoothingSettings() ?? null) : null;
-            const smoothEnabled = smoothing?.enabled === true;
 
             // Move anchor position
             if (this._anchor && loco.position) {
@@ -179,58 +174,15 @@ export class VehicleController {
                 const targetZ = loco.position.z;
                 const targetYaw = typeof loco.yaw === 'number' ? loco.yaw : null;
 
-                if (!smoothEnabled) {
-                    this._anchor.position.x = targetX;
-                    this._anchor.position.z = targetZ;
-                    if (targetYaw !== null) this._anchor.rotation.y = targetYaw;
-                    this._visualPose = { x: targetX, z: targetZ, yaw: targetYaw ?? this._anchor.rotation.y };
-                } else {
-                    if (!this._visualPose) {
-                        this._visualPose = {
-                            x: Number.isFinite(this._anchor.position.x) ? this._anchor.position.x : targetX,
-                            z: Number.isFinite(this._anchor.position.z) ? this._anchor.position.z : targetZ,
-                            yaw: Number.isFinite(this._anchor.rotation?.y) ? this._anchor.rotation.y : (targetYaw ?? 0)
-                        };
-                    }
-
-                    const cur = this._visualPose;
-                    const dx = targetX - cur.x;
-                    const dz = targetZ - cur.z;
-                    const dist = Math.hypot(dx, dz);
-
-                    const maxLagMeters = Number.isFinite(smoothing?.maxLagMeters) ? smoothing.maxLagMeters : 2.0;
-                    const catchupFactor = Number.isFinite(smoothing?.catchupFactor) ? smoothing.catchupFactor : 1.6;
-                    const nominalFps = Number.isFinite(smoothing?.nominalFps) ? smoothing.nominalFps : 60;
-                    const nominalDt = nominalFps > 0 ? (1 / nominalFps) : (1 / 60);
-
-                    const speed = Number.isFinite(loco.speed) ? Math.abs(loco.speed) : 0;
-                    const maxStep = Math.max(0.01, speed * nominalDt * Math.max(1.0, catchupFactor));
-
-                    if (dist > maxLagMeters) {
-                        cur.x = targetX;
-                        cur.z = targetZ;
-                    } else if (dist > maxStep && maxStep > 0) {
-                        const t = maxStep / dist;
-                        cur.x += dx * t;
-                        cur.z += dz * t;
-                    } else {
-                        cur.x = targetX;
-                        cur.z = targetZ;
-                    }
-
-                    this._anchor.position.x = cur.x;
-                    this._anchor.position.z = cur.z;
-                    if (targetYaw !== null) {
-                        this._anchor.rotation.y = targetYaw;
-                        cur.yaw = targetYaw;
-                    }
-                }
+                this._anchor.position.x = targetX;
+                this._anchor.position.z = targetZ;
+                if (targetYaw !== null) this._anchor.rotation.y = targetYaw;
                 // Y is controlled by road height, not locomotion
             }
 
             // Rotate anchor yaw
             if (this._anchor && typeof loco.yaw === 'number') {
-                // (Handled above to keep smoothing consistent.)
+                // (Handled above.)
             }
 
             // Steering angle (visual wheel turn)

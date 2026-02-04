@@ -15,7 +15,6 @@ import { is3dLutSupported, loadCubeLut3DTexture } from '../../graphics/visuals/p
 import { getResolvedSunBloomSettings, sanitizeSunBloomSettings } from '../../graphics/visuals/postprocessing/SunBloomSettings.js';
 import { getOrCreateGpuFrameTimer } from '../../graphics/engine3d/perf/GpuFrameTimer.js';
 import { getResolvedVehicleMotionDebugSettings, sanitizeVehicleMotionDebugSettings } from '../vehicle/VehicleMotionDebugSettings.js';
-import { getResolvedVehicleVisualSmoothingSettings, sanitizeVehicleVisualSmoothingSettings } from '../vehicle/VehicleVisualSmoothingSettings.js';
 
 export class GameEngine {
     constructor({
@@ -145,10 +144,6 @@ export class GameEngine {
         this._vehicleMotionDebug = {
             settings: getResolvedVehicleMotionDebugSettings(),
             frameIndex: 0
-        };
-
-        this._vehicleVisualSmoothing = {
-            settings: getResolvedVehicleVisualSmoothingSettings()
         };
 
         this._onResize = () => this.resize();
@@ -891,7 +886,6 @@ export class GameEngine {
         this.reloadBloomSettings();
         this.reloadSunBloomSettings();
         this.reloadColorGradingSettings();
-        this.reloadVehicleVisualSmoothingSettings();
     }
 
     /**
@@ -1119,19 +1113,6 @@ export class GameEngine {
 
     reloadVehicleMotionDebugSettings() {
         this.setVehicleMotionDebugSettings(getResolvedVehicleMotionDebugSettings());
-    }
-
-    get vehicleVisualSmoothingSettings() {
-        return this._vehicleVisualSmoothing?.settings ?? null;
-    }
-
-    setVehicleVisualSmoothingSettings(settings) {
-        if (!this._vehicleVisualSmoothing) return;
-        this._vehicleVisualSmoothing.settings = sanitizeVehicleVisualSmoothingSettings(settings);
-    }
-
-    reloadVehicleVisualSmoothingSettings() {
-        this.setVehicleVisualSmoothingSettings(getResolvedVehicleVisualSmoothingSettings());
     }
 
     getPhysicsLoopDebugInfo() {

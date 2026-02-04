@@ -49,13 +49,6 @@ export const scenarioVehicleMotionFlickerProbe = {
         anchor.add(body);
         engine.scene.add(anchor);
 
-        const smoothing = options?.visualSmoothing && typeof options.visualSmoothing === 'object' ? options.visualSmoothing : null;
-        if (smoothing) {
-            engine.setVehicleVisualSmoothingSettings?.(smoothing);
-        } else {
-            engine.setVehicleVisualSmoothingSettings?.({ enabled: false });
-        }
-
         const target = { x: 0, z: 0, yaw: 0 };
         const speedMps = Number.isFinite(options?.speedMps) ? Number(options.speedMps) : 12.0;
 
@@ -81,9 +74,7 @@ export const scenarioVehicleMotionFlickerProbe = {
             }
         };
 
-        const controller = new VehicleController('player', fakePhysics, fakeEventBus, {
-            getVisualSmoothingSettings: () => engine.vehicleVisualSmoothingSettings
-        });
+        const controller = new VehicleController('player', fakePhysics, fakeEventBus);
         controller.setVehicleApi(null, anchor);
 
         const samples = [];
