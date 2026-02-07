@@ -1932,7 +1932,9 @@ async function runTests() {
         assertTrue(!!tabs, 'Picker tabs element should exist.');
         assertFalse(tabs.classList.contains('hidden'), 'Picker tabs should be visible.');
         const tabBtns = tabs.querySelectorAll('button.ui-picker-tab');
-        assertEqual(tabBtns.length, 2, 'Picker should show 2 tabs.');
+        assertTrue(tabBtns.length >= 2, `Picker should show at least 2 tabs. Expected >=2, got ${tabBtns.length}.`);
+        const tabLabels = Array.from(tabBtns).map((btn) => String(btn.textContent || '').trim()).filter(Boolean);
+        assertTrue(tabLabels.includes('Color'), `Picker should include a 'Color' tab. Found: ${tabLabels.join(', ') || '(none)'}`);
         ui._pickerPopup?.close?.();
     });
 

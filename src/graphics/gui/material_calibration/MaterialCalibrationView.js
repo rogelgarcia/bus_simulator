@@ -1,10 +1,10 @@
 // src/graphics/gui/material_calibration/MaterialCalibrationView.js
 // Orchestrates UI, input, and 3D rendering for the Material Calibration tool.
 import * as THREE from 'three';
-import { getPbrMaterialClassOptions, getPbrMaterialOptions } from '../../content3d/catalogs/PbrMaterialCatalog.js';
+import { getPbrMaterialClassOptions, getPbrMaterialOptions, getPbrMaterialTileMeters } from '../../content3d/catalogs/PbrMaterialCatalog.js';
 import { MaterialCalibrationScene } from './MaterialCalibrationScene.js';
 import { MaterialCalibrationUI } from './MaterialCalibrationUI.js';
-import { getMaterialCalibrationIlluminationPresetById } from './MaterialCalibrationIlluminationPresets.js';
+import { getMaterialCalibrationIlluminationPresetById, getMaterialCalibrationIlluminationPresetOptions } from './MaterialCalibrationIlluminationPresets.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -89,6 +89,52 @@ function sanitizeOverrides(value) {
     if (Number.isFinite(Number(src.albedoHueDegrees))) out.albedoHueDegrees = clamp(src.albedoHueDegrees, -180, 180);
     if (Number.isFinite(Number(src.albedoSaturation))) out.albedoSaturation = clamp(src.albedoSaturation, -1, 1);
     return out;
+}
+
+function getDefaultOverridesForMaterial(materialId) {
+    const id = typeof materialId === 'string' ? materialId.trim() : '';
+    if (!id) return null;
+    return {
+        tileMeters: getPbrMaterialTileMeters(id),
+        albedoBrightness: 1.0,
+        albedoSaturation: 0.0,
+        roughness: 1.0,
+        normalStrength: 1.0,
+        aoIntensity: 1.0,
+        metalness: 0.0
+    };
+}
+
+function diffOverridesFromDefaults(materialId, overrides) {
+    const defaults = getDefaultOverridesForMaterial(materialId);
+    const ovr = overrides && typeof overrides === 'object' ? overrides : null;
+    if (!defaults || !ovr) return {};
+
+    const out = {};
+    const eps = 1e-6;
+    const addIfDiff = (key, value) => {
+        const v = Number(value);
+        const d = Number(defaults[key]);
+        if (!Number.isFinite(v) || !Number.isFinite(d)) return;
+        if (Math.abs(v - d) <= eps) return;
+        out[key] = v;
+    };
+
+    addIfDiff('tileMeters', ovr.tileMeters);
+    addIfDiff('albedoBrightness', ovr.albedoBrightness);
+    addIfDiff('albedoSaturation', ovr.albedoSaturation);
+    addIfDiff('roughness', ovr.roughness);
+    addIfDiff('normalStrength', ovr.normalStrength);
+    addIfDiff('aoIntensity', ovr.aoIntensity);
+    addIfDiff('metalness', ovr.metalness);
+
+    return out;
+}
+
+function getEffectiveOverridesForMaterial(materialId, storedOverrides) {
+    const defaults = getDefaultOverridesForMaterial(materialId) ?? {};
+    const ovr = storedOverrides && typeof storedOverrides === 'object' ? storedOverrides : {};
+    return { ...defaults, ...ovr };
 }
 
 function readStoredState() {
@@ -307,8 +353,7 @@ export class MaterialCalibrationView {
     _syncUiStatic() {
         this.ui.setClassOptions(getPbrMaterialClassOptions());
         this.ui.setMaterialOptions(this._materialOptions);
-        this.ui.setIlluminationPresetOptions(getMaterialCalibrationIlluminationPresetById('neutral') ? null : null);
-        this.ui.setIlluminationPresetOptions?.(null);
+        this.ui.setIlluminationPresetOptions(getMaterialCalibrationIlluminationPresetOptions());
     }
 
     _syncSceneFromState({ keepCamera = true } = {}) {
@@ -343,7 +388,7 @@ export class MaterialCalibrationView {
         const activeMaterialId = sanitizeMaterialId(state.slotMaterialIds[state.activeSlotIndex]);
         this.ui.setActiveMaterial({
             materialId: activeMaterialId,
-            overrides: activeMaterialId ? (state.overridesByMaterialId[activeMaterialId] ?? null) : null
+            overrides: activeMaterialId ? getEffectiveOverridesForMaterial(activeMaterialId, state.overridesByMaterialId[activeMaterialId] ?? null) : null
         });
 
         this.ui.setRulerEnabled(this._rulerEnabled);
@@ -449,7 +494,8 @@ export class MaterialCalibrationView {
     _setMaterialOverrides(materialId, overrides) {
         const id = sanitizeMaterialId(materialId);
         if (!id) return;
-        const clean = sanitizeOverrides(overrides);
+        const raw = sanitizeOverrides(overrides);
+        const clean = diffOverridesFromDefaults(id, raw);
         if (Object.keys(clean).length) this._state.overridesByMaterialId[id] = clean;
         else delete this._state.overridesByMaterialId[id];
 
@@ -690,4 +736,3 @@ export class MaterialCalibrationView {
         for (const k of Object.keys(this._keys)) this._keys[k] = false;
     }
 }
-

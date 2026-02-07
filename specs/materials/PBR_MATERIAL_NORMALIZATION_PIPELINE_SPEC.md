@@ -127,11 +127,14 @@ Manual actions:
   - normal/roughness/metalness/AO are linear
 
 Tools / automation:
-- Implement a **Material Calibration Tool** view:
-  - fixed geometry set (material ball, flat panel, beveled box)
-  - side-by-side comparisons across selected materials
-  - quick switching between baseline IBL presets
-  - locked camera positions (optional) for repeatable screenshots
+- Implement a **Material Calibration Tool** view (state: `material_calibration`):
+  - fixed reference geometry set (panel + sphere/cube)
+  - side-by-side comparisons across up to 3 selected materials
+  - deterministic illumination presets (no drift)
+  - camera focus that preserves orbit style
+
+Specification:
+- `specs/materials/PBR_MATERIAL_CALIBRATION_TOOL_SPEC.md`
 
 Success criteria:
 - The same material looks the same across runs and across machines (within tolerance).
