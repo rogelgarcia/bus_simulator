@@ -4,6 +4,7 @@
 // When `tuning.engine` is provided, EngineTransmissionSim computes wheel force from `maxTorque`/ratios and is clamped by `engineForce`.
 import * as THREE from 'three';
 import { PhysicsLoop } from '../PhysicsLoop.js';
+import { FixedTimestepPoseBuffer } from '../interpolation/FixedTimestepPoseBuffer.js';
 import { loadRapier } from '../rapier/RapierLoader.js';
 import {
     DEFAULT_ENGINE_GEARS,
@@ -385,7 +386,8 @@ export class RapierVehicleSim {
 
         this.loop = new PhysicsLoop({ fixedDt, maxSubSteps });
         this.loop.add({
-            fixedUpdate: (dt) => this._fixedUpdate(dt)
+            fixedUpdate: (dt) => this._fixedUpdate(dt),
+            interpolate: (alpha) => this._interpolate(alpha)
         });
 
         this._vehicles = new Map();
@@ -530,6 +532,22 @@ export class RapierVehicleSim {
         for (const entry of this._vehicles.values()) {
             if (!entry.controller || !entry.body) continue;
             this._syncVehicleState(entry, dt);
+        }
+    }
+
+    _interpolate(alpha) {
+        const a = Number(alpha);
+        for (const entry of this._vehicles.values()) {
+            const buffer = entry.poseBuffer;
+            const renderPose = entry.state.renderPose;
+            buffer.interpolate(a, renderPose);
+            renderPose.alpha = a;
+
+            const anchor = entry.anchor;
+            if (!anchor?.position || !anchor?.rotation) continue;
+            anchor.position.x = renderPose.position.x;
+            anchor.position.z = renderPose.position.z;
+            anchor.rotation.y = renderPose.yaw;
         }
     }
 
@@ -721,6 +739,8 @@ export class RapierVehicleSim {
             }
         }
         susp.bodyHeave = heave;
+
+        entry.poseBuffer.push(loco);
     }
 
     _computeSteerAngles(entry, steering) {
@@ -942,6 +962,11 @@ export class RapierVehicleSim {
                     steerAngleRight: 0,
                     wheelSpinAccum: 0
                 },
+                renderPose: {
+                    position: { x: startX, y: startY, z: startZ },
+                    yaw: startYaw,
+                    alpha: 0
+                },
                 suspension: {
                     bodyPitch: 0,
                     bodyRoll: 0,
@@ -959,6 +984,7 @@ export class RapierVehicleSim {
             controller: null,
             centerLocal: new THREE.Vector3(),
             chassisSize: null,
+            poseBuffer: new FixedTimestepPoseBuffer({ position: { x: startX, y: startY, z: startZ }, yaw: startYaw }),
             wheelRadius: DEFAULT_CONFIG.wheelRadius,
             wheelSpinAccum: 0,
             wheelIndices: { front: [], rear: [], frontLeft: [], frontRight: [], rearLeft: [], rearRight: [], all: [] },

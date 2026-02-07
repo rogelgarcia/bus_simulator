@@ -1,4 +1,5 @@
 // Headless browser tests: BF2 mesh inspection for a multi-bay facade config.
+import fs from 'node:fs/promises';
 import test, { expect } from '@playwright/test';
 
 test.setTimeout(120_000);
@@ -482,7 +483,7 @@ async function getMeshInspectionReport(page) {
     });
 }
 
-test('BF2: mesh inspection report for a 3-bay linked facade config', async ({ page }) => {
+test('BF2: mesh inspection report for a 3-bay linked facade config', async ({ page }, testInfo) => {
     const getErrors = await attachFailFastConsole({ page });
     await page.goto('/index.html?ibl=0&bloom=0&coreTests=0');
 
@@ -497,31 +498,44 @@ test('BF2: mesh inspection report for a 3-bay linked facade config', async ({ pa
     await loadConfigIntoBf2(page, BF2_BUILDING_BUILDING_CONFIG);
 
     const report = await getMeshInspectionReport(page);
-    expect(report).not.toBeNull();
+    const errors = await getErrors();
 
-    expect(report.counts.stripsByFace).toEqual({ A: 0, B: 0, C: 0, D: 0 });
-    expect(report.counts.stripItemIdsByFace.A).toEqual([]);
-    expect(report.counts.stripItemIdsByFace.C).toEqual([]);
-    expect(report.invalid).toEqual({
-        positions: 0,
-        uvs: 0,
-        indicesOutOfRange: 0,
-        degenerateTriangles: 0
-    });
+    try {
+        expect(report).not.toBeNull();
 
-    expect(report.wall.material.isMultiMaterial).toBe(true);
-    expect(report.wall.material.materialCount).toBe(4);
-    expect(report.wall.material.polygonOffsetEnabledAny).toBe(false);
+        expect(report.counts.stripsByFace).toEqual({ A: 0, B: 0, C: 0, D: 0 });
+        expect(report.counts.stripItemIdsByFace.A).toEqual([]);
+        expect(report.counts.stripItemIdsByFace.C).toEqual([]);
+        expect(report.invalid).toEqual({
+            positions: 0,
+            uvs: 0,
+            indicesOutOfRange: 0,
+            degenerateTriangles: 0
+        });
 
-    expect(report.faces.A.baselineEdgeCount).toBeGreaterThan(0);
-    expect(report.faces.B.baselineEdgeCount).toBeGreaterThan(0);
-    expect(report.faces.C.baselineEdgeCount).toBeGreaterThan(0);
-    expect(report.faces.D.baselineEdgeCount).toBeGreaterThan(0);
+        expect(report.wall.material.isMultiMaterial).toBe(true);
+        expect(report.wall.material.materialCount).toBe(4);
+        expect(report.wall.material.polygonOffsetEnabledAny).toBe(false);
 
-    if (process.env.BF2_MESH_REPORT === '1') {
-        // eslint-disable-next-line no-console
-        console.log(JSON.stringify(report, null, 2));
+        expect(report.faces.A.baselineEdgeCount).toBeGreaterThan(0);
+        expect(report.faces.B.baselineEdgeCount).toBeGreaterThan(0);
+        expect(report.faces.C.baselineEdgeCount).toBeGreaterThan(0);
+        expect(report.faces.D.baselineEdgeCount).toBeGreaterThan(0);
+
+        if (process.env.BF2_MESH_REPORT === '1') {
+            // eslint-disable-next-line no-console
+            console.log(JSON.stringify(report, null, 2));
+        }
+
+        expect(errors).toEqual([]);
+    } catch (err) {
+        await fs.writeFile(testInfo.outputPath('bf2_mesh_inspection_report.json'), JSON.stringify({
+            report,
+            errors,
+            config: BF2_BUILDING_BUILDING_CONFIG
+        }, null, 2), 'utf-8');
+        throw err;
     }
 
-    expect(await getErrors()).toEqual([]);
+    expect(errors).toEqual([]);
 });

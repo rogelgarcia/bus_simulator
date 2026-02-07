@@ -1,10 +1,50 @@
 // src/graphics/content3d/catalogs/PbrMaterialCatalog.js
 // Defines a stable registry of imported PBR materials (URLs + building eligibility).
 import { getPbrAssetsEnabled } from '../materials/PbrAssetsRuntime.js';
+import { PBR_MATERIAL_CATALOG } from '../../../../assets/public/pbr/_catalog_index.js';
 
 const PBR_ID_PREFIX = 'pbr.';
 
 const PBR_BASE_URL = new URL('../../../../assets/public/pbr/', import.meta.url);
+
+export const PBR_MATERIAL_CLASS = Object.freeze({
+    ASPHALT: 'asphalt',
+    CONCRETE: 'concrete',
+    BRICK: 'brick',
+    PLASTER_STUCCO: 'plaster_stucco',
+    STONE: 'stone',
+    METAL: 'metal',
+    ROOF_TILES: 'roof_tiles',
+    PAVERS: 'pavers',
+    GRASS: 'grass',
+    GROUND: 'ground'
+});
+
+const PBR_MATERIAL_CLASS_META = Object.freeze({
+    [PBR_MATERIAL_CLASS.ASPHALT]: Object.freeze({ id: PBR_MATERIAL_CLASS.ASPHALT, label: 'Asphalt' }),
+    [PBR_MATERIAL_CLASS.CONCRETE]: Object.freeze({ id: PBR_MATERIAL_CLASS.CONCRETE, label: 'Concrete' }),
+    [PBR_MATERIAL_CLASS.BRICK]: Object.freeze({ id: PBR_MATERIAL_CLASS.BRICK, label: 'Brick' }),
+    [PBR_MATERIAL_CLASS.PLASTER_STUCCO]: Object.freeze({ id: PBR_MATERIAL_CLASS.PLASTER_STUCCO, label: 'Plaster / Stucco' }),
+    [PBR_MATERIAL_CLASS.STONE]: Object.freeze({ id: PBR_MATERIAL_CLASS.STONE, label: 'Stone' }),
+    [PBR_MATERIAL_CLASS.METAL]: Object.freeze({ id: PBR_MATERIAL_CLASS.METAL, label: 'Metal' }),
+    [PBR_MATERIAL_CLASS.ROOF_TILES]: Object.freeze({ id: PBR_MATERIAL_CLASS.ROOF_TILES, label: 'Roof Tiles' }),
+    [PBR_MATERIAL_CLASS.PAVERS]: Object.freeze({ id: PBR_MATERIAL_CLASS.PAVERS, label: 'Pavers' }),
+    [PBR_MATERIAL_CLASS.GRASS]: Object.freeze({ id: PBR_MATERIAL_CLASS.GRASS, label: 'Grass' }),
+    [PBR_MATERIAL_CLASS.GROUND]: Object.freeze({ id: PBR_MATERIAL_CLASS.GROUND, label: 'Ground' })
+});
+
+const PBR_MATERIAL_CLASS_ORDER = Object.freeze([
+    PBR_MATERIAL_CLASS.ASPHALT,
+    PBR_MATERIAL_CLASS.CONCRETE,
+    PBR_MATERIAL_CLASS.BRICK,
+    PBR_MATERIAL_CLASS.PLASTER_STUCCO,
+    PBR_MATERIAL_CLASS.STONE,
+    PBR_MATERIAL_CLASS.METAL,
+    PBR_MATERIAL_CLASS.ROOF_TILES,
+    PBR_MATERIAL_CLASS.PAVERS,
+    PBR_MATERIAL_CLASS.GRASS,
+    PBR_MATERIAL_CLASS.GROUND
+]);
 
 const MAPS = Object.freeze({
     baseColor: 'basecolor.jpg',
@@ -31,12 +71,25 @@ function toTitle(slug) {
         .join(' ');
 }
 
-function makeId(slug) {
-    return `${PBR_ID_PREFIX}${slug}`;
-}
-
 function normalizeRoot(value) {
     return value === 'surface' ? 'surface' : 'wall';
+}
+
+function normalizeClassId(value) {
+    const id = typeof value === 'string' ? value.trim() : '';
+    return PBR_MATERIAL_CLASS_META[id] ? id : null;
+}
+
+function requireString(value, name) {
+    const v = typeof value === 'string' ? value.trim() : '';
+    if (!v) throw new Error(`[PbrMaterialCatalog] Missing required ${name}.`);
+    return v;
+}
+
+function requirePositiveNumber(value, name) {
+    const v = Number(value);
+    if (!(Number.isFinite(v) && v > 0)) throw new Error(`[PbrMaterialCatalog] Expected ${name} to be a positive number.`);
+    return v;
 }
 
 function normalizeVariant(value) {
@@ -64,6 +117,14 @@ function normalizeMapFiles(value) {
     add('displacement');
 
     return Object.keys(out).length ? out : null;
+}
+
+function normalizeNormalizationMeta(value) {
+    const src = value && typeof value === 'object' ? value : {};
+    const notes = typeof src.notes === 'string' ? src.notes : '';
+    const albedoNotes = typeof src.albedoNotes === 'string' ? src.albedoNotes : '';
+    const roughnessIntent = typeof src.roughnessIntent === 'string' ? src.roughnessIntent : '';
+    return Object.freeze({ notes, albedoNotes, roughnessIntent });
 }
 
 function makePreviewUrl({ id, label }) {
@@ -117,99 +178,51 @@ function getCachedPreviewUrl({ id, label }) {
     return url;
 }
 
-const MATERIALS = Object.freeze([
-    Object.freeze({ id: makeId('asphalt_02'), label: 'Asphalt 02', root: 'surface', buildingEligible: false }),
-    Object.freeze({ id: makeId('brick_crosswalk'), label: 'Brick Crosswalk', root: 'surface', buildingEligible: false }),
-    Object.freeze({ id: makeId('clay_roof_tiles_02'), label: 'Clay Roof Tiles 02', root: 'surface', buildingEligible: false }),
-    Object.freeze({ id: makeId('coast_sand_rocks_02'), label: 'Coast Sand Rocks 02', root: 'surface', buildingEligible: false, groundEligible: true }),
-    Object.freeze({ id: makeId('forrest_ground_01'), label: 'Forest Ground 01', root: 'surface', buildingEligible: false, groundEligible: true }),
-    Object.freeze({ id: makeId('gravelly_sand'), label: 'Gravelly Sand', root: 'surface', buildingEligible: false, groundEligible: true }),
-    Object.freeze({
-        id: makeId('grass_001'),
-        label: 'Grass 001',
-        root: 'surface',
-        buildingEligible: false,
-        groundEligible: true,
-        mapFiles: Object.freeze({
-            baseColor: 'basecolor.png',
-            normal: 'normal_gl.png',
-            ao: 'ao.png',
-            roughness: 'roughness.png',
-            displacement: 'displacement.png'
-        })
-    }),
-    Object.freeze({
-        id: makeId('grass_004'),
-        label: 'Grass 004',
-        root: 'surface',
-        buildingEligible: false,
-        groundEligible: true,
-        mapFiles: Object.freeze({
-            baseColor: 'basecolor.png',
-            normal: 'normal_gl.png',
-            ao: 'ao.png',
-            roughness: 'roughness.png',
-            displacement: 'displacement.png'
-        })
-    }),
-    Object.freeze({
-        id: makeId('grass_005'),
-        label: 'Grass 005',
-        root: 'surface',
-        buildingEligible: false,
-        groundEligible: true,
-        mapFiles: Object.freeze({
-            baseColor: 'basecolor.png',
-            normal: 'normal_gl.png',
-            ao: 'ao.png',
-            roughness: 'roughness.png',
-            displacement: 'displacement.png'
-        })
-    }),
-    Object.freeze({
-        id: makeId('ground_037'),
-        label: 'Ground 037',
-        root: 'surface',
-        buildingEligible: false,
-        groundEligible: true,
-        mapFiles: Object.freeze({
-            baseColor: 'basecolor.png',
-            normal: 'normal_gl.png',
-            ao: 'ao.png',
-            roughness: 'roughness.png',
-            displacement: 'displacement.png'
-        })
-    }),
-    Object.freeze({ id: makeId('patterned_concrete_pavers'), label: 'Patterned Concrete Pavers', root: 'surface', buildingEligible: false }),
-    Object.freeze({ id: makeId('patterned_paving'), label: 'Patterned Paving', root: 'surface', buildingEligible: false }),
-    Object.freeze({ id: makeId('red_slate_roof_tiles_01'), label: 'Red Slate Roof Tiles 01', root: 'surface', buildingEligible: false }),
-    Object.freeze({ id: makeId('rocky_terrain_02'), label: 'Rocky Terrain 02', root: 'surface', buildingEligible: false, groundEligible: true }),
+function normalizeCatalogEntry(entry) {
+    const src = entry && typeof entry === 'object' ? entry : null;
+    if (!src) throw new Error('[PbrMaterialCatalog] Invalid catalog entry (expected object).');
 
-    Object.freeze({ id: makeId('brick_wall_11'), label: 'Brick Wall 11', root: 'wall', buildingEligible: true }),
-    Object.freeze({ id: makeId('brick_wall_13'), label: 'Brick Wall 13', root: 'wall', buildingEligible: true }),
-    Object.freeze({ id: makeId('concrete'), label: 'Concrete', root: 'wall', buildingEligible: true }),
-    Object.freeze({ id: makeId('concrete_layers_02'), label: 'Concrete Layers 02', root: 'wall', buildingEligible: true }),
-    Object.freeze({ id: makeId('corrugated_iron_02'), label: 'Corrugated Iron 02', root: 'wall', buildingEligible: true }),
-    Object.freeze({ id: makeId('exterior_wall_cladding'), label: 'Exterior Wall Cladding', root: 'wall', buildingEligible: true }),
-    Object.freeze({ id: makeId('metal_plate'), label: 'Metal Plate', root: 'wall', buildingEligible: true }),
-    Object.freeze({ id: makeId('painted_brick'), label: 'Painted Brick', root: 'wall', buildingEligible: true }),
-    Object.freeze({ id: makeId('painted_plaster_wall'), label: 'Painted Plaster Wall', root: 'wall', buildingEligible: true }),
-    Object.freeze({ id: makeId('patterned_concrete_wall'), label: 'Patterned Concrete Wall', root: 'wall', buildingEligible: true }),
-    Object.freeze({ id: makeId('plaster_brick_pattern'), label: 'Plaster Brick Pattern', root: 'wall', buildingEligible: true }),
-    Object.freeze({ id: makeId('plastered_wall_02'), label: 'Plastered Wall 02', root: 'wall', buildingEligible: true }),
-    Object.freeze({ id: makeId('plastered_wall_04'), label: 'Plastered Wall 04', root: 'wall', buildingEligible: true }),
-    Object.freeze({ id: makeId('plastered_wall_05'), label: 'Plastered Wall 05', root: 'wall', buildingEligible: true }),
-    Object.freeze({ id: makeId('red_brick'), label: 'Red Brick', root: 'wall', buildingEligible: true }),
-    Object.freeze({ id: makeId('rock_wall_16'), label: 'Rock Wall 16', root: 'wall', buildingEligible: true }),
-    Object.freeze({ id: makeId('rough_concrete'), label: 'Rough Concrete', root: 'wall', buildingEligible: true }),
-    Object.freeze({ id: makeId('rustic_stone_wall_02'), label: 'Rustic Stone Wall 02', root: 'wall', buildingEligible: true }),
-    Object.freeze({ id: makeId('rusty_metal_shutter'), label: 'Rusty Metal Shutter', root: 'wall', buildingEligible: true }),
-    Object.freeze({ id: makeId('seaworn_sandstone_brick'), label: 'Seaworn Sandstone Brick', root: 'wall', buildingEligible: true }),
-    Object.freeze({ id: makeId('whitewashed_brick'), label: 'Whitewashed Brick', root: 'wall', buildingEligible: true }),
-    Object.freeze({ id: makeId('worn_mossy_plasterwall'), label: 'Worn Mossy Plasterwall', root: 'wall', buildingEligible: true })
-]);
+    const materialId = requireString(src.materialId ?? src.id, 'materialId');
+    if (!materialId.startsWith(PBR_ID_PREFIX)) throw new Error(`[PbrMaterialCatalog] Invalid materialId: ${materialId}`);
+    const slug = materialId.slice(PBR_ID_PREFIX.length);
+    if (!slug || slug.includes('/') || slug.includes('\\')) throw new Error(`[PbrMaterialCatalog] Invalid materialId slug: ${materialId}`);
+
+    const classId = normalizeClassId(src.classId);
+    if (!classId) throw new Error(`[PbrMaterialCatalog] Invalid classId for ${materialId}: ${String(src.classId ?? '')}`);
+
+    const root = normalizeRoot(src.root);
+    const label = typeof src.label === 'string' && src.label.trim() ? src.label.trim() : toTitle(slug);
+    const tileMeters = requirePositiveNumber(src.tileMeters, `tileMeters for ${materialId}`);
+    const buildingEligible = !!src.buildingEligible;
+    const groundEligible = !!src.groundEligible;
+    const mapFilesRaw = normalizeMapFiles(src.mapFiles);
+    const mapFiles = mapFilesRaw ? Object.freeze(mapFilesRaw) : null;
+
+    const files = mapFiles ?? MAPS;
+    const hasBase = typeof files.baseColor === 'string' && files.baseColor.trim();
+    const hasNormal = typeof files.normal === 'string' && files.normal.trim();
+    if (!hasBase || !hasNormal) throw new Error(`[PbrMaterialCatalog] Missing baseColor/normal mapFiles for ${materialId}.`);
+    const hasOrm = typeof files.orm === 'string' && files.orm.trim();
+    const hasExtra = !!(files.ao || files.roughness || files.metalness);
+    if (!hasOrm && !hasExtra) throw new Error(`[PbrMaterialCatalog] Missing orm or ao/roughness/metalness mapFiles for ${materialId}.`);
+
+    return Object.freeze({
+        id: materialId,
+        label,
+        classId,
+        root,
+        buildingEligible,
+        groundEligible,
+        tileMeters,
+        mapFiles,
+        normalization: normalizeNormalizationMeta(src.normalization)
+    });
+}
+
+const MATERIALS = Object.freeze((Array.isArray(PBR_MATERIAL_CATALOG) ? PBR_MATERIAL_CATALOG : []).map((entry) => normalizeCatalogEntry(entry)));
 
 const MATERIAL_BY_ID = new Map(MATERIALS.map((entry) => [entry.id, entry]));
+if (MATERIAL_BY_ID.size !== MATERIALS.length) throw new Error('[PbrMaterialCatalog] Duplicate materialId detected in PBR catalog.');
 
 export function isPbrMaterialId(materialId) {
     const id = typeof materialId === 'string' ? materialId : '';
@@ -228,8 +241,11 @@ export function getPbrMaterialExplicitTileMeters(materialId) {
     const override = MATERIAL_META_OVERRIDES[def.id] ?? null;
     const candidate = Number.isFinite(override?.tileMeters) ? override.tileMeters : def.tileMeters;
     const tile = Number(candidate);
-    if (Number.isFinite(tile) && tile > 0) return tile;
-    return null;
+    if (!(Number.isFinite(tile) && tile > 0)) return null;
+    const root = normalizeRoot(def.root);
+    const fallback = Number(DEFAULT_TILE_METERS_BY_ROOT[root] ?? 1.0);
+    if (Number.isFinite(fallback) && Math.abs(tile - fallback) <= 1e-6) return null;
+    return tile;
 }
 
 export function getPbrMaterialMeta(materialId) {
@@ -258,6 +274,8 @@ export function getPbrMaterialMeta(materialId) {
     return {
         id: def.id,
         label: getPbrMaterialLabel(def.id),
+        classId: def.classId ?? null,
+        classLabel: getPbrMaterialClassLabel(def.classId) ?? null,
         root,
         buildingEligible: !!def.buildingEligible,
         groundEligible: !!def.groundEligible,
@@ -300,6 +318,51 @@ export function getPbrMaterialLabel(materialId) {
     return def.label || toTitle(def.id.slice(PBR_ID_PREFIX.length));
 }
 
+export function getPbrMaterialClassLabel(classId) {
+    const id = typeof classId === 'string' ? classId.trim() : '';
+    return PBR_MATERIAL_CLASS_META[id]?.label ?? null;
+}
+
+export function getPbrMaterialClassOptions() {
+    return PBR_MATERIAL_CLASS_ORDER.map((id) => ({ id, label: PBR_MATERIAL_CLASS_META[id]?.label ?? id }));
+}
+
+function buildOptionsByClass(options) {
+    const list = Array.isArray(options) ? options : [];
+    const byClass = new Map();
+    for (const opt of list) {
+        const classId = typeof opt?.classId === 'string' ? opt.classId : null;
+        if (!classId) continue;
+        const bucket = byClass.get(classId);
+        if (bucket) bucket.push(opt);
+        else byClass.set(classId, [opt]);
+    }
+
+    const sections = [];
+    for (const classId of PBR_MATERIAL_CLASS_ORDER) {
+        const opts = byClass.get(classId) ?? [];
+        if (!opts.length) continue;
+        sections.push({
+            classId,
+            label: getPbrMaterialClassLabel(classId) ?? classId,
+            options: opts
+        });
+    }
+
+    const unknown = Array.from(byClass.entries())
+        .filter(([id]) => !PBR_MATERIAL_CLASS_META[id])
+        .flatMap(([, opts]) => opts);
+    if (unknown.length) {
+        sections.push({
+            classId: 'unknown',
+            label: 'Other',
+            options: unknown
+        });
+    }
+
+    return sections;
+}
+
 export function tryGetPbrMaterialIdFromUrl(url) {
     const raw = typeof url === 'string' ? url : '';
     if (!raw) return null;
@@ -311,7 +374,7 @@ export function tryGetPbrMaterialIdFromUrl(url) {
     if (slash <= 0) return null;
     const slug = rest.slice(0, slash);
     if (!slug) return null;
-    const id = makeId(slug);
+    const id = `${PBR_ID_PREFIX}${slug}`;
     return isPbrMaterialId(id) ? id : null;
 }
 
@@ -369,6 +432,8 @@ export function getPbrMaterialOptions() {
             label,
             previewUrl,
             root: entry.root,
+            classId: entry.classId ?? null,
+            classLabel: getPbrMaterialClassLabel(entry.classId) ?? null,
             buildingEligible: !!entry.buildingEligible,
             groundEligible: !!entry.groundEligible,
             tileMeters: meta?.tileMeters ?? null,
@@ -377,6 +442,18 @@ export function getPbrMaterialOptions() {
             maps: meta?.maps ?? null
         };
     });
+}
+
+export function getPbrMaterialClassSections() {
+    return buildOptionsByClass(getPbrMaterialOptions());
+}
+
+export function getPbrMaterialClassSectionsForBuildings() {
+    return buildOptionsByClass(getPbrMaterialOptionsForBuildings());
+}
+
+export function getPbrMaterialClassSectionsForGround() {
+    return buildOptionsByClass(getPbrMaterialOptionsForGround());
 }
 
 export function getPbrMaterialOptionsForBuildings() {

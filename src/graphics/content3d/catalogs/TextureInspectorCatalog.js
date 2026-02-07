@@ -1,16 +1,14 @@
 // src/graphics/content3d/catalogs/TextureInspectorCatalog.js
 // Defines a stable texture catalog for inspector scenes.
 import { WINDOW_STYLE } from '../../../app/buildings/WindowStyle.js';
-import { BUILDING_STYLE } from '../../../app/buildings/BuildingStyle.js';
 import { getWindowTexture } from '../../assets3d/generators/buildings/WindowTextureGenerator.js';
 import { getSignAssetById, getSignAssets } from '../../assets3d/textures/signs/SignAssets.js';
-import { getPbrMaterialOptions } from './PbrMaterialCatalog.js';
+import { getPbrMaterialClassSections } from './PbrMaterialCatalog.js';
 
 export const INSPECTOR_COLLECTION = Object.freeze({
     WINDOWS: 'tex.collection.windows',
     TRAFFIC_SIGNS: 'tex.collection.traffic_signs',
-    BUILDING_WALLS: 'tex.collection.building_walls',
-    PBR_MATERIALS: 'tex.collection.pbr_materials'
+    PBR_PREFIX: 'tex.collection.pbr.'
 });
 
 export const INSPECTOR_TEXTURE = Object.freeze({
@@ -20,12 +18,22 @@ export const INSPECTOR_TEXTURE = Object.freeze({
     WINDOW_LIGHT_BLUE: 'tex.window.light_blue',
     WINDOW_GREEN: 'tex.window.green',
     WINDOW_WARM: 'tex.window.warm',
-    WINDOW_GRID: 'tex.window.grid',
-    WALL_BRICK: 'tex.wall.brick',
-    WALL_CEMENT: 'tex.wall.cement',
-    WALL_STONE_1: 'tex.wall.stone_1',
-    WALL_STONE_2: 'tex.wall.stone_2'
+    WINDOW_GRID: 'tex.window.grid'
 });
+
+const PBR_COLLECTIONS = Object.freeze(getPbrMaterialClassSections().map((section) => ({
+    id: `${INSPECTOR_COLLECTION.PBR_PREFIX}${section.classId}`,
+    label: `PBR · ${section.label}`,
+    entries: Object.freeze((section.options ?? []).map((opt) => ({
+        id: opt.id,
+        label: opt.label,
+        kind: 'pbr_material',
+        materialId: opt.id,
+        root: opt.root,
+        buildingEligible: opt.buildingEligible,
+        groundEligible: opt.groundEligible
+    })))
+})));
 
 const COLLECTIONS = Object.freeze([
     {
@@ -57,28 +65,7 @@ const COLLECTIONS = Object.freeze([
             aspect: sign.aspect
         })))
     },
-    {
-        id: INSPECTOR_COLLECTION.BUILDING_WALLS,
-        label: 'Building Walls',
-        entries: Object.freeze([
-            { id: INSPECTOR_TEXTURE.WALL_BRICK, label: 'Brick', kind: 'building_wall', style: BUILDING_STYLE.BRICK },
-            { id: INSPECTOR_TEXTURE.WALL_CEMENT, label: 'Cement', kind: 'building_wall', style: BUILDING_STYLE.CEMENT },
-            { id: INSPECTOR_TEXTURE.WALL_STONE_1, label: 'Stone 1', kind: 'building_wall', style: BUILDING_STYLE.STONE_1 },
-            { id: INSPECTOR_TEXTURE.WALL_STONE_2, label: 'Stone 2', kind: 'building_wall', style: BUILDING_STYLE.STONE_2 }
-        ])
-    },
-    {
-        id: INSPECTOR_COLLECTION.PBR_MATERIALS,
-        label: 'PBR Materials',
-        entries: Object.freeze(getPbrMaterialOptions().map((opt) => ({
-            id: opt.id,
-            label: opt.label,
-            kind: 'pbr_material',
-            materialId: opt.id,
-            root: opt.root,
-            buildingEligible: opt.buildingEligible
-        })))
-    }
+    ...PBR_COLLECTIONS
 ]);
 
 const COLLECTION_OPTIONS = Object.freeze(COLLECTIONS.map((collection) => ({ id: collection.id, label: collection.label })));

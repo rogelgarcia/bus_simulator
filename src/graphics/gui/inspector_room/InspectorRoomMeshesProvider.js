@@ -382,6 +382,7 @@ export class InspectorRoomMeshesProvider {
 
             const shared = assets?.materials ?? null;
             const leaf = shared?.leaf?.clone?.() ?? new THREE.MeshStandardMaterial({ color: 0xb9c86c, roughness: 0.9, metalness: 0.0, alphaTest: 0.5, side: THREE.DoubleSide });
+            leaf.userData.isFoliage = true;
             const trunk = shared?.trunk?.clone?.() ?? new THREE.MeshStandardMaterial({ color: 0xb9a188, roughness: 0.95, metalness: 0.0 });
             const solid = new THREE.MeshStandardMaterial({ color: 0xd7dde7, metalness: 0.0, roughness: 0.7 });
 

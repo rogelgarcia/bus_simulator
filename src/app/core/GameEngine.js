@@ -15,6 +15,8 @@ import { is3dLutSupported, loadCubeLut3DTexture } from '../../graphics/visuals/p
 import { getResolvedSunBloomSettings, sanitizeSunBloomSettings } from '../../graphics/visuals/postprocessing/SunBloomSettings.js';
 import { getOrCreateGpuFrameTimer } from '../../graphics/engine3d/perf/GpuFrameTimer.js';
 import { getResolvedVehicleMotionDebugSettings, sanitizeVehicleMotionDebugSettings } from '../vehicle/VehicleMotionDebugSettings.js';
+import { BusContactShadowRig } from '../../graphics/visuals/vehicles/BusContactShadowRig.js';
+import { StaticAoRuntime } from '../../graphics/visuals/static_ao/StaticAoRuntime.js';
 
 export class GameEngine {
     constructor({
@@ -83,6 +85,17 @@ export class GameEngine {
 
         this._ambientOcclusion = {
             settings: getResolvedAmbientOcclusionSettings()
+        };
+
+        this._busContactShadow = {
+            rig: null,
+            target: null,
+            raycastRoot: null
+        };
+
+        this._staticAo = {
+            runtime: null,
+            lastCity: null
         };
 
         this._sunBloom = {
@@ -310,12 +323,38 @@ export class GameEngine {
 
     getAmbientOcclusionDebugInfo() {
         const s = this._ambientOcclusion?.settings ?? null;
-        if (!this._post?.pipeline) return { mode: s?.mode ?? 'off', ...(s ?? {}) };
+        const mode = s?.mode ?? 'off';
+        if (!this._post?.pipeline) {
+            const gtao = s?.gtao ?? null;
+            return {
+                mode,
+                gtao: mode === 'gtao'
+                    ? {
+                        updateMode: gtao?.updateMode ?? 'every_frame',
+                        updatedThisFrame: null,
+                        updateReason: null,
+                        cacheSupported: null,
+                        ageFrames: null
+                    }
+                    : null
+            };
+        }
 
         const info = this._post.pipeline.getDebugInfo?.() ?? null;
         const ao = info?.ambientOcclusion ?? null;
+        const activeMode = ao?.mode ?? mode;
+        const gtao = ao?.gtao ?? null;
         return {
-            mode: ao?.mode ?? (s?.mode ?? 'off')
+            mode: activeMode,
+            gtao: activeMode === 'gtao'
+                ? {
+                    updateMode: gtao?.updateMode ?? (s?.gtao?.updateMode ?? 'every_frame'),
+                    updatedThisFrame: gtao?.updatedThisFrame ?? null,
+                    updateReason: gtao?.updateReason ?? null,
+                    cacheSupported: gtao?.cacheSupported ?? null,
+                    ageFrames: gtao?.ageFrames ?? null
+                }
+                : null
         };
     }
 
@@ -588,6 +627,47 @@ export class GameEngine {
         const next = sanitizeAmbientOcclusionSettings(settings);
         this._ambientOcclusion.settings = next;
         this._syncPostProcessingPipeline();
+        this._syncBusContactShadowSettings(next?.busContactShadow ?? null);
+        this._syncStaticAoSettings(next);
+    }
+
+    _syncStaticAoSettings(ambientOcclusionSettings) {
+        const ao = ambientOcclusionSettings && typeof ambientOcclusionSettings === 'object' ? ambientOcclusionSettings : null;
+        const enabled = ao?.staticAo?.mode && ao.staticAo.mode !== 'off';
+        const state = this._staticAo ?? null;
+        if (!state || typeof state !== 'object') return;
+
+        if (!enabled) {
+            state.lastCity = null;
+            state.runtime?.syncCity?.(null, ao);
+            return;
+        }
+
+        if (!state.runtime) state.runtime = new StaticAoRuntime();
+        const city = this._contextProxy?.city ?? null;
+        state.lastCity = city;
+        state.runtime.syncCity(city, ao);
+    }
+
+    _syncBusContactShadowSettings(settings) {
+        const s = settings && typeof settings === 'object' ? settings : null;
+        const enabled = s?.enabled === true;
+
+        const state = this._busContactShadow ?? null;
+        if (!state || typeof state !== 'object') return;
+
+        if (!enabled) {
+            state.rig?.setEnabled?.(false);
+            return;
+        }
+
+        if (!state.rig) {
+            state.rig = new BusContactShadowRig({ enabled: true, settings: s });
+            this.scene?.add?.(state.rig.group);
+        }
+
+        state.rig.setEnabled(true);
+        state.rig.setSettings(s);
     }
 
     _applyBloomSettings(settings) {
@@ -994,6 +1074,9 @@ export class GameEngine {
 
         if (!render) return;
 
+        this._updateStaticAo();
+        this._updateBusContactShadow(stepDt);
+
         const gpuTimer = this._gpuFrameTimer;
         gpuTimer?.beginFrame?.();
         try {
@@ -1015,6 +1098,55 @@ export class GameEngine {
         }
     }
 
+    _updateBusContactShadow(dt) {
+        const state = this._busContactShadow ?? null;
+        const rig = state?.rig ?? null;
+        if (!rig) return;
+
+        if (rig.group?.parent !== this.scene && this.scene?.add) {
+            this.scene.add(rig.group);
+        }
+
+        const selected = this._contextProxy?.selectedBus ?? null;
+        const model = selected?.userData?.model?.isObject3D
+            ? selected.userData.model
+            : (selected?.isObject3D ? selected : null);
+
+        if (model !== state.target) {
+            state.target = model;
+            rig.setTarget(model);
+        }
+
+        const city = this._contextProxy?.city ?? null;
+        const raycastRoot = city?.group?.isObject3D ? city.group : this.scene;
+        if (raycastRoot !== state.raycastRoot) {
+            state.raycastRoot = raycastRoot;
+            rig.setRaycastRoot(raycastRoot);
+        }
+
+        rig.update(dt);
+    }
+
+    _updateStaticAo() {
+        const state = this._staticAo ?? null;
+        if (!state || typeof state !== 'object') return;
+        const runtime = state.runtime ?? null;
+        if (!runtime) return;
+
+        const ao = this._ambientOcclusion?.settings ?? null;
+        const enabled = ao?.staticAo?.mode && ao.staticAo.mode !== 'off';
+        if (!enabled) {
+            if (state.lastCity !== null) state.lastCity = null;
+            runtime.syncCity(null, ao);
+            return;
+        }
+
+        const city = this._contextProxy?.city ?? null;
+        if (city === state.lastCity) return;
+        state.lastCity = city;
+        runtime.syncCity(city, ao);
+    }
+
     renderFrame() {
         if (this._post?.pipeline) this._post.pipeline.render();
         else this.renderer.render(this.scene, this.camera);
@@ -1026,6 +1158,9 @@ export class GameEngine {
         this.simulation?.dispose?.();
         this._post?.pipeline?.dispose?.();
         if (this._post) this._post.pipeline = null;
+        this._staticAo?.runtime?.dispose?.();
+        if (this._staticAo) this._staticAo.runtime = null;
+        this._busContactShadow?.rig?.dispose?.();
         this.renderer?.dispose?.();
     }
 

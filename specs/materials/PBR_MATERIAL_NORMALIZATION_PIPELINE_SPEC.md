@@ -77,26 +77,35 @@ Each phase includes:
 - Tools / automation (we implement or run)
 - Success criteria
 
-### Phase 1 — Inventory and single source of truth
+### Phase 1 — Catalog-first registry + classes (single source of truth)
 
 Purpose:
-- Identify where materials come from today and stop uncontrolled divergence.
+- Establish a **catalog-first** PBR material registry as the canonical source for surface materials.
+- Organize materials into **classes** (asphalt/concrete/brick/grass/etc.) so UI pickers are easy to browse.
+- Remove basecolor-only “plain texture” wall collections from user-facing tools.
 
 Outcome:
-- A definitive “catalog-first” path exists for all major asset types.
+- Every texture set under `assets/public/pbr/` is represented by a per-folder catalog config entry.
+- Runtime catalogs and selection UIs are driven by those configs (not hardcoded lists).
+- Building wall selection defaults to **PBR `materialId`s** (legacy building style IDs are migrated/aliased deterministically).
+
+Specifications:
+- `specs/materials/PBR_MATERIAL_CATALOG_SPEC.md` defines the Phase 1 schema, class list, and picker grouping rules.
 
 Manual actions:
-- Decide and document the canonical catalog(s) used by the game (e.g., one PBR material catalog for buildings/props/roads).
-- List current exceptions (custom shaders, special-case materials) that will be handled later.
+- Review the `classId` assignment for each PBR set and adjust as needed.
+- Verify in-game that building walls and terrain pickers expose only PBR materials and are class-grouped.
 
 Tools / automation:
-- Implement a **material usage report** tool that scans scenes/generators and prints:
-  - which materials are used
-  - whether they originate from the catalog
-  - where per-object overrides are applied
+- Per-folder config modules under `assets/public/pbr/<slug>/pbr.material.config.js`.
+- A catalog collector under `assets/public/pbr/_catalog_index.js`.
+- Runtime helpers and UI grouping driven by catalog entries.
+- A deterministic migration mapping from legacy building style IDs → PBR `materialId`s.
 
 Success criteria:
-- You can answer: “which assets use non-catalog materials and why?”
+- No user-facing wall material picker/inspector exposes legacy basecolor-only wall textures.
+- Materials are browsable by class in pickers/tools (sections).
+- Legacy building style IDs still render correctly via the PBR catalog (no legacy wall texture URLs by default).
 
 ---
 
@@ -308,4 +317,3 @@ When introducing a new material:
 - How much stylization is acceptable (e.g., signage, UI-like surfaces) and how it is isolated from the normalized PBR pipeline.
 - How weather/time-of-day impacts material response (wetness, puddles, etc.) and whether it is a class-level effect.
 - How LOD affects detail layers (detail normal scaling vs disabling at distance).
-

@@ -143,6 +143,24 @@
     gap: 8px;
 }
 
+.options-layer .is-invisible {
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.options-overlap-stack {
+    display: grid;
+    grid-template-columns: 1fr;
+}
+
+.options-overlap-pane {
+    grid-row: 1;
+    grid-column: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
 .options-section.is-collapsed > :not(.options-section-header) {
     display: none;
 }

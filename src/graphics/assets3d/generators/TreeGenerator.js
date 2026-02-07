@@ -160,6 +160,34 @@ function applyTextureColorSpace(tex, { srgb }) {
     if ('encoding' in tex) tex.encoding = srgb ? THREE.sRGBEncoding : THREE.LinearEncoding;
 }
 
+function premultiplyTextureRgbByAlpha(tex) {
+    const t = tex ?? null;
+    const img = t?.image ?? null;
+    const data = img?.data ?? null;
+    if (!t || !img || !data || data.length < 4) return false;
+    const userData = (t.userData && typeof t.userData === 'object') ? t.userData : (t.userData = {});
+    if (userData._premultipliedRgbByAlpha === true) return true;
+
+    for (let i = 0; i + 3 < data.length; i += 4) {
+        const a = data[i + 3] | 0;
+        if (a === 255) continue;
+        if (a === 0) {
+            data[i] = 0;
+            data[i + 1] = 0;
+            data[i + 2] = 0;
+            continue;
+        }
+        data[i] = ((data[i] * a + 127) / 255) | 0;
+        data[i + 1] = ((data[i + 1] * a + 127) / 255) | 0;
+        data[i + 2] = ((data[i + 2] * a + 127) / 255) | 0;
+    }
+
+    t.premultiplyAlpha = false;
+    userData._premultipliedRgbByAlpha = true;
+    t.needsUpdate = true;
+    return true;
+}
+
 function getUrlBasename(url) {
     const s = String(url ?? '');
     const stripped = s.split(/[?#]/)[0];
@@ -210,6 +238,7 @@ function loadTextures() {
         applyTextureColorSpace(leafNormal, { srgb: false });
         applyTextureColorSpace(trunkMap, { srgb: true });
         applyTextureColorSpace(trunkNormal, { srgb: false });
+        premultiplyTextureRgbByAlpha(leafMap);
         leafMap.anisotropy = 8;
         trunkMap.anisotropy = 8;
         trunkMap.wrapS = THREE.RepeatWrapping;
@@ -228,9 +257,12 @@ function makeTreeMaterials({ leafMap, leafNormal, trunkMap, trunkNormal }) {
         normalMap: leafNormal,
         roughness: 0.9,
         metalness: 0.0,
+        transparent: true,
+        premultipliedAlpha: true,
         alphaTest: 0.5,
         side: THREE.DoubleSide
     });
+    leaf.userData.isFoliage = true;
 
     const trunk = new THREE.MeshStandardMaterial({
         map: trunkMap,

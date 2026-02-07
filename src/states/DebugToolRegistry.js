@@ -50,6 +50,13 @@ export const DEBUG_TOOL_REGISTRY = Object.freeze([
         label: 'Grass',
         description: 'Grass LOD experiments + blade inspector',
         href: 'debug_tools/grass_lod_debug.html'
+    }),
+    Object.freeze({
+        id: 'ao_foliage_debug',
+        key: '8',
+        label: 'AO Foliage',
+        description: 'AO alpha foliage repro scene (SSAO/GTAO)',
+        href: 'debug_tools/ao_foliage_debug.html'
     })
 ]);
 

@@ -2,8 +2,8 @@
 // Builds the HUD controls for Building Fabrication 2.
 
 import { getBeltCourseColorOptions } from '../../../app/buildings/BeltCourseColor.js';
-import { getBuildingStyleOptions } from '../../assets3d/generators/buildings/BuildingGenerator.js';
-import { getPbrMaterialOptionsForBuildings } from '../../assets3d/materials/PbrMaterialCatalog.js';
+import { resolveBuildingStylePbrMaterialId } from '../../content3d/catalogs/BuildingStyleCatalog.js';
+import { getPbrMaterialClassSectionsForBuildings } from '../../assets3d/materials/PbrMaterialCatalog.js';
 import { appendMaterialVariationLayerUI } from '../building_fabrication/MaterialVariationLayerUI.js';
 import { createTextureTilingMiniController } from '../building_fabrication/mini_controllers/TextureTilingMiniController.js';
 import { createDetailsSection, createHint, createRangeRow } from '../building_fabrication/mini_controllers/UiMiniControlPrimitives.js';
@@ -134,25 +134,24 @@ export class BuildingFabrication2UI {
         this.rightPanel.className = 'ui-panel is-interactive building-fab2-panel building-fab2-right-panel';
 
         this._materialPickerPopup = new MaterialPickerPopupController();
-        this._buildingStyleOptions = getBuildingStyleOptions();
         this._beltCourseColorOptions = getBeltCourseColorOptions();
-        this._wallTextureDefs = [
-            ...(this._buildingStyleOptions ?? []).map((opt) => ({
-                id: opt.id,
-                label: opt.label,
-                wallTextureUrl: opt.wallTextureUrl ?? null
-            })),
-            ...getPbrMaterialOptionsForBuildings().map((opt) => ({
+        this._wallTextureSections = getPbrMaterialClassSectionsForBuildings();
+        this._wallTextureDefs = this._wallTextureSections.flatMap((section) => (
+            (section.options ?? []).map((opt) => ({
                 id: opt.id,
                 label: opt.label,
                 wallTextureUrl: opt.previewUrl ?? null
             }))
-        ];
-        this._baseWallTexturePickerOptions = this._wallTextureDefs.map((opt) => ({
-            id: `texture:${opt.id}`,
-            label: opt.label,
-            kind: 'texture',
-            previewUrl: opt.wallTextureUrl
+        ));
+        this._wallTextureDefById = new Map(this._wallTextureDefs.map((opt) => [opt.id, opt]));
+        this._baseWallTexturePickerSections = this._wallTextureSections.map((section) => ({
+            label: section.label,
+            options: (section.options ?? []).map((opt) => ({
+                id: `texture:${opt.id}`,
+                label: opt.label,
+                kind: 'texture',
+                previewUrl: opt.previewUrl ?? null
+            }))
         }));
         this._baseWallColorPickerOptions = (this._beltCourseColorOptions ?? []).map((opt) => ({
             id: `color:${opt.id}`,
@@ -850,7 +849,12 @@ export class BuildingFabrication2UI {
                 : 'Select a face and click the wall material picker to edit.')
             : 'Material editing is currently disabled.';
 
-        const getTexOpt = (id) => this._wallTextureDefs.find((o) => o?.id === id) ?? null;
+        const normalizeWallTextureId = (texId) => {
+            const id = typeof texId === 'string' ? texId : '';
+            return resolveBuildingStylePbrMaterialId(id) ?? id;
+        };
+
+        const getTexOpt = (id) => this._wallTextureDefById?.get(normalizeWallTextureId(id));
         const getColorOpt = (id) => (this._beltCourseColorOptions ?? []).find((o) => o?.id === id) ?? null;
 
         const deepClone = (value) => {
@@ -953,16 +957,22 @@ export class BuildingFabrication2UI {
                     const layerRaw = layer?.material && typeof layer.material === 'object' ? layer.material : null;
                     const layerKind = layerRaw?.kind;
                     const layerMatId = typeof layerRaw?.id === 'string' ? layerRaw.id : '';
-                    if ((layerKind === 'texture' || layerKind === 'color') && layerMatId) return { kind: layerKind, id: layerMatId };
+                    if ((layerKind === 'texture' || layerKind === 'color') && layerMatId) {
+                        if (layerKind === 'texture') return { kind: layerKind, id: normalizeWallTextureId(layerMatId) };
+                        return { kind: layerKind, id: layerMatId };
+                    }
                     const styleId = typeof layer?.style === 'string' && layer.style ? layer.style : 'default';
-                    return { kind: 'texture', id: styleId };
+                    return { kind: 'texture', id: normalizeWallTextureId(styleId) };
                 };
 
                 const resolveMasterFaceMaterial = () => {
                     const raw = faceCfgForBay?.material && typeof faceCfgForBay.material === 'object' ? faceCfgForBay.material : null;
                     const kind = raw?.kind;
                     const id = typeof raw?.id === 'string' ? raw.id : '';
-                    if ((kind === 'texture' || kind === 'color') && id) return { kind, id };
+                    if ((kind === 'texture' || kind === 'color') && id) {
+                        if (kind === 'texture') return { kind, id: normalizeWallTextureId(id) };
+                        return { kind, id };
+                    }
                     return resolveLayerMaterial();
                 };
 
@@ -970,7 +980,10 @@ export class BuildingFabrication2UI {
                     const raw = bayCfg?.wallMaterialOverride && typeof bayCfg.wallMaterialOverride === 'object' ? bayCfg.wallMaterialOverride : null;
                     const kind = raw?.kind;
                     const id = typeof raw?.id === 'string' ? raw.id : '';
-                    if ((kind === 'texture' || kind === 'color') && id) return { kind, id };
+                    if ((kind === 'texture' || kind === 'color') && id) {
+                        if (kind === 'texture') return { kind, id: normalizeWallTextureId(id) };
+                        return { kind, id };
+                    }
                     return null;
                 };
 
@@ -989,7 +1002,7 @@ export class BuildingFabrication2UI {
                         this._materialPickerPopup.open({
                             title: `Wall material · ${label} · Face ${masterFaceId ?? ''}`.trim(),
                             sections: [
-                                { label: 'Texture', options: this._baseWallTexturePickerOptions },
+                                ...this._baseWallTexturePickerSections,
                                 { label: 'Color', options: this._baseWallColorPickerOptions }
                             ],
                             selectedId,
@@ -1164,50 +1177,59 @@ export class BuildingFabrication2UI {
 
             if (target !== 'bay') {
                 const resolveFaceMaterial = () => {
-                const raw = cfg?.material && typeof cfg.material === 'object' ? cfg.material : null;
-                const kind = raw?.kind;
-                const id = typeof raw?.id === 'string' ? raw.id : '';
-                if ((kind === 'texture' || kind === 'color') && id) return { kind, id };
-                const layerRaw = layer?.material && typeof layer.material === 'object' ? layer.material : null;
-                const layerKind = layerRaw?.kind;
-                const layerMatId = typeof layerRaw?.id === 'string' ? layerRaw.id : '';
-                if ((layerKind === 'texture' || layerKind === 'color') && layerMatId) return { kind: layerKind, id: layerMatId };
-                const styleId = typeof layer?.style === 'string' && layer.style ? layer.style : 'default';
-                return { kind: 'texture', id: styleId };
+                    const raw = cfg?.material && typeof cfg.material === 'object' ? cfg.material : null;
+                    const kind = raw?.kind;
+                    const id = typeof raw?.id === 'string' ? raw.id : '';
+                    if ((kind === 'texture' || kind === 'color') && id) {
+                        if (kind === 'texture') return { kind, id: normalizeWallTextureId(id) };
+                        return { kind, id };
+                    }
+
+                    const layerRaw = layer?.material && typeof layer.material === 'object' ? layer.material : null;
+                    const layerKind = layerRaw?.kind;
+                    const layerMatId = typeof layerRaw?.id === 'string' ? layerRaw.id : '';
+                    if ((layerKind === 'texture' || layerKind === 'color') && layerMatId) {
+                        if (layerKind === 'texture') return { kind: layerKind, id: normalizeWallTextureId(layerMatId) };
+                        return { kind: layerKind, id: layerMatId };
+                    }
+
+                    const styleId = typeof layer?.style === 'string' && layer.style ? layer.style : 'default';
+                    return { kind: 'texture', id: normalizeWallTextureId(styleId) };
                 };
 
-            const wallMaterialPicker = createMaterialPickerRowController({
-                label: '',
-                rowExtraClassName: 'building-fab2-no-label',
-                disabled: !allowEdit,
-                onPick: () => {
-                    const current = resolveFaceMaterial();
-                    const selectedId = current ? `${current.kind}:${current.id}` : null;
+                const wallMaterialPicker = createMaterialPickerRowController({
+                    label: '',
+                    rowExtraClassName: 'building-fab2-no-label',
+                    disabled: !allowEdit,
+                    onPick: () => {
+                        const current = resolveFaceMaterial();
+                        const selectedId = current ? `${current.kind}:${current.id}` : null;
 
-                    this._materialPickerPopup.open({
-                        title: `Wall material · Face ${masterFaceId ?? ''}`.trim(),
-                        sections: [
-                            { label: 'Texture', options: this._baseWallTexturePickerOptions },
-                            { label: 'Color', options: this._baseWallColorPickerOptions }
-                        ],
-                        selectedId,
-                        onSelect: (opt) => {
-                            const next = parseMaterialPickerId(opt?.id);
-                            if (!next) return;
-                            cfg.material = next;
-                            syncMaterialPicker(wallMaterialPicker, cfg.material);
-                            onChange();
-                            this.onMaterialConfigRequestUiSync?.();
-                            this._renderMaterialPanel();
-                        }
-                    });
-                }
-            });
+                        this._materialPickerPopup.open({
+                            title: `Wall material · Face ${masterFaceId ?? ''}`.trim(),
+                            sections: [
+                                ...this._baseWallTexturePickerSections,
+                                { label: 'Color', options: this._baseWallColorPickerOptions }
+                            ],
+                            selectedId,
+                            onSelect: (opt) => {
+                                const next = parseMaterialPickerId(opt?.id);
+                                if (!next) return;
+                                if (next.kind === 'texture') next.id = normalizeWallTextureId(next.id);
+                                cfg.material = next;
+                                syncMaterialPicker(wallMaterialPicker, cfg.material);
+                                onChange();
+                                this.onMaterialConfigRequestUiSync?.();
+                                this._renderMaterialPanel();
+                            }
+                        });
+                    }
+                });
 
-            syncMaterialPicker(wallMaterialPicker, resolveFaceMaterial());
-            base.body.appendChild(wallMaterialPicker.row);
+                syncMaterialPicker(wallMaterialPicker, resolveFaceMaterial());
+                base.body.appendChild(wallMaterialPicker.row);
 
-            base.body.appendChild(createHint('These controls affect the full wall surface (before material variation).'));
+                base.body.appendChild(createHint('These controls affect the full wall surface (before material variation).'));
 
             const tintPicker = createMaterialPickerRowController({
                 label: 'Wall albedo tint',
@@ -1753,15 +1775,23 @@ export class BuildingFabrication2UI {
                 heightRow.appendChild(heightNumber);
                 body.appendChild(heightRow);
 
-                const getTexOpt = (id) => this._wallTextureDefs.find((o) => o?.id === id) ?? null;
+                const normalizeWallTextureId = (texId) => {
+                    const id = typeof texId === 'string' ? texId : '';
+                    return resolveBuildingStylePbrMaterialId(id) ?? id;
+                };
+
+                const getTexOpt = (id) => this._wallTextureDefById?.get(normalizeWallTextureId(id)) ?? null;
                 const getColorOpt = (id) => (this._beltCourseColorOptions ?? []).find((o) => o?.id === id) ?? null;
                 const resolveLayerMaterial = () => {
                     const raw = layer?.material && typeof layer.material === 'object' ? layer.material : null;
                     const kind = raw?.kind;
                     const id = typeof raw?.id === 'string' ? raw.id : '';
-                    if ((kind === 'texture' || kind === 'color') && id) return { kind, id };
+                    if ((kind === 'texture' || kind === 'color') && id) {
+                        if (kind === 'texture') return { kind, id: normalizeWallTextureId(id) };
+                        return { kind, id };
+                    }
                     const styleId = typeof layer?.style === 'string' && layer.style ? layer.style : 'default';
-                    return { kind: 'texture', id: styleId };
+                    return { kind: 'texture', id: normalizeWallTextureId(styleId) };
                 };
 
                 const facesHeader = document.createElement('div');

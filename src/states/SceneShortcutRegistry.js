@@ -1,5 +1,5 @@
 // src/states/SceneShortcutRegistry.js
-// Registry of selectable scenes and their numeric shortcuts.
+// Registry of selectable scenes and their shortcuts.
 
 export const SCENE_SHORTCUT_REGISTRY = Object.freeze([
     {
@@ -31,6 +31,11 @@ export const SCENE_SHORTCUT_REGISTRY = Object.freeze([
         id: 'inspector_room',
         label: 'Inspector Room',
         key: '6'
+    },
+    {
+        id: 'material_calibration',
+        label: 'Material Calibration',
+        key: 'C'
     },
     {
         id: 'road_debugger',

@@ -110,9 +110,17 @@ function normalizeSettingsBooleans(src) {
     const ambientOcclusion = src.ambientOcclusion && typeof src.ambientOcclusion === 'object' ? src.ambientOcclusion : null;
     if (ambientOcclusion) {
         const gtao = ambientOcclusion.gtao && typeof ambientOcclusion.gtao === 'object' ? ambientOcclusion.gtao : null;
+        const staticAo = ambientOcclusion.staticAo && typeof ambientOcclusion.staticAo === 'object' ? ambientOcclusion.staticAo : null;
+        const busContactShadow = ambientOcclusion.busContactShadow && typeof ambientOcclusion.busContactShadow === 'object'
+            ? ambientOcclusion.busContactShadow
+            : null;
         out.ambientOcclusion = {
             ...ambientOcclusion,
-            gtao: gtao ? { ...gtao, denoise: parseLooseBool(gtao.denoise, gtao.denoise) } : gtao
+            gtao: gtao ? { ...gtao, denoise: parseLooseBool(gtao.denoise, gtao.denoise) } : gtao,
+            staticAo: staticAo ? { ...staticAo, debugView: parseLooseBool(staticAo.debugView, staticAo.debugView) } : staticAo,
+            busContactShadow: busContactShadow
+                ? { ...busContactShadow, enabled: parseLooseBool(busContactShadow.enabled, busContactShadow.enabled) }
+                : busContactShadow
         };
     }
 

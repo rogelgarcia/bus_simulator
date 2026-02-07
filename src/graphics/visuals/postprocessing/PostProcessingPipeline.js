@@ -16,11 +16,21 @@ import { SUN_BLOOM_LAYER, SUN_BLOOM_LAYER_ID } from '../sun/SunBloomLayers.js';
 import { sanitizeAntiAliasingSettings } from './AntiAliasingSettings.js';
 import { sanitizeAmbientOcclusionSettings } from './AmbientOcclusionSettings.js';
 import { TemporalAAPass } from './TemporalAAPass.js';
+import { hasCameraViewStateChanged, shouldUpdateGtaoFixedRate } from './GtaoUpdateScheduler.js';
 
 function clamp(value, min, max, fallback) {
     const num = Number(value);
     if (!Number.isFinite(num)) return fallback;
     return Math.max(min, Math.min(max, num));
+}
+
+function getDynamicAoIntensityScale(ambientOcclusionSettings) {
+    const ao = ambientOcclusionSettings && typeof ambientOcclusionSettings === 'object' ? ambientOcclusionSettings : null;
+    const s = ao?.staticAo ?? null;
+    const mode = typeof s?.mode === 'string' ? s.mode : 'off';
+    if (mode === 'off') return 1;
+    const k = clamp(s?.intensity, 0, 1, 0);
+    return clamp(1 - 0.5 * k, 0.25, 1, 1);
 }
 
 function halton(index, base) {
@@ -270,6 +280,36 @@ function createBlackTexture() {
     return tex;
 }
 
+function createWhiteTexture() {
+    const tex = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+    tex.needsUpdate = true;
+    tex.magFilter = THREE.NearestFilter;
+    tex.minFilter = THREE.NearestFilter;
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    return tex;
+}
+
+function getMaterialForAoGroup(object, group) {
+    const obj = object ?? null;
+    if (!obj) return null;
+    const mat = obj.material ?? null;
+    if (!mat) return null;
+    if (!Array.isArray(mat)) return mat;
+    const idx = Number.isFinite(group?.materialIndex) ? Math.max(0, Math.floor(group.materialIndex)) : 0;
+    return mat[idx] ?? mat[0] ?? null;
+}
+
+function shouldApplyAoAlphaCutout(material, object) {
+    const mat = material && typeof material === 'object' ? material : null;
+    if (!mat) return false;
+    const hasAlphaMap = !!(mat.alphaMap || mat.map);
+    if (!hasAlphaMap) return false;
+    const alphaTest = Number(mat.alphaTest) || 0;
+    const tagged = mat.userData?.isFoliage === true || object?.userData?.isFoliage === true;
+    return tagged || alphaTest > 1e-6;
+}
+
 const OUTPUT_COLORSPACE_SHADER = Object.freeze({
     uniforms: {
         tDiffuse: { value: null }
@@ -288,6 +328,35 @@ const OUTPUT_COLORSPACE_SHADER = Object.freeze({
         void main() {
             gl_FragColor = texture2D(tDiffuse, vUv);
             #include <colorspace_fragment>
+        }
+    `
+});
+
+const GTAO_CACHE_BLEND_SHADER = Object.freeze({
+    uniforms: {
+        tDiffuse: { value: null },
+        uGtaoMap: { value: null },
+        uIntensity: { value: 0.35 }
+    },
+    vertexShader: `
+        varying vec2 vUv;
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    `,
+    fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform sampler2D uGtaoMap;
+        uniform float uIntensity;
+        varying vec2 vUv;
+
+        void main() {
+            vec4 base = texture2D(tDiffuse, vUv);
+            float ao = texture2D(uGtaoMap, vUv).r;
+            float k = clamp(uIntensity, 0.0, 2.0);
+            float factor = clamp(1.0 - k * (1.0 - ao), 0.0, 1.0);
+            gl_FragColor = vec4(base.rgb * factor, base.a);
         }
     `
 });
@@ -315,12 +384,31 @@ export class PostProcessingPipeline {
         this._taaJitterIndex = 0;
 
         this._blackTex = createBlackTexture();
+        this._whiteTex = createWhiteTexture();
 
         this._globalBloom = sanitizeGlobalBloomRuntimeSettings(bloom);
         this._sunBloom = sanitizeSunBloomRuntimeSettings(sunBloom);
         this._ambientOcclusion = sanitizeAmbientOcclusionSettings(ambientOcclusion);
         this._colorGrading = { enabled: false, intensity: 0, lutTexture: null };
         this._ao = { mode: 'off', pass: null };
+        this._gtaoCache = {
+            blendPass: null,
+            cacheSupported: false,
+            frameIndex: 0,
+            lastUpdateFrameIndex: -1,
+            lastViewState: null,
+            pendingViewState: null,
+            updatedThisFrame: false,
+            updateReason: null,
+            forceUpdate: true,
+            warnedUnsupported: false
+        };
+        this._aoAlpha = {
+            overrideMaterials: new Set(),
+            patchedObjects: new WeakSet(),
+            originalOnBeforeRender: new WeakMap(),
+            lastSceneScanMs: -Infinity
+        };
         this._antiAliasing = {
             requested: sanitizeAntiAliasingSettings(antiAliasing),
             activeMode: 'off',
@@ -396,6 +484,119 @@ export class PostProcessingPipeline {
         this.setAntiAliasing(antiAliasing);
     }
 
+    _syncAoAlphaCutoutSupport() {
+        const aoMode = this._ambientOcclusion?.mode ?? 'off';
+        const aoOn = aoMode === 'ssao' || aoMode === 'gtao';
+        if (!aoOn) {
+            this._aoAlpha.overrideMaterials.clear();
+            return;
+        }
+
+        const pass = this._ao?.pass ?? null;
+        const materials = this._aoAlpha.overrideMaterials;
+        materials.clear();
+
+        const maybeAdd = (mat) => {
+            if (!mat || typeof mat !== 'object' || !mat.isMaterial) return;
+            if (!('alphaTest' in mat)) return;
+            materials.add(mat);
+        };
+
+        maybeAdd(pass?.normalMaterial);
+        maybeAdd(pass?.depthMaterial);
+
+        const normalPass = pass?.normalPass ?? pass?._normalPass ?? null;
+        maybeAdd(normalPass?.normalMaterial);
+        maybeAdd(normalPass?.overrideMaterial);
+
+        const depthPass = pass?.depthPass ?? pass?._depthPass ?? null;
+        maybeAdd(depthPass?.depthMaterial);
+        maybeAdd(depthPass?.overrideMaterial);
+
+        if (pass && typeof pass === 'object') {
+            for (const [key, value] of Object.entries(pass)) {
+                const k = String(key ?? '').toLowerCase();
+                if (!k.includes('normal') && !k.includes('depth')) continue;
+                if (!value || typeof value !== 'object') continue;
+                maybeAdd(value.normalMaterial);
+                maybeAdd(value.depthMaterial);
+                maybeAdd(value.overrideMaterial);
+            }
+        }
+
+        for (const mat of materials) {
+            let needsUpdate = false;
+            if ('transparent' in mat) mat.transparent = false;
+            if ('depthWrite' in mat) mat.depthWrite = true;
+            if ('alphaTest' in mat && !((Number(mat.alphaTest) || 0) > 0)) {
+                mat.alphaTest = 0.0001;
+                needsUpdate = true;
+            }
+            if ('map' in mat) {
+                if (!mat.map) needsUpdate = true;
+                mat.map = this._whiteTex;
+            }
+            if ('alphaMap' in mat) {
+                if (!mat.alphaMap) needsUpdate = true;
+                mat.alphaMap = this._whiteTex;
+            }
+            if (needsUpdate) mat.needsUpdate = true;
+        }
+
+        if (!Number.isFinite(this._aoAlpha.lastSceneScanMs)) {
+            this._scanSceneForAoAlphaHooks();
+            this._aoAlpha.lastSceneScanMs = 0;
+        }
+    }
+
+    _scanSceneForAoAlphaHooks() {
+        const scene = this.scene ?? null;
+        if (!scene?.traverse) return;
+
+        scene.traverse((obj) => {
+            if (!obj?.isMesh) return;
+            if (this._aoAlpha.patchedObjects.has(obj)) return;
+            this._aoAlpha.patchedObjects.add(obj);
+
+            const prev = typeof obj.onBeforeRender === 'function' ? obj.onBeforeRender : null;
+            this._aoAlpha.originalOnBeforeRender.set(obj, prev);
+
+            obj.onBeforeRender = (renderer, s, camera, geometry, material, group) => {
+                this._applyAoAlphaCutout(obj, material, group);
+                prev?.call(obj, renderer, s, camera, geometry, material, group);
+            };
+        });
+    }
+
+    _applyAoAlphaCutout(object, material, group) {
+        const overrideMaterials = this._aoAlpha?.overrideMaterials ?? null;
+        if (!overrideMaterials?.size) return;
+        if (!overrideMaterials.has(material)) return;
+
+        const ao = this._ambientOcclusion ?? null;
+        const handling = ao?.alpha?.handling ?? 'alpha_test';
+        const threshold = clamp(ao?.alpha?.threshold, 0.01, 0.99, 0.5);
+
+        if ('map' in material) material.map = this._whiteTex;
+        if ('alphaMap' in material) material.alphaMap = this._whiteTex;
+        if ('alphaTest' in material) material.alphaTest = 0.0001;
+
+        const srcMat = getMaterialForAoGroup(object, group);
+        const wantsAlpha = shouldApplyAoAlphaCutout(srcMat, object);
+        if (!wantsAlpha) return;
+
+        if (handling === 'exclude') {
+            if ('alphaTest' in material) material.alphaTest = 1.1;
+            return;
+        }
+
+        if (handling === 'alpha_test') {
+            if ('map' in material) material.map = srcMat?.map ?? this._whiteTex;
+            if ('alphaMap' in material) material.alphaMap = srcMat?.alphaMap ?? this._whiteTex;
+            if ('alphaTest' in material) material.alphaTest = threshold;
+        }
+    }
+
     setPixelRatio(pixelRatio) {
         const pr = clamp(pixelRatio, 0.1, 8, 1);
         this._pixelRatio = pr;
@@ -404,6 +605,7 @@ export class PostProcessingPipeline {
         this._sunBloomComposer?.setPixelRatio?.(pr);
         this._syncAaPassSizes();
         this._syncAoPassSizes();
+        if ((this._ambientOcclusion?.mode ?? 'off') === 'gtao') this._invalidateGtaoCache({ resetFrameIndex: true });
     }
 
     setSize(width, height) {
@@ -418,6 +620,7 @@ export class PostProcessingPipeline {
         this._sunBloomPass?.setSize?.(w, h);
         this._syncAaPassSizes();
         this._syncAoPassSizes();
+        if ((this._ambientOcclusion?.mode ?? 'off') === 'gtao') this._invalidateGtaoCache({ resetFrameIndex: true });
     }
 
     _syncAaPassSizes() {
@@ -463,6 +666,199 @@ export class PostProcessingPipeline {
         pass.setSize(size.w, size.h);
     }
 
+    _resetGtaoCacheState({ forceUpdate = false } = {}) {
+        const s = this._gtaoCache ?? null;
+        if (!s || typeof s !== 'object') return;
+        s.cacheSupported = false;
+        s.frameIndex = 0;
+        s.lastUpdateFrameIndex = -1;
+        s.lastViewState = null;
+        s.pendingViewState = null;
+        s.updatedThisFrame = false;
+        s.updateReason = null;
+        s.forceUpdate = !!forceUpdate;
+        s.warnedUnsupported = false;
+    }
+
+    _invalidateGtaoCache({ resetFrameIndex = false } = {}) {
+        const s = this._gtaoCache ?? null;
+        if (!s || typeof s !== 'object') return;
+        if (resetFrameIndex) s.frameIndex = 0;
+        s.lastUpdateFrameIndex = -1;
+        s.lastViewState = null;
+        s.pendingViewState = null;
+        s.updatedThisFrame = false;
+        s.updateReason = null;
+        s.forceUpdate = true;
+    }
+
+    _removeGtaoBlendPass() {
+        const pass = this._gtaoCache?.blendPass ?? null;
+        if (!pass) return;
+        this._removeComposerPass(pass);
+        pass.material?.dispose?.();
+        this._gtaoCache.blendPass = null;
+    }
+
+    _syncGtaoBlendPass(gtaoPass) {
+        if (!gtaoPass) return;
+        const passes = this.composer?.passes ?? null;
+        if (!Array.isArray(passes)) return;
+
+        let blendPass = this._gtaoCache?.blendPass ?? null;
+        if (!blendPass) {
+            blendPass = new ShaderPass(GTAO_CACHE_BLEND_SHADER);
+            blendPass.enabled = false;
+            if (blendPass?.material) blendPass.material.toneMapped = false;
+            if (blendPass?.material?.uniforms?.uGtaoMap) blendPass.material.uniforms.uGtaoMap.value = this._whiteTex;
+            this._gtaoCache.blendPass = blendPass;
+        }
+
+        const gtaoIdx = passes.indexOf(gtaoPass);
+        if (gtaoIdx < 0) return;
+        const desiredIdx = gtaoIdx + 1;
+        const curIdx = passes.indexOf(blendPass);
+        if (curIdx === desiredIdx) return;
+        if (curIdx >= 0) passes.splice(curIdx, 1);
+        passes.splice(Math.max(0, Math.min(desiredIdx, passes.length)), 0, blendPass);
+    }
+
+    _getCameraViewState() {
+        const cam = this.camera ?? null;
+        if (!cam) return null;
+
+        const projection = cam.isOrthographicCamera
+            ? {
+                type: 'orthographic',
+                left: cam.left,
+                right: cam.right,
+                top: cam.top,
+                bottom: cam.bottom,
+                near: cam.near,
+                far: cam.far,
+                zoom: cam.zoom
+            }
+            : {
+                type: 'perspective',
+                fov: cam.fov,
+                aspect: cam.aspect,
+                near: cam.near,
+                far: cam.far,
+                zoom: cam.zoom
+            };
+
+        return {
+            position: { x: cam.position.x, y: cam.position.y, z: cam.position.z },
+            quaternion: { x: cam.quaternion.x, y: cam.quaternion.y, z: cam.quaternion.z, w: cam.quaternion.w },
+            projection
+        };
+    }
+
+    _syncGtaoFrameRuntime() {
+        const ao = this._ambientOcclusion ?? null;
+        const gtaoPass = this._ao?.pass ?? null;
+        const cache = this._gtaoCache ?? null;
+        const blendPass = cache?.blendPass ?? null;
+        const dynamicScale = getDynamicAoIntensityScale(ao);
+
+        if (!cache || typeof cache !== 'object') return;
+        cache.updatedThisFrame = false;
+        cache.updateReason = null;
+        cache.pendingViewState = null;
+
+        if ((ao?.mode ?? 'off') !== 'gtao' || !gtaoPass || !blendPass) {
+            if (blendPass) blendPass.enabled = false;
+            return;
+        }
+
+        const gtao = ao?.gtao ?? null;
+        const updateMode = gtao?.updateMode ?? 'every_frame';
+        const thresholds = gtao?.motionThreshold ?? null;
+
+        const blendUniforms = blendPass?.material?.uniforms ?? null;
+        if (blendUniforms?.uIntensity) blendUniforms.uIntensity.value = clamp(clamp(gtao?.intensity, 0, 2, 0.35) * dynamicScale, 0, 2, 0.35);
+
+        const map = gtaoPass?.gtaoMap ?? null;
+        const cacheSupported = !!map?.isTexture;
+        cache.cacheSupported = cacheSupported;
+        if (blendUniforms?.uGtaoMap) blendUniforms.uGtaoMap.value = cacheSupported ? map : this._whiteTex;
+
+        const frameIndex = cache.frameIndex;
+
+        let shouldUpdate = false;
+        let reason = null;
+
+        if (cache.forceUpdate) {
+            shouldUpdate = true;
+            reason = 'force';
+        } else if (updateMode === 'when_camera_moves') {
+            const view = this._getCameraViewState();
+            cache.pendingViewState = view;
+            shouldUpdate = hasCameraViewStateChanged(cache.lastViewState, view, thresholds ?? {});
+            reason = shouldUpdate ? 'camera_move' : 'cached';
+        } else {
+            shouldUpdate = shouldUpdateGtaoFixedRate({ updateMode, frameIndex });
+            reason = shouldUpdate ? 'cadence' : 'cached';
+        }
+
+        if (cache.lastUpdateFrameIndex < 0) {
+            shouldUpdate = true;
+            reason = 'initial';
+        }
+
+        if (!cacheSupported && !shouldUpdate) {
+            shouldUpdate = true;
+            reason = 'missing_cache';
+        }
+
+        if (!cacheSupported && cache.lastUpdateFrameIndex >= 0 && updateMode !== 'every_frame' && !cache.warnedUnsupported) {
+            cache.warnedUnsupported = true;
+            console.warn('[PostProcessingPipeline] GTAO caching is not supported by this GTAOPass version; falling back to every-frame updates.');
+        }
+
+        gtaoPass.enabled = shouldUpdate;
+        blendPass.enabled = !shouldUpdate;
+
+        cache.updatedThisFrame = shouldUpdate;
+        cache.updateReason = reason;
+    }
+
+    _finalizeGtaoFrameRuntime() {
+        const ao = this._ambientOcclusion ?? null;
+        const cache = this._gtaoCache ?? null;
+        if (!cache || typeof cache !== 'object') return;
+
+        const gtaoPass = this._ao?.pass ?? null;
+        const blendPass = cache.blendPass ?? null;
+        if ((ao?.mode ?? 'off') !== 'gtao' || !gtaoPass || !blendPass) {
+            cache.frameIndex = 0;
+            cache.lastUpdateFrameIndex = -1;
+            cache.lastViewState = null;
+            cache.pendingViewState = null;
+            cache.updatedThisFrame = false;
+            cache.updateReason = null;
+            cache.forceUpdate = false;
+            return;
+        }
+
+        const map = gtaoPass?.gtaoMap ?? null;
+        const cacheSupported = !!map?.isTexture;
+        cache.cacheSupported = cacheSupported;
+        const uniforms = blendPass?.material?.uniforms ?? null;
+        if (uniforms?.uGtaoMap) uniforms.uGtaoMap.value = cacheSupported ? map : this._whiteTex;
+
+        if (cache.updatedThisFrame) {
+            cache.lastUpdateFrameIndex = cache.frameIndex;
+            if (cache.pendingViewState) cache.lastViewState = cache.pendingViewState;
+            cache.forceUpdate = false;
+        } else if (!cacheSupported) {
+            cache.forceUpdate = true;
+        }
+
+        cache.pendingViewState = null;
+        cache.frameIndex += 1;
+    }
+
     _removeComposerPass(pass) {
         if (!pass) return;
         const passes = this.composer?.passes ?? null;
@@ -497,12 +893,18 @@ export class PostProcessingPipeline {
         const nextMode = typeof settings?.mode === 'string' ? settings.mode : 'off';
         const prevMode = this._ao?.mode ?? 'off';
         const prevPass = this._ao?.pass ?? null;
+        const dynamicScale = getDynamicAoIntensityScale(settings);
 
         if (prevPass && prevMode !== nextMode) {
             this._removeComposerPass(prevPass);
             prevPass.dispose?.();
             this._ao.pass = null;
             this._ao.mode = 'off';
+        }
+
+        if (prevMode === 'gtao' && nextMode !== 'gtao') {
+            this._removeGtaoBlendPass();
+            this._resetGtaoCacheState({ forceUpdate: false });
         }
 
         if (nextMode === 'off') {
@@ -536,11 +938,17 @@ export class PostProcessingPipeline {
                 passes.splice(Math.max(0, Math.min(insertAt, passes.length)), 0, pass);
                 this._ao.pass = pass;
                 this._ao.mode = 'gtao';
+                this._syncGtaoBlendPass(pass);
+                this._resetGtaoCacheState({ forceUpdate: true });
             }
+
+            this._syncAoAlphaCutoutSupport();
         }
 
         const pass = this._ao.pass;
         if (!pass) return;
+
+        this._syncAoAlphaCutoutSupport();
 
         if (nextMode === 'ssao') {
             const ssao = settings?.ssao ?? null;
@@ -549,7 +957,7 @@ export class PostProcessingPipeline {
             if ('maxDistance' in pass) pass.maxDistance = 0.15;
             if ('aoClamp' in pass) pass.aoClamp = 0.25;
             if ('lumInfluence' in pass) pass.lumInfluence = 0.7;
-            if ('aoIntensity' in pass) pass.aoIntensity = clamp(ssao?.intensity, 0, 2, 0.35);
+            if ('aoIntensity' in pass) pass.aoIntensity = clamp(clamp(ssao?.intensity, 0, 2, 0.35) * dynamicScale, 0, 2, 0.35);
             if ('kernelSize' in pass) pass.kernelSize = this._getSsaoKernelSize(ssao?.quality);
             if ('output' in pass && SSAOPass?.OUTPUT?.Default !== undefined) pass.output = SSAOPass.OUTPUT.Default;
             this._syncAoPassSizes();
@@ -561,8 +969,12 @@ export class PostProcessingPipeline {
             const quality = gtao?.quality ?? 'medium';
             const samples = this._getGtaoSampleCount(quality);
             const denoise = gtao?.denoise !== false;
+            const intensity = clamp(clamp(gtao?.intensity, 0, 2, 0.35) * dynamicScale, 0, 2, 0.35);
 
-            if ('blendIntensity' in pass) pass.blendIntensity = clamp(gtao?.intensity, 0, 2, 0.35);
+            if ('blendIntensity' in pass) pass.blendIntensity = intensity;
+            this._syncGtaoBlendPass(pass);
+            const blendPass = this._gtaoCache?.blendPass ?? null;
+            if (blendPass?.material?.uniforms?.uIntensity) blendPass.material.uniforms.uIntensity.value = intensity;
 
             const aoParams = {
                 radius: clamp(gtao?.radius, 0.05, 8, 0.25),
@@ -595,8 +1007,40 @@ export class PostProcessingPipeline {
     }
 
     setAmbientOcclusion(ambientOcclusion) {
-        this._ambientOcclusion = sanitizeAmbientOcclusionSettings(ambientOcclusion);
+        const prev = this._ambientOcclusion ?? null;
+        const next = sanitizeAmbientOcclusionSettings(ambientOcclusion);
+        this._ambientOcclusion = next;
         this._syncAmbientOcclusionPass();
+
+        const nextMode = next?.mode ?? 'off';
+        if (nextMode !== 'gtao') return;
+
+        const prevMode = prev?.mode ?? 'off';
+        if (prevMode !== 'gtao') {
+            this._resetGtaoCacheState({ forceUpdate: true });
+            return;
+        }
+
+        const prevGtao = prev?.gtao ?? null;
+        const nextGtao = next?.gtao ?? null;
+        const prevAlpha = prev?.alpha ?? null;
+        const nextAlpha = next?.alpha ?? null;
+
+        const prevMotion = prevGtao?.motionThreshold ?? null;
+        const nextMotion = nextGtao?.motionThreshold ?? null;
+
+        const needsUpdate =
+            prevAlpha?.handling !== nextAlpha?.handling ||
+            prevAlpha?.threshold !== nextAlpha?.threshold ||
+            prevGtao?.radius !== nextGtao?.radius ||
+            prevGtao?.quality !== nextGtao?.quality ||
+            prevGtao?.denoise !== nextGtao?.denoise ||
+            prevGtao?.updateMode !== nextGtao?.updateMode ||
+            prevMotion?.positionMeters !== nextMotion?.positionMeters ||
+            prevMotion?.rotationDeg !== nextMotion?.rotationDeg ||
+            prevMotion?.fovDeg !== nextMotion?.fovDeg;
+
+        if (needsUpdate) this._invalidateGtaoCache({ resetFrameIndex: true });
     }
 
     setAntiAliasing(antiAliasing) {
@@ -695,11 +1139,29 @@ export class PostProcessingPipeline {
     }
 
     getDebugInfo() {
+        const aoMode = this._ambientOcclusion?.mode ?? 'off';
+        const gtao = this._ambientOcclusion?.gtao ?? null;
+        const gtaoCache = this._gtaoCache ?? null;
+        const gtaoFrameIndex = Number.isFinite(gtaoCache?.frameIndex) ? gtaoCache.frameIndex : 0;
+        const gtaoLastUpdateFrameIndex = Number.isFinite(gtaoCache?.lastUpdateFrameIndex) ? gtaoCache.lastUpdateFrameIndex : -1;
+        const gtaoAgeFrames = (aoMode === 'gtao' && gtaoLastUpdateFrameIndex >= 0)
+            ? Math.max(0, Math.floor((gtaoFrameIndex - 1) - gtaoLastUpdateFrameIndex))
+            : null;
+
         return {
             globalBloomEnabled: !!this._globalBloom?.enabled,
             sunBloomEnabled: !!this._sunBloom?.enabled,
             ambientOcclusion: {
-                mode: this._ambientOcclusion?.mode ?? 'off'
+                mode: aoMode,
+                gtao: aoMode === 'gtao'
+                    ? {
+                        updateMode: gtao?.updateMode ?? 'every_frame',
+                        updatedThisFrame: gtaoCache?.updatedThisFrame === true,
+                        updateReason: typeof gtaoCache?.updateReason === 'string' ? gtaoCache.updateReason : null,
+                        cacheSupported: gtaoCache?.cacheSupported === true,
+                        ageFrames: gtaoAgeFrames
+                    }
+                    : null
             },
             antiAliasing: {
                 mode: this._antiAliasing?.activeMode ?? 'off',
@@ -804,12 +1266,21 @@ export class PostProcessingPipeline {
         const sunBloomOn = !!this._sunBloom?.enabled && (this._sunBloom?.strength > 0);
         const aoMode = this._ambientOcclusion?.mode ?? 'off';
         const aoOn = aoMode === 'ssao' || aoMode === 'gtao';
+        if (aoOn && typeof performance !== 'undefined' && typeof performance.now === 'function') {
+            const now = performance.now();
+            if ((now - (this._aoAlpha?.lastSceneScanMs ?? -Infinity)) > 1000) {
+                this._aoAlpha.lastSceneScanMs = now;
+                this._scanSceneForAoAlphaHooks();
+            }
+        }
         const gradeOn = !!this._colorGrading?.enabled;
         const aaMode = this._antiAliasing?.activeMode ?? 'off';
         const taa = aaMode === 'taa' ? (this._antiAliasing?.requested?.taa ?? null) : null;
         const taaJitterStrength = taa ? clamp(taa.jitter, 0, 1, 0) : 0;
         const jitterApplied = aaMode === 'taa' && taaJitterStrength > 0;
         const wantsPipeline = globalBloomOn || sunBloomOn || aoOn || gradeOn || aaMode !== 'off';
+
+        if (aoMode === 'gtao') this._syncGtaoFrameRuntime();
 
         const prevView = jitterApplied ? cloneCameraView(this.camera?.view) : null;
         if (jitterApplied) {
@@ -842,6 +1313,7 @@ export class PostProcessingPipeline {
 
             this.composer.render(deltaTime);
         } finally {
+            if (aoMode === 'gtao') this._finalizeGtaoFrameRuntime();
             if (jitterApplied) restoreCameraView(this.camera, prevView);
             if (aaMode === 'taa') this._taaJitterIndex += 1;
             if (canCapture) info.autoReset = prevAutoReset;
@@ -852,6 +1324,7 @@ export class PostProcessingPipeline {
         this._globalBloomPass?.dispose?.();
         this._sunBloomPass?.dispose?.();
         this._ao?.pass?.dispose?.();
+        this._gtaoCache?.blendPass?.material?.dispose?.();
         this.taaPass?.dispose?.();
         this.smaaPass?.dispose?.();
         this.fxaaPass?.material?.dispose?.();
@@ -872,5 +1345,6 @@ export class PostProcessingPipeline {
 
         this._darkMaterial?.dispose?.();
         this._blackTex?.dispose?.();
+        this._whiteTex?.dispose?.();
     }
 }

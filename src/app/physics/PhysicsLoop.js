@@ -42,8 +42,8 @@ export class PhysicsLoop {
         }
         this.lastSubSteps = steps;
 
-        // optional interpolation hook (not used yet)
-        const alpha = this.fixedDt > 0 ? this.accum / this.fixedDt : 0;
+        const alphaRaw = this.fixedDt > 0 ? this.accum / this.fixedDt : 0;
+        const alpha = Math.max(0, Math.min(1, alphaRaw));
         this.lastAlpha = alpha;
         for (const s of this.systems) {
             if (typeof s.interpolate === 'function') s.interpolate(alpha);

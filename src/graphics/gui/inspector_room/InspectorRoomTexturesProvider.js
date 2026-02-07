@@ -1,7 +1,6 @@
 // src/graphics/gui/inspector_room/InspectorRoomTexturesProvider.js
 // Texture inspection content provider for the Inspector Room.
 import * as THREE from 'three';
-import { resolveBuildingStyleWallMaterialUrls } from '../../assets3d/generators/buildings/BuildingGenerator.js';
 import { getWindowNormalMapTexture, getWindowRoughnessMapTexture } from '../../assets3d/generators/buildings/WindowTextureGenerator.js';
 import { getPbrMaterialMeta, getPbrMaterialTileMeters, resolvePbrMaterialUrls } from '../../assets3d/materials/PbrMaterialCatalog.js';
 import { getSignAlphaMaskTextureById } from '../../assets3d/textures/signs/SignAlphaMaskCache.js';
@@ -456,11 +455,6 @@ export class InspectorRoomTexturesProvider {
         this._selectedSizeMeters = getEffectiveRealWorldSizeForEntry(entry).size;
         this._syncPreviewLayout();
 
-        if (entry?.kind === 'building_wall') {
-            this._setBuildingWallMaterial(entry);
-            return;
-        }
-
         if (entry?.kind === 'pbr_material') {
             this._setPbrMaterial(entry);
             return;
@@ -478,8 +472,6 @@ export class InspectorRoomTexturesProvider {
             extra = { kind: 'sign', atlas: entry.atlasLabel ?? entry.atlasId ?? '-', rectPx: entry.rectPx ?? null, uv: entry.uv ?? null };
         } else if (entry.kind === 'window') {
             extra = { kind: 'window', style: entry.style ?? '-' };
-        } else if (entry.kind === 'building_wall') {
-            extra = { kind: 'building_wall', style: entry.style ?? '-' };
         } else if (entry.kind === 'pbr_material') {
             const materialId = entry?.materialId ?? entry?.id ?? null;
             const meta = getPbrMaterialMeta(materialId);
@@ -785,60 +777,6 @@ export class InspectorRoomTexturesProvider {
         this._previewRoughnessMap = pbr?.roughness?.enabled
             ? clonePreviewTexture(getWindowRoughnessMapTexture({ typeId, roughness: pbr?.roughness ?? null }), { wrap })
             : null;
-    }
-
-    _setBuildingWallMaterial(entry) {
-        this._disposePreviewTexture();
-        this._previewNormalScale = 0.9;
-
-        const token = ++this._loadToken;
-        const urls = resolveBuildingStyleWallMaterialUrls(entry?.style);
-        const baseUrl = urls?.baseColorUrl ?? null;
-        const normalUrl = urls?.normalUrl ?? null;
-        const ormUrl = urls?.ormUrl ?? null;
-
-        this._previewAlphaMap = null;
-
-        Promise.allSettled([
-            this._loadUrlTexture(baseUrl, { srgb: true }),
-            this._loadUrlTexture(normalUrl, { srgb: false }),
-            this._loadUrlTexture(ormUrl, { srgb: false })
-        ]).then((results) => {
-            if (token !== this._loadToken) return;
-            const getTex = (idx, url) => {
-                const res = results[idx] ?? null;
-                if (res?.status === 'rejected') this._warnTextureUrlOnce(url, res.reason);
-                return res?.status === 'fulfilled' ? (res.value ?? null) : null;
-            };
-
-            const baseTex = getTex(0, baseUrl);
-            const normalTex = getTex(1, normalUrl);
-            const ormTex = getTex(2, ormUrl);
-
-            const wrap = this._previewMode === 'tiled' ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
-            const label = entry?.label ?? entry?.style ?? 'Building wall';
-            if (!baseTex && !normalTex && !ormTex) {
-                const tex = canvasToTexture(buildPlaceholderCanvas({ label, size: 256 }), { srgb: true });
-                this._previewTexture = clonePreviewTexture(tex, { wrap });
-                tex.dispose?.();
-                this._previewNormalMap = null;
-                this._previewRoughnessMap = null;
-                this._syncPreviewWrap();
-                this._syncPreviewMaps();
-                return;
-            }
-
-            if (baseTex) this._previewTexture = clonePreviewTexture(baseTex, { wrap });
-            else {
-                const tex = canvasToTexture(buildPlaceholderCanvas({ label, size: 256 }), { srgb: true });
-                this._previewTexture = clonePreviewTexture(tex, { wrap });
-                tex.dispose?.();
-            }
-            this._previewNormalMap = clonePreviewTexture(normalTex, { wrap });
-            this._previewRoughnessMap = clonePreviewTexture(ormTex, { wrap });
-            this._syncPreviewWrap();
-            this._syncPreviewMaps();
-        });
     }
 
     _setPbrMaterial(entry) {

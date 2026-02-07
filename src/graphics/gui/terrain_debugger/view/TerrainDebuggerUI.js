@@ -3,7 +3,7 @@
 // @ts-check
 
 import { DEFAULT_IBL_ID, getIblOptions } from '../../../content3d/catalogs/IBLCatalog.js';
-import { getPbrMaterialOptionsForGround } from '../../../content3d/catalogs/PbrMaterialCatalog.js';
+import { getPbrMaterialClassSectionsForGround, getPbrMaterialOptionsForGround } from '../../../content3d/catalogs/PbrMaterialCatalog.js';
 import { createDefaultGrassEngineConfig } from '../../../engine3d/grass/GrassConfig.js';
 import { MaterialPickerPopupController } from '../../shared/material_picker/MaterialPickerPopupController.js';
 import { createMaterialPickerRowController } from '../../shared/material_picker/MaterialPickerRowController.js';
@@ -2864,16 +2864,19 @@ export class TerrainDebuggerUI {
         const picker = this._controls?.groundMaterialPicker ?? null;
         if (!picker || picker.button?.disabled) return;
 
-        const options = getPbrMaterialOptionsForGround().map((opt) => ({
-            id: opt.id,
-            label: opt.label,
-            kind: 'texture',
-            previewUrl: opt.previewUrl ?? null
+        const sections = getPbrMaterialClassSectionsForGround().map((section) => ({
+            label: section.label,
+            options: (section.options ?? []).map((opt) => ({
+                id: opt.id,
+                label: opt.label,
+                kind: 'texture',
+                previewUrl: opt.previewUrl ?? null
+            }))
         }));
 
         this._materialPickerPopup?.open?.({
             title: 'Ground material',
-            sections: [{ label: 'Ground', options }],
+            sections,
             selectedId: String(this._state?.terrain?.groundMaterialId ?? ''),
             onSelect: (opt) => {
                 this._state.terrain.groundMaterialId = String(opt?.id ?? '');

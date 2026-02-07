@@ -3808,3 +3808,9 @@ export function buildBuildingFabricationVisualParts({
         topBelt: roofRingGroup.children.length ? roofRingGroup : null
     };
 }
+
+export const __testOnly = Object.freeze({
+    computeQuadFacadeFramesFromLoop,
+    computeQuadFacadeSilhouette,
+    buildWallSidesGeometryFromLoopDetailXZ
+});

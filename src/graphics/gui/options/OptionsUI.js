@@ -731,6 +731,40 @@ export class OptionsUI {
             els.bloom.textContent = '-';
         }
 
+        if (els.ao) {
+            const ao = info?.ambientOcclusion ?? null;
+            if (!ao || typeof ao !== 'object') {
+                els.ao.textContent = '-';
+            } else {
+                const mode = String(ao.mode ?? 'off');
+                if (mode === 'off') {
+                    els.ao.textContent = 'Off';
+                } else if (mode === 'ssao') {
+                    els.ao.textContent = 'SSAO';
+                } else if (mode === 'gtao') {
+                    const g = ao.gtao ?? null;
+                    const updateMode = typeof g?.updateMode === 'string' ? g.updateMode : 'every_frame';
+                    const labels = {
+                        every_frame: 'every frame',
+                        when_camera_moves: 'camera moves',
+                        half_rate: 'half rate',
+                        third_rate: 'third rate',
+                        quarter_rate: 'quarter rate'
+                    };
+                    const modeLabel = labels[updateMode] ?? updateMode;
+                    const updated = g?.updatedThisFrame === true;
+                    const reason = typeof g?.updateReason === 'string' ? g.updateReason : null;
+                    const age = Number.isFinite(g?.ageFrames) ? Number(g.ageFrames) : null;
+                    const cacheSupported = g?.cacheSupported;
+                    const status = updated ? `updated${reason ? ` (${reason})` : ''}` : (age !== null ? `cached (${age}f)` : 'cached');
+                    const cache = cacheSupported === false ? ' (no cache)' : '';
+                    els.ao.textContent = `GTAO (${modeLabel}) (${status})${cache}`;
+                } else {
+                    els.ao.textContent = mode.toUpperCase();
+                }
+            }
+        }
+
         const grade = info?.colorGrading ?? null;
         if (grade && typeof grade === 'object') {
             const requested = String(grade.requestedPreset ?? 'off');
@@ -1003,6 +1037,25 @@ export class OptionsUI {
         const d = this._draftAmbientOcclusion;
         if (d.mode === undefined) d.mode = defaults.mode;
 
+        if (!d.alpha || typeof d.alpha !== 'object') d.alpha = { ...defaults.alpha };
+        if (d.alpha.handling === undefined) d.alpha.handling = defaults.alpha.handling;
+        if (d.alpha.threshold === undefined) d.alpha.threshold = defaults.alpha.threshold;
+
+        if (!d.staticAo || typeof d.staticAo !== 'object') d.staticAo = { ...defaults.staticAo };
+        if (d.staticAo.mode === undefined) d.staticAo.mode = defaults.staticAo.mode;
+        if (d.staticAo.intensity === undefined) d.staticAo.intensity = defaults.staticAo.intensity;
+        if (d.staticAo.quality === undefined) d.staticAo.quality = defaults.staticAo.quality;
+        if (d.staticAo.radius === undefined) d.staticAo.radius = defaults.staticAo.radius;
+        if (d.staticAo.wallHeight === undefined) d.staticAo.wallHeight = defaults.staticAo.wallHeight;
+        if (d.staticAo.debugView === undefined) d.staticAo.debugView = defaults.staticAo.debugView;
+
+        if (!d.busContactShadow || typeof d.busContactShadow !== 'object') d.busContactShadow = { ...defaults.busContactShadow };
+        if (d.busContactShadow.enabled === undefined) d.busContactShadow.enabled = defaults.busContactShadow.enabled;
+        if (d.busContactShadow.intensity === undefined) d.busContactShadow.intensity = defaults.busContactShadow.intensity;
+        if (d.busContactShadow.radius === undefined) d.busContactShadow.radius = defaults.busContactShadow.radius;
+        if (d.busContactShadow.softness === undefined) d.busContactShadow.softness = defaults.busContactShadow.softness;
+        if (d.busContactShadow.maxDistance === undefined) d.busContactShadow.maxDistance = defaults.busContactShadow.maxDistance;
+
         if (!d.ssao || typeof d.ssao !== 'object') d.ssao = { ...defaults.ssao };
         if (d.ssao.intensity === undefined) d.ssao.intensity = defaults.ssao.intensity;
         if (d.ssao.radius === undefined) d.ssao.radius = defaults.ssao.radius;
@@ -1013,6 +1066,12 @@ export class OptionsUI {
         if (d.gtao.radius === undefined) d.gtao.radius = defaults.gtao.radius;
         if (d.gtao.quality === undefined) d.gtao.quality = defaults.gtao.quality;
         if (d.gtao.denoise === undefined) d.gtao.denoise = defaults.gtao.denoise;
+        if (d.gtao.updateMode === undefined) d.gtao.updateMode = defaults.gtao.updateMode;
+
+        if (!d.gtao.motionThreshold || typeof d.gtao.motionThreshold !== 'object') d.gtao.motionThreshold = { ...(defaults.gtao.motionThreshold ?? {}) };
+        if (d.gtao.motionThreshold.positionMeters === undefined) d.gtao.motionThreshold.positionMeters = defaults.gtao.motionThreshold.positionMeters;
+        if (d.gtao.motionThreshold.rotationDeg === undefined) d.gtao.motionThreshold.rotationDeg = defaults.gtao.motionThreshold.rotationDeg;
+        if (d.gtao.motionThreshold.fovDeg === undefined) d.gtao.motionThreshold.fovDeg = defaults.gtao.motionThreshold.fovDeg;
     }
 
     _ensureDraftBloom() {
@@ -2016,7 +2075,13 @@ export class OptionsUI {
 
         const updateAoStatus = () => {
             const mode = String(ao?.mode ?? 'off');
-            status.ao.text.textContent = mode === 'off' ? 'Off' : mode.toUpperCase();
+            const bits = [];
+            bits.push(mode === 'off' ? 'Off' : mode.toUpperCase());
+            const staticOn = String(ao?.staticAo?.mode ?? 'off') !== 'off';
+            const contactOn = ao?.busContactShadow?.enabled === true;
+            if (staticOn) bits.push('Static');
+            if (contactOn) bits.push('Bus');
+            status.ao.text.textContent = bits.join(' + ');
         };
         updateAoStatus();
 
@@ -2428,20 +2493,168 @@ export class OptionsUI {
         const sectionAo = makeEl('div', 'options-section');
         sectionAo.appendChild(makeEl('div', 'options-section-title', 'Ambient Occlusion'));
 
-        const aoMode = makeChoiceRow({
-            label: 'Mode',
-            value: String(ao?.mode ?? 'off'),
+	        const aoMode = makeChoiceRow({
+	            label: 'Mode',
+	            value: String(ao?.mode ?? 'off'),
+	            options: [
+	                { id: 'off', label: 'Off' },
+	                { id: 'ssao', label: 'SSAO' },
+	                { id: 'gtao', label: 'GTAO' }
+	            ],
+	            onChange: (v) => {
+	                ao.mode = v;
+	                emit();
+	                syncAoControls();
+	                updateAoStatus();
+	            }
+	        });
+
+	        const staticAoMode = makeChoiceRow({
+	            label: 'Static AO',
+	            value: String(ao?.staticAo?.mode ?? 'off') === 'off' ? 'off' : 'vertex',
+	            options: [
+	                { id: 'off', label: 'Off' },
+	                { id: 'vertex', label: 'On' }
+	            ],
+	            onChange: (v) => {
+	                if (!ao.staticAo || typeof ao.staticAo !== 'object') ao.staticAo = {};
+	                ao.staticAo.mode = v === 'off' ? 'off' : 'vertex';
+	                emit();
+	                syncAoControls();
+	                updateAoStatus();
+	            }
+	        });
+
+        const staticAoIntensity = makeNumberSliderRow({
+            label: 'Static AO intensity',
+            value: ao?.staticAo?.intensity ?? 0.6,
+            min: 0,
+            max: 2,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => { ao.staticAo.intensity = v; emit(); }
+        });
+
+        const staticAoQuality = makeChoiceRow({
+            label: 'Static AO quality',
+            value: String(ao?.staticAo?.quality ?? 'medium'),
             options: [
-                { id: 'off', label: 'Off' },
-                { id: 'ssao', label: 'SSAO' },
-                { id: 'gtao', label: 'GTAO' }
+                { id: 'low', label: 'Low' },
+                { id: 'medium', label: 'Medium' },
+                { id: 'high', label: 'High' }
+            ],
+            onChange: (v) => { ao.staticAo.quality = v; emit(); }
+        });
+
+        const staticAoRadius = makeNumberSliderRow({
+            label: 'Static AO radius (m)',
+            value: ao?.staticAo?.radius ?? 4,
+            min: 0.25,
+            max: 16,
+            step: 0.05,
+            digits: 2,
+            onChange: (v) => { ao.staticAo.radius = v; emit(); }
+        });
+
+        const staticAoWallHeight = makeNumberSliderRow({
+            label: 'Static AO wall height (m)',
+            value: ao?.staticAo?.wallHeight ?? 1.6,
+            min: 0.25,
+            max: 6,
+            step: 0.05,
+            digits: 2,
+            onChange: (v) => { ao.staticAo.wallHeight = v; emit(); }
+        });
+
+        const staticAoDebugView = makeToggleRow({
+            label: 'Static AO debug view',
+            value: ao?.staticAo?.debugView === true,
+            onChange: (v) => { ao.staticAo.debugView = v; emit(); }
+        });
+
+        const aoAlphaHandling = makeChoiceRow({
+            label: 'Alpha handling',
+            value: String(ao?.alpha?.handling ?? 'alpha_test'),
+            options: [
+                { id: 'alpha_test', label: 'Alpha test' },
+                { id: 'exclude', label: 'Exclude' }
             ],
             onChange: (v) => {
-                ao.mode = v;
+                if (!ao.alpha || typeof ao.alpha !== 'object') ao.alpha = {};
+                ao.alpha.handling = v;
                 emit();
                 syncAoControls();
-                updateAoStatus();
             }
+        });
+
+	        const aoAlphaThreshold = makeNumberSliderRow({
+	            label: 'Alpha threshold',
+	            value: ao?.alpha?.threshold ?? 0.5,
+            min: 0.01,
+            max: 0.99,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                if (!ao.alpha || typeof ao.alpha !== 'object') ao.alpha = {};
+                ao.alpha.threshold = v;
+                emit();
+	            }
+	        });
+
+	        const busContactShadowMode = makeChoiceRow({
+	            label: 'Bus contact shadow',
+	            value: ao?.busContactShadow?.enabled === true ? 'on' : 'off',
+	            options: [
+	                { id: 'off', label: 'Off' },
+	                { id: 'on', label: 'On' }
+	            ],
+	            onChange: (v) => {
+	                if (!ao.busContactShadow || typeof ao.busContactShadow !== 'object') ao.busContactShadow = {};
+	                ao.busContactShadow.enabled = v === 'on';
+	                emit();
+	                syncAoControls();
+	                updateAoStatus();
+	            }
+	        });
+
+        const busContactShadowIntensity = makeNumberSliderRow({
+            label: 'Bus contact shadow intensity',
+            value: ao?.busContactShadow?.intensity ?? 0.4,
+            min: 0,
+            max: 2,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => { ao.busContactShadow.intensity = v; emit(); }
+        });
+
+        const busContactShadowRadius = makeNumberSliderRow({
+            label: 'Bus contact shadow radius (m)',
+            value: ao?.busContactShadow?.radius ?? 0.9,
+            min: 0.05,
+            max: 4,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => { ao.busContactShadow.radius = v; emit(); }
+        });
+
+        const busContactShadowSoftness = makeNumberSliderRow({
+            label: 'Bus contact shadow softness',
+            value: ao?.busContactShadow?.softness ?? 0.75,
+            min: 0.02,
+            max: 1,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => { ao.busContactShadow.softness = v; emit(); }
+        });
+
+        const busContactShadowMaxDistance = makeNumberSliderRow({
+            label: 'Bus contact shadow max distance (m)',
+            value: ao?.busContactShadow?.maxDistance ?? 0.75,
+            min: 0,
+            max: 5,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => { ao.busContactShadow.maxDistance = v; emit(); }
         });
 
         const ssaoIntensity = makeNumberSliderRow({
@@ -2512,23 +2725,131 @@ export class OptionsUI {
             onChange: (v) => { ao.gtao.denoise = v; emit(); }
         });
 
+        const gtaoUpdateMode = makeSelectRow({
+            label: 'GTAO update',
+            value: String(ao?.gtao?.updateMode ?? 'every_frame'),
+            options: [
+                { id: 'every_frame', label: 'Every frame' },
+                { id: 'when_camera_moves', label: 'When camera moves' },
+                { id: 'half_rate', label: 'Half rate (2 frames)' },
+                { id: 'third_rate', label: 'Third rate (3 frames)' },
+                { id: 'quarter_rate', label: 'Quarter rate (4 frames)' }
+            ],
+            onChange: (v) => {
+                ao.gtao.updateMode = v;
+                emit();
+                syncAoControls();
+            }
+        });
+
+        const gtaoMotionPos = makeNumberSliderRow({
+            label: 'GTAO motion threshold: position (m)',
+            value: ao?.gtao?.motionThreshold?.positionMeters ?? 0.02,
+            min: 0,
+            max: 0.25,
+            step: 0.001,
+            digits: 3,
+            onChange: (v) => {
+                if (!ao.gtao.motionThreshold || typeof ao.gtao.motionThreshold !== 'object') ao.gtao.motionThreshold = {};
+                ao.gtao.motionThreshold.positionMeters = v;
+                emit();
+            }
+        });
+
+        const gtaoMotionRot = makeNumberSliderRow({
+            label: 'GTAO motion threshold: rotation (deg)',
+            value: ao?.gtao?.motionThreshold?.rotationDeg ?? 0.15,
+            min: 0,
+            max: 5,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                if (!ao.gtao.motionThreshold || typeof ao.gtao.motionThreshold !== 'object') ao.gtao.motionThreshold = {};
+                ao.gtao.motionThreshold.rotationDeg = v;
+                emit();
+            }
+        });
+
+        const gtaoMotionFov = makeNumberSliderRow({
+            label: 'GTAO motion threshold: FOV (deg)',
+            value: ao?.gtao?.motionThreshold?.fovDeg ?? 0,
+            min: 0,
+            max: 10,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                if (!ao.gtao.motionThreshold || typeof ao.gtao.motionThreshold !== 'object') ao.gtao.motionThreshold = {};
+                ao.gtao.motionThreshold.fovDeg = v;
+                emit();
+            }
+        });
+
         const aoNote = makeEl('div', 'options-note');
-        aoNote.textContent = 'AO adds subtle contact occlusion. SSAO is cheaper; GTAO is cleaner and can be denoised. Low quality reduces resolution and sample count.';
+        aoNote.textContent = 'Static AO is a baked, stable occlusion term for static world geometry. SSAO is cheaper; GTAO is cleaner and can be denoised. Bus contact shadow is a cheap grounding cue for the vehicle.';
 
         sectionAo.appendChild(aoMode.row);
-        sectionAo.appendChild(ssaoIntensity.row);
-        sectionAo.appendChild(ssaoRadius.row);
-        sectionAo.appendChild(ssaoQuality.row);
-        sectionAo.appendChild(gtaoIntensity.row);
-        sectionAo.appendChild(gtaoRadius.row);
-        sectionAo.appendChild(gtaoQuality.row);
-        sectionAo.appendChild(gtaoDenoise.row);
-        sectionAo.appendChild(aoNote);
+        const aoParamsStack = makeEl('div', 'options-overlap-stack');
+        const ssaoGroup = makeEl('div', 'options-overlap-pane');
+        ssaoGroup.appendChild(ssaoIntensity.row);
+        ssaoGroup.appendChild(ssaoRadius.row);
+        ssaoGroup.appendChild(ssaoQuality.row);
 
-        const syncAoControls = () => {
-            const mode = String(ao?.mode ?? 'off');
-            const ssaoOn = mode === 'ssao';
-            const gtaoOn = mode === 'gtao';
+        const gtaoGroup = makeEl('div', 'options-overlap-pane');
+        gtaoGroup.appendChild(gtaoIntensity.row);
+        gtaoGroup.appendChild(gtaoRadius.row);
+        gtaoGroup.appendChild(gtaoQuality.row);
+        gtaoGroup.appendChild(gtaoDenoise.row);
+        gtaoGroup.appendChild(gtaoUpdateMode.row);
+        gtaoGroup.appendChild(gtaoMotionPos.row);
+        gtaoGroup.appendChild(gtaoMotionRot.row);
+        gtaoGroup.appendChild(gtaoMotionFov.row);
+
+	        aoParamsStack.appendChild(ssaoGroup);
+	        aoParamsStack.appendChild(gtaoGroup);
+	        sectionAo.appendChild(aoParamsStack);
+	        sectionAo.appendChild(aoAlphaHandling.row);
+	        sectionAo.appendChild(aoAlphaThreshold.row);
+	        sectionAo.appendChild(staticAoMode.row);
+	        const staticAoGroup = makeEl('div', 'options-overlap-pane');
+	        staticAoGroup.appendChild(staticAoIntensity.row);
+	        staticAoGroup.appendChild(staticAoQuality.row);
+	        staticAoGroup.appendChild(staticAoRadius.row);
+	        staticAoGroup.appendChild(staticAoWallHeight.row);
+	        staticAoGroup.appendChild(staticAoDebugView.row);
+	        sectionAo.appendChild(staticAoGroup);
+
+	        sectionAo.appendChild(busContactShadowMode.row);
+	        const busContactShadowGroup = makeEl('div', 'options-overlap-pane');
+	        busContactShadowGroup.appendChild(busContactShadowIntensity.row);
+	        busContactShadowGroup.appendChild(busContactShadowRadius.row);
+	        busContactShadowGroup.appendChild(busContactShadowSoftness.row);
+	        busContactShadowGroup.appendChild(busContactShadowMaxDistance.row);
+	        sectionAo.appendChild(busContactShadowGroup);
+	        sectionAo.appendChild(aoNote);
+
+	        const syncAoControls = () => {
+	            const mode = String(ao?.mode ?? 'off');
+	            const ssaoOn = mode === 'ssao';
+	            const gtaoOn = mode === 'gtao';
+	            const aoOn = ssaoOn || gtaoOn;
+	            const alphaHandling = String(ao?.alpha?.handling ?? 'alpha_test');
+	            const alphaTestOn = alphaHandling === 'alpha_test';
+
+	            const staticMode = String(ao?.staticAo?.mode ?? 'off');
+	            const staticOn = staticMode !== 'off';
+
+	            staticAoMode.setValue(staticOn ? 'vertex' : 'off');
+	            staticAoGroup.classList.toggle('hidden', !staticOn);
+	            for (const ctrl of [staticAoIntensity, staticAoRadius, staticAoWallHeight]) {
+	                ctrl.range.disabled = !staticOn;
+	                ctrl.number.disabled = !staticOn;
+	            }
+	            staticAoQuality.setDisabled(!staticOn);
+	            staticAoDebugView.toggle.disabled = !staticOn;
+
+            aoParamsStack.classList.toggle('hidden', !aoOn);
+            ssaoGroup.classList.toggle('hidden', !ssaoOn);
+            gtaoGroup.classList.toggle('hidden', !gtaoOn);
 
             for (const ctrl of [ssaoIntensity, ssaoRadius]) {
                 ctrl.range.disabled = !ssaoOn;
@@ -2542,15 +2863,39 @@ export class OptionsUI {
             }
             gtaoQuality.setDisabled(!gtaoOn);
             gtaoDenoise.toggle.disabled = !gtaoOn;
-        };
-        syncAoControls();
+            gtaoUpdateMode.select.disabled = !gtaoOn;
 
-        this.body.appendChild(sectionStatus);
-        this.body.appendChild(sectionShadows);
-        this.body.appendChild(sectionAo);
-        this.body.appendChild(sectionAa);
-        this._refreshAntiAliasingDebug();
-    }
+            const updateMode = String(ao?.gtao?.updateMode ?? 'every_frame');
+            const motionOn = gtaoOn && updateMode === 'when_camera_moves';
+            for (const ctrl of [gtaoMotionPos, gtaoMotionRot, gtaoMotionFov]) {
+                ctrl.row.classList.toggle('hidden', !motionOn);
+                ctrl.range.disabled = !motionOn;
+                ctrl.number.disabled = !motionOn;
+            }
+
+            aoAlphaHandling.setDisabled(!aoOn);
+            aoAlphaHandling.row.classList.toggle('hidden', !aoOn);
+
+            aoAlphaThreshold.row.classList.toggle('hidden', !(aoOn && alphaTestOn));
+	            aoAlphaThreshold.range.disabled = !aoOn || !alphaTestOn;
+	            aoAlphaThreshold.number.disabled = !aoOn || !alphaTestOn;
+
+	            const contactShadowOn = ao?.busContactShadow?.enabled === true;
+	            busContactShadowMode.setValue(contactShadowOn ? 'on' : 'off');
+	            busContactShadowGroup.classList.toggle('hidden', !contactShadowOn);
+	            for (const ctrl of [busContactShadowIntensity, busContactShadowRadius, busContactShadowSoftness, busContactShadowMaxDistance]) {
+	                ctrl.range.disabled = !contactShadowOn;
+	                ctrl.number.disabled = !contactShadowOn;
+	            }
+	        };
+	        syncAoControls();
+
+	        this.body.appendChild(sectionStatus);
+	        this.body.appendChild(sectionAa);
+	        this.body.appendChild(sectionShadows);
+	        this.body.appendChild(sectionAo);
+	        this._refreshAntiAliasingDebug();
+	    }
 
     _renderDebugTab() {
         this._ensureDraftVehicleMotionDebug();
@@ -3320,11 +3665,13 @@ export class OptionsUI {
         if (this._getPostProcessingDebugInfo) {
             const pipelineRow = makeValueRow({ label: 'Post-processing pipeline', value: '-' });
             const bloomRow = makeValueRow({ label: 'Bloom (active now)', value: '-' });
+            const aoRow = makeValueRow({ label: 'Ambient occlusion (active now)', value: '-' });
             const gradeRow = makeValueRow({ label: 'Color grading (active now)', value: '-' });
             sectionPost.appendChild(pipelineRow.row);
             sectionPost.appendChild(bloomRow.row);
+            sectionPost.appendChild(aoRow.row);
             sectionPost.appendChild(gradeRow.row);
-            this._postDebugEls = { pipeline: pipelineRow.text, bloom: bloomRow.text, grading: gradeRow.text };
+            this._postDebugEls = { pipeline: pipelineRow.text, bloom: bloomRow.text, ao: aoRow.text, grading: gradeRow.text };
         } else {
             if (this._initialPostProcessingActive !== null) {
                 sectionPost.appendChild(makeValueRow({
@@ -3563,6 +3910,10 @@ export class OptionsUI {
             },
             ambientOcclusion: {
                 mode: String(ambientOcclusion?.mode ?? 'off'),
+                alpha: {
+                    handling: String(ambientOcclusion?.alpha?.handling ?? 'alpha_test'),
+                    threshold: ambientOcclusion?.alpha?.threshold
+                },
                 ssao: {
                     intensity: ambientOcclusion?.ssao?.intensity,
                     radius: ambientOcclusion?.ssao?.radius,

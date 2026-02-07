@@ -16,7 +16,7 @@ import {
     resolveBuildingStyleWallMaterialUrls as resolveBuildingStyleWallMaterialUrlsFromCatalog,
     resolveBuildingStyleWallTextureUrl as resolveBuildingStyleWallTextureUrlFromCatalog
 } from '../../../content3d/catalogs/BuildingStyleCatalog.js';
-import { computePbrMaterialTextureRepeat, tryGetPbrMaterialIdFromUrl } from '../../../content3d/catalogs/PbrMaterialCatalog.js';
+import { computePbrMaterialTextureRepeat, isPbrMaterialId, tryGetPbrMaterialIdFromUrl } from '../../../content3d/catalogs/PbrMaterialCatalog.js';
 import { applyMaterialVariationToMeshStandardMaterial, computeMaterialVariationSeedFromTiles, MATERIAL_VARIATION_ROOT } from '../../materials/MaterialVariationSystem.js';
 
 const EPS = 1e-6;
@@ -1239,7 +1239,7 @@ export function buildBuildingVisualParts({
         ? clamp(streetCfg.floorHeight ?? upperFloorHeight, 1.0, 12.0)
         : upperFloorHeight;
     const streetStyle = streetEnabled
-        ? (isBuildingStyle(streetCfg.style) ? streetCfg.style : style)
+        ? ((isBuildingStyle(streetCfg.style) || isPbrMaterialId(streetCfg.style)) ? streetCfg.style : style)
         : style;
 
     const beltHeight = Number.isFinite(beltCfg.height) ? clamp(beltCfg.height, 0.02, 1.2) : 0.18;

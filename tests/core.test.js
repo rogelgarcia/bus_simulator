@@ -179,6 +179,63 @@ async function runTests() {
         assertTrue(Math.abs(c1.z - 10) < 1e-3, `Expected center.z≈10, got ${c1.z}`);
     });
 
+    // ========== Vehicle Visual Interpolation (Regression) ==========
+    const { PhysicsLoop } = await import('/src/app/physics/PhysicsLoop.js');
+    const { FixedTimestepPoseBuffer } = await import('/src/app/physics/interpolation/FixedTimestepPoseBuffer.js');
+
+    test('PhysicsLoop: interpolate(alpha) produces smooth render poses under dt < fixedDt', () => {
+        const fixedDt = 1 / 60;
+        const renderDt = fixedDt / 2;
+        const speed = 12;
+        const yawRate = Math.PI * 0.75;
+
+        const loop = new PhysicsLoop({ fixedDt, maxSubSteps: 4 });
+        const physicsPose = { position: { x: 0, y: 0, z: 0 }, yaw: 0 };
+        const renderPose = { position: { x: 0, y: 0, z: 0 }, yaw: 0 };
+        const buffer = new FixedTimestepPoseBuffer(physicsPose);
+        const anchor = new THREE.Group();
+
+        const normalizeAngle = (rad) => Math.atan2(Math.sin(rad), Math.cos(rad));
+
+        loop.add({
+            fixedUpdate: (dt) => {
+                physicsPose.position.x += speed * dt;
+                physicsPose.yaw += yawRate * dt;
+                buffer.push(physicsPose);
+            },
+            interpolate: (alpha) => {
+                buffer.interpolate(alpha, renderPose);
+                anchor.position.x = renderPose.position.x;
+                anchor.position.z = renderPose.position.z;
+                anchor.rotation.y = renderPose.yaw;
+            }
+        });
+
+        loop.update(fixedDt);
+
+        const expectedDx = speed * renderDt;
+        const expectedDyaw = yawRate * renderDt;
+        let lastX = anchor.position.x;
+        let lastYaw = anchor.rotation.y;
+        let maxDxErr = 0;
+        let maxYawErr = 0;
+
+        for (let i = 0; i < 240; i++) {
+            loop.update(renderDt);
+
+            const dx = anchor.position.x - lastX;
+            const dyaw = normalizeAngle(anchor.rotation.y - lastYaw);
+            maxDxErr = Math.max(maxDxErr, Math.abs(dx - expectedDx));
+            maxYawErr = Math.max(maxYawErr, Math.abs(dyaw - expectedDyaw));
+
+            lastX = anchor.position.x;
+            lastYaw = anchor.rotation.y;
+        }
+
+        assertTrue(maxDxErr <= expectedDx * 0.25 + 1e-4, `Expected smooth dx per frame, maxErr=${maxDxErr}`);
+        assertTrue(maxYawErr <= expectedDyaw * 0.25 + 1e-4, `Expected smooth dyaw per frame, maxErr=${maxYawErr}`);
+    });
+
     // ========== Atmosphere / Sky ==========
     const { shouldShowSkyDome } = await import('/src/graphics/assets3d/generators/SkyGenerator.js');
     const { getDefaultResolvedAtmosphereSettings, getResolvedAtmosphereSettings } = await import('/src/graphics/visuals/atmosphere/AtmosphereSettings.js');
@@ -8531,15 +8588,19 @@ async function runTests() {
         resolveBuildingStyleWallMaterialUrls
     } = await import('/src/graphics/content3d/catalogs/BuildingStyleCatalog.js');
 
-    test('BuildingStyleCatalog: brick style uses lightweight wall texture', () => {
+    test('BuildingStyleCatalog: legacy brick style resolves via PBR catalog', () => {
         assertEqual(resolveBuildingStyleLabel('brick'), 'Brick', 'Brick label mismatch.');
         const urls = resolveBuildingStyleWallMaterialUrls('brick');
-        assertTrue(
-            typeof urls.baseColorUrl === 'string' && urls.baseColorUrl.includes('brick_wall_DEPRECATED.png'),
-            'Expected baseColorUrl.'
-        );
-        assertEqual(urls.normalUrl, null, 'Expected normalUrl to be null.');
-        assertEqual(urls.ormUrl, null, 'Expected ormUrl to be null.');
+        const hasAny = !!urls.baseColorUrl || !!urls.normalUrl || !!urls.ormUrl;
+        if (!hasAny) {
+            assertEqual(urls.baseColorUrl, null, 'Expected missing baseColorUrl for local-only assets.');
+            assertEqual(urls.normalUrl, null, 'Expected missing normalUrl for local-only assets.');
+            assertEqual(urls.ormUrl, null, 'Expected missing ormUrl for local-only assets.');
+            return;
+        }
+        assertTrue(typeof urls.baseColorUrl === 'string' && urls.baseColorUrl.includes('/assets/public/pbr/red_brick/basecolor'), 'Expected baseColorUrl to point at PBR folder.');
+        assertTrue(typeof urls.normalUrl === 'string' && urls.normalUrl.includes('/assets/public/pbr/red_brick/normal_gl'), 'Expected normalUrl to point at PBR folder.');
+        assertTrue(typeof urls.ormUrl === 'string' && urls.ormUrl.includes('/assets/public/pbr/red_brick/arm'), 'Expected ormUrl to point at PBR folder.');
     });
 
     const {

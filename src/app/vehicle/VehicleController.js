@@ -167,12 +167,14 @@ export class VehicleController {
         // Apply locomotion state (position, yaw, steering, wheel spin)
         if (state.locomotion) {
             const loco = state.locomotion;
+            const renderPose = state.renderPose && typeof state.renderPose === 'object' ? state.renderPose : null;
+            const pose = renderPose ?? loco;
 
             // Move anchor position
-            if (this._anchor && loco.position) {
-                const targetX = loco.position.x;
-                const targetZ = loco.position.z;
-                const targetYaw = typeof loco.yaw === 'number' ? loco.yaw : null;
+            if (this._anchor && pose.position) {
+                const targetX = pose.position.x;
+                const targetZ = pose.position.z;
+                const targetYaw = typeof pose.yaw === 'number' ? pose.yaw : null;
 
                 this._anchor.position.x = targetX;
                 this._anchor.position.z = targetZ;
