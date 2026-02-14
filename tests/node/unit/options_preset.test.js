@@ -89,3 +89,18 @@ test('OptionsPreset: antiAliasing is included and sanitized', () => {
     assert.equal(preset.settings.antiAliasing.smaa.cornerRounding, 100);
     assert.equal(preset.settings.antiAliasing.fxaa.edgeThreshold, 0.5);
 });
+
+test('OptionsPreset: sidewalk grass-edge strip toggle parses loose booleans', () => {
+    const preset = parseOptionsPresetJson(JSON.stringify({
+        version: 1,
+        schema: OPTIONS_PRESET_SCHEMA_ID,
+        settings: {
+            asphaltNoise: {
+                livedIn: {
+                    sidewalkGrassEdgeStrip: { enabled: 'false' }
+                }
+            }
+        }
+    }));
+    assert.equal(preset.settings.asphaltNoise.livedIn.sidewalkGrassEdgeStrip.enabled, false);
+});

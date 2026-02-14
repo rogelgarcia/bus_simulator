@@ -5,6 +5,7 @@ import { OptionsUI } from '../graphics/gui/options/OptionsUI.js';
 import { applyAsphaltRoadVisualsToMeshStandardMaterial } from '../graphics/visuals/city/AsphaltRoadVisuals.js';
 import { applyAsphaltEdgeWearVisualsToMeshStandardMaterial } from '../graphics/visuals/city/AsphaltEdgeWearVisuals.js';
 import { applyAsphaltMarkingsNoiseVisualsToMeshStandardMaterial } from '../graphics/visuals/city/AsphaltMarkingsNoiseVisuals.js';
+import { applySidewalkEdgeDirtStripVisualsToMeshStandardMaterial, getSidewalkEdgeDirtStripConfig } from '../graphics/visuals/city/SidewalkEdgeDirtStripVisuals.js';
 import { saveLightingSettings } from '../graphics/lighting/LightingSettings.js';
 import { getResolvedShadowSettings, saveShadowSettings } from '../graphics/lighting/ShadowSettings.js';
 import { saveAntiAliasingSettings } from '../graphics/visuals/postprocessing/AntiAliasingSettings.js';
@@ -185,6 +186,15 @@ export class OptionsState {
                             strength: asphaltNoise.livedIn?.edgeDirt?.strength,
                             width: asphaltNoise.livedIn?.edgeDirt?.width,
                             scale: asphaltNoise.livedIn?.edgeDirt?.scale
+                        },
+                        sidewalkGrassEdgeStrip: {
+                            enabled: asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.enabled,
+                            width: asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.width,
+                            opacity: asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.opacity,
+                            roughness: asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.roughness,
+                            metalness: asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.metalness,
+                            colorHex: asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.colorHex,
+                            fadePower: asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.fadePower
                         },
                         cracks: {
                             enabled: asphaltNoise.livedIn?.cracks?.enabled,
@@ -402,6 +412,17 @@ export class OptionsState {
                     seed: roadSeed,
                     maxWidth: 2.5
                 });
+            }
+
+            const sidewalkEdgeStrip = getSidewalkEdgeDirtStripConfig(asphaltNoise);
+            const stripMats = new Set();
+            if (city.materials.sidewalkEdgeDirt?.isMeshStandardMaterial) stripMats.add(city.materials.sidewalkEdgeDirt);
+            if (city.roads?.sidewalkEdgeDirt?.material?.isMeshStandardMaterial) stripMats.add(city.roads.sidewalkEdgeDirt.material);
+            for (const mat of stripMats) {
+                applySidewalkEdgeDirtStripVisualsToMeshStandardMaterial(mat, { asphaltNoise });
+            }
+            if (city.roads?.sidewalkEdgeDirt?.isMesh) {
+                city.roads.sidewalkEdgeDirt.visible = sidewalkEdgeStrip.enabled;
             }
         }
 

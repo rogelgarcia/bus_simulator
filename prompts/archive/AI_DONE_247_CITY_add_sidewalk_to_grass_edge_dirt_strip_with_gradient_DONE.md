@@ -1,3 +1,11 @@
+# DONE
+
+## Summary
+- Added a dedicated sidewalk-to-grass edge dirt strip mesh generator and integrated it into city road rendering.
+- Added persisted strip settings (`asphaltNoise.livedIn.sidewalkGrassEdgeStrip`) plus strip material/shader fade visuals.
+- Added a new `Grass` options tab with an enable/disable toggle for the strip, including live apply + persistence.
+- Added unit tests for strip builder geometry/winding and updated settings/preset tests for the new setting path.
+
 #Problem
 
 Where sidewalks meet grass, the transition currently looks too clean and visually “cuts” hard. We want a subtle darker dirt/wear strip along the sidewalk edge to blend the sidewalk into the grass/ground more naturally.

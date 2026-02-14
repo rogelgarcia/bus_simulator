@@ -343,14 +343,14 @@ export class OptionsUI {
         this._visibleTabs = (() => {
             const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
             const wantsDebugTab = params ? (params.get('debug') === 'true' || params.get('debugOptions') === 'true') : false;
-            const base = ['lighting', 'graphics', 'sun_bloom', 'asphalt', 'buildings'];
+            const base = ['lighting', 'graphics', 'sun_bloom', 'asphalt', 'grass', 'buildings'];
             if (wantsDebugTab) base.push('debug');
             if (!Array.isArray(visibleTabs)) return base;
             const out = [];
             for (const entry of visibleTabs) {
                 const raw = String(entry ?? '').toLowerCase();
                 const key = raw === 'gameplay' ? 'buildings' : (raw === 'sunbloom' ? 'sun_bloom' : raw);
-                if (key !== 'lighting' && key !== 'graphics' && key !== 'sun_bloom' && key !== 'asphalt' && key !== 'buildings' && key !== 'debug') continue;
+                if (key !== 'lighting' && key !== 'graphics' && key !== 'sun_bloom' && key !== 'asphalt' && key !== 'grass' && key !== 'buildings' && key !== 'debug') continue;
                 if (out.includes(key)) continue;
                 out.push(key);
             }
@@ -364,6 +364,7 @@ export class OptionsUI {
             lighting: 'Lighting',
             sun_bloom: 'Sun Bloom',
             asphalt: 'Asphalt',
+            grass: 'Grass',
             buildings: 'Buildings',
             debug: 'Debug'
         };
@@ -415,7 +416,9 @@ export class OptionsUI {
                 ? 'graphics'
                 : (initialTab === 'asphalt'
                     ? 'asphalt'
-                    : (initialTab === 'sun_bloom' || initialTab === 'sunbloom' ? 'sun_bloom' : 'lighting')));
+                    : (initialTab === 'grass'
+                        ? 'grass'
+                        : (initialTab === 'sun_bloom' || initialTab === 'sunbloom' ? 'sun_bloom' : 'lighting'))));
         this._tab = this._visibleTabs.includes(desiredTab) ? desiredTab : (this._visibleTabs[0] ?? desiredTab);
         this._draftLighting = initialLighting && typeof initialLighting === 'object'
             ? JSON.parse(JSON.stringify(initialLighting))
@@ -561,7 +564,11 @@ export class OptionsUI {
             ? 'buildings'
             : (key === 'graphics'
                 ? 'graphics'
-                : (key === 'asphalt' ? 'asphalt' : (key === 'sun_bloom' || key === 'sunbloom' ? 'sun_bloom' : 'lighting')));
+                : (key === 'asphalt'
+                    ? 'asphalt'
+                    : (key === 'grass'
+                        ? 'grass'
+                        : (key === 'sun_bloom' || key === 'sunbloom' ? 'sun_bloom' : 'lighting'))));
         const next = this._visibleTabs.includes(desired) ? desired : (this._visibleTabs[0] ?? desired);
         this._tab = next;
         for (const [k, btn] of Object.entries(this.tabButtons)) btn.classList.toggle('is-active', k === next);
@@ -578,6 +585,7 @@ export class OptionsUI {
         if (this._tab === 'lighting') return this._renderLightingTab();
         if (this._tab === 'sun_bloom') return this._renderSunBloomTab();
         if (this._tab === 'asphalt') return this._renderAsphaltTab();
+        if (this._tab === 'grass') return this._renderGrassTab();
         if (this._tab === 'debug') return this._renderDebugTab();
         return this._renderBuildingsTab();
     }
@@ -926,6 +934,18 @@ export class OptionsUI {
         if (edgeDirt.strength === undefined) edgeDirt.strength = livedInDefaults.edgeDirt?.strength;
         if (edgeDirt.width === undefined) edgeDirt.width = livedInDefaults.edgeDirt?.width;
         if (edgeDirt.scale === undefined) edgeDirt.scale = livedInDefaults.edgeDirt?.scale;
+
+        if (!livedIn.sidewalkGrassEdgeStrip || typeof livedIn.sidewalkGrassEdgeStrip !== 'object') {
+            livedIn.sidewalkGrassEdgeStrip = { ...(livedInDefaults.sidewalkGrassEdgeStrip ?? {}) };
+        }
+        const sidewalkGrassEdgeStrip = livedIn.sidewalkGrassEdgeStrip;
+        if (sidewalkGrassEdgeStrip.enabled === undefined) sidewalkGrassEdgeStrip.enabled = livedInDefaults.sidewalkGrassEdgeStrip?.enabled;
+        if (sidewalkGrassEdgeStrip.width === undefined) sidewalkGrassEdgeStrip.width = livedInDefaults.sidewalkGrassEdgeStrip?.width;
+        if (sidewalkGrassEdgeStrip.opacity === undefined) sidewalkGrassEdgeStrip.opacity = livedInDefaults.sidewalkGrassEdgeStrip?.opacity;
+        if (sidewalkGrassEdgeStrip.roughness === undefined) sidewalkGrassEdgeStrip.roughness = livedInDefaults.sidewalkGrassEdgeStrip?.roughness;
+        if (sidewalkGrassEdgeStrip.metalness === undefined) sidewalkGrassEdgeStrip.metalness = livedInDefaults.sidewalkGrassEdgeStrip?.metalness;
+        if (sidewalkGrassEdgeStrip.colorHex === undefined) sidewalkGrassEdgeStrip.colorHex = livedInDefaults.sidewalkGrassEdgeStrip?.colorHex;
+        if (sidewalkGrassEdgeStrip.fadePower === undefined) sidewalkGrassEdgeStrip.fadePower = livedInDefaults.sidewalkGrassEdgeStrip?.fadePower;
 
         if (!livedIn.cracks || typeof livedIn.cracks !== 'object') livedIn.cracks = { ...(livedInDefaults.cracks ?? {}) };
         const cracks = livedIn.cracks;
@@ -1687,6 +1707,34 @@ export class OptionsUI {
 	        this.body.appendChild(sectionLivedIn);
 	        this.body.appendChild(note);
 	    }
+
+    _renderGrassTab() {
+        this._ensureDraftAsphaltNoise();
+
+        const d = this._draftAsphaltNoise;
+        const livedIn = d.livedIn ?? (d.livedIn = {});
+        const strip = livedIn.sidewalkGrassEdgeStrip ?? (livedIn.sidewalkGrassEdgeStrip = {});
+        const emit = () => this._emitLiveChange();
+
+        const section = makeEl('div', 'options-section');
+        section.appendChild(makeEl('div', 'options-section-title', 'Sidewalk Edge Blend'));
+
+        const controls = {
+            enabled: makeToggleRow({
+                label: 'Sidewalk grass-edge dirt strip',
+                value: strip.enabled,
+                onChange: (v) => { strip.enabled = v; emit(); }
+            })
+        };
+
+        section.appendChild(controls.enabled.row);
+
+        const note = makeEl('div', 'options-note');
+        note.textContent = 'Adds a subtle dirt/wear strip where sidewalks transition into grass/ground.';
+
+        this.body.appendChild(section);
+        this.body.appendChild(note);
+    }
 
     _renderBuildingsTab() {
         this._ensureDraftBuildingWindowVisuals();
@@ -3973,6 +4021,15 @@ export class OptionsUI {
                         strength: asphaltNoise.livedIn?.edgeDirt?.strength,
                         width: asphaltNoise.livedIn?.edgeDirt?.width,
                         scale: asphaltNoise.livedIn?.edgeDirt?.scale
+                    },
+                    sidewalkGrassEdgeStrip: {
+                        enabled: !!asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.enabled,
+                        width: asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.width,
+                        opacity: asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.opacity,
+                        roughness: asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.roughness,
+                        metalness: asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.metalness,
+                        colorHex: asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.colorHex,
+                        fadePower: asphaltNoise.livedIn?.sidewalkGrassEdgeStrip?.fadePower
                     },
                     cracks: {
                         enabled: !!asphaltNoise.livedIn?.cracks?.enabled,

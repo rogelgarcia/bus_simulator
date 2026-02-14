@@ -25,6 +25,13 @@ test('AsphaltNoiseSettings: defaults are sane', () => {
     assert.equal(typeof d.livedIn?.edgeDirt?.enabled, 'boolean');
     assert.equal(typeof d.livedIn?.edgeDirt?.strength, 'number');
     assert.equal(typeof d.livedIn?.edgeDirt?.width, 'number');
+    assert.equal(typeof d.livedIn?.sidewalkGrassEdgeStrip?.enabled, 'boolean');
+    assert.equal(typeof d.livedIn?.sidewalkGrassEdgeStrip?.width, 'number');
+    assert.equal(typeof d.livedIn?.sidewalkGrassEdgeStrip?.opacity, 'number');
+    assert.equal(typeof d.livedIn?.sidewalkGrassEdgeStrip?.roughness, 'number');
+    assert.equal(typeof d.livedIn?.sidewalkGrassEdgeStrip?.metalness, 'number');
+    assert.equal(typeof d.livedIn?.sidewalkGrassEdgeStrip?.colorHex, 'number');
+    assert.equal(typeof d.livedIn?.sidewalkGrassEdgeStrip?.fadePower, 'number');
     assert.equal(typeof d.livedIn?.cracks?.strength, 'number');
     assert.equal(typeof d.livedIn?.patches?.coverage, 'number');
     assert.equal(typeof d.livedIn?.tireWear?.scale, 'number');
@@ -55,7 +62,11 @@ test('AsphaltNoiseSettings: sanitize clamps scale per layer', () => {
         fine: { scale: 999 },
         markings: { enabled: 'yes', colorStrength: 999, roughnessStrength: -999, debug: 1 },
         color: { value: 999, warmCool: -999, saturation: 999 },
-        livedIn: { edgeDirt: { width: 999 }, patches: { coverage: -999 } }
+        livedIn: {
+            edgeDirt: { width: 999 },
+            sidewalkGrassEdgeStrip: { width: 999, opacity: 999, roughness: -999, metalness: 999, colorHex: -1, fadePower: 999 },
+            patches: { coverage: -999 }
+        }
     });
     assert.equal(s.coarse.scale, 10);
     assert.equal(s.fine.scale, 15);
@@ -67,6 +78,12 @@ test('AsphaltNoiseSettings: sanitize clamps scale per layer', () => {
     assert.equal(s.color.warmCool, -0.25);
     assert.equal(s.color.saturation, 0.5);
     assert.equal(s.livedIn.edgeDirt.width, 3);
+    assert.equal(s.livedIn.sidewalkGrassEdgeStrip.width, 4);
+    assert.equal(s.livedIn.sidewalkGrassEdgeStrip.opacity, 1);
+    assert.equal(s.livedIn.sidewalkGrassEdgeStrip.roughness, 0);
+    assert.equal(s.livedIn.sidewalkGrassEdgeStrip.metalness, 1);
+    assert.equal(s.livedIn.sidewalkGrassEdgeStrip.colorHex, 0xffffff);
+    assert.equal(s.livedIn.sidewalkGrassEdgeStrip.fadePower, 8);
     assert.equal(s.livedIn.patches.coverage, 0);
 });
 

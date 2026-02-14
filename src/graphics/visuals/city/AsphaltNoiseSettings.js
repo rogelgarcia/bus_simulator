@@ -41,6 +41,15 @@ const LEGACY_ASPHALT_NOISE_DEFAULTS_V1 = Object.freeze({
             width: 0.65,
             scale: 0.55
         }),
+        sidewalkGrassEdgeStrip: Object.freeze({
+            enabled: true,
+            width: 0.65,
+            opacity: 0.45,
+            roughness: 1.0,
+            metalness: 0.0,
+            colorHex: 0x4d473c,
+            fadePower: 1.6
+        }),
         cracks: Object.freeze({
             enabled: true,
             strength: 0.12,
@@ -96,6 +105,15 @@ export const ASPHALT_NOISE_DEFAULTS = Object.freeze({
             strength: 0.35,
             width: 0.65,
             scale: 0.55
+        }),
+        sidewalkGrassEdgeStrip: Object.freeze({
+            enabled: true,
+            width: 0.65,
+            opacity: 0.45,
+            roughness: 1.0,
+            metalness: 0.0,
+            colorHex: 0x4d473c,
+            fadePower: 1.6
         }),
         cracks: Object.freeze({
             enabled: true,
@@ -198,11 +216,32 @@ function sanitizeAsphaltLivedInLayerSettings(input, defaults, { includeCoverage 
     return out;
 }
 
+function sanitizeColorHex(value, fallback = 0x4d473c) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return (Math.trunc(fallback) >>> 0) & 0xffffff;
+    return (Math.trunc(n) >>> 0) & 0xffffff;
+}
+
+function sanitizeSidewalkGrassEdgeStripSettings(input, defaults) {
+    const src = input && typeof input === 'object' ? input : {};
+    const d = defaults && typeof defaults === 'object' ? defaults : {};
+    return {
+        enabled: src.enabled !== undefined ? !!src.enabled : !!d.enabled,
+        width: clamp(src.width ?? d.width, 0.0, 4.0, d.width ?? 0.65),
+        opacity: clamp(src.opacity ?? d.opacity, 0.0, 1.0, d.opacity ?? 0.45),
+        roughness: clamp(src.roughness ?? d.roughness, 0.0, 1.0, d.roughness ?? 1.0),
+        metalness: clamp(src.metalness ?? d.metalness, 0.0, 1.0, d.metalness ?? 0.0),
+        colorHex: sanitizeColorHex(src.colorHex ?? src.color ?? d.colorHex, d.colorHex ?? 0x4d473c),
+        fadePower: clamp(src.fadePower ?? d.fadePower, 0.25, 8.0, d.fadePower ?? 1.6)
+    };
+}
+
 function sanitizeAsphaltLivedInSettings(input, defaults) {
     const src = input && typeof input === 'object' ? input : {};
     const d = defaults && typeof defaults === 'object' ? defaults : {};
     return {
         edgeDirt: sanitizeAsphaltLivedInLayerSettings(src.edgeDirt, d.edgeDirt, { includeWidth: true }),
+        sidewalkGrassEdgeStrip: sanitizeSidewalkGrassEdgeStripSettings(src.sidewalkGrassEdgeStrip, d.sidewalkGrassEdgeStrip),
         cracks: sanitizeAsphaltLivedInLayerSettings(src.cracks, d.cracks),
         patches: sanitizeAsphaltLivedInLayerSettings(src.patches, d.patches, { includeCoverage: true }),
         tireWear: sanitizeAsphaltLivedInLayerSettings(src.tireWear, d.tireWear)

@@ -39,6 +39,18 @@ export function getCityMaterials() {
         metalness: 0.0
     });
 
+    const sidewalkEdgeDirt = applyPolygonOffset(new THREE.MeshStandardMaterial({
+        color: 0x4d473c,
+        roughness: 1.0,
+        metalness: 0.0,
+        transparent: true,
+        opacity: 0.45,
+        depthWrite: false
+    }), { factor: 0, units: -3 });
+    sidewalkEdgeDirt.blending = THREE.NormalBlending;
+    if (!sidewalkEdgeDirt.userData) sidewalkEdgeDirt.userData = {};
+    sidewalkEdgeDirt.userData.bloomExclude = true;
+
     const curb = new THREE.MeshStandardMaterial({
         color: 0x7a7a7a,
         roughness: 0.9,
@@ -69,6 +81,6 @@ export function getCityMaterials() {
     if (!laneYellow.userData) laneYellow.userData = {};
     laneYellow.userData.bloomExclude = true;
 
-    _cached = { road, roadEdgeWear, sidewalk, curb, laneWhite, laneYellow };
+    _cached = { road, roadEdgeWear, sidewalk, sidewalkEdgeDirt, curb, laneWhite, laneYellow };
     return _cached;
 }

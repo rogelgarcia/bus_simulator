@@ -180,6 +180,9 @@ function normalizeSettingsBooleans(src) {
         const markings = asphaltNoise.markings && typeof asphaltNoise.markings === 'object' ? asphaltNoise.markings : null;
         const livedIn = asphaltNoise.livedIn && typeof asphaltNoise.livedIn === 'object' ? asphaltNoise.livedIn : null;
         const edgeDirt = livedIn?.edgeDirt && typeof livedIn.edgeDirt === 'object' ? livedIn.edgeDirt : null;
+        const sidewalkGrassEdgeStrip = livedIn?.sidewalkGrassEdgeStrip && typeof livedIn.sidewalkGrassEdgeStrip === 'object'
+            ? livedIn.sidewalkGrassEdgeStrip
+            : null;
         const cracks = livedIn?.cracks && typeof livedIn.cracks === 'object' ? livedIn.cracks : null;
         const patches = livedIn?.patches && typeof livedIn.patches === 'object' ? livedIn.patches : null;
         const tireWear = livedIn?.tireWear && typeof livedIn.tireWear === 'object' ? livedIn.tireWear : null;
@@ -204,6 +207,12 @@ function normalizeSettingsBooleans(src) {
                 ? {
                     ...livedIn,
                     edgeDirt: edgeDirt ? { ...edgeDirt, enabled: parseLooseBool(edgeDirt.enabled, edgeDirt.enabled) } : edgeDirt,
+                    sidewalkGrassEdgeStrip: sidewalkGrassEdgeStrip
+                        ? {
+                            ...sidewalkGrassEdgeStrip,
+                            enabled: parseLooseBool(sidewalkGrassEdgeStrip.enabled, sidewalkGrassEdgeStrip.enabled)
+                        }
+                        : sidewalkGrassEdgeStrip,
                     cracks: cracks ? { ...cracks, enabled: parseLooseBool(cracks.enabled, cracks.enabled) } : cracks,
                     patches: patches ? { ...patches, enabled: parseLooseBool(patches.enabled, patches.enabled) } : patches,
                     tireWear: tireWear ? { ...tireWear, enabled: parseLooseBool(tireWear.enabled, tireWear.enabled) } : tireWear
