@@ -24,14 +24,7 @@ Thumbs.db
 dist/
 build/
 
-# AI Prompts
-AI_[0-9]*
-AI_DONE_*
-prompts/
-
 PROJECT_RULES.local.md
-# Local archive of completed AI prompts
-old_prompts/
 
 # Test artifacts (generated outputs only)
 tests/artifacts/

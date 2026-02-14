@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 const DEFAULT_ROOTS = ['src'];
-const EXCLUDED_DIRS = new Set(['.git', 'node_modules', 'assets', 'downloads', 'old_prompts']);
+const EXCLUDED_DIRS = new Set(['.git', 'node_modules', 'assets', 'downloads', 'archive']);
 
 function parseArgs(argv) {
     const opts = { json: false, help: false, roots: [] };

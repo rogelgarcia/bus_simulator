@@ -2,6 +2,7 @@
 
 - Follow `PROJECT_RULES.md` (and `PROJECT_RULES.local.md` when pushing code to github) for repo structure, coding style, comments, commits, and asset rules.
 - When creating AI prompt files, follow `AI_PROMPT_INSTRUCTIONS.md` for naming and structure.
+  - Active prompt files live in `prompts/`; archived prompt files live in `prompts/archive/`.
   - User requested `create promtpt` or `create ai` or `create ai prompt`. Or similar variations.
 
 ## Debug suggestion

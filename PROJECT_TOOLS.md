@@ -13,3 +13,4 @@ Registry of scripts under `tools/`. When adding a new tool, register it here.
 | citySpecExporter | `tools/city_spec_exporter/` | Export authoritative JS city specs to JSON under `tests/artifacts/` | `node tools/city_spec_exporter/run.mjs` |
 | optionsPresets | `tools/options_presets/` | Export/import Options presets and promote to defaults | `node tools/options_presets/promote_to_defaults.mjs path/to/preset.json --write` |
 | runSelectedTest | `tools/run_selected_test/` | Run a selected test target via `tests/.selected_test` for fast AI/dev iteration | `node tools/run_selected_test/run.mjs` |
+| promptNameValidator | `tools/prompt_name_validator/` | Validate AI prompt folder placement and naming conventions | `node tools/prompt_name_validator/run.mjs` |

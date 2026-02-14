@@ -34,11 +34,19 @@ Any AI prompt or change that modifies a specification/model MUST update one or m
 
 **Commits:**
 - Don't commit. Don't play with git. Unless explicitly requested, never create or modify git commits.
-- AI files are in gitignore, don't worry about them.
+
+**AI Prompt files:**
+- AI prompt files are tracked in git.
+- Active and completed prompts live in `prompts/`.
+- Archived prompts live in `prompts/archive/`.
+- Do not move prompts to `prompts/archive/` automatically.
+- Completion is not enough to move a prompt; move only when explicitly requested by the user.
 
 **Tasks:**
 These are the ones from AI prompt files.
-- Even if explicitly requested, never start prompts whose filename indicates DONE (`AI_DONE_##_..._DONE.md`) without double confirming with the user.
+- Even if explicitly requested, never start prompts whose filename indicates DONE (`AI_DONE_##_..._DONE.md` on `main`, or `AI_DONE_<branch>_##_..._DONE.md` on non-main branches) without double confirming with the user.
+- If multiple prompts share the same numeric id, select the prompt in the current branch namespace for implementation.
+- If id selection is still ambiguous or conflicting, stop and ask the user for guidance before implementing.
 
 **AI Prompt naming:**
 - Follow `AI_PROMPT_INSTRUCTIONS.md` (naming, template, and completion steps).
