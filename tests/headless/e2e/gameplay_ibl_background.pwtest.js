@@ -42,8 +42,10 @@ async function attachFailFastConsole({ page }) {
 }
 
 function rowByLabel(page, label) {
+    const escaped = String(label).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const exact = new RegExp(`^${escaped}$`);
     return page.locator('.options-row', {
-        has: page.locator('.options-row-label', { hasText: label })
+        has: page.locator('.options-row-label', { hasText: exact })
     });
 }
 
