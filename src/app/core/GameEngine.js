@@ -334,7 +334,12 @@ export class GameEngine {
                         updatedThisFrame: null,
                         updateReason: null,
                         cacheSupported: null,
-                        ageFrames: null
+                        ageFrames: null,
+                        denoiseRequested: gtao?.denoise !== false,
+                        denoiseActive: gtao?.denoise !== false,
+                        debugViewRequested: gtao?.debugView === true,
+                        debugViewActive: false,
+                        fallbackReason: null
                     }
                     : null
             };
@@ -352,7 +357,12 @@ export class GameEngine {
                     updatedThisFrame: gtao?.updatedThisFrame ?? null,
                     updateReason: gtao?.updateReason ?? null,
                     cacheSupported: gtao?.cacheSupported ?? null,
-                    ageFrames: gtao?.ageFrames ?? null
+                    ageFrames: gtao?.ageFrames ?? null,
+                    denoiseRequested: gtao?.denoiseRequested ?? (s?.gtao?.denoise !== false),
+                    denoiseActive: gtao?.denoiseActive ?? null,
+                    debugViewRequested: gtao?.debugViewRequested ?? (s?.gtao?.debugView === true),
+                    debugViewActive: gtao?.debugViewActive ?? null,
+                    fallbackReason: gtao?.fallbackReason ?? null
                 }
                 : null
         };

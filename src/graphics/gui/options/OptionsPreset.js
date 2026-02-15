@@ -116,7 +116,13 @@ function normalizeSettingsBooleans(src) {
             : null;
         out.ambientOcclusion = {
             ...ambientOcclusion,
-            gtao: gtao ? { ...gtao, denoise: parseLooseBool(gtao.denoise, gtao.denoise) } : gtao,
+            gtao: gtao
+                ? {
+                    ...gtao,
+                    denoise: parseLooseBool(gtao.denoise, gtao.denoise),
+                    debugView: parseLooseBool(gtao.debugView, gtao.debugView)
+                }
+                : gtao,
             staticAo: staticAo ? { ...staticAo, debugView: parseLooseBool(staticAo.debugView, staticAo.debugView) } : staticAo,
             busContactShadow: busContactShadow
                 ? { ...busContactShadow, enabled: parseLooseBool(busContactShadow.enabled, busContactShadow.enabled) }

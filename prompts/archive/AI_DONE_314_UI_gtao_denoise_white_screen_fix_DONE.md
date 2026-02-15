@@ -1,3 +1,13 @@
+# DONE
+
+## Summary
+- Reproduced/documented the root cause path: GTAO denoise was mapped to `GTAOPass.OUTPUT.Denoise` in `PostProcessingPipeline`, which is a visualization output path.
+- Refactored GTAO runtime so normal denoise keeps normal composed rendering (`OUTPUT.Default`) and moved visualization behavior behind a dedicated `gtao.debugView` debug toggle.
+- Added denoise/debug fallback handling with explicit warnings when denoise controls or debug output are unavailable or fail at runtime.
+- Updated options/settings wiring (defaults, sanitization, draft/preset serialization, UI labels/status) so denoise and debug behavior are unambiguous and persisted.
+- Added deterministic unit coverage for denoise-vs-debug policy behavior and AO setting persistence/sanitization.
+- Updated `specs/graphics/ambient_occlusion.md` to document GTAO denoise semantics, debug visualization, and fallback behavior.
+
 #Problem
 
 Enabling **GTAO denoise** does not currently behave as a pure denoise quality option for the final scene render. Instead, the current behavior exposes a GTAO/filter-style output that is useful for inspection, but confusing for normal gameplay usage under a setting named only "denoise."

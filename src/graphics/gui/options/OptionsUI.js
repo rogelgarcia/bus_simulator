@@ -561,7 +561,16 @@ export class OptionsUI {
                     const cacheSupported = g?.cacheSupported;
                     const status = updated ? `updated${reason ? ` (${reason})` : ''}` : (age !== null ? `cached (${age}f)` : 'cached');
                     const cache = cacheSupported === false ? ' (no cache)' : '';
-                    els.ao.textContent = `GTAO (${modeLabel}) (${status})${cache}`;
+                    const denoise = g?.denoiseActive === true ? 'denoise' : 'raw';
+                    const debug = g?.debugViewActive === true ? ' (debug view)' : '';
+                    const fallbackMap = {
+                        denoise_unsupported: ' (denoise fallback)',
+                        debug_output_unsupported: ' (debug fallback)',
+                        denoise_runtime_error: ' (denoise runtime fallback)'
+                    };
+                    const fallbackReason = typeof g?.fallbackReason === 'string' ? g.fallbackReason : '';
+                    const fallback = fallbackMap[fallbackReason] ?? '';
+                    els.ao.textContent = `GTAO (${modeLabel}) (${status}) (${denoise})${cache}${debug}${fallback}`;
                 } else {
                     els.ao.textContent = mode.toUpperCase();
                 }
@@ -881,6 +890,7 @@ export class OptionsUI {
         if (d.gtao.radius === undefined) d.gtao.radius = defaults.gtao.radius;
         if (d.gtao.quality === undefined) d.gtao.quality = defaults.gtao.quality;
         if (d.gtao.denoise === undefined) d.gtao.denoise = defaults.gtao.denoise;
+        if (d.gtao.debugView === undefined) d.gtao.debugView = defaults.gtao.debugView;
         if (d.gtao.updateMode === undefined) d.gtao.updateMode = defaults.gtao.updateMode;
 
         if (!d.gtao.motionThreshold || typeof d.gtao.motionThreshold !== 'object') d.gtao.motionThreshold = { ...(defaults.gtao.motionThreshold ?? {}) };
@@ -1178,6 +1188,21 @@ export class OptionsUI {
                     handling: String(ambientOcclusion?.alpha?.handling ?? 'alpha_test'),
                     threshold: ambientOcclusion?.alpha?.threshold
                 },
+                staticAo: {
+                    mode: String(ambientOcclusion?.staticAo?.mode ?? 'off'),
+                    intensity: ambientOcclusion?.staticAo?.intensity,
+                    quality: String(ambientOcclusion?.staticAo?.quality ?? 'medium'),
+                    radius: ambientOcclusion?.staticAo?.radius,
+                    wallHeight: ambientOcclusion?.staticAo?.wallHeight,
+                    debugView: !!ambientOcclusion?.staticAo?.debugView
+                },
+                busContactShadow: {
+                    enabled: !!ambientOcclusion?.busContactShadow?.enabled,
+                    intensity: ambientOcclusion?.busContactShadow?.intensity,
+                    radius: ambientOcclusion?.busContactShadow?.radius,
+                    softness: ambientOcclusion?.busContactShadow?.softness,
+                    maxDistance: ambientOcclusion?.busContactShadow?.maxDistance
+                },
                 ssao: {
                     intensity: ambientOcclusion?.ssao?.intensity,
                     radius: ambientOcclusion?.ssao?.radius,
@@ -1187,7 +1212,14 @@ export class OptionsUI {
                     intensity: ambientOcclusion?.gtao?.intensity,
                     radius: ambientOcclusion?.gtao?.radius,
                     quality: String(ambientOcclusion?.gtao?.quality ?? 'medium'),
-                    denoise: !!ambientOcclusion?.gtao?.denoise
+                    denoise: !!ambientOcclusion?.gtao?.denoise,
+                    debugView: !!ambientOcclusion?.gtao?.debugView,
+                    updateMode: String(ambientOcclusion?.gtao?.updateMode ?? 'every_frame'),
+                    motionThreshold: {
+                        positionMeters: ambientOcclusion?.gtao?.motionThreshold?.positionMeters,
+                        rotationDeg: ambientOcclusion?.gtao?.motionThreshold?.rotationDeg,
+                        fovDeg: ambientOcclusion?.gtao?.motionThreshold?.fovDeg
+                    }
                 }
             },
             bloom: {

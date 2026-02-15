@@ -104,3 +104,22 @@ test('OptionsPreset: sidewalk grass-edge strip toggle parses loose booleans', ()
     }));
     assert.equal(preset.settings.asphaltNoise.livedIn.sidewalkGrassEdgeStrip.enabled, false);
 });
+
+test('OptionsPreset: ambient occlusion GTAO debug view parses loose booleans', () => {
+    const preset = parseOptionsPresetJson(JSON.stringify({
+        version: 1,
+        schema: OPTIONS_PRESET_SCHEMA_ID,
+        settings: {
+            ambientOcclusion: {
+                mode: 'gtao',
+                gtao: {
+                    denoise: 'true',
+                    debugView: 'false'
+                }
+            }
+        }
+    }));
+
+    assert.equal(preset.settings.ambientOcclusion.gtao.denoise, true);
+    assert.equal(preset.settings.ambientOcclusion.gtao.debugView, false);
+});

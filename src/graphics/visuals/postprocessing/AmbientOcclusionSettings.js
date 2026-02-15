@@ -35,6 +35,7 @@ export const AMBIENT_OCCLUSION_DEFAULTS = Object.freeze({
         radius: 0.25,
         quality: 'medium',
         denoise: true,
+        debugView: false,
         updateMode: 'every_frame',
         motionThreshold: {
             positionMeters: 0.02,
@@ -155,6 +156,7 @@ export function sanitizeAmbientOcclusionSettings(input) {
             radius: clamp(gtao.radius, 0.05, 8, AMBIENT_OCCLUSION_DEFAULTS.gtao.radius),
             quality: gtaoQuality,
             denoise: gtao.denoise !== undefined ? !!gtao.denoise : AMBIENT_OCCLUSION_DEFAULTS.gtao.denoise,
+            debugView: gtao.debugView !== undefined ? !!gtao.debugView : AMBIENT_OCCLUSION_DEFAULTS.gtao.debugView,
             updateMode: sanitizeGtaoUpdateMode(gtao.updateMode),
             motionThreshold: sanitizeMotionThreshold(gtao.motionThreshold)
         }

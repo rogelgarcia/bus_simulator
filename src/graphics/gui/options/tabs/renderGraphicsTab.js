@@ -41,8 +41,10 @@ export function renderGraphicsTab() {
         bits.push(mode === 'off' ? 'Off' : mode.toUpperCase());
         const staticOn = String(ao?.staticAo?.mode ?? 'off') !== 'off';
         const contactOn = ao?.busContactShadow?.enabled === true;
+        const gtaoDebugOn = mode === 'gtao' && ao?.gtao?.debugView === true;
         if (staticOn) bits.push('Static');
         if (contactOn) bits.push('Bus');
+        if (gtaoDebugOn) bits.push('GTAO debug');
         status.ao.text.textContent = bits.join(' + ');
     };
     updateAoStatus();
@@ -682,9 +684,19 @@ export function renderGraphicsTab() {
     });
 
     const gtaoDenoise = makeToggleRow({
-        label: 'GTAO denoise',
+        label: 'GTAO denoise (final render)',
         value: ao?.gtao?.denoise !== false,
         onChange: (v) => { ao.gtao.denoise = v; emit(); }
+    });
+
+    const gtaoDebugView = makeToggleRow({
+        label: 'GTAO debug visualization',
+        value: ao?.gtao?.debugView === true,
+        onChange: (v) => {
+            ao.gtao.debugView = v;
+            emit();
+            updateAoStatus();
+        }
     });
 
     const gtaoUpdateMode = makeSelectRow({
@@ -747,7 +759,7 @@ export function renderGraphicsTab() {
     });
 
     const aoNote = makeEl('div', 'options-note');
-    aoNote.textContent = 'Static AO is a baked, stable occlusion term for static world geometry. SSAO is cheaper; GTAO is cleaner and can be denoised. Bus contact shadow is a cheap grounding cue for the vehicle.';
+    aoNote.textContent = 'Static AO is a baked, stable occlusion term for static world geometry. SSAO is cheaper; GTAO is cleaner; GTAO denoise affects final composition. GTAO debug visualization is inspection-only. Bus contact shadow is a cheap grounding cue for the vehicle.';
 
     sectionAo.appendChild(aoMode.row);
     const aoParamsStack = makeEl('div', 'options-overlap-stack');
@@ -761,6 +773,7 @@ export function renderGraphicsTab() {
     gtaoGroup.appendChild(gtaoRadius.row);
     gtaoGroup.appendChild(gtaoQuality.row);
     gtaoGroup.appendChild(gtaoDenoise.row);
+    gtaoGroup.appendChild(gtaoDebugView.row);
     gtaoGroup.appendChild(gtaoUpdateMode.row);
     gtaoGroup.appendChild(gtaoMotionPos.row);
     gtaoGroup.appendChild(gtaoMotionRot.row);
@@ -825,6 +838,7 @@ export function renderGraphicsTab() {
         }
         gtaoQuality.setDisabled(!gtaoOn);
         gtaoDenoise.toggle.disabled = !gtaoOn;
+        gtaoDebugView.toggle.disabled = !gtaoOn;
         gtaoUpdateMode.select.disabled = !gtaoOn;
 
         const updateMode = String(ao?.gtao?.updateMode ?? 'every_frame');
@@ -858,4 +872,3 @@ export function renderGraphicsTab() {
 	        this.body.appendChild(sectionAo);
 	        this._refreshAntiAliasingDebug();
 	    }
-

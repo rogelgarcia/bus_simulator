@@ -6,6 +6,17 @@
 - `ssao`: Screen-space ambient occlusion (cheaper)
 - `gtao`: Ground-truth ambient occlusion (cleaner; optional denoise)
 
+## GTAO denoise + debug visualization
+
+Setting: `ambientOcclusion.gtao`
+
+- `denoise`:
+  - Controls denoising quality for normal GTAO composition (final scene stays normally composed).
+  - If denoise support is unavailable at runtime, the renderer falls back to stable non-denoised GTAO and emits a warning.
+- `debugView`:
+  - Inspection-only mode that intentionally shows GTAO denoise/filter output.
+  - This is separate from normal denoise quality behavior and is not intended for gameplay view.
+
 ## GTAO update / caching
 
 GTAO can be amortized by skipping expensive compute on some frames and reusing the last valid GTAO output.

@@ -26,6 +26,7 @@ test('AmbientOcclusionSettings: defaults are sane', () => {
     assert.equal(typeof d.busContactShadow?.softness, 'number');
     assert.equal(typeof d.busContactShadow?.maxDistance, 'number');
     assert.ok(['every_frame', 'when_camera_moves', 'half_rate', 'third_rate', 'quarter_rate'].includes(String(d.gtao?.updateMode)));
+    assert.equal(typeof d.gtao?.debugView, 'boolean');
     assert.equal(typeof d.gtao?.motionThreshold?.positionMeters, 'number');
     assert.equal(typeof d.gtao?.motionThreshold?.rotationDeg, 'number');
     assert.equal(typeof d.gtao?.motionThreshold?.fovDeg, 'number');
@@ -43,6 +44,7 @@ test('AmbientOcclusionSettings: sanitize clamps and normalizes', () => {
             radius: -1,
             quality: ' LOW ',
             denoise: false,
+            debugView: 'true',
             updateMode: ' THIRD_RATE ',
             motionThreshold: {
                 positionMeters: -1,
@@ -73,6 +75,7 @@ test('AmbientOcclusionSettings: sanitize clamps and normalizes', () => {
     assert.equal(s.gtao.radius, 0.05);
     assert.equal(s.gtao.quality, 'low');
     assert.equal(s.gtao.denoise, false);
+    assert.equal(s.gtao.debugView, true);
     assert.equal(s.gtao.updateMode, 'third_rate');
     assert.equal(s.gtao.motionThreshold.positionMeters, 0);
     assert.equal(s.gtao.motionThreshold.rotationDeg, 180);
@@ -132,6 +135,7 @@ test('AmbientOcclusionSettings: save/load persists gtao update settings', () => 
                 radius: 0.3,
                 quality: 'high',
                 denoise: true,
+                debugView: true,
                 updateMode: 'when_camera_moves',
                 motionThreshold: { positionMeters: 0.05, rotationDeg: 0.25, fovDeg: 0.1 }
             }
@@ -145,6 +149,7 @@ test('AmbientOcclusionSettings: save/load persists gtao update settings', () => 
         assert.equal(loaded.gtao.radius, 0.3);
         assert.equal(loaded.gtao.quality, 'high');
         assert.equal(loaded.gtao.denoise, true);
+        assert.equal(loaded.gtao.debugView, true);
         assert.equal(loaded.gtao.updateMode, 'when_camera_moves');
         assert.equal(loaded.gtao.motionThreshold.positionMeters, 0.05);
         assert.equal(loaded.gtao.motionThreshold.rotationDeg, 0.25);

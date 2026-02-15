@@ -17,6 +17,7 @@ import { sanitizeAntiAliasingSettings } from './AntiAliasingSettings.js';
 import { sanitizeAmbientOcclusionSettings } from './AmbientOcclusionSettings.js';
 import { TemporalAAPass } from './TemporalAAPass.js';
 import { hasCameraViewStateChanged, shouldUpdateGtaoFixedRate } from './GtaoUpdateScheduler.js';
+import { resolveGtaoDenoisePolicy } from './GtaoDenoisePolicy.js';
 
 function clamp(value, min, max, fallback) {
     const num = Number(value);
@@ -403,6 +404,14 @@ export class PostProcessingPipeline {
             forceUpdate: true,
             warnedUnsupported: false
         };
+        this._gtaoDenoise = {
+            requested: false,
+            active: false,
+            debugViewRequested: false,
+            debugViewActive: false,
+            fallbackReason: null,
+            warnedReasons: new Set()
+        };
         this._aoAlpha = {
             overrideMaterials: new Set(),
             patchedObjects: new WeakSet(),
@@ -666,6 +675,35 @@ export class PostProcessingPipeline {
         pass.setSize(size.w, size.h);
     }
 
+    _resetGtaoDenoiseState() {
+        const s = this._gtaoDenoise ?? null;
+        if (!s || typeof s !== 'object') return;
+        s.requested = false;
+        s.active = false;
+        s.debugViewRequested = false;
+        s.debugViewActive = false;
+        s.fallbackReason = null;
+    }
+
+    _warnGtaoDenoiseFallback(reason, error = null) {
+        const s = this._gtaoDenoise ?? null;
+        const warned = s?.warnedReasons ?? null;
+        if (!(warned instanceof Set) || !reason || warned.has(reason)) return;
+        warned.add(reason);
+
+        if (reason === 'denoise_unsupported') {
+            console.warn('[PostProcessingPipeline] GTAO denoise requested but this GTAOPass runtime does not support denoise controls; falling back to non-denoised GTAO.');
+            return;
+        }
+        if (reason === 'debug_output_unsupported') {
+            console.warn('[PostProcessingPipeline] GTAO debug visualization requested but this GTAOPass runtime does not expose Denoise output; falling back to normal composed view.');
+            return;
+        }
+        if (reason === 'denoise_runtime_error') {
+            console.warn('[PostProcessingPipeline] GTAO denoise failed at runtime; falling back to non-denoised GTAO.', error);
+        }
+    }
+
     _resetGtaoCacheState({ forceUpdate = false } = {}) {
         const s = this._gtaoCache ?? null;
         if (!s || typeof s !== 'object') return;
@@ -774,6 +812,7 @@ export class PostProcessingPipeline {
         const gtao = ao?.gtao ?? null;
         const updateMode = gtao?.updateMode ?? 'every_frame';
         const thresholds = gtao?.motionThreshold ?? null;
+        const debugViewActive = this._gtaoDenoise?.debugViewActive === true;
 
         const blendUniforms = blendPass?.material?.uniforms ?? null;
         if (blendUniforms?.uIntensity) blendUniforms.uIntensity.value = clamp(clamp(gtao?.intensity, 0, 2, 0.35) * dynamicScale, 0, 2, 0.35);
@@ -782,6 +821,14 @@ export class PostProcessingPipeline {
         const cacheSupported = !!map?.isTexture;
         cache.cacheSupported = cacheSupported;
         if (blendUniforms?.uGtaoMap) blendUniforms.uGtaoMap.value = cacheSupported ? map : this._whiteTex;
+
+        if (debugViewActive) {
+            gtaoPass.enabled = true;
+            blendPass.enabled = false;
+            cache.updatedThisFrame = true;
+            cache.updateReason = 'debug_view';
+            return;
+        }
 
         const frameIndex = cache.frameIndex;
 
@@ -905,6 +952,7 @@ export class PostProcessingPipeline {
         if (prevMode === 'gtao' && nextMode !== 'gtao') {
             this._removeGtaoBlendPass();
             this._resetGtaoCacheState({ forceUpdate: false });
+            this._resetGtaoDenoiseState();
         }
 
         if (nextMode === 'off') {
@@ -914,6 +962,7 @@ export class PostProcessingPipeline {
                 this._ao.pass = null;
                 this._ao.mode = 'off';
             }
+            this._resetGtaoDenoiseState();
             return;
         }
 
@@ -940,6 +989,7 @@ export class PostProcessingPipeline {
                 this._ao.mode = 'gtao';
                 this._syncGtaoBlendPass(pass);
                 this._resetGtaoCacheState({ forceUpdate: true });
+                this._resetGtaoDenoiseState();
             }
 
             this._syncAoAlphaCutoutSupport();
@@ -968,8 +1018,19 @@ export class PostProcessingPipeline {
             const gtao = settings?.gtao ?? null;
             const quality = gtao?.quality ?? 'medium';
             const samples = this._getGtaoSampleCount(quality);
-            const denoise = gtao?.denoise !== false;
             const intensity = clamp(clamp(gtao?.intensity, 0, 2, 0.35) * dynamicScale, 0, 2, 0.35);
+            const denoiseRequested = gtao?.denoise !== false;
+            const debugViewRequested = gtao?.debugView === true;
+            const denoiseSupported = typeof pass.updatePdMaterial === 'function';
+            const debugOutputSupported = !!('output' in pass) && GTAOPass?.OUTPUT?.Denoise !== undefined;
+
+            let denoisePolicy = resolveGtaoDenoisePolicy({
+                denoiseRequested,
+                debugViewRequested,
+                denoiseSupported,
+                debugOutputSupported
+            });
+            if (denoisePolicy.fallbackReason) this._warnGtaoDenoiseFallback(denoisePolicy.fallbackReason);
 
             if ('blendIntensity' in pass) pass.blendIntensity = intensity;
             this._syncGtaoBlendPass(pass);
@@ -996,10 +1057,33 @@ export class PostProcessingPipeline {
                 rings: 2,
                 samples
             };
-            pass.updatePdMaterial?.(pdParams);
+            if (denoiseSupported) {
+                try {
+                    pass.updatePdMaterial(pdParams);
+                } catch (err) {
+                    if (denoisePolicy.denoiseEnabled || denoisePolicy.debugViewEnabled) {
+                        denoisePolicy = {
+                            ...denoisePolicy,
+                            denoiseEnabled: false,
+                            debugViewEnabled: false,
+                            outputMode: 'default',
+                            fallbackReason: 'denoise_runtime_error'
+                        };
+                        this._warnGtaoDenoiseFallback('denoise_runtime_error', err);
+                    }
+                }
+            }
 
             if ('output' in pass && GTAOPass?.OUTPUT) {
-                pass.output = denoise && GTAOPass.OUTPUT.Denoise !== undefined ? GTAOPass.OUTPUT.Denoise : GTAOPass.OUTPUT.Default;
+                pass.output = denoisePolicy.outputMode === 'denoise_debug' ? GTAOPass.OUTPUT.Denoise : GTAOPass.OUTPUT.Default;
+            }
+
+            if (this._gtaoDenoise && typeof this._gtaoDenoise === 'object') {
+                this._gtaoDenoise.requested = denoiseRequested;
+                this._gtaoDenoise.active = denoisePolicy.denoiseEnabled;
+                this._gtaoDenoise.debugViewRequested = debugViewRequested;
+                this._gtaoDenoise.debugViewActive = denoisePolicy.debugViewEnabled;
+                this._gtaoDenoise.fallbackReason = denoisePolicy.fallbackReason;
             }
 
             this._syncAoPassSizes();
@@ -1035,6 +1119,7 @@ export class PostProcessingPipeline {
             prevGtao?.radius !== nextGtao?.radius ||
             prevGtao?.quality !== nextGtao?.quality ||
             prevGtao?.denoise !== nextGtao?.denoise ||
+            prevGtao?.debugView !== nextGtao?.debugView ||
             prevGtao?.updateMode !== nextGtao?.updateMode ||
             prevMotion?.positionMeters !== nextMotion?.positionMeters ||
             prevMotion?.rotationDeg !== nextMotion?.rotationDeg ||
@@ -1159,7 +1244,12 @@ export class PostProcessingPipeline {
                         updatedThisFrame: gtaoCache?.updatedThisFrame === true,
                         updateReason: typeof gtaoCache?.updateReason === 'string' ? gtaoCache.updateReason : null,
                         cacheSupported: gtaoCache?.cacheSupported === true,
-                        ageFrames: gtaoAgeFrames
+                        ageFrames: gtaoAgeFrames,
+                        denoiseRequested: gtao?.denoise !== false,
+                        denoiseActive: this._gtaoDenoise?.active === true,
+                        debugViewRequested: gtao?.debugView === true,
+                        debugViewActive: this._gtaoDenoise?.debugViewActive === true,
+                        fallbackReason: this._gtaoDenoise?.fallbackReason ?? null
                     }
                     : null
             },
