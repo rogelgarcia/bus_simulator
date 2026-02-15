@@ -27,6 +27,32 @@ function getCanvasSizePx(canvas, pixelRatio) {
     return { wCss, hCss, pr };
 }
 
+function createDeterministicCutoutMap() {
+    const w = 8;
+    const h = 8;
+    const data = new Uint8Array(w * h * 4);
+
+    for (let y = 0; y < h; y += 1) {
+        for (let x = 0; x < w; x += 1) {
+            const i = (y * w + x) * 4;
+            const opaque = x < (w / 2);
+            data[i + 0] = opaque ? 92 : 140;
+            data[i + 1] = opaque ? 196 : 212;
+            data[i + 2] = opaque ? 106 : 224;
+            data[i + 3] = opaque ? 255 : 0;
+        }
+    }
+
+    const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
+    applyTextureColorSpace(tex, { srgb: true });
+    tex.magFilter = THREE.NearestFilter;
+    tex.minFilter = THREE.NearestFilter;
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.needsUpdate = true;
+    return tex;
+}
+
 export class AOFoliageDebuggerView {
     constructor({ canvas }) {
         this.canvas = canvas;
@@ -40,6 +66,10 @@ export class AOFoliageDebuggerView {
         this._lastT = 0;
         this._onResize = () => this._resize();
         this.onFrame = null;
+        this._reproState = {
+            leafTexture: null,
+            samplePointsWorld: null
+        };
     }
 
     async start() {
@@ -166,6 +196,37 @@ export class AOFoliageDebuggerView {
         this._raf = requestAnimationFrame((ts) => this._tick(ts));
     }
 
+    setAmbientOcclusionForTest(ambientOcclusion) {
+        this._pipeline?.setAmbientOcclusion?.(ambientOcclusion ?? null);
+    }
+
+    getAmbientOcclusionForTest() {
+        const ao = this._pipeline?._ambientOcclusion ?? null;
+        if (!ao) return null;
+        return JSON.parse(JSON.stringify(ao));
+    }
+
+    getReproInfoForTest() {
+        const points = this._reproState?.samplePointsWorld ?? null;
+        const projected = {};
+        if (points && this.camera) {
+            for (const [id, p] of Object.entries(points)) {
+                const v = p.clone().project(this.camera);
+                const onScreen = v.x >= -1 && v.x <= 1 && v.y >= -1 && v.y <= 1 && v.z >= -1 && v.z <= 1;
+                projected[id] = {
+                    u: (v.x + 1) * 0.5,
+                    v: (1 - v.y) * 0.5,
+                    zNdc: v.z,
+                    onScreen
+                };
+            }
+        }
+        return {
+            leafTexture: this._reproState?.leafTexture ?? null,
+            samplePoints: projected
+        };
+    }
+
     async _initReproScene() {
         if (!this.scene) return;
 
@@ -174,6 +235,10 @@ export class AOFoliageDebuggerView {
         applyTextureColorSpace(leafMap, { srgb: true });
         leafMap.anisotropy = 8;
         leafMap.needsUpdate = true;
+        this._reproState.leafTexture = {
+            width: Number(leafMap?.image?.width) || 0,
+            height: Number(leafMap?.image?.height) || 0
+        };
 
         const groundMat = new THREE.MeshStandardMaterial({ color: 0x1d232b, roughness: 1.0, metalness: 0.0 });
         const ground = new THREE.Mesh(new THREE.PlaneGeometry(18, 18), groundMat);
@@ -218,11 +283,32 @@ export class AOFoliageDebuggerView {
         leafB.rotation.y = -Math.PI * 0.12;
         this.scene.add(leafB);
 
+        const deterministicMap = createDeterministicCutoutMap();
+        deterministicMap.anisotropy = 8;
+
+        const deterministicCardMaterial = new THREE.MeshStandardMaterial({
+            map: deterministicMap,
+            roughness: 0.9,
+            metalness: 0.0,
+            alphaTest: 0.5,
+            side: THREE.DoubleSide
+        });
+        deterministicCardMaterial.userData.isFoliage = true;
+
+        const deterministicCard = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 1.8), deterministicCardMaterial);
+        deterministicCard.position.set(0, 1.2, -1.58);
+        this.scene.add(deterministicCard);
+
         const base = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.35, 0.6), new THREE.MeshStandardMaterial({ color: 0x4a515e, roughness: 1.0, metalness: 0.0 }));
         base.position.set(0, 0.175, -0.4);
         base.castShadow = true;
         base.receiveShadow = true;
         this.scene.add(base);
+
+        this._reproState.samplePointsWorld = {
+            wallOpaque: new THREE.Vector3(-0.45, 1.2, -2.0),
+            wallTransparent: new THREE.Vector3(0.45, 1.2, -2.0),
+            wallReference: new THREE.Vector3(2.0, 1.2, -2.0)
+        };
     }
 }
-

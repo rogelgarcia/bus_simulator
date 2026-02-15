@@ -40,6 +40,8 @@ const FBX_TEXTURE_PLACEHOLDERS = new Map([
     ['t_leaf_realistic9_normal.tga', FBX_TEXTURE_PLACEHOLDER_FLAT_NORMAL_PNG]
 ]);
 
+const LEAF_ALPHA_CUTOUT_THRESHOLD = 0.5;
+
 let texturesPromise = null;
 const templateCache = { desktop: null, mobile: null };
 const promiseCache = { desktop: null, mobile: null };
@@ -160,31 +162,71 @@ function applyTextureColorSpace(tex, { srgb }) {
     if ('encoding' in tex) tex.encoding = srgb ? THREE.sRGBEncoding : THREE.LinearEncoding;
 }
 
-function premultiplyTextureRgbByAlpha(tex) {
+function bleedCutoutTextureRgb(tex, { passes = 2 } = {}) {
     const t = tex ?? null;
     const img = t?.image ?? null;
     const data = img?.data ?? null;
-    if (!t || !img || !data || data.length < 4) return false;
-    const userData = (t.userData && typeof t.userData === 'object') ? t.userData : (t.userData = {});
-    if (userData._premultipliedRgbByAlpha === true) return true;
+    const w = Number(img?.width) || 0;
+    const h = Number(img?.height) || 0;
+    if (!t || !data || !Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return false;
+    if (!(data instanceof Uint8Array)) return false;
+    if (data.length < w * h * 4) return false;
 
-    for (let i = 0; i + 3 < data.length; i += 4) {
-        const a = data[i + 3] | 0;
-        if (a === 255) continue;
-        if (a === 0) {
-            data[i] = 0;
-            data[i + 1] = 0;
-            data[i + 2] = 0;
-            continue;
+    const userData = (t.userData && typeof t.userData === 'object') ? t.userData : (t.userData = {});
+    if (userData._cutoutRgbBleedApplied === true) return true;
+
+    let src = new Uint8Array(data);
+    let dst = new Uint8Array(src);
+    const maxPasses = Math.max(1, Math.min(6, Math.floor(Number(passes) || 2)));
+
+    const idx = (x, y) => ((y * w + x) << 2);
+
+    for (let pass = 0; pass < maxPasses; pass += 1) {
+        let changed = false;
+        for (let y = 0; y < h; y += 1) {
+            for (let x = 0; x < w; x += 1) {
+                const i = idx(x, y);
+                const a = src[i + 3];
+                if (a > 0) continue;
+
+                let rs = 0;
+                let gs = 0;
+                let bs = 0;
+                let n = 0;
+
+                for (let oy = -1; oy <= 1; oy += 1) {
+                    for (let ox = -1; ox <= 1; ox += 1) {
+                        if (ox === 0 && oy === 0) continue;
+                        const nx = x + ox;
+                        const ny = y + oy;
+                        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                        const j = idx(nx, ny);
+                        if (src[j + 3] <= 0) continue;
+                        rs += src[j];
+                        gs += src[j + 1];
+                        bs += src[j + 2];
+                        n += 1;
+                    }
+                }
+
+                if (n <= 0) continue;
+                dst[i] = Math.round(rs / n);
+                dst[i + 1] = Math.round(gs / n);
+                dst[i + 2] = Math.round(bs / n);
+                dst[i + 3] = 0;
+                changed = true;
+            }
         }
-        data[i] = ((data[i] * a + 127) / 255) | 0;
-        data[i + 1] = ((data[i + 1] * a + 127) / 255) | 0;
-        data[i + 2] = ((data[i + 2] * a + 127) / 255) | 0;
+
+        if (!changed) break;
+        const tmp = src;
+        src = dst;
+        dst = tmp;
     }
 
-    t.premultiplyAlpha = false;
-    userData._premultipliedRgbByAlpha = true;
+    data.set(src);
     t.needsUpdate = true;
+    userData._cutoutRgbBleedApplied = true;
     return true;
 }
 
@@ -238,7 +280,8 @@ function loadTextures() {
         applyTextureColorSpace(leafNormal, { srgb: false });
         applyTextureColorSpace(trunkMap, { srgb: true });
         applyTextureColorSpace(trunkNormal, { srgb: false });
-        premultiplyTextureRgbByAlpha(leafMap);
+        bleedCutoutTextureRgb(leafMap, { passes: 2 });
+        // Leaves are rendered as alpha-test cutouts (not blended), so keep original RGB.
         leafMap.anisotropy = 8;
         trunkMap.anisotropy = 8;
         trunkMap.wrapS = THREE.RepeatWrapping;
@@ -254,15 +297,17 @@ function loadTextures() {
 function makeTreeMaterials({ leafMap, leafNormal, trunkMap, trunkNormal }) {
     const leaf = new THREE.MeshStandardMaterial({
         map: leafMap,
-        normalMap: leafNormal,
         roughness: 0.9,
         metalness: 0.0,
-        transparent: true,
-        premultipliedAlpha: true,
-        alphaTest: 0.5,
-        side: THREE.DoubleSide
+        transparent: false,
+        premultipliedAlpha: false,
+        alphaTest: LEAF_ALPHA_CUTOUT_THRESHOLD,
+        side: THREE.FrontSide
     });
+    leaf.shadowSide = THREE.FrontSide;
+    leaf.alphaToCoverage = false;
     leaf.userData.isFoliage = true;
+    leaf.userData.preserveShadowSide = true;
 
     const trunk = new THREE.MeshStandardMaterial({
         map: trunkMap,
@@ -277,6 +322,36 @@ function makeTreeMaterials({ leafMap, leafNormal, trunkMap, trunkNormal }) {
 function isFoliageName(name) {
     const s = String(name ?? '').toLowerCase();
     return s.includes('leaf') || s.includes('foliage') || s.includes('bush');
+}
+
+function getTextureSourceName(tex) {
+    const src = tex?.source?.data?.currentSrc
+        ?? tex?.source?.data?.src
+        ?? tex?.image?.currentSrc
+        ?? tex?.image?.src
+        ?? tex?.name
+        ?? '';
+    return String(src ?? '');
+}
+
+function isLikelyFoliageMaterial(mat, objectName = '') {
+    const m = mat && typeof mat === 'object' ? mat : null;
+    if (!m) return false;
+
+    const hasCutoutSignals =
+        (Number(m.alphaTest) || 0) > 1e-6
+        || m.transparent === true
+        || (Number.isFinite(m.opacity) && Number(m.opacity) < 0.999)
+        || !!m.alphaMap;
+    if (hasCutoutSignals) return true;
+
+    const nameBlob = [
+        objectName,
+        m.name,
+        getTextureSourceName(m.map),
+        getTextureSourceName(m.alphaMap)
+    ].join(' ');
+    return isFoliageName(nameBlob);
 }
 
 function isCollisionMeshName(name) {
@@ -294,6 +369,20 @@ function removeCollisionMeshes(root) {
     for (const m of toRemove) {
         if (typeof m.removeFromParent === 'function') m.removeFromParent();
         else if (m.parent) m.parent.remove(m);
+    }
+    return toRemove.length;
+}
+
+function removeNonMeshRenderables(root) {
+    const toRemove = [];
+    root.traverse((o) => {
+        if (!o) return;
+        if (o.isMesh) return;
+        if (o.isPoints || o.isLine || o.isLineSegments || o.isSprite) toRemove.push(o);
+    });
+    for (const obj of toRemove) {
+        if (typeof obj.removeFromParent === 'function') obj.removeFromParent();
+        else if (obj.parent) obj.parent.remove(obj);
     }
     return toRemove.length;
 }
@@ -348,13 +437,13 @@ function applyTreeMaterials(model, mats) {
         if (isCollisionMeshName(o.name)) return;
         if (Array.isArray(o.material)) {
             o.material = o.material.map((mat) => {
-                const name = `${o.name} ${mat?.name ?? ''}`;
-                return isFoliageName(name) ? mats.leaf : mats.trunk;
+                return isLikelyFoliageMaterial(mat, o.name) ? mats.leaf : mats.trunk;
             });
         } else {
-            const name = `${o.name} ${o.material?.name ?? ''}`;
-            o.material = isFoliageName(name) ? mats.leaf : mats.trunk;
+            o.material = isLikelyFoliageMaterial(o.material, o.name) ? mats.leaf : mats.trunk;
         }
+        const matsList = Array.isArray(o.material) ? o.material : [o.material];
+        o.userData.isFoliage = matsList.some((m) => m === mats.leaf);
         o.castShadow = true;
         o.receiveShadow = true;
     });
@@ -382,6 +471,7 @@ function loadTreeAssets(quality, entries) {
             const baseUrl = getModelBaseUrl(key);
             const loadModel = (entry) => loader.loadAsync(new URL(entry.name, baseUrl).toString()).then((model) => {
                 removeCollisionMeshes(model);
+                removeNonMeshRenderables(model);
                 applyTreeMaterials(model, mats);
                 const rot = Array.isArray(entry.rot) ? entry.rot : [0, 0, 0];
                 model.rotation.set(rot[0] ?? 0, rot[1] ?? 0, rot[2] ?? 0);

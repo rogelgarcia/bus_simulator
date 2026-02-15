@@ -19,6 +19,12 @@ const view = new AOFoliageDebuggerView({ canvas });
 view.start().then(() => {
     if (view.renderer) perfBar.setRenderer(view.renderer);
     view.onFrame = (frame) => perfBar.onFrame(frame);
+    window.__aoFoliageDebugHooks = {
+        version: 1,
+        setAmbientOcclusion: (settings) => view.setAmbientOcclusionForTest(settings),
+        getAmbientOcclusion: () => view.getAmbientOcclusionForTest(),
+        getReproInfo: () => view.getReproInfoForTest()
+    };
 }).catch((err) => {
     console.error('[AOFoliageDebugger] Failed to start', err);
 });
@@ -33,7 +39,7 @@ const onKeyDown = (e) => {
 window.addEventListener('keydown', onKeyDown, { passive: false });
 window.addEventListener('beforeunload', () => {
     window.removeEventListener('keydown', onKeyDown);
+    window.__aoFoliageDebugHooks = null;
     viewportContextMenuBlocker?.dispose?.();
     view.destroy();
 }, { passive: true });
-

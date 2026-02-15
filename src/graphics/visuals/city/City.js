@@ -35,8 +35,10 @@ function applyShadowSideToObject(root, shadowSide) {
         const mats = Array.isArray(o.material) ? o.material : [o.material];
         for (const mat of mats) {
             if (!mat || typeof mat !== 'object' || !('shadowSide' in mat)) continue;
+            const preserveShadowSide = mat.userData?.preserveShadowSide === true || mat.userData?.isFoliage === true;
 
             if (shadowSide !== null && shadowSide !== undefined) {
+                if (preserveShadowSide) continue;
                 if (!MATERIAL_SHADOW_SIDE_ORIGINAL.has(mat)) MATERIAL_SHADOW_SIDE_ORIGINAL.set(mat, mat.shadowSide ?? null);
                 mat.shadowSide = shadowSide;
                 continue;

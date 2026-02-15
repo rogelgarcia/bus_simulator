@@ -20,6 +20,12 @@ import { hasCameraViewStateChanged, shouldUpdateGtaoFixedRate } from './GtaoUpda
 import { resolveGtaoDenoisePolicy } from './GtaoDenoisePolicy.js';
 import { resolveSsaoPassParams } from './SsaoPassConfig.js';
 import { resolveGtaoCacheTexture } from './GtaoCacheSupport.js';
+import {
+    applyAoAlphaHandlingToMaterial,
+    getMaterialForAoGroup,
+    primeAoOverrideMaterial,
+    resolveAoOverrideMaterial
+} from './AoAlphaCutoutSupport.js';
 
 function clamp(value, min, max, fallback) {
     const num = Number(value);
@@ -293,26 +299,6 @@ function createWhiteTexture() {
     return tex;
 }
 
-function getMaterialForAoGroup(object, group) {
-    const obj = object ?? null;
-    if (!obj) return null;
-    const mat = obj.material ?? null;
-    if (!mat) return null;
-    if (!Array.isArray(mat)) return mat;
-    const idx = Number.isFinite(group?.materialIndex) ? Math.max(0, Math.floor(group.materialIndex)) : 0;
-    return mat[idx] ?? mat[0] ?? null;
-}
-
-function shouldApplyAoAlphaCutout(material, object) {
-    const mat = material && typeof material === 'object' ? material : null;
-    if (!mat) return false;
-    const hasAlphaMap = !!(mat.alphaMap || mat.map);
-    if (!hasAlphaMap) return false;
-    const alphaTest = Number(mat.alphaTest) || 0;
-    const tagged = mat.userData?.isFoliage === true || object?.userData?.isFoliage === true;
-    return tagged || alphaTest > 1e-6;
-}
-
 const OUTPUT_COLORSPACE_SHADER = Object.freeze({
     uniforms: {
         tDiffuse: { value: null }
@@ -510,12 +496,12 @@ export class PostProcessingPipeline {
 
         const maybeAdd = (mat) => {
             if (!mat || typeof mat !== 'object' || !mat.isMaterial) return;
-            if (!('alphaTest' in mat)) return;
             materials.add(mat);
         };
 
         maybeAdd(pass?.normalMaterial);
         maybeAdd(pass?.depthMaterial);
+        maybeAdd(pass?.depthRenderMaterial);
 
         const normalPass = pass?.normalPass ?? pass?._normalPass ?? null;
         maybeAdd(normalPass?.normalMaterial);
@@ -537,22 +523,7 @@ export class PostProcessingPipeline {
         }
 
         for (const mat of materials) {
-            let needsUpdate = false;
-            if ('transparent' in mat) mat.transparent = false;
-            if ('depthWrite' in mat) mat.depthWrite = true;
-            if ('alphaTest' in mat && !((Number(mat.alphaTest) || 0) > 0)) {
-                mat.alphaTest = 0.0001;
-                needsUpdate = true;
-            }
-            if ('map' in mat) {
-                if (!mat.map) needsUpdate = true;
-                mat.map = this._whiteTex;
-            }
-            if ('alphaMap' in mat) {
-                if (!mat.alphaMap) needsUpdate = true;
-                mat.alphaMap = this._whiteTex;
-            }
-            if (needsUpdate) mat.needsUpdate = true;
+            primeAoOverrideMaterial(mat, this._whiteTex);
         }
 
         if (!Number.isFinite(this._aoAlpha.lastSceneScanMs)) {
@@ -583,30 +554,27 @@ export class PostProcessingPipeline {
     _applyAoAlphaCutout(object, material, group) {
         const overrideMaterials = this._aoAlpha?.overrideMaterials ?? null;
         if (!overrideMaterials?.size) return;
-        if (!overrideMaterials.has(material)) return;
+        const sceneOverrideMaterial = this.scene?.overrideMaterial ?? null;
+        const overrideMaterial = resolveAoOverrideMaterial({
+            drawMaterial: material,
+            sceneOverrideMaterial,
+            overrideMaterials
+        });
+        if (!overrideMaterial) return;
 
         const ao = this._ambientOcclusion ?? null;
         const handling = ao?.alpha?.handling ?? 'alpha_test';
         const threshold = clamp(ao?.alpha?.threshold, 0.01, 0.99, 0.5);
 
-        if ('map' in material) material.map = this._whiteTex;
-        if ('alphaMap' in material) material.alphaMap = this._whiteTex;
-        if ('alphaTest' in material) material.alphaTest = 0.0001;
-
         const srcMat = getMaterialForAoGroup(object, group);
-        const wantsAlpha = shouldApplyAoAlphaCutout(srcMat, object);
-        if (!wantsAlpha) return;
-
-        if (handling === 'exclude') {
-            if ('alphaTest' in material) material.alphaTest = 1.1;
-            return;
-        }
-
-        if (handling === 'alpha_test') {
-            if ('map' in material) material.map = srcMat?.map ?? this._whiteTex;
-            if ('alphaMap' in material) material.alphaMap = srcMat?.alphaMap ?? this._whiteTex;
-            if ('alphaTest' in material) material.alphaTest = threshold;
-        }
+        applyAoAlphaHandlingToMaterial({
+            overrideMaterial,
+            sourceMaterial: srcMat,
+            object,
+            handling,
+            threshold,
+            whiteTexture: this._whiteTex
+        });
     }
 
     setPixelRatio(pixelRatio) {

@@ -10,10 +10,10 @@ export const SHADOW_DEFAULTS = Object.freeze({
 
 export const SHADOW_QUALITY_PRESETS = Object.freeze({
     off: Object.freeze({ enabled: false, shadowMapType: 'pcf_soft', mapSize: 0, radius: 1, bias: 0, normalBias: 0, twoSidedCasting: false }),
-    low: Object.freeze({ enabled: true, shadowMapType: 'pcf_soft', mapSize: 1024, radius: 2, bias: -0.0001, normalBias: 0, twoSidedCasting: false }),
-    medium: Object.freeze({ enabled: true, shadowMapType: 'pcf_soft', mapSize: 2048, radius: 1.5, bias: -0.00015, normalBias: 0, twoSidedCasting: true }),
-    high: Object.freeze({ enabled: true, shadowMapType: 'pcf_soft', mapSize: 4096, radius: 1.25, bias: -0.0002, normalBias: 0, twoSidedCasting: true }),
-    ultra: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 4096, radius: 1, bias: -0.0002, normalBias: 0, twoSidedCasting: true })
+    low: Object.freeze({ enabled: true, shadowMapType: 'pcf_soft', mapSize: 1024, radius: 2, bias: -0.0001, normalBias: 0.01, twoSidedCasting: false }),
+    medium: Object.freeze({ enabled: true, shadowMapType: 'pcf_soft', mapSize: 2048, radius: 1.5, bias: -0.00015, normalBias: 0.02, twoSidedCasting: true }),
+    high: Object.freeze({ enabled: true, shadowMapType: 'pcf_soft', mapSize: 4096, radius: 1.25, bias: -0.0002, normalBias: 0.03, twoSidedCasting: true }),
+    ultra: Object.freeze({ enabled: true, shadowMapType: 'pcf', mapSize: 4096, radius: 1, bias: -0.0002, normalBias: 0.035, twoSidedCasting: true })
 });
 
 function sanitizeQuality(value) {
@@ -90,4 +90,3 @@ export function getResolvedShadowSettings({ includeUrlOverrides = true } = {}) {
 export function getDefaultResolvedShadowSettings() {
     return sanitizeShadowSettings(SHADOW_DEFAULTS);
 }
-
