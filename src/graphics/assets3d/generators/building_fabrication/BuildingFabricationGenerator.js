@@ -8,6 +8,7 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { ROOF_COLOR, resolveRoofColorHex } from '../../../../app/buildings/RoofColor.js';
 import { resolveBeltCourseColorHex } from '../../../../app/buildings/BeltCourseColor.js';
 import { BUILDING_STYLE } from '../../../../app/buildings/BuildingStyle.js';
+import { sanitizeWindowMeshSettings } from '../../../../app/buildings/window_mesh/index.js';
 import {
     WINDOW_TYPE,
     getDefaultWindowParams,
@@ -17,6 +18,7 @@ import {
     getWindowTexture,
     isWindowTypeId
 } from '../buildings/WindowTextureGenerator.js';
+import { WindowMeshGenerator } from '../buildings/WindowMeshGenerator.js';
 import { computeBuildingLoopsFromTiles, offsetOrthogonalLoopXZ, resolveBuildingStyleWallMaterialUrls } from '../buildings/BuildingGenerator.js';
 import { LAYER_TYPE, normalizeBuildingLayers } from './BuildingFabricationTypes.js';
 import { applyMaterialVariationToMeshStandardMaterial, computeMaterialVariationSeedFromTiles, MATERIAL_VARIATION_ROOT } from '../../materials/MaterialVariationSystem.js';
@@ -2173,17 +2175,19 @@ export function buildBuildingFabricationVisualParts({
     for (const entry of windowDefinitionItems) {
         const id = typeof entry?.id === 'string' ? entry.id : '';
         if (!id) continue;
-        const settings = entry?.settings && typeof entry.settings === 'object' ? entry.settings : null;
+        const settings = sanitizeWindowMeshSettings(entry?.settings ?? null);
         const widthMetersRaw = Number(settings?.width);
         const heightMetersRaw = Number(settings?.height);
         const widthMeters = Number.isFinite(widthMetersRaw) ? clamp(widthMetersRaw, 0.1, 20.0) : null;
         const heightMeters = Number.isFinite(heightMetersRaw) ? clamp(heightMetersRaw, 0.1, 20.0) : null;
         windowDefinitionById.set(id, {
             id,
+            settings,
             widthMeters,
             heightMeters
         });
     }
+    const windowMeshGenerator = new WindowMeshGenerator({ renderer, curveSegments: 28 });
 
     windowsGroup.userData.buildingWindowVisuals = Object.freeze({
         reflective: Object.freeze({
@@ -2693,6 +2697,8 @@ export function buildBuildingFabricationVisualParts({
                     const height = Number.isFinite(def.heightMeters) ? def.heightMeters : winDesiredHeight;
 
                     bayWindowPlacements.push({
+                        defId,
+                        settings: def.settings,
                         x: center.x + nx * windowOffset,
                         z: center.z + nz * windowOffset,
                         yaw,
@@ -3367,8 +3373,29 @@ export function buildBuildingFabricationVisualParts({
                     }
                 }
 
-                if (windowMat && bayWindowPlacements.length) {
-                    for (const placement of bayWindowPlacements) {
+                if (bayWindowPlacements.length) {
+                    const customBuckets = new Map();
+                    const addCustomInstance = ({ defId, settings, x, y, z, yaw, instanceId }) => {
+                        const safeSettings = sanitizeWindowMeshSettings(settings ?? null);
+                        const key = JSON.stringify(safeSettings);
+                        let bucket = customBuckets.get(key);
+                        if (!bucket) {
+                            bucket = {
+                                defId: typeof defId === 'string' ? defId : '',
+                                settings: safeSettings,
+                                instances: []
+                            };
+                            customBuckets.set(key, bucket);
+                        }
+                        bucket.instances.push({
+                            id: instanceId,
+                            position: { x, y, z },
+                            yaw
+                        });
+                    };
+
+                    for (let i = 0; i < bayWindowPlacements.length; i++) {
+                        const placement = bayWindowPlacements[i];
                         const width = Math.max(0.1, Number(placement?.width) || 0.1);
                         const desiredHeight = Math.max(0.1, Number(placement?.height) || 0.1);
                         const windowHeight = Math.min(desiredHeight, Math.max(0.3, segHeight * 0.95));
@@ -3378,7 +3405,30 @@ export function buildBuildingFabricationVisualParts({
                         const yaw = Number(placement?.yaw) || 0;
                         const nx = Number(placement?.nx) || 0;
                         const nz = Number(placement?.nz) || 0;
+                        const defId = typeof placement?.defId === 'string' ? placement.defId : '';
+                        const defSettings = placement?.settings && typeof placement.settings === 'object' ? placement.settings : null;
 
+                        if (defSettings) {
+                            const mergedSettings = sanitizeWindowMeshSettings({
+                                ...defSettings,
+                                width,
+                                height: windowHeight
+                            });
+                            const frameDepth = Math.max(0, Number(mergedSettings?.frame?.depth) || 0);
+                            const frameInset = Math.max(0, frameDepth - 0.001);
+                            addCustomInstance({
+                                defId,
+                                settings: mergedSettings,
+                                x: x + nx * (windowOffset - frameInset),
+                                y,
+                                z: z + nz * (windowOffset - frameInset),
+                                yaw,
+                                instanceId: `${layerId || 'layer'}:${floor}:${i}:${defId || 'window'}`
+                            });
+                            continue;
+                        }
+
+                        if (!windowMat) continue;
                         const geo = getPlaneGeometry(width, windowHeight);
                         addWindowInstance({ geometry: geo, material: windowMat, x, y, z, yaw, renderOrder: 0 });
 
@@ -3393,6 +3443,20 @@ export function buildBuildingFabricationVisualParts({
                                 renderOrder: 1
                             });
                         }
+                    }
+
+                    for (const bucket of customBuckets.values()) {
+                        if (!bucket?.instances?.length) continue;
+                        const group = windowMeshGenerator.createWindowGroup({
+                            settings: bucket.settings,
+                            seed: bucket.defId || 'bf2_window',
+                            instances: bucket.instances
+                        });
+                        group.name = `bf2_window_${bucket.defId || 'custom'}`;
+                        group.userData = group.userData ?? {};
+                        group.userData.buildingWindowSource = 'bf2_window_definition';
+                        group.userData.windowDefinitionId = bucket.defId || null;
+                        windowsGroup.add(group);
                     }
                 }
 
