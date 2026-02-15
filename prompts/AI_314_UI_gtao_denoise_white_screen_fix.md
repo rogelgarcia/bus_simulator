@@ -1,40 +1,43 @@
 #Problem
 
-Enabling **GTAO denoise** in the game’s Ambient Occlusion options causes the screen to become white (or nearly white), effectively breaking rendering whenever denoise is enabled.
+Enabling **GTAO denoise** does not currently behave as a pure denoise quality option for the final scene render. Instead, the current behavior exposes a GTAO/filter-style output that is useful for inspection, but confusing for normal gameplay usage under a setting named only "denoise."
 
-This appears to be specific to the GTAO denoise path (not GTAO default and not SSAO), suggesting a bug in how the denoise output is configured, blended, or composed in the post-processing pipeline.
+We want to preserve that interesting visualization behavior as an explicit debug capability, while making the normal GTAO denoise toggle perform true denoised AO integration in the final composed image.
 
 # Request
 
-Fix the GTAO denoise white-screen bug so that enabling denoise produces a valid denoised AO result (or safely falls back without breaking the scene).
+Refactor GTAO denoise behavior so:
+- normal AO settings use denoise as a true quality/composition feature (final scene remains normal),
+- and the existing GTAO/filter output visualization is retained as a dedicated debug feature.
 
 Tasks:
-- Reproduce the issue deterministically:
-  - Enable GTAO, toggle denoise on, and confirm the white-screen behavior.
-  - Identify whether the issue is universal or depends on resolution, quality preset, browser/GPU, or scene content.
-- Investigate the post-processing AO pipeline configuration and determine why denoise produces a white output:
-  - Verify GTAOPass output mode selection and blending behavior.
-  - Verify required textures/buffers (depth/normal) are present and valid for the denoise stage.
-  - Check for NaNs/infs or uninitialized render targets in the denoise shader path.
-  - Confirm the pass ordering in the EffectComposer is correct when GTAO is enabled.
-- Implement a correct denoise integration:
-  - Ensure denoise output is composed correctly (no full-screen overwrite) and blended with the main scene as intended.
-  - Ensure the denoise path respects intensity and does not clip to white.
-- Add safe fallback behavior:
-  - If denoise cannot run (missing buffers, unsupported features, runtime shader compile error, etc.), automatically fall back to non-denoised GTAO rather than breaking the frame.
+- Reproduce current behavior deterministically:
+  - Enable GTAO and denoise and confirm current output behavior.
+  - Document which path currently produces visualization-style output.
+- Implement intended denoise behavior for normal rendering:
+  - Enabling GTAO denoise must produce a denoised AO result in the final scene composition, not a debug/filter visualization output.
+  - Ensure AO intensity/radius/quality controls still behave correctly with denoise enabled.
+- Preserve the current visualization behavior as debug:
+  - Add a dedicated debug control/mode for GTAO output inspection (naming and placement implementation-defined).
+  - This debug feature should intentionally expose the GTAO/filter-style view without affecting default gameplay expectations.
+- Ensure safe runtime fallback:
+  - If denoise cannot run (missing buffers, unsupported features, runtime errors, etc.), automatically fall back to stable non-denoised GTAO.
   - Emit an explicit warning in console/dev logging when fallback happens.
-- Update the Ambient Occlusion options UI behavior if needed:
-  - If denoise is not supported in the current runtime environment, disable the toggle and show a short note (implementation-defined).
-- Add a regression check:
-  - A deterministic test or debug-mode sanity check that verifies enabling GTAO denoise does not produce an all-white frame.
-  - The check can be headless or tool-driven (implementation-defined), but must be repeatable.
+- Update options UX text/labels as needed so behavior is unambiguous:
+  - "GTAO denoise" should clearly map to denoised final rendering.
+  - Debug visualization should be clearly marked as debug/inspection.
+- Add regression coverage:
+  - A deterministic test or sanity check that confirms GTAO denoise does not break/overwrite normal scene composition.
+  - A deterministic test or sanity check that confirms debug output visualization mode is available and functional.
 
 Constraints / notes:
 - Keep SSAO behavior unchanged.
-- Keep GTAO (non-denoise) behavior unchanged except for any shared fixes required to support denoise correctly.
+- Keep GTAO (non-denoise) behavior unchanged except for shared fixes required to support correct denoise/debug separation.
 - The solution must work with the current Three.js `GTAOPass` implementation used by the repo.
 
 ## On completion
 - When complete mark the AI document as DONE by adding a marker in the first line
 - Also rename the AI file to `AI_DONE_314_UI_gtao_denoise_white_screen_fix_DONE.md`
+- Do not move to `prompts/archive/` automatically
+- Completion is not enough to move a prompt; move to `prompts/archive/` only when explicitly requested by the user
 - Provide a summary of the changes made in the AI document (very high level, one liner for each change)
