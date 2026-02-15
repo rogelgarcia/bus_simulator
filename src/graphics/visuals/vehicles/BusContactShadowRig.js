@@ -21,6 +21,45 @@ function isDescendantOf(node, root) {
     return false;
 }
 
+function expandBoundsWithTransformedBox(out, box, matrix) {
+    const min = box.min;
+    const max = box.max;
+    const points = [
+        new THREE.Vector3(min.x, min.y, min.z),
+        new THREE.Vector3(min.x, min.y, max.z),
+        new THREE.Vector3(min.x, max.y, min.z),
+        new THREE.Vector3(min.x, max.y, max.z),
+        new THREE.Vector3(max.x, min.y, min.z),
+        new THREE.Vector3(max.x, min.y, max.z),
+        new THREE.Vector3(max.x, max.y, min.z),
+        new THREE.Vector3(max.x, max.y, max.z)
+    ];
+    for (const p of points) out.expandByPoint(p.applyMatrix4(matrix));
+}
+
+function computeObjectBoundsLocal(root) {
+    const obj = root?.isObject3D ? root : null;
+    if (!obj) return new THREE.Box3();
+
+    obj.updateMatrixWorld(true);
+    const worldToLocal = new THREE.Matrix4().copy(obj.matrixWorld).invert();
+    const out = new THREE.Box3();
+    const meshToLocal = new THREE.Matrix4();
+
+    obj.traverse((node) => {
+        if (!node?.isMesh || !node.geometry) return;
+        const geo = node.geometry;
+        if (!geo.boundingBox) geo.computeBoundingBox();
+        const bounds = geo.boundingBox ?? null;
+        if (!bounds) return;
+
+        meshToLocal.copy(worldToLocal).multiply(node.matrixWorld);
+        expandBoundsWithTransformedBox(out, bounds, meshToLocal);
+    });
+
+    return out;
+}
+
 const CONTACT_SHADOW_BLOB_SHADER = Object.freeze({
     uniforms: {
         uIntensity: { value: 0.4 },
@@ -113,6 +152,11 @@ export class BusContactShadowRig {
         this._wheelRig = null;
         this._wheelPivots = [];
         this._wheelRadius = 0.55;
+        this._chassisAnchorLocal = new THREE.Vector3(0, 0.6, 0);
+        this._chassisHalfExtents = new THREE.Vector2(1.3, 3.2);
+        this._chassisClearance = 0.35;
+        this._tmpBoundsSize = new THREE.Vector3();
+        this._tmpBoundsCenter = new THREE.Vector3();
 
         this._raycaster = new THREE.Raycaster();
         this._raycaster.far = 50;
@@ -178,7 +222,37 @@ export class BusContactShadowRig {
         this._wheelRig = wheelRig;
         this._wheelPivots = pivots;
         this._wheelRadius = clamp(wheelRig?.wheelRadius, 0.05, 5, 0.55);
+        this._updateChassisLayout();
         this._rebuildBlobs();
+    }
+
+    _updateChassisLayout() {
+        const model = this._targetModel ?? null;
+        if (!model?.isObject3D) {
+            this._chassisAnchorLocal.set(0, Math.max(0.2, this._wheelRadius * 1.1), 0);
+            this._chassisHalfExtents.set(1.3, 3.2);
+            this._chassisClearance = Math.max(0.08, this._wheelRadius * 0.7);
+            return;
+        }
+
+        const bounds = computeObjectBoundsLocal(model);
+        if (bounds.isEmpty()) {
+            this._chassisAnchorLocal.set(0, Math.max(0.2, this._wheelRadius * 1.1), 0);
+            this._chassisHalfExtents.set(1.3, 3.2);
+            this._chassisClearance = Math.max(0.08, this._wheelRadius * 0.7);
+            return;
+        }
+
+        const size = bounds.getSize(this._tmpBoundsSize);
+        const center = bounds.getCenter(this._tmpBoundsCenter);
+
+        const halfWidth = clamp(size.x * 0.46, 0.55, 2.4, 1.3);
+        const halfLength = clamp(size.z * 0.36, 1.25, 5.5, 3.2);
+        const anchorY = bounds.min.y + Math.max(0.2, this._wheelRadius * 1.1);
+
+        this._chassisAnchorLocal.set(center.x, anchorY, center.z);
+        this._chassisHalfExtents.set(halfWidth, halfLength);
+        this._chassisClearance = Math.max(0.08, anchorY - bounds.min.y);
     }
 
     _rebuildBlobs() {
@@ -219,6 +293,9 @@ export class BusContactShadowRig {
             this._blobs.push({
                 kind: 'chassis',
                 pivot: this._targetModel,
+                localOffset: this._chassisAnchorLocal.clone(),
+                halfWidth: this._chassisHalfExtents.x,
+                halfLength: this._chassisHalfExtents.y,
                 mesh,
                 smoothPos: new THREE.Vector3(),
                 smoothNormal: new THREE.Vector3(0, 1, 0),
@@ -283,8 +360,6 @@ export class BusContactShadowRig {
         ray.far = 50;
 
         let any = false;
-        let wheelFadeSum = 0;
-        let wheelFadeCount = 0;
 
         for (const blob of this._blobs) {
             const pivot = blob.pivot ?? null;
@@ -292,7 +367,11 @@ export class BusContactShadowRig {
             const mat = mesh?.material ?? null;
             if (!pivot?.getWorldPosition || !mesh || !mat?.uniforms) continue;
 
-            pivot.getWorldPosition(this._tmpPos);
+            if (blob.localOffset?.isVector3 && pivot?.matrixWorld) {
+                this._tmpPos.copy(blob.localOffset).applyMatrix4(pivot.matrixWorld);
+            } else {
+                pivot.getWorldPosition(this._tmpPos);
+            }
             ray.set(this._tmpPos, this._down);
 
             const hits = ray.intersectObject(raycastRoot, true);
@@ -304,22 +383,25 @@ export class BusContactShadowRig {
 
             let fade = 1;
             let intensity = baseIntensity;
-            let blobRadius = radius;
+            let blobRadiusX = radius;
+            let blobRadiusZ = radius;
             let blobSoftness = softness;
 
             if (blob.kind === 'wheel') {
                 const d = Number.isFinite(hit.distance) ? hit.distance : Infinity;
                 const lift = Math.max(0, d - this._wheelRadius);
                 fade = maxDistance > 1e-6 ? clamp(1 - (lift / maxDistance), 0, 1, 0) : (lift <= 1e-6 ? 1 : 0);
-                wheelFadeSum += fade;
-                wheelFadeCount += 1;
                 intensity = baseIntensity * fade;
             } else {
-                const avgWheelFade = wheelFadeCount ? (wheelFadeSum / wheelFadeCount) : 1;
-                fade = avgWheelFade;
-                intensity = baseIntensity * 0.55 * fade;
-                blobRadius = radius * 2.25;
-                blobSoftness = clamp(softness * 1.1, 0.02, 1, softness);
+                const d = Number.isFinite(hit.distance) ? hit.distance : Infinity;
+                const expected = Math.max(0.04, this._chassisClearance);
+                const lift = Math.max(0, d - expected);
+                const chassisMaxDistance = Math.max(0.25, maxDistance * 1.4);
+                fade = clamp(1 - (lift / chassisMaxDistance), 0, 1, 0);
+                intensity = baseIntensity * 0.9 * fade;
+                blobRadiusX = Math.max(radius * 1.2, blob.halfWidth ?? (radius * 2.25));
+                blobRadiusZ = Math.max(radius * 1.6, blob.halfLength ?? (radius * 2.25));
+                blobSoftness = clamp(softness * 1.2, 0.02, 1, softness);
             }
 
             mat.uniforms.uIntensity.value = intensity;
@@ -354,7 +436,7 @@ export class BusContactShadowRig {
             mesh.position.copy(blob.smoothPos);
             this._tmpQuat.setFromUnitVectors(this._up, blob.smoothNormal);
             mesh.quaternion.copy(this._tmpQuat);
-            mesh.scale.set(blobRadius * 2, 1, blobRadius * 2);
+            mesh.scale.set(blobRadiusX * 2, 1, blobRadiusZ * 2);
             mesh.visible = true;
             any = true;
         }

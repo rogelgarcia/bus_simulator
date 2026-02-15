@@ -574,8 +574,16 @@ export class OptionsUI {
                     const reason = typeof g?.updateReason === 'string' ? g.updateReason : null;
                     const age = Number.isFinite(g?.ageFrames) ? Number(g.ageFrames) : null;
                     const cacheSupported = g?.cacheSupported;
+                    const cacheMode = typeof g?.cacheMode === 'string' ? g.cacheMode : 'none';
                     const status = updated ? `updated${reason ? ` (${reason})` : ''}` : (age !== null ? `cached (${age}f)` : 'cached');
-                    const cache = cacheSupported === false ? ' (no cache)' : '';
+                    const cacheLabelMap = {
+                        native_map: 'native cache',
+                        pd_target: 'internal cache',
+                        raw_target: 'raw cache',
+                        none: 'no cache'
+                    };
+                    const cacheName = cacheLabelMap[cacheMode] ?? cacheMode;
+                    const cache = cacheSupported === false ? ` (${cacheName})` : ` (${cacheName})`;
                     const denoise = g?.denoiseActive === true ? 'denoise' : 'raw';
                     const debug = g?.debugViewActive === true ? ' (debug view)' : '';
                     const fallbackMap = {

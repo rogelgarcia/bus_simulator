@@ -19,6 +19,7 @@ import { TemporalAAPass } from './TemporalAAPass.js';
 import { hasCameraViewStateChanged, shouldUpdateGtaoFixedRate } from './GtaoUpdateScheduler.js';
 import { resolveGtaoDenoisePolicy } from './GtaoDenoisePolicy.js';
 import { resolveSsaoPassParams } from './SsaoPassConfig.js';
+import { resolveGtaoCacheTexture } from './GtaoCacheSupport.js';
 
 function clamp(value, min, max, fallback) {
     const num = Number(value);
@@ -396,6 +397,7 @@ export class PostProcessingPipeline {
         this._gtaoCache = {
             blendPass: null,
             cacheSupported: false,
+            cacheMode: 'none',
             frameIndex: 0,
             lastUpdateFrameIndex: -1,
             lastViewState: null,
@@ -711,6 +713,7 @@ export class PostProcessingPipeline {
         const s = this._gtaoCache ?? null;
         if (!s || typeof s !== 'object') return;
         s.cacheSupported = false;
+        s.cacheMode = 'none';
         s.frameIndex = 0;
         s.lastUpdateFrameIndex = -1;
         s.lastViewState = null;
@@ -820,10 +823,11 @@ export class PostProcessingPipeline {
         const blendUniforms = blendPass?.material?.uniforms ?? null;
         if (blendUniforms?.uIntensity) blendUniforms.uIntensity.value = clamp(clamp(gtao?.intensity, 0, 2, 0.35) * dynamicScale, 0, 2, 0.35);
 
-        const map = gtaoPass?.gtaoMap ?? null;
-        const cacheSupported = !!map?.isTexture;
+        const cacheTexture = resolveGtaoCacheTexture(gtaoPass);
+        const cacheSupported = cacheTexture.supported === true;
         cache.cacheSupported = cacheSupported;
-        if (blendUniforms?.uGtaoMap) blendUniforms.uGtaoMap.value = cacheSupported ? map : this._whiteTex;
+        cache.cacheMode = cacheTexture.mode;
+        if (blendUniforms?.uGtaoMap) blendUniforms.uGtaoMap.value = cacheTexture.texture ?? this._whiteTex;
 
         if (debugViewActive) {
             gtaoPass.enabled = true;
@@ -891,11 +895,12 @@ export class PostProcessingPipeline {
             return;
         }
 
-        const map = gtaoPass?.gtaoMap ?? null;
-        const cacheSupported = !!map?.isTexture;
+        const cacheTexture = resolveGtaoCacheTexture(gtaoPass);
+        const cacheSupported = cacheTexture.supported === true;
         cache.cacheSupported = cacheSupported;
+        cache.cacheMode = cacheTexture.mode;
         const uniforms = blendPass?.material?.uniforms ?? null;
-        if (uniforms?.uGtaoMap) uniforms.uGtaoMap.value = cacheSupported ? map : this._whiteTex;
+        if (uniforms?.uGtaoMap) uniforms.uGtaoMap.value = cacheTexture.texture ?? this._whiteTex;
 
         if (cache.updatedThisFrame) {
             cache.lastUpdateFrameIndex = cache.frameIndex;
@@ -1294,6 +1299,7 @@ export class PostProcessingPipeline {
                         updatedThisFrame: gtaoCache?.updatedThisFrame === true,
                         updateReason: typeof gtaoCache?.updateReason === 'string' ? gtaoCache.updateReason : null,
                         cacheSupported: gtaoCache?.cacheSupported === true,
+                        cacheMode: typeof gtaoCache?.cacheMode === 'string' ? gtaoCache.cacheMode : 'none',
                         ageFrames: gtaoAgeFrames,
                         denoiseRequested: gtao?.denoise !== false,
                         denoiseActive: this._gtaoDenoise?.active === true,

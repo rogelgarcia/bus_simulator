@@ -1,4 +1,6 @@
-#Problem
+# DONE
+
+# Problem
 
 Changing GTAO update frequency does not appear to affect runtime behavior; GTAO seems to update every frame, and UI/debug readouts are inconsistent with selected update mode.
 
@@ -19,3 +21,8 @@ Tasks:
 - Do not move to `prompts/archive/` automatically.
 - Completion is not enough to move a prompt; move to `prompts/archive/` only when explicitly requested by the user.
 - Provide a summary of the changes made in the AI document (very high level, one liner for each change).
+
+## Completion summary
+- Added GTAO cache-texture support resolution so cadence modes can reuse internal GTAO pass textures even when `gtaoMap` is unavailable in this runtime.
+- Updated post-processing GTAO frame scheduling/finalization to use resolved cache texture support and preserve selected update cadence where supported.
+- Improved GTAO debug status visibility with explicit cache mode labels and added deterministic unit coverage for cache support resolution.

@@ -1,4 +1,6 @@
-#Problem
+# DONE
+
+# Problem
 
 With GTAO enabled, bus grounding appears mostly around the bus perimeter while the center underside lacks expected occlusion, especially at low camera angles.
 
@@ -19,3 +21,8 @@ Tasks:
 - Do not move to `prompts/archive/` automatically.
 - Completion is not enough to move a prompt; move to `prompts/archive/` only when explicitly requested by the user.
 - Provide a summary of the changes made in the AI document (very high level, one liner for each change).
+
+## Completion summary
+- Reworked bus contact-shadow chassis placement to use bus hull local bounds, ensuring the grounding anchor tracks true underside center across bus variants.
+- Upgraded chassis shadow shape from small circular footprint to an elongated underside footprint (independent X/Z extents), restoring center-underbody grounding.
+- Decoupled chassis fade/intensity from wheel-edge averaging and switched to clearance-based fade, reducing perimeter-only bias while keeping lift-off fade behavior stable.
