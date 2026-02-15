@@ -213,19 +213,14 @@ export class WindowMeshGenerator {
         glassMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         glassLayer.add(glassMesh);
 
-	        const glassZ = s.frame.depth + s.glass.zOffset;
-	        const shadeZ = glassZ + s.shade.zOffset;
-	        const interiorZ = glassZ + Math.min(-0.02, s.shade.enabled ? (s.shade.zOffset - 0.02) : -0.02) + s.interior.zOffset;
-	        glassMesh.position.z = glassZ;
-	        shadeMesh.position.z = shadeZ;
-	        if (interiorMesh) interiorMesh.position.z = interiorZ;
+        const glassZ = s.frame.depth + s.glass.zOffset;
+        const shadeZ = glassZ + s.shade.zOffset;
+        const interiorZ = glassZ + Math.min(-0.02, s.shade.enabled ? (s.shade.zOffset - 0.02) : -0.02) + s.interior.zOffset;
+        glassMesh.position.z = glassZ;
+        shadeMesh.position.z = shadeZ;
+        if (interiorMesh) interiorMesh.position.z = interiorZ;
 
-        const frameInsetZ = -Number(s.frame.inset || 0);
-        frameLayer.position.z = frameInsetZ;
-        muntinsLayer.position.z = frameInsetZ;
-        glassLayer.position.z = frameInsetZ;
-        shadeLayer.position.z = frameInsetZ;
-        if (interiorLayer) interiorLayer.position.z = frameInsetZ;
+        const insetLocalZ = -Number(s.frame.inset || 0);
 
         frameMesh.renderOrder = 3;
         if (muntinsMesh) muntinsMesh.renderOrder = 3;
@@ -235,7 +230,9 @@ export class WindowMeshGenerator {
             const entry = list[i];
             if (!isInteractiveInstance(entry)) continue;
             const pose = getInstancePose(entry);
-            dummy.position.set(pose.x, pose.y, pose.z);
+            const insetX = Math.sin(pose.yaw) * insetLocalZ;
+            const insetZ = Math.cos(pose.yaw) * insetLocalZ;
+            dummy.position.set(pose.x + insetX, pose.y, pose.z + insetZ);
             dummy.rotation.set(0, pose.yaw, 0);
             dummy.updateMatrix();
             frameMesh.setMatrixAt(i, dummy.matrix);

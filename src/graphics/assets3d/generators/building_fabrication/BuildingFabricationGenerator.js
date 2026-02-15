@@ -731,11 +731,30 @@ function facadeStripSegmentKey(faceId, u0, depth0, u1, depth1) {
     return `${faceId}|${p0.u}|${p0.d}|${p1.u}|${p1.d}`;
 }
 
+function sortUniqueNumbers(values, { tol = 1e-5 } = {}) {
+    const list = [];
+    for (const v of values) {
+        const num = Number(v);
+        if (!Number.isFinite(num)) continue;
+        list.push(num);
+    }
+    list.sort((a, b) => a - b);
+    const out = [];
+    for (const v of list) {
+        if (!out.length || Math.abs(v - out[out.length - 1]) > tol) out.push(v);
+    }
+    return out;
+}
+
 function buildWallSidesGeometryFromLoopDetailXZ(loop, {
     height,
     uvBaseV = 0.0,
     minEdge = 1e-5,
-    segmentOverrides = null
+    segmentOverrides = null,
+    cutouts = null,
+    ySlices = null,
+    cutoutTol = 0.02,
+    cutoutCurveSegments = 18
 } = {}) {
     const pts = Array.isArray(loop) ? loop : [];
     const n = pts.length;
@@ -743,6 +762,60 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
     if (n < 3 || !(h > EPS)) return null;
 
     const overrides = segmentOverrides instanceof Map ? segmentOverrides : null;
+    const cutList = Array.isArray(cutouts) ? cutouts.filter((entry) => entry && typeof entry === 'object') : null;
+    const cutTol = clamp(cutoutTol, 1e-4, 0.5);
+    const curveSegments = clampInt(cutoutCurveSegments, 6, 64);
+    const rawYSlices = Array.isArray(ySlices) ? ySlices : null;
+    const cutoutsByFaceId = (() => {
+        if (!cutList?.length) return null;
+        const map = new Map();
+        for (const entry of cutList) {
+            const faceId = typeof entry?.faceId === 'string' ? entry.faceId : '';
+            if (faceId !== 'A' && faceId !== 'B' && faceId !== 'C' && faceId !== 'D') continue;
+            const x = Number(entry?.x);
+            const y = Number(entry?.y);
+            const z = Number(entry?.z);
+            const width = Number(entry?.width);
+            const height = Number(entry?.height);
+            const wantsArch = !!entry?.wantsArch;
+            const archRise = Number(entry?.archRise) || 0;
+            if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
+            if (!Number.isFinite(width) || !Number.isFinite(height) || !(width > EPS) || !(height > EPS)) continue;
+            const list = map.get(faceId);
+            const item = { faceId, x, y, z, width, height, wantsArch, archRise: wantsArch ? archRise : 0.0 };
+            if (list) list.push(item);
+            else map.set(faceId, [item]);
+        }
+        return map.size ? map : null;
+    })();
+
+    const normalizedYSlices = (() => {
+        if (!rawYSlices?.length) return null;
+        const tmp = [];
+        for (const entry of rawYSlices) {
+            const y0 = Number(entry?.y0);
+            const y1 = Number(entry?.y1);
+            if (!Number.isFinite(y0) || !Number.isFinite(y1)) continue;
+            const a = clamp(Math.min(y0, y1), 0.0, h);
+            const b = clamp(Math.max(y0, y1), 0.0, h);
+            if (!(b - a > EPS)) continue;
+            tmp.push({ y0: a, y1: b });
+        }
+        if (!tmp.length) return null;
+        tmp.sort((a, b) => a.y0 - b.y0);
+
+        const out = [];
+        let cursor = 0.0;
+        for (const slice of tmp) {
+            if (slice.y1 <= cursor + EPS) continue;
+            if (slice.y0 > cursor + EPS) out.push({ y0: cursor, y1: slice.y0 });
+            out.push({ y0: Math.max(cursor, slice.y0), y1: slice.y1 });
+            cursor = slice.y1;
+            if (cursor >= h - EPS) break;
+        }
+        if (cursor < h - EPS) out.push({ y0: cursor, y1: h });
+        return out.length ? out : null;
+    })();
 
     const v0 = Number(uvBaseV) || 0;
     const v1 = v0 + h;
@@ -834,6 +907,219 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
             curGroupMatIndex = matIndex;
             curGroupStart = Math.floor(positions.length / 3);
             curGroupCount = 0;
+        }
+
+        const slices = normalizedYSlices ?? null;
+        const wantsYCutlines = !!slices;
+
+        const segCuts = [];
+        const wantsSegmentCutouts = !!cutoutsByFaceId && a.kind === 'profile' && b.kind === 'profile' && faceId && faceId === b.faceId;
+        if (wantsSegmentCutouts) {
+            const cuts = cutoutsByFaceId.get(faceId) ?? null;
+            if (cuts?.length) {
+                const tx = dx / segLen;
+                const tz = dz / segLen;
+                for (const cut of cuts) {
+                    const localX = (cut.x - a.x) * tx + (cut.z - a.z) * tz;
+                    if (localX < -cutTol || localX > segLen + cutTol) continue;
+                    const perp = Math.abs((cut.x - a.x) * tz - (cut.z - a.z) * tx);
+                    if (perp > cutTol) continue;
+                    segCuts.push({ ...cut, localX });
+                }
+            }
+        }
+
+        if (wantsYCutlines || segCuts.length) {
+            const tx = dx / segLen;
+            const tz = dz / segLen;
+            const sliceList = slices ?? [{ y0: 0.0, y1: h }];
+
+            for (const slice of sliceList) {
+                const sliceY0 = Number(slice?.y0) || 0;
+                const sliceY1 = Number(slice?.y1) || 0;
+                if (!(sliceY1 - sliceY0 > EPS)) continue;
+
+                const xCuts = [0.0, segLen];
+                const yCuts = [sliceY0, sliceY1];
+                const sliceCuts = [];
+
+                for (const cut of segCuts) {
+                    const cx = Number(cut.localX) || 0;
+                    const cy = Number(cut.y) || 0;
+                    const wCut = Math.max(EPS, Number(cut.width) || 0);
+                    const hCut = Math.max(EPS, Number(cut.height) || 0);
+                    const halfW = wCut * 0.5;
+                    const halfH = hCut * 0.5;
+                    const x0 = cx - halfW;
+                    const x1 = cx + halfW;
+                    const y0 = cy - halfH;
+                    const y1 = cy + halfH;
+
+                    if (x0 <= EPS || x1 >= segLen - EPS) continue;
+                    if (y1 <= sliceY0 + EPS || y0 >= sliceY1 - EPS) continue;
+
+                    const sx0 = clamp(x0, 0.0, segLen);
+                    const sx1 = clamp(x1, 0.0, segLen);
+                    const sy0 = clamp(y0, sliceY0, sliceY1);
+                    const sy1 = clamp(y1, sliceY0, sliceY1);
+                    if (!(sx1 - sx0 > EPS) || !(sy1 - sy0 > EPS)) continue;
+
+                    xCuts.push(sx0, sx1);
+                    yCuts.push(sy0, sy1);
+                    sliceCuts.push({
+                        x0: sx0,
+                        x1: sx1,
+                        y0: sy0,
+                        y1: sy1,
+                        wantsArch: !!cut.wantsArch,
+                        archRise: Math.max(0, Number(cut.archRise) || 0)
+                    });
+                }
+
+                const xs = sortUniqueNumbers(xCuts);
+                const ys = sortUniqueNumbers(yCuts);
+
+                for (let xi = 0; xi + 1 < xs.length; xi++) {
+                    const x0 = xs[xi];
+                    const x1 = xs[xi + 1];
+                    if (!(x1 - x0 > minEdge)) continue;
+
+                    for (let yi = 0; yi + 1 < ys.length; yi++) {
+                        const y0 = ys[yi];
+                        const y1 = ys[yi + 1];
+                        if (!(y1 - y0 > minEdge)) continue;
+
+                        let isHole = false;
+                        for (const cut of sliceCuts) {
+                            if (
+                                x0 >= cut.x0 - EPS
+                                && x1 <= cut.x1 + EPS
+                                && y0 >= cut.y0 - EPS
+                                && y1 <= cut.y1 + EPS
+                            ) {
+                                isHole = true;
+                                break;
+                            }
+                        }
+                        if (isHole) continue;
+
+                        const pushVertex = (lx, ly) => {
+                            const tU = segLen > EPS ? clamp(lx / segLen, 0, 1) : 0;
+                            positions.push(
+                                a.x + tx * lx,
+                                ly,
+                                a.z + tz * lx
+                            );
+                            uvs.push(
+                                uAtA + (uAtB - uAtA) * tU,
+                                v0 + ly
+                            );
+                        };
+
+                        pushVertex(x0, y0);
+                        pushVertex(x1, y1);
+                        pushVertex(x1, y0);
+
+                        pushVertex(x0, y0);
+                        pushVertex(x0, y1);
+                        pushVertex(x1, y1);
+
+                        curGroupCount += 6;
+                    }
+                }
+
+                for (const cut of sliceCuts) {
+                    if (!cut.wantsArch || !(cut.archRise > EPS)) continue;
+
+                    const x0 = cut.x0;
+                    const x1 = cut.x1;
+                    const yTop = cut.y1;
+                    const yChord = yTop - cut.archRise;
+
+                    if (yChord <= cut.y0 + EPS) continue;
+                    if (sliceY0 > yChord + 1e-4 || sliceY1 < yTop - 1e-4) continue;
+
+                    const w = Math.abs(x1 - x0);
+                    const R = (w * w) / (8 * cut.archRise) + cut.archRise / 2;
+                    const cx = (x0 + x1) * 0.5;
+                    const circleY = yChord + cut.archRise - R;
+                    const arcYAt = (xp) => {
+                        const dxp = xp - cx;
+                        const inner = R * R - dxp * dxp;
+                        if (!(inner > 0)) return yChord;
+                        return circleY + Math.sqrt(inner);
+                    };
+
+                    const arcSegments = clampInt(curveSegments, 6, 64);
+                    const addSpandrel = (side) => {
+                        const shape = new THREE.Shape();
+                        if (side === 'left') {
+                            shape.moveTo(x0, yTop);
+                            shape.lineTo(x0, yChord);
+                            for (let s = 1; s <= arcSegments; s++) {
+                                const t = s / arcSegments;
+                                const x = x0 + (cx - x0) * t;
+                                shape.lineTo(x, arcYAt(x));
+                            }
+                            shape.lineTo(x0, yTop);
+                        } else {
+                            shape.moveTo(x1, yTop);
+                            shape.lineTo(x1, yChord);
+                            for (let s = 1; s <= arcSegments; s++) {
+                                const t = s / arcSegments;
+                                const x = x1 + (cx - x1) * t;
+                                shape.lineTo(x, arcYAt(x));
+                            }
+                            shape.lineTo(x1, yTop);
+                        }
+
+                        const indexed = new THREE.ShapeGeometry(shape, arcSegments);
+                        const geo = indexed.index ? indexed.toNonIndexed() : indexed;
+                        if (geo !== indexed) indexed.dispose();
+                        const pos = geo.getAttribute('position');
+                        const count = pos?.count ?? 0;
+                        let wantsWindingFlip = false;
+                        for (let k = 0; k + 2 < count; k += 3) {
+                            const x0 = pos.getX(k);
+                            const y0 = pos.getY(k);
+                            const x1 = pos.getX(k + 1);
+                            const y1 = pos.getY(k + 1);
+                            const x2 = pos.getX(k + 2);
+                            const y2 = pos.getY(k + 2);
+                            const triZ = (x1 - x0) * (y2 - y0) - (y1 - y0) * (x2 - x0);
+                            if (!(Math.abs(triZ) > 1e-8)) continue;
+                            wantsWindingFlip = triZ > 0;
+                            break;
+                        }
+                        for (let k = 0; k + 2 < count; k += 3) {
+                            const a0 = k;
+                            const a1 = wantsWindingFlip ? (k + 2) : (k + 1);
+                            const a2 = wantsWindingFlip ? (k + 1) : (k + 2);
+                            for (const idx of [a0, a1, a2]) {
+                                const lx = pos.getX(idx);
+                                const ly = pos.getY(idx);
+                                const tU = segLen > EPS ? clamp(lx / segLen, 0, 1) : 0;
+                                positions.push(
+                                    a.x + tx * lx,
+                                    ly,
+                                    a.z + tz * lx
+                                );
+                                uvs.push(
+                                    uAtA + (uAtB - uAtA) * tU,
+                                    v0 + ly
+                                );
+                            }
+                        }
+                        curGroupCount += count;
+                        geo.dispose();
+                    };
+
+                    addSpandrel('left');
+                    addSpandrel('right');
+                }
+            }
+
+            continue;
         }
 
         // Tri 1: bottomA, topB, bottomB (CCW for CCW loops → outward normals).
@@ -2697,10 +2983,11 @@ export function buildBuildingFabricationVisualParts({
                     const height = Number.isFinite(def.heightMeters) ? def.heightMeters : winDesiredHeight;
 
                     bayWindowPlacements.push({
+                        faceId,
                         defId,
                         settings: def.settings,
-                        x: center.x + nx * windowOffset,
-                        z: center.z + nz * windowOffset,
+                        x: center.x,
+                        z: center.z,
                         yaw,
                         nx,
                         nz,
@@ -2921,11 +3208,80 @@ export function buildBuildingFabricationVisualParts({
                         }
                     }
 
+                    let facadeWallCutouts = null;
+                    let facadeWallYSlices = null;
+                    if (wantsFacadeWall && bayWindowPlacements.length) {
+                        facadeWallCutouts = [];
+                        facadeWallYSlices = [];
+                        let yCursorLocal = 0.0;
+                        let pendingExtra = firstFloorPendingExtra;
+                        for (let floor = 0; floor < floors; floor++) {
+                            const segHeight = floorHeight + (floor === 0 ? pendingExtra : 0);
+                            if (floor === 0) pendingExtra = 0;
+                            facadeWallYSlices.push({ y0: yCursorLocal, y1: yCursorLocal + segHeight });
+
+                            for (let i = 0; i < bayWindowPlacements.length; i++) {
+                                const placement = bayWindowPlacements[i];
+                                const faceId = placement?.faceId;
+                                if (faceId !== 'A' && faceId !== 'B' && faceId !== 'C' && faceId !== 'D') continue;
+
+                                const width = Math.max(0.1, Number(placement?.width) || 0.1);
+                                const desiredHeight = Math.max(0.1, Number(placement?.height) || 0.1);
+                                const windowHeight = Math.min(desiredHeight, Math.max(0.3, segHeight * 0.95));
+                                const y = yCursorLocal + (segHeight - windowHeight) * 0.5 + windowHeight * 0.5;
+
+                                const defSettings = placement?.settings && typeof placement.settings === 'object' ? placement.settings : null;
+                                if (!defSettings) continue;
+
+                                const mergedSettings = sanitizeWindowMeshSettings({
+                                    ...defSettings,
+                                    width,
+                                    height: windowHeight
+                                });
+                                const frameWidth = Math.max(0, Number(mergedSettings?.frame?.width) || 0);
+                                const cutWidth = width - frameWidth * 2;
+                                const cutHeight = windowHeight - frameWidth * 2;
+                                if (!(cutWidth > 0.02) || !(cutHeight > 0.02)) continue;
+
+                                const wantsArch = !!mergedSettings?.arch?.enabled;
+                                const archRatio = Number(mergedSettings?.arch?.heightRatio) || 0;
+                                const outerArchRise = wantsArch ? (archRatio * width) : 0;
+                                const innerWantsArch = wantsArch && outerArchRise > EPS;
+                                const archRiseCandidate = innerWantsArch ? (archRatio * cutWidth) : 0;
+                                const archRise = Math.min(archRiseCandidate, Math.max(0, cutHeight - frameWidth));
+                                const cutWantsArch = innerWantsArch && archRise > EPS;
+
+                                facadeWallCutouts.push({
+                                    faceId,
+                                    x: Number(placement?.x) || 0,
+                                    y,
+                                    z: Number(placement?.z) || 0,
+                                    width: cutWidth,
+                                    height: cutHeight,
+                                    wantsArch: cutWantsArch,
+                                    archRise
+                                });
+                            }
+
+                            yCursorLocal += segHeight;
+                            if (beltEnabled && beltHeight > EPS) {
+                                facadeWallYSlices.push({ y0: yCursorLocal, y1: yCursorLocal + beltHeight });
+                                yCursorLocal += beltHeight;
+                            }
+                        }
+                        if (!facadeWallCutouts.length) {
+                            facadeWallCutouts = null;
+                            facadeWallYSlices = null;
+                        }
+                    }
+
                     const facadeGeo = wantsFacadeWall
                         ? buildWallSidesGeometryFromLoopDetailXZ(facadeLoopDetail, {
                             height: totalWallHeight,
                             uvBaseV: yOffset,
-                            segmentOverrides: facadeWallSegmentOverrides
+                            segmentOverrides: facadeWallSegmentOverrides,
+                            cutouts: facadeWallCutouts,
+                            ySlices: facadeWallYSlices
                         })
                         : null;
 
@@ -3430,15 +3786,17 @@ export function buildBuildingFabricationVisualParts({
 
                         if (!windowMat) continue;
                         const geo = getPlaneGeometry(width, windowHeight);
-                        addWindowInstance({ geometry: geo, material: windowMat, x, y, z, yaw, renderOrder: 0 });
+                        const px = x + nx * windowOffset;
+                        const pz = z + nz * windowOffset;
+                        addWindowInstance({ geometry: geo, material: windowMat, x: px, y, z: pz, yaw, renderOrder: 0 });
 
                         if (windowGlassMat) {
                             addWindowInstance({
                                 geometry: geo,
                                 material: windowGlassMat,
-                                x: x + nx * glassLift,
+                                x: px + nx * glassLift,
                                 y,
-                                z: z + nz * glassLift,
+                                z: pz + nz * glassLift,
                                 yaw,
                                 renderOrder: 1
                             });

@@ -1,3 +1,5 @@
+# DONE
+
 #Problem
 BF2 window placement has two regressions in the window builder that affect geometry correctness:
 
@@ -20,3 +22,9 @@ Tasks:
   - `prompts/AI_DONE_<branch>_##_SUBJECT_title_DONE.md` on non-main branches
 - Do not move to `prompts/archive/` automatically.
 - Completion is not enough to move a prompt; move to `prompts/archive/` only when explicitly requested by the user.
+
+## Summary
+- Fixed BF2 bay window wall openings by cutting per-floor holes into the facade wall mesh where custom window definitions are placed (supports arched openings).
+- Sliced cutout wall geometry on floor lines and fixed triangle winding so wall normals face outward and triangulation doesn’t span multiple floors.
+- Fixed window `frame.inset` to apply per instance (rotated by face yaw) so faces A and C inset in opposite directions as expected.
+- Added a headless regression test covering wall cutouts, outward wall normals, and face-relative inset.
