@@ -543,7 +543,22 @@ export class OptionsUI {
                 if (mode === 'off') {
                     els.ao.textContent = 'Off';
                 } else if (mode === 'ssao') {
-                    els.ao.textContent = 'SSAO';
+                    const s = ao.ssao ?? null;
+                    const quality = String(s?.quality ?? 'medium');
+                    const req = Number.isFinite(s?.requestedIntensity) ? s.requestedIntensity : 0;
+                    const effective = Number.isFinite(s?.effectiveIntensity) ? s.effectiveIntensity : 0;
+                    const enabled = !!s?.enabled && s?.passEnabled !== false;
+                    const status = enabled ? 'on' : 'off';
+                    const maxDistance = Number.isFinite(s?.maxDistance) ? s.maxDistance : null;
+                    const depthSpan = Number.isFinite(s?.depthSpan) ? s.depthSpan : null;
+                    const formatDist = (v) => {
+                        const abs = Math.abs(v);
+                        if (abs >= 0.01) return v.toFixed(4);
+                        return v.toExponential(2);
+                    };
+                    const maxLabel = maxDistance === null ? '' : ` maxDist ${formatDist(maxDistance)}`;
+                    const depthLabel = depthSpan === null ? '' : ` depth ${depthSpan.toFixed(1)}`;
+                    els.ao.textContent = `SSAO (${quality}) [req ${req.toFixed(2)} eff ${effective.toFixed(2)}] (${status})${maxLabel}${depthLabel}`;
                 } else if (mode === 'gtao') {
                     const g = ao.gtao ?? null;
                     const updateMode = typeof g?.updateMode === 'string' ? g.updateMode : 'every_frame';

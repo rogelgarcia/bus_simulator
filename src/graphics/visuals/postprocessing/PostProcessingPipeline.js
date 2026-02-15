@@ -18,6 +18,7 @@ import { sanitizeAmbientOcclusionSettings } from './AmbientOcclusionSettings.js'
 import { TemporalAAPass } from './TemporalAAPass.js';
 import { hasCameraViewStateChanged, shouldUpdateGtaoFixedRate } from './GtaoUpdateScheduler.js';
 import { resolveGtaoDenoisePolicy } from './GtaoDenoisePolicy.js';
+import { resolveSsaoPassParams } from './SsaoPassConfig.js';
 
 function clamp(value, min, max, fallback) {
     const num = Number(value);
@@ -660,7 +661,9 @@ export class PostProcessingPipeline {
         const quality = mode === 'ssao'
             ? (this._ambientOcclusion?.ssao?.quality ?? 'medium')
             : (this._ambientOcclusion?.gtao?.quality ?? 'medium');
-        const scale = quality === 'low' ? 0.5 : (quality === 'medium' ? 0.75 : 1.0);
+        const scale = mode === 'ssao'
+            ? this._getSsaoAoPixelScale(quality)
+            : (quality === 'low' ? 0.5 : (quality === 'medium' ? 0.75 : 1.0));
 
         return {
             w: Math.max(1, Math.floor(pxW * scale)),
@@ -921,6 +924,24 @@ export class PostProcessingPipeline {
         return 16;
     }
 
+    _getSsaoAoPixelScale(quality) {
+        const q = typeof quality === 'string' ? quality : 'medium';
+        if (q === 'low') return 0.75;
+        if (q === 'high') return 1.0;
+        return 0.9;
+    }
+
+    _applySsaoPassParams(pass, params, quality) {
+        if (!pass || typeof params !== 'object') return;
+        if ('kernelRadius' in pass) pass.kernelRadius = params.kernelRadius;
+        if ('radius' in pass) pass.radius = params.kernelRadius;
+        if ('minDistance' in pass) pass.minDistance = params.minDistance;
+        if ('maxDistance' in pass) pass.maxDistance = params.maxDistance;
+        if ('kernelSize' in pass) pass.kernelSize = this._getSsaoKernelSize(quality);
+        if ('output' in pass && SSAOPass?.OUTPUT?.Default !== undefined) pass.output = SSAOPass.OUTPUT.Default;
+        pass.enabled = params.enabled === true;
+    }
+
     _getGtaoSampleCount(quality) {
         const q = typeof quality === 'string' ? quality : 'medium';
         if (q === 'low') return 8;
@@ -1002,14 +1023,15 @@ export class PostProcessingPipeline {
 
         if (nextMode === 'ssao') {
             const ssao = settings?.ssao ?? null;
-            if ('kernelRadius' in pass) pass.kernelRadius = clamp(ssao?.radius, 0.1, 64, 8);
-            if ('minDistance' in pass) pass.minDistance = 0.01;
-            if ('maxDistance' in pass) pass.maxDistance = 0.15;
-            if ('aoClamp' in pass) pass.aoClamp = 0.25;
-            if ('lumInfluence' in pass) pass.lumInfluence = 0.7;
-            if ('aoIntensity' in pass) pass.aoIntensity = clamp(clamp(ssao?.intensity, 0, 2, 0.35) * dynamicScale, 0, 2, 0.35);
-            if ('kernelSize' in pass) pass.kernelSize = this._getSsaoKernelSize(ssao?.quality);
-            if ('output' in pass && SSAOPass?.OUTPUT?.Default !== undefined) pass.output = SSAOPass.OUTPUT.Default;
+            const ssaoParams = resolveSsaoPassParams({
+                quality: ssao?.quality,
+                radius: ssao?.radius,
+                intensity: ssao?.intensity,
+                dynamicScale,
+                cameraNear: this.camera?.near,
+                cameraFar: this.camera?.far
+            });
+            this._applySsaoPassParams(pass, ssaoParams, ssao?.quality);
             this._syncAoPassSizes();
             return;
         }
@@ -1225,6 +1247,33 @@ export class PostProcessingPipeline {
 
     getDebugInfo() {
         const aoMode = this._ambientOcclusion?.mode ?? 'off';
+        const dynamicScale = getDynamicAoIntensityScale(this._ambientOcclusion);
+        const ssao = this._ambientOcclusion?.ssao ?? null;
+        const ssaoDebug = aoMode === 'ssao'
+            ? (() => {
+                const params = resolveSsaoPassParams({
+                    quality: ssao?.quality,
+                    radius: ssao?.radius,
+                    intensity: ssao?.intensity,
+                    dynamicScale,
+                    cameraNear: this.camera?.near,
+                    cameraFar: this.camera?.far
+                });
+                const pass = this._ao?.pass ?? null;
+                return {
+                    quality: String(params.quality ?? ssao?.quality ?? 'medium'),
+                    requestedIntensity: params.requestedIntensity,
+                    effectiveIntensity: params.effectiveIntensity,
+                    intensityScale: params.intensityScale,
+                    kernelRadius: params.kernelRadius,
+                    minDistance: params.minDistance,
+                    maxDistance: params.maxDistance,
+                    depthSpan: params.depthSpan,
+                    enabled: params.enabled,
+                    passEnabled: pass?.enabled === true
+                };
+            })()
+            : null;
         const gtao = this._ambientOcclusion?.gtao ?? null;
         const gtaoCache = this._gtaoCache ?? null;
         const gtaoFrameIndex = Number.isFinite(gtaoCache?.frameIndex) ? gtaoCache.frameIndex : 0;
@@ -1238,6 +1287,7 @@ export class PostProcessingPipeline {
             sunBloomEnabled: !!this._sunBloom?.enabled,
             ambientOcclusion: {
                 mode: aoMode,
+                ssao: ssaoDebug,
                 gtao: aoMode === 'gtao'
                     ? {
                         updateMode: gtao?.updateMode ?? 'every_frame',

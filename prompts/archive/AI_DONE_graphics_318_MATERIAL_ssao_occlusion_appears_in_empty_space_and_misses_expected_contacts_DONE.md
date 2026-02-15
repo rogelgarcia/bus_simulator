@@ -1,4 +1,6 @@
-#Problem
+# DONE
+
+# Problem
 
 SSAO is producing occlusion in visually empty space (outside walls, between distant buildings) while missing expected contact/crease darkening (for example, under the bus). The result looks detached from scene geometry.
 
@@ -13,7 +15,12 @@ Tasks:
 - Keep behavior stable across common camera angles and movement.
 - Avoid regressions in non-SSAO AO paths while fixing SSAO behavior.
 
-## On completion
+## Completion summary
+- Reworked SSAO tuning to camera-depth-normalized meter thresholds so occlusion stays local (reduces floating in-air darkening, restores close contact sensitivity).
+- Wired SSAO intensity to real `SSAOPass` controls (`kernelRadius`, `minDistance`, `maxDistance`) instead of non-existent intensity fields.
+- Added SSAO resolver unit coverage for intensity response and camera-range scaling, and improved debug readout precision for tiny normalized max-distance values.
+
+# On completion
 - When complete mark the AI document as DONE by adding a marker in the first line.
 - Rename the file in `prompts/` to `prompts/AI_DONE_graphics_318_MATERIAL_ssao_occlusion_appears_in_empty_space_and_misses_expected_contacts_DONE.md`.
 - Do not move to `prompts/archive/` automatically.
