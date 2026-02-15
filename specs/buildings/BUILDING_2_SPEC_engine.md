@@ -173,8 +173,15 @@ Building v2 moves from face-wide window spacing to **bay-driven content**:
 
 - Windows/doors/openings are authored as bay content (segments/features) rather than “fill a face with evenly spaced windows”.
 - If an opening cannot fit within a bay (after margins/clearances), it MUST be **omitted** and surfaced as a warning (never overlap).
-- Window definitions are building-owned and reusable across bays; bays may override width/height while referencing a shared definition.
-- A floor-skip/interval option must exist for bay windows (default `1` = every floor).
+- Window definitions are building-owned and reusable across bays; bays reference definitions by id.
+- Bay window authoring is per-bay and includes:
+  - `window.width.minMeters`,
+  - `window.width.maxMeters` (`null` = infinity / fill available bay width),
+  - `window.padding.leftMeters` / `window.padding.rightMeters` (linked by default).
+- The effective bay minimum width MUST be clamped by bay-window requirements:
+  - `effectiveBayMin = max(bayMin, windowMin + leftPadding + rightPadding)`.
+- Face slaves do not own independent bay/window copies; they inherit the master face facade/bay/window config.
+- Bay slaves (`linkFromBayId`) inherit the master bay window configuration by reference (no deep copy).
 
 The detailed content model is described in `specs/buildings/BUILDING_2_FACADE_LAYOUT_SPEC.md`.
 

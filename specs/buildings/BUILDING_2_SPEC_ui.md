@@ -220,6 +220,23 @@ Inside each `Floor layer` group, the UI order MUST be:
        - `Base material` (including albedo tint / roughness / normal strength),
        - `Texture tiling`,
        - `Material variation`.
+   - the selected bay exposes a `Window` section:
+     - `Enable window` toggle (off = no bay window preview/placement for that bay)
+     - window picker uses the same thumbnail rectangle layout as material pickers:
+       - no row label text,
+       - shows the currently selected building-owned window definition thumbnail.
+     - clicking the picker opens a selector popup with:
+       - existing building-owned window definitions,
+       - `Create New`,
+       - `Edit` for the currently selected definition.
+     - `Create New` and `Edit` open the shared Window Fabrication popup (reused Window Debugger authoring UI):
+       - wider controls area,
+       - smaller viewport,
+       - contextual 2×2 wall preview sample.
+     - per-bay window controls:
+       - width range (`min` + `max`, where `max = null` uses infinity / available bay width),
+       - left/right padding with a link toggle (linked by default).
+     - when window constraints increase the required bay width, the UI must show the effective clamped bay minimum width clearly.
    - Bay linking (bay-level master/slave, full spec):
      - the bay editor header row includes a `Link` action alongside the move arrows and delete icons
        - when the selected bay is linked (slave), the `Link` button border is yellow

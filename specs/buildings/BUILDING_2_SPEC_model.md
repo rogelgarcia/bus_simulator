@@ -54,6 +54,14 @@ At a conceptual level, a Building v2 model includes:
   - Material configuration is authored per **floor-layer face**, and respects face master/slave inheritance (slaves do not duplicate config).
 - **Bay content** definitions (openings/windows, columns, wall segments), with constraints and omission rules.
 - **Reusable definitions** owned by the building (e.g., window definitions reused across bays).
+- **Bay window configuration** authored per floor-layer face bay, including:
+  - enabled/disabled state,
+  - selected building-owned window definition id,
+  - per-bay width constraints (`min`/`max`, where `max = null` means infinity),
+  - per-side minimum padding (`left`/`right`, linked by default).
+- **Inheritance rules** for bay windows:
+  - face slaves inherit facade/bay/window config from their master face (no duplicated per-slave copy),
+  - bay slaves (`linkFromBayId`) inherit the master bay’s full window configuration by reference.
 
 Concrete schema definitions belong in dedicated specs:
 - `specs/buildings/BUILDING_2_FACADE_LAYOUT_SPEC.md`

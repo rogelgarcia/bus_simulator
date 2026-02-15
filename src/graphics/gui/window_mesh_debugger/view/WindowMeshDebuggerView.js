@@ -38,6 +38,23 @@ function clamp(value, min, max, fallback) {
     return Math.max(min, Math.min(max, num));
 }
 
+function normalizeWallSpec(value) {
+    const src = value && typeof value === 'object' ? value : null;
+    if (!src) return { ...WALL_SPEC };
+    const width = clamp(src.width, 0.5, 64.0, WALL_SPEC.width);
+    const height = clamp(src.height, 0.5, 64.0, WALL_SPEC.height);
+    const depth = clamp(src.depth, 0.05, 16.0, WALL_SPEC.depth);
+    const frontZ = clamp(src.frontZ, -64.0, 64.0, WALL_SPEC.frontZ);
+    return { width, height, depth, frontZ };
+}
+
+function normalizePreviewGrid(value) {
+    const src = value && typeof value === 'object' ? value : null;
+    const rows = clamp(src?.rows, 1, 8, 3) | 0;
+    const cols = clamp(src?.cols, 1, 8, 3) | 0;
+    return { rows, cols };
+}
+
 function deepClone(obj) {
     return obj && typeof obj === 'object' ? JSON.parse(JSON.stringify(obj)) : obj;
 }
@@ -281,7 +298,9 @@ export class WindowMeshDebuggerView {
         uiSubtitle = null,
         initialSettings = null,
         onSettingsChange = null,
-        onClose = null
+        onClose = null,
+        wallSpec = null,
+        previewGrid = null
     } = {}) {
         this.canvas = canvas;
         this.onFrame = null;
@@ -316,7 +335,8 @@ export class WindowMeshDebuggerView {
         this._wallMat = null;
         this._wallTexCache = new Map();
         this._texLoader = new THREE.TextureLoader();
-        this._wallSpec = { ...WALL_SPEC };
+        this._wallSpec = normalizeWallSpec(wallSpec);
+        this._previewGrid = normalizePreviewGrid(previewGrid);
         this._wallHoleKey = '';
         this._iblKey = '';
         this._iblRequestId = 0;
@@ -354,7 +374,8 @@ export class WindowMeshDebuggerView {
         const renderer = new THREE.WebGLRenderer({
             canvas: this.canvas,
             antialias: true,
-            alpha: false
+            alpha: false,
+            premultipliedAlpha: false
         });
         renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 
@@ -756,11 +777,13 @@ export class WindowMeshDebuggerView {
     }
 
     _makeDemoInstances(settings) {
-        const floorCount = 3;
-        const windowsPerFloor = 3;
-        const floorHeight = 3.0;
-        const spanX = 8.0;
-        const baseY = 0.85;
+        const floorCount = Math.max(1, this._previewGrid?.rows | 0);
+        const windowsPerFloor = Math.max(1, this._previewGrid?.cols | 0);
+        const wallWidth = Math.max(0.5, Number(this._wallSpec?.width) || WALL_SPEC.width);
+        const wallHeight = Math.max(0.5, Number(this._wallSpec?.height) || WALL_SPEC.height);
+        const floorHeight = windowsPerFloor > 1 ? Math.max(0.8, wallHeight / Math.max(2, floorCount + 1)) : Math.max(0.8, wallHeight * 0.33);
+        const spanX = Math.max(0.5, wallWidth * 0.66);
+        const baseY = Math.max(0.35, wallHeight * 0.12);
         const { frontZ: wallFrontZ } = this._wallSpec;
         const frameDepth = Number(settings?.frame?.depth) || 0;
         const zFace = wallFrontZ - frameDepth + 0.001;

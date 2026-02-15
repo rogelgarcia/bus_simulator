@@ -33,6 +33,14 @@ const WEDGE_ANGLE_MAX_DEG = 75;
 const FACADE_DEPTH_MIN_M = -2.0;
 const FACADE_DEPTH_MAX_M = 2.0;
 
+function deepClone(value) {
+    if (value === null || typeof value !== 'object') return value;
+    if (Array.isArray(value)) return value.map((entry) => deepClone(entry));
+    const out = {};
+    for (const [k, v] of Object.entries(value)) out[k] = deepClone(v);
+    return out;
+}
+
 function clamp(value, min, max) {
     const num = Number(value);
     if (!Number.isFinite(num)) return min;
@@ -1594,6 +1602,7 @@ function buildFacadeFaceProfile({
         const wallBase = isBay && it?.wallBase && typeof it.wallBase === 'object' ? it.wallBase : null;
         const tiling = isBay && it?.tiling && typeof it.tiling === 'object' ? it.tiling : null;
         const materialVariation = isBay && it?.materialVariation && typeof it.materialVariation === 'object' ? it.materialVariation : null;
+        const window = isBay && it?.window && typeof it.window === 'object' ? deepClone(it.window) : null;
         strips.push({
             faceId,
             id,
@@ -1603,6 +1612,7 @@ function buildFacadeFaceProfile({
             ...(wallBase ? { wallBase } : {}),
             ...(tiling ? { tiling } : {}),
             ...(materialVariation ? { materialVariation } : {}),
+            ...(window ? { window } : {}),
             u0,
             u1,
             frontU0,
@@ -2158,6 +2168,22 @@ export function buildBuildingFabricationVisualParts({
     windowsGroup.userData = windowsGroup.userData ?? {};
     const baseReflectiveCfg = resolveBuildingWindowReflectiveConfig(windowVisuals);
     const baseVisualsOverride = !!windowVisualsIsOverride;
+    const windowDefinitionItems = Array.isArray(windowDefinitions?.items) ? windowDefinitions.items : [];
+    const windowDefinitionById = new Map();
+    for (const entry of windowDefinitionItems) {
+        const id = typeof entry?.id === 'string' ? entry.id : '';
+        if (!id) continue;
+        const settings = entry?.settings && typeof entry.settings === 'object' ? entry.settings : null;
+        const widthMetersRaw = Number(settings?.width);
+        const heightMetersRaw = Number(settings?.height);
+        const widthMeters = Number.isFinite(widthMetersRaw) ? clamp(widthMetersRaw, 0.1, 20.0) : null;
+        const heightMeters = Number.isFinite(heightMetersRaw) ? clamp(heightMetersRaw, 0.1, 20.0) : null;
+        windowDefinitionById.set(id, {
+            id,
+            widthMeters,
+            heightMeters
+        });
+    }
 
     windowsGroup.userData.buildingWindowVisuals = Object.freeze({
         reflective: Object.freeze({
@@ -2489,6 +2515,10 @@ export function buildBuildingFabricationVisualParts({
 
             const winCfg = layer.windows ?? null;
             const winEnabled = !!winCfg?.enabled;
+            const hasBayWindowFeatures = Array.isArray(facadeStrips) && facadeStrips.some((strip) => {
+                const window = strip?.window && typeof strip.window === 'object' ? strip.window : null;
+                return !!window && window.enabled !== false;
+            });
             const winWidth = clamp(winCfg?.width, 0.3, 12.0);
             const winSpacing = clamp(winCfg?.spacing, 0.0, 24.0);
             const winDesiredHeight = clamp(winCfg?.height, 0.3, 10.0);
@@ -2528,12 +2558,15 @@ export function buildBuildingFabricationVisualParts({
 
             const windowOffset = clamp(winCfg?.offset, 0.0, 0.2);
             const cornerEps = clamp(winCfg?.cornerEps, 0.01, 2.0);
+            const wantsAnyWindowPlacement = winEnabled || hasBayWindowFeatures;
+            const materialWindowWidth = winEnabled ? winWidth : 1.2;
+            const materialWindowHeight = winEnabled ? winDesiredHeight : 1.6;
 
-            const windowMat = winEnabled ? makeWindowMaterial({
+            const windowMat = wantsAnyWindowPlacement ? makeWindowMaterial({
                 typeId: winTypeId,
                 params: winParams,
-                windowWidth: winWidth,
-                windowHeight: winDesiredHeight,
+                windowWidth: materialWindowWidth,
+                windowHeight: materialWindowHeight,
                 fakeDepth: winFakeDepth,
                 pbr: winPbr
             }) : null;
@@ -2541,11 +2574,11 @@ export function buildBuildingFabricationVisualParts({
             const reflectiveCfg = winVisualsOverride ? resolveBuildingWindowReflectiveConfig(winVisualsOverride) : baseReflectiveCfg;
             const glassLift = reflectiveCfg.layerOffset;
             const glassIsOverride = baseVisualsOverride || !!winVisualsOverride;
-            const windowGlassMat = (winEnabled && windowMat) ? makeGlassMaterial(getWindowGlassMaskTexture({
+            const windowGlassMat = (wantsAnyWindowPlacement && windowMat) ? makeGlassMaterial(getWindowGlassMaskTexture({
                 typeId: winTypeId,
                 params: winParams,
-                windowWidth: winWidth,
-                windowHeight: winDesiredHeight
+                windowWidth: materialWindowWidth,
+                windowHeight: materialWindowHeight
             }), reflectiveCfg, { isOverride: glassIsOverride }) : null;
 
             const windowRuns = [];
@@ -2588,6 +2621,86 @@ export function buildBuildingFabricationVisualParts({
                             spacerCenters: placement?.spacerCenters ?? []
                         });
                     }
+                }
+            }
+
+            const bayWindowPlacements = [];
+            if (hasBayWindowFeatures && windowMat && facadeFrames && Array.isArray(facadeStrips)) {
+                for (const strip of facadeStrips) {
+                    const type = typeof strip?.type === 'string' ? strip.type : '';
+                    if (type !== 'bay') continue;
+
+                    const windowCfg = strip?.window && typeof strip.window === 'object' ? strip.window : null;
+                    if (!windowCfg || windowCfg.enabled === false) continue;
+
+                    const faceId = strip?.faceId;
+                    if (faceId !== 'A' && faceId !== 'B' && faceId !== 'C' && faceId !== 'D') continue;
+                    const frame = facadeFrames?.[faceId] ?? null;
+                    if (!frame) continue;
+
+                    const rawU0 = Number(strip?.frontU0);
+                    const rawU1 = Number(strip?.frontU1);
+                    const u0 = Number.isFinite(rawU0) ? rawU0 : (Number(strip?.u0) || 0);
+                    const u1 = Number.isFinite(rawU1) ? rawU1 : (Number(strip?.u1) || 0);
+                    const span = Math.max(0, u1 - u0);
+                    if (!(span > EPS)) continue;
+
+                    const padding = windowCfg?.padding && typeof windowCfg.padding === 'object' ? windowCfg.padding : null;
+                    const leftPad = clamp(padding?.leftMeters ?? 0, 0, 9999);
+                    const rightPad = clamp(padding?.rightMeters ?? 0, 0, 9999);
+                    const usable = span - leftPad - rightPad;
+                    if (!(usable > EPS)) {
+                        warnings.push(`${faceId}:${strip?.id || 'bay'}: window padding leaves no usable bay width.`);
+                        continue;
+                    }
+
+                    const defId = typeof windowCfg?.defId === 'string' ? windowCfg.defId : '';
+                    const def = defId ? (windowDefinitionById.get(defId) ?? null) : null;
+                    if (!def) {
+                        warnings.push(`${faceId}:${strip?.id || 'bay'}: window definition "${defId || '(missing)'}" not found.`);
+                        continue;
+                    }
+
+                    const widthSpec = windowCfg?.width && typeof windowCfg.width === 'object' ? windowCfg.width : null;
+                    const minWidthRaw = Number(widthSpec?.minMeters);
+                    const minWidth = Number.isFinite(minWidthRaw)
+                        ? clamp(minWidthRaw, 0.1, 9999)
+                        : (Number.isFinite(def.widthMeters) ? def.widthMeters : 0.1);
+                    const maxRaw = widthSpec?.maxMeters;
+                    const maxWidth = (maxRaw === null || maxRaw === undefined) ? Infinity : clamp(maxRaw, minWidth, 9999);
+                    if (usable + 1e-6 < minWidth) {
+                        warnings.push(`${faceId}:${strip?.id || 'bay'}: usable width ${usable.toFixed(2)}m is below window min ${minWidth.toFixed(2)}m.`);
+                        continue;
+                    }
+
+                    let width = Number.isFinite(def.widthMeters) ? def.widthMeters : minWidth;
+                    width = clamp(width, minWidth, Number.isFinite(maxWidth) ? maxWidth : 9999);
+                    width = Math.min(width, usable);
+                    if (!(width > EPS)) continue;
+
+                    const centerU = u0 + leftPad + usable * 0.5;
+                    const depth0Raw = Number(strip?.depth0);
+                    const depth1Raw = Number(strip?.depth1);
+                    const depthRaw = Number(strip?.depth);
+                    const depth = Number.isFinite(depth0Raw) && Number.isFinite(depth1Raw)
+                        ? ((depth0Raw + depth1Raw) * 0.5)
+                        : (Number.isFinite(depthRaw) ? depthRaw : 0);
+
+                    const center = pointOnFacadeFrame({ frame, u: centerU, depth });
+                    const nx = Number(frame?.n?.x) || 0;
+                    const nz = Number(frame?.n?.z) || 0;
+                    const yaw = Math.atan2(nx, nz);
+                    const height = Number.isFinite(def.heightMeters) ? def.heightMeters : winDesiredHeight;
+
+                    bayWindowPlacements.push({
+                        x: center.x + nx * windowOffset,
+                        z: center.z + nz * windowOffset,
+                        yaw,
+                        nx,
+                        nz,
+                        width,
+                        height
+                    });
                 }
             }
 
@@ -3250,6 +3363,35 @@ export function buildBuildingFabricationVisualParts({
                                     });
                                 }
                             }
+                        }
+                    }
+                }
+
+                if (windowMat && bayWindowPlacements.length) {
+                    for (const placement of bayWindowPlacements) {
+                        const width = Math.max(0.1, Number(placement?.width) || 0.1);
+                        const desiredHeight = Math.max(0.1, Number(placement?.height) || 0.1);
+                        const windowHeight = Math.min(desiredHeight, Math.max(0.3, segHeight * 0.95));
+                        const y = yCursor + (segHeight - windowHeight) * 0.5 + windowHeight * 0.5;
+                        const x = Number(placement?.x) || 0;
+                        const z = Number(placement?.z) || 0;
+                        const yaw = Number(placement?.yaw) || 0;
+                        const nx = Number(placement?.nx) || 0;
+                        const nz = Number(placement?.nz) || 0;
+
+                        const geo = getPlaneGeometry(width, windowHeight);
+                        addWindowInstance({ geometry: geo, material: windowMat, x, y, z, yaw, renderOrder: 0 });
+
+                        if (windowGlassMat) {
+                            addWindowInstance({
+                                geometry: geo,
+                                material: windowGlassMat,
+                                x: x + nx * glassLift,
+                                y,
+                                z: z + nz * glassLift,
+                                yaw,
+                                renderOrder: 1
+                            });
                         }
                     }
                 }

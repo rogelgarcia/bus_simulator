@@ -1001,6 +1001,65 @@
     width: 220px;
 }
 
+.building-fab2-bay-window-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.building-fab2-bay-window-toggle-row {
+    margin-top: 2px;
+}
+
+.building-fab2-bay-window-details {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.building-fab2-bay-window-details.is-hidden {
+    display: none;
+}
+
+.building-fab2-bay-window-picker .building-fab-material-thumb {
+    height: 76px;
+}
+
+.building-fab2-bay-window-padding-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.building-fab2-bay-window-padding-input {
+    width: 72px;
+    text-align: right;
+}
+
+.building-fab2-bay-window-min-hint,
+.building-fab2-bay-window-details-hint {
+    margin-top: 0;
+}
+
+.building-fab-window-fab-panel.building-fab2-window-fab-popup {
+    width: min(1280px, calc(100vw - 24px));
+    max-height: min(840px, calc(100vh - 24px));
+    height: min(840px, calc(100vh - 24px));
+}
+
+.building-fab-window-fab-panel.building-fab2-window-fab-popup .building-fab-window-fab-layout {
+    gap: 8px;
+}
+
+.building-fab-window-fab-panel.building-fab2-window-fab-popup .building-fab-window-fab-viewport {
+    flex: 1 1 46%;
+    min-width: 260px;
+}
+
+.building-fab-window-fab-panel.building-fab2-window-fab-popup .building-fab-window-fab-options {
+    flex: 0 0 520px;
+}
+
 .building-fab2-toggle-switch {
     position: relative;
     display: inline-flex;

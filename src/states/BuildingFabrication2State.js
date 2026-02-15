@@ -14,10 +14,27 @@ export class BuildingFabrication2State {
 
         this.view = null;
         this._prevSunBloomSettings = null;
+        this._prevLightingSettings = null;
         this._onKeyDown = (e) => this._handleKeyDown(e);
     }
 
     enter() {
+        // Building Fabrication 2 should keep a neutral background color (no IBL background texture).
+        // Must not persist: restore previous lighting settings on exit.
+        const lighting = this.engine?.lightingSettings ?? null;
+        this._prevLightingSettings = lighting && typeof lighting === 'object'
+            ? JSON.parse(JSON.stringify(lighting))
+            : null;
+        this.engine?.setLightingSettings?.({
+            ...(this._prevLightingSettings ?? {}),
+            ibl: {
+                ...((this._prevLightingSettings?.ibl && typeof this._prevLightingSettings.ibl === 'object')
+                    ? this._prevLightingSettings.ibl
+                    : {}),
+                setBackground: false
+            }
+        });
+
         // Building Fabrication 2 expects neutral presentation; temporarily disable sun bloom.
         // Must not persist: restore previous settings on exit.
         const sunBloom = this.engine?.sunBloomSettings ?? null;
@@ -55,6 +72,13 @@ export class BuildingFabrication2State {
         }
         this._prevSunBloomSettings = null;
 
+        if (this._prevLightingSettings && this.engine?.setLightingSettings) {
+            this.engine.setLightingSettings(this._prevLightingSettings);
+        } else {
+            this.engine?.reloadLightingSettings?.();
+        }
+        this._prevLightingSettings = null;
+
         this.engine.clearScene();
     }
 
@@ -73,4 +97,3 @@ export class BuildingFabrication2State {
         }
     }
 }
-

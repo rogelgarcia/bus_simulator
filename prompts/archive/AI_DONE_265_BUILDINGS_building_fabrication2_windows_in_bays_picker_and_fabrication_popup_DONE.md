@@ -1,4 +1,4 @@
-#Problem
+# Problem (DONE)
 
 Building Fabrication 2 supports floor layers, per-floor-layer face selection/linking, and bay authoring per face. We now need to support configuring **windows inside bays** with a reusable selection/fabrication workflow that leverages the existing Window Debugger window creation UI (no duplicated window-authoring code).
 
@@ -63,3 +63,11 @@ Constraints:
 - When complete mark the AI document as DONE by adding a marker in the first line
 - Also rename the AI file to `AI_DONE_265_BUILDINGS_building_fabrication2_windows_in_bays_picker_and_fabrication_popup_DONE.md`
 - Provide a summary of the changes made in the AI document (very high level, one liner for each change)
+
+## Summary of changes made
+- Added bay-level window authoring in Building Fabrication 2 UI (enable toggle, thumbnail picker, create/edit flow, per-bay width range with infinite max, per-side padding with default link).
+- Wired BF2 view logic for building-owned window definitions (create/edit/update/sanitize definitions, popup selector actions, inheritance-safe bay updates, and bay min-width clamping from window constraints).
+- Reused shared window fabrication popup and extended it for BF2-specific layout (wider controls, smaller viewport, 2x2 contextual preview sample).
+- Extended facade bay solver + silhouette strip data to carry bay-window config and enforce window-driven bay minimum width during solving.
+- Added bay-window runtime placement in the building generator using resolved facade strips and building-owned window definitions.
+- Updated building specs (`BUILDING_2_SPEC_model.md`, `BUILDING_2_SPEC_engine.md`, `BUILDING_2_SPEC_ui.md`) to document bay-window model scope, workflow, constraints, and inheritance behavior.

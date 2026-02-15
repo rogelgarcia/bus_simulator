@@ -129,6 +129,41 @@ function normalizeBayEdgeDepthSpec(value) {
     return { left, right };
 }
 
+function normalizeBayWindowSpec(value) {
+    const src = value && typeof value === 'object' ? value : null;
+    if (!src) return null;
+    if (src.enabled === false) return null;
+
+    const defId = typeof src.defId === 'string' ? src.defId : '';
+
+    const widthSrc = src.width && typeof src.width === 'object' ? src.width : null;
+    const minRaw = Number(widthSrc?.minMeters ?? src.minWidthMeters ?? src.widthMeters);
+    const minMeters = Number.isFinite(minRaw) ? clamp(minRaw, BAY_MIN_WIDTH_M, 9999) : BAY_MIN_WIDTH_M;
+
+    const maxRaw = widthSrc?.maxMeters ?? src.maxWidthMeters;
+    const maxMeters = (maxRaw === null || maxRaw === undefined)
+        ? null
+        : clamp(maxRaw, minMeters, 9999);
+
+    const paddingSrc = src.padding && typeof src.padding === 'object' ? src.padding : null;
+    const linked = (paddingSrc?.linked ?? true) !== false;
+    const leftMeters = clamp(paddingSrc?.leftMeters ?? src.paddingLeftMeters ?? 0, 0, 9999);
+    const rightRaw = Number(paddingSrc?.rightMeters ?? src.paddingRightMeters);
+    const rightMeters = clamp(Number.isFinite(rightRaw) ? rightRaw : (linked ? leftMeters : 0), 0, 9999);
+
+    return {
+        enabled: true,
+        defId,
+        width: {
+            minMeters,
+            maxMeters
+        },
+        padding: linked
+            ? { leftMeters, rightMeters }
+            : { leftMeters, rightMeters, linked: false }
+    };
+}
+
 /**
  * @typedef {Object} BaySizeFixed
  * @property {'fixed'} mode
@@ -151,6 +186,7 @@ function normalizeBayEdgeDepthSpec(value) {
  * @property {{tintHex:number, roughness:number, normalStrength:number} | null} [wallBase]
  * @property {{enabled:boolean, tileMeters:number, tileMetersU:number, tileMetersV:number, uvEnabled:boolean, offsetU:number, offsetV:number, rotationDegrees:number} | null} [tiling]
  * @property {object | null} [materialVariation]
+ * @property {{enabled:true, defId:string, width:{minMeters:number, maxMeters:number|null}, padding:{leftMeters:number, rightMeters:number, linked?:boolean}} | null} [window]
  * @property {'restart'|'repeats'|'overflow_left'|'overflow_right'} [textureFlow]
  *
  * @typedef {Object} FacadeBayGroupSpec
@@ -171,6 +207,7 @@ function normalizeBayEdgeDepthSpec(value) {
  * @property {{tintHex:number, roughness:number, normalStrength:number} | null} [wallBase]
  * @property {{enabled:boolean, tileMeters:number, tileMetersU:number, tileMetersV:number, uvEnabled:boolean, offsetU:number, offsetV:number, rotationDegrees:number} | null} [tiling]
  * @property {object | null} [materialVariation]
+ * @property {{enabled:true, defId:string, width:{minMeters:number, maxMeters:number|null}, padding:{leftMeters:number, rightMeters:number, linked?:boolean}} | null} [window]
  */
 
 function normalizeFracs(fracs) {
@@ -218,6 +255,18 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
             }
         }
 
+        const windowLegacy = entry?.features && typeof entry.features === 'object'
+            ? entry.features.window
+            : null;
+        const window = normalizeBayWindowSpec(entry?.window ?? windowLegacy ?? null);
+        if (window) {
+            const windowMin = clamp(window?.width?.minMeters ?? BAY_MIN_WIDTH_M, BAY_MIN_WIDTH_M, 9999);
+            const leftPad = clamp(window?.padding?.leftMeters ?? 0, 0, 9999);
+            const rightPad = clamp(window?.padding?.rightMeters ?? 0, 0, 9999);
+            minWidth = Math.max(minWidth, windowMin + leftPad + rightPad);
+            if (Number.isFinite(maxWidth) && maxWidth < minWidth) maxWidth = minWidth;
+        }
+
         let expandPreference = normalizeExpandPreference(entry?.expandPreference ?? null);
         if (!expandPreference) {
             if (entry?.repeatable !== undefined) {
@@ -241,6 +290,7 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
             wallBase: normalizeWallBase(entry?.wallBase ?? null),
             tiling: normalizeTiling(entry?.tiling ?? null),
             materialVariation: normalizeMaterialVariation(entry?.materialVariation ?? null),
+            window: window ? deepClone(window) : null,
             textureFlow: normalizeTextureFlow(entry?.textureFlow ?? null)
         });
     }
@@ -468,7 +518,8 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
             wallMaterialOverride: source.wallMaterialOverride,
             wallBase: source.wallBase,
             tiling: source.tiling,
-            materialVariation: source.materialVariation
+            materialVariation: source.materialVariation,
+            window: source.window ? deepClone(source.window) : null
         });
     }
 
@@ -486,7 +537,8 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
             ...(it.wallMaterialOverride ? { wallMaterialOverride: it.wallMaterialOverride } : {}),
             ...(it.wallBase ? { wallBase: it.wallBase } : {}),
             ...(it.tiling ? { tiling: it.tiling } : {}),
-            ...(it.materialVariation ? { materialVariation: it.materialVariation } : {})
+            ...(it.materialVariation ? { materialVariation: it.materialVariation } : {}),
+            ...(it.window ? { window: deepClone(it.window) } : {})
         }));
     }
 
@@ -509,7 +561,8 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
             ...(it.wallMaterialOverride ? { wallMaterialOverride: it.wallMaterialOverride } : {}),
             ...(it.wallBase ? { wallBase: it.wallBase } : {}),
             ...(it.tiling ? { tiling: it.tiling } : {}),
-            ...(it.materialVariation ? { materialVariation: it.materialVariation } : {})
+            ...(it.materialVariation ? { materialVariation: it.materialVariation } : {}),
+            ...(it.window ? { window: deepClone(it.window) } : {})
         }));
     }
 
@@ -592,6 +645,7 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
         ...(it.wallMaterialOverride ? { wallMaterialOverride: it.wallMaterialOverride } : {}),
         ...(it.wallBase ? { wallBase: it.wallBase } : {}),
         ...(it.tiling ? { tiling: it.tiling } : {}),
-        ...(it.materialVariation ? { materialVariation: it.materialVariation } : {})
+        ...(it.materialVariation ? { materialVariation: it.materialVariation } : {}),
+        ...(it.window ? { window: deepClone(it.window) } : {})
     }));
 }

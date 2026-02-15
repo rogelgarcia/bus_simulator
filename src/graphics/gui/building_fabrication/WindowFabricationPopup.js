@@ -37,6 +37,7 @@ export class WindowFabricationPopup {
 
         this._view = null;
         this._onSettingsChange = null;
+        this._panelClassName = '';
 
         this._onOverlayClick = (e) => this._handleOverlayClick(e);
         this._onKeyDown = (e) => this._handleKeyDown(e);
@@ -50,11 +51,16 @@ export class WindowFabricationPopup {
         title = null,
         subtitle = null,
         initialSettings = null,
-        onSettingsChange = null
+        onSettingsChange = null,
+        popupClassName = '',
+        wallSpec = null,
+        previewGrid = null
     } = {}) {
         this.close();
 
         this._onSettingsChange = typeof onSettingsChange === 'function' ? onSettingsChange : null;
+        this._panelClassName = typeof popupClassName === 'string' ? popupClassName.trim() : '';
+        if (this._panelClassName) this._panel.classList.add(this._panelClassName);
         if (!this._overlay.isConnected) document.body.appendChild(this._overlay);
         this._overlay.classList.remove('hidden');
         this._overlay.addEventListener('click', this._onOverlayClick);
@@ -70,6 +76,8 @@ export class WindowFabricationPopup {
             uiTitle,
             uiSubtitle,
             initialSettings,
+            wallSpec,
+            previewGrid,
             onSettingsChange: (settings) => this._onSettingsChange?.(settings),
             onClose: () => this.close()
         });
@@ -91,8 +99,10 @@ export class WindowFabricationPopup {
             this._overlay.removeEventListener('click', this._onOverlayClick);
             window.removeEventListener('keydown', this._onKeyDown);
         }
+        if (this._panelClassName) this._panel.classList.remove(this._panelClassName);
 
         this._onSettingsChange = null;
+        this._panelClassName = '';
     }
 
     dispose() {
@@ -113,4 +123,3 @@ export class WindowFabricationPopup {
         this.close();
     }
 }
-
