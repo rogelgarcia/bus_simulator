@@ -15,4 +15,4 @@ Registry of scripts under `tools/`. When adding a new tool, register it here.
 | optionsPresets | `tools/options_presets/` | Export/import Options presets and promote to defaults | `node tools/options_presets/promote_to_defaults.mjs path/to/preset.json --write` |
 | runSelectedTest | `tools/run_selected_test/` | Run a selected test target via `tests/.selected_test` for fast AI/dev iteration | `node tools/run_selected_test/run.mjs` |
 | promptNameValidator | `tools/prompt_name_validator/` | Validate AI prompt folder placement and naming conventions | `node tools/prompt_name_validator/run.mjs` |
-| worktreeCreateAndSync | `tools/worktree_create_and_sync/` | Create/reuse a named worktree and run asset sync inside it | `node tools/worktree_create_and_sync/run.mjs <name>` |
+| worktreeCreateAndSync | `tools/worktree_create_and_sync/` | Create/reuse a named worktree and run asset sync inside it | `bash tools/worktree_create_and_sync/run.sh <name>` |

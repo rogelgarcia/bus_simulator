@@ -10,24 +10,27 @@ Default behavior:
 ## Usage
 
 ```bash
-node tools/worktree_create_and_sync/run.mjs <name>
+bash tools/worktree_create_and_sync/run.sh <name>
 ```
 
 Example:
 
 ```bash
-node tools/worktree_create_and_sync/run.mjs graphics
+bash tools/worktree_create_and_sync/run.sh graphics
 ```
 
 ## Options
 
 - `--root <path>`: override worktrees root directory
-- `--asset-sync-args "<args>"`: forward extra args to `assetSync`
 - `--dry-run`: print commands without executing
 - `--help`: show usage
 
-Example with forwarded args:
+Dry run:
 
 ```bash
-node tools/worktree_create_and_sync/run.mjs graphics --asset-sync-args "--dry-run"
+bash tools/worktree_create_and_sync/run.sh graphics --dry-run
 ```
+
+Notes:
+- The shell script attempts `node tools/asset_sync/run.mjs` inside the target worktree.
+- If `node` is not available in the runtime environment, it falls back to a direct filesystem copy from root `assets/` into the worktree `assets/`.
