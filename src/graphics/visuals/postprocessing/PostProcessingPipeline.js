@@ -24,7 +24,8 @@ import {
     applyAoAlphaHandlingToMaterial,
     getMaterialForAoGroup,
     primeAoOverrideMaterial,
-    resolveAoOverrideMaterial
+    resolveAoOverrideMaterial,
+    shouldApplyAoAlphaCutout
 } from './AoAlphaCutoutSupport.js';
 
 function clamp(value, min, max, fallback) {
@@ -416,6 +417,12 @@ export class PostProcessingPipeline {
         };
 
         this._darkMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+        this._darkMaterial.toneMapped = false;
+        this._sunBloomOcclusion = {
+            materialCache: new WeakMap(),
+            arrayCache: new WeakMap(),
+            createdMaterials: new Set()
+        };
         this._materialCache = new Map();
         this._hidden = [];
 
@@ -1310,6 +1317,62 @@ export class PostProcessingPipeline {
         }
     }
 
+    _createSunBloomAlphaCutoutOccluderMaterial(sourceMaterial) {
+        const src = sourceMaterial && typeof sourceMaterial === 'object' ? sourceMaterial : null;
+        if (!src?.isMaterial) return null;
+
+        const srcAlphaTest = Number(src.alphaTest) || 0;
+        const alphaTest = srcAlphaTest > 1e-6
+            ? clamp(srcAlphaTest, 0.01, 0.99, 0.5)
+            : 0.5;
+
+        const mat = new THREE.MeshBasicMaterial({
+            color: 0x000000,
+            side: src.side ?? THREE.FrontSide,
+            map: src.map ?? null,
+            alphaMap: src.alphaMap ?? null,
+            alphaTest
+        });
+
+        mat.transparent = false;
+        mat.depthWrite = true;
+        mat.depthTest = true;
+        mat.toneMapped = false;
+        return mat;
+    }
+
+    _getSunBloomOcclusionMaterialForSource(object, sourceMaterial) {
+        const src = sourceMaterial && typeof sourceMaterial === 'object' ? sourceMaterial : null;
+        if (!src?.isMaterial) return this._darkMaterial;
+        if (!shouldApplyAoAlphaCutout(src, object)) return this._darkMaterial;
+
+        const cache = this._sunBloomOcclusion?.materialCache ?? null;
+        const cached = cache?.get?.(src) ?? null;
+        if (cached) return cached;
+
+        const created = this._createSunBloomAlphaCutoutOccluderMaterial(src);
+        if (!created) return this._darkMaterial;
+
+        cache?.set?.(src, created);
+        this._sunBloomOcclusion?.createdMaterials?.add?.(created);
+        return created;
+    }
+
+    _getSunBloomOcclusionMaterial(object, sourceMaterial) {
+        const mat = sourceMaterial ?? null;
+        if (!mat) return this._darkMaterial;
+
+        if (!Array.isArray(mat)) return this._getSunBloomOcclusionMaterialForSource(object, mat);
+
+        const cache = this._sunBloomOcclusion?.arrayCache ?? null;
+        const cached = cache?.get?.(mat) ?? null;
+        if (cached) return cached;
+
+        const override = mat.map((m) => this._getSunBloomOcclusionMaterialForSource(object, m));
+        cache?.set?.(mat, override);
+        return override;
+    }
+
     _renderSunBloom(deltaTime) {
         if (!this._sunBloom.enabled || this._sunBloom.strength <= 0) return;
 
@@ -1341,7 +1404,7 @@ export class PostProcessingPipeline {
                     const mat = obj.material ?? null;
                     if (!mat) return;
                     this._materialCache.set(obj, mat);
-                    obj.material = this._darkMaterial;
+                    obj.material = this._getSunBloomOcclusionMaterial(obj, mat);
                     return;
                 }
 
@@ -1458,6 +1521,8 @@ export class PostProcessingPipeline {
         this.composer?.renderTarget2?.dispose?.();
 
         this._darkMaterial?.dispose?.();
+        for (const mat of (this._sunBloomOcclusion?.createdMaterials ?? [])) mat?.dispose?.();
+        this._sunBloomOcclusion?.createdMaterials?.clear?.();
         this._blackTex?.dispose?.();
         this._whiteTex?.dispose?.();
     }
