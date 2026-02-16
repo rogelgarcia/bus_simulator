@@ -11,6 +11,8 @@ import { scenarioWindowMeshShadeVisibility } from './scenario_window_mesh_shade_
 import { scenarioWindowMeshInteriorParallax } from './scenario_window_mesh_interior_parallax.js';
 import { scenarioGrassBladeHiresShine } from './scenario_grass_blade_hires_shine.js';
 import { scenarioVehicleMotionFlickerProbe } from './scenario_vehicle_motion_flicker_probe.js';
+import { scenarioSunBloomFoliageOcclusion } from './scenario_sun_bloom_foliage_occlusion.js';
+import { scenarioAoFoliageMotionStability } from './scenario_ao_foliage_motion_stability.js';
 
 const REGISTRY = new Map([
     [scenarioEmpty.id, scenarioEmpty],
@@ -24,7 +26,9 @@ const REGISTRY = new Map([
     [scenarioWindowMeshShadeVisibility.id, scenarioWindowMeshShadeVisibility],
     [scenarioWindowMeshInteriorParallax.id, scenarioWindowMeshInteriorParallax],
     [scenarioGrassBladeHiresShine.id, scenarioGrassBladeHiresShine],
-    [scenarioVehicleMotionFlickerProbe.id, scenarioVehicleMotionFlickerProbe]
+    [scenarioVehicleMotionFlickerProbe.id, scenarioVehicleMotionFlickerProbe],
+    [scenarioSunBloomFoliageOcclusion.id, scenarioSunBloomFoliageOcclusion],
+    [scenarioAoFoliageMotionStability.id, scenarioAoFoliageMotionStability]
 ]);
 
 export function listScenarioIds() {

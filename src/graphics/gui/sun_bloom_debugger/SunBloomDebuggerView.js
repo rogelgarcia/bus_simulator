@@ -17,6 +17,7 @@ import { getResolvedAtmosphereSettings, sanitizeAtmosphereSettings } from '../..
 import { azimuthElevationDegToDir, dirToAzimuthElevationDeg } from '../../visuals/atmosphere/SunDirection.js';
 import { getResolvedSunFlareSettings } from '../../visuals/sun/SunFlareSettings.js';
 import { SunFlareRig } from '../../visuals/sun/SunFlareRig.js';
+import { shouldApplyAoAlphaCutout } from '../../visuals/postprocessing/AoAlphaCutoutSupport.js';
 import { SunBloomDebuggerUI } from './SunBloomDebuggerUI.js';
 import { loadHdriEnvironment } from '../atmosphere_debugger/AtmosphereDebuggerHdri.js';
 import { getOrCreateGpuFrameTimer } from '../../engine3d/perf/GpuFrameTimer.js';
@@ -354,6 +355,11 @@ export class SunBloomDebuggerView {
 
         this._post = null;
         this._darkMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+        this._sunBloomOcclusion = {
+            materialCache: new WeakMap(),
+            arrayCache: new WeakMap(),
+            createdMaterials: new Set()
+        };
         this._materialCache = new Map();
 
         this._compare = { enabled: true, slot: 0, toggleReq: 0 };
@@ -600,6 +606,10 @@ export class SunBloomDebuggerView {
 
         this._post?.dispose?.();
         this._post = null;
+
+        for (const mat of (this._sunBloomOcclusion?.createdMaterials ?? [])) mat?.dispose?.();
+        this._sunBloomOcclusion?.createdMaterials?.clear?.();
+        this._sunBloomOcclusion = null;
 
         this._darkMaterial?.dispose?.();
         this._darkMaterial = null;
@@ -1310,6 +1320,62 @@ export class SunBloomDebuggerView {
         post.finalComposer.render();
     }
 
+    _createSunBloomAlphaCutoutOccluderMaterial(sourceMaterial) {
+        const src = sourceMaterial && typeof sourceMaterial === 'object' ? sourceMaterial : null;
+        if (!src?.isMaterial) return null;
+
+        const srcAlphaTest = Number(src.alphaTest) || 0;
+        const alphaTest = srcAlphaTest > 1e-6
+            ? Math.max(0.01, Math.min(0.99, srcAlphaTest))
+            : 0.5;
+
+        const mat = new THREE.MeshBasicMaterial({
+            color: 0x000000,
+            side: src.side ?? THREE.FrontSide,
+            map: src.map ?? null,
+            alphaMap: src.alphaMap ?? null,
+            alphaTest
+        });
+
+        mat.transparent = false;
+        mat.depthWrite = true;
+        mat.depthTest = true;
+        mat.toneMapped = false;
+        return mat;
+    }
+
+    _getSunBloomOcclusionMaterialForSource(object, sourceMaterial) {
+        const src = sourceMaterial && typeof sourceMaterial === 'object' ? sourceMaterial : null;
+        if (!src?.isMaterial) return this._darkMaterial;
+        if (!shouldApplyAoAlphaCutout(src, object)) return this._darkMaterial;
+
+        const cache = this._sunBloomOcclusion?.materialCache ?? null;
+        const cached = cache?.get?.(src) ?? null;
+        if (cached) return cached;
+
+        const created = this._createSunBloomAlphaCutoutOccluderMaterial(src);
+        if (!created) return this._darkMaterial;
+
+        cache?.set?.(src, created);
+        this._sunBloomOcclusion?.createdMaterials?.add?.(created);
+        return created;
+    }
+
+    _getSunBloomOcclusionMaterial(object, sourceMaterial) {
+        const mat = sourceMaterial ?? null;
+        if (!mat) return this._darkMaterial;
+
+        if (!Array.isArray(mat)) return this._getSunBloomOcclusionMaterialForSource(object, mat);
+
+        const cache = this._sunBloomOcclusion?.arrayCache ?? null;
+        const cached = cache?.get?.(mat) ?? null;
+        if (cached) return cached;
+
+        const override = mat.map((m) => this._getSunBloomOcclusionMaterialForSource(object, m));
+        cache?.set?.(mat, override);
+        return override;
+    }
+
     _renderBloomSunOnly({ occlusion }) {
         const post = this._post;
         const camera = this.camera;
@@ -1342,7 +1408,7 @@ export class SunBloomDebuggerView {
             const mat = obj.material ?? null;
             if (!mat) return;
             this._materialCache.set(obj, mat);
-            obj.material = this._darkMaterial;
+            obj.material = this._getSunBloomOcclusionMaterial(obj, mat);
         });
 
         if (this._flare?.group) this._flare.group.visible = false;

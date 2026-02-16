@@ -230,6 +230,43 @@ function bleedCutoutTextureRgb(tex, { passes = 2 } = {}) {
     return true;
 }
 
+function createAoAlphaMapFromTextureAlpha(tex, { anisotropy = 1 } = {}) {
+    const srcTex = tex ?? null;
+    const img = srcTex?.image ?? null;
+    const data = img?.data ?? null;
+    const w = Number(img?.width) || 0;
+    const h = Number(img?.height) || 0;
+    if (!(data instanceof Uint8Array) || w <= 0 || h <= 0 || data.length < w * h * 4) return null;
+
+    const out = new Uint8Array(w * h * 4);
+    for (let i = 0; i < w * h; i += 1) {
+        const alpha = data[(i * 4) + 3];
+        const j = i * 4;
+        out[j] = alpha;
+        out[j + 1] = alpha;
+        out[j + 2] = alpha;
+        out[j + 3] = 255;
+    }
+
+    const alphaTex = new THREE.DataTexture(out, w, h, THREE.RGBAFormat);
+    applyTextureColorSpace(alphaTex, { srgb: false });
+    alphaTex.wrapS = srcTex.wrapS;
+    alphaTex.wrapT = srcTex.wrapT;
+    alphaTex.magFilter = srcTex.magFilter;
+    alphaTex.minFilter = srcTex.minFilter;
+    alphaTex.generateMipmaps = srcTex.generateMipmaps !== false;
+    alphaTex.anisotropy = Number.isFinite(Number(anisotropy)) ? Math.max(1, Number(anisotropy)) : 1;
+    alphaTex.flipY = srcTex.flipY === true;
+    alphaTex.offset.copy(srcTex.offset);
+    alphaTex.repeat.copy(srcTex.repeat);
+    alphaTex.center.copy(srcTex.center);
+    alphaTex.rotation = Number.isFinite(srcTex.rotation) ? srcTex.rotation : 0;
+    alphaTex.matrixAutoUpdate = srcTex.matrixAutoUpdate !== false;
+    if (!alphaTex.matrixAutoUpdate) alphaTex.matrix.copy(srcTex.matrix);
+    alphaTex.needsUpdate = true;
+    return alphaTex;
+}
+
 function getUrlBasename(url) {
     const s = String(url ?? '');
     const stripped = s.split(/[?#]/)[0];
@@ -283,31 +320,43 @@ function loadTextures() {
         bleedCutoutTextureRgb(leafMap, { passes: 2 });
         // Leaves are rendered as alpha-test cutouts (not blended), so keep original RGB.
         leafMap.anisotropy = 8;
+        leafMap.magFilter = THREE.LinearFilter;
+        leafMap.minFilter = THREE.LinearMipmapLinearFilter;
+        leafMap.generateMipmaps = true;
+        leafNormal.anisotropy = 8;
+        leafNormal.magFilter = THREE.LinearFilter;
+        leafNormal.minFilter = THREE.LinearMipmapLinearFilter;
+        leafNormal.generateMipmaps = true;
         trunkMap.anisotropy = 8;
         trunkMap.wrapS = THREE.RepeatWrapping;
         trunkMap.wrapT = THREE.RepeatWrapping;
         trunkNormal.wrapS = THREE.RepeatWrapping;
         trunkNormal.wrapT = THREE.RepeatWrapping;
+        leafMap.needsUpdate = true;
+        leafNormal.needsUpdate = true;
         trunkMap.needsUpdate = true;
         trunkNormal.needsUpdate = true;
-        return { leafMap, leafNormal, trunkMap, trunkNormal };
+        const leafAoAlphaMap = createAoAlphaMapFromTextureAlpha(leafMap, { anisotropy: 8 });
+        return { leafMap, leafAoAlphaMap, leafNormal, trunkMap, trunkNormal };
     });
 }
 
-function makeTreeMaterials({ leafMap, leafNormal, trunkMap, trunkNormal }) {
+function makeTreeMaterials({ leafMap, leafAoAlphaMap, leafNormal, trunkMap, trunkNormal }) {
     const leaf = new THREE.MeshStandardMaterial({
         map: leafMap,
+        normalMap: leafNormal,
         roughness: 0.9,
         metalness: 0.0,
         transparent: false,
         premultipliedAlpha: false,
         alphaTest: LEAF_ALPHA_CUTOUT_THRESHOLD,
-        side: THREE.FrontSide
+        side: THREE.DoubleSide
     });
-    leaf.shadowSide = THREE.FrontSide;
-    leaf.alphaToCoverage = false;
+    leaf.shadowSide = THREE.DoubleSide;
+    leaf.alphaToCoverage = true;
     leaf.userData.isFoliage = true;
     leaf.userData.preserveShadowSide = true;
+    if (leafAoAlphaMap) leaf.userData.aoAlphaMap = leafAoAlphaMap;
 
     const trunk = new THREE.MeshStandardMaterial({
         map: trunkMap,

@@ -23,7 +23,8 @@ view.start().then(() => {
         version: 1,
         setAmbientOcclusion: (settings) => view.setAmbientOcclusionForTest(settings),
         getAmbientOcclusion: () => view.getAmbientOcclusionForTest(),
-        getReproInfo: () => view.getReproInfoForTest()
+        getReproInfo: () => view.getReproInfoForTest(),
+        getAoOverrideDebugInfo: () => view.getAoOverrideDebugInfoForTest()
     };
 }).catch((err) => {
     console.error('[AOFoliageDebugger] Failed to start', err);

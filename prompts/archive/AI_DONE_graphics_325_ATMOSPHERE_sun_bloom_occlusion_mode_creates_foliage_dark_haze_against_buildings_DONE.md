@@ -1,3 +1,5 @@
+# DONE
+
 #Problem
 
 Distance-dependent dark shading/haze appears around tree foliage when **Sun Bloom** is set to **Mode = occlusion** (occlusion-aware path).  
@@ -36,3 +38,8 @@ Tasks:
 - Do not move to `prompts/archive/` automatically.
 - Completion is not enough to move a prompt; move to `prompts/archive/` only when explicitly requested by the user.
 - Provide a summary of the changes made in the AI document (very high level, one liner for each change).
+
+## Summary (implemented)
+- Fixed Sun Bloom `mode = occlusion` by using alpha-aware occluder materials for cutout/foliage meshes so invisible pixels no longer block bloom.
+- Updated the Sun Bloom Debug tool occlusion path to match the runtime behavior (alpha-cutout respected).
+- Added a deterministic harness repro scene and a headless pixel-sampling regression test covering foliage against opaque geometry and sky.

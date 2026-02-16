@@ -276,6 +276,15 @@ function setAntiAliasingSettings(settings) {
     return true;
 }
 
+function getAmbientOcclusionDebugInfo() {
+    return state.engine?.getAmbientOcclusionDebugInfo?.() ?? null;
+}
+
+function setAmbientOcclusionSettings(settings) {
+    state.engine?.setAmbientOcclusionSettings?.(settings);
+    return true;
+}
+
 function getSceneObjectStatsByName(name) {
     const target = String(name ?? '');
     const out = { name: target, count: 0, visibleCount: 0, types: {} };
@@ -370,6 +379,8 @@ window.__testHooks = {
     getColorGradingDebugInfo,
     getAntiAliasingDebugInfo,
     setAntiAliasingSettings,
+    getAmbientOcclusionDebugInfo,
+    setAmbientOcclusionSettings,
     getSceneObjectStatsByName,
     setSceneObjectVisibleByName,
     setRoadMarkingsOverlayEnabled,

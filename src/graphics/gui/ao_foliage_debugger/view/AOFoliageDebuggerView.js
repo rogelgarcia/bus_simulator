@@ -35,11 +35,13 @@ function createDeterministicCutoutMap() {
     for (let y = 0; y < h; y += 1) {
         for (let x = 0; x < w; x += 1) {
             const i = (y * w + x) * 4;
-            const opaque = x < (w / 2);
-            data[i + 0] = opaque ? 92 : 140;
-            data[i + 1] = opaque ? 196 : 212;
-            data[i + 2] = opaque ? 106 : 224;
-            data[i + 3] = opaque ? 255 : 0;
+            data[i + 0] = 110;
+            data[i + 1] = 190;
+            data[i + 2] = 120;
+            if (x < 2) data[i + 3] = 255;
+            else if (x < 4) data[i + 3] = 182;
+            else if (x < 6) data[i + 3] = 82;
+            else data[i + 3] = 0;
         }
     }
 
@@ -49,6 +51,41 @@ function createDeterministicCutoutMap() {
     tex.minFilter = THREE.NearestFilter;
     tex.wrapS = THREE.ClampToEdgeWrapping;
     tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.needsUpdate = true;
+    return tex;
+}
+
+function createAoAlphaMapFromRgbaTexture(sourceTexture) {
+    const src = sourceTexture?.image?.data ?? null;
+    const w = Number(sourceTexture?.image?.width) || 0;
+    const h = Number(sourceTexture?.image?.height) || 0;
+    if (!(src instanceof Uint8Array) || w <= 0 || h <= 0 || src.length < w * h * 4) return null;
+
+    const out = new Uint8Array(w * h * 4);
+    for (let i = 0; i < w * h; i += 1) {
+        const alpha = src[(i * 4) + 3];
+        const j = i * 4;
+        out[j] = alpha;
+        out[j + 1] = alpha;
+        out[j + 2] = alpha;
+        out[j + 3] = 255;
+    }
+
+    const tex = new THREE.DataTexture(out, w, h, THREE.RGBAFormat);
+    applyTextureColorSpace(tex, { srgb: false });
+    tex.magFilter = sourceTexture.magFilter;
+    tex.minFilter = sourceTexture.minFilter;
+    tex.wrapS = sourceTexture.wrapS;
+    tex.wrapT = sourceTexture.wrapT;
+    tex.generateMipmaps = sourceTexture.generateMipmaps !== false;
+    tex.anisotropy = sourceTexture.anisotropy;
+    tex.flipY = sourceTexture.flipY === true;
+    tex.offset.copy(sourceTexture.offset);
+    tex.repeat.copy(sourceTexture.repeat);
+    tex.center.copy(sourceTexture.center);
+    tex.rotation = Number.isFinite(sourceTexture.rotation) ? sourceTexture.rotation : 0;
+    tex.matrixAutoUpdate = sourceTexture.matrixAutoUpdate !== false;
+    if (!tex.matrixAutoUpdate) tex.matrix.copy(sourceTexture.matrix);
     tex.needsUpdate = true;
     return tex;
 }
@@ -79,6 +116,7 @@ export class AOFoliageDebuggerView {
             canvas,
             antialias: false,
             alpha: false,
+            preserveDrawingBuffer: true,
             powerPreference: 'high-performance'
         });
         this.renderer.setClearColor(0x0b0f14, 1);
@@ -227,6 +265,26 @@ export class AOFoliageDebuggerView {
         };
     }
 
+    getAoOverrideDebugInfoForTest() {
+        const pipeline = this._pipeline ?? null;
+        const mats = pipeline?._aoAlpha?.overrideMaterials ?? null;
+        const list = [];
+        if (mats instanceof Set) {
+            for (const mat of mats) {
+                list.push({
+                    type: mat?.type ?? null,
+                    alphaTest: Number(mat?.alphaTest) || 0,
+                    hasMap: !!mat?.map,
+                    hasAlphaMap: !!mat?.alphaMap
+                });
+            }
+        }
+        return {
+            count: list.length,
+            materials: list
+        };
+    }
+
     async _initReproScene() {
         if (!this.scene) return;
 
@@ -235,6 +293,7 @@ export class AOFoliageDebuggerView {
         applyTextureColorSpace(leafMap, { srgb: true });
         leafMap.anisotropy = 8;
         leafMap.needsUpdate = true;
+        const leafAoAlphaMap = createAoAlphaMapFromRgbaTexture(leafMap);
         this._reproState.leafTexture = {
             width: Number(leafMap?.image?.width) || 0,
             height: Number(leafMap?.image?.height) || 0
@@ -261,6 +320,7 @@ export class AOFoliageDebuggerView {
             side: THREE.DoubleSide
         });
         leafCutout.userData.isFoliage = true;
+        if (leafAoAlphaMap) leafCutout.userData.aoAlphaMap = leafAoAlphaMap;
 
         const leafTransparent = new THREE.MeshStandardMaterial({
             map: leafMap,
@@ -271,6 +331,7 @@ export class AOFoliageDebuggerView {
             side: THREE.DoubleSide
         });
         leafTransparent.userData.isFoliage = true;
+        if (leafAoAlphaMap) leafTransparent.userData.aoAlphaMap = leafAoAlphaMap;
 
         const leafGeo = new THREE.PlaneGeometry(2.2, 2.2);
         const leafA = new THREE.Mesh(leafGeo, leafCutout);
@@ -285,6 +346,7 @@ export class AOFoliageDebuggerView {
 
         const deterministicMap = createDeterministicCutoutMap();
         deterministicMap.anisotropy = 8;
+        const deterministicAoAlphaMap = createAoAlphaMapFromRgbaTexture(deterministicMap);
 
         const deterministicCardMaterial = new THREE.MeshStandardMaterial({
             map: deterministicMap,
@@ -294,6 +356,7 @@ export class AOFoliageDebuggerView {
             side: THREE.DoubleSide
         });
         deterministicCardMaterial.userData.isFoliage = true;
+        if (deterministicAoAlphaMap) deterministicCardMaterial.userData.aoAlphaMap = deterministicAoAlphaMap;
 
         const deterministicCard = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 1.8), deterministicCardMaterial);
         deterministicCard.position.set(0, 1.2, -1.58);
@@ -307,6 +370,7 @@ export class AOFoliageDebuggerView {
 
         this._reproState.samplePointsWorld = {
             wallOpaque: new THREE.Vector3(-0.45, 1.2, -2.0),
+            wallEdge: new THREE.Vector3(-0.2, 1.2, -2.0),
             wallTransparent: new THREE.Vector3(0.45, 1.2, -2.0),
             wallReference: new THREE.Vector3(2.0, 1.2, -2.0)
         };

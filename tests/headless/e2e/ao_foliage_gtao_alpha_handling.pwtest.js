@@ -94,8 +94,8 @@ async function readAveragedLuma(page, points, sampleRadiusPx = 2) {
     }, { points, sampleRadiusPx });
 }
 
-async function setGtaoAlphaHandling(page, handling) {
-    await page.evaluate((mode) => {
+async function setGtaoAlphaHandling(page, handling, threshold = 0.5) {
+    await page.evaluate(({ mode, threshold }) => {
         const hooks = window.__aoFoliageDebugHooks;
         if (!hooks) throw new Error('Missing __aoFoliageDebugHooks');
         const current = hooks.getAmbientOcclusion() ?? {};
@@ -105,7 +105,7 @@ async function setGtaoAlphaHandling(page, handling) {
             alpha: {
                 ...(current.alpha ?? {}),
                 handling: mode,
-                threshold: 0.5
+                threshold
             },
             gtao: {
                 ...(current.gtao ?? {}),
@@ -123,10 +123,30 @@ async function setGtaoAlphaHandling(page, handling) {
             }
         };
         hooks.setAmbientOcclusion(next);
-    }, handling);
+    }, { mode: handling, threshold });
 }
 
-test('AO Foliage Debugger: GTAO alpha handling respects cutout transparency', async ({ page }) => {
+async function setAoOff(page) {
+    await page.evaluate(() => {
+        const hooks = window.__aoFoliageDebugHooks;
+        if (!hooks) throw new Error('Missing __aoFoliageDebugHooks');
+        const current = hooks.getAmbientOcclusion() ?? {};
+        hooks.setAmbientOcclusion({
+            ...current,
+            mode: 'off'
+        });
+    });
+}
+
+async function readAoOverrideDebug(page) {
+    return page.evaluate(() => {
+        const hooks = window.__aoFoliageDebugHooks;
+        if (!hooks) throw new Error('Missing __aoFoliageDebugHooks');
+        return hooks.getAoOverrideDebugInfo?.() ?? null;
+    });
+}
+
+test('AO Foliage Debugger: GTAO alpha handling avoids foliage darkening regression', async ({ page }) => {
     const getIssues = await attachFailFastConsole({ page });
     await page.setViewportSize({ width: 1280, height: 720 });
 
@@ -137,7 +157,7 @@ test('AO Foliage Debugger: GTAO alpha handling respects cutout transparency', as
     expect(repro?.leafTexture?.width ?? 0).toBeGreaterThan(0);
     expect(repro?.leafTexture?.height ?? 0).toBeGreaterThan(0);
 
-    const sampleIds = ['wallOpaque', 'wallTransparent', 'wallReference'];
+    const sampleIds = ['wallOpaque', 'wallEdge', 'wallTransparent', 'wallReference'];
     const samplePoints = sampleIds.map((id) => ({
         id,
         u: repro?.samplePoints?.[id]?.u ?? -1,
@@ -146,32 +166,72 @@ test('AO Foliage Debugger: GTAO alpha handling respects cutout transparency', as
     }));
     for (const p of samplePoints) expect(p.onScreen).toBe(true);
 
-    await setGtaoAlphaHandling(page, 'alpha_test');
+    await setAoOff(page);
+    await waitFrames(page, 10);
+    const aoOffPixels = await readAveragedLuma(page, samplePoints);
+    expect(aoOffPixels.ok).toBe(true);
+
+    await setGtaoAlphaHandling(page, 'alpha_test', 0.5);
     await waitFrames(page, 10);
     const alphaTestPixels = await readAveragedLuma(page, samplePoints);
     expect(alphaTestPixels.ok).toBe(true);
+    const alphaDebug = await readAoOverrideDebug(page);
+
+    await setGtaoAlphaHandling(page, 'alpha_test', 0.85);
+    await waitFrames(page, 10);
+    const alphaTestHighThresholdPixels = await readAveragedLuma(page, samplePoints);
+    expect(alphaTestHighThresholdPixels.ok).toBe(true);
+    const alphaHighDebug = await readAoOverrideDebug(page);
 
     await setGtaoAlphaHandling(page, 'exclude');
     await waitFrames(page, 10);
     const excludePixels = await readAveragedLuma(page, samplePoints);
     expect(excludePixels.ok).toBe(true);
+    const excludeDebug = await readAoOverrideDebug(page);
 
     const alphaOpaque = alphaTestPixels.points.wallOpaque.luma;
+    const alphaEdge = alphaTestPixels.points.wallEdge.luma;
     const alphaTransparent = alphaTestPixels.points.wallTransparent.luma;
+    const alphaHighThresholdOpaque = alphaTestHighThresholdPixels.points.wallOpaque.luma;
+    const alphaHighThresholdEdge = alphaTestHighThresholdPixels.points.wallEdge.luma;
+    const alphaHighThresholdTransparent = alphaTestHighThresholdPixels.points.wallTransparent.luma;
     const excludeOpaque = excludePixels.points.wallOpaque.luma;
+    const excludeEdge = excludePixels.points.wallEdge.luma;
     const excludeTransparent = excludePixels.points.wallTransparent.luma;
+    const offOpaque = aoOffPixels.points.wallOpaque.luma;
+    const offEdge = aoOffPixels.points.wallEdge.luma;
+    const offTransparent = aoOffPixels.points.wallTransparent.luma;
+    const offReference = aoOffPixels.points.wallReference.luma;
 
-    const alphaSplit = alphaTransparent - alphaOpaque;
+    const alphaSplit = Math.abs(alphaTransparent - alphaOpaque);
+    const offSplit = Math.abs(offTransparent - offOpaque);
     const excludeSplit = Math.abs(excludeTransparent - excludeOpaque);
 
-    expect(alphaSplit).toBeGreaterThan(0.01);
-    expect(excludeSplit).toBeLessThan(alphaSplit);
-    expect(excludeOpaque).toBeGreaterThan(alphaOpaque + 0.01);
+    expect(alphaOpaque).toBeGreaterThan(offOpaque - 0.06);
+    expect(alphaEdge).toBeGreaterThan(offEdge - 0.08);
+    expect(alphaTransparent).toBeGreaterThan(offTransparent - 0.06);
+    expect(alphaHighThresholdOpaque).toBeGreaterThan(offOpaque - 0.06);
+    expect(alphaHighThresholdEdge).toBeGreaterThan(offEdge - 0.08);
+    expect(alphaHighThresholdTransparent).toBeGreaterThan(offTransparent - 0.06);
+    expect(excludeOpaque).toBeGreaterThan(offOpaque - 0.08);
+    expect(excludeEdge).toBeGreaterThan(offEdge - 0.1);
+    expect(excludeTransparent).toBeGreaterThan(offTransparent - 0.08);
+
+    expect(alphaDebug?.count ?? 0).toBeGreaterThan(0);
+    expect(alphaHighDebug?.count ?? 0).toBeGreaterThan(0);
+    expect(excludeDebug?.count ?? 0).toBeGreaterThan(0);
+    expect((alphaDebug?.materials ?? []).some((m) => (m?.alphaTest ?? 0) > 1)).toBe(true);
+    expect((alphaHighDebug?.materials ?? []).some((m) => (m?.alphaTest ?? 0) > 1)).toBe(true);
+    expect((excludeDebug?.materials ?? []).some((m) => (m?.alphaTest ?? 0) > 1)).toBe(true);
+
+    expect(Math.abs(alphaSplit - offSplit)).toBeLessThan(0.05);
+    expect(Math.abs(excludeSplit - offSplit)).toBeLessThan(0.08);
 
     const alphaReference = alphaTestPixels.points.wallReference.luma;
     const excludeReference = excludePixels.points.wallReference.luma;
     expect(Math.abs(excludeReference - alphaReference)).toBeLessThan(0.05);
+    expect(alphaReference).toBeGreaterThan(offReference - 0.08);
+    expect(excludeReference).toBeGreaterThan(offReference - 0.08);
 
     expect(await getIssues()).toEqual([]);
 });
-

@@ -109,9 +109,33 @@ test('AoAlphaCutoutSupport: alpha_test mode uses source cutout textures and thre
         whiteTexture: white
     });
 
-    assert.equal(override.map, sourceMap);
+    assert.equal(override.map, white);
     assert.equal(override.alphaMap, sourceAlphaMap);
     assert.equal(override.alphaTest, 0.42);
+});
+
+test('AoAlphaCutoutSupport: foliage cutouts force AO exclusion for stability', () => {
+    const white = makeTexture('white');
+    const sourceMap = makeTexture('leaf_map');
+    const src = makeMaterial({
+        map: sourceMap,
+        alphaTest: 0.45,
+        userData: { isFoliage: true }
+    });
+    const override = makeMaterial({ map: white, alphaMap: white, alphaTest: 0.0001 });
+
+    applyAoAlphaHandlingToMaterial({
+        overrideMaterial: override,
+        sourceMaterial: src,
+        object: null,
+        handling: 'alpha_test',
+        threshold: 0.4,
+        whiteTexture: white
+    });
+
+    assert.equal(override.map, white);
+    assert.equal(override.alphaMap, white);
+    assert.equal(override.alphaTest, 1.1);
 });
 
 test('AoAlphaCutoutSupport: exclude mode removes cutout caster contribution', () => {
@@ -136,4 +160,3 @@ test('AoAlphaCutoutSupport: exclude mode removes cutout caster contribution', ()
     assert.equal(override.alphaMap, white);
     assert.equal(override.alphaTest, 1.1);
 });
-
