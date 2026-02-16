@@ -262,6 +262,11 @@ For each face `F`, generate its wall mesh using deterministic topology:
    - Lift/extrude the top-down wall/cap surfaces across the facade’s vertical extent.
    - If the model indicates continuity across layers, vertical stitching MUST preserve watertightness at layer boundaries.
 
+7) Openings (windows/doors) and inset reveals:
+   - Openings SHOULD be introduced by explicit **cutlines** (vertical + horizontal breakpoints) so topology stays deterministic (no cross-floor triangles or arbitrary diagonals).
+   - If an opening contains an inset element (e.g., recessed window), the wall SHOULD generate an inward “reveal” surface by extruding the opening boundary along `-n(F)` by a model-driven depth.
+   - Reveal faces SHOULD reuse the originating wall material and MUST use meter-based UVs on both axes (including depth) to avoid stretched textures.
+
 **Invariant:** Generic polygon triangulation SHOULD NOT be used for primary face surfaces; the topology MUST be driven by explicit breakpoints and per-segment quads/triangles.
 **Invariant:** For any non-roof surface group (face walls, returns, bay caps, corner patches), triangles MUST NOT connect vertices belonging to non-adjacent faces. “Adjacency” here means:
 - same face, or

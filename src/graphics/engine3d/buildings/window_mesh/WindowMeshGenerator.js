@@ -216,9 +216,6 @@ export class WindowMeshGenerator {
         const glassZ = s.frame.depth + s.glass.zOffset;
         const shadeZ = glassZ + s.shade.zOffset;
         const interiorZ = glassZ + Math.min(-0.02, s.shade.enabled ? (s.shade.zOffset - 0.02) : -0.02) + s.interior.zOffset;
-        glassMesh.position.z = glassZ;
-        shadeMesh.position.z = shadeZ;
-        if (interiorMesh) interiorMesh.position.z = interiorZ;
 
         const insetLocalZ = -Number(s.frame.inset || 0);
 
@@ -230,16 +227,33 @@ export class WindowMeshGenerator {
             const entry = list[i];
             if (!isInteractiveInstance(entry)) continue;
             const pose = getInstancePose(entry);
-            const insetX = Math.sin(pose.yaw) * insetLocalZ;
-            const insetZ = Math.cos(pose.yaw) * insetLocalZ;
-            dummy.position.set(pose.x + insetX, pose.y, pose.z + insetZ);
+            const sinYaw = Math.sin(pose.yaw);
+            const cosYaw = Math.cos(pose.yaw);
+            const insetX = sinYaw * insetLocalZ;
+            const insetZ = cosYaw * insetLocalZ;
+            const baseX = pose.x + insetX;
+            const baseY = pose.y;
+            const baseZ = pose.z + insetZ;
+
+            dummy.position.set(baseX, baseY, baseZ);
             dummy.rotation.set(0, pose.yaw, 0);
             dummy.updateMatrix();
             frameMesh.setMatrixAt(i, dummy.matrix);
             if (group.userData._joinMesh) group.userData._joinMesh.setMatrixAt(i, dummy.matrix);
             muntinsMesh?.setMatrixAt(i, dummy.matrix);
-            interiorMesh?.setMatrixAt(i, dummy.matrix);
+
+            if (interiorMesh) {
+                dummy.position.set(baseX + sinYaw * interiorZ, baseY, baseZ + cosYaw * interiorZ);
+                dummy.updateMatrix();
+                interiorMesh.setMatrixAt(i, dummy.matrix);
+            }
+
+            dummy.position.set(baseX + sinYaw * shadeZ, baseY, baseZ + cosYaw * shadeZ);
+            dummy.updateMatrix();
             shadeMesh.setMatrixAt(i, dummy.matrix);
+
+            dummy.position.set(baseX + sinYaw * glassZ, baseY, baseZ + cosYaw * glassZ);
+            dummy.updateMatrix();
             glassMesh.setMatrixAt(i, dummy.matrix);
         }
 

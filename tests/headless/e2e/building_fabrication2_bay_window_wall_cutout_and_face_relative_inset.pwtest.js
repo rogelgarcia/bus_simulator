@@ -214,6 +214,37 @@ test('BF2: bay window cuts wall + inset is face-relative (A vs C)', async ({ pag
         if (!frameMesh) throw new Error('Missing frame instanced mesh');
         frameMesh.updateMatrixWorld(true);
 
+        const getFirstInstancedMesh = (layer, label) => {
+            if (!layer?.traverse) throw new Error(`Missing ${label} layer`);
+            let mesh = null;
+            layer.traverse((obj) => {
+                if (mesh) return;
+                if (obj?.isInstancedMesh) mesh = obj;
+            });
+            if (!mesh) throw new Error(`Missing ${label} instanced mesh`);
+            mesh.updateMatrixWorld(true);
+            return mesh;
+        };
+
+        const shadeMesh = getFirstInstancedMesh(defGroup.userData?.layers?.shade, 'shade');
+        const glassMesh = getFirstInstancedMesh(defGroup.userData?.layers?.glass, 'glass');
+        const interiorLayer = defGroup.userData?.layers?.interior ?? null;
+        const interiorMesh = interiorLayer ? getFirstInstancedMesh(interiorLayer, 'interior') : null;
+
+        const expectedLayerZ = (() => {
+            const s = defGroup.userData?.settings ?? null;
+            if (!s) return null;
+            const frameDepth = Number(s?.frame?.depth) || 0;
+            const glassZOffset = Number(s?.glass?.zOffset) || 0;
+            const shadeZOffset = Number(s?.shade?.zOffset) || 0;
+            const interiorZOffset = Number(s?.interior?.zOffset) || 0;
+            const shadeEnabled = s?.shade?.enabled !== false;
+            const glassZ = frameDepth + glassZOffset;
+            const shadeZ = glassZ + shadeZOffset;
+            const interiorZ = glassZ + Math.min(-0.02, shadeEnabled ? (shadeZOffset - 0.02) : -0.02) + interiorZOffset;
+            return { glassZ, shadeZ, interiorZ };
+        })();
+
         const vars = Array.isArray(defGroup.userData?.instanceVariations) ? defGroup.userData.instanceVariations : [];
         const indexById = new Map();
         for (let i = 0; i < vars.length; i++) {
@@ -250,17 +281,32 @@ test('BF2: bay window cuts wall + inset is face-relative (A vs C)', async ({ pag
                 ? probeHits[0].face.normal.clone().transformDirection(wallMesh.matrixWorld).normalize()
                 : null;
 
+            const getLayerDepth = (mesh) => {
+                if (!mesh) return null;
+                const layerIm = new THREE.Matrix4();
+                mesh.getMatrixAt(idx, layerIm);
+                const layerWm = new THREE.Matrix4().multiplyMatrices(mesh.matrixWorld, layerIm);
+                const layerPos = new THREE.Vector3().setFromMatrixPosition(layerWm);
+                return layerPos.sub(pos).dot(normal);
+            };
+
             return {
                 pos: { x: pos.x, y: pos.y, z: pos.z },
                 normal: { x: normal.x, y: normal.y, z: normal.z },
                 wallHits: hits.length,
                 probeHits: probeHits.length,
-                probeNormalDot: probeFaceNormalWorld ? probeFaceNormalWorld.dot(normal) : null
+                probeNormalDot: probeFaceNormalWorld ? probeFaceNormalWorld.dot(normal) : null,
+                layerZ: {
+                    interior: getLayerDepth(interiorMesh),
+                    shade: getLayerDepth(shadeMesh),
+                    glass: getLayerDepth(glassMesh)
+                }
             };
         };
 
         return {
             crossFloorTriangles,
+            expectedLayerZ,
             A: extract(ids.A),
             C: extract(ids.C)
         };
@@ -273,6 +319,11 @@ test('BF2: bay window cuts wall + inset is face-relative (A vs C)', async ({ pag
     expect(baseline.C.probeHits).toBeGreaterThan(0);
     expect(baseline.A.probeNormalDot).toBeGreaterThan(0.75);
     expect(baseline.C.probeNormalDot).toBeGreaterThan(0.75);
+    expect(baseline.expectedLayerZ).not.toBeNull();
+    expect(baseline.A.layerZ.glass).toBeGreaterThan(baseline.A.layerZ.shade);
+    expect(baseline.C.layerZ.glass).toBeGreaterThan(baseline.C.layerZ.shade);
+    expect(baseline.A.layerZ.shade).toBeGreaterThan(baseline.A.layerZ.interior);
+    expect(baseline.C.layerZ.shade).toBeGreaterThan(baseline.C.layerZ.interior);
 
     const cfg1 = makeConfig({ insetMeters: 0.1 });
     await loadIntoBf2(page, cfg1);
@@ -280,6 +331,24 @@ test('BF2: bay window cuts wall + inset is face-relative (A vs C)', async ({ pag
         const THREE = await import('three');
         const view = window.__busSim?.sm?.current?.view ?? null;
         if (!view) throw new Error('Missing BF2 view');
+
+        const solidGroup = view.scene?._building?.solidGroup ?? null;
+        if (!solidGroup?.traverse) throw new Error('Missing solid group');
+
+        let wallMesh = null;
+        solidGroup.traverse((obj) => {
+            if (wallMesh) return;
+            if (!obj?.isMesh) return;
+            if (obj.userData?.buildingFab2Role === 'wall') wallMesh = obj;
+        });
+        if (!wallMesh?.geometry) throw new Error('Missing wall mesh');
+        const applyDoubleSide = (mat) => {
+            if (!mat || typeof mat !== 'object') return;
+            mat.side = THREE.DoubleSide;
+        };
+        if (Array.isArray(wallMesh.material)) wallMesh.material.forEach(applyDoubleSide);
+        else applyDoubleSide(wallMesh.material);
+        wallMesh.updateMatrixWorld(true);
 
         const windowsGroup = view.scene?._building?.windowsGroup ?? null;
         if (!windowsGroup?.traverse) throw new Error('Missing windows group');
@@ -292,6 +361,8 @@ test('BF2: bay window cuts wall + inset is face-relative (A vs C)', async ({ pag
         });
         if (!defGroup) throw new Error('Missing bf2 window definition group');
         defGroup.updateMatrixWorld(true);
+
+        const frameDepth = Math.max(0, Number(defGroup.userData?.settings?.frame?.depth) || 0.12);
 
         const frameLayer = defGroup.userData?.layers?.frame ?? null;
         if (!frameLayer?.traverse) throw new Error('Missing frame layer');
@@ -316,26 +387,59 @@ test('BF2: bay window cuts wall + inset is face-relative (A vs C)', async ({ pag
             C: 'floor_70:0:1:win_1'
         };
 
-        const extractPos = (id) => {
+        const extract = (id) => {
             const idx = indexById.get(id);
             if (!Number.isInteger(idx)) throw new Error(`Missing instance id "${id}"`);
             const im = new THREE.Matrix4();
             frameMesh.getMatrixAt(idx, im);
             const wm = new THREE.Matrix4().multiplyMatrices(frameMesh.matrixWorld, im);
             const pos = new THREE.Vector3().setFromMatrixPosition(wm);
-            return { x: pos.x, y: pos.y, z: pos.z };
+
+            const normal = new THREE.Vector3(0, 0, 1).transformDirection(wm).normalize();
+            const tangent = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), normal).normalize();
+            const revealOrigin = pos.clone().addScaledVector(normal, frameDepth);
+
+            const cast = (dir, expectedNormal) => {
+                const ray = new THREE.Raycaster(revealOrigin, dir, 0, 5);
+                const hits = ray.intersectObject(wallMesh, false);
+                const faceNormalWorld = hits[0]?.face?.normal
+                    ? hits[0].face.normal.clone().transformDirection(wallMesh.matrixWorld).normalize()
+                    : null;
+                const dot = faceNormalWorld ? faceNormalWorld.dot(expectedNormal) : null;
+                return { hits: hits.length, dot };
+            };
+
+            const left = cast(tangent.clone().multiplyScalar(-1), tangent);
+            const right = cast(tangent, tangent.clone().multiplyScalar(-1));
+
+            return {
+                pos: { x: pos.x, y: pos.y, z: pos.z },
+                revealLeftHits: left.hits,
+                revealRightHits: right.hits,
+                revealLeftDot: left.dot,
+                revealRightDot: right.dot
+            };
         };
 
         return {
-            A: extractPos(ids.A),
-            C: extractPos(ids.C)
+            A: extract(ids.A),
+            C: extract(ids.C)
         };
     });
 
-    expect(inset.A.z - baseline.A.pos.z).toBeLessThan(-0.09);
-    expect(inset.A.z - baseline.A.pos.z).toBeGreaterThan(-0.11);
-    expect(inset.C.z - baseline.C.pos.z).toBeGreaterThan(0.09);
-    expect(inset.C.z - baseline.C.pos.z).toBeLessThan(0.11);
+    expect(inset.A.pos.z - baseline.A.pos.z).toBeLessThan(-0.09);
+    expect(inset.A.pos.z - baseline.A.pos.z).toBeGreaterThan(-0.11);
+    expect(inset.C.pos.z - baseline.C.pos.z).toBeGreaterThan(0.09);
+    expect(inset.C.pos.z - baseline.C.pos.z).toBeLessThan(0.11);
+
+    expect(inset.A.revealLeftHits).toBeGreaterThan(0);
+    expect(inset.A.revealRightHits).toBeGreaterThan(0);
+    expect(inset.C.revealLeftHits).toBeGreaterThan(0);
+    expect(inset.C.revealRightHits).toBeGreaterThan(0);
+    expect(inset.A.revealLeftDot).toBeGreaterThan(0.75);
+    expect(inset.A.revealRightDot).toBeGreaterThan(0.75);
+    expect(inset.C.revealLeftDot).toBeGreaterThan(0.75);
+    expect(inset.C.revealRightDot).toBeGreaterThan(0.75);
 
     expect(await getErrors()).toEqual([]);
 });

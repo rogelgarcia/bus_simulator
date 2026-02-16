@@ -779,10 +779,11 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
             const height = Number(entry?.height);
             const wantsArch = !!entry?.wantsArch;
             const archRise = Number(entry?.archRise) || 0;
+            const revealDepth = Math.max(0, Number(entry?.revealDepth) || 0);
             if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
             if (!Number.isFinite(width) || !Number.isFinite(height) || !(width > EPS) || !(height > EPS)) continue;
             const list = map.get(faceId);
-            const item = { faceId, x, y, z, width, height, wantsArch, archRise: wantsArch ? archRise : 0.0 };
+            const item = { faceId, x, y, z, width, height, wantsArch, archRise: wantsArch ? archRise : 0.0, revealDepth };
             if (list) list.push(item);
             else map.set(faceId, [item]);
         }
@@ -972,7 +973,8 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                         y0: sy0,
                         y1: sy1,
                         wantsArch: !!cut.wantsArch,
-                        archRise: Math.max(0, Number(cut.archRise) || 0)
+                        archRise: Math.max(0, Number(cut.archRise) || 0),
+                        revealDepth: Math.max(0, Number(cut.revealDepth) || 0)
                     });
                 }
 
@@ -1116,6 +1118,98 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
 
                     addSpandrel('left');
                     addSpandrel('right');
+                }
+
+                const inwardX = -tz;
+                const inwardZ = tx;
+                const du = uAtB - uAtA;
+                const invSegLen = segLen > EPS ? (1 / segLen) : 0;
+
+                const pushRevealVertex = (lx, ly, depth, addDepthToV) => {
+                    const tU = invSegLen ? clamp(lx * invSegLen, 0, 1) : 0;
+                    const baseU = uAtA + du * tU;
+                    const baseV = v0 + ly;
+                    const u = addDepthToV ? baseU : (baseU + depth);
+                    const v = addDepthToV ? (baseV + depth) : baseV;
+                    positions.push(
+                        a.x + tx * lx + inwardX * depth,
+                        ly,
+                        a.z + tz * lx + inwardZ * depth
+                    );
+                    uvs.push(u, v);
+                };
+
+                const pushRevealQuad = (x0, y0, x1, y1, depth) => {
+                    if (!(depth > EPS)) return;
+                    if (!(Math.hypot(x1 - x0, y1 - y0) > minEdge)) return;
+                    const addDepthToV = Math.abs(y1 - y0) <= 1e-6;
+
+                    pushRevealVertex(x0, y0, 0.0, addDepthToV);
+                    pushRevealVertex(x0, y0, depth, addDepthToV);
+                    pushRevealVertex(x1, y1, depth, addDepthToV);
+
+                    pushRevealVertex(x0, y0, 0.0, addDepthToV);
+                    pushRevealVertex(x1, y1, depth, addDepthToV);
+                    pushRevealVertex(x1, y1, 0.0, addDepthToV);
+
+                    curGroupCount += 6;
+                };
+
+                for (const cut of sliceCuts) {
+                    const depth = Number(cut.revealDepth) || 0;
+                    if (!(depth > EPS)) continue;
+
+                    const x0 = cut.x0;
+                    const x1 = cut.x1;
+                    const y0 = cut.y0;
+                    const y1 = cut.y1;
+                    if (!(x1 - x0 > minEdge) || !(y1 - y0 > minEdge)) continue;
+
+                    if (!cut.wantsArch || !(cut.archRise > EPS)) {
+                        pushRevealQuad(x0, y0, x1, y0, depth);
+                        pushRevealQuad(x1, y0, x1, y1, depth);
+                        pushRevealQuad(x1, y1, x0, y1, depth);
+                        pushRevealQuad(x0, y1, x0, y0, depth);
+                        continue;
+                    }
+
+                    const yTop = y1;
+                    const yChord = yTop - cut.archRise;
+                    if (yChord <= y0 + EPS) {
+                        pushRevealQuad(x0, y0, x1, y0, depth);
+                        pushRevealQuad(x1, y0, x1, y1, depth);
+                        pushRevealQuad(x1, y1, x0, y1, depth);
+                        pushRevealQuad(x0, y1, x0, y0, depth);
+                        continue;
+                    }
+
+                    const w = Math.abs(x1 - x0);
+                    if (!(w > EPS)) continue;
+                    const R = (w * w) / (8 * cut.archRise) + cut.archRise / 2;
+                    const cx = (x0 + x1) * 0.5;
+                    const circleY = yChord + cut.archRise - R;
+                    const arcYAt = (xp) => {
+                        const dxp = xp - cx;
+                        const inner = R * R - dxp * dxp;
+                        if (!(inner > 0)) return yChord;
+                        return circleY + Math.sqrt(inner);
+                    };
+
+                    const arcSegments = clampInt(curveSegments, 6, 64);
+                    pushRevealQuad(x0, y0, x1, y0, depth);
+                    pushRevealQuad(x1, y0, x1, yChord, depth);
+                    let prevX = x1;
+                    let prevY = yChord;
+                    for (let s = 1; s < arcSegments; s++) {
+                        const t = s / arcSegments;
+                        const x = x1 + (x0 - x1) * t;
+                        const y = arcYAt(x);
+                        pushRevealQuad(prevX, prevY, x, y, depth);
+                        prevX = x;
+                        prevY = y;
+                    }
+                    pushRevealQuad(prevX, prevY, x0, yChord, depth);
+                    pushRevealQuad(x0, yChord, x0, y0, depth);
                 }
             }
 
@@ -3250,6 +3344,7 @@ export function buildBuildingFabricationVisualParts({
                                 const archRiseCandidate = innerWantsArch ? (archRatio * cutWidth) : 0;
                                 const archRise = Math.min(archRiseCandidate, Math.max(0, cutHeight - frameWidth));
                                 const cutWantsArch = innerWantsArch && archRise > EPS;
+                                const revealDepth = Math.max(0, Number(mergedSettings?.frame?.inset) || 0);
 
                                 facadeWallCutouts.push({
                                     faceId,
@@ -3259,7 +3354,8 @@ export function buildBuildingFabricationVisualParts({
                                     width: cutWidth,
                                     height: cutHeight,
                                     wantsArch: cutWantsArch,
-                                    archRise
+                                    archRise,
+                                    revealDepth
                                 });
                             }
 
