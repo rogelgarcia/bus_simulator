@@ -3,11 +3,7 @@
 // @ts-check
 
 import { DEFAULT_IBL_ID, getIblOptions } from '../../../content3d/catalogs/IBLCatalog.js';
-import { getPbrMaterialClassSectionsForGround, getPbrMaterialOptionsForGround } from '../../../content3d/catalogs/PbrMaterialCatalog.js';
 import { createDefaultGrassEngineConfig } from '../../../engine3d/grass/GrassConfig.js';
-import { MaterialPickerPopupController } from '../../shared/material_picker/MaterialPickerPopupController.js';
-import { createMaterialPickerRowController } from '../../shared/material_picker/MaterialPickerRowController.js';
-import { setMaterialThumbToTexture } from '../../shared/material_picker/materialThumb.js';
 
 function clamp(value, min, max, fallback) {
     const num = Number(value);
@@ -316,25 +312,29 @@ export class TerrainDebuggerUI {
         this._isSetting = false;
         this._sectionCollapsed = new Map();
 
-        const groundOptions = getPbrMaterialOptionsForGround();
-        const defaultGround = groundOptions[0]?.id ?? '';
-
-        const defaultLayers = [
-            {
-                id: 'layer_1',
-                kind: 'anti_tiling',
-                enabled: true,
-                mode: 'fast',
-                strength: 0.55,
-                cellSize: 2.0,
-                blendWidth: 0.2,
-                offsetU: 0.22,
-                offsetV: 0.22,
-                rotationDegrees: 18.0,
-                collapsed: false
+        const defaultTerrainEngine = {
+            seed: 'terrain-debugger',
+            patch: { sizeMeters: 72, originX: 0, originZ: 0, layout: 'voronoi', voronoiJitter: 0.85, warpScale: 0.02, warpAmplitudeMeters: 36 },
+            biomes: {
+                mode: 'patch_grid',
+                defaultBiomeId: 'land',
+                weights: { stone: 0.25, grass: 0.35, land: 0.40 }
+            },
+            humidity: {
+                mode: 'noise',
+                noiseScale: 0.01,
+                octaves: 4,
+                gain: 0.5,
+                lacunarity: 2.0,
+                bias: 0.0,
+                amplitude: 1.0
+            },
+            transition: {
+                cameraBlendRadiusMeters: 140,
+                cameraBlendFeatherMeters: 24,
+                boundaryBandMeters: 10
             }
-        ];
-        this._nextLayerId = 2;
+        };
 
         this._state = {
             tab: 'environment',
@@ -361,26 +361,7 @@ export class TerrainDebuggerUI {
                     endDeg: 0,
                     endStartAfterRoadTiles: 0
                 },
-                groundMaterialId: defaultGround,
                 showGrid: false,
-                uv: {
-                    scale: 1.0,
-                    scaleU: 1.0,
-                    scaleV: 1.0,
-                    offsetU: 0.0,
-                    offsetV: 0.0,
-                    rotationDegrees: 0.0
-                },
-                uvDistance: {
-                    enabled: true,
-                    farScale: 0.35,
-                    farScaleU: 1.0,
-                    farScaleV: 1.0,
-                    blendStartMeters: 45,
-                    blendEndMeters: 220,
-                    macroWeight: 1.0,
-                    debugView: 'blended'
-                },
                 cloud: {
                     enabled: true,
                     amplitude: 7.5,
@@ -388,19 +369,10 @@ export class TerrainDebuggerUI {
                     tiles: 5,
                     blendMeters: 32
                 },
-                pbr: {
-                    normalStrength: 1.0,
-                    roughness: 1.0,
-                    albedoBrightness: 1.0,
-                    albedoHueDegrees: 0.0,
-                    albedoSaturation: 0.0,
-                    albedoTintStrength: 0.0
-                },
-                variation: {
-                    nearIntensity: 1.0,
-                    farIntensity: 0.55
-                },
-                layers: defaultLayers
+                engine: defaultTerrainEngine,
+                debug: {
+                    mode: 'standard'
+                }
             },
             grass: createDefaultGrassEngineConfig(),
             ...(initialState ?? {})
@@ -408,8 +380,6 @@ export class TerrainDebuggerUI {
 
         this.root = makeEl('div', 'ui-layer options-layer');
         this.root.id = 'ui-terrain-debugger';
-
-        this._materialPickerPopup = new MaterialPickerPopupController();
 
         this.panel = makeEl('div', 'ui-panel is-interactive options-panel');
 
@@ -423,7 +393,6 @@ export class TerrainDebuggerUI {
         this._tabButtons = {
             environment: makeEl('button', 'options-tab', 'Environment'),
             terrain: makeEl('button', 'options-tab', 'Terrain'),
-            variation: makeEl('button', 'options-tab', 'Variation'),
             grass: makeEl('button', 'options-tab', 'Grass')
         };
         for (const [key, btn] of Object.entries(this._tabButtons)) {
@@ -436,12 +405,10 @@ export class TerrainDebuggerUI {
         this._tabBodies = {
             environment: makeEl('div', null),
             terrain: makeEl('div', null),
-            variation: makeEl('div', null),
             grass: makeEl('div', null)
         };
         this.body.appendChild(this._tabBodies.environment);
         this.body.appendChild(this._tabBodies.terrain);
-        this.body.appendChild(this._tabBodies.variation);
         this.body.appendChild(this._tabBodies.grass);
 
         this.panel.appendChild(header);
@@ -452,7 +419,6 @@ export class TerrainDebuggerUI {
         this._controls = {};
         this._buildEnvironmentTab();
         this._buildTerrainTab();
-        this._buildVariationTab();
         this._buildGrassTab();
 
         this.setTab(this._state.tab);
@@ -524,7 +490,7 @@ export class TerrainDebuggerUI {
     }
 
     setTab(key) {
-        const next = (key === 'terrain' || key === 'variation' || key === 'grass') ? key : 'environment';
+        const next = (key === 'terrain' || key === 'grass') ? key : 'environment';
         this._state.tab = next;
         for (const [id, btn] of Object.entries(this._tabButtons)) btn.classList.toggle('is-active', id === next);
         for (const [id, body] of Object.entries(this._tabBodies)) body.style.display = id === next ? '' : 'none';
@@ -540,6 +506,35 @@ export class TerrainDebuggerUI {
 
         this._syncCloudTilesMax?.();
         this._syncDrawDistanceForTerrain?.();
+    }
+
+    setTerrainSampleInfo({
+        x = null,
+        z = null,
+        patchId = null,
+        primaryBiomeId = null,
+        secondaryBiomeId = null,
+        biomeBlend = null,
+        humidity = null
+    } = {}) {
+        const note = this._controls?.terrainSampleNote ?? null;
+        if (!note) return;
+
+        const xx = Number(x);
+        const zz = Number(z);
+        const pid = Number(patchId);
+        if (!(Number.isFinite(xx) && Number.isFinite(zz) && Number.isFinite(pid) && pid !== 0)) {
+            note.textContent = 'Sample: (move mouse over terrain)';
+            return;
+        }
+
+        const toIndex = (id) => (id === 'stone' ? 0 : id === 'grass' ? 1 : id === 'land' ? 2 : '?');
+        const prim = String(primaryBiomeId ?? '');
+        const sec = String(secondaryBiomeId ?? '');
+        const blend = clamp(biomeBlend, 0.0, 1.0, 0.0);
+        const hum = clamp(humidity, 0.0, 1.0, 0.5);
+
+        note.textContent = `Sample: x ${xx.toFixed(1)} z ${zz.toFixed(1)} · patchId ${(pid >>> 0).toString()} · biome ${toIndex(prim)}:${prim || '?'} → ${toIndex(sec)}:${sec || '?'} (blend ${blend.toFixed(2)}) · humidity ${hum.toFixed(2)}`;
     }
 
     _emit() {
@@ -1026,6 +1021,425 @@ export class TerrainDebuggerUI {
         }
 
     _buildTerrainTab() {
+        const terrain = this._state.terrain;
+        const engine = (terrain.engine && typeof terrain.engine === 'object') ? terrain.engine : {};
+        terrain.engine = engine;
+
+        if (typeof engine.seed !== 'string') engine.seed = 'terrain-debugger';
+
+        const patch = (engine.patch && typeof engine.patch === 'object') ? engine.patch : {};
+        engine.patch = patch;
+        patch.sizeMeters = Math.max(1, Math.round(clamp(patch.sizeMeters, 1, 4096, 72)));
+        patch.originX = Number.isFinite(patch.originX) ? Number(patch.originX) : 0;
+        patch.originZ = Number.isFinite(patch.originZ) ? Number(patch.originZ) : 0;
+        if (patch.layout !== 'grid' && patch.layout !== 'voronoi') patch.layout = 'voronoi';
+        patch.voronoiJitter = clamp(patch.voronoiJitter, 0.0, 1.0, 0.85);
+        patch.warpScale = clamp(patch.warpScale, 0.000001, 10.0, 0.02);
+        const warpAmpDefault = Math.min(256, Math.max(0, Math.round(Number(patch.sizeMeters) * 0.5)));
+        const warpAmpRaw = Number(patch.warpAmplitudeMeters);
+        patch.warpAmplitudeMeters = Number.isFinite(warpAmpRaw) ? Math.max(0, warpAmpRaw) : warpAmpDefault;
+
+        const biomes = (engine.biomes && typeof engine.biomes === 'object') ? engine.biomes : {};
+        engine.biomes = biomes;
+        if (biomes.mode !== 'patch_grid' && biomes.mode !== 'source_map') biomes.mode = 'patch_grid';
+        if (typeof biomes.defaultBiomeId !== 'string') biomes.defaultBiomeId = 'land';
+        const weights = (biomes.weights && typeof biomes.weights === 'object') ? biomes.weights : {};
+        biomes.weights = weights;
+        if (!Number.isFinite(weights.stone)) weights.stone = 0.25;
+        if (!Number.isFinite(weights.grass)) weights.grass = 0.35;
+        if (!Number.isFinite(weights.land)) weights.land = 0.40;
+
+        const humidity = (engine.humidity && typeof engine.humidity === 'object') ? engine.humidity : {};
+        engine.humidity = humidity;
+        if (humidity.mode !== 'noise' && humidity.mode !== 'source_map') humidity.mode = 'noise';
+        humidity.noiseScale = clamp(humidity.noiseScale, 0.000001, 10.0, 0.01);
+        humidity.octaves = Math.max(1, Math.min(8, Math.round(Number(humidity.octaves) || 4)));
+        humidity.gain = clamp(humidity.gain, 0.01, 1.0, 0.5);
+        humidity.lacunarity = clamp(humidity.lacunarity, 1.0, 4.0, 2.0);
+        humidity.bias = clamp(humidity.bias, -1.0, 1.0, 0.0);
+        humidity.amplitude = clamp(humidity.amplitude, 0.0, 1.0, 1.0);
+
+        const transition = (engine.transition && typeof engine.transition === 'object') ? engine.transition : {};
+        engine.transition = transition;
+        transition.cameraBlendRadiusMeters = Math.max(0, Number(transition.cameraBlendRadiusMeters) || 140);
+        transition.cameraBlendFeatherMeters = Math.max(0, Number(transition.cameraBlendFeatherMeters) || 24);
+        transition.boundaryBandMeters = Math.max(0, Number(transition.boundaryBandMeters) || 10);
+
+        const debug = (terrain.debug && typeof terrain.debug === 'object') ? terrain.debug : {};
+        terrain.debug = debug;
+        const modeRaw = String(debug.mode ?? 'standard');
+        const modeAllowed = new Set(['standard', 'biome_id', 'patch_ids', 'humidity', 'transition_band']);
+        debug.mode = modeAllowed.has(modeRaw) ? modeRaw : 'standard';
+
+        const viewSection = this._buildSection('terrain', 'View');
+        const modeNotes = Object.freeze({
+            standard: 'Standard render mode (biome + humidity material binding).',
+            biome_id: 'Primary biome ID per patch (stone/grass/land). Validate there are no gaps (uncolored areas).',
+            patch_ids: 'Patch IDs and boundaries. Patch colors are stable per patchId; boundaries should be continuous with no gaps.',
+            humidity: 'Humidity field [0..1]. Use this to validate large-scale wet/dry variation is stable and continuous.',
+            transition_band: 'Transition band visualization (where boundary blending is active near the camera).'
+        });
+
+        const viewModeRow = makeChoiceRow({
+            label: 'Mode',
+            value: debug.mode,
+            options: [
+                { id: 'standard', label: 'Standard' },
+                { id: 'biome_id', label: 'Biome ID' },
+                { id: 'patch_ids', label: 'Patch IDs' },
+                { id: 'humidity', label: 'Humidity' },
+                { id: 'transition_band', label: 'Transition Band' }
+            ],
+            tooltip: 'Switch between standard rendering and terrain-engine diagnostic views.',
+            onChange: (id) => {
+                const next = String(id ?? 'standard');
+                debug.mode = modeAllowed.has(next) ? next : 'standard';
+                if (viewNote) viewNote.textContent = modeNotes[debug.mode] ?? '';
+                this._emit();
+            }
+        });
+        viewSection.appendChild(viewModeRow.row);
+        const viewNote = makeEl('div', 'options-note', modeNotes[debug.mode] ?? '');
+        viewSection.appendChild(viewNote);
+        this._controls.terrainViewMode = viewModeRow;
+
+        const legendSection = this._buildSection('terrain', 'Legend');
+        legendSection.appendChild(makeEl('div', 'options-note', 'Biome indices (packed mask R/G channels):'));
+        const makeLegendRow = ({ color, text }) => {
+            const row = makeEl('div', 'options-note', '');
+            row.style.display = 'flex';
+            row.style.alignItems = 'center';
+            row.style.gap = '8px';
+            const swatch = makeEl('span', null, '');
+            swatch.style.display = 'inline-block';
+            swatch.style.width = '12px';
+            swatch.style.height = '12px';
+            swatch.style.borderRadius = '3px';
+            swatch.style.background = String(color ?? '#000');
+            swatch.style.border = '1px solid rgba(0,0,0,0.35)';
+            row.appendChild(swatch);
+            row.appendChild(makeEl('span', null, String(text ?? '')));
+            return row;
+        };
+        legendSection.appendChild(makeLegendRow({ color: '#969696', text: '0 = stone' }));
+        legendSection.appendChild(makeLegendRow({ color: '#46A04E', text: '1 = grass' }));
+        legendSection.appendChild(makeLegendRow({ color: '#D79146', text: '2 = land' }));
+        legendSection.appendChild(makeEl('div', 'options-note', 'Patch ID colors (Patch IDs mode): deterministic hash of patchId (stable). Boundaries are drawn black.'));
+        const sampleNote = makeEl('div', 'options-note', 'Sample: (move mouse over terrain)');
+        legendSection.appendChild(sampleNote);
+        this._controls.terrainSampleNote = sampleNote;
+
+        const section = this._buildSection('terrain', 'Terrain Engine');
+        section.appendChild(makeEl('div', 'options-note', 'Patch-based biomes are hard-bordered at map scale. Boundary blending is view-dependent near the camera.'));
+
+        const seedRow = makeTextRow({
+            label: 'Seed',
+            value: engine.seed,
+            placeholder: 'terrain-debugger',
+            tooltip: 'Deterministic seed for patches + humidity noise.',
+            onChange: (v) => {
+                engine.seed = String(v ?? '');
+                this._emit();
+            }
+        });
+        section.appendChild(seedRow.row);
+        this._controls.engineSeed = seedRow;
+
+        const patchSizeRow = makeNumberSliderRow({
+            label: 'Patch Size (m)',
+            value: Number(patch.sizeMeters),
+            min: 8,
+            max: 512,
+            step: 1,
+            digits: 0,
+            tooltip: 'Patch cell size (controls patch scale).',
+            onChange: (v) => {
+                patch.sizeMeters = Math.max(1, Math.round(v));
+                this._emit();
+            }
+        });
+        section.appendChild(patchSizeRow.row);
+        this._controls.enginePatchSizeMeters = patchSizeRow;
+
+        let warpAmpRow = null;
+        let warpScaleRow = null;
+
+        const patchLayoutRow = makeChoiceRow({
+            label: 'Patch Layout',
+            value: String(patch.layout ?? 'voronoi'),
+            options: [
+                { id: 'voronoi', label: 'Voronoi' },
+                { id: 'grid', label: 'Grid' }
+            ],
+            tooltip: 'Voronoi yields organic patch shapes. Grid yields axis-aligned patch cells.',
+            onChange: (id) => {
+                const next = String(id ?? '');
+                patch.layout = next === 'grid' ? 'grid' : 'voronoi';
+                const isVoronoi = patch.layout === 'voronoi';
+                if (voronoiJitterRow?.range) voronoiJitterRow.range.disabled = !isVoronoi;
+                if (voronoiJitterRow?.number) voronoiJitterRow.number.disabled = !isVoronoi;
+                if (warpAmpRow?.range) warpAmpRow.range.disabled = !isVoronoi;
+                if (warpAmpRow?.number) warpAmpRow.number.disabled = !isVoronoi;
+                if (warpScaleRow?.range) warpScaleRow.range.disabled = !isVoronoi;
+                if (warpScaleRow?.number) warpScaleRow.number.disabled = !isVoronoi;
+                this._emit();
+            }
+        });
+        section.appendChild(patchLayoutRow.row);
+        this._controls.enginePatchLayout = patchLayoutRow;
+
+        const voronoiJitterRow = makeNumberSliderRow({
+            label: 'Voronoi Jitter',
+            value: Number(patch.voronoiJitter),
+            min: 0,
+            max: 1,
+            step: 0.01,
+            digits: 2,
+            tooltip: 'Randomizes patch seed positions inside each cell (higher = more organic).',
+            onChange: (v) => {
+                patch.voronoiJitter = clamp(v, 0.0, 1.0, 0.85);
+                this._emit();
+            }
+        });
+        const isVoronoi = String(patch.layout ?? 'voronoi') !== 'grid';
+        voronoiJitterRow.range.disabled = !isVoronoi;
+        voronoiJitterRow.number.disabled = !isVoronoi;
+        section.appendChild(voronoiJitterRow.row);
+        this._controls.engineVoronoiJitter = voronoiJitterRow;
+
+        warpAmpRow = makeNumberSliderRow({
+            label: 'Warp Amplitude (m)',
+            value: Number(patch.warpAmplitudeMeters),
+            min: 0,
+            max: 256,
+            step: 1,
+            digits: 0,
+            tooltip: 'Curves Voronoi patch boundaries by warping the sampling domain. Set to 0 to disable.',
+            onChange: (v) => {
+                patch.warpAmplitudeMeters = Math.max(0, Math.round(Number(v) || 0));
+                this._emit();
+            }
+        });
+        warpAmpRow.range.disabled = !isVoronoi;
+        warpAmpRow.number.disabled = !isVoronoi;
+        section.appendChild(warpAmpRow.row);
+        this._controls.engineWarpAmplitudeMeters = warpAmpRow;
+
+        warpScaleRow = makeNumberSliderRow({
+            label: 'Warp Scale',
+            value: Number(patch.warpScale),
+            min: 0.001,
+            max: 0.08,
+            step: 0.001,
+            digits: 3,
+            tooltip: 'Frequency of the warp noise (higher = more wiggles).',
+            onChange: (v) => {
+                patch.warpScale = clamp(v, 0.000001, 10.0, 0.02);
+                this._emit();
+            }
+        });
+        warpScaleRow.range.disabled = !isVoronoi;
+        warpScaleRow.number.disabled = !isVoronoi;
+        section.appendChild(warpScaleRow.row);
+        this._controls.engineWarpScale = warpScaleRow;
+
+        const defaultBiomeRow = makeSelectRow({
+            label: 'Default Biome',
+            value: String(biomes.defaultBiomeId ?? 'land'),
+            options: [
+                { id: 'stone', label: 'Stone' },
+                { id: 'grass', label: 'Grass' },
+                { id: 'land', label: 'Land' }
+            ],
+            tooltip: 'Fallback biome (outside bounds or invalid states).',
+            onChange: (id) => {
+                biomes.defaultBiomeId = String(id ?? 'land');
+                this._emit();
+            }
+        });
+        section.appendChild(defaultBiomeRow.row);
+        this._controls.engineDefaultBiomeId = defaultBiomeRow;
+
+        const weightsSection = this._buildSection('terrain', 'Biome Weights');
+        weightsSection.appendChild(makeEl('div', 'options-note', 'Weights are normalized. Setting all weights to 0 falls back to defaults.'));
+
+        const stoneRow = makeNumberSliderRow({
+            label: 'Stone',
+            value: Number(weights.stone),
+            min: 0.0,
+            max: 1.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                weights.stone = v;
+                this._emit();
+            }
+        });
+        weightsSection.appendChild(stoneRow.row);
+
+        const grassRow = makeNumberSliderRow({
+            label: 'Grass',
+            value: Number(weights.grass),
+            min: 0.0,
+            max: 1.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                weights.grass = v;
+                this._emit();
+            }
+        });
+        weightsSection.appendChild(grassRow.row);
+
+        const landRow = makeNumberSliderRow({
+            label: 'Land',
+            value: Number(weights.land),
+            min: 0.0,
+            max: 1.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                weights.land = v;
+                this._emit();
+            }
+        });
+        weightsSection.appendChild(landRow.row);
+
+        const humiditySection = this._buildSection('terrain', 'Humidity');
+        humiditySection.appendChild(makeEl('div', 'options-note', 'Humidity is continuous and deterministic. It drives dry/wet variation.'));
+
+        const humidityScaleRow = makeNumberSliderRow({
+            label: 'Noise Scale',
+            value: Number(humidity.noiseScale),
+            min: 0.0005,
+            max: 0.05,
+            step: 0.0005,
+            digits: 4,
+            tooltip: 'Lower = larger features. Higher = smaller/noisier.',
+            onChange: (v) => {
+                humidity.noiseScale = v;
+                this._emit();
+            }
+        });
+        humiditySection.appendChild(humidityScaleRow.row);
+
+        const octavesRow = makeNumberSliderRow({
+            label: 'Octaves',
+            value: Number(humidity.octaves),
+            min: 1,
+            max: 8,
+            step: 1,
+            digits: 0,
+            onChange: (v) => {
+                humidity.octaves = Math.max(1, Math.round(v));
+                this._emit();
+            }
+        });
+        humiditySection.appendChild(octavesRow.row);
+
+        const gainRow = makeNumberSliderRow({
+            label: 'Gain',
+            value: Number(humidity.gain),
+            min: 0.05,
+            max: 1.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                humidity.gain = v;
+                this._emit();
+            }
+        });
+        humiditySection.appendChild(gainRow.row);
+
+        const lacRow = makeNumberSliderRow({
+            label: 'Lacunarity',
+            value: Number(humidity.lacunarity),
+            min: 1.0,
+            max: 4.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                humidity.lacunarity = v;
+                this._emit();
+            }
+        });
+        humiditySection.appendChild(lacRow.row);
+
+        const biasRow = makeNumberSliderRow({
+            label: 'Bias',
+            value: Number(humidity.bias),
+            min: -1.0,
+            max: 1.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                humidity.bias = v;
+                this._emit();
+            }
+        });
+        humiditySection.appendChild(biasRow.row);
+
+        const ampRow = makeNumberSliderRow({
+            label: 'Amplitude',
+            value: Number(humidity.amplitude),
+            min: 0.0,
+            max: 1.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                humidity.amplitude = v;
+                this._emit();
+            }
+        });
+        humiditySection.appendChild(ampRow.row);
+
+        const transitionSection = this._buildSection('terrain', 'Transitions');
+        transitionSection.appendChild(makeEl('div', 'options-note', 'Blend zone only affects patch boundaries. Outside the zone, borders are hard.'));
+
+        const radiusRow = makeNumberSliderRow({
+            label: 'Blend Radius (m)',
+            value: Number(transition.cameraBlendRadiusMeters),
+            min: 0,
+            max: 2000,
+            step: 1,
+            digits: 0,
+            onChange: (v) => {
+                transition.cameraBlendRadiusMeters = Math.max(0, Math.round(v));
+                this._emit();
+            }
+        });
+        transitionSection.appendChild(radiusRow.row);
+
+        const featherRow = makeNumberSliderRow({
+            label: 'Radius Feather (m)',
+            value: Number(transition.cameraBlendFeatherMeters),
+            min: 0,
+            max: 500,
+            step: 1,
+            digits: 0,
+            onChange: (v) => {
+                transition.cameraBlendFeatherMeters = Math.max(0, Math.round(v));
+                this._emit();
+            }
+        });
+        transitionSection.appendChild(featherRow.row);
+
+        const bandRow = makeNumberSliderRow({
+            label: 'Boundary Band (m)',
+            value: Number(transition.boundaryBandMeters),
+            min: 0,
+            max: 80,
+            step: 0.5,
+            digits: 1,
+            onChange: (v) => {
+                transition.boundaryBandMeters = Math.max(0, v);
+                this._emit();
+            }
+        });
+        transitionSection.appendChild(bandRow.row);
+    }
+
+    _buildTerrainTabLegacy() {
         const section = this._buildSection('terrain', 'Ground');
         const groundRow = createMaterialPickerRowController({ label: 'Material', onPick: () => this._openGroundMaterialPicker() });
         section.appendChild(groundRow.row);

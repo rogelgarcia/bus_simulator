@@ -12,6 +12,7 @@ import { getPbrMaterialMeta, resolvePbrMaterialUrls } from '../../../content3d/c
 import { createGeneratorConfig, ROAD_DEFAULTS } from '../../../assets3d/generators/GeneratorParams.js';
 import { getCityMaterials } from '../../../assets3d/textures/CityMaterials.js';
 import { createRoadEngineRoads } from '../../../visuals/city/RoadEngineRoads.js';
+import { computeUvScaleForGroundSize, updateGroundSubstrateBlendOnMeshStandardMaterial } from '../../../assets3d/materials/GroundSubstrateBlendSystem.js';
 import { GrassDebuggerUI } from './GrassDebuggerUI.js';
 import { GrassLod1InspectorPopup } from './GrassLod1InspectorPopup.js';
 
@@ -920,6 +921,92 @@ export class GrassDebuggerView {
         mat.needsUpdate = true;
     }
 
+    _getSubstrateLayerTextures(materialId) {
+        const id = typeof materialId === 'string' ? materialId : '';
+        if (!id) return { map: null, normalMap: null, roughnessMap: null, tileMeters: 4.0 };
+
+        const urls = resolvePbrMaterialUrls(id);
+        const baseUrl = urls?.baseColorUrl ?? null;
+        const normalUrl = urls?.normalUrl ?? null;
+        const ormUrl = urls?.ormUrl ?? null;
+        const roughUrl = urls?.roughnessUrl ?? null;
+        const roughSrcUrl = ormUrl || roughUrl || null;
+
+        const map = this._loadTexture(baseUrl, { srgb: true });
+        const normalMap = this._loadTexture(normalUrl, { srgb: false });
+        const roughnessMap = this._loadTexture(roughSrcUrl, { srgb: false });
+
+        const meta = getPbrMaterialMeta(id);
+        const tileMeters = Number(meta?.tileMeters) || 4.0;
+
+        return { map, normalMap, roughnessMap, tileMeters };
+    }
+
+    _syncGroundSubstrateBlendFromState(state) {
+        const mat = this._groundMat;
+        if (!mat) return;
+
+        const substrate = state?.terrain?.substrate && typeof state.terrain.substrate === 'object' ? state.terrain.substrate : null;
+        const enabled = substrate?.enabled !== false;
+        const seed = Number(substrate?.seed) || 0;
+
+        const layer1State = substrate?.layer1 && typeof substrate.layer1 === 'object' ? substrate.layer1 : {};
+        const layer2State = substrate?.layer2 && typeof substrate.layer2 === 'object' ? substrate.layer2 : {};
+
+        const layer1Id = typeof layer1State.materialId === 'string' ? layer1State.materialId : '';
+        const layer2Id = typeof layer2State.materialId === 'string' ? layer2State.materialId : '';
+
+        const layer1 = this._getSubstrateLayerTextures(layer1Id);
+        const layer2 = this._getSubstrateLayerTextures(layer2Id);
+
+        const layer1Uv = computeUvScaleForGroundSize({
+            groundSizeX: this._groundSize.x,
+            groundSizeZ: this._groundSize.z,
+            tileMeters: layer1.tileMeters
+        });
+        const layer2Uv = computeUvScaleForGroundSize({
+            groundSizeX: this._groundSize.x,
+            groundSizeZ: this._groundSize.z,
+            tileMeters: layer2.tileMeters
+        });
+
+        const patchSize1 = Math.max(EPS, Number(layer1State.patchSizeMeters) || 55);
+        const edgeSize1 = Math.max(EPS, Number(layer1State.edgeSizeMeters) || 11);
+        const patchSize2 = Math.max(EPS, Number(layer2State.patchSizeMeters) || 85);
+        const edgeSize2 = Math.max(EPS, Number(layer2State.edgeSizeMeters) || 14);
+
+        updateGroundSubstrateBlendOnMeshStandardMaterial(mat, {
+            enabled,
+            seed,
+            layer1: {
+                enabled: layer1State.enabled !== false,
+                materialId: layer1Id,
+                coverage: clamp(layer1State.coverage, 0.0, 1.0, 0.55),
+                blendWidth: clamp(layer1State.blendWidth, 0.0, 0.49, 0.16),
+                noiseScale: 1.0 / patchSize1,
+                detailScale: 1.0 / edgeSize1,
+                detailStrength: clamp(layer1State.edgeStrength, 0.0, 1.0, 0.25),
+                uvScale: layer1Uv,
+                map: layer1.map,
+                normalMap: layer1.normalMap,
+                roughnessMap: layer1.roughnessMap
+            },
+            layer2: {
+                enabled: layer2State.enabled !== false,
+                materialId: layer2Id,
+                coverage: clamp(layer2State.coverage, 0.0, 1.0, 0.35),
+                blendWidth: clamp(layer2State.blendWidth, 0.0, 0.49, 0.16),
+                noiseScale: 1.0 / patchSize2,
+                detailScale: 1.0 / edgeSize2,
+                detailStrength: clamp(layer2State.edgeStrength, 0.0, 1.0, 0.22),
+                uvScale: layer2Uv,
+                map: layer2.map,
+                normalMap: layer2.normalMap,
+                roughnessMap: layer2.roughnessMap
+            }
+        });
+    }
+
     _setGroundSolidFallback() {
         const mat = this._groundMat;
         if (!mat) return;
@@ -940,11 +1027,13 @@ export class GrassDebuggerView {
 
         const materialId = typeof state?.terrain?.groundMaterialId === 'string' ? state.terrain.groundMaterialId : '';
         const key = materialId || '__solid__';
-        if (!force && key === this._groundMaterialKey) return;
-        this._groundMaterialKey = key;
+        if (force || key !== this._groundMaterialKey) {
+            this._groundMaterialKey = key;
+            if (!materialId) this._setGroundSolidFallback();
+            else this._applyGroundPbrMaterial(materialId);
+        }
 
-        if (!materialId) this._setGroundSolidFallback();
-        else this._applyGroundPbrMaterial(materialId);
+        this._syncGroundSubstrateBlendFromState(state);
     }
 
     _syncLod1FromState(state, { force = false } = {}) {

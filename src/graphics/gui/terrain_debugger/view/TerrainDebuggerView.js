@@ -15,6 +15,7 @@ import { getCityMaterials } from '../../../assets3d/textures/CityMaterials.js';
 import { ROAD_DEFAULTS, createGeneratorConfig } from '../../../assets3d/generators/GeneratorParams.js';
 import { createRoadEngineRoads } from '../../../visuals/city/RoadEngineRoads.js';
 import { GrassEngine } from '../../../engine3d/grass/GrassEngine.js';
+import { createTerrainEngine } from '../../../../app/city/terrain_engine/index.js';
 import { TerrainDebuggerUI } from './TerrainDebuggerUI.js';
 import { GrassBladeInspectorPopup } from './GrassBladeInspectorPopup.js';
 import { GrassLodInspectorPopup } from './GrassLodInspectorPopup.js';
@@ -22,6 +23,9 @@ import { GrassLodInspectorPopup } from './GrassLodInspectorPopup.js';
 const EPS = 1e-6;
 const CAMERA_PRESET_BEHIND_GAMEPLAY_DISTANCE = 13.5;
 const ALBEDO_SATURATION_ADJUST_SHADER_VERSION = 2;
+const TERRAIN_BIOME_BLEND_SHADER_VERSION = 4;
+
+const TERRAIN_ENGINE_MASK_TEX_SIZE = 256;
 
 function injectAlbedoSaturationAdjustShader(material, shader) {
     const cfg = material?.userData?.albedoSaturationAdjustConfig ?? null;
@@ -140,6 +144,186 @@ function applyTextureColorSpace(tex, { srgb = true } = {}) {
         return;
     }
     if ('encoding' in tex) tex.encoding = srgb ? THREE.sRGBEncoding : THREE.LinearEncoding;
+}
+
+function createSolidDataTexture(r, g, b, { srgb = true } = {}) {
+    const data = new Uint8Array([r & 255, g & 255, b & 255, 255]);
+    const tex = new THREE.DataTexture(data, 1, 1);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.needsUpdate = true;
+    applyTextureColorSpace(tex, { srgb: !!srgb });
+    return tex;
+}
+
+const FALLBACK_TERRAIN_BIOME_MAPS = Object.freeze({
+    stone: createSolidDataTexture(150, 150, 150, { srgb: true }),
+    grass: createSolidDataTexture(70, 160, 78, { srgb: true }),
+    land: createSolidDataTexture(215, 145, 70, { srgb: true })
+});
+
+const FALLBACK_TERRAIN_ENGINE_MASK_TEX = (() => {
+    // Land everywhere, mid humidity; ensures Standard mode renders something even before the engine exports.
+    const data = new Uint8Array([2, 2, 0, 128]);
+    const tex = new THREE.DataTexture(data, 1, 1);
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.minFilter = THREE.NearestFilter;
+    tex.magFilter = THREE.NearestFilter;
+    tex.generateMipmaps = false;
+    tex.needsUpdate = true;
+    applyTextureColorSpace(tex, { srgb: false });
+    return tex;
+})();
+
+const TERRAIN_BIOME_PBR_BINDINGS = Object.freeze({
+    stone: 'pbr.rocky_terrain_02',
+    grass: 'pbr.grass_005',
+    land: 'pbr.ground_037'
+});
+
+function ensureTerrainBiomeBlendShaderOnMaterial(material) {
+    if (!material?.isMeshStandardMaterial) return;
+    const mat = material;
+    mat.userData = mat.userData ?? {};
+    if (mat.userData.terrainBiomeBlendShaderVersion === TERRAIN_BIOME_BLEND_SHADER_VERSION) return;
+    mat.userData.terrainBiomeBlendShaderVersion = TERRAIN_BIOME_BLEND_SHADER_VERSION;
+
+    mat.defines = mat.defines ?? {};
+    mat.defines.USE_TERRAIN_BIOME_BLEND = 1;
+
+    const prevCacheKey = typeof mat.customProgramCacheKey === 'function' ? mat.customProgramCacheKey.bind(mat) : null;
+    mat.customProgramCacheKey = () => {
+        const prev = prevCacheKey ? prevCacheKey() : '';
+        return `${prev}|terrainbiome:${TERRAIN_BIOME_BLEND_SHADER_VERSION}`;
+    };
+
+    const prevOnBeforeCompile = typeof mat.onBeforeCompile === 'function' ? mat.onBeforeCompile.bind(mat) : null;
+    mat.onBeforeCompile = (shader, renderer) => {
+        if (prevOnBeforeCompile) prevOnBeforeCompile(shader, renderer);
+
+        const data = mat.userData ?? {};
+        shader.uniforms.uGdTerrainMask = { value: data.terrainEngineMaskTex ?? null };
+        shader.uniforms.uGdTerrainBounds = { value: data.terrainEngineBounds ?? new THREE.Vector4() };
+        shader.uniforms.uGdBiomeMapStone = { value: data.terrainBiomeMapStone ?? FALLBACK_TERRAIN_BIOME_MAPS.stone };
+        shader.uniforms.uGdBiomeMapGrass = { value: data.terrainBiomeMapGrass ?? FALLBACK_TERRAIN_BIOME_MAPS.grass };
+        shader.uniforms.uGdBiomeMapLand = { value: data.terrainBiomeMapLand ?? FALLBACK_TERRAIN_BIOME_MAPS.land };
+        shader.uniforms.uGdBiomeUvScale = { value: data.terrainBiomeUvScale ?? new THREE.Vector3(0.25, 0.25, 0.25) };
+        shader.uniforms.uGdDryTintStrength = { value: Number(data.terrainBiomeDryTintStrength) || 0.28 };
+        shader.uniforms.uGdWetTintStrength = { value: Number(data.terrainBiomeWetTintStrength) || 0.22 };
+
+        shader.vertexShader = shader.vertexShader.replace(
+            '#include <common>',
+            [
+                '#include <common>',
+                '#ifdef USE_TERRAIN_BIOME_BLEND',
+                'varying vec2 vGdWorldUv;',
+                '#endif'
+            ].join('\n')
+        );
+
+        // Use world XZ for mask + biome map sampling so we don't depend on the mesh UV setup.
+        shader.vertexShader = shader.vertexShader.replace(
+            '#include <worldpos_vertex>',
+            [
+                '#include <worldpos_vertex>',
+                '#ifdef USE_TERRAIN_BIOME_BLEND',
+                'vGdWorldUv = worldPosition.xz;',
+                '#endif'
+            ].join('\n')
+        );
+
+        shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <common>',
+            [
+                '#include <common>',
+                '#ifdef USE_TERRAIN_BIOME_BLEND',
+                '#if __VERSION__ >= 300',
+                '#define gdTex2D texture',
+                '#else',
+                '#define gdTex2D texture2D',
+                '#endif',
+                'varying vec2 vGdWorldUv;',
+                'uniform sampler2D uGdTerrainMask;',
+                'uniform vec4 uGdTerrainBounds;',
+                'uniform sampler2D uGdBiomeMapStone;',
+                'uniform sampler2D uGdBiomeMapGrass;',
+                'uniform sampler2D uGdBiomeMapLand;',
+                'uniform vec3 uGdBiomeUvScale;',
+                'uniform float uGdDryTintStrength;',
+                'uniform float uGdWetTintStrength;',
+                'vec3 gdSrgbToLinear(vec3 c){',
+                'bvec3 cutoff = lessThanEqual(c, vec3(0.04045));',
+                'vec3 lower = c / 12.92;',
+                'vec3 higher = pow((c + 0.055) / 1.055, vec3(2.4));',
+                'return mix(higher, lower, vec3(cutoff));',
+                '}',
+                'vec2 gdTerrainMaskUv(vec2 worldUv){',
+                'vec2 denom = vec2(max(1e-6, uGdTerrainBounds.y - uGdTerrainBounds.x), max(1e-6, uGdTerrainBounds.w - uGdTerrainBounds.z));',
+                'vec2 uv = (worldUv - vec2(uGdTerrainBounds.x, uGdTerrainBounds.z)) / denom;',
+                'return clamp(uv, 0.0, 1.0);',
+                '}',
+                'vec3 gdTerrainApplyHumidityTint(vec3 c, float humidity){',
+                'float h = clamp(humidity, 0.0, 1.0);',
+                'float dryW = clamp(1.0 - h, 0.0, 1.0);',
+                'float wetW = clamp((h - 0.5) * 2.0, 0.0, 1.0);',
+                'c = mix(c, vec3(1.0, 0.95, 0.65), dryW * uGdDryTintStrength);',
+                'c = mix(c, vec3(0.08, 0.35, 0.15), wetW * uGdWetTintStrength);',
+                'return c;',
+                '}',
+                '#endif'
+            ].join('\n')
+        );
+
+        shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <map_fragment>',
+            [
+                '#ifdef USE_TERRAIN_BIOME_BLEND',
+                'vec2 gdWorldUv = vGdWorldUv;',
+                'vec4 gdMask = gdTex2D(uGdTerrainMask, gdTerrainMaskUv(gdWorldUv));',
+                'int gdPrimary = int(floor(gdMask.r * 255.0 + 0.5));',
+                'int gdSecondary = int(floor(gdMask.g * 255.0 + 0.5));',
+                'float gdBlend = clamp(gdMask.b, 0.0, 1.0);',
+                'float gdHumidity = clamp(gdMask.a, 0.0, 1.0);',
+                'float wStone = 0.0;',
+                'float wGrass = 0.0;',
+                'float wLand = 0.0;',
+                'float wp = 1.0 - gdBlend;',
+                'if (gdPrimary == 0) wStone += wp; else if (gdPrimary == 1) wGrass += wp; else wLand += wp;',
+                'if (gdSecondary == 0) wStone += gdBlend; else if (gdSecondary == 1) wGrass += gdBlend; else wLand += gdBlend;',
+                'vec3 cStone = gdSrgbToLinear(gdTex2D(uGdBiomeMapStone, gdWorldUv * uGdBiomeUvScale.x).rgb);',
+                'vec3 cGrass = gdSrgbToLinear(gdTex2D(uGdBiomeMapGrass, gdWorldUv * uGdBiomeUvScale.y).rgb);',
+                'vec3 cLand = gdSrgbToLinear(gdTex2D(uGdBiomeMapLand, gdWorldUv * uGdBiomeUvScale.z).rgb);',
+                'vec3 texelColor = cStone * wStone + cGrass * wGrass + cLand * wLand;',
+                'texelColor = gdTerrainApplyHumidityTint(texelColor, gdHumidity);',
+                // Standard mode should always show terrain, even if other material controls set color to black.
+                'diffuseColor.rgb = texelColor;',
+                '#else',
+                '#include <map_fragment>',
+                '#endif'
+            ].join('\n')
+        );
+
+        mat.userData.terrainBiomeBlendUniforms = shader.uniforms;
+    };
+
+    mat.needsUpdate = true;
+}
+
+function syncTerrainBiomeBlendUniformsOnMaterial(material) {
+    const mat = material?.isMeshStandardMaterial ? material : null;
+    const uniforms = mat?.userData?.terrainBiomeBlendUniforms ?? null;
+    if (!uniforms || typeof uniforms !== 'object') return;
+    const data = mat.userData ?? {};
+
+    if (uniforms.uGdTerrainMask) uniforms.uGdTerrainMask.value = data.terrainEngineMaskTex ?? null;
+    if (uniforms.uGdTerrainBounds) uniforms.uGdTerrainBounds.value = data.terrainEngineBounds ?? uniforms.uGdTerrainBounds.value;
+    if (uniforms.uGdBiomeMapStone) uniforms.uGdBiomeMapStone.value = data.terrainBiomeMapStone ?? FALLBACK_TERRAIN_BIOME_MAPS.stone;
+    if (uniforms.uGdBiomeMapGrass) uniforms.uGdBiomeMapGrass.value = data.terrainBiomeMapGrass ?? FALLBACK_TERRAIN_BIOME_MAPS.grass;
+    if (uniforms.uGdBiomeMapLand) uniforms.uGdBiomeMapLand.value = data.terrainBiomeMapLand ?? FALLBACK_TERRAIN_BIOME_MAPS.land;
+    if (uniforms.uGdBiomeUvScale) uniforms.uGdBiomeUvScale.value = data.terrainBiomeUvScale ?? uniforms.uGdBiomeUvScale.value;
+    if (uniforms.uGdDryTintStrength) uniforms.uGdDryTintStrength.value = Number(data.terrainBiomeDryTintStrength) || 0.28;
+    if (uniforms.uGdWetTintStrength) uniforms.uGdWetTintStrength.value = Number(data.terrainBiomeWetTintStrength) || 0.22;
 }
 
 function ensureUv2(geo) {
@@ -459,6 +643,21 @@ export class TerrainDebuggerView {
         this._terrainGrid = null;
         this._gridLines = null;
         this._roads = null;
+        this._terrainEngine = null;
+        this._terrainEngineMaskTex = null;
+        this._terrainEngineMaskKey = '';
+        this._terrainEngineMaskLastMs = 0;
+        this._terrainEngineMaskDirty = true;
+        this._terrainEngineMaskViewKey = '';
+        this._terrainEngineLastExport = null;
+        this._terrainDebugMode = 'standard';
+        this._terrainDebugTex = null;
+        this._terrainDebugMat = null;
+        this._terrainDebugTexKey = '';
+        this._terrainEngineBoundsVec4 = new THREE.Vector4();
+        this._terrainBiomeUvScaleVec3 = new THREE.Vector3();
+        this._terrainBiomePbrKey = '';
+        this._terrainBiomeDummyMapTex = createSolidDataTexture(215, 145, 70, { srgb: true });
 
         this._grassEngine = null;
         this._grassRoadBounds = { enabled: false, halfWidth: 0, z0: 0, z1: 0 };
@@ -508,6 +707,12 @@ export class TerrainDebuggerView {
         this._terrainRayOrigin = new THREE.Vector3();
         this._terrainRayDir = new THREE.Vector3(0, -1, 0);
         this._terrainRayHits = [];
+        this._cursorNdc = new THREE.Vector2();
+        this._cursorValid = false;
+        this._cursorRaycaster = new THREE.Raycaster();
+        this._cursorHits = [];
+        this._cursorSampleLastMs = 0;
+        this._cursorSampleKey = '';
 
         this._onResize = () => this._resize();
         this._onKeyDown = (e) => this._handleKey(e, true);
@@ -516,6 +721,21 @@ export class TerrainDebuggerView {
             if (!e) return;
             if (isInteractiveElement(e.target) || isInteractiveElement(document.activeElement)) return;
             e.preventDefault();
+        };
+        this._onPointerMove = (e) => {
+            const canvas = this.canvas;
+            if (!e || !canvas?.getBoundingClientRect) return;
+            const rect = canvas.getBoundingClientRect();
+            const w = Math.max(1, Number(rect.width) || 1);
+            const h = Math.max(1, Number(rect.height) || 1);
+            const x = ((Number(e.clientX) - Number(rect.left)) / w) * 2 - 1;
+            const y = -(((Number(e.clientY) - Number(rect.top)) / h) * 2 - 1);
+            if (!(Number.isFinite(x) && Number.isFinite(y))) return;
+            this._cursorNdc.set(clamp(x, -1, 1, 0), clamp(y, -1, 1, 0));
+            this._cursorValid = true;
+        };
+        this._onPointerLeave = () => {
+            this._cursorValid = false;
         };
 
         this._terrainSpec = {
@@ -760,6 +980,8 @@ export class TerrainDebuggerView {
         ui.mount();
 
         this.canvas.addEventListener('contextmenu', this._onContextMenu, { passive: false, capture: true });
+        this.canvas.addEventListener('pointermove', this._onPointerMove, { passive: true, capture: true });
+        this.canvas.addEventListener('pointerleave', this._onPointerLeave, { passive: true, capture: true });
 
         this.controls = new FirstPersonCameraController(this.camera, this.canvas, {
             uiRoot: ui.root,
@@ -776,6 +998,36 @@ export class TerrainDebuggerView {
 
         this._buildScene();
         this._updateGrassRoadBounds();
+        if (!this._terrainEngine && this._terrainGrid) {
+            const bounds = this._getTerrainBoundsXZ();
+            if (bounds) {
+                this._terrainEngine = createTerrainEngine({
+                    seed: 'terrain-debugger',
+                    bounds,
+                    patch: { sizeMeters: 72, originX: 0, originZ: 0, layout: 'voronoi', voronoiJitter: 0.85, warpScale: 0.02, warpAmplitudeMeters: 36 },
+                    biomes: {
+                        mode: 'patch_grid',
+                        defaultBiomeId: 'land',
+                        weights: { stone: 0.25, grass: 0.35, land: 0.40 }
+                    },
+                    humidity: {
+                        mode: 'noise',
+                        noiseScale: 0.01,
+                        octaves: 4,
+                        gain: 0.5,
+                        lacunarity: 2.0,
+                        bias: 0.0,
+                        amplitude: 1.0
+                    },
+                    transition: {
+                        cameraBlendRadiusMeters: 140,
+                        cameraBlendFeatherMeters: 24,
+                        boundaryBandMeters: 10
+                    }
+                });
+                this._terrainEngineMaskDirty = true;
+            }
+        }
         if (!this._grassEngine && this.scene && this._terrain && this._terrainGrid) {
             this._grassEngine = new GrassEngine({
                 scene: this.scene,
@@ -810,6 +1062,8 @@ export class TerrainDebuggerView {
         this._raf = 0;
 
         this.canvas?.removeEventListener?.('contextmenu', this._onContextMenu, { capture: true });
+        this.canvas?.removeEventListener?.('pointermove', this._onPointerMove, { capture: true });
+        this.canvas?.removeEventListener?.('pointerleave', this._onPointerLeave, { capture: true });
 
         window.removeEventListener('resize', this._onResize);
         window.removeEventListener('keydown', this._onKeyDown);
@@ -829,6 +1083,21 @@ export class TerrainDebuggerView {
 
         this._grassEngine?.dispose?.();
         this._grassEngine = null;
+
+        this._terrainEngine?.dispose?.();
+        this._terrainEngine = null;
+        this._terrainEngineMaskTex?.dispose?.();
+        this._terrainEngineMaskTex = null;
+        this._terrainEngineMaskKey = '';
+        this._terrainEngineMaskDirty = true;
+        this._terrainEngineMaskViewKey = '';
+        this._terrainEngineLastExport = null;
+        this._terrainDebugTex?.dispose?.();
+        this._terrainDebugTex = null;
+        this._terrainDebugMat?.dispose?.();
+        this._terrainDebugMat = null;
+        this._terrainBiomeDummyMapTex?.dispose?.();
+        this._terrainBiomeDummyMapTex = null;
 
         const disposeMaterial = (mat) => {
             if (!mat) return;
@@ -860,6 +1129,7 @@ export class TerrainDebuggerView {
         this.camera = null;
         this._gpuFrameTimer = null;
 
+        for (const tex of this._texCache.values()) tex?.dispose?.();
         this._texCache.clear();
         this._terrain = null;
         this._terrainMat = null;
@@ -894,6 +1164,11 @@ export class TerrainDebuggerView {
         terrainMat.polygonOffset = true;
         terrainMat.polygonOffsetFactor = 1;
         terrainMat.polygonOffsetUnits = 1;
+        // Ensure <map_pars_fragment> (and mapTexelToLinear) exist for our biome-blend shader.
+        terrainMat.map = this._terrainBiomeDummyMapTex;
+        terrainMat.userData = terrainMat.userData ?? {};
+        terrainMat.userData.terrainEngineMaskTex = FALLBACK_TERRAIN_ENGINE_MASK_TEX;
+        ensureTerrainBiomeBlendShaderOnMaterial(terrainMat);
         this._terrainMat = terrainMat;
 
         const terrain = (() => {
@@ -1013,10 +1288,10 @@ export class TerrainDebuggerView {
         this._roads = roads;
     }
 
-        _buildTerrainSpec() {
-            const base = this._terrainSpec;
-            const layout = base?.layout && typeof base.layout === 'object' ? base.layout : {};
-            const extraEndTiles = Math.max(0, Math.round(Number(layout?.extraEndTiles) || 0));
+	        _buildTerrainSpec() {
+	            const base = this._terrainSpec;
+	            const layout = base?.layout && typeof base.layout === 'object' ? base.layout : {};
+	            const extraEndTiles = Math.max(0, Math.round(Number(layout?.extraEndTiles) || 0));
             const extraSideTiles = Math.max(0, Math.round(Number(layout?.extraSideTiles) || 0));
             const baseWidthTiles = Math.max(1, Math.round(Number(base?.widthTiles) || 1));
             const baseDepthTiles = Math.max(1, Math.round(Number(base?.depthTiles) || 1));
@@ -1028,38 +1303,38 @@ export class TerrainDebuggerView {
             const tileMinX = baseTileMinX - extraSideTiles;
             const tileMinZ = baseTileMinZ - extraEndTiles;
 
-            const road = base?.road && typeof base.road === 'object' ? base.road : {};
-            const tileSize = Number(base?.tileSize) || 24;
-            const laneWidth = Math.max(0, Number(road?.laneWidthMeters) || 0);
-            const lanesEach = Math.max(1, Number(road?.lanesEachDirection) || 3);
-        const shoulder = Math.max(0, Number(road?.shoulderMeters) || 0);
-        const curb = road?.curb && typeof road.curb === 'object' ? road.curb : {};
-        const sidewalk = road?.sidewalk && typeof road.sidewalk === 'object' ? road.sidewalk : {};
-        const curbThickness = Math.max(0, Number(curb?.thickness) || 0);
-        const sidewalkWidth = Math.max(0, Number(sidewalk?.extraWidth) || 0);
-        const lengthTiles = Math.max(0, Number(road?.lengthTiles) || 0);
-        const roadLength = lengthTiles * tileSize;
-        const zEnd = Number(road?.zEnd) || 0;
-        const dir = Number(road?.direction) < 0 ? -1 : 1;
-        const roadStart = zEnd + dir * roadLength;
-        const z0 = Math.min(roadStart, zEnd);
-        const z1 = Math.max(roadStart, zEnd);
-        const widthMeters = laneWidth * lanesEach * 2 + shoulder * 2 + curbThickness * 2 + sidewalkWidth * 2;
+	            const road = base?.road && typeof base.road === 'object' ? base.road : {};
+	            const tileSize = Number(base?.tileSize) || 24;
+	            const laneWidth = Math.max(0, Number(road?.laneWidthMeters) || 0);
+	            const lanesEach = Math.max(1, Number(road?.lanesEachDirection) || 3);
+	            const shoulder = Math.max(0, Number(road?.shoulderMeters) || 0);
+	            const curb = road?.curb && typeof road.curb === 'object' ? road.curb : {};
+	            const sidewalk = road?.sidewalk && typeof road.sidewalk === 'object' ? road.sidewalk : {};
+	            const curbThickness = Math.max(0, Number(curb?.thickness) || 0);
+	            const sidewalkWidth = Math.max(0, Number(sidewalk?.extraWidth) || 0);
+	            const lengthTiles = Math.max(0, Number(road?.lengthTiles) || 0);
+	            const roadLength = lengthTiles * tileSize;
+	            const zEnd = Number(road?.zEnd) || 0;
+	            const dir = Number(road?.direction) < 0 ? -1 : 1;
+	            const roadStart = zEnd + dir * roadLength;
+	            const z0 = Math.min(roadStart, zEnd);
+	            const z1 = Math.max(roadStart, zEnd);
+	            const widthMeters = laneWidth * lanesEach * 2 + shoulder * 2 + curbThickness * 2 + sidewalkWidth * 2;
 
-            return {
-                ...base,
-                tileMinX,
-                tileMinZ,
-                widthTiles,
-                depthTiles,
-                road: {
-                    ...road,
-                    widthMeters,
-                    z0,
-                z1
-            }
-        };
-    }
+	            return {
+	                ...base,
+	                tileMinX,
+	                tileMinZ,
+	                widthTiles,
+	                depthTiles,
+	                road: {
+	                    ...road,
+	                    widthMeters,
+	                    z0,
+	                    z1
+	                }
+	            };
+	        }
 
     _rebuildTerrain() {
         const scene = this.scene;
@@ -1075,6 +1350,14 @@ export class TerrainDebuggerView {
         this._terrainBounds.maxY = maxY;
         this._terrainGrid = { nx, nz, minX, minZ, dx, dz, tileSize, widthTiles, depthTiles, minY, maxY };
         this._updateGrassRoadBounds();
+        if (this._terrainEngine) {
+            const bounds = this._getTerrainBoundsXZ();
+            if (bounds) {
+                const cfg = this._terrainEngine.getConfig();
+                this._terrainEngine.setConfig({ ...cfg, bounds });
+                this._terrainEngineMaskDirty = true;
+            }
+        }
         this._grassEngine?.setTerrain?.({ terrainMesh: terrain, terrainGrid: this._terrainGrid });
 
         if (this._gridLines) {
@@ -1614,6 +1897,13 @@ export class TerrainDebuggerView {
             this._updateCameraFromKeys(dt);
         }
         this.controls?.update?.(dt);
+
+        if (this._terrainEngine && camera?.position) {
+            this._terrainEngine.setViewOrigin({ x: camera.position.x, z: camera.position.z });
+            this._updateTerrainEngineMasks({ nowMs: t });
+            this._updateTerrainHoverSample({ nowMs: t });
+        }
+
         this._grassEngine?.update?.({ camera });
 
         const ui = this._ui;
@@ -1648,6 +1938,411 @@ export class TerrainDebuggerView {
         controls.setLookAt({ position: pose.position, target: pose.target });
         this._activeCameraPresetId = preset || 'custom';
         this._syncCameraStatus({ nowMs: performance.now(), force: true });
+    }
+
+    _getTerrainBoundsXZ() {
+        const grid = this._terrainGrid;
+        if (!grid) return null;
+        const tileSize = Number(grid.tileSize) || 0;
+        const widthTiles = Math.max(1, Number(grid.widthTiles) || 1);
+        const depthTiles = Math.max(1, Number(grid.depthTiles) || 1);
+        const minX = Number(grid.minX) || 0;
+        const minZ = Number(grid.minZ) || 0;
+        const maxX = minX + widthTiles * tileSize;
+        const maxZ = minZ + depthTiles * tileSize;
+        if (!(Number.isFinite(maxX) && Number.isFinite(maxZ) && maxX > minX && maxZ > minZ && tileSize > EPS)) return null;
+        return { minX, maxX, minZ, maxZ };
+    }
+
+    _syncTerrainBiomePbrMapsOnStandardMaterial() {
+        const mat = this._terrainMat;
+        if (!mat) return;
+
+        const stoneId = TERRAIN_BIOME_PBR_BINDINGS.stone;
+        const grassId = TERRAIN_BIOME_PBR_BINDINGS.grass;
+        const landId = TERRAIN_BIOME_PBR_BINDINGS.land;
+
+        const stoneUrls = resolvePbrMaterialUrls(stoneId);
+        const grassUrls = resolvePbrMaterialUrls(grassId);
+        const landUrls = resolvePbrMaterialUrls(landId);
+        const stoneMapLoaded = this._loadTexture(stoneUrls?.baseColorUrl ?? null, { srgb: true });
+        const grassMapLoaded = this._loadTexture(grassUrls?.baseColorUrl ?? null, { srgb: true });
+        const landMapLoaded = this._loadTexture(landUrls?.baseColorUrl ?? null, { srgb: true });
+        const stoneMap = stoneMapLoaded ?? FALLBACK_TERRAIN_BIOME_MAPS.stone;
+        const grassMap = grassMapLoaded ?? FALLBACK_TERRAIN_BIOME_MAPS.grass;
+        const landMap = landMapLoaded ?? FALLBACK_TERRAIN_BIOME_MAPS.land;
+
+        const stoneMeta = getPbrMaterialMeta(stoneId);
+        const grassMeta = getPbrMaterialMeta(grassId);
+        const landMeta = getPbrMaterialMeta(landId);
+        const stoneTile = Math.max(EPS, Number(stoneMeta?.tileMeters) || 4.0);
+        const grassTile = Math.max(EPS, Number(grassMeta?.tileMeters) || 4.0);
+        const landTile = Math.max(EPS, Number(landMeta?.tileMeters) || 4.0);
+
+        const key = [
+            stoneUrls?.baseColorUrl ?? 'fallback',
+            grassUrls?.baseColorUrl ?? 'fallback',
+            landUrls?.baseColorUrl ?? 'fallback',
+            stoneTile.toFixed(4),
+            grassTile.toFixed(4),
+            landTile.toFixed(4)
+        ].join('|');
+        if (key === this._terrainBiomePbrKey) return;
+        this._terrainBiomePbrKey = key;
+
+        mat.userData = mat.userData ?? {};
+        mat.userData.terrainBiomeMapStone = stoneMap;
+        mat.userData.terrainBiomeMapGrass = grassMap;
+        mat.userData.terrainBiomeMapLand = landMap;
+        mat.userData.terrainBiomeUvScale = this._terrainBiomeUvScaleVec3.set(1 / stoneTile, 1 / grassTile, 1 / landTile);
+
+        if (landMapLoaded && mat.map !== landMapLoaded) {
+            mat.map = landMapLoaded;
+            mat.needsUpdate = true;
+        }
+
+        syncTerrainBiomeBlendUniformsOnMaterial(mat);
+    }
+
+    _ensureTerrainDebugMaterial() {
+        if (this._terrainDebugMat) return;
+        const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, map: null });
+        mat.polygonOffset = true;
+        mat.polygonOffsetFactor = 1;
+        mat.polygonOffsetUnits = 1;
+        // Debug view colors should be stable regardless of exposure / tone mapping settings.
+        mat.toneMapped = false;
+        this._terrainDebugMat = mat;
+    }
+
+    _updateTerrainDebugTextureFromExport(res, { mode } = {}) {
+        const dbgMode = String(mode ?? 'standard');
+        if (dbgMode === 'standard') return;
+        if (!res) return;
+        const packed = res?.rgba;
+        const patchIds = res?.patchIds;
+        const texW = Number(res?.width) || 0;
+        const texH = Number(res?.height) || 0;
+        if (!(packed instanceof Uint8Array) || packed.length < texW * texH * 4) return;
+        if (!(patchIds instanceof Uint32Array) || patchIds.length < texW * texH) return;
+
+        const viewKey = dbgMode === 'transition_band' ? this._terrainEngineMaskViewKey : 'static';
+        const key = `${dbgMode}|${this._terrainEngineMaskKey}|${viewKey}|${texW}x${texH}`;
+        if (key === this._terrainDebugTexKey && this._terrainDebugTex) return;
+        this._terrainDebugTexKey = key;
+
+        const out = new Uint8Array(texW * texH * 4);
+        const biomeBase = [
+            [150, 150, 150],
+            [70, 160, 78],
+            [215, 145, 70]
+        ];
+
+        const mixU32 = (h) => {
+            let x = h >>> 0;
+            x ^= x >>> 16;
+            x = Math.imul(x, 0x7feb352d) >>> 0;
+            x ^= x >>> 15;
+            x = Math.imul(x, 0x846ca68b) >>> 0;
+            x ^= x >>> 16;
+            return x >>> 0;
+        };
+
+        if (dbgMode === 'biome_id') {
+            for (let i = 0; i < packed.length; i += 4) {
+                const idx = Math.max(0, Math.min(2, packed[i] | 0));
+                const c = biomeBase[idx];
+                out[i] = c[0];
+                out[i + 1] = c[1];
+                out[i + 2] = c[2];
+                out[i + 3] = 255;
+            }
+        } else if (dbgMode === 'humidity') {
+            for (let i = 0; i < packed.length; i += 4) {
+                const h = (packed[i + 3] | 0) / 255;
+                const t = clamp(h, 0, 1, 0);
+                let r;
+                let g;
+                let b;
+                if (t < 0.5) {
+                    const u = t / 0.5;
+                    r = 255 + (70 - 255) * u;
+                    g = 242 + (160 - 242) * u;
+                    b = 170 + (78 - 170) * u;
+                } else {
+                    const u = (t - 0.5) / 0.5;
+                    r = 70 + (20 - 70) * u;
+                    g = 160 + (90 - 160) * u;
+                    b = 78 + (35 - 78) * u;
+                }
+                out[i] = Math.max(0, Math.min(255, Math.round(r)));
+                out[i + 1] = Math.max(0, Math.min(255, Math.round(g)));
+                out[i + 2] = Math.max(0, Math.min(255, Math.round(b)));
+                out[i + 3] = 255;
+            }
+        } else if (dbgMode === 'transition_band') {
+            for (let i = 0; i < packed.length; i += 4) {
+                const blend = (packed[i + 2] | 0) / 255;
+                const band = clamp(4 * blend * (1 - blend), 0, 1, 0);
+                const v = Math.max(0, Math.min(255, Math.round(band * 255)));
+                out[i] = v;
+                out[i + 1] = v;
+                out[i + 2] = v;
+                out[i + 3] = 255;
+            }
+        } else if (dbgMode === 'patch_ids') {
+            for (let iz = 0; iz < texH; iz++) {
+                for (let ix = 0; ix < texW; ix++) {
+                    const pIdx = iz * texW + ix;
+                    const baseIdx = pIdx * 4;
+                    const id = patchIds[pIdx] >>> 0;
+                    const h = mixU32(id);
+                    const rr = 60 + (h & 0xbf);
+                    const gg = 60 + ((h >>> 8) & 0xbf);
+                    const bb = 60 + ((h >>> 16) & 0xbf);
+                    let r = rr;
+                    let g = gg;
+                    let b = bb;
+                    const leftDifferent = ix > 0 && patchIds[pIdx - 1] !== id;
+                    const upDifferent = iz > 0 && patchIds[pIdx - texW] !== id;
+                    if (leftDifferent || upDifferent) {
+                        r = 0;
+                        g = 0;
+                        b = 0;
+                    }
+                    out[baseIdx] = r;
+                    out[baseIdx + 1] = g;
+                    out[baseIdx + 2] = b;
+                    out[baseIdx + 3] = 255;
+                }
+            }
+        } else {
+            return;
+        }
+
+        let tex = this._terrainDebugTex;
+        if (!tex || tex.image?.width !== texW || tex.image?.height !== texH) {
+            tex?.dispose?.();
+            tex = new THREE.DataTexture(out, texW, texH);
+            tex.wrapS = THREE.ClampToEdgeWrapping;
+            tex.wrapT = THREE.ClampToEdgeWrapping;
+            tex.minFilter = THREE.NearestFilter;
+            tex.magFilter = THREE.NearestFilter;
+            tex.generateMipmaps = false;
+            applyTextureColorSpace(tex, { srgb: true });
+            this._terrainDebugTex = tex;
+        } else {
+            tex.image.data = out;
+        }
+
+        // Terrain geometry uses world-space XZ in its UV attribute. Remap world coords -> [0..1] so the
+        // debug texture covers the entire bounds instead of clamping at u/v = 0/1.
+        const tb = res?.bounds ?? null;
+        if (tb && Number.isFinite(tb.minX) && Number.isFinite(tb.maxX) && Number.isFinite(tb.minZ) && Number.isFinite(tb.maxZ)) {
+            const sizeX = Number(tb.maxX) - Number(tb.minX);
+            const sizeZ = Number(tb.maxZ) - Number(tb.minZ);
+            if (sizeX > EPS && sizeZ > EPS && tex?.repeat?.set && tex?.offset?.set) {
+                tex.repeat.set(1 / sizeX, 1 / sizeZ);
+                tex.offset.set(-Number(tb.minX) / sizeX, -Number(tb.minZ) / sizeZ);
+            }
+        }
+
+        tex.needsUpdate = true;
+
+        this._ensureTerrainDebugMaterial();
+        if (this._terrainDebugMat) {
+            this._terrainDebugMat.map = tex;
+            this._terrainDebugMat.needsUpdate = true;
+        }
+    }
+
+    _syncTerrainMeshMaterialForDebugMode(res) {
+        const mesh = this._terrain;
+        if (!mesh) return;
+        const mode = String(this._terrainDebugMode ?? 'standard');
+        if (mode === 'standard') {
+            if (mesh.material !== this._terrainMat) mesh.material = this._terrainMat;
+            return;
+        }
+
+        this._updateTerrainDebugTextureFromExport(res, { mode });
+        this._ensureTerrainDebugMaterial();
+        if (mesh.material !== this._terrainDebugMat && this._terrainDebugMat) mesh.material = this._terrainDebugMat;
+    }
+
+    _updateTerrainEngineMasks({ nowMs } = {}) {
+        const engine = this._terrainEngine;
+        const mat = this._terrainMat;
+        const bounds = this._getTerrainBoundsXZ();
+        if (!engine || !mat || !bounds) return;
+
+        const now = Number.isFinite(nowMs) ? nowMs : performance.now();
+        const texW = TERRAIN_ENGINE_MASK_TEX_SIZE;
+        const texH = TERRAIN_ENGINE_MASK_TEX_SIZE;
+
+        const debugMode = String(this._terrainDebugMode ?? 'standard');
+        const viewDependent = debugMode === 'standard' || debugMode === 'transition_band';
+
+        const cam = this.camera;
+        const cx = Number(cam?.position?.x) || 0;
+        const cz = Number(cam?.position?.z) || 0;
+        const quant = 1.0;
+        const camViewKey = `${(Math.round(cx / quant) * quant).toFixed(1)}|${(Math.round(cz / quant) * quant).toFixed(1)}`;
+        const viewKey = viewDependent ? camViewKey : (this._terrainEngineMaskViewKey || 'static');
+
+        const cfg = engine.getConfig();
+        const b = cfg?.bounds ?? bounds;
+        const p = cfg?.patch ?? {};
+        const bio = cfg?.biomes ?? {};
+        const w = bio?.weights ?? {};
+        const hum = cfg?.humidity ?? {};
+        const tr = cfg?.transition ?? {};
+
+        const configKey = [
+            String(cfg?.seed ?? ''),
+            `${Number(b.minX).toFixed(2)},${Number(b.maxX).toFixed(2)},${Number(b.minZ).toFixed(2)},${Number(b.maxZ).toFixed(2)}`,
+            `${Number(p.sizeMeters).toFixed(3)},${Number(p.originX).toFixed(3)},${Number(p.originZ).toFixed(3)},${String(p.layout ?? '')},${Number(p.voronoiJitter).toFixed(4)},${Number(p.warpScale).toFixed(5)},${Number(p.warpAmplitudeMeters).toFixed(3)}`,
+            `${String(bio.mode ?? '')},${String(bio.defaultBiomeId ?? '')},${Number(w.stone).toFixed(4)},${Number(w.grass).toFixed(4)},${Number(w.land).toFixed(4)}`,
+            `${String(hum.mode ?? '')},${Number(hum.noiseScale).toFixed(6)},${Number(hum.octaves) || 0},${Number(hum.gain).toFixed(4)},${Number(hum.lacunarity).toFixed(4)},${Number(hum.bias).toFixed(4)},${Number(hum.amplitude).toFixed(4)}`,
+            `${Number(tr.cameraBlendRadiusMeters).toFixed(3)},${Number(tr.cameraBlendFeatherMeters).toFixed(3)},${Number(tr.boundaryBandMeters).toFixed(3)}`,
+            `${texW}x${texH}`
+        ].join('|');
+
+        const configChanged = configKey !== this._terrainEngineMaskKey;
+        const viewChanged = viewKey !== this._terrainEngineMaskViewKey;
+
+        const wantsDebug = String(this._terrainDebugMode ?? 'standard') !== 'standard';
+        if (!this._terrainEngineMaskDirty && !configChanged && !viewChanged) {
+            if (wantsDebug) this._syncTerrainMeshMaterialForDebugMode(this._terrainEngineLastExport);
+            else this._syncTerrainMeshMaterialForDebugMode(null);
+            return;
+        }
+        if (!this._terrainEngineMaskDirty && !configChanged && viewChanged && now - this._terrainEngineMaskLastMs < 250) {
+            if (wantsDebug) this._syncTerrainMeshMaterialForDebugMode(this._terrainEngineLastExport);
+            else this._syncTerrainMeshMaterialForDebugMode(null);
+            return;
+        }
+
+        if (
+            Number(b.minX) !== Number(bounds.minX)
+            || Number(b.maxX) !== Number(bounds.maxX)
+            || Number(b.minZ) !== Number(bounds.minZ)
+            || Number(b.maxZ) !== Number(bounds.maxZ)
+        ) {
+            engine.setConfig({ ...cfg, bounds });
+        }
+
+        const res = engine.exportPackedMaskRgba8({ width: texW, height: texH, viewOrigin: { x: cx, z: cz } });
+        const packed = res?.rgba;
+        const patchIds = res?.patchIds;
+        if (!(packed instanceof Uint8Array) || packed.length < texW * texH * 4) return;
+        if (!(patchIds instanceof Uint32Array) || patchIds.length < texW * texH) return;
+
+        let tex = this._terrainEngineMaskTex;
+        if (!tex || tex.image?.width !== texW || tex.image?.height !== texH) {
+            tex?.dispose?.();
+            tex = new THREE.DataTexture(packed, texW, texH);
+            tex.wrapS = THREE.ClampToEdgeWrapping;
+            tex.wrapT = THREE.ClampToEdgeWrapping;
+            tex.minFilter = THREE.NearestFilter;
+            tex.magFilter = THREE.NearestFilter;
+            tex.generateMipmaps = false;
+            applyTextureColorSpace(tex, { srgb: false });
+            this._terrainEngineMaskTex = tex;
+        } else {
+            tex.image.data = packed;
+        }
+        tex.needsUpdate = true;
+
+        const tb = res?.bounds ?? bounds;
+        this._terrainEngineBoundsVec4.set(Number(tb.minX) || 0, Number(tb.maxX) || 0, Number(tb.minZ) || 0, Number(tb.maxZ) || 0);
+
+        mat.userData = mat.userData ?? {};
+        mat.userData.terrainEngineMaskTex = tex;
+        mat.userData.terrainEngineBounds = this._terrainEngineBoundsVec4;
+        syncTerrainBiomeBlendUniformsOnMaterial(mat);
+        this._syncTerrainBiomePbrMapsOnStandardMaterial();
+
+        this._terrainEngineLastExport = res;
+        this._syncTerrainMeshMaterialForDebugMode(res);
+
+        this._terrainEngineMaskKey = configKey;
+        this._terrainEngineMaskViewKey = viewKey;
+        this._terrainEngineMaskLastMs = now;
+        this._terrainEngineMaskDirty = false;
+    }
+
+    _updateTerrainHoverSample({ nowMs } = {}) {
+        const ui = this._ui;
+        const engine = this._terrainEngine;
+        const terrain = this._terrain;
+        const camera = this.camera;
+        if (!ui?.setTerrainSampleInfo || !engine || !terrain || !camera) return;
+
+        const now = Number.isFinite(nowMs) ? nowMs : performance.now();
+        if (now - (this._cursorSampleLastMs || 0) < 80) return;
+        this._cursorSampleLastMs = now;
+
+        if (!this._cursorValid) {
+            if (this._cursorSampleKey !== 'none') {
+                this._cursorSampleKey = 'none';
+                ui.setTerrainSampleInfo({});
+            }
+            return;
+        }
+
+        this._cursorRaycaster.setFromCamera(this._cursorNdc, camera);
+        this._cursorHits.length = 0;
+        this._cursorRaycaster.intersectObject(terrain, false, this._cursorHits);
+        const hit = this._cursorHits[0] ?? null;
+        const point = hit?.point ?? null;
+        if (!point) {
+            if (this._cursorSampleKey !== 'none') {
+                this._cursorSampleKey = 'none';
+                ui.setTerrainSampleInfo({});
+            }
+            return;
+        }
+
+        const x = Number(point.x) || 0;
+        const z = Number(point.z) || 0;
+        const s = engine.sample(x, z);
+        const key = `${(s.patchId >>> 0).toString()}|${String(s.primaryBiomeId)}|${String(s.secondaryBiomeId)}|${Number(s.biomeBlend).toFixed(4)}|${Number(s.humidity).toFixed(4)}`;
+        if (key === this._cursorSampleKey) return;
+        this._cursorSampleKey = key;
+
+        ui.setTerrainSampleInfo({
+            x,
+            z,
+            patchId: s.patchId >>> 0,
+            primaryBiomeId: s.primaryBiomeId,
+            secondaryBiomeId: s.secondaryBiomeId,
+            biomeBlend: s.biomeBlend,
+            humidity: s.humidity
+        });
+    }
+
+    _applyTerrainEngineUiConfig(state) {
+        const engine = this._terrainEngine;
+        const src = state && typeof state === 'object' ? state : null;
+        if (!engine || !src) return;
+
+        const prev = engine.getConfig();
+        const patchSrc = src.patch && typeof src.patch === 'object' ? src.patch : {};
+        const biomesSrc = src.biomes && typeof src.biomes === 'object' ? src.biomes : {};
+        const humiditySrc = src.humidity && typeof src.humidity === 'object' ? src.humidity : {};
+        const transitionSrc = src.transition && typeof src.transition === 'object' ? src.transition : {};
+
+        engine.setConfig({
+            ...prev,
+            seed: typeof src.seed === 'string' ? src.seed : prev.seed,
+            patch: { ...prev.patch, ...patchSrc },
+            biomes: { ...prev.biomes, ...biomesSrc },
+            humidity: { ...prev.humidity, ...humiditySrc },
+            transition: { ...prev.transition, ...transitionSrc }
+        });
+
+        this._terrainEngineMaskDirty = true;
     }
 
     _loadTexture(url, { srgb } = {}) {
@@ -1951,9 +2646,9 @@ export class TerrainDebuggerView {
             if (key !== this._terrainLayoutKey) {
                 this._terrainLayoutKey = key;
                 this._terrainSpec.layout = { ...prev, extraEndTiles, extraSideTiles };
-                    rebuildTerrain = true;
-                }
+                rebuildTerrain = true;
             }
+        }
 
         const slopeCfg = terrainCfg.slope && typeof terrainCfg.slope === 'object' ? terrainCfg.slope : null;
         if (slopeCfg) {
@@ -1983,20 +2678,25 @@ export class TerrainDebuggerView {
             if (key !== this._terrainCloudKey) {
                 this._terrainCloudKey = key;
                 this._terrainSpec.cloud = { ...prev, enabled, amplitude, worldScale, tiles, blendMeters };
-                    rebuildTerrain = true;
-                }
+                rebuildTerrain = true;
             }
+        }
 
-            if (rebuildTerrain) this._rebuildTerrain();
-            if (this._gridLines) this._gridLines.visible = !!terrainCfg.showGrid;
-            this._applyGroundMaterial({
-                materialId: terrainCfg.groundMaterialId,
-                uv: terrainCfg.uv,
-                uvDistance: terrainCfg.uvDistance,
-                variation: terrainCfg.variation,
-                layers: terrainCfg.layers,
-                pbr: terrainCfg.pbr
-            });
+        if (rebuildTerrain) this._rebuildTerrain();
+        if (this._gridLines) this._gridLines.visible = !!terrainCfg.showGrid;
+        if (this._terrainEngine) this._applyTerrainEngineUiConfig(terrainCfg.engine);
+        {
+            const debugCfg = terrainCfg.debug && typeof terrainCfg.debug === 'object' ? terrainCfg.debug : {};
+            const raw = String(debugCfg.mode ?? 'standard');
+            const allowed = new Set(['standard', 'biome_id', 'patch_ids', 'humidity', 'transition_band']);
+            const nextMode = allowed.has(raw) ? raw : 'standard';
+            const prevMode = String(this._terrainDebugMode ?? 'standard');
+            this._terrainDebugMode = nextMode;
+
+            const prevViewDependent = prevMode === 'standard' || prevMode === 'transition_band';
+            const nextViewDependent = nextMode === 'standard' || nextMode === 'transition_band';
+            if (!prevViewDependent && nextViewDependent) this._terrainEngineMaskDirty = true;
+        }
 
         void this._applyIblState(s.ibl, { force: false });
 

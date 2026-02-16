@@ -368,7 +368,29 @@ export class GrassDebuggerUI {
             },
             terrain: {
                 showGrid: false,
-                groundMaterialId: defaultGroundMaterialId
+                groundMaterialId: defaultGroundMaterialId,
+                substrate: {
+                    enabled: true,
+                    seed: 0,
+                    layer1: {
+                        enabled: true,
+                        materialId: 'pbr.forrest_ground_01',
+                        coverage: 0.55,
+                        blendWidth: 0.16,
+                        patchSizeMeters: 55,
+                        edgeSizeMeters: 11,
+                        edgeStrength: 0.25
+                    },
+                    layer2: {
+                        enabled: true,
+                        materialId: 'pbr.grass_004',
+                        coverage: 0.35,
+                        blendWidth: 0.16,
+                        patchSizeMeters: 85,
+                        edgeSizeMeters: 14,
+                        edgeStrength: 0.22
+                    }
+                }
             },
             lod1: {
                 enabled: true,
@@ -1039,6 +1061,21 @@ export class GrassDebuggerUI {
             ? this._state.terrain
             : (this._state.terrain = { showGrid: false, groundMaterialId: '' });
 
+        const substrate = terrain.substrate && typeof terrain.substrate === 'object'
+            ? terrain.substrate
+            : (terrain.substrate = {
+                enabled: true,
+                seed: 0,
+                layer1: { enabled: true, materialId: '', coverage: 0.55, blendWidth: 0.16, patchSizeMeters: 55, edgeSizeMeters: 11, edgeStrength: 0.25 },
+                layer2: { enabled: true, materialId: '', coverage: 0.35, blendWidth: 0.16, patchSizeMeters: 85, edgeSizeMeters: 14, edgeStrength: 0.22 }
+            });
+        substrate.layer1 = substrate.layer1 && typeof substrate.layer1 === 'object'
+            ? substrate.layer1
+            : (substrate.layer1 = { enabled: true, materialId: '', coverage: 0.55, blendWidth: 0.16, patchSizeMeters: 55, edgeSizeMeters: 11, edgeStrength: 0.25 });
+        substrate.layer2 = substrate.layer2 && typeof substrate.layer2 === 'object'
+            ? substrate.layer2
+            : (substrate.layer2 = { enabled: true, materialId: '', coverage: 0.35, blendWidth: 0.16, patchSizeMeters: 85, edgeSizeMeters: 14, edgeStrength: 0.22 });
+
         const section = makeSection({ title: 'Ground', collapsedByDefault: false });
         parent.appendChild(section);
 
@@ -1067,6 +1104,17 @@ export class GrassDebuggerUI {
         const current = options.find((o) => o.id === desired)?.id ?? options[0].id;
         terrain.groundMaterialId = current;
 
+        const validIds = new Set(options.map((o) => o.id));
+        const normalizeGroundId = (value, fallback) => {
+            const id = String(value ?? '');
+            if (validIds.has(id)) return id;
+            const fb = String(fallback ?? '');
+            return validIds.has(fb) ? fb : options[0].id;
+        };
+
+        substrate.layer1.materialId = normalizeGroundId(substrate.layer1.materialId, options[1]?.id ?? options[0].id);
+        substrate.layer2.materialId = normalizeGroundId(substrate.layer2.materialId, options[2]?.id ?? options[0].id);
+
         const pickerRow = makeGroundMaterialPickerRow({
             label: 'Ground material',
             onPick: () => this._openGroundMaterialPicker()
@@ -1074,6 +1122,124 @@ export class GrassDebuggerUI {
         section.appendChild(pickerRow.row);
         this._controls.groundMaterialPicker = pickerRow;
         this._syncGroundMaterialPicker();
+
+        const substrateSection = makeSection({ title: 'Substrate Blend', collapsedByDefault: false });
+        parent.appendChild(substrateSection);
+
+        substrateSection.appendChild(makeToggleRow({
+            label: 'Enabled',
+            value: substrate.enabled !== false,
+            onChange: (v) => {
+                substrate.enabled = !!v;
+                this._emit();
+            }
+        }).row);
+
+        substrateSection.appendChild(makeNumberSliderRow({
+            label: 'Seed',
+            value: Number(substrate.seed) || 0,
+            min: 0,
+            max: 9999,
+            step: 1,
+            digits: 0,
+            onChange: (v) => {
+                substrate.seed = Math.round(v);
+                this._emit();
+            }
+        }).row);
+
+        const makeLayerSection = (title, layerKey) => {
+            const layer = substrate[layerKey];
+            const s = makeSection({ title, collapsedByDefault: true });
+            parent.appendChild(s);
+
+            s.appendChild(makeToggleRow({
+                label: 'Enabled',
+                value: layer.enabled !== false,
+                onChange: (v) => {
+                    layer.enabled = !!v;
+                    this._emit();
+                }
+            }).row);
+
+            const picker = makeGroundMaterialPickerRow({
+                label: 'Material',
+                onPick: () => this._openSubstrateLayerPicker(layerKey)
+            });
+            s.appendChild(picker.row);
+            if (layerKey === 'layer1') this._controls.substrateLayer1Picker = picker;
+            else this._controls.substrateLayer2Picker = picker;
+
+            s.appendChild(makeNumberSliderRow({
+                label: 'Coverage',
+                value: Number(layer.coverage) || 0,
+                min: 0.0,
+                max: 1.0,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => {
+                    layer.coverage = v;
+                    this._emit();
+                }
+            }).row);
+
+            s.appendChild(makeNumberSliderRow({
+                label: 'Blend width',
+                value: Number(layer.blendWidth) || 0.16,
+                min: 0.0,
+                max: 0.49,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => {
+                    layer.blendWidth = v;
+                    this._emit();
+                }
+            }).row);
+
+            s.appendChild(makeNumberSliderRow({
+                label: 'Patch size (m)',
+                value: Number(layer.patchSizeMeters) || 55,
+                min: 4,
+                max: 280,
+                step: 1,
+                digits: 0,
+                onChange: (v) => {
+                    layer.patchSizeMeters = Math.round(v);
+                    this._emit();
+                }
+            }).row);
+
+            s.appendChild(makeNumberSliderRow({
+                label: 'Edge size (m)',
+                value: Number(layer.edgeSizeMeters) || 11,
+                min: 1,
+                max: 80,
+                step: 1,
+                digits: 0,
+                onChange: (v) => {
+                    layer.edgeSizeMeters = Math.round(v);
+                    this._emit();
+                }
+            }).row);
+
+            s.appendChild(makeNumberSliderRow({
+                label: 'Edge strength',
+                value: Number(layer.edgeStrength) || 0.25,
+                min: 0.0,
+                max: 1.0,
+                step: 0.01,
+                digits: 2,
+                onChange: (v) => {
+                    layer.edgeStrength = v;
+                    this._emit();
+                }
+            }).row);
+        };
+
+        makeLayerSection('Blend Layer 1', 'layer1');
+        makeLayerSection('Blend Layer 2', 'layer2');
+        this._syncSubstrateLayerPicker('layer1');
+        this._syncSubstrateLayerPicker('layer2');
     }
 
     _syncGroundMaterialPicker() {
@@ -1109,6 +1275,53 @@ export class GrassDebuggerUI {
             onSelect: (opt) => {
                 this._state.terrain.groundMaterialId = String(opt?.id ?? '');
                 this._syncGroundMaterialPicker();
+                this._emit();
+            }
+        });
+    }
+
+    _syncSubstrateLayerPicker(layerKey) {
+        const key = layerKey === 'layer2' ? 'layer2' : 'layer1';
+        const picker = key === 'layer2' ? this._controls?.substrateLayer2Picker : this._controls?.substrateLayer1Picker;
+        if (!picker) return;
+
+        const substrate = this._state?.terrain?.substrate ?? null;
+        const layer = substrate?.[key] ?? null;
+        const id = String(layer?.materialId ?? '');
+        const options = getPbrMaterialOptionsForGround();
+        const found = options.find((opt) => opt?.id === id) ?? options[0] ?? null;
+        if (found && layer) layer.materialId = found.id;
+
+        const label = found?.label ?? id ?? '';
+        picker.textEl.textContent = label;
+        setOptionsThumbToTexture(picker.thumb, found?.previewUrl ?? '', label);
+    }
+
+    _openSubstrateLayerPicker(layerKey) {
+        const key = layerKey === 'layer2' ? 'layer2' : 'layer1';
+        const picker = key === 'layer2' ? this._controls?.substrateLayer2Picker : this._controls?.substrateLayer1Picker;
+        if (!picker || picker.btn?.disabled) return;
+
+        const sections = getPbrMaterialClassSectionsForGround().map((section) => ({
+            label: section.label,
+            options: (section.options ?? []).map((opt) => ({
+                id: opt.id,
+                label: opt.label,
+                kind: 'texture',
+                previewUrl: opt.previewUrl ?? null
+            }))
+        }));
+
+        this._pickerPopup?.open?.({
+            title: `Substrate ${key === 'layer2' ? 'layer 2' : 'layer 1'} material`,
+            sections,
+            selectedId: String(this._state?.terrain?.substrate?.[key]?.materialId ?? ''),
+            onSelect: (opt) => {
+                const substrate = this._state?.terrain?.substrate ?? null;
+                const layer = substrate?.[key] ?? null;
+                if (!layer) return;
+                layer.materialId = String(opt?.id ?? '');
+                this._syncSubstrateLayerPicker(key);
                 this._emit();
             }
         });
