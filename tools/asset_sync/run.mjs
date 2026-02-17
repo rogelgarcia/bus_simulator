@@ -7,14 +7,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '../..');
 
-const DEFAULT_MAIN_ASSETS = path.resolve(repoRoot, '../../bus_simulator/assets');
-const DEFAULT_WORKTREE_ASSETS = path.resolve(repoRoot, 'assets');
-
-function getDefaultPaths(reverse) {
-    return reverse
-        ? { fromPath: DEFAULT_WORKTREE_ASSETS, toPath: DEFAULT_MAIN_ASSETS }
-        : { fromPath: DEFAULT_MAIN_ASSETS, toPath: DEFAULT_WORKTREE_ASSETS };
-}
+const DEFAULT_MAIN_ROOT = path.resolve(repoRoot, '../../bus_simulator');
+const DEFAULT_WORKTREE_ROOT = repoRoot;
+const DEFAULT_LINK_NAMES = ['assets', 'downloads', 'docs'];
 
 function printUsage() {
     console.log('assetSync');
@@ -23,20 +18,22 @@ function printUsage() {
     console.log('  node tools/asset_sync/run.mjs [options]');
     console.log('');
     console.log('Options:');
-    console.log(`  --from <path>           Source assets directory (default: ${DEFAULT_MAIN_ASSETS})`);
-    console.log(`  --to <path>             Destination assets directory (default: ${DEFAULT_WORKTREE_ASSETS})`);
-    console.log('  --reverse               Copy from this worktree assets back to main worktree assets');
+    console.log(`  --main-root <path>      Main repo root containing shared folders (default: ${DEFAULT_MAIN_ROOT})`);
+    console.log(`  --worktree-root <path>  Worktree root to receive symlinks (default: ${DEFAULT_WORKTREE_ROOT})`);
+    console.log('  --from <path>           Override: single source directory to symlink');
+    console.log('  --to <path>             Override: single destination path to replace with symlink');
     console.log('  --dry-run               Print actions only');
     console.log('  --help                  Show this help');
 }
 
 function parseArgs(argv) {
     const out = {
+        mainRoot: DEFAULT_MAIN_ROOT,
+        worktreeRoot: DEFAULT_WORKTREE_ROOT,
         fromPath: '',
         toPath: '',
         fromProvided: false,
         toProvided: false,
-        reverse: false,
         dryRun: false,
         help: false
     };
@@ -51,9 +48,26 @@ function parseArgs(argv) {
             out.dryRun = true;
             continue;
         }
-        if (token === '--reverse') {
-            out.reverse = true;
+        if (token === '--main-root') {
+            out.mainRoot = String(argv[i + 1] ?? '').trim();
+            i += 1;
             continue;
+        }
+        if (token.startsWith('--main-root=')) {
+            out.mainRoot = String(token.slice('--main-root='.length)).trim();
+            continue;
+        }
+        if (token === '--worktree-root') {
+            out.worktreeRoot = String(argv[i + 1] ?? '').trim();
+            i += 1;
+            continue;
+        }
+        if (token.startsWith('--worktree-root=')) {
+            out.worktreeRoot = String(token.slice('--worktree-root='.length)).trim();
+            continue;
+        }
+        if (token === '--reverse') {
+            throw new Error('--reverse is not supported in symlink mode. Use --from and --to for explicit paths.');
         }
         if (token === '--from') {
             out.fromPath = String(argv[i + 1] ?? '').trim();
@@ -80,10 +94,11 @@ function parseArgs(argv) {
         throw new Error(`Unknown argument: ${token}`);
     }
 
-    const defaults = getDefaultPaths(out.reverse);
-    if (!out.fromProvided) out.fromPath = defaults.fromPath;
-    if (!out.toProvided) out.toPath = defaults.toPath;
-
+    if (!out.mainRoot) throw new Error('--main-root cannot be empty.');
+    if (!out.worktreeRoot) throw new Error('--worktree-root cannot be empty.');
+    if (out.fromProvided !== out.toProvided) {
+        throw new Error('--from and --to must be provided together when overriding a single link.');
+    }
     if (out.fromProvided && !out.fromPath) throw new Error('--from cannot be empty.');
     if (out.toProvided && !out.toPath) throw new Error('--to cannot be empty.');
     return out;
@@ -92,6 +107,32 @@ function parseArgs(argv) {
 function resolvePathFromRepo(maybeRelativePath) {
     if (path.isAbsolute(maybeRelativePath)) return path.resolve(maybeRelativePath);
     return path.resolve(repoRoot, maybeRelativePath);
+}
+
+function computeSymlinkTarget(sourcePath, destinationPath) {
+    const destinationParent = path.dirname(destinationPath);
+    return path.relative(destinationParent, sourcePath) || '.';
+}
+
+function buildDefaultMappings(mainRootPath, worktreeRootPath) {
+    return DEFAULT_LINK_NAMES.map((name) => ({
+        label: name,
+        sourcePath: path.resolve(mainRootPath, name),
+        destinationPath: path.resolve(worktreeRootPath, name)
+    }));
+}
+
+function buildMappings(options) {
+    if (options.fromProvided && options.toProvided) {
+        return [{
+            label: 'custom',
+            sourcePath: resolvePathFromRepo(options.fromPath),
+            destinationPath: resolvePathFromRepo(options.toPath)
+        }];
+    }
+    const mainRootPath = resolvePathFromRepo(options.mainRoot);
+    const worktreeRootPath = resolvePathFromRepo(options.worktreeRoot);
+    return buildDefaultMappings(mainRootPath, worktreeRootPath);
 }
 
 async function assertDirectory(absPath, label) {
@@ -112,34 +153,40 @@ async function run() {
         return;
     }
 
-    const sourcePath = resolvePathFromRepo(options.fromPath);
-    const destinationPath = resolvePathFromRepo(options.toPath);
+    const mappings = buildMappings(options);
+    if (mappings.length === 0) throw new Error('No mappings to process.');
 
-    if (sourcePath === destinationPath) {
-        throw new Error('Source and destination are the same path. Choose a different source path.');
+    for (const mapping of mappings) {
+        if (mapping.sourcePath === mapping.destinationPath) {
+            throw new Error(`Source and destination are the same path for "${mapping.label}": ${mapping.sourcePath}`);
+        }
+        await assertDirectory(mapping.sourcePath, `Source directory for "${mapping.label}"`);
     }
-
-    await assertDirectory(sourcePath, 'Source directory');
 
     if (options.dryRun) {
         console.log('[assetSync] Dry run:');
-        console.log(`  mode:          ${options.reverse ? 'reverse (worktree -> main)' : 'default (main -> worktree)'}`);
-        console.log(`  source path:   ${sourcePath}`);
-        console.log(`  destination:   ${destinationPath}`);
+        for (const mapping of mappings) {
+            const symlinkTarget = computeSymlinkTarget(mapping.sourcePath, mapping.destinationPath);
+            console.log(`  [${mapping.label}] source path: ${mapping.sourcePath}`);
+            console.log(`  [${mapping.label}] destination: ${mapping.destinationPath}`);
+            console.log(`  [${mapping.label}] remove path: ${mapping.destinationPath}`);
+            console.log(`  [${mapping.label}] symlink to:  ${symlinkTarget}`);
+        }
         return;
     }
 
-    await fs.mkdir(destinationPath, { recursive: true });
-    const entries = await fs.readdir(sourcePath, { withFileTypes: true });
-    for (const entry of entries) {
-        const from = path.join(sourcePath, entry.name);
-        const to = path.join(destinationPath, entry.name);
-        await fs.cp(from, to, { recursive: true, force: true });
-    }
+    for (const mapping of mappings) {
+        const destinationParent = path.dirname(mapping.destinationPath);
+        const symlinkTarget = computeSymlinkTarget(mapping.sourcePath, mapping.destinationPath);
+        await fs.mkdir(destinationParent, { recursive: true });
+        await fs.rm(mapping.destinationPath, { recursive: true, force: true });
+        await fs.symlink(symlinkTarget, mapping.destinationPath);
 
-    console.log('[assetSync] Copied assets folder contents:');
-    console.log(`  from: ${sourcePath}`);
-    console.log(`  to:   ${destinationPath}`);
+        console.log('[assetSync] Replaced destination with symlink:');
+        console.log(`  label:     ${mapping.label}`);
+        console.log(`  link path: ${mapping.destinationPath}`);
+        console.log(`  target:    ${mapping.sourcePath}`);
+    }
 }
 
 run().catch((err) => {

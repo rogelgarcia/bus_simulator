@@ -1,4 +1,4 @@
-// Creates or reuses a named git worktree, then runs assetSync inside it.
+// Creates or reuses a named git worktree, then runs shared path symlink sync inside it.
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -204,7 +204,7 @@ function main() {
 
     const forwarded = splitForwardedArgs(args.assetSyncArgs);
     runInWorktree(worktreePath, 'node', ['tools/asset_sync/run.mjs', ...forwarded], { dryRun: args.dryRun });
-    console.log(`[worktreeCreateAndSync] Asset sync completed in ${worktreePath}`);
+    console.log(`[worktreeCreateAndSync] Shared path sync completed in ${worktreePath}`);
 }
 
 try {

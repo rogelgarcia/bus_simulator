@@ -5,7 +5,11 @@ Create (or reuse) a named git worktree and then run `assetSync` inside that work
 Default behavior:
 - Worktrees root: `../bus_simulator_worktrees`
 - Worktree path: `<worktrees_root>/<name>`
-- Asset sync command run inside the worktree: `node tools/asset_sync/run.mjs`
+- Shared-path sync command run inside the worktree: `node tools/asset_sync/run.mjs`
+- Default synced paths:
+  - `assets`
+  - `downloads`
+  - `docs`
 
 ## Usage
 
@@ -33,4 +37,4 @@ bash tools/worktree_create_and_sync/run.sh graphics --dry-run
 
 Notes:
 - The shell script attempts `node tools/asset_sync/run.mjs` inside the target worktree.
-- If `node` is not available in the runtime environment, it falls back to a direct filesystem copy from root `assets/` into the worktree `assets/`.
+- If `node` is not available in the runtime environment, it falls back to shell symlink creation for `assets/`, `downloads/`, and `docs/`.

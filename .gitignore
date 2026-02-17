@@ -1,8 +1,7 @@
-# Assets
-assets/*
-
-downloads/
-docs/
+# Shared worktree folders (symlinked from main)
+/assets
+/downloads
+/docs
 
 *.zip
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Creates or reuses a named git worktree, then runs asset sync inside it.
+# Creates or reuses a named git worktree, then links shared paths inside it.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -113,17 +113,19 @@ fi
 
 if command -v node >/dev/null 2>&1; then
   (cd "${WORKTREE_PATH}" && node tools/asset_sync/run.mjs)
-  echo "[worktreeCreateAndSync] Asset sync completed in ${WORKTREE_PATH}"
+  echo "[worktreeCreateAndSync] Shared path sync completed in ${WORKTREE_PATH}"
   exit 0
 fi
 
-echo "[worktreeCreateAndSync] node is not available; falling back to filesystem copy." >&2
-SOURCE_ASSETS="${REPO_ROOT}/assets"
-DEST_ASSETS="${WORKTREE_PATH}/assets"
-if [[ ! -d "${SOURCE_ASSETS}" ]]; then
-  echo "[worktreeCreateAndSync] Failed: Source assets directory not found: ${SOURCE_ASSETS}" >&2
-  exit 1
-fi
-mkdir -p "${DEST_ASSETS}"
-cp -a "${SOURCE_ASSETS}/." "${DEST_ASSETS}/"
-echo "[worktreeCreateAndSync] Asset copy fallback completed in ${WORKTREE_PATH}"
+echo "[worktreeCreateAndSync] node is not available; falling back to shell symlink sync." >&2
+for NAME in assets downloads docs; do
+  SOURCE_PATH="${REPO_ROOT}/${NAME}"
+  DEST_PATH="${WORKTREE_PATH}/${NAME}"
+  if [[ ! -d "${SOURCE_PATH}" ]]; then
+    echo "[worktreeCreateAndSync] Failed: Source directory not found: ${SOURCE_PATH}" >&2
+    exit 1
+  fi
+  rm -rf "${DEST_PATH}"
+  ln -s "${SOURCE_PATH}" "${DEST_PATH}"
+done
+echo "[worktreeCreateAndSync] Shell symlink sync completed in ${WORKTREE_PATH}"
