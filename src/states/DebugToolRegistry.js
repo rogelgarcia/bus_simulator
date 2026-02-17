@@ -61,8 +61,8 @@ export const DEBUG_TOOL_REGISTRY = Object.freeze([
     Object.freeze({
         id: 'ao_foliage_debug',
         key: 'O',
-        label: 'AO Foliage',
-        description: 'AO alpha foliage repro scene (SSAO/GTAO)',
+        label: 'AO',
+        description: 'Standalone AO repro scene (tone mapping + SSAO/GTAO)',
         href: 'debug_tools/ao_foliage_debug.html'
     })
 ]);

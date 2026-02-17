@@ -1,12 +1,12 @@
 // src/graphics/gui/ao_foliage_debugger/main.js
-// Standalone AO foliage debug tool entry point.
+// Standalone AO debug tool entry point.
 
 import { AOFoliageDebuggerView } from './view/AOFoliageDebuggerView.js';
 import { ensureGlobalPerfBar } from '../perf_bar/PerfBar.js';
 import { installViewportContextMenuBlocker } from '../shared/utils/viewportContextMenuBlocker.js';
 
 const canvas = document.getElementById('game-canvas');
-if (!canvas) throw new Error('[AOFoliageDebugger] Missing canvas#game-canvas');
+if (!canvas) throw new Error('[AO] Missing canvas#game-canvas');
 
 const viewport = document.getElementById('game-viewport');
 const viewportContextMenuBlocker = viewport ? installViewportContextMenuBlocker(viewport) : null;
@@ -27,7 +27,7 @@ view.start().then(() => {
         getAoOverrideDebugInfo: () => view.getAoOverrideDebugInfoForTest()
     };
 }).catch((err) => {
-    console.error('[AOFoliageDebugger] Failed to start', err);
+    console.error('[AO] Failed to start', err);
 });
 
 const onKeyDown = (e) => {
