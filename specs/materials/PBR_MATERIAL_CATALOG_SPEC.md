@@ -95,6 +95,15 @@ Color space conventions:
 - `baseColor` is sRGB.
 - all other maps are linear/data.
 
+Texture format conventions:
+- `baseColor` / `albedo` / `diffuse` / `emissive` should default to `.jpg` (use `.png` only when alpha/cutout is required).
+- Data maps should use `.png`:
+  - `normal` (`normal_gl` / `normal_dx`)
+  - packed maps (`orm` / `arm`)
+  - scalar maps (`ao`, `roughness`, `metalness`, `displacement`, `height`)
+  - masks (`opacity`, `alpha`, and other mask maps)
+- If both `.jpg` and `.png` exist for the same map role, keep the preferred format above and remove the duplicate format.
+
 ---
 
 ## 4. UI picker grouping rules
@@ -104,4 +113,3 @@ Material selection UIs must be **class-grouped**, not a single flat “PBR” li
 - For building walls, show only `buildingEligible` entries (typically `root: wall`).
 - For terrain/ground selection, show only `groundEligible` entries (typically `root: surface`).
 - Inspector/debug tooling must not expose basecolor-only wall texture collections that overlap with catalog materials (example: legacy “Building Walls”).
-
