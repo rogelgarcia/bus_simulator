@@ -14,8 +14,8 @@ const MODE = Object.freeze({
 });
 
 const FOOTER_TEXT = Object.freeze({
-    state: 'Press number, 0 (Options), Q, or click. Esc to return.',
-    overlay: 'Press number, 0 (Options), Q/Esc closes, click outside to close.'
+    state: 'Press shortcut key, 0 (Options), Q, or click. Esc to return.',
+    overlay: 'Press shortcut key, 0 (Options), Q/Esc closes, click outside to close.'
 });
 
 function normalizeKey(key) {

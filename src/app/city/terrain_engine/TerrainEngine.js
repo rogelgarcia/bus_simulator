@@ -2,6 +2,8 @@
 // Deterministic patch-based biome + humidity sampler (renderer-agnostic).
 // @ts-check
 
+import { createValueNoise2DSampler, hashIntPairU32, hashStringToU32, mixU32, sampleFbm2D, u32ToUnitFloat01 } from '../../core/noise/DeterministicNoise.js';
+
 const EPS = 1e-6;
 
 export const TERRAIN_BIOME_ID = Object.freeze({
@@ -133,35 +135,8 @@ function smoothstep(edge0, edge1, x) {
     return t * t * (3 - 2 * t);
 }
 
-function hashStringToU32(str) {
-    const s = typeof str === 'string' ? str : '';
-    let h = 2166136261 >>> 0; // FNV-1a
-    for (let i = 0; i < s.length; i++) {
-        h ^= s.charCodeAt(i) & 0xff;
-        h = Math.imul(h, 16777619) >>> 0;
-    }
-    return h >>> 0;
-}
-
-function mixU32(h) {
-    let x = h >>> 0;
-    x ^= x >>> 16;
-    x = Math.imul(x, 0x7feb352d) >>> 0;
-    x ^= x >>> 15;
-    x = Math.imul(x, 0x846ca68b) >>> 0;
-    x ^= x >>> 16;
-    return x >>> 0;
-}
-
 function hash2i(x, z, seedU32) {
-    const xi = x | 0;
-    const zi = z | 0;
-    let h = seedU32 ^ Math.imul(xi, 0x9e3779b1) ^ Math.imul(zi, 0x85ebca6b);
-    return mixU32(h >>> 0);
-}
-
-function u32ToUnitFloat01(h) {
-    return (h >>> 0) / 0xffffffff;
+    return hashIntPairU32(x, z, seedU32);
 }
 
 function normalizeBiomeId(value, fallback) {
@@ -236,48 +211,6 @@ function sampleSourceMapBilinear01(map, x, z) {
     const a = v00 + (v10 - v00) * fx;
     const b0 = v01 + (v11 - v01) * fx;
     return a + (b0 - a) * fz;
-}
-
-function valueNoise2(ix, iz, seedU32) {
-    return u32ToUnitFloat01(hash2i(ix, iz, seedU32));
-}
-
-function noise2(x, z, seedU32) {
-    const fx = Math.floor(x);
-    const fz = Math.floor(z);
-    const x0 = fx | 0;
-    const z0 = fz | 0;
-    const x1 = (x0 + 1) | 0;
-    const z1 = (z0 + 1) | 0;
-    const tx = x - fx;
-    const tz = z - fz;
-    const ux = tx * tx * (3 - 2 * tx);
-    const uz = tz * tz * (3 - 2 * tz);
-    const a = valueNoise2(x0, z0, seedU32);
-    const b = valueNoise2(x1, z0, seedU32);
-    const c = valueNoise2(x0, z1, seedU32);
-    const d = valueNoise2(x1, z1, seedU32);
-    const ab = a + (b - a) * ux;
-    const cd = c + (d - c) * ux;
-    return ab + (cd - ab) * uz;
-}
-
-function fbm2(x, z, { seedU32, octaves, gain, lacunarity }) {
-    const oct = Math.max(1, Math.min(8, octaves | 0));
-    let amp = 1.0;
-    let sum = 0.0;
-    let norm = 0.0;
-    let fx = x;
-    let fz = z;
-    for (let i = 0; i < oct; i++) {
-        sum += amp * noise2(fx, fz, seedU32);
-        norm += amp;
-        fx *= lacunarity;
-        fz *= lacunarity;
-        amp *= gain;
-    }
-    if (!(norm > EPS)) return 0.5;
-    return sum / norm;
 }
 
 export function sanitizeTerrainEngineConfig(input) {
@@ -362,6 +295,7 @@ function freezeConfig(cfg) {
 export function createTerrainEngine(initialConfig) {
     let config = freezeConfig(sanitizeTerrainEngineConfig(initialConfig));
     let seedU32 = hashStringToU32(config.seed);
+    const valueNoiseSamplerBySeed = new Map();
     /** @type {TerrainEngineSourceMaps} */
     let sourceMaps = { biome: null, humidity: null };
 
@@ -371,6 +305,30 @@ export function createTerrainEngine(initialConfig) {
     const setConfig = (nextConfig) => {
         config = freezeConfig(sanitizeTerrainEngineConfig(nextConfig));
         seedU32 = hashStringToU32(config.seed);
+        valueNoiseSamplerBySeed.clear();
+    };
+
+    const getValueNoise2Sampler = (seed) => {
+        const key = seed >>> 0;
+        let sampler = valueNoiseSamplerBySeed.get(key);
+        if (sampler) return sampler;
+        sampler = createValueNoise2DSampler({
+            hashU32: (ix, iz) => hash2i(ix, iz, key),
+            smoothing: 'hermite'
+        });
+        valueNoiseSamplerBySeed.set(key, sampler);
+        return sampler;
+    };
+
+    const sampleSeededFbm = (x, z, { seed, octaves, gain, lacunarity }) => {
+        const sampler = getValueNoise2Sampler(seed);
+        return sampleFbm2D(x, z, {
+            noise2: sampler.sample,
+            octaves,
+            gain,
+            lacunarity,
+            maxOctaves: 8
+        });
     };
 
     const getConfig = () => config;
@@ -423,14 +381,14 @@ export function createTerrainEngine(initialConfig) {
         const warpAmp = Math.max(0, Number(config.patch.warpAmplitudeMeters) || 0);
         if (warpAmp > EPS) {
             const scale = clamp(config.patch.warpScale, 0.000001, 10.0, 0.01);
-            const w0 = fbm2(x * scale, z * scale, {
-                seedU32: seedU32 ^ 0x2d8b6c1f,
+            const w0 = sampleSeededFbm(x * scale, z * scale, {
+                seed: seedU32 ^ 0x2d8b6c1f,
                 octaves: 3,
                 gain: 0.5,
                 lacunarity: 2.0
             });
-            const w1 = fbm2((x + 37.2) * scale, (z - 19.7) * scale, {
-                seedU32: seedU32 ^ 0x8f6a0e3b,
+            const w1 = sampleSeededFbm((x + 37.2) * scale, (z - 19.7) * scale, {
+                seed: seedU32 ^ 0x8f6a0e3b,
                 octaves: 3,
                 gain: 0.5,
                 lacunarity: 2.0
@@ -515,8 +473,8 @@ export function createTerrainEngine(initialConfig) {
             return clamp01(sampleSourceMapBilinear01(sourceMaps.humidity, x, z));
         }
 
-        const v = fbm2(x * hCfg.noiseScale, z * hCfg.noiseScale, {
-            seedU32: seedU32 ^ 0x3c6ef372,
+        const v = sampleSeededFbm(x * hCfg.noiseScale, z * hCfg.noiseScale, {
+            seed: seedU32 ^ 0x3c6ef372,
             octaves: hCfg.octaves,
             gain: hCfg.gain,
             lacunarity: hCfg.lacunarity
@@ -706,6 +664,7 @@ export function createTerrainEngine(initialConfig) {
 
     const dispose = () => {
         sourceMaps = { biome: null, humidity: null };
+        valueNoiseSamplerBySeed.clear();
     };
 
     return Object.freeze({

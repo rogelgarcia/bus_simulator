@@ -18,6 +18,7 @@ import { applyAsphaltRoadVisualsToMeshStandardMaterial } from './AsphaltRoadVisu
 import { applyAsphaltMarkingsNoiseVisualsToMeshStandardMaterial } from './AsphaltMarkingsNoiseVisuals.js';
 import { applyAsphaltEdgeWearVisualsToMeshStandardMaterial } from './AsphaltEdgeWearVisuals.js';
 import { applySidewalkEdgeDirtStripVisualsToMeshStandardMaterial, getSidewalkEdgeDirtStripConfig } from './SidewalkEdgeDirtStripVisuals.js';
+import { createRotatedTwoTapFbmGlsl, createValueNoise2Glsl, createValueNoiseHash12Glsl } from '../shared/noise/NoiseShaderChunks.js';
 
 const EPS = 1e-9;
 
@@ -428,28 +429,16 @@ function createAsphaltMaterialWithMarkings(
                 'float s = (r - uRoadMarkingsAsphaltFineBaseRoughness) / denom;',
                 'return clamp(s, -1.0, 1.0);',
                 '}',
-                'float roadMarkingsVarHash12(vec2 p){',
-                'vec3 p3 = fract(vec3(p.xyx) * 0.1031);',
-                'p3 += dot(p3, p3.yzx + 33.33);',
-                'return fract((p3.x + p3.y) * p3.z);',
-                '}',
-                'float roadMarkingsVarNoise(vec2 p){',
-                'vec2 i = floor(p);',
-                'vec2 f = fract(p);',
-                'float a = roadMarkingsVarHash12(i);',
-                'float b = roadMarkingsVarHash12(i + vec2(1.0, 0.0));',
-                'float c = roadMarkingsVarHash12(i + vec2(0.0, 1.0));',
-                'float d = roadMarkingsVarHash12(i + vec2(1.0, 1.0));',
-                'vec2 u = f * f * (3.0 - 2.0 * f);',
-                'return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;',
-                '}',
-                'float roadMarkingsVarFbm(vec2 p){',
-                'mat2 r = mat2(0.80, -0.60, 0.60, 0.80);',
-                'p = r * p;',
-                'float n1 = roadMarkingsVarNoise(p);',
-                'float n2 = roadMarkingsVarNoise(p * 2.07 + vec2(21.1, 5.7));',
-                'return n1 * 0.68 + n2 * 0.32;',
-                '}'
+                createValueNoiseHash12Glsl({ hashFnName: 'roadMarkingsVarHash12' }),
+                createValueNoise2Glsl({
+                    noiseFnName: 'roadMarkingsVarNoise',
+                    hashFnName: 'roadMarkingsVarHash12',
+                    smoothing: 'hermite'
+                }),
+                createRotatedTwoTapFbmGlsl({
+                    fbmFnName: 'roadMarkingsVarFbm',
+                    noiseFnName: 'roadMarkingsVarNoise'
+                })
             ].join('\n')
         );
         shader.fragmentShader = shader.fragmentShader.replace(

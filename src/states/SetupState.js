@@ -5,6 +5,9 @@ import { SetupUIController } from '../graphics/gui/setup/SetupUIController.js';
 
 const DEBUGS_MENU_STATE = '__debugs__';
 const DEBUGS_MENU_KEY = '8';
+const NOISE_FABRICATION_STATE = '__noise_fabrication__';
+const NOISE_FABRICATION_KEY = 'N';
+const NOISE_FABRICATION_HREF = 'debug_tools/noise_fabrication.html';
 
 export class SetupState {
     constructor(engine, sm) {
@@ -46,6 +49,13 @@ export class SetupState {
         }));
 
         scenes.push({
+            key: NOISE_FABRICATION_KEY,
+            label: 'Noise fabrication',
+            description: 'Generate, preview, and save reusable noise recipes',
+            state: NOISE_FABRICATION_STATE
+        });
+
+        scenes.push({
             key: DEBUGS_MENU_KEY,
             label: 'Debugs',
             description: 'Isolated debug screens',
@@ -60,6 +70,10 @@ export class SetupState {
                 const id = typeof state === 'string' ? state : '';
                 if (id === DEBUGS_MENU_STATE) {
                     this._openDebugsMenu();
+                    return;
+                }
+                if (id === NOISE_FABRICATION_STATE) {
+                    this._navigateToDebugTool(NOISE_FABRICATION_HREF);
                     return;
                 }
                 this.sm.go(id);

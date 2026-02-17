@@ -16,6 +16,7 @@ import { ROAD_DEFAULTS, createGeneratorConfig } from '../../../assets3d/generato
 import { createRoadEngineRoads } from '../../../visuals/city/RoadEngineRoads.js';
 import { GrassEngine } from '../../../engine3d/grass/GrassEngine.js';
 import { createTerrainEngine } from '../../../../app/city/terrain_engine/index.js';
+import { createValueNoise2DSampler, mixU32, sampleFbm2D } from '../../../../app/core/noise/DeterministicNoise.js';
 import { TerrainDebuggerUI } from './TerrainDebuggerUI.js';
 import { GrassBladeInspectorPopup } from './GrassBladeInspectorPopup.js';
 import { GrassLodInspectorPopup } from './GrassLodInspectorPopup.js';
@@ -349,41 +350,30 @@ function smoothstep(edge0, edge1, x) {
     return t * t * (3 - 2 * t);
 }
 
-function hash2(x, y) {
+function terrainCloudHash2(x, y) {
     let h = (Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263)) >>> 0;
     h = (h ^ (h >>> 13)) >>> 0;
     h = Math.imul(h, 1274126177) >>> 0;
     return (h ^ (h >>> 16)) >>> 0;
 }
 
-function noise2(x, y) {
-    const ix = Math.floor(x);
-    const iy = Math.floor(y);
-    const fx = x - ix;
-    const fy = y - iy;
-    const a = hash2(ix, iy) / 0xffffffff;
-    const b = hash2(ix + 1, iy) / 0xffffffff;
-    const c = hash2(ix, iy + 1) / 0xffffffff;
-    const d = hash2(ix + 1, iy + 1) / 0xffffffff;
-    const ux = fx * fx * (3 - 2 * fx);
-    const uy = fy * fy * (3 - 2 * fy);
-    const ab = a + (b - a) * ux;
-    const cd = c + (d - c) * ux;
-    return ab + (cd - ab) * uy;
-}
+const TERRAIN_CLOUD_NOISE_SAMPLER = createValueNoise2DSampler({
+    hashU32: (ix, iy) => terrainCloudHash2(ix, iy),
+    smoothing: 'hermite'
+});
 
-function fbm2(x, y) {
-    let v = 0;
-    let a = 0.5;
-    let fx = x;
-    let fy = y;
-    for (let i = 0; i < 4; i++) {
-        v += a * noise2(fx, fy);
-        fx = fx * 2.03 + 17.7;
-        fy = fy * 2.11 + 31.3;
-        a *= 0.5;
-    }
-    return v;
+function sampleTerrainCloudFbm2(x, y) {
+    return sampleFbm2D(x, y, {
+        noise2: TERRAIN_CLOUD_NOISE_SAMPLER.sample,
+        octaves: 4,
+        gain: 0.5,
+        initialAmplitude: 0.5,
+        normalize: false,
+        advance: ({ x: fx, y: fy }) => ({
+            x: fx * 2.03 + 17.7,
+            y: fy * 2.11 + 31.3
+        })
+    });
 }
 
 function buildTerrainGeometry(spec = {}) {
@@ -513,7 +503,7 @@ function buildTerrainGeometry(spec = {}) {
                     : 0;
                 const w = cloudW * (1 - flatX);
                 if (w > EPS) {
-                    const n = fbm2(worldX * cloudWorldScale, worldZ * cloudWorldScale) * cloudFbmAmp * w;
+                    const n = sampleTerrainCloudFbm2(worldX * cloudWorldScale, worldZ * cloudWorldScale) * cloudFbmAmp * w;
                     y += n;
                 }
             }
@@ -2037,16 +2027,6 @@ export class TerrainDebuggerView {
             [70, 160, 78],
             [215, 145, 70]
         ];
-
-        const mixU32 = (h) => {
-            let x = h >>> 0;
-            x ^= x >>> 16;
-            x = Math.imul(x, 0x7feb352d) >>> 0;
-            x ^= x >>> 15;
-            x = Math.imul(x, 0x846ca68b) >>> 0;
-            x ^= x >>> 16;
-            return x >>> 0;
-        };
 
         if (dbgMode === 'biome_id') {
             for (let i = 0; i < packed.length; i += 4) {
