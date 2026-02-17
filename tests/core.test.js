@@ -3009,6 +3009,35 @@ async function runTests() {
         assertEqual(small.length, 0, 'Expected empty footprint for 1x1 grids.');
 	    });
 
+    test('BuildingFabricationScene: enter/re-enter uses standardized fog distances (AI 327)', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(),
+            canvas: document.createElement('canvas'),
+            lightingSettings: { ibl: { setBackground: false } },
+            atmosphereSettings: { sky: { horizonColor: '#112233' } }
+        };
+        const baselineFog = new THREE.Fog(0x334455, 5, 50);
+        engine.scene.fog = baselineFog;
+
+        const scene = new BuildingFabricationScene(engine);
+
+        scene.enter();
+        assertTrue(!!engine.scene.fog, 'Expected fabrication scene to set fog.');
+        assertNear(engine.scene.fog.near, 200, 1e-6, 'Expected fabrication fog near=200.');
+        assertNear(engine.scene.fog.far, 2000, 1e-6, 'Expected fabrication fog far=2000.');
+        assertEqual(engine.scene.fog.color.getHex(), 0x112233, 'Expected fabrication fog to keep atmosphere-driven color.');
+
+        scene.dispose();
+        assertEqual(engine.scene.fog, baselineFog, 'Expected fabrication scene to restore previous fog on dispose.');
+
+        scene.enter();
+        assertNear(engine.scene.fog.near, 200, 1e-6, 'Expected fabrication fog near to remain stable on re-enter.');
+        assertNear(engine.scene.fog.far, 2000, 1e-6, 'Expected fabrication fog far to remain stable on re-enter.');
+        scene.dispose();
+        assertEqual(engine.scene.fog, baselineFog, 'Expected fabrication scene to restore previous fog after re-enter dispose.');
+    });
+
     test('BuildingFabricationScene: face mirror lock syncs opposite facades', () => {
         const engine = {
             scene: new THREE.Scene(),
@@ -4632,6 +4661,34 @@ async function runTests() {
             assertEqual(state._cityOptions.size, 600, 'Expected bigcity size to update city options.');
         });
 
+        test('MapDebuggerState: applies debug fog profile on enter/rebuild (AI 327)', () => {
+            const engine = {
+                canvas: document.createElement('canvas'),
+                camera: new THREE.PerspectiveCamera(),
+                scene: new THREE.Scene(),
+                clearScene: function() { while (this.scene.children.length) this.scene.remove(this.scene.children[0]); },
+                context: {}
+            };
+            const sm = { go: () => {} };
+            const state = new MapDebuggerState(engine, sm);
+            const cfg = createCityConfig(state._cityOptions);
+            const spec = CityMap.demoSpec(cfg);
+
+            state._applySpec(spec, { resetCamera: true });
+            assertTrue(!!engine.scene.fog, 'Expected map debugger scene fog.');
+            assertNear(engine.scene.fog.near, 200, 1e-6, 'Expected map debugger fog near=200.');
+            assertNear(engine.scene.fog.far, 2000, 1e-6, 'Expected map debugger fog far=2000.');
+
+            state._applySpec(spec, { resetCamera: false });
+            assertNear(engine.scene.fog.near, 200, 1e-6, 'Expected map debugger fog near to stay stable after rebuild.');
+            assertNear(engine.scene.fog.far, 2000, 1e-6, 'Expected map debugger fog far to stay stable after rebuild.');
+
+            state.city?.detach(engine);
+            state.city = null;
+            engine.context.city = null;
+            engine.clearScene();
+        });
+
         test('MapDebuggerState: road draft markers + live preview (segment-by-segment)', () => {
             const engine = {
                 canvas: document.createElement('canvas'),
@@ -5683,6 +5740,49 @@ async function runTests() {
             const city = new City({ size: 120, tileMeters: 2, mapTileSize: 24, seed: 't', mapSpec, generatorConfig: { render: { treesEnabled: false } } });
             assertEqual(city?.roads?.debug?.source, 'road_engine', 'Expected City roads to come from RoadEngine pipeline.');
             assertTrue((city?.roads?.debug?.derived?.segments?.length ?? 0) > 0, 'Expected City to have derived RoadEngine segments.');
+        });
+
+        test('City: applies gameplay fog profile on attach/re-attach (AI 327)', () => {
+            const mapSpec = {
+                version: 1,
+                seed: 'fog-test',
+                width: 4,
+                height: 4,
+                tileSize: 24,
+                origin: { x: 0, z: 0 },
+                roads: [],
+                buildings: []
+            };
+            const baselineFog = new THREE.Fog(0x223344, 6, 60);
+            const engine = {
+                scene: new THREE.Scene(),
+                camera: new THREE.PerspectiveCamera(),
+                renderer: { capabilities: { maxTextureSize: 2048 } },
+                lightingSettings: { ibl: { setBackground: false } },
+                atmosphereSettings: { sky: { horizonColor: '#abcdef' } }
+            };
+            engine.scene.fog = baselineFog;
+
+            const city = new City({
+                size: 120,
+                tileMeters: 2,
+                mapTileSize: 24,
+                seed: 'fog-test',
+                mapSpec,
+                generatorConfig: { render: { treesEnabled: false } }
+            });
+
+            city.attach(engine);
+            assertTrue(!!engine.scene.fog, 'Expected city attach to set fog.');
+            assertNear(engine.scene.fog.near, 120, 1e-6, 'Expected gameplay city fog near=120.');
+            assertNear(engine.scene.fog.far, 1200, 1e-6, 'Expected gameplay city fog far=1200.');
+            city.detach(engine);
+            assertEqual(engine.scene.fog, baselineFog, 'Expected city detach to restore previous fog.');
+
+            city.attach(engine);
+            assertNear(engine.scene.fog.near, 120, 1e-6, 'Expected gameplay fog near to remain stable on re-attach.');
+            assertNear(engine.scene.fog.far, 1200, 1e-6, 'Expected gameplay fog far to remain stable on re-attach.');
+            city.detach(engine);
         });
     } catch (e) {
         console.log('⏭️  Road engine global road tests skipped:', e.message);
@@ -8461,15 +8561,23 @@ async function runTests() {
             };
 
             engine.scene.background = null;
-            engine.scene.fog = null;
+            const baselineFog = new THREE.Fog(0x0a0a0a, 10, 100);
+            engine.scene.fog = baselineFog;
 
             const scene = new RapierDebuggerScene(engine);
             scene.enter();
             assertTrue(!!engine.scene.background, 'Expected Rapier debugger to set scene background.');
             assertTrue(!!engine.scene.fog, 'Expected Rapier debugger to set scene fog.');
+            assertNear(engine.scene.fog.near, 200, 1e-6, 'Expected Rapier debugger fog near=200.');
+            assertNear(engine.scene.fog.far, 2000, 1e-6, 'Expected Rapier debugger fog far=2000.');
             scene.dispose();
             assertEqual(engine.scene.background, null, 'Expected Rapier debugger to restore scene background.');
-            assertEqual(engine.scene.fog, null, 'Expected Rapier debugger to restore scene fog.');
+            assertEqual(engine.scene.fog, baselineFog, 'Expected Rapier debugger to restore scene fog.');
+
+            scene.enter();
+            assertNear(engine.scene.fog.near, 200, 1e-6, 'Expected Rapier debugger fog near to remain stable on re-enter.');
+            assertNear(engine.scene.fog.far, 2000, 1e-6, 'Expected Rapier debugger fog far to remain stable on re-enter.');
+            scene.dispose();
         });
     } catch (e) {
         console.log('⏭️  Rapier Debugger renderer state tests skipped:', e.message);

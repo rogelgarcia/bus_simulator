@@ -54,6 +54,8 @@ const ROAD_HIGHLIGHT_PAD_TILE_FRACTION = 0.18;
 const ROAD_HIGHLIGHT_PAD_LANE_FACTOR = 0.6;
 const ROAD_HIGHLIGHT_PAD_CURB_FACTOR = 2.4;
 const ROAD_HIGHLIGHT_PAD_MIN = 1.2;
+const BUILDING_FABRICATION_FOG_NEAR = 200;
+const BUILDING_FABRICATION_FOG_FAR = 2000;
 
 const FACE_IDS_RECT = Object.freeze(['A', 'B', 'C', 'D']);
 const FACE_HIGHLIGHT_COLOR = 0x64d2ff;
@@ -309,14 +311,13 @@ export class BuildingFabricationScene {
             far: Number.isFinite(this.camera?.far) ? this.camera.far : null
         };
 
-        const span = this.tileSize * this.gridSize;
         this._syncSkyVisibility();
         const bg = this.scene.background ?? null;
         const bgIsTexture = !!bg && !!bg.isTexture;
         const wantsIblBackground = !!this.engine?.lightingSettings?.ibl?.setBackground;
         if (!wantsIblBackground || !bgIsTexture) this.scene.background = null;
         const fogColor = this.engine?.atmosphereSettings?.sky?.horizonColor ?? '#EAF9FF';
-        this.scene.fog = new THREE.Fog(fogColor, Math.max(40, span * 0.5), Math.max(240, span * 3.2));
+        this.scene.fog = new THREE.Fog(fogColor, BUILDING_FABRICATION_FOG_NEAR, BUILDING_FABRICATION_FOG_FAR);
 
         if (this.camera && Number.isFinite(this.camera.far)) {
             this.camera.far = Math.max(this.camera.far, 2500);

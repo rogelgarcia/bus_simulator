@@ -56,6 +56,8 @@ const ADJUSTED_END_ORIGIN_COLOR_HEX = 0xff3b30;
 const ADJUSTED_END_ORIGIN_OPACITY = 0.45;
 const COLLISION_MARKER_LIFT = 0.002;
 const COLLISION_MARKER_SEGMENTS = 32;
+const DEBUG_CITY_FOG_NEAR = 200;
+const DEBUG_CITY_FOG_FAR = 2000;
 
 function normalizeDir(x, y) {
     const len = Math.hypot(x, y);
@@ -659,6 +661,8 @@ export class MapDebuggerState {
         this.engine.context.city = null;
         if (mapSpec?.seed !== undefined) this._cityOptions.seed = mapSpec.seed;
         this.city = getSharedCity(this.engine, { ...this._cityOptions, mapSpec });
+        this.city.config.fogNear = DEBUG_CITY_FOG_NEAR;
+        this.city.config.fogFar = DEBUG_CITY_FOG_FAR;
         this.city.attach(this.engine);
         this._setupHighlight();
         this._setupSelectionOverlays();

@@ -67,8 +67,8 @@ export class City {
             size,
             tileMeters,
             fogColor: '#EAF9FF',
-            fogNear: 80,
-            fogFar: 900,
+            fogNear: 120,
+            fogFar: 1200,
             cameraNear: 0.5,
             cameraFar: 1800
         };

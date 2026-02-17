@@ -5,6 +5,9 @@ import { makeCheckerTexture } from '../../assets3d/textures/CityTextures.js';
 import { RAPIER_DEBUGGER_VEHICLE_CONFIG, RAPIER_DEBUGGER_WORLD_CONFIG } from '../../../app/physics/rapier_debugger/RapierDebuggerConstants.js';
 import { createToolCameraController } from '../../engine3d/camera/ToolCameraPrefab.js';
 
+const RAPIER_DEBUGGER_FOG_NEAR = 200;
+const RAPIER_DEBUGGER_FOG_FAR = 2000;
+
 export class RapierDebuggerScene {
     constructor(engine, {
         worldConfig = RAPIER_DEBUGGER_WORLD_CONFIG,
@@ -122,7 +125,7 @@ export class RapierDebuggerScene {
         this.scene.add(this.root);
 
         this.scene.background = new THREE.Color(0x0b0f1a);
-        this.scene.fog = new THREE.Fog(0x0b0f1a, 40, 200);
+        this.scene.fog = new THREE.Fog(0x0b0f1a, RAPIER_DEBUGGER_FOG_NEAR, RAPIER_DEBUGGER_FOG_FAR);
 
         this._buildGround();
         this._buildLights();
