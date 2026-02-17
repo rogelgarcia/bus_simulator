@@ -80,6 +80,7 @@ function formatIncludedGroups(includes) {
 export class OptionsUI {
     constructor({
         visibleTabs = null,
+        showLightingAtmosphereSection = true,
         initialTab = 'lighting',
         initialLighting = null,
         initialAtmosphere = null,
@@ -125,6 +126,7 @@ export class OptionsUI {
 
         this.root = makeEl('div', 'ui-layer options-layer');
         this.root.id = 'ui-options';
+        this._showLightingAtmosphereSection = showLightingAtmosphereSection !== false;
 
         this.panel = makeEl('div', 'ui-panel is-interactive options-panel');
 

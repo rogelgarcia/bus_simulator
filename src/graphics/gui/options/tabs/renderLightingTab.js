@@ -17,6 +17,7 @@ export function renderLightingTab() {
 
     const sectionAtmosphere = makeEl('div', 'options-section');
     sectionAtmosphere.appendChild(makeEl('div', 'options-section-title', 'Atmosphere / Sky'));
+    const showAtmosphereSection = this._showLightingAtmosphereSection !== false;
 
     const d = this._draftLighting;
     const atmo = this._draftAtmosphere;
@@ -566,7 +567,13 @@ export function renderLightingTab() {
     this.body.appendChild(sectionIbl);
     if (iblStatusSection) this.body.appendChild(iblStatusSection);
     this.body.appendChild(sectionLighting);
-    this.body.appendChild(sectionAtmosphere);
+    if (showAtmosphereSection) {
+        this.body.appendChild(sectionAtmosphere);
+    } else {
+        const fixedAtmosphereNote = makeEl('div', 'options-note');
+        fixedAtmosphereNote.textContent = 'Atmosphere controls are fixed for this tool to keep look-dev captures repeatable.';
+        this.body.appendChild(fixedAtmosphereNote);
+    }
     this.body.appendChild(sectionPost);
     this.body.appendChild(note);
 
@@ -574,4 +581,3 @@ export function renderLightingTab() {
     this._refreshIblDebug();
     this._refreshPostProcessingDebug();
 }
-

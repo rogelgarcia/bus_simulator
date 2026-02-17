@@ -52,6 +52,13 @@ export const DEBUG_TOOL_REGISTRY = Object.freeze([
         href: 'debug_tools/grass_lod_debug.html'
     }),
     Object.freeze({
+        id: 'lab_scene',
+        key: 'L',
+        label: 'Lab Scene',
+        description: 'Stable urban look-dev scene for lighting/composition tuning',
+        href: 'debug_tools/lab_scene.html'
+    }),
+    Object.freeze({
         id: 'ao_foliage_debug',
         key: 'O',
         label: 'AO Foliage',

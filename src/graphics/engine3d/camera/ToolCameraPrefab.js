@@ -46,6 +46,9 @@ export function createToolCameraController(camera, canvas, {
     maxDistance = 1e6,
     minPolarAngle = 0.12,
     maxPolarAngle = Math.PI / 2.05,
+    orbitMouseButtons = null,
+    panMouseButtons = null,
+    shiftPanFromOrbitButtons = true,
     getFocusTarget = null,
     initialPose = null
 } = {}) {
@@ -61,6 +64,9 @@ export function createToolCameraController(camera, canvas, {
         maxDistance,
         minPolarAngle,
         maxPolarAngle,
+        orbitMouseButtons,
+        panMouseButtons,
+        shiftPanFromOrbitButtons,
         getFocusTarget
     });
 
@@ -69,4 +75,3 @@ export function createToolCameraController(camera, canvas, {
 
     return controls;
 }
-

@@ -1,5 +1,5 @@
 // src/graphics/engine3d/camera/ToolCameraController.js
-// Provides RMB-orbit / MMB-pan / wheel-zoom camera controls for tool scenes without consuming LMB.
+// Provides configurable mouse orbit/pan + wheel-zoom camera controls for tool scenes.
 import * as THREE from 'three';
 
 const EPS = 1e-8;
@@ -14,6 +14,20 @@ function isInteractiveElement(target) {
     const tag = target?.tagName;
     if (!tag) return false;
     return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || target?.isContentEditable;
+}
+
+function normalizeMouseButtons(value, fallback) {
+    const base = Array.isArray(value) ? value : fallback;
+    const out = [];
+    for (const entry of base) {
+        const btn = Number(entry);
+        if (!Number.isInteger(btn)) continue;
+        if (btn < 0 || btn > 4) continue;
+        if (out.includes(btn)) continue;
+        out.push(btn);
+    }
+    if (out.length) return new Set(out);
+    return new Set(Array.isArray(fallback) ? fallback : [2]);
 }
 
 export function computeFrameDistanceForSphere({ radius, fovDeg, aspect, padding = 1.15 } = {}) {
@@ -96,6 +110,9 @@ export class ToolCameraController {
         maxDistance = 1e6,
         minPolarAngle = 0.0,
         maxPolarAngle = Math.PI,
+        orbitMouseButtons = [2],
+        panMouseButtons = [1],
+        shiftPanFromOrbitButtons = true,
         getFocusTarget = null
     } = {}) {
         this.camera = camera;
@@ -111,6 +128,9 @@ export class ToolCameraController {
         this.maxDistance = Math.max(this.minDistance, Number(maxDistance) || 1e6);
         this.minPolarAngle = clamp(minPolarAngle, 0.0, Math.PI);
         this.maxPolarAngle = clamp(maxPolarAngle, this.minPolarAngle, Math.PI);
+        this._orbitMouseButtons = normalizeMouseButtons(orbitMouseButtons, [2]);
+        this._panMouseButtons = normalizeMouseButtons(panMouseButtons, [1]);
+        this._shiftPanFromOrbitButtons = shiftPanFromOrbitButtons !== false;
 
         this.target = new THREE.Vector3();
         this._targetEnd = this.target.clone();
@@ -443,16 +463,17 @@ export class ToolCameraController {
             return;
         }
 
-        const btn = e.button;
-        if (btn !== 1 && btn !== 2) return;
+        const btn = Number(e.button);
+        const isOrbitButton = this._orbitMouseButtons.has(btn);
+        const isPanButton = this._panMouseButtons.has(btn);
+        if (!isOrbitButton && !isPanButton) return;
         this._activeButton = btn;
         if (btn === 2) {
             const now = (typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now();
             this._suppressContextMenuUntil = now + 10000;
         }
-        if (btn === 2 && e.shiftKey) this._state = 'pan';
-        else if (btn === 1) this._state = 'pan';
-        else this._state = 'orbit';
+        const panViaShift = isOrbitButton && this._shiftPanFromOrbitButtons && !!e.shiftKey;
+        this._state = (isPanButton || panViaShift) ? 'pan' : 'orbit';
 
         this._activePointerId = e.pointerId;
         this._pointerStart.x = e.clientX;
