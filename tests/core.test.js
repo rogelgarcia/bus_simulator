@@ -1796,7 +1796,10 @@ async function runTests() {
     const { BuildingFabricationUI } = await import('/src/graphics/gui/building_fabrication/BuildingFabricationUI.js');
     const { BuildingFabricationScene, getCentered2x1FootprintTileIds } = await import('/src/graphics/gui/building_fabrication/BuildingFabricationScene.js');
     const { offsetOrthogonalLoopXZ } = await import('/src/graphics/assets3d/generators/buildings/BuildingGenerator.js');
-    const { buildBuildingFabricationVisualParts } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationGenerator.js');
+    const {
+        buildBuildingFabricationVisualParts,
+        __testOnly: buildingFabricationGeneratorTestOnly
+    } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationGenerator.js');
     const { WALL_BASE_MATERIAL_DEFAULT, createDefaultFloorLayer, createDefaultRoofLayer, normalizeBuildingWindowVisualsConfig } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationTypes.js');
     const {
         WINDOW_TYPE,
@@ -2704,6 +2707,259 @@ async function runTests() {
             assertTrue(Number.isFinite(h), 'Expected a BoxGeometry height.');
             assertTrue(Math.abs(h - expectedHeight) < 1e-6, `Column height should span full layer (${expectedHeight}).`);
         }
+    });
+
+    const buildFacadeBoundaryLoopDetailForMaterialOwnership = ({ leftDepth = 0.2, rightDepth = 0.8 } = {}) => ([
+        { x: 0, y: 0, z: -1.0, kind: 'corner_cut' },
+        { x: 4, y: 0, z: -1.0, kind: 'corner_cut' },
+        { x: 4, y: 0, z: rightDepth, kind: 'profile', faceId: 'A', u: 4, depth: rightDepth },
+        { x: 2, y: 0, z: rightDepth, kind: 'profile', faceId: 'A', u: 2, depth: rightDepth },
+        { x: 2, y: 0, z: leftDepth, kind: 'profile', faceId: 'A', u: 2, depth: leftDepth },
+        { x: 0, y: 0, z: leftDepth, kind: 'profile', faceId: 'A', u: 0, depth: leftDepth }
+    ]);
+
+    const buildFacadeBoundaryRangeOverridesForMaterialOwnership = ({
+        leftDepth = 0.2,
+        rightDepth = 0.8,
+        leftMaterialIndex = 1,
+        rightMaterialIndex = 2,
+        leftUvStart = 0.0,
+        rightUvStart = 0.0,
+        reverseRanges = false
+    } = {}) => {
+        const ranges = [
+            {
+                faceId: 'A',
+                materialIndex: leftMaterialIndex,
+                u0: 0,
+                u1: 2,
+                depth0: leftDepth,
+                depth1: leftDepth,
+                uvStart: leftUvStart
+            },
+            {
+                faceId: 'A',
+                materialIndex: rightMaterialIndex,
+                u0: 2,
+                u1: 4,
+                depth0: rightDepth,
+                depth1: rightDepth,
+                uvStart: rightUvStart
+            }
+        ];
+
+        const overrides = new Map();
+        overrides.set('__ranges__:A', reverseRanges ? ranges.slice().reverse() : ranges);
+        return overrides;
+    };
+
+    const collectBoundaryTriangleMaterialIndices = (geo, {
+        x = 2.0,
+        xTol = 0.25,
+        yMin = 0.2,
+        yMax = 2.8
+    } = {}) => {
+        const pos = geo?.getAttribute?.('position') ?? null;
+        const groups = Array.isArray(geo?.groups) ? geo.groups : [];
+        if (!pos?.getX || !pos?.getY) return { triangleCount: 0, materialIndices: [] };
+
+        const triCount = Math.floor(pos.count / 3);
+        const triMat = new Int32Array(triCount);
+        triMat.fill(-1);
+
+        for (const group of groups) {
+            const mat = Number(group?.materialIndex);
+            if (!Number.isFinite(mat)) continue;
+            const start = Math.max(0, Math.floor((Number(group?.start) || 0) / 3));
+            const end = Math.min(triCount, Math.floor(((Number(group?.start) || 0) + (Number(group?.count) || 0)) / 3));
+            for (let t = start; t < end; t++) triMat[t] = mat;
+        }
+
+        const hitMaterials = new Set();
+        let hits = 0;
+        for (let t = 0; t < triCount; t++) {
+            const vi = t * 3;
+            const cx = (pos.getX(vi) + pos.getX(vi + 1) + pos.getX(vi + 2)) / 3;
+            const cy = (pos.getY(vi) + pos.getY(vi + 1) + pos.getY(vi + 2)) / 3;
+            if (Math.abs(cx - x) > xTol) continue;
+            if (cy < yMin || cy > yMax) continue;
+            const mat = triMat[t];
+            if (mat < 0) continue;
+            hits += 1;
+            hitMaterials.add(mat);
+        }
+
+        return {
+            triangleCount: hits,
+            materialIndices: Array.from(hitMaterials).sort((a, b) => a - b)
+        };
+    };
+
+    const collectBoundaryUvUSpan = (geo, {
+        x = 2.0,
+        xTol = 0.25,
+        yMin = 0.2,
+        yMax = 2.8
+    } = {}) => {
+        const pos = geo?.getAttribute?.('position') ?? null;
+        const uv = geo?.getAttribute?.('uv') ?? null;
+        if (!pos?.getX || !pos?.getY || !uv?.getX) return { sampleCount: 0, uSpan: 0 };
+
+        const triCount = Math.floor(pos.count / 3);
+        let minU = Infinity;
+        let maxU = -Infinity;
+        let count = 0;
+
+        for (let t = 0; t < triCount; t++) {
+            const vi = t * 3;
+            const cx = (pos.getX(vi) + pos.getX(vi + 1) + pos.getX(vi + 2)) / 3;
+            const cy = (pos.getY(vi) + pos.getY(vi + 1) + pos.getY(vi + 2)) / 3;
+            if (Math.abs(cx - x) > xTol) continue;
+            if (cy < yMin || cy > yMax) continue;
+            for (let i = 0; i < 3; i++) {
+                const u = uv.getX(vi + i);
+                if (!Number.isFinite(u)) continue;
+                if (u < minU) minU = u;
+                if (u > maxU) maxU = u;
+                count += 1;
+            }
+        }
+
+        if (!count || !(minU < Infinity) || !(maxU > -Infinity)) return { sampleCount: 0, uSpan: 0 };
+        return { sampleCount: count, uSpan: maxU - minU };
+    };
+
+    const makeBoundaryCutout = ({ leftDepth = 0.2, rightDepth = 0.8, wantsArch = false } = {}) => [{
+        faceId: 'A',
+        x: 2.0,
+        y: 1.5,
+        z: (leftDepth + rightDepth) * 0.5,
+        width: 0.24,
+        height: 1.2,
+        wantsArch,
+        archRise: wantsArch ? 0.22 : 0.0,
+        revealDepth: 0.22
+    }];
+
+    test('BuildingFabricationGenerator: opening side face uses forward-owner material (left-forward rectangular)', () => {
+        const buildWall = buildingFabricationGeneratorTestOnly?.buildWallSidesGeometryFromLoopDetailXZ ?? null;
+        assertTrue(typeof buildWall === 'function', 'Expected buildWallSidesGeometryFromLoopDetailXZ test helper.');
+
+        const leftDepth = 0.82;
+        const rightDepth = 0.22;
+        const leftMaterialIndex = 5;
+        const rightMaterialIndex = 7;
+
+        const geo = buildWall(buildFacadeBoundaryLoopDetailForMaterialOwnership({ leftDepth, rightDepth }), {
+            height: 3.0,
+            uvBaseV: 0.0,
+            segmentOverrides: buildFacadeBoundaryRangeOverridesForMaterialOwnership({
+                leftDepth,
+                rightDepth,
+                leftMaterialIndex,
+                rightMaterialIndex
+            }),
+            cutouts: makeBoundaryCutout({ leftDepth, rightDepth, wantsArch: false }),
+            cutoutTol: 0.05
+        });
+
+        assertTrue(!!geo, 'Expected geometry for forward-owner side-face test.');
+        const scan = collectBoundaryTriangleMaterialIndices(geo);
+        assertTrue(scan.triangleCount > 0, 'Expected boundary triangles near the opening side face.');
+        assertEqual(scan.materialIndices.length, 1, 'Expected a single owner material on the boundary side face.');
+        assertEqual(scan.materialIndices[0], leftMaterialIndex, 'Expected left-forward wall to own the side face material.');
+        const uvScan = collectBoundaryUvUSpan(geo);
+        assertTrue(uvScan.sampleCount > 0, 'Expected UV samples on the boundary side face.');
+        assertTrue(uvScan.uSpan > 0.15, `Expected side-face UV U span along depth (no stretch), got ${uvScan.uSpan}.`);
+    });
+
+    test('BuildingFabricationGenerator: opening side face uses forward-owner material (right-forward arched)', () => {
+        const buildWall = buildingFabricationGeneratorTestOnly?.buildWallSidesGeometryFromLoopDetailXZ ?? null;
+        assertTrue(typeof buildWall === 'function', 'Expected buildWallSidesGeometryFromLoopDetailXZ test helper.');
+
+        const leftDepth = 0.22;
+        const rightDepth = 0.82;
+        const leftMaterialIndex = 3;
+        const rightMaterialIndex = 9;
+
+        const geo = buildWall(buildFacadeBoundaryLoopDetailForMaterialOwnership({ leftDepth, rightDepth }), {
+            height: 3.0,
+            uvBaseV: 0.0,
+            segmentOverrides: buildFacadeBoundaryRangeOverridesForMaterialOwnership({
+                leftDepth,
+                rightDepth,
+                leftMaterialIndex,
+                rightMaterialIndex
+            }),
+            cutouts: makeBoundaryCutout({ leftDepth, rightDepth, wantsArch: true }),
+            cutoutTol: 0.05
+        });
+
+        assertTrue(!!geo, 'Expected geometry for forward-owner arched side-face test.');
+        const scan = collectBoundaryTriangleMaterialIndices(geo);
+        assertTrue(scan.triangleCount > 0, 'Expected boundary triangles near the arched opening side face.');
+        assertEqual(scan.materialIndices.length, 1, 'Expected a single owner material on the arched boundary side face.');
+        assertEqual(scan.materialIndices[0], rightMaterialIndex, 'Expected right-forward wall to own the side face material.');
+        const uvScan = collectBoundaryUvUSpan(geo);
+        assertTrue(uvScan.sampleCount > 0, 'Expected UV samples on the arched boundary side face.');
+        assertTrue(uvScan.uSpan > 0.15, `Expected arched side-face UV U span along depth (no stretch), got ${uvScan.uSpan}.`);
+    });
+
+    test('BuildingFabricationGenerator: opening side-face owner is independent of UV/range ordering', () => {
+        const buildWall = buildingFabricationGeneratorTestOnly?.buildWallSidesGeometryFromLoopDetailXZ ?? null;
+        assertTrue(typeof buildWall === 'function', 'Expected buildWallSidesGeometryFromLoopDetailXZ test helper.');
+
+        const leftDepth = 0.2;
+        const rightDepth = 0.8;
+        const leftMaterialIndex = 4;
+        const rightMaterialIndex = 10;
+        const loopDetail = buildFacadeBoundaryLoopDetailForMaterialOwnership({ leftDepth, rightDepth });
+        const cutouts = makeBoundaryCutout({ leftDepth, rightDepth, wantsArch: false });
+
+        const geoA = buildWall(loopDetail, {
+            height: 3.0,
+            uvBaseV: 0.0,
+            segmentOverrides: buildFacadeBoundaryRangeOverridesForMaterialOwnership({
+                leftDepth,
+                rightDepth,
+                leftMaterialIndex,
+                rightMaterialIndex,
+                leftUvStart: 0.0,
+                rightUvStart: 2.0,
+                reverseRanges: false
+            }),
+            cutouts,
+            cutoutTol: 0.05
+        });
+        const geoB = buildWall(loopDetail, {
+            height: 3.0,
+            uvBaseV: 0.0,
+            segmentOverrides: buildFacadeBoundaryRangeOverridesForMaterialOwnership({
+                leftDepth,
+                rightDepth,
+                leftMaterialIndex,
+                rightMaterialIndex,
+                leftUvStart: 11.0,
+                rightUvStart: -7.0,
+                reverseRanges: true
+            }),
+            cutouts,
+            cutoutTol: 0.05
+        });
+
+        assertTrue(!!geoA && !!geoB, 'Expected geometry for UV/range ordering regression test.');
+        const scanA = collectBoundaryTriangleMaterialIndices(geoA);
+        const scanB = collectBoundaryTriangleMaterialIndices(geoB);
+        assertTrue(scanA.triangleCount > 0 && scanB.triangleCount > 0, 'Expected boundary side-face triangles in both UV-ordering variants.');
+        assertEqual(scanA.materialIndices.length, 1, 'Expected a single owner material in ordering variant A.');
+        assertEqual(scanB.materialIndices.length, 1, 'Expected a single owner material in ordering variant B.');
+        assertEqual(scanA.materialIndices[0], rightMaterialIndex, 'Expected forward owner material in ordering variant A.');
+        assertEqual(scanB.materialIndices[0], rightMaterialIndex, 'Expected forward owner material in ordering variant B.');
+        assertEqual(scanA.materialIndices[0], scanB.materialIndices[0], 'Expected identical ownership regardless of UV/range ordering.');
+        const uvA = collectBoundaryUvUSpan(geoA);
+        const uvB = collectBoundaryUvUSpan(geoB);
+        assertTrue(uvA.sampleCount > 0 && uvB.sampleCount > 0, 'Expected UV samples in both ordering variants.');
+        assertTrue(uvA.uSpan > 0.15 && uvB.uSpan > 0.15, 'Expected side-face UV U span along depth in both ordering variants.');
     });
 
     test('BuildingFabricationScene: trims building tiles when road overlaps', () => {

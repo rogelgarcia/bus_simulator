@@ -266,6 +266,10 @@ For each face `F`, generate its wall mesh using deterministic topology:
    - Openings SHOULD be introduced by explicit **cutlines** (vertical + horizontal breakpoints) so topology stays deterministic (no cross-floor triangles or arbitrary diagonals).
    - If an opening contains an inset element (e.g., recessed window), the wall SHOULD generate an inward “reveal” surface by extruding the opening boundary along `-n(F)` by a model-driven depth.
    - Reveal faces SHOULD reuse the originating wall material and MUST use meter-based UVs on both axes (including depth) to avoid stretched textures.
+   - For a reveal/return side face that sits on a boundary between two neighboring wall regions, ownership MUST be deterministic:
+     - choose a single owner region using forward depth (the region closer to the observer in face-local front view wins),
+     - apply that owner region’s wall material to the side face,
+     - and keep the result independent from UV range ordering, winding, or incidental segment iteration order.
 
 **Invariant:** Generic polygon triangulation SHOULD NOT be used for primary face surfaces; the topology MUST be driven by explicit breakpoints and per-segment quads/triangles.
 **Invariant:** For any non-roof surface group (face walls, returns, bay caps, corner patches), triangles MUST NOT connect vertices belonging to non-adjacent faces. “Adjacency” here means:

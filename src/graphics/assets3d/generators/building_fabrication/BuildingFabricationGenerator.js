@@ -746,6 +746,206 @@ function sortUniqueNumbers(values, { tol = 1e-5 } = {}) {
     return out;
 }
 
+function normalizeFacadeRangeEntry(entry, order) {
+    if (!entry || typeof entry !== 'object') return null;
+    const u0 = Number(entry.u0);
+    const u1 = Number(entry.u1);
+    if (!Number.isFinite(u0) || !Number.isFinite(u1)) return null;
+
+    const depth0Raw = Number(entry.depth0);
+    const depth1Raw = Number(entry.depth1);
+    const depthRaw = Number(entry.depth);
+    const depth0 = Number.isFinite(depth0Raw) ? depth0Raw : (Number.isFinite(depthRaw) ? depthRaw : 0.0);
+    const depth1 = Number.isFinite(depth1Raw) ? depth1Raw : (Number.isFinite(depthRaw) ? depthRaw : depth0);
+
+    return {
+        materialIndex: clampInt(entry.materialIndex, 0, 9999),
+        u0,
+        u1,
+        depth0,
+        depth1,
+        uvStart: Number(entry.uvStart) || 0.0,
+        order
+    };
+}
+
+function sampleFacadeRangeDepthAtU(range, u) {
+    const u0 = Number(range?.u0) || 0;
+    const u1 = Number(range?.u1) || 0;
+    const d0 = Number(range?.depth0) || 0;
+    const d1 = Number(range?.depth1) || d0;
+    const denom = u1 - u0;
+    if (!(Math.abs(denom) > 1e-6)) return d0;
+    const t = clamp((u - u0) / denom, 0.0, 1.0);
+    return d0 + (d1 - d0) * t;
+}
+
+function chooseDeterministicFacadeRangeCandidate(a, b) {
+    if (!a) return b;
+    if (!b) return a;
+    if (a.materialIndex !== b.materialIndex) return a.materialIndex < b.materialIndex ? a : b;
+    const aMin = Math.min(a.u0, a.u1);
+    const bMin = Math.min(b.u0, b.u1);
+    if (Math.abs(aMin - bMin) > 1e-6) return aMin < bMin ? a : b;
+    const aMax = Math.max(a.u0, a.u1);
+    const bMax = Math.max(b.u0, b.u1);
+    if (Math.abs(aMax - bMax) > 1e-6) return aMax < bMax ? a : b;
+    return a.order <= b.order ? a : b;
+}
+
+function resolveFacadeRangeOverrideForSegment(ranges, { uA, uB, depthA, depthB, tol = 1e-4 } = {}) {
+    const list = Array.isArray(ranges)
+        ? ranges.map((entry, idx) => normalizeFacadeRangeEntry(entry, idx)).filter(Boolean)
+        : [];
+    if (!list.length) return null;
+
+    const segUA = Number(uA) || 0;
+    const segUB = Number(uB) || 0;
+    const segDepthMid = ((Number(depthA) || 0) + (Number(depthB) || 0)) * 0.5;
+    const uMin = Math.min(segUA, segUB);
+    const uMax = Math.max(segUA, segUB);
+    const uSpan = Math.abs(segUB - segUA);
+
+    if (uSpan > tol) {
+        const segMid = (uMin + uMax) * 0.5;
+        let best = null;
+        let bestOverlap = -Infinity;
+        let bestCenterDist = Infinity;
+        let bestDepth = -Infinity;
+
+        for (const r of list) {
+            const rMin = Math.min(r.u0, r.u1);
+            const rMax = Math.max(r.u0, r.u1);
+            const overlap = Math.min(uMax, rMax) - Math.max(uMin, rMin);
+            if (!(overlap > tol)) continue;
+
+            const center = (rMin + rMax) * 0.5;
+            const centerDist = Math.abs(center - segMid);
+            const depthMid = sampleFacadeRangeDepthAtU(r, segMid);
+
+            if (overlap > bestOverlap + 1e-6) {
+                best = r;
+                bestOverlap = overlap;
+                bestCenterDist = centerDist;
+                bestDepth = depthMid;
+                continue;
+            }
+
+            if (Math.abs(overlap - bestOverlap) <= 1e-6) {
+                if (centerDist < bestCenterDist - 1e-6) {
+                    best = r;
+                    bestCenterDist = centerDist;
+                    bestDepth = depthMid;
+                    continue;
+                }
+                if (Math.abs(centerDist - bestCenterDist) <= 1e-6) {
+                    if (depthMid > bestDepth + 1e-6) {
+                        best = r;
+                        bestDepth = depthMid;
+                        continue;
+                    }
+                    if (Math.abs(depthMid - bestDepth) <= 1e-6) best = chooseDeterministicFacadeRangeCandidate(best, r);
+                }
+            }
+        }
+        return best;
+    }
+
+    const sideTol = Math.max(tol * 2, 1e-4);
+    const uBoundary = (segUA + segUB) * 0.5;
+    const touching = [];
+    const lowerSide = [];
+    const upperSide = [];
+
+    for (const r of list) {
+        const rMin = Math.min(r.u0, r.u1);
+        const rMax = Math.max(r.u0, r.u1);
+        if (uBoundary < rMin - sideTol || uBoundary > rMax + sideTol) continue;
+        const depthAtBoundary = sampleFacadeRangeDepthAtU(r, uBoundary);
+        const candidate = { ...r, depthAtBoundary, rMin, rMax };
+        touching.push(candidate);
+        if (Math.abs(uBoundary - rMax) <= sideTol) lowerSide.push(candidate);
+        if (Math.abs(uBoundary - rMin) <= sideTol) upperSide.push(candidate);
+    }
+    if (!touching.length) return null;
+
+    const pickLower = () => {
+        let best = null;
+        let bestUMin = -Infinity;
+        for (const c of lowerSide) {
+            if (c.rMin > bestUMin + 1e-6) {
+                best = c;
+                bestUMin = c.rMin;
+                continue;
+            }
+            if (Math.abs(c.rMin - bestUMin) <= 1e-6) {
+                if (!best || c.depthAtBoundary > best.depthAtBoundary + 1e-6) {
+                    best = c;
+                    continue;
+                }
+                if (best && Math.abs(c.depthAtBoundary - best.depthAtBoundary) <= 1e-6) best = chooseDeterministicFacadeRangeCandidate(best, c);
+            }
+        }
+        return best;
+    };
+
+    const pickUpper = () => {
+        let best = null;
+        let bestUMax = Infinity;
+        for (const c of upperSide) {
+            if (c.rMax < bestUMax - 1e-6) {
+                best = c;
+                bestUMax = c.rMax;
+                continue;
+            }
+            if (Math.abs(c.rMax - bestUMax) <= 1e-6) {
+                if (!best || c.depthAtBoundary > best.depthAtBoundary + 1e-6) {
+                    best = c;
+                    continue;
+                }
+                if (best && Math.abs(c.depthAtBoundary - best.depthAtBoundary) <= 1e-6) best = chooseDeterministicFacadeRangeCandidate(best, c);
+            }
+        }
+        return best;
+    };
+
+    const lower = pickLower();
+    const upper = pickUpper();
+    if (lower && upper) {
+        if (Math.abs(lower.depthAtBoundary - upper.depthAtBoundary) > 1e-6) {
+            return lower.depthAtBoundary > upper.depthAtBoundary ? lower : upper;
+        }
+        const lowerErr = Math.abs(segDepthMid - lower.depthAtBoundary);
+        const upperErr = Math.abs(segDepthMid - upper.depthAtBoundary);
+        if (Math.abs(lowerErr - upperErr) > 1e-6) return lowerErr < upperErr ? lower : upper;
+        return chooseDeterministicFacadeRangeCandidate(lower, upper);
+    }
+    if (lower) return lower;
+    if (upper) return upper;
+
+    let best = null;
+    let bestDepth = -Infinity;
+    let bestErr = Infinity;
+    for (const c of touching) {
+        const err = Math.abs(segDepthMid - c.depthAtBoundary);
+        if (c.depthAtBoundary > bestDepth + 1e-6) {
+            best = c;
+            bestDepth = c.depthAtBoundary;
+            bestErr = err;
+            continue;
+        }
+        if (Math.abs(c.depthAtBoundary - bestDepth) <= 1e-6) {
+            if (err < bestErr - 1e-6) {
+                best = c;
+                bestErr = err;
+                continue;
+            }
+            if (Math.abs(err - bestErr) <= 1e-6) best = chooseDeterministicFacadeRangeCandidate(best, c);
+        }
+    }
+    return best;
+}
+
 function buildWallSidesGeometryFromLoopDetailXZ(loop, {
     height,
     uvBaseV = 0.0,
@@ -860,26 +1060,13 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
 
             if (!ovr) {
                 const ranges = overrides.get(`__ranges__:${faceId}`) ?? null;
-                if (Array.isArray(ranges)) {
-                    const uA = Number(a.u) || 0;
-                    const uB = Number(b.u) || 0;
-                    const uMin = Math.min(uA, uB);
-                    const uMax = Math.max(uA, uB);
-                    const tol = 1e-4;
-                    if (Math.abs(uB - uA) > tol) {
-                        for (const r of ranges) {
-                            if (!r || typeof r !== 'object') continue;
-                            const ru0 = Number(r.u0) || 0;
-                            const ru1 = Number(r.u1) || 0;
-                            const rMin = Math.min(ru0, ru1);
-                            const rMax = Math.max(ru0, ru1);
-                            if (uMin + tol < rMin) continue;
-                            if (uMax - tol > rMax) continue;
-                            ovr = r;
-                            break;
-                        }
-                    }
-                }
+                ovr = resolveFacadeRangeOverrideForSegment(ranges, {
+                    uA: Number(a.u) || 0,
+                    uB: Number(b.u) || 0,
+                    depthA: Number(a.depth) || 0,
+                    depthB: Number(b.depth) || 0,
+                    tol: 1e-4
+                });
             }
 
             if (ovr) {
@@ -889,7 +1076,23 @@ function buildWallSidesGeometryFromLoopDetailXZ(loop, {
                 const uvStart = Number(ovr.uvStart) || 0;
                 const uA = Number(a.u) || 0;
                 const uB = Number(b.u) || 0;
-                if (faceId === 'B' || faceId === 'D') {
+                const depthA = Number(a.depth);
+                const depthB = Number(b.depth);
+                const sideTol = 1e-4;
+                const isBoundarySideSegment = Math.abs(uB - uA) <= sideTol
+                    && Number.isFinite(depthA)
+                    && Number.isFinite(depthB)
+                    && Math.abs(depthB - depthA) > sideTol;
+
+                if (isBoundarySideSegment) {
+                    // Boundary side face: map U along depth so side textures do not collapse/stretch.
+                    const boundaryU = (uA + uB) * 0.5;
+                    const anchorU = (faceId === 'B' || faceId === 'D')
+                        ? (uvStart + (u1 - boundaryU))
+                        : (uvStart + (boundaryU - u0));
+                    uAtA = anchorU;
+                    uAtB = anchorU + (depthB - depthA);
+                } else if (faceId === 'B' || faceId === 'D') {
                     uAtA = uvStart + (u1 - uA);
                     uAtB = uvStart + (u1 - uB);
                 } else {
@@ -3278,18 +3481,20 @@ export function buildBuildingFabricationVisualParts({
                             const continueOffset = (faceId === 'B' || faceId === 'D') ? -w : prevWidthForUv;
                             const uvStart = (repeats || overflow) ? (prevUvStartForUv + continueOffset) : 0;
 
-                            const shouldApply = !!matKey && key !== baseKey && w > 1e-5;
-                            if (shouldApply) {
+                            if (w > 1e-5) {
                                 const materialIndex = getFacadeMaterialIndex({ materialSpec: resolvedSpec, wallBase, tiling, materialVariation });
-                                const segKey = facadeStripSegmentKey(faceId, u0, depth0, u1, depth1);
-                                facadeWallSegmentOverrides.set(segKey, { materialIndex, faceId, u0, u1, uvStart });
+                                const shouldApplyDirect = !!matKey && key !== baseKey;
+                                if (shouldApplyDirect) {
+                                    const segKey = facadeStripSegmentKey(faceId, u0, depth0, u1, depth1);
+                                    facadeWallSegmentOverrides.set(segKey, { materialIndex, faceId, u0, u1, depth0, depth1, uvStart });
+                                }
 
                                 const rangeKey = `__ranges__:${faceId}`;
                                 const ranges = facadeWallSegmentOverrides.get(rangeKey);
                                 if (Array.isArray(ranges)) {
-                                    ranges.push({ materialIndex, faceId, u0, u1, uvStart });
+                                    ranges.push({ materialIndex, faceId, u0, u1, depth0, depth1, uvStart });
                                 } else if (ranges === undefined) {
-                                    facadeWallSegmentOverrides.set(rangeKey, [{ materialIndex, faceId, u0, u1, uvStart }]);
+                                    facadeWallSegmentOverrides.set(rangeKey, [{ materialIndex, faceId, u0, u1, depth0, depth1, uvStart }]);
                                 }
                             }
 
