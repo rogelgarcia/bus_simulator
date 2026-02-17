@@ -815,18 +815,31 @@ export class OptionsUI {
     }
 
     _ensureDraftLighting() {
-        if (this._draftLighting) return;
         const d = getDefaultResolvedLightingSettings();
-        this._draftLighting = {
-            exposure: d.exposure,
-            hemiIntensity: d.hemiIntensity,
-            sunIntensity: d.sunIntensity,
-            ibl: {
-                enabled: d.ibl.enabled,
-                envMapIntensity: d.ibl.envMapIntensity,
-                setBackground: d.ibl.setBackground
-            }
-        };
+        if (!this._draftLighting) {
+            this._draftLighting = {
+                exposure: d.exposure,
+                toneMapping: d.toneMapping,
+                hemiIntensity: d.hemiIntensity,
+                sunIntensity: d.sunIntensity,
+                ibl: {
+                    enabled: d.ibl.enabled,
+                    envMapIntensity: d.ibl.envMapIntensity,
+                    setBackground: d.ibl.setBackground
+                }
+            };
+            return;
+        }
+
+        const lighting = this._draftLighting;
+        if (lighting.exposure === undefined) lighting.exposure = d.exposure;
+        if (lighting.toneMapping === undefined) lighting.toneMapping = d.toneMapping;
+        if (lighting.hemiIntensity === undefined) lighting.hemiIntensity = d.hemiIntensity;
+        if (lighting.sunIntensity === undefined) lighting.sunIntensity = d.sunIntensity;
+        if (!lighting.ibl || typeof lighting.ibl !== 'object') lighting.ibl = {};
+        if (lighting.ibl.enabled === undefined) lighting.ibl.enabled = d.ibl.enabled;
+        if (lighting.ibl.envMapIntensity === undefined) lighting.ibl.envMapIntensity = d.ibl.envMapIntensity;
+        if (lighting.ibl.setBackground === undefined) lighting.ibl.setBackground = d.ibl.setBackground;
     }
 
     _ensureDraftAtmosphere() {
@@ -1060,6 +1073,7 @@ export class OptionsUI {
         const d = getDefaultResolvedLightingSettings();
         this._draftLighting = {
             exposure: d.exposure,
+            toneMapping: d.toneMapping,
             hemiIntensity: d.hemiIntensity,
             sunIntensity: d.sunIntensity,
             ibl: {
@@ -1172,6 +1186,7 @@ export class OptionsUI {
         return {
             lighting: {
                 exposure: d.exposure,
+                toneMapping: String(d.toneMapping ?? 'aces'),
                 hemiIntensity: d.hemiIntensity,
                 sunIntensity: d.sunIntensity,
                 ibl: {

@@ -1,5 +1,5 @@
 // src/graphics/lighting/LightingSettings.js
-// Persisted global lighting settings (IBL + exposure + common light intensities).
+// Persisted global lighting settings (IBL + tone mapping + exposure + common light intensities).
 
 import { getIBLConfig, IBL_DEFAULTS } from '../content3d/lighting/IBLConfig.js';
 
@@ -7,6 +7,7 @@ const STORAGE_KEY = 'bus_sim.lighting.v1';
 
 const LEGACY_LIGHTING_DEFAULTS_V1 = Object.freeze({
     exposure: 1.6,
+    toneMapping: 'aces',
     hemiIntensity: 0.85,
     sunIntensity: 1.2,
     ibl: {
@@ -26,6 +27,7 @@ const LEGACY_LIGHTING_DEFAULTS_V0 = Object.freeze({
 
 export const LIGHTING_DEFAULTS = Object.freeze({
     exposure: 1.14,
+    toneMapping: 'aces',
     hemiIntensity: 0.92,
     sunIntensity: 1.64,
     ibl: {
@@ -34,6 +36,8 @@ export const LIGHTING_DEFAULTS = Object.freeze({
         setBackground: true
     }
 });
+
+export const LIGHTING_TONE_MAPPING_MODES = Object.freeze(['aces', 'agx', 'neutral']);
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -58,12 +62,19 @@ function readUrlParamBool(params, key, fallback) {
     return fallback;
 }
 
+export function sanitizeToneMappingMode(value, fallback = LIGHTING_DEFAULTS.toneMapping) {
+    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (raw === 'aces' || raw === 'agx' || raw === 'neutral') return raw;
+    return typeof fallback === 'string' ? sanitizeToneMappingMode(fallback, 'aces') : 'aces';
+}
+
 export function sanitizeLightingSettings(input) {
     const src = input && typeof input === 'object' ? input : {};
     const ibl = src.ibl && typeof src.ibl === 'object' ? src.ibl : {};
 
     return {
         exposure: clamp(src.exposure ?? LIGHTING_DEFAULTS.exposure, 0.1, 5),
+        toneMapping: sanitizeToneMappingMode(src.toneMapping, LIGHTING_DEFAULTS.toneMapping),
         hemiIntensity: clamp(src.hemiIntensity ?? LIGHTING_DEFAULTS.hemiIntensity, 0, 5),
         sunIntensity: clamp(src.sunIntensity ?? LIGHTING_DEFAULTS.sunIntensity, 0, 10),
         ibl: {
@@ -139,12 +150,14 @@ export function getResolvedLightingSettings({ includeUrlOverrides = true } = {})
     const merged = sanitizeLightingSettings({ ...LIGHTING_DEFAULTS, ...(saved ?? {}) });
 
     let exposure = merged.exposure;
+    let toneMapping = merged.toneMapping;
     let hemiIntensity = merged.hemiIntensity;
     let sunIntensity = merged.sunIntensity;
 
     if (includeUrlOverrides && typeof window !== 'undefined') {
         const params = new URLSearchParams(window.location.search);
         exposure = readUrlParamNumber(params, 'exposure', exposure, { min: 0.1, max: 5 });
+        toneMapping = sanitizeToneMappingMode(params.get('toneMapping'), toneMapping);
         hemiIntensity = readUrlParamNumber(params, 'hemiIntensity', hemiIntensity, { min: 0, max: 5 });
         sunIntensity = readUrlParamNumber(params, 'sunIntensity', sunIntensity, { min: 0, max: 10 });
 
@@ -156,6 +169,7 @@ export function getResolvedLightingSettings({ includeUrlOverrides = true } = {})
 
     return {
         exposure,
+        toneMapping,
         hemiIntensity,
         sunIntensity,
         ibl
@@ -166,6 +180,7 @@ export function getDefaultResolvedLightingSettings() {
     const ibl = getIBLConfig(LIGHTING_DEFAULTS.ibl, { includeUrlOverrides: false });
     return {
         exposure: LIGHTING_DEFAULTS.exposure,
+        toneMapping: LIGHTING_DEFAULTS.toneMapping,
         hemiIntensity: LIGHTING_DEFAULTS.hemiIntensity,
         sunIntensity: LIGHTING_DEFAULTS.sunIntensity,
         ibl

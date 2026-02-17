@@ -101,6 +101,7 @@ export class OptionsState {
             initialLighting: lighting && typeof lighting === 'object'
                 ? {
                     exposure: lighting.exposure,
+                    toneMapping: lighting.toneMapping,
                     hemiIntensity: lighting.hemiIntensity,
                     sunIntensity: lighting.sunIntensity,
                     ibl: {

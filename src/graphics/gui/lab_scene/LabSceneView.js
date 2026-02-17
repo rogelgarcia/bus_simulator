@@ -453,6 +453,10 @@ export class LabSceneView {
         city.attach(engine);
         const originAxes = city.group?.getObjectByName?.('OriginAxes') ?? null;
         if (originAxes?.parent) originAxes.parent.remove(originAxes);
+        const tileGrid = city.group?.getObjectByName?.('TileGrid')
+            ?? city.world?.group?.getObjectByName?.('TileGrid')
+            ?? null;
+        if (tileGrid?.parent) tileGrid.parent.remove(tileGrid);
         engine.context.city = city;
         this._surfaceHeights = resolveSurfaceHeights(city);
         this._rebuildTrafficControlsFromRoadEngine();
@@ -787,6 +791,11 @@ export class LabSceneView {
             { value: '2', label: '2x' },
             { value: '8', label: '8x' }
         ]);
+        createChoiceControl('toneMapping', 'Tone Mapping', [
+            { value: 'aces', label: 'ACES' },
+            { value: 'agx', label: 'AgX' },
+            { value: 'neutral', label: 'Neutral' }
+        ]);
 
         optionsBody.appendChild(section);
         optionsPanel.appendChild(optionsBody);
@@ -878,6 +887,15 @@ export class LabSceneView {
                 : 'off';
         draft.ambientOcclusion = ao;
 
+        const lighting = draft.lighting && typeof draft.lighting === 'object' ? draft.lighting : {};
+        const toneMappingRaw = String(controls.toneMapping?.getValue?.() ?? 'aces').toLowerCase();
+        lighting.toneMapping = toneMappingRaw === 'agx'
+            ? 'agx'
+            : toneMappingRaw === 'neutral'
+                ? 'neutral'
+                : 'aces';
+        draft.lighting = lighting;
+
         this._state.draft = this._normalizeDraft(draft);
         this._applyDraft(this._state.draft);
         this._syncLayerPanelFromState();
@@ -895,6 +913,8 @@ export class LabSceneView {
 
         const aoModeRaw = String(draft?.ambientOcclusion?.mode ?? '').toLowerCase();
         const aoMode = aoModeRaw === 'gtao' ? 'gtao' : aoModeRaw === 'ssao' ? 'ssao' : 'off';
+        const toneMappingRaw = String(draft?.lighting?.toneMapping ?? '').toLowerCase();
+        const toneMapping = toneMappingRaw === 'agx' ? 'agx' : toneMappingRaw === 'neutral' ? 'neutral' : 'aces';
 
         if (controls.shadowsEnabled) controls.shadowsEnabled.checked = String(draft?.shadows?.quality ?? 'off').toLowerCase() !== 'off';
         if (controls.bloomEnabled) controls.bloomEnabled.checked = !!draft?.bloom?.enabled;
@@ -903,6 +923,7 @@ export class LabSceneView {
         if (controls.windowReflectionsEnabled) controls.windowReflectionsEnabled.checked = !!draft?.buildingWindowVisuals?.reflective?.enabled;
         controls.aoMode?.setValue?.(aoMode);
         controls.aaSamples?.setValue?.(aaMode === 'msaa' ? aaSamples : '2');
+        controls.toneMapping?.setValue?.(toneMapping);
     }
 
     _handleKeyDown(e) {
@@ -1005,5 +1026,6 @@ export class LabSceneView {
                 baseEnvMapIntensity
             });
         }
+
     }
 }

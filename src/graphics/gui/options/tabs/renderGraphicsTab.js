@@ -1,9 +1,11 @@
 import { makeChoiceRow, makeEl, makeNumberSliderRow, makeSelectRow, makeToggleRow, makeValueRow } from '../OptionsUiControls.js';
 
 export function renderGraphicsTab() {
+    this._ensureDraftLighting();
     this._ensureDraftAntiAliasing();
     this._ensureDraftAmbientOcclusion();
     this._ensureDraftShadows();
+    const lighting = this._draftLighting;
     const aa = this._draftAntiAliasing;
     const ao = this._draftAmbientOcclusion;
     const shadows = this._draftShadows;
@@ -34,6 +36,28 @@ export function renderGraphicsTab() {
         native: status.native.text,
         msaa: status.msaa.text
     };
+
+    const sectionToneMapping = makeEl('div', 'options-section');
+    sectionToneMapping.appendChild(makeEl('div', 'options-section-title', 'Tone Mapping'));
+
+    const toneMappingMode = makeChoiceRow({
+        label: 'Operator',
+        value: String(lighting?.toneMapping ?? 'aces'),
+        options: [
+            { id: 'aces', label: 'ACES' },
+            { id: 'agx', label: 'AgX' },
+            { id: 'neutral', label: 'Neutral' }
+        ],
+        onChange: (v) => {
+            lighting.toneMapping = v;
+            emit();
+        }
+    });
+
+    const toneMappingNote = makeEl('div', 'options-note');
+    toneMappingNote.textContent = 'Applies to direct render and post-processing pipeline (AO, bloom, sun bloom).';
+    sectionToneMapping.appendChild(toneMappingMode.row);
+    sectionToneMapping.appendChild(toneMappingNote);
 
     const updateAoStatus = () => {
         const mode = String(ao?.mode ?? 'off');
@@ -866,9 +890,10 @@ export function renderGraphicsTab() {
 	        };
 	        syncAoControls();
 
-	        this.body.appendChild(sectionStatus);
-	        this.body.appendChild(sectionAa);
-	        this.body.appendChild(sectionShadows);
-	        this.body.appendChild(sectionAo);
+    this.body.appendChild(sectionStatus);
+    this.body.appendChild(sectionToneMapping);
+    this.body.appendChild(sectionAa);
+    this.body.appendChild(sectionShadows);
+    this.body.appendChild(sectionAo);
 	        this._refreshAntiAliasingDebug();
 	    }

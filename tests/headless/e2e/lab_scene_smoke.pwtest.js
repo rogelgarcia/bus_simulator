@@ -51,7 +51,7 @@ test('Lab Scene: standalone tool loads with presets and layers panel', async ({ 
     await page.waitForSelector('.lab-scene-preset-btn');
     await expect(page.locator('.lab-scene-preset-btn')).toHaveCount(8);
     await expect(page.locator('.lab-scene-options-layer .options-toggle')).toHaveCount(5);
-    await expect(page.locator('.lab-scene-options-layer .options-choice-group')).toHaveCount(2);
+    await expect(page.locator('.lab-scene-options-layer .options-choice-group')).toHaveCount(3);
 
     await page.click('.lab-scene-preset-btn[data-preset-id="crossing_bus_right_wide"]');
     await page.waitForTimeout(180);

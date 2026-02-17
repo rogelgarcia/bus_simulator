@@ -11,7 +11,13 @@ import {
 
 test('OptionsPreset: createOptionsPresetFromDraft produces schema + clamps', () => {
     const preset = createOptionsPresetFromDraft({
-        lighting: { exposure: 999, hemiIntensity: -1, sunIntensity: '2', ibl: { enabled: 'yes', envMapIntensity: 999, setBackground: 0 } },
+        lighting: {
+            exposure: 999,
+            toneMapping: 'AgX',
+            hemiIntensity: -1,
+            sunIntensity: '2',
+            ibl: { enabled: 'yes', envMapIntensity: 999, setBackground: 0 }
+        },
         bloom: { enabled: 1, strength: 999, radius: -1, threshold: 'nope' },
         colorGrading: { preset: 'Filmic', intensity: 999 },
         sunFlare: { enabled: '0', preset: 'Subtle', strength: -1, components: { core: 0, halo: 1, starburst: 'yes', ghosting: null } },
@@ -22,6 +28,7 @@ test('OptionsPreset: createOptionsPresetFromDraft produces schema + clamps', () 
     assert.equal(preset.schema, OPTIONS_PRESET_SCHEMA_ID);
     assert.equal(preset.version, OPTIONS_PRESET_VERSION);
     assert.equal(preset.settings.lighting.exposure, 5);
+    assert.equal(preset.settings.lighting.toneMapping, 'agx');
     assert.equal(preset.settings.lighting.hemiIntensity, 0);
     assert.equal(preset.settings.lighting.sunIntensity, 2);
     assert.equal(preset.settings.lighting.ibl.envMapIntensity, 5);

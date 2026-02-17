@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { SimulationContext } from './SimulationContext.js';
 import { applyIBLIntensity, applyIBLToScene, getIBLBackgroundTexture, loadIBLBackgroundTexture, loadIBLTexture } from '../../graphics/lighting/IBL.js';
-import { getResolvedLightingSettings } from '../../graphics/lighting/LightingSettings.js';
+import { getResolvedLightingSettings, sanitizeToneMappingMode } from '../../graphics/lighting/LightingSettings.js';
 import { getResolvedShadowSettings, getShadowQualityPreset, sanitizeShadowSettings } from '../../graphics/lighting/ShadowSettings.js';
 import { getResolvedAtmosphereSettings, sanitizeAtmosphereSettings } from '../../graphics/visuals/atmosphere/AtmosphereSettings.js';
 import { getResolvedAntiAliasingSettings, sanitizeAntiAliasingSettings } from '../../graphics/visuals/postprocessing/AntiAliasingSettings.js';
@@ -17,6 +17,13 @@ import { getOrCreateGpuFrameTimer } from '../../graphics/engine3d/perf/GpuFrameT
 import { getResolvedVehicleMotionDebugSettings, sanitizeVehicleMotionDebugSettings } from '../vehicle/VehicleMotionDebugSettings.js';
 import { BusContactShadowRig } from '../../graphics/visuals/vehicles/BusContactShadowRig.js';
 import { StaticAoRuntime } from '../../graphics/visuals/static_ao/StaticAoRuntime.js';
+
+function resolveThreeToneMapping(mode) {
+    const key = sanitizeToneMappingMode(mode, 'aces');
+    if (key === 'agx') return THREE.AgXToneMapping ?? THREE.ACESFilmicToneMapping;
+    if (key === 'neutral') return THREE.NeutralToneMapping ?? THREE.ACESFilmicToneMapping;
+    return THREE.ACESFilmicToneMapping;
+}
 
 export class GameEngine {
     constructor({
@@ -65,8 +72,8 @@ export class GameEngine {
         this._applyShadowSettings(this._shadows.settings);
 
         // ✅ Tone mapping
-        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
         this._lighting = getResolvedLightingSettings();
+        this.renderer.toneMapping = resolveThreeToneMapping(this._lighting.toneMapping);
         this.renderer.toneMappingExposure = this._lighting.exposure;
         this._atmosphere = getResolvedAtmosphereSettings();
 
@@ -76,7 +83,11 @@ export class GameEngine {
         this.camera.position.set(0, 4, 14);
 
         this._post = {
-            pipeline: null
+            pipeline: null,
+            debugOptions: {
+                outputToneMappingEnabled: true,
+                outputColorSpaceEnabled: true
+            }
         };
 
         this._bloom = {
@@ -194,6 +205,7 @@ export class GameEngine {
 
         const next = {
             exposure: clamp(src?.exposure ?? prev.exposure, 0.1, 5, prev.exposure),
+            toneMapping: sanitizeToneMappingMode(src?.toneMapping ?? prev.toneMapping, prev.toneMapping ?? 'aces'),
             hemiIntensity: clamp(src?.hemiIntensity ?? prev.hemiIntensity, 0, 5, prev.hemiIntensity),
             sunIntensity: clamp(src?.sunIntensity ?? prev.sunIntensity, 0, 10, prev.sunIntensity),
             ibl: {
@@ -205,7 +217,12 @@ export class GameEngine {
         };
 
         this._lighting = next;
+        this.renderer.toneMapping = resolveThreeToneMapping(next.toneMapping);
         this.renderer.toneMappingExposure = next.exposure;
+        this._post?.pipeline?.setToneMapping?.({
+            toneMapping: this.renderer.toneMapping,
+            exposure: this.renderer.toneMappingExposure
+        });
 
         if (!this._ibl) {
             this._initIBL();
@@ -818,6 +835,11 @@ export class GameEngine {
             lutTexture: this._colorGrading?.lut ?? null,
             intensity: this._colorGrading?.settings?.intensity ?? 0
         });
+        this._post.pipeline.setToneMapping({
+            toneMapping: this.renderer.toneMapping,
+            exposure: this.renderer.toneMappingExposure
+        });
+        this._post.pipeline.setDebugOptions(this._post?.debugOptions ?? null);
     }
 
     _initIBL() {
@@ -908,7 +930,12 @@ export class GameEngine {
 
     reloadLightingSettings() {
         this._lighting = getResolvedLightingSettings();
+        this.renderer.toneMapping = resolveThreeToneMapping(this._lighting.toneMapping);
         this.renderer.toneMappingExposure = this._lighting.exposure;
+        this._post?.pipeline?.setToneMapping?.({
+            toneMapping: this.renderer.toneMapping,
+            exposure: this.renderer.toneMappingExposure
+        });
         this.scene.environment = null;
         this.scene.background = null;
         this._ibl = null;
@@ -962,6 +989,21 @@ export class GameEngine {
 
     setColorGradingSettings(settings) {
         this._applyColorGradingSettings(settings);
+    }
+
+    setPostProcessingDebugOptions(options) {
+        const src = options && typeof options === 'object' ? options : {};
+        const prev = this._post?.debugOptions ?? {};
+        const next = {
+            outputToneMappingEnabled: src.outputToneMappingEnabled !== undefined
+                ? !!src.outputToneMappingEnabled
+                : (prev.outputToneMappingEnabled !== undefined ? !!prev.outputToneMappingEnabled : true),
+            outputColorSpaceEnabled: src.outputColorSpaceEnabled !== undefined
+                ? !!src.outputColorSpaceEnabled
+                : (prev.outputColorSpaceEnabled !== undefined ? !!prev.outputColorSpaceEnabled : true)
+        };
+        this._post.debugOptions = next;
+        this._post?.pipeline?.setDebugOptions?.(next);
     }
 
     restart({ startState = 'welcome' } = {}) {

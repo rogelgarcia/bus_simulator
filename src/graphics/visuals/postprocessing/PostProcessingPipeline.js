@@ -274,7 +274,7 @@ function makeCompositePass({ globalBloomTexture, sunBloomTexture } = {}) {
         `,
         depthWrite: false,
         depthTest: false,
-        toneMapped: true
+        toneMapped: false
     });
 
     return new ShaderPass(mat, 'baseTexture');
@@ -302,7 +302,9 @@ function createWhiteTexture() {
 
 const OUTPUT_COLORSPACE_SHADER = Object.freeze({
     uniforms: {
-        tDiffuse: { value: null }
+        tDiffuse: { value: null },
+        uEnableToneMapping: { value: 1.0 },
+        uEnableOutputColorSpace: { value: 1.0 }
     },
     vertexShader: `
         varying vec2 vUv;
@@ -313,11 +315,20 @@ const OUTPUT_COLORSPACE_SHADER = Object.freeze({
     `,
     fragmentShader: `
         uniform sampler2D tDiffuse;
+        uniform float uEnableToneMapping;
+        uniform float uEnableOutputColorSpace;
         varying vec2 vUv;
+
+        #include <common>
 
         void main() {
             gl_FragColor = texture2D(tDiffuse, vUv);
-            #include <colorspace_fragment>
+            if (uEnableToneMapping > 0.5) {
+                #include <tonemapping_fragment>
+            }
+            if (uEnableOutputColorSpace > 0.5) {
+                #include <colorspace_fragment>
+            }
         }
     `
 });
@@ -415,6 +426,10 @@ export class PostProcessingPipeline {
             msaaMaxSamples: 0,
             msaaSamples: 0
         };
+        this._debugOptions = {
+            outputToneMappingEnabled: true,
+            outputColorSpaceEnabled: true
+        };
 
         this._darkMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
         this._darkMaterial.toneMapped = false;
@@ -472,7 +487,7 @@ export class PostProcessingPipeline {
         if (this.fxaaPass?.material) this.fxaaPass.material.toneMapped = false;
 
         this.outputPass = new ShaderPass(OUTPUT_COLORSPACE_SHADER);
-        if (this.outputPass?.material) this.outputPass.material.toneMapped = false;
+        if (this.outputPass?.material) this.outputPass.material.toneMapped = true;
 
         this.composer.addPass(this.renderPass);
         this._syncAmbientOcclusionPass();
@@ -487,6 +502,7 @@ export class PostProcessingPipeline {
         this.setAmbientOcclusion(ambientOcclusion);
         this.setColorGrading(colorGrading);
         this.setAntiAliasing(antiAliasing);
+        this.setDebugOptions(this._debugOptions);
     }
 
     _syncAoAlphaCutoutSupport() {
@@ -999,6 +1015,7 @@ export class PostProcessingPipeline {
         const pass = this._ao.pass;
         if (!pass) return;
 
+        setToneMappedForPassMaterials(pass, false);
         this._syncAoAlphaCutoutSupport();
 
         if (nextMode === 'ssao') {
@@ -1223,6 +1240,33 @@ export class PostProcessingPipeline {
             lutTexture
         };
         setColorGradingPassState(this.colorGradingPass, { lutTexture, intensity });
+    }
+
+    setToneMapping({ toneMapping = null, exposure = null } = {}) {
+        const renderer = this.renderer ?? null;
+        if (renderer) {
+            if (Number.isFinite(toneMapping)) renderer.toneMapping = Number(toneMapping);
+            if (Number.isFinite(exposure)) renderer.toneMappingExposure = Number(exposure);
+        }
+        if (this.outputPass?.material) this.outputPass.material.needsUpdate = true;
+    }
+
+    setDebugOptions(options = null) {
+        const src = options && typeof options === 'object' ? options : {};
+        const prev = this._debugOptions ?? {};
+        const next = {
+            outputToneMappingEnabled: src.outputToneMappingEnabled !== undefined
+                ? !!src.outputToneMappingEnabled
+                : (prev.outputToneMappingEnabled !== undefined ? !!prev.outputToneMappingEnabled : true),
+            outputColorSpaceEnabled: src.outputColorSpaceEnabled !== undefined
+                ? !!src.outputColorSpaceEnabled
+                : (prev.outputColorSpaceEnabled !== undefined ? !!prev.outputColorSpaceEnabled : true)
+        };
+        this._debugOptions = next;
+
+        const uniforms = this.outputPass?.material?.uniforms ?? null;
+        if (uniforms?.uEnableToneMapping) uniforms.uEnableToneMapping.value = next.outputToneMappingEnabled ? 1.0 : 0.0;
+        if (uniforms?.uEnableOutputColorSpace) uniforms.uEnableOutputColorSpace.value = next.outputColorSpaceEnabled ? 1.0 : 0.0;
     }
 
     getDebugInfo() {

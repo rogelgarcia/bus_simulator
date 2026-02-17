@@ -19,6 +19,7 @@
   - One-way curved connector
 - Uses the same `RoadEngineRoads` path as gameplay city rendering.
 - Open area: large terrain envelope around the road layout.
+- Tile-grid line overlay is hidden in Lab Scene.
 - Buildings: 5 fixed blocks around the central road/crossing area.
 - Buildings use catalog `configId` entries with textured wall materials.
 - Trees are enabled using the standard city terrain/tree generator path.
@@ -57,6 +58,7 @@ Mouse camera movement:
   - Window reflections
 - Ambient Occlusion mode uses a single choice control: `Off` / `SSAO` / `GTAO`.
 - MSAA selector uses a single choice control: `2x` / `8x`.
+- Tone mapping selector uses a single choice control: `ACES` / `AgX` / `Neutral`.
 
 ## Fixed-atmosphere rule
 
