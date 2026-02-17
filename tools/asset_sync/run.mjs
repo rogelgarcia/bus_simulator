@@ -7,8 +7,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '../..');
 
-const DEFAULT_SOURCE = path.resolve(repoRoot, '../../bus_simulator/assets');
-const DEFAULT_DEST = path.resolve(repoRoot, 'assets');
+const DEFAULT_MAIN_ASSETS = path.resolve(repoRoot, '../../bus_simulator/assets');
+const DEFAULT_WORKTREE_ASSETS = path.resolve(repoRoot, 'assets');
+
+function getDefaultPaths(reverse) {
+    return reverse
+        ? { fromPath: DEFAULT_WORKTREE_ASSETS, toPath: DEFAULT_MAIN_ASSETS }
+        : { fromPath: DEFAULT_MAIN_ASSETS, toPath: DEFAULT_WORKTREE_ASSETS };
+}
 
 function printUsage() {
     console.log('assetSync');
@@ -17,16 +23,20 @@ function printUsage() {
     console.log('  node tools/asset_sync/run.mjs [options]');
     console.log('');
     console.log('Options:');
-    console.log(`  --from <path>           Source assets directory (default: ${DEFAULT_SOURCE})`);
-    console.log(`  --to <path>             Destination assets directory (default: ${DEFAULT_DEST})`);
+    console.log(`  --from <path>           Source assets directory (default: ${DEFAULT_MAIN_ASSETS})`);
+    console.log(`  --to <path>             Destination assets directory (default: ${DEFAULT_WORKTREE_ASSETS})`);
+    console.log('  --reverse               Copy from this worktree assets back to main worktree assets');
     console.log('  --dry-run               Print actions only');
     console.log('  --help                  Show this help');
 }
 
 function parseArgs(argv) {
     const out = {
-        fromPath: DEFAULT_SOURCE,
-        toPath: DEFAULT_DEST,
+        fromPath: '',
+        toPath: '',
+        fromProvided: false,
+        toProvided: false,
+        reverse: false,
         dryRun: false,
         help: false
     };
@@ -41,29 +51,41 @@ function parseArgs(argv) {
             out.dryRun = true;
             continue;
         }
+        if (token === '--reverse') {
+            out.reverse = true;
+            continue;
+        }
         if (token === '--from') {
             out.fromPath = String(argv[i + 1] ?? '').trim();
+            out.fromProvided = true;
             i += 1;
             continue;
         }
         if (token.startsWith('--from=')) {
             out.fromPath = String(token.slice('--from='.length)).trim();
+            out.fromProvided = true;
             continue;
         }
         if (token === '--to') {
             out.toPath = String(argv[i + 1] ?? '').trim();
+            out.toProvided = true;
             i += 1;
             continue;
         }
         if (token.startsWith('--to=')) {
             out.toPath = String(token.slice('--to='.length)).trim();
+            out.toProvided = true;
             continue;
         }
         throw new Error(`Unknown argument: ${token}`);
     }
 
-    if (!out.fromPath) throw new Error('--from cannot be empty.');
-    if (!out.toPath) throw new Error('--to cannot be empty.');
+    const defaults = getDefaultPaths(out.reverse);
+    if (!out.fromProvided) out.fromPath = defaults.fromPath;
+    if (!out.toProvided) out.toPath = defaults.toPath;
+
+    if (out.fromProvided && !out.fromPath) throw new Error('--from cannot be empty.');
+    if (out.toProvided && !out.toPath) throw new Error('--to cannot be empty.');
     return out;
 }
 
@@ -101,6 +123,7 @@ async function run() {
 
     if (options.dryRun) {
         console.log('[assetSync] Dry run:');
+        console.log(`  mode:          ${options.reverse ? 'reverse (worktree -> main)' : 'default (main -> worktree)'}`);
         console.log(`  source path:   ${sourcePath}`);
         console.log(`  destination:   ${destinationPath}`);
         return;
