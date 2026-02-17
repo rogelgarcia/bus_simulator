@@ -31,7 +31,12 @@ The debugger UI state MUST include a `terrain.engine` payload (serializable) cov
 - `seed`
 - `patch` (at least `sizeMeters`, optional `originX/originZ`, optional `layout/voronoiJitter`, optional `warpScale/warpAmplitudeMeters`)
 - `biomes` (mode, default biome, weights)
-- `humidity` (mode + noise parameters)
+- `humidity`:
+  - `mode` (`source_map` for debugger flow)
+  - `cloud` controls (`subtilePerTile`, `scale`, `octaves`, `gain`, `lacunarity`, `bias`, `amplitude`)
+- `materialBindings`:
+  - `biomes`: per-biome dry/neutral/wet PBR material ids
+  - `humidity`: slot-threshold and edge-band settings (`dryMax`, `wetMin`, `blendBand`, `edgeNoiseScale`, `edgeNoiseStrength`)
 - `transition` (near-camera blend zone radius/feather + boundary band width)
 
 The bounds are not stored in UI state and are always derived from terrain geometry.
@@ -39,8 +44,14 @@ The bounds are not stored in UI state and are always derived from terrain geomet
 ## 4. Rendering Integration (High Level)
 
 - The debugger renders ground appearance from terrain engine outputs.
+- Humidity source map data is runtime-owned by the debugger view and pushed to the engine via `setSourceMaps({ humidity })`.
+- The source map is generated from cloud-noise sampling with one humidity value per subtile.
 - Debug views and mask exports may be view-dependent (because transition blending depends on camera/view origin).
 - Switching debug views MUST NOT mutate long-lived renderer state in a way that breaks normal rendering after returning to the standard view.
+- Standard mode shading MUST resolve final PBR from biome × humidity bindings (PBR-only; no humidity tint overlay workflow).
+- Transition-band diagnostics MUST represent final PBR boundaries:
+  - biome-boundary blend bands
+  - humidity slot edge bands
 
 ## 5. Migration Notes (Legacy Controls)
 
@@ -51,3 +62,8 @@ Legacy terrain controls that are debugger-only and no longer authoritative shoul
 - terrain variation layers/macros intended for one-material workflows
 
 Replacements MUST flow through the terrain engine config and derived outputs.
+
+Additionally deprecated for this phase:
+
+- humidity paint/brush/fill controls in Terrain Debugger UI
+- humidity tint-centric controls that do not change PBR slot assignment

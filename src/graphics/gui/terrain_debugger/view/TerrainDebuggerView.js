@@ -24,9 +24,16 @@ import { GrassLodInspectorPopup } from './GrassLodInspectorPopup.js';
 const EPS = 1e-6;
 const CAMERA_PRESET_BEHIND_GAMEPLAY_DISTANCE = 13.5;
 const ALBEDO_SATURATION_ADJUST_SHADER_VERSION = 2;
-const TERRAIN_BIOME_BLEND_SHADER_VERSION = 4;
+const TERRAIN_BIOME_BLEND_SHADER_VERSION = 6;
 
 const TERRAIN_ENGINE_MASK_TEX_SIZE = 256;
+const TERRAIN_BIOME_IDS = Object.freeze(['stone', 'grass', 'land']);
+const TERRAIN_HUMIDITY_SLOT_IDS = Object.freeze(['dry', 'neutral', 'wet']);
+const TERRAIN_HUMIDITY_LEVELS = Object.freeze({
+    dry: 0.14,
+    neutral: 0.50,
+    wet: 0.86
+});
 
 function injectAlbedoSaturationAdjustShader(material, shader) {
     const cfg = material?.userData?.albedoSaturationAdjustConfig ?? null;
@@ -157,11 +164,38 @@ function createSolidDataTexture(r, g, b, { srgb = true } = {}) {
     return tex;
 }
 
+function createHumidityEdgeNoiseTexture(size = 64) {
+    const s = Math.max(2, Math.round(Number(size) || 64));
+    const data = new Uint8Array(s * s * 4);
+    let i = 0;
+    for (let y = 0; y < s; y++) {
+        for (let x = 0; x < s; x++) {
+            const h = mixU32(((x + 1) * 73856093) ^ ((y + 1) * 19349663));
+            const v = h & 255;
+            data[i++] = v;
+            data[i++] = v;
+            data[i++] = v;
+            data[i++] = 255;
+        }
+    }
+    const tex = new THREE.DataTexture(data, s, s);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    tex.needsUpdate = true;
+    applyTextureColorSpace(tex, { srgb: false });
+    return tex;
+}
+
 const FALLBACK_TERRAIN_BIOME_MAPS = Object.freeze({
     stone: createSolidDataTexture(150, 150, 150, { srgb: true }),
     grass: createSolidDataTexture(70, 160, 78, { srgb: true }),
     land: createSolidDataTexture(215, 145, 70, { srgb: true })
 });
+
+const FALLBACK_TERRAIN_HUMIDITY_EDGE_NOISE_TEX = createHumidityEdgeNoiseTexture(64);
 
 const FALLBACK_TERRAIN_ENGINE_MASK_TEX = (() => {
     // Land everywhere, mid humidity; ensures Standard mode renders something even before the engine exports.
@@ -177,11 +211,47 @@ const FALLBACK_TERRAIN_ENGINE_MASK_TEX = (() => {
     return tex;
 })();
 
-const TERRAIN_BIOME_PBR_BINDINGS = Object.freeze({
-    stone: 'pbr.rocky_terrain_02',
-    grass: 'pbr.grass_005',
-    land: 'pbr.ground_037'
+const DEFAULT_TERRAIN_BIOME_HUMIDITY_PBR_BINDINGS = Object.freeze({
+    stone: Object.freeze({ dry: 'pbr.rock_ground', neutral: 'pbr.rock_ground', wet: 'pbr.coast_sand_rocks_02' }),
+    grass: Object.freeze({ dry: 'pbr.grass_005', neutral: 'pbr.grass_005', wet: 'pbr.grass_005' }),
+    land: Object.freeze({ dry: 'pbr.ground_037', neutral: 'pbr.ground_037', wet: 'pbr.ground_037' })
 });
+
+const DEFAULT_TERRAIN_HUMIDITY_BLEND_CONFIG = Object.freeze({
+    dryMax: 0.33,
+    wetMin: 0.67,
+    blendBand: 0.02,
+    edgeNoiseScale: 0.025,
+    edgeNoiseStrength: 0.0
+});
+
+const DEFAULT_TERRAIN_HUMIDITY_CLOUD_CONFIG = Object.freeze({
+    subtilePerTile: 8,
+    scale: 0.02,
+    octaves: 4,
+    gain: 0.5,
+    lacunarity: 2.0,
+    bias: 0.0,
+    amplitude: 1.0
+});
+
+function normalizeHumiditySlotId(value) {
+    const id = String(value ?? '');
+    if (id === 'dry' || id === 'wet') return id;
+    return 'neutral';
+}
+
+function titleCaseBiomeId(id) {
+    if (id === 'stone') return 'Stone';
+    if (id === 'grass') return 'Grass';
+    return 'Land';
+}
+
+function titleCaseHumiditySlot(slot) {
+    if (slot === 'dry') return 'Dry';
+    if (slot === 'wet') return 'Wet';
+    return 'Neutral';
+}
 
 function ensureTerrainBiomeBlendShaderOnMaterial(material) {
     if (!material?.isMeshStandardMaterial) return;
@@ -206,12 +276,21 @@ function ensureTerrainBiomeBlendShaderOnMaterial(material) {
         const data = mat.userData ?? {};
         shader.uniforms.uGdTerrainMask = { value: data.terrainEngineMaskTex ?? null };
         shader.uniforms.uGdTerrainBounds = { value: data.terrainEngineBounds ?? new THREE.Vector4() };
-        shader.uniforms.uGdBiomeMapStone = { value: data.terrainBiomeMapStone ?? FALLBACK_TERRAIN_BIOME_MAPS.stone };
-        shader.uniforms.uGdBiomeMapGrass = { value: data.terrainBiomeMapGrass ?? FALLBACK_TERRAIN_BIOME_MAPS.grass };
-        shader.uniforms.uGdBiomeMapLand = { value: data.terrainBiomeMapLand ?? FALLBACK_TERRAIN_BIOME_MAPS.land };
-        shader.uniforms.uGdBiomeUvScale = { value: data.terrainBiomeUvScale ?? new THREE.Vector3(0.25, 0.25, 0.25) };
-        shader.uniforms.uGdDryTintStrength = { value: Number(data.terrainBiomeDryTintStrength) || 0.28 };
-        shader.uniforms.uGdWetTintStrength = { value: Number(data.terrainBiomeWetTintStrength) || 0.22 };
+        shader.uniforms.uGdBiomeMapStoneDry = { value: data.terrainBiomeMapStoneDry ?? FALLBACK_TERRAIN_BIOME_MAPS.stone };
+        shader.uniforms.uGdBiomeMapStoneNeutral = { value: data.terrainBiomeMapStoneNeutral ?? FALLBACK_TERRAIN_BIOME_MAPS.stone };
+        shader.uniforms.uGdBiomeMapStoneWet = { value: data.terrainBiomeMapStoneWet ?? FALLBACK_TERRAIN_BIOME_MAPS.stone };
+        shader.uniforms.uGdBiomeMapGrassDry = { value: data.terrainBiomeMapGrassDry ?? FALLBACK_TERRAIN_BIOME_MAPS.grass };
+        shader.uniforms.uGdBiomeMapGrassNeutral = { value: data.terrainBiomeMapGrassNeutral ?? FALLBACK_TERRAIN_BIOME_MAPS.grass };
+        shader.uniforms.uGdBiomeMapGrassWet = { value: data.terrainBiomeMapGrassWet ?? FALLBACK_TERRAIN_BIOME_MAPS.grass };
+        shader.uniforms.uGdBiomeMapLandDry = { value: data.terrainBiomeMapLandDry ?? FALLBACK_TERRAIN_BIOME_MAPS.land };
+        shader.uniforms.uGdBiomeMapLandNeutral = { value: data.terrainBiomeMapLandNeutral ?? FALLBACK_TERRAIN_BIOME_MAPS.land };
+        shader.uniforms.uGdBiomeMapLandWet = { value: data.terrainBiomeMapLandWet ?? FALLBACK_TERRAIN_BIOME_MAPS.land };
+        shader.uniforms.uGdBiomeUvScaleStone = { value: data.terrainBiomeUvScaleStone ?? new THREE.Vector3(0.25, 0.25, 0.25) };
+        shader.uniforms.uGdBiomeUvScaleGrass = { value: data.terrainBiomeUvScaleGrass ?? new THREE.Vector3(0.25, 0.25, 0.25) };
+        shader.uniforms.uGdBiomeUvScaleLand = { value: data.terrainBiomeUvScaleLand ?? new THREE.Vector3(0.25, 0.25, 0.25) };
+        shader.uniforms.uGdHumidityThresholds = { value: data.terrainHumidityThresholds ?? new THREE.Vector4(0.33, 0.67, 0.02, 0.0) };
+        shader.uniforms.uGdHumidityEdgeNoise = { value: data.terrainHumidityEdgeNoise ?? new THREE.Vector4(0.025, 0.0, 0.0, 0.0) };
+        shader.uniforms.uGdHumidityEdgeNoiseTex = { value: data.terrainHumidityEdgeNoiseTex ?? FALLBACK_TERRAIN_HUMIDITY_EDGE_NOISE_TEX };
 
         shader.vertexShader = shader.vertexShader.replace(
             '#include <common>',
@@ -247,12 +326,21 @@ function ensureTerrainBiomeBlendShaderOnMaterial(material) {
                 'varying vec2 vGdWorldUv;',
                 'uniform sampler2D uGdTerrainMask;',
                 'uniform vec4 uGdTerrainBounds;',
-                'uniform sampler2D uGdBiomeMapStone;',
-                'uniform sampler2D uGdBiomeMapGrass;',
-                'uniform sampler2D uGdBiomeMapLand;',
-                'uniform vec3 uGdBiomeUvScale;',
-                'uniform float uGdDryTintStrength;',
-                'uniform float uGdWetTintStrength;',
+                'uniform sampler2D uGdBiomeMapStoneDry;',
+                'uniform sampler2D uGdBiomeMapStoneNeutral;',
+                'uniform sampler2D uGdBiomeMapStoneWet;',
+                'uniform sampler2D uGdBiomeMapGrassDry;',
+                'uniform sampler2D uGdBiomeMapGrassNeutral;',
+                'uniform sampler2D uGdBiomeMapGrassWet;',
+                'uniform sampler2D uGdBiomeMapLandDry;',
+                'uniform sampler2D uGdBiomeMapLandNeutral;',
+                'uniform sampler2D uGdBiomeMapLandWet;',
+                'uniform vec3 uGdBiomeUvScaleStone;',
+                'uniform vec3 uGdBiomeUvScaleGrass;',
+                'uniform vec3 uGdBiomeUvScaleLand;',
+                'uniform vec4 uGdHumidityThresholds;',
+                'uniform vec4 uGdHumidityEdgeNoise;',
+                'uniform sampler2D uGdHumidityEdgeNoiseTex;',
                 'vec3 gdSrgbToLinear(vec3 c){',
                 'bvec3 cutoff = lessThanEqual(c, vec3(0.04045));',
                 'vec3 lower = c / 12.92;',
@@ -264,13 +352,41 @@ function ensureTerrainBiomeBlendShaderOnMaterial(material) {
                 'vec2 uv = (worldUv - vec2(uGdTerrainBounds.x, uGdTerrainBounds.z)) / denom;',
                 'return clamp(uv, 0.0, 1.0);',
                 '}',
-                'vec3 gdTerrainApplyHumidityTint(vec3 c, float humidity){',
+                'vec3 gdHumidityWeights(float humidity, vec2 worldUv){',
                 'float h = clamp(humidity, 0.0, 1.0);',
-                'float dryW = clamp(1.0 - h, 0.0, 1.0);',
-                'float wetW = clamp((h - 0.5) * 2.0, 0.0, 1.0);',
-                'c = mix(c, vec3(1.0, 0.95, 0.65), dryW * uGdDryTintStrength);',
-                'c = mix(c, vec3(0.08, 0.35, 0.15), wetW * uGdWetTintStrength);',
-                'return c;',
+                'float dryMax = clamp(uGdHumidityThresholds.x, 0.01, 0.98);',
+                'float wetMin = clamp(uGdHumidityThresholds.y, dryMax + 0.01, 0.99);',
+                'float band = max(1e-4, uGdHumidityThresholds.z);',
+                'float halfBand = band * 0.5;',
+                'float edgeScale = max(1e-6, uGdHumidityEdgeNoise.x);',
+                'float edgeStrength = clamp(uGdHumidityEdgeNoise.y, 0.0, 1.0);',
+                'float noise = gdTex2D(uGdHumidityEdgeNoiseTex, worldUv * edgeScale).r * 2.0 - 1.0;',
+                'float dryDist = abs(h - dryMax);',
+                'float wetDist = abs(h - wetMin);',
+                'float edgeMask = max(1.0 - smoothstep(halfBand, band, dryDist), 1.0 - smoothstep(halfBand, band, wetDist));',
+                'h = clamp(h + noise * edgeStrength * edgeMask, 0.0, 1.0);',
+                'if (h < dryMax - halfBand) return vec3(1.0, 0.0, 0.0);',
+                'if (h > wetMin + halfBand) return vec3(0.0, 0.0, 1.0);',
+                'if (h <= dryMax + halfBand) {',
+                'float t = clamp((h - (dryMax - halfBand)) / max(1e-6, band), 0.0, 1.0);',
+                'float neutralW = smoothstep(0.0, 1.0, t);',
+                'return vec3(1.0 - neutralW, neutralW, 0.0);',
+                '}',
+                'if (h >= wetMin - halfBand) {',
+                'float t = clamp((h - (wetMin - halfBand)) / max(1e-6, band), 0.0, 1.0);',
+                'float wetW = smoothstep(0.0, 1.0, t);',
+                'return vec3(0.0, 1.0 - wetW, wetW);',
+                '}',
+                'return vec3(0.0, 1.0, 0.0);',
+                '}',
+                'vec3 gdSampleBiomeHumidityPbr(',
+                'sampler2D dryMap, sampler2D neutralMap, sampler2D wetMap,',
+                'vec3 uvScale, vec2 worldUv, vec3 humidityWeights',
+                '){',
+                'vec3 cDry = gdSrgbToLinear(gdTex2D(dryMap, worldUv * uvScale.x).rgb);',
+                'vec3 cNeutral = gdSrgbToLinear(gdTex2D(neutralMap, worldUv * uvScale.y).rgb);',
+                'vec3 cWet = gdSrgbToLinear(gdTex2D(wetMap, worldUv * uvScale.z).rgb);',
+                'return cDry * humidityWeights.x + cNeutral * humidityWeights.y + cWet * humidityWeights.z;',
                 '}',
                 '#endif'
             ].join('\n')
@@ -292,11 +408,20 @@ function ensureTerrainBiomeBlendShaderOnMaterial(material) {
                 'float wp = 1.0 - gdBlend;',
                 'if (gdPrimary == 0) wStone += wp; else if (gdPrimary == 1) wGrass += wp; else wLand += wp;',
                 'if (gdSecondary == 0) wStone += gdBlend; else if (gdSecondary == 1) wGrass += gdBlend; else wLand += gdBlend;',
-                'vec3 cStone = gdSrgbToLinear(gdTex2D(uGdBiomeMapStone, gdWorldUv * uGdBiomeUvScale.x).rgb);',
-                'vec3 cGrass = gdSrgbToLinear(gdTex2D(uGdBiomeMapGrass, gdWorldUv * uGdBiomeUvScale.y).rgb);',
-                'vec3 cLand = gdSrgbToLinear(gdTex2D(uGdBiomeMapLand, gdWorldUv * uGdBiomeUvScale.z).rgb);',
+                'vec3 gdHumidityWeights01 = gdHumidityWeights(gdHumidity, gdWorldUv);',
+                'vec3 cStone = gdSampleBiomeHumidityPbr(',
+                'uGdBiomeMapStoneDry, uGdBiomeMapStoneNeutral, uGdBiomeMapStoneWet,',
+                'uGdBiomeUvScaleStone, gdWorldUv, gdHumidityWeights01',
+                ');',
+                'vec3 cGrass = gdSampleBiomeHumidityPbr(',
+                'uGdBiomeMapGrassDry, uGdBiomeMapGrassNeutral, uGdBiomeMapGrassWet,',
+                'uGdBiomeUvScaleGrass, gdWorldUv, gdHumidityWeights01',
+                ');',
+                'vec3 cLand = gdSampleBiomeHumidityPbr(',
+                'uGdBiomeMapLandDry, uGdBiomeMapLandNeutral, uGdBiomeMapLandWet,',
+                'uGdBiomeUvScaleLand, gdWorldUv, gdHumidityWeights01',
+                ');',
                 'vec3 texelColor = cStone * wStone + cGrass * wGrass + cLand * wLand;',
-                'texelColor = gdTerrainApplyHumidityTint(texelColor, gdHumidity);',
                 // Standard mode should always show terrain, even if other material controls set color to black.
                 'diffuseColor.rgb = texelColor;',
                 '#else',
@@ -319,12 +444,21 @@ function syncTerrainBiomeBlendUniformsOnMaterial(material) {
 
     if (uniforms.uGdTerrainMask) uniforms.uGdTerrainMask.value = data.terrainEngineMaskTex ?? null;
     if (uniforms.uGdTerrainBounds) uniforms.uGdTerrainBounds.value = data.terrainEngineBounds ?? uniforms.uGdTerrainBounds.value;
-    if (uniforms.uGdBiomeMapStone) uniforms.uGdBiomeMapStone.value = data.terrainBiomeMapStone ?? FALLBACK_TERRAIN_BIOME_MAPS.stone;
-    if (uniforms.uGdBiomeMapGrass) uniforms.uGdBiomeMapGrass.value = data.terrainBiomeMapGrass ?? FALLBACK_TERRAIN_BIOME_MAPS.grass;
-    if (uniforms.uGdBiomeMapLand) uniforms.uGdBiomeMapLand.value = data.terrainBiomeMapLand ?? FALLBACK_TERRAIN_BIOME_MAPS.land;
-    if (uniforms.uGdBiomeUvScale) uniforms.uGdBiomeUvScale.value = data.terrainBiomeUvScale ?? uniforms.uGdBiomeUvScale.value;
-    if (uniforms.uGdDryTintStrength) uniforms.uGdDryTintStrength.value = Number(data.terrainBiomeDryTintStrength) || 0.28;
-    if (uniforms.uGdWetTintStrength) uniforms.uGdWetTintStrength.value = Number(data.terrainBiomeWetTintStrength) || 0.22;
+    if (uniforms.uGdBiomeMapStoneDry) uniforms.uGdBiomeMapStoneDry.value = data.terrainBiomeMapStoneDry ?? FALLBACK_TERRAIN_BIOME_MAPS.stone;
+    if (uniforms.uGdBiomeMapStoneNeutral) uniforms.uGdBiomeMapStoneNeutral.value = data.terrainBiomeMapStoneNeutral ?? FALLBACK_TERRAIN_BIOME_MAPS.stone;
+    if (uniforms.uGdBiomeMapStoneWet) uniforms.uGdBiomeMapStoneWet.value = data.terrainBiomeMapStoneWet ?? FALLBACK_TERRAIN_BIOME_MAPS.stone;
+    if (uniforms.uGdBiomeMapGrassDry) uniforms.uGdBiomeMapGrassDry.value = data.terrainBiomeMapGrassDry ?? FALLBACK_TERRAIN_BIOME_MAPS.grass;
+    if (uniforms.uGdBiomeMapGrassNeutral) uniforms.uGdBiomeMapGrassNeutral.value = data.terrainBiomeMapGrassNeutral ?? FALLBACK_TERRAIN_BIOME_MAPS.grass;
+    if (uniforms.uGdBiomeMapGrassWet) uniforms.uGdBiomeMapGrassWet.value = data.terrainBiomeMapGrassWet ?? FALLBACK_TERRAIN_BIOME_MAPS.grass;
+    if (uniforms.uGdBiomeMapLandDry) uniforms.uGdBiomeMapLandDry.value = data.terrainBiomeMapLandDry ?? FALLBACK_TERRAIN_BIOME_MAPS.land;
+    if (uniforms.uGdBiomeMapLandNeutral) uniforms.uGdBiomeMapLandNeutral.value = data.terrainBiomeMapLandNeutral ?? FALLBACK_TERRAIN_BIOME_MAPS.land;
+    if (uniforms.uGdBiomeMapLandWet) uniforms.uGdBiomeMapLandWet.value = data.terrainBiomeMapLandWet ?? FALLBACK_TERRAIN_BIOME_MAPS.land;
+    if (uniforms.uGdBiomeUvScaleStone) uniforms.uGdBiomeUvScaleStone.value = data.terrainBiomeUvScaleStone ?? uniforms.uGdBiomeUvScaleStone.value;
+    if (uniforms.uGdBiomeUvScaleGrass) uniforms.uGdBiomeUvScaleGrass.value = data.terrainBiomeUvScaleGrass ?? uniforms.uGdBiomeUvScaleGrass.value;
+    if (uniforms.uGdBiomeUvScaleLand) uniforms.uGdBiomeUvScaleLand.value = data.terrainBiomeUvScaleLand ?? uniforms.uGdBiomeUvScaleLand.value;
+    if (uniforms.uGdHumidityThresholds) uniforms.uGdHumidityThresholds.value = data.terrainHumidityThresholds ?? uniforms.uGdHumidityThresholds.value;
+    if (uniforms.uGdHumidityEdgeNoise) uniforms.uGdHumidityEdgeNoise.value = data.terrainHumidityEdgeNoise ?? uniforms.uGdHumidityEdgeNoise.value;
+    if (uniforms.uGdHumidityEdgeNoiseTex) uniforms.uGdHumidityEdgeNoiseTex.value = data.terrainHumidityEdgeNoiseTex ?? FALLBACK_TERRAIN_HUMIDITY_EDGE_NOISE_TEX;
 }
 
 function ensureUv2(geo) {
@@ -645,9 +779,18 @@ export class TerrainDebuggerView {
         this._terrainDebugMat = null;
         this._terrainDebugTexKey = '';
         this._terrainEngineBoundsVec4 = new THREE.Vector4();
-        this._terrainBiomeUvScaleVec3 = new THREE.Vector3();
+        this._terrainBiomeUvScaleStoneVec3 = new THREE.Vector3();
+        this._terrainBiomeUvScaleGrassVec3 = new THREE.Vector3();
+        this._terrainBiomeUvScaleLandVec3 = new THREE.Vector3();
+        this._terrainHumidityThresholdsVec4 = new THREE.Vector4();
+        this._terrainHumidityEdgeNoiseVec4 = new THREE.Vector4();
         this._terrainBiomePbrKey = '';
         this._terrainBiomeDummyMapTex = createSolidDataTexture(215, 145, 70, { srgb: true });
+        this._terrainBiomeHumidityBindings = JSON.parse(JSON.stringify(DEFAULT_TERRAIN_BIOME_HUMIDITY_PBR_BINDINGS));
+        this._terrainHumidityBlendConfig = { ...DEFAULT_TERRAIN_HUMIDITY_BLEND_CONFIG };
+        this._terrainHumidityCloudConfig = { ...DEFAULT_TERRAIN_HUMIDITY_CLOUD_CONFIG };
+        this._terrainHumiditySourceMap = null;
+        this._terrainHumiditySourceMapKey = '';
 
         this._grassEngine = null;
         this._grassRoadBounds = { enabled: false, halfWidth: 0, z0: 0, z1: 0 };
@@ -1001,7 +1144,7 @@ export class TerrainDebuggerView {
                         weights: { stone: 0.25, grass: 0.35, land: 0.40 }
                     },
                     humidity: {
-                        mode: 'noise',
+                        mode: 'source_map',
                         noiseScale: 0.01,
                         octaves: 4,
                         gain: 0.5,
@@ -1035,7 +1178,6 @@ export class TerrainDebuggerView {
         primePbrAssetsAvailability().then(() => {
             const state = this._ui?.getState?.();
             if (state) this._applyUiState(state);
-            this._warmupGroundTextures();
         }).catch(() => {});
 
         window.addEventListener('resize', this._onResize, { passive: true });
@@ -1082,6 +1224,8 @@ export class TerrainDebuggerView {
         this._terrainEngineMaskDirty = true;
         this._terrainEngineMaskViewKey = '';
         this._terrainEngineLastExport = null;
+        this._terrainHumiditySourceMap = null;
+        this._terrainHumiditySourceMapKey = '';
         this._terrainDebugTex?.dispose?.();
         this._terrainDebugTex = null;
         this._terrainDebugMat?.dispose?.();
@@ -1944,54 +2088,228 @@ export class TerrainDebuggerView {
         return { minX, maxX, minZ, maxZ };
     }
 
+    _sanitizeTerrainBiomeHumidityBindings(bindingsSrc) {
+        const src = bindingsSrc && typeof bindingsSrc === 'object' ? bindingsSrc : {};
+        const out = {};
+        for (const biome of TERRAIN_BIOME_IDS) {
+            const srcBiome = src[biome] && typeof src[biome] === 'object' ? src[biome] : {};
+            const fallbackBiome = DEFAULT_TERRAIN_BIOME_HUMIDITY_PBR_BINDINGS[biome] ?? {};
+            const row = {};
+            for (const slot of TERRAIN_HUMIDITY_SLOT_IDS) {
+                const id = String(srcBiome[slot] ?? fallbackBiome[slot] ?? '');
+                row[slot] = id || String(fallbackBiome[slot] ?? '');
+            }
+            out[biome] = row;
+        }
+        return out;
+    }
+
+    _sanitizeTerrainHumidityBlendConfig(humidityCfgSrc) {
+        const src = humidityCfgSrc && typeof humidityCfgSrc === 'object' ? humidityCfgSrc : {};
+        const dryMax = clamp(src.dryMax, 0.05, 0.49, DEFAULT_TERRAIN_HUMIDITY_BLEND_CONFIG.dryMax);
+        const wetMinBase = clamp(src.wetMin, 0.51, 0.95, DEFAULT_TERRAIN_HUMIDITY_BLEND_CONFIG.wetMin);
+        const wetMin = wetMinBase <= dryMax + 0.02 ? Math.min(0.95, dryMax + 0.02) : wetMinBase;
+        return {
+            dryMax,
+            wetMin,
+            blendBand: clamp(src.blendBand, 0.005, 0.25, DEFAULT_TERRAIN_HUMIDITY_BLEND_CONFIG.blendBand),
+            edgeNoiseScale: clamp(src.edgeNoiseScale, 0.001, 0.2, DEFAULT_TERRAIN_HUMIDITY_BLEND_CONFIG.edgeNoiseScale),
+            edgeNoiseStrength: clamp(src.edgeNoiseStrength, 0.0, 0.3, DEFAULT_TERRAIN_HUMIDITY_BLEND_CONFIG.edgeNoiseStrength)
+        };
+    }
+
+    _sanitizeTerrainHumidityCloudConfig(cloudSrc) {
+        const src = cloudSrc && typeof cloudSrc === 'object' ? cloudSrc : {};
+        return {
+            subtilePerTile: Math.max(1, Math.min(32, Math.round(Number(src.subtilePerTile) || DEFAULT_TERRAIN_HUMIDITY_CLOUD_CONFIG.subtilePerTile))),
+            scale: clamp(src.scale, 0.0005, 0.2, DEFAULT_TERRAIN_HUMIDITY_CLOUD_CONFIG.scale),
+            octaves: Math.max(1, Math.min(8, Math.round(Number(src.octaves) || DEFAULT_TERRAIN_HUMIDITY_CLOUD_CONFIG.octaves))),
+            gain: clamp(src.gain, 0.01, 1.0, DEFAULT_TERRAIN_HUMIDITY_CLOUD_CONFIG.gain),
+            lacunarity: clamp(src.lacunarity, 1.0, 4.0, DEFAULT_TERRAIN_HUMIDITY_CLOUD_CONFIG.lacunarity),
+            bias: clamp(src.bias, -1.0, 1.0, DEFAULT_TERRAIN_HUMIDITY_CLOUD_CONFIG.bias),
+            amplitude: clamp(src.amplitude, 0.0, 1.0, DEFAULT_TERRAIN_HUMIDITY_CLOUD_CONFIG.amplitude)
+        };
+    }
+
+    _buildTerrainHumiditySourceMapFromCloud({ bounds, seed } = {}) {
+        const b = bounds && typeof bounds === 'object' ? bounds : null;
+        if (!b) return null;
+        const cfg = this._terrainHumidityCloudConfig ?? DEFAULT_TERRAIN_HUMIDITY_CLOUD_CONFIG;
+        const grid = this._terrainGrid;
+        const widthTiles = Math.max(1, Math.round(Number(grid?.widthTiles) || 1));
+        const depthTiles = Math.max(1, Math.round(Number(grid?.depthTiles) || 1));
+        const subtilePerTile = Math.max(1, Math.min(32, Math.round(Number(cfg.subtilePerTile) || 8)));
+        const width = Math.max(1, widthTiles * subtilePerTile);
+        const height = Math.max(1, depthTiles * subtilePerTile);
+
+        const safeSeed = String(seed ?? 'terrain-debugger');
+        let seedU32 = 2166136261 >>> 0;
+        for (let i = 0; i < safeSeed.length; i++) {
+            seedU32 ^= safeSeed.charCodeAt(i) & 255;
+            seedU32 = Math.imul(seedU32, 16777619) >>> 0;
+        }
+        const seedX = ((seedU32 & 0xffff) / 65535 - 0.5) * 4096;
+        const seedZ = (((seedU32 >>> 16) & 0xffff) / 65535 - 0.5) * 4096;
+
+        const scale = clamp(cfg.scale, 0.0005, 0.2, DEFAULT_TERRAIN_HUMIDITY_CLOUD_CONFIG.scale);
+        const octaves = Math.max(1, Math.min(8, Math.round(Number(cfg.octaves) || DEFAULT_TERRAIN_HUMIDITY_CLOUD_CONFIG.octaves)));
+        const gain = clamp(cfg.gain, 0.01, 1.0, DEFAULT_TERRAIN_HUMIDITY_CLOUD_CONFIG.gain);
+        const lacunarity = clamp(cfg.lacunarity, 1.0, 4.0, DEFAULT_TERRAIN_HUMIDITY_CLOUD_CONFIG.lacunarity);
+        const bias = clamp(cfg.bias, -1.0, 1.0, DEFAULT_TERRAIN_HUMIDITY_CLOUD_CONFIG.bias);
+        const amplitude = clamp(cfg.amplitude, 0.0, 1.0, DEFAULT_TERRAIN_HUMIDITY_CLOUD_CONFIG.amplitude);
+        const blendCfg = this._terrainHumidityBlendConfig ?? DEFAULT_TERRAIN_HUMIDITY_BLEND_CONFIG;
+        const dryThreshold = clamp(blendCfg.dryMax, 0.05, 0.49, DEFAULT_TERRAIN_HUMIDITY_BLEND_CONFIG.dryMax);
+        const wetThreshold = clamp(blendCfg.wetMin, 0.51, 0.95, DEFAULT_TERRAIN_HUMIDITY_BLEND_CONFIG.wetMin);
+
+        const key = [
+            safeSeed,
+            `${Number(b.minX).toFixed(3)},${Number(b.maxX).toFixed(3)},${Number(b.minZ).toFixed(3)},${Number(b.maxZ).toFixed(3)}`,
+            `${width}x${height}`,
+            `${subtilePerTile},${scale.toFixed(6)},${octaves},${gain.toFixed(4)},${lacunarity.toFixed(4)},${bias.toFixed(4)},${amplitude.toFixed(4)},${dryThreshold.toFixed(4)},${wetThreshold.toFixed(4)}`
+        ].join('|');
+        if (key === this._terrainHumiditySourceMapKey && this._terrainHumiditySourceMap) return this._terrainHumiditySourceMap;
+
+        const sizeX = Number(b.maxX) - Number(b.minX);
+        const sizeZ = Number(b.maxZ) - Number(b.minZ);
+        if (!(sizeX > EPS && sizeZ > EPS)) return null;
+
+        const data = new Uint8Array(width * height);
+        let idx = 0;
+        for (let iz = 0; iz < height; iz++) {
+            const z = Number(b.minZ) + ((iz + 0.5) / height) * sizeZ;
+            for (let ix = 0; ix < width; ix++) {
+                const x = Number(b.minX) + ((ix + 0.5) / width) * sizeX;
+                const n = sampleFbm2D((x + seedX) * scale, (z + seedZ) * scale, {
+                    noise2: TERRAIN_CLOUD_NOISE_SAMPLER.sample,
+                    octaves,
+                    gain,
+                    lacunarity,
+                    maxOctaves: 8
+                });
+                const humidity = clamp(0.5 + (n - 0.5) * amplitude + bias, 0.0, 1.0, 0.5);
+                let level = TERRAIN_HUMIDITY_LEVELS.neutral;
+                if (humidity <= dryThreshold) level = TERRAIN_HUMIDITY_LEVELS.dry;
+                else if (humidity >= wetThreshold) level = TERRAIN_HUMIDITY_LEVELS.wet;
+                data[idx++] = Math.max(0, Math.min(255, Math.round(level * 255)));
+            }
+        }
+
+        this._terrainHumiditySourceMap = {
+            width,
+            height,
+            data,
+            bounds: { minX: Number(b.minX) || 0, maxX: Number(b.maxX) || 0, minZ: Number(b.minZ) || 0, maxZ: Number(b.maxZ) || 0 }
+        };
+        this._terrainHumiditySourceMapKey = key;
+        this._terrainEngineMaskDirty = true;
+        return this._terrainHumiditySourceMap;
+    }
+
+    _updateTerrainPbrLegendUi() {
+        const ui = this._ui;
+        if (!ui?.setTerrainPbrLegend) return;
+        const entries = [];
+        for (const biome of TERRAIN_BIOME_IDS) {
+            const row = this._terrainBiomeHumidityBindings?.[biome] ?? {};
+            for (const slot of TERRAIN_HUMIDITY_SLOT_IDS) {
+                const materialId = String(row?.[slot] ?? DEFAULT_TERRAIN_BIOME_HUMIDITY_PBR_BINDINGS?.[biome]?.[slot] ?? '');
+                const urls = resolvePbrMaterialUrls(materialId);
+                entries.push({
+                    biomeId: biome,
+                    humiditySlotId: slot,
+                    materialId,
+                    previewUrl: urls?.baseColorUrl ?? ''
+                });
+            }
+        }
+        ui.setTerrainPbrLegend(entries);
+    }
+
     _syncTerrainBiomePbrMapsOnStandardMaterial() {
         const mat = this._terrainMat;
         if (!mat) return;
 
-        const stoneId = TERRAIN_BIOME_PBR_BINDINGS.stone;
-        const grassId = TERRAIN_BIOME_PBR_BINDINGS.grass;
-        const landId = TERRAIN_BIOME_PBR_BINDINGS.land;
-
-        const stoneUrls = resolvePbrMaterialUrls(stoneId);
-        const grassUrls = resolvePbrMaterialUrls(grassId);
-        const landUrls = resolvePbrMaterialUrls(landId);
-        const stoneMapLoaded = this._loadTexture(stoneUrls?.baseColorUrl ?? null, { srgb: true });
-        const grassMapLoaded = this._loadTexture(grassUrls?.baseColorUrl ?? null, { srgb: true });
-        const landMapLoaded = this._loadTexture(landUrls?.baseColorUrl ?? null, { srgb: true });
-        const stoneMap = stoneMapLoaded ?? FALLBACK_TERRAIN_BIOME_MAPS.stone;
-        const grassMap = grassMapLoaded ?? FALLBACK_TERRAIN_BIOME_MAPS.grass;
-        const landMap = landMapLoaded ?? FALLBACK_TERRAIN_BIOME_MAPS.land;
-
-        const stoneMeta = getPbrMaterialMeta(stoneId);
-        const grassMeta = getPbrMaterialMeta(grassId);
-        const landMeta = getPbrMaterialMeta(landId);
-        const stoneTile = Math.max(EPS, Number(stoneMeta?.tileMeters) || 4.0);
-        const grassTile = Math.max(EPS, Number(grassMeta?.tileMeters) || 4.0);
-        const landTile = Math.max(EPS, Number(landMeta?.tileMeters) || 4.0);
-
-        const key = [
-            stoneUrls?.baseColorUrl ?? 'fallback',
-            grassUrls?.baseColorUrl ?? 'fallback',
-            landUrls?.baseColorUrl ?? 'fallback',
-            stoneTile.toFixed(4),
-            grassTile.toFixed(4),
-            landTile.toFixed(4)
-        ].join('|');
+        const bindings = this._terrainBiomeHumidityBindings ?? DEFAULT_TERRAIN_BIOME_HUMIDITY_PBR_BINDINGS;
+        const blendCfg = this._terrainHumidityBlendConfig ?? DEFAULT_TERRAIN_HUMIDITY_BLEND_CONFIG;
+        const sampled = {};
+        const keyParts = [];
+        for (const biome of TERRAIN_BIOME_IDS) {
+            sampled[biome] = {};
+            const row = bindings?.[biome] ?? {};
+            for (const slot of TERRAIN_HUMIDITY_SLOT_IDS) {
+                const id = String(row?.[slot] ?? DEFAULT_TERRAIN_BIOME_HUMIDITY_PBR_BINDINGS?.[biome]?.[slot] ?? '');
+                const urls = resolvePbrMaterialUrls(id);
+                const mapLoaded = this._loadTexture(urls?.baseColorUrl ?? null, { srgb: true });
+                const fallback = FALLBACK_TERRAIN_BIOME_MAPS[biome] ?? FALLBACK_TERRAIN_BIOME_MAPS.land;
+                const meta = getPbrMaterialMeta(id);
+                const tile = Math.max(EPS, Number(meta?.tileMeters) || 4.0);
+                sampled[biome][slot] = {
+                    id,
+                    map: mapLoaded ?? fallback,
+                    mapLoaded,
+                    baseColorUrl: urls?.baseColorUrl ?? 'fallback',
+                    tile
+                };
+                keyParts.push(sampled[biome][slot].baseColorUrl, tile.toFixed(4));
+            }
+        }
+        keyParts.push(
+            Number(blendCfg.dryMax).toFixed(4),
+            Number(blendCfg.wetMin).toFixed(4),
+            Number(blendCfg.blendBand).toFixed(4),
+            Number(blendCfg.edgeNoiseScale).toFixed(5),
+            Number(blendCfg.edgeNoiseStrength).toFixed(4)
+        );
+        const key = keyParts.join('|');
         if (key === this._terrainBiomePbrKey) return;
         this._terrainBiomePbrKey = key;
 
         mat.userData = mat.userData ?? {};
-        mat.userData.terrainBiomeMapStone = stoneMap;
-        mat.userData.terrainBiomeMapGrass = grassMap;
-        mat.userData.terrainBiomeMapLand = landMap;
-        mat.userData.terrainBiomeUvScale = this._terrainBiomeUvScaleVec3.set(1 / stoneTile, 1 / grassTile, 1 / landTile);
+        mat.userData.terrainBiomeMapStoneDry = sampled.stone.dry.map;
+        mat.userData.terrainBiomeMapStoneNeutral = sampled.stone.neutral.map;
+        mat.userData.terrainBiomeMapStoneWet = sampled.stone.wet.map;
+        mat.userData.terrainBiomeMapGrassDry = sampled.grass.dry.map;
+        mat.userData.terrainBiomeMapGrassNeutral = sampled.grass.neutral.map;
+        mat.userData.terrainBiomeMapGrassWet = sampled.grass.wet.map;
+        mat.userData.terrainBiomeMapLandDry = sampled.land.dry.map;
+        mat.userData.terrainBiomeMapLandNeutral = sampled.land.neutral.map;
+        mat.userData.terrainBiomeMapLandWet = sampled.land.wet.map;
+        mat.userData.terrainBiomeUvScaleStone = this._terrainBiomeUvScaleStoneVec3.set(
+            1 / sampled.stone.dry.tile,
+            1 / sampled.stone.neutral.tile,
+            1 / sampled.stone.wet.tile
+        );
+        mat.userData.terrainBiomeUvScaleGrass = this._terrainBiomeUvScaleGrassVec3.set(
+            1 / sampled.grass.dry.tile,
+            1 / sampled.grass.neutral.tile,
+            1 / sampled.grass.wet.tile
+        );
+        mat.userData.terrainBiomeUvScaleLand = this._terrainBiomeUvScaleLandVec3.set(
+            1 / sampled.land.dry.tile,
+            1 / sampled.land.neutral.tile,
+            1 / sampled.land.wet.tile
+        );
+        mat.userData.terrainHumidityThresholds = this._terrainHumidityThresholdsVec4.set(
+            Number(blendCfg.dryMax) || DEFAULT_TERRAIN_HUMIDITY_BLEND_CONFIG.dryMax,
+            Number(blendCfg.wetMin) || DEFAULT_TERRAIN_HUMIDITY_BLEND_CONFIG.wetMin,
+            Number(blendCfg.blendBand) || DEFAULT_TERRAIN_HUMIDITY_BLEND_CONFIG.blendBand,
+            0.0
+        );
+        mat.userData.terrainHumidityEdgeNoise = this._terrainHumidityEdgeNoiseVec4.set(
+            Number(blendCfg.edgeNoiseScale) || DEFAULT_TERRAIN_HUMIDITY_BLEND_CONFIG.edgeNoiseScale,
+            Number(blendCfg.edgeNoiseStrength) || DEFAULT_TERRAIN_HUMIDITY_BLEND_CONFIG.edgeNoiseStrength,
+            0.0,
+            0.0
+        );
+        mat.userData.terrainHumidityEdgeNoiseTex = FALLBACK_TERRAIN_HUMIDITY_EDGE_NOISE_TEX;
 
-        if (landMapLoaded && mat.map !== landMapLoaded) {
-            mat.map = landMapLoaded;
+        if (sampled.land.neutral.mapLoaded && mat.map !== sampled.land.neutral.mapLoaded) {
+            mat.map = sampled.land.neutral.mapLoaded;
             mat.needsUpdate = true;
         }
 
         syncTerrainBiomeBlendUniformsOnMaterial(mat);
+        this._updateTerrainPbrLegendUi();
     }
 
     _ensureTerrainDebugMaterial() {
@@ -2061,10 +2379,19 @@ export class TerrainDebuggerView {
                 out[i + 3] = 255;
             }
         } else if (dbgMode === 'transition_band') {
+            const blendCfg = this._terrainHumidityBlendConfig ?? DEFAULT_TERRAIN_HUMIDITY_BLEND_CONFIG;
+            const dryMax = clamp(blendCfg.dryMax, 0.05, 0.49, DEFAULT_TERRAIN_HUMIDITY_BLEND_CONFIG.dryMax);
+            const wetMin = clamp(blendCfg.wetMin, 0.51, 0.95, DEFAULT_TERRAIN_HUMIDITY_BLEND_CONFIG.wetMin);
+            const edgeBand = Math.max(EPS, clamp(blendCfg.blendBand, 0.005, 0.25, DEFAULT_TERRAIN_HUMIDITY_BLEND_CONFIG.blendBand) * 0.5);
             for (let i = 0; i < packed.length; i += 4) {
-                const blend = (packed[i + 2] | 0) / 255;
-                const band = clamp(4 * blend * (1 - blend), 0, 1, 0);
-                const v = Math.max(0, Math.min(255, Math.round(band * 255)));
+                const biomeBlend = (packed[i + 2] | 0) / 255;
+                const biomeBand = clamp(4 * biomeBlend * (1 - biomeBlend), 0, 1, 0);
+                const h = clamp((packed[i + 3] | 0) / 255, 0, 1, 0);
+                const humDryBand = Math.max(0, 1 - Math.abs(h - dryMax) / edgeBand);
+                const humWetBand = Math.max(0, 1 - Math.abs(h - wetMin) / edgeBand);
+                const humidityBand = Math.max(humDryBand, humWetBand);
+                const band = Math.max(biomeBand, humidityBand);
+                const v = Math.max(0, Math.min(255, Math.round(clamp(band, 0, 1, 0) * 255)));
                 out[i] = v;
                 out[i + 1] = v;
                 out[i + 2] = v;
@@ -2311,17 +2638,34 @@ export class TerrainDebuggerView {
         const patchSrc = src.patch && typeof src.patch === 'object' ? src.patch : {};
         const biomesSrc = src.biomes && typeof src.biomes === 'object' ? src.biomes : {};
         const humiditySrc = src.humidity && typeof src.humidity === 'object' ? src.humidity : {};
+        const humidityCloudSrc = humiditySrc.cloud && typeof humiditySrc.cloud === 'object' ? humiditySrc.cloud : {};
+        const materialBindingsSrc = src.materialBindings && typeof src.materialBindings === 'object' ? src.materialBindings : {};
+        const biomeBindingsSrc = materialBindingsSrc.biomes && typeof materialBindingsSrc.biomes === 'object' ? materialBindingsSrc.biomes : {};
+        const humidityBlendSrc = materialBindingsSrc.humidity && typeof materialBindingsSrc.humidity === 'object' ? materialBindingsSrc.humidity : {};
         const transitionSrc = src.transition && typeof src.transition === 'object' ? src.transition : {};
+
+        this._terrainBiomeHumidityBindings = this._sanitizeTerrainBiomeHumidityBindings(biomeBindingsSrc);
+        this._terrainHumidityBlendConfig = this._sanitizeTerrainHumidityBlendConfig(humidityBlendSrc);
+        this._terrainHumidityCloudConfig = this._sanitizeTerrainHumidityCloudConfig(humidityCloudSrc);
+        this._terrainDebugTexKey = '';
 
         engine.setConfig({
             ...prev,
             seed: typeof src.seed === 'string' ? src.seed : prev.seed,
             patch: { ...prev.patch, ...patchSrc },
             biomes: { ...prev.biomes, ...biomesSrc },
-            humidity: { ...prev.humidity, ...humiditySrc },
+            humidity: { ...prev.humidity, ...humiditySrc, mode: 'source_map' },
             transition: { ...prev.transition, ...transitionSrc }
         });
 
+        const nextCfg = engine.getConfig();
+        const bounds = nextCfg?.bounds ?? prev?.bounds ?? this._getTerrainBoundsXZ();
+        const humidityMap = this._buildTerrainHumiditySourceMapFromCloud({
+            bounds,
+            seed: nextCfg?.seed ?? prev?.seed ?? 'terrain-debugger'
+        });
+        if (humidityMap) engine.setSourceMaps({ humidity: humidityMap });
+        this._syncTerrainBiomePbrMapsOnStandardMaterial();
         this._terrainEngineMaskDirty = true;
     }
 

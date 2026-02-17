@@ -97,6 +97,11 @@ test('Terrain Debugger: standard mode renders terrain (not just road) with no sh
     await page.waitForSelector('#ui-terrain-debugger');
 
     await Promise.all([waitStone, waitGrass, waitLand]);
+    await page.waitForFunction(() => {
+        const root = document.querySelector('[data-terrain-pbr-legend]');
+        if (!root) return false;
+        return root.children.length >= 9;
+    });
     await waitFrames(page, 10);
 
     const pixels = await readPixels(page, {
@@ -112,4 +117,3 @@ test('Terrain Debugger: standard mode renders terrain (not just road) with no sh
 
     expect(await getErrors()).toEqual([]);
 });
-

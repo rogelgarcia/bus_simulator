@@ -115,3 +115,41 @@ test('TerrainEngine: voronoi domain warp produces non-grid patch regions', () =>
 
     assert.ok(mismatches > 0);
 });
+
+test('TerrainEngine: humidity source map deterministically resolves dry/neutral/wet slots', () => {
+    const engine = createTerrainEngine({
+        seed: 'unit-test',
+        bounds: { minX: 0, maxX: 30, minZ: 0, maxZ: 10 },
+        patch: { sizeMeters: 10, originX: 0, originZ: 0 },
+        biomes: { mode: 'patch_grid', defaultBiomeId: 'land', weights: { stone: 0.0, grass: 0.0, land: 1.0 } },
+        humidity: { mode: 'source_map' },
+        transition: { cameraBlendRadiusMeters: 0, cameraBlendFeatherMeters: 0, boundaryBandMeters: 0 }
+    });
+
+    engine.setSourceMaps({
+        humidity: {
+            width: 3,
+            height: 1,
+            data: new Uint8Array([16, 128, 240]),
+            bounds: { minX: 0, maxX: 30, minZ: 0, maxZ: 10 }
+        }
+    });
+
+    const resolveSlot = (h) => {
+        if (h <= 0.33) return 'dry';
+        if (h >= 0.67) return 'wet';
+        return 'neutral';
+    };
+
+    const dry = engine.sample(4, 5);
+    const neutral = engine.sample(15, 5);
+    const wet = engine.sample(26, 5);
+
+    assert.equal(resolveSlot(dry.humidity), 'dry');
+    assert.equal(resolveSlot(neutral.humidity), 'neutral');
+    assert.equal(resolveSlot(wet.humidity), 'wet');
+
+    const repeat = engine.sample(26, 5);
+    assert.equal(resolveSlot(repeat.humidity), 'wet');
+    assert.ok(Math.abs(repeat.humidity - wet.humidity) < 1e-9);
+});

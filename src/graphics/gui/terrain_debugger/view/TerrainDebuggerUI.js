@@ -3,7 +3,9 @@
 // @ts-check
 
 import { DEFAULT_IBL_ID, getIblOptions } from '../../../content3d/catalogs/IBLCatalog.js';
+import { getPbrMaterialClassSectionsForGround, getPbrMaterialOptionsForGround } from '../../../content3d/catalogs/PbrMaterialCatalog.js';
 import { createDefaultGrassEngineConfig } from '../../../engine3d/grass/GrassConfig.js';
+import { PickerPopup } from '../../shared/PickerPopup.js';
 
 function clamp(value, min, max, fallback) {
     const num = Number(value);
@@ -34,6 +36,35 @@ function isInteractiveElement(target) {
 
 function deepClone(obj) {
     return obj && typeof obj === 'object' ? JSON.parse(JSON.stringify(obj)) : obj;
+}
+
+const TERRAIN_BIOME_IDS = Object.freeze(['stone', 'grass', 'land']);
+const TERRAIN_HUMIDITY_SLOT_IDS = Object.freeze(['dry', 'neutral', 'wet']);
+
+const DEFAULT_TERRAIN_BIOME_HUMIDITY_BINDINGS = Object.freeze({
+    stone: Object.freeze({ dry: 'pbr.rock_ground', neutral: 'pbr.rock_ground', wet: 'pbr.coast_sand_rocks_02' }),
+    grass: Object.freeze({ dry: 'pbr.grass_005', neutral: 'pbr.grass_005', wet: 'pbr.grass_005' }),
+    land: Object.freeze({ dry: 'pbr.ground_037', neutral: 'pbr.ground_037', wet: 'pbr.ground_037' })
+});
+
+function titleCaseHumSlot(id) {
+    const v = String(id ?? '');
+    if (v === 'dry') return 'Dry';
+    if (v === 'wet') return 'Wet';
+    return 'Neutral';
+}
+
+function titleCaseBiome(id) {
+    const v = String(id ?? '');
+    if (v === 'stone') return 'Stone';
+    if (v === 'grass') return 'Grass';
+    return 'Land';
+}
+
+function normalizeHumiditySlotId(value) {
+    const id = String(value ?? '');
+    if (id === 'dry' || id === 'wet') return id;
+    return 'neutral';
 }
 
 function normalizeHexColor(value) {
@@ -311,6 +342,9 @@ export class TerrainDebuggerUI {
         this._onInspectGrassLod = typeof onInspectGrassLod === 'function' ? onInspectGrassLod : null;
         this._isSetting = false;
         this._sectionCollapsed = new Map();
+        this._terrainLegendKey = '';
+        this._pickerPopup = new PickerPopup();
+        this._materialPickerPopup = this._pickerPopup;
 
         const defaultTerrainEngine = {
             seed: 'terrain-debugger',
@@ -321,13 +355,30 @@ export class TerrainDebuggerUI {
                 weights: { stone: 0.25, grass: 0.35, land: 0.40 }
             },
             humidity: {
-                mode: 'noise',
-                noiseScale: 0.01,
-                octaves: 4,
-                gain: 0.5,
-                lacunarity: 2.0,
-                bias: 0.0,
-                amplitude: 1.0
+                mode: 'source_map',
+                cloud: {
+                    subtilePerTile: 8,
+                    scale: 0.02,
+                    octaves: 4,
+                    gain: 0.5,
+                    lacunarity: 2.0,
+                    bias: 0.0,
+                    amplitude: 1.0
+                }
+            },
+            materialBindings: {
+                biomes: {
+                    stone: { dry: 'pbr.rock_ground', neutral: 'pbr.rock_ground', wet: 'pbr.coast_sand_rocks_02' },
+                    grass: { dry: 'pbr.grass_005', neutral: 'pbr.grass_005', wet: 'pbr.grass_005' },
+                    land: { dry: 'pbr.ground_037', neutral: 'pbr.ground_037', wet: 'pbr.ground_037' }
+                },
+                humidity: {
+                    dryMax: 0.33,
+                    wetMin: 0.67,
+                    blendBand: 0.02,
+                    edgeNoiseScale: 0.025,
+                    edgeNoiseStrength: 0.0
+                }
             },
             transition: {
                 cameraBlendRadiusMeters: 140,
@@ -438,6 +489,8 @@ export class TerrainDebuggerUI {
 
     unmount() {
         window.removeEventListener('keydown', this._onKeyDown);
+        this._pickerPopup?.dispose?.();
+        this._pickerPopup = null;
         this._materialPickerPopup?.dispose?.();
         this._materialPickerPopup = null;
         this.root.remove();
@@ -535,6 +588,124 @@ export class TerrainDebuggerUI {
         const hum = clamp(humidity, 0.0, 1.0, 0.5);
 
         note.textContent = `Sample: x ${xx.toFixed(1)} z ${zz.toFixed(1)} · patchId ${(pid >>> 0).toString()} · biome ${toIndex(prim)}:${prim || '?'} → ${toIndex(sec)}:${sec || '?'} (blend ${blend.toFixed(2)}) · humidity ${hum.toFixed(2)}`;
+    }
+
+    setTerrainPbrLegend(entries = []) {
+        const root = this._controls?.terrainPbrLegend ?? null;
+        if (!root) return;
+        const list = Array.isArray(entries) ? entries : [];
+        const key = list.map((e) => {
+            const biome = String(e?.biomeId ?? '');
+            const slot = String(e?.humiditySlotId ?? '');
+            const mat = String(e?.materialId ?? '');
+            const preview = String(e?.previewUrl ?? '');
+            return `${biome}|${slot}|${mat}|${preview}`;
+        }).join(';');
+        if (key === this._terrainLegendKey) return;
+        this._terrainLegendKey = key;
+
+        root.textContent = '';
+        for (const e of list) {
+            const biomeId = String(e?.biomeId ?? '');
+            const humiditySlotId = normalizeHumiditySlotId(e?.humiditySlotId);
+            const biome = titleCaseBiome(biomeId);
+            const hum = titleCaseHumSlot(humiditySlotId);
+            const materialId = String(e?.materialId ?? '');
+            const previewUrl = String(e?.previewUrl ?? '');
+
+            const card = makeEl('div', 'options-note');
+            card.style.display = 'flex';
+            card.style.flexDirection = 'column';
+            card.style.gap = '4px';
+            card.style.border = '1px solid rgba(255,255,255,0.14)';
+            card.style.borderRadius = '8px';
+            card.style.padding = '6px';
+            card.style.background = 'rgba(0,0,0,0.18)';
+            card.style.minWidth = '0';
+
+            const thumbBtn = document.createElement('button');
+            thumbBtn.type = 'button';
+            thumbBtn.className = 'options-btn';
+            thumbBtn.style.padding = '0';
+            thumbBtn.style.width = '100%';
+            thumbBtn.style.height = '38px';
+            thumbBtn.style.borderRadius = '6px';
+            thumbBtn.style.border = '1px solid rgba(0,0,0,0.35)';
+            thumbBtn.style.overflow = 'hidden';
+            thumbBtn.style.background = 'transparent';
+            thumbBtn.style.cursor = 'pointer';
+            thumbBtn.title = `Change ${biome} ${hum} texture`;
+            thumbBtn.setAttribute('data-terrain-legend-slot', `${biomeId}:${humiditySlotId}`);
+            thumbBtn.addEventListener('click', () => {
+                this._openTerrainLegendSlotPicker({
+                    biomeId,
+                    humiditySlotId,
+                    selectedId: materialId
+                });
+            });
+            if (previewUrl) {
+                const thumbImg = document.createElement('img');
+                thumbImg.src = previewUrl;
+                thumbImg.alt = `${biome} ${hum}`;
+                thumbImg.style.width = '100%';
+                thumbImg.style.height = '100%';
+                thumbImg.style.objectFit = 'cover';
+                thumbBtn.appendChild(thumbImg);
+            } else {
+                thumbBtn.style.background = 'linear-gradient(135deg, #4e4e4e, #808080)';
+            }
+
+            const title = makeEl('div', null, `${biome} · ${hum}`);
+            title.style.fontWeight = '600';
+            title.style.fontSize = '11px';
+            const detail = makeEl('div', null, materialId);
+            detail.style.fontSize = '10px';
+            detail.style.opacity = '0.82';
+            detail.style.wordBreak = 'break-word';
+
+            card.appendChild(thumbBtn);
+            card.appendChild(title);
+            card.appendChild(detail);
+            root.appendChild(card);
+        }
+    }
+
+    _openTerrainLegendSlotPicker({ biomeId, humiditySlotId, selectedId } = {}) {
+        const biome = String(biomeId ?? '');
+        if (!TERRAIN_BIOME_IDS.includes(biome)) return;
+        const slot = normalizeHumiditySlotId(humiditySlotId);
+
+        const sections = getPbrMaterialClassSectionsForGround().map((section) => ({
+            label: section.label,
+            options: (section.options ?? []).map((opt) => ({
+                id: String(opt?.id ?? ''),
+                label: String(opt?.label ?? opt?.id ?? ''),
+                kind: 'texture',
+                previewUrl: opt?.previewUrl ?? null
+            })).filter((opt) => !!opt.id)
+        })).filter((section) => Array.isArray(section.options) && section.options.length > 0);
+        if (!sections.length) return;
+
+        this._pickerPopup?.open?.({
+            title: `${titleCaseBiome(biome)} · ${titleCaseHumSlot(slot)} texture`,
+            sections,
+            selectedId: String(selectedId ?? ''),
+            onSelect: (opt) => {
+                const engine = this._state?.terrain?.engine ?? null;
+                if (!engine || typeof engine !== 'object') return;
+                const bindings = (engine.materialBindings && typeof engine.materialBindings === 'object')
+                    ? engine.materialBindings
+                    : (engine.materialBindings = {});
+                const biomeBindings = (bindings.biomes && typeof bindings.biomes === 'object')
+                    ? bindings.biomes
+                    : (bindings.biomes = {});
+                const row = (biomeBindings[biome] && typeof biomeBindings[biome] === 'object')
+                    ? biomeBindings[biome]
+                    : (biomeBindings[biome] = {});
+                row[slot] = String(opt?.id ?? '');
+                this._emit();
+            }
+        });
     }
 
     _emit() {
@@ -1049,15 +1220,52 @@ export class TerrainDebuggerUI {
         if (!Number.isFinite(weights.grass)) weights.grass = 0.35;
         if (!Number.isFinite(weights.land)) weights.land = 0.40;
 
+        const materialOptionsRaw = getPbrMaterialOptionsForGround();
+        const materialOptions = (Array.isArray(materialOptionsRaw) ? materialOptionsRaw : [])
+            .map((opt) => ({ id: String(opt?.id ?? ''), label: String(opt?.label ?? opt?.id ?? '') }))
+            .filter((opt) => !!opt.id);
+        const validMaterialIds = new Set(materialOptions.map((opt) => opt.id));
+        const defaultMaterialId = materialOptions[0]?.id ?? 'pbr.ground_037';
+        const normalizeMaterialId = (value, fallback) => {
+            const id = String(value ?? '').trim();
+            if (validMaterialIds.has(id)) return id;
+            if (validMaterialIds.has(String(fallback ?? ''))) return String(fallback);
+            return defaultMaterialId;
+        };
+
         const humidity = (engine.humidity && typeof engine.humidity === 'object') ? engine.humidity : {};
         engine.humidity = humidity;
-        if (humidity.mode !== 'noise' && humidity.mode !== 'source_map') humidity.mode = 'noise';
-        humidity.noiseScale = clamp(humidity.noiseScale, 0.000001, 10.0, 0.01);
-        humidity.octaves = Math.max(1, Math.min(8, Math.round(Number(humidity.octaves) || 4)));
-        humidity.gain = clamp(humidity.gain, 0.01, 1.0, 0.5);
-        humidity.lacunarity = clamp(humidity.lacunarity, 1.0, 4.0, 2.0);
-        humidity.bias = clamp(humidity.bias, -1.0, 1.0, 0.0);
-        humidity.amplitude = clamp(humidity.amplitude, 0.0, 1.0, 1.0);
+        humidity.mode = 'source_map';
+        const humidityCloud = (humidity.cloud && typeof humidity.cloud === 'object') ? humidity.cloud : {};
+        humidity.cloud = humidityCloud;
+        humidityCloud.subtilePerTile = Math.max(1, Math.min(32, Math.round(Number(humidityCloud.subtilePerTile) || 8)));
+        humidityCloud.scale = clamp(humidityCloud.scale, 0.0005, 0.2, 0.02);
+        humidityCloud.octaves = Math.max(1, Math.min(8, Math.round(Number(humidityCloud.octaves) || 4)));
+        humidityCloud.gain = clamp(humidityCloud.gain, 0.01, 1.0, 0.5);
+        humidityCloud.lacunarity = clamp(humidityCloud.lacunarity, 1.0, 4.0, 2.0);
+        humidityCloud.bias = clamp(humidityCloud.bias, -1.0, 1.0, 0.0);
+        humidityCloud.amplitude = clamp(humidityCloud.amplitude, 0.0, 1.0, 1.0);
+
+        const materialBindings = (engine.materialBindings && typeof engine.materialBindings === 'object') ? engine.materialBindings : {};
+        engine.materialBindings = materialBindings;
+        const biomeBindings = (materialBindings.biomes && typeof materialBindings.biomes === 'object') ? materialBindings.biomes : {};
+        materialBindings.biomes = biomeBindings;
+        for (const biome of TERRAIN_BIOME_IDS) {
+            const fallbackBiome = DEFAULT_TERRAIN_BIOME_HUMIDITY_BINDINGS[biome];
+            const row = (biomeBindings[biome] && typeof biomeBindings[biome] === 'object') ? biomeBindings[biome] : {};
+            biomeBindings[biome] = row;
+            for (const slot of TERRAIN_HUMIDITY_SLOT_IDS) {
+                row[slot] = normalizeMaterialId(row[slot], fallbackBiome?.[slot] ?? defaultMaterialId);
+            }
+        }
+        const humidityBindings = (materialBindings.humidity && typeof materialBindings.humidity === 'object') ? materialBindings.humidity : {};
+        materialBindings.humidity = humidityBindings;
+        humidityBindings.dryMax = clamp(humidityBindings.dryMax, 0.05, 0.49, 0.33);
+        humidityBindings.wetMin = clamp(humidityBindings.wetMin, 0.51, 0.95, 0.67);
+        if (humidityBindings.wetMin <= humidityBindings.dryMax + 0.02) humidityBindings.wetMin = Math.min(0.95, humidityBindings.dryMax + 0.02);
+        humidityBindings.blendBand = clamp(humidityBindings.blendBand, 0.005, 0.25, 0.02);
+        humidityBindings.edgeNoiseScale = clamp(humidityBindings.edgeNoiseScale, 0.001, 0.2, 0.025);
+        humidityBindings.edgeNoiseStrength = clamp(humidityBindings.edgeNoiseStrength, 0.0, 0.3, 0.0);
 
         const transition = (engine.transition && typeof engine.transition === 'object') ? engine.transition : {};
         engine.transition = transition;
@@ -1076,8 +1284,8 @@ export class TerrainDebuggerUI {
             standard: 'Standard render mode (biome + humidity material binding).',
             biome_id: 'Primary biome ID per patch (stone/grass/land). Validate there are no gaps (uncolored areas).',
             patch_ids: 'Patch IDs and boundaries. Patch colors are stable per patchId; boundaries should be continuous with no gaps.',
-            humidity: 'Humidity field [0..1]. Use this to validate large-scale wet/dry variation is stable and continuous.',
-            transition_band: 'Transition band visualization (where boundary blending is active near the camera).'
+            humidity: 'Humidity field [0..1] generated by cloud noise per subtile.',
+            transition_band: 'Final PBR transition bands (biome boundaries + humidity slot edges).'
         });
 
         const viewModeRow = makeChoiceRow({
@@ -1125,6 +1333,14 @@ export class TerrainDebuggerUI {
         legendSection.appendChild(makeLegendRow({ color: '#46A04E', text: '1 = grass' }));
         legendSection.appendChild(makeLegendRow({ color: '#D79146', text: '2 = land' }));
         legendSection.appendChild(makeEl('div', 'options-note', 'Patch ID colors (Patch IDs mode): deterministic hash of patchId (stable). Boundaries are drawn black.'));
+        legendSection.appendChild(makeEl('div', 'options-note', 'Biome × humidity active PBR slots:'));
+        const pbrLegend = makeEl('div', '');
+        pbrLegend.style.display = 'grid';
+        pbrLegend.style.gridTemplateColumns = 'repeat(3, minmax(0, 1fr))';
+        pbrLegend.style.gap = '8px';
+        pbrLegend.setAttribute('data-terrain-pbr-legend', '1');
+        legendSection.appendChild(pbrLegend);
+        this._controls.terrainPbrLegend = pbrLegend;
         const sampleNote = makeEl('div', 'options-note', 'Sample: (move mouse over terrain)');
         legendSection.appendChild(sampleNote);
         this._controls.terrainSampleNote = sampleNote;
@@ -1136,7 +1352,7 @@ export class TerrainDebuggerUI {
             label: 'Seed',
             value: engine.seed,
             placeholder: 'terrain-debugger',
-            tooltip: 'Deterministic seed for patches + humidity noise.',
+            tooltip: 'Deterministic seed for patch layout and humidity edge shaping.',
             onChange: (v) => {
                 engine.seed = String(v ?? '');
                 this._emit();
@@ -1305,93 +1521,167 @@ export class TerrainDebuggerUI {
         });
         weightsSection.appendChild(landRow.row);
 
-        const humiditySection = this._buildSection('terrain', 'Humidity');
-        humiditySection.appendChild(makeEl('div', 'options-note', 'Humidity is continuous and deterministic. It drives dry/wet variation.'));
-
-        const humidityScaleRow = makeNumberSliderRow({
-            label: 'Noise Scale',
-            value: Number(humidity.noiseScale),
-            min: 0.0005,
-            max: 0.05,
-            step: 0.0005,
-            digits: 4,
-            tooltip: 'Lower = larger features. Higher = smaller/noisier.',
+        const humiditySection = this._buildSection('terrain', 'Humidity Pattern');
+        humiditySection.appendChild(makeEl('div', 'options-note', 'Humidity uses a cloud-noise pattern with one humidity value per subtile.'));
+        humiditySection.appendChild(makeNumberSliderRow({
+            label: 'Subtiles / Tile',
+            value: Number(humidityCloud.subtilePerTile),
+            min: 1,
+            max: 32,
+            step: 1,
+            digits: 0,
             onChange: (v) => {
-                humidity.noiseScale = v;
+                humidityCloud.subtilePerTile = Math.max(1, Math.min(32, Math.round(v)));
                 this._emit();
             }
-        });
-        humiditySection.appendChild(humidityScaleRow.row);
-
-        const octavesRow = makeNumberSliderRow({
+        }).row);
+        humiditySection.appendChild(makeNumberSliderRow({
+            label: 'Cloud Scale',
+            value: Number(humidityCloud.scale),
+            min: 0.0005,
+            max: 0.2,
+            step: 0.0005,
+            digits: 4,
+            onChange: (v) => {
+                humidityCloud.scale = clamp(v, 0.0005, 0.2, 0.02);
+                this._emit();
+            }
+        }).row);
+        humiditySection.appendChild(makeNumberSliderRow({
             label: 'Octaves',
-            value: Number(humidity.octaves),
+            value: Number(humidityCloud.octaves),
             min: 1,
             max: 8,
             step: 1,
             digits: 0,
             onChange: (v) => {
-                humidity.octaves = Math.max(1, Math.round(v));
+                humidityCloud.octaves = Math.max(1, Math.min(8, Math.round(v)));
                 this._emit();
             }
-        });
-        humiditySection.appendChild(octavesRow.row);
-
-        const gainRow = makeNumberSliderRow({
+        }).row);
+        humiditySection.appendChild(makeNumberSliderRow({
             label: 'Gain',
-            value: Number(humidity.gain),
-            min: 0.05,
+            value: Number(humidityCloud.gain),
+            min: 0.01,
             max: 1.0,
             step: 0.01,
             digits: 2,
             onChange: (v) => {
-                humidity.gain = v;
+                humidityCloud.gain = clamp(v, 0.01, 1.0, 0.5);
                 this._emit();
             }
-        });
-        humiditySection.appendChild(gainRow.row);
-
-        const lacRow = makeNumberSliderRow({
+        }).row);
+        humiditySection.appendChild(makeNumberSliderRow({
             label: 'Lacunarity',
-            value: Number(humidity.lacunarity),
+            value: Number(humidityCloud.lacunarity),
             min: 1.0,
             max: 4.0,
             step: 0.01,
             digits: 2,
             onChange: (v) => {
-                humidity.lacunarity = v;
+                humidityCloud.lacunarity = clamp(v, 1.0, 4.0, 2.0);
                 this._emit();
             }
-        });
-        humiditySection.appendChild(lacRow.row);
-
-        const biasRow = makeNumberSliderRow({
+        }).row);
+        humiditySection.appendChild(makeNumberSliderRow({
             label: 'Bias',
-            value: Number(humidity.bias),
+            value: Number(humidityCloud.bias),
             min: -1.0,
             max: 1.0,
             step: 0.01,
             digits: 2,
             onChange: (v) => {
-                humidity.bias = v;
+                humidityCloud.bias = clamp(v, -1.0, 1.0, 0.0);
                 this._emit();
             }
-        });
-        humiditySection.appendChild(biasRow.row);
-
-        const ampRow = makeNumberSliderRow({
+        }).row);
+        humiditySection.appendChild(makeNumberSliderRow({
             label: 'Amplitude',
-            value: Number(humidity.amplitude),
+            value: Number(humidityCloud.amplitude),
             min: 0.0,
             max: 1.0,
             step: 0.01,
             digits: 2,
             onChange: (v) => {
-                humidity.amplitude = v;
+                humidityCloud.amplitude = clamp(v, 0.0, 1.0, 1.0);
+                this._emit();
+            }
+        }).row);
+
+        const humidityDryRow = makeNumberSliderRow({
+            label: 'Dry Max',
+            value: Number(humidityBindings.dryMax),
+            min: 0.05,
+            max: 0.49,
+            step: 0.01,
+            digits: 2,
+            tooltip: 'Humidity values below this threshold resolve to dry PBR slot.',
+            onChange: (v) => {
+                humidityBindings.dryMax = clamp(v, 0.05, 0.49, 0.33);
+                if (humidityBindings.wetMin <= humidityBindings.dryMax + 0.02) humidityBindings.wetMin = Math.min(0.95, humidityBindings.dryMax + 0.02);
                 this._emit();
             }
         });
-        humiditySection.appendChild(ampRow.row);
+        humiditySection.appendChild(humidityDryRow.row);
+
+        const humidityWetRow = makeNumberSliderRow({
+            label: 'Wet Min',
+            value: Number(humidityBindings.wetMin),
+            min: 0.51,
+            max: 0.95,
+            step: 0.01,
+            digits: 2,
+            tooltip: 'Humidity values above this threshold resolve to wet PBR slot.',
+            onChange: (v) => {
+                humidityBindings.wetMin = clamp(v, 0.51, 0.95, 0.67);
+                if (humidityBindings.wetMin <= humidityBindings.dryMax + 0.02) humidityBindings.wetMin = Math.min(0.95, humidityBindings.dryMax + 0.02);
+                this._emit();
+            }
+        });
+        humiditySection.appendChild(humidityWetRow.row);
+
+        const humidityBandRow = makeNumberSliderRow({
+            label: 'Edge Band',
+            value: Number(humidityBindings.blendBand),
+            min: 0.005,
+            max: 0.25,
+            step: 0.005,
+            digits: 3,
+            tooltip: 'Band-only blend width around dry/neutral/wet boundaries.',
+            onChange: (v) => {
+                humidityBindings.blendBand = clamp(v, 0.005, 0.25, 0.02);
+                this._emit();
+            }
+        });
+        humiditySection.appendChild(humidityBandRow.row);
+
+        const humidityEdgeNoiseScaleRow = makeNumberSliderRow({
+            label: 'Edge Noise Scale',
+            value: Number(humidityBindings.edgeNoiseScale),
+            min: 0.001,
+            max: 0.2,
+            step: 0.001,
+            digits: 3,
+            onChange: (v) => {
+                humidityBindings.edgeNoiseScale = clamp(v, 0.001, 0.2, 0.025);
+                this._emit();
+            }
+        });
+        humiditySection.appendChild(humidityEdgeNoiseScaleRow.row);
+
+        const humidityEdgeNoiseStrengthRow = makeNumberSliderRow({
+            label: 'Edge Noise Strength',
+            value: Number(humidityBindings.edgeNoiseStrength),
+            min: 0.0,
+            max: 0.3,
+            step: 0.005,
+            digits: 3,
+            onChange: (v) => {
+                humidityBindings.edgeNoiseStrength = clamp(v, 0.0, 0.3, 0.0);
+                this._emit();
+            }
+        });
+        humiditySection.appendChild(humidityEdgeNoiseStrengthRow.row);
 
         const transitionSection = this._buildSection('terrain', 'Transitions');
         transitionSection.appendChild(makeEl('div', 'options-note', 'Blend zone only affects patch boundaries. Outside the zone, borders are hard.'));

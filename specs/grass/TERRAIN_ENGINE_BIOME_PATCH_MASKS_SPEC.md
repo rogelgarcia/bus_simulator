@@ -10,6 +10,7 @@ The terrain engine MUST:
 - Provide full-map ground coverage with no gaps (a default biome applies everywhere)
 - Represent patch-based biome regions with hard borders at map scale
 - Provide humidity as a continuous, deterministic field
+- In Terrain Debugger workflows, allow humidity source-map generation from cloud noise with one humidity value per subtile
 - Support graded biome transitions only inside a configurable near-camera blend zone
 - Support texture/painterly source maps as optional inputs (biome + humidity)
 - Provide a lightweight sampling API: `(worldX, worldZ) -> biome ids, humidity, blend`
@@ -85,6 +86,7 @@ The engine config MUST be JSON-serializable and versioned.
 - `biomes.weights`: non-negative floats, not all zero. Default as in example.
   - Engine normalizes weights to a distribution.
 - `humidity.mode`: `noise` (default) or `source_map` (requires a runtime humidity source map).
+- Terrain Debugger SHOULD set `humidity.mode=source_map` and generate humidity values from a deterministic cloud pattern over subtiles.
 - `humidity.noiseScale`: float, `(0, +inf)`. Default `0.01`.
 - `humidity.octaves`: integer, `[1..8]`. Default `4`.
 - `humidity.gain`: float, `(0, 1]`. Default `0.5`.
@@ -112,6 +114,10 @@ The engine MAY accept runtime-only source maps (not JSON-serializable):
   - When enabled (`biomes.mode=source_map`), the biome for a patch is sampled at the patch center.
 - Humidity map: `uint8` values mapped to `[0..1]`.
   - When enabled (`humidity.mode=source_map`), humidity is sampled bilinearly per position.
+  - Terrain Debugger subtile cloud semantics:
+    - one humidity value is generated for each subtile cell
+    - values are derived from deterministic cloud-noise sampling using debugger seed + cloud params
+    - repeated runs with identical config MUST produce identical humidity cells
 
 ## 5. Sampling Contract (Runtime API)
 
@@ -175,3 +181,32 @@ For patch diagnostics, a separate `Uint32Array` patch-id raster MAY be exported:
 - v1 supports `grid` and `voronoi` patch partitions; Voronoi may optionally be domain-warped for curved boundaries.
 - Source maps (biome/humidity) are an optional input; the output contract remains stable.
 - Rendering systems SHOULD treat the engine output as authoritative and derive materials/grass controls from it.
+
+## 8. Biome × Humidity PBR Binding (Terrain Debugger)
+
+Terrain Debugger standard rendering binds PBR baseColor textures using:
+
+- Primary dimension: biome (`stone`, `grass`, `land`)
+- Secondary dimension: humidity slot (`dry`, `neutral`, `wet`)
+
+This creates a `3 x 3` binding matrix where each slot points to one PBR material id.
+
+### 8.1 Slot Resolution
+
+- Humidity slot thresholds:
+  - `dry` for humidity `<= dryMax`
+  - `wet` for humidity `>= wetMin`
+  - `neutral` in between
+- Recommended defaults:
+  - `dryMax = 0.33`
+  - `wetMin = 0.67`
+  - narrow edge-band blend width around thresholds (`blendBand`, recommended `0.08`)
+- Humidity slot transitions SHOULD be edge-band-only; broad full-area blending is not allowed.
+- Organic/noisy edge perturbation MAY be applied, but it MUST be deterministic for fixed inputs.
+
+### 8.2 Final Transition Interpretation
+
+- Final visible transition bands are the union of:
+  - biome-boundary blend bands (camera-zone constrained by engine transition settings)
+  - humidity slot edge bands (threshold crossings)
+- Transition diagnostics SHOULD visualize these final PBR boundaries, not only biome boundaries.
