@@ -48,7 +48,7 @@ test('BF2: fallback roof surface cuts out when bay insets inward', async ({ page
     await page.waitForSelector('#ui-welcome:not(.hidden)');
     await page.keyboard.press('Q');
     await page.waitForSelector('#ui-setup:not(.hidden)');
-    await page.keyboard.press('9');
+    await page.keyboard.press('4');
 
     await page.waitForSelector('#building-fab2-hud');
     await page.locator('.building-fab2-create-btn').click();

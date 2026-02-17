@@ -22,8 +22,13 @@ import { InputManager } from '../app/input/InputManager.js';
 import { createVehicleFromBus } from '../app/vehicle/createVehicle.js';
 import { GameplayDebugPanel } from '../graphics/gui/gameplay/GameplayDebugPanel.js';
 import { VehicleMotionDebugOverlay } from '../graphics/gui/debug/VehicleMotionDebugOverlay.js';
-import { getSelectableSceneShortcuts } from './SceneShortcutRegistry.js';
+import { Q_MENU_GROUP } from './SceneShortcutRegistry.js';
 import { SetupUIController } from '../graphics/gui/setup/SetupUIController.js';
+import {
+    getQMenuGroupMenuItems,
+    getQMenuQuickShortcutByKey,
+    getQMenuScreenMenuItemsByGroup
+} from './QMenuScreenRegistry.js';
 
 // Camera tuning
 const CAMERA_TUNE = {
@@ -865,27 +870,60 @@ export class GameplayState {
         this._cameraDrag.active = false;
         this._cameraDrag.pointerId = null;
         this._cameraDrag.idleTime = 0;
+        this._openSetupOverlayRoot();
+    }
 
-        const scenes = getSelectableSceneShortcuts().map((scene) => ({
-            key: scene.key,
-            label: scene.label,
-            state: scene.id
-        }));
-
+    _openSetupOverlayRoot() {
         this._setupUi.open({
             mode: 'overlay',
-            sceneItems: scenes,
+            sceneItems: getQMenuGroupMenuItems(),
             closeItem: { key: 'Q', label: 'Close overlay' },
             currentStateId: this.sm?.currentName ?? null,
             currentStateLabel: 'Gameplay',
-            onSelectState: (state) => {
-                const id = typeof state === 'string' ? state : '';
-                if (!id) return;
-                this._closeSetupOverlay({ restoreInput: false });
-                this.sm.go(id);
-            },
-            onRequestClose: () => this._closeSetupOverlay()
+            onSelectState: (groupId) => this._openSetupOverlayGroup(groupId),
+            onRequestClose: () => this._closeSetupOverlay(),
+            onShortcutKey: (key) => this._handleSetupQuickShortcut(key)
         });
+    }
+
+    _openSetupOverlayGroup(groupId) {
+        const selectedGroup = groupId === Q_MENU_GROUP.debuggers ? Q_MENU_GROUP.debuggers : Q_MENU_GROUP.fabrication;
+        const screens = getQMenuScreenMenuItemsByGroup(selectedGroup);
+        if (!screens.length) {
+            this._openSetupOverlayRoot();
+            return;
+        }
+
+        this._setupUi.open({
+            mode: 'overlay',
+            sceneItems: screens,
+            closeItem: { key: 'Q', label: 'Back' },
+            currentStateId: this.sm?.currentName ?? null,
+            currentStateLabel: 'Gameplay',
+            onSelectState: (href) => this._navigateToSetupScreen(href),
+            onRequestClose: () => this._openSetupOverlayRoot()
+        });
+    }
+
+    _handleSetupQuickShortcut(key) {
+        const href = getQMenuQuickShortcutByKey(key);
+        if (!href) return false;
+        this._navigateToSetupScreen(href);
+        return true;
+    }
+
+    _navigateToSetupScreen(href) {
+        const raw = typeof href === 'string' ? href : '';
+        if (!raw) return;
+        this._closeSetupOverlay({ restoreInput: false });
+
+        const url = new URL(raw, window.location.href);
+        const currentParams = new URLSearchParams(window.location.search);
+        for (const [key, value] of currentParams.entries()) {
+            if (key === 'screen') continue;
+            if (!url.searchParams.has(key)) url.searchParams.set(key, value);
+        }
+        window.location.assign(url.toString());
     }
 
     _closeSetupOverlay({ restoreInput = true } = {}) {

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Material Calibration</title>
+    <script>
+        (() => {
+            const target = new URL('../index.html', window.location.href);
+            const params = new URLSearchParams(window.location.search);
+            for (const [key, value] of params.entries()) target.searchParams.set(key, value);
+            target.searchParams.set('screen', 'material_calibration');
+            window.location.replace(target.toString());
+        })();
+    </script>
+    <noscript>
+        <meta http-equiv="refresh" content="0; url=../index.html?screen=material_calibration" />
+    </noscript>
+</head>
+<body></body>
+</html>

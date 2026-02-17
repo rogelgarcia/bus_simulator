@@ -8633,17 +8633,17 @@ async function runTests() {
     // ========== Scene Shortcut Tests ==========
     const { getSceneShortcutByKey, getSceneShortcutById } = await import('/src/states/SceneShortcutRegistry.js');
 
-    test('SceneShortcutRegistry: key 6 maps to Inspector Room', () => {
-        const scene = getSceneShortcutByKey('6');
-        assertTrue(!!scene, 'Expected scene for key 6.');
+    test('SceneShortcutRegistry: key I maps to Inspector Room', () => {
+        const scene = getSceneShortcutByKey('I');
+        assertTrue(!!scene, 'Expected scene for key I.');
         assertEqual(scene.id, 'inspector_room', 'Expected inspector_room id.');
         assertEqual(scene.label, 'Inspector Room', 'Expected Inspector Room label.');
     });
 
-    test('SceneShortcutRegistry: inspector_room uses key 6', () => {
+    test('SceneShortcutRegistry: inspector_room uses key I', () => {
         const scene = getSceneShortcutById('inspector_room');
         assertTrue(!!scene, 'Expected scene for inspector_room.');
-        assertEqual(scene.key, '6', 'Expected inspector_room key 6.');
+        assertEqual(scene.key, 'I', 'Expected inspector_room key I.');
     });
 
     const { InspectorRoomUI } = await import('/src/graphics/gui/inspector_room/InspectorRoomUI.js');

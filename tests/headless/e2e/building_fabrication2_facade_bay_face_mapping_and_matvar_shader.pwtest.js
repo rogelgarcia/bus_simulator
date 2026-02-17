@@ -156,7 +156,7 @@ test('BF2: face A bays affect A/C (not B/D)', async ({ page }) => {
     await page.waitForSelector('#ui-welcome:not(.hidden)');
     await page.keyboard.press('Q');
     await page.waitForSelector('#ui-setup:not(.hidden)');
-    await page.keyboard.press('9');
+    await page.keyboard.press('4');
 
     await page.waitForSelector('#building-fab2-hud');
     await page.locator('.building-fab2-create-btn').click();
@@ -228,7 +228,7 @@ test('BF2: enabling bay material variation should not break shaders', async ({ p
     await page.waitForSelector('#ui-welcome:not(.hidden)');
     await page.keyboard.press('Q');
     await page.waitForSelector('#ui-setup:not(.hidden)');
-    await page.keyboard.press('9');
+    await page.keyboard.press('4');
 
     await page.waitForSelector('#building-fab2-hud');
     await page.locator('.building-fab2-create-btn').click();

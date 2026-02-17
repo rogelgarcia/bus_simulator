@@ -1,13 +1,15 @@
 // src/states/SetupState.js
-import { getSelectableSceneShortcuts } from './SceneShortcutRegistry.js';
-import { getDebugToolShortcuts } from './DebugToolRegistry.js';
+import { Q_MENU_GROUP } from './SceneShortcutRegistry.js';
+import {
+    getQMenuGroupMenuItems,
+    getQMenuQuickShortcutByKey,
+    getQMenuScreenMenuItemsByGroup
+} from './QMenuScreenRegistry.js';
 import { SetupUIController } from '../graphics/gui/setup/SetupUIController.js';
 
-const DEBUGS_MENU_STATE = '__debugs__';
-const DEBUGS_MENU_KEY = '8';
-const NOISE_FABRICATION_STATE = '__noise_fabrication__';
-const NOISE_FABRICATION_KEY = 'N';
-const NOISE_FABRICATION_HREF = 'debug_tools/noise_fabrication.html';
+function normalizeMenuId(value) {
+    return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
 
 export class SetupState {
     constructor(engine, sm) {
@@ -27,13 +29,16 @@ export class SetupState {
         if (this.uiWelcome) this.uiWelcome.classList.add('hidden');
 
         this.engine.clearScene();
-        const initialMenu = typeof params?.initialMenu === 'string' ? params.initialMenu.trim().toLowerCase() : '';
-        const wantsDebugs = initialMenu === 'debugs';
-        if (wantsDebugs) {
-            this._openDebugsMenu({ returnToWelcome: true });
+        const initialMenu = normalizeMenuId(params?.initialMenu);
+        if (initialMenu === 'debugs' || initialMenu === 'debugger' || initialMenu === 'debuggers') {
+            this._openGroupMenu(Q_MENU_GROUP.debuggers, { returnToWelcome: true });
             return;
         }
-        this._openMainMenu();
+        if (initialMenu === Q_MENU_GROUP.fabrication) {
+            this._openGroupMenu(Q_MENU_GROUP.fabrication, { returnToWelcome: true });
+            return;
+        }
+        this._openRootMenu();
     }
 
     exit() {
@@ -41,59 +46,25 @@ export class SetupState {
         this._ui.close();
     }
 
-    _openMainMenu() {
-        const scenes = getSelectableSceneShortcuts().map((scene) => ({
-            key: scene.key,
-            label: scene.label,
-            state: scene.id
-        }));
-
-        scenes.push({
-            key: NOISE_FABRICATION_KEY,
-            label: 'Noise fabrication',
-            description: 'Generate, preview, and save reusable noise recipes',
-            state: NOISE_FABRICATION_STATE
-        });
-
-        scenes.push({
-            key: DEBUGS_MENU_KEY,
-            label: 'Debugs',
-            description: 'Isolated debug screens',
-            state: DEBUGS_MENU_STATE
-        });
-
+    _openRootMenu() {
         this._ui.open({
             mode: 'state',
-            sceneItems: scenes,
+            sceneItems: getQMenuGroupMenuItems(),
             closeItem: { key: 'Q', label: 'Back' },
-            onSelectState: (state) => {
-                const id = typeof state === 'string' ? state : '';
-                if (id === DEBUGS_MENU_STATE) {
-                    this._openDebugsMenu();
-                    return;
-                }
-                if (id === NOISE_FABRICATION_STATE) {
-                    this._navigateToDebugTool(NOISE_FABRICATION_HREF);
-                    return;
-                }
-                this.sm.go(id);
-            },
-            onRequestClose: () => this.sm.go('welcome')
+            onSelectState: (groupId) => this._openGroupMenu(groupId),
+            onRequestClose: () => this.sm.go('welcome'),
+            onShortcutKey: (key) => this._handleQuickShortcut(key)
         });
     }
 
-    _openDebugsMenu({ returnToWelcome = false } = {}) {
-        const tools = getDebugToolShortcuts().map((tool) => ({
-            key: tool.key,
-            label: tool.label,
-            description: tool.description,
-            state: tool.href
-        }));
+    _openGroupMenu(groupId, { returnToWelcome = false } = {}) {
+        const selectedGroup = groupId === Q_MENU_GROUP.debuggers ? Q_MENU_GROUP.debuggers : Q_MENU_GROUP.fabrication;
+        const tools = getQMenuScreenMenuItemsByGroup(selectedGroup);
 
         if (!tools.length) {
-            console.warn('[SetupState] No debug tools registered.');
+            console.warn(`[SetupState] No Q-menu screens registered for group '${selectedGroup}'.`);
             if (returnToWelcome) this.sm.go('welcome');
-            else this._openMainMenu();
+            else this._openRootMenu();
             return;
         }
 
@@ -101,15 +72,27 @@ export class SetupState {
             mode: 'state',
             sceneItems: tools,
             closeItem: { key: 'Q', label: 'Back' },
-            onSelectState: (href) => this._navigateToDebugTool(href),
-            onRequestClose: () => (returnToWelcome ? this.sm.go('welcome') : this._openMainMenu())
+            onSelectState: (href) => this._navigateToScreen(href),
+            onRequestClose: () => (returnToWelcome ? this.sm.go('welcome') : this._openRootMenu())
         });
     }
 
-    _navigateToDebugTool(href) {
+    _handleQuickShortcut(key) {
+        const href = getQMenuQuickShortcutByKey(key);
+        if (!href) return false;
+        this._navigateToScreen(href);
+        return true;
+    }
+
+    _navigateToScreen(href) {
         const raw = typeof href === 'string' ? href : '';
         if (!raw) return;
-        const url = new URL(raw, window.location.href).toString();
-        window.location.assign(url);
+        const url = new URL(raw, window.location.href);
+        const currentParams = new URLSearchParams(window.location.search);
+        for (const [key, value] of currentParams.entries()) {
+            if (key === 'screen') continue;
+            if (!url.searchParams.has(key)) url.searchParams.set(key, value);
+        }
+        window.location.assign(url.toString());
     }
 }

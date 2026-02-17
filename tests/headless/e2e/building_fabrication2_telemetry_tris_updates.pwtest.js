@@ -66,7 +66,7 @@ test('BF2: telemetry tris updates after rebuild', async ({ page }) => {
     await page.waitForSelector('#ui-welcome:not(.hidden)');
     await page.keyboard.press('Q');
     await page.waitForSelector('#ui-setup:not(.hidden)');
-    await page.keyboard.press('9');
+    await page.keyboard.press('4');
 
     await page.waitForSelector('#building-fab2-hud');
     await page.locator('.building-fab2-create-btn').click();

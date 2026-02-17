@@ -111,6 +111,7 @@ export class SetupUIController {
 
         this._onSelectState = null;
         this._onRequestClose = null;
+        this._onShortcutKey = null;
 
         this._onKeyDown = (e) => this._handleKeyDown(e);
         this._onResize = () => this._syncLayout();
@@ -129,7 +130,8 @@ export class SetupUIController {
         currentStateId = null,
         currentStateLabel = null,
         onSelectState = null,
-        onRequestClose = null
+        onRequestClose = null,
+        onShortcutKey = null
     } = {}) {
         if (!this.root || !this.frameEl) return;
         this.close();
@@ -160,6 +162,7 @@ export class SetupUIController {
 
         this._onSelectState = typeof onSelectState === 'function' ? onSelectState : null;
         this._onRequestClose = typeof onRequestClose === 'function' ? onRequestClose : null;
+        this._onShortcutKey = typeof onShortcutKey === 'function' ? onShortcutKey : null;
 
         this._syncText({ currentStateId, currentStateLabel });
 
@@ -209,6 +212,7 @@ export class SetupUIController {
         this._menuColumns = 1;
         this._onSelectState = null;
         this._onRequestClose = null;
+        this._onShortcutKey = null;
     }
 
     _syncText({ currentStateId, currentStateLabel }) {
@@ -414,7 +418,11 @@ export class SetupUIController {
         if (!typed) return;
 
         const opt = this.optionRows.find((r) => normalizeKey(r?.button?.dataset?.key) === typed) ?? null;
-        if (!opt) return;
+        if (!opt) {
+            const handled = !!this._onShortcutKey?.(typed);
+            if (handled) e.preventDefault();
+            return;
+        }
         e.preventDefault();
         if (opt.button?.dataset?.action === 'close') this._onRequestClose?.();
         else this._onSelectState?.(opt.button?.dataset?.state);

@@ -47,8 +47,12 @@ test('UI: Map Debugger mounts without crashing', async ({ page }) => {
     await page.waitForSelector('#ui-welcome:not(.hidden)');
     await page.keyboard.press('Q');
     await page.waitForSelector('#ui-setup:not(.hidden)');
+    await expect(page.locator('#setup-menu')).toContainText('Fabrication');
+    await expect(page.locator('#setup-menu')).toContainText('Debuggers');
     await page.keyboard.press('1');
-    await page.waitForSelector('.map-debugger-ui-root');
+    await page.waitForSelector('.map-debugger-panel');
+    await page.reload();
+    await page.waitForSelector('.map-debugger-panel');
     expect(await getErrors()).toEqual([]);
 });
 
@@ -58,7 +62,7 @@ test('UI: Road Debugger mounts without crashing', async ({ page }) => {
     await page.waitForSelector('#ui-welcome:not(.hidden)');
     await page.keyboard.press('Q');
     await page.waitForSelector('#ui-setup:not(.hidden)');
-    await page.keyboard.press('7');
+    await page.keyboard.press('2');
     await page.waitForSelector('.road-debugger-ui');
     expect(await getErrors()).toEqual([]);
 });

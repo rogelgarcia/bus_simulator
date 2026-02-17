@@ -16,6 +16,7 @@ import { InspectorRoomState } from './states/InspectorRoomState.js';
 import { MaterialCalibrationState } from './states/MaterialCalibrationState.js';
 import { RoadDebuggerState } from './states/RoadDebuggerState.js';
 import { OptionsState } from './states/OptionsState.js';
+import { isLaunchableSceneId } from './states/SceneShortcutRegistry.js';
 import { ensureGlobalPerfBar } from './graphics/gui/perf_bar/PerfBar.js';
 import { installViewportContextMenuBlocker } from './graphics/gui/shared/utils/viewportContextMenuBlocker.js';
 
@@ -25,6 +26,28 @@ function isEditableTarget(target) {
     const tag = String(el.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
     return !!el.isContentEditable;
+}
+
+function readLaunchScreenFromUrl() {
+    if (typeof window === 'undefined') return null;
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get('screen');
+    const id = typeof raw === 'string' ? raw.trim() : '';
+    if (!id || !isLaunchableSceneId(id)) return null;
+    return id;
+}
+
+function syncLaunchScreenParam(stateName) {
+    if (typeof window === 'undefined') return;
+    if (!window.history || typeof window.history.replaceState !== 'function') return;
+
+    const params = new URLSearchParams(window.location.search);
+    if (isLaunchableSceneId(stateName)) params.set('screen', stateName);
+    else params.delete('screen');
+
+    const query = params.toString();
+    const nextUrl = `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash || ''}`;
+    window.history.replaceState(window.history.state, '', nextUrl);
 }
 
 const perfBar = ensureGlobalPerfBar();
@@ -54,9 +77,15 @@ sm.register('material_calibration', new MaterialCalibrationState(engine, sm));
 sm.register('road_debugger', new RoadDebuggerState(engine, sm));
 sm.register('options', new OptionsState(engine, sm));
 
+const rawGo = sm.go.bind(sm);
+sm.go = (name, params = {}) => {
+    rawGo(name, params);
+    syncLaunchScreenParam(name);
+};
+
 engine.setStateMachine(sm);
 engine.start();
-sm.go('welcome');
+sm.go(readLaunchScreenFromUrl() ?? 'welcome');
 
 window.addEventListener('keydown', (e) => {
     if (isEditableTarget(e.target)) return;

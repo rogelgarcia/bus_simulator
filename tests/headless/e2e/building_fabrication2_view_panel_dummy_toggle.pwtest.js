@@ -66,7 +66,7 @@ test('BF2: view panel toggles are switches + Show dummy affects tris', async ({ 
     await page.waitForSelector('#ui-welcome:not(.hidden)');
     await page.keyboard.press('Q');
     await page.waitForSelector('#ui-setup:not(.hidden)');
-    await page.keyboard.press('9');
+    await page.keyboard.press('4');
 
     await page.waitForSelector('#building-fab2-hud');
 
