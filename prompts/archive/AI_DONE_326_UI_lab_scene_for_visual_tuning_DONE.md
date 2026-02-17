@@ -35,8 +35,12 @@ Tasks:
 ## Completion Summary
 - Added standalone `debug_tools/lab_scene.html` and `src/graphics/gui/lab_scene/main.js` for a dedicated Lab scene tool entrypoint.
 - Implemented `LabSceneView` with deterministic city composition, curated props, and six camera presets for repeatable visual checks.
-- Added persistent Lab state (`bus_sim.lab_scene.v2`) and fixed-atmosphere behavior while exposing lighting, shadows, post, and building visual tuning controls.
+- Added persistent Lab state (`bus_sim.lab_scene.v3`) and fixed-atmosphere behavior while exposing lighting, shadows, post, and building visual tuning controls.
 - Registered Lab scene quick access in `src/states/DebugToolRegistry.js` and wired quick-return behavior from the standalone page.
 - Documented the workflow in `specs/graphics/lab_scene_visual_tuning.md` and added node/unit plus headless/e2e coverage for registry and load smoke checks.
 - Follow-up tuning pass: added a crossing-front camera preset, explicit mouse camera navigation, road/sidewalk-grounded prop placement, larger traffic signal scale, game-aligned visual defaults, and enabled trees.
 - Follow-up simplification pass: replaced full options dock with a single Layers tab (toggle-only controls, AA limited to MSAA 2x/8x, AO limited to SSAO/GTAO), removed the asphalt ball prop, and added a wider/lower right-side crossing camera preset with stop-sign visibility.
+- Follow-up UX/framing pass: moved the Layers panel to the right, converted layer controls to button groups with AO `Off/SSAO/GTAO`, and moved the wide crossing camera + stop sign to the opposite street side.
+- Follow-up traffic-controls pass: removed manually positioned signs/lights in LabScene and now rebuild traffic-control props from RoadEngine/asphalt-derived placements.
+- Follow-up layout pass: split UI into left camera panel + right gameplay-style options panel, switched ON/OFF layer controls to toggle switches, and kept AO mode as `Off/SSAO/GTAO`.
+- Follow-up cleanup pass: removed the `OriginAxes` helper from Lab Scene rendering.

@@ -22,11 +22,9 @@
 - Buildings: 5 fixed blocks around the central road/crossing area.
 - Buildings use catalog `configId` entries with textured wall materials.
 - Trees are enabled using the standard city terrain/tree generator path.
+- Traffic controls (stop signs/traffic lights) are placed from RoadEngine/asphalt-derived junction data.
 - Curated props:
   - Parked bus for scale/composition
-  - Stop sign
-  - Traffic light
-  - Street sign pole
   - Material reference set (metal sphere, rough sphere, clearcoat cube)
 
 ## Camera presets
@@ -38,7 +36,7 @@ Presets are fixed, named, and bound to keys for repeatable review captures:
 3. `Bus follow` (`3`): vehicle-scale and grounding read
 4. `Corner detail` (`4`): intersection edge detail
 5. `Crossing front` (`7`): near crossing framing with bus front visibility
-6. `Crossing right wide` (`8`): farther/lower right-side bus framing that covers the crossing
+6. `Crossing right wide` (`8`): farther/lower crossing framing from the opposite sidewalk with stop-sign readability
 7. `Material close` (`5`): reference object inspection
 8. `Building glass` (`6`): window reflection checks
 
@@ -49,14 +47,16 @@ Mouse camera movement:
 
 ## Visual parameter controls
 
-The tool provides a single `Layers` tab with enable/disable controls only:
-- Shadows toggle
-- Bloom toggle
-- Sun Bloom toggle
-- Sun Flare toggle
-- Window reflections toggle
-- Ambient Occlusion toggle + mode (`SSAO` or `GTAO`)
-- MSAA selector (`2x` or `8x`)
+- Left panel: camera presets only.
+- Right panel: gameplay `Options` menu structure with one `Layers` tab.
+- On/off items use toggle switches:
+  - Shadows
+  - Bloom
+  - Sun Bloom
+  - Sun Flare
+  - Window reflections
+- Ambient Occlusion mode uses a single choice control: `Off` / `SSAO` / `GTAO`.
+- MSAA selector uses a single choice control: `2x` / `8x`.
 
 ## Fixed-atmosphere rule
 
@@ -67,7 +67,7 @@ The tool provides a single `Layers` tab with enable/disable controls only:
 
 ## Persistence
 
-- Local storage key: `bus_sim.lab_scene.v2`
+- Local storage key: `bus_sim.lab_scene.v3`
 - Persisted payload:
   - current Lab tuning draft (lighting/shadows/AA/AO/bloom/sun bloom/color grading/sun flare/building window visuals)
   - active camera preset id

@@ -1,8 +1,9 @@
 /* src/graphics/gui/lab_scene/styles.css */
 
 .lab-scene-layer {
-    justify-content: flex-start;
+    justify-content: space-between;
     align-items: flex-start;
+    gap: 16px;
     padding: 16px;
     z-index: 110;
 }
@@ -12,6 +13,20 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+}
+
+.lab-scene-options-layer {
+    pointer-events: auto;
+    width: min(var(--options-dock-width), calc(100vw - 32px));
+    max-height: calc(100vh - 32px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+    background: rgba(10, 14, 20, 0.92);
+    overflow: hidden;
+}
+
+.lab-scene-options-panel {
+    padding: 16px;
 }
 
 .lab-scene-title {
@@ -33,64 +48,10 @@
     gap: 8px;
 }
 
-.lab-scene-tabs {
-    display: flex;
-    gap: 6px;
-    margin-top: 2px;
-}
-
-.lab-scene-tab {
-    border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    background: rgba(6, 10, 18, 0.7);
-    color: #e9f2ff;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    padding: 6px 10px;
-    cursor: default;
-}
-
-.lab-scene-tab.is-active {
-    border-color: rgba(100, 210, 255, 0.55);
-    box-shadow: 0 0 0 1px rgba(100, 210, 255, 0.2) inset;
-}
-
 .lab-scene-controls {
     display: flex;
     flex-direction: column;
     gap: 6px;
-}
-
-.lab-scene-control-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 6px 8px;
-    border-radius: 8px;
-    background: rgba(0, 0, 0, 0.16);
-}
-
-.lab-scene-control-label {
-    font-size: 12px;
-    color: #e9f2ff;
-    opacity: 0.9;
-}
-
-.lab-scene-control-toggle {
-    accent-color: #64d2ff;
-}
-
-.lab-scene-control-select {
-    min-width: 86px;
-    border-radius: 7px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    background: rgba(4, 8, 14, 0.85);
-    color: #e9f2ff;
-    padding: 4px 6px;
-    font-size: 12px;
 }
 
 .lab-scene-preset-btn {
@@ -143,29 +104,8 @@
 .lab-scene-footer {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-
-.lab-scene-reset-btn {
-    border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    background: rgba(0, 0, 0, 0.18);
-    color: #e9f2ff;
-    cursor: pointer;
-    padding: 8px 10px;
-    font-weight: 700;
-    font-size: 12px;
-}
-
-.lab-scene-reset-btn:hover {
-    background: rgba(0, 0, 0, 0.28);
-}
-
-.lab-scene-reset-btn:focus-visible {
-    outline: 2px solid rgba(100, 210, 255, 0.55);
-    outline-offset: 2px;
+    justify-content: flex-end;
+    gap: 8px;
 }
 
 .lab-scene-active {
@@ -174,8 +114,18 @@
 }
 
 @media (max-width: 960px) {
+    .lab-scene-layer {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
     .lab-scene-panel {
-        width: min(340px, calc(100vw - 24px));
+        width: min(100%, calc(100vw - 24px));
+    }
+
+    .lab-scene-options-layer {
+        width: min(100%, calc(100vw - 24px));
+        max-height: min(56vh, 520px);
     }
 
     .lab-scene-preset-grid {

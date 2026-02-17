@@ -5,15 +5,16 @@
 import * as THREE from 'three';
 import { GameEngine } from '../../../app/core/GameEngine.js';
 import { createCityConfig } from '../../../app/city/CityConfig.js';
+import { computeRoadTrafficControlPlacementsFromRoadEngineDerived } from '../../../app/road_decoration/traffic_controls/RoadTrafficControlPlacement.js';
 import { createBus } from '../../assets3d/factories/BusFactory.js';
 import { BUS_CATALOG } from '../../assets3d/factories/BusCatalog.js';
 import { ROAD_DEFAULTS } from '../../assets3d/generators/GeneratorParams.js';
-import { createProceduralMeshAsset, PROCEDURAL_MESH } from '../../assets3d/procedural_meshes/ProceduralMeshCatalog.js';
 import { primePbrAssetsAvailability, setPbrAssetsEnabled } from '../../content3d/materials/PbrAssetsRuntime.js';
 import { createToolCameraController } from '../../engine3d/camera/ToolCameraPrefab.js';
 import { getResolvedLightingSettings, sanitizeLightingSettings } from '../../lighting/LightingSettings.js';
 import { getResolvedShadowSettings, sanitizeShadowSettings } from '../../lighting/ShadowSettings.js';
 import { City } from '../../visuals/city/City.js';
+import { createTrafficControlProps } from '../../visuals/city/TrafficControlProps.js';
 import { getResolvedAtmosphereSettings, sanitizeAtmosphereSettings } from '../../visuals/atmosphere/AtmosphereSettings.js';
 import { getResolvedBuildingWindowVisualsSettings, sanitizeBuildingWindowVisualsSettings } from '../../visuals/buildings/BuildingWindowVisualsSettings.js';
 import { applyBuildingWindowVisualsToCityMeshes } from '../../visuals/buildings/BuildingWindowVisualsRuntime.js';
@@ -23,6 +24,7 @@ import { getResolvedBloomSettings, sanitizeBloomSettings } from '../../visuals/p
 import { getResolvedColorGradingSettings, sanitizeColorGradingSettings } from '../../visuals/postprocessing/ColorGradingSettings.js';
 import { getResolvedSunBloomSettings, sanitizeSunBloomSettings } from '../../visuals/postprocessing/SunBloomSettings.js';
 import { getResolvedSunFlareSettings, sanitizeSunFlareSettings } from '../../visuals/sun/SunFlareSettings.js';
+import { makeChoiceRow, makeToggleRow } from '../options/OptionsUiControls.js';
 
 const LAB_STORAGE_KEY = 'bus_sim.lab_scene.v3';
 const LAB_STORAGE_VERSION = 3;
@@ -62,7 +64,7 @@ const LAB_CAMERA_PRESETS = Object.freeze([
         id: 'crossing_bus_right_wide',
         key: '8',
         label: 'Crossing right wide',
-        description: 'Lower right-side framing that catches the crossing and stop sign.'
+        description: 'Lower far crossing shot from the opposite sidewalk with stop-sign read.'
     }),
     Object.freeze({
         id: 'material_close',
@@ -275,6 +277,53 @@ function resolveSurfaceHeights(city) {
     return { roadY, groundY, sidewalkY };
 }
 
+function resolveRoadEngineTrafficControlPlacements(city) {
+    const derived = city?.roads?.debug?.derived ?? null;
+    const segments = Array.isArray(derived?.segments) ? derived.segments : [];
+    const junctions = Array.isArray(derived?.junctions) ? derived.junctions : [];
+    if (!segments.length || !junctions.length) return [];
+
+    const gen = city?.generatorConfig ?? {};
+    const roadCfg = { ...ROAD_DEFAULTS, ...(gen.road ?? {}) };
+    roadCfg.curb = { ...(ROAD_DEFAULTS.curb ?? {}), ...(roadCfg.curb ?? {}) };
+    roadCfg.sidewalk = { ...(ROAD_DEFAULTS.sidewalk ?? {}), ...(roadCfg.sidewalk ?? {}) };
+    const trafficCfg = roadCfg.trafficControls && typeof roadCfg.trafficControls === 'object'
+        ? roadCfg.trafficControls
+        : {};
+
+    const laneWidth = Number.isFinite(roadCfg.laneWidth) ? roadCfg.laneWidth : ROAD_DEFAULTS.laneWidth;
+    const tileSize = Number.isFinite(city?.map?.tileSize) ? city.map.tileSize : 24;
+    const asphaltY = Number.isFinite(city?.roads?.debug?.asphaltY)
+        ? city.roads.debug.asphaltY
+        : (Number.isFinite(roadCfg.surfaceY) ? roadCfg.surfaceY : ROAD_DEFAULTS.surfaceY);
+    const curbThickness = Number.isFinite(roadCfg.curb?.thickness)
+        ? roadCfg.curb.thickness
+        : (ROAD_DEFAULTS.curb?.thickness ?? 0.48);
+    const curbHeightBase = Number.isFinite(roadCfg.curb?.height) ? roadCfg.curb.height : (ROAD_DEFAULTS.curb?.height ?? 0);
+    const curbExtra = Number.isFinite(roadCfg.curb?.extraHeight) ? roadCfg.curb.extraHeight : 0;
+    const sidewalkWidth = Number.isFinite(roadCfg.sidewalk?.extraWidth)
+        ? roadCfg.sidewalk.extraWidth
+        : (ROAD_DEFAULTS.sidewalk?.extraWidth ?? 0);
+    const sidewalkLift = Number.isFinite(roadCfg.sidewalk?.lift) ? roadCfg.sidewalk.lift : 0;
+    const trafficLightLaneThreshold = Number.isFinite(Number(trafficCfg.trafficLightLaneThreshold))
+        ? Number(trafficCfg.trafficLightLaneThreshold)
+        : 5;
+
+    return computeRoadTrafficControlPlacementsFromRoadEngineDerived(
+        { segments, junctions },
+        {
+            laneWidth,
+            tileSize,
+            asphaltY,
+            curbThickness,
+            curbHeight: curbHeightBase + curbExtra,
+            sidewalkWidth,
+            sidewalkLift,
+            trafficLightLaneThreshold
+        }
+    );
+}
+
 function snapObjectBaseToY(object3d, baseY) {
     if (!object3d || !Number.isFinite(baseY)) return false;
     object3d.updateMatrixWorld(true);
@@ -354,24 +403,6 @@ function createReferencePropsGroup() {
     return group;
 }
 
-function createProceduralProp(meshId, { name, x, y, z, yawDeg = 0, scale = 1.0, baseY = null } = {}) {
-    const asset = createProceduralMeshAsset(meshId);
-    const mesh = asset?.mesh ?? null;
-    if (!mesh) return null;
-
-    const solid = asset?.materials?.solid ?? null;
-    if (Array.isArray(solid) && solid.length) mesh.material = solid;
-    else if (solid) mesh.material = solid;
-
-    mesh.name = typeof name === 'string' && name ? name : meshId;
-    mesh.position.set(Number(x) || 0, Number(y) || 0, Number(z) || 0);
-    mesh.rotation.y = THREE.MathUtils.degToRad(Number(yawDeg) || 0);
-    mesh.scale.setScalar(Number(scale) || 1.0);
-    if (Number.isFinite(baseY)) snapObjectBaseToY(mesh, Number(baseY));
-    setShadowsRecursive(mesh, { cast: true, receive: true });
-    return mesh;
-}
-
 export class LabSceneView {
     constructor({ canvas } = {}) {
         this.canvas = canvas;
@@ -420,11 +451,11 @@ export class LabSceneView {
         });
         this.city = city;
         city.attach(engine);
+        const originAxes = city.group?.getObjectByName?.('OriginAxes') ?? null;
+        if (originAxes?.parent) originAxes.parent.remove(originAxes);
         engine.context.city = city;
         this._surfaceHeights = resolveSurfaceHeights(city);
-
-        if (city.trafficControls?.group?.parent) city.trafficControls.group.parent.remove(city.trafficControls.group);
-        city.trafficControls = null;
+        this._rebuildTrafficControlsFromRoadEngine();
 
         this._propsRoot = new THREE.Group();
         this._propsRoot.name = 'LabSceneProps';
@@ -502,13 +533,31 @@ export class LabSceneView {
         this._raf = requestAnimationFrame((tt) => this._tick(tt));
     }
 
+    _rebuildTrafficControlsFromRoadEngine() {
+        const city = this.city;
+        if (!city) return;
+
+        if (city.trafficControls?.group?.parent) city.trafficControls.group.parent.remove(city.trafficControls.group);
+        city.trafficControls = null;
+
+        const placements = resolveRoadEngineTrafficControlPlacements(city);
+        if (!placements.length) return;
+
+        const props = createTrafficControlProps({ placements, useSolidMaterials: true });
+        const group = props?.group ?? null;
+        if (!group) return;
+
+        group.name = 'LabRoadEngineTrafficControls';
+        setShadowsRecursive(group, { cast: true, receive: true });
+        city.group.add(group);
+        city.trafficControls = { ...props, group };
+    }
+
     _buildProps() {
         const root = this._propsRoot;
         const city = this.city;
         if (!root || !city) return;
-        const map = city.map ?? null;
         const heights = this._surfaceHeights ?? resolveSurfaceHeights(city);
-        const crossing = map?.tileToWorldCenter?.(7, 7) ?? { x: 0, z: 0 };
 
         const busSpec = BUS_CATALOG.find((entry) => entry?.id === 'city') ?? BUS_CATALOG[0] ?? null;
         if (busSpec) {
@@ -520,39 +569,6 @@ export class LabSceneView {
             this._busRoot = bus;
             root.add(bus);
         }
-
-        const stopSign = createProceduralProp(PROCEDURAL_MESH.STOP_SIGN_V1, {
-            name: 'LabStopSign',
-            x: crossing.x + 6.5,
-            y: heights.sidewalkY,
-            z: crossing.z - 8.6,
-            yawDeg: 180,
-            scale: 1.15,
-            baseY: heights.sidewalkY
-        });
-        if (stopSign) root.add(stopSign);
-
-        const trafficLight = createProceduralProp(PROCEDURAL_MESH.TRAFFIC_LIGHT_V1, {
-            name: 'LabTrafficLight',
-            x: crossing.x + 15.0,
-            y: heights.sidewalkY,
-            z: crossing.z - 12.0,
-            yawDeg: 180,
-            scale: 2.7,
-            baseY: heights.sidewalkY
-        });
-        if (trafficLight) root.add(trafficLight);
-
-        const signPole = createProceduralProp(PROCEDURAL_MESH.STREET_SIGN_POLE_V1, {
-            name: 'LabSignPole',
-            x: crossing.x - 20.0,
-            y: heights.sidewalkY,
-            z: crossing.z - 16.0,
-            yawDeg: 25,
-            scale: 1.15,
-            baseY: heights.sidewalkY
-        });
-        if (signPole) root.add(signPole);
 
         const references = createReferencePropsGroup();
         references.position.set(20, 0, 0);
@@ -610,11 +626,11 @@ export class LabSceneView {
             const baseRoadY = this._surfaceHeights?.roadY ?? 0;
             const camPos = busPos.clone()
                 .addScaledVector(forward, 30.0)
-                .addScaledVector(right, 14.0);
+                .addScaledVector(right, -14.0);
             camPos.y = baseRoadY + 1.85;
             return {
                 position: camPos,
-                target: new THREE.Vector3(crossing.x + 2.4, baseRoadY + 1.15, crossing.z - 2.4)
+                target: new THREE.Vector3(crossing.x + 2.4, baseRoadY + 1.15, crossing.z + 2.4)
             };
         }
         if (preset.id === 'material_close') {
@@ -684,89 +700,8 @@ export class LabSceneView {
         }
         panel.appendChild(grid);
 
-        const tabs = document.createElement('div');
-        tabs.className = 'lab-scene-tabs';
-        const layersTab = document.createElement('button');
-        layersTab.type = 'button';
-        layersTab.className = 'lab-scene-tab is-active';
-        layersTab.textContent = 'Layers';
-        layersTab.setAttribute('aria-pressed', 'true');
-        tabs.appendChild(layersTab);
-        panel.appendChild(tabs);
-
-        const controlsWrap = document.createElement('div');
-        controlsWrap.className = 'lab-scene-controls';
-        this._layerControls = {};
-
-        const createToggleRow = (key, label) => {
-            const row = document.createElement('label');
-            row.className = 'lab-scene-control-row';
-
-            const text = document.createElement('span');
-            text.className = 'lab-scene-control-label';
-            text.textContent = label;
-
-            const input = document.createElement('input');
-            input.type = 'checkbox';
-            input.className = 'lab-scene-control-toggle';
-            input.addEventListener('change', () => this._onLayerControlChanged());
-
-            row.appendChild(text);
-            row.appendChild(input);
-            controlsWrap.appendChild(row);
-            this._layerControls[key] = input;
-        };
-
-        const createSelectRow = (key, label, options) => {
-            const row = document.createElement('label');
-            row.className = 'lab-scene-control-row';
-
-            const text = document.createElement('span');
-            text.className = 'lab-scene-control-label';
-            text.textContent = label;
-
-            const select = document.createElement('select');
-            select.className = 'lab-scene-control-select';
-            for (const opt of options) {
-                const el = document.createElement('option');
-                el.value = String(opt?.value ?? '');
-                el.textContent = String(opt?.label ?? opt?.value ?? '');
-                select.appendChild(el);
-            }
-            select.addEventListener('change', () => this._onLayerControlChanged());
-
-            row.appendChild(text);
-            row.appendChild(select);
-            controlsWrap.appendChild(row);
-            this._layerControls[key] = select;
-        };
-
-        createToggleRow('shadowsEnabled', 'Shadows');
-        createToggleRow('bloomEnabled', 'Bloom');
-        createToggleRow('sunBloomEnabled', 'Sun Bloom');
-        createToggleRow('sunFlareEnabled', 'Sun Flare');
-        createToggleRow('windowReflectionsEnabled', 'Window Reflections');
-        createToggleRow('aoEnabled', 'Ambient Occlusion');
-        createSelectRow('aoMode', 'AO Mode', [
-            { value: 'ssao', label: 'SSAO' },
-            { value: 'gtao', label: 'GTAO' }
-        ]);
-        createSelectRow('aaSamples', 'AA (MSAA)', [
-            { value: '2', label: '2x' },
-            { value: '8', label: '8x' }
-        ]);
-
-        panel.appendChild(controlsWrap);
-
         const footer = document.createElement('div');
         footer.className = 'lab-scene-footer';
-
-        const resetBtn = document.createElement('button');
-        resetBtn.type = 'button';
-        resetBtn.className = 'lab-scene-reset-btn';
-        resetBtn.textContent = 'Reset Visual Defaults';
-        resetBtn.addEventListener('click', () => this._resetToFactoryDefaults());
-        footer.appendChild(resetBtn);
 
         const active = document.createElement('div');
         active.className = 'lab-scene-active';
@@ -774,7 +709,102 @@ export class LabSceneView {
         this._activePresetEl = active;
 
         panel.appendChild(footer);
+
+        const optionsLayer = document.createElement('div');
+        optionsLayer.className = 'options-layer is-embedded lab-scene-options-layer';
+
+        const optionsPanel = document.createElement('div');
+        optionsPanel.className = 'ui-panel is-interactive options-panel lab-scene-options-panel';
+
+        const optionsHeader = document.createElement('div');
+        optionsHeader.className = 'options-header';
+        const optionsTitle = document.createElement('div');
+        optionsTitle.className = 'options-title';
+        optionsTitle.textContent = 'Options';
+        optionsHeader.appendChild(optionsTitle);
+        const optionsSubtitle = document.createElement('div');
+        optionsSubtitle.className = 'options-subtitle';
+        optionsSubtitle.textContent = 'Visual layers (lab-only)';
+        optionsHeader.appendChild(optionsSubtitle);
+        optionsPanel.appendChild(optionsHeader);
+
+        const optionsTabs = document.createElement('div');
+        optionsTabs.className = 'options-tabs';
+        const optionsLayersTab = document.createElement('button');
+        optionsLayersTab.type = 'button';
+        optionsLayersTab.className = 'options-tab is-active';
+        optionsLayersTab.textContent = 'Layers';
+        optionsTabs.appendChild(optionsLayersTab);
+        optionsPanel.appendChild(optionsTabs);
+
+        this._layerControls = {};
+        const optionsBody = document.createElement('div');
+        optionsBody.className = 'options-body lab-scene-controls';
+        const section = document.createElement('div');
+        section.className = 'options-section';
+        const sectionTitle = document.createElement('div');
+        sectionTitle.className = 'options-section-title';
+        sectionTitle.textContent = 'Layers';
+        section.appendChild(sectionTitle);
+
+        const createToggleControl = (key, label) => {
+            const control = makeToggleRow({
+                label,
+                value: false,
+                onChange: () => this._onLayerControlChanged()
+            });
+            section.appendChild(control.row);
+            this._layerControls[key] = control.toggle;
+        };
+
+        const createChoiceControl = (key, label, options) => {
+            const normalized = Array.isArray(options) ? options.map((entry) => ({
+                id: String(entry?.value ?? ''),
+                label: String(entry?.label ?? entry?.value ?? '')
+            })) : [];
+            const first = normalized[0]?.id ?? '';
+            const control = makeChoiceRow({
+                label,
+                value: first,
+                options: normalized,
+                onChange: () => this._onLayerControlChanged()
+            });
+            section.appendChild(control.row);
+            this._layerControls[key] = control;
+        };
+
+        createToggleControl('shadowsEnabled', 'Shadows');
+        createToggleControl('bloomEnabled', 'Bloom');
+        createToggleControl('sunBloomEnabled', 'Sun Bloom');
+        createToggleControl('sunFlareEnabled', 'Sun Flare');
+        createToggleControl('windowReflectionsEnabled', 'Window Reflections');
+        createChoiceControl('aoMode', 'AO Mode', [
+            { value: 'off', label: 'Off' },
+            { value: 'ssao', label: 'SSAO' },
+            { value: 'gtao', label: 'GTAO' }
+        ]);
+        createChoiceControl('aaSamples', 'AA (MSAA)', [
+            { value: '2', label: '2x' },
+            { value: '8', label: '8x' }
+        ]);
+
+        optionsBody.appendChild(section);
+        optionsPanel.appendChild(optionsBody);
+
+        const optionsFooter = document.createElement('div');
+        optionsFooter.className = 'options-footer';
+        const resetBtn = document.createElement('button');
+        resetBtn.type = 'button';
+        resetBtn.className = 'options-btn';
+        resetBtn.textContent = 'Reset';
+        resetBtn.addEventListener('click', () => this._resetToFactoryDefaults());
+        optionsFooter.appendChild(resetBtn);
+        optionsPanel.appendChild(optionsFooter);
+
+        optionsLayer.appendChild(optionsPanel);
+
         layer.appendChild(panel);
+        layer.appendChild(optionsLayer);
         document.body.appendChild(layer);
         this._hudLayer = layer;
         this._syncPresetUi();
@@ -833,16 +863,19 @@ export class LabSceneView {
         windowVisuals.reflective = reflective;
         draft.buildingWindowVisuals = windowVisuals;
 
-        const aaSamples = controls.aaSamples?.value === '8' ? 8 : 2;
+        const aaSamples = controls.aaSamples?.getValue?.() === '8' ? 8 : 2;
         const aa = draft.antiAliasing && typeof draft.antiAliasing === 'object' ? draft.antiAliasing : {};
         aa.mode = 'msaa';
         aa.msaa = { ...(aa.msaa ?? {}), samples: aaSamples };
         draft.antiAliasing = aa;
 
         const ao = draft.ambientOcclusion && typeof draft.ambientOcclusion === 'object' ? draft.ambientOcclusion : {};
-        const aoEnabled = !!controls.aoEnabled?.checked;
-        const aoMode = controls.aoMode?.value === 'gtao' ? 'gtao' : 'ssao';
-        ao.mode = aoEnabled ? aoMode : 'off';
+        const aoModeRaw = String(controls.aoMode?.getValue?.() ?? 'off').toLowerCase();
+        ao.mode = aoModeRaw === 'gtao'
+            ? 'gtao'
+            : aoModeRaw === 'ssao'
+                ? 'ssao'
+                : 'off';
         draft.ambientOcclusion = ao;
 
         this._state.draft = this._normalizeDraft(draft);
@@ -861,22 +894,15 @@ export class LabSceneView {
         const aaSamples = aaSamplesRaw >= 8 ? '8' : '2';
 
         const aoModeRaw = String(draft?.ambientOcclusion?.mode ?? '').toLowerCase();
-        const aoEnabled = aoModeRaw === 'ssao' || aoModeRaw === 'gtao';
-        const aoMode = aoModeRaw === 'gtao' ? 'gtao' : 'ssao';
+        const aoMode = aoModeRaw === 'gtao' ? 'gtao' : aoModeRaw === 'ssao' ? 'ssao' : 'off';
 
         if (controls.shadowsEnabled) controls.shadowsEnabled.checked = String(draft?.shadows?.quality ?? 'off').toLowerCase() !== 'off';
         if (controls.bloomEnabled) controls.bloomEnabled.checked = !!draft?.bloom?.enabled;
         if (controls.sunBloomEnabled) controls.sunBloomEnabled.checked = !!draft?.sunBloom?.enabled;
         if (controls.sunFlareEnabled) controls.sunFlareEnabled.checked = !!draft?.sunFlare?.enabled;
         if (controls.windowReflectionsEnabled) controls.windowReflectionsEnabled.checked = !!draft?.buildingWindowVisuals?.reflective?.enabled;
-        if (controls.aoEnabled) controls.aoEnabled.checked = aoEnabled;
-        if (controls.aoMode) {
-            controls.aoMode.value = aoMode;
-            controls.aoMode.disabled = !aoEnabled;
-        }
-        if (controls.aaSamples) {
-            controls.aaSamples.value = aaMode === 'msaa' ? aaSamples : '2';
-        }
+        controls.aoMode?.setValue?.(aoMode);
+        controls.aaSamples?.setValue?.(aaMode === 'msaa' ? aaSamples : '2');
     }
 
     _handleKeyDown(e) {
