@@ -276,3 +276,12 @@ This creates a `3 x 3` binding matrix where each slot points to one PBR material
   - biome-boundary blend bands (camera-zone constrained by engine transition settings)
   - humidity slot edge bands (threshold crossings)
 - Transition diagnostics SHOULD visualize these final PBR boundaries, not only biome boundaries.
+
+### 8.3 Biome Tiling Validation Mode (Terrain Debugger)
+
+For tiling-validation workflows, Terrain Debugger may run the engine in a constant-material setup:
+
+- Biome source map is a constant single-biome map over full bounds.
+- Biome × humidity bindings point to the same selected PBR material for all slots.
+- Engine sampling/mask semantics remain unchanged; this mode is a debugger-side authoring configuration.
+- This mode is intended to validate repetition, distance-based tiling behavior, and variation controls independently from biome transitions.

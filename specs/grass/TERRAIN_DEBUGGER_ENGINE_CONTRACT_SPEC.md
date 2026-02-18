@@ -47,6 +47,10 @@ The debugger UI state MUST include a `terrain.engine` payload (serializable) cov
   - `compareEnabled`
   - `baselineProfiles` (captured baseline profile by pair key)
   - preset `catalog` entries (id/name/biome pair/profile)
+- `terrain.biomeTiling`:
+  - `materialId` (single PBR applied across the full map for tiling validation)
+  - `distanceTiling` (`enabled`, `nearScale`, `farScale`, `blendStartMeters`, `blendEndMeters`, optional `blendCurve`, `debugView`)
+  - `variation` (`antiTilingEnabled`, `antiTilingStrength`, `antiTilingCellMeters`, `macroVariationEnabled`, `macroVariationStrength`, `macroVariationScale`)
 
 The bounds are not stored in UI state and are always derived from terrain geometry.
 
@@ -87,13 +91,30 @@ When the active debugger tab is `Biome Transition`, the view MUST switch to a de
   - noise contribution
   - final transition result
 
+### 4.3 Biome Tiling View Mode
+
+When the active debugger tab is `Biome Tiling`, the view MUST switch to a deterministic single-texture validation mode:
+
+- Terrain layout is fixed to a deterministic `15 x 40` tile setup.
+- The tab provides two focus actions: overview framing and eye-height framing at `1.8m`.
+- Non-tiling terrain concerns are suppressed for clarity (roads/cloud/slope effects disabled in this mode).
+- A single selected PBR material is applied across all biome × humidity slots so the full map is uniform.
+- Runtime terrain-engine config is adapted for repeatability in this view:
+  - grid patching with deterministic origin tied to current terrain bounds
+  - biome mode forced to `source_map` with a constant-biome source map for the full area
+- Texture-size-by-distance controls MUST support near/far scale with blend start/end and a default linear-like curve.
+- Distance diagnostics MUST support at least `blended`, `near-only`, and `far-only` inspection views.
+- Variation controls MUST support anti-tiling and macro variation tuning for repetition checks.
+- URL deep-linking SHOULD persist biome-tiling authoring context (`tab`, selected PBR, and camera pose) so browser hard-refresh restores the same tiling setup.
+- Tooling visuals for roads/grass groups are hidden in this mode to keep attention on terrain texture behavior.
+
 ## 5. Migration Notes (Legacy Controls)
 
-Legacy terrain controls that are debugger-only and no longer authoritative should be removed/deprecated:
+Legacy terrain controls that are debugger-only and no longer authoritative should be removed/deprecated from the general Terrain tab:
 
-- single ground material picker
-- UV scale/distance scaling controls
-- terrain variation layers/macros intended for one-material workflows
+- single ground material picker (moved to `Biome Tiling` validation workflow)
+- UV scale/distance scaling controls (moved to `Biome Tiling` validation workflow)
+- terrain variation layers/macros intended for one-material workflows (moved to `Biome Tiling` validation workflow)
 
 Replacements MUST flow through the terrain engine config and derived outputs.
 

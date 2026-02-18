@@ -25,9 +25,34 @@ import { GrassLodInspectorPopup } from './GrassLodInspectorPopup.js';
 const EPS = 1e-6;
 const CAMERA_PRESET_BEHIND_GAMEPLAY_DISTANCE = 13.5;
 const ALBEDO_SATURATION_ADJUST_SHADER_VERSION = 2;
-const TERRAIN_BIOME_BLEND_SHADER_VERSION = 6;
+const TERRAIN_BIOME_BLEND_SHADER_VERSION = 7;
 const OUTPUT_PANEL_REFRESH_MS = 100;
 const FLYOVER_SAMPLE_RATE = 15;
+const FLYOVER_DEBUG_HELPER_LAYER = 1;
+const FLYOVER_DEBUG_ICON_FORWARD = Object.freeze(new THREE.Vector3(1, 0, 0));
+const FLYOVER_DEBUG_OVERLAY_MARGIN_PX = 12;
+const FLYOVER_DEBUG_OVERLAY_GAP_PX = 10;
+const FLYOVER_DEBUG_OVERLAY_MIN_WIDTH_PX = 220;
+const FLYOVER_DEBUG_OVERLAY_MAX_WIDTH_PX = 460;
+const FLYOVER_DEBUG_OVERLAY_ASPECT = 16 / 9;
+const FLYOVER_DEBUG_OVERLAY_MAX_HEIGHT_FRAC = 0.42;
+const FLYOVER_DEBUG_KEYFRAME_INDEX_SIZE_METERS = 32.0;
+const FLYOVER_DEBUG_KEYFRAME_INDEX_OFFSET_Y = 64.0;
+const FLYOVER_DEBUG_TANGENT_EXTEND = 1.8;
+const FLYOVER_DEBUG_KEYFRAME2_TANGENT_LENGTH_METERS = 24.0;
+const FLYOVER_DEBUG_KEYFRAME2_TANGENT_SECONDARY_SCALE = 0.72;
+const FLYOVER_DEBUG_TANGENT_IN_COLOR = 0xff5f57;
+const FLYOVER_DEBUG_TANGENT_OUT_COLOR = 0x7dd3fc;
+const FLYOVER_DEBUG_AXIS_OUTSIDE_OFFSET_METERS = 5.0;
+const FLYOVER_DEBUG_AXIS_SCALE = 10.0;
+const BIOME_TILING_AXIS_INSET_METERS = 1.0;
+const BIOME_TILING_AXIS_GAP_METERS = 1.0;
+const BIOME_TILING_AXIS_OUTSIDE_OFFSET_METERS = 1.0;
+const BIOME_TILING_AXIS_LENGTH_METERS = 2.8;
+const BIOME_TILING_AXIS_HEAD_LENGTH_METERS = 0.62;
+const BIOME_TILING_AXIS_HEAD_WIDTH_METERS = 0.30;
+const BIOME_TILING_AXIS_Y_OFFSET_METERS = 0.22;
+const BIOME_TILING_AXIS_LABEL_SIZE_METERS = 0.85;
 
 const TERRAIN_ENGINE_MASK_TEX_SIZE = 256;
 const TERRAIN_BIOME_IDS = Object.freeze(['stone', 'grass', 'land']);
@@ -39,7 +64,8 @@ const TERRAIN_HUMIDITY_LEVELS = Object.freeze({
 });
 const TERRAIN_VIEW_MODE = Object.freeze({
     DEFAULT: 'default',
-    BIOME_TRANSITION: 'biome_transition'
+    BIOME_TRANSITION: 'biome_transition',
+    BIOME_TILING: 'biome_tiling'
 });
 const BIOME_TRANSITION_DEBUG_MODES = new Set(['pair_isolation', 'transition_result', 'transition_weight', 'transition_falloff', 'transition_noise', 'pair_compare']);
 const TERRAIN_DEBUG_MODE_ALLOWED = new Set([
@@ -59,6 +85,39 @@ const BIOME_TRANSITION_DEFAULT_PROFILE = Object.freeze({
     dominanceBias: 0.0,
     heightInfluence: 0.0,
     contrast: 1.0
+});
+const BIOME_TILING_DEFAULT_STATE = Object.freeze({
+    materialId: 'pbr.ground_037',
+    distanceTiling: Object.freeze({
+        enabled: true,
+        nearScale: 1.0,
+        farScale: 0.36,
+        blendStartMeters: 40.0,
+        blendEndMeters: 240.0,
+        blendCurve: 1.0,
+        debugView: 'blended'
+    }),
+    variation: Object.freeze({
+        antiTilingEnabled: true,
+        antiTilingStrength: 0.45,
+        antiTilingCellMeters: 2.0,
+        macroVariationEnabled: true,
+        macroVariationStrength: 0.16,
+        macroVariationScale: 0.02,
+        nearIntensity: 1.0,
+        farIntensity: 0.65
+    })
+});
+const TERRAIN_DEBUGGER_URL_PARAM = Object.freeze({
+    tab: 'td_tab',
+    tilingPbr: 'td_tiling_pbr',
+    tilingFocus: 'td_tiling_focus',
+    cameraPosX: 'td_cx',
+    cameraPosY: 'td_cy',
+    cameraPosZ: 'td_cz',
+    cameraTargetX: 'td_tx',
+    cameraTargetY: 'td_ty',
+    cameraTargetZ: 'td_tz'
 });
 
 function injectAlbedoSaturationAdjustShader(material, shader) {
@@ -357,6 +416,10 @@ function ensureTerrainBiomeBlendShaderOnMaterial(material) {
         shader.uniforms.uGdHumidityThresholds = { value: data.terrainHumidityThresholds ?? new THREE.Vector4(0.33, 0.67, 0.02, 0.0) };
         shader.uniforms.uGdHumidityEdgeNoise = { value: data.terrainHumidityEdgeNoise ?? new THREE.Vector4(0.025, 0.0, 0.0, 0.0) };
         shader.uniforms.uGdHumidityEdgeNoiseTex = { value: data.terrainHumidityEdgeNoiseTex ?? FALLBACK_TERRAIN_HUMIDITY_EDGE_NOISE_TEX };
+        shader.uniforms.uGdTilingDistance0 = { value: data.terrainTilingDistance0 ?? new THREE.Vector4(1.0, 1.0, 40.0, 240.0) };
+        shader.uniforms.uGdTilingDistance1 = { value: data.terrainTilingDistance1 ?? new THREE.Vector4(1.0, 0.0, 0.0, 0.0) };
+        shader.uniforms.uGdTilingVariation0 = { value: data.terrainTilingVariation0 ?? new THREE.Vector4(0.0, 0.45, 2.0, 0.0) };
+        shader.uniforms.uGdTilingVariation1 = { value: data.terrainTilingVariation1 ?? new THREE.Vector4(0.16, 0.02, 1.0, 0.65) };
 
         shader.vertexShader = shader.vertexShader.replace(
             '#include <common>',
@@ -407,6 +470,10 @@ function ensureTerrainBiomeBlendShaderOnMaterial(material) {
                 'uniform vec4 uGdHumidityThresholds;',
                 'uniform vec4 uGdHumidityEdgeNoise;',
                 'uniform sampler2D uGdHumidityEdgeNoiseTex;',
+                'uniform vec4 uGdTilingDistance0;',
+                'uniform vec4 uGdTilingDistance1;',
+                'uniform vec4 uGdTilingVariation0;',
+                'uniform vec4 uGdTilingVariation1;',
                 'vec3 gdSrgbToLinear(vec3 c){',
                 'bvec3 cutoff = lessThanEqual(c, vec3(0.04045));',
                 'vec3 lower = c / 12.92;',
@@ -417,6 +484,66 @@ function ensureTerrainBiomeBlendShaderOnMaterial(material) {
                 'vec2 denom = vec2(max(1e-6, uGdTerrainBounds.y - uGdTerrainBounds.x), max(1e-6, uGdTerrainBounds.w - uGdTerrainBounds.z));',
                 'vec2 uv = (worldUv - vec2(uGdTerrainBounds.x, uGdTerrainBounds.z)) / denom;',
                 'return clamp(uv, 0.0, 1.0);',
+                '}',
+                'float gdHash12(vec2 p){',
+                'return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);',
+                '}',
+                'vec2 gdRotate2(vec2 v, float a){',
+                'float s = sin(a);',
+                'float c = cos(a);',
+                'return vec2(c * v.x - s * v.y, s * v.x + c * v.y);',
+                '}',
+                'float gdDistanceBlend01(vec2 worldUv){',
+                'float startD = max(0.0, uGdTilingDistance0.z);',
+                'float endD = max(startD + 1e-4, uGdTilingDistance0.w);',
+                'float dist = distance(cameraPosition.xz, worldUv);',
+                'float t = clamp((dist - startD) / max(1e-4, endD - startD), 0.0, 1.0);',
+                'float curve = max(0.1, uGdTilingDistance1.x);',
+                'return pow(t, curve);',
+                '}',
+                'vec2 gdAntiTileUv(vec2 uv, float cellMeters, float strength){',
+                'float cell = max(1e-3, cellMeters);',
+                'vec2 cellId = floor(uv / cell);',
+                'vec2 local = fract(uv / cell) - 0.5;',
+                'float h0 = gdHash12(cellId);',
+                'float h1 = gdHash12(cellId + vec2(17.3, 91.7));',
+                'float angle = (h0 - 0.5) * 1.57079632679 * strength;',
+                'vec2 offset = (vec2(h1, gdHash12(cellId + vec2(53.9, 29.1))) - 0.5) * strength;',
+                'vec2 rotated = gdRotate2(local, angle);',
+                'return (cellId + rotated + 0.5) * cell + offset;',
+                '}',
+                'vec3 gdSampleTerrainAlbedo(sampler2D tex, vec2 worldUv, float uvScale){',
+                'float nearScale = max(1e-4, uGdTilingDistance0.x);',
+                'float farScale = max(1e-4, uGdTilingDistance0.y);',
+                'float distanceEnabled = step(0.5, uGdTilingDistance1.z);',
+                'float blend = gdDistanceBlend01(worldUv) * distanceEnabled;',
+                'float debugMode = uGdTilingDistance1.y;',
+                'if (debugMode > 1.5) blend = 1.0;',
+                'else if (debugMode > 0.5) blend = 0.0;',
+                'vec2 uvNear = worldUv * uvScale * nearScale;',
+                'vec2 uvFar = worldUv * uvScale * mix(nearScale, farScale, distanceEnabled);',
+                'float variationNear = max(0.0, uGdTilingVariation1.z);',
+                'float variationFar = max(0.0, uGdTilingVariation1.w);',
+                'float variationIntensity = mix(variationNear, variationFar, blend);',
+                'float antiEnabled = step(0.5, uGdTilingVariation0.x);',
+                'float antiStrength = max(0.0, uGdTilingVariation0.y) * antiEnabled * variationIntensity;',
+                'float antiWeight = clamp(antiStrength, 0.0, 1.0);',
+                'float antiCell = max(1e-3, uGdTilingVariation0.z);',
+                'vec2 uvNearAlt = gdAntiTileUv(uvNear, antiCell, antiStrength);',
+                'vec2 uvFarAlt = gdAntiTileUv(uvFar, antiCell, antiStrength);',
+                'vec3 nearBase = gdSrgbToLinear(gdTex2D(tex, uvNear).rgb);',
+                'vec3 farBase = gdSrgbToLinear(gdTex2D(tex, uvFar).rgb);',
+                'vec3 nearAlt = gdSrgbToLinear(gdTex2D(tex, uvNearAlt).rgb);',
+                'vec3 farAlt = gdSrgbToLinear(gdTex2D(tex, uvFarAlt).rgb);',
+                'vec3 nearColor = mix(nearBase, nearAlt, antiWeight);',
+                'vec3 farColor = mix(farBase, farAlt, antiWeight);',
+                'vec3 color = mix(nearColor, farColor, blend);',
+                'float macroEnabled = step(0.5, uGdTilingVariation0.w);',
+                'float macroStrength = max(0.0, uGdTilingVariation1.x) * macroEnabled * variationIntensity;',
+                'float macroScale = max(1e-5, uGdTilingVariation1.y);',
+                'float macroNoise = gdTex2D(uGdHumidityEdgeNoiseTex, worldUv * macroScale).r * 2.0 - 1.0;',
+                'float macroMul = max(0.0, 1.0 + macroNoise * macroStrength);',
+                'return color * macroMul;',
                 '}',
                 'vec3 gdHumidityWeights(float humidity, vec2 worldUv){',
                 'float h = clamp(humidity, 0.0, 1.0);',
@@ -449,9 +576,9 @@ function ensureTerrainBiomeBlendShaderOnMaterial(material) {
                 'sampler2D dryMap, sampler2D neutralMap, sampler2D wetMap,',
                 'vec3 uvScale, vec2 worldUv, vec3 humidityWeights',
                 '){',
-                'vec3 cDry = gdSrgbToLinear(gdTex2D(dryMap, worldUv * uvScale.x).rgb);',
-                'vec3 cNeutral = gdSrgbToLinear(gdTex2D(neutralMap, worldUv * uvScale.y).rgb);',
-                'vec3 cWet = gdSrgbToLinear(gdTex2D(wetMap, worldUv * uvScale.z).rgb);',
+                'vec3 cDry = gdSampleTerrainAlbedo(dryMap, worldUv, uvScale.x);',
+                'vec3 cNeutral = gdSampleTerrainAlbedo(neutralMap, worldUv, uvScale.y);',
+                'vec3 cWet = gdSampleTerrainAlbedo(wetMap, worldUv, uvScale.z);',
                 'return cDry * humidityWeights.x + cNeutral * humidityWeights.y + cWet * humidityWeights.z;',
                 '}',
                 '#endif'
@@ -525,6 +652,10 @@ function syncTerrainBiomeBlendUniformsOnMaterial(material) {
     if (uniforms.uGdHumidityThresholds) uniforms.uGdHumidityThresholds.value = data.terrainHumidityThresholds ?? uniforms.uGdHumidityThresholds.value;
     if (uniforms.uGdHumidityEdgeNoise) uniforms.uGdHumidityEdgeNoise.value = data.terrainHumidityEdgeNoise ?? uniforms.uGdHumidityEdgeNoise.value;
     if (uniforms.uGdHumidityEdgeNoiseTex) uniforms.uGdHumidityEdgeNoiseTex.value = data.terrainHumidityEdgeNoiseTex ?? FALLBACK_TERRAIN_HUMIDITY_EDGE_NOISE_TEX;
+    if (uniforms.uGdTilingDistance0) uniforms.uGdTilingDistance0.value = data.terrainTilingDistance0 ?? uniforms.uGdTilingDistance0.value;
+    if (uniforms.uGdTilingDistance1) uniforms.uGdTilingDistance1.value = data.terrainTilingDistance1 ?? uniforms.uGdTilingDistance1.value;
+    if (uniforms.uGdTilingVariation0) uniforms.uGdTilingVariation0.value = data.terrainTilingVariation0 ?? uniforms.uGdTilingVariation0.value;
+    if (uniforms.uGdTilingVariation1) uniforms.uGdTilingVariation1.value = data.terrainTilingVariation1 ?? uniforms.uGdTilingVariation1.value;
 }
 
 function ensureUv2(geo) {
@@ -548,6 +679,41 @@ function smoothstep(edge0, edge1, x) {
     if (Math.abs(b - a) < EPS) return xx >= b ? 1 : 0;
     const t = clamp((xx - a) / (b - a), 0, 1, 0);
     return t * t * (3 - 2 * t);
+}
+
+function slerpUnitVector3(out, from, to, t) {
+    const result = out?.isVector3 ? out : new THREE.Vector3();
+    const fromDir = from?.isVector3 ? from : null;
+    const toDir = to?.isVector3 ? to : null;
+    if (!fromDir || !toDir) {
+        result.set(0, 0, 1);
+        return result;
+    }
+
+    const tt = clamp(t, 0, 1, 0);
+    const dot = clamp(fromDir.dot(toDir), -1, 1, 1);
+    if (dot > 0.9995 || dot < -0.9995) {
+        result.copy(fromDir).lerp(toDir, tt);
+        if (result.lengthSq() > EPS) result.normalize();
+        else result.copy(toDir);
+        return result;
+    }
+
+    const theta = Math.acos(dot);
+    const sinTheta = Math.sin(theta);
+    if (Math.abs(sinTheta) <= EPS) {
+        result.copy(fromDir).lerp(toDir, tt);
+        if (result.lengthSq() > EPS) result.normalize();
+        else result.copy(toDir);
+        return result;
+    }
+
+    const w0 = Math.sin((1 - tt) * theta) / sinTheta;
+    const w1 = Math.sin(tt * theta) / sinTheta;
+    result.copy(fromDir).multiplyScalar(w0).addScaledVector(toDir, w1);
+    if (result.lengthSq() > EPS) result.normalize();
+    else result.copy(toDir);
+    return result;
 }
 
 function terrainCloudHash2(x, y) {
@@ -842,6 +1008,8 @@ export class TerrainDebuggerView {
         this._terrainEngineLastExport = null;
         this._terrainEngineCompareExport = null;
         this._terrainEngineCompareKey = '';
+        this._biomeTilingAxisHelper = null;
+        this._biomeTilingAxisKey = '';
         this._terrainDebugMode = 'standard';
         this._terrainDebugTex = null;
         this._terrainDebugMat = null;
@@ -852,6 +1020,10 @@ export class TerrainDebuggerView {
         this._terrainBiomeUvScaleLandVec3 = new THREE.Vector3();
         this._terrainHumidityThresholdsVec4 = new THREE.Vector4();
         this._terrainHumidityEdgeNoiseVec4 = new THREE.Vector4();
+        this._terrainTilingDistance0Vec4 = new THREE.Vector4();
+        this._terrainTilingDistance1Vec4 = new THREE.Vector4();
+        this._terrainTilingVariation0Vec4 = new THREE.Vector4();
+        this._terrainTilingVariation1Vec4 = new THREE.Vector4();
         this._terrainBiomePbrKey = '';
         this._terrainBiomeDummyMapTex = createSolidDataTexture(215, 145, 70, { srgb: true });
         this._terrainBiomeHumidityBindings = JSON.parse(JSON.stringify(DEFAULT_TERRAIN_BIOME_HUMIDITY_PBR_BINDINGS));
@@ -870,6 +1042,15 @@ export class TerrainDebuggerView {
             compareEnabled: false,
             baselineProfile: null
         };
+        this._biomeTilingState = {
+            materialId: BIOME_TILING_DEFAULT_STATE.materialId,
+            distanceTiling: {
+                ...BIOME_TILING_DEFAULT_STATE.distanceTiling
+            },
+            variation: {
+                ...BIOME_TILING_DEFAULT_STATE.variation
+            }
+        };
         this._terrainWireframe = false;
         this._asphaltWireframe = false;
         this._gameplayLightingDefaults = getDefaultResolvedLightingSettings();
@@ -884,6 +1065,9 @@ export class TerrainDebuggerView {
         this._iblRequestId = 0;
         this._iblPromise = null;
         this._cameraFarKey = '';
+        this._biomeTilingFocusMode = 'overview';
+        this._biomeTilingInitialCameraPose = null;
+        this._biomeTilingHrefKey = '';
 
         this._raf = 0;
         this._lastT = 0;
@@ -909,6 +1093,8 @@ export class TerrainDebuggerView {
             sampleCount: 0,
             poses: null,
             startMs: 0,
+            pauseStartMs: 0,
+            paused: false,
             timeSec: 0,
             lastUiUpdateMs: 0
         };
@@ -916,6 +1102,22 @@ export class TerrainDebuggerView {
         this._flyoverTmpTarget = new THREE.Vector3();
         this._flyoverTmpPos2 = new THREE.Vector3();
         this._flyoverTmpTarget2 = new THREE.Vector3();
+        this._flyoverDebug = {
+            active: false,
+            camera: null,
+            pathLine: null,
+            cameraIcon: null,
+            keyframesGroup: null,
+            axisHelper: null
+        };
+        this._flyoverDebugTmpDir = new THREE.Vector3();
+        this._flyoverDebugViewportSize = new THREE.Vector2();
+        this._flyoverDebugUi = {
+            root: null,
+            toggleBtn: null,
+            resetBtn: null
+        };
+        this._flyoverDebugCameraController = null;
         this._cameraMoveEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
         this._terrainRaycaster = new THREE.Raycaster();
@@ -1195,11 +1397,14 @@ export class TerrainDebuggerView {
         this.scene = new THREE.Scene();
         this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 4000);
 
+        const initialUiStateFromUrl = this._buildInitialUiStateFromUrl();
         const ui = new TerrainDebuggerUI({
+            initialState: initialUiStateFromUrl,
             onChange: (state) => this._applyUiState(state),
             onResetCamera: () => this.controls?.reset?.(),
             onCameraPreset: (id) => this._applyCameraPreset(id),
             onFocusBiomeTransition: () => this._focusBiomeTransitionCamera(),
+            onFocusBiomeTiling: (mode) => this._focusBiomeTilingCamera(mode),
             onToggleFlyover: () => this._toggleFlyover(),
             onFlyoverLoopChange: (enabled) => this._setFlyoverLoop(enabled),
             onInspectGrass: () => this._openGrassInspector(),
@@ -1268,8 +1473,10 @@ export class TerrainDebuggerView {
         }
         const initialState = ui.getState();
         this._applyUiState(initialState);
+        this._applyInitialBiomeTilingUrlCameraOverride();
         ui.setFlyoverActive?.(false);
         this._syncCameraStatus({ nowMs: performance.now(), force: true });
+        this._syncBiomeTilingHref({ force: true });
         void this._applyIblState(initialState?.ibl, { force: true });
 
         primePbrAssetsAvailability().then(() => {
@@ -1289,6 +1496,8 @@ export class TerrainDebuggerView {
     destroy() {
         if (this._raf) cancelAnimationFrame(this._raf);
         this._raf = 0;
+        this._disableFlyoverDebug();
+        this._removeBiomeTilingAxisHelper();
 
         this.canvas?.removeEventListener?.('contextmenu', this._onContextMenu, { capture: true });
         this.canvas?.removeEventListener?.('pointermove', this._onPointerMove, { capture: true });
@@ -1522,12 +1731,39 @@ export class TerrainDebuggerView {
             return res;
         })();
         this._roads = roads;
+        this._syncBiomeTilingAxisHelper();
     }
 
     _buildTerrainSpec() {
         const base = this._terrainSpec;
         const tileSize = Number(base?.tileSize) || 24;
         const roadBase = base?.road && typeof base.road === 'object' ? base.road : {};
+
+        if (this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING) {
+            const widthTiles = 15;
+            const depthTiles = 40;
+            const tileMinX = -7;
+            const tileMinZ = -20;
+            const z0 = (tileMinZ - 0.5) * tileSize;
+            const z1 = z0 + depthTiles * tileSize;
+            return {
+                ...base,
+                layout: { ...(base?.layout ?? {}), extraEndTiles: 0, extraSideTiles: 0 },
+                slope: { ...(base?.slope ?? {}), leftDeg: 0, rightDeg: 0, endDeg: 0, endStartAfterRoadTiles: 0 },
+                cloud: { ...(base?.cloud ?? {}), enabled: false },
+                tileMinX,
+                tileMinZ,
+                widthTiles,
+                depthTiles,
+                road: {
+                    ...roadBase,
+                    enabled: false,
+                    widthMeters: 0,
+                    z0: Math.min(z0, z1),
+                    z1: Math.max(z0, z1)
+                }
+            };
+        }
 
         if (this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TRANSITION) {
             const widthTiles = 3;
@@ -1647,9 +1883,11 @@ export class TerrainDebuggerView {
         }
 
         this._applyVisualizationToggles();
-        const hideRoadAndGrass = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TRANSITION;
+        const hideRoadAndGrass = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TRANSITION
+            || this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING;
         if (this._roads?.group) this._roads.group.visible = !hideRoadAndGrass;
         if (this._grassEngine?.group) this._grassEngine.group.visible = !hideRoadAndGrass;
+        this._syncBiomeTilingAxisHelper();
     }
 
     _applyMaterialWireframe(material, enabled) {
@@ -1760,15 +1998,769 @@ export class TerrainDebuggerView {
         this._syncCameraStatus({ nowMs: performance.now(), force: true });
     }
 
+    _setObjectLayerRecursive(object3d, layerId) {
+        const obj = object3d;
+        if (!obj) return;
+        obj.traverse?.((child) => child.layers?.set?.(layerId));
+        obj.layers?.set?.(layerId);
+    }
+
+    _disposeObjectResources(object3d) {
+        const obj = object3d;
+        if (!obj?.traverse) return;
+        obj.traverse((child) => {
+            child?.geometry?.dispose?.();
+            const mat = child?.material ?? null;
+            if (Array.isArray(mat)) {
+                for (const entry of mat) entry?.dispose?.();
+            } else {
+                mat?.dispose?.();
+            }
+        });
+    }
+
+    _styleBiomeTilingAxisObject(object3d) {
+        object3d?.traverse?.((child) => {
+            child.frustumCulled = false;
+            child.renderOrder = 920;
+            const mat = child?.material ?? null;
+            const mats = Array.isArray(mat) ? mat : [mat];
+            for (const entry of mats) {
+                if (!entry) continue;
+                entry.depthTest = true;
+                entry.depthWrite = false;
+                entry.transparent = true;
+                entry.opacity = 0.96;
+            }
+        });
+    }
+
+    _createBiomeTilingAxisLabelSprite({ text = 'X', color = '#ffffff', sizeMeters = BIOME_TILING_AXIS_LABEL_SIZE_METERS } = {}) {
+        if (typeof document === 'undefined') return null;
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = '900 84px Arial';
+        ctx.lineWidth = 12;
+        ctx.strokeStyle = 'rgba(2, 6, 23, 0.86)';
+        ctx.strokeText(text, 64, 64);
+        ctx.fillStyle = color;
+        ctx.fillText(text, 64, 64);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.needsUpdate = true;
+
+        const material = new THREE.SpriteMaterial({
+            map: texture,
+            transparent: true,
+            depthTest: true,
+            depthWrite: false,
+            sizeAttenuation: true
+        });
+
+        const sprite = new THREE.Sprite(material);
+        const labelSize = Math.max(0.1, Number(sizeMeters) || BIOME_TILING_AXIS_LABEL_SIZE_METERS);
+        sprite.scale.set(labelSize, labelSize, 1);
+        sprite.renderOrder = 924;
+        sprite.frustumCulled = false;
+        return sprite;
+    }
+
+    _createBiomeTilingAxisHelper({
+        outsideOffsetMeters = BIOME_TILING_AXIS_OUTSIDE_OFFSET_METERS,
+        scale = 1.0
+    } = {}) {
+        const bounds = this._getTerrainBoundsXZ();
+        if (!bounds) return null;
+
+        const sampleX = bounds.minX + BIOME_TILING_AXIS_INSET_METERS;
+        const sampleZ = bounds.minZ + BIOME_TILING_AXIS_INSET_METERS;
+        const baseY = this._getTerrainHeightAtXZ(sampleX, sampleZ) + BIOME_TILING_AXIS_Y_OFFSET_METERS;
+        const outsideOffset = Math.max(0, Number(outsideOffsetMeters) || 0);
+        const cornerX = bounds.minX - outsideOffset;
+        const cornerZ = bounds.minZ - outsideOffset;
+        const xOrigin = new THREE.Vector3(BIOME_TILING_AXIS_GAP_METERS, 0, 0);
+        const zOrigin = new THREE.Vector3(-BIOME_TILING_AXIS_GAP_METERS, 0, BIOME_TILING_AXIS_GAP_METERS);
+
+        const group = new THREE.Group();
+        group.name = 'BiomeTilingAxisHelper';
+        group.position.set(cornerX, baseY, cornerZ);
+        group.frustumCulled = false;
+        const axisScale = Math.max(0.01, Number(scale) || 1.0);
+        const arrowLength = BIOME_TILING_AXIS_LENGTH_METERS * axisScale;
+        const headLength = BIOME_TILING_AXIS_HEAD_LENGTH_METERS * axisScale;
+        const headWidth = BIOME_TILING_AXIS_HEAD_WIDTH_METERS * axisScale;
+
+        const xArrow = new THREE.ArrowHelper(
+            new THREE.Vector3(1, 0, 0),
+            xOrigin,
+            arrowLength,
+            0xff4f4f,
+            headLength,
+            headWidth
+        );
+        const zArrow = new THREE.ArrowHelper(
+            new THREE.Vector3(0, 0, 1),
+            zOrigin,
+            arrowLength,
+            0x52b8ff,
+            headLength,
+            headWidth
+        );
+
+        const spacingLine = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints([xOrigin.clone(), zOrigin.clone()]),
+            new THREE.LineBasicMaterial({ color: 0xf3f4f6 })
+        );
+        spacingLine.frustumCulled = false;
+        spacingLine.renderOrder = 922;
+
+        const labelSize = BIOME_TILING_AXIS_LABEL_SIZE_METERS * axisScale;
+        const xLabel = this._createBiomeTilingAxisLabelSprite({ text: 'X', color: '#ff6b6b', sizeMeters: labelSize });
+        const zLabel = this._createBiomeTilingAxisLabelSprite({ text: 'Z', color: '#6bc7ff', sizeMeters: labelSize });
+        if (xLabel) {
+            xLabel.position.set(xOrigin.x + arrowLength + headLength + 0.3, 0.0, xOrigin.z);
+            group.add(xLabel);
+        }
+        if (zLabel) {
+            zLabel.position.set(zOrigin.x, 0.0, zOrigin.z + arrowLength + headLength + 0.3);
+            group.add(zLabel);
+        }
+
+        group.add(xArrow);
+        group.add(zArrow);
+        group.add(spacingLine);
+        this._styleBiomeTilingAxisObject(group);
+        return group;
+    }
+
+    _createFlyoverDebugAxisHelper() {
+        const helper = this._createBiomeTilingAxisHelper({
+            outsideOffsetMeters: FLYOVER_DEBUG_AXIS_OUTSIDE_OFFSET_METERS,
+            scale: FLYOVER_DEBUG_AXIS_SCALE
+        });
+        if (!helper) return null;
+        this._setObjectLayerRecursive(helper, FLYOVER_DEBUG_HELPER_LAYER);
+        return helper;
+    }
+
+    _removeBiomeTilingAxisHelper() {
+        const helper = this._biomeTilingAxisHelper;
+        if (!helper) return;
+        this.scene?.remove?.(helper);
+        this._disposeObjectResources(helper);
+        this._biomeTilingAxisHelper = null;
+        this._biomeTilingAxisKey = '';
+    }
+
+    _syncBiomeTilingAxisHelper() {
+        if (!this.scene) return;
+        if (this._terrainViewMode !== TERRAIN_VIEW_MODE.BIOME_TILING) {
+            this._removeBiomeTilingAxisHelper();
+            return;
+        }
+
+        const bounds = this._getTerrainBoundsXZ();
+        if (!bounds) {
+            this._removeBiomeTilingAxisHelper();
+            return;
+        }
+
+        const key = [
+            bounds.minX.toFixed(3),
+            bounds.maxX.toFixed(3),
+            bounds.minZ.toFixed(3),
+            bounds.maxZ.toFixed(3),
+            Number(this._terrainBounds?.minY || 0).toFixed(3),
+            Number(this._terrainBounds?.maxY || 0).toFixed(3)
+        ].join('|');
+
+        if (this._biomeTilingAxisHelper && this._biomeTilingAxisKey === key) return;
+        this._removeBiomeTilingAxisHelper();
+
+        const helper = this._createBiomeTilingAxisHelper();
+        if (!helper) return;
+        this.scene.add(helper);
+        this._biomeTilingAxisHelper = helper;
+        this._biomeTilingAxisKey = key;
+    }
+
+    _clearFlyoverDebugHelpers() {
+        const scene = this.scene;
+        const debug = this._flyoverDebug;
+        if (!debug) return;
+        if (debug.pathLine) {
+            scene?.remove?.(debug.pathLine);
+            this._disposeObjectResources(debug.pathLine);
+            debug.pathLine = null;
+        }
+        if (debug.cameraIcon) {
+            scene?.remove?.(debug.cameraIcon);
+            this._disposeObjectResources(debug.cameraIcon);
+            debug.cameraIcon = null;
+        }
+        if (debug.keyframesGroup) {
+            scene?.remove?.(debug.keyframesGroup);
+            this._disposeObjectResources(debug.keyframesGroup);
+            debug.keyframesGroup = null;
+        }
+        if (debug.axisHelper) {
+            scene?.remove?.(debug.axisHelper);
+            this._disposeObjectResources(debug.axisHelper);
+            debug.axisHelper = null;
+        }
+    }
+
+    _disposeFlyoverDebugCameraController() {
+        const ctrl = this._flyoverDebugCameraController;
+        if (!ctrl) return;
+        ctrl.dispose?.();
+        this._flyoverDebugCameraController = null;
+    }
+
+    _createFlyoverDebugCameraController(camera) {
+        if (!camera || !this.canvas) return null;
+        this._disposeFlyoverDebugCameraController();
+
+        const controller = new FirstPersonCameraController(camera, this.canvas, {
+            uiRoot: this._ui?.root ?? null,
+            enabled: true,
+            lookSpeed: 1.0,
+            panSpeed: 1.0,
+            zoomSpeed: 1.0,
+            getFocusTarget: () => {
+                const focus = this._getBiomeTilingFocusPoses();
+                const b = focus?.bounds ?? null;
+                if (!b) return null;
+                const center = new THREE.Vector3(
+                    (Number(b.minX) + Number(b.maxX)) * 0.5,
+                    Number(focus?.overview?.target?.y) || 0,
+                    (Number(b.minZ) + Number(b.maxZ)) * 0.5
+                );
+                const spanX = Math.max(EPS, Number(b.sizeX) || 0);
+                const spanZ = Math.max(EPS, Number(b.sizeZ) || 0);
+                const radius = Math.max(8.0, Math.hypot(spanX, spanZ) * 0.62);
+                return { center, radius };
+            }
+        });
+        this._flyoverDebugCameraController = controller;
+        return controller;
+    }
+
+    _disableFlyoverDebug() {
+        const debug = this._flyoverDebug;
+        if (!debug) return;
+        this._disposeFlyoverDebugCameraController();
+        this._clearFlyoverDebugHelpers();
+        debug.active = false;
+        debug.camera = null;
+        this.camera?.layers?.disable?.(FLYOVER_DEBUG_HELPER_LAYER);
+        this._removeFlyoverDebugControls();
+    }
+
+    _syncFlyoverDebugControls() {
+        const ui = this._flyoverDebugUi;
+        const root = ui?.root ?? null;
+        const toggleBtn = ui?.toggleBtn ?? null;
+        const resetBtn = ui?.resetBtn ?? null;
+        if (!root || !toggleBtn || !resetBtn) return;
+
+        const debugActive = !!this._flyoverDebug?.active;
+        const flyoverActive = !!this._flyover?.active;
+        const paused = !!this._flyover?.paused;
+        root.style.display = (debugActive && flyoverActive) ? 'flex' : 'none';
+        this._positionFlyoverDebugControls();
+
+        toggleBtn.disabled = !flyoverActive;
+        resetBtn.disabled = !flyoverActive;
+        toggleBtn.textContent = paused ? 'Resume' : 'Pause';
+    }
+
+    _positionFlyoverDebugControls() {
+        const root = this._flyoverDebugUi?.root ?? null;
+        if (!root || typeof window === 'undefined') return;
+        const margin = 12;
+
+        const canvasRect = this.canvas?.getBoundingClientRect?.() ?? null;
+        const panelRect = this._ui?.panel?.getBoundingClientRect?.() ?? null;
+        const controlsRect = root.getBoundingClientRect();
+        const controlsWidth = Math.max(0, Number(controlsRect.width) || 0);
+
+        const top = canvasRect
+            ? Math.max(margin, Math.round(Number(canvasRect.top) + margin))
+            : margin;
+        const minLeft = canvasRect
+            ? Math.max(margin, Math.round(Number(canvasRect.left) + margin))
+            : margin;
+
+        let rightLimit = canvasRect
+            ? Math.round(Number(canvasRect.right) - margin)
+            : Math.round(window.innerWidth - margin);
+
+        if (panelRect && Number(panelRect.width) > 0 && Number(panelRect.height) > 0) {
+            rightLimit = Math.min(rightLimit, Math.round(Number(panelRect.left) - margin));
+        }
+
+        let left = rightLimit - Math.round(controlsWidth);
+        if (!Number.isFinite(left)) left = minLeft;
+        left = Math.max(minLeft, left);
+
+        root.style.left = `${left}px`;
+        root.style.top = `${top}px`;
+        root.style.right = 'auto';
+    }
+
+    _ensureFlyoverDebugControls() {
+        const ui = this._flyoverDebugUi;
+        if (ui?.root) {
+            this._syncFlyoverDebugControls();
+            return;
+        }
+        if (typeof document === 'undefined') return;
+
+        const root = document.createElement('div');
+        root.style.position = 'fixed';
+        root.style.top = '12px';
+        root.style.left = '12px';
+        root.style.zIndex = '260';
+        root.style.display = 'flex';
+        root.style.flexDirection = 'column';
+        root.style.gap = '8px';
+        root.style.pointerEvents = 'auto';
+
+        const makeBtn = (label) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = label;
+            btn.className = 'options-btn options-btn-primary';
+            btn.style.minWidth = '88px';
+            return btn;
+        };
+
+        const toggleBtn = makeBtn('Pause');
+        toggleBtn.addEventListener('click', () => {
+            if (this._flyover?.paused) this._resumeFlyover();
+            else this._pauseFlyover();
+        });
+        root.appendChild(toggleBtn);
+
+        const resetBtn = makeBtn('Reset');
+        resetBtn.addEventListener('click', () => this._resetFlyoverToStart());
+        root.appendChild(resetBtn);
+        document.body.appendChild(root);
+
+        this._flyoverDebugUi = { root, toggleBtn, resetBtn };
+        this._positionFlyoverDebugControls();
+        this._syncFlyoverDebugControls();
+    }
+
+    _removeFlyoverDebugControls() {
+        const ui = this._flyoverDebugUi;
+        ui?.root?.remove?.();
+        this._flyoverDebugUi = {
+            root: null,
+            toggleBtn: null,
+            resetBtn: null
+        };
+    }
+
+    _pauseFlyover() {
+        const flyover = this._flyover;
+        if (!flyover?.active || flyover.paused) return;
+        flyover.paused = true;
+        flyover.pauseStartMs = performance.now();
+        this._syncFlyoverDebugControls();
+        this._syncCameraStatus({ nowMs: flyover.pauseStartMs, force: true });
+    }
+
+    _resumeFlyover() {
+        const flyover = this._flyover;
+        if (!flyover?.active || !flyover.paused) return;
+        const nowMs = performance.now();
+        const pauseStartMs = Number(flyover.pauseStartMs) || nowMs;
+        flyover.startMs += Math.max(0, nowMs - pauseStartMs);
+        flyover.pauseStartMs = 0;
+        flyover.paused = false;
+        this._syncFlyoverDebugControls();
+        this._syncCameraStatus({ nowMs, force: true });
+    }
+
+    _resetFlyoverToStart() {
+        const flyover = this._flyover;
+        if (!flyover?.active) return;
+
+        const nowMs = performance.now();
+        flyover.timeSec = 0;
+        if (flyover.paused) {
+            flyover.pauseStartMs = nowMs;
+        } else {
+            flyover.startMs = nowMs;
+            flyover.pauseStartMs = 0;
+        }
+
+        this._applyFlyoverPose(0);
+        this._updateFlyoverDebugOverlay();
+        this._syncFlyoverDebugControls();
+        this._syncCameraStatus({ nowMs, force: true });
+    }
+
+    _createFlyoverDebugPathLine(path) {
+        const poses = path?.poses instanceof Float32Array ? path.poses : null;
+        const sampleCount = Math.max(0, Number(path?.sampleCount) || 0);
+        if (!poses || sampleCount < 2) return null;
+
+        const points = new Array(sampleCount);
+        for (let i = 0; i < sampleCount; i++) {
+            const base = i * 6;
+            points[i] = new THREE.Vector3(poses[base], poses[base + 1], poses[base + 2]);
+        }
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const material = new THREE.LineBasicMaterial({
+            color: 0xffc342,
+            transparent: true,
+            opacity: 0.95,
+            depthTest: false,
+            depthWrite: false
+        });
+        const line = new THREE.Line(geometry, material);
+        line.frustumCulled = false;
+        line.renderOrder = 1000;
+        this._setObjectLayerRecursive(line, FLYOVER_DEBUG_HELPER_LAYER);
+        return line;
+    }
+
+    _createFlyoverDebugCameraIcon() {
+        const group = new THREE.Group();
+
+        const body = new THREE.Mesh(
+            new THREE.BoxGeometry(4.0, 2.0, 2.2),
+            new THREE.MeshBasicMaterial({
+                color: 0xff5a3d,
+                transparent: true,
+                opacity: 0.95,
+                depthTest: false,
+                depthWrite: false
+            })
+        );
+        body.renderOrder = 1002;
+
+        const arrowCone = new THREE.Mesh(
+            new THREE.ConeGeometry(0.95, 2.7, 10),
+            new THREE.MeshBasicMaterial({
+                color: 0xffe08a,
+                transparent: true,
+                opacity: 0.95,
+                depthTest: false,
+                depthWrite: false
+            })
+        );
+        arrowCone.rotation.z = -Math.PI * 0.5;
+        arrowCone.position.x = 3.2;
+        arrowCone.renderOrder = 1003;
+
+        const arrowLine = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(0.2, 0, 0),
+                new THREE.Vector3(8.2, 0, 0)
+            ]),
+            new THREE.LineBasicMaterial({
+                color: 0x3ad2ff,
+                transparent: true,
+                opacity: 0.95,
+                depthTest: false,
+                depthWrite: false
+            })
+        );
+        arrowLine.frustumCulled = false;
+        arrowLine.renderOrder = 1004;
+
+        group.add(body);
+        group.add(arrowCone);
+        group.add(arrowLine);
+        group.frustumCulled = false;
+        this._setObjectLayerRecursive(group, FLYOVER_DEBUG_HELPER_LAYER);
+        return group;
+    }
+
+    _createFlyoverDebugKeyframeIndexSprite(indexOneBased) {
+        if (typeof document === 'undefined') return null;
+        const value = Number(indexOneBased);
+        if (!Number.isFinite(value) || value < 1) return null;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+
+        const label = String(Math.round(value));
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = '900 82px Arial';
+        ctx.lineWidth = 11;
+        ctx.strokeStyle = 'rgba(2, 6, 23, 0.92)';
+        ctx.strokeText(label, 64, 64);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(label, 64, 64);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.needsUpdate = true;
+
+        const material = new THREE.SpriteMaterial({
+            map: texture,
+            transparent: true,
+            depthTest: false,
+            depthWrite: false,
+            sizeAttenuation: true
+        });
+
+        const sprite = new THREE.Sprite(material);
+        sprite.scale.set(
+            FLYOVER_DEBUG_KEYFRAME_INDEX_SIZE_METERS,
+            FLYOVER_DEBUG_KEYFRAME_INDEX_SIZE_METERS,
+            1
+        );
+        sprite.frustumCulled = false;
+        sprite.renderOrder = 1009;
+        return sprite;
+    }
+
+    _createFlyoverDebugKeyframes(path) {
+        const keyframes = Array.isArray(path?.keyframes) ? path.keyframes : [];
+        if (!keyframes.length) return null;
+        const positionSegments = Array.isArray(path?.positionSegments) ? path.positionSegments : [];
+
+        const group = new THREE.Group();
+        group.frustumCulled = false;
+        const arrowPalette = [0xff5f57, 0x4ecdc4, 0xffc857, 0x6c8cff, 0xff8fab, 0x7ddf64];
+        const addLine = ({ from, to, color, renderOrder = 1005 }) => {
+            if (!from?.isVector3 || !to?.isVector3) return;
+            if (from.distanceToSquared(to) <= EPS) return;
+            const line = new THREE.Line(
+                new THREE.BufferGeometry().setFromPoints([from.clone(), to.clone()]),
+                new THREE.LineBasicMaterial({
+                    color,
+                    transparent: true,
+                    opacity: 0.95,
+                    depthTest: false,
+                    depthWrite: false
+                })
+            );
+            line.frustumCulled = false;
+            line.renderOrder = renderOrder;
+            group.add(line);
+        };
+        const addTangentLine = ({ origin, control, color }) => {
+            if (!origin?.isVector3 || !control?.isVector3) return;
+            const delta = control.clone().sub(origin);
+            if (delta.lengthSq() <= EPS) return;
+            const tip = origin.clone().addScaledVector(delta, FLYOVER_DEBUG_TANGENT_EXTEND);
+            addLine({ from: origin, to: tip, color });
+        };
+        const addYAxisTangentLine = ({ origin, sign = 1, color, lengthMeters = FLYOVER_DEBUG_KEYFRAME2_TANGENT_LENGTH_METERS }) => {
+            if (!origin?.isVector3) return;
+            const from = origin.clone();
+            const dir = sign < 0 ? -1 : 1;
+            const tip = from.clone();
+            const len = Math.max(0.1, Number(lengthMeters) || FLYOVER_DEBUG_KEYFRAME2_TANGENT_LENGTH_METERS);
+            tip.y += dir * len;
+            addLine({ from, to: tip, color, renderOrder: 1010 });
+        };
+
+        for (let index = 0; index < keyframes.length; index++) {
+            const frame = keyframes[index];
+            const pos = frame?.position?.isVector3 ? frame.position : null;
+            const target = frame?.target?.isVector3 ? frame.target : null;
+            if (!pos || !target) continue;
+            const arrowColor = arrowPalette[index % arrowPalette.length];
+
+            const marker = new THREE.Group();
+            marker.position.copy(pos);
+            marker.frustumCulled = false;
+
+            const base = new THREE.Mesh(
+                new THREE.SphereGeometry(2.7, 16, 14),
+                new THREE.MeshBasicMaterial({
+                    color: 0xa78bfa,
+                    transparent: true,
+                    opacity: 0.9,
+                    depthTest: false,
+                    depthWrite: false
+                })
+            );
+            base.renderOrder = 1006;
+
+            const arrowStem = new THREE.Line(
+                new THREE.BufferGeometry().setFromPoints([
+                    new THREE.Vector3(0.2, 0, 0),
+                    new THREE.Vector3(8.6, 0, 0)
+                ]),
+                new THREE.LineBasicMaterial({
+                    color: arrowColor,
+                    transparent: true,
+                    opacity: 0.95,
+                    depthTest: false,
+                    depthWrite: false
+                })
+            );
+            arrowStem.frustumCulled = false;
+            arrowStem.renderOrder = 1007;
+
+            const arrow = new THREE.Mesh(
+                new THREE.ConeGeometry(1.45, 4.8, 14),
+                new THREE.MeshBasicMaterial({
+                    color: arrowColor,
+                    transparent: true,
+                    opacity: 0.95,
+                    depthTest: false,
+                    depthWrite: false
+                })
+            );
+            arrow.rotation.z = -Math.PI * 0.5;
+            arrow.position.x = 10.5;
+            arrow.renderOrder = 1008;
+
+            marker.add(base);
+            marker.add(arrowStem);
+            marker.add(arrow);
+
+            this._flyoverDebugTmpDir.copy(target).sub(pos);
+            if (this._flyoverDebugTmpDir.lengthSq() > EPS) {
+                this._flyoverDebugTmpDir.normalize();
+                marker.quaternion.setFromUnitVectors(FLYOVER_DEBUG_ICON_FORWARD, this._flyoverDebugTmpDir);
+            }
+
+            const incomingSeg = index > 0 ? (positionSegments[index - 1] ?? null) : null;
+            const outgoingSeg = index < positionSegments.length ? (positionSegments[index] ?? null) : null;
+            if (index === 1) {
+                addYAxisTangentLine({
+                    origin: pos,
+                    sign: -1,
+                    color: FLYOVER_DEBUG_TANGENT_IN_COLOR,
+                    lengthMeters: FLYOVER_DEBUG_KEYFRAME2_TANGENT_LENGTH_METERS
+                });
+                addYAxisTangentLine({
+                    origin: pos,
+                    sign: -1,
+                    color: FLYOVER_DEBUG_TANGENT_OUT_COLOR,
+                    lengthMeters: FLYOVER_DEBUG_KEYFRAME2_TANGENT_LENGTH_METERS * FLYOVER_DEBUG_KEYFRAME2_TANGENT_SECONDARY_SCALE
+                });
+            } else {
+                addTangentLine({ origin: pos, control: incomingSeg?.c2 ?? null, color: FLYOVER_DEBUG_TANGENT_IN_COLOR });
+                addTangentLine({ origin: pos, control: outgoingSeg?.c1 ?? null, color: FLYOVER_DEBUG_TANGENT_OUT_COLOR });
+            }
+
+            group.add(marker);
+            if (index < keyframes.length - 1) {
+                const indexSprite = this._createFlyoverDebugKeyframeIndexSprite(index + 1);
+                if (indexSprite) {
+                    indexSprite.position.set(pos.x, pos.y - FLYOVER_DEBUG_KEYFRAME_INDEX_OFFSET_Y, pos.z);
+                    group.add(indexSprite);
+                }
+            }
+        }
+
+        this._setObjectLayerRecursive(group, FLYOVER_DEBUG_HELPER_LAYER);
+        return group;
+    }
+
+    _positionFlyoverDebugCamera() {
+        const debug = this._flyoverDebug;
+        const camera = debug?.camera;
+        if (!camera) return;
+
+        const focus = this._getBiomeTilingFocusPoses();
+        if (!focus?.bounds) return;
+
+        const bounds = focus.bounds;
+        const centerX = (bounds.minX + bounds.maxX) * 0.5;
+        const centerZ = (bounds.minZ + bounds.maxZ) * 0.5;
+        const spanX = Math.max(EPS, bounds.sizeX);
+        const spanZ = Math.max(EPS, bounds.sizeZ);
+        const span = Math.max(spanX, spanZ);
+        const targetY = Number(focus.overview?.target?.y) || 0;
+        const position = new THREE.Vector3(
+            bounds.maxX + spanX * 0.96,
+            targetY + Math.max(58, span * 0.76),
+            centerZ + spanZ * 0.22
+        );
+        const target = new THREE.Vector3(centerX, targetY + Math.max(4, span * 0.02), centerZ);
+
+        const debugCtrl = this._flyoverDebugCameraController;
+        if (debugCtrl?.setLookAt) {
+            debugCtrl.setLookAt({ position, target });
+        } else {
+            camera.position.copy(position);
+            camera.lookAt(target);
+        }
+        camera.updateProjectionMatrix?.();
+    }
+
+    _updateFlyoverDebugOverlay() {
+        const debug = this._flyoverDebug;
+        if (!debug?.active || !debug.cameraIcon) return;
+        const camera = this.camera;
+        const target = this.controls?.target;
+        if (!camera?.position || !target?.isVector3) return;
+
+        debug.cameraIcon.position.copy(camera.position);
+        this._flyoverDebugTmpDir.copy(target).sub(camera.position);
+        if (this._flyoverDebugTmpDir.lengthSq() <= EPS) return;
+        this._flyoverDebugTmpDir.normalize();
+        debug.cameraIcon.quaternion.setFromUnitVectors(FLYOVER_DEBUG_ICON_FORWARD, this._flyoverDebugTmpDir);
+    }
+
+    _enableFlyoverDebug({ path } = {}) {
+        const scene = this.scene;
+        if (!scene) return;
+        this._disableFlyoverDebug();
+
+        const debugCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 12000);
+        debugCamera.layers.enable(0);
+        debugCamera.layers.enable(FLYOVER_DEBUG_HELPER_LAYER);
+
+        const pathLine = this._createFlyoverDebugPathLine(path);
+        const cameraIcon = this._createFlyoverDebugCameraIcon();
+        const keyframesGroup = this._createFlyoverDebugKeyframes(path);
+        const axisHelper = this._createFlyoverDebugAxisHelper();
+
+        if (pathLine) scene.add(pathLine);
+        if (cameraIcon) scene.add(cameraIcon);
+        if (keyframesGroup) scene.add(keyframesGroup);
+        if (axisHelper) scene.add(axisHelper);
+
+        this._flyoverDebug.camera = debugCamera;
+        this._flyoverDebug.pathLine = pathLine;
+        this._flyoverDebug.cameraIcon = cameraIcon;
+        this._flyoverDebug.keyframesGroup = keyframesGroup;
+        this._flyoverDebug.axisHelper = axisHelper;
+        this._flyoverDebug.active = true;
+        this._createFlyoverDebugCameraController(debugCamera);
+        this.camera?.layers?.disable?.(FLYOVER_DEBUG_HELPER_LAYER);
+        this._positionFlyoverDebugCamera();
+        this._updateFlyoverDebugOverlay();
+        this._ensureFlyoverDebugControls();
+    }
+
     _toggleFlyover() {
         if (this._flyover?.active) {
             this._stopFlyover({ keepPose: true });
         } else {
+            this._disableFlyoverDebug();
             this._startFlyover();
         }
     }
 
-    _startFlyover() {
+    _startFlyover({ path: externalPath } = {}) {
         const controls = this.controls;
         const ui = this._ui;
         if (!controls?.setLookAt || !this.camera) return;
@@ -1776,9 +2768,12 @@ export class TerrainDebuggerView {
         this._clearKeys();
         controls.enabled = false;
 
-        const startPosition = this.camera.position.clone();
-        const startTarget = controls.target?.clone?.() ?? new THREE.Vector3(0, 0, 0);
-        const path = this._buildFlyoverPath({ startPosition, startTarget });
+        const path = (externalPath && typeof externalPath === 'object')
+            ? externalPath
+            : this._buildFlyoverPath({
+                startPosition: this.camera.position.clone(),
+                startTarget: controls.target?.clone?.() ?? new THREE.Vector3(0, 0, 0)
+            });
         if (!path) {
             controls.enabled = true;
             return;
@@ -1787,6 +2782,8 @@ export class TerrainDebuggerView {
         const flyover = this._flyover;
         flyover.active = true;
         flyover.startMs = performance.now();
+        flyover.pauseStartMs = 0;
+        flyover.paused = false;
         flyover.timeSec = 0;
         flyover.durationSec = path.durationSec;
         flyover.sampleRate = path.sampleRate;
@@ -1794,6 +2791,9 @@ export class TerrainDebuggerView {
         flyover.poses = path.poses;
         flyover.lastUiUpdateMs = 0;
 
+        this._applyFlyoverPose(0);
+        this._updateFlyoverDebugOverlay();
+        this._syncFlyoverDebugControls();
         ui?.setFlyoverActive?.(true);
         this._syncCameraStatus({ nowMs: flyover.startMs, force: true });
     }
@@ -1805,7 +2805,11 @@ export class TerrainDebuggerView {
         flyover.active = false;
         flyover.poses = null;
         flyover.sampleCount = 0;
+        flyover.pauseStartMs = 0;
+        flyover.paused = false;
         flyover.timeSec = 0;
+        this._disableFlyoverDebug();
+        this._syncFlyoverDebugControls();
 
         this._clearKeys();
         if (this.controls) this.controls.enabled = true;
@@ -1819,6 +2823,12 @@ export class TerrainDebuggerView {
     _updateFlyover(nowMs) {
         const flyover = this._flyover;
         if (!flyover?.active || !flyover.poses || !(flyover.sampleCount > 1)) return;
+        if (flyover.paused) {
+            this._applyFlyoverPose(flyover.timeSec);
+            this._updateFlyoverDebugOverlay();
+            this._syncCameraStatus({ nowMs, force: false });
+            return;
+        }
 
         const durationSec = Math.max(0.001, Number(flyover.durationSec) || 20);
         const elapsedSec = Math.max(0, (Number(nowMs) - Number(flyover.startMs)) / 1000);
@@ -1833,6 +2843,7 @@ export class TerrainDebuggerView {
         flyover.timeSec = tSec;
 
         this._applyFlyoverPose(tSec);
+        this._updateFlyoverDebugOverlay();
         this._syncCameraStatus({ nowMs, force: false });
     }
 
@@ -1900,6 +2911,7 @@ export class TerrainDebuggerView {
             pointerDistance: sample?.hasHit ? sample?.distance : null
         };
         ui.setOutputInfo(payload);
+        this._syncBiomeTilingHref({ force: false });
     }
 
     _getTerrainHeightAtXZ(x, z) {
@@ -2002,6 +3014,491 @@ export class TerrainDebuggerView {
         }
 
         return null;
+    }
+
+    _getBiomeTilingFocusPoses() {
+        const grid = this._terrainGrid;
+        if (!grid) return null;
+
+        const tileSize = Number(grid.tileSize) || 24;
+        const widthTiles = Math.max(1, Number(grid.widthTiles) || 1);
+        const depthTiles = Math.max(1, Number(grid.depthTiles) || 1);
+        const minX = Number(grid.minX) || 0;
+        const minZ = Number(grid.minZ) || 0;
+        const sizeX = widthTiles * tileSize;
+        const sizeZ = depthTiles * tileSize;
+        const centerX = minX + sizeX * 0.5;
+        const maxX = minX + sizeX;
+        const maxZ = minZ + sizeZ;
+        const gridMinY = Number(grid.minY);
+        const gridMaxY = Number(grid.maxY);
+        const fallbackY = Number(this._terrainBounds?.minY);
+        const flatY = Number.isFinite(gridMinY) && Number.isFinite(gridMaxY)
+            ? (gridMinY + gridMaxY) * 0.5
+            : (Number.isFinite(fallbackY) ? fallbackY : 0);
+        const span = Math.max(sizeX, sizeZ);
+        const eyePosZ = minZ + sizeZ * 0.16;
+        const eyeTgtZ = minZ + sizeZ * 0.82;
+        const overviewPosZ = minZ + sizeZ * 0.10;
+        const sharedTargetY = flatY + 1.8;
+
+        const overview = {
+            position: new THREE.Vector3(
+                centerX,
+                flatY + Math.max(24, span * 0.38),
+                overviewPosZ
+            ),
+            target: new THREE.Vector3(centerX, sharedTargetY, eyeTgtZ)
+        };
+        const eye = {
+            position: new THREE.Vector3(centerX, flatY + 1.8, eyePosZ),
+            target: new THREE.Vector3(centerX, sharedTargetY, eyeTgtZ)
+        };
+
+        return {
+            overview,
+            eye,
+            bounds: { minX, maxX, minZ, maxZ, sizeX, sizeZ }
+        };
+    }
+
+    _buildBezierCurve3({
+        from,
+        to,
+        fromDir,
+        toDir,
+        tangentScale = 0.33,
+        tangentMaxMeters = Number.POSITIVE_INFINITY,
+        lift = 0,
+        lateral = 0
+    } = {}) {
+        const start = from?.isVector3 ? from.clone() : new THREE.Vector3();
+        const end = to?.isVector3 ? to.clone() : new THREE.Vector3();
+        const delta = end.clone().sub(start);
+        const dist = Math.max(EPS, delta.length());
+        const deltaDir = delta.clone();
+        if (deltaDir.lengthSq() > EPS) deltaDir.normalize();
+        else deltaDir.set(0, 0, 1);
+
+        const dir0 = fromDir?.isVector3 ? fromDir.clone() : deltaDir.clone();
+        if (dir0.lengthSq() > EPS) dir0.normalize();
+        else dir0.copy(deltaDir);
+        if (dir0.dot(deltaDir) < 0) dir0.negate();
+
+        const dir1 = toDir?.isVector3 ? toDir.clone() : deltaDir.clone();
+        if (dir1.lengthSq() > EPS) dir1.normalize();
+        else dir1.copy(deltaDir);
+        if (dir1.dot(deltaDir) < 0) dir1.negate();
+
+        const lateralDir = new THREE.Vector3(-delta.z, 0, delta.x);
+        if (lateralDir.lengthSq() > EPS) lateralDir.normalize();
+        else lateralDir.set(0, 0, 0);
+
+        const tangentRaw = dist * clamp(tangentScale, 0.05, 0.9, 0.33);
+        const tangentLimit = Number(tangentMaxMeters);
+        const tangent = Number.isFinite(tangentLimit)
+            ? Math.min(tangentRaw, Math.max(0.01, tangentLimit))
+            : tangentRaw;
+        const c1 = start.clone().addScaledVector(dir0, tangent);
+        const c2 = end.clone().addScaledVector(dir1, -tangent);
+        const liftAmount = Number(lift);
+        if (Number.isFinite(liftAmount) && Math.abs(liftAmount) > EPS) {
+            c1.y += liftAmount;
+            c2.y += liftAmount;
+        }
+        const lateralAmount = Number(lateral);
+        if (Number.isFinite(lateralAmount) && Math.abs(lateralAmount) > EPS) {
+            c1.addScaledVector(lateralDir, lateralAmount);
+            c2.addScaledVector(lateralDir, lateralAmount);
+        }
+
+        return new THREE.CubicBezierCurve3(start, c1, c2, end);
+    }
+
+    _buildBiomeTilingFlyoverPath({ startPosition, startTarget } = {}) {
+        const focus = this._getBiomeTilingFocusPoses();
+        if (!focus) return null;
+
+        const startPos = startPosition?.isVector3 ? startPosition.clone() : null;
+        const startTgt = startTarget?.isVector3 ? startTarget.clone() : null;
+        const overviewPos = focus.overview.position.clone();
+        const overviewTarget = focus.overview.target.clone();
+        const eyePos = focus.eye.position.clone();
+        eyePos.z = clamp(
+            eyePos.z + 20.0,
+            Number(focus.bounds?.minZ) + 1.0,
+            Number(focus.bounds?.maxZ) - 1.0,
+            eyePos.z + 20.0
+        );
+
+        const walkMeters = 300;
+        const flatY = eyePos.y - 1.8;
+        const lowerFlyoverY = (y) => flatY + (Number(y) - flatY) * 0.9;
+        eyePos.y = lowerFlyoverY(eyePos.y);
+
+        const maxTargetZ = Number(focus.bounds?.maxZ) - 1.0;
+        const plusZTargetDistance = Math.max(18.0, Number(focus.bounds?.sizeZ) * 0.55 || 0);
+        const makePlusZTarget = (position) => new THREE.Vector3(
+            position.x,
+            position.y,
+            clamp(
+                position.z + plusZTargetDistance,
+                Number(focus.bounds?.minZ) + 1.0,
+                maxTargetZ,
+                position.z + plusZTargetDistance
+            )
+        );
+
+        const eyeTarget = makePlusZTarget(eyePos);
+
+        const walkDir = eyeTarget.clone().sub(eyePos);
+        walkDir.y = 0;
+        if (walkDir.lengthSq() > EPS) walkDir.normalize();
+        else walkDir.set(0, 0, 1);
+
+        const eyeDir = eyeTarget.clone().sub(eyePos);
+        if (eyeDir.lengthSq() > EPS) eyeDir.normalize();
+        else eyeDir.copy(walkDir);
+        const overviewDir = overviewTarget.clone().sub(overviewPos);
+        if (overviewDir.lengthSq() > EPS) overviewDir.normalize();
+        else overviewDir.copy(eyeDir);
+        const overviewLookDir = overviewTarget.clone().sub(overviewPos);
+        if (overviewLookDir.lengthSq() > EPS) overviewLookDir.normalize();
+        else overviewLookDir.copy(overviewDir);
+        const divePos = overviewPos.clone().lerp(eyePos, 0.34);
+        divePos.y = Math.max(
+            eyePos.y + 0.7,
+            divePos.y - Math.max(1.2, (overviewPos.y - eyePos.y) * 0.20)
+        );
+        const overviewToDiveDir = divePos.clone().sub(overviewPos);
+        if (overviewToDiveDir.lengthSq() > EPS) overviewToDiveDir.normalize();
+        else overviewToDiveDir.copy(overviewDir);
+        const overviewToDiveOutDir = overviewToDiveDir.clone();
+        {
+            const horizontalLen = Math.hypot(overviewToDiveOutDir.x, overviewToDiveOutDir.z);
+            const ySign = overviewToDiveOutDir.y < 0 ? -1 : 1;
+            if (horizontalLen > EPS) {
+                const invHorizontal = 1 / horizontalLen;
+                overviewToDiveOutDir.x *= invHorizontal;
+                overviewToDiveOutDir.z *= invHorizontal;
+                overviewToDiveOutDir.y = ySign;
+                overviewToDiveOutDir.normalize();
+            } else {
+                overviewToDiveOutDir.copy(overviewToDiveDir);
+            }
+        }
+        const keyframe2PosTangentDir = new THREE.Vector3(0, -1, 0);
+
+        const diveLookDownMeters = Math.max(6.0, Number(focus.bounds?.sizeZ) * 0.03 || 0);
+        const diveTarget = new THREE.Vector3(
+            divePos.x,
+            divePos.y - diveLookDownMeters,
+            divePos.z
+        );
+
+        const diveLookDir = diveTarget.clone().sub(divePos);
+        if (diveLookDir.lengthSq() > EPS) diveLookDir.normalize();
+        else diveLookDir.copy(eyeDir);
+        const diveBlendLookDir = overviewLookDir.clone().lerp(diveLookDir, 0.72);
+        if (diveBlendLookDir.lengthSq() > EPS) diveBlendLookDir.normalize();
+        else diveBlendLookDir.copy(diveLookDir);
+        const lookDistance = Math.max(24.0, Number(focus.bounds?.sizeZ) * 0.16 || 0);
+
+        const walkEndPos = eyePos.clone().addScaledVector(walkDir, walkMeters);
+        const walkEndTarget = eyeTarget.clone().addScaledVector(walkDir, walkMeters);
+
+        const liftReturn = Math.max(3, Number(focus.bounds?.sizeZ) * 0.010 || 0);
+
+        const startToOverviewDistance = startPos ? startPos.distanceTo(overviewPos) : 0;
+        const startTargetDistance = startTgt ? startTgt.distanceTo(overviewTarget) : 0;
+        const includeStartSegment = !!startPos && !!startTgt
+            && (startToOverviewDistance > 1.0 || startTargetDistance > 1.0);
+
+        const startToOverviewSec = includeStartSegment
+            ? clamp(startToOverviewDistance / 120.0, 1.6, 4.0, 2.2)
+            : 0.0;
+        const overviewToDiveSec = 2.5;
+        const diveToEyeSec = 1.9;
+        const walkSec = Math.max(12.0, walkMeters / 55.0);
+        const returnSec = 8.0 / 1.35;
+        const diveToEyePositionCurve = this._buildBezierCurve3({
+            from: divePos,
+            to: eyePos,
+            fromDir: keyframe2PosTangentDir,
+            toDir: walkDir,
+            tangentScale: 0.28,
+            tangentMaxMeters: 40.0
+        });
+        if (diveToEyePositionCurve?.v2?.isVector3 && diveToEyePositionCurve?.v3?.isVector3) {
+            const keyframe3Incoming = diveToEyePositionCurve.v2.clone().sub(diveToEyePositionCurve.v3);
+            if (keyframe3Incoming.lengthSq() > EPS) {
+                diveToEyePositionCurve.v2.copy(diveToEyePositionCurve.v3).addScaledVector(keyframe3Incoming, 2.0);
+            }
+        }
+
+        const segments = [];
+        if (includeStartSegment) {
+            const startLookDir = startTgt.clone().sub(startPos);
+            if (startLookDir.lengthSq() > EPS) startLookDir.normalize();
+            else startLookDir.copy(overviewDir);
+
+            segments.push({
+                durationSec: startToOverviewSec,
+                positionCurve: this._buildBezierCurve3({
+                    from: startPos,
+                    to: overviewPos,
+                    fromDir: startLookDir,
+                    toDir: overviewDir,
+                    tangentScale: 0.26
+                }),
+                targetCurve: this._buildBezierCurve3({
+                    from: startTgt,
+                    to: overviewTarget,
+                    fromDir: startLookDir,
+                    toDir: overviewDir,
+                    tangentScale: 0.26
+                })
+            });
+        }
+
+        segments.push(
+            {
+                durationSec: overviewToDiveSec,
+                positionCurve: this._buildBezierCurve3({
+                    from: overviewPos,
+                    to: divePos,
+                    fromDir: overviewToDiveOutDir,
+                    toDir: keyframe2PosTangentDir,
+                    tangentScale: 0.22,
+                    tangentMaxMeters: 28.0
+                }),
+                targetCurve: this._buildBezierCurve3({
+                    from: overviewTarget,
+                    to: diveTarget,
+                    fromDir: diveBlendLookDir,
+                    toDir: diveLookDir,
+                    tangentScale: 0.16,
+                    tangentMaxMeters: 18.0,
+                    lift: -Math.max(1.2, Number(focus.bounds?.sizeZ) * 0.003)
+                }),
+                lookDirFrom: overviewLookDir.clone(),
+                lookDirTo: diveLookDir.clone(),
+                lookBlendMode: 'linear',
+                lookDistance
+            },
+            {
+                durationSec: diveToEyeSec,
+                positionCurve: diveToEyePositionCurve,
+                targetCurve: this._buildBezierCurve3({
+                    from: diveTarget,
+                    to: eyeTarget,
+                    fromDir: diveLookDir,
+                    toDir: eyeDir,
+                    tangentScale: 0.18,
+                    tangentMaxMeters: 16.0
+                }),
+                lookDirFrom: diveLookDir.clone(),
+                lookDirTo: eyeDir.clone(),
+                lookBlendMode: 'linear',
+                lookDistance
+            },
+            {
+                durationSec: walkSec,
+                positionCurve: this._buildBezierCurve3({
+                    from: eyePos,
+                    to: walkEndPos,
+                    fromDir: walkDir,
+                    toDir: walkDir,
+                    tangentScale: 0.34
+                }),
+                targetCurve: this._buildBezierCurve3({
+                    from: eyeTarget,
+                    to: walkEndTarget,
+                    fromDir: walkDir,
+                    toDir: walkDir,
+                    tangentScale: 0.34
+                }),
+                easeMode: 'out'
+            },
+            {
+                durationSec: returnSec,
+                positionCurve: this._buildBezierCurve3({
+                    from: walkEndPos,
+                    to: overviewPos,
+                    fromDir: walkDir.clone().multiplyScalar(-1),
+                    toDir: eyeDir.clone().multiplyScalar(-1),
+                    tangentScale: 0.28,
+                    lift: liftReturn
+                }),
+                targetCurve: this._buildBezierCurve3({
+                    from: walkEndTarget,
+                    to: overviewTarget,
+                    fromDir: walkDir.clone().multiplyScalar(-1),
+                    toDir: eyeDir.clone().multiplyScalar(-1),
+                    tangentScale: 0.28,
+                    lift: liftReturn * 0.3
+                }),
+                easeMode: 'in'
+            }
+        );
+
+        const tmpLookPosStart = new THREE.Vector3();
+        const tmpLookPosEnd = new THREE.Vector3();
+        const tmpLookTargetStart = new THREE.Vector3();
+        const tmpLookTargetEnd = new THREE.Vector3();
+        const defaultLookDir = eyeDir.lengthSq() > EPS ? eyeDir.clone() : new THREE.Vector3(0, 0, 1);
+        let previousLookDir = defaultLookDir.clone();
+        for (let s = 0; s < segments.length; s++) {
+            const segment = segments[s];
+            const positionCurve = segment?.positionCurve ?? null;
+            const targetCurve = segment?.targetCurve ?? null;
+            positionCurve.getPointAt(0, tmpLookPosStart);
+            positionCurve.getPointAt(1, tmpLookPosEnd);
+            targetCurve.getPointAt(0, tmpLookTargetStart);
+            targetCurve.getPointAt(1, tmpLookTargetEnd);
+
+            const fromDir = segment.lookDirFrom?.isVector3
+                ? segment.lookDirFrom.clone()
+                : tmpLookTargetStart.clone().sub(tmpLookPosStart);
+            if (fromDir.lengthSq() > EPS) fromDir.normalize();
+            else fromDir.copy(previousLookDir);
+
+            const toDir = segment.lookDirTo?.isVector3
+                ? segment.lookDirTo.clone()
+                : tmpLookTargetEnd.clone().sub(tmpLookPosEnd);
+            if (toDir.lengthSq() > EPS) toDir.normalize();
+            else toDir.copy(fromDir);
+
+            const fromDistRaw = segment.lookDirFrom?.isVector3
+                ? Math.max(EPS, tmpLookTargetStart.distanceTo(tmpLookPosStart))
+                : tmpLookTargetStart.distanceTo(tmpLookPosStart);
+            const toDistRaw = segment.lookDirTo?.isVector3
+                ? Math.max(EPS, tmpLookTargetEnd.distanceTo(tmpLookPosEnd))
+                : tmpLookTargetEnd.distanceTo(tmpLookPosEnd);
+            const defaultLookDistance = Math.max(6.0, Number(segment.lookDistance) || 12.0);
+            const fromDist = fromDistRaw > EPS ? fromDistRaw : defaultLookDistance;
+            const toDist = toDistRaw > EPS ? toDistRaw : defaultLookDistance;
+
+            segment.rotLookFrom = fromDir;
+            segment.rotLookTo = toDir;
+            segment.rotLookDistanceFrom = fromDist;
+            segment.rotLookDistanceTo = toDist;
+            previousLookDir = toDir.clone();
+        }
+
+        const segmentTimeStarts = new Float64Array(segments.length);
+        const segmentTimeDurations = new Float64Array(segments.length);
+        let durationSec = 0;
+        for (let s = 0; s < segments.length; s++) {
+            segmentTimeStarts[s] = durationSec;
+            const segDuration = Math.max(EPS, Number(segments[s]?.durationSec) || 0);
+            segmentTimeDurations[s] = segDuration;
+            durationSec += segDuration;
+        }
+        const sampleRate = FLYOVER_SAMPLE_RATE;
+        const sampleCount = Math.max(2, Math.round(durationSec * sampleRate) + 1);
+        const poses = new Float32Array(sampleCount * 6);
+        const pos = new THREE.Vector3();
+        const target = new THREE.Vector3();
+        const lookDir = new THREE.Vector3();
+        const keyframes = [];
+        if (includeStartSegment && startPos && startTgt) {
+            keyframes.push({ role: 'start', position: startPos.clone(), target: startTgt.clone() });
+        }
+        keyframes.push(
+            { role: 'overview', position: overviewPos.clone(), target: overviewTarget.clone() },
+            { role: 'dive', position: divePos.clone(), target: diveTarget.clone() },
+            { role: 'eye', position: eyePos.clone(), target: eyeTarget.clone() },
+            { role: 'walk_end', position: walkEndPos.clone(), target: walkEndTarget.clone() },
+            { role: 'overview_return', position: overviewPos.clone(), target: overviewTarget.clone() }
+        );
+
+        for (let i = 0; i < sampleCount; i++) {
+            const tSec = i / sampleRate;
+            let segmentIndex = 0;
+            for (let s = 0; s < segments.length; s++) {
+                segmentIndex = s;
+                const segStart = segmentTimeStarts[s];
+                const segEnd = segStart + segmentTimeDurations[s];
+                if (tSec <= segEnd + EPS || s === segments.length - 1) break;
+            }
+            if (i === sampleCount - 1) segmentIndex = segments.length - 1;
+            const segment = segments[segmentIndex];
+
+            const segStart = segmentTimeStarts[segmentIndex];
+            const segDuration = segmentTimeDurations[segmentIndex];
+            const uRaw = segDuration > EPS ? clamp((tSec - segStart) / segDuration, 0, 1, 0) : 0;
+            let u = uRaw;
+            const easeMode = String(segment?.easeMode ?? '');
+            if (easeMode === 'in') u = uRaw * uRaw;
+            else if (easeMode === 'out') {
+                const inv = 1.0 - uRaw;
+                u = 1.0 - inv * inv;
+            } else if (easeMode === 'smooth' || easeMode === 'in_out') u = smoothstep01(uRaw);
+            if (i === sampleCount - 1) u = 1;
+
+            segment.positionCurve.getPointAt(u, pos);
+            let rotU = smoothstep01(uRaw);
+            if (i === sampleCount - 1) rotU = 1;
+            const rotFrom = segment.rotLookFrom?.isVector3 ? segment.rotLookFrom : null;
+            const rotTo = segment.rotLookTo?.isVector3 ? segment.rotLookTo : null;
+            if (rotFrom && rotTo) {
+                slerpUnitVector3(lookDir, rotFrom, rotTo, rotU);
+                const distFrom = Math.max(6.0, Number(segment.rotLookDistanceFrom) || 6.0);
+                const distTo = Math.max(6.0, Number(segment.rotLookDistanceTo) || 6.0);
+                const distMeters = THREE.MathUtils.lerp(distFrom, distTo, rotU);
+                target.copy(pos).addScaledVector(lookDir, distMeters);
+            } else {
+                segment.targetCurve.getPointAt(u, target);
+            }
+
+            const idx = i * 6;
+            poses[idx] = pos.x;
+            poses[idx + 1] = pos.y;
+            poses[idx + 2] = pos.z;
+            poses[idx + 3] = target.x;
+            poses[idx + 4] = target.y;
+            poses[idx + 5] = target.z;
+        }
+
+        const positionSegments = segments.map((segment) => {
+            const curve = segment?.positionCurve ?? null;
+            const c0 = curve?.v0?.isVector3 ? curve.v0.clone() : null;
+            const c1 = curve?.v1?.isVector3 ? curve.v1.clone() : null;
+            const c2 = curve?.v2?.isVector3 ? curve.v2.clone() : null;
+            const c3 = curve?.v3?.isVector3 ? curve.v3.clone() : null;
+            return { from: c0, c1, c2, to: c3 };
+        });
+
+        return { durationSec, sampleRate, sampleCount, poses, keyframes, positionSegments };
+    }
+
+    _startBiomeTilingFlyover() {
+        const controls = this.controls;
+        const camera = this.camera;
+        const startPosition = camera?.position?.isVector3 ? camera.position.clone() : null;
+        const startTarget = controls?.target?.isVector3 ? controls.target.clone() : null;
+        const path = this._buildBiomeTilingFlyoverPath({ startPosition, startTarget });
+        if (!path) return;
+        this._disableFlyoverDebug();
+        this._biomeTilingFocusMode = 'overview';
+        if (this._flyover) this._flyover.loop = false;
+        this._startFlyover({ path });
+        this._syncBiomeTilingHref({ force: true });
+    }
+
+    _startBiomeTilingFlyoverDebug() {
+        const controls = this.controls;
+        const camera = this.camera;
+        const startPosition = camera?.position?.isVector3 ? camera.position.clone() : null;
+        const startTarget = controls?.target?.isVector3 ? controls.target.clone() : null;
+        const path = this._buildBiomeTilingFlyoverPath({ startPosition, startTarget });
+        if (!path) return;
+        this._enableFlyoverDebug({ path });
+        this._biomeTilingFocusMode = 'overview';
+        if (this._flyover) this._flyover.loop = false;
+        this._startFlyover({ path });
+        this._syncBiomeTilingHref({ force: true });
     }
 
     _buildFlyoverPath({ startPosition, startTarget } = {}) {
@@ -2211,6 +3708,83 @@ export class TerrainDebuggerView {
         renderer.setSize(w, h, false);
         camera.aspect = w / h;
         camera.updateProjectionMatrix?.();
+        this._positionFlyoverDebugControls();
+    }
+
+    _renderSceneWithFlyoverDebug({ renderer, scene, camera } = {}) {
+        const debug = this._flyoverDebug;
+        const debugCamera = debug?.camera ?? null;
+        const splitActive = !!debug?.active && !!debugCamera;
+
+        const size = renderer.getSize(this._flyoverDebugViewportSize);
+        const fullW = Math.max(1, Math.floor(size.x));
+        const fullH = Math.max(1, Math.floor(size.y));
+
+        if (!splitActive) {
+            const aspect = fullW / Math.max(1, fullH);
+            if (Math.abs((Number(camera?.aspect) || 0) - aspect) > EPS) {
+                camera.aspect = aspect;
+                camera.updateProjectionMatrix?.();
+            }
+            camera.layers.enable(0);
+            camera.layers.disable(FLYOVER_DEBUG_HELPER_LAYER);
+            renderer.setScissorTest(false);
+            renderer.setViewport(0, 0, fullW, fullH);
+            renderer.render(scene, camera);
+            return;
+        }
+
+        const outputMetrics = this._ui?.getOutputPanelViewportMetrics?.() ?? null;
+        const outputInsetBottom = Math.max(0, Number(outputMetrics?.bottomInset) || 0);
+        const outputHeight = Math.max(0, Number(outputMetrics?.height) || 0);
+
+        let overlayW = Math.round(clamp(
+            fullW * 0.28,
+            FLYOVER_DEBUG_OVERLAY_MIN_WIDTH_PX,
+            FLYOVER_DEBUG_OVERLAY_MAX_WIDTH_PX,
+            320
+        ));
+        let overlayH = Math.round(overlayW / FLYOVER_DEBUG_OVERLAY_ASPECT);
+        const overlayMaxH = Math.max(120, Math.floor(fullH * FLYOVER_DEBUG_OVERLAY_MAX_HEIGHT_FRAC));
+        if (overlayH > overlayMaxH) {
+            overlayH = overlayMaxH;
+            overlayW = Math.round(overlayH * FLYOVER_DEBUG_OVERLAY_ASPECT);
+        }
+        overlayW = Math.min(overlayW, Math.max(1, fullW - FLYOVER_DEBUG_OVERLAY_MARGIN_PX * 2));
+        overlayH = Math.min(overlayH, Math.max(1, fullH - FLYOVER_DEBUG_OVERLAY_MARGIN_PX * 2));
+
+        const overlayX = FLYOVER_DEBUG_OVERLAY_MARGIN_PX;
+        const desiredOverlayY = Math.round(outputInsetBottom + outputHeight + FLYOVER_DEBUG_OVERLAY_GAP_PX);
+        const overlayMaxY = Math.max(FLYOVER_DEBUG_OVERLAY_MARGIN_PX, fullH - overlayH - FLYOVER_DEBUG_OVERLAY_MARGIN_PX);
+        const overlayY = Math.min(overlayMaxY, Math.max(FLYOVER_DEBUG_OVERLAY_MARGIN_PX, desiredOverlayY));
+
+        const fullAspect = fullW / Math.max(1, fullH);
+        if (Math.abs((Number(debugCamera?.aspect) || 0) - fullAspect) > EPS) {
+            debugCamera.aspect = fullAspect;
+            debugCamera.updateProjectionMatrix?.();
+        }
+
+        const overlayAspect = overlayW / Math.max(1, overlayH);
+        if (Math.abs((Number(camera?.aspect) || 0) - overlayAspect) > EPS) {
+            camera.aspect = overlayAspect;
+            camera.updateProjectionMatrix?.();
+        }
+
+        camera.layers.enable(0);
+        camera.layers.disable(FLYOVER_DEBUG_HELPER_LAYER);
+        debugCamera.layers.enable(0);
+        debugCamera.layers.enable(FLYOVER_DEBUG_HELPER_LAYER);
+
+        renderer.setScissorTest(true);
+        renderer.setViewport(0, 0, fullW, fullH);
+        renderer.setScissor(0, 0, fullW, fullH);
+        renderer.render(scene, debugCamera);
+
+        renderer.setViewport(overlayX, overlayY, overlayW, overlayH);
+        renderer.setScissor(overlayX, overlayY, overlayW, overlayH);
+        renderer.clearDepth();
+        renderer.render(scene, camera);
+        renderer.setScissorTest(false);
     }
 
     _tick(t) {
@@ -2228,6 +3802,9 @@ export class TerrainDebuggerView {
             this._updateCameraFromKeys(dt);
         }
         this.controls?.update?.(dt);
+        if (this._biomeTilingAxisHelper) {
+            this._biomeTilingAxisHelper.visible = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING && !this._flyover?.active;
+        }
         this._syncOutputPanel({ nowMs: t });
 
         if (this._terrainEngine && camera?.position) {
@@ -2248,7 +3825,7 @@ export class TerrainDebuggerView {
         const gpuTimer = this._gpuFrameTimer;
         gpuTimer?.beginFrame?.();
         try {
-            renderer.render(scene, camera);
+            this._renderSceneWithFlyoverDebug({ renderer, scene, camera });
         } finally {
             gpuTimer?.endFrame?.();
             gpuTimer?.poll?.();
@@ -2257,6 +3834,146 @@ export class TerrainDebuggerView {
         this.onFrame?.({ dt, nowMs: t, renderer });
 
         this._raf = requestAnimationFrame((tt) => this._tick(tt));
+    }
+
+    _buildInitialUiStateFromUrl() {
+        if (typeof window === 'undefined') return null;
+        const params = new URLSearchParams(window.location.search);
+        const tabRaw = String(params.get(TERRAIN_DEBUGGER_URL_PARAM.tab) ?? '').trim();
+        const tab = (tabRaw === 'environment'
+            || tabRaw === 'terrain'
+            || tabRaw === 'biome_transition'
+            || tabRaw === 'biome_tiling'
+            || tabRaw === 'visualization'
+            || tabRaw === 'grass') ? tabRaw : null;
+
+        const pbr = String(params.get(TERRAIN_DEBUGGER_URL_PARAM.tilingPbr) ?? '').trim();
+        const focusRaw = String(params.get(TERRAIN_DEBUGGER_URL_PARAM.tilingFocus) ?? '').trim().toLowerCase();
+        this._biomeTilingFocusMode = focusRaw === 'eye_1p8' || focusRaw === 'eye' || focusRaw === 'low' ? 'eye_1p8' : 'overview';
+
+        const parseNum = (key) => {
+            const n = Number(params.get(key));
+            return Number.isFinite(n) ? n : null;
+        };
+        const cx = parseNum(TERRAIN_DEBUGGER_URL_PARAM.cameraPosX);
+        const cy = parseNum(TERRAIN_DEBUGGER_URL_PARAM.cameraPosY);
+        const cz = parseNum(TERRAIN_DEBUGGER_URL_PARAM.cameraPosZ);
+        const tx = parseNum(TERRAIN_DEBUGGER_URL_PARAM.cameraTargetX);
+        const ty = parseNum(TERRAIN_DEBUGGER_URL_PARAM.cameraTargetY);
+        const tz = parseNum(TERRAIN_DEBUGGER_URL_PARAM.cameraTargetZ);
+        if (cx !== null && cy !== null && cz !== null && tx !== null && ty !== null && tz !== null) {
+            this._biomeTilingInitialCameraPose = {
+                position: new THREE.Vector3(cx, cy, cz),
+                target: new THREE.Vector3(tx, ty, tz)
+            };
+        } else {
+            this._biomeTilingInitialCameraPose = null;
+        }
+
+        const nextState = {};
+        if (tab) nextState.tab = tab;
+        if (pbr) {
+            nextState.terrain = {
+                biomeTiling: {
+                    materialId: pbr
+                }
+            };
+        }
+        if (!Object.keys(nextState).length) return null;
+        return nextState;
+    }
+
+    _applyInitialBiomeTilingUrlCameraOverride() {
+        if (this._terrainViewMode !== TERRAIN_VIEW_MODE.BIOME_TILING) return;
+        const controls = this.controls;
+        if (!controls?.setLookAt) return;
+        const pose = this._biomeTilingInitialCameraPose;
+        if (pose?.position && pose?.target) {
+            controls.setLookAt({ position: pose.position, target: pose.target });
+            this._activeCameraPresetId = 'custom';
+            this._syncCameraStatus({ nowMs: performance.now(), force: true });
+            return;
+        }
+        this._focusBiomeTilingCamera(this._biomeTilingFocusMode);
+    }
+
+    _syncBiomeTilingHref({ force = false } = {}) {
+        if (typeof window === 'undefined' || !window.history?.replaceState) return;
+        const camera = this.camera;
+        const controls = this.controls;
+        const target = controls?.target ?? null;
+        const url = new URL(window.location.href);
+        const params = url.searchParams;
+
+        if (this._terrainViewMode !== TERRAIN_VIEW_MODE.BIOME_TILING) {
+            const had = params.has(TERRAIN_DEBUGGER_URL_PARAM.tab)
+                || params.has(TERRAIN_DEBUGGER_URL_PARAM.tilingPbr)
+                || params.has(TERRAIN_DEBUGGER_URL_PARAM.tilingFocus)
+                || params.has(TERRAIN_DEBUGGER_URL_PARAM.cameraPosX)
+                || params.has(TERRAIN_DEBUGGER_URL_PARAM.cameraPosY)
+                || params.has(TERRAIN_DEBUGGER_URL_PARAM.cameraPosZ)
+                || params.has(TERRAIN_DEBUGGER_URL_PARAM.cameraTargetX)
+                || params.has(TERRAIN_DEBUGGER_URL_PARAM.cameraTargetY)
+                || params.has(TERRAIN_DEBUGGER_URL_PARAM.cameraTargetZ);
+            if (!had) return;
+            params.delete(TERRAIN_DEBUGGER_URL_PARAM.tab);
+            params.delete(TERRAIN_DEBUGGER_URL_PARAM.tilingPbr);
+            params.delete(TERRAIN_DEBUGGER_URL_PARAM.tilingFocus);
+            params.delete(TERRAIN_DEBUGGER_URL_PARAM.cameraPosX);
+            params.delete(TERRAIN_DEBUGGER_URL_PARAM.cameraPosY);
+            params.delete(TERRAIN_DEBUGGER_URL_PARAM.cameraPosZ);
+            params.delete(TERRAIN_DEBUGGER_URL_PARAM.cameraTargetX);
+            params.delete(TERRAIN_DEBUGGER_URL_PARAM.cameraTargetY);
+            params.delete(TERRAIN_DEBUGGER_URL_PARAM.cameraTargetZ);
+            const query = params.toString();
+            const nextUrl = `${url.pathname}${query ? `?${query}` : ''}${url.hash || ''}`;
+            if (nextUrl !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
+                window.history.replaceState(null, '', nextUrl);
+            }
+            this._biomeTilingHrefKey = '';
+            return;
+        }
+
+        const materialId = String(this._biomeTilingState?.materialId ?? '').trim();
+        const focusMode = this._biomeTilingFocusMode === 'eye_1p8' ? 'eye_1p8' : 'overview';
+        const camX = Number(camera?.position?.x);
+        const camY = Number(camera?.position?.y);
+        const camZ = Number(camera?.position?.z);
+        const targetX = Number(target?.x);
+        const targetY = Number(target?.y);
+        const targetZ = Number(target?.z);
+        if (!(Number.isFinite(camX) && Number.isFinite(camY) && Number.isFinite(camZ)
+            && Number.isFinite(targetX) && Number.isFinite(targetY) && Number.isFinite(targetZ))) return;
+
+        const key = [
+            materialId,
+            focusMode,
+            camX.toFixed(3),
+            camY.toFixed(3),
+            camZ.toFixed(3),
+            targetX.toFixed(3),
+            targetY.toFixed(3),
+            targetZ.toFixed(3)
+        ].join('|');
+        if (!force && key === this._biomeTilingHrefKey) return;
+        this._biomeTilingHrefKey = key;
+
+        params.set(TERRAIN_DEBUGGER_URL_PARAM.tab, 'biome_tiling');
+        if (materialId) params.set(TERRAIN_DEBUGGER_URL_PARAM.tilingPbr, materialId);
+        else params.delete(TERRAIN_DEBUGGER_URL_PARAM.tilingPbr);
+        params.set(TERRAIN_DEBUGGER_URL_PARAM.tilingFocus, focusMode);
+        params.set(TERRAIN_DEBUGGER_URL_PARAM.cameraPosX, camX.toFixed(3));
+        params.set(TERRAIN_DEBUGGER_URL_PARAM.cameraPosY, camY.toFixed(3));
+        params.set(TERRAIN_DEBUGGER_URL_PARAM.cameraPosZ, camZ.toFixed(3));
+        params.set(TERRAIN_DEBUGGER_URL_PARAM.cameraTargetX, targetX.toFixed(3));
+        params.set(TERRAIN_DEBUGGER_URL_PARAM.cameraTargetY, targetY.toFixed(3));
+        params.set(TERRAIN_DEBUGGER_URL_PARAM.cameraTargetZ, targetZ.toFixed(3));
+
+        const query = params.toString();
+        const nextUrl = `${url.pathname}${query ? `?${query}` : ''}${url.hash || ''}`;
+        if (nextUrl !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
+            window.history.replaceState(null, '', nextUrl);
+        }
     }
 
     _applyCameraPreset(id) {
@@ -2300,6 +4017,42 @@ export class TerrainDebuggerView {
         controls.setLookAt({ position, target });
         this._activeCameraPresetId = 'custom';
         this._syncCameraStatus({ nowMs: performance.now(), force: true });
+    }
+
+    _focusBiomeTilingCamera(mode = 'overview') {
+        const controls = this.controls;
+        if (!controls?.setLookAt) return;
+        const modeId = String(mode ?? '').trim().toLowerCase();
+        if (modeId === 'flyover_debug') {
+            if (this._terrainViewMode !== TERRAIN_VIEW_MODE.BIOME_TILING) return;
+            if (this._flyover?.active) this._stopFlyover({ keepPose: true });
+            this._startBiomeTilingFlyoverDebug();
+            return;
+        }
+        if (modeId === 'flyover') {
+            if (this._terrainViewMode !== TERRAIN_VIEW_MODE.BIOME_TILING) return;
+            if (this._flyover?.active) this._stopFlyover({ keepPose: true });
+            this._startBiomeTilingFlyover();
+            return;
+        }
+
+        this._disableFlyoverDebug();
+        if (this._flyover?.active) this._stopFlyover({ keepPose: true });
+
+        const focus = this._getBiomeTilingFocusPoses();
+        if (!focus) {
+            this._applyCameraPreset('low');
+            return;
+        }
+
+        const isEye = modeId === 'eye_1p8' || modeId === 'eye' || modeId === 'low';
+        this._biomeTilingFocusMode = isEye ? 'eye_1p8' : 'overview';
+
+        const pose = isEye ? focus.eye : focus.overview;
+        controls.setLookAt({ position: pose.position, target: pose.target });
+        this._activeCameraPresetId = 'custom';
+        this._syncCameraStatus({ nowMs: performance.now(), force: true });
+        this._syncBiomeTilingHref({ force: true });
     }
 
     _getTerrainBoundsXZ() {
@@ -2459,6 +4212,53 @@ export class TerrainDebuggerView {
         };
     }
 
+    _sanitizeBiomeTilingState(src) {
+        const input = src && typeof src === 'object' ? src : {};
+        const materialOptionsRaw = getPbrMaterialOptionsForGround();
+        const materialOptions = (Array.isArray(materialOptionsRaw) ? materialOptionsRaw : [])
+            .map((opt) => String(opt?.id ?? '').trim())
+            .filter((id) => !!id);
+        const validMaterialIds = new Set(materialOptions);
+        const defaultMaterialId = materialOptions[0] ?? BIOME_TILING_DEFAULT_STATE.materialId;
+        const normalizeMaterialId = (value, fallback = defaultMaterialId) => {
+            const id = String(value ?? '').trim();
+            if (validMaterialIds.has(id)) return id;
+            if (validMaterialIds.has(String(fallback ?? ''))) return String(fallback);
+            return defaultMaterialId;
+        };
+
+        const distSrc = input.distanceTiling && typeof input.distanceTiling === 'object' ? input.distanceTiling : {};
+        const blendStartMeters = clamp(distSrc.blendStartMeters, 0.0, 500.0, BIOME_TILING_DEFAULT_STATE.distanceTiling.blendStartMeters);
+        let blendEndMeters = clamp(distSrc.blendEndMeters, 0.0, 2000.0, BIOME_TILING_DEFAULT_STATE.distanceTiling.blendEndMeters);
+        if (blendEndMeters <= blendStartMeters + 1.0) blendEndMeters = Math.min(2000.0, blendStartMeters + 1.0);
+        const rawDistanceDebug = String(distSrc.debugView ?? BIOME_TILING_DEFAULT_STATE.distanceTiling.debugView);
+        const distanceDebugView = rawDistanceDebug === 'near' || rawDistanceDebug === 'far' ? rawDistanceDebug : 'blended';
+
+        const varSrc = input.variation && typeof input.variation === 'object' ? input.variation : {};
+        return {
+            materialId: normalizeMaterialId(input.materialId, defaultMaterialId),
+            distanceTiling: {
+                enabled: distSrc.enabled !== false,
+                nearScale: clamp(distSrc.nearScale, 0.1, 6.0, BIOME_TILING_DEFAULT_STATE.distanceTiling.nearScale),
+                farScale: clamp(distSrc.farScale, 0.01, 2.0, BIOME_TILING_DEFAULT_STATE.distanceTiling.farScale),
+                blendStartMeters,
+                blendEndMeters,
+                blendCurve: clamp(distSrc.blendCurve, 0.35, 3.0, BIOME_TILING_DEFAULT_STATE.distanceTiling.blendCurve),
+                debugView: distanceDebugView
+            },
+            variation: {
+                antiTilingEnabled: varSrc.antiTilingEnabled !== false,
+                antiTilingStrength: clamp(varSrc.antiTilingStrength, 0.0, 2.0, BIOME_TILING_DEFAULT_STATE.variation.antiTilingStrength),
+                antiTilingCellMeters: clamp(varSrc.antiTilingCellMeters, 0.25, 12.0, BIOME_TILING_DEFAULT_STATE.variation.antiTilingCellMeters),
+                macroVariationEnabled: varSrc.macroVariationEnabled !== false,
+                macroVariationStrength: clamp(varSrc.macroVariationStrength, 0.0, 0.8, BIOME_TILING_DEFAULT_STATE.variation.macroVariationStrength),
+                macroVariationScale: clamp(varSrc.macroVariationScale, 0.002, 0.2, BIOME_TILING_DEFAULT_STATE.variation.macroVariationScale),
+                nearIntensity: clamp(varSrc.nearIntensity, 0.0, 2.0, BIOME_TILING_DEFAULT_STATE.variation.nearIntensity),
+                farIntensity: clamp(varSrc.farIntensity, 0.0, 2.0, BIOME_TILING_DEFAULT_STATE.variation.farIntensity)
+            }
+        };
+    }
+
     _buildBiomeTransitionSourceMap({ bounds, biome1, biome2 } = {}) {
         const b = bounds && typeof bounds === 'object' ? bounds : null;
         if (!b) return null;
@@ -2488,6 +4288,33 @@ export class TerrainDebuggerView {
             width,
             height,
             data,
+            bounds: {
+                minX: Number(b.minX) || 0,
+                maxX: Number(b.maxX) || 0,
+                minZ: Number(b.minZ) || 0,
+                maxZ: Number(b.maxZ) || 0
+            }
+        };
+        this._terrainBiomeSourceMapKey = key;
+        this._terrainEngineMaskDirty = true;
+        return this._terrainBiomeSourceMap;
+    }
+
+    _buildBiomeTilingSourceMap({ bounds, biomeId } = {}) {
+        const b = bounds && typeof bounds === 'object' ? bounds : null;
+        if (!b) return null;
+        const id = TERRAIN_BIOME_IDS.includes(String(biomeId ?? '')) ? String(biomeId) : 'land';
+        const index = id === 'stone' ? 0 : id === 'grass' ? 1 : 2;
+        const key = [
+            `${Number(b.minX).toFixed(3)},${Number(b.maxX).toFixed(3)},${Number(b.minZ).toFixed(3)},${Number(b.maxZ).toFixed(3)}`,
+            `tiling|${id}`
+        ].join('|');
+        if (this._terrainBiomeSourceMap && this._terrainBiomeSourceMapKey === key) return this._terrainBiomeSourceMap;
+
+        this._terrainBiomeSourceMap = {
+            width: 1,
+            height: 1,
+            data: new Uint8Array([index]),
             bounds: {
                 minX: Number(b.minX) || 0,
                 maxX: Number(b.maxX) || 0,
@@ -2555,6 +4382,49 @@ export class TerrainDebuggerView {
             Number(blendCfg.edgeNoiseScale).toFixed(5),
             Number(blendCfg.edgeNoiseStrength).toFixed(4)
         );
+        const tilingViewActive = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING;
+        const tilingState = this._biomeTilingState ?? BIOME_TILING_DEFAULT_STATE;
+        const distCfg = tilingState.distanceTiling && typeof tilingState.distanceTiling === 'object'
+            ? tilingState.distanceTiling
+            : BIOME_TILING_DEFAULT_STATE.distanceTiling;
+        const varCfg = tilingState.variation && typeof tilingState.variation === 'object'
+            ? tilingState.variation
+            : BIOME_TILING_DEFAULT_STATE.variation;
+        const distanceEnabled = tilingViewActive && distCfg.enabled !== false;
+        const distanceNearScale = clamp(distCfg.nearScale, 0.1, 6.0, BIOME_TILING_DEFAULT_STATE.distanceTiling.nearScale);
+        const distanceFarScale = clamp(distCfg.farScale, 0.01, 2.0, BIOME_TILING_DEFAULT_STATE.distanceTiling.farScale);
+        const distanceBlendStart = clamp(distCfg.blendStartMeters, 0.0, 500.0, BIOME_TILING_DEFAULT_STATE.distanceTiling.blendStartMeters);
+        const distanceBlendEnd = Math.max(distanceBlendStart + 1.0, clamp(distCfg.blendEndMeters, 0.0, 2000.0, BIOME_TILING_DEFAULT_STATE.distanceTiling.blendEndMeters));
+        const distanceBlendCurve = clamp(distCfg.blendCurve, 0.35, 3.0, BIOME_TILING_DEFAULT_STATE.distanceTiling.blendCurve);
+        const rawDistanceDebug = String(distCfg.debugView ?? BIOME_TILING_DEFAULT_STATE.distanceTiling.debugView);
+        const distanceDebugView = rawDistanceDebug === 'near' || rawDistanceDebug === 'far' ? rawDistanceDebug : 'blended';
+        const distanceDebugModeCode = distanceDebugView === 'near' ? 1.0 : distanceDebugView === 'far' ? 2.0 : 0.0;
+        const antiEnabled = tilingViewActive && varCfg.antiTilingEnabled !== false;
+        const antiStrength = clamp(varCfg.antiTilingStrength, 0.0, 2.0, BIOME_TILING_DEFAULT_STATE.variation.antiTilingStrength);
+        const antiCellMeters = clamp(varCfg.antiTilingCellMeters, 0.25, 12.0, BIOME_TILING_DEFAULT_STATE.variation.antiTilingCellMeters);
+        const macroEnabled = tilingViewActive && varCfg.macroVariationEnabled !== false;
+        const macroStrength = clamp(varCfg.macroVariationStrength, 0.0, 0.8, BIOME_TILING_DEFAULT_STATE.variation.macroVariationStrength);
+        const macroScale = clamp(varCfg.macroVariationScale, 0.002, 0.2, BIOME_TILING_DEFAULT_STATE.variation.macroVariationScale);
+        const variationNearIntensity = clamp(varCfg.nearIntensity, 0.0, 2.0, BIOME_TILING_DEFAULT_STATE.variation.nearIntensity);
+        const variationFarIntensity = clamp(varCfg.farIntensity, 0.0, 2.0, BIOME_TILING_DEFAULT_STATE.variation.farIntensity);
+        keyParts.push(
+            tilingViewActive ? 'tiling' : 'default',
+            distanceEnabled ? '1' : '0',
+            distanceNearScale.toFixed(4),
+            distanceFarScale.toFixed(4),
+            distanceBlendStart.toFixed(2),
+            distanceBlendEnd.toFixed(2),
+            distanceBlendCurve.toFixed(3),
+            distanceDebugView,
+            antiEnabled ? '1' : '0',
+            antiStrength.toFixed(3),
+            antiCellMeters.toFixed(3),
+            macroEnabled ? '1' : '0',
+            macroStrength.toFixed(3),
+            macroScale.toFixed(5),
+            variationNearIntensity.toFixed(3),
+            variationFarIntensity.toFixed(3)
+        );
         const key = keyParts.join('|');
         if (key === this._terrainBiomePbrKey) return;
         this._terrainBiomePbrKey = key;
@@ -2597,6 +4467,30 @@ export class TerrainDebuggerView {
             0.0
         );
         mat.userData.terrainHumidityEdgeNoiseTex = FALLBACK_TERRAIN_HUMIDITY_EDGE_NOISE_TEX;
+        mat.userData.terrainTilingDistance0 = this._terrainTilingDistance0Vec4.set(
+            distanceNearScale,
+            distanceFarScale,
+            distanceBlendStart,
+            distanceBlendEnd
+        );
+        mat.userData.terrainTilingDistance1 = this._terrainTilingDistance1Vec4.set(
+            distanceBlendCurve,
+            distanceDebugModeCode,
+            distanceEnabled ? 1.0 : 0.0,
+            0.0
+        );
+        mat.userData.terrainTilingVariation0 = this._terrainTilingVariation0Vec4.set(
+            antiEnabled ? 1.0 : 0.0,
+            antiStrength,
+            antiCellMeters,
+            macroEnabled ? 1.0 : 0.0
+        );
+        mat.userData.terrainTilingVariation1 = this._terrainTilingVariation1Vec4.set(
+            macroStrength,
+            macroScale,
+            variationNearIntensity,
+            variationFarIntensity
+        );
 
         if (sampled.land.neutral.mapLoaded && mat.map !== sampled.land.neutral.mapLoaded) {
             mat.map = sampled.land.neutral.mapLoaded;
@@ -3189,12 +5083,27 @@ export class TerrainDebuggerView {
         this._terrainEngineCompareKey = '';
 
         const transitionViewActive = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TRANSITION;
+        const tilingViewActive = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING;
         const transitionPair = this._biomeTransitionState ?? {};
         const biome1 = TERRAIN_BIOME_IDS.includes(String(transitionPair.biome1 ?? '')) ? String(transitionPair.biome1) : 'grass';
         let biome2 = TERRAIN_BIOME_IDS.includes(String(transitionPair.biome2 ?? '')) ? String(transitionPair.biome2) : 'land';
         if (biome1 === biome2) biome2 = TERRAIN_BIOME_IDS.find((id) => id !== biome1) ?? 'land';
         const pairKey = makeBiomePairKey(biome1, biome2);
         if (!transitionPairProfiles[pairKey]) transitionPairProfiles[pairKey] = sanitizeBiomeTransitionProfile(null, transitionDefaults);
+        const tilingState = this._biomeTilingState ?? BIOME_TILING_DEFAULT_STATE;
+        const fallbackTilingMaterialId = String(
+            this._terrainBiomeHumidityBindings?.land?.neutral
+            ?? DEFAULT_TERRAIN_BIOME_HUMIDITY_PBR_BINDINGS?.land?.neutral
+            ?? BIOME_TILING_DEFAULT_STATE.materialId
+        );
+        const tilingMaterialId = String(tilingState?.materialId ?? '').trim() || fallbackTilingMaterialId;
+        if (tilingViewActive) {
+            for (const biomeId of TERRAIN_BIOME_IDS) {
+                const row = this._terrainBiomeHumidityBindings[biomeId] ?? {};
+                for (const slot of TERRAIN_HUMIDITY_SLOT_IDS) row[slot] = tilingMaterialId;
+                this._terrainBiomeHumidityBindings[biomeId] = row;
+            }
+        }
 
         const boundsFromGrid = this._getTerrainBoundsXZ();
         let nextPatch = { ...prev.patch, ...patchSrc };
@@ -3229,6 +5138,29 @@ export class TerrainDebuggerView {
                 cameraBlendFeatherMeters: 0,
                 boundaryBandMeters: Math.max(Number(nextTransition.boundaryBandMeters) || 0, tileSize * 0.55)
             };
+        } else if (tilingViewActive) {
+            const tileSize = Number(this._terrainGrid?.tileSize) || Number(nextPatch.sizeMeters) || 24;
+            const bounds = boundsFromGrid ?? prev?.bounds ?? null;
+            if (bounds) {
+                nextPatch = {
+                    ...nextPatch,
+                    layout: 'grid',
+                    sizeMeters: tileSize,
+                    originX: Number(bounds.minX) || 0,
+                    originZ: Number(bounds.minZ) || 0
+                };
+            }
+            nextBiomes = {
+                ...nextBiomes,
+                mode: 'source_map',
+                defaultBiomeId: 'land'
+            };
+            nextTransition = {
+                ...nextTransition,
+                cameraBlendRadiusMeters: 0,
+                cameraBlendFeatherMeters: 0,
+                boundaryBandMeters: 0
+            };
         }
 
         engine.setConfig({
@@ -3250,6 +5182,9 @@ export class TerrainDebuggerView {
         if (humidityMap) sourceMaps.humidity = humidityMap;
         if (transitionViewActive) {
             const biomeMap = this._buildBiomeTransitionSourceMap({ bounds, biome1, biome2 });
+            if (biomeMap) sourceMaps.biome = biomeMap;
+        } else if (tilingViewActive) {
+            const biomeMap = this._buildBiomeTilingSourceMap({ bounds, biomeId: 'land' });
             if (biomeMap) sourceMaps.biome = biomeMap;
         } else {
             this._terrainBiomeSourceMap = null;
@@ -3554,9 +5489,15 @@ export class TerrainDebuggerView {
         const visualizationCfg = s.visualization && typeof s.visualization === 'object' ? s.visualization : {};
         const nextLandWireframe = !!visualizationCfg.landWireframe;
         const nextAsphaltWireframe = !!visualizationCfg.asphaltWireframe;
-        const nextTerrainViewMode = String(s.tab ?? '') === TERRAIN_VIEW_MODE.BIOME_TRANSITION
+        const tabId = String(s.tab ?? '');
+        const nextTerrainViewMode = tabId === TERRAIN_VIEW_MODE.BIOME_TRANSITION
             ? TERRAIN_VIEW_MODE.BIOME_TRANSITION
-            : TERRAIN_VIEW_MODE.DEFAULT;
+            : tabId === TERRAIN_VIEW_MODE.BIOME_TILING
+                ? TERRAIN_VIEW_MODE.BIOME_TILING
+                : TERRAIN_VIEW_MODE.DEFAULT;
+        if (nextTerrainViewMode !== TERRAIN_VIEW_MODE.BIOME_TILING) {
+            this._disableFlyoverDebug();
+        }
         if (nextTerrainViewMode !== this._terrainViewMode) {
             this._terrainViewMode = nextTerrainViewMode;
             this._terrainEngineMaskDirty = true;
@@ -3564,6 +5505,8 @@ export class TerrainDebuggerView {
             this._terrainDebugTexKey = '';
             this._terrainEngineCompareExport = null;
             this._terrainEngineCompareKey = '';
+            this._terrainBiomeSourceMap = null;
+            this._terrainBiomeSourceMapKey = '';
             rebuildTerrain = true;
         }
 
@@ -3587,6 +5530,19 @@ export class TerrainDebuggerView {
             this._biomeTransitionState = nextBiomeTransitionState;
         } else {
             this._biomeTransitionState = nextBiomeTransitionState;
+        }
+
+        const nextBiomeTilingState = this._sanitizeBiomeTilingState(terrainCfg.biomeTiling);
+        const prevBiomeTilingState = this._biomeTilingState ?? null;
+        const nextBiomeTilingStateKey = JSON.stringify(nextBiomeTilingState);
+        const prevBiomeTilingStateKey = JSON.stringify(prevBiomeTilingState ?? {});
+        if (nextBiomeTilingStateKey !== prevBiomeTilingStateKey) {
+            this._biomeTilingState = nextBiomeTilingState;
+            this._terrainBiomePbrKey = '';
+            this._terrainDebugTexKey = '';
+            this._terrainEngineMaskDirty = true;
+        } else {
+            this._biomeTilingState = nextBiomeTilingState;
         }
 
         const layoutCfg = terrainCfg.layout && typeof terrainCfg.layout === 'object' ? terrainCfg.layout : null;
@@ -3645,7 +5601,9 @@ export class TerrainDebuggerView {
             const transitionMode = TERRAIN_DEBUG_MODE_ALLOWED.has(transitionModeRaw) ? transitionModeRaw : 'transition_result';
             const nextMode = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TRANSITION
                 ? transitionMode
-                : standardMode;
+                : this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING
+                    ? 'standard'
+                    : standardMode;
             const prevMode = String(this._terrainDebugMode ?? 'standard');
             this._terrainDebugMode = nextMode;
 
@@ -3663,7 +5621,8 @@ export class TerrainDebuggerView {
         void this._applyIblState(s.ibl, { force: false });
 
         if (this._grassEngine) this._grassEngine.setConfig?.(s.grass);
-        const hideRoadAndGrass = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TRANSITION;
+        const hideRoadAndGrass = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TRANSITION
+            || this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING;
         if (this._roads?.group) this._roads.group.visible = !hideRoadAndGrass;
         if (this._grassEngine?.group) this._grassEngine.group.visible = !hideRoadAndGrass;
 
@@ -3674,6 +5633,8 @@ export class TerrainDebuggerView {
         } else {
             this._applyVisualizationToggles();
         }
+        this._syncBiomeTilingHref({ force: false });
+        this._syncBiomeTilingAxisHelper();
     }
 
     async _applyIblState(iblState, { force = false } = {}) {

@@ -1,3 +1,4 @@
+#DONE
 #Problem
 
 The current Terrain Debugger workflow does not have a dedicated setup mode for validating ground texture tiling quality and variation behavior on a large, uniform map. Biome Transition tools are focused on transitions, not on single-material tiling diagnostics.
@@ -27,3 +28,12 @@ Tasks:
 - Do not move to `prompts/archive/` automatically.
 - Completion is not enough to move a prompt; move to `prompts/archive/` only when explicitly requested by the user.
 - Provide a summary of the changes made in the AI document (very high level, one liner for each change)
+
+## Summary of changes
+- Added a new `Biome Tiling` Terrain Debugger tab with a focus-camera action, single PBR picker, and deterministic setup messaging.
+- Added tiling controls for distance-based near/far texture size blending (start/end range, optional blend-curve, blended/near/far debug views).
+- Added variation controls for anti-tiling and macro variation tuning dedicated to repetition diagnostics.
+- Added a dedicated `Biome Tiling` view mode in `TerrainDebuggerView` with deterministic `15 x 40` layout, uniform material binding, constant biome source map, and hidden road/grass overlays.
+- Updated terrain biome shader uniforms/logic so the tiling tab drives distance tiling behavior and variation effects directly in the rendered terrain.
+- Updated grass terrain specs to document the new biome tiling workflow and state contract.
+- Follow-up tuning updated the tiling map to `15 x 40`, added a second `1.8m` eye-height focus action, tightened distance slider ranges, and added near/far variation intensity controls.

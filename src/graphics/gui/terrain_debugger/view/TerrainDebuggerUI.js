@@ -44,6 +44,23 @@ function deepClone(obj) {
     return obj && typeof obj === 'object' ? JSON.parse(JSON.stringify(obj)) : obj;
 }
 
+function deepMerge(base, override) {
+    const baseObj = base && typeof base === 'object' ? base : {};
+    const overrideObj = override && typeof override === 'object' ? override : null;
+    if (!overrideObj) return deepClone(baseObj);
+
+    const out = {};
+    for (const [key, value] of Object.entries(baseObj)) out[key] = deepClone(value);
+    for (const [key, value] of Object.entries(overrideObj)) {
+        const prev = baseObj[key];
+        const next = value;
+        const bothObjects = prev && typeof prev === 'object' && !Array.isArray(prev)
+            && next && typeof next === 'object' && !Array.isArray(next);
+        out[key] = bothObjects ? deepMerge(prev, next) : deepClone(next);
+    }
+    return out;
+}
+
 const TERRAIN_BIOME_IDS = Object.freeze(['stone', 'grass', 'land']);
 const TERRAIN_HUMIDITY_SLOT_IDS = Object.freeze(['dry', 'neutral', 'wet']);
 
@@ -440,6 +457,7 @@ export class TerrainDebuggerUI {
         onResetCamera,
         onCameraPreset,
         onFocusBiomeTransition,
+        onFocusBiomeTiling,
         onToggleFlyover,
         onFlyoverLoopChange,
         onInspectGrass,
@@ -454,6 +472,7 @@ export class TerrainDebuggerUI {
         this._onResetCamera = typeof onResetCamera === 'function' ? onResetCamera : null;
         this._onCameraPreset = typeof onCameraPreset === 'function' ? onCameraPreset : null;
         this._onFocusBiomeTransition = typeof onFocusBiomeTransition === 'function' ? onFocusBiomeTransition : null;
+        this._onFocusBiomeTiling = typeof onFocusBiomeTiling === 'function' ? onFocusBiomeTiling : null;
         this._onToggleFlyover = typeof onToggleFlyover === 'function' ? onToggleFlyover : null;
         this._onFlyoverLoopChange = typeof onFlyoverLoopChange === 'function' ? onFlyoverLoopChange : null;
         this._onInspectGrass = typeof onInspectGrass === 'function' ? onInspectGrass : null;
@@ -507,7 +526,7 @@ export class TerrainDebuggerUI {
             }
         };
 
-        this._state = {
+        const baseState = {
             tab: 'environment',
             ibl: {
                 enabled: true,
@@ -558,11 +577,33 @@ export class TerrainDebuggerUI {
                     selectedPresetId: '',
                     catalog: [],
                     baselineProfiles: {}
+                },
+                biomeTiling: {
+                    materialId: '',
+                    distanceTiling: {
+                        enabled: true,
+                        nearScale: 1.0,
+                        farScale: 0.36,
+                        blendStartMeters: 40,
+                        blendEndMeters: 240,
+                        blendCurve: 1.0,
+                        debugView: 'blended'
+                    },
+                    variation: {
+                        antiTilingEnabled: true,
+                        antiTilingStrength: 0.45,
+                        antiTilingCellMeters: 2.0,
+                        macroVariationEnabled: true,
+                        macroVariationStrength: 0.16,
+                        macroVariationScale: 0.02,
+                        nearIntensity: 1.0,
+                        farIntensity: 0.65
+                    }
                 }
             },
             grass: createDefaultGrassEngineConfig(),
-            ...(initialState ?? {})
         };
+        this._state = deepMerge(baseState, initialState && typeof initialState === 'object' ? initialState : null);
 
         this.root = makeEl('div', 'ui-layer options-layer');
         this.root.id = 'ui-terrain-debugger';
@@ -580,6 +621,7 @@ export class TerrainDebuggerUI {
             environment: makeEl('button', 'options-tab', 'Environment'),
             terrain: makeEl('button', 'options-tab', 'Terrain'),
             biome_transition: makeEl('button', 'options-tab', 'Biome Transition'),
+            biome_tiling: makeEl('button', 'options-tab', 'Biome Tiling'),
             visualization: makeEl('button', 'options-tab', 'Visualization'),
             grass: makeEl('button', 'options-tab', 'Grass')
         };
@@ -594,12 +636,14 @@ export class TerrainDebuggerUI {
             environment: makeEl('div', null),
             terrain: makeEl('div', null),
             biome_transition: makeEl('div', null),
+            biome_tiling: makeEl('div', null),
             visualization: makeEl('div', null),
             grass: makeEl('div', null)
         };
         this.body.appendChild(this._tabBodies.environment);
         this.body.appendChild(this._tabBodies.terrain);
         this.body.appendChild(this._tabBodies.biome_transition);
+        this.body.appendChild(this._tabBodies.biome_tiling);
         this.body.appendChild(this._tabBodies.visualization);
         this.body.appendChild(this._tabBodies.grass);
 
@@ -614,6 +658,7 @@ export class TerrainDebuggerUI {
         this._buildEnvironmentTab();
         this._buildTerrainTab();
         this._buildBiomeTransitionTab();
+        this._buildBiomeTilingTab();
         this._buildVisualizationTab();
         this._buildGrassTab();
 
@@ -777,7 +822,7 @@ export class TerrainDebuggerUI {
     }
 
     setTab(key) {
-        const next = (key === 'terrain' || key === 'biome_transition' || key === 'grass' || key === 'visualization') ? key : 'environment';
+        const next = (key === 'terrain' || key === 'biome_transition' || key === 'biome_tiling' || key === 'grass' || key === 'visualization') ? key : 'environment';
         this._state.tab = next;
         for (const [id, btn] of Object.entries(this._tabButtons)) btn.classList.toggle('is-active', id === next);
         for (const [id, body] of Object.entries(this._tabBodies)) body.style.display = id === next ? '' : 'none';
@@ -853,6 +898,22 @@ export class TerrainDebuggerUI {
         }
             pointerDistanceLine.textContent = `${formatFixedWidthNumber(d, 9, 1)} m`;
         }
+
+    getOutputPanelViewportMetrics() {
+        const panel = this._outputPanel;
+        if (!panel?.getBoundingClientRect || typeof window === 'undefined') return null;
+        const rect = panel.getBoundingClientRect();
+        const width = Math.max(0, Number(rect.width) || 0);
+        const height = Math.max(0, Number(rect.height) || 0);
+        const bottomInset = Math.max(0, Number(window.innerHeight) - Number(rect.bottom));
+        return {
+            left: Number(rect.left) || 0,
+            top: Number(rect.top) || 0,
+            width,
+            height,
+            bottomInset
+        };
+    }
 
     setTerrainPbrLegend(entries = []) {
         const root = this._controls?.terrainPbrLegend ?? null;
@@ -2879,6 +2940,459 @@ export class TerrainDebuggerUI {
         };
 
         syncPairDependentUi();
+    }
+
+    _buildBiomeTilingTab() {
+        const terrain = this._state.terrain && typeof this._state.terrain === 'object' ? this._state.terrain : {};
+        this._state.terrain = terrain;
+        const bt = (terrain.biomeTiling && typeof terrain.biomeTiling === 'object') ? terrain.biomeTiling : {};
+        terrain.biomeTiling = bt;
+
+        const materialOptionsRaw = getPbrMaterialOptionsForGround();
+        const materialOptions = (Array.isArray(materialOptionsRaw) ? materialOptionsRaw : [])
+            .map((opt) => ({
+                id: String(opt?.id ?? ''),
+                label: String(opt?.label ?? opt?.id ?? ''),
+                previewUrl: String(opt?.previewUrl ?? '')
+            }))
+            .filter((opt) => !!opt.id);
+        const materialById = new Map(materialOptions.map((opt) => [opt.id, opt]));
+        const validMaterialIds = new Set(materialOptions.map((opt) => opt.id));
+        const defaultMaterialId = materialOptions[0]?.id ?? 'pbr.ground_037';
+        const normalizeMaterialId = (value, fallback) => {
+            const id = String(value ?? '').trim();
+            if (validMaterialIds.has(id)) return id;
+            if (validMaterialIds.has(String(fallback ?? ''))) return String(fallback);
+            return defaultMaterialId;
+        };
+
+        bt.materialId = normalizeMaterialId(bt.materialId, defaultMaterialId);
+        const distanceTiling = (bt.distanceTiling && typeof bt.distanceTiling === 'object') ? bt.distanceTiling : {};
+        distanceTiling.enabled = distanceTiling.enabled !== false;
+        distanceTiling.nearScale = clamp(distanceTiling.nearScale, 0.1, 6.0, 1.0);
+        distanceTiling.farScale = clamp(distanceTiling.farScale, 0.01, 2.0, 0.36);
+        distanceTiling.blendStartMeters = clamp(distanceTiling.blendStartMeters, 0.0, 500.0, 40.0);
+        distanceTiling.blendEndMeters = clamp(distanceTiling.blendEndMeters, 0.0, 2000.0, 240.0);
+        if (distanceTiling.blendEndMeters <= distanceTiling.blendStartMeters + 1.0) {
+            distanceTiling.blendEndMeters = Math.min(2000.0, distanceTiling.blendStartMeters + 1.0);
+        }
+        distanceTiling.blendCurve = clamp(distanceTiling.blendCurve, 0.35, 3.0, 1.0);
+        const rawDistanceDebug = String(distanceTiling.debugView ?? 'blended');
+        distanceTiling.debugView = rawDistanceDebug === 'near' || rawDistanceDebug === 'far' ? rawDistanceDebug : 'blended';
+        bt.distanceTiling = distanceTiling;
+
+        const variation = (bt.variation && typeof bt.variation === 'object') ? bt.variation : {};
+        variation.antiTilingEnabled = variation.antiTilingEnabled !== false;
+        variation.antiTilingStrength = clamp(variation.antiTilingStrength, 0.0, 2.0, 0.45);
+        variation.antiTilingCellMeters = clamp(variation.antiTilingCellMeters, 0.25, 12.0, 2.0);
+        variation.macroVariationEnabled = variation.macroVariationEnabled !== false;
+        variation.macroVariationStrength = clamp(variation.macroVariationStrength, 0.0, 0.8, 0.16);
+        variation.macroVariationScale = clamp(variation.macroVariationScale, 0.002, 0.2, 0.02);
+        variation.nearIntensity = clamp(variation.nearIntensity, 0.0, 2.0, 1.0);
+        variation.farIntensity = clamp(variation.farIntensity, 0.0, 2.0, 0.65);
+        bt.variation = variation;
+
+        const setSliderValue = (ctrl, value, digits = 2) => {
+            if (!ctrl?.range || !ctrl?.number) return;
+            const v = Number(value);
+            if (!Number.isFinite(v)) return;
+            ctrl.range.value = String(v);
+            ctrl.number.value = String(v.toFixed(digits));
+        };
+
+        const createMaterialPickerRow = ({ label, onPick }) => {
+            const row = makeEl('div', 'options-row');
+            const left = makeEl('div', 'options-row-label', label);
+            const right = makeEl('div', 'options-row-control');
+            const button = makeEl('button', 'options-btn');
+            button.type = 'button';
+            button.style.display = 'flex';
+            button.style.alignItems = 'center';
+            button.style.gap = '10px';
+            button.style.minWidth = '220px';
+            button.style.maxWidth = '100%';
+            button.style.textAlign = 'left';
+            button.addEventListener('click', () => onPick?.());
+
+            const thumb = makeEl('div', null);
+            thumb.style.width = '60px';
+            thumb.style.height = '40px';
+            thumb.style.borderRadius = '6px';
+            thumb.style.border = '1px solid rgba(0,0,0,0.35)';
+            thumb.style.overflow = 'hidden';
+            thumb.style.flex = '0 0 auto';
+
+            const text = makeEl('div', null, '');
+            text.style.fontSize = '11px';
+            text.style.opacity = '0.9';
+            text.style.wordBreak = 'break-word';
+            text.style.minWidth = '0';
+
+            button.appendChild(thumb);
+            button.appendChild(text);
+            right.appendChild(button);
+            row.appendChild(left);
+            row.appendChild(right);
+            return {
+                row,
+                setValue: ({ materialId, materialLabel, previewUrl }) => {
+                    thumb.textContent = '';
+                    const url = String(previewUrl ?? '').trim();
+                    if (url) {
+                        thumb.style.background = '';
+                        const img = document.createElement('img');
+                        img.src = url;
+                        img.alt = String(materialLabel ?? materialId ?? '');
+                        img.style.width = '100%';
+                        img.style.height = '100%';
+                        img.style.objectFit = 'cover';
+                        thumb.appendChild(img);
+                    } else {
+                        thumb.style.background = 'linear-gradient(135deg, #4e4e4e, #808080)';
+                    }
+                    text.textContent = String(materialLabel ?? materialId ?? '(none)');
+                }
+            };
+        };
+
+        const openMaterialPicker = () => {
+            const sections = getPbrMaterialClassSectionsForGround().map((section) => ({
+                label: section.label,
+                options: (section.options ?? []).map((opt) => ({
+                    id: String(opt?.id ?? ''),
+                    label: String(opt?.label ?? opt?.id ?? ''),
+                    kind: 'texture',
+                    previewUrl: opt?.previewUrl ?? null
+                })).filter((opt) => !!opt.id)
+            })).filter((section) => Array.isArray(section.options) && section.options.length > 0);
+            if (!sections.length) return;
+            this._pickerPopup?.open?.({
+                title: 'Biome Tiling Texture',
+                sections,
+                selectedId: bt.materialId,
+                onSelect: (opt) => {
+                    bt.materialId = normalizeMaterialId(opt?.id, defaultMaterialId);
+                    syncUi();
+                    this._emit();
+                }
+            });
+        };
+
+        const actionsSection = this._buildSection('biome_tiling', 'Quick Actions');
+        const focusButtonsRow = makeEl('div', null);
+        focusButtonsRow.style.display = 'grid';
+        focusButtonsRow.style.gridTemplateColumns = 'repeat(4, minmax(0, 1fr))';
+        focusButtonsRow.style.gap = '8px';
+
+        const focusOverviewBtn = makeEl('button', 'options-btn options-btn-primary', 'Focus Overview');
+        focusOverviewBtn.type = 'button';
+        focusOverviewBtn.addEventListener('click', () => this._onFocusBiomeTiling?.('overview'));
+
+        const focusEyeBtn = makeEl('button', 'options-btn options-btn-primary', 'Focus Eye 1.8m');
+        focusEyeBtn.type = 'button';
+        focusEyeBtn.addEventListener('click', () => this._onFocusBiomeTiling?.('eye_1p8'));
+
+        const flyoverBtn = makeEl('button', 'options-btn options-btn-primary', 'Flyover');
+        flyoverBtn.type = 'button';
+        flyoverBtn.addEventListener('click', () => this._onFocusBiomeTiling?.('flyover'));
+
+        const flyoverDebugBtn = makeEl('button', 'options-btn options-btn-primary', 'Flyover Debug');
+        flyoverDebugBtn.type = 'button';
+        flyoverDebugBtn.addEventListener('click', () => this._onFocusBiomeTiling?.('flyover_debug'));
+
+        focusButtonsRow.appendChild(focusOverviewBtn);
+        focusButtonsRow.appendChild(focusEyeBtn);
+        focusButtonsRow.appendChild(flyoverBtn);
+        focusButtonsRow.appendChild(flyoverDebugBtn);
+        actionsSection.appendChild(focusButtonsRow);
+
+        const textureSection = this._buildSection('biome_tiling', 'Single Texture');
+        textureSection.appendChild(makeEl('div', 'options-note', 'Selected PBR is applied to the entire map (all biomes and humidity slots).'));
+        const materialRow = createMaterialPickerRow({
+            label: 'PBR Texture',
+            onPick: () => openMaterialPicker()
+        });
+        textureSection.appendChild(materialRow.row);
+
+        const distanceSection = this._buildSection('biome_tiling', 'Texture Size by Distance');
+        distanceSection.appendChild(makeEl('div', 'options-note', 'Blends near/far texture size using camera distance. "Blend Curve" is optional and defaults to linear.'));
+        const distanceEnabledRow = makeToggleRow({
+            label: 'Enable Distance Blend',
+            value: distanceTiling.enabled,
+            onChange: (v) => {
+                distanceTiling.enabled = !!v;
+                syncUi();
+                this._emit();
+            }
+        });
+        distanceSection.appendChild(distanceEnabledRow.row);
+
+        const nearScaleRow = makeNumberSliderRow({
+            label: 'Near Size',
+            value: distanceTiling.nearScale,
+            min: 0.1,
+            max: 6.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                distanceTiling.nearScale = v;
+                this._emit();
+            }
+        });
+        distanceSection.appendChild(nearScaleRow.row);
+
+        const farScaleRow = makeNumberSliderRow({
+            label: 'Far Size',
+            value: distanceTiling.farScale,
+            min: 0.01,
+            max: 2.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                distanceTiling.farScale = v;
+                this._emit();
+            }
+        });
+        distanceSection.appendChild(farScaleRow.row);
+
+        const blendStartRow = makeNumberSliderRow({
+            label: 'Blend Start (m)',
+            value: distanceTiling.blendStartMeters,
+            min: 0.0,
+            max: 500.0,
+            step: 1.0,
+            digits: 0,
+            onChange: (v) => {
+                distanceTiling.blendStartMeters = v;
+                if (distanceTiling.blendEndMeters <= distanceTiling.blendStartMeters + 1.0) {
+                    distanceTiling.blendEndMeters = Math.min(2000.0, distanceTiling.blendStartMeters + 1.0);
+                    setSliderValue(blendEndRow, distanceTiling.blendEndMeters, 0);
+                }
+                this._emit();
+            }
+        });
+        distanceSection.appendChild(blendStartRow.row);
+
+        const blendEndRow = makeNumberSliderRow({
+            label: 'Blend End (m)',
+            value: distanceTiling.blendEndMeters,
+            min: 0.0,
+            max: 2000.0,
+            step: 1.0,
+            digits: 0,
+            onChange: (v) => {
+                distanceTiling.blendEndMeters = Math.min(2000.0, Math.max(v, distanceTiling.blendStartMeters + 1.0));
+                setSliderValue(blendEndRow, distanceTiling.blendEndMeters, 0);
+                this._emit();
+            }
+        });
+        distanceSection.appendChild(blendEndRow.row);
+
+        const blendCurveRow = makeNumberSliderRow({
+            label: 'Blend Curve',
+            value: distanceTiling.blendCurve,
+            min: 0.35,
+            max: 3.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                distanceTiling.blendCurve = v;
+                this._emit();
+            }
+        });
+        distanceSection.appendChild(blendCurveRow.row);
+
+        const debugViewRow = makeChoiceRow({
+            label: 'Distance Debug',
+            value: distanceTiling.debugView,
+            options: [
+                { id: 'blended', label: 'Blended' },
+                { id: 'near', label: 'Near Only' },
+                { id: 'far', label: 'Far Only' }
+            ],
+            onChange: (id) => {
+                distanceTiling.debugView = (id === 'near' || id === 'far') ? id : 'blended';
+                this._emit();
+            }
+        });
+        distanceSection.appendChild(debugViewRow.row);
+
+        const variationSection = this._buildSection('biome_tiling', 'Texture Variation');
+        variationSection.appendChild(makeEl('div', 'options-note', 'Use anti-tiling and macro variation to break visible repetition.'));
+        const antiEnabledRow = makeToggleRow({
+            label: 'Enable Anti-Tiling',
+            value: variation.antiTilingEnabled,
+            onChange: (v) => {
+                variation.antiTilingEnabled = !!v;
+                syncUi();
+                this._emit();
+            }
+        });
+        variationSection.appendChild(antiEnabledRow.row);
+
+        const antiStrengthRow = makeNumberSliderRow({
+            label: 'Anti Strength',
+            value: variation.antiTilingStrength,
+            min: 0.0,
+            max: 2.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                variation.antiTilingStrength = v;
+                this._emit();
+            }
+        });
+        variationSection.appendChild(antiStrengthRow.row);
+
+        const antiCellRow = makeNumberSliderRow({
+            label: 'Anti Cell (m)',
+            value: variation.antiTilingCellMeters,
+            min: 0.25,
+            max: 12.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                variation.antiTilingCellMeters = v;
+                this._emit();
+            }
+        });
+        variationSection.appendChild(antiCellRow.row);
+
+        const macroEnabledRow = makeToggleRow({
+            label: 'Enable Macro Variation',
+            value: variation.macroVariationEnabled,
+            onChange: (v) => {
+                variation.macroVariationEnabled = !!v;
+                syncUi();
+                this._emit();
+            }
+        });
+        variationSection.appendChild(macroEnabledRow.row);
+
+        const macroStrengthRow = makeNumberSliderRow({
+            label: 'Macro Strength',
+            value: variation.macroVariationStrength,
+            min: 0.0,
+            max: 0.8,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                variation.macroVariationStrength = v;
+                this._emit();
+            }
+        });
+        variationSection.appendChild(macroStrengthRow.row);
+
+        const macroScaleRow = makeNumberSliderRow({
+            label: 'Macro Scale',
+            value: variation.macroVariationScale,
+            min: 0.002,
+            max: 0.2,
+            step: 0.001,
+            digits: 3,
+            onChange: (v) => {
+                variation.macroVariationScale = v;
+                this._emit();
+            }
+        });
+        variationSection.appendChild(macroScaleRow.row);
+
+        const variationNearRow = makeNumberSliderRow({
+            label: 'Variation Near',
+            value: variation.nearIntensity,
+            min: 0.0,
+            max: 2.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                variation.nearIntensity = v;
+                this._emit();
+            }
+        });
+        variationSection.appendChild(variationNearRow.row);
+
+        const variationFarRow = makeNumberSliderRow({
+            label: 'Variation Far',
+            value: variation.farIntensity,
+            min: 0.0,
+            max: 2.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                variation.farIntensity = v;
+                this._emit();
+            }
+        });
+        variationSection.appendChild(variationFarRow.row);
+
+        const setDistanceControlsEnabled = (enabled) => {
+            const disabled = !enabled;
+            if (nearScaleRow.range) nearScaleRow.range.disabled = disabled;
+            if (nearScaleRow.number) nearScaleRow.number.disabled = disabled;
+            if (farScaleRow.range) farScaleRow.range.disabled = disabled;
+            if (farScaleRow.number) farScaleRow.number.disabled = disabled;
+            if (blendStartRow.range) blendStartRow.range.disabled = disabled;
+            if (blendStartRow.number) blendStartRow.number.disabled = disabled;
+            if (blendEndRow.range) blendEndRow.range.disabled = disabled;
+            if (blendEndRow.number) blendEndRow.number.disabled = disabled;
+            if (blendCurveRow.range) blendCurveRow.range.disabled = disabled;
+            if (blendCurveRow.number) blendCurveRow.number.disabled = disabled;
+            debugViewRow.setDisabled(disabled);
+        };
+
+        const setVariationControlsEnabled = ({ antiEnabled, macroEnabled }) => {
+            const antiDisabled = !antiEnabled;
+            if (antiStrengthRow.range) antiStrengthRow.range.disabled = antiDisabled;
+            if (antiStrengthRow.number) antiStrengthRow.number.disabled = antiDisabled;
+            if (antiCellRow.range) antiCellRow.range.disabled = antiDisabled;
+            if (antiCellRow.number) antiCellRow.number.disabled = antiDisabled;
+
+            const macroDisabled = !macroEnabled;
+            if (macroStrengthRow.range) macroStrengthRow.range.disabled = macroDisabled;
+            if (macroStrengthRow.number) macroStrengthRow.number.disabled = macroDisabled;
+            if (macroScaleRow.range) macroScaleRow.range.disabled = macroDisabled;
+            if (macroScaleRow.number) macroScaleRow.number.disabled = macroDisabled;
+
+            const intensityDisabled = !(antiEnabled || macroEnabled);
+            if (variationNearRow.range) variationNearRow.range.disabled = intensityDisabled;
+            if (variationNearRow.number) variationNearRow.number.disabled = intensityDisabled;
+            if (variationFarRow.range) variationFarRow.range.disabled = intensityDisabled;
+            if (variationFarRow.number) variationFarRow.number.disabled = intensityDisabled;
+        };
+
+        const syncUi = () => {
+            bt.materialId = normalizeMaterialId(bt.materialId, defaultMaterialId);
+            const meta = materialById.get(bt.materialId) ?? null;
+            materialRow.setValue({
+                materialId: bt.materialId,
+                materialLabel: meta?.label ?? bt.materialId,
+                previewUrl: meta?.previewUrl ?? ''
+            });
+
+            distanceEnabledRow.toggle.checked = distanceTiling.enabled;
+            setSliderValue(nearScaleRow, distanceTiling.nearScale, 2);
+            setSliderValue(farScaleRow, distanceTiling.farScale, 2);
+            setSliderValue(blendStartRow, distanceTiling.blendStartMeters, 0);
+            setSliderValue(blendEndRow, distanceTiling.blendEndMeters, 0);
+            setSliderValue(blendCurveRow, distanceTiling.blendCurve, 2);
+            debugViewRow.setValue(distanceTiling.debugView);
+            setDistanceControlsEnabled(distanceTiling.enabled);
+
+            antiEnabledRow.toggle.checked = variation.antiTilingEnabled;
+            setSliderValue(antiStrengthRow, variation.antiTilingStrength, 2);
+            setSliderValue(antiCellRow, variation.antiTilingCellMeters, 2);
+            macroEnabledRow.toggle.checked = variation.macroVariationEnabled;
+            setSliderValue(macroStrengthRow, variation.macroVariationStrength, 2);
+            setSliderValue(macroScaleRow, variation.macroVariationScale, 3);
+            setSliderValue(variationNearRow, variation.nearIntensity, 2);
+            setSliderValue(variationFarRow, variation.farIntensity, 2);
+            setVariationControlsEnabled({
+                antiEnabled: variation.antiTilingEnabled,
+                macroEnabled: variation.macroVariationEnabled
+            });
+        };
+
+        syncUi();
     }
 
     _buildTerrainTabLegacy() {
