@@ -16,7 +16,6 @@ export class MaterialCalibrationState {
         this._uiBound = false;
         this._prevSunBloomSettings = null;
         this._prevColorGradingSettings = null;
-        this._prevLightingSettings = null;
     }
 
     enter() {
@@ -34,12 +33,6 @@ export class MaterialCalibrationState {
             ? JSON.parse(JSON.stringify(grading))
             : null;
         this.engine?.setColorGradingSettings?.({ ...(this._prevColorGradingSettings ?? {}), intensity: 0 });
-
-        // Store lighting settings so presets don't leak out of this tool.
-        const lighting = this.engine?.lightingSettings ?? null;
-        this._prevLightingSettings = lighting && typeof lighting === 'object'
-            ? JSON.parse(JSON.stringify(lighting))
-            : null;
 
         const appCanvas = document.getElementById('game-canvas');
         this._uiBound = !!(appCanvas && this.engine?.canvas === appCanvas);
@@ -65,12 +58,7 @@ export class MaterialCalibrationState {
         this.view?.exit();
         this.view = null;
 
-        if (this._prevLightingSettings && this.engine?.setLightingSettings) {
-            this.engine.setLightingSettings(this._prevLightingSettings);
-        } else {
-            this.engine?.reloadLightingSettings?.();
-        }
-        this._prevLightingSettings = null;
+        this.engine?.reloadLightingSettings?.();
 
         if (this._prevSunBloomSettings && this.engine?.setSunBloomSettings) {
             this.engine.setSunBloomSettings(this._prevSunBloomSettings);
@@ -94,4 +82,3 @@ export class MaterialCalibrationState {
         this.view?.update(dt);
     }
 }
-

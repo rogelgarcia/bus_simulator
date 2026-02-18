@@ -85,6 +85,19 @@
     user-select: none;
 }
 
+.material-calibration-illumination-status {
+    font-weight: 700;
+    margin-top: 8px;
+}
+
+.material-calibration-illumination-status.is-preset {
+    color: rgba(255, 241, 166, 0.95);
+}
+
+.material-calibration-illumination-status.is-warning {
+    color: rgba(255, 183, 158, 0.96);
+}
+
 .material-calibration-grid {
     flex: 1 1 auto;
     overflow: auto;
@@ -331,4 +344,3 @@
     text-shadow: 0 2px 10px rgba(0,0,0,0.75);
     white-space: nowrap;
 }
-

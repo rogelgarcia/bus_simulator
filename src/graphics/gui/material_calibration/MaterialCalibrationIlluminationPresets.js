@@ -1,13 +1,16 @@
 // src/graphics/gui/material_calibration/MaterialCalibrationIlluminationPresets.js
 // Stable, deterministic illumination presets for the Material Calibration tool.
 
+export const MATERIAL_CALIBRATION_ILLUMINATION_DEFAULT_ID = '';
+
 export const MATERIAL_CALIBRATION_ILLUMINATION_PRESETS = Object.freeze([
     Object.freeze({
         id: 'neutral',
         label: 'Neutral (IBL)',
         description: 'Soft, low-contrast baseline for side-by-side comparisons.',
-        engineLighting: Object.freeze({
+        lightingSnapshot: Object.freeze({
             exposure: 1.05,
+            toneMapping: 'aces',
             hemiIntensity: 0.9,
             sunIntensity: 0.75,
             ibl: Object.freeze({ enabled: true, envMapIntensity: 0.28, setBackground: false })
@@ -27,8 +30,9 @@ export const MATERIAL_CALIBRATION_ILLUMINATION_PRESETS = Object.freeze([
         id: 'overcast',
         label: 'Overcast (Soft)',
         description: 'Reduced directional contrast with slightly higher exposure.',
-        engineLighting: Object.freeze({
+        lightingSnapshot: Object.freeze({
             exposure: 1.18,
+            toneMapping: 'aces',
             hemiIntensity: 1.05,
             sunIntensity: 0.45,
             ibl: Object.freeze({ enabled: true, envMapIntensity: 0.24, setBackground: false })
@@ -48,8 +52,9 @@ export const MATERIAL_CALIBRATION_ILLUMINATION_PRESETS = Object.freeze([
         id: 'sunny',
         label: 'Sunny (Hard)',
         description: 'Harder directional lighting for specular/roughness checks.',
-        engineLighting: Object.freeze({
+        lightingSnapshot: Object.freeze({
             exposure: 0.98,
+            toneMapping: 'aces',
             hemiIntensity: 0.75,
             sunIntensity: 1.65,
             ibl: Object.freeze({ enabled: true, envMapIntensity: 0.18, setBackground: false })
@@ -67,12 +72,32 @@ export const MATERIAL_CALIBRATION_ILLUMINATION_PRESETS = Object.freeze([
     })
 ]);
 
-export function getMaterialCalibrationIlluminationPresetById(presetId) {
+export function isMaterialCalibrationLightingSnapshotComplete(snapshot) {
+    const src = snapshot && typeof snapshot === 'object' ? snapshot : null;
+    if (!src) return false;
+    const ibl = src.ibl && typeof src.ibl === 'object' ? src.ibl : null;
+    if (!ibl) return false;
+
+    return Number.isFinite(Number(src.exposure))
+        && typeof src.toneMapping === 'string'
+        && Number.isFinite(Number(src.hemiIntensity))
+        && Number.isFinite(Number(src.sunIntensity))
+        && ibl.enabled !== undefined
+        && Number.isFinite(Number(ibl.envMapIntensity))
+        && ibl.setBackground !== undefined;
+}
+
+export function getMaterialCalibrationIlluminationPresetById(presetId, { fallbackToFirst = true } = {}) {
     const id = typeof presetId === 'string' ? presetId : '';
-    return MATERIAL_CALIBRATION_ILLUMINATION_PRESETS.find((p) => p.id === id) ?? MATERIAL_CALIBRATION_ILLUMINATION_PRESETS[0] ?? null;
+    const found = MATERIAL_CALIBRATION_ILLUMINATION_PRESETS.find((p) => p.id === id) ?? null;
+    if (found) return found;
+    return fallbackToFirst ? (MATERIAL_CALIBRATION_ILLUMINATION_PRESETS[0] ?? null) : null;
 }
 
-export function getMaterialCalibrationIlluminationPresetOptions() {
-    return MATERIAL_CALIBRATION_ILLUMINATION_PRESETS.map((p) => ({ id: p.id, label: p.label }));
+export function getMaterialCalibrationIlluminationPresetOptions({ includeDefault = false } = {}) {
+    const opts = MATERIAL_CALIBRATION_ILLUMINATION_PRESETS.map((p) => ({ id: p.id, label: p.label }));
+    if (includeDefault) {
+        return [{ id: MATERIAL_CALIBRATION_ILLUMINATION_DEFAULT_ID, label: 'User mode' }, ...opts];
+    }
+    return opts;
 }
-

@@ -146,7 +146,7 @@ function readStoredState() {
     try {
         const parsed = JSON.parse(raw);
         const selectedClassId = sanitizeClassId(parsed?.selectedClassId, { fallback: null });
-        const illuminationPresetId = typeof parsed?.illuminationPresetId === 'string' ? parsed.illuminationPresetId : null;
+        const illuminationPresetId = typeof parsed?.illuminationPresetId === 'string' ? parsed.illuminationPresetId.trim() : '';
         const layoutMode = sanitizeLayoutMode(parsed?.layoutMode);
         const tilingMode = sanitizeTilingMode(parsed?.tilingMode);
         const activeSlotIndex = sanitizeSlotIndex(parsed?.activeSlotIndex) ?? 0;
@@ -212,7 +212,7 @@ export class MaterialCalibrationView {
 
         this._state = {
             selectedClassId,
-            illuminationPresetId: stored?.illuminationPresetId ?? 'neutral',
+            illuminationPresetId: stored?.illuminationPresetId ?? '',
             layoutMode: stored?.layoutMode ?? 'full',
             tilingMode: stored?.tilingMode ?? 'default',
             activeSlotIndex: stored?.activeSlotIndex ?? 0,
@@ -222,6 +222,7 @@ export class MaterialCalibrationView {
                 ? { ...stored.overridesByMaterialId }
                 : {}
         };
+        this._lastIlluminationStatus = null;
 
         this._materialOptions = getPbrMaterialOptions()
             .filter((opt) => !!opt?.id)
@@ -353,15 +354,21 @@ export class MaterialCalibrationView {
     _syncUiStatic() {
         this.ui.setClassOptions(getPbrMaterialClassOptions());
         this.ui.setMaterialOptions(this._materialOptions);
-        this.ui.setIlluminationPresetOptions(getMaterialCalibrationIlluminationPresetOptions());
+        this.ui.setIlluminationPresetOptions(getMaterialCalibrationIlluminationPresetOptions({ includeDefault: true }));
     }
 
     _syncSceneFromState({ keepCamera = true } = {}) {
         const state = this._state;
+        let correctedInvalidPreset = false;
         this.scene.setLayoutMode(state.layoutMode);
         this.scene.setTilingMultiplier(state.tilingMode === '2x2' ? 2.0 : 1.0);
         this.scene.setActiveSlotIndex(state.activeSlotIndex);
-        this.scene.applyIlluminationPreset(state.illuminationPresetId);
+        this._lastIlluminationStatus = this.scene.applyIlluminationPreset(state.illuminationPresetId);
+        const reason = this._lastIlluminationStatus?.reason ?? null;
+        if (state.illuminationPresetId && (reason === 'missing_preset' || reason === 'incomplete_preset')) {
+            state.illuminationPresetId = '';
+            correctedInvalidPreset = true;
+        }
 
         for (let i = 0; i < 3; i++) {
             const id = sanitizeMaterialId(state.slotMaterialIds[i]);
@@ -370,6 +377,7 @@ export class MaterialCalibrationView {
         }
 
         if (!keepCamera) this.scene.focusSlot(state.activeSlotIndex, { keepOrbit: false, immediate: true });
+        if (correctedInvalidPreset) this._persist();
     }
 
     _syncUiFromState() {
@@ -379,6 +387,7 @@ export class MaterialCalibrationView {
         this.ui.setLayoutMode(state.layoutMode);
         this.ui.setTilingMode(state.tilingMode);
         this.ui.setIlluminationPresetId(state.illuminationPresetId);
+        this.ui.setIlluminationStatus(this._lastIlluminationStatus ?? { mode: 'default', reason: null });
         this.ui.setSelectedMaterials({
             slotMaterialIds: state.slotMaterialIds.slice(0, 3),
             activeSlotIndex: state.activeSlotIndex,
@@ -473,10 +482,13 @@ export class MaterialCalibrationView {
     }
 
     _setIlluminationPreset(presetId) {
-        const preset = getMaterialCalibrationIlluminationPresetById(presetId);
-        if (!preset) return;
-        if (preset.id === this._state.illuminationPresetId) return;
-        this._state.illuminationPresetId = preset.id;
+        const id = typeof presetId === 'string' ? presetId.trim() : '';
+        if (id === this._state.illuminationPresetId) return;
+        if (id) {
+            const preset = getMaterialCalibrationIlluminationPresetById(id, { fallbackToFirst: false });
+            if (!preset) return;
+        }
+        this._state.illuminationPresetId = id;
         this._applyStateToSceneAndUi({ keepCamera: true });
     }
 

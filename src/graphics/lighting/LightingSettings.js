@@ -1,5 +1,5 @@
 // src/graphics/lighting/LightingSettings.js
-// Persisted global lighting settings (IBL + tone mapping + exposure + common light intensities).
+// Global lighting resolution (L1 defaults + L2 persisted overrides + optional calibration snapshot replacement).
 
 import { getIBLConfig, IBL_DEFAULTS } from '../content3d/lighting/IBLConfig.js';
 
@@ -38,6 +38,10 @@ export const LIGHTING_DEFAULTS = Object.freeze({
 });
 
 export const LIGHTING_TONE_MAPPING_MODES = Object.freeze(['aces', 'agx', 'neutral']);
+export const LIGHTING_RESOLUTION_MODES = Object.freeze({
+    DEFAULT: 'default',
+    CALIBRATION_PRESET: 'calibration_preset'
+});
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -83,6 +87,26 @@ export function sanitizeLightingSettings(input) {
             setBackground: ibl.setBackground !== undefined ? !!ibl.setBackground : LIGHTING_DEFAULTS.ibl.setBackground
         }
     };
+}
+
+export function isCompleteLightingSnapshot(input) {
+    const src = input && typeof input === 'object' ? input : null;
+    if (!src) return false;
+    const ibl = src.ibl && typeof src.ibl === 'object' ? src.ibl : null;
+    if (!ibl) return false;
+
+    return Number.isFinite(Number(src.exposure))
+        && typeof src.toneMapping === 'string'
+        && Number.isFinite(Number(src.hemiIntensity))
+        && Number.isFinite(Number(src.sunIntensity))
+        && ibl.enabled !== undefined
+        && Number.isFinite(Number(ibl.envMapIntensity))
+        && ibl.setBackground !== undefined;
+}
+
+export function resolveCalibrationReplacementLightingSettings(snapshot) {
+    if (!isCompleteLightingSnapshot(snapshot)) return null;
+    return sanitizeLightingSettings(snapshot);
 }
 
 export function loadSavedLightingSettings() {
@@ -145,16 +169,30 @@ export function clearSavedLightingSettings() {
     }
 }
 
-export function getResolvedLightingSettings({ includeUrlOverrides = true } = {}) {
+function resolveLayeredDefaultLightingSettings() {
     const saved = loadSavedLightingSettings();
-    const merged = sanitizeLightingSettings({ ...LIGHTING_DEFAULTS, ...(saved ?? {}) });
+    return sanitizeLightingSettings({ ...LIGHTING_DEFAULTS, ...(saved ?? {}) });
+}
+
+export function getResolvedLightingSettings({
+    includeUrlOverrides = true,
+    resolutionMode = LIGHTING_RESOLUTION_MODES.DEFAULT,
+    calibrationSnapshot = null
+} = {}) {
+    const wantsCalibrationPreset = resolutionMode === LIGHTING_RESOLUTION_MODES.CALIBRATION_PRESET;
+    const replacement = wantsCalibrationPreset
+        ? resolveCalibrationReplacementLightingSettings(calibrationSnapshot)
+        : null;
+
+    const merged = replacement ?? resolveLayeredDefaultLightingSettings();
+    const useUrlOverrides = !!includeUrlOverrides && !replacement;
 
     let exposure = merged.exposure;
     let toneMapping = merged.toneMapping;
     let hemiIntensity = merged.hemiIntensity;
     let sunIntensity = merged.sunIntensity;
 
-    if (includeUrlOverrides && typeof window !== 'undefined') {
+    if (useUrlOverrides && typeof window !== 'undefined') {
         const params = new URLSearchParams(window.location.search);
         exposure = readUrlParamNumber(params, 'exposure', exposure, { min: 0.1, max: 5 });
         toneMapping = sanitizeToneMappingMode(params.get('toneMapping'), toneMapping);
@@ -165,7 +203,7 @@ export function getResolvedLightingSettings({ includeUrlOverrides = true } = {})
         merged.ibl.setBackground = legacyBg;
     }
 
-    const ibl = getIBLConfig(merged.ibl, { includeUrlOverrides });
+    const ibl = getIBLConfig(merged.ibl, { includeUrlOverrides: useUrlOverrides });
 
     return {
         exposure,
@@ -174,6 +212,24 @@ export function getResolvedLightingSettings({ includeUrlOverrides = true } = {})
         sunIntensity,
         ibl
     };
+}
+
+export function getResolvedDefaultLightingSettings({ includeUrlOverrides = true } = {}) {
+    return getResolvedLightingSettings({
+        includeUrlOverrides,
+        resolutionMode: LIGHTING_RESOLUTION_MODES.DEFAULT
+    });
+}
+
+export function getResolvedCalibrationPresetLightingSettings({
+    calibrationSnapshot = null,
+    includeUrlOverrides = false
+} = {}) {
+    return getResolvedLightingSettings({
+        includeUrlOverrides,
+        resolutionMode: LIGHTING_RESOLUTION_MODES.CALIBRATION_PRESET,
+        calibrationSnapshot
+    });
 }
 
 export function getDefaultResolvedLightingSettings() {

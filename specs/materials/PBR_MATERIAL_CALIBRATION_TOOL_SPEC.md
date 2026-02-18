@@ -49,21 +49,26 @@ The tool is a state-machine scene:
 - “Focus camera” actions must preserve the current orbit angle/distance style:
   - focusing another slot translates the camera target only (no angle drift)
 
-### 3.4 Illumination stability
+### 3.4 Illumination stability and global resolver contract
 
-Illumination presets must be:
-- deterministic (same preset id → same numeric settings)
-- stable across slot focus changes (no “lighting changes per sample”)
-- restored on exit (presets must not leak into other states)
+Lighting uses one shared global resolver with two explicit paths:
+- Default path (`L1 + L2`) for every screen:
+  - `L1`: code defaults (`LIGHTING_DEFAULTS`)
+  - `L2`: persisted browser overrides (`bus_sim.lighting.v1`)
+- Calibration path (Material Calibration only):
+  - when a preset is selected, a complete preset snapshot replaces the default merged path
+  - replacement is full snapshot semantics (not shallow merge)
 
-First-pass presets:
+Calibration behavior requirements:
+- deterministic (same preset id -> same numeric settings)
+- stable across slot focus changes (no per-sample lighting drift)
+- missing/invalid/incomplete preset snapshot must fall back to default path and surface a UI warning state
+- exiting calibration must reload default global resolver settings so calibration preset mode never leaks to other states
+
+First-pass calibration presets:
 - `neutral` — soft baseline (IBL-enabled)
 - `overcast` — softer directional contrast
 - `sunny` — harder directional contrast for spec/roughness checks
-
-Notes:
-- Presets may adjust exposure, IBL intensity, hemisphere intensity, and sun direction/intensity.
-- IBL background must remain consistent (tool may use a solid background while keeping IBL environment).
 
 ---
 
@@ -86,8 +91,15 @@ Notes:
   - Tiling mode selector (Default vs 2×2 multiplier)
   - Layout mode selector
 - **Illumination** panel:
-  - Preset selector
+  - Preset selector, including `Default (Global)` mode
   - Short preset description
+  - Explicit mode status label:
+    - default mode active (`L1 + L2`)
+    - preset mode active (full replacement)
+    - warning when falling back from missing/incomplete preset
+  - Reset actions:
+    - `Use default lighting` (clear active preset mode and return to merged default path)
+    - `Reset saved defaults` (clear browser overrides in `bus_sim.lighting.v1`)
 
 ### 4.3 Center overlay tools
 
@@ -108,7 +120,7 @@ Notes:
 
 ---
 
-## 5. Storage / persistence (Phase 2 first pass)
+## 5. Storage / persistence
 
 The calibration tool persists **tool state** and **per-material overrides** in `localStorage`:
 
@@ -128,4 +140,9 @@ Rules:
 - Overrides should be stored as a minimal diff from defaults when possible.
 - The tool may apply overrides only within the calibration scene in Phase 2.
   - Exporting overrides back into catalog config modules is a later phase.
+- `illuminationPresetId` may be empty (`''`) to represent global default lighting mode.
 
+Global lighting persistence (shared across screens):
+- Key: `bus_sim.lighting.v1`
+- Stores user/browser overrides (`L2`) over code defaults (`L1`).
+- Clearing this key resets default mode to pure code defaults.

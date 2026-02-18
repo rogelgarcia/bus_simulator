@@ -6,7 +6,8 @@ import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { createToolCameraController } from '../../engine3d/camera/ToolCameraPrefab.js';
 import { getPbrMaterialTileMeters, resolvePbrMaterialUrls } from '../../content3d/catalogs/PbrMaterialCatalog.js';
-import { getMaterialCalibrationIlluminationPresetById } from './MaterialCalibrationIlluminationPresets.js';
+import { getResolvedCalibrationPresetLightingSettings, getResolvedDefaultLightingSettings, LIGHTING_RESOLUTION_MODES } from '../../lighting/LightingSettings.js';
+import { getMaterialCalibrationIlluminationPresetById, isMaterialCalibrationLightingSnapshotComplete } from './MaterialCalibrationIlluminationPresets.js';
 
 const EPS = 1e-6;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -28,6 +29,16 @@ const BACKGROUND_FALLBACK = 0x858585;
 const RULER_LINE_COLOR = 0xfff1a6;
 const RULER_LINEWIDTH = 3;
 const RULER_LINE_OPACITY = 0.92;
+const DEFAULT_SCENE_ILLUMINATION = Object.freeze({
+    backgroundColorHex: BACKGROUND_FALLBACK,
+    hemi: Object.freeze({ intensity: 0.95 }),
+    sun: Object.freeze({
+        enabled: true,
+        intensity: 1.0,
+        colorHex: 0xffffff,
+        position: Object.freeze({ x: 4, y: 7, z: 4 })
+    })
+});
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -423,45 +434,68 @@ export class MaterialCalibrationScene {
     }
 
     applyIlluminationPreset(presetId) {
-        const preset = getMaterialCalibrationIlluminationPresetById(presetId);
-        if (!preset) return false;
+        const requestedId = typeof presetId === 'string' ? presetId.trim() : '';
+        const preset = requestedId
+            ? getMaterialCalibrationIlluminationPresetById(requestedId, { fallbackToFirst: false })
+            : null;
+        const snapshot = preset?.lightingSnapshot ?? null;
 
-        const bg = Number(preset.scene?.backgroundColorHex);
+        const missingPreset = !!requestedId && !preset;
+        const incompletePreset = !!preset && !isMaterialCalibrationLightingSnapshotComplete(snapshot);
+        const usePreset = !!preset && !incompletePreset;
+
+        if (usePreset) {
+            this._applySceneIllumination(preset.scene);
+            const resolved = getResolvedCalibrationPresetLightingSettings({
+                calibrationSnapshot: snapshot,
+                includeUrlOverrides: false
+            });
+            this.engine?.setLightingSettings?.(resolved);
+            return {
+                mode: LIGHTING_RESOLUTION_MODES.CALIBRATION_PRESET,
+                presetId: preset.id,
+                reason: null
+            };
+        }
+
+        this._applySceneIllumination(DEFAULT_SCENE_ILLUMINATION);
+        this.engine?.setLightingSettings?.(getResolvedDefaultLightingSettings({ includeUrlOverrides: true }));
+        return {
+            mode: LIGHTING_RESOLUTION_MODES.DEFAULT,
+            presetId: null,
+            reason: missingPreset ? 'missing_preset' : (incompletePreset ? 'incomplete_preset' : null)
+        };
+    }
+
+    _applySceneIllumination(sceneLighting) {
+        const scenePreset = sceneLighting && typeof sceneLighting === 'object'
+            ? sceneLighting
+            : DEFAULT_SCENE_ILLUMINATION;
+
+        const bg = Number(scenePreset.backgroundColorHex);
         if (Number.isFinite(bg)) {
             this._backgroundColor.setHex(bg >>> 0);
             this.scene.background = this._backgroundColor;
             this.engine?.renderer?.setClearColor?.(this._backgroundColor, 1);
         }
 
-        const hemiIntensity = Number(preset.scene?.hemi?.intensity);
+        const hemiIntensity = Number(scenePreset.hemi?.intensity);
         if (this.hemi && Number.isFinite(hemiIntensity)) this.hemi.intensity = clamp(hemiIntensity, 0, 5);
 
-        const sunEnabled = preset.scene?.sun?.enabled !== false;
-        const sunIntensity = Number(preset.scene?.sun?.intensity);
-        const sunColorHex = Number(preset.scene?.sun?.colorHex);
-        const sunPos = preset.scene?.sun?.position ?? null;
-        if (this.sun) {
-            this.sun.visible = !!sunEnabled;
-            if (Number.isFinite(sunIntensity)) this.sun.intensity = clamp(sunIntensity, 0, 10);
-            if (Number.isFinite(sunColorHex)) this.sun.color.setHex(sunColorHex >>> 0);
-            const x = Number(sunPos?.x);
-            const y = Number(sunPos?.y);
-            const z = Number(sunPos?.z);
-            if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) this.sun.position.set(x, y, z);
-            if (this.sun.target) this.sun.target.position.set(0, 0.9, 0);
-        }
+        const sunEnabled = scenePreset.sun?.enabled !== false;
+        const sunIntensity = Number(scenePreset.sun?.intensity);
+        const sunColorHex = Number(scenePreset.sun?.colorHex);
+        const sunPos = scenePreset.sun?.position ?? null;
+        if (!this.sun) return;
 
-        const engineLighting = preset.engineLighting ?? null;
-        if (engineLighting && this.engine?.setLightingSettings) {
-            this.engine.setLightingSettings({
-                exposure: engineLighting.exposure,
-                hemiIntensity: engineLighting.hemiIntensity,
-                sunIntensity: engineLighting.sunIntensity,
-                ibl: engineLighting.ibl ?? null
-            });
-        }
-
-        return true;
+        this.sun.visible = !!sunEnabled;
+        if (Number.isFinite(sunIntensity)) this.sun.intensity = clamp(sunIntensity, 0, 10);
+        if (Number.isFinite(sunColorHex)) this.sun.color.setHex(sunColorHex >>> 0);
+        const x = Number(sunPos?.x);
+        const y = Number(sunPos?.y);
+        const z = Number(sunPos?.z);
+        if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) this.sun.position.set(x, y, z);
+        if (this.sun.target) this.sun.target.position.set(0, 0.9, 0);
     }
 
     setSlotMaterial(slotIndex, materialId, { overrides = null } = {}) {
@@ -792,4 +826,3 @@ export class MaterialCalibrationScene {
         }
     }
 }
-

@@ -28,9 +28,10 @@ function setSelectOptions(select, options, { placeholder = null } = {}) {
     }
 
     for (const option of Array.isArray(options) ? options : []) {
-        const id = toId(option?.id);
+        const rawId = option?.id;
+        const id = toId(rawId);
         const label = String(option?.label ?? id);
-        if (!id) continue;
+        if (!id && rawId !== '') continue;
         const opt = document.createElement('option');
         opt.value = id;
         opt.textContent = label;
@@ -247,7 +248,7 @@ export class MaterialCalibrationUI {
         illumLabel.textContent = 'Preset';
         this.illuminationSelect = document.createElement('select');
         this.illuminationSelect.className = 'material-calibration-select';
-        setSelectOptions(this.illuminationSelect, getMaterialCalibrationIlluminationPresetOptions());
+        setSelectOptions(this.illuminationSelect, getMaterialCalibrationIlluminationPresetOptions({ includeDefault: true }));
         illumRow.appendChild(illumLabel);
         illumRow.appendChild(this.illuminationSelect);
 
@@ -255,9 +256,14 @@ export class MaterialCalibrationUI {
         this.illuminationDesc.className = 'material-calibration-hint';
         this.illuminationDesc.textContent = '';
 
+        this.illuminationStatus = document.createElement('div');
+        this.illuminationStatus.className = 'material-calibration-hint material-calibration-illumination-status';
+        this.illuminationStatus.textContent = 'Default mode active';
+
         this.illuminationPanel.appendChild(illuminationTitle);
         this.illuminationPanel.appendChild(illumRow);
         this.illuminationPanel.appendChild(this.illuminationDesc);
+        this.illuminationPanel.appendChild(this.illuminationStatus);
 
         this.leftDock.appendChild(this.optionsPanel);
         this.leftDock.appendChild(this.illuminationPanel);
@@ -505,7 +511,7 @@ export class MaterialCalibrationUI {
     }
 
     setIlluminationPresetOptions(options) {
-        const opts = Array.isArray(options) ? options : getMaterialCalibrationIlluminationPresetOptions();
+        const opts = Array.isArray(options) ? options : getMaterialCalibrationIlluminationPresetOptions({ includeDefault: true });
         setSelectOptions(this.illuminationSelect, opts);
     }
 
@@ -527,8 +533,39 @@ export class MaterialCalibrationUI {
     setIlluminationPresetId(presetId) {
         const id = toId(presetId);
         if (this.illuminationSelect) this.illuminationSelect.value = id;
-        const preset = getMaterialCalibrationIlluminationPresetById(id);
-        this.illuminationDesc.textContent = preset?.description ?? '';
+        if (!id) {
+            this.illuminationDesc.textContent = 'User mode: global resolver (L1 defaults + L2 saved browser overrides).';
+            return;
+        }
+        const preset = getMaterialCalibrationIlluminationPresetById(id, { fallbackToFirst: false });
+        this.illuminationDesc.textContent = preset?.description ?? 'Preset unavailable; default mode is in use.';
+    }
+
+    setIlluminationStatus({ mode = 'default', reason = null } = {}) {
+        if (!this.illuminationStatus) return;
+
+        this.illuminationStatus.classList.remove('is-preset');
+        this.illuminationStatus.classList.remove('is-warning');
+
+        if (mode === 'calibration_preset') {
+            this.illuminationStatus.classList.add('is-preset');
+            this.illuminationStatus.textContent = 'Preset mode active (full replacement snapshot).';
+            return;
+        }
+
+        if (reason === 'missing_preset') {
+            this.illuminationStatus.classList.add('is-warning');
+            this.illuminationStatus.textContent = 'Selected preset is missing; using default mode.';
+            return;
+        }
+
+        if (reason === 'incomplete_preset') {
+            this.illuminationStatus.classList.add('is-warning');
+            this.illuminationStatus.textContent = 'Selected preset is incomplete; using default mode.';
+            return;
+        }
+
+        this.illuminationStatus.textContent = 'Default mode active (L1 + L2).';
     }
 
     setSelectedMaterials({ slotMaterialIds = null, activeSlotIndex = 0, baselineMaterialId = null } = {}) {
@@ -684,4 +721,3 @@ export class MaterialCalibrationUI {
         }
     }
 }
-

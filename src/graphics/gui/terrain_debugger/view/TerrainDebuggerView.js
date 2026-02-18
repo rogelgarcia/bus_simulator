@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { FirstPersonCameraController } from '../../../engine3d/camera/FirstPersonCameraController.js';
 import { getOrCreateGpuFrameTimer } from '../../../engine3d/perf/GpuFrameTimer.js';
 import { applyIBLIntensity, applyIBLToScene, loadIBLTexture } from '../../../lighting/IBL.js';
-import { getDefaultResolvedLightingSettings } from '../../../lighting/LightingSettings.js';
+import { getResolvedDefaultLightingSettings } from '../../../lighting/LightingSettings.js';
 import { DEFAULT_IBL_ID, getIblEntryById } from '../../../content3d/catalogs/IBLCatalog.js';
 import { getPbrMaterialMeta, getPbrMaterialOptionsForGround, resolvePbrMaterialUrls } from '../../../content3d/catalogs/PbrMaterialCatalog.js';
 import { primePbrAssetsAvailability } from '../../../content3d/materials/PbrAssetsRuntime.js';
@@ -990,6 +990,7 @@ export class TerrainDebuggerView {
         this.camera = null;
         this.controls = null;
         this._ui = null;
+        this._tilingFallbackBackground = new THREE.Color(0x858585);
 
         this._texLoader = new THREE.TextureLoader();
         this._texCache = new Map();
@@ -1054,7 +1055,7 @@ export class TerrainDebuggerView {
         };
         this._terrainWireframe = false;
         this._asphaltWireframe = false;
-        this._gameplayLightingDefaults = getDefaultResolvedLightingSettings();
+        this._gameplayLightingDefaults = getResolvedDefaultLightingSettings({ includeUrlOverrides: true });
 
         this._grassEngine = null;
         this._grassRoadBounds = { enabled: false, halfWidth: 0, z0: 0, z1: 0 };
@@ -1384,7 +1385,7 @@ export class TerrainDebuggerView {
 
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        const lightingDefaults = this._gameplayLightingDefaults ?? getDefaultResolvedLightingSettings();
+        const lightingDefaults = this._gameplayLightingDefaults ?? getResolvedDefaultLightingSettings({ includeUrlOverrides: true });
         const toneMapping = String(lightingDefaults?.toneMapping ?? 'aces');
         renderer.toneMapping = toneMapping === 'agx'
             ? (THREE.AgXToneMapping ?? THREE.ACESFilmicToneMapping)
@@ -1399,8 +1400,26 @@ export class TerrainDebuggerView {
         this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 4000);
 
         const initialUiStateFromUrl = this._buildInitialUiStateFromUrl();
+        const initialUiState = initialUiStateFromUrl && typeof initialUiStateFromUrl === 'object'
+            ? initialUiStateFromUrl
+            : {};
+        if (!Number.isFinite(initialUiState.exposure)) {
+            initialUiState.exposure = clamp(lightingDefaults?.exposure, 0.1, 5.0, 1.14);
+        }
+        const initialIbl = initialUiState.ibl && typeof initialUiState.ibl === 'object' ? initialUiState.ibl : {};
+        initialUiState.ibl = {
+            ...initialIbl,
+            enabled: initialIbl.enabled !== undefined ? !!initialIbl.enabled : (lightingDefaults?.ibl?.enabled !== false),
+            iblId: (typeof initialIbl.iblId === 'string' && initialIbl.iblId)
+                ? initialIbl.iblId
+                : String(lightingDefaults?.ibl?.iblId ?? DEFAULT_IBL_ID),
+            setBackground: initialIbl.setBackground !== undefined ? !!initialIbl.setBackground : !!lightingDefaults?.ibl?.setBackground,
+            envMapIntensity: Number.isFinite(initialIbl.envMapIntensity)
+                ? Number(initialIbl.envMapIntensity)
+                : clamp(lightingDefaults?.ibl?.envMapIntensity, 0.0, 10.0, 0.3)
+        };
         const ui = new TerrainDebuggerUI({
-            initialState: initialUiStateFromUrl,
+            initialState: initialUiState,
             onChange: (state) => this._applyUiState(state),
             onResetCamera: () => this.controls?.reset?.(),
             onCameraPreset: (id) => this._applyCameraPreset(id),
@@ -1587,10 +1606,10 @@ export class TerrainDebuggerView {
         const scene = this.scene;
         if (!scene) return;
 
-        scene.background = null;
+        scene.background = this._tilingFallbackBackground;
         scene.environment = null;
 
-        const lightingDefaults = this._gameplayLightingDefaults ?? getDefaultResolvedLightingSettings();
+        const lightingDefaults = this._gameplayLightingDefaults ?? getResolvedDefaultLightingSettings({ includeUrlOverrides: true });
         const hemi = new THREE.HemisphereLight(0xffffff, 0x253018, clamp(lightingDefaults?.hemiIntensity, 0.0, 5.0, 0.92));
         hemi.position.set(0, 220, 0);
         scene.add(hemi);
@@ -4390,9 +4409,22 @@ export class TerrainDebuggerView {
                     map: mapLoaded ?? fallback,
                     mapLoaded,
                     baseColorUrl: urls?.baseColorUrl ?? 'fallback',
+                    normalUrl: urls?.normalUrl ?? '',
+                    ormUrl: urls?.ormUrl ?? '',
+                    aoUrl: urls?.aoUrl ?? '',
+                    roughnessUrl: urls?.roughnessUrl ?? '',
+                    metalnessUrl: urls?.metalnessUrl ?? '',
                     tile
                 };
-                keyParts.push(sampled[biome][slot].baseColorUrl, tile.toFixed(4));
+                keyParts.push(
+                    sampled[biome][slot].baseColorUrl,
+                    sampled[biome][slot].normalUrl,
+                    sampled[biome][slot].ormUrl,
+                    sampled[biome][slot].aoUrl,
+                    sampled[biome][slot].roughnessUrl,
+                    sampled[biome][slot].metalnessUrl,
+                    tile.toFixed(4)
+                );
             }
         }
         keyParts.push(
@@ -4445,6 +4477,14 @@ export class TerrainDebuggerView {
             variationNearIntensity.toFixed(3),
             variationFarIntensity.toFixed(3)
         );
+        const allIds = [];
+        for (const biome of TERRAIN_BIOME_IDS) {
+            for (const slot of TERRAIN_HUMIDITY_SLOT_IDS) allIds.push(String(sampled?.[biome]?.[slot]?.id ?? ''));
+        }
+        const firstId = String(allIds[0] ?? '');
+        const allSameMaterial = !!firstId && allIds.every((id) => id === firstId);
+        const physicalSourceId = allSameMaterial ? firstId : String(sampled?.land?.neutral?.id ?? firstId ?? '');
+        keyParts.push(`phys:${physicalSourceId}`);
         const key = keyParts.join('|');
         if (key === this._terrainBiomePbrKey) return;
         this._terrainBiomePbrKey = key;
@@ -4515,6 +4555,33 @@ export class TerrainDebuggerView {
         if (sampled.land.neutral.mapLoaded && mat.map !== sampled.land.neutral.mapLoaded) {
             mat.map = sampled.land.neutral.mapLoaded;
             mat.needsUpdate = true;
+        }
+
+        // Keep physical shading maps in sync with the active material context.
+        // When all biome/humidity slots point to one material, use that exact PBR stack.
+        // Otherwise keep using Land/Neutral as the representative physical source.
+        if (physicalSourceId) {
+            const urls = resolvePbrMaterialUrls(physicalSourceId);
+            const nextNormal = this._loadTexture(urls?.normalUrl ?? null, { srgb: false });
+            const nextOrm = this._loadTexture(urls?.ormUrl ?? null, { srgb: false });
+            const nextAo = nextOrm ?? this._loadTexture(urls?.aoUrl ?? null, { srgb: false });
+            const nextRoughness = nextOrm ?? this._loadTexture(urls?.roughnessUrl ?? null, { srgb: false });
+            // Terrain should remain non-metallic in biome blend mode; keep physical detail from
+            // normal/roughness/AO without introducing metallic darkening.
+            const nextMetalnessMap = null;
+            const nextMetalness = 0.0;
+            let changed = false;
+
+            if (mat.normalMap !== nextNormal) { mat.normalMap = nextNormal; changed = true; }
+            if (mat.aoMap !== nextAo) { mat.aoMap = nextAo; changed = true; }
+            if (mat.roughnessMap !== nextRoughness) { mat.roughnessMap = nextRoughness; changed = true; }
+            if (mat.metalnessMap !== nextMetalnessMap) { mat.metalnessMap = nextMetalnessMap; changed = true; }
+            if (Math.abs((Number(mat.metalness) || 0) - nextMetalness) > 1e-6) {
+                mat.metalness = nextMetalness;
+                changed = true;
+            }
+
+            if (changed) mat.needsUpdate = true;
         }
 
         syncTerrainBiomeBlendUniformsOnMaterial(mat);
@@ -5637,6 +5704,7 @@ export class TerrainDebuggerView {
                 this._terrainEngineCompareKey = '';
             }
         }
+        this._applyTerrainViewBackgroundFallback();
 
         void this._applyIblState(s.ibl, { force: false });
 
@@ -5665,7 +5733,9 @@ export class TerrainDebuggerView {
         const s = iblState && typeof iblState === 'object' ? iblState : {};
         const enabled = s.enabled !== false;
         const iblId = String(s.iblId ?? DEFAULT_IBL_ID);
-        const setBackground = !!s.setBackground;
+        const setBackground = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING
+            ? true
+            : !!s.setBackground;
         const envMapIntensity = clamp(s.envMapIntensity, 0.0, 10.0, 0.25);
 
         const entry = getIblEntryById(iblId) ?? getIblEntryById(DEFAULT_IBL_ID);
@@ -5677,6 +5747,7 @@ export class TerrainDebuggerView {
 
         if (!enabled || !hdrUrl) {
             applyIBLToScene(scene, null, { enabled: false });
+            this._applyTerrainViewBackgroundFallback();
             return;
         }
 
@@ -5697,5 +5768,43 @@ export class TerrainDebuggerView {
 
         applyIBLToScene(scene, envMap, { enabled: true, setBackground, hdrUrl });
         applyIBLIntensity(scene, { enabled: true, envMapIntensity }, { force: true });
+
+        if (setBackground && (!scene.background || !scene.background.isTexture)) {
+            try {
+                const hdrTex = await loadIBLBackgroundTexture(hdrUrl);
+                if (req !== this._iblRequestId) return;
+                if (hdrTex?.isTexture) {
+                    if (envMap) {
+                        envMap.userData = envMap.userData ?? {};
+                        envMap.userData.iblBackgroundTexture = hdrTex;
+                        envMap.__iblBackgroundTexture = hdrTex;
+                    }
+                    scene.background = hdrTex;
+                }
+            } catch (err) {
+                console.warn('[TerrainDebugger] Failed to load IBL background texture', err);
+            }
+        }
+        this._applyTerrainViewBackgroundFallback();
+    }
+
+    _applyTerrainViewBackgroundFallback() {
+        const scene = this.scene;
+        if (!scene) return;
+
+        if (this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING) {
+            const iblState = this._ui?.getState?.()?.ibl ?? null;
+            const iblEnabled = iblState?.enabled !== false;
+            const wantsBackground = iblEnabled;
+            if (wantsBackground) {
+                if (scene.background === this._tilingFallbackBackground) scene.background = null;
+                return;
+            }
+            const bg = scene.background ?? null;
+            if (!bg || !bg.isTexture) scene.background = this._tilingFallbackBackground;
+            return;
+        }
+
+        if (scene.background === this._tilingFallbackBackground) scene.background = null;
     }
 }
