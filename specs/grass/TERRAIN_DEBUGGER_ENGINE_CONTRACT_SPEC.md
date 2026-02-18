@@ -37,7 +37,16 @@ The debugger UI state MUST include a `terrain.engine` payload (serializable) cov
 - `materialBindings`:
   - `biomes`: per-biome dry/neutral/wet PBR material ids
   - `humidity`: slot-threshold and edge-band settings (`dryMax`, `wetMin`, `blendBand`, `edgeNoiseScale`, `edgeNoiseStrength`)
-- `transition` (near-camera blend zone radius/feather + boundary band width)
+- `transition`:
+  - near-camera blend zone (`cameraBlendRadiusMeters`, `cameraBlendFeatherMeters`, `boundaryBandMeters`)
+  - pair-profile defaults (`profileDefaults`)
+  - explicit per-pair profiles (`pairProfiles`, keyed by canonical biome pair id)
+- `terrain.biomeTransition`:
+  - `biome1`, `biome2`
+  - `debugMode` (`pair_isolation`, `transition_result`, `transition_weight`, `transition_falloff`, `transition_noise`, `pair_compare`)
+  - `compareEnabled`
+  - `baselineProfiles` (captured baseline profile by pair key)
+  - preset `catalog` entries (id/name/biome pair/profile)
 
 The bounds are not stored in UI state and are always derived from terrain geometry.
 
@@ -52,6 +61,31 @@ The bounds are not stored in UI state and are always derived from terrain geomet
 - Transition-band diagnostics MUST represent final PBR boundaries:
   - biome-boundary blend bands
   - humidity slot edge bands
+
+### 4.1 Biome Transition View Mode
+
+When the active debugger tab is `Biome Transition`, the view MUST switch to a deterministic pair-authoring mode:
+
+- Terrain layout is fixed to a deterministic `3 x 3` tile setup.
+- Left side is authored as `Biome 1`, right side as `Biome 2`, with center area used for transition evaluation.
+- Non-transition terrain concerns are suppressed for clarity (roads/cloud/slope effects disabled in this mode).
+- Runtime terrain-engine config is adapted for repeatability in this view:
+  - grid patching with deterministic origin tied to current terrain bounds
+  - biome mode forced to `source_map` using a generated pair source map
+  - humidity mode remains deterministic `source_map`
+  - transition blend radius is expanded so the whole test area stays in transition-authoring context
+- Tooling visuals for roads/grass groups are hidden in this mode to keep attention on terrain transition output.
+
+### 4.2 Biome Transition Diagnostics + Compare
+
+- Diagnostic modes are driven by `terrain.biomeTransition.debugMode`.
+- `pair_compare` mode MUST support side-by-side baseline (left) vs tuned (right) output for the active pair.
+- Baseline rendering MUST be generated from the same base engine config with only the active pair profile overridden.
+- Debug visualizations SHOULD be sourced from `exportPackedMaskRgba8(...).transitionDebug` channels when relevant:
+  - transition weight
+  - falloff contribution
+  - noise contribution
+  - final transition result
 
 ## 5. Migration Notes (Legacy Controls)
 

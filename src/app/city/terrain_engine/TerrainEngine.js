@@ -24,6 +24,47 @@ const TERRAIN_BIOME_BY_INDEX = Object.freeze([
     TERRAIN_BIOME_ID.LAND
 ]);
 
+const TERRAIN_TRANSITION_INTENT_ID = Object.freeze({
+    SOFT: 'soft',
+    MEDIUM: 'medium',
+    HARD: 'hard'
+});
+
+const TERRAIN_TRANSITION_INTENT_PRESETS = Object.freeze({
+    [TERRAIN_TRANSITION_INTENT_ID.SOFT]: Object.freeze({
+        widthScale: 1.45,
+        falloffPower: 0.85,
+        edgeNoiseScale: 0.02,
+        edgeNoiseStrength: 0.42,
+        dominanceBias: 0.0,
+        heightInfluence: 0.28,
+        contrast: 0.82
+    }),
+    [TERRAIN_TRANSITION_INTENT_ID.MEDIUM]: Object.freeze({
+        widthScale: 1.0,
+        falloffPower: 1.0,
+        edgeNoiseScale: 0.02,
+        edgeNoiseStrength: 0.22,
+        dominanceBias: 0.0,
+        heightInfluence: 0.0,
+        contrast: 1.0
+    }),
+    [TERRAIN_TRANSITION_INTENT_ID.HARD]: Object.freeze({
+        widthScale: 0.65,
+        falloffPower: 1.45,
+        edgeNoiseScale: 0.02,
+        edgeNoiseStrength: 0.08,
+        dominanceBias: 0.0,
+        heightInfluence: -0.12,
+        contrast: 1.45
+    })
+});
+
+const TERRAIN_TRANSITION_PROFILE_DEFAULTS = Object.freeze({
+    intent: TERRAIN_TRANSITION_INTENT_ID.MEDIUM,
+    ...TERRAIN_TRANSITION_INTENT_PRESETS[TERRAIN_TRANSITION_INTENT_ID.MEDIUM]
+});
+
 /**
  * @typedef {object} TerrainBounds
  * @property {number} minX
@@ -66,6 +107,20 @@ const TERRAIN_BIOME_BY_INDEX = Object.freeze([
  * @property {number} cameraBlendRadiusMeters
  * @property {number} cameraBlendFeatherMeters
  * @property {number} boundaryBandMeters
+ * @property {TerrainEngineTransitionPairProfile} profileDefaults
+ * @property {Record<string, TerrainEngineTransitionPairProfile>} pairProfiles
+ */
+
+/**
+ * @typedef {object} TerrainEngineTransitionPairProfile
+ * @property {'soft'|'medium'|'hard'} intent
+ * @property {number} widthScale
+ * @property {number} falloffPower
+ * @property {number} edgeNoiseScale
+ * @property {number} edgeNoiseStrength
+ * @property {number} dominanceBias
+ * @property {number} heightInfluence
+ * @property {number} contrast
  */
 
 /**
@@ -101,7 +156,23 @@ const TERRAIN_BIOME_BY_INDEX = Object.freeze([
  * @property {number} biomeBlend
  * @property {number} humidity
  * @property {number} edgeDistanceMeters
- * @property {{ active: boolean, cameraAlpha: number }} transition
+ * @property {{
+ *   active: boolean,
+ *   cameraAlpha: number,
+ *   pairKey: string,
+ *   intent: 'soft'|'medium'|'hard',
+ *   widthScale: number,
+ *   falloffPower: number,
+ *   edgeNoiseStrength: number,
+ *   dominanceBias: number,
+ *   heightInfluence: number,
+ *   contrast: number,
+ *   rawWeight: number,
+ *   falloffWeight: number,
+ *   dominanceWeight: number,
+ *   finalWeight: number,
+ *   noiseOffsetMeters: number
+ * }} transition
  */
 
 function clamp(value, min, max, fallback = min) {
@@ -143,6 +214,66 @@ function normalizeBiomeId(value, fallback) {
     const id = String(value ?? '').trim();
     if (id === TERRAIN_BIOME_ID.STONE || id === TERRAIN_BIOME_ID.GRASS || id === TERRAIN_BIOME_ID.LAND) return id;
     return String(fallback ?? TERRAIN_BIOME_ID.LAND);
+}
+
+function getBiomeSortIndex(id) {
+    const biomeId = normalizeBiomeId(id, TERRAIN_BIOME_ID.LAND);
+    if (biomeId === TERRAIN_BIOME_ID.STONE) return 0;
+    if (biomeId === TERRAIN_BIOME_ID.GRASS) return 1;
+    if (biomeId === TERRAIN_BIOME_ID.LAND) return 2;
+    return 3;
+}
+
+function makeBiomePairKey(a, b) {
+    const aId = normalizeBiomeId(a, TERRAIN_BIOME_ID.LAND);
+    const bId = normalizeBiomeId(b, aId);
+    if (aId === bId) return `${aId}|${aId}`;
+    if (getBiomeSortIndex(aId) <= getBiomeSortIndex(bId)) return `${aId}|${bId}`;
+    return `${bId}|${aId}`;
+}
+
+function normalizeTransitionIntent(value, fallback = TERRAIN_TRANSITION_INTENT_ID.MEDIUM) {
+    const raw = String(value ?? '').trim().toLowerCase();
+    if (raw === TERRAIN_TRANSITION_INTENT_ID.SOFT || raw === TERRAIN_TRANSITION_INTENT_ID.MEDIUM || raw === TERRAIN_TRANSITION_INTENT_ID.HARD) return raw;
+    const fb = String(fallback ?? '').trim().toLowerCase();
+    if (fb === TERRAIN_TRANSITION_INTENT_ID.SOFT || fb === TERRAIN_TRANSITION_INTENT_ID.HARD) return fb;
+    return TERRAIN_TRANSITION_INTENT_ID.MEDIUM;
+}
+
+function getTransitionIntentPreset(intentId) {
+    const intent = normalizeTransitionIntent(intentId, TERRAIN_TRANSITION_INTENT_ID.MEDIUM);
+    return TERRAIN_TRANSITION_INTENT_PRESETS[intent] ?? TERRAIN_TRANSITION_INTENT_PRESETS[TERRAIN_TRANSITION_INTENT_ID.MEDIUM];
+}
+
+function normalizeTransitionPairProfile(src, { fallbackProfile = null, defaultIntent = TERRAIN_TRANSITION_INTENT_ID.MEDIUM } = {}) {
+    const inProfile = src && typeof src === 'object' ? src : {};
+    const fallback = fallbackProfile && typeof fallbackProfile === 'object' ? fallbackProfile : TERRAIN_TRANSITION_PROFILE_DEFAULTS;
+    const intent = normalizeTransitionIntent(inProfile.intent, fallback.intent ?? defaultIntent);
+    const preset = getTransitionIntentPreset(intent);
+    return {
+        intent,
+        widthScale: clamp(inProfile.widthScale, 0.25, 4.0, preset.widthScale ?? fallback.widthScale ?? TERRAIN_TRANSITION_PROFILE_DEFAULTS.widthScale),
+        falloffPower: clamp(inProfile.falloffPower, 0.3, 3.5, preset.falloffPower ?? fallback.falloffPower ?? TERRAIN_TRANSITION_PROFILE_DEFAULTS.falloffPower),
+        edgeNoiseScale: clamp(inProfile.edgeNoiseScale, 0.0005, 0.2, preset.edgeNoiseScale ?? fallback.edgeNoiseScale ?? TERRAIN_TRANSITION_PROFILE_DEFAULTS.edgeNoiseScale),
+        edgeNoiseStrength: clamp(inProfile.edgeNoiseStrength, 0.0, 1.0, preset.edgeNoiseStrength ?? fallback.edgeNoiseStrength ?? TERRAIN_TRANSITION_PROFILE_DEFAULTS.edgeNoiseStrength),
+        dominanceBias: clamp(inProfile.dominanceBias, -0.5, 0.5, preset.dominanceBias ?? fallback.dominanceBias ?? TERRAIN_TRANSITION_PROFILE_DEFAULTS.dominanceBias),
+        heightInfluence: clamp(inProfile.heightInfluence, -1.0, 1.0, preset.heightInfluence ?? fallback.heightInfluence ?? TERRAIN_TRANSITION_PROFILE_DEFAULTS.heightInfluence),
+        contrast: clamp(inProfile.contrast, 0.25, 3.0, preset.contrast ?? fallback.contrast ?? TERRAIN_TRANSITION_PROFILE_DEFAULTS.contrast)
+    };
+}
+
+function sanitizeTransitionPairProfiles(src, defaultProfile) {
+    const out = {};
+    const source = src && typeof src === 'object' ? src : {};
+    for (const [rawKey, rawProfile] of Object.entries(source)) {
+        const key = String(rawKey ?? '').trim();
+        if (!key) continue;
+        const parts = key.split('|');
+        if (parts.length !== 2) continue;
+        const pairKey = makeBiomePairKey(parts[0], parts[1]);
+        out[pairKey] = normalizeTransitionPairProfile(rawProfile, { fallbackProfile: defaultProfile, defaultIntent: defaultProfile?.intent });
+    }
+    return out;
 }
 
 function normalizeWeights(src) {
@@ -256,10 +387,18 @@ export function sanitizeTerrainEngineConfig(input) {
     };
 
     const transSrc = src.transition && typeof src.transition === 'object' ? src.transition : {};
+    const profileDefaultsSrc = transSrc.profileDefaults && typeof transSrc.profileDefaults === 'object' ? transSrc.profileDefaults : transSrc;
+    const profileDefaults = normalizeTransitionPairProfile(profileDefaultsSrc, {
+        fallbackProfile: TERRAIN_TRANSITION_PROFILE_DEFAULTS,
+        defaultIntent: TERRAIN_TRANSITION_PROFILE_DEFAULTS.intent
+    });
+    const pairProfiles = sanitizeTransitionPairProfiles(transSrc.pairProfiles, profileDefaults);
     const transition = {
         cameraBlendRadiusMeters: Math.max(0, Number(transSrc.cameraBlendRadiusMeters) || 140),
         cameraBlendFeatherMeters: Math.max(0, Number(transSrc.cameraBlendFeatherMeters) || 24),
-        boundaryBandMeters: Math.max(0, Number(transSrc.boundaryBandMeters) || 10)
+        boundaryBandMeters: Math.max(0, Number(transSrc.boundaryBandMeters) || 10),
+        profileDefaults,
+        pairProfiles
     };
 
     const seed = typeof src.seed === 'string' && src.seed.trim() ? src.seed.trim() : 'terrain-v1';
@@ -281,7 +420,21 @@ function freezeConfig(cfg) {
     const weights = Object.freeze({ ...cfg.biomes.weights });
     const biomes = Object.freeze({ ...cfg.biomes, weights });
     const humidity = Object.freeze({ ...cfg.humidity });
-    const transition = Object.freeze({ ...cfg.transition });
+    const transitionDefaults = Object.freeze({
+        ...(cfg.transition?.profileDefaults ?? TERRAIN_TRANSITION_PROFILE_DEFAULTS)
+    });
+    const transitionProfilesSrc = cfg.transition?.pairProfiles && typeof cfg.transition.pairProfiles === 'object'
+        ? cfg.transition.pairProfiles
+        : {};
+    const transitionProfiles = {};
+    for (const [key, value] of Object.entries(transitionProfilesSrc)) {
+        transitionProfiles[key] = Object.freeze({ ...(value ?? {}) });
+    }
+    const transition = Object.freeze({
+        ...cfg.transition,
+        profileDefaults: transitionDefaults,
+        pairProfiles: Object.freeze(transitionProfiles)
+    });
     return Object.freeze({
         ...cfg,
         bounds,
@@ -296,6 +449,7 @@ export function createTerrainEngine(initialConfig) {
     let config = freezeConfig(sanitizeTerrainEngineConfig(initialConfig));
     let seedU32 = hashStringToU32(config.seed);
     const valueNoiseSamplerBySeed = new Map();
+    const pairSeedByKey = new Map();
     /** @type {TerrainEngineSourceMaps} */
     let sourceMaps = { biome: null, humidity: null };
 
@@ -306,6 +460,7 @@ export function createTerrainEngine(initialConfig) {
         config = freezeConfig(sanitizeTerrainEngineConfig(nextConfig));
         seedU32 = hashStringToU32(config.seed);
         valueNoiseSamplerBySeed.clear();
+        pairSeedByKey.clear();
     };
 
     const getValueNoise2Sampler = (seed) => {
@@ -348,6 +503,68 @@ export function createTerrainEngine(initialConfig) {
     const getPatchCoord = (x, origin, size) => Math.floor((x - origin) / size);
 
     const getPatchId = (keyX, keyZ) => hash2i(keyX, keyZ, seedU32);
+
+    const getPairSeed = (pairKey) => {
+        const key = String(pairKey ?? '');
+        let seed = pairSeedByKey.get(key);
+        if (seed !== undefined) return seed;
+        seed = hashStringToU32(key) >>> 0;
+        pairSeedByKey.set(key, seed);
+        return seed;
+    };
+
+    const getTransitionPairProfile = (primaryBiomeId, secondaryBiomeId) => {
+        const pairKey = makeBiomePairKey(primaryBiomeId, secondaryBiomeId);
+        const transitionCfg = config.transition ?? {};
+        const defaults = transitionCfg.profileDefaults ?? TERRAIN_TRANSITION_PROFILE_DEFAULTS;
+        const profile = transitionCfg.pairProfiles?.[pairKey] ?? defaults;
+        return { pairKey, profile, defaults };
+    };
+
+    const sampleTransitionEdgeNoise = (x, z, pairKey, noiseScale) => {
+        const scale = clamp(noiseScale, 0.0005, 0.2, TERRAIN_TRANSITION_PROFILE_DEFAULTS.edgeNoiseScale);
+        const noiseSeed = (seedU32 ^ getPairSeed(pairKey) ^ 0x4f1bbcdc) >>> 0;
+        const noise = sampleSeededFbm(x * scale, z * scale, {
+            seed: noiseSeed,
+            octaves: 3,
+            gain: 0.5,
+            lacunarity: 2.0
+        });
+        return clamp((noise - 0.5) * 2.0, -1.0, 1.0, 0.0);
+    };
+
+    const shapeTransitionWeight = ({
+        rawWeight,
+        humidity,
+        pairKey,
+        profile,
+        secondaryBiomeId
+    } = {}) => {
+        const p = profile && typeof profile === 'object'
+            ? profile
+            : TERRAIN_TRANSITION_PROFILE_DEFAULTS;
+        const pairParts = String(pairKey ?? '').split('|');
+        const preferredBiome = normalizeBiomeId(pairParts[1], normalizeBiomeId(secondaryBiomeId, TERRAIN_BIOME_ID.LAND));
+        const secondary = normalizeBiomeId(secondaryBiomeId, preferredBiome);
+        const dominanceSign = secondary === preferredBiome ? 1 : -1;
+        const base = clamp01(rawWeight);
+        const centered = clamp(base * 2.0 - 1.0, -1.0, 1.0, 0.0);
+        const centeredAbs = Math.abs(centered);
+        const falloffPower = Math.max(0.001, Number(p.falloffPower) || 1.0);
+        const falloffCentered = Math.sign(centered) * Math.pow(centeredAbs, falloffPower);
+        const falloffWeight = clamp01(falloffCentered * 0.5 + 0.5);
+        const humidityCentered = (clamp01(humidity) - 0.5) * 2.0;
+        const dominanceBias = clamp(p.dominanceBias, -0.5, 0.5, 0.0) * dominanceSign;
+        const heightBias = clamp(p.heightInfluence, -1.0, 1.0, 0.0) * humidityCentered * 0.35 * dominanceSign;
+        const dominanceWeight = clamp01(falloffWeight + (dominanceBias + heightBias) * centeredAbs);
+        const contrast = clamp(p.contrast, 0.25, 3.0, 1.0);
+        const finalWeight = clamp01((dominanceWeight - 0.5) * contrast + 0.5);
+        return {
+            falloffWeight,
+            dominanceWeight,
+            finalWeight
+        };
+    };
 
     const getGridPatchCenterWorld = (px, pz) => {
         const size = config.patch.sizeMeters;
@@ -491,6 +708,8 @@ export function createTerrainEngine(initialConfig) {
 
         if (xx < bounds.minX || xx > bounds.maxX || zz < bounds.minZ || zz > bounds.maxZ) {
             const d = config.biomes.defaultBiomeId;
+            const pairKey = makeBiomePairKey(d, d);
+            const profile = config.transition?.profileDefaults ?? TERRAIN_TRANSITION_PROFILE_DEFAULTS;
             return {
                 patchId: 0,
                 primaryBiomeId: d,
@@ -498,7 +717,23 @@ export function createTerrainEngine(initialConfig) {
                 biomeBlend: 0.0,
                 humidity: 0.5,
                 edgeDistanceMeters: 0.0,
-                transition: { active: false, cameraAlpha: 0.0 }
+                transition: {
+                    active: false,
+                    cameraAlpha: 0.0,
+                    pairKey,
+                    intent: normalizeTransitionIntent(profile.intent, TERRAIN_TRANSITION_INTENT_ID.MEDIUM),
+                    widthScale: Number(profile.widthScale) || 1.0,
+                    falloffPower: Number(profile.falloffPower) || 1.0,
+                    edgeNoiseStrength: Number(profile.edgeNoiseStrength) || 0.0,
+                    dominanceBias: Number(profile.dominanceBias) || 0.0,
+                    heightInfluence: Number(profile.heightInfluence) || 0.0,
+                    contrast: Number(profile.contrast) || 1.0,
+                    rawWeight: 0.0,
+                    falloffWeight: 0.0,
+                    dominanceWeight: 0.0,
+                    finalWeight: 0.0,
+                    noiseOffsetMeters: 0.0
+                }
             };
         }
 
@@ -530,6 +765,20 @@ export function createTerrainEngine(initialConfig) {
         let secondaryBiomeId = primaryBiomeId;
         let biomeBlend = 0.0;
         let edgeDistanceMeters = 0.0;
+        let transitionPairKey = makeBiomePairKey(primaryBiomeId, secondaryBiomeId);
+        let transitionIntent = TERRAIN_TRANSITION_INTENT_ID.MEDIUM;
+        let transitionWidthScale = TERRAIN_TRANSITION_PROFILE_DEFAULTS.widthScale;
+        let transitionFalloffPower = TERRAIN_TRANSITION_PROFILE_DEFAULTS.falloffPower;
+        let transitionEdgeNoiseStrength = TERRAIN_TRANSITION_PROFILE_DEFAULTS.edgeNoiseStrength;
+        let transitionDominanceBias = TERRAIN_TRANSITION_PROFILE_DEFAULTS.dominanceBias;
+        let transitionHeightInfluence = TERRAIN_TRANSITION_PROFILE_DEFAULTS.heightInfluence;
+        let transitionContrast = TERRAIN_TRANSITION_PROFILE_DEFAULTS.contrast;
+        let transitionRawWeight = 0.0;
+        let transitionFalloffWeight = 0.0;
+        let transitionDominanceWeight = 0.0;
+        let transitionFinalWeight = 0.0;
+        let transitionNoiseOffsetMeters = 0.0;
+        let transitionProfileForReport = null;
 
         if (patch.layout === 'voronoi') {
             const vor = sampleVoronoiPatches(xx, zz);
@@ -552,11 +801,36 @@ export function createTerrainEngine(initialConfig) {
                         centerX: vor.secondary.seedX,
                         centerZ: vor.secondary.seedZ
                     });
-                    const wNeighbor = 0.5 * (1 - smoothstep(0.0, band, minD));
-                    biomeBlend = clamp01(wNeighbor * cameraAlpha);
-                    if (secondaryBiomeId === primaryBiomeId) biomeBlend = 0.0;
-                    if (biomeBlend < 1 / 255) biomeBlend = 0.0;
-                    if (!biomeBlend) secondaryBiomeId = primaryBiomeId;
+                    if (secondaryBiomeId !== primaryBiomeId) {
+                        const pairInfo = getTransitionPairProfile(primaryBiomeId, secondaryBiomeId);
+                        const profile = pairInfo.profile ?? TERRAIN_TRANSITION_PROFILE_DEFAULTS;
+                        transitionProfileForReport = profile;
+                        transitionPairKey = pairInfo.pairKey;
+                        transitionIntent = normalizeTransitionIntent(profile.intent, TERRAIN_TRANSITION_INTENT_ID.MEDIUM);
+                        transitionWidthScale = clamp(profile.widthScale, 0.25, 4.0, TERRAIN_TRANSITION_PROFILE_DEFAULTS.widthScale);
+                        transitionFalloffPower = clamp(profile.falloffPower, 0.3, 3.5, TERRAIN_TRANSITION_PROFILE_DEFAULTS.falloffPower);
+                        transitionEdgeNoiseStrength = clamp(profile.edgeNoiseStrength, 0.0, 1.0, TERRAIN_TRANSITION_PROFILE_DEFAULTS.edgeNoiseStrength);
+                        transitionDominanceBias = clamp(profile.dominanceBias, -0.5, 0.5, TERRAIN_TRANSITION_PROFILE_DEFAULTS.dominanceBias);
+                        transitionHeightInfluence = clamp(profile.heightInfluence, -1.0, 1.0, TERRAIN_TRANSITION_PROFILE_DEFAULTS.heightInfluence);
+                        transitionContrast = clamp(profile.contrast, 0.25, 3.0, TERRAIN_TRANSITION_PROFILE_DEFAULTS.contrast);
+
+                        const localBand = Math.max(EPS, band * transitionWidthScale);
+                        const noiseNorm = sampleTransitionEdgeNoise(xx, zz, transitionPairKey, profile.edgeNoiseScale);
+                        transitionNoiseOffsetMeters = noiseNorm * transitionEdgeNoiseStrength * localBand;
+                        const minDNoisy = Math.max(0, minD + transitionNoiseOffsetMeters);
+                        transitionRawWeight = clamp01(0.5 * (1 - smoothstep(0.0, localBand, minDNoisy)));
+                        const shaped = shapeTransitionWeight({
+                            rawWeight: transitionRawWeight,
+                            humidity,
+                            pairKey: transitionPairKey,
+                            profile,
+                            secondaryBiomeId
+                        });
+                        transitionFalloffWeight = shaped.falloffWeight;
+                        transitionDominanceWeight = shaped.dominanceWeight;
+                        transitionFinalWeight = shaped.finalWeight;
+                        biomeBlend = clamp01(transitionFinalWeight * cameraAlpha);
+                    }
                 }
             }
         } else {
@@ -578,39 +852,83 @@ export function createTerrainEngine(initialConfig) {
             if (transitionActive) {
                 const minD = edgeDistanceMeters;
                 if (minD < band + EPS) {
-                    const isVertical = Math.min(distLeft, distRight) <= Math.min(distBottom, distTop);
-                    if (isVertical) {
-                        const isLeftBoundary = distLeft <= distRight;
-                        const boundaryX = isLeftBoundary ? (ox + px * patchSize) : (ox + (px + 1) * patchSize);
-                        const leftPx = isLeftBoundary ? (px - 1) : px;
-                        const rightPx = isLeftBoundary ? px : (px + 1);
-                        const signed = xx - boundaryX;
-                        const tRight = smoothstep(-band, band, signed);
-                        const rightIsPrimary = px === rightPx;
-                        const neighborPx = rightIsPrimary ? leftPx : rightPx;
-                        const neighborCenter = getGridPatchCenterWorld(neighborPx, pz);
-                        secondaryBiomeId = getPatchBiomeId({ keyX: neighborPx, keyZ: pz, centerX: neighborCenter.x, centerZ: neighborCenter.z });
-                        const wNeighbor = rightIsPrimary ? (1 - tRight) : tRight;
-                        biomeBlend = clamp01(wNeighbor * cameraAlpha);
-                    } else {
-                        const isBottomBoundary = distBottom <= distTop;
-                        const boundaryZ = isBottomBoundary ? (oz + pz * patchSize) : (oz + (pz + 1) * patchSize);
-                        const bottomPz = isBottomBoundary ? (pz - 1) : pz;
-                        const topPz = isBottomBoundary ? pz : (pz + 1);
-                        const signed = zz - boundaryZ;
-                        const tTop = smoothstep(-band, band, signed);
-                        const topIsPrimary = pz === topPz;
-                        const neighborPz = topIsPrimary ? bottomPz : topPz;
-                        const neighborCenter = getGridPatchCenterWorld(px, neighborPz);
-                        secondaryBiomeId = getPatchBiomeId({ keyX: px, keyZ: neighborPz, centerX: neighborCenter.x, centerZ: neighborCenter.z });
-                        const wNeighbor = topIsPrimary ? (1 - tTop) : tTop;
-                        biomeBlend = clamp01(wNeighbor * cameraAlpha);
-                    }
+                    const candidates = [
+                        { distance: distLeft, signed: xx - (ox + px * patchSize), neighborPx: px - 1, neighborPz: pz, primaryOnPositive: true },
+                        { distance: distRight, signed: xx - (ox + (px + 1) * patchSize), neighborPx: px + 1, neighborPz: pz, primaryOnPositive: false },
+                        { distance: distBottom, signed: zz - (oz + pz * patchSize), neighborPx: px, neighborPz: pz - 1, primaryOnPositive: true },
+                        { distance: distTop, signed: zz - (oz + (pz + 1) * patchSize), neighborPx: px, neighborPz: pz + 1, primaryOnPositive: false }
+                    ].sort((a, b) => a.distance - b.distance);
 
-                    if (secondaryBiomeId === primaryBiomeId) biomeBlend = 0.0;
-                    if (biomeBlend < 1 / 255) biomeBlend = 0.0;
+                    for (const candidate of candidates) {
+                        if (!(candidate.distance < band + EPS)) break;
+                        const neighborCenter = getGridPatchCenterWorld(candidate.neighborPx, candidate.neighborPz);
+                        const neighborBiomeId = getPatchBiomeId({
+                            keyX: candidate.neighborPx,
+                            keyZ: candidate.neighborPz,
+                            centerX: neighborCenter.x,
+                            centerZ: neighborCenter.z
+                        });
+                        if (neighborBiomeId === primaryBiomeId) continue;
+
+                        secondaryBiomeId = neighborBiomeId;
+                        const pairInfo = getTransitionPairProfile(primaryBiomeId, secondaryBiomeId);
+                        const profile = pairInfo.profile ?? TERRAIN_TRANSITION_PROFILE_DEFAULTS;
+                        transitionProfileForReport = profile;
+                        transitionPairKey = pairInfo.pairKey;
+                        transitionIntent = normalizeTransitionIntent(profile.intent, TERRAIN_TRANSITION_INTENT_ID.MEDIUM);
+                        transitionWidthScale = clamp(profile.widthScale, 0.25, 4.0, TERRAIN_TRANSITION_PROFILE_DEFAULTS.widthScale);
+                        transitionFalloffPower = clamp(profile.falloffPower, 0.3, 3.5, TERRAIN_TRANSITION_PROFILE_DEFAULTS.falloffPower);
+                        transitionEdgeNoiseStrength = clamp(profile.edgeNoiseStrength, 0.0, 1.0, TERRAIN_TRANSITION_PROFILE_DEFAULTS.edgeNoiseStrength);
+                        transitionDominanceBias = clamp(profile.dominanceBias, -0.5, 0.5, TERRAIN_TRANSITION_PROFILE_DEFAULTS.dominanceBias);
+                        transitionHeightInfluence = clamp(profile.heightInfluence, -1.0, 1.0, TERRAIN_TRANSITION_PROFILE_DEFAULTS.heightInfluence);
+                        transitionContrast = clamp(profile.contrast, 0.25, 3.0, TERRAIN_TRANSITION_PROFILE_DEFAULTS.contrast);
+
+                        const localBand = Math.max(EPS, band * transitionWidthScale);
+                        const noiseNorm = sampleTransitionEdgeNoise(xx, zz, transitionPairKey, profile.edgeNoiseScale);
+                        transitionNoiseOffsetMeters = noiseNorm * transitionEdgeNoiseStrength * localBand;
+                        const signedNoisy = candidate.signed + transitionNoiseOffsetMeters;
+                        const tPositive = smoothstep(-localBand, localBand, signedNoisy);
+                        transitionRawWeight = clamp01(candidate.primaryOnPositive ? (1 - tPositive) : tPositive);
+                        const shaped = shapeTransitionWeight({
+                            rawWeight: transitionRawWeight,
+                            humidity,
+                            pairKey: transitionPairKey,
+                            profile,
+                            secondaryBiomeId
+                        });
+                        transitionFalloffWeight = shaped.falloffWeight;
+                        transitionDominanceWeight = shaped.dominanceWeight;
+                        transitionFinalWeight = shaped.finalWeight;
+                        biomeBlend = clamp01(transitionFinalWeight * cameraAlpha);
+                        break;
+                    }
                 }
             }
+        }
+
+        if (secondaryBiomeId === primaryBiomeId) biomeBlend = 0.0;
+        if (biomeBlend < 1 / 255) biomeBlend = 0.0;
+        if (!biomeBlend) {
+            secondaryBiomeId = primaryBiomeId;
+            transitionRawWeight = 0.0;
+            transitionFalloffWeight = 0.0;
+            transitionDominanceWeight = 0.0;
+            transitionFinalWeight = 0.0;
+            transitionNoiseOffsetMeters = 0.0;
+        }
+
+        if (!transitionProfileForReport) {
+            const pairInfo = getTransitionPairProfile(primaryBiomeId, secondaryBiomeId);
+            const profile = pairInfo.profile ?? TERRAIN_TRANSITION_PROFILE_DEFAULTS;
+            transitionProfileForReport = profile;
+            transitionPairKey = pairInfo.pairKey;
+            transitionIntent = normalizeTransitionIntent(profile.intent, TERRAIN_TRANSITION_INTENT_ID.MEDIUM);
+            transitionWidthScale = clamp(profile.widthScale, 0.25, 4.0, TERRAIN_TRANSITION_PROFILE_DEFAULTS.widthScale);
+            transitionFalloffPower = clamp(profile.falloffPower, 0.3, 3.5, TERRAIN_TRANSITION_PROFILE_DEFAULTS.falloffPower);
+            transitionEdgeNoiseStrength = clamp(profile.edgeNoiseStrength, 0.0, 1.0, TERRAIN_TRANSITION_PROFILE_DEFAULTS.edgeNoiseStrength);
+            transitionDominanceBias = clamp(profile.dominanceBias, -0.5, 0.5, TERRAIN_TRANSITION_PROFILE_DEFAULTS.dominanceBias);
+            transitionHeightInfluence = clamp(profile.heightInfluence, -1.0, 1.0, TERRAIN_TRANSITION_PROFILE_DEFAULTS.heightInfluence);
+            transitionContrast = clamp(profile.contrast, 0.25, 3.0, TERRAIN_TRANSITION_PROFILE_DEFAULTS.contrast);
         }
 
         /** @type {TerrainEngineSample} */
@@ -621,7 +939,23 @@ export function createTerrainEngine(initialConfig) {
             biomeBlend,
             humidity,
             edgeDistanceMeters,
-            transition: { active: transitionActive, cameraAlpha: clamp01(cameraAlpha) }
+            transition: {
+                active: transitionActive,
+                cameraAlpha: clamp01(cameraAlpha),
+                pairKey: transitionPairKey,
+                intent: transitionIntent,
+                widthScale: transitionWidthScale,
+                falloffPower: transitionFalloffPower,
+                edgeNoiseStrength: transitionEdgeNoiseStrength,
+                dominanceBias: transitionDominanceBias,
+                heightInfluence: transitionHeightInfluence,
+                contrast: transitionContrast,
+                rawWeight: clamp01(transitionRawWeight),
+                falloffWeight: clamp01(transitionFalloffWeight),
+                dominanceWeight: clamp01(transitionDominanceWeight),
+                finalWeight: clamp01(transitionFinalWeight),
+                noiseOffsetMeters: Number(transitionNoiseOffsetMeters) || 0.0
+            }
         };
         return out;
     };
@@ -634,6 +968,11 @@ export function createTerrainEngine(initialConfig) {
         const sizeZ = b.maxZ - b.minZ;
         const rgba = new Uint8Array(w * h * 4);
         const patchIds = new Uint32Array(w * h);
+        const transitionRawWeight = new Float32Array(w * h);
+        const transitionFalloffWeight = new Float32Array(w * h);
+        const transitionDominanceWeight = new Float32Array(w * h);
+        const transitionFinalWeight = new Float32Array(w * h);
+        const transitionNoiseOffset = new Float32Array(w * h);
 
         const view = viewOrigin && typeof viewOrigin === 'object'
             ? { x: Number(viewOrigin.x) || 0, z: Number(viewOrigin.z) || 0 }
@@ -655,16 +994,36 @@ export function createTerrainEngine(initialConfig) {
                 rgba[idx + 2] = Math.max(0, Math.min(255, Math.round(s.biomeBlend * 255)));
                 rgba[idx + 3] = Math.max(0, Math.min(255, Math.round(s.humidity * 255)));
                 idx += 4;
-                patchIds[pIdx++] = s.patchId >>> 0;
+                patchIds[pIdx] = s.patchId >>> 0;
+                transitionRawWeight[pIdx] = Number(s.transition?.rawWeight) || 0.0;
+                transitionFalloffWeight[pIdx] = Number(s.transition?.falloffWeight) || 0.0;
+                transitionDominanceWeight[pIdx] = Number(s.transition?.dominanceWeight) || 0.0;
+                transitionFinalWeight[pIdx] = Number(s.transition?.finalWeight) || 0.0;
+                transitionNoiseOffset[pIdx] = Number(s.transition?.noiseOffsetMeters) || 0.0;
+                pIdx++;
             }
         }
 
-        return { width: w, height: h, bounds: b, rgba, patchIds };
+        return {
+            width: w,
+            height: h,
+            bounds: b,
+            rgba,
+            patchIds,
+            transitionDebug: {
+                rawWeight: transitionRawWeight,
+                falloffWeight: transitionFalloffWeight,
+                dominanceWeight: transitionDominanceWeight,
+                finalWeight: transitionFinalWeight,
+                noiseOffsetMeters: transitionNoiseOffset
+            }
+        };
     };
 
     const dispose = () => {
         sourceMaps = { biome: null, humidity: null };
         valueNoiseSamplerBySeed.clear();
+        pairSeedByKey.clear();
     };
 
     return Object.freeze({

@@ -12,6 +12,7 @@ The terrain engine MUST:
 - Provide humidity as a continuous, deterministic field
 - In Terrain Debugger workflows, allow humidity source-map generation from cloud noise with one humidity value per subtile
 - Support graded biome transitions only inside a configurable near-camera blend zone
+- Support explicit biome-pair transition profiles (with intent presets) so pair behavior is tunable independently
 - Support texture/painterly source maps as optional inputs (biome + humidity)
 - Provide a lightweight sampling API: `(worldX, worldZ) -> biome ids, humidity, blend`
 - Optionally export mask rasters for debug rendering
@@ -61,7 +62,29 @@ The engine config MUST be JSON-serializable and versioned.
   "transition": {
     "cameraBlendRadiusMeters": 140,
     "cameraBlendFeatherMeters": 24,
-    "boundaryBandMeters": 10
+    "boundaryBandMeters": 10,
+    "profileDefaults": {
+      "intent": "medium",
+      "widthScale": 1.0,
+      "falloffPower": 1.0,
+      "edgeNoiseScale": 0.02,
+      "edgeNoiseStrength": 0.22,
+      "dominanceBias": 0.0,
+      "heightInfluence": 0.0,
+      "contrast": 1.0
+    },
+    "pairProfiles": {
+      "grass|land": {
+        "intent": "soft",
+        "widthScale": 1.4,
+        "falloffPower": 0.9,
+        "edgeNoiseScale": 0.02,
+        "edgeNoiseStrength": 0.35,
+        "dominanceBias": 0.0,
+        "heightInfluence": 0.2,
+        "contrast": 0.85
+      }
+    }
   }
 }
 ```
@@ -96,6 +119,20 @@ The engine config MUST be JSON-serializable and versioned.
 - `transition.cameraBlendRadiusMeters`: float, `[0..+inf)`. Default `140`.
 - `transition.cameraBlendFeatherMeters`: float, `[0..+inf)`. Default `24`.
 - `transition.boundaryBandMeters`: float, `[0..+inf)`. Default `10`.
+- `transition.profileDefaults`: per-pair profile fallback used when no explicit pair entry exists.
+- `transition.pairProfiles`: map keyed by canonical biome pair id (`stone|grass`, `stone|land`, `grass|land`).
+  - Key ordering MUST be canonicalized (stable pair ordering, not directional input order).
+
+### 3.3 Transition Pair Profile Fields
+
+- `intent`: one of `soft`, `medium`, `hard`. Used as artistic preset category.
+- `widthScale`: `[0.25..4.0]`, scales boundary-band width for this pair.
+- `falloffPower`: `[0.3..3.5]`, reshapes the blend curve.
+- `edgeNoiseScale`: `[0.0005..0.2]`, world-space edge irregularity frequency.
+- `edgeNoiseStrength`: `[0.0..1.0]`, edge irregularity amplitude.
+- `dominanceBias`: `[-0.5..0.5]`, secondary-vs-primary push in the pair transition.
+- `heightInfluence`: `[-1.0..1.0]`, humidity/height-informed dominance influence.
+- `contrast`: `[0.25..3.0]`, final transition clarity/softness shaping.
 
 ## 4. Determinism Requirements
 
@@ -135,7 +172,20 @@ The engine provides a lightweight sampler for world positions.
   edgeDistanceMeters: 18.2,
   transition: {
     active: true,
-    cameraAlpha: 0.8
+    cameraAlpha: 0.8,
+    pairKey: "grass|land",
+    intent: "medium",
+    widthScale: 1.0,
+    falloffPower: 1.0,
+    edgeNoiseStrength: 0.22,
+    dominanceBias: 0.0,
+    heightInfluence: 0.0,
+    contrast: 1.0,
+    rawWeight: 0.24,
+    falloffWeight: 0.24,
+    dominanceWeight: 0.24,
+    finalWeight: 0.24,
+    noiseOffsetMeters: -0.18
   }
 }
 ```
@@ -151,6 +201,10 @@ Semantics:
 - `humidity`: `[0..1]`, continuous (noise/source map), clamped.
 - `edgeDistanceMeters`: distance to the nearest patch boundary (>= 0).
 - `transition.cameraAlpha`: `[0..1]` blend zone influence (0 outside zone, 1 well inside).
+- `transition.pairKey`: canonical biome pair used for profile lookup.
+- `transition.intent` + profile scalars: resolved per-pair profile used for this sample.
+- `transition.rawWeight/falloffWeight/dominanceWeight/finalWeight`: ordered shaping stages for transition diagnostics.
+- `transition.noiseOffsetMeters`: deterministic edge-noise displacement applied before shaping.
 
 ## 6. Mask Export (Optional)
 
@@ -175,6 +229,18 @@ Notes:
 For patch diagnostics, a separate `Uint32Array` patch-id raster MAY be exported:
 
 - one `uint32` per pixel storing the `patchId` at that sample.
+
+### 6.3 Transition Debug Channels
+
+Packed-mask export SHOULD include a `transitionDebug` payload with deterministic `Float32Array` channels:
+
+- `rawWeight`
+- `falloffWeight`
+- `dominanceWeight`
+- `finalWeight`
+- `noiseOffsetMeters`
+
+These channels MUST align 1:1 with exported pixels and MUST be stable for fixed config + view origin.
 
 ## 7. Migration Notes
 

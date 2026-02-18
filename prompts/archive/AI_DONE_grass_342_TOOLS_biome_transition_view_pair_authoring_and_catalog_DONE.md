@@ -1,3 +1,5 @@
+# DONE
+
 #Problem
 
 Biome transition quality is not acceptable with a generic blend approach, and current tooling is not focused enough to tune biome-pair behavior quickly. Transitions show gradient/square artifacts and lack a dedicated authoring workflow.
@@ -48,3 +50,11 @@ Tasks:
 - Do not move to `prompts/archive/` automatically.
 - Completion is not enough to move a prompt; move to `prompts/archive/` only when explicitly requested by the user.
 - Provide a summary of the changes made in the AI document (very high level, one liner for each change)
+
+## Summary (implemented)
+
+- Added a dedicated `Biome Transition` debugger tab with two-biome selection, intent presets, minimal per-pair controls, diagnostics modes, and in-tool acceptance checklist.
+- Extended terrain engine transition modeling to support canonical biome-pair profiles (`profileDefaults` + `pairProfiles`) with deterministic edge-noise and multi-stage transition diagnostics.
+- Added baseline-vs-tuned compare workflow plus pair-preset catalog save/apply/delete and JSON import/export for reusable authoring.
+- Wired debugger view mode switching so `Biome Transition` runs a deterministic 3x3 transition-authoring layout with focused rendering (roads/grass hidden, transition diagnostics active).
+- Updated terrain engine/unit-test/spec contracts to cover pair-profile transition shaping and deterministic `transitionDebug` export channels.

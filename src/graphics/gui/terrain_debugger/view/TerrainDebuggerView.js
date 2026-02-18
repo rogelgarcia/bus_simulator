@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { FirstPersonCameraController } from '../../../engine3d/camera/FirstPersonCameraController.js';
 import { getOrCreateGpuFrameTimer } from '../../../engine3d/perf/GpuFrameTimer.js';
 import { applyIBLIntensity, applyIBLToScene, loadIBLTexture } from '../../../lighting/IBL.js';
+import { getDefaultResolvedLightingSettings } from '../../../lighting/LightingSettings.js';
 import { DEFAULT_IBL_ID, getIblEntryById } from '../../../content3d/catalogs/IBLCatalog.js';
 import { getPbrMaterialMeta, getPbrMaterialOptionsForGround, resolvePbrMaterialUrls } from '../../../content3d/catalogs/PbrMaterialCatalog.js';
 import { primePbrAssetsAvailability } from '../../../content3d/materials/PbrAssetsRuntime.js';
@@ -35,6 +36,29 @@ const TERRAIN_HUMIDITY_LEVELS = Object.freeze({
     dry: 0.14,
     neutral: 0.50,
     wet: 0.86
+});
+const TERRAIN_VIEW_MODE = Object.freeze({
+    DEFAULT: 'default',
+    BIOME_TRANSITION: 'biome_transition'
+});
+const BIOME_TRANSITION_DEBUG_MODES = new Set(['pair_isolation', 'transition_result', 'transition_weight', 'transition_falloff', 'transition_noise', 'pair_compare']);
+const TERRAIN_DEBUG_MODE_ALLOWED = new Set([
+    'standard',
+    'biome_id',
+    'patch_ids',
+    'humidity',
+    'transition_band',
+    ...BIOME_TRANSITION_DEBUG_MODES
+]);
+const BIOME_TRANSITION_DEFAULT_PROFILE = Object.freeze({
+    intent: 'medium',
+    widthScale: 1.0,
+    falloffPower: 1.0,
+    edgeNoiseScale: 0.02,
+    edgeNoiseStrength: 0.22,
+    dominanceBias: 0.0,
+    heightInfluence: 0.0,
+    contrast: 1.0
 });
 
 function injectAlbedoSaturationAdjustShader(material, shader) {
@@ -253,6 +277,46 @@ function titleCaseHumiditySlot(slot) {
     if (slot === 'dry') return 'Dry';
     if (slot === 'wet') return 'Wet';
     return 'Neutral';
+}
+
+function getBiomeSortIndex(id) {
+    const biomeId = String(id ?? '');
+    if (biomeId === 'stone') return 0;
+    if (biomeId === 'grass') return 1;
+    if (biomeId === 'land') return 2;
+    return 3;
+}
+
+function makeBiomePairKey(a, b) {
+    const aId = TERRAIN_BIOME_IDS.includes(String(a ?? '')) ? String(a) : 'land';
+    const bId = TERRAIN_BIOME_IDS.includes(String(b ?? '')) ? String(b) : aId;
+    if (aId === bId) return `${aId}|${aId}`;
+    if (getBiomeSortIndex(aId) <= getBiomeSortIndex(bId)) return `${aId}|${bId}`;
+    return `${bId}|${aId}`;
+}
+
+function biomeIdFromIndex(value) {
+    const idx = Number(value) | 0;
+    if (idx === 0) return 'stone';
+    if (idx === 1) return 'grass';
+    return 'land';
+}
+
+function sanitizeBiomeTransitionProfile(input, fallback = BIOME_TRANSITION_DEFAULT_PROFILE) {
+    const src = input && typeof input === 'object' ? input : {};
+    const fb = fallback && typeof fallback === 'object' ? fallback : BIOME_TRANSITION_DEFAULT_PROFILE;
+    const intentRaw = String(src.intent ?? fb.intent ?? BIOME_TRANSITION_DEFAULT_PROFILE.intent).trim().toLowerCase();
+    const intent = intentRaw === 'soft' || intentRaw === 'hard' ? intentRaw : 'medium';
+    return {
+        intent,
+        widthScale: clamp(src.widthScale, 0.25, 4.0, fb.widthScale ?? BIOME_TRANSITION_DEFAULT_PROFILE.widthScale),
+        falloffPower: clamp(src.falloffPower, 0.3, 3.5, fb.falloffPower ?? BIOME_TRANSITION_DEFAULT_PROFILE.falloffPower),
+        edgeNoiseScale: clamp(src.edgeNoiseScale, 0.0005, 0.2, fb.edgeNoiseScale ?? BIOME_TRANSITION_DEFAULT_PROFILE.edgeNoiseScale),
+        edgeNoiseStrength: clamp(src.edgeNoiseStrength, 0.0, 1.0, fb.edgeNoiseStrength ?? BIOME_TRANSITION_DEFAULT_PROFILE.edgeNoiseStrength),
+        dominanceBias: clamp(src.dominanceBias, -0.5, 0.5, fb.dominanceBias ?? BIOME_TRANSITION_DEFAULT_PROFILE.dominanceBias),
+        heightInfluence: clamp(src.heightInfluence, -1.0, 1.0, fb.heightInfluence ?? BIOME_TRANSITION_DEFAULT_PROFILE.heightInfluence),
+        contrast: clamp(src.contrast, 0.25, 3.0, fb.contrast ?? BIOME_TRANSITION_DEFAULT_PROFILE.contrast)
+    };
 }
 
 function ensureTerrainBiomeBlendShaderOnMaterial(material) {
@@ -776,6 +840,8 @@ export class TerrainDebuggerView {
         this._terrainEngineMaskDirty = true;
         this._terrainEngineMaskViewKey = '';
         this._terrainEngineLastExport = null;
+        this._terrainEngineCompareExport = null;
+        this._terrainEngineCompareKey = '';
         this._terrainDebugMode = 'standard';
         this._terrainDebugTex = null;
         this._terrainDebugMat = null;
@@ -793,8 +859,20 @@ export class TerrainDebuggerView {
         this._terrainHumidityCloudConfig = { ...DEFAULT_TERRAIN_HUMIDITY_CLOUD_CONFIG };
         this._terrainHumiditySourceMap = null;
         this._terrainHumiditySourceMapKey = '';
+        this._terrainBiomeSourceMap = null;
+        this._terrainBiomeSourceMapKey = '';
+        this._terrainViewMode = TERRAIN_VIEW_MODE.DEFAULT;
+        this._biomeTransitionState = {
+            biome1: 'grass',
+            biome2: 'land',
+            pairKey: 'grass|land',
+            debugMode: 'transition_result',
+            compareEnabled: false,
+            baselineProfile: null
+        };
         this._terrainWireframe = false;
         this._asphaltWireframe = false;
+        this._gameplayLightingDefaults = getDefaultResolvedLightingSettings();
 
         this._grassEngine = null;
         this._grassRoadBounds = { enabled: false, halfWidth: 0, z0: 0, z1: 0 };
@@ -1103,8 +1181,14 @@ export class TerrainDebuggerView {
 
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.0;
+        const lightingDefaults = this._gameplayLightingDefaults ?? getDefaultResolvedLightingSettings();
+        const toneMapping = String(lightingDefaults?.toneMapping ?? 'aces');
+        renderer.toneMapping = toneMapping === 'agx'
+            ? (THREE.AgXToneMapping ?? THREE.ACESFilmicToneMapping)
+            : toneMapping === 'neutral'
+                ? (THREE.NeutralToneMapping ?? THREE.ACESFilmicToneMapping)
+                : THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = clamp(lightingDefaults?.exposure, 0.1, 5.0, 1.14);
 
         this.renderer = renderer;
         this._gpuFrameTimer = getOrCreateGpuFrameTimer(renderer);
@@ -1115,6 +1199,7 @@ export class TerrainDebuggerView {
             onChange: (state) => this._applyUiState(state),
             onResetCamera: () => this.controls?.reset?.(),
             onCameraPreset: (id) => this._applyCameraPreset(id),
+            onFocusBiomeTransition: () => this._focusBiomeTransitionCamera(),
             onToggleFlyover: () => this._toggleFlyover(),
             onFlyoverLoopChange: (enabled) => this._setFlyoverLoop(enabled),
             onInspectGrass: () => this._openGrassInspector(),
@@ -1236,8 +1321,12 @@ export class TerrainDebuggerView {
         this._terrainEngineMaskDirty = true;
         this._terrainEngineMaskViewKey = '';
         this._terrainEngineLastExport = null;
+        this._terrainEngineCompareExport = null;
+        this._terrainEngineCompareKey = '';
         this._terrainHumiditySourceMap = null;
         this._terrainHumiditySourceMapKey = '';
+        this._terrainBiomeSourceMap = null;
+        this._terrainBiomeSourceMapKey = '';
         this._terrainDebugTex?.dispose?.();
         this._terrainDebugTex = null;
         this._terrainDebugMat?.dispose?.();
@@ -1291,11 +1380,12 @@ export class TerrainDebuggerView {
         scene.background = null;
         scene.environment = null;
 
-        const hemi = new THREE.HemisphereLight(0xffffff, 0x253018, 0.45);
+        const lightingDefaults = this._gameplayLightingDefaults ?? getDefaultResolvedLightingSettings();
+        const hemi = new THREE.HemisphereLight(0xffffff, 0x253018, clamp(lightingDefaults?.hemiIntensity, 0.0, 5.0, 0.92));
         hemi.position.set(0, 220, 0);
         scene.add(hemi);
 
-        const sun = new THREE.DirectionalLight(0xffffff, 1.1);
+        const sun = new THREE.DirectionalLight(0xffffff, clamp(lightingDefaults?.sunIntensity, 0.0, 10.0, 1.64));
         sun.position.set(120, 170, 90);
         sun.castShadow = true;
         sun.shadow.mapSize.set(1024, 1024);
@@ -1434,53 +1524,80 @@ export class TerrainDebuggerView {
         this._roads = roads;
     }
 
-	        _buildTerrainSpec() {
-	            const base = this._terrainSpec;
-	            const layout = base?.layout && typeof base.layout === 'object' ? base.layout : {};
-	            const extraEndTiles = Math.max(0, Math.round(Number(layout?.extraEndTiles) || 0));
-            const extraSideTiles = Math.max(0, Math.round(Number(layout?.extraSideTiles) || 0));
-            const baseWidthTiles = Math.max(1, Math.round(Number(base?.widthTiles) || 1));
-            const baseDepthTiles = Math.max(1, Math.round(Number(base?.depthTiles) || 1));
-            const baseTileMinX = Math.round(Number(base?.tileMinX) || 0);
-            const baseTileMinZ = Math.round(Number(base?.tileMinZ) || 0);
-    
-            const widthTiles = baseWidthTiles + extraSideTiles * 2;
-            const depthTiles = baseDepthTiles + extraEndTiles;
-            const tileMinX = baseTileMinX - extraSideTiles;
-            const tileMinZ = baseTileMinZ - extraEndTiles;
+    _buildTerrainSpec() {
+        const base = this._terrainSpec;
+        const tileSize = Number(base?.tileSize) || 24;
+        const roadBase = base?.road && typeof base.road === 'object' ? base.road : {};
 
-	            const road = base?.road && typeof base.road === 'object' ? base.road : {};
-	            const tileSize = Number(base?.tileSize) || 24;
-	            const laneWidth = Math.max(0, Number(road?.laneWidthMeters) || 0);
-	            const lanesEach = Math.max(1, Number(road?.lanesEachDirection) || 3);
-	            const shoulder = Math.max(0, Number(road?.shoulderMeters) || 0);
-	            const curb = road?.curb && typeof road.curb === 'object' ? road.curb : {};
-	            const sidewalk = road?.sidewalk && typeof road.sidewalk === 'object' ? road.sidewalk : {};
-	            const curbThickness = Math.max(0, Number(curb?.thickness) || 0);
-	            const sidewalkWidth = Math.max(0, Number(sidewalk?.extraWidth) || 0);
-	            const lengthTiles = Math.max(0, Number(road?.lengthTiles) || 0);
-	            const roadLength = lengthTiles * tileSize;
-	            const zEnd = Number(road?.zEnd) || 0;
-	            const dir = Number(road?.direction) < 0 ? -1 : 1;
-	            const roadStart = zEnd + dir * roadLength;
-	            const z0 = Math.min(roadStart, zEnd);
-	            const z1 = Math.max(roadStart, zEnd);
-	            const widthMeters = laneWidth * lanesEach * 2 + shoulder * 2 + curbThickness * 2 + sidewalkWidth * 2;
+        if (this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TRANSITION) {
+            const widthTiles = 3;
+            const depthTiles = 3;
+            const tileMinX = -1;
+            const tileMinZ = -1;
+            const z0 = (tileMinZ - 0.5) * tileSize;
+            const z1 = z0 + depthTiles * tileSize;
+            return {
+                ...base,
+                layout: { ...(base?.layout ?? {}), extraEndTiles: 0, extraSideTiles: 0 },
+                slope: { ...(base?.slope ?? {}), leftDeg: 0, rightDeg: 0, endDeg: 0, endStartAfterRoadTiles: 0 },
+                cloud: { ...(base?.cloud ?? {}), enabled: false },
+                tileMinX,
+                tileMinZ,
+                widthTiles,
+                depthTiles,
+                road: {
+                    ...roadBase,
+                    enabled: false,
+                    widthMeters: 0,
+                    z0: Math.min(z0, z1),
+                    z1: Math.max(z0, z1)
+                }
+            };
+        }
 
-	            return {
-	                ...base,
-	                tileMinX,
-	                tileMinZ,
-	                widthTiles,
-	                depthTiles,
-	                road: {
-	                    ...road,
-	                    widthMeters,
-	                    z0,
-	                    z1
-	                }
-	            };
-	        }
+        const layout = base?.layout && typeof base.layout === 'object' ? base.layout : {};
+        const extraEndTiles = Math.max(0, Math.round(Number(layout?.extraEndTiles) || 0));
+        const extraSideTiles = Math.max(0, Math.round(Number(layout?.extraSideTiles) || 0));
+        const baseWidthTiles = Math.max(1, Math.round(Number(base?.widthTiles) || 1));
+        const baseDepthTiles = Math.max(1, Math.round(Number(base?.depthTiles) || 1));
+        const baseTileMinX = Math.round(Number(base?.tileMinX) || 0);
+        const baseTileMinZ = Math.round(Number(base?.tileMinZ) || 0);
+
+        const widthTiles = baseWidthTiles + extraSideTiles * 2;
+        const depthTiles = baseDepthTiles + extraEndTiles;
+        const tileMinX = baseTileMinX - extraSideTiles;
+        const tileMinZ = baseTileMinZ - extraEndTiles;
+
+        const laneWidth = Math.max(0, Number(roadBase?.laneWidthMeters) || 0);
+        const lanesEach = Math.max(1, Number(roadBase?.lanesEachDirection) || 3);
+        const shoulder = Math.max(0, Number(roadBase?.shoulderMeters) || 0);
+        const curb = roadBase?.curb && typeof roadBase.curb === 'object' ? roadBase.curb : {};
+        const sidewalk = roadBase?.sidewalk && typeof roadBase.sidewalk === 'object' ? roadBase.sidewalk : {};
+        const curbThickness = Math.max(0, Number(curb?.thickness) || 0);
+        const sidewalkWidth = Math.max(0, Number(sidewalk?.extraWidth) || 0);
+        const lengthTiles = Math.max(0, Number(roadBase?.lengthTiles) || 0);
+        const roadLength = lengthTiles * tileSize;
+        const zEnd = Number(roadBase?.zEnd) || 0;
+        const dir = Number(roadBase?.direction) < 0 ? -1 : 1;
+        const roadStart = zEnd + dir * roadLength;
+        const z0 = Math.min(roadStart, zEnd);
+        const z1 = Math.max(roadStart, zEnd);
+        const widthMeters = laneWidth * lanesEach * 2 + shoulder * 2 + curbThickness * 2 + sidewalkWidth * 2;
+
+        return {
+            ...base,
+            tileMinX,
+            tileMinZ,
+            widthTiles,
+            depthTiles,
+            road: {
+                ...roadBase,
+                widthMeters,
+                z0,
+                z1
+            }
+        };
+    }
 
     _rebuildTerrain() {
         const scene = this.scene;
@@ -1530,6 +1647,9 @@ export class TerrainDebuggerView {
         }
 
         this._applyVisualizationToggles();
+        const hideRoadAndGrass = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TRANSITION;
+        if (this._roads?.group) this._roads.group.visible = !hideRoadAndGrass;
+        if (this._grassEngine?.group) this._grassEngine.group.visible = !hideRoadAndGrass;
     }
 
     _applyMaterialWireframe(material, enabled) {
@@ -2152,6 +2272,36 @@ export class TerrainDebuggerView {
         this._syncCameraStatus({ nowMs: performance.now(), force: true });
     }
 
+    _focusBiomeTransitionCamera() {
+        const controls = this.controls;
+        if (!controls?.setLookAt) return;
+        if (this._flyover?.active) this._stopFlyover({ keepPose: true });
+
+        const grid = this._terrainGrid;
+        if (!grid) {
+            this._applyCameraPreset('low');
+            return;
+        }
+
+        const tileSize = Number(grid.tileSize) || 24;
+        const widthTiles = Math.max(1, Number(grid.widthTiles) || 1);
+        const depthTiles = Math.max(1, Number(grid.depthTiles) || 1);
+        const minX = Number(grid.minX) || 0;
+        const minZ = Number(grid.minZ) || 0;
+        const centerX = minX + widthTiles * tileSize * 0.5;
+        const centerZ = minZ + depthTiles * tileSize * 0.5;
+        const targetY = this._getTerrainHeightAtXZ(centerX, centerZ);
+        const position = new THREE.Vector3(
+            centerX,
+            targetY + Math.max(16, tileSize * 1.35),
+            centerZ + Math.max(28, tileSize * 2.3)
+        );
+        const target = new THREE.Vector3(centerX, targetY, centerZ);
+        controls.setLookAt({ position, target });
+        this._activeCameraPresetId = 'custom';
+        this._syncCameraStatus({ nowMs: performance.now(), force: true });
+    }
+
     _getTerrainBoundsXZ() {
         const grid = this._terrainGrid;
         if (!grid) return null;
@@ -2283,6 +2433,73 @@ export class TerrainDebuggerView {
         return this._terrainHumiditySourceMap;
     }
 
+    _sanitizeBiomeTransitionState(src) {
+        const input = src && typeof src === 'object' ? src : {};
+        const biome1 = TERRAIN_BIOME_IDS.includes(String(input.biome1 ?? '')) ? String(input.biome1) : 'grass';
+        let biome2 = TERRAIN_BIOME_IDS.includes(String(input.biome2 ?? '')) ? String(input.biome2) : 'land';
+        if (biome1 === biome2) biome2 = TERRAIN_BIOME_IDS.find((id) => id !== biome1) ?? 'land';
+        const pairKey = makeBiomePairKey(biome1, biome2);
+        const rawDebugMode = BIOME_TRANSITION_DEBUG_MODES.has(String(input.debugMode ?? ''))
+            ? String(input.debugMode)
+            : 'transition_result';
+        const baselineProfiles = input.baselineProfiles && typeof input.baselineProfiles === 'object' ? input.baselineProfiles : {};
+        const baselineSrc = baselineProfiles[pairKey];
+        const baselineProfile = (baselineSrc && typeof baselineSrc === 'object')
+            ? sanitizeBiomeTransitionProfile(baselineSrc, BIOME_TRANSITION_DEFAULT_PROFILE)
+            : null;
+        const compareEnabled = !!input.compareEnabled && !!baselineProfile;
+        const debugMode = rawDebugMode === 'pair_compare' && !compareEnabled ? 'transition_result' : rawDebugMode;
+        return {
+            biome1,
+            biome2,
+            pairKey,
+            debugMode,
+            compareEnabled,
+            baselineProfile
+        };
+    }
+
+    _buildBiomeTransitionSourceMap({ bounds, biome1, biome2 } = {}) {
+        const b = bounds && typeof bounds === 'object' ? bounds : null;
+        if (!b) return null;
+        const idA = TERRAIN_BIOME_IDS.includes(String(biome1 ?? '')) ? String(biome1) : 'grass';
+        const idB = TERRAIN_BIOME_IDS.includes(String(biome2 ?? '')) ? String(biome2) : 'land';
+        const indexA = idA === 'stone' ? 0 : idA === 'grass' ? 1 : 2;
+        const indexB = idB === 'stone' ? 0 : idB === 'grass' ? 1 : 2;
+
+        const width = 3;
+        const height = 3;
+        const key = [
+            `${Number(b.minX).toFixed(3)},${Number(b.maxX).toFixed(3)},${Number(b.minZ).toFixed(3)},${Number(b.maxZ).toFixed(3)}`,
+            `${idA}|${idB}`
+        ].join('|');
+        if (this._terrainBiomeSourceMap && this._terrainBiomeSourceMapKey === key) return this._terrainBiomeSourceMap;
+
+        const data = new Uint8Array(width * height);
+        let idx = 0;
+        for (let iz = 0; iz < height; iz++) {
+            for (let ix = 0; ix < width; ix++) {
+                if (ix === 0) data[idx++] = indexA;
+                else data[idx++] = indexB;
+            }
+        }
+
+        this._terrainBiomeSourceMap = {
+            width,
+            height,
+            data,
+            bounds: {
+                minX: Number(b.minX) || 0,
+                maxX: Number(b.maxX) || 0,
+                minZ: Number(b.minZ) || 0,
+                maxZ: Number(b.maxZ) || 0
+            }
+        };
+        this._terrainBiomeSourceMapKey = key;
+        this._terrainEngineMaskDirty = true;
+        return this._terrainBiomeSourceMap;
+    }
+
     _updateTerrainPbrLegendUi() {
         const ui = this._ui;
         if (!ui?.setTerrainPbrLegend) return;
@@ -2412,8 +2629,11 @@ export class TerrainDebuggerView {
         if (!(packed instanceof Uint8Array) || packed.length < texW * texH * 4) return;
         if (!(patchIds instanceof Uint32Array) || patchIds.length < texW * texH) return;
 
-        const viewKey = dbgMode === 'transition_band' ? this._terrainEngineMaskViewKey : 'static';
-        const key = `${dbgMode}|${this._terrainEngineMaskKey}|${viewKey}|${texW}x${texH}`;
+        const pairKey = String(this._biomeTransitionState?.pairKey ?? 'grass|land');
+        const viewKey = (dbgMode === 'transition_band' || BIOME_TRANSITION_DEBUG_MODES.has(dbgMode))
+            ? this._terrainEngineMaskViewKey
+            : 'static';
+        const key = `${dbgMode}|${this._terrainEngineMaskKey}|${viewKey}|${BIOME_TRANSITION_DEBUG_MODES.has(dbgMode) ? pairKey : ''}|${dbgMode === 'pair_compare' ? this._terrainEngineCompareKey : ''}|${texW}x${texH}`;
         if (key === this._terrainDebugTexKey && this._terrainDebugTex) return;
         this._terrainDebugTexKey = key;
 
@@ -2423,6 +2643,27 @@ export class TerrainDebuggerView {
             [70, 160, 78],
             [215, 145, 70]
         ];
+        const pairParts = pairKey.split('|');
+        const pairBiomeA = TERRAIN_BIOME_IDS.includes(pairParts[0]) ? pairParts[0] : 'grass';
+        const pairBiomeB = TERRAIN_BIOME_IDS.includes(pairParts[1]) ? pairParts[1] : 'land';
+        const pairIdxA = pairBiomeA === 'stone' ? 0 : pairBiomeA === 'grass' ? 1 : 2;
+        const pairIdxB = pairBiomeB === 'stone' ? 0 : pairBiomeB === 'grass' ? 1 : 2;
+        const transitionDebug = res?.transitionDebug && typeof res.transitionDebug === 'object' ? res.transitionDebug : {};
+        const falloffWeight = transitionDebug?.falloffWeight instanceof Float32Array ? transitionDebug.falloffWeight : null;
+        const noiseOffsetMeters = transitionDebug?.noiseOffsetMeters instanceof Float32Array ? transitionDebug.noiseOffsetMeters : null;
+
+        const toTransitionColor = (srcPacked, i) => {
+            const p = Math.max(0, Math.min(2, srcPacked[i] | 0));
+            const q = Math.max(0, Math.min(2, srcPacked[i + 1] | 0));
+            const blend = clamp((srcPacked[i + 2] | 0) / 255, 0, 1, 0);
+            const c0 = biomeBase[p];
+            const c1 = biomeBase[q];
+            return {
+                r: Math.max(0, Math.min(255, Math.round(c0[0] + (c1[0] - c0[0]) * blend))),
+                g: Math.max(0, Math.min(255, Math.round(c0[1] + (c1[1] - c0[1]) * blend))),
+                b: Math.max(0, Math.min(255, Math.round(c0[2] + (c1[2] - c0[2]) * blend)))
+            };
+        };
 
         if (dbgMode === 'biome_id') {
             for (let i = 0; i < packed.length; i += 4) {
@@ -2473,6 +2714,99 @@ export class TerrainDebuggerView {
                 out[i] = v;
                 out[i + 1] = v;
                 out[i + 2] = v;
+                out[i + 3] = 255;
+            }
+        } else if (dbgMode === 'transition_result') {
+            for (let i = 0; i < packed.length; i += 4) {
+                const c = toTransitionColor(packed, i);
+                out[i] = c.r;
+                out[i + 1] = c.g;
+                out[i + 2] = c.b;
+                out[i + 3] = 255;
+            }
+        } else if (dbgMode === 'transition_weight') {
+            for (let i = 0; i < packed.length; i += 4) {
+                const v = packed[i + 2] | 0;
+                out[i] = v;
+                out[i + 1] = v;
+                out[i + 2] = v;
+                out[i + 3] = 255;
+            }
+        } else if (dbgMode === 'transition_falloff') {
+            const len = texW * texH;
+            for (let idx = 0; idx < len; idx++) {
+                const i = idx * 4;
+                const value = falloffWeight ? clamp(falloffWeight[idx], 0, 1, 0) : ((packed[i + 2] | 0) / 255);
+                const v = Math.max(0, Math.min(255, Math.round(value * 255)));
+                out[i] = v;
+                out[i + 1] = v;
+                out[i + 2] = v;
+                out[i + 3] = 255;
+            }
+        } else if (dbgMode === 'transition_noise') {
+            const len = texW * texH;
+            let maxAbs = 0;
+            if (noiseOffsetMeters) {
+                for (let idx = 0; idx < len; idx++) maxAbs = Math.max(maxAbs, Math.abs(Number(noiseOffsetMeters[idx]) || 0));
+            }
+            if (!(maxAbs > EPS)) maxAbs = 1;
+            for (let idx = 0; idx < len; idx++) {
+                const i = idx * 4;
+                const n = noiseOffsetMeters ? (Number(noiseOffsetMeters[idx]) || 0) : 0;
+                const t = clamp(0.5 + (n / maxAbs) * 0.5, 0, 1, 0.5);
+                const r = Math.max(0, Math.min(255, Math.round(t * 255)));
+                const b2 = Math.max(0, Math.min(255, Math.round((1 - t) * 255)));
+                out[i] = r;
+                out[i + 1] = Math.max(0, Math.min(255, Math.round((1 - Math.abs(0.5 - t) * 2) * 180)));
+                out[i + 2] = b2;
+                out[i + 3] = 255;
+            }
+        } else if (dbgMode === 'pair_isolation') {
+            for (let i = 0; i < packed.length; i += 4) {
+                const p = Math.max(0, Math.min(2, packed[i] | 0));
+                const q = Math.max(0, Math.min(2, packed[i + 1] | 0));
+                const pair = makeBiomePairKey(biomeIdFromIndex(p), biomeIdFromIndex(q));
+                const blendRaw = clamp((packed[i + 2] | 0) / 255, 0, 1, 0);
+                if (pair === pairKey && p !== q) {
+                    const blend = (p === pairIdxA && q === pairIdxB) ? blendRaw : (1 - blendRaw);
+                    const c0 = biomeBase[pairIdxA];
+                    const c1 = biomeBase[pairIdxB];
+                    out[i] = Math.max(0, Math.min(255, Math.round(c0[0] + (c1[0] - c0[0]) * blend)));
+                    out[i + 1] = Math.max(0, Math.min(255, Math.round(c0[1] + (c1[1] - c0[1]) * blend)));
+                    out[i + 2] = Math.max(0, Math.min(255, Math.round(c0[2] + (c1[2] - c0[2]) * blend)));
+                    out[i + 3] = 255;
+                } else {
+                    const c = biomeBase[p];
+                    out[i] = Math.max(0, Math.min(255, Math.round(c[0] * 0.18)));
+                    out[i + 1] = Math.max(0, Math.min(255, Math.round(c[1] * 0.18)));
+                    out[i + 2] = Math.max(0, Math.min(255, Math.round(c[2] * 0.18)));
+                    out[i + 3] = 255;
+                }
+            }
+        } else if (dbgMode === 'pair_compare') {
+            const compareRes = this._terrainEngineCompareExport ?? null;
+            const comparePacked = compareRes?.rgba instanceof Uint8Array && compareRes.rgba.length >= packed.length
+                ? compareRes.rgba
+                : null;
+            for (let iz = 0; iz < texH; iz++) {
+                for (let ix = 0; ix < texW; ix++) {
+                    const idx = iz * texW + ix;
+                    const i = idx * 4;
+                    const useBaseline = comparePacked && ix < (texW * 0.5);
+                    const c = toTransitionColor(useBaseline ? comparePacked : packed, i);
+                    out[i] = c.r;
+                    out[i + 1] = c.g;
+                    out[i + 2] = c.b;
+                    out[i + 3] = 255;
+                }
+            }
+            const dividerX = Math.floor(texW * 0.5);
+            for (let iz = 0; iz < texH; iz++) {
+                const idx = iz * texW + dividerX;
+                const i = idx * 4;
+                out[i] = 255;
+                out[i + 1] = 255;
+                out[i + 2] = 255;
                 out[i + 3] = 255;
             }
         } else if (dbgMode === 'patch_ids') {
@@ -2545,7 +2879,7 @@ export class TerrainDebuggerView {
         const mesh = this._terrain;
         if (!mesh) return;
         const mode = String(this._terrainDebugMode ?? 'standard');
-        if (mode === 'standard') {
+        if (mode === 'standard' || mode === 'transition_result') {
             if (mesh.material !== this._terrainMat) mesh.material = this._terrainMat;
             this._applyVisualizationToggles();
             return;
@@ -2555,6 +2889,35 @@ export class TerrainDebuggerView {
         this._ensureTerrainDebugMaterial();
         if (mesh.material !== this._terrainDebugMat && this._terrainDebugMat) mesh.material = this._terrainDebugMat;
         this._applyVisualizationToggles();
+    }
+
+    _exportPackedMaskForProfileOverride({ config, pairKey, profile, width, height, viewOrigin } = {}) {
+        const cfg = config && typeof config === 'object' ? config : null;
+        const key = String(pairKey ?? '').trim();
+        if (!cfg || !key) return null;
+        const baseTransition = cfg.transition && typeof cfg.transition === 'object' ? cfg.transition : {};
+        const baseProfiles = baseTransition.pairProfiles && typeof baseTransition.pairProfiles === 'object'
+            ? baseTransition.pairProfiles
+            : {};
+        const nextProfiles = { ...baseProfiles };
+        nextProfiles[key] = sanitizeBiomeTransitionProfile(profile, baseTransition.profileDefaults ?? BIOME_TRANSITION_DEFAULT_PROFILE);
+        const overrideConfig = {
+            ...cfg,
+            transition: {
+                ...baseTransition,
+                pairProfiles: nextProfiles
+            }
+        };
+        const temp = createTerrainEngine(overrideConfig);
+        try {
+            temp.setSourceMaps({
+                biome: this._terrainBiomeSourceMap ?? null,
+                humidity: this._terrainHumiditySourceMap ?? null
+            });
+            return temp.exportPackedMaskRgba8({ width, height, viewOrigin });
+        } finally {
+            temp.dispose();
+        }
     }
 
     _updateTerrainEngineMasks({ nowMs } = {}) {
@@ -2568,7 +2931,7 @@ export class TerrainDebuggerView {
         const texH = TERRAIN_ENGINE_MASK_TEX_SIZE;
 
         const debugMode = String(this._terrainDebugMode ?? 'standard');
-        const viewDependent = debugMode === 'standard' || debugMode === 'transition_band';
+        const viewDependent = !(debugMode === 'biome_id' || debugMode === 'patch_ids' || debugMode === 'humidity');
 
         const cam = this.camera;
         const cx = Number(cam?.position?.x) || 0;
@@ -2584,6 +2947,22 @@ export class TerrainDebuggerView {
         const w = bio?.weights ?? {};
         const hum = cfg?.humidity ?? {};
         const tr = cfg?.transition ?? {};
+        const trDefaults = tr?.profileDefaults ?? BIOME_TRANSITION_DEFAULT_PROFILE;
+        const trProfiles = tr?.pairProfiles && typeof tr.pairProfiles === 'object' ? tr.pairProfiles : {};
+        const trProfileKey = Object.keys(trProfiles).sort().map((key) => {
+            const p = trProfiles[key] ?? {};
+            return [
+                key,
+                String(p.intent ?? ''),
+                Number(p.widthScale).toFixed(4),
+                Number(p.falloffPower).toFixed(4),
+                Number(p.edgeNoiseScale).toFixed(5),
+                Number(p.edgeNoiseStrength).toFixed(4),
+                Number(p.dominanceBias).toFixed(4),
+                Number(p.heightInfluence).toFixed(4),
+                Number(p.contrast).toFixed(4)
+            ].join(':');
+        }).join(';');
 
         const configKey = [
             String(cfg?.seed ?? ''),
@@ -2592,6 +2971,8 @@ export class TerrainDebuggerView {
             `${String(bio.mode ?? '')},${String(bio.defaultBiomeId ?? '')},${Number(w.stone).toFixed(4)},${Number(w.grass).toFixed(4)},${Number(w.land).toFixed(4)}`,
             `${String(hum.mode ?? '')},${Number(hum.noiseScale).toFixed(6)},${Number(hum.octaves) || 0},${Number(hum.gain).toFixed(4)},${Number(hum.lacunarity).toFixed(4)},${Number(hum.bias).toFixed(4)},${Number(hum.amplitude).toFixed(4)}`,
             `${Number(tr.cameraBlendRadiusMeters).toFixed(3)},${Number(tr.cameraBlendFeatherMeters).toFixed(3)},${Number(tr.boundaryBandMeters).toFixed(3)}`,
+            `${String(trDefaults.intent ?? '')},${Number(trDefaults.widthScale).toFixed(4)},${Number(trDefaults.falloffPower).toFixed(4)},${Number(trDefaults.edgeNoiseScale).toFixed(5)},${Number(trDefaults.edgeNoiseStrength).toFixed(4)},${Number(trDefaults.dominanceBias).toFixed(4)},${Number(trDefaults.heightInfluence).toFixed(4)},${Number(trDefaults.contrast).toFixed(4)}`,
+            trProfileKey,
             `${texW}x${texH}`
         ].join('|');
 
@@ -2651,6 +3032,31 @@ export class TerrainDebuggerView {
         this._syncTerrainBiomePbrMapsOnStandardMaterial();
 
         this._terrainEngineLastExport = res;
+        if (debugMode === 'pair_compare' && this._biomeTransitionState?.compareEnabled) {
+            const comparePairKey = String(this._biomeTransitionState?.pairKey ?? '');
+            const baselineProfile = this._biomeTransitionState?.baselineProfile ?? null;
+            if (comparePairKey && baselineProfile) {
+                const baselineKey = JSON.stringify(sanitizeBiomeTransitionProfile(baselineProfile, BIOME_TRANSITION_DEFAULT_PROFILE));
+                const compareKey = `${configKey}|${comparePairKey}|${baselineKey}|${camViewKey}`;
+                if (compareKey !== this._terrainEngineCompareKey || !this._terrainEngineCompareExport) {
+                    this._terrainEngineCompareExport = this._exportPackedMaskForProfileOverride({
+                        config: engine.getConfig(),
+                        pairKey: comparePairKey,
+                        profile: baselineProfile,
+                        width: texW,
+                        height: texH,
+                        viewOrigin: { x: cx, z: cz }
+                    });
+                    this._terrainEngineCompareKey = compareKey;
+                }
+            } else {
+                this._terrainEngineCompareExport = null;
+                this._terrainEngineCompareKey = '';
+            }
+        } else {
+            this._terrainEngineCompareExport = null;
+            this._terrainEngineCompareKey = '';
+        }
         this._syncTerrainMeshMaterialForDebugMode(res);
 
         this._terrainEngineMaskKey = configKey;
@@ -2682,7 +3088,7 @@ export class TerrainDebuggerView {
 
         this._cursorRaycaster.setFromCamera(this._cursorNdc, camera);
         this._cursorHits.length = 0;
-        const roads = this._roads?.group ?? null;
+        const roads = this._roads?.group?.visible ? this._roads.group : null;
         const raycastTargets = roads ? [terrain, roads] : [terrain];
         this._cursorRaycaster.intersectObjects(raycastTargets, true, this._cursorHits);
         const hit = this._cursorHits[0] ?? null;
@@ -2757,28 +3163,99 @@ export class TerrainDebuggerView {
         const biomeBindingsSrc = materialBindingsSrc.biomes && typeof materialBindingsSrc.biomes === 'object' ? materialBindingsSrc.biomes : {};
         const humidityBlendSrc = materialBindingsSrc.humidity && typeof materialBindingsSrc.humidity === 'object' ? materialBindingsSrc.humidity : {};
         const transitionSrc = src.transition && typeof src.transition === 'object' ? src.transition : {};
+        const transitionDefaultsSrc = transitionSrc.profileDefaults && typeof transitionSrc.profileDefaults === 'object'
+            ? transitionSrc.profileDefaults
+            : transitionSrc;
+        const prevTransitionDefaults = prev?.transition?.profileDefaults ?? BIOME_TRANSITION_DEFAULT_PROFILE;
+        const transitionDefaults = sanitizeBiomeTransitionProfile(transitionDefaultsSrc, prevTransitionDefaults);
+        const transitionPairProfilesRaw = transitionSrc.pairProfiles && typeof transitionSrc.pairProfiles === 'object'
+            ? transitionSrc.pairProfiles
+            : (prev?.transition?.pairProfiles ?? {});
+        const transitionPairProfiles = {};
+        for (const [rawKey, rawProfile] of Object.entries(transitionPairProfilesRaw)) {
+            const key = String(rawKey ?? '').trim();
+            if (!key) continue;
+            const parts = key.split('|');
+            if (parts.length !== 2) continue;
+            const pairKey = makeBiomePairKey(parts[0], parts[1]);
+            transitionPairProfiles[pairKey] = sanitizeBiomeTransitionProfile(rawProfile, transitionDefaults);
+        }
 
         this._terrainBiomeHumidityBindings = this._sanitizeTerrainBiomeHumidityBindings(biomeBindingsSrc);
         this._terrainHumidityBlendConfig = this._sanitizeTerrainHumidityBlendConfig(humidityBlendSrc);
         this._terrainHumidityCloudConfig = this._sanitizeTerrainHumidityCloudConfig(humidityCloudSrc);
         this._terrainDebugTexKey = '';
+        this._terrainEngineCompareExport = null;
+        this._terrainEngineCompareKey = '';
+
+        const transitionViewActive = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TRANSITION;
+        const transitionPair = this._biomeTransitionState ?? {};
+        const biome1 = TERRAIN_BIOME_IDS.includes(String(transitionPair.biome1 ?? '')) ? String(transitionPair.biome1) : 'grass';
+        let biome2 = TERRAIN_BIOME_IDS.includes(String(transitionPair.biome2 ?? '')) ? String(transitionPair.biome2) : 'land';
+        if (biome1 === biome2) biome2 = TERRAIN_BIOME_IDS.find((id) => id !== biome1) ?? 'land';
+        const pairKey = makeBiomePairKey(biome1, biome2);
+        if (!transitionPairProfiles[pairKey]) transitionPairProfiles[pairKey] = sanitizeBiomeTransitionProfile(null, transitionDefaults);
+
+        const boundsFromGrid = this._getTerrainBoundsXZ();
+        let nextPatch = { ...prev.patch, ...patchSrc };
+        let nextBiomes = { ...prev.biomes, ...biomesSrc };
+        let nextTransition = {
+            ...prev.transition,
+            ...transitionSrc,
+            profileDefaults: transitionDefaults,
+            pairProfiles: transitionPairProfiles
+        };
+        if (transitionViewActive) {
+            const tileSize = Number(this._terrainGrid?.tileSize) || Number(nextPatch.sizeMeters) || 24;
+            const transitionPatchSize = tileSize * 1.5;
+            const bounds = boundsFromGrid ?? prev?.bounds ?? null;
+            if (bounds) {
+                nextPatch = {
+                    ...nextPatch,
+                    layout: 'grid',
+                    sizeMeters: transitionPatchSize,
+                    originX: Number(bounds.minX) || 0,
+                    originZ: Number(bounds.minZ) || 0
+                };
+            }
+            nextBiomes = {
+                ...nextBiomes,
+                mode: 'source_map',
+                defaultBiomeId: biome1
+            };
+            nextTransition = {
+                ...nextTransition,
+                cameraBlendRadiusMeters: Math.max(Number(nextTransition.cameraBlendRadiusMeters) || 0, 2000),
+                cameraBlendFeatherMeters: 0,
+                boundaryBandMeters: Math.max(Number(nextTransition.boundaryBandMeters) || 0, tileSize * 0.55)
+            };
+        }
 
         engine.setConfig({
             ...prev,
             seed: typeof src.seed === 'string' ? src.seed : prev.seed,
-            patch: { ...prev.patch, ...patchSrc },
-            biomes: { ...prev.biomes, ...biomesSrc },
+            patch: nextPatch,
+            biomes: nextBiomes,
             humidity: { ...prev.humidity, ...humiditySrc, mode: 'source_map' },
-            transition: { ...prev.transition, ...transitionSrc }
+            transition: nextTransition
         });
 
         const nextCfg = engine.getConfig();
-        const bounds = nextCfg?.bounds ?? prev?.bounds ?? this._getTerrainBoundsXZ();
+        const bounds = nextCfg?.bounds ?? prev?.bounds ?? boundsFromGrid;
         const humidityMap = this._buildTerrainHumiditySourceMapFromCloud({
             bounds,
             seed: nextCfg?.seed ?? prev?.seed ?? 'terrain-debugger'
         });
-        if (humidityMap) engine.setSourceMaps({ humidity: humidityMap });
+        const sourceMaps = {};
+        if (humidityMap) sourceMaps.humidity = humidityMap;
+        if (transitionViewActive) {
+            const biomeMap = this._buildBiomeTransitionSourceMap({ bounds, biome1, biome2 });
+            if (biomeMap) sourceMaps.biome = biomeMap;
+        } else {
+            this._terrainBiomeSourceMap = null;
+            this._terrainBiomeSourceMapKey = '';
+        }
+        engine.setSourceMaps(sourceMaps);
         this._syncTerrainBiomePbrMapsOnStandardMaterial();
         this._terrainEngineMaskDirty = true;
     }
@@ -3077,6 +3554,40 @@ export class TerrainDebuggerView {
         const visualizationCfg = s.visualization && typeof s.visualization === 'object' ? s.visualization : {};
         const nextLandWireframe = !!visualizationCfg.landWireframe;
         const nextAsphaltWireframe = !!visualizationCfg.asphaltWireframe;
+        const nextTerrainViewMode = String(s.tab ?? '') === TERRAIN_VIEW_MODE.BIOME_TRANSITION
+            ? TERRAIN_VIEW_MODE.BIOME_TRANSITION
+            : TERRAIN_VIEW_MODE.DEFAULT;
+        if (nextTerrainViewMode !== this._terrainViewMode) {
+            this._terrainViewMode = nextTerrainViewMode;
+            this._terrainEngineMaskDirty = true;
+            this._terrainEngineMaskViewKey = '';
+            this._terrainDebugTexKey = '';
+            this._terrainEngineCompareExport = null;
+            this._terrainEngineCompareKey = '';
+            rebuildTerrain = true;
+        }
+
+        const nextBiomeTransitionState = this._sanitizeBiomeTransitionState(terrainCfg.biomeTransition);
+        const prevBiomeTransitionState = this._biomeTransitionState ?? null;
+        const nextTransitionStateKey = JSON.stringify(nextBiomeTransitionState);
+        const prevTransitionStateKey = JSON.stringify(prevBiomeTransitionState ?? {});
+        if (nextTransitionStateKey !== prevTransitionStateKey) {
+            if (String(prevBiomeTransitionState?.pairKey ?? '') !== String(nextBiomeTransitionState.pairKey ?? '')) {
+                this._terrainBiomeSourceMap = null;
+                this._terrainBiomeSourceMapKey = '';
+            }
+            if (String(prevBiomeTransitionState?.debugMode ?? '') !== String(nextBiomeTransitionState.debugMode ?? '')
+                || !!prevBiomeTransitionState?.compareEnabled !== !!nextBiomeTransitionState.compareEnabled
+                || !!prevBiomeTransitionState?.baselineProfile !== !!nextBiomeTransitionState.baselineProfile) {
+                this._terrainEngineCompareExport = null;
+                this._terrainEngineCompareKey = '';
+            }
+            this._terrainDebugTexKey = '';
+            this._terrainEngineMaskDirty = true;
+            this._biomeTransitionState = nextBiomeTransitionState;
+        } else {
+            this._biomeTransitionState = nextBiomeTransitionState;
+        }
 
         const layoutCfg = terrainCfg.layout && typeof terrainCfg.layout === 'object' ? terrainCfg.layout : null;
         if (layoutCfg) {
@@ -3128,20 +3639,33 @@ export class TerrainDebuggerView {
         if (this._terrainEngine) this._applyTerrainEngineUiConfig(terrainCfg.engine);
         {
             const debugCfg = terrainCfg.debug && typeof terrainCfg.debug === 'object' ? terrainCfg.debug : {};
-            const raw = String(debugCfg.mode ?? 'standard');
-            const allowed = new Set(['standard', 'biome_id', 'patch_ids', 'humidity', 'transition_band']);
-            const nextMode = allowed.has(raw) ? raw : 'standard';
+            const standardModeRaw = String(debugCfg.mode ?? 'standard');
+            const standardMode = TERRAIN_DEBUG_MODE_ALLOWED.has(standardModeRaw) ? standardModeRaw : 'standard';
+            const transitionModeRaw = String(this._biomeTransitionState?.debugMode ?? 'transition_result');
+            const transitionMode = TERRAIN_DEBUG_MODE_ALLOWED.has(transitionModeRaw) ? transitionModeRaw : 'transition_result';
+            const nextMode = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TRANSITION
+                ? transitionMode
+                : standardMode;
             const prevMode = String(this._terrainDebugMode ?? 'standard');
             this._terrainDebugMode = nextMode;
 
-            const prevViewDependent = prevMode === 'standard' || prevMode === 'transition_band';
-            const nextViewDependent = nextMode === 'standard' || nextMode === 'transition_band';
+            const isViewDependent = (mode) => mode !== 'biome_id' && mode !== 'patch_ids' && mode !== 'humidity';
+            const prevViewDependent = isViewDependent(prevMode);
+            const nextViewDependent = isViewDependent(nextMode);
             if (!prevViewDependent && nextViewDependent) this._terrainEngineMaskDirty = true;
+            if (prevMode !== nextMode) this._terrainDebugTexKey = '';
+            if (prevMode === 'pair_compare' || nextMode === 'pair_compare') {
+                this._terrainEngineCompareExport = null;
+                this._terrainEngineCompareKey = '';
+            }
         }
 
         void this._applyIblState(s.ibl, { force: false });
 
         if (this._grassEngine) this._grassEngine.setConfig?.(s.grass);
+        const hideRoadAndGrass = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TRANSITION;
+        if (this._roads?.group) this._roads.group.visible = !hideRoadAndGrass;
+        if (this._grassEngine?.group) this._grassEngine.group.visible = !hideRoadAndGrass;
 
         if (nextLandWireframe !== this._terrainWireframe || nextAsphaltWireframe !== this._asphaltWireframe) {
             this._terrainWireframe = nextLandWireframe;

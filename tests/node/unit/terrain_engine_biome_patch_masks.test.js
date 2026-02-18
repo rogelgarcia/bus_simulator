@@ -49,7 +49,21 @@ test('TerrainEngine: blend activates only near camera and near boundaries', () =
         bounds: { minX: 0, maxX: 20, minZ: 0, maxZ: 20 },
         patch: { sizeMeters: 10, originX: 0, originZ: 0 },
         biomes: { mode: 'source_map', defaultBiomeId: 'land' },
-        transition: { cameraBlendRadiusMeters: 1000, cameraBlendFeatherMeters: 0, boundaryBandMeters: 2 }
+        transition: {
+            cameraBlendRadiusMeters: 1000,
+            cameraBlendFeatherMeters: 0,
+            boundaryBandMeters: 2,
+            profileDefaults: {
+                intent: 'medium',
+                widthScale: 1.0,
+                falloffPower: 1.0,
+                edgeNoiseScale: 0.02,
+                edgeNoiseStrength: 0.0,
+                dominanceBias: 0.0,
+                heightInfluence: 0.0,
+                contrast: 1.0
+            }
+        }
     });
 
     engine.setSourceMaps({
@@ -65,7 +79,7 @@ test('TerrainEngine: blend activates only near camera and near boundaries', () =
 
     const farFromBoundary = engine.sample(8, 5);
     assert.equal(farFromBoundary.primaryBiomeId, 'stone');
-    assert.equal(farFromBoundary.secondaryBiomeId, 'land');
+    assert.equal(farFromBoundary.secondaryBiomeId, farFromBoundary.primaryBiomeId);
     assert.equal(farFromBoundary.biomeBlend, 0);
 
     const nearBoundary = engine.sample(9, 5);
@@ -73,13 +87,61 @@ test('TerrainEngine: blend activates only near camera and near boundaries', () =
     assert.equal(nearBoundary.secondaryBiomeId, 'land');
     assert.ok(nearBoundary.biomeBlend > 0.05);
 
+    const prev = engine.getConfig();
     engine.setConfig({
-        ...engine.getConfig(),
-        transition: { cameraBlendRadiusMeters: 1, cameraBlendFeatherMeters: 0, boundaryBandMeters: 2 }
+        ...prev,
+        transition: {
+            ...prev.transition,
+            cameraBlendRadiusMeters: 1,
+            cameraBlendFeatherMeters: 0,
+            boundaryBandMeters: 2
+        }
     });
     engine.setViewOrigin({ x: 100, z: 100 });
     const outsideBlendZone = engine.sample(9, 5);
     assert.equal(outsideBlendZone.biomeBlend, 0);
+});
+
+test('TerrainEngine: transition uses nearest differing boundary at crossings', () => {
+    const engine = createTerrainEngine({
+        seed: 'crossing-boundary',
+        bounds: { minX: 0, maxX: 20, minZ: 0, maxZ: 20 },
+        patch: { sizeMeters: 10, originX: 0, originZ: 0, layout: 'grid' },
+        biomes: { mode: 'source_map', defaultBiomeId: 'land' },
+        transition: {
+            cameraBlendRadiusMeters: 1000,
+            cameraBlendFeatherMeters: 0,
+            boundaryBandMeters: 2,
+            profileDefaults: {
+                intent: 'medium',
+                widthScale: 1.0,
+                falloffPower: 1.0,
+                edgeNoiseScale: 0.02,
+                edgeNoiseStrength: 0.0,
+                dominanceBias: 0.0,
+                heightInfluence: 0.0,
+                contrast: 1.0
+            }
+        }
+    });
+
+    engine.setSourceMaps({
+        biome: {
+            width: 2,
+            height: 2,
+            data: new Uint8Array([
+                0, 2,
+                0, 2
+            ]),
+            bounds: { minX: 0, maxX: 20, minZ: 0, maxZ: 20 }
+        }
+    });
+    engine.setViewOrigin({ x: 10, z: 10 });
+
+    const crossingSample = engine.sample(9, 10);
+    assert.equal(crossingSample.primaryBiomeId, 'stone');
+    assert.equal(crossingSample.secondaryBiomeId, 'land');
+    assert.ok(crossingSample.biomeBlend > 0.05);
 });
 
 test('TerrainEngine: voronoi domain warp produces non-grid patch regions', () => {
@@ -152,4 +214,209 @@ test('TerrainEngine: humidity source map deterministically resolves dry/neutral/
     const repeat = engine.sample(26, 5);
     assert.equal(resolveSlot(repeat.humidity), 'wet');
     assert.ok(Math.abs(repeat.humidity - wet.humidity) < 1e-9);
+});
+
+test('TerrainEngine: canonical biome-pair profiles control transition shaping', () => {
+    const makeEngine = (pairProfile) => {
+        const engine = createTerrainEngine({
+            seed: 'pair-profile-test',
+            bounds: { minX: 0, maxX: 20, minZ: 0, maxZ: 10 },
+            patch: { sizeMeters: 10, originX: 0, originZ: 0, layout: 'grid' },
+            biomes: { mode: 'source_map', defaultBiomeId: 'land' },
+            humidity: { mode: 'source_map' },
+            transition: {
+                cameraBlendRadiusMeters: 1000,
+                cameraBlendFeatherMeters: 0,
+                boundaryBandMeters: 2,
+                pairProfiles: {
+                    'land|stone': pairProfile
+                }
+            }
+        });
+
+        engine.setSourceMaps({
+            biome: {
+                width: 2,
+                height: 1,
+                data: new Uint8Array([0, 2]),
+                bounds: { minX: 0, maxX: 20, minZ: 0, maxZ: 10 }
+            },
+            humidity: {
+                width: 1,
+                height: 1,
+                data: new Uint8Array([128]),
+                bounds: { minX: 0, maxX: 20, minZ: 0, maxZ: 10 }
+            }
+        });
+        engine.setViewOrigin({ x: 10, z: 5 });
+        return engine;
+    };
+
+    const narrow = makeEngine({
+        intent: 'hard',
+        widthScale: 0.6,
+        falloffPower: 1.0,
+        edgeNoiseScale: 0.02,
+        edgeNoiseStrength: 0.0,
+        dominanceBias: 0.0,
+        heightInfluence: 0.0,
+        contrast: 1.0
+    });
+    const wide = makeEngine({
+        intent: 'soft',
+        widthScale: 2.0,
+        falloffPower: 1.0,
+        edgeNoiseScale: 0.02,
+        edgeNoiseStrength: 0.0,
+        dominanceBias: 0.0,
+        heightInfluence: 0.0,
+        contrast: 1.0
+    });
+
+    const x = 8;
+    const z = 5;
+    const sampleNarrow = narrow.sample(x, z);
+    const sampleWide = wide.sample(x, z);
+
+    assert.equal(sampleNarrow.primaryBiomeId, 'stone');
+    assert.equal(sampleNarrow.secondaryBiomeId, 'stone');
+    assert.equal(sampleNarrow.transition.pairKey, 'stone|land');
+    assert.equal(sampleNarrow.biomeBlend, 0);
+    assert.equal(sampleNarrow.transition.intent, 'hard');
+
+    assert.equal(sampleWide.primaryBiomeId, 'stone');
+    assert.equal(sampleWide.secondaryBiomeId, 'land');
+    assert.equal(sampleWide.transition.pairKey, 'stone|land');
+    assert.equal(sampleWide.transition.intent, 'soft');
+    assert.ok(sampleWide.biomeBlend > 0.05);
+    assert.ok(sampleWide.transition.rawWeight > 0.05);
+
+    narrow.dispose();
+    wide.dispose();
+});
+
+test('TerrainEngine: soft profile keeps one continuous midpoint transition', () => {
+    const engine = createTerrainEngine({
+        seed: 'soft-midpoint',
+        bounds: { minX: 0, maxX: 20, minZ: 0, maxZ: 10 },
+        patch: { sizeMeters: 10, originX: 0, originZ: 0, layout: 'grid' },
+        biomes: { mode: 'source_map', defaultBiomeId: 'land' },
+        humidity: { mode: 'source_map' },
+        transition: {
+            cameraBlendRadiusMeters: 1000,
+            cameraBlendFeatherMeters: 0,
+            boundaryBandMeters: 2,
+            pairProfiles: {
+                'stone|land': {
+                    intent: 'soft',
+                    widthScale: 1.45,
+                    falloffPower: 0.85,
+                    edgeNoiseScale: 0.02,
+                    edgeNoiseStrength: 0.0,
+                    dominanceBias: 0.0,
+                    heightInfluence: 0.28,
+                    contrast: 0.82
+                }
+            }
+        }
+    });
+
+    engine.setSourceMaps({
+        biome: {
+            width: 2,
+            height: 1,
+            data: new Uint8Array([0, 2]),
+            bounds: { minX: 0, maxX: 20, minZ: 0, maxZ: 10 }
+        },
+        humidity: {
+            width: 1,
+            height: 1,
+            data: new Uint8Array([240]),
+            bounds: { minX: 0, maxX: 20, minZ: 0, maxZ: 10 }
+        }
+    });
+    engine.setViewOrigin({ x: 10, z: 5 });
+
+    const atBoundary = engine.sample(10, 5);
+    assert.ok(Math.abs(atBoundary.transition.rawWeight - 0.5) < 1e-6);
+    assert.ok(Math.abs(atBoundary.transition.falloffWeight - 0.5) < 1e-6);
+    assert.ok(Math.abs(atBoundary.transition.dominanceWeight - 0.5) < 1e-6);
+    assert.ok(Math.abs(atBoundary.biomeBlend - 0.5) < 1e-6);
+
+    engine.dispose();
+});
+
+test('TerrainEngine: transition debug mask channels are deterministic', () => {
+    const engine = createTerrainEngine({
+        seed: 'transition-debug-export',
+        bounds: { minX: 0, maxX: 20, minZ: 0, maxZ: 10 },
+        patch: { sizeMeters: 10, originX: 0, originZ: 0, layout: 'grid' },
+        biomes: { mode: 'source_map', defaultBiomeId: 'land' },
+        humidity: { mode: 'source_map' },
+        transition: {
+            cameraBlendRadiusMeters: 1000,
+            cameraBlendFeatherMeters: 0,
+            boundaryBandMeters: 2,
+            pairProfiles: {
+                'stone|land': {
+                    intent: 'soft',
+                    widthScale: 1.4,
+                    falloffPower: 0.9,
+                    edgeNoiseScale: 0.03,
+                    edgeNoiseStrength: 0.4,
+                    dominanceBias: 0.0,
+                    heightInfluence: 0.0,
+                    contrast: 1.0
+                }
+            }
+        }
+    });
+
+    engine.setSourceMaps({
+        biome: {
+            width: 2,
+            height: 1,
+            data: new Uint8Array([0, 2]),
+            bounds: { minX: 0, maxX: 20, minZ: 0, maxZ: 10 }
+        },
+        humidity: {
+            width: 1,
+            height: 1,
+            data: new Uint8Array([128]),
+            bounds: { minX: 0, maxX: 20, minZ: 0, maxZ: 10 }
+        }
+    });
+
+    const first = engine.exportPackedMaskRgba8({
+        width: 16,
+        height: 8,
+        viewOrigin: { x: 10, z: 5 }
+    });
+    const second = engine.exportPackedMaskRgba8({
+        width: 16,
+        height: 8,
+        viewOrigin: { x: 10, z: 5 }
+    });
+
+    const dbgA = first.transitionDebug;
+    const dbgB = second.transitionDebug;
+    const len = 16 * 8;
+    assert.ok(dbgA.rawWeight instanceof Float32Array);
+    assert.ok(dbgA.falloffWeight instanceof Float32Array);
+    assert.ok(dbgA.dominanceWeight instanceof Float32Array);
+    assert.ok(dbgA.finalWeight instanceof Float32Array);
+    assert.ok(dbgA.noiseOffsetMeters instanceof Float32Array);
+    assert.equal(dbgA.rawWeight.length, len);
+    assert.equal(dbgA.falloffWeight.length, len);
+    assert.equal(dbgA.dominanceWeight.length, len);
+    assert.equal(dbgA.finalWeight.length, len);
+    assert.equal(dbgA.noiseOffsetMeters.length, len);
+
+    assert.deepEqual(dbgA.rawWeight, dbgB.rawWeight);
+    assert.deepEqual(dbgA.falloffWeight, dbgB.falloffWeight);
+    assert.deepEqual(dbgA.dominanceWeight, dbgB.dominanceWeight);
+    assert.deepEqual(dbgA.finalWeight, dbgB.finalWeight);
+    assert.deepEqual(dbgA.noiseOffsetMeters, dbgB.noiseOffsetMeters);
+
+    engine.dispose();
 });

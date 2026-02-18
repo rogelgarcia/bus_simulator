@@ -426,7 +426,11 @@ export function getPbrMaterialOptions() {
         const meta = getPbrMaterialMeta(entry.id);
         const label = entry.label || toTitle(entry.id.slice(PBR_ID_PREFIX.length));
         const urls = resolvePbrMaterialUrls(entry.id);
-        const previewUrl = urls.baseColorUrl ?? getCachedPreviewUrl({ id: entry.id, label });
+        const previewDir = new URL(`${entry.id.slice(PBR_ID_PREFIX.length)}/`, PBR_BASE_URL);
+        const previewFiles = normalizeMapFiles(entry.mapFiles) ?? MAPS;
+        const previewFile = typeof previewFiles.baseColor === 'string' ? previewFiles.baseColor.trim() : '';
+        const previewBaseColorUrl = previewFile ? new URL(previewFile, previewDir).toString() : null;
+        const previewUrl = previewBaseColorUrl ?? urls.baseColorUrl ?? getCachedPreviewUrl({ id: entry.id, label });
         return {
             id: entry.id,
             label,
