@@ -67,7 +67,7 @@ const BIOME_TILING_CALIB_RIG_CAMERA_TARGET = Object.freeze({ x: 0, y: BIOME_TILI
 const BIOME_TILING_CALIB_RIG_CAMERA_POSITION = Object.freeze({ x: 0.25, y: BIOME_TILING_CALIB_RIG_PLATE_THICKNESS + 2.25, z: 7.0 });
 const BIOME_TILING_CALIB_RIG_SUN_POSITION = Object.freeze({ x: 4, y: 7, z: 4 });
 const BIOME_TILING_CALIB_RIG_SUN_TARGET = Object.freeze({ x: 0, y: 0.9, z: 0 });
-const BIOME_TILING_CALIB_RIG_ELEVATION_OFFSET_METERS = 6.0;
+const BIOME_TILING_CALIB_RIG_ELEVATION_OFFSET_METERS = 0.5;
 
 const TERRAIN_ENGINE_MASK_TEX_SIZE = 256;
 const TERRAIN_BIOME_IDS = Object.freeze(['stone', 'grass', 'land']);
@@ -1684,7 +1684,7 @@ export class TerrainDebuggerView {
             iblId: (typeof initialIbl.iblId === 'string' && initialIbl.iblId)
                 ? initialIbl.iblId
                 : String(lightingDefaults?.ibl?.iblId ?? DEFAULT_IBL_ID),
-            setBackground: initialIbl.setBackground !== undefined ? !!initialIbl.setBackground : !!lightingDefaults?.ibl?.setBackground,
+            setBackground: initialIbl.setBackground !== undefined ? !!initialIbl.setBackground : true,
             envMapIntensity: Number.isFinite(initialIbl.envMapIntensity)
                 ? Number(initialIbl.envMapIntensity)
                 : clamp(lightingDefaults?.ibl?.envMapIntensity, 0.0, 10.0, 0.3)
