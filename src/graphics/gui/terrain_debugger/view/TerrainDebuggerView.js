@@ -53,6 +53,7 @@ const BIOME_TILING_AXIS_HEAD_LENGTH_METERS = 0.62;
 const BIOME_TILING_AXIS_HEAD_WIDTH_METERS = 0.30;
 const BIOME_TILING_AXIS_Y_OFFSET_METERS = 0.22;
 const BIOME_TILING_AXIS_LABEL_SIZE_METERS = 0.85;
+const BIOME_TILING_OVERVIEW_ANGLE_OFFSET_DEG = 15;
 
 const TERRAIN_ENGINE_MASK_TEX_SIZE = 256;
 const TERRAIN_BIOME_IDS = Object.freeze(['stone', 'grass', 'land']);
@@ -3036,19 +3037,37 @@ export class TerrainDebuggerView {
         const flatY = Number.isFinite(gridMinY) && Number.isFinite(gridMaxY)
             ? (gridMinY + gridMaxY) * 0.5
             : (Number.isFinite(fallbackY) ? fallbackY : 0);
-        const span = Math.max(sizeX, sizeZ);
         const eyePosZ = minZ + sizeZ * 0.16;
         const eyeTgtZ = minZ + sizeZ * 0.82;
         const overviewPosZ = minZ + sizeZ * 0.10;
         const sharedTargetY = flatY + 1.8;
+        const overviewPosY = flatY + 80;
+        const overviewDeltaY = sharedTargetY - overviewPosY;
+        const overviewBaseDz = Math.max(EPS, eyeTgtZ - overviewPosZ);
+        const overviewBasePitch = Math.atan2(overviewDeltaY, overviewBaseDz);
+        const overviewPitchOffset = THREE.MathUtils.degToRad(BIOME_TILING_OVERVIEW_ANGLE_OFFSET_DEG);
+        const overviewTargetPitch = clamp(
+            overviewBasePitch - overviewPitchOffset,
+            -Math.PI * 0.49,
+            -0.01,
+            overviewBasePitch - overviewPitchOffset
+        );
+        const overviewDzRaw = overviewDeltaY / Math.tan(overviewTargetPitch);
+        const overviewDz = Math.max(EPS, Number.isFinite(overviewDzRaw) ? overviewDzRaw : overviewBaseDz);
+        const overviewTargetZ = clamp(
+            overviewPosZ + overviewDz,
+            minZ + 1.0,
+            maxZ - 1.0,
+            overviewPosZ + overviewDz
+        );
 
         const overview = {
             position: new THREE.Vector3(
                 centerX,
-                flatY + Math.max(24, span * 0.38),
+                overviewPosY,
                 overviewPosZ
             ),
-            target: new THREE.Vector3(centerX, sharedTargetY, eyeTgtZ)
+            target: new THREE.Vector3(centerX, sharedTargetY, overviewTargetZ)
         };
         const eye = {
             position: new THREE.Vector3(centerX, flatY + 1.8, eyePosZ),
@@ -3131,7 +3150,7 @@ export class TerrainDebuggerView {
             eyePos.z + 20.0
         );
 
-        const walkMeters = 300;
+        const walkMeters = 150;
         const flatY = eyePos.y - 1.8;
         const lowerFlyoverY = (y) => flatY + (Number(y) - flatY) * 0.9;
         eyePos.y = lowerFlyoverY(eyePos.y);
@@ -3187,13 +3206,14 @@ export class TerrainDebuggerView {
                 overviewToDiveOutDir.copy(overviewToDiveDir);
             }
         }
-        const keyframe2PosTangentDir = new THREE.Vector3(0, -1, 0);
+        const keyframe2PosTangentDir = new THREE.Vector3(0, -1, 1).normalize();
 
         const diveLookDownMeters = Math.max(6.0, Number(focus.bounds?.sizeZ) * 0.03 || 0);
+        const diveLookForwardMeters = diveLookDownMeters;
         const diveTarget = new THREE.Vector3(
             divePos.x,
             divePos.y - diveLookDownMeters,
-            divePos.z
+            divePos.z + diveLookForwardMeters
         );
 
         const diveLookDir = diveTarget.clone().sub(divePos);
