@@ -25,6 +25,8 @@ const EPS = 1e-6;
 const CAMERA_PRESET_BEHIND_GAMEPLAY_DISTANCE = 13.5;
 const ALBEDO_SATURATION_ADJUST_SHADER_VERSION = 2;
 const TERRAIN_BIOME_BLEND_SHADER_VERSION = 6;
+const OUTPUT_PANEL_REFRESH_MS = 100;
+const FLYOVER_SAMPLE_RATE = 15;
 
 const TERRAIN_ENGINE_MASK_TEX_SIZE = 256;
 const TERRAIN_BIOME_IDS = Object.freeze(['stone', 'grass', 'land']);
@@ -517,9 +519,9 @@ function buildTerrainGeometry(spec = {}) {
     const segmentsPerTile = spec?.segmentsPerTile ?? 8;
     const tileMinX = spec?.tileMinX ?? -5;
     const tileMinZ = spec?.tileMinZ ?? -10;
-    const slopeDegLeft = spec?.slope?.leftDeg ?? spec?.slopeDegLeft ?? 15;
-    const slopeDegRight = spec?.slope?.rightDeg ?? spec?.slopeDegRight ?? 30;
-    const slopeDegEnd = spec?.slope?.endDeg ?? spec?.slopeDegEnd ?? 0;
+    const slopeDegLeft = spec?.slope?.leftDeg ?? spec?.slopeDegLeft ?? 1.5;
+    const slopeDegRight = spec?.slope?.rightDeg ?? spec?.slopeDegRight ?? 3.5;
+    const slopeDegEnd = spec?.slope?.endDeg ?? spec?.slopeDegEnd ?? 3;
     const slopeEndStartAfterRoadTiles = spec?.slope?.endStartAfterRoadTiles ?? spec?.slopeEndStartAfterRoadTiles ?? 0;
     const slopeBottomCurveMeters = spec?.slope?.bottomCurveMeters ?? 36;
     const slopeTopFlatMeters = spec?.slope?.topFlatMeters ?? 24;
@@ -544,9 +546,9 @@ function buildTerrainGeometry(spec = {}) {
     let minY = Infinity;
     let maxY = -Infinity;
 
-    const tanLeft = Math.tan(THREE.MathUtils.degToRad(clamp(slopeDegLeft, 0, 89.9, 15)));
-    const tanRight = Math.tan(THREE.MathUtils.degToRad(clamp(slopeDegRight, 0, 89.9, 30)));
-    const tanEnd = Math.tan(THREE.MathUtils.degToRad(clamp(slopeDegEnd, -89.9, 89.9, 0)));
+    const tanLeft = Math.tan(THREE.MathUtils.degToRad(clamp(slopeDegLeft, 0, 89.9, 1.5)));
+    const tanRight = Math.tan(THREE.MathUtils.degToRad(clamp(slopeDegRight, 0, 89.9, 3.5)));
+    const tanEnd = Math.tan(THREE.MathUtils.degToRad(clamp(slopeDegEnd, -89.9, 89.9, 3)));
     const roadEnabled = roadSpec?.enabled !== false;
     const roadWidthMeters = Math.max(0, Number(roadSpec?.widthMeters) || 0);
     const roadHalfWidth = roadWidthMeters > EPS ? roadWidthMeters * 0.5 : 0;
@@ -791,6 +793,8 @@ export class TerrainDebuggerView {
         this._terrainHumidityCloudConfig = { ...DEFAULT_TERRAIN_HUMIDITY_CLOUD_CONFIG };
         this._terrainHumiditySourceMap = null;
         this._terrainHumiditySourceMapKey = '';
+        this._terrainWireframe = false;
+        this._asphaltWireframe = false;
 
         this._grassEngine = null;
         this._grassRoadBounds = { enabled: false, halfWidth: 0, z0: 0, z1: 0 };
@@ -823,7 +827,7 @@ export class TerrainDebuggerView {
             active: false,
             loop: false,
             durationSec: 20,
-            sampleRate: 60,
+            sampleRate: 30,
             sampleCount: 0,
             poses: null,
             startMs: 0,
@@ -846,6 +850,14 @@ export class TerrainDebuggerView {
         this._cursorHits = [];
         this._cursorSampleLastMs = 0;
         this._cursorSampleKey = '';
+        this._cursorSample = {
+            hasHit: false,
+            x: 0,
+            y: 0,
+            z: 0,
+            distance: 0
+        };
+        this._outputPanelLastMs = 0;
 
         this._onResize = () => this._resize();
         this._onKeyDown = (e) => this._handleKey(e, true);
@@ -873,8 +885,8 @@ export class TerrainDebuggerView {
 
         this._terrainSpec = {
             layout: {
-                extraEndTiles: 5,
-                extraSideTiles: 0
+                extraEndTiles: 80,
+                extraSideTiles: 20
             },
             tileSize: 24,
             tileMinX: -9,
@@ -883,9 +895,9 @@ export class TerrainDebuggerView {
             depthTiles: 16,
             segmentsPerTile: 8,
             slope: {
-                leftDeg: 15,
-                rightDeg: 30,
-                endDeg: 0,
+                leftDeg: 1.5,
+                rightDeg: 3.5,
+                endDeg: 3,
                 endStartAfterRoadTiles: 0,
                 bottomCurveMeters: 36,
                 topFlatMeters: 120
@@ -917,10 +929,10 @@ export class TerrainDebuggerView {
             },
             cloud: {
                 enabled: true,
-                amplitude: 7.5,
-                worldScale: 0.06,
-                tiles: 5,
-                blendMeters: 32
+                amplitude: 11,
+                worldScale: 0.1,
+                tiles: 50,
+                blendMeters: 1000
             }
         };
 
@@ -933,9 +945,9 @@ export class TerrainDebuggerView {
         this._terrainLayoutKey = `${extraEndTiles}|${extraSideTiles}`;
 
         const slope = this._terrainSpec.slope;
-        const slopeLeft = clamp(slope?.leftDeg, 0.0, 89.9, 15.0);
-        const slopeRight = clamp(slope?.rightDeg, 0.0, 89.9, 30.0);
-        const slopeEnd = clamp(slope?.endDeg, -89.9, 89.9, 0.0);
+        const slopeLeft = clamp(slope?.leftDeg, 0.0, 89.9, 1.5);
+        const slopeRight = clamp(slope?.rightDeg, 0.0, 89.9, 3.5);
+        const slopeEnd = clamp(slope?.endDeg, -89.9, 89.9, 3.0);
         const endStartAfterRoadTiles = Math.max(0, Math.round(Number(slope?.endStartAfterRoadTiles) || 0));
         this._terrainSlopeKey = `${slopeLeft.toFixed(3)}|${slopeRight.toFixed(3)}|${slopeEnd.toFixed(3)}|${endStartAfterRoadTiles}`;
     }
@@ -1097,7 +1109,7 @@ export class TerrainDebuggerView {
         this.renderer = renderer;
         this._gpuFrameTimer = getOrCreateGpuFrameTimer(renderer);
         this.scene = new THREE.Scene();
-        this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 1200);
+        this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 4000);
 
         const ui = new TerrainDebuggerUI({
             onChange: (state) => this._applyUiState(state),
@@ -1516,6 +1528,65 @@ export class TerrainDebuggerView {
             scene.add(grid);
             this._gridLines = grid;
         }
+
+        this._applyVisualizationToggles();
+    }
+
+    _applyMaterialWireframe(material, enabled) {
+        if (!material) return;
+        if (Array.isArray(material)) {
+            for (const entry of material) {
+                if (!entry) continue;
+                if ('wireframe' in entry) entry.wireframe = enabled;
+            }
+            return;
+        }
+        if ('wireframe' in material) material.wireframe = enabled;
+    }
+
+    _applyLandWireframe(enabled = false) {
+        const terrain = this._terrain;
+        if (!terrain) return;
+
+        const wire = !!enabled;
+        this._applyMaterialWireframe(terrain.material, wire);
+        this._applyMaterialWireframe(this._terrainMat, wire);
+        if (this._terrainDebugMat) this._applyMaterialWireframe(this._terrainDebugMat, wire);
+    }
+
+    _applyAsphaltWireframe(enabled = false) {
+        const roads = this._roads;
+        const wire = !!enabled;
+        if (!roads) return;
+
+        const target = [];
+        if (roads.asphalt) target.push(roads.asphalt);
+        if (roads.asphaltEdgeWear) target.push(roads.asphaltEdgeWear);
+        if (roads.curbBlocks) target.push(roads.curbBlocks);
+        if (roads.sidewalk) target.push(roads.sidewalk);
+        if (roads.sidewalkEdgeDirt) target.push(roads.sidewalkEdgeDirt);
+
+        if (!target.length) {
+            const includeByName = new Set(['Asphalt', 'AsphaltEdgeWear', 'CurbBlocks', 'Sidewalk', 'SidewalkGrassEdgeDirtStrip']);
+            const group = roads.group;
+            group?.traverse?.((child) => {
+                if (!child?.isMesh || !includeByName.has(String(child.name))) return;
+                this._applyMaterialWireframe(child.material, wire);
+            });
+            return;
+        }
+
+        for (const mesh of target) {
+            if (!mesh?.isMesh || !mesh.material) continue;
+            this._applyMaterialWireframe(mesh.material, wire);
+        }
+    }
+
+    _applyVisualizationToggles() {
+        const landWireframe = this._terrainWireframe === true;
+        const asphaltWireframe = this._asphaltWireframe === true;
+        this._applyLandWireframe(landWireframe);
+        this._applyAsphaltWireframe(asphaltWireframe);
     }
 
     _handleKey(e, isDown) {
@@ -1649,7 +1720,7 @@ export class TerrainDebuggerView {
         const controls = this.controls;
         const flyover = this._flyover;
         const poses = flyover?.poses ?? null;
-        const sampleRate = Number(flyover?.sampleRate) || 60;
+        const sampleRate = Number(flyover?.sampleRate) || 30;
         const sampleCount = flyover?.sampleCount ?? 0;
         if (!controls?.setLookAt || !poses || !(sampleCount > 1)) return;
 
@@ -1686,6 +1757,29 @@ export class TerrainDebuggerView {
             flyoverTimeSec: Number(flyover?.timeSec) || 0,
             flyoverDurationSec: Number(flyover?.durationSec) || 20
         });
+    }
+
+    _syncOutputPanel({ nowMs } = {}) {
+        const ui = this._ui;
+        const camera = this.camera;
+        if (!ui?.setOutputInfo || !camera) return;
+
+        const now = Number(nowMs);
+        const t = Number.isFinite(now) ? now : performance.now();
+        if (t - (this._outputPanelLastMs || 0) < OUTPUT_PANEL_REFRESH_MS) return;
+        this._outputPanelLastMs = t;
+
+        const sample = this._cursorSample;
+        const payload = {
+            cameraX: camera.position.x,
+            cameraY: camera.position.y,
+            cameraZ: camera.position.z,
+            pointerX: sample?.hasHit ? sample?.x : null,
+            pointerY: sample?.hasHit ? sample?.y : null,
+            pointerZ: sample?.hasHit ? sample?.z : null,
+            pointerDistance: sample?.hasHit ? sample?.distance : null
+        };
+        ui.setOutputInfo(payload);
     }
 
     _getTerrainHeightAtXZ(x, z) {
@@ -1880,7 +1974,7 @@ export class TerrainDebuggerView {
         const climbEndTgtY = this._getTerrainHeightAtXZ(climbEndTgtX, climbEndTgtZ) + 0.6;
         const climbEndTarget = new THREE.Vector3(climbEndTgtX, climbEndTgtY, climbEndTgtZ);
 
-        const sampleRate = 60;
+        const sampleRate = FLYOVER_SAMPLE_RATE;
         const sampleCount = Math.round(durationSec * sampleRate) + 1;
         const poses = new Float32Array(sampleCount * 6);
 
@@ -1894,9 +1988,6 @@ export class TerrainDebuggerView {
         const tgtD = new THREE.Vector3();
         const posC = new THREE.Vector3();
         const tgtC = new THREE.Vector3();
-        const tmpHorizonTarget = new THREE.Vector3();
-        const tmpSlopeDir = new THREE.Vector3();
-        const tmpTiltTarget = new THREE.Vector3();
 
         for (let i = 0; i < sampleCount; i++) {
             const t = i / sampleRate;
@@ -1914,38 +2005,24 @@ export class TerrainDebuggerView {
             const x = clamp(roadX + dx, minX + tileSize, maxX - tileSize, roadX + dx);
             const z = clamp(startMovePos.z + dz, minZ + tileSize, maxZ - tileSize, startMovePos.z + dz);
 
-            const horizon = buildHorizonPoseAt(x, z);
-            const posY = THREE.MathUtils.lerp(busGameplayPose.position.y, horizon.lowY, horizonW);
+            const posY = THREE.MathUtils.lerp(busGameplayPose.position.y, endMove.lowY, horizonW);
             posB.set(x, posY, z);
 
             tgtB.copy(busGameplayPose.target).addScaledVector(forward, travelMeters * moveW);
-            tmpHorizonTarget.copy(horizon.target);
-            tgtB.lerp(tmpHorizonTarget, horizonW);
+            tgtB.lerp(endMove.target, horizonW);
 
             const uD = climbSec > EPS ? clamp((t - climbStartSec) / climbSec, 0, 1, 0) : 1;
             const climbW = uD;
             const liftW = smoothstep01(uD);
             const xD = clamp(endMove.pos.x + forward.x * (climbTravelMeters * climbW), minX + tileSize, maxX - tileSize, endMove.pos.x);
             const zD = clamp(endMove.pos.z + forward.z * (climbTravelMeters * climbW), minZ + tileSize, maxZ - tileSize, endMove.pos.z);
-            const groundYD = this._getTerrainHeightAtXZ(xD, zD);
+            const groundYD = THREE.MathUtils.lerp(moveEnd.groundY, climbEndGroundY, climbW);
             const heightD = THREE.MathUtils.lerp(lowHeightAboveGround, climbHeightAboveGround, liftW);
             posD.set(xD, groundYD + heightD, zD);
 
-            const aheadGroundYD = this._getTerrainHeightAtXZ(xD + forward.x * slopeSampleDist, zD + forward.z * slopeSampleDist);
-            const slopeD = (aheadGroundYD - groundYD) / Math.max(EPS, slopeSampleDist);
-            tmpSlopeDir.set(forward.x, slopeD, forward.z);
-            if (tmpSlopeDir.lengthSq() > EPS) tmpSlopeDir.normalize();
-            else tmpSlopeDir.set(forward.x, 0, forward.z);
-            if (tmpSlopeDir.lengthSq() > EPS) tmpSlopeDir.normalize();
-            else tmpSlopeDir.set(0, 0, -1);
-
-            tgtD.set(xD, groundYD + lowHeightAboveGround, zD).addScaledVector(tmpSlopeDir, horizonDist);
             const tiltW = smoothstep(0.15, 1.0, uD);
-            const tiltX = clamp(xD + forward.x * climbTiltLookAheadMeters, minX + tileSize, maxX - tileSize, xD + forward.x * climbTiltLookAheadMeters);
-            const tiltZ = clamp(zD + forward.z * climbTiltLookAheadMeters, minZ + tileSize, maxZ - tileSize, zD + forward.z * climbTiltLookAheadMeters);
-            const tiltY = this._getTerrainHeightAtXZ(tiltX, tiltZ) + 0.6;
-            tmpTiltTarget.set(tiltX, tiltY, tiltZ);
-            tgtD.lerp(tmpTiltTarget, tiltW);
+            tgtD.copy(moveEnd.target);
+            tgtD.lerp(climbEndTarget, tiltW);
 
             const uC = returnSec > EPS ? clamp((t - climbEndSec) / returnSec, 0, 1, 0) : 1;
             const wC = 1 - (1 - uC) * (1 - uC);
@@ -2031,6 +2108,7 @@ export class TerrainDebuggerView {
             this._updateCameraFromKeys(dt);
         }
         this.controls?.update?.(dt);
+        this._syncOutputPanel({ nowMs: t });
 
         if (this._terrainEngine && camera?.position) {
             this._terrainEngine.setViewOrigin({ x: camera.position.x, z: camera.position.z });
@@ -2469,12 +2547,14 @@ export class TerrainDebuggerView {
         const mode = String(this._terrainDebugMode ?? 'standard');
         if (mode === 'standard') {
             if (mesh.material !== this._terrainMat) mesh.material = this._terrainMat;
+            this._applyVisualizationToggles();
             return;
         }
 
         this._updateTerrainDebugTextureFromExport(res, { mode });
         this._ensureTerrainDebugMaterial();
         if (mesh.material !== this._terrainDebugMat && this._terrainDebugMat) mesh.material = this._terrainDebugMat;
+        this._applyVisualizationToggles();
     }
 
     _updateTerrainEngineMasks({ nowMs } = {}) {
@@ -2587,26 +2667,32 @@ export class TerrainDebuggerView {
         if (!ui?.setTerrainSampleInfo || !engine || !terrain || !camera) return;
 
         const now = Number.isFinite(nowMs) ? nowMs : performance.now();
-        if (now - (this._cursorSampleLastMs || 0) < 80) return;
+        if (now - (this._cursorSampleLastMs || 0) < OUTPUT_PANEL_REFRESH_MS) return;
         this._cursorSampleLastMs = now;
 
         if (!this._cursorValid) {
+            this._cursorSample = { hasHit: false, x: 0, y: 0, z: 0, distance: 0 };
             if (this._cursorSampleKey !== 'none') {
                 this._cursorSampleKey = 'none';
                 ui.setTerrainSampleInfo({});
+                ui.setOutputInfo?.({});
             }
             return;
         }
 
         this._cursorRaycaster.setFromCamera(this._cursorNdc, camera);
         this._cursorHits.length = 0;
-        this._cursorRaycaster.intersectObject(terrain, false, this._cursorHits);
+        const roads = this._roads?.group ?? null;
+        const raycastTargets = roads ? [terrain, roads] : [terrain];
+        this._cursorRaycaster.intersectObjects(raycastTargets, true, this._cursorHits);
         const hit = this._cursorHits[0] ?? null;
         const point = hit?.point ?? null;
         if (!point) {
+            this._cursorSample = { hasHit: false, x: 0, y: 0, z: 0, distance: 0 };
             if (this._cursorSampleKey !== 'none') {
                 this._cursorSampleKey = 'none';
                 ui.setTerrainSampleInfo({});
+                ui.setOutputInfo?.({});
             }
             return;
         }
@@ -2614,9 +2700,37 @@ export class TerrainDebuggerView {
         const x = Number(point.x) || 0;
         const z = Number(point.z) || 0;
         const s = engine.sample(x, z);
+        const dist = Number(hit.distance);
         const key = `${(s.patchId >>> 0).toString()}|${String(s.primaryBiomeId)}|${String(s.secondaryBiomeId)}|${Number(s.biomeBlend).toFixed(4)}|${Number(s.humidity).toFixed(4)}`;
-        if (key === this._cursorSampleKey) return;
+        if (key === this._cursorSampleKey) {
+            ui.setOutputInfo?.({
+                cameraX: camera.position.x,
+                cameraY: camera.position.y,
+                cameraZ: camera.position.z,
+                pointerX: point.x,
+                pointerY: point.y,
+                pointerZ: point.z,
+                pointerDistance: dist
+            });
+            return;
+        }
         this._cursorSampleKey = key;
+        this._cursorSample = {
+            hasHit: true,
+            x: Number(point.x) || 0,
+            y: Number(point.y) || 0,
+            z: Number(point.z) || 0,
+            distance: Number.isFinite(dist) ? dist : 0
+        };
+        ui.setOutputInfo?.({
+            cameraX: camera.position.x,
+            cameraY: camera.position.y,
+            cameraZ: camera.position.z,
+            pointerX: point.x,
+            pointerY: point.y,
+            pointerZ: point.z,
+            pointerDistance: dist
+        });
 
         ui.setTerrainSampleInfo({
             x,
@@ -2960,6 +3074,9 @@ export class TerrainDebuggerView {
 
         const terrainCfg = s.terrain && typeof s.terrain === 'object' ? s.terrain : {};
         let rebuildTerrain = false;
+        const visualizationCfg = s.visualization && typeof s.visualization === 'object' ? s.visualization : {};
+        const nextLandWireframe = !!visualizationCfg.landWireframe;
+        const nextAsphaltWireframe = !!visualizationCfg.asphaltWireframe;
 
         const layoutCfg = terrainCfg.layout && typeof terrainCfg.layout === 'object' ? terrainCfg.layout : null;
         if (layoutCfg) {
@@ -2977,9 +3094,9 @@ export class TerrainDebuggerView {
         const slopeCfg = terrainCfg.slope && typeof terrainCfg.slope === 'object' ? terrainCfg.slope : null;
         if (slopeCfg) {
             const prev = this._terrainSpec.slope && typeof this._terrainSpec.slope === 'object' ? this._terrainSpec.slope : {};
-            const leftDeg = clamp(slopeCfg.leftDeg, 0.0, 89.9, prev.leftDeg ?? 15.0);
-            const rightDeg = clamp(slopeCfg.rightDeg, 0.0, 89.9, prev.rightDeg ?? 30.0);
-            const endDeg = clamp(slopeCfg.endDeg, -89.9, 89.9, prev.endDeg ?? 0.0);
+            const leftDeg = clamp(slopeCfg.leftDeg, 0.0, 89.9, prev.leftDeg ?? 1.5);
+            const rightDeg = clamp(slopeCfg.rightDeg, 0.0, 89.9, prev.rightDeg ?? 3.5);
+            const endDeg = clamp(slopeCfg.endDeg, -89.9, 89.9, prev.endDeg ?? 3.0);
             const endStartAfterRoadTiles = Math.max(0, Math.round(clamp(slopeCfg.endStartAfterRoadTiles, 0, 4096, prev.endStartAfterRoadTiles ?? 0)));
             const key = `${leftDeg.toFixed(3)}|${rightDeg.toFixed(3)}|${endDeg.toFixed(3)}|${endStartAfterRoadTiles}`;
             if (key !== this._terrainSlopeKey) {
@@ -2993,11 +3110,11 @@ export class TerrainDebuggerView {
         if (cloudCfg) {
             const prev = this._terrainSpec.cloud && typeof this._terrainSpec.cloud === 'object' ? this._terrainSpec.cloud : {};
             const enabled = cloudCfg.enabled !== false;
-            const amplitude = clamp(cloudCfg.amplitude, 0.0, 200.0, prev.amplitude ?? 0.0);
-            const worldScale = clamp(cloudCfg.worldScale, 0.0001, 10.0, prev.worldScale ?? 0.06);
+            const amplitude = clamp(cloudCfg.amplitude, 0.0, 200.0, prev.amplitude ?? 11.0);
+            const worldScale = clamp(cloudCfg.worldScale, 0.0001, 10.0, prev.worldScale ?? 0.1);
             const maxTiles = Math.max(0, Math.round(Number(this._buildTerrainSpec()?.depthTiles) || 0));
-            const tiles = Math.max(0, Math.round(clamp(cloudCfg.tiles, 0, maxTiles, prev.tiles ?? 5)));
-            const blendMeters = clamp(cloudCfg.blendMeters, 0.0, 1000.0, prev.blendMeters ?? 32.0);
+            const tiles = Math.max(0, Math.round(clamp(cloudCfg.tiles, 0, maxTiles, prev.tiles ?? 50)));
+            const blendMeters = clamp(cloudCfg.blendMeters, 0.0, 1000.0, prev.blendMeters ?? 1000.0);
             const key = `${enabled ? '1' : '0'}|${amplitude.toFixed(3)}|${worldScale.toFixed(5)}|${tiles}|${blendMeters.toFixed(3)}`;
             if (key !== this._terrainCloudKey) {
                 this._terrainCloudKey = key;
@@ -3025,6 +3142,14 @@ export class TerrainDebuggerView {
         void this._applyIblState(s.ibl, { force: false });
 
         if (this._grassEngine) this._grassEngine.setConfig?.(s.grass);
+
+        if (nextLandWireframe !== this._terrainWireframe || nextAsphaltWireframe !== this._asphaltWireframe) {
+            this._terrainWireframe = nextLandWireframe;
+            this._asphaltWireframe = nextAsphaltWireframe;
+            this._applyVisualizationToggles();
+        } else {
+            this._applyVisualizationToggles();
+        }
     }
 
     async _applyIblState(iblState, { force = false } = {}) {

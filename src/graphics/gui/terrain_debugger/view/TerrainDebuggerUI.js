@@ -14,6 +14,12 @@ function clamp(value, min, max, fallback) {
     return Math.max(min, Math.min(max, num));
 }
 
+function formatFixedWidthNumber(value, width = 10, digits = 2) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return `${'-'.repeat(width)}`;
+    return String(num.toFixed(digits)).padStart(width, ' ');
+}
+
 function makeEl(tag, className, text) {
     const el = document.createElement(tag);
     if (className) el.className = className;
@@ -396,29 +402,33 @@ export class TerrainDebuggerUI {
                 envMapIntensity: 0.25
             },
             exposure: 1.0,
+            visualization: {
+                landWireframe: false,
+                asphaltWireframe: false
+            },
             camera: {
-                drawDistance: 1200,
+                drawDistance: 4000,
                 presetId: 'low',
                 flyoverLoop: false
             },
             terrain: {
                 layout: {
-                    extraEndTiles: 5,
-                    extraSideTiles: 0
+                    extraEndTiles: 80,
+                    extraSideTiles: 20
                 },
                 slope: {
-                    leftDeg: 15,
-                    rightDeg: 30,
-                    endDeg: 0,
+                    leftDeg: 1.5,
+                    rightDeg: 3.5,
+                    endDeg: 3,
                     endStartAfterRoadTiles: 0
                 },
                 showGrid: false,
                 cloud: {
                     enabled: true,
-                    amplitude: 7.5,
-                    worldScale: 0.06,
-                    tiles: 5,
-                    blendMeters: 32
+                    amplitude: 11,
+                    worldScale: 0.1,
+                    tiles: 50,
+                    blendMeters: 1000
                 },
                 engine: defaultTerrainEngine,
                 debug: {
@@ -444,6 +454,7 @@ export class TerrainDebuggerUI {
         this._tabButtons = {
             environment: makeEl('button', 'options-tab', 'Environment'),
             terrain: makeEl('button', 'options-tab', 'Terrain'),
+            visualization: makeEl('button', 'options-tab', 'Visualization'),
             grass: makeEl('button', 'options-tab', 'Grass')
         };
         for (const [key, btn] of Object.entries(this._tabButtons)) {
@@ -456,10 +467,12 @@ export class TerrainDebuggerUI {
         this._tabBodies = {
             environment: makeEl('div', null),
             terrain: makeEl('div', null),
+            visualization: makeEl('div', null),
             grass: makeEl('div', null)
         };
         this.body.appendChild(this._tabBodies.environment);
         this.body.appendChild(this._tabBodies.terrain);
+        this.body.appendChild(this._tabBodies.visualization);
         this.body.appendChild(this._tabBodies.grass);
 
         this.panel.appendChild(header);
@@ -468,8 +481,11 @@ export class TerrainDebuggerUI {
         this.root.appendChild(this.panel);
 
         this._controls = {};
+        this._outputPanel = null;
+        this._buildOutputPanel();
         this._buildEnvironmentTab();
         this._buildTerrainTab();
+        this._buildVisualizationTab();
         this._buildGrassTab();
 
         this.setTab(this._state.tab);
@@ -485,6 +501,9 @@ export class TerrainDebuggerUI {
 
     mount() {
         document.body.appendChild(this.root);
+        if (this._outputPanel) {
+            document.body.appendChild(this._outputPanel);
+        }
     }
 
     unmount() {
@@ -494,6 +513,92 @@ export class TerrainDebuggerUI {
         this._materialPickerPopup?.dispose?.();
         this._materialPickerPopup = null;
         this.root.remove();
+        this._outputPanel?.remove?.();
+    }
+
+    _buildOutputPanel() {
+        const panel = makeEl('div', 'ui-panel terrain-debugger-output-panel');
+        panel.style.position = 'fixed';
+        panel.style.left = '12px';
+        panel.style.bottom = '12px';
+        panel.style.zIndex = '220';
+        panel.style.pointerEvents = 'none';
+        panel.style.display = 'flex';
+        panel.style.flexDirection = 'column';
+        panel.style.gap = '6px';
+        panel.style.maxWidth = '420px';
+        panel.style.minWidth = '280px';
+        panel.style.padding = '10px 12px';
+        panel.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
+        panel.style.fontSize = '11px';
+        panel.style.opacity = '0.95';
+
+        const cameraXzRow = makeEl('div', 'terrain-debugger-output-row');
+        cameraXzRow.style.display = 'flex';
+        cameraXzRow.style.alignItems = 'baseline';
+        cameraXzRow.style.gap = '8px';
+        cameraXzRow.style.justifyContent = 'space-between';
+
+        const cameraXzLabel = makeEl('div', 'terrain-debugger-output-label', 'Camera XZ');
+        cameraXzLabel.style.fontSize = '11px';
+        cameraXzLabel.style.fontFamily = 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
+        cameraXzLabel.style.letterSpacing = '0.04em';
+        cameraXzLabel.style.textTransform = 'uppercase';
+        cameraXzLabel.style.opacity = '0.8';
+        const cameraXzValue = makeEl('div', 'terrain-debugger-output-value', 'X ------   Z ------');
+        cameraXzValue.style.textAlign = 'right';
+        cameraXzValue.style.whiteSpace = 'pre';
+        cameraXzValue.style.fontVariantNumeric = 'tabular-nums';
+        cameraXzValue.style.minWidth = '250px';
+        cameraXzRow.appendChild(cameraXzLabel);
+        cameraXzRow.appendChild(cameraXzValue);
+
+        const cameraHeightRow = makeEl('div', 'terrain-debugger-output-row');
+        cameraHeightRow.style.display = 'flex';
+        cameraHeightRow.style.alignItems = 'baseline';
+        cameraHeightRow.style.gap = '8px';
+        cameraHeightRow.style.justifyContent = 'space-between';
+
+        const cameraHeightLabel = makeEl('div', 'terrain-debugger-output-label', 'Camera Height (m)');
+        cameraHeightLabel.style.fontSize = '11px';
+        cameraHeightLabel.style.fontFamily = 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
+        cameraHeightLabel.style.letterSpacing = '0.04em';
+        cameraHeightLabel.style.textTransform = 'uppercase';
+        cameraHeightLabel.style.opacity = '0.8';
+        const cameraHeightValue = makeEl('div', 'terrain-debugger-output-value', '-----.-- m');
+        cameraHeightValue.style.textAlign = 'right';
+        cameraHeightValue.style.whiteSpace = 'pre';
+        cameraHeightValue.style.fontVariantNumeric = 'tabular-nums';
+        cameraHeightValue.style.minWidth = '250px';
+        cameraHeightRow.appendChild(cameraHeightLabel);
+        cameraHeightRow.appendChild(cameraHeightValue);
+
+        const pointerDistanceRow = makeEl('div', 'terrain-debugger-output-row');
+        pointerDistanceRow.style.display = 'flex';
+        pointerDistanceRow.style.alignItems = 'baseline';
+        pointerDistanceRow.style.gap = '8px';
+        pointerDistanceRow.style.justifyContent = 'space-between';
+
+        const pointerDistanceLabel = makeEl('div', 'terrain-debugger-output-label', 'Pointer Distance');
+        pointerDistanceLabel.style.fontSize = '11px';
+        pointerDistanceLabel.style.fontFamily = 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
+        pointerDistanceLabel.style.letterSpacing = '0.04em';
+        pointerDistanceLabel.style.textTransform = 'uppercase';
+        pointerDistanceLabel.style.opacity = '0.8';
+        const pointerDistanceValue = makeEl('div', 'terrain-debugger-output-value', '---.- m');
+        pointerDistanceValue.style.textAlign = 'right';
+        pointerDistanceValue.style.whiteSpace = 'pre';
+        pointerDistanceValue.style.fontVariantNumeric = 'tabular-nums';
+        pointerDistanceValue.style.minWidth = '250px';
+        pointerDistanceRow.appendChild(pointerDistanceLabel);
+        pointerDistanceRow.appendChild(pointerDistanceValue);
+        panel.appendChild(cameraXzRow);
+        panel.appendChild(cameraHeightRow);
+        panel.appendChild(pointerDistanceRow);
+        this._outputPanel = panel;
+        this._controls.outputCameraXzLine = cameraXzValue;
+        this._controls.outputCameraHeightLine = cameraHeightValue;
+        this._controls.outputPointerDistanceLine = pointerDistanceValue;
     }
 
     getState() {
@@ -543,7 +648,7 @@ export class TerrainDebuggerUI {
     }
 
     setTab(key) {
-        const next = (key === 'terrain' || key === 'grass') ? key : 'environment';
+        const next = (key === 'terrain' || key === 'grass' || key === 'visualization') ? key : 'environment';
         this._state.tab = next;
         for (const [id, btn] of Object.entries(this._tabButtons)) btn.classList.toggle('is-active', id === next);
         for (const [id, body] of Object.entries(this._tabBodies)) body.style.display = id === next ? '' : 'none';
@@ -589,6 +694,36 @@ export class TerrainDebuggerUI {
 
         note.textContent = `Sample: x ${xx.toFixed(1)} z ${zz.toFixed(1)} · patchId ${(pid >>> 0).toString()} · biome ${toIndex(prim)}:${prim || '?'} → ${toIndex(sec)}:${sec || '?'} (blend ${blend.toFixed(2)}) · humidity ${hum.toFixed(2)}`;
     }
+
+    setOutputInfo({
+        cameraX = null,
+        cameraY = null,
+        cameraZ = null,
+        pointerDistance = null
+    } = {}) {
+        const cameraXzLine = this._controls?.outputCameraXzLine ?? null;
+        const cameraHeightLine = this._controls?.outputCameraHeightLine ?? null;
+        const pointerDistanceLine = this._controls?.outputPointerDistanceLine ?? null;
+
+        if (cameraXzLine) {
+            const cx = formatFixedWidthNumber(cameraX, 10, 2);
+            const cz = formatFixedWidthNumber(cameraZ, 10, 2);
+            cameraXzLine.textContent = `${cx}  ${cz}`;
+        }
+
+        if (cameraHeightLine) {
+            const cy = formatFixedWidthNumber(cameraY, 10, 2);
+            cameraHeightLine.textContent = `${cy} m`;
+        }
+
+        const d = Number(pointerDistance);
+        if (!pointerDistanceLine) return;
+        if (!Number.isFinite(d)) {
+            pointerDistanceLine.textContent = 'Move mouse over terrain';
+            return;
+        }
+            pointerDistanceLine.textContent = `${formatFixedWidthNumber(d, 9, 1)} m`;
+        }
 
     setTerrainPbrLegend(entries = []) {
         const root = this._controls?.terrainPbrLegend ?? null;
@@ -854,17 +989,17 @@ export class TerrainDebuggerUI {
         const terrain = this._state.terrain && typeof this._state.terrain === 'object' ? this._state.terrain : {};
         const layoutState = (terrain.layout && typeof terrain.layout === 'object')
             ? terrain.layout
-            : { extraEndTiles: 5, extraSideTiles: 0 };
+            : { extraEndTiles: 80, extraSideTiles: 20 };
         terrain.layout = layoutState;
         const slopeState = (terrain.slope && typeof terrain.slope === 'object')
             ? terrain.slope
-            : { leftDeg: 15, rightDeg: 30, endDeg: 0, endStartAfterRoadTiles: 0 };
+            : { leftDeg: 1.5, rightDeg: 3.5, endDeg: 3, endStartAfterRoadTiles: 0 };
         terrain.slope = slopeState;
         if (!Number.isFinite(slopeState.endStartAfterRoadTiles)) slopeState.endStartAfterRoadTiles = 0;
 
         const cameraState = (this._state.camera && typeof this._state.camera === 'object')
             ? this._state.camera
-            : { drawDistance: 1200, presetId: 'low', flyoverLoop: false };
+            : { drawDistance: 4000, presetId: 'low', flyoverLoop: false };
         this._state.camera = cameraState;
         if (typeof cameraState.presetId !== 'string' || !cameraState.presetId) cameraState.presetId = 'low';
         cameraState.flyoverLoop = !!cameraState.flyoverLoop;
@@ -1189,7 +1324,39 @@ export class TerrainDebuggerUI {
             bgRow.toggle.disabled = iblDisabled;
             intensityRow.range.disabled = iblDisabled;
             intensityRow.number.disabled = iblDisabled;
-        }
+    }
+
+    _buildVisualizationTab() {
+        const visualization = this._state.visualization && typeof this._state.visualization === 'object'
+            ? this._state.visualization
+            : {};
+        this._state.visualization = visualization;
+
+        const section = this._buildSection('visualization', 'Wireframe');
+        const landRow = makeToggleRow({
+            label: 'Land',
+            value: !!visualization.landWireframe,
+            tooltip: 'Render terrain using wireframe material mode.',
+            onChange: (v) => {
+                visualization.landWireframe = !!v;
+                this._emit();
+            }
+        });
+        section.appendChild(landRow.row);
+
+        const asphaltRow = makeToggleRow({
+            label: 'Asphalt (Curb + Sidewalk)',
+            value: !!visualization.asphaltWireframe,
+            tooltip: 'Render asphalt, curbs, and sidewalks as wireframes.',
+            onChange: (v) => {
+                visualization.asphaltWireframe = !!v;
+                this._emit();
+            }
+        });
+        section.appendChild(asphaltRow.row);
+        this._controls.landWireframe = landRow;
+        this._controls.asphaltWireframe = asphaltRow;
+    }
 
     _buildTerrainTab() {
         const terrain = this._state.terrain;
