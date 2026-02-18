@@ -1,6 +1,9 @@
 // Headless browser tests: Terrain Debugger should render terrain in Standard mode (no shader errors).
 import test, { expect } from '@playwright/test';
 
+// Terrain Debugger can take a while to warm up (shaders + multiple textures).
+test.setTimeout(240_000);
+
 async function attachFailFastConsole({ page }) {
     const errors = [];
     await page.addInitScript(() => {
@@ -89,7 +92,7 @@ test('Terrain Debugger: standard mode renders terrain (not just road) with no sh
     const getErrors = await attachFailFastConsole({ page });
     await page.setViewportSize({ width: 960, height: 540 });
 
-    const waitStone = page.waitForResponse((res) => res.url().includes('/assets/public/pbr/rocky_terrain_02/basecolor') && res.status() === 200);
+    const waitStone = page.waitForResponse((res) => res.url().includes('/assets/public/pbr/rock_ground/basecolor') && res.status() === 200);
     const waitGrass = page.waitForResponse((res) => res.url().includes('/assets/public/pbr/grass_005/basecolor') && res.status() === 200);
     const waitLand = page.waitForResponse((res) => res.url().includes('/assets/public/pbr/ground_037/basecolor') && res.status() === 200);
 

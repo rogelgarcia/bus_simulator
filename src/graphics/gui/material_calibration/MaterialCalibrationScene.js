@@ -458,8 +458,19 @@ export class MaterialCalibrationScene {
             };
         }
 
-        this._applySceneIllumination(DEFAULT_SCENE_ILLUMINATION);
-        this.engine?.setLightingSettings?.(getResolvedDefaultLightingSettings({ includeUrlOverrides: true }));
+        const resolved = getResolvedDefaultLightingSettings({ includeUrlOverrides: true });
+        this._applySceneIllumination({
+            ...DEFAULT_SCENE_ILLUMINATION,
+            hemi: {
+                ...(DEFAULT_SCENE_ILLUMINATION.hemi ?? {}),
+                intensity: resolved.hemiIntensity
+            },
+            sun: {
+                ...(DEFAULT_SCENE_ILLUMINATION.sun ?? {}),
+                intensity: resolved.sunIntensity
+            }
+        });
+        this.engine?.setLightingSettings?.(resolved);
         return {
             mode: LIGHTING_RESOLUTION_MODES.DEFAULT,
             presetId: null,

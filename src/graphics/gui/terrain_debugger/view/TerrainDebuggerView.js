@@ -7,6 +7,7 @@ import { FirstPersonCameraController } from '../../../engine3d/camera/FirstPerso
 import { getOrCreateGpuFrameTimer } from '../../../engine3d/perf/GpuFrameTimer.js';
 import { applyIBLIntensity, applyIBLToScene, loadIBLTexture } from '../../../lighting/IBL.js';
 import { getResolvedDefaultLightingSettings } from '../../../lighting/LightingSettings.js';
+import { getResolvedShadowSettings, getShadowQualityPreset } from '../../../lighting/ShadowSettings.js';
 import { DEFAULT_IBL_ID, getIblEntryById } from '../../../content3d/catalogs/IBLCatalog.js';
 import { getPbrMaterialMeta, getPbrMaterialOptionsForGround, resolvePbrMaterialUrls } from '../../../content3d/catalogs/PbrMaterialCatalog.js';
 import { primePbrAssetsAvailability } from '../../../content3d/materials/PbrAssetsRuntime.js';
@@ -54,6 +55,19 @@ const BIOME_TILING_AXIS_HEAD_WIDTH_METERS = 0.30;
 const BIOME_TILING_AXIS_Y_OFFSET_METERS = 0.22;
 const BIOME_TILING_AXIS_LABEL_SIZE_METERS = 0.85;
 const BIOME_TILING_OVERVIEW_ANGLE_OFFSET_DEG = 15;
+
+const BIOME_TILING_CALIB_RIG_ANIMATION_MS = 4000;
+const BIOME_TILING_CALIB_RIG_PLATE_SIZE = 2.7;
+const BIOME_TILING_CALIB_RIG_PLATE_THICKNESS = 0.12;
+const BIOME_TILING_CALIB_RIG_PANEL_WIDTH = 2.4;
+const BIOME_TILING_CALIB_RIG_PANEL_HEIGHT = 2.2;
+const BIOME_TILING_CALIB_RIG_SPHERE_RADIUS = 0.65;
+const BIOME_TILING_CALIB_RIG_CUBE_SIZE = 0.92;
+const BIOME_TILING_CALIB_RIG_CAMERA_TARGET = Object.freeze({ x: 0, y: BIOME_TILING_CALIB_RIG_PLATE_THICKNESS + 1.05, z: 0 });
+const BIOME_TILING_CALIB_RIG_CAMERA_POSITION = Object.freeze({ x: 0.25, y: BIOME_TILING_CALIB_RIG_PLATE_THICKNESS + 2.25, z: 7.0 });
+const BIOME_TILING_CALIB_RIG_SUN_POSITION = Object.freeze({ x: 4, y: 7, z: 4 });
+const BIOME_TILING_CALIB_RIG_SUN_TARGET = Object.freeze({ x: 0, y: 0.9, z: 0 });
+const BIOME_TILING_CALIB_RIG_ELEVATION_OFFSET_METERS = 6.0;
 
 const TERRAIN_ENGINE_MASK_TEX_SIZE = 256;
 const TERRAIN_BIOME_IDS = Object.freeze(['stone', 'grass', 'land']);
@@ -281,6 +295,37 @@ const FALLBACK_TERRAIN_BIOME_MAPS = Object.freeze({
     land: createSolidDataTexture(215, 145, 70, { srgb: true })
 });
 
+function createSolidDataArrayTexture(r, g, b, { a = 255, depth = 9, srgb = false } = {}) {
+    const d = Math.max(1, Math.round(Number(depth) || 1));
+    const data = new Uint8Array(d * 4);
+    const rr = r & 255;
+    const gg = g & 255;
+    const bb = b & 255;
+    const aa = a & 255;
+    for (let i = 0; i < d; i++) {
+        const o = i * 4;
+        data[o] = rr;
+        data[o + 1] = gg;
+        data[o + 2] = bb;
+        data[o + 3] = aa;
+    }
+
+    const tex = new THREE.DataArrayTexture(data, 1, 1, d);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    tex.needsUpdate = true;
+    applyTextureColorSpace(tex, { srgb: !!srgb });
+    return tex;
+}
+
+// Keep array textures present even while async layers are rebuilding to avoid shader
+// recompiles / missing-uniform issues.
+const FALLBACK_TERRAIN_BIOME_NORMAL_ARRAY_TEX = createSolidDataArrayTexture(128, 128, 255, { depth: 9, srgb: false });
+const FALLBACK_TERRAIN_BIOME_ORM_ARRAY_TEX = createSolidDataArrayTexture(255, 255, 0, { depth: 9, srgb: false });
+
 const FALLBACK_TERRAIN_HUMIDITY_EDGE_NOISE_TEX = createHumidityEdgeNoiseTexture(64);
 
 const FALLBACK_TERRAIN_ENGINE_MASK_TEX = (() => {
@@ -411,9 +456,12 @@ function ensureTerrainBiomeBlendShaderOnMaterial(material) {
         shader.uniforms.uGdBiomeMapLandDry = { value: data.terrainBiomeMapLandDry ?? FALLBACK_TERRAIN_BIOME_MAPS.land };
         shader.uniforms.uGdBiomeMapLandNeutral = { value: data.terrainBiomeMapLandNeutral ?? FALLBACK_TERRAIN_BIOME_MAPS.land };
         shader.uniforms.uGdBiomeMapLandWet = { value: data.terrainBiomeMapLandWet ?? FALLBACK_TERRAIN_BIOME_MAPS.land };
+        shader.uniforms.uGdBiomeNormalArray = { value: data.terrainBiomeNormalArrayTex ?? FALLBACK_TERRAIN_BIOME_NORMAL_ARRAY_TEX };
+        shader.uniforms.uGdBiomeOrmArray = { value: data.terrainBiomeOrmArrayTex ?? FALLBACK_TERRAIN_BIOME_ORM_ARRAY_TEX };
         shader.uniforms.uGdBiomeUvScaleStone = { value: data.terrainBiomeUvScaleStone ?? new THREE.Vector3(0.25, 0.25, 0.25) };
         shader.uniforms.uGdBiomeUvScaleGrass = { value: data.terrainBiomeUvScaleGrass ?? new THREE.Vector3(0.25, 0.25, 0.25) };
         shader.uniforms.uGdBiomeUvScaleLand = { value: data.terrainBiomeUvScaleLand ?? new THREE.Vector3(0.25, 0.25, 0.25) };
+        shader.uniforms.uGdDecodeSrgbAlbedo = { value: Number(data.terrainDecodeSrgbAlbedo) || 0.0 };
         shader.uniforms.uGdHumidityThresholds = { value: data.terrainHumidityThresholds ?? new THREE.Vector4(0.33, 0.67, 0.02, 0.0) };
         shader.uniforms.uGdHumidityEdgeNoise = { value: data.terrainHumidityEdgeNoise ?? new THREE.Vector4(0.025, 0.0, 0.0, 0.0) };
         shader.uniforms.uGdHumidityEdgeNoiseTex = { value: data.terrainHumidityEdgeNoiseTex ?? FALLBACK_TERRAIN_HUMIDITY_EDGE_NOISE_TEX };
@@ -450,6 +498,7 @@ function ensureTerrainBiomeBlendShaderOnMaterial(material) {
                 '#ifdef USE_TERRAIN_BIOME_BLEND',
                 '#if __VERSION__ >= 300',
                 '#define gdTex2D texture',
+                '#define gdTex2DArray texture',
                 '#else',
                 '#define gdTex2D texture2D',
                 '#endif',
@@ -465,9 +514,14 @@ function ensureTerrainBiomeBlendShaderOnMaterial(material) {
                 'uniform sampler2D uGdBiomeMapLandDry;',
                 'uniform sampler2D uGdBiomeMapLandNeutral;',
                 'uniform sampler2D uGdBiomeMapLandWet;',
+                '#if __VERSION__ >= 300',
+                'uniform sampler2DArray uGdBiomeNormalArray;',
+                'uniform sampler2DArray uGdBiomeOrmArray;',
+                '#endif',
                 'uniform vec3 uGdBiomeUvScaleStone;',
                 'uniform vec3 uGdBiomeUvScaleGrass;',
                 'uniform vec3 uGdBiomeUvScaleLand;',
+                'uniform float uGdDecodeSrgbAlbedo;',
                 'uniform vec4 uGdHumidityThresholds;',
                 'uniform vec4 uGdHumidityEdgeNoise;',
                 'uniform sampler2D uGdHumidityEdgeNoiseTex;',
@@ -480,6 +534,10 @@ function ensureTerrainBiomeBlendShaderOnMaterial(material) {
                 'vec3 lower = c / 12.92;',
                 'vec3 higher = pow((c + 0.055) / 1.055, vec3(2.4));',
                 'return mix(higher, lower, vec3(cutoff));',
+                '}',
+                'vec3 gdAlbedoTexelToLinear(vec3 c){',
+                'float w = step(0.5, uGdDecodeSrgbAlbedo);',
+                'return mix(c, gdSrgbToLinear(c), w);',
                 '}',
                 'vec2 gdTerrainMaskUv(vec2 worldUv){',
                 'vec2 denom = vec2(max(1e-6, uGdTerrainBounds.y - uGdTerrainBounds.x), max(1e-6, uGdTerrainBounds.w - uGdTerrainBounds.z));',
@@ -532,10 +590,10 @@ function ensureTerrainBiomeBlendShaderOnMaterial(material) {
                 'float antiCell = max(1e-3, uGdTilingVariation0.z);',
                 'vec2 uvNearAlt = gdAntiTileUv(uvNear, antiCell, antiStrength);',
                 'vec2 uvFarAlt = gdAntiTileUv(uvFar, antiCell, antiStrength);',
-                'vec3 nearBase = gdSrgbToLinear(gdTex2D(tex, uvNear).rgb);',
-                'vec3 farBase = gdSrgbToLinear(gdTex2D(tex, uvFar).rgb);',
-                'vec3 nearAlt = gdSrgbToLinear(gdTex2D(tex, uvNearAlt).rgb);',
-                'vec3 farAlt = gdSrgbToLinear(gdTex2D(tex, uvFarAlt).rgb);',
+                'vec3 nearBase = gdAlbedoTexelToLinear(gdTex2D(tex, uvNear).rgb);',
+                'vec3 farBase = gdAlbedoTexelToLinear(gdTex2D(tex, uvFar).rgb);',
+                'vec3 nearAlt = gdAlbedoTexelToLinear(gdTex2D(tex, uvNearAlt).rgb);',
+                'vec3 farAlt = gdAlbedoTexelToLinear(gdTex2D(tex, uvFarAlt).rgb);',
                 'vec3 nearColor = mix(nearBase, nearAlt, antiWeight);',
                 'vec3 farColor = mix(farBase, farAlt, antiWeight);',
                 'vec3 color = mix(nearColor, farColor, blend);',
@@ -582,6 +640,92 @@ function ensureTerrainBiomeBlendShaderOnMaterial(material) {
                 'vec3 cWet = gdSampleTerrainAlbedo(wetMap, worldUv, uvScale.z);',
                 'return cDry * humidityWeights.x + cNeutral * humidityWeights.y + cWet * humidityWeights.z;',
                 '}',
+                '#if __VERSION__ >= 300',
+                'vec3 gdSampleTerrainLinearArray(sampler2DArray tex, vec2 worldUv, float uvScale, float layer){',
+                'float nearScale = max(1e-4, uGdTilingDistance0.x);',
+                'float farScale = max(1e-4, uGdTilingDistance0.y);',
+                'float distanceEnabled = step(0.5, uGdTilingDistance1.z);',
+                'float blend = gdDistanceBlend01(worldUv) * distanceEnabled;',
+                'float debugMode = uGdTilingDistance1.y;',
+                'if (debugMode > 1.5) blend = 1.0;',
+                'else if (debugMode > 0.5) blend = 0.0;',
+                'vec2 uvNear = worldUv * uvScale * nearScale;',
+                'vec2 uvFar = worldUv * uvScale * mix(nearScale, farScale, distanceEnabled);',
+                'float variationNear = max(0.0, uGdTilingVariation1.z);',
+                'float variationFar = max(0.0, uGdTilingVariation1.w);',
+                'float variationIntensity = mix(variationNear, variationFar, blend);',
+                'float antiEnabled = step(0.5, uGdTilingVariation0.x);',
+                'float antiStrength = max(0.0, uGdTilingVariation0.y) * antiEnabled * variationIntensity;',
+                'float antiWeight = clamp(antiStrength, 0.0, 1.0);',
+                'float antiCell = max(1e-3, uGdTilingVariation0.z);',
+                'vec2 uvNearAlt = gdAntiTileUv(uvNear, antiCell, antiStrength);',
+                'vec2 uvFarAlt = gdAntiTileUv(uvFar, antiCell, antiStrength);',
+                'vec3 nearBase = gdTex2DArray(tex, vec3(uvNear, layer)).rgb;',
+                'vec3 farBase = gdTex2DArray(tex, vec3(uvFar, layer)).rgb;',
+                'vec3 nearAlt = gdTex2DArray(tex, vec3(uvNearAlt, layer)).rgb;',
+                'vec3 farAlt = gdTex2DArray(tex, vec3(uvFarAlt, layer)).rgb;',
+                'vec3 nearColor = mix(nearBase, nearAlt, antiWeight);',
+                'vec3 farColor = mix(farBase, farAlt, antiWeight);',
+                'return mix(nearColor, farColor, blend);',
+                '}',
+                'vec3 gdDecodeNormal(vec3 rgb){',
+                'vec3 n = rgb * 2.0 - 1.0;',
+                'return normalize(n);',
+                '}',
+                'vec3 gdSampleTerrainNormalTs(sampler2DArray tex, vec2 worldUv, float uvScale, float layer){',
+                'return gdDecodeNormal(gdSampleTerrainLinearArray(tex, worldUv, uvScale, layer));',
+                '}',
+                'vec3 gdSampleBiomeHumidityArray(',
+                'sampler2DArray tex, float baseLayer, vec3 uvScale, vec2 worldUv, vec3 humidityWeights',
+                '){',
+                'vec3 cDry = gdSampleTerrainLinearArray(tex, worldUv, uvScale.x, baseLayer + 0.0);',
+                'vec3 cNeutral = gdSampleTerrainLinearArray(tex, worldUv, uvScale.y, baseLayer + 1.0);',
+                'vec3 cWet = gdSampleTerrainLinearArray(tex, worldUv, uvScale.z, baseLayer + 2.0);',
+                'return cDry * humidityWeights.x + cNeutral * humidityWeights.y + cWet * humidityWeights.z;',
+                '}',
+                'vec3 gdSampleBiomeHumidityNormal(',
+                'sampler2DArray tex, float baseLayer, vec3 uvScale, vec2 worldUv, vec3 humidityWeights',
+                '){',
+                'vec3 nDry = gdSampleTerrainNormalTs(tex, worldUv, uvScale.x, baseLayer + 0.0);',
+                'vec3 nNeutral = gdSampleTerrainNormalTs(tex, worldUv, uvScale.y, baseLayer + 1.0);',
+                'vec3 nWet = gdSampleTerrainNormalTs(tex, worldUv, uvScale.z, baseLayer + 2.0);',
+                'return normalize(nDry * humidityWeights.x + nNeutral * humidityWeights.y + nWet * humidityWeights.z);',
+                '}',
+                'vec3 gdTerrainOrmFromWeights(vec2 worldUv, vec3 humidityWeights, float wStone, float wGrass, float wLand){',
+                'vec3 oStone = gdSampleBiomeHumidityArray(uGdBiomeOrmArray, 0.0, uGdBiomeUvScaleStone, worldUv, humidityWeights);',
+                'vec3 oGrass = gdSampleBiomeHumidityArray(uGdBiomeOrmArray, 3.0, uGdBiomeUvScaleGrass, worldUv, humidityWeights);',
+                'vec3 oLand = gdSampleBiomeHumidityArray(uGdBiomeOrmArray, 6.0, uGdBiomeUvScaleLand, worldUv, humidityWeights);',
+                'return oStone * wStone + oGrass * wGrass + oLand * wLand;',
+                '}',
+                'vec3 gdTerrainNormalTsFromWeights(vec2 worldUv, vec3 humidityWeights, float wStone, float wGrass, float wLand){',
+                'vec3 nStone = gdSampleBiomeHumidityNormal(uGdBiomeNormalArray, 0.0, uGdBiomeUvScaleStone, worldUv, humidityWeights);',
+                'vec3 nGrass = gdSampleBiomeHumidityNormal(uGdBiomeNormalArray, 3.0, uGdBiomeUvScaleGrass, worldUv, humidityWeights);',
+                'vec3 nLand = gdSampleBiomeHumidityNormal(uGdBiomeNormalArray, 6.0, uGdBiomeUvScaleLand, worldUv, humidityWeights);',
+                'return normalize(nStone * wStone + nGrass * wGrass + nLand * wLand);',
+                '}',
+                'float gdWeightedUvScale(vec3 uvScale, vec3 humidityWeights){',
+                'return uvScale.x * humidityWeights.x + uvScale.y * humidityWeights.y + uvScale.z * humidityWeights.z;',
+                '}',
+                'vec2 gdTerrainNormalDerivUv(vec2 worldUv, vec3 humidityWeights, float wStone, float wGrass, float wLand){',
+                'float sStone = gdWeightedUvScale(uGdBiomeUvScaleStone, humidityWeights);',
+                'float sGrass = gdWeightedUvScale(uGdBiomeUvScaleGrass, humidityWeights);',
+                'float sLand = gdWeightedUvScale(uGdBiomeUvScaleLand, humidityWeights);',
+                'float s = sStone * wStone + sGrass * wGrass + sLand * wLand;',
+                'float nearScale = max(1e-4, uGdTilingDistance0.x);',
+                'return worldUv * s * nearScale;',
+                '}',
+                'vec3 gdPerturbNormal2Arb(vec3 eye_pos, vec3 surf_norm, vec3 mapN, vec2 uv){',
+                'vec3 q0 = dFdx(eye_pos);',
+                'vec3 q1 = dFdy(eye_pos);',
+                'vec2 st0 = dFdx(uv);',
+                'vec2 st1 = dFdy(uv);',
+                'vec3 S = normalize(q0 * st1.y - q1 * st0.y);',
+                'vec3 T = normalize(-q0 * st1.x + q1 * st0.x);',
+                'vec3 N = normalize(surf_norm);',
+                'mat3 tsn = mat3(S, T, N);',
+                'return normalize(tsn * mapN);',
+                '}',
+                '#endif',
                 '#endif'
             ].join('\n')
         );
@@ -624,6 +768,90 @@ function ensureTerrainBiomeBlendShaderOnMaterial(material) {
             ].join('\n')
         );
 
+        shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <normal_fragment_maps>',
+            [
+                '#ifdef USE_TERRAIN_BIOME_BLEND',
+                '#if __VERSION__ >= 300',
+                '#ifdef USE_NORMALMAP',
+                'vec3 gdTerrainNormalTs = gdTerrainNormalTsFromWeights(gdWorldUv, gdHumidityWeights01, wStone, wGrass, wLand);',
+                'gdTerrainNormalTs.xy *= normalScale;',
+                'vec2 gdTerrainNormalUv = gdTerrainNormalDerivUv(gdWorldUv, gdHumidityWeights01, wStone, wGrass, wLand);',
+                'normal = gdPerturbNormal2Arb(-vViewPosition, normal, gdTerrainNormalTs, gdTerrainNormalUv);',
+                '#else',
+                '#include <normal_fragment_maps>',
+                '#endif',
+                '#else',
+                '#include <normal_fragment_maps>',
+                '#endif',
+                '#else',
+                '#include <normal_fragment_maps>',
+                '#endif'
+            ].join('\n')
+        );
+
+        shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <roughnessmap_fragment>',
+            [
+                '#ifdef USE_TERRAIN_BIOME_BLEND',
+                '#include <roughnessmap_fragment>',
+                '#if __VERSION__ >= 300',
+                '{',
+                'vec3 gdOrmR = gdTerrainOrmFromWeights(gdWorldUv, gdHumidityWeights01, wStone, wGrass, wLand);',
+                'roughnessFactor = roughness * clamp(gdOrmR.g, 0.0, 1.0);',
+                '}',
+                '#endif',
+                '#else',
+                '#include <roughnessmap_fragment>',
+                '#endif'
+            ].join('\n')
+        );
+
+        shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <metalnessmap_fragment>',
+            [
+                '#ifdef USE_TERRAIN_BIOME_BLEND',
+                '#include <metalnessmap_fragment>',
+                '#if __VERSION__ >= 300',
+                '{',
+                'vec3 gdOrmM = gdTerrainOrmFromWeights(gdWorldUv, gdHumidityWeights01, wStone, wGrass, wLand);',
+                // Match how ORM stacks are typically applied in PBR: map controls metalness directly.
+                'metalnessFactor = clamp(gdOrmM.b, 0.0, 1.0);',
+                '}',
+                '#endif',
+                '#else',
+                '#include <metalnessmap_fragment>',
+                '#endif'
+            ].join('\n')
+        );
+
+        shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <aomap_fragment>',
+            [
+                '#ifdef USE_TERRAIN_BIOME_BLEND',
+                '#if __VERSION__ >= 300',
+                '{',
+                'vec3 gdOrmA = gdTerrainOrmFromWeights(gdWorldUv, gdHumidityWeights01, wStone, wGrass, wLand);',
+                'float gdAo = clamp(gdOrmA.r, 0.0, 1.0);',
+                'float gdAoIntensity = 1.0;',
+                '#ifdef USE_AOMAP',
+                'gdAoIntensity = aoMapIntensity;',
+                '#endif',
+                'float ambientOcclusion = (gdAo - 1.0) * gdAoIntensity + 1.0;',
+                'reflectedLight.indirectDiffuse *= ambientOcclusion;',
+                '#if defined( USE_ENVMAP ) && defined( STANDARD )',
+                'reflectedLight.indirectSpecular *= ambientOcclusion;',
+                '#endif',
+                '}',
+                '#else',
+                '#include <aomap_fragment>',
+                '#endif',
+                '#else',
+                '#include <aomap_fragment>',
+                '#endif'
+            ].join('\n')
+        );
+
         mat.userData.terrainBiomeBlendUniforms = shader.uniforms;
     };
 
@@ -647,9 +875,12 @@ function syncTerrainBiomeBlendUniformsOnMaterial(material) {
     if (uniforms.uGdBiomeMapLandDry) uniforms.uGdBiomeMapLandDry.value = data.terrainBiomeMapLandDry ?? FALLBACK_TERRAIN_BIOME_MAPS.land;
     if (uniforms.uGdBiomeMapLandNeutral) uniforms.uGdBiomeMapLandNeutral.value = data.terrainBiomeMapLandNeutral ?? FALLBACK_TERRAIN_BIOME_MAPS.land;
     if (uniforms.uGdBiomeMapLandWet) uniforms.uGdBiomeMapLandWet.value = data.terrainBiomeMapLandWet ?? FALLBACK_TERRAIN_BIOME_MAPS.land;
+    if (uniforms.uGdBiomeNormalArray) uniforms.uGdBiomeNormalArray.value = data.terrainBiomeNormalArrayTex ?? FALLBACK_TERRAIN_BIOME_NORMAL_ARRAY_TEX;
+    if (uniforms.uGdBiomeOrmArray) uniforms.uGdBiomeOrmArray.value = data.terrainBiomeOrmArrayTex ?? FALLBACK_TERRAIN_BIOME_ORM_ARRAY_TEX;
     if (uniforms.uGdBiomeUvScaleStone) uniforms.uGdBiomeUvScaleStone.value = data.terrainBiomeUvScaleStone ?? uniforms.uGdBiomeUvScaleStone.value;
     if (uniforms.uGdBiomeUvScaleGrass) uniforms.uGdBiomeUvScaleGrass.value = data.terrainBiomeUvScaleGrass ?? uniforms.uGdBiomeUvScaleGrass.value;
     if (uniforms.uGdBiomeUvScaleLand) uniforms.uGdBiomeUvScaleLand.value = data.terrainBiomeUvScaleLand ?? uniforms.uGdBiomeUvScaleLand.value;
+    if (uniforms.uGdDecodeSrgbAlbedo) uniforms.uGdDecodeSrgbAlbedo.value = Number(data.terrainDecodeSrgbAlbedo) || 0.0;
     if (uniforms.uGdHumidityThresholds) uniforms.uGdHumidityThresholds.value = data.terrainHumidityThresholds ?? uniforms.uGdHumidityThresholds.value;
     if (uniforms.uGdHumidityEdgeNoise) uniforms.uGdHumidityEdgeNoise.value = data.terrainHumidityEdgeNoise ?? uniforms.uGdHumidityEdgeNoise.value;
     if (uniforms.uGdHumidityEdgeNoiseTex) uniforms.uGdHumidityEdgeNoiseTex.value = data.terrainHumidityEdgeNoiseTex ?? FALLBACK_TERRAIN_HUMIDITY_EDGE_NOISE_TEX;
@@ -665,6 +896,19 @@ function ensureUv2(geo) {
     if (!uv || !uv.isBufferAttribute) return;
     if (g.attributes.uv2) return;
     g.setAttribute('uv2', new THREE.BufferAttribute(uv.array.slice(0), 2));
+}
+
+function scaleUv(geo, scaleU, scaleV) {
+    const g = geo?.isBufferGeometry ? geo : null;
+    const uv = g?.attributes?.uv ?? null;
+    if (!uv || !uv.isBufferAttribute) return;
+    const uMul = Number(scaleU);
+    const vMul = Number(scaleV);
+    if (!Number.isFinite(uMul) || !Number.isFinite(vMul)) return;
+    for (let i = 0; i < uv.count; i++) {
+        uv.setXY(i, uv.getX(i) * uMul, uv.getY(i) * vMul);
+    }
+    uv.needsUpdate = true;
 }
 
 function smoothstep01(t) {
@@ -991,6 +1235,8 @@ export class TerrainDebuggerView {
         this.controls = null;
         this._ui = null;
         this._tilingFallbackBackground = new THREE.Color(0x858585);
+        this._hemiLight = null;
+        this._sunLight = null;
 
         this._texLoader = new THREE.TextureLoader();
         this._texCache = new Map();
@@ -1028,6 +1274,16 @@ export class TerrainDebuggerView {
         this._terrainTilingVariation1Vec4 = new THREE.Vector4();
         this._terrainBiomePbrKey = '';
         this._terrainBiomeDummyMapTex = createSolidDataTexture(215, 145, 70, { srgb: true });
+        this._terrainBiomePhysicalArrayKey = '';
+        this._terrainBiomePhysicalArrayRequestId = 0;
+        this._terrainBiomePhysicalArrayPromise = null;
+        // Physical (normal/ORM) arrays are rebuilt on the fly; keep the default modest so
+        // software-rendered environments (headless tests) don't stall.
+        this._terrainBiomePhysicalArraySize = 256;
+        this._terrainBiomeImageRgbaCache = new Map();
+        this._terrainBiomePackedOrmCache = new Map();
+        this._terrainBiomeNormalArrayTex = null;
+        this._terrainBiomeOrmArrayTex = null;
         this._terrainBiomeHumidityBindings = JSON.parse(JSON.stringify(DEFAULT_TERRAIN_BIOME_HUMIDITY_PBR_BINDINGS));
         this._terrainHumidityBlendConfig = { ...DEFAULT_TERRAIN_HUMIDITY_BLEND_CONFIG };
         this._terrainHumidityCloudConfig = { ...DEFAULT_TERRAIN_HUMIDITY_CLOUD_CONFIG };
@@ -1070,6 +1326,10 @@ export class TerrainDebuggerView {
         this._biomeTilingFocusMode = 'overview';
         this._biomeTilingInitialCameraPose = null;
         this._biomeTilingHrefKey = '';
+
+        this._biomeTilingCalibrationRig = null;
+        this._biomeTilingCalibrationRigDebugEnabled = false;
+        this._biomeTilingCalibrationRigAnim = null;
 
         this._raf = 0;
         this._lastT = 0;
@@ -1383,8 +1643,19 @@ export class TerrainDebuggerView {
 
         if ('useLegacyLights' in renderer) renderer.useLegacyLights = true;
 
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        const shadowSettings = getResolvedShadowSettings({ includeUrlOverrides: true });
+        const preset = getShadowQualityPreset(shadowSettings?.quality);
+        const shadowsEnabled = !!preset.enabled;
+        const shadowMapType = preset.shadowMapType === 'pcf' ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+
+        if (renderer.shadowMap.enabled !== shadowsEnabled) {
+            renderer.shadowMap.enabled = shadowsEnabled;
+            if ('needsUpdate' in renderer.shadowMap) renderer.shadowMap.needsUpdate = true;
+        }
+        if (shadowsEnabled && renderer.shadowMap.type !== shadowMapType) {
+            renderer.shadowMap.type = shadowMapType;
+            if ('needsUpdate' in renderer.shadowMap) renderer.shadowMap.needsUpdate = true;
+        }
         const lightingDefaults = this._gameplayLightingDefaults ?? getResolvedDefaultLightingSettings({ includeUrlOverrides: true });
         const toneMapping = String(lightingDefaults?.toneMapping ?? 'aces');
         renderer.toneMapping = toneMapping === 'agx'
@@ -1562,6 +1833,15 @@ export class TerrainDebuggerView {
         this._terrainDebugMat = null;
         this._terrainBiomeDummyMapTex?.dispose?.();
         this._terrainBiomeDummyMapTex = null;
+        this._terrainBiomePhysicalArrayRequestId++;
+        this._terrainBiomePhysicalArrayPromise = null;
+        this._terrainBiomePhysicalArrayKey = '';
+        this._terrainBiomeNormalArrayTex?.dispose?.();
+        this._terrainBiomeNormalArrayTex = null;
+        this._terrainBiomeOrmArrayTex?.dispose?.();
+        this._terrainBiomeOrmArrayTex = null;
+        this._terrainBiomeImageRgbaCache?.clear?.();
+        this._terrainBiomePackedOrmCache?.clear?.();
 
         const disposeMaterial = (mat) => {
             if (!mat) return;
@@ -1600,6 +1880,11 @@ export class TerrainDebuggerView {
         this._gridLines = null;
         this._roads = null;
         this._terrainGrid = null;
+        this._hemiLight = null;
+        this._sunLight = null;
+        this._biomeTilingCalibrationRig = null;
+        this._biomeTilingCalibrationRigAnim = null;
+        this._biomeTilingCalibrationRigDebugEnabled = false;
     }
 
     _buildScene() {
@@ -1613,13 +1898,35 @@ export class TerrainDebuggerView {
         const hemi = new THREE.HemisphereLight(0xffffff, 0x253018, clamp(lightingDefaults?.hemiIntensity, 0.0, 5.0, 0.92));
         hemi.position.set(0, 220, 0);
         scene.add(hemi);
+        this._hemiLight = hemi;
 
         const sun = new THREE.DirectionalLight(0xffffff, clamp(lightingDefaults?.sunIntensity, 0.0, 10.0, 1.64));
         sun.position.set(120, 170, 90);
-        sun.castShadow = true;
-        sun.shadow.mapSize.set(1024, 1024);
-        sun.shadow.bias = -0.0002;
+        const shadowPreset = getShadowQualityPreset(getResolvedShadowSettings({ includeUrlOverrides: true })?.quality);
+        const wantsSunShadows = !!shadowPreset.enabled && !!this.renderer?.shadowMap?.enabled;
+        sun.castShadow = wantsSunShadows;
+        if (wantsSunShadows) {
+            sun.shadow.bias = shadowPreset.bias;
+            if ('normalBias' in sun.shadow) sun.shadow.normalBias = shadowPreset.normalBias;
+            if ('radius' in sun.shadow) sun.shadow.radius = shadowPreset.radius;
+
+            if (shadowPreset.mapSize > 0) {
+                const renderer = this.renderer ?? null;
+                const capsMax = Number.isFinite(renderer?.capabilities?.maxTextureSize)
+                    ? Math.max(256, Math.floor(renderer.capabilities.maxTextureSize))
+                    : shadowPreset.mapSize;
+                const size = Math.max(256, Math.min(shadowPreset.mapSize, 4096, capsMax));
+                const current = sun.shadow.mapSize;
+                if (current?.x !== size || current?.y !== size) {
+                    sun.shadow.mapSize.set(size, size);
+                    if (sun.shadow.map?.dispose) sun.shadow.map.dispose();
+                    sun.shadow.map = null;
+                }
+            }
+        }
         scene.add(sun);
+        if (sun.target) scene.add(sun.target);
+        this._sunLight = sun;
 
         const terrainMat = new THREE.MeshStandardMaterial({
             color: 0xffffff,
@@ -2210,6 +2517,325 @@ export class TerrainDebuggerView {
         this.scene.add(helper);
         this._biomeTilingAxisHelper = helper;
         this._biomeTilingAxisKey = key;
+    }
+
+    _getBiomeTilingCalibrationRigOrigin() {
+        const bounds = this._getTerrainBoundsXZ();
+        const centerX = bounds ? (bounds.minX + bounds.maxX) * 0.5 : 0;
+        const centerZ = bounds ? (bounds.minZ + bounds.maxZ) * 0.5 : 0;
+        const maxY = Number(this._terrainBounds?.maxY) || 0;
+        const origin = new THREE.Vector3(centerX, maxY + BIOME_TILING_CALIB_RIG_ELEVATION_OFFSET_METERS, centerZ);
+        return origin;
+    }
+
+    _disposeBiomeTilingCalibrationRigTextures(rig) {
+        const src = rig?.textures ?? null;
+        if (!src || typeof src !== 'object') return;
+        const disposed = new Set();
+        for (const tex of Object.values(src)) {
+            if (!tex?.isTexture) continue;
+            if (disposed.has(tex)) continue;
+            disposed.add(tex);
+            tex.dispose?.();
+        }
+        rig.textures = null;
+    }
+
+    _applyBiomeTilingCalibrationRigMaterial(materialId) {
+        const rig = this._biomeTilingCalibrationRig;
+        if (!rig) return;
+        const mat = rig.slotMaterial ?? null;
+        if (!mat?.isMeshStandardMaterial) return;
+
+        const id = String(materialId ?? '').trim();
+        if (id === String(rig.materialId ?? '')) return;
+        rig.materialId = id;
+
+        this._disposeBiomeTilingCalibrationRigTextures(rig);
+
+        if (!id) {
+            mat.map = null;
+            mat.normalMap = null;
+            mat.roughnessMap = null;
+            mat.metalnessMap = null;
+            mat.aoMap = null;
+            mat.roughness = 1.0;
+            mat.metalness = 0.0;
+            if ('aoMapIntensity' in mat) mat.aoMapIntensity = 1.0;
+            mat.color?.setRGB?.(0.75, 0.75, 0.75);
+            if (mat.normalScale?.set) mat.normalScale.set(1, 1);
+            mat.needsUpdate = true;
+            return;
+        }
+
+        const urls = resolvePbrMaterialUrls(id);
+        const baseColor = this._loadTexture(urls?.baseColorUrl ?? null, { srgb: true });
+        const normal = this._loadTexture(urls?.normalUrl ?? null, { srgb: false });
+        const orm = this._loadTexture(urls?.ormUrl ?? null, { srgb: false });
+        const ao = this._loadTexture(urls?.aoUrl ?? null, { srgb: false });
+        const roughness = this._loadTexture(urls?.roughnessUrl ?? null, { srgb: false });
+        const metalness = this._loadTexture(urls?.metalnessUrl ?? null, { srgb: false });
+
+        const cloneTex = (tex) => {
+            if (!tex?.isTexture) return null;
+            const cloned = tex.clone();
+            cloned.needsUpdate = true;
+            return cloned;
+        };
+
+        const textures = {
+            baseColor: cloneTex(baseColor),
+            normal: cloneTex(normal),
+            orm: cloneTex(orm),
+            ao: cloneTex(ao),
+            roughness: cloneTex(roughness),
+            metalness: cloneTex(metalness)
+        };
+
+        const meta = getPbrMaterialMeta(id);
+        const tileMeters = Math.max(EPS, Number(meta?.tileMeters) || 4.0);
+        const rep = 1.0 / tileMeters;
+        for (const tex of Object.values(textures)) {
+            if (!tex) continue;
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(rep, rep);
+            tex.needsUpdate = true;
+        }
+        rig.textures = textures;
+
+        mat.map = textures.baseColor ?? null;
+        mat.normalMap = textures.normal ?? null;
+        if (textures.orm) {
+            mat.roughnessMap = textures.orm;
+            mat.metalnessMap = textures.orm;
+            mat.aoMap = textures.orm;
+            mat.metalness = 1.0;
+        } else {
+            mat.aoMap = textures.ao ?? null;
+            mat.roughnessMap = textures.roughness ?? null;
+            mat.metalnessMap = textures.metalness ?? null;
+            mat.metalness = textures.metalness ? 1.0 : 0.0;
+        }
+        mat.roughness = 1.0;
+        if ('aoMapIntensity' in mat) mat.aoMapIntensity = 1.0;
+        if (mat.normalScale?.set) mat.normalScale.set(1, 1);
+        mat.color?.setRGB?.(1, 1, 1);
+        mat.needsUpdate = true;
+    }
+
+    _disableBiomeTilingCalibrationRigDebug() {
+        const rig = this._biomeTilingCalibrationRig;
+        if (!rig) return;
+
+        const anim = this._biomeTilingCalibrationRigAnim;
+        if (anim?.restoreControlsEnabled !== undefined && this.controls) {
+            this.controls.enabled = !!anim.restoreControlsEnabled;
+        }
+        this._biomeTilingCalibrationRigAnim = null;
+
+        rig.group?.removeFromParent?.();
+        this.scene?.remove?.(rig.group);
+        this._disposeBiomeTilingCalibrationRigTextures(rig);
+        this._disposeObjectResources(rig.group);
+        this._biomeTilingCalibrationRig = null;
+    }
+
+    _enableBiomeTilingCalibrationRigDebug({ materialId, nowMs } = {}) {
+        const scene = this.scene;
+        if (!scene) return;
+        if (this._biomeTilingCalibrationRig) return;
+
+        const origin = this._getBiomeTilingCalibrationRigOrigin();
+
+        const group = new THREE.Group();
+        group.name = 'BiomeTilingCalibrationRig';
+        group.position.copy(origin);
+        scene.add(group);
+
+        const plateGeo = new THREE.BoxGeometry(
+            BIOME_TILING_CALIB_RIG_PLATE_SIZE,
+            BIOME_TILING_CALIB_RIG_PLATE_THICKNESS,
+            BIOME_TILING_CALIB_RIG_PLATE_SIZE
+        );
+        const plateMat = new THREE.MeshStandardMaterial({ color: 0x1f242c, roughness: 1.0, metalness: 0.0 });
+        const plate = new THREE.Mesh(plateGeo, plateMat);
+        plate.name = 'plate';
+        plate.position.set(0, BIOME_TILING_CALIB_RIG_PLATE_THICKNESS * 0.5, 0);
+        plate.receiveShadow = true;
+        group.add(plate);
+
+        const panelGeo = new THREE.PlaneGeometry(BIOME_TILING_CALIB_RIG_PANEL_WIDTH, BIOME_TILING_CALIB_RIG_PANEL_HEIGHT, 1, 1);
+        scaleUv(panelGeo, BIOME_TILING_CALIB_RIG_PANEL_WIDTH, BIOME_TILING_CALIB_RIG_PANEL_HEIGHT);
+        ensureUv2(panelGeo);
+
+        const sphereGeo = new THREE.SphereGeometry(BIOME_TILING_CALIB_RIG_SPHERE_RADIUS, 48, 32);
+        scaleUv(
+            sphereGeo,
+            2 * Math.PI * BIOME_TILING_CALIB_RIG_SPHERE_RADIUS,
+            Math.PI * BIOME_TILING_CALIB_RIG_SPHERE_RADIUS
+        );
+        ensureUv2(sphereGeo);
+
+        const cubeGeo = new THREE.BoxGeometry(BIOME_TILING_CALIB_RIG_CUBE_SIZE, BIOME_TILING_CALIB_RIG_CUBE_SIZE, BIOME_TILING_CALIB_RIG_CUBE_SIZE);
+        scaleUv(cubeGeo, BIOME_TILING_CALIB_RIG_CUBE_SIZE, BIOME_TILING_CALIB_RIG_CUBE_SIZE);
+        ensureUv2(cubeGeo);
+
+        const slotMat = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            roughness: 1.0,
+            metalness: 0.0
+        });
+
+        const panel = new THREE.Mesh(panelGeo, slotMat);
+        panel.name = 'panel';
+        panel.position.set(0, BIOME_TILING_CALIB_RIG_PLATE_THICKNESS + 1.15, -0.95);
+        panel.receiveShadow = true;
+        group.add(panel);
+
+        const sphere = new THREE.Mesh(sphereGeo, slotMat);
+        sphere.name = 'sphere';
+        sphere.position.set(-0.55, BIOME_TILING_CALIB_RIG_PLATE_THICKNESS + BIOME_TILING_CALIB_RIG_SPHERE_RADIUS, 0.55);
+        sphere.castShadow = true;
+        sphere.receiveShadow = true;
+        group.add(sphere);
+
+        const cube = new THREE.Mesh(cubeGeo, slotMat);
+        cube.name = 'cube';
+        cube.position.set(0.7, BIOME_TILING_CALIB_RIG_PLATE_THICKNESS + (BIOME_TILING_CALIB_RIG_CUBE_SIZE * 0.5), 0.25);
+        cube.rotation.y = Math.PI * 0.25;
+        cube.castShadow = true;
+        cube.receiveShadow = true;
+        group.add(cube);
+
+        this._biomeTilingCalibrationRig = {
+            group,
+            origin,
+            materialId: '',
+            slotMaterial: slotMat,
+            textures: null
+        };
+
+        this._applyBiomeTilingCalibrationRigMaterial(materialId);
+        this._startBiomeTilingCalibrationRigAnimation({ origin, nowMs: Number(nowMs) || performance.now() });
+    }
+
+    _startBiomeTilingCalibrationRigAnimation({ origin, nowMs } = {}) {
+        const controls = this.controls;
+        const camera = this.camera;
+        const sun = this._sunLight;
+        if (!controls?.setLookAt || !camera || !sun) return;
+        if (!origin?.isVector3) return;
+
+        this._disableFlyoverDebug();
+        if (this._flyover?.active) this._stopFlyover({ keepPose: true });
+        this._clearKeys();
+
+        const restoreControlsEnabled = !!controls.enabled;
+        controls.enabled = false;
+
+        const camStartPos = camera.position.clone();
+        const camStartTgt = controls.target?.clone?.() ?? new THREE.Vector3(0, 0, 0);
+        const sunStartPos = sun.position.clone();
+        const sunStartTgt = sun.target?.position?.clone?.() ?? new THREE.Vector3(0, 0, 0);
+
+        const camEndPos = new THREE.Vector3(
+            origin.x + BIOME_TILING_CALIB_RIG_CAMERA_POSITION.x,
+            origin.y + BIOME_TILING_CALIB_RIG_CAMERA_POSITION.y,
+            origin.z + BIOME_TILING_CALIB_RIG_CAMERA_POSITION.z
+        );
+        const camEndTgt = new THREE.Vector3(
+            origin.x + BIOME_TILING_CALIB_RIG_CAMERA_TARGET.x,
+            origin.y + BIOME_TILING_CALIB_RIG_CAMERA_TARGET.y,
+            origin.z + BIOME_TILING_CALIB_RIG_CAMERA_TARGET.z
+        );
+
+        const sunEndPos = new THREE.Vector3(
+            origin.x + BIOME_TILING_CALIB_RIG_SUN_POSITION.x,
+            origin.y + BIOME_TILING_CALIB_RIG_SUN_POSITION.y,
+            origin.z + BIOME_TILING_CALIB_RIG_SUN_POSITION.z
+        );
+        const sunEndTgt = new THREE.Vector3(
+            origin.x + BIOME_TILING_CALIB_RIG_SUN_TARGET.x,
+            origin.y + BIOME_TILING_CALIB_RIG_SUN_TARGET.y,
+            origin.z + BIOME_TILING_CALIB_RIG_SUN_TARGET.z
+        );
+
+        this._biomeTilingCalibrationRigAnim = {
+            startMs: Number(nowMs) || performance.now(),
+            durationMs: BIOME_TILING_CALIB_RIG_ANIMATION_MS,
+            restoreControlsEnabled,
+            camStartPos,
+            camStartTgt,
+            camEndPos,
+            camEndTgt,
+            sunStartPos,
+            sunStartTgt,
+            sunEndPos,
+            sunEndTgt,
+            tmpCamPos: new THREE.Vector3(),
+            tmpCamTgt: new THREE.Vector3(),
+            tmpSunPos: new THREE.Vector3(),
+            tmpSunTgt: new THREE.Vector3()
+        };
+    }
+
+    _updateBiomeTilingCalibrationRigAnimation(nowMs) {
+        const anim = this._biomeTilingCalibrationRigAnim;
+        if (!anim) return;
+
+        const controls = this.controls;
+        const sun = this._sunLight;
+        if (!controls?.setLookAt || !sun) {
+            this._biomeTilingCalibrationRigAnim = null;
+            return;
+        }
+
+        const t0 = Number(anim.startMs) || 0;
+        const duration = Math.max(1, Number(anim.durationMs) || BIOME_TILING_CALIB_RIG_ANIMATION_MS);
+        const elapsed = Math.max(0, Number(nowMs) - t0);
+        const u = clamp(elapsed / duration, 0, 1, 0);
+        const w = smoothstep01(u);
+
+        anim.tmpCamPos.lerpVectors(anim.camStartPos, anim.camEndPos, w);
+        anim.tmpCamTgt.lerpVectors(anim.camStartTgt, anim.camEndTgt, w);
+        controls.setLookAt({ position: anim.tmpCamPos, target: anim.tmpCamTgt });
+
+        anim.tmpSunPos.lerpVectors(anim.sunStartPos, anim.sunEndPos, w);
+        anim.tmpSunTgt.lerpVectors(anim.sunStartTgt, anim.sunEndTgt, w);
+        sun.position.copy(anim.tmpSunPos);
+        if (sun.target?.position) sun.target.position.copy(anim.tmpSunTgt);
+
+        if (u < 1) return;
+
+        controls.setLookAt({ position: anim.camEndPos, target: anim.camEndTgt });
+        sun.position.copy(anim.sunEndPos);
+        if (sun.target?.position) sun.target.position.copy(anim.sunEndTgt);
+        if (sun.target?.updateMatrixWorld) sun.target.updateMatrixWorld(true);
+
+        if (controls) controls.enabled = !!anim.restoreControlsEnabled;
+        this._activeCameraPresetId = 'custom';
+        this._syncCameraStatus({ nowMs: Number(nowMs) || performance.now(), force: true });
+        this._syncBiomeTilingHref({ force: true });
+        this._biomeTilingCalibrationRigAnim = null;
+    }
+
+    _syncBiomeTilingCalibrationRigDebug({ enabled = false, materialId = '' } = {}) {
+        const wants = !!enabled;
+        const prev = !!this._biomeTilingCalibrationRigDebugEnabled;
+        this._biomeTilingCalibrationRigDebugEnabled = wants;
+
+        if (!wants) {
+            if (this._biomeTilingCalibrationRig) this._disableBiomeTilingCalibrationRigDebug();
+            return;
+        }
+
+        if (!prev || !this._biomeTilingCalibrationRig) {
+            this._enableBiomeTilingCalibrationRigDebug({ materialId, nowMs: performance.now() });
+            return;
+        }
+
+        this._applyBiomeTilingCalibrationRigMaterial(materialId);
     }
 
     _clearFlyoverDebugHelpers() {
@@ -3841,6 +4467,7 @@ export class TerrainDebuggerView {
             this._updateCameraFromKeys(dt);
         }
         this.controls?.update?.(dt);
+        this._updateBiomeTilingCalibrationRigAnimation(t);
         if (this._biomeTilingAxisHelper) {
             this._biomeTilingAxisHelper.visible = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING && !this._flyover?.active;
         }
@@ -4393,6 +5020,8 @@ export class TerrainDebuggerView {
         const bindings = this._terrainBiomeHumidityBindings ?? DEFAULT_TERRAIN_BIOME_HUMIDITY_PBR_BINDINGS;
         const blendCfg = this._terrainHumidityBlendConfig ?? DEFAULT_TERRAIN_HUMIDITY_BLEND_CONFIG;
         const sampled = {};
+        const physicalSlots = [];
+        const physicalKeyParts = [];
         const keyParts = [];
         for (const biome of TERRAIN_BIOME_IDS) {
             sampled[biome] = {};
@@ -4416,6 +5045,20 @@ export class TerrainDebuggerView {
                     metalnessUrl: urls?.metalnessUrl ?? '',
                     tile
                 };
+                physicalSlots.push({
+                    normalUrl: sampled[biome][slot].normalUrl,
+                    ormUrl: sampled[biome][slot].ormUrl,
+                    aoUrl: sampled[biome][slot].aoUrl,
+                    roughnessUrl: sampled[biome][slot].roughnessUrl,
+                    metalnessUrl: sampled[biome][slot].metalnessUrl
+                });
+                physicalKeyParts.push(
+                    sampled[biome][slot].normalUrl,
+                    sampled[biome][slot].ormUrl,
+                    sampled[biome][slot].aoUrl,
+                    sampled[biome][slot].roughnessUrl,
+                    sampled[biome][slot].metalnessUrl
+                );
                 keyParts.push(
                     sampled[biome][slot].baseColorUrl,
                     sampled[biome][slot].normalUrl,
@@ -4427,6 +5070,7 @@ export class TerrainDebuggerView {
                 );
             }
         }
+        const physicalKey = physicalKeyParts.join('|');
         keyParts.push(
             Number(blendCfg.dryMax).toFixed(4),
             Number(blendCfg.wetMin).toFixed(4),
@@ -4514,6 +5158,13 @@ export class TerrainDebuggerView {
             1 / sampled.land.neutral.tile,
             1 / sampled.land.wet.tile
         );
+        {
+            const renderer = this.renderer ?? null;
+            const isWebGL2 = !!renderer?.capabilities?.isWebGL2;
+            const hasSrgbExt = !!renderer?.extensions?.has?.('EXT_sRGB');
+            // If sRGB textures cannot be uploaded, we must decode in shader. Otherwise sampling yields linear.
+            mat.userData.terrainDecodeSrgbAlbedo = (!isWebGL2 && !hasSrgbExt) ? 1.0 : 0.0;
+        }
         mat.userData.terrainHumidityThresholds = this._terrainHumidityThresholdsVec4.set(
             Number(blendCfg.dryMax) || DEFAULT_TERRAIN_HUMIDITY_BLEND_CONFIG.dryMax,
             Number(blendCfg.wetMin) || DEFAULT_TERRAIN_HUMIDITY_BLEND_CONFIG.wetMin,
@@ -4584,8 +5235,228 @@ export class TerrainDebuggerView {
             if (changed) mat.needsUpdate = true;
         }
 
+        this._queueTerrainBiomePhysicalArrayRebuild({ key: physicalKey, slots: physicalSlots });
         syncTerrainBiomeBlendUniformsOnMaterial(mat);
         this._updateTerrainPbrLegendUi();
+    }
+
+    _queueTerrainBiomePhysicalArrayRebuild({ key, slots } = {}) {
+        const mat = this._terrainMat;
+        const renderer = this.renderer;
+        if (!mat || !renderer) return;
+
+        const safeKey = typeof key === 'string' ? key : '';
+        const list = Array.isArray(slots) ? slots : [];
+
+        // Texture arrays require WebGL2; keep the old single-source material maps as the fallback.
+        if (!renderer.capabilities?.isWebGL2) {
+            if (safeKey) this._terrainBiomePhysicalArrayKey = safeKey;
+            if (mat.userData) {
+                mat.userData.terrainBiomeNormalArrayTex = null;
+                mat.userData.terrainBiomeOrmArrayTex = null;
+            }
+            syncTerrainBiomeBlendUniformsOnMaterial(mat);
+            return;
+        }
+
+        if (safeKey && safeKey === this._terrainBiomePhysicalArrayKey) return;
+        this._terrainBiomePhysicalArrayKey = safeKey;
+
+        const requestId = ++this._terrainBiomePhysicalArrayRequestId;
+        const size = Math.max(8, Math.min(2048, Math.round(Number(this._terrainBiomePhysicalArraySize) || 512)));
+        const payload = {
+            key: safeKey,
+            requestId,
+            size,
+            // Ensure a stable depth (stone/grass/land x dry/neutral/wet).
+            slots: list.length === 9 ? list.slice(0, 9) : list.slice(0, 9)
+        };
+
+        this._terrainBiomePhysicalArrayPromise = this._rebuildTerrainBiomePhysicalArrays(payload).catch((err) => {
+            console.warn('[TerrainDebugger] Failed to rebuild terrain biome physical arrays', err);
+        });
+    }
+
+    async _rebuildTerrainBiomePhysicalArrays({ requestId, size, slots } = {}) {
+        const renderer = this.renderer;
+        const mat = this._terrainMat;
+        if (!renderer || !mat) return;
+        if (!renderer.capabilities?.isWebGL2) return;
+
+        const safeSize = Math.max(8, Math.min(2048, Math.round(Number(size) || 512)));
+        const depth = 9;
+        const layerCount = Math.max(0, Math.min(depth, Array.isArray(slots) ? slots.length : 0));
+        const layerBytes = safeSize * safeSize * 4;
+
+        const fillLayerSolid = (dst, offset, r, g, b, a) => {
+            const rr = r & 255;
+            const gg = g & 255;
+            const bb = b & 255;
+            const aa = a & 255;
+            for (let i = 0; i < layerBytes; i += 4) {
+                dst[offset + i] = rr;
+                dst[offset + i + 1] = gg;
+                dst[offset + i + 2] = bb;
+                dst[offset + i + 3] = aa;
+            }
+        };
+
+        const normalLayers = [];
+        const ormLayers = [];
+        for (let i = 0; i < layerCount; i++) {
+            const slot = slots[i] && typeof slots[i] === 'object' ? slots[i] : {};
+            normalLayers.push(this._getTerrainBiomeImageRgba(slot.normalUrl, { size: safeSize }));
+            ormLayers.push(this._getTerrainBiomePackedOrmRgba(slot, { size: safeSize }));
+        }
+
+        const [normalDataList, ormDataList] = await Promise.all([
+            Promise.all(normalLayers),
+            Promise.all(ormLayers)
+        ]);
+
+        // Cancel if a newer rebuild started while we were loading images.
+        if (requestId !== this._terrainBiomePhysicalArrayRequestId) return;
+
+        const normalData = new Uint8Array(layerBytes * depth);
+        const ormData = new Uint8Array(layerBytes * depth);
+
+        for (let layer = 0; layer < depth; layer++) {
+            const dstOff = layer * layerBytes;
+            const n = normalDataList[layer] ?? null;
+            const o = ormDataList[layer] ?? null;
+
+            if (n && n.length === layerBytes) normalData.set(n, dstOff);
+            else fillLayerSolid(normalData, dstOff, 128, 128, 255, 255);
+
+            if (o && o.length === layerBytes) ormData.set(o, dstOff);
+            else fillLayerSolid(ormData, dstOff, 255, 255, 0, 255);
+        }
+
+        const nextNormalTex = new THREE.DataArrayTexture(normalData, safeSize, safeSize, depth);
+        nextNormalTex.wrapS = THREE.RepeatWrapping;
+        nextNormalTex.wrapT = THREE.RepeatWrapping;
+        nextNormalTex.magFilter = THREE.LinearFilter;
+        nextNormalTex.minFilter = THREE.LinearFilter;
+        nextNormalTex.generateMipmaps = false;
+        nextNormalTex.anisotropy = 1;
+        applyTextureColorSpace(nextNormalTex, { srgb: false });
+        nextNormalTex.needsUpdate = true;
+
+        const nextOrmTex = new THREE.DataArrayTexture(ormData, safeSize, safeSize, depth);
+        nextOrmTex.wrapS = THREE.RepeatWrapping;
+        nextOrmTex.wrapT = THREE.RepeatWrapping;
+        nextOrmTex.magFilter = THREE.LinearFilter;
+        nextOrmTex.minFilter = THREE.LinearFilter;
+        nextOrmTex.generateMipmaps = false;
+        nextOrmTex.anisotropy = 1;
+        applyTextureColorSpace(nextOrmTex, { srgb: false });
+        nextOrmTex.needsUpdate = true;
+
+        // Cancel check again before swapping textures in.
+        if (requestId !== this._terrainBiomePhysicalArrayRequestId) {
+            nextNormalTex.dispose?.();
+            nextOrmTex.dispose?.();
+            return;
+        }
+
+        this._terrainBiomeNormalArrayTex?.dispose?.();
+        this._terrainBiomeOrmArrayTex?.dispose?.();
+        this._terrainBiomeNormalArrayTex = nextNormalTex;
+        this._terrainBiomeOrmArrayTex = nextOrmTex;
+
+        mat.userData = mat.userData ?? {};
+        mat.userData.terrainBiomeNormalArrayTex = nextNormalTex;
+        mat.userData.terrainBiomeOrmArrayTex = nextOrmTex;
+        syncTerrainBiomeBlendUniformsOnMaterial(mat);
+    }
+
+    async _getTerrainBiomeImageRgba(url, { size } = {}) {
+        const safeUrl = typeof url === 'string' && url ? url : null;
+        if (!safeUrl) return null;
+
+        const safeSize = Math.max(8, Math.min(2048, Math.round(Number(size) || 512)));
+        const key = `${safeSize}|${safeUrl}`;
+        const cached = this._terrainBiomeImageRgbaCache?.get?.(key) ?? null;
+        if (cached) return cached;
+
+        const promise = (async () => {
+            try {
+                const img = await new Promise((resolve) => {
+                    const el = new Image();
+                    el.crossOrigin = 'anonymous';
+                    el.onload = () => resolve(el);
+                    el.onerror = () => resolve(null);
+                    el.src = safeUrl;
+                });
+                if (!img) return null;
+
+                const canvas = (typeof OffscreenCanvas !== 'undefined')
+                    ? new OffscreenCanvas(safeSize, safeSize)
+                    : document.createElement('canvas');
+                canvas.width = safeSize;
+                canvas.height = safeSize;
+                const ctx = canvas.getContext?.('2d', { willReadFrequently: true }) ?? null;
+                if (!ctx) return null;
+
+                ctx.imageSmoothingEnabled = true;
+                ctx.clearRect(0, 0, safeSize, safeSize);
+                ctx.drawImage(img, 0, 0, safeSize, safeSize);
+                const src = ctx.getImageData(0, 0, safeSize, safeSize).data;
+
+                // Flip Y to match how THREE.TextureLoader uploads with flipY=true.
+                const out = new Uint8Array(safeSize * safeSize * 4);
+                const rowBytes = safeSize * 4;
+                for (let y = 0; y < safeSize; y++) {
+                    const srcOff = y * rowBytes;
+                    const dstOff = (safeSize - 1 - y) * rowBytes;
+                    out.set(src.subarray(srcOff, srcOff + rowBytes), dstOff);
+                }
+                return out;
+            } catch {
+                return null;
+            }
+        })();
+
+        this._terrainBiomeImageRgbaCache?.set?.(key, promise);
+        return promise;
+    }
+
+    async _getTerrainBiomePackedOrmRgba(slot, { size } = {}) {
+        const safeSize = Math.max(8, Math.min(2048, Math.round(Number(size) || 512)));
+        const src = slot && typeof slot === 'object' ? slot : {};
+        const ormUrl = typeof src.ormUrl === 'string' && src.ormUrl ? src.ormUrl : '';
+        const aoUrl = typeof src.aoUrl === 'string' && src.aoUrl ? src.aoUrl : '';
+        const roughUrl = typeof src.roughnessUrl === 'string' && src.roughnessUrl ? src.roughnessUrl : '';
+        const metalUrl = typeof src.metalnessUrl === 'string' && src.metalnessUrl ? src.metalnessUrl : '';
+
+        if (ormUrl) return this._getTerrainBiomeImageRgba(ormUrl, { size: safeSize });
+
+        const cacheKey = `${safeSize}|${aoUrl}|${roughUrl}|${metalUrl}`;
+        const cached = this._terrainBiomePackedOrmCache?.get?.(cacheKey) ?? null;
+        if (cached) return cached;
+
+        const promise = (async () => {
+            const [ao, rough, metal] = await Promise.all([
+                aoUrl ? this._getTerrainBiomeImageRgba(aoUrl, { size: safeSize }) : null,
+                roughUrl ? this._getTerrainBiomeImageRgba(roughUrl, { size: safeSize }) : null,
+                metalUrl ? this._getTerrainBiomeImageRgba(metalUrl, { size: safeSize }) : null
+            ]);
+
+            const out = new Uint8Array(safeSize * safeSize * 4);
+            const hasAo = ao && ao.length === out.length;
+            const hasRough = rough && rough.length === out.length;
+            const hasMetal = metal && metal.length === out.length;
+            for (let i = 0; i < out.length; i += 4) {
+                out[i] = hasAo ? ao[i] : 255;
+                out[i + 1] = hasRough ? rough[i] : 255;
+                out[i + 2] = hasMetal ? metal[i] : 0;
+                out[i + 3] = 255;
+            }
+            return out;
+        })();
+
+        this._terrainBiomePackedOrmCache?.set?.(cacheKey, promise);
+        return promise;
     }
 
     _ensureTerrainDebugMaterial() {
@@ -5630,6 +6501,14 @@ export class TerrainDebuggerView {
             this._terrainEngineMaskDirty = true;
         } else {
             this._biomeTilingState = nextBiomeTilingState;
+        }
+
+        {
+            const biomeTilingCfg = terrainCfg.biomeTiling && typeof terrainCfg.biomeTiling === 'object' ? terrainCfg.biomeTiling : null;
+            this._syncBiomeTilingCalibrationRigDebug({
+                enabled: biomeTilingCfg?.calibrationRigDebugEnabled,
+                materialId: nextBiomeTilingState.materialId
+            });
         }
 
         const layoutCfg = terrainCfg.layout && typeof terrainCfg.layout === 'object' ? terrainCfg.layout : null;

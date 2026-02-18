@@ -579,6 +579,7 @@ export class TerrainDebuggerUI {
                     baselineProfiles: {}
                 },
                 biomeTiling: {
+                    calibrationRigDebugEnabled: false,
                     materialId: '',
                     distanceTiling: {
                         enabled: true,
@@ -2966,6 +2967,7 @@ export class TerrainDebuggerUI {
             return defaultMaterialId;
         };
 
+        bt.calibrationRigDebugEnabled = bt.calibrationRigDebugEnabled === true;
         bt.materialId = normalizeMaterialId(bt.materialId, defaultMaterialId);
         const distanceTiling = (bt.distanceTiling && typeof bt.distanceTiling === 'object') ? bt.distanceTiling : {};
         distanceTiling.enabled = distanceTiling.enabled !== false;
@@ -3105,6 +3107,18 @@ export class TerrainDebuggerUI {
         focusButtonsRow.appendChild(flyoverBtn);
         focusButtonsRow.appendChild(flyoverDebugBtn);
         actionsSection.appendChild(focusButtonsRow);
+
+        const rigDebugRow = makeToggleRow({
+            label: 'Calibration Rig Debug',
+            value: bt.calibrationRigDebugEnabled,
+            tooltip: 'Spawns the calibration panel/sphere/cube rig above the terrain and animates camera + sun to the calibration pose (4s ease-in-out).',
+            onChange: (v) => {
+                bt.calibrationRigDebugEnabled = !!v;
+                syncUi();
+                this._emit();
+            }
+        });
+        actionsSection.appendChild(rigDebugRow.row);
 
         const textureSection = this._buildSection('biome_tiling', 'Single Texture');
         textureSection.appendChild(makeEl('div', 'options-note', 'Selected PBR is applied to the entire map (all biomes and humidity slots).'));
@@ -3368,6 +3382,8 @@ export class TerrainDebuggerUI {
                 materialLabel: meta?.label ?? bt.materialId,
                 previewUrl: meta?.previewUrl ?? ''
             });
+
+            rigDebugRow.toggle.checked = bt.calibrationRigDebugEnabled;
 
             distanceEnabledRow.toggle.checked = distanceTiling.enabled;
             setSliderValue(nearScaleRow, distanceTiling.nearScale, 2);
