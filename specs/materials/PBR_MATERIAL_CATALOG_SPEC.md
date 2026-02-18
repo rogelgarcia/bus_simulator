@@ -73,12 +73,19 @@ export default {
   },
 
   // Optional exhaustive image inventory for tooling/debugging.
-  // Repo-relative asset paths under assets/public/pbr/<slug>/.
-  allImagePaths: [
-    'assets/public/pbr/<slug>/basecolor.jpg',
-    'assets/public/pbr/<slug>/normal_gl.png',
-    'assets/public/pbr/<slug>/arm.png'
-  ],
+  // Structured full-path map inventory under assets/public/pbr/<slug>/.
+  allMapFiles: {
+    baseColor: 'assets/public/pbr/<slug>/basecolor.jpg',
+    normal: 'assets/public/pbr/<slug>/normal_gl.png',
+    orm: 'assets/public/pbr/<slug>/arm.png',
+    // Optional keys when present:
+    // ao, roughness, metalness, displacement, height, normalDx
+    variants: {
+      // Any additional image files not part of canonical slots.
+      // Key is a stable slug derived from filename.
+      '<variant_key>': 'assets/public/pbr/<slug>/<file_name>'
+    }
+  },
 
   // Placeholder for future normalization metadata (Phase 1 keeps it informational)
   normalization: {
@@ -97,7 +104,7 @@ Field rules:
 - `tileMeters` must be a positive number.
 - `mapFiles.baseColor` and `mapFiles.normal` are required.
 - Either `mapFiles.orm` **or** one or more of `ao/roughness/metalness` must be provided.
-- `allImagePaths` is optional and may include every image file path in the material folder for tooling/auditing.
+- `allMapFiles` is optional and may include every image file path in the material folder for tooling/auditing.
 - `normalization` is optional and may contain placeholders (strings) until later phases enforce validation.
 
 Color space conventions:
