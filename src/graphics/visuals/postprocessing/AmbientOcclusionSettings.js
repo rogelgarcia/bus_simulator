@@ -5,10 +5,10 @@
 const STORAGE_KEY = 'bus_sim.ambientOcclusion.v1';
 
 export const AMBIENT_OCCLUSION_DEFAULTS = Object.freeze({
-    mode: 'off',
+    mode: 'gtao',
     alpha: {
         handling: 'alpha_test',
-        threshold: 0.5
+        threshold: 0.52
     },
     staticAo: {
         mode: 'off',
@@ -26,15 +26,15 @@ export const AMBIENT_OCCLUSION_DEFAULTS = Object.freeze({
         maxDistance: 0.75
     },
     ssao: {
-        intensity: 0.35,
-        radius: 8,
-        quality: 'medium'
+        intensity: 0.52,
+        radius: 1.3,
+        quality: 'high'
     },
     gtao: {
-        intensity: 0.35,
-        radius: 0.25,
-        quality: 'medium',
-        denoise: true,
+        intensity: 0.88,
+        radius: 0.47,
+        quality: 'high',
+        denoise: false,
         debugView: false,
         updateMode: 'every_frame',
         motionThreshold: {

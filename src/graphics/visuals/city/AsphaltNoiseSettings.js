@@ -73,7 +73,7 @@ export const ASPHALT_NOISE_DEFAULTS = Object.freeze({
     coarse: Object.freeze({
         albedo: false,
         roughness: false,
-        scale: 0.226,
+        scale: 1.983,
         colorStrength: 0.16,
         dirtyStrength: 0.34,
         roughnessStrength: 0.1
@@ -89,7 +89,7 @@ export const ASPHALT_NOISE_DEFAULTS = Object.freeze({
         normalStrength: 0.32
     }),
     markings: Object.freeze({
-        enabled: false,
+        enabled: true,
         colorStrength: 0.025,
         roughnessStrength: 0.09,
         debug: false
@@ -102,7 +102,7 @@ export const ASPHALT_NOISE_DEFAULTS = Object.freeze({
     livedIn: Object.freeze({
         edgeDirt: Object.freeze({
             enabled: true,
-            strength: 0.35,
+            strength: 0.18,
             width: 0.65,
             scale: 0.55
         }),
@@ -116,19 +116,19 @@ export const ASPHALT_NOISE_DEFAULTS = Object.freeze({
             fadePower: 1.6
         }),
         cracks: Object.freeze({
-            enabled: true,
-            strength: 0.25,
+            enabled: false,
+            strength: 0.12,
             scale: 3.2
         }),
         patches: Object.freeze({
             enabled: true,
-            strength: 0.2,
+            strength: 0.1,
             scale: 4.0,
             coverage: 0.84
         }),
         tireWear: Object.freeze({
             enabled: true,
-            strength: 0.25,
+            strength: 0.1,
             scale: 1.6
         })
     })

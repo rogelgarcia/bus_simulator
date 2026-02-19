@@ -13,8 +13,8 @@ const LEGACY_BLOOM_DEFAULTS_V3 = Object.freeze({
 
 export const BLOOM_DEFAULTS = Object.freeze({
     enabled: false,
-    strength: 0.02,
-    radius: 0.05,
+    strength: 0.01,
+    radius: 0.01,
     threshold: 5
 });
 

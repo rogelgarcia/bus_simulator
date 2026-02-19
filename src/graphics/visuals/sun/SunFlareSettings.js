@@ -17,14 +17,14 @@ const LEGACY_SUN_FLARE_DEFAULTS_V1 = Object.freeze({
 });
 
 export const SUN_FLARE_DEFAULTS = Object.freeze({
-    enabled: false,
-    preset: 'cinematic',
-    strength: 1.1,
+    enabled: true,
+    preset: 'subtle',
+    strength: 0.65,
     components: Object.freeze({
-        core: false,
-        halo: false,
+        core: true,
+        halo: true,
         starburst: false,
-        ghosting: false
+        ghosting: true
     })
 });
 

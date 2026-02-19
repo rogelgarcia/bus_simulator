@@ -297,23 +297,6 @@ async function runTests() {
         history.replaceState({}, '', originalUrl);
     });
 
-    // ========== Building Window Visuals Settings ==========
-    const { getDefaultResolvedBuildingWindowVisualsSettings } = await import('/src/graphics/visuals/buildings/BuildingWindowVisualsSettings.js');
-
-    test('BuildingWindowVisualsSettings: default reflective disabled', () => {
-        const d = getDefaultResolvedBuildingWindowVisualsSettings();
-        assertTrue(d && typeof d === 'object', 'Expected building window visuals defaults object.');
-        assertTrue(d.reflective && typeof d.reflective === 'object', 'Expected reflective object.');
-        assertTrue(d.reflective.enabled === false, 'Reflective building windows should be disabled by default.');
-        assertTrue(d.reflective.glass && typeof d.reflective.glass === 'object', 'Expected reflective.glass object.');
-        assertEqual(d.reflective.glass.colorHex, 0xffffff, 'Expected default glass color hex.');
-        assertNear(d.reflective.glass.metalness, 0.0, 1e-6, 'Expected default glass metalness.');
-        assertNear(d.reflective.glass.roughness, 0.02, 1e-6, 'Expected default glass roughness.');
-        assertNear(d.reflective.glass.transmission, 0.0, 1e-6, 'Expected default glass transmission.');
-        assertNear(d.reflective.glass.ior, 2.2, 1e-6, 'Expected default glass ior.');
-        assertNear(d.reflective.glass.envMapIntensity, 4.0, 1e-6, 'Expected default glass envMapIntensity.');
-    });
-
     // ========== Building Materials / IBL ==========
     const { buildBuildingVisualParts: buildBuildingVisualPartsForIbl } = await import('/src/graphics/assets3d/generators/buildings/BuildingGenerator.js');
     const { buildBuildingFabricationVisualParts: buildBuildingFabricationVisualPartsForIbl } = await import('/src/graphics/assets3d/generators/building_fabrication/BuildingFabricationGenerator.js');

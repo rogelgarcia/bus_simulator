@@ -5,7 +5,7 @@
 const STORAGE_KEY = 'bus_sim.shadows.v1';
 
 export const SHADOW_DEFAULTS = Object.freeze({
-    quality: 'medium'
+    quality: 'high'
 });
 
 export const SHADOW_QUALITY_PRESETS = Object.freeze({

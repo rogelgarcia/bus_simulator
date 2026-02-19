@@ -8,14 +8,14 @@ const STORAGE_KEY = 'bus_sim.buildingWindowVisuals.v1';
 
 export const BUILDING_WINDOW_VISUALS_DEFAULTS = Object.freeze({
     reflective: Object.freeze({
-        enabled: false,
+        enabled: true,
         glass: Object.freeze({
             colorHex: 0xffffff,
-            metalness: 0.0,
-            roughness: 0.02,
+            metalness: 0.95,
+            roughness: 0.07,
             transmission: 0.0,
-            ior: 2.2,
-            envMapIntensity: 4.0
+            ior: 1.88,
+            envMapIntensity: 2.57
         })
     })
 });

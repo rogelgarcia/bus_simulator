@@ -7,7 +7,7 @@ const STORAGE_KEY = 'bus_sim.antiAliasing.v1';
 export const ANTIALIASING_DEFAULTS = Object.freeze({
     mode: 'msaa',
     msaa: {
-        samples: 2
+        samples: 8
     },
     taa: {
         preset: 'high',
@@ -17,11 +17,11 @@ export const ANTIALIASING_DEFAULTS = Object.freeze({
         clampStrength: 0.8
     },
     smaa: {
-        preset: 'medium',
-        threshold: 0.1,
-        maxSearchSteps: 16,
-        maxSearchStepsDiag: 8,
-        cornerRounding: 25
+        preset: 'custom',
+        threshold: 0.02,
+        maxSearchSteps: 23,
+        maxSearchStepsDiag: 12,
+        cornerRounding: 20
     },
     fxaa: {
         preset: 'balanced',
