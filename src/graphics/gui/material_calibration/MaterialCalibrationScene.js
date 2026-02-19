@@ -186,6 +186,7 @@ export class MaterialCalibrationScene {
         this._slotOverrides = Array(SLOT_COUNT).fill(null);
         this._slotMaterials = Array(SLOT_COUNT).fill(null);
         this._slotGroups = Array(SLOT_COUNT).fill(null);
+        this._slotBasePositions = Array(SLOT_COUNT).fill(null);
         this._slotPlates = Array(SLOT_COUNT).fill(null);
         this._slotFocusSphere = Array(SLOT_COUNT).fill(null);
 
@@ -193,6 +194,9 @@ export class MaterialCalibrationScene {
         this._layoutMode = 'full';
         this._tilingMultiplier = 1.0;
         this._activeSlotIndex = 0;
+        this._plateVisible = true;
+        this._isolatedSlotIndex = null;
+        this._centeredCaptureSlotIndex = null;
 
         this._pickRaycaster = new THREE.Raycaster();
         this._pickHits = [];
@@ -252,8 +256,12 @@ export class MaterialCalibrationScene {
         this._slotOverrides = Array(SLOT_COUNT).fill(null);
         this._slotMaterials = Array(SLOT_COUNT).fill(null);
         this._slotGroups = Array(SLOT_COUNT).fill(null);
+        this._slotBasePositions = Array(SLOT_COUNT).fill(null);
         this._slotPlates = Array(SLOT_COUNT).fill(null);
         this._slotFocusSphere = Array(SLOT_COUNT).fill(null);
+        this._plateVisible = true;
+        this._isolatedSlotIndex = null;
+        this._centeredCaptureSlotIndex = null;
 
         this.scene.background = this._prevSceneBackground ?? null;
         this._prevSceneBackground = null;
@@ -298,6 +306,61 @@ export class MaterialCalibrationScene {
         this._syncActiveSlotHighlight();
     }
 
+    setPlateVisible(visible) {
+        const next = visible !== false;
+        if (next === this._plateVisible) return;
+        this._plateVisible = next;
+        this._applyLayoutMode();
+        this._recomputeFocusSpheres();
+    }
+
+    isPlateVisible() {
+        return this._plateVisible;
+    }
+
+    setIsolatedSlotIndex(slotIndex = null) {
+        const idx = slotIndex === null ? null : sanitizeSlotIndex(slotIndex);
+        if (slotIndex !== null && idx === null) return;
+        if (idx === this._isolatedSlotIndex) return;
+        this._isolatedSlotIndex = idx;
+        this._applyLayoutMode();
+        this._recomputeFocusSpheres();
+    }
+
+    getIsolatedSlotIndex() {
+        return this._isolatedSlotIndex;
+    }
+
+    setCenteredCaptureSlot(slotIndex = null) {
+        const idx = slotIndex === null ? null : sanitizeSlotIndex(slotIndex);
+        if (slotIndex !== null && idx === null) return;
+        if (idx === this._centeredCaptureSlotIndex) return;
+        this._centeredCaptureSlotIndex = idx;
+
+        for (let i = 0; i < SLOT_COUNT; i++) {
+            const group = this._slotGroups[i] ?? null;
+            if (!group) continue;
+            const base = this._slotBasePositions[i] ?? null;
+            const bx = Number(base?.x);
+            const by = Number(base?.y);
+            const bz = Number(base?.z);
+            if (idx !== null && i === idx) {
+                group.position.set(0, Number.isFinite(by) ? by : 0, Number.isFinite(bz) ? bz : 0);
+            } else {
+                group.position.set(
+                    Number.isFinite(bx) ? bx : 0,
+                    Number.isFinite(by) ? by : 0,
+                    Number.isFinite(bz) ? bz : 0
+                );
+            }
+        }
+        this._recomputeFocusSpheres();
+    }
+
+    getCenteredCaptureSlot() {
+        return this._centeredCaptureSlotIndex;
+    }
+
     getActiveSlotIndex() {
         return this._activeSlotIndex;
     }
@@ -319,29 +382,133 @@ export class MaterialCalibrationScene {
         return this._slotMaterialIds.slice();
     }
 
-    focusSlot(slotIndex, { keepOrbit = true, immediate = false } = {}) {
+    _resolveSlotFocusOrbit(slotIndex, { distanceScale = null } = {}) {
+        const idx = sanitizeSlotIndex(slotIndex);
+        if (idx === null) return null;
+        if (!this.controls) return null;
+        const sphere = this._slotFocusSphere[idx] ?? null;
+        const center = sphere?.center && isValidVector3(sphere.center) ? sphere.center : null;
+        if (!center) return null;
+
+        const orbit = this.controls.getOrbit?.() ?? null;
+        const radius = Number(orbit?.radius);
+        const theta = Number(orbit?.theta);
+        const phi = Number(orbit?.phi);
+        if (!Number.isFinite(radius) || !Number.isFinite(theta) || !Number.isFinite(phi)) return null;
+
+        let nextRadius = radius;
+        const scale = Number(distanceScale);
+        const sphereRadius = Number(sphere?.radius);
+        if (Number.isFinite(scale) && scale > 0 && Number.isFinite(sphereRadius) && sphereRadius > 0) {
+            const minDist = Number(this.controls?.minDistance);
+            const maxDist = Number(this.controls?.maxDistance);
+            nextRadius = clamp(
+                sphereRadius * scale,
+                Number.isFinite(minDist) ? minDist : 0.1,
+                Number.isFinite(maxDist) ? maxDist : 1e6
+            );
+        }
+
+        return {
+            radius: nextRadius,
+            theta,
+            phi,
+            target: { x: center.x, y: center.y, z: center.z }
+        };
+    }
+
+    getSlotCapturePose(slotIndex, { distanceScale = null } = {}) {
+        const orbit = this._resolveSlotFocusOrbit(slotIndex, { distanceScale });
+        if (!orbit) return null;
+        const spherical = new THREE.Spherical(orbit.radius, orbit.phi, orbit.theta);
+        const position = new THREE.Vector3().setFromSpherical(spherical).add(
+            new THREE.Vector3(orbit.target.x, orbit.target.y, orbit.target.z)
+        );
+        return {
+            position,
+            target: new THREE.Vector3(orbit.target.x, orbit.target.y, orbit.target.z),
+            orbit
+        };
+    }
+
+    getSlotPanelCapturePose(slotIndex, { framing = 1.0, fit = 'cover' } = {}) {
+        const idx = sanitizeSlotIndex(slotIndex);
+        if (idx === null) return null;
+        const group = this._slotGroups[idx] ?? null;
+        if (!group) return null;
+
+        const panel = group.getObjectByName?.('panel') ?? null;
+        if (!panel?.isMesh) return null;
+
+        const geoParams = panel.geometry?.parameters ?? null;
+        let width = Number(geoParams?.width);
+        let height = Number(geoParams?.height);
+        if (!(Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0)) {
+            const bbox = new THREE.Box3().setFromObject(panel);
+            const size = new THREE.Vector3();
+            bbox.getSize(size);
+            width = Math.max(0.01, Math.abs(size.x));
+            height = Math.max(0.01, Math.abs(size.y));
+        }
+
+        const worldScale = new THREE.Vector3();
+        panel.getWorldScale(worldScale);
+        const halfW = Math.max(0.01, Math.abs(width * worldScale.x) * 0.5);
+        const halfH = Math.max(0.01, Math.abs(height * worldScale.y) * 0.5);
+
+        const center = new THREE.Vector3();
+        panel.getWorldPosition(center);
+
+        const normal = new THREE.Vector3(0, 0, 1);
+        const worldQuat = new THREE.Quaternion();
+        panel.getWorldQuaternion(worldQuat);
+        normal.applyQuaternion(worldQuat).normalize();
+
+        const camera = this.camera ?? null;
+        const aspect = Number.isFinite(camera?.aspect) && camera.aspect > EPS ? camera.aspect : 1.0;
+        const vFov = THREE.MathUtils.degToRad(clamp(camera?.fov ?? 50, 1, 179));
+        const hFov = 2 * Math.atan(Math.tan(vFov * 0.5) * aspect);
+
+        const safeFraming = clamp(framing, 0.8, 3.0);
+        const distV = (halfH * safeFraming) / Math.max(EPS, Math.tan(vFov * 0.5));
+        const distH = (halfW * safeFraming) / Math.max(EPS, Math.tan(hFov * 0.5));
+        const fitMode = fit === 'contain' ? 'contain' : 'cover';
+        const baseDistance = fitMode === 'contain'
+            ? Math.max(distV, distH)
+            : Math.min(distV, distH);
+        const minDist = Number(this.controls?.minDistance);
+        const maxDist = Number(this.controls?.maxDistance);
+        const distance = clamp(
+            baseDistance,
+            Number.isFinite(minDist) ? minDist : 0.1,
+            Number.isFinite(maxDist) ? maxDist : 1e6
+        );
+
+        const position = center.clone().addScaledVector(normal, distance);
+        return {
+            position,
+            target: center.clone()
+        };
+    }
+
+    focusSlot(slotIndex, { keepOrbit = true, immediate = false, distanceScale = null } = {}) {
         const idx = sanitizeSlotIndex(slotIndex);
         if (idx === null) return false;
         if (!this.controls) return false;
-        const sphere = this._slotFocusSphere[idx] ?? null;
-        const center = sphere?.center && isValidVector3(sphere.center) ? sphere.center : null;
-        if (!center) return false;
 
         if (!keepOrbit) {
             this.controls.frame?.();
             return true;
         }
 
-        const orbit = this.controls.getOrbit?.() ?? null;
-        const radius = Number(orbit?.radius);
-        const theta = Number(orbit?.theta);
-        const phi = Number(orbit?.phi);
-        if (!Number.isFinite(radius) || !Number.isFinite(theta) || !Number.isFinite(phi)) return false;
+        const orbit = this._resolveSlotFocusOrbit(idx, { distanceScale });
+        if (!orbit) return false;
+
         this.controls.setOrbit({
-            radius,
-            theta,
-            phi,
-            target: { x: center.x, y: center.y, z: center.z }
+            radius: orbit.radius,
+            theta: orbit.theta,
+            phi: orbit.phi,
+            target: orbit.target
         }, { immediate: !!immediate });
         return true;
     }
@@ -716,9 +883,11 @@ export class MaterialCalibrationScene {
         for (let i = 0; i < SLOT_COUNT; i++) {
             const group = new THREE.Group();
             group.name = `material_calibration_slot_${i}`;
-            group.position.set((i - 1) * SLOT_X_SPACING, 0, 0);
+            const baseX = (i - 1) * SLOT_X_SPACING;
+            group.position.set(baseX, 0, 0);
             this.root.add(group);
             this._slotGroups[i] = group;
+            this._slotBasePositions[i] = group.position.clone();
 
             const plateMat = plateMatBase.clone();
             const plate = new THREE.Mesh(plateGeo, plateMat);
@@ -772,9 +941,13 @@ export class MaterialCalibrationScene {
         for (let i = 0; i < SLOT_COUNT; i++) {
             const group = this._slotGroups[i];
             if (!group) continue;
+            group.visible = this._isolatedSlotIndex === null || this._isolatedSlotIndex === i;
             group.traverse((obj) => {
                 if (!obj?.isMesh) return;
-                if (obj.name === 'plate') return;
+                if (obj.name === 'plate') {
+                    obj.visible = this._plateVisible;
+                    return;
+                }
                 if (this._layoutMode === 'full') obj.visible = true;
                 else if (this._layoutMode === 'panel') obj.visible = obj.name === 'panel';
                 else if (this._layoutMode === 'sphere') obj.visible = obj.name === 'sphere';

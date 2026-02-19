@@ -9,6 +9,17 @@ import { getMaterialCalibrationIlluminationPresetById, getMaterialCalibrationIll
 const UP = new THREE.Vector3(0, 1, 0);
 
 const STORAGE_KEY = 'bus_sim.material_calibration.v1';
+const SLOT_CAMERA_FOCUS_DISTANCE_SCALE = 2.35;
+const SCREENSHOT_SLOT_FOCUS_DISTANCE_SCALE = 1.95;
+const SCREENSHOT_CAPTURE_WIDTH = 1280;
+const SCREENSHOT_CAPTURE_HEIGHT = 720;
+const SCREENSHOT_REPORT_WIDTH = 1920;
+const SCREENSHOT_REPORT_HEIGHT = 1280;
+const SCREENSHOT_RENDER_SCALE = 2.0;
+const SCREENSHOT_RENDER_MIN_WIDTH = 1920;
+const SCREENSHOT_RENDER_MIN_HEIGHT = 1080;
+const SCREENSHOT_RENDER_MAX_WIDTH = 3840;
+const SCREENSHOT_RENDER_MAX_HEIGHT = 2160;
 
 function isInteractiveElement(target) {
     const tag = target?.tagName;
@@ -48,6 +59,11 @@ function sanitizeSlotIndex(value) {
     const idx = Math.round(n);
     if (idx < 0 || idx > 2) return null;
     return idx;
+}
+
+function sanitizeOptionalSlotIndex(value) {
+    if (value === null || value === undefined || value === '') return null;
+    return sanitizeSlotIndex(value);
 }
 
 function sanitizeClassId(value, { fallback = null } = {}) {
@@ -137,6 +153,195 @@ function getEffectiveOverridesForMaterial(materialId, storedOverrides) {
     return { ...defaults, ...ovr };
 }
 
+function findNextEmptySlotAfter(slotMaterialIds, startIndex) {
+    const list = Array.isArray(slotMaterialIds) ? slotMaterialIds : [];
+    const start = sanitizeSlotIndex(startIndex);
+    if (start === null) return null;
+    for (let i = start + 1; i < 3; i++) {
+        if (!sanitizeMaterialId(list[i])) return i;
+    }
+    return null;
+}
+
+function formatFixed(value, digits = 2, fallback = '-') {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return fallback;
+    return num.toFixed(digits);
+}
+
+function formatBool(value) {
+    return value ? 'yes' : 'no';
+}
+
+function formatHexColor(value, fallback = '-') {
+    const color = value?.isColor ? value : null;
+    if (!color) return fallback;
+    const hex = typeof color.getHexString === 'function' ? color.getHexString() : '';
+    return hex ? `#${hex}` : fallback;
+}
+
+function getToneMappingLabel(renderer) {
+    const mode = renderer?.toneMapping;
+    if (mode === THREE.NoToneMapping) return 'none';
+    if (mode === THREE.ACESFilmicToneMapping) return 'aces';
+    if (THREE.AgXToneMapping !== undefined && mode === THREE.AgXToneMapping) return 'agx';
+    if (THREE.NeutralToneMapping !== undefined && mode === THREE.NeutralToneMapping) return 'neutral';
+    return String(mode ?? '-');
+}
+
+function getOutputColorSpaceLabel(renderer) {
+    const colorSpace = renderer?.outputColorSpace;
+    if (typeof colorSpace === 'string' && colorSpace) return colorSpace;
+    const encoding = renderer?.outputEncoding;
+    if (encoding === THREE.sRGBEncoding) return 'sRGBEncoding';
+    return String(encoding ?? '-');
+}
+
+function makeCanvas(width, height) {
+    const w = Math.max(1, Math.floor(Number(width) || 0));
+    const h = Math.max(1, Math.floor(Number(height) || 0));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    return canvas;
+}
+
+function drawCanvasCover(ctx, source, x, y, width, height, { fill = '#090d12' } = {}) {
+    const dstW = Math.max(1, Number(width) || 0);
+    const dstH = Math.max(1, Number(height) || 0);
+    const src = source && typeof source === 'object' ? source : null;
+    const srcW = Number(src?.width);
+    const srcH = Number(src?.height);
+
+    ctx.fillStyle = fill;
+    ctx.fillRect(x, y, dstW, dstH);
+
+    if (!Number.isFinite(srcW) || !Number.isFinite(srcH) || srcW <= 0 || srcH <= 0) return;
+
+    const scale = Math.max(dstW / srcW, dstH / srcH);
+    const drawW = srcW * scale;
+    const drawH = srcH * scale;
+    const drawX = x + (dstW - drawW) * 0.5;
+    const drawY = y + (dstH - drawH) * 0.5;
+    ctx.imageSmoothingEnabled = true;
+    if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(src, drawX, drawY, drawW, drawH);
+}
+
+function fitTextWithEllipsis(ctx, text, maxWidth) {
+    const limit = Math.max(0, Number(maxWidth) || 0);
+    const raw = typeof text === 'string' ? text : String(text ?? '');
+    if (ctx.measureText(raw).width <= limit) return raw;
+    if (limit <= 0) return '';
+    const suffix = '…';
+    if (ctx.measureText(suffix).width > limit) return '';
+    let end = raw.length;
+    while (end > 0) {
+        const candidate = `${raw.slice(0, end)}${suffix}`;
+        if (ctx.measureText(candidate).width <= limit) return candidate;
+        end--;
+    }
+    return suffix;
+}
+
+function wrapTextLines(ctx, text, maxWidth) {
+    const width = Math.max(0, Number(maxWidth) || 0);
+    const lines = [];
+    const paragraphs = String(text ?? '').split(/\r?\n/g);
+
+    for (const paragraph of paragraphs) {
+        const trimmed = paragraph.trim();
+        if (!trimmed) {
+            lines.push('');
+            continue;
+        }
+
+        const words = trimmed.split(/\s+/g);
+        let line = '';
+        for (const word of words) {
+            const candidate = line ? `${line} ${word}` : word;
+            if (!line || ctx.measureText(candidate).width <= width) {
+                line = candidate;
+                continue;
+            }
+            lines.push(line);
+            if (ctx.measureText(word).width <= width) {
+                line = word;
+                continue;
+            }
+
+            let remainder = word;
+            while (remainder.length > 0) {
+                let cut = remainder.length;
+                while (cut > 1 && ctx.measureText(remainder.slice(0, cut)).width > width) cut--;
+                const part = remainder.slice(0, cut);
+                if (!part) break;
+                lines.push(part);
+                remainder = remainder.slice(cut);
+            }
+            line = '';
+        }
+        if (line) lines.push(line);
+    }
+
+    return lines.length ? lines : [''];
+}
+
+function drawTextPanel(ctx, {
+    x = 0,
+    y = 0,
+    width = 100,
+    height = 100,
+    title = '',
+    lines = [],
+    panelFill = 'rgba(5, 10, 16, 0.78)',
+    panelStroke = 'rgba(173, 199, 226, 0.28)',
+    titleColor = '#e9f2ff',
+    textColor = '#d2ddea'
+} = {}) {
+    const px = Number(x) || 0;
+    const py = Number(y) || 0;
+    const pw = Math.max(1, Number(width) || 0);
+    const ph = Math.max(1, Number(height) || 0);
+    const innerPad = 12;
+
+    ctx.fillStyle = panelFill;
+    ctx.fillRect(px, py, pw, ph);
+    ctx.strokeStyle = panelStroke;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(px + 0.5, py + 0.5, pw - 1, ph - 1);
+
+    const titleY = py + 20;
+    ctx.fillStyle = titleColor;
+    ctx.font = '600 16px Inter, system-ui, sans-serif';
+    ctx.fillText(fitTextWithEllipsis(ctx, title, pw - innerPad * 2), px + innerPad, titleY);
+
+    const contentTop = titleY + 14;
+    const lineHeight = 15;
+    const maxLines = Math.max(0, Math.floor((ph - (contentTop - py) - 10) / lineHeight));
+
+    ctx.fillStyle = textColor;
+    ctx.font = '400 13px Inter, system-ui, sans-serif';
+
+    const flattened = [];
+    for (const line of Array.isArray(lines) ? lines : []) {
+        const wrapped = wrapTextLines(ctx, line, pw - innerPad * 2);
+        for (const entry of wrapped) flattened.push(entry);
+    }
+
+    const visibleLines = flattened.slice(0, maxLines);
+    if (flattened.length > visibleLines.length && visibleLines.length) {
+        const lastIdx = visibleLines.length - 1;
+        visibleLines[lastIdx] = fitTextWithEllipsis(ctx, `${visibleLines[lastIdx]} …`, pw - innerPad * 2);
+    }
+
+    let yy = contentTop;
+    for (const line of visibleLines) {
+        yy += lineHeight;
+        ctx.fillText(line, px + innerPad, yy);
+    }
+}
+
 function readStoredState() {
     if (typeof window === 'undefined') return null;
     const storage = window.localStorage;
@@ -215,12 +420,10 @@ export class MaterialCalibrationView {
             illuminationPresetId: stored?.illuminationPresetId ?? '',
             layoutMode: stored?.layoutMode ?? 'full',
             tilingMode: stored?.tilingMode ?? 'default',
-            activeSlotIndex: stored?.activeSlotIndex ?? 0,
-            slotMaterialIds: Array.isArray(stored?.slotMaterialIds) ? stored.slotMaterialIds.slice(0, 3) : [null, null, null],
-            baselineMaterialId: stored?.baselineMaterialId ?? null,
-            overridesByMaterialId: stored?.overridesByMaterialId && typeof stored.overridesByMaterialId === 'object'
-                ? { ...stored.overridesByMaterialId }
-                : {}
+            activeSlotIndex: 0,
+            slotMaterialIds: [null, null, null],
+            baselineMaterialId: null,
+            overridesByMaterialId: {}
         };
         this._lastIlluminationStatus = null;
 
@@ -258,6 +461,9 @@ export class MaterialCalibrationView {
         this._moveForward = new THREE.Vector3();
         this._moveRight = new THREE.Vector3();
         this._moveDir = new THREE.Vector3();
+        this._selectedSlotCameraIndex = null;
+        this._initialCameraPose = null;
+        this._screenshotBusy = false;
 
         this._onCanvasPointerMove = (e) => this._handlePointerMove(e);
         this._onCanvasPointerDown = (e) => this._handlePointerDown(e);
@@ -276,18 +482,40 @@ export class MaterialCalibrationView {
         this._syncUiStatic();
         this._syncSceneFromState({ keepCamera: false });
         this._syncUiFromState();
+        this._selectedSlotCameraIndex = null;
+        this.ui.setSelectedSlotCameraIndex?.(null);
+        this._initialCameraPose = this._captureCurrentCameraPose();
 
         this.ui.onExit = () => this.onExit?.();
         this.ui.onSelectClass = (classId) => this._setSelectedClass(classId);
         this.ui.onToggleMaterial = (materialId) => this._toggleMaterial(materialId, { focus: false });
         this.ui.onFocusMaterial = (materialId) => this._toggleMaterial(materialId, { focus: true });
-        this.ui.onFocusSlot = (slotIndex) => this._focusSlot(slotIndex, { keepOrbit: true });
+        this.ui.onFocusSlot = (slotIndex) => {
+            const idx = sanitizeSlotIndex(slotIndex);
+            if (idx === null) return;
+            if (this._selectedSlotCameraIndex === idx) {
+                this._selectedSlotCameraIndex = null;
+                this.ui.setSelectedSlotCameraIndex?.(null);
+                this._restoreInitialCameraPose();
+                return;
+            }
+            this._selectedSlotCameraIndex = idx;
+            this.ui.setSelectedSlotCameraIndex?.(idx);
+            this._state.activeSlotIndex = idx;
+            this.scene.setActiveSlotIndex(idx);
+            this._syncUiFromState();
+            this._persist();
+            this._focusSlot(idx, { keepOrbit: true, zoomClose: true });
+        };
         this.ui.onSetLayoutMode = (layoutMode) => this._setLayoutMode(layoutMode);
         this.ui.onSetTilingMode = (tilingMode) => this._setTilingMode(tilingMode);
         this.ui.onSelectIlluminationPreset = (presetId) => this._setIlluminationPreset(presetId);
         this.ui.onSetBaselineMaterial = (materialId) => this._setBaselineMaterial(materialId);
         this.ui.onSetOverrides = (materialId, overrides) => this._setMaterialOverrides(materialId, overrides);
         this.ui.onToggleRuler = (enabled) => this._setRulerEnabled(enabled);
+        this.ui.onRequestExport = () => {};
+        this.ui.onRequestScreenshot = () => this._requestCalibrationScreenshot();
+        this.ui.setScreenshotBusy?.(false);
 
         const canvas = this.engine?.canvas ?? null;
         canvas?.addEventListener?.('pointermove', this._onCanvasPointerMove, { passive: true });
@@ -325,6 +553,12 @@ export class MaterialCalibrationView {
         this.ui.onSetBaselineMaterial = null;
         this.ui.onSetOverrides = null;
         this.ui.onToggleRuler = null;
+        this.ui.onRequestExport = null;
+        this.ui.onRequestScreenshot = null;
+        this.ui.setScreenshotBusy?.(false);
+        this._selectedSlotCameraIndex = null;
+        this._initialCameraPose = null;
+        this._screenshotBusy = false;
 
         this.ui.unmount();
         this.scene.exit();
@@ -401,6 +635,51 @@ export class MaterialCalibrationView {
         });
 
         this.ui.setRulerEnabled(this._rulerEnabled);
+        this.ui.setSelectedSlotCameraIndex?.(this._selectedSlotCameraIndex);
+    }
+
+    _captureCurrentCameraPose() {
+        const camera = this.scene?.camera ?? null;
+        const controls = this.scene?.controls ?? null;
+        if (!camera?.position?.isVector3 || !controls?.target?.isVector3) return null;
+
+        const orbit = controls.getOrbit?.() ?? null;
+        const radius = Number(orbit?.radius);
+        const theta = Number(orbit?.theta);
+        const phi = Number(orbit?.phi);
+        const tx = Number(orbit?.target?.x);
+        const ty = Number(orbit?.target?.y);
+        const tz = Number(orbit?.target?.z);
+        const safeOrbit = (
+            Number.isFinite(radius)
+            && Number.isFinite(theta)
+            && Number.isFinite(phi)
+            && Number.isFinite(tx)
+            && Number.isFinite(ty)
+            && Number.isFinite(tz)
+        )
+            ? { radius, theta, phi, target: { x: tx, y: ty, z: tz } }
+            : null;
+
+        return {
+            orbit: safeOrbit,
+            position: camera.position.clone(),
+            target: controls.target.clone()
+        };
+    }
+
+    _restoreInitialCameraPose() {
+        const pose = this._initialCameraPose;
+        if (!pose) return;
+
+        const controls = this.scene?.controls ?? null;
+        if (controls?.setOrbit && pose.orbit) {
+            controls.setOrbit(pose.orbit, { immediate: false });
+            return;
+        }
+        if (controls?.setLookAt && pose.position?.isVector3 && pose.target?.isVector3) {
+            controls.setLookAt({ position: pose.position, target: pose.target });
+        }
     }
 
     _setSelectedClass(classId) {
@@ -416,13 +695,17 @@ export class MaterialCalibrationView {
         const selected = state.slotMaterialIds.filter(Boolean);
         const baseline = sanitizeMaterialId(state.baselineMaterialId);
         if (!baseline || !selected.includes(baseline)) state.baselineMaterialId = selected[0] ?? null;
+        state.activeSlotIndex = sanitizeSlotIndex(state.activeSlotIndex) ?? 0;
+    }
 
-        const activeIdx = sanitizeSlotIndex(state.activeSlotIndex) ?? 0;
-        const activeMat = sanitizeMaterialId(state.slotMaterialIds[activeIdx]);
-        if (!activeMat && selected.length) {
-            const firstIdx = state.slotMaterialIds.findIndex(Boolean);
-            state.activeSlotIndex = firstIdx >= 0 ? firstIdx : 0;
+    _getResolvedActiveSlotIndex() {
+        const stateIdx = sanitizeSlotIndex(this._state.activeSlotIndex);
+        const sceneIdx = sanitizeSlotIndex(this.scene?.getActiveSlotIndex?.());
+        if (sceneIdx !== null && sceneIdx !== stateIdx) {
+            this._state.activeSlotIndex = sceneIdx;
+            return sceneIdx;
         }
+        return stateIdx ?? 0;
     }
 
     _toggleMaterial(materialId, { focus = false } = {}) {
@@ -430,29 +713,31 @@ export class MaterialCalibrationView {
         if (!id) return;
 
         const state = this._state;
+        const activeSlot = this._getResolvedActiveSlotIndex();
         const existingSlot = state.slotMaterialIds.findIndex((v) => v === id);
         if (existingSlot >= 0) {
             if (focus) {
+                state.activeSlotIndex = existingSlot;
+                this.scene.setActiveSlotIndex(existingSlot);
+                this._syncUiFromState();
+                this._persist();
                 this._focusSlot(existingSlot, { keepOrbit: true });
                 return;
             }
-            state.slotMaterialIds[existingSlot] = null;
-            if (state.activeSlotIndex === existingSlot) {
-                state.activeSlotIndex = 0;
-            }
-            this._ensureBaselineAndActive();
-            this._applyStateToSceneAndUi({ keepCamera: true });
+            if (existingSlot === activeSlot) return;
+            state.activeSlotIndex = existingSlot;
+            this.scene.setActiveSlotIndex(existingSlot);
+            this._syncUiFromState();
+            this._persist();
             return;
         }
 
-        const emptySlot = state.slotMaterialIds.findIndex((v) => !sanitizeMaterialId(v));
-        const targetSlot = emptySlot >= 0 ? emptySlot : (sanitizeSlotIndex(state.activeSlotIndex) ?? 0);
-
-        state.slotMaterialIds[targetSlot] = id;
-        state.activeSlotIndex = targetSlot;
+        state.slotMaterialIds[activeSlot] = id;
+        const nextEmpty = findNextEmptySlotAfter(state.slotMaterialIds, activeSlot);
+        state.activeSlotIndex = nextEmpty === null ? activeSlot : nextEmpty;
         this._ensureBaselineAndActive();
         this._applyStateToSceneAndUi({ keepCamera: true });
-        if (focus) this._focusSlot(targetSlot, { keepOrbit: true });
+        if (focus) this._focusSlot(activeSlot, { keepOrbit: true });
     }
 
     _applyStateToSceneAndUi({ keepCamera = true } = {}) {
@@ -461,10 +746,13 @@ export class MaterialCalibrationView {
         this._persist();
     }
 
-    _focusSlot(slotIndex, { keepOrbit = true } = {}) {
+    _focusSlot(slotIndex, { keepOrbit = true, zoomClose = false } = {}) {
         const idx = sanitizeSlotIndex(slotIndex);
         if (idx === null) return;
-        this.scene.focusSlot(idx, { keepOrbit: !!keepOrbit });
+        this.scene.focusSlot(idx, {
+            keepOrbit: !!keepOrbit,
+            distanceScale: zoomClose ? SLOT_CAMERA_FOCUS_DISTANCE_SCALE : null
+        });
     }
 
     _setLayoutMode(layoutMode) {
@@ -742,6 +1030,442 @@ export class MaterialCalibrationView {
         const delta = speed * Math.max(0.001, Number(dt) || 0);
 
         controls.panWorld(this._moveDir.x * delta, 0, this._moveDir.z * delta);
+    }
+
+    async _requestCalibrationScreenshot() {
+        if (this._screenshotBusy) return;
+        this._screenshotBusy = true;
+        this.ui.setScreenshotBusy?.(true);
+
+        try {
+            await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+            const reportCanvas = await this._captureCalibrationReportCanvas();
+            if (!reportCanvas) return;
+            await this._downloadCalibrationReport(reportCanvas);
+        } catch (err) {
+            console.error('[MaterialCalibration] Screenshot capture failed:', err);
+        } finally {
+            this._screenshotBusy = false;
+            this.ui.setScreenshotBusy?.(false);
+        }
+    }
+
+    async _captureCalibrationReportCanvas() {
+        const renderer = this.engine?.renderer ?? null;
+        const canvas = this.engine?.canvas ?? renderer?.domElement ?? null;
+        if (!renderer || !canvas) return null;
+
+        const snapshot = this._captureScreenshotStateSnapshot();
+        const viewportSnapshot = this._captureViewportSizeSnapshot();
+        this._setScreenshotCaptureViewportSize(viewportSnapshot);
+        const focusedShots = [null, null, null];
+        const panelShots = [null, null, null];
+        let fixedSurfacePose = null;
+        let fixedPanelPose = null;
+
+        try {
+            this._applySceneRenderModes({
+                layoutMode: this._state.layoutMode,
+                tilingMode: this._state.tilingMode
+            });
+            this.scene.setPlateVisible?.(true);
+
+            for (let i = 0; i < 3; i++) {
+                const capture = this._captureSlotScreenshot(i, {
+                    distanceScale: SCREENSHOT_SLOT_FOCUS_DISTANCE_SCALE,
+                    fixedPose: fixedSurfacePose,
+                    poseMode: 'slot_focus'
+                });
+                focusedShots[i] = capture?.image ?? null;
+                if (!fixedSurfacePose && capture?.pose) fixedSurfacePose = capture.pose;
+            }
+
+            this._applySceneRenderModes({ layoutMode: 'panel', tilingMode: '2x2' });
+            this.scene.setPlateVisible?.(false);
+            for (let i = 0; i < 3; i++) {
+                const capture = this._captureSlotScreenshot(i, {
+                    distanceScale: SCREENSHOT_SLOT_FOCUS_DISTANCE_SCALE,
+                    fixedPose: fixedPanelPose,
+                    poseMode: 'panel_perpendicular'
+                });
+                panelShots[i] = capture?.image ?? null;
+                if (!fixedPanelPose && capture?.pose) fixedPanelPose = capture.pose;
+            }
+
+            return this._composeCalibrationReportCanvas({ focusedShots, panelShots });
+        } finally {
+            this._restoreViewportSizeSnapshot(viewportSnapshot);
+            this._restoreScreenshotStateSnapshot(snapshot);
+        }
+    }
+
+    _captureViewportSizeSnapshot() {
+        const renderer = this.engine?.renderer ?? null;
+        if (!renderer?.getSize) return null;
+        const size = renderer.getSize(new THREE.Vector2());
+        const width = Math.max(1, Math.floor(Number(size?.x) || 0));
+        const height = Math.max(1, Math.floor(Number(size?.y) || 0));
+        if (!(width > 0 && height > 0)) return null;
+        return { width, height };
+    }
+
+    _setScreenshotCaptureViewportSize(snapshot) {
+        const src = snapshot && typeof snapshot === 'object' ? snapshot : null;
+        if (!src) return false;
+
+        const baseW = Math.max(1, Math.floor(Number(src.width) || 1));
+        const baseH = Math.max(1, Math.floor(Number(src.height) || 1));
+
+        const scaledW = Math.floor(baseW * SCREENSHOT_RENDER_SCALE);
+        const scaledH = Math.floor(baseH * SCREENSHOT_RENDER_SCALE);
+        const targetW = Math.min(
+            SCREENSHOT_RENDER_MAX_WIDTH,
+            Math.max(baseW, SCREENSHOT_RENDER_MIN_WIDTH, scaledW)
+        );
+        const targetH = Math.min(
+            SCREENSHOT_RENDER_MAX_HEIGHT,
+            Math.max(baseH, SCREENSHOT_RENDER_MIN_HEIGHT, scaledH)
+        );
+
+        if (targetW === baseW && targetH === baseH) return false;
+        this.engine?.setViewportSize?.(targetW, targetH);
+        this.scene?.controls?.update?.(0);
+        this.engine?.renderFrame?.();
+        return true;
+    }
+
+    _restoreViewportSizeSnapshot(snapshot) {
+        const src = snapshot && typeof snapshot === 'object' ? snapshot : null;
+        if (!src) return;
+
+        const width = Math.max(1, Math.floor(Number(src.width) || 1));
+        const height = Math.max(1, Math.floor(Number(src.height) || 1));
+        this.engine?.setViewportSize?.(width, height);
+    }
+
+    _captureScreenshotStateSnapshot() {
+        return {
+            cameraPose: this._captureCurrentCameraPose(),
+            activeSlotIndex: this.scene?.getActiveSlotIndex?.() ?? this._state.activeSlotIndex,
+            layoutMode: this._state.layoutMode,
+            tilingMode: this._state.tilingMode,
+            plateVisible: this.scene?.isPlateVisible?.() !== false,
+            isolatedSlotIndex: this.scene?.getIsolatedSlotIndex?.() ?? null,
+            centeredSlotIndex: this.scene?.getCenteredCaptureSlot?.() ?? null
+        };
+    }
+
+    _restoreScreenshotStateSnapshot(snapshot) {
+        const src = snapshot && typeof snapshot === 'object' ? snapshot : null;
+        if (!src) return;
+
+        this._applySceneRenderModes({
+            layoutMode: sanitizeLayoutMode(src.layoutMode),
+            tilingMode: sanitizeTilingMode(src.tilingMode)
+        });
+        this.scene?.setPlateVisible?.(src.plateVisible !== false);
+        this.scene?.setIsolatedSlotIndex?.(sanitizeOptionalSlotIndex(src.isolatedSlotIndex));
+        this.scene?.setCenteredCaptureSlot?.(sanitizeOptionalSlotIndex(src.centeredSlotIndex));
+
+        const active = sanitizeSlotIndex(src.activeSlotIndex);
+        if (active !== null) this.scene?.setActiveSlotIndex?.(active);
+
+        this._applyCameraPose(src.cameraPose, { immediate: true });
+        this.scene?.controls?.update?.(0);
+        this.engine?.renderFrame?.();
+    }
+
+    _applySceneRenderModes({ layoutMode = null, tilingMode = null } = {}) {
+        const layout = sanitizeLayoutMode(layoutMode ?? this._state.layoutMode);
+        const tiling = sanitizeTilingMode(tilingMode ?? this._state.tilingMode);
+        this.scene?.setLayoutMode?.(layout);
+        this.scene?.setTilingMultiplier?.(tiling === '2x2' ? 2.0 : 1.0);
+    }
+
+    _applyCameraPose(pose, { immediate = false } = {}) {
+        const src = pose && typeof pose === 'object' ? pose : null;
+        if (!src) return;
+
+        const controls = this.scene?.controls ?? null;
+        if (controls?.setOrbit && src.orbit) {
+            controls.setOrbit(src.orbit, { immediate: !!immediate });
+            if (immediate) controls.update?.(0);
+            return;
+        }
+
+        const position = src.position?.isVector3 ? src.position : null;
+        const target = src.target?.isVector3 ? src.target : null;
+        if (controls?.setLookAt && position && target) {
+            controls.setLookAt({ position, target });
+            return;
+        }
+
+        const camera = this.scene?.camera ?? null;
+        if (!camera || !position || !target) return;
+        camera.position.copy(position);
+        camera.lookAt(target);
+        camera.updateProjectionMatrix();
+    }
+
+    _captureSlotScreenshot(slotIndex, {
+        distanceScale = SCREENSHOT_SLOT_FOCUS_DISTANCE_SCALE,
+        fixedPose = null,
+        poseMode = 'slot_focus'
+    } = {}) {
+        const idx = sanitizeSlotIndex(slotIndex);
+        if (idx === null) return { image: null, pose: null };
+
+        this.scene?.setIsolatedSlotIndex?.(idx);
+        this.scene?.setCenteredCaptureSlot?.(idx);
+        this.scene?.setActiveSlotIndex?.(idx);
+
+        let pose = fixedPose ?? null;
+        if (!pose) {
+            if (poseMode === 'panel_perpendicular') {
+                pose = this.scene?.getSlotPanelCapturePose?.(idx, { framing: 1.0, fit: 'cover' }) ?? null;
+            } else {
+                pose = this.scene?.getSlotCapturePose?.(idx, { distanceScale }) ?? null;
+            }
+        }
+        if (pose) this._applyCameraPose(pose, { immediate: true });
+
+        this.scene?.controls?.update?.(0);
+        this.engine?.renderFrame?.();
+        return { image: this._captureCurrentViewportCanvas(), pose: pose ?? null };
+    }
+
+    _captureCurrentViewportCanvas() {
+        const source = this.engine?.canvas ?? this.engine?.renderer?.domElement ?? null;
+        if (!source) return null;
+
+        const canvas = makeCanvas(SCREENSHOT_CAPTURE_WIDTH, SCREENSHOT_CAPTURE_HEIGHT);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+
+        drawCanvasCover(ctx, source, 0, 0, canvas.width, canvas.height, { fill: '#090f16' });
+        return canvas;
+    }
+
+    _composeCalibrationReportCanvas({ focusedShots = null, panelShots = null } = {}) {
+        const report = makeCanvas(SCREENSHOT_REPORT_WIDTH, SCREENSHOT_REPORT_HEIGHT);
+        const ctx = report.getContext('2d');
+        if (!ctx) return null;
+
+        ctx.fillStyle = '#04080d';
+        ctx.fillRect(0, 0, report.width, report.height);
+
+        const padX = 30;
+        const padY = 26;
+        const rowGap = 16;
+        const colGap = 16;
+        const rowLabelH = 24;
+        const rowHeights = [320, 320, 220, 320];
+        const contentW = report.width - (padX * 2);
+        const shotColW = (contentW - (colGap * 2)) / 3;
+        const titleColor = '#b0c5dc';
+        const textColor = '#cfe0f1';
+
+        const slotMaterialIds = [0, 1, 2].map((idx) => sanitizeMaterialId(this._state.slotMaterialIds[idx]));
+
+        const drawRowTitle = (title, y) => {
+            ctx.fillStyle = titleColor;
+            ctx.font = '600 15px Inter, system-ui, sans-serif';
+            ctx.fillText(title, padX, y + 17);
+        };
+
+        const drawImageRow = (rowTop, rowHeight, title, shots) => {
+            drawRowTitle(title, rowTop);
+            const cardsTop = rowTop + rowLabelH;
+            const cardsHeight = rowHeight - rowLabelH;
+
+            for (let i = 0; i < 3; i++) {
+                const x = padX + (i * (shotColW + colGap));
+                const y = cardsTop;
+                const w = shotColW;
+                const h = cardsHeight;
+                const imageY = y + 8;
+                const imageH = Math.max(10, h - 42);
+
+                ctx.fillStyle = 'rgba(5, 10, 16, 0.8)';
+                ctx.fillRect(x, y, w, h);
+                ctx.strokeStyle = 'rgba(173, 199, 226, 0.3)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+
+                drawCanvasCover(ctx, shots?.[i] ?? null, x + 8, imageY, w - 16, imageH, { fill: '#0a1119' });
+
+                const label = slotMaterialIds[i] ? `#${i + 1} ${slotMaterialIds[i]}` : `#${i + 1} (empty)`;
+                ctx.fillStyle = textColor;
+                ctx.font = '500 13px Inter, system-ui, sans-serif';
+                ctx.fillText(fitTextWithEllipsis(ctx, label, w - 16), x + 8, y + h - 12);
+            }
+        };
+
+        let y = padY;
+        drawImageRow(y, rowHeights[0], 'Row 1 · focused textures', focusedShots);
+        y += rowHeights[0] + rowGap;
+
+        drawImageRow(y, rowHeights[1], 'Row 2 · back plane only · 2×2 tiling', panelShots);
+        y += rowHeights[1] + rowGap;
+
+        drawRowTitle('Row 3 · texture + material parameters', y);
+        const row3Top = y + rowLabelH;
+        const row3Height = rowHeights[2] - rowLabelH;
+        for (let i = 0; i < 3; i++) {
+            const lines = this._getSlotParameterLines(i);
+            drawTextPanel(ctx, {
+                x: padX + (i * (shotColW + colGap)),
+                y: row3Top,
+                width: shotColW,
+                height: row3Height,
+                title: `Platform ${i + 1}`,
+                lines
+            });
+        }
+        y += rowHeights[2] + rowGap;
+
+        drawRowTitle('Row 4 · illumination, filters, shaders', y);
+        const row4Top = y + rowLabelH;
+        const row4Height = rowHeights[3] - rowLabelH;
+        const infoColumns = this._getGlobalParameterColumns();
+        const infoColCount = 4;
+        const infoColW = (contentW - (colGap * (infoColCount - 1))) / infoColCount;
+        for (let i = 0; i < infoColCount; i++) {
+            const col = infoColumns[i] ?? { title: `Info ${i + 1}`, lines: ['-'] };
+            drawTextPanel(ctx, {
+                x: padX + (i * (infoColW + colGap)),
+                y: row4Top,
+                width: infoColW,
+                height: row4Height,
+                title: col.title,
+                lines: col.lines
+            });
+        }
+
+        return report;
+    }
+
+    _getSlotParameterLines(slotIndex) {
+        const idx = sanitizeSlotIndex(slotIndex);
+        if (idx === null) return ['slot unavailable'];
+
+        const materialId = sanitizeMaterialId(this._state.slotMaterialIds[idx]);
+        if (!materialId) return ['Texture: (empty)', 'No texture selected for this platform.'];
+
+        const baselineId = sanitizeMaterialId(this._state.baselineMaterialId);
+        const stored = this._state.overridesByMaterialId[materialId] ?? null;
+        const ovr = getEffectiveOverridesForMaterial(materialId, stored);
+
+        return [
+            `Texture: ${materialId}`,
+            `baseline: ${formatBool(materialId === baselineId)}`,
+            `tileMeters: ${formatFixed(ovr.tileMeters, 2)}`,
+            `albedoBrightness: ${formatFixed(ovr.albedoBrightness, 2)}`,
+            `albedoSaturation: ${formatFixed(ovr.albedoSaturation, 2)}`,
+            `roughness: ${formatFixed(ovr.roughness, 2)}`,
+            `normalStrength: ${formatFixed(ovr.normalStrength, 2)}`,
+            `aoIntensity: ${formatFixed(ovr.aoIntensity, 2)}`,
+            `metalness: ${formatFixed(ovr.metalness, 2)}`
+        ];
+    }
+
+    _getGlobalParameterColumns() {
+        const renderer = this.engine?.renderer ?? null;
+        const lighting = this.engine?.lightingSettings ?? null;
+        const aaInfo = this.engine?.getAntiAliasingDebugInfo?.() ?? null;
+        const aoInfo = this.engine?.getAmbientOcclusionDebugInfo?.() ?? null;
+        const bloomInfo = this.engine?.getBloomDebugInfo?.() ?? null;
+        const sunBloomInfo = this.engine?.getSunBloomDebugInfo?.() ?? null;
+        const colorInfo = this.engine?.getColorGradingDebugInfo?.() ?? null;
+        const iblInfo = this.engine?.getIBLDebugInfo?.() ?? null;
+
+        const preset = this._state.illuminationPresetId
+            ? getMaterialCalibrationIlluminationPresetById(this._state.illuminationPresetId, { fallbackToFirst: false })
+            : null;
+        const illumStatus = this._lastIlluminationStatus ?? null;
+        const sun = this.scene?.sun ?? null;
+        const hemi = this.scene?.hemi ?? null;
+        const sceneBg = this.scene?.scene?.background ?? null;
+
+        const renderSize = renderer?.getSize?.(new THREE.Vector2()) ?? null;
+        const sizeLabel = (renderSize && Number.isFinite(renderSize.x) && Number.isFinite(renderSize.y))
+            ? `${Math.round(renderSize.x)}×${Math.round(renderSize.y)}`
+            : '-';
+
+        const aoGtao = aoInfo?.mode === 'gtao' ? (aoInfo.gtao ?? null) : null;
+        const bloomStrength = Number.isFinite(bloomInfo?.strength) ? ` s=${formatFixed(bloomInfo.strength, 2)}` : '';
+        const sunBloomStrength = Number.isFinite(sunBloomInfo?.strength) ? ` s=${formatFixed(sunBloomInfo.strength, 2)}` : '';
+
+        return [
+            {
+                title: 'Illumination',
+                lines: [
+                    `mode: ${illumStatus?.mode ?? '-'}`,
+                    `preset: ${preset?.label ?? 'User mode'}`,
+                    `scene bg: ${formatHexColor(sceneBg, 'n/a')}`,
+                    `hemi intensity: ${formatFixed(hemi?.intensity, 2)}`,
+                    `sun enabled: ${formatBool(sun?.visible !== false)}`,
+                    `sun intensity: ${formatFixed(sun?.intensity, 2)}`,
+                    `sun pos: ${formatFixed(sun?.position?.x, 2)}, ${formatFixed(sun?.position?.y, 2)}, ${formatFixed(sun?.position?.z, 2)}`
+                ]
+            },
+            {
+                title: 'Renderer',
+                lines: [
+                    `tone mapping: ${typeof lighting?.toneMapping === 'string' ? lighting.toneMapping : getToneMappingLabel(renderer)}`,
+                    `exposure: ${formatFixed(renderer?.toneMappingExposure, 2)}`,
+                    `output color space: ${getOutputColorSpaceLabel(renderer)}`,
+                    `pixel ratio: ${formatFixed(renderer?.getPixelRatio?.(), 2)}`,
+                    `viewport: ${sizeLabel}`,
+                    `shadow map: ${formatBool(renderer?.shadowMap?.enabled)}`
+                ]
+            },
+            {
+                title: 'Filters / Shaders',
+                lines: [
+                    `AA: ${aaInfo?.activeMode ?? '-'} (req ${aaInfo?.requestedMode ?? '-'})`,
+                    `AO: ${aoInfo?.mode ?? '-'}`,
+                    `GTAO update: ${aoGtao?.updateMode ?? '-'}`,
+                    `Bloom: ${formatBool(bloomInfo?.enabled)}${bloomStrength}`,
+                    `Sun bloom: ${formatBool(sunBloomInfo?.enabled)}${sunBloomStrength}`,
+                    `Color grading: ${colorInfo?.requestedPreset ?? '-'} i=${formatFixed(colorInfo?.intensity, 2)} active=${formatBool(colorInfo?.enabled)}`
+                ]
+            },
+            {
+                title: 'IBL / View',
+                lines: [
+                    `IBL enabled: ${formatBool(iblInfo?.enabled)}`,
+                    `IBL loaded: ${formatBool(iblInfo?.envMapLoaded)}`,
+                    `IBL env intensity: ${formatFixed(iblInfo?.envMapIntensity, 2)}`,
+                    `IBL bg mode: ${iblInfo?.sceneBackgroundMode ?? '-'}`,
+                    `layout: ${this._state.layoutMode}`,
+                    `tiling: ${this._state.tilingMode}`,
+                    `active slot: #${(sanitizeSlotIndex(this._state.activeSlotIndex) ?? 0) + 1}`,
+                    `baseline: ${sanitizeMaterialId(this._state.baselineMaterialId) ?? '-'}`
+                ]
+            }
+        ];
+    }
+
+    async _downloadCalibrationReport(canvas) {
+        const src = canvas && typeof canvas === 'object' ? canvas : null;
+        if (!src) return;
+
+        const blob = await new Promise((resolve) => src.toBlob?.(resolve, 'image/png'));
+        if (!blob) return;
+
+        const stamp = new Date();
+        const pad2 = (v) => String(v).padStart(2, '0');
+        const fileName = `material_calibration_${stamp.getFullYear()}${pad2(stamp.getMonth() + 1)}${pad2(stamp.getDate())}_${pad2(stamp.getHours())}${pad2(stamp.getMinutes())}${pad2(stamp.getSeconds())}.png`;
+
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
     }
 
     _clearKeys() {

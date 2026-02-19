@@ -107,12 +107,15 @@ export class MaterialCalibrationUI {
         this.onSetBaselineMaterial = null;
         this.onSetOverrides = null;
         this.onToggleRuler = null;
+        this.onRequestExport = null;
+        this.onRequestScreenshot = null;
 
         this._classOptions = [];
         this._materialOptions = [];
         this._selectedClassId = null;
         this._slotMaterialIds = [null, null, null];
         this._activeSlotIndex = 0;
+        this._selectedSlotCameraIndex = null;
         this._baselineMaterialId = null;
         this._activeMaterialId = null;
         this._activeOverrides = null;
@@ -131,12 +134,20 @@ export class MaterialCalibrationUI {
         this._onIlluminationChange = () => this.onSelectIlluminationPreset?.(this.illuminationSelect.value);
         this._onBaselineChange = () => this.onSetBaselineMaterial?.(this.baselineSelect.value);
         this._onCatalogClick = (e) => this._handleCatalogClick(e);
-        this._onRulerClick = (e) => this._handleRulerClick(e);
+        this._onCenterToolsClick = (e) => this._handleCenterToolsClick(e);
         this._onOverridesInput = () => this._handleOverridesInput();
         this._onResetOverrides = (e) => {
             e.preventDefault();
             if (!this._activeMaterialId) return;
             this.onSetOverrides?.(this._activeMaterialId, {});
+        };
+        this._onExportClick = (e) => {
+            e.preventDefault();
+            this.onRequestExport?.();
+        };
+        this._onScreenshotClick = (e) => {
+            e.preventDefault();
+            this.onRequestScreenshot?.();
         };
     }
 
@@ -162,7 +173,9 @@ export class MaterialCalibrationUI {
         this.illuminationSelect?.addEventListener?.('change', this._onIlluminationChange);
         this.baselineSelect?.addEventListener?.('change', this._onBaselineChange);
         this.catalogGrid?.addEventListener?.('click', this._onCatalogClick);
-        this.rulerBtn?.addEventListener?.('click', this._onRulerClick, { passive: false });
+        this.centerTools?.addEventListener?.('click', this._onCenterToolsClick);
+        this.exportBtn?.addEventListener?.('click', this._onExportClick, { passive: false });
+        this.screenshotBtn?.addEventListener?.('click', this._onScreenshotClick, { passive: false });
 
         for (const el of this._getOverrideInputs()) {
             el.addEventListener('input', this._onOverridesInput);
@@ -183,7 +196,9 @@ export class MaterialCalibrationUI {
         this.illuminationSelect?.removeEventListener?.('change', this._onIlluminationChange);
         this.baselineSelect?.removeEventListener?.('change', this._onBaselineChange);
         this.catalogGrid?.removeEventListener?.('click', this._onCatalogClick);
-        this.rulerBtn?.removeEventListener?.('click', this._onRulerClick);
+        this.centerTools?.removeEventListener?.('click', this._onCenterToolsClick);
+        this.exportBtn?.removeEventListener?.('click', this._onExportClick);
+        this.screenshotBtn?.removeEventListener?.('click', this._onScreenshotClick);
 
         for (const el of this._getOverrideInputs()) {
             el.removeEventListener('input', this._onOverridesInput);
@@ -317,7 +332,33 @@ export class MaterialCalibrationUI {
         this.adjustPanel.appendChild(this.resetOverridesBtn);
         this.adjustPanel.appendChild(this.overridesGrid);
 
+        this.actionsPanel = document.createElement('div');
+        this.actionsPanel.className = 'ui-panel is-interactive material-calibration-panel material-calibration-actions';
+
+        const actionsTitle = document.createElement('div');
+        actionsTitle.className = 'ui-title';
+        actionsTitle.textContent = 'Actions';
+
+        const actionsRow = document.createElement('div');
+        actionsRow.className = 'material-calibration-actions-row';
+
+        this.exportBtn = document.createElement('button');
+        this.exportBtn.type = 'button';
+        this.exportBtn.className = 'material-calibration-btn';
+        this.exportBtn.textContent = 'Export';
+
+        this.screenshotBtn = document.createElement('button');
+        this.screenshotBtn.type = 'button';
+        this.screenshotBtn.className = 'material-calibration-btn';
+        this.screenshotBtn.textContent = 'Screenshot';
+
+        actionsRow.appendChild(this.exportBtn);
+        actionsRow.appendChild(this.screenshotBtn);
+        this.actionsPanel.appendChild(actionsTitle);
+        this.actionsPanel.appendChild(actionsRow);
+
         this.rightDock.appendChild(this.adjustPanel);
+        this.rightDock.appendChild(this.actionsPanel);
     }
 
     _buildCatalogPanel() {
@@ -357,8 +398,26 @@ export class MaterialCalibrationUI {
         this.rulerBtn = document.createElement('button');
         this.rulerBtn.type = 'button';
         this.rulerBtn.className = 'material-calibration-tool-btn';
+        this.rulerBtn.dataset.action = 'toggle-ruler';
         applyMaterialSymbolToButton(this.rulerBtn, { name: 'straighten', label: 'Ruler', size: 'md' });
         this.centerTools.appendChild(this.rulerBtn);
+
+        this.slotCameraBtns = [];
+        for (let i = 0; i < 3; i++) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'material-calibration-tool-btn material-calibration-slot-camera-btn';
+            btn.dataset.action = 'focus-slot';
+            btn.dataset.slotIndex = String(i);
+            applyMaterialSymbolToButton(btn, { name: 'photo_camera', label: `Focus platform ${i + 1}`, size: 'md' });
+            const number = document.createElement('span');
+            number.className = 'material-calibration-slot-camera-num';
+            number.textContent = String(i + 1);
+            btn.appendChild(number);
+            this.centerTools.appendChild(btn);
+            this.slotCameraBtns.push(btn);
+        }
+        this._syncSlotCameraButtons();
     }
 
     _buildOverrideControls() {
@@ -462,23 +521,30 @@ export class MaterialCalibrationUI {
 
     _handleCatalogClick(e) {
         const target = e?.target ?? null;
-        const action = target?.closest?.('[data-action]')?.dataset?.action ?? null;
         const card = target?.closest?.('[data-material-id]') ?? null;
         const materialId = toId(card?.dataset?.materialId);
         if (!materialId) return;
-
-        if (action === 'focus') {
-            e.preventDefault();
-            this.onFocusMaterial?.(materialId);
-            return;
-        }
-
         this.onToggleMaterial?.(materialId);
     }
 
-    _handleRulerClick(e) {
-        e.preventDefault();
-        this.onToggleRuler?.(!this._rulerEnabled);
+    _handleCenterToolsClick(e) {
+        const target = e?.target ?? null;
+        const actionEl = target?.closest?.('[data-action]') ?? null;
+        const action = actionEl?.dataset?.action ?? null;
+        if (!action) return;
+
+        if (action === 'toggle-ruler') {
+            e.preventDefault?.();
+            this.onToggleRuler?.(!this._rulerEnabled);
+            return;
+        }
+
+        if (action === 'focus-slot') {
+            e.preventDefault?.();
+            const idx = Number(actionEl?.dataset?.slotIndex);
+            if (!Number.isFinite(idx)) return;
+            this.onFocusSlot?.(idx);
+        }
     }
 
     _handleOverridesInput() {
@@ -588,7 +654,23 @@ export class MaterialCalibrationUI {
             this.baselineSelect.value = this._baselineMaterialId;
         }
 
+        this._syncSlotCameraButtons();
         this._renderCatalogCards();
+    }
+
+    setSelectedSlotCameraIndex(slotIndex = null) {
+        const hasValue = slotIndex !== null && slotIndex !== undefined && slotIndex !== '';
+        const idx = hasValue ? Number(slotIndex) : NaN;
+        if (Number.isFinite(idx) && idx >= 0 && idx <= 2) this._selectedSlotCameraIndex = idx | 0;
+        else this._selectedSlotCameraIndex = null;
+        this._syncSlotCameraButtons();
+    }
+
+    setScreenshotBusy(enabled) {
+        const busy = !!enabled;
+        if (!this.screenshotBtn) return;
+        this.screenshotBtn.disabled = busy;
+        this.screenshotBtn.textContent = busy ? 'Capturing…' : 'Screenshot';
     }
 
     setActiveMaterial({ materialId = null, overrides = null } = {}) {
@@ -635,6 +717,13 @@ export class MaterialCalibrationUI {
         this._rulerEnabled = !!enabled;
         this.rulerBtn?.classList?.toggle?.('is-active', this._rulerEnabled);
         applyMaterialSymbolToButton(this.rulerBtn, { name: 'straighten', label: 'Ruler', size: 'md', active: this._rulerEnabled });
+    }
+
+    _syncSlotCameraButtons() {
+        const active = Number.isFinite(this._selectedSlotCameraIndex) ? (this._selectedSlotCameraIndex | 0) : -1;
+        for (let i = 0; i < 3; i++) {
+            this.slotCameraBtns?.[i]?.classList?.toggle?.('is-active', i === active);
+        }
     }
 
     setRulerLabel({ visible = false, x = 0, y = 0, text = '' } = {}) {
@@ -703,19 +792,8 @@ export class MaterialCalibrationUI {
                 meta.appendChild(badge);
             }
 
-            const actions = document.createElement('div');
-            actions.className = 'material-calibration-card-actions';
-
-            const focusBtn = document.createElement('button');
-            focusBtn.type = 'button';
-            focusBtn.className = 'material-calibration-icon-btn';
-            focusBtn.dataset.action = 'focus';
-            applyMaterialSymbolToButton(focusBtn, { name: 'center_focus_strong', label: 'Focus camera', size: 'sm' });
-            actions.appendChild(focusBtn);
-
             card.appendChild(thumb);
             card.appendChild(meta);
-            card.appendChild(actions);
 
             this.catalogGrid.appendChild(card);
         }

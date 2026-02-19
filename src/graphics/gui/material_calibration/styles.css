@@ -72,6 +72,9 @@
 
 .material-calibration-select {
     width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
     padding: 8px 10px;
     border-radius: 10px;
     border: 1px solid rgba(255,255,255,0.14);
@@ -110,7 +113,7 @@
 
 .material-calibration-card {
     display: grid;
-    grid-template-rows: 92px auto auto;
+    grid-template-rows: 92px auto;
     gap: 8px;
     padding: 10px;
     border-radius: 14px;
@@ -213,7 +216,7 @@
 .material-calibration-center-tools {
     position: fixed;
     left: 50%;
-    bottom: calc(16px + var(--mc-catalog-height) + 16px);
+    bottom: 16px;
     transform: translateX(-50%);
     display: flex;
     align-items: center;
@@ -249,12 +252,32 @@
     background: rgba(0,0,0,0.28);
 }
 
+.material-calibration-slot-camera-btn {
+    gap: 4px;
+    padding: 6px 8px;
+}
+
+.material-calibration-slot-camera-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0.9em;
+    font-size: 11px;
+    font-weight: 900;
+    line-height: 1;
+    opacity: 0.96;
+}
+
 .material-calibration-adjust-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
     margin-bottom: 10px;
+}
+
+.material-calibration-adjust .material-calibration-row {
+    grid-template-columns: minmax(72px, 0.8fr) minmax(0, 1.8fr);
 }
 
 .material-calibration-btn {
@@ -269,6 +292,22 @@
 
 .material-calibration-btn:hover {
     background: rgba(0,0,0,0.28);
+}
+
+.material-calibration-btn:disabled {
+    opacity: 0.58;
+    cursor: default;
+}
+
+.material-calibration-actions-row {
+    margin-top: 10px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+}
+
+.material-calibration-actions-row .material-calibration-btn {
+    width: 100%;
 }
 
 .material-calibration-btn-secondary {
@@ -291,22 +330,27 @@
     flex-direction: column;
     gap: 8px;
     max-height: calc(100vh - var(--mc-catalog-height) - 240px);
-    overflow: auto;
+    overflow-y: auto;
+    overflow-x: hidden;
     padding-right: 2px;
 }
 
 .material-calibration-control-row {
     display: grid;
-    grid-template-columns: 92px 1fr;
+    grid-template-columns: minmax(88px, 0.8fr) minmax(0, 1.8fr);
     gap: 10px;
     align-items: center;
 }
 
 .material-calibration-control-body {
     display: grid;
-    grid-template-columns: 1fr 68px;
+    grid-template-columns: minmax(0, 1fr) minmax(74px, 0.55fr);
     gap: 10px;
     align-items: center;
+}
+
+.material-calibration-control-body > * {
+    min-width: 0;
 }
 
 .material-calibration-range {
@@ -315,6 +359,9 @@
 
 .material-calibration-number {
     width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
     padding: 8px 10px;
     border-radius: 10px;
     border: 1px solid rgba(255,255,255,0.14);
