@@ -1,9 +1,6 @@
 // src/graphics/gui/material_calibration/MaterialCalibrationScene.js
 // Controlled scene for side-by-side PBR material calibration.
 import * as THREE from 'three';
-import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
-import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
-import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { createToolCameraController } from '../../engine3d/camera/ToolCameraPrefab.js';
 import { getPbrMaterialTileMeters, resolvePbrMaterialUrls } from '../../content3d/catalogs/PbrMaterialCatalog.js';
 import { getResolvedCalibrationPresetLightingSettings, getResolvedDefaultLightingSettings, LIGHTING_RESOLUTION_MODES } from '../../lighting/LightingSettings.js';
@@ -14,6 +11,11 @@ const UP = new THREE.Vector3(0, 1, 0);
 
 const SLOT_COUNT = 3;
 const SLOT_X_SPACING = 3.9;
+const SLOT_LAYOUT_MODES = Object.freeze({
+    FULL: 'full',
+    PANEL: 'panel',
+    SPHERE: 'sphere'
+});
 
 const PLATE_SIZE = 2.7;
 const PLATE_THICKNESS = 0.12;
@@ -29,6 +31,55 @@ const BACKGROUND_FALLBACK = 0x858585;
 const RULER_LINE_COLOR = 0xfff1a6;
 const RULER_LINEWIDTH = 3;
 const RULER_LINE_OPACITY = 0.92;
+const SLOT_EMPTY_MATERIAL_STYLE = Object.freeze({
+    roughness: 1.0,
+    metalness: 0.0,
+    aoMapIntensity: 1.0,
+    normalStrength: 1.0,
+    color: Object.freeze({ r: 0.75, g: 0.75, b: 0.75 })
+});
+const SLOT_PLATE_STYLE = Object.freeze({
+    active: Object.freeze({ colorHex: 0x2a3b46, emissiveHex: 0x0a141c, emissiveIntensity: 0.25 }),
+    inactive: Object.freeze({ colorHex: 0x1f242c, emissiveHex: 0x000000, emissiveIntensity: 0.0 })
+});
+const EMPTY_OVERRIDES = Object.freeze({});
+const TEXTURE_CHANNEL_DEFS = Object.freeze([
+    Object.freeze({ key: 'baseColor', urlKey: 'baseColorUrl', srgb: true }),
+    Object.freeze({ key: 'normal', urlKey: 'normalUrl', srgb: false }),
+    Object.freeze({ key: 'orm', urlKey: 'ormUrl', srgb: false }),
+    Object.freeze({ key: 'ao', urlKey: 'aoUrl', srgb: false }),
+    Object.freeze({ key: 'roughness', urlKey: 'roughnessUrl', srgb: false }),
+    Object.freeze({ key: 'metalness', urlKey: 'metalnessUrl', srgb: false })
+]);
+const CALIB_SHADER_CACHE_KEY_PREFIX = 'material_calibration_shader_v2';
+const CALIB_SHADER_TOKENS = Object.freeze({
+    common: '#include <common>',
+    mapFragment: '#include <map_fragment>',
+    colorFragment: '#include <color_fragment>',
+    roughnessFragment: '#include <roughnessmap_fragment>'
+});
+const CALIB_SHADER_COMMON_APPEND = `uniform vec2 uBusSimRoughnessRange;
+uniform vec2 uBusSimRoughnessInputNorm;
+uniform float uBusSimRoughnessGamma;
+uniform float uBusSimRoughnessRemapEnabled;
+uniform float uBusSimRoughnessInvertInput;
+uniform float uBusSimAlbedoSaturationAdjust;
+vec3 busSimSaturateColor(vec3 c, float amount) {
+    float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    float t = clamp(1.0 + amount, 0.0, 2.0);
+    return mix(vec3(l), c, t);
+}`;
+const CALIB_SHADER_SATURATION_APPEND = 'diffuseColor.rgb = busSimSaturateColor(diffuseColor.rgb, uBusSimAlbedoSaturationAdjust);';
+const CALIB_SHADER_ROUGHNESS_REMAP_APPEND = `if (uBusSimRoughnessRemapEnabled > 0.5) {
+    float busSimInput = roughnessFactor;
+    if (uBusSimRoughnessInvertInput > 0.5) busSimInput = 1.0 - busSimInput;
+    float busSimNormSpan = max(1e-5, uBusSimRoughnessInputNorm.y - uBusSimRoughnessInputNorm.x);
+    float busSimT = clamp((busSimInput - uBusSimRoughnessInputNorm.x) / busSimNormSpan, 0.0, 1.0);
+    busSimT = pow(busSimT, max(0.001, uBusSimRoughnessGamma));
+    float busSimMinR = clamp(uBusSimRoughnessRange.x, 0.0, 1.0);
+    float busSimMaxR = clamp(uBusSimRoughnessRange.y, busSimMinR, 1.0);
+    roughnessFactor = mix(busSimMinR, busSimMaxR, busSimT);
+}`;
 const DEFAULT_SCENE_ILLUMINATION = Object.freeze({
     backgroundColorHex: BACKGROUND_FALLBACK,
     hemi: Object.freeze({ intensity: 0.95 }),
@@ -117,6 +168,16 @@ function sanitizeSlotIndex(value) {
     return idx;
 }
 
+function sanitizeOptionalSlotIndex(value) {
+    if (value === null || value === undefined || value === '') return null;
+    return sanitizeSlotIndex(value);
+}
+
+function toFinite(value, fallback = 0) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+}
+
 function normalizeRoughnessRemap(value) {
     const src = value && typeof value === 'object' ? value : null;
     if (!src) return null;
@@ -150,7 +211,7 @@ function normalizeRoughnessRemap(value) {
 
 function normalizeOverrides(value) {
     const src = value && typeof value === 'object' ? value : null;
-    if (!src) return Object.freeze({});
+    if (!src) return EMPTY_OVERRIDES;
 
     const out = {};
     if (Number.isFinite(Number(src.tileMeters))) out.tileMeters = Math.max(EPS, Number(src.tileMeters));
@@ -237,7 +298,6 @@ export class MaterialCalibrationScene {
         this._rulerRaycaster = new THREE.Raycaster();
         this._rulerRayHits = [];
         this._rulerLine = null;
-        this._lineResolution = new THREE.Vector2(1, 1);
     }
 
     enter() {
@@ -316,11 +376,12 @@ export class MaterialCalibrationScene {
 
     setLayoutMode(layoutMode) {
         const id = typeof layoutMode === 'string' ? layoutMode.trim() : '';
-        const next = id === 'panel' || id === 'sphere' || id === 'full' ? id : 'full';
+        const next = id === SLOT_LAYOUT_MODES.PANEL || id === SLOT_LAYOUT_MODES.SPHERE || id === SLOT_LAYOUT_MODES.FULL
+            ? id
+            : SLOT_LAYOUT_MODES.FULL;
         if (next === this._layoutMode) return;
         this._layoutMode = next;
-        this._applyLayoutMode();
-        this._recomputeFocusSpheres();
+        this._refreshSlotVisibilityAndBounds();
     }
 
     setTilingMultiplier(multiplier) {
@@ -343,8 +404,7 @@ export class MaterialCalibrationScene {
         const next = visible !== false;
         if (next === this._plateVisible) return;
         this._plateVisible = next;
-        this._applyLayoutMode();
-        this._recomputeFocusSpheres();
+        this._refreshSlotVisibilityAndBounds();
     }
 
     isPlateVisible() {
@@ -352,12 +412,11 @@ export class MaterialCalibrationScene {
     }
 
     setIsolatedSlotIndex(slotIndex = null) {
-        const idx = slotIndex === null ? null : sanitizeSlotIndex(slotIndex);
+        const idx = sanitizeOptionalSlotIndex(slotIndex);
         if (slotIndex !== null && idx === null) return;
         if (idx === this._isolatedSlotIndex) return;
         this._isolatedSlotIndex = idx;
-        this._applyLayoutMode();
-        this._recomputeFocusSpheres();
+        this._refreshSlotVisibilityAndBounds();
     }
 
     getIsolatedSlotIndex() {
@@ -365,28 +424,12 @@ export class MaterialCalibrationScene {
     }
 
     setCenteredCaptureSlot(slotIndex = null) {
-        const idx = slotIndex === null ? null : sanitizeSlotIndex(slotIndex);
+        const idx = sanitizeOptionalSlotIndex(slotIndex);
         if (slotIndex !== null && idx === null) return;
         if (idx === this._centeredCaptureSlotIndex) return;
         this._centeredCaptureSlotIndex = idx;
 
-        for (let i = 0; i < SLOT_COUNT; i++) {
-            const group = this._slotGroups[i] ?? null;
-            if (!group) continue;
-            const base = this._slotBasePositions[i] ?? null;
-            const bx = Number(base?.x);
-            const by = Number(base?.y);
-            const bz = Number(base?.z);
-            if (idx !== null && i === idx) {
-                group.position.set(0, Number.isFinite(by) ? by : 0, Number.isFinite(bz) ? bz : 0);
-            } else {
-                group.position.set(
-                    Number.isFinite(bx) ? bx : 0,
-                    Number.isFinite(by) ? by : 0,
-                    Number.isFinite(bz) ? bz : 0
-                );
-            }
-        }
+        this._forEachSlot((i) => this._setSlotGroupPositionFromBase(i, { centerX: idx !== null && i === idx }));
         this._recomputeFocusSpheres();
     }
 
@@ -415,6 +458,70 @@ export class MaterialCalibrationScene {
         return this._slotMaterialIds.slice();
     }
 
+    _forEachSlot(callback) {
+        if (typeof callback !== 'function') return;
+        for (let i = 0; i < SLOT_COUNT; i++) callback(i);
+    }
+
+    _forEachSlotGroup(callback) {
+        if (typeof callback !== 'function') return;
+        this._forEachSlot((slotIndex) => {
+            const group = this._slotGroups[slotIndex] ?? null;
+            if (!group) return;
+            callback(slotIndex, group);
+        });
+    }
+
+    _getSlotBasePosition(slotIndex) {
+        const idx = sanitizeSlotIndex(slotIndex);
+        if (idx === null) return { x: 0, y: 0, z: 0 };
+        const base = this._slotBasePositions[idx] ?? null;
+        return {
+            x: toFinite(base?.x, 0),
+            y: toFinite(base?.y, 0),
+            z: toFinite(base?.z, 0)
+        };
+    }
+
+    _setSlotGroupPositionFromBase(slotIndex, { centerX = false } = {}) {
+        const idx = sanitizeSlotIndex(slotIndex);
+        if (idx === null) return;
+        const group = this._slotGroups[idx] ?? null;
+        if (!group) return;
+
+        const base = this._getSlotBasePosition(idx);
+        group.position.set(centerX ? 0 : base.x, base.y, base.z);
+    }
+
+    _refreshSlotVisibilityAndBounds() {
+        this._applyLayoutMode();
+        this._recomputeFocusSpheres();
+    }
+
+    _isSlotObjectVisibleForLayout(objectName) {
+        if (objectName === 'plate') return this._plateVisible;
+        if (this._layoutMode === SLOT_LAYOUT_MODES.FULL) return true;
+        if (this._layoutMode === SLOT_LAYOUT_MODES.PANEL) return objectName === 'panel';
+        if (this._layoutMode === SLOT_LAYOUT_MODES.SPHERE) return objectName === 'sphere';
+        return true;
+    }
+
+    _clampControlDistance(distance) {
+        const minDist = Number(this.controls?.minDistance);
+        const maxDist = Number(this.controls?.maxDistance);
+        return clamp(
+            distance,
+            Number.isFinite(minDist) ? minDist : 0.1,
+            Number.isFinite(maxDist) ? maxDist : 1e6
+        );
+    }
+
+    _getSlotOverrides(slotIndex) {
+        const idx = sanitizeSlotIndex(slotIndex);
+        if (idx === null) return EMPTY_OVERRIDES;
+        return this._slotOverrides[idx] ?? EMPTY_OVERRIDES;
+    }
+
     _resolveSlotFocusOrbit(slotIndex, { distanceScale = null } = {}) {
         const idx = sanitizeSlotIndex(slotIndex);
         if (idx === null) return null;
@@ -433,13 +540,7 @@ export class MaterialCalibrationScene {
         const scale = Number(distanceScale);
         const sphereRadius = Number(sphere?.radius);
         if (Number.isFinite(scale) && scale > 0 && Number.isFinite(sphereRadius) && sphereRadius > 0) {
-            const minDist = Number(this.controls?.minDistance);
-            const maxDist = Number(this.controls?.maxDistance);
-            nextRadius = clamp(
-                sphereRadius * scale,
-                Number.isFinite(minDist) ? minDist : 0.1,
-                Number.isFinite(maxDist) ? maxDist : 1e6
-            );
+            nextRadius = this._clampControlDistance(sphereRadius * scale);
         }
 
         return {
@@ -509,13 +610,7 @@ export class MaterialCalibrationScene {
         const baseDistance = fitMode === 'contain'
             ? Math.max(distV, distH)
             : Math.min(distV, distH);
-        const minDist = Number(this.controls?.minDistance);
-        const maxDist = Number(this.controls?.maxDistance);
-        const distance = clamp(
-            baseDistance,
-            Number.isFinite(minDist) ? minDist : 0.1,
-            Number.isFinite(maxDist) ? maxDist : 1e6
-        );
+        const distance = this._clampControlDistance(baseDistance);
 
         const position = center.clone().addScaledVector(normal, distance);
         return {
@@ -594,25 +689,21 @@ export class MaterialCalibrationScene {
         if (!this.root) return;
 
         if (!this._rulerLine) {
-            const geo = new LineSegmentsGeometry();
-            geo.setPositions([a.x, a.y, a.z, b.x, b.y, b.z]);
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.Float32BufferAttribute([
+                a.x, a.y, a.z,
+                b.x, b.y, b.z
+            ], 3));
 
-            const mat = new LineMaterial({
+            const mat = new THREE.LineBasicMaterial({
                 color: RULER_LINE_COLOR,
                 linewidth: RULER_LINEWIDTH,
-                worldUnits: false,
                 transparent: true,
                 opacity: RULER_LINE_OPACITY,
                 depthTest: false,
                 depthWrite: false
             });
-
-            if (this.engine?.renderer) {
-                const size = this.engine.renderer.getSize(this._lineResolution);
-                mat.resolution.set(size.x, size.y);
-            }
-
-            const line = new LineSegments2(geo, mat);
+            const line = new THREE.Line(geo, mat);
             line.name = 'material_calibration_ruler_line';
             line.renderOrder = 190;
             line.frustumCulled = false;
@@ -625,7 +716,13 @@ export class MaterialCalibrationScene {
         }
 
         const geo = this._rulerLine.geometry;
-        if (geo?.setPositions) geo.setPositions([a.x, a.y, a.z, b.x, b.y, b.z]);
+        const pos = geo?.attributes?.position ?? null;
+        if (pos?.setXYZ) {
+            pos.setXYZ(0, a.x, a.y, a.z);
+            pos.setXYZ(1, b.x, b.y, b.z);
+            pos.needsUpdate = true;
+            geo.computeBoundingSphere?.();
+        }
         this._rulerLine.visible = true;
     }
 
@@ -709,24 +806,25 @@ export class MaterialCalibrationScene {
         if (this.sun.target) this.sun.target.position.set(0, 0.9, 0);
     }
 
-    setSlotMaterial(slotIndex, materialId, { overrides = null } = {}) {
+    setSlotMaterial(slotIndex, materialId, { overrides = null, forceMaterialUpdate = false } = {}) {
         const idx = sanitizeSlotIndex(slotIndex);
         if (idx === null) return false;
         const id = typeof materialId === 'string' ? materialId.trim() : '';
         const nextId = id || null;
+        const force = forceMaterialUpdate === true;
 
         const prevId = this._slotMaterialIds[idx] ?? null;
         const prevWas = prevId;
         if (prevId === nextId) {
             this._slotOverrides[idx] = normalizeOverrides(overrides);
-            this._applySlotMaterial(idx);
+            this._applySlotMaterial(idx, { forceMaterialUpdate: force });
             return true;
         }
 
         this._slotMaterialIds[idx] = nextId;
         this._slotOverrides[idx] = normalizeOverrides(overrides);
 
-        this._applySlotMaterial(idx);
+        this._applySlotMaterial(idx, { forceMaterialUpdate: true });
         this._releaseMaterialIfUnused(prevWas);
         return true;
     }
@@ -741,7 +839,7 @@ export class MaterialCalibrationScene {
         this._materialTextures.delete(id);
     }
 
-    _applySlotMaterial(slotIndex) {
+    _applySlotMaterial(slotIndex, { forceMaterialUpdate = false } = {}) {
         if (!this.root) return;
         const idx = sanitizeSlotIndex(slotIndex);
         if (idx === null) return;
@@ -750,24 +848,43 @@ export class MaterialCalibrationScene {
 
         const materialId = this._slotMaterialIds[idx] ?? null;
         if (!materialId) {
-            mat.map = null;
-            mat.normalMap = null;
-            mat.roughnessMap = null;
-            mat.metalnessMap = null;
-            mat.aoMap = null;
-            mat.roughness = 1.0;
-            mat.metalness = 0.0;
-            mat.aoMapIntensity = 1.0;
-            mat.color.setRGB(0.75, 0.75, 0.75);
-            if (mat.normalScale?.set) mat.normalScale.set(1, 1);
-            this._applyRoughnessRemapOnMaterial(mat, null);
-            mat.needsUpdate = true;
+            this._applyEmptySlotMaterial(mat, { forceMaterialUpdate });
             return;
         }
 
         const textureSet = this._ensureMaterialTextures(materialId);
         const tex = textureSet?.textures ?? {};
+        const ovr = this._getSlotOverrides(idx);
 
+        this._assignSlotTextureMaps(mat, tex);
+        this._applySlotOverridesToMaterial(mat, ovr, { forceMaterialUpdate });
+
+        this._applySlotTiling(idx, materialId, ovr);
+        if (forceMaterialUpdate) mat.needsUpdate = true;
+    }
+
+    _applyEmptySlotMaterial(mat, { forceMaterialUpdate = false } = {}) {
+        if (!mat) return;
+        mat.map = null;
+        mat.normalMap = null;
+        mat.roughnessMap = null;
+        mat.metalnessMap = null;
+        mat.aoMap = null;
+        mat.roughness = SLOT_EMPTY_MATERIAL_STYLE.roughness;
+        mat.metalness = SLOT_EMPTY_MATERIAL_STYLE.metalness;
+        mat.aoMapIntensity = SLOT_EMPTY_MATERIAL_STYLE.aoMapIntensity;
+        mat.color.setRGB(
+            SLOT_EMPTY_MATERIAL_STYLE.color.r,
+            SLOT_EMPTY_MATERIAL_STYLE.color.g,
+            SLOT_EMPTY_MATERIAL_STYLE.color.b
+        );
+        if (mat.normalScale?.set) mat.normalScale.set(SLOT_EMPTY_MATERIAL_STYLE.normalStrength, SLOT_EMPTY_MATERIAL_STYLE.normalStrength);
+        this._applyRoughnessRemapOnMaterial(mat, null, { forceRebind: forceMaterialUpdate, albedoSaturation: 0.0 });
+        if (forceMaterialUpdate) mat.needsUpdate = true;
+    }
+
+    _assignSlotTextureMaps(mat, textures) {
+        const tex = textures && typeof textures === 'object' ? textures : {};
         mat.map = tex.baseColor ?? null;
         mat.normalMap = tex.normal ?? null;
 
@@ -776,16 +893,21 @@ export class MaterialCalibrationScene {
             mat.metalnessMap = tex.orm;
             mat.aoMap = tex.orm;
             mat.metalness = 1.0;
-        } else {
-            mat.aoMap = tex.ao ?? null;
-            mat.roughnessMap = tex.roughness ?? null;
-            mat.metalnessMap = tex.metalness ?? null;
-            mat.metalness = tex.metalness ? 1.0 : 0.0;
+            return;
         }
 
-        const ovr = this._slotOverrides[idx] ?? {};
+        mat.aoMap = tex.ao ?? null;
+        mat.roughnessMap = tex.roughness ?? null;
+        mat.metalnessMap = tex.metalness ?? null;
+        mat.metalness = tex.metalness ? 1.0 : 0.0;
+    }
+
+    _applySlotOverridesToMaterial(mat, overrides, { forceMaterialUpdate = false } = {}) {
+        const ovr = overrides && typeof overrides === 'object' ? overrides : EMPTY_OVERRIDES;
+
         const normalStrength = Number.isFinite(ovr.normalStrength) ? ovr.normalStrength : 1.0;
         if (mat.normalScale?.set) mat.normalScale.set(normalStrength, normalStrength);
+
         mat.roughness = Number.isFinite(ovr.roughness) ? ovr.roughness : 1.0;
         if (Number.isFinite(ovr.metalness)) mat.metalness = ovr.metalness;
         mat.aoMapIntensity = Number.isFinite(ovr.aoIntensity) ? ovr.aoIntensity : 1.0;
@@ -794,80 +916,152 @@ export class MaterialCalibrationScene {
             albedoBrightness: Number.isFinite(ovr.albedoBrightness) ? ovr.albedoBrightness : 1.0,
             albedoTintStrength: Number.isFinite(ovr.albedoTintStrength) ? ovr.albedoTintStrength : 0.0,
             albedoHueDegrees: Number.isFinite(ovr.albedoHueDegrees) ? ovr.albedoHueDegrees : 0.0,
-            albedoSaturation: Number.isFinite(ovr.albedoSaturation) ? ovr.albedoSaturation : 0.0
+            albedoSaturation: 0.0
         }));
-        this._applyRoughnessRemapOnMaterial(mat, ovr.roughnessRemap ?? null);
+        this._applyRoughnessRemapOnMaterial(mat, ovr.roughnessRemap ?? null, {
+            forceRebind: forceMaterialUpdate,
+            albedoSaturation: Number.isFinite(ovr.albedoSaturation) ? ovr.albedoSaturation : 0.0
+        });
+    }
 
-        this._applySlotTiling(idx, materialId, ovr);
+    _getMaterialCalibrationUserData(material) {
+        const mat = material?.isMeshStandardMaterial ? material : null;
+        if (!mat) return null;
+        return mat.userData ?? (mat.userData = {});
+    }
+
+    _getMaterialCalibrationStateFromMaterial(material) {
+        const data = this._getMaterialCalibrationUserData(material) ?? EMPTY_OVERRIDES;
+        const remap = normalizeRoughnessRemap(data.materialCalibrationRoughnessRemap ?? null);
+        const saturationRaw = Number(data.materialCalibrationAlbedoSaturationAmount);
+        const saturationAmount = Number.isFinite(saturationRaw) ? clamp(saturationRaw, -1, 1) : 0.0;
+        return { remap, saturationAmount };
+    }
+
+    _buildMaterialCalibrationRemapSignature(remap) {
+        const rr = normalizeRoughnessRemap(remap);
+        if (!rr) return 'off';
+        return `on:${rr.min.toFixed(6)}:${rr.max.toFixed(6)}:${rr.gamma.toFixed(6)}:${rr.invertInput ? 1 : 0}:${rr.lowPercentile.toFixed(6)}:${rr.highPercentile.toFixed(6)}`;
+    }
+
+    _createMaterialCalibrationShaderUniforms() {
+        return {
+            uBusSimRoughnessRange: { value: new THREE.Vector2(0, 1) },
+            uBusSimRoughnessInputNorm: { value: new THREE.Vector2(0, 1) },
+            uBusSimRoughnessGamma: { value: 1.0 },
+            uBusSimRoughnessRemapEnabled: { value: 0.0 },
+            uBusSimRoughnessInvertInput: { value: 0.0 },
+            uBusSimAlbedoSaturationAdjust: { value: 0.0 }
+        };
+    }
+
+    _applyMaterialCalibrationUniformValues(uniforms, { remap = null, saturationAmount = 0.0 } = {}) {
+        const u = uniforms && typeof uniforms === 'object' ? uniforms : null;
+        if (!u) return;
+
+        const min = remap ? remap.min : 0;
+        const max = remap ? remap.max : 1;
+        const lowNorm = remap ? (remap.lowPercentile / 100) : 0;
+        const highNorm = remap ? (remap.highPercentile / 100) : 1;
+        const gamma = remap ? remap.gamma : 1.0;
+        const enabled = remap ? 1.0 : 0.0;
+        const invertInput = remap?.invertInput ? 1.0 : 0.0;
+
+        if (u.uBusSimRoughnessRange?.value?.set) u.uBusSimRoughnessRange.value.set(min, max);
+        if (u.uBusSimRoughnessInputNorm?.value?.set) u.uBusSimRoughnessInputNorm.value.set(lowNorm, highNorm);
+        if (u.uBusSimRoughnessGamma) u.uBusSimRoughnessGamma.value = gamma;
+        if (u.uBusSimRoughnessRemapEnabled) u.uBusSimRoughnessRemapEnabled.value = enabled;
+        if (u.uBusSimRoughnessInvertInput) u.uBusSimRoughnessInvertInput.value = invertInput;
+        if (u.uBusSimAlbedoSaturationAdjust) u.uBusSimAlbedoSaturationAdjust.value = saturationAmount;
+    }
+
+    _patchMaterialCalibrationFragmentShader(fragmentShader) {
+        let source = typeof fragmentShader === 'string' ? fragmentShader : '';
+        source = source.replace(
+            CALIB_SHADER_TOKENS.common,
+            `${CALIB_SHADER_TOKENS.common}\n${CALIB_SHADER_COMMON_APPEND}`
+        );
+
+        if (source.includes(CALIB_SHADER_TOKENS.mapFragment)) {
+            source = source.replace(
+                CALIB_SHADER_TOKENS.mapFragment,
+                `${CALIB_SHADER_TOKENS.mapFragment}\n${CALIB_SHADER_SATURATION_APPEND}`
+            );
+        } else if (source.includes(CALIB_SHADER_TOKENS.colorFragment)) {
+            source = source.replace(
+                CALIB_SHADER_TOKENS.colorFragment,
+                `${CALIB_SHADER_TOKENS.colorFragment}\n${CALIB_SHADER_SATURATION_APPEND}`
+            );
+        }
+
+        const roughnessPatched = source.includes(CALIB_SHADER_TOKENS.roughnessFragment);
+        if (roughnessPatched) {
+            source = source.replace(
+                CALIB_SHADER_TOKENS.roughnessFragment,
+                `${CALIB_SHADER_TOKENS.roughnessFragment}\n${CALIB_SHADER_ROUGHNESS_REMAP_APPEND}`
+            );
+        }
+
+        return { fragmentShader: source, roughnessPatched };
+    }
+
+    _shouldRebindMaterialCalibrationShader({ data = null, previousSignature = '', nextSignature = '', forceRebind = false } = {}) {
+        const installed = data?.materialCalibrationShaderInstalled === true;
+        if (nextSignature !== previousSignature) return true;
+        if (forceRebind === true) return true;
+        return !installed;
+    }
+
+    _bindMaterialCalibrationShader(material, data) {
+        const mat = material?.isMeshStandardMaterial ? material : null;
+        if (!mat || !data) return;
+
+        mat.onBeforeCompile = (shader) => {
+            const shaderUniforms = shader.uniforms && typeof shader.uniforms === 'object' ? shader.uniforms : {};
+            shader.uniforms = shaderUniforms;
+            Object.assign(shaderUniforms, this._createMaterialCalibrationShaderUniforms());
+
+            const state = this._getMaterialCalibrationStateFromMaterial(mat);
+            this._applyMaterialCalibrationUniformValues(shaderUniforms, state);
+
+            const patched = this._patchMaterialCalibrationFragmentShader(shader.fragmentShader);
+            shader.fragmentShader = patched.fragmentShader;
+
+            data.materialCalibrationRoughnessRemapPatched = patched.roughnessPatched;
+            data.materialCalibrationShaderUniforms = shaderUniforms;
+            data.materialCalibrationShaderInstalled = true;
+        };
+        mat.customProgramCacheKey = () => `${CALIB_SHADER_CACHE_KEY_PREFIX}:${mat.userData?.materialCalibrationRoughnessRemapSignature ?? 'off'}`;
         mat.needsUpdate = true;
     }
 
-    _applyRoughnessRemapOnMaterial(material, roughnessRemap) {
+    _applyRoughnessRemapOnMaterial(material, roughnessRemap, { forceRebind = false, albedoSaturation = 0.0 } = {}) {
         const mat = material?.isMeshStandardMaterial ? material : null;
         if (!mat) return;
 
         const remap = normalizeRoughnessRemap(roughnessRemap);
-        const data = mat.userData ?? (mat.userData = {});
-        const prevSig = typeof data.materialCalibrationRoughnessRemapSignature === 'string'
+        const saturationAmount = clamp(albedoSaturation, -1, 1);
+        const data = this._getMaterialCalibrationUserData(mat);
+        if (!data) return;
+
+        const previousSignature = typeof data.materialCalibrationRoughnessRemapSignature === 'string'
             ? data.materialCalibrationRoughnessRemapSignature
             : '';
-        const nextSig = remap
-            ? `on:${remap.min.toFixed(6)}:${remap.max.toFixed(6)}:${remap.gamma.toFixed(6)}:${remap.invertInput ? 1 : 0}:${remap.lowPercentile.toFixed(6)}:${remap.highPercentile.toFixed(6)}`
-            : 'off';
-
-        if (nextSig === prevSig) return;
-        data.materialCalibrationRoughnessRemapSignature = nextSig;
+        const nextSignature = this._buildMaterialCalibrationRemapSignature(remap);
         data.materialCalibrationRoughnessRemap = remap;
+        data.materialCalibrationAlbedoSaturationAmount = saturationAmount;
+        data.materialCalibrationRoughnessRemapSignature = nextSignature;
 
-        const onBeforeCompile = (shader) => {
-            shader.uniforms.uBusSimRoughnessRange = { value: new THREE.Vector2(0, 1) };
-            shader.uniforms.uBusSimRoughnessInputNorm = { value: new THREE.Vector2(0, 1) };
-            shader.uniforms.uBusSimRoughnessGamma = { value: 1.0 };
-            shader.uniforms.uBusSimRoughnessRemapEnabled = { value: 0.0 };
-            shader.uniforms.uBusSimRoughnessInvertInput = { value: 0.0 };
+        this._applyMaterialCalibrationUniformValues(data.materialCalibrationShaderUniforms, { remap, saturationAmount });
 
-            const current = mat.userData?.materialCalibrationRoughnessRemap ?? null;
-            if (current) {
-                shader.uniforms.uBusSimRoughnessRange.value.set(current.min, current.max);
-                shader.uniforms.uBusSimRoughnessInputNorm.value.set(current.lowPercentile / 100, current.highPercentile / 100);
-                shader.uniforms.uBusSimRoughnessGamma.value = current.gamma;
-                shader.uniforms.uBusSimRoughnessRemapEnabled.value = 1.0;
-                shader.uniforms.uBusSimRoughnessInvertInput.value = current.invertInput ? 1.0 : 0.0;
-            }
-
-            shader.fragmentShader = shader.fragmentShader.replace(
-                '#include <common>',
-                `#include <common>
-uniform vec2 uBusSimRoughnessRange;
-uniform vec2 uBusSimRoughnessInputNorm;
-uniform float uBusSimRoughnessGamma;
-uniform float uBusSimRoughnessRemapEnabled;
-uniform float uBusSimRoughnessInvertInput;`
-            );
-
-            shader.fragmentShader = shader.fragmentShader.replace(
-                '#include <roughnessmap_fragment>',
-                `float roughnessFactor = roughness;
-#ifdef USE_ROUGHNESSMAP
-    vec4 texelRoughness = texture2D( roughnessMap, vRoughnessMapUv );
-    roughnessFactor *= texelRoughness.g;
-#endif
-if (uBusSimRoughnessRemapEnabled > 0.5) {
-    float busSimInput = roughnessFactor;
-    if (uBusSimRoughnessInvertInput > 0.5) busSimInput = 1.0 - busSimInput;
-    float busSimNormSpan = max(1e-5, uBusSimRoughnessInputNorm.y - uBusSimRoughnessInputNorm.x);
-    float busSimT = clamp((busSimInput - uBusSimRoughnessInputNorm.x) / busSimNormSpan, 0.0, 1.0);
-    busSimT = pow(busSimT, max(0.001, uBusSimRoughnessGamma));
-    float busSimMinR = clamp(uBusSimRoughnessRange.x, 0.0, 1.0);
-    float busSimMaxR = clamp(uBusSimRoughnessRange.y, busSimMinR, 1.0);
-    roughnessFactor = mix(busSimMinR, busSimMaxR, busSimT);
-}`
-            );
-        };
-
-        mat.onBeforeCompile = onBeforeCompile;
-        mat.customProgramCacheKey = () => `material_calibration_roughness_remap:${mat.userData?.materialCalibrationRoughnessRemapSignature ?? 'off'}`;
-        mat.needsUpdate = true;
+        const shouldRebind = this._shouldRebindMaterialCalibrationShader({
+            data,
+            previousSignature,
+            nextSignature,
+            forceRebind
+        });
+        if (!shouldRebind) return;
+        this._bindMaterialCalibrationShader(mat, data);
     }
 
     _applySlotTiling(slotIndex, materialId, overrides) {
@@ -894,12 +1088,11 @@ if (uBusSimRoughnessRemapEnabled > 0.5) {
     }
 
     _syncAllSlotTilings() {
-        for (let i = 0; i < SLOT_COUNT; i++) {
-            const id = this._slotMaterialIds[i] ?? null;
-            if (!id) continue;
-            const ovr = this._slotOverrides[i] ?? null;
-            this._applySlotTiling(i, id, ovr);
-        }
+        this._forEachSlot((slotIndex) => {
+            const materialId = this._slotMaterialIds[slotIndex] ?? null;
+            if (!materialId) return;
+            this._applySlotTiling(slotIndex, materialId, this._getSlotOverrides(slotIndex));
+        });
     }
 
     _ensureMaterialTextures(materialId) {
@@ -909,21 +1102,11 @@ if (uBusSimRoughnessRemapEnabled > 0.5) {
         if (existing) return existing;
 
         const urls = resolvePbrMaterialUrls(id);
-        const baseColorUrl = urls?.baseColorUrl ?? null;
-        const normalUrl = urls?.normalUrl ?? null;
-        const ormUrl = urls?.ormUrl ?? null;
-        const aoUrl = urls?.aoUrl ?? null;
-        const roughUrl = urls?.roughnessUrl ?? null;
-        const metalUrl = urls?.metalnessUrl ?? null;
-
-        const textures = {
-            baseColor: this._loadTexture(baseColorUrl, { srgb: true }),
-            normal: this._loadTexture(normalUrl, { srgb: false }),
-            orm: this._loadTexture(ormUrl, { srgb: false }),
-            ao: this._loadTexture(aoUrl, { srgb: false }),
-            roughness: this._loadTexture(roughUrl, { srgb: false }),
-            metalness: this._loadTexture(metalUrl, { srgb: false })
-        };
+        const textures = {};
+        for (const channel of TEXTURE_CHANNEL_DEFS) {
+            const url = urls?.[channel.urlKey] ?? null;
+            textures[channel.key] = this._loadTexture(url, { srgb: channel.srgb });
+        }
 
         const payload = { urls, textures };
         this._materialTextures.set(id, payload);
@@ -967,9 +1150,9 @@ if (uBusSimRoughnessRemapEnabled > 0.5) {
         this.root.add(this.sun.target);
     }
 
-    _buildSlots() {
+    _createSlotGeometryAssets() {
         const plateGeo = new THREE.BoxGeometry(PLATE_SIZE, PLATE_THICKNESS, PLATE_SIZE);
-        const plateMatBase = new THREE.MeshStandardMaterial({ color: 0x1f242c, roughness: 1.0, metalness: 0.0 });
+        const plateMatBase = new THREE.MeshStandardMaterial({ color: SLOT_PLATE_STYLE.inactive.colorHex, roughness: 1.0, metalness: 0.0 });
 
         const panelGeo = new THREE.PlaneGeometry(PANEL_WIDTH, PANEL_HEIGHT, 1, 1);
         scaleUv(panelGeo, PANEL_WIDTH, PANEL_HEIGHT);
@@ -983,96 +1166,136 @@ if (uBusSimRoughnessRemapEnabled > 0.5) {
         scaleUv(cubeGeo, CUBE_SIZE, CUBE_SIZE);
         ensureUv2(cubeGeo);
 
-        for (let i = 0; i < SLOT_COUNT; i++) {
-            const group = new THREE.Group();
-            group.name = `material_calibration_slot_${i}`;
-            const baseX = (i - 1) * SLOT_X_SPACING;
-            group.position.set(baseX, 0, 0);
-            this.root.add(group);
-            this._slotGroups[i] = group;
-            this._slotBasePositions[i] = group.position.clone();
+        return { plateGeo, plateMatBase, panelGeo, sphereGeo, cubeGeo };
+    }
 
-            const plateMat = plateMatBase.clone();
-            const plate = new THREE.Mesh(plateGeo, plateMat);
-            plate.name = 'plate';
-            plate.position.set(0, PLATE_THICKNESS * 0.5, 0);
-            plate.receiveShadow = true;
-            plate.userData.materialCalibrationSlotIndex = i;
+    _createSlotSurfaceMaterial() {
+        return new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            roughness: 1.0,
+            metalness: 0.0
+        });
+    }
+
+    _createSlotMesh({
+        name,
+        geometry,
+        material,
+        position = null,
+        rotationY = 0,
+        castShadow = false,
+        receiveShadow = false,
+        slotIndex = null
+    } = {}) {
+        if (!geometry || !material) return null;
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.name = String(name ?? '');
+
+        const pos = position && typeof position === 'object' ? position : null;
+        mesh.position.set(toFinite(pos?.x, 0), toFinite(pos?.y, 0), toFinite(pos?.z, 0));
+        mesh.rotation.y = Number.isFinite(Number(rotationY)) ? Number(rotationY) : 0;
+        mesh.castShadow = castShadow === true;
+        mesh.receiveShadow = receiveShadow === true;
+        mesh.userData.materialCalibrationSlotIndex = sanitizeSlotIndex(slotIndex) ?? 0;
+        return mesh;
+    }
+
+    _buildSlotGroup(slotIndex, assets) {
+        const i = sanitizeSlotIndex(slotIndex);
+        if (i === null || !assets) return;
+
+        const group = new THREE.Group();
+        group.name = `material_calibration_slot_${i}`;
+        const baseX = (i - 1) * SLOT_X_SPACING;
+        group.position.set(baseX, 0, 0);
+        this.root.add(group);
+        this._slotGroups[i] = group;
+        this._slotBasePositions[i] = group.position.clone();
+
+        const plate = this._createSlotMesh({
+            name: 'plate',
+            geometry: assets.plateGeo,
+            material: assets.plateMatBase.clone(),
+            position: { x: 0, y: PLATE_THICKNESS * 0.5, z: 0 },
+            castShadow: false,
+            receiveShadow: true,
+            slotIndex: i
+        });
+        if (plate) {
             group.add(plate);
             this._slotPlates[i] = plate;
-
-            const slotMat = new THREE.MeshStandardMaterial({
-                color: 0xffffff,
-                roughness: 1.0,
-                metalness: 0.0
-            });
-
-            const panel = new THREE.Mesh(panelGeo, slotMat);
-            panel.name = 'panel';
-            panel.position.set(0, PLATE_THICKNESS + 1.15, -0.95);
-            panel.receiveShadow = true;
-            panel.userData.materialCalibrationSlotIndex = i;
-            group.add(panel);
-
-            const sphere = new THREE.Mesh(sphereGeo, slotMat);
-            sphere.name = 'sphere';
-            sphere.position.set(-0.55, PLATE_THICKNESS + SPHERE_RADIUS, 0.55);
-            sphere.castShadow = true;
-            sphere.receiveShadow = true;
-            sphere.userData.materialCalibrationSlotIndex = i;
-            group.add(sphere);
-
-            const cube = new THREE.Mesh(cubeGeo, slotMat);
-            cube.name = 'cube';
-            cube.position.set(0.7, PLATE_THICKNESS + (CUBE_SIZE * 0.5), 0.25);
-            cube.rotation.y = Math.PI * 0.25;
-            cube.castShadow = true;
-            cube.receiveShadow = true;
-            cube.userData.materialCalibrationSlotIndex = i;
-            group.add(cube);
-
-            this._slotMaterials[i] = slotMat;
-            this._slotMaterialIds[i] = null;
-            this._slotOverrides[i] = Object.freeze({});
         }
 
-        this._applyLayoutMode();
-        this._recomputeFocusSpheres();
+        const slotMat = this._createSlotSurfaceMaterial();
+        const panel = this._createSlotMesh({
+            name: 'panel',
+            geometry: assets.panelGeo,
+            material: slotMat,
+            position: { x: 0, y: PLATE_THICKNESS + 1.15, z: -0.95 },
+            castShadow: false,
+            receiveShadow: true,
+            slotIndex: i
+        });
+        if (panel) group.add(panel);
+
+        const sphere = this._createSlotMesh({
+            name: 'sphere',
+            geometry: assets.sphereGeo,
+            material: slotMat,
+            position: { x: -0.55, y: PLATE_THICKNESS + SPHERE_RADIUS, z: 0.55 },
+            castShadow: true,
+            receiveShadow: true,
+            slotIndex: i
+        });
+        if (sphere) group.add(sphere);
+
+        const cube = this._createSlotMesh({
+            name: 'cube',
+            geometry: assets.cubeGeo,
+            material: slotMat,
+            position: { x: 0.7, y: PLATE_THICKNESS + (CUBE_SIZE * 0.5), z: 0.25 },
+            rotationY: Math.PI * 0.25,
+            castShadow: true,
+            receiveShadow: true,
+            slotIndex: i
+        });
+        if (cube) group.add(cube);
+
+        this._slotMaterials[i] = slotMat;
+        this._slotMaterialIds[i] = null;
+        this._slotOverrides[i] = EMPTY_OVERRIDES;
+    }
+
+    _buildSlots() {
+        const assets = this._createSlotGeometryAssets();
+        this._forEachSlot((slotIndex) => this._buildSlotGroup(slotIndex, assets));
+        this._refreshSlotVisibilityAndBounds();
     }
 
     _applyLayoutMode() {
-        for (let i = 0; i < SLOT_COUNT; i++) {
-            const group = this._slotGroups[i];
-            if (!group) continue;
-            group.visible = this._isolatedSlotIndex === null || this._isolatedSlotIndex === i;
+        this._forEachSlotGroup((slotIndex, group) => {
+            group.visible = this._isolatedSlotIndex === null || this._isolatedSlotIndex === slotIndex;
             group.traverse((obj) => {
                 if (!obj?.isMesh) return;
-                if (obj.name === 'plate') {
-                    obj.visible = this._plateVisible;
-                    return;
-                }
-                if (this._layoutMode === 'full') obj.visible = true;
-                else if (this._layoutMode === 'panel') obj.visible = obj.name === 'panel';
-                else if (this._layoutMode === 'sphere') obj.visible = obj.name === 'sphere';
-                else obj.visible = true;
+                obj.visible = this._isSlotObjectVisibleForLayout(obj.name);
             });
-        }
+        });
     }
 
     _recomputeFocusSpheres() {
         const box = new THREE.Box3();
         const sphere = new THREE.Sphere();
-        for (let i = 0; i < SLOT_COUNT; i++) {
-            const group = this._slotGroups[i];
-            if (!group) continue;
+        this._forEachSlot((slotIndex) => {
+            const group = this._slotGroups[slotIndex] ?? null;
+            if (!group) return;
             box.setFromObject(group);
             if (box.isEmpty()) {
-                this._slotFocusSphere[i] = null;
-                continue;
+                this._slotFocusSphere[slotIndex] = null;
+                return;
             }
             box.getBoundingSphere(sphere);
-            this._slotFocusSphere[i] = { center: sphere.center.clone(), radius: Math.max(0.1, sphere.radius) };
-        }
+            this._slotFocusSphere[slotIndex] = { center: sphere.center.clone(), radius: Math.max(0.1, sphere.radius) };
+        });
     }
 
     _buildCamera() {
@@ -1097,19 +1320,14 @@ if (uBusSimRoughnessRemapEnabled > 0.5) {
     }
 
     _syncActiveSlotHighlight() {
-        for (let i = 0; i < SLOT_COUNT; i++) {
-            const plate = this._slotPlates[i] ?? null;
+        this._forEachSlot((slotIndex) => {
+            const plate = this._slotPlates[slotIndex] ?? null;
             const mat = plate?.material ?? null;
-            if (!mat || Array.isArray(mat)) continue;
-            if (i === this._activeSlotIndex) {
-                mat.color.setHex(0x2a3b46);
-                mat.emissive?.setHex?.(0x0a141c);
-                if ('emissiveIntensity' in mat) mat.emissiveIntensity = 0.25;
-            } else {
-                mat.color.setHex(0x1f242c);
-                mat.emissive?.setHex?.(0x000000);
-                if ('emissiveIntensity' in mat) mat.emissiveIntensity = 0;
-            }
-        }
+            if (!mat || Array.isArray(mat)) return;
+            const style = slotIndex === this._activeSlotIndex ? SLOT_PLATE_STYLE.active : SLOT_PLATE_STYLE.inactive;
+            mat.color.setHex(style.colorHex);
+            mat.emissive?.setHex?.(style.emissiveHex);
+            if ('emissiveIntensity' in mat) mat.emissiveIntensity = style.emissiveIntensity;
+        });
     }
 }

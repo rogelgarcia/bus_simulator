@@ -59,6 +59,32 @@ function getSlotIndexForMaterialId(materialId, slotMaterialIds) {
     return idx >= 0 ? idx : null;
 }
 
+const OVERRIDE_CONTROL_DEFS = Object.freeze([
+    { type: 'number', id: 'tileMeters', label: 'Tile meters', min: 0.25, max: 16, step: 0.05, digits: 2, bindGroup: 'topLevel', bindKey: 'tileMeters', defaultValue: null },
+    { type: 'number', id: 'albedoBrightness', label: 'Albedo bright', min: 0, max: 4, step: 0.01, digits: 2, bindGroup: 'topLevel', bindKey: 'albedoBrightness', defaultValue: 1.0 },
+    { type: 'number', id: 'albedoHueDegrees', label: 'Albedo hue°', min: -180, max: 180, step: 1, digits: 0, bindGroup: 'topLevel', bindKey: 'albedoHueDegrees', defaultValue: 0.0 },
+    { type: 'number', id: 'albedoTintStrength', label: 'Albedo tint', min: 0, max: 1, step: 0.01, digits: 2, bindGroup: 'topLevel', bindKey: 'albedoTintStrength', defaultValue: 0.0 },
+    { type: 'number', id: 'albedoSaturation', label: 'Albedo sat', min: -1, max: 1, step: 0.01, digits: 2, bindGroup: 'topLevel', bindKey: 'albedoSaturation', defaultValue: 0.0 },
+    { type: 'number', id: 'roughness', label: 'Roughness mul', min: 0, max: 1, step: 0.01, digits: 2, bindGroup: 'topLevel', bindKey: 'roughness', defaultValue: 1.0 },
+    { type: 'number', id: 'roughnessRemapMin', label: 'Rough remap min', min: 0, max: 1, step: 0.01, digits: 2, bindGroup: 'roughnessRemap', bindKey: 'min', defaultValue: 0.0 },
+    { type: 'number', id: 'roughnessRemapMax', label: 'Rough remap max', min: 0, max: 1, step: 0.01, digits: 2, bindGroup: 'roughnessRemap', bindKey: 'max', defaultValue: 1.0 },
+    { type: 'number', id: 'roughnessRemapGamma', label: 'Rough gamma', min: 0.1, max: 4, step: 0.01, digits: 2, bindGroup: 'roughnessRemap', bindKey: 'gamma', defaultValue: 1.0 },
+    { type: 'number', id: 'roughnessRemapLowPercentile', label: 'Rough low %', min: 0, max: 100, step: 1, digits: 0, bindGroup: 'roughnessRemap', bindKey: 'lowPercentile', defaultValue: 0.0 },
+    { type: 'number', id: 'roughnessRemapHighPercentile', label: 'Rough high %', min: 0, max: 100, step: 1, digits: 0, bindGroup: 'roughnessRemap', bindKey: 'highPercentile', defaultValue: 100.0 },
+    { type: 'switch', id: 'roughnessRemapInvertInput', label: 'Rough invert', bindGroup: 'roughnessRemap', bindKey: 'invertInput', defaultValue: false },
+    { type: 'number', id: 'normalStrength', label: 'Normal int', min: 0, max: 8, step: 0.01, digits: 2, bindGroup: 'topLevel', bindKey: 'normalStrength', defaultValue: 1.0 },
+    { type: 'number', id: 'aoIntensity', label: 'AO int', min: 0, max: 2, step: 0.01, digits: 2, bindGroup: 'topLevel', bindKey: 'aoIntensity', defaultValue: 1.0 },
+    { type: 'number', id: 'metalness', label: 'Metalness', min: 0, max: 1, step: 0.01, digits: 2, bindGroup: 'topLevel', bindKey: 'metalness', defaultValue: 0.0 }
+]);
+
+function getOverrideControlPropNames(controlId) {
+    const id = toId(controlId);
+    return {
+        range: id ? `${id}Range` : '',
+        number: id ? `${id}Number` : ''
+    };
+}
+
 export class MaterialCalibrationUI {
     constructor() {
         this.root = document.createElement('div');
@@ -84,6 +110,7 @@ export class MaterialCalibrationUI {
         this.rulerLabel.className = 'material-calibration-viewport-label material-calibration-ruler-label';
         this.rulerLabel.style.display = 'none';
         this.viewportOverlay.appendChild(this.rulerLabel);
+        this._overrideInputs = [];
 
         this._buildLeftPanels();
         this._buildRightPanel();
@@ -168,49 +195,53 @@ export class MaterialCalibrationUI {
     _bind() {
         if (this._bound) return;
         this._bound = true;
-
-        this.exitBtn?.addEventListener?.('click', this._onExitClick, { passive: false });
-        this.classSelect?.addEventListener?.('change', this._onClassChange);
-        this.calibrationModeToggle?.addEventListener?.('change', this._onCalibrationModeChange);
-        this.layoutSelect?.addEventListener?.('change', this._onLayoutChange);
-        this.tilingSelect?.addEventListener?.('change', this._onTilingChange);
-        this.illuminationSelect?.addEventListener?.('change', this._onIlluminationChange);
-        this.baselineSelect?.addEventListener?.('change', this._onBaselineChange);
-        this.catalogGrid?.addEventListener?.('click', this._onCatalogClick);
-        this.centerTools?.addEventListener?.('click', this._onCenterToolsClick);
-        this.exportBtn?.addEventListener?.('click', this._onExportClick, { passive: false });
-        this.screenshotBtn?.addEventListener?.('click', this._onScreenshotClick, { passive: false });
-
-        for (const el of this._getOverrideInputs()) {
-            el.addEventListener('input', this._onOverridesInput);
-            el.addEventListener('change', this._onOverridesInput);
+        for (const binding of this._getUiEventBindings()) {
+            const target = binding?.target ?? null;
+            const type = binding?.type ?? '';
+            const handler = binding?.handler ?? null;
+            if (!target || !type || !handler) continue;
+            if (binding?.options) target.addEventListener?.(type, handler, binding.options);
+            else target.addEventListener?.(type, handler);
         }
-
-        this.resetOverridesBtn?.addEventListener?.('click', this._onResetOverrides, { passive: false });
+        this._setOverrideInputsBindings(true);
     }
 
     _unbind() {
         if (!this._bound) return;
         this._bound = false;
-
-        this.exitBtn?.removeEventListener?.('click', this._onExitClick);
-        this.classSelect?.removeEventListener?.('change', this._onClassChange);
-        this.calibrationModeToggle?.removeEventListener?.('change', this._onCalibrationModeChange);
-        this.layoutSelect?.removeEventListener?.('change', this._onLayoutChange);
-        this.tilingSelect?.removeEventListener?.('change', this._onTilingChange);
-        this.illuminationSelect?.removeEventListener?.('change', this._onIlluminationChange);
-        this.baselineSelect?.removeEventListener?.('change', this._onBaselineChange);
-        this.catalogGrid?.removeEventListener?.('click', this._onCatalogClick);
-        this.centerTools?.removeEventListener?.('click', this._onCenterToolsClick);
-        this.exportBtn?.removeEventListener?.('click', this._onExportClick);
-        this.screenshotBtn?.removeEventListener?.('click', this._onScreenshotClick);
-
-        for (const el of this._getOverrideInputs()) {
-            el.removeEventListener('input', this._onOverridesInput);
-            el.removeEventListener('change', this._onOverridesInput);
+        for (const binding of this._getUiEventBindings()) {
+            const target = binding?.target ?? null;
+            const type = binding?.type ?? '';
+            const handler = binding?.handler ?? null;
+            if (!target || !type || !handler) continue;
+            target.removeEventListener?.(type, handler);
         }
+        this._setOverrideInputsBindings(false);
+    }
 
-        this.resetOverridesBtn?.removeEventListener?.('click', this._onResetOverrides);
+    _getUiEventBindings() {
+        return [
+            { target: this.exitBtn, type: 'click', handler: this._onExitClick, options: { passive: false } },
+            { target: this.classSelect, type: 'change', handler: this._onClassChange },
+            { target: this.calibrationModeToggle, type: 'change', handler: this._onCalibrationModeChange },
+            { target: this.layoutSelect, type: 'change', handler: this._onLayoutChange },
+            { target: this.tilingSelect, type: 'change', handler: this._onTilingChange },
+            { target: this.illuminationSelect, type: 'change', handler: this._onIlluminationChange },
+            { target: this.baselineSelect, type: 'change', handler: this._onBaselineChange },
+            { target: this.catalogGrid, type: 'click', handler: this._onCatalogClick },
+            { target: this.centerTools, type: 'click', handler: this._onCenterToolsClick },
+            { target: this.exportBtn, type: 'click', handler: this._onExportClick, options: { passive: false } },
+            { target: this.screenshotBtn, type: 'click', handler: this._onScreenshotClick, options: { passive: false } },
+            { target: this.resetOverridesBtn, type: 'click', handler: this._onResetOverrides, options: { passive: false } }
+        ];
+    }
+
+    _setOverrideInputsBindings(bound) {
+        const action = bound ? 'addEventListener' : 'removeEventListener';
+        for (const el of this._getOverrideInputs()) {
+            el?.[action]?.('input', this._onOverridesInput);
+            el?.[action]?.('change', this._onOverridesInput);
+        }
     }
 
     _buildLeftPanels() {
@@ -462,186 +493,112 @@ export class MaterialCalibrationUI {
     }
 
     _buildOverrideControls() {
-        const makeRow = (label, { min, max, step, digits = 2, id }) => {
-            const row = document.createElement('div');
-            row.className = 'material-calibration-control-row';
-            row.dataset.id = id;
+        this._overrideInputs = [];
+        for (const control of OVERRIDE_CONTROL_DEFS) {
+            if (control?.type === 'switch') this._appendSwitchOverrideControl(control);
+            else this._appendNumericOverrideControl(control);
+        }
+    }
 
-            const lab = document.createElement('div');
-            lab.className = 'material-calibration-row-label';
-            lab.textContent = label;
+    _appendNumericOverrideControl(control) {
+        const row = document.createElement('div');
+        row.className = 'material-calibration-control-row';
+        row.dataset.id = control.id;
 
-            const body = document.createElement('div');
-            body.className = 'material-calibration-control-body';
+        const lab = document.createElement('div');
+        lab.className = 'material-calibration-row-label';
+        lab.textContent = control.label;
 
-            const range = document.createElement('input');
-            range.type = 'range';
-            range.className = 'material-calibration-range';
-            range.min = String(min);
-            range.max = String(max);
-            range.step = String(step);
+        const body = document.createElement('div');
+        body.className = 'material-calibration-control-body';
 
-            const num = document.createElement('input');
-            num.type = 'number';
-            num.className = 'material-calibration-number';
-            num.min = String(min);
-            num.max = String(max);
-            num.step = String(step);
+        const range = document.createElement('input');
+        range.type = 'range';
+        range.className = 'material-calibration-range';
+        range.min = String(control.min);
+        range.max = String(control.max);
+        range.step = String(control.step);
 
-            const sync = (value) => {
-                const v = clamp(value, Number(min), Number(max));
-                range.value = String(v);
-                num.value = v.toFixed(digits);
-            };
+        const num = document.createElement('input');
+        num.type = 'number';
+        num.className = 'material-calibration-number';
+        num.min = String(control.min);
+        num.max = String(control.max);
+        num.step = String(control.step);
 
-            range.addEventListener('input', () => sync(parseNumberInput(range.value, Number(min))));
-            num.addEventListener('input', () => sync(parseNumberInput(num.value, Number(min))));
-            sync(Number(min));
+        const props = getOverrideControlPropNames(control.id);
+        this[props.range] = range;
+        this[props.number] = num;
+        this._registerOverrideInput(range);
+        this._registerOverrideInput(num);
 
-            body.appendChild(range);
-            body.appendChild(num);
-            row.appendChild(lab);
-            row.appendChild(body);
-            return { row, range, num };
-        };
+        const sync = (value) => this._setNumericOverrideControlValue(control, value);
+        range.addEventListener('input', () => sync(parseNumberInput(range.value, Number(control.min))));
+        num.addEventListener('input', () => sync(parseNumberInput(num.value, Number(control.min))));
+        sync(Number(control.min));
 
-        const makeSwitchRow = (label, { id }) => {
-            const row = document.createElement('div');
-            row.className = 'material-calibration-control-row';
-            row.dataset.id = id;
+        body.appendChild(range);
+        body.appendChild(num);
+        row.appendChild(lab);
+        row.appendChild(body);
+        this.overridesGrid.appendChild(row);
+    }
 
-            const lab = document.createElement('div');
-            lab.className = 'material-calibration-row-label';
-            lab.textContent = label;
+    _appendSwitchOverrideControl(control) {
+        const row = document.createElement('div');
+        row.className = 'material-calibration-control-row';
+        row.dataset.id = control.id;
 
-            const body = document.createElement('div');
-            body.className = 'material-calibration-control-body material-calibration-control-body-switch';
+        const lab = document.createElement('div');
+        lab.className = 'material-calibration-row-label';
+        lab.textContent = control.label;
 
-            const switchWrap = document.createElement('label');
-            switchWrap.className = 'material-calibration-switch material-calibration-switch-sm';
+        const body = document.createElement('div');
+        body.className = 'material-calibration-control-body material-calibration-control-body-switch';
 
-            const input = document.createElement('input');
-            input.type = 'checkbox';
-            input.className = 'material-calibration-switch-input';
+        const switchWrap = document.createElement('label');
+        switchWrap.className = 'material-calibration-switch material-calibration-switch-sm';
 
-            const track = document.createElement('span');
-            track.className = 'material-calibration-switch-track';
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.className = 'material-calibration-switch-input';
+        this[control.id] = input;
+        this._registerOverrideInput(input);
 
-            switchWrap.appendChild(input);
-            switchWrap.appendChild(track);
-            body.appendChild(switchWrap);
-            row.appendChild(lab);
-            row.appendChild(body);
-            return { row, input };
-        };
+        const track = document.createElement('span');
+        track.className = 'material-calibration-switch-track';
 
-        const tile = makeRow('Tile meters', { id: 'tileMeters', min: 0.25, max: 16, step: 0.05, digits: 2 });
-        this.tileMetersRange = tile.range;
-        this.tileMetersNumber = tile.num;
-        this.overridesGrid.appendChild(tile.row);
+        switchWrap.appendChild(input);
+        switchWrap.appendChild(track);
+        body.appendChild(switchWrap);
+        row.appendChild(lab);
+        row.appendChild(body);
+        this.overridesGrid.appendChild(row);
+    }
 
-        const albedoBright = makeRow('Albedo bright', { id: 'albedoBrightness', min: 0, max: 4, step: 0.01, digits: 2 });
-        this.albedoBrightnessRange = albedoBright.range;
-        this.albedoBrightnessNumber = albedoBright.num;
-        this.overridesGrid.appendChild(albedoBright.row);
+    _setNumericOverrideControlValue(control, value) {
+        const props = getOverrideControlPropNames(control.id);
+        const range = this[props.range];
+        const num = this[props.number];
+        if (!range || !num) return;
 
-        const albedoHue = makeRow('Albedo hue°', { id: 'albedoHueDegrees', min: -180, max: 180, step: 1, digits: 0 });
-        this.albedoHueDegreesRange = albedoHue.range;
-        this.albedoHueDegreesNumber = albedoHue.num;
-        this.overridesGrid.appendChild(albedoHue.row);
+        const min = Number(control.min);
+        const max = Number(control.max);
+        const digits = Number(control.digits ?? 2);
+        const parsed = Number(value);
+        const fallback = Number(control.min);
+        const next = Number.isFinite(parsed) ? clamp(parsed, min, max) : fallback;
+        range.value = String(next);
+        num.value = next.toFixed(digits);
+    }
 
-        const albedoTint = makeRow('Albedo tint', { id: 'albedoTintStrength', min: 0, max: 1, step: 0.01, digits: 2 });
-        this.albedoTintStrengthRange = albedoTint.range;
-        this.albedoTintStrengthNumber = albedoTint.num;
-        this.overridesGrid.appendChild(albedoTint.row);
-
-        const albedoSat = makeRow('Albedo sat', { id: 'albedoSaturation', min: -1, max: 1, step: 0.01, digits: 2 });
-        this.albedoSaturationRange = albedoSat.range;
-        this.albedoSaturationNumber = albedoSat.num;
-        this.overridesGrid.appendChild(albedoSat.row);
-
-        const rough = makeRow('Roughness mul', { id: 'roughness', min: 0, max: 1, step: 0.01, digits: 2 });
-        this.roughnessRange = rough.range;
-        this.roughnessNumber = rough.num;
-        this.overridesGrid.appendChild(rough.row);
-
-        const roughMin = makeRow('Rough remap min', { id: 'roughnessRemapMin', min: 0, max: 1, step: 0.01, digits: 2 });
-        this.roughnessRemapMinRange = roughMin.range;
-        this.roughnessRemapMinNumber = roughMin.num;
-        this.overridesGrid.appendChild(roughMin.row);
-
-        const roughMax = makeRow('Rough remap max', { id: 'roughnessRemapMax', min: 0, max: 1, step: 0.01, digits: 2 });
-        this.roughnessRemapMaxRange = roughMax.range;
-        this.roughnessRemapMaxNumber = roughMax.num;
-        this.overridesGrid.appendChild(roughMax.row);
-
-        const roughGamma = makeRow('Rough gamma', { id: 'roughnessRemapGamma', min: 0.1, max: 4, step: 0.01, digits: 2 });
-        this.roughnessRemapGammaRange = roughGamma.range;
-        this.roughnessRemapGammaNumber = roughGamma.num;
-        this.overridesGrid.appendChild(roughGamma.row);
-
-        const roughLow = makeRow('Rough low %', { id: 'roughnessRemapLowPercentile', min: 0, max: 100, step: 1, digits: 0 });
-        this.roughnessRemapLowPercentileRange = roughLow.range;
-        this.roughnessRemapLowPercentileNumber = roughLow.num;
-        this.overridesGrid.appendChild(roughLow.row);
-
-        const roughHigh = makeRow('Rough high %', { id: 'roughnessRemapHighPercentile', min: 0, max: 100, step: 1, digits: 0 });
-        this.roughnessRemapHighPercentileRange = roughHigh.range;
-        this.roughnessRemapHighPercentileNumber = roughHigh.num;
-        this.overridesGrid.appendChild(roughHigh.row);
-
-        const roughInvert = makeSwitchRow('Rough invert', { id: 'roughnessRemapInvertInput' });
-        this.roughnessRemapInvertInput = roughInvert.input;
-        this.overridesGrid.appendChild(roughInvert.row);
-
-        const normal = makeRow('Normal int', { id: 'normalStrength', min: 0, max: 8, step: 0.01, digits: 2 });
-        this.normalStrengthRange = normal.range;
-        this.normalStrengthNumber = normal.num;
-        this.overridesGrid.appendChild(normal.row);
-
-        const ao = makeRow('AO int', { id: 'aoIntensity', min: 0, max: 2, step: 0.01, digits: 2 });
-        this.aoIntensityRange = ao.range;
-        this.aoIntensityNumber = ao.num;
-        this.overridesGrid.appendChild(ao.row);
-
-        const metal = makeRow('Metalness', { id: 'metalness', min: 0, max: 1, step: 0.01, digits: 2 });
-        this.metalnessRange = metal.range;
-        this.metalnessNumber = metal.num;
-        this.overridesGrid.appendChild(metal.row);
+    _registerOverrideInput(input) {
+        if (!input) return;
+        this._overrideInputs.push(input);
     }
 
     _getOverrideInputs() {
-        return [
-            this.tileMetersRange,
-            this.tileMetersNumber,
-            this.albedoBrightnessRange,
-            this.albedoBrightnessNumber,
-            this.albedoHueDegreesRange,
-            this.albedoHueDegreesNumber,
-            this.albedoTintStrengthRange,
-            this.albedoTintStrengthNumber,
-            this.albedoSaturationRange,
-            this.albedoSaturationNumber,
-            this.roughnessRange,
-            this.roughnessNumber,
-            this.roughnessRemapMinRange,
-            this.roughnessRemapMinNumber,
-            this.roughnessRemapMaxRange,
-            this.roughnessRemapMaxNumber,
-            this.roughnessRemapGammaRange,
-            this.roughnessRemapGammaNumber,
-            this.roughnessRemapLowPercentileRange,
-            this.roughnessRemapLowPercentileNumber,
-            this.roughnessRemapHighPercentileRange,
-            this.roughnessRemapHighPercentileNumber,
-            this.roughnessRemapInvertInput,
-            this.normalStrengthRange,
-            this.normalStrengthNumber,
-            this.aoIntensityRange,
-            this.aoIntensityNumber,
-            this.metalnessRange,
-            this.metalnessNumber
-        ].filter(Boolean);
+        return this._overrideInputs.slice();
     }
 
     _handleCatalogClick(e) {
@@ -680,7 +637,7 @@ export class MaterialCalibrationUI {
         this.onSetOverrides?.(id, this.getOverridesFromUi());
     }
 
-    _getRoughnessRemapFromUi() {
+    _getRoughnessRemapFromUi({ includeIdentity = false } = {}) {
         const minRaw = clamp(parseNumberInput(this.roughnessRemapMinNumber?.value, 0), 0, 1);
         const maxRaw = clamp(parseNumberInput(this.roughnessRemapMaxNumber?.value, 1), 0, 1);
         const gamma = clamp(parseNumberInput(this.roughnessRemapGammaNumber?.value, 1), 0.1, 4);
@@ -714,22 +671,18 @@ export class MaterialCalibrationUI {
             && Math.abs(highForIdentity - 100) <= eps
             && out.invertInput !== true
         );
-        return isIdentity ? null : out;
+        if (isIdentity && includeIdentity !== true) return null;
+        return out;
     }
 
-    getOverridesFromUi() {
-        const out = {
-            tileMeters: parseNumberInput(this.tileMetersNumber?.value, null),
-            albedoBrightness: parseNumberInput(this.albedoBrightnessNumber?.value, null),
-            albedoHueDegrees: parseNumberInput(this.albedoHueDegreesNumber?.value, null),
-            albedoTintStrength: parseNumberInput(this.albedoTintStrengthNumber?.value, null),
-            albedoSaturation: parseNumberInput(this.albedoSaturationNumber?.value, null),
-            roughness: parseNumberInput(this.roughnessNumber?.value, null),
-            normalStrength: parseNumberInput(this.normalStrengthNumber?.value, null),
-            aoIntensity: parseNumberInput(this.aoIntensityNumber?.value, null),
-            metalness: parseNumberInput(this.metalnessNumber?.value, null)
-        };
-        const roughnessRemap = this._getRoughnessRemapFromUi();
+    getOverridesFromUi({ includeIdentityRoughnessRemap = false } = {}) {
+        const out = {};
+        for (const control of OVERRIDE_CONTROL_DEFS) {
+            if (control?.type !== 'number' || control?.bindGroup !== 'topLevel') continue;
+            const props = getOverrideControlPropNames(control.id);
+            out[control.bindKey] = parseNumberInput(this[props.number]?.value, null);
+        }
+        const roughnessRemap = this._getRoughnessRemapFromUi({ includeIdentity: includeIdentityRoughnessRemap });
         if (roughnessRemap) out.roughnessRemap = roughnessRemap;
         return out;
     }
@@ -878,30 +831,22 @@ export class MaterialCalibrationUI {
     }
 
     _setOverridesUi(ovr) {
-        const set = (range, num, value, { min, max, digits = 2 } = {}) => {
-            if (!range || !num) return;
-            const vRaw = Number.isFinite(Number(value)) ? Number(value) : null;
-            const v = vRaw === null ? Number(min) : clamp(vRaw, Number(min), Number(max));
-            range.value = String(v);
-            num.value = v.toFixed(digits);
-        };
-
-        set(this.tileMetersRange, this.tileMetersNumber, ovr.tileMeters ?? null, { min: 0.25, max: 16, digits: 2 });
-        set(this.albedoBrightnessRange, this.albedoBrightnessNumber, ovr.albedoBrightness ?? 1.0, { min: 0, max: 4, digits: 2 });
-        set(this.albedoHueDegreesRange, this.albedoHueDegreesNumber, ovr.albedoHueDegrees ?? 0.0, { min: -180, max: 180, digits: 0 });
-        set(this.albedoTintStrengthRange, this.albedoTintStrengthNumber, ovr.albedoTintStrength ?? 0.0, { min: 0, max: 1, digits: 2 });
-        set(this.albedoSaturationRange, this.albedoSaturationNumber, ovr.albedoSaturation ?? 0.0, { min: -1, max: 1, digits: 2 });
-        set(this.roughnessRange, this.roughnessNumber, ovr.roughness ?? 1.0, { min: 0, max: 1, digits: 2 });
         const remap = ovr.roughnessRemap && typeof ovr.roughnessRemap === 'object' ? ovr.roughnessRemap : null;
-        set(this.roughnessRemapMinRange, this.roughnessRemapMinNumber, remap?.min ?? 0.0, { min: 0, max: 1, digits: 2 });
-        set(this.roughnessRemapMaxRange, this.roughnessRemapMaxNumber, remap?.max ?? 1.0, { min: 0, max: 1, digits: 2 });
-        set(this.roughnessRemapGammaRange, this.roughnessRemapGammaNumber, remap?.gamma ?? 1.0, { min: 0.1, max: 4, digits: 2 });
-        set(this.roughnessRemapLowPercentileRange, this.roughnessRemapLowPercentileNumber, remap?.lowPercentile ?? 0.0, { min: 0, max: 100, digits: 0 });
-        set(this.roughnessRemapHighPercentileRange, this.roughnessRemapHighPercentileNumber, remap?.highPercentile ?? 100.0, { min: 0, max: 100, digits: 0 });
-        if (this.roughnessRemapInvertInput) this.roughnessRemapInvertInput.checked = remap?.invertInput === true;
-        set(this.normalStrengthRange, this.normalStrengthNumber, ovr.normalStrength ?? 1.0, { min: 0, max: 8, digits: 2 });
-        set(this.aoIntensityRange, this.aoIntensityNumber, ovr.aoIntensity ?? 1.0, { min: 0, max: 2, digits: 2 });
-        set(this.metalnessRange, this.metalnessNumber, ovr.metalness ?? 0.0, { min: 0, max: 1, digits: 2 });
+        for (const control of OVERRIDE_CONTROL_DEFS) {
+            if (control?.type === 'switch') {
+                const input = this[control.id];
+                if (!input) continue;
+                if (control.bindGroup === 'roughnessRemap') input.checked = remap?.[control.bindKey] === true;
+                else input.checked = ovr?.[control.bindKey] === true;
+                continue;
+            }
+
+            if (control?.type !== 'number') continue;
+            let nextValue = control.defaultValue;
+            if (control.bindGroup === 'roughnessRemap') nextValue = remap?.[control.bindKey] ?? control.defaultValue;
+            else nextValue = ovr?.[control.bindKey] ?? control.defaultValue;
+            this._setNumericOverrideControlValue(control, nextValue);
+        }
     }
 
     setRulerEnabled(enabled) {

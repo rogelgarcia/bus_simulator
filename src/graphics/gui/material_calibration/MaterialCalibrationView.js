@@ -522,19 +522,6 @@ function readStoredState() {
 
         const baselineMaterialId = sanitizeMaterialId(parsed?.baselineMaterialId);
 
-        const overridesRaw = parsed?.overridesByMaterialId && typeof parsed.overridesByMaterialId === 'object'
-            ? parsed.overridesByMaterialId
-            : null;
-        const overridesByMaterialId = {};
-        if (overridesRaw) {
-            for (const [materialId, overrides] of Object.entries(overridesRaw)) {
-                const id = sanitizeMaterialId(materialId);
-                if (!id) continue;
-                const clean = sanitizeOverrides(overrides);
-                if (Object.keys(clean).length) overridesByMaterialId[id] = clean;
-            }
-        }
-
         return {
             selectedClassId,
             illuminationPresetId,
@@ -543,8 +530,7 @@ function readStoredState() {
             calibrationMode,
             activeSlotIndex,
             slotMaterialIds,
-            baselineMaterialId,
-            overridesByMaterialId
+            baselineMaterialId
         };
     } catch {
         return null;
@@ -630,8 +616,6 @@ export class MaterialCalibrationView {
         this._pendingCorrectionSync = false;
         this._correctionOverridesByMaterialId = {};
         this._correctionLoadToken = 0;
-        this._lastCalibratedOverridesByMaterialId = {};
-        this._rawToggleCalibrationSnapshot = null;
 
         this._onCanvasPointerMove = (e) => this._handlePointerMove(e);
         this._onCanvasPointerDown = (e) => this._handlePointerDown(e);
@@ -653,29 +637,44 @@ export class MaterialCalibrationView {
         this._selectedSlotCameraIndex = null;
         this.ui.setSelectedSlotCameraIndex?.(null);
         this._initialCameraPose = this._captureCurrentCameraPose();
-        this._primeCorrectionOverridesForCatalog().catch(() => {});
+        this._primeCorrectionOverridesForCatalog().catch((err) => {
+            console.error('[MaterialCalibration] Failed to load correction overrides for catalog:', err);
+        });
+        this._bindUiCallbacks();
+        this._addGlobalInputListeners();
+    }
 
+    exit() {
+        this._removeGlobalInputListeners();
+        this._clearKeys();
+
+        this._setRulerEnabled(false);
+        this.scene?.clearRuler?.();
+        this.ui?.setRulerLabel?.({ visible: false });
+        this._unbindUiCallbacks();
+        this._selectedSlotCameraIndex = null;
+        this._initialCameraPose = null;
+        this._screenshotBusy = false;
+        this._pendingCorrectionSync = false;
+        this._correctionLoadToken += 1;
+        this._correctionOverridesByMaterialId = {};
+
+        this.ui.unmount();
+        this.scene.exit();
+    }
+
+    update(dt) {
+        this.scene.update(dt);
+        this._updateCameraFromKeys(dt);
+        this._syncRulerOverlay();
+    }
+
+    _bindUiCallbacks() {
         this.ui.onExit = () => this.onExit?.();
         this.ui.onSelectClass = (classId) => this._setSelectedClass(classId);
         this.ui.onToggleMaterial = (materialId) => this._toggleMaterial(materialId, { focus: false });
         this.ui.onFocusMaterial = (materialId) => this._toggleMaterial(materialId, { focus: true });
-        this.ui.onFocusSlot = (slotIndex) => {
-            const idx = sanitizeSlotIndex(slotIndex);
-            if (idx === null) return;
-            if (this._selectedSlotCameraIndex === idx) {
-                this._selectedSlotCameraIndex = null;
-                this.ui.setSelectedSlotCameraIndex?.(null);
-                this._restoreInitialCameraPose();
-                return;
-            }
-            this._selectedSlotCameraIndex = idx;
-            this.ui.setSelectedSlotCameraIndex?.(idx);
-            this._state.activeSlotIndex = idx;
-            this.scene.setActiveSlotIndex(idx);
-            this._syncUiFromState();
-            this._persist();
-            this._focusSlot(idx, { keepOrbit: true, zoomClose: true });
-        };
+        this.ui.onFocusSlot = (slotIndex) => this._handleFocusSlotRequest(slotIndex);
         this.ui.onSetLayoutMode = (layoutMode) => this._setLayoutMode(layoutMode);
         this.ui.onSetTilingMode = (tilingMode) => this._setTilingMode(tilingMode);
         this.ui.onSetCalibrationMode = (calibrationMode) => this._setCalibrationMode(calibrationMode);
@@ -686,32 +685,9 @@ export class MaterialCalibrationView {
         this.ui.onRequestExport = () => {};
         this.ui.onRequestScreenshot = () => this._requestCalibrationScreenshot();
         this.ui.setScreenshotBusy?.(false);
-
-        const canvas = this.engine?.canvas ?? null;
-        canvas?.addEventListener?.('pointermove', this._onCanvasPointerMove, { passive: true });
-        canvas?.addEventListener?.('pointerdown', this._onCanvasPointerDown, { passive: true });
-        canvas?.addEventListener?.('pointerup', this._onCanvasPointerUp, { passive: true });
-        canvas?.addEventListener?.('pointercancel', this._onCanvasPointerCancel, { passive: true });
-
-        window.addEventListener('keydown', this._onKeyDown, { passive: false });
-        window.addEventListener('keyup', this._onKeyUp, { passive: false });
     }
 
-    exit() {
-        const canvas = this.engine?.canvas ?? null;
-        canvas?.removeEventListener?.('pointermove', this._onCanvasPointerMove);
-        canvas?.removeEventListener?.('pointerdown', this._onCanvasPointerDown);
-        canvas?.removeEventListener?.('pointerup', this._onCanvasPointerUp);
-        canvas?.removeEventListener?.('pointercancel', this._onCanvasPointerCancel);
-
-        window.removeEventListener('keydown', this._onKeyDown);
-        window.removeEventListener('keyup', this._onKeyUp);
-        this._clearKeys();
-
-        this._setRulerEnabled(false);
-        this.scene?.clearRuler?.();
-        this.ui?.setRulerLabel?.({ visible: false });
-
+    _unbindUiCallbacks() {
         this.ui.onExit = null;
         this.ui.onSelectClass = null;
         this.ui.onToggleMaterial = null;
@@ -727,23 +703,28 @@ export class MaterialCalibrationView {
         this.ui.onRequestExport = null;
         this.ui.onRequestScreenshot = null;
         this.ui.setScreenshotBusy?.(false);
-        this._selectedSlotCameraIndex = null;
-        this._initialCameraPose = null;
-        this._screenshotBusy = false;
-        this._pendingCorrectionSync = false;
-        this._correctionLoadToken += 1;
-        this._correctionOverridesByMaterialId = {};
-        this._lastCalibratedOverridesByMaterialId = {};
-        this._rawToggleCalibrationSnapshot = null;
-
-        this.ui.unmount();
-        this.scene.exit();
     }
 
-    update(dt) {
-        this.scene.update(dt);
-        this._updateCameraFromKeys(dt);
-        this._syncRulerOverlay();
+    _addGlobalInputListeners() {
+        const canvas = this.engine?.canvas ?? null;
+        canvas?.addEventListener?.('pointermove', this._onCanvasPointerMove, { passive: true });
+        canvas?.addEventListener?.('pointerdown', this._onCanvasPointerDown, { passive: true });
+        canvas?.addEventListener?.('pointerup', this._onCanvasPointerUp, { passive: true });
+        canvas?.addEventListener?.('pointercancel', this._onCanvasPointerCancel, { passive: true });
+
+        window.addEventListener('keydown', this._onKeyDown, { passive: false });
+        window.addEventListener('keyup', this._onKeyUp, { passive: false });
+    }
+
+    _removeGlobalInputListeners() {
+        const canvas = this.engine?.canvas ?? null;
+        canvas?.removeEventListener?.('pointermove', this._onCanvasPointerMove);
+        canvas?.removeEventListener?.('pointerdown', this._onCanvasPointerDown);
+        canvas?.removeEventListener?.('pointerup', this._onCanvasPointerUp);
+        canvas?.removeEventListener?.('pointercancel', this._onCanvasPointerCancel);
+
+        window.removeEventListener('keydown', this._onKeyDown);
+        window.removeEventListener('keyup', this._onKeyUp);
     }
 
     _persist() {
@@ -756,10 +737,14 @@ export class MaterialCalibrationView {
             calibrationMode: state.calibrationMode,
             activeSlotIndex: state.activeSlotIndex,
             slotMaterialIds: state.slotMaterialIds.slice(0, 3),
-            baselineMaterialId: state.baselineMaterialId,
-            overridesByMaterialId: state.overridesByMaterialId
+            baselineMaterialId: state.baselineMaterialId
         };
         writeStoredState(payload);
+    }
+
+    _syncUiAndPersist() {
+        this._syncUiFromState();
+        this._persist();
     }
 
     _syncUiStatic() {
@@ -768,7 +753,7 @@ export class MaterialCalibrationView {
         this.ui.setIlluminationPresetOptions(getMaterialCalibrationIlluminationPresetOptions({ includeDefault: true }));
     }
 
-    _syncSceneFromState({ keepCamera = true } = {}) {
+    _syncSceneFromState({ keepCamera = true, forceMaterialUpdate = false } = {}) {
         const state = this._state;
         let correctedInvalidPreset = false;
         this.scene.setLayoutMode(state.layoutMode);
@@ -783,8 +768,8 @@ export class MaterialCalibrationView {
 
         for (let i = 0; i < 3; i++) {
             const id = sanitizeMaterialId(state.slotMaterialIds[i]);
-            const overrides = this._getResolvedSceneOverridesForMaterial(id);
-            this.scene.setSlotMaterial(i, id, { overrides });
+            const overrides = this._getEffectiveOverridesForMaterial(id, { forUi: false });
+            this.scene.setSlotMaterial(i, id, { overrides, forceMaterialUpdate: !!forceMaterialUpdate });
         }
 
         if (!keepCamera) this.scene.focusSlot(state.activeSlotIndex, { keepOrbit: false, immediate: true });
@@ -809,7 +794,7 @@ export class MaterialCalibrationView {
         const activeMaterialId = sanitizeMaterialId(state.slotMaterialIds[state.activeSlotIndex]);
         this.ui.setActiveMaterial({
             materialId: activeMaterialId,
-            overrides: this._getResolvedUiOverridesForMaterial(activeMaterialId)
+            overrides: this._getEffectiveOverridesForMaterial(activeMaterialId, { forUi: true })
         });
 
         this.ui.setRulerEnabled(this._rulerEnabled);
@@ -860,12 +845,36 @@ export class MaterialCalibrationView {
         }
     }
 
+    _setActiveSlotAndCommit(slotIndex) {
+        const idx = sanitizeSlotIndex(slotIndex);
+        if (idx === null) return false;
+        this._state.activeSlotIndex = idx;
+        this.scene.setActiveSlotIndex(idx);
+        this._syncUiAndPersist();
+        return true;
+    }
+
+    _handleFocusSlotRequest(slotIndex) {
+        const idx = sanitizeSlotIndex(slotIndex);
+        if (idx === null) return;
+        if (this._selectedSlotCameraIndex === idx) {
+            this._selectedSlotCameraIndex = null;
+            this.ui.setSelectedSlotCameraIndex?.(null);
+            this._restoreInitialCameraPose();
+            return;
+        }
+
+        this._selectedSlotCameraIndex = idx;
+        this.ui.setSelectedSlotCameraIndex?.(idx);
+        this._setActiveSlotAndCommit(idx);
+        this._focusSlot(idx, { keepOrbit: true, zoomClose: true });
+    }
+
     _setSelectedClass(classId) {
         const next = sanitizeClassId(classId, { fallback: this._state.selectedClassId });
         if (!next || next === this._state.selectedClassId) return;
         this._state.selectedClassId = next;
-        this._syncUiFromState();
-        this._persist();
+        this._syncUiAndPersist();
     }
 
     _ensureBaselineAndActive() {
@@ -901,134 +910,110 @@ export class MaterialCalibrationView {
         return { ...defaults, ...(correction ?? {}) };
     }
 
-    _getResolvedUiOverridesForMaterial(materialId) {
+    _getEffectiveOverridesForMaterial(materialId, { forUi = false } = {}) {
         const id = sanitizeMaterialId(materialId);
         if (!id) return null;
-
-        if (this._state.calibrationMode === 'raw') {
-            return getDefaultOverridesForMaterial(id);
-        }
-        const cached = this._lastCalibratedOverridesByMaterialId[id] ?? null;
+        if (this._state.calibrationMode === 'raw') return forUi ? getDefaultOverridesForMaterial(id) : null;
         const manual = this._state.overridesByMaterialId[id] ?? null;
-        const correction = this._getCorrectionOverridesForMaterial(id);
-        if (!manual && !correction && cached && typeof cached === 'object') return { ...cached };
         const baseline = this._getCalibrationBaselineOverridesForMaterial(id) ?? {};
         return { ...baseline, ...(manual ?? {}) };
     }
 
-    _getResolvedSceneOverridesForMaterial(materialId) {
+    _applyEffectiveOverridesToMaterialSlots(materialId, { forceMaterialUpdate = false } = {}) {
         const id = sanitizeMaterialId(materialId);
-        if (!id) return null;
-        if (this._state.calibrationMode === 'raw') return null;
+        if (!id) return;
 
-        const manual = this._state.overridesByMaterialId[id] ?? null;
-        const correction = this._getCorrectionOverridesForMaterial(id);
-        if (!manual && !correction) {
-            const cached = this._lastCalibratedOverridesByMaterialId[id] ?? null;
-            return cached && typeof cached === 'object' ? { ...cached } : null;
-        }
-
-        const baseline = this._getCalibrationBaselineOverridesForMaterial(id) ?? {};
-        const resolved = { ...baseline, ...(manual ?? {}) };
-        this._lastCalibratedOverridesByMaterialId[id] = sanitizeOverrides(resolved);
-        return resolved;
-    }
-
-    _captureRawToggleCalibrationSnapshot() {
-        const snapshot = [];
+        const overrides = this._getEffectiveOverridesForMaterial(id, { forUi: false });
         for (let i = 0; i < 3; i++) {
-            const id = sanitizeMaterialId(this._state.slotMaterialIds[i]);
-            if (!id) continue;
-            const sceneOverrides = this.scene?._slotOverrides?.[i] ?? null;
-            const fromScene = sceneOverrides && typeof sceneOverrides === 'object'
-                ? sanitizeOverrides(sceneOverrides)
-                : null;
-            const fromSceneHasValues = !!fromScene && Object.keys(fromScene).length > 0;
-            const resolved = fromSceneHasValues ? fromScene : this._getResolvedSceneOverridesForMaterial(id);
-            const clean = resolved && typeof resolved === 'object' ? sanitizeOverrides(resolved) : null;
-            if (clean) this._lastCalibratedOverridesByMaterialId[id] = clean;
-            snapshot.push({
-                slotIndex: i,
-                materialId: id,
-                overrides: clean
-            });
-        }
-        return snapshot;
-    }
-
-    _restoreRawToggleCalibrationSnapshot() {
-        const snapshot = Array.isArray(this._rawToggleCalibrationSnapshot) ? this._rawToggleCalibrationSnapshot : null;
-        if (!snapshot || !snapshot.length) return;
-
-        for (const entry of snapshot) {
-            const idx = sanitizeSlotIndex(entry?.slotIndex);
-            const id = sanitizeMaterialId(entry?.materialId);
-            if (idx === null || !id) continue;
-            if (sanitizeMaterialId(this._state.slotMaterialIds[idx]) !== id) continue;
-            const overrides = entry?.overrides && typeof entry.overrides === 'object'
-                ? sanitizeOverrides(entry.overrides)
-                : null;
-            const hasOverrides = !!overrides && Object.keys(overrides).length > 0;
-            if (hasOverrides) this._lastCalibratedOverridesByMaterialId[id] = overrides;
-            this.scene.setSlotMaterial(idx, id, { overrides: hasOverrides ? overrides : null });
+            if (sanitizeMaterialId(this._state.slotMaterialIds[i]) !== id) continue;
+            this.scene.setSlotMaterial(i, id, { overrides, forceMaterialUpdate: !!forceMaterialUpdate });
         }
     }
 
-    async _primeCorrectionOverridesForCatalog() {
-        const token = ++this._correctionLoadToken;
-        const materialIds = this._materialOptions.map((opt) => sanitizeMaterialId(opt?.id)).filter(Boolean);
-        const resolved = await Promise.all(materialIds.map(async (id) => ({
-            id,
-            overrides: await this._loadCorrectionOverridesForMaterial(id)
-        })));
-        if (token !== this._correctionLoadToken) return;
-
-        const out = {};
-        for (const entry of resolved) {
-            if (entry?.overrides) out[entry.id] = entry.overrides;
-        }
-        this._correctionOverridesByMaterialId = out;
-
-        if (this._state.calibrationMode === 'calibrated') {
-            if (this._screenshotBusy) {
-                this._pendingCorrectionSync = true;
-                return;
-            }
-            this._syncSceneFromState({ keepCamera: true });
-            this._syncUiFromState();
-        }
-    }
-
-    async _refreshCorrectionOverridesForSelectedSlots({ forceReload = false } = {}) {
+    _reapplySelectedMaterialsViaOverridesPath({ forceMaterialUpdate = false } = {}) {
         const slotIds = this._state.slotMaterialIds
             .map((id) => sanitizeMaterialId(id))
             .filter(Boolean);
         const uniqueSlotIds = [...new Set(slotIds)];
-        const materialIds = forceReload
-            ? uniqueSlotIds
-            : uniqueSlotIds.filter((id) => !Object.prototype.hasOwnProperty.call(this._correctionOverridesByMaterialId, id));
-        if (!materialIds.length) return;
+        for (const id of uniqueSlotIds) {
+            this._applyEffectiveOverridesToMaterialSlots(id, { forceMaterialUpdate });
+        }
+    }
+
+    _getSelectedSlotMaterialIds() {
+        const slotIds = this._state.slotMaterialIds
+            .map((id) => sanitizeMaterialId(id))
+            .filter(Boolean);
+        return [...new Set(slotIds)];
+    }
+
+    async _loadCorrectionOverridesEntries(materialIds) {
+        const ids = (Array.isArray(materialIds) ? materialIds : [])
+            .map((id) => sanitizeMaterialId(id))
+            .filter(Boolean);
+        const uniqueIds = [...new Set(ids)];
+        if (!uniqueIds.length) return [];
 
         const token = ++this._correctionLoadToken;
-        const resolved = await Promise.all(materialIds.map(async (id) => ({
+        const resolved = await Promise.all(uniqueIds.map(async (id) => ({
             id,
             overrides: await this._loadCorrectionOverridesForMaterial(id)
         })));
-        if (token !== this._correctionLoadToken) return;
+        if (token !== this._correctionLoadToken) return null;
+        return resolved;
+    }
 
-        const next = { ...this._correctionOverridesByMaterialId };
-        for (const entry of resolved) {
-            if (entry?.overrides) next[entry.id] = entry.overrides;
+    _applyCorrectionOverrideEntries(entries, { replace = false } = {}) {
+        const next = replace ? {} : { ...this._correctionOverridesByMaterialId };
+        for (const entry of Array.isArray(entries) ? entries : []) {
+            const id = sanitizeMaterialId(entry?.id);
+            if (!id) continue;
+            next[id] = entry?.overrides ?? null;
         }
         this._correctionOverridesByMaterialId = next;
+    }
 
+    _syncAfterCorrectionOverridesChange({ forceMaterialUpdate = false } = {}) {
         if (this._state.calibrationMode !== 'calibrated') return;
         if (this._screenshotBusy) {
             this._pendingCorrectionSync = true;
             return;
         }
-        this._syncSceneFromState({ keepCamera: true });
+
+        if (forceMaterialUpdate) {
+            this._reapplySelectedMaterialsViaOverridesPath({ forceMaterialUpdate: true });
+        } else {
+            this._syncSceneFromState({ keepCamera: true });
+        }
         this._syncUiFromState();
+    }
+
+    async _primeCorrectionOverridesForCatalog() {
+        const materialIds = this._materialOptions.map((opt) => sanitizeMaterialId(opt?.id)).filter(Boolean);
+        const entries = await this._loadCorrectionOverridesEntries(materialIds);
+        if (!entries) return;
+        this._applyCorrectionOverrideEntries(entries, { replace: true });
+        this._syncAfterCorrectionOverridesChange({ forceMaterialUpdate: false });
+    }
+
+    async _refreshCorrectionOverridesForSelectedSlots({ forceReload = false } = {}) {
+        const uniqueSlotIds = this._getSelectedSlotMaterialIds();
+        const materialIds = forceReload
+            ? uniqueSlotIds
+            : uniqueSlotIds.filter((id) => !Object.prototype.hasOwnProperty.call(this._correctionOverridesByMaterialId, id));
+        if (!materialIds.length) return;
+
+        const entries = await this._loadCorrectionOverridesEntries(materialIds);
+        if (!entries) return;
+        this._applyCorrectionOverrideEntries(entries, { replace: false });
+        this._syncAfterCorrectionOverridesChange({ forceMaterialUpdate: true });
+    }
+
+    _refreshSelectedCorrectionOverridesWithLog({ forceReload = false, reason = 'selected slots update' } = {}) {
+        if (this._state.calibrationMode !== 'calibrated') return;
+        this._refreshCorrectionOverridesForSelectedSlots({ forceReload }).catch((err) => {
+            console.error(`[MaterialCalibration] Failed to refresh correction overrides (${reason}):`, err);
+        });
     }
 
     async _loadCorrectionOverridesForMaterial(materialId) {
@@ -1059,18 +1044,13 @@ export class MaterialCalibrationView {
         const existingSlot = state.slotMaterialIds.findIndex((v) => v === id);
         if (existingSlot >= 0) {
             if (focus) {
-                state.activeSlotIndex = existingSlot;
-                this.scene.setActiveSlotIndex(existingSlot);
-                this._syncUiFromState();
-                this._persist();
-                this._focusSlot(existingSlot, { keepOrbit: true });
+                if (this._setActiveSlotAndCommit(existingSlot)) {
+                    this._focusSlot(existingSlot, { keepOrbit: true });
+                }
                 return;
             }
             if (existingSlot === activeSlot) return;
-            state.activeSlotIndex = existingSlot;
-            this.scene.setActiveSlotIndex(existingSlot);
-            this._syncUiFromState();
-            this._persist();
+            this._setActiveSlotAndCommit(existingSlot);
             return;
         }
 
@@ -1079,13 +1059,13 @@ export class MaterialCalibrationView {
         state.activeSlotIndex = nextEmpty === null ? activeSlot : nextEmpty;
         this._ensureBaselineAndActive();
         this._applyStateToSceneAndUi({ keepCamera: true });
+        this._refreshSelectedCorrectionOverridesWithLog({ forceReload: false, reason: 'slot material selection' });
         if (focus) this._focusSlot(activeSlot, { keepOrbit: true });
     }
 
-    _applyStateToSceneAndUi({ keepCamera = true } = {}) {
-        this._syncSceneFromState({ keepCamera });
-        this._syncUiFromState();
-        this._persist();
+    _applyStateToSceneAndUi({ keepCamera = true, forceMaterialUpdate = false } = {}) {
+        this._syncSceneFromState({ keepCamera, forceMaterialUpdate });
+        this._syncUiAndPersist();
     }
 
     _focusSlot(slotIndex, { keepOrbit = true, zoomClose = false } = {}) {
@@ -1115,12 +1095,10 @@ export class MaterialCalibrationView {
         const next = sanitizeCalibrationMode(calibrationMode);
         if (next === this._state.calibrationMode) return;
         this._state.overridesByMaterialId = {};
-        this._lastCalibratedOverridesByMaterialId = {};
-        this._rawToggleCalibrationSnapshot = null;
         this._state.calibrationMode = next;
-        this._applyStateToSceneAndUi({ keepCamera: true });
+        this._applyStateToSceneAndUi({ keepCamera: true, forceMaterialUpdate: next === 'calibrated' });
         if (next === 'calibrated') {
-            this._refreshCorrectionOverridesForSelectedSlots({ forceReload: true }).catch(() => {});
+            this._refreshSelectedCorrectionOverridesWithLog({ forceReload: true, reason: 'mode switch to calibrated' });
         }
     }
 
@@ -1142,11 +1120,10 @@ export class MaterialCalibrationView {
         if (!selected.includes(id)) return;
         if (id === this._state.baselineMaterialId) return;
         this._state.baselineMaterialId = id;
-        this._syncUiFromState();
-        this._persist();
+        this._syncUiAndPersist();
     }
 
-    _setMaterialOverrides(materialId, overrides) {
+    _setMaterialOverrides(materialId, overrides, { forceMaterialUpdate = false } = {}) {
         const id = sanitizeMaterialId(materialId);
         if (!id) return;
         if (this._state.calibrationMode !== 'calibrated') return;
@@ -1156,12 +1133,8 @@ export class MaterialCalibrationView {
         if (Object.keys(clean).length) this._state.overridesByMaterialId[id] = clean;
         else delete this._state.overridesByMaterialId[id];
 
-        for (let i = 0; i < 3; i++) {
-            if (sanitizeMaterialId(this._state.slotMaterialIds[i]) !== id) continue;
-            this.scene.setSlotMaterial(i, id, { overrides: this._getResolvedSceneOverridesForMaterial(id) });
-        }
-        this._syncUiFromState();
-        this._persist();
+        this._applyEffectiveOverridesToMaterialSlots(id, { forceMaterialUpdate: !!forceMaterialUpdate });
+        this._syncUiAndPersist();
     }
 
     _setRulerEnabled(enabled) {
@@ -1176,12 +1149,6 @@ export class MaterialCalibrationView {
 
         this._rulerPointerDown = null;
         this._rulerPointerMoved = false;
-
-        if (!next) {
-            this._clearRulerMeasurement();
-            return;
-        }
-
         this._clearRulerMeasurement();
     }
 
@@ -1290,10 +1257,8 @@ export class MaterialCalibrationView {
         if (slotIndex === null) return;
 
         this._state.activeSlotIndex = slotIndex;
-        this.scene.setActiveSlotIndex(slotIndex);
         this._ensureBaselineAndActive();
-        this._syncUiFromState();
-        this._persist();
+        this._setActiveSlotAndCommit(this._state.activeSlotIndex);
     }
 
     _syncRulerOverlay() {
@@ -1406,8 +1371,7 @@ export class MaterialCalibrationView {
             this.ui.setScreenshotBusy?.(false);
             if (this._pendingCorrectionSync) {
                 this._pendingCorrectionSync = false;
-                this._syncSceneFromState({ keepCamera: true });
-                this._syncUiFromState();
+                this._syncAfterCorrectionOverridesChange({ forceMaterialUpdate: true });
             }
         }
     }
@@ -1715,7 +1679,7 @@ export class MaterialCalibrationView {
         if (!materialId) return ['Texture: (empty)', 'No texture selected for this platform.'];
 
         const baselineId = sanitizeMaterialId(this._state.baselineMaterialId);
-        const ovr = this._getResolvedUiOverridesForMaterial(materialId) ?? getDefaultOverridesForMaterial(materialId) ?? {};
+        const ovr = this._getEffectiveOverridesForMaterial(materialId, { forUi: true }) ?? getDefaultOverridesForMaterial(materialId) ?? {};
         const mode = this._state.calibrationMode === 'raw' ? 'raw' : 'calibrated';
         const hasPipelineCorrection = !!this._getCorrectionOverridesForMaterial(materialId);
         const roughnessRemap = ovr.roughnessRemap && typeof ovr.roughnessRemap === 'object' ? ovr.roughnessRemap : null;
