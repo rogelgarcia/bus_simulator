@@ -26,7 +26,7 @@ import { GrassLodInspectorPopup } from './GrassLodInspectorPopup.js';
 const EPS = 1e-6;
 const CAMERA_PRESET_BEHIND_GAMEPLAY_DISTANCE = 13.5;
 const ALBEDO_SATURATION_ADJUST_SHADER_VERSION = 2;
-const TERRAIN_BIOME_BLEND_SHADER_VERSION = 7;
+const TERRAIN_BIOME_BLEND_SHADER_VERSION = 8;
 const OUTPUT_PANEL_REFRESH_MS = 100;
 const FLYOVER_SAMPLE_RATE = 15;
 const FLYOVER_DEBUG_HELPER_LAYER = 1;
@@ -55,6 +55,12 @@ const BIOME_TILING_AXIS_HEAD_WIDTH_METERS = 0.30;
 const BIOME_TILING_AXIS_Y_OFFSET_METERS = 0.22;
 const BIOME_TILING_AXIS_LABEL_SIZE_METERS = 0.85;
 const BIOME_TILING_OVERVIEW_ANGLE_OFFSET_DEG = 15;
+const BIOME_TILING_RING_HELPER_Y_OFFSET_METERS = 0.28;
+const BIOME_TILING_RING_HELPER_NEAR_COLOR = 0x44f7a1;
+const BIOME_TILING_RING_HELPER_OUTER_COLOR = 0xfbbf24;
+const BIOME_TILING_LOD_MONITOR_WINDOW_SEC = 12.0;
+const BIOME_TILING_LOD_MONITOR_SAMPLE_MS = 120;
+const BIOME_TILING_LOD_POP_CANDIDATE_SEG_DELTA_PER_SEC = 2.0;
 
 const BIOME_TILING_CALIB_RIG_ANIMATION_MS = 4000;
 const BIOME_TILING_CALIB_RIG_PLATE_SIZE = 2.7;
@@ -68,6 +74,44 @@ const BIOME_TILING_CALIB_RIG_CAMERA_POSITION = Object.freeze({ x: 0.25, y: BIOME
 const BIOME_TILING_CALIB_RIG_SUN_POSITION = Object.freeze({ x: 4, y: 7, z: 4 });
 const BIOME_TILING_CALIB_RIG_SUN_TARGET = Object.freeze({ x: 0, y: 0.9, z: 0 });
 const BIOME_TILING_CALIB_RIG_ELEVATION_OFFSET_METERS = 0.5;
+const BIOME_TILING_DISPLACEMENT_OVERLAY_Y_OFFSET_METERS = 0.015;
+const BIOME_TILING_DISPLACEMENT_OVERLAY_MAX_TRIANGLES = 8000000;
+const BIOME_TILING_DISPLACEMENT_OVERLAY_MAX_QUADS_PER_BUILD = 1200000;
+const BIOME_TILING_DISPLACEMENT_OVERLAY_SHAPE_SIDES = 32;
+const BIOME_TILING_VIEWPORT_MASK_MARGIN_METERS = 0.2;
+const BIOME_TILING_VIEWPORT_MASK_STABILIZE_MOVE_METERS = 1.0;
+const BIOME_TILING_OVERLAY_FOLLOW_REBUILD_INTERVAL_MS = 180;
+const BIOME_TILING_OVERLAY_FOLLOW_MIN_MOVE_METERS = 0.75;
+const BIOME_TILING_OVERLAY_FOLLOW_MAX_MOVE_METERS = 2.0;
+const BIOME_TILING_OVERLAY_FOLLOW_SNAP_MIN_METERS = 0.25;
+const BIOME_TILING_OVERLAY_FOLLOW_SNAP_MAX_METERS = 0.5;
+const TERRAIN_BIOME_BLEND_USER_DATA_KEYS = Object.freeze([
+    'terrainEngineMaskTex',
+    'terrainEngineBounds',
+    'terrainUvAnchor',
+    'terrainBiomeMapStoneDry',
+    'terrainBiomeMapStoneNeutral',
+    'terrainBiomeMapStoneWet',
+    'terrainBiomeMapGrassDry',
+    'terrainBiomeMapGrassNeutral',
+    'terrainBiomeMapGrassWet',
+    'terrainBiomeMapLandDry',
+    'terrainBiomeMapLandNeutral',
+    'terrainBiomeMapLandWet',
+    'terrainBiomeNormalArrayTex',
+    'terrainBiomeOrmArrayTex',
+    'terrainBiomeUvScaleStone',
+    'terrainBiomeUvScaleGrass',
+    'terrainBiomeUvScaleLand',
+    'terrainDecodeSrgbAlbedo',
+    'terrainHumidityThresholds',
+    'terrainHumidityEdgeNoise',
+    'terrainHumidityEdgeNoiseTex',
+    'terrainTilingDistance0',
+    'terrainTilingDistance1',
+    'terrainTilingVariation0',
+    'terrainTilingVariation1'
+]);
 
 const TERRAIN_ENGINE_MASK_TEX_SIZE = 256;
 const TERRAIN_BIOME_IDS = Object.freeze(['stone', 'grass', 'land']);
@@ -105,7 +149,7 @@ const BIOME_TILING_DEFAULT_STATE = Object.freeze({
     materialId: 'pbr.ground_037',
     distanceTiling: Object.freeze({
         enabled: true,
-        nearScale: 1.0,
+        nearScale: 4.0,
         farScale: 0.36,
         blendStartMeters: 40.0,
         blendEndMeters: 240.0,
@@ -113,14 +157,38 @@ const BIOME_TILING_DEFAULT_STATE = Object.freeze({
         debugView: 'blended'
     }),
     variation: Object.freeze({
-        antiTilingEnabled: true,
+        antiTilingEnabled: false,
         antiTilingStrength: 0.45,
         antiTilingCellMeters: 2.0,
-        macroVariationEnabled: true,
+        macroVariationEnabled: false,
         macroVariationStrength: 0.16,
         macroVariationScale: 0.02,
         nearIntensity: 1.0,
         farIntensity: 0.65
+    }),
+    displacement: Object.freeze({
+        enabled: false,
+        strength: 0.02,
+        bias: 0.0,
+        source: 'auto',
+        debugView: 'standard'
+    }),
+    geometryDensity: Object.freeze({
+        mode: 'adaptive_rings',
+        segmentsPerTile: 8,
+        nearSegmentsPerTile: 1024,
+        farSegmentsPerTile: 4,
+        nearRadiusMeters: 3,
+        transitionWidthMeters: 3,
+        transitionSmoothing: 0.72,
+        transitionBias: 0.0,
+        transitionDebugBands: 3,
+        ringOverlayEnabled: true,
+        centerOnApplyCamera: true,
+        rebuildCadence: 'off',
+        centerX: 0,
+        centerZ: 0,
+        applyNonce: 0
     })
 });
 const TERRAIN_DEBUGGER_URL_PARAM = Object.freeze({
@@ -294,6 +362,7 @@ const FALLBACK_TERRAIN_BIOME_MAPS = Object.freeze({
     grass: createSolidDataTexture(70, 160, 78, { srgb: true }),
     land: createSolidDataTexture(215, 145, 70, { srgb: true })
 });
+const BIOME_TILING_DISPLACEMENT_DEBUG_ALBEDO_TEX = createSolidDataTexture(196, 196, 196, { srgb: true });
 
 function createSolidDataArrayTexture(r, g, b, { a = 255, depth = 9, srgb = false } = {}) {
     const d = Math.max(1, Math.round(Number(depth) || 1));
@@ -447,6 +516,7 @@ function ensureTerrainBiomeBlendShaderOnMaterial(material) {
         const data = mat.userData ?? {};
         shader.uniforms.uGdTerrainMask = { value: data.terrainEngineMaskTex ?? null };
         shader.uniforms.uGdTerrainBounds = { value: data.terrainEngineBounds ?? new THREE.Vector4() };
+        shader.uniforms.uGdTerrainUvAnchor = { value: data.terrainUvAnchor ?? new THREE.Vector2() };
         shader.uniforms.uGdBiomeMapStoneDry = { value: data.terrainBiomeMapStoneDry ?? FALLBACK_TERRAIN_BIOME_MAPS.stone };
         shader.uniforms.uGdBiomeMapStoneNeutral = { value: data.terrainBiomeMapStoneNeutral ?? FALLBACK_TERRAIN_BIOME_MAPS.stone };
         shader.uniforms.uGdBiomeMapStoneWet = { value: data.terrainBiomeMapStoneWet ?? FALLBACK_TERRAIN_BIOME_MAPS.stone };
@@ -486,7 +556,8 @@ function ensureTerrainBiomeBlendShaderOnMaterial(material) {
             [
                 '#include <worldpos_vertex>',
                 '#ifdef USE_TERRAIN_BIOME_BLEND',
-                'vGdWorldUv = worldPosition.xz;',
+                // Anchor biome sampling to the undeformed mesh XZ so displacement does not slide albedo.
+                'vGdWorldUv = (modelMatrix * vec4(position, 1.0)).xz;',
                 '#endif'
             ].join('\n')
         );
@@ -505,6 +576,7 @@ function ensureTerrainBiomeBlendShaderOnMaterial(material) {
                 'varying vec2 vGdWorldUv;',
                 'uniform sampler2D uGdTerrainMask;',
                 'uniform vec4 uGdTerrainBounds;',
+                'uniform vec2 uGdTerrainUvAnchor;',
                 'uniform sampler2D uGdBiomeMapStoneDry;',
                 'uniform sampler2D uGdBiomeMapStoneNeutral;',
                 'uniform sampler2D uGdBiomeMapStoneWet;',
@@ -544,6 +616,9 @@ function ensureTerrainBiomeBlendShaderOnMaterial(material) {
                 'vec2 uv = (worldUv - vec2(uGdTerrainBounds.x, uGdTerrainBounds.z)) / denom;',
                 'return clamp(uv, 0.0, 1.0);',
                 '}',
+                'vec2 gdAnchoredUv(vec2 worldUv){',
+                'return worldUv - uGdTerrainUvAnchor;',
+                '}',
                 'float gdHash12(vec2 p){',
                 'return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);',
                 '}',
@@ -576,11 +651,12 @@ function ensureTerrainBiomeBlendShaderOnMaterial(material) {
                 'float farScale = max(1e-4, uGdTilingDistance0.y);',
                 'float distanceEnabled = step(0.5, uGdTilingDistance1.z);',
                 'float blend = gdDistanceBlend01(worldUv) * distanceEnabled;',
+                'vec2 anchoredUv = gdAnchoredUv(worldUv);',
                 'float debugMode = uGdTilingDistance1.y;',
                 'if (debugMode > 1.5) blend = 1.0;',
                 'else if (debugMode > 0.5) blend = 0.0;',
-                'vec2 uvNear = worldUv * uvScale * nearScale;',
-                'vec2 uvFar = worldUv * uvScale * mix(nearScale, farScale, distanceEnabled);',
+                'vec2 uvNear = anchoredUv * uvScale * nearScale;',
+                'vec2 uvFar = anchoredUv * uvScale * mix(nearScale, farScale, distanceEnabled);',
                 'float variationNear = max(0.0, uGdTilingVariation1.z);',
                 'float variationFar = max(0.0, uGdTilingVariation1.w);',
                 'float variationIntensity = mix(variationNear, variationFar, blend);',
@@ -600,7 +676,7 @@ function ensureTerrainBiomeBlendShaderOnMaterial(material) {
                 'float macroEnabled = step(0.5, uGdTilingVariation0.w);',
                 'float macroStrength = max(0.0, uGdTilingVariation1.x) * macroEnabled * variationIntensity;',
                 'float macroScale = max(1e-5, uGdTilingVariation1.y);',
-                'float macroNoise = gdTex2D(uGdHumidityEdgeNoiseTex, worldUv * macroScale).r * 2.0 - 1.0;',
+                'float macroNoise = gdTex2D(uGdHumidityEdgeNoiseTex, anchoredUv * macroScale).r * 2.0 - 1.0;',
                 'float macroMul = max(0.0, 1.0 + macroNoise * macroStrength);',
                 'return color * macroMul;',
                 '}',
@@ -612,7 +688,7 @@ function ensureTerrainBiomeBlendShaderOnMaterial(material) {
                 'float halfBand = band * 0.5;',
                 'float edgeScale = max(1e-6, uGdHumidityEdgeNoise.x);',
                 'float edgeStrength = clamp(uGdHumidityEdgeNoise.y, 0.0, 1.0);',
-                'float noise = gdTex2D(uGdHumidityEdgeNoiseTex, worldUv * edgeScale).r * 2.0 - 1.0;',
+                'float noise = gdTex2D(uGdHumidityEdgeNoiseTex, gdAnchoredUv(worldUv) * edgeScale).r * 2.0 - 1.0;',
                 'float dryDist = abs(h - dryMax);',
                 'float wetDist = abs(h - wetMin);',
                 'float edgeMask = max(1.0 - smoothstep(halfBand, band, dryDist), 1.0 - smoothstep(halfBand, band, wetDist));',
@@ -646,11 +722,12 @@ function ensureTerrainBiomeBlendShaderOnMaterial(material) {
                 'float farScale = max(1e-4, uGdTilingDistance0.y);',
                 'float distanceEnabled = step(0.5, uGdTilingDistance1.z);',
                 'float blend = gdDistanceBlend01(worldUv) * distanceEnabled;',
+                'vec2 anchoredUv = gdAnchoredUv(worldUv);',
                 'float debugMode = uGdTilingDistance1.y;',
                 'if (debugMode > 1.5) blend = 1.0;',
                 'else if (debugMode > 0.5) blend = 0.0;',
-                'vec2 uvNear = worldUv * uvScale * nearScale;',
-                'vec2 uvFar = worldUv * uvScale * mix(nearScale, farScale, distanceEnabled);',
+                'vec2 uvNear = anchoredUv * uvScale * nearScale;',
+                'vec2 uvFar = anchoredUv * uvScale * mix(nearScale, farScale, distanceEnabled);',
                 'float variationNear = max(0.0, uGdTilingVariation1.z);',
                 'float variationFar = max(0.0, uGdTilingVariation1.w);',
                 'float variationIntensity = mix(variationNear, variationFar, blend);',
@@ -866,6 +943,7 @@ function syncTerrainBiomeBlendUniformsOnMaterial(material) {
 
     if (uniforms.uGdTerrainMask) uniforms.uGdTerrainMask.value = data.terrainEngineMaskTex ?? null;
     if (uniforms.uGdTerrainBounds) uniforms.uGdTerrainBounds.value = data.terrainEngineBounds ?? uniforms.uGdTerrainBounds.value;
+    if (uniforms.uGdTerrainUvAnchor) uniforms.uGdTerrainUvAnchor.value = data.terrainUvAnchor ?? uniforms.uGdTerrainUvAnchor.value;
     if (uniforms.uGdBiomeMapStoneDry) uniforms.uGdBiomeMapStoneDry.value = data.terrainBiomeMapStoneDry ?? FALLBACK_TERRAIN_BIOME_MAPS.stone;
     if (uniforms.uGdBiomeMapStoneNeutral) uniforms.uGdBiomeMapStoneNeutral.value = data.terrainBiomeMapStoneNeutral ?? FALLBACK_TERRAIN_BIOME_MAPS.stone;
     if (uniforms.uGdBiomeMapStoneWet) uniforms.uGdBiomeMapStoneWet.value = data.terrainBiomeMapStoneWet ?? FALLBACK_TERRAIN_BIOME_MAPS.stone;
@@ -924,6 +1002,18 @@ function smoothstep(edge0, edge1, x) {
     if (Math.abs(b - a) < EPS) return xx >= b ? 1 : 0;
     const t = clamp((xx - a) / (b - a), 0, 1, 0);
     return t * t * (3 - 2 * t);
+}
+
+function applyAdaptiveTransitionBlend01(t, { smoothing = 0.72, bias = 0.0 } = {}) {
+    const tt = clamp(t, 0, 1, 0);
+    const sm = clamp(smoothing, 0, 1, 0.72);
+    const bz = clamp(bias, -0.85, 0.85, 0.0);
+    const exponent = bz < 0
+        ? (1 + (-bz * 4))
+        : (1 / (1 + (bz * 4)));
+    const biased = Math.pow(tt, exponent);
+    const smooth = smoothstep01(biased);
+    return biased + (smooth - biased) * sm;
 }
 
 function slerpUnitVector3(out, from, to, t) {
@@ -987,10 +1077,91 @@ function sampleTerrainCloudFbm2(x, y) {
     });
 }
 
+function buildAdaptiveAxisCoordinates({
+    min = 0,
+    max = 1,
+    center = 0,
+    nearRadius = 0,
+    transitionWidth = 0,
+    nearStep = 1,
+    farStep = 1,
+    transitionSmoothing = 0.72,
+    transitionBias = 0.0
+} = {}) {
+    const lo = Math.min(Number(min) || 0, Number(max) || 0);
+    const hi = Math.max(Number(min) || 0, Number(max) || 0);
+    if (!(hi > lo + EPS)) return [lo, hi];
+
+    const c = clamp(center, lo, hi, (lo + hi) * 0.5);
+    const nearR = Math.max(0, Number(nearRadius) || 0);
+    const transition = Math.max(0, Number(transitionWidth) || 0);
+    const outerR = nearR + transition;
+    const fineStep = Math.max(EPS, Number(nearStep) || EPS);
+    const coarseStep = Math.max(EPS, Number(farStep) || fineStep);
+    const smoothing = clamp(transitionSmoothing, 0, 1, 0.72);
+    const bias = clamp(transitionBias, -0.85, 0.85, 0.0);
+
+    const stepAtDistance = (distance) => {
+        const d = Math.max(0, Number(distance) || 0);
+        if (d <= nearR + EPS) return fineStep;
+        if (transition <= EPS || d >= outerR - EPS) return coarseStep;
+        const t = clamp((d - nearR) / Math.max(EPS, transition), 0, 1, 0);
+        const blend = applyAdaptiveTransitionBlend01(t, {
+            smoothing,
+            bias
+        });
+        return fineStep + (coarseStep - fineStep) * blend;
+    };
+
+    const values = [c];
+    const appendSide = (direction) => {
+        let pos = c;
+        const end = direction < 0 ? lo : hi;
+        while (Math.abs(pos - end) > EPS) {
+            const dist = Math.abs(pos - c);
+            const step = stepAtDistance(dist);
+            let next = pos + (direction * step);
+
+            const nearEdge = c + (direction * nearR);
+            const outerEdge = c + (direction * outerR);
+            if (direction < 0) {
+                if (nearEdge < pos - EPS && nearEdge > next + EPS) next = nearEdge;
+                if (outerEdge < pos - EPS && outerEdge > next + EPS) next = outerEdge;
+                if (next < lo) next = lo;
+            } else {
+                if (nearEdge > pos + EPS && nearEdge < next - EPS) next = nearEdge;
+                if (outerEdge > pos + EPS && outerEdge < next - EPS) next = outerEdge;
+                if (next > hi) next = hi;
+            }
+
+            if (Math.abs(next - pos) <= EPS) break;
+            values.push(next);
+            pos = next;
+            if (Math.abs(pos - end) <= EPS) break;
+        }
+    };
+
+    appendSide(-1);
+    appendSide(1);
+    values.sort((a, b) => a - b);
+
+    const deduped = [];
+    for (const raw of values) {
+        const value = clamp(raw, lo, hi, lo);
+        if (!deduped.length || Math.abs(value - deduped[deduped.length - 1]) > 1e-4) deduped.push(value);
+    }
+    if (!deduped.length) deduped.push(lo, hi);
+    if (deduped[0] > lo + 1e-4) deduped.unshift(lo);
+    else deduped[0] = lo;
+    if (deduped[deduped.length - 1] < hi - 1e-4) deduped.push(hi);
+    else deduped[deduped.length - 1] = hi;
+    return deduped;
+}
+
 function buildTerrainGeometry(spec = {}) {
     const tileSize = Number(spec?.tileSize) || 24;
-    const widthTiles = spec?.widthTiles ?? 11;
-    const depthTiles = spec?.depthTiles ?? 16;
+    const widthTiles = Number(spec?.widthTiles) || 11;
+    const depthTiles = Number(spec?.depthTiles) || 16;
     const segmentsPerTile = spec?.segmentsPerTile ?? 8;
     const tileMinX = spec?.tileMinX ?? -5;
     const tileMinZ = spec?.tileMinZ ?? -10;
@@ -1002,22 +1173,121 @@ function buildTerrainGeometry(spec = {}) {
     const slopeTopFlatMeters = spec?.slope?.topFlatMeters ?? 24;
     const roadSpec = spec?.road && typeof spec.road === 'object' ? spec.road : null;
     const cloudSpec = spec?.cloud && typeof spec.cloud === 'object' ? spec.cloud : null;
-
-    const seg = Math.max(1, segmentsPerTile | 0);
-    const nx = Math.max(1, (widthTiles | 0) * seg);
-    const nz = Math.max(1, (depthTiles | 0) * seg);
-
-    const dx = tileSize / seg;
-    const dz = tileSize / seg;
-
-    const minX = (tileMinX - 0.5) * tileSize;
-    const minZ = (tileMinZ - 0.5) * tileSize;
-    const maxX = minX + (widthTiles | 0) * tileSize;
-    const maxZ = minZ + (depthTiles | 0) * tileSize;
+    const boundsSpec = spec?.bounds && typeof spec.bounds === 'object'
+        ? spec.bounds
+        : null;
+    let minX = (tileMinX - 0.5) * tileSize;
+    let minZ = (tileMinZ - 0.5) * tileSize;
+    let maxX = minX + Math.max(1, widthTiles) * tileSize;
+    let maxZ = minZ + Math.max(1, depthTiles) * tileSize;
+    const boundsMinX = Number(boundsSpec?.minX);
+    const boundsMaxX = Number(boundsSpec?.maxX);
+    const boundsMinZ = Number(boundsSpec?.minZ);
+    const boundsMaxZ = Number(boundsSpec?.maxZ);
+    if (
+        Number.isFinite(boundsMinX)
+        && Number.isFinite(boundsMaxX)
+        && Number.isFinite(boundsMinZ)
+        && Number.isFinite(boundsMaxZ)
+        && boundsMaxX > boundsMinX + EPS
+        && boundsMaxZ > boundsMinZ + EPS
+    ) {
+        minX = boundsMinX;
+        maxX = boundsMaxX;
+        minZ = boundsMinZ;
+        maxZ = boundsMaxZ;
+    }
+    const spanX = Math.max(EPS, maxX - minX);
+    const spanZ = Math.max(EPS, maxZ - minZ);
+    const widthTilesApprox = spanX / Math.max(EPS, tileSize);
+    const depthTilesApprox = spanZ / Math.max(EPS, tileSize);
     const maxAbsX = Math.max(Math.abs(minX), Math.abs(maxX));
 
-    const positions = new Float32Array((nx + 1) * (nz + 1) * 3);
-    const uvs = new Float32Array((nx + 1) * (nz + 1) * 2);
+    const adaptiveRingsSrc = spec?.adaptiveRings && typeof spec.adaptiveRings === 'object'
+        ? spec.adaptiveRings
+        : null;
+    const adaptiveEnabled = adaptiveRingsSrc?.enabled === true;
+
+    const seg = Math.max(1, segmentsPerTile | 0);
+    let xCoords = null;
+    let zCoords = null;
+    let adaptiveConfig = {
+        enabled: false,
+        centerX: (minX + maxX) * 0.5,
+        centerZ: (minZ + maxZ) * 0.5,
+        nearRadiusMeters: 0,
+        transitionWidthMeters: 0,
+        transitionSmoothing: 0.72,
+        transitionBias: 0.0,
+        transitionDebugBands: 3,
+        nearSegmentsPerTile: seg,
+        farSegmentsPerTile: seg
+    };
+
+    if (adaptiveEnabled) {
+        const nearSegmentsPerTile = Math.max(1, Math.round(Number(adaptiveRingsSrc?.nearSegmentsPerTile) || seg));
+        const farSegmentsPerTile = Math.max(1, Math.round(Number(adaptiveRingsSrc?.farSegmentsPerTile) || seg));
+        const nearRadiusMeters = Math.max(0, Number(adaptiveRingsSrc?.nearRadiusMeters) || 0);
+        const transitionWidthMeters = Math.max(0, Number(adaptiveRingsSrc?.transitionWidthMeters) || 0);
+        const transitionSmoothing = clamp(adaptiveRingsSrc?.transitionSmoothing, 0.0, 1.0, 0.72);
+        const transitionBias = clamp(adaptiveRingsSrc?.transitionBias, -0.85, 0.85, 0.0);
+        const transitionDebugBandsRaw = Number(adaptiveRingsSrc?.transitionDebugBands);
+        const transitionDebugBands = Math.max(
+            0,
+            Math.min(6, Math.round(Number.isFinite(transitionDebugBandsRaw) ? transitionDebugBandsRaw : 3))
+        );
+        const centerX = clamp(adaptiveRingsSrc?.centerX, minX, maxX, (minX + maxX) * 0.5);
+        const centerZ = clamp(adaptiveRingsSrc?.centerZ, minZ, maxZ, (minZ + maxZ) * 0.5);
+        const nearStep = tileSize / Math.max(1, nearSegmentsPerTile);
+        const farStep = tileSize / Math.max(1, farSegmentsPerTile);
+
+        xCoords = buildAdaptiveAxisCoordinates({
+            min: minX,
+            max: maxX,
+            center: centerX,
+            nearRadius: nearRadiusMeters,
+            transitionWidth: transitionWidthMeters,
+            nearStep,
+            farStep,
+            transitionSmoothing,
+            transitionBias
+        });
+        zCoords = buildAdaptiveAxisCoordinates({
+            min: minZ,
+            max: maxZ,
+            center: centerZ,
+            nearRadius: nearRadiusMeters,
+            transitionWidth: transitionWidthMeters,
+            nearStep,
+            farStep,
+            transitionSmoothing,
+            transitionBias
+        });
+
+        adaptiveConfig = {
+            enabled: true,
+            centerX,
+            centerZ,
+            nearRadiusMeters,
+            transitionWidthMeters,
+            transitionSmoothing,
+            transitionBias,
+            transitionDebugBands,
+            nearSegmentsPerTile,
+            farSegmentsPerTile
+        };
+    }
+
+    const nxFallback = Math.max(1, Math.round(widthTilesApprox * seg));
+    const nzFallback = Math.max(1, Math.round(depthTilesApprox * seg));
+    let nx = Math.max(1, (Array.isArray(xCoords) && xCoords.length > 1) ? (xCoords.length - 1) : nxFallback);
+    let nz = Math.max(1, (Array.isArray(zCoords) && zCoords.length > 1) ? (zCoords.length - 1) : nzFallback);
+    let dx = spanX / Math.max(1, nx);
+    let dz = spanZ / Math.max(1, nz);
+
+    let positions = null;
+    let uvs = null;
+    let indices = null;
     let minY = Infinity;
     let maxY = -Infinity;
 
@@ -1089,25 +1359,21 @@ function buildTerrainGeometry(spec = {}) {
         return roadBaseY + Math.min(hRaw, hPlateau);
     };
 
-    for (let z = 0; z <= nz; z++) {
-        const worldZ = minZ + z * dz;
-        const cloudW = cloudEnabled ? (1 - smoothstep(cloudZ1, cloudZ1 + cloudBlendMeters, worldZ)) : 0;
+    const computeWorldY = (worldX, worldZ) => {
+        const absX = Math.abs(worldX);
+        const tanSlope = worldX < 0 ? tanLeft : tanRight;
+        let y = computeHill(absX, tanSlope);
 
-        for (let x = 0; x <= nx; x++) {
-            const worldX = minX + x * dx;
-
-            const absX = Math.abs(worldX);
-            const tanSlope = worldX < 0 ? tanLeft : tanRight;
-            let y = computeHill(absX, tanSlope);
-
-            if (Math.abs(tanEnd) > EPS) {
-                const zDist = endSlopeStartZ - worldZ;
-                if (zDist > EPS) {
-                    const w = smoothstep(0, endSlopeBlendMeters, zDist);
-                    y += tanEnd * zDist * w;
-                }
+        if (Math.abs(tanEnd) > EPS) {
+            const zDist = endSlopeStartZ - worldZ;
+            if (zDist > EPS) {
+                const w = smoothstep(0, endSlopeBlendMeters, zDist);
+                y += tanEnd * zDist * w;
             }
+        }
 
+        if (cloudEnabled) {
+            const cloudW = 1 - smoothstep(cloudZ1, cloudZ1 + cloudBlendMeters, worldZ);
             if (cloudW > EPS) {
                 const flatX = (roadEnabled && roadFlatHalfWidth > EPS)
                     ? (1 - smoothstep(roadFlatHalfWidth, roadFlatHalfWidth + cloudRoadBlend, absX))
@@ -1118,48 +1384,210 @@ function buildTerrainGeometry(spec = {}) {
                     y += n;
                 }
             }
+        }
 
-            if (roadEnabled && roadHalfWidth > EPS) {
-                const wX = 1 - smoothstep(roadHalfWidth, roadHalfWidth + roadEdgeBlend, absX);
-                let wZ = 1;
-                if (Number.isFinite(roadZ0) && Number.isFinite(roadZ1) && roadZBlend > EPS) {
-                    const zMin = Math.min(roadZ0, roadZ1);
-                    const zMax = Math.max(roadZ0, roadZ1);
-                    wZ = smoothstep(zMin - roadZBlend, zMin, worldZ) * (1 - smoothstep(zMax, zMax + roadZBlend, worldZ));
+        if (roadEnabled && roadHalfWidth > EPS) {
+            const wX = 1 - smoothstep(roadHalfWidth, roadHalfWidth + roadEdgeBlend, absX);
+            let wZ = 1;
+            if (Number.isFinite(roadZ0) && Number.isFinite(roadZ1) && roadZBlend > EPS) {
+                const zMin = Math.min(roadZ0, roadZ1);
+                const zMax = Math.max(roadZ0, roadZ1);
+                wZ = smoothstep(zMin - roadZBlend, zMin, worldZ) * (1 - smoothstep(zMax, zMax + roadZBlend, worldZ));
+            }
+            const w = wX * wZ;
+            if (w > EPS) y = y * (1 - w) + roadBaseY * w;
+        }
+
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+        return y;
+    };
+
+    const ringQuadAdaptiveEnabled = adaptiveEnabled === true;
+    if (ringQuadAdaptiveEnabled) {
+        const centerX = Number(adaptiveConfig.centerX);
+        const centerZ = Number(adaptiveConfig.centerZ);
+        const nearRadius = Math.max(0, Number(adaptiveConfig.nearRadiusMeters) || 0);
+        const transitionWidth = Math.max(0, Number(adaptiveConfig.transitionWidthMeters) || 0);
+        const outerRadius = nearRadius + transitionWidth;
+        const nearStep = Math.max(EPS, tileSize / Math.max(1, Number(adaptiveConfig.nearSegmentsPerTile) || seg));
+        const farStep = Math.max(EPS, tileSize / Math.max(1, Number(adaptiveConfig.farSegmentsPerTile) || seg));
+        if (outerRadius > EPS) {
+            const transitionBands = Math.max(1, Math.round(Number(adaptiveConfig.transitionDebugBands) || 0) + 1);
+            const stepAtDistance = (distance) => {
+                const d = Math.max(0, Number(distance) || 0);
+                if (d <= nearRadius + EPS) return nearStep;
+                if (transitionWidth <= EPS || d >= outerRadius - EPS) return farStep;
+                const t = clamp((d - nearRadius) / Math.max(EPS, transitionWidth), 0, 1, 0);
+                const blend = applyAdaptiveTransitionBlend01(t, {
+                    smoothing: adaptiveConfig.transitionSmoothing,
+                    bias: adaptiveConfig.transitionBias
+                });
+                return nearStep + (farStep - nearStep) * blend;
+            };
+
+            const ringEdges = [0];
+            if (nearRadius > EPS) ringEdges.push(nearRadius);
+            if (transitionWidth > EPS) {
+                for (let i = 1; i <= transitionBands; i++) {
+                    ringEdges.push(nearRadius + transitionWidth * (i / transitionBands));
                 }
-                const w = wX * wZ;
-                if (w > EPS) y = y * (1 - w) + roadBaseY * w;
+            } else if (outerRadius > EPS) {
+                ringEdges.push(outerRadius);
+            }
+            ringEdges.sort((a, b) => a - b);
+            const dedupEdges = [];
+            for (const r of ringEdges) {
+                const rr = Math.max(0, Number(r) || 0);
+                if (!dedupEdges.length || Math.abs(rr - dedupEdges[dedupEdges.length - 1]) > 1e-4) dedupEdges.push(rr);
+            }
+            if (dedupEdges.length < 2) dedupEdges.push(outerRadius);
+            if (dedupEdges[dedupEdges.length - 1] < outerRadius - 1e-4) dedupEdges.push(outerRadius);
+            if (dedupEdges.length < 3 && outerRadius > EPS) {
+                const mid = outerRadius * 0.5;
+                if (mid > EPS && mid < outerRadius - EPS) dedupEdges.splice(1, 0, mid);
             }
 
-            const idx = z * (nx + 1) + x;
-            positions[idx * 3] = worldX;
-            positions[idx * 3 + 1] = y;
-            positions[idx * 3 + 2] = worldZ;
+            const bands = [];
+            for (let i = 0; i < dedupEdges.length - 1; i++) {
+                const inner = dedupEdges[i];
+                const outer = dedupEdges[i + 1];
+                if (!(outer > inner + EPS)) continue;
+                const mid = inner + (outer - inner) * 0.5;
+                bands.push({
+                    inner,
+                    outer,
+                    step: Math.max(EPS, stepAtDistance(mid))
+                });
+            }
 
-            uvs[idx * 2] = worldX;
-            uvs[idx * 2 + 1] = worldZ;
+            if (bands.length > 0) {
+                let estQuads = 0;
+                for (const band of bands) {
+                    const area = Math.max(0, 4 * (band.outer * band.outer - band.inner * band.inner));
+                    estQuads += area / Math.max(EPS, band.step * band.step);
+                }
+                if (estQuads > BIOME_TILING_DISPLACEMENT_OVERLAY_MAX_QUADS_PER_BUILD) {
+                    const scale = Math.sqrt(estQuads / BIOME_TILING_DISPLACEMENT_OVERLAY_MAX_QUADS_PER_BUILD);
+                    for (const band of bands) band.step = Math.max(EPS, band.step * scale);
+                }
 
-            if (y < minY) minY = y;
-            if (y > maxY) maxY = y;
+                const posList = [];
+                const uvList = [];
+                const idxList = [];
+                let vertexBase = 0;
+                const pushQuad = (x0, z0, x1, z1) => {
+                    const y00 = computeWorldY(x0, z0);
+                    const y10 = computeWorldY(x1, z0);
+                    const y01 = computeWorldY(x0, z1);
+                    const y11 = computeWorldY(x1, z1);
+                    posList.push(
+                        x0, y00, z0,
+                        x1, y10, z0,
+                        x0, y01, z1,
+                        x1, y11, z1
+                    );
+                    uvList.push(
+                        x0, z0,
+                        x1, z0,
+                        x0, z1,
+                        x1, z1
+                    );
+                    idxList.push(
+                        vertexBase,
+                        vertexBase + 2,
+                        vertexBase + 1,
+                        vertexBase + 1,
+                        vertexBase + 2,
+                        vertexBase + 3
+                    );
+                    vertexBase += 4;
+                };
+
+                for (const band of bands) {
+                    const inner = band.inner;
+                    const outer = band.outer;
+                    const step = band.step;
+                    const bandMinX = clamp(centerX - outer, minX, maxX, minX);
+                    const bandMaxX = clamp(centerX + outer, minX, maxX, maxX);
+                    const bandMinZ = clamp(centerZ - outer, minZ, maxZ, minZ);
+                    const bandMaxZ = clamp(centerZ + outer, minZ, maxZ, maxZ);
+                    if (!(bandMaxX > bandMinX + EPS && bandMaxZ > bandMinZ + EPS)) continue;
+
+                    const startX = Math.floor(bandMinX / step) * step;
+                    const startZ = Math.floor(bandMinZ / step) * step;
+                    const endX = Math.ceil(bandMaxX / step) * step;
+                    const endZ = Math.ceil(bandMaxZ / step) * step;
+                    for (let z = startZ; z < endZ - EPS; z += step) {
+                        const z0 = clamp(z, bandMinZ, bandMaxZ, bandMinZ);
+                        const z1 = clamp(z + step, bandMinZ, bandMaxZ, bandMaxZ);
+                        if (!(z1 > z0 + EPS)) continue;
+                        for (let x = startX; x < endX - EPS; x += step) {
+                            const x0 = clamp(x, bandMinX, bandMaxX, bandMinX);
+                            const x1 = clamp(x + step, bandMinX, bandMaxX, bandMaxX);
+                            if (!(x1 > x0 + EPS)) continue;
+                            const cx = (x0 + x1) * 0.5;
+                            const cz = (z0 + z1) * 0.5;
+                            const ringDist = Math.max(Math.abs(cx - centerX), Math.abs(cz - centerZ));
+                            if (ringDist > outer + 1e-4) continue;
+                            if (ringDist <= inner + 1e-4 && inner > EPS) continue;
+                            pushQuad(x0, z0, x1, z1);
+                        }
+                    }
+                }
+
+                if (vertexBase > 0 && idxList.length > 0) {
+                    positions = new Float32Array(posList);
+                    uvs = new Float32Array(uvList);
+                    indices = new Uint32Array(idxList);
+                    const avgStep = outerRadius / Math.max(1, bands.length);
+                    nx = Math.max(1, Math.round((outerRadius * 2) / Math.max(EPS, avgStep)));
+                    nz = Math.max(1, bands.length);
+                    dx = avgStep;
+                    dz = avgStep;
+                }
+            }
         }
     }
 
-    const indices = new Uint32Array(nx * nz * 6);
-    let k = 0;
-    for (let z = 0; z < nz; z++) {
-        for (let x = 0; x < nx; x++) {
-            const a = z * (nx + 1) + x;
-            const b = a + 1;
-            const c = a + (nx + 1);
-            const d = c + 1;
-            indices[k++] = a;
-            indices[k++] = c;
-            indices[k++] = b;
-            indices[k++] = b;
-            indices[k++] = c;
-            indices[k++] = d;
+    if (!positions || !uvs || !indices) {
+        positions = new Float32Array((nx + 1) * (nz + 1) * 3);
+        uvs = new Float32Array((nx + 1) * (nz + 1) * 2);
+
+        for (let z = 0; z <= nz; z++) {
+            const worldZ = Array.isArray(zCoords) ? zCoords[z] : (minZ + z * dz);
+            for (let x = 0; x <= nx; x++) {
+                const worldX = Array.isArray(xCoords) ? xCoords[x] : (minX + x * dx);
+                const y = computeWorldY(worldX, worldZ);
+                const idx = z * (nx + 1) + x;
+                positions[idx * 3] = worldX;
+                positions[idx * 3 + 1] = y;
+                positions[idx * 3 + 2] = worldZ;
+                uvs[idx * 2] = worldX;
+                uvs[idx * 2 + 1] = worldZ;
+            }
+        }
+
+        indices = new Uint32Array(nx * nz * 6);
+        let k = 0;
+        for (let z = 0; z < nz; z++) {
+            for (let x = 0; x < nx; x++) {
+                const a = z * (nx + 1) + x;
+                const b = a + 1;
+                const c = a + (nx + 1);
+                const d = c + 1;
+                indices[k++] = a;
+                indices[k++] = c;
+                indices[k++] = b;
+                indices[k++] = b;
+                indices[k++] = c;
+                indices[k++] = d;
+            }
         }
     }
+
+    if (!Number.isFinite(minY)) minY = roadBaseY;
+    if (!Number.isFinite(maxY)) maxY = minY;
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -1170,7 +1598,21 @@ function buildTerrainGeometry(spec = {}) {
     geo.computeBoundingBox();
     geo.computeBoundingSphere();
 
-    return { geo, minY, maxY, nx, nz, minX, minZ, dx, dz, widthTiles, depthTiles, tileSize };
+    return {
+        geo,
+        minY,
+        maxY,
+        nx,
+        nz,
+        minX,
+        minZ,
+        dx,
+        dz,
+        widthTiles: widthTilesApprox,
+        depthTiles: depthTilesApprox,
+        tileSize,
+        adaptive: adaptiveConfig
+    };
 }
 
 function buildTileGridLinesFromTerrain(terrainGeo, { widthTiles, depthTiles, segmentsPerTile, yOffset = 0.04 } = {}) {
@@ -1258,6 +1700,8 @@ export class TerrainDebuggerView {
         this._terrainEngineCompareKey = '';
         this._biomeTilingAxisHelper = null;
         this._biomeTilingAxisKey = '';
+        this._biomeTilingRingHelper = null;
+        this._biomeTilingRingHelperKey = '';
         this._terrainDebugMode = 'standard';
         this._terrainDebugTex = null;
         this._terrainDebugMat = null;
@@ -1266,6 +1710,7 @@ export class TerrainDebuggerView {
         this._terrainBiomeUvScaleStoneVec3 = new THREE.Vector3();
         this._terrainBiomeUvScaleGrassVec3 = new THREE.Vector3();
         this._terrainBiomeUvScaleLandVec3 = new THREE.Vector3();
+        this._terrainUvAnchorVec2 = new THREE.Vector2();
         this._terrainHumidityThresholdsVec4 = new THREE.Vector4();
         this._terrainHumidityEdgeNoiseVec4 = new THREE.Vector4();
         this._terrainTilingDistance0Vec4 = new THREE.Vector4();
@@ -1307,8 +1752,73 @@ export class TerrainDebuggerView {
             },
             variation: {
                 ...BIOME_TILING_DEFAULT_STATE.variation
+            },
+            displacement: {
+                ...BIOME_TILING_DEFAULT_STATE.displacement
+            },
+            geometryDensity: {
+                ...BIOME_TILING_DEFAULT_STATE.geometryDensity
             }
         };
+        this._biomeTilingGeometryApplyNonce = Number(BIOME_TILING_DEFAULT_STATE.geometryDensity.applyNonce) || 0;
+        this._biomeTilingAppliedGeometryState = {
+            mode: 'uniform',
+            segmentsPerTile: Math.max(1, Math.round(Number(BIOME_TILING_DEFAULT_STATE.geometryDensity.segmentsPerTile) || 8)),
+            nearSegmentsPerTile: Math.max(1, Math.round(Number(BIOME_TILING_DEFAULT_STATE.geometryDensity.nearSegmentsPerTile) || 1024)),
+            farSegmentsPerTile: Math.max(1, Math.round(Number(BIOME_TILING_DEFAULT_STATE.geometryDensity.farSegmentsPerTile) || 4)),
+            nearRadiusMeters: Math.max(0, Number(BIOME_TILING_DEFAULT_STATE.geometryDensity.nearRadiusMeters) || 3),
+            transitionWidthMeters: Math.max(0, Number(BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionWidthMeters) || 3),
+            transitionSmoothing: clamp(
+                BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionSmoothing,
+                0.0,
+                1.0,
+                0.72
+            ),
+            transitionBias: clamp(
+                BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionBias,
+                -0.85,
+                0.85,
+                0.0
+            ),
+            transitionDebugBands: Math.max(
+                0,
+                Math.min(6, Math.round(Number(BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionDebugBands) || 3))
+            ),
+            ringOverlayEnabled: BIOME_TILING_DEFAULT_STATE.geometryDensity.ringOverlayEnabled !== false,
+            overlayBounds: null,
+            overlayViewportBounds: null,
+            overlayViewportPolygon: null,
+            overlayViewportKey: '',
+            centerX: 0,
+            centerZ: 0
+        };
+        this._biomeTilingLastGeometryApplyMs = null;
+        this._biomeTilingLastDisplacementUpdateMs = null;
+        this._biomeTilingDisplacementRuntimeKey = '';
+        this._biomeTilingDisplacementRuntimeTex = null;
+        this._biomeTilingDisplacementOverlay = null;
+        this._biomeTilingDisplacementOverlayMat = null;
+        this._biomeTilingDisplacementOverlayKey = '';
+        this._biomeTilingViewportMaskCache = null;
+        this._biomeTilingOverlayFollowLastMs = 0;
+        this._biomeTilingAutoRebuildCadence = 'off';
+        this._biomeTilingAutoRebuildFrameCounter = 0;
+        this._biomeTilingAutoRebuildLastMs = 0;
+        this._biomeTilingDisplacementResolved = {
+            enabled: false,
+            sourceMode: 'auto',
+            resolvedSource: 'none',
+            fallbackActive: false,
+            textureUrl: '',
+            missing: false
+        };
+        this._biomeTilingLodMonitor = {
+            windowSec: BIOME_TILING_LOD_MONITOR_WINDOW_SEC,
+            sampleIntervalMs: BIOME_TILING_LOD_MONITOR_SAMPLE_MS,
+            samples: [],
+            lastSampleMs: 0
+        };
+        this._biomeTilingDiagnosticsLastSyncMs = 0;
         this._terrainWireframe = false;
         this._asphaltWireframe = false;
         this._gameplayLightingDefaults = getResolvedDefaultLightingSettings({ includeUrlOverrides: true });
@@ -1436,6 +1946,18 @@ export class TerrainDebuggerView {
             widthTiles: 19,
             depthTiles: 16,
             segmentsPerTile: 8,
+            adaptiveRings: {
+                enabled: false,
+                centerX: 0,
+                centerZ: 0,
+                nearRadiusMeters: 3,
+                transitionWidthMeters: 3,
+                transitionSmoothing: 0.72,
+                transitionBias: 0.0,
+                transitionDebugBands: 3,
+                nearSegmentsPerTile: 1024,
+                farSegmentsPerTile: 4
+            },
             slope: {
                 leftDeg: 1.5,
                 rightDeg: 3.5,
@@ -1789,6 +2311,8 @@ export class TerrainDebuggerView {
         this._raf = 0;
         this._disableFlyoverDebug();
         this._removeBiomeTilingAxisHelper();
+        this._removeBiomeTilingAdaptiveRingHelper();
+        this._removeBiomeTilingDisplacementOverlay({ disposeMaterial: true });
 
         this.canvas?.removeEventListener?.('contextmenu', this._onContextMenu, { capture: true });
         this.canvas?.removeEventListener?.('pointermove', this._onPointerMove, { capture: true });
@@ -1831,6 +2355,9 @@ export class TerrainDebuggerView {
         this._terrainDebugTex = null;
         this._terrainDebugMat?.dispose?.();
         this._terrainDebugMat = null;
+        this._biomeTilingDisplacementRuntimeTex?.dispose?.();
+        this._biomeTilingDisplacementRuntimeTex = null;
+        this._biomeTilingDisplacementRuntimeKey = '';
         this._terrainBiomeDummyMapTex?.dispose?.();
         this._terrainBiomeDummyMapTex = null;
         this._terrainBiomePhysicalArrayRequestId++;
@@ -1845,7 +2372,7 @@ export class TerrainDebuggerView {
 
         const disposeMaterial = (mat) => {
             if (!mat) return;
-            const keys = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap'];
+            const keys = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'displacementMap'];
             for (const key of keys) {
                 const tex = mat[key];
                 if (tex?.dispose) tex.dispose();
@@ -1878,6 +2405,9 @@ export class TerrainDebuggerView {
         this._terrain = null;
         this._terrainMat = null;
         this._gridLines = null;
+        this._biomeTilingDisplacementOverlay = null;
+        this._biomeTilingDisplacementOverlayMat = null;
+        this._biomeTilingDisplacementOverlayKey = '';
         this._roads = null;
         this._terrainGrid = null;
         this._hemiLight = null;
@@ -1944,10 +2474,10 @@ export class TerrainDebuggerView {
         this._terrainMat = terrainMat;
 
         const terrain = (() => {
-            const { geo, minY, maxY, widthTiles, depthTiles, nx, nz, minX, minZ, dx, dz, tileSize } = buildTerrainGeometry(this._buildTerrainSpec());
+            const { geo, minY, maxY, widthTiles, depthTiles, nx, nz, minX, minZ, dx, dz, tileSize, adaptive } = buildTerrainGeometry(this._buildTerrainSpec());
             this._terrainBounds.minY = minY;
             this._terrainBounds.maxY = maxY;
-            this._terrainGrid = { nx, nz, minX, minZ, dx, dz, tileSize, widthTiles, depthTiles, minY, maxY };
+            this._terrainGrid = { nx, nz, minX, minZ, dx, dz, tileSize, widthTiles, depthTiles, minY, maxY, adaptive };
 
             const mesh = new THREE.Mesh(geo, terrainMat);
             mesh.name = 'Terrain';
@@ -1955,12 +2485,14 @@ export class TerrainDebuggerView {
             mesh.castShadow = false;
             scene.add(mesh);
 
-            const grid = buildTileGridLinesFromTerrain(geo, {
-                widthTiles,
-                depthTiles,
-                segmentsPerTile: this._terrainSpec.segmentsPerTile,
-                yOffset: 0.06
-            });
+            const grid = adaptive?.enabled
+                ? null
+                : buildTileGridLinesFromTerrain(geo, {
+                    widthTiles,
+                    depthTiles,
+                    segmentsPerTile: this._terrainSpec.segmentsPerTile,
+                    yOffset: 0.06
+                });
             if (grid) {
                 grid.name = 'TileGrid';
                 grid.renderOrder = 10;
@@ -2058,7 +2590,10 @@ export class TerrainDebuggerView {
             return res;
         })();
         this._roads = roads;
+        this._syncBiomeTilingDisplacementOverlay({ forceRebuild: true, allowCreate: false });
         this._syncBiomeTilingAxisHelper();
+        this._syncBiomeTilingAdaptiveRingHelper();
+        this._syncBiomeTilingDiagnosticsUi();
     }
 
     _buildTerrainSpec() {
@@ -2082,6 +2617,10 @@ export class TerrainDebuggerView {
                 tileMinZ,
                 widthTiles,
                 depthTiles,
+                adaptiveRings: {
+                    ...(base?.adaptiveRings ?? {}),
+                    enabled: false
+                },
                 road: {
                     ...roadBase,
                     enabled: false,
@@ -2108,6 +2647,10 @@ export class TerrainDebuggerView {
                 tileMinZ,
                 widthTiles,
                 depthTiles,
+                adaptiveRings: {
+                    ...(base?.adaptiveRings ?? {}),
+                    enabled: false
+                },
                 road: {
                     ...roadBase,
                     enabled: false,
@@ -2153,6 +2696,10 @@ export class TerrainDebuggerView {
             tileMinZ,
             widthTiles,
             depthTiles,
+            adaptiveRings: {
+                ...(base?.adaptiveRings ?? {}),
+                enabled: false
+            },
             road: {
                 ...roadBase,
                 widthMeters,
@@ -2166,15 +2713,16 @@ export class TerrainDebuggerView {
         const scene = this.scene;
         const terrain = this._terrain;
         if (!scene || !terrain) return;
+        this._resetBiomeTilingViewportMaskCache();
 
         const oldGeo = terrain.geometry;
-        const { geo, minY, maxY, widthTiles, depthTiles, nx, nz, minX, minZ, dx, dz, tileSize } = buildTerrainGeometry(this._buildTerrainSpec());
+        const { geo, minY, maxY, widthTiles, depthTiles, nx, nz, minX, minZ, dx, dz, tileSize, adaptive } = buildTerrainGeometry(this._buildTerrainSpec());
         terrain.geometry = geo;
         oldGeo?.dispose?.();
 
         this._terrainBounds.minY = minY;
         this._terrainBounds.maxY = maxY;
-        this._terrainGrid = { nx, nz, minX, minZ, dx, dz, tileSize, widthTiles, depthTiles, minY, maxY };
+        this._terrainGrid = { nx, nz, minX, minZ, dx, dz, tileSize, widthTiles, depthTiles, minY, maxY, adaptive };
         this._updateGrassRoadBounds();
         if (this._terrainEngine) {
             const bounds = this._getTerrainBoundsXZ();
@@ -2196,12 +2744,14 @@ export class TerrainDebuggerView {
             this._gridLines = null;
         }
 
-        const grid = buildTileGridLinesFromTerrain(geo, {
-            widthTiles,
-            depthTiles,
-            segmentsPerTile: this._terrainSpec.segmentsPerTile,
-            yOffset: 0.06
-        });
+        const grid = adaptive?.enabled
+            ? null
+            : buildTileGridLinesFromTerrain(geo, {
+                widthTiles,
+                depthTiles,
+                segmentsPerTile: this._terrainSpec.segmentsPerTile,
+                yOffset: 0.06
+            });
         if (grid) {
             grid.name = 'TileGrid';
             grid.renderOrder = 10;
@@ -2209,12 +2759,18 @@ export class TerrainDebuggerView {
             this._gridLines = grid;
         }
 
+        this._syncBiomeTilingDisplacementOverlay({
+            forceRebuild: true,
+            allowCreate: !!this._biomeTilingDisplacementOverlay
+        });
         this._applyVisualizationToggles();
         const hideRoadAndGrass = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TRANSITION
             || this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING;
         if (this._roads?.group) this._roads.group.visible = !hideRoadAndGrass;
         if (this._grassEngine?.group) this._grassEngine.group.visible = !hideRoadAndGrass;
         this._syncBiomeTilingAxisHelper();
+        this._syncBiomeTilingAdaptiveRingHelper();
+        this._syncBiomeTilingDiagnosticsUi();
     }
 
     _applyMaterialWireframe(material, enabled) {
@@ -2231,11 +2787,14 @@ export class TerrainDebuggerView {
 
     _applyLandWireframe(enabled = false) {
         const terrain = this._terrain;
-        if (!terrain) return;
-
         const wire = !!enabled;
-        this._applyMaterialWireframe(terrain.material, wire);
-        this._applyMaterialWireframe(this._terrainMat, wire);
+        const overlayActive = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING
+            && this._biomeTilingState?.displacement?.enabled === true
+            && !!this._biomeTilingDisplacementOverlay;
+        const terrainWire = wire && !overlayActive;
+        if (terrain) this._applyMaterialWireframe(terrain.material, terrainWire);
+        this._applyMaterialWireframe(this._terrainMat, terrainWire);
+        this._applyMaterialWireframe(this._biomeTilingDisplacementOverlayMat, wire);
         if (this._terrainDebugMat) this._applyMaterialWireframe(this._terrainDebugMat, wire);
     }
 
@@ -2272,6 +2831,7 @@ export class TerrainDebuggerView {
         const asphaltWireframe = this._asphaltWireframe === true;
         this._applyLandWireframe(landWireframe);
         this._applyAsphaltWireframe(asphaltWireframe);
+        this._applyBiomeTilingDisplacementDebugView();
     }
 
     _handleKey(e, isDown) {
@@ -2519,6 +3079,1250 @@ export class TerrainDebuggerView {
         this._biomeTilingAxisKey = key;
     }
 
+    _removeBiomeTilingAdaptiveRingHelper() {
+        const helper = this._biomeTilingRingHelper;
+        if (!helper) return;
+        this.scene?.remove?.(helper);
+        this._disposeObjectResources(helper);
+        this._biomeTilingRingHelper = null;
+        this._biomeTilingRingHelperKey = '';
+    }
+
+    _createBiomeTilingAdaptiveRingHelper({
+        centerX,
+        centerZ,
+        nearRadiusMeters,
+        transitionWidthMeters,
+        transitionDebugBands = 3,
+        footprintBounds = null,
+        viewportPolygon = null
+    } = {}) {
+        const terrainBounds = this._getTerrainBoundsXZ();
+        if (!terrainBounds) return null;
+
+        const rawFootprint = footprintBounds && typeof footprintBounds === 'object'
+            ? footprintBounds
+            : terrainBounds;
+        const minX = clamp(rawFootprint.minX, terrainBounds.minX, terrainBounds.maxX, terrainBounds.minX);
+        const maxX = clamp(rawFootprint.maxX, terrainBounds.minX, terrainBounds.maxX, terrainBounds.maxX);
+        const minZ = clamp(rawFootprint.minZ, terrainBounds.minZ, terrainBounds.maxZ, terrainBounds.minZ);
+        const maxZ = clamp(rawFootprint.maxZ, terrainBounds.minZ, terrainBounds.maxZ, terrainBounds.maxZ);
+        if (!(maxX > minX + EPS && maxZ > minZ + EPS)) return null;
+
+        const cx = clamp(centerX, terrainBounds.minX, terrainBounds.maxX, (terrainBounds.minX + terrainBounds.maxX) * 0.5);
+        const cz = clamp(centerZ, terrainBounds.minZ, terrainBounds.maxZ, (terrainBounds.minZ + terrainBounds.maxZ) * 0.5);
+        const nearR = Math.max(0, Number(nearRadiusMeters) || 0);
+        const transitionWidth = Math.max(0, Number(transitionWidthMeters) || 0);
+        const outerR = nearR + transitionWidth;
+        const y = (Number(this._terrainBounds?.maxY) || 0) + BIOME_TILING_RING_HELPER_Y_OFFSET_METERS;
+
+        const clipPolygon = Array.isArray(viewportPolygon) && viewportPolygon.length >= 3
+            ? viewportPolygon
+            : null;
+        const isInsideFootprint = (x, z) => {
+            if (!Number.isFinite(x) || !Number.isFinite(z)) return false;
+            if (x < minX - 1e-4 || x > maxX + 1e-4) return false;
+            if (z < minZ - 1e-4 || z > maxZ + 1e-4) return false;
+            if (clipPolygon) {
+                return this._isPointInsideBiomeTilingConvexPolygonXZ({
+                    x,
+                    z,
+                    polygon: clipPolygon
+                });
+            }
+            return true;
+        };
+
+        const colorNear = new THREE.Color(BIOME_TILING_RING_HELPER_NEAR_COLOR);
+        const colorOuter = new THREE.Color(BIOME_TILING_RING_HELPER_OUTER_COLOR);
+        const ringDistanceMeters = (x, z) => Math.max(Math.abs(x - cx), Math.abs(z - cz));
+        const edgeSampleStepMeters = clamp(outerR / 36, 0.25, 1.5, 0.5);
+        const sampleRingPoint = (radius, edgeIndex, t) => {
+            const r = Math.max(0, Number(radius) || 0);
+            const tt = clamp(t, 0.0, 1.0, 0.0);
+            switch ((edgeIndex | 0) & 3) {
+            case 0:
+                return { x: cx - r + tt * (r * 2), z: cz - r };
+            case 1:
+                return { x: cx + r, z: cz - r + tt * (r * 2) };
+            case 2:
+                return { x: cx + r - tt * (r * 2), z: cz + r };
+            default:
+                return { x: cx - r, z: cz + r - tt * (r * 2) };
+            }
+        };
+
+        const makeFill = () => {
+            if (outerR <= EPS) return null;
+            const width = maxX - minX;
+            const depth = maxZ - minZ;
+            if (!(width > EPS && depth > EPS)) return null;
+
+            let step = clamp(outerR / 42, 0.2, 1.25, 0.4);
+            const maxQuads = 180000;
+            const estQuads = Math.ceil(width / step) * Math.ceil(depth / step);
+            if (estQuads > maxQuads) step *= Math.sqrt(estQuads / maxQuads);
+
+            const positions = [];
+            const colors = [];
+            const indices = [];
+            const fillY = y - 0.01;
+            const tempColor = new THREE.Color();
+            let vertexBase = 0;
+            const startX = Math.floor(minX / step) * step;
+            const startZ = Math.floor(minZ / step) * step;
+            const endX = Math.ceil(maxX / step) * step;
+            const endZ = Math.ceil(maxZ / step) * step;
+
+            for (let z = startZ; z < endZ - EPS; z += step) {
+                const z0 = clamp(z, minZ, maxZ, minZ);
+                const z1 = clamp(z + step, minZ, maxZ, maxZ);
+                if (!(z1 > z0 + EPS)) continue;
+                for (let x = startX; x < endX - EPS; x += step) {
+                    const x0 = clamp(x, minX, maxX, minX);
+                    const x1 = clamp(x + step, minX, maxX, maxX);
+                    if (!(x1 > x0 + EPS)) continue;
+                    const sampleX = (x0 + x1) * 0.5;
+                    const sampleZ = (z0 + z1) * 0.5;
+                    if (!isInsideFootprint(sampleX, sampleZ)) continue;
+                    const ringDist = ringDistanceMeters(sampleX, sampleZ);
+                    if (ringDist > outerR + 1e-4) continue;
+
+                    if (transitionWidth <= EPS || ringDist <= nearR + EPS) {
+                        tempColor.copy(colorNear);
+                    } else {
+                        const alpha = clamp((ringDist - nearR) / Math.max(EPS, transitionWidth), 0.0, 1.0, 0.0);
+                        tempColor.copy(colorNear).lerp(colorOuter, alpha);
+                    }
+
+                    positions.push(
+                        x0, fillY, z0,
+                        x1, fillY, z0,
+                        x0, fillY, z1,
+                        x1, fillY, z1
+                    );
+                    colors.push(
+                        tempColor.r, tempColor.g, tempColor.b,
+                        tempColor.r, tempColor.g, tempColor.b,
+                        tempColor.r, tempColor.g, tempColor.b,
+                        tempColor.r, tempColor.g, tempColor.b
+                    );
+                    indices.push(
+                        vertexBase,
+                        vertexBase + 2,
+                        vertexBase + 1,
+                        vertexBase + 1,
+                        vertexBase + 2,
+                        vertexBase + 3
+                    );
+                    vertexBase += 4;
+                }
+            }
+
+            if (indices.length < 3) return null;
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            geometry.setIndex(indices);
+            const material = new THREE.MeshBasicMaterial({
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.22,
+                depthTest: true,
+                depthWrite: false,
+                side: THREE.DoubleSide
+            });
+            material.polygonOffset = true;
+            material.polygonOffsetFactor = -1;
+            material.polygonOffsetUnits = -1;
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.frustumCulled = false;
+            mesh.renderOrder = 925;
+            return mesh;
+        };
+
+        const makeLoop = ({ radius, color, opacity = 0.92 }) => {
+            const r = Math.max(0, Number(radius) || 0);
+            if (r <= EPS) return null;
+            const positions = [];
+            const edgeSamples = Math.max(2, Math.min(512, Math.ceil((r * 2) / edgeSampleStepMeters)));
+            let prevPoint = sampleRingPoint(r, 0, 0);
+            for (let edge = 0; edge < 4; edge++) {
+                for (let i = 1; i <= edgeSamples; i++) {
+                    const point = sampleRingPoint(r, edge, i / edgeSamples);
+                    const midX = (prevPoint.x + point.x) * 0.5;
+                    const midZ = (prevPoint.z + point.z) * 0.5;
+                    if (isInsideFootprint(midX, midZ)) {
+                        positions.push(prevPoint.x, y, prevPoint.z, point.x, y, point.z);
+                    }
+                    prevPoint = point;
+                }
+            }
+            if (positions.length < 6) return null;
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            const material = new THREE.LineBasicMaterial({
+                color,
+                transparent: true,
+                opacity: clamp(opacity, 0.0, 1.0, 0.92),
+                depthTest: true,
+                depthWrite: false
+            });
+            const line = new THREE.LineSegments(geometry, material);
+            line.frustumCulled = false;
+            line.renderOrder = 926;
+            return line;
+        };
+
+        const group = new THREE.Group();
+        group.name = 'BiomeTilingAdaptiveRingHelper';
+        group.frustumCulled = false;
+        const fillMesh = makeFill();
+        if (fillMesh) group.add(fillMesh);
+        const nearLoop = makeLoop({ radius: nearR, color: BIOME_TILING_RING_HELPER_NEAR_COLOR, opacity: 0.96 });
+        const outerLoop = makeLoop({ radius: outerR, color: BIOME_TILING_RING_HELPER_OUTER_COLOR, opacity: 0.96 });
+        if (nearLoop) group.add(nearLoop);
+        const bands = Math.max(0, Math.min(6, Math.round(Number(transitionDebugBands) || 0)));
+        if (bands > 0 && outerR > nearR + EPS) {
+            for (let i = 1; i <= bands; i++) {
+                const alpha = i / (bands + 1);
+                const radius = nearR + (outerR - nearR) * alpha;
+                const bandColor = colorNear.clone().lerp(colorOuter, alpha).getHex();
+                const opacity = THREE.MathUtils.lerp(0.48, 0.76, alpha);
+                const bandLoop = makeLoop({ radius, color: bandColor, opacity });
+                if (bandLoop) group.add(bandLoop);
+            }
+        }
+        if (outerLoop) group.add(outerLoop);
+        if (group.children.length <= 0) return null;
+        return group;
+    }
+
+    _syncBiomeTilingAdaptiveRingHelper() {
+        if (!this.scene) return;
+        const isBiomeTiling = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING;
+        const applied = this._biomeTilingAppliedGeometryState ?? null;
+        const adaptiveEnabled = isBiomeTiling && String(applied?.mode ?? 'uniform') === 'adaptive_rings';
+        const requestedGeometry = this._biomeTilingState?.geometryDensity ?? null;
+        const overlayEnabled = requestedGeometry
+            ? (requestedGeometry.ringOverlayEnabled !== false)
+            : (applied?.ringOverlayEnabled !== false);
+        if (!(adaptiveEnabled && overlayEnabled)) {
+            this._removeBiomeTilingAdaptiveRingHelper();
+            return;
+        }
+
+        const bounds = this._getTerrainBoundsXZ();
+        if (!bounds) {
+            this._removeBiomeTilingAdaptiveRingHelper();
+            return;
+        }
+
+        const nearRadiusMeters = Math.max(0, Number(applied?.nearRadiusMeters) || 0);
+        const transitionWidthMeters = Math.max(0, Number(applied?.transitionWidthMeters) || 0);
+        const outerRadiusMeters = nearRadiusMeters + transitionWidthMeters;
+        const centerX = clamp(Number(applied?.centerX), bounds.minX, bounds.maxX, (bounds.minX + bounds.maxX) * 0.5);
+        const centerZ = clamp(Number(applied?.centerZ), bounds.minZ, bounds.maxZ, (bounds.minZ + bounds.maxZ) * 0.5);
+
+        const viewportBoundsSrc = applied?.overlayViewportBounds && typeof applied.overlayViewportBounds === 'object'
+            ? applied.overlayViewportBounds
+            : null;
+        let viewportPolygon = Array.isArray(applied?.overlayViewportPolygon) && applied.overlayViewportPolygon.length >= 3
+            ? applied.overlayViewportPolygon
+            : null;
+        let viewportBounds = viewportBoundsSrc && Number.isFinite(Number(viewportBoundsSrc.minX))
+            && Number.isFinite(Number(viewportBoundsSrc.maxX))
+            && Number.isFinite(Number(viewportBoundsSrc.minZ))
+            && Number.isFinite(Number(viewportBoundsSrc.maxZ))
+            && Number(viewportBoundsSrc.maxX) > Number(viewportBoundsSrc.minX) + EPS
+            && Number(viewportBoundsSrc.maxZ) > Number(viewportBoundsSrc.minZ) + EPS
+            ? {
+                minX: Number(viewportBoundsSrc.minX),
+                maxX: Number(viewportBoundsSrc.maxX),
+                minZ: Number(viewportBoundsSrc.minZ),
+                maxZ: Number(viewportBoundsSrc.maxZ)
+            }
+            : null;
+        let viewportKey = String(applied?.overlayViewportKey ?? '');
+        if (!viewportBounds || !viewportPolygon) {
+            const sampledMask = this._getBiomeTilingStableViewportGroundPolygon({
+                edgeSamples: 6,
+                marginMeters: BIOME_TILING_VIEWPORT_MASK_MARGIN_METERS,
+                translationThresholdMeters: BIOME_TILING_VIEWPORT_MASK_STABILIZE_MOVE_METERS
+            });
+            viewportPolygon = sampledMask?.polygon ?? viewportPolygon;
+            viewportBounds = sampledMask?.bounds ?? viewportBounds;
+            viewportKey = String(sampledMask?.key ?? viewportKey);
+        }
+
+        let footprintBounds = applied?.overlayBounds && typeof applied.overlayBounds === 'object'
+            ? {
+                minX: Number(applied.overlayBounds.minX),
+                maxX: Number(applied.overlayBounds.maxX),
+                minZ: Number(applied.overlayBounds.minZ),
+                maxZ: Number(applied.overlayBounds.maxZ)
+            }
+            : null;
+        if (
+            !footprintBounds
+            || !Number.isFinite(footprintBounds.minX)
+            || !Number.isFinite(footprintBounds.maxX)
+            || !Number.isFinite(footprintBounds.minZ)
+            || !Number.isFinite(footprintBounds.maxZ)
+            || footprintBounds.maxX <= footprintBounds.minX + EPS
+            || footprintBounds.maxZ <= footprintBounds.minZ + EPS
+        ) {
+            if (viewportBounds) {
+                const vpMinX = clamp(viewportBounds.minX, bounds.minX, bounds.maxX, bounds.minX);
+                const vpMaxX = clamp(viewportBounds.maxX, bounds.minX, bounds.maxX, bounds.maxX);
+                const vpMinZ = clamp(viewportBounds.minZ, bounds.minZ, bounds.maxZ, bounds.minZ);
+                const vpMaxZ = clamp(viewportBounds.maxZ, bounds.minZ, bounds.maxZ, bounds.maxZ);
+                footprintBounds = {
+                    minX: clamp(Math.max(centerX - outerRadiusMeters, vpMinX), bounds.minX, bounds.maxX, bounds.minX),
+                    maxX: clamp(Math.min(centerX + outerRadiusMeters, vpMaxX), bounds.minX, bounds.maxX, bounds.maxX),
+                    minZ: clamp(Math.max(centerZ - outerRadiusMeters, vpMinZ), bounds.minZ, bounds.maxZ, bounds.minZ),
+                    maxZ: clamp(Math.min(centerZ + outerRadiusMeters, vpMaxZ), bounds.minZ, bounds.maxZ, bounds.maxZ)
+                };
+            } else {
+                footprintBounds = {
+                    minX: clamp(centerX - outerRadiusMeters, bounds.minX, bounds.maxX, bounds.minX),
+                    maxX: clamp(centerX + outerRadiusMeters, bounds.minX, bounds.maxX, bounds.maxX),
+                    minZ: clamp(centerZ - outerRadiusMeters, bounds.minZ, bounds.maxZ, bounds.minZ),
+                    maxZ: clamp(centerZ + outerRadiusMeters, bounds.minZ, bounds.maxZ, bounds.maxZ)
+                };
+            }
+        }
+        if (
+            !Number.isFinite(footprintBounds.minX)
+            || !Number.isFinite(footprintBounds.maxX)
+            || !Number.isFinite(footprintBounds.minZ)
+            || !Number.isFinite(footprintBounds.maxZ)
+            || footprintBounds.maxX <= footprintBounds.minX + EPS
+            || footprintBounds.maxZ <= footprintBounds.minZ + EPS
+        ) {
+            this._removeBiomeTilingAdaptiveRingHelper();
+            return;
+        }
+
+        const key = [
+            bounds.minX.toFixed(3),
+            bounds.maxX.toFixed(3),
+            bounds.minZ.toFixed(3),
+            bounds.maxZ.toFixed(3),
+            centerX.toFixed(3),
+            centerZ.toFixed(3),
+            nearRadiusMeters.toFixed(3),
+            transitionWidthMeters.toFixed(3),
+            Math.max(0, Math.min(6, Math.round(Number(applied?.transitionDebugBands) || 0))),
+            footprintBounds.minX.toFixed(3),
+            footprintBounds.maxX.toFixed(3),
+            footprintBounds.minZ.toFixed(3),
+            footprintBounds.maxZ.toFixed(3),
+            String(viewportKey ?? '')
+        ].join('|');
+        if (this._biomeTilingRingHelper && key === this._biomeTilingRingHelperKey) return;
+
+        this._removeBiomeTilingAdaptiveRingHelper();
+        const helper = this._createBiomeTilingAdaptiveRingHelper({
+            centerX,
+            centerZ,
+            nearRadiusMeters,
+            transitionWidthMeters,
+            transitionDebugBands: Math.max(0, Math.min(6, Math.round(Number(applied?.transitionDebugBands) || 0))),
+            footprintBounds,
+            viewportPolygon
+        });
+        if (!helper) return;
+        this.scene.add(helper);
+        this._biomeTilingRingHelper = helper;
+        this._biomeTilingRingHelperKey = key;
+    }
+
+    _getGeometryTriangleCount(geometry) {
+        const geo = geometry?.isBufferGeometry ? geometry : null;
+        if (!geo) return 0;
+        const indexAttr = geo.index ?? null;
+        if (indexAttr?.isBufferAttribute) return Math.max(0, Math.round((Number(indexAttr.count) || 0) / 3));
+        const posAttr = geo.attributes?.position ?? null;
+        if (posAttr?.isBufferAttribute) return Math.max(0, Math.round((Number(posAttr.count) || 0) / 3));
+        return 0;
+    }
+
+    _clearBiomeTilingDisplacementStateForMaterial(material) {
+        const mat = material?.isMeshStandardMaterial ? material : null;
+        if (!mat) return;
+        let needsUpdate = false;
+        if (mat.displacementMap) {
+            mat.displacementMap = null;
+            needsUpdate = true;
+        }
+        if (Math.abs(Number(mat.displacementScale) || 0) > EPS) mat.displacementScale = 0.0;
+        if (Math.abs(Number(mat.displacementBias) || 0) > EPS) mat.displacementBias = 0.0;
+        if (needsUpdate) mat.needsUpdate = true;
+    }
+
+    _removeBiomeTilingDisplacementOverlay({ disposeMaterial = false } = {}) {
+        const overlay = this._biomeTilingDisplacementOverlay;
+        if (overlay) {
+            this.scene?.remove?.(overlay);
+            overlay.geometry?.dispose?.();
+            this._biomeTilingDisplacementOverlay = null;
+        }
+        this._biomeTilingDisplacementOverlayKey = '';
+        this._clearBiomeTilingDisplacementStateForMaterial(this._biomeTilingDisplacementOverlayMat);
+
+        if (disposeMaterial) {
+            this._biomeTilingDisplacementOverlayMat?.dispose?.();
+            this._biomeTilingDisplacementOverlayMat = null;
+        }
+    }
+
+    _hideBiomeTilingDisplacementOverlay() {
+        const overlay = this._biomeTilingDisplacementOverlay;
+        if (!overlay) return;
+        overlay.visible = false;
+    }
+
+    _ensureBiomeTilingDisplacementOverlayMaterial() {
+        if (this._biomeTilingDisplacementOverlayMat?.isMeshStandardMaterial) {
+            return this._biomeTilingDisplacementOverlayMat;
+        }
+
+        const mat = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            roughness: 1.0,
+            metalness: 0.0
+        });
+        mat.polygonOffset = true;
+        mat.polygonOffsetFactor = 1;
+        mat.polygonOffsetUnits = 1;
+        mat.map = this._terrainBiomeDummyMapTex;
+        mat.userData = mat.userData ?? {};
+        mat.userData.terrainEngineMaskTex = FALLBACK_TERRAIN_ENGINE_MASK_TEX;
+        ensureTerrainBiomeBlendShaderOnMaterial(mat);
+        this._biomeTilingDisplacementOverlayMat = mat;
+        this._syncBiomeTilingDisplacementOverlayMaterialFromTerrain();
+        return mat;
+    }
+
+    _syncBiomeTilingDisplacementOverlayMaterialFromTerrain() {
+        const src = this._terrainMat;
+        const dst = this._biomeTilingDisplacementOverlayMat;
+        if (!src?.isMeshStandardMaterial || !dst?.isMeshStandardMaterial) return;
+        const displacementDebugActive = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING
+            && String(this._biomeTilingState?.displacement?.debugView ?? BIOME_TILING_DEFAULT_STATE.displacement.debugView) === 'displacement';
+
+        let needsUpdate = false;
+        const assignTex = (key) => {
+            const next = src[key] ?? null;
+            if (dst[key] !== next) {
+                dst[key] = next;
+                needsUpdate = true;
+            }
+        };
+        // Overlay albedo is driven by biome-blend uniforms; keep base map unbound to save a texture unit.
+        if (dst.map) {
+            dst.map = null;
+            needsUpdate = true;
+        }
+        if (!displacementDebugActive) {
+            assignTex('normalMap');
+            // ORM detail comes from biome arrays on WebGL2; avoid extra sampler pressure on low-end GPUs.
+            if (dst.roughnessMap) {
+                dst.roughnessMap = null;
+                needsUpdate = true;
+            }
+            if (dst.metalnessMap) {
+                dst.metalnessMap = null;
+                needsUpdate = true;
+            }
+            if (dst.aoMap) {
+                dst.aoMap = null;
+                needsUpdate = true;
+            }
+        }
+
+        if (!displacementDebugActive) {
+            const nextRoughness = Number(src.roughness);
+            if (Math.abs((Number(dst.roughness) || 0) - nextRoughness) > EPS) dst.roughness = nextRoughness;
+            const nextMetalness = Number(src.metalness);
+            if (Math.abs((Number(dst.metalness) || 0) - nextMetalness) > EPS) dst.metalness = nextMetalness;
+            if ('aoMapIntensity' in dst && 'aoMapIntensity' in src) {
+                const nextAoIntensity = Number(src.aoMapIntensity);
+                if (Math.abs((Number(dst.aoMapIntensity) || 0) - nextAoIntensity) > EPS) dst.aoMapIntensity = nextAoIntensity;
+            }
+            if (dst.normalScale?.isVector2 && src.normalScale?.isVector2 && !dst.normalScale.equals(src.normalScale)) {
+                dst.normalScale.copy(src.normalScale);
+            }
+            if (dst.color?.isColor && src.color?.isColor && !dst.color.equals(src.color)) {
+                dst.color.copy(src.color);
+            }
+        }
+
+        dst.userData = dst.userData ?? {};
+        const srcUserData = src.userData ?? {};
+        for (const key of TERRAIN_BIOME_BLEND_USER_DATA_KEYS) {
+            if (dst.userData[key] !== srcUserData[key]) dst.userData[key] = srcUserData[key];
+        }
+        syncTerrainBiomeBlendUniformsOnMaterial(dst);
+        if (needsUpdate) dst.needsUpdate = true;
+    }
+
+    _isBiomeTilingOverlayPointInsideRegularPolygon({
+        x,
+        z,
+        centerX,
+        centerZ,
+        radiusMeters,
+        sides
+    } = {}) {
+        const px = Number(x);
+        const pz = Number(z);
+        const cx = Number(centerX);
+        const cz = Number(centerZ);
+        const r = Math.max(0, Number(radiusMeters) || 0);
+        const n = Math.max(3, Math.round(Number(sides) || BIOME_TILING_DISPLACEMENT_OVERLAY_SHAPE_SIDES));
+        if (!(Number.isFinite(px) && Number.isFinite(pz) && Number.isFinite(cx) && Number.isFinite(cz) && r > EPS)) return false;
+
+        const dx = px - cx;
+        const dz = pz - cz;
+        const dist = Math.hypot(dx, dz);
+        if (dist <= EPS) return true;
+
+        const sector = (Math.PI * 2) / n;
+        const halfSector = sector * 0.5;
+        let angle = Math.atan2(dz, dx);
+        angle = ((angle % sector) + sector) % sector;
+        const edgeDenom = Math.cos(angle - halfSector);
+        if (!(edgeDenom > EPS)) return false;
+        const edgeDist = (r * Math.cos(Math.PI / n)) / edgeDenom;
+        return dist <= edgeDist + 1e-3;
+    }
+
+    _buildBiomeTilingConvexHullXZ(points = []) {
+        const src = Array.isArray(points) ? points : [];
+        if (src.length < 3) return [];
+        const norm = [];
+        for (const p of src) {
+            const x = Number(p?.x);
+            const z = Number(p?.z);
+            if (!(Number.isFinite(x) && Number.isFinite(z))) continue;
+            norm.push({ x, z });
+        }
+        if (norm.length < 3) return [];
+        norm.sort((a, b) => (a.x === b.x ? a.z - b.z : a.x - b.x));
+
+        const dedup = [];
+        for (const p of norm) {
+            const prev = dedup[dedup.length - 1];
+            if (prev && Math.abs(prev.x - p.x) <= 1e-5 && Math.abs(prev.z - p.z) <= 1e-5) continue;
+            dedup.push(p);
+        }
+        if (dedup.length < 3) return [];
+
+        const cross = (o, a, b) => ((a.x - o.x) * (b.z - o.z)) - ((a.z - o.z) * (b.x - o.x));
+
+        const lower = [];
+        for (const p of dedup) {
+            while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+            lower.push(p);
+        }
+        const upper = [];
+        for (let i = dedup.length - 1; i >= 0; i--) {
+            const p = dedup[i];
+            while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+            upper.push(p);
+        }
+        lower.pop();
+        upper.pop();
+        const hull = lower.concat(upper);
+        return hull.length >= 3 ? hull : [];
+    }
+
+    _expandBiomeTilingConvexPolygonXZ({ polygon, marginMeters = 0 } = {}) {
+        const poly = Array.isArray(polygon) ? polygon : [];
+        if (poly.length < 3) return [];
+        const margin = Math.max(0, Number(marginMeters) || 0);
+        if (margin <= EPS) return poly.map((p) => ({ x: Number(p.x) || 0, z: Number(p.z) || 0 }));
+
+        let cx = 0;
+        let cz = 0;
+        for (const p of poly) {
+            cx += Number(p?.x) || 0;
+            cz += Number(p?.z) || 0;
+        }
+        cx /= poly.length;
+        cz /= poly.length;
+
+        return poly.map((p) => {
+            const x = Number(p?.x) || 0;
+            const z = Number(p?.z) || 0;
+            const dx = x - cx;
+            const dz = z - cz;
+            const len = Math.hypot(dx, dz);
+            if (len <= EPS) return { x, z };
+            const inv = 1 / len;
+            return {
+                x: x + (dx * inv * margin),
+                z: z + (dz * inv * margin)
+            };
+        });
+    }
+
+    _isPointInsideBiomeTilingConvexPolygonXZ({ x, z, polygon } = {}) {
+        const poly = Array.isArray(polygon) ? polygon : [];
+        if (poly.length < 3) return false;
+        const px = Number(x);
+        const pz = Number(z);
+        if (!(Number.isFinite(px) && Number.isFinite(pz))) return false;
+
+        let hasPos = false;
+        let hasNeg = false;
+        for (let i = 0; i < poly.length; i++) {
+            const a = poly[i];
+            const b = poly[(i + 1) % poly.length];
+            const ax = Number(a?.x) || 0;
+            const az = Number(a?.z) || 0;
+            const bx = Number(b?.x) || 0;
+            const bz = Number(b?.z) || 0;
+            const cross = ((bx - ax) * (pz - az)) - ((bz - az) * (px - ax));
+            if (cross > 1e-6) hasPos = true;
+            else if (cross < -1e-6) hasNeg = true;
+            if (hasPos && hasNeg) return false;
+        }
+        return true;
+    }
+
+    _sampleBiomeTilingCameraViewportGroundPolygon({ edgeSamples = 6, marginMeters = BIOME_TILING_VIEWPORT_MASK_MARGIN_METERS } = {}) {
+        const camera = this.camera;
+        const terrain = this._terrain;
+        if (!camera || !terrain?.isMesh) return null;
+
+        const sampleCount = Math.max(2, Math.round(Number(edgeSamples) || 6));
+        const borderNdc = [];
+        for (let i = 0; i < sampleCount; i++) {
+            const t = i / Math.max(1, sampleCount - 1);
+            borderNdc.push({ x: -1 + t * 2, y: 1 });
+        }
+        for (let i = 1; i < sampleCount; i++) {
+            const t = i / Math.max(1, sampleCount - 1);
+            borderNdc.push({ x: 1, y: 1 - t * 2 });
+        }
+        for (let i = 1; i < sampleCount; i++) {
+            const t = i / Math.max(1, sampleCount - 1);
+            borderNdc.push({ x: 1 - t * 2, y: -1 });
+        }
+        for (let i = 1; i < sampleCount - 1; i++) {
+            const t = i / Math.max(1, sampleCount - 1);
+            borderNdc.push({ x: -1, y: -1 + t * 2 });
+        }
+
+        terrain.updateMatrixWorld?.(true);
+        const raycaster = new THREE.Raycaster();
+        const ndc = new THREE.Vector2();
+        const hits = [];
+        const points = [];
+        for (const p of borderNdc) {
+            ndc.set(Number(p.x) || 0, Number(p.y) || 0);
+            raycaster.setFromCamera(ndc, camera);
+            hits.length = 0;
+            raycaster.intersectObject(terrain, false, hits);
+            const hit = hits[0];
+            if (!hit?.point) continue;
+            points.push({ x: Number(hit.point.x) || 0, z: Number(hit.point.z) || 0 });
+        }
+
+        const hull = this._buildBiomeTilingConvexHullXZ(points);
+        if (hull.length < 3) return null;
+        const expanded = this._expandBiomeTilingConvexPolygonXZ({
+            polygon: hull,
+            marginMeters: Math.max(0, Number(marginMeters) || BIOME_TILING_VIEWPORT_MASK_MARGIN_METERS)
+        });
+        if (expanded.length < 3) return null;
+
+        let minX = Infinity;
+        let minZ = Infinity;
+        let maxX = -Infinity;
+        let maxZ = -Infinity;
+        for (const p of expanded) {
+            minX = Math.min(minX, p.x);
+            minZ = Math.min(minZ, p.z);
+            maxX = Math.max(maxX, p.x);
+            maxZ = Math.max(maxZ, p.z);
+        }
+        if (!(maxX > minX + EPS && maxZ > minZ + EPS)) return null;
+
+        const key = expanded.map((p) => `${p.x.toFixed(3)},${p.z.toFixed(3)}`).join('|');
+        return {
+            polygon: expanded,
+            bounds: { minX, maxX, minZ, maxZ },
+            key
+        };
+    }
+
+    _cloneBiomeTilingViewportMask(mask = null) {
+        const src = mask && typeof mask === 'object' ? mask : null;
+        const boundsSrc = src?.bounds && typeof src.bounds === 'object' ? src.bounds : null;
+        const polySrc = Array.isArray(src?.polygon) ? src.polygon : null;
+        if (!boundsSrc || !polySrc || polySrc.length < 3) return null;
+        const minX = Number(boundsSrc.minX);
+        const maxX = Number(boundsSrc.maxX);
+        const minZ = Number(boundsSrc.minZ);
+        const maxZ = Number(boundsSrc.maxZ);
+        if (
+            !Number.isFinite(minX)
+            || !Number.isFinite(maxX)
+            || !Number.isFinite(minZ)
+            || !Number.isFinite(maxZ)
+            || maxX <= minX + EPS
+            || maxZ <= minZ + EPS
+        ) {
+            return null;
+        }
+        const polygon = [];
+        for (const p of polySrc) {
+            const x = Number(p?.x);
+            const z = Number(p?.z);
+            if (!(Number.isFinite(x) && Number.isFinite(z))) continue;
+            polygon.push({ x, z });
+        }
+        if (polygon.length < 3) return null;
+        return {
+            polygon,
+            bounds: { minX, maxX, minZ, maxZ },
+            key: String(src?.key ?? '')
+        };
+    }
+
+    _resetBiomeTilingViewportMaskCache() {
+        this._biomeTilingViewportMaskCache = null;
+    }
+
+    _getBiomeTilingStableViewportGroundPolygon({
+        edgeSamples = 6,
+        marginMeters = BIOME_TILING_VIEWPORT_MASK_MARGIN_METERS,
+        translationThresholdMeters = BIOME_TILING_VIEWPORT_MASK_STABILIZE_MOVE_METERS
+    } = {}) {
+        const sampled = this._cloneBiomeTilingViewportMask(this._sampleBiomeTilingCameraViewportGroundPolygon({
+            edgeSamples,
+            marginMeters
+        }));
+        const camera = this.camera;
+        const camPos = camera?.position ?? null;
+        const camX = Number(camPos?.x);
+        const camY = Number(camPos?.y);
+        const camZ = Number(camPos?.z);
+        const cameraValid = Number.isFinite(camX) && Number.isFinite(camY) && Number.isFinite(camZ);
+        const threshold = Math.max(0, Number(translationThresholdMeters) || BIOME_TILING_VIEWPORT_MASK_STABILIZE_MOVE_METERS);
+
+        const cacheRaw = this._biomeTilingViewportMaskCache;
+        const cache = cacheRaw && typeof cacheRaw === 'object' ? cacheRaw : null;
+        const cachedMask = this._cloneBiomeTilingViewportMask(cache?.mask ?? null);
+
+        if (!cachedMask && sampled) {
+            this._biomeTilingViewportMaskCache = {
+                mask: sampled,
+                cameraX: cameraValid ? camX : null,
+                cameraY: cameraValid ? camY : null,
+                cameraZ: cameraValid ? camZ : null
+            };
+            return this._cloneBiomeTilingViewportMask(sampled);
+        }
+        if (!cachedMask && !sampled) return null;
+        if (!cachedMask) return this._cloneBiomeTilingViewportMask(sampled);
+
+        if (!cameraValid) {
+            if (sampled) {
+                this._biomeTilingViewportMaskCache = {
+                    mask: sampled,
+                    cameraX: null,
+                    cameraY: null,
+                    cameraZ: null
+                };
+                return this._cloneBiomeTilingViewportMask(sampled);
+            }
+            return cachedMask;
+        }
+
+        const cacheX = Number(cache?.cameraX);
+        const cacheY = Number(cache?.cameraY);
+        const cacheZ = Number(cache?.cameraZ);
+        const cachePosValid = Number.isFinite(cacheX) && Number.isFinite(cacheY) && Number.isFinite(cacheZ);
+        const movedMeters = cachePosValid ? Math.hypot(camX - cacheX, camY - cacheY, camZ - cacheZ) : Infinity;
+        if (movedMeters <= threshold + 1e-4) return cachedMask;
+
+        if (sampled) {
+            this._biomeTilingViewportMaskCache = {
+                mask: sampled,
+                cameraX: camX,
+                cameraY: camY,
+                cameraZ: camZ
+            };
+            return this._cloneBiomeTilingViewportMask(sampled);
+        }
+        return cachedMask;
+    }
+
+    _clipBiomeTilingOverlayGeometryToRegularPolygon({
+        geometry,
+        centerX,
+        centerZ,
+        radiusMeters,
+        sides = BIOME_TILING_DISPLACEMENT_OVERLAY_SHAPE_SIDES,
+        viewportPolygon = null
+    } = {}) {
+        const geo = geometry?.isBufferGeometry ? geometry : null;
+        if (!geo) return geometry;
+
+        const posAttr = geo.attributes?.position;
+        if (!posAttr?.isBufferAttribute) return geometry;
+
+        const idxAttr = geo.index;
+        const idxArray = idxAttr?.isBufferAttribute ? idxAttr.array : null;
+        const triCount = idxArray
+            ? Math.max(0, Math.floor(Number(idxAttr.count) / 3))
+            : Math.max(0, Math.floor(Number(posAttr.count) / 3));
+        if (triCount <= 0) return geometry;
+
+        const pos = posAttr.array;
+        const stride = Math.max(3, Number(posAttr.itemSize) || 3);
+        const isInsideTri = (triIndex) => {
+            const base = triIndex * 3;
+            const i0 = idxArray ? idxArray[base] : base;
+            const i1 = idxArray ? idxArray[base + 1] : (base + 1);
+            const i2 = idxArray ? idxArray[base + 2] : (base + 2);
+            const o0 = i0 * stride;
+            const o1 = i1 * stride;
+            const o2 = i2 * stride;
+            const cx = (pos[o0] + pos[o1] + pos[o2]) / 3;
+            const cz = (pos[o0 + 2] + pos[o1 + 2] + pos[o2 + 2]) / 3;
+            if (Number(radiusMeters) > EPS) {
+                const insideLod = this._isBiomeTilingOverlayPointInsideRegularPolygon({
+                    x: cx,
+                    z: cz,
+                    centerX,
+                    centerZ,
+                    radiusMeters,
+                    sides
+                });
+                if (!insideLod) return false;
+            }
+            if (Array.isArray(viewportPolygon) && viewportPolygon.length >= 3) {
+                return this._isPointInsideBiomeTilingConvexPolygonXZ({
+                    x: cx,
+                    z: cz,
+                    polygon: viewportPolygon
+                });
+            }
+            return true;
+        };
+
+        let keepTriCount = 0;
+        for (let tri = 0; tri < triCount; tri++) {
+            if (isInsideTri(tri)) keepTriCount++;
+        }
+        if (keepTriCount >= triCount) return geometry;
+
+        const maxVertexIndex = Math.max(0, Math.round(Number(posAttr.count) - 1));
+        if (keepTriCount <= 0) {
+            const emptyIndex = maxVertexIndex > 65535 ? new Uint32Array(0) : new Uint16Array(0);
+            geo.setIndex(new THREE.BufferAttribute(emptyIndex, 1));
+            geo.computeBoundingSphere?.();
+            geo.computeBoundingBox?.();
+            return geometry;
+        }
+        const nextIndex = maxVertexIndex > 65535
+            ? new Uint32Array(keepTriCount * 3)
+            : new Uint16Array(keepTriCount * 3);
+        let write = 0;
+        for (let tri = 0; tri < triCount; tri++) {
+            if (!isInsideTri(tri)) continue;
+            const base = tri * 3;
+            nextIndex[write++] = idxArray ? idxArray[base] : base;
+            nextIndex[write++] = idxArray ? idxArray[base + 1] : (base + 1);
+            nextIndex[write++] = idxArray ? idxArray[base + 2] : (base + 2);
+        }
+
+        geo.setIndex(new THREE.BufferAttribute(nextIndex, 1));
+        geo.computeBoundingSphere?.();
+        geo.computeBoundingBox?.();
+        return geometry;
+    }
+
+    _rotateBiomeTilingOverlayUvForView({
+        geometry,
+        centerX,
+        centerZ
+    } = {}) {
+        const geo = geometry?.isBufferGeometry ? geometry : null;
+        const uv = geo?.attributes?.uv;
+        const camera = this.camera;
+        if (!geo || !uv?.isBufferAttribute || !camera) return;
+
+        const dir = new THREE.Vector3();
+        camera.getWorldDirection(dir);
+        dir.y = 0;
+        if (dir.lengthSq() <= EPS) return;
+        dir.normalize();
+
+        const yaw = Math.atan2(dir.z, dir.x);
+        const sin = Math.sin(-yaw);
+        const cos = Math.cos(-yaw);
+        const cx = Number(centerX) || 0;
+        const cz = Number(centerZ) || 0;
+        const arr = uv.array;
+        for (let i = 0; i < uv.count; i++) {
+            const o = i * 2;
+            const x = Number(arr[o]) || 0;
+            const z = Number(arr[o + 1]) || 0;
+            const dx = x - cx;
+            const dz = z - cz;
+            arr[o] = cx + (dx * cos - dz * sin);
+            arr[o + 1] = cz + (dx * sin + dz * cos);
+        }
+        uv.needsUpdate = true;
+    }
+
+    _syncBiomeTilingDisplacementOverlay({
+        forceRebuild = false,
+        allowCreate = true,
+        allowRebuild = true,
+        refreshViewportMask = false
+    } = {}) {
+        const scene = this.scene;
+        const terrain = this._terrain;
+        if (!scene || !terrain) {
+            this._removeBiomeTilingDisplacementOverlay();
+            return { rebuilt: false, triangles: 0 };
+        }
+
+        const tilingViewActive = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING;
+        if (!tilingViewActive) {
+            this._removeBiomeTilingDisplacementOverlay();
+            return { rebuilt: false, triangles: 0 };
+        }
+        const displacementEnabled = this._biomeTilingState?.displacement?.enabled === true;
+        if (!displacementEnabled) {
+            this._hideBiomeTilingDisplacementOverlay();
+            return {
+                rebuilt: false,
+                triangles: this._getGeometryTriangleCount(this._biomeTilingDisplacementOverlay?.geometry)
+            };
+        }
+        if (!allowCreate && !this._biomeTilingDisplacementOverlay) {
+            return { rebuilt: false, triangles: 0 };
+        }
+        if (refreshViewportMask) this._resetBiomeTilingViewportMaskCache();
+
+        const baseSpec = this._buildTerrainSpec();
+        const bounds = this._getTerrainBoundsXZ();
+        if (!baseSpec || !bounds) {
+            this._removeBiomeTilingDisplacementOverlay();
+            return { rebuilt: false, triangles: 0 };
+        }
+
+        const applied = this._biomeTilingAppliedGeometryState ?? {};
+        const mode = String(applied.mode ?? 'uniform') === 'adaptive_rings' ? 'adaptive_rings' : 'uniform';
+        const defaultSmoothing = clamp(
+            BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionSmoothing,
+            0.0,
+            1.0,
+            0.72
+        );
+        const defaultBias = clamp(
+            BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionBias,
+            -0.85,
+            0.85,
+            0.0
+        );
+        const defaultBands = Math.max(
+            0,
+            Math.min(6, Math.round(Number(BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionDebugBands) || 3))
+        );
+
+        let segmentsPerTile = Math.max(
+            1,
+            Math.round(Number(applied.segmentsPerTile) || BIOME_TILING_DEFAULT_STATE.geometryDensity.segmentsPerTile)
+        );
+        let nearSegmentsPerTile = Math.max(1, Math.round(Number(applied.nearSegmentsPerTile) || segmentsPerTile));
+        let farSegmentsPerTile = Math.max(1, Math.round(Number(applied.farSegmentsPerTile) || segmentsPerTile));
+        let nearRadiusMeters = Math.max(0, Number(applied.nearRadiusMeters) || 0);
+        let transitionWidthMeters = Math.max(0, Number(applied.transitionWidthMeters) || 0);
+        const transitionSmoothing = clamp(applied.transitionSmoothing, 0.0, 1.0, defaultSmoothing);
+        const transitionBias = clamp(applied.transitionBias, -0.85, 0.85, defaultBias);
+        const transitionDebugBands = Math.max(
+            0,
+            Math.min(6, Math.round(Number(applied.transitionDebugBands) || defaultBands))
+        );
+        let centerX = Number(applied.centerX);
+        let centerZ = Number(applied.centerZ);
+        if (!Number.isFinite(centerX)) centerX = (Number(bounds.minX) + Number(bounds.maxX)) * 0.5 || 0;
+        if (!Number.isFinite(centerZ)) centerZ = (Number(bounds.minZ) + Number(bounds.maxZ)) * 0.5 || 0;
+        centerX = clamp(centerX, bounds.minX, bounds.maxX, centerX);
+        centerZ = clamp(centerZ, bounds.minZ, bounds.maxZ, centerZ);
+        const tileSizeMeters = Math.max(EPS, Number(baseSpec.tileSize) || 24);
+        const baseMinX = Number(bounds.minX);
+        const baseMaxX = Number(bounds.maxX);
+        const baseMinZ = Number(bounds.minZ);
+        const baseMaxZ = Number(bounds.maxZ);
+        const viewportMask = this._getBiomeTilingStableViewportGroundPolygon({
+            edgeSamples: 6,
+            marginMeters: BIOME_TILING_VIEWPORT_MASK_MARGIN_METERS,
+            translationThresholdMeters: BIOME_TILING_VIEWPORT_MASK_STABILIZE_MOVE_METERS
+        });
+        const viewportBounds = viewportMask?.bounds ?? null;
+        if (!viewportBounds) {
+            this._removeBiomeTilingDisplacementOverlay();
+            return { rebuilt: false, triangles: 0 };
+        }
+        const viewportMinX = clamp(viewportBounds.minX, baseMinX, baseMaxX, baseMinX);
+        const viewportMaxX = clamp(viewportBounds.maxX, baseMinX, baseMaxX, baseMaxX);
+        const viewportMinZ = clamp(viewportBounds.minZ, baseMinZ, baseMaxZ, baseMinZ);
+        const viewportMaxZ = clamp(viewportBounds.maxZ, baseMinZ, baseMaxZ, baseMaxZ);
+        if (!(viewportMaxX > viewportMinX + EPS && viewportMaxZ > viewportMinZ + EPS)) {
+            this._removeBiomeTilingDisplacementOverlay();
+            return { rebuilt: false, triangles: 0 };
+        }
+
+        const overlayOuterRadiusMeters = mode === 'adaptive_rings'
+            ? Math.max(0, nearRadiusMeters + transitionWidthMeters)
+            : 0;
+        const targetMinX = mode === 'adaptive_rings'
+            ? Math.max(centerX - overlayOuterRadiusMeters, viewportMinX)
+            : viewportMinX;
+        const targetMaxX = mode === 'adaptive_rings'
+            ? Math.min(centerX + overlayOuterRadiusMeters, viewportMaxX)
+            : viewportMaxX;
+        const targetMinZ = mode === 'adaptive_rings'
+            ? Math.max(centerZ - overlayOuterRadiusMeters, viewportMinZ)
+            : viewportMinZ;
+        const targetMaxZ = mode === 'adaptive_rings'
+            ? Math.min(centerZ + overlayOuterRadiusMeters, viewportMaxZ)
+            : viewportMaxZ;
+        const desiredOverlayMinX = clamp(targetMinX, baseMinX, baseMaxX, baseMinX);
+        const desiredOverlayMaxX = clamp(targetMaxX, baseMinX, baseMaxX, baseMaxX);
+        const desiredOverlayMinZ = clamp(targetMinZ, baseMinZ, baseMaxZ, baseMinZ);
+        const desiredOverlayMaxZ = clamp(targetMaxZ, baseMinZ, baseMaxZ, baseMaxZ);
+        if (!(desiredOverlayMaxX > desiredOverlayMinX + EPS && desiredOverlayMaxZ > desiredOverlayMinZ + EPS)) {
+            this._removeBiomeTilingDisplacementOverlay();
+            return { rebuilt: false, triangles: 0 };
+        }
+
+        const overlayWidthMeters = Math.max(EPS, desiredOverlayMaxX - desiredOverlayMinX);
+        const overlayDepthMeters = Math.max(EPS, desiredOverlayMaxZ - desiredOverlayMinZ);
+        const totalTiles = Math.max(
+            1,
+            (overlayWidthMeters / Math.max(EPS, tileSizeMeters)) * (overlayDepthMeters / Math.max(EPS, tileSizeMeters))
+        );
+        const maxSegmentsGlobal = Math.max(
+            1,
+            Math.floor(Math.sqrt(BIOME_TILING_DISPLACEMENT_OVERLAY_MAX_TRIANGLES / Math.max(1, totalTiles * 2)))
+        );
+        if (mode === 'adaptive_rings') {
+            farSegmentsPerTile = Math.max(1, Math.min(farSegmentsPerTile, maxSegmentsGlobal));
+            nearSegmentsPerTile = Math.max(farSegmentsPerTile, nearSegmentsPerTile);
+        } else {
+            segmentsPerTile = Math.max(1, Math.min(segmentsPerTile, maxSegmentsGlobal));
+        }
+
+        const makeOverlayKey = () => [
+            mode,
+            tileSizeMeters.toFixed(3),
+            desiredOverlayMinX.toFixed(3),
+            desiredOverlayMaxX.toFixed(3),
+            desiredOverlayMinZ.toFixed(3),
+            desiredOverlayMaxZ.toFixed(3),
+            mode === 'adaptive_rings' ? nearSegmentsPerTile : segmentsPerTile,
+            mode === 'adaptive_rings' ? farSegmentsPerTile : segmentsPerTile,
+            mode === 'adaptive_rings' ? nearRadiusMeters.toFixed(3) : '0.000',
+            mode === 'adaptive_rings' ? transitionWidthMeters.toFixed(3) : '0.000',
+            mode === 'adaptive_rings' ? transitionSmoothing.toFixed(4) : defaultSmoothing.toFixed(4),
+            mode === 'adaptive_rings' ? transitionBias.toFixed(4) : defaultBias.toFixed(4),
+            mode === 'adaptive_rings' ? transitionDebugBands : defaultBands,
+            mode === 'adaptive_rings' ? centerX.toFixed(3) : '0.000',
+            mode === 'adaptive_rings' ? centerZ.toFixed(3) : '0.000',
+            mode === 'adaptive_rings' ? overlayOuterRadiusMeters.toFixed(3) : '0.000',
+            mode === 'adaptive_rings' ? BIOME_TILING_DISPLACEMENT_OVERLAY_SHAPE_SIDES : 0,
+            String(viewportMask?.key ?? '')
+        ].join('|');
+
+        let overlayKey = makeOverlayKey();
+        if (
+            this._biomeTilingDisplacementOverlay
+            && (
+                !allowRebuild
+                || (!forceRebuild && overlayKey === this._biomeTilingDisplacementOverlayKey)
+            )
+        ) {
+            const overlayMat = this._ensureBiomeTilingDisplacementOverlayMaterial();
+            if (this._biomeTilingDisplacementOverlay.material !== overlayMat) {
+                this._biomeTilingDisplacementOverlay.material = overlayMat;
+            }
+            this._biomeTilingDisplacementOverlay.position.set(0, BIOME_TILING_DISPLACEMENT_OVERLAY_Y_OFFSET_METERS, 0);
+            this._biomeTilingDisplacementOverlay.visible = true;
+            this._syncBiomeTilingDisplacementOverlayMaterialFromTerrain();
+            return {
+                rebuilt: false,
+                triangles: this._getGeometryTriangleCount(this._biomeTilingDisplacementOverlay.geometry)
+            };
+        }
+
+        const makeOverlaySpec = () => ({
+            ...baseSpec,
+            bounds: {
+                minX: desiredOverlayMinX,
+                maxX: desiredOverlayMaxX,
+                minZ: desiredOverlayMinZ,
+                maxZ: desiredOverlayMaxZ
+            },
+            segmentsPerTile: mode === 'adaptive_rings' ? farSegmentsPerTile : segmentsPerTile,
+            adaptiveRings: mode === 'adaptive_rings'
+                ? {
+                    enabled: true,
+                    centerX,
+                    centerZ,
+                    nearRadiusMeters,
+                    transitionWidthMeters,
+                    transitionSmoothing,
+                    transitionBias,
+                    transitionDebugBands,
+                    nearSegmentsPerTile,
+                    farSegmentsPerTile
+                }
+                : {
+                    ...(baseSpec?.adaptiveRings ?? {}),
+                    enabled: false
+                }
+        });
+
+        let overlaySpec = makeOverlaySpec();
+        let build = buildTerrainGeometry(overlaySpec);
+        this._clipBiomeTilingOverlayGeometryToRegularPolygon({
+            geometry: build.geo,
+            centerX,
+            centerZ,
+            radiusMeters: mode === 'adaptive_rings' ? overlayOuterRadiusMeters : 0.0,
+            sides: BIOME_TILING_DISPLACEMENT_OVERLAY_SHAPE_SIDES,
+            viewportPolygon: viewportMask?.polygon ?? null
+        });
+        let triangles = this._getGeometryTriangleCount(build.geo);
+        let guard = 0;
+        while (triangles > BIOME_TILING_DISPLACEMENT_OVERLAY_MAX_TRIANGLES && guard < 8) {
+            guard++;
+            const ratio = Math.sqrt(BIOME_TILING_DISPLACEMENT_OVERLAY_MAX_TRIANGLES / Math.max(1, triangles));
+            const scale = clamp(ratio, 0.05, 0.98, ratio);
+            if (mode === 'adaptive_rings') {
+                const nextNear = Math.max(farSegmentsPerTile, Math.floor(nearSegmentsPerTile * scale));
+                if (nextNear >= nearSegmentsPerTile) break;
+                nearSegmentsPerTile = nextNear;
+            } else {
+                const nextSegments = Math.max(1, Math.floor(segmentsPerTile * scale));
+                if (nextSegments >= segmentsPerTile) break;
+                segmentsPerTile = nextSegments;
+            }
+            build.geo?.dispose?.();
+            overlaySpec = makeOverlaySpec();
+            build = buildTerrainGeometry(overlaySpec);
+            this._clipBiomeTilingOverlayGeometryToRegularPolygon({
+                geometry: build.geo,
+                centerX,
+                centerZ,
+                radiusMeters: mode === 'adaptive_rings' ? overlayOuterRadiusMeters : 0.0,
+                sides: BIOME_TILING_DISPLACEMENT_OVERLAY_SHAPE_SIDES,
+                viewportPolygon: viewportMask?.polygon ?? null
+            });
+            triangles = this._getGeometryTriangleCount(build.geo);
+        }
+
+        const ringOverlayEnabled = mode === 'adaptive_rings'
+            ? (applied.ringOverlayEnabled !== false)
+            : false;
+        const overlayBoundsApplied = {
+            minX: desiredOverlayMinX,
+            maxX: desiredOverlayMaxX,
+            minZ: desiredOverlayMinZ,
+            maxZ: desiredOverlayMaxZ
+        };
+        const overlayViewportBoundsApplied = viewportBounds
+            ? {
+                minX: Number(viewportBounds.minX) || 0,
+                maxX: Number(viewportBounds.maxX) || 0,
+                minZ: Number(viewportBounds.minZ) || 0,
+                maxZ: Number(viewportBounds.maxZ) || 0
+            }
+            : null;
+        const overlayViewportPolygonApplied = Array.isArray(viewportMask?.polygon) && viewportMask.polygon.length >= 3
+            ? viewportMask.polygon.map((p) => ({
+                x: Number(p?.x) || 0,
+                z: Number(p?.z) || 0
+            }))
+            : null;
+        const overlayViewportKeyApplied = String(viewportMask?.key ?? '');
+        this._biomeTilingAppliedGeometryState = mode === 'adaptive_rings'
+            ? {
+                mode,
+                segmentsPerTile: farSegmentsPerTile,
+                nearSegmentsPerTile,
+                farSegmentsPerTile,
+                nearRadiusMeters,
+                transitionWidthMeters,
+                transitionSmoothing,
+                transitionBias,
+                transitionDebugBands,
+                ringOverlayEnabled,
+                overlayBounds: overlayBoundsApplied,
+                overlayViewportBounds: overlayViewportBoundsApplied,
+                overlayViewportPolygon: overlayViewportPolygonApplied,
+                overlayViewportKey: overlayViewportKeyApplied,
+                centerX,
+                centerZ
+            }
+            : {
+                mode: 'uniform',
+                segmentsPerTile,
+                nearSegmentsPerTile: segmentsPerTile,
+                farSegmentsPerTile: segmentsPerTile,
+                nearRadiusMeters: 0,
+                transitionWidthMeters: 0,
+                transitionSmoothing: defaultSmoothing,
+                transitionBias: defaultBias,
+                transitionDebugBands: defaultBands,
+                ringOverlayEnabled: false,
+                overlayBounds: overlayBoundsApplied,
+                overlayViewportBounds: overlayViewportBoundsApplied,
+                overlayViewportPolygon: overlayViewportPolygonApplied,
+                overlayViewportKey: overlayViewportKeyApplied,
+                centerX: 0,
+                centerZ: 0
+            };
+        overlayKey = makeOverlayKey();
+
+        const overlayMat = this._ensureBiomeTilingDisplacementOverlayMaterial();
+        let overlay = this._biomeTilingDisplacementOverlay;
+        if (!overlay) {
+            overlay = new THREE.Mesh(build.geo, overlayMat);
+            overlay.name = 'TerrainDisplacementOverlay';
+            overlay.receiveShadow = false;
+            overlay.castShadow = false;
+            overlay.renderOrder = 2;
+            scene.add(overlay);
+            this._biomeTilingDisplacementOverlay = overlay;
+        } else {
+            const oldGeo = overlay.geometry;
+            overlay.geometry = build.geo;
+            oldGeo?.dispose?.();
+            if (overlay.material !== overlayMat) overlay.material = overlayMat;
+            overlay.renderOrder = 2;
+        }
+        overlay.position.set(0, BIOME_TILING_DISPLACEMENT_OVERLAY_Y_OFFSET_METERS, 0);
+        overlay.visible = true;
+
+        this._biomeTilingDisplacementOverlayKey = overlayKey;
+        this._syncBiomeTilingDisplacementOverlayMaterialFromTerrain();
+        this._applyBiomeTilingDisplacementDebugView();
+        return { rebuilt: true, triangles };
+    }
+
     _getBiomeTilingCalibrationRigOrigin() {
         const bounds = this._getTerrainBoundsXZ();
         const centerX = bounds ? (bounds.minX + bounds.maxX) * 0.5 : 0;
@@ -2541,17 +4345,50 @@ export class TerrainDebuggerView {
         rig.textures = null;
     }
 
-    _applyBiomeTilingCalibrationRigMaterial(materialId) {
+    _applyBiomeTilingCalibrationRigTextureScale(nearScale) {
+        const rig = this._biomeTilingCalibrationRig;
+        if (!rig) return;
+        const textures = rig.textures;
+        if (!textures || typeof textures !== 'object') return;
+        const nextNearScale = clamp(
+            nearScale,
+            0.1,
+            6.0,
+            BIOME_TILING_DEFAULT_STATE.distanceTiling.nearScale
+        );
+        const tileMeters = Math.max(EPS, Number(rig.tileMeters) || 4.0);
+        const repeat = nextNearScale / tileMeters;
+        for (const tex of Object.values(textures)) {
+            if (!tex?.isTexture) continue;
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(repeat, repeat);
+            tex.needsUpdate = true;
+        }
+        rig.nearScale = nextNearScale;
+    }
+
+    _applyBiomeTilingCalibrationRigMaterial(materialId, nearScale) {
         const rig = this._biomeTilingCalibrationRig;
         if (!rig) return;
         const mat = rig.slotMaterial ?? null;
         if (!mat?.isMeshStandardMaterial) return;
+        const resolvedNearScale = clamp(
+            nearScale,
+            0.1,
+            6.0,
+            BIOME_TILING_DEFAULT_STATE.distanceTiling.nearScale
+        );
 
         const id = String(materialId ?? '').trim();
-        if (id === String(rig.materialId ?? '')) return;
+        if (id === String(rig.materialId ?? '')) {
+            this._applyBiomeTilingCalibrationRigTextureScale(resolvedNearScale);
+            return;
+        }
         rig.materialId = id;
 
         this._disposeBiomeTilingCalibrationRigTextures(rig);
+        rig.tileMeters = 4.0;
 
         if (!id) {
             mat.map = null;
@@ -2564,6 +4401,7 @@ export class TerrainDebuggerView {
             if ('aoMapIntensity' in mat) mat.aoMapIntensity = 1.0;
             mat.color?.setRGB?.(0.75, 0.75, 0.75);
             if (mat.normalScale?.set) mat.normalScale.set(1, 1);
+            rig.nearScale = resolvedNearScale;
             mat.needsUpdate = true;
             return;
         }
@@ -2593,16 +4431,9 @@ export class TerrainDebuggerView {
         };
 
         const meta = getPbrMaterialMeta(id);
-        const tileMeters = Math.max(EPS, Number(meta?.tileMeters) || 4.0);
-        const rep = 1.0 / tileMeters;
-        for (const tex of Object.values(textures)) {
-            if (!tex) continue;
-            tex.wrapS = THREE.RepeatWrapping;
-            tex.wrapT = THREE.RepeatWrapping;
-            tex.repeat.set(rep, rep);
-            tex.needsUpdate = true;
-        }
+        rig.tileMeters = Math.max(EPS, Number(meta?.tileMeters) || 4.0);
         rig.textures = textures;
+        this._applyBiomeTilingCalibrationRigTextureScale(resolvedNearScale);
 
         mat.map = textures.baseColor ?? null;
         mat.normalMap = textures.normal ?? null;
@@ -2641,7 +4472,7 @@ export class TerrainDebuggerView {
         this._biomeTilingCalibrationRig = null;
     }
 
-    _enableBiomeTilingCalibrationRigDebug({ materialId, nowMs } = {}) {
+    _enableBiomeTilingCalibrationRigDebug({ materialId, nearScale, nowMs } = {}) {
         const scene = this.scene;
         if (!scene) return;
         if (this._biomeTilingCalibrationRig) return;
@@ -2713,10 +4544,17 @@ export class TerrainDebuggerView {
             origin,
             materialId: '',
             slotMaterial: slotMat,
-            textures: null
+            textures: null,
+            tileMeters: 4.0,
+            nearScale: clamp(
+                nearScale,
+                0.1,
+                6.0,
+                BIOME_TILING_DEFAULT_STATE.distanceTiling.nearScale
+            )
         };
 
-        this._applyBiomeTilingCalibrationRigMaterial(materialId);
+        this._applyBiomeTilingCalibrationRigMaterial(materialId, nearScale);
         this._startBiomeTilingCalibrationRigAnimation({ origin, nowMs: Number(nowMs) || performance.now() });
     }
 
@@ -2820,7 +4658,7 @@ export class TerrainDebuggerView {
         this._biomeTilingCalibrationRigAnim = null;
     }
 
-    _syncBiomeTilingCalibrationRigDebug({ enabled = false, materialId = '' } = {}) {
+    _syncBiomeTilingCalibrationRigDebug({ enabled = false, materialId = '', nearScale } = {}) {
         const wants = !!enabled;
         const prev = !!this._biomeTilingCalibrationRigDebugEnabled;
         this._biomeTilingCalibrationRigDebugEnabled = wants;
@@ -2831,11 +4669,11 @@ export class TerrainDebuggerView {
         }
 
         if (!prev || !this._biomeTilingCalibrationRig) {
-            this._enableBiomeTilingCalibrationRigDebug({ materialId, nowMs: performance.now() });
+            this._enableBiomeTilingCalibrationRigDebug({ materialId, nearScale, nowMs: performance.now() });
             return;
         }
 
-        this._applyBiomeTilingCalibrationRigMaterial(materialId);
+        this._applyBiomeTilingCalibrationRigMaterial(materialId, nearScale);
     }
 
     _clearFlyoverDebugHelpers() {
@@ -3425,6 +5263,7 @@ export class TerrainDebuggerView {
             return;
         }
 
+        this._resetBiomeTilingLodMonitor();
         const flyover = this._flyover;
         flyover.active = true;
         flyover.startMs = performance.now();
@@ -4471,6 +6310,18 @@ export class TerrainDebuggerView {
         if (this._biomeTilingAxisHelper) {
             this._biomeTilingAxisHelper.visible = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING && !this._flyover?.active;
         }
+        if (this._biomeTilingRingHelper) {
+            this._biomeTilingRingHelper.visible = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING && !this._flyover?.active;
+        }
+        this._maybeFollowBiomeTilingDisplacementOverlay({ nowMs: t });
+        this._maybeAutoRebuildBiomeTilingDisplacementOverlay({ nowMs: t });
+        this._updateBiomeTilingLodMonitor({ nowMs: t });
+        if (this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING) {
+            if (t - (Number(this._biomeTilingDiagnosticsLastSyncMs) || 0) >= 120) {
+                this._biomeTilingDiagnosticsLastSyncMs = t;
+                this._syncBiomeTilingDiagnosticsUi();
+            }
+        }
         this._syncOutputPanel({ nowMs: t });
 
         if (this._terrainEngine && camera?.position) {
@@ -4692,12 +6543,14 @@ export class TerrainDebuggerView {
         if (modeId === 'flyover_debug') {
             if (this._terrainViewMode !== TERRAIN_VIEW_MODE.BIOME_TILING) return;
             if (this._flyover?.active) this._stopFlyover({ keepPose: true });
+            this._resetBiomeTilingLodMonitor();
             this._startBiomeTilingFlyoverDebug();
             return;
         }
         if (modeId === 'flyover') {
             if (this._terrainViewMode !== TERRAIN_VIEW_MODE.BIOME_TILING) return;
             if (this._flyover?.active) this._stopFlyover({ keepPose: true });
+            this._resetBiomeTilingLodMonitor();
             this._startBiomeTilingFlyover();
             return;
         }
@@ -4716,6 +6569,7 @@ export class TerrainDebuggerView {
 
         const pose = isEye ? focus.eye : focus.overview;
         controls.setLookAt({ position: pose.position, target: pose.target });
+        this._resetBiomeTilingLodMonitor();
         this._activeCameraPresetId = 'custom';
         this._syncCameraStatus({ nowMs: performance.now(), force: true });
         this._syncBiomeTilingHref({ force: true });
@@ -4901,6 +6755,18 @@ export class TerrainDebuggerView {
         const distanceDebugView = rawDistanceDebug === 'near' || rawDistanceDebug === 'far' ? rawDistanceDebug : 'blended';
 
         const varSrc = input.variation && typeof input.variation === 'object' ? input.variation : {};
+        const dispSrc = input.displacement && typeof input.displacement === 'object' ? input.displacement : {};
+        const dispSourceRaw = String(dispSrc.source ?? BIOME_TILING_DEFAULT_STATE.displacement.source);
+        const dispSource = (dispSourceRaw === 'displacement' || dispSourceRaw === 'ao' || dispSourceRaw === 'orm')
+            ? dispSourceRaw
+            : 'auto';
+        const dispDebugRaw = String(dispSrc.debugView ?? BIOME_TILING_DEFAULT_STATE.displacement.debugView);
+        const dispDebugView = (dispDebugRaw === 'wireframe' || dispDebugRaw === 'displacement')
+            ? dispDebugRaw
+            : 'standard';
+        const geometrySrc = input.geometryDensity && typeof input.geometryDensity === 'object' ? input.geometryDensity : {};
+        const geometryModeRaw = String(geometrySrc.mode ?? BIOME_TILING_DEFAULT_STATE.geometryDensity.mode);
+        const geometryMode = geometryModeRaw === 'adaptive_rings' ? 'adaptive_rings' : 'uniform';
         return {
             materialId: normalizeMaterialId(input.materialId, defaultMaterialId),
             distanceTiling: {
@@ -4913,15 +6779,800 @@ export class TerrainDebuggerView {
                 debugView: distanceDebugView
             },
             variation: {
-                antiTilingEnabled: varSrc.antiTilingEnabled !== false,
+                antiTilingEnabled: varSrc.antiTilingEnabled === true,
                 antiTilingStrength: clamp(varSrc.antiTilingStrength, 0.0, 2.0, BIOME_TILING_DEFAULT_STATE.variation.antiTilingStrength),
                 antiTilingCellMeters: clamp(varSrc.antiTilingCellMeters, 0.25, 12.0, BIOME_TILING_DEFAULT_STATE.variation.antiTilingCellMeters),
-                macroVariationEnabled: varSrc.macroVariationEnabled !== false,
+                macroVariationEnabled: varSrc.macroVariationEnabled === true,
                 macroVariationStrength: clamp(varSrc.macroVariationStrength, 0.0, 0.8, BIOME_TILING_DEFAULT_STATE.variation.macroVariationStrength),
                 macroVariationScale: clamp(varSrc.macroVariationScale, 0.002, 0.2, BIOME_TILING_DEFAULT_STATE.variation.macroVariationScale),
                 nearIntensity: clamp(varSrc.nearIntensity, 0.0, 2.0, BIOME_TILING_DEFAULT_STATE.variation.nearIntensity),
                 farIntensity: clamp(varSrc.farIntensity, 0.0, 2.0, BIOME_TILING_DEFAULT_STATE.variation.farIntensity)
+            },
+            displacement: {
+                enabled: dispSrc.enabled === true,
+                strength: clamp(dispSrc.strength, 0.0, 0.2, BIOME_TILING_DEFAULT_STATE.displacement.strength),
+                bias: clamp(dispSrc.bias, -10.0, 10.0, BIOME_TILING_DEFAULT_STATE.displacement.bias),
+                source: dispSource,
+                debugView: dispDebugView
+            },
+            geometryDensity: {
+                mode: geometryMode,
+                segmentsPerTile: Math.max(1, Math.min(1024, Math.round(Number(geometrySrc.segmentsPerTile) || BIOME_TILING_DEFAULT_STATE.geometryDensity.segmentsPerTile))),
+                nearSegmentsPerTile: Math.max(1, Math.min(10000, Math.round(Number(geometrySrc.nearSegmentsPerTile) || BIOME_TILING_DEFAULT_STATE.geometryDensity.nearSegmentsPerTile))),
+                farSegmentsPerTile: Math.max(1, Math.min(1024, Math.round(Number(geometrySrc.farSegmentsPerTile) || BIOME_TILING_DEFAULT_STATE.geometryDensity.farSegmentsPerTile))),
+                nearRadiusMeters: clamp(geometrySrc.nearRadiusMeters, 0.0, 1200.0, BIOME_TILING_DEFAULT_STATE.geometryDensity.nearRadiusMeters),
+                transitionWidthMeters: clamp(geometrySrc.transitionWidthMeters, 0.0, 600.0, BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionWidthMeters),
+                transitionSmoothing: clamp(geometrySrc.transitionSmoothing, 0.0, 1.0, BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionSmoothing),
+                transitionBias: clamp(geometrySrc.transitionBias, -0.85, 0.85, BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionBias),
+                transitionDebugBands: Math.max(
+                    0,
+                    Math.min(
+                        6,
+                        Math.round(
+                            Number.isFinite(Number(geometrySrc.transitionDebugBands))
+                                ? Number(geometrySrc.transitionDebugBands)
+                                : Number(BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionDebugBands)
+                        )
+                    )
+                ),
+                ringOverlayEnabled: geometrySrc.ringOverlayEnabled !== false,
+                centerOnApplyCamera: geometrySrc.centerOnApplyCamera !== false,
+                rebuildCadence: (() => {
+                    const cadenceRaw = String(geometrySrc.rebuildCadence ?? BIOME_TILING_DEFAULT_STATE.geometryDensity.rebuildCadence ?? 'off');
+                    return (
+                        cadenceRaw === 'frame'
+                        || cadenceRaw === 'frame_2'
+                        || cadenceRaw === 'frame_4'
+                        || cadenceRaw === 'frame_8'
+                        || cadenceRaw === '1s'
+                    )
+                        ? cadenceRaw
+                        : 'off';
+                })(),
+                centerX: Number.isFinite(Number(geometrySrc.centerX))
+                    ? Number(geometrySrc.centerX)
+                    : Number(BIOME_TILING_DEFAULT_STATE.geometryDensity.centerX) || 0,
+                centerZ: Number.isFinite(Number(geometrySrc.centerZ))
+                    ? Number(geometrySrc.centerZ)
+                    : Number(BIOME_TILING_DEFAULT_STATE.geometryDensity.centerZ) || 0,
+                applyNonce: Math.max(0, Math.round(Number(geometrySrc.applyNonce) || BIOME_TILING_DEFAULT_STATE.geometryDensity.applyNonce))
             }
+        };
+    }
+
+    _resolveBiomeTilingDisplacementSource({ materialId, sourceMode } = {}) {
+        const id = String(materialId ?? '').trim();
+        if (!id) {
+            return {
+                texture: null,
+                textureUrl: '',
+                resolvedSource: 'none',
+                fallbackActive: false
+            };
+        }
+
+        const urls = resolvePbrMaterialUrls(id);
+        const candidates = sourceMode === 'displacement'
+            ? [{ source: 'displacement', url: urls?.displacementUrl ?? '' }]
+            : sourceMode === 'ao'
+                ? [{ source: 'ao', url: urls?.aoUrl ?? '' }]
+                : sourceMode === 'orm'
+                    ? [{ source: 'orm', url: urls?.ormUrl ?? '' }]
+                    : [
+                        { source: 'displacement', url: urls?.displacementUrl ?? '' },
+                        { source: 'ao', url: urls?.aoUrl ?? '' },
+                        { source: 'orm', url: urls?.ormUrl ?? '' }
+                    ];
+
+        for (const candidate of candidates) {
+            const textureUrl = String(candidate?.url ?? '').trim();
+            if (!textureUrl) continue;
+            const texture = this._loadTexture(textureUrl, { srgb: false });
+            if (!texture?.isTexture) continue;
+            return {
+                texture,
+                textureUrl,
+                resolvedSource: String(candidate?.source ?? 'none'),
+                fallbackActive: sourceMode === 'auto' && String(candidate?.source ?? '') !== 'displacement'
+            };
+        }
+
+        return {
+            texture: null,
+            textureUrl: '',
+            resolvedSource: 'none',
+            fallbackActive: false
+        };
+    }
+
+    _applyBiomeTilingDisplacementState({ materialId, displacementCfg, tilingViewActive, material } = {}) {
+        const mat = material?.isMeshStandardMaterial
+            ? material
+            : (this._biomeTilingDisplacementOverlayMat?.isMeshStandardMaterial
+                ? this._biomeTilingDisplacementOverlayMat
+                : this._terrainMat);
+        if (!mat?.isMeshStandardMaterial) {
+            return {
+                enabled: false,
+                sourceMode: 'auto',
+                resolvedSource: 'none',
+                fallbackActive: false,
+                textureUrl: '',
+                missing: false
+            };
+        }
+
+        const cfg = displacementCfg && typeof displacementCfg === 'object' ? displacementCfg : BIOME_TILING_DEFAULT_STATE.displacement;
+        const sourceModeRaw = String(cfg.source ?? BIOME_TILING_DEFAULT_STATE.displacement.source);
+        const sourceMode = (sourceModeRaw === 'displacement' || sourceModeRaw === 'ao' || sourceModeRaw === 'orm')
+            ? sourceModeRaw
+            : 'auto';
+        const enabled = !!tilingViewActive && cfg.enabled === true;
+        const strength = clamp(cfg.strength, 0.0, 0.2, BIOME_TILING_DEFAULT_STATE.displacement.strength);
+        const bias = clamp(cfg.bias, -10.0, 10.0, BIOME_TILING_DEFAULT_STATE.displacement.bias);
+        const nearScale = clamp(
+            this._biomeTilingState?.distanceTiling?.nearScale,
+            0.1,
+            6.0,
+            BIOME_TILING_DEFAULT_STATE.distanceTiling.nearScale
+        );
+        const terrainBounds = this._getTerrainBoundsXZ();
+        const uvAnchorX = Number.isFinite(Number(terrainBounds?.minX)) ? Number(terrainBounds.minX) : 0;
+        const uvAnchorZ = Number.isFinite(Number(terrainBounds?.minZ)) ? Number(terrainBounds.minZ) : 0;
+        const wrap01 = (value) => {
+            const v = Number(value);
+            if (!Number.isFinite(v)) return 0;
+            const f = v - Math.floor(v);
+            return f < 0 ? (f + 1) : f;
+        };
+
+        let runtimeTex = null;
+        let resolvedSource = 'none';
+        let fallbackActive = false;
+        let textureUrl = '';
+        let missing = false;
+
+        if (enabled) {
+            const resolved = this._resolveBiomeTilingDisplacementSource({ materialId, sourceMode });
+            resolvedSource = String(resolved.resolvedSource ?? 'none');
+            fallbackActive = !!resolved.fallbackActive;
+            textureUrl = String(resolved.textureUrl ?? '');
+
+            const sourceTex = resolved.texture?.isTexture ? resolved.texture : null;
+            if (sourceTex && textureUrl) {
+                const meta = getPbrMaterialMeta(materialId);
+                const tileMeters = Math.max(EPS, Number(meta?.tileMeters) || 4.0);
+                const sourceKey = [
+                    textureUrl,
+                    tileMeters.toFixed(4),
+                    nearScale.toFixed(4),
+                    uvAnchorX.toFixed(4),
+                    uvAnchorZ.toFixed(4)
+                ].join('|');
+                if (sourceKey !== this._biomeTilingDisplacementRuntimeKey || !this._biomeTilingDisplacementRuntimeTex?.isTexture) {
+                    this._biomeTilingDisplacementRuntimeTex?.dispose?.();
+                    const cloned = sourceTex.clone();
+                    cloned.wrapS = THREE.RepeatWrapping;
+                    cloned.wrapT = THREE.RepeatWrapping;
+                    const rep = nearScale / tileMeters;
+                    cloned.repeat.set(rep, rep);
+                    if (cloned.offset?.set) cloned.offset.set(wrap01(-uvAnchorX * rep), wrap01(-uvAnchorZ * rep));
+                    if (cloned.center?.set) cloned.center.set(0, 0);
+                    cloned.rotation = 0;
+                    cloned.matrixAutoUpdate = true;
+                    cloned.updateMatrix?.();
+                    cloned.needsUpdate = true;
+                    this._biomeTilingDisplacementRuntimeTex = cloned;
+                    this._biomeTilingDisplacementRuntimeKey = sourceKey;
+                }
+                runtimeTex = this._biomeTilingDisplacementRuntimeTex;
+            } else {
+                missing = true;
+                if (this._biomeTilingDisplacementRuntimeTex) {
+                    this._biomeTilingDisplacementRuntimeTex.dispose?.();
+                    this._biomeTilingDisplacementRuntimeTex = null;
+                    this._biomeTilingDisplacementRuntimeKey = '';
+                }
+            }
+        }
+
+        if (!enabled && this._biomeTilingDisplacementRuntimeTex) {
+            this._biomeTilingDisplacementRuntimeTex.dispose?.();
+            this._biomeTilingDisplacementRuntimeTex = null;
+            this._biomeTilingDisplacementRuntimeKey = '';
+        }
+
+        let needsUpdate = false;
+        if (mat.displacementMap !== runtimeTex) {
+            mat.displacementMap = runtimeTex;
+            needsUpdate = true;
+        }
+
+        const nextScale = enabled && runtimeTex ? strength : 0.0;
+        const nextBias = enabled && runtimeTex ? bias : 0.0;
+        if (Math.abs((Number(mat.displacementScale) || 0) - nextScale) > EPS) mat.displacementScale = nextScale;
+        if (Math.abs((Number(mat.displacementBias) || 0) - nextBias) > EPS) mat.displacementBias = nextBias;
+        if (needsUpdate) mat.needsUpdate = true;
+
+        const resolvedState = {
+            enabled,
+            sourceMode,
+            resolvedSource,
+            fallbackActive,
+            textureUrl,
+            missing: enabled && !runtimeTex ? missing : false
+        };
+        this._biomeTilingDisplacementResolved = resolvedState;
+        return resolvedState;
+    }
+
+    _applyBiomeTilingDisplacementDebugView() {
+        const overlayMat = this._biomeTilingDisplacementOverlay?.material?.isMeshStandardMaterial
+            ? this._biomeTilingDisplacementOverlay.material
+            : null;
+        const displacementEnabled = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING
+            && this._biomeTilingState?.displacement?.enabled === true;
+        if (displacementEnabled && !overlayMat) return;
+        const mat = overlayMat ?? this._terrainMat;
+        if (!mat?.isMeshStandardMaterial) return;
+
+        const tilingViewActive = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING;
+        const displacementCfg = this._biomeTilingState?.displacement ?? BIOME_TILING_DEFAULT_STATE.displacement;
+        const debugRaw = String(displacementCfg?.debugView ?? BIOME_TILING_DEFAULT_STATE.displacement.debugView);
+        const debugView = (debugRaw === 'wireframe' || debugRaw === 'displacement') ? debugRaw : 'standard';
+        const wireframeEnabled = this._terrainWireframe === true || (tilingViewActive && debugView === 'wireframe');
+        this._applyMaterialWireframe(mat, wireframeEnabled);
+
+        if (!(tilingViewActive && debugView === 'displacement')) return;
+
+        let needsUpdate = false;
+        if (mat.normalMap) {
+            mat.normalMap = null;
+            needsUpdate = true;
+        }
+        if (mat.roughnessMap) {
+            mat.roughnessMap = null;
+            needsUpdate = true;
+        }
+        if (mat.metalnessMap) {
+            mat.metalnessMap = null;
+            needsUpdate = true;
+        }
+        if (mat.aoMap) {
+            mat.aoMap = null;
+            needsUpdate = true;
+        }
+        mat.userData = mat.userData ?? {};
+        mat.userData.terrainBiomeMapStoneDry = BIOME_TILING_DISPLACEMENT_DEBUG_ALBEDO_TEX;
+        mat.userData.terrainBiomeMapStoneNeutral = BIOME_TILING_DISPLACEMENT_DEBUG_ALBEDO_TEX;
+        mat.userData.terrainBiomeMapStoneWet = BIOME_TILING_DISPLACEMENT_DEBUG_ALBEDO_TEX;
+        mat.userData.terrainBiomeMapGrassDry = BIOME_TILING_DISPLACEMENT_DEBUG_ALBEDO_TEX;
+        mat.userData.terrainBiomeMapGrassNeutral = BIOME_TILING_DISPLACEMENT_DEBUG_ALBEDO_TEX;
+        mat.userData.terrainBiomeMapGrassWet = BIOME_TILING_DISPLACEMENT_DEBUG_ALBEDO_TEX;
+        mat.userData.terrainBiomeMapLandDry = BIOME_TILING_DISPLACEMENT_DEBUG_ALBEDO_TEX;
+        mat.userData.terrainBiomeMapLandNeutral = BIOME_TILING_DISPLACEMENT_DEBUG_ALBEDO_TEX;
+        mat.userData.terrainBiomeMapLandWet = BIOME_TILING_DISPLACEMENT_DEBUG_ALBEDO_TEX;
+        mat.userData.terrainBiomeNormalArrayTex = FALLBACK_TERRAIN_BIOME_NORMAL_ARRAY_TEX;
+        mat.userData.terrainBiomeOrmArrayTex = FALLBACK_TERRAIN_BIOME_ORM_ARRAY_TEX;
+        syncTerrainBiomeBlendUniformsOnMaterial(mat);
+        mat.color?.setRGB?.(0.76, 0.76, 0.76);
+        mat.roughness = 1.0;
+        mat.metalness = 0.0;
+        if (mat.normalScale?.set) mat.normalScale.set(1, 1);
+        if (needsUpdate) mat.needsUpdate = true;
+    }
+
+    _syncBiomeTilingDiagnosticsUi() {
+        const ui = this._ui;
+        if (!ui?.setBiomeTilingDiagnostics) return;
+
+        const readGeometryStats = (geo) => {
+            const posAttr = geo?.attributes?.position ?? null;
+            const indexAttr = geo?.index ?? null;
+            const vertices = posAttr?.isBufferAttribute ? Math.max(0, Math.round(Number(posAttr.count) || 0)) : 0;
+            const triangles = indexAttr?.isBufferAttribute
+                ? Math.max(0, Math.round((Number(indexAttr.count) || 0) / 3))
+                : Math.max(0, Math.round(vertices / 3));
+            return { vertices, triangles };
+        };
+        const overlayMesh = this._biomeTilingDisplacementOverlay;
+        const overlayGeometry = overlayMesh?.geometry?.isBufferGeometry ? overlayMesh.geometry : null;
+        const baseGeometry = this._terrain?.geometry?.isBufferGeometry ? this._terrain.geometry : null;
+        const overlayStats = readGeometryStats(overlayGeometry);
+        const baseStats = readGeometryStats(baseGeometry);
+        const overlayVisible = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING && overlayMesh?.visible === true;
+        const grid = this._terrainGrid ?? null;
+        const baseWidthTiles = Math.max(1, Math.round(Number(grid?.widthTiles) || 1));
+        const baseDepthTiles = Math.max(1, Math.round(Number(grid?.depthTiles) || 1));
+        const tileSize = Math.max(EPS, Number(grid?.tileSize) || Number(this._terrainSpec?.tileSize) || 24);
+        const overlayBounds = this._biomeTilingAppliedGeometryState?.overlayBounds ?? null;
+        const overlayWidthMeters = (
+            Number.isFinite(Number(overlayBounds?.minX))
+            && Number.isFinite(Number(overlayBounds?.maxX))
+            && Number(overlayBounds.maxX) > Number(overlayBounds.minX) + EPS
+        )
+            ? (Number(overlayBounds.maxX) - Number(overlayBounds.minX))
+            : 0;
+        const overlayDepthMeters = (
+            Number.isFinite(Number(overlayBounds?.minZ))
+            && Number.isFinite(Number(overlayBounds?.maxZ))
+            && Number(overlayBounds.maxZ) > Number(overlayBounds.minZ) + EPS
+        )
+            ? (Number(overlayBounds.maxZ) - Number(overlayBounds.minZ))
+            : 0;
+        const overlayWidthTiles = overlayWidthMeters > EPS ? (overlayWidthMeters / tileSize) : 0;
+        const overlayDepthTiles = overlayDepthMeters > EPS ? (overlayDepthMeters / tileSize) : 0;
+        const requestedGeometry = this._biomeTilingState?.geometryDensity ?? BIOME_TILING_DEFAULT_STATE.geometryDensity;
+        const requestedGeometryMode = String(requestedGeometry?.mode ?? 'uniform') === 'adaptive_rings'
+            ? 'adaptive_rings'
+            : 'uniform';
+        const requestedSegmentsPerTile = Math.max(
+            1,
+            Math.round(Number(requestedGeometry?.segmentsPerTile) || BIOME_TILING_DEFAULT_STATE.geometryDensity.segmentsPerTile)
+        );
+        const requestedNearSegmentsPerTile = Math.max(
+            1,
+            Math.round(Number(requestedGeometry?.nearSegmentsPerTile) || BIOME_TILING_DEFAULT_STATE.geometryDensity.nearSegmentsPerTile)
+        );
+        const requestedFarSegmentsPerTile = Math.max(
+            1,
+            Math.round(Number(requestedGeometry?.farSegmentsPerTile) || BIOME_TILING_DEFAULT_STATE.geometryDensity.farSegmentsPerTile)
+        );
+        const requestedNearRadiusMeters = Math.max(
+            0,
+            Number(requestedGeometry?.nearRadiusMeters) || BIOME_TILING_DEFAULT_STATE.geometryDensity.nearRadiusMeters
+        );
+        const requestedTransitionWidthMeters = Math.max(
+            0,
+            Number(requestedGeometry?.transitionWidthMeters) || BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionWidthMeters
+        );
+        const requestedTransitionSmoothing = clamp(
+            requestedGeometry?.transitionSmoothing,
+            0.0,
+            1.0,
+            BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionSmoothing
+        );
+        const requestedTransitionBias = clamp(
+            requestedGeometry?.transitionBias,
+            -0.85,
+            0.85,
+            BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionBias
+        );
+        const requestedTransitionDebugBands = Math.max(
+            0,
+            Math.min(
+                6,
+                Math.round(Number.isFinite(Number(requestedGeometry?.transitionDebugBands))
+                    ? Number(requestedGeometry.transitionDebugBands)
+                    : Number(BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionDebugBands))
+            )
+        );
+        const appliedGeometry = this._biomeTilingAppliedGeometryState ?? {
+            mode: 'uniform',
+            segmentsPerTile: Math.max(1, Math.round(Number(this._terrainSpec?.segmentsPerTile) || requestedSegmentsPerTile)),
+            nearSegmentsPerTile: requestedNearSegmentsPerTile,
+            farSegmentsPerTile: requestedFarSegmentsPerTile,
+            nearRadiusMeters: requestedNearRadiusMeters,
+            transitionWidthMeters: requestedTransitionWidthMeters,
+            transitionSmoothing: requestedTransitionSmoothing,
+            transitionBias: requestedTransitionBias,
+            transitionDebugBands: requestedTransitionDebugBands,
+            ringOverlayEnabled: requestedGeometry?.ringOverlayEnabled !== false,
+            centerX: 0,
+            centerZ: 0
+        };
+        const appliedGeometryMode = String(appliedGeometry.mode ?? 'uniform') === 'adaptive_rings'
+            ? 'adaptive_rings'
+            : 'uniform';
+        const appliedSegmentsPerTile = Math.max(
+            1,
+            Math.round(Number(appliedGeometry.segmentsPerTile) || Number(this._terrainSpec?.segmentsPerTile) || requestedSegmentsPerTile)
+        );
+        const appliedNearSegmentsPerTile = Math.max(
+            1,
+            Math.round(Number(appliedGeometry.nearSegmentsPerTile) || requestedNearSegmentsPerTile)
+        );
+        const appliedFarSegmentsPerTile = Math.max(
+            1,
+            Math.round(Number(appliedGeometry.farSegmentsPerTile) || requestedFarSegmentsPerTile)
+        );
+        const appliedNearRadiusMeters = Math.max(0, Number(appliedGeometry.nearRadiusMeters) || requestedNearRadiusMeters);
+        const appliedTransitionWidthMeters = Math.max(0, Number(appliedGeometry.transitionWidthMeters) || requestedTransitionWidthMeters);
+        const appliedTransitionSmoothing = clamp(
+            appliedGeometry.transitionSmoothing,
+            0.0,
+            1.0,
+            requestedTransitionSmoothing
+        );
+        const appliedTransitionBias = clamp(
+            appliedGeometry.transitionBias,
+            -0.85,
+            0.85,
+            requestedTransitionBias
+        );
+        const appliedTransitionDebugBands = Math.max(
+            0,
+            Math.min(
+                6,
+                Math.round(Number.isFinite(Number(appliedGeometry.transitionDebugBands))
+                    ? Number(appliedGeometry.transitionDebugBands)
+                    : requestedTransitionDebugBands)
+            )
+        );
+        const appliedRingCenterX = Number(appliedGeometry.centerX) || 0;
+        const appliedRingCenterZ = Number(appliedGeometry.centerZ) || 0;
+        const farSegForEstimate = appliedGeometryMode === 'adaptive_rings' ? appliedFarSegmentsPerTile : appliedSegmentsPerTile;
+        const nearSegForEstimate = appliedGeometryMode === 'adaptive_rings' ? appliedNearSegmentsPerTile : appliedSegmentsPerTile;
+        const totalTiles = Math.max(
+            1,
+            (overlayWidthTiles > EPS && overlayDepthTiles > EPS)
+                ? (overlayWidthTiles * overlayDepthTiles)
+                : (baseWidthTiles * baseDepthTiles)
+        );
+        const estimatedFarOnlyTriangles = Math.max(0, Math.round(totalTiles * farSegForEstimate * farSegForEstimate * 2));
+        const estimatedNearOnlyTriangles = Math.max(0, Math.round(totalTiles * nearSegForEstimate * nearSegForEstimate * 2));
+        const displacementResolved = this._biomeTilingDisplacementResolved ?? {
+            enabled: false,
+            sourceMode: 'auto',
+            resolvedSource: 'none',
+            fallbackActive: false,
+            textureUrl: '',
+            missing: false
+        };
+        const lodMonitor = this._getBiomeTilingLodMonitorStats({
+            nowMs: performance.now()
+        });
+
+        ui.setBiomeTilingDiagnostics({
+            active: this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING,
+            requestedGeometryMode,
+            appliedGeometryMode,
+            requestedSegmentsPerTile,
+            appliedSegmentsPerTile,
+            requestedNearSegmentsPerTile,
+            requestedFarSegmentsPerTile,
+            appliedNearSegmentsPerTile,
+            appliedFarSegmentsPerTile,
+            requestedNearRadiusMeters,
+            requestedTransitionWidthMeters,
+            appliedNearRadiusMeters,
+            appliedTransitionWidthMeters,
+            requestedTransitionSmoothing,
+            requestedTransitionBias,
+            requestedTransitionDebugBands,
+            appliedTransitionSmoothing,
+            appliedTransitionBias,
+            appliedTransitionDebugBands,
+            appliedRingCenterX,
+            appliedRingCenterZ,
+            ringOverlayEnabled: requestedGeometry?.ringOverlayEnabled !== false,
+            overlayVisible,
+            overlayWidthTiles,
+            overlayDepthTiles,
+            overlayWidthMeters,
+            overlayDepthMeters,
+            overlayVertices: overlayStats.vertices,
+            overlayTriangles: overlayStats.triangles,
+            widthTiles: overlayWidthTiles,
+            depthTiles: overlayDepthTiles,
+            vertices: overlayStats.vertices,
+            triangles: overlayStats.triangles,
+            baseWidthTiles,
+            baseDepthTiles,
+            baseVertices: baseStats.vertices,
+            baseTriangles: baseStats.triangles,
+            estimatedFarOnlyTriangles,
+            estimatedNearOnlyTriangles,
+            lastGeometryApplyMs: this._biomeTilingLastGeometryApplyMs,
+            lastDisplacementUpdateMs: this._biomeTilingLastDisplacementUpdateMs,
+            displacementEnabled: displacementResolved.enabled === true,
+            displacementSourceMode: String(displacementResolved.sourceMode ?? 'auto'),
+            displacementResolvedSource: String(displacementResolved.resolvedSource ?? 'none'),
+            displacementFallbackActive: displacementResolved.fallbackActive === true,
+            displacementTextureUrl: String(displacementResolved.textureUrl ?? ''),
+            displacementMissing: displacementResolved.missing === true,
+            activeLodZone: String(lodMonitor?.activeZone ?? 'n/a'),
+            activeLodBlend: Number.isFinite(Number(lodMonitor?.activeBlend)) ? Number(lodMonitor.activeBlend) : null,
+            activeLodSegmentsPerTile: Number.isFinite(Number(lodMonitor?.activeSegmentsPerTile)) ? Number(lodMonitor.activeSegmentsPerTile) : null,
+            activeLodDistanceMeters: Number.isFinite(Number(lodMonitor?.activeDistanceMeters)) ? Number(lodMonitor.activeDistanceMeters) : null,
+            historyWindowSec: Number.isFinite(Number(lodMonitor?.windowSec)) ? Number(lodMonitor.windowSec) : null,
+            historyNearPct: Number.isFinite(Number(lodMonitor?.nearPct)) ? Number(lodMonitor.nearPct) : null,
+            historyTransitionPct: Number.isFinite(Number(lodMonitor?.transitionPct)) ? Number(lodMonitor.transitionPct) : null,
+            historyFarPct: Number.isFinite(Number(lodMonitor?.farPct)) ? Number(lodMonitor.farPct) : null,
+            historyBoundaryCrossings: Number.isFinite(Number(lodMonitor?.boundaryCrossings)) ? Number(lodMonitor.boundaryCrossings) : 0,
+            historyPopCandidates: Number.isFinite(Number(lodMonitor?.popCandidates)) ? Number(lodMonitor.popCandidates) : 0,
+            historyMaxSegmentsDeltaPerSec: Number.isFinite(Number(lodMonitor?.maxSegmentsDeltaPerSec)) ? Number(lodMonitor.maxSegmentsDeltaPerSec) : null
+        });
+    }
+
+    _resetBiomeTilingLodMonitor({ windowSec = null } = {}) {
+        const monitor = this._biomeTilingLodMonitor;
+        if (!monitor || typeof monitor !== 'object') return;
+        if (Number.isFinite(Number(windowSec)) && Number(windowSec) > 0) {
+            monitor.windowSec = Math.max(1, Number(windowSec));
+        }
+        monitor.samples = [];
+        monitor.lastSampleMs = 0;
+    }
+
+    _computeBiomeTilingLodProbe({ cameraX = null, cameraZ = null } = {}) {
+        const cx = Number(cameraX);
+        const cz = Number(cameraZ);
+        if (!(Number.isFinite(cx) && Number.isFinite(cz))) return null;
+
+        const applied = this._biomeTilingAppliedGeometryState ?? null;
+        if (!applied || typeof applied !== 'object') return null;
+
+        const mode = String(applied.mode ?? 'uniform') === 'adaptive_rings' ? 'adaptive_rings' : 'uniform';
+        const uniformSeg = Math.max(1, Math.round(Number(applied.segmentsPerTile) || Number(this._terrainSpec?.segmentsPerTile) || 1));
+        if (mode !== 'adaptive_rings') {
+            return {
+                zone: 'uniform',
+                blend: 0,
+                segmentsPerTile: uniformSeg,
+                distanceMeters: 0
+            };
+        }
+
+        const nearSeg = Math.max(1, Math.round(Number(applied.nearSegmentsPerTile) || uniformSeg));
+        const farSeg = Math.max(1, Math.round(Number(applied.farSegmentsPerTile) || uniformSeg));
+        const nearRadius = Math.max(0, Number(applied.nearRadiusMeters) || 0);
+        const transitionWidth = Math.max(0, Number(applied.transitionWidthMeters) || 0);
+        const centerX = Number.isFinite(Number(applied.centerX)) ? Number(applied.centerX) : 0;
+        const centerZ = Number.isFinite(Number(applied.centerZ)) ? Number(applied.centerZ) : 0;
+        const smoothing = clamp(applied.transitionSmoothing, 0.0, 1.0, BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionSmoothing);
+        const bias = clamp(applied.transitionBias, -0.85, 0.85, BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionBias);
+
+        const distanceMeters = Math.hypot(cx - centerX, cz - centerZ);
+        const outerRadius = nearRadius + transitionWidth;
+        let zone = 'transition';
+        let rawT = 0;
+        if (transitionWidth <= EPS) {
+            if (distanceMeters <= nearRadius + EPS) {
+                zone = 'near';
+                rawT = 0;
+            } else {
+                zone = 'far';
+                rawT = 1;
+            }
+        } else if (distanceMeters <= nearRadius + EPS) {
+            zone = 'near';
+            rawT = 0;
+        } else if (distanceMeters >= outerRadius - EPS) {
+            zone = 'far';
+            rawT = 1;
+        } else {
+            zone = 'transition';
+            rawT = clamp((distanceMeters - nearRadius) / Math.max(EPS, transitionWidth), 0, 1, 0);
+        }
+
+        const blend = applyAdaptiveTransitionBlend01(rawT, {
+            smoothing,
+            bias
+        });
+        const segmentsPerTile = nearSeg + (farSeg - nearSeg) * blend;
+        return {
+            zone,
+            blend,
+            segmentsPerTile,
+            distanceMeters
+        };
+    }
+
+    _updateBiomeTilingLodMonitor({ nowMs = performance.now() } = {}) {
+        const monitor = this._biomeTilingLodMonitor;
+        if (!monitor || typeof monitor !== 'object') return;
+
+        const adaptiveActive = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING
+            && String(this._biomeTilingAppliedGeometryState?.mode ?? 'uniform') === 'adaptive_rings';
+        if (!adaptiveActive || !this.camera?.position) {
+            if ((monitor.samples?.length ?? 0) > 0 || (monitor.lastSampleMs || 0) > 0) {
+                this._resetBiomeTilingLodMonitor({
+                    windowSec: monitor.windowSec
+                });
+            }
+            return;
+        }
+
+        const t = Number.isFinite(Number(nowMs)) ? Number(nowMs) : performance.now();
+        const sampleIntervalMs = Math.max(16, Number(monitor.sampleIntervalMs) || BIOME_TILING_LOD_MONITOR_SAMPLE_MS);
+        const lastMs = Number(monitor.lastSampleMs) || 0;
+        if (lastMs > 0 && (t - lastMs) < sampleIntervalMs) return;
+
+        const probe = this._computeBiomeTilingLodProbe({
+            cameraX: Number(this.camera.position.x),
+            cameraZ: Number(this.camera.position.z)
+        });
+        if (!probe) return;
+
+        monitor.lastSampleMs = t;
+        monitor.samples = Array.isArray(monitor.samples) ? monitor.samples : [];
+        monitor.samples.push({
+            timeMs: t,
+            zone: probe.zone,
+            blend: probe.blend,
+            segmentsPerTile: probe.segmentsPerTile,
+            distanceMeters: probe.distanceMeters
+        });
+
+        const windowSec = Math.max(1, Number(monitor.windowSec) || BIOME_TILING_LOD_MONITOR_WINDOW_SEC);
+        const windowMs = windowSec * 1000;
+        while (monitor.samples.length > 1 && (t - Number(monitor.samples[0]?.timeMs || t)) > windowMs) {
+            monitor.samples.shift();
+        }
+    }
+
+    _maybeAutoRebuildBiomeTilingDisplacementOverlay({ nowMs = performance.now() } = {}) {
+        if (this._terrainViewMode !== TERRAIN_VIEW_MODE.BIOME_TILING) return;
+        if (this._flyover?.active) return;
+        if (this._biomeTilingState?.displacement?.enabled !== true) return;
+
+        const geometryCfg = this._biomeTilingState?.geometryDensity ?? null;
+        const cadenceRaw = String(geometryCfg?.rebuildCadence ?? 'off');
+        const cadence = (
+            cadenceRaw === 'frame'
+            || cadenceRaw === 'frame_2'
+            || cadenceRaw === 'frame_4'
+            || cadenceRaw === 'frame_8'
+            || cadenceRaw === '1s'
+        )
+            ? cadenceRaw
+            : 'off';
+
+        if (cadence !== this._biomeTilingAutoRebuildCadence) {
+            this._biomeTilingAutoRebuildCadence = cadence;
+            this._biomeTilingAutoRebuildFrameCounter = 0;
+            this._biomeTilingAutoRebuildLastMs = 0;
+        }
+        if (cadence === 'off') return;
+
+        const now = Number.isFinite(Number(nowMs)) ? Number(nowMs) : performance.now();
+        const lastFollowMs = Number(this._biomeTilingOverlayFollowLastMs) || 0;
+        if (lastFollowMs > 0 && Math.abs(now - lastFollowMs) < 0.1) return;
+
+        let shouldRebuild = false;
+        if (cadence === '1s') {
+            const lastRebuildMs = Number(this._biomeTilingAutoRebuildLastMs) || 0;
+            shouldRebuild = lastRebuildMs <= 0 || (now - lastRebuildMs) >= 1000;
+        } else {
+            const divisor = cadence === 'frame_2'
+                ? 2
+                : cadence === 'frame_4'
+                    ? 4
+                    : cadence === 'frame_8'
+                        ? 8
+                        : 1;
+            this._biomeTilingAutoRebuildFrameCounter = (Number(this._biomeTilingAutoRebuildFrameCounter) || 0) + 1;
+            shouldRebuild = divisor <= 1 || (this._biomeTilingAutoRebuildFrameCounter % divisor) === 0;
+        }
+        if (!shouldRebuild) return;
+
+        const startMs = performance.now();
+        const result = this._syncBiomeTilingDisplacementOverlay({
+            forceRebuild: true,
+            allowCreate: true,
+            allowRebuild: true,
+            refreshViewportMask: true
+        });
+        if (result?.rebuilt) {
+            this._biomeTilingAutoRebuildLastMs = now;
+            this._biomeTilingLastGeometryApplyMs = performance.now() - startMs;
+            this._syncBiomeTilingAdaptiveRingHelper();
+        } else if (cadence === '1s') {
+            this._biomeTilingAutoRebuildLastMs = now;
+        }
+    }
+
+    _maybeFollowBiomeTilingDisplacementOverlay({ nowMs = performance.now() } = {}) {
+        if (this._terrainViewMode !== TERRAIN_VIEW_MODE.BIOME_TILING) return;
+        if (this._flyover?.active) return;
+        const displacementEnabled = this._biomeTilingState?.displacement?.enabled === true;
+        if (!displacementEnabled) return;
+        if (!this._biomeTilingDisplacementOverlay) return;
+
+        const geometryCfg = this._biomeTilingState?.geometryDensity ?? null;
+        if (geometryCfg?.centerOnApplyCamera === false) return;
+
+        const applied = this._biomeTilingAppliedGeometryState ?? null;
+        if (!applied || String(applied.mode ?? 'uniform') !== 'adaptive_rings') return;
+        const bounds = this._getTerrainBoundsXZ();
+        if (!bounds) return;
+
+        const camera = this.camera;
+        const camX = Number(camera?.position?.x);
+        const camZ = Number(camera?.position?.z);
+        if (!(Number.isFinite(camX) && Number.isFinite(camZ))) return;
+
+        const centerX = clamp(Number(applied.centerX), bounds.minX, bounds.maxX, (bounds.minX + bounds.maxX) * 0.5);
+        const centerZ = clamp(Number(applied.centerZ), bounds.minZ, bounds.maxZ, (bounds.minZ + bounds.maxZ) * 0.5);
+        const nearRadius = Math.max(0, Number(applied.nearRadiusMeters) || 0);
+        const transitionWidth = Math.max(0, Number(applied.transitionWidthMeters) || 0);
+        const outerRadius = nearRadius + transitionWidth;
+        if (outerRadius <= EPS) return;
+
+        const now = Number.isFinite(Number(nowMs)) ? Number(nowMs) : performance.now();
+        const lastFollowMs = Number(this._biomeTilingOverlayFollowLastMs) || 0;
+        if ((now - lastFollowMs) < BIOME_TILING_OVERLAY_FOLLOW_REBUILD_INTERVAL_MS) return;
+
+        const moveThreshold = clamp(
+            outerRadius * 0.35,
+            BIOME_TILING_OVERLAY_FOLLOW_MIN_MOVE_METERS,
+            BIOME_TILING_OVERLAY_FOLLOW_MAX_MOVE_METERS,
+            1.0
+        );
+        const moveDist = Math.hypot(camX - centerX, camZ - centerZ);
+        if (moveDist < moveThreshold) return;
+
+        const snapStep = clamp(
+            moveThreshold * 0.5,
+            BIOME_TILING_OVERLAY_FOLLOW_SNAP_MIN_METERS,
+            BIOME_TILING_OVERLAY_FOLLOW_SNAP_MAX_METERS,
+            0.25
+        );
+        const nextCenterX = clamp(Math.round(camX / snapStep) * snapStep, bounds.minX, bounds.maxX, camX);
+        const nextCenterZ = clamp(Math.round(camZ / snapStep) * snapStep, bounds.minZ, bounds.maxZ, camZ);
+        if (Math.abs(nextCenterX - centerX) <= EPS && Math.abs(nextCenterZ - centerZ) <= EPS) return;
+
+        applied.centerX = nextCenterX;
+        applied.centerZ = nextCenterZ;
+        this._biomeTilingOverlayFollowLastMs = now;
+        this._syncBiomeTilingDisplacementOverlay({
+            forceRebuild: true,
+            allowCreate: true,
+            allowRebuild: true,
+            refreshViewportMask: true
+        });
+        this._syncBiomeTilingAdaptiveRingHelper();
+    }
+
+    _getBiomeTilingLodMonitorStats({ nowMs = performance.now() } = {}) {
+        const monitor = this._biomeTilingLodMonitor;
+        if (!monitor || typeof monitor !== 'object') return null;
+        const samplesRaw = Array.isArray(monitor.samples) ? monitor.samples : [];
+        if (!samplesRaw.length) return null;
+
+        const t = Number.isFinite(Number(nowMs)) ? Number(nowMs) : performance.now();
+        const windowSec = Math.max(1, Number(monitor.windowSec) || BIOME_TILING_LOD_MONITOR_WINDOW_SEC);
+        const windowMs = windowSec * 1000;
+        const samples = samplesRaw.filter((sample) => (t - Number(sample?.timeMs || t)) <= windowMs);
+        if (!samples.length) return null;
+
+        const counts = { near: 0, transition: 0, far: 0 };
+        let boundaryCrossings = 0;
+        let popCandidates = 0;
+        let maxSegmentsDeltaPerSec = 0;
+        for (let i = 0; i < samples.length; i++) {
+            const sample = samples[i];
+            const zone = String(sample?.zone ?? '');
+            if (zone === 'near' || zone === 'transition' || zone === 'far') counts[zone]++;
+            if (i <= 0) continue;
+            const prev = samples[i - 1];
+            const prevZone = String(prev?.zone ?? '');
+            if (zone !== prevZone) boundaryCrossings++;
+            const currTime = Number(sample?.timeMs) || 0;
+            const prevTime = Number(prev?.timeMs) || 0;
+            const dtSec = Math.max(EPS, (currTime - prevTime) / 1000);
+            const currSeg = Number(sample?.segmentsPerTile) || 0;
+            const prevSeg = Number(prev?.segmentsPerTile) || 0;
+            const segDeltaPerSec = Math.abs(currSeg - prevSeg) / dtSec;
+            if (segDeltaPerSec > maxSegmentsDeltaPerSec) maxSegmentsDeltaPerSec = segDeltaPerSec;
+            if (segDeltaPerSec >= BIOME_TILING_LOD_POP_CANDIDATE_SEG_DELTA_PER_SEC) popCandidates++;
+        }
+
+        const total = Math.max(1, samples.length);
+        const latest = samples[samples.length - 1];
+        return {
+            windowSec,
+            activeZone: String(latest?.zone ?? 'n/a'),
+            activeBlend: Number(latest?.blend),
+            activeSegmentsPerTile: Number(latest?.segmentsPerTile),
+            activeDistanceMeters: Number(latest?.distanceMeters),
+            nearPct: (counts.near / total) * 100,
+            transitionPct: (counts.transition / total) * 100,
+            farPct: (counts.far / total) * 100,
+            boundaryCrossings,
+            popCandidates,
+            maxSegmentsDeltaPerSec
         };
     }
 
@@ -5016,6 +7667,11 @@ export class TerrainDebuggerView {
     _syncTerrainBiomePbrMapsOnStandardMaterial() {
         const mat = this._terrainMat;
         if (!mat) return;
+        const terrainBounds = this._getTerrainBoundsXZ();
+        const uvAnchorX = Number.isFinite(Number(terrainBounds?.minX)) ? Number(terrainBounds.minX) : 0;
+        const uvAnchorZ = Number.isFinite(Number(terrainBounds?.minZ)) ? Number(terrainBounds.minZ) : 0;
+        mat.userData = mat.userData ?? {};
+        mat.userData.terrainUvAnchor = this._terrainUvAnchorVec2.set(uvAnchorX, uvAnchorZ);
 
         const bindings = this._terrainBiomeHumidityBindings ?? DEFAULT_TERRAIN_BIOME_HUMIDITY_PBR_BINDINGS;
         const blendCfg = this._terrainHumidityBlendConfig ?? DEFAULT_TERRAIN_HUMIDITY_BLEND_CONFIG;
@@ -5086,6 +7742,9 @@ export class TerrainDebuggerView {
         const varCfg = tilingState.variation && typeof tilingState.variation === 'object'
             ? tilingState.variation
             : BIOME_TILING_DEFAULT_STATE.variation;
+        const dispCfg = tilingState.displacement && typeof tilingState.displacement === 'object'
+            ? tilingState.displacement
+            : BIOME_TILING_DEFAULT_STATE.displacement;
         const distanceEnabled = tilingViewActive && distCfg.enabled !== false;
         const distanceNearScale = clamp(distCfg.nearScale, 0.1, 6.0, BIOME_TILING_DEFAULT_STATE.distanceTiling.nearScale);
         const distanceFarScale = clamp(distCfg.farScale, 0.01, 2.0, BIOME_TILING_DEFAULT_STATE.distanceTiling.farScale);
@@ -5095,14 +7754,39 @@ export class TerrainDebuggerView {
         const rawDistanceDebug = String(distCfg.debugView ?? BIOME_TILING_DEFAULT_STATE.distanceTiling.debugView);
         const distanceDebugView = rawDistanceDebug === 'near' || rawDistanceDebug === 'far' ? rawDistanceDebug : 'blended';
         const distanceDebugModeCode = distanceDebugView === 'near' ? 1.0 : distanceDebugView === 'far' ? 2.0 : 0.0;
-        const antiEnabled = tilingViewActive && varCfg.antiTilingEnabled !== false;
+        const antiEnabled = tilingViewActive && varCfg.antiTilingEnabled === true;
         const antiStrength = clamp(varCfg.antiTilingStrength, 0.0, 2.0, BIOME_TILING_DEFAULT_STATE.variation.antiTilingStrength);
         const antiCellMeters = clamp(varCfg.antiTilingCellMeters, 0.25, 12.0, BIOME_TILING_DEFAULT_STATE.variation.antiTilingCellMeters);
-        const macroEnabled = tilingViewActive && varCfg.macroVariationEnabled !== false;
+        const macroEnabled = tilingViewActive && varCfg.macroVariationEnabled === true;
         const macroStrength = clamp(varCfg.macroVariationStrength, 0.0, 0.8, BIOME_TILING_DEFAULT_STATE.variation.macroVariationStrength);
         const macroScale = clamp(varCfg.macroVariationScale, 0.002, 0.2, BIOME_TILING_DEFAULT_STATE.variation.macroVariationScale);
         const variationNearIntensity = clamp(varCfg.nearIntensity, 0.0, 2.0, BIOME_TILING_DEFAULT_STATE.variation.nearIntensity);
         const variationFarIntensity = clamp(varCfg.farIntensity, 0.0, 2.0, BIOME_TILING_DEFAULT_STATE.variation.farIntensity);
+        const displacementEnabled = tilingViewActive && dispCfg.enabled === true;
+        const displacementStrength = clamp(dispCfg.strength, 0.0, 0.2, BIOME_TILING_DEFAULT_STATE.displacement.strength);
+        const displacementBias = clamp(dispCfg.bias, -10.0, 10.0, BIOME_TILING_DEFAULT_STATE.displacement.bias);
+        const displacementSourceRaw = String(dispCfg.source ?? BIOME_TILING_DEFAULT_STATE.displacement.source);
+        const displacementSource = (displacementSourceRaw === 'displacement' || displacementSourceRaw === 'ao' || displacementSourceRaw === 'orm')
+            ? displacementSourceRaw
+            : 'auto';
+        const displacementDebugRaw = String(dispCfg.debugView ?? BIOME_TILING_DEFAULT_STATE.displacement.debugView);
+        const displacementDebugView = (displacementDebugRaw === 'wireframe' || displacementDebugRaw === 'displacement')
+            ? displacementDebugRaw
+            : 'standard';
+        if (displacementEnabled) {
+            this._syncBiomeTilingDisplacementOverlay({
+                forceRebuild: false,
+                allowCreate: false,
+                allowRebuild: false
+            });
+            this._ensureBiomeTilingDisplacementOverlayMaterial();
+        } else {
+            this._hideBiomeTilingDisplacementOverlay();
+        }
+        this._syncBiomeTilingDisplacementOverlayMaterialFromTerrain();
+        const displacementTargetMaterial = displacementEnabled
+            ? this._biomeTilingDisplacementOverlayMat
+            : this._terrainMat;
         keyParts.push(
             tilingViewActive ? 'tiling' : 'default',
             distanceEnabled ? '1' : '0',
@@ -5119,7 +7803,12 @@ export class TerrainDebuggerView {
             macroStrength.toFixed(3),
             macroScale.toFixed(5),
             variationNearIntensity.toFixed(3),
-            variationFarIntensity.toFixed(3)
+            variationFarIntensity.toFixed(3),
+            displacementEnabled ? '1' : '0',
+            displacementStrength.toFixed(3),
+            displacementBias.toFixed(3),
+            displacementSource,
+            displacementDebugView
         );
         const allIds = [];
         for (const biome of TERRAIN_BIOME_IDS) {
@@ -5128,9 +7817,33 @@ export class TerrainDebuggerView {
         const firstId = String(allIds[0] ?? '');
         const allSameMaterial = !!firstId && allIds.every((id) => id === firstId);
         const physicalSourceId = allSameMaterial ? firstId : String(sampled?.land?.neutral?.id ?? firstId ?? '');
+        const displacementMaterialId = String(
+            allSameMaterial
+                ? firstId
+                : (tilingState?.materialId ?? physicalSourceId ?? '')
+        );
         keyParts.push(`phys:${physicalSourceId}`);
         const key = keyParts.join('|');
-        if (key === this._terrainBiomePbrKey) return;
+        if (key === this._terrainBiomePbrKey) {
+            const displacementStartMs = performance.now();
+            this._applyBiomeTilingDisplacementState({
+                materialId: displacementMaterialId,
+                displacementCfg: {
+                    enabled: displacementEnabled,
+                    strength: displacementStrength,
+                    bias: displacementBias,
+                    source: displacementSource,
+                    debugView: displacementDebugView
+                },
+                tilingViewActive,
+                material: displacementTargetMaterial
+            });
+            this._clearBiomeTilingDisplacementStateForMaterial(this._terrainMat);
+            this._biomeTilingLastDisplacementUpdateMs = performance.now() - displacementStartMs;
+            this._applyBiomeTilingDisplacementDebugView();
+            this._syncBiomeTilingDiagnosticsUi();
+            return;
+        }
         this._terrainBiomePbrKey = key;
 
         mat.userData = mat.userData ?? {};
@@ -5203,8 +7916,9 @@ export class TerrainDebuggerView {
             variationFarIntensity
         );
 
-        if (sampled.land.neutral.mapLoaded && mat.map !== sampled.land.neutral.mapLoaded) {
-            mat.map = sampled.land.neutral.mapLoaded;
+        const nextBaseMap = sampled.land.neutral.mapLoaded ?? null;
+        if (mat.map !== nextBaseMap) {
+            mat.map = nextBaseMap;
             mat.needsUpdate = true;
         }
 
@@ -5237,7 +7951,25 @@ export class TerrainDebuggerView {
 
         this._queueTerrainBiomePhysicalArrayRebuild({ key: physicalKey, slots: physicalSlots });
         syncTerrainBiomeBlendUniformsOnMaterial(mat);
+        this._syncBiomeTilingDisplacementOverlayMaterialFromTerrain();
+        const displacementStartMs = performance.now();
+        this._applyBiomeTilingDisplacementState({
+            materialId: displacementMaterialId,
+            displacementCfg: {
+                enabled: displacementEnabled,
+                strength: displacementStrength,
+                bias: displacementBias,
+                source: displacementSource,
+                debugView: displacementDebugView
+            },
+            tilingViewActive,
+            material: displacementTargetMaterial
+        });
+        this._clearBiomeTilingDisplacementStateForMaterial(this._terrainMat);
+        this._biomeTilingLastDisplacementUpdateMs = performance.now() - displacementStartMs;
+        this._applyBiomeTilingDisplacementDebugView();
         this._updateTerrainPbrLegendUi();
+        this._syncBiomeTilingDiagnosticsUi();
     }
 
     _queueTerrainBiomePhysicalArrayRebuild({ key, slots } = {}) {
@@ -5256,6 +7988,7 @@ export class TerrainDebuggerView {
                 mat.userData.terrainBiomeOrmArrayTex = null;
             }
             syncTerrainBiomeBlendUniformsOnMaterial(mat);
+            this._syncBiomeTilingDisplacementOverlayMaterialFromTerrain();
             return;
         }
 
@@ -5368,6 +8101,7 @@ export class TerrainDebuggerView {
         mat.userData.terrainBiomeNormalArrayTex = nextNormalTex;
         mat.userData.terrainBiomeOrmArrayTex = nextOrmTex;
         syncTerrainBiomeBlendUniformsOnMaterial(mat);
+        this._syncBiomeTilingDisplacementOverlayMaterialFromTerrain();
     }
 
     async _getTerrainBiomeImageRgba(url, { size } = {}) {
@@ -5881,6 +8615,7 @@ export class TerrainDebuggerView {
         mat.userData.terrainEngineMaskTex = tex;
         mat.userData.terrainEngineBounds = this._terrainEngineBoundsVec4;
         syncTerrainBiomeBlendUniformsOnMaterial(mat);
+        this._syncBiomeTilingDisplacementOverlayMaterialFromTerrain();
         this._syncTerrainBiomePbrMapsOnStandardMaterial();
 
         this._terrainEngineLastExport = res;
@@ -6494,20 +9229,158 @@ export class TerrainDebuggerView {
         const prevBiomeTilingState = this._biomeTilingState ?? null;
         const nextBiomeTilingStateKey = JSON.stringify(nextBiomeTilingState);
         const prevBiomeTilingStateKey = JSON.stringify(prevBiomeTilingState ?? {});
+        const nextBiomeTilingRenderKey = JSON.stringify({
+            materialId: nextBiomeTilingState?.materialId ?? '',
+            distanceTiling: nextBiomeTilingState?.distanceTiling ?? {},
+            variation: nextBiomeTilingState?.variation ?? {},
+            displacement: nextBiomeTilingState?.displacement ?? {}
+        });
+        const prevBiomeTilingRenderKey = JSON.stringify({
+            materialId: prevBiomeTilingState?.materialId ?? '',
+            distanceTiling: prevBiomeTilingState?.distanceTiling ?? {},
+            variation: prevBiomeTilingState?.variation ?? {},
+            displacement: prevBiomeTilingState?.displacement ?? {}
+        });
+        let geometryApplyTriggered = false;
         if (nextBiomeTilingStateKey !== prevBiomeTilingStateKey) {
             this._biomeTilingState = nextBiomeTilingState;
-            this._terrainBiomePbrKey = '';
-            this._terrainDebugTexKey = '';
-            this._terrainEngineMaskDirty = true;
+            if (nextBiomeTilingRenderKey !== prevBiomeTilingRenderKey) {
+                this._terrainBiomePbrKey = '';
+                this._terrainDebugTexKey = '';
+                this._terrainEngineMaskDirty = true;
+            }
         } else {
             this._biomeTilingState = nextBiomeTilingState;
+        }
+
+        {
+            const nextApplyNonce = Math.max(0, Math.round(Number(nextBiomeTilingState?.geometryDensity?.applyNonce) || 0));
+            if (nextApplyNonce !== this._biomeTilingGeometryApplyNonce) {
+                this._biomeTilingGeometryApplyNonce = nextApplyNonce;
+                if (this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING) {
+                    geometryApplyTriggered = true;
+                    const geometryCfg = nextBiomeTilingState?.geometryDensity ?? BIOME_TILING_DEFAULT_STATE.geometryDensity;
+                    const mode = String(geometryCfg.mode ?? 'uniform') === 'adaptive_rings' ? 'adaptive_rings' : 'uniform';
+                    if (mode === 'adaptive_rings') {
+                        const nearSegments = Math.max(
+                            1,
+                            Math.round(Number(geometryCfg.nearSegmentsPerTile) || BIOME_TILING_DEFAULT_STATE.geometryDensity.nearSegmentsPerTile)
+                        );
+                        const farSegments = Math.max(
+                            1,
+                            Math.round(Number(geometryCfg.farSegmentsPerTile) || BIOME_TILING_DEFAULT_STATE.geometryDensity.farSegmentsPerTile)
+                        );
+                        const nearRadius = Math.max(0, Number(geometryCfg.nearRadiusMeters) || BIOME_TILING_DEFAULT_STATE.geometryDensity.nearRadiusMeters);
+                        const transitionWidth = Math.max(0, Number(geometryCfg.transitionWidthMeters) || BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionWidthMeters);
+                        const transitionSmoothing = clamp(
+                            geometryCfg.transitionSmoothing,
+                            0.0,
+                            1.0,
+                            BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionSmoothing
+                        );
+                        const transitionBias = clamp(
+                            geometryCfg.transitionBias,
+                            -0.85,
+                            0.85,
+                            BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionBias
+                        );
+                        const transitionDebugBands = Math.max(
+                            0,
+                            Math.min(
+                                6,
+                                Math.round(Number.isFinite(Number(geometryCfg.transitionDebugBands))
+                                    ? Number(geometryCfg.transitionDebugBands)
+                                    : Number(BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionDebugBands))
+                            )
+                        );
+                        const captureCameraCenter = geometryCfg.centerOnApplyCamera !== false;
+                        const specForBounds = this._buildTerrainSpec();
+                        const tileSize = Number(specForBounds?.tileSize) || 24;
+                        const widthTiles = Math.max(1, Math.round(Number(specForBounds?.widthTiles) || 1));
+                        const depthTiles = Math.max(1, Math.round(Number(specForBounds?.depthTiles) || 1));
+                        const tileMinX = Math.round(Number(specForBounds?.tileMinX) || 0);
+                        const tileMinZ = Math.round(Number(specForBounds?.tileMinZ) || 0);
+                        const minX = (tileMinX - 0.5) * tileSize;
+                        const minZ = (tileMinZ - 0.5) * tileSize;
+                        const maxX = minX + widthTiles * tileSize;
+                        const maxZ = minZ + depthTiles * tileSize;
+                        let centerX = Number(geometryCfg.centerX);
+                        let centerZ = Number(geometryCfg.centerZ);
+                        if (captureCameraCenter && this.camera?.position) {
+                            centerX = Number(this.camera.position.x);
+                            centerZ = Number(this.camera.position.z);
+                        }
+                        if (!Number.isFinite(centerX)) centerX = (minX + maxX) * 0.5;
+                        if (!Number.isFinite(centerZ)) centerZ = (minZ + maxZ) * 0.5;
+                        centerX = clamp(centerX, minX, maxX, centerX);
+                        centerZ = clamp(centerZ, minZ, maxZ, centerZ);
+
+                        this._biomeTilingAppliedGeometryState = {
+                            mode: 'adaptive_rings',
+                            segmentsPerTile: farSegments,
+                            nearSegmentsPerTile: nearSegments,
+                            farSegmentsPerTile: farSegments,
+                            nearRadiusMeters: nearRadius,
+                            transitionWidthMeters: transitionWidth,
+                            transitionSmoothing,
+                            transitionBias,
+                            transitionDebugBands,
+                            ringOverlayEnabled: geometryCfg.ringOverlayEnabled !== false,
+                            overlayBounds: null,
+                            overlayViewportBounds: null,
+                            overlayViewportPolygon: null,
+                            overlayViewportKey: '',
+                            centerX,
+                            centerZ
+                        };
+                    } else {
+                        const requestedSegments = Math.max(
+                            1,
+                            Math.round(Number(geometryCfg.segmentsPerTile) || BIOME_TILING_DEFAULT_STATE.geometryDensity.segmentsPerTile)
+                        );
+                        this._biomeTilingAppliedGeometryState = {
+                            mode: 'uniform',
+                            segmentsPerTile: requestedSegments,
+                            nearSegmentsPerTile: requestedSegments,
+                            farSegmentsPerTile: requestedSegments,
+                            nearRadiusMeters: 0,
+                            transitionWidthMeters: 0,
+                            transitionSmoothing: clamp(
+                                BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionSmoothing,
+                                0.0,
+                                1.0,
+                                0.72
+                            ),
+                            transitionBias: clamp(
+                                BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionBias,
+                                -0.85,
+                                0.85,
+                                0.0
+                            ),
+                            transitionDebugBands: Math.max(
+                                0,
+                                Math.min(6, Math.round(Number(BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionDebugBands) || 3))
+                            ),
+                            ringOverlayEnabled: false,
+                            overlayBounds: null,
+                            overlayViewportBounds: null,
+                            overlayViewportPolygon: null,
+                            overlayViewportKey: '',
+                            centerX: 0,
+                            centerZ: 0
+                        };
+                    }
+                    this._resetBiomeTilingLodMonitor();
+                }
+            }
         }
 
         {
             const biomeTilingCfg = terrainCfg.biomeTiling && typeof terrainCfg.biomeTiling === 'object' ? terrainCfg.biomeTiling : null;
             this._syncBiomeTilingCalibrationRigDebug({
                 enabled: biomeTilingCfg?.calibrationRigDebugEnabled,
-                materialId: nextBiomeTilingState.materialId
+                materialId: nextBiomeTilingState.materialId,
+                nearScale: nextBiomeTilingState?.distanceTiling?.nearScale
             });
         }
 
@@ -6556,7 +9429,28 @@ export class TerrainDebuggerView {
             }
         }
 
-        if (rebuildTerrain) this._rebuildTerrain();
+        let rebuildTerrainMs = null;
+        if (rebuildTerrain) {
+            const startMs = performance.now();
+            this._rebuildTerrain();
+            rebuildTerrainMs = performance.now() - startMs;
+        }
+        let overlaySyncMs = null;
+        if (!rebuildTerrain) {
+            const startMs = performance.now();
+            this._syncBiomeTilingDisplacementOverlay({
+                forceRebuild: geometryApplyTriggered,
+                allowCreate: geometryApplyTriggered || !!this._biomeTilingDisplacementOverlay,
+                allowRebuild: geometryApplyTriggered,
+                refreshViewportMask: geometryApplyTriggered
+            });
+            overlaySyncMs = performance.now() - startMs;
+        }
+        if (geometryApplyTriggered) {
+            this._biomeTilingLastGeometryApplyMs = Number.isFinite(rebuildTerrainMs)
+                ? rebuildTerrainMs
+                : (Number.isFinite(overlaySyncMs) ? overlaySyncMs : 0.0);
+        }
         if (this._gridLines) this._gridLines.visible = !!terrainCfg.showGrid;
         if (this._terrainEngine) this._applyTerrainEngineUiConfig(terrainCfg.engine);
         {
@@ -6602,6 +9496,8 @@ export class TerrainDebuggerView {
         }
         this._syncBiomeTilingHref({ force: false });
         this._syncBiomeTilingAxisHelper();
+        this._syncBiomeTilingAdaptiveRingHelper();
+        this._syncBiomeTilingDiagnosticsUi();
     }
 
     async _applyIblState(iblState, { force = false } = {}) {

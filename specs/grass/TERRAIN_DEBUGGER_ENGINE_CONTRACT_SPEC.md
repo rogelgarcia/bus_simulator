@@ -51,6 +51,17 @@ The debugger UI state MUST include a `terrain.engine` payload (serializable) cov
   - `materialId` (single PBR applied across the full map for tiling validation)
   - `distanceTiling` (`enabled`, `nearScale`, `farScale`, `blendStartMeters`, `blendEndMeters`, optional `blendCurve`, `debugView`)
   - `variation` (`antiTilingEnabled`, `antiTilingStrength`, `antiTilingCellMeters`, `macroVariationEnabled`, `macroVariationStrength`, `macroVariationScale`)
+  - `displacement` (`enabled`, `strength`, `bias`, `source`, `debugView`)
+  - `geometryDensity`:
+    - mode (`uniform` or `adaptive_rings`)
+    - uniform density (`segmentsPerTile`)
+    - adaptive densities (`nearSegmentsPerTile`, `farSegmentsPerTile`)
+    - adaptive coverage (`nearRadiusMeters`, `transitionWidthMeters`)
+    - adaptive transition shaping (`transitionSmoothing`, `transitionBias`)
+    - adaptive transition debug ring density (`transitionDebugBands`)
+    - adaptive ring debug + center capture (`ringOverlayEnabled`, `centerOnApplyCamera`, optional `centerX/centerZ`)
+    - optional auto rebuild cadence (`rebuildCadence`: `off` | `frame` | `frame_2` | `frame_4` | `frame_8` | `1s`, default `off`)
+    - explicit apply trigger (`applyNonce`)
 
 The bounds are not stored in UI state and are always derived from terrain geometry.
 
@@ -105,6 +116,26 @@ When the active debugger tab is `Biome Tiling`, the view MUST switch to a determ
 - Texture-size-by-distance controls MUST support near/far scale with blend start/end and a default linear-like curve.
 - Distance diagnostics MUST support at least `blended`, `near-only`, and `far-only` inspection views.
 - Variation controls MUST support anti-tiling and macro variation tuning for repetition checks.
+- Displacement validation controls MUST support:
+  - enable/disable
+  - strength and bias tuning
+  - source selection (`auto`, `displacement`, `ao`, `orm`) with explicit fallback visibility
+  - inspection view modes (`standard`, `wireframe`, `displacement`-focused)
+- Geometry density validation controls MUST support:
+  - uniform mode (`segmentsPerTile`)
+  - adaptive rings mode with independent near/far density (`nearSegmentsPerTile`, `farSegmentsPerTile`)
+  - adaptive zone shaping (`nearRadiusMeters`, `transitionWidthMeters`)
+  - adaptive transition smoothing controls (`transitionSmoothing`, `transitionBias`) to tune stability vs responsiveness
+  - adaptive transition debug-band controls (`transitionDebugBands`) for intermediate LOD state overlays
+  - auto rebuild cadence selection (`rebuildCadence`) with an explicit no-auto-updates default (`off`)
+  - explicit apply/rebuild action (`applyNonce`) with optional camera-center capture for ring placement
+- Adaptive ring visualization MUST provide clear near/transition boundary feedback in the Biome Tiling view.
+- Adaptive geometry output MUST remain crack-free/continuous across near/far transition boundaries (no visible hard seams while moving camera).
+- Biome tiling diagnostics MUST report:
+  - live geometry complexity
+  - last update cost (geometry rebuild + displacement update)
+  - lightweight adaptive comparison metrics (actual mesh complexity versus far-only and near-only reference densities)
+  - active camera LOD state + transition blend and short rolling history (near/transition/far occupancy, boundary crossings, pop-candidate rate)
 - URL deep-linking SHOULD persist biome-tiling authoring context (`tab`, selected PBR, and camera pose) so browser hard-refresh restores the same tiling setup.
 - Tooling visuals for roads/grass groups are hidden in this mode to keep attention on terrain texture behavior.
 

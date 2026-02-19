@@ -583,7 +583,7 @@ export class TerrainDebuggerUI {
                     materialId: '',
                     distanceTiling: {
                         enabled: true,
-                        nearScale: 1.0,
+                        nearScale: 4.0,
                         farScale: 0.36,
                         blendStartMeters: 40,
                         blendEndMeters: 240,
@@ -591,14 +591,38 @@ export class TerrainDebuggerUI {
                         debugView: 'blended'
                     },
                     variation: {
-                        antiTilingEnabled: true,
+                        antiTilingEnabled: false,
                         antiTilingStrength: 0.45,
                         antiTilingCellMeters: 2.0,
-                        macroVariationEnabled: true,
+                        macroVariationEnabled: false,
                         macroVariationStrength: 0.16,
                         macroVariationScale: 0.02,
                         nearIntensity: 1.0,
                         farIntensity: 0.65
+                    },
+                    displacement: {
+                        enabled: false,
+                        strength: 0.02,
+                        bias: 0.0,
+                        source: 'auto',
+                        debugView: 'standard'
+                    },
+                    geometryDensity: {
+                        mode: 'adaptive_rings',
+                        segmentsPerTile: 8,
+                        nearSegmentsPerTile: 1024,
+                        farSegmentsPerTile: 4,
+                        nearRadiusMeters: 3,
+                        transitionWidthMeters: 3,
+                        transitionSmoothing: 0.72,
+                        transitionBias: 0.0,
+                        transitionDebugBands: 3,
+                        ringOverlayEnabled: true,
+                        centerOnApplyCamera: true,
+                        rebuildCadence: 'off',
+                        centerX: 0,
+                        centerZ: 0,
+                        applyNonce: 0
                     }
                 }
             },
@@ -868,6 +892,264 @@ export class TerrainDebuggerUI {
         const hum = clamp(humidity, 0.0, 1.0, 0.5);
 
         note.textContent = `Sample: x ${xx.toFixed(1)} z ${zz.toFixed(1)} · patchId ${(pid >>> 0).toString()} · biome ${toIndex(prim)}:${prim || '?'} → ${toIndex(sec)}:${sec || '?'} (blend ${blend.toFixed(2)}) · humidity ${hum.toFixed(2)}`;
+    }
+
+    setBiomeTilingDiagnostics({
+        active = false,
+        requestedGeometryMode = 'uniform',
+        appliedGeometryMode = 'uniform',
+        requestedSegmentsPerTile = null,
+        appliedSegmentsPerTile = null,
+        requestedNearSegmentsPerTile = null,
+        requestedFarSegmentsPerTile = null,
+        appliedNearSegmentsPerTile = null,
+        appliedFarSegmentsPerTile = null,
+        requestedNearRadiusMeters = null,
+        requestedTransitionWidthMeters = null,
+        appliedNearRadiusMeters = null,
+        appliedTransitionWidthMeters = null,
+        requestedTransitionSmoothing = null,
+        requestedTransitionBias = null,
+        requestedTransitionDebugBands = null,
+        appliedTransitionSmoothing = null,
+        appliedTransitionBias = null,
+        appliedTransitionDebugBands = null,
+        appliedRingCenterX = null,
+        appliedRingCenterZ = null,
+        ringOverlayEnabled = false,
+        overlayVisible = false,
+        overlayWidthTiles = null,
+        overlayDepthTiles = null,
+        overlayWidthMeters = null,
+        overlayDepthMeters = null,
+        overlayVertices = null,
+        overlayTriangles = null,
+        widthTiles = null,
+        depthTiles = null,
+        vertices = null,
+        triangles = null,
+        baseWidthTiles = null,
+        baseDepthTiles = null,
+        baseVertices = null,
+        baseTriangles = null,
+        estimatedFarOnlyTriangles = null,
+        estimatedNearOnlyTriangles = null,
+        lastGeometryApplyMs = null,
+        lastDisplacementUpdateMs = null,
+        displacementEnabled = false,
+        displacementSourceMode = 'auto',
+        displacementResolvedSource = 'none',
+        displacementFallbackActive = false,
+        displacementTextureUrl = '',
+        displacementMissing = false,
+        activeLodZone = 'n/a',
+        activeLodBlend = null,
+        activeLodSegmentsPerTile = null,
+        activeLodDistanceMeters = null,
+        historyWindowSec = null,
+        historyNearPct = null,
+        historyTransitionPct = null,
+        historyFarPct = null,
+        historyBoundaryCrossings = 0,
+        historyPopCandidates = 0,
+        historyMaxSegmentsDeltaPerSec = null
+    } = {}) {
+        const sourceNote = this._controls?.biomeTilingDisplacementStatus ?? null;
+        const geometryNote = this._controls?.biomeTilingGeometryStats ?? null;
+        const adaptiveNote = this._controls?.biomeTilingAdaptiveStatus ?? null;
+        const perfNote = this._controls?.biomeTilingAdaptivePerf ?? null;
+        const updateCostNote = this._controls?.biomeTilingUpdateCost ?? null;
+        const pendingNote = this._controls?.biomeTilingPendingApply ?? null;
+        const lodStateNote = this._controls?.biomeTilingLodState ?? null;
+        const lodHistoryNote = this._controls?.biomeTilingLodHistory ?? null;
+        const baseGeometryNote = this._controls?.biomeTilingBaseGeometryStats ?? null;
+        const baseModeNote = this._controls?.biomeTilingBaseMode ?? null;
+        if (!(sourceNote || geometryNote || adaptiveNote || perfNote || updateCostNote || pendingNote || lodStateNote || lodHistoryNote || baseGeometryNote || baseModeNote)) return;
+
+        if (!active) {
+            if (sourceNote) sourceNote.textContent = 'Overlay displacement: (Biome Tiling tab inactive)';
+            if (geometryNote) geometryNote.textContent = 'Overlay geometry: (Biome Tiling tab inactive)';
+            if (adaptiveNote) adaptiveNote.textContent = 'Overlay adaptive rings: (Biome Tiling tab inactive)';
+            if (perfNote) perfNote.textContent = 'Overlay adaptive perf: (Biome Tiling tab inactive)';
+            if (updateCostNote) updateCostNote.textContent = 'Overlay update cost: (Biome Tiling tab inactive)';
+            if (pendingNote) pendingNote.textContent = 'Overlay pending: (Biome Tiling tab inactive)';
+            if (lodStateNote) lodStateNote.textContent = 'Overlay LOD state: (Biome Tiling tab inactive)';
+            if (lodHistoryNote) lodHistoryNote.textContent = 'Overlay LOD history: (Biome Tiling tab inactive)';
+            if (baseGeometryNote) baseGeometryNote.textContent = 'Base geometry: (Biome Tiling tab inactive)';
+            if (baseModeNote) baseModeNote.textContent = 'Base mode: (Biome Tiling tab inactive)';
+            return;
+        }
+
+        const requestedMode = String(requestedGeometryMode ?? 'uniform') === 'adaptive_rings' ? 'adaptive_rings' : 'uniform';
+        const appliedMode = String(appliedGeometryMode ?? 'uniform') === 'adaptive_rings' ? 'adaptive_rings' : 'uniform';
+        const sourceMode = String(displacementSourceMode ?? 'auto');
+        const resolvedSource = String(displacementResolvedSource ?? 'none');
+        const url = String(displacementTextureUrl ?? '');
+        if (sourceNote) {
+            const enabledText = displacementEnabled ? 'enabled' : 'disabled';
+            const fallbackText = displacementFallbackActive ? ' · fallback active' : '';
+            const missingText = displacementMissing ? ' · source missing' : '';
+            const fileText = url ? ` · ${url.split('/').pop() || 'texture'}` : '';
+            sourceNote.textContent = `Overlay displacement: ${enabledText} · mode ${sourceMode} · using ${resolvedSource}${fallbackText}${missingText}${fileText}`;
+        }
+
+        const overlayW = Number.isFinite(Number(overlayWidthTiles)) ? Math.max(0, Number(overlayWidthTiles)) : Math.max(0, Number(widthTiles) || 0);
+        const overlayD = Number.isFinite(Number(overlayDepthTiles)) ? Math.max(0, Number(overlayDepthTiles)) : Math.max(0, Number(depthTiles) || 0);
+        const overlayWm = Number.isFinite(Number(overlayWidthMeters)) ? Math.max(0, Number(overlayWidthMeters)) : null;
+        const overlayDm = Number.isFinite(Number(overlayDepthMeters)) ? Math.max(0, Number(overlayDepthMeters)) : null;
+        const oV = Math.max(0, Math.round(Number(overlayVertices) || Number(vertices) || 0));
+        const oT = Math.max(0, Math.round(Number(overlayTriangles) || Number(triangles) || 0));
+        if (geometryNote) {
+            const sizeMetersText = (overlayWm !== null && overlayDm !== null)
+                ? `${overlayWm.toFixed(1)}m x ${overlayDm.toFixed(1)}m`
+                : 'n/a';
+            const sizeTilesText = `${overlayW.toFixed(1)}x${overlayD.toFixed(1)} tiles`;
+            if (overlayVisible || oT > 0 || oV > 0) {
+                const visText = overlayVisible ? 'visible' : 'hidden';
+                geometryNote.textContent = `Overlay geometry: ${sizeMetersText} (${sizeTilesText}) · ${oV.toLocaleString()} verts · ${oT.toLocaleString()} tris · mode ${appliedMode === 'adaptive_rings' ? 'adaptive' : 'uniform'} · ${visText}`;
+            } else {
+                geometryNote.textContent = 'Overlay geometry: not built (enable displacement and click Rebuild Terrain)';
+            }
+        }
+
+        const normalizeMeters = (value, fallback = 0) => {
+            const n = Number(value);
+            if (!Number.isFinite(n)) return fallback;
+            return Math.max(0, n);
+        };
+        const appliedNearSeg = Math.max(1, Math.round(Number(appliedNearSegmentsPerTile) || Number(requestedNearSegmentsPerTile) || 1));
+        const appliedFarSeg = Math.max(1, Math.round(Number(appliedFarSegmentsPerTile) || Number(requestedFarSegmentsPerTile) || 1));
+        const appliedRadius = normalizeMeters(appliedNearRadiusMeters, 0);
+        const appliedTransition = normalizeMeters(appliedTransitionWidthMeters, 0);
+        const appliedSmoothing = clamp(appliedTransitionSmoothing, 0.0, 1.0, 0.72);
+        const appliedBias = clamp(appliedTransitionBias, -0.85, 0.85, 0.0);
+        const appliedDebugBands = Math.max(0, Math.min(6, Math.round(Number(appliedTransitionDebugBands) || 0)));
+        const ringCenterX = Number(appliedRingCenterX);
+        const ringCenterZ = Number(appliedRingCenterZ);
+        if (adaptiveNote) {
+            if (appliedMode !== 'adaptive_rings') {
+                adaptiveNote.textContent = 'Overlay adaptive rings: disabled (uniform density)';
+            } else {
+                const radiusText = Number.isFinite(appliedRadius) ? `${appliedRadius.toFixed(1)}m` : 'n/a';
+                const transitionText = Number.isFinite(appliedTransition) ? `${appliedTransition.toFixed(1)}m` : 'n/a';
+                const centerText = Number.isFinite(ringCenterX) && Number.isFinite(ringCenterZ)
+                    ? `${ringCenterX.toFixed(1)}, ${ringCenterZ.toFixed(1)}`
+                    : 'n/a';
+                adaptiveNote.textContent = `Overlay adaptive rings: near ${appliedNearSeg}/tile · far ${appliedFarSeg}/tile · radius ${radiusText} · transition ${transitionText} · smooth ${appliedSmoothing.toFixed(2)} · bias ${appliedBias.toFixed(2)} · bands ${appliedDebugBands} · center (${centerText}) · overlay ${ringOverlayEnabled ? 'on' : 'off'}`;
+            }
+        }
+
+        const farOnlyTris = Math.max(0, Math.round(Number(estimatedFarOnlyTriangles) || 0));
+        const nearOnlyTris = Math.max(0, Math.round(Number(estimatedNearOnlyTriangles) || 0));
+        if (perfNote) {
+            if (appliedMode !== 'adaptive_rings' || farOnlyTris <= 0 || nearOnlyTris <= 0 || oT <= 0) {
+                perfNote.textContent = 'Overlay adaptive perf: n/a (enable adaptive rings and apply)';
+            } else {
+                const deltaVsFarPct = ((oT - farOnlyTris) / Math.max(1, farOnlyTris)) * 100;
+                const savingsVsNearPct = (1 - (oT / Math.max(1, nearOnlyTris))) * 100;
+                const sign = deltaVsFarPct >= 0 ? '+' : '';
+                perfNote.textContent = `Overlay adaptive perf: vs far ${sign}${deltaVsFarPct.toFixed(1)}% tris · vs near ${savingsVsNearPct.toFixed(1)}% fewer tris`;
+            }
+        }
+
+        const geoMs = Number(lastGeometryApplyMs);
+        const dispMs = Number(lastDisplacementUpdateMs);
+        const geoText = Number.isFinite(geoMs) ? `${geoMs.toFixed(2)}ms` : 'n/a';
+        const dispText = Number.isFinite(dispMs) ? `${dispMs.toFixed(2)}ms` : 'n/a';
+        if (updateCostNote) updateCostNote.textContent = `Overlay update cost: geometry ${geoText} · displacement ${dispText}`;
+
+        const requested = Math.max(1, Math.round(Number(requestedSegmentsPerTile) || 1));
+        const applied = Math.max(1, Math.round(Number(appliedSegmentsPerTile) || requested));
+        const requestedNear = Math.max(1, Math.round(Number(requestedNearSegmentsPerTile) || appliedNearSeg));
+        const requestedFar = Math.max(1, Math.round(Number(requestedFarSegmentsPerTile) || appliedFarSeg));
+        const requestedRadius = normalizeMeters(requestedNearRadiusMeters, appliedRadius);
+        const requestedTransition = normalizeMeters(requestedTransitionWidthMeters, appliedTransition);
+        const requestedSmoothing = clamp(requestedTransitionSmoothing, 0.0, 1.0, appliedSmoothing);
+        const requestedBias = clamp(requestedTransitionBias, -0.85, 0.85, appliedBias);
+        const requestedDebugBands = Math.max(
+            0,
+            Math.min(
+                6,
+                Math.round(Number.isFinite(Number(requestedTransitionDebugBands))
+                    ? Number(requestedTransitionDebugBands)
+                    : appliedDebugBands)
+            )
+        );
+        const radiusDiff = Math.abs((requestedRadius || 0) - (appliedRadius || 0));
+        const transitionDiff = Math.abs((requestedTransition || 0) - (appliedTransition || 0));
+        const smoothingDiff = Math.abs(requestedSmoothing - appliedSmoothing);
+        const biasDiff = Math.abs(requestedBias - appliedBias);
+        const pendingAdaptive = requestedMode === 'adaptive_rings' && (
+            appliedMode !== 'adaptive_rings'
+            || requestedNear !== appliedNearSeg
+            || requestedFar !== appliedFarSeg
+            || radiusDiff > 0.05
+            || transitionDiff > 0.05
+            || smoothingDiff > 0.001
+            || biasDiff > 0.001
+            || requestedDebugBands !== appliedDebugBands
+        );
+        const pendingUniform = requestedMode === 'uniform' && (appliedMode !== 'uniform' || requested !== applied);
+        if (pendingNote) {
+            if (pendingAdaptive) {
+                pendingNote.textContent = `Overlay pending: adaptive near ${requestedNear}/tile · far ${requestedFar}/tile · radius ${requestedRadius.toFixed(1)}m · transition ${requestedTransition.toFixed(1)}m · smooth ${requestedSmoothing.toFixed(2)} · bias ${requestedBias.toFixed(2)} · bands ${requestedDebugBands} staged. Click Rebuild Terrain.`;
+            } else if (pendingUniform) {
+                pendingNote.textContent = `Overlay pending: uniform ${requested}/tile staged (applied ${applied}/tile). Click Rebuild Terrain.`;
+            } else if (appliedMode === 'adaptive_rings') {
+                pendingNote.textContent = `Overlay pending: none · applied adaptive near ${appliedNearSeg}/tile · far ${appliedFarSeg}/tile · smooth ${appliedSmoothing.toFixed(2)} · bias ${appliedBias.toFixed(2)} · bands ${appliedDebugBands}`;
+            } else {
+                pendingNote.textContent = `Overlay pending: none · applied uniform ${applied}/tile`;
+            }
+        }
+
+        if (lodStateNote) {
+            const zoneRaw = String(activeLodZone ?? '').trim().toLowerCase();
+            const zone = zoneRaw === 'near' || zoneRaw === 'transition' || zoneRaw === 'far' || zoneRaw === 'uniform'
+                ? zoneRaw
+                : 'n/a';
+            const blendPct = Number.isFinite(Number(activeLodBlend))
+                ? `${(clamp(activeLodBlend, 0.0, 1.0, 0.0) * 100).toFixed(0)}%`
+                : 'n/a';
+            const segText = Number.isFinite(Number(activeLodSegmentsPerTile))
+                ? `${Math.max(0, Number(activeLodSegmentsPerTile)).toFixed(2)}/tile`
+                : 'n/a';
+            const distText = Number.isFinite(Number(activeLodDistanceMeters))
+                ? `${Math.max(0, Number(activeLodDistanceMeters)).toFixed(1)}m`
+                : 'n/a';
+            lodStateNote.textContent = `Overlay LOD state: ${zone} · blend ${blendPct} · seg ${segText} · ring distance ${distText}`;
+        }
+
+        if (lodHistoryNote) {
+            const windowText = Number.isFinite(Number(historyWindowSec))
+                ? `${Math.max(0, Number(historyWindowSec)).toFixed(1)}s`
+                : 'n/a';
+            const nearText = Number.isFinite(Number(historyNearPct))
+                ? `${clamp(historyNearPct, 0, 100, 0).toFixed(0)}%`
+                : 'n/a';
+            const transitionText = Number.isFinite(Number(historyTransitionPct))
+                ? `${clamp(historyTransitionPct, 0, 100, 0).toFixed(0)}%`
+                : 'n/a';
+            const farText = Number.isFinite(Number(historyFarPct))
+                ? `${clamp(historyFarPct, 0, 100, 0).toFixed(0)}%`
+                : 'n/a';
+            const crossings = Math.max(0, Math.round(Number(historyBoundaryCrossings) || 0));
+            const popCandidates = Math.max(0, Math.round(Number(historyPopCandidates) || 0));
+            const maxDeltaText = Number.isFinite(Number(historyMaxSegmentsDeltaPerSec))
+                ? `${Math.max(0, Number(historyMaxSegmentsDeltaPerSec)).toFixed(2)}/s`
+                : 'n/a';
+            lodHistoryNote.textContent = `Overlay LOD history (${windowText}): near ${nearText} · transition ${transitionText} · far ${farText} · crossings ${crossings} · pop candidates ${popCandidates} · max Δseg ${maxDeltaText}`;
+        }
+
+        const bW = Math.max(0, Math.round(Number(baseWidthTiles) || 0));
+        const bD = Math.max(0, Math.round(Number(baseDepthTiles) || 0));
+        const bV = Math.max(0, Math.round(Number(baseVertices) || 0));
+        const bT = Math.max(0, Math.round(Number(baseTriangles) || 0));
+        if (baseGeometryNote) {
+            baseGeometryNote.textContent = `Base geometry: ${bW}x${bD} tiles · ${bV.toLocaleString()} verts · ${bT.toLocaleString()} tris`;
+        }
+        if (baseModeNote) {
+            baseModeNote.textContent = 'Base mode: fixed terrain mesh (overlay displacement does not modify base terrain)';
+        }
     }
 
     setOutputInfo({
@@ -2971,7 +3253,7 @@ export class TerrainDebuggerUI {
         bt.materialId = normalizeMaterialId(bt.materialId, defaultMaterialId);
         const distanceTiling = (bt.distanceTiling && typeof bt.distanceTiling === 'object') ? bt.distanceTiling : {};
         distanceTiling.enabled = distanceTiling.enabled !== false;
-        distanceTiling.nearScale = clamp(distanceTiling.nearScale, 0.1, 6.0, 1.0);
+        distanceTiling.nearScale = clamp(distanceTiling.nearScale, 0.1, 6.0, 4.0);
         distanceTiling.farScale = clamp(distanceTiling.farScale, 0.01, 2.0, 0.36);
         distanceTiling.blendStartMeters = clamp(distanceTiling.blendStartMeters, 0.0, 500.0, 40.0);
         distanceTiling.blendEndMeters = clamp(distanceTiling.blendEndMeters, 0.0, 2000.0, 240.0);
@@ -2984,15 +3266,68 @@ export class TerrainDebuggerUI {
         bt.distanceTiling = distanceTiling;
 
         const variation = (bt.variation && typeof bt.variation === 'object') ? bt.variation : {};
-        variation.antiTilingEnabled = variation.antiTilingEnabled !== false;
+        variation.antiTilingEnabled = variation.antiTilingEnabled === true;
         variation.antiTilingStrength = clamp(variation.antiTilingStrength, 0.0, 2.0, 0.45);
         variation.antiTilingCellMeters = clamp(variation.antiTilingCellMeters, 0.25, 12.0, 2.0);
-        variation.macroVariationEnabled = variation.macroVariationEnabled !== false;
+        variation.macroVariationEnabled = variation.macroVariationEnabled === true;
         variation.macroVariationStrength = clamp(variation.macroVariationStrength, 0.0, 0.8, 0.16);
         variation.macroVariationScale = clamp(variation.macroVariationScale, 0.002, 0.2, 0.02);
         variation.nearIntensity = clamp(variation.nearIntensity, 0.0, 2.0, 1.0);
         variation.farIntensity = clamp(variation.farIntensity, 0.0, 2.0, 0.65);
         bt.variation = variation;
+
+        const displacement = (bt.displacement && typeof bt.displacement === 'object') ? bt.displacement : {};
+        displacement.enabled = displacement.enabled === true;
+        displacement.strength = clamp(displacement.strength, 0.0, 0.2, 0.02);
+        displacement.bias = clamp(displacement.bias, -10.0, 10.0, 0.0);
+        const displacementSourceRaw = String(displacement.source ?? 'auto');
+        displacement.source = (displacementSourceRaw === 'displacement'
+            || displacementSourceRaw === 'ao'
+            || displacementSourceRaw === 'orm')
+            ? displacementSourceRaw
+            : 'auto';
+        const displacementDebugRaw = String(displacement.debugView ?? 'standard');
+        displacement.debugView = (displacementDebugRaw === 'wireframe' || displacementDebugRaw === 'displacement')
+            ? displacementDebugRaw
+            : 'standard';
+        bt.displacement = displacement;
+
+        const geometryDensity = (bt.geometryDensity && typeof bt.geometryDensity === 'object') ? bt.geometryDensity : {};
+        const geometryModeRaw = String(geometryDensity.mode ?? 'adaptive_rings');
+        geometryDensity.mode = geometryModeRaw === 'adaptive_rings' ? 'adaptive_rings' : 'uniform';
+        geometryDensity.segmentsPerTile = Math.max(1, Math.min(1024, Math.round(Number(geometryDensity.segmentsPerTile) || 8)));
+        geometryDensity.nearSegmentsPerTile = Math.max(1, Math.min(10000, Math.round(Number(geometryDensity.nearSegmentsPerTile) || 1024)));
+        geometryDensity.farSegmentsPerTile = Math.max(1, Math.min(1024, Math.round(Number(geometryDensity.farSegmentsPerTile) || 4)));
+        geometryDensity.nearRadiusMeters = clamp(geometryDensity.nearRadiusMeters, 0.0, 1200.0, 3.0);
+        geometryDensity.transitionWidthMeters = clamp(geometryDensity.transitionWidthMeters, 0.0, 600.0, 3.0);
+        geometryDensity.transitionSmoothing = clamp(geometryDensity.transitionSmoothing, 0.0, 1.0, 0.72);
+        geometryDensity.transitionBias = clamp(geometryDensity.transitionBias, -0.85, 0.85, 0.0);
+        {
+            const transitionDebugBands = Number(geometryDensity.transitionDebugBands);
+            const fallbackBands = 3;
+            geometryDensity.transitionDebugBands = Math.max(
+                0,
+                Math.min(6, Math.round(Number.isFinite(transitionDebugBands) ? transitionDebugBands : fallbackBands))
+            );
+        }
+        geometryDensity.ringOverlayEnabled = geometryDensity.ringOverlayEnabled !== false;
+        geometryDensity.centerOnApplyCamera = geometryDensity.centerOnApplyCamera !== false;
+        {
+            const rebuildCadenceRaw = String(geometryDensity.rebuildCadence ?? 'off');
+            geometryDensity.rebuildCadence = (
+                rebuildCadenceRaw === 'frame'
+                || rebuildCadenceRaw === 'frame_2'
+                || rebuildCadenceRaw === 'frame_4'
+                || rebuildCadenceRaw === 'frame_8'
+                || rebuildCadenceRaw === '1s'
+            )
+                ? rebuildCadenceRaw
+                : 'off';
+        }
+        geometryDensity.centerX = Number.isFinite(Number(geometryDensity.centerX)) ? Number(geometryDensity.centerX) : 0;
+        geometryDensity.centerZ = Number.isFinite(Number(geometryDensity.centerZ)) ? Number(geometryDensity.centerZ) : 0;
+        geometryDensity.applyNonce = Math.max(0, Math.round(Number(geometryDensity.applyNonce) || 0));
+        bt.geometryDensity = geometryDensity;
 
         const setSliderValue = (ctrl, value, digits = 2) => {
             if (!ctrl?.range || !ctrl?.number) return;
@@ -3127,6 +3462,309 @@ export class TerrainDebuggerUI {
             onPick: () => openMaterialPicker()
         });
         textureSection.appendChild(materialRow.row);
+
+        const displacementSection = this._buildSection('biome_tiling', 'Overlay Displacement');
+        displacementSection.appendChild(makeEl('div', 'options-note', 'Enable displacement on the active PBR and tune strength/bias before moving to adaptive LOD.'));
+        const displacementEnabledRow = makeToggleRow({
+            label: 'Enable Displacement',
+            value: displacement.enabled,
+            onChange: (v) => {
+                displacement.enabled = !!v;
+                syncUi();
+                this._emit();
+            }
+        });
+        displacementSection.appendChild(displacementEnabledRow.row);
+
+        const displacementStrengthRow = makeNumberSliderRow({
+            label: 'Strength',
+            value: displacement.strength,
+            min: 0.0,
+            max: 0.2,
+            step: 0.001,
+            digits: 3,
+            onChange: (v) => {
+                displacement.strength = v;
+                this._emit();
+            }
+        });
+        displacementSection.appendChild(displacementStrengthRow.row);
+
+        const displacementBiasRow = makeNumberSliderRow({
+            label: 'Bias',
+            value: displacement.bias,
+            min: -10.0,
+            max: 10.0,
+            step: 0.05,
+            digits: 2,
+            onChange: (v) => {
+                displacement.bias = v;
+                this._emit();
+            }
+        });
+        displacementSection.appendChild(displacementBiasRow.row);
+
+        const displacementSourceRow = makeSelectRow({
+            label: 'Source',
+            value: displacement.source,
+            options: [
+                { id: 'auto', label: 'Auto (Disp → AO → ORM)' },
+                { id: 'displacement', label: 'Displacement Map' },
+                { id: 'ao', label: 'AO Map' },
+                { id: 'orm', label: 'ORM Map' }
+            ],
+            onChange: (id) => {
+                const v = String(id ?? 'auto');
+                displacement.source = (v === 'displacement' || v === 'ao' || v === 'orm') ? v : 'auto';
+                this._emit();
+            }
+        });
+        displacementSection.appendChild(displacementSourceRow.row);
+
+        const displacementDebugViewRow = makeChoiceRow({
+            label: 'Inspect Mode',
+            value: displacement.debugView,
+            options: [
+                { id: 'standard', label: 'Standard' },
+                { id: 'wireframe', label: 'Wireframe' },
+                { id: 'displacement', label: 'Displacement Focus' }
+            ],
+            onChange: (id) => {
+                displacement.debugView = id === 'wireframe' || id === 'displacement' ? id : 'standard';
+                this._emit();
+            }
+        });
+        displacementSection.appendChild(displacementDebugViewRow.row);
+
+        const geometrySection = this._buildSection('biome_tiling', 'Overlay Geometry Density');
+        geometrySection.appendChild(makeEl('div', 'options-note', 'Use uniform or adaptive near/far rings. Geometry changes are staged until you apply.'));
+        geometrySection.appendChild(makeEl('div', 'options-note', 'Transition smoothing lowers visible LOD popping; bias shifts how quickly near detail fades.'));
+        const geometryModeRow = makeChoiceRow({
+            label: 'Mode',
+            value: geometryDensity.mode,
+            options: [
+                { id: 'uniform', label: 'Uniform' },
+                { id: 'adaptive_rings', label: 'Adaptive Rings' }
+            ],
+            onChange: (id) => {
+                geometryDensity.mode = id === 'adaptive_rings' ? 'adaptive_rings' : 'uniform';
+                syncUi();
+                this._emit();
+            }
+        });
+        geometrySection.appendChild(geometryModeRow.row);
+
+        const geometrySegmentsRow = makeNumberSliderRow({
+            label: 'Uniform Segments / Tile',
+            value: geometryDensity.segmentsPerTile,
+            min: 1,
+            max: 1024,
+            step: 1,
+            digits: 0,
+            onChange: (v) => {
+                geometryDensity.segmentsPerTile = Math.max(1, Math.min(1024, Math.round(v)));
+                this._emit();
+            }
+        });
+        geometrySection.appendChild(geometrySegmentsRow.row);
+
+        const geometryNearSegmentsRow = makeNumberSliderRow({
+            label: 'Near Segments / Tile',
+            value: geometryDensity.nearSegmentsPerTile,
+            min: 1,
+            max: 10000,
+            step: 1,
+            digits: 0,
+            onChange: (v) => {
+                geometryDensity.nearSegmentsPerTile = Math.max(1, Math.min(10000, Math.round(v)));
+                this._emit();
+            }
+        });
+        geometrySection.appendChild(geometryNearSegmentsRow.row);
+
+        const geometryFarSegmentsRow = makeNumberSliderRow({
+            label: 'Far Segments / Tile',
+            value: geometryDensity.farSegmentsPerTile,
+            min: 1,
+            max: 1024,
+            step: 1,
+            digits: 0,
+            onChange: (v) => {
+                geometryDensity.farSegmentsPerTile = Math.max(1, Math.min(1024, Math.round(v)));
+                this._emit();
+            }
+        });
+        geometrySection.appendChild(geometryFarSegmentsRow.row);
+
+        const geometryNearRadiusRow = makeNumberSliderRow({
+            label: 'Near Radius (m)',
+            value: geometryDensity.nearRadiusMeters,
+            min: 0.0,
+            max: 1200.0,
+            step: 1.0,
+            digits: 0,
+            onChange: (v) => {
+                geometryDensity.nearRadiusMeters = clamp(v, 0.0, 1200.0, 3.0);
+                this._emit();
+            }
+        });
+        geometrySection.appendChild(geometryNearRadiusRow.row);
+
+        const geometryTransitionWidthRow = makeNumberSliderRow({
+            label: 'Transition Width (m)',
+            value: geometryDensity.transitionWidthMeters,
+            min: 0.0,
+            max: 600.0,
+            step: 1.0,
+            digits: 0,
+            onChange: (v) => {
+                geometryDensity.transitionWidthMeters = clamp(v, 0.0, 600.0, 3.0);
+                this._emit();
+            }
+        });
+        geometrySection.appendChild(geometryTransitionWidthRow.row);
+
+        const geometryTransitionSmoothingRow = makeNumberSliderRow({
+            label: 'Transition Smoothing',
+            value: geometryDensity.transitionSmoothing,
+            min: 0.0,
+            max: 1.0,
+            step: 0.01,
+            digits: 2,
+            tooltip: '0 = more responsive (linear), 1 = smoother (lower pop risk).',
+            onChange: (v) => {
+                geometryDensity.transitionSmoothing = clamp(v, 0.0, 1.0, 0.72);
+                this._emit();
+            }
+        });
+        geometrySection.appendChild(geometryTransitionSmoothingRow.row);
+
+        const geometryTransitionBiasRow = makeNumberSliderRow({
+            label: 'Transition Bias',
+            value: geometryDensity.transitionBias,
+            min: -0.85,
+            max: 0.85,
+            step: 0.01,
+            digits: 2,
+            tooltip: 'Negative keeps near detail longer; positive responds faster toward far density.',
+            onChange: (v) => {
+                geometryDensity.transitionBias = clamp(v, -0.85, 0.85, 0.0);
+                this._emit();
+            }
+        });
+        geometrySection.appendChild(geometryTransitionBiasRow.row);
+
+        const geometryTransitionBandsRow = makeNumberSliderRow({
+            label: 'Transition Debug Bands',
+            value: geometryDensity.transitionDebugBands,
+            min: 0,
+            max: 6,
+            step: 1,
+            digits: 0,
+            tooltip: 'Adds intermediate transition rings to visualize active LOD zones.',
+            onChange: (v) => {
+                geometryDensity.transitionDebugBands = Math.max(0, Math.min(6, Math.round(v)));
+                this._emit();
+            }
+        });
+        geometrySection.appendChild(geometryTransitionBandsRow.row);
+
+        const geometryCaptureCenterRow = makeToggleRow({
+            label: 'Capture Camera Center',
+            value: geometryDensity.centerOnApplyCamera,
+            tooltip: 'When enabled, apply captures current camera XZ as adaptive ring center.',
+            onChange: (v) => {
+                geometryDensity.centerOnApplyCamera = !!v;
+                this._emit();
+            }
+        });
+        geometrySection.appendChild(geometryCaptureCenterRow.row);
+
+        const geometryOverlayRow = makeToggleRow({
+            label: 'Show Ring Overlay',
+            value: geometryDensity.ringOverlayEnabled,
+            onChange: (v) => {
+                geometryDensity.ringOverlayEnabled = !!v;
+                this._emit();
+            }
+        });
+        geometrySection.appendChild(geometryOverlayRow.row);
+
+        const geometryAutoRebuildRow = makeSelectRow({
+            label: 'Auto Rebuild',
+            value: geometryDensity.rebuildCadence,
+            options: [
+                { id: 'off', label: 'No auto updates' },
+                { id: 'frame', label: 'Every frame' },
+                { id: 'frame_2', label: 'Every /2' },
+                { id: 'frame_4', label: 'Every /4' },
+                { id: 'frame_8', label: 'Every /8' },
+                { id: '1s', label: 'Every 1s' }
+            ],
+            onChange: (id) => {
+                const v = String(id ?? 'off');
+                geometryDensity.rebuildCadence = (
+                    v === 'frame'
+                    || v === 'frame_2'
+                    || v === 'frame_4'
+                    || v === 'frame_8'
+                    || v === '1s'
+                )
+                    ? v
+                    : 'off';
+                this._emit();
+            }
+        });
+        geometrySection.appendChild(geometryAutoRebuildRow.row);
+
+        const applyGeometryRow = makeButtonRow({
+            label: 'Apply',
+            text: 'Rebuild Terrain',
+            onClick: () => {
+                geometryDensity.applyNonce = Math.max(0, Math.round(Number(geometryDensity.applyNonce) || 0)) + 1;
+                this._emit();
+            }
+        });
+        geometrySection.appendChild(applyGeometryRow.row);
+
+        const diagnosticsSection = this._buildSection('biome_tiling', 'Diagnostics');
+        const overlayTitleNote = makeEl('div', 'options-note', 'Overlay');
+        overlayTitleNote.style.fontWeight = '700';
+        const displacementStatusNote = makeEl('div', 'options-note', 'Overlay displacement: (n/a)');
+        const geometryStatsNote = makeEl('div', 'options-note', 'Overlay geometry: (n/a)');
+        const adaptiveStatusNote = makeEl('div', 'options-note', 'Overlay adaptive rings: (n/a)');
+        const adaptivePerfNote = makeEl('div', 'options-note', 'Overlay adaptive perf: (n/a)');
+        const updateCostNote = makeEl('div', 'options-note', 'Overlay update cost: (n/a)');
+        const pendingApplyNote = makeEl('div', 'options-note', 'Overlay pending: (n/a)');
+        const lodStateNote = makeEl('div', 'options-note', 'Overlay LOD state: (n/a)');
+        const lodHistoryNote = makeEl('div', 'options-note', 'Overlay LOD history: (n/a)');
+        const baseTitleNote = makeEl('div', 'options-note', 'Base');
+        baseTitleNote.style.fontWeight = '700';
+        baseTitleNote.style.marginTop = '8px';
+        const baseGeometryStatsNote = makeEl('div', 'options-note', 'Base geometry: (n/a)');
+        const baseModeNote = makeEl('div', 'options-note', 'Base mode: (n/a)');
+        diagnosticsSection.appendChild(overlayTitleNote);
+        diagnosticsSection.appendChild(displacementStatusNote);
+        diagnosticsSection.appendChild(geometryStatsNote);
+        diagnosticsSection.appendChild(adaptiveStatusNote);
+        diagnosticsSection.appendChild(adaptivePerfNote);
+        diagnosticsSection.appendChild(updateCostNote);
+        diagnosticsSection.appendChild(pendingApplyNote);
+        diagnosticsSection.appendChild(lodStateNote);
+        diagnosticsSection.appendChild(lodHistoryNote);
+        diagnosticsSection.appendChild(baseTitleNote);
+        diagnosticsSection.appendChild(baseGeometryStatsNote);
+        diagnosticsSection.appendChild(baseModeNote);
+        this._controls.biomeTilingDisplacementStatus = displacementStatusNote;
+        this._controls.biomeTilingGeometryStats = geometryStatsNote;
+        this._controls.biomeTilingAdaptiveStatus = adaptiveStatusNote;
+        this._controls.biomeTilingAdaptivePerf = adaptivePerfNote;
+        this._controls.biomeTilingUpdateCost = updateCostNote;
+        this._controls.biomeTilingPendingApply = pendingApplyNote;
+        this._controls.biomeTilingLodState = lodStateNote;
+        this._controls.biomeTilingLodHistory = lodHistoryNote;
+        this._controls.biomeTilingBaseGeometryStats = baseGeometryStatsNote;
+        this._controls.biomeTilingBaseMode = baseModeNote;
 
         const distanceSection = this._buildSection('biome_tiling', 'Texture Size by Distance');
         distanceSection.appendChild(makeEl('div', 'options-note', 'Blends near/far texture size using camera distance. "Blend Curve" is optional and defaults to linear.'));
@@ -3374,6 +4012,40 @@ export class TerrainDebuggerUI {
             if (variationFarRow.number) variationFarRow.number.disabled = intensityDisabled;
         };
 
+        const setDisplacementControlsEnabled = (enabled) => {
+            const disabled = !enabled;
+            if (displacementStrengthRow.range) displacementStrengthRow.range.disabled = disabled;
+            if (displacementStrengthRow.number) displacementStrengthRow.number.disabled = disabled;
+            if (displacementBiasRow.range) displacementBiasRow.range.disabled = disabled;
+            if (displacementBiasRow.number) displacementBiasRow.number.disabled = disabled;
+            if (displacementSourceRow.select) displacementSourceRow.select.disabled = disabled;
+        };
+
+        const setGeometryControlsEnabled = (mode) => {
+            const adaptive = String(mode ?? '') === 'adaptive_rings';
+            const uniformDisabled = adaptive;
+            if (geometrySegmentsRow.range) geometrySegmentsRow.range.disabled = uniformDisabled;
+            if (geometrySegmentsRow.number) geometrySegmentsRow.number.disabled = uniformDisabled;
+
+            const adaptiveDisabled = !adaptive;
+            if (geometryNearSegmentsRow.range) geometryNearSegmentsRow.range.disabled = adaptiveDisabled;
+            if (geometryNearSegmentsRow.number) geometryNearSegmentsRow.number.disabled = adaptiveDisabled;
+            if (geometryFarSegmentsRow.range) geometryFarSegmentsRow.range.disabled = adaptiveDisabled;
+            if (geometryFarSegmentsRow.number) geometryFarSegmentsRow.number.disabled = adaptiveDisabled;
+            if (geometryNearRadiusRow.range) geometryNearRadiusRow.range.disabled = adaptiveDisabled;
+            if (geometryNearRadiusRow.number) geometryNearRadiusRow.number.disabled = adaptiveDisabled;
+            if (geometryTransitionWidthRow.range) geometryTransitionWidthRow.range.disabled = adaptiveDisabled;
+            if (geometryTransitionWidthRow.number) geometryTransitionWidthRow.number.disabled = adaptiveDisabled;
+            if (geometryTransitionSmoothingRow.range) geometryTransitionSmoothingRow.range.disabled = adaptiveDisabled;
+            if (geometryTransitionSmoothingRow.number) geometryTransitionSmoothingRow.number.disabled = adaptiveDisabled;
+            if (geometryTransitionBiasRow.range) geometryTransitionBiasRow.range.disabled = adaptiveDisabled;
+            if (geometryTransitionBiasRow.number) geometryTransitionBiasRow.number.disabled = adaptiveDisabled;
+            if (geometryTransitionBandsRow.range) geometryTransitionBandsRow.range.disabled = adaptiveDisabled;
+            if (geometryTransitionBandsRow.number) geometryTransitionBandsRow.number.disabled = adaptiveDisabled;
+            if (geometryCaptureCenterRow.toggle) geometryCaptureCenterRow.toggle.disabled = adaptiveDisabled;
+            if (geometryOverlayRow.toggle) geometryOverlayRow.toggle.disabled = adaptiveDisabled;
+        };
+
         const syncUi = () => {
             bt.materialId = normalizeMaterialId(bt.materialId, defaultMaterialId);
             const meta = materialById.get(bt.materialId) ?? null;
@@ -3406,7 +4078,37 @@ export class TerrainDebuggerUI {
                 antiEnabled: variation.antiTilingEnabled,
                 macroEnabled: variation.macroVariationEnabled
             });
+
+            displacementEnabledRow.toggle.checked = displacement.enabled;
+            setSliderValue(displacementStrengthRow, displacement.strength, 3);
+            setSliderValue(displacementBiasRow, displacement.bias, 2);
+            if (displacementSourceRow.select) displacementSourceRow.select.value = displacement.source;
+            displacementDebugViewRow.setValue(displacement.debugView);
+            setDisplacementControlsEnabled(displacement.enabled);
+
+            geometryModeRow.setValue(geometryDensity.mode);
+            setSliderValue(geometrySegmentsRow, geometryDensity.segmentsPerTile, 0);
+            setSliderValue(geometryNearSegmentsRow, geometryDensity.nearSegmentsPerTile, 0);
+            setSliderValue(geometryFarSegmentsRow, geometryDensity.farSegmentsPerTile, 0);
+            setSliderValue(geometryNearRadiusRow, geometryDensity.nearRadiusMeters, 0);
+            setSliderValue(geometryTransitionWidthRow, geometryDensity.transitionWidthMeters, 0);
+            setSliderValue(geometryTransitionSmoothingRow, geometryDensity.transitionSmoothing, 2);
+            setSliderValue(geometryTransitionBiasRow, geometryDensity.transitionBias, 2);
+            setSliderValue(geometryTransitionBandsRow, geometryDensity.transitionDebugBands, 0);
+            geometryCaptureCenterRow.toggle.checked = geometryDensity.centerOnApplyCamera;
+            geometryOverlayRow.toggle.checked = geometryDensity.ringOverlayEnabled;
+            if (geometryAutoRebuildRow.select) geometryAutoRebuildRow.select.value = String(geometryDensity.rebuildCadence ?? 'off');
+            setGeometryControlsEnabled(geometryDensity.mode);
         };
+
+        {
+            const biomeTilingTabBody = this._tabBodies?.biome_tiling ?? null;
+            if (biomeTilingTabBody) {
+                biomeTilingTabBody.appendChild(geometrySection);
+                biomeTilingTabBody.appendChild(displacementSection);
+                biomeTilingTabBody.appendChild(diagnosticsSection);
+            }
+        }
 
         syncUi();
     }
