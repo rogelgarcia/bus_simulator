@@ -8,7 +8,7 @@ import { getMaterialCalibrationIlluminationPresetById, getMaterialCalibrationIll
 
 const UP = new THREE.Vector3(0, 1, 0);
 
-const STORAGE_KEY = 'bus_sim.material_calibration.v1';
+const STORAGE_KEY = 'bus_sim.material_calibration.v3';
 const SLOT_CAMERA_FOCUS_DISTANCE_SCALE = 2.35;
 const SCREENSHOT_SLOT_FOCUS_DISTANCE_SCALE = 1.95;
 const SCREENSHOT_CAPTURE_WIDTH = 1280;
@@ -20,6 +20,10 @@ const SCREENSHOT_RENDER_MIN_WIDTH = 1920;
 const SCREENSHOT_RENDER_MIN_HEIGHT = 1080;
 const SCREENSHOT_RENDER_MAX_WIDTH = 3840;
 const SCREENSHOT_RENDER_MAX_HEIGHT = 2160;
+const CALIBRATION_PRESET_ID = 'aces';
+const CORRECTION_CONFIG_FILE = 'pbr.material.correction.config.js';
+const PBR_ID_PREFIX = 'pbr.';
+const PBR_CORRECTION_BASE_URL = new URL('../../../../assets/public/pbr/', import.meta.url);
 
 function isInteractiveElement(target) {
     const tag = target?.tagName;
@@ -90,6 +94,12 @@ function sanitizeTilingMode(value) {
     return 'default';
 }
 
+function sanitizeCalibrationMode(value) {
+    const typed = typeof value === 'string' ? value.trim() : '';
+    if (typed === 'raw' || typed === 'calibrated') return typed;
+    return 'calibrated';
+}
+
 function sanitizeOverrides(value) {
     const src = value && typeof value === 'object' ? value : null;
     if (!src) return {};
@@ -104,7 +114,107 @@ function sanitizeOverrides(value) {
     if (Number.isFinite(Number(src.albedoTintStrength))) out.albedoTintStrength = clamp(src.albedoTintStrength, 0, 1);
     if (Number.isFinite(Number(src.albedoHueDegrees))) out.albedoHueDegrees = clamp(src.albedoHueDegrees, -180, 180);
     if (Number.isFinite(Number(src.albedoSaturation))) out.albedoSaturation = clamp(src.albedoSaturation, -1, 1);
+    if (src.roughnessRemap && typeof src.roughnessRemap === 'object') {
+        const rr = src.roughnessRemap;
+        const min = Number(rr.min);
+        const maxRaw = Number(rr.max);
+        const gamma = Number(rr.gamma);
+        const lowPercentile = Number(rr.lowPercentile);
+        const highPercentile = Number(rr.highPercentile);
+        const invertInput = rr.invertInput === true;
+        if (Number.isFinite(min) && Number.isFinite(maxRaw) && Number.isFinite(gamma)) {
+            const max = Math.max(min, maxRaw);
+            out.roughnessRemap = {
+                min: clamp(min, 0, 1),
+                max: clamp(max, 0, 1),
+                gamma: clamp(gamma, 0.1, 4),
+                invertInput
+            };
+            if (Number.isFinite(lowPercentile) && Number.isFinite(highPercentile)) {
+                const lo = clamp(lowPercentile, 0, 100);
+                const hi = clamp(highPercentile, 0, 100);
+                if (hi > lo) {
+                    out.roughnessRemap.lowPercentile = lo;
+                    out.roughnessRemap.highPercentile = hi;
+                }
+            }
+        }
+    }
     return out;
+}
+
+function materialIdToSlug(materialId) {
+    const id = sanitizeMaterialId(materialId);
+    if (!id) return null;
+    if (!id.startsWith(PBR_ID_PREFIX)) return null;
+    const slug = id.slice(PBR_ID_PREFIX.length).trim();
+    if (!slug || slug.includes('/') || slug.includes('\\')) return null;
+    return slug;
+}
+
+function toPlainObject(value) {
+    return value && typeof value === 'object' ? value : null;
+}
+
+function mapCorrectionAdjustmentsToOverrides(adjustments) {
+    const src = toPlainObject(adjustments);
+    if (!src) return null;
+
+    const out = {};
+
+    const albedo = toPlainObject(src.albedo);
+    if (albedo) {
+        if (Number.isFinite(Number(albedo.brightness))) out.albedoBrightness = clamp(albedo.brightness, 0, 4);
+        if (Number.isFinite(Number(albedo.hueDegrees))) out.albedoHueDegrees = clamp(albedo.hueDegrees, -180, 180);
+        if (Number.isFinite(Number(albedo.tintStrength))) out.albedoTintStrength = clamp(albedo.tintStrength, 0, 1);
+        if (Number.isFinite(Number(albedo.saturation))) out.albedoSaturation = clamp(Number(albedo.saturation) - 1, -1, 1);
+    }
+
+    const normal = toPlainObject(src.normal);
+    if (normal && Number.isFinite(Number(normal.strength))) out.normalStrength = clamp(normal.strength, 0, 8);
+
+    const roughness = toPlainObject(src.roughness);
+    if (roughness) {
+        const min = Number(roughness.min);
+        const maxRaw = Number(roughness.max);
+        const gamma = Number(roughness.gamma);
+        const invertInput = roughness.invertInput === true;
+        if (Number.isFinite(min) && Number.isFinite(maxRaw) && Number.isFinite(gamma)) {
+            const max = Math.max(min, maxRaw);
+            const roughnessRemap = {
+                min: clamp(min, 0, 1),
+                max: clamp(max, 0, 1),
+                gamma: clamp(gamma, 0.1, 4),
+                invertInput
+            };
+            const norm = Array.isArray(roughness.normalizeInputPercentiles) ? roughness.normalizeInputPercentiles : null;
+            if (norm && norm.length === 2) {
+                const lowPercentile = clamp(norm[0], 0, 100);
+                const highPercentile = clamp(norm[1], 0, 100);
+                if (highPercentile > lowPercentile) {
+                    roughnessRemap.lowPercentile = lowPercentile;
+                    roughnessRemap.highPercentile = highPercentile;
+                }
+            }
+            out.roughnessRemap = roughnessRemap;
+        } else if (Number.isFinite(Number(roughness.strength))) {
+            out.roughness = clamp(roughness.strength, 0, 1);
+        }
+    }
+
+    const ao = toPlainObject(src.ao);
+    if (ao && Number.isFinite(Number(ao.intensity))) out.aoIntensity = clamp(ao.intensity, 0, 2);
+
+    const metal = toPlainObject(src.metalness);
+    if (metal && Number.isFinite(Number(metal.value))) out.metalness = clamp(metal.value, 0, 1);
+
+    return Object.keys(out).length ? out : null;
+}
+
+function getCorrectionConfigUrlForMaterial(materialId) {
+    const slug = materialIdToSlug(materialId);
+    if (!slug) return null;
+    return new URL(`${slug}/${CORRECTION_CONFIG_FILE}`, PBR_CORRECTION_BASE_URL).toString();
 }
 
 function getDefaultOverridesForMaterial(materialId) {
@@ -113,6 +223,8 @@ function getDefaultOverridesForMaterial(materialId) {
     return {
         tileMeters: getPbrMaterialTileMeters(id),
         albedoBrightness: 1.0,
+        albedoTintStrength: 0.0,
+        albedoHueDegrees: 0.0,
         albedoSaturation: 0.0,
         roughness: 1.0,
         normalStrength: 1.0,
@@ -121,36 +233,84 @@ function getDefaultOverridesForMaterial(materialId) {
     };
 }
 
-function diffOverridesFromDefaults(materialId, overrides) {
-    const defaults = getDefaultOverridesForMaterial(materialId);
-    const ovr = overrides && typeof overrides === 'object' ? overrides : null;
-    if (!defaults || !ovr) return {};
+function normalizeRoughnessRemapForDiff(value) {
+    const src = value && typeof value === 'object' ? value : null;
+    if (!src) return null;
 
-    const out = {};
-    const eps = 1e-6;
-    const addIfDiff = (key, value) => {
-        const v = Number(value);
-        const d = Number(defaults[key]);
-        if (!Number.isFinite(v) || !Number.isFinite(d)) return;
-        if (Math.abs(v - d) <= eps) return;
-        out[key] = v;
+    const minRaw = Number(src.min);
+    const maxRaw = Number(src.max);
+    const gammaRaw = Number(src.gamma);
+    if (!(Number.isFinite(minRaw) && Number.isFinite(maxRaw) && Number.isFinite(gammaRaw))) return null;
+
+    const out = {
+        min: clamp(minRaw, 0, 1),
+        max: clamp(Math.max(minRaw, maxRaw), 0, 1),
+        gamma: clamp(gammaRaw, 0.1, 4),
+        invertInput: src.invertInput === true,
+        lowPercentile: 0,
+        highPercentile: 100
     };
 
-    addIfDiff('tileMeters', ovr.tileMeters);
-    addIfDiff('albedoBrightness', ovr.albedoBrightness);
-    addIfDiff('albedoSaturation', ovr.albedoSaturation);
-    addIfDiff('roughness', ovr.roughness);
-    addIfDiff('normalStrength', ovr.normalStrength);
-    addIfDiff('aoIntensity', ovr.aoIntensity);
-    addIfDiff('metalness', ovr.metalness);
-
+    const lowRaw = Number(src.lowPercentile);
+    const highRaw = Number(src.highPercentile);
+    if (Number.isFinite(lowRaw) && Number.isFinite(highRaw)) {
+        const lo = clamp(lowRaw, 0, 100);
+        const hi = clamp(highRaw, 0, 100);
+        if (hi > lo) {
+            out.lowPercentile = lo;
+            out.highPercentile = hi;
+        }
+    }
     return out;
 }
 
-function getEffectiveOverridesForMaterial(materialId, storedOverrides) {
-    const defaults = getDefaultOverridesForMaterial(materialId) ?? {};
-    const ovr = storedOverrides && typeof storedOverrides === 'object' ? storedOverrides : {};
-    return { ...defaults, ...ovr };
+function areRoughnessRemapsEqual(a, b, eps = 1e-6) {
+    const left = normalizeRoughnessRemapForDiff(a);
+    const right = normalizeRoughnessRemapForDiff(b);
+    if (!left && !right) return true;
+    if (!left || !right) return false;
+    if (left.invertInput !== right.invertInput) return false;
+    return (
+        Math.abs(left.min - right.min) <= eps
+        && Math.abs(left.max - right.max) <= eps
+        && Math.abs(left.gamma - right.gamma) <= eps
+        && Math.abs(left.lowPercentile - right.lowPercentile) <= eps
+        && Math.abs(left.highPercentile - right.highPercentile) <= eps
+    );
+}
+
+function diffOverridesFromBaseline(baselineOverrides, overrides) {
+    const base = sanitizeOverrides(baselineOverrides);
+    const ovr = sanitizeOverrides(overrides);
+    if (!Object.keys(ovr).length) return {};
+
+    const out = {};
+    const eps = 1e-6;
+    const addIfDiff = (key) => {
+        const value = ovr[key];
+        const baselineValue = base[key];
+        const v = Number(value);
+        if (!Number.isFinite(v)) return;
+        if (Number.isFinite(Number(baselineValue)) && Math.abs(v - Number(baselineValue)) <= eps) return;
+        out[key] = v;
+    };
+
+    addIfDiff('tileMeters');
+    addIfDiff('albedoBrightness');
+    addIfDiff('albedoTintStrength');
+    addIfDiff('albedoHueDegrees');
+    addIfDiff('albedoSaturation');
+    addIfDiff('roughness');
+    addIfDiff('normalStrength');
+    addIfDiff('aoIntensity');
+    addIfDiff('metalness');
+
+    const roughnessRemap = normalizeRoughnessRemapForDiff(ovr.roughnessRemap);
+    if (roughnessRemap && !areRoughnessRemapsEqual(roughnessRemap, base.roughnessRemap)) {
+        out.roughnessRemap = roughnessRemap;
+    }
+
+    return out;
 }
 
 function findNextEmptySlotAfter(slotMaterialIds, startIndex) {
@@ -354,6 +514,7 @@ function readStoredState() {
         const illuminationPresetId = typeof parsed?.illuminationPresetId === 'string' ? parsed.illuminationPresetId.trim() : '';
         const layoutMode = sanitizeLayoutMode(parsed?.layoutMode);
         const tilingMode = sanitizeTilingMode(parsed?.tilingMode);
+        const calibrationMode = sanitizeCalibrationMode(parsed?.calibrationMode);
         const activeSlotIndex = sanitizeSlotIndex(parsed?.activeSlotIndex) ?? 0;
 
         const slotMaterialIdsRaw = Array.isArray(parsed?.slotMaterialIds) ? parsed.slotMaterialIds : [];
@@ -379,6 +540,7 @@ function readStoredState() {
             illuminationPresetId,
             layoutMode,
             tilingMode,
+            calibrationMode,
             activeSlotIndex,
             slotMaterialIds,
             baselineMaterialId,
@@ -420,6 +582,7 @@ export class MaterialCalibrationView {
             illuminationPresetId: stored?.illuminationPresetId ?? '',
             layoutMode: stored?.layoutMode ?? 'full',
             tilingMode: stored?.tilingMode ?? 'default',
+            calibrationMode: sanitizeCalibrationMode(stored?.calibrationMode ?? 'calibrated'),
             activeSlotIndex: 0,
             slotMaterialIds: [null, null, null],
             baselineMaterialId: null,
@@ -464,6 +627,11 @@ export class MaterialCalibrationView {
         this._selectedSlotCameraIndex = null;
         this._initialCameraPose = null;
         this._screenshotBusy = false;
+        this._pendingCorrectionSync = false;
+        this._correctionOverridesByMaterialId = {};
+        this._correctionLoadToken = 0;
+        this._lastCalibratedOverridesByMaterialId = {};
+        this._rawToggleCalibrationSnapshot = null;
 
         this._onCanvasPointerMove = (e) => this._handlePointerMove(e);
         this._onCanvasPointerDown = (e) => this._handlePointerDown(e);
@@ -485,6 +653,7 @@ export class MaterialCalibrationView {
         this._selectedSlotCameraIndex = null;
         this.ui.setSelectedSlotCameraIndex?.(null);
         this._initialCameraPose = this._captureCurrentCameraPose();
+        this._primeCorrectionOverridesForCatalog().catch(() => {});
 
         this.ui.onExit = () => this.onExit?.();
         this.ui.onSelectClass = (classId) => this._setSelectedClass(classId);
@@ -509,6 +678,7 @@ export class MaterialCalibrationView {
         };
         this.ui.onSetLayoutMode = (layoutMode) => this._setLayoutMode(layoutMode);
         this.ui.onSetTilingMode = (tilingMode) => this._setTilingMode(tilingMode);
+        this.ui.onSetCalibrationMode = (calibrationMode) => this._setCalibrationMode(calibrationMode);
         this.ui.onSelectIlluminationPreset = (presetId) => this._setIlluminationPreset(presetId);
         this.ui.onSetBaselineMaterial = (materialId) => this._setBaselineMaterial(materialId);
         this.ui.onSetOverrides = (materialId, overrides) => this._setMaterialOverrides(materialId, overrides);
@@ -549,6 +719,7 @@ export class MaterialCalibrationView {
         this.ui.onFocusSlot = null;
         this.ui.onSetLayoutMode = null;
         this.ui.onSetTilingMode = null;
+        this.ui.onSetCalibrationMode = null;
         this.ui.onSelectIlluminationPreset = null;
         this.ui.onSetBaselineMaterial = null;
         this.ui.onSetOverrides = null;
@@ -559,6 +730,11 @@ export class MaterialCalibrationView {
         this._selectedSlotCameraIndex = null;
         this._initialCameraPose = null;
         this._screenshotBusy = false;
+        this._pendingCorrectionSync = false;
+        this._correctionLoadToken += 1;
+        this._correctionOverridesByMaterialId = {};
+        this._lastCalibratedOverridesByMaterialId = {};
+        this._rawToggleCalibrationSnapshot = null;
 
         this.ui.unmount();
         this.scene.exit();
@@ -577,6 +753,7 @@ export class MaterialCalibrationView {
             illuminationPresetId: state.illuminationPresetId,
             layoutMode: state.layoutMode,
             tilingMode: state.tilingMode,
+            calibrationMode: state.calibrationMode,
             activeSlotIndex: state.activeSlotIndex,
             slotMaterialIds: state.slotMaterialIds.slice(0, 3),
             baselineMaterialId: state.baselineMaterialId,
@@ -606,7 +783,7 @@ export class MaterialCalibrationView {
 
         for (let i = 0; i < 3; i++) {
             const id = sanitizeMaterialId(state.slotMaterialIds[i]);
-            const overrides = id ? (state.overridesByMaterialId[id] ?? null) : null;
+            const overrides = this._getResolvedSceneOverridesForMaterial(id);
             this.scene.setSlotMaterial(i, id, { overrides });
         }
 
@@ -620,6 +797,7 @@ export class MaterialCalibrationView {
         this.ui.setSelectedClassId(state.selectedClassId);
         this.ui.setLayoutMode(state.layoutMode);
         this.ui.setTilingMode(state.tilingMode);
+        this.ui.setCalibrationMode(state.calibrationMode);
         this.ui.setIlluminationPresetId(state.illuminationPresetId);
         this.ui.setIlluminationStatus(this._lastIlluminationStatus ?? { mode: 'default', reason: null });
         this.ui.setSelectedMaterials({
@@ -631,7 +809,7 @@ export class MaterialCalibrationView {
         const activeMaterialId = sanitizeMaterialId(state.slotMaterialIds[state.activeSlotIndex]);
         this.ui.setActiveMaterial({
             materialId: activeMaterialId,
-            overrides: activeMaterialId ? getEffectiveOverridesForMaterial(activeMaterialId, state.overridesByMaterialId[activeMaterialId] ?? null) : null
+            overrides: this._getResolvedUiOverridesForMaterial(activeMaterialId)
         });
 
         this.ui.setRulerEnabled(this._rulerEnabled);
@@ -708,6 +886,170 @@ export class MaterialCalibrationView {
         return stateIdx ?? 0;
     }
 
+    _getCorrectionOverridesForMaterial(materialId) {
+        const id = sanitizeMaterialId(materialId);
+        if (!id) return null;
+        const raw = this._correctionOverridesByMaterialId[id] ?? null;
+        return raw && typeof raw === 'object' ? raw : null;
+    }
+
+    _getCalibrationBaselineOverridesForMaterial(materialId) {
+        const id = sanitizeMaterialId(materialId);
+        if (!id) return null;
+        const defaults = getDefaultOverridesForMaterial(id) ?? {};
+        const correction = this._getCorrectionOverridesForMaterial(id);
+        return { ...defaults, ...(correction ?? {}) };
+    }
+
+    _getResolvedUiOverridesForMaterial(materialId) {
+        const id = sanitizeMaterialId(materialId);
+        if (!id) return null;
+
+        if (this._state.calibrationMode === 'raw') {
+            return getDefaultOverridesForMaterial(id);
+        }
+        const cached = this._lastCalibratedOverridesByMaterialId[id] ?? null;
+        const manual = this._state.overridesByMaterialId[id] ?? null;
+        const correction = this._getCorrectionOverridesForMaterial(id);
+        if (!manual && !correction && cached && typeof cached === 'object') return { ...cached };
+        const baseline = this._getCalibrationBaselineOverridesForMaterial(id) ?? {};
+        return { ...baseline, ...(manual ?? {}) };
+    }
+
+    _getResolvedSceneOverridesForMaterial(materialId) {
+        const id = sanitizeMaterialId(materialId);
+        if (!id) return null;
+        if (this._state.calibrationMode === 'raw') return null;
+
+        const manual = this._state.overridesByMaterialId[id] ?? null;
+        const correction = this._getCorrectionOverridesForMaterial(id);
+        if (!manual && !correction) {
+            const cached = this._lastCalibratedOverridesByMaterialId[id] ?? null;
+            return cached && typeof cached === 'object' ? { ...cached } : null;
+        }
+
+        const baseline = this._getCalibrationBaselineOverridesForMaterial(id) ?? {};
+        const resolved = { ...baseline, ...(manual ?? {}) };
+        this._lastCalibratedOverridesByMaterialId[id] = sanitizeOverrides(resolved);
+        return resolved;
+    }
+
+    _captureRawToggleCalibrationSnapshot() {
+        const snapshot = [];
+        for (let i = 0; i < 3; i++) {
+            const id = sanitizeMaterialId(this._state.slotMaterialIds[i]);
+            if (!id) continue;
+            const sceneOverrides = this.scene?._slotOverrides?.[i] ?? null;
+            const fromScene = sceneOverrides && typeof sceneOverrides === 'object'
+                ? sanitizeOverrides(sceneOverrides)
+                : null;
+            const fromSceneHasValues = !!fromScene && Object.keys(fromScene).length > 0;
+            const resolved = fromSceneHasValues ? fromScene : this._getResolvedSceneOverridesForMaterial(id);
+            const clean = resolved && typeof resolved === 'object' ? sanitizeOverrides(resolved) : null;
+            if (clean) this._lastCalibratedOverridesByMaterialId[id] = clean;
+            snapshot.push({
+                slotIndex: i,
+                materialId: id,
+                overrides: clean
+            });
+        }
+        return snapshot;
+    }
+
+    _restoreRawToggleCalibrationSnapshot() {
+        const snapshot = Array.isArray(this._rawToggleCalibrationSnapshot) ? this._rawToggleCalibrationSnapshot : null;
+        if (!snapshot || !snapshot.length) return;
+
+        for (const entry of snapshot) {
+            const idx = sanitizeSlotIndex(entry?.slotIndex);
+            const id = sanitizeMaterialId(entry?.materialId);
+            if (idx === null || !id) continue;
+            if (sanitizeMaterialId(this._state.slotMaterialIds[idx]) !== id) continue;
+            const overrides = entry?.overrides && typeof entry.overrides === 'object'
+                ? sanitizeOverrides(entry.overrides)
+                : null;
+            const hasOverrides = !!overrides && Object.keys(overrides).length > 0;
+            if (hasOverrides) this._lastCalibratedOverridesByMaterialId[id] = overrides;
+            this.scene.setSlotMaterial(idx, id, { overrides: hasOverrides ? overrides : null });
+        }
+    }
+
+    async _primeCorrectionOverridesForCatalog() {
+        const token = ++this._correctionLoadToken;
+        const materialIds = this._materialOptions.map((opt) => sanitizeMaterialId(opt?.id)).filter(Boolean);
+        const resolved = await Promise.all(materialIds.map(async (id) => ({
+            id,
+            overrides: await this._loadCorrectionOverridesForMaterial(id)
+        })));
+        if (token !== this._correctionLoadToken) return;
+
+        const out = {};
+        for (const entry of resolved) {
+            if (entry?.overrides) out[entry.id] = entry.overrides;
+        }
+        this._correctionOverridesByMaterialId = out;
+
+        if (this._state.calibrationMode === 'calibrated') {
+            if (this._screenshotBusy) {
+                this._pendingCorrectionSync = true;
+                return;
+            }
+            this._syncSceneFromState({ keepCamera: true });
+            this._syncUiFromState();
+        }
+    }
+
+    async _refreshCorrectionOverridesForSelectedSlots({ forceReload = false } = {}) {
+        const slotIds = this._state.slotMaterialIds
+            .map((id) => sanitizeMaterialId(id))
+            .filter(Boolean);
+        const uniqueSlotIds = [...new Set(slotIds)];
+        const materialIds = forceReload
+            ? uniqueSlotIds
+            : uniqueSlotIds.filter((id) => !Object.prototype.hasOwnProperty.call(this._correctionOverridesByMaterialId, id));
+        if (!materialIds.length) return;
+
+        const token = ++this._correctionLoadToken;
+        const resolved = await Promise.all(materialIds.map(async (id) => ({
+            id,
+            overrides: await this._loadCorrectionOverridesForMaterial(id)
+        })));
+        if (token !== this._correctionLoadToken) return;
+
+        const next = { ...this._correctionOverridesByMaterialId };
+        for (const entry of resolved) {
+            if (entry?.overrides) next[entry.id] = entry.overrides;
+        }
+        this._correctionOverridesByMaterialId = next;
+
+        if (this._state.calibrationMode !== 'calibrated') return;
+        if (this._screenshotBusy) {
+            this._pendingCorrectionSync = true;
+            return;
+        }
+        this._syncSceneFromState({ keepCamera: true });
+        this._syncUiFromState();
+    }
+
+    async _loadCorrectionOverridesForMaterial(materialId) {
+        const id = sanitizeMaterialId(materialId);
+        if (!id) return null;
+        const moduleUrl = getCorrectionConfigUrlForMaterial(id);
+        if (!moduleUrl) return null;
+        try {
+            const mod = await import(moduleUrl);
+            const config = toPlainObject(mod?.default ?? mod);
+            if (!config) return null;
+            if (sanitizeMaterialId(config.materialId) !== id) return null;
+            const presets = toPlainObject(config.presets);
+            const preset = presets ? toPlainObject(presets[CALIBRATION_PRESET_ID]) : null;
+            const adjustments = preset ? toPlainObject(preset.adjustments) : null;
+            return mapCorrectionAdjustmentsToOverrides(adjustments);
+        } catch {
+            return null;
+        }
+    }
+
     _toggleMaterial(materialId, { focus = false } = {}) {
         const id = sanitizeMaterialId(materialId);
         if (!id) return;
@@ -769,6 +1111,19 @@ export class MaterialCalibrationView {
         this._applyStateToSceneAndUi({ keepCamera: true });
     }
 
+    _setCalibrationMode(calibrationMode) {
+        const next = sanitizeCalibrationMode(calibrationMode);
+        if (next === this._state.calibrationMode) return;
+        this._state.overridesByMaterialId = {};
+        this._lastCalibratedOverridesByMaterialId = {};
+        this._rawToggleCalibrationSnapshot = null;
+        this._state.calibrationMode = next;
+        this._applyStateToSceneAndUi({ keepCamera: true });
+        if (next === 'calibrated') {
+            this._refreshCorrectionOverridesForSelectedSlots({ forceReload: true }).catch(() => {});
+        }
+    }
+
     _setIlluminationPreset(presetId) {
         const id = typeof presetId === 'string' ? presetId.trim() : '';
         if (id === this._state.illuminationPresetId) return;
@@ -794,14 +1149,16 @@ export class MaterialCalibrationView {
     _setMaterialOverrides(materialId, overrides) {
         const id = sanitizeMaterialId(materialId);
         if (!id) return;
+        if (this._state.calibrationMode !== 'calibrated') return;
         const raw = sanitizeOverrides(overrides);
-        const clean = diffOverridesFromDefaults(id, raw);
+        const baseline = this._getCalibrationBaselineOverridesForMaterial(id) ?? getDefaultOverridesForMaterial(id) ?? {};
+        const clean = diffOverridesFromBaseline(baseline, raw);
         if (Object.keys(clean).length) this._state.overridesByMaterialId[id] = clean;
         else delete this._state.overridesByMaterialId[id];
 
-        const slotIdx = this.scene.getSlotIndexForMaterialId(id);
-        if (slotIdx !== null) {
-            this.scene.setSlotMaterial(slotIdx, id, { overrides: this._state.overridesByMaterialId[id] ?? null });
+        for (let i = 0; i < 3; i++) {
+            if (sanitizeMaterialId(this._state.slotMaterialIds[i]) !== id) continue;
+            this.scene.setSlotMaterial(i, id, { overrides: this._getResolvedSceneOverridesForMaterial(id) });
         }
         this._syncUiFromState();
         this._persist();
@@ -1047,6 +1404,11 @@ export class MaterialCalibrationView {
         } finally {
             this._screenshotBusy = false;
             this.ui.setScreenshotBusy?.(false);
+            if (this._pendingCorrectionSync) {
+                this._pendingCorrectionSync = false;
+                this._syncSceneFromState({ keepCamera: true });
+                this._syncUiFromState();
+            }
         }
     }
 
@@ -1353,16 +1715,28 @@ export class MaterialCalibrationView {
         if (!materialId) return ['Texture: (empty)', 'No texture selected for this platform.'];
 
         const baselineId = sanitizeMaterialId(this._state.baselineMaterialId);
-        const stored = this._state.overridesByMaterialId[materialId] ?? null;
-        const ovr = getEffectiveOverridesForMaterial(materialId, stored);
+        const ovr = this._getResolvedUiOverridesForMaterial(materialId) ?? getDefaultOverridesForMaterial(materialId) ?? {};
+        const mode = this._state.calibrationMode === 'raw' ? 'raw' : 'calibrated';
+        const hasPipelineCorrection = !!this._getCorrectionOverridesForMaterial(materialId);
+        const roughnessRemap = ovr.roughnessRemap && typeof ovr.roughnessRemap === 'object' ? ovr.roughnessRemap : null;
+        const remapLow = Number.isFinite(Number(roughnessRemap?.lowPercentile)) ? Number(roughnessRemap.lowPercentile) : 0;
+        const remapHigh = Number.isFinite(Number(roughnessRemap?.highPercentile)) ? Number(roughnessRemap.highPercentile) : 100;
 
         return [
             `Texture: ${materialId}`,
+            `mode: ${mode}`,
+            `pipeline correction: ${formatBool(hasPipelineCorrection)}`,
             `baseline: ${formatBool(materialId === baselineId)}`,
             `tileMeters: ${formatFixed(ovr.tileMeters, 2)}`,
             `albedoBrightness: ${formatFixed(ovr.albedoBrightness, 2)}`,
+            `albedoHueDegrees: ${formatFixed(ovr.albedoHueDegrees, 0)}`,
+            `albedoTintStrength: ${formatFixed(ovr.albedoTintStrength, 2)}`,
             `albedoSaturation: ${formatFixed(ovr.albedoSaturation, 2)}`,
             `roughness: ${formatFixed(ovr.roughness, 2)}`,
+            `roughnessRemap: ${roughnessRemap ? `${formatFixed(roughnessRemap.min, 2)}..${formatFixed(roughnessRemap.max, 2)}` : 'off'}`,
+            `roughnessGamma: ${roughnessRemap ? formatFixed(roughnessRemap.gamma, 2) : '-'}`,
+            `roughnessNormPct: ${roughnessRemap ? `${formatFixed(remapLow, 0)}..${formatFixed(remapHigh, 0)}` : '-'}`,
+            `roughnessInvert: ${roughnessRemap ? formatBool(roughnessRemap.invertInput === true) : '-'}`,
             `normalStrength: ${formatFixed(ovr.normalStrength, 2)}`,
             `aoIntensity: ${formatFixed(ovr.aoIntensity, 2)}`,
             `metalness: ${formatFixed(ovr.metalness, 2)}`
@@ -1438,6 +1812,7 @@ export class MaterialCalibrationView {
                     `IBL loaded: ${formatBool(iblInfo?.envMapLoaded)}`,
                     `IBL env intensity: ${formatFixed(iblInfo?.envMapIntensity, 2)}`,
                     `IBL bg mode: ${iblInfo?.sceneBackgroundMode ?? '-'}`,
+                    `mode: ${this._state.calibrationMode}`,
                     `layout: ${this._state.layoutMode}`,
                     `tiling: ${this._state.tilingMode}`,
                     `active slot: #${(sanitizeSlotIndex(this._state.activeSlotIndex) ?? 0) + 1}`,

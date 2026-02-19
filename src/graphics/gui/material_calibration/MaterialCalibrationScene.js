@@ -117,6 +117,37 @@ function sanitizeSlotIndex(value) {
     return idx;
 }
 
+function normalizeRoughnessRemap(value) {
+    const src = value && typeof value === 'object' ? value : null;
+    if (!src) return null;
+
+    const min = Number(src.min);
+    const maxRaw = Number(src.max);
+    const gamma = Number(src.gamma);
+    if (!(Number.isFinite(min) && Number.isFinite(maxRaw) && Number.isFinite(gamma))) return null;
+
+    const lowPercentile = Number(src.lowPercentile);
+    const highPercentile = Number(src.highPercentile);
+    const out = {
+        min: clamp(min, 0, 1),
+        max: clamp(Math.max(min, maxRaw), 0, 1),
+        gamma: clamp(gamma, 0.1, 4),
+        invertInput: src.invertInput === true,
+        lowPercentile: 0,
+        highPercentile: 100
+    };
+
+    if (Number.isFinite(lowPercentile) && Number.isFinite(highPercentile)) {
+        const lo = clamp(lowPercentile, 0, 100);
+        const hi = clamp(highPercentile, 0, 100);
+        if (hi > lo) {
+            out.lowPercentile = lo;
+            out.highPercentile = hi;
+        }
+    }
+    return Object.freeze(out);
+}
+
 function normalizeOverrides(value) {
     const src = value && typeof value === 'object' ? value : null;
     if (!src) return Object.freeze({});
@@ -131,6 +162,8 @@ function normalizeOverrides(value) {
     if (Number.isFinite(Number(src.albedoTintStrength))) out.albedoTintStrength = clamp(src.albedoTintStrength, 0, 1);
     if (Number.isFinite(Number(src.albedoHueDegrees))) out.albedoHueDegrees = clamp(src.albedoHueDegrees, -180, 180);
     if (Number.isFinite(Number(src.albedoSaturation))) out.albedoSaturation = clamp(src.albedoSaturation, -1, 1);
+    const roughnessRemap = normalizeRoughnessRemap(src.roughnessRemap);
+    if (roughnessRemap) out.roughnessRemap = roughnessRemap;
     return Object.freeze(out);
 }
 
@@ -727,6 +760,7 @@ export class MaterialCalibrationScene {
             mat.aoMapIntensity = 1.0;
             mat.color.setRGB(0.75, 0.75, 0.75);
             if (mat.normalScale?.set) mat.normalScale.set(1, 1);
+            this._applyRoughnessRemapOnMaterial(mat, null);
             mat.needsUpdate = true;
             return;
         }
@@ -762,8 +796,77 @@ export class MaterialCalibrationScene {
             albedoHueDegrees: Number.isFinite(ovr.albedoHueDegrees) ? ovr.albedoHueDegrees : 0.0,
             albedoSaturation: Number.isFinite(ovr.albedoSaturation) ? ovr.albedoSaturation : 0.0
         }));
+        this._applyRoughnessRemapOnMaterial(mat, ovr.roughnessRemap ?? null);
 
         this._applySlotTiling(idx, materialId, ovr);
+        mat.needsUpdate = true;
+    }
+
+    _applyRoughnessRemapOnMaterial(material, roughnessRemap) {
+        const mat = material?.isMeshStandardMaterial ? material : null;
+        if (!mat) return;
+
+        const remap = normalizeRoughnessRemap(roughnessRemap);
+        const data = mat.userData ?? (mat.userData = {});
+        const prevSig = typeof data.materialCalibrationRoughnessRemapSignature === 'string'
+            ? data.materialCalibrationRoughnessRemapSignature
+            : '';
+        const nextSig = remap
+            ? `on:${remap.min.toFixed(6)}:${remap.max.toFixed(6)}:${remap.gamma.toFixed(6)}:${remap.invertInput ? 1 : 0}:${remap.lowPercentile.toFixed(6)}:${remap.highPercentile.toFixed(6)}`
+            : 'off';
+
+        if (nextSig === prevSig) return;
+        data.materialCalibrationRoughnessRemapSignature = nextSig;
+        data.materialCalibrationRoughnessRemap = remap;
+
+        const onBeforeCompile = (shader) => {
+            shader.uniforms.uBusSimRoughnessRange = { value: new THREE.Vector2(0, 1) };
+            shader.uniforms.uBusSimRoughnessInputNorm = { value: new THREE.Vector2(0, 1) };
+            shader.uniforms.uBusSimRoughnessGamma = { value: 1.0 };
+            shader.uniforms.uBusSimRoughnessRemapEnabled = { value: 0.0 };
+            shader.uniforms.uBusSimRoughnessInvertInput = { value: 0.0 };
+
+            const current = mat.userData?.materialCalibrationRoughnessRemap ?? null;
+            if (current) {
+                shader.uniforms.uBusSimRoughnessRange.value.set(current.min, current.max);
+                shader.uniforms.uBusSimRoughnessInputNorm.value.set(current.lowPercentile / 100, current.highPercentile / 100);
+                shader.uniforms.uBusSimRoughnessGamma.value = current.gamma;
+                shader.uniforms.uBusSimRoughnessRemapEnabled.value = 1.0;
+                shader.uniforms.uBusSimRoughnessInvertInput.value = current.invertInput ? 1.0 : 0.0;
+            }
+
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <common>',
+                `#include <common>
+uniform vec2 uBusSimRoughnessRange;
+uniform vec2 uBusSimRoughnessInputNorm;
+uniform float uBusSimRoughnessGamma;
+uniform float uBusSimRoughnessRemapEnabled;
+uniform float uBusSimRoughnessInvertInput;`
+            );
+
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <roughnessmap_fragment>',
+                `float roughnessFactor = roughness;
+#ifdef USE_ROUGHNESSMAP
+    vec4 texelRoughness = texture2D( roughnessMap, vRoughnessMapUv );
+    roughnessFactor *= texelRoughness.g;
+#endif
+if (uBusSimRoughnessRemapEnabled > 0.5) {
+    float busSimInput = roughnessFactor;
+    if (uBusSimRoughnessInvertInput > 0.5) busSimInput = 1.0 - busSimInput;
+    float busSimNormSpan = max(1e-5, uBusSimRoughnessInputNorm.y - uBusSimRoughnessInputNorm.x);
+    float busSimT = clamp((busSimInput - uBusSimRoughnessInputNorm.x) / busSimNormSpan, 0.0, 1.0);
+    busSimT = pow(busSimT, max(0.001, uBusSimRoughnessGamma));
+    float busSimMinR = clamp(uBusSimRoughnessRange.x, 0.0, 1.0);
+    float busSimMaxR = clamp(uBusSimRoughnessRange.y, busSimMinR, 1.0);
+    roughnessFactor = mix(busSimMinR, busSimMaxR, busSimT);
+}`
+            );
+        };
+
+        mat.onBeforeCompile = onBeforeCompile;
+        mat.customProgramCacheKey = () => `material_calibration_roughness_remap:${mat.userData?.materialCalibrationRoughnessRemapSignature ?? 'off'}`;
         mat.needsUpdate = true;
     }
 

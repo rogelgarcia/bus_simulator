@@ -103,6 +103,7 @@ export class MaterialCalibrationUI {
         this.onFocusSlot = null;
         this.onSetLayoutMode = null;
         this.onSetTilingMode = null;
+        this.onSetCalibrationMode = null;
         this.onSelectIlluminationPreset = null;
         this.onSetBaselineMaterial = null;
         this.onSetOverrides = null;
@@ -119,6 +120,7 @@ export class MaterialCalibrationUI {
         this._baselineMaterialId = null;
         this._activeMaterialId = null;
         this._activeOverrides = null;
+        this._calibrationMode = 'calibrated';
         this._rulerEnabled = false;
 
         this._bound = false;
@@ -129,6 +131,7 @@ export class MaterialCalibrationUI {
             this.onExit?.();
         };
         this._onClassChange = () => this.onSelectClass?.(this.classSelect.value);
+        this._onCalibrationModeChange = () => this.onSetCalibrationMode?.(this.calibrationModeToggle?.checked ? 'calibrated' : 'raw');
         this._onLayoutChange = () => this.onSetLayoutMode?.(this.layoutSelect.value);
         this._onTilingChange = () => this.onSetTilingMode?.(this.tilingSelect.value);
         this._onIlluminationChange = () => this.onSelectIlluminationPreset?.(this.illuminationSelect.value);
@@ -168,6 +171,7 @@ export class MaterialCalibrationUI {
 
         this.exitBtn?.addEventListener?.('click', this._onExitClick, { passive: false });
         this.classSelect?.addEventListener?.('change', this._onClassChange);
+        this.calibrationModeToggle?.addEventListener?.('change', this._onCalibrationModeChange);
         this.layoutSelect?.addEventListener?.('change', this._onLayoutChange);
         this.tilingSelect?.addEventListener?.('change', this._onTilingChange);
         this.illuminationSelect?.addEventListener?.('change', this._onIlluminationChange);
@@ -191,6 +195,7 @@ export class MaterialCalibrationUI {
 
         this.exitBtn?.removeEventListener?.('click', this._onExitClick);
         this.classSelect?.removeEventListener?.('change', this._onClassChange);
+        this.calibrationModeToggle?.removeEventListener?.('change', this._onCalibrationModeChange);
         this.layoutSelect?.removeEventListener?.('change', this._onLayoutChange);
         this.tilingSelect?.removeEventListener?.('change', this._onTilingChange);
         this.illuminationSelect?.removeEventListener?.('change', this._onIlluminationChange);
@@ -215,6 +220,41 @@ export class MaterialCalibrationUI {
         const optionsTitle = document.createElement('div');
         optionsTitle.className = 'ui-title';
         optionsTitle.textContent = 'Options';
+
+        const modeRow = document.createElement('div');
+        modeRow.className = 'material-calibration-row material-calibration-mode-row';
+        const modeLabel = document.createElement('div');
+        modeLabel.className = 'material-calibration-row-label';
+        modeLabel.textContent = 'Texture mode';
+        const modeSwitch = document.createElement('div');
+        modeSwitch.className = 'material-calibration-mode-switch';
+
+        this.rawModeLabel = document.createElement('span');
+        this.rawModeLabel.className = 'material-calibration-mode-label';
+        this.rawModeLabel.textContent = 'Raw';
+
+        this.calibratedModeLabel = document.createElement('span');
+        this.calibratedModeLabel.className = 'material-calibration-mode-label';
+        this.calibratedModeLabel.textContent = 'Calibrated';
+
+        this.calibrationModeToggleWrap = document.createElement('label');
+        this.calibrationModeToggleWrap.className = 'material-calibration-switch';
+
+        this.calibrationModeToggle = document.createElement('input');
+        this.calibrationModeToggle.type = 'checkbox';
+        this.calibrationModeToggle.className = 'material-calibration-switch-input';
+        this.calibrationModeToggle.setAttribute('aria-label', 'Toggle between calibrated and raw texture mode');
+
+        this.calibrationModeToggleTrack = document.createElement('span');
+        this.calibrationModeToggleTrack.className = 'material-calibration-switch-track';
+
+        this.calibrationModeToggleWrap.appendChild(this.calibrationModeToggle);
+        this.calibrationModeToggleWrap.appendChild(this.calibrationModeToggleTrack);
+        modeSwitch.appendChild(this.rawModeLabel);
+        modeSwitch.appendChild(this.calibrationModeToggleWrap);
+        modeSwitch.appendChild(this.calibratedModeLabel);
+        modeRow.appendChild(modeLabel);
+        modeRow.appendChild(modeSwitch);
 
         const layoutRow = document.createElement('div');
         layoutRow.className = 'material-calibration-row';
@@ -246,6 +286,7 @@ export class MaterialCalibrationUI {
         tilingRow.appendChild(this.tilingSelect);
 
         this.optionsPanel.appendChild(optionsTitle);
+        this.optionsPanel.appendChild(modeRow);
         this.optionsPanel.appendChild(layoutRow);
         this.optionsPanel.appendChild(tilingRow);
 
@@ -464,6 +505,36 @@ export class MaterialCalibrationUI {
             return { row, range, num };
         };
 
+        const makeSwitchRow = (label, { id }) => {
+            const row = document.createElement('div');
+            row.className = 'material-calibration-control-row';
+            row.dataset.id = id;
+
+            const lab = document.createElement('div');
+            lab.className = 'material-calibration-row-label';
+            lab.textContent = label;
+
+            const body = document.createElement('div');
+            body.className = 'material-calibration-control-body material-calibration-control-body-switch';
+
+            const switchWrap = document.createElement('label');
+            switchWrap.className = 'material-calibration-switch material-calibration-switch-sm';
+
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.className = 'material-calibration-switch-input';
+
+            const track = document.createElement('span');
+            track.className = 'material-calibration-switch-track';
+
+            switchWrap.appendChild(input);
+            switchWrap.appendChild(track);
+            body.appendChild(switchWrap);
+            row.appendChild(lab);
+            row.appendChild(body);
+            return { row, input };
+        };
+
         const tile = makeRow('Tile meters', { id: 'tileMeters', min: 0.25, max: 16, step: 0.05, digits: 2 });
         this.tileMetersRange = tile.range;
         this.tileMetersNumber = tile.num;
@@ -474,17 +545,56 @@ export class MaterialCalibrationUI {
         this.albedoBrightnessNumber = albedoBright.num;
         this.overridesGrid.appendChild(albedoBright.row);
 
+        const albedoHue = makeRow('Albedo hue°', { id: 'albedoHueDegrees', min: -180, max: 180, step: 1, digits: 0 });
+        this.albedoHueDegreesRange = albedoHue.range;
+        this.albedoHueDegreesNumber = albedoHue.num;
+        this.overridesGrid.appendChild(albedoHue.row);
+
+        const albedoTint = makeRow('Albedo tint', { id: 'albedoTintStrength', min: 0, max: 1, step: 0.01, digits: 2 });
+        this.albedoTintStrengthRange = albedoTint.range;
+        this.albedoTintStrengthNumber = albedoTint.num;
+        this.overridesGrid.appendChild(albedoTint.row);
+
         const albedoSat = makeRow('Albedo sat', { id: 'albedoSaturation', min: -1, max: 1, step: 0.01, digits: 2 });
         this.albedoSaturationRange = albedoSat.range;
         this.albedoSaturationNumber = albedoSat.num;
         this.overridesGrid.appendChild(albedoSat.row);
 
-        const rough = makeRow('Roughness', { id: 'roughness', min: 0, max: 1, step: 0.01, digits: 2 });
+        const rough = makeRow('Roughness mul', { id: 'roughness', min: 0, max: 1, step: 0.01, digits: 2 });
         this.roughnessRange = rough.range;
         this.roughnessNumber = rough.num;
         this.overridesGrid.appendChild(rough.row);
 
-        const normal = makeRow('Normal int', { id: 'normalStrength', min: 0, max: 4, step: 0.01, digits: 2 });
+        const roughMin = makeRow('Rough remap min', { id: 'roughnessRemapMin', min: 0, max: 1, step: 0.01, digits: 2 });
+        this.roughnessRemapMinRange = roughMin.range;
+        this.roughnessRemapMinNumber = roughMin.num;
+        this.overridesGrid.appendChild(roughMin.row);
+
+        const roughMax = makeRow('Rough remap max', { id: 'roughnessRemapMax', min: 0, max: 1, step: 0.01, digits: 2 });
+        this.roughnessRemapMaxRange = roughMax.range;
+        this.roughnessRemapMaxNumber = roughMax.num;
+        this.overridesGrid.appendChild(roughMax.row);
+
+        const roughGamma = makeRow('Rough gamma', { id: 'roughnessRemapGamma', min: 0.1, max: 4, step: 0.01, digits: 2 });
+        this.roughnessRemapGammaRange = roughGamma.range;
+        this.roughnessRemapGammaNumber = roughGamma.num;
+        this.overridesGrid.appendChild(roughGamma.row);
+
+        const roughLow = makeRow('Rough low %', { id: 'roughnessRemapLowPercentile', min: 0, max: 100, step: 1, digits: 0 });
+        this.roughnessRemapLowPercentileRange = roughLow.range;
+        this.roughnessRemapLowPercentileNumber = roughLow.num;
+        this.overridesGrid.appendChild(roughLow.row);
+
+        const roughHigh = makeRow('Rough high %', { id: 'roughnessRemapHighPercentile', min: 0, max: 100, step: 1, digits: 0 });
+        this.roughnessRemapHighPercentileRange = roughHigh.range;
+        this.roughnessRemapHighPercentileNumber = roughHigh.num;
+        this.overridesGrid.appendChild(roughHigh.row);
+
+        const roughInvert = makeSwitchRow('Rough invert', { id: 'roughnessRemapInvertInput' });
+        this.roughnessRemapInvertInput = roughInvert.input;
+        this.overridesGrid.appendChild(roughInvert.row);
+
+        const normal = makeRow('Normal int', { id: 'normalStrength', min: 0, max: 8, step: 0.01, digits: 2 });
         this.normalStrengthRange = normal.range;
         this.normalStrengthNumber = normal.num;
         this.overridesGrid.appendChild(normal.row);
@@ -506,10 +616,25 @@ export class MaterialCalibrationUI {
             this.tileMetersNumber,
             this.albedoBrightnessRange,
             this.albedoBrightnessNumber,
+            this.albedoHueDegreesRange,
+            this.albedoHueDegreesNumber,
+            this.albedoTintStrengthRange,
+            this.albedoTintStrengthNumber,
             this.albedoSaturationRange,
             this.albedoSaturationNumber,
             this.roughnessRange,
             this.roughnessNumber,
+            this.roughnessRemapMinRange,
+            this.roughnessRemapMinNumber,
+            this.roughnessRemapMaxRange,
+            this.roughnessRemapMaxNumber,
+            this.roughnessRemapGammaRange,
+            this.roughnessRemapGammaNumber,
+            this.roughnessRemapLowPercentileRange,
+            this.roughnessRemapLowPercentileNumber,
+            this.roughnessRemapHighPercentileRange,
+            this.roughnessRemapHighPercentileNumber,
+            this.roughnessRemapInvertInput,
             this.normalStrengthRange,
             this.normalStrengthNumber,
             this.aoIntensityRange,
@@ -549,21 +674,64 @@ export class MaterialCalibrationUI {
 
     _handleOverridesInput() {
         if (this._suppressOverrides) return;
+        if (this._calibrationMode !== 'calibrated') return;
         const id = this._activeMaterialId;
         if (!id) return;
         this.onSetOverrides?.(id, this.getOverridesFromUi());
     }
 
+    _getRoughnessRemapFromUi() {
+        const minRaw = clamp(parseNumberInput(this.roughnessRemapMinNumber?.value, 0), 0, 1);
+        const maxRaw = clamp(parseNumberInput(this.roughnessRemapMaxNumber?.value, 1), 0, 1);
+        const gamma = clamp(parseNumberInput(this.roughnessRemapGammaNumber?.value, 1), 0.1, 4);
+        const lowRaw = clamp(parseNumberInput(this.roughnessRemapLowPercentileNumber?.value, 0), 0, 100);
+        const highRaw = clamp(parseNumberInput(this.roughnessRemapHighPercentileNumber?.value, 100), 0, 100);
+        const min = Math.min(minRaw, maxRaw);
+        const max = Math.max(minRaw, maxRaw);
+        const lowPercentile = Math.min(lowRaw, highRaw);
+        const highPercentile = Math.max(lowRaw, highRaw);
+        const invertInput = !!this.roughnessRemapInvertInput?.checked;
+
+        const out = {
+            min,
+            max,
+            gamma,
+            invertInput
+        };
+        if (highPercentile > lowPercentile) {
+            out.lowPercentile = lowPercentile;
+            out.highPercentile = highPercentile;
+        }
+
+        const eps = 1e-6;
+        const lowForIdentity = out.lowPercentile ?? 0;
+        const highForIdentity = out.highPercentile ?? 100;
+        const isIdentity = (
+            Math.abs(out.min - 0) <= eps
+            && Math.abs(out.max - 1) <= eps
+            && Math.abs(out.gamma - 1) <= eps
+            && Math.abs(lowForIdentity - 0) <= eps
+            && Math.abs(highForIdentity - 100) <= eps
+            && out.invertInput !== true
+        );
+        return isIdentity ? null : out;
+    }
+
     getOverridesFromUi() {
-        return {
+        const out = {
             tileMeters: parseNumberInput(this.tileMetersNumber?.value, null),
             albedoBrightness: parseNumberInput(this.albedoBrightnessNumber?.value, null),
+            albedoHueDegrees: parseNumberInput(this.albedoHueDegreesNumber?.value, null),
+            albedoTintStrength: parseNumberInput(this.albedoTintStrengthNumber?.value, null),
             albedoSaturation: parseNumberInput(this.albedoSaturationNumber?.value, null),
             roughness: parseNumberInput(this.roughnessNumber?.value, null),
             normalStrength: parseNumberInput(this.normalStrengthNumber?.value, null),
             aoIntensity: parseNumberInput(this.aoIntensityNumber?.value, null),
             metalness: parseNumberInput(this.metalnessNumber?.value, null)
         };
+        const roughnessRemap = this._getRoughnessRemapFromUi();
+        if (roughnessRemap) out.roughnessRemap = roughnessRemap;
+        return out;
     }
 
     setClassOptions(options) {
@@ -590,6 +758,14 @@ export class MaterialCalibrationUI {
 
     setLayoutMode(layoutMode) {
         if (this.layoutSelect) this.layoutSelect.value = toId(layoutMode);
+    }
+
+    setCalibrationMode(calibrationMode) {
+        const id = toId(calibrationMode);
+        this._calibrationMode = id === 'raw' ? 'raw' : 'calibrated';
+        if (this.calibrationModeToggle) this.calibrationModeToggle.checked = this._calibrationMode === 'calibrated';
+        this._syncCalibrationModeToggleLabels();
+        this._setOverridesEnabled(!!this._activeMaterialId);
     }
 
     setTilingMode(tilingMode) {
@@ -690,9 +866,15 @@ export class MaterialCalibrationUI {
     }
 
     _setOverridesEnabled(enabled) {
-        const on = !!enabled;
+        const on = !!enabled && this._calibrationMode === 'calibrated';
         for (const el of this._getOverrideInputs()) el.disabled = !on;
         if (this.resetOverridesBtn) this.resetOverridesBtn.disabled = !on;
+    }
+
+    _syncCalibrationModeToggleLabels() {
+        const calibratedActive = this._calibrationMode === 'calibrated';
+        this.calibratedModeLabel?.classList?.toggle?.('is-active', calibratedActive);
+        this.rawModeLabel?.classList?.toggle?.('is-active', !calibratedActive);
     }
 
     _setOverridesUi(ovr) {
@@ -706,9 +888,18 @@ export class MaterialCalibrationUI {
 
         set(this.tileMetersRange, this.tileMetersNumber, ovr.tileMeters ?? null, { min: 0.25, max: 16, digits: 2 });
         set(this.albedoBrightnessRange, this.albedoBrightnessNumber, ovr.albedoBrightness ?? 1.0, { min: 0, max: 4, digits: 2 });
+        set(this.albedoHueDegreesRange, this.albedoHueDegreesNumber, ovr.albedoHueDegrees ?? 0.0, { min: -180, max: 180, digits: 0 });
+        set(this.albedoTintStrengthRange, this.albedoTintStrengthNumber, ovr.albedoTintStrength ?? 0.0, { min: 0, max: 1, digits: 2 });
         set(this.albedoSaturationRange, this.albedoSaturationNumber, ovr.albedoSaturation ?? 0.0, { min: -1, max: 1, digits: 2 });
         set(this.roughnessRange, this.roughnessNumber, ovr.roughness ?? 1.0, { min: 0, max: 1, digits: 2 });
-        set(this.normalStrengthRange, this.normalStrengthNumber, ovr.normalStrength ?? 1.0, { min: 0, max: 4, digits: 2 });
+        const remap = ovr.roughnessRemap && typeof ovr.roughnessRemap === 'object' ? ovr.roughnessRemap : null;
+        set(this.roughnessRemapMinRange, this.roughnessRemapMinNumber, remap?.min ?? 0.0, { min: 0, max: 1, digits: 2 });
+        set(this.roughnessRemapMaxRange, this.roughnessRemapMaxNumber, remap?.max ?? 1.0, { min: 0, max: 1, digits: 2 });
+        set(this.roughnessRemapGammaRange, this.roughnessRemapGammaNumber, remap?.gamma ?? 1.0, { min: 0.1, max: 4, digits: 2 });
+        set(this.roughnessRemapLowPercentileRange, this.roughnessRemapLowPercentileNumber, remap?.lowPercentile ?? 0.0, { min: 0, max: 100, digits: 0 });
+        set(this.roughnessRemapHighPercentileRange, this.roughnessRemapHighPercentileNumber, remap?.highPercentile ?? 100.0, { min: 0, max: 100, digits: 0 });
+        if (this.roughnessRemapInvertInput) this.roughnessRemapInvertInput.checked = remap?.invertInput === true;
+        set(this.normalStrengthRange, this.normalStrengthNumber, ovr.normalStrength ?? 1.0, { min: 0, max: 8, digits: 2 });
         set(this.aoIntensityRange, this.aoIntensityNumber, ovr.aoIntensity ?? 1.0, { min: 0, max: 2, digits: 2 });
         set(this.metalnessRange, this.metalnessNumber, ovr.metalness ?? 0.0, { min: 0, max: 1, digits: 2 });
     }

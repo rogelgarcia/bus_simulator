@@ -20,3 +20,7 @@ __testHooks.getMetrics()
 2. Register it in `tests/headless/harness/scenarios/index.js`.
 3. Keep scenarios deterministic: avoid non-seeded randomness and avoid time-based animation unless stepped via `__testHooks.step(...)`.
 
+## Material QA capture scenario
+
+- Scenario id: `material_calibration_capture`
+- Purpose: deterministic texture QA captures (fixed camera/light recipes) for the texture-correction pipeline tooling.

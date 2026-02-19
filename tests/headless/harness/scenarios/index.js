@@ -13,6 +13,7 @@ import { scenarioGrassBladeHiresShine } from './scenario_grass_blade_hires_shine
 import { scenarioVehicleMotionFlickerProbe } from './scenario_vehicle_motion_flicker_probe.js';
 import { scenarioSunBloomFoliageOcclusion } from './scenario_sun_bloom_foliage_occlusion.js';
 import { scenarioAoFoliageMotionStability } from './scenario_ao_foliage_motion_stability.js';
+import { scenarioMaterialCalibrationCapture } from './scenario_material_calibration_capture.js';
 
 const REGISTRY = new Map([
     [scenarioEmpty.id, scenarioEmpty],
@@ -28,7 +29,8 @@ const REGISTRY = new Map([
     [scenarioGrassBladeHiresShine.id, scenarioGrassBladeHiresShine],
     [scenarioVehicleMotionFlickerProbe.id, scenarioVehicleMotionFlickerProbe],
     [scenarioSunBloomFoliageOcclusion.id, scenarioSunBloomFoliageOcclusion],
-    [scenarioAoFoliageMotionStability.id, scenarioAoFoliageMotionStability]
+    [scenarioAoFoliageMotionStability.id, scenarioAoFoliageMotionStability],
+    [scenarioMaterialCalibrationCapture.id, scenarioMaterialCalibrationCapture]
 ]);
 
 export function listScenarioIds() {
