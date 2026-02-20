@@ -3,18 +3,48 @@
 // @ts-check
 
 import {
-    applyGeneratorPresetToParams,
+    addNoiseLayerFromCatalog,
+    describeNoiseLayer,
+    duplicateNoiseLayer,
     generateNoiseFieldFromState,
+    getNoiseFabricationExecutionPlan,
     getNoiseFabricationDefaultState,
-    getNoiseTextureGeneratorById,
+    getNoiseLayerById,
+    listNoiseBlendModes,
+    listNoiseExecutionModes,
+    listNoiseExecutionPaths,
+    listNoiseLayerMapTargets,
     listNoiseTextureGenerators,
     NOISE_FABRICATION_TEXTURE_SIZES,
-    sanitizeNoiseFabricationState
+    renameNoiseLayer,
+    reorderNoiseLayers,
+    replaceNoiseLayerFromCatalog,
+    sanitizeNoiseFabricationState,
+    setNoiseFabricationActiveLayer,
+    setNoiseFabricationBaseColor,
+    setNoiseFabricationExportTargets,
+    setNoiseFabricationPreviewMode,
+    setNoiseFabricationTextureSize,
+    setNoiseFabricationExecutionAssistantQuestions,
+    setNoiseLayerBlendMode,
+    setNoiseLayerDynamicRuntime,
+    setNoiseLayerExecutionManualPath,
+    setNoiseLayerExecutionMode,
+    setNoiseLayerLock,
+    setNoiseLayerLargeScaleWorld,
+    setNoiseLayerMapTarget,
+    setNoiseLayerParam,
+    setNoiseLayerPreset,
+    setNoiseLayerSolo,
+    setNoiseLayerStrength,
+    setNoiseLayerTransform
 } from './NoiseTextureGeneratorRegistry.js';
+import { getNoiseCatalogEntryById, listNoiseCatalogEntries } from './NoiseFabricationCatalog.js';
 import { parseNoiseFabricationRecipeText, stringifyNoiseFabricationRecipe } from './NoiseFabricationRecipe.js';
 import { renderNoiseFieldToRgba } from './NoisePreviewRenderer.js';
 
-const STORAGE_KEY = 'bus_sim.noise_fabrication.state.v1';
+const STORAGE_KEY_V2 = 'bus_sim.noise_fabrication.state.v2';
+const STORAGE_KEY_V1 = 'bus_sim.noise_fabrication.state.v1';
 
 function makeEl(tag, className, text) {
     const el = document.createElement(tag);
@@ -93,6 +123,26 @@ function createTextRow({ label, value = '', onChange }) {
     row.appendChild(left);
     row.appendChild(right);
 
+    return { row, input };
+}
+
+function createTextAreaRow({ label, value = '', rows = 2, onChange }) {
+    const row = makeEl('div', 'options-row options-row-wide');
+    const left = makeEl('div', 'options-row-label', label);
+    const right = makeEl('div', 'options-row-control options-row-control-wide');
+
+    const input = document.createElement('textarea');
+    input.className = 'noise-fabrication-textarea';
+    input.rows = rows;
+    input.value = String(value ?? '');
+
+    const emit = () => onChange?.(String(input.value ?? ''));
+    input.addEventListener('change', emit);
+    input.addEventListener('blur', emit);
+
+    right.appendChild(input);
+    row.appendChild(left);
+    row.appendChild(right);
     return { row, input };
 }
 
@@ -196,6 +246,14 @@ function createColorRow({ label, value = '#888888', onChange }) {
     return { row, color, text };
 }
 
+function setInputsDisabled(inputRefs, disabled) {
+    if (!Array.isArray(inputRefs)) return;
+    for (const ref of inputRefs) {
+        if (!ref) continue;
+        ref.disabled = disabled;
+    }
+}
+
 export class NoiseFabricationView {
     constructor({ canvas } = {}) {
         this.canvas = canvas;
@@ -203,15 +261,19 @@ export class NoiseFabricationView {
 
         this.root = null;
         this._controls = {};
-        this._paramInputs = new Map();
-
         this._state = getNoiseFabricationDefaultState();
         this._preview = null;
         this._previewImageData = null;
         this._previewCanvas = null;
         this._previewCanvasCtx = null;
-
         this._running = false;
+
+        this._catalogEntries = listNoiseCatalogEntries();
+        this._pickerMode = 'replace';
+        this._hoveredPickerNoiseId = this._catalogEntries[0]?.id ?? '';
+        this._pendingReorderIds = [];
+        this._pendingExecutionAssistantOverrides = {};
+        this._executionAssistantPlan = null;
 
         this._onResize = () => {
             this._resizeCanvas();
@@ -234,8 +296,11 @@ export class NoiseFabricationView {
         this._buildUi();
 
         this._state = this._loadState();
-        this._syncUiFromState();
+        if (!this._state.layers.find((layer) => layer.id === this._state.activeLayerId)) {
+            this._state = setNoiseFabricationActiveLayer(this._state, this._state.layers[0]?.id ?? '');
+        }
 
+        this._syncUiFromState();
         this._resizeCanvas();
         this._regenerateAndRender();
 
@@ -258,13 +323,12 @@ export class NoiseFabricationView {
         if (this.root?.parentNode) this.root.parentNode.removeChild(this.root);
         this.root = null;
         this._controls = {};
-        this._paramInputs.clear();
     }
 
     _loadState() {
         let parsed = null;
         try {
-            const raw = window.localStorage?.getItem?.(STORAGE_KEY) ?? null;
+            const raw = window.localStorage?.getItem?.(STORAGE_KEY_V2) ?? window.localStorage?.getItem?.(STORAGE_KEY_V1) ?? null;
             if (raw) parsed = JSON.parse(raw);
         } catch {
             parsed = null;
@@ -274,9 +338,22 @@ export class NoiseFabricationView {
 
     _saveState() {
         try {
-            window.localStorage?.setItem?.(STORAGE_KEY, JSON.stringify(this._state));
+            window.localStorage?.setItem?.(STORAGE_KEY_V2, JSON.stringify(this._state));
         } catch {
         }
+    }
+
+    _commitState(nextState, { sync = true, regenerate = true } = {}) {
+        this._state = sanitizeNoiseFabricationState(nextState);
+        this._saveState();
+        if (sync) this._syncUiFromState();
+        if (regenerate) this._regenerateAndRender();
+    }
+
+    _setPickerMode(mode) {
+        this._pickerMode = mode === 'add' ? 'add' : 'replace';
+        this._renderLayerTabs();
+        this._renderNoisePicker();
     }
 
     _buildUi() {
@@ -287,29 +364,39 @@ export class NoiseFabricationView {
 
         const header = makeEl('div', 'options-header');
         header.appendChild(makeEl('div', 'options-title', 'Noise fabrication'));
-        header.appendChild(makeEl('div', 'options-subtitle', 'Esc back · R regenerate · Export/import parameter recipes'));
+        header.appendChild(makeEl('div', 'options-subtitle', 'Esc back · R regenerate · Layered stack + catalog picker'));
 
         const body = makeEl('div', 'options-body');
 
-        const generatorSection = makeEl('div', 'options-section');
-        generatorSection.appendChild(makeEl('div', 'options-section-title', 'Generator'));
+        const stackSection = makeEl('div', 'options-section');
+        const stackHeaderRow = makeEl('div', 'noise-stack-header');
+        stackHeaderRow.appendChild(makeEl('div', 'options-section-title', 'Layer stack'));
+        const reorderBtn = makeEl('button', 'options-btn noise-stack-reorder-btn', 'Reorder');
+        reorderBtn.type = 'button';
+        reorderBtn.innerHTML = '<span class="ui-icon">swap_vert</span><span>Reorder</span>';
+        stackHeaderRow.appendChild(reorderBtn);
+        stackSection.appendChild(stackHeaderRow);
 
-        const generatorOptions = listNoiseTextureGenerators().map((generator) => ({ value: generator.id, label: generator.label }));
-        const generatorRow = createSelectRow({
-            label: 'Type',
-            value: this._state.generatorId,
-            options: generatorOptions,
-            onChange: (value) => this._setGenerator(value)
-        });
-        generatorSection.appendChild(generatorRow.row);
+        const tabsContainer = makeEl('div', 'noise-layer-tabs');
+        stackSection.appendChild(tabsContainer);
+        stackSection.appendChild(makeEl('div', 'options-note noise-stack-note', 'Tab order is deterministic (left-to-right evaluation).'));
 
-        const presetRow = createSelectRow({
-            label: 'Preset',
-            value: this._state.activePresetId ?? '',
-            options: [{ value: '', label: 'Custom' }],
-            onChange: (value) => this._setPreset(value)
-        });
-        generatorSection.appendChild(presetRow.row);
+        const pickerSection = makeEl('div', 'options-section');
+        const pickerHeader = makeEl('div', 'noise-picker-header');
+        pickerHeader.appendChild(makeEl('div', 'options-section-title', 'Noise picker'));
+        const pickerModeBadge = makeEl('div', 'noise-picker-mode', '');
+        pickerHeader.appendChild(pickerModeBadge);
+        pickerSection.appendChild(pickerHeader);
+
+        const pickerGrid = makeEl('div', 'noise-picker-grid');
+        pickerSection.appendChild(pickerGrid);
+        const pickerDetails = makeEl('div', 'noise-picker-details');
+        pickerSection.appendChild(pickerDetails);
+
+        const layerEditorSection = makeEl('div', 'options-section');
+        layerEditorSection.appendChild(makeEl('div', 'options-section-title', 'Active layer'));
+        const layerEditor = makeEl('div', 'noise-layer-editor');
+        layerEditorSection.appendChild(layerEditor);
 
         const previewSection = makeEl('div', 'options-section');
         previewSection.appendChild(makeEl('div', 'options-section-title', 'Preview'));
@@ -318,14 +405,12 @@ export class NoiseFabricationView {
             label: 'Mode',
             value: this._state.previewMode,
             options: [
-                { value: 'texture', label: 'Texture' },
+                { value: 'texture', label: 'Texture (Albedo)' },
                 { value: 'normal', label: 'Normal map' }
             ],
             onChange: (value) => {
-                this._state = sanitizeNoiseFabricationState({ ...this._state, previewMode: value });
-                this._saveState();
-                this._regenerateAndRender();
-                this._syncUiFromState();
+                const next = setNoiseFabricationPreviewMode(this._state, value);
+                this._commitState(next, { sync: true, regenerate: true });
             }
         });
         previewSection.appendChild(previewModeRow.row);
@@ -334,10 +419,8 @@ export class NoiseFabricationView {
             label: 'Base color',
             value: this._state.baseColor,
             onChange: (value) => {
-                this._state = sanitizeNoiseFabricationState({ ...this._state, baseColor: value });
-                this._saveState();
-                this._regenerateAndRender();
-                this._syncUiFromState();
+                const next = setNoiseFabricationBaseColor(this._state, value);
+                this._commitState(next, { sync: true, regenerate: true });
             }
         });
         previewSection.appendChild(baseColorRow.row);
@@ -347,37 +430,71 @@ export class NoiseFabricationView {
             value: String(this._state.textureSize),
             options: NOISE_FABRICATION_TEXTURE_SIZES.map((size) => ({ value: String(size), label: `${size} x ${size}` })),
             onChange: (value) => {
-                this._state = sanitizeNoiseFabricationState({ ...this._state, textureSize: Number(value) });
-                this._saveState();
-                this._regenerateAndRender();
-                this._syncUiFromState();
+                const next = setNoiseFabricationTextureSize(this._state, Number(value));
+                this._commitState(next, { sync: true, regenerate: true });
             }
         });
         previewSection.appendChild(sizeRow.row);
 
-        const paramsSection = makeEl('div', 'options-section');
-        paramsSection.appendChild(makeEl('div', 'options-section-title', 'Parameters'));
-        const paramsContainer = makeEl('div', 'noise-fabrication-params');
-        paramsSection.appendChild(paramsContainer);
+        const exportSection = makeEl('div', 'options-section');
+        exportSection.appendChild(makeEl('div', 'options-section-title', 'Recipe export'));
 
-        const recipeSection = makeEl('div', 'options-section');
-        recipeSection.appendChild(makeEl('div', 'options-section-title', 'Recipe'));
+        const exportNormalToggle = createToggleRow({
+            label: 'Export Normal',
+            value: this._state.exportTargets.normal,
+            onChange: (checked) => {
+                const next = setNoiseFabricationExportTargets(this._state, {
+                    ...this._state.exportTargets,
+                    normal: checked
+                });
+                this._commitState(next, { sync: true, regenerate: false });
+            }
+        });
+        exportSection.appendChild(exportNormalToggle.row);
+
+        const exportAlbedoToggle = createToggleRow({
+            label: 'Export Albedo',
+            value: this._state.exportTargets.albedo,
+            onChange: (checked) => {
+                const next = setNoiseFabricationExportTargets(this._state, {
+                    ...this._state.exportTargets,
+                    albedo: checked
+                });
+                this._commitState(next, { sync: true, regenerate: false });
+            }
+        });
+        exportSection.appendChild(exportAlbedoToggle.row);
+
+        const exportOrmToggle = createToggleRow({
+            label: 'Export ORM',
+            value: this._state.exportTargets.orm,
+            onChange: (checked) => {
+                const next = setNoiseFabricationExportTargets(this._state, {
+                    ...this._state.exportTargets,
+                    orm: checked
+                });
+                this._commitState(next, { sync: true, regenerate: false });
+            }
+        });
+        exportSection.appendChild(exportOrmToggle.row);
 
         const actionsRow = makeEl('div', 'options-row options-row-wide');
         const actionsLeft = makeEl('div', 'options-row-label', 'JSON');
         const actionsRight = makeEl('div', 'options-row-control options-row-control-wide');
-        const exportBtn = makeEl('button', 'options-btn options-btn-primary', 'Export');
+        const exportBtn = makeEl('button', 'options-btn options-btn-primary', 'Export (Assistant)');
         exportBtn.type = 'button';
-        const importBtn = makeEl('button', 'options-btn', 'Import');
+        const importBtn = makeEl('button', 'options-btn', 'Import recipe');
         importBtn.type = 'button';
         actionsRight.appendChild(exportBtn);
         actionsRight.appendChild(importBtn);
         actionsRow.appendChild(actionsLeft);
         actionsRow.appendChild(actionsRight);
-        recipeSection.appendChild(actionsRow);
+        exportSection.appendChild(actionsRow);
+
+        exportSection.appendChild(makeEl('div', 'options-note noise-export-note', 'Baked map outputs are unavailable in this AI scope. Export writes deterministic stack recipe JSON only.'));
 
         const status = makeEl('div', 'options-note noise-fabrication-status', 'Ready.');
-        recipeSection.appendChild(status);
+        exportSection.appendChild(status);
 
         const fileInput = document.createElement('input');
         fileInput.type = 'file';
@@ -390,139 +507,783 @@ export class NoiseFabricationView {
             await this._importRecipeFile(file);
         });
 
-        exportBtn.addEventListener('click', () => this._exportRecipe());
+        exportBtn.addEventListener('click', () => this._openExecutionAssistantPopup());
         importBtn.addEventListener('click', () => fileInput.click());
+        reorderBtn.addEventListener('click', () => this._openReorderPopup());
 
-        body.appendChild(generatorSection);
+        body.appendChild(stackSection);
+        body.appendChild(pickerSection);
+        body.appendChild(layerEditorSection);
         body.appendChild(previewSection);
-        body.appendChild(paramsSection);
-        body.appendChild(recipeSection);
+        body.appendChild(exportSection);
 
         panel.appendChild(header);
         panel.appendChild(body);
         panel.appendChild(fileInput);
         layer.appendChild(panel);
+
+        const reorderOverlay = makeEl('div', 'noise-fabrication-modal-overlay hidden');
+        const reorderPanel = makeEl('div', 'ui-panel is-interactive noise-fabrication-modal-panel');
+        const reorderHeader = makeEl('div', 'noise-fabrication-modal-header');
+        reorderHeader.appendChild(makeEl('div', 'noise-fabrication-modal-title', 'Reorder layers'));
+        const reorderClose = makeEl('button', 'options-btn', 'Close');
+        reorderClose.type = 'button';
+        reorderHeader.appendChild(reorderClose);
+
+        const reorderList = makeEl('div', 'noise-fabrication-reorder-list');
+
+        const reorderFooter = makeEl('div', 'noise-fabrication-modal-footer');
+        const reorderApply = makeEl('button', 'options-btn options-btn-primary', 'Apply order');
+        reorderApply.type = 'button';
+        const reorderCancel = makeEl('button', 'options-btn', 'Cancel');
+        reorderCancel.type = 'button';
+        reorderFooter.appendChild(reorderApply);
+        reorderFooter.appendChild(reorderCancel);
+
+        reorderPanel.appendChild(reorderHeader);
+        reorderPanel.appendChild(reorderList);
+        reorderPanel.appendChild(reorderFooter);
+        reorderOverlay.appendChild(reorderPanel);
+
+        reorderOverlay.addEventListener('click', (event) => {
+            if (event.target === reorderOverlay) this._closeReorderPopup();
+        });
+        reorderClose.addEventListener('click', () => this._closeReorderPopup());
+        reorderCancel.addEventListener('click', () => this._closeReorderPopup());
+        reorderApply.addEventListener('click', () => {
+            const next = reorderNoiseLayers(this._state, this._pendingReorderIds);
+            this._closeReorderPopup();
+            this._commitState(next, { sync: true, regenerate: true });
+            this._setStatus('Applied deterministic layer reorder.');
+        });
+
+        const executionOverlay = makeEl('div', 'noise-fabrication-modal-overlay hidden');
+        const executionPanel = makeEl('div', 'ui-panel is-interactive noise-fabrication-modal-panel noise-execution-modal-panel');
+        const executionHeader = makeEl('div', 'noise-fabrication-modal-header');
+        executionHeader.appendChild(makeEl('div', 'noise-fabrication-modal-title', 'Execution Decision Assistant'));
+        const executionClose = makeEl('button', 'options-btn', 'Close');
+        executionClose.type = 'button';
+        executionHeader.appendChild(executionClose);
+
+        const executionQuestions = makeEl('div', 'noise-execution-assistant-questions');
+        const questionDynamic = createToggleRow({
+            label: 'Dynamic scene context',
+            value: this._state.executionAssistantQuestions?.dynamicSceneContext === true,
+            onChange: (checked) => this._onExecutionAssistantQuestionChange('dynamicSceneContext', checked)
+        });
+        const questionLargeWorld = createToggleRow({
+            label: 'Large world usage',
+            value: this._state.executionAssistantQuestions?.largeWorldContext === true,
+            onChange: (checked) => this._onExecutionAssistantQuestionChange('largeWorldContext', checked)
+        });
+        const questionPreferBaked = createToggleRow({
+            label: 'Prioritize baked perf',
+            value: this._state.executionAssistantQuestions?.preferBakedPerformance === true,
+            onChange: (checked) => this._onExecutionAssistantQuestionChange('preferBakedPerformance', checked)
+        });
+        executionQuestions.appendChild(questionDynamic.row);
+        executionQuestions.appendChild(questionLargeWorld.row);
+        executionQuestions.appendChild(questionPreferBaked.row);
+
+        const executionList = makeEl('div', 'noise-execution-assistant-list');
+        const executionConfirmRow = makeEl('div', 'noise-execution-confirm-row');
+        const executionConfirmToggle = createToggleRow({
+            label: 'Confirm layer choices',
+            value: false,
+            onChange: (checked) => this._setExecutionAssistantConfirmed(checked)
+        });
+        executionConfirmRow.appendChild(executionConfirmToggle.row);
+
+        const executionFooter = makeEl('div', 'noise-fabrication-modal-footer');
+        const executionApplyBtn = makeEl('button', 'options-btn options-btn-primary', 'Confirm and Export');
+        executionApplyBtn.type = 'button';
+        executionApplyBtn.disabled = true;
+        const executionCancelBtn = makeEl('button', 'options-btn', 'Cancel');
+        executionCancelBtn.type = 'button';
+        executionFooter.appendChild(executionApplyBtn);
+        executionFooter.appendChild(executionCancelBtn);
+
+        executionPanel.appendChild(executionHeader);
+        executionPanel.appendChild(executionQuestions);
+        executionPanel.appendChild(executionList);
+        executionPanel.appendChild(executionConfirmRow);
+        executionPanel.appendChild(executionFooter);
+        executionOverlay.appendChild(executionPanel);
+
+        executionOverlay.addEventListener('click', (event) => {
+            if (event.target === executionOverlay) this._closeExecutionAssistantPopup();
+        });
+        executionClose.addEventListener('click', () => this._closeExecutionAssistantPopup());
+        executionCancelBtn.addEventListener('click', () => this._closeExecutionAssistantPopup());
+        executionApplyBtn.addEventListener('click', () => this._confirmExecutionAssistantAndExport());
+
         document.body.appendChild(layer);
+        document.body.appendChild(reorderOverlay);
+        document.body.appendChild(executionOverlay);
 
         this.root = layer;
         this._controls = {
-            generatorSelect: generatorRow.select,
-            presetSelect: presetRow.select,
+            tabsContainer,
+            pickerGrid,
+            pickerDetails,
+            pickerModeBadge,
+            layerEditor,
             previewModeSelect: previewModeRow.select,
             baseColorInput: baseColorRow.color,
             baseColorText: baseColorRow.text,
             textureSizeSelect: sizeRow.select,
-            paramsContainer,
+            exportNormalToggle: exportNormalToggle.input,
+            exportAlbedoToggle: exportAlbedoToggle.input,
+            exportOrmToggle: exportOrmToggle.input,
             status,
-            fileInput
+            fileInput,
+            reorderOverlay,
+            reorderList,
+            executionOverlay,
+            executionQuestions: {
+                dynamicSceneContext: questionDynamic.input,
+                largeWorldContext: questionLargeWorld.input,
+                preferBakedPerformance: questionPreferBaked.input
+            },
+            executionList,
+            executionConfirmToggle: executionConfirmToggle.input,
+            executionApplyBtn
         };
     }
 
-    _setGenerator(generatorId) {
-        const nextGenerator = getNoiseTextureGeneratorById(generatorId);
-        if (!nextGenerator) return;
-        const nextPresetId = nextGenerator.defaultPresetId ?? null;
-        const currentParams = this._state.generatorParamsById?.[nextGenerator.id] ?? nextGenerator.defaultParams;
-        const presetParams = applyGeneratorPresetToParams(nextGenerator.id, nextPresetId, currentParams);
-        const generatorParamsById = {
-            ...this._state.generatorParamsById,
-            [nextGenerator.id]: presetParams
-        };
+    _setExecutionAssistantConfirmed(checked) {
+        if (this._controls.executionApplyBtn) {
+            this._controls.executionApplyBtn.disabled = checked !== true;
+        }
+    }
 
-        this._state = sanitizeNoiseFabricationState({
-            ...this._state,
-            generatorId: nextGenerator.id,
-            activePresetId: nextPresetId,
-            generatorParamsById
-        });
+    _readExecutionAssistantQuestionsFromUi() {
+        const q = this._controls.executionQuestions;
+        return {
+            dynamicSceneContext: q?.dynamicSceneContext?.checked === true,
+            largeWorldContext: q?.largeWorldContext?.checked === true,
+            preferBakedPerformance: q?.preferBakedPerformance?.checked === true
+        };
+    }
+
+    _openExecutionAssistantPopup() {
+        this._pendingExecutionAssistantOverrides = {};
+        if (this._controls.executionConfirmToggle) this._controls.executionConfirmToggle.checked = false;
+        this._setExecutionAssistantConfirmed(false);
+
+        const questions = this._state.executionAssistantQuestions ?? {
+            dynamicSceneContext: false,
+            largeWorldContext: false,
+            preferBakedPerformance: false
+        };
+        if (this._controls.executionQuestions) {
+            this._controls.executionQuestions.dynamicSceneContext.checked = questions.dynamicSceneContext === true;
+            this._controls.executionQuestions.largeWorldContext.checked = questions.largeWorldContext === true;
+            this._controls.executionQuestions.preferBakedPerformance.checked = questions.preferBakedPerformance === true;
+        }
+
+        this._refreshExecutionAssistantPlan();
+        this._controls.executionOverlay?.classList.remove('hidden');
+    }
+
+    _closeExecutionAssistantPopup() {
+        this._controls.executionOverlay?.classList.add('hidden');
+        this._executionAssistantPlan = null;
+        this._pendingExecutionAssistantOverrides = {};
+        if (this._controls.executionConfirmToggle) this._controls.executionConfirmToggle.checked = false;
+        this._setExecutionAssistantConfirmed(false);
+    }
+
+    _onExecutionAssistantQuestionChange() {
+        this._refreshExecutionAssistantPlan();
+    }
+
+    _refreshExecutionAssistantPlan() {
+        const questions = this._readExecutionAssistantQuestionsFromUi();
+        const nextState = setNoiseFabricationExecutionAssistantQuestions(this._state, questions);
+        this._state = sanitizeNoiseFabricationState(nextState);
         this._saveState();
-        this._regenerateAndRender();
-        this._syncUiFromState();
+
+        this._executionAssistantPlan = getNoiseFabricationExecutionPlan(this._state, {
+            questions: this._state.executionAssistantQuestions,
+            manualOverridesByLayerId: this._pendingExecutionAssistantOverrides
+        });
+        this._renderExecutionAssistantRows();
+        this._renderLayerTabs();
+        this._rebuildLayerEditor();
     }
 
-    _setPreset(presetId) {
-        const generator = getNoiseTextureGeneratorById(this._state.generatorId);
-        if (!generator) return;
+    _renderExecutionAssistantRows() {
+        const list = this._controls.executionList;
+        if (!list) return;
+        list.textContent = '';
 
-        if (!presetId) {
-            this._state = sanitizeNoiseFabricationState({
-                ...this._state,
-                activePresetId: null
-            });
-            this._saveState();
-            this._syncUiFromState();
+        const plan = this._executionAssistantPlan;
+        if (!plan) {
+            list.appendChild(makeEl('div', 'options-note', 'No execution plan available.'));
             return;
         }
 
-        const current = this._state.generatorParamsById?.[generator.id] ?? generator.defaultParams;
-        const params = applyGeneratorPresetToParams(generator.id, presetId, current);
-        const generatorParamsById = {
-            ...this._state.generatorParamsById,
-            [generator.id]: params
-        };
+        const summary = makeEl('div', 'noise-execution-summary', `Final paths → Shader: ${plan.summary.shader} · Baked: ${plan.summary.textureBaked} · Hybrid: ${plan.summary.hybrid}`);
+        list.appendChild(summary);
 
-        this._state = sanitizeNoiseFabricationState({
-            ...this._state,
-            activePresetId: presetId,
-            generatorParamsById
-        });
-        this._saveState();
-        this._regenerateAndRender();
-        this._syncUiFromState();
+        for (const entry of plan.layers) {
+            const row = makeEl('div', 'noise-execution-row');
+
+            const top = makeEl('div', 'noise-execution-row-top');
+            top.appendChild(makeEl('div', 'noise-execution-layer-name', entry.layerName || entry.layerId));
+            top.appendChild(makeEl('div', 'noise-execution-layer-recommended', `Recommended: ${entry.recommendedPath}`));
+            row.appendChild(top);
+
+            const metrics = makeEl('div', 'noise-execution-row-metrics', `HF ${entry.scores.highFrequency.toFixed(2)} · Large ${entry.scores.largeScaleWorld.toFixed(2)} · Cost ${entry.scores.staticCost.toFixed(2)}`);
+            row.appendChild(metrics);
+
+            const reasons = makeEl('div', 'noise-execution-row-reasons', entry.reasons.join(' '));
+            row.appendChild(reasons);
+
+            const controlRow = makeEl('div', 'noise-execution-row-control');
+            const label = makeEl('label', 'noise-execution-row-label', 'Final path');
+            const select = document.createElement('select');
+            select.className = 'options-number noise-fabrication-select';
+            for (const opt of listNoiseExecutionPaths()) {
+                const option = document.createElement('option');
+                option.value = opt.id;
+                option.textContent = opt.label;
+                select.appendChild(option);
+            }
+            const selected = this._pendingExecutionAssistantOverrides[entry.layerId] ?? entry.finalPath;
+            select.value = selected;
+            select.addEventListener('change', () => {
+                this._pendingExecutionAssistantOverrides[entry.layerId] = String(select.value || entry.finalPath);
+                this._refreshExecutionAssistantPlan();
+            });
+            controlRow.appendChild(label);
+            controlRow.appendChild(select);
+            row.appendChild(controlRow);
+
+            list.appendChild(row);
+        }
     }
 
-    _setParamValue(id, value) {
-        const generator = getNoiseTextureGeneratorById(this._state.generatorId);
-        if (!generator || !id) return;
-
-        const current = this._state.generatorParamsById?.[generator.id] ?? generator.defaultParams;
-        const nextParams = generator.sanitizeParams({
-            ...current,
-            [id]: value
+    async _confirmExecutionAssistantAndExport() {
+        if (this._controls.executionConfirmToggle?.checked !== true) {
+            this._setStatus('Confirm execution decisions before export.');
+            return;
+        }
+        const plan = getNoiseFabricationExecutionPlan(this._state, {
+            questions: this._state.executionAssistantQuestions,
+            manualOverridesByLayerId: this._pendingExecutionAssistantOverrides
         });
-
-        const generatorParamsById = {
-            ...this._state.generatorParamsById,
-            [generator.id]: nextParams
-        };
-
-        this._state = sanitizeNoiseFabricationState({
-            ...this._state,
-            activePresetId: null,
-            generatorParamsById
+        await this._exportRecipe({
+            executionDecisionAssistant: {
+                questions: plan.questions,
+                summary: plan.summary,
+                layers: plan.layers.map((entry) => ({
+                    layerId: entry.layerId,
+                    layerName: entry.layerName,
+                    recommendedPath: entry.recommendedPath,
+                    finalPath: entry.finalPath,
+                    reasons: entry.reasons,
+                    flags: entry.flags,
+                    scores: entry.scores
+                })),
+                confirmedAt: new Date().toISOString()
+            }
         });
-
-        this._saveState();
-        if (this._controls?.presetSelect) this._controls.presetSelect.value = '';
-        this._regenerateAndRender();
+        this._closeExecutionAssistantPopup();
     }
 
-    _rebuildParameterRows() {
-        const container = this._controls.paramsContainer;
+    _openReorderPopup() {
+        this._pendingReorderIds = this._state.layers.map((layer) => layer.id);
+        this._renderReorderList();
+        this._controls.reorderOverlay?.classList.remove('hidden');
+    }
+
+    _closeReorderPopup() {
+        this._controls.reorderOverlay?.classList.add('hidden');
+        this._pendingReorderIds = [];
+    }
+
+    _movePendingReorder(id, direction) {
+        const index = this._pendingReorderIds.indexOf(id);
+        if (index < 0) return;
+        const target = direction < 0 ? index - 1 : index + 1;
+        if (target < 0 || target >= this._pendingReorderIds.length) return;
+        const next = [...this._pendingReorderIds];
+        const temp = next[index];
+        next[index] = next[target];
+        next[target] = temp;
+        this._pendingReorderIds = next;
+        this._renderReorderList();
+    }
+
+    _renderReorderList() {
+        const list = this._controls.reorderList;
+        if (!list) return;
+        list.textContent = '';
+
+        for (let i = 0; i < this._pendingReorderIds.length; i++) {
+            const layerId = this._pendingReorderIds[i];
+            const layer = getNoiseLayerById(this._state, layerId);
+            if (!layer) continue;
+
+            const row = makeEl('div', 'noise-fabrication-reorder-row');
+            const label = makeEl('div', 'noise-fabrication-reorder-label', `${i + 1}. ${layer.name}`);
+            row.appendChild(label);
+
+            const actions = makeEl('div', 'noise-fabrication-reorder-actions');
+            const upBtn = makeEl('button', 'options-btn', '↑');
+            upBtn.type = 'button';
+            upBtn.disabled = i <= 0;
+            upBtn.addEventListener('click', () => this._movePendingReorder(layer.id, -1));
+
+            const downBtn = makeEl('button', 'options-btn', '↓');
+            downBtn.type = 'button';
+            downBtn.disabled = i >= this._pendingReorderIds.length - 1;
+            downBtn.addEventListener('click', () => this._movePendingReorder(layer.id, 1));
+
+            actions.appendChild(upBtn);
+            actions.appendChild(downBtn);
+            row.appendChild(actions);
+            list.appendChild(row);
+        }
+    }
+
+    _syncUiFromState() {
+        if (this._controls.previewModeSelect) this._controls.previewModeSelect.value = this._state.previewMode;
+        if (this._controls.baseColorInput) this._controls.baseColorInput.value = normalizeHexColor(this._state.baseColor, '#888888');
+        if (this._controls.baseColorText) this._controls.baseColorText.value = normalizeHexColor(this._state.baseColor, '#888888');
+        if (this._controls.textureSizeSelect) this._controls.textureSizeSelect.value = String(this._state.textureSize);
+        if (this._controls.exportNormalToggle) this._controls.exportNormalToggle.checked = this._state.exportTargets.normal;
+        if (this._controls.exportAlbedoToggle) this._controls.exportAlbedoToggle.checked = this._state.exportTargets.albedo;
+        if (this._controls.exportOrmToggle) this._controls.exportOrmToggle.checked = this._state.exportTargets.orm;
+        if (this._controls.executionQuestions) {
+            this._controls.executionQuestions.dynamicSceneContext.checked = this._state.executionAssistantQuestions?.dynamicSceneContext === true;
+            this._controls.executionQuestions.largeWorldContext.checked = this._state.executionAssistantQuestions?.largeWorldContext === true;
+            this._controls.executionQuestions.preferBakedPerformance.checked = this._state.executionAssistantQuestions?.preferBakedPerformance === true;
+        }
+
+        this._renderLayerTabs();
+        this._renderNoisePicker();
+        this._rebuildLayerEditor();
+    }
+
+    _renderLayerTabs() {
+        const container = this._controls.tabsContainer;
         if (!container) return;
 
         container.textContent = '';
-        this._paramInputs.clear();
+        const activeLayerId = this._state.activeLayerId;
+        const plan = getNoiseFabricationExecutionPlan(this._state, { questions: this._state.executionAssistantQuestions });
+        const executionByLayerId = new Map(plan.layers.map((entry) => [entry.layerId, entry.finalPath]));
 
-        const generator = getNoiseTextureGeneratorById(this._state.generatorId);
-        if (!generator) return;
-        const params = this._state.generatorParamsById?.[generator.id] ?? generator.defaultParams;
+        for (const layer of this._state.layers) {
+            const tab = makeEl('button', 'noise-layer-tab');
+            tab.type = 'button';
+            tab.classList.toggle('is-active', this._pickerMode !== 'add' && layer.id === activeLayerId);
+            tab.addEventListener('click', () => {
+                const next = setNoiseFabricationActiveLayer(this._state, layer.id);
+                this._setPickerMode('replace');
+                this._commitState(next, { sync: true, regenerate: true });
+            });
+
+            const title = makeEl('span', 'noise-layer-tab-title', layer.name);
+            tab.appendChild(title);
+
+            const flags = makeEl('span', 'noise-layer-tab-flags');
+            if (layer.lock) flags.appendChild(makeEl('span', 'noise-layer-tab-flag', 'L'));
+            if (layer.solo) flags.appendChild(makeEl('span', 'noise-layer-tab-flag', 'S'));
+            const execPath = executionByLayerId.get(layer.id) ?? 'hybrid';
+            const execTag = execPath === 'texture_baked' ? 'B' : (execPath === 'shader' ? 'SH' : 'HY');
+            flags.appendChild(makeEl('span', 'noise-layer-tab-flag', execTag));
+            tab.appendChild(flags);
+
+            container.appendChild(tab);
+        }
+
+        const addTab = makeEl('button', 'noise-layer-tab noise-layer-tab-add', '+');
+        addTab.type = 'button';
+        addTab.title = 'Add new layer from noise picker';
+        addTab.classList.toggle('is-active', this._pickerMode === 'add');
+        addTab.addEventListener('click', () => {
+            this._setPickerMode('add');
+            this._setStatus('Picker in add mode: selecting a catalog noise creates a new layer.');
+        });
+        container.appendChild(addTab);
+    }
+
+    _renderNoisePicker() {
+        const grid = this._controls.pickerGrid;
+        if (!grid) return;
+        grid.textContent = '';
+
+        const activeLayer = getNoiseLayerById(this._state, this._state.activeLayerId);
+        const selectedNoiseId = this._pickerMode === 'replace' ? String(activeLayer?.noiseId ?? '') : '';
+
+        if (this._controls.pickerModeBadge) {
+            this._controls.pickerModeBadge.textContent = this._pickerMode === 'add'
+                ? 'Add mode: click a noise to create a new layer'
+                : 'Replace mode: click a noise to replace the active layer';
+        }
+
+        for (const entry of this._catalogEntries) {
+            const card = makeEl('button', 'noise-picker-card');
+            card.type = 'button';
+            card.classList.toggle('is-selected', entry.id === selectedNoiseId);
+            card.dataset.noiseId = entry.id;
+            card.title = `${entry.displayName} · ${entry.usageExample}`;
+
+            const title = makeEl('div', 'noise-picker-card-title', entry.displayName);
+            const desc = makeEl('div', 'noise-picker-card-desc', entry.shortDescription);
+            const usage = makeEl('div', 'noise-picker-card-usage', `Usage: ${entry.usageExample}`);
+
+            const hints = makeEl('div', 'noise-picker-card-hints');
+            hints.appendChild(makeEl('span', 'noise-picker-hint', 'Normal'));
+            hints.appendChild(makeEl('span', 'noise-picker-hint', 'Albedo'));
+            hints.appendChild(makeEl('span', 'noise-picker-hint', 'ORM'));
+
+            card.appendChild(title);
+            card.appendChild(desc);
+            card.appendChild(usage);
+            card.appendChild(hints);
+
+            card.addEventListener('mouseenter', () => {
+                this._hoveredPickerNoiseId = entry.id;
+                this._renderNoisePickerDetails();
+            });
+            card.addEventListener('focus', () => {
+                this._hoveredPickerNoiseId = entry.id;
+                this._renderNoisePickerDetails();
+            });
+            card.addEventListener('click', () => this._applyPickerSelection(entry.id));
+
+            grid.appendChild(card);
+        }
+
+        if (!this._hoveredPickerNoiseId) this._hoveredPickerNoiseId = this._catalogEntries[0]?.id ?? '';
+        this._renderNoisePickerDetails();
+    }
+
+    _renderNoisePickerDetails() {
+        const panel = this._controls.pickerDetails;
+        if (!panel) return;
+        panel.textContent = '';
+
+        const entry = getNoiseCatalogEntryById(this._hoveredPickerNoiseId) ?? this._catalogEntries[0] ?? null;
+        if (!entry) {
+            panel.appendChild(makeEl('div', 'options-note', 'No noise catalog entries available.'));
+            return;
+        }
+
+        panel.appendChild(makeEl('div', 'noise-picker-details-title', entry.displayName));
+        panel.appendChild(makeEl('div', 'noise-picker-details-line', entry.shortDescription));
+        panel.appendChild(makeEl('div', 'noise-picker-details-line', `Example: ${entry.usageExample}`));
+        panel.appendChild(makeEl('div', 'noise-picker-details-line', `Effect: ${entry.hoverDetails}`));
+        panel.appendChild(makeEl('div', 'noise-picker-details-line', `Mix tip: ${entry.mixGuidance}`));
+
+        const hintsList = makeEl('div', 'noise-picker-details-hints');
+        hintsList.appendChild(makeEl('div', 'noise-picker-details-hint', `Normal: ${entry.mapTargetHints.normal}`));
+        hintsList.appendChild(makeEl('div', 'noise-picker-details-hint', `Albedo: ${entry.mapTargetHints.albedo}`));
+        hintsList.appendChild(makeEl('div', 'noise-picker-details-hint', `ORM: ${entry.mapTargetHints.orm}`));
+        panel.appendChild(hintsList);
+    }
+
+    _applyPickerSelection(noiseId) {
+        const activeLayer = getNoiseLayerById(this._state, this._state.activeLayerId);
+        if (this._pickerMode === 'add' || !activeLayer) {
+            const next = addNoiseLayerFromCatalog(this._state, noiseId);
+            this._setPickerMode('replace');
+            this._commitState(next, { sync: true, regenerate: true });
+            this._setStatus('Created a new layer from catalog default preset (blend=Normal, strength=1.0).');
+            return;
+        }
+
+        const next = replaceNoiseLayerFromCatalog(this._state, activeLayer.id, noiseId);
+        this._commitState(next, { sync: true, regenerate: true });
+        this._setStatus('Replaced active layer generator from the catalog; kept layer naming/blending/strength/transform.');
+    }
+
+    _rebuildLayerEditor() {
+        const container = this._controls.layerEditor;
+        if (!container) return;
+        container.textContent = '';
+
+        const activeLayer = getNoiseLayerById(this._state, this._state.activeLayerId);
+        if (!activeLayer) {
+            container.appendChild(makeEl('div', 'options-note', 'No active layer selected.'));
+            return;
+        }
+
+        const isLocked = activeLayer.lock === true;
+        const generator = listNoiseTextureGenerators().find((item) => item.id === activeLayer.generatorId) ?? null;
+        const mapTargetOptions = listNoiseLayerMapTargets().map((target) => ({ value: target.id, label: target.label }));
+        const blendOptions = listNoiseBlendModes().map((mode) => ({ value: mode.id, label: mode.label }));
+
+        const nameRow = createTextRow({
+            label: 'Name',
+            value: activeLayer.name,
+            onChange: (value) => {
+                const next = renameNoiseLayer(this._state, activeLayer.id, value);
+                this._commitState(next, { sync: true, regenerate: false });
+            }
+        });
+        setInputsDisabled([nameRow.input], isLocked);
+        container.appendChild(nameRow.row);
+
+        const descriptionRow = createTextAreaRow({
+            label: 'Description',
+            value: activeLayer.description,
+            rows: 2,
+            onChange: (value) => {
+                const next = describeNoiseLayer(this._state, activeLayer.id, value);
+                this._commitState(next, { sync: true, regenerate: false });
+            }
+        });
+        setInputsDisabled([descriptionRow.input], isLocked);
+        container.appendChild(descriptionRow.row);
+
+        const mapTargetRow = createSelectRow({
+            label: 'Map target',
+            value: activeLayer.mapTarget,
+            options: mapTargetOptions,
+            onChange: (value) => {
+                const next = setNoiseLayerMapTarget(this._state, activeLayer.id, value);
+                this._commitState(next, { sync: true, regenerate: true });
+            }
+        });
+        setInputsDisabled([mapTargetRow.select], isLocked);
+        container.appendChild(mapTargetRow.row);
+
+        const blendRow = createSelectRow({
+            label: 'Blend mode',
+            value: activeLayer.blendMode,
+            options: blendOptions,
+            onChange: (value) => {
+                const next = setNoiseLayerBlendMode(this._state, activeLayer.id, value);
+                this._commitState(next, { sync: true, regenerate: true });
+            }
+        });
+        setInputsDisabled([blendRow.select], isLocked);
+        container.appendChild(blendRow.row);
+
+        const strengthRow = createRangeRow({
+            label: 'Strength',
+            value: activeLayer.strength,
+            min: 0,
+            max: 1,
+            step: 0.01,
+            digits: 2,
+            onChange: (value) => {
+                const next = setNoiseLayerStrength(this._state, activeLayer.id, value);
+                this._commitState(next, { sync: true, regenerate: true });
+            }
+        });
+        setInputsDisabled([strengthRow.range, strengthRow.number], isLocked);
+        container.appendChild(strengthRow.row);
+
+        const executionModeOptions = listNoiseExecutionModes().map((entry) => ({ value: entry.id, label: entry.label }));
+        const executionPathOptions = listNoiseExecutionPaths().map((entry) => ({ value: entry.id, label: entry.label }));
+        const execution = activeLayer.execution && typeof activeLayer.execution === 'object'
+            ? activeLayer.execution
+            : { mode: 'auto', manualPath: 'hybrid', dynamicRuntime: false, largeScaleWorld: false };
+
+        const executionModeRow = createSelectRow({
+            label: 'Execution mode',
+            value: execution.mode ?? 'auto',
+            options: executionModeOptions,
+            onChange: (value) => {
+                const next = setNoiseLayerExecutionMode(this._state, activeLayer.id, value);
+                this._commitState(next, { sync: true, regenerate: false });
+            }
+        });
+        setInputsDisabled([executionModeRow.select], isLocked);
+        container.appendChild(executionModeRow.row);
+
+        const manualPathRow = createSelectRow({
+            label: 'Manual path',
+            value: execution.manualPath ?? 'hybrid',
+            options: executionPathOptions,
+            onChange: (value) => {
+                const next = setNoiseLayerExecutionManualPath(this._state, activeLayer.id, value);
+                this._commitState(next, { sync: true, regenerate: false });
+            }
+        });
+        setInputsDisabled([manualPathRow.select], isLocked || execution.mode !== 'manual');
+        container.appendChild(manualPathRow.row);
+
+        const dynamicRuntimeRow = createToggleRow({
+            label: 'Dynamic runtime',
+            value: execution.dynamicRuntime === true,
+            onChange: (checked) => {
+                const next = setNoiseLayerDynamicRuntime(this._state, activeLayer.id, checked);
+                this._commitState(next, { sync: true, regenerate: false });
+            }
+        });
+        setInputsDisabled([dynamicRuntimeRow.input], isLocked);
+        container.appendChild(dynamicRuntimeRow.row);
+
+        const largeScaleRow = createToggleRow({
+            label: 'Large-scale/world',
+            value: execution.largeScaleWorld === true,
+            onChange: (checked) => {
+                const next = setNoiseLayerLargeScaleWorld(this._state, activeLayer.id, checked);
+                this._commitState(next, { sync: true, regenerate: false });
+            }
+        });
+        setInputsDisabled([largeScaleRow.input], isLocked);
+        container.appendChild(largeScaleRow.row);
+
+        const executionPlan = getNoiseFabricationExecutionPlan(this._state, { questions: this._state.executionAssistantQuestions });
+        const activeExecutionEntry = executionPlan.layers.find((entry) => entry.layerId === activeLayer.id) ?? null;
+        if (activeExecutionEntry) {
+            container.appendChild(makeEl(
+                'div',
+                'options-note noise-layer-execution-note',
+                `Checker → Recommended: ${activeExecutionEntry.recommendedPath}, Final: ${activeExecutionEntry.finalPath}. ` +
+                `HF ${activeExecutionEntry.scores.highFrequency.toFixed(2)}, Large ${activeExecutionEntry.scores.largeScaleWorld.toFixed(2)}, Cost ${activeExecutionEntry.scores.staticCost.toFixed(2)}.`
+            ));
+        }
+
+        const controlsRow = makeEl('div', 'noise-layer-action-row');
+        const duplicateBtn = makeEl('button', 'options-btn', 'Duplicate');
+        duplicateBtn.type = 'button';
+        duplicateBtn.addEventListener('click', () => {
+            const next = duplicateNoiseLayer(this._state, activeLayer.id);
+            this._commitState(next, { sync: true, regenerate: true });
+        });
+
+        const lockBtn = makeEl('button', 'options-btn', activeLayer.lock ? 'Unlock' : 'Lock');
+        lockBtn.type = 'button';
+        lockBtn.classList.toggle('is-active', activeLayer.lock === true);
+        lockBtn.addEventListener('click', () => {
+            const next = setNoiseLayerLock(this._state, activeLayer.id, !activeLayer.lock);
+            this._commitState(next, { sync: true, regenerate: false });
+        });
+
+        const soloBtn = makeEl('button', 'options-btn', activeLayer.solo ? 'Unsolo' : 'Solo');
+        soloBtn.type = 'button';
+        soloBtn.classList.toggle('is-active', activeLayer.solo === true);
+        soloBtn.addEventListener('click', () => {
+            const next = setNoiseLayerSolo(this._state, activeLayer.id, !activeLayer.solo);
+            this._commitState(next, { sync: true, regenerate: true });
+        });
+
+        controlsRow.appendChild(duplicateBtn);
+        controlsRow.appendChild(lockBtn);
+        controlsRow.appendChild(soloBtn);
+        container.appendChild(controlsRow);
+
+        const presetOptions = [{ value: '', label: 'Custom' }];
+        if (generator?.presets) {
+            for (const preset of generator.presets) {
+                presetOptions.push({ value: preset.id, label: preset.label });
+            }
+        }
+
+        const presetRow = createSelectRow({
+            label: 'Preset',
+            value: activeLayer.presetId ?? '',
+            options: presetOptions,
+            onChange: (value) => {
+                if (!value) return;
+                const next = setNoiseLayerPreset(this._state, activeLayer.id, value);
+                this._commitState(next, { sync: true, regenerate: true });
+            }
+        });
+        setInputsDisabled([presetRow.select], isLocked);
+        container.appendChild(presetRow.row);
+
+        const transformTitle = makeEl('div', 'options-section-title noise-layer-subtitle', 'Transforms');
+        container.appendChild(transformTitle);
+
+        const scaleRow = createRangeRow({
+            label: 'Scale (UV)',
+            value: activeLayer.transform.scale,
+            min: 0.05,
+            max: 16.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (value) => {
+                const next = setNoiseLayerTransform(this._state, activeLayer.id, { scale: value, space: 'uv' });
+                this._commitState(next, { sync: true, regenerate: true });
+            }
+        });
+        setInputsDisabled([scaleRow.range, scaleRow.number], isLocked);
+        container.appendChild(scaleRow.row);
+
+        const rotationRow = createRangeRow({
+            label: 'Rotation',
+            value: activeLayer.transform.rotationDeg,
+            min: -180,
+            max: 180,
+            step: 1,
+            digits: 0,
+            onChange: (value) => {
+                const next = setNoiseLayerTransform(this._state, activeLayer.id, { rotationDeg: value, space: 'uv' });
+                this._commitState(next, { sync: true, regenerate: true });
+            }
+        });
+        setInputsDisabled([rotationRow.range, rotationRow.number], isLocked);
+        container.appendChild(rotationRow.row);
+
+        const offsetURow = createRangeRow({
+            label: 'Offset U',
+            value: activeLayer.transform.offsetU,
+            min: -8,
+            max: 8,
+            step: 0.01,
+            digits: 2,
+            onChange: (value) => {
+                const next = setNoiseLayerTransform(this._state, activeLayer.id, { offsetU: value, space: 'uv' });
+                this._commitState(next, { sync: true, regenerate: true });
+            }
+        });
+        setInputsDisabled([offsetURow.range, offsetURow.number], isLocked);
+        container.appendChild(offsetURow.row);
+
+        const offsetVRow = createRangeRow({
+            label: 'Offset V',
+            value: activeLayer.transform.offsetV,
+            min: -8,
+            max: 8,
+            step: 0.01,
+            digits: 2,
+            onChange: (value) => {
+                const next = setNoiseLayerTransform(this._state, activeLayer.id, { offsetV: value, space: 'uv' });
+                this._commitState(next, { sync: true, regenerate: true });
+            }
+        });
+        setInputsDisabled([offsetVRow.range, offsetVRow.number], isLocked);
+        container.appendChild(offsetVRow.row);
+
+        container.appendChild(makeEl('div', 'options-note', 'Coordinate space: UV. World-space transforms are intentionally unsupported in this tool.'));
+
+        if (!generator) {
+            container.appendChild(makeEl('div', 'options-note', 'Missing generator definition for this layer.'));
+            return;
+        }
+
+        const paramsTitle = makeEl('div', 'options-section-title noise-layer-subtitle', 'Generator parameters');
+        container.appendChild(paramsTitle);
 
         for (const control of generator.controls ?? []) {
             const id = String(control?.id ?? '').trim();
             if (!id) continue;
-            const label = String(control?.label ?? id);
             const type = String(control?.type ?? '').toLowerCase();
-            const value = params[id];
+            const label = String(control?.label ?? id);
+            const value = activeLayer.params?.[id];
 
             if (type === 'toggle') {
                 const row = createToggleRow({
                     label,
                     value: value === true,
-                    onChange: (next) => this._setParamValue(id, next)
+                    onChange: (nextValue) => {
+                        const next = setNoiseLayerParam(this._state, activeLayer.id, id, nextValue);
+                        this._commitState(next, { sync: true, regenerate: true });
+                    }
                 });
+                setInputsDisabled([row.input], isLocked);
                 container.appendChild(row.row);
-                this._paramInputs.set(id, row.input);
                 continue;
             }
 
@@ -530,10 +1291,32 @@ export class NoiseFabricationView {
                 const row = createTextRow({
                     label,
                     value: String(value ?? ''),
-                    onChange: (next) => this._setParamValue(id, next)
+                    onChange: (nextValue) => {
+                        const next = setNoiseLayerParam(this._state, activeLayer.id, id, nextValue);
+                        this._commitState(next, { sync: true, regenerate: true });
+                    }
                 });
+                setInputsDisabled([row.input], isLocked);
                 container.appendChild(row.row);
-                this._paramInputs.set(id, row.input);
+                continue;
+            }
+
+            if (type === 'select') {
+                const options = Array.isArray(control.options) ? control.options.map((option) => ({
+                    value: option?.value,
+                    label: option?.label ?? option?.value
+                })) : [];
+                const row = createSelectRow({
+                    label,
+                    value: String(value ?? ''),
+                    options,
+                    onChange: (nextValue) => {
+                        const next = setNoiseLayerParam(this._state, activeLayer.id, id, nextValue);
+                        this._commitState(next, { sync: true, regenerate: true });
+                    }
+                });
+                setInputsDisabled([row.select], isLocked);
+                container.appendChild(row.row);
                 continue;
             }
 
@@ -548,52 +1331,14 @@ export class NoiseFabricationView {
                 max: Number.isFinite(max) ? max : 1,
                 step: Number.isFinite(step) ? step : 0.01,
                 digits,
-                onChange: (next) => this._setParamValue(id, next)
+                onChange: (nextValue) => {
+                    const next = setNoiseLayerParam(this._state, activeLayer.id, id, nextValue);
+                    this._commitState(next, { sync: true, regenerate: true });
+                }
             });
+            setInputsDisabled([row.range, row.number], isLocked);
             container.appendChild(row.row);
-            this._paramInputs.set(id, row.number);
         }
-    }
-
-    _syncUiFromState() {
-        const generator = getNoiseTextureGeneratorById(this._state.generatorId);
-        if (!generator) return;
-
-        const controls = this._controls;
-        if (!controls || !controls.generatorSelect) return;
-
-        controls.generatorSelect.value = generator.id;
-
-        const presetSelect = controls.presetSelect;
-        if (presetSelect) {
-            const previous = presetSelect.value;
-            presetSelect.textContent = '';
-            const customOption = document.createElement('option');
-            customOption.value = '';
-            customOption.textContent = 'Custom';
-            presetSelect.appendChild(customOption);
-
-            for (const preset of generator.presets ?? []) {
-                const option = document.createElement('option');
-                option.value = preset.id;
-                option.textContent = preset.label;
-                presetSelect.appendChild(option);
-            }
-
-            const nextValue = this._state.activePresetId ?? '';
-            presetSelect.value = nextValue;
-            if (presetSelect.value !== nextValue) presetSelect.value = '';
-            if (previous !== presetSelect.value) {
-                this._setStatus(nextValue ? `Preset: ${presetSelect.options[presetSelect.selectedIndex]?.textContent ?? nextValue}` : 'Preset: Custom');
-            }
-        }
-
-        if (controls.previewModeSelect) controls.previewModeSelect.value = this._state.previewMode;
-        if (controls.baseColorInput) controls.baseColorInput.value = normalizeHexColor(this._state.baseColor, '#888888');
-        if (controls.baseColorText) controls.baseColorText.value = normalizeHexColor(this._state.baseColor, '#888888');
-        if (controls.textureSizeSelect) controls.textureSizeSelect.value = String(this._state.textureSize);
-
-        this._rebuildParameterRows();
     }
 
     _setStatus(text) {
@@ -637,8 +1382,8 @@ export class NoiseFabricationView {
         this._drawPreview();
 
         const elapsed = Math.max(0, performance.now() - startedAt);
-        const generator = getNoiseTextureGeneratorById(this._state.generatorId);
-        this._setStatus(`Generated ${generated.width} x ${generated.height} ${generator?.label ?? generated.generatorId} in ${elapsed.toFixed(1)} ms`);
+        const warningText = this._state.statusWarnings.length ? ` · ${this._state.statusWarnings.join(' | ')}` : '';
+        this._setStatus(`Generated ${generated.width} x ${generated.height} in ${elapsed.toFixed(1)} ms${warningText}`);
     }
 
     _drawPreview() {
@@ -688,15 +1433,18 @@ export class NoiseFabricationView {
         ctx.textBaseline = 'top';
         const modeLabel = this._state.previewMode === 'normal' ? 'NORMAL PREVIEW' : 'TEXTURE PREVIEW';
         ctx.fillText(modeLabel, drawX + 10, drawY + 10);
+
+        const stackLabel = `Layers: ${this._state.layers.length} (${this._state.layers.filter((layer) => layer.solo).length ? 'solo active' : 'full stack'})`;
+        ctx.fillText(stackLabel, drawX + 10, drawY + 30);
     }
 
-    async _exportRecipe() {
+    async _exportRecipe({ executionDecisionAssistant = null } = {}) {
         try {
-            const json = stringifyNoiseFabricationRecipe(this._state);
+            const json = stringifyNoiseFabricationRecipe(this._state, { executionDecisionAssistant });
             const blob = new Blob([json], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const name = `noise_recipe_${this._state.generatorId}_${stamp}.json`;
+            const name = `noise_stack_recipe_${stamp}.json`;
 
             const a = document.createElement('a');
             a.href = url;
@@ -706,10 +1454,10 @@ export class NoiseFabricationView {
             a.remove();
             window.setTimeout(() => URL.revokeObjectURL(url), 0);
 
-            this._setStatus(`Exported ${name}`);
+            this._setStatus(`Exported ${name} (stack recipe JSON only; baked maps unavailable).`);
         } catch (err) {
             console.error('[NoiseFabrication] Export failed', err);
-            this._setStatus('Export failed.');
+            this._setStatus(err?.message ? `Export failed: ${err.message}` : 'Export failed.');
         }
     }
 
