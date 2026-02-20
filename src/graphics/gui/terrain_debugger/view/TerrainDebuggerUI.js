@@ -256,12 +256,15 @@ function makeSelectRow({ label, value = '', options = [], tooltip = '', onChange
     return { row, select, labelEl: left };
 }
 
-function makeChoiceRow({ label, value = '', options = [], tooltip = '', onChange }) {
+function makeChoiceRow({ label, value = '', options = [], tooltip = '', segmented = false, onChange }) {
     const row = makeEl('div', 'options-row options-row-wide');
     const left = makeEl('div', 'options-row-label', label);
     const right = makeEl('div', 'options-row-control options-row-control-wide');
 
-    const group = makeEl('div', 'options-choice-group');
+    const groupClass = segmented
+        ? 'options-choice-group options-choice-group-segmented'
+        : 'options-choice-group';
+    const group = makeEl('div', groupClass);
     const buttons = new Map();
     let current = String(value ?? '');
 
@@ -272,11 +275,16 @@ function makeChoiceRow({ label, value = '', options = [], tooltip = '', onChange
         for (const [key, btn] of buttons.entries()) btn.classList.toggle('is-active', key === next);
     };
 
+    const seenIds = new Set();
     for (const opt of Array.isArray(options) ? options : []) {
-        const id = String(opt?.id ?? '');
-        const text = String(opt?.label ?? id);
-        if (!id) continue;
-        const btn = makeEl('button', 'options-choice-btn', text);
+        const id = String(opt?.id ?? '').trim();
+        const text = String(opt?.label ?? id).trim() || id;
+        if (!id || !text || seenIds.has(id)) continue;
+        seenIds.add(id);
+        const btnClass = segmented
+            ? 'options-choice-btn options-choice-btn-segmented'
+            : 'options-choice-btn';
+        const btn = makeEl('button', btnClass, text);
         btn.type = 'button';
         applyTooltip(btn, tooltip);
         btn.addEventListener('click', () => {
@@ -413,7 +421,7 @@ function makeButtonRow({ label, text = 'Action', tooltip = '', onClick }) {
     const row = makeEl('div', 'options-row');
     const left = makeEl('div', 'options-row-label', label);
     const right = makeEl('div', 'options-row-control');
-    const btn = makeEl('button', 'options-btn options-btn-primary', text);
+    const btn = makeEl('button', 'options-btn', text);
     btn.type = 'button';
     btn.addEventListener('click', () => onClick?.());
     right.appendChild(btn);
@@ -608,28 +616,38 @@ export class TerrainDebuggerUI {
                         debugView: 'standard'
                     },
                     geometryDensity: {
-                        enabled: true,
-                        mode: 'adaptive_rings',
-                        segmentsPerTile: 8,
-                        nearSegmentsPerTile: 1024,
-                        farSegmentsPerTile: 4,
-                        nearRadiusMeters: 3,
-                        transitionWidthMeters: 3,
-                        renderDistanceMeters: 6,
+                        enabled: false,
+                        mode: 'uniform',
+                        detailPreset: 'medium',
+                        segmentsPerTile: 1,
+                        nearSegmentsPerTile: 16,
+                        farSegmentsPerTile: 1,
+                        nearRadiusMeters: 0,
+                        transitionWidthMeters: 0,
+                        renderDistanceMeters: 0,
                         transitionSmoothing: 0.72,
                         transitionBias: 0.0,
-                        transitionDebugBands: 3,
+                        transitionDebugBands: 0,
                         waveStrength: 0.02,
                         waveMaxHeightMeters: 2.0,
                         waveMaxNeighborDeltaMeters: 0.5,
                         waveMaxTileRangeMeters: 0.5,
-                        ringOverlayEnabled: true,
+                        ringOverlayEnabled: false,
                         tileLodDebugEnabled: false,
                         centerOnApplyCamera: true,
                         rebuildCadence: 'off',
                         centerX: 0,
                         centerZ: 0,
                         applyNonce: 0
+                    },
+                    performance: {
+                        fragmentShaderEnabled: true,
+                        fragmentShaderBiomeEnabled: true,
+                        fragmentShaderPbrLightingEnabled: true,
+                        fragmentShaderAlbedoEnabled: true,
+                        fragmentShaderSurfaceEnabled: true,
+                        shadowsEnabled: true,
+                        highDpiEnabled: true
                     }
                 }
             },
@@ -928,10 +946,7 @@ export class TerrainDebuggerUI {
         requestedWaveStrength = null,
         appliedWaveStrength = null,
         requestedWaveMaxHeightMeters = null,
-        appliedWaveMaxHeightMeters = null,
         requestedWaveMaxNeighborDeltaMeters = null,
-        appliedWaveMaxNeighborDeltaMeters = null,
-        rebuildCadence = 'off',
         appliedRingCenterX = null,
         appliedRingCenterZ = null,
         ringOverlayEnabled = false,
@@ -950,8 +965,6 @@ export class TerrainDebuggerUI {
         baseDepthTiles = null,
         baseVertices = null,
         baseTriangles = null,
-        estimatedFarOnlyTriangles = null,
-        estimatedNearOnlyTriangles = null,
         lastGeometryApplyMs = null,
         lastDisplacementUpdateMs = null,
         displacementEnabled = false,
@@ -960,6 +973,24 @@ export class TerrainDebuggerUI {
         displacementFallbackActive = false,
         displacementTextureUrl = '',
         displacementMissing = false,
+        lodDetailPreset = 'medium',
+        lodQuadLevels = null,
+        lodTileCounts = null,
+        lodTotalQuads = null,
+        lodBandWidthsMeters = null,
+        lodSamplerEstimateUsed = null,
+        lodSamplerMaxTextures = null,
+        gpuSamplerHeadroom = null,
+        gpuWebglVersion = '',
+        gpuFrameTimeMs = null,
+        fragmentShaderEnabled = true,
+        fragmentShaderBiomeEnabled = true,
+        fragmentShaderPbrLightingEnabled = true,
+        fragmentShaderAlbedoEnabled = true,
+        fragmentShaderSurfaceEnabled = true,
+        fragmentToggleStates = null,
+        fragmentPathStates = null,
+        gpuSamplerPathRows = null,
         activeLodZone = 'n/a',
         activeLodBlend = null,
         activeLodSegmentsPerTile = null,
@@ -980,9 +1011,117 @@ export class TerrainDebuggerUI {
         const pendingNote = this._controls?.biomeTilingPendingApply ?? null;
         const lodStateNote = this._controls?.biomeTilingLodState ?? null;
         const lodHistoryNote = this._controls?.biomeTilingLodHistory ?? null;
+        const terrainLodSummaryNote = this._controls?.biomeTilingTerrainLodSummary ?? null;
+        const terrainLodStatusCell = this._controls?.biomeTilingTerrainLodStatusCell ?? null;
+        const terrainLodCountCells = this._controls?.biomeTilingTerrainLodCountCells ?? null;
+        const terrainLodTotalCell = this._controls?.biomeTilingTerrainLodTotalCell ?? null;
+        const lodSamplerDiagnosticsNote = this._controls?.biomeTilingLodSamplerDiagnostics ?? null;
+        const fragmentPathBreakdownNote = this._controls?.biomeTilingFragmentPathBreakdown ?? null;
+        const gpuSamplerUsageNote = this._controls?.biomeTilingGpuSamplerUsage ?? null;
+        const gpuMaxTexturesNote = this._controls?.biomeTilingGpuMaxTextures ?? null;
+        const gpuSamplerHeadroomNote = this._controls?.biomeTilingGpuSamplerHeadroom ?? null;
+        const gpuWebglVersionNote = this._controls?.biomeTilingGpuWebglVersion ?? null;
+        const gpuFrameTimeNote = this._controls?.biomeTilingGpuFrameTime ?? null;
+        const gpuSamplerPathsTableBody = this._controls?.biomeTilingGpuSamplerPathsBody ?? null;
         const baseGeometryNote = this._controls?.biomeTilingBaseGeometryStats ?? null;
         const baseModeNote = this._controls?.biomeTilingBaseMode ?? null;
-        if (!(sourceNote || geometryNote || adaptiveNote || perfNote || updateCostNote || pendingNote || lodStateNote || lodHistoryNote || baseGeometryNote || baseModeNote)) return;
+        const renderGpuSamplerPathRows = ({ rows = null, totalUsed = null, maxTextures = null } = {}) => {
+            if (!gpuSamplerPathsTableBody) return;
+            while (gpuSamplerPathsTableBody.firstChild) gpuSamplerPathsTableBody.removeChild(gpuSamplerPathsTableBody.firstChild);
+            const samplerRows = Array.isArray(rows) ? rows.filter((row) => row && typeof row === 'object') : [];
+            if (!samplerRows.length) {
+                const tr = document.createElement('tr');
+                const tdPath = document.createElement('td');
+                const tdSamplers = document.createElement('td');
+                const tdNotes = document.createElement('td');
+                tdPath.textContent = 'n/a';
+                tdSamplers.textContent = 'n/a';
+                tdNotes.textContent = 'No active fragment paths.';
+                tdPath.style.padding = '5px 8px';
+                tdSamplers.style.padding = '5px 8px';
+                tdNotes.style.padding = '5px 8px';
+                tdSamplers.style.textAlign = 'right';
+                tdPath.style.whiteSpace = 'nowrap';
+                tdSamplers.style.whiteSpace = 'nowrap';
+                tr.appendChild(tdPath);
+                tr.appendChild(tdSamplers);
+                tr.appendChild(tdNotes);
+                gpuSamplerPathsTableBody.appendChild(tr);
+                return;
+            }
+
+            for (const row of samplerRows) {
+                const tr = document.createElement('tr');
+                const tdPath = document.createElement('td');
+                const tdSamplers = document.createElement('td');
+                const tdNotes = document.createElement('td');
+                const label = String(row?.label ?? '').trim() || '(path)';
+                const samplers = Math.max(0, Math.round(Number(row?.samplers) || 0));
+                const note = String(row?.note ?? '').trim();
+                tdPath.textContent = label;
+                tdSamplers.textContent = samplers.toLocaleString();
+                tdNotes.textContent = note || '-';
+                tdPath.style.padding = '5px 8px';
+                tdSamplers.style.padding = '5px 8px';
+                tdNotes.style.padding = '5px 8px';
+                tdSamplers.style.textAlign = 'right';
+                tdPath.style.whiteSpace = 'nowrap';
+                tdSamplers.style.whiteSpace = 'nowrap';
+                tr.appendChild(tdPath);
+                tr.appendChild(tdSamplers);
+                tr.appendChild(tdNotes);
+                gpuSamplerPathsTableBody.appendChild(tr);
+            }
+
+            const totalRow = document.createElement('tr');
+            const totalPath = document.createElement('td');
+            const totalSamplers = document.createElement('td');
+            const totalNote = document.createElement('td');
+            totalPath.textContent = 'Total';
+            const used = Math.max(0, Math.round(Number(totalUsed) || 0));
+            const max = Math.max(0, Math.round(Number(maxTextures) || 0));
+            totalSamplers.textContent = max > 0
+                ? `${used.toLocaleString()} / ${max.toLocaleString()}`
+                : `${used.toLocaleString()} / n/a`;
+            totalNote.textContent = 'Estimated total fragment samplers vs max fragment texture units.';
+            totalPath.style.padding = '5px 8px';
+            totalSamplers.style.padding = '5px 8px';
+            totalNote.style.padding = '5px 8px';
+            totalSamplers.style.textAlign = 'right';
+            totalPath.style.whiteSpace = 'nowrap';
+            totalSamplers.style.whiteSpace = 'nowrap';
+            totalPath.style.fontWeight = '700';
+            totalSamplers.style.fontWeight = '700';
+            totalNote.style.opacity = '0.8';
+            totalRow.appendChild(totalPath);
+            totalRow.appendChild(totalSamplers);
+            totalRow.appendChild(totalNote);
+            gpuSamplerPathsTableBody.appendChild(totalRow);
+        };
+        if (!(
+            sourceNote
+            || geometryNote
+            || adaptiveNote
+            || perfNote
+            || updateCostNote
+            || pendingNote
+            || lodStateNote
+            || lodHistoryNote
+            || terrainLodSummaryNote
+            || terrainLodStatusCell
+            || terrainLodCountCells
+            || terrainLodTotalCell
+            || lodSamplerDiagnosticsNote
+            || fragmentPathBreakdownNote
+            || gpuSamplerUsageNote
+            || gpuMaxTexturesNote
+            || gpuSamplerHeadroomNote
+            || gpuWebglVersionNote
+            || gpuFrameTimeNote
+            || gpuSamplerPathsTableBody
+            || baseGeometryNote
+            || baseModeNote
+        )) return;
 
         if (!active) {
             if (sourceNote) sourceNote.textContent = 'Displacement overlay: (Biome Tiling tab inactive)';
@@ -993,6 +1132,23 @@ export class TerrainDebuggerUI {
             if (pendingNote) pendingNote.textContent = 'Adaptive terrain pending: (Biome Tiling tab inactive)';
             if (lodStateNote) lodStateNote.textContent = 'Adaptive terrain state: (Biome Tiling tab inactive)';
             if (lodHistoryNote) lodHistoryNote.textContent = 'Adaptive terrain history: (Biome Tiling tab inactive)';
+            if (terrainLodSummaryNote) terrainLodSummaryNote.textContent = 'Terrain LOD: (Biome Tiling tab inactive)';
+            if (terrainLodStatusCell) terrainLodStatusCell.textContent = 'n/a';
+            if (terrainLodCountCells && typeof terrainLodCountCells === 'object') {
+                for (const level of ['256', '64', '16', '4', '1']) {
+                    const cell = terrainLodCountCells[level];
+                    if (cell) cell.textContent = 'n/a';
+                }
+            }
+            if (terrainLodTotalCell) terrainLodTotalCell.textContent = 'n/a';
+            if (lodSamplerDiagnosticsNote) lodSamplerDiagnosticsNote.textContent = 'Fragment samplers: n/a';
+            if (fragmentPathBreakdownNote) fragmentPathBreakdownNote.textContent = 'Fragment paths: n/a';
+            if (gpuSamplerUsageNote) gpuSamplerUsageNote.textContent = 'GPU samplers: n/a';
+            if (gpuMaxTexturesNote) gpuMaxTexturesNote.textContent = 'GPU max fragment texture units: n/a';
+            if (gpuSamplerHeadroomNote) gpuSamplerHeadroomNote.textContent = 'GPU sampler headroom: n/a';
+            if (gpuWebglVersionNote) gpuWebglVersionNote.textContent = 'GPU WebGL: n/a';
+            if (gpuFrameTimeNote) gpuFrameTimeNote.textContent = 'GPU frame time: n/a';
+            renderGpuSamplerPathRows();
             if (baseGeometryNote) baseGeometryNote.textContent = 'Base terrain geometry: (Biome Tiling tab inactive)';
             if (baseModeNote) baseModeNote.textContent = 'Base terrain mode: (Biome Tiling tab inactive)';
             return;
@@ -1026,8 +1182,144 @@ export class TerrainDebuggerUI {
                 const visText = overlayVisible ? 'visible' : 'hidden';
                 geometryNote.textContent = `Adaptive terrain geometry: ${sizeMetersText} (${sizeTilesText}) · ${oV.toLocaleString()} verts · ${oT.toLocaleString()} tris · mode ${appliedMode === 'adaptive_rings' ? 'adaptive' : 'uniform'} · ${visText}`;
             } else {
-                geometryNote.textContent = 'Adaptive terrain geometry: not built (click Rebuild Terrain)';
+                geometryNote.textContent = 'Adaptive terrain geometry: not built yet';
             }
+        }
+
+        const lodLevels = [256, 64, 16, 4, 1];
+        const lodCounts = (lodTileCounts && typeof lodTileCounts === 'object') ? lodTileCounts : {};
+        const lodTotalQuadsRounded = Math.max(0, Math.round(Number(lodTotalQuads) || 0));
+        if (terrainLodSummaryNote) {
+            const countsText = lodLevels
+                .map((level) => `${level}:${Math.max(0, Math.round(Number(lodCounts[String(level)]) || 0)).toLocaleString()}`)
+                .join(' · ');
+            terrainLodSummaryNote.textContent = `Terrain LOD (${String(lodDetailPreset ?? 'medium')}): ${countsText} · total quads ${lodTotalQuadsRounded.toLocaleString()}`;
+        }
+        if (terrainLodStatusCell) {
+            terrainLodStatusCell.textContent = (appliedAdaptiveEnabled !== false) ? 'On' : 'Off';
+        }
+        if (terrainLodCountCells && typeof terrainLodCountCells === 'object') {
+            for (const level of lodLevels) {
+                const cell = terrainLodCountCells[String(level)] ?? null;
+                if (!cell) continue;
+                const count = Math.max(0, Math.round(Number(lodCounts[String(level)]) || 0));
+                cell.textContent = count.toLocaleString();
+            }
+        }
+        if (terrainLodTotalCell) terrainLodTotalCell.textContent = lodTotalQuadsRounded.toLocaleString();
+        if (lodSamplerDiagnosticsNote) {
+            const used = Math.max(0, Math.round(Number(lodSamplerEstimateUsed) || 0));
+            const max = Math.max(0, Math.round(Number(lodSamplerMaxTextures) || 0));
+            const shaderEnabledText = fragmentShaderEnabled === false ? ' · shader off' : '';
+            lodSamplerDiagnosticsNote.textContent = (max > 0)
+                ? `Fragment samplers: ${used.toLocaleString()} / ${max.toLocaleString()}${shaderEnabledText}`
+                : `Fragment samplers: ${used.toLocaleString()} / n/a${shaderEnabledText}`;
+        }
+        const fallbackToggleRows = [
+            { label: 'Fragment Shader', requested: fragmentShaderEnabled === true, effective: fragmentShaderEnabled === true, reason: fragmentShaderEnabled ? '' : 'set Off' },
+            {
+                label: 'PBR Lighting',
+                requested: fragmentShaderPbrLightingEnabled === true,
+                effective: fragmentShaderEnabled === true && fragmentShaderPbrLightingEnabled === true,
+                reason: fragmentShaderPbrLightingEnabled === true
+                    ? (fragmentShaderEnabled === true ? '' : 'blocked by Fragment Shader')
+                    : 'set Off'
+            },
+            {
+                label: 'Biome',
+                requested: fragmentShaderBiomeEnabled === true,
+                effective: fragmentShaderEnabled === true && fragmentShaderBiomeEnabled === true,
+                reason: fragmentShaderBiomeEnabled === true
+                    ? (fragmentShaderEnabled === true ? '' : 'blocked by Fragment Shader')
+                    : 'set Off'
+            },
+            {
+                label: 'Albedo',
+                requested: fragmentShaderAlbedoEnabled === true,
+                effective: fragmentShaderEnabled === true && fragmentShaderAlbedoEnabled === true,
+                reason: fragmentShaderAlbedoEnabled === true
+                    ? (fragmentShaderEnabled === true ? '' : 'blocked by Fragment Shader')
+                    : 'set Off'
+            },
+            {
+                label: 'Surface (Normal+ORM)',
+                requested: fragmentShaderSurfaceEnabled === true,
+                effective: fragmentShaderEnabled === true
+                    && fragmentShaderPbrLightingEnabled === true
+                    && fragmentShaderSurfaceEnabled === true,
+                reason: fragmentShaderSurfaceEnabled === true
+                    ? (fragmentShaderEnabled === true
+                        ? (fragmentShaderPbrLightingEnabled === true ? '' : 'blocked by PBR Lighting')
+                        : 'blocked by Fragment Shader')
+                    : 'set Off'
+            }
+        ];
+        const normalizedToggleRows = Array.isArray(fragmentToggleStates)
+            ? fragmentToggleStates
+                .filter((row) => row && typeof row === 'object')
+                .map((row) => ({
+                    label: String(row.label ?? '').trim() || '(toggle)',
+                    requested: row.requested === true,
+                    effective: row.effective === true,
+                    reason: String(row.reason ?? '').trim()
+                }))
+            : [];
+        const toggleRows = normalizedToggleRows.length > 0 ? normalizedToggleRows : fallbackToggleRows;
+        const toggleSummary = toggleRows
+            .map((row) => {
+                const status = row.effective ? 'On' : 'Off';
+                const reason = String(row.reason ?? '').trim();
+                return reason ? `${row.label} ${status} (${reason})` : `${row.label} ${status}`;
+            })
+            .join(' · ');
+        if (fragmentPathBreakdownNote) {
+            const pathRows = Array.isArray(fragmentPathStates) ? fragmentPathStates : [];
+            const activePaths = pathRows
+                .filter((row) => row && typeof row === 'object' && row.active !== false)
+                .map((row) => String(row.label ?? '').trim())
+                .filter((label) => label.length > 0);
+            const pathSummary = activePaths.length > 0
+                ? `Paths: ${activePaths.join(' · ')}`
+                : (fragmentShaderEnabled ? 'Paths: none' : 'Paths: shader off');
+            fragmentPathBreakdownNote.textContent = `Fragment toggles: ${toggleSummary} | ${pathSummary}`;
+        }
+        {
+            const used = Math.max(0, Math.round(Number(lodSamplerEstimateUsed) || 0));
+            const max = Math.max(0, Math.round(Number(lodSamplerMaxTextures) || 0));
+            const headroomValue = Number.isFinite(Number(gpuSamplerHeadroom))
+                ? Math.max(0, Math.round(Number(gpuSamplerHeadroom)))
+                : (max > 0 ? Math.max(0, max - used) : null);
+            const shaderEnabledText = fragmentShaderEnabled === false ? ' · shader off' : '';
+            if (gpuSamplerUsageNote) {
+                gpuSamplerUsageNote.textContent = (max > 0)
+                    ? `GPU samplers: ${used.toLocaleString()} / ${max.toLocaleString()}${shaderEnabledText}`
+                    : `GPU samplers: ${used.toLocaleString()} / n/a${shaderEnabledText}`;
+            }
+            if (gpuMaxTexturesNote) {
+                gpuMaxTexturesNote.textContent = max > 0
+                    ? `GPU max fragment texture units: ${max.toLocaleString()}`
+                    : 'GPU max fragment texture units: n/a';
+            }
+            if (gpuSamplerHeadroomNote) {
+                gpuSamplerHeadroomNote.textContent = headroomValue === null
+                    ? 'GPU sampler headroom: n/a'
+                    : `GPU sampler headroom: ${headroomValue.toLocaleString()}`;
+            }
+            if (gpuWebglVersionNote) {
+                const versionText = String(gpuWebglVersion ?? '').trim() || 'n/a';
+                gpuWebglVersionNote.textContent = `GPU WebGL: ${versionText}`;
+            }
+            if (gpuFrameTimeNote) {
+                const frameMs = Number(gpuFrameTimeMs);
+                gpuFrameTimeNote.textContent = Number.isFinite(frameMs)
+                    ? `GPU frame time: ${Math.max(0, frameMs).toFixed(2)}ms`
+                    : 'GPU frame time: n/a';
+            }
+            renderGpuSamplerPathRows({
+                rows: gpuSamplerPathRows,
+                totalUsed: used,
+                maxTextures: max
+            });
         }
 
         const normalizeMeters = (value, fallback = 0) => {
@@ -1053,53 +1345,22 @@ export class TerrainDebuggerUI {
         const requestedWave = clamp(requestedWaveStrength, 0.0, 1.0, 0.02);
         const appliedWave = clamp(appliedWaveStrength, 0.0, 1.0, requestedWave);
         const requestedWaveHeight = normalizeMeters(requestedWaveMaxHeightMeters, 2.0);
-        const appliedWaveHeight = normalizeMeters(appliedWaveMaxHeightMeters, requestedWaveHeight);
         const requestedWaveNeighborDelta = normalizeMeters(requestedWaveMaxNeighborDeltaMeters, 0.5);
-        const appliedWaveNeighborDelta = normalizeMeters(appliedWaveMaxNeighborDeltaMeters, requestedWaveNeighborDelta);
-        const cadenceRaw = String(rebuildCadence ?? 'off');
-        const cadenceText = cadenceRaw === 'frame'
-            ? 'frame'
-            : cadenceRaw === 'frame_2'
-                ? '/2'
-                : cadenceRaw === 'frame_4'
-                    ? '/4'
-                    : cadenceRaw === 'frame_8'
-                        ? '/8'
-                        : cadenceRaw === '1s'
-                            ? '1s'
-                            : 'off';
         const ringCenterX = Number(appliedRingCenterX);
         const ringCenterZ = Number(appliedRingCenterZ);
         const appliedEnabled = appliedAdaptiveEnabled !== false;
         const requestedEnabled = requestedAdaptiveEnabled !== false;
         if (adaptiveNote) {
-            if (!appliedEnabled) {
-                adaptiveNote.textContent = 'Adaptive terrain LOD: disabled';
-            } else if (appliedMode !== 'adaptive_rings') {
-                adaptiveNote.textContent = 'Adaptive terrain LOD: enabled · mode uniform';
-            } else {
-                const radiusText = Number.isFinite(appliedRadius) ? `${appliedRadius.toFixed(1)}m` : 'n/a';
-                const transitionText = Number.isFinite(appliedTransition) ? `${appliedTransition.toFixed(1)}m` : 'n/a';
-                const centerText = Number.isFinite(ringCenterX) && Number.isFinite(ringCenterZ)
-                    ? `${ringCenterX.toFixed(1)}, ${ringCenterZ.toFixed(1)}`
-                    : 'n/a';
-                adaptiveNote.textContent = `Adaptive terrain LOD: near ${appliedNearSeg}/tile · far ${appliedFarSeg}/tile · radius ${radiusText} · transition ${transitionText} · render ${appliedRenderDistance.toFixed(1)}m · wave ${appliedWave.toFixed(3)} (h<=${appliedWaveHeight.toFixed(1)}m, step<=${appliedWaveNeighborDelta.toFixed(2)}m) · smooth ${appliedSmoothing.toFixed(2)} · bias ${appliedBias.toFixed(2)} · bands ${appliedDebugBands} · center (${centerText}) · debug ${ringOverlayEnabled ? 'on' : 'off'} · cadence ${cadenceText}`;
-            }
+            adaptiveNote.textContent = !appliedEnabled
+                ? 'Terrain LOD: disabled'
+                : `Terrain LOD: enabled · preset ${String(lodDetailPreset ?? 'medium')} · levels 256/64/16/4/1`;
         }
 
-        const farOnlyTris = Math.max(0, Math.round(Number(estimatedFarOnlyTriangles) || 0));
-        const nearOnlyTris = Math.max(0, Math.round(Number(estimatedNearOnlyTriangles) || 0));
         if (perfNote) {
-            if (!appliedEnabled || appliedMode !== 'adaptive_rings' || farOnlyTris <= 0 || nearOnlyTris <= 0 || oT <= 0) {
-                perfNote.textContent = 'Adaptive terrain diagnostics: n/a (enable adaptive terrain and click Rebuild Terrain)';
-            } else {
-                const deltaVsFarPct = ((oT - farOnlyTris) / Math.max(1, farOnlyTris)) * 100;
-                const savingsVsNearPct = (1 - (oT / Math.max(1, nearOnlyTris))) * 100;
-                const sign = deltaVsFarPct >= 0 ? '+' : '';
-                const chunkTiles = 2.0;
-                const chunkCount = Math.max(0, Math.round(Math.ceil(overlayW / chunkTiles) * Math.ceil(overlayD / chunkTiles)));
-                perfNote.textContent = `Adaptive terrain diagnostics: chunks ${chunkCount.toLocaleString()} · vs far ${sign}${deltaVsFarPct.toFixed(1)}% tris · vs near ${savingsVsNearPct.toFixed(1)}% fewer tris`;
-            }
+            const totalQuadsText = Math.max(0, Math.round(Number(lodTotalQuads) || 0)).toLocaleString();
+            perfNote.textContent = !appliedEnabled
+                ? 'Terrain LOD diagnostics: n/a (enable Terrain LOD)'
+                : `Terrain LOD diagnostics: ${oT.toLocaleString()} tris · ${oV.toLocaleString()} verts · ${totalQuadsText} quads`;
         }
 
         const geoMs = Number(lastGeometryApplyMs);
@@ -1148,9 +1409,9 @@ export class TerrainDebuggerUI {
             if (!requestedEnabled || !appliedEnabled) {
                 pendingNote.textContent = 'Adaptive terrain pending: disabled';
             } else if (pendingAdaptive) {
-                pendingNote.textContent = `Adaptive terrain pending: adaptive near ${requestedNear}/tile · far ${requestedFar}/tile · render ${requestedRenderDistance.toFixed(1)}m · wave ${requestedWave.toFixed(3)} (h<=${requestedWaveHeight.toFixed(1)}m, step<=${requestedWaveNeighborDelta.toFixed(2)}m) · smooth ${requestedSmoothing.toFixed(2)} · bias ${requestedBias.toFixed(2)} · bands ${requestedDebugBands} staged. Click Rebuild Terrain.`;
+                pendingNote.textContent = `Adaptive terrain pending: adaptive near ${requestedNear}/tile · far ${requestedFar}/tile · render ${requestedRenderDistance.toFixed(1)}m · wave ${requestedWave.toFixed(3)} (h<=${requestedWaveHeight.toFixed(1)}m, step<=${requestedWaveNeighborDelta.toFixed(2)}m) · smooth ${requestedSmoothing.toFixed(2)} · bias ${requestedBias.toFixed(2)} · bands ${requestedDebugBands} staged.`;
             } else if (pendingUniform) {
-                pendingNote.textContent = `Adaptive terrain pending: uniform ${requested}/tile staged (applied ${applied}/tile). Click Rebuild Terrain.`;
+                pendingNote.textContent = `Adaptive terrain pending: uniform ${requested}/tile staged (applied ${applied}/tile).`;
             } else if (appliedMode === 'adaptive_rings') {
                 pendingNote.textContent = `Adaptive terrain pending: none · applied adaptive near ${appliedNearSeg}/tile · far ${appliedFarSeg}/tile · render ${appliedRenderDistance.toFixed(1)}m · wave ${appliedWave.toFixed(3)} · smooth ${appliedSmoothing.toFixed(2)} · bias ${appliedBias.toFixed(2)} · bands ${appliedDebugBands}`;
             } else {
@@ -3309,6 +3570,39 @@ export class TerrainDebuggerUI {
             if (validMaterialIds.has(String(fallback ?? ''))) return String(fallback);
             return defaultMaterialId;
         };
+        const normalizeRebuildCadence = (value, fallbackSeconds = 1.0) => {
+            const raw = String(value ?? '').trim().toLowerCase();
+            if (!raw || raw === 'off' || raw === 'none' || raw === 'no_auto') return 'off';
+            if (raw === 'frame' || raw === '1f' || raw === 'f1') return 'frame';
+            if (raw === 'frame_2' || raw === '2f' || raw === 'f2' || raw === '/2') return 'frame_2';
+            if (raw === 'frame_8' || raw === '8f' || raw === 'f8' || raw === '/8') return 'frame_8';
+            if (raw === '1s') return 'sec:1';
+            const secMatch = raw.match(/^sec:([0-9]*\.?[0-9]+)$/);
+            if (secMatch) {
+                const sec = clamp(Number(secMatch[1]), 0.1, 60.0, fallbackSeconds);
+                return `sec:${Number(sec.toFixed(2))}`;
+            }
+            const asNumber = Number(raw);
+            if (Number.isFinite(asNumber) && asNumber > 0) {
+                const sec = clamp(asNumber, 0.1, 60.0, fallbackSeconds);
+                return `sec:${Number(sec.toFixed(2))}`;
+            }
+            return 'off';
+        };
+        const normalizeRebuildCadenceChoice = (value) => {
+            const normalized = normalizeRebuildCadence(value, 1.0);
+            if (normalized === 'off' || normalized === 'frame' || normalized === 'frame_2' || normalized === 'frame_8') {
+                return normalized;
+            }
+            return 'sec:1';
+        };
+        const normalizeGeometryPreset = (value, fallback = 'medium') => {
+            const raw = String(value ?? '').trim().toLowerCase();
+            if (raw === 'low' || raw === 'medium' || raw === 'high') return raw;
+            const fb = String(fallback ?? '').trim().toLowerCase();
+            if (fb === 'low' || fb === 'medium' || fb === 'high') return fb;
+            return 'medium';
+        };
 
         bt.calibrationRigDebugEnabled = bt.calibrationRigDebugEnabled === true;
         bt.materialId = normalizeMaterialId(bt.materialId, defaultMaterialId);
@@ -3354,54 +3648,54 @@ export class TerrainDebuggerUI {
         bt.displacement = displacement;
 
         const geometryDensity = (bt.geometryDensity && typeof bt.geometryDensity === 'object') ? bt.geometryDensity : {};
-        geometryDensity.enabled = geometryDensity.enabled !== false;
-        const geometryModeRaw = String(geometryDensity.mode ?? 'adaptive_rings');
-        geometryDensity.mode = geometryModeRaw === 'adaptive_rings' ? 'adaptive_rings' : 'uniform';
-        geometryDensity.segmentsPerTile = Math.max(1, Math.min(1024, Math.round(Number(geometryDensity.segmentsPerTile) || 8)));
-        geometryDensity.nearSegmentsPerTile = Math.max(1, Math.min(10000, Math.round(Number(geometryDensity.nearSegmentsPerTile) || 1024)));
-        geometryDensity.farSegmentsPerTile = Math.max(1, Math.min(1024, Math.round(Number(geometryDensity.farSegmentsPerTile) || 4)));
-        geometryDensity.nearRadiusMeters = clamp(geometryDensity.nearRadiusMeters, 0.0, 1200.0, 3.0);
-        geometryDensity.transitionWidthMeters = clamp(geometryDensity.transitionWidthMeters, 0.0, 600.0, 3.0);
-        geometryDensity.renderDistanceMeters = clamp(
-            geometryDensity.renderDistanceMeters,
-            0.0,
-            1800.0,
-            Math.max(0, Number(geometryDensity.nearRadiusMeters) + Number(geometryDensity.transitionWidthMeters) || 6.0)
-        );
+        const hasGeometryEnabled = Object.prototype.hasOwnProperty.call(geometryDensity, 'enabled');
+        const hasDetailPreset = Object.prototype.hasOwnProperty.call(geometryDensity, 'detailPreset');
+        const detailPresetRaw = String(
+            hasDetailPreset ? geometryDensity.detailPreset : 'medium'
+        ).trim().toLowerCase();
+        geometryDensity.enabled = hasGeometryEnabled
+            ? (geometryDensity.enabled === true && detailPresetRaw !== 'off')
+            : (hasDetailPreset && detailPresetRaw !== 'off');
+        geometryDensity.detailPreset = normalizeGeometryPreset(detailPresetRaw, 'medium');
+        const tileSizeMeters = Math.max(0.001, Number(this._terrainTileSize) || 24);
+        const thresholdsTiles = geometryDensity.detailPreset === 'low'
+            ? [0, 1, 2, 4]
+            : geometryDensity.detailPreset === 'high'
+                ? [1, 3, 6, 12]
+                : [0, 2, 4, 8];
+        geometryDensity.mode = geometryDensity.enabled ? 'adaptive_rings' : 'uniform';
+        geometryDensity.segmentsPerTile = 1;
+        geometryDensity.nearSegmentsPerTile = 16;
+        geometryDensity.farSegmentsPerTile = 1;
+        geometryDensity.nearRadiusMeters = Math.max(0, thresholdsTiles[0] * tileSizeMeters);
+        geometryDensity.transitionWidthMeters = Math.max(0, (thresholdsTiles[1] - thresholdsTiles[0]) * tileSizeMeters);
+        geometryDensity.renderDistanceMeters = Math.max(0, thresholdsTiles[3] * tileSizeMeters);
         geometryDensity.transitionSmoothing = clamp(geometryDensity.transitionSmoothing, 0.0, 1.0, 0.72);
         geometryDensity.transitionBias = clamp(geometryDensity.transitionBias, -0.85, 0.85, 0.0);
-        {
-            const transitionDebugBands = Number(geometryDensity.transitionDebugBands);
-            const fallbackBands = 3;
-            geometryDensity.transitionDebugBands = Math.max(
-                0,
-                Math.min(6, Math.round(Number.isFinite(transitionDebugBands) ? transitionDebugBands : fallbackBands))
-            );
-        }
-        geometryDensity.ringOverlayEnabled = geometryDensity.ringOverlayEnabled !== false;
+        geometryDensity.transitionDebugBands = Math.max(0, Math.min(6, Math.round(Number(geometryDensity.transitionDebugBands) || 0)));
+        geometryDensity.ringOverlayEnabled = geometryDensity.ringOverlayEnabled === true;
         geometryDensity.tileLodDebugEnabled = geometryDensity.tileLodDebugEnabled === true;
         geometryDensity.centerOnApplyCamera = geometryDensity.centerOnApplyCamera !== false;
         geometryDensity.waveStrength = clamp(geometryDensity.waveStrength, 0.0, 1.0, 0.02);
         geometryDensity.waveMaxHeightMeters = clamp(geometryDensity.waveMaxHeightMeters, 0.0, 10.0, 2.0);
         geometryDensity.waveMaxNeighborDeltaMeters = clamp(geometryDensity.waveMaxNeighborDeltaMeters, 0.0, 2.0, 0.5);
         geometryDensity.waveMaxTileRangeMeters = clamp(geometryDensity.waveMaxTileRangeMeters, 0.0, 20.0, 0.5);
-        {
-            const rebuildCadenceRaw = String(geometryDensity.rebuildCadence ?? 'off');
-            geometryDensity.rebuildCadence = (
-                rebuildCadenceRaw === 'frame'
-                || rebuildCadenceRaw === 'frame_2'
-                || rebuildCadenceRaw === 'frame_4'
-                || rebuildCadenceRaw === 'frame_8'
-                || rebuildCadenceRaw === '1s'
-            )
-                ? rebuildCadenceRaw
-                : 'off';
-        }
+        geometryDensity.rebuildCadence = normalizeRebuildCadence(geometryDensity.rebuildCadence, 1.0);
         geometryDensity.centerX = Number.isFinite(Number(geometryDensity.centerX)) ? Number(geometryDensity.centerX) : 0;
         geometryDensity.centerZ = Number.isFinite(Number(geometryDensity.centerZ)) ? Number(geometryDensity.centerZ) : 0;
         geometryDensity.applyNonce = Math.max(0, Math.round(Number(geometryDensity.applyNonce) || 0));
         if (!geometryDensity.enabled) geometryDensity.mode = 'uniform';
         bt.geometryDensity = geometryDensity;
+
+        const performance = (bt.performance && typeof bt.performance === 'object') ? bt.performance : {};
+        performance.fragmentShaderEnabled = performance.fragmentShaderEnabled !== false;
+        performance.fragmentShaderBiomeEnabled = performance.fragmentShaderBiomeEnabled !== false;
+        performance.fragmentShaderPbrLightingEnabled = performance.fragmentShaderPbrLightingEnabled !== false;
+        performance.fragmentShaderAlbedoEnabled = performance.fragmentShaderAlbedoEnabled !== false;
+        performance.fragmentShaderSurfaceEnabled = performance.fragmentShaderSurfaceEnabled !== false;
+        performance.shadowsEnabled = performance.shadowsEnabled !== false;
+        performance.highDpiEnabled = performance.highDpiEnabled !== false;
+        bt.performance = performance;
 
         const setSliderValue = (ctrl, value, digits = 2) => {
             if (!ctrl?.range || !ctrl?.number) return;
@@ -3489,33 +3783,57 @@ export class TerrainDebuggerUI {
             });
         };
 
-        const actionsSection = this._buildSection('biome_tiling', 'Quick Actions');
+        const focusSection = this._buildSection('biome_tiling', 'Focus');
         const focusButtonsRow = makeEl('div', null);
         focusButtonsRow.style.display = 'grid';
         focusButtonsRow.style.gridTemplateColumns = 'repeat(4, minmax(0, 1fr))';
         focusButtonsRow.style.gap = '8px';
 
-        const focusOverviewBtn = makeEl('button', 'options-btn options-btn-primary', 'Focus Overview');
+        const focusOverviewBtn = makeEl('button', 'options-btn terrain-focus-btn', 'Overview');
         focusOverviewBtn.type = 'button';
         focusOverviewBtn.addEventListener('click', () => this._onFocusBiomeTiling?.('overview'));
 
-        const focusEyeBtn = makeEl('button', 'options-btn options-btn-primary', 'Focus Eye 1.8m');
+        const focusBusBtn = makeEl('button', 'options-btn terrain-focus-btn', 'Bus High');
+        focusBusBtn.type = 'button';
+        focusBusBtn.addEventListener('click', () => this._onFocusBiomeTiling?.('bus_high'));
+
+        const focusEyeBtn = makeEl('button', 'options-btn terrain-focus-btn', 'Focus Eye');
         focusEyeBtn.type = 'button';
         focusEyeBtn.addEventListener('click', () => this._onFocusBiomeTiling?.('eye_1p8'));
 
-        const flyoverBtn = makeEl('button', 'options-btn options-btn-primary', 'Flyover');
+        const flyoverBtn = makeEl('button', 'options-btn terrain-focus-btn', 'Flyover');
         flyoverBtn.type = 'button';
         flyoverBtn.addEventListener('click', () => this._onFocusBiomeTiling?.('flyover'));
 
-        const flyoverDebugBtn = makeEl('button', 'options-btn options-btn-primary', 'Flyover Debug');
-        flyoverDebugBtn.type = 'button';
-        flyoverDebugBtn.addEventListener('click', () => this._onFocusBiomeTiling?.('flyover_debug'));
-
         focusButtonsRow.appendChild(focusOverviewBtn);
+        focusButtonsRow.appendChild(focusBusBtn);
         focusButtonsRow.appendChild(focusEyeBtn);
         focusButtonsRow.appendChild(flyoverBtn);
-        focusButtonsRow.appendChild(flyoverDebugBtn);
-        actionsSection.appendChild(focusButtonsRow);
+        focusSection.appendChild(focusButtonsRow);
+        this._controls.biomeTilingFocusButtons = {
+            overview: focusOverviewBtn,
+            bus_high: focusBusBtn,
+            eye_1p8: focusEyeBtn
+        };
+
+        const debugRunsRow = makeEl('div', 'options-row');
+        const debugRunsLabel = makeEl('div', 'options-row-label', 'Debug Runs');
+        const debugRunsControl = makeEl('div', 'options-row-control');
+        debugRunsControl.style.gap = '8px';
+
+        const flyoverDebugBtn = makeEl('button', 'options-btn', 'Flyover Debug Run');
+        flyoverDebugBtn.type = 'button';
+        flyoverDebugBtn.addEventListener('click', () => this._onFocusBiomeTiling?.('flyover_debug'));
+        debugRunsControl.appendChild(flyoverDebugBtn);
+
+        const sunOrbitBtn = makeEl('button', 'options-btn', 'Sun Orbit Run');
+        sunOrbitBtn.type = 'button';
+        sunOrbitBtn.addEventListener('click', () => this._onFocusBiomeTiling?.('sun_orbit'));
+        debugRunsControl.appendChild(sunOrbitBtn);
+
+        debugRunsRow.appendChild(debugRunsLabel);
+        debugRunsRow.appendChild(debugRunsControl);
+        focusSection.appendChild(debugRunsRow);
 
         const rigDebugRow = makeToggleRow({
             label: 'Calibration Rig Debug',
@@ -3527,17 +3845,166 @@ export class TerrainDebuggerUI {
                 this._emit();
             }
         });
-        actionsSection.appendChild(rigDebugRow.row);
+        focusSection.appendChild(rigDebugRow.row);
 
-        const textureSection = this._buildSection('biome_tiling', 'Single Texture');
-        textureSection.appendChild(makeEl('div', 'options-note', 'Selected PBR is applied to the entire map (all biomes and humidity slots).'));
+        const textureSection = this._buildSection('biome_tiling', 'Texture');
         const materialRow = createMaterialPickerRow({
             label: 'PBR Texture',
             onPick: () => openMaterialPicker()
         });
         textureSection.appendChild(materialRow.row);
+        const textureNearScaleRow = makeNumberSliderRow({
+            label: 'Size',
+            value: distanceTiling.nearScale,
+            min: 0.1,
+            max: 6.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                distanceTiling.nearScale = v;
+                this._emit();
+            }
+        });
+        textureSection.appendChild(textureNearScaleRow.row);
 
-        const displacementSection = this._buildSection('biome_tiling', 'Displacement Overlay');
+        const biomeTilingSubtabsHost = makeEl('div', 'options-section');
+        biomeTilingSubtabsHost.style.padding = '10px 12px';
+        const biomeTilingSubtabsBar = makeEl('div', 'options-tabs');
+        const biomeTilingSubtabsBody = makeEl('div', null);
+        biomeTilingSubtabsBody.style.display = 'block';
+        biomeTilingSubtabsBody.style.marginTop = '8px';
+        const biomeTilingSubtabs = [
+            { id: 'config', label: 'Config' },
+            { id: 'dynamic_size', label: 'Distance Blend' },
+            { id: 'variation', label: 'Anti-tiling' },
+            { id: 'lod', label: 'LOD' },
+            { id: 'displacement', label: 'Displacement' },
+            { id: 'diagnostics', label: 'Diagnostics' }
+        ];
+        const biomeTilingSubtabButtons = new Map();
+        const biomeTilingSubtabPanels = new Map();
+        const setBiomeTilingSubtab = (id) => {
+            const next = biomeTilingSubtabPanels.has(id) ? id : 'config';
+            for (const [key, btn] of biomeTilingSubtabButtons.entries()) btn.classList.toggle('is-active', key === next);
+            for (const [key, panel] of biomeTilingSubtabPanels.entries()) panel.style.display = key === next ? '' : 'none';
+        };
+        for (const def of biomeTilingSubtabs) {
+            const btn = makeEl('button', 'options-tab', def.label);
+            btn.type = 'button';
+            btn.style.textTransform = 'none';
+            btn.style.letterSpacing = '0';
+            btn.addEventListener('click', () => setBiomeTilingSubtab(def.id));
+            biomeTilingSubtabsBar.appendChild(btn);
+            biomeTilingSubtabButtons.set(def.id, btn);
+
+            const panel = makeEl('div', null);
+            panel.style.display = 'none';
+            panel.style.marginTop = '8px';
+            biomeTilingSubtabPanels.set(def.id, panel);
+            biomeTilingSubtabsBody.appendChild(panel);
+        }
+        biomeTilingSubtabsHost.appendChild(biomeTilingSubtabsBar);
+        biomeTilingSubtabsHost.appendChild(biomeTilingSubtabsBody);
+        setBiomeTilingSubtab('config');
+
+        const createBiomeSubtabBody = (titleText) => {
+            const body = makeEl('div', null);
+            body.style.display = 'flex';
+            body.style.flexDirection = 'column';
+            body.style.gap = '8px';
+            body.appendChild(makeEl('div', 'options-note', titleText));
+            return body;
+        };
+        const makeConfigToggleGroup = (marginTopPx = 0) => {
+            const group = makeEl('div', null);
+            group.style.display = 'flex';
+            group.style.flexDirection = 'column';
+            group.style.gap = '8px';
+            if (marginTopPx > 0) group.style.marginTop = `${marginTopPx}px`;
+            return group;
+        };
+
+        const configSection = createBiomeSubtabBody('Config');
+        const configFeaturesGroup = makeConfigToggleGroup(0);
+        const configVisualsGroup = makeConfigToggleGroup(12);
+        const configPerformanceGroup = makeConfigToggleGroup(12);
+        const requestGeometryRebuild = () => {
+            geometryDensity.applyNonce = Math.max(0, Math.round(Number(geometryDensity.applyNonce) || 0)) + 1;
+        };
+        const configWireframeRow = makeToggleRow({
+            label: 'Heatmap Wireframe',
+            value: visualization.landWireframe === true,
+            onChange: (v) => {
+                visualization.landWireframe = !!v;
+                this._emit();
+            }
+        });
+        configVisualsGroup.appendChild(configWireframeRow.row);
+
+        const configDistanceEnabledRow = makeToggleRow({
+            label: 'Enable Distance Blend',
+            value: distanceTiling.enabled,
+            onChange: (v) => {
+                distanceTiling.enabled = !!v;
+                syncUi();
+                this._emit();
+            }
+        });
+        configFeaturesGroup.appendChild(configDistanceEnabledRow.row);
+
+        const configLodEnabledRow = makeToggleRow({
+            label: 'Enable LOD',
+            value: geometryDensity.enabled !== false,
+            onChange: (v) => {
+                const enabled = !!v;
+                geometryDensity.enabled = enabled;
+                geometryDensity.mode = enabled ? 'adaptive_rings' : 'uniform';
+                if (enabled) {
+                    geometryDensity.detailPreset = normalizeGeometryPreset(geometryDensity.detailPreset, 'medium');
+                }
+                requestGeometryRebuild();
+                syncUi();
+                this._emit();
+            }
+        });
+        configFeaturesGroup.appendChild(configLodEnabledRow.row);
+
+        const configAntiEnabledRow = makeToggleRow({
+            label: 'Enable Anti-Tiling',
+            value: variation.antiTilingEnabled,
+            onChange: (v) => {
+                const enabled = !!v;
+                variation.antiTilingEnabled = enabled;
+                variation.macroVariationEnabled = enabled;
+                syncUi();
+                this._emit();
+            }
+        });
+        configFeaturesGroup.appendChild(configAntiEnabledRow.row);
+
+        const configMacroEnabledRow = makeToggleRow({
+            label: 'Enable Macro Variation',
+            value: variation.macroVariationEnabled,
+            onChange: (v) => {
+                variation.macroVariationEnabled = !!v;
+                syncUi();
+                this._emit();
+            }
+        });
+        configFeaturesGroup.appendChild(configMacroEnabledRow.row);
+
+        const configDisplacementEnabledRow = makeToggleRow({
+            label: 'Enable Displacement',
+            value: displacement.enabled,
+            onChange: (v) => {
+                displacement.enabled = !!v;
+                syncUi();
+                this._emit();
+            }
+        });
+        configFeaturesGroup.appendChild(configDisplacementEnabledRow.row);
+
+        const displacementSection = createBiomeSubtabBody('Displacement');
         displacementSection.appendChild(makeEl('div', 'options-note', 'Optional displacement validation overlay (separate from adaptive terrain LOD mesh).'));
         const displacementEnabledRow = makeToggleRow({
             label: 'Enable Displacement',
@@ -3610,32 +4077,37 @@ export class TerrainDebuggerUI {
         });
         displacementSection.appendChild(displacementDebugViewRow.row);
 
-        const geometrySection = this._buildSection('biome_tiling', 'Adaptive Terrain LOD');
-        geometrySection.appendChild(makeEl('div', 'options-note', 'Camera-centered adaptive terrain mesh for Biome Tiling. Changes are staged until you click Rebuild Terrain.'));
-        geometrySection.appendChild(makeEl('div', 'options-note', 'Smart defaults drive near/far density and transitions; use only these debug controls for validation.'));
-        geometrySection.appendChild(makeEl('div', 'options-note', 'Near/Far Segments / Tile control quad density near and far from the camera center.'));
+        const geometrySection = createBiomeSubtabBody('LOD');
+        geometrySection.appendChild(makeEl('div', 'options-note', 'Finite map terrain LOD with fixed grid bounds. Rebuild applies current camera-centered LOD allocation.'));
 
-        const geometryEnabledRow = makeToggleRow({
-            label: 'Enable Adaptive Terrain LOD',
-            value: geometryDensity.enabled,
-            onChange: (v) => {
-                geometryDensity.enabled = !!v;
-                if (geometryDensity.enabled) geometryDensity.mode = 'adaptive_rings';
+        const geometryPresetRow = makeChoiceRow({
+            label: 'Detail Preset',
+            value: geometryDensity.enabled === false
+                ? 'off'
+                : normalizeGeometryPreset(geometryDensity.detailPreset, 'medium'),
+            segmented: true,
+            options: [
+                { id: 'off', label: 'Off' },
+                { id: 'low', label: 'Low' },
+                { id: 'medium', label: 'Medium' },
+                { id: 'high', label: 'High' }
+            ],
+            onChange: (id) => {
+                const v = String(id ?? 'medium');
+                if (v === 'off') {
+                    geometryDensity.enabled = false;
+                    geometryDensity.mode = 'uniform';
+                } else {
+                    geometryDensity.enabled = true;
+                    geometryDensity.mode = 'adaptive_rings';
+                    geometryDensity.detailPreset = normalizeGeometryPreset(v, geometryDensity.detailPreset);
+                }
+                requestGeometryRebuild();
                 syncUi();
                 this._emit();
             }
         });
-        geometrySection.appendChild(geometryEnabledRow.row);
-
-        const geometryWireframeRow = makeToggleRow({
-            label: 'Wireframe',
-            value: visualization.landWireframe === true,
-            onChange: (v) => {
-                visualization.landWireframe = !!v;
-                this._emit();
-            }
-        });
-        geometrySection.appendChild(geometryWireframeRow.row);
+        geometrySection.appendChild(geometryPresetRow.row);
 
         const geometryRenderDistanceRow = makeNumberSliderRow({
             label: 'Render Distance (m)',
@@ -3833,6 +4305,7 @@ export class TerrainDebuggerUI {
             tooltip: 'When enabled, apply captures current camera XZ as adaptive ring center.',
             onChange: (v) => {
                 geometryDensity.centerOnApplyCamera = !!v;
+                syncUi();
                 this._emit();
             }
         });
@@ -3843,113 +4316,330 @@ export class TerrainDebuggerUI {
             value: geometryDensity.ringOverlayEnabled,
             onChange: (v) => {
                 geometryDensity.ringOverlayEnabled = !!v;
+                syncUi();
                 this._emit();
             }
         });
         geometrySection.appendChild(geometryOverlayRow.row);
 
         const geometryTileLodDebugRow = makeToggleRow({
-            label: 'Show Tile LOD Labels',
+            label: 'LOD Markers',
             value: geometryDensity.tileLodDebugEnabled === true,
             onChange: (v) => {
                 geometryDensity.tileLodDebugEnabled = !!v;
+                syncUi();
                 this._emit();
             }
         });
         geometrySection.appendChild(geometryTileLodDebugRow.row);
 
-        const geometryAutoRebuildRow = makeSelectRow({
+        const geometryAutoRebuildCadenceRow = makeChoiceRow({
             label: 'Auto Rebuild',
-            value: geometryDensity.rebuildCadence,
+            value: normalizeRebuildCadenceChoice(geometryDensity.rebuildCadence),
+            segmented: true,
             options: [
-                { id: 'off', label: 'No auto updates' },
-                { id: 'frame', label: 'Every frame' },
-                { id: 'frame_2', label: 'Every /2' },
-                { id: 'frame_4', label: 'Every /4' },
-                { id: 'frame_8', label: 'Every /8' },
-                { id: '1s', label: 'Every 1s' }
+                { id: 'off', label: 'Off' },
+                { id: 'frame', label: '1F' },
+                { id: 'frame_2', label: '2F' },
+                { id: 'frame_8', label: '8F' },
+                { id: 'sec:1', label: '1S' }
             ],
             onChange: (id) => {
-                const v = String(id ?? 'off');
-                geometryDensity.rebuildCadence = (
-                    v === 'frame'
-                    || v === 'frame_2'
-                    || v === 'frame_4'
-                    || v === 'frame_8'
-                    || v === '1s'
-                )
-                    ? v
-                    : 'off';
+                const selected = String(id ?? 'off');
+                geometryDensity.rebuildCadence = normalizeRebuildCadence(selected, 1.0);
+                syncUi();
                 this._emit();
             }
         });
-        geometrySection.appendChild(geometryAutoRebuildRow.row);
+        geometrySection.appendChild(geometryAutoRebuildCadenceRow.row);
 
-        const applyGeometryRow = makeButtonRow({
-            label: 'Apply',
-            text: 'Rebuild Terrain',
-            onClick: () => {
-                geometryDensity.applyNonce = Math.max(0, Math.round(Number(geometryDensity.applyNonce) || 0)) + 1;
+        const configCaptureCenterRow = makeToggleRow({
+            label: 'Capture Camera Center',
+            value: geometryDensity.centerOnApplyCamera,
+            onChange: (v) => {
+                geometryDensity.centerOnApplyCamera = !!v;
+                syncUi();
                 this._emit();
             }
         });
-        geometrySection.appendChild(applyGeometryRow.row);
+        configVisualsGroup.appendChild(configCaptureCenterRow.row);
+
+        const configTileLodDebugRow = makeToggleRow({
+            label: 'LOD Markers',
+            value: geometryDensity.tileLodDebugEnabled === true,
+            onChange: (v) => {
+                geometryDensity.tileLodDebugEnabled = !!v;
+                syncUi();
+                this._emit();
+            }
+        });
+        configVisualsGroup.appendChild(configTileLodDebugRow.row);
+
+        const configFragmentShaderRow = makeToggleRow({
+            label: 'Fragment Shader',
+            value: performance.fragmentShaderEnabled,
+            onChange: (v) => {
+                performance.fragmentShaderEnabled = !!v;
+                syncUi();
+                this._emit();
+            }
+        });
+        configPerformanceGroup.appendChild(configFragmentShaderRow.row);
+
+        const configFragmentShaderBiomeRow = makeToggleRow({
+            label: 'Biome',
+            value: performance.fragmentShaderBiomeEnabled,
+            onChange: (v) => {
+                performance.fragmentShaderBiomeEnabled = !!v;
+                syncUi();
+                this._emit();
+            }
+        });
+        configFragmentShaderBiomeRow.row.classList.add('options-row-child-indent');
+        configPerformanceGroup.appendChild(configFragmentShaderBiomeRow.row);
+
+        const configFragmentShaderPbrLightingRow = makeToggleRow({
+            label: 'PBR Lighting',
+            value: performance.fragmentShaderPbrLightingEnabled,
+            onChange: (v) => {
+                performance.fragmentShaderPbrLightingEnabled = !!v;
+                syncUi();
+                this._emit();
+            }
+        });
+        configFragmentShaderPbrLightingRow.row.classList.add('options-row-child-indent');
+        configPerformanceGroup.appendChild(configFragmentShaderPbrLightingRow.row);
+
+        const configFragmentShaderAlbedoRow = makeToggleRow({
+            label: 'Albedo',
+            value: performance.fragmentShaderAlbedoEnabled,
+            onChange: (v) => {
+                performance.fragmentShaderAlbedoEnabled = !!v;
+                syncUi();
+                this._emit();
+            }
+        });
+        configFragmentShaderAlbedoRow.row.classList.add('options-row-child-indent');
+        configPerformanceGroup.appendChild(configFragmentShaderAlbedoRow.row);
+
+        const configFragmentShaderSurfaceRow = makeToggleRow({
+            label: 'Surface (Normal+ORM)',
+            value: performance.fragmentShaderSurfaceEnabled,
+            onChange: (v) => {
+                performance.fragmentShaderSurfaceEnabled = !!v;
+                syncUi();
+                this._emit();
+            }
+        });
+        configFragmentShaderSurfaceRow.row.classList.add('options-row-child-indent');
+        configPerformanceGroup.appendChild(configFragmentShaderSurfaceRow.row);
+
+        const configShadowsRow = makeToggleRow({
+            label: 'Shadows',
+            value: performance.shadowsEnabled,
+            onChange: (v) => {
+                performance.shadowsEnabled = !!v;
+                syncUi();
+                this._emit();
+            }
+        });
+        configPerformanceGroup.appendChild(configShadowsRow.row);
+
+        const configHighDpiRow = makeToggleRow({
+            label: 'High-DPI / Pixel Ratio',
+            value: performance.highDpiEnabled,
+            onChange: (v) => {
+                performance.highDpiEnabled = !!v;
+                syncUi();
+                this._emit();
+            }
+        });
+        configPerformanceGroup.appendChild(configHighDpiRow.row);
+
+        configSection.appendChild(configFeaturesGroup);
+        configSection.appendChild(configVisualsGroup);
+        configSection.appendChild(configPerformanceGroup);
+
+        const lodSamplerDiagnosticsNote = makeEl('div', 'options-note', 'Fragment samplers: n/a');
+        geometrySection.appendChild(lodSamplerDiagnosticsNote);
+        this._controls.biomeTilingLodSamplerDiagnostics = lodSamplerDiagnosticsNote;
+        const fragmentPathBreakdownNote = makeEl('div', 'options-note', 'Fragment paths: n/a');
+        geometrySection.appendChild(fragmentPathBreakdownNote);
+        this._controls.biomeTilingFragmentPathBreakdown = fragmentPathBreakdownNote;
 
         const hideAdvancedGeometryRows = [
+            geometryRenderDistanceRow,
+            geometryWaveStrengthRow,
+            geometryWaveMaxHeightRow,
+            geometryWaveMaxTileRangeRow,
             geometryModeRow,
             geometrySegmentsRow,
+            geometryNearSegmentsRow,
+            geometryFarSegmentsRow,
             geometryNearRadiusRow,
             geometryTransitionWidthRow,
             geometryTransitionSmoothingRow,
             geometryTransitionBiasRow,
             geometryTransitionBandsRow,
-            geometryCaptureCenterRow
+            geometryCaptureCenterRow,
+            geometryOverlayRow
         ];
         for (const rowCtrl of hideAdvancedGeometryRows) {
             if (rowCtrl?.row?.style) rowCtrl.row.style.display = 'none';
         }
 
-        const diagnosticsSection = this._buildSection('biome_tiling', 'Diagnostics');
-        const overlayTitleNote = makeEl('div', 'options-note', 'Adaptive Terrain');
-        overlayTitleNote.style.fontWeight = '700';
-        const displacementStatusNote = makeEl('div', 'options-note', 'Displacement overlay: (n/a)');
-        const geometryStatsNote = makeEl('div', 'options-note', 'Adaptive terrain geometry: (n/a)');
-        const adaptiveStatusNote = makeEl('div', 'options-note', 'Adaptive terrain LOD: (n/a)');
-        const adaptivePerfNote = makeEl('div', 'options-note', 'Adaptive terrain diagnostics: (n/a)');
-        const updateCostNote = makeEl('div', 'options-note', 'Adaptive terrain update cost: (n/a)');
-        const pendingApplyNote = makeEl('div', 'options-note', 'Adaptive terrain pending: (n/a)');
-        const lodStateNote = makeEl('div', 'options-note', 'Adaptive terrain state: (n/a)');
-        const lodHistoryNote = makeEl('div', 'options-note', 'Adaptive terrain history: (n/a)');
+        const diagnosticsSection = createBiomeSubtabBody('Diagnostics');
+        const terrainLodTitle = makeEl('div', 'options-note', 'Terrain LOD');
+        terrainLodTitle.style.fontWeight = '700';
+        terrainLodTitle.style.marginTop = '2px';
+        diagnosticsSection.appendChild(terrainLodTitle);
+
+        const terrainLodTableWrap = makeEl('div', null);
+        terrainLodTableWrap.style.overflowX = 'auto';
+        terrainLodTableWrap.style.border = '1px solid rgba(255,255,255,0.12)';
+        terrainLodTableWrap.style.borderRadius = '10px';
+        terrainLodTableWrap.style.padding = '6px';
+        terrainLodTableWrap.style.background = 'rgba(0,0,0,0.16)';
+        const terrainLodTable = document.createElement('table');
+        terrainLodTable.style.width = '100%';
+        terrainLodTable.style.borderCollapse = 'collapse';
+        terrainLodTable.style.fontVariantNumeric = 'tabular-nums';
+        terrainLodTable.style.fontSize = '11px';
+        const terrainLodHead = document.createElement('thead');
+        const terrainLodHeadRow = document.createElement('tr');
+        for (const label of ['On/Off', '256', '64', '16', '4', '1', 'Total Quads']) {
+            const th = document.createElement('th');
+            th.textContent = label;
+            th.style.padding = '5px 8px';
+            th.style.textAlign = 'right';
+            th.style.borderBottom = '1px solid rgba(255,255,255,0.18)';
+            th.style.whiteSpace = 'nowrap';
+            if (label === 'On/Off') th.style.textAlign = 'left';
+            terrainLodHeadRow.appendChild(th);
+        }
+        terrainLodHead.appendChild(terrainLodHeadRow);
+        terrainLodTable.appendChild(terrainLodHead);
+        const terrainLodBody = document.createElement('tbody');
+        const terrainLodRow = document.createElement('tr');
+        const makeValueCell = ({ align = 'right', text = 'n/a' } = {}) => {
+            const td = document.createElement('td');
+            td.textContent = text;
+            td.style.padding = '6px 8px';
+            td.style.textAlign = align;
+            td.style.whiteSpace = 'nowrap';
+            return td;
+        };
+        const terrainLodStatusCell = makeValueCell({ align: 'left', text: 'n/a' });
+        const terrainLodCell256 = makeValueCell();
+        const terrainLodCell64 = makeValueCell();
+        const terrainLodCell16 = makeValueCell();
+        const terrainLodCell4 = makeValueCell();
+        const terrainLodCell1 = makeValueCell();
+        const terrainLodTotalCell = makeValueCell();
+        terrainLodRow.appendChild(terrainLodStatusCell);
+        terrainLodRow.appendChild(terrainLodCell256);
+        terrainLodRow.appendChild(terrainLodCell64);
+        terrainLodRow.appendChild(terrainLodCell16);
+        terrainLodRow.appendChild(terrainLodCell4);
+        terrainLodRow.appendChild(terrainLodCell1);
+        terrainLodRow.appendChild(terrainLodTotalCell);
+        terrainLodBody.appendChild(terrainLodRow);
+        terrainLodTable.appendChild(terrainLodBody);
+        terrainLodTableWrap.appendChild(terrainLodTable);
+        diagnosticsSection.appendChild(terrainLodTableWrap);
+
+        const gpuTitleNote = makeEl('div', 'options-note', 'GPU');
+        gpuTitleNote.style.fontWeight = '700';
+        gpuTitleNote.style.marginTop = '8px';
+        const gpuSamplerUsageNote = makeEl('div', 'options-note', 'GPU samplers: n/a');
+        const gpuSamplerPathsTitle = makeEl('div', 'options-note', 'Fragment Sampler Paths');
+        gpuSamplerPathsTitle.style.marginTop = '4px';
+        const gpuSamplerPathsTableWrap = makeEl('div', null);
+        gpuSamplerPathsTableWrap.style.overflowX = 'auto';
+        gpuSamplerPathsTableWrap.style.border = '1px solid rgba(255,255,255,0.12)';
+        gpuSamplerPathsTableWrap.style.borderRadius = '10px';
+        gpuSamplerPathsTableWrap.style.padding = '6px';
+        gpuSamplerPathsTableWrap.style.background = 'rgba(0,0,0,0.16)';
+        const gpuSamplerPathsTable = document.createElement('table');
+        gpuSamplerPathsTable.style.width = '100%';
+        gpuSamplerPathsTable.style.borderCollapse = 'collapse';
+        gpuSamplerPathsTable.style.fontVariantNumeric = 'tabular-nums';
+        gpuSamplerPathsTable.style.fontSize = '11px';
+        const gpuSamplerPathsHead = document.createElement('thead');
+        const gpuSamplerPathsHeadRow = document.createElement('tr');
+        for (const label of ['Path', 'Samplers', 'Notes']) {
+            const th = document.createElement('th');
+            th.textContent = label;
+            th.style.padding = '5px 8px';
+            th.style.textAlign = label === 'Samplers' ? 'right' : 'left';
+            th.style.borderBottom = '1px solid rgba(255,255,255,0.18)';
+            th.style.whiteSpace = 'nowrap';
+            gpuSamplerPathsHeadRow.appendChild(th);
+        }
+        gpuSamplerPathsHead.appendChild(gpuSamplerPathsHeadRow);
+        gpuSamplerPathsTable.appendChild(gpuSamplerPathsHead);
+        const gpuSamplerPathsBody = document.createElement('tbody');
+        const gpuSamplerPathsBodyRow = document.createElement('tr');
+        const gpuSamplerPathsPathCell = document.createElement('td');
+        gpuSamplerPathsPathCell.textContent = 'n/a';
+        gpuSamplerPathsPathCell.style.padding = '5px 8px';
+        gpuSamplerPathsPathCell.style.whiteSpace = 'nowrap';
+        const gpuSamplerPathsCountCell = document.createElement('td');
+        gpuSamplerPathsCountCell.textContent = 'n/a';
+        gpuSamplerPathsCountCell.style.padding = '5px 8px';
+        gpuSamplerPathsCountCell.style.textAlign = 'right';
+        gpuSamplerPathsCountCell.style.whiteSpace = 'nowrap';
+        const gpuSamplerPathsNoteCell = document.createElement('td');
+        gpuSamplerPathsNoteCell.textContent = 'No active fragment paths.';
+        gpuSamplerPathsNoteCell.style.padding = '5px 8px';
+        gpuSamplerPathsBodyRow.appendChild(gpuSamplerPathsPathCell);
+        gpuSamplerPathsBodyRow.appendChild(gpuSamplerPathsCountCell);
+        gpuSamplerPathsBodyRow.appendChild(gpuSamplerPathsNoteCell);
+        gpuSamplerPathsBody.appendChild(gpuSamplerPathsBodyRow);
+        gpuSamplerPathsTable.appendChild(gpuSamplerPathsBody);
+        gpuSamplerPathsTableWrap.appendChild(gpuSamplerPathsTable);
+        const gpuMaxTexturesNote = makeEl('div', 'options-note', 'GPU max fragment texture units: n/a');
+        const gpuSamplerHeadroomNote = makeEl('div', 'options-note', 'GPU sampler headroom: n/a');
+        const gpuWebglVersionNote = makeEl('div', 'options-note', 'GPU WebGL: n/a');
+        const gpuFrameTimeNote = makeEl('div', 'options-note', 'GPU frame time: n/a');
+        diagnosticsSection.appendChild(gpuTitleNote);
+        diagnosticsSection.appendChild(gpuSamplerUsageNote);
+        diagnosticsSection.appendChild(gpuSamplerPathsTitle);
+        diagnosticsSection.appendChild(gpuSamplerPathsTableWrap);
+        diagnosticsSection.appendChild(gpuMaxTexturesNote);
+        diagnosticsSection.appendChild(gpuSamplerHeadroomNote);
+        diagnosticsSection.appendChild(gpuWebglVersionNote);
+        diagnosticsSection.appendChild(gpuFrameTimeNote);
+
         const baseTitleNote = makeEl('div', 'options-note', 'Base');
         baseTitleNote.style.fontWeight = '700';
         baseTitleNote.style.marginTop = '8px';
         const baseGeometryStatsNote = makeEl('div', 'options-note', 'Base terrain geometry: (n/a)');
         const baseModeNote = makeEl('div', 'options-note', 'Base terrain mode: (n/a)');
-        diagnosticsSection.appendChild(overlayTitleNote);
-        diagnosticsSection.appendChild(displacementStatusNote);
-        diagnosticsSection.appendChild(geometryStatsNote);
-        diagnosticsSection.appendChild(adaptiveStatusNote);
-        diagnosticsSection.appendChild(adaptivePerfNote);
-        diagnosticsSection.appendChild(updateCostNote);
-        diagnosticsSection.appendChild(pendingApplyNote);
-        diagnosticsSection.appendChild(lodStateNote);
-        diagnosticsSection.appendChild(lodHistoryNote);
         diagnosticsSection.appendChild(baseTitleNote);
         diagnosticsSection.appendChild(baseGeometryStatsNote);
         diagnosticsSection.appendChild(baseModeNote);
-        this._controls.biomeTilingDisplacementStatus = displacementStatusNote;
-        this._controls.biomeTilingGeometryStats = geometryStatsNote;
-        this._controls.biomeTilingAdaptiveStatus = adaptiveStatusNote;
-        this._controls.biomeTilingAdaptivePerf = adaptivePerfNote;
-        this._controls.biomeTilingUpdateCost = updateCostNote;
-        this._controls.biomeTilingPendingApply = pendingApplyNote;
-        this._controls.biomeTilingLodState = lodStateNote;
-        this._controls.biomeTilingLodHistory = lodHistoryNote;
+
+        this._controls.biomeTilingTerrainLodStatusCell = terrainLodStatusCell;
+        this._controls.biomeTilingTerrainLodCountCells = {
+            '256': terrainLodCell256,
+            '64': terrainLodCell64,
+            '16': terrainLodCell16,
+            '4': terrainLodCell4,
+            '1': terrainLodCell1
+        };
+        this._controls.biomeTilingTerrainLodTotalCell = terrainLodTotalCell;
+        this._controls.biomeTilingGpuSamplerUsage = gpuSamplerUsageNote;
+        this._controls.biomeTilingGpuMaxTextures = gpuMaxTexturesNote;
+        this._controls.biomeTilingGpuSamplerHeadroom = gpuSamplerHeadroomNote;
+        this._controls.biomeTilingGpuWebglVersion = gpuWebglVersionNote;
+        this._controls.biomeTilingGpuFrameTime = gpuFrameTimeNote;
+        this._controls.biomeTilingGpuSamplerPathsBody = gpuSamplerPathsBody;
         this._controls.biomeTilingBaseGeometryStats = baseGeometryStatsNote;
         this._controls.biomeTilingBaseMode = baseModeNote;
 
-        const distanceSection = this._buildSection('biome_tiling', 'Texture Size by Distance');
-        distanceSection.appendChild(makeEl('div', 'options-note', 'Blends near/far texture size using camera distance. "Blend Curve" is optional and defaults to linear.'));
+        const distanceSection = createBiomeSubtabBody('Distance Blend');
+        distanceSection.appendChild(makeEl('div', 'options-note', 'Blends global Size (Texture section) toward Far Size using camera distance. "Blend Curve" is optional and defaults to linear.'));
         const distanceEnabledRow = makeToggleRow({
             label: 'Enable Distance Blend',
             value: distanceTiling.enabled,
@@ -3960,20 +4650,6 @@ export class TerrainDebuggerUI {
             }
         });
         distanceSection.appendChild(distanceEnabledRow.row);
-
-        const nearScaleRow = makeNumberSliderRow({
-            label: 'Near Size',
-            value: distanceTiling.nearScale,
-            min: 0.1,
-            max: 6.0,
-            step: 0.01,
-            digits: 2,
-            onChange: (v) => {
-                distanceTiling.nearScale = v;
-                this._emit();
-            }
-        });
-        distanceSection.appendChild(nearScaleRow.row);
 
         const farScaleRow = makeNumberSliderRow({
             label: 'Far Size',
@@ -4051,7 +4727,7 @@ export class TerrainDebuggerUI {
         });
         distanceSection.appendChild(debugViewRow.row);
 
-        const variationSection = this._buildSection('biome_tiling', 'Texture Variation');
+        const variationSection = createBiomeSubtabBody('Anti-tiling');
         variationSection.appendChild(makeEl('div', 'options-note', 'Use anti-tiling and macro variation to break visible repetition.'));
         const antiEnabledRow = makeToggleRow({
             label: 'Enable Anti-Tiling',
@@ -4161,8 +4837,6 @@ export class TerrainDebuggerUI {
 
         const setDistanceControlsEnabled = (enabled) => {
             const disabled = !enabled;
-            if (nearScaleRow.range) nearScaleRow.range.disabled = disabled;
-            if (nearScaleRow.number) nearScaleRow.number.disabled = disabled;
             if (farScaleRow.range) farScaleRow.range.disabled = disabled;
             if (farScaleRow.number) farScaleRow.number.disabled = disabled;
             if (blendStartRow.range) blendStartRow.range.disabled = disabled;
@@ -4235,8 +4909,13 @@ export class TerrainDebuggerUI {
             if (geometryWaveMaxHeightRow.number) geometryWaveMaxHeightRow.number.disabled = !enabled;
             if (geometryWaveMaxTileRangeRow.range) geometryWaveMaxTileRangeRow.range.disabled = !enabled;
             if (geometryWaveMaxTileRangeRow.number) geometryWaveMaxTileRangeRow.number.disabled = !enabled;
-            if (geometryAutoRebuildRow.select) geometryAutoRebuildRow.select.disabled = !enabled;
-            if (applyGeometryRow.btn) applyGeometryRow.btn.disabled = false;
+            geometryAutoRebuildCadenceRow.setDisabled(!enabled);
+        };
+        const setFragmentShaderSubControlsEnabled = () => {
+            if (configFragmentShaderBiomeRow.toggle) configFragmentShaderBiomeRow.toggle.disabled = false;
+            if (configFragmentShaderPbrLightingRow.toggle) configFragmentShaderPbrLightingRow.toggle.disabled = false;
+            if (configFragmentShaderAlbedoRow.toggle) configFragmentShaderAlbedoRow.toggle.disabled = false;
+            if (configFragmentShaderSurfaceRow.toggle) configFragmentShaderSurfaceRow.toggle.disabled = false;
         };
 
         const syncUi = () => {
@@ -4251,7 +4930,7 @@ export class TerrainDebuggerUI {
             rigDebugRow.toggle.checked = bt.calibrationRigDebugEnabled;
 
             distanceEnabledRow.toggle.checked = distanceTiling.enabled;
-            setSliderValue(nearScaleRow, distanceTiling.nearScale, 2);
+            setSliderValue(textureNearScaleRow, distanceTiling.nearScale, 2);
             setSliderValue(farScaleRow, distanceTiling.farScale, 2);
             setSliderValue(blendStartRow, distanceTiling.blendStartMeters, 0);
             setSliderValue(blendEndRow, distanceTiling.blendEndMeters, 0);
@@ -4280,10 +4959,25 @@ export class TerrainDebuggerUI {
             setDisplacementControlsEnabled(displacement.enabled);
 
             geometryDensity.enabled = geometryDensity.enabled !== false;
+            geometryDensity.detailPreset = normalizeGeometryPreset(geometryDensity.detailPreset, 'medium');
             if (!geometryDensity.enabled) geometryDensity.mode = 'uniform';
+            else geometryDensity.mode = 'adaptive_rings';
             geometryModeRow.setValue(geometryDensity.mode);
-            geometryEnabledRow.toggle.checked = geometryDensity.enabled;
-            geometryWireframeRow.toggle.checked = visualization.landWireframe === true;
+            geometryPresetRow.setValue(geometryDensity.enabled ? geometryDensity.detailPreset : 'off');
+            configWireframeRow.toggle.checked = visualization.landWireframe === true;
+            configDistanceEnabledRow.toggle.checked = distanceTiling.enabled;
+            configLodEnabledRow.toggle.checked = geometryDensity.enabled !== false;
+            configAntiEnabledRow.toggle.checked = variation.antiTilingEnabled;
+            configMacroEnabledRow.toggle.checked = variation.macroVariationEnabled;
+            configDisplacementEnabledRow.toggle.checked = displacement.enabled;
+            configFragmentShaderRow.toggle.checked = performance.fragmentShaderEnabled;
+            configFragmentShaderBiomeRow.toggle.checked = performance.fragmentShaderBiomeEnabled;
+            configFragmentShaderPbrLightingRow.toggle.checked = performance.fragmentShaderPbrLightingEnabled;
+            configFragmentShaderAlbedoRow.toggle.checked = performance.fragmentShaderAlbedoEnabled;
+            configFragmentShaderSurfaceRow.toggle.checked = performance.fragmentShaderSurfaceEnabled;
+            setFragmentShaderSubControlsEnabled();
+            configShadowsRow.toggle.checked = performance.shadowsEnabled;
+            configHighDpiRow.toggle.checked = performance.highDpiEnabled;
             const renderDistance = clamp(
                 geometryDensity.renderDistanceMeters,
                 2.0,
@@ -4306,20 +5000,30 @@ export class TerrainDebuggerUI {
             geometryCaptureCenterRow.toggle.checked = geometryDensity.centerOnApplyCamera;
             geometryOverlayRow.toggle.checked = geometryDensity.ringOverlayEnabled;
             geometryTileLodDebugRow.toggle.checked = geometryDensity.tileLodDebugEnabled === true;
-            if (geometryAutoRebuildRow.select) geometryAutoRebuildRow.select.value = String(geometryDensity.rebuildCadence ?? 'off');
+            configCaptureCenterRow.toggle.checked = geometryDensity.centerOnApplyCamera;
+            configTileLodDebugRow.toggle.checked = geometryDensity.tileLodDebugEnabled === true;
+            geometryDensity.rebuildCadence = normalizeRebuildCadence(geometryDensity.rebuildCadence, 1.0);
+            geometryAutoRebuildCadenceRow.setValue(normalizeRebuildCadenceChoice(geometryDensity.rebuildCadence));
             setGeometryControlsEnabled(geometryDensity.mode, geometryDensity.enabled !== false);
         };
 
         {
             const biomeTilingTabBody = this._tabBodies?.biome_tiling ?? null;
             if (biomeTilingTabBody) {
-                biomeTilingTabBody.appendChild(geometrySection);
-                biomeTilingTabBody.appendChild(displacementSection);
-                biomeTilingTabBody.appendChild(diagnosticsSection);
+                biomeTilingTabBody.appendChild(textureSection);
+                biomeTilingTabBody.appendChild(focusSection);
+                biomeTilingTabBody.appendChild(biomeTilingSubtabsHost);
+                biomeTilingSubtabPanels.get('config')?.appendChild(configSection);
+                biomeTilingSubtabPanels.get('dynamic_size')?.appendChild(distanceSection);
+                biomeTilingSubtabPanels.get('variation')?.appendChild(variationSection);
+                biomeTilingSubtabPanels.get('lod')?.appendChild(geometrySection);
+                biomeTilingSubtabPanels.get('displacement')?.appendChild(displacementSection);
+                biomeTilingSubtabPanels.get('diagnostics')?.appendChild(diagnosticsSection);
             }
         }
 
         syncUi();
+        this.setBiomeTilingFocusButtons({ activePresetId: '' });
     }
 
     _buildTerrainTabLegacy() {
@@ -5208,6 +5912,16 @@ export class TerrainDebuggerUI {
         }
 
         note.textContent = lines.join(' · ');
+    }
+
+    setBiomeTilingFocusButtons({ activePresetId = '' } = {}) {
+        const buttons = this._controls?.biomeTilingFocusButtons ?? null;
+        if (!buttons || typeof buttons !== 'object') return;
+        const activeId = String(activePresetId ?? '').trim().toLowerCase();
+        for (const [id, btn] of Object.entries(buttons)) {
+            if (!btn?.classList) continue;
+            btn.classList.toggle('is-active', id === activeId);
+        }
     }
 
     setGrassStats({
