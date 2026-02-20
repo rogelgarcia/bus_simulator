@@ -51,6 +51,7 @@ These are the ones from AI prompt files.
 - In interactive mode (`start ai`):
   - If subject is missing, ask for `SUBJECT` before creating the file.
   - If an interactive AI is already open, ask whether to continue it, close and start a new one, or start a new one without closing the current one.
+  - As soon as trigger + subject are known, start/create the interactive `AI_i_...` file (do not wait for a full requirement list).
   - Track requirements with markdown checkboxes (`- [ ]` pending, `- [x]` implemented) and keep them updated after each implementation cycle.
   - Never edit completed checklist items (`- [x]`).
   - If completed behavior needs a fix, add a new requirement item for the fix.

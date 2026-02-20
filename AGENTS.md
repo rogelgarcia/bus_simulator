@@ -8,6 +8,7 @@
   - Interactive mode rules:
     - If subject is not specified, ask for subject first.
     - If an interactive AI is already open, ask whether to continue it, close and start new, or start new without closing current.
+    - As soon as trigger + subject are known, create/start the `AI_i_...` file; do not wait for full requirements.
     - Track requirements as markdown checkboxes (`- [ ]` pending, `- [x]` implemented) and update after each implementation cycle.
     - Never edit completed checklist items (`- [x]`).
     - If a completed requirement needs a fix, add another requirement item for that fix.

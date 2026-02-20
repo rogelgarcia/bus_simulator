@@ -87,7 +87,11 @@ When the user says `start ai`, use interactive prompt mode.
      - Continue the current AI
      - Close current and start a new one
      - Start a new one without closing current
-3. Keep the prompt conversational:
+3. Start the file immediately:
+   - As soon as `start ai` + `SUBJECT` are known, create the `AI_i_...` file.
+   - Do not wait for the full requirement list before creating the file.
+   - If an open interactive AI required a choice, create/update the selected file immediately after that choice.
+4. Keep the prompt conversational:
    - Add requirements incrementally as discussion continues.
    - Track requirements with checkboxes:
      - `- [ ]` not implemented
@@ -96,11 +100,11 @@ When the user says `start ai`, use interactive prompt mode.
    - If a completed item needs a fix, add a new checklist item for the fix instead of changing the completed item.
    - Contradictions are allowed between completed and new requirements; keep both and implement the new requirement as a follow-up.
    - If a new requirement contradicts an existing non-completed requirement (`- [ ]`), patch the existing non-completed requirement text.
-4. Implementation loop:
+5. Implementation loop:
    - On “implement” requests, implement selected pending requirements.
    - Update the checklist status in the interactive AI file after implementation.
    - Continue gathering new requirements and repeating implementation cycles until the user says done.
-5. Completion:
+6. Completion:
    - Rename to interactive DONE naming (`AI_i_DONE_..._DONE.md`).
    - Do not move to `prompts/archive/` automatically.
    - Move to archive only when explicitly requested.
@@ -183,3 +187,4 @@ Rules:
 5. Create a new file for each new request unless explicitly asked to continue/edit an existing one.
 6. For interactive mode, keep checklist state current after every implementation cycle.
 7. Treat completed checklist items as immutable history; use new items for fixes.
+8. In interactive mode, create the `AI_i_...` file immediately once trigger + subject are known.

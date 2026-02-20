@@ -23,6 +23,7 @@ Open `index.html` in a modern browser.
 - Standard prompt request triggers: `create prompt`, `create ai`, `create ai prompt`.
 - Interactive AI trigger: `start ai`.
 - Interactive AI prompts use `AI_i_` filenames in `prompts/` and are handled as conversational requirement documents.
+- As soon as `start ai` + subject/topic are known, the `AI_i_...` file is created (no waiting for full requirements).
 - Interactive requirements are tracked with checkboxes:
   - `- [ ]` pending
   - `- [x]` implemented
