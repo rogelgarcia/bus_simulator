@@ -608,16 +608,23 @@ export class TerrainDebuggerUI {
                         debugView: 'standard'
                     },
                     geometryDensity: {
+                        enabled: true,
                         mode: 'adaptive_rings',
                         segmentsPerTile: 8,
                         nearSegmentsPerTile: 1024,
                         farSegmentsPerTile: 4,
                         nearRadiusMeters: 3,
                         transitionWidthMeters: 3,
+                        renderDistanceMeters: 6,
                         transitionSmoothing: 0.72,
                         transitionBias: 0.0,
                         transitionDebugBands: 3,
+                        waveStrength: 0.02,
+                        waveMaxHeightMeters: 2.0,
+                        waveMaxNeighborDeltaMeters: 0.5,
+                        waveMaxTileRangeMeters: 0.5,
                         ringOverlayEnabled: true,
+                        tileLodDebugEnabled: false,
                         centerOnApplyCamera: true,
                         rebuildCadence: 'off',
                         centerX: 0,
@@ -896,6 +903,8 @@ export class TerrainDebuggerUI {
 
     setBiomeTilingDiagnostics({
         active = false,
+        requestedAdaptiveEnabled = true,
+        appliedAdaptiveEnabled = true,
         requestedGeometryMode = 'uniform',
         appliedGeometryMode = 'uniform',
         requestedSegmentsPerTile = null,
@@ -914,6 +923,15 @@ export class TerrainDebuggerUI {
         appliedTransitionSmoothing = null,
         appliedTransitionBias = null,
         appliedTransitionDebugBands = null,
+        requestedRenderDistanceMeters = null,
+        appliedRenderDistanceMeters = null,
+        requestedWaveStrength = null,
+        appliedWaveStrength = null,
+        requestedWaveMaxHeightMeters = null,
+        appliedWaveMaxHeightMeters = null,
+        requestedWaveMaxNeighborDeltaMeters = null,
+        appliedWaveMaxNeighborDeltaMeters = null,
+        rebuildCadence = 'off',
         appliedRingCenterX = null,
         appliedRingCenterZ = null,
         ringOverlayEnabled = false,
@@ -967,16 +985,16 @@ export class TerrainDebuggerUI {
         if (!(sourceNote || geometryNote || adaptiveNote || perfNote || updateCostNote || pendingNote || lodStateNote || lodHistoryNote || baseGeometryNote || baseModeNote)) return;
 
         if (!active) {
-            if (sourceNote) sourceNote.textContent = 'Overlay displacement: (Biome Tiling tab inactive)';
-            if (geometryNote) geometryNote.textContent = 'Overlay geometry: (Biome Tiling tab inactive)';
-            if (adaptiveNote) adaptiveNote.textContent = 'Overlay adaptive rings: (Biome Tiling tab inactive)';
-            if (perfNote) perfNote.textContent = 'Overlay adaptive perf: (Biome Tiling tab inactive)';
-            if (updateCostNote) updateCostNote.textContent = 'Overlay update cost: (Biome Tiling tab inactive)';
-            if (pendingNote) pendingNote.textContent = 'Overlay pending: (Biome Tiling tab inactive)';
-            if (lodStateNote) lodStateNote.textContent = 'Overlay LOD state: (Biome Tiling tab inactive)';
-            if (lodHistoryNote) lodHistoryNote.textContent = 'Overlay LOD history: (Biome Tiling tab inactive)';
-            if (baseGeometryNote) baseGeometryNote.textContent = 'Base geometry: (Biome Tiling tab inactive)';
-            if (baseModeNote) baseModeNote.textContent = 'Base mode: (Biome Tiling tab inactive)';
+            if (sourceNote) sourceNote.textContent = 'Displacement overlay: (Biome Tiling tab inactive)';
+            if (geometryNote) geometryNote.textContent = 'Adaptive terrain geometry: (Biome Tiling tab inactive)';
+            if (adaptiveNote) adaptiveNote.textContent = 'Adaptive terrain LOD: (Biome Tiling tab inactive)';
+            if (perfNote) perfNote.textContent = 'Adaptive terrain diagnostics: (Biome Tiling tab inactive)';
+            if (updateCostNote) updateCostNote.textContent = 'Adaptive terrain update cost: (Biome Tiling tab inactive)';
+            if (pendingNote) pendingNote.textContent = 'Adaptive terrain pending: (Biome Tiling tab inactive)';
+            if (lodStateNote) lodStateNote.textContent = 'Adaptive terrain state: (Biome Tiling tab inactive)';
+            if (lodHistoryNote) lodHistoryNote.textContent = 'Adaptive terrain history: (Biome Tiling tab inactive)';
+            if (baseGeometryNote) baseGeometryNote.textContent = 'Base terrain geometry: (Biome Tiling tab inactive)';
+            if (baseModeNote) baseModeNote.textContent = 'Base terrain mode: (Biome Tiling tab inactive)';
             return;
         }
 
@@ -990,7 +1008,7 @@ export class TerrainDebuggerUI {
             const fallbackText = displacementFallbackActive ? ' · fallback active' : '';
             const missingText = displacementMissing ? ' · source missing' : '';
             const fileText = url ? ` · ${url.split('/').pop() || 'texture'}` : '';
-            sourceNote.textContent = `Overlay displacement: ${enabledText} · mode ${sourceMode} · using ${resolvedSource}${fallbackText}${missingText}${fileText}`;
+            sourceNote.textContent = `Displacement overlay: ${enabledText} · mode ${sourceMode} · using ${resolvedSource}${fallbackText}${missingText}${fileText}`;
         }
 
         const overlayW = Number.isFinite(Number(overlayWidthTiles)) ? Math.max(0, Number(overlayWidthTiles)) : Math.max(0, Number(widthTiles) || 0);
@@ -1006,9 +1024,9 @@ export class TerrainDebuggerUI {
             const sizeTilesText = `${overlayW.toFixed(1)}x${overlayD.toFixed(1)} tiles`;
             if (overlayVisible || oT > 0 || oV > 0) {
                 const visText = overlayVisible ? 'visible' : 'hidden';
-                geometryNote.textContent = `Overlay geometry: ${sizeMetersText} (${sizeTilesText}) · ${oV.toLocaleString()} verts · ${oT.toLocaleString()} tris · mode ${appliedMode === 'adaptive_rings' ? 'adaptive' : 'uniform'} · ${visText}`;
+                geometryNote.textContent = `Adaptive terrain geometry: ${sizeMetersText} (${sizeTilesText}) · ${oV.toLocaleString()} verts · ${oT.toLocaleString()} tris · mode ${appliedMode === 'adaptive_rings' ? 'adaptive' : 'uniform'} · ${visText}`;
             } else {
-                geometryNote.textContent = 'Overlay geometry: not built (enable displacement and click Rebuild Terrain)';
+                geometryNote.textContent = 'Adaptive terrain geometry: not built (click Rebuild Terrain)';
             }
         }
 
@@ -1024,31 +1042,63 @@ export class TerrainDebuggerUI {
         const appliedSmoothing = clamp(appliedTransitionSmoothing, 0.0, 1.0, 0.72);
         const appliedBias = clamp(appliedTransitionBias, -0.85, 0.85, 0.0);
         const appliedDebugBands = Math.max(0, Math.min(6, Math.round(Number(appliedTransitionDebugBands) || 0)));
+        const requestedRenderDistance = normalizeMeters(
+            requestedRenderDistanceMeters,
+            normalizeMeters(requestedNearRadiusMeters, 0) + normalizeMeters(requestedTransitionWidthMeters, 0)
+        );
+        const appliedRenderDistance = normalizeMeters(
+            appliedRenderDistanceMeters,
+            appliedRadius + appliedTransition
+        );
+        const requestedWave = clamp(requestedWaveStrength, 0.0, 1.0, 0.02);
+        const appliedWave = clamp(appliedWaveStrength, 0.0, 1.0, requestedWave);
+        const requestedWaveHeight = normalizeMeters(requestedWaveMaxHeightMeters, 2.0);
+        const appliedWaveHeight = normalizeMeters(appliedWaveMaxHeightMeters, requestedWaveHeight);
+        const requestedWaveNeighborDelta = normalizeMeters(requestedWaveMaxNeighborDeltaMeters, 0.5);
+        const appliedWaveNeighborDelta = normalizeMeters(appliedWaveMaxNeighborDeltaMeters, requestedWaveNeighborDelta);
+        const cadenceRaw = String(rebuildCadence ?? 'off');
+        const cadenceText = cadenceRaw === 'frame'
+            ? 'frame'
+            : cadenceRaw === 'frame_2'
+                ? '/2'
+                : cadenceRaw === 'frame_4'
+                    ? '/4'
+                    : cadenceRaw === 'frame_8'
+                        ? '/8'
+                        : cadenceRaw === '1s'
+                            ? '1s'
+                            : 'off';
         const ringCenterX = Number(appliedRingCenterX);
         const ringCenterZ = Number(appliedRingCenterZ);
+        const appliedEnabled = appliedAdaptiveEnabled !== false;
+        const requestedEnabled = requestedAdaptiveEnabled !== false;
         if (adaptiveNote) {
-            if (appliedMode !== 'adaptive_rings') {
-                adaptiveNote.textContent = 'Overlay adaptive rings: disabled (uniform density)';
+            if (!appliedEnabled) {
+                adaptiveNote.textContent = 'Adaptive terrain LOD: disabled';
+            } else if (appliedMode !== 'adaptive_rings') {
+                adaptiveNote.textContent = 'Adaptive terrain LOD: enabled · mode uniform';
             } else {
                 const radiusText = Number.isFinite(appliedRadius) ? `${appliedRadius.toFixed(1)}m` : 'n/a';
                 const transitionText = Number.isFinite(appliedTransition) ? `${appliedTransition.toFixed(1)}m` : 'n/a';
                 const centerText = Number.isFinite(ringCenterX) && Number.isFinite(ringCenterZ)
                     ? `${ringCenterX.toFixed(1)}, ${ringCenterZ.toFixed(1)}`
                     : 'n/a';
-                adaptiveNote.textContent = `Overlay adaptive rings: near ${appliedNearSeg}/tile · far ${appliedFarSeg}/tile · radius ${radiusText} · transition ${transitionText} · smooth ${appliedSmoothing.toFixed(2)} · bias ${appliedBias.toFixed(2)} · bands ${appliedDebugBands} · center (${centerText}) · overlay ${ringOverlayEnabled ? 'on' : 'off'}`;
+                adaptiveNote.textContent = `Adaptive terrain LOD: near ${appliedNearSeg}/tile · far ${appliedFarSeg}/tile · radius ${radiusText} · transition ${transitionText} · render ${appliedRenderDistance.toFixed(1)}m · wave ${appliedWave.toFixed(3)} (h<=${appliedWaveHeight.toFixed(1)}m, step<=${appliedWaveNeighborDelta.toFixed(2)}m) · smooth ${appliedSmoothing.toFixed(2)} · bias ${appliedBias.toFixed(2)} · bands ${appliedDebugBands} · center (${centerText}) · debug ${ringOverlayEnabled ? 'on' : 'off'} · cadence ${cadenceText}`;
             }
         }
 
         const farOnlyTris = Math.max(0, Math.round(Number(estimatedFarOnlyTriangles) || 0));
         const nearOnlyTris = Math.max(0, Math.round(Number(estimatedNearOnlyTriangles) || 0));
         if (perfNote) {
-            if (appliedMode !== 'adaptive_rings' || farOnlyTris <= 0 || nearOnlyTris <= 0 || oT <= 0) {
-                perfNote.textContent = 'Overlay adaptive perf: n/a (enable adaptive rings and apply)';
+            if (!appliedEnabled || appliedMode !== 'adaptive_rings' || farOnlyTris <= 0 || nearOnlyTris <= 0 || oT <= 0) {
+                perfNote.textContent = 'Adaptive terrain diagnostics: n/a (enable adaptive terrain and click Rebuild Terrain)';
             } else {
                 const deltaVsFarPct = ((oT - farOnlyTris) / Math.max(1, farOnlyTris)) * 100;
                 const savingsVsNearPct = (1 - (oT / Math.max(1, nearOnlyTris))) * 100;
                 const sign = deltaVsFarPct >= 0 ? '+' : '';
-                perfNote.textContent = `Overlay adaptive perf: vs far ${sign}${deltaVsFarPct.toFixed(1)}% tris · vs near ${savingsVsNearPct.toFixed(1)}% fewer tris`;
+                const chunkTiles = 2.0;
+                const chunkCount = Math.max(0, Math.round(Math.ceil(overlayW / chunkTiles) * Math.ceil(overlayD / chunkTiles)));
+                perfNote.textContent = `Adaptive terrain diagnostics: chunks ${chunkCount.toLocaleString()} · vs far ${sign}${deltaVsFarPct.toFixed(1)}% tris · vs near ${savingsVsNearPct.toFixed(1)}% fewer tris`;
             }
         }
 
@@ -1056,7 +1106,7 @@ export class TerrainDebuggerUI {
         const dispMs = Number(lastDisplacementUpdateMs);
         const geoText = Number.isFinite(geoMs) ? `${geoMs.toFixed(2)}ms` : 'n/a';
         const dispText = Number.isFinite(dispMs) ? `${dispMs.toFixed(2)}ms` : 'n/a';
-        if (updateCostNote) updateCostNote.textContent = `Overlay update cost: geometry ${geoText} · displacement ${dispText}`;
+        if (updateCostNote) updateCostNote.textContent = `Adaptive terrain update cost: geometry ${geoText} · displacement ${dispText}`;
 
         const requested = Math.max(1, Math.round(Number(requestedSegmentsPerTile) || 1));
         const applied = Math.max(1, Math.round(Number(appliedSegmentsPerTile) || requested));
@@ -1079,6 +1129,8 @@ export class TerrainDebuggerUI {
         const transitionDiff = Math.abs((requestedTransition || 0) - (appliedTransition || 0));
         const smoothingDiff = Math.abs(requestedSmoothing - appliedSmoothing);
         const biasDiff = Math.abs(requestedBias - appliedBias);
+        const renderDistanceDiff = Math.abs(requestedRenderDistance - appliedRenderDistance);
+        const waveDiff = Math.abs(requestedWave - appliedWave);
         const pendingAdaptive = requestedMode === 'adaptive_rings' && (
             appliedMode !== 'adaptive_rings'
             || requestedNear !== appliedNearSeg
@@ -1088,17 +1140,21 @@ export class TerrainDebuggerUI {
             || smoothingDiff > 0.001
             || biasDiff > 0.001
             || requestedDebugBands !== appliedDebugBands
+            || renderDistanceDiff > 0.05
+            || waveDiff > 0.0005
         );
         const pendingUniform = requestedMode === 'uniform' && (appliedMode !== 'uniform' || requested !== applied);
         if (pendingNote) {
-            if (pendingAdaptive) {
-                pendingNote.textContent = `Overlay pending: adaptive near ${requestedNear}/tile · far ${requestedFar}/tile · radius ${requestedRadius.toFixed(1)}m · transition ${requestedTransition.toFixed(1)}m · smooth ${requestedSmoothing.toFixed(2)} · bias ${requestedBias.toFixed(2)} · bands ${requestedDebugBands} staged. Click Rebuild Terrain.`;
+            if (!requestedEnabled || !appliedEnabled) {
+                pendingNote.textContent = 'Adaptive terrain pending: disabled';
+            } else if (pendingAdaptive) {
+                pendingNote.textContent = `Adaptive terrain pending: adaptive near ${requestedNear}/tile · far ${requestedFar}/tile · render ${requestedRenderDistance.toFixed(1)}m · wave ${requestedWave.toFixed(3)} (h<=${requestedWaveHeight.toFixed(1)}m, step<=${requestedWaveNeighborDelta.toFixed(2)}m) · smooth ${requestedSmoothing.toFixed(2)} · bias ${requestedBias.toFixed(2)} · bands ${requestedDebugBands} staged. Click Rebuild Terrain.`;
             } else if (pendingUniform) {
-                pendingNote.textContent = `Overlay pending: uniform ${requested}/tile staged (applied ${applied}/tile). Click Rebuild Terrain.`;
+                pendingNote.textContent = `Adaptive terrain pending: uniform ${requested}/tile staged (applied ${applied}/tile). Click Rebuild Terrain.`;
             } else if (appliedMode === 'adaptive_rings') {
-                pendingNote.textContent = `Overlay pending: none · applied adaptive near ${appliedNearSeg}/tile · far ${appliedFarSeg}/tile · smooth ${appliedSmoothing.toFixed(2)} · bias ${appliedBias.toFixed(2)} · bands ${appliedDebugBands}`;
+                pendingNote.textContent = `Adaptive terrain pending: none · applied adaptive near ${appliedNearSeg}/tile · far ${appliedFarSeg}/tile · render ${appliedRenderDistance.toFixed(1)}m · wave ${appliedWave.toFixed(3)} · smooth ${appliedSmoothing.toFixed(2)} · bias ${appliedBias.toFixed(2)} · bands ${appliedDebugBands}`;
             } else {
-                pendingNote.textContent = `Overlay pending: none · applied uniform ${applied}/tile`;
+                pendingNote.textContent = `Adaptive terrain pending: none · applied uniform ${applied}/tile`;
             }
         }
 
@@ -1116,7 +1172,7 @@ export class TerrainDebuggerUI {
             const distText = Number.isFinite(Number(activeLodDistanceMeters))
                 ? `${Math.max(0, Number(activeLodDistanceMeters)).toFixed(1)}m`
                 : 'n/a';
-            lodStateNote.textContent = `Overlay LOD state: ${zone} · blend ${blendPct} · seg ${segText} · ring distance ${distText}`;
+            lodStateNote.textContent = `Adaptive terrain state: ${zone} · blend ${blendPct} · seg ${segText} · ring distance ${distText}`;
         }
 
         if (lodHistoryNote) {
@@ -1137,7 +1193,7 @@ export class TerrainDebuggerUI {
             const maxDeltaText = Number.isFinite(Number(historyMaxSegmentsDeltaPerSec))
                 ? `${Math.max(0, Number(historyMaxSegmentsDeltaPerSec)).toFixed(2)}/s`
                 : 'n/a';
-            lodHistoryNote.textContent = `Overlay LOD history (${windowText}): near ${nearText} · transition ${transitionText} · far ${farText} · crossings ${crossings} · pop candidates ${popCandidates} · max Δseg ${maxDeltaText}`;
+            lodHistoryNote.textContent = `Adaptive terrain history (${windowText}): near ${nearText} · transition ${transitionText} · far ${farText} · crossings ${crossings} · pop candidates ${popCandidates} · max Δseg ${maxDeltaText}`;
         }
 
         const bW = Math.max(0, Math.round(Number(baseWidthTiles) || 0));
@@ -1145,10 +1201,11 @@ export class TerrainDebuggerUI {
         const bV = Math.max(0, Math.round(Number(baseVertices) || 0));
         const bT = Math.max(0, Math.round(Number(baseTriangles) || 0));
         if (baseGeometryNote) {
-            baseGeometryNote.textContent = `Base geometry: ${bW}x${bD} tiles · ${bV.toLocaleString()} verts · ${bT.toLocaleString()} tris`;
+            baseGeometryNote.textContent = `Base terrain geometry: ${bW}x${bD} tiles · ${bV.toLocaleString()} verts · ${bT.toLocaleString()} tris`;
         }
         if (baseModeNote) {
-            baseModeNote.textContent = 'Base mode: fixed terrain mesh (overlay displacement does not modify base terrain)';
+            const appliedEnabledText = (appliedEnabled && overlayVisible) ? 'hidden while adaptive terrain mesh is visible' : 'visible';
+            baseModeNote.textContent = `Base terrain mode: fixed fallback mesh (${appliedEnabledText})`;
         }
     }
 
@@ -3228,6 +3285,10 @@ export class TerrainDebuggerUI {
     _buildBiomeTilingTab() {
         const terrain = this._state.terrain && typeof this._state.terrain === 'object' ? this._state.terrain : {};
         this._state.terrain = terrain;
+        const visualization = this._state.visualization && typeof this._state.visualization === 'object'
+            ? this._state.visualization
+            : {};
+        this._state.visualization = visualization;
         const bt = (terrain.biomeTiling && typeof terrain.biomeTiling === 'object') ? terrain.biomeTiling : {};
         terrain.biomeTiling = bt;
 
@@ -3293,6 +3354,7 @@ export class TerrainDebuggerUI {
         bt.displacement = displacement;
 
         const geometryDensity = (bt.geometryDensity && typeof bt.geometryDensity === 'object') ? bt.geometryDensity : {};
+        geometryDensity.enabled = geometryDensity.enabled !== false;
         const geometryModeRaw = String(geometryDensity.mode ?? 'adaptive_rings');
         geometryDensity.mode = geometryModeRaw === 'adaptive_rings' ? 'adaptive_rings' : 'uniform';
         geometryDensity.segmentsPerTile = Math.max(1, Math.min(1024, Math.round(Number(geometryDensity.segmentsPerTile) || 8)));
@@ -3300,6 +3362,12 @@ export class TerrainDebuggerUI {
         geometryDensity.farSegmentsPerTile = Math.max(1, Math.min(1024, Math.round(Number(geometryDensity.farSegmentsPerTile) || 4)));
         geometryDensity.nearRadiusMeters = clamp(geometryDensity.nearRadiusMeters, 0.0, 1200.0, 3.0);
         geometryDensity.transitionWidthMeters = clamp(geometryDensity.transitionWidthMeters, 0.0, 600.0, 3.0);
+        geometryDensity.renderDistanceMeters = clamp(
+            geometryDensity.renderDistanceMeters,
+            0.0,
+            1800.0,
+            Math.max(0, Number(geometryDensity.nearRadiusMeters) + Number(geometryDensity.transitionWidthMeters) || 6.0)
+        );
         geometryDensity.transitionSmoothing = clamp(geometryDensity.transitionSmoothing, 0.0, 1.0, 0.72);
         geometryDensity.transitionBias = clamp(geometryDensity.transitionBias, -0.85, 0.85, 0.0);
         {
@@ -3311,7 +3379,12 @@ export class TerrainDebuggerUI {
             );
         }
         geometryDensity.ringOverlayEnabled = geometryDensity.ringOverlayEnabled !== false;
+        geometryDensity.tileLodDebugEnabled = geometryDensity.tileLodDebugEnabled === true;
         geometryDensity.centerOnApplyCamera = geometryDensity.centerOnApplyCamera !== false;
+        geometryDensity.waveStrength = clamp(geometryDensity.waveStrength, 0.0, 1.0, 0.02);
+        geometryDensity.waveMaxHeightMeters = clamp(geometryDensity.waveMaxHeightMeters, 0.0, 10.0, 2.0);
+        geometryDensity.waveMaxNeighborDeltaMeters = clamp(geometryDensity.waveMaxNeighborDeltaMeters, 0.0, 2.0, 0.5);
+        geometryDensity.waveMaxTileRangeMeters = clamp(geometryDensity.waveMaxTileRangeMeters, 0.0, 20.0, 0.5);
         {
             const rebuildCadenceRaw = String(geometryDensity.rebuildCadence ?? 'off');
             geometryDensity.rebuildCadence = (
@@ -3327,6 +3400,7 @@ export class TerrainDebuggerUI {
         geometryDensity.centerX = Number.isFinite(Number(geometryDensity.centerX)) ? Number(geometryDensity.centerX) : 0;
         geometryDensity.centerZ = Number.isFinite(Number(geometryDensity.centerZ)) ? Number(geometryDensity.centerZ) : 0;
         geometryDensity.applyNonce = Math.max(0, Math.round(Number(geometryDensity.applyNonce) || 0));
+        if (!geometryDensity.enabled) geometryDensity.mode = 'uniform';
         bt.geometryDensity = geometryDensity;
 
         const setSliderValue = (ctrl, value, digits = 2) => {
@@ -3463,8 +3537,8 @@ export class TerrainDebuggerUI {
         });
         textureSection.appendChild(materialRow.row);
 
-        const displacementSection = this._buildSection('biome_tiling', 'Overlay Displacement');
-        displacementSection.appendChild(makeEl('div', 'options-note', 'Enable displacement on the active PBR and tune strength/bias before moving to adaptive LOD.'));
+        const displacementSection = this._buildSection('biome_tiling', 'Displacement Overlay');
+        displacementSection.appendChild(makeEl('div', 'options-note', 'Optional displacement validation overlay (separate from adaptive terrain LOD mesh).'));
         const displacementEnabledRow = makeToggleRow({
             label: 'Enable Displacement',
             value: displacement.enabled,
@@ -3536,9 +3610,92 @@ export class TerrainDebuggerUI {
         });
         displacementSection.appendChild(displacementDebugViewRow.row);
 
-        const geometrySection = this._buildSection('biome_tiling', 'Overlay Geometry Density');
-        geometrySection.appendChild(makeEl('div', 'options-note', 'Use uniform or adaptive near/far rings. Geometry changes are staged until you apply.'));
-        geometrySection.appendChild(makeEl('div', 'options-note', 'Transition smoothing lowers visible LOD popping; bias shifts how quickly near detail fades.'));
+        const geometrySection = this._buildSection('biome_tiling', 'Adaptive Terrain LOD');
+        geometrySection.appendChild(makeEl('div', 'options-note', 'Camera-centered adaptive terrain mesh for Biome Tiling. Changes are staged until you click Rebuild Terrain.'));
+        geometrySection.appendChild(makeEl('div', 'options-note', 'Smart defaults drive near/far density and transitions; use only these debug controls for validation.'));
+        geometrySection.appendChild(makeEl('div', 'options-note', 'Near/Far Segments / Tile control quad density near and far from the camera center.'));
+
+        const geometryEnabledRow = makeToggleRow({
+            label: 'Enable Adaptive Terrain LOD',
+            value: geometryDensity.enabled,
+            onChange: (v) => {
+                geometryDensity.enabled = !!v;
+                if (geometryDensity.enabled) geometryDensity.mode = 'adaptive_rings';
+                syncUi();
+                this._emit();
+            }
+        });
+        geometrySection.appendChild(geometryEnabledRow.row);
+
+        const geometryWireframeRow = makeToggleRow({
+            label: 'Wireframe',
+            value: visualization.landWireframe === true,
+            onChange: (v) => {
+                visualization.landWireframe = !!v;
+                this._emit();
+            }
+        });
+        geometrySection.appendChild(geometryWireframeRow.row);
+
+        const geometryRenderDistanceRow = makeNumberSliderRow({
+            label: 'Render Distance (m)',
+            value: Math.max(0, Number(geometryDensity.renderDistanceMeters) || (Number(geometryDensity.nearRadiusMeters) + Number(geometryDensity.transitionWidthMeters) || 6)),
+            min: 2.0,
+            max: 1200.0,
+            step: 1.0,
+            digits: 0,
+            onChange: (v) => {
+                const dist = clamp(v, 2.0, 1200.0, 6.0);
+                geometryDensity.renderDistanceMeters = dist;
+                geometryDensity.nearRadiusMeters = dist * 0.5;
+                geometryDensity.transitionWidthMeters = dist * 0.5;
+                this._emit();
+            }
+        });
+        geometrySection.appendChild(geometryRenderDistanceRow.row);
+
+        const geometryWaveStrengthRow = makeNumberSliderRow({
+            label: 'Wave Strength',
+            value: geometryDensity.waveStrength,
+            min: 0.0,
+            max: 1.0,
+            step: 0.001,
+            digits: 3,
+            onChange: (v) => {
+                geometryDensity.waveStrength = clamp(v, 0.0, 1.0, 0.02);
+                this._emit();
+            }
+        });
+        geometrySection.appendChild(geometryWaveStrengthRow.row);
+
+        const geometryWaveMaxHeightRow = makeNumberSliderRow({
+            label: 'Max Height on Map (m)',
+            value: geometryDensity.waveMaxHeightMeters,
+            min: 0.0,
+            max: 10.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                geometryDensity.waveMaxHeightMeters = clamp(v, 0.0, 10.0, 2.0);
+                this._emit();
+            }
+        });
+        geometrySection.appendChild(geometryWaveMaxHeightRow.row);
+
+        const geometryWaveMaxTileRangeRow = makeNumberSliderRow({
+            label: 'Max Height Range / Tile (m)',
+            value: geometryDensity.waveMaxTileRangeMeters,
+            min: 0.0,
+            max: 20.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                geometryDensity.waveMaxTileRangeMeters = clamp(v, 0.0, 20.0, 0.5);
+                this._emit();
+            }
+        });
+        geometrySection.appendChild(geometryWaveMaxTileRangeRow.row);
+
         const geometryModeRow = makeChoiceRow({
             label: 'Mode',
             value: geometryDensity.mode,
@@ -3548,6 +3705,7 @@ export class TerrainDebuggerUI {
             ],
             onChange: (id) => {
                 geometryDensity.mode = id === 'adaptive_rings' ? 'adaptive_rings' : 'uniform';
+                geometryDensity.enabled = geometryDensity.mode === 'adaptive_rings';
                 syncUi();
                 this._emit();
             }
@@ -3681,7 +3839,7 @@ export class TerrainDebuggerUI {
         geometrySection.appendChild(geometryCaptureCenterRow.row);
 
         const geometryOverlayRow = makeToggleRow({
-            label: 'Show Ring Overlay',
+            label: 'Show LOD Overlay',
             value: geometryDensity.ringOverlayEnabled,
             onChange: (v) => {
                 geometryDensity.ringOverlayEnabled = !!v;
@@ -3689,6 +3847,16 @@ export class TerrainDebuggerUI {
             }
         });
         geometrySection.appendChild(geometryOverlayRow.row);
+
+        const geometryTileLodDebugRow = makeToggleRow({
+            label: 'Show Tile LOD Labels',
+            value: geometryDensity.tileLodDebugEnabled === true,
+            onChange: (v) => {
+                geometryDensity.tileLodDebugEnabled = !!v;
+                this._emit();
+            }
+        });
+        geometrySection.appendChild(geometryTileLodDebugRow.row);
 
         const geometryAutoRebuildRow = makeSelectRow({
             label: 'Auto Rebuild',
@@ -3727,22 +3895,36 @@ export class TerrainDebuggerUI {
         });
         geometrySection.appendChild(applyGeometryRow.row);
 
+        const hideAdvancedGeometryRows = [
+            geometryModeRow,
+            geometrySegmentsRow,
+            geometryNearRadiusRow,
+            geometryTransitionWidthRow,
+            geometryTransitionSmoothingRow,
+            geometryTransitionBiasRow,
+            geometryTransitionBandsRow,
+            geometryCaptureCenterRow
+        ];
+        for (const rowCtrl of hideAdvancedGeometryRows) {
+            if (rowCtrl?.row?.style) rowCtrl.row.style.display = 'none';
+        }
+
         const diagnosticsSection = this._buildSection('biome_tiling', 'Diagnostics');
-        const overlayTitleNote = makeEl('div', 'options-note', 'Overlay');
+        const overlayTitleNote = makeEl('div', 'options-note', 'Adaptive Terrain');
         overlayTitleNote.style.fontWeight = '700';
-        const displacementStatusNote = makeEl('div', 'options-note', 'Overlay displacement: (n/a)');
-        const geometryStatsNote = makeEl('div', 'options-note', 'Overlay geometry: (n/a)');
-        const adaptiveStatusNote = makeEl('div', 'options-note', 'Overlay adaptive rings: (n/a)');
-        const adaptivePerfNote = makeEl('div', 'options-note', 'Overlay adaptive perf: (n/a)');
-        const updateCostNote = makeEl('div', 'options-note', 'Overlay update cost: (n/a)');
-        const pendingApplyNote = makeEl('div', 'options-note', 'Overlay pending: (n/a)');
-        const lodStateNote = makeEl('div', 'options-note', 'Overlay LOD state: (n/a)');
-        const lodHistoryNote = makeEl('div', 'options-note', 'Overlay LOD history: (n/a)');
+        const displacementStatusNote = makeEl('div', 'options-note', 'Displacement overlay: (n/a)');
+        const geometryStatsNote = makeEl('div', 'options-note', 'Adaptive terrain geometry: (n/a)');
+        const adaptiveStatusNote = makeEl('div', 'options-note', 'Adaptive terrain LOD: (n/a)');
+        const adaptivePerfNote = makeEl('div', 'options-note', 'Adaptive terrain diagnostics: (n/a)');
+        const updateCostNote = makeEl('div', 'options-note', 'Adaptive terrain update cost: (n/a)');
+        const pendingApplyNote = makeEl('div', 'options-note', 'Adaptive terrain pending: (n/a)');
+        const lodStateNote = makeEl('div', 'options-note', 'Adaptive terrain state: (n/a)');
+        const lodHistoryNote = makeEl('div', 'options-note', 'Adaptive terrain history: (n/a)');
         const baseTitleNote = makeEl('div', 'options-note', 'Base');
         baseTitleNote.style.fontWeight = '700';
         baseTitleNote.style.marginTop = '8px';
-        const baseGeometryStatsNote = makeEl('div', 'options-note', 'Base geometry: (n/a)');
-        const baseModeNote = makeEl('div', 'options-note', 'Base mode: (n/a)');
+        const baseGeometryStatsNote = makeEl('div', 'options-note', 'Base terrain geometry: (n/a)');
+        const baseModeNote = makeEl('div', 'options-note', 'Base terrain mode: (n/a)');
         diagnosticsSection.appendChild(overlayTitleNote);
         diagnosticsSection.appendChild(displacementStatusNote);
         diagnosticsSection.appendChild(geometryStatsNote);
@@ -4021,8 +4203,8 @@ export class TerrainDebuggerUI {
             if (displacementSourceRow.select) displacementSourceRow.select.disabled = disabled;
         };
 
-        const setGeometryControlsEnabled = (mode) => {
-            const adaptive = String(mode ?? '') === 'adaptive_rings';
+        const setGeometryControlsEnabled = (mode, enabled = true) => {
+            const adaptive = enabled && String(mode ?? '') === 'adaptive_rings';
             const uniformDisabled = adaptive;
             if (geometrySegmentsRow.range) geometrySegmentsRow.range.disabled = uniformDisabled;
             if (geometrySegmentsRow.number) geometrySegmentsRow.number.disabled = uniformDisabled;
@@ -4043,7 +4225,18 @@ export class TerrainDebuggerUI {
             if (geometryTransitionBandsRow.range) geometryTransitionBandsRow.range.disabled = adaptiveDisabled;
             if (geometryTransitionBandsRow.number) geometryTransitionBandsRow.number.disabled = adaptiveDisabled;
             if (geometryCaptureCenterRow.toggle) geometryCaptureCenterRow.toggle.disabled = adaptiveDisabled;
-            if (geometryOverlayRow.toggle) geometryOverlayRow.toggle.disabled = adaptiveDisabled;
+            if (geometryOverlayRow.toggle) geometryOverlayRow.toggle.disabled = !enabled;
+            if (geometryTileLodDebugRow.toggle) geometryTileLodDebugRow.toggle.disabled = !enabled;
+            if (geometryRenderDistanceRow.range) geometryRenderDistanceRow.range.disabled = !enabled;
+            if (geometryRenderDistanceRow.number) geometryRenderDistanceRow.number.disabled = !enabled;
+            if (geometryWaveStrengthRow.range) geometryWaveStrengthRow.range.disabled = !enabled;
+            if (geometryWaveStrengthRow.number) geometryWaveStrengthRow.number.disabled = !enabled;
+            if (geometryWaveMaxHeightRow.range) geometryWaveMaxHeightRow.range.disabled = !enabled;
+            if (geometryWaveMaxHeightRow.number) geometryWaveMaxHeightRow.number.disabled = !enabled;
+            if (geometryWaveMaxTileRangeRow.range) geometryWaveMaxTileRangeRow.range.disabled = !enabled;
+            if (geometryWaveMaxTileRangeRow.number) geometryWaveMaxTileRangeRow.number.disabled = !enabled;
+            if (geometryAutoRebuildRow.select) geometryAutoRebuildRow.select.disabled = !enabled;
+            if (applyGeometryRow.btn) applyGeometryRow.btn.disabled = false;
         };
 
         const syncUi = () => {
@@ -4086,7 +4279,22 @@ export class TerrainDebuggerUI {
             displacementDebugViewRow.setValue(displacement.debugView);
             setDisplacementControlsEnabled(displacement.enabled);
 
+            geometryDensity.enabled = geometryDensity.enabled !== false;
+            if (!geometryDensity.enabled) geometryDensity.mode = 'uniform';
             geometryModeRow.setValue(geometryDensity.mode);
+            geometryEnabledRow.toggle.checked = geometryDensity.enabled;
+            geometryWireframeRow.toggle.checked = visualization.landWireframe === true;
+            const renderDistance = clamp(
+                geometryDensity.renderDistanceMeters,
+                2.0,
+                1200.0,
+                Math.max(2, Number(geometryDensity.nearRadiusMeters) + Number(geometryDensity.transitionWidthMeters) || 6)
+            );
+            geometryDensity.renderDistanceMeters = renderDistance;
+            setSliderValue(geometryRenderDistanceRow, renderDistance, 0);
+            setSliderValue(geometryWaveStrengthRow, geometryDensity.waveStrength, 3);
+            setSliderValue(geometryWaveMaxHeightRow, geometryDensity.waveMaxHeightMeters, 2);
+            setSliderValue(geometryWaveMaxTileRangeRow, geometryDensity.waveMaxTileRangeMeters, 2);
             setSliderValue(geometrySegmentsRow, geometryDensity.segmentsPerTile, 0);
             setSliderValue(geometryNearSegmentsRow, geometryDensity.nearSegmentsPerTile, 0);
             setSliderValue(geometryFarSegmentsRow, geometryDensity.farSegmentsPerTile, 0);
@@ -4097,8 +4305,9 @@ export class TerrainDebuggerUI {
             setSliderValue(geometryTransitionBandsRow, geometryDensity.transitionDebugBands, 0);
             geometryCaptureCenterRow.toggle.checked = geometryDensity.centerOnApplyCamera;
             geometryOverlayRow.toggle.checked = geometryDensity.ringOverlayEnabled;
+            geometryTileLodDebugRow.toggle.checked = geometryDensity.tileLodDebugEnabled === true;
             if (geometryAutoRebuildRow.select) geometryAutoRebuildRow.select.value = String(geometryDensity.rebuildCadence ?? 'off');
-            setGeometryControlsEnabled(geometryDensity.mode);
+            setGeometryControlsEnabled(geometryDensity.mode, geometryDensity.enabled !== false);
         };
 
         {

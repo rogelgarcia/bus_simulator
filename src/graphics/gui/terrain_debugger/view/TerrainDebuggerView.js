@@ -58,9 +58,18 @@ const BIOME_TILING_OVERVIEW_ANGLE_OFFSET_DEG = 15;
 const BIOME_TILING_RING_HELPER_Y_OFFSET_METERS = 0.28;
 const BIOME_TILING_RING_HELPER_NEAR_COLOR = 0x44f7a1;
 const BIOME_TILING_RING_HELPER_OUTER_COLOR = 0xfbbf24;
+const BIOME_TILING_TILE_LOD_HELPER_Y_OFFSET_METERS = 0.55;
+const BIOME_TILING_TILE_LOD_LABEL_SCALE_METERS = 2.1;
+const BIOME_TILING_TILE_LOD_LABEL_MAX_TILES = 1600;
 const BIOME_TILING_LOD_MONITOR_WINDOW_SEC = 12.0;
 const BIOME_TILING_LOD_MONITOR_SAMPLE_MS = 120;
 const BIOME_TILING_LOD_POP_CANDIDATE_SEG_DELTA_PER_SEC = 2.0;
+const BIOME_TILING_WAVE_DEFAULT_MAX_HEIGHT_METERS = 2.0;
+const BIOME_TILING_WAVE_DEFAULT_MAX_NEIGHBOR_DELTA_METERS = 0.5;
+const BIOME_TILING_WAVE_DEFAULT_MAX_TILE_RANGE_METERS = 0.5;
+const BIOME_TILING_WAVE_HARD_MAX_HEIGHT_METERS = 10.0;
+const BIOME_TILING_WAVE_HARD_MAX_NEIGHBOR_DELTA_METERS = 2.0;
+const BIOME_TILING_WAVE_HARD_MAX_TILE_RANGE_METERS = 20.0;
 
 const BIOME_TILING_CALIB_RIG_ANIMATION_MS = 4000;
 const BIOME_TILING_CALIB_RIG_PLATE_SIZE = 2.7;
@@ -75,8 +84,8 @@ const BIOME_TILING_CALIB_RIG_SUN_POSITION = Object.freeze({ x: 4, y: 7, z: 4 });
 const BIOME_TILING_CALIB_RIG_SUN_TARGET = Object.freeze({ x: 0, y: 0.9, z: 0 });
 const BIOME_TILING_CALIB_RIG_ELEVATION_OFFSET_METERS = 0.5;
 const BIOME_TILING_DISPLACEMENT_OVERLAY_Y_OFFSET_METERS = 0.015;
-const BIOME_TILING_DISPLACEMENT_OVERLAY_MAX_TRIANGLES = 8000000;
-const BIOME_TILING_DISPLACEMENT_OVERLAY_MAX_QUADS_PER_BUILD = 1200000;
+const BIOME_TILING_DISPLACEMENT_OVERLAY_MAX_TRIANGLES = 2000000;
+const BIOME_TILING_DISPLACEMENT_OVERLAY_MAX_QUADS_PER_BUILD = 300000;
 const BIOME_TILING_DISPLACEMENT_OVERLAY_SHAPE_SIDES = 32;
 const BIOME_TILING_VIEWPORT_MASK_MARGIN_METERS = 0.2;
 const BIOME_TILING_VIEWPORT_MASK_STABILIZE_MOVE_METERS = 1.0;
@@ -85,6 +94,10 @@ const BIOME_TILING_OVERLAY_FOLLOW_MIN_MOVE_METERS = 0.75;
 const BIOME_TILING_OVERLAY_FOLLOW_MAX_MOVE_METERS = 2.0;
 const BIOME_TILING_OVERLAY_FOLLOW_SNAP_MIN_METERS = 0.25;
 const BIOME_TILING_OVERLAY_FOLLOW_SNAP_MAX_METERS = 0.5;
+const TERRAIN_HEIGHT_WIREFRAME_Y_OFFSET_METERS = 0.012;
+const TERRAIN_HEIGHT_WIREFRAME_OPACITY = 0.95;
+const TERRAIN_HEIGHT_WIREFRAME_LOW_HUE = 0.66;
+const TERRAIN_HEIGHT_WIREFRAME_HIGH_HUE = 0.00;
 const TERRAIN_BIOME_BLEND_USER_DATA_KEYS = Object.freeze([
     'terrainEngineMaskTex',
     'terrainEngineBounds',
@@ -174,16 +187,23 @@ const BIOME_TILING_DEFAULT_STATE = Object.freeze({
         debugView: 'standard'
     }),
     geometryDensity: Object.freeze({
+        enabled: true,
         mode: 'adaptive_rings',
         segmentsPerTile: 8,
         nearSegmentsPerTile: 1024,
         farSegmentsPerTile: 4,
         nearRadiusMeters: 3,
         transitionWidthMeters: 3,
+        renderDistanceMeters: 6,
         transitionSmoothing: 0.72,
         transitionBias: 0.0,
         transitionDebugBands: 3,
+        waveStrength: 0.02,
+        waveMaxHeightMeters: BIOME_TILING_WAVE_DEFAULT_MAX_HEIGHT_METERS,
+        waveMaxNeighborDeltaMeters: BIOME_TILING_WAVE_DEFAULT_MAX_NEIGHBOR_DELTA_METERS,
+        waveMaxTileRangeMeters: BIOME_TILING_WAVE_DEFAULT_MAX_TILE_RANGE_METERS,
         ringOverlayEnabled: true,
+        tileLodDebugEnabled: false,
         centerOnApplyCamera: true,
         rebuildCadence: 'off',
         centerX: 0,
@@ -1328,6 +1348,55 @@ function buildTerrainGeometry(spec = {}) {
     const cloudZ0 = minZ;
     const cloudZ1 = cloudZ0 + cloudTiles * tileSize;
     const cloudRoadBlend = roadEdgeBlend > EPS ? roadEdgeBlend : Math.max(EPS, tileSize * 0.25);
+    const waveSpec = spec?.wave && typeof spec.wave === 'object' ? spec.wave : null;
+    const waveEnabled = waveSpec?.enabled === true;
+    const waveStrength01 = clamp(waveSpec?.strength, 0.0, 1.0, 0.02);
+    const waveMaxHeightMeters = clamp(
+        waveSpec?.maxHeightMeters,
+        0.0,
+        BIOME_TILING_WAVE_HARD_MAX_HEIGHT_METERS,
+        BIOME_TILING_WAVE_DEFAULT_MAX_HEIGHT_METERS
+    );
+    const waveMaxNeighborDeltaMeters = clamp(
+        waveSpec?.maxNeighborDeltaMeters,
+        0.0,
+        BIOME_TILING_WAVE_HARD_MAX_NEIGHBOR_DELTA_METERS,
+        BIOME_TILING_WAVE_DEFAULT_MAX_NEIGHBOR_DELTA_METERS
+    );
+    const waveMaxTileRangeMeters = clamp(
+        waveSpec?.maxTileRangeMeters,
+        0.0,
+        BIOME_TILING_WAVE_HARD_MAX_TILE_RANGE_METERS,
+        BIOME_TILING_WAVE_DEFAULT_MAX_TILE_RANGE_METERS
+    );
+    const waveAmplitudeMeters = waveEnabled
+        ? clamp(waveStrength01 * waveMaxHeightMeters, 0.0, waveMaxHeightMeters, 0.0)
+        : 0.0;
+    const waveReferenceStepMeters = Math.max(
+        0.25,
+        Number.isFinite(Number(waveSpec?.neighborReferenceStepMeters))
+            ? Number(waveSpec.neighborReferenceStepMeters)
+            : 0.5
+    );
+    const waveSeed = Number(waveSpec?.seed);
+    const waveSeedX = Number.isFinite(waveSeed) ? waveSeed * 31.123 : 173.37;
+    const waveSeedZ = Number.isFinite(waveSeed) ? waveSeed * 57.731 : -91.17;
+    const waveSlopeBudget = waveAmplitudeMeters > EPS
+        ? (waveMaxNeighborDeltaMeters / Math.max(EPS, waveAmplitudeMeters * waveReferenceStepMeters))
+        : 0;
+    const waveTileRangeGain = 1.2;
+    const waveTileRangeBudget = waveAmplitudeMeters > EPS
+        ? (waveMaxTileRangeMeters / Math.max(EPS, waveAmplitudeMeters * tileSize * waveTileRangeGain))
+        : 0;
+    const waveFreqMaxRadPerMeter = 0.45;
+    const waveFreqRadPerMeter = waveAmplitudeMeters > EPS
+        ? clamp(
+            Math.min(waveFreqMaxRadPerMeter, waveSlopeBudget * 0.9, waveTileRangeBudget * 0.9),
+            0.004,
+            waveFreqMaxRadPerMeter,
+            0.12
+        )
+        : 0;
 
     const computeHillHeight = (d, tanSlope) => {
         const dist = Number(d);
@@ -1386,6 +1455,18 @@ function buildTerrainGeometry(spec = {}) {
             }
         }
 
+        if (waveAmplitudeMeters > EPS && waveFreqRadPerMeter > EPS) {
+            const xA = (worldX + waveSeedX) * waveFreqRadPerMeter;
+            const zA = (worldZ + waveSeedZ) * waveFreqRadPerMeter;
+            const diagA = (worldX + worldZ + (waveSeedX * 0.37)) * (waveFreqRadPerMeter * 0.37);
+            const wave = waveAmplitudeMeters * (
+                (Math.sin(xA) * 0.55)
+                + (Math.cos(zA * 1.11) * 0.35)
+                + (Math.sin(diagA) * 0.10)
+            );
+            y += clamp(wave, -waveMaxHeightMeters, waveMaxHeightMeters, 0.0);
+        }
+
         if (roadEnabled && roadHalfWidth > EPS) {
             const wX = 1 - smoothstep(roadHalfWidth, roadHalfWidth + roadEdgeBlend, absX);
             let wZ = 1;
@@ -1410,9 +1491,16 @@ function buildTerrainGeometry(spec = {}) {
         const nearRadius = Math.max(0, Number(adaptiveConfig.nearRadiusMeters) || 0);
         const transitionWidth = Math.max(0, Number(adaptiveConfig.transitionWidthMeters) || 0);
         const outerRadius = nearRadius + transitionWidth;
+        const maxRingRadius = Math.max(
+            Math.abs(minX - centerX),
+            Math.abs(maxX - centerX),
+            Math.abs(minZ - centerZ),
+            Math.abs(maxZ - centerZ)
+        );
+        const coverageRadius = Math.max(outerRadius, maxRingRadius);
         const nearStep = Math.max(EPS, tileSize / Math.max(1, Number(adaptiveConfig.nearSegmentsPerTile) || seg));
         const farStep = Math.max(EPS, tileSize / Math.max(1, Number(adaptiveConfig.farSegmentsPerTile) || seg));
-        if (outerRadius > EPS) {
+        if (coverageRadius > EPS) {
             const transitionBands = Math.max(1, Math.round(Number(adaptiveConfig.transitionDebugBands) || 0) + 1);
             const stepAtDistance = (distance) => {
                 const d = Math.max(0, Number(distance) || 0);
@@ -1441,11 +1529,11 @@ function buildTerrainGeometry(spec = {}) {
                 const rr = Math.max(0, Number(r) || 0);
                 if (!dedupEdges.length || Math.abs(rr - dedupEdges[dedupEdges.length - 1]) > 1e-4) dedupEdges.push(rr);
             }
-            if (dedupEdges.length < 2) dedupEdges.push(outerRadius);
-            if (dedupEdges[dedupEdges.length - 1] < outerRadius - 1e-4) dedupEdges.push(outerRadius);
-            if (dedupEdges.length < 3 && outerRadius > EPS) {
-                const mid = outerRadius * 0.5;
-                if (mid > EPS && mid < outerRadius - EPS) dedupEdges.splice(1, 0, mid);
+            if (dedupEdges.length < 2) dedupEdges.push(coverageRadius);
+            if (dedupEdges[dedupEdges.length - 1] < coverageRadius - 1e-4) dedupEdges.push(coverageRadius);
+            if (dedupEdges.length < 3 && coverageRadius > EPS) {
+                const mid = coverageRadius * 0.5;
+                if (mid > EPS && mid < coverageRadius - EPS) dedupEdges.splice(1, 0, mid);
             }
 
             const bands = [];
@@ -1514,15 +1602,19 @@ function buildTerrainGeometry(spec = {}) {
                     const bandMaxZ = clamp(centerZ + outer, minZ, maxZ, maxZ);
                     if (!(bandMaxX > bandMinX + EPS && bandMaxZ > bandMinZ + EPS)) continue;
 
-                    const startX = Math.floor(bandMinX / step) * step;
-                    const startZ = Math.floor(bandMinZ / step) * step;
-                    const endX = Math.ceil(bandMaxX / step) * step;
-                    const endZ = Math.ceil(bandMaxZ / step) * step;
-                    for (let z = startZ; z < endZ - EPS; z += step) {
+                    const startX = minX + Math.floor((bandMinX - minX) / step) * step;
+                    const startZ = minZ + Math.floor((bandMinZ - minZ) / step) * step;
+                    const endX = minX + Math.ceil((bandMaxX - minX) / step) * step;
+                    const endZ = minZ + Math.ceil((bandMaxZ - minZ) / step) * step;
+                    const zCount = Math.max(1, Math.ceil((endZ - startZ) / Math.max(EPS, step)));
+                    const xCount = Math.max(1, Math.ceil((endX - startX) / Math.max(EPS, step)));
+                    for (let zi = 0; zi < zCount; zi++) {
+                        const z = startZ + zi * step;
                         const z0 = clamp(z, bandMinZ, bandMaxZ, bandMinZ);
                         const z1 = clamp(z + step, bandMinZ, bandMaxZ, bandMaxZ);
                         if (!(z1 > z0 + EPS)) continue;
-                        for (let x = startX; x < endX - EPS; x += step) {
+                        for (let xi = 0; xi < xCount; xi++) {
+                            const x = startX + xi * step;
                             const x0 = clamp(x, bandMinX, bandMaxX, bandMinX);
                             const x1 = clamp(x + step, bandMinX, bandMaxX, bandMaxX);
                             if (!(x1 > x0 + EPS)) continue;
@@ -1540,8 +1632,8 @@ function buildTerrainGeometry(spec = {}) {
                     positions = new Float32Array(posList);
                     uvs = new Float32Array(uvList);
                     indices = new Uint32Array(idxList);
-                    const avgStep = outerRadius / Math.max(1, bands.length);
-                    nx = Math.max(1, Math.round((outerRadius * 2) / Math.max(EPS, avgStep)));
+                    const avgStep = coverageRadius / Math.max(1, bands.length);
+                    nx = Math.max(1, Math.round((coverageRadius * 2) / Math.max(EPS, avgStep)));
                     nz = Math.max(1, bands.length);
                     dx = avgStep;
                     dz = avgStep;
@@ -1702,6 +1794,11 @@ export class TerrainDebuggerView {
         this._biomeTilingAxisKey = '';
         this._biomeTilingRingHelper = null;
         this._biomeTilingRingHelperKey = '';
+        this._biomeTilingTileLodHelper = null;
+        this._biomeTilingTileLodHelperKey = '';
+        this._biomeTilingTileLodLabelCache = new Map();
+        this._landHeightWireframe = null;
+        this._landHeightWireframeKey = '';
         this._terrainDebugMode = 'standard';
         this._terrainDebugTex = null;
         this._terrainDebugMat = null;
@@ -1762,12 +1859,14 @@ export class TerrainDebuggerView {
         };
         this._biomeTilingGeometryApplyNonce = Number(BIOME_TILING_DEFAULT_STATE.geometryDensity.applyNonce) || 0;
         this._biomeTilingAppliedGeometryState = {
+            enabled: BIOME_TILING_DEFAULT_STATE.geometryDensity.enabled !== false,
             mode: 'uniform',
             segmentsPerTile: Math.max(1, Math.round(Number(BIOME_TILING_DEFAULT_STATE.geometryDensity.segmentsPerTile) || 8)),
             nearSegmentsPerTile: Math.max(1, Math.round(Number(BIOME_TILING_DEFAULT_STATE.geometryDensity.nearSegmentsPerTile) || 1024)),
             farSegmentsPerTile: Math.max(1, Math.round(Number(BIOME_TILING_DEFAULT_STATE.geometryDensity.farSegmentsPerTile) || 4)),
             nearRadiusMeters: Math.max(0, Number(BIOME_TILING_DEFAULT_STATE.geometryDensity.nearRadiusMeters) || 3),
             transitionWidthMeters: Math.max(0, Number(BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionWidthMeters) || 3),
+            renderDistanceMeters: Math.max(0, Number(BIOME_TILING_DEFAULT_STATE.geometryDensity.renderDistanceMeters) || 6),
             transitionSmoothing: clamp(
                 BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionSmoothing,
                 0.0,
@@ -1783,6 +1882,30 @@ export class TerrainDebuggerView {
             transitionDebugBands: Math.max(
                 0,
                 Math.min(6, Math.round(Number(BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionDebugBands) || 3))
+            ),
+            waveStrength: clamp(
+                BIOME_TILING_DEFAULT_STATE.geometryDensity.waveStrength,
+                0.0,
+                1.0,
+                0.02
+            ),
+            waveMaxHeightMeters: clamp(
+                BIOME_TILING_DEFAULT_STATE.geometryDensity.waveMaxHeightMeters,
+                0.0,
+                BIOME_TILING_WAVE_HARD_MAX_HEIGHT_METERS,
+                BIOME_TILING_WAVE_DEFAULT_MAX_HEIGHT_METERS
+            ),
+            waveMaxNeighborDeltaMeters: clamp(
+                BIOME_TILING_DEFAULT_STATE.geometryDensity.waveMaxNeighborDeltaMeters,
+                0.0,
+                BIOME_TILING_WAVE_HARD_MAX_NEIGHBOR_DELTA_METERS,
+                BIOME_TILING_WAVE_DEFAULT_MAX_NEIGHBOR_DELTA_METERS
+            ),
+            waveMaxTileRangeMeters: clamp(
+                BIOME_TILING_DEFAULT_STATE.geometryDensity.waveMaxTileRangeMeters,
+                0.0,
+                BIOME_TILING_WAVE_HARD_MAX_TILE_RANGE_METERS,
+                BIOME_TILING_WAVE_DEFAULT_MAX_TILE_RANGE_METERS
             ),
             ringOverlayEnabled: BIOME_TILING_DEFAULT_STATE.geometryDensity.ringOverlayEnabled !== false,
             overlayBounds: null,
@@ -2310,8 +2433,10 @@ export class TerrainDebuggerView {
         if (this._raf) cancelAnimationFrame(this._raf);
         this._raf = 0;
         this._disableFlyoverDebug();
+        this._removeLandHeightWireframeOverlay();
         this._removeBiomeTilingAxisHelper();
         this._removeBiomeTilingAdaptiveRingHelper();
+        this._removeBiomeTilingTileLodDebugHelper({ disposeLabelCache: true });
         this._removeBiomeTilingDisplacementOverlay({ disposeMaterial: true });
 
         this.canvas?.removeEventListener?.('contextmenu', this._onContextMenu, { capture: true });
@@ -2405,6 +2530,8 @@ export class TerrainDebuggerView {
         this._terrain = null;
         this._terrainMat = null;
         this._gridLines = null;
+        this._landHeightWireframe = null;
+        this._landHeightWireframeKey = '';
         this._biomeTilingDisplacementOverlay = null;
         this._biomeTilingDisplacementOverlayMat = null;
         this._biomeTilingDisplacementOverlayKey = '';
@@ -2591,8 +2718,10 @@ export class TerrainDebuggerView {
         })();
         this._roads = roads;
         this._syncBiomeTilingDisplacementOverlay({ forceRebuild: true, allowCreate: false });
+        this._syncBiomeTilingBaseTerrainVisibility();
         this._syncBiomeTilingAxisHelper();
         this._syncBiomeTilingAdaptiveRingHelper();
+        this._syncBiomeTilingTileLodDebugHelper();
         this._syncBiomeTilingDiagnosticsUi();
     }
 
@@ -2763,6 +2892,7 @@ export class TerrainDebuggerView {
             forceRebuild: true,
             allowCreate: !!this._biomeTilingDisplacementOverlay
         });
+        this._syncBiomeTilingBaseTerrainVisibility();
         this._applyVisualizationToggles();
         const hideRoadAndGrass = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TRANSITION
             || this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING;
@@ -2770,7 +2900,17 @@ export class TerrainDebuggerView {
         if (this._grassEngine?.group) this._grassEngine.group.visible = !hideRoadAndGrass;
         this._syncBiomeTilingAxisHelper();
         this._syncBiomeTilingAdaptiveRingHelper();
+        this._syncBiomeTilingTileLodDebugHelper();
         this._syncBiomeTilingDiagnosticsUi();
+    }
+
+    _syncBiomeTilingBaseTerrainVisibility() {
+        const terrain = this._terrain;
+        if (!terrain) return;
+        const biomeTilingActive = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING;
+        const adaptiveEnabled = this._biomeTilingState?.geometryDensity?.enabled !== false;
+        const overlayVisible = this._biomeTilingDisplacementOverlay?.visible === true;
+        terrain.visible = !(biomeTilingActive && adaptiveEnabled && overlayVisible);
     }
 
     _applyMaterialWireframe(material, enabled) {
@@ -2789,13 +2929,136 @@ export class TerrainDebuggerView {
         const terrain = this._terrain;
         const wire = !!enabled;
         const overlayActive = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING
-            && this._biomeTilingState?.displacement?.enabled === true
-            && !!this._biomeTilingDisplacementOverlay;
-        const terrainWire = wire && !overlayActive;
-        if (terrain) this._applyMaterialWireframe(terrain.material, terrainWire);
-        this._applyMaterialWireframe(this._terrainMat, terrainWire);
-        this._applyMaterialWireframe(this._biomeTilingDisplacementOverlayMat, wire);
-        if (this._terrainDebugMat) this._applyMaterialWireframe(this._terrainDebugMat, wire);
+            && this._biomeTilingState?.geometryDensity?.enabled !== false
+            && this._biomeTilingDisplacementOverlay?.visible === true;
+        const heightWireOverlayActive = this._syncLandHeightWireframeOverlay({ enabled: wire });
+        const fallbackTerrainWire = wire && !heightWireOverlayActive && !overlayActive;
+        const fallbackOverlayWire = wire && !heightWireOverlayActive && overlayActive;
+        if (terrain) this._applyMaterialWireframe(terrain.material, fallbackTerrainWire);
+        this._applyMaterialWireframe(this._terrainMat, fallbackTerrainWire);
+        this._applyMaterialWireframe(this._biomeTilingDisplacementOverlayMat, fallbackOverlayWire);
+        if (this._terrainDebugMat) this._applyMaterialWireframe(this._terrainDebugMat, wire && !heightWireOverlayActive);
+    }
+
+    _getLandWireframeTargetMesh() {
+        const overlay = this._biomeTilingDisplacementOverlay;
+        const overlayActive = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING
+            && this._biomeTilingState?.geometryDensity?.enabled !== false
+            && overlay?.isMesh
+            && overlay.visible === true;
+        if (overlayActive) return overlay;
+        return this._terrain?.isMesh ? this._terrain : null;
+    }
+
+    _removeLandHeightWireframeOverlay() {
+        const line = this._landHeightWireframe;
+        if (!line) {
+            this._landHeightWireframeKey = '';
+            return;
+        }
+        line.parent?.remove?.(line);
+        line.geometry?.dispose?.();
+        const mat = line.material;
+        if (Array.isArray(mat)) for (const entry of mat) entry?.dispose?.();
+        else mat?.dispose?.();
+        this._landHeightWireframe = null;
+        this._landHeightWireframeKey = '';
+    }
+
+    _syncLandHeightWireframeOverlay({ enabled = false } = {}) {
+        if (!enabled) {
+            this._removeLandHeightWireframeOverlay();
+            return false;
+        }
+
+        const sourceMesh = this._getLandWireframeTargetMesh();
+        const sourceGeo = sourceMesh?.geometry?.isBufferGeometry ? sourceMesh.geometry : null;
+        if (!sourceMesh?.isMesh || !sourceGeo || sourceMesh.visible !== true) {
+            this._removeLandHeightWireframeOverlay();
+            return false;
+        }
+
+        const sourcePos = sourceGeo.attributes?.position;
+        if (!sourcePos?.isBufferAttribute || sourcePos.count < 2) {
+            this._removeLandHeightWireframeOverlay();
+            return false;
+        }
+
+        const sourceVersion = Math.max(
+            Number(sourceGeo.version) || 0,
+            Number(sourcePos.version) || 0,
+            Number(sourceGeo.index?.version) || 0
+        );
+        const key = [
+            sourceMesh.uuid,
+            sourceGeo.uuid,
+            sourceVersion,
+            Number(sourceMesh.position?.y || 0).toFixed(6)
+        ].join('|');
+        if (this._landHeightWireframe && this._landHeightWireframeKey === key) {
+            if (this._landHeightWireframe.parent !== sourceMesh) {
+                this._landHeightWireframe.parent?.remove?.(this._landHeightWireframe);
+                sourceMesh.add(this._landHeightWireframe);
+            }
+            this._landHeightWireframe.visible = true;
+            return true;
+        }
+
+        this._removeLandHeightWireframeOverlay();
+
+        const wireGeo = new THREE.WireframeGeometry(sourceGeo);
+        const wirePos = wireGeo.attributes?.position;
+        if (!wirePos?.isBufferAttribute || wirePos.count < 2) {
+            wireGeo.dispose?.();
+            return false;
+        }
+
+        const baseY = Number(sourceMesh.position?.y) || 0.0;
+        let minY = Infinity;
+        let maxY = -Infinity;
+        for (let i = 0; i < wirePos.count; i++) {
+            const y = wirePos.getY(i) + baseY;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+        }
+        if (!Number.isFinite(minY) || !Number.isFinite(maxY)) {
+            minY = Number(this._terrainBounds?.minY) || 0.0;
+            maxY = Number(this._terrainBounds?.maxY) || (minY + 1.0);
+        }
+        if (maxY <= minY + EPS) maxY = minY + 1.0;
+        const invRange = 1.0 / Math.max(EPS, maxY - minY);
+
+        const colors = new Float32Array(wirePos.count * 3);
+        const tempColor = new THREE.Color();
+        for (let i = 0; i < wirePos.count; i++) {
+            const y = wirePos.getY(i) + baseY;
+            const t = clamp((y - minY) * invRange, 0.0, 1.0, 0.0);
+            const hue = THREE.MathUtils.lerp(TERRAIN_HEIGHT_WIREFRAME_LOW_HUE, TERRAIN_HEIGHT_WIREFRAME_HIGH_HUE, t);
+            tempColor.setHSL(hue, 0.92, 0.52);
+            const base = i * 3;
+            colors[base] = tempColor.r;
+            colors[base + 1] = tempColor.g;
+            colors[base + 2] = tempColor.b;
+        }
+        wireGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        const wireMat = new THREE.LineBasicMaterial({
+            vertexColors: true,
+            transparent: true,
+            opacity: TERRAIN_HEIGHT_WIREFRAME_OPACITY,
+            depthTest: true,
+            depthWrite: false
+        });
+        const wire = new THREE.LineSegments(wireGeo, wireMat);
+        wire.name = 'LandHeightWireframe';
+        wire.frustumCulled = false;
+        wire.renderOrder = 9;
+        wire.position.y = TERRAIN_HEIGHT_WIREFRAME_Y_OFFSET_METERS;
+        sourceMesh.add(wire);
+
+        this._landHeightWireframe = wire;
+        this._landHeightWireframeKey = key;
+        return true;
     }
 
     _applyAsphaltWireframe(enabled = false) {
@@ -2827,6 +3090,7 @@ export class TerrainDebuggerView {
     }
 
     _applyVisualizationToggles() {
+        this._syncBiomeTilingBaseTerrainVisibility();
         const landWireframe = this._terrainWireframe === true;
         const asphaltWireframe = this._asphaltWireframe === true;
         this._applyLandWireframe(landWireframe);
@@ -3088,6 +3352,210 @@ export class TerrainDebuggerView {
         this._biomeTilingRingHelperKey = '';
     }
 
+    _disposeBiomeTilingTileLodLabelCache() {
+        if (!(this._biomeTilingTileLodLabelCache instanceof Map)) {
+            this._biomeTilingTileLodLabelCache = new Map();
+            return;
+        }
+        for (const entry of this._biomeTilingTileLodLabelCache.values()) {
+            entry?.material?.map?.dispose?.();
+            entry?.material?.dispose?.();
+        }
+        this._biomeTilingTileLodLabelCache.clear();
+    }
+
+    _removeBiomeTilingTileLodDebugHelper({ disposeLabelCache = false } = {}) {
+        const helper = this._biomeTilingTileLodHelper;
+        if (helper) {
+            this.scene?.remove?.(helper);
+            this._disposeObjectResources(helper);
+            this._disposeBiomeTilingTileLodLabelCache();
+            this._biomeTilingTileLodHelper = null;
+        }
+        this._biomeTilingTileLodHelperKey = '';
+        if (disposeLabelCache) this._disposeBiomeTilingTileLodLabelCache();
+    }
+
+    _getBiomeTilingTileLodLabelMaterial({
+        label = '',
+        zone = 'far'
+    } = {}) {
+        const normalizedZone = zone === 'near' || zone === 'transition' ? zone : 'far';
+        const text = String(label ?? '').trim() || '?';
+        const cacheKey = `${text}|${normalizedZone}`;
+        const cache = this._biomeTilingTileLodLabelCache instanceof Map
+            ? this._biomeTilingTileLodLabelCache
+            : new Map();
+        this._biomeTilingTileLodLabelCache = cache;
+        if (cache.has(cacheKey)) {
+            return cache.get(cacheKey)?.material ?? null;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+        const bg = normalizedZone === 'near'
+            ? 'rgba(46, 192, 112, 0.88)'
+            : normalizedZone === 'transition'
+                ? 'rgba(255, 173, 47, 0.88)'
+                : 'rgba(86, 154, 255, 0.88)';
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = 'rgba(8, 14, 22, 0.96)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
+        ctx.fillStyle = '#091018';
+        ctx.font = '600 30px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, canvas.width * 0.5, canvas.height * 0.52);
+
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.generateMipmaps = false;
+        tex.minFilter = THREE.LinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        tex.needsUpdate = true;
+        const material = new THREE.SpriteMaterial({
+            map: tex,
+            transparent: true,
+            depthTest: true,
+            depthWrite: false,
+            sizeAttenuation: true
+        });
+        material.toneMapped = false;
+        cache.set(cacheKey, { material });
+        return material;
+    }
+
+    _syncBiomeTilingTileLodDebugHelper() {
+        if (!this.scene) return;
+
+        const geometryCfg = this._biomeTilingState?.geometryDensity ?? null;
+        const debugEnabled = geometryCfg?.tileLodDebugEnabled === true;
+        const adaptiveEnabled = geometryCfg?.enabled !== false;
+        const tilingActive = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING;
+        const overlayVisible = this._biomeTilingDisplacementOverlay?.visible === true;
+        const applied = this._biomeTilingAppliedGeometryState ?? null;
+        if (!(tilingActive && adaptiveEnabled && debugEnabled && overlayVisible && applied)) {
+            this._removeBiomeTilingTileLodDebugHelper();
+            return;
+        }
+
+        const spec = this._buildTerrainSpec();
+        const tileSize = Math.max(EPS, Number(spec?.tileSize) || 24);
+        const widthTiles = Math.max(1, Math.round(Number(spec?.widthTiles) || 1));
+        const depthTiles = Math.max(1, Math.round(Number(spec?.depthTiles) || 1));
+        const tileMinX = Math.round(Number(spec?.tileMinX) || 0);
+        const tileMinZ = Math.round(Number(spec?.tileMinZ) || 0);
+        const minX = (tileMinX - 0.5) * tileSize;
+        const minZ = (tileMinZ - 0.5) * tileSize;
+        const maxX = minX + widthTiles * tileSize;
+        const maxZ = minZ + depthTiles * tileSize;
+        const centerX = clamp(Number(applied.centerX), minX, maxX, (minX + maxX) * 0.5);
+        const centerZ = clamp(Number(applied.centerZ), minZ, maxZ, (minZ + maxZ) * 0.5);
+        const mode = String(applied.mode ?? 'uniform') === 'adaptive_rings' ? 'adaptive_rings' : 'uniform';
+        const nearRadius = Math.max(0, Number(applied.nearRadiusMeters) || 0);
+        const transitionWidth = Math.max(0, Number(applied.transitionWidthMeters) || 0);
+        const nearSeg = Math.max(1, Math.round(Number(applied.nearSegmentsPerTile) || Number(applied.segmentsPerTile) || 1));
+        const farSeg = Math.max(1, Math.round(Number(applied.farSegmentsPerTile) || Number(applied.segmentsPerTile) || nearSeg));
+        const uniformSeg = Math.max(1, Math.round(Number(applied.segmentsPerTile) || nearSeg));
+        const smoothing = clamp(applied.transitionSmoothing, 0.0, 1.0, BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionSmoothing);
+        const bias = clamp(applied.transitionBias, -0.85, 0.85, BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionBias);
+        const totalTiles = widthTiles * depthTiles;
+        const labelSkip = totalTiles > BIOME_TILING_TILE_LOD_LABEL_MAX_TILES
+            ? Math.max(1, Math.ceil(Math.sqrt(totalTiles / BIOME_TILING_TILE_LOD_LABEL_MAX_TILES)))
+            : 1;
+        const y = (Number(this._terrainBounds?.maxY) || 0) + BIOME_TILING_TILE_LOD_HELPER_Y_OFFSET_METERS;
+        const key = [
+            minX.toFixed(3),
+            maxX.toFixed(3),
+            minZ.toFixed(3),
+            maxZ.toFixed(3),
+            tileSize.toFixed(3),
+            widthTiles,
+            depthTiles,
+            centerX.toFixed(3),
+            centerZ.toFixed(3),
+            nearRadius.toFixed(3),
+            transitionWidth.toFixed(3),
+            nearSeg,
+            farSeg,
+            uniformSeg,
+            mode,
+            smoothing.toFixed(4),
+            bias.toFixed(4),
+            labelSkip
+        ].join('|');
+        if (this._biomeTilingTileLodHelper && key === this._biomeTilingTileLodHelperKey) return;
+        this._removeBiomeTilingTileLodDebugHelper();
+
+        const group = new THREE.Group();
+        group.name = 'BiomeTilingTileLodDebugHelper';
+        group.frustumCulled = false;
+
+        const linePositions = [];
+        for (let ix = 0; ix <= widthTiles; ix++) {
+            const x = minX + ix * tileSize;
+            linePositions.push(x, y, minZ, x, y, maxZ);
+        }
+        for (let iz = 0; iz <= depthTiles; iz++) {
+            const z = minZ + iz * tileSize;
+            linePositions.push(minX, y, z, maxX, y, z);
+        }
+        if (linePositions.length >= 6) {
+            const lineGeo = new THREE.BufferGeometry();
+            lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3));
+            const lineMat = new THREE.LineBasicMaterial({
+                color: 0xe2e8f0,
+                transparent: true,
+                opacity: 0.48,
+                depthTest: true,
+                depthWrite: false
+            });
+            const lines = new THREE.LineSegments(lineGeo, lineMat);
+            lines.renderOrder = 927;
+            lines.frustumCulled = false;
+            group.add(lines);
+        }
+
+        const labelScale = Math.max(1.0, tileSize * BIOME_TILING_TILE_LOD_LABEL_SCALE_METERS * 0.08);
+        for (let iz = 0; iz < depthTiles; iz++) {
+            if ((iz % labelSkip) !== 0) continue;
+            for (let ix = 0; ix < widthTiles; ix++) {
+                if ((ix % labelSkip) !== 0) continue;
+                const tileCenterX = (tileMinX + ix) * tileSize;
+                const tileCenterZ = (tileMinZ + iz) * tileSize;
+                const ringDistance = Math.max(Math.abs(tileCenterX - centerX), Math.abs(tileCenterZ - centerZ));
+                const resolved = this._resolveBiomeTilingLodAtDistance({
+                    applied,
+                    distanceMeters: ringDistance,
+                    fallbackSegments: uniformSeg
+                });
+                const labelText = `${Math.max(1, Math.round(Number(resolved?.segmentsPerTile) || uniformSeg))}`;
+                const labelMat = this._getBiomeTilingTileLodLabelMaterial({
+                    label: labelText,
+                    zone: String(resolved?.zone ?? 'far')
+                });
+                if (!labelMat?.isSpriteMaterial) continue;
+                const sprite = new THREE.Sprite(labelMat);
+                sprite.position.set(tileCenterX, y + 0.08, tileCenterZ);
+                sprite.scale.set(labelScale, labelScale * 0.5, 1.0);
+                sprite.renderOrder = 928;
+                sprite.frustumCulled = false;
+                group.add(sprite);
+            }
+        }
+
+        if (group.children.length <= 0) return;
+        this.scene.add(group);
+        this._biomeTilingTileLodHelper = group;
+        this._biomeTilingTileLodHelperKey = key;
+    }
+
     _createBiomeTilingAdaptiveRingHelper({
         centerX,
         centerZ,
@@ -3302,7 +3770,11 @@ export class TerrainDebuggerView {
         if (!this.scene) return;
         const isBiomeTiling = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING;
         const applied = this._biomeTilingAppliedGeometryState ?? null;
-        const adaptiveEnabled = isBiomeTiling && String(applied?.mode ?? 'uniform') === 'adaptive_rings';
+        const requestedAdaptiveEnabled = this._biomeTilingState?.geometryDensity?.enabled !== false;
+        const adaptiveEnabled = isBiomeTiling
+            && requestedAdaptiveEnabled
+            && applied?.enabled !== false
+            && String(applied?.mode ?? 'uniform') === 'adaptive_rings';
         const requestedGeometry = this._biomeTilingState?.geometryDensity ?? null;
         const overlayEnabled = requestedGeometry
             ? (requestedGeometry.ringOverlayEnabled !== false)
@@ -3320,41 +3792,8 @@ export class TerrainDebuggerView {
 
         const nearRadiusMeters = Math.max(0, Number(applied?.nearRadiusMeters) || 0);
         const transitionWidthMeters = Math.max(0, Number(applied?.transitionWidthMeters) || 0);
-        const outerRadiusMeters = nearRadiusMeters + transitionWidthMeters;
         const centerX = clamp(Number(applied?.centerX), bounds.minX, bounds.maxX, (bounds.minX + bounds.maxX) * 0.5);
         const centerZ = clamp(Number(applied?.centerZ), bounds.minZ, bounds.maxZ, (bounds.minZ + bounds.maxZ) * 0.5);
-
-        const viewportBoundsSrc = applied?.overlayViewportBounds && typeof applied.overlayViewportBounds === 'object'
-            ? applied.overlayViewportBounds
-            : null;
-        let viewportPolygon = Array.isArray(applied?.overlayViewportPolygon) && applied.overlayViewportPolygon.length >= 3
-            ? applied.overlayViewportPolygon
-            : null;
-        let viewportBounds = viewportBoundsSrc && Number.isFinite(Number(viewportBoundsSrc.minX))
-            && Number.isFinite(Number(viewportBoundsSrc.maxX))
-            && Number.isFinite(Number(viewportBoundsSrc.minZ))
-            && Number.isFinite(Number(viewportBoundsSrc.maxZ))
-            && Number(viewportBoundsSrc.maxX) > Number(viewportBoundsSrc.minX) + EPS
-            && Number(viewportBoundsSrc.maxZ) > Number(viewportBoundsSrc.minZ) + EPS
-            ? {
-                minX: Number(viewportBoundsSrc.minX),
-                maxX: Number(viewportBoundsSrc.maxX),
-                minZ: Number(viewportBoundsSrc.minZ),
-                maxZ: Number(viewportBoundsSrc.maxZ)
-            }
-            : null;
-        let viewportKey = String(applied?.overlayViewportKey ?? '');
-        if (!viewportBounds || !viewportPolygon) {
-            const sampledMask = this._getBiomeTilingStableViewportGroundPolygon({
-                edgeSamples: 6,
-                marginMeters: BIOME_TILING_VIEWPORT_MASK_MARGIN_METERS,
-                translationThresholdMeters: BIOME_TILING_VIEWPORT_MASK_STABILIZE_MOVE_METERS
-            });
-            viewportPolygon = sampledMask?.polygon ?? viewportPolygon;
-            viewportBounds = sampledMask?.bounds ?? viewportBounds;
-            viewportKey = String(sampledMask?.key ?? viewportKey);
-        }
-
         let footprintBounds = applied?.overlayBounds && typeof applied.overlayBounds === 'object'
             ? {
                 minX: Number(applied.overlayBounds.minX),
@@ -3372,25 +3811,12 @@ export class TerrainDebuggerView {
             || footprintBounds.maxX <= footprintBounds.minX + EPS
             || footprintBounds.maxZ <= footprintBounds.minZ + EPS
         ) {
-            if (viewportBounds) {
-                const vpMinX = clamp(viewportBounds.minX, bounds.minX, bounds.maxX, bounds.minX);
-                const vpMaxX = clamp(viewportBounds.maxX, bounds.minX, bounds.maxX, bounds.maxX);
-                const vpMinZ = clamp(viewportBounds.minZ, bounds.minZ, bounds.maxZ, bounds.minZ);
-                const vpMaxZ = clamp(viewportBounds.maxZ, bounds.minZ, bounds.maxZ, bounds.maxZ);
-                footprintBounds = {
-                    minX: clamp(Math.max(centerX - outerRadiusMeters, vpMinX), bounds.minX, bounds.maxX, bounds.minX),
-                    maxX: clamp(Math.min(centerX + outerRadiusMeters, vpMaxX), bounds.minX, bounds.maxX, bounds.maxX),
-                    minZ: clamp(Math.max(centerZ - outerRadiusMeters, vpMinZ), bounds.minZ, bounds.maxZ, bounds.minZ),
-                    maxZ: clamp(Math.min(centerZ + outerRadiusMeters, vpMaxZ), bounds.minZ, bounds.maxZ, bounds.maxZ)
-                };
-            } else {
-                footprintBounds = {
-                    minX: clamp(centerX - outerRadiusMeters, bounds.minX, bounds.maxX, bounds.minX),
-                    maxX: clamp(centerX + outerRadiusMeters, bounds.minX, bounds.maxX, bounds.maxX),
-                    minZ: clamp(centerZ - outerRadiusMeters, bounds.minZ, bounds.maxZ, bounds.minZ),
-                    maxZ: clamp(centerZ + outerRadiusMeters, bounds.minZ, bounds.maxZ, bounds.maxZ)
-                };
-            }
+            footprintBounds = {
+                minX: bounds.minX,
+                maxX: bounds.maxX,
+                minZ: bounds.minZ,
+                maxZ: bounds.maxZ
+            };
         }
         if (
             !Number.isFinite(footprintBounds.minX)
@@ -3417,8 +3843,7 @@ export class TerrainDebuggerView {
             footprintBounds.minX.toFixed(3),
             footprintBounds.maxX.toFixed(3),
             footprintBounds.minZ.toFixed(3),
-            footprintBounds.maxZ.toFixed(3),
-            String(viewportKey ?? '')
+            footprintBounds.maxZ.toFixed(3)
         ].join('|');
         if (this._biomeTilingRingHelper && key === this._biomeTilingRingHelperKey) return;
 
@@ -3429,8 +3854,7 @@ export class TerrainDebuggerView {
             nearRadiusMeters,
             transitionWidthMeters,
             transitionDebugBands: Math.max(0, Math.min(6, Math.round(Number(applied?.transitionDebugBands) || 0))),
-            footprintBounds,
-            viewportPolygon
+            footprintBounds
         });
         if (!helper) return;
         this.scene.add(helper);
@@ -3463,12 +3887,16 @@ export class TerrainDebuggerView {
 
     _removeBiomeTilingDisplacementOverlay({ disposeMaterial = false } = {}) {
         const overlay = this._biomeTilingDisplacementOverlay;
+        if (this._landHeightWireframe?.parent === overlay) {
+            this._removeLandHeightWireframeOverlay();
+        }
         if (overlay) {
             this.scene?.remove?.(overlay);
             overlay.geometry?.dispose?.();
             this._biomeTilingDisplacementOverlay = null;
         }
         this._biomeTilingDisplacementOverlayKey = '';
+        this._removeBiomeTilingTileLodDebugHelper();
         this._clearBiomeTilingDisplacementStateForMaterial(this._biomeTilingDisplacementOverlayMat);
 
         if (disposeMaterial) {
@@ -3481,6 +3909,10 @@ export class TerrainDebuggerView {
         const overlay = this._biomeTilingDisplacementOverlay;
         if (!overlay) return;
         overlay.visible = false;
+        if (this._landHeightWireframe?.parent === overlay) {
+            this._removeLandHeightWireframeOverlay();
+        }
+        this._removeBiomeTilingTileLodDebugHelper();
     }
 
     _ensureBiomeTilingDisplacementOverlayMaterial() {
@@ -3695,7 +4127,7 @@ export class TerrainDebuggerView {
 
     _sampleBiomeTilingCameraViewportGroundPolygon({ edgeSamples = 6, marginMeters = BIOME_TILING_VIEWPORT_MASK_MARGIN_METERS } = {}) {
         const camera = this.camera;
-        const terrain = this._terrain;
+        const terrain = this._getTerrainRaycastSurface();
         if (!camera || !terrain?.isMesh) return null;
 
         const sampleCount = Math.max(2, Math.round(Number(edgeSamples) || 6));
@@ -4001,8 +4433,8 @@ export class TerrainDebuggerView {
             this._removeBiomeTilingDisplacementOverlay();
             return { rebuilt: false, triangles: 0 };
         }
-        const displacementEnabled = this._biomeTilingState?.displacement?.enabled === true;
-        if (!displacementEnabled) {
+        const adaptiveEnabled = this._biomeTilingState?.geometryDensity?.enabled !== false;
+        if (!adaptiveEnabled) {
             this._hideBiomeTilingDisplacementOverlay();
             return {
                 rebuilt: false,
@@ -4054,6 +4486,36 @@ export class TerrainDebuggerView {
             0,
             Math.min(6, Math.round(Number(applied.transitionDebugBands) || defaultBands))
         );
+        const renderDistanceMeters = Math.max(
+            0,
+            Number.isFinite(Number(applied.renderDistanceMeters))
+                ? Number(applied.renderDistanceMeters)
+                : (nearRadiusMeters + transitionWidthMeters)
+        );
+        const waveStrength = clamp(
+            applied.waveStrength,
+            0.0,
+            1.0,
+            BIOME_TILING_DEFAULT_STATE.geometryDensity.waveStrength
+        );
+        const waveMaxHeightMeters = clamp(
+            applied.waveMaxHeightMeters,
+            0.0,
+            BIOME_TILING_WAVE_HARD_MAX_HEIGHT_METERS,
+            BIOME_TILING_DEFAULT_STATE.geometryDensity.waveMaxHeightMeters
+        );
+        const waveMaxNeighborDeltaMeters = clamp(
+            applied.waveMaxNeighborDeltaMeters,
+            0.0,
+            BIOME_TILING_WAVE_HARD_MAX_NEIGHBOR_DELTA_METERS,
+            BIOME_TILING_DEFAULT_STATE.geometryDensity.waveMaxNeighborDeltaMeters
+        );
+        const waveMaxTileRangeMeters = clamp(
+            applied.waveMaxTileRangeMeters,
+            0.0,
+            BIOME_TILING_WAVE_HARD_MAX_TILE_RANGE_METERS,
+            BIOME_TILING_DEFAULT_STATE.geometryDensity.waveMaxTileRangeMeters
+        );
         let centerX = Number(applied.centerX);
         let centerZ = Number(applied.centerZ);
         if (!Number.isFinite(centerX)) centerX = (Number(bounds.minX) + Number(bounds.maxX)) * 0.5 || 0;
@@ -4065,44 +4527,13 @@ export class TerrainDebuggerView {
         const baseMaxX = Number(bounds.maxX);
         const baseMinZ = Number(bounds.minZ);
         const baseMaxZ = Number(bounds.maxZ);
-        const viewportMask = this._getBiomeTilingStableViewportGroundPolygon({
-            edgeSamples: 6,
-            marginMeters: BIOME_TILING_VIEWPORT_MASK_MARGIN_METERS,
-            translationThresholdMeters: BIOME_TILING_VIEWPORT_MASK_STABILIZE_MOVE_METERS
-        });
-        const viewportBounds = viewportMask?.bounds ?? null;
-        if (!viewportBounds) {
-            this._removeBiomeTilingDisplacementOverlay();
-            return { rebuilt: false, triangles: 0 };
-        }
-        const viewportMinX = clamp(viewportBounds.minX, baseMinX, baseMaxX, baseMinX);
-        const viewportMaxX = clamp(viewportBounds.maxX, baseMinX, baseMaxX, baseMaxX);
-        const viewportMinZ = clamp(viewportBounds.minZ, baseMinZ, baseMaxZ, baseMinZ);
-        const viewportMaxZ = clamp(viewportBounds.maxZ, baseMinZ, baseMaxZ, baseMaxZ);
-        if (!(viewportMaxX > viewportMinX + EPS && viewportMaxZ > viewportMinZ + EPS)) {
-            this._removeBiomeTilingDisplacementOverlay();
-            return { rebuilt: false, triangles: 0 };
-        }
-
         const overlayOuterRadiusMeters = mode === 'adaptive_rings'
             ? Math.max(0, nearRadiusMeters + transitionWidthMeters)
             : 0;
-        const targetMinX = mode === 'adaptive_rings'
-            ? Math.max(centerX - overlayOuterRadiusMeters, viewportMinX)
-            : viewportMinX;
-        const targetMaxX = mode === 'adaptive_rings'
-            ? Math.min(centerX + overlayOuterRadiusMeters, viewportMaxX)
-            : viewportMaxX;
-        const targetMinZ = mode === 'adaptive_rings'
-            ? Math.max(centerZ - overlayOuterRadiusMeters, viewportMinZ)
-            : viewportMinZ;
-        const targetMaxZ = mode === 'adaptive_rings'
-            ? Math.min(centerZ + overlayOuterRadiusMeters, viewportMaxZ)
-            : viewportMaxZ;
-        const desiredOverlayMinX = clamp(targetMinX, baseMinX, baseMaxX, baseMinX);
-        const desiredOverlayMaxX = clamp(targetMaxX, baseMinX, baseMaxX, baseMaxX);
-        const desiredOverlayMinZ = clamp(targetMinZ, baseMinZ, baseMaxZ, baseMinZ);
-        const desiredOverlayMaxZ = clamp(targetMaxZ, baseMinZ, baseMaxZ, baseMaxZ);
+        const desiredOverlayMinX = baseMinX;
+        const desiredOverlayMaxX = baseMaxX;
+        const desiredOverlayMinZ = baseMinZ;
+        const desiredOverlayMaxZ = baseMaxZ;
         if (!(desiredOverlayMaxX > desiredOverlayMinX + EPS && desiredOverlayMaxZ > desiredOverlayMinZ + EPS)) {
             this._removeBiomeTilingDisplacementOverlay();
             return { rebuilt: false, triangles: 0 };
@@ -4120,6 +4551,22 @@ export class TerrainDebuggerView {
         );
         if (mode === 'adaptive_rings') {
             farSegmentsPerTile = Math.max(1, Math.min(farSegmentsPerTile, maxSegmentsGlobal));
+            const outerMinX = clamp(centerX - overlayOuterRadiusMeters, desiredOverlayMinX, desiredOverlayMaxX, desiredOverlayMinX);
+            const outerMaxX = clamp(centerX + overlayOuterRadiusMeters, desiredOverlayMinX, desiredOverlayMaxX, desiredOverlayMaxX);
+            const outerMinZ = clamp(centerZ - overlayOuterRadiusMeters, desiredOverlayMinZ, desiredOverlayMaxZ, desiredOverlayMinZ);
+            const outerMaxZ = clamp(centerZ + overlayOuterRadiusMeters, desiredOverlayMinZ, desiredOverlayMaxZ, desiredOverlayMaxZ);
+            const outerWidthMeters = Math.max(0, outerMaxX - outerMinX);
+            const outerDepthMeters = Math.max(0, outerMaxZ - outerMinZ);
+            const outerTiles = Math.max(
+                1,
+                (outerWidthMeters / Math.max(EPS, tileSizeMeters))
+                * (outerDepthMeters / Math.max(EPS, tileSizeMeters))
+            );
+            const maxNearSegmentsGlobal = Math.max(
+                farSegmentsPerTile,
+                Math.floor(Math.sqrt(BIOME_TILING_DISPLACEMENT_OVERLAY_MAX_TRIANGLES / Math.max(1, outerTiles * 2)))
+            );
+            nearSegmentsPerTile = Math.max(farSegmentsPerTile, Math.min(nearSegmentsPerTile, maxNearSegmentsGlobal));
             nearSegmentsPerTile = Math.max(farSegmentsPerTile, nearSegmentsPerTile);
         } else {
             segmentsPerTile = Math.max(1, Math.min(segmentsPerTile, maxSegmentsGlobal));
@@ -4142,8 +4589,11 @@ export class TerrainDebuggerView {
             mode === 'adaptive_rings' ? centerX.toFixed(3) : '0.000',
             mode === 'adaptive_rings' ? centerZ.toFixed(3) : '0.000',
             mode === 'adaptive_rings' ? overlayOuterRadiusMeters.toFixed(3) : '0.000',
-            mode === 'adaptive_rings' ? BIOME_TILING_DISPLACEMENT_OVERLAY_SHAPE_SIDES : 0,
-            String(viewportMask?.key ?? '')
+            waveStrength.toFixed(5),
+            waveMaxHeightMeters.toFixed(3),
+            waveMaxNeighborDeltaMeters.toFixed(3),
+            waveMaxTileRangeMeters.toFixed(3),
+            renderDistanceMeters.toFixed(3)
         ].join('|');
 
         let overlayKey = makeOverlayKey();
@@ -4192,19 +4642,20 @@ export class TerrainDebuggerView {
                 : {
                     ...(baseSpec?.adaptiveRings ?? {}),
                     enabled: false
+                },
+            wave: {
+                enabled: true,
+                strength: waveStrength,
+                maxHeightMeters: waveMaxHeightMeters,
+                maxNeighborDeltaMeters: waveMaxNeighborDeltaMeters,
+                maxTileRangeMeters: waveMaxTileRangeMeters,
+                neighborReferenceStepMeters: 0.5,
+                seed: 137.0
                 }
         });
 
         let overlaySpec = makeOverlaySpec();
         let build = buildTerrainGeometry(overlaySpec);
-        this._clipBiomeTilingOverlayGeometryToRegularPolygon({
-            geometry: build.geo,
-            centerX,
-            centerZ,
-            radiusMeters: mode === 'adaptive_rings' ? overlayOuterRadiusMeters : 0.0,
-            sides: BIOME_TILING_DISPLACEMENT_OVERLAY_SHAPE_SIDES,
-            viewportPolygon: viewportMask?.polygon ?? null
-        });
         let triangles = this._getGeometryTriangleCount(build.geo);
         let guard = 0;
         while (triangles > BIOME_TILING_DISPLACEMENT_OVERLAY_MAX_TRIANGLES && guard < 8) {
@@ -4223,14 +4674,6 @@ export class TerrainDebuggerView {
             build.geo?.dispose?.();
             overlaySpec = makeOverlaySpec();
             build = buildTerrainGeometry(overlaySpec);
-            this._clipBiomeTilingOverlayGeometryToRegularPolygon({
-                geometry: build.geo,
-                centerX,
-                centerZ,
-                radiusMeters: mode === 'adaptive_rings' ? overlayOuterRadiusMeters : 0.0,
-                sides: BIOME_TILING_DISPLACEMENT_OVERLAY_SHAPE_SIDES,
-                viewportPolygon: viewportMask?.polygon ?? null
-            });
             triangles = this._getGeometryTriangleCount(build.geo);
         }
 
@@ -4243,32 +4686,26 @@ export class TerrainDebuggerView {
             minZ: desiredOverlayMinZ,
             maxZ: desiredOverlayMaxZ
         };
-        const overlayViewportBoundsApplied = viewportBounds
-            ? {
-                minX: Number(viewportBounds.minX) || 0,
-                maxX: Number(viewportBounds.maxX) || 0,
-                minZ: Number(viewportBounds.minZ) || 0,
-                maxZ: Number(viewportBounds.maxZ) || 0
-            }
-            : null;
-        const overlayViewportPolygonApplied = Array.isArray(viewportMask?.polygon) && viewportMask.polygon.length >= 3
-            ? viewportMask.polygon.map((p) => ({
-                x: Number(p?.x) || 0,
-                z: Number(p?.z) || 0
-            }))
-            : null;
-        const overlayViewportKeyApplied = String(viewportMask?.key ?? '');
+        const overlayViewportBoundsApplied = null;
+        const overlayViewportPolygonApplied = null;
+        const overlayViewportKeyApplied = '';
         this._biomeTilingAppliedGeometryState = mode === 'adaptive_rings'
             ? {
+                enabled: adaptiveEnabled,
                 mode,
                 segmentsPerTile: farSegmentsPerTile,
                 nearSegmentsPerTile,
                 farSegmentsPerTile,
                 nearRadiusMeters,
                 transitionWidthMeters,
+                renderDistanceMeters,
                 transitionSmoothing,
                 transitionBias,
                 transitionDebugBands,
+                waveStrength,
+                waveMaxHeightMeters,
+                waveMaxNeighborDeltaMeters,
+                waveMaxTileRangeMeters,
                 ringOverlayEnabled,
                 overlayBounds: overlayBoundsApplied,
                 overlayViewportBounds: overlayViewportBoundsApplied,
@@ -4278,15 +4715,21 @@ export class TerrainDebuggerView {
                 centerZ
             }
             : {
+                enabled: adaptiveEnabled,
                 mode: 'uniform',
                 segmentsPerTile,
                 nearSegmentsPerTile: segmentsPerTile,
                 farSegmentsPerTile: segmentsPerTile,
                 nearRadiusMeters: 0,
                 transitionWidthMeters: 0,
+                renderDistanceMeters,
                 transitionSmoothing: defaultSmoothing,
                 transitionBias: defaultBias,
                 transitionDebugBands: defaultBands,
+                waveStrength,
+                waveMaxHeightMeters,
+                waveMaxNeighborDeltaMeters,
+                waveMaxTileRangeMeters,
                 ringOverlayEnabled: false,
                 overlayBounds: overlayBoundsApplied,
                 overlayViewportBounds: overlayViewportBoundsApplied,
@@ -5399,8 +5842,21 @@ export class TerrainDebuggerView {
         this._syncBiomeTilingHref({ force: false });
     }
 
+    _getTerrainRaycastSurface() {
+        const overlay = this._biomeTilingDisplacementOverlay;
+        if (
+            this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING
+            && this._biomeTilingState?.geometryDensity?.enabled !== false
+            && overlay?.isMesh
+            && overlay.visible === true
+        ) {
+            return overlay;
+        }
+        return this._terrain;
+    }
+
     _getTerrainHeightAtXZ(x, z) {
-        const terrain = this._terrain;
+        const terrain = this._getTerrainRaycastSurface();
         if (!terrain) return 0;
 
         if (terrain.matrixWorldNeedsUpdate) terrain.updateMatrixWorld(true);
@@ -6313,6 +6769,9 @@ export class TerrainDebuggerView {
         if (this._biomeTilingRingHelper) {
             this._biomeTilingRingHelper.visible = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING && !this._flyover?.active;
         }
+        if (this._biomeTilingTileLodHelper) {
+            this._biomeTilingTileLodHelper.visible = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING && !this._flyover?.active;
+        }
         this._maybeFollowBiomeTilingDisplacementOverlay({ nowMs: t });
         this._maybeAutoRebuildBiomeTilingDisplacementOverlay({ nowMs: t });
         this._updateBiomeTilingLodMonitor({ nowMs: t });
@@ -6766,7 +7225,8 @@ export class TerrainDebuggerView {
             : 'standard';
         const geometrySrc = input.geometryDensity && typeof input.geometryDensity === 'object' ? input.geometryDensity : {};
         const geometryModeRaw = String(geometrySrc.mode ?? BIOME_TILING_DEFAULT_STATE.geometryDensity.mode);
-        const geometryMode = geometryModeRaw === 'adaptive_rings' ? 'adaptive_rings' : 'uniform';
+        const geometryEnabled = geometrySrc.enabled !== false;
+        const geometryMode = geometryEnabled && geometryModeRaw === 'adaptive_rings' ? 'adaptive_rings' : 'uniform';
         return {
             materialId: normalizeMaterialId(input.materialId, defaultMaterialId),
             distanceTiling: {
@@ -6796,12 +7256,23 @@ export class TerrainDebuggerView {
                 debugView: dispDebugView
             },
             geometryDensity: {
+                enabled: geometryEnabled,
                 mode: geometryMode,
                 segmentsPerTile: Math.max(1, Math.min(1024, Math.round(Number(geometrySrc.segmentsPerTile) || BIOME_TILING_DEFAULT_STATE.geometryDensity.segmentsPerTile))),
                 nearSegmentsPerTile: Math.max(1, Math.min(10000, Math.round(Number(geometrySrc.nearSegmentsPerTile) || BIOME_TILING_DEFAULT_STATE.geometryDensity.nearSegmentsPerTile))),
                 farSegmentsPerTile: Math.max(1, Math.min(1024, Math.round(Number(geometrySrc.farSegmentsPerTile) || BIOME_TILING_DEFAULT_STATE.geometryDensity.farSegmentsPerTile))),
                 nearRadiusMeters: clamp(geometrySrc.nearRadiusMeters, 0.0, 1200.0, BIOME_TILING_DEFAULT_STATE.geometryDensity.nearRadiusMeters),
                 transitionWidthMeters: clamp(geometrySrc.transitionWidthMeters, 0.0, 600.0, BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionWidthMeters),
+                renderDistanceMeters: clamp(
+                    geometrySrc.renderDistanceMeters,
+                    0.0,
+                    1800.0,
+                    Math.max(
+                        0,
+                        Number(geometrySrc.nearRadiusMeters) + Number(geometrySrc.transitionWidthMeters)
+                        || BIOME_TILING_DEFAULT_STATE.geometryDensity.renderDistanceMeters
+                    )
+                ),
                 transitionSmoothing: clamp(geometrySrc.transitionSmoothing, 0.0, 1.0, BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionSmoothing),
                 transitionBias: clamp(geometrySrc.transitionBias, -0.85, 0.85, BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionBias),
                 transitionDebugBands: Math.max(
@@ -6815,7 +7286,32 @@ export class TerrainDebuggerView {
                         )
                     )
                 ),
+                waveStrength: clamp(
+                    geometrySrc.waveStrength,
+                    0.0,
+                    1.0,
+                    BIOME_TILING_DEFAULT_STATE.geometryDensity.waveStrength
+                ),
+                waveMaxHeightMeters: clamp(
+                    geometrySrc.waveMaxHeightMeters,
+                    0.0,
+                    BIOME_TILING_WAVE_HARD_MAX_HEIGHT_METERS,
+                    BIOME_TILING_DEFAULT_STATE.geometryDensity.waveMaxHeightMeters
+                ),
+                waveMaxNeighborDeltaMeters: clamp(
+                    geometrySrc.waveMaxNeighborDeltaMeters,
+                    0.0,
+                    BIOME_TILING_WAVE_HARD_MAX_NEIGHBOR_DELTA_METERS,
+                    BIOME_TILING_DEFAULT_STATE.geometryDensity.waveMaxNeighborDeltaMeters
+                ),
+                waveMaxTileRangeMeters: clamp(
+                    geometrySrc.waveMaxTileRangeMeters,
+                    0.0,
+                    BIOME_TILING_WAVE_HARD_MAX_TILE_RANGE_METERS,
+                    BIOME_TILING_DEFAULT_STATE.geometryDensity.waveMaxTileRangeMeters
+                ),
                 ringOverlayEnabled: geometrySrc.ringOverlayEnabled !== false,
+                tileLodDebugEnabled: geometrySrc.tileLodDebugEnabled === true,
                 centerOnApplyCamera: geometrySrc.centerOnApplyCamera !== false,
                 rebuildCadence: (() => {
                     const cadenceRaw = String(geometrySrc.rebuildCadence ?? BIOME_TILING_DEFAULT_STATE.geometryDensity.rebuildCadence ?? 'off');
@@ -7021,7 +7517,8 @@ export class TerrainDebuggerView {
         const debugRaw = String(displacementCfg?.debugView ?? BIOME_TILING_DEFAULT_STATE.displacement.debugView);
         const debugView = (debugRaw === 'wireframe' || debugRaw === 'displacement') ? debugRaw : 'standard';
         const wireframeEnabled = this._terrainWireframe === true || (tilingViewActive && debugView === 'wireframe');
-        this._applyMaterialWireframe(mat, wireframeEnabled);
+        const heightWireOverlayActive = this._syncLandHeightWireframeOverlay({ enabled: wireframeEnabled });
+        this._applyMaterialWireframe(mat, wireframeEnabled && !heightWireOverlayActive);
 
         if (!(tilingViewActive && debugView === 'displacement')) return;
 
@@ -7103,7 +7600,8 @@ export class TerrainDebuggerView {
         const overlayWidthTiles = overlayWidthMeters > EPS ? (overlayWidthMeters / tileSize) : 0;
         const overlayDepthTiles = overlayDepthMeters > EPS ? (overlayDepthMeters / tileSize) : 0;
         const requestedGeometry = this._biomeTilingState?.geometryDensity ?? BIOME_TILING_DEFAULT_STATE.geometryDensity;
-        const requestedGeometryMode = String(requestedGeometry?.mode ?? 'uniform') === 'adaptive_rings'
+        const requestedAdaptiveEnabled = requestedGeometry?.enabled !== false;
+        const requestedGeometryMode = requestedAdaptiveEnabled && String(requestedGeometry?.mode ?? 'uniform') === 'adaptive_rings'
             ? 'adaptive_rings'
             : 'uniform';
         const requestedSegmentsPerTile = Math.max(
@@ -7148,22 +7646,38 @@ export class TerrainDebuggerView {
             )
         );
         const appliedGeometry = this._biomeTilingAppliedGeometryState ?? {
+            enabled: requestedGeometry?.enabled !== false,
             mode: 'uniform',
             segmentsPerTile: Math.max(1, Math.round(Number(this._terrainSpec?.segmentsPerTile) || requestedSegmentsPerTile)),
             nearSegmentsPerTile: requestedNearSegmentsPerTile,
             farSegmentsPerTile: requestedFarSegmentsPerTile,
             nearRadiusMeters: requestedNearRadiusMeters,
             transitionWidthMeters: requestedTransitionWidthMeters,
+            renderDistanceMeters: Math.max(0, requestedNearRadiusMeters + requestedTransitionWidthMeters),
             transitionSmoothing: requestedTransitionSmoothing,
             transitionBias: requestedTransitionBias,
             transitionDebugBands: requestedTransitionDebugBands,
+            waveStrength: clamp(requestedGeometry?.waveStrength, 0.0, 1.0, BIOME_TILING_DEFAULT_STATE.geometryDensity.waveStrength),
+            waveMaxHeightMeters: clamp(
+                requestedGeometry?.waveMaxHeightMeters,
+                0.0,
+                BIOME_TILING_WAVE_HARD_MAX_HEIGHT_METERS,
+                BIOME_TILING_DEFAULT_STATE.geometryDensity.waveMaxHeightMeters
+            ),
+            waveMaxNeighborDeltaMeters: clamp(
+                requestedGeometry?.waveMaxNeighborDeltaMeters,
+                0.0,
+                BIOME_TILING_WAVE_HARD_MAX_NEIGHBOR_DELTA_METERS,
+                BIOME_TILING_DEFAULT_STATE.geometryDensity.waveMaxNeighborDeltaMeters
+            ),
             ringOverlayEnabled: requestedGeometry?.ringOverlayEnabled !== false,
             centerX: 0,
             centerZ: 0
         };
-        const appliedGeometryMode = String(appliedGeometry.mode ?? 'uniform') === 'adaptive_rings'
+        const appliedGeometryMode = (appliedGeometry?.enabled !== false) && String(appliedGeometry.mode ?? 'uniform') === 'adaptive_rings'
             ? 'adaptive_rings'
             : 'uniform';
+        const appliedAdaptiveEnabled = appliedGeometry?.enabled !== false;
         const appliedSegmentsPerTile = Math.max(
             1,
             Math.round(Number(appliedGeometry.segmentsPerTile) || Number(this._terrainSpec?.segmentsPerTile) || requestedSegmentsPerTile)
@@ -7225,6 +7739,8 @@ export class TerrainDebuggerView {
 
         ui.setBiomeTilingDiagnostics({
             active: this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING,
+            requestedAdaptiveEnabled,
+            appliedAdaptiveEnabled,
             requestedGeometryMode,
             appliedGeometryMode,
             requestedSegmentsPerTile,
@@ -7243,6 +7759,43 @@ export class TerrainDebuggerView {
             appliedTransitionSmoothing,
             appliedTransitionBias,
             appliedTransitionDebugBands,
+            requestedRenderDistanceMeters: Math.max(
+                0,
+                Number(requestedGeometry?.renderDistanceMeters)
+                || (requestedNearRadiusMeters + requestedTransitionWidthMeters)
+            ),
+            appliedRenderDistanceMeters: Math.max(
+                0,
+                Number(appliedGeometry?.renderDistanceMeters)
+                || (appliedNearRadiusMeters + appliedTransitionWidthMeters)
+            ),
+            requestedWaveStrength: clamp(requestedGeometry?.waveStrength, 0.0, 1.0, BIOME_TILING_DEFAULT_STATE.geometryDensity.waveStrength),
+            appliedWaveStrength: clamp(appliedGeometry?.waveStrength, 0.0, 1.0, BIOME_TILING_DEFAULT_STATE.geometryDensity.waveStrength),
+            requestedWaveMaxHeightMeters: clamp(
+                requestedGeometry?.waveMaxHeightMeters,
+                0.0,
+                BIOME_TILING_WAVE_HARD_MAX_HEIGHT_METERS,
+                BIOME_TILING_DEFAULT_STATE.geometryDensity.waveMaxHeightMeters
+            ),
+            appliedWaveMaxHeightMeters: clamp(
+                appliedGeometry?.waveMaxHeightMeters,
+                0.0,
+                BIOME_TILING_WAVE_HARD_MAX_HEIGHT_METERS,
+                BIOME_TILING_DEFAULT_STATE.geometryDensity.waveMaxHeightMeters
+            ),
+            requestedWaveMaxNeighborDeltaMeters: clamp(
+                requestedGeometry?.waveMaxNeighborDeltaMeters,
+                0.0,
+                BIOME_TILING_WAVE_HARD_MAX_NEIGHBOR_DELTA_METERS,
+                BIOME_TILING_DEFAULT_STATE.geometryDensity.waveMaxNeighborDeltaMeters
+            ),
+            appliedWaveMaxNeighborDeltaMeters: clamp(
+                appliedGeometry?.waveMaxNeighborDeltaMeters,
+                0.0,
+                BIOME_TILING_WAVE_HARD_MAX_NEIGHBOR_DELTA_METERS,
+                BIOME_TILING_DEFAULT_STATE.geometryDensity.waveMaxNeighborDeltaMeters
+            ),
+            rebuildCadence: String(requestedGeometry?.rebuildCadence ?? 'off'),
             appliedRingCenterX,
             appliedRingCenterZ,
             ringOverlayEnabled: requestedGeometry?.ringOverlayEnabled !== false,
@@ -7295,17 +7848,39 @@ export class TerrainDebuggerView {
         monitor.lastSampleMs = 0;
     }
 
-    _computeBiomeTilingLodProbe({ cameraX = null, cameraZ = null } = {}) {
-        const cx = Number(cameraX);
-        const cz = Number(cameraZ);
-        if (!(Number.isFinite(cx) && Number.isFinite(cz))) return null;
+    _computeBiomeTilingRingDistance({
+        x = null,
+        z = null,
+        centerX = null,
+        centerZ = null
+    } = {}) {
+        const px = Number(x);
+        const pz = Number(z);
+        const cx = Number(centerX);
+        const cz = Number(centerZ);
+        if (!(Number.isFinite(px) && Number.isFinite(pz) && Number.isFinite(cx) && Number.isFinite(cz))) {
+            return null;
+        }
+        return Math.max(Math.abs(px - cx), Math.abs(pz - cz));
+    }
 
-        const applied = this._biomeTilingAppliedGeometryState ?? null;
-        if (!applied || typeof applied !== 'object') return null;
-
-        const mode = String(applied.mode ?? 'uniform') === 'adaptive_rings' ? 'adaptive_rings' : 'uniform';
-        const uniformSeg = Math.max(1, Math.round(Number(applied.segmentsPerTile) || Number(this._terrainSpec?.segmentsPerTile) || 1));
-        if (mode !== 'adaptive_rings') {
+    _resolveBiomeTilingLodAtDistance({
+        applied = null,
+        distanceMeters = null,
+        fallbackSegments = 1
+    } = {}) {
+        const appliedCfg = applied && typeof applied === 'object' ? applied : null;
+        const mode = String(appliedCfg?.mode ?? 'uniform') === 'adaptive_rings' ? 'adaptive_rings' : 'uniform';
+        const uniformSeg = Math.max(
+            1,
+            Math.round(
+                Number(appliedCfg?.segmentsPerTile)
+                || Number(this._terrainSpec?.segmentsPerTile)
+                || Number(fallbackSegments)
+                || 1
+            )
+        );
+        if (!appliedCfg || appliedCfg.enabled === false || mode !== 'adaptive_rings') {
             return {
                 zone: 'uniform',
                 blend: 0,
@@ -7314,48 +7889,96 @@ export class TerrainDebuggerView {
             };
         }
 
-        const nearSeg = Math.max(1, Math.round(Number(applied.nearSegmentsPerTile) || uniformSeg));
-        const farSeg = Math.max(1, Math.round(Number(applied.farSegmentsPerTile) || uniformSeg));
-        const nearRadius = Math.max(0, Number(applied.nearRadiusMeters) || 0);
-        const transitionWidth = Math.max(0, Number(applied.transitionWidthMeters) || 0);
-        const centerX = Number.isFinite(Number(applied.centerX)) ? Number(applied.centerX) : 0;
-        const centerZ = Number.isFinite(Number(applied.centerZ)) ? Number(applied.centerZ) : 0;
-        const smoothing = clamp(applied.transitionSmoothing, 0.0, 1.0, BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionSmoothing);
-        const bias = clamp(applied.transitionBias, -0.85, 0.85, BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionBias);
-
-        const distanceMeters = Math.hypot(cx - centerX, cz - centerZ);
+        const d = Math.max(0, Number(distanceMeters) || 0);
+        const nearSeg = Math.max(1, Math.round(Number(appliedCfg.nearSegmentsPerTile) || uniformSeg));
+        const farSeg = Math.max(1, Math.round(Number(appliedCfg.farSegmentsPerTile) || uniformSeg));
+        const nearRadius = Math.max(0, Number(appliedCfg.nearRadiusMeters) || 0);
+        const transitionWidth = Math.max(0, Number(appliedCfg.transitionWidthMeters) || 0);
+        const smoothing = clamp(
+            appliedCfg.transitionSmoothing,
+            0.0,
+            1.0,
+            BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionSmoothing
+        );
+        const bias = clamp(
+            appliedCfg.transitionBias,
+            -0.85,
+            0.85,
+            BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionBias
+        );
         const outerRadius = nearRadius + transitionWidth;
         let zone = 'transition';
         let rawT = 0;
         if (transitionWidth <= EPS) {
-            if (distanceMeters <= nearRadius + EPS) {
+            if (d <= nearRadius + EPS) {
                 zone = 'near';
                 rawT = 0;
             } else {
                 zone = 'far';
                 rawT = 1;
             }
-        } else if (distanceMeters <= nearRadius + EPS) {
+        } else if (d <= nearRadius + EPS) {
             zone = 'near';
             rawT = 0;
-        } else if (distanceMeters >= outerRadius - EPS) {
+        } else if (d >= outerRadius - EPS) {
             zone = 'far';
             rawT = 1;
         } else {
             zone = 'transition';
-            rawT = clamp((distanceMeters - nearRadius) / Math.max(EPS, transitionWidth), 0, 1, 0);
+            rawT = clamp((d - nearRadius) / Math.max(EPS, transitionWidth), 0, 1, 0);
         }
 
         const blend = applyAdaptiveTransitionBlend01(rawT, {
             smoothing,
             bias
         });
-        const segmentsPerTile = nearSeg + (farSeg - nearSeg) * blend;
         return {
             zone,
             blend,
-            segmentsPerTile,
-            distanceMeters
+            segmentsPerTile: nearSeg + (farSeg - nearSeg) * blend,
+            distanceMeters: d
+        };
+    }
+
+    _computeBiomeTilingLodProbe({ cameraX = null, cameraZ = null } = {}) {
+        const cx = Number(cameraX);
+        const cz = Number(cameraZ);
+        if (!(Number.isFinite(cx) && Number.isFinite(cz))) return null;
+
+        const applied = this._biomeTilingAppliedGeometryState ?? null;
+        if (!applied || typeof applied !== 'object') return null;
+        const requestedAdaptiveEnabled = this._biomeTilingState?.geometryDensity?.enabled !== false;
+
+        const mode = String(applied.mode ?? 'uniform') === 'adaptive_rings' ? 'adaptive_rings' : 'uniform';
+        const uniformSeg = Math.max(1, Math.round(Number(applied.segmentsPerTile) || Number(this._terrainSpec?.segmentsPerTile) || 1));
+        if (!requestedAdaptiveEnabled || applied.enabled === false || mode !== 'adaptive_rings') {
+            return {
+                zone: 'uniform',
+                blend: 0,
+                segmentsPerTile: uniformSeg,
+                distanceMeters: 0
+            };
+        }
+
+        const centerX = Number.isFinite(Number(applied.centerX)) ? Number(applied.centerX) : 0;
+        const centerZ = Number.isFinite(Number(applied.centerZ)) ? Number(applied.centerZ) : 0;
+        const ringDistance = this._computeBiomeTilingRingDistance({
+            x: cx,
+            z: cz,
+            centerX,
+            centerZ
+        });
+        if (ringDistance === null) return null;
+        const resolved = this._resolveBiomeTilingLodAtDistance({
+            applied,
+            distanceMeters: ringDistance,
+            fallbackSegments: uniformSeg
+        });
+        return {
+            zone: String(resolved?.zone ?? 'uniform'),
+            blend: Number(resolved?.blend) || 0,
+            segmentsPerTile: Number(resolved?.segmentsPerTile) || uniformSeg,
+            distanceMeters: Number(resolved?.distanceMeters) || 0
         };
     }
 
@@ -7363,7 +7986,10 @@ export class TerrainDebuggerView {
         const monitor = this._biomeTilingLodMonitor;
         if (!monitor || typeof monitor !== 'object') return;
 
+        const requestedAdaptiveEnabled = this._biomeTilingState?.geometryDensity?.enabled !== false;
         const adaptiveActive = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING
+            && requestedAdaptiveEnabled
+            && this._biomeTilingAppliedGeometryState?.enabled !== false
             && String(this._biomeTilingAppliedGeometryState?.mode ?? 'uniform') === 'adaptive_rings';
         if (!adaptiveActive || !this.camera?.position) {
             if ((monitor.samples?.length ?? 0) > 0 || (monitor.lastSampleMs || 0) > 0) {
@@ -7405,9 +8031,9 @@ export class TerrainDebuggerView {
     _maybeAutoRebuildBiomeTilingDisplacementOverlay({ nowMs = performance.now() } = {}) {
         if (this._terrainViewMode !== TERRAIN_VIEW_MODE.BIOME_TILING) return;
         if (this._flyover?.active) return;
-        if (this._biomeTilingState?.displacement?.enabled !== true) return;
 
         const geometryCfg = this._biomeTilingState?.geometryDensity ?? null;
+        if (geometryCfg?.enabled === false) return;
         const cadenceRaw = String(geometryCfg?.rebuildCadence ?? 'off');
         const cadence = (
             cadenceRaw === 'frame'
@@ -7448,81 +8074,31 @@ export class TerrainDebuggerView {
         if (!shouldRebuild) return;
 
         const startMs = performance.now();
+        this._captureBiomeTilingAppliedGeometryStateFromRequest({ geometryCfg });
         const result = this._syncBiomeTilingDisplacementOverlay({
-            forceRebuild: true,
+            forceRebuild: false,
             allowCreate: true,
             allowRebuild: true,
-            refreshViewportMask: true
+            refreshViewportMask: false
         });
+        this._syncBiomeTilingBaseTerrainVisibility();
         if (result?.rebuilt) {
             this._biomeTilingAutoRebuildLastMs = now;
             this._biomeTilingLastGeometryApplyMs = performance.now() - startMs;
             this._syncBiomeTilingAdaptiveRingHelper();
-        } else if (cadence === '1s') {
+            this._syncBiomeTilingTileLodDebugHelper();
+        } else {
+            this._syncBiomeTilingTileLodDebugHelper();
+        }
+        if (!result?.rebuilt && cadence === '1s') {
             this._biomeTilingAutoRebuildLastMs = now;
         }
     }
 
     _maybeFollowBiomeTilingDisplacementOverlay({ nowMs = performance.now() } = {}) {
-        if (this._terrainViewMode !== TERRAIN_VIEW_MODE.BIOME_TILING) return;
-        if (this._flyover?.active) return;
-        const displacementEnabled = this._biomeTilingState?.displacement?.enabled === true;
-        if (!displacementEnabled) return;
-        if (!this._biomeTilingDisplacementOverlay) return;
-
-        const geometryCfg = this._biomeTilingState?.geometryDensity ?? null;
-        if (geometryCfg?.centerOnApplyCamera === false) return;
-
-        const applied = this._biomeTilingAppliedGeometryState ?? null;
-        if (!applied || String(applied.mode ?? 'uniform') !== 'adaptive_rings') return;
-        const bounds = this._getTerrainBoundsXZ();
-        if (!bounds) return;
-
-        const camera = this.camera;
-        const camX = Number(camera?.position?.x);
-        const camZ = Number(camera?.position?.z);
-        if (!(Number.isFinite(camX) && Number.isFinite(camZ))) return;
-
-        const centerX = clamp(Number(applied.centerX), bounds.minX, bounds.maxX, (bounds.minX + bounds.maxX) * 0.5);
-        const centerZ = clamp(Number(applied.centerZ), bounds.minZ, bounds.maxZ, (bounds.minZ + bounds.maxZ) * 0.5);
-        const nearRadius = Math.max(0, Number(applied.nearRadiusMeters) || 0);
-        const transitionWidth = Math.max(0, Number(applied.transitionWidthMeters) || 0);
-        const outerRadius = nearRadius + transitionWidth;
-        if (outerRadius <= EPS) return;
-
-        const now = Number.isFinite(Number(nowMs)) ? Number(nowMs) : performance.now();
-        const lastFollowMs = Number(this._biomeTilingOverlayFollowLastMs) || 0;
-        if ((now - lastFollowMs) < BIOME_TILING_OVERLAY_FOLLOW_REBUILD_INTERVAL_MS) return;
-
-        const moveThreshold = clamp(
-            outerRadius * 0.35,
-            BIOME_TILING_OVERLAY_FOLLOW_MIN_MOVE_METERS,
-            BIOME_TILING_OVERLAY_FOLLOW_MAX_MOVE_METERS,
-            1.0
-        );
-        const moveDist = Math.hypot(camX - centerX, camZ - centerZ);
-        if (moveDist < moveThreshold) return;
-
-        const snapStep = clamp(
-            moveThreshold * 0.5,
-            BIOME_TILING_OVERLAY_FOLLOW_SNAP_MIN_METERS,
-            BIOME_TILING_OVERLAY_FOLLOW_SNAP_MAX_METERS,
-            0.25
-        );
-        const nextCenterX = clamp(Math.round(camX / snapStep) * snapStep, bounds.minX, bounds.maxX, camX);
-        const nextCenterZ = clamp(Math.round(camZ / snapStep) * snapStep, bounds.minZ, bounds.maxZ, camZ);
-        if (Math.abs(nextCenterX - centerX) <= EPS && Math.abs(nextCenterZ - centerZ) <= EPS) return;
-
-        applied.centerX = nextCenterX;
-        applied.centerZ = nextCenterZ;
-        this._biomeTilingOverlayFollowLastMs = now;
-        this._syncBiomeTilingDisplacementOverlay({
-            forceRebuild: true,
-            allowCreate: true,
-            allowRebuild: true,
-            refreshViewportMask: true
-        });
-        this._syncBiomeTilingAdaptiveRingHelper();
+        // Disabled on purpose: center updates are cadence-driven via auto-rebuild.
+        // This keeps "No auto updates" fully static and prevents out-of-band tile swaps.
+        void nowMs;
     }
 
     _getBiomeTilingLodMonitorStats({ nowMs = performance.now() } = {}) {
@@ -7773,18 +8349,20 @@ export class TerrainDebuggerView {
         const displacementDebugView = (displacementDebugRaw === 'wireframe' || displacementDebugRaw === 'displacement')
             ? displacementDebugRaw
             : 'standard';
-        if (displacementEnabled) {
+        const adaptiveTerrainEnabled = tilingViewActive && this._biomeTilingState?.geometryDensity?.enabled !== false;
+        if (adaptiveTerrainEnabled) {
             this._syncBiomeTilingDisplacementOverlay({
                 forceRebuild: false,
                 allowCreate: false,
                 allowRebuild: false
             });
-            this._ensureBiomeTilingDisplacementOverlayMaterial();
         } else {
             this._hideBiomeTilingDisplacementOverlay();
         }
+        this._syncBiomeTilingBaseTerrainVisibility();
+        this._ensureBiomeTilingDisplacementOverlayMaterial();
         this._syncBiomeTilingDisplacementOverlayMaterialFromTerrain();
-        const displacementTargetMaterial = displacementEnabled
+        const displacementTargetMaterial = adaptiveTerrainEnabled
             ? this._biomeTilingDisplacementOverlayMat
             : this._terrainMat;
         keyParts.push(
@@ -8655,7 +9233,7 @@ export class TerrainDebuggerView {
     _updateTerrainHoverSample({ nowMs } = {}) {
         const ui = this._ui;
         const engine = this._terrainEngine;
-        const terrain = this._terrain;
+        const terrain = this._getTerrainRaycastSurface();
         const camera = this.camera;
         if (!ui?.setTerrainSampleInfo || !engine || !terrain || !camera) return;
 
@@ -9154,6 +9732,171 @@ export class TerrainDebuggerView {
         updateAlbedoSaturationAdjustOnMeshStandardMaterial(mat, { amount: albedoSaturationAdjust });
     }
 
+    _captureBiomeTilingAppliedGeometryStateFromRequest({ geometryCfg = null } = {}) {
+        const cfg = geometryCfg && typeof geometryCfg === 'object'
+            ? geometryCfg
+            : (this._biomeTilingState?.geometryDensity ?? BIOME_TILING_DEFAULT_STATE.geometryDensity);
+        const adaptiveEnabled = cfg.enabled !== false;
+        const requestedMode = String(cfg.mode ?? 'uniform') === 'adaptive_rings' ? 'adaptive_rings' : 'uniform';
+        const mode = adaptiveEnabled ? requestedMode : 'uniform';
+        const renderDistanceMeters = Math.max(
+            0,
+            Number.isFinite(Number(cfg.renderDistanceMeters))
+                ? Number(cfg.renderDistanceMeters)
+                : (
+                    Math.max(0, Number(cfg.nearRadiusMeters) || 0)
+                    + Math.max(0, Number(cfg.transitionWidthMeters) || 0)
+                )
+        );
+        const waveStrength = clamp(
+            cfg.waveStrength,
+            0.0,
+            1.0,
+            BIOME_TILING_DEFAULT_STATE.geometryDensity.waveStrength
+        );
+        const waveMaxHeightMeters = clamp(
+            cfg.waveMaxHeightMeters,
+            0.0,
+            BIOME_TILING_WAVE_HARD_MAX_HEIGHT_METERS,
+            BIOME_TILING_DEFAULT_STATE.geometryDensity.waveMaxHeightMeters
+        );
+        const waveMaxNeighborDeltaMeters = clamp(
+            cfg.waveMaxNeighborDeltaMeters,
+            0.0,
+            BIOME_TILING_WAVE_HARD_MAX_NEIGHBOR_DELTA_METERS,
+            BIOME_TILING_DEFAULT_STATE.geometryDensity.waveMaxNeighborDeltaMeters
+        );
+        const waveMaxTileRangeMeters = clamp(
+            cfg.waveMaxTileRangeMeters,
+            0.0,
+            BIOME_TILING_WAVE_HARD_MAX_TILE_RANGE_METERS,
+            BIOME_TILING_DEFAULT_STATE.geometryDensity.waveMaxTileRangeMeters
+        );
+
+        if (mode === 'adaptive_rings') {
+            const nearSegments = Math.max(
+                1,
+                Math.round(Number(cfg.nearSegmentsPerTile) || BIOME_TILING_DEFAULT_STATE.geometryDensity.nearSegmentsPerTile)
+            );
+            const farSegments = Math.max(
+                1,
+                Math.round(Number(cfg.farSegmentsPerTile) || BIOME_TILING_DEFAULT_STATE.geometryDensity.farSegmentsPerTile)
+            );
+            const nearRadius = Math.max(0, Number(cfg.nearRadiusMeters) || BIOME_TILING_DEFAULT_STATE.geometryDensity.nearRadiusMeters);
+            const transitionWidth = Math.max(0, Number(cfg.transitionWidthMeters) || BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionWidthMeters);
+            const transitionSmoothing = clamp(
+                cfg.transitionSmoothing,
+                0.0,
+                1.0,
+                BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionSmoothing
+            );
+            const transitionBias = clamp(
+                cfg.transitionBias,
+                -0.85,
+                0.85,
+                BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionBias
+            );
+            const transitionDebugBands = Math.max(
+                0,
+                Math.min(
+                    6,
+                    Math.round(Number.isFinite(Number(cfg.transitionDebugBands))
+                        ? Number(cfg.transitionDebugBands)
+                        : Number(BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionDebugBands))
+                )
+            );
+            const captureCameraCenter = cfg.centerOnApplyCamera !== false;
+            const specForBounds = this._buildTerrainSpec();
+            const tileSize = Number(specForBounds?.tileSize) || 24;
+            const widthTiles = Math.max(1, Math.round(Number(specForBounds?.widthTiles) || 1));
+            const depthTiles = Math.max(1, Math.round(Number(specForBounds?.depthTiles) || 1));
+            const tileMinX = Math.round(Number(specForBounds?.tileMinX) || 0);
+            const tileMinZ = Math.round(Number(specForBounds?.tileMinZ) || 0);
+            const minX = (tileMinX - 0.5) * tileSize;
+            const minZ = (tileMinZ - 0.5) * tileSize;
+            const maxX = minX + widthTiles * tileSize;
+            const maxZ = minZ + depthTiles * tileSize;
+            let centerX = Number(cfg.centerX);
+            let centerZ = Number(cfg.centerZ);
+            if (captureCameraCenter && this.camera?.position) {
+                centerX = Number(this.camera.position.x);
+                centerZ = Number(this.camera.position.z);
+            }
+            if (!Number.isFinite(centerX)) centerX = (minX + maxX) * 0.5;
+            if (!Number.isFinite(centerZ)) centerZ = (minZ + maxZ) * 0.5;
+            centerX = clamp(centerX, minX, maxX, centerX);
+            centerZ = clamp(centerZ, minZ, maxZ, centerZ);
+
+            this._biomeTilingAppliedGeometryState = {
+                enabled: adaptiveEnabled,
+                mode: 'adaptive_rings',
+                segmentsPerTile: farSegments,
+                nearSegmentsPerTile: nearSegments,
+                farSegmentsPerTile: farSegments,
+                nearRadiusMeters: nearRadius,
+                transitionWidthMeters: transitionWidth,
+                renderDistanceMeters,
+                transitionSmoothing,
+                transitionBias,
+                transitionDebugBands,
+                waveStrength,
+                waveMaxHeightMeters,
+                waveMaxNeighborDeltaMeters,
+                waveMaxTileRangeMeters,
+                ringOverlayEnabled: cfg.ringOverlayEnabled !== false,
+                overlayBounds: null,
+                overlayViewportBounds: null,
+                overlayViewportPolygon: null,
+                overlayViewportKey: '',
+                centerX,
+                centerZ
+            };
+        } else {
+            const requestedSegments = Math.max(
+                1,
+                Math.round(Number(cfg.segmentsPerTile) || BIOME_TILING_DEFAULT_STATE.geometryDensity.segmentsPerTile)
+            );
+            this._biomeTilingAppliedGeometryState = {
+                enabled: adaptiveEnabled,
+                mode: 'uniform',
+                segmentsPerTile: requestedSegments,
+                nearSegmentsPerTile: requestedSegments,
+                farSegmentsPerTile: requestedSegments,
+                nearRadiusMeters: 0,
+                transitionWidthMeters: 0,
+                renderDistanceMeters,
+                transitionSmoothing: clamp(
+                    BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionSmoothing,
+                    0.0,
+                    1.0,
+                    0.72
+                ),
+                transitionBias: clamp(
+                    BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionBias,
+                    -0.85,
+                    0.85,
+                    0.0
+                ),
+                transitionDebugBands: Math.max(
+                    0,
+                    Math.min(6, Math.round(Number(BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionDebugBands) || 3))
+                ),
+                waveStrength,
+                waveMaxHeightMeters,
+                waveMaxNeighborDeltaMeters,
+                waveMaxTileRangeMeters,
+                ringOverlayEnabled: false,
+                overlayBounds: null,
+                overlayViewportBounds: null,
+                overlayViewportPolygon: null,
+                overlayViewportKey: '',
+                centerX: 0,
+                centerZ: 0
+            };
+        }
+        this._resetBiomeTilingLodMonitor();
+    }
+
     _applyUiState(state) {
         const s = state && typeof state === 'object' ? state : null;
         if (!s) return;
@@ -9260,117 +10003,7 @@ export class TerrainDebuggerView {
                 if (this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING) {
                     geometryApplyTriggered = true;
                     const geometryCfg = nextBiomeTilingState?.geometryDensity ?? BIOME_TILING_DEFAULT_STATE.geometryDensity;
-                    const mode = String(geometryCfg.mode ?? 'uniform') === 'adaptive_rings' ? 'adaptive_rings' : 'uniform';
-                    if (mode === 'adaptive_rings') {
-                        const nearSegments = Math.max(
-                            1,
-                            Math.round(Number(geometryCfg.nearSegmentsPerTile) || BIOME_TILING_DEFAULT_STATE.geometryDensity.nearSegmentsPerTile)
-                        );
-                        const farSegments = Math.max(
-                            1,
-                            Math.round(Number(geometryCfg.farSegmentsPerTile) || BIOME_TILING_DEFAULT_STATE.geometryDensity.farSegmentsPerTile)
-                        );
-                        const nearRadius = Math.max(0, Number(geometryCfg.nearRadiusMeters) || BIOME_TILING_DEFAULT_STATE.geometryDensity.nearRadiusMeters);
-                        const transitionWidth = Math.max(0, Number(geometryCfg.transitionWidthMeters) || BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionWidthMeters);
-                        const transitionSmoothing = clamp(
-                            geometryCfg.transitionSmoothing,
-                            0.0,
-                            1.0,
-                            BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionSmoothing
-                        );
-                        const transitionBias = clamp(
-                            geometryCfg.transitionBias,
-                            -0.85,
-                            0.85,
-                            BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionBias
-                        );
-                        const transitionDebugBands = Math.max(
-                            0,
-                            Math.min(
-                                6,
-                                Math.round(Number.isFinite(Number(geometryCfg.transitionDebugBands))
-                                    ? Number(geometryCfg.transitionDebugBands)
-                                    : Number(BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionDebugBands))
-                            )
-                        );
-                        const captureCameraCenter = geometryCfg.centerOnApplyCamera !== false;
-                        const specForBounds = this._buildTerrainSpec();
-                        const tileSize = Number(specForBounds?.tileSize) || 24;
-                        const widthTiles = Math.max(1, Math.round(Number(specForBounds?.widthTiles) || 1));
-                        const depthTiles = Math.max(1, Math.round(Number(specForBounds?.depthTiles) || 1));
-                        const tileMinX = Math.round(Number(specForBounds?.tileMinX) || 0);
-                        const tileMinZ = Math.round(Number(specForBounds?.tileMinZ) || 0);
-                        const minX = (tileMinX - 0.5) * tileSize;
-                        const minZ = (tileMinZ - 0.5) * tileSize;
-                        const maxX = minX + widthTiles * tileSize;
-                        const maxZ = minZ + depthTiles * tileSize;
-                        let centerX = Number(geometryCfg.centerX);
-                        let centerZ = Number(geometryCfg.centerZ);
-                        if (captureCameraCenter && this.camera?.position) {
-                            centerX = Number(this.camera.position.x);
-                            centerZ = Number(this.camera.position.z);
-                        }
-                        if (!Number.isFinite(centerX)) centerX = (minX + maxX) * 0.5;
-                        if (!Number.isFinite(centerZ)) centerZ = (minZ + maxZ) * 0.5;
-                        centerX = clamp(centerX, minX, maxX, centerX);
-                        centerZ = clamp(centerZ, minZ, maxZ, centerZ);
-
-                        this._biomeTilingAppliedGeometryState = {
-                            mode: 'adaptive_rings',
-                            segmentsPerTile: farSegments,
-                            nearSegmentsPerTile: nearSegments,
-                            farSegmentsPerTile: farSegments,
-                            nearRadiusMeters: nearRadius,
-                            transitionWidthMeters: transitionWidth,
-                            transitionSmoothing,
-                            transitionBias,
-                            transitionDebugBands,
-                            ringOverlayEnabled: geometryCfg.ringOverlayEnabled !== false,
-                            overlayBounds: null,
-                            overlayViewportBounds: null,
-                            overlayViewportPolygon: null,
-                            overlayViewportKey: '',
-                            centerX,
-                            centerZ
-                        };
-                    } else {
-                        const requestedSegments = Math.max(
-                            1,
-                            Math.round(Number(geometryCfg.segmentsPerTile) || BIOME_TILING_DEFAULT_STATE.geometryDensity.segmentsPerTile)
-                        );
-                        this._biomeTilingAppliedGeometryState = {
-                            mode: 'uniform',
-                            segmentsPerTile: requestedSegments,
-                            nearSegmentsPerTile: requestedSegments,
-                            farSegmentsPerTile: requestedSegments,
-                            nearRadiusMeters: 0,
-                            transitionWidthMeters: 0,
-                            transitionSmoothing: clamp(
-                                BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionSmoothing,
-                                0.0,
-                                1.0,
-                                0.72
-                            ),
-                            transitionBias: clamp(
-                                BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionBias,
-                                -0.85,
-                                0.85,
-                                0.0
-                            ),
-                            transitionDebugBands: Math.max(
-                                0,
-                                Math.min(6, Math.round(Number(BIOME_TILING_DEFAULT_STATE.geometryDensity.transitionDebugBands) || 3))
-                            ),
-                            ringOverlayEnabled: false,
-                            overlayBounds: null,
-                            overlayViewportBounds: null,
-                            overlayViewportPolygon: null,
-                            overlayViewportKey: '',
-                            centerX: 0,
-                            centerZ: 0
-                        };
-                    }
-                    this._resetBiomeTilingLodMonitor();
+                    this._captureBiomeTilingAppliedGeometryStateFromRequest({ geometryCfg });
                 }
             }
         }
@@ -9442,10 +10075,11 @@ export class TerrainDebuggerView {
                 forceRebuild: geometryApplyTriggered,
                 allowCreate: geometryApplyTriggered || !!this._biomeTilingDisplacementOverlay,
                 allowRebuild: geometryApplyTriggered,
-                refreshViewportMask: geometryApplyTriggered
+                refreshViewportMask: false
             });
             overlaySyncMs = performance.now() - startMs;
         }
+        this._syncBiomeTilingBaseTerrainVisibility();
         if (geometryApplyTriggered) {
             this._biomeTilingLastGeometryApplyMs = Number.isFinite(rebuildTerrainMs)
                 ? rebuildTerrainMs
@@ -9497,6 +10131,7 @@ export class TerrainDebuggerView {
         this._syncBiomeTilingHref({ force: false });
         this._syncBiomeTilingAxisHelper();
         this._syncBiomeTilingAdaptiveRingHelper();
+        this._syncBiomeTilingTileLodDebugHelper();
         this._syncBiomeTilingDiagnosticsUi();
     }
 

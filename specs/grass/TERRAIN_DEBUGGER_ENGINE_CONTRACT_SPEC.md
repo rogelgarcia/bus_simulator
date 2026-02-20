@@ -53,12 +53,14 @@ The debugger UI state MUST include a `terrain.engine` payload (serializable) cov
   - `variation` (`antiTilingEnabled`, `antiTilingStrength`, `antiTilingCellMeters`, `macroVariationEnabled`, `macroVariationStrength`, `macroVariationScale`)
   - `displacement` (`enabled`, `strength`, `bias`, `source`, `debugView`)
   - `geometryDensity`:
-    - mode (`uniform` or `adaptive_rings`)
+    - adaptive enable (`enabled`)
+    - mode (`uniform` or `adaptive_rings`; debugger defaults to adaptive)
     - uniform density (`segmentsPerTile`)
     - adaptive densities (`nearSegmentsPerTile`, `farSegmentsPerTile`)
-    - adaptive coverage (`nearRadiusMeters`, `transitionWidthMeters`)
+    - adaptive coverage (`nearRadiusMeters`, `transitionWidthMeters`, optional `renderDistanceMeters`)
     - adaptive transition shaping (`transitionSmoothing`, `transitionBias`)
     - adaptive transition debug ring density (`transitionDebugBands`)
+    - adaptive wave shaping (`waveStrength`) with bounded limits (`waveMaxHeightMeters`, `waveMaxNeighborDeltaMeters`)
     - adaptive ring debug + center capture (`ringOverlayEnabled`, `centerOnApplyCamera`, optional `centerX/centerZ`)
     - optional auto rebuild cadence (`rebuildCadence`: `off` | `frame` | `frame_2` | `frame_4` | `frame_8` | `1s`, default `off`)
     - explicit apply trigger (`applyNonce`)
@@ -121,20 +123,31 @@ When the active debugger tab is `Biome Tiling`, the view MUST switch to a determ
   - strength and bias tuning
   - source selection (`auto`, `displacement`, `ao`, `orm`) with explicit fallback visibility
   - inspection view modes (`standard`, `wireframe`, `displacement`-focused)
-- Geometry density validation controls MUST support:
-  - uniform mode (`segmentsPerTile`)
-  - adaptive rings mode with independent near/far density (`nearSegmentsPerTile`, `farSegmentsPerTile`)
-  - adaptive zone shaping (`nearRadiusMeters`, `transitionWidthMeters`)
-  - adaptive transition smoothing controls (`transitionSmoothing`, `transitionBias`) to tune stability vs responsiveness
-  - adaptive transition debug-band controls (`transitionDebugBands`) for intermediate LOD state overlays
-  - auto rebuild cadence selection (`rebuildCadence`) with an explicit no-auto-updates default (`off`)
-  - explicit apply/rebuild action (`applyNonce`) with optional camera-center capture for ring placement
+- Adaptive terrain LOD controls MUST stay compact and practical, with at minimum:
+  - enable/disable adaptive terrain LOD
+  - wireframe toggle
+  - render distance
+  - wave strength
+  - wave maximum map height cap (`waveMaxHeightMeters`)
+  - wave maximum local tile height range (`waveMaxTileRangeMeters`) for limiting highest-vs-lowest within one tile
+  - compact LOD coverage/debug overlay toggle
+  - optional per-tile LOD label debug toggle (`tileLodDebugEnabled`) that marks each base tile with resolved LOD detail (`segments/tile`)
+  - auto rebuild cadence selection (`rebuildCadence`) with explicit no-auto-updates default (`off`)
+  - explicit apply/rebuild action (`applyNonce`)
+- Advanced adaptive parameters (near/far segment internals, transition shaping internals) MAY exist in state but SHOULD be smart-default-driven and not primary controls in the panel.
+- Adaptive terrain mesh generation MUST be explicit (manual rebuild or configured cadence), with no implicit full-map mesh generation from unrelated toggle changes.
+- Adaptive terrain mesh coverage in Biome Tiling MUST target the full finite terrain bounds (map border to map border), not camera viewport clipping.
+- Adaptive auto-rebuild cadence MUST avoid shape drift when camera position is unchanged; unchanged geometry keys SHOULD skip rebuild and reuse existing mesh/material resources.
+- Adaptive runtime MUST proactively enforce geometry safety budgets (max triangles/quads) before heavy builds, including near-ring-specific clamping, to avoid GPU overload.
 - Adaptive ring visualization MUST provide clear near/transition boundary feedback in the Biome Tiling view.
 - Adaptive geometry output MUST remain crack-free/continuous across near/far transition boundaries (no visible hard seams while moving camera).
+- Wave shaping safety MUST enforce bounded behavior:
+  - default absolute height cap `2.0m`, optional up to hard cap `10.0m`
+  - default neighboring-step cap `0.5m`, optional up to hard cap `2.0m`
 - Biome tiling diagnostics MUST report:
-  - live geometry complexity
+  - adaptive terrain geometry complexity (verts/tris/coverage)
   - last update cost (geometry rebuild + displacement update)
-  - lightweight adaptive comparison metrics (actual mesh complexity versus far-only and near-only reference densities)
+  - adaptive runtime diagnostics (visible chunk estimate, LOD/ring distribution, cadence, wave bounds)
   - active camera LOD state + transition blend and short rolling history (near/transition/far occupancy, boundary crossings, pop-candidate rate)
 - URL deep-linking SHOULD persist biome-tiling authoring context (`tab`, selected PBR, and camera pose) so browser hard-refresh restores the same tiling setup.
 - Tooling visuals for roads/grass groups are hidden in this mode to keep attention on terrain texture behavior.
