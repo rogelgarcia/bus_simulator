@@ -30,7 +30,11 @@ const BRANCH_TOKEN_RE = /^[a-z0-9._-]+$/;
 const NUMERIC_ID_RE = /^[0-9]+$/;
 const TITLE_TOKEN_RE = /^[a-z0-9]+$/;
 const ACTIVE_PREFIX = 'AI_';
+const INTERACTIVE_ACTIVE_PREFIX = 'AI_i_';
 const DONE_PREFIX = 'AI_DONE_';
+const INTERACTIVE_DONE_PREFIX = 'AI_i_DONE_';
+const ACTIVE_PREFIXES = [INTERACTIVE_ACTIVE_PREFIX, ACTIVE_PREFIX];
+const DONE_PREFIXES = [INTERACTIVE_DONE_PREFIX, DONE_PREFIX];
 const MD_SUFFIX = '.md';
 const DONE_FILE_SUFFIX = '_DONE.md';
 
@@ -62,6 +66,19 @@ function addError(message) {
 
 function addWarning(message) {
     warnings.push(message);
+}
+
+function detectModeFromPrefix(prefix) {
+    return prefix.startsWith('AI_i_') ? 'interactive' : 'standard';
+}
+
+function findMatchingPrefix(fileName, prefixes) {
+    for (const prefix of prefixes) {
+        if (fileName.startsWith(prefix)) {
+            return prefix;
+        }
+    }
+    return null;
 }
 
 function listFilesRecursive(dir) {
@@ -147,8 +164,9 @@ function validateActiveFile(fileName, relPath) {
         return;
     }
 
-    if (fileName.startsWith(DONE_PREFIX)) {
-        const parsedDone = parseNewDoneFile(fileName, relPath);
+    const donePrefix = findMatchingPrefix(fileName, DONE_PREFIXES);
+    if (donePrefix !== null) {
+        const parsedDone = parseDoneFile(fileName, relPath, donePrefix);
         if (!parsedDone.ok) {
             addError(`${relPath}: ${parsedDone.reason}`);
             return;
@@ -157,12 +175,13 @@ function validateActiveFile(fileName, relPath) {
         return;
     }
 
-    if (!fileName.startsWith(ACTIVE_PREFIX)) {
-        addError(`${relPath}: prompt in prompts/ must start with "AI_" or "AI_DONE_"`);
+    const activePrefix = findMatchingPrefix(fileName, ACTIVE_PREFIXES);
+    if (activePrefix === null) {
+        addError(`${relPath}: prompt in prompts/ must start with "AI_", "AI_i_", "AI_DONE_", or "AI_i_DONE_"`);
         return;
     }
 
-    const body = fileName.slice(ACTIVE_PREFIX.length, -MD_SUFFIX.length);
+    const body = fileName.slice(activePrefix.length, -MD_SUFFIX.length);
     const tokens = body.split('_').filter((token) => token.length > 0);
     const parsedResult = parseBodyTokens(tokens, relPath);
     if (!parsedResult.ok) {
@@ -172,7 +191,8 @@ function validateActiveFile(fileName, relPath) {
 
     const { branch, id } = parsedResult.parsed;
     const namespace = branch ?? 'main';
-    const key = `${namespace}:${id}`;
+    const mode = detectModeFromPrefix(activePrefix);
+    const key = `${mode}:${namespace}:${id}`;
     const previous = activeNamespaceIds.get(key);
     if (previous) {
         addError(`${relPath}: duplicate active prompt namespace/id with ${previous} (${key})`);
@@ -182,11 +202,12 @@ function validateActiveFile(fileName, relPath) {
     stats.activeCompliant += 1;
 }
 
-function parseNewDoneFile(fileName, relPath) {
-    if (!fileName.startsWith(DONE_PREFIX) || !fileName.endsWith(DONE_FILE_SUFFIX)) {
-        return { ok: false, reason: 'missing AI_DONE_ prefix or _DONE.md suffix' };
+function parseDoneFile(fileName, relPath, donePrefix = null) {
+    const resolvedDonePrefix = donePrefix ?? findMatchingPrefix(fileName, DONE_PREFIXES);
+    if (resolvedDonePrefix === null || !fileName.endsWith(DONE_FILE_SUFFIX)) {
+        return { ok: false, reason: 'missing AI_DONE_/AI_i_DONE_ prefix or _DONE.md suffix' };
     }
-    const body = fileName.slice(DONE_PREFIX.length, -DONE_FILE_SUFFIX.length);
+    const body = fileName.slice(resolvedDonePrefix.length, -DONE_FILE_SUFFIX.length);
     const tokens = body.split('_').filter((token) => token.length > 0);
     return parseBodyTokens(tokens, relPath);
 }
@@ -197,8 +218,10 @@ function validateArchiveFile(fileName, relPath) {
         return;
     }
 
-    if (fileName.startsWith(ACTIVE_PREFIX) && !fileName.startsWith(DONE_PREFIX)) {
-        const asActive = fileName.slice(ACTIVE_PREFIX.length, -MD_SUFFIX.length).split('_').filter(Boolean);
+    const donePrefix = findMatchingPrefix(fileName, DONE_PREFIXES);
+    const activePrefix = findMatchingPrefix(fileName, ACTIVE_PREFIXES);
+    if (activePrefix !== null && donePrefix === null) {
+        const asActive = fileName.slice(activePrefix.length, -MD_SUFFIX.length).split('_').filter(Boolean);
         const activeParse = parseBodyTokens(asActive, relPath);
         if (activeParse.ok) {
             addError(`${relPath}: active prompt file is in archive folder; expected prompts/`);
@@ -206,7 +229,7 @@ function validateArchiveFile(fileName, relPath) {
         }
     }
 
-    const parsedDone = parseNewDoneFile(fileName, relPath);
+    const parsedDone = parseDoneFile(fileName, relPath, donePrefix);
     if (parsedDone.ok) {
         stats.archiveCompliant += 1;
         return;

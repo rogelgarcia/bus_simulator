@@ -21,13 +21,19 @@ node tools/prompt_name_validator/run.mjs --strict
 - In-progress prompt files under `prompts/` follow:
   - `AI_##_SUBJECT_title.md` on `main`
   - `AI_<branch>_##_SUBJECT_title.md` on non-main branches
+  - `AI_i_##_SUBJECT_title.md` on `main`
+  - `AI_i_<branch>_##_SUBJECT_title.md` on non-main branches
 - Completed (not yet archived) prompt files under `prompts/` follow:
   - `AI_DONE_##_SUBJECT_title_DONE.md` on `main`
   - `AI_DONE_<branch>_##_SUBJECT_title_DONE.md` on non-main branches
+  - `AI_i_DONE_##_SUBJECT_title_DONE.md` on `main`
+  - `AI_i_DONE_<branch>_##_SUBJECT_title_DONE.md` on non-main branches
 - Completed prompt files under `prompts/archive/` follow:
   - `AI_DONE_##_SUBJECT_title_DONE.md` on `main`
   - `AI_DONE_<branch>_##_SUBJECT_title_DONE.md` on non-main branches
-- Active prompts do not duplicate `(namespace, id)`.
+  - `AI_i_DONE_##_SUBJECT_title_DONE.md` on `main`
+  - `AI_i_DONE_<branch>_##_SUBJECT_title_DONE.md` on non-main branches
+- Active prompts do not duplicate `(mode, namespace, id)`.
 
 ## Legacy archive behavior
 

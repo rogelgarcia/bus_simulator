@@ -41,12 +41,17 @@ Any AI prompt or change that modifies a specification/model MUST update one or m
 - Archived prompts live in `prompts/archive/`.
 - Do not move prompts to `prompts/archive/` automatically.
 - Completion is not enough to move a prompt; move only when explicitly requested by the user.
+- Interactive prompt mode is triggered by `start ai` and uses `AI_i_...` naming (see `AI_PROMPT_INSTRUCTIONS.md`).
 
 **Tasks:**
 These are the ones from AI prompt files.
-- Even if explicitly requested, never start prompts whose filename indicates DONE (`AI_DONE_##_..._DONE.md` on `main`, or `AI_DONE_<branch>_##_..._DONE.md` on non-main branches) without double confirming with the user.
-- If multiple prompts share the same numeric id, select the prompt in the current branch namespace for implementation.
+- Even if explicitly requested, never start prompts whose filename indicates DONE (`AI_DONE_##_..._DONE.md`, `AI_DONE_<branch>_##_..._DONE.md`, `AI_i_DONE_##_..._DONE.md`, or `AI_i_DONE_<branch>_##_..._DONE.md`) without double confirming with the user.
+- If multiple prompts share the same numeric id, select the prompt in the current branch namespace for implementation (within the same mode: standard or interactive).
 - If id selection is still ambiguous or conflicting, stop and ask the user for guidance before implementing.
+- In interactive mode (`start ai`):
+  - If subject is missing, ask for `SUBJECT` before creating the file.
+  - If an interactive AI is already open, ask whether to continue it, close and start a new one, or start a new one without closing the current one.
+  - Track requirements with markdown checkboxes (`- [ ]` pending, `- [x]` implemented) and keep them updated after each implementation cycle.
 
 **AI Prompt naming:**
 - Follow `AI_PROMPT_INSTRUCTIONS.md` (naming, template, and completion steps).

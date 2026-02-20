@@ -18,6 +18,16 @@ python3 -m http.server 8000
 
 Open `index.html` in a modern browser.
 
+## AI Workflow
+
+- Standard prompt request triggers: `create prompt`, `create ai`, `create ai prompt`.
+- Interactive AI trigger: `start ai`.
+- Interactive AI prompts use `AI_i_` filenames in `prompts/` and are handled as conversational requirement documents.
+- Interactive requirements are tracked with checkboxes:
+  - `- [ ]` pending
+  - `- [x]` implemented
+- Interactive sessions can cycle through requirement gathering and implementation multiple times until user says done.
+
 ### Tools
 
 - Atmosphere Debug: open `debug_tools/atmosphere_debug.html` (e.g. `http://localhost:8000/debug_tools/atmosphere_debug.html`)
