@@ -52,6 +52,10 @@ These are the ones from AI prompt files.
   - If subject is missing, ask for `SUBJECT` before creating the file.
   - If an interactive AI is already open, ask whether to continue it, close and start a new one, or start a new one without closing the current one.
   - Track requirements with markdown checkboxes (`- [ ]` pending, `- [x]` implemented) and keep them updated after each implementation cycle.
+  - Never edit completed checklist items (`- [x]`).
+  - If completed behavior needs a fix, add a new requirement item for the fix.
+  - Contradictions between completed and new requirements are allowed; keep the completed item unchanged.
+  - If contradiction is with a non-completed item (`- [ ]`), patch the existing non-completed requirement.
 
 **AI Prompt naming:**
 - Follow `AI_PROMPT_INSTRUCTIONS.md` (naming, template, and completion steps).

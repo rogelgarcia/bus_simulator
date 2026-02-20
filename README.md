@@ -26,6 +26,8 @@ Open `index.html` in a modern browser.
 - Interactive requirements are tracked with checkboxes:
   - `- [ ]` pending
   - `- [x]` implemented
+- Completed items (`- [x]`) are immutable history; fixes are added as new checklist items.
+- Contradictions with completed items are allowed; contradictions with pending items can be patched in place.
 - Interactive sessions can cycle through requirement gathering and implementation multiple times until user says done.
 
 ### Tools

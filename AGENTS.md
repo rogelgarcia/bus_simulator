@@ -9,6 +9,9 @@
     - If subject is not specified, ask for subject first.
     - If an interactive AI is already open, ask whether to continue it, close and start new, or start new without closing current.
     - Track requirements as markdown checkboxes (`- [ ]` pending, `- [x]` implemented) and update after each implementation cycle.
+    - Never edit completed checklist items (`- [x]`).
+    - If a completed requirement needs a fix, add another requirement item for that fix.
+    - If a new requirement contradicts a non-completed requirement (`- [ ]`), patch the non-completed requirement.
 
 ## Debug suggestion
 - If a problem doesn't resolve after multiple prompts, it might be another issue

@@ -92,6 +92,10 @@ When the user says `start ai`, use interactive prompt mode.
    - Track requirements with checkboxes:
      - `- [ ]` not implemented
      - `- [x]` implemented
+   - Never edit completed checklist items (`- [x]`); they are immutable history.
+   - If a completed item needs a fix, add a new checklist item for the fix instead of changing the completed item.
+   - Contradictions are allowed between completed and new requirements; keep both and implement the new requirement as a follow-up.
+   - If a new requirement contradicts an existing non-completed requirement (`- [ ]`), patch the existing non-completed requirement text.
 4. Implementation loop:
    - On “implement” requests, implement selected pending requirements.
    - Update the checklist status in the interactive AI file after implementation.
@@ -146,6 +150,11 @@ Tasks:
 - [ ] [Requirement 1]
 - [ ] [Requirement 2]
 
+Rules:
+- Do not edit text of completed items (`- [x]`).
+- Add a new item for any fix/change to previously completed behavior.
+- You may patch contradictory non-completed (`- [ ]`) items in place.
+
 ## Implementation Notes
 - [Add short notes for each implementation cycle]
 
@@ -173,3 +182,4 @@ Tasks:
 4. Keep requests concise; the AI can inspect the repo as needed.
 5. Create a new file for each new request unless explicitly asked to continue/edit an existing one.
 6. For interactive mode, keep checklist state current after every implementation cycle.
+7. Treat completed checklist items as immutable history; use new items for fixes.
