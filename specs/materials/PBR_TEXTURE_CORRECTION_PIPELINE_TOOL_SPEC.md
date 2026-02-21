@@ -153,3 +153,21 @@ Drift/anomaly:
 - color drift: CIE Lab `ΔE2000` vs class reference profile
 - weighted deterministic anomaly score across color/brightness/contrast/detail/clipping
 - multi-condition policy: single-capture outlier => heuristic warning, 2+ outliers => review required
+
+---
+
+## 10. Runtime Consumption Contract (AI 349)
+
+Generated correction configs are consumed by the shared runtime resolver:
+- `src/graphics/content3d/materials/PbrTextureCalibrationResolver.js`
+
+Runtime mapping requirements:
+- `presets[presetId].adjustments` maps into runtime override keys:
+  - albedo: brightness, hue, tint strength, saturation
+  - normal: strength
+  - roughness: interval remap (preferred) or scalar strength fallback
+  - ao: intensity
+  - metalness: scalar value
+- overrides are sanitized/clamped before use.
+- runtime merge order is catalog defaults -> calibration overrides -> local overrides.
+- runtime does not execute analysis plugins; it only consumes generated config outputs.

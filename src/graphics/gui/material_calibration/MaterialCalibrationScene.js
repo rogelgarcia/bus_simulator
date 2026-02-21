@@ -2,7 +2,8 @@
 // Controlled scene for side-by-side PBR material calibration.
 import * as THREE from 'three';
 import { createToolCameraController } from '../../engine3d/camera/ToolCameraPrefab.js';
-import { getPbrMaterialTileMeters, resolvePbrMaterialUrls } from '../../content3d/catalogs/PbrMaterialCatalog.js';
+import { getPbrMaterialTileMeters } from '../../content3d/catalogs/PbrMaterialCatalog.js';
+import { PbrTextureLoaderService } from '../../content3d/materials/PbrTexturePipeline.js';
 import { getResolvedCalibrationPresetLightingSettings, getResolvedDefaultLightingSettings, LIGHTING_RESOLUTION_MODES } from '../../lighting/LightingSettings.js';
 import { getMaterialCalibrationIlluminationPresetById, isMaterialCalibrationLightingSnapshotComplete } from './MaterialCalibrationIlluminationPresets.js';
 
@@ -43,14 +44,6 @@ const SLOT_PLATE_STYLE = Object.freeze({
     inactive: Object.freeze({ colorHex: 0x1f242c, emissiveHex: 0x000000, emissiveIntensity: 0.0 })
 });
 const EMPTY_OVERRIDES = Object.freeze({});
-const TEXTURE_CHANNEL_DEFS = Object.freeze([
-    Object.freeze({ key: 'baseColor', urlKey: 'baseColorUrl', srgb: true }),
-    Object.freeze({ key: 'normal', urlKey: 'normalUrl', srgb: false }),
-    Object.freeze({ key: 'orm', urlKey: 'ormUrl', srgb: false }),
-    Object.freeze({ key: 'ao', urlKey: 'aoUrl', srgb: false }),
-    Object.freeze({ key: 'roughness', urlKey: 'roughnessUrl', srgb: false }),
-    Object.freeze({ key: 'metalness', urlKey: 'metalnessUrl', srgb: false })
-]);
 const CALIB_SHADER_CACHE_KEY_PREFIX = 'material_calibration_shader_v2';
 const CALIB_SHADER_TOKENS = Object.freeze({
     common: '#include <common>',
@@ -95,15 +88,6 @@ function clamp(value, min, max) {
     const num = Number(value);
     if (!Number.isFinite(num)) return min;
     return Math.max(min, Math.min(max, num));
-}
-
-function applyTextureColorSpace(tex, { srgb = true } = {}) {
-    if (!tex) return;
-    if ('colorSpace' in tex) {
-        tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-        return;
-    }
-    if ('encoding' in tex) tex.encoding = srgb ? THREE.sRGBEncoding : THREE.LinearEncoding;
 }
 
 function ensureUv2(geo) {
@@ -276,6 +260,10 @@ export class MaterialCalibrationScene {
         this._backgroundColor = new THREE.Color(BACKGROUND_FALLBACK);
 
         this._texLoader = new THREE.TextureLoader();
+        this._pbrLoader = new PbrTextureLoaderService({
+            renderer: this.engine?.renderer ?? null,
+            textureLoader: this._texLoader
+        });
         this._slotMaterialIds = Array(SLOT_COUNT).fill(null);
         this._slotOverrides = Array(SLOT_COUNT).fill(null);
         this._slotMaterials = Array(SLOT_COUNT).fill(null);
@@ -335,6 +323,7 @@ export class MaterialCalibrationScene {
             for (const tex of Object.values(set?.textures ?? {})) tex?.dispose?.();
         }
         this._materialTextures.clear();
+        this._pbrLoader?.dispose?.();
 
         if (this.root) {
             this.root.removeFromParent();
@@ -1074,7 +1063,10 @@ export class MaterialCalibrationScene {
         const ovr = overrides && typeof overrides === 'object' ? overrides : {};
 
         const tileCandidate = Number(ovr.tileMeters);
-        const tileMeters = (Number.isFinite(tileCandidate) && tileCandidate > EPS) ? tileCandidate : getPbrMaterialTileMeters(id);
+        const resolvedTileMeters = Number(set?.resolved?.overrides?.effective?.tileMeters);
+        const tileMeters = (Number.isFinite(tileCandidate) && tileCandidate > EPS)
+            ? tileCandidate
+            : ((Number.isFinite(resolvedTileMeters) && resolvedTileMeters > EPS) ? resolvedTileMeters : getPbrMaterialTileMeters(id));
         const safeTile = Math.max(EPS, Number(tileMeters) || 1.0);
         const rep = this._tilingMultiplier / safeTile;
 
@@ -1101,29 +1093,22 @@ export class MaterialCalibrationScene {
         const existing = this._materialTextures.get(id);
         if (existing) return existing;
 
-        const urls = resolvePbrMaterialUrls(id);
-        const textures = {};
-        for (const channel of TEXTURE_CHANNEL_DEFS) {
-            const url = urls?.[channel.urlKey] ?? null;
-            textures[channel.key] = this._loadTexture(url, { srgb: channel.srgb });
-        }
+        const resolved = this._pbrLoader.resolveMaterial(id, {
+            cloneTextures: true,
+            diagnosticsTag: 'MaterialCalibrationScene'
+        });
+        const textures = {
+            baseColor: resolved?.textures?.baseColor ?? null,
+            normal: resolved?.textures?.normal ?? null,
+            orm: resolved?.textures?.orm ?? null,
+            ao: resolved?.textures?.ao ?? null,
+            roughness: resolved?.textures?.roughness ?? null,
+            metalness: resolved?.textures?.metalness ?? null
+        };
 
-        const payload = { urls, textures };
+        const payload = { urls: resolved?.urls ?? null, textures, resolved };
         this._materialTextures.set(id, payload);
         return payload;
-    }
-
-    _loadTexture(url, { srgb = true } = {}) {
-        const safeUrl = typeof url === 'string' && url ? url : null;
-        const renderer = this.engine?.renderer ?? null;
-        if (!safeUrl || !renderer) return null;
-
-        const tex = this._texLoader.load(safeUrl);
-        tex.wrapS = THREE.RepeatWrapping;
-        tex.wrapT = THREE.RepeatWrapping;
-        tex.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy?.() ?? 16);
-        applyTextureColorSpace(tex, { srgb: !!srgb });
-        return tex;
     }
 
     _clearRulerLine() {

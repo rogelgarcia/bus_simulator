@@ -12,7 +12,8 @@ import { applyIBLIntensity, applyIBLToScene } from '../../lighting/IBL.js';
 import { DEFAULT_IBL_ID, getIblEntryById, getIblOptions } from '../../content3d/catalogs/IBLCatalog.js';
 import { getResolvedLightingSettings } from '../../lighting/LightingSettings.js';
 import { applyAtmosphereToSkyDome, createGradientSkyDome, shouldShowSkyDome } from '../../assets3d/generators/SkyGenerator.js';
-import { getPbrMaterialTileMeters } from '../../assets3d/materials/PbrMaterialCatalog.js';
+import { getPbrMaterialTileMeters } from '../../content3d/catalogs/PbrMaterialCatalog.js';
+import { PbrTextureLoaderService } from '../../content3d/materials/PbrTexturePipeline.js';
 import { getResolvedAtmosphereSettings, sanitizeAtmosphereSettings } from '../../visuals/atmosphere/AtmosphereSettings.js';
 import { azimuthElevationDegToDir, dirToAzimuthElevationDeg } from '../../visuals/atmosphere/SunDirection.js';
 import { getResolvedSunFlareSettings } from '../../visuals/sun/SunFlareSettings.js';
@@ -27,7 +28,6 @@ const BLOOM_LAYER_ID = 1;
 const BLOOM_LAYER = new THREE.Layers();
 BLOOM_LAYER.set(BLOOM_LAYER_ID);
 const PBR_FLOOR_ID = 'pbr.rocky_terrain_02';
-const PBR_BASE_URL = new URL('../../../../assets/public/pbr/', import.meta.url);
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -96,24 +96,6 @@ function pointInConvexPolygon2D(pt, poly) {
         if (hasPos && hasNeg) return false;
     }
     return true;
-}
-
-function applyTextureColorSpace(tex, { srgb = true } = {}) {
-    if (!tex) return;
-    if ('colorSpace' in tex) {
-        tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-        return;
-    }
-    if ('encoding' in tex) tex.encoding = srgb ? THREE.sRGBEncoding : THREE.LinearEncoding;
-}
-
-function makePbrMapUrls(slug) {
-    const dir = new URL(`${slug}/`, PBR_BASE_URL);
-    return {
-        baseColorUrl: new URL('basecolor.jpg', dir).toString(),
-        normalUrl: new URL('normal_gl.png', dir).toString(),
-        ormUrl: new URL('arm.png', dir).toString()
-    };
 }
 
 function makeFinalCompositePass(bloomTexture) {
@@ -326,6 +308,7 @@ export class SunBloomDebuggerView {
         this._floor = null;
         this._floorMat = null;
         this._floorTex = [];
+        this._pbrTextureService = null;
 
         this._hemi = null;
         this._sun = null;
@@ -412,6 +395,7 @@ export class SunBloomDebuggerView {
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
 
         this.renderer = renderer;
+        this._pbrTextureService = new PbrTextureLoaderService({ renderer: this.renderer });
         this._gpuFrameTimer = getOrCreateGpuFrameTimer(renderer);
         this.scene = new THREE.Scene();
         this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 1200);
@@ -620,6 +604,9 @@ export class SunBloomDebuggerView {
         this._root = null;
         this.scene = null;
 
+        this._pbrTextureService?.dispose?.();
+        this._pbrTextureService = null;
+
         this.renderer?.dispose?.();
         this.renderer = null;
         this.camera = null;
@@ -787,67 +774,37 @@ export class SunBloomDebuggerView {
 
     _loadFloorPbrTextures({ floorSizeMeters }) {
         const mat = this._floorMat;
-        const renderer = this.renderer;
-        if (!mat || !renderer) return;
-
-        const slug = PBR_FLOOR_ID.startsWith('pbr.') ? PBR_FLOOR_ID.slice(4) : PBR_FLOOR_ID;
-        const urls = makePbrMapUrls(slug);
+        if (!mat || !this._pbrTextureService) return;
 
         const tileMeters = getPbrMaterialTileMeters(PBR_FLOOR_ID);
         const rep = (Number.isFinite(tileMeters) && tileMeters > 0) ? (floorSizeMeters / tileMeters) : 10;
         const repeat = Number.isFinite(rep) ? Math.max(0.25, rep) : 10;
+        for (const tex of this._floorTex) tex?.dispose?.();
+        this._floorTex = [];
 
-        const loader = new THREE.TextureLoader();
-        const maxAniso = renderer.capabilities?.getMaxAnisotropy?.() ?? 8;
-        const configure = (tex, { srgb }) => {
-            if (!tex) return;
-            tex.wrapS = THREE.RepeatWrapping;
-            tex.wrapT = THREE.RepeatWrapping;
-            tex.repeat.set(repeat, repeat);
-            tex.anisotropy = Math.min(16, Number(maxAniso) || 8);
-            applyTextureColorSpace(tex, { srgb });
-            tex.needsUpdate = true;
-            this._floorTex.push(tex);
+        const resolved = this._pbrTextureService.resolveMaterial(PBR_FLOOR_ID, {
+            cloneTextures: true,
+            repeat: { x: repeat, y: repeat },
+            diagnosticsTag: 'SunBloomDebugger.floor'
+        });
+        const tex = resolved?.textures ?? {};
+
+        const remember = (texture) => {
+            if (!texture?.isTexture) return null;
+            this._floorTex.push(texture);
+            return texture;
         };
 
-        loader.load(
-            urls.baseColorUrl,
-            (tex) => {
-                configure(tex, { srgb: true });
-                mat.map = tex;
-                mat.color.setHex(0xffffff);
-                mat.needsUpdate = true;
-            },
-            undefined,
-            (err) => console.warn('[SunBloomDebugger] Floor baseColor failed to load', err)
-        );
-
-        loader.load(
-            urls.normalUrl,
-            (tex) => {
-                configure(tex, { srgb: false });
-                mat.normalMap = tex;
-                mat.normalScale?.set?.(0.9, 0.9);
-                mat.needsUpdate = true;
-            },
-            undefined,
-            (err) => console.warn('[SunBloomDebugger] Floor normal failed to load', err)
-        );
-
-        loader.load(
-            urls.ormUrl,
-            (tex) => {
-                configure(tex, { srgb: false });
-                mat.roughnessMap = tex;
-                mat.metalnessMap = tex;
-                mat.aoMap = tex;
-                mat.roughness = 1.0;
-                mat.metalness = 1.0;
-                mat.needsUpdate = true;
-            },
-            undefined,
-            (err) => console.warn('[SunBloomDebugger] Floor ORM failed to load', err)
-        );
+        mat.map = remember(tex.baseColor);
+        mat.normalMap = remember(tex.normal);
+        mat.aoMap = remember(tex.orm ?? tex.ao ?? null);
+        mat.roughnessMap = remember(tex.orm ?? tex.roughness ?? null);
+        mat.metalnessMap = remember(tex.orm ?? tex.metalness ?? null);
+        mat.color.setHex(0xffffff);
+        mat.normalScale?.set?.(0.9, 0.9);
+        mat.roughness = 1.0;
+        mat.metalness = tex.orm ? 1.0 : 0.0;
+        mat.needsUpdate = true;
     }
 
     async _loadEnvironment(iblId) {

@@ -17,6 +17,7 @@ import {
     resolveBuildingStyleWallTextureUrl as resolveBuildingStyleWallTextureUrlFromCatalog
 } from '../../../content3d/catalogs/BuildingStyleCatalog.js';
 import { computePbrMaterialTextureRepeat, isPbrMaterialId, tryGetPbrMaterialIdFromUrl } from '../../../content3d/catalogs/PbrMaterialCatalog.js';
+import { applyResolvedPbrToStandardMaterial, PbrTextureLoaderService } from '../../../content3d/materials/PbrTexturePipeline.js';
 import { applyMaterialVariationToMeshStandardMaterial, computeMaterialVariationSeedFromTiles, MATERIAL_VARIATION_ROOT } from '../../materials/MaterialVariationSystem.js';
 
 const EPS = 1e-6;
@@ -767,6 +768,10 @@ export class BuildingWallTextureCache {
     constructor({ renderer = null, textureLoader = null } = {}) {
         this._renderer = renderer ?? null;
         this._loader = textureLoader ?? new THREE.TextureLoader();
+        this._pbrLoader = new PbrTextureLoaderService({
+            renderer: this._renderer,
+            textureLoader: this._loader
+        });
         this._cache = new Map();
         this._warned = new Set();
     }
@@ -775,8 +780,39 @@ export class BuildingWallTextureCache {
         for (const entry of this._cache.values()) {
             entry?.texture?.dispose?.();
         }
+        this._pbrLoader?.dispose?.();
         this._cache.clear();
         this._warned.clear();
+    }
+
+    setPbrDiagnosticsEnabled(enabled) {
+        this._pbrLoader?.setDiagnosticsEnabled?.(enabled === true);
+    }
+
+    resolveMaterial(materialId, {
+        calibrationOverrides = undefined,
+        localOverrides = null,
+        cloneTextures = false,
+        repeat = null,
+        uvSpace = 'meters',
+        surfaceSizeMeters = null,
+        repeatScale = 1.0,
+        diagnosticsTag = ''
+    } = {}) {
+        return this._pbrLoader.resolveMaterial(materialId, {
+            calibrationOverrides,
+            localOverrides,
+            cloneTextures,
+            repeat,
+            uvSpace,
+            surfaceSizeMeters,
+            repeatScale,
+            diagnosticsTag
+        });
+    }
+
+    applyResolvedMaterial(material, payload, { clearOnMissing = true } = {}) {
+        return applyResolvedPbrToStandardMaterial(material, payload, { clearOnMissing });
     }
 
     _warnOnce(url, err) {
@@ -1130,6 +1166,7 @@ export function applyWallTextureToGroup({
     const useTexture = !!safeUrl && !!textureCache;
     const safeNormalUrl = typeof wallNormalUrl === 'string' && wallNormalUrl ? wallNormalUrl : null;
     const safeOrmUrl = typeof wallOrmUrl === 'string' && wallOrmUrl ? wallOrmUrl : null;
+    const pbrMaterialId = safeUrl ? tryGetPbrMaterialIdFromUrl(safeUrl) : null;
     const usePbr = !!useTexture && (!!safeNormalUrl || !!safeOrmUrl);
     const color = Number.isFinite(baseColorHex) ? baseColorHex : 0xffffff;
 
@@ -1151,6 +1188,18 @@ export function applyWallTextureToGroup({
             return;
         }
 
+        if (pbrMaterialId && textureCache?.resolveMaterial && textureCache?.applyResolvedMaterial) {
+            const payload = textureCache.resolveMaterial(pbrMaterialId, {
+                cloneTextures: false,
+                diagnosticsTag: 'BuildingGenerator.applyWallTextureToGroup'
+            });
+            textureCache.applyResolvedMaterial(wallMat, payload, { clearOnMissing: true });
+            wallMat.color.setHex(0xffffff);
+            if (usePbr) wallMat.normalScale?.set?.(0.9, 0.9);
+            wallMat.needsUpdate = true;
+            return;
+        }
+
         wallMat.color.setHex(0xffffff);
         const tex = textureCache.trackMaterial(safeUrl, wallMat, { slot: 'map', srgb: true });
         if (tex) wallMat.map = tex;
@@ -1164,7 +1213,11 @@ export function applyWallTextureToGroup({
 
         if (safeOrmUrl) {
             const rough = textureCache.trackMaterial(safeOrmUrl, wallMat, { slot: 'roughnessMap', srgb: false });
-            if (rough) wallMat.roughnessMap = rough;
+            if (rough) {
+                wallMat.roughnessMap = rough;
+                wallMat.metalnessMap = rough;
+                wallMat.aoMap = rough;
+            }
             wallMat.roughness = 1.0;
             wallMat.metalness = 0.0;
         } else {
@@ -1325,27 +1378,44 @@ export function buildBuildingVisualParts({
         const url = spec?.baseColorUrl ?? null;
         const normalUrl = spec?.normalUrl ?? null;
         const ormUrl = spec?.ormUrl ?? null;
+        const pbrMaterialId = tryGetPbrMaterialIdFromUrl(url);
 
-        if (url && textureCache) {
+        if (pbrMaterialId && textureCache?.resolveMaterial && textureCache?.applyResolvedMaterial) {
+            const payload = textureCache.resolveMaterial(pbrMaterialId, {
+                cloneTextures: false,
+                diagnosticsTag: 'BuildingGenerator.makeWallMaterial'
+            });
+            textureCache.applyResolvedMaterial(mat, payload, { clearOnMissing: true });
+            mat.color.setHex(0xffffff);
+            if (mat.normalScale) mat.normalScale.set(0.9, 0.9);
+            mat.roughness = 1.0;
+            mat.metalness = 0.0;
+        }
+
+        if (!pbrMaterialId && url && textureCache) {
             mat.color.setHex(0xffffff);
             const tex = textureCache.trackMaterial(url, mat, { slot: 'map', srgb: true });
             if (tex) mat.map = tex;
         }
 
-        if (normalUrl && textureCache) {
+        if (!pbrMaterialId && normalUrl && textureCache) {
             const tex = textureCache.trackMaterial(normalUrl, mat, { slot: 'normalMap', srgb: false });
             if (tex) mat.normalMap = tex;
             mat.normalScale.set(0.9, 0.9);
         }
 
-        if (ormUrl && textureCache) {
+        if (!pbrMaterialId && ormUrl && textureCache) {
             const rough = textureCache.trackMaterial(ormUrl, mat, { slot: 'roughnessMap', srgb: false });
-            if (rough) mat.roughnessMap = rough;
+            if (rough) {
+                mat.roughnessMap = rough;
+                mat.metalnessMap = rough;
+                mat.aoMap = rough;
+            }
             mat.roughness = 1.0;
             mat.metalness = 0.0;
         }
 
-        if (ormUrl) {
+        if (ormUrl || pbrMaterialId) {
             applyMaterialVariationToMeshStandardMaterial(mat, {
                 seed: matVarSeed,
                 seedOffset,

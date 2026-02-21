@@ -112,6 +112,7 @@ When the active debugger tab is `Biome Tiling`, the view MUST switch to a determ
 - Runtime terrain-engine config is adapted for repeatability in this view:
   - grid patching with deterministic origin tied to current terrain bounds
   - biome mode forced to `source_map` with a constant-biome source map for the full area
+- Biome/humidity material textures MUST be resolved through the shared global PBR pipeline (`PbrTexturePipeline`) so terrain behavior matches other tools/screens (catalog metadata + calibration + local overrides precedence).
 - Texture-size-by-distance controls MUST support near/far scale with blend start/end and a default linear-like curve.
 - Distance diagnostics MUST support at least `blended`, `near-only`, and `far-only` inspection views.
 - Variation controls MUST support anti-tiling and macro variation tuning for repetition checks.

@@ -8,7 +8,8 @@ import { getOrCreateGpuFrameTimer } from '../../../engine3d/perf/GpuFrameTimer.j
 import { applyIBLIntensity, applyIBLToScene, loadIBLTexture } from '../../../lighting/IBL.js';
 import { DEFAULT_IBL_ID, getIblEntryById } from '../../../content3d/catalogs/IBLCatalog.js';
 import { createProceduralMeshAsset } from '../../../assets3d/procedural_meshes/ProceduralMeshCatalog.js';
-import { getPbrMaterialMeta, resolvePbrMaterialUrls } from '../../../content3d/catalogs/PbrMaterialCatalog.js';
+import { getPbrMaterialMeta } from '../../../content3d/catalogs/PbrMaterialCatalog.js';
+import { PbrTextureLoaderService } from '../../../content3d/materials/PbrTexturePipeline.js';
 import { createGeneratorConfig, ROAD_DEFAULTS } from '../../../assets3d/generators/GeneratorParams.js';
 import { getCityMaterials } from '../../../assets3d/textures/CityMaterials.js';
 import { createRoadEngineRoads } from '../../../visuals/city/RoadEngineRoads.js';
@@ -173,6 +174,7 @@ export class GrassDebuggerView {
 
         this._texLoader = new THREE.TextureLoader();
         this._texCache = new Map();
+        this._pbrTextureService = null;
         this._groundMat = null;
         this._groundSize = { x: 1, z: 1 };
         this._groundMaterialKey = '';
@@ -310,6 +312,10 @@ export class GrassDebuggerView {
         this._sun = sun;
 
         this.renderer = renderer;
+        this._pbrTextureService = new PbrTextureLoaderService({
+            renderer: this.renderer,
+            textureLoader: this._texLoader
+        });
         this._gpuFrameTimer = getOrCreateGpuFrameTimer(renderer);
         this.scene = scene;
         this.camera = camera;
@@ -379,6 +385,8 @@ export class GrassDebuggerView {
         this.renderer = null;
         this._gpuFrameTimer = null;
         this.camera = null;
+        this._pbrTextureService?.dispose?.();
+        this._pbrTextureService = null;
 
         for (const tex of this._texCache.values()) tex?.dispose?.();
         this._texCache.clear();
@@ -869,40 +877,63 @@ export class GrassDebuggerView {
         return tex;
     }
 
+    _resolvePbrMaterialPayload(materialId, {
+        calibrationOverrides = undefined,
+        localOverrides = null,
+        cloneTextures = false,
+        repeat = null,
+        uvSpace = 'meters',
+        surfaceSizeMeters = null,
+        repeatScale = 1.0,
+        diagnosticsTag = 'GrassDebuggerView'
+    } = {}) {
+        const id = typeof materialId === 'string' ? materialId.trim() : '';
+        if (!id || !this._pbrTextureService) return null;
+        return this._pbrTextureService.resolveMaterial(id, {
+            calibrationOverrides,
+            localOverrides,
+            cloneTextures,
+            repeat,
+            uvSpace,
+            surfaceSizeMeters,
+            repeatScale,
+            diagnosticsTag
+        });
+    }
+
     _applyGroundPbrMaterial(materialId) {
         const mat = this._groundMat;
         if (!mat) return;
 
         const id = typeof materialId === 'string' ? materialId : '';
-        const urls = resolvePbrMaterialUrls(id);
-        const baseUrl = urls?.baseColorUrl ?? null;
-        const normalUrl = urls?.normalUrl ?? null;
-        const ormUrl = urls?.ormUrl ?? null;
-        const aoUrl = urls?.aoUrl ?? null;
-        const roughUrl = urls?.roughnessUrl ?? null;
-        const metalUrl = urls?.metalnessUrl ?? null;
+        const resolved = this._resolvePbrMaterialPayload(id, {
+            cloneTextures: false,
+            diagnosticsTag: 'GrassDebuggerView.applyGroundPbrMaterial'
+        });
+        const textures = resolved?.textures ?? {};
 
         mat.color?.setHex?.(0xffffff);
-        mat.map = this._loadTexture(baseUrl, { srgb: true });
-        mat.normalMap = this._loadTexture(normalUrl, { srgb: false });
+        mat.map = textures.baseColor ?? null;
+        mat.normalMap = textures.normal ?? null;
 
-        if (ormUrl) {
-            const orm = this._loadTexture(ormUrl, { srgb: false });
-            mat.roughnessMap = orm;
-            mat.metalnessMap = orm;
-            mat.aoMap = orm;
+        if (textures.orm) {
+            mat.roughnessMap = textures.orm;
+            mat.metalnessMap = textures.orm;
+            mat.aoMap = textures.orm;
             mat.metalness = 1.0;
         } else {
-            mat.aoMap = this._loadTexture(aoUrl, { srgb: false });
-            mat.roughnessMap = this._loadTexture(roughUrl, { srgb: false });
-            mat.metalnessMap = this._loadTexture(metalUrl, { srgb: false });
+            mat.aoMap = textures.ao ?? null;
+            mat.roughnessMap = textures.roughness ?? null;
+            mat.metalnessMap = textures.metalness ?? null;
             mat.metalness = 0.0;
         }
 
         mat.roughness = 1.0;
 
-        const meta = getPbrMaterialMeta(id);
-        const tileMeters = Number(meta?.tileMeters) || 4.0;
+        const resolvedTileMeters = Number(resolved?.overrides?.effective?.tileMeters);
+        const tileMeters = (Number.isFinite(resolvedTileMeters) && resolvedTileMeters > EPS)
+            ? resolvedTileMeters
+            : (Number(getPbrMaterialMeta(id)?.tileMeters) || 4.0);
         const repX = this._groundSize.x / Math.max(EPS, tileMeters);
         const repY = this._groundSize.z / Math.max(EPS, tileMeters);
 
@@ -925,19 +956,17 @@ export class GrassDebuggerView {
         const id = typeof materialId === 'string' ? materialId : '';
         if (!id) return { map: null, normalMap: null, roughnessMap: null, tileMeters: 4.0 };
 
-        const urls = resolvePbrMaterialUrls(id);
-        const baseUrl = urls?.baseColorUrl ?? null;
-        const normalUrl = urls?.normalUrl ?? null;
-        const ormUrl = urls?.ormUrl ?? null;
-        const roughUrl = urls?.roughnessUrl ?? null;
-        const roughSrcUrl = ormUrl || roughUrl || null;
-
-        const map = this._loadTexture(baseUrl, { srgb: true });
-        const normalMap = this._loadTexture(normalUrl, { srgb: false });
-        const roughnessMap = this._loadTexture(roughSrcUrl, { srgb: false });
-
-        const meta = getPbrMaterialMeta(id);
-        const tileMeters = Number(meta?.tileMeters) || 4.0;
+        const resolved = this._resolvePbrMaterialPayload(id, {
+            cloneTextures: false,
+            diagnosticsTag: 'GrassDebuggerView.substrateLayer'
+        });
+        const map = resolved?.textures?.baseColor ?? null;
+        const normalMap = resolved?.textures?.normal ?? null;
+        const roughnessMap = resolved?.textures?.orm ?? resolved?.textures?.roughness ?? null;
+        const resolvedTileMeters = Number(resolved?.overrides?.effective?.tileMeters);
+        const tileMeters = (Number.isFinite(resolvedTileMeters) && resolvedTileMeters > EPS)
+            ? resolvedTileMeters
+            : (Number(getPbrMaterialMeta(id)?.tileMeters) || 4.0);
 
         return { map, normalMap, roughnessMap, tileMeters };
     }

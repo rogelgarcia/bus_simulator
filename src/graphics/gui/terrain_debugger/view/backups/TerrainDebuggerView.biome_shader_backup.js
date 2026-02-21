@@ -31,7 +31,6 @@ const BIOME_TILING_FOCUS_EYE_Z_OFFSET_METERS = -16.0;
 const BIOME_TILING_FOCUS_POSE_MATCH_EPSILON_METERS = 0.001;
 const ALBEDO_SATURATION_ADJUST_SHADER_VERSION = 3;
 const TERRAIN_BIOME_BLEND_SHADER_VERSION = 15;
-const TERRAIN_BIOME_SHADER_TEMP_DISABLED = true;
 const OUTPUT_PANEL_REFRESH_MS = 100;
 const FLYOVER_SAMPLE_RATE = 15;
 const FLYOVER_DEBUG_HELPER_LAYER = 1;
@@ -177,7 +176,7 @@ const BIOME_TRANSITION_DEFAULT_PROFILE = Object.freeze({
 const BIOME_TILING_DEFAULT_STATE = Object.freeze({
     materialId: 'pbr.ground_037',
     distanceTiling: Object.freeze({
-        enabled: false,
+        enabled: true,
         nearScale: 4.0,
         farScale: 0.36,
         blendStartMeters: 40.0,
@@ -203,11 +202,11 @@ const BIOME_TILING_DEFAULT_STATE = Object.freeze({
         debugView: 'standard'
     }),
     performance: Object.freeze({
-        fragmentShaderEnabled: false,
-        fragmentShaderBiomeEnabled: false,
-        fragmentShaderPbrLightingEnabled: false,
-        fragmentShaderAlbedoEnabled: false,
-        fragmentShaderSurfaceEnabled: false,
+        fragmentShaderEnabled: true,
+        fragmentShaderBiomeEnabled: true,
+        fragmentShaderPbrLightingEnabled: true,
+        fragmentShaderAlbedoEnabled: true,
+        fragmentShaderSurfaceEnabled: true,
         shadowsEnabled: true,
         highDpiEnabled: true
     }),
@@ -586,12 +585,6 @@ function applyTextureColorSpace(tex, { srgb = true } = {}) {
         return;
     }
     if ('encoding' in tex) tex.encoding = srgb ? THREE.sRGBEncoding : THREE.LinearEncoding;
-}
-
-function textureHasImageData(tex) {
-    if (!tex?.isTexture) return false;
-    const image = tex.image ?? tex.source?.data ?? null;
-    return !!image;
 }
 
 function createSolidDataTexture(r, g, b, { srgb = true } = {}) {
@@ -2927,11 +2920,6 @@ export class TerrainDebuggerView {
         fragmentInfo = '',
         fragmentSource = ''
     } = {}) {
-        if (TERRAIN_BIOME_SHADER_TEMP_DISABLED) return;
-        const fragmentRuntimeState = this._resolveBiomeTilingFragmentRuntimeState(this._getBiomeTilingPerformanceState());
-        const effectiveState = fragmentRuntimeState?.effective ?? null;
-        // Ignore transient shader errors when the biome shader path is not active.
-        if (!(effectiveState?.fragmentShaderEnabled === true && effectiveState?.fragmentShaderBiomeEnabled === true)) return;
         this._terrainBiomeShaderErrorCount = Math.max(0, Math.round(Number(this._terrainBiomeShaderErrorCount) || 0)) + 1;
         const prevStage = Math.max(0, Math.round(Number(this._terrainBiomeShaderFallbackStage) || 0));
         const nextStage = Math.min(3, prevStage + 1);
@@ -3158,7 +3146,7 @@ export class TerrainDebuggerView {
         terrainMat.userData.terrainEngineMaskTex = FALLBACK_TERRAIN_ENGINE_MASK_TEX;
         ensureTerrainBiomeBlendShaderOnMaterial(terrainMat);
         const terrainShaderEnabledOnStartup = (this._terrainViewMode !== TERRAIN_VIEW_MODE.DEFAULT)
-            && (this._biomeTilingState?.performance?.fragmentShaderEnabled === true);
+            && (this._biomeTilingState?.performance?.fragmentShaderEnabled !== false);
         setTerrainBiomeBlendShaderEnabledOnMaterial(
             terrainMat,
             terrainShaderEnabledOnStartup
@@ -4613,9 +4601,8 @@ export class TerrainDebuggerView {
         mat.userData = mat.userData ?? {};
         mat.userData.terrainEngineMaskTex = FALLBACK_TERRAIN_ENGINE_MASK_TEX;
         ensureTerrainBiomeBlendShaderOnMaterial(mat);
-        const fragmentRuntimeState = this._resolveBiomeTilingFragmentRuntimeState(this._getBiomeTilingPerformanceState());
         const overlayShaderEnabled = (this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING)
-            && (fragmentRuntimeState?.effective?.fragmentShaderEnabled === true);
+            && (this._biomeTilingState?.performance?.fragmentShaderEnabled !== false);
         setTerrainBiomeBlendShaderEnabledOnMaterial(
             mat,
             overlayShaderEnabled
@@ -4629,8 +4616,8 @@ export class TerrainDebuggerView {
         const src = this._terrainMat;
         const dst = this._biomeTilingDisplacementOverlayMat;
         if (!src?.isMeshStandardMaterial || !dst?.isMeshStandardMaterial) return;
-        const fragmentRuntimeState = this._resolveBiomeTilingFragmentRuntimeState(this._getBiomeTilingPerformanceState());
-        const fragmentEffective = fragmentRuntimeState?.effective ?? {};
+        const fragmentToggleState = this._resolveBiomeTilingFragmentToggleState(this._getBiomeTilingPerformanceState());
+        const fragmentEffective = fragmentToggleState?.effective ?? {};
         const albedoEnabled = fragmentEffective.fragmentShaderAlbedoEnabled === true;
         const biomeEnabled = fragmentEffective.fragmentShaderBiomeEnabled === true;
         const shaderEnabled = fragmentEffective.fragmentShaderEnabled === true;
@@ -4696,23 +4683,12 @@ export class TerrainDebuggerView {
 
     _getBiomeTilingPerformanceState() {
         const src = this._biomeTilingState?.performance ?? BIOME_TILING_DEFAULT_STATE.performance;
-        if (TERRAIN_BIOME_SHADER_TEMP_DISABLED) {
-            return {
-                fragmentShaderEnabled: src?.fragmentShaderEnabled === true,
-                fragmentShaderBiomeEnabled: false,
-                fragmentShaderPbrLightingEnabled: src?.fragmentShaderPbrLightingEnabled === true,
-                fragmentShaderAlbedoEnabled: src?.fragmentShaderAlbedoEnabled === true,
-                fragmentShaderSurfaceEnabled: src?.fragmentShaderSurfaceEnabled === true,
-                shadowsEnabled: src?.shadowsEnabled !== false,
-                highDpiEnabled: src?.highDpiEnabled !== false
-            };
-        }
         return {
-            fragmentShaderEnabled: src?.fragmentShaderEnabled === true,
-            fragmentShaderBiomeEnabled: src?.fragmentShaderBiomeEnabled === true,
-            fragmentShaderPbrLightingEnabled: src?.fragmentShaderPbrLightingEnabled === true,
-            fragmentShaderAlbedoEnabled: src?.fragmentShaderAlbedoEnabled === true,
-            fragmentShaderSurfaceEnabled: src?.fragmentShaderSurfaceEnabled === true,
+            fragmentShaderEnabled: src?.fragmentShaderEnabled !== false,
+            fragmentShaderBiomeEnabled: src?.fragmentShaderBiomeEnabled !== false,
+            fragmentShaderPbrLightingEnabled: src?.fragmentShaderPbrLightingEnabled !== false,
+            fragmentShaderAlbedoEnabled: src?.fragmentShaderAlbedoEnabled !== false,
+            fragmentShaderSurfaceEnabled: src?.fragmentShaderSurfaceEnabled !== false,
             shadowsEnabled: src?.shadowsEnabled !== false,
             highDpiEnabled: src?.highDpiEnabled !== false
         };
@@ -4723,11 +4699,11 @@ export class TerrainDebuggerView {
             ? performanceState
             : this._getBiomeTilingPerformanceState();
         const requested = {
-            fragmentShaderEnabled: src?.fragmentShaderEnabled === true,
-            fragmentShaderBiomeEnabled: src?.fragmentShaderBiomeEnabled === true,
-            fragmentShaderPbrLightingEnabled: src?.fragmentShaderPbrLightingEnabled === true,
-            fragmentShaderAlbedoEnabled: src?.fragmentShaderAlbedoEnabled === true,
-            fragmentShaderSurfaceEnabled: src?.fragmentShaderSurfaceEnabled === true
+            fragmentShaderEnabled: src?.fragmentShaderEnabled !== false,
+            fragmentShaderBiomeEnabled: src?.fragmentShaderBiomeEnabled !== false,
+            fragmentShaderPbrLightingEnabled: src?.fragmentShaderPbrLightingEnabled !== false,
+            fragmentShaderAlbedoEnabled: src?.fragmentShaderAlbedoEnabled !== false,
+            fragmentShaderSurfaceEnabled: src?.fragmentShaderSurfaceEnabled !== false
         };
         const effective = {
             fragmentShaderEnabled: requested.fragmentShaderEnabled,
@@ -4781,206 +4757,36 @@ export class TerrainDebuggerView {
                 effectiveValue: effective.fragmentShaderEnabled
             }),
             buildState({
-                id: 'albedo',
-                label: 'Albedo',
-                requestedValue: requested.fragmentShaderAlbedoEnabled,
-                effectiveValue: effective.fragmentShaderAlbedoEnabled
-            }),
-            buildState({
                 id: 'pbr_lighting',
                 label: 'PBR Lighting',
                 requestedValue: requested.fragmentShaderPbrLightingEnabled,
                 effectiveValue: effective.fragmentShaderPbrLightingEnabled
             }),
             buildState({
-                id: 'surface',
-                label: 'Surface (Normal+ORM)',
-                requestedValue: requested.fragmentShaderSurfaceEnabled,
-                effectiveValue: effective.fragmentShaderSurfaceEnabled
-            }),
-            buildState({
                 id: 'biome',
                 label: 'Biome',
                 requestedValue: requested.fragmentShaderBiomeEnabled,
                 effectiveValue: effective.fragmentShaderBiomeEnabled
+            }),
+            buildState({
+                id: 'albedo',
+                label: 'Albedo',
+                requestedValue: requested.fragmentShaderAlbedoEnabled,
+                effectiveValue: effective.fragmentShaderAlbedoEnabled
+            }),
+            buildState({
+                id: 'surface',
+                label: 'Surface (Normal+ORM)',
+                requestedValue: requested.fragmentShaderSurfaceEnabled,
+                effectiveValue: effective.fragmentShaderSurfaceEnabled
             })
         ];
         return { requested, effective, states };
     }
 
-    _resolveBiomeTilingFragmentRuntimeState(performanceState = null) {
-        const baseState = this._resolveBiomeTilingFragmentToggleState(performanceState);
-        const requested = {
-            fragmentShaderEnabled: baseState?.requested?.fragmentShaderEnabled === true,
-            fragmentShaderBiomeEnabled: baseState?.requested?.fragmentShaderBiomeEnabled === true,
-            fragmentShaderPbrLightingEnabled: baseState?.requested?.fragmentShaderPbrLightingEnabled === true,
-            fragmentShaderAlbedoEnabled: baseState?.requested?.fragmentShaderAlbedoEnabled === true,
-            fragmentShaderSurfaceEnabled: baseState?.requested?.fragmentShaderSurfaceEnabled === true
-        };
-        const effective = {
-            fragmentShaderEnabled: baseState?.effective?.fragmentShaderEnabled === true,
-            fragmentShaderBiomeEnabled: baseState?.effective?.fragmentShaderBiomeEnabled === true,
-            fragmentShaderPbrLightingEnabled: baseState?.effective?.fragmentShaderPbrLightingEnabled === true,
-            fragmentShaderAlbedoEnabled: baseState?.effective?.fragmentShaderAlbedoEnabled === true,
-            fragmentShaderSurfaceEnabled: baseState?.effective?.fragmentShaderSurfaceEnabled === true
-        };
-        const fallbackStage = TERRAIN_BIOME_SHADER_TEMP_DISABLED
-            ? 3
-            : Math.max(0, Math.round(Number(this._terrainBiomeShaderFallbackStage) || 0));
-        if (fallbackStage >= 1) effective.fragmentShaderSurfaceEnabled = false;
-        if (fallbackStage >= 2) effective.fragmentShaderBiomeEnabled = false;
-        if (fallbackStage >= 3) {
-            effective.fragmentShaderEnabled = false;
-            effective.fragmentShaderBiomeEnabled = false;
-            effective.fragmentShaderPbrLightingEnabled = false;
-            effective.fragmentShaderAlbedoEnabled = false;
-            effective.fragmentShaderSurfaceEnabled = false;
-        }
-        const biomeShaderPathEnabled = effective.fragmentShaderEnabled && effective.fragmentShaderBiomeEnabled;
-        if (!biomeShaderPathEnabled) {
-            // The terrain biome shader is a no-op unless the biome branch is explicitly enabled.
-            effective.fragmentShaderEnabled = false;
-            effective.fragmentShaderBiomeEnabled = false;
-            effective.fragmentShaderPbrLightingEnabled = false;
-            effective.fragmentShaderAlbedoEnabled = false;
-            effective.fragmentShaderSurfaceEnabled = false;
-        }
-        return { requested, effective, fallbackStage };
-    }
-
-    _buildBiomeTilingShaderToggleStates({
-        requested = null,
-        effective = null,
-        distanceBlendEnabled = false,
-        antiTilingEnabled = false,
-        macroVariationEnabled = false,
-        fallbackStage = 0
-    } = {}) {
-        const req = {
-            fragmentShaderEnabled: requested?.fragmentShaderEnabled === true,
-            fragmentShaderBiomeEnabled: requested?.fragmentShaderBiomeEnabled === true,
-            fragmentShaderPbrLightingEnabled: requested?.fragmentShaderPbrLightingEnabled === true,
-            fragmentShaderAlbedoEnabled: requested?.fragmentShaderAlbedoEnabled === true,
-            fragmentShaderSurfaceEnabled: requested?.fragmentShaderSurfaceEnabled === true
-        };
-        const eff = {
-            fragmentShaderEnabled: effective?.fragmentShaderEnabled === true,
-            fragmentShaderBiomeEnabled: effective?.fragmentShaderBiomeEnabled === true,
-            fragmentShaderPbrLightingEnabled: effective?.fragmentShaderPbrLightingEnabled === true,
-            fragmentShaderAlbedoEnabled: effective?.fragmentShaderAlbedoEnabled === true,
-            fragmentShaderSurfaceEnabled: effective?.fragmentShaderSurfaceEnabled === true
-        };
-        const shaderFallbackReason = Math.max(0, Math.round(Number(fallbackStage) || 0)) > 0
-            ? 'disabled by shader fallback'
-            : '';
-        const withFallbackReason = (reason, requestedValue, effectiveValue) => {
-            const explicitReason = String(reason ?? '').trim();
-            if (explicitReason) return explicitReason;
-            if (requestedValue === true && effectiveValue !== true && shaderFallbackReason) return shaderFallbackReason;
-            return '';
-        };
-        const rows = [];
-        const pushRow = ({ id, label, requestedValue = false, effectiveValue = false, reason = '' }) => {
-            rows.push({
-                id: String(id ?? '').trim(),
-                label: String(label ?? '').trim(),
-                requested: requestedValue === true,
-                effective: effectiveValue === true,
-                reason: withFallbackReason(reason, requestedValue === true, effectiveValue === true)
-            });
-        };
-        pushRow({
-            id: 'fragment_shader',
-            label: 'Fragment Shader',
-            requestedValue: req.fragmentShaderEnabled,
-            effectiveValue: eff.fragmentShaderEnabled,
-            reason: req.fragmentShaderEnabled !== true
-                ? 'set Off'
-                : (eff.fragmentShaderEnabled
-                    ? ''
-                    : (req.fragmentShaderBiomeEnabled === true ? '' : 'blocked by Biome'))
-        });
-        pushRow({
-            id: 'albedo',
-            label: 'Albedo',
-            requestedValue: req.fragmentShaderAlbedoEnabled,
-            effectiveValue: eff.fragmentShaderAlbedoEnabled,
-            reason: req.fragmentShaderAlbedoEnabled !== true
-                ? 'set Off'
-                : (eff.fragmentShaderEnabled ? '' : 'blocked by Fragment Shader')
-        });
-        pushRow({
-            id: 'distance_blend',
-            label: 'Distance Blend Shader',
-            requestedValue: distanceBlendEnabled === true,
-            effectiveValue: distanceBlendEnabled === true && eff.fragmentShaderEnabled && eff.fragmentShaderAlbedoEnabled,
-            reason: distanceBlendEnabled === true
-                ? (eff.fragmentShaderEnabled
-                    ? (eff.fragmentShaderAlbedoEnabled ? '' : 'blocked by Albedo')
-                    : 'blocked by Fragment Shader')
-                : 'set Off'
-        });
-        pushRow({
-            id: 'anti_tiling',
-            label: 'Anti-tiling Shader',
-            requestedValue: antiTilingEnabled === true,
-            effectiveValue: antiTilingEnabled === true && eff.fragmentShaderEnabled && eff.fragmentShaderAlbedoEnabled,
-            reason: antiTilingEnabled === true
-                ? (eff.fragmentShaderEnabled
-                    ? (eff.fragmentShaderAlbedoEnabled ? '' : 'blocked by Albedo')
-                    : 'blocked by Fragment Shader')
-                : 'set Off'
-        });
-        pushRow({
-            id: 'macro_variation',
-            label: 'Macro Variation Shader',
-            requestedValue: macroVariationEnabled === true,
-            effectiveValue: macroVariationEnabled === true && eff.fragmentShaderEnabled && eff.fragmentShaderAlbedoEnabled,
-            reason: macroVariationEnabled === true
-                ? (eff.fragmentShaderEnabled
-                    ? (eff.fragmentShaderAlbedoEnabled ? '' : 'blocked by Albedo')
-                    : 'blocked by Fragment Shader')
-                : 'set Off'
-        });
-        pushRow({
-            id: 'pbr_lighting',
-            label: 'PBR Lighting',
-            requestedValue: req.fragmentShaderPbrLightingEnabled,
-            effectiveValue: eff.fragmentShaderPbrLightingEnabled,
-            reason: req.fragmentShaderPbrLightingEnabled !== true
-                ? 'set Off'
-                : (eff.fragmentShaderEnabled ? '' : 'blocked by Fragment Shader')
-        });
-        pushRow({
-            id: 'surface',
-            label: 'Surface (Normal+ORM)',
-            requestedValue: req.fragmentShaderSurfaceEnabled,
-            effectiveValue: eff.fragmentShaderSurfaceEnabled,
-            reason: req.fragmentShaderSurfaceEnabled !== true
-                ? 'set Off'
-                : (eff.fragmentShaderEnabled
-                    ? (eff.fragmentShaderPbrLightingEnabled ? '' : 'blocked by PBR Lighting')
-                    : 'blocked by Fragment Shader')
-        });
-        pushRow({
-            id: 'biome',
-            label: 'Biome',
-            requestedValue: req.fragmentShaderBiomeEnabled,
-            effectiveValue: eff.fragmentShaderBiomeEnabled,
-            reason: req.fragmentShaderBiomeEnabled !== true
-                ? 'set Off'
-                : (eff.fragmentShaderEnabled ? '' : 'blocked by Fragment Shader')
-        });
-        return rows;
-    }
-
     _applyBiomeTilingPerformanceSettings({ force = false } = {}) {
         const renderer = this.renderer ?? null;
         const perfState = this._getBiomeTilingPerformanceState();
-        if (perfState?.fragmentShaderBiomeEnabled !== true && this._terrainBiomeShaderFallbackStage !== 0) {
-            this._terrainBiomeShaderFallbackStage = 0;
-            this._terrainBiomeShaderFallbackActive = false;
-        }
         const {
             fragmentShaderEnabled,
             fragmentShaderBiomeEnabled,
@@ -4990,8 +4796,25 @@ export class TerrainDebuggerView {
             shadowsEnabled,
             highDpiEnabled
         } = perfState;
-        const fragmentRuntimeState = this._resolveBiomeTilingFragmentRuntimeState(perfState);
-        const fragmentEffective = fragmentRuntimeState.effective;
+        const fragmentToggleState = this._resolveBiomeTilingFragmentToggleState(perfState);
+        const fragmentEffectiveRaw = fragmentToggleState.effective;
+        const fallbackStage = Math.max(0, Math.round(Number(this._terrainBiomeShaderFallbackStage) || 0));
+        const fragmentEffective = {
+            fragmentShaderEnabled: fragmentEffectiveRaw.fragmentShaderEnabled === true,
+            fragmentShaderBiomeEnabled: fragmentEffectiveRaw.fragmentShaderBiomeEnabled === true,
+            fragmentShaderPbrLightingEnabled: fragmentEffectiveRaw.fragmentShaderPbrLightingEnabled === true,
+            fragmentShaderAlbedoEnabled: fragmentEffectiveRaw.fragmentShaderAlbedoEnabled === true,
+            fragmentShaderSurfaceEnabled: fragmentEffectiveRaw.fragmentShaderSurfaceEnabled === true
+        };
+        if (fallbackStage >= 1) fragmentEffective.fragmentShaderSurfaceEnabled = false;
+        if (fallbackStage >= 2) fragmentEffective.fragmentShaderBiomeEnabled = false;
+        if (fallbackStage >= 3) {
+            fragmentEffective.fragmentShaderEnabled = false;
+            fragmentEffective.fragmentShaderBiomeEnabled = false;
+            fragmentEffective.fragmentShaderPbrLightingEnabled = false;
+            fragmentEffective.fragmentShaderAlbedoEnabled = false;
+            fragmentEffective.fragmentShaderSurfaceEnabled = false;
+        }
 
         const targetPixelRatio = highDpiEnabled ? Math.min(devicePixelRatio, 2) : 1;
         const perfKey = [
@@ -5062,9 +4885,7 @@ export class TerrainDebuggerView {
         const applyShaderToggle = (mat, { allowShader = true } = {}) => {
             if (!mat?.isMeshStandardMaterial) return;
             ensureTerrainBiomeBlendShaderOnMaterial(mat);
-            const shaderEnabled = (!TERRAIN_BIOME_SHADER_TEMP_DISABLED)
-                && allowShader
-                && fragmentEffective.fragmentShaderEnabled;
+            const shaderEnabled = allowShader && fragmentEffective.fragmentShaderEnabled;
             setTerrainBiomeBlendShaderEnabledOnMaterial(mat, shaderEnabled);
             mat.userData = mat.userData ?? {};
             const nextFeatureMaskX = (shaderEnabled && fragmentEffective.fragmentShaderAlbedoEnabled) ? 1.0 : 0.0;
@@ -5108,11 +4929,11 @@ export class TerrainDebuggerView {
 
     _buildTerrainFragmentPathDiagnostics({
         material = null,
-        fragmentShaderEnabled = false,
-        fragmentShaderBiomeEnabled = false,
-        fragmentShaderPbrLightingEnabled = false,
-        fragmentShaderAlbedoEnabled = false,
-        fragmentShaderSurfaceEnabled = false,
+        fragmentShaderEnabled = true,
+        fragmentShaderBiomeEnabled = true,
+        fragmentShaderPbrLightingEnabled = true,
+        fragmentShaderAlbedoEnabled = true,
+        fragmentShaderSurfaceEnabled = true,
         fragmentToggleStates = null,
         distanceBlendEnabled = true,
         antiTilingEnabled = false,
@@ -5224,23 +5045,18 @@ export class TerrainDebuggerView {
         };
 
         if (effectiveFragmentShaderEnabled) {
-            const biomeAlbedoReason = getToggleReason(['biome', 'albedo', 'fragment_shader']);
-            const baseAlbedoReason = getToggleReason(['albedo', 'fragment_shader']);
-            const distanceReason = getToggleReason(['distance_blend', 'fragment_shader', 'albedo']);
-            const antiReason = getToggleReason(['anti_tiling', 'fragment_shader', 'albedo']);
-            const macroReason = getToggleReason(['macro_variation', 'fragment_shader', 'albedo']);
-            const surfaceReason = getToggleReason(['surface', 'fragment_shader', 'pbr_lighting']);
+            const albedoReason = getToggleReason(['fragment_shader', 'biome', 'albedo']);
+            const surfaceReason = getToggleReason(['fragment_shader', 'pbr_lighting', 'surface']);
             const biomeAlbedoActive = effectiveAlbedoEnabled && effectiveBiomeEnabled;
             const baseAlbedoActive = effectiveAlbedoEnabled && !effectiveBiomeEnabled;
             const biomeSurfaceActive = effectiveSurfaceEnabled && effectiveBiomeEnabled;
-            const baseSurfaceActive = effectiveSurfaceEnabled && !effectiveBiomeEnabled;
             addPathState({
                 id: 'albedo_biome_blend',
-                label: 'Biome Albedo Shader',
+                label: 'Albedo biome blend',
                 active: biomeAlbedoActive,
                 note: biomeAlbedoActive
                     ? 'Terrain mask + biome albedo textures.'
-                    : appendReasonNote('Terrain mask + biome albedo textures.', biomeAlbedoReason),
+                    : appendReasonNote('Terrain mask + biome albedo textures.', albedoReason),
                 textures: [
                     data.terrainEngineMaskTex,
                     data.terrainBiomeMapStone,
@@ -5250,77 +5066,77 @@ export class TerrainDebuggerView {
             });
             addPathState({
                 id: 'albedo_base_map',
-                label: 'Albedo Base Map Shader',
+                label: 'Albedo base map',
                 active: baseAlbedoActive,
                 note: baseAlbedoActive
                     ? 'Base material albedo with distance/anti-tiling controls.'
-                    : appendReasonNote('Base material albedo with distance/anti-tiling controls.', baseAlbedoReason),
+                    : appendReasonNote('Base material albedo with distance/anti-tiling controls.', albedoReason),
                 textures: [mat.map]
             });
             addPathState({
                 id: 'distance_blend',
-                label: 'Distance Blend Shader',
+                label: 'Distance blend',
                 active: effectiveAlbedoEnabled && distanceBlendEnabled,
                 note: (effectiveAlbedoEnabled && distanceBlendEnabled)
                     ? 'UV blend math only; no extra sampler bindings.'
-                    : appendReasonNote('UV blend math only; no extra sampler bindings.', distanceReason),
+                    : (!effectiveAlbedoEnabled
+                        ? appendReasonNote('UV blend math only; no extra sampler bindings.', albedoReason)
+                        : 'Distance Blend set Off.'),
                 textures: []
             });
             addPathState({
                 id: 'anti_tiling',
-                label: 'Anti-tiling Shader',
+                label: 'Anti-tiling',
                 active: effectiveAlbedoEnabled && antiTilingEnabled,
                 note: (effectiveAlbedoEnabled && antiTilingEnabled)
                     ? 'UV remap + extra fetches on existing textures.'
-                    : appendReasonNote('UV remap + extra fetches on existing textures.', antiReason),
+                    : (!effectiveAlbedoEnabled
+                        ? appendReasonNote('UV remap + extra fetches on existing textures.', albedoReason)
+                        : 'Anti-tiling set Off.'),
                 textures: []
             });
             addPathState({
                 id: 'macro_variation',
-                label: 'Macro Variation Shader',
+                label: 'Macro variation',
                 active: effectiveAlbedoEnabled && macroVariationEnabled,
                 note: (effectiveAlbedoEnabled && macroVariationEnabled)
                     ? 'Uses humidity noise texture (shared sampler).'
-                    : appendReasonNote('Uses humidity noise texture (shared sampler).', macroReason),
+                    : (!effectiveAlbedoEnabled
+                        ? appendReasonNote('Uses humidity noise texture (shared sampler).', albedoReason)
+                        : 'Macro Variation set Off.'),
                 textures: [data.terrainHumidityEdgeNoiseTex]
             });
             addPathState({
                 id: 'humidity_edge_noise',
-                label: 'Humidity Edge Noise (Derived)',
+                label: 'Humidity edge noise',
                 active: biomeMaskSamplingEnabled || (effectiveAlbedoEnabled && macroVariationEnabled),
                 note: (biomeMaskSamplingEnabled || (effectiveAlbedoEnabled && macroVariationEnabled))
                     ? 'Humidity transition and macro variation noise sampling.'
                     : appendReasonNote(
                         'Humidity transition and macro variation noise sampling.',
-                        getToggleReason(['biome']) || getToggleReason(['macro_variation']) || baseAlbedoReason
+                        getToggleReason(['fragment_shader', 'biome']) || getToggleReason(['fragment_shader', 'albedo'])
                     ),
                 textures: [data.terrainHumidityEdgeNoiseTex]
             });
             addPathState({
                 id: 'surface_normal_orm',
-                label: 'Surface (Normal+ORM) Shader',
+                label: 'Surface Normal/ORM',
                 active: effectiveSurfaceEnabled,
                 note: effectiveSurfaceEnabled
                     ? (biomeSurfaceActive
                         ? 'Biome normal + ORM texture arrays.'
-                        : 'Base normal + roughness/AO maps.')
+                        : 'Using base material normal/roughness/AO maps.')
                     : appendReasonNote('Biome normal + ORM texture arrays.', surfaceReason),
                 textures: biomeSurfaceActive
                     ? [
                         data.terrainBiomeNormalArrayTex,
                         data.terrainBiomeOrmArrayTex
                     ]
-                    : (baseSurfaceActive
-                        ? [
-                            mat.normalMap,
-                            mat.aoMap,
-                            mat.roughnessMap
-                        ]
-                        : [])
+                    : []
             });
             addPathState({
                 id: 'displacement_source_sampling',
-                label: 'Displacement Source Shader',
+                label: 'Displacement source sampling',
                 active: displacementSamplingEnabled,
                 domain: 'vertex',
                 note: 'Vertex-domain sampling; not counted in fragment sampler total.',
@@ -5329,56 +5145,56 @@ export class TerrainDebuggerView {
         } else {
             addPathState({
                 id: 'albedo_biome_blend',
-                label: 'Biome Albedo Shader',
+                label: 'Albedo biome blend',
                 active: false,
                 note: 'Fragment Shader set Off.',
                 textures: []
             });
             addPathState({
                 id: 'albedo_base_map',
-                label: 'Albedo Base Map Shader',
+                label: 'Albedo base map',
                 active: false,
                 note: 'Fragment Shader set Off.',
                 textures: []
             });
             addPathState({
                 id: 'distance_blend',
-                label: 'Distance Blend Shader',
+                label: 'Distance blend',
                 active: false,
                 note: 'Fragment Shader set Off.',
                 textures: []
             });
             addPathState({
                 id: 'anti_tiling',
-                label: 'Anti-tiling Shader',
+                label: 'Anti-tiling',
                 active: false,
                 note: 'Fragment Shader set Off.',
                 textures: []
             });
             addPathState({
                 id: 'macro_variation',
-                label: 'Macro Variation Shader',
+                label: 'Macro variation',
                 active: false,
                 note: 'Fragment Shader set Off.',
                 textures: []
             });
             addPathState({
                 id: 'humidity_edge_noise',
-                label: 'Humidity Edge Noise (Derived)',
+                label: 'Humidity edge noise',
                 active: false,
                 note: 'Fragment Shader set Off.',
                 textures: []
             });
             addPathState({
                 id: 'surface_normal_orm',
-                label: 'Surface (Normal+ORM) Shader',
+                label: 'Surface Normal/ORM',
                 active: false,
                 note: 'Fragment Shader set Off.',
                 textures: []
             });
             addPathState({
                 id: 'displacement_source_sampling',
-                label: 'Displacement Source Shader',
+                label: 'Displacement source sampling',
                 active: displacementSamplingEnabled,
                 domain: 'vertex',
                 note: 'Vertex-domain sampling; not counted in fragment sampler total.',
@@ -5437,11 +5253,11 @@ export class TerrainDebuggerView {
 
     _estimateTerrainFragmentSamplerUsage({
         material = null,
-        fragmentShaderEnabled = false,
-        fragmentShaderBiomeEnabled = false,
-        fragmentShaderPbrLightingEnabled = false,
-        fragmentShaderAlbedoEnabled = false,
-        fragmentShaderSurfaceEnabled = false
+        fragmentShaderEnabled = true,
+        fragmentShaderBiomeEnabled = true,
+        fragmentShaderPbrLightingEnabled = true,
+        fragmentShaderAlbedoEnabled = true,
+        fragmentShaderSurfaceEnabled = true
     } = {}) {
         const diagnostics = this._buildTerrainFragmentPathDiagnostics({
             material,
@@ -6207,7 +6023,7 @@ export class TerrainDebuggerView {
             tex.wrapS = THREE.RepeatWrapping;
             tex.wrapT = THREE.RepeatWrapping;
             tex.repeat.set(repeat, repeat);
-            if (textureHasImageData(tex)) tex.needsUpdate = true;
+            tex.needsUpdate = true;
         }
         rig.nearScale = nextNearScale;
     }
@@ -8798,7 +8614,7 @@ export class TerrainDebuggerView {
         return {
             materialId: normalizeMaterialId(input.materialId, defaultMaterialId),
             distanceTiling: {
-                enabled: distSrc.enabled === true,
+                enabled: distSrc.enabled !== false,
                 nearScale: clamp(distSrc.nearScale, 0.1, 6.0, BIOME_TILING_DEFAULT_STATE.distanceTiling.nearScale),
                 farScale: clamp(distSrc.farScale, 0.01, 2.0, BIOME_TILING_DEFAULT_STATE.distanceTiling.farScale),
                 blendStartMeters,
@@ -8824,11 +8640,11 @@ export class TerrainDebuggerView {
                 debugView: dispDebugView
             },
             performance: {
-                fragmentShaderEnabled: perfSrc.fragmentShaderEnabled === true,
-                fragmentShaderBiomeEnabled: TERRAIN_BIOME_SHADER_TEMP_DISABLED ? false : perfSrc.fragmentShaderBiomeEnabled === true,
-                fragmentShaderPbrLightingEnabled: perfSrc.fragmentShaderPbrLightingEnabled === true,
-                fragmentShaderAlbedoEnabled: perfSrc.fragmentShaderAlbedoEnabled === true,
-                fragmentShaderSurfaceEnabled: perfSrc.fragmentShaderSurfaceEnabled === true,
+                fragmentShaderEnabled: perfSrc.fragmentShaderEnabled !== false,
+                fragmentShaderBiomeEnabled: perfSrc.fragmentShaderBiomeEnabled !== false,
+                fragmentShaderPbrLightingEnabled: perfSrc.fragmentShaderPbrLightingEnabled !== false,
+                fragmentShaderAlbedoEnabled: perfSrc.fragmentShaderAlbedoEnabled !== false,
+                fragmentShaderSurfaceEnabled: perfSrc.fragmentShaderSurfaceEnabled !== false,
                 shadowsEnabled: perfSrc.shadowsEnabled !== false,
                 highDpiEnabled: perfSrc.highDpiEnabled !== false
             },
@@ -9023,7 +8839,7 @@ export class TerrainDebuggerView {
                     cloned.rotation = 0;
                     cloned.matrixAutoUpdate = true;
                     cloned.updateMatrix?.();
-                    if (textureHasImageData(cloned)) cloned.needsUpdate = true;
+                    cloned.needsUpdate = true;
                     this._biomeTilingDisplacementRuntimeTex = cloned;
                     this._biomeTilingDisplacementRuntimeKey = sourceKey;
                 }
@@ -9160,9 +8976,9 @@ export class TerrainDebuggerView {
         const overlayWidthTiles = overlayWidthMeters > EPS ? (overlayWidthMeters / tileSize) : 0;
         const overlayDepthTiles = overlayDepthMeters > EPS ? (overlayDepthMeters / tileSize) : 0;
         const requestedGeometry = this._biomeTilingState?.geometryDensity ?? BIOME_TILING_DEFAULT_STATE.geometryDensity;
-        const fragmentRuntimeState = this._resolveBiomeTilingFragmentRuntimeState(this._getBiomeTilingPerformanceState());
-        const fragmentRequested = fragmentRuntimeState.requested;
-        const fragmentEffective = fragmentRuntimeState.effective;
+        const fragmentToggleState = this._resolveBiomeTilingFragmentToggleState(this._getBiomeTilingPerformanceState());
+        const fragmentRequested = fragmentToggleState.requested;
+        const fragmentEffective = fragmentToggleState.effective;
         const fragmentShaderEnabled = fragmentEffective.fragmentShaderEnabled === true;
         const fragmentShaderBiomeEnabled = fragmentEffective.fragmentShaderBiomeEnabled === true;
         const fragmentShaderPbrLightingEnabled = fragmentEffective.fragmentShaderPbrLightingEnabled === true;
@@ -9310,28 +9126,17 @@ export class TerrainDebuggerView {
         const distanceCfg = this._biomeTilingState?.distanceTiling ?? BIOME_TILING_DEFAULT_STATE.distanceTiling;
         const variationCfg = this._biomeTilingState?.variation ?? BIOME_TILING_DEFAULT_STATE.variation;
         const displacementCfg = this._biomeTilingState?.displacement ?? BIOME_TILING_DEFAULT_STATE.displacement;
-        const distanceBlendEnabled = distanceCfg?.enabled !== false;
-        const antiTilingEnabled = variationCfg?.antiTilingEnabled === true;
-        const macroVariationEnabled = variationCfg?.macroVariationEnabled === true;
-        const fragmentToggleRows = this._buildBiomeTilingShaderToggleStates({
-            requested: fragmentRequested,
-            effective: fragmentEffective,
-            distanceBlendEnabled,
-            antiTilingEnabled,
-            macroVariationEnabled,
-            fallbackStage: fragmentRuntimeState?.fallbackStage ?? 0
-        });
         const fragmentPathDiagnostics = this._buildTerrainFragmentPathDiagnostics({
             material: lodDiagnosticsMaterial,
-            fragmentShaderEnabled: fragmentEffective.fragmentShaderEnabled === true,
-            fragmentShaderBiomeEnabled: fragmentEffective.fragmentShaderBiomeEnabled === true,
-            fragmentShaderPbrLightingEnabled: fragmentEffective.fragmentShaderPbrLightingEnabled === true,
-            fragmentShaderAlbedoEnabled: fragmentEffective.fragmentShaderAlbedoEnabled === true,
-            fragmentShaderSurfaceEnabled: fragmentEffective.fragmentShaderSurfaceEnabled === true,
-            fragmentToggleStates: fragmentToggleRows,
-            distanceBlendEnabled,
-            antiTilingEnabled,
-            macroVariationEnabled,
+            fragmentShaderEnabled: fragmentRequested.fragmentShaderEnabled === true,
+            fragmentShaderBiomeEnabled: fragmentRequested.fragmentShaderBiomeEnabled === true,
+            fragmentShaderPbrLightingEnabled: fragmentRequested.fragmentShaderPbrLightingEnabled === true,
+            fragmentShaderAlbedoEnabled: fragmentRequested.fragmentShaderAlbedoEnabled === true,
+            fragmentShaderSurfaceEnabled: fragmentRequested.fragmentShaderSurfaceEnabled === true,
+            fragmentToggleStates: fragmentToggleState.states,
+            distanceBlendEnabled: distanceCfg?.enabled !== false,
+            antiTilingEnabled: variationCfg?.antiTilingEnabled === true,
+            macroVariationEnabled: variationCfg?.macroVariationEnabled === true,
             displacementSamplingEnabled: displacementCfg?.enabled === true
         });
         const lodSamplerEstimateUsed = Math.max(0, Math.round(Number(fragmentPathDiagnostics?.totalFragmentSamplers) || 0));
@@ -9461,11 +9266,8 @@ export class TerrainDebuggerView {
             fragmentShaderPbrLightingEnabled,
             fragmentShaderAlbedoEnabled,
             fragmentShaderSurfaceEnabled,
-            distanceBlendEnabled,
-            antiTilingEnabled,
-            macroVariationEnabled,
-            fragmentToggleStates: Array.isArray(fragmentToggleRows)
-                ? fragmentToggleRows.map((row) => ({
+            fragmentToggleStates: Array.isArray(fragmentToggleState?.states)
+                ? fragmentToggleState.states.map((row) => ({
                     id: String(row?.id ?? ''),
                     label: String(row?.label ?? ''),
                     requested: row?.requested === true,
@@ -10010,8 +9812,8 @@ export class TerrainDebuggerView {
         const displacementDebugView = (displacementDebugRaw === 'wireframe' || displacementDebugRaw === 'displacement')
             ? displacementDebugRaw
             : 'standard';
-        const fragmentRuntimeState = this._resolveBiomeTilingFragmentRuntimeState(this._getBiomeTilingPerformanceState());
-        const fragmentEffective = fragmentRuntimeState.effective;
+        const fragmentToggleState = this._resolveBiomeTilingFragmentToggleState(this._getBiomeTilingPerformanceState());
+        const fragmentEffective = fragmentToggleState.effective;
         const adaptiveTerrainEnabled = tilingViewActive && this._biomeTilingState?.geometryDensity?.enabled !== false;
         if (adaptiveTerrainEnabled) {
             this._syncBiomeTilingDisplacementOverlay({

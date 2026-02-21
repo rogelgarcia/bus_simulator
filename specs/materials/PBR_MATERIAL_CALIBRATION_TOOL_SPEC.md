@@ -146,3 +146,17 @@ Global lighting persistence (shared across screens):
 - Key: `bus_sim.lighting.v1`
 - Stores user/browser overrides (`L2`) over code defaults (`L1`).
 - Clearing this key resets default mode to pure code defaults.
+
+---
+
+## 6. Shared Calibration Resolver Contract (AI 349)
+
+The Material Calibration tool is a first-class consumer of the shared runtime calibration layer:
+- resolver module: `src/graphics/content3d/materials/PbrTextureCalibrationResolver.js`
+- shared loader pipeline: `src/graphics/content3d/materials/PbrTexturePipeline.js`
+
+Requirements:
+- calibration overrides are resolved by `materialId` and cached for the active session,
+- correction payload mapping must remain deterministic (generated tool output -> runtime override fields),
+- calibration fallback must be safe (missing/invalid correction config resolves to defaults, no hard failure),
+- tool refresh/reload actions may force resolver cache refresh during the current session.

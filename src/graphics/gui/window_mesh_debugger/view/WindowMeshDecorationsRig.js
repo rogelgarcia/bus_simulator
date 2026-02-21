@@ -3,7 +3,7 @@
 // @ts-check
 
 import * as THREE from 'three';
-import { resolvePbrMaterialUrls } from '../../../content3d/catalogs/PbrMaterialCatalog.js';
+import { PbrTextureLoaderService } from '../../../content3d/materials/PbrTexturePipeline.js';
 
 const EPS = 1e-6;
 const QUANT = 1000;
@@ -34,15 +34,6 @@ function normalizeHexColor(value, fallback) {
         return parseInt(`${r}${r}${g}${g}${b}${b}`, 16) & 0xffffff;
     }
     return fallback;
-}
-
-function applyTextureColorSpace(tex, { srgb = true } = {}) {
-    if (!tex) return;
-    if ('colorSpace' in tex) {
-        tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-        return;
-    }
-    if ('encoding' in tex) tex.encoding = srgb ? THREE.sRGBEncoding : THREE.LinearEncoding;
 }
 
 function ensureUv2(geo) {
@@ -206,6 +197,10 @@ export class WindowMeshDecorationsRig {
     constructor({ renderer, texLoader }) {
         this._renderer = renderer ?? null;
         this._texLoader = texLoader ?? new THREE.TextureLoader();
+        this._pbrTextureService = new PbrTextureLoaderService({
+            renderer: this._renderer,
+            textureLoader: this._texLoader
+        });
 
         this.group = new THREE.Group();
         this.group.name = 'window_decorations';
@@ -238,6 +233,9 @@ export class WindowMeshDecorationsRig {
             for (const tex of cache.values()) tex?.dispose?.();
             cache.clear();
         }
+
+        this._pbrTextureService?.dispose?.();
+        this._pbrTextureService = null;
     }
 
     setRenderMode(mode, normalMaterial) {
@@ -457,36 +455,31 @@ export class WindowMeshDecorationsRig {
                         mat.roughness = roughness;
                         mat.metalness = metalness;
 
-                        const urls = resolvePbrMaterialUrls(matId);
-                        const baseUrl = urls?.baseColorUrl ?? null;
-                        const normalUrl = urls?.normalUrl ?? null;
-                        const ormUrl = urls?.ormUrl ?? null;
+                        const resolved = this._pbrTextureService?.resolveMaterial(matId, {
+                            cloneTextures: false,
+                            localOverrides: { roughness, metalness, normalStrength },
+                            diagnosticsTag: `WindowMeshDecorationsRig.${type}`
+                        }) ?? null;
+                        const tex = resolved?.textures ?? {};
 
-                        const cache = this._texCaches[type];
-                        const applyTexture = (url, { srgb }) => {
-                            const safeUrl = typeof url === 'string' && url ? url : null;
-                            if (!safeUrl) return null;
-                            const cached = cache.get(safeUrl);
-                            if (cached) return cached;
-                            const tex = this._texLoader.load(safeUrl);
-                            const renderer = this._renderer;
-                            if (renderer) tex.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy?.() ?? 16);
-                            applyTextureColorSpace(tex, { srgb: !!srgb });
-                            cache.set(safeUrl, tex);
-                            return tex;
-                        };
-
-                        mat.map = applyTexture(baseUrl, { srgb: true });
-                        mat.normalMap = applyTexture(normalUrl, { srgb: false });
-                        const orm = applyTexture(ormUrl, { srgb: false });
-                        mat.roughnessMap = orm;
-                        mat.metalnessMap = orm;
-                        mat.aoMap = orm;
+                        mat.map = tex.baseColor ?? null;
+                        mat.normalMap = tex.normal ?? null;
+                        if (tex.orm) {
+                            mat.roughnessMap = tex.orm;
+                            mat.metalnessMap = tex.orm;
+                            mat.aoMap = tex.orm;
+                        } else {
+                            mat.aoMap = tex.ao ?? null;
+                            mat.roughnessMap = tex.roughness ?? null;
+                            mat.metalnessMap = tex.metalness ?? null;
+                        }
                         if (mat.normalScale) mat.normalScale.set(normalStrength, normalStrength);
 
                         applyUvTransform(mat.map, uv);
                         applyUvTransform(mat.normalMap, uv);
-                        applyUvTransform(orm, uv);
+                        applyUvTransform(mat.aoMap, uv);
+                        applyUvTransform(mat.roughnessMap, uv);
+                        applyUvTransform(mat.metalnessMap, uv);
                     }
                     mat.needsUpdate = true;
                 }

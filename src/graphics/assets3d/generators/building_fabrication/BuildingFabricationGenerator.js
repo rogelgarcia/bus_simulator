@@ -1563,27 +1563,44 @@ function makeWallMaterial({ style, baseColorHex, textureCache }) {
     const url = urls?.baseColorUrl ?? null;
     const normalUrl = urls?.normalUrl ?? null;
     const ormUrl = urls?.ormUrl ?? null;
+    const pbrMaterialId = tryGetPbrMaterialIdFromUrl(url);
     const mat = new THREE.MeshStandardMaterial({
         color: baseColorHex,
         roughness: 0.85,
         metalness: 0.05
     });
 
-    if (url && textureCache) {
+    if (pbrMaterialId && textureCache?.resolveMaterial && textureCache?.applyResolvedMaterial) {
+        const payload = textureCache.resolveMaterial(pbrMaterialId, {
+            cloneTextures: false,
+            diagnosticsTag: 'BuildingFabricationGenerator.makeWallMaterial'
+        });
+        textureCache.applyResolvedMaterial(mat, payload, { clearOnMissing: true });
+        mat.color.setHex(0xffffff);
+        mat.normalScale.set(0.9, 0.9);
+        mat.roughness = 1.0;
+        mat.metalness = 0.0;
+    }
+
+    if (!pbrMaterialId && url && textureCache) {
         mat.color.setHex(0xffffff);
         const tex = textureCache.trackMaterial(url, mat, { slot: 'map', srgb: true });
         if (tex) mat.map = tex;
     }
 
-    if (normalUrl && textureCache) {
+    if (!pbrMaterialId && normalUrl && textureCache) {
         const tex = textureCache.trackMaterial(normalUrl, mat, { slot: 'normalMap', srgb: false });
         if (tex) mat.normalMap = tex;
         mat.normalScale.set(0.9, 0.9);
     }
 
-    if (ormUrl && textureCache) {
+    if (!pbrMaterialId && ormUrl && textureCache) {
         const rough = textureCache.trackMaterial(ormUrl, mat, { slot: 'roughnessMap', srgb: false });
-        if (rough) mat.roughnessMap = rough;
+        if (rough) {
+            mat.roughnessMap = rough;
+            mat.metalnessMap = rough;
+            mat.aoMap = rough;
+        }
         mat.roughness = 1.0;
         mat.metalness = 0.0;
     }
@@ -1607,6 +1624,7 @@ function makeTextureMaterialFromBuildingStyle({
     const url = urls?.baseColorUrl ?? null;
     const normalUrl = urls?.normalUrl ?? null;
     const ormUrl = urls?.ormUrl ?? null;
+    const pbrMaterialId = tryGetPbrMaterialIdFromUrl(url);
     const mat = new THREE.MeshStandardMaterial({
         color: baseColorHex,
         roughness,
@@ -1616,21 +1634,35 @@ function makeTextureMaterialFromBuildingStyle({
         polygonOffsetUnits
     });
 
-    if (url && textureCache) {
+    if (pbrMaterialId && textureCache?.resolveMaterial && textureCache?.applyResolvedMaterial) {
+        const payload = textureCache.resolveMaterial(pbrMaterialId, {
+            cloneTextures: false,
+            diagnosticsTag: 'BuildingFabricationGenerator.makeTextureMaterialFromBuildingStyle'
+        });
+        textureCache.applyResolvedMaterial(mat, payload, { clearOnMissing: true });
+        mat.color.setHex(0xffffff);
+        mat.normalScale.set(0.9, 0.9);
+    }
+
+    if (!pbrMaterialId && url && textureCache) {
         mat.color.setHex(0xffffff);
         const tex = textureCache.trackMaterial(url, mat, { slot: 'map', srgb: true });
         if (tex) mat.map = tex;
     }
 
-    if (normalUrl && textureCache) {
+    if (!pbrMaterialId && normalUrl && textureCache) {
         const tex = textureCache.trackMaterial(normalUrl, mat, { slot: 'normalMap', srgb: false });
         if (tex) mat.normalMap = tex;
         mat.normalScale.set(0.9, 0.9);
     }
 
-    if (ormUrl && textureCache) {
+    if (!pbrMaterialId && ormUrl && textureCache) {
         const tex = textureCache.trackMaterial(ormUrl, mat, { slot: 'roughnessMap', srgb: false });
-        if (tex) mat.roughnessMap = tex;
+        if (tex) {
+            mat.roughnessMap = tex;
+            mat.metalnessMap = tex;
+            mat.aoMap = tex;
+        }
     }
 
     disableIblOnMaterial(mat);

@@ -16,6 +16,48 @@ document.body.classList.add('options-dock-open');
 const perfBar = ensureGlobalPerfBar();
 
 const view = new TerrainDebuggerView({ canvas });
+
+function renderStartError(err) {
+    const host = viewport ?? document.body;
+    if (!host) return;
+    const existing = host.querySelector?.('.terrain-debugger-start-error');
+    if (existing) existing.remove();
+
+    const panel = document.createElement('div');
+    panel.className = 'terrain-debugger-start-error';
+    panel.setAttribute('role', 'alert');
+    panel.style.position = 'absolute';
+    panel.style.left = '12px';
+    panel.style.top = '12px';
+    panel.style.maxWidth = '700px';
+    panel.style.padding = '12px 14px';
+    panel.style.border = '1px solid rgba(255, 90, 90, 0.65)';
+    panel.style.background = 'rgba(20, 10, 10, 0.92)';
+    panel.style.color = '#ffd7d7';
+    panel.style.font = '13px/1.45 Consolas, Menlo, Monaco, monospace';
+    panel.style.zIndex = '9999';
+    panel.style.whiteSpace = 'pre-wrap';
+
+    const causeMessage = String(err?.cause?.message ?? '').trim();
+    const message = String(err?.message ?? err ?? 'Unknown startup failure').trim();
+    panel.textContent = [
+        '[TerrainDebugger] Failed to start.',
+        message,
+        causeMessage ? `Cause: ${causeMessage}` : '',
+        '',
+        'Quick checks:',
+        '1) Open chrome://gpu and verify WebGL is enabled.',
+        '2) Disable browser extensions that inject WebGL hooks.',
+        '3) Restart browser with hardware acceleration enabled.',
+        '4) If running in sandbox/remote session, test in normal desktop session.'
+    ].filter(Boolean).join('\n');
+
+    if (getComputedStyle(host).position === 'static') {
+        host.style.position = 'relative';
+    }
+    host.appendChild(panel);
+}
+
 view.start().then(() => {
     if (view.renderer) perfBar.setRenderer(view.renderer);
     view.onFrame = ({ dt, nowMs }) => perfBar.onFrame({ dt, nowMs });
@@ -85,6 +127,7 @@ view.start().then(() => {
     };
 }).catch((err) => {
     console.error('[TerrainDebugger] Failed to start', err);
+    renderStartError(err);
 });
 
 const onKeyDown = (e) => {

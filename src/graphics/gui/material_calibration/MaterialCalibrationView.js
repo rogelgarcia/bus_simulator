@@ -1,7 +1,8 @@
 // src/graphics/gui/material_calibration/MaterialCalibrationView.js
 // Orchestrates UI, input, and 3D rendering for the Material Calibration tool.
 import * as THREE from 'three';
-import { getPbrMaterialClassOptions, getPbrMaterialOptions, getPbrMaterialTileMeters } from '../../content3d/catalogs/PbrMaterialCatalog.js';
+import { getPbrMaterialClassOptions, getPbrMaterialOptions } from '../../content3d/catalogs/PbrMaterialCatalog.js';
+import { getPbrCalibrationDefaultOverrides, getPbrTextureCalibrationResolver } from '../../content3d/materials/PbrTextureCalibrationResolver.js';
 import { MaterialCalibrationScene } from './MaterialCalibrationScene.js';
 import { MaterialCalibrationUI } from './MaterialCalibrationUI.js';
 import { getMaterialCalibrationIlluminationPresetById, getMaterialCalibrationIlluminationPresetOptions } from './MaterialCalibrationIlluminationPresets.js';
@@ -20,10 +21,6 @@ const SCREENSHOT_RENDER_MIN_WIDTH = 1920;
 const SCREENSHOT_RENDER_MIN_HEIGHT = 1080;
 const SCREENSHOT_RENDER_MAX_WIDTH = 3840;
 const SCREENSHOT_RENDER_MAX_HEIGHT = 2160;
-const CALIBRATION_PRESET_ID = 'aces';
-const CORRECTION_CONFIG_FILE = 'pbr.material.correction.config.js';
-const PBR_ID_PREFIX = 'pbr.';
-const PBR_CORRECTION_BASE_URL = new URL('../../../../assets/public/pbr/', import.meta.url);
 
 function isInteractiveElement(target) {
     const tag = target?.tagName;
@@ -143,94 +140,10 @@ function sanitizeOverrides(value) {
     return out;
 }
 
-function materialIdToSlug(materialId) {
-    const id = sanitizeMaterialId(materialId);
-    if (!id) return null;
-    if (!id.startsWith(PBR_ID_PREFIX)) return null;
-    const slug = id.slice(PBR_ID_PREFIX.length).trim();
-    if (!slug || slug.includes('/') || slug.includes('\\')) return null;
-    return slug;
-}
-
-function toPlainObject(value) {
-    return value && typeof value === 'object' ? value : null;
-}
-
-function mapCorrectionAdjustmentsToOverrides(adjustments) {
-    const src = toPlainObject(adjustments);
-    if (!src) return null;
-
-    const out = {};
-
-    const albedo = toPlainObject(src.albedo);
-    if (albedo) {
-        if (Number.isFinite(Number(albedo.brightness))) out.albedoBrightness = clamp(albedo.brightness, 0, 4);
-        if (Number.isFinite(Number(albedo.hueDegrees))) out.albedoHueDegrees = clamp(albedo.hueDegrees, -180, 180);
-        if (Number.isFinite(Number(albedo.tintStrength))) out.albedoTintStrength = clamp(albedo.tintStrength, 0, 1);
-        if (Number.isFinite(Number(albedo.saturation))) out.albedoSaturation = clamp(Number(albedo.saturation) - 1, -1, 1);
-    }
-
-    const normal = toPlainObject(src.normal);
-    if (normal && Number.isFinite(Number(normal.strength))) out.normalStrength = clamp(normal.strength, 0, 8);
-
-    const roughness = toPlainObject(src.roughness);
-    if (roughness) {
-        const min = Number(roughness.min);
-        const maxRaw = Number(roughness.max);
-        const gamma = Number(roughness.gamma);
-        const invertInput = roughness.invertInput === true;
-        if (Number.isFinite(min) && Number.isFinite(maxRaw) && Number.isFinite(gamma)) {
-            const max = Math.max(min, maxRaw);
-            const roughnessRemap = {
-                min: clamp(min, 0, 1),
-                max: clamp(max, 0, 1),
-                gamma: clamp(gamma, 0.1, 4),
-                invertInput
-            };
-            const norm = Array.isArray(roughness.normalizeInputPercentiles) ? roughness.normalizeInputPercentiles : null;
-            if (norm && norm.length === 2) {
-                const lowPercentile = clamp(norm[0], 0, 100);
-                const highPercentile = clamp(norm[1], 0, 100);
-                if (highPercentile > lowPercentile) {
-                    roughnessRemap.lowPercentile = lowPercentile;
-                    roughnessRemap.highPercentile = highPercentile;
-                }
-            }
-            out.roughnessRemap = roughnessRemap;
-        } else if (Number.isFinite(Number(roughness.strength))) {
-            out.roughness = clamp(roughness.strength, 0, 1);
-        }
-    }
-
-    const ao = toPlainObject(src.ao);
-    if (ao && Number.isFinite(Number(ao.intensity))) out.aoIntensity = clamp(ao.intensity, 0, 2);
-
-    const metal = toPlainObject(src.metalness);
-    if (metal && Number.isFinite(Number(metal.value))) out.metalness = clamp(metal.value, 0, 1);
-
-    return Object.keys(out).length ? out : null;
-}
-
-function getCorrectionConfigUrlForMaterial(materialId) {
-    const slug = materialIdToSlug(materialId);
-    if (!slug) return null;
-    return new URL(`${slug}/${CORRECTION_CONFIG_FILE}`, PBR_CORRECTION_BASE_URL).toString();
-}
-
 function getDefaultOverridesForMaterial(materialId) {
     const id = typeof materialId === 'string' ? materialId.trim() : '';
     if (!id) return null;
-    return {
-        tileMeters: getPbrMaterialTileMeters(id),
-        albedoBrightness: 1.0,
-        albedoTintStrength: 0.0,
-        albedoHueDegrees: 0.0,
-        albedoSaturation: 0.0,
-        roughness: 1.0,
-        normalStrength: 1.0,
-        aoIntensity: 1.0,
-        metalness: 0.0
-    };
+    return getPbrCalibrationDefaultOverrides(id);
 }
 
 function normalizeRoughnessRemapForDiff(value) {
@@ -614,6 +527,7 @@ export class MaterialCalibrationView {
         this._initialCameraPose = null;
         this._screenshotBusy = false;
         this._pendingCorrectionSync = false;
+        this._calibrationResolver = getPbrTextureCalibrationResolver();
         this._correctionOverridesByMaterialId = {};
         this._correctionLoadToken = 0;
 
@@ -947,7 +861,7 @@ export class MaterialCalibrationView {
         return [...new Set(slotIds)];
     }
 
-    async _loadCorrectionOverridesEntries(materialIds) {
+    async _loadCorrectionOverridesEntries(materialIds, { forceReload = false } = {}) {
         const ids = (Array.isArray(materialIds) ? materialIds : [])
             .map((id) => sanitizeMaterialId(id))
             .filter(Boolean);
@@ -955,12 +869,12 @@ export class MaterialCalibrationView {
         if (!uniqueIds.length) return [];
 
         const token = ++this._correctionLoadToken;
-        const resolved = await Promise.all(uniqueIds.map(async (id) => ({
-            id,
-            overrides: await this._loadCorrectionOverridesForMaterial(id)
-        })));
+        const resolved = await this._calibrationResolver.preloadOverrides(uniqueIds, { forceReload });
         if (token !== this._correctionLoadToken) return null;
-        return resolved;
+        return resolved.map((entry) => ({
+            id: sanitizeMaterialId(entry?.id),
+            overrides: entry?.overrides ?? null
+        }));
     }
 
     _applyCorrectionOverrideEntries(entries, { replace = false } = {}) {
@@ -990,7 +904,7 @@ export class MaterialCalibrationView {
 
     async _primeCorrectionOverridesForCatalog() {
         const materialIds = this._materialOptions.map((opt) => sanitizeMaterialId(opt?.id)).filter(Boolean);
-        const entries = await this._loadCorrectionOverridesEntries(materialIds);
+        const entries = await this._loadCorrectionOverridesEntries(materialIds, { forceReload: false });
         if (!entries) return;
         this._applyCorrectionOverrideEntries(entries, { replace: true });
         this._syncAfterCorrectionOverridesChange({ forceMaterialUpdate: false });
@@ -1003,7 +917,7 @@ export class MaterialCalibrationView {
             : uniqueSlotIds.filter((id) => !Object.prototype.hasOwnProperty.call(this._correctionOverridesByMaterialId, id));
         if (!materialIds.length) return;
 
-        const entries = await this._loadCorrectionOverridesEntries(materialIds);
+        const entries = await this._loadCorrectionOverridesEntries(materialIds, { forceReload });
         if (!entries) return;
         this._applyCorrectionOverrideEntries(entries, { replace: false });
         this._syncAfterCorrectionOverridesChange({ forceMaterialUpdate: true });
@@ -1014,25 +928,6 @@ export class MaterialCalibrationView {
         this._refreshCorrectionOverridesForSelectedSlots({ forceReload }).catch((err) => {
             console.error(`[MaterialCalibration] Failed to refresh correction overrides (${reason}):`, err);
         });
-    }
-
-    async _loadCorrectionOverridesForMaterial(materialId) {
-        const id = sanitizeMaterialId(materialId);
-        if (!id) return null;
-        const moduleUrl = getCorrectionConfigUrlForMaterial(id);
-        if (!moduleUrl) return null;
-        try {
-            const mod = await import(moduleUrl);
-            const config = toPlainObject(mod?.default ?? mod);
-            if (!config) return null;
-            if (sanitizeMaterialId(config.materialId) !== id) return null;
-            const presets = toPlainObject(config.presets);
-            const preset = presets ? toPlainObject(presets[CALIBRATION_PRESET_ID]) : null;
-            const adjustments = preset ? toPlainObject(preset.adjustments) : null;
-            return mapCorrectionAdjustmentsToOverrides(adjustments);
-        } catch {
-            return null;
-        }
     }
 
     _toggleMaterial(materialId, { focus = false } = {}) {

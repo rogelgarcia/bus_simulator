@@ -115,6 +115,8 @@ const BIOME_TRANSITION_PROFILE_DEFAULT = Object.freeze({
     intent: 'medium',
     ...BIOME_TRANSITION_INTENT_PRESETS.medium
 });
+const TERRAIN_BIOME_SHADER_TEMP_DISABLED = true;
+const TERRAIN_BIOME_SHADER_TEMP_DISABLED_REASON = 'Biome blend is temporarily disabled while terrain biome shader validation is being fixed.';
 
 function titleCaseHumSlot(id) {
     const v = String(id ?? '');
@@ -590,7 +592,7 @@ export class TerrainDebuggerUI {
                     calibrationRigDebugEnabled: false,
                     materialId: '',
                     distanceTiling: {
-                        enabled: true,
+                        enabled: false,
                         nearScale: 4.0,
                         farScale: 0.36,
                         blendStartMeters: 40,
@@ -641,11 +643,11 @@ export class TerrainDebuggerUI {
                         applyNonce: 0
                     },
                     performance: {
-                        fragmentShaderEnabled: true,
-                        fragmentShaderBiomeEnabled: true,
-                        fragmentShaderPbrLightingEnabled: true,
-                        fragmentShaderAlbedoEnabled: true,
-                        fragmentShaderSurfaceEnabled: true,
+                        fragmentShaderEnabled: false,
+                        fragmentShaderBiomeEnabled: false,
+                        fragmentShaderPbrLightingEnabled: false,
+                        fragmentShaderAlbedoEnabled: false,
+                        fragmentShaderSurfaceEnabled: false,
                         shadowsEnabled: true,
                         highDpiEnabled: true
                     }
@@ -983,11 +985,14 @@ export class TerrainDebuggerUI {
         gpuSamplerHeadroom = null,
         gpuWebglVersion = '',
         gpuFrameTimeMs = null,
-        fragmentShaderEnabled = true,
-        fragmentShaderBiomeEnabled = true,
-        fragmentShaderPbrLightingEnabled = true,
-        fragmentShaderAlbedoEnabled = true,
-        fragmentShaderSurfaceEnabled = true,
+        fragmentShaderEnabled = false,
+        fragmentShaderBiomeEnabled = false,
+        fragmentShaderPbrLightingEnabled = false,
+        fragmentShaderAlbedoEnabled = false,
+        fragmentShaderSurfaceEnabled = false,
+        distanceBlendEnabled = false,
+        antiTilingEnabled = false,
+        macroVariationEnabled = false,
         fragmentToggleStates = null,
         fragmentPathStates = null,
         gpuSamplerPathRows = null,
@@ -1218,26 +1223,48 @@ export class TerrainDebuggerUI {
         const fallbackToggleRows = [
             { label: 'Fragment Shader', requested: fragmentShaderEnabled === true, effective: fragmentShaderEnabled === true, reason: fragmentShaderEnabled ? '' : 'set Off' },
             {
-                label: 'PBR Lighting',
-                requested: fragmentShaderPbrLightingEnabled === true,
-                effective: fragmentShaderEnabled === true && fragmentShaderPbrLightingEnabled === true,
-                reason: fragmentShaderPbrLightingEnabled === true
-                    ? (fragmentShaderEnabled === true ? '' : 'blocked by Fragment Shader')
-                    : 'set Off'
-            },
-            {
-                label: 'Biome',
-                requested: fragmentShaderBiomeEnabled === true,
-                effective: fragmentShaderEnabled === true && fragmentShaderBiomeEnabled === true,
-                reason: fragmentShaderBiomeEnabled === true
-                    ? (fragmentShaderEnabled === true ? '' : 'blocked by Fragment Shader')
-                    : 'set Off'
-            },
-            {
                 label: 'Albedo',
                 requested: fragmentShaderAlbedoEnabled === true,
                 effective: fragmentShaderEnabled === true && fragmentShaderAlbedoEnabled === true,
                 reason: fragmentShaderAlbedoEnabled === true
+                    ? (fragmentShaderEnabled === true ? '' : 'blocked by Fragment Shader')
+                    : 'set Off'
+            },
+            {
+                label: 'Distance Blend Shader',
+                requested: distanceBlendEnabled === true,
+                effective: fragmentShaderEnabled === true && fragmentShaderAlbedoEnabled === true && distanceBlendEnabled === true,
+                reason: distanceBlendEnabled === true
+                    ? (fragmentShaderEnabled === true
+                        ? (fragmentShaderAlbedoEnabled === true ? '' : 'blocked by Albedo')
+                        : 'blocked by Fragment Shader')
+                    : 'set Off'
+            },
+            {
+                label: 'Anti-tiling Shader',
+                requested: antiTilingEnabled === true,
+                effective: fragmentShaderEnabled === true && fragmentShaderAlbedoEnabled === true && antiTilingEnabled === true,
+                reason: antiTilingEnabled === true
+                    ? (fragmentShaderEnabled === true
+                        ? (fragmentShaderAlbedoEnabled === true ? '' : 'blocked by Albedo')
+                        : 'blocked by Fragment Shader')
+                    : 'set Off'
+            },
+            {
+                label: 'Macro Variation Shader',
+                requested: macroVariationEnabled === true,
+                effective: fragmentShaderEnabled === true && fragmentShaderAlbedoEnabled === true && macroVariationEnabled === true,
+                reason: macroVariationEnabled === true
+                    ? (fragmentShaderEnabled === true
+                        ? (fragmentShaderAlbedoEnabled === true ? '' : 'blocked by Albedo')
+                        : 'blocked by Fragment Shader')
+                    : 'set Off'
+            },
+            {
+                label: 'PBR Lighting',
+                requested: fragmentShaderPbrLightingEnabled === true,
+                effective: fragmentShaderEnabled === true && fragmentShaderPbrLightingEnabled === true,
+                reason: fragmentShaderPbrLightingEnabled === true
                     ? (fragmentShaderEnabled === true ? '' : 'blocked by Fragment Shader')
                     : 'set Off'
             },
@@ -1251,6 +1278,14 @@ export class TerrainDebuggerUI {
                     ? (fragmentShaderEnabled === true
                         ? (fragmentShaderPbrLightingEnabled === true ? '' : 'blocked by PBR Lighting')
                         : 'blocked by Fragment Shader')
+                    : 'set Off'
+            },
+            {
+                label: 'Biome',
+                requested: fragmentShaderBiomeEnabled === true,
+                effective: fragmentShaderEnabled === true && fragmentShaderBiomeEnabled === true,
+                reason: fragmentShaderBiomeEnabled === true
+                    ? (fragmentShaderEnabled === true ? '' : 'blocked by Fragment Shader')
                     : 'set Off'
             }
         ];
@@ -3607,7 +3642,7 @@ export class TerrainDebuggerUI {
         bt.calibrationRigDebugEnabled = bt.calibrationRigDebugEnabled === true;
         bt.materialId = normalizeMaterialId(bt.materialId, defaultMaterialId);
         const distanceTiling = (bt.distanceTiling && typeof bt.distanceTiling === 'object') ? bt.distanceTiling : {};
-        distanceTiling.enabled = distanceTiling.enabled !== false;
+        distanceTiling.enabled = distanceTiling.enabled === true;
         distanceTiling.nearScale = clamp(distanceTiling.nearScale, 0.1, 6.0, 4.0);
         distanceTiling.farScale = clamp(distanceTiling.farScale, 0.01, 2.0, 0.36);
         distanceTiling.blendStartMeters = clamp(distanceTiling.blendStartMeters, 0.0, 500.0, 40.0);
@@ -3688,11 +3723,11 @@ export class TerrainDebuggerUI {
         bt.geometryDensity = geometryDensity;
 
         const performance = (bt.performance && typeof bt.performance === 'object') ? bt.performance : {};
-        performance.fragmentShaderEnabled = performance.fragmentShaderEnabled !== false;
-        performance.fragmentShaderBiomeEnabled = performance.fragmentShaderBiomeEnabled !== false;
-        performance.fragmentShaderPbrLightingEnabled = performance.fragmentShaderPbrLightingEnabled !== false;
-        performance.fragmentShaderAlbedoEnabled = performance.fragmentShaderAlbedoEnabled !== false;
-        performance.fragmentShaderSurfaceEnabled = performance.fragmentShaderSurfaceEnabled !== false;
+        performance.fragmentShaderEnabled = performance.fragmentShaderEnabled === true;
+        performance.fragmentShaderBiomeEnabled = TERRAIN_BIOME_SHADER_TEMP_DISABLED ? false : performance.fragmentShaderBiomeEnabled === true;
+        performance.fragmentShaderPbrLightingEnabled = performance.fragmentShaderPbrLightingEnabled === true;
+        performance.fragmentShaderAlbedoEnabled = performance.fragmentShaderAlbedoEnabled === true;
+        performance.fragmentShaderSurfaceEnabled = performance.fragmentShaderSurfaceEnabled === true;
         performance.shadowsEnabled = performance.shadowsEnabled !== false;
         performance.highDpiEnabled = performance.highDpiEnabled !== false;
         bt.performance = performance;
@@ -3973,9 +4008,7 @@ export class TerrainDebuggerUI {
             label: 'Enable Anti-Tiling',
             value: variation.antiTilingEnabled,
             onChange: (v) => {
-                const enabled = !!v;
-                variation.antiTilingEnabled = enabled;
-                variation.macroVariationEnabled = enabled;
+                variation.antiTilingEnabled = !!v;
                 syncUi();
                 this._emit();
             }
@@ -4386,17 +4419,53 @@ export class TerrainDebuggerUI {
         });
         configPerformanceGroup.appendChild(configFragmentShaderRow.row);
 
-        const configFragmentShaderBiomeRow = makeToggleRow({
-            label: 'Biome',
-            value: performance.fragmentShaderBiomeEnabled,
+        const configFragmentShaderAlbedoRow = makeToggleRow({
+            label: 'Albedo',
+            value: performance.fragmentShaderAlbedoEnabled,
             onChange: (v) => {
-                performance.fragmentShaderBiomeEnabled = !!v;
+                performance.fragmentShaderAlbedoEnabled = !!v;
                 syncUi();
                 this._emit();
             }
         });
-        configFragmentShaderBiomeRow.row.classList.add('options-row-child-indent');
-        configPerformanceGroup.appendChild(configFragmentShaderBiomeRow.row);
+        configFragmentShaderAlbedoRow.row.classList.add('options-row-child-indent');
+        configPerformanceGroup.appendChild(configFragmentShaderAlbedoRow.row);
+
+        const configFragmentShaderDistanceBlendRow = makeToggleRow({
+            label: 'Distance Blend Shader',
+            value: distanceTiling.enabled,
+            onChange: (v) => {
+                distanceTiling.enabled = !!v;
+                syncUi();
+                this._emit();
+            }
+        });
+        configFragmentShaderDistanceBlendRow.row.classList.add('options-row-child-indent');
+        configPerformanceGroup.appendChild(configFragmentShaderDistanceBlendRow.row);
+
+        const configFragmentShaderAntiTilingRow = makeToggleRow({
+            label: 'Anti-tiling Shader',
+            value: variation.antiTilingEnabled,
+            onChange: (v) => {
+                variation.antiTilingEnabled = !!v;
+                syncUi();
+                this._emit();
+            }
+        });
+        configFragmentShaderAntiTilingRow.row.classList.add('options-row-child-indent');
+        configPerformanceGroup.appendChild(configFragmentShaderAntiTilingRow.row);
+
+        const configFragmentShaderMacroVariationRow = makeToggleRow({
+            label: 'Macro Variation Shader',
+            value: variation.macroVariationEnabled,
+            onChange: (v) => {
+                variation.macroVariationEnabled = !!v;
+                syncUi();
+                this._emit();
+            }
+        });
+        configFragmentShaderMacroVariationRow.row.classList.add('options-row-child-indent');
+        configPerformanceGroup.appendChild(configFragmentShaderMacroVariationRow.row);
 
         const configFragmentShaderPbrLightingRow = makeToggleRow({
             label: 'PBR Lighting',
@@ -4410,18 +4479,6 @@ export class TerrainDebuggerUI {
         configFragmentShaderPbrLightingRow.row.classList.add('options-row-child-indent');
         configPerformanceGroup.appendChild(configFragmentShaderPbrLightingRow.row);
 
-        const configFragmentShaderAlbedoRow = makeToggleRow({
-            label: 'Albedo',
-            value: performance.fragmentShaderAlbedoEnabled,
-            onChange: (v) => {
-                performance.fragmentShaderAlbedoEnabled = !!v;
-                syncUi();
-                this._emit();
-            }
-        });
-        configFragmentShaderAlbedoRow.row.classList.add('options-row-child-indent');
-        configPerformanceGroup.appendChild(configFragmentShaderAlbedoRow.row);
-
         const configFragmentShaderSurfaceRow = makeToggleRow({
             label: 'Surface (Normal+ORM)',
             value: performance.fragmentShaderSurfaceEnabled,
@@ -4433,6 +4490,22 @@ export class TerrainDebuggerUI {
         });
         configFragmentShaderSurfaceRow.row.classList.add('options-row-child-indent');
         configPerformanceGroup.appendChild(configFragmentShaderSurfaceRow.row);
+
+        const configFragmentShaderBiomeRow = makeToggleRow({
+            label: 'Biome',
+            value: performance.fragmentShaderBiomeEnabled,
+            tooltip: TERRAIN_BIOME_SHADER_TEMP_DISABLED ? TERRAIN_BIOME_SHADER_TEMP_DISABLED_REASON : '',
+            onChange: (v) => {
+                performance.fragmentShaderBiomeEnabled = TERRAIN_BIOME_SHADER_TEMP_DISABLED ? false : !!v;
+                syncUi();
+                this._emit();
+            }
+        });
+        configFragmentShaderBiomeRow.row.classList.add('options-row-child-indent');
+        configPerformanceGroup.appendChild(configFragmentShaderBiomeRow.row);
+        if (TERRAIN_BIOME_SHADER_TEMP_DISABLED) {
+            configPerformanceGroup.appendChild(makeEl('div', 'options-note', TERRAIN_BIOME_SHADER_TEMP_DISABLED_REASON));
+        }
 
         const configShadowsRow = makeToggleRow({
             label: 'Shadows',
@@ -4912,13 +4985,62 @@ export class TerrainDebuggerUI {
             geometryAutoRebuildCadenceRow.setDisabled(!enabled);
         };
         const setFragmentShaderSubControlsEnabled = () => {
-            if (configFragmentShaderBiomeRow.toggle) configFragmentShaderBiomeRow.toggle.disabled = false;
-            if (configFragmentShaderPbrLightingRow.toggle) configFragmentShaderPbrLightingRow.toggle.disabled = false;
+            if (configFragmentShaderRow.toggle) configFragmentShaderRow.toggle.disabled = false;
             if (configFragmentShaderAlbedoRow.toggle) configFragmentShaderAlbedoRow.toggle.disabled = false;
+            if (configFragmentShaderDistanceBlendRow.toggle) configFragmentShaderDistanceBlendRow.toggle.disabled = false;
+            if (configFragmentShaderAntiTilingRow.toggle) configFragmentShaderAntiTilingRow.toggle.disabled = false;
+            if (configFragmentShaderMacroVariationRow.toggle) configFragmentShaderMacroVariationRow.toggle.disabled = false;
+            if (configFragmentShaderPbrLightingRow.toggle) configFragmentShaderPbrLightingRow.toggle.disabled = false;
             if (configFragmentShaderSurfaceRow.toggle) configFragmentShaderSurfaceRow.toggle.disabled = false;
+            if (configFragmentShaderBiomeRow.toggle) configFragmentShaderBiomeRow.toggle.disabled = TERRAIN_BIOME_SHADER_TEMP_DISABLED;
+        };
+        const enforceShaderFeatureLinkage = () => {
+            performance.fragmentShaderEnabled = performance.fragmentShaderEnabled === true;
+            performance.fragmentShaderAlbedoEnabled = performance.fragmentShaderAlbedoEnabled === true;
+            performance.fragmentShaderPbrLightingEnabled = performance.fragmentShaderPbrLightingEnabled === true;
+            performance.fragmentShaderSurfaceEnabled = performance.fragmentShaderSurfaceEnabled === true;
+            performance.fragmentShaderBiomeEnabled = TERRAIN_BIOME_SHADER_TEMP_DISABLED
+                ? false
+                : (performance.fragmentShaderBiomeEnabled === true);
+            distanceTiling.enabled = distanceTiling.enabled === true;
+            variation.antiTilingEnabled = variation.antiTilingEnabled === true;
+            variation.macroVariationEnabled = variation.macroVariationEnabled === true;
+
+            const albedoShaderFeaturesEnabled = distanceTiling.enabled || variation.antiTilingEnabled || variation.macroVariationEnabled;
+            if (albedoShaderFeaturesEnabled) {
+                performance.fragmentShaderEnabled = true;
+                performance.fragmentShaderAlbedoEnabled = true;
+            }
+            if (performance.fragmentShaderSurfaceEnabled) {
+                performance.fragmentShaderEnabled = true;
+                performance.fragmentShaderPbrLightingEnabled = true;
+            }
+            if (performance.fragmentShaderBiomeEnabled) {
+                performance.fragmentShaderEnabled = true;
+                performance.fragmentShaderAlbedoEnabled = true;
+            }
+
+            if (!performance.fragmentShaderEnabled) {
+                performance.fragmentShaderAlbedoEnabled = false;
+                performance.fragmentShaderPbrLightingEnabled = false;
+                performance.fragmentShaderSurfaceEnabled = false;
+                performance.fragmentShaderBiomeEnabled = false;
+                distanceTiling.enabled = false;
+                variation.antiTilingEnabled = false;
+                variation.macroVariationEnabled = false;
+            }
+            if (!performance.fragmentShaderAlbedoEnabled) {
+                distanceTiling.enabled = false;
+                variation.antiTilingEnabled = false;
+                variation.macroVariationEnabled = false;
+            }
+            if (!performance.fragmentShaderPbrLightingEnabled) {
+                performance.fragmentShaderSurfaceEnabled = false;
+            }
         };
 
         const syncUi = () => {
+            enforceShaderFeatureLinkage();
             bt.materialId = normalizeMaterialId(bt.materialId, defaultMaterialId);
             const meta = materialById.get(bt.materialId) ?? null;
             materialRow.setValue({
@@ -4974,6 +5096,9 @@ export class TerrainDebuggerUI {
             configFragmentShaderBiomeRow.toggle.checked = performance.fragmentShaderBiomeEnabled;
             configFragmentShaderPbrLightingRow.toggle.checked = performance.fragmentShaderPbrLightingEnabled;
             configFragmentShaderAlbedoRow.toggle.checked = performance.fragmentShaderAlbedoEnabled;
+            configFragmentShaderDistanceBlendRow.toggle.checked = distanceTiling.enabled;
+            configFragmentShaderAntiTilingRow.toggle.checked = variation.antiTilingEnabled;
+            configFragmentShaderMacroVariationRow.toggle.checked = variation.macroVariationEnabled;
             configFragmentShaderSurfaceRow.toggle.checked = performance.fragmentShaderSurfaceEnabled;
             setFragmentShaderSubControlsEnabled();
             configShadowsRow.toggle.checked = performance.shadowsEnabled;

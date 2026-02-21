@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { getWindowNormalMapTexture, getWindowRoughnessMapTexture } from '../../assets3d/generators/buildings/WindowTextureGenerator.js';
 import { getPbrMaterialMeta, getPbrMaterialTileMeters, resolvePbrMaterialUrls } from '../../assets3d/materials/PbrMaterialCatalog.js';
+import { PbrTextureLoaderService } from '../../content3d/materials/PbrTexturePipeline.js';
 import { getSignAlphaMaskTextureById } from '../../assets3d/textures/signs/SignAlphaMaskCache.js';
 import {
     getTextureInspectorCollectionById,
@@ -285,6 +286,10 @@ export class InspectorRoomTexturesProvider {
         this._selectedSizeMeters = { widthMeters: DEFAULT_REAL_WORLD_SIZE_METERS, heightMeters: DEFAULT_REAL_WORLD_SIZE_METERS };
 
         this._textureLoader = new THREE.TextureLoader();
+        this._pbrTextureService = new PbrTextureLoaderService({
+            renderer: this.engine?.renderer ?? null,
+            textureLoader: this._textureLoader
+        });
         this._urlTextures = new Map();
         this._warnedUrls = new Set();
         this._loadToken = 0;
@@ -350,6 +355,8 @@ export class InspectorRoomTexturesProvider {
     dispose() {
         this._disposePreviewTexture();
         this._disposeUrlTextures();
+        this._pbrTextureService?.dispose?.();
+        this._pbrTextureService = null;
         this._warnedUrls.clear();
 
         if (this._tileGroup) this.root?.remove?.(this._tileGroup);
@@ -783,18 +790,21 @@ export class InspectorRoomTexturesProvider {
         this._disposePreviewTexture();
         this._previewNormalScale = 0.9;
 
-        const token = ++this._loadToken;
-        const urls = resolvePbrMaterialUrls(entry?.materialId);
-        const baseUrl = urls?.baseColorUrl ?? null;
-        const normalUrl = urls?.normalUrl ?? null;
-        const ormUrl = urls?.ormUrl ?? null;
-
+        this._loadToken += 1;
         this._previewAlphaMap = null;
+        const wrap = this._previewMode === 'tiled' ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+        const label = entry?.label ?? entry?.materialId ?? 'PBR material';
 
-        if (!baseUrl && !normalUrl && !ormUrl) {
-            const label = entry?.label ?? entry?.materialId ?? 'PBR material';
+        const resolved = this._pbrTextureService?.resolveMaterial(entry?.materialId, {
+            cloneTextures: false,
+            diagnosticsTag: 'InspectorRoomTexturesProvider.setPbrMaterial'
+        }) ?? null;
+        const baseTex = resolved?.textures?.baseColor ?? null;
+        const normalTex = resolved?.textures?.normal ?? null;
+        const ormTex = resolved?.textures?.orm ?? resolved?.textures?.roughness ?? null;
+
+        if (!baseTex && !normalTex && !ormTex) {
             const tex = canvasToTexture(buildPlaceholderCanvas({ label, size: 256 }), { srgb: true });
-            const wrap = this._previewMode === 'tiled' ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
             this._previewTexture = clonePreviewTexture(tex, { wrap });
             tex.dispose?.();
             this._previewNormalMap = null;
@@ -804,48 +814,17 @@ export class InspectorRoomTexturesProvider {
             return;
         }
 
-        Promise.allSettled([
-            this._loadUrlTexture(baseUrl, { srgb: true }),
-            this._loadUrlTexture(normalUrl, { srgb: false }),
-            this._loadUrlTexture(ormUrl, { srgb: false })
-        ]).then((results) => {
-            if (token !== this._loadToken) return;
-            const getTex = (idx, url) => {
-                const res = results[idx] ?? null;
-                if (res?.status === 'rejected') this._warnTextureUrlOnce(url, res.reason);
-                return res?.status === 'fulfilled' ? (res.value ?? null) : null;
-            };
+        if (baseTex) this._previewTexture = clonePreviewTexture(baseTex, { wrap });
+        else {
+            const tex = canvasToTexture(buildPlaceholderCanvas({ label, size: 256 }), { srgb: true });
+            this._previewTexture = clonePreviewTexture(tex, { wrap });
+            tex.dispose?.();
+        }
 
-            const baseTex = getTex(0, baseUrl);
-            const normalTex = getTex(1, normalUrl);
-            const ormTex = getTex(2, ormUrl);
-
-            const wrap = this._previewMode === 'tiled' ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
-
-            const label = entry?.label ?? entry?.materialId ?? 'PBR material';
-            if (!baseTex && !normalTex && !ormTex) {
-                const tex = canvasToTexture(buildPlaceholderCanvas({ label, size: 256 }), { srgb: true });
-                this._previewTexture = clonePreviewTexture(tex, { wrap });
-                tex.dispose?.();
-                this._previewNormalMap = null;
-                this._previewRoughnessMap = null;
-                this._syncPreviewWrap();
-                this._syncPreviewMaps();
-                return;
-            }
-
-            if (baseTex) this._previewTexture = clonePreviewTexture(baseTex, { wrap });
-            else {
-                const tex = canvasToTexture(buildPlaceholderCanvas({ label, size: 256 }), { srgb: true });
-                this._previewTexture = clonePreviewTexture(tex, { wrap });
-                tex.dispose?.();
-            }
-
-            this._previewNormalMap = clonePreviewTexture(normalTex, { wrap });
-            this._previewRoughnessMap = clonePreviewTexture(ormTex, { wrap });
-            this._syncPreviewWrap();
-            this._syncPreviewMaps();
-        });
+        this._previewNormalMap = clonePreviewTexture(normalTex, { wrap });
+        this._previewRoughnessMap = clonePreviewTexture(ormTex, { wrap });
+        this._syncPreviewWrap();
+        this._syncPreviewMaps();
     }
 
     _warnTextureUrlOnce(url, err) {

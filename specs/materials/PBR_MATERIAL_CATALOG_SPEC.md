@@ -129,3 +129,21 @@ Material selection UIs must be **class-grouped**, not a single flat “PBR” li
 - For building walls, show only `buildingEligible` entries (typically `root: wall`).
 - For terrain/ground selection, show only `groundEligible` entries (typically `root: surface`).
 - Inspector/debug tooling must not expose basecolor-only wall texture collections that overlap with catalog materials (example: legacy “Building Walls”).
+
+---
+
+## 5. Global Runtime PBR Pipeline Contract (AI 349)
+
+Runtime PBR consumers must resolve catalog materials through the shared pipeline:
+- `src/graphics/content3d/materials/PbrTexturePipeline.js`
+- `src/graphics/content3d/materials/PbrTextureCalibrationResolver.js`
+
+Resolution/value precedence is fixed:
+1. catalog defaults (`tileMeters` and baseline scalar defaults),
+2. cached calibration overrides from `pbr.material.correction.config.js`,
+3. caller-local overrides (explicit opt-in).
+
+Notes:
+- URL/map-slot resolution remains catalog-driven via `resolvePbrMaterialUrls(materialId)`.
+- Calibration files are treated as session-cached inputs; edits are picked up on next app load/restart.
+- Diagnostics for resolved values should expose per-field source (`catalog`, `calibration`, `local`) to aid debugging.

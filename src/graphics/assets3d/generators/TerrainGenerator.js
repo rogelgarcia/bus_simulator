@@ -2,31 +2,64 @@
 // Builds the city ground and world tiles
 import * as THREE from 'three';
 import { TILE } from '../../../app/city/CityMap.js';
+import { PbrTextureLoaderService } from '../../content3d/materials/PbrTexturePipeline.js';
 import { GROUND_DEFAULTS, ROAD_DEFAULTS } from './GeneratorParams.js';
 import { createTreeField } from './TreeGenerator.js';
 
-function applyTextureColorSpace(tex, { srgb = true } = {}) {
-    if ('colorSpace' in tex) {
-        tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-        return;
-    }
-    if ('encoding' in tex) tex.encoding = srgb ? THREE.sRGBEncoding : THREE.LinearEncoding;
-}
+const EPS = 1e-6;
 
 function ensureUv2(geo) {
     if (!geo?.attributes?.uv || geo.attributes.uv2) return;
     geo.setAttribute('uv2', new THREE.BufferAttribute(geo.attributes.uv.array, 2));
 }
 
-function configureRepeatTexture(tex, { repeats = 1, srgb = true, anisotropy = 16 } = {}) {
-    if (!tex) return null;
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(repeats, repeats);
-    tex.anisotropy = anisotropy;
-    applyTextureColorSpace(tex, { srgb });
-    tex.needsUpdate = true;
-    return tex;
+function clamp(value, min, max, fallback = min) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return fallback;
+    return Math.max(min, Math.min(max, num));
+}
+
+function normalizeRoughnessRemap(value) {
+    const src = value && typeof value === 'object' ? value : null;
+    if (!src) return null;
+    const minRaw = Number(src.min);
+    const maxRaw = Number(src.max);
+    if (!(Number.isFinite(minRaw) && Number.isFinite(maxRaw))) return null;
+    const lo = clamp(minRaw, 0.0, 1.0, 0.0);
+    const hi = clamp(Math.max(minRaw, maxRaw), 0.0, 1.0, 1.0);
+    return { min: lo, max: hi };
+}
+
+function applyResolvedPayloadToGroundMaterial(material, payload) {
+    if (!material?.isMeshStandardMaterial) return;
+    const tex = payload?.textures ?? {};
+    const effective = payload?.overrides?.effective ?? {};
+    const orm = tex.orm ?? null;
+
+    material.map = tex.baseColor ?? null;
+    material.normalMap = tex.normal ?? null;
+    material.aoMap = orm ?? tex.ao ?? null;
+    material.metalnessMap = orm ?? tex.metalness ?? null;
+
+    const remap = normalizeRoughnessRemap(effective.roughnessRemap);
+    const constantRoughness = remap && Math.abs(remap.max - remap.min) <= EPS
+        ? clamp(remap.min, 0.0, 1.0, 1.0)
+        : null;
+
+    if (constantRoughness !== null) {
+        // Without a remap shader in TerrainGenerator materials, a degenerate remap
+        // should still force a deterministic roughness value.
+        material.roughnessMap = null;
+        material.roughness = constantRoughness;
+    } else {
+        material.roughnessMap = orm ?? tex.roughness ?? null;
+        material.roughness = clamp(effective.roughness, 0.0, 1.0, 1.0);
+    }
+
+    material.metalness = orm
+        ? clamp(effective.metalness, 0.0, 1.0, 1.0)
+        : clamp(effective.metalness, 0.0, 1.0, 0.0);
+    material.needsUpdate = true;
 }
 
 export function createCityWorld({
@@ -158,39 +191,50 @@ export function createCityWorld({
     ensureUv2(floorGeo);
     ensureUv2(tileGeo);
 
-    const legacyGrassUrl = new URL('../../../../assets/public/grass.png', import.meta.url);
     const loader = new THREE.TextureLoader();
+    const pbrLoader = new PbrTextureLoaderService({ textureLoader: loader });
 
     const worldRepeats = Math.max(1, size / Math.max(0.1, tileMeters));
     const tileRepeats = map ? Math.max(1, map.tileSize / Math.max(0.1, tileMeters)) : null;
 
-    loader.load(
-        legacyGrassUrl.href,
-        (tex) => {
-            configureRepeatTexture(tex, { repeats: worldRepeats, srgb: true });
+    const floorPayload = pbrLoader.resolveMaterial('pbr.grass_004', {
+        cloneTextures: true,
+        repeat: { x: worldRepeats, y: worldRepeats },
+        diagnosticsTag: 'TerrainGenerator.floor'
+    });
+    applyResolvedPayloadToGroundMaterial(floor.material, floorPayload);
 
-            floor.material.map = tex;
-            floor.material.normalMap = null;
-            floor.material.roughnessMap = null;
-            floor.material.aoMap = null;
-            floor.material.roughness = 1.0;
-            floor.material.metalness = 0.0;
-            floor.material.needsUpdate = true;
+    if (tilesMat && tileRepeats) {
+        const tilePayload = pbrLoader.resolveMaterial('pbr.grass_004', {
+            cloneTextures: true,
+            repeat: { x: tileRepeats, y: tileRepeats },
+            diagnosticsTag: 'TerrainGenerator.tiles'
+        });
+        applyResolvedPayloadToGroundMaterial(tilesMat, tilePayload);
+    }
+
+    // TerrainGenerator is synchronous; calibration loads async on first use.
+    // Re-apply once calibration arrives so ground materials reflect correction files.
+    Promise.resolve()
+        .then(() => pbrLoader.preloadCalibrationForMaterialIds(['pbr.grass_004'], { forceReload: true }))
+        .then(() => {
+            const refreshedFloorPayload = pbrLoader.resolveMaterial('pbr.grass_004', {
+                cloneTextures: true,
+                repeat: { x: worldRepeats, y: worldRepeats },
+                diagnosticsTag: 'TerrainGenerator.floor.calibrated'
+            });
+            applyResolvedPayloadToGroundMaterial(floor.material, refreshedFloorPayload);
 
             if (tilesMat && tileRepeats) {
-                const t2 = configureRepeatTexture(tex.clone(), { repeats: tileRepeats, srgb: true });
-                tilesMat.map = t2;
-                tilesMat.normalMap = null;
-                tilesMat.roughnessMap = null;
-                tilesMat.aoMap = null;
-                tilesMat.roughness = 1.0;
-                tilesMat.metalness = 0.0;
-                tilesMat.needsUpdate = true;
+                const refreshedTilePayload = pbrLoader.resolveMaterial('pbr.grass_004', {
+                    cloneTextures: true,
+                    repeat: { x: tileRepeats, y: tileRepeats },
+                    diagnosticsTag: 'TerrainGenerator.tiles.calibrated'
+                });
+                applyResolvedPayloadToGroundMaterial(tilesMat, refreshedTilePayload);
             }
-        },
-        undefined,
-        (e2) => console.warn('[CityWorld] Failed to load legacy grass texture:', legacyGrassUrl.href, e2)
-    );
+        })
+        .catch(() => {});
 
     return { group, floor, groundTiles, gridLines, trees };
 }

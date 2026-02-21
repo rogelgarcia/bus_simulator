@@ -7,7 +7,7 @@ import { createToolCameraController } from '../../../engine3d/camera/ToolCameraP
 import { getOrCreateGpuFrameTimer } from '../../../engine3d/perf/GpuFrameTimer.js';
 import { applyIBLIntensity, applyIBLToScene, loadIBLTexture } from '../../../lighting/IBL.js';
 import { DEFAULT_IBL_ID, getIblEntryById } from '../../../content3d/catalogs/IBLCatalog.js';
-import { resolvePbrMaterialUrls } from '../../../content3d/catalogs/PbrMaterialCatalog.js';
+import { PbrTextureLoaderService } from '../../../content3d/materials/PbrTexturePipeline.js';
 import { WindowMeshGenerator } from '../../../assets3d/generators/buildings/WindowMeshGenerator.js';
 import { getDefaultWindowMeshSettings, sanitizeWindowMeshSettings } from '../../../../app/buildings/window_mesh/index.js';
 import { WindowMeshDebuggerUI } from './WindowMeshDebuggerUI.js';
@@ -20,15 +20,7 @@ const WALL_SPEC = Object.freeze({
     depth: 1.6,
     frontZ: 5.0
 });
-const GRASS_URLS = (() => {
-    const base = new URL('../../../../../assets/public/pbr/grass_004/', import.meta.url);
-    return Object.freeze({
-        baseColorUrl: new URL('basecolor.png', base).toString(),
-        normalUrl: new URL('normal_gl.png', base).toString(),
-        aoUrl: new URL('ao.png', base).toString(),
-        roughnessUrl: new URL('roughness.png', base).toString()
-    });
-})();
+const GROUND_MATERIAL_ID = 'pbr.grass_004';
 const EPS = 1e-6;
 
 function clamp(value, min, max, fallback) {
@@ -63,15 +55,6 @@ function isInteractiveElement(target) {
     const tag = target?.tagName;
     if (!tag) return false;
     return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || target?.isContentEditable;
-}
-
-function applyTextureColorSpace(tex, { srgb = true } = {}) {
-    if (!tex) return;
-    if ('colorSpace' in tex) {
-        tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-        return;
-    }
-    if ('encoding' in tex) tex.encoding = srgb ? THREE.sRGBEncoding : THREE.LinearEncoding;
 }
 
 function setupRepeat(tex, repeat) {
@@ -330,6 +313,7 @@ export class WindowMeshDebuggerView {
         this._ground = null;
         this._groundMat = null;
         this._groundTexCache = new Map();
+        this._pbrTextureService = null;
 
         this._wall = null;
         this._wallMat = null;
@@ -389,6 +373,10 @@ export class WindowMeshDebuggerView {
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
 
         this.renderer = renderer;
+        this._pbrTextureService = new PbrTextureLoaderService({
+            renderer: this.renderer,
+            textureLoader: this._texLoader
+        });
         this._gpuFrameTimer = getOrCreateGpuFrameTimer(renderer);
         this.scene = new THREE.Scene();
         this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 500);
@@ -502,6 +490,9 @@ export class WindowMeshDebuggerView {
         this._ui?.unmount?.();
         this._ui = null;
 
+        this._pbrTextureService?.dispose?.();
+        this._pbrTextureService = null;
+
         this.renderer?.dispose?.();
         this.renderer = null;
         this._gpuFrameTimer = null;
@@ -554,34 +545,56 @@ export class WindowMeshDebuggerView {
         this._wallMat = wallMat;
     }
 
+    _resolvePbrMaterialPayload(materialId, {
+        calibrationOverrides = undefined,
+        localOverrides = null,
+        cloneTextures = false,
+        repeat = null,
+        uvSpace = 'meters',
+        surfaceSizeMeters = null,
+        repeatScale = 1.0,
+        diagnosticsTag = 'WindowMeshDebuggerView'
+    } = {}) {
+        const id = typeof materialId === 'string' ? materialId.trim() : '';
+        if (!id || !this._pbrTextureService) return null;
+        return this._pbrTextureService.resolveMaterial(id, {
+            calibrationOverrides,
+            localOverrides,
+            cloneTextures,
+            repeat,
+            uvSpace,
+            surfaceSizeMeters,
+            repeatScale,
+            diagnosticsTag
+        });
+    }
+
     _applyGrassGroundMaterial() {
         const groundMat = this._groundMat;
-        const renderer = this.renderer;
-        if (!groundMat || !renderer) return;
+        if (!groundMat) return;
 
         const rep = 120 / 2.0;
-        const repeat = { x: rep, y: rep };
+        const resolved = this._resolvePbrMaterialPayload(GROUND_MATERIAL_ID, {
+            cloneTextures: false,
+            repeat: { x: rep, y: rep },
+            diagnosticsTag: 'WindowMeshDebuggerView.ground'
+        });
+        const tex = resolved?.textures ?? {};
 
-        const applyTexture = (url, { srgb }) => {
-            const safeUrl = typeof url === 'string' && url ? url : null;
-            if (!safeUrl) return null;
-            const cached = this._groundTexCache.get(safeUrl);
-            if (cached) return cached;
-
-            const tex = this._texLoader.load(safeUrl);
-            tex.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy?.() ?? 16);
-            applyTextureColorSpace(tex, { srgb: !!srgb });
-            setupRepeat(tex, repeat);
-            this._groundTexCache.set(safeUrl, tex);
-            return tex;
-        };
-
-        groundMat.map = applyTexture(GRASS_URLS.baseColorUrl, { srgb: true });
-        groundMat.normalMap = applyTexture(GRASS_URLS.normalUrl, { srgb: false });
-        groundMat.aoMap = applyTexture(GRASS_URLS.aoUrl, { srgb: false });
-        groundMat.roughnessMap = applyTexture(GRASS_URLS.roughnessUrl, { srgb: false });
+        groundMat.map = tex.baseColor ?? null;
+        groundMat.normalMap = tex.normal ?? null;
+        if (tex.orm) {
+            groundMat.aoMap = tex.orm;
+            groundMat.roughnessMap = tex.orm;
+            groundMat.metalnessMap = tex.orm;
+            groundMat.metalness = 1.0;
+        } else {
+            groundMat.aoMap = tex.ao ?? null;
+            groundMat.roughnessMap = tex.roughness ?? null;
+            groundMat.metalnessMap = tex.metalness ?? null;
+            groundMat.metalness = 0.0;
+        }
         groundMat.roughness = 1.0;
-        groundMat.metalness = 0.0;
 
         groundMat.needsUpdate = true;
     }
@@ -806,8 +819,7 @@ export class WindowMeshDebuggerView {
     _applyWallMaterial(materialId, { roughness, normalIntensity } = {}) {
         const wallMat = this._wallMat;
         const wall = this._wall;
-        const renderer = this.renderer;
-        if (!wallMat || !renderer) return;
+        if (!wallMat) return;
 
         const wallRoughness = clamp(roughness, 0.0, 1.0, 0.85);
         const wallNormalIntensity = clamp(normalIntensity, 0.0, 5.0, 1.0);
@@ -833,36 +845,37 @@ export class WindowMeshDebuggerView {
         })();
 
         const id = typeof materialId === 'string' ? materialId : '';
-        const urls = resolvePbrMaterialUrls(id);
-        const baseUrl = urls?.baseColorUrl ?? null;
-        const normalUrl = urls?.normalUrl ?? null;
-        const ormUrl = urls?.ormUrl ?? null;
+        const resolved = this._resolvePbrMaterialPayload(id, {
+            cloneTextures: false,
+            repeat: { x: wallRepeat.x, y: wallRepeat.y },
+            localOverrides: {
+                roughness: wallRoughness,
+                normalStrength: wallNormalIntensity
+            },
+            diagnosticsTag: 'WindowMeshDebuggerView.wall'
+        });
+        const tex = resolved?.textures ?? {};
 
-        const applyTexture = (url, { srgb }) => {
-            const safeUrl = typeof url === 'string' && url ? url : null;
-            if (!safeUrl) return null;
-            const cached = this._wallTexCache.get(safeUrl);
-            if (cached) {
-                setupRepeat(cached, wallRepeat);
-                return cached;
-            }
+        wallMat.map = tex.baseColor ?? null;
+        wallMat.normalMap = tex.normal ?? null;
+        setupRepeat(wallMat.map, wallRepeat);
+        setupRepeat(wallMat.normalMap, wallRepeat);
 
-            const tex = this._texLoader.load(safeUrl);
-            tex.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy?.() ?? 16);
-            applyTextureColorSpace(tex, { srgb: !!srgb });
-            setupRepeat(tex, wallRepeat);
-            this._wallTexCache.set(safeUrl, tex);
-            return tex;
-        };
+        if (tex.orm) {
+            wallMat.roughnessMap = tex.orm;
+            wallMat.metalnessMap = tex.orm;
+            wallMat.aoMap = tex.orm;
+            setupRepeat(tex.orm, wallRepeat);
+        } else {
+            wallMat.aoMap = tex.ao ?? null;
+            wallMat.roughnessMap = tex.roughness ?? null;
+            wallMat.metalnessMap = tex.metalness ?? null;
+            setupRepeat(wallMat.aoMap, wallRepeat);
+            setupRepeat(wallMat.roughnessMap, wallRepeat);
+            setupRepeat(wallMat.metalnessMap, wallRepeat);
+        }
 
-        wallMat.map = applyTexture(baseUrl, { srgb: true });
-        wallMat.normalMap = applyTexture(normalUrl, { srgb: false });
         if (wallMat.normalScale) wallMat.normalScale.set(wallNormalIntensity, wallNormalIntensity);
-
-        const orm = applyTexture(ormUrl, { srgb: false });
-        wallMat.roughnessMap = orm;
-        wallMat.metalnessMap = orm;
-        wallMat.aoMap = orm;
         wallMat.roughness = wallRoughness;
         wallMat.metalness = 0.0;
 

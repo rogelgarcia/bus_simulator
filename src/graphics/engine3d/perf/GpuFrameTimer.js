@@ -27,14 +27,56 @@ function getWebGlContextFromRenderer(renderer) {
     }
 }
 
+function safeGetError(gl) {
+    if (!gl || typeof gl.getError !== 'function') return null;
+    try {
+        return gl.getError();
+    } catch {
+        return null;
+    }
+}
+
+function clearGlErrors(gl, maxChecks = 8) {
+    const noError = Number(gl?.NO_ERROR);
+    if (!Number.isFinite(noError) || typeof gl?.getError !== 'function') return;
+    for (let i = 0; i < maxChecks; i++) {
+        let err = null;
+        try {
+            err = gl.getError();
+        } catch {
+            return;
+        }
+        if (Number(err) === noError) return;
+    }
+}
+
+function glCallHasNoError(gl, fn) {
+    clearGlErrors(gl, 4);
+    try {
+        fn();
+    } catch {
+        return false;
+    }
+    const err = safeGetError(gl);
+    if (err === null) return true;
+    return Number(err) === Number(gl.NO_ERROR);
+}
+
+function hasNoGlError(gl) {
+    const err = safeGetError(gl);
+    if (err === null) return true;
+    return Number(err) === Number(gl.NO_ERROR);
+}
+
 /** @returns {GpuFrameTimer} */
-function createWebGL2Timer(gl, ext) {
+function createWebGL2Timer(gl, ext, { timeElapsedTarget, gpuDisjointParam }) {
     /** @type {WebGLQuery|null} */
     let inFlight = null;
     /** @type {WebGLQuery[]} */
     const pending = [];
     /** @type {number|null} */
     let lastMs = null;
+    let disabled = false;
 
     const deleteQuery = (q) => {
         try {
@@ -43,51 +85,97 @@ function createWebGL2Timer(gl, ext) {
         }
     };
 
+    const clearPending = () => {
+        while (pending.length) deleteQuery(pending.shift());
+    };
+
+    const disableTimer = () => {
+        disabled = true;
+        if (inFlight) {
+            deleteQuery(inFlight);
+            inFlight = null;
+        }
+        clearPending();
+        lastMs = null;
+    };
+
+    const hasActiveExtension = () => {
+        if (disabled) return false;
+        if (gl.isContextLost?.()) return false;
+        if (!Number.isFinite(timeElapsedTarget) || !Number.isFinite(gpuDisjointParam)) return false;
+        try {
+            const active = gl.getExtension('EXT_disjoint_timer_query_webgl2');
+            if (!active) return false;
+            return Number(active.TIME_ELAPSED_EXT) === timeElapsedTarget
+                && Number(active.GPU_DISJOINT_EXT) === gpuDisjointParam;
+        } catch {
+            return false;
+        }
+    };
+
     return {
         isSupported: true,
         beginFrame() {
+            if (disabled) return;
             if (inFlight) return;
-            if (gl.isContextLost?.()) return;
-            try {
-                const q = gl.createQuery();
-                if (!q) return;
-                gl.beginQuery(ext.TIME_ELAPSED_EXT, q);
-                inFlight = q;
-            } catch {
-                inFlight = null;
-            }
-        },
-        endFrame() {
-            if (!inFlight) return;
-            const q = inFlight;
-            inFlight = null;
-            if (gl.isContextLost?.()) {
-                deleteQuery(q);
+            if (!hasActiveExtension()) {
+                disableTimer();
                 return;
             }
             try {
-                gl.endQuery(ext.TIME_ELAPSED_EXT);
+                const q = gl.createQuery();
+                if (!q) return;
+                const started = glCallHasNoError(gl, () => gl.beginQuery(timeElapsedTarget, q));
+                if (!started) {
+                    deleteQuery(q);
+                    disableTimer();
+                    return;
+                }
+                inFlight = q;
+            } catch {
+                disableTimer();
+            }
+        },
+        endFrame() {
+            if (disabled) return;
+            if (!inFlight) return;
+            const q = inFlight;
+            inFlight = null;
+            if (!hasActiveExtension()) {
+                deleteQuery(q);
+                disableTimer();
+                return;
+            }
+            const ended = glCallHasNoError(gl, () => gl.endQuery(timeElapsedTarget));
+            if (ended) {
                 pending.push(q);
                 while (pending.length > MAX_PENDING_QUERIES) deleteQuery(pending.shift());
-            } catch {
+            } else {
                 deleteQuery(q);
+                disableTimer();
             }
         },
         poll() {
+            if (disabled) return;
             if (!pending.length) return;
-            if (gl.isContextLost?.()) {
-                while (pending.length) deleteQuery(pending.shift());
-                lastMs = null;
+            if (!hasActiveExtension()) {
+                disableTimer();
                 return;
             }
 
             let disjoint = false;
             try {
-                disjoint = !!gl.getParameter(ext.GPU_DISJOINT_EXT);
+                disjoint = !!gl.getParameter(gpuDisjointParam);
             } catch {
+                disableTimer();
+                return;
+            }
+            if (!hasNoGlError(gl)) {
+                disableTimer();
+                return;
             }
             if (disjoint) {
-                while (pending.length) deleteQuery(pending.shift());
+                clearPending();
                 lastMs = null;
                 return;
             }
@@ -98,17 +186,28 @@ function createWebGL2Timer(gl, ext) {
                 try {
                     available = !!gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE);
                 } catch {
-                    available = false;
+                    disableTimer();
+                    return;
+                }
+                if (!hasNoGlError(gl)) {
+                    disableTimer();
+                    return;
                 }
                 if (!available) break;
                 pending.shift();
 
                 try {
                     const nsRaw = gl.getQueryParameter(q, gl.QUERY_RESULT);
+                    if (!hasNoGlError(gl)) {
+                        disableTimer();
+                        return;
+                    }
                     const ns = Number(nsRaw);
                     const ms = ns / 1e6;
                     if (Number.isFinite(ms) && ms >= 0) lastMs = ms;
                 } catch {
+                    disableTimer();
+                    return;
                 } finally {
                     deleteQuery(q);
                 }
@@ -121,13 +220,14 @@ function createWebGL2Timer(gl, ext) {
 }
 
 /** @returns {GpuFrameTimer} */
-function createWebGL1Timer(gl, ext) {
+function createWebGL1Timer(gl, ext, { timeElapsedTarget, gpuDisjointParam }) {
     /** @type {any|null} */
     let inFlight = null;
     /** @type {any[]} */
     const pending = [];
     /** @type {number|null} */
     let lastMs = null;
+    let disabled = false;
 
     const deleteQuery = (q) => {
         try {
@@ -136,51 +236,97 @@ function createWebGL1Timer(gl, ext) {
         }
     };
 
+    const clearPending = () => {
+        while (pending.length) deleteQuery(pending.shift());
+    };
+
+    const disableTimer = () => {
+        disabled = true;
+        if (inFlight) {
+            deleteQuery(inFlight);
+            inFlight = null;
+        }
+        clearPending();
+        lastMs = null;
+    };
+
+    const hasActiveExtension = () => {
+        if (disabled) return false;
+        if (gl.isContextLost?.()) return false;
+        if (!Number.isFinite(timeElapsedTarget) || !Number.isFinite(gpuDisjointParam)) return false;
+        try {
+            const active = gl.getExtension('EXT_disjoint_timer_query');
+            if (!active) return false;
+            return Number(active.TIME_ELAPSED_EXT) === timeElapsedTarget
+                && Number(active.GPU_DISJOINT_EXT) === gpuDisjointParam;
+        } catch {
+            return false;
+        }
+    };
+
     return {
         isSupported: true,
         beginFrame() {
+            if (disabled) return;
             if (inFlight) return;
-            if (gl.isContextLost?.()) return;
-            try {
-                const q = ext.createQueryEXT?.();
-                if (!q) return;
-                ext.beginQueryEXT(ext.TIME_ELAPSED_EXT, q);
-                inFlight = q;
-            } catch {
-                inFlight = null;
-            }
-        },
-        endFrame() {
-            if (!inFlight) return;
-            const q = inFlight;
-            inFlight = null;
-            if (gl.isContextLost?.()) {
-                deleteQuery(q);
+            if (!hasActiveExtension()) {
+                disableTimer();
                 return;
             }
             try {
-                ext.endQueryEXT(ext.TIME_ELAPSED_EXT);
+                const q = ext.createQueryEXT?.();
+                if (!q) return;
+                const started = glCallHasNoError(gl, () => ext.beginQueryEXT(timeElapsedTarget, q));
+                if (!started) {
+                    deleteQuery(q);
+                    disableTimer();
+                    return;
+                }
+                inFlight = q;
+            } catch {
+                disableTimer();
+            }
+        },
+        endFrame() {
+            if (disabled) return;
+            if (!inFlight) return;
+            const q = inFlight;
+            inFlight = null;
+            if (!hasActiveExtension()) {
+                deleteQuery(q);
+                disableTimer();
+                return;
+            }
+            const ended = glCallHasNoError(gl, () => ext.endQueryEXT(timeElapsedTarget));
+            if (ended) {
                 pending.push(q);
                 while (pending.length > MAX_PENDING_QUERIES) deleteQuery(pending.shift());
-            } catch {
+            } else {
                 deleteQuery(q);
+                disableTimer();
             }
         },
         poll() {
+            if (disabled) return;
             if (!pending.length) return;
-            if (gl.isContextLost?.()) {
-                while (pending.length) deleteQuery(pending.shift());
-                lastMs = null;
+            if (!hasActiveExtension()) {
+                disableTimer();
                 return;
             }
 
             let disjoint = false;
             try {
-                disjoint = !!gl.getParameter(ext.GPU_DISJOINT_EXT);
+                disjoint = !!gl.getParameter(gpuDisjointParam);
             } catch {
+                disableTimer();
+                return;
+            }
+            if (!hasNoGlError(gl)) {
+                disableTimer();
+                return;
             }
             if (disjoint) {
-                while (pending.length) deleteQuery(pending.shift());
+                clearPending();
                 lastMs = null;
                 return;
             }
@@ -191,16 +337,27 @@ function createWebGL1Timer(gl, ext) {
                 try {
                     available = !!ext.getQueryObjectEXT(q, ext.QUERY_RESULT_AVAILABLE_EXT);
                 } catch {
-                    available = false;
+                    disableTimer();
+                    return;
+                }
+                if (!hasNoGlError(gl)) {
+                    disableTimer();
+                    return;
                 }
                 if (!available) break;
                 pending.shift();
                 try {
                     const nsRaw = ext.getQueryObjectEXT(q, ext.QUERY_RESULT_EXT);
+                    if (!hasNoGlError(gl)) {
+                        disableTimer();
+                        return;
+                    }
                     const ns = Number(nsRaw);
                     const ms = ns / 1e6;
                     if (Number.isFinite(ms) && ms >= 0) lastMs = ms;
                 } catch {
+                    disableTimer();
+                    return;
                 } finally {
                     deleteQuery(q);
                 }
@@ -222,12 +379,18 @@ function createTimerForRenderer(renderer) {
         if (hasWebGL2Queries) {
             const ext = gl.getExtension('EXT_disjoint_timer_query_webgl2');
             if (!ext) return createNoopTimer();
-            return createWebGL2Timer(gl, ext);
+            const timeElapsedTarget = Number(ext.TIME_ELAPSED_EXT);
+            const gpuDisjointParam = Number(ext.GPU_DISJOINT_EXT);
+            if (!Number.isFinite(timeElapsedTarget) || !Number.isFinite(gpuDisjointParam)) return createNoopTimer();
+            return createWebGL2Timer(gl, ext, { timeElapsedTarget, gpuDisjointParam });
         }
 
         const ext = gl.getExtension('EXT_disjoint_timer_query');
         if (!ext) return createNoopTimer();
-        return createWebGL1Timer(gl, ext);
+        const timeElapsedTarget = Number(ext.TIME_ELAPSED_EXT);
+        const gpuDisjointParam = Number(ext.GPU_DISJOINT_EXT);
+        if (!Number.isFinite(timeElapsedTarget) || !Number.isFinite(gpuDisjointParam)) return createNoopTimer();
+        return createWebGL1Timer(gl, ext, { timeElapsedTarget, gpuDisjointParam });
     } catch {
         return createNoopTimer();
     }
