@@ -2,11 +2,11 @@
 
 ## Local Rules
 
-- MUST READ `PROJECT_RULES.local.md`
+- MUST READ root-level `PROJECT_RULES.local.md`
 
 ## Coding / Architecture (Canonical)
 
-- Follow `PROJECT_CODING_RULES.md` for:
+- Follow `ai_rules/PROJECT_CODING_RULES.md` for:
   - Directory structure and layering (`src/app/` vs `src/graphics/`)
   - Code style, comments policy, GUI/CSS rules, naming conventions
   - Architecture rules (validation boundaries, no junk-drawer utils, no silent fallbacks, etc.)
@@ -30,10 +30,10 @@ Any AI prompt or change that modifies a specification/model MUST update one or m
 
 - During AI/dev iteration, prefer the standardized runner: `node tools/run_selected_test/run.mjs` (reads `tests/.selected_test`) instead of ad-hoc long inline test commands.
 - Browser-run console tests live in `tests/core.test.js` (can be run by opening `index.html` locally and checking the console, or by selecting `core` in `tests/.selected_test`).
-- For hard-to-reproduce rendering regressions, follow `TESTING_RULES.md` → “Regression Debugging Playbook (headless + bisect)” (create a deterministic headless repro, then bisect with repeated test runs and a research log).
+- For hard-to-reproduce rendering regressions, follow `ai_rules/TESTING_RULES.md` → “Regression Debugging Playbook (headless + bisect)” (create a deterministic headless repro, then bisect with repeated test runs and a research log).
 - Add new tests near related sections and keep naming descriptive (e.g., `System: behavior should ...`).
 - If adding new modules, ensure they are importable from the browser (relative import paths).
-- Expanded testing policy and conventions: `TESTING_RULES.md`
+- Expanded testing policy and conventions: `ai_rules/TESTING_RULES.md`
 
 ## AI Guidance
 
@@ -46,7 +46,7 @@ Any AI prompt or change that modifies a specification/model MUST update one or m
 - Archived prompts live in `prompts/archive/`.
 - Do not move prompts to `prompts/archive/` automatically.
 - Completion is not enough to move a prompt; move only when explicitly requested by the user.
-- Interactive prompt mode is triggered by `start ai` and uses `AI_i_...` naming (see `AI_PROMPT_INSTRUCTIONS.md`).
+- Interactive prompt mode is triggered by `start ai` and uses `AI_i_...` naming (see `ai_rules/AI_PROMPT_INSTRUCTIONS.md`).
 
 **Mesh Fabrication JSON prompts:**
 - For mesh-generation/editing requests for the mesh fabrication editor, follow:
@@ -79,7 +79,7 @@ These are the ones from AI prompt files.
   - Use the highest existing prompt id across all active, completed, and archived files (standard and interactive) plus 1.
 
 **AI Prompt naming:**
-- Follow `AI_PROMPT_INSTRUCTIONS.md` (naming, template, and completion steps).
+- Follow `ai_rules/AI_PROMPT_INSTRUCTIONS.md` (naming, template, and completion steps).
 
 **3P libraries, assets, models**
 If using resources from downloads/ folder, always copy to the application.

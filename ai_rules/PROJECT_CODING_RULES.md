@@ -2,7 +2,7 @@
 
 This file is the single source of truth for **coding style**, **architecture**, and **code organization** rules in this repo.
 
-If `PROJECT_RULES.md` and this file disagree, follow this file.
+If `ai_rules/PROJECT_RULES.md` and this file disagree, follow this file.
 
 ## Layers and directory structure
 
@@ -15,7 +15,7 @@ If `PROJECT_RULES.md` and this file disagree, follow this file.
   - GUI/HUD/CSS → `src/graphics/gui/`
   - Visual effects & rendering utilities → `src/graphics/visuals/`
 - Keep high-level gameplay states in `src/states/`.
-- Keep browser-run tests under `tests/` (see `TESTING_RULES.md` for structure).
+- Keep browser-run tests under `tests/` (see `ai_rules/TESTING_RULES.md` for structure).
 - Assets:
   - `assets/public/` is shareable/public.
   - other `assets/` subfolders may be licensed/private.

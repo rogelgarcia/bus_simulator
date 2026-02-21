@@ -1,6 +1,6 @@
 # Project Coding Rules - Migration Notes (Phase 1)
 
-This doc tracks incremental, behavior-preserving refactors that apply `PROJECT_CODING_RULES.md` to the existing codebase.
+This doc tracks incremental, behavior-preserving refactors that apply `ai_rules/PROJECT_CODING_RULES.md` to the existing codebase.
 
 ## Phase 1 (this pass)
 
@@ -24,4 +24,3 @@ Implemented:
 - Reduce cross-layer re-export shims in `src/app/**` that forward to `src/graphics/**` (replace with direct imports or relocate catalogs to the correct layer).
 - Introduce `internal/` folders for large modules (ex: debugger UIs) and enforce the internal import privacy rule for newly-split modules.
 - Add `// @ts-check` + JSDoc typedefs to a few high-churn public APIs (pick 1–2 modules at a time).
-

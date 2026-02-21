@@ -1,4 +1,4 @@
-// Node unit tests: lightweight guardrails for PROJECT_CODING_RULES.md.
+// Node unit tests: lightweight guardrails for ai_rules/PROJECT_CODING_RULES.md.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -153,4 +153,3 @@ test('Guardrails: internal/* modules are only imported by their owning module', 
         assert.fail(`Found forbidden imports from internal/* (${violations.length})\n${preview}`);
     }
 });
-

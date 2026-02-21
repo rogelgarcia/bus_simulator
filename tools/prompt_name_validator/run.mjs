@@ -306,9 +306,6 @@ function checkRootLeftovers() {
         if (!entry.name.startsWith('AI_')) {
             continue;
         }
-        if (entry.name === 'AI_PROMPT_INSTRUCTIONS.md') {
-            continue;
-        }
         addError(`${entry.name}: prompt task file must be moved under prompts/`);
     }
 

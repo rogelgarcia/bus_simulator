@@ -1,8 +1,8 @@
 # Agent Notes
 
-- Follow `PROJECT_RULES.md` (and `PROJECT_RULES.local.md` when pushing code to github) for repo structure, coding style, comments, commits, and asset rules.
-- Generated screenshots and debug captures go under `tests/artifacts/screens/<topic>/` (gitignored). Never save them into `screens/` or next to source code (see `TESTING_RULES.md`, "Artifacts and baselines").
-- When creating AI prompt files, follow `AI_PROMPT_INSTRUCTIONS.md` for naming and structure.
+- Follow `ai_rules/PROJECT_RULES.md` (and root-level `PROJECT_RULES.local.md` when pushing code to github) for repo structure, coding style, comments, commits, and asset rules.
+- Generated screenshots and debug captures go under `tests/artifacts/screens/<topic>/` (gitignored). Never save them into `screens/` or next to source code (see `ai_rules/TESTING_RULES.md`, "Artifacts and baselines").
+- When creating AI prompt files, follow `ai_rules/AI_PROMPT_INSTRUCTIONS.md` for naming and structure.
   - Active prompt files live in `prompts/`; archived prompt files live in `prompts/archive/`.
   - User requested `create promtpt` or `create ai` or `create ai prompt`. Or similar variations.
   - User requested `start ai`: use interactive mode with `AI_i_` prompt naming and conversational requirement gathering.

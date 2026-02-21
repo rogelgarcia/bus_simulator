@@ -1,6 +1,6 @@
 # Testing Rules
 
-This doc is the expanded testing policy and conventions for this repo. `PROJECT_RULES.md` links here.
+This doc is the expanded testing policy and conventions for this repo. `ai_rules/PROJECT_RULES.md` links here.
 
 ## Goals
 

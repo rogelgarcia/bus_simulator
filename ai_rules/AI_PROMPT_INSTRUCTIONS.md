@@ -11,6 +11,11 @@ All AI prompts are tracked in git and stored under:
 
 Do not place prompt task files at repo root.
 
+## Trigger Phrases (Required)
+
+- Standard prompt mode triggers include: `create prompt`, `create ai`, `create ai prompt`, and common variants such as `create promtpt`.
+- Interactive prompt mode trigger is: `start ai`.
+
 ## File Naming (Required)
 
 There are two prompt types: standard prompts and interactive prompts.
@@ -186,7 +191,7 @@ Rules:
 ## Notes
 
 - The AI has access to the repository and can retrieve files as needed.
-- The AI is aware of `PROJECT_RULES.md` and `AGENTS.md` conventions.
+- The AI is aware of `ai_rules/PROJECT_RULES.md` and `AGENTS.md` conventions.
 - No need to manually attach files or project structure.
 - Legacy files in `prompts/archive/` may follow older naming formats; new files must follow the naming rules above.
 
