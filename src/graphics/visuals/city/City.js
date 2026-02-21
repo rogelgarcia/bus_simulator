@@ -173,6 +173,7 @@ export class City {
             for (const entry of buildingsList) {
                 const wallInset = Number.isFinite(entry?.wallInset) ? entry.wallInset : 0.0;
                 const hasLayers = Array.isArray(entry?.layers) && entry.layers.length;
+                const footprintLoops = Array.isArray(entry?.footprintLoops) ? entry.footprintLoops : null;
                 const windowsSpec = entry?.windows ?? null;
                 const windowsEnabled = !!windowsSpec && typeof windowsSpec === 'object';
                 const overrideWindowVisuals = entry?.windowVisuals ?? null;
@@ -182,6 +183,7 @@ export class City {
                     ? buildBuildingFabricationVisualParts({
                         map: this.map,
                         tiles: entry.tiles,
+                        footprintLoops,
                         generatorConfig: this.generatorConfig,
                         tileSize: this.map.tileSize,
                         occupyRatio: 1.0,

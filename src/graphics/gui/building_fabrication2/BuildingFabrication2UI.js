@@ -314,10 +314,22 @@ export class BuildingFabrication2UI {
         this.addRoofBtn.className = 'building-fab2-btn building-fab2-btn-small';
         this.addRoofBtn.textContent = '+ Roof';
 
+        this.adjustLayoutBtn = document.createElement('button');
+        this.adjustLayoutBtn.type = 'button';
+        this.adjustLayoutBtn.className = 'building-fab2-icon-btn building-fab2-right-action-layout-btn';
+        this.adjustLayoutBtn.title = 'Adjust Layout';
+        this.adjustLayoutBtn.setAttribute('aria-label', 'Adjust Layout');
+        this.adjustLayoutBtn.appendChild(createMaterialSymbolIcon('open_with', { size: 'sm' }));
+        this.adjustLayoutBtnLabel = document.createElement('span');
+        this.adjustLayoutBtnLabel.className = 'building-fab2-right-action-layout-label';
+        this.adjustLayoutBtnLabel.textContent = 'Adjust Layout';
+        this.adjustLayoutBtn.appendChild(this.adjustLayoutBtnLabel);
+
         this.rightActions = document.createElement('div');
         this.rightActions.className = 'building-fab2-right-actions';
         this.rightActions.appendChild(this.addFloorBtn);
         this.rightActions.appendChild(this.addRoofBtn);
+        this.rightActions.appendChild(this.adjustLayoutBtn);
 
         this.layersList = document.createElement('div');
         this.layersList.className = 'building-fab2-layer-list';
@@ -373,6 +385,15 @@ export class BuildingFabrication2UI {
         this.bottomToolsPanel = document.createElement('div');
         this.bottomToolsPanel.className = 'building-fab2-bottom-tools';
 
+        this.adjustModeOverlayPanel = document.createElement('div');
+        this.adjustModeOverlayPanel.className = 'building-fab2-adjust-overlay hidden';
+
+        this.adjustModeCloseBtn = document.createElement('button');
+        this.adjustModeCloseBtn.type = 'button';
+        this.adjustModeCloseBtn.className = 'building-fab2-btn building-fab2-btn-small';
+        this.adjustModeCloseBtn.textContent = 'Close';
+        this.adjustModeOverlayPanel.appendChild(this.adjustModeCloseBtn);
+
         this.rulerBtn = document.createElement('button');
         this.rulerBtn.type = 'button';
         this.rulerBtn.className = 'building-fab2-icon-btn building-fab2-bottom-tool-btn';
@@ -387,6 +408,7 @@ export class BuildingFabrication2UI {
         this.rulerLabel.style.display = 'none';
         this.viewportOverlay.appendChild(this.rulerLabel);
 
+        this.root.appendChild(this.adjustModeOverlayPanel);
         this.root.appendChild(this.bottomToolsPanel);
         this.root.appendChild(this.viewportOverlay);
 
@@ -511,6 +533,7 @@ export class BuildingFabrication2UI {
         this._hideFaceMarkEnabled = false;
         this._showDummyEnabled = false;
         this._rulerEnabled = false;
+        this._layoutAdjustEnabled = false;
         this._layers = [];
         this._layerOpenById = new Map();
         this._floorLayerFaceStateById = new Map();
@@ -544,6 +567,7 @@ export class BuildingFabrication2UI {
         this.onHideFaceMarkChange = null;
         this.onShowDummyChange = null;
         this.onRulerToggle = null;
+        this.onAdjustLayoutToggle = null;
         this.onSelectCatalogEntry = null;
 
         this.onAddFloorLayer = null;
@@ -603,6 +627,19 @@ export class BuildingFabrication2UI {
             this._syncRulerButton();
             this.onRulerToggle?.(this._rulerEnabled);
         };
+        this._onAdjustLayoutClick = () => {
+            if (this.adjustLayoutBtn.disabled) return;
+            this._layoutAdjustEnabled = !this._layoutAdjustEnabled;
+            this._syncAdjustLayoutButton();
+            this.onAdjustLayoutToggle?.(this._layoutAdjustEnabled);
+        };
+        this._onAdjustModeCloseClick = () => {
+            if (this.adjustModeCloseBtn.disabled) return;
+            if (!this._layoutAdjustEnabled) return;
+            this._layoutAdjustEnabled = false;
+            this._syncAdjustLayoutButton();
+            this.onAdjustLayoutToggle?.(false);
+        };
         this._onAddFloorClick = () => this.onAddFloorLayer?.();
         this._onAddRoofClick = () => this.onAddRoofLayer?.();
         this._onLinkOverlayClick = (e) => this._handleLinkOverlayClick(e);
@@ -661,6 +698,11 @@ export class BuildingFabrication2UI {
         this._syncRulerButton();
     }
 
+    setLayoutAdjustEnabled(enabled) {
+        this._layoutAdjustEnabled = !!enabled;
+        this._syncAdjustLayoutButton();
+    }
+
     setRulerLabel({ visible = false, x = 0, y = 0, text = '' } = {}) {
         if (!this.rulerLabel) return;
         const show = !!visible && Number.isFinite(x) && Number.isFinite(y) && typeof text === 'string' && text;
@@ -684,6 +726,8 @@ export class BuildingFabrication2UI {
             this._selectedBayIdByKey.clear();
             this.closeGroupingPanel();
             this.closeSidePanel();
+            this._layoutAdjustEnabled = false;
+            this._syncAdjustLayoutButton();
         }
         const name = typeof buildingName === 'string' ? buildingName : '';
         const type = (buildingType === 'business' || buildingType === 'industrial' || buildingType === 'apartments' || buildingType === 'house')
@@ -1463,6 +1507,8 @@ export class BuildingFabrication2UI {
         this.viewModes.addEventListener('click', this._onViewModesClick);
         this.hideFaceMarkToggleInput.addEventListener('change', this._onHideFaceMarkToggleChange);
         this.showDummyToggleInput.addEventListener('change', this._onShowDummyToggleChange);
+        this.adjustLayoutBtn.addEventListener('click', this._onAdjustLayoutClick);
+        this.adjustModeCloseBtn.addEventListener('click', this._onAdjustModeCloseClick);
         this.rulerBtn.addEventListener('click', this._onRulerClick);
         this.addFloorBtn.addEventListener('click', this._onAddFloorClick);
         this.addRoofBtn.addEventListener('click', this._onAddRoofClick);
@@ -1499,6 +1545,8 @@ export class BuildingFabrication2UI {
         this.viewModes.removeEventListener('click', this._onViewModesClick);
         this.hideFaceMarkToggleInput.removeEventListener('change', this._onHideFaceMarkToggleChange);
         this.showDummyToggleInput.removeEventListener('change', this._onShowDummyToggleChange);
+        this.adjustLayoutBtn.removeEventListener('click', this._onAdjustLayoutClick);
+        this.adjustModeCloseBtn.removeEventListener('click', this._onAdjustModeCloseClick);
         this.rulerBtn.removeEventListener('click', this._onRulerClick);
         this.addFloorBtn.removeEventListener('click', this._onAddFloorClick);
         this.addRoofBtn.removeEventListener('click', this._onAddRoofClick);
@@ -1530,6 +1578,8 @@ export class BuildingFabrication2UI {
         this.typeSelect.disabled = !allow || !hasBuilding;
         this.hideFaceMarkToggleInput.disabled = !allow;
         this.showDummyToggleInput.disabled = !allow || !hasBuilding;
+        this.adjustLayoutBtn.disabled = !allow || !hasBuilding;
+        this.adjustModeCloseBtn.disabled = !allow || !hasBuilding || !this._layoutAdjustEnabled;
         this.rulerBtn.disabled = !allow;
 
         this.addFloorBtn.disabled = !allow || !hasBuilding;
@@ -1548,6 +1598,7 @@ export class BuildingFabrication2UI {
         }
         this._syncHideFaceMarkToggle();
         this._syncShowDummyToggle();
+        this._syncAdjustLayoutButton();
         this._syncRulerButton();
     }
 
@@ -1562,6 +1613,20 @@ export class BuildingFabrication2UI {
     _syncRulerButton() {
         if (!this.rulerBtn) return;
         this.rulerBtn.classList.toggle('is-active', this._rulerEnabled);
+    }
+
+    _syncAdjustLayoutButton() {
+        if (!this.adjustLayoutBtn) return;
+        this.adjustLayoutBtn.classList.toggle('is-active', this._layoutAdjustEnabled);
+        this._syncAdjustModeOverlay();
+    }
+
+    _syncAdjustModeOverlay() {
+        if (!this.adjustModeOverlayPanel) return;
+        this.adjustModeOverlayPanel.classList.toggle('hidden', !this._layoutAdjustEnabled);
+        if (this.adjustModeCloseBtn) {
+            this.adjustModeCloseBtn.disabled = !this._enabled || !this._hasBuilding || !this._layoutAdjustEnabled;
+        }
     }
 
     _handleViewModeClick(e) {

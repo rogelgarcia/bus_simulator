@@ -16,6 +16,35 @@ function clampInt(value, min, max) {
     return Math.max(min, Math.min(max, rounded));
 }
 
+function normalizeFootprintLoopsInput(footprintLoops) {
+    const srcLoops = Array.isArray(footprintLoops) ? footprintLoops : [];
+    if (!srcLoops.length) return null;
+
+    const samePointXZ = (a, b) => (
+        !!a && !!b
+        && Math.abs((Number(a.x) || 0) - (Number(b.x) || 0)) <= 1e-6
+        && Math.abs((Number(a.z) || 0) - (Number(b.z) || 0)) <= 1e-6
+    );
+
+    const out = [];
+    for (const rawLoop of srcLoops) {
+        const src = Array.isArray(rawLoop) ? rawLoop : [];
+        if (!src.length) continue;
+        const loop = [];
+        for (const entry of src) {
+            const x = Number(entry?.x ?? entry?.[0]);
+            const z = Number(entry?.z ?? entry?.[1]);
+            if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
+            const p = { x, z };
+            if (!loop.length || !samePointXZ(loop[loop.length - 1], p)) loop.push(p);
+        }
+        if (loop.length > 2 && samePointXZ(loop[0], loop[loop.length - 1])) loop.pop();
+        if (loop.length >= 3) out.push(loop);
+    }
+
+    return out.length ? out : null;
+}
+
 function indentLines(text, spaces) {
     const pad = ' '.repeat(Math.max(0, spaces | 0));
     return String(text)
@@ -88,6 +117,7 @@ export function createCityBuildingConfigFromFabrication({
     id,
     name,
     layers,
+    footprintLoops = null,
     wallInset = 0.0,
     materialVariationSeed = null,
     windowVisuals = null,
@@ -101,6 +131,7 @@ export function createCityBuildingConfigFromFabrication({
 
     const inset = clamp(wallInset, 0.0, 4.0);
     const seed = Number.isFinite(materialVariationSeed) ? clampInt(materialVariationSeed, 0, 4294967295) : null;
+    const footprint = normalizeFootprintLoopsInput(footprintLoops);
     const cfg = {
         id: safeId,
         name: safeName,
@@ -111,6 +142,7 @@ export function createCityBuildingConfigFromFabrication({
         windows
     };
 
+    if (footprint) cfg.footprintLoops = footprint;
     if (inset > 1e-6) cfg.wallInset = inset;
     if (seed !== null) cfg.materialVariationSeed = seed;
     if (windowVisuals && typeof windowVisuals === 'object') cfg.windowVisuals = normalizeBuildingWindowVisualsConfig(windowVisuals);
@@ -145,9 +177,15 @@ export function serializeCityBuildingConfigToEsModule(config, { exportConstName 
 
     const wallInset = Number.isFinite(cfg.wallInset) ? clamp(cfg.wallInset, 0.0, 4.0) : null;
     const seed = Number.isFinite(cfg.materialVariationSeed) ? clampInt(cfg.materialVariationSeed, 0, 4294967295) : null;
+    const footprintLoops = normalizeFootprintLoopsInput(cfg.footprintLoops);
     const windowVisuals = cfg.windowVisuals && typeof cfg.windowVisuals === 'object' ? cfg.windowVisuals : null;
     const facades = cfg.facades && typeof cfg.facades === 'object' ? cfg.facades : null;
     const windowDefinitions = cfg.windowDefinitions && typeof cfg.windowDefinitions === 'object' ? cfg.windowDefinitions : null;
+    const footprintLines = footprintLoops ? [
+        '    footprintLoops: Object.freeze(',
+        indentLines(JSON.stringify(footprintLoops, null, 4), 8),
+        '    ),'
+    ] : [];
     const windowVisualsLines = windowVisuals ? [
         '    windowVisuals: Object.freeze(',
         indentLines(JSON.stringify(windowVisuals, null, 4), 8),
@@ -175,6 +213,7 @@ export function serializeCityBuildingConfigToEsModule(config, { exportConstName 
         '    ),',
         ...(wallInset !== null && wallInset > 1e-6 ? [`    wallInset: ${wallInset},`] : []),
         ...(seed !== null ? [`    materialVariationSeed: ${seed},`] : []),
+        ...footprintLines,
         `    floors: ${clampInt(cfg.floors ?? 1, 1, 30)},`,
         `    floorHeight: ${clamp(cfg.floorHeight ?? 3, 1.0, 12.0)},`,
         `    style: ${JSON.stringify(isBuildingStyle(cfg.style) ? cfg.style : BUILDING_STYLE.DEFAULT)},`,

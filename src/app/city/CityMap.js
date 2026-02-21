@@ -40,6 +40,47 @@ function clampInt(v, lo, hi) {
     return Math.max(lo, Math.min(hi, v | 0));
 }
 
+function deepClone(value) {
+    if (Array.isArray(value)) return value.map((entry) => deepClone(entry));
+    if (value && typeof value === 'object') {
+        const out = {};
+        for (const [k, v] of Object.entries(value)) out[k] = deepClone(v);
+        return out;
+    }
+    return value;
+}
+
+function normalizeFootprintLoopsInput(footprintLoops) {
+    const srcLoops = Array.isArray(footprintLoops) ? footprintLoops : [];
+    if (!srcLoops.length) return null;
+
+    const samePointXZ = (a, b) => (
+        !!a && !!b
+        && Math.abs((Number(a.x) || 0) - (Number(b.x) || 0)) <= 1e-6
+        && Math.abs((Number(a.z) || 0) - (Number(b.z) || 0)) <= 1e-6
+    );
+
+    const out = [];
+    for (const rawLoop of srcLoops) {
+        const src = Array.isArray(rawLoop) ? rawLoop : [];
+        if (!src.length) continue;
+
+        const loop = [];
+        for (const entry of src) {
+            const x = Number(entry?.x ?? entry?.[0]);
+            const z = Number(entry?.z ?? entry?.[1]);
+            if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
+            const p = { x, z };
+            if (!loop.length || !samePointXZ(loop[loop.length - 1], p)) loop.push(p);
+        }
+
+        if (loop.length > 2 && samePointXZ(loop[0], loop[loop.length - 1])) loop.pop();
+        if (loop.length >= 3) out.push(loop);
+    }
+
+    return out.length ? out : null;
+}
+
 function bitCount4(m) {
     m = m & 0x0f;
     m = (m & 0x05) + ((m >> 1) & 0x05);
@@ -576,10 +617,16 @@ export class CityMap {
                 tiles: tiles.map((tile) => [tile?.[0] | 0, tile?.[1] | 0])
             };
 
+            const footprintLoops = normalizeFootprintLoopsInput(building?.footprintLoops);
+            if (footprintLoops) record.footprintLoops = footprintLoops;
+            if (Number.isFinite(building?.wallInset)) record.wallInset = building.wallInset;
+            if (Number.isFinite(building?.materialVariationSeed)) record.materialVariationSeed = building.materialVariationSeed;
+            if (building?.windowVisuals && typeof building.windowVisuals === 'object') record.windowVisuals = deepClone(building.windowVisuals);
+            if (building?.facades && typeof building.facades === 'object') record.facades = deepClone(building.facades);
+            if (building?.windowDefinitions && typeof building.windowDefinitions === 'object') record.windowDefinitions = deepClone(building.windowDefinitions);
+
             if (!record.configId) {
                 if (Array.isArray(building?.layers) && building.layers.length) record.layers = building.layers;
-                if (Number.isFinite(building?.wallInset)) record.wallInset = building.wallInset;
-                if (Number.isFinite(building?.materialVariationSeed)) record.materialVariationSeed = building.materialVariationSeed;
                 if (Number.isFinite(building?.floorHeight)) record.floorHeight = building.floorHeight;
                 if (Number.isFinite(building?.floors)) record.floors = building.floors;
                 if (typeof building?.style === 'string') record.style = building.style;
@@ -683,9 +730,10 @@ export class CityMap {
             const rawConfigId = typeof raw.configId === 'string' ? raw.configId : null;
             const resolvedConfigId = resolveBrickMidriseVariantConfigId(rawConfigId, { mapSeed, buildingId: id, tiles: accepted });
             const config = resolvedConfigId ? getBuildingConfigById(resolvedConfigId) : null;
-            const design = config && typeof config === 'object' ? config : raw;
+            const designBase = config && typeof config === 'object' ? config : raw;
+            const overrideOrBase = (key) => (raw?.[key] !== undefined ? raw[key] : designBase?.[key]);
 
-            const designLayers = Array.isArray(design.layers) ? design.layers : null;
+            const designLayers = Array.isArray(overrideOrBase('layers')) ? overrideOrBase('layers') : null;
             const hasLayers = !!designLayers?.length;
 
             const deriveLegacyFromLayers = (layers) => {
@@ -709,11 +757,11 @@ export class CityMap {
 
             const derivedLegacy = hasLayers ? deriveLegacyFromLayers(designLayers) : null;
 
-            const floors = Number.isFinite(design.floors ?? design.numFloors)
-                ? clampIntLocal(design.floors ?? design.numFloors, 1, 30)
+            const floors = Number.isFinite(overrideOrBase('floors') ?? overrideOrBase('numFloors'))
+                ? clampIntLocal(overrideOrBase('floors') ?? overrideOrBase('numFloors'), 1, 30)
                 : (derivedLegacy?.floors ?? 1);
-            const floorHeight = Number.isFinite(design.floorHeight)
-                ? clampLocal(design.floorHeight, 1.0, 12.0)
+            const floorHeight = Number.isFinite(overrideOrBase('floorHeight'))
+                ? clampLocal(overrideOrBase('floorHeight'), 1.0, 12.0)
                 : (derivedLegacy?.floorHeight ?? 3.0);
 
 	            const mapStyleFromTextureUrl = (url) => {
@@ -728,11 +776,12 @@ export class CityMap {
 	                return BUILDING_STYLE.DEFAULT;
 	            };
 
-            const style = isBuildingStyle(design.style)
-                ? design.style
-                : (derivedLegacy?.style ?? mapStyleFromTextureUrl(design.wallTextureUrl));
+            const styleRaw = overrideOrBase('style');
+            const style = isBuildingStyle(styleRaw)
+                ? styleRaw
+                : (derivedLegacy?.style ?? mapStyleFromTextureUrl(overrideOrBase('wallTextureUrl')));
 
-            const windowsRaw = design.windows ?? derivedLegacy?.windows ?? null;
+            const windowsRaw = overrideOrBase('windows') ?? derivedLegacy?.windows ?? null;
             const windowsEnabled = windowsRaw && typeof windowsRaw === 'object';
             const windowWidth = windowsEnabled ? clampLocal(windowsRaw.width, 0.3, 12.0) : null;
             const windowGap = windowsEnabled ? clampLocal(windowsRaw.gap, 0.0, 24.0) : null;
@@ -741,19 +790,28 @@ export class CityMap {
                 ? clampLocal(windowsRaw.y, 0.0, Math.max(0.0, floorHeight - (windowHeight ?? 0.3)))
                 : null;
 
+            const footprintLoops = normalizeFootprintLoopsInput(overrideOrBase('footprintLoops'));
+            const facades = overrideOrBase('facades');
+            const windowDefinitions = overrideOrBase('windowDefinitions');
+            const windowVisuals = overrideOrBase('windowVisuals');
+
             out.push({
                 id,
                 configId: config?.id ?? null,
                 tiles: accepted,
-                layers: hasLayers ? designLayers : null,
-                wallInset: clampFiniteLocal(design.wallInset, 0.0, 4.0, 0.0),
-                materialVariationSeed: Number.isFinite(design.materialVariationSeed)
-                    ? clampIntLocal(design.materialVariationSeed, 0, 4294967295)
+                layers: hasLayers ? deepClone(designLayers) : null,
+                footprintLoops,
+                wallInset: clampFiniteLocal(overrideOrBase('wallInset'), 0.0, 4.0, 0.0),
+                materialVariationSeed: Number.isFinite(overrideOrBase('materialVariationSeed'))
+                    ? clampIntLocal(overrideOrBase('materialVariationSeed'), 0, 4294967295)
                     : null,
                 floorHeight,
                 floors,
                 style,
-                windows: windowsEnabled ? { width: windowWidth, gap: windowGap, height: windowHeight, y: windowY } : null
+                windows: windowsEnabled ? { width: windowWidth, gap: windowGap, height: windowHeight, y: windowY } : null,
+                facades: (facades && typeof facades === 'object') ? deepClone(facades) : null,
+                windowDefinitions: (windowDefinitions && typeof windowDefinitions === 'object') ? deepClone(windowDefinitions) : null,
+                windowVisuals: (windowVisuals && typeof windowVisuals === 'object') ? deepClone(windowVisuals) : null
             });
         }
 

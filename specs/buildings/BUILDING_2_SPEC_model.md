@@ -43,6 +43,9 @@ To keep authoring stable and to support continuity across layers:
 At a conceptual level, a Building v2 model includes:
 
 - **Layers** (floor and roof layers), including floor counts/heights and layer offsets.
+- **Building-default footprint loops in meters** (tile-independent authoring shape):
+  - stored as a default silhouette for the config,
+  - used by BF2 and runtime when no placement override is provided.
 - **Floorplan/footprint** data per layer (topology-preserving across applicable layers).
 - **Facades**, authored per floor layer and per face id (`A`, `B`, `C`, …), using a bay/group layout model.
 - **Per-floor-layer face relationships**:
@@ -74,3 +77,4 @@ Concrete schema definitions belong in dedicated specs:
 - Exported building configs SHOULD be self-contained and portable.
 - Loading an exported v2 config should reproduce the same building (modulo deterministic solver reflow when face lengths change).
 - Importing a v1 config MUST convert to v2 and then render via v2.
+- City placement/runtime MAY override a config’s default footprint loops (and related facade-driven dimensions) per placed building without mutating the source config.

@@ -192,6 +192,63 @@ function splitLoops(loops) {
     return { outer, holes };
 }
 
+function normalizeFootprintLoopsInput(footprintLoops) {
+    const srcLoops = Array.isArray(footprintLoops) ? footprintLoops : [];
+    if (!srcLoops.length) return [];
+
+    const samePointXZ = (a, b) => (
+        !!a && !!b && Math.abs((Number(a.x) || 0) - (Number(b.x) || 0)) <= 1e-6 && Math.abs((Number(a.z) || 0) - (Number(b.z) || 0)) <= 1e-6
+    );
+
+    const out = [];
+    for (const rawLoop of srcLoops) {
+        const src = Array.isArray(rawLoop) ? rawLoop : [];
+        if (!src.length) continue;
+
+        const loop = [];
+        for (const entry of src) {
+            const x = Number(entry?.x ?? entry?.[0]);
+            const z = Number(entry?.z ?? entry?.[1]);
+            if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
+            const p = { x: qf(x), z: qf(z) };
+            if (!loop.length || !samePointXZ(loop[loop.length - 1], p)) loop.push(p);
+        }
+
+        if (loop.length > 2 && samePointXZ(loop[0], loop[loop.length - 1])) loop.pop();
+        if (loop.length < 3) continue;
+
+        const area = signedArea(loop);
+        if (!(Math.abs(area) > EPS)) continue;
+        out.push(area >= 0 ? loop : loop.slice().reverse());
+    }
+
+    return out;
+}
+
+function computeMaterialVariationSeedFromFootprintLoops(loops, { salt = 'building' } = {}) {
+    const srcLoops = Array.isArray(loops) ? loops : [];
+    let h = 2166136261 >>> 0;
+    const mix = (v) => {
+        h ^= hashUint32(v);
+        h = Math.imul(h, 16777619) >>> 0;
+    };
+
+    const s = typeof salt === 'string' ? salt : '';
+    for (let i = 0; i < s.length; i++) mix(s.charCodeAt(i));
+    mix(srcLoops.length);
+
+    for (const loop of srcLoops) {
+        const pts = Array.isArray(loop) ? loop : [];
+        mix(pts.length);
+        for (const p of pts) {
+            mix(q(p?.x ?? 0));
+            mix(q(p?.z ?? 0));
+        }
+    }
+
+    return h >>> 0;
+}
+
 function computeBuildingBaseAndSidewalk({ generatorConfig, floorHeight }) {
     const roadCfg = generatorConfig?.road ?? {};
     const baseRoadY = Number.isFinite(roadCfg.surfaceY) ? roadCfg.surfaceY : 0;
@@ -420,36 +477,141 @@ function computeQuadFacadeFramesFromLoop(loop, { warnings = null, tol = 1e-4 } =
         }
     }
 
-    const area = signedArea(loop);
-    const isCcw = area >= 0;
-    const frames = {};
     const faceIds = ['A', 'B', 'C', 'D'];
+    const center = { x: 0, z: 0 };
+    for (const p of loop) {
+        center.x += Number(p?.x) || 0;
+        center.z += Number(p?.z) || 0;
+    }
+    if (loop.length > 0) {
+        center.x /= loop.length;
+        center.z /= loop.length;
+    }
 
+    const runInfos = runs.map((run, idx) => {
+        const a = run?.a ?? null;
+        const b = run?.b ?? null;
+        const t = normalize2({ x: (Number(b?.x) || 0) - (Number(a?.x) || 0), z: (Number(b?.z) || 0) - (Number(a?.z) || 0) });
+        const mid = {
+            x: ((Number(a?.x) || 0) + (Number(b?.x) || 0)) * 0.5,
+            z: ((Number(a?.z) || 0) + (Number(b?.z) || 0)) * 0.5
+        };
+        const outwardHint = { x: mid.x - center.x, z: mid.z - center.z };
+        const right = rightNormal2(t);
+        const outward = dot2(right, outwardHint) >= 0 ? right : { x: -right.x, z: -right.z };
+        return { idx, run, t, outward, mid };
+    });
+
+    const takeBest = (scoreFn, taken) => {
+        let best = -1;
+        let bestScore = -Infinity;
+        for (const info of runInfos) {
+            if (taken.has(info.idx)) continue;
+            const score = Number(scoreFn(info)) || -Infinity;
+            if (score > bestScore) {
+                bestScore = score;
+                best = info.idx;
+            }
+        }
+        return best;
+    };
+
+    const taken = new Set();
+    const runIndexByFaceId = {};
+    runIndexByFaceId.A = takeBest((info) => info.outward.z, taken);
+    if (runIndexByFaceId.A < 0) return null;
+    taken.add(runIndexByFaceId.A);
+    runIndexByFaceId.C = takeBest((info) => -info.outward.z, taken);
+    if (runIndexByFaceId.C < 0) return null;
+    taken.add(runIndexByFaceId.C);
+    runIndexByFaceId.B = takeBest((info) => info.outward.x, taken);
+    if (runIndexByFaceId.B < 0) return null;
+    taken.add(runIndexByFaceId.B);
+    runIndexByFaceId.D = takeBest((info) => -info.outward.x, taken);
+    if (runIndexByFaceId.D < 0) return null;
+
+    const runByFaceId = {};
+    for (const faceId of faceIds) {
+        const idx = runIndexByFaceId[faceId];
+        runByFaceId[faceId] = runs[idx] ?? null;
+        if (!runByFaceId[faceId]) return null;
+    }
+
+    const orientRun = (run, reverse) => {
+        const a = run?.a ?? null;
+        const b = run?.b ?? null;
+        if (!a || !b) return null;
+        return reverse ? { a: b, b: a } : { a, b };
+    };
+
+    let bestMask = 0;
+    let bestError = Infinity;
+    for (let mask = 0; mask < 16; mask++) {
+        const oriented = {};
+        let invalid = false;
+        for (let i = 0; i < 4; i++) {
+            const faceId = faceIds[i];
+            const rev = ((mask >> i) & 1) === 1;
+            const edge = orientRun(runByFaceId[faceId], rev);
+            if (!edge) {
+                invalid = true;
+                break;
+            }
+            oriented[faceId] = edge;
+        }
+        if (invalid) continue;
+
+        let err = 0;
+        for (let i = 0; i < 4; i++) {
+            const faceId = faceIds[i];
+            const nextFaceId = faceIds[(i + 1) % 4];
+            const a = oriented[faceId];
+            const b = oriented[nextFaceId];
+            const dx = (Number(a?.b?.x) || 0) - (Number(b?.a?.x) || 0);
+            const dz = (Number(a?.b?.z) || 0) - (Number(b?.a?.z) || 0);
+            err += dx * dx + dz * dz;
+        }
+
+        if (err < bestError) {
+            bestError = err;
+            bestMask = mask;
+        }
+    }
+
+    const frames = {};
     for (let i = 0; i < 4; i++) {
-        const run = runs[i];
         const faceId = faceIds[i];
+        const run = runByFaceId[faceId];
+        const reverse = ((bestMask >> i) & 1) === 1;
+        const oriented = orientRun(run, reverse);
+        if (!oriented) return null;
+
         const L = Number(run?.length) || 0;
         if (!(L > EPS)) {
             if (w) w.push(`Facade silhouette: face ${faceId} has invalid length.`);
             return null;
         }
 
-        const t = normalize2({ x: run.b.x - run.a.x, z: run.b.z - run.a.z });
+        const t = normalize2({ x: oriented.b.x - oriented.a.x, z: oriented.b.z - oriented.a.z });
         if (!(t.len > EPS)) {
             if (w) w.push(`Facade silhouette: face ${faceId} has invalid tangent.`);
             return null;
         }
 
-        const n = isCcw ? rightNormal2(t) : leftNormal2(t);
-        if (!(Math.abs(n.x) + Math.abs(n.z) > EPS)) {
+        const mid = { x: (oriented.a.x + oriented.b.x) * 0.5, z: (oriented.a.z + oriented.b.z) * 0.5 };
+        const outwardHint = { x: mid.x - center.x, z: mid.z - center.z };
+        const right = rightNormal2(t);
+        const nRaw = dot2(right, outwardHint) >= 0 ? right : { x: -right.x, z: -right.z };
+        const n = normalize2(nRaw);
+        if (!(n.len > EPS)) {
             if (w) w.push(`Facade silhouette: face ${faceId} has invalid normal.`);
             return null;
         }
 
         frames[faceId] = {
             faceId,
-            start: { x: qf(run.a.x), z: qf(run.a.z) },
-            end: { x: qf(run.b.x), z: qf(run.b.z) },
+            start: { x: qf(oriented.a.x), z: qf(oriented.a.z) },
+            end: { x: qf(oriented.b.x), z: qf(oriented.b.z) },
             t: { x: t.x, z: t.z },
             n: { x: n.x, z: n.z },
             length: L
@@ -2729,6 +2891,7 @@ function computeQuadFacadeSilhouette({
 export function buildBuildingFabricationVisualParts({
     map,
     tiles,
+    footprintLoops = null,
     generatorConfig = null,
     tileSize = null,
     occupyRatio = 1.0,
@@ -2747,21 +2910,26 @@ export function buildBuildingFabricationVisualParts({
     overlays = null,
     walls = null
 } = {}) {
-    const footprintLoops = computeBuildingLoopsFromTiles({ map, tiles, generatorConfig, tileSize, occupyRatio });
-    if (!footprintLoops.length) return null;
+    const explicitFootprintLoops = normalizeFootprintLoopsInput(footprintLoops);
+    const sourceFootprintLoops = explicitFootprintLoops.length
+        ? explicitFootprintLoops
+        : computeBuildingLoopsFromTiles({ map, tiles, generatorConfig, tileSize, occupyRatio });
+    if (!sourceFootprintLoops.length) return null;
 
     const safeLayers = normalizeBuildingLayers(layers);
     const tileCount = Array.isArray(tiles) ? tiles.length : 0;
     const baseColorHex = makeDeterministicColor(tileCount * 97 + safeLayers.length * 31).getHex();
     const matVarSeed = Number.isFinite(materialVariationSeed)
         ? (Number(materialVariationSeed) >>> 0)
-        : computeMaterialVariationSeedFromTiles(tiles, { salt: 'building' });
+        : ((tileCount > 0)
+            ? computeMaterialVariationSeedFromTiles(tiles, { salt: 'building' })
+            : computeMaterialVariationSeedFromFootprintLoops(sourceFootprintLoops, { salt: 'building' }));
 
     const firstFloorLayer = safeLayers.find((layer) => layer?.type === LAYER_TYPE.FLOOR) ?? null;
     const firstFloorHeight = clamp(firstFloorLayer?.floorHeight ?? 3.2, 1.0, 12.0);
     const { baseY, extraFirstFloor, planY } = computeBuildingBaseAndSidewalk({ generatorConfig, floorHeight: firstFloorHeight });
     const matVarHeightMax = estimateFabricationHeightMax({ baseY, extraFirstFloor, layers: safeLayers });
-    const overlayLoops = applyPlanOffset({ loops: footprintLoops, offset: firstFloorLayer?.planOffset ?? 0.0 }).all;
+    const overlayLoops = applyPlanOffset({ loops: sourceFootprintLoops, offset: firstFloorLayer?.planOffset ?? 0.0 }).all;
 
     const wallInset = clamp(walls?.inset, 0.0, 4.0);
     const lineColor = colors?.line ?? 0xff3b30;
@@ -2895,7 +3063,7 @@ export function buildBuildingFabricationVisualParts({
     });
     disableIblOnMaterial(roofMatTemplate);
 
-    let currentLoops = footprintLoops;
+    let currentLoops = sourceFootprintLoops;
     let yCursor = baseY;
     let firstFloorPendingExtra = extraFirstFloor;
 
@@ -2908,7 +3076,7 @@ export function buildBuildingFabricationVisualParts({
     const facadePatternTopologyByFaceId = new Map();
     if (wantsFacadePatterns) {
         const minFaceLengthByFaceId = { A: Infinity, B: Infinity, C: Infinity, D: Infinity };
-        let probeLoops = footprintLoops;
+        let probeLoops = sourceFootprintLoops;
 
         for (const layer of safeLayers) {
             if (layer?.type !== LAYER_TYPE.FLOOR) continue;

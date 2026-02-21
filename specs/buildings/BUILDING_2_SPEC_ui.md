@@ -40,6 +40,7 @@ Building Fabrication 2 MUST:
 - open with **no building configured** (empty state),
 - temporarily disable **sun bloom** while the screen is active and restore the prior bloom value on exit (non-persistent),
 - keep camera/navigation consistent with other debug tools (no unnecessary movement clamps).
+- allow camera orbit with **left mouse drag** during normal navigation (outside tool-capture modes such as layout adjustment and ruler placement).
 
 ---
 
@@ -132,7 +133,7 @@ When building configuration widgets are enabled, the core authoring unit is the 
 ### 7.1 Create Building defaults
 
 `Create Building` creates a building at the map center with:
-- Footprint: **2×1 tiles**
+- Footprint: **meter-based default silhouette** (tile-independent authoring default; editable via `Adjust Layout`)
 - Floors: **4 floors** initial setup (via the initial `Floor layer`)
 - Default face linking (per-floor-layer):
   - Face `A` is the master of face `C`
@@ -141,7 +142,17 @@ When building configuration widgets are enabled, the core authoring unit is the 
 ### 7.2 Layer groups (minimal layout)
 
 At the building level:
-- Provide a top-level `+ Floor` button to add floor layers.
+- Provide a top-level actions row with `+ Floor`, `+ Roof`, and a right-aligned `Adjust Layout` toggle (visible text label `Adjust Layout`).
+- `Adjust Layout` behavior:
+  - enables direct silhouette editing in meters (tile-independent)
+  - hover a face edge: highlight the edge and show an always-on-top wall overlay, then drag along the face normal
+  - hover a corner/edge handle: show a ring handle, then drag that corner freely
+  - holding `Shift` during corner drag snaps motion to the tangent of the closest adjacent wall line
+  - holding `Control` during corner drag prefers snapping to a 90-degree corner when close enough
+  - on facade hover, the selector bar is aligned to that facade edge direction (correct per-face rotation) and rendered on the building base line
+  - while adjustment mode is active, show a small overlay panel above the ruler tool panel with a `Close` button that exits adjustment mode
+  - face/corner drag must clamp to minimum allowed facade widths (including bay constraints), with absolute minimum `1.0m`
+  - during drag, rebuild updates are throttled to at most `4Hz` (every `250ms`)
 - Adding creates a `Floor layer` group with:
   - move up/down (arrow buttons),
   - delete (garbage button),

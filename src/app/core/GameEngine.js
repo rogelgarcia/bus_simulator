@@ -1213,7 +1213,9 @@ export class GameEngine {
         this._staticAo?.runtime?.dispose?.();
         if (this._staticAo) this._staticAo.runtime = null;
         this._busContactShadow?.rig?.dispose?.();
-        this.renderer?.dispose?.();
+        const renderer = this.renderer ?? null;
+        this.renderer = null;
+        renderer?.dispose?.();
     }
 
     _tick(t) {

@@ -1210,37 +1210,53 @@ async function runTests() {
     try {
         const { GameEngine } = await import('/src/app/core/GameEngine.js');
 
-        // Create a mock canvas for testing
-        const mockCanvas = document.createElement('canvas');
-        mockCanvas.width = 100;
-        mockCanvas.height = 100;
+        const withGameEngine = (fn) => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 100;
+            canvas.height = 100;
+            const engine = new GameEngine({
+                canvas,
+                autoResize: false,
+                deterministic: true,
+                pixelRatio: 1
+            });
+            try {
+                fn(engine);
+            } finally {
+                engine?.dispose?.();
+            }
+        };
 
         test('GameEngine: has simulation property', () => {
-            const engine = new GameEngine({ canvas: mockCanvas });
-            assertTrue(engine.simulation !== null, 'simulation should exist');
-            assertTrue(engine.simulation.events !== undefined, 'simulation.events should exist');
-            assertTrue(engine.simulation.vehicles !== undefined, 'simulation.vehicles should exist');
-            assertTrue(engine.simulation.physics !== undefined, 'simulation.physics should exist');
+            withGameEngine((engine) => {
+                assertTrue(engine.simulation !== null, 'simulation should exist');
+                assertTrue(engine.simulation.events !== undefined, 'simulation.events should exist');
+                assertTrue(engine.simulation.vehicles !== undefined, 'simulation.vehicles should exist');
+                assertTrue(engine.simulation.physics !== undefined, 'simulation.physics should exist');
+            });
         });
 
         test('GameEngine: context getter returns proxy', () => {
-            const engine = new GameEngine({ canvas: mockCanvas });
-            assertTrue(engine.context !== null, 'context should exist');
+            withGameEngine((engine) => {
+                assertTrue(engine.context !== null, 'context should exist');
+            });
         });
 
         test('GameEngine: context.selectedBus syncs with simulation', () => {
-            const engine = new GameEngine({ canvas: mockCanvas });
-            const mockBus = { name: 'test-bus' };
-            engine.context.selectedBus = mockBus;
-            assertEqual(engine.simulation.selectedBus, mockBus, 'simulation.selectedBus should match');
-            assertEqual(engine.context.selectedBus, mockBus, 'context.selectedBus should match');
+            withGameEngine((engine) => {
+                const mockBus = { name: 'test-bus' };
+                engine.context.selectedBus = mockBus;
+                assertEqual(engine.simulation.selectedBus, mockBus, 'simulation.selectedBus should match');
+                assertEqual(engine.context.selectedBus, mockBus, 'context.selectedBus should match');
+            });
         });
 
         test('GameEngine: context.selectedBusId syncs with simulation', () => {
-            const engine = new GameEngine({ canvas: mockCanvas });
-            engine.context.selectedBusId = 'bus-123';
-            assertEqual(engine.simulation.selectedBusId, 'bus-123', 'simulation.selectedBusId should match');
-            assertEqual(engine.context.selectedBusId, 'bus-123', 'context.selectedBusId should match');
+            withGameEngine((engine) => {
+                engine.context.selectedBusId = 'bus-123';
+                assertEqual(engine.simulation.selectedBusId, 'bus-123', 'simulation.selectedBusId should match');
+                assertEqual(engine.context.selectedBusId, 'bus-123', 'context.selectedBusId should match');
+            });
         });
     } catch (e) {
         console.log('⏭️  GameEngine integration tests skipped:', e.message);
@@ -1777,6 +1793,9 @@ async function runTests() {
 
     // ========== Building Fabrication UI Tests ==========
     const { BuildingFabricationUI } = await import('/src/graphics/gui/building_fabrication/BuildingFabricationUI.js');
+    const { BuildingFabrication2UI } = await import('/src/graphics/gui/building_fabrication2/BuildingFabrication2UI.js');
+    const { BuildingFabrication2View, __testOnly: buildingFabrication2ViewTestOnly } = await import('/src/graphics/gui/building_fabrication2/BuildingFabrication2View.js');
+    const { BuildingFabrication2Scene } = await import('/src/graphics/gui/building_fabrication2/BuildingFabrication2Scene.js');
     const { BuildingFabricationScene, getCentered2x1FootprintTileIds } = await import('/src/graphics/gui/building_fabrication/BuildingFabricationScene.js');
     const { offsetOrthogonalLoopXZ } = await import('/src/graphics/assets3d/generators/buildings/BuildingGenerator.js');
     const {
@@ -2132,6 +2151,116 @@ async function runTests() {
         assertFalse(!!buildButton, 'Build button should not exist.');
     });
 
+    test('BuildingFabrication2UI: adjust layout button lives in right actions row', () => {
+        const ui = new BuildingFabrication2UI();
+        ui.mount(document.body);
+        try {
+            ui.setBuildingState({ hasBuilding: true, buildingName: 'Test', buildingType: 'business' });
+            assertTrue(ui.rightActions.contains(ui.adjustLayoutBtn), 'Adjust Layout should be in right actions row.');
+            assertFalse(ui.bottomToolsPanel.contains(ui.adjustLayoutBtn), 'Adjust Layout should not be in bottom tools panel.');
+            assertTrue(ui.adjustLayoutBtn.classList.contains('building-fab2-right-action-layout-btn'), 'Adjust Layout should use right-aligned action class.');
+            assertTrue((ui.adjustLayoutBtn.textContent || '').includes('Adjust Layout'), 'Adjust Layout button should show a visible label.');
+        } finally {
+            ui.unmount();
+        }
+    });
+
+    test('BuildingFabrication2UI: adjustment mode shows close overlay above ruler tools', () => {
+        const ui = new BuildingFabrication2UI();
+        ui.mount(document.body);
+        try {
+            ui.setBuildingState({ hasBuilding: true, buildingName: 'Test', buildingType: 'business' });
+            assertTrue(ui.adjustModeOverlayPanel.classList.contains('hidden'), 'Adjustment close overlay should start hidden.');
+
+            let toggled = null;
+            ui.onAdjustLayoutToggle = (next) => { toggled = next; };
+
+            ui.setLayoutAdjustEnabled(true);
+            assertFalse(ui.adjustModeOverlayPanel.classList.contains('hidden'), 'Adjustment close overlay should show when adjust mode is on.');
+            ui.adjustModeCloseBtn.click();
+            assertEqual(toggled, false, 'Close button should request exiting adjustment mode.');
+            assertTrue(ui.adjustModeOverlayPanel.classList.contains('hidden'), 'Adjustment close overlay should hide after closing.');
+        } finally {
+            ui.unmount();
+        }
+    });
+
+    test('BuildingFabrication2Scene: camera supports left mouse orbit', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const scene = new BuildingFabrication2Scene(engine);
+        scene._buildCamera();
+        try {
+            assertTrue(!!scene.controls, 'Expected camera controls to exist.');
+            assertTrue(scene.controls._orbitMouseButtons.has(0), 'Expected left mouse to orbit camera.');
+            assertTrue(scene.controls._orbitMouseButtons.has(2), 'Expected right mouse to orbit camera.');
+            assertTrue(scene.controls._panMouseButtons.has(1), 'Expected middle mouse to pan camera.');
+        } finally {
+            scene.controls?.dispose?.();
+            scene.controls = null;
+        }
+    });
+
+    test('BuildingFabrication2View: ruler/layout modes disable camera mouse controls', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const view = new BuildingFabrication2View(engine);
+        view.scene = {
+            controls: { enabled: true },
+            setRulerSegment: () => {},
+            setLayoutEditState: () => {},
+            getHasBuilding: () => false
+        };
+
+        view._setRulerEnabled(true);
+        assertFalse(view.scene.controls.enabled, 'Expected camera controls disabled while ruler mode is active.');
+
+        view._setRulerEnabled(false);
+        assertTrue(view.scene.controls.enabled, 'Expected camera controls re-enabled after ruler mode exits.');
+
+        view._setLayoutAdjustEnabled(true);
+        assertFalse(view.scene.controls.enabled, 'Expected camera controls disabled while layout adjust mode is active.');
+
+        view._setLayoutAdjustEnabled(false);
+        assertTrue(view.scene.controls.enabled, 'Expected camera controls re-enabled after layout adjust exits.');
+    });
+
+    test('BuildingFabrication2View: control snap prefers right-angle vertex when close', () => {
+        const snap = buildingFabrication2ViewTestOnly?.snapVertexToRightAngleIfClose;
+        assertTrue(typeof snap === 'function', 'Expected BF2 right-angle snap helper.');
+
+        const nearCandidate = { x: 2.0, z: 1.7 };
+        const snapped = snap({
+            candidate: nearCandidate,
+            prev: { x: 0, z: 0 },
+            next: { x: 4, z: 0 },
+            reference: nearCandidate
+        });
+        assertTrue(!!snapped, 'Expected nearby control snap to produce a snapped corner.');
+        assertNear(snapped.x, 2.0, 1e-6, 'Expected snapped point on vertical bisector.');
+        assertNear(snapped.z, 2.0, 1e-6, 'Expected snapped point on right-angle locus.');
+
+        const vPrev = { x: 0 - snapped.x, z: 0 - snapped.z };
+        const vNext = { x: 4 - snapped.x, z: 0 - snapped.z };
+        const dot = vPrev.x * vNext.x + vPrev.z * vNext.z;
+        assertTrue(Math.abs(dot) < 1e-4, `Expected orthogonal corner vectors after snap. dot=${dot}`);
+
+        const farCandidate = { x: 2.0, z: 5.0 };
+        const noSnap = snap({
+            candidate: farCandidate,
+            prev: { x: 0, z: 0 },
+            next: { x: 4, z: 0 },
+            reference: farCandidate
+        });
+        assertEqual(noSnap, null, 'Expected far candidate to remain unsnapped.');
+    });
+
     test('BuildingGenerator: offsetOrthogonalLoopXZ offsets collinear points', () => {
         const loop = [
             { x: 0, z: 0 },
@@ -2192,6 +2321,54 @@ async function runTests() {
         const floor2 = meshes[2];
         const expected = floor1.position.y + lowerFloorHeight;
         assertTrue(Math.abs(floor2.position.y - expected) < 1e-6, `Floor above roof should start at ${expected}, got ${floor2.position.y}.`);
+    });
+
+    test('BuildingFabricationGenerator: supports footprint loops without tile-coupled sizing', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+
+        const layers = [
+            createDefaultFloorLayer({ floors: 1, floorHeight: 3.0, windows: { enabled: false } }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+        const footprintLoops = [[
+            { x: -8.0, z: 6.5 },
+            { x: 9.2, z: 4.7 },
+            { x: 7.4, z: -5.8 },
+            { x: -9.1, z: -6.6 }
+        ]];
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [],
+            footprintLoops,
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!parts, 'Expected visual parts with explicit footprint loops.');
+        const wallMesh = (parts?.solidMeshes ?? []).find((m) => m?.userData?.buildingFab2Role === 'wall') ?? null;
+        assertTrue(!!wallMesh, 'Expected wall mesh.');
+        const box = new THREE.Box3().setFromObject(wallMesh);
+        assertTrue((box.max.x - box.min.x) > 14.0, 'Expected footprint loop width to be respected.');
+        assertTrue((box.max.z - box.min.z) > 10.0, 'Expected footprint loop depth to be respected.');
     });
 
     test('BuildingFabricationGenerator: arched windows render with transparency', () => {
@@ -3655,6 +3832,42 @@ async function runTests() {
         assertEqual(map.buildings.length, 1, 'Expected one building.');
         assertEqual(map.buildings[0].id, 'layer_building_1');
         assertTrue(Array.isArray(map.buildings[0].layers) && map.buildings[0].layers.length === 2, 'Expected layers on map building entry.');
+    });
+
+    test('CityMap: preserves footprint loop and window visuals overrides for config buildings', () => {
+        const cfg = createCityConfig({ size: 96, mapTileSize: 24, seed: 'test-footprint-override' });
+        const footprintLoops = [[
+            { x: -9.0, z: 5.0 },
+            { x: 8.0, z: 4.0 },
+            { x: 7.0, z: -5.5 },
+            { x: -8.5, z: -6.0 }
+        ]];
+        const map = CityMap.fromSpec({
+            roads: [],
+            buildings: [{
+                id: 'config_override_1',
+                configId: 'brick_midrise',
+                tiles: [[0, 0], [1, 0]],
+                footprintLoops,
+                windowVisuals: {
+                    reflective: {
+                        enabled: true,
+                        opacity: 0.6
+                    }
+                }
+            }]
+        }, cfg);
+
+        assertEqual(map.buildings.length, 1, 'Expected one building.');
+        const b = map.buildings[0];
+        assertTrue(Array.isArray(b?.footprintLoops), 'Expected footprint loop override to be preserved.');
+        assertEqual(b.footprintLoops[0].length, 4, 'Expected quad footprint loop.');
+        assertTrue(!!b.windowVisuals && typeof b.windowVisuals === 'object', 'Expected window visuals override.');
+        assertTrue(!!b.configId, 'Expected resolved config id.');
+
+        const exported = map.exportSpec();
+        assertTrue(Array.isArray(exported?.buildings?.[0]?.footprintLoops), 'Expected footprint loop override in exported spec.');
+        assertTrue(!!exported?.buildings?.[0]?.windowVisuals, 'Expected window visuals override in exported spec.');
     });
 
     test('CityMap: builds empty building list when missing', () => {

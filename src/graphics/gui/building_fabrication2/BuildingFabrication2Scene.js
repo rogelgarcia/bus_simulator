@@ -26,6 +26,12 @@ const LAYER_HIGHLIGHT_OPACITY = 0.28;
 const RULER_LINE_COLOR = 0xfff1a6;
 const RULER_LINEWIDTH = 3;
 const RULER_LINE_OPACITY = 0.92;
+const LAYOUT_FACE_OVERLAY_OPACITY = 0.2;
+const LAYOUT_FACE_OVERLAY_COLOR = 0x7ee1ff;
+const LAYOUT_FACE_LINE_Y_LIFT = 0.012;
+const LAYOUT_VERTEX_RING_COLOR = 0xffdf8e;
+const LAYOUT_VERTEX_RING_RADIUS = 0.4;
+const LAYOUT_VERTEX_RING_TUBE = 0.06;
 
 function isFaceId(faceId) {
     return faceId === 'A' || faceId === 'B' || faceId === 'C' || faceId === 'D';
@@ -195,6 +201,15 @@ export class BuildingFabrication2Scene {
         this._rulerRaycaster = new THREE.Raycaster();
         this._rulerRayHits = [];
         this._rulerLine = null;
+        this._layoutAdjustEnabled = false;
+        this._layoutLoop = null;
+        this._layoutHoverFaceId = null;
+        this._layoutHoverVertexIndex = null;
+        this._layoutFaceOverlay = null;
+        this._layoutFaceLine = null;
+        this._layoutVertexRing = null;
+        this._layoutRayPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+        this._layoutRayPoint = new THREE.Vector3();
 
         this._facadeCornerStrategyId = null;
         this._facadeCornerDebug = false;
@@ -224,6 +239,7 @@ export class BuildingFabrication2Scene {
         this._clearBuilding();
         this._clearFaceHighlight();
         this._clearRulerLine();
+        this._clearLayoutOverlays();
 
         if (this.world?.group) {
             this.world.group.removeFromParent();
@@ -244,6 +260,10 @@ export class BuildingFabrication2Scene {
 
         if (this.scene) this.scene.background = this._prevSceneBackground ?? null;
         this._prevSceneBackground = null;
+        this._layoutAdjustEnabled = false;
+        this._layoutLoop = null;
+        this._layoutHoverFaceId = null;
+        this._layoutHoverVertexIndex = null;
     }
 
     update(dt) {
@@ -310,6 +330,42 @@ export class BuildingFabrication2Scene {
         if (next === this._showDummy) return;
         this._showDummy = next;
         this._syncDummy();
+    }
+
+    getLayoutEditPlaneY() {
+        if (this._focusBox && Number.isFinite(this._focusBox.min.y)) return Number(this._focusBox.min.y) + 0.02;
+        return 0.02;
+    }
+
+    raycastHorizontalPlane(pointerNdc, { y = null } = {}) {
+        const pointer = pointerNdc && typeof pointerNdc === 'object' ? pointerNdc : null;
+        if (!pointer || !this.camera) return null;
+
+        const planeY = Number.isFinite(y) ? Number(y) : this.getLayoutEditPlaneY();
+        this._layoutRayPlane.constant = -planeY;
+
+        this._rulerRaycaster.setFromCamera(pointer, this.camera);
+        const hit = this._rulerRaycaster.ray.intersectPlane(this._layoutRayPlane, this._layoutRayPoint);
+        if (!hit) return null;
+        return hit.clone();
+    }
+
+    setLayoutEditState({
+        enabled = false,
+        loop = null,
+        hoverFaceId = null,
+        hoverVertexIndex = null
+    } = {}) {
+        const nextEnabled = !!enabled;
+        const nextLoop = Array.isArray(loop) ? loop : null;
+        const nextFaceId = isFaceId(hoverFaceId) ? hoverFaceId : null;
+        const nextVertexIndex = Number.isInteger(hoverVertexIndex) ? Math.max(0, hoverVertexIndex | 0) : null;
+
+        this._layoutAdjustEnabled = nextEnabled;
+        this._layoutLoop = nextLoop;
+        this._layoutHoverFaceId = nextFaceId;
+        this._layoutHoverVertexIndex = nextVertexIndex;
+        this._syncLayoutEditOverlays();
     }
 
     raycastSurface(pointerNdc) {
@@ -444,6 +500,7 @@ export class BuildingFabrication2Scene {
         group.add(windowsGroup);
 
         const tiles = getCenteredRectFootprintTiles(this.gridSize, DOUBLE, 1);
+        const footprintLoops = Array.isArray(config?.footprintLoops) ? config.footprintLoops : null;
         const wallInset = Number.isFinite(config.wallInset) ? config.wallInset : 0.0;
         const materialVariationSeed = Number.isFinite(config.materialVariationSeed) ? config.materialVariationSeed : null;
         const windowVisuals = config?.windowVisuals && typeof config.windowVisuals === 'object' ? config.windowVisuals : null;
@@ -452,6 +509,7 @@ export class BuildingFabrication2Scene {
         const parts = buildBuildingFabricationVisualParts({
             map: this.map,
             tiles,
+            footprintLoops,
             generatorConfig: this.generatorConfig,
             tileSize: this.tileSize,
             occupyRatio: this.occupyRatio,
@@ -494,6 +552,7 @@ export class BuildingFabrication2Scene {
         this._floorLayerYRangeById = this._computeFloorLayerYRangeById(layers);
         this._syncHoverHighlight();
         this._syncFaceHighlight();
+        this._syncLayoutEditOverlays();
 
         if (keepCamera && cameraPos && cameraTarget) {
             this.controls.setLookAt({ position: cameraPos, target: cameraTarget });
@@ -593,9 +652,146 @@ export class BuildingFabrication2Scene {
         this._rulerLine = null;
     }
 
+    _clearLayoutOverlays() {
+        if (this._layoutFaceOverlay) {
+            this._layoutFaceOverlay.removeFromParent();
+            disposeObject3D(this._layoutFaceOverlay);
+            this._layoutFaceOverlay = null;
+        }
+        if (this._layoutFaceLine) {
+            this._layoutFaceLine.removeFromParent();
+            disposeObject3D(this._layoutFaceLine);
+            this._layoutFaceLine = null;
+        }
+        if (this._layoutVertexRing) {
+            this._layoutVertexRing.removeFromParent();
+            disposeObject3D(this._layoutVertexRing);
+            this._layoutVertexRing = null;
+        }
+    }
+
+    _getLayoutLoopFaceVertices(loop, faceId) {
+        const points = Array.isArray(loop) ? loop : [];
+        if (points.length < 4) return null;
+        switch (faceId) {
+            case 'A': return { a: points[0], b: points[1] };
+            case 'B': return { a: points[1], b: points[2] };
+            case 'C': return { a: points[2], b: points[3] };
+            case 'D': return { a: points[3], b: points[0] };
+            default: return null;
+        }
+    }
+
+    _syncLayoutEditOverlays() {
+        this._clearLayoutOverlays();
+
+        if (!this.root || !this._layoutAdjustEnabled || !this._building) return;
+        const loop = Array.isArray(this._layoutLoop) ? this._layoutLoop : null;
+        if (!loop || loop.length < 4) return;
+
+        const baseY = this.getLayoutEditPlaneY();
+        const topY = this._focusBox && Number.isFinite(this._focusBox.max.y)
+            ? Number(this._focusBox.max.y)
+            : (baseY + 1.0);
+        const yHeight = Math.max(0.5, topY - baseY);
+
+        const faceId = this._layoutHoverFaceId;
+        if (faceId) {
+            const edge = this._getLayoutLoopFaceVertices(loop, faceId);
+            const a = edge?.a ?? null;
+            const b = edge?.b ?? null;
+            if (a && b) {
+                const dx = (Number(b.x) || 0) - (Number(a.x) || 0);
+                const dz = (Number(b.z) || 0) - (Number(a.z) || 0);
+                const len = Math.hypot(dx, dz);
+                if (len > EPS) {
+                    const tx = dx / len;
+                    const tz = dz / len;
+                    const nxRaw = { x: tz, z: -tx };
+                    const cx = loop.reduce((sum, p) => sum + (Number(p?.x) || 0), 0) / loop.length;
+                    const cz = loop.reduce((sum, p) => sum + (Number(p?.z) || 0), 0) / loop.length;
+                    const mid = { x: (Number(a.x) + Number(b.x)) * 0.5, z: (Number(a.z) + Number(b.z)) * 0.5 };
+                    const toMid = { x: mid.x - cx, z: mid.z - cz };
+                    const dot = nxRaw.x * toMid.x + nxRaw.z * toMid.z;
+                    const nx = dot >= 0 ? nxRaw.x : -nxRaw.x;
+                    const nz = dot >= 0 ? nxRaw.z : -nxRaw.z;
+
+                    const faceGeo = new THREE.PlaneGeometry(len, yHeight, 1, 1);
+                    const faceMat = new THREE.MeshBasicMaterial({
+                        color: LAYOUT_FACE_OVERLAY_COLOR,
+                        transparent: true,
+                        opacity: LAYOUT_FACE_OVERLAY_OPACITY,
+                        depthTest: false,
+                        depthWrite: false,
+                        side: THREE.DoubleSide
+                    });
+                    const faceMesh = new THREE.Mesh(faceGeo, faceMat);
+                    faceMesh.name = `bf2_layout_face_overlay_${faceId}`;
+                    faceMesh.renderOrder = 210;
+                    faceMesh.position.set(mid.x, baseY + yHeight * 0.5, mid.z);
+                    const basisX = new THREE.Vector3(tx, 0, tz);
+                    const basisY = new THREE.Vector3(0, 1, 0);
+                    const basisZ = new THREE.Vector3(nx, 0, nz);
+                    const basis = new THREE.Matrix4().makeBasis(basisX, basisY, basisZ);
+                    faceMesh.quaternion.setFromRotationMatrix(basis);
+                    this.root.add(faceMesh);
+
+                    const lineGeo = new LineSegmentsGeometry();
+                    lineGeo.setPositions([a.x, baseY + LAYOUT_FACE_LINE_Y_LIFT, a.z, b.x, baseY + LAYOUT_FACE_LINE_Y_LIFT, b.z]);
+                    const lineMat = new LineMaterial({
+                        color: FACE_HIGHLIGHT_COLOR,
+                        linewidth: FACE_HIGHLIGHT_LINEWIDTH,
+                        worldUnits: false,
+                        transparent: true,
+                        opacity: FACE_HIGHLIGHT_OPACITY,
+                        depthTest: false,
+                        depthWrite: false
+                    });
+                    if (this.engine?.renderer) {
+                        const size = this.engine.renderer.getSize(this._lineResolution);
+                        lineMat.resolution.set(size.x, size.y);
+                    }
+                    const line = new LineSegments2(lineGeo, lineMat);
+                    line.name = `bf2_layout_face_line_${faceId}`;
+                    line.renderOrder = 211;
+                    line.frustumCulled = false;
+                    this.root.add(line);
+
+                    this._layoutFaceOverlay = faceMesh;
+                    this._layoutFaceLine = line;
+                }
+            }
+        }
+
+        if (Number.isInteger(this._layoutHoverVertexIndex) && this._layoutHoverVertexIndex >= 0 && this._layoutHoverVertexIndex < loop.length) {
+            const p = loop[this._layoutHoverVertexIndex];
+            const x = Number(p?.x);
+            const z = Number(p?.z);
+            if (Number.isFinite(x) && Number.isFinite(z)) {
+                const geo = new THREE.TorusGeometry(LAYOUT_VERTEX_RING_RADIUS, LAYOUT_VERTEX_RING_TUBE, 12, 32);
+                const mat = new THREE.MeshBasicMaterial({
+                    color: LAYOUT_VERTEX_RING_COLOR,
+                    transparent: true,
+                    opacity: 0.95,
+                    depthTest: false,
+                    depthWrite: false
+                });
+                const ring = new THREE.Mesh(geo, mat);
+                ring.name = `bf2_layout_vertex_ring_${this._layoutHoverVertexIndex}`;
+                ring.rotation.x = Math.PI * 0.5;
+                ring.position.set(x, baseY + 0.08, z);
+                ring.renderOrder = 212;
+                ring.frustumCulled = false;
+                this.root.add(ring);
+                this._layoutVertexRing = ring;
+            }
+        }
+    }
+
     _syncFaceHighlight() {
         this._clearFaceHighlight();
 
+        if (this._layoutAdjustEnabled) return;
         if (!this.root || !this._building || !this._selectedFaceId || !this._focusBox) return;
 
         const faceId = this._selectedFaceId;
@@ -841,13 +1037,21 @@ export class BuildingFabrication2Scene {
             maxPolarAngle: Math.PI - 0.12,
             minDistance: Math.max(16, dist * 0.35),
             maxDistance: dist * 2.2,
+            orbitMouseButtons: [0, 2],
+            panMouseButtons: [1],
             getFocusTarget: () => this._getCameraFocusTarget()
         });
         this.resetCamera();
     }
 
     _clearBuilding() {
-        if (!this._building) return;
+        if (!this._building) {
+            this._clearLayoutOverlays();
+            this._layoutLoop = null;
+            this._layoutHoverFaceId = null;
+            this._layoutHoverVertexIndex = null;
+            return;
+        }
         this._building.group?.removeFromParent?.();
         disposeObject3D(this._building.group);
         this._building = null;
@@ -856,6 +1060,10 @@ export class BuildingFabrication2Scene {
         this._hoveredFloorLayerId = null;
         this._activeFaceLayerId = null;
         this._clearHoverHighlight();
+        this._clearLayoutOverlays();
+        this._layoutLoop = null;
+        this._layoutHoverFaceId = null;
+        this._layoutHoverVertexIndex = null;
         this._syncFaceHighlight();
         this._syncDummy();
     }

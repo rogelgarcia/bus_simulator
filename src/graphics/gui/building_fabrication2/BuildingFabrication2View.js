@@ -50,6 +50,15 @@ const BAY_DEFAULT_WIDTH_M = 1.0;
 const BAY_DEPTH_MIN_M = -2.0;
 const BAY_DEPTH_MAX_M = 2.0;
 const BAY_GROUP_MIN_SIZE = 2;
+const LAYOUT_ABSOLUTE_MIN_FACE_WIDTH_M = 1.0;
+const LAYOUT_DRAG_REBUILD_HZ = 4;
+const LAYOUT_HOVER_VERTEX_PX = 16;
+const LAYOUT_HOVER_EDGE_PX = 12;
+const LAYOUT_VERTEX_RIGHT_ANGLE_SNAP_RATIO = 0.16;
+const LAYOUT_VERTEX_RIGHT_ANGLE_SNAP_MIN_DIST_M = 0.2;
+const LAYOUT_VERTEX_RIGHT_ANGLE_SNAP_MAX_DIST_M = 2.0;
+const DEFAULT_FOOTPRINT_WIDTH_M = 48.0;
+const DEFAULT_FOOTPRINT_DEPTH_M = 24.0;
 const WINDOW_MIN_WIDTH_M = 0.1;
 const WINDOW_MAX_WIDTH_M = 9999;
 const WINDOW_PADDING_MIN_M = 0.0;
@@ -168,6 +177,230 @@ function clamp(value, min, max) {
     const num = Number(value);
     if (!Number.isFinite(num)) return min;
     return Math.max(min, Math.min(max, num));
+}
+
+function signedAreaXZ(loop) {
+    const pts = Array.isArray(loop) ? loop : [];
+    const n = pts.length;
+    if (n < 3) return 0;
+    let sum = 0;
+    for (let i = 0; i < n; i++) {
+        const a = pts[i];
+        const b = pts[(i + 1) % n];
+        sum += (Number(a?.x) || 0) * (Number(b?.z) || 0) - (Number(b?.x) || 0) * (Number(a?.z) || 0);
+    }
+    return sum * 0.5;
+}
+
+function cloneLoop(loop) {
+    const src = Array.isArray(loop) ? loop : [];
+    return src.map((p) => ({ x: Number(p?.x) || 0, z: Number(p?.z) || 0 }));
+}
+
+function createDefaultFootprintLoop({ widthMeters = DEFAULT_FOOTPRINT_WIDTH_M, depthMeters = DEFAULT_FOOTPRINT_DEPTH_M } = {}) {
+    const halfW = Math.max(0.5, Number(widthMeters) || DEFAULT_FOOTPRINT_WIDTH_M) * 0.5;
+    const halfD = Math.max(0.5, Number(depthMeters) || DEFAULT_FOOTPRINT_DEPTH_M) * 0.5;
+    return [
+        { x: -halfW, z: halfD },
+        { x: halfW, z: halfD },
+        { x: halfW, z: -halfD },
+        { x: -halfW, z: -halfD }
+    ];
+}
+
+function normalizePrimaryFootprintLoop(footprintLoops) {
+    const srcLoops = Array.isArray(footprintLoops) ? footprintLoops : [];
+    const srcLoop = Array.isArray(srcLoops[0]) ? srcLoops[0] : [];
+
+    const samePoint = (a, b) => (
+        !!a && !!b
+        && Math.abs((Number(a.x) || 0) - (Number(b.x) || 0)) <= 1e-6
+        && Math.abs((Number(a.z) || 0) - (Number(b.z) || 0)) <= 1e-6
+    );
+
+    const cleaned = [];
+    for (const entry of srcLoop) {
+        const x = Number(entry?.x ?? entry?.[0]);
+        const z = Number(entry?.z ?? entry?.[1]);
+        if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
+        const p = { x, z };
+        if (!cleaned.length || !samePoint(cleaned[cleaned.length - 1], p)) cleaned.push(p);
+    }
+    if (cleaned.length > 2 && samePoint(cleaned[0], cleaned[cleaned.length - 1])) cleaned.pop();
+    if (cleaned.length === 4) return cleaned;
+    return createDefaultFootprintLoop();
+}
+
+function edgeIndicesFromFaceId(faceId) {
+    switch (faceId) {
+        case 'A': return [0, 1];
+        case 'B': return [1, 2];
+        case 'C': return [2, 3];
+        case 'D': return [3, 0];
+        default: return null;
+    }
+}
+
+function faceIdFromEdgeIndex(edgeIndex) {
+    switch (edgeIndex | 0) {
+        case 0: return 'A';
+        case 1: return 'B';
+        case 2: return 'C';
+        case 3: return 'D';
+        default: return null;
+    }
+}
+
+function normalize2(v) {
+    const x = Number(v?.x) || 0;
+    const z = Number(v?.z) || 0;
+    const len = Math.hypot(x, z);
+    if (!(len > 1e-6)) return { x: 0, z: 0, len: 0 };
+    return { x: x / len, z: z / len, len };
+}
+
+function rightNormal2(v) {
+    return { x: v.z, z: -v.x };
+}
+
+function dot2(a, b) {
+    return (Number(a?.x) || 0) * (Number(b?.x) || 0) + (Number(a?.z) || 0) * (Number(b?.z) || 0);
+}
+
+function cross2(a, b) {
+    return (Number(a?.x) || 0) * (Number(b?.z) || 0) - (Number(a?.z) || 0) * (Number(b?.x) || 0);
+}
+
+function distanceSqPointToLine2(point, a, b) {
+    const px = Number(point?.x) || 0;
+    const pz = Number(point?.z) || 0;
+    const ax = Number(a?.x) || 0;
+    const az = Number(a?.z) || 0;
+    const bx = Number(b?.x) || 0;
+    const bz = Number(b?.z) || 0;
+    const dx = bx - ax;
+    const dz = bz - az;
+    const lenSq = dx * dx + dz * dz;
+    if (!(lenSq > 1e-12)) {
+        const ex = px - ax;
+        const ez = pz - az;
+        return ex * ex + ez * ez;
+    }
+    const t = ((px - ax) * dx + (pz - az) * dz) / lenSq;
+    const cx = ax + dx * t;
+    const cz = az + dz * t;
+    const ex = px - cx;
+    const ez = pz - cz;
+    return ex * ex + ez * ez;
+}
+
+function distance2(a, b) {
+    const dx = (Number(a?.x) || 0) - (Number(b?.x) || 0);
+    const dz = (Number(a?.z) || 0) - (Number(b?.z) || 0);
+    return Math.hypot(dx, dz);
+}
+
+// Snap a dragged corner to the nearest 90° locus (Thales circle) when close enough.
+function snapVertexToRightAngleIfClose({ candidate, prev, next, reference = null } = {}) {
+    const cand = candidate && typeof candidate === 'object' ? candidate : null;
+    const a = prev && typeof prev === 'object' ? prev : null;
+    const b = next && typeof next === 'object' ? next : null;
+    if (!cand || !a || !b) return null;
+
+    const ax = Number(a.x) || 0;
+    const az = Number(a.z) || 0;
+    const bx = Number(b.x) || 0;
+    const bz = Number(b.z) || 0;
+    const chordDx = bx - ax;
+    const chordDz = bz - az;
+    const chordLen = Math.hypot(chordDx, chordDz);
+    if (!(chordLen > 1e-6)) return null;
+
+    const cx = (ax + bx) * 0.5;
+    const cz = (az + bz) * 0.5;
+    const radius = chordLen * 0.5;
+
+    let dirX = (Number(cand.x) || 0) - cx;
+    let dirZ = (Number(cand.z) || 0) - cz;
+    let dirLen = Math.hypot(dirX, dirZ);
+
+    if (!(dirLen > 1e-6)) {
+        const ref = reference && typeof reference === 'object' ? reference : null;
+        if (ref) {
+            dirX = (Number(ref.x) || 0) - cx;
+            dirZ = (Number(ref.z) || 0) - cz;
+            dirLen = Math.hypot(dirX, dirZ);
+        }
+    }
+
+    if (!(dirLen > 1e-6)) {
+        dirX = -chordDz;
+        dirZ = chordDx;
+        dirLen = Math.hypot(dirX, dirZ);
+    }
+    if (!(dirLen > 1e-6)) return null;
+
+    const scale = radius / dirLen;
+    const snapped = {
+        x: cx + dirX * scale,
+        z: cz + dirZ * scale
+    };
+
+    const refPoint = reference && typeof reference === 'object' ? reference : cand;
+    const baseLen = Math.min(
+        distance2(refPoint, a),
+        distance2(refPoint, b),
+        chordLen
+    );
+    const snapThreshold = clamp(
+        baseLen * LAYOUT_VERTEX_RIGHT_ANGLE_SNAP_RATIO,
+        LAYOUT_VERTEX_RIGHT_ANGLE_SNAP_MIN_DIST_M,
+        LAYOUT_VERTEX_RIGHT_ANGLE_SNAP_MAX_DIST_M
+    );
+    const snapDelta = distance2(snapped, cand);
+    if (snapDelta > snapThreshold) return null;
+    return snapped;
+}
+
+function segmentsIntersect2(a1, a2, b1, b2) {
+    const da = { x: (Number(a2?.x) || 0) - (Number(a1?.x) || 0), z: (Number(a2?.z) || 0) - (Number(a1?.z) || 0) };
+    const db = { x: (Number(b2?.x) || 0) - (Number(b1?.x) || 0), z: (Number(b2?.z) || 0) - (Number(b1?.z) || 0) };
+    const diff = { x: (Number(b1?.x) || 0) - (Number(a1?.x) || 0), z: (Number(b1?.z) || 0) - (Number(a1?.z) || 0) };
+    const det = cross2(da, db);
+    if (Math.abs(det) < 1e-9) return false;
+    const t = cross2(diff, db) / det;
+    const u = cross2(diff, da) / det;
+    return t > 1e-6 && t < 1 - 1e-6 && u > 1e-6 && u < 1 - 1e-6;
+}
+
+function computeFaceFrameFromLoop(loop, faceId) {
+    const edge = edgeIndicesFromFaceId(faceId);
+    if (!edge) return null;
+    const a = loop?.[edge[0]] ?? null;
+    const b = loop?.[edge[1]] ?? null;
+    if (!a || !b) return null;
+    const t = normalize2({ x: b.x - a.x, z: b.z - a.z });
+    if (!(t.len > 1e-6)) return null;
+    const center = {
+        x: (loop[0].x + loop[1].x + loop[2].x + loop[3].x) * 0.25,
+        z: (loop[0].z + loop[1].z + loop[2].z + loop[3].z) * 0.25
+    };
+    const mid = { x: (a.x + b.x) * 0.5, z: (a.z + b.z) * 0.5 };
+    const right = rightNormal2(t);
+    const toMid = { x: mid.x - center.x, z: mid.z - center.z };
+    const n = dot2(right, toMid) >= 0 ? right : { x: -right.x, z: -right.z };
+    const nNorm = normalize2(n);
+    if (!(nNorm.len > 1e-6)) return null;
+    return {
+        faceId,
+        startIndex: edge[0],
+        endIndex: edge[1],
+        start: { x: a.x, z: a.z },
+        end: { x: b.x, z: b.z },
+        tangent: { x: t.x, z: t.z },
+        normal: { x: nNorm.x, z: nNorm.z },
+        length: t.len
+    };
 }
 
 function getFloorLayers(layers) {
@@ -320,10 +553,13 @@ export class BuildingFabrication2View {
         this._materialConfigBayId = null;
         this._pendingRebuild = false;
         this._pendingRebuildPreserveCamera = true;
+        this._pendingRebuildEarliestAtMs = 0;
+        this._lastRebuildAtMs = 0;
 
         this._hideFaceMarkEnabled = false;
         this._showDummyEnabled = false;
         this._rulerEnabled = false;
+        this._layoutAdjustEnabled = false;
         this._rulerPointA = null;
         this._rulerPointB = null;
         this._rulerFixed = false;
@@ -332,6 +568,13 @@ export class BuildingFabrication2View {
         this._rulerProject = new THREE.Vector3();
         this._rulerPointerDown = null;
         this._rulerPointerMoved = false;
+        this._layoutPointer = new THREE.Vector2();
+        this._layoutHover = null;
+        this._layoutDrag = null;
+        this._layoutMinWidthByFaceId = null;
+        this._layoutProjected = new THREE.Vector3();
+        this._layoutProjectedA = new THREE.Vector3();
+        this._layoutProjectedB = new THREE.Vector3();
 
         this._pointerInViewport = false;
         this._onCanvasPointerEnter = () => {
@@ -341,12 +584,13 @@ export class BuildingFabrication2View {
         this._onCanvasPointerLeave = () => {
             this._pointerInViewport = false;
             this._syncFaceHighlightSuppression();
+            this._handleLayoutPointerLeave();
             this._handleRulerPointerLeave();
         };
-        this._onCanvasPointerMove = (e) => this._handleRulerPointerMove(e);
-        this._onCanvasPointerDown = (e) => this._handleRulerPointerDown(e);
-        this._onCanvasPointerUp = (e) => this._handleRulerPointerUp(e);
-        this._onCanvasPointerCancel = (e) => this._handleRulerPointerUp(e);
+        this._onCanvasPointerMove = (e) => this._handleCanvasPointerMove(e);
+        this._onCanvasPointerDown = (e) => this._handleCanvasPointerDown(e);
+        this._onCanvasPointerUp = (e) => this._handleCanvasPointerUp(e);
+        this._onCanvasPointerCancel = (e) => this._handleCanvasPointerCancel(e);
 
         this._keys = {
             ArrowUp: false,
@@ -372,8 +616,10 @@ export class BuildingFabrication2View {
         this._setHideFaceMarkEnabled(false);
         this._setShowDummyEnabled(false);
         this._setRulerEnabled(false);
+        this._setLayoutAdjustEnabled(false);
         this.ui.setViewToggles({ hideFaceMarkEnabled: false, showDummyEnabled: false });
         this.ui.setRulerEnabled(false);
+        this.ui.setLayoutAdjustEnabled(false);
         this.ui.setRulerLabel({ visible: false });
 
         this.ui.mount();
@@ -396,6 +642,7 @@ export class BuildingFabrication2View {
         this.ui.onHideFaceMarkChange = (enabled) => this._setHideFaceMarkEnabled(enabled);
         this.ui.onShowDummyChange = (enabled) => this._setShowDummyEnabled(enabled);
         this.ui.onRulerToggle = (enabled) => this._setRulerEnabled(enabled);
+        this.ui.onAdjustLayoutToggle = (enabled) => this._setLayoutAdjustEnabled(enabled);
         this.ui.onSelectCatalogEntry = (configId) => this._loadConfigFromCatalog(configId);
 
         this.ui.onAddFloorLayer = () => this._addFloorLayer();
@@ -461,16 +708,22 @@ export class BuildingFabrication2View {
         this._hideFaceMarkEnabled = false;
         this._showDummyEnabled = false;
         this._rulerEnabled = false;
+        this._layoutAdjustEnabled = false;
         this._rulerPointA = null;
         this._rulerPointB = null;
         this._rulerFixed = false;
         this._rulerPointerDown = null;
         this._rulerPointerMoved = false;
+        this._layoutHover = null;
+        this._layoutDrag = null;
+        this._layoutMinWidthByFaceId = null;
         if (canvas) canvas.style.cursor = '';
         this.scene?.setFaceHighlightSuppressed?.(false);
         this.scene?.setShowDummy?.(false);
         this.scene?.setRulerSegment?.(null, null);
+        this.scene?.setLayoutEditState?.({ enabled: false, loop: null, hoverFaceId: null, hoverVertexIndex: null });
         this.ui?.setRulerLabel?.({ visible: false });
+        this.ui?.setLayoutAdjustEnabled?.(false);
 
         this._thumbJobId += 1;
         this.ui.onCreateBuilding = null;
@@ -485,6 +738,7 @@ export class BuildingFabrication2View {
         this.ui.onHideFaceMarkChange = null;
         this.ui.onShowDummyChange = null;
         this.ui.onRulerToggle = null;
+        this.ui.onAdjustLayoutToggle = null;
         this.ui.onSelectCatalogEntry = null;
         this.ui.onAddFloorLayer = null;
         this.ui.onAddRoofLayer = null;
@@ -530,12 +784,19 @@ export class BuildingFabrication2View {
 
     update(dt) {
         if (this._pendingRebuild) {
-            const preserveCamera = this._pendingRebuildPreserveCamera;
-            this._pendingRebuild = false;
-            this._pendingRebuildPreserveCamera = true;
-            if (this._currentConfig) {
-                const loaded = this.scene.loadBuildingConfig(this._currentConfig, { preserveCamera });
-                if (loaded) this._perfBar?.requestUpdate?.();
+            const now = (typeof performance !== 'undefined' && Number.isFinite(performance.now()))
+                ? performance.now()
+                : Date.now();
+            if (now >= this._pendingRebuildEarliestAtMs) {
+                const preserveCamera = this._pendingRebuildPreserveCamera;
+                this._pendingRebuild = false;
+                this._pendingRebuildPreserveCamera = true;
+                this._pendingRebuildEarliestAtMs = 0;
+                if (this._currentConfig) {
+                    const loaded = this.scene.loadBuildingConfig(this._currentConfig, { preserveCamera });
+                    if (loaded) this._perfBar?.requestUpdate?.();
+                }
+                this._lastRebuildAtMs = now;
             }
         }
 
@@ -545,6 +806,10 @@ export class BuildingFabrication2View {
     }
 
     handleEscape() {
+        if (this._layoutAdjustEnabled) {
+            this._setLayoutAdjustEnabled(false);
+            return true;
+        }
         if (this._windowFabricationPopup?.isOpen?.()) {
             this._windowFabricationPopup.close();
             return true;
@@ -631,6 +896,7 @@ export class BuildingFabrication2View {
         this.ui.setMaterialConfigContext(this._buildMaterialConfigContext());
         this.ui.setWindowDefinitions(this._buildWindowDefinitionsUiModel());
         this.ui.setFacadesByLayerId(this._currentConfig?.facades ?? null);
+        this._syncLayoutSceneState();
     }
 
     _buildMaterialConfigContext() {
@@ -1252,11 +1518,15 @@ export class BuildingFabrication2View {
 
         this._currentConfig = deepClone(cfg);
         applyBaseWallMaterialFallbackToFloorLayers(this._currentConfig);
+        this._ensureCurrentFootprintLoop();
         this._floorLayerFaceStateById = new Map();
         this._activeFloorLayerId = null;
         this._materialConfigLayerId = null;
         this._materialConfigFaceId = null;
         this._materialConfigBayId = null;
+        this._layoutHover = null;
+        this._layoutDrag = null;
+        this._layoutMinWidthByFaceId = null;
         this.scene.setSelectedFaceId(null);
 
         const loaded = this.scene.loadBuildingConfig(this._currentConfig, { preserveCamera: true });
@@ -1282,13 +1552,17 @@ export class BuildingFabrication2View {
         const cfg = {
             id: 'bf2_building',
             name: 'Building',
-            layers: [floor]
+            layers: [floor],
+            footprintLoops: [createDefaultFootprintLoop()]
         };
 
         this._currentConfig = cfg;
         this._materialConfigLayerId = null;
         this._materialConfigFaceId = null;
         this._materialConfigBayId = null;
+        this._layoutHover = null;
+        this._layoutDrag = null;
+        this._layoutMinWidthByFaceId = null;
         const lockedToByFace = createEmptyFaceLockMap();
         for (const [slave, master] of Object.entries(faceLinking.links)) lockedToByFace.set(slave, master);
         this._floorLayerFaceStateById = new Map();
@@ -1319,6 +1593,10 @@ export class BuildingFabrication2View {
         this._materialConfigLayerId = null;
         this._materialConfigFaceId = null;
         this._materialConfigBayId = null;
+        this._layoutHover = null;
+        this._layoutDrag = null;
+        this._layoutMinWidthByFaceId = null;
+        this._setLayoutAdjustEnabled(false);
         this.scene.setSelectedFaceId(null);
         this.ui.closeLoadBrowser();
         this.ui.closeLinkPopup();
@@ -1328,14 +1606,24 @@ export class BuildingFabrication2View {
         this._syncUiState();
     }
 
-    _requestRebuild({ preserveCamera = true } = {}) {
+    _requestRebuild({ preserveCamera = true, maxRateHz = null } = {}) {
         const keepCamera = !!preserveCamera;
+        const hz = Number(maxRateHz);
+        const minIntervalMs = Number.isFinite(hz) && hz > 0 ? (1000 / hz) : 0;
+        const now = (typeof performance !== 'undefined' && Number.isFinite(performance.now()))
+            ? performance.now()
+            : Date.now();
+        const earliestAt = minIntervalMs > 0
+            ? Math.max(this._lastRebuildAtMs + minIntervalMs, now)
+            : now;
         if (this._pendingRebuild) {
             this._pendingRebuildPreserveCamera &&= keepCamera;
+            this._pendingRebuildEarliestAtMs = Math.min(this._pendingRebuildEarliestAtMs, earliestAt);
             return;
         }
         this._pendingRebuild = true;
         this._pendingRebuildPreserveCamera = keepCamera;
+        this._pendingRebuildEarliestAtMs = earliestAt;
     }
 
     _addFloorLayer() {
@@ -2393,13 +2681,39 @@ export class BuildingFabrication2View {
         this.scene?.setShowDummy?.(this._showDummyEnabled);
     }
 
+    _setLayoutAdjustEnabled(enabled) {
+        const next = !!enabled;
+        if (next === this._layoutAdjustEnabled) {
+            this.ui?.setLayoutAdjustEnabled?.(next);
+            this._syncLayoutSceneState();
+            this._syncCameraControlEnabled();
+            this._setCanvasCursor();
+            return;
+        }
+
+        if (next && this._rulerEnabled) this._setRulerEnabled(false);
+        this._layoutAdjustEnabled = next;
+        this.ui?.setLayoutAdjustEnabled?.(next);
+
+        if (!next) {
+            if (this._layoutDrag) this._finishLayoutDrag(null);
+            this._layoutHover = null;
+            this._layoutDrag = null;
+            this._layoutMinWidthByFaceId = null;
+        }
+
+        this._syncLayoutSceneState();
+        this._syncCameraControlEnabled();
+        this._setCanvasCursor();
+    }
+
     _setRulerEnabled(enabled) {
         const next = !!enabled;
         if (next === this._rulerEnabled) return;
+        if (next && this._layoutAdjustEnabled) this._setLayoutAdjustEnabled(false);
         this._rulerEnabled = next;
-
-        const canvas = this.engine?.canvas ?? null;
-        if (canvas) canvas.style.cursor = next ? 'crosshair' : '';
+        this._syncCameraControlEnabled();
+        this._setCanvasCursor();
 
         this.ui.setRulerEnabled(next);
 
@@ -2414,6 +2728,26 @@ export class BuildingFabrication2View {
         this._clearRulerMeasurement();
     }
 
+    _setCanvasCursor() {
+        const canvas = this.engine?.canvas ?? null;
+        if (!canvas) return;
+        if (this._layoutAdjustEnabled) {
+            canvas.style.cursor = this._layoutDrag ? 'grabbing' : 'grab';
+            return;
+        }
+        if (this._rulerEnabled) {
+            canvas.style.cursor = 'crosshair';
+            return;
+        }
+        canvas.style.cursor = '';
+    }
+
+    _syncCameraControlEnabled() {
+        const controls = this.scene?.controls ?? null;
+        if (!controls || typeof controls !== 'object') return;
+        controls.enabled = !this._layoutAdjustEnabled && !this._rulerEnabled && !this._layoutDrag;
+    }
+
     _clearRulerMeasurement() {
         this._rulerPointA = null;
         this._rulerPointB = null;
@@ -2423,6 +2757,16 @@ export class BuildingFabrication2View {
     }
 
     _setRulerPointerFromEvent(event) {
+        return this._setPointerFromEvent(event, this._rulerPointer);
+    }
+
+    _setLayoutPointerFromEvent(event) {
+        return this._setPointerFromEvent(event, this._layoutPointer);
+    }
+
+    _setPointerFromEvent(event, target) {
+        const out = target && typeof target.set === 'function' ? target : null;
+        if (!out) return false;
         const canvas = this.engine?.canvas ?? null;
         if (!canvas || !event || !Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) return false;
 
@@ -2430,8 +2774,41 @@ export class BuildingFabrication2View {
         if (!(rect.width > 0 && rect.height > 0)) return false;
         const x = (event.clientX - rect.left) / rect.width;
         const y = (event.clientY - rect.top) / rect.height;
-        this._rulerPointer.set(x * 2 - 1, -(y * 2 - 1));
+        out.set(x * 2 - 1, -(y * 2 - 1));
         return true;
+    }
+
+    _handleCanvasPointerDown(event) {
+        if (this._layoutAdjustEnabled) {
+            this._handleLayoutPointerDown(event);
+            return;
+        }
+        this._handleRulerPointerDown(event);
+    }
+
+    _handleCanvasPointerMove(event) {
+        if (this._layoutAdjustEnabled) {
+            this._handleLayoutPointerMove(event);
+            return;
+        }
+        this._handleRulerPointerMove(event);
+    }
+
+    _handleCanvasPointerUp(event) {
+        if (this._layoutAdjustEnabled) {
+            this._handleLayoutPointerUp(event);
+            return;
+        }
+        this._handleRulerPointerUp(event);
+    }
+
+    _handleCanvasPointerCancel(event) {
+        if (this._layoutAdjustEnabled) {
+            this._handleLayoutPointerCancel(event);
+            return;
+        }
+        this._rulerPointerDown = null;
+        this._rulerPointerMoved = false;
     }
 
     _handleRulerPointerDown(event) {
@@ -2533,6 +2910,509 @@ export class BuildingFabrication2View {
         this.ui.setRulerLabel({ visible, x, y, text: `${dist.toFixed(2)}m` });
     }
 
+    _ensureCurrentFootprintLoop() {
+        const cfg = this._currentConfig;
+        if (!cfg || typeof cfg !== 'object') return null;
+        const loop = normalizePrimaryFootprintLoop(cfg.footprintLoops);
+        cfg.footprintLoops = [cloneLoop(loop)];
+        return cfg.footprintLoops[0];
+    }
+
+    _getCurrentFootprintLoop() {
+        const loop = this._ensureCurrentFootprintLoop();
+        return Array.isArray(loop) ? cloneLoop(loop) : null;
+    }
+
+    _setCurrentFootprintLoop(loop, { rateLimited = false } = {}) {
+        const cfg = this._currentConfig;
+        if (!cfg || !Array.isArray(loop) || loop.length !== 4) return false;
+        const next = cloneLoop(loop);
+        const prev = this._ensureCurrentFootprintLoop();
+        if (!Array.isArray(prev) || prev.length !== 4) return false;
+
+        let changed = false;
+        for (let i = 0; i < 4; i++) {
+            const dx = Math.abs((Number(prev[i]?.x) || 0) - (Number(next[i]?.x) || 0));
+            const dz = Math.abs((Number(prev[i]?.z) || 0) - (Number(next[i]?.z) || 0));
+            if (dx > 1e-6 || dz > 1e-6) {
+                changed = true;
+                break;
+            }
+        }
+        if (!changed) return false;
+
+        cfg.footprintLoops = [next];
+        this._syncLayoutSceneState();
+        this._requestRebuild({
+            preserveCamera: true,
+            maxRateHz: rateLimited ? LAYOUT_DRAG_REBUILD_HZ : null
+        });
+        return true;
+    }
+
+    _syncLayoutSceneState() {
+        const hasBuilding = !!this.scene?.getHasBuilding?.();
+        const enabled = !!this._layoutAdjustEnabled && hasBuilding && !!this._currentConfig;
+        const loop = enabled ? this._getCurrentFootprintLoop() : null;
+        const drag = this._layoutDrag;
+        const hover = this._layoutHover;
+        const hoverFaceId = enabled
+            ? (drag?.kind === 'face' ? drag.faceId : (hover?.kind === 'face' ? hover.faceId : null))
+            : null;
+        const hoverVertexIndex = enabled
+            ? (drag?.kind === 'vertex' ? drag.vertexIndex : (hover?.kind === 'vertex' ? hover.vertexIndex : null))
+            : null;
+        this.scene?.setLayoutEditState?.({
+            enabled,
+            loop,
+            hoverFaceId,
+            hoverVertexIndex
+        });
+    }
+
+    _resolveFacadeMinimumWidthMeters(facade) {
+        const facadeObj = facade && typeof facade === 'object' ? facade : null;
+        const bays = Array.isArray(facadeObj?.layout?.bays?.items) ? facadeObj.layout.bays.items : [];
+        if (!bays.length) return LAYOUT_ABSOLUTE_MIN_FACE_WIDTH_M;
+
+        const byId = new Map();
+        for (const bay of bays) {
+            const id = typeof bay?.id === 'string' ? bay.id : '';
+            if (id) byId.set(id, bay);
+        }
+
+        const memo = new Map();
+        const resolveBayMin = (bay, stack = null) => {
+            const bayObj = bay && typeof bay === 'object' ? bay : null;
+            if (!bayObj) return LAYOUT_ABSOLUTE_MIN_FACE_WIDTH_M;
+            const id = typeof bayObj.id === 'string' ? bayObj.id : '';
+            if (id && memo.has(id)) return memo.get(id);
+
+            const visited = stack instanceof Set ? stack : new Set();
+            if (id) {
+                if (visited.has(id)) return LAYOUT_ABSOLUTE_MIN_FACE_WIDTH_M;
+                visited.add(id);
+            }
+
+            let minMeters = LAYOUT_ABSOLUTE_MIN_FACE_WIDTH_M;
+            const link = resolveBayLinkFromSpec(bayObj);
+            if (link && byId.has(link)) {
+                minMeters = resolveBayMin(byId.get(link), visited);
+            } else {
+                const mode = bayObj?.size?.mode === 'fixed' ? 'fixed' : 'range';
+                if (mode === 'fixed') minMeters = clamp(bayObj?.size?.widthMeters ?? BAY_DEFAULT_WIDTH_M, BAY_MIN_WIDTH_M, 9999);
+                else minMeters = clamp(bayObj?.size?.minMeters ?? BAY_DEFAULT_WIDTH_M, BAY_MIN_WIDTH_M, 9999);
+            }
+
+            const windowMin = this._resolveBayWindowMinRequirementMeters(bayObj);
+            if (Number.isFinite(windowMin)) minMeters = Math.max(minMeters, windowMin);
+            minMeters = Math.max(LAYOUT_ABSOLUTE_MIN_FACE_WIDTH_M, minMeters);
+            if (id) memo.set(id, minMeters);
+            return minMeters;
+        };
+
+        let totalMin = 0;
+        for (const bay of bays) totalMin += resolveBayMin(bay);
+
+        const groups = Array.isArray(facadeObj?.layout?.groups?.items) ? facadeObj.layout.groups.items : [];
+        for (const group of groups) {
+            const ids = Array.isArray(group?.bayIds) ? group.bayIds : [];
+            if (!ids.length) continue;
+            let groupMin = 0;
+            for (const id of ids) {
+                const bay = byId.get(id);
+                if (!bay) continue;
+                groupMin += resolveBayMin(bay);
+            }
+            if (!(groupMin > 0)) continue;
+            const minRepeats = clampInt(group?.repeat?.minRepeats ?? 1, 1, 9999);
+            totalMin += groupMin * Math.max(0, minRepeats - 1);
+        }
+
+        return Math.max(LAYOUT_ABSOLUTE_MIN_FACE_WIDTH_M, totalMin);
+    }
+
+    _resolveFaceMinWidthByFaceId() {
+        const out = { A: LAYOUT_ABSOLUTE_MIN_FACE_WIDTH_M, B: LAYOUT_ABSOLUTE_MIN_FACE_WIDTH_M, C: LAYOUT_ABSOLUTE_MIN_FACE_WIDTH_M, D: LAYOUT_ABSOLUTE_MIN_FACE_WIDTH_M };
+        const cfg = this._currentConfig;
+        const layers = Array.isArray(cfg?.layers) ? cfg.layers : [];
+        const facadesByLayerId = cfg?.facades && typeof cfg.facades === 'object' ? cfg.facades : null;
+
+        for (const layer of layers) {
+            if (layer?.type !== 'floor') continue;
+            const layerId = typeof layer?.id === 'string' ? layer.id : '';
+            if (!layerId) continue;
+            const layerFacades = facadesByLayerId?.[layerId] && typeof facadesByLayerId[layerId] === 'object'
+                ? facadesByLayerId[layerId]
+                : null;
+            const links = layer?.faceLinking?.links && typeof layer.faceLinking.links === 'object'
+                ? layer.faceLinking.links
+                : null;
+
+            const resolveMasterFaceId = (faceId) => {
+                if (!isFaceId(faceId)) return null;
+                const visited = new Set();
+                let cur = faceId;
+                for (let i = 0; i < 8; i++) {
+                    if (visited.has(cur)) break;
+                    visited.add(cur);
+                    const next = links?.[cur];
+                    if (!isFaceId(next) || next === cur) break;
+                    cur = next;
+                }
+                return cur;
+            };
+
+            for (const faceId of FACE_IDS) {
+                const masterFaceId = resolveMasterFaceId(faceId) ?? faceId;
+                const facade = layerFacades?.[masterFaceId] && typeof layerFacades[masterFaceId] === 'object'
+                    ? layerFacades[masterFaceId]
+                    : null;
+                const minWidth = this._resolveFacadeMinimumWidthMeters(facade);
+                out[faceId] = Math.max(out[faceId], minWidth);
+            }
+        }
+        return out;
+    }
+
+    _isFootprintLoopValidForLayout(loop, minWidthByFaceId) {
+        const pts = Array.isArray(loop) ? loop : [];
+        if (pts.length !== 4) return false;
+        for (const p of pts) {
+            if (!Number.isFinite(p?.x) || !Number.isFinite(p?.z)) return false;
+        }
+
+        const area = signedAreaXZ(pts);
+        if (!(Math.abs(area) > 1e-4)) return false;
+        if (segmentsIntersect2(pts[0], pts[1], pts[2], pts[3])) return false;
+        if (segmentsIntersect2(pts[1], pts[2], pts[3], pts[0])) return false;
+
+        for (const faceId of FACE_IDS) {
+            const frame = computeFaceFrameFromLoop(pts, faceId);
+            if (!frame) return false;
+            const minWidth = Number(minWidthByFaceId?.[faceId]) || LAYOUT_ABSOLUTE_MIN_FACE_WIDTH_M;
+            if (!(frame.length + 1e-6 >= minWidth)) return false;
+        }
+        return true;
+    }
+
+    _clampLoopCandidate(startLoop, targetLoop, minWidthByFaceId) {
+        const start = cloneLoop(startLoop);
+        const target = cloneLoop(targetLoop);
+        if (this._isFootprintLoopValidForLayout(target, minWidthByFaceId)) return target;
+        if (!this._isFootprintLoopValidForLayout(start, minWidthByFaceId)) return start;
+
+        let lo = 0;
+        let hi = 1;
+        let best = start;
+        for (let i = 0; i < 22; i++) {
+            const t = (lo + hi) * 0.5;
+            const cand = [];
+            for (let j = 0; j < 4; j++) {
+                const sx = Number(start[j]?.x) || 0;
+                const sz = Number(start[j]?.z) || 0;
+                const tx = Number(target[j]?.x) || 0;
+                const tz = Number(target[j]?.z) || 0;
+                cand.push({
+                    x: sx + (tx - sx) * t,
+                    z: sz + (tz - sz) * t
+                });
+            }
+            if (this._isFootprintLoopValidForLayout(cand, minWidthByFaceId)) {
+                lo = t;
+                best = cand;
+            } else {
+                hi = t;
+            }
+        }
+        return best;
+    }
+
+    _projectLoopPointToScreen(point, y) {
+        const camera = this.engine?.camera ?? null;
+        const canvas = this.engine?.canvas ?? null;
+        if (!camera || !canvas) return null;
+        const rect = canvas.getBoundingClientRect();
+        if (!(rect.width > 0 && rect.height > 0)) return null;
+
+        this._layoutProjected.set(Number(point?.x) || 0, Number(y) || 0, Number(point?.z) || 0).project(camera);
+        return {
+            x: rect.left + (this._layoutProjected.x * 0.5 + 0.5) * rect.width,
+            y: rect.top + (-this._layoutProjected.y * 0.5 + 0.5) * rect.height
+        };
+    }
+
+    _distanceSqPointToScreenSegment(point, a, b) {
+        const px = Number(point?.x) || 0;
+        const py = Number(point?.y) || 0;
+        const ax = Number(a?.x) || 0;
+        const ay = Number(a?.y) || 0;
+        const bx = Number(b?.x) || 0;
+        const by = Number(b?.y) || 0;
+        const dx = bx - ax;
+        const dy = by - ay;
+        const lenSq = dx * dx + dy * dy;
+        if (!(lenSq > 1e-12)) {
+            const ex = px - ax;
+            const ey = py - ay;
+            return ex * ex + ey * ey;
+        }
+        const tRaw = ((px - ax) * dx + (py - ay) * dy) / lenSq;
+        const t = Math.max(0, Math.min(1, tRaw));
+        const cx = ax + dx * t;
+        const cy = ay + dy * t;
+        const ex = px - cx;
+        const ey = py - cy;
+        return ex * ex + ey * ey;
+    }
+
+    _computeLayoutHoverFromEvent(event) {
+        if (!this._layoutAdjustEnabled || !this._currentConfig) return null;
+        if (!this._setLayoutPointerFromEvent(event)) return null;
+
+        const loop = this._getCurrentFootprintLoop();
+        if (!loop || loop.length !== 4) return null;
+
+        const planeY = this.scene?.getLayoutEditPlaneY?.() ?? 0.02;
+        const hit3 = this.scene?.raycastHorizontalPlane?.(this._layoutPointer, { y: planeY }) ?? null;
+        if (!hit3) return null;
+
+        const pointerPx = { x: Number(event?.clientX) || 0, y: Number(event?.clientY) || 0 };
+        const vertexThreshSq = LAYOUT_HOVER_VERTEX_PX * LAYOUT_HOVER_VERTEX_PX;
+        const edgeThreshSq = LAYOUT_HOVER_EDGE_PX * LAYOUT_HOVER_EDGE_PX;
+
+        let bestVertexIndex = -1;
+        let bestVertexDistSq = Infinity;
+        const projectedVertices = [];
+        for (let i = 0; i < 4; i++) {
+            const screen = this._projectLoopPointToScreen(loop[i], planeY);
+            projectedVertices.push(screen);
+            if (!screen) continue;
+            const dx = screen.x - pointerPx.x;
+            const dy = screen.y - pointerPx.y;
+            const d2 = dx * dx + dy * dy;
+            if (d2 < bestVertexDistSq) {
+                bestVertexDistSq = d2;
+                bestVertexIndex = i;
+            }
+        }
+
+        if (bestVertexIndex >= 0 && bestVertexDistSq <= vertexThreshSq) {
+            return {
+                kind: 'vertex',
+                vertexIndex: bestVertexIndex,
+                loop,
+                planeY,
+                hit: { x: hit3.x, z: hit3.z }
+            };
+        }
+
+        let bestEdgeIndex = -1;
+        let bestEdgeDistSq = Infinity;
+        for (let i = 0; i < 4; i++) {
+            const a = projectedVertices[i];
+            const b = projectedVertices[(i + 1) % 4];
+            if (!a || !b) continue;
+            const d2 = this._distanceSqPointToScreenSegment(pointerPx, a, b);
+            if (d2 < bestEdgeDistSq) {
+                bestEdgeDistSq = d2;
+                bestEdgeIndex = i;
+            }
+        }
+
+        if (bestEdgeIndex >= 0 && bestEdgeDistSq <= edgeThreshSq) {
+            const faceId = faceIdFromEdgeIndex(bestEdgeIndex);
+            if (faceId) {
+                return {
+                    kind: 'face',
+                    faceId,
+                    edgeIndex: bestEdgeIndex,
+                    loop,
+                    planeY,
+                    hit: { x: hit3.x, z: hit3.z }
+                };
+            }
+        }
+
+        return {
+            kind: null,
+            loop,
+            planeY,
+            hit: { x: hit3.x, z: hit3.z }
+        };
+    }
+
+    _handleLayoutPointerDown(event) {
+        if (!this._layoutAdjustEnabled) return;
+        if (!event || event.button !== 0) return;
+
+        const hover = this._computeLayoutHoverFromEvent(event);
+        if (!hover || (hover.kind !== 'face' && hover.kind !== 'vertex')) {
+            this._layoutHover = null;
+            this._syncLayoutSceneState();
+            return;
+        }
+
+        const startLoop = hover.loop;
+        const minWidthByFaceId = this._resolveFaceMinWidthByFaceId();
+        if (!this._isFootprintLoopValidForLayout(startLoop, minWidthByFaceId)) return;
+
+        this._layoutHover = hover;
+        if (hover.kind === 'face') {
+            const frame = computeFaceFrameFromLoop(startLoop, hover.faceId);
+            if (!frame) return;
+            this._layoutDrag = {
+                kind: 'face',
+                faceId: hover.faceId,
+                frame,
+                planeY: hover.planeY,
+                startHit: { x: hover.hit.x, z: hover.hit.z },
+                pointerId: Number.isFinite(event?.pointerId) ? event.pointerId : null,
+                startLoop
+            };
+        } else {
+            const idx = hover.vertexIndex | 0;
+            const p = startLoop[idx];
+            const prev = startLoop[(idx + 3) % 4];
+            const next = startLoop[(idx + 1) % 4];
+            this._layoutDrag = {
+                kind: 'vertex',
+                vertexIndex: idx,
+                planeY: hover.planeY,
+                startHit: { x: hover.hit.x, z: hover.hit.z },
+                pointerId: Number.isFinite(event?.pointerId) ? event.pointerId : null,
+                vertexStart: { x: p.x, z: p.z },
+                prevVertex: { x: prev.x, z: prev.z },
+                nextVertex: { x: next.x, z: next.z },
+                tangentPrev: normalize2({ x: p.x - prev.x, z: p.z - prev.z }),
+                tangentNext: normalize2({ x: next.x - p.x, z: next.z - p.z }),
+                startLoop
+            };
+        }
+
+        this._layoutMinWidthByFaceId = minWidthByFaceId;
+        const canvas = this.engine?.canvas ?? null;
+        const pointerId = this._layoutDrag?.pointerId;
+        if (canvas && Number.isFinite(pointerId) && canvas.setPointerCapture) {
+            try { canvas.setPointerCapture(pointerId); } catch {}
+        }
+        this._syncCameraControlEnabled();
+        this._setCanvasCursor();
+        this._syncLayoutSceneState();
+    }
+
+    _handleLayoutPointerMove(event) {
+        if (!this._layoutAdjustEnabled || !event) return;
+
+        const drag = this._layoutDrag;
+        if (!drag) {
+            const hover = this._computeLayoutHoverFromEvent(event);
+            this._layoutHover = hover && hover.kind ? hover : null;
+            this._syncLayoutSceneState();
+            return;
+        }
+
+        if (!this._setLayoutPointerFromEvent(event)) return;
+        const hit3 = this.scene?.raycastHorizontalPlane?.(this._layoutPointer, { y: drag.planeY }) ?? null;
+        if (!hit3) return;
+        const hit = { x: hit3.x, z: hit3.z };
+
+        let targetLoop = null;
+        if (drag.kind === 'face') {
+            const delta = {
+                x: hit.x - drag.startHit.x,
+                z: hit.z - drag.startHit.z
+            };
+            const move = dot2(delta, drag.frame.normal);
+            targetLoop = cloneLoop(drag.startLoop);
+            const i0 = drag.frame.startIndex | 0;
+            const i1 = drag.frame.endIndex | 0;
+            targetLoop[i0].x += drag.frame.normal.x * move;
+            targetLoop[i0].z += drag.frame.normal.z * move;
+            targetLoop[i1].x += drag.frame.normal.x * move;
+            targetLoop[i1].z += drag.frame.normal.z * move;
+        } else if (drag.kind === 'vertex') {
+            const deltaHit = { x: hit.x - drag.startHit.x, z: hit.z - drag.startHit.z };
+            let delta = deltaHit;
+            if (event.shiftKey) {
+                const vStart = drag.vertexStart;
+                const prevLineEnd = { x: vStart.x + drag.tangentPrev.x, z: vStart.z + drag.tangentPrev.z };
+                const nextLineEnd = { x: vStart.x + drag.tangentNext.x, z: vStart.z + drag.tangentNext.z };
+                const dPrev = distanceSqPointToLine2(hit, vStart, prevLineEnd);
+                const dNext = distanceSqPointToLine2(hit, vStart, nextLineEnd);
+                const tangent = dPrev <= dNext ? drag.tangentPrev : drag.tangentNext;
+                const amount = dot2(deltaHit, tangent);
+                delta = { x: tangent.x * amount, z: tangent.z * amount };
+            }
+            let vertexTarget = {
+                x: drag.vertexStart.x + delta.x,
+                z: drag.vertexStart.z + delta.z
+            };
+            if (event.ctrlKey) {
+                const snapped = snapVertexToRightAngleIfClose({
+                    candidate: vertexTarget,
+                    prev: drag.prevVertex,
+                    next: drag.nextVertex,
+                    reference: drag.vertexStart
+                });
+                if (snapped) vertexTarget = snapped;
+            }
+            targetLoop = cloneLoop(drag.startLoop);
+            const idx = drag.vertexIndex | 0;
+            targetLoop[idx].x = vertexTarget.x;
+            targetLoop[idx].z = vertexTarget.z;
+        }
+
+        if (!targetLoop) return;
+        const clamped = this._clampLoopCandidate(drag.startLoop, targetLoop, this._layoutMinWidthByFaceId);
+        this._setCurrentFootprintLoop(clamped, { rateLimited: true });
+        this._layoutHover = drag.kind === 'face'
+            ? { kind: 'face', faceId: drag.faceId, loop: clamped }
+            : { kind: 'vertex', vertexIndex: drag.vertexIndex, loop: clamped };
+        this._syncLayoutSceneState();
+    }
+
+    _finishLayoutDrag(event = null) {
+        const drag = this._layoutDrag;
+        if (!drag) return;
+        const canvas = this.engine?.canvas ?? null;
+        const pointerId = drag.pointerId;
+        if (canvas && Number.isFinite(pointerId) && canvas.releasePointerCapture) {
+            try { canvas.releasePointerCapture(pointerId); } catch {}
+        }
+        this._layoutDrag = null;
+        this._layoutMinWidthByFaceId = null;
+        this._syncCameraControlEnabled();
+
+        if (event) {
+            const hover = this._computeLayoutHoverFromEvent(event);
+            this._layoutHover = hover && hover.kind ? hover : null;
+        } else {
+            this._layoutHover = null;
+        }
+        this._setCanvasCursor();
+        this._syncLayoutSceneState();
+        this._requestRebuild({ preserveCamera: true });
+    }
+
+    _handleLayoutPointerUp(event) {
+        if (!this._layoutAdjustEnabled || !event || event.button !== 0) return;
+        this._finishLayoutDrag(event);
+    }
+
+    _handleLayoutPointerCancel() {
+        if (!this._layoutAdjustEnabled) return;
+        this._finishLayoutDrag(null);
+    }
+
+    _handleLayoutPointerLeave() {
+        if (!this._layoutAdjustEnabled) return;
+        if (!this._layoutDrag) {
+            this._layoutHover = null;
+            this._syncLayoutSceneState();
+        }
+    }
+
     _syncFaceHighlightSuppression() {
         const suppressed = this._hideFaceMarkEnabled && this._pointerInViewport;
         this.scene.setFaceHighlightSuppressed?.(suppressed);
@@ -2564,11 +3444,13 @@ export class BuildingFabrication2View {
 
         const wallInset = Number.isFinite(cfg.wallInset) ? cfg.wallInset : 0.0;
         const materialVariationSeed = Number.isFinite(cfg.materialVariationSeed) ? cfg.materialVariationSeed : null;
+        const footprintLoops = cfg?.footprintLoops ?? null;
         const windowVisuals = cfg?.windowVisuals ?? null;
         const exported = createCityBuildingConfigFromFabrication({
             id: exportId,
             name,
             layers,
+            footprintLoops,
             wallInset,
             materialVariationSeed,
             windowVisuals,
@@ -2667,3 +3549,7 @@ export class BuildingFabrication2View {
         for (const k of Object.keys(this._keys)) this._keys[k] = false;
     }
 }
+
+export const __testOnly = Object.freeze({
+    snapVertexToRightAngleIfClose
+});

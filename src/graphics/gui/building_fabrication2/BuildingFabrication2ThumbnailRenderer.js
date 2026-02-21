@@ -190,6 +190,7 @@ export class BuildingFabrication2ThumbnailRenderer {
         group.name = 'thumb_building';
 
         const wallInset = Number.isFinite(cfg.wallInset) ? cfg.wallInset : 0.0;
+        const footprintLoops = Array.isArray(cfg?.footprintLoops) ? cfg.footprintLoops : null;
         const materialVariationSeed = Number.isFinite(cfg.materialVariationSeed) ? cfg.materialVariationSeed : null;
         const windowVisuals = cfg?.windowVisuals && typeof cfg.windowVisuals === 'object' ? cfg.windowVisuals : null;
         const windowVisualsIsOverride = !!windowVisuals;
@@ -197,6 +198,7 @@ export class BuildingFabrication2ThumbnailRenderer {
         const parts = buildBuildingFabricationVisualParts({
             map,
             tiles,
+            footprintLoops,
             generatorConfig: this.generatorConfig,
             tileSize: this.tileSize,
             occupyRatio: this.occupyRatio,
