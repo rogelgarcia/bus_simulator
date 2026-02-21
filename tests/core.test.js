@@ -2231,6 +2231,54 @@ async function runTests() {
         assertTrue(view.scene.controls.enabled, 'Expected camera controls re-enabled after layout adjust exits.');
     });
 
+    test('BuildingFabrication2View: dragging shows adjacent-face width guides', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        engine.camera.position.set(0, 40, 55);
+        engine.camera.lookAt(0, 0, 0);
+        engine.camera.updateProjectionMatrix();
+        engine.canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100 });
+
+        const view = new BuildingFabrication2View(engine);
+        let scenePayload = null;
+        let uiLabels = null;
+        view.scene = {
+            controls: { enabled: true },
+            getHasBuilding: () => true,
+            getLayoutEditPlaneY: () => 0.02,
+            setLayoutEditState: (payload) => { scenePayload = payload; }
+        };
+        view.ui = {
+            setLayoutWidthLabels: (labels) => { uiLabels = labels; }
+        };
+        view._projectLoopPointToScreen = () => ({ x: 10, y: 20, zNdc: 0 });
+
+        view._layoutAdjustEnabled = true;
+        view._currentConfig = { footprintLoops: [[
+            { x: -24, z: 12 },
+            { x: 24, z: 12 },
+            { x: 24, z: -12 },
+            { x: -24, z: -12 }
+        ]] };
+
+        view._layoutDrag = { kind: 'face', faceId: 'A' };
+        view._syncLayoutSceneState();
+        assertEqual((scenePayload?.widthGuideFaceIds ?? []).join(','), 'B,D', 'Expected adjacent faces B and D while dragging face A.');
+        assertTrue(Array.isArray(uiLabels) && uiLabels.length === 2, 'Expected two width labels while dragging face.');
+
+        view._layoutDrag = { kind: 'vertex', vertexIndex: 1 };
+        view._syncLayoutSceneState();
+        assertEqual((scenePayload?.widthGuideFaceIds ?? []).join(','), 'A,B', 'Expected adjacent faces A and B while dragging vertex 1.');
+        assertTrue(Array.isArray(uiLabels) && uiLabels.length === 2, 'Expected two width labels while dragging vertex.');
+
+        view._layoutDrag = null;
+        view._syncLayoutSceneState();
+        assertTrue(Array.isArray(uiLabels) && uiLabels.length === 0, 'Expected width labels hidden when not dragging.');
+    });
+
     test('BuildingFabrication2View: control snap prefers right-angle vertex when close', () => {
         const snap = buildingFabrication2ViewTestOnly?.snapVertexToRightAngleIfClose;
         assertTrue(typeof snap === 'function', 'Expected BF2 right-angle snap helper.');

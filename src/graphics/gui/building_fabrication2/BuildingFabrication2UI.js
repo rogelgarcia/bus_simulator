@@ -408,6 +408,16 @@ export class BuildingFabrication2UI {
         this.rulerLabel.style.display = 'none';
         this.viewportOverlay.appendChild(this.rulerLabel);
 
+        this.layoutWidthLabelA = document.createElement('div');
+        this.layoutWidthLabelA.className = 'building-fab2-viewport-label building-fab2-layout-width-label';
+        this.layoutWidthLabelA.style.display = 'none';
+        this.viewportOverlay.appendChild(this.layoutWidthLabelA);
+
+        this.layoutWidthLabelB = document.createElement('div');
+        this.layoutWidthLabelB.className = 'building-fab2-viewport-label building-fab2-layout-width-label';
+        this.layoutWidthLabelB.style.display = 'none';
+        this.viewportOverlay.appendChild(this.layoutWidthLabelB);
+
         this.root.appendChild(this.adjustModeOverlayPanel);
         this.root.appendChild(this.bottomToolsPanel);
         this.root.appendChild(this.viewportOverlay);
@@ -716,6 +726,29 @@ export class BuildingFabrication2UI {
         this.rulerLabel.style.top = `${y}px`;
     }
 
+    setLayoutWidthLabels(labels = []) {
+        const entries = Array.isArray(labels) ? labels : [];
+        const targets = [this.layoutWidthLabelA, this.layoutWidthLabelB];
+        for (let i = 0; i < targets.length; i++) {
+            const labelEl = targets[i];
+            if (!labelEl) continue;
+            const item = entries[i];
+            const show = !!item?.visible
+                && Number.isFinite(item?.x)
+                && Number.isFinite(item?.y)
+                && typeof item?.text === 'string'
+                && item.text;
+            if (!show) {
+                labelEl.style.display = 'none';
+                continue;
+            }
+            labelEl.textContent = item.text;
+            labelEl.style.display = 'block';
+            labelEl.style.left = `${item.x}px`;
+            labelEl.style.top = `${item.y}px`;
+        }
+    }
+
     setBuildingState({
         hasBuilding = false,
         buildingName = '',
@@ -728,6 +761,7 @@ export class BuildingFabrication2UI {
             this.closeSidePanel();
             this._layoutAdjustEnabled = false;
             this._syncAdjustLayoutButton();
+            this.setLayoutWidthLabels([]);
         }
         const name = typeof buildingName === 'string' ? buildingName : '';
         const type = (buildingType === 'business' || buildingType === 'industrial' || buildingType === 'apartments' || buildingType === 'house')

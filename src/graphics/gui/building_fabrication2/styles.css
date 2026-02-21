@@ -88,6 +88,10 @@
     color: rgba(255,255,255,0.96);
 }
 
+.building-fab2-layout-width-label {
+    color: rgba(255, 230, 143, 0.98);
+}
+
 .building-fab2-right-panel {
     width: 520px;
     max-width: 520px;
@@ -318,15 +322,17 @@
     margin-bottom: 12px;
 }
 
-.building-fab2-right-action-layout-btn {
+.building-fab2-icon-btn.building-fab2-right-action-layout-btn {
     margin-left: auto;
     width: auto;
-    min-width: 0;
+    min-width: 128px;
     height: 32px;
     padding: 0 10px;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 6px;
+    flex: 0 0 auto;
 }
 
 .building-fab2-right-action-layout-label {

@@ -150,6 +150,10 @@ At the building level:
   - holding `Shift` during corner drag snaps motion to the tangent of the closest adjacent wall line
   - holding `Control` during corner drag prefers snapping to a 90-degree corner when close enough
   - on facade hover, the selector bar is aligned to that facade edge direction (correct per-face rotation) and rendered on the building base line
+  - while mouse-dragging in adjustment mode, show adjacent-face width guides on the ground:
+    - face drag: show the two adjacent face widths
+    - corner/edge drag: show the two adjacent face widths
+    - guides/labels are visible only while the mouse is held for movement
   - while adjustment mode is active, show a small overlay panel above the ruler tool panel with a `Close` button that exits adjustment mode
   - face/corner drag must clamp to minimum allowed facade widths (including bay constraints), with absolute minimum `1.0m`
   - during drag, rebuild updates are throttled to at most `4Hz` (every `250ms`)

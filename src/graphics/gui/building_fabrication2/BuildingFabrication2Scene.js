@@ -29,6 +29,10 @@ const RULER_LINE_OPACITY = 0.92;
 const LAYOUT_FACE_OVERLAY_OPACITY = 0.2;
 const LAYOUT_FACE_OVERLAY_COLOR = 0x7ee1ff;
 const LAYOUT_FACE_LINE_Y_LIFT = 0.012;
+const LAYOUT_WIDTH_GUIDE_COLOR = 0xffe08f;
+const LAYOUT_WIDTH_GUIDE_LINEWIDTH = 3;
+const LAYOUT_WIDTH_GUIDE_OPACITY = 0.9;
+const LAYOUT_WIDTH_GUIDE_Y_LIFT = 0.014;
 const LAYOUT_VERTEX_RING_COLOR = 0xffdf8e;
 const LAYOUT_VERTEX_RING_RADIUS = 0.4;
 const LAYOUT_VERTEX_RING_TUBE = 0.06;
@@ -205,8 +209,10 @@ export class BuildingFabrication2Scene {
         this._layoutLoop = null;
         this._layoutHoverFaceId = null;
         this._layoutHoverVertexIndex = null;
+        this._layoutWidthGuideFaceIds = null;
         this._layoutFaceOverlay = null;
         this._layoutFaceLine = null;
+        this._layoutWidthGuideLine = null;
         this._layoutVertexRing = null;
         this._layoutRayPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
         this._layoutRayPoint = new THREE.Vector3();
@@ -354,17 +360,22 @@ export class BuildingFabrication2Scene {
         enabled = false,
         loop = null,
         hoverFaceId = null,
-        hoverVertexIndex = null
+        hoverVertexIndex = null,
+        widthGuideFaceIds = null
     } = {}) {
         const nextEnabled = !!enabled;
         const nextLoop = Array.isArray(loop) ? loop : null;
         const nextFaceId = isFaceId(hoverFaceId) ? hoverFaceId : null;
         const nextVertexIndex = Number.isInteger(hoverVertexIndex) ? Math.max(0, hoverVertexIndex | 0) : null;
+        const nextWidthGuideFaceIds = Array.isArray(widthGuideFaceIds)
+            ? widthGuideFaceIds.filter((faceId) => isFaceId(faceId))
+            : null;
 
         this._layoutAdjustEnabled = nextEnabled;
         this._layoutLoop = nextLoop;
         this._layoutHoverFaceId = nextFaceId;
         this._layoutHoverVertexIndex = nextVertexIndex;
+        this._layoutWidthGuideFaceIds = nextWidthGuideFaceIds;
         this._syncLayoutEditOverlays();
     }
 
@@ -663,6 +674,11 @@ export class BuildingFabrication2Scene {
             disposeObject3D(this._layoutFaceLine);
             this._layoutFaceLine = null;
         }
+        if (this._layoutWidthGuideLine) {
+            this._layoutWidthGuideLine.removeFromParent();
+            disposeObject3D(this._layoutWidthGuideLine);
+            this._layoutWidthGuideLine = null;
+        }
         if (this._layoutVertexRing) {
             this._layoutVertexRing.removeFromParent();
             disposeObject3D(this._layoutVertexRing);
@@ -694,6 +710,46 @@ export class BuildingFabrication2Scene {
             ? Number(this._focusBox.max.y)
             : (baseY + 1.0);
         const yHeight = Math.max(0.5, topY - baseY);
+        const widthGuideFaceIds = Array.isArray(this._layoutWidthGuideFaceIds) ? this._layoutWidthGuideFaceIds : [];
+        if (widthGuideFaceIds.length) {
+            const seen = new Set();
+            const positions = [];
+            for (const faceId of widthGuideFaceIds) {
+                if (!isFaceId(faceId) || seen.has(faceId)) continue;
+                seen.add(faceId);
+                const edge = this._getLayoutLoopFaceVertices(loop, faceId);
+                const a = edge?.a ?? null;
+                const b = edge?.b ?? null;
+                if (!a || !b) continue;
+                positions.push(
+                    Number(a.x) || 0, baseY + LAYOUT_WIDTH_GUIDE_Y_LIFT, Number(a.z) || 0,
+                    Number(b.x) || 0, baseY + LAYOUT_WIDTH_GUIDE_Y_LIFT, Number(b.z) || 0
+                );
+            }
+            if (positions.length >= 6) {
+                const lineGeo = new LineSegmentsGeometry();
+                lineGeo.setPositions(positions);
+                const lineMat = new LineMaterial({
+                    color: LAYOUT_WIDTH_GUIDE_COLOR,
+                    linewidth: LAYOUT_WIDTH_GUIDE_LINEWIDTH,
+                    worldUnits: false,
+                    transparent: true,
+                    opacity: LAYOUT_WIDTH_GUIDE_OPACITY,
+                    depthTest: false,
+                    depthWrite: false
+                });
+                if (this.engine?.renderer) {
+                    const size = this.engine.renderer.getSize(this._lineResolution);
+                    lineMat.resolution.set(size.x, size.y);
+                }
+                const line = new LineSegments2(lineGeo, lineMat);
+                line.name = 'bf2_layout_width_guides';
+                line.renderOrder = 209;
+                line.frustumCulled = false;
+                this.root.add(line);
+                this._layoutWidthGuideLine = line;
+            }
+        }
 
         const faceId = this._layoutHoverFaceId;
         if (faceId) {
@@ -1050,6 +1106,7 @@ export class BuildingFabrication2Scene {
             this._layoutLoop = null;
             this._layoutHoverFaceId = null;
             this._layoutHoverVertexIndex = null;
+            this._layoutWidthGuideFaceIds = null;
             return;
         }
         this._building.group?.removeFromParent?.();
@@ -1064,6 +1121,7 @@ export class BuildingFabrication2Scene {
         this._layoutLoop = null;
         this._layoutHoverFaceId = null;
         this._layoutHoverVertexIndex = null;
+        this._layoutWidthGuideFaceIds = null;
         this._syncFaceHighlight();
         this._syncDummy();
     }

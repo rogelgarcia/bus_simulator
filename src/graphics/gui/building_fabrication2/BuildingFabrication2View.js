@@ -41,6 +41,18 @@ function isTextEditingElement(target) {
 
 const FACE_IDS = Object.freeze(['A', 'B', 'C', 'D']);
 const DEFAULT_FACE_LINKS = Object.freeze({ C: 'A', D: 'B' });
+const ADJACENT_FACE_IDS_BY_FACE_ID = Object.freeze({
+    A: Object.freeze(['B', 'D']),
+    B: Object.freeze(['A', 'C']),
+    C: Object.freeze(['B', 'D']),
+    D: Object.freeze(['A', 'C'])
+});
+const ADJACENT_FACE_IDS_BY_VERTEX_INDEX = Object.freeze({
+    0: Object.freeze(['D', 'A']),
+    1: Object.freeze(['A', 'B']),
+    2: Object.freeze(['B', 'C']),
+    3: Object.freeze(['C', 'D'])
+});
 const FLOOR_COUNT_MIN = 1;
 const FLOOR_COUNT_MAX = 30;
 const FLOOR_HEIGHT_MIN = 1.0;
@@ -2956,6 +2968,7 @@ export class BuildingFabrication2View {
         const loop = enabled ? this._getCurrentFootprintLoop() : null;
         const drag = this._layoutDrag;
         const hover = this._layoutHover;
+        const widthGuideFaceIds = enabled && drag ? this._resolveLayoutWidthGuideFaceIds(drag) : null;
         const hoverFaceId = enabled
             ? (drag?.kind === 'face' ? drag.faceId : (hover?.kind === 'face' ? hover.faceId : null))
             : null;
@@ -2966,8 +2979,57 @@ export class BuildingFabrication2View {
             enabled,
             loop,
             hoverFaceId,
-            hoverVertexIndex
+            hoverVertexIndex,
+            widthGuideFaceIds
         });
+        this._syncLayoutWidthLabels({ enabled, loop, widthGuideFaceIds });
+    }
+
+    _resolveLayoutWidthGuideFaceIds(drag) {
+        const d = drag && typeof drag === 'object' ? drag : null;
+        if (!d) return [];
+        if (d.kind === 'face') {
+            const faceId = isFaceId(d.faceId) ? d.faceId : null;
+            return faceId ? [...(ADJACENT_FACE_IDS_BY_FACE_ID[faceId] ?? [])] : [];
+        }
+        if (d.kind === 'vertex') {
+            const idx = Number(d.vertexIndex);
+            if (!Number.isInteger(idx)) return [];
+            return [...(ADJACENT_FACE_IDS_BY_VERTEX_INDEX[idx] ?? [])];
+        }
+        return [];
+    }
+
+    _syncLayoutWidthLabels({ enabled = false, loop = null, widthGuideFaceIds = null } = {}) {
+        const ui = this.ui ?? null;
+        if (!ui || typeof ui.setLayoutWidthLabels !== 'function') return;
+        const active = !!enabled && Array.isArray(loop) && loop.length === 4 && Array.isArray(widthGuideFaceIds) && widthGuideFaceIds.length > 0;
+        if (!active) {
+            ui.setLayoutWidthLabels([]);
+            return;
+        }
+
+        const planeY = this.scene?.getLayoutEditPlaneY?.() ?? 0.02;
+        const entries = [];
+        for (const faceId of widthGuideFaceIds) {
+            if (!isFaceId(faceId)) continue;
+            const frame = computeFaceFrameFromLoop(loop, faceId);
+            if (!frame) continue;
+            const mid = {
+                x: (frame.start.x + frame.end.x) * 0.5,
+                z: (frame.start.z + frame.end.z) * 0.5
+            };
+            const projected = this._projectLoopPointToScreen(mid, planeY);
+            const visible = !!projected && projected.zNdc >= -1 && projected.zNdc <= 1;
+            entries.push({
+                visible,
+                x: projected?.x ?? 0,
+                y: projected?.y ?? 0,
+                text: `${frame.length.toFixed(2)}m`
+            });
+            if (entries.length >= 2) break;
+        }
+        ui.setLayoutWidthLabels(entries);
     }
 
     _resolveFacadeMinimumWidthMeters(facade) {
@@ -3138,7 +3200,8 @@ export class BuildingFabrication2View {
         this._layoutProjected.set(Number(point?.x) || 0, Number(y) || 0, Number(point?.z) || 0).project(camera);
         return {
             x: rect.left + (this._layoutProjected.x * 0.5 + 0.5) * rect.width,
-            y: rect.top + (-this._layoutProjected.y * 0.5 + 0.5) * rect.height
+            y: rect.top + (-this._layoutProjected.y * 0.5 + 0.5) * rect.height,
+            zNdc: this._layoutProjected.z
         };
     }
 
