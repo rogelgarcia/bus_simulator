@@ -51,17 +51,24 @@ Any AI prompt or change that modifies a specification/model MUST update one or m
 **Tasks:**
 These are the ones from AI prompt files.
 - Even if explicitly requested, never start prompts whose filename indicates DONE (`AI_DONE_##_..._DONE.md`, `AI_DONE_<branch>_##_..._DONE.md`, `AI_i_DONE_##_..._DONE.md`, or `AI_i_DONE_<branch>_##_..._DONE.md`) without double confirming with the user.
-- If multiple prompts share the same numeric id, select the prompt in the current branch namespace for implementation (within the same mode: standard or interactive).
+- If multiple prompts share the same numeric id, prefer the prompt in the current branch namespace for implementation within the same mode (standard or interactive).
 - If id selection is still ambiguous or conflicting, stop and ask the user for guidance before implementing.
 - In interactive mode (`start ai`):
   - If subject is missing, ask for `SUBJECT` before creating the file.
-  - If an interactive AI is already open, ask whether to continue it, close and start a new one, or start a new one without closing the current one.
+  - If an interactive AI is already open, ask whether to continue it, `make final` and start a new one, or start a new one without closing the current one.
   - As soon as trigger + subject are known, start/create the interactive `AI_i_...` file (do not wait for a full requirement list).
+  - Keep the session in conversation mode until the user says `implement`.
   - Track requirements with markdown checkboxes (`- [ ]` pending, `- [x]` implemented) and keep them updated after each implementation cycle.
+  - Treat `make final` in interactive mode as follows:
+    - if all checklist items are complete, rename to `AI_i_DONE_..._DONE.md`
+    - if items remain open, rename to regular AI naming (`AI_...`) so it continues as a standard AI prompt with checklists preserved
   - Never edit completed checklist items (`- [x]`).
   - If completed behavior needs a fix, add a new requirement item for the fix.
   - Contradictions between completed and new requirements are allowed; keep the completed item unchanged.
   - If contradiction is with a non-completed item (`- [ ]`), patch the existing non-completed requirement.
+
+- Prompt numbering:
+  - Use the highest existing prompt id across all active, completed, and archived files (standard and interactive) plus 1.
 
 **AI Prompt naming:**
 - Follow `AI_PROMPT_INSTRUCTIONS.md` (naming, template, and completion steps).

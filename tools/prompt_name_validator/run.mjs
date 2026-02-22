@@ -39,6 +39,7 @@ const MD_SUFFIX = '.md';
 const DONE_FILE_SUFFIX = '_DONE.md';
 
 const strict = process.argv.includes('--strict');
+const showNextId = process.argv.includes('--next-id');
 const cwd = process.cwd();
 const promptsDir = path.join(cwd, 'prompts');
 const archiveDir = path.join(promptsDir, 'archive');
@@ -158,6 +159,30 @@ function parseBodyTokens(tokens, contextLabel) {
     };
 }
 
+function extractPromptId(fileName, relPath = fileName) {
+    const donePrefix = findMatchingPrefix(fileName, DONE_PREFIXES);
+    if (donePrefix !== null) {
+        const parsedDone = parseDoneFile(fileName, relPath, donePrefix);
+        if (parsedDone.ok) {
+            return Number(parsedDone.parsed.id);
+        }
+    }
+
+    const activePrefix = findMatchingPrefix(fileName, ACTIVE_PREFIXES);
+    if (activePrefix === null) {
+        return null;
+    }
+
+    const body = fileName.slice(activePrefix.length, -MD_SUFFIX.length);
+    const tokens = body.split('_').filter((token) => token.length > 0);
+    const parsedActive = parseBodyTokens(tokens, relPath);
+    if (!parsedActive.ok) {
+        return null;
+    }
+
+    return Number(parsedActive.parsed.id);
+}
+
 function validateActiveFile(fileName, relPath) {
     if (!fileName.endsWith(MD_SUFFIX)) {
         addError(`${relPath}: prompt must use .md extension`);
@@ -239,6 +264,39 @@ function validateArchiveFile(fileName, relPath) {
     addWarning(`${relPath}: legacy archived naming (${parsedDone.reason})`);
 }
 
+function collectPromptIds() {
+    if (!fs.existsSync(promptsDir) || !fs.statSync(promptsDir).isDirectory()) {
+        return [];
+    }
+
+    const files = listFilesRecursive(promptsDir);
+    const ids = new Set();
+    for (const absPath of files) {
+        const relPath = toPosix(path.relative(cwd, absPath));
+        const baseName = path.basename(absPath);
+        if (!baseName.startsWith('AI_') || !baseName.endsWith('.md')) {
+            continue;
+        }
+        const id = extractPromptId(baseName, relPath);
+        if (Number.isFinite(id)) {
+            ids.add(id);
+        }
+    }
+    return [...ids].sort((a, b) => a - b);
+}
+
+function printNextIdReport() {
+    const ids = collectPromptIds();
+    const maxId = ids.length > 0 ? ids[ids.length - 1] : 0;
+    const nextId = maxId + 1;
+    if (ids.length > 0) {
+        console.log(`Next available prompt id (all prompt files): ${nextId}`);
+        console.log(`Highest existing prompt id: ${maxId}`);
+    } else {
+        console.log('No valid prompt ids found. Start new prompts at id: 1');
+    }
+}
+
 function checkRootLeftovers() {
     const rootEntries = fs.readdirSync(cwd, { withFileTypes: true });
     for (const entry of rootEntries) {
@@ -298,6 +356,9 @@ function validatePromptsTree() {
 
 checkRootLeftovers();
 validatePromptsTree();
+if (showNextId) {
+    printNextIdReport();
+}
 
 if (warnings.length > 0) {
     console.log(`Warnings (${warnings.length}):`);

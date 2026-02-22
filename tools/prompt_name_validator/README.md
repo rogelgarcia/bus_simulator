@@ -8,6 +8,12 @@ Validate AI prompt file placement and naming conventions.
 node tools/prompt_name_validator/run.mjs
 ```
 
+To get the next free prompt id across all active, completed, and archived prompts:
+
+```bash
+node tools/prompt_name_validator/run.mjs --next-id
+```
+
 Strict mode (treat warnings as failures):
 
 ```bash

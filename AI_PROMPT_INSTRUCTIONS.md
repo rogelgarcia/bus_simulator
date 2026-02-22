@@ -37,7 +37,8 @@ On non-`main` branches:
 
 ### Naming rules
 
-- `##` is the numeric prompt id (keep it stable within each mode namespace).
+- `##` is the numeric prompt id.
+- Use the highest existing prompt id across active, completed, and archived prompts (standard and interactive) plus 1.
 - Completed prompts include `DONE` near the front and at the end.
 - `<branch>` is required on non-`main` branches and omitted on `main`.
 - `<branch>` should be filename-safe:
@@ -85,26 +86,33 @@ When the user says `start ai`, use interactive prompt mode.
 2. Check for an open interactive AI file (active `AI_i_...` in `prompts/`):
    - If one exists, ask whether to:
      - Continue the current AI
-     - Close current and start a new one
+     - Finalize current (`make final`) and start a new one
      - Start a new one without closing current
 3. Start the file immediately:
    - As soon as `start ai` + `SUBJECT` are known, create the `AI_i_...` file.
    - Do not wait for the full requirement list before creating the file.
    - If an open interactive AI required a choice, create/update the selected file immediately after that choice.
-4. Keep the prompt conversational:
-   - Add requirements incrementally as discussion continues.
-   - Track requirements with checkboxes:
-     - `- [ ]` not implemented
-     - `- [x]` implemented
-   - Never edit completed checklist items (`- [x]`); they are immutable history.
-   - If a completed item needs a fix, add a new checklist item for the fix instead of changing the completed item.
-   - Contradictions are allowed between completed and new requirements; keep both and implement the new requirement as a follow-up.
-   - If a new requirement contradicts an existing non-completed requirement (`- [ ]`), patch the existing non-completed requirement text.
-5. Implementation loop:
-   - On “implement” requests, implement selected pending requirements.
+4. Conversation mode:
+   - After `start ai`, stay in conversation mode and do not implement until the user says `implement`.
+   - Keep requirements conversational and tracked as checkboxes (`- [ ]` and `- [x]`) in the interactive file.
+   - Track requirements incrementally as discussion continues.
+   - Completed checklist items (`- [x]`) remain immutable history.
+   - On `implement`, apply selected pending requirements, update checkbox states, and return to conversation mode.
+5. Finalization (`make final`):
+   - If the user says `make final` and all checklist items are complete, rename to `AI_i_DONE_..._DONE.md`.
+   - If the user says `make final` with open items:
+     - rename the file to standard (non-interactive) naming, removing `AI_i_`.
+     - keep all checkboxes unchanged, including pending items.
+     - continue as a regular AI prompt in conversational mode.
+     - standard naming example:
+       - `AI_i_407_UI_example.md` → `AI_407_UI_example.md`
+       - `AI_i_branch-name_407_UI_example.md` → `AI_branch-name_407_UI_example.md`
+   - If any open items exist and the user still wants `DONE` naming, ask to continue as regular AI instead.
+6. Implementation loop:
+   - On `implement` requests, implement selected pending requirements.
    - Update the checklist status in the interactive AI file after implementation.
    - Continue gathering new requirements and repeating implementation cycles until the user says done.
-6. Completion:
+7. Completion:
    - Rename to interactive DONE naming (`AI_i_DONE_..._DONE.md`).
    - Do not move to `prompts/archive/` automatically.
    - Move to archive only when explicitly requested.
@@ -169,6 +177,10 @@ Rules:
   - `prompts/AI_i_DONE_<branch>_##_SUBJECT_title_DONE.md` on non-main branches
 - Do not move to `prompts/archive/` automatically
 - Move to `prompts/archive/` only when explicitly requested
+
+## On `make final` without full completion
+- If the user asks for `make final` while checklist items are still open, do not use `DONE` naming.
+- Rename to regular mode naming (`AI_...`) and keep all checklist items.
 ```
 
 ## Notes

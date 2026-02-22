@@ -24,12 +24,15 @@ Open `index.html` in a modern browser.
 - Interactive AI trigger: `start ai`.
 - Interactive AI prompts use `AI_i_` filenames in `prompts/` and are handled as conversational requirement documents.
 - As soon as `start ai` + subject/topic are known, the `AI_i_...` file is created (no waiting for full requirements).
+- Interactive AI starts in conversation mode and should not implement until you say `implement`.
 - Interactive requirements are tracked with checkboxes:
   - `- [ ]` pending
   - `- [x]` implemented
 - Completed items (`- [x]`) are immutable history; fixes are added as new checklist items.
+- `make final` with open checklist items keeps the file in `prompts/`, converts it to non-interactive naming (`AI_...`), and keeps all checkboxes intact for regular AI follow-up.
 - Contradictions with completed items are allowed; contradictions with pending items can be patched in place.
 - Interactive sessions can cycle through requirement gathering and implementation multiple times until user says done.
+- New prompt IDs should use the highest existing prompt number (+1) across active, done, and archived prompt files.
 
 ### Tools
 
