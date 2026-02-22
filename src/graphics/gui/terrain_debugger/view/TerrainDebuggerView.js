@@ -9,7 +9,7 @@ import { applyIBLIntensity, applyIBLToScene, loadIBLTexture } from '../../../lig
 import { getResolvedDefaultLightingSettings } from '../../../lighting/LightingSettings.js';
 import { getResolvedShadowSettings, getShadowQualityPreset } from '../../../lighting/ShadowSettings.js';
 import { DEFAULT_IBL_ID, getIblEntryById } from '../../../content3d/catalogs/IBLCatalog.js';
-import { getPbrMaterialMeta, getPbrMaterialOptionsForGround, resolvePbrMaterialUrls } from '../../../content3d/catalogs/PbrMaterialCatalog.js';
+import { getPbrMaterialMeta, getPbrMaterialOptionsForGround } from '../../../content3d/catalogs/PbrMaterialCatalog.js';
 import { PbrTextureLoaderService } from '../../../content3d/materials/PbrTexturePipeline.js';
 import { primePbrAssetsAvailability } from '../../../content3d/materials/PbrAssetsRuntime.js';
 import { applyUvTilingToMeshStandardMaterial, updateUvTilingOnMeshStandardMaterial } from '../../../assets3d/materials/MaterialUvTilingSystem.js';
@@ -9866,12 +9866,14 @@ export class TerrainDebuggerView {
             const row = this._terrainBiomeHumidityBindings?.[biome] ?? {};
             for (const slot of TERRAIN_HUMIDITY_SLOT_IDS) {
                 const materialId = String(row?.[slot] ?? DEFAULT_TERRAIN_BIOME_HUMIDITY_PBR_BINDINGS?.[biome]?.[slot] ?? '');
-                const urls = resolvePbrMaterialUrls(materialId);
+                const resolved = this._resolvePbrMaterialPayload(materialId, {
+                    diagnosticsTag: 'TerrainDebuggerView.biomeLegend'
+                });
                 entries.push({
                     biomeId: biome,
                     humiditySlotId: slot,
                     materialId,
-                    previewUrl: urls?.baseColorUrl ?? ''
+                    previewUrl: resolved?.urls?.baseColorUrl ?? ''
                 });
             }
         }

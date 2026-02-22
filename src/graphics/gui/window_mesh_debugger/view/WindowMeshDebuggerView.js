@@ -318,7 +318,6 @@ export class WindowMeshDebuggerView {
         this._wall = null;
         this._wallMat = null;
         this._wallTexCache = new Map();
-        this._texLoader = new THREE.TextureLoader();
         this._wallSpec = normalizeWallSpec(wallSpec);
         this._previewGrid = normalizePreviewGrid(previewGrid);
         this._wallHoleKey = '';
@@ -374,8 +373,7 @@ export class WindowMeshDebuggerView {
 
         this.renderer = renderer;
         this._pbrTextureService = new PbrTextureLoaderService({
-            renderer: this.renderer,
-            textureLoader: this._texLoader
+            renderer: this.renderer
         });
         this._gpuFrameTimer = getOrCreateGpuFrameTimer(renderer);
         this.scene = new THREE.Scene();
@@ -424,7 +422,7 @@ export class WindowMeshDebuggerView {
 
         this._buildScene();
 
-        this._decorations = new WindowMeshDecorationsRig({ renderer, texLoader: this._texLoader });
+        this._decorations = new WindowMeshDecorationsRig({ renderer });
         this.scene.add(this._decorations.group);
 
         const initialState = ui.getState();

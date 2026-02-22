@@ -2,8 +2,8 @@
 // Texture inspection content provider for the Inspector Room.
 import * as THREE from 'three';
 import { getWindowNormalMapTexture, getWindowRoughnessMapTexture } from '../../assets3d/generators/buildings/WindowTextureGenerator.js';
-import { getPbrMaterialMeta, getPbrMaterialTileMeters, resolvePbrMaterialUrls } from '../../assets3d/materials/PbrMaterialCatalog.js';
-import { PbrTextureLoaderService } from '../../content3d/materials/PbrTexturePipeline.js';
+import { getPbrMaterialMeta, getPbrMaterialTileMeters } from '../../assets3d/materials/PbrMaterialCatalog.js';
+import { PbrTextureLoaderService, resolvePbrMaterialPipeline } from '../../content3d/materials/PbrTexturePipeline.js';
 import { getSignAlphaMaskTextureById } from '../../assets3d/textures/signs/SignAlphaMaskCache.js';
 import {
     getTextureInspectorCollectionById,
@@ -481,9 +481,10 @@ export class InspectorRoomTexturesProvider {
             extra = { kind: 'window', style: entry.style ?? '-' };
         } else if (entry.kind === 'pbr_material') {
             const materialId = entry?.materialId ?? entry?.id ?? null;
-            const meta = getPbrMaterialMeta(materialId);
-            const urls = resolvePbrMaterialUrls(materialId);
-            const tileMeters = meta?.tileMeters ?? null;
+            const payload = resolvePbrMaterialPipeline(materialId);
+            const meta = payload?.meta ?? getPbrMaterialMeta(materialId);
+            const urls = payload?.urls ?? null;
+            const tileMeters = payload?.overrides?.effective?.tileMeters ?? meta?.tileMeters ?? null;
             extra = {
                 kind: 'pbr_material',
                 tileMeters: (Number.isFinite(Number(tileMeters)) && Number(tileMeters) > 0) ? Number(tileMeters) : null,

@@ -194,12 +194,10 @@ function setMaterialWireframe(mat, enabled) {
 }
 
 export class WindowMeshDecorationsRig {
-    constructor({ renderer, texLoader }) {
+    constructor({ renderer } = {}) {
         this._renderer = renderer ?? null;
-        this._texLoader = texLoader ?? new THREE.TextureLoader();
         this._pbrTextureService = new PbrTextureLoaderService({
-            renderer: this._renderer,
-            textureLoader: this._texLoader
+            renderer: this._renderer
         });
 
         this.group = new THREE.Group();
