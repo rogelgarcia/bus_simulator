@@ -19,6 +19,8 @@ import { azimuthElevationDegToDir, dirToAzimuthElevationDeg } from '../../visual
 import { getResolvedSunFlareSettings } from '../../visuals/sun/SunFlareSettings.js';
 import { SunFlareRig } from '../../visuals/sun/SunFlareRig.js';
 import { shouldApplyAoAlphaCutout } from '../../visuals/postprocessing/AoAlphaCutoutSupport.js';
+import { attachShaderMetadata } from '../../shaders/core/ShaderLoader.js';
+import { createSunBloomDebuggerCompositePayload, createSunBloomDebuggerEmitterPayload, createSunBloomDebuggerRaysPayload } from '../../shaders/diagnostics/SunBloomDebuggerShader.js';
 import { SunBloomDebuggerUI } from './SunBloomDebuggerUI.js';
 import { loadHdriEnvironment } from '../atmosphere_debugger/AtmosphereDebuggerHdri.js';
 import { getOrCreateGpuFrameTimer } from '../../engine3d/perf/GpuFrameTimer.js';
@@ -99,80 +101,40 @@ function pointInConvexPolygon2D(pt, poly) {
 }
 
 function makeFinalCompositePass(bloomTexture) {
-    const mat = new THREE.ShaderMaterial({
+    const payload = createSunBloomDebuggerCompositePayload({
         uniforms: {
-            baseTexture: { value: null },
-            bloomTexture: { value: bloomTexture ?? null },
-            uBloomStrength: { value: 0.0 },
-            uBloomBrightnessOnly: { value: 1.0 },
-            uViewMode: { value: 0.0 }
-        },
-        vertexShader: `
-            varying vec2 vUv;
-            void main() {
-                vUv = uv;
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-            }
-        `,
-        fragmentShader: `
-            uniform sampler2D baseTexture;
-            uniform sampler2D bloomTexture;
-            uniform float uBloomStrength;
-            uniform float uBloomBrightnessOnly;
-            uniform float uViewMode;
-            varying vec2 vUv;
-
-            float luma(vec3 c) {
-                return dot(c, vec3(0.2126, 0.7152, 0.0722));
-            }
-
-            void main() {
-                vec3 base = texture2D(baseTexture, vUv).rgb;
-                vec3 bloom = texture2D(bloomTexture, vUv).rgb * uBloomStrength;
-                if (uBloomBrightnessOnly > 0.5) {
-                    float y = luma(bloom);
-                    bloom = vec3(y);
-                }
-                vec3 outColor = base + bloom;
-                if (uViewMode > 0.5) outColor = bloom;
-                gl_FragColor = vec4(outColor, 1.0);
-            }
-        `,
+            baseTexture: null,
+            bloomTexture: bloomTexture ?? null,
+            uBloomStrength: 0.0,
+            uBloomBrightnessOnly: 1.0,
+            uViewMode: 0.0
+        }
+    });
+    const mat = new THREE.ShaderMaterial({
+        uniforms: THREE.UniformsUtils.clone(payload.uniforms),
+        vertexShader: payload.vertexSource,
+        fragmentShader: payload.fragmentSource,
         depthWrite: false,
         depthTest: false,
         toneMapped: true
     });
+    attachShaderMetadata(mat, payload, 'sun-bloom-debug-composite');
 
     return new ShaderPass(mat, 'baseTexture');
 }
 
 function createSunDiscEmitter() {
     const geo = new THREE.PlaneGeometry(1, 1, 1, 1);
-    const mat = new THREE.ShaderMaterial({
+    const payload = createSunBloomDebuggerEmitterPayload({
         uniforms: {
-            uIntensity: { value: 25.0 },
-            uFalloff: { value: 2.2 }
-        },
-        vertexShader: `
-            varying vec2 vUv;
-            void main() {
-                vUv = uv;
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-            }
-        `,
-        fragmentShader: `
-            uniform float uIntensity;
-            uniform float uFalloff;
-            varying vec2 vUv;
-
-            void main() {
-                vec2 p = vUv * 2.0 - 1.0;
-                float r = length(p);
-                float a = exp(-pow(r, max(0.05, uFalloff)) * 6.0);
-                vec3 col = vec3(1.0) * (a * uIntensity);
-                gl_FragColor = vec4(col, a);
-            }
-        `,
+            uIntensity: 25.0,
+            uFalloff: 2.2
+        }
+    });
+    const mat = new THREE.ShaderMaterial({
+        uniforms: THREE.UniformsUtils.clone(payload.uniforms),
+        vertexShader: payload.vertexSource,
+        fragmentShader: payload.fragmentSource,
         transparent: true,
         blending: THREE.AdditiveBlending,
         side: THREE.DoubleSide,
@@ -180,6 +142,7 @@ function createSunDiscEmitter() {
         depthWrite: false,
         toneMapped: false
     });
+    attachShaderMetadata(mat, payload, 'sun-bloom-debug-emitter');
     const mesh = new THREE.Mesh(geo, mat);
     mesh.name = 'sun_disc_emitter';
     mesh.frustumCulled = false;
@@ -191,95 +154,33 @@ function createSunDiscEmitter() {
 
 function createSunRaysStarburst() {
     const geo = new THREE.PlaneGeometry(1, 1, 1, 1);
-    const mat = new THREE.ShaderMaterial({
+    const payload = createSunBloomDebuggerRaysPayload({
         uniforms: {
-            uIntensity: { value: 0.85 },
-            uRayCount: { value: 48.0 },
-            uRayLength: { value: 0.95 },
-            uLengthJitter: { value: 0.45 },
-            uBaseWidthRad: { value: (1.6 * Math.PI) / 180 },
-            uTipWidthRad: { value: (0.28 * Math.PI) / 180 },
-            uSoftnessRad: { value: (0.9 * Math.PI) / 180 },
-            uCoreGlow: { value: 0.35 },
-            uOuterGlow: { value: 0.18 },
-            uRotationRad: { value: 0.0 },
-            uSeed: { value: 0.0 },
-            uColor: { value: new THREE.Color('#fff2d6') }
-        },
-        vertexShader: `
-            varying vec2 vUv;
-            void main() {
-                vUv = uv;
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-            }
-        `,
-        fragmentShader: `
-            uniform float uIntensity;
-            uniform float uRayCount;
-            uniform float uRayLength;
-            uniform float uLengthJitter;
-            uniform float uBaseWidthRad;
-            uniform float uTipWidthRad;
-            uniform float uSoftnessRad;
-            uniform float uCoreGlow;
-            uniform float uOuterGlow;
-            uniform float uRotationRad;
-            uniform float uSeed;
-            uniform vec3 uColor;
-
-            varying vec2 vUv;
-
-            float hash11(float x) {
-                return fract(sin(x * 127.1 + uSeed * 311.7) * 43758.5453123);
-            }
-
-            void main() {
-                vec2 p = vUv * 2.0 - 1.0;
-                float r = length(p);
-                float r01 = clamp(r, 0.0, 1.0);
-
-                // Fade out outside the unit circle to avoid square corners.
-                float circleFade = 1.0 - smoothstep(1.0, 1.08, r);
-
-                float ang = atan(p.y, p.x) + uRotationRad;
-                if (ang < 0.0) ang += 6.28318530718;
-
-                float n = max(3.0, floor(uRayCount + 0.5));
-                float cell = 6.28318530718 / n;
-                float idx = floor(ang / cell);
-                float center = (idx + 0.5) * cell;
-
-                float dAng = abs(ang - center);
-                dAng = min(dAng, 6.28318530718 - dAng);
-
-                float rnd = hash11(idx + 1.0);
-                float len = max(0.02, uRayLength * mix(1.0 - uLengthJitter, 1.0 + uLengthJitter, rnd));
-
-                float t = smoothstep(0.0, max(1e-3, len), r01);
-                float width = mix(uBaseWidthRad, uTipWidthRad, t);
-
-                float rayMask = 1.0 - smoothstep(width, width + uSoftnessRad, dAng);
-                float radialMask = 1.0 - smoothstep(len, len + 0.06, r01);
-
-                // Rays are bold at the base, thinner and dimmer towards the tip.
-                float baseBoost = pow(max(0.0, 1.0 - r01 / max(1e-3, len)), 0.25);
-                float tipFade = 1.0 - smoothstep(len * 0.75, len, r01);
-                float rays = rayMask * radialMask * baseBoost * tipFade;
-
-                float core = exp(-r01 * r01 * 18.0) * uCoreGlow;
-                float halo = exp(-r01 * r01 * 2.8) * uOuterGlow;
-
-                float a = (rays + core + halo) * uIntensity * circleFade;
-                vec3 col = uColor * a;
-                gl_FragColor = vec4(col, a);
-            }
-        `,
+            uIntensity: 0.85,
+            uRayCount: 48.0,
+            uRayLength: 0.95,
+            uLengthJitter: 0.45,
+            uBaseWidthRad: (1.6 * Math.PI) / 180,
+            uTipWidthRad: (0.28 * Math.PI) / 180,
+            uSoftnessRad: (0.9 * Math.PI) / 180,
+            uCoreGlow: 0.35,
+            uOuterGlow: 0.18,
+            uRotationRad: 0.0,
+            uSeed: 0.0,
+            uColor: [1.0, 0.9490196078, 0.8392156863]
+        }
+    });
+    const mat = new THREE.ShaderMaterial({
+        uniforms: THREE.UniformsUtils.clone(payload.uniforms),
+        vertexShader: payload.vertexSource,
+        fragmentShader: payload.fragmentSource,
         transparent: true,
         blending: THREE.AdditiveBlending,
         depthTest: true,
         depthWrite: false,
         toneMapped: false
     });
+    attachShaderMetadata(mat, payload, 'sun-bloom-debug-rays');
 
     const mesh = new THREE.Mesh(geo, mat);
     mesh.name = 'sun_rays_starburst';

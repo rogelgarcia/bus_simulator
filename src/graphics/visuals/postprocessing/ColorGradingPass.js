@@ -1,76 +1,21 @@
-// src/graphics/visuals/postprocessing/ColorGradingPass.js
 // 3D LUT color grading post-processing pass (WebGL2).
 // @ts-check
 
 import * as THREE from 'three';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-
-const GRADING_SHADER = Object.freeze({
-    uniforms: {
-        tDiffuse: { value: null },
-        tLut: { value: null },
-        intensity: { value: 0 }
-    },
-    vertexShader: `
-out vec2 vUv;
-
-void main() {
-    vUv = uv;
-    gl_Position = vec4(position, 1.0);
-}
-`,
-    fragmentShader: `
-precision highp float;
-precision highp sampler3D;
-
-uniform sampler2D tDiffuse;
-uniform sampler3D tLut;
-uniform float intensity;
-
-in vec2 vUv;
-out vec4 outColor;
-
-vec3 applyLut(vec3 rgb) {
-    vec3 uvw = clamp(rgb, 0.0, 1.0);
-    return texture(tLut, uvw).rgb;
-}
-
-vec3 linearToSrgb(vec3 c) {
-    vec3 clamped = clamp(c, 0.0, 1.0);
-    vec3 low = clamped * 12.92;
-    vec3 high = 1.055 * pow(clamped, vec3(1.0 / 2.4)) - 0.055;
-    vec3 cutoff = step(vec3(0.0031308), clamped);
-    return mix(low, high, cutoff);
-}
-
-vec3 srgbToLinear(vec3 c) {
-    vec3 clamped = clamp(c, 0.0, 1.0);
-    vec3 low = clamped / 12.92;
-    vec3 high = pow((clamped + 0.055) / 1.055, vec3(2.4));
-    vec3 cutoff = step(vec3(0.04045), clamped);
-    return mix(low, high, cutoff);
-}
-
-void main() {
-    vec4 base = texture(tDiffuse, vUv);
-    vec3 srcLinear = clamp(base.rgb, 0.0, 1.0);
-    vec3 src = linearToSrgb(srcLinear);
-    vec3 graded = applyLut(src);
-    float k = clamp(intensity, 0.0, 1.0);
-    vec3 outSrgb = mix(src, graded, k);
-    outColor = vec4(srgbToLinear(outSrgb), base.a);
-}
-`
-});
+import { attachShaderMetadata } from '../../shaders/core/ShaderLoader.js';
+import { createColorGradingShaderPayload } from '../../shaders/postprocessing/ColorGradingShader.js';
 
 export function createColorGradingPass() {
+    const payload = createColorGradingShaderPayload();
     const pass = new ShaderPass({
-        uniforms: THREE.UniformsUtils.clone(GRADING_SHADER.uniforms),
-        vertexShader: GRADING_SHADER.vertexShader,
-        fragmentShader: GRADING_SHADER.fragmentShader
+        uniforms: THREE.UniformsUtils.clone(payload.uniforms),
+        vertexShader: payload.vertexSource,
+        fragmentShader: payload.fragmentSource
     });
     pass.enabled = false;
     if (pass.material) {
+        attachShaderMetadata(pass.material, payload, 'postprocessing-color-grading');
         pass.material.glslVersion = THREE.GLSL3;
         pass.material.needsUpdate = true;
     }

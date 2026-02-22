@@ -5,6 +5,8 @@
 import * as THREE from 'three';
 import { sanitizeSunBloomSettings } from '../postprocessing/SunBloomSettings.js';
 import { SUN_BLOOM_LAYER_ID } from './SunBloomLayers.js';
+import { createSunBloomDebuggerEmitterPayload } from '../../shaders/diagnostics/SunBloomDebuggerShader.js';
+import { attachShaderMetadata } from '../../shaders/core/ShaderLoader.js';
 
 function clamp(value, min, max, fallback) {
     const num = Number(value);
@@ -22,31 +24,16 @@ function getSkyRadius(sky) {
 
 function createSunDiscEmitter() {
     const geo = new THREE.PlaneGeometry(1, 1, 1, 1);
-    const mat = new THREE.ShaderMaterial({
+    const payload = createSunBloomDebuggerEmitterPayload({
         uniforms: {
-            uIntensity: { value: 25.0 },
-            uFalloff: { value: 2.2 }
-        },
-        vertexShader: `
-            varying vec2 vUv;
-            void main() {
-                vUv = uv;
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-            }
-        `,
-        fragmentShader: `
-            uniform float uIntensity;
-            uniform float uFalloff;
-            varying vec2 vUv;
-
-            void main() {
-                vec2 p = vUv * 2.0 - 1.0;
-                float r = length(p);
-                float a = exp(-pow(r, max(0.05, uFalloff)) * 6.0);
-                vec3 col = vec3(1.0) * (a * uIntensity);
-                gl_FragColor = vec4(col, a);
-            }
-        `,
+            uIntensity: 25.0,
+            uFalloff: 2.2
+        }
+    });
+    const mat = new THREE.ShaderMaterial({
+        uniforms: THREE.UniformsUtils.clone(payload.uniforms),
+        vertexShader: payload.vertexSource,
+        fragmentShader: payload.fragmentSource,
         transparent: true,
         blending: THREE.AdditiveBlending,
         side: THREE.DoubleSide,
@@ -54,6 +41,7 @@ function createSunDiscEmitter() {
         depthWrite: false,
         toneMapped: false
     });
+    attachShaderMetadata(mat, payload, 'sun-bloom-emitter');
 
     const mesh = new THREE.Mesh(geo, mat);
     mesh.name = 'sun_bloom_emitter';
@@ -125,4 +113,3 @@ export class SunBloomRig {
         this.group.removeFromParent?.();
     }
 }
-

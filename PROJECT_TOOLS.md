@@ -16,4 +16,5 @@ Registry of scripts under `tools/`. When adding a new tool, register it here.
 | textureCorrectionPipeline | `tools/texture_correction_pipeline/` | Run deterministic plugin-based PBR texture correction config generation (class baselines + guard plugins) with optional map QA + headless capture harness analysis | `node tools/texture_correction_pipeline/run.mjs` |
 | runSelectedTest | `tools/run_selected_test/` | Run a selected test target via `tests/.selected_test` for fast AI/dev iteration | `node tools/run_selected_test/run.mjs` |
 | promptNameValidator | `tools/prompt_name_validator/` | Validate AI prompt folder placement and naming conventions | `node tools/prompt_name_validator/run.mjs` |
+| shaderPolicy | `tools/shader_policy/` | Scan `.js`/`.mjs` files for inline shader source assignments and enforce loader-only source policy | `node tools/shader_policy/run.mjs` |
 | worktreeCreateAndSync | `tools/worktree_create_and_sync/` | Create/reuse a named worktree and run shared-path symlink sync (`assets/`, `downloads/`, `docs/`) inside it | `bash tools/worktree_create_and_sync/run.sh <name>` |

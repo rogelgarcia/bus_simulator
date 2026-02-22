@@ -12,6 +12,10 @@ import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { createColorGradingPass, setColorGradingPassState } from './ColorGradingPass.js';
+import { attachShaderMetadata } from '../../shaders/core/ShaderLoader.js';
+import { createPostProcessingCompositeShaderPayload } from '../../shaders/postprocessing/PostProcessingCompositeShader.js';
+import { createPostProcessingOutputShaderPayload } from '../../shaders/postprocessing/PostProcessingOutputShader.js';
+import { createPostProcessingGtaoBlendShaderPayload } from '../../shaders/postprocessing/PostProcessingGtaoBlendShader.js';
 import { SUN_BLOOM_LAYER, SUN_BLOOM_LAYER_ID } from '../sun/SunBloomLayers.js';
 import { sanitizeAntiAliasingSettings } from './AntiAliasingSettings.js';
 import { sanitizeAmbientOcclusionSettings } from './AmbientOcclusionSettings.js';
@@ -237,47 +241,36 @@ function sanitizeSunBloomRuntimeSettings(settings) {
 }
 
 function makeCompositePass({ globalBloomTexture, sunBloomTexture } = {}) {
-    const mat = new THREE.ShaderMaterial({
+    const payload = createPostProcessingCompositeShaderPayload({
         uniforms: {
-            baseTexture: { value: null },
-            uGlobalBloomTexture: { value: globalBloomTexture ?? null },
-            uSunBloomTexture: { value: sunBloomTexture ?? null },
-            uSunBrightnessOnly: { value: 1.0 }
-        },
-        vertexShader: `
-            varying vec2 vUv;
-            void main() {
-                vUv = uv;
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-            }
-        `,
-        fragmentShader: `
-            uniform sampler2D baseTexture;
-            uniform sampler2D uGlobalBloomTexture;
-            uniform sampler2D uSunBloomTexture;
-            uniform float uSunBrightnessOnly;
-            varying vec2 vUv;
-
-            float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
-
-            void main() {
-                vec4 base = texture2D(baseTexture, vUv);
-                vec3 bloom = texture2D(uGlobalBloomTexture, vUv).rgb;
-                vec3 sun = texture2D(uSunBloomTexture, vUv).rgb;
-                if (uSunBrightnessOnly > 0.5) {
-                    float y = luma(sun);
-                    sun = vec3(y);
-                }
-                vec3 outColor = base.rgb + bloom + sun;
-                gl_FragColor = vec4(outColor, base.a);
-            }
-        `,
+            baseTexture: null,
+            uGlobalBloomTexture: globalBloomTexture ?? null,
+            uSunBloomTexture: sunBloomTexture ?? null,
+            uSunBrightnessOnly: 1.0
+        }
+    });
+    const mat = new THREE.ShaderMaterial({
+        uniforms: THREE.UniformsUtils.clone(payload.uniforms),
+        vertexShader: payload.vertexSource,
+        fragmentShader: payload.fragmentSource,
         depthWrite: false,
         depthTest: false,
         toneMapped: false
     });
+    attachShaderMetadata(mat, payload, 'postprocessing-composite');
 
     return new ShaderPass(mat, 'baseTexture');
+}
+
+function makeOutputPass() {
+    const payload = createPostProcessingOutputShaderPayload();
+    const mat = new THREE.ShaderMaterial({
+        uniforms: THREE.UniformsUtils.clone(payload.uniforms),
+        vertexShader: payload.vertexSource,
+        fragmentShader: payload.fragmentSource
+    });
+    attachShaderMetadata(mat, payload, 'postprocessing-output');
+    return new ShaderPass(mat);
 }
 
 function createBlackTexture() {
@@ -299,68 +292,6 @@ function createWhiteTexture() {
     tex.wrapT = THREE.ClampToEdgeWrapping;
     return tex;
 }
-
-const OUTPUT_COLORSPACE_SHADER = Object.freeze({
-    uniforms: {
-        tDiffuse: { value: null },
-        uEnableToneMapping: { value: 1.0 },
-        uEnableOutputColorSpace: { value: 1.0 }
-    },
-    vertexShader: `
-        varying vec2 vUv;
-        void main() {
-            vUv = uv;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-    `,
-    fragmentShader: `
-        uniform sampler2D tDiffuse;
-        uniform float uEnableToneMapping;
-        uniform float uEnableOutputColorSpace;
-        varying vec2 vUv;
-
-        #include <common>
-
-        void main() {
-            gl_FragColor = texture2D(tDiffuse, vUv);
-            if (uEnableToneMapping > 0.5) {
-                #include <tonemapping_fragment>
-            }
-            if (uEnableOutputColorSpace > 0.5) {
-                #include <colorspace_fragment>
-            }
-        }
-    `
-});
-
-const GTAO_CACHE_BLEND_SHADER = Object.freeze({
-    uniforms: {
-        tDiffuse: { value: null },
-        uGtaoMap: { value: null },
-        uIntensity: { value: 0.35 }
-    },
-    vertexShader: `
-        varying vec2 vUv;
-        void main() {
-            vUv = uv;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-    `,
-    fragmentShader: `
-        uniform sampler2D tDiffuse;
-        uniform sampler2D uGtaoMap;
-        uniform float uIntensity;
-        varying vec2 vUv;
-
-        void main() {
-            vec4 base = texture2D(tDiffuse, vUv);
-            float ao = texture2D(uGtaoMap, vUv).r;
-            float k = clamp(uIntensity, 0.0, 2.0);
-            float factor = clamp(1.0 - k * (1.0 - ao), 0.0, 1.0);
-            gl_FragColor = vec4(base.rgb * factor, base.a);
-        }
-    `
-});
 
 export class PostProcessingPipeline {
     constructor({
@@ -486,7 +417,7 @@ export class PostProcessingPipeline {
         this.fxaaPass.enabled = false;
         if (this.fxaaPass?.material) this.fxaaPass.material.toneMapped = false;
 
-        this.outputPass = new ShaderPass(OUTPUT_COLORSPACE_SHADER);
+        this.outputPass = makeOutputPass();
         if (this.outputPass?.material) this.outputPass.material.toneMapped = true;
 
         this.composer.addPass(this.renderPass);
@@ -742,7 +673,19 @@ export class PostProcessingPipeline {
 
         let blendPass = this._gtaoCache?.blendPass ?? null;
         if (!blendPass) {
-            blendPass = new ShaderPass(GTAO_CACHE_BLEND_SHADER);
+            const blendPayload = createPostProcessingGtaoBlendShaderPayload({
+                uniforms: {
+                    tDiffuse: null,
+                    uGtaoMap: this._whiteTex,
+                    uIntensity: null
+                }
+            });
+            blendPass = new ShaderPass({
+                uniforms: THREE.UniformsUtils.clone(blendPayload.uniforms),
+                vertexShader: blendPayload.vertexSource,
+                fragmentShader: blendPayload.fragmentSource
+            });
+            attachShaderMetadata(blendPass.material, blendPayload, 'postprocessing-gtao-blend');
             blendPass.enabled = false;
             if (blendPass?.material) blendPass.material.toneMapped = false;
             if (blendPass?.material?.uniforms?.uGtaoMap) blendPass.material.uniforms.uGtaoMap.value = this._whiteTex;

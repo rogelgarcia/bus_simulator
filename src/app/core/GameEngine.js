@@ -143,12 +143,20 @@ export class GameEngine {
 
         // ✅ Backward-compatible context proxy
         // Existing code using engine.context.selectedBus will still work
+        const contextSimulation = this.simulation;
         this._contextProxy = {
-            get selectedBusId() { return this._sim.selectedBusId; },
-            set selectedBusId(v) { this._sim.selectedBusId = v; },
-            get selectedBus() { return this._sim.selectedBus; },
-            set selectedBus(v) { this._sim.selectedBus = v; },
-            _sim: this.simulation
+            get selectedBusId() {
+                return contextSimulation?.selectedBusId ?? null;
+            },
+            set selectedBusId(v) {
+                if (contextSimulation) contextSimulation.selectedBusId = v;
+            },
+            get selectedBus() {
+                return contextSimulation?.selectedBus ?? null;
+            },
+            set selectedBus(v) {
+                if (contextSimulation) contextSimulation.selectedBus = v;
+            }
         };
 
         this._stateMachine = null;

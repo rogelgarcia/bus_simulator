@@ -2,6 +2,8 @@
 // Gradient percent is based on sky-dome direction y: 0=horizon, 1=zenith.
 import * as THREE from 'three';
 import { ATMOSPHERE_DEFAULTS } from '../../visuals/atmosphere/AtmosphereSettings.js';
+import { attachShaderMetadata } from '../../shaders/core/ShaderLoader.js';
+import { createSkyDomeShaderPayload } from '../../shaders/materials/SkyDomeShader.js';
 
 let _hexAlreadyLinearProbe = null;
 
@@ -112,152 +114,48 @@ export function createGradientSkyDome({
     const cGround = srgbToLinearColor(sky.groundColor ?? ATMOSPHERE_DEFAULTS.sky.groundColor);
     const cHazeTint = srgbToLinearColor(haze.tintColor ?? ATMOSPHERE_DEFAULTS.haze.tintColor);
 
-    const mat = new THREE.ShaderMaterial({
+    const payload = createSkyDomeShaderPayload({
         uniforms: {
-            uHorizon: { value: cHorizon },
-            uZenith: { value: cZenith },
-            uGround: { value: cGround },
-            uSkyCurve: { value: Number.isFinite(sky.curve) ? sky.curve : ATMOSPHERE_DEFAULTS.sky.curve },
-            uSkyExposure: { value: Number.isFinite(sky.exposure) ? sky.exposure : ATMOSPHERE_DEFAULTS.sky.exposure },
-            uDitherStrength: { value: Number.isFinite(sky.ditherStrength) ? sky.ditherStrength : ATMOSPHERE_DEFAULTS.sky.ditherStrength },
-            uHazeEnabled: { value: haze.enabled === false ? 0.0 : 1.0 },
-            uHazeIntensity: { value: Number.isFinite(haze.intensity) ? haze.intensity : ATMOSPHERE_DEFAULTS.haze.intensity },
-            uHazeThickness: { value: Number.isFinite(haze.thickness) ? haze.thickness : ATMOSPHERE_DEFAULTS.haze.thickness },
-            uHazeCurve: { value: Number.isFinite(haze.curve) ? haze.curve : ATMOSPHERE_DEFAULTS.haze.curve },
-            uHazeTint: { value: cHazeTint },
-            uHazeTintStrength: { value: Number.isFinite(haze.tintStrength) ? haze.tintStrength : ATMOSPHERE_DEFAULTS.haze.tintStrength },
-            uGlareEnabled: { value: glare.enabled === false ? 0.0 : 1.0 },
-            uGlareIntensity: { value: Number.isFinite(glare.intensity) ? glare.intensity : ATMOSPHERE_DEFAULTS.glare.intensity },
-            uGlareSigma2: { value: degToSigma2(glare.sigmaDeg ?? ATMOSPHERE_DEFAULTS.glare.sigmaDeg) },
-            uGlarePower: { value: Number.isFinite(glare.power) ? glare.power : ATMOSPHERE_DEFAULTS.glare.power },
-            uDiscEnabled: { value: disc.enabled === false ? 0.0 : 1.0 },
-            uDiscIntensity: { value: Number.isFinite(disc.intensity) ? disc.intensity : ATMOSPHERE_DEFAULTS.disc.intensity },
-            uDiscSigma2: { value: degToSigma2(disc.sigmaDeg ?? ATMOSPHERE_DEFAULTS.disc.sigmaDeg) },
-            uDiscCoreIntensity: { value: Number.isFinite(disc.coreIntensity) ? disc.coreIntensity : ATMOSPHERE_DEFAULTS.disc.coreIntensity },
-            uDiscCoreSigma2: { value: degToSigma2(disc.coreSigmaDeg ?? ATMOSPHERE_DEFAULTS.disc.coreSigmaDeg) },
-            uSunDir: { value: sunDir.clone().normalize() },
-            uSunIntensity: { value: Number.isFinite(sunIntensity) ? sunIntensity : 1.0 },
-            uDebugMode: { value: getDebugModeId(dbg.mode) },
-            uShowSunRing: { value: dbg.showSunRing ? 1.0 : 0.0 },
-            uSunRingRadius: { value: (Number.isFinite(dbg.sunRingRadiusDeg) ? dbg.sunRingRadiusDeg : ATMOSPHERE_DEFAULTS.debug.sunRingRadiusDeg) * (Math.PI / 180) },
-            uSunRingThickness: { value: (Number.isFinite(dbg.sunRingThicknessDeg) ? dbg.sunRingThicknessDeg : ATMOSPHERE_DEFAULTS.debug.sunRingThicknessDeg) * (Math.PI / 180) }
-        },
-        vertexShader: `
-            varying vec3 vDir;
-            void main() {
-                vDir = normalize(position);
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-            }
-        `,
-        fragmentShader: `
-            uniform vec3 uHorizon;
-            uniform vec3 uZenith;
-            uniform vec3 uGround;
-            uniform float uSkyCurve;
-            uniform float uSkyExposure;
-            uniform float uDitherStrength;
-            uniform float uHazeEnabled;
-            uniform float uHazeIntensity;
-            uniform float uHazeThickness;
-            uniform float uHazeCurve;
-            uniform vec3 uHazeTint;
-            uniform float uHazeTintStrength;
-            uniform float uGlareEnabled;
-            uniform float uGlareIntensity;
-            uniform float uGlareSigma2;
-            uniform float uGlarePower;
-            uniform float uDiscEnabled;
-            uniform float uDiscIntensity;
-            uniform float uDiscSigma2;
-            uniform float uDiscCoreIntensity;
-            uniform float uDiscCoreSigma2;
-            uniform vec3 uSunDir;
-            uniform float uSunIntensity;
-            uniform float uDebugMode;
-            uniform float uShowSunRing;
-            uniform float uSunRingRadius;
-            uniform float uSunRingThickness;
-            varying vec3 vDir;
+            uHorizon: cHorizon,
+            uZenith: cZenith,
+            uGround: cGround,
+            uSkyCurve: Number.isFinite(sky.curve) ? sky.curve : ATMOSPHERE_DEFAULTS.sky.curve,
+            uSkyExposure: Number.isFinite(sky.exposure) ? sky.exposure : ATMOSPHERE_DEFAULTS.sky.exposure,
+            uDitherStrength: Number.isFinite(sky.ditherStrength) ? sky.ditherStrength : ATMOSPHERE_DEFAULTS.sky.ditherStrength,
+            uHazeEnabled: haze.enabled === false ? 0.0 : 1.0,
+            uHazeIntensity: Number.isFinite(haze.intensity) ? haze.intensity : ATMOSPHERE_DEFAULTS.haze.intensity,
+            uHazeThickness: Number.isFinite(haze.thickness) ? haze.thickness : ATMOSPHERE_DEFAULTS.haze.thickness,
+            uHazeCurve: Number.isFinite(haze.curve) ? haze.curve : ATMOSPHERE_DEFAULTS.haze.curve,
+            uHazeTint: cHazeTint,
+            uHazeTintStrength: Number.isFinite(haze.tintStrength) ? haze.tintStrength : ATMOSPHERE_DEFAULTS.haze.tintStrength,
+            uGlareEnabled: glare.enabled === false ? 0.0 : 1.0,
+            uGlareIntensity: Number.isFinite(glare.intensity) ? glare.intensity : ATMOSPHERE_DEFAULTS.glare.intensity,
+            uGlareSigma2: degToSigma2(glare.sigmaDeg ?? ATMOSPHERE_DEFAULTS.glare.sigmaDeg),
+            uGlarePower: Number.isFinite(glare.power) ? glare.power : ATMOSPHERE_DEFAULTS.glare.power,
+            uDiscEnabled: disc.enabled === false ? 0.0 : 1.0,
+            uDiscIntensity: Number.isFinite(disc.intensity) ? disc.intensity : ATMOSPHERE_DEFAULTS.disc.intensity,
+            uDiscSigma2: degToSigma2(disc.sigmaDeg ?? ATMOSPHERE_DEFAULTS.disc.sigmaDeg),
+            uDiscCoreIntensity: Number.isFinite(disc.coreIntensity) ? disc.coreIntensity : ATMOSPHERE_DEFAULTS.disc.coreIntensity,
+            uDiscCoreSigma2: degToSigma2(disc.coreSigmaDeg ?? ATMOSPHERE_DEFAULTS.disc.coreSigmaDeg),
+            uSunDir: sunDir.clone().normalize(),
+            uSunIntensity: Number.isFinite(sunIntensity) ? sunIntensity : 1.0,
+            uDebugMode: getDebugModeId(dbg.mode),
+            uShowSunRing: dbg.showSunRing ? 1.0 : 0.0,
+            uSunRingRadius: (Number.isFinite(dbg.sunRingRadiusDeg) ? dbg.sunRingRadiusDeg : ATMOSPHERE_DEFAULTS.debug.sunRingRadiusDeg) * (Math.PI / 180),
+            uSunRingThickness: (Number.isFinite(dbg.sunRingThicknessDeg) ? dbg.sunRingThicknessDeg : ATMOSPHERE_DEFAULTS.debug.sunRingThicknessDeg) * (Math.PI / 180)
+        }
+    });
 
-            float hash21(vec2 p) {
-                vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-                p3 += dot(p3, p3.yzx + 33.33);
-                return fract((p3.x + p3.y) * p3.z);
-            }
-
-            void main() {
-                float y = vDir.y;
-                float t = clamp(y, 0.0, 1.0);
-                t = pow(t, max(0.001, uSkyCurve));
-                vec3 base = mix(uHorizon, uZenith, t);
-                float groundMix = smoothstep(0.0, 0.18, -y);
-                base = mix(base, uGround, groundMix);
-
-                vec3 dir = normalize(vDir);
-                vec3 sunD = normalize(uSunDir);
-                float sunDot = clamp(dot(dir, sunD), 0.0, 1.0);
-                float theta2 = max(0.0, 2.0 * (1.0 - sunDot));
-
-                float haze = 0.0;
-                if (uHazeEnabled > 0.5) {
-                    float hz = exp(-pow(t / max(1e-4, uHazeThickness), max(0.01, uHazeCurve)));
-                    haze = hz * uHazeIntensity;
-                }
-                vec3 hazeCol = mix(vec3(1.0), uHazeTint, clamp(uHazeTintStrength, 0.0, 1.0));
-
-                float glare = 0.0;
-                if (uGlareEnabled > 0.5) {
-                    float sigma2 = max(1e-8, uGlareSigma2);
-                    float g = exp(-theta2 / (2.0 * sigma2));
-                    g = pow(g, max(0.01, uGlarePower));
-                    glare = g * uGlareIntensity * uSunIntensity;
-                }
-
-                float disc = 0.0;
-                if (uDiscEnabled > 0.5) {
-                    float sigma2 = max(1e-8, uDiscSigma2);
-                    float soft = exp(-theta2 / (2.0 * sigma2)) * uDiscIntensity;
-                    float coreSigma2 = max(1e-8, uDiscCoreSigma2);
-                    float core = exp(-theta2 / (2.0 * coreSigma2)) * uDiscCoreIntensity;
-                    disc = (soft + core) * uSunIntensity;
-                }
-
-                vec3 col = base;
-
-                float mode = uDebugMode;
-                if (mode > 0.5 && mode < 1.5) {
-                    col = base;
-                } else if (mode > 1.5 && mode < 2.5) {
-                    col = vec3(glare);
-                } else if (mode > 2.5) {
-                    col = vec3(disc);
-                } else {
-                    col = mix(col, hazeCol, clamp(haze, 0.0, 1.0));
-                    col *= (1.0 + glare);
-                    col += vec3(1.0) * disc;
-                }
-
-                col *= uSkyExposure;
-
-                float n = hash21(gl_FragCoord.xy);
-                col += vec3((n - 0.5) * (uDitherStrength / 512.0));
-
-                if (uShowSunRing > 0.5) {
-                    float theta = sqrt(max(theta2, 0.0));
-                    float r = max(1e-6, uSunRingRadius);
-                    float w = max(1e-6, uSunRingThickness);
-                    float ring = 1.0 - smoothstep(0.0, w, abs(theta - r));
-                    col = mix(col, vec3(1.0, 0.0, 1.0), ring);
-                }
-
-                gl_FragColor = vec4(col, 1.0);
-            }
-        `,
+    const mat = new THREE.ShaderMaterial({
+        uniforms: THREE.UniformsUtils.clone(payload.uniforms),
+        vertexShader: payload.vertexSource,
+        fragmentShader: payload.fragmentSource,
         side: THREE.BackSide,
         depthWrite: false,
         depthTest: true,
         toneMapped: true
     });
+    attachShaderMetadata(mat, payload, 'sky-dome');
 
     const mesh = new THREE.Mesh(geom, mat);
     mesh.name = 'CitySkyDome';

@@ -11,6 +11,8 @@ import { PostProcessingPipeline } from '../../visuals/postprocessing/PostProcess
 import { ANTIALIASING_DEFAULTS, getResolvedAntiAliasingSettings, sanitizeAntiAliasingSettings } from '../../visuals/postprocessing/AntiAliasingSettings.js';
 import { getResolvedLightingSettings } from '../../lighting/LightingSettings.js';
 import { getResolvedAtmosphereSettings } from '../../visuals/atmosphere/AtmosphereSettings.js';
+import { attachShaderMetadata } from '../../shaders/core/ShaderLoader.js';
+import { createMarkingsAAblitShaderPayload, createMarkingsAAMarkingsShaderPayload, createMarkingsAACompositeShaderPayload, createMarkingsAADepthShaderPayload, createMarkingsAAOccluderShaderPayload } from '../../shaders/diagnostics/MarkingsAADebuggerShader.js';
 import { getOrCreateGpuFrameTimer } from '../../engine3d/perf/GpuFrameTimer.js';
 import { MarkingsAADebuggerUI } from './MarkingsAADebuggerUI.js';
 import { MARKINGS_AA_DEBUGGER_DEFAULTS, sanitizeMarkingsAADebuggerSettings } from './MarkingsAADebuggerSettings.js';
@@ -161,156 +163,28 @@ function makeFullscreenQuad() {
     return { scene, camera, mesh, geo };
 }
 
-const BLIT_SHADER = Object.freeze({
-    uniforms: {
-        tDiffuse: { value: null }
-    },
-    vertexShader: `
-        varying vec2 vUv;
-        void main() {
-            vUv = uv;
-            gl_Position = vec4(position.xy, 0.0, 1.0);
-        }
-    `,
-    fragmentShader: `
-        uniform sampler2D tDiffuse;
-        varying vec2 vUv;
-        void main() {
-            gl_FragColor = texture2D(tDiffuse, vUv);
-            #include <colorspace_fragment>
-        }
-    `
-});
-
-const MARKINGS_VIZ_SHADER = Object.freeze({
-    uniforms: {
-        tMarkings: { value: null },
-        uBgColor: { value: new THREE.Color('#2A2F36') }
-    },
-    vertexShader: `
-        varying vec2 vUv;
-        void main() {
-            vUv = uv;
-            gl_Position = vec4(position.xy, 0.0, 1.0);
-        }
-    `,
-    fragmentShader: `
-        uniform sampler2D tMarkings;
-        uniform vec3 uBgColor;
-        varying vec2 vUv;
-        void main() {
-            vec4 m = texture2D(tMarkings, vUv);
-            vec3 outColor = mix(uBgColor, m.rgb, m.a);
-            gl_FragColor = vec4(outColor, 1.0);
-            #include <colorspace_fragment>
-        }
-    `
-});
-
-const COMPOSITE_SHADER = Object.freeze({
-    uniforms: {
-        tScene: { value: null },
-        tMarkings: { value: null }
-    },
-    vertexShader: `
-        varying vec2 vUv;
-        void main() {
-            vUv = uv;
-            gl_Position = vec4(position.xy, 0.0, 1.0);
-        }
-    `,
-    fragmentShader: `
-        uniform sampler2D tScene;
-        uniform sampler2D tMarkings;
-        varying vec2 vUv;
-        void main() {
-            vec4 s = texture2D(tScene, vUv);
-            vec4 m = texture2D(tMarkings, vUv);
-            vec3 outColor = mix(s.rgb, m.rgb, m.a);
-            gl_FragColor = vec4(outColor, 1.0);
-            #include <colorspace_fragment>
-        }
-    `
-});
-
-const DEPTH_VIZ_SHADER = Object.freeze({
-    uniforms: {
-        tDepth: { value: null },
-        cameraNear: { value: 0.1 },
-        cameraFar: { value: 500.0 },
-        uRangeMeters: { value: 200.0 },
-        uPower: { value: 1.6 }
-    },
-    vertexShader: `
-        varying vec2 vUv;
-        void main() {
-            vUv = uv;
-            gl_Position = vec4(position.xy, 0.0, 1.0);
-        }
-    `,
-    fragmentShader: `
-        #include <packing>
-        uniform sampler2D tDepth;
-        uniform float cameraNear;
-        uniform float cameraFar;
-        uniform float uRangeMeters;
-        uniform float uPower;
-        varying vec2 vUv;
-        void main() {
-            float fragCoordZ = texture2D(tDepth, vUv).x;
-            float viewZ = perspectiveDepthToViewZ(fragCoordZ, cameraNear, cameraFar);
-            float dist = max(0.0, -viewZ - cameraNear);
-            float t = dist / max(uRangeMeters, 0.001);
-            t = clamp(t, 0.0, 1.0);
-            float c = pow(1.0 - t, max(uPower, 0.001));
-            gl_FragColor = vec4(vec3(c), 1.0);
-            #include <colorspace_fragment>
-        }
-    `
-});
-
 function createMarkingsOcclusionMaterial({ colorHex = 0xffffff } = {}) {
-    const mat = new THREE.ShaderMaterial({
+    const payload = createMarkingsAAOccluderShaderPayload({
         uniforms: {
-            uColor: { value: new THREE.Color(colorHex) },
-            uDepthTex: { value: null },
-            uInvSize: { value: new THREE.Vector2(1, 1) },
-            cameraNear: { value: 0.1 },
-            cameraFar: { value: 500.0 },
-            uBiasMeters: { value: 0.02 }
-        },
-        vertexShader: `
-            void main() {
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-            }
-        `,
-        fragmentShader: `
-            uniform vec3 uColor;
-            uniform sampler2D uDepthTex;
-            uniform vec2 uInvSize;
-            uniform float cameraNear;
-            uniform float cameraFar;
-            uniform float uBiasMeters;
-            #include <packing>
-            void main() {
-                vec2 uv = gl_FragCoord.xy * uInvSize;
-                float sceneDepth = texture2D(uDepthTex, uv).x;
-                float fragDepth = gl_FragCoord.z;
+            uColor: new THREE.Color(colorHex),
+            uDepthTex: null,
+            uInvSize: [1, 1],
+            cameraNear: 0.1,
+            cameraFar: 500.0,
+            uBiasMeters: 0.02
+        }
+    });
 
-                float sceneViewZ = perspectiveDepthToViewZ(sceneDepth, cameraNear, cameraFar);
-                float fragViewZ = perspectiveDepthToViewZ(fragDepth, cameraNear, cameraFar);
-
-                float sceneDist = -sceneViewZ;
-                float fragDist = -fragViewZ;
-                if (fragDist > sceneDist + uBiasMeters) discard;
-                gl_FragColor = vec4(uColor, 1.0);
-            }
-        `,
+    const mat = new THREE.ShaderMaterial({
+        uniforms: THREE.UniformsUtils.clone(payload.uniforms),
+        vertexShader: payload.vertexSource,
+        fragmentShader: payload.fragmentSource,
         depthWrite: false,
         depthTest: false,
         transparent: true,
         toneMapped: false
     });
+    attachShaderMetadata(mat, payload, 'markings-aa-occluder');
     return mat;
 }
 
@@ -728,23 +602,24 @@ export class MarkingsAADebuggerView {
         const screen = makeFullscreenQuad();
         this._screen = screen;
 
-        const mkMat = (shader) => {
+        const mkMat = (payload, label) => {
             const mat = new THREE.ShaderMaterial({
-                uniforms: THREE.UniformsUtils.clone(shader.uniforms),
-                vertexShader: shader.vertexShader,
-                fragmentShader: shader.fragmentShader,
+                uniforms: THREE.UniformsUtils.clone(payload.uniforms),
+                vertexShader: payload.vertexSource,
+                fragmentShader: payload.fragmentSource,
                 depthTest: false,
                 depthWrite: false,
                 toneMapped: false,
                 transparent: false
             });
+            attachShaderMetadata(mat, payload, label);
             return mat;
         };
 
-        this._screenMaterials.blit = mkMat(BLIT_SHADER);
-        this._screenMaterials.depth = mkMat(DEPTH_VIZ_SHADER);
-        this._screenMaterials.markings = mkMat(MARKINGS_VIZ_SHADER);
-        this._screenMaterials.composite = mkMat(COMPOSITE_SHADER);
+        this._screenMaterials.blit = mkMat(createMarkingsAAblitShaderPayload(), 'markings-aa-blit');
+        this._screenMaterials.depth = mkMat(createMarkingsAADepthShaderPayload(), 'markings-aa-depth');
+        this._screenMaterials.markings = mkMat(createMarkingsAAMarkingsShaderPayload({ uBgColor: [0.165, 0.184, 0.211 ] }), 'markings-aa-markings');
+        this._screenMaterials.composite = mkMat(createMarkingsAACompositeShaderPayload(), 'markings-aa-composite');
     }
 
     _initMarkingsScene() {

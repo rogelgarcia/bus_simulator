@@ -8,6 +8,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { attachShaderMetadata, createPostProcessingOutputShaderPayload } from '../../../shaders/core/ShaderLoader.js';
 
 const AO_DEFAULTS = Object.freeze({
     mode: 'off',
@@ -27,39 +28,6 @@ const AO_DEFAULTS = Object.freeze({
         denoise: true,
         debugView: false
     })
-});
-
-const OUTPUT_COLORSPACE_SHADER = Object.freeze({
-    uniforms: {
-        tDiffuse: { value: null },
-        uEnableToneMapping: { value: 1.0 },
-        uEnableOutputColorSpace: { value: 1.0 }
-    },
-    vertexShader: `
-        varying vec2 vUv;
-        void main() {
-            vUv = uv;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-    `,
-    fragmentShader: `
-        uniform sampler2D tDiffuse;
-        uniform float uEnableToneMapping;
-        uniform float uEnableOutputColorSpace;
-        varying vec2 vUv;
-
-        #include <common>
-
-        void main() {
-            gl_FragColor = texture2D(tDiffuse, vUv);
-            if (uEnableToneMapping > 0.5) {
-                #include <tonemapping_fragment>
-            }
-            if (uEnableOutputColorSpace > 0.5) {
-                #include <colorspace_fragment>
-            }
-        }
-    `
 });
 
 function clamp(value, min, max, fallback) {
@@ -418,7 +386,15 @@ export class AODebugPipeline {
         setComposerRenderTargetColorSpace(this.composer, linearColorSpace);
 
         this.renderPass = new RenderPass(scene, camera);
-        this.outputPass = new ShaderPass(OUTPUT_COLORSPACE_SHADER);
+        const outputPayload = createPostProcessingOutputShaderPayload();
+        const outputMat = new THREE.ShaderMaterial({
+            uniforms: THREE.UniformsUtils.clone(outputPayload.uniforms),
+            vertexShader: outputPayload.vertexSource,
+            fragmentShader: outputPayload.fragmentSource
+        });
+        attachShaderMetadata(outputMat, outputPayload, 'ao-output');
+        outputMat.toneMapped = true;
+        this.outputPass = new ShaderPass(outputMat);
         if (this.outputPass?.material) this.outputPass.material.toneMapped = true;
 
         this.composer.addPass(this.renderPass);

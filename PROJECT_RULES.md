@@ -10,6 +10,11 @@
   - Directory structure and layering (`src/app/` vs `src/graphics/`)
   - Code style, comments policy, GUI/CSS rules, naming conventions
   - Architecture rules (validation boundaries, no junk-drawer utils, no silent fallbacks, etc.)
+- All shader programs must be stored in dedicated shader source files (`.glsl`, `.vert.glsl`, `.frag.glsl`) under `src/graphics/shaders/` and loaded via shader loader modules.
+- Shader source layout and naming conventions are defined in `specs/shaders/shader_layout.md`.
+- Inline shader source strings are forbidden in application/source files (`.js`/`.mjs`), except for:
+  - Tests/mocks when intentionally validating loader behavior
+  - Non-shader helper strings such as preprocessor directives built from loader configuration
 
 ## Specifications
 

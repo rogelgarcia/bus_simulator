@@ -3,7 +3,8 @@
 // @ts-check
 
 import * as THREE from 'three';
-
+import { attachShaderMetadata, createShaderPayload } from '../../shaders/core/ShaderLoader.js';
+import { createBusContactShadowShaderPayload } from '../../shaders/vehicles/BusContactShadowShader.js';
 function clamp(value, min, max, fallback) {
     const num = Number(value);
     if (!Number.isFinite(num)) return fallback;
@@ -60,49 +61,35 @@ function computeObjectBoundsLocal(root) {
     return out;
 }
 
-const CONTACT_SHADOW_BLOB_SHADER = Object.freeze({
-    uniforms: {
-        uIntensity: { value: 0.4 },
-        uSoftness: { value: 0.75 }
-    },
-    vertexShader: `
-        varying vec2 vUv;
-        void main() {
-            vUv = uv;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-    `,
-    fragmentShader: `
-        uniform float uIntensity;
-        uniform float uSoftness;
-        varying vec2 vUv;
-
-        void main() {
-            vec2 p = (vUv - vec2(0.5)) * 2.0;
-            float r = length(p);
-            float softness = clamp(uSoftness, 0.02, 1.0);
-            float inner = max(0.0, 1.0 - softness);
-            float a = 1.0 - smoothstep(inner, 1.0, r);
-            float alpha = clamp(uIntensity, 0.0, 2.0) * a;
-            if (alpha <= 0.0001) discard;
-            gl_FragColor = vec4(0.0, 0.0, 0.0, alpha);
-        }
-    `
+const DEFAULT_BLOB_PARAMS = Object.freeze({
+    intensity: 0.4,
+    softness: 0.75
 });
 
 function createBlobMaterial({ intensity, softness } = {}) {
+    const payload = createBusContactShadowShaderPayload({
+        uniforms: {
+            uIntensity: intensity,
+            uSoftness: softness
+        }
+    });
     const mat = new THREE.ShaderMaterial({
-        uniforms: THREE.UniformsUtils.clone(CONTACT_SHADOW_BLOB_SHADER.uniforms),
-        vertexShader: CONTACT_SHADOW_BLOB_SHADER.vertexShader,
-        fragmentShader: CONTACT_SHADOW_BLOB_SHADER.fragmentShader,
+        uniforms: THREE.UniformsUtils.clone(payload.uniforms),
+        vertexShader: payload.vertexSource,
+        fragmentShader: payload.fragmentSource,
         transparent: true,
         depthWrite: false,
         depthTest: true,
         toneMapped: false
     });
+    attachShaderMetadata(mat, payload, 'bus-contact-shadow');
 
     if (mat.uniforms?.uIntensity) mat.uniforms.uIntensity.value = clamp(intensity, 0, 2, 0.4);
-    if (mat.uniforms?.uSoftness) mat.uniforms.uSoftness.value = clamp(softness, 0.02, 1, 0.75);
+    if (mat.uniforms?.uSoftness) mat.uniforms.uSoftness.value = clamp(softness, 0.02, 1, DEFAULT_BLOB_PARAMS.softness);
+    if (Number.isFinite(mat.uniforms?.uIntensity?.value)) {
+        const clamped = clamp(intensity, 0, 2, DEFAULT_BLOB_PARAMS.intensity);
+        mat.uniforms.uIntensity.value = clamped;
+    }
     return mat;
 }
 
