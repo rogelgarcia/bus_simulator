@@ -23,6 +23,13 @@ import { createValueNoise2DSampler, mixU32, sampleFbm2D } from '../../../../app/
 import { TerrainDebuggerUI } from './TerrainDebuggerUI.js';
 import { GrassBladeInspectorPopup } from './GrassBladeInspectorPopup.js';
 import { GrassLodInspectorPopup } from './GrassLodInspectorPopup.js';
+import { DisposerRegistry } from './controllers/DisposerRegistry.js';
+import { TerrainDebuggerSceneController } from './controllers/TerrainDebuggerSceneController.js';
+import { TerrainDebuggerBiomeTilingController } from './controllers/TerrainDebuggerBiomeTilingController.js';
+import { TerrainDebuggerMaterialController } from './controllers/TerrainDebuggerMaterialController.js';
+import { TerrainDebuggerTerrainEngineAdapter } from './controllers/TerrainDebuggerTerrainEngineAdapter.js';
+import { TERRAIN_DEBUGGER_PARITY_INVARIANTS, assertTerrainDebuggerParityInvariants } from './invariants/TerrainDebuggerInvariants.js';
+import { TerrainDebuggerUiActionType, isTerrainDebuggerUiAction } from './contracts/TerrainDebuggerUiActionContract.js';
 
 const EPS = 1e-6;
 const CAMERA_PRESET_BEHIND_GAMEPLAY_DISTANCE = 13.5;
@@ -2477,7 +2484,7 @@ export class TerrainDebuggerView {
         };
         this._outputPanelLastMs = 0;
 
-        this._onResize = () => this._resize();
+        this._onResize = () => this._sceneController?.resizeViewport?.();
         this._onKeyDown = (e) => this._handleKey(e, true);
         this._onKeyUp = (e) => this._handleKey(e, false);
         this._onContextMenu = (e) => {
@@ -2580,6 +2587,67 @@ export class TerrainDebuggerView {
         const slopeEnd = clamp(slope?.endDeg, -89.9, 89.9, 3.0);
         const endStartAfterRoadTiles = Math.max(0, Math.round(Number(slope?.endStartAfterRoadTiles) || 0));
         this._terrainSlopeKey = `${slopeLeft.toFixed(3)}|${slopeRight.toFixed(3)}|${slopeEnd.toFixed(3)}|${endStartAfterRoadTiles}`;
+
+        this._parityInvariants = TERRAIN_DEBUGGER_PARITY_INVARIANTS;
+        this._lifecycleDisposer = new DisposerRegistry({ label: 'TerrainDebuggerView.lifecycle' });
+        this._sceneController = new TerrainDebuggerSceneController({
+            view: this,
+            disposerRegistry: this._lifecycleDisposer
+        });
+        this._biomeTilingController = new TerrainDebuggerBiomeTilingController({ view: this });
+        this._materialController = new TerrainDebuggerMaterialController({ view: this });
+        this._terrainEngineAdapter = new TerrainDebuggerTerrainEngineAdapter({
+            view: this,
+            createTerrainEngineFactory: createTerrainEngine
+        });
+        this._uiActionHandlers = this._buildUiActionHandlers();
+        assertTerrainDebuggerParityInvariants(this);
+    }
+
+    _buildUiActionHandlers() {
+        return Object.freeze({
+            [TerrainDebuggerUiActionType.STATE_CHANGED]: (payload) => {
+                this._applyUiState(payload?.state);
+            },
+            [TerrainDebuggerUiActionType.RESET_CAMERA]: () => {
+                this.controls?.reset?.();
+            },
+            [TerrainDebuggerUiActionType.CAMERA_PRESET]: (payload) => {
+                this._applyCameraPreset(String(payload?.presetId ?? ''));
+            },
+            [TerrainDebuggerUiActionType.FOCUS_BIOME_TRANSITION]: () => {
+                this._biomeTilingController.focusBiomeTransitionCamera();
+            },
+            [TerrainDebuggerUiActionType.FOCUS_BIOME_TILING]: (payload) => {
+                this._biomeTilingController.focusBiomeTilingCamera(String(payload?.mode ?? 'overview'));
+            },
+            [TerrainDebuggerUiActionType.TOGGLE_FLYOVER]: () => {
+                this._biomeTilingController.toggleFlyover();
+            },
+            [TerrainDebuggerUiActionType.FLYOVER_LOOP_CHANGED]: (payload) => {
+                this._biomeTilingController.setFlyoverLoop(payload?.enabled === true);
+            },
+            [TerrainDebuggerUiActionType.INSPECT_GRASS]: () => {
+                this._openGrassInspector();
+            },
+            [TerrainDebuggerUiActionType.INSPECT_GRASS_LOD]: (payload) => {
+                this._openGrassLodInspector(String(payload?.tier ?? ''));
+            }
+        });
+    }
+
+    _dispatchUiAction(action) {
+        if (!isTerrainDebuggerUiAction(action)) return;
+        const handler = this._uiActionHandlers?.[action.type];
+        if (typeof handler !== 'function') return;
+        try {
+            handler(action.payload ?? {});
+        } catch (error) {
+            console.error('[TerrainDebugger] UI action dispatch failed', {
+                actionType: action.type,
+                error
+            });
+        }
     }
 
     _updateGrassRoadBounds() {
@@ -2716,6 +2784,8 @@ export class TerrainDebuggerView {
     async start() {
         if (!this.canvas) throw new Error('[TerrainDebugger] Missing canvas');
         if (this.renderer) return;
+        this._lifecycleDisposer.reset();
+        this._sceneController.setDisposerRegistry(this._lifecycleDisposer);
 
         if (THREE.ColorManagement) THREE.ColorManagement.enabled = true;
 
@@ -2793,23 +2863,11 @@ export class TerrainDebuggerView {
         };
         const ui = new TerrainDebuggerUI({
             initialState: initialUiState,
-            onChange: (state) => this._applyUiState(state),
-            onResetCamera: () => this.controls?.reset?.(),
-            onCameraPreset: (id) => this._applyCameraPreset(id),
-            onFocusBiomeTransition: () => this._focusBiomeTransitionCamera(),
-            onFocusBiomeTiling: (mode) => this._focusBiomeTilingCamera(mode),
-            onToggleFlyover: () => this._toggleFlyover(),
-            onFlyoverLoopChange: (enabled) => this._setFlyoverLoop(enabled),
-            onInspectGrass: () => this._openGrassInspector(),
-            onInspectGrassLod: (tier) => this._openGrassLodInspector(tier)
+            dispatchAction: (action) => this._dispatchUiAction(action)
         });
         ui.setTerrainMeta?.({ tileSize: this._terrainSpec.tileSize, baseDepthTiles: this._terrainSpec.depthTiles });
         this._ui = ui;
         ui.mount();
-
-        this.canvas.addEventListener('contextmenu', this._onContextMenu, { passive: false, capture: true });
-        this.canvas.addEventListener('pointermove', this._onPointerMove, { passive: true, capture: true });
-        this.canvas.addEventListener('pointerleave', this._onPointerLeave, { passive: true, capture: true });
 
         this.controls = new FirstPersonCameraController(this.camera, this.canvas, {
             uiRoot: ui.root,
@@ -2824,64 +2882,26 @@ export class TerrainDebuggerView {
         });
         this.controls.setHomeFromCurrent?.();
 
-        this._buildScene();
+        this._sceneController.buildScene();
         this._updateGrassRoadBounds();
-        if (!this._terrainEngine && this._terrainGrid) {
-            const bounds = this._getTerrainBoundsXZ();
-            if (bounds) {
-                this._terrainEngine = createTerrainEngine({
-                    seed: 'terrain-debugger',
-                    bounds,
-                    patch: { sizeMeters: 72, originX: 0, originZ: 0, layout: 'voronoi', voronoiJitter: 0.85, warpScale: 0.02, warpAmplitudeMeters: 36 },
-                    biomes: {
-                        mode: 'patch_grid',
-                        defaultBiomeId: 'land',
-                        weights: { stone: 0.25, grass: 0.35, land: 0.40 }
-                    },
-                    humidity: {
-                        mode: 'source_map',
-                        noiseScale: 0.01,
-                        octaves: 4,
-                        gain: 0.5,
-                        lacunarity: 2.0,
-                        bias: 0.0,
-                        amplitude: 1.0
-                    },
-                    transition: {
-                        cameraBlendRadiusMeters: 140,
-                        cameraBlendFeatherMeters: 24,
-                        boundaryBandMeters: 10
-                    }
-                });
-                this._terrainEngineMaskDirty = true;
-            }
-        }
-        if (!this._grassEngine && this.scene && this._terrain && this._terrainGrid) {
-            this._grassEngine = new GrassEngine({
-                scene: this.scene,
-                terrainMesh: this._terrain,
-                terrainGrid: this._terrainGrid,
-                getExclusionRects: () => this._getGrassExclusionRects()
-            });
-        }
+        this._terrainEngineAdapter.ensureEngineCreated();
+        this._sceneController.ensureGrassEngine(GrassEngine);
         const initialState = ui.getState();
         this._applyUiState(initialState);
         this._applyInitialBiomeTilingUrlCameraOverride();
         ui.setFlyoverActive?.(false);
         this._syncCameraStatus({ nowMs: performance.now(), force: true });
-        this._syncBiomeTilingHref({ force: true });
-        void this._applyIblState(initialState?.ibl, { force: true });
+        this._biomeTilingController.syncHref({ force: true });
+        void this._materialController.applyIblState(initialState?.ibl, { force: true });
 
         primePbrAssetsAvailability().then(() => {
             const state = this._ui?.getState?.();
             if (state) this._applyUiState(state);
         }).catch(() => {});
 
-        window.addEventListener('resize', this._onResize, { passive: true });
-        window.addEventListener('keydown', this._onKeyDown, { passive: false });
-        window.addEventListener('keyup', this._onKeyUp, { passive: false });
+        this._sceneController.registerDomListeners();
 
-        this._resize();
+        this._sceneController.resizeViewport();
         this._lastT = performance.now();
         this._raf = requestAnimationFrame((t) => this._tick(t));
     }
@@ -2962,8 +2982,8 @@ export class TerrainDebuggerView {
 
         this._biomeTilingPerformanceKey = '';
         this._terrainBiomePbrKey = '';
-        this._applyBiomeTilingPerformanceSettings({ force: true });
-        this._syncTerrainBiomePbrMapsOnStandardMaterial();
+        this._materialController.applyBiomeTilingPerformanceSettings({ force: true });
+        this._materialController.syncTerrainBiomePbrMapsOnStandardMaterial();
         this._syncBiomeTilingDiagnosticsUi();
 
         const sourceText = String(fragmentSource || '');
@@ -2996,14 +3016,7 @@ export class TerrainDebuggerView {
         this._removeBiomeTilingAdaptiveRingHelper();
         this._removeBiomeTilingTileLodDebugHelper({ disposeLabelCache: true });
         this._removeBiomeTilingDisplacementOverlay({ disposeMaterial: true });
-
-        this.canvas?.removeEventListener?.('contextmenu', this._onContextMenu, { capture: true });
-        this.canvas?.removeEventListener?.('pointermove', this._onPointerMove, { capture: true });
-        this.canvas?.removeEventListener?.('pointerleave', this._onPointerLeave, { capture: true });
-
-        window.removeEventListener('resize', this._onResize);
-        window.removeEventListener('keydown', this._onKeyDown);
-        window.removeEventListener('keyup', this._onKeyUp);
+        this._sceneController.disposeDomAndLifecycleResources();
 
         this.controls?.dispose?.();
         this.controls = null;
@@ -3020,16 +3033,7 @@ export class TerrainDebuggerView {
         this._grassEngine?.dispose?.();
         this._grassEngine = null;
 
-        this._terrainEngine?.dispose?.();
-        this._terrainEngine = null;
-        this._terrainEngineMaskTex?.dispose?.();
-        this._terrainEngineMaskTex = null;
-        this._terrainEngineMaskKey = '';
-        this._terrainEngineMaskDirty = true;
-        this._terrainEngineMaskViewKey = '';
-        this._terrainEngineLastExport = null;
-        this._terrainEngineCompareExport = null;
-        this._terrainEngineCompareKey = '';
+        this._terrainEngineAdapter.dispose();
         this._terrainHumiditySourceMap = null;
         this._terrainHumiditySourceMapKey = '';
         this._terrainBiomeSourceMap = null;
@@ -6488,7 +6492,7 @@ export class TerrainDebuggerView {
         if (controls) controls.enabled = !!anim.restoreControlsEnabled;
         this._activeCameraPresetId = 'custom';
         this._syncCameraStatus({ nowMs: Number(nowMs) || performance.now(), force: true });
-        this._syncBiomeTilingHref({ force: true });
+        this._biomeTilingController.syncHref({ force: true });
         this._biomeTilingCalibrationRigAnim = null;
     }
 
@@ -7312,7 +7316,7 @@ export class TerrainDebuggerView {
             pointerDistance: sample?.hasHit ? sample?.distance : null
         };
         ui.setOutputInfo(payload);
-        this._syncBiomeTilingHref({ force: false });
+        this._biomeTilingController.syncHref({ force: false });
     }
 
     _getTerrainRaycastSurface() {
@@ -7979,7 +7983,7 @@ export class TerrainDebuggerView {
         this._biomeTilingFocusMode = 'overview';
         if (this._flyover) this._flyover.loop = false;
         this._startFlyover({ path });
-        this._syncBiomeTilingHref({ force: true });
+        this._biomeTilingController.syncHref({ force: true });
     }
 
     _startBiomeTilingFlyoverDebug() {
@@ -7993,7 +7997,7 @@ export class TerrainDebuggerView {
         this._biomeTilingFocusMode = 'overview';
         if (this._flyover) this._flyover.loop = false;
         this._startFlyover({ path });
-        this._syncBiomeTilingHref({ force: true });
+        this._biomeTilingController.syncHref({ force: true });
     }
 
     _buildFlyoverPath({ startPosition, startTarget } = {}) {
@@ -8286,41 +8290,14 @@ export class TerrainDebuggerView {
 
         const dt = Math.min((t - this._lastT) / 1000, 0.05);
         this._lastT = t;
-
-        if (this._flyover?.active) {
-            this._updateFlyover(t);
-        } else {
-            this._updateCameraFromKeys(dt);
-        }
-        this.controls?.update?.(dt);
-        this._syncBiomeTilingFocusUiState({ force: false });
-        this._updateBiomeTilingCalibrationRigAnimation(t);
-        this._updateBiomeTilingSunOrbit(t);
-        if (this._biomeTilingAxisHelper) {
-            this._biomeTilingAxisHelper.visible = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING && !this._flyover?.active;
-        }
-        if (this._biomeTilingRingHelper) {
-            this._biomeTilingRingHelper.visible = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING && !this._flyover?.active;
-        }
-        if (this._biomeTilingTileLodHelper) {
-            this._biomeTilingTileLodHelper.visible = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING && !this._flyover?.active;
-        }
-        this._maybeFollowBiomeTilingDisplacementOverlay({ nowMs: t });
-        this._maybeAutoRebuildBiomeTilingDisplacementOverlay({ nowMs: t });
-        this._updateBiomeTilingLodMonitor({ nowMs: t });
-        if (this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING) {
-            if (t - (Number(this._biomeTilingDiagnosticsLastSyncMs) || 0) >= 120) {
-                this._biomeTilingDiagnosticsLastSyncMs = t;
-                this._syncBiomeTilingDiagnosticsUi();
-            }
-        }
+        const biomeTilingViewActive = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TILING;
+        this._biomeTilingController.stepFrame({
+            nowMs: t,
+            dt,
+            biomeTilingViewActive
+        });
         this._syncOutputPanel({ nowMs: t });
-
-        if (this._terrainEngine && camera?.position) {
-            this._terrainEngine.setViewOrigin({ x: camera.position.x, z: camera.position.z });
-            this._updateTerrainEngineMasks({ nowMs: t });
-            this._updateTerrainHoverSample({ nowMs: t });
-        }
+        this._terrainEngineAdapter.updatePerFrame({ nowMs: t, camera });
 
         this._grassEngine?.update?.({ camera });
 
@@ -8581,7 +8558,7 @@ export class TerrainDebuggerView {
         this._resetBiomeTilingLodMonitor();
         this._activeCameraPresetId = 'custom';
         this._syncCameraStatus({ nowMs: performance.now(), force: true });
-        this._syncBiomeTilingHref({ force: true });
+        this._biomeTilingController.syncHref({ force: true });
     }
 
     _getTerrainBoundsXZ() {
@@ -10910,7 +10887,7 @@ export class TerrainDebuggerView {
         mat.userData.terrainEngineBounds = this._terrainEngineBoundsVec4;
         syncTerrainBiomeBlendUniformsOnMaterial(mat);
         this._syncBiomeTilingDisplacementOverlayMaterialFromTerrain();
-        this._syncTerrainBiomePbrMapsOnStandardMaterial();
+        this._materialController.syncTerrainBiomePbrMapsOnStandardMaterial();
 
         this._terrainEngineLastExport = res;
         if (debugMode === 'pair_compare' && this._biomeTransitionState?.compareEnabled) {
@@ -11178,7 +11155,7 @@ export class TerrainDebuggerView {
             this._terrainBiomeSourceMapKey = '';
         }
         engine.setSourceMaps(sourceMaps);
-        this._syncTerrainBiomePbrMapsOnStandardMaterial();
+        this._materialController.syncTerrainBiomePbrMapsOnStandardMaterial();
         this._terrainEngineMaskDirty = true;
     }
 
@@ -11649,7 +11626,7 @@ export class TerrainDebuggerView {
         } else {
             this._biomeTilingState = nextBiomeTilingState;
         }
-        this._applyBiomeTilingPerformanceSettings({ force: false });
+        this._materialController.applyBiomeTilingPerformanceSettings({ force: false });
 
         {
             const nextApplyNonce = Math.max(0, Math.round(Number(nextBiomeTilingState?.geometryDensity?.applyNonce) || 0));
@@ -11741,7 +11718,7 @@ export class TerrainDebuggerView {
                 : (Number.isFinite(overlaySyncMs) ? overlaySyncMs : 0.0);
         }
         if (this._gridLines) this._gridLines.visible = !!terrainCfg.showGrid;
-        if (this._terrainEngine) this._applyTerrainEngineUiConfig(terrainCfg.engine);
+        this._terrainEngineAdapter.applyUiConfig(terrainCfg.engine);
         {
             const debugCfg = terrainCfg.debug && typeof terrainCfg.debug === 'object' ? terrainCfg.debug : {};
             const standardModeRaw = String(debugCfg.mode ?? 'standard');
@@ -11768,7 +11745,7 @@ export class TerrainDebuggerView {
         }
         this._applyTerrainViewBackgroundFallback();
 
-        void this._applyIblState(s.ibl, { force: false });
+        void this._materialController.applyIblState(s.ibl, { force: false });
 
         if (this._grassEngine) this._grassEngine.setConfig?.(s.grass);
         const hideRoadAndGrass = this._terrainViewMode === TERRAIN_VIEW_MODE.BIOME_TRANSITION
@@ -11783,7 +11760,7 @@ export class TerrainDebuggerView {
         } else {
             this._applyVisualizationToggles();
         }
-        this._syncBiomeTilingHref({ force: false });
+        this._biomeTilingController.syncHref({ force: false });
         this._syncBiomeTilingAxisHelper();
         this._syncBiomeTilingAdaptiveRingHelper();
         this._syncBiomeTilingTileLodDebugHelper();
