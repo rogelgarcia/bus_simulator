@@ -145,6 +145,7 @@ Given a solved facade layout, geometry generation MUST:
   - `tiling` (tile meters + UV transform),
   - `materialVariation` (wall material variation config).
 - A bay MAY link (inherit) its **entire bay configuration** from another bay on the same face using `linkFromBayId`:
+  - one master bay MAY have multiple slave bays,
   - linking is **reference-based inheritance** (no deep copy/duplication of bay config),
   - link resolution is evaluated within the master face’s bay list (face slaves do not own independent bay lists),
   - the engine MUST resolve `linkFromBayId` chains transitively before solving/rendering.
@@ -165,6 +166,24 @@ Given a solved facade layout, geometry generation MUST:
 Compatibility note (transitional):
 - For older configs, the engine MAY treat legacy `materialLinkFromBayId` as an alias of `linkFromBayId`.
 
+### 6.2 Street-floor carve + single-room interior shell (post-process)
+
+- Building v2 MUST support a street-floor-special post-process pass after base facade wall generation.
+- The pass applies to the first floor (street floor) and MUST:
+  - cut exterior facade walls at all street-floor opening positions (window and door placements),
+  - derive one interior room wall plane per face from the innermost street-floor opening depth on that face,
+  - generate side-wall returns for non-innermost openings by extending opening reveal depth from opening depth to the interior wall plane.
+- The street-floor interior shell MUST include:
+  - interior wall mesh,
+  - interior floor mesh,
+  - interior ceiling mesh.
+- Street-floor interior vertical span MUST run from street-floor base elevation to `floorHeight - 0.10m`.
+- Street-floor interior shell material assignments are fixed:
+  - interior walls: `Plastered wall 02` (`pbr.plastered_wall_02`)
+  - interior floor: `Plastered wall 004` (`pbr.plastered_wall_04`)
+  - interior ceiling: `Concrete layers 2` (`pbr.concrete_layers_02`)
+- Non-street-floor behavior remains unchanged unless explicitly defined by this pass.
+
 ---
 
 ## 7. Bay content features (windows, columns, etc.)
@@ -175,11 +194,17 @@ Building v2 moves from face-wide window spacing to **bay-driven content**:
 - If an opening cannot fit within a bay (after margins/clearances), it MUST be **omitted** and surfaced as a warning (never overlap).
 - Window definitions are building-owned and reusable across bays; bays reference definitions by id.
 - Bay window authoring is per-bay and includes:
-  - `window.width.minMeters`,
-  - `window.width.maxMeters` (`null` = infinity / fill available bay width),
+  - `window.size.widthMeters`,
+  - `window.size.heightMeters`,
   - `window.padding.leftMeters` / `window.padding.rightMeters` (linked by default).
 - The effective bay minimum width MUST be clamped by bay-window requirements:
-  - `effectiveBayMin = max(bayMin, windowMin + leftPadding + rightPadding)`.
+  - `effectiveBayMin = max(bayMin, windowWidth + leftPadding + rightPadding)`.
+- Runtime placement clamps:
+  - width clamps to resolved usable bay width (`baySpan - leftPadding - rightPadding`),
+  - height clamps to floor segment bounds for the target layer.
+- Backward compatibility:
+  - legacy `window.width.minMeters` / `window.width.maxMeters` MAY still be read for older configs,
+  - when both legacy width range and `window.size.widthMeters` exist, `window.size.widthMeters` takes precedence.
 - Face slaves do not own independent bay/window copies; they inherit the master face facade/bay/window config.
 - Bay slaves (`linkFromBayId`) inherit the master bay window configuration by reference (no deep copy).
 

@@ -4,5 +4,7 @@
 
 export * from './WindowMeshSettings.js';
 export * from './WindowMeshVariation.js';
+export * from './WindowMeshDecorationTemplates.js';
 export * from './WindowInteriorAtlasLayoutCatalog.js';
 export * from './ParallaxInteriorPresetCatalog.js';
+export * from './WindowFabricationCatalog.js';

@@ -679,22 +679,36 @@
     margin-top: 8px;
 }
 
-.building-fab-bay-window-def-controls {
-    display: flex;
+.building-fab-bay-window-width-controls,
+.building-fab-bay-window-padding-controls {
+    display: grid;
+    grid-template-columns: minmax(64px, 1fr) auto minmax(64px, 1fr);
     gap: 8px;
     align-items: center;
     flex: 1 1 auto;
     min-width: 0;
 }
 
-.building-fab-bay-window-def-controls .building-fab-select {
-    flex: 1 1 auto;
+.building-fab-bay-window-width-controls .building-fab-number,
+.building-fab-bay-window-padding-controls .building-fab-number {
     min-width: 0;
+    width: 100%;
 }
 
-.building-fab-bay-window-edit-btn {
-    width: 100%;
-    margin-top: 4px;
+.building-fab-bay-window-inf-btn,
+.building-fab-bay-window-link-btn {
+    min-width: 74px;
+    justify-self: center;
+}
+
+.building-fab-bay-window-inf-btn.is-active,
+.building-fab-bay-window-link-btn.is-active {
+    border-color: rgba(100, 210, 255, 0.55);
+    background: rgba(100, 210, 255, 0.16);
+}
+
+.building-fab-bay-window-hint {
+    margin-top: 6px;
 }
 
 .building-fab-window-fab-panel {

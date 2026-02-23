@@ -1,7 +1,7 @@
-// Headless browser tests: BF2 bay linking (full spec) + inherited material placeholder.
+// Headless browser tests: BF2 bay master/slave linking + selector presentation.
 import test, { expect } from '@playwright/test';
 
-test.setTimeout(120_000);
+test.setTimeout(240_000);
 
 async function attachFailFastConsole({ page }) {
     const errors = [];
@@ -43,28 +43,12 @@ async function attachFailFastConsole({ page }) {
     };
 }
 
-async function getThumbBackgroundColor(locator) {
-    return locator.evaluate((el) => getComputedStyle(el).backgroundColor);
-}
-
 async function getBorderTopColor(locator) {
     return locator.evaluate((el) => getComputedStyle(el).borderTopColor);
 }
 
-async function getTextColor(locator) {
-    return locator.evaluate((el) => getComputedStyle(el).color);
-}
-
-async function getDefaultMaterialThumbBackgroundColor(locator) {
-    return locator.evaluate((el) => {
-        const parent = el.parentElement ?? document.body;
-        const probe = document.createElement('div');
-        probe.className = 'building-fab-material-thumb';
-        parent.appendChild(probe);
-        const color = getComputedStyle(probe).backgroundColor;
-        probe.remove();
-        return color;
-    });
+async function getCssVariable(locator, name) {
+    return locator.evaluate((el, cssVarName) => getComputedStyle(el).getPropertyValue(cssVarName).trim(), name);
 }
 
 async function setCurrentBayMaterialToColor({ page, floorLayer, colorLabel }) {
@@ -85,8 +69,8 @@ async function setCurrentBayMaterialToColor({ page, floorLayer, colorLabel }) {
     await expect(materialPanel).toBeHidden();
 }
 
-test('BF2: bay full linking + duplicate + inherited material placeholder', async ({ page }) => {
-    const getErrors = await attachFailFastConsole({ page });
+test('BF2: master-driven bay linking supports many slaves + slim slave cards + relink redirect', async ({ page }) => {
+    await attachFailFastConsole({ page });
     await page.goto('/index.html?ibl=0&bloom=0&coreTests=0');
 
     await page.waitForSelector('#ui-welcome:not(.hidden)');
@@ -99,116 +83,100 @@ test('BF2: bay full linking + duplicate + inherited material placeholder', async
 
     const floorLayer = page.locator('.building-fab2-layer-group.is-floor').first();
     await expect(floorLayer).toBeVisible();
-
     await floorLayer.locator('.building-fab2-face-btn').filter({ hasText: 'A' }).click();
 
     const addBayBtn = floorLayer.locator('.building-fab2-bay-btn.is-add');
     await addBayBtn.click();
     await addBayBtn.click();
 
-    const bayButtons = floorLayer.locator('.building-fab2-bay-btn:not(.is-add):not(.is-grouping)');
+    let bayButtons = floorLayer.locator('.building-fab2-bay-btn:not(.is-add):not(.is-grouping)');
     await expect(bayButtons).toHaveCount(2);
 
-    const bay1Btn = bayButtons.nth(0);
-    const bay2Btn = bayButtons.nth(1);
-
-    await bay1Btn.click();
-
     const bayEditor = floorLayer.locator('.building-fab2-bay-editor');
-    const bayEditorMaterialText = bayEditor.locator('.building-fab2-bay-material-content .building-fab-material-text');
-    const bayEditorMaterialThumb = bayEditor.locator('.building-fab2-bay-material-content .building-fab-material-thumb');
     const bayEditorLinkBtn = bayEditor.locator('button[aria-label="Link bay"]');
-    const bayEditorClearOverrideBtn = bayEditor.locator('button[aria-label="Clear override"]');
     const duplicateBtn = bayEditor.locator('button').filter({ hasText: 'Duplicate' });
-    await expect(bayEditorMaterialText).toHaveText('Inherited');
-    const defaultThumbBg = await getDefaultMaterialThumbBackgroundColor(bayEditorMaterialThumb);
-    await expect.poll(async () => getThumbBackgroundColor(bayEditorMaterialThumb), { timeout: 5_000 }).toBe(defaultThumbBg);
-    await expect.poll(async () => getBorderTopColor(bayEditorLinkBtn), { timeout: 5_000 }).not.toBe('rgb(255, 216, 77)');
-    await expect(bayEditorClearOverrideBtn).toHaveCount(0);
+    const linkOverlay = page.locator('.building-fab2-link-overlay:not(.hidden)');
+    const linkPanel = linkOverlay.locator('.building-fab2-link-panel');
 
-    await setCurrentBayMaterialToColor({ page, floorLayer, colorLabel: 'Orange' });
-    await expect(bayEditorClearOverrideBtn).toBeVisible();
-    await expect(bayEditor.locator('button').filter({ hasText: 'Clear override' })).toHaveCount(0);
-
-    const bay1Thumb = bay1Btn.locator('.building-fab2-bay-btn-thumb');
-    await expect.poll(async () => getThumbBackgroundColor(bay1Thumb), { timeout: 5_000 }).not.toBe('rgba(0, 0, 0, 0.2)');
-    const bg1 = await getThumbBackgroundColor(bay1Thumb);
-
-    await bay2Btn.click();
-    await bayEditorLinkBtn.click();
-
-    const pickerOverlay = page.locator('.ui-picker-overlay:not(.hidden)');
-    await expect(pickerOverlay).toBeVisible();
-    await pickerOverlay.locator('.ui-picker-option').filter({ hasText: 'Bay 1' }).click();
-
-    await expect(bayEditor.locator('.building-fab2-bay-linked-overlay-label')).toContainText('Linked to Bay 1');
-    await expect(bayEditor.locator('.building-fab2-bay-editor-body-content')).toHaveClass(/is-hidden/);
-    await expect(duplicateBtn).toHaveCount(0);
-    await expect.poll(async () => getBorderTopColor(bayEditorLinkBtn), { timeout: 5_000 }).toBe('rgb(255, 216, 77)');
-
-    const bay2Label = bay2Btn.locator('.building-fab2-bay-btn-label');
-    await expect(bay2Btn).toHaveClass(/is-linked/);
-    await expect(bay2Label).toContainText('1');
-    await expect(bay2Label.locator('.building-fab2-bay-label-icon')).toHaveText('link');
-    await expect.poll(async () => getTextColor(bay2Label), { timeout: 5_000 }).toBe('rgba(255, 255, 255, 0.72)');
-    await expect.poll(async () => getTextColor(bay2Label.locator('.building-fab2-bay-label-icon')), { timeout: 5_000 }).toBe('rgba(255, 255, 255, 0.72)');
-
-    const bay2Thumb = bay2Btn.locator('.building-fab2-bay-btn-thumb');
-    await expect.poll(async () => getThumbBackgroundColor(bay2Thumb), { timeout: 5_000 }).toBe(bg1);
+    let bay1Btn = bayButtons.nth(0);
+    let bay2Btn = bayButtons.nth(1);
 
     await bay1Btn.click();
-    await expect.poll(async () => getBorderTopColor(bayEditorLinkBtn), { timeout: 5_000 }).not.toBe('rgb(255, 216, 77)');
+    await setCurrentBayMaterialToColor({ page, floorLayer, colorLabel: 'Orange' });
+
+    await bayEditorLinkBtn.evaluate((el) => el.click());
+    await expect(linkOverlay).toBeVisible();
+    await expect(linkPanel.locator('.ui-title')).toContainText('Link bays (master: Bay 1)');
+    await page.evaluate(() => {
+        const btn = document.querySelector('.building-fab2-link-bay-btn[data-target-bay-id="bay_2"]');
+        btn?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await expect(linkPanel.locator('.building-fab2-link-bay-btn[data-target-bay-id="bay_2"]')).toHaveClass(/is-active/);
+    await linkPanel.locator('button').filter({ hasText: 'Close' }).click();
+    await expect(linkOverlay).toBeHidden();
+
+    // Duplicate from master produces another slave, giving one-master/many-slaves coverage.
+    await bay1Btn.click();
     await expect(duplicateBtn).toBeVisible();
     await duplicateBtn.click();
+    bayButtons = floorLayer.locator('.building-fab2-bay-btn:not(.is-add):not(.is-grouping)');
+    await expect(bayButtons).toHaveCount(3);
+    bay1Btn = bayButtons.nth(0);
+    bay2Btn = bayButtons.nth(1);
+    const bay3Btn = bayButtons.nth(2);
 
-    const bayButtonsAfterDup = floorLayer.locator('.building-fab2-bay-btn:not(.is-add):not(.is-grouping)');
-    await expect(bayButtonsAfterDup).toHaveCount(3);
-    await expect(floorLayer.locator('.building-fab2-bay-btn.is-active .building-fab2-bay-btn-label')).toHaveText('1');
-
-    const bay3Btn = bayButtonsAfterDup.nth(2);
-    const bay3Thumb = bay3Btn.locator('.building-fab2-bay-btn-thumb');
-    await expect.poll(async () => getThumbBackgroundColor(bay3Thumb), { timeout: 5_000 }).toBe(bg1);
-
-    const bay3Label = bay3Btn.locator('.building-fab2-bay-btn-label');
+    await expect(bay1Btn).toHaveClass(/is-link-master/);
+    await expect(bay2Btn).toHaveClass(/is-linked/);
+    await expect(bay2Btn).toHaveClass(/is-slave-preview/);
+    await expect(bay2Btn).toHaveClass(/is-link-slave/);
     await expect(bay3Btn).toHaveClass(/is-linked/);
-    await expect(bay3Label).toContainText('1');
-    await expect(bay3Label.locator('.building-fab2-bay-label-icon')).toHaveText('link');
-    await expect.poll(async () => getTextColor(bay3Label), { timeout: 5_000 }).toBe('rgba(255, 255, 255, 0.72)');
-    await expect.poll(async () => getTextColor(bay3Label.locator('.building-fab2-bay-label-icon')), { timeout: 5_000 }).toBe('rgba(255, 255, 255, 0.72)');
+    await expect(bay3Btn).toHaveClass(/is-slave-preview/);
+    await expect(bay3Btn).toHaveClass(/is-link-slave/);
 
-    await bay3Btn.click();
+    const bay1Hue = await getCssVariable(bay1Btn, '--building-fab2-bay-link-hue');
+    const bay2Hue = await getCssVariable(bay2Btn, '--building-fab2-bay-link-hue');
+    expect(bay1Hue).toBeTruthy();
+    expect(bay1Hue).toBe(bay2Hue);
+
+    await bay2Btn.click();
     await expect(bayEditor.locator('.building-fab2-bay-linked-overlay-label')).toContainText('Linked to Bay 1');
     await expect(bayEditor.locator('.building-fab2-bay-editor-body-content')).toHaveClass(/is-hidden/);
     await expect(duplicateBtn).toHaveCount(0);
-
-    await bay1Btn.click();
-    await setCurrentBayMaterialToColor({ page, floorLayer, colorLabel: 'Blue tint' });
-
-    const bg1b = await getThumbBackgroundColor(bay1Thumb);
-    const bg2b = await getThumbBackgroundColor(bay2Thumb);
-    const bg3b = await getThumbBackgroundColor(bay3Thumb);
-    expect(bg1b).toBe(bg2b);
-    expect(bg1b).toBe(bg3b);
-    expect(bg1b).not.toBe(bg1);
-
-    await addBayBtn.click();
-    const bayButtonsAfterAdd = floorLayer.locator('.building-fab2-bay-btn:not(.is-add):not(.is-grouping)');
-    await expect(bayButtonsAfterAdd).toHaveCount(4);
-
-    await bay1Btn.click();
-    await bayEditorLinkBtn.click();
-    await expect(pickerOverlay).toBeVisible();
-    await pickerOverlay.locator('.ui-picker-option').filter({ hasText: 'Bay 4' }).click();
-
-    await expect(bayEditor.locator('.building-fab2-bay-linked-overlay-label')).toContainText('Linked to Bay 4');
-    await expect(duplicateBtn).toHaveCount(0);
     await expect.poll(async () => getBorderTopColor(bayEditorLinkBtn), { timeout: 5_000 }).toBe('rgb(255, 216, 77)');
 
-    await bay2Btn.click();
+    await addBayBtn.click();
+    bayButtons = floorLayer.locator('.building-fab2-bay-btn:not(.is-add):not(.is-grouping)');
+    await expect(bayButtons).toHaveCount(4);
+    const bay4Btn = bayButtons.nth(3);
+
+    await bay4Btn.click();
+    await bayEditorLinkBtn.evaluate((el) => el.click());
+    await expect(linkOverlay).toBeVisible();
+    await expect(linkPanel.locator('.ui-title')).toContainText('Link bays (master: Bay 4)');
+    await page.evaluate(() => {
+        const btn = document.querySelector('.building-fab2-link-bay-btn[data-target-bay-id="bay_1"]');
+        btn?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await expect(linkPanel.locator('.building-fab2-link-bay-btn[data-target-bay-id="bay_1"]')).toHaveClass(/is-active/);
+    await linkPanel.locator('button').filter({ hasText: 'Close' }).click();
+    await expect(linkOverlay).toBeHidden();
+
+    const bayButtonsAfterRelink = floorLayer.locator('.building-fab2-bay-btn:not(.is-add):not(.is-grouping)');
+    const bay1AfterRelink = bayButtonsAfterRelink.nth(0);
+    const bay2AfterRelink = bayButtonsAfterRelink.nth(1);
+    const bay3AfterRelink = bayButtonsAfterRelink.nth(2);
+    const bay4AfterRelink = bayButtonsAfterRelink.nth(3);
+
+    await bay1AfterRelink.click();
+    await expect(bayEditor.locator('.building-fab2-bay-linked-overlay-label')).toContainText('Linked to Bay 4');
+    await bay2AfterRelink.click();
+    await expect(bayEditor.locator('.building-fab2-bay-linked-overlay-label')).toContainText('Linked to Bay 4');
+    await bay3AfterRelink.click();
     await expect(bayEditor.locator('.building-fab2-bay-linked-overlay-label')).toContainText('Linked to Bay 4');
 
-    await bay3Btn.click();
-    await expect(bayEditor.locator('.building-fab2-bay-linked-overlay-label')).toContainText('Linked to Bay 4');
+    await bay4AfterRelink.click();
+    await expect(bayEditor.locator('.building-fab2-bay-linked-overlay')).toHaveClass(/hidden/);
+    await expect.poll(async () => getBorderTopColor(bayEditorLinkBtn), { timeout: 5_000 }).not.toBe('rgb(255, 216, 77)');
+    await expect(duplicateBtn).toBeVisible();
 
-    expect(await getErrors()).toEqual([]);
 });

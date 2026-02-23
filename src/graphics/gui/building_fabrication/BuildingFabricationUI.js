@@ -53,6 +53,14 @@ function deepClone(value) {
     return value;
 }
 
+function resolveBayWindowFromUiSpec(item) {
+    const spec = item && typeof item === 'object' ? item : null;
+    if (!spec) return null;
+    if (spec.window && typeof spec.window === 'object') return spec.window;
+    const legacyWindow = spec.features && typeof spec.features === 'object' ? spec.features.window : null;
+    return legacyWindow && typeof legacyWindow === 'object' ? legacyWindow : null;
+}
+
 function formatFloat(value, digits = 1) {
     const num = Number(value);
     if (!Number.isFinite(num)) return '';
@@ -1138,12 +1146,11 @@ export class BuildingFabricationUI {
         this.onFaceFacadeBayDepthOffsetChange = null;
         this.onFaceFacadeBayWedgeAngleDegChange = null;
         this.onFaceFacadeBayWindowEnabledChange = null;
-        this.onFaceFacadeBayWindowDefinitionChange = null;
-        this.onFaceFacadeBayWindowNewDefinition = null;
-        this.onFaceFacadeBayWindowEdit = null;
-        this.onFaceFacadeBayWindowWidthOverrideChange = null;
-        this.onFaceFacadeBayWindowHeightOverrideChange = null;
-        this.onFaceFacadeBayWindowFloorSkipChange = null;
+        this.onFaceFacadeBayWindowRequestPicker = null;
+        this.onFaceFacadeBayWindowMinWidthChange = null;
+        this.onFaceFacadeBayWindowMaxWidthChange = null;
+        this.onFaceFacadeBayWindowPaddingChange = null;
+        this.onFaceFacadeBayWindowPaddingLinkToggle = null;
 
         this._bound = false;
 
@@ -3049,12 +3056,16 @@ export class BuildingFabricationUI {
             let wedgeToggle = null;
             let wedgeAngleSelect = null;
             let windowToggle = null;
-            let windowDefSelect = null;
-            let windowNewDefBtn = null;
-            let windowEditBtn = null;
-            let windowWidthInput = null;
-            let windowHeightInput = null;
-            let windowFloorSkipInput = null;
+            let windowPickerButton = null;
+            let windowPickerThumb = null;
+            let windowPickerText = null;
+            let windowMinWidthInput = null;
+            let windowMaxWidthInput = null;
+            let windowMaxInfinityBtn = null;
+            let windowPaddingLeftInput = null;
+            let windowPaddingRightInput = null;
+            let windowPaddingLinkBtn = null;
+            let windowHint = null;
 
             if (itemType === 'bay') {
                 materialPicker = document.createElement('div');
@@ -3132,92 +3143,125 @@ export class BuildingFabricationUI {
                 const windowInput = document.createElement('input');
                 windowInput.type = 'checkbox';
                 const windowText = document.createElement('span');
-                windowText.textContent = 'Window feature';
+                windowText.textContent = 'Enable window';
                 windowToggle.appendChild(windowInput);
                 windowToggle.appendChild(windowText);
                 body.appendChild(windowToggle);
 
-                const windowDefRow = document.createElement('div');
-                windowDefRow.className = 'building-fab-row building-fab-row-wide';
-                const windowDefLabel = document.createElement('div');
-                windowDefLabel.className = 'building-fab-row-label';
-                windowDefLabel.textContent = 'Window definition';
-                const windowDefControls = document.createElement('div');
-                windowDefControls.className = 'building-fab-bay-window-def-controls';
-                windowDefSelect = document.createElement('select');
-                windowDefSelect.className = 'building-fab-select';
-                windowNewDefBtn = document.createElement('button');
-                windowNewDefBtn.type = 'button';
-                windowNewDefBtn.className = 'building-fab-layer-btn';
-                windowNewDefBtn.textContent = 'New';
-                windowDefControls.appendChild(windowDefSelect);
-                windowDefControls.appendChild(windowNewDefBtn);
-                windowDefRow.appendChild(windowDefLabel);
-                windowDefRow.appendChild(windowDefControls);
-                body.appendChild(windowDefRow);
+                const windowPickerRow = document.createElement('div');
+                windowPickerRow.className = 'building-fab-row building-fab-row-texture';
+                const windowPickerLabel = document.createElement('div');
+                windowPickerLabel.className = 'building-fab-row-label';
+                windowPickerLabel.textContent = 'Window definition';
+                const windowPicker = document.createElement('div');
+                windowPicker.className = 'building-fab-texture-picker building-fab-material-picker';
+                windowPickerButton = document.createElement('button');
+                windowPickerButton.type = 'button';
+                windowPickerButton.className = 'building-fab-material-button';
+                windowPickerThumb = document.createElement('div');
+                windowPickerThumb.className = 'building-fab-material-thumb';
+                windowPickerText = document.createElement('div');
+                windowPickerText.className = 'building-fab-material-text';
+                windowPickerButton.appendChild(windowPickerThumb);
+                windowPickerButton.appendChild(windowPickerText);
+                windowPicker.appendChild(windowPickerButton);
+                windowPickerRow.appendChild(windowPickerLabel);
+                windowPickerRow.appendChild(windowPicker);
+                body.appendChild(windowPickerRow);
 
-                windowEditBtn = document.createElement('button');
-                windowEditBtn.type = 'button';
-                windowEditBtn.className = 'building-fab-layer-btn building-fab-bay-window-edit-btn';
-                windowEditBtn.textContent = 'Fabricate / Edit Window…';
-                body.appendChild(windowEditBtn);
+                const windowWidthRow = document.createElement('div');
+                windowWidthRow.className = 'building-fab-row building-fab-row-wide';
+                const windowWidthLabel = document.createElement('div');
+                windowWidthLabel.className = 'building-fab-row-label';
+                windowWidthLabel.textContent = 'Window width (m)';
+                const windowWidthControls = document.createElement('div');
+                windowWidthControls.className = 'building-fab-bay-window-width-controls';
+                windowMinWidthInput = document.createElement('input');
+                windowMinWidthInput.type = 'number';
+                windowMinWidthInput.className = 'building-fab-number';
+                windowMinWidthInput.min = '0.1';
+                windowMinWidthInput.max = '9999';
+                windowMinWidthInput.step = '0.1';
+                windowMinWidthInput.placeholder = 'Min';
+                windowMaxWidthInput = document.createElement('input');
+                windowMaxWidthInput.type = 'number';
+                windowMaxWidthInput.className = 'building-fab-number';
+                windowMaxWidthInput.min = '0.1';
+                windowMaxWidthInput.max = '9999';
+                windowMaxWidthInput.step = '0.1';
+                windowMaxWidthInput.placeholder = 'Max';
+                windowMaxInfinityBtn = document.createElement('button');
+                windowMaxInfinityBtn.type = 'button';
+                windowMaxInfinityBtn.className = 'building-fab-layer-btn building-fab-bay-window-inf-btn';
+                windowMaxInfinityBtn.textContent = '∞';
+                windowMaxInfinityBtn.title = 'Toggle infinite max width';
+                windowWidthControls.appendChild(windowMinWidthInput);
+                windowWidthControls.appendChild(windowMaxWidthInput);
+                windowWidthControls.appendChild(windowMaxInfinityBtn);
+                windowWidthRow.appendChild(windowWidthLabel);
+                windowWidthRow.appendChild(windowWidthControls);
+                body.appendChild(windowWidthRow);
 
-                const makeNumberOnlyRow = (rowLabel, { placeholder = '' } = {}) => {
-                    const row = document.createElement('div');
-                    row.className = 'building-fab-row building-fab-row-wide';
-                    const l = document.createElement('div');
-                    l.className = 'building-fab-row-label';
-                    l.textContent = rowLabel;
-                    const input = document.createElement('input');
-                    input.type = 'number';
-                    input.className = 'building-fab-number';
-                    if (placeholder) input.placeholder = placeholder;
-                    row.appendChild(l);
-                    row.appendChild(input);
-                    return { row, input };
-                };
+                const windowPaddingRow = document.createElement('div');
+                windowPaddingRow.className = 'building-fab-row building-fab-row-wide';
+                const windowPaddingLabel = document.createElement('div');
+                windowPaddingLabel.className = 'building-fab-row-label';
+                windowPaddingLabel.textContent = 'Window padding (m)';
+                const windowPaddingControls = document.createElement('div');
+                windowPaddingControls.className = 'building-fab-bay-window-padding-controls';
+                windowPaddingLeftInput = document.createElement('input');
+                windowPaddingLeftInput.type = 'number';
+                windowPaddingLeftInput.className = 'building-fab-number';
+                windowPaddingLeftInput.min = '0';
+                windowPaddingLeftInput.max = '9999';
+                windowPaddingLeftInput.step = '0.1';
+                windowPaddingLeftInput.placeholder = 'Left';
+                windowPaddingLinkBtn = document.createElement('button');
+                windowPaddingLinkBtn.type = 'button';
+                windowPaddingLinkBtn.className = 'building-fab-layer-btn building-fab-bay-window-link-btn';
+                windowPaddingLinkBtn.textContent = 'Linked';
+                windowPaddingRightInput = document.createElement('input');
+                windowPaddingRightInput.type = 'number';
+                windowPaddingRightInput.className = 'building-fab-number';
+                windowPaddingRightInput.min = '0';
+                windowPaddingRightInput.max = '9999';
+                windowPaddingRightInput.step = '0.1';
+                windowPaddingRightInput.placeholder = 'Right';
+                windowPaddingControls.appendChild(windowPaddingLeftInput);
+                windowPaddingControls.appendChild(windowPaddingLinkBtn);
+                windowPaddingControls.appendChild(windowPaddingRightInput);
+                windowPaddingRow.appendChild(windowPaddingLabel);
+                windowPaddingRow.appendChild(windowPaddingControls);
+                body.appendChild(windowPaddingRow);
 
-                const winWidthRow = makeNumberOnlyRow('Window width override (m)', { placeholder: 'inherit' });
-                winWidthRow.input.min = '0.1';
-                winWidthRow.input.max = '9999';
-                winWidthRow.input.step = '0.1';
-                windowWidthInput = winWidthRow.input;
-                body.appendChild(winWidthRow.row);
-
-                const winHeightRow = makeNumberOnlyRow('Window height override (m)', { placeholder: 'inherit' });
-                winHeightRow.input.min = '0.1';
-                winHeightRow.input.max = '99';
-                winHeightRow.input.step = '0.1';
-                windowHeightInput = winHeightRow.input;
-                body.appendChild(winHeightRow.row);
-
-                const floorSkipRow = makeNumberOnlyRow('Window floor skip', { placeholder: '1' });
-                floorSkipRow.input.min = '1';
-                floorSkipRow.input.max = '99';
-                floorSkipRow.input.step = '1';
-                windowFloorSkipInput = floorSkipRow.input;
-                body.appendChild(floorSkipRow.row);
+                windowHint = document.createElement('div');
+                windowHint.className = 'building-fab-hint building-fab-bay-window-hint';
+                body.appendChild(windowHint);
 
                 windowInput.addEventListener('change', () => {
                     this.onFaceFacadeBayWindowEnabledChange?.(itemId, !!windowInput.checked);
                 });
-                windowDefSelect.addEventListener('change', () => {
-                    this.onFaceFacadeBayWindowDefinitionChange?.(itemId, windowDefSelect.value);
+                windowPickerButton.addEventListener('click', () => {
+                    this.onFaceFacadeBayWindowRequestPicker?.(itemId);
                 });
-                windowNewDefBtn.addEventListener('click', () => {
-                    this.onFaceFacadeBayWindowNewDefinition?.(itemId);
+                windowMinWidthInput.addEventListener('change', () => {
+                    this.onFaceFacadeBayWindowMinWidthChange?.(itemId, windowMinWidthInput.value);
                 });
-                windowEditBtn.addEventListener('click', () => {
-                    this.onFaceFacadeBayWindowEdit?.(itemId);
+                windowMaxWidthInput.addEventListener('change', () => {
+                    this.onFaceFacadeBayWindowMaxWidthChange?.(itemId, windowMaxWidthInput.value);
                 });
-                windowWidthInput.addEventListener('change', () => {
-                    this.onFaceFacadeBayWindowWidthOverrideChange?.(itemId, windowWidthInput.value);
+                windowMaxInfinityBtn.addEventListener('click', () => {
+                    const isInfinity = windowMaxInfinityBtn.classList.contains('is-active');
+                    this.onFaceFacadeBayWindowMaxWidthChange?.(itemId, isInfinity ? windowMaxWidthInput.value : null);
                 });
-                windowHeightInput.addEventListener('change', () => {
-                    this.onFaceFacadeBayWindowHeightOverrideChange?.(itemId, windowHeightInput.value);
+                windowPaddingLeftInput.addEventListener('change', () => {
+                    this.onFaceFacadeBayWindowPaddingChange?.(itemId, 'left', windowPaddingLeftInput.value);
                 });
-                windowFloorSkipInput.addEventListener('change', () => {
-                    this.onFaceFacadeBayWindowFloorSkipChange?.(itemId, windowFloorSkipInput.value);
+                windowPaddingRightInput.addEventListener('change', () => {
+                    this.onFaceFacadeBayWindowPaddingChange?.(itemId, 'right', windowPaddingRightInput.value);
+                });
+                windowPaddingLinkBtn.addEventListener('click', () => {
+                    this.onFaceFacadeBayWindowPaddingLinkToggle?.(itemId);
                 });
 
                 materialPicker._thumb = thumb;
@@ -3255,12 +3299,16 @@ export class BuildingFabricationUI {
                 wedgeToggle,
                 wedgeAngleSelect,
                 windowToggle,
-                windowDefSelect,
-                windowNewDefBtn,
-                windowEditBtn,
-                windowWidthInput,
-                windowHeightInput,
-                windowFloorSkipInput,
+                windowPickerButton,
+                windowPickerThumb,
+                windowPickerText,
+                windowMinWidthInput,
+                windowMaxWidthInput,
+                windowMaxInfinityBtn,
+                windowPaddingLeftInput,
+                windowPaddingRightInput,
+                windowPaddingLinkBtn,
+                windowHint,
                 status
             });
         }
@@ -3373,8 +3421,8 @@ export class BuildingFabricationUI {
                     if (wedgeEnabled) ui.wedgeAngleSelect.value = value;
                 }
 
-                const windowFeature = it?.features?.window ?? null;
-                const hasWindow = windowFeature && typeof windowFeature === 'object';
+                const windowCfg = resolveBayWindowFromUiSpec(it);
+                const hasWindow = !!windowCfg && windowCfg.enabled !== false;
                 const windowInput = ui.windowToggle?._input ?? null;
                 if (windowInput) {
                     windowInput.disabled = !canEditBays;
@@ -3382,60 +3430,99 @@ export class BuildingFabricationUI {
                 }
 
                 const defs = Array.isArray(this._faceWindowDefinitions?.items) ? this._faceWindowDefinitions.items : [];
-                const defOptions = defs
-                    .map((d) => ({
-                        id: typeof d?.id === 'string' ? d.id : '',
-                        label: typeof d?.label === 'string' ? d.label : ''
-                    }))
-                    .filter((opt) => !!opt.id);
+                const defById = new Map();
+                for (const entry of defs) {
+                    const id = typeof entry?.id === 'string' ? entry.id : '';
+                    if (!id || defById.has(id)) continue;
+                    defById.set(id, entry);
+                }
 
-                const currentDefId = hasWindow && typeof windowFeature?.defId === 'string' ? windowFeature.defId : '';
-                if (ui.windowDefSelect) {
-                    const key = defOptions.map((o) => `${o.id}:${o.label}`).join('|');
-                    if (ui.windowDefSelect.dataset.key !== key) {
-                        ui.windowDefSelect.dataset.key = key;
-                        ui.windowDefSelect.textContent = '';
-                        const placeholder = document.createElement('option');
-                        placeholder.value = '';
-                        placeholder.textContent = 'Select…';
-                        ui.windowDefSelect.appendChild(placeholder);
-                        for (const opt of defOptions) {
-                            const el = document.createElement('option');
-                            el.value = opt.id;
-                            el.textContent = opt.label || opt.id;
-                            ui.windowDefSelect.appendChild(el);
-                        }
+                const currentDefId = hasWindow && typeof windowCfg?.defId === 'string' ? windowCfg.defId : '';
+                const currentDef = currentDefId ? (defById.get(currentDefId) ?? null) : null;
+                const hasWindowSelection = hasWindow && !!currentDefId && !!currentDef;
+
+                if (ui.windowPickerButton) {
+                    ui.windowPickerButton.disabled = !canEditBays || !hasWindow;
+                }
+
+                if (ui.windowPickerText && ui.windowPickerThumb) {
+                    if (!hasWindow) {
+                        ui.windowPickerText.textContent = 'Disabled';
+                        setMaterialThumbToTexture(ui.windowPickerThumb, '', 'Disabled');
+                    } else if (hasWindowSelection) {
+                        const label = typeof currentDef?.label === 'string' && currentDef.label ? currentDef.label : currentDefId;
+                        const previewUrl = typeof currentDef?.previewUrl === 'string' ? currentDef.previewUrl : '';
+                        ui.windowPickerText.textContent = label;
+                        setMaterialThumbToTexture(ui.windowPickerThumb, previewUrl, label);
+                    } else if (currentDefId) {
+                        const label = `Missing · ${currentDefId}`;
+                        ui.windowPickerText.textContent = label;
+                        setMaterialThumbToTexture(ui.windowPickerThumb, '', label);
+                    } else {
+                        ui.windowPickerText.textContent = 'Select window';
+                        setMaterialThumbToTexture(ui.windowPickerThumb, '', 'Select window');
                     }
-                    if (currentDefId && !defOptions.some((o) => o.id === currentDefId)) {
-                        const missing = ui.windowDefSelect.querySelector(`option[value="${CSS.escape(currentDefId)}"]`) ?? null;
-                        if (!missing) {
-                            const el = document.createElement('option');
-                            el.value = currentDefId;
-                            el.textContent = `Missing · ${currentDefId}`;
-                            ui.windowDefSelect.appendChild(el);
-                        }
+                }
+
+                const defWidth = (() => {
+                    const value = Number(currentDef?.settings?.width);
+                    if (Number.isFinite(value)) return Math.max(0.1, value);
+                    return 1.2;
+                })();
+                const minRaw = Number(windowCfg?.width?.minMeters ?? windowCfg?.width?.min ?? windowCfg?.widthMeters);
+                const minWidth = hasWindow
+                    ? (Number.isFinite(minRaw) ? Math.max(0.1, minRaw) : defWidth)
+                    : defWidth;
+                const maxRaw = windowCfg?.width?.maxMeters ?? windowCfg?.width?.max ?? windowCfg?.maxWidthMeters;
+                const maxIsInfinity = maxRaw === null || maxRaw === undefined;
+                const maxResolved = Number(maxRaw);
+                const maxWidth = Number.isFinite(maxResolved) ? Math.max(minWidth, maxResolved) : minWidth;
+
+                const paddingCfg = windowCfg?.padding && typeof windowCfg.padding === 'object' ? windowCfg.padding : null;
+                const paddingLinked = (paddingCfg?.linked ?? true) !== false;
+                const paddingLeft = Math.max(0, Number(paddingCfg?.leftMeters ?? windowCfg?.paddingLeftMeters) || 0);
+                const paddingRight = Math.max(
+                    0,
+                    Number(paddingCfg?.rightMeters ?? windowCfg?.paddingRightMeters) || (paddingLinked ? paddingLeft : 0)
+                );
+                const effectiveMin = hasWindowSelection ? (minWidth + paddingLeft + paddingRight) : null;
+
+                if (ui.windowMinWidthInput) {
+                    ui.windowMinWidthInput.disabled = !canEditBays || !hasWindowSelection;
+                    ui.windowMinWidthInput.value = hasWindow ? formatFloat(minWidth, 2) : '';
+                }
+                if (ui.windowMaxWidthInput) {
+                    ui.windowMaxWidthInput.disabled = !canEditBays || !hasWindowSelection || maxIsInfinity;
+                    ui.windowMaxWidthInput.value = hasWindow ? formatFloat(maxWidth, 2) : '';
+                }
+                if (ui.windowMaxInfinityBtn) {
+                    ui.windowMaxInfinityBtn.disabled = !canEditBays || !hasWindowSelection;
+                    ui.windowMaxInfinityBtn.classList.toggle('is-active', maxIsInfinity);
+                }
+                if (ui.windowPaddingLeftInput) {
+                    ui.windowPaddingLeftInput.disabled = !canEditBays || !hasWindowSelection;
+                    ui.windowPaddingLeftInput.value = hasWindow ? formatFloat(paddingLeft, 2) : '';
+                }
+                if (ui.windowPaddingRightInput) {
+                    ui.windowPaddingRightInput.disabled = !canEditBays || !hasWindowSelection || paddingLinked;
+                    ui.windowPaddingRightInput.value = hasWindow ? formatFloat(paddingRight, 2) : '';
+                }
+                if (ui.windowPaddingLinkBtn) {
+                    ui.windowPaddingLinkBtn.disabled = !canEditBays || !hasWindowSelection;
+                    ui.windowPaddingLinkBtn.classList.toggle('is-active', paddingLinked);
+                    ui.windowPaddingLinkBtn.textContent = paddingLinked ? 'Linked' : 'Unlinked';
+                    ui.windowPaddingLinkBtn.title = paddingLinked ? 'Unlink left/right padding' : 'Link left/right padding';
+                }
+                if (ui.windowHint) {
+                    if (!hasWindow) {
+                        ui.windowHint.textContent = 'Enable window to choose a definition.';
+                    } else if (!currentDefId) {
+                        ui.windowHint.textContent = 'Choose a window before editing width and padding.';
+                    } else if (!currentDef) {
+                        ui.windowHint.textContent = `Definition "${currentDefId}" is missing. Pick a valid window.`;
+                    } else {
+                        ui.windowHint.textContent = `Definition width: ${formatFloat(defWidth, 2)}m · Effective bay min: ${formatFloat(effectiveMin, 2)}m`;
                     }
-                    ui.windowDefSelect.disabled = !canEditBays || !hasWindow || defOptions.length === 0;
-                    ui.windowDefSelect.value = currentDefId || '';
-                }
-
-                if (ui.windowNewDefBtn) ui.windowNewDefBtn.disabled = !canEditBays || !hasWindow;
-                if (ui.windowEditBtn) ui.windowEditBtn.disabled = !canEditBays || !hasWindow || !currentDefId;
-
-                if (ui.windowWidthInput) {
-                    ui.windowWidthInput.disabled = !canEditBays || !hasWindow || !hasLength;
-                    const w = Number(windowFeature?.widthMeters);
-                    ui.windowWidthInput.value = (hasWindow && Number.isFinite(w)) ? formatFloat(w, 2) : '';
-                }
-                if (ui.windowHeightInput) {
-                    ui.windowHeightInput.disabled = !canEditBays || !hasWindow;
-                    const h = Number(windowFeature?.heightMeters);
-                    ui.windowHeightInput.value = (hasWindow && Number.isFinite(h)) ? formatFloat(h, 2) : '';
-                }
-                if (ui.windowFloorSkipInput) {
-                    ui.windowFloorSkipInput.disabled = !canEditBays || !hasWindow;
-                    const skip = clampInt(windowFeature?.floorSkip ?? 1, 1, 99);
-                    ui.windowFloorSkipInput.value = hasWindow ? String(skip) : '';
                 }
             }
 

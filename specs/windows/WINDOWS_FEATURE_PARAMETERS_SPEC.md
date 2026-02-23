@@ -1,7 +1,7 @@
 # Windows — Feature Parameters Spec
 
 Status: **Proposed (draft)**  
-Scope: Window Builder feature tabs (**Frame, Muntins, Shade, Glass, Sill, Header/Lintel, Trim, Wear, Interior**) and any global tabs that compose those controls.  
+Scope: Window Builder feature tabs (**Frame, Facade, Muntins, Shade, Glass, Sill, Header/Lintel, Trim, Wear, Interior**) and any global tabs that compose those controls.  
 Non-goals: Final shader authoring, detailed mesh topology, balcony details (deferred).
 
 This spec defines feature-specific parameters that are not covered by:
@@ -12,10 +12,10 @@ This spec defines feature-specific parameters that are not covered by:
 
 ## 1. Feature Enablement (canonical keys)
 
-### 1.1 Opening kind (window vs door)
+### 1.1 Opening kind (window vs door vs garage)
 
 Window fabrication MUST support an “opening kind” parameter:
-- `openingKind` (enum): `window | door`
+- `openingKind` (enum): `window | door | garage`
 
 Rules:
 - Default: `openingKind = window`
@@ -45,17 +45,47 @@ When `openingKind = door`, the system MUST apply these preset rules:
 - Force-disable:
   - `sillEnabled = false`
   - `balconyEnabled = false`
+  - `shadeEnabled = false`
 - Default-disable (but user may re-enable later if desired):
   - `lintelEnabled = false`
   - `trimEnabled = false`
 
 Rationale:
 - Doors typically do not use a window sill or balcony.
+- First-pass door flow does not include shade controls.
 - Lintel/trim may exist for some door styles, but are not required in first pass and should be opt-in.
 
 Note:
 - “Force-disable” means the UI must hide the feature and the engine must ignore it while in door mode.
 - “Default-disable” means the feature remains available but starts off.
+- Door wall-cut behavior MUST remain valid when the door opening reaches the wall bottom edge (base-aligned door cuts are not out-of-bounds).
+
+### 1.3 Garage preset rules (first pass)
+
+When `openingKind = garage`, the system MUST apply these preset rules:
+- Force-disable:
+  - `muntinsEnabled = false`
+  - `shadeEnabled = false`
+  - `glassEnabled = false`
+  - `interiorEnabled = false` (for window-parallax interior)
+  - `lintelEnabled = false`
+  - `trimEnabled = false`
+- Force-disable arch behavior (`arch.enabled = false`).
+- Force-open-bottom frame behavior (`frame.openBottom = true`).
+- Keep frame generation enabled (garage mode still uses frame geometry).
+
+Garage-specific facade controls:
+- `garageFacadeState` (enum): `open | closed`
+- `garageClosedMaterialId` (material id, constrained to metal-class building materials)
+- `garageFacadeRotationDegrees` (enum): `0 | 90`, default `0`
+
+Garage runtime behavior:
+- `garageFacadeState = closed` MUST render a closed garage facade surface using `garageClosedMaterialId`.
+- `garageFacadeState = closed` MUST rotate the closed-surface facade material maps by `garageFacadeRotationDegrees`.
+- `garageFacadeState = open` MUST cut the wall opening and generate a room volume behind it.
+- Garage room material MUST be `Concrete layers 2` (`pbr.concrete_layers_02`).
+- Garage room depth MUST be 50% of available building depth.
+- Garage room footprint MUST extend beyond opening bounds in width and height.
 
 ---
 
@@ -71,6 +101,33 @@ Their size/position/material parameters are defined in the related specs (see to
 Balcony is deferred for deeper discussion and is not fully specified here.
 Balcony is specified in: `specs/windows/WINDOWS_BALCONY_SPEC.md`
 
+### 2.1 BF2 Decoration Template Constraints (Visualization-Only)
+
+For the Building Fabrication 2 window fabrication flow, decoration controls (`sill`, `header/lintel`, `trim`) are visualization-only:
+- They affect only debugger/fabrication viewport visuals.
+- They MUST NOT be serialized in exported window fabrication config payloads.
+
+First-pass constrained control model for each decoration component:
+- `enabled` toggle
+- `type` selector (`header`/`trim`: `simple`; `sill`: `simple` and `bottom_cover`)
+- width mode: `match_window` or `pct_15`
+- depth option: `0.08` (default) or `0.02`
+- material mode: `match_wall` (default), `match_frame`, `pbr`
+
+First-pass width semantics:
+- `match_window` => `widthScale = 1.0`
+- `pct_15` => `widthScale = 1.15`
+
+First-pass `simple` template defaults:
+- `height = 0.08`
+- `depth = 0.08`
+- `gap = 0`
+- `offset = { x: 0, y: 0, z: 0 }`
+
+Sill `bottom_cover` metadata/suggestion rules:
+- On selecting `bottom_cover`, UI auto-applies: `widthMode = match_window`, `depthMeters = 0.08`, `material.mode = match_frame`.
+- `bottom_cover` template defaults: `height = 0.5`, `offset.z = -depth` (depth-relative).
+
 ---
 
 ## 3. Frame (non-size/non-material behavior)
@@ -78,6 +135,28 @@ Balcony is specified in: `specs/windows/WINDOWS_BALCONY_SPEC.md`
 Frame sizing/arch/depth are defined in `specs/windows/WINDOWS_SIZE_AND_POSITIONING_SPEC.md`.
 
 Frame materials + bevel/roundness “finish” are defined in `specs/windows/WINDOWS_MATERIALS_AND_FINISH_SPEC.md` and MUST be present in the first pass (Frame tab and Materials/Finish tab reuse the same control section).
+
+### 3.1 Door handles (debugger-first rule set)
+
+Door handle generation is controlled from the Frame tab:
+- `frameAddHandles` (bool, default `false`)
+- The `Add handles` toggle is shown only when `openingKind = door`.
+- The `Add handles` toggle MUST be hidden when `openingKind = garage`.
+
+When `frameAddHandles = true` and `openingKind = door`:
+- Handle material inherits the frame material.
+- Each handle uses low-poly cylinders (`radialSegments = 6`) with main handle diameter `0.05m`.
+- Each main handle includes two horizontal connector cylinders from handle body to the door surface.
+
+Handle placement is driven by vertical muntin/panel layout:
+- `0` vertical muntins (single panel): one handle on the right side at `1.0m` from door bottom.
+- `1` vertical muntin (two panels): two handles on the meeting sides (right side of left panel, left side of right panel).
+- `2+` vertical muntins (three+ panels): exactly two handles on the center-most panel pair.
+- For odd panel counts in the `2+` case, implementation picks one valid center-area pair deterministically.
+
+Runtime behavior:
+- Handle placement MUST update when muntin column/layout changes.
+- Disabling `frameAddHandles` MUST remove/hide generated handles without leftover geometry.
 
 ---
 
@@ -135,27 +214,55 @@ Rules:
 
 Glass is a transparent plane at the opening. It MUST NOT cast or receive shadows.
 
-### 6.1 Presets (IOR/reflectivity)
+### 6.1 Preset row (first control)
 
-IOR/reflectivity controls MUST be exposed as **presets** (first pass), not as raw numeric sliders.
+The Glass tab MUST expose `Preset` as the first row in the section.
 
 Parameters:
-- `glassPresetId` (string or enum)
+- `glassPresetId` (enum): `clear | mid | dark | reflexive`
 
-Glass presets SHOULD include (implementation-defined, but must be consistent):
-- reflectivity / specular strength
-- IOR (index of refraction)
-- roughness baseline
+Preset application rule:
+- Selecting a preset MUST immediately apply all preset-mapped glass values (`opacity`, `tint`, `metalness`, `roughness`, `transmission`, `ior`, `envMapIntensity`).
 
-Note: It is currently known that changing IOR/reflectivity may not visibly change output; implementation MUST make presets visually meaningful.
+### 6.2 Preset definitions (canonical first pass)
 
-### 6.2 Tint/opacity (first pass)
+`Clear`:
+- `opacity = 0.25`
+- `tintHex = #A0A0A0`
+- `metalness = 0.5`
+- `roughness = 0.1`
+- `transmission = 0.0`
+- `ior = 2.0`
+- `envMapIntensity = 1.35`
 
-Tint/opacity may remain direct controls (not presets) to support art direction.
+`Mid` (same as Clear except below overrides):
+- `opacity = 0.50`
+- `tintHex = #7B7986`
 
-Parameters (first pass):
+`Dark` (same as Clear except below overrides):
+- `opacity = 0.70`
+- `tintHex = #3D3C44`
+
+`Reflexive`:
+- `opacity = 0.85`
+- `tintHex = #3D3C44`
+- `metalness = 0.6`
+- `roughness = 0.05`
+- `transmission = 0.0`
+- `ior = 2.3`
+- `envMapIntensity = 1.9`
+
+### 6.3 Manual controls (available after preset apply)
+
+Manual glass controls remain available for art-direction tuning and may diverge from presets:
 - `glassTint` (RGB)
 - `glassOpacity` (0..1)
+- `glassZOffset` (m)
+- `glassMetalness` (0..1)
+- `glassRoughness` (0..1)
+- `glassTransmission` (0..1)
+- `glassIor` (1.0..2.5)
+- `glassEnvMapIntensity` (0..8)
 
 ---
 

@@ -11,7 +11,7 @@ import { createCityWorld } from '../../assets3d/generators/TerrainGenerator.js';
 import { buildBuildingFabricationVisualParts } from '../../assets3d/generators/building_fabrication/BuildingFabricationGenerator.js';
 import { BuildingWallTextureCache } from '../../assets3d/generators/buildings/BuildingGenerator.js';
 import { createProceduralMeshAsset, PROCEDURAL_MESH } from '../../content3d/catalogs/ProceduralMeshCatalog.js';
-import { ToolCameraController } from '../../engine3d/camera/ToolCameraController.js';
+import { FirstPersonCameraController } from '../../engine3d/camera/FirstPersonCameraController.js';
 
 const DOUBLE = 2;
 const EPS = 1e-6;
@@ -1086,17 +1086,17 @@ export class BuildingFabrication2Scene {
         if (!this.camera) return;
         const span = this.tileSize * this.gridSize;
         const dist = span * 1.2;
-        this.controls = new ToolCameraController(this.camera, this.canvas, {
-            enableDamping: true,
-            dampingFactor: 0.08,
-            minPolarAngle: 0.12,
-            maxPolarAngle: Math.PI - 0.12,
-            minDistance: Math.max(16, dist * 0.35),
-            maxDistance: dist * 2.2,
-            orbitMouseButtons: [0, 2],
-            panMouseButtons: [1],
+        this.controls = new FirstPersonCameraController(this.camera, this.canvas, {
+            enabled: true,
+            lookSpeed: 1.0,
+            panSpeed: 1.0,
+            zoomSpeed: 1.0,
+            minPitchDeg: -89,
+            maxPitchDeg: 89,
             getFocusTarget: () => this._getCameraFocusTarget()
         });
+        this.controls.minDistance = Math.max(16, dist * 0.35);
+        this.controls.maxDistance = dist * 2.2;
         this.resetCamera();
     }
 

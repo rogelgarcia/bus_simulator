@@ -64,6 +64,11 @@ const FACE_HIGHLIGHT_LINEWIDTH = 6;
 const FACE_HIGHLIGHT_Y_LIFT = 0.075;
 const MIN_FACADE_BAY_WIDTH_M = 1.0;
 const MIN_FACADE_PADDING_WIDTH_M = 0.25;
+const WINDOW_MIN_WIDTH_M = 0.1;
+const WINDOW_MAX_WIDTH_M = 9999;
+const WINDOW_PADDING_MIN_M = 0.0;
+const WINDOW_PADDING_MAX_M = 9999;
+const WINDOW_DEF_WIDTH_FALLBACK_M = 1.2;
 const WEDGE_ANGLE_STEP_DEG = 15;
 const WEDGE_ANGLE_MAX_DEG = 75;
 
@@ -187,6 +192,23 @@ function normalizeWedgeAngleDeg(value) {
     if (!Number.isFinite(num)) return 0;
     const snapped = Math.round(num / WEDGE_ANGLE_STEP_DEG) * WEDGE_ANGLE_STEP_DEG;
     return clampInt(snapped, 0, WEDGE_ANGLE_MAX_DEG);
+}
+
+function resolveBayWindowFromSpec(bay) {
+    const spec = bay && typeof bay === 'object' ? bay : null;
+    if (!spec) return null;
+    if (spec.window && typeof spec.window === 'object') return spec.window;
+    const legacy = spec.features && typeof spec.features === 'object' ? spec.features.window : null;
+    return legacy && typeof legacy === 'object' ? legacy : null;
+}
+
+function clearLegacyBayWindowFeature(bay) {
+    const spec = bay && typeof bay === 'object' ? bay : null;
+    if (!spec) return;
+    if (!spec.features || typeof spec.features !== 'object') return;
+    if (spec.features.window === undefined) return;
+    delete spec.features.window;
+    if (!Object.keys(spec.features).length) delete spec.features;
 }
 
 function normalizeDir(x, y) {
@@ -888,6 +910,84 @@ export class BuildingFabricationScene {
         return id;
     }
 
+    _resolveWindowDefinitionWidthMeters(building, windowDefId) {
+        const defs = Array.isArray(building?.windowDefinitions?.items) ? building.windowDefinitions.items : [];
+        const id = typeof windowDefId === 'string' ? windowDefId : '';
+        const def = id ? (defs.find((entry) => entry?.id === id) ?? null) : null;
+        const width = Number(def?.settings?.width);
+        if (Number.isFinite(width)) return clamp(width, WINDOW_MIN_WIDTH_M, WINDOW_MAX_WIDTH_M);
+        return WINDOW_DEF_WIDTH_FALLBACK_M;
+    }
+
+    _ensureBayWindowConfig(bay, { create = false, building = null } = {}) {
+        const bayObj = bay && typeof bay === 'object' ? bay : null;
+        if (!bayObj || bayObj.type !== 'bay') return null;
+
+        const existing = resolveBayWindowFromSpec(bayObj);
+        if (!existing) {
+            if (!create) return null;
+            bayObj.window = {
+                enabled: true,
+                defId: '',
+                width: { minMeters: WINDOW_DEF_WIDTH_FALLBACK_M, maxMeters: null },
+                padding: { leftMeters: 0, rightMeters: 0 }
+            };
+        } else if (bayObj.window !== existing) {
+            bayObj.window = deepClone(existing);
+        }
+
+        clearLegacyBayWindowFeature(bayObj);
+
+        const windowCfg = bayObj.window && typeof bayObj.window === 'object' ? bayObj.window : null;
+        if (!windowCfg) return null;
+
+        windowCfg.enabled = windowCfg.enabled !== false;
+        windowCfg.defId = typeof windowCfg.defId === 'string' ? windowCfg.defId : '';
+
+        const defWidth = this._resolveWindowDefinitionWidthMeters(building, windowCfg.defId);
+
+        const widthSrc = windowCfg.width && typeof windowCfg.width === 'object' ? windowCfg.width : {};
+        const legacyWidth = Number(windowCfg.widthMeters);
+        const minRaw = widthSrc.minMeters ?? widthSrc.min ?? (Number.isFinite(legacyWidth) ? legacyWidth : null);
+        let minMeters = Number.isFinite(Number(minRaw))
+            ? clamp(Number(minRaw), WINDOW_MIN_WIDTH_M, WINDOW_MAX_WIDTH_M)
+            : defWidth;
+        minMeters = Math.max(defWidth, minMeters);
+
+        const maxRaw = widthSrc.maxMeters ?? widthSrc.max ?? windowCfg.maxWidthMeters;
+        const maxMeters = (maxRaw === null || maxRaw === undefined)
+            ? null
+            : clamp(Number(maxRaw), minMeters, WINDOW_MAX_WIDTH_M);
+        windowCfg.width = { minMeters, maxMeters };
+
+        const paddingSrc = windowCfg.padding && typeof windowCfg.padding === 'object' ? windowCfg.padding : {};
+        const linked = (paddingSrc.linked ?? true) !== false;
+        const leftMeters = clamp(
+            paddingSrc.leftMeters ?? windowCfg.paddingLeftMeters ?? 0,
+            WINDOW_PADDING_MIN_M,
+            WINDOW_PADDING_MAX_M
+        );
+        const rightRaw = Number(paddingSrc.rightMeters ?? windowCfg.paddingRightMeters);
+        const rightMeters = clamp(
+            Number.isFinite(rightRaw) ? rightRaw : (linked ? leftMeters : 0),
+            WINDOW_PADDING_MIN_M,
+            WINDOW_PADDING_MAX_M
+        );
+        windowCfg.padding = linked
+            ? { leftMeters, rightMeters }
+            : { leftMeters, rightMeters, linked: false };
+
+        delete windowCfg.widthMeters;
+        delete windowCfg.heightMeters;
+        delete windowCfg.floorSkip;
+        delete windowCfg.minWidthMeters;
+        delete windowCfg.maxWidthMeters;
+        delete windowCfg.paddingLeftMeters;
+        delete windowCfg.paddingRightMeters;
+
+        return windowCfg;
+    }
+
     setSelectedBuildingWindowDefinitionSettings(windowDefId, settings) {
         const building = this.getSelectedBuilding();
         if (!building?.windowDefinitions?.items) return false;
@@ -898,8 +998,42 @@ export class BuildingFabricationScene {
         if (!entry) return false;
 
         const next = sanitizeWindowMeshSettings(settings);
+        try {
+            if (JSON.stringify(entry.settings ?? null) === JSON.stringify(next)) return false;
+        } catch {
+            // Treat as changed when deep compare fails.
+        }
         entry.settings = deepClone(next);
+
+        const facades = building?.facades && typeof building.facades === 'object' ? building.facades : null;
+        if (facades) {
+            for (const faceId of FACE_IDS_RECT) {
+                const facade = facades[faceId] ?? null;
+                const items = Array.isArray(facade?.layout?.items) ? facade.layout.items : [];
+                for (const bay of items) {
+                    if (!bay || bay.type !== 'bay') continue;
+                    const windowCfg = this._ensureBayWindowConfig(bay, { create: false, building });
+                    if (!windowCfg || windowCfg.enabled === false || windowCfg.defId !== id) continue;
+                    const defWidth = this._resolveWindowDefinitionWidthMeters(building, id);
+                    const minWidth = Math.max(defWidth, clamp(windowCfg?.width?.minMeters ?? defWidth, WINDOW_MIN_WIDTH_M, WINDOW_MAX_WIDTH_M));
+                    windowCfg.width.minMeters = minWidth;
+                    if (windowCfg.width.maxMeters !== null && windowCfg.width.maxMeters !== undefined) {
+                        windowCfg.width.maxMeters = clamp(windowCfg.width.maxMeters, minWidth, WINDOW_MAX_WIDTH_M);
+                    }
+                }
+            }
+        }
+
+        this._rebuildBuildingMesh(building);
         return true;
+    }
+
+    _applyBayWindowWidthConstraint(building, faceId, bay, itemId) {
+        const faceLength = this._getFaceLengthMeters(building, faceId);
+        if (!Number.isFinite(faceLength) || !(faceLength > EPS)) return;
+        const required = this._minWidthMetersForLayoutItem(bay, faceLength, { building });
+        const width = this._getLayoutItemWidthMeters(bay, faceLength);
+        if (width + 1e-6 < required) this.setSelectedFaceFacadeItemWidth(itemId, required);
     }
 
     setSelectedFaceFacadeBayWindowEnabled(itemId, enabled) {
@@ -913,36 +1047,47 @@ export class BuildingFabricationScene {
 
         const bay = items.find((it) => it?.id === itemId) ?? null;
         if (!bay || bay.type !== 'bay') return false;
-        bay.features ??= {};
 
-        const cur = bay.features?.window ?? null;
-        const has = cur && typeof cur === 'object';
-        if (!wants && !has) return false;
+        const current = this._ensureBayWindowConfig(bay, { create: false, building });
+        const hasWindow = !!current && current.enabled !== false;
+        if (!wants && !hasWindow) return false;
 
         if (!wants) {
-            delete bay.features.window;
+            delete bay.window;
+            clearLegacyBayWindowFeature(bay);
             this._syncMirroredFacadeIfLocked(building, faceId);
+            this._rebuildBuildingMesh(building);
             return true;
         }
 
         const defs = Array.isArray(building?.windowDefinitions?.items) ? building.windowDefinitions.items : [];
-        let defId = typeof cur?.defId === 'string' ? cur.defId : '';
-        if (!defId || !defs.some((d) => d?.id === defId)) {
-            defId = typeof defs[0]?.id === 'string' ? defs[0].id : '';
+        if (!defs.length) {
+            const createdId = this.createSelectedBuildingWindowDefinition();
+            if (!createdId) return false;
         }
-        if (!defId) {
-            defId = this.createSelectedBuildingWindowDefinition() ?? '';
+
+        const resolvedDefs = Array.isArray(building?.windowDefinitions?.items) ? building.windowDefinitions.items : [];
+        const windowCfg = this._ensureBayWindowConfig(bay, { create: true, building });
+        if (!windowCfg) return false;
+
+        let defId = typeof windowCfg.defId === 'string' ? windowCfg.defId : '';
+        if (!defId || !resolvedDefs.some((d) => d?.id === defId)) {
+            defId = typeof resolvedDefs[0]?.id === 'string' ? resolvedDefs[0].id : '';
         }
         if (!defId) return false;
 
-        bay.features.window = {
-            defId,
-            widthMeters: null,
-            heightMeters: null,
-            floorSkip: 1
-        };
+        windowCfg.enabled = true;
+        windowCfg.defId = defId;
+        const defWidth = this._resolveWindowDefinitionWidthMeters(building, defId);
+        const minWidth = Math.max(defWidth, clamp(windowCfg?.width?.minMeters ?? defWidth, WINDOW_MIN_WIDTH_M, WINDOW_MAX_WIDTH_M));
+        windowCfg.width.minMeters = minWidth;
+        if (windowCfg.width.maxMeters !== null && windowCfg.width.maxMeters !== undefined) {
+            windowCfg.width.maxMeters = clamp(windowCfg.width.maxMeters, minWidth, WINDOW_MAX_WIDTH_M);
+        }
 
+        this._applyBayWindowWidthConstraint(building, faceId, bay, itemId);
         this._syncMirroredFacadeIfLocked(building, faceId);
+        this._rebuildBuildingMesh(building);
         return true;
     }
 
@@ -957,56 +1102,31 @@ export class BuildingFabricationScene {
         const bay = items.find((it) => it?.id === itemId) ?? null;
         if (!bay || bay.type !== 'bay') return false;
 
-        const win = bay?.features?.window ?? null;
-        if (!win || typeof win !== 'object') return false;
-
         const nextId = typeof windowDefId === 'string' ? windowDefId : '';
         if (!nextId) return false;
         const defs = Array.isArray(building?.windowDefinitions?.items) ? building.windowDefinitions.items : [];
         if (!defs.some((d) => d?.id === nextId)) return false;
 
-        if (win.defId === nextId) return false;
-        win.defId = nextId;
-        this._syncMirroredFacadeIfLocked(building, faceId);
-        return true;
-    }
+        const windowCfg = this._ensureBayWindowConfig(bay, { create: true, building });
+        if (!windowCfg) return false;
+        if (windowCfg.defId === nextId && windowCfg.enabled !== false) return false;
 
-    setSelectedFaceFacadeBayWindowWidthOverride(itemId, widthMeters) {
-        const building = this.getSelectedBuilding();
-        if (!building?.facades) return false;
-        const faceId = this._selectedFaceId;
-        const facade = building.facades[faceId] ?? null;
-        const items = Array.isArray(facade?.layout?.items) ? facade.layout.items : null;
-        if (!items) return false;
-
-        const bay = items.find((it) => it?.id === itemId) ?? null;
-        if (!bay || bay.type !== 'bay') return false;
-
-        const win = bay?.features?.window ?? null;
-        if (!win || typeof win !== 'object') return false;
-
-        const raw = widthMeters === '' ? null : widthMeters;
-        const num = Number(raw);
-        const faceLength = this._getFaceLengthMeters(building, faceId);
-        const max = Number.isFinite(faceLength) && faceLength > EPS ? faceLength : 9999;
-        const next = Number.isFinite(num) ? clamp(num, 0.1, max) : null;
-
-        const prev = Number.isFinite(win.widthMeters) ? win.widthMeters : null;
-        if ((prev === null && next === null) || (prev !== null && next !== null && Math.abs(prev - next) < 1e-6)) return false;
-
-        win.widthMeters = next;
-
-        if (Number.isFinite(faceLength) && faceLength > EPS) {
-            const required = this._minWidthMetersForLayoutItem(bay, faceLength, { building });
-            const width = this._getLayoutItemWidthMeters(bay, faceLength);
-            if (width + 1e-6 < required) this.setSelectedFaceFacadeItemWidth(itemId, required);
+        windowCfg.enabled = true;
+        windowCfg.defId = nextId;
+        const defWidth = this._resolveWindowDefinitionWidthMeters(building, nextId);
+        const minWidth = Math.max(defWidth, clamp(windowCfg?.width?.minMeters ?? defWidth, WINDOW_MIN_WIDTH_M, WINDOW_MAX_WIDTH_M));
+        windowCfg.width.minMeters = minWidth;
+        if (windowCfg.width.maxMeters !== null && windowCfg.width.maxMeters !== undefined) {
+            windowCfg.width.maxMeters = clamp(windowCfg.width.maxMeters, minWidth, WINDOW_MAX_WIDTH_M);
         }
 
+        this._applyBayWindowWidthConstraint(building, faceId, bay, itemId);
         this._syncMirroredFacadeIfLocked(building, faceId);
+        this._rebuildBuildingMesh(building);
         return true;
     }
 
-    setSelectedFaceFacadeBayWindowHeightOverride(itemId, heightMeters) {
+    setSelectedFaceFacadeBayWindowMinWidth(itemId, minWidthMeters) {
         const building = this.getSelectedBuilding();
         if (!building?.facades) return false;
         const faceId = this._selectedFaceId;
@@ -1017,22 +1137,56 @@ export class BuildingFabricationScene {
         const bay = items.find((it) => it?.id === itemId) ?? null;
         if (!bay || bay.type !== 'bay') return false;
 
-        const win = bay?.features?.window ?? null;
-        if (!win || typeof win !== 'object') return false;
+        const windowCfg = this._ensureBayWindowConfig(bay, { create: false, building });
+        if (!windowCfg || windowCfg.enabled === false) return false;
 
-        const raw = heightMeters === '' ? null : heightMeters;
-        const num = Number(raw);
-        const next = Number.isFinite(num) ? clamp(num, 0.1, 99) : null;
+        const defWidth = this._resolveWindowDefinitionWidthMeters(building, windowCfg.defId);
+        const next = Math.max(defWidth, clamp(minWidthMeters, WINDOW_MIN_WIDTH_M, WINDOW_MAX_WIDTH_M));
+        const prev = clamp(windowCfg?.width?.minMeters ?? defWidth, WINDOW_MIN_WIDTH_M, WINDOW_MAX_WIDTH_M);
+        if (Math.abs(next - prev) < 1e-6) return false;
 
-        const prev = Number.isFinite(win.heightMeters) ? win.heightMeters : null;
+        windowCfg.width.minMeters = next;
+        if (windowCfg.width.maxMeters !== null && windowCfg.width.maxMeters !== undefined) {
+            windowCfg.width.maxMeters = clamp(windowCfg.width.maxMeters, next, WINDOW_MAX_WIDTH_M);
+        }
+
+        this._applyBayWindowWidthConstraint(building, faceId, bay, itemId);
+        this._syncMirroredFacadeIfLocked(building, faceId);
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    setSelectedFaceFacadeBayWindowMaxWidth(itemId, maxWidthMeters) {
+        const building = this.getSelectedBuilding();
+        if (!building?.facades) return false;
+        const faceId = this._selectedFaceId;
+        const facade = building.facades[faceId] ?? null;
+        const items = Array.isArray(facade?.layout?.items) ? facade.layout.items : null;
+        if (!items) return false;
+
+        const bay = items.find((it) => it?.id === itemId) ?? null;
+        if (!bay || bay.type !== 'bay') return false;
+
+        const windowCfg = this._ensureBayWindowConfig(bay, { create: false, building });
+        if (!windowCfg || windowCfg.enabled === false) return false;
+
+        const minWidth = clamp(windowCfg?.width?.minMeters ?? WINDOW_MIN_WIDTH_M, WINDOW_MIN_WIDTH_M, WINDOW_MAX_WIDTH_M);
+        const raw = (maxWidthMeters === null || maxWidthMeters === undefined || maxWidthMeters === '')
+            ? null
+            : Number(maxWidthMeters);
+        const next = Number.isFinite(raw) ? clamp(raw, minWidth, WINDOW_MAX_WIDTH_M) : null;
+        const prev = (windowCfg.width.maxMeters === null || windowCfg.width.maxMeters === undefined)
+            ? null
+            : clamp(windowCfg.width.maxMeters, minWidth, WINDOW_MAX_WIDTH_M);
         if ((prev === null && next === null) || (prev !== null && next !== null && Math.abs(prev - next) < 1e-6)) return false;
 
-        win.heightMeters = next;
+        windowCfg.width.maxMeters = next;
         this._syncMirroredFacadeIfLocked(building, faceId);
+        this._rebuildBuildingMesh(building);
         return true;
     }
 
-    setSelectedFaceFacadeBayWindowFloorSkip(itemId, floorSkip) {
+    setSelectedFaceFacadeBayWindowPadding(itemId, edge, value) {
         const building = this.getSelectedBuilding();
         if (!building?.facades) return false;
         const faceId = this._selectedFaceId;
@@ -1043,15 +1197,81 @@ export class BuildingFabricationScene {
         const bay = items.find((it) => it?.id === itemId) ?? null;
         if (!bay || bay.type !== 'bay') return false;
 
-        const win = bay?.features?.window ?? null;
-        if (!win || typeof win !== 'object') return false;
+        const windowCfg = this._ensureBayWindowConfig(bay, { create: false, building });
+        if (!windowCfg || windowCfg.enabled === false) return false;
 
-        const next = clampInt(floorSkip ?? 1, 1, 99);
-        const prev = clampInt(win.floorSkip ?? 1, 1, 99);
-        if (next === prev) return false;
-        win.floorSkip = next;
+        const side = edge === 'right' ? 'right' : 'left';
+        const padding = windowCfg.padding && typeof windowCfg.padding === 'object'
+            ? windowCfg.padding
+            : { leftMeters: 0, rightMeters: 0 };
+        const linked = (padding.linked ?? true) !== false;
+        const next = clamp(value, WINDOW_PADDING_MIN_M, WINDOW_PADDING_MAX_M);
+        const prevLeft = clamp(padding.leftMeters ?? 0, WINDOW_PADDING_MIN_M, WINDOW_PADDING_MAX_M);
+        const prevRight = clamp(padding.rightMeters ?? (linked ? prevLeft : 0), WINDOW_PADDING_MIN_M, WINDOW_PADDING_MAX_M);
+
+        if (side === 'left') {
+            const changed = Math.abs(next - prevLeft) >= 1e-6 || (linked && Math.abs(next - prevRight) >= 1e-6);
+            if (!changed) return false;
+            windowCfg.padding = linked
+                ? { leftMeters: next, rightMeters: next }
+                : { leftMeters: next, rightMeters: prevRight, linked: false };
+        } else {
+            if (linked) return false;
+            if (Math.abs(next - prevRight) < 1e-6) return false;
+            windowCfg.padding = { leftMeters: prevLeft, rightMeters: next, linked: false };
+        }
+
+        this._applyBayWindowWidthConstraint(building, faceId, bay, itemId);
         this._syncMirroredFacadeIfLocked(building, faceId);
+        this._rebuildBuildingMesh(building);
         return true;
+    }
+
+    toggleSelectedFaceFacadeBayWindowPaddingLink(itemId) {
+        const building = this.getSelectedBuilding();
+        if (!building?.facades) return false;
+        const faceId = this._selectedFaceId;
+        const facade = building.facades[faceId] ?? null;
+        const items = Array.isArray(facade?.layout?.items) ? facade.layout.items : null;
+        if (!items) return false;
+
+        const bay = items.find((it) => it?.id === itemId) ?? null;
+        if (!bay || bay.type !== 'bay') return false;
+
+        const windowCfg = this._ensureBayWindowConfig(bay, { create: false, building });
+        if (!windowCfg || windowCfg.enabled === false) return false;
+
+        const padding = windowCfg.padding && typeof windowCfg.padding === 'object'
+            ? windowCfg.padding
+            : { leftMeters: 0, rightMeters: 0 };
+        const linked = (padding.linked ?? true) !== false;
+        const left = clamp(padding.leftMeters ?? 0, WINDOW_PADDING_MIN_M, WINDOW_PADDING_MAX_M);
+        const right = clamp(padding.rightMeters ?? left, WINDOW_PADDING_MIN_M, WINDOW_PADDING_MAX_M);
+
+        if (linked) {
+            windowCfg.padding = { leftMeters: left, rightMeters: right, linked: false };
+        } else {
+            const next = Math.max(left, right);
+            windowCfg.padding = { leftMeters: next, rightMeters: next };
+        }
+
+        this._applyBayWindowWidthConstraint(building, faceId, bay, itemId);
+        this._syncMirroredFacadeIfLocked(building, faceId);
+        this._rebuildBuildingMesh(building);
+        return true;
+    }
+
+    // Legacy compatibility wrappers.
+    setSelectedFaceFacadeBayWindowWidthOverride(itemId, widthMeters) {
+        return this.setSelectedFaceFacadeBayWindowMinWidth(itemId, widthMeters);
+    }
+
+    setSelectedFaceFacadeBayWindowHeightOverride(_itemId, _heightMeters) {
+        return false;
+    }
+
+    setSelectedFaceFacadeBayWindowFloorSkip(_itemId, _floorSkip) {
+        return false;
     }
 
     getBuildings() {
@@ -3186,16 +3406,38 @@ export class BuildingFabricationScene {
 
         let required = baseMin > 0 ? baseMin : MIN_FACADE_BAY_WIDTH_M;
 
-        const windowFeature = item?.features?.window ?? null;
-        if (windowFeature && typeof windowFeature === 'object') {
-            let windowWidth = Number.isFinite(windowFeature?.widthMeters) ? windowFeature.widthMeters : null;
-            if (!Number.isFinite(windowWidth)) {
-                const defId = typeof windowFeature?.defId === 'string' ? windowFeature.defId : '';
-                const defs = Array.isArray(building?.windowDefinitions?.items) ? building.windowDefinitions.items : [];
-                const def = defId ? (defs.find((d) => d?.id === defId) ?? null) : null;
-                windowWidth = Number(def?.settings?.width);
-            }
-            if (Number.isFinite(windowWidth)) required = Math.max(required, clamp(windowWidth, 0, faceLength));
+        const windowCfg = resolveBayWindowFromSpec(item);
+        if (windowCfg && typeof windowCfg === 'object' && windowCfg.enabled !== false) {
+            const defs = Array.isArray(building?.windowDefinitions?.items) ? building.windowDefinitions.items : [];
+            const defId = typeof windowCfg?.defId === 'string' ? windowCfg.defId : '';
+            const def = defId ? (defs.find((d) => d?.id === defId) ?? null) : null;
+            const defWidth = Number.isFinite(def?.settings?.width)
+                ? clamp(def.settings.width, WINDOW_MIN_WIDTH_M, WINDOW_MAX_WIDTH_M)
+                : WINDOW_DEF_WIDTH_FALLBACK_M;
+
+            const widthSrc = windowCfg.width && typeof windowCfg.width === 'object' ? windowCfg.width : {};
+            const legacyWidth = Number(windowCfg.widthMeters);
+            const minRaw = widthSrc.minMeters ?? widthSrc.min ?? (Number.isFinite(legacyWidth) ? legacyWidth : defWidth);
+            const minWindowWidth = Math.max(
+                defWidth,
+                clamp(minRaw, WINDOW_MIN_WIDTH_M, WINDOW_MAX_WIDTH_M)
+            );
+
+            const paddingSrc = windowCfg.padding && typeof windowCfg.padding === 'object' ? windowCfg.padding : {};
+            const linked = (paddingSrc.linked ?? true) !== false;
+            const leftPad = clamp(
+                paddingSrc.leftMeters ?? windowCfg.paddingLeftMeters ?? 0,
+                WINDOW_PADDING_MIN_M,
+                WINDOW_PADDING_MAX_M
+            );
+            const rightRaw = Number(paddingSrc.rightMeters ?? windowCfg.paddingRightMeters);
+            const rightPad = clamp(
+                Number.isFinite(rightRaw) ? rightRaw : (linked ? leftPad : 0),
+                WINDOW_PADDING_MIN_M,
+                WINDOW_PADDING_MAX_M
+            );
+
+            required = Math.max(required, clamp(minWindowWidth + leftPad + rightPad, 0, faceLength));
         }
 
         const absDepth = Math.abs(Number(item?.depthOffset) || 0);
@@ -3239,30 +3481,54 @@ export class BuildingFabricationScene {
                 warnings.push(`${id || type}: width ${widthMeters.toFixed(2)}m < min ${minWidthMeters.toFixed(2)}m.`);
             }
             if (type === 'bay') {
-                const windowFeature = it?.features?.window ?? null;
-                if (windowFeature && typeof windowFeature === 'object') {
-                    const defId = typeof windowFeature?.defId === 'string' ? windowFeature.defId : '';
+                const windowCfg = resolveBayWindowFromSpec(it);
+                if (windowCfg && typeof windowCfg === 'object' && windowCfg.enabled !== false) {
+                    const defId = typeof windowCfg?.defId === 'string' ? windowCfg.defId : '';
                     if (!defId) {
-                        warnings.push(`${id || type}: window feature is enabled but no definition is selected.`);
+                        warnings.push(`${id || type}: window is enabled but no definition is selected.`);
                     } else if (!defById.has(defId)) {
                         warnings.push(`${id || type}: window definition "${defId}" not found.`);
                     }
 
-                    const floorSkipRaw = windowFeature?.floorSkip;
-                    const floorSkipRawNum = Number(floorSkipRaw);
-                    if (floorSkipRaw !== undefined && floorSkipRaw !== null) {
-                        const isInt = Number.isFinite(floorSkipRawNum) && Math.abs(floorSkipRawNum - Math.round(floorSkipRawNum)) < 1e-6;
-                        if (!isInt || floorSkipRawNum < 1) warnings.push(`${id || type}: window floorSkip must be an integer >= 1.`);
-                    }
-
                     const def = defId ? (defById.get(defId) ?? null) : null;
-                    const defWidth = Number(def?.settings?.width);
-                    const overrideWidth = Number.isFinite(windowFeature?.widthMeters) ? windowFeature.widthMeters : null;
-                    const windowWidth = Number.isFinite(overrideWidth)
-                        ? clamp(overrideWidth, 0, faceLength)
-                        : (Number.isFinite(defWidth) ? clamp(defWidth, 0, faceLength) : null);
-                    if (Number.isFinite(windowWidth) && windowWidth > widthMeters + 1e-6) {
-                        warnings.push(`${id || type}: window width ${windowWidth.toFixed(2)}m exceeds bay width ${widthMeters.toFixed(2)}m (will be omitted).`);
+                    const defWidth = Number.isFinite(def?.settings?.width)
+                        ? clamp(def.settings.width, WINDOW_MIN_WIDTH_M, WINDOW_MAX_WIDTH_M)
+                        : WINDOW_DEF_WIDTH_FALLBACK_M;
+
+                    const widthSrc = windowCfg.width && typeof windowCfg.width === 'object' ? windowCfg.width : {};
+                    const legacyWidth = Number(windowCfg.widthMeters);
+                    const minRaw = widthSrc.minMeters ?? widthSrc.min ?? (Number.isFinite(legacyWidth) ? legacyWidth : defWidth);
+                    const minWindowWidth = Math.max(defWidth, clamp(minRaw, WINDOW_MIN_WIDTH_M, WINDOW_MAX_WIDTH_M));
+
+                    const maxRaw = widthSrc.maxMeters ?? widthSrc.max ?? windowCfg.maxWidthMeters;
+                    const maxWindowWidth = (maxRaw === null || maxRaw === undefined)
+                        ? null
+                        : clamp(maxRaw, minWindowWidth, WINDOW_MAX_WIDTH_M);
+
+                    const paddingSrc = windowCfg.padding && typeof windowCfg.padding === 'object' ? windowCfg.padding : {};
+                    const linked = (paddingSrc.linked ?? true) !== false;
+                    const leftPad = clamp(
+                        paddingSrc.leftMeters ?? windowCfg.paddingLeftMeters ?? 0,
+                        WINDOW_PADDING_MIN_M,
+                        WINDOW_PADDING_MAX_M
+                    );
+                    const rightRaw = Number(paddingSrc.rightMeters ?? windowCfg.paddingRightMeters);
+                    const rightPad = clamp(
+                        Number.isFinite(rightRaw) ? rightRaw : (linked ? leftPad : 0),
+                        WINDOW_PADDING_MIN_M,
+                        WINDOW_PADDING_MAX_M
+                    );
+
+                    const usableWidth = widthMeters - leftPad - rightPad;
+                    if (usableWidth + 1e-6 < minWindowWidth) {
+                        warnings.push(
+                            `${id || type}: window min ${minWindowWidth.toFixed(2)}m + padding ${(leftPad + rightPad).toFixed(2)}m exceeds bay width ${widthMeters.toFixed(2)}m.`
+                        );
+                    }
+                    if (Number.isFinite(maxWindowWidth) && maxWindowWidth > usableWidth + 1e-6) {
+                        warnings.push(
+                            `${id || type}: window max ${maxWindowWidth.toFixed(2)}m exceeds usable bay width ${Math.max(0, usableWidth).toFixed(2)}m.`
+                        );
                     }
                 }
 

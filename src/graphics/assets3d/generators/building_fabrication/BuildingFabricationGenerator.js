@@ -34,6 +34,12 @@ const WEDGE_ANGLE_STEP_DEG = 15;
 const WEDGE_ANGLE_MAX_DEG = 75;
 const FACADE_DEPTH_MIN_M = -2.0;
 const FACADE_DEPTH_MAX_M = 2.0;
+const STREET_FLOOR_INTERIOR_TOP_CLEARANCE_M = 0.10;
+const STREET_FLOOR_INTERIOR_MATERIALS = Object.freeze({
+    walls: Object.freeze({ kind: 'texture', id: 'pbr.plastered_wall_02' }),
+    floor: Object.freeze({ kind: 'texture', id: 'pbr.plastered_wall_04' }),
+    ceiling: Object.freeze({ kind: 'texture', id: 'pbr.concrete_layers_02' })
+});
 
 function deepClone(value) {
     if (value === null || typeof value !== 'object') return value;
@@ -2288,6 +2294,67 @@ function cornerJoinPointWithDepths(aFrame, aDepth, bFrame, bDepth, corner) {
     return { x: qf(out.x), y: 0, z: qf(out.z) };
 }
 
+function projectPointToFacadeFrame({ frame, x, z }) {
+    const f = frame && typeof frame === 'object' ? frame : null;
+    if (!f) return { u: 0, depth: 0 };
+    const px = Number(x) || 0;
+    const pz = Number(z) || 0;
+    const sx = Number(f.start?.x) || 0;
+    const sz = Number(f.start?.z) || 0;
+    const tx = Number(f.t?.x) || 0;
+    const tz = Number(f.t?.z) || 0;
+    const nx = Number(f.n?.x) || 0;
+    const nz = Number(f.n?.z) || 0;
+    const dx = px - sx;
+    const dz = pz - sz;
+    return {
+        u: qf(dx * tx + dz * tz),
+        depth: qf(dx * nx + dz * nz)
+    };
+}
+
+function resolveFacadeFaceIdForExteriorRun({ a, tx, tz, nx, nz, length, frames } = {}) {
+    if (!a || !frames || typeof frames !== 'object') return null;
+    const runLen = Number(length) || 0;
+    if (!(runLen > EPS)) return null;
+    const tanX = Number(tx) || 0;
+    const tanZ = Number(tz) || 0;
+    const normalX = Number(nx) || 0;
+    const normalZ = Number(nz) || 0;
+
+    const midX = (Number(a.x) || 0) + tanX * (runLen * 0.5);
+    const midZ = (Number(a.z) || 0) + tanZ * (runLen * 0.5);
+    const faceIds = ['A', 'B', 'C', 'D'];
+
+    let bestFaceId = null;
+    let bestScore = -Infinity;
+    for (const faceId of faceIds) {
+        const frame = frames?.[faceId] ?? null;
+        if (!frame) continue;
+        const frameNormalX = Number(frame?.n?.x) || 0;
+        const frameNormalZ = Number(frame?.n?.z) || 0;
+        const frameTanX = Number(frame?.t?.x) || 0;
+        const frameTanZ = Number(frame?.t?.z) || 0;
+        const dotNormal = normalX * frameNormalX + normalZ * frameNormalZ;
+        const dotTanAbs = Math.abs(tanX * frameTanX + tanZ * frameTanZ);
+        if (!(dotNormal > 0.65) || !(dotTanAbs > 0.65)) continue;
+
+        const coords = projectPointToFacadeFrame({ frame, x: midX, z: midZ });
+        const u = Number(coords?.u) || 0;
+        const faceLen = Number(frame?.length) || 0;
+        if (!(faceLen > EPS)) continue;
+        if (u < -0.35 || u > faceLen + 0.35) continue;
+
+        const depth = Number(coords?.depth) || 0;
+        const score = dotNormal * 2.0 + dotTanAbs - Math.abs(depth) * 0.02;
+        if (score > bestScore) {
+            bestScore = score;
+            bestFaceId = faceId;
+        }
+    }
+    return bestFaceId;
+}
+
 function buildFacadeFaceProfile({
     faceId,
     frame,
@@ -3385,6 +3452,15 @@ export function buildBuildingFabricationVisualParts({
                         const nx = tz;
                         const nz = -tx;
                         const yaw = Math.atan2(nx, nz);
+                        const faceId = resolveFacadeFaceIdForExteriorRun({
+                            a,
+                            tx,
+                            tz,
+                            nx,
+                            nz,
+                            length: L,
+                            frames: facadeFrames
+                        });
 
                         const placement = computeWindowSegmentsWithSpacers({
                             length: L,
@@ -3398,6 +3474,7 @@ export function buildBuildingFabricationVisualParts({
 
                         windowRuns.push({
                             a,
+                            faceId,
                             tx,
                             tz,
                             nx,
@@ -3448,20 +3525,29 @@ export function buildBuildingFabricationVisualParts({
                         continue;
                     }
 
-                    const widthSpec = windowCfg?.width && typeof windowCfg.width === 'object' ? windowCfg.width : null;
-                    const minWidthRaw = Number(widthSpec?.minMeters);
-                    const minWidth = Number.isFinite(minWidthRaw)
-                        ? clamp(minWidthRaw, 0.1, 9999)
-                        : (Number.isFinite(def.widthMeters) ? def.widthMeters : 0.1);
-                    const maxRaw = widthSpec?.maxMeters;
-                    const maxWidth = (maxRaw === null || maxRaw === undefined) ? Infinity : clamp(maxRaw, minWidth, 9999);
-                    if (usable + 1e-6 < minWidth) {
-                        warnings.push(`${faceId}:${strip?.id || 'bay'}: usable width ${usable.toFixed(2)}m is below window min ${minWidth.toFixed(2)}m.`);
-                        continue;
+                    const sizeSpec = windowCfg?.size && typeof windowCfg.size === 'object' ? windowCfg.size : null;
+                    const requestedWidthRaw = Number(sizeSpec?.widthMeters ?? windowCfg?.widthMeters);
+                    let width = null;
+                    if (Number.isFinite(requestedWidthRaw)) {
+                        width = clamp(requestedWidthRaw, 0.1, 9999);
+                        if (usable + 1e-6 < width) {
+                            warnings.push(`${faceId}:${strip?.id || 'bay'}: usable width ${usable.toFixed(2)}m clamps requested width ${width.toFixed(2)}m.`);
+                        }
+                    } else {
+                        const widthSpec = windowCfg?.width && typeof windowCfg.width === 'object' ? windowCfg.width : null;
+                        const minWidthRaw = Number(widthSpec?.minMeters);
+                        const minWidth = Number.isFinite(minWidthRaw)
+                            ? clamp(minWidthRaw, 0.1, 9999)
+                            : (Number.isFinite(def.widthMeters) ? def.widthMeters : 0.1);
+                        const maxRaw = widthSpec?.maxMeters;
+                        const maxWidth = (maxRaw === null || maxRaw === undefined) ? Infinity : clamp(maxRaw, minWidth, 9999);
+                        if (usable + 1e-6 < minWidth) {
+                            warnings.push(`${faceId}:${strip?.id || 'bay'}: usable width ${usable.toFixed(2)}m is below window min ${minWidth.toFixed(2)}m.`);
+                            continue;
+                        }
+                        width = Number.isFinite(def.widthMeters) ? def.widthMeters : minWidth;
+                        width = clamp(width, minWidth, Number.isFinite(maxWidth) ? maxWidth : 9999);
                     }
-
-                    let width = Number.isFinite(def.widthMeters) ? def.widthMeters : minWidth;
-                    width = clamp(width, minWidth, Number.isFinite(maxWidth) ? maxWidth : 9999);
                     width = Math.min(width, usable);
                     if (!(width > EPS)) continue;
 
@@ -3477,7 +3563,10 @@ export function buildBuildingFabricationVisualParts({
                     const nx = Number(frame?.n?.x) || 0;
                     const nz = Number(frame?.n?.z) || 0;
                     const yaw = Math.atan2(nx, nz);
-                    const height = Number.isFinite(def.heightMeters) ? def.heightMeters : winDesiredHeight;
+                    const requestedHeightRaw = Number(sizeSpec?.heightMeters ?? windowCfg?.heightMeters);
+                    const height = Number.isFinite(requestedHeightRaw)
+                        ? clamp(requestedHeightRaw, 0.1, 9999)
+                        : (Number.isFinite(def.heightMeters) ? def.heightMeters : winDesiredHeight);
 
                     bayWindowPlacements.push({
                         faceId,
@@ -3709,20 +3798,38 @@ export function buildBuildingFabricationVisualParts({
 
                     let facadeWallCutouts = null;
                     let facadeWallYSlices = null;
-                    if (wantsFacadeWall && bayWindowPlacements.length) {
+                    let streetFloorInteriorPass = null;
+                    if (wantsFacadeWall && facadeFrames && (bayWindowPlacements.length || windowRuns.length)) {
                         facadeWallCutouts = [];
                         facadeWallYSlices = [];
+                        const streetFloorOpeningsByFaceId = {
+                            A: [],
+                            B: [],
+                            C: [],
+                            D: []
+                        };
+                        const streetFloorCutoutEntries = [];
+                        const depthFallbackByFaceId = {
+                            A: Number(facadeDepthMinsByFaceId?.A),
+                            B: Number(facadeDepthMinsByFaceId?.B),
+                            C: Number(facadeDepthMinsByFaceId?.C),
+                            D: Number(facadeDepthMinsByFaceId?.D)
+                        };
+
                         let yCursorLocal = 0.0;
                         let pendingExtra = firstFloorPendingExtra;
                         for (let floor = 0; floor < floors; floor++) {
                             const segHeight = floorHeight + (floor === 0 ? pendingExtra : 0);
                             if (floor === 0) pendingExtra = 0;
+                            const isStreetFloor = floor === 0;
                             facadeWallYSlices.push({ y0: yCursorLocal, y1: yCursorLocal + segHeight });
 
                             for (let i = 0; i < bayWindowPlacements.length; i++) {
                                 const placement = bayWindowPlacements[i];
                                 const faceId = placement?.faceId;
                                 if (faceId !== 'A' && faceId !== 'B' && faceId !== 'C' && faceId !== 'D') continue;
+                                const frame = facadeFrames?.[faceId] ?? null;
+                                if (!frame) continue;
 
                                 const width = Math.max(0.1, Number(placement?.width) || 0.1);
                                 const desiredHeight = Math.max(0.1, Number(placement?.height) || 0.1);
@@ -3749,19 +3856,79 @@ export function buildBuildingFabricationVisualParts({
                                 const archRiseCandidate = innerWantsArch ? (archRatio * cutWidth) : 0;
                                 const archRise = Math.min(archRiseCandidate, Math.max(0, cutHeight - frameWidth));
                                 const cutWantsArch = innerWantsArch && archRise > EPS;
-                                const revealDepth = Math.max(0, Number(mergedSettings?.frame?.inset) || 0);
+                                const frameInset = Math.max(0, Number(mergedSettings?.frame?.inset) || 0);
+                                const px = Number(placement?.x) || 0;
+                                const pz = Number(placement?.z) || 0;
+                                const outerDepth = Number(projectPointToFacadeFrame({ frame, x: px, z: pz })?.depth) || 0;
+                                const openingDepth = outerDepth - frameInset;
 
-                                facadeWallCutouts.push({
+                                const cutout = {
                                     faceId,
-                                    x: Number(placement?.x) || 0,
+                                    x: px,
                                     y,
-                                    z: Number(placement?.z) || 0,
+                                    z: pz,
                                     width: cutWidth,
                                     height: cutHeight,
                                     wantsArch: cutWantsArch,
                                     archRise,
-                                    revealDepth
-                                });
+                                    revealDepth: frameInset
+                                };
+                                facadeWallCutouts.push(cutout);
+
+                                if (isStreetFloor) {
+                                    streetFloorOpeningsByFaceId[faceId].push(openingDepth);
+                                    streetFloorCutoutEntries.push({ cutout, faceId, outerDepth });
+                                }
+                            }
+
+                            if (isStreetFloor && winEnabled && windowRuns.length) {
+                                const windowHeight = Math.min(winDesiredHeight, Math.max(0.3, segHeight * 0.95));
+                                const windowYOffset = Math.min(winSill, Math.max(0, segHeight - windowHeight));
+                                const y = yCursorLocal + windowYOffset + windowHeight * 0.5;
+
+                                for (const run of windowRuns) {
+                                    const faceId = run?.faceId;
+                                    if (faceId !== 'A' && faceId !== 'B' && faceId !== 'C' && faceId !== 'D') continue;
+                                    const frame = facadeFrames?.[faceId] ?? null;
+                                    if (!frame) continue;
+
+                                    const runLength = Number(run?.length) || 0;
+                                    if (!(runLength > EPS)) continue;
+                                    const a = run?.a ?? null;
+                                    if (!a) continue;
+                                    const tx = Number(run?.tx) || 0;
+                                    const tz = Number(run?.tz) || 0;
+
+                                    for (const seg of run?.segments ?? []) {
+                                        const segOffset = Number(seg?.offset) || 0;
+                                        const starts = Array.isArray(seg?.layout?.starts) ? seg.layout.starts : [];
+                                        for (const start of starts) {
+                                            const leftDist = segOffset + start;
+                                            const rightDist = leftDist + winWidth;
+                                            if (leftDist < cornerEps - 1e-6 || rightDist > runLength - cornerEps + 1e-6) continue;
+
+                                            const centerDist = leftDist + winWidth * 0.5;
+                                            const px = (Number(a.x) || 0) + tx * centerDist;
+                                            const pz = (Number(a.z) || 0) + tz * centerDist;
+                                            const outerDepth = Number(projectPointToFacadeFrame({ frame, x: px, z: pz })?.depth) || 0;
+
+                                            const cutout = {
+                                                faceId,
+                                                x: px,
+                                                y,
+                                                z: pz,
+                                                width: winWidth,
+                                                height: windowHeight,
+                                                wantsArch: false,
+                                                archRise: 0.0,
+                                                revealDepth: 0.0
+                                            };
+                                            facadeWallCutouts.push(cutout);
+                                            streetFloorOpeningsByFaceId[faceId].push(outerDepth);
+                                            streetFloorCutoutEntries.push({ cutout, faceId, outerDepth });
+                                        }
+                                    }
+                                }
                             }
 
                             yCursorLocal += segHeight;
@@ -3770,6 +3937,45 @@ export function buildBuildingFabricationVisualParts({
                                 yCursorLocal += beltHeight;
                             }
                         }
+
+                        if (streetFloorCutoutEntries.length) {
+                            const faceIds = ['A', 'B', 'C', 'D'];
+                            let globalMinOpeningDepth = Infinity;
+                            const interiorDepthByFaceId = {};
+                            for (const faceId of faceIds) {
+                                const list = streetFloorOpeningsByFaceId[faceId];
+                                if (Array.isArray(list) && list.length) {
+                                    const minDepth = Math.min(...list.map((v) => Number(v) || 0));
+                                    interiorDepthByFaceId[faceId] = minDepth;
+                                    if (minDepth < globalMinOpeningDepth) globalMinOpeningDepth = minDepth;
+                                }
+                            }
+                            if (!Number.isFinite(globalMinOpeningDepth)) globalMinOpeningDepth = 0;
+
+                            for (const faceId of faceIds) {
+                                if (Number.isFinite(interiorDepthByFaceId[faceId])) continue;
+                                const fallback = depthFallbackByFaceId[faceId];
+                                interiorDepthByFaceId[faceId] = Number.isFinite(fallback) ? fallback : globalMinOpeningDepth;
+                            }
+
+                            for (const entry of streetFloorCutoutEntries) {
+                                const cutout = entry?.cutout ?? null;
+                                const faceId = entry?.faceId;
+                                if (!cutout || (faceId !== 'A' && faceId !== 'B' && faceId !== 'C' && faceId !== 'D')) continue;
+                                const targetDepth = Number(interiorDepthByFaceId[faceId]) || 0;
+                                const outerDepth = Number(entry?.outerDepth) || 0;
+                                cutout.revealDepth = Math.max(0, outerDepth - targetDepth);
+                            }
+
+                            const interiorHeight = floorHeight - STREET_FLOOR_INTERIOR_TOP_CLEARANCE_M;
+                            if (interiorHeight > EPS) {
+                                streetFloorInteriorPass = {
+                                    interiorDepthByFaceId,
+                                    height: interiorHeight
+                                };
+                            }
+                        }
+
                         if (!facadeWallCutouts.length) {
                             facadeWallCutouts = null;
                             facadeWallYSlices = null;
@@ -3809,6 +4015,103 @@ export function buildBuildingFabricationVisualParts({
                         const depthMins = facadeDepthMinsByFaceId && typeof facadeDepthMinsByFaceId === 'object'
                             ? facadeDepthMinsByFaceId
                             : null;
+
+                        if (streetFloorInteriorPass && frames) {
+                            const interiorDepthByFaceId = streetFloorInteriorPass?.interiorDepthByFaceId ?? null;
+                            const interiorHeight = Math.min(totalWallHeight, Number(streetFloorInteriorPass?.height) || 0);
+                            if (interiorDepthByFaceId && interiorHeight > EPS) {
+                                const interiorJoinByCornerId = {
+                                    AB: cornerJoinPointWithDepths(frames.A, interiorDepthByFaceId.A ?? 0, frames.B, interiorDepthByFaceId.B ?? 0, frames.A.end),
+                                    BC: cornerJoinPointWithDepths(frames.B, interiorDepthByFaceId.B ?? 0, frames.C, interiorDepthByFaceId.C ?? 0, frames.B.end),
+                                    CD: cornerJoinPointWithDepths(frames.C, interiorDepthByFaceId.C ?? 0, frames.D, interiorDepthByFaceId.D ?? 0, frames.C.end),
+                                    DA: cornerJoinPointWithDepths(frames.D, interiorDepthByFaceId.D ?? 0, frames.A, interiorDepthByFaceId.A ?? 0, frames.D.end)
+                                };
+                                const interiorLoopRaw = [
+                                    interiorJoinByCornerId.AB,
+                                    interiorJoinByCornerId.BC,
+                                    interiorJoinByCornerId.CD,
+                                    interiorJoinByCornerId.DA
+                                ];
+                                const interiorLoop = simplifyLoopConsecutiveCollinearXZ(interiorLoopRaw, { tol: 1e-4, minEdge: 1e-3 });
+                                if (interiorLoop && interiorLoop.length >= 3) {
+                                    const interiorWallGeo = buildWallSidesGeometryFromLoopXZ(interiorLoop, {
+                                        height: interiorHeight,
+                                        uvBaseV: yOffset
+                                    });
+                                    if (interiorWallGeo) {
+                                        const interiorWallMat = makeWallMaterialFromSpec({
+                                            material: STREET_FLOOR_INTERIOR_MATERIALS.walls,
+                                            baseColorHex,
+                                            textureCache
+                                        });
+                                        const interiorWallMesh = new THREE.Mesh(interiorWallGeo, interiorWallMat);
+                                        interiorWallMesh.castShadow = true;
+                                        interiorWallMesh.receiveShadow = true;
+                                        interiorWallMesh.position.y = layerStartY;
+                                        interiorWallMesh.userData = interiorWallMesh.userData ?? {};
+                                        interiorWallMesh.userData.buildingFab2Role = 'interior';
+                                        interiorWallMesh.userData.buildingFab2InteriorKind = 'wall';
+                                        solidMeshes.push(interiorWallMesh);
+
+                                        if (showWire) {
+                                            const edgeGeo = new THREE.EdgesGeometry(interiorWallGeo, 1);
+                                            appendWirePositions(wirePositions, edgeGeo, layerStartY);
+                                            edgeGeo.dispose();
+                                        }
+                                    }
+
+                                    const interiorArea = signedArea(interiorLoop);
+                                    const interiorLoopCcw = interiorArea < 0 ? interiorLoop.slice().reverse() : interiorLoop;
+                                    const interiorShape = buildShapeFromLoops({ outerLoop: interiorLoopCcw, holeLoops: [] });
+
+                                    const interiorFloorGeo = new THREE.ShapeGeometry(interiorShape);
+                                    interiorFloorGeo.rotateX(-Math.PI / 2);
+                                    interiorFloorGeo.computeVertexNormals();
+                                    const interiorFloorMat = makeWallMaterialFromSpec({
+                                        material: STREET_FLOOR_INTERIOR_MATERIALS.floor,
+                                        baseColorHex,
+                                        textureCache
+                                    });
+                                    const interiorFloorMesh = new THREE.Mesh(interiorFloorGeo, interiorFloorMat);
+                                    interiorFloorMesh.castShadow = true;
+                                    interiorFloorMesh.receiveShadow = true;
+                                    interiorFloorMesh.position.y = layerStartY;
+                                    interiorFloorMesh.userData = interiorFloorMesh.userData ?? {};
+                                    interiorFloorMesh.userData.buildingFab2Role = 'interior';
+                                    interiorFloorMesh.userData.buildingFab2InteriorKind = 'floor';
+                                    solidMeshes.push(interiorFloorMesh);
+
+                                    if (showWire) {
+                                        const edgeGeo = new THREE.EdgesGeometry(interiorFloorGeo, 1);
+                                        appendWirePositions(wirePositions, edgeGeo, layerStartY);
+                                        edgeGeo.dispose();
+                                    }
+
+                                    const interiorCeilingGeo = new THREE.ShapeGeometry(interiorShape);
+                                    interiorCeilingGeo.rotateX(Math.PI / 2);
+                                    interiorCeilingGeo.computeVertexNormals();
+                                    const interiorCeilingMat = makeWallMaterialFromSpec({
+                                        material: STREET_FLOOR_INTERIOR_MATERIALS.ceiling,
+                                        baseColorHex,
+                                        textureCache
+                                    });
+                                    const interiorCeilingMesh = new THREE.Mesh(interiorCeilingGeo, interiorCeilingMat);
+                                    interiorCeilingMesh.castShadow = true;
+                                    interiorCeilingMesh.receiveShadow = true;
+                                    interiorCeilingMesh.position.y = layerStartY + interiorHeight;
+                                    interiorCeilingMesh.userData = interiorCeilingMesh.userData ?? {};
+                                    interiorCeilingMesh.userData.buildingFab2Role = 'interior';
+                                    interiorCeilingMesh.userData.buildingFab2InteriorKind = 'ceiling';
+                                    solidMeshes.push(interiorCeilingMesh);
+
+                                    if (showWire) {
+                                        const edgeGeo = new THREE.EdgesGeometry(interiorCeilingGeo, 1);
+                                        appendWirePositions(wirePositions, edgeGeo, layerStartY + interiorHeight);
+                                        edgeGeo.dispose();
+                                    }
+                                }
+                            }
+                        }
 
                         const baseJoinByCornerId = (frames && depthMins) ? {
                             AB: cornerJoinPointWithDepths(frames.A, depthMins.A ?? 0, frames.B, depthMins.B ?? 0, frames.A.end),

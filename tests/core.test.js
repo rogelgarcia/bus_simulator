@@ -1796,6 +1796,7 @@ async function runTests() {
     const { BuildingFabrication2UI } = await import('/src/graphics/gui/building_fabrication2/BuildingFabrication2UI.js');
     const { BuildingFabrication2View, __testOnly: buildingFabrication2ViewTestOnly } = await import('/src/graphics/gui/building_fabrication2/BuildingFabrication2View.js');
     const { BuildingFabrication2Scene } = await import('/src/graphics/gui/building_fabrication2/BuildingFabrication2Scene.js');
+    const { FirstPersonCameraController } = await import('/src/graphics/engine3d/camera/FirstPersonCameraController.js');
     const { BuildingFabricationScene, getCentered2x1FootprintTileIds } = await import('/src/graphics/gui/building_fabrication/BuildingFabricationScene.js');
     const { offsetOrthogonalLoopXZ } = await import('/src/graphics/assets3d/generators/buildings/BuildingGenerator.js');
     const {
@@ -2019,7 +2020,7 @@ async function runTests() {
         assertTrue(!!bayTitle, 'Expected bay_1 to render in the bay list.');
     });
 
-    test('BuildingFabricationUI: bay window feature controls render', () => {
+    test('BuildingFabricationUI: bay window picker and quick params render', () => {
         const ui = new BuildingFabricationUI();
         ui.setSelectedBuilding({ id: 'building_test', layers: ui.getTemplateLayers() });
         ui.setFaceEditorState({
@@ -2046,7 +2047,12 @@ async function runTests() {
                         wallMaterialOverride: null,
                         depthOffset: 0.0,
                         wedgeAngleDeg: 0,
-                        features: {}
+                        window: {
+                            enabled: true,
+                            defId: 'win_1',
+                            width: { minMeters: 1.4, maxMeters: null },
+                            padding: { leftMeters: 0.25, rightMeters: 0.25 }
+                        }
                     }]
                 }
             }
@@ -2059,12 +2065,30 @@ async function runTests() {
         assertTrue(!!bayList, 'Bay list should exist.');
 
         const windowFeatureLabel = Array.from(bayList.querySelectorAll('label.building-fab-toggle span'))
-            .find((el) => el.textContent?.trim() === 'Window feature');
-        assertTrue(!!windowFeatureLabel, 'Expected a Window feature toggle in the bay details.');
+            .find((el) => el.textContent?.trim() === 'Enable window');
+        assertTrue(!!windowFeatureLabel, 'Expected an Enable window toggle in the bay details.');
 
-        const editBtn = Array.from(bayList.querySelectorAll('button'))
+        const pickerBtn = Array.from(bayList.querySelectorAll('button.building-fab-material-button'))
+            .find((btn) => String(btn.textContent || '').includes('Window 1'));
+        assertTrue(!!pickerBtn, 'Expected a window picker button showing the selected definition.');
+
+        const minInput = bayList.querySelector('input[type="number"][placeholder="Min"]');
+        const maxInput = bayList.querySelector('input[type="number"][placeholder="Max"]');
+        assertTrue(!!minInput, 'Expected window min width input.');
+        assertTrue(!!maxInput, 'Expected window max width input.');
+
+        const infinityBtn = Array.from(bayList.querySelectorAll('button'))
+            .find((btn) => String(btn.textContent || '').trim() === '∞');
+        assertTrue(!!infinityBtn, 'Expected window max infinity toggle button.');
+
+        const leftPadInput = bayList.querySelector('input[type="number"][placeholder="Left"]');
+        const rightPadInput = bayList.querySelector('input[type="number"][placeholder="Right"]');
+        assertTrue(!!leftPadInput, 'Expected window left padding input.');
+        assertTrue(!!rightPadInput, 'Expected window right padding input.');
+
+        const legacyEditBtn = Array.from(bayList.querySelectorAll('button'))
             .find((btn) => String(btn.textContent || '').includes('Fabricate / Edit Window'));
-        assertTrue(!!editBtn, 'Expected a Fabricate / Edit Window button in the bay details.');
+        assertFalse(!!legacyEditBtn, 'Expected legacy Fabricate / Edit Window button to be retired.');
     });
 
     test('BuildingFabricationUI: windows fake depth controls toggle and disable sliders', () => {
@@ -2185,7 +2209,7 @@ async function runTests() {
         }
     });
 
-    test('BuildingFabrication2Scene: camera supports left mouse orbit', () => {
+    test('BuildingFabrication2Scene: camera maps left-look, middle-pan, and right-orbit', () => {
         const engine = {
             scene: new THREE.Scene(),
             camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
@@ -2194,10 +2218,30 @@ async function runTests() {
         const scene = new BuildingFabrication2Scene(engine);
         scene._buildCamera();
         try {
-            assertTrue(!!scene.controls, 'Expected camera controls to exist.');
-            assertTrue(scene.controls._orbitMouseButtons.has(0), 'Expected left mouse to orbit camera.');
-            assertTrue(scene.controls._orbitMouseButtons.has(2), 'Expected right mouse to orbit camera.');
-            assertTrue(scene.controls._panMouseButtons.has(1), 'Expected middle mouse to pan camera.');
+            const controls = scene.controls;
+            assertTrue(controls instanceof FirstPersonCameraController, 'Expected BF2 to use first-person camera controls.');
+
+            const baseEvt = {
+                pointerId: 17,
+                pointerType: 'mouse',
+                clientX: 200,
+                clientY: 180,
+                shiftKey: false,
+                preventDefault: () => {},
+                stopImmediatePropagation: () => {}
+            };
+
+            controls._handlePointerDown({ ...baseEvt, button: 0 });
+            assertEqual(controls._state, 'look', 'Expected left mouse drag to look without camera translation.');
+            controls._handlePointerUp({ ...baseEvt, button: 0 });
+
+            controls._handlePointerDown({ ...baseEvt, button: 1 });
+            assertEqual(controls._state, 'pan', 'Expected middle mouse drag to pan camera.');
+            controls._handlePointerUp({ ...baseEvt, button: 1 });
+
+            controls._handlePointerDown({ ...baseEvt, button: 2 });
+            assertEqual(controls._state, 'orbit', 'Expected right mouse drag to orbit around the focus target.');
+            controls._handlePointerUp({ ...baseEvt, button: 2 });
         } finally {
             scene.controls?.dispose?.();
             scene.controls = null;
@@ -2917,6 +2961,290 @@ async function runTests() {
         }
     });
 
+    test('BuildingFabricationGenerator: street-floor interior pass includes legacy run windows on facade walls', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+
+        const layers = [
+            createDefaultFloorLayer({
+                floors: 1,
+                floorHeight: 3.0,
+                belt: { enabled: false },
+                windows: {
+                    enabled: true,
+                    width: 1.2,
+                    height: 1.7,
+                    sillHeight: 0.8,
+                    spacing: 1.0
+                }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+        const baseMat = layers[0]?.material ?? { kind: 'texture', id: 'pbr.brick_wall_11' };
+        const makePaddingFacade = (id) => ({
+            wallMaterial: baseMat,
+            depthOffset: 0.0,
+            layout: {
+                items: [{
+                    type: 'padding',
+                    id,
+                    widthFrac: 1.0,
+                    minWidthMeters: 0.5
+                }]
+            }
+        });
+        const facades = {
+            A: makePaddingFacade('pad_a'),
+            B: makePaddingFacade('pad_b'),
+            C: makePaddingFacade('pad_c'),
+            D: makePaddingFacade('pad_d')
+        };
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            facades,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!parts, 'Expected visual parts.');
+
+        const interiorMeshes = (parts.solidMeshes ?? []).filter((m) => m?.userData?.buildingFab2Role === 'interior');
+        assertTrue(interiorMeshes.length >= 3, 'Expected street-floor interior shell meshes from run-window carve pass.');
+    });
+
+    test('BuildingFabricationGenerator: street-floor interior shell uses fixed materials and floorHeight-0.10 span', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+
+        const floorHeight = 3.2;
+        const layers = [
+            createDefaultFloorLayer({
+                floors: 2,
+                floorHeight,
+                belt: { enabled: false },
+                windows: {
+                    enabled: true,
+                    width: 1.1,
+                    height: 2.0,
+                    sillHeight: 0.2,
+                    spacing: 0.8
+                }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+        const baseMat = layers[0]?.material ?? { kind: 'texture', id: 'pbr.brick_wall_11' };
+        const makePadding = (id, widthFrac) => ({ type: 'padding', id, widthFrac, minWidthMeters: 0.4 });
+        const makeBay = (id, widthFrac, depthOffset, window) => ({
+            type: 'bay',
+            id,
+            widthFrac,
+            minWidthMeters: 1.0,
+            wallMaterialOverride: null,
+            depthOffset,
+            wedgeAngleDeg: 0,
+            features: {},
+            window
+        });
+        const doorWindow = {
+            enabled: true,
+            defId: 'door_1',
+            width: { minMeters: 1.0, maxMeters: 1.4 },
+            padding: { leftMeters: 0.15, rightMeters: 0.15 }
+        };
+        const facades = {
+            A: {
+                wallMaterial: baseMat,
+                depthOffset: 0.0,
+                layout: {
+                    items: [
+                        makeBay('bay_deep', 0.5, 0.45, doorWindow),
+                        makeBay('bay_flat', 0.5, 0.0, doorWindow)
+                    ]
+                }
+            },
+            B: { wallMaterial: baseMat, depthOffset: 0.0, layout: { items: [makePadding('pad_b', 1.0)] } },
+            C: { wallMaterial: baseMat, depthOffset: 0.0, layout: { items: [makePadding('pad_c', 1.0)] } },
+            D: { wallMaterial: baseMat, depthOffset: 0.0, layout: { items: [makePadding('pad_d', 1.0)] } }
+        };
+        const windowDefinitions = {
+            items: [{
+                id: 'door_1',
+                label: 'Door 1',
+                settings: {
+                    width: 1.2,
+                    height: 2.2,
+                    frame: { width: 0.08, depth: 0.12, inset: 0.02 }
+                }
+            }]
+        };
+
+        const resolvedMaterialIds = [];
+        const textureCache = {
+            resolveMaterial: (id) => {
+                resolvedMaterialIds.push(String(id || ''));
+                return { id };
+            },
+            applyResolvedMaterial: (mat, payload) => {
+                mat.userData = mat.userData ?? {};
+                mat.userData.testResolvedMaterialId = payload?.id ?? null;
+            },
+            trackMaterial: () => null
+        };
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            facades,
+            windowDefinitions,
+            textureCache,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!parts, 'Expected visual parts.');
+
+        const interiorMeshes = (parts.solidMeshes ?? []).filter((m) => m?.userData?.buildingFab2Role === 'interior');
+        const interiorWall = interiorMeshes.find((m) => m?.userData?.buildingFab2InteriorKind === 'wall') ?? null;
+        const interiorFloor = interiorMeshes.find((m) => m?.userData?.buildingFab2InteriorKind === 'floor') ?? null;
+        const interiorCeiling = interiorMeshes.find((m) => m?.userData?.buildingFab2InteriorKind === 'ceiling') ?? null;
+        assertTrue(!!interiorWall, 'Expected interior wall mesh.');
+        assertTrue(!!interiorFloor, 'Expected interior floor mesh.');
+        assertTrue(!!interiorCeiling, 'Expected interior ceiling mesh.');
+
+        const box = new THREE.Box3().setFromObject(interiorWall);
+        const interiorHeight = box.max.y - box.min.y;
+        assertNear(interiorHeight, floorHeight - 0.10, 1e-3, 'Expected interior wall span to be floorHeight - 0.10m.');
+        assertNear(interiorFloor.position.y, box.min.y, 1e-6, 'Expected interior floor to start at street-floor base.');
+        assertNear(interiorCeiling.position.y, box.max.y, 1e-6, 'Expected interior ceiling to align with interior wall top.');
+
+        const requiredMaterialIds = ['pbr.plastered_wall_02', 'pbr.plastered_wall_04', 'pbr.concrete_layers_02'];
+        for (const materialId of requiredMaterialIds) {
+            assertTrue(resolvedMaterialIds.includes(materialId), `Expected interior material resolve: ${materialId}.`);
+        }
+    });
+
+    test('BuildingFabricationGenerator: bay window size width/height directly controls opening placement size', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+        const layers = [
+            createDefaultFloorLayer({
+                floors: 1,
+                floorHeight: 3.2,
+                belt: { enabled: false },
+                windows: { enabled: false }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+        const baseMat = layers[0]?.material ?? { kind: 'texture', id: 'pbr.brick_wall_11' };
+        const facades = {
+            A: {
+                wallMaterial: baseMat,
+                depthOffset: 0.0,
+                layout: {
+                    bays: {
+                        nextBayIndex: 2,
+                        items: [{
+                            id: 'bay_1',
+                            size: { mode: 'range', minMeters: 4.0, maxMeters: null },
+                            expandPreference: 'prefer_expand',
+                            window: {
+                                enabled: true,
+                                defId: 'door_1',
+                                size: { widthMeters: 1.7, heightMeters: 2.5 },
+                                padding: { leftMeters: 0.2, rightMeters: 0.2 }
+                            }
+                        }]
+                    }
+                }
+            }
+        };
+        const windowDefinitions = {
+            items: [{
+                id: 'door_1',
+                label: 'Door 1',
+                settings: {
+                    width: 1.2,
+                    height: 2.2,
+                    frame: { openBottom: true, width: 0.08, depth: 0.12, inset: 0.02 },
+                    arch: { enabled: false }
+                }
+            }]
+        };
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            facades,
+            windowDefinitions,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!parts && !!parts.windows, 'Expected windows group.');
+
+        const customGroups = (parts.windows?.children ?? [])
+            .filter((entry) => entry?.userData?.buildingWindowSource === 'bf2_window_definition');
+        assertTrue(customGroups.length > 0, 'Expected at least one custom bay window group.');
+
+        const box = new THREE.Box3().setFromObject(customGroups[0]);
+        const size = box.getSize(new THREE.Vector3());
+        assertNear(size.x, 1.7, 0.2, 'Expected bay opening width to follow window.size.widthMeters.');
+        assertNear(size.y, 2.5, 0.2, 'Expected bay opening height to follow window.size.heightMeters.');
+    });
+
     const buildFacadeBoundaryLoopDetailForMaterialOwnership = ({ leftDepth = 0.2, rightDepth = 0.8 } = {}) => ([
         { x: 0, y: 0, z: -1.0, kind: 'corner_cut' },
         { x: 4, y: 0, z: -1.0, kind: 'corner_cut' },
@@ -3354,7 +3682,7 @@ async function runTests() {
         assertTrue(bay2Width + 1e-6 >= expectedWedgeMin, `Expected bay_2 width >= wedge min (${expectedWedgeMin.toFixed(3)}m).`);
     });
 
-    test('BuildingFabricationScene: bay window feature clamps bay min width', () => {
+    test('BuildingFabricationScene: bay window constraints clamp bay min width and canonical model', () => {
         const engine = {
             scene: new THREE.Scene(),
             camera: new THREE.PerspectiveCamera(),
@@ -3414,16 +3742,21 @@ async function runTests() {
         assertNear(faceLength, 48, 1e-6, 'Expected A face length for 2x1 footprint.');
 
         assertTrue(scene.setSelectedFaceFacadeBayWindowEnabled('bay_2', true), 'Expected enabling bay window feature to succeed.');
+        assertTrue(scene.setSelectedFaceFacadeBayWindowPadding('bay_2', 'left', 1.5), 'Expected setting linked window padding to succeed.');
         scene.setSelectedFaceFacadeItemWidth('bay_2', 5);
 
         const items = building.facades.A.layout.items;
         const bay2 = items.find((it) => it?.id === 'bay_2') ?? null;
         assertTrue(!!bay2, 'Expected bay_2 to exist.');
-        assertTrue(bay2.widthFrac * faceLength + 1e-6 >= 12, 'Expected bay_2 to remain at least window min width.');
+        assertTrue(bay2.widthFrac * faceLength + 1e-6 >= 15, 'Expected bay_2 to remain at least window min + padding width.');
 
-        scene.setSelectedFaceFacadeBayWindowFloorSkip('bay_2', 0);
-        const win = bay2.features?.window ?? null;
-        assertEqual(win?.floorSkip ?? null, 1, 'Expected floorSkip to clamp to 1.');
+        const win = bay2.window ?? null;
+        assertTrue(!!win, 'Expected canonical bay.window config to be stored.');
+        assertNear(win.padding.leftMeters, 1.5, 1e-6, 'Expected left padding to be updated.');
+        assertNear(win.padding.rightMeters, 1.5, 1e-6, 'Expected linked right padding to match left.');
+
+        assertTrue(scene.setSelectedFaceFacadeBayWindowMaxWidth('bay_2', 5), 'Expected max width update to clamp to min width.');
+        assertNear(win.width.maxMeters, 12, 1e-6, 'Expected max width to clamp to definition min width.');
     });
 
     // ========== Facade Layout Solver Tests ==========

@@ -8,6 +8,9 @@ import { sanitizeWindowMeshSettings } from '../../../../app/buildings/window_mes
 
 const EPS = 1e-6;
 const QUANT = 10000;
+const HANDLE_RADIUS = 0.025;
+const HANDLE_MAIN_HEIGHT = 0.24;
+const HANDLE_SEGMENTS = 6;
 
 function q(value) {
     return Math.round(Number(value) * QUANT);
@@ -65,14 +68,14 @@ function buildArchedOutline(out, { x0, x1, y0, yTop, yChord, archRise, curveSegm
     }
 }
 
-function buildWindowOutline(out, { width, height, wantsArch, archRise, curveSegments, reverse }) {
+function buildWindowOutline(out, { centerX = 0, centerY = 0, width, height, wantsArch, archRise, curveSegments, reverse }) {
     const w = Math.max(0.01, Number(width) || 1);
     const h = Math.max(0.01, Number(height) || 1);
 
-    const x0 = -w * 0.5;
-    const x1 = w * 0.5;
-    const y0 = -h * 0.5;
-    const yTop = h * 0.5;
+    const x0 = centerX - w * 0.5;
+    const x1 = centerX + w * 0.5;
+    const y0 = centerY - h * 0.5;
+    const yTop = centerY + h * 0.5;
 
     if (!wantsArch) {
         buildRectOutline(out, { x0, x1, y0, y1: yTop, reverse });
@@ -84,6 +87,21 @@ function buildWindowOutline(out, { width, height, wantsArch, archRise, curveSegm
     return { x0, x1, y0, yTop, yChord, archRise };
 }
 
+function computeInnerOpeningProfile(settings) {
+    const w = Number(settings?.width) || 0;
+    const h = Number(settings?.height) || 0;
+    const fw = Math.max(0, Number(settings?.frame?.width) || 0);
+    const openBottom = !!settings?.frame?.openBottom;
+
+    const innerWidth = Math.max(EPS, w - fw * 2);
+    const topMargin = fw;
+    const bottomMargin = openBottom ? 0 : fw;
+    const innerHeight = Math.max(EPS, h - topMargin - bottomMargin);
+    const centerY = (bottomMargin - topMargin) * 0.5;
+
+    return { innerWidth, innerHeight, centerY, topMargin };
+}
+
 function buildFrameGeometry({ settings, curveSegments }) {
     const s = sanitizeWindowMeshSettings(settings);
 
@@ -91,6 +109,30 @@ function buildFrameGeometry({ settings, curveSegments }) {
     const h = s.height;
     const fw = s.frame.width;
     const depth = s.frame.depth;
+    const openBottom = !!s.frame.openBottom;
+
+    if (openBottom) {
+        const d = Math.max(EPS, depth);
+        const sideW = Math.max(EPS, Math.min(fw, w * 0.5));
+        const sideH = Math.max(EPS, h);
+        const topH = Math.max(EPS, Math.min(fw, h));
+        const topW = Math.max(EPS, w - sideW * 2);
+
+        const left = new THREE.BoxGeometry(sideW, sideH, d);
+        left.translate(-w * 0.5 + sideW * 0.5, 0, d * 0.5);
+        const right = new THREE.BoxGeometry(sideW, sideH, d);
+        right.translate(w * 0.5 - sideW * 0.5, 0, d * 0.5);
+        const top = new THREE.BoxGeometry(topW, topH, d);
+        top.translate(0, h * 0.5 - topH * 0.5, d * 0.5);
+
+        const merged = mergeGeometries([left, right, top], false);
+        left.dispose();
+        right.dispose();
+        top.dispose();
+        merged.computeVertexNormals();
+        merged.computeBoundingBox();
+        return merged;
+    }
 
     const wantsArch = !!s.arch.enabled;
     const archRise = wantsArch ? (s.arch.heightRatio * w) : 0.0;
@@ -161,24 +203,20 @@ function applyPlanarUv01(geo) {
 function buildOpeningGeometry({ settings, curveSegments }) {
     const s = sanitizeWindowMeshSettings(settings);
 
-    const w = s.width;
-    const h = s.height;
-    const fw = s.frame.width;
-
-    const innerWidth = Math.max(EPS, w - fw * 2);
-    const innerHeight = Math.max(EPS, h - fw * 2);
+    const { innerWidth, innerHeight, centerY, topMargin } = computeInnerOpeningProfile(s);
 
     const wantsArch = !!s.arch.enabled;
-    const outerArchRise = wantsArch ? (s.arch.heightRatio * w) : 0.0;
+    const outerArchRise = wantsArch ? (s.arch.heightRatio * s.width) : 0.0;
     const innerWantsArch = wantsArch && outerArchRise > EPS;
     const innerArchRise = innerWantsArch ? (s.arch.heightRatio * innerWidth) : 0.0;
 
     const shape = new THREE.Shape();
     buildWindowOutline(shape, {
+        centerY,
         width: innerWidth,
         height: innerHeight,
         wantsArch: innerWantsArch,
-        archRise: Math.min(innerArchRise, Math.max(0, innerHeight - fw)),
+        archRise: Math.min(innerArchRise, Math.max(0, innerHeight - topMargin)),
         curveSegments,
         reverse: false
     });
@@ -194,25 +232,21 @@ function buildMuntinsGeometry({ settings, curveSegments }) {
     const s = sanitizeWindowMeshSettings(settings);
     if (!s.muntins.enabled) return null;
 
-    const w = s.width;
-    const h = s.height;
-    const fw = s.frame.width;
     const frameDepth = s.frame.depth;
 
-    const innerWidth = Math.max(EPS, w - fw * 2);
-    const innerHeight = Math.max(EPS, h - fw * 2);
+    const { innerWidth, innerHeight, centerY, topMargin } = computeInnerOpeningProfile(s);
 
     const wantsArch = !!s.arch.enabled;
-    const outerArchRise = wantsArch ? (s.arch.heightRatio * w) : 0.0;
+    const outerArchRise = wantsArch ? (s.arch.heightRatio * s.width) : 0.0;
     const innerWantsArch = wantsArch && outerArchRise > EPS;
     const innerArchRise = innerWantsArch ? (s.arch.heightRatio * innerWidth) : 0.0;
-    const openingArchRise = innerWantsArch ? Math.min(innerArchRise, Math.max(0, innerHeight - fw)) : 0.0;
+    const openingArchRise = innerWantsArch ? Math.min(innerArchRise, Math.max(0, innerHeight - topMargin)) : 0.0;
     const rectHeight = openingArchRise > EPS ? Math.max(EPS, innerHeight - openingArchRise) : innerHeight;
 
     const x0 = -innerWidth * 0.5;
     const x1 = innerWidth * 0.5;
-    const y0 = -innerHeight * 0.5;
-    const yTop = innerHeight * 0.5;
+    const y0 = centerY - innerHeight * 0.5;
+    const yTop = centerY + innerHeight * 0.5;
     const yChord = openingArchRise > EPS ? (yTop - openingArchRise) : yTop;
     const y1 = openingArchRise > EPS ? yChord : (y0 + rectHeight);
 
@@ -340,6 +374,103 @@ function buildArchMeetRectJoinGeometry({ settings }) {
     return geo;
 }
 
+function createHandleCylinderGeometry({ x = 0, y = 0, z = 0, height = 0.1, axis = 'y' } = {}) {
+    const geo = new THREE.CylinderGeometry(
+        HANDLE_RADIUS,
+        HANDLE_RADIUS,
+        Math.max(EPS, Number(height) || 0.1),
+        HANDLE_SEGMENTS,
+        1,
+        false
+    );
+    if (axis === 'z') geo.rotateX(Math.PI * 0.5);
+    geo.translate(Number(x) || 0, Number(y) || 0, Number(z) || 0);
+    return geo;
+}
+
+function resolveHandlePanelPair(panelCount) {
+    const count = Math.max(2, panelCount | 0);
+    if ((count % 2) === 0) {
+        const rightIndex = count * 0.5;
+        return [rightIndex - 1, rightIndex];
+    }
+    const mid = (count - 1) * 0.5;
+    const leftIndex = Math.min(count - 2, mid);
+    return [leftIndex, leftIndex + 1];
+}
+
+function computeDoorHandleXPositions({ innerWidth, panelCount }) {
+    const count = Math.max(1, panelCount | 0);
+    const paneWidth = Math.max(EPS, innerWidth / count);
+    const xMin = -innerWidth * 0.5;
+    const edgeInset = Math.min(Math.max(0.06, paneWidth * 0.2), paneWidth * 0.45);
+
+    if (count === 1) return [xMin + paneWidth - edgeInset];
+
+    const [leftPanel, rightPanel] = resolveHandlePanelPair(count);
+    const leftPanelLeft = xMin + paneWidth * leftPanel;
+    const rightPanelLeft = xMin + paneWidth * rightPanel;
+    const leftPanelRight = leftPanelLeft + paneWidth;
+    return [leftPanelRight - edgeInset, rightPanelLeft + edgeInset];
+}
+
+function buildDoorHandlesGeometry({ settings }) {
+    const s = sanitizeWindowMeshSettings(settings);
+    if (!s.frame.openBottom || !s.frame.addHandles) return null;
+
+    const { innerWidth, innerHeight, centerY } = computeInnerOpeningProfile(s);
+    const panelCount = s.muntins.enabled ? Math.max(1, s.muntins.columns | 0) : 1;
+    const xPositions = computeDoorHandleXPositions({ innerWidth, panelCount });
+
+    const yBottom = centerY - innerHeight * 0.5;
+    const yTop = centerY + innerHeight * 0.5;
+    const yDesired = yBottom + 1.0;
+    const yMin = yBottom + HANDLE_MAIN_HEIGHT * 0.5 + 0.02;
+    const yMax = yTop - HANDLE_MAIN_HEIGHT * 0.5 - 0.02;
+    const yCenter = yMax >= yMin
+        ? Math.min(yMax, Math.max(yMin, yDesired))
+        : (yBottom + yTop) * 0.5;
+
+    const surfaceZ = Math.max(EPS, s.frame.depth);
+    const handleCenterZ = surfaceZ + 0.08;
+    const connectorLength = Math.max(EPS, handleCenterZ - surfaceZ);
+    const connectorCenterZ = surfaceZ + connectorLength * 0.5;
+    const connectorYOffset = HANDLE_MAIN_HEIGHT * 0.32;
+
+    /** @type {THREE.BufferGeometry[]} */
+    const parts = [];
+    for (const x of xPositions) {
+        parts.push(createHandleCylinderGeometry({
+            x,
+            y: yCenter,
+            z: handleCenterZ,
+            height: HANDLE_MAIN_HEIGHT,
+            axis: 'y'
+        }));
+        parts.push(createHandleCylinderGeometry({
+            x,
+            y: yCenter + connectorYOffset,
+            z: connectorCenterZ,
+            height: connectorLength,
+            axis: 'z'
+        }));
+        parts.push(createHandleCylinderGeometry({
+            x,
+            y: yCenter - connectorYOffset,
+            z: connectorCenterZ,
+            height: connectorLength,
+            axis: 'z'
+        }));
+    }
+
+    if (!parts.length) return null;
+    const merged = mergeGeometries(parts, false);
+    for (const part of parts) part.dispose();
+    merged.computeVertexNormals();
+    merged.computeBoundingBox();
+    return merged;
+}
+
 export function getWindowMeshGeometryKey(settings, { curveSegments = 24 } = {}) {
     const s = sanitizeWindowMeshSettings(settings);
     const a = s.arch;
@@ -357,6 +488,8 @@ export function getWindowMeshGeometryKey(settings, { curveSegments = 24 } = {}) 
         `clipv:${a.clipVerticalMuntinsToRectWhenNoTopPiece ? 1 : 0}`,
         `fw:${q(f.width)}`,
         `fd:${q(f.depth)}`,
+        `fob:${f.openBottom ? 1 : 0}`,
+        `fah:${f.addHandles ? 1 : 0}`,
         `m:${m.enabled ? 1 : 0}`,
         `mc:${m.columns | 0}`,
         `mr:${m.rows | 0}`,
@@ -375,7 +508,8 @@ export function buildWindowMeshGeometryBundle(settings, { curveSegments = 24 } =
     const opening = buildOpeningGeometry({ settings, curveSegments });
     const muntins = buildMuntinsGeometry({ settings, curveSegments });
     const joinBar = buildArchMeetRectJoinGeometry({ settings });
+    const handles = buildDoorHandlesGeometry({ settings });
 
     const joinBarLayer = joinBar?.userData?.windowJoinBarLayer === 'muntins' ? 'muntins' : (joinBar ? 'frame' : null);
-    return { frame, opening, muntins, joinBar, joinBarLayer };
+    return { frame, opening, muntins, joinBar, joinBarLayer, handles };
 }

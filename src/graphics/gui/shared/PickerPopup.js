@@ -81,6 +81,7 @@ export class PickerPopup {
         this._activeSection = 0;
         this._selectedId = null;
         this._onSelect = null;
+        this._panelExtraClasses = [];
 
         this._onOverlayClick = (e) => this._handleOverlayClick(e);
         this._onClose = () => this.close();
@@ -96,8 +97,20 @@ export class PickerPopup {
         title = 'Select',
         sections = [],
         selectedId = null,
-        onSelect = null
+        onSelect = null,
+        panelClassName = '',
+        thumbHeightPx = null,
+        optionMinWidthPx = null,
+        thumbImageScale = null,
+        thumbImageFit = null
     } = {}) {
+        this._setPanelExtraClasses(panelClassName);
+        this._applyThumbPresentationVars({
+            thumbHeightPx,
+            optionMinWidthPx,
+            thumbImageScale,
+            thumbImageFit
+        });
         this._sections = (Array.isArray(sections) ? sections : []).map((s) => ({
             label: typeof s?.label === 'string' ? s.label : '',
             options: normalizeOptions(s?.options),
@@ -129,6 +142,33 @@ export class PickerPopup {
     dispose() {
         this.close();
         this.overlay.remove();
+    }
+
+    _setPanelExtraClasses(className) {
+        for (const cls of this._panelExtraClasses) this.panel.classList.remove(cls);
+        const next = typeof className === 'string'
+            ? className.split(/\s+/).map((v) => v.trim()).filter(Boolean)
+            : [];
+        for (const cls of next) this.panel.classList.add(cls);
+        this._panelExtraClasses = next;
+    }
+
+    _applyThumbPresentationVars({ thumbHeightPx = null, optionMinWidthPx = null, thumbImageScale = null, thumbImageFit = null } = {}) {
+        const h = Number(thumbHeightPx);
+        if (Number.isFinite(h) && h >= 32) this.panel.style.setProperty('--ui-picker-thumb-height', `${Math.round(h)}px`);
+        else this.panel.style.removeProperty('--ui-picker-thumb-height');
+
+        const minW = Number(optionMinWidthPx);
+        if (Number.isFinite(minW) && minW >= 96) this.panel.style.setProperty('--ui-picker-option-min-width', `${Math.round(minW)}px`);
+        else this.panel.style.removeProperty('--ui-picker-option-min-width');
+
+        const scale = Number(thumbImageScale);
+        if (Number.isFinite(scale) && scale > 0) this.panel.style.setProperty('--ui-picker-thumb-image-scale', String(scale));
+        else this.panel.style.removeProperty('--ui-picker-thumb-image-scale');
+
+        const fit = thumbImageFit === 'contain' ? 'contain' : (thumbImageFit === 'cover' ? 'cover' : '');
+        if (fit) this.panel.style.setProperty('--ui-picker-thumb-image-fit', fit);
+        else this.panel.style.removeProperty('--ui-picker-thumb-image-fit');
     }
 
     _bind() {

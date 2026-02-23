@@ -3,6 +3,13 @@
 // @ts-check
 
 import * as THREE from 'three';
+import {
+    WINDOW_DECORATION_PART,
+    WINDOW_DECORATION_PART_IDS,
+    WINDOW_DECORATION_STYLE,
+    WINDOW_DECORATION_MATERIAL_MODE,
+    resolveWindowDecorationState
+} from '../../../../app/buildings/window_mesh/index.js';
 import { PbrTextureLoaderService } from '../../../content3d/materials/PbrTexturePipeline.js';
 
 const EPS = 1e-6;
@@ -193,6 +200,156 @@ function setMaterialWireframe(mat, enabled) {
     mat.needsUpdate = true;
 }
 
+function getPartFromValue(value) {
+    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    for (const partId of WINDOW_DECORATION_PART_IDS) {
+        if (raw === partId) return partId;
+    }
+    return null;
+}
+
+function getStyleFromValue(value) {
+    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (raw === WINDOW_DECORATION_STYLE.SIMPLE) return WINDOW_DECORATION_STYLE.SIMPLE;
+    if (raw === WINDOW_DECORATION_STYLE.BOTTOM_COVER) return WINDOW_DECORATION_STYLE.BOTTOM_COVER;
+    return null;
+}
+
+const WINDOW_DECORATION_STYLE_PLUGIN_REGISTRY = new Map();
+
+function makePluginKey(partId, styleId) {
+    return `${String(partId ?? '').trim().toLowerCase()}::${String(styleId ?? '').trim().toLowerCase()}`;
+}
+
+export function registerWindowMeshDecorationStylePlugin(partId, styleId, plugin) {
+    const normalizedPart = getPartFromValue(partId);
+    const normalizedStyle = getStyleFromValue(styleId);
+    if (!normalizedPart || !normalizedStyle) return false;
+
+    const obj = plugin && typeof plugin === 'object' ? plugin : null;
+    if (!obj || typeof obj.buildGeometry !== 'function') return false;
+
+    WINDOW_DECORATION_STYLE_PLUGIN_REGISTRY.set(makePluginKey(normalizedPart, normalizedStyle), {
+        buildGeometryKey: typeof obj.buildGeometryKey === 'function' ? obj.buildGeometryKey : null,
+        buildGeometry: obj.buildGeometry
+    });
+    return true;
+}
+
+function getWindowMeshDecorationStylePlugin(partId, styleId) {
+    const normalizedPart = getPartFromValue(partId);
+    const normalizedStyle = getStyleFromValue(styleId);
+    if (!normalizedPart || !normalizedStyle) return null;
+    return WINDOW_DECORATION_STYLE_PLUGIN_REGISTRY.get(makePluginKey(normalizedPart, normalizedStyle)) ?? null;
+}
+
+function registerDefaultWindowMeshDecorationStylePlugins() {
+    registerWindowMeshDecorationStylePlugin(WINDOW_DECORATION_PART.SILL, WINDOW_DECORATION_STYLE.SIMPLE, {
+        buildGeometryKey: ({ windowWidth, resolved }) => {
+            const width = Math.max(0.01, Number(windowWidth) || 1) * (Number(resolved?.widthScale) || 1);
+            const height = Number(resolved?.template?.height) || 0.08;
+            const depth = Number(resolved?.template?.depth) || 0.08;
+            return `simple_box|w:${q(width)}|h:${q(height)}|d:${q(depth)}`;
+        },
+        buildGeometry: ({ windowWidth, resolved }) => {
+            const width = Math.max(0.01, Number(windowWidth) || 1) * (Number(resolved?.widthScale) || 1);
+            const height = Number(resolved?.template?.height) || 0.08;
+            const depth = Number(resolved?.template?.depth) || 0.08;
+            return buildBoxWithBackAtZero({ width, height, depth });
+        }
+    });
+
+    registerWindowMeshDecorationStylePlugin(WINDOW_DECORATION_PART.SILL, WINDOW_DECORATION_STYLE.BOTTOM_COVER, {
+        buildGeometryKey: ({ windowWidth, resolved }) => {
+            const width = Math.max(0.01, Number(windowWidth) || 1) * (Number(resolved?.widthScale) || 1);
+            const height = Number(resolved?.template?.height) || 0.08;
+            const depth = Number(resolved?.template?.depth) || 0.08;
+            return `simple_box|w:${q(width)}|h:${q(height)}|d:${q(depth)}`;
+        },
+        buildGeometry: ({ windowWidth, resolved }) => {
+            const width = Math.max(0.01, Number(windowWidth) || 1) * (Number(resolved?.widthScale) || 1);
+            const height = Number(resolved?.template?.height) || 0.08;
+            const depth = Number(resolved?.template?.depth) || 0.08;
+            return buildBoxWithBackAtZero({ width, height, depth });
+        }
+    });
+
+    registerWindowMeshDecorationStylePlugin(WINDOW_DECORATION_PART.HEADER, WINDOW_DECORATION_STYLE.SIMPLE, {
+        buildGeometryKey: ({ windowWidth, resolved }) => {
+            const width = Math.max(0.01, Number(windowWidth) || 1) * (Number(resolved?.widthScale) || 1);
+            const height = Number(resolved?.template?.height) || 0.08;
+            const depth = Number(resolved?.template?.depth) || 0.08;
+            return `simple_box|w:${q(width)}|h:${q(height)}|d:${q(depth)}`;
+        },
+        buildGeometry: ({ windowWidth, resolved }) => {
+            const width = Math.max(0.01, Number(windowWidth) || 1) * (Number(resolved?.widthScale) || 1);
+            const height = Number(resolved?.template?.height) || 0.08;
+            const depth = Number(resolved?.template?.depth) || 0.08;
+            return buildBoxWithBackAtZero({ width, height, depth });
+        }
+    });
+
+    registerWindowMeshDecorationStylePlugin(WINDOW_DECORATION_PART.TRIM, WINDOW_DECORATION_STYLE.SIMPLE, {
+        buildGeometryKey: ({ windowWidth, windowHeight, archEnabled, archHeightRatio, curveSegments, resolved }) => {
+            const width = Math.max(0.01, Number(windowWidth) || 1) * (Number(resolved?.widthScale) || 1);
+            const height = Math.max(0.01, Number(windowHeight) || 1);
+            const bandWidth = Number(resolved?.template?.height) || 0.08;
+            const innerGap = Math.max(0, Number(resolved?.template?.gap) || 0.0);
+            const depth = Number(resolved?.template?.depth) || 0.08;
+            return `simple_trim|w:${q(width)}|h:${q(height)}|arch:${archEnabled ? 1 : 0}|ahr:${q(archHeightRatio)}|bw:${q(bandWidth)}|ig:${q(innerGap)}|d:${q(depth)}|cs:${curveSegments | 0}`;
+        },
+        buildGeometry: ({ windowWidth, windowHeight, archEnabled, archHeightRatio, curveSegments, resolved }) => {
+            const width = Math.max(0.01, Number(windowWidth) || 1) * (Number(resolved?.widthScale) || 1);
+            const height = Math.max(0.01, Number(windowHeight) || 1);
+            const bandWidth = Number(resolved?.template?.height) || 0.08;
+            const innerGap = Math.max(0, Number(resolved?.template?.gap) || 0.0);
+            const depth = Number(resolved?.template?.depth) || 0.08;
+            return buildTrimGeometry({
+                windowWidth: width,
+                windowHeight: height,
+                archEnabled,
+                archHeightRatio,
+                bandWidth,
+                innerGap,
+                depth,
+                curveSegments
+            });
+        }
+    });
+}
+
+registerDefaultWindowMeshDecorationStylePlugins();
+
+function computeDecorationPlacement(partId, resolved, windowHeight, wallFrontZ) {
+    const template = resolved?.template && typeof resolved.template === 'object' ? resolved.template : {};
+    const offset = template.offset && typeof template.offset === 'object' ? template.offset : {};
+    const height = Number(template.height) || 0;
+    const gap = Number(template.gap) || 0;
+
+    let yBase = 0;
+    if (partId === WINDOW_DECORATION_PART.SILL) {
+        yBase = -windowHeight * 0.5 - gap - height * 0.5;
+    } else if (partId === WINDOW_DECORATION_PART.HEADER) {
+        yBase = windowHeight * 0.5 + gap + height * 0.5;
+    }
+
+    return {
+        x: Number(offset.x) || 0,
+        y: yBase + (Number(offset.y) || 0),
+        z: wallFrontZ + (Number(offset.z) || 0)
+    };
+}
+
+function getDefaultUvTransform() {
+    return {
+        repeatU: 1.0,
+        repeatV: 1.0,
+        offsetU: 0.0,
+        offsetV: 0.0,
+        rotationDeg: 0.0
+    };
+}
+
 export class WindowMeshDecorationsRig {
     constructor({ renderer } = {}) {
         this._renderer = renderer ?? null;
@@ -204,32 +361,46 @@ export class WindowMeshDecorationsRig {
         this.group.name = 'window_decorations';
 
         this._dummy = new THREE.Object3D();
-        this._geometryKeys = { sill: '', header: '', trim: '' };
-        this._materialKeys = { sill: '', header: '', trim: '' };
+        this._geometryKeys = {
+            [WINDOW_DECORATION_PART.SILL]: '',
+            [WINDOW_DECORATION_PART.HEADER]: '',
+            [WINDOW_DECORATION_PART.TRIM]: ''
+        };
+        this._materialKeys = {
+            [WINDOW_DECORATION_PART.SILL]: '',
+            [WINDOW_DECORATION_PART.HEADER]: '',
+            [WINDOW_DECORATION_PART.TRIM]: ''
+        };
         this._renderMode = 'solid';
 
-        this._meshes = { sill: null, header: null, trim: null };
-        this._materials = { sill: null, header: null, trim: null };
-        this._savedMaterialsForNormals = { sill: null, header: null, trim: null };
-        this._texCaches = { sill: new Map(), header: new Map(), trim: new Map() };
+        this._meshes = {
+            [WINDOW_DECORATION_PART.SILL]: null,
+            [WINDOW_DECORATION_PART.HEADER]: null,
+            [WINDOW_DECORATION_PART.TRIM]: null
+        };
+        this._materials = {
+            [WINDOW_DECORATION_PART.SILL]: null,
+            [WINDOW_DECORATION_PART.HEADER]: null,
+            [WINDOW_DECORATION_PART.TRIM]: null
+        };
+        this._savedMaterialsForNormals = {
+            [WINDOW_DECORATION_PART.SILL]: null,
+            [WINDOW_DECORATION_PART.HEADER]: null,
+            [WINDOW_DECORATION_PART.TRIM]: null
+        };
     }
 
     dispose() {
-        for (const type of Object.keys(this._meshes)) {
-            const mesh = this._meshes[type];
+        for (const partId of WINDOW_DECORATION_PART_IDS) {
+            const mesh = this._meshes[partId];
             if (mesh) {
                 this.group.remove(mesh);
                 mesh.geometry?.dispose?.();
             }
-            this._materials[type]?.dispose?.();
-            this._meshes[type] = null;
-            this._materials[type] = null;
-            this._savedMaterialsForNormals[type] = null;
-        }
-
-        for (const cache of Object.values(this._texCaches)) {
-            for (const tex of cache.values()) tex?.dispose?.();
-            cache.clear();
+            this._materials[partId]?.dispose?.();
+            this._meshes[partId] = null;
+            this._materials[partId] = null;
+            this._savedMaterialsForNormals[partId] = null;
         }
 
         this._pbrTextureService?.dispose?.();
@@ -243,28 +414,28 @@ export class WindowMeshDecorationsRig {
         const normals = next === 'normals';
         const wireframe = next === 'wireframe';
 
-        for (const type of Object.keys(this._meshes)) {
-            const mesh = this._meshes[type];
+        for (const partId of WINDOW_DECORATION_PART_IDS) {
+            const mesh = this._meshes[partId];
             if (!mesh) continue;
 
             if (normals) {
                 if (mesh.material !== normalMaterial) {
-                    this._savedMaterialsForNormals[type] = mesh.material;
+                    this._savedMaterialsForNormals[partId] = mesh.material;
                     mesh.material = normalMaterial;
                 }
                 continue;
             }
 
-            if (mesh.material === normalMaterial && this._savedMaterialsForNormals[type]) {
-                mesh.material = this._savedMaterialsForNormals[type];
+            if (mesh.material === normalMaterial && this._savedMaterialsForNormals[partId]) {
+                mesh.material = this._savedMaterialsForNormals[partId];
             }
 
-            const mat = this._materials[type];
+            const mat = this._materials[partId];
             setMaterialWireframe(mat, wireframe);
         }
     }
 
-    update({ wallFrontZ, windowSettings, instances, curveSegments = 24 } = {}, decorationState) {
+    update({ wallFrontZ, windowSettings, instances, curveSegments = 24, wallMaterial = null } = {}, decorationState) {
         const wFront = Number.isFinite(wallFrontZ) ? wallFrontZ : 0;
         const s = windowSettings && typeof windowSettings === 'object' ? windowSettings : {};
         const list = Array.isArray(instances) ? instances : [];
@@ -273,192 +444,152 @@ export class WindowMeshDecorationsRig {
         const archEnabled = !!s?.arch?.enabled;
         const archHeightRatio = Number(s?.arch?.heightRatio) || 0;
 
-        const deco = decorationState && typeof decorationState === 'object' ? decorationState : {};
-        const types = ['sill', 'header', 'trim'];
+        const wallMatCfg = wallMaterial && typeof wallMaterial === 'object' ? wallMaterial : {};
+        const wallMaterialId = typeof wallMatCfg.materialId === 'string' ? wallMatCfg.materialId.trim() : '';
+        const wallRoughness = clamp(wallMatCfg.roughness, 0.0, 1.0, 0.85);
+        const wallNormalStrength = clamp(wallMatCfg.normalIntensity, 0.0, 5.0, 1.0);
 
-        for (const type of types) {
-            const raw = deco[type] && typeof deco[type] === 'object' ? deco[type] : {};
-            const enabled = !!raw.enabled;
-            const shadows = raw.shadows && typeof raw.shadows === 'object' ? raw.shadows : {};
-            const castShadow = shadows.cast !== false;
-            const receiveShadow = shadows.receive !== false;
-            const off = raw.offset && typeof raw.offset === 'object' ? raw.offset : {};
-            const offsetX = Number(off.x) || 0;
-            const offsetY = Number(off.y) || 0;
-            const offsetZ = Number.isFinite(Number(off.z)) ? Number(off.z) : 0.002;
+        const resolvedByPart = resolveWindowDecorationState(decorationState, {
+            wallMaterialId
+        });
+
+        for (const partId of WINDOW_DECORATION_PART_IDS) {
+            const resolved = resolvedByPart?.[partId] ?? null;
+            const enabled = !!resolved?.enabled;
 
             if (!enabled) {
-                const mesh = this._meshes[type];
-                if (mesh) mesh.visible = false;
+                const hidden = this._meshes[partId];
+                if (hidden) hidden.visible = false;
                 continue;
             }
 
-            let geometryKey = '';
-            let geo = null;
-            if (type === 'sill' || type === 'header') {
-                const widthScale = clamp(raw.widthScale, 0.2, 4.0, 1.0);
-                const height = clamp(raw.height, 0.001, 2.0, 0.05);
-                const depth = clamp(raw.depth, 0.001, 2.0, 0.1);
-                geometryKey = `${type}|w:${q(winW * widthScale)}|h:${q(height)}|d:${q(depth)}`;
-                if (geometryKey !== this._geometryKeys[type]) {
-                    geo = buildBoxWithBackAtZero({ width: winW * widthScale, height, depth });
-                }
-            } else {
-                const bandWidth = clamp(raw.bandWidth, 0.0, 2.0, 0.08);
-                const innerGap = clamp(raw.innerGap, 0.0, 1.0, 0.005);
-                const depth = clamp(raw.depth, 0.001, 2.0, 0.04);
-                geometryKey = `${type}|w:${q(winW)}|h:${q(winH)}|arch:${archEnabled ? 1 : 0}|ahr:${q(archHeightRatio)}|bw:${q(bandWidth)}|ig:${q(innerGap)}|d:${q(depth)}|cs:${curveSegments | 0}`;
-                if (geometryKey !== this._geometryKeys[type]) {
-                    geo = buildTrimGeometry({
-                        windowWidth: winW,
-                        windowHeight: winH,
-                        archEnabled,
-                        archHeightRatio,
-                        bandWidth,
-                        innerGap,
-                        depth,
-                        curveSegments
-                    });
-                }
+            const styleId = String(resolved?.type ?? WINDOW_DECORATION_STYLE.SIMPLE);
+            const plugin = getWindowMeshDecorationStylePlugin(partId, styleId);
+            if (!plugin) {
+                const hidden = this._meshes[partId];
+                if (hidden) hidden.visible = false;
+                continue;
             }
 
+            const pluginCtx = {
+                partId,
+                resolved,
+                windowWidth: winW,
+                windowHeight: winH,
+                archEnabled,
+                archHeightRatio,
+                curveSegments
+            };
+
+            const geometryKey = plugin.buildGeometryKey
+                ? String(plugin.buildGeometryKey(pluginCtx) ?? '')
+                : `${partId}|${styleId}`;
             const count = list.length;
-            let mesh = this._meshes[type];
+
+            let mesh = this._meshes[partId];
+            let replaceGeometry = false;
             if (!mesh || mesh.count !== count) {
                 if (mesh) {
                     this.group.remove(mesh);
                     mesh.geometry?.dispose?.();
                 }
-                this._materials[type]?.dispose?.();
-                const material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, metalness: 0.0 });
-                const seedGeo = (() => {
-                    if (geo) return geo;
-                    if (type === 'sill' || type === 'header') {
-                        const widthScale = clamp(raw.widthScale, 0.2, 4.0, 1.0);
-                        const height = clamp(raw.height, 0.001, 2.0, 0.05);
-                        const depth = clamp(raw.depth, 0.001, 2.0, 0.1);
-                        return buildBoxWithBackAtZero({ width: winW * widthScale, height, depth });
-                    }
-                    const bandWidth = clamp(raw.bandWidth, 0.0, 2.0, 0.08);
-                    const innerGap = clamp(raw.innerGap, 0.0, 1.0, 0.005);
-                    const depth = clamp(raw.depth, 0.001, 2.0, 0.04);
-                    return buildTrimGeometry({
-                        windowWidth: winW,
-                        windowHeight: winH,
-                        archEnabled,
-                        archHeightRatio,
-                        bandWidth,
-                        innerGap,
-                        depth,
-                        curveSegments
-                    });
-                })();
+                this._materials[partId]?.dispose?.();
 
+                const seedGeo = plugin.buildGeometry(pluginCtx);
+                if (!seedGeo) {
+                    this._meshes[partId] = null;
+                    this._materials[partId] = null;
+                    continue;
+                }
+
+                const material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, metalness: 0.0 });
                 mesh = new THREE.InstancedMesh(seedGeo, material, count);
                 mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
                 mesh.frustumCulled = false;
                 this.group.add(mesh);
-                this._meshes[type] = mesh;
-                this._materials[type] = material;
-                this._geometryKeys[type] = geometryKey;
-                this._materialKeys[type] = '';
-                geo = null;
+
+                this._meshes[partId] = mesh;
+                this._materials[partId] = material;
+                this._geometryKeys[partId] = geometryKey;
+                this._materialKeys[partId] = '';
+                replaceGeometry = false;
+            } else if (geometryKey !== this._geometryKeys[partId]) {
+                replaceGeometry = true;
             }
 
-            if (geo) {
-                mesh.geometry?.dispose?.();
-                mesh.geometry = geo;
-                this._geometryKeys[type] = geometryKey;
-            } else if (geometryKey) {
-                this._geometryKeys[type] = geometryKey;
+            if (!mesh) continue;
+
+            if (replaceGeometry) {
+                const geo = plugin.buildGeometry(pluginCtx);
+                if (geo) {
+                    mesh.geometry?.dispose?.();
+                    mesh.geometry = geo;
+                }
             }
+            this._geometryKeys[partId] = geometryKey;
 
             mesh.visible = true;
-            mesh.castShadow = !!castShadow;
-            mesh.receiveShadow = !!receiveShadow;
+            // Decorations are visualization-only and always receive/cast shadows.
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
 
-            if (type === 'sill' || type === 'header') {
-                const height = clamp(raw.height, 0.001, 2.0, 0.05);
-                const gap = Number(raw.gap) || 0;
-                const yBase = type === 'sill'
-                    ? (-winH * 0.5 - gap - height * 0.5)
-                    : (winH * 0.5 + gap + height * 0.5);
-
-                for (let i = 0; i < count; i++) {
-                    const entry = list[i];
-                    const p = entry?.position && typeof entry.position === 'object' ? entry.position : entry;
-                    const yaw = Number(entry?.yaw) || 0;
-                    const x = (Number(p?.x) || 0) + offsetX;
-                    const y = (Number(p?.y) || 0) + yBase + offsetY;
-                    const z = wFront + offsetZ;
-                    this._dummy.position.set(x, y, z);
-                    this._dummy.rotation.set(0, yaw, 0);
-                    this._dummy.updateMatrix();
-                    mesh.setMatrixAt(i, this._dummy.matrix);
-                }
-                mesh.instanceMatrix.needsUpdate = true;
-            } else {
-                for (let i = 0; i < count; i++) {
-                    const entry = list[i];
-                    const p = entry?.position && typeof entry.position === 'object' ? entry.position : entry;
-                    const yaw = Number(entry?.yaw) || 0;
-                    const x = (Number(p?.x) || 0) + offsetX;
-                    const y = (Number(p?.y) || 0) + offsetY;
-                    const z = wFront + offsetZ;
-                    this._dummy.position.set(x, y, z);
-                    this._dummy.rotation.set(0, yaw, 0);
-                    this._dummy.updateMatrix();
-                    mesh.setMatrixAt(i, this._dummy.matrix);
-                }
-                mesh.instanceMatrix.needsUpdate = true;
+            const placement = computeDecorationPlacement(partId, resolved, winH, wFront);
+            for (let i = 0; i < count; i++) {
+                const entry = list[i];
+                const p = entry?.position && typeof entry.position === 'object' ? entry.position : entry;
+                const yaw = Number(entry?.yaw) || 0;
+                const x = (Number(p?.x) || 0) + placement.x;
+                const y = (Number(p?.y) || 0) + placement.y;
+                const z = placement.z;
+                this._dummy.position.set(x, y, z);
+                this._dummy.rotation.set(0, yaw, 0);
+                this._dummy.updateMatrix();
+                mesh.setMatrixAt(i, this._dummy.matrix);
             }
+            mesh.instanceMatrix.needsUpdate = true;
 
-            const matCfg = raw.material && typeof raw.material === 'object' ? raw.material : {};
-            const mode = String(matCfg.mode ?? 'pbr');
-            const matId = String(matCfg.materialId ?? '');
-            const roughness = clamp(matCfg.roughness, 0.0, 1.0, 0.85);
-            const metalness = clamp(matCfg.metalness, 0.0, 1.0, 0.0);
-            const normalStrength = clamp(matCfg.normalStrength, 0.0, 5.0, 1.0);
-            const uv = matCfg.uv && typeof matCfg.uv === 'object' ? matCfg.uv : {};
-            const colorHex = normalizeHexColor(matCfg.colorHex, 0xffffff);
+            const mode = String(resolved?.material?.mode ?? WINDOW_DECORATION_MATERIAL_MODE.MATCH_WALL);
+            const pbrMaterialId = typeof resolved?.material?.materialId === 'string' && resolved.material.materialId
+                ? resolved.material.materialId
+                : wallMaterialId;
+            const uv = getDefaultUvTransform();
+            const matKey = `${mode}|wall:${wallMaterialId}|pbr:${pbrMaterialId}|wr:${q(wallRoughness)}|wn:${q(wallNormalStrength)}`;
 
-            const matKey = `${mode}|id:${matId}|r:${q(roughness)}|m:${q(metalness)}|n:${q(normalStrength)}|c:${colorHex}|uv:${q(uv.repeatU)}:${q(uv.repeatV)}:${q(uv.offsetU)}:${q(uv.offsetV)}:${q(uv.rotationDeg)}`;
-            if (matKey !== this._materialKeys[type]) {
-                const mat = this._materials[type];
+            if (matKey !== this._materialKeys[partId]) {
+                const mat = this._materials[partId];
                 if (mat) {
-                    if (mode === 'match_frame') {
+                    const clearMaps = () => {
+                        mat.map = null;
+                        mat.normalMap = null;
+                        mat.roughnessMap = null;
+                        mat.metalnessMap = null;
+                        mat.aoMap = null;
+                    };
+
+                    if (mode === WINDOW_DECORATION_MATERIAL_MODE.MATCH_FRAME) {
                         const frame = s.frame ?? {};
                         const frameMat = frame.material ?? {};
                         mat.color.setHex(normalizeHexColor(frame.colorHex, 0xffffff));
-                        mat.roughness = clamp(frameMat.roughness, 0.0, 1.0, roughness);
-                        mat.metalness = clamp(frameMat.metalness, 0.0, 1.0, metalness);
-                        mat.map = null;
-                        mat.normalMap = null;
-                        mat.roughnessMap = null;
-                        mat.metalnessMap = null;
-                        mat.aoMap = null;
-                        if (mat.normalScale) mat.normalScale.set(clamp(frameMat.normalStrength, 0.0, 5.0, normalStrength), clamp(frameMat.normalStrength, 0.0, 5.0, normalStrength));
-                    } else if (mode === 'solid') {
-                        mat.color.setHex(colorHex);
-                        mat.roughness = roughness;
-                        mat.metalness = metalness;
-                        mat.map = null;
-                        mat.normalMap = null;
-                        mat.roughnessMap = null;
-                        mat.metalnessMap = null;
-                        mat.aoMap = null;
-                        if (mat.normalScale) mat.normalScale.set(normalStrength, normalStrength);
-                    } else {
+                        mat.roughness = clamp(frameMat.roughness, 0.0, 1.0, 0.72);
+                        mat.metalness = clamp(frameMat.metalness, 0.0, 1.0, 0.0);
+                        clearMaps();
+                        if (mat.normalScale) {
+                            const ns = clamp(frameMat.normalStrength, 0.0, 5.0, 1.0);
+                            mat.normalScale.set(ns, ns);
+                        }
+                    } else if (mode === WINDOW_DECORATION_MATERIAL_MODE.PBR) {
                         mat.color.setHex(0xffffff);
-                        mat.roughness = roughness;
-                        mat.metalness = metalness;
+                        mat.roughness = 0.85;
+                        mat.metalness = 0.0;
 
-                        const resolved = this._pbrTextureService?.resolveMaterial(matId, {
-                            cloneTextures: false,
-                            localOverrides: { roughness, metalness, normalStrength },
-                            diagnosticsTag: `WindowMeshDecorationsRig.${type}`
-                        }) ?? null;
-                        const tex = resolved?.textures ?? {};
+                        const resolvedPbr = pbrMaterialId
+                            ? (this._pbrTextureService?.resolveMaterial(pbrMaterialId, {
+                                cloneTextures: false,
+                                localOverrides: { roughness: 0.85, metalness: 0.0, normalStrength: 1.0 },
+                                diagnosticsTag: `WindowMeshDecorationsRig.${partId}.pbr`
+                            }) ?? null)
+                            : null;
+                        const tex = resolvedPbr?.textures ?? {};
 
                         mat.map = tex.baseColor ?? null;
                         mat.normalMap = tex.normal ?? null;
@@ -471,17 +602,50 @@ export class WindowMeshDecorationsRig {
                             mat.roughnessMap = tex.roughness ?? null;
                             mat.metalnessMap = tex.metalness ?? null;
                         }
-                        if (mat.normalScale) mat.normalScale.set(normalStrength, normalStrength);
 
+                        if (mat.normalScale) mat.normalScale.set(1.0, 1.0);
+                        applyUvTransform(mat.map, uv);
+                        applyUvTransform(mat.normalMap, uv);
+                        applyUvTransform(mat.aoMap, uv);
+                        applyUvTransform(mat.roughnessMap, uv);
+                        applyUvTransform(mat.metalnessMap, uv);
+                    } else {
+                        mat.color.setHex(0xffffff);
+                        mat.roughness = wallRoughness;
+                        mat.metalness = 0.0;
+
+                        const resolvedWall = wallMaterialId
+                            ? (this._pbrTextureService?.resolveMaterial(wallMaterialId, {
+                                cloneTextures: false,
+                                localOverrides: { roughness: wallRoughness, normalStrength: wallNormalStrength },
+                                diagnosticsTag: `WindowMeshDecorationsRig.${partId}.match_wall`
+                            }) ?? null)
+                            : null;
+                        const tex = resolvedWall?.textures ?? {};
+
+                        mat.map = tex.baseColor ?? null;
+                        mat.normalMap = tex.normal ?? null;
+                        if (tex.orm) {
+                            mat.roughnessMap = tex.orm;
+                            mat.metalnessMap = tex.orm;
+                            mat.aoMap = tex.orm;
+                        } else {
+                            mat.aoMap = tex.ao ?? null;
+                            mat.roughnessMap = tex.roughness ?? null;
+                            mat.metalnessMap = tex.metalness ?? null;
+                        }
+
+                        if (mat.normalScale) mat.normalScale.set(wallNormalStrength, wallNormalStrength);
                         applyUvTransform(mat.map, uv);
                         applyUvTransform(mat.normalMap, uv);
                         applyUvTransform(mat.aoMap, uv);
                         applyUvTransform(mat.roughnessMap, uv);
                         applyUvTransform(mat.metalnessMap, uv);
                     }
+
                     mat.needsUpdate = true;
                 }
-                this._materialKeys[type] = matKey;
+                this._materialKeys[partId] = matKey;
             }
         }
     }

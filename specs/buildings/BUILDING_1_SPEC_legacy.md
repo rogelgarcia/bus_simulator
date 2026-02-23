@@ -95,6 +95,18 @@ All things related to building fabrication should be organized in a dedicated mo
 - Use a unified material picker for all material selections in the UI. The material picker should show a preview of the material selected. The material picker should show a popup to select the material.
 - Windows and doors should have a catalog browser to select the type from predefined options. 
 
+## Legacy Bay Window Authoring Parity (Current Implementation)
+
+For the legacy Building Fabrication face/bay editor, bay-window authoring follows the same interaction model as Building Fabrication 2:
+- `Enable window` toggle, then picker-first flow.
+- Window selection uses the shared `PickerPopup` component (same popup behavior used by Window Debugger), with:
+  - `Window Definitions` options.
+  - `Actions`: `Create New` and `Edit` (for the current definition).
+- After a window is selected, per-bay quick parameters are edited inline:
+  - width `min` + `max` (`max = null` is treated as infinity),
+  - left/right padding with link/unlink toggle.
+- Legacy conflicting controls are retired in this flow (definition dropdown/new-row/edit-row + width/height/floor-skip overrides).
+
 ## Export building configuration
 
 - There must be an `EXPORT` button in the fabrication screen.

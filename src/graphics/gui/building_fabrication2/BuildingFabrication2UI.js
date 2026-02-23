@@ -29,6 +29,7 @@ const BAY_GROUP_CONNECTOR_STRIP_HEIGHT_PX = 14;
 const BAY_GROUP_CONNECTOR_LEVEL_SPACING_PX = 4;
 const BAY_GROUP_CONNECTOR_LEVEL_TOP_PADDING_PX = 2;
 const BAY_GROUP_CONNECTOR_MAX_LEVELS = 3;
+const BAY_LINK_MASTER_HUES = Object.freeze([14, 44, 88, 152, 204, 242, 304]);
 
 function isFaceId(faceId) {
     return faceId === 'A' || faceId === 'B' || faceId === 'C' || faceId === 'D';
@@ -48,6 +49,71 @@ function resolveBayWindowFromSpec(bay) {
     if (spec.window && typeof spec.window === 'object') return spec.window;
     const legacy = spec.features && typeof spec.features === 'object' ? spec.features.window : null;
     return legacy && typeof legacy === 'object' ? legacy : null;
+}
+
+function buildBayLinkGraph(bays) {
+    const list = Array.isArray(bays) ? bays : [];
+    const byId = new Map();
+    const orderedIds = [];
+    for (const entry of list) {
+        const bay = entry && typeof entry === 'object' ? entry : null;
+        const id = typeof bay?.id === 'string' ? bay.id : '';
+        if (!id || byId.has(id)) continue;
+        byId.set(id, bay);
+        orderedIds.push(id);
+    }
+
+    const resolveRootMasterId = (startId) => {
+        const start = typeof startId === 'string' ? startId : '';
+        if (!start || !byId.has(start)) return null;
+        const visited = new Set();
+        let cur = start;
+        for (let i = 0; i < 32; i++) {
+            if (visited.has(cur)) return start;
+            visited.add(cur);
+            const bay = byId.get(cur) ?? null;
+            if (!bay || typeof bay !== 'object') return start;
+            const next = resolveBayLinkFromSpec(bay);
+            if (!next) return cur;
+            if (next === cur) return cur;
+            if (!byId.has(next)) return cur;
+            cur = next;
+        }
+        return start;
+    };
+
+    const rootMasterByBayId = new Map();
+    const directMasterByBayId = new Map();
+    const slaveIdsByMasterId = new Map();
+    for (const bayId of orderedIds) {
+        const bay = byId.get(bayId) ?? null;
+        const directMasterId = resolveBayLinkFromSpec(bay);
+        directMasterByBayId.set(bayId, directMasterId);
+        const rootMasterId = resolveRootMasterId(bayId) ?? bayId;
+        rootMasterByBayId.set(bayId, rootMasterId);
+        if (rootMasterId && rootMasterId !== bayId) {
+            if (!slaveIdsByMasterId.has(rootMasterId)) slaveIdsByMasterId.set(rootMasterId, []);
+            slaveIdsByMasterId.get(rootMasterId).push(bayId);
+        }
+    }
+
+    const hueByMasterId = new Map();
+    let hueIndex = 0;
+    for (const bayId of orderedIds) {
+        const slaves = slaveIdsByMasterId.get(bayId) ?? [];
+        if (!slaves.length) continue;
+        hueByMasterId.set(bayId, BAY_LINK_MASTER_HUES[hueIndex % BAY_LINK_MASTER_HUES.length]);
+        hueIndex += 1;
+    }
+
+    return {
+        byId,
+        orderedIds,
+        rootMasterByBayId,
+        directMasterByBayId,
+        slaveIdsByMasterId,
+        hueByMasterId
+    };
 }
 
 function clamp(value, min, max) {
@@ -607,6 +673,8 @@ export class BuildingFabrication2UI {
 	        this.onRequestBayMaterialConfig = null;
 	        this.onSetBayWindowEnabled = null;
 	        this.onRequestBayWindowPicker = null;
+	        this.onSetBayWindowPlacementWidth = null;
+	        this.onSetBayWindowPlacementHeight = null;
 	        this.onSetBayWindowMinWidth = null;
 	        this.onSetBayWindowMaxWidth = null;
 	        this.onSetBayWindowPadding = null;
@@ -2074,6 +2142,7 @@ export class BuildingFabrication2UI {
                     const id = typeof bay?.id === 'string' ? bay.id : '';
                     if (id) bayIndexById.set(id, i);
                 }
+                const bayLinkGraph = buildBayLinkGraph(bays);
 
                 const windowDefinitions = this._windowDefinitions && typeof this._windowDefinitions === 'object'
                     ? this._windowDefinitions
@@ -2166,23 +2235,8 @@ export class BuildingFabrication2UI {
                 const resolveBaySource = (bayId) => {
                     const id = typeof bayId === 'string' ? bayId : '';
                     if (!id) return null;
-                    const start = bays.find((b) => (b && typeof b === 'object' ? b.id : '') === id) ?? null;
-                    if (!start || typeof start !== 'object') return null;
-                    const visited = new Set();
-                    let cur = start;
-                    for (let i = 0; i < 32; i++) {
-                        const curId = typeof cur?.id === 'string' ? cur.id : '';
-                        if (!curId) return start;
-                        if (visited.has(curId)) return start;
-                        visited.add(curId);
-                        const nextId = resolveBayLinkFromSpec(cur);
-                        if (!nextId) return cur;
-                        if (nextId === curId) return cur;
-                        const next = bays.find((b) => (b && typeof b === 'object' ? b.id : '') === nextId) ?? null;
-                        if (!next || typeof next !== 'object') return cur;
-                        cur = next;
-                    }
-                    return start;
+                    const rootMasterId = bayLinkGraph.rootMasterByBayId.get(id) ?? id;
+                    return bayLinkGraph.byId.get(rootMasterId) ?? bayLinkGraph.byId.get(id) ?? null;
                 };
 
                 const resolveEffectiveBayMaterial = (bay) => {
@@ -2255,6 +2309,7 @@ export class BuildingFabrication2UI {
                     slot.className = 'building-fab2-bay-slot';
                     const i = Number.isInteger(index) ? index : -1;
                     if (i >= 0) slot.dataset.bayIndex = String(i);
+                    if (btn?.classList?.contains('is-slave-preview')) slot.classList.add('is-slave-preview');
                     slot.appendChild(btn);
 
                     const strip = document.createElement('div');
@@ -2297,17 +2352,33 @@ export class BuildingFabrication2UI {
                         const bay = bays[bayIndex] && typeof bays[bayIndex] === 'object' ? bays[bayIndex] : null;
                         const bayId = typeof bay?.id === 'string' ? bay.id : '';
                         if (!bayId) continue;
+                        const rootMasterBayId = bayLinkGraph.rootMasterByBayId.get(bayId) ?? bayId;
+                        const isSlaveBay = rootMasterBayId !== bayId;
+                        const linkHue = bayLinkGraph.hueByMasterId.get(rootMasterBayId) ?? null;
 
                         const btn = document.createElement('button');
                         btn.type = 'button';
                         btn.className = 'building-fab2-bay-btn';
                         btn.disabled = !allowEdit;
                         btn.classList.toggle('is-active', bayId === selectedBayId);
+                        if (Number.isFinite(linkHue)) {
+                            btn.style.setProperty('--building-fab2-bay-link-hue', String(linkHue));
+                            btn.classList.add(isSlaveBay ? 'is-link-slave' : 'is-link-master');
+                        }
                         btn.addEventListener('click', () => {
                             if (!allowEdit) return;
                             this._setSelectedBayId(layerId, configFaceId, bayId);
                             this._renderLayers();
                         });
+
+                        if (isSlaveBay) {
+                            const linkIcon = createMaterialSymbolIcon('link', { size: 'sm' });
+                            linkIcon.classList.add('building-fab2-bay-slave-icon');
+                            btn.classList.add('is-linked', 'is-slave-preview');
+                            btn.appendChild(linkIcon);
+                            appendBaySlot(btn, bayIndex);
+                            continue;
+                        }
 
                         const thumb = document.createElement('div');
                         thumb.className = 'building-fab-material-thumb building-fab2-bay-btn-thumb';
@@ -2317,17 +2388,7 @@ export class BuildingFabrication2UI {
 
                         const label = document.createElement('div');
                         label.className = 'building-fab2-bay-btn-label';
-                        const linkedFromBayId = resolveBayLinkFromSpec(bay);
-                        if (linkedFromBayId) {
-                            const linkedFromIndex = bayIndexById.get(linkedFromBayId) ?? null;
-                            label.textContent = Number.isInteger(linkedFromIndex) ? String(linkedFromIndex + 1) : String(bayIndex + 1);
-                            const linkIcon = createMaterialSymbolIcon('link', { size: 'sm' });
-                            linkIcon.classList.add('building-fab2-bay-label-icon');
-                            label.appendChild(linkIcon);
-                            btn.classList.add('is-linked');
-                        } else {
-                            label.textContent = String(bayIndex + 1);
-                        }
+                        label.textContent = String(bayIndex + 1);
 
                         const icons = document.createElement('div');
                         icons.className = 'building-fab2-bay-btn-icons';
@@ -2445,21 +2506,25 @@ export class BuildingFabrication2UI {
                 const selectedWindowPreviewUrl = typeof selectedWindowDef?.previewUrl === 'string' ? selectedWindowDef.previewUrl : '';
                 const selectedWindowDefWidth = Number(selectedWindowDef?.settings?.width);
                 const selectedWindowDefHeight = Number(selectedWindowDef?.settings?.height);
-                const windowMinRaw = Number(windowCfg?.width?.minMeters);
-                const windowMinWidth = hasBayWindow
-                    ? (Number.isFinite(windowMinRaw)
-                        ? Math.max(0.1, windowMinRaw)
+                const windowSize = windowCfg?.size && typeof windowCfg.size === 'object' ? windowCfg.size : null;
+                const windowWidthRaw = Number(windowSize?.widthMeters);
+                const windowHeightRaw = Number(windowSize?.heightMeters);
+                const windowWidthMeters = hasBayWindow
+                    ? (Number.isFinite(windowWidthRaw)
+                        ? Math.max(0.1, windowWidthRaw)
                         : (Number.isFinite(selectedWindowDefWidth) ? Math.max(0.1, selectedWindowDefWidth) : 0.1))
                     : 0.1;
-                const windowMaxRaw = windowCfg?.width?.maxMeters;
-                const windowMaxIsInfinity = windowMaxRaw === null || windowMaxRaw === undefined;
-                const windowMaxWidth = Number(windowMaxRaw);
+                const windowHeightMeters = hasBayWindow
+                    ? (Number.isFinite(windowHeightRaw)
+                        ? Math.max(0.1, windowHeightRaw)
+                        : (Number.isFinite(selectedWindowDefHeight) ? Math.max(0.1, selectedWindowDefHeight) : 0.1))
+                    : 0.1;
                 const windowPadding = windowCfg?.padding && typeof windowCfg.padding === 'object' ? windowCfg.padding : null;
                 const windowPaddingLinked = (windowPadding?.linked ?? true) !== false;
                 const windowPaddingLeft = Math.max(0, Number(windowPadding?.leftMeters) || 0);
                 const windowPaddingRight = Math.max(0, Number(windowPadding?.rightMeters) || (windowPaddingLinked ? windowPaddingLeft : 0));
                 const windowRequiredWidth = hasBayWindow
-                    ? Math.max(0.1, windowMinWidth + windowPaddingLeft + windowPaddingRight)
+                    ? Math.max(0.1, windowWidthMeters + windowPaddingLeft + windowPaddingRight)
                     : null;
 
 	                {
@@ -2492,60 +2557,18 @@ export class BuildingFabrication2UI {
 	                        this.onMoveBay?.(layerId, configFaceId, bayId, 1);
 	                    });
 
-		                    const bayLinkBtn = document.createElement('button');
-		                    bayLinkBtn.type = 'button';
-		                    bayLinkBtn.className = 'building-fab2-icon-btn building-fab2-bay-link-btn';
-		                    bayLinkBtn.classList.toggle('is-linked', !!linkedFromBayId);
-		                    applyMaterialSymbolToButton(bayLinkBtn, { name: 'link', label: 'Link bay', size: 'sm' });
-		                    bayLinkBtn.disabled = !allowBayEdit;
-		                    bayLinkBtn.addEventListener('click', () => {
-		                        if (!allowBayEdit) return;
-	                        const options = [];
-	                        options.push({ id: 'baylink:none', label: 'Unlink (independent)' });
-	                        for (let i = 0; i < bays.length; i++) {
-	                            const b = bays[i] && typeof bays[i] === 'object' ? bays[i] : null;
-	                            const id = typeof b?.id === 'string' ? b.id : '';
-	                            if (!id) continue;
-	                            const eff = resolveEffectiveBayMaterial(b);
-	                            if (eff.kind === 'color') {
-	                                const c = getColorOpt(eff.id);
-	                                options.push({
-	                                    id: `baylink:${id}`,
-	                                    label: `Bay ${i + 1}`,
-	                                    kind: 'color',
-	                                    hex: c?.hex ?? 0xffffff,
-	                                    disabled: id === bayId
-	                                });
-	                            } else {
-	                                const tex = getTexOpt(eff.id);
-	                                options.push({
-	                                    id: `baylink:${id}`,
-	                                    label: `Bay ${i + 1}`,
-	                                    kind: 'texture',
-	                                    previewUrl: tex?.wallTextureUrl ?? null,
-	                                    disabled: id === bayId
-	                                });
-	                            }
-	                        }
-
-	                        const selectedId = linkedFromBayId ? `baylink:${linkedFromBayId}` : 'baylink:none';
-	                        this._materialPickerPopup.open({
-	                            title: `Link bay · Face ${configFaceId}`,
-	                            sections: [{ label: 'Bays', options }],
-	                            selectedId,
-	                            onSelect: (opt) => {
-	                                const id = typeof opt?.id === 'string' ? opt.id : '';
-	                                if (id === 'baylink:none') {
-	                                    this.onSetBayLink?.(layerId, configFaceId, bayId, null);
-	                                    return;
-	                                }
-	                                if (!id.startsWith('baylink:')) return;
-	                                const next = id.slice('baylink:'.length);
-	                                if (!next) return;
-	                                this.onSetBayLink?.(layerId, configFaceId, bayId, next);
-	                            }
-	                        });
-	                    });
+			                    const bayLinkBtn = document.createElement('button');
+			                    bayLinkBtn.type = 'button';
+			                    bayLinkBtn.className = 'building-fab2-icon-btn building-fab2-bay-link-btn';
+			                    bayLinkBtn.classList.toggle('is-linked', !!linkedFromBayId);
+			                    applyMaterialSymbolToButton(bayLinkBtn, { name: 'link', label: 'Link bay', size: 'sm' });
+			                    bayLinkBtn.disabled = !allowBayEdit;
+			                    bayLinkBtn.addEventListener('click', () => {
+			                        if (!allowBayEdit) return;
+		                        // In the master/slave model, linking is authored from the master bay.
+		                        if (linkedFromBayId) this.onSetBayLink?.(layerId, configFaceId, bayId, null);
+		                        this.openBayLinkPopup({ layerId, faceId: configFaceId, masterBayId: bayId });
+		                    });
 
 	                    const bayDeleteBtn = document.createElement('button');
 	                    bayDeleteBtn.type = 'button';
@@ -2982,61 +3005,53 @@ export class BuildingFabrication2UI {
                             }
                             windowDetails.appendChild(bayWindowPicker.row);
 
-                            const windowSizeRow = document.createElement('div');
-                            windowSizeRow.className = 'building-fab-row building-fab-row-wide';
-                            const windowSizeLabel = document.createElement('div');
-                            windowSizeLabel.className = 'building-fab-row-label';
-                            windowSizeLabel.textContent = 'Window width';
-                            const windowSizeControls = document.createElement('div');
-                            windowSizeControls.className = 'building-fab2-bay-width-controls';
-
-                            const windowWidthInputs = document.createElement('div');
-                            windowWidthInputs.className = 'building-fab2-bay-width-inputs';
-
-                            const windowMinInput = document.createElement('input');
-                            windowMinInput.type = 'number';
-                            windowMinInput.className = 'building-fab-number building-fab2-bay-width-input';
-                            windowMinInput.min = '0.1';
-                            windowMinInput.step = '0.1';
-                            windowMinInput.placeholder = 'Min';
-                            windowMinInput.disabled = !allowBayConfigEdit || !hasBayWindow;
-                            windowMinInput.value = String(windowMinWidth);
-                            windowMinInput.addEventListener('input', () => {
+                            const windowWidthRow = document.createElement('div');
+                            windowWidthRow.className = 'building-fab-row building-fab-row-wide';
+                            const windowWidthLabel = document.createElement('div');
+                            windowWidthLabel.className = 'building-fab-row-label';
+                            windowWidthLabel.textContent = 'Opening width';
+                            const windowWidthControls = document.createElement('div');
+                            windowWidthControls.className = 'building-fab2-bay-width-controls';
+                            const windowWidthInput = document.createElement('input');
+                            windowWidthInput.type = 'number';
+                            windowWidthInput.className = 'building-fab-number building-fab2-bay-width-input';
+                            windowWidthInput.min = '0.1';
+                            windowWidthInput.step = '0.1';
+                            windowWidthInput.placeholder = 'Width';
+                            windowWidthInput.disabled = !allowBayConfigEdit || !hasBayWindow;
+                            windowWidthInput.value = String(windowWidthMeters);
+                            windowWidthInput.addEventListener('input', () => {
                                 if (!allowBayConfigEdit || !hasBayWindow) return;
-                                this.onSetBayWindowMinWidth?.(layerId, configFaceId, bayId, Number(windowMinInput.value));
+                                this.onSetBayWindowPlacementWidth?.(layerId, configFaceId, bayId, Number(windowWidthInput.value));
                             });
-                            windowWidthInputs.appendChild(windowMinInput);
+                            windowWidthControls.appendChild(windowWidthInput);
+                            windowWidthRow.appendChild(windowWidthLabel);
+                            windowWidthRow.appendChild(windowWidthControls);
+                            windowDetails.appendChild(windowWidthRow);
 
-                            const windowMaxInput = document.createElement('input');
-                            windowMaxInput.type = 'number';
-                            windowMaxInput.className = 'building-fab-number building-fab2-bay-width-input';
-                            windowMaxInput.min = '0.1';
-                            windowMaxInput.step = '0.1';
-                            windowMaxInput.placeholder = 'Max';
-                            windowMaxInput.disabled = !allowBayConfigEdit || !hasBayWindow || windowMaxIsInfinity;
-                            windowMaxInput.value = String(Number.isFinite(windowMaxWidth) ? windowMaxWidth : windowMinWidth);
-                            windowMaxInput.addEventListener('input', () => {
+                            const windowHeightRow = document.createElement('div');
+                            windowHeightRow.className = 'building-fab-row building-fab-row-wide';
+                            const windowHeightLabel = document.createElement('div');
+                            windowHeightLabel.className = 'building-fab-row-label';
+                            windowHeightLabel.textContent = 'Opening height';
+                            const windowHeightControls = document.createElement('div');
+                            windowHeightControls.className = 'building-fab2-bay-width-controls';
+                            const windowHeightInput = document.createElement('input');
+                            windowHeightInput.type = 'number';
+                            windowHeightInput.className = 'building-fab-number building-fab2-bay-width-input';
+                            windowHeightInput.min = '0.1';
+                            windowHeightInput.step = '0.1';
+                            windowHeightInput.placeholder = 'Height';
+                            windowHeightInput.disabled = !allowBayConfigEdit || !hasBayWindow;
+                            windowHeightInput.value = String(windowHeightMeters);
+                            windowHeightInput.addEventListener('input', () => {
                                 if (!allowBayConfigEdit || !hasBayWindow) return;
-                                this.onSetBayWindowMaxWidth?.(layerId, configFaceId, bayId, Number(windowMaxInput.value));
+                                this.onSetBayWindowPlacementHeight?.(layerId, configFaceId, bayId, Number(windowHeightInput.value));
                             });
-                            windowWidthInputs.appendChild(windowMaxInput);
-
-                            const windowInfinityBtn = document.createElement('button');
-                            windowInfinityBtn.type = 'button';
-                            windowInfinityBtn.className = 'building-fab2-width-inf-btn';
-                            applyMaterialSymbolToButton(windowInfinityBtn, { name: 'all_inclusive', label: 'Infinite max', size: 'sm' });
-                            windowInfinityBtn.disabled = !allowBayConfigEdit || !hasBayWindow;
-                            windowInfinityBtn.classList.toggle('is-active', windowMaxIsInfinity);
-                            windowInfinityBtn.addEventListener('click', () => {
-                                if (!allowBayConfigEdit || !hasBayWindow) return;
-                                this.onSetBayWindowMaxWidth?.(layerId, configFaceId, bayId, windowMaxIsInfinity ? Number(windowMaxInput.value) : null);
-                            });
-                            windowWidthInputs.appendChild(windowInfinityBtn);
-
-                            windowSizeControls.appendChild(windowWidthInputs);
-                            windowSizeRow.appendChild(windowSizeLabel);
-                            windowSizeRow.appendChild(windowSizeControls);
-                            windowDetails.appendChild(windowSizeRow);
+                            windowHeightControls.appendChild(windowHeightInput);
+                            windowHeightRow.appendChild(windowHeightLabel);
+                            windowHeightRow.appendChild(windowHeightControls);
+                            windowDetails.appendChild(windowHeightRow);
 
                             const windowPaddingRow = document.createElement('div');
                             windowPaddingRow.className = 'building-fab-row building-fab-row-wide';
@@ -3095,9 +3110,10 @@ export class BuildingFabrication2UI {
 
                             const windowDetailHint = document.createElement('div');
                             windowDetailHint.className = 'building-fab2-hint building-fab2-bay-window-details-hint';
+                            const windowRefWidth = Number.isFinite(selectedWindowDefWidth) ? `${selectedWindowDefWidth.toFixed(2)}m` : 'n/a';
                             const windowRefHeight = Number.isFinite(selectedWindowDefHeight) ? `${selectedWindowDefHeight.toFixed(2)}m` : 'n/a';
                             const requiredText = Number.isFinite(windowRequiredWidth) ? `${windowRequiredWidth.toFixed(2)}m` : 'n/a';
-                            windowDetailHint.textContent = `Definition height: ${windowRefHeight} · Effective bay min: ${requiredText}`;
+                            windowDetailHint.textContent = `Definition size: ${windowRefWidth} x ${windowRefHeight} · Effective bay min: ${requiredText}`;
                             windowDetails.appendChild(windowDetailHint);
 
                             windowSection.appendChild(windowDetails);
@@ -3195,7 +3211,20 @@ export class BuildingFabrication2UI {
         const master = isFaceId(masterFaceId) ? masterFaceId : null;
         if (!id || !master) return false;
 
-        this._linkPopup = { layerId: id, masterFaceId: master };
+        this._linkPopup = { target: 'face', layerId: id, masterFaceId: master };
+        if (!this.linkOverlay.isConnected) document.body.appendChild(this.linkOverlay);
+        this.linkOverlay.classList.remove('hidden');
+        this._renderLinkPopup();
+        return true;
+    }
+
+    openBayLinkPopup({ layerId = null, faceId = null, masterBayId = null } = {}) {
+        const id = typeof layerId === 'string' ? layerId : '';
+        const face = isFaceId(faceId) ? faceId : null;
+        const masterId = typeof masterBayId === 'string' ? masterBayId : '';
+        if (!id || !face || !masterId) return false;
+
+        this._linkPopup = { target: 'bay', layerId: id, faceId: face, masterBayId: masterId };
         if (!this.linkOverlay.isConnected) document.body.appendChild(this.linkOverlay);
         this.linkOverlay.classList.remove('hidden');
         this._renderLinkPopup();
@@ -3238,9 +3267,20 @@ export class BuildingFabrication2UI {
         const popup = this._linkPopup;
         if (!popup) return;
 
+        if (popup.target === 'bay') {
+            this._renderBayLinkPopup(popup);
+            return;
+        }
+        this._renderFaceLinkPopup(popup);
+    }
+
+    _renderFaceLinkPopup(popup) {
         const layerId = popup.layerId;
         const masterFaceId = popup.masterFaceId;
+        if (!layerId || !isFaceId(masterFaceId)) return;
+
         this.linkTitle.textContent = `Link faces (master: ${masterFaceId})`;
+        this.linkFooter.textContent = 'Select which faces to link to the master face.';
 
         const faceState = this._getFloorLayerFaceState(layerId);
         const lockedToByFace = faceState.lockedToByFace;
@@ -3268,6 +3308,152 @@ export class BuildingFabrication2UI {
         }
 
         this.linkBody.appendChild(grid);
+    }
+
+    _renderBayLinkPopup(popup) {
+        const layerId = typeof popup?.layerId === 'string' ? popup.layerId : '';
+        const faceId = isFaceId(popup?.faceId) ? popup.faceId : null;
+        const masterBayId = typeof popup?.masterBayId === 'string' ? popup.masterBayId : '';
+        if (!layerId || !faceId || !masterBayId) return;
+
+        const layerFacades = (this._facadesByLayerId?.[layerId] && typeof this._facadesByLayerId[layerId] === 'object')
+            ? this._facadesByLayerId[layerId]
+            : null;
+        const facade = (layerFacades?.[faceId] && typeof layerFacades[faceId] === 'object')
+            ? layerFacades[faceId]
+            : null;
+        const bays = Array.isArray(facade?.layout?.bays?.items) ? facade.layout.bays.items : [];
+        const bayIndexById = new Map(
+            bays
+                .map((entry, index) => {
+                    const bay = entry && typeof entry === 'object' ? entry : null;
+                    const id = typeof bay?.id === 'string' ? bay.id : '';
+                    return [id, index];
+                })
+                .filter((entry) => typeof entry[0] === 'string' && entry[0])
+        );
+
+        if (!bayIndexById.has(masterBayId)) {
+            this.closeLinkPopup();
+            return;
+        }
+
+        const linkGraph = buildBayLinkGraph(bays);
+        const masterIndex = bayIndexById.get(masterBayId);
+        const masterLabel = Number.isInteger(masterIndex) ? `Bay ${masterIndex + 1}` : masterBayId;
+
+        this.linkTitle.textContent = `Link bays (master: ${masterLabel})`;
+        this.linkFooter.textContent = 'Select bays to link to this master bay. Click a linked bay to unlink it.';
+
+        const layer = this._layers.find((entry) => entry?.type === 'floor' && entry?.id === layerId) ?? null;
+        const faceMaterials = layer?.faceMaterials && typeof layer.faceMaterials === 'object' ? layer.faceMaterials : null;
+        const faceConfig = faceMaterials?.[faceId] && typeof faceMaterials[faceId] === 'object' ? faceMaterials[faceId] : null;
+        const faceMaterial = (() => {
+            const cfg = faceConfig?.material && typeof faceConfig.material === 'object' ? faceConfig.material : null;
+            const kind = cfg?.kind;
+            const id = typeof cfg?.id === 'string' ? cfg.id : '';
+            if ((kind === 'texture' || kind === 'color') && id) return { kind, id };
+            const layerMat = layer?.material && typeof layer.material === 'object' ? layer.material : null;
+            const layerKind = layerMat?.kind;
+            const layerMaterialId = typeof layerMat?.id === 'string' ? layerMat.id : '';
+            if ((layerKind === 'texture' || layerKind === 'color') && layerMaterialId) return { kind: layerKind, id: layerMaterialId };
+            const styleId = typeof layer?.style === 'string' && layer.style ? layer.style : 'default';
+            return { kind: 'texture', id: styleId };
+        })();
+
+        const resolveEffectiveBayMaterial = (bayId) => {
+            const id = typeof bayId === 'string' ? bayId : '';
+            if (!id) return faceMaterial;
+            const rootMasterId = linkGraph.rootMasterByBayId.get(id) ?? id;
+            const sourceBay = linkGraph.byId.get(rootMasterId) ?? linkGraph.byId.get(id) ?? null;
+            const override = sourceBay?.wallMaterialOverride && typeof sourceBay.wallMaterialOverride === 'object'
+                ? sourceBay.wallMaterialOverride
+                : null;
+            const kind = override?.kind;
+            const materialId = typeof override?.id === 'string' ? override.id : '';
+            if ((kind === 'texture' || kind === 'color') && materialId) return { kind, id: materialId };
+            return faceMaterial;
+        };
+
+        const syncMaterialThumb = (thumb, material) => {
+            const spec = material && typeof material === 'object' ? material : {};
+            const kind = spec.kind === 'color' ? 'color' : 'texture';
+            const id = typeof spec.id === 'string' ? spec.id : '';
+            if (kind === 'color') {
+                const colorOpt = (this._baseWallColorPickerOptions ?? []).find((opt) => opt?.id === `color:${id}`) ?? null;
+                setMaterialThumbToColor(thumb, colorOpt?.hex ?? 0xffffff);
+                return;
+            }
+            const texOpt = this._wallTextureDefById.get(id) ?? null;
+            setMaterialThumbToTexture(thumb, texOpt?.wallTextureUrl ?? '', texOpt?.label ?? '');
+        };
+
+        const list = document.createElement('div');
+        list.className = 'building-fab2-link-bay-list';
+
+        for (let i = 0; i < bays.length; i++) {
+            const bay = bays[i] && typeof bays[i] === 'object' ? bays[i] : null;
+            const bayId = typeof bay?.id === 'string' ? bay.id : '';
+            if (!bayId) continue;
+
+            const rootMasterId = linkGraph.rootMasterByBayId.get(bayId) ?? bayId;
+            const directMasterId = linkGraph.directMasterByBayId.get(bayId) ?? null;
+            const isMaster = bayId === masterBayId;
+            const isLinkedToMaster = !isMaster && rootMasterId === masterBayId;
+            const groupHue = linkGraph.hueByMasterId.get(rootMasterId) ?? null;
+
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'building-fab2-link-bay-btn';
+            btn.dataset.layerId = layerId;
+            btn.dataset.faceId = faceId;
+            btn.dataset.masterBayId = masterBayId;
+            btn.dataset.targetBayId = bayId;
+            btn.disabled = !this._enabled || !this._hasBuilding || isMaster;
+            btn.classList.toggle('is-master', isMaster);
+            btn.classList.toggle('is-active', isLinkedToMaster);
+            if (Number.isFinite(groupHue)) {
+                btn.style.setProperty('--building-fab2-bay-link-hue', String(groupHue));
+                btn.classList.add(rootMasterId === bayId ? 'is-link-master' : 'is-link-slave');
+            }
+
+            const thumb = document.createElement('div');
+            thumb.className = 'building-fab-material-thumb building-fab2-link-bay-thumb';
+            syncMaterialThumb(thumb, resolveEffectiveBayMaterial(bayId));
+
+            const meta = document.createElement('div');
+            meta.className = 'building-fab2-link-bay-meta';
+            const title = document.createElement('div');
+            title.className = 'building-fab2-link-bay-title';
+            title.textContent = `Bay ${i + 1}`;
+            const status = document.createElement('div');
+            status.className = 'building-fab2-link-bay-status';
+
+            if (isMaster) {
+                status.textContent = 'Master';
+            } else if (isLinkedToMaster) {
+                status.textContent = 'Linked';
+            } else if (directMasterId) {
+                const linkedIndex = bayIndexById.get(directMasterId);
+                status.textContent = Number.isInteger(linkedIndex) ? `Linked to Bay ${linkedIndex + 1}` : 'Linked';
+            } else {
+                status.textContent = 'Independent';
+            }
+
+            meta.appendChild(title);
+            meta.appendChild(status);
+
+            const iconName = isLinkedToMaster ? 'link_off' : 'link';
+            const toggleIcon = createMaterialSymbolIcon(iconName, { size: 'sm' });
+            toggleIcon.classList.add('building-fab2-link-bay-icon');
+
+            btn.appendChild(thumb);
+            btn.appendChild(meta);
+            btn.appendChild(toggleIcon);
+            list.appendChild(btn);
+        }
+
+        this.linkBody.appendChild(list);
     }
 
     _renderGroupingPanel() {
@@ -3445,6 +3631,18 @@ export class BuildingFabrication2UI {
         const btn = e?.target?.closest?.('button');
         if (!btn || !this.linkBody.contains(btn)) return;
         if (btn.disabled) return;
+        const popup = this._linkPopup;
+        if (popup?.target === 'bay') {
+            const layerId = btn.dataset?.layerId ?? '';
+            const faceId = btn.dataset?.faceId ?? null;
+            const masterBayId = btn.dataset?.masterBayId ?? '';
+            const targetBayId = btn.dataset?.targetBayId ?? '';
+            if (!layerId || !isFaceId(faceId) || !masterBayId || !targetBayId || targetBayId === masterBayId) return;
+            const nextMaster = btn.classList.contains('is-active') ? null : masterBayId;
+            this.onSetBayLink?.(layerId, faceId, targetBayId, nextMaster);
+            return;
+        }
+
         const layerId = btn.dataset?.layerId ?? '';
         const masterFaceId = btn.dataset?.masterFaceId ?? null;
         const targetFaceId = btn.dataset?.faceId ?? null;

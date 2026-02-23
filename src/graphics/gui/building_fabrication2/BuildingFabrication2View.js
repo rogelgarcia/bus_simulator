@@ -73,6 +73,8 @@ const DEFAULT_FOOTPRINT_WIDTH_M = 48.0;
 const DEFAULT_FOOTPRINT_DEPTH_M = 24.0;
 const WINDOW_MIN_WIDTH_M = 0.1;
 const WINDOW_MAX_WIDTH_M = 9999;
+const WINDOW_MIN_HEIGHT_M = 0.1;
+const WINDOW_MAX_HEIGHT_M = 9999;
 const WINDOW_PADDING_MIN_M = 0.0;
 const WINDOW_PADDING_MAX_M = 9999;
 const WINDOW_DEF_WIDTH_FALLBACK_M = 1.2;
@@ -603,6 +605,10 @@ export class BuildingFabrication2View {
         this._onCanvasPointerDown = (e) => this._handleCanvasPointerDown(e);
         this._onCanvasPointerUp = (e) => this._handleCanvasPointerUp(e);
         this._onCanvasPointerCancel = (e) => this._handleCanvasPointerCancel(e);
+        this._onCanvasContextMenu = (e) => {
+            if (!e) return;
+            e.preventDefault();
+        };
 
         this._keys = {
             ArrowUp: false,
@@ -684,6 +690,8 @@ export class BuildingFabrication2View {
         this.ui.onRequestBayMaterialConfig = (layerId, faceId, bayId) => this._openMaterialConfigForBay(layerId, faceId, bayId);
         this.ui.onSetBayWindowEnabled = (layerId, faceId, bayId, enabled) => this._setBayWindowEnabled(layerId, faceId, bayId, enabled);
         this.ui.onRequestBayWindowPicker = (layerId, faceId, bayId) => this._openBayWindowPicker(layerId, faceId, bayId);
+        this.ui.onSetBayWindowPlacementWidth = (layerId, faceId, bayId, width) => this._setBayWindowPlacementWidth(layerId, faceId, bayId, width);
+        this.ui.onSetBayWindowPlacementHeight = (layerId, faceId, bayId, height) => this._setBayWindowPlacementHeight(layerId, faceId, bayId, height);
         this.ui.onSetBayWindowMinWidth = (layerId, faceId, bayId, min) => this._setBayWindowMinWidth(layerId, faceId, bayId, min);
         this.ui.onSetBayWindowMaxWidth = (layerId, faceId, bayId, max) => this._setBayWindowMaxWidth(layerId, faceId, bayId, max);
         this.ui.onSetBayWindowPadding = (layerId, faceId, bayId, edge, value) => this._setBayWindowPadding(layerId, faceId, bayId, edge, value);
@@ -699,6 +707,7 @@ export class BuildingFabrication2View {
         canvas?.addEventListener?.('pointerdown', this._onCanvasPointerDown, { passive: true });
         canvas?.addEventListener?.('pointerup', this._onCanvasPointerUp, { passive: true });
         canvas?.addEventListener?.('pointercancel', this._onCanvasPointerCancel, { passive: true });
+        canvas?.addEventListener?.('contextmenu', this._onCanvasContextMenu, { passive: false, capture: true });
 
         window.addEventListener('keydown', this._onKeyDown, { passive: false });
         window.addEventListener('keyup', this._onKeyUp, { passive: false });
@@ -712,6 +721,7 @@ export class BuildingFabrication2View {
         canvas?.removeEventListener?.('pointerdown', this._onCanvasPointerDown);
         canvas?.removeEventListener?.('pointerup', this._onCanvasPointerUp);
         canvas?.removeEventListener?.('pointercancel', this._onCanvasPointerCancel);
+        canvas?.removeEventListener?.('contextmenu', this._onCanvasContextMenu, { capture: true });
 
         window.removeEventListener('keydown', this._onKeyDown);
         window.removeEventListener('keyup', this._onKeyUp);
@@ -779,6 +789,8 @@ export class BuildingFabrication2View {
         this.ui.onRequestBayMaterialConfig = null;
         this.ui.onSetBayWindowEnabled = null;
         this.ui.onRequestBayWindowPicker = null;
+        this.ui.onSetBayWindowPlacementWidth = null;
+        this.ui.onSetBayWindowPlacementHeight = null;
         this.ui.onSetBayWindowMinWidth = null;
         this.ui.onSetBayWindowMaxWidth = null;
         this.ui.onSetBayWindowPadding = null;
@@ -1027,7 +1039,7 @@ export class BuildingFabrication2View {
     _resolveWindowDefinitionHeightMeters(windowDefId) {
         const entry = this._findWindowDefinitionEntry(windowDefId);
         const raw = Number(entry?.settings?.height);
-        if (Number.isFinite(raw)) return clamp(raw, WINDOW_MIN_WIDTH_M, WINDOW_MAX_WIDTH_M);
+        if (Number.isFinite(raw)) return clamp(raw, WINDOW_MIN_HEIGHT_M, WINDOW_MAX_HEIGHT_M);
         return WINDOW_DEF_HEIGHT_FALLBACK_M;
     }
 
@@ -1059,6 +1071,10 @@ export class BuildingFabrication2View {
             bayObj.window = {
                 enabled: true,
                 defId: '',
+                size: {
+                    widthMeters: WINDOW_DEF_WIDTH_FALLBACK_M,
+                    heightMeters: WINDOW_DEF_HEIGHT_FALLBACK_M
+                },
                 width: { minMeters: WINDOW_DEF_WIDTH_FALLBACK_M, maxMeters: null },
                 padding: { leftMeters: 0, rightMeters: 0 }
             };
@@ -1083,6 +1099,16 @@ export class BuildingFabrication2View {
         const maxMeters = (maxRaw === null || maxRaw === undefined) ? null : clamp(maxRaw, minMeters, WINDOW_MAX_WIDTH_M);
         windowCfg.width = { minMeters, maxMeters };
 
+        const defWidth = this._resolveWindowDefinitionWidthMeters(windowCfg.defId);
+        const defHeight = this._resolveWindowDefinitionHeightMeters(windowCfg.defId);
+        const sizeSrc = windowCfg.size && typeof windowCfg.size === 'object' ? windowCfg.size : {};
+        const widthMeters = this._resolveBayWindowPlacementWidthMeters({ ...windowCfg, size: sizeSrc }, { defWidth });
+        const heightRaw = Number(sizeSrc.heightMeters ?? windowCfg.heightMeters);
+        const heightMeters = Number.isFinite(heightRaw)
+            ? clamp(heightRaw, WINDOW_MIN_HEIGHT_M, WINDOW_MAX_HEIGHT_M)
+            : clamp(defHeight, WINDOW_MIN_HEIGHT_M, WINDOW_MAX_HEIGHT_M);
+        windowCfg.size = { widthMeters, heightMeters };
+
         const paddingSrc = windowCfg.padding && typeof windowCfg.padding === 'object' ? windowCfg.padding : {};
         const linked = (paddingSrc.linked ?? true) !== false;
         const leftMeters = clamp(paddingSrc.leftMeters ?? windowCfg.paddingLeftMeters ?? 0, WINDOW_PADDING_MIN_M, WINDOW_PADDING_MAX_M);
@@ -1095,12 +1121,44 @@ export class BuildingFabrication2View {
         return windowCfg;
     }
 
+    _resolveLegacyBayWindowWidthMeters(windowCfg, { defWidth = WINDOW_DEF_WIDTH_FALLBACK_M } = {}) {
+        const cfg = windowCfg && typeof windowCfg === 'object' ? windowCfg : {};
+        const safeDefWidth = clamp(defWidth, WINDOW_MIN_WIDTH_M, WINDOW_MAX_WIDTH_M);
+        const widthSrc = cfg.width && typeof cfg.width === 'object' ? cfg.width : null;
+        const minRaw = Number(widthSrc?.minMeters ?? cfg.minWidthMeters);
+        const minMeters = Number.isFinite(minRaw)
+            ? clamp(minRaw, WINDOW_MIN_WIDTH_M, WINDOW_MAX_WIDTH_M)
+            : safeDefWidth;
+        const maxRaw = widthSrc?.maxMeters ?? cfg.maxWidthMeters;
+        const maxMeters = (maxRaw === null || maxRaw === undefined)
+            ? null
+            : clamp(maxRaw, minMeters, WINDOW_MAX_WIDTH_M);
+        let widthMeters = safeDefWidth;
+        widthMeters = clamp(widthMeters, minMeters, Number.isFinite(maxMeters) ? maxMeters : WINDOW_MAX_WIDTH_M);
+        return widthMeters;
+    }
+
+    _resolveBayWindowPlacementWidthMeters(windowCfg, { defWidth = WINDOW_DEF_WIDTH_FALLBACK_M } = {}) {
+        const cfg = windowCfg && typeof windowCfg === 'object' ? windowCfg : {};
+        const size = cfg.size && typeof cfg.size === 'object' ? cfg.size : null;
+        const widthRaw = Number(size?.widthMeters ?? cfg.widthMeters);
+        if (Number.isFinite(widthRaw)) return clamp(widthRaw, WINDOW_MIN_WIDTH_M, WINDOW_MAX_WIDTH_M);
+        return this._resolveLegacyBayWindowWidthMeters(cfg, { defWidth });
+    }
+
+    _resolveBayWindowPlacementHeightMeters(windowCfg, { defHeight = WINDOW_DEF_HEIGHT_FALLBACK_M } = {}) {
+        const cfg = windowCfg && typeof windowCfg === 'object' ? windowCfg : {};
+        const size = cfg.size && typeof cfg.size === 'object' ? cfg.size : null;
+        const heightRaw = Number(size?.heightMeters ?? cfg.heightMeters);
+        if (Number.isFinite(heightRaw)) return clamp(heightRaw, WINDOW_MIN_HEIGHT_M, WINDOW_MAX_HEIGHT_M);
+        return clamp(defHeight, WINDOW_MIN_HEIGHT_M, WINDOW_MAX_HEIGHT_M);
+    }
+
     _resolveBayWindowMinRequirementMeters(bay) {
         const windowCfg = this._ensureBayWindowConfig(bay, { create: false });
         if (!windowCfg || windowCfg.enabled === false) return null;
         const defWidth = this._resolveWindowDefinitionWidthMeters(windowCfg.defId);
-        const userMin = clamp(windowCfg?.width?.minMeters ?? defWidth, WINDOW_MIN_WIDTH_M, WINDOW_MAX_WIDTH_M);
-        const minWindowWidth = Math.max(defWidth, userMin);
+        const minWindowWidth = this._resolveBayWindowPlacementWidthMeters(windowCfg, { defWidth });
         const leftPad = clamp(windowCfg?.padding?.leftMeters ?? 0, WINDOW_PADDING_MIN_M, WINDOW_PADDING_MAX_M);
         const rightPad = clamp(windowCfg?.padding?.rightMeters ?? 0, WINDOW_PADDING_MIN_M, WINDOW_PADDING_MAX_M);
         return clamp(minWindowWidth + leftPad + rightPad, WINDOW_MIN_WIDTH_M, WINDOW_MAX_WIDTH_M);
@@ -1148,6 +1206,7 @@ export class BuildingFabrication2View {
         const id = typeof windowDefId === 'string' ? windowDefId : '';
         if (!id) return false;
         const defWidth = this._resolveWindowDefinitionWidthMeters(id);
+        const defHeight = this._resolveWindowDefinitionHeightMeters(id);
         let changed = false;
 
         const facadesByLayerId = this._currentConfig?.facades && typeof this._currentConfig.facades === 'object'
@@ -1163,6 +1222,17 @@ export class BuildingFabrication2View {
                 for (const bay of bays) {
                     const windowCfg = this._ensureBayWindowConfig(bay, { create: false });
                     if (!windowCfg || windowCfg.defId !== id || windowCfg.enabled === false) continue;
+                    const size = windowCfg.size && typeof windowCfg.size === 'object' ? windowCfg.size : {};
+                    const nextWidth = this._resolveBayWindowPlacementWidthMeters(windowCfg, { defWidth });
+                    const nextHeight = this._resolveBayWindowPlacementHeightMeters(windowCfg, { defHeight });
+                    if (Math.abs(nextWidth - (Number(size.widthMeters) || 0)) > 1e-6
+                        || Math.abs(nextHeight - (Number(size.heightMeters) || 0)) > 1e-6) {
+                        windowCfg.size = {
+                            widthMeters: nextWidth,
+                            heightMeters: nextHeight
+                        };
+                        changed = true;
+                    }
                     const prev = clamp(windowCfg?.width?.minMeters ?? defWidth, WINDOW_MIN_WIDTH_M, WINDOW_MAX_WIDTH_M);
                     const next = Math.max(prev, defWidth);
                     if (Math.abs(next - prev) > 1e-6) {
@@ -1251,11 +1321,16 @@ export class BuildingFabrication2View {
         windowCfg.defId = resolvedDefId;
 
         const defWidth = this._resolveWindowDefinitionWidthMeters(resolvedDefId);
+        const defHeight = this._resolveWindowDefinitionHeightMeters(resolvedDefId);
         const currentMin = clamp(windowCfg?.width?.minMeters ?? defWidth, WINDOW_MIN_WIDTH_M, WINDOW_MAX_WIDTH_M);
         windowCfg.width.minMeters = Math.max(defWidth, currentMin);
         if (windowCfg.width.maxMeters !== null && windowCfg.width.maxMeters !== undefined) {
             windowCfg.width.maxMeters = clamp(windowCfg.width.maxMeters, windowCfg.width.minMeters, WINDOW_MAX_WIDTH_M);
         }
+        windowCfg.size = {
+            widthMeters: this._resolveBayWindowPlacementWidthMeters(windowCfg, { defWidth }),
+            heightMeters: this._resolveBayWindowPlacementHeightMeters(windowCfg, { defHeight })
+        };
 
         this._enforceBaySizeAgainstWindow(bay);
         this._syncUiState();
@@ -1278,16 +1353,76 @@ export class BuildingFabrication2View {
         if (!windowCfg) return;
         windowCfg.enabled = true;
         if (windowCfg.defId === nextDefId) return;
+
+        const prevSize = windowCfg.size && typeof windowCfg.size === 'object' ? windowCfg.size : null;
         windowCfg.defId = nextDefId;
 
         const defWidth = this._resolveWindowDefinitionWidthMeters(nextDefId);
+        const defHeight = this._resolveWindowDefinitionHeightMeters(nextDefId);
         const nextMin = Math.max(defWidth, clamp(windowCfg?.width?.minMeters ?? defWidth, WINDOW_MIN_WIDTH_M, WINDOW_MAX_WIDTH_M));
         windowCfg.width.minMeters = nextMin;
         if (windowCfg.width.maxMeters !== null && windowCfg.width.maxMeters !== undefined) {
             windowCfg.width.maxMeters = clamp(windowCfg.width.maxMeters, nextMin, WINDOW_MAX_WIDTH_M);
         }
+        const prevWidthRaw = Number(prevSize?.widthMeters);
+        const prevHeightRaw = Number(prevSize?.heightMeters);
+        windowCfg.size = {
+            widthMeters: Number.isFinite(prevWidthRaw)
+                ? clamp(prevWidthRaw, WINDOW_MIN_WIDTH_M, WINDOW_MAX_WIDTH_M)
+                : this._resolveBayWindowPlacementWidthMeters(windowCfg, { defWidth }),
+            heightMeters: Number.isFinite(prevHeightRaw)
+                ? clamp(prevHeightRaw, WINDOW_MIN_HEIGHT_M, WINDOW_MAX_HEIGHT_M)
+                : this._resolveBayWindowPlacementHeightMeters(windowCfg, { defHeight })
+        };
         this._enforceBaySizeAgainstWindow(bay);
 
+        this._syncUiState();
+        this._requestRebuild({ preserveCamera: true });
+    }
+
+    _setBayWindowPlacementWidth(layerId, faceId, bayId, width) {
+        const ctx = this._findBaySpec({ layerId, faceId, bayId });
+        if (!ctx) return;
+        const bay = ctx.bay && typeof ctx.bay === 'object' ? ctx.bay : null;
+        if (!bay) return;
+        if (resolveBayLinkFromSpec(bay)) return;
+
+        const windowCfg = this._ensureBayWindowConfig(bay, { create: false });
+        if (!windowCfg || windowCfg.enabled === false) return;
+        const defWidth = this._resolveWindowDefinitionWidthMeters(windowCfg.defId);
+        const nextWidth = clamp(width, WINDOW_MIN_WIDTH_M, WINDOW_MAX_WIDTH_M);
+        const prevWidth = this._resolveBayWindowPlacementWidthMeters(windowCfg, { defWidth });
+        if (Math.abs(nextWidth - prevWidth) < 1e-6) return;
+
+        const defHeight = this._resolveWindowDefinitionHeightMeters(windowCfg.defId);
+        windowCfg.size = {
+            widthMeters: nextWidth,
+            heightMeters: this._resolveBayWindowPlacementHeightMeters(windowCfg, { defHeight })
+        };
+        this._enforceBaySizeAgainstWindow(bay);
+        this._syncUiState();
+        this._requestRebuild({ preserveCamera: true });
+    }
+
+    _setBayWindowPlacementHeight(layerId, faceId, bayId, height) {
+        const ctx = this._findBaySpec({ layerId, faceId, bayId });
+        if (!ctx) return;
+        const bay = ctx.bay && typeof ctx.bay === 'object' ? ctx.bay : null;
+        if (!bay) return;
+        if (resolveBayLinkFromSpec(bay)) return;
+
+        const windowCfg = this._ensureBayWindowConfig(bay, { create: false });
+        if (!windowCfg || windowCfg.enabled === false) return;
+        const defWidth = this._resolveWindowDefinitionWidthMeters(windowCfg.defId);
+        const defHeight = this._resolveWindowDefinitionHeightMeters(windowCfg.defId);
+        const nextHeight = clamp(height, WINDOW_MIN_HEIGHT_M, WINDOW_MAX_HEIGHT_M);
+        const prevHeight = this._resolveBayWindowPlacementHeightMeters(windowCfg, { defHeight });
+        if (Math.abs(nextHeight - prevHeight) < 1e-6) return;
+
+        windowCfg.size = {
+            widthMeters: this._resolveBayWindowPlacementWidthMeters(windowCfg, { defWidth }),
+            heightMeters: nextHeight
+        };
         this._syncUiState();
         this._requestRebuild({ preserveCamera: true });
     }
@@ -1307,6 +1442,14 @@ export class BuildingFabrication2View {
         windowCfg.width.minMeters = nextMin;
         if (windowCfg.width.maxMeters !== null && windowCfg.width.maxMeters !== undefined) {
             windowCfg.width.maxMeters = clamp(windowCfg.width.maxMeters, nextMin, WINDOW_MAX_WIDTH_M);
+        }
+        const defHeight = this._resolveWindowDefinitionHeightMeters(windowCfg.defId);
+        const legacyResolvedWidth = this._resolveLegacyBayWindowWidthMeters(windowCfg, { defWidth });
+        if (legacyResolvedWidth > this._resolveBayWindowPlacementWidthMeters(windowCfg, { defWidth })) {
+            windowCfg.size = {
+                widthMeters: legacyResolvedWidth,
+                heightMeters: this._resolveBayWindowPlacementHeightMeters(windowCfg, { defHeight })
+            };
         }
         this._enforceBaySizeAgainstWindow(bay);
         this._syncUiState();
@@ -1330,6 +1473,15 @@ export class BuildingFabrication2View {
             const nextMax = clamp(max, minWidth, WINDOW_MAX_WIDTH_M);
             if (Math.abs(nextMax - (Number(windowCfg.width.maxMeters) || 0)) < 1e-6) return;
             windowCfg.width.maxMeters = nextMax;
+        }
+        const defWidth = this._resolveWindowDefinitionWidthMeters(windowCfg.defId);
+        const defHeight = this._resolveWindowDefinitionHeightMeters(windowCfg.defId);
+        const legacyResolvedWidth = this._resolveLegacyBayWindowWidthMeters(windowCfg, { defWidth });
+        if (legacyResolvedWidth < this._resolveBayWindowPlacementWidthMeters(windowCfg, { defWidth })) {
+            windowCfg.size = {
+                widthMeters: legacyResolvedWidth,
+                heightMeters: this._resolveBayWindowPlacementHeightMeters(windowCfg, { defHeight })
+            };
         }
         this._syncUiState();
         this._requestRebuild({ preserveCamera: true });

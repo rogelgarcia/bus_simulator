@@ -4,6 +4,8 @@ import * as THREE from 'three';
 import { BuildingFabricationScene } from './BuildingFabricationScene.js';
 import { BuildingFabricationUI } from './BuildingFabricationUI.js';
 import { WindowFabricationPopup } from './WindowFabricationPopup.js';
+import { getDefaultWindowMeshSettings, sanitizeWindowMeshSettings } from '../../../app/buildings/window_mesh/index.js';
+import { PickerPopup } from '../shared/PickerPopup.js';
 import {
     buildingConfigIdToFileBaseName,
     createCityBuildingConfigFromFabrication,
@@ -16,6 +18,101 @@ function isInteractiveElement(target) {
     const tag = target?.tagName;
     if (!tag) return false;
     return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || target?.isContentEditable;
+}
+
+const WINDOW_DEF_WIDTH_FALLBACK_M = 1.2;
+const WINDOW_DEF_HEIGHT_FALLBACK_M = 1.6;
+
+function resolveBayWindowFromSpec(bay) {
+    const spec = bay && typeof bay === 'object' ? bay : null;
+    if (!spec) return null;
+    if (spec.window && typeof spec.window === 'object') return spec.window;
+    const legacyFeatures = spec.features && typeof spec.features === 'object' ? spec.features : null;
+    if (legacyFeatures?.window && typeof legacyFeatures.window === 'object') return legacyFeatures.window;
+    return null;
+}
+
+function colorHexToCss(value, fallback = 0xffffff) {
+    const hex = Number.isFinite(value) ? (Number(value) >>> 0) & 0xffffff : fallback;
+    return `#${hex.toString(16).padStart(6, '0')}`;
+}
+
+function drawWindowDefinitionPreview(settings) {
+    if (typeof document === 'undefined') return '';
+    const s = sanitizeWindowMeshSettings(settings ?? null);
+    const canvas = document.createElement('canvas');
+    canvas.width = 144;
+    canvas.height = 96;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return '';
+
+    const bg = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    bg.addColorStop(0, '#dce6f2');
+    bg.addColorStop(1, '#bac9da');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const widthMeters = Math.max(0.1, Number(s.width) || WINDOW_DEF_WIDTH_FALLBACK_M);
+    const heightMeters = Math.max(0.1, Number(s.height) || WINDOW_DEF_HEIGHT_FALLBACK_M);
+    const aspect = Math.max(0.35, Math.min(2.5, widthMeters / heightMeters));
+
+    let w = canvas.width * 0.62;
+    let h = w / aspect;
+    const maxH = canvas.height * 0.72;
+    if (h > maxH) {
+        h = maxH;
+        w = h * aspect;
+    }
+
+    const x = (canvas.width - w) * 0.5;
+    const y = (canvas.height - h) * 0.5;
+    const frameRatio = Math.max(0.02, Math.min(0.3, (Number(s?.frame?.width) || 0.08) / widthMeters));
+    const framePx = Math.max(3, Math.min(16, Math.round(w * frameRatio)));
+
+    ctx.fillStyle = colorHexToCss(s?.frame?.colorHex, 0xe7edf8);
+    ctx.fillRect(x, y, w, h);
+
+    const innerX = x + framePx;
+    const innerY = y + framePx;
+    const innerW = Math.max(4, w - framePx * 2);
+    const innerH = Math.max(4, h - framePx * 2);
+
+    const glass = ctx.createLinearGradient(0, innerY, 0, innerY + innerH);
+    glass.addColorStop(0, 'rgba(170, 214, 255, 0.95)');
+    glass.addColorStop(1, 'rgba(126, 168, 214, 0.95)');
+    ctx.fillStyle = glass;
+    ctx.fillRect(innerX, innerY, innerW, innerH);
+
+    if (s?.arch?.enabled) {
+        const rise = Math.max(2, Math.min(innerH * 0.45, innerW * (Number(s?.arch?.heightRatio) || 0.25)));
+        ctx.beginPath();
+        ctx.moveTo(innerX, innerY + rise);
+        ctx.quadraticCurveTo(innerX + innerW * 0.5, innerY - rise * 0.9, innerX + innerW, innerY + rise);
+        ctx.lineTo(innerX + innerW, innerY + innerH);
+        ctx.lineTo(innerX, innerY + innerH);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(170, 214, 255, 0.95)';
+        ctx.fill();
+    }
+
+    if (s?.muntins?.enabled) {
+        const colCount = Math.max(0, (Number(s?.muntins?.columns) || 1) - 1);
+        const rowCount = Math.max(0, (Number(s?.muntins?.rows) || 1) - 1);
+        const muntinColor = colorHexToCss(s?.muntins?.colorHex ?? s?.frame?.colorHex, 0xf1f5fb);
+        const muntinW = Math.max(1, Math.round(Math.min(innerW, innerH) * 0.04));
+        ctx.fillStyle = muntinColor;
+
+        for (let i = 1; i <= colCount; i++) {
+            const px = innerX + (innerW * i) / (colCount + 1) - muntinW * 0.5;
+            ctx.fillRect(px, innerY, muntinW, innerH);
+        }
+        for (let i = 1; i <= rowCount; i++) {
+            const py = innerY + (innerH * i) / (rowCount + 1) - muntinW * 0.5;
+            ctx.fillRect(innerX, py, innerW, muntinW);
+        }
+    }
+
+    return canvas.toDataURL('image/png');
 }
 
 export class BuildingFabricationView {
@@ -36,6 +133,8 @@ export class BuildingFabricationView {
         this._moveForward = new THREE.Vector3();
         this._moveRight = new THREE.Vector3();
         this._windowFabricationPopup = new WindowFabricationPopup();
+        this._windowPickerPopup = new PickerPopup();
+        this._windowDefPreviewByKey = new Map();
 
         this._onPointerMove = (e) => this._handlePointerMove(e);
         this._onPointerDown = (e) => this._handlePointerDown(e);
@@ -57,7 +156,7 @@ export class BuildingFabricationView {
         this.ui.setFloorplanEnabled(false);
         this.ui.setRoadModeEnabled(this.scene.getRoadModeEnabled());
         this.ui.setSelectedBuilding(this.scene.getSelectedBuilding());
-        this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+        this._syncFaceEditorState();
         this._syncUiCounts();
         this._syncRoadList();
         this._syncBuilding();
@@ -142,124 +241,98 @@ export class BuildingFabricationView {
 
         this.ui.onFaceSelect = (faceId) => {
             this.scene.setSelectedFaceId(faceId);
-            this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+            this._syncFaceEditorState();
         };
 
         this.ui.onFaceMirrorLockChange = (enabled) => {
             this.scene.setFaceMirrorLockEnabled(enabled);
-            this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+            this._syncFaceEditorState();
         };
 
         this.ui.onFaceWallMaterialChange = (materialSpec) => {
             if (this.scene.setSelectedFaceWallMaterial(materialSpec)) {
-                this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+                this._syncFaceEditorState();
             }
         };
 
         this.ui.onFaceDepthOffsetChange = (value) => {
             if (this.scene.setSelectedFaceDepthOffset(value)) {
-                this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+                this._syncFaceEditorState();
             }
         };
 
         this.ui.onFaceAddBay = () => {
             if (this.scene.addSelectedFaceFacadeBay()) {
-                this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+                this._syncFaceEditorState();
             }
         };
 
         this.ui.onFaceAddPadding = () => {
             if (this.scene.addSelectedFaceFacadePadding()) {
-                this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+                this._syncFaceEditorState();
             }
         };
 
         this.ui.onFaceFacadeItemRemove = (itemId) => {
             if (this.scene.removeSelectedFaceFacadeItem(itemId)) {
-                this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+                this._syncFaceEditorState();
             }
         };
 
         this.ui.onFaceFacadeItemMove = (itemId, direction) => {
             if (this.scene.moveSelectedFaceFacadeItem(itemId, direction)) {
-                this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+                this._syncFaceEditorState();
             }
         };
 
         this.ui.onFaceFacadeItemWidthChange = (itemId, widthMeters) => {
             this.scene.setSelectedFaceFacadeItemWidth(itemId, widthMeters);
-            this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+            this._syncFaceEditorState();
         };
 
         this.ui.onFaceFacadeBayWallMaterialOverrideChange = (itemId, materialSpec) => {
             this.scene.setSelectedFaceFacadeBayWallMaterialOverride(itemId, materialSpec);
-            this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+            this._syncFaceEditorState();
         };
 
         this.ui.onFaceFacadeBayDepthOffsetChange = (itemId, value) => {
             this.scene.setSelectedFaceFacadeBayDepthOffset(itemId, value);
-            this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+            this._syncFaceEditorState();
         };
 
         this.ui.onFaceFacadeBayWedgeAngleDegChange = (itemId, angleDeg) => {
             this.scene.setSelectedFaceFacadeBayWedgeAngleDeg(itemId, angleDeg);
-            this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+            this._syncFaceEditorState();
         };
 
         this.ui.onFaceFacadeBayWindowEnabledChange = (itemId, enabled) => {
-            this.scene.setSelectedFaceFacadeBayWindowEnabled(itemId, enabled);
-            this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+            const changed = this.scene.setSelectedFaceFacadeBayWindowEnabled(itemId, enabled);
+            this._syncFaceEditorState();
+            if (changed && enabled) this._openFaceBayWindowPicker(itemId);
         };
 
-        this.ui.onFaceFacadeBayWindowDefinitionChange = (itemId, windowDefId) => {
-            this.scene.setSelectedFaceFacadeBayWindowDefinition(itemId, windowDefId);
-            this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+        this.ui.onFaceFacadeBayWindowRequestPicker = (itemId) => {
+            this._openFaceBayWindowPicker(itemId);
         };
 
-        this.ui.onFaceFacadeBayWindowNewDefinition = (itemId) => {
-            const newId = this.scene.createSelectedBuildingWindowDefinition();
-            if (!newId) return;
-            this.scene.setSelectedFaceFacadeBayWindowEnabled(itemId, true);
-            this.scene.setSelectedFaceFacadeBayWindowDefinition(itemId, newId);
-            this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+        this.ui.onFaceFacadeBayWindowMinWidthChange = (itemId, minWidthMeters) => {
+            this.scene.setSelectedFaceFacadeBayWindowMinWidth(itemId, minWidthMeters);
+            this._syncFaceEditorState();
         };
 
-        this.ui.onFaceFacadeBayWindowWidthOverrideChange = (itemId, widthMeters) => {
-            this.scene.setSelectedFaceFacadeBayWindowWidthOverride(itemId, widthMeters);
-            this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+        this.ui.onFaceFacadeBayWindowMaxWidthChange = (itemId, maxWidthMeters) => {
+            this.scene.setSelectedFaceFacadeBayWindowMaxWidth(itemId, maxWidthMeters);
+            this._syncFaceEditorState();
         };
 
-        this.ui.onFaceFacadeBayWindowHeightOverrideChange = (itemId, heightMeters) => {
-            this.scene.setSelectedFaceFacadeBayWindowHeightOverride(itemId, heightMeters);
-            this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+        this.ui.onFaceFacadeBayWindowPaddingChange = (itemId, edge, value) => {
+            this.scene.setSelectedFaceFacadeBayWindowPadding(itemId, edge, value);
+            this._syncFaceEditorState();
         };
 
-        this.ui.onFaceFacadeBayWindowFloorSkipChange = (itemId, floorSkip) => {
-            this.scene.setSelectedFaceFacadeBayWindowFloorSkip(itemId, floorSkip);
-            this.ui.setFaceEditorState(this.scene.getFaceEditorState());
-        };
-
-        this.ui.onFaceFacadeBayWindowEdit = (itemId) => {
-            const faceState = this.scene.getFaceEditorState();
-            const items = Array.isArray(faceState?.facade?.layout?.items) ? faceState.facade.layout.items : [];
-            const bay = items.find((it) => it?.id === itemId) ?? null;
-            const win = bay?.features?.window ?? null;
-            const defId = typeof win?.defId === 'string' ? win.defId : '';
-            if (!defId) return;
-
-            const defs = Array.isArray(faceState?.windowDefinitions?.items) ? faceState.windowDefinitions.items : [];
-            const def = defs.find((d) => d?.id === defId) ?? null;
-            const settings = def?.settings && typeof def.settings === 'object' ? def.settings : null;
-            if (!settings) return;
-
-            this._windowFabricationPopup.open({
-                title: def?.label ? `${def.label}` : defId,
-                initialSettings: settings,
-                onSettingsChange: (nextSettings) => {
-                    this.scene.setSelectedBuildingWindowDefinitionSettings(defId, nextSettings);
-                    this.ui.setFaceEditorState(this.scene.getFaceEditorState());
-                }
-            });
+        this.ui.onFaceFacadeBayWindowPaddingLinkToggle = (itemId) => {
+            this.scene.toggleSelectedFaceFacadeBayWindowPaddingLink(itemId);
+            this._syncFaceEditorState();
         };
 
         this.ui.onFloorHeightChange = (height) => {
@@ -671,6 +744,7 @@ export class BuildingFabricationView {
 
     exit() {
         this._windowFabricationPopup?.close?.();
+        this._windowPickerPopup?.close?.();
 
         this.canvas.removeEventListener('pointermove', this._onPointerMove);
         this.canvas.removeEventListener('pointerdown', this._onPointerDown);
@@ -817,6 +891,16 @@ export class BuildingFabricationView {
             return true;
         }
 
+        if (this._windowFabricationPopup?.isOpen?.()) {
+            this._windowFabricationPopup.close();
+            return true;
+        }
+
+        if (this._windowPickerPopup?.isOpen?.()) {
+            this._windowPickerPopup.close();
+            return true;
+        }
+
         if (this.scene.getRoadModeEnabled()) {
             this.scene.cancelRoadSelection();
             this._syncRoadStatus();
@@ -824,6 +908,161 @@ export class BuildingFabricationView {
         }
 
         return false;
+    }
+
+    _getWindowDefinitionPreviewUrl(windowDefId, settings) {
+        const id = typeof windowDefId === 'string' ? windowDefId : '';
+        if (!id) return '';
+        const safeSettings = sanitizeWindowMeshSettings(settings ?? getDefaultWindowMeshSettings());
+        const key = `${id}:${JSON.stringify(safeSettings)}`;
+        const cached = this._windowDefPreviewByKey.get(key);
+        if (typeof cached === 'string' && cached) return cached;
+        const url = drawWindowDefinitionPreview(safeSettings);
+        if (url) {
+            this._windowDefPreviewByKey.set(key, url);
+            if (this._windowDefPreviewByKey.size > 256) {
+                const firstKey = this._windowDefPreviewByKey.keys().next().value;
+                this._windowDefPreviewByKey.delete(firstKey);
+            }
+        }
+        return url;
+    }
+
+    _getFaceEditorStateWithWindowPreviews() {
+        const faceState = this.scene.getFaceEditorState();
+        const defs = Array.isArray(faceState?.windowDefinitions?.items) ? faceState.windowDefinitions.items : null;
+        if (!defs) return faceState;
+
+        const nextItems = defs.map((entry) => {
+            const id = typeof entry?.id === 'string' ? entry.id : '';
+            if (!id) return entry;
+            const settings = sanitizeWindowMeshSettings(entry?.settings ?? getDefaultWindowMeshSettings());
+            return {
+                ...entry,
+                settings,
+                previewUrl: this._getWindowDefinitionPreviewUrl(id, settings)
+            };
+        });
+
+        return {
+            ...faceState,
+            windowDefinitions: {
+                ...faceState.windowDefinitions,
+                items: nextItems
+            }
+        };
+    }
+
+    _syncFaceEditorState() {
+        this.ui.setFaceEditorState(this._getFaceEditorStateWithWindowPreviews());
+    }
+
+    _openFaceBayWindowFabrication(itemId, windowDefId) {
+        const defId = typeof windowDefId === 'string' ? windowDefId : '';
+        if (!defId) return;
+
+        const faceState = this._getFaceEditorStateWithWindowPreviews();
+        const defs = Array.isArray(faceState?.windowDefinitions?.items) ? faceState.windowDefinitions.items : [];
+        const def = defs.find((entry) => entry?.id === defId) ?? null;
+        const settings = def?.settings && typeof def.settings === 'object' ? def.settings : null;
+        if (!settings) return;
+
+        this._windowPickerPopup?.close?.();
+        this._windowFabricationPopup.open({
+            title: typeof def?.label === 'string' && def.label ? def.label : defId,
+            subtitle: 'Building window definition',
+            initialSettings: settings,
+            onSettingsChange: (nextSettings) => {
+                this.scene.setSelectedBuildingWindowDefinitionSettings(defId, nextSettings);
+                this.scene.setSelectedFaceFacadeBayWindowDefinition(itemId, defId);
+                this._syncFaceEditorState();
+            }
+        });
+    }
+
+    _openFaceBayWindowPicker(itemId) {
+        let faceState = this._getFaceEditorStateWithWindowPreviews();
+        const items = Array.isArray(faceState?.facade?.layout?.items) ? faceState.facade.layout.items : [];
+        const bay = items.find((entry) => entry?.id === itemId && entry?.type === 'bay') ?? null;
+        if (!bay) return;
+
+        const windowCfg = resolveBayWindowFromSpec(bay);
+        if (!windowCfg || windowCfg.enabled === false) return;
+
+        let defs = Array.isArray(faceState?.windowDefinitions?.items)
+            ? faceState.windowDefinitions.items.filter((entry) => typeof entry?.id === 'string' && !!entry.id)
+            : [];
+        if (!defs.length) {
+            const createdId = this.scene.createSelectedBuildingWindowDefinition();
+            if (!createdId) return;
+            this.scene.setSelectedFaceFacadeBayWindowEnabled(itemId, true);
+            this.scene.setSelectedFaceFacadeBayWindowDefinition(itemId, createdId);
+            this._syncFaceEditorState();
+            faceState = this._getFaceEditorStateWithWindowPreviews();
+            defs = Array.isArray(faceState?.windowDefinitions?.items)
+                ? faceState.windowDefinitions.items.filter((entry) => typeof entry?.id === 'string' && !!entry.id)
+                : [];
+        }
+        if (!defs.length) return;
+
+        const latestItems = Array.isArray(faceState?.facade?.layout?.items) ? faceState.facade.layout.items : [];
+        const latestBay = latestItems.find((entry) => entry?.id === itemId && entry?.type === 'bay') ?? null;
+        if (!latestBay) return;
+        const latestWindow = resolveBayWindowFromSpec(latestBay);
+        const selectedDefId = typeof latestWindow?.defId === 'string' ? latestWindow.defId : '';
+        const selectedDef = defs.find((entry) => entry?.id === selectedDefId) ?? null;
+
+        const definitionOptions = defs.map((entry) => ({
+            id: `window:def:${entry.id}`,
+            label: entry.label || entry.id,
+            kind: 'texture',
+            previewUrl: this._getWindowDefinitionPreviewUrl(entry.id, entry.settings)
+        }));
+        const actionOptions = [
+            { id: 'window:create', label: 'Create New', kind: 'texture', previewUrl: null }
+        ];
+        if (selectedDef) {
+            actionOptions.push({
+                id: `window:edit:${selectedDef.id}`,
+                label: 'Edit',
+                kind: 'texture',
+                previewUrl: this._getWindowDefinitionPreviewUrl(selectedDef.id, selectedDef.settings)
+            });
+        }
+
+        this._windowPickerPopup.open({
+            title: 'Select Window',
+            sections: [
+                { label: 'Window Definitions', options: definitionOptions },
+                { label: 'Actions', options: actionOptions }
+            ],
+            selectedId: selectedDef ? `window:def:${selectedDef.id}` : null,
+            onSelect: (opt) => {
+                const id = typeof opt?.id === 'string' ? opt.id : '';
+                if (!id) return;
+                if (id === 'window:create') {
+                    const createdId = this.scene.createSelectedBuildingWindowDefinition({ cloneFromId: selectedDef?.id ?? null });
+                    if (!createdId) return;
+                    this.scene.setSelectedFaceFacadeBayWindowEnabled(itemId, true);
+                    this.scene.setSelectedFaceFacadeBayWindowDefinition(itemId, createdId);
+                    this._syncFaceEditorState();
+                    this._openFaceBayWindowFabrication(itemId, createdId);
+                    return;
+                }
+                if (id.startsWith('window:edit:')) {
+                    const editId = id.slice('window:edit:'.length);
+                    if (!editId) return;
+                    this._openFaceBayWindowFabrication(itemId, editId);
+                    return;
+                }
+                if (id.startsWith('window:def:')) {
+                    const defId = id.slice('window:def:'.length);
+                    if (!defId) return;
+                    this.scene.setSelectedFaceFacadeBayWindowDefinition(itemId, defId);
+                    this._syncFaceEditorState();
+                }
+            }
+        });
     }
 
     _syncUiCounts() {
@@ -844,7 +1083,7 @@ export class BuildingFabricationView {
     _syncBuilding() {
         const selected = this.scene.getSelectedBuilding();
         this.ui.setSelectedBuilding(selected);
-        this.ui.setFaceEditorState(this.scene.getFaceEditorState());
+        this._syncFaceEditorState();
         if (selected) this.ui.setFloorCount(selected.floors);
     }
 

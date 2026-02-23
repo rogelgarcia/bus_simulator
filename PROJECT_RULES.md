@@ -50,6 +50,7 @@ Any AI prompt or change that modifies a specification/model MUST update one or m
 
 **Tasks:**
 These are the ones from AI prompt files.
+- Building Fabrication 1 is deprecated. Any prompt related to building fabrication must target Building Fabrication 2 by default, unless the user explicitly requests otherwise.
 - Even if explicitly requested, never start prompts whose filename indicates DONE (`AI_DONE_##_..._DONE.md`, `AI_DONE_<branch>_##_..._DONE.md`, `AI_i_DONE_##_..._DONE.md`, or `AI_i_DONE_<branch>_##_..._DONE.md`) without double confirming with the user.
 - If multiple prompts share the same numeric id, prefer the prompt in the current branch namespace for implementation within the same mode (standard or interactive).
 - If id selection is still ambiguous or conflicting, stop and ask the user for guidance before implementing.

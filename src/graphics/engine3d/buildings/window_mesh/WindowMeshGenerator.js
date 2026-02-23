@@ -21,6 +21,7 @@ function disposeGeometryBundle(bundle) {
     bundle?.opening?.dispose?.();
     bundle?.muntins?.dispose?.();
     bundle?.joinBar?.dispose?.();
+    bundle?.handles?.dispose?.();
 }
 
 function isInteractiveInstance(entry) {
@@ -158,6 +159,14 @@ export class WindowMeshGenerator {
         frameMesh.receiveShadow = true;
         frameMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         frameLayer.add(frameMesh);
+        let handlesMesh = null;
+        if (bundle.handles) {
+            handlesMesh = new THREE.InstancedMesh(bundle.handles, mats.frameMat, count);
+            handlesMesh.castShadow = true;
+            handlesMesh.receiveShadow = true;
+            handlesMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            frameLayer.add(handlesMesh);
+        }
 
         const muntinsLayer = new THREE.Group();
         muntinsLayer.name = 'muntins';
@@ -220,6 +229,7 @@ export class WindowMeshGenerator {
         const insetLocalZ = -Number(s.frame.inset || 0);
 
         frameMesh.renderOrder = 3;
+        if (handlesMesh) handlesMesh.renderOrder = 3;
         if (muntinsMesh) muntinsMesh.renderOrder = 3;
         if (group.userData._joinMesh) group.userData._joinMesh.renderOrder = 3;
 
@@ -239,6 +249,7 @@ export class WindowMeshGenerator {
             dummy.rotation.set(0, pose.yaw, 0);
             dummy.updateMatrix();
             frameMesh.setMatrixAt(i, dummy.matrix);
+            handlesMesh?.setMatrixAt(i, dummy.matrix);
             if (group.userData._joinMesh) group.userData._joinMesh.setMatrixAt(i, dummy.matrix);
             muntinsMesh?.setMatrixAt(i, dummy.matrix);
 
@@ -258,6 +269,7 @@ export class WindowMeshGenerator {
         }
 
         frameMesh.instanceMatrix.needsUpdate = true;
+        if (handlesMesh) handlesMesh.instanceMatrix.needsUpdate = true;
         if (group.userData._joinMesh) group.userData._joinMesh.instanceMatrix.needsUpdate = true;
         if (muntinsMesh) muntinsMesh.instanceMatrix.needsUpdate = true;
         if (interiorMesh) interiorMesh.instanceMatrix.needsUpdate = true;

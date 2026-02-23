@@ -40,7 +40,9 @@ Building Fabrication 2 MUST:
 - open with **no building configured** (empty state),
 - temporarily disable **sun bloom** while the screen is active and restore the prior bloom value on exit (non-persistent),
 - keep camera/navigation consistent with other debug tools (no unnecessary movement clamps).
-- allow camera orbit with **left mouse drag** during normal navigation (outside tool-capture modes such as layout adjustment and ruler placement).
+- allow camera **look** with **left mouse drag** during normal navigation (outside tool-capture modes such as layout adjustment and ruler placement), without translating the camera.
+- use **right mouse drag** for camera orbit around the focus target.
+- use **middle mouse drag** for camera pan.
 
 ---
 
@@ -249,16 +251,28 @@ Inside each `Floor layer` group, the UI order MUST be:
        - smaller viewport,
        - contextual 2×2 wall preview sample.
      - per-bay window controls:
-       - width range (`min` + `max`, where `max = null` uses infinity / available bay width),
+       - opening width (meters),
+       - opening height (meters),
        - left/right padding with a link toggle (linked by default).
+       - these same controls size both window and door-style definitions placed in bays.
+       - validation:
+         - width/height must be positive,
+         - width is clamped at runtime to the resolved usable bay span (`bay span - left padding - right padding`),
+         - height is clamped at runtime per floor segment bounds.
      - when window constraints increase the required bay width, the UI must show the effective clamped bay minimum width clearly.
+     - parity rule: legacy Building Fabrication bay-window controls MUST mirror this same picker-first model and shared picker component behavior.
    - Bay linking (bay-level master/slave, full spec):
      - the bay editor header row includes a `Link` action alongside the move arrows and delete icons
        - when the selected bay is linked (slave), the `Link` button border is yellow
-     - clicking opens a popup listing the bays for the current face (each shows a bay number + a material preview)
-     - selecting a bay links the current bay’s entire bay configuration to the selected bay by **reference** (no deep copy)
+     - clicking opens a popup listing bays for the current face; the selected bay is treated as the **master** for that popup
+     - the popup supports toggling multiple slave bays for that master in one session (one master, many slaves)
+     - if linking is initiated from a bay that is currently a slave, it is first promoted (unlinked) and then treated as the master
+     - linking is reference-based inheritance of the full bay config (`linkFromBayId`, no deep copy)
      - link targets are normalized to the “root master” bay (chains are flattened; no multi-hop bay links)
      - if a bay that currently has slaves becomes a slave (is linked to another bay), its existing slaves are redirected to the new root master (no `C -> B -> A` chains)
+     - in the bay selector, master cards do not show “linked to bay N” style labels; slave cards render as thin preview cards with only a link icon
+     - slave selector cards must not show literal `default` fallback text for material previews
+     - linked groups are color-coded with 7 rotating master hues; master cards use the base hue and slaves use a lighter variant of that same hue
      - when a bay is linked (slave), the UI shows an indication like `Linked to Bay X` and suppresses the entire bay configuration controls (layout remains reserved; hidden via `visibility:hidden`-style behavior)
      - an `Unlink` action is provided for linked bays
      - a `Duplicate` button exists at the bottom of the bay editor panel (master bays only):

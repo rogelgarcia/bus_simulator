@@ -34,13 +34,14 @@ The Window Builder UI MUST:
 
 ## 2. Tab Model
 
-### 2.0 Opening kind selector (window vs door)
+### 2.0 Opening kind selector (window vs door vs garage)
 
-The Window Builder MUST support an `openingKind` selector (`window | door`) as defined in `specs/windows/WINDOWS_FEATURE_PARAMETERS_SPEC.md`.
+The Window Builder MUST support an `openingKind` selector (`window | door | garage`) as defined in `specs/windows/WINDOWS_FEATURE_PARAMETERS_SPEC.md`.
 
 Rules:
 - `openingKind` MAY be provided by the caller (e.g., a “Create Door” tool) and applied as the initial preset.
-- The UI MUST also expose an “Opening kind” control (first pass) so users can switch between `window` and `door`.
+- The UI MUST also expose an “Opening kind” control (first pass) so users can switch between `window`, `door`, and `garage`.
+- Switching `openingKind` MUST NOT implicitly apply/load a catalog entry; catalog loading is explicit via the Load action.
 
 When `openingKind = door`:
 - Tabs and controls that are not relevant MUST be hidden (see §2.4).
@@ -82,13 +83,25 @@ Disabled feature tabs MUST:
 - have disabled styling
 - ignore pointer/keyboard activation (no tab switch)
 
-### 2.4 Door mode UI hiding rules
+### 2.4 Door/Garage mode UI hiding rules
 
 When `openingKind = door`, the UI MUST hide (not just disable):
 - The **Sill** tab and all Sill controls.
 - The **Balcony** tab and all Balcony controls.
+- The **Shade** tab and all Shade controls.
 
 Additionally, in door mode the default-disable features (Lintel, Trim) remain visible but start disabled unless the user explicitly enables them (see `specs/windows/WINDOWS_FEATURE_PARAMETERS_SPEC.md`).
+
+When `openingKind = garage`, the UI MUST hide (not just disable):
+- The **Glass** tab and all Glass controls.
+- The **Shade** tab and all Shade controls.
+- The **Decoration** tab and all decoration controls.
+- Arch controls and muntin controls in the Frame domain.
+
+When `openingKind = garage`, the UI MUST expose a **Facade** tab with:
+- `Open` / `Closed` facade state control.
+- Closed-surface material rotation control (`0` or `90` degrees, default `0`).
+- Closed-surface metal material picker.
 
 ---
 
@@ -99,6 +112,7 @@ All window configuration MUST live in a single model object (or equivalent canon
 Rules:
 - All UI controls bind directly to this model via a shared controller/binding layer.
 - Tabs are strictly **views** over the same model; no tab-local caches or duplicated state are allowed.
+- When opening-kind/catalog switches apply a new active configuration (e.g., `window` ↔ `door`), visible input controls MUST refresh from the active model so rendered materials/settings and shown input values stay in sync.
 
 ---
 

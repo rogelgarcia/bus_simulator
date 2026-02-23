@@ -610,20 +610,26 @@
 }
 
 .building-fab2-bay-selector-cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(40px, 78px));
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
     gap: 10px;
-    justify-content: start;
+    justify-content: flex-start;
     max-height: 210px;
     overflow-y: auto;
     padding-right: 2px;
 }
 
 .building-fab2-bay-slot {
-    width: 100%;
+    width: 78px;
+    flex: 0 0 auto;
     display: flex;
     flex-direction: column;
     align-items: stretch;
+}
+
+.building-fab2-bay-slot.is-slave-preview {
+    width: 32px;
 }
 
 .building-fab2-bay-group-strip {
@@ -675,6 +681,7 @@
 }
 
 .building-fab2-bay-btn {
+    --building-fab2-bay-link-hue: 200;
     appearance: none;
     width: 78px;
     min-height: 100px;
@@ -702,6 +709,26 @@
 .building-fab2-bay-btn.is-active {
     background: rgba(100, 210, 255, 0.22);
     border-color: rgba(100, 210, 255, 0.35);
+}
+
+.building-fab2-bay-btn.is-link-master {
+    border-color: hsl(var(--building-fab2-bay-link-hue) 68% 56% / 0.62);
+    background: hsl(var(--building-fab2-bay-link-hue) 52% 20% / 0.5);
+}
+
+.building-fab2-bay-btn.is-link-slave {
+    border-color: hsl(var(--building-fab2-bay-link-hue) 78% 74% / 0.66);
+    background: hsl(var(--building-fab2-bay-link-hue) 58% 30% / 0.52);
+}
+
+.building-fab2-bay-btn.is-active.is-link-master {
+    border-color: hsl(var(--building-fab2-bay-link-hue) 76% 66% / 0.78);
+    background: hsl(var(--building-fab2-bay-link-hue) 60% 34% / 0.62);
+}
+
+.building-fab2-bay-btn.is-active.is-link-slave {
+    border-color: hsl(var(--building-fab2-bay-link-hue) 86% 84% / 0.82);
+    background: hsl(var(--building-fab2-bay-link-hue) 62% 42% / 0.68);
 }
 
 .building-fab2-bay-btn:disabled {
@@ -733,6 +760,24 @@
 
 .building-fab2-bay-btn.is-linked .building-fab2-bay-btn-label {
     color: rgba(255,255,255,0.72);
+}
+
+.building-fab2-bay-btn.is-slave-preview {
+    width: 32px;
+    padding: 6px 0;
+    gap: 0;
+    justify-content: center;
+}
+
+.building-fab2-bay-btn.is-slave-preview .building-fab2-bay-btn-thumb,
+.building-fab2-bay-btn.is-slave-preview .building-fab2-bay-btn-label,
+.building-fab2-bay-btn.is-slave-preview .building-fab2-bay-btn-icons {
+    display: none;
+}
+
+.building-fab2-bay-slave-icon {
+    --ui-icon-size: 14px;
+    opacity: 0.95;
 }
 
 .building-fab2-bay-btn.is-add .building-fab2-bay-btn-label {
@@ -1443,6 +1488,95 @@
 
 .building-fab2-link-footer {
     margin-top: 0;
+}
+
+.building-fab2-link-bay-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 300px;
+    overflow-y: auto;
+    padding-right: 2px;
+}
+
+.building-fab2-link-bay-btn {
+    --building-fab2-bay-link-hue: 200;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(0,0,0,0.16);
+    color: #e9f2ff;
+    padding: 8px;
+    display: grid;
+    grid-template-columns: 44px 1fr auto;
+    align-items: center;
+    gap: 8px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.building-fab2-link-bay-btn:hover:not(:disabled) {
+    background: rgba(0,0,0,0.24);
+}
+
+.building-fab2-link-bay-btn.is-active {
+    border-color: rgba(100, 210, 255, 0.35);
+    background: rgba(100, 210, 255, 0.2);
+}
+
+.building-fab2-link-bay-btn.is-master {
+    border-style: dashed;
+    opacity: 0.8;
+}
+
+.building-fab2-link-bay-btn.is-link-master {
+    border-color: hsl(var(--building-fab2-bay-link-hue) 68% 56% / 0.62);
+    background: hsl(var(--building-fab2-bay-link-hue) 52% 20% / 0.5);
+}
+
+.building-fab2-link-bay-btn.is-link-slave {
+    border-color: hsl(var(--building-fab2-bay-link-hue) 78% 74% / 0.66);
+    background: hsl(var(--building-fab2-bay-link-hue) 58% 30% / 0.52);
+}
+
+.building-fab2-link-bay-btn.is-active.is-link-master {
+    border-color: hsl(var(--building-fab2-bay-link-hue) 76% 66% / 0.78);
+    background: hsl(var(--building-fab2-bay-link-hue) 60% 34% / 0.62);
+}
+
+.building-fab2-link-bay-btn.is-active.is-link-slave {
+    border-color: hsl(var(--building-fab2-bay-link-hue) 86% 84% / 0.82);
+    background: hsl(var(--building-fab2-bay-link-hue) 62% 42% / 0.68);
+}
+
+.building-fab2-link-bay-btn:disabled {
+    cursor: default;
+}
+
+.building-fab2-link-bay-thumb {
+    width: 44px;
+    height: 44px;
+}
+
+.building-fab2-link-bay-meta {
+    min-width: 0;
+}
+
+.building-fab2-link-bay-title {
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+}
+
+.building-fab2-link-bay-status {
+    font-size: 11px;
+    opacity: 0.8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.building-fab2-link-bay-icon {
+    --ui-icon-size: 16px;
 }
 
 .building-fab2-group-panel {

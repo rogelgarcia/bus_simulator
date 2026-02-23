@@ -113,6 +113,157 @@ function normalizeShadeDirection(value, fallback) {
     return fallback;
 }
 
+export const WINDOW_GLASS_PRESET_ID = Object.freeze({
+    CLEAR: 'clear',
+    MID: 'mid',
+    DARK: 'dark',
+    REFLEXIVE: 'reflexive'
+});
+
+const WINDOW_GLASS_PRESET_REGISTRY = Object.freeze({
+    [WINDOW_GLASS_PRESET_ID.CLEAR]: Object.freeze({
+        id: WINDOW_GLASS_PRESET_ID.CLEAR,
+        label: 'Clear',
+        opacity: 0.25,
+        tintHex: 0xa0a0a0,
+        reflection: Object.freeze({
+            metalness: 0.5,
+            roughness: 0.1,
+            transmission: 0.0,
+            ior: 2.0,
+            envMapIntensity: 1.35
+        })
+    }),
+    [WINDOW_GLASS_PRESET_ID.MID]: Object.freeze({
+        id: WINDOW_GLASS_PRESET_ID.MID,
+        label: 'Mid',
+        opacity: 0.5,
+        tintHex: 0x7b7986,
+        reflection: Object.freeze({
+            metalness: 0.5,
+            roughness: 0.1,
+            transmission: 0.0,
+            ior: 2.0,
+            envMapIntensity: 1.35
+        })
+    }),
+    [WINDOW_GLASS_PRESET_ID.DARK]: Object.freeze({
+        id: WINDOW_GLASS_PRESET_ID.DARK,
+        label: 'Dark',
+        opacity: 0.7,
+        tintHex: 0x3d3c44,
+        reflection: Object.freeze({
+            metalness: 0.5,
+            roughness: 0.1,
+            transmission: 0.0,
+            ior: 2.0,
+            envMapIntensity: 1.35
+        })
+    }),
+    [WINDOW_GLASS_PRESET_ID.REFLEXIVE]: Object.freeze({
+        id: WINDOW_GLASS_PRESET_ID.REFLEXIVE,
+        label: 'Reflexive',
+        opacity: 0.85,
+        tintHex: 0x3d3c44,
+        reflection: Object.freeze({
+            metalness: 0.6,
+            roughness: 0.05,
+            transmission: 0.0,
+            ior: 2.3,
+            envMapIntensity: 1.9
+        })
+    })
+});
+
+const WINDOW_GLASS_PRESET_IDS = Object.freeze([
+    WINDOW_GLASS_PRESET_ID.CLEAR,
+    WINDOW_GLASS_PRESET_ID.MID,
+    WINDOW_GLASS_PRESET_ID.DARK,
+    WINDOW_GLASS_PRESET_ID.REFLEXIVE
+]);
+
+function normalizeGlassPresetId(value, fallback = null) {
+    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (raw && WINDOW_GLASS_PRESET_REGISTRY[raw]) return raw;
+    return (typeof fallback === 'string' && WINDOW_GLASS_PRESET_REGISTRY[fallback]) ? fallback : null;
+}
+
+function cloneGlassPresetValues(entry) {
+    const src = entry && typeof entry === 'object' ? entry : null;
+    if (!src) return null;
+    return {
+        id: String(src.id ?? ''),
+        label: String(src.label ?? ''),
+        opacity: Number(src.opacity) || 0,
+        tintHex: (Number(src.tintHex) >>> 0) & 0xffffff,
+        reflection: {
+            metalness: Number(src.reflection?.metalness) || 0,
+            roughness: Number(src.reflection?.roughness) || 0,
+            transmission: Number(src.reflection?.transmission) || 0,
+            ior: Number(src.reflection?.ior) || 1.5,
+            envMapIntensity: Number(src.reflection?.envMapIntensity) || 0
+        }
+    };
+}
+
+export function getWindowGlassPresetOptions() {
+    return WINDOW_GLASS_PRESET_IDS.map((id) => Object.freeze({
+        id,
+        label: String(WINDOW_GLASS_PRESET_REGISTRY[id]?.label ?? id)
+    }));
+}
+
+export function getWindowGlassPresetById(value, { fallback = null } = {}) {
+    const id = normalizeGlassPresetId(value, normalizeGlassPresetId(fallback, null));
+    if (!id) return null;
+    return cloneGlassPresetValues(WINDOW_GLASS_PRESET_REGISTRY[id]);
+}
+
+function nearlyEqual(a, b, epsilon = 1e-6) {
+    const x = Number(a);
+    const y = Number(b);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+    return Math.abs(x - y) <= Math.max(0, Number(epsilon) || 0);
+}
+
+export function detectWindowGlassPresetId(glass, { epsilon = 1e-6 } = {}) {
+    const src = glass && typeof glass === 'object' ? glass : null;
+    if (!src) return null;
+
+    const reflection = src.reflection && typeof src.reflection === 'object' ? src.reflection : src;
+    const tintHex = normalizeHexColor(src.tintHex ?? src.tint ?? src.colorHex ?? src.color, -1);
+    if (tintHex < 0) return null;
+
+    const opacity = Number(src.opacity);
+    const metalness = Number(reflection.metalness);
+    const roughness = Number(reflection.roughness);
+    const transmission = Number(reflection.transmission);
+    const ior = Number(reflection.ior ?? reflection.indexOfRefraction);
+    const envMapIntensity = Number(reflection.envMapIntensity);
+    if (!Number.isFinite(opacity)
+        || !Number.isFinite(metalness)
+        || !Number.isFinite(roughness)
+        || !Number.isFinite(transmission)
+        || !Number.isFinite(ior)
+        || !Number.isFinite(envMapIntensity)) {
+        return null;
+    }
+
+    for (const id of WINDOW_GLASS_PRESET_IDS) {
+        const preset = WINDOW_GLASS_PRESET_REGISTRY[id];
+        const refl = preset.reflection;
+        if ((preset.tintHex & 0xffffff) !== (tintHex & 0xffffff)) continue;
+        if (!nearlyEqual(preset.opacity, opacity, epsilon)) continue;
+        if (!nearlyEqual(refl.metalness, metalness, epsilon)) continue;
+        if (!nearlyEqual(refl.roughness, roughness, epsilon)) continue;
+        if (!nearlyEqual(refl.transmission, transmission, epsilon)) continue;
+        if (!nearlyEqual(refl.ior, ior, epsilon)) continue;
+        if (!nearlyEqual(refl.envMapIntensity, envMapIntensity, epsilon)) continue;
+        return id;
+    }
+    return null;
+}
+
 /**
  * @typedef {Object} WindowMeshArchSettings
  * @property {boolean} enabled
@@ -141,6 +292,8 @@ function normalizeShadeDirection(value, fallback) {
  * @property {number} width
  * @property {number} depth
  * @property {number} inset
+ * @property {boolean} openBottom
+ * @property {boolean} addHandles
  * @property {number} colorHex
  * @property {WindowMeshBevelSettings} bevel
  * @property {WindowMeshPbrSettings} material
@@ -255,6 +408,8 @@ export const WINDOW_MESH_DEFAULTS = Object.freeze({
         width: 0.085,
         depth: 0.12,
         inset: 0.0,
+        openBottom: false,
+        addHandles: false,
         colorHex: 0xe9eef7,
         bevel: Object.freeze({
             size: 0.3,
@@ -365,6 +520,12 @@ export function sanitizeWindowMeshSettings(input) {
     const frameWidth = clamp(frameSrc.width, 0.005, Math.min(0.5, width * 0.45), WINDOW_MESH_DEFAULTS.frame.width);
     const frameDepth = clamp(frameSrc.depth, 0.001, 1.0, WINDOW_MESH_DEFAULTS.frame.depth);
     const frameInset = clamp(frameSrc.inset, -1.0, 1.0, WINDOW_MESH_DEFAULTS.frame.inset);
+    const frameOpenBottom = frameSrc.openBottom !== undefined
+        ? !!frameSrc.openBottom
+        : WINDOW_MESH_DEFAULTS.frame.openBottom;
+    const frameAddHandles = frameSrc.addHandles !== undefined
+        ? !!frameSrc.addHandles
+        : WINDOW_MESH_DEFAULTS.frame.addHandles;
     const frameBevelSrc = frameSrc.bevel && typeof frameSrc.bevel === 'object' ? frameSrc.bevel : {};
     const frameBevelSize = clamp(frameBevelSrc.size, 0.0, 1.0, WINDOW_MESH_DEFAULTS.frame.bevel.size);
     const frameRoundness = clamp(frameBevelSrc.roundness, 0.0, 1.0, WINDOW_MESH_DEFAULTS.frame.bevel.roundness);
@@ -501,7 +662,7 @@ export function sanitizeWindowMeshSettings(input) {
     const wantsArch = archEnabled && archHeightRatio > 0.001;
     const archRise = wantsArch ? archHeightRatio * width : 0.0;
     const minRectHeight = Math.max(frameWidth * 2.0, 0.05);
-    const archOk = wantsArch && height - archRise >= minRectHeight;
+    const archOk = !frameOpenBottom && wantsArch && height - archRise >= minRectHeight;
 
     return {
         version: VERSION,
@@ -518,6 +679,8 @@ export function sanitizeWindowMeshSettings(input) {
             width: frameWidth,
             depth: frameDepth,
             inset: frameInset,
+            openBottom: frameOpenBottom,
+            addHandles: frameAddHandles,
             colorHex: frameColorHex,
             bevel: { size: frameBevelSize, roundness: frameRoundness },
             material: {

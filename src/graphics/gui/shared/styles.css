@@ -181,14 +181,14 @@ body.options-dock-open .ui-layer:not(.options-layer) {
 .ui-picker-grid {
     overflow: auto;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(var(--ui-picker-option-min-width, 140px), 1fr));
     gap: 10px;
     padding: 4px;
 }
 
 .ui-picker-option {
     display: grid;
-    grid-template-rows: 84px auto;
+    grid-template-rows: var(--ui-picker-thumb-height, 84px) auto;
     align-items: stretch;
     gap: 8px;
     padding: 10px;
@@ -231,9 +231,9 @@ body.options-dock-open .ui-layer:not(.options-layer) {
 .ui-picker-thumb-img {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: var(--ui-picker-thumb-image-fit, cover);
     display: block;
-    transform: scale(1.2);
+    transform: scale(var(--ui-picker-thumb-image-scale, 1.2));
     transform-origin: center;
 }
 

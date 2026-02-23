@@ -25,6 +25,7 @@ The frame consists of the outer border and optionally an internal grid of muntin
 
 - **Width**: The thickness of the frame as seen from the front (in meters)
 - **Depth**: How far the frame extrudes from the wall surface (in meters)
+- **Open bottom**: Optional flag to remove the bottom frame segment (used for door mode)
 - **Color**: RGB color for the frame material
 
 ### Bevel Effect
@@ -131,5 +132,49 @@ The following are explicitly not part of the window mesh:
 ## Debugger
 
 - Create an independent debugger view for window meshes.
-- Add all parameters, later on, this will be moved to building fabrication. 
-- Create a map, and a square building, with 3 floors, and 3 windows per floor, to test the window meshes in various configurations. No need for customizations in the building, use sensible defaults. Allow only changing the building Wall texture (PBR).
+- Add all parameters, later on, this will be moved to building fabrication.
+- Add a top-level mode switch for `window` vs `door` vs `garage` and mode-specific catalogs.
+- In door mode, render a single door at the bottom center of the test wall.
+- In door mode, disable interior parallax (first pass).
+- In garage mode:
+  - render a single base-aligned garage opening,
+  - remove glass/shade/decoration workflows,
+  - keep frame support,
+  - expose a `Facade` tab with `Open` / `Closed` and closed-panel metal material picker,
+  - in `Closed`, render the closed surface with the selected metal material,
+  - in `Open`, cut wall opening + create room volume behind the opening using `pbr.concrete_layers_02`,
+  - ensure room depth is 50% of available building depth and room footprint extends beyond opening width/height,
+  - ensure open/closed switching rebuilds geometry cleanly with no stale meshes.
+- Add catalog export/import flow with name-first entries:
+  - Export uses a user-provided catalog name (not only preset ids).
+  - Export payload includes window settings/layers, wall material hint, and a thumbnail snapshot.
+  - Export payload MUST NOT include decoration component settings (`sill` / `header` / `trim`), because decoration is visualization-only.
+  - Load is driven by a thumbnail picker that selects catalog entries by preview.
+  - Thumbnail generation renders the asset in an offscreen buffer against a wall that is 20% larger than the window/door dimensions.
+- Decoration controls are template-driven and pluggable:
+  - each decoration component exposes a `type` selector (`header`/`trim`: `simple`; `sill`: `simple` + `bottom cover`),
+  - style plugins are responsible only for generating local decoration shape from resolved template params,
+  - placement/alignment relative to the window is handled by the view/engine layer (outside style plugins).
+- Decoration material mode button groups MUST be exactly:
+  - `Match wall` (default),
+  - `Match frame`,
+  - `PBR`.
+- Decoration shadows are not user-configurable in this phase; rendered decoration always casts and receives shadows.
+- Sill/Header/Trim controls in first pass are constrained to:
+  - `enabled`,
+  - `type` (`header`/`trim`: `simple`; `sill`: `simple` or `bottom cover`),
+  - width mode (`Match window` or `15%`),
+  - depth option (`0.08` default, or `0.02`),
+  - material mode.
+- Width mode semantics:
+  - `Match window` = 100% width (`widthScale = 1.0`),
+  - `15%` = 115% width (`widthScale = 1.15`).
+- Template baseline defaults for first-pass `simple` style:
+  - `height = 0.08`,
+  - `depth = 0.08`,
+  - `gap = 0`,
+  - `offset = { x: 0, y: 0, z: 0 }`.
+- Sill type metadata drives auto-suggestions on type change:
+  - selecting sill `bottom cover` auto-applies: width mode `Match window`, depth `0.08`, material mode `Match frame`,
+  - sill `bottom cover` template: `height = 0.5`, `offset.z = -depth` (depth-relative).
+- Keep the existing preview wall + environment flow with PBR wall material selection.

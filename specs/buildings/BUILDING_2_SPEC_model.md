@@ -60,11 +60,16 @@ At a conceptual level, a Building v2 model includes:
 - **Bay window configuration** authored per floor-layer face bay, including:
   - enabled/disabled state,
   - selected building-owned window definition id,
-  - per-bay width constraints (`min`/`max`, where `max = null` means infinity),
+  - per-bay opening size (`size.widthMeters`, `size.heightMeters`),
   - per-side minimum padding (`left`/`right`, linked by default).
 - **Inheritance rules** for bay windows:
   - face slaves inherit facade/bay/window config from their master face (no duplicated per-slave copy),
-  - bay slaves (`linkFromBayId`) inherit the master bay’s full window configuration by reference.
+  - bay linking is one-master/many-slaves per face (`linkFromBayId` on each slave),
+  - bay slaves (`linkFromBayId`) inherit the master bay’s full window configuration by reference,
+  - effective links are normalized to root masters (authoring avoids multi-hop chains).
+- **Street-floor carve/interior shell derivation**:
+  - street-floor wall carving and single-room interior shell generation are engine-derived from solved opening placements + floor height,
+  - v2 baseline does not require separate authored model fields for these derived meshes/material assignments.
 
 Concrete schema definitions belong in dedicated specs:
 - `specs/buildings/BUILDING_2_FACADE_LAYOUT_SPEC.md`
