@@ -43,6 +43,7 @@ Note: The exact picker API and data source are implementation-defined, but the U
 
 Each feature has a primary material slot (unless otherwise specified):
 - Frame: `frameMaterial`
+- Door handles: `frameHandleMaterial` (mode-driven: `match | metal`)
 - Muntins: `muntinMaterial` (may default to inherit `frameMaterial`)
 - Glass: `glassMaterial` (or a glass preset; may include tint/opacity controls elsewhere)
 - Shade: `shadeMaterial`

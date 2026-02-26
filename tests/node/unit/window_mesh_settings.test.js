@@ -8,6 +8,9 @@ import {
     computeWindowMeshInstanceVariationFromSanitized,
     WINDOW_SHADE_DIRECTION,
     WINDOW_GLASS_PRESET_ID,
+    WINDOW_FRAME_DOOR_STYLE,
+    WINDOW_FRAME_MATCH_MODE,
+    WINDOW_HANDLE_MATERIAL_MODE,
     WINDOW_INTERIOR_ATLAS_ID,
     PARALLAX_INTERIOR_PRESET_ID,
     WINDOW_FABRICATION_ASSET_TYPE,
@@ -113,6 +116,28 @@ test('WindowMeshSettings: frame addHandles defaults to false', () => {
     assert.equal(s.frame.addHandles, false);
 });
 
+test('WindowMeshSettings: frame style defaults include door style, bottom/center modes, and handle material mode', () => {
+    const s = sanitizeWindowMeshSettings({});
+    assert.equal(s.frame.doorStyle, WINDOW_FRAME_DOOR_STYLE.SINGLE);
+    assert.equal(s.frame.doorBottomFrame.enabled, false);
+    assert.equal(s.frame.doorBottomFrame.mode, WINDOW_FRAME_MATCH_MODE.MATCH);
+    assert.equal(s.frame.doorCenterFrame.leftMode, WINDOW_FRAME_MATCH_MODE.MATCH);
+    assert.equal(s.frame.doorCenterFrame.rightMode, WINDOW_FRAME_MATCH_MODE.MATCH);
+    assert.equal(s.frame.handleMaterialMode, WINDOW_HANDLE_MATERIAL_MODE.MATCH);
+});
+
+test('WindowMeshSettings: frame vertical/horizontal widths sanitize independently with legacy width fallback', () => {
+    const s = sanitizeWindowMeshSettings({
+        frame: {
+            width: 0.09,
+            verticalWidth: 0.11
+        }
+    });
+    assert.equal(s.frame.verticalWidth, 0.11);
+    assert.equal(s.frame.horizontalWidth, 0.09);
+    assert.equal(s.frame.width, 0.11);
+});
+
 test('WindowMeshSettings: frame addHandles sanitizes to boolean', () => {
     const s = sanitizeWindowMeshSettings({
         frame: { addHandles: 1 }
@@ -129,6 +154,22 @@ test('WindowMeshSettings: openBottom frame disables arch', () => {
     });
     assert.equal(s.frame.openBottom, true);
     assert.equal(s.arch.enabled, false);
+});
+
+test('WindowMeshSettings: glass zOffset default is -0.04 and clamps to 2 decimals', () => {
+    const defaults = sanitizeWindowMeshSettings({});
+    assert.equal(defaults.glass.zOffset, -0.04);
+
+    const rounded = sanitizeWindowMeshSettings({
+        glass: { zOffset: -0.047 }
+    });
+    assert.equal(rounded.glass.zOffset, -0.05);
+});
+
+test('WindowMeshSettings: muntin defaults inherit color and material from frame', () => {
+    const s = sanitizeWindowMeshSettings({});
+    assert.equal(s.muntins.colorHex, null);
+    assert.equal(s.muntins.material.inheritFromFrame, true);
 });
 
 test('WindowMeshVariation: same seed+id is deterministic', () => {
@@ -206,15 +247,17 @@ test('WindowFabricationCatalog: returns mode-filtered entries with expected defa
     const doors = getWindowFabricationCatalogEntries({ assetType: WINDOW_FABRICATION_ASSET_TYPE.DOOR });
     const garages = getWindowFabricationCatalogEntries({ assetType: WINDOW_FABRICATION_ASSET_TYPE.GARAGE });
 
-    assert.equal(windows.length, 1);
-    assert.equal(doors.length, 0);
-    assert.equal(garages.length, 0);
+    assert.ok(windows.length >= 1);
+    assert.ok(doors.length >= 1);
+    assert.ok(garages.length >= 1);
     assert.ok(windows.every((entry) => entry.assetType === WINDOW_FABRICATION_ASSET_TYPE.WINDOW));
+    assert.ok(doors.every((entry) => entry.assetType === WINDOW_FABRICATION_ASSET_TYPE.DOOR));
+    assert.ok(garages.every((entry) => entry.assetType === WINDOW_FABRICATION_ASSET_TYPE.GARAGE));
 
     const defaultDoorId = getDefaultWindowFabricationCatalogId(WINDOW_FABRICATION_ASSET_TYPE.DOOR);
-    assert.equal(defaultDoorId, '');
+    assert.ok(defaultDoorId);
     const defaultGarageId = getDefaultWindowFabricationCatalogId(WINDOW_FABRICATION_ASSET_TYPE.GARAGE);
-    assert.equal(defaultGarageId, '');
+    assert.ok(defaultGarageId);
 });
 
 test('WindowFabricationCatalog: asset type options include garage mode', () => {
@@ -236,9 +279,68 @@ test('WindowFabricationCatalog: includes embedded downloaded window entry with w
     assert.equal(embedded?.thumbnail?.wallMaterialId, 'pbr.brick_wall_11');
 });
 
+test('WindowFabricationCatalog: includes embedded downloaded street window black entry with wall hint metadata', () => {
+    const windows = getWindowFabricationCatalogEntries({ assetType: WINDOW_FABRICATION_ASSET_TYPE.WINDOW });
+    const embedded = windows.find((entry) => entry.id === 'window_street_black') ?? null;
+    assert.ok(embedded);
+    assert.equal(embedded?.name, 'Street Store Black Window');
+    assert.equal(embedded?.settings?.width, 1.7);
+    assert.equal(embedded?.settings?.height, 2.5);
+    assert.equal(embedded?.settings?.frame?.width, 0.04);
+    assert.equal(embedded?.settings?.frame?.depth, 0.12);
+    assert.equal(embedded?.settings?.frame?.doorStyle, 'single');
+    assert.equal(embedded?.settings?.shade?.enabled, false);
+    assert.equal(embedded?.settings?.interior?.enabled, false);
+    assert.equal(embedded?.wall?.materialId, 'pbr.brick_wall_11');
+    assert.equal(embedded?.thumbnail?.wallMaterialId, 'pbr.brick_wall_11');
+});
+
+test('WindowFabricationCatalog: includes embedded downloaded door black tall entry with wall hint metadata', () => {
+    const doors = getWindowFabricationCatalogEntries({ assetType: WINDOW_FABRICATION_ASSET_TYPE.DOOR });
+    const embedded = doors.find((entry) => entry.id === 'door_black_tall') ?? null;
+    assert.ok(embedded);
+    assert.equal(embedded?.name, 'Street Store Black Door');
+    assert.equal(embedded?.settings?.width, 2);
+    assert.equal(embedded?.settings?.height, 2.7);
+    assert.equal(embedded?.settings?.frame?.doorStyle, 'double');
+    assert.equal(embedded?.wall?.materialId, 'pbr.brick_wall_11');
+    assert.equal(embedded?.thumbnail?.wallMaterialId, 'pbr.brick_wall_11');
+});
+
 test('WindowFabricationCatalog: resolves entries by catalog name (case-insensitive)', () => {
     const found = getWindowFabricationCatalogEntryByName('black 6 panels tall', {
         assetType: WINDOW_FABRICATION_ASSET_TYPE.WINDOW
     });
     assert.equal(found?.id, 'window_black_6_panels_tall');
+});
+
+test('WindowFabricationCatalog: resolves embedded street window black entry by catalog name', () => {
+    const found = getWindowFabricationCatalogEntryByName('street store black window', {
+        assetType: WINDOW_FABRICATION_ASSET_TYPE.WINDOW
+    });
+    assert.equal(found?.id, 'window_street_black');
+});
+
+test('WindowFabricationCatalog: resolves embedded door download entries by catalog name', () => {
+    const found = getWindowFabricationCatalogEntryByName('street store black door', {
+        assetType: WINDOW_FABRICATION_ASSET_TYPE.DOOR
+    });
+    assert.equal(found?.id, 'door_black_tall');
+});
+
+test('WindowFabricationCatalog: door and garage defaults expose dedicated entries', () => {
+    const door = getWindowFabricationCatalogEntryByName('black single door modern', {
+        assetType: WINDOW_FABRICATION_ASSET_TYPE.DOOR
+    });
+    const garage = getWindowFabricationCatalogEntryByName('black garage panel wide', {
+        assetType: WINDOW_FABRICATION_ASSET_TYPE.GARAGE
+    });
+
+    assert.equal(door?.id, 'door_black_single_modern');
+    assert.equal(door?.settings?.frame?.openBottom, true);
+    assert.equal(door?.settings?.shade?.enabled, false);
+
+    assert.equal(garage?.id, 'garage_black_panel_wide');
+    assert.equal(garage?.settings?.frame?.openBottom, true);
+    assert.equal(garage?.settings?.shade?.enabled, false);
 });

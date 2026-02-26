@@ -80,6 +80,8 @@ First-pass calibration presets:
 - Contains:
   - Category selector (Phase 1 `classId`s)
   - Material cards for that category
+- Catalog may include calibration-only variants where `buildingEligible=false` and `groundEligible=false`.
+- Calibration-only variants may define catalog metadata `calibration.uvRotationDegrees`; when present, the slot textures must render with that UV rotation.
 - Cards:
   - Click toggles selected/unselected
   - Enforces max 3 slots (replacement rule above)

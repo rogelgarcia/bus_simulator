@@ -135,8 +135,9 @@ When building configuration widgets are enabled, the core authoring unit is the 
 ### 7.1 Create Building defaults
 
 `Create Building` creates a building at the map center with:
-- Footprint: **meter-based default silhouette** (tile-independent authoring default; editable via `Adjust Layout`)
-- Floors: **4 floors** initial setup (via the initial `Floor layer`)
+- Footprint: **1 tile equivalent square footprint** (uses the current BF2 tile size for width/depth, editable via `Adjust Layout`)
+- Floors: **1 floor** initial setup (via the initial `Floor layer`)
+- Floor height: **3.5m** initial setup
 - Default face linking (per-floor-layer):
   - Face `A` is the master of face `C`
   - Face `B` is the master of face `D`
@@ -212,6 +213,7 @@ Inside each `Floor layer` group, the UI order MUST be:
    - the selected bay exposes a width mode:
      - `fixed`: `widthMeters`
      - `range`: `minMeters..maxMeters` where `maxMeters = null` is interpreted as infinity (UI uses an `∞` toggle)
+     - `window_fixed`: derived fixed width from opening width + opening padding (window icon mode)
      - width validation:
        - minimum acceptable width is `0.1m` (applies to fixed width and to range min/max)
        - newly created bays default to `1.0m` min/width for authoring convenience
@@ -234,33 +236,55 @@ Inside each `Floor layer` group, the UI order MUST be:
      - if the bay has no wall material override, the bay editor material picker shows the default opacity thumbnail background + `Inherited` label (no inherited thumbnail in the bay editor picker)
      - a “clear override” action (shown as a small icon next to the picker when an override is active)
      - the bay Material Configuration panel exposes the same top-level sections as the face material panel:
-       - `Base material` (including albedo tint / roughness / normal strength),
-       - `Texture tiling`,
-       - `Material variation`.
-   - the selected bay exposes a `Window` section:
-     - `Enable window` toggle (off = no bay window preview/placement for that bay)
-     - window picker uses the same thumbnail rectangle layout as material pickers:
-       - no row label text,
-       - shows the currently selected building-owned window definition thumbnail.
-     - clicking the picker opens a selector popup with:
-       - existing building-owned window definitions,
-       - `Create New`,
-       - `Edit` for the currently selected definition.
-     - `Create New` and `Edit` open the shared Window Fabrication popup (reused Window Debugger authoring UI):
-       - wider controls area,
-       - smaller viewport,
-       - contextual 2×2 wall preview sample.
-     - per-bay window controls:
-       - opening width (meters),
-       - opening height (meters),
-       - left/right padding with a link toggle (linked by default).
-       - these same controls size both window and door-style definitions placed in bays.
-       - validation:
-         - width/height must be positive,
-         - width is clamped at runtime to the resolved usable bay span (`bay span - left padding - right padding`),
-         - height is clamped at runtime per floor segment bounds.
-     - when window constraints increase the required bay width, the UI must show the effective clamped bay minimum width clearly.
-     - parity rule: legacy Building Fabrication bay-window controls MUST mirror this same picker-first model and shared picker component behavior.
+       - `Base material` (including tint sliders + roughness + normal strength),
+       - `Texture tiling`.
+   - the selected bay exposes a `Windows/Doors` section:
+     - picker-first selection row:
+       - left row label is contextual by selected opening type (`Window`, `Door`, `Garage`),
+       - right control is the opening picker.
+     - opening picker uses the same thumbnail rectangle layout as material pickers and shows the currently selected opening thumbnail.
+     - clicking the picker opens a catalog-only selector popup with 3 tabs:
+       - `Window`,
+       - `Door`,
+       - `Garage`.
+     - picker tab options come from Window Fabrication Catalog (same source as Window Debugger).
+     - picker flow is load-only in BF2:
+       - no `Actions` tab,
+       - no in-BF2 create/edit of window/door/garage definitions.
+     - below the picker, a selected-name row:
+       - shows selected catalog item name or `none` when no opening is selected,
+       - includes a clear/delete icon action that resets opening selection to `none`.
+     - per-bay opening controls:
+       - no editable type selector,
+       - no legacy `Enable window/door/garage` toggle row,
+       - no legacy `Selected` label row,
+       - type/context labels are dynamic (`Window`, `Door`, `Garage`) instead of generic “opening” wording,
+       - width/height/offset/repeat use slider + number controls,
+       - main (bottom) height mode uses grouped buttons (`Fixed`, `Full Height`) positioned with the height controls,
+       - left/right padding keeps link toggle behavior (linked by default).
+     - repeat controls:
+       - window openings support repeat count `1..5` (side-by-side),
+       - door/garage openings are forced to repeat `1`.
+     - stacked top opening controls:
+       - supported for window and door openings,
+       - top opening type follows the selected main opening type,
+       - includes `Enable` on/off button group, height mode, height override, vertical gap, and top frame-width override,
+       - top frame-width override uses `[label] [on/inherit] [setting]` pattern,
+       - top frame-width input is authored with two-decimal precision,
+       - top opening width follows the bottom opening width,
+       - garage openings do not support stacked top opening.
+     - muntin toggles:
+       - separate `Bottom muntins` and `Top muntins` states.
+     - main-section toggle controls:
+       - `Bottom muntins` uses explicit `On/Off` grouped buttons,
+       - `Shades` uses explicit `On/Off` grouped buttons,
+       - defaults are inherited from the selected opening definition and can then be overridden per bay.
+     - validation:
+       - width/height must be positive,
+       - width is clamped at runtime to each repeat slot’s usable width,
+       - height is clamped at runtime per floor segment bounds.
+     - when opening constraints increase required bay width, UI shows the effective clamped bay minimum width.
+     - numeric controls must update in real time during press-and-hold increments (no single-click-only behavior).
    - Bay linking (bay-level master/slave, full spec):
      - the bay editor header row includes a `Link` action alongside the move arrows and delete icons
        - when the selected bay is linked (slave), the `Link` button border is yellow
@@ -307,27 +331,27 @@ Clicking the base wall material picker MUST open a Material Configuration panel:
 - full screen height,
 - same width as the building properties panel.
 
-### 8.3 Side-by-side panel collapse behavior (required)
+### 8.3 Side-by-side panel behavior during material picking
 
-When a side panel is open next to the building properties panel:
-- the building properties panel collapses into a thin expandable column,
-- the thin column shows a left arrow expand button at the top,
-- clicking the expand button shows the building properties panel again while keeping the thin column affordance available.
+When the Material Configuration side panel opens next to the building properties panel:
+- the building properties panel MUST keep its current expanded/collapsed state (no forced collapse),
+- if expanded, it remains visible while opening/using/applying material picker selections,
+- if collapsed by the user via the side-handle control, it remains collapsed until manually expanded again.
 
-This collapse/expand behavior is a general rule for any panel that opens alongside the building properties panel.
+The side-handle collapse/expand control remains available for manual layout control; only automatic collapse on material-picking flows is disallowed.
 
 ### 8.4 Material Configuration contents and scope
 
-The Material Configuration panel contains exactly three top-level collapsible sections:
-1) `Base material` — base wall material selection + fundamental PBR inputs (albedo tint, roughness, normal strength).
+The Material Configuration panel contains exactly two top-level flat sections (non-collapsible, no boxed details containers):
+1) `Base material` — base wall material selection + fundamental wall inputs (tint hue/saturation/value/intensity sliders, roughness, normal strength).
 2) `Texture tiling` — UV scale/offset/rotation controls and “override tile meters” behavior.
-3) `Material variation` — wall material variation controls (same properties/intent as legacy Building Fabrication).
 
 Material configuration is scoped per **floor-layer face**:
 - if a face is a slave (linked), it MUST NOT own duplicated material configuration; it inherits from its master face.
+- tiling overrides are tracked per selected wall material so switching materials restores that material’s own tiling values.
 
 The Material Configuration panel MAY also be opened for a **bay material override**:
 - the panel scope becomes “this bay within the selected floor-layer face”
-- the same three top-level sections are shown (`Base material`, `Texture tiling`, `Material variation`)
+- the same two top-level sections are shown (`Base material`, `Texture tiling`)
 - bay settings inherit from the face material configuration until overridden
 - if the bay is linked to another bay (bay master/slave), the panel shows `Linked to Bay X` and suppresses editable controls; an `Unlink` action is provided

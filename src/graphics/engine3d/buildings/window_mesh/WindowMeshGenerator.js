@@ -161,7 +161,8 @@ export class WindowMeshGenerator {
         frameLayer.add(frameMesh);
         let handlesMesh = null;
         if (bundle.handles) {
-            handlesMesh = new THREE.InstancedMesh(bundle.handles, mats.frameMat, count);
+            handlesMesh = new THREE.InstancedMesh(bundle.handles, mats.handlesMat ?? mats.frameMat, count);
+            handlesMesh.name = 'handles';
             handlesMesh.castShadow = true;
             handlesMesh.receiveShadow = true;
             handlesMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);

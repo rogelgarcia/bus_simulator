@@ -92,7 +92,13 @@ export default {
     notes: '',
     albedoNotes: '',
     roughnessIntent: ''
-  }
+  },
+
+  // Optional calibration-only metadata consumed by Material Calibration tool.
+  calibration: {
+    // UV texture rotation in degrees, applied in calibration view only.
+    uvRotationDegrees: 0
+  },
 };
 ```
 
@@ -106,6 +112,9 @@ Field rules:
 - Either `mapFiles.orm` **or** one or more of `ao/roughness/metalness` must be provided.
 - `allMapFiles` is optional and may include every image file path in the material folder for tooling/auditing.
 - `normalization` is optional and may contain placeholders (strings) until later phases enforce validation.
+- `calibration` is optional and currently supports `uvRotationDegrees` (used only by the Material Calibration tool).
+- Calibration-only catalog entries are allowed by setting both `buildingEligible` and `groundEligible` to `false`.
+- Calibration-only entries may reuse another material folder by using relative `mapFiles` paths (for example `../plastered_wall_02/basecolor.jpg`) and must not duplicate texture assets.
 
 Color space conventions:
 - `baseColor` is sRGB.

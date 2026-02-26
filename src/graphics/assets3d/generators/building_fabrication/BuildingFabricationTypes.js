@@ -158,6 +158,14 @@ function normalizeMaterialVariationConfig(value, { defaultEnabled = false, defau
     return { ...deepClone(src), enabled: src.enabled === undefined ? !!defaultEnabled : !!src.enabled, seedOffset };
 }
 
+function normalizeFloorLayerInteriorConfig(value, { fallbackEnabled = false } = {}) {
+    if (typeof value === 'boolean') return { enabled: value };
+    const src = value && typeof value === 'object' ? value : null;
+    const enabledRaw = src?.enabled ?? src?.on ?? src?.interiorEnabled;
+    if (enabledRaw === undefined) return { enabled: !!fallbackEnabled };
+    return { enabled: !!enabledRaw };
+}
+
 function normalizeMaterialSpec(
     value,
     {
@@ -342,6 +350,8 @@ export function createDefaultFloorLayer({
     wallBase = null,
     belt = null,
     windows = null,
+    interior = null,
+    interiorEnabled = undefined,
     tiling = null,
     materialVariation = null,
     faceLinking = null,
@@ -367,6 +377,9 @@ export function createDefaultFloorLayer({
         layerDefaults: { material: wallMaterial, wallBase: wallBaseCfg, tiling: tilingCfg, materialVariation: matVarCfg },
         faceLinking: faceLinkingCfg
     });
+    const interiorCfg = normalizeFloorLayerInteriorConfig(interior, {
+        fallbackEnabled: interiorEnabled !== undefined ? !!interiorEnabled : false
+    });
 
     const out = {
         id: typeof id === 'string' && id ? id : createLayerId('floor'),
@@ -374,6 +387,7 @@ export function createDefaultFloorLayer({
         floors: clampInt(floors, 1, 99),
         floorHeight: clamp(floorHeight, 1.0, 12.0),
         planOffset: clamp(planOffset, -8.0, 8.0),
+        interior: interiorCfg,
         style: derivedStyle,
         material: wallMaterial,
         wallBase: wallBaseCfg,
@@ -530,6 +544,7 @@ export function cloneBuildingLayers(layers) {
             const beltMaterial = belt?.material ?? null;
             const beltTiling = belt?.tiling ?? null;
             const windows = layer?.windows ?? {};
+            const interior = layer?.interior ?? null;
             const windowVisuals = windows?.windowVisuals ?? null;
             const columns = windows?.spaceColumns ?? {};
             const columnsMaterial = columns?.material ?? null;
@@ -550,6 +565,7 @@ export function cloneBuildingLayers(layers) {
                 material: material ? { ...material } : material,
                 wallBase: wallBase ? deepClone(wallBase) : wallBase,
                 tiling: tiling ? deepClone(tiling) : tiling,
+                interior: interior ? deepClone(interior) : interior,
                 materialVariation: materialVariation ? deepClone(materialVariation) : materialVariation,
                 belt: {
                     ...belt,

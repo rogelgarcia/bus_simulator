@@ -8,6 +8,7 @@ import { createToggleRowController } from './ToggleRowController.js';
 export function createTextureTilingMiniController({
     mode = 'details',
     title = 'Texture tiling',
+    showTitle = true,
     detailsOpenByKey = null,
     detailsKey = null,
     allow = true,
@@ -39,8 +40,10 @@ export function createTextureTilingMiniController({
         nodes.push(detailsSection.details);
         body = detailsSection.body;
     } else {
-        const label = createSectionLabel(title);
-        nodes.push(label);
+        if (showTitle) {
+            const label = createSectionLabel(title);
+            nodes.push(label);
+        }
         body = null;
     }
 

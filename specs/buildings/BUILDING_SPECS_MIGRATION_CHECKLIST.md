@@ -20,7 +20,7 @@ Purpose: ensure new `specs/buildings/` documentation captures all existing build
 
 **AI_DONE_252_BUILDINGS_building_fabrication_single_building_fixed_footprint_DONE.md**
 - [x] “Edit one building” workflow → `specs/buildings/BUILDING_2_SPEC_ui.md`
-- [x] Centered 2×1 starting footprint (when creating) → `specs/buildings/BUILDING_2_SPEC_ui.md`
+- [x] Centered 1×1 starting footprint (when creating) → `specs/buildings/BUILDING_2_SPEC_ui.md`
 
 **AI_DONE_253_BUILDINGS_building_fabrication_face_editor_and_mirror_lock_DONE.md**
 - [x] Face selection (A–D) and viewport highlight → `specs/buildings/BUILDING_2_SPEC_ui.md`
@@ -60,7 +60,7 @@ Purpose: ensure new `specs/buildings/` documentation captures all existing build
 - [x] Right panel empty in phase 1 → `specs/buildings/BUILDING_2_SPEC_ui.md`
 
 **AI_DONE_259_BUILDINGS_building_fabrication2_faces_locking_and_layers_ui_layout_DONE.md**
-- [x] Left `Create Building` spawns centered 2×1, 4 floors → `specs/buildings/BUILDING_2_SPEC_ui.md`
+- [x] Left `Create Building` spawns centered 1×1, 1 floor at 3.5m → `specs/buildings/BUILDING_2_SPEC_ui.md`
 - [x] Default locking A→C and B→D on creation → `specs/buildings/BUILDING_2_SPEC_ui.md`
 - [x] Face locking master/slave + unlink from master UI → `specs/buildings/BUILDING_2_SPEC_ui.md`
 - [x] Floor layer authoring flow (`+ Floor` top-level, per-floor-layer faces + linking) → `specs/buildings/BUILDING_2_SPEC_ui.md`

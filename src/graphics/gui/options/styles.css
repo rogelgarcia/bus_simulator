@@ -149,6 +149,118 @@
     display: flex;
 }
 
+#ui-wall-decoration-mesh-debugger .wall-decoration-tab-pane {
+    display: none;
+    flex-direction: column;
+    gap: 12px;
+}
+
+#ui-wall-decoration-mesh-debugger .wall-decoration-tab-pane.is-active {
+    display: flex;
+}
+
+#ui-wall-decoration-mesh-debugger .wall-decoration-tab-pane[data-tab-id="catalog"] .options-section {
+    border: 0;
+    background: transparent;
+    border-radius: 0;
+    padding: 0;
+    gap: 8px;
+}
+
+#ui-wall-decoration-mesh-debugger .wall-decoration-tab-pane[data-tab-id="catalog"] .options-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#ui-wall-decoration-mesh-debugger .wall-decoration-tab-pane[data-tab-id="catalog"] .options-section-title::after {
+    content: '';
+    flex: 1 1 auto;
+    min-width: 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.2);
+}
+
+.wall-decoration-left-stack {
+    position: fixed;
+    left: 16px;
+    top: calc(var(--global-top-bar-height, 0px) + 16px);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: min(252px, calc(100vw - 32px));
+    pointer-events: auto;
+    z-index: 205;
+}
+
+.wall-decoration-left-panel {
+    width: 100%;
+    max-width: 252px;
+}
+
+.wall-decoration-left-title {
+    font-size: 16px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 900;
+    margin-bottom: 10px;
+    opacity: 0.92;
+}
+
+.wall-decoration-left-toggle-group {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.wall-decoration-left-toggle-btn {
+    width: 100%;
+    min-height: 38px;
+}
+
+#ui-wall-decoration-mesh-debugger .wall-decoration-catalog-grid {
+    width: 100%;
+    justify-content: stretch;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 8px;
+}
+
+#ui-wall-decoration-mesh-debugger .wall-decoration-catalog-btn {
+    width: 100%;
+    min-height: 44px;
+    border-radius: 10px;
+    text-align: left;
+    padding: 8px 10px;
+}
+
+.wall-decoration-wall-material-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.wall-decoration-wall-material-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 6px;
+    padding: 8px 6px;
+}
+
+.wall-decoration-wall-material-thumb {
+    width: 56px;
+    height: 42px;
+    border-radius: 8px;
+}
+
+.wall-decoration-wall-material-label {
+    text-align: center;
+    font-size: 11px;
+    line-height: 1.15;
+    font-weight: 800;
+}
+
 #ui-window-mesh-debugger .options-section {
     border: 0;
     background: transparent;
@@ -388,6 +500,20 @@
     font-variant-numeric: tabular-nums;
 }
 
+.options-text-input {
+    width: 100%;
+    min-width: 0;
+    flex: 1 1 auto;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(0,0,0,0.25);
+    color: #e9f2ff;
+    box-sizing: border-box;
+    text-align: left;
+    font-variant-numeric: normal;
+}
+
 .options-color {
     width: 44px;
     height: 36px;
@@ -402,7 +528,8 @@
 
 .options-range:focus-visible,
 .options-color:focus-visible,
-.options-number:focus-visible {
+.options-number:focus-visible,
+.options-text-input:focus-visible {
     outline: 2px solid rgba(100, 210, 255, 0.55);
     outline-offset: 2px;
 }

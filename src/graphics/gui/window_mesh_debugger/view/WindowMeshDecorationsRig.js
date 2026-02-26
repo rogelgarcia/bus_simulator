@@ -10,6 +10,7 @@ import {
     WINDOW_DECORATION_MATERIAL_MODE,
     resolveWindowDecorationState
 } from '../../../../app/buildings/window_mesh/index.js';
+import { WINDOW_MESH_DOUBLE_DOOR_CENTER_GAP_METERS } from '../../../engine3d/buildings/window_mesh/WindowMeshGeometry.js';
 import { PbrTextureLoaderService } from '../../../content3d/materials/PbrTexturePipeline.js';
 
 const EPS = 1e-6;
@@ -325,10 +326,13 @@ function computeDecorationPlacement(partId, resolved, windowHeight, wallFrontZ) 
     const offset = template.offset && typeof template.offset === 'object' ? template.offset : {};
     const height = Number(template.height) || 0;
     const gap = Number(template.gap) || 0;
+    const style = String(resolved?.type ?? WINDOW_DECORATION_STYLE.SIMPLE).toLowerCase();
 
     let yBase = 0;
     if (partId === WINDOW_DECORATION_PART.SILL) {
-        yBase = -windowHeight * 0.5 - gap - height * 0.5;
+        yBase = style === WINDOW_DECORATION_STYLE.BOTTOM_COVER
+            ? (-windowHeight * 0.5 + gap + height * 0.5)
+            : (-windowHeight * 0.5 - gap - height * 0.5);
     } else if (partId === WINDOW_DECORATION_PART.HEADER) {
         yBase = windowHeight * 0.5 + gap + height * 0.5;
     }
@@ -338,6 +342,44 @@ function computeDecorationPlacement(partId, resolved, windowHeight, wallFrontZ) 
         y: yBase + (Number(offset.y) || 0),
         z: wallFrontZ + (Number(offset.z) || 0)
     };
+}
+
+function isDoorDoubleSillMode(windowSettings) {
+    const frame = windowSettings?.frame && typeof windowSettings.frame === 'object' ? windowSettings.frame : {};
+    const style = typeof frame.doorStyle === 'string' ? frame.doorStyle.trim().toLowerCase() : '';
+    return !!frame.openBottom && style === 'double';
+}
+
+function computeDoorLeafLayout(windowWidth) {
+    const width = Math.max(EPS, Number(windowWidth) || 0);
+    const centerGap = Math.max(0, Math.min(width - EPS, WINDOW_MESH_DOUBLE_DOOR_CENTER_GAP_METERS));
+    const leafWidth = Math.max(EPS, (width - centerGap) * 0.5);
+    const leafOffset = centerGap * 0.5 + leafWidth * 0.5;
+    return { leafWidth, leafOffset };
+}
+
+function buildPartPlacementEntries(partId, instances, windowSettings, windowWidth) {
+    const base = Array.isArray(instances) ? instances : [];
+    if (partId !== WINDOW_DECORATION_PART.SILL) return { instances: base, width: Math.max(EPS, Number(windowWidth) || 1) };
+    if (!isDoorDoubleSillMode(windowSettings)) return { instances: base, width: Math.max(EPS, Number(windowWidth) || 1) };
+
+    const layout = computeDoorLeafLayout(windowWidth);
+    const split = [];
+    for (const entry of base) {
+        const p = entry?.position && typeof entry.position === 'object' ? entry.position : entry;
+        const px = Number(p?.x) || 0;
+        const py = Number(p?.y) || 0;
+        const pz = Number(p?.z) || 0;
+        split.push({
+            ...entry,
+            position: { x: px - layout.leafOffset, y: py, z: pz }
+        });
+        split.push({
+            ...entry,
+            position: { x: px + layout.leafOffset, y: py, z: pz }
+        });
+    }
+    return { instances: split, width: layout.leafWidth };
 }
 
 function getDefaultUvTransform() {
@@ -481,10 +523,14 @@ export class WindowMeshDecorationsRig {
                 curveSegments
             };
 
+            const partPlacement = buildPartPlacementEntries(partId, list, s, winW);
+            const partInstances = partPlacement.instances;
+            pluginCtx.windowWidth = partPlacement.width;
+
             const geometryKey = plugin.buildGeometryKey
                 ? String(plugin.buildGeometryKey(pluginCtx) ?? '')
                 : `${partId}|${styleId}`;
-            const count = list.length;
+            const count = partInstances.length;
 
             let mesh = this._meshes[partId];
             let replaceGeometry = false;
@@ -535,7 +581,7 @@ export class WindowMeshDecorationsRig {
 
             const placement = computeDecorationPlacement(partId, resolved, winH, wFront);
             for (let i = 0; i < count; i++) {
-                const entry = list[i];
+                const entry = partInstances[i];
                 const p = entry?.position && typeof entry.position === 'object' ? entry.position : entry;
                 const yaw = Number(entry?.yaw) || 0;
                 const x = (Number(p?.x) || 0) + placement.x;
@@ -552,8 +598,16 @@ export class WindowMeshDecorationsRig {
             const pbrMaterialId = typeof resolved?.material?.materialId === 'string' && resolved.material.materialId
                 ? resolved.material.materialId
                 : wallMaterialId;
+            const frame = s.frame ?? {};
+            const frameMat = frame.material ?? {};
+            const frameColorHex = normalizeHexColor(frame.colorHex, 0xffffff);
+            const frameRoughness = clamp(frameMat.roughness, 0.0, 1.0, 0.72);
+            const frameMetalness = clamp(frameMat.metalness, 0.0, 1.0, 0.0);
+            const frameEnvMapIntensity = clamp(frameMat.envMapIntensity, 0.0, 8.0, 0.0);
+            const frameNormalStrength = clamp(frameMat.normalStrength, 0.0, 5.0, 1.0);
             const uv = getDefaultUvTransform();
-            const matKey = `${mode}|wall:${wallMaterialId}|pbr:${pbrMaterialId}|wr:${q(wallRoughness)}|wn:${q(wallNormalStrength)}`;
+            const frameMatchKey = `|fc:${frameColorHex}|fr:${q(frameRoughness)}|fm:${q(frameMetalness)}|fe:${q(frameEnvMapIntensity)}|fn:${q(frameNormalStrength)}`;
+            const matKey = `${mode}|wall:${wallMaterialId}|pbr:${pbrMaterialId}|wr:${q(wallRoughness)}|wn:${q(wallNormalStrength)}${mode === WINDOW_DECORATION_MATERIAL_MODE.MATCH_FRAME ? frameMatchKey : ''}`;
 
             if (matKey !== this._materialKeys[partId]) {
                 const mat = this._materials[partId];
@@ -567,15 +621,13 @@ export class WindowMeshDecorationsRig {
                     };
 
                     if (mode === WINDOW_DECORATION_MATERIAL_MODE.MATCH_FRAME) {
-                        const frame = s.frame ?? {};
-                        const frameMat = frame.material ?? {};
-                        mat.color.setHex(normalizeHexColor(frame.colorHex, 0xffffff));
-                        mat.roughness = clamp(frameMat.roughness, 0.0, 1.0, 0.72);
-                        mat.metalness = clamp(frameMat.metalness, 0.0, 1.0, 0.0);
+                        mat.color.setHex(frameColorHex);
+                        mat.roughness = frameRoughness;
+                        mat.metalness = frameMetalness;
+                        mat.envMapIntensity = frameEnvMapIntensity;
                         clearMaps();
                         if (mat.normalScale) {
-                            const ns = clamp(frameMat.normalStrength, 0.0, 5.0, 1.0);
-                            mat.normalScale.set(ns, ns);
+                            mat.normalScale.set(frameNormalStrength, frameNormalStrength);
                         }
                     } else if (mode === WINDOW_DECORATION_MATERIAL_MODE.PBR) {
                         mat.color.setHex(0xffffff);

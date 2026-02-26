@@ -166,22 +166,22 @@ Given a solved facade layout, geometry generation MUST:
 Compatibility note (transitional):
 - For older configs, the engine MAY treat legacy `materialLinkFromBayId` as an alias of `linkFromBayId`.
 
-### 6.2 Street-floor carve + single-room interior shell (post-process)
+### 6.2 Street-floor carve + legacy interior shell (post-process)
 
 - Building v2 MUST support a street-floor-special post-process pass after base facade wall generation.
-- The pass applies to the first floor (street floor) and MUST:
-  - cut exterior facade walls at all street-floor opening positions (window and door placements),
-  - derive one interior room wall plane per face from the innermost street-floor opening depth on that face,
-  - generate side-wall returns for non-innermost openings by extending opening reveal depth from opening depth to the interior wall plane.
-- The street-floor interior shell MUST include:
-  - interior wall mesh,
-  - interior floor mesh,
-  - interior ceiling mesh.
-- Street-floor interior vertical span MUST run from street-floor base elevation to `floorHeight - 0.10m`.
-- Street-floor interior shell material assignments are fixed:
+- The street-floor carve pass MUST cut exterior facade walls at street-floor opening positions.
+- Bay-driven openings (`layout.bays[].window`) MUST NOT generate an automatic interior shell mesh pass.
+- The single-room interior shell pass is legacy and only applies to legacy run-window facade openings (`layer.windows.enabled` flow).
+- When the legacy interior shell pass is active, it MUST:
+  - derive one interior room wall plane per face from the innermost street-floor run-window opening depth on that face,
+  - generate side-wall returns for run-window openings by extending opening reveal depth to the derived interior wall plane,
+  - include interior wall/floor/ceiling meshes.
+- Street-floor interior vertical span (legacy pass) MUST run from street-floor base elevation to `floorHeight - 0.10m`.
+- Street-floor interior shell material assignments (legacy pass) are fixed:
   - interior walls: `Plastered wall 02` (`pbr.plastered_wall_02`)
   - interior floor: `Plastered wall 004` (`pbr.plastered_wall_04`)
   - interior ceiling: `Concrete layers 2` (`pbr.concrete_layers_02`)
+- Bay opening reveals remain local to the opening cutout depth and do not derive/emit an interior room shell.
 - Non-street-floor behavior remains unchanged unless explicitly defined by this pass.
 
 ---
@@ -192,16 +192,35 @@ Building v2 moves from face-wide window spacing to **bay-driven content**:
 
 - Windows/doors/openings are authored as bay content (segments/features) rather than “fill a face with evenly spaced windows”.
 - If an opening cannot fit within a bay (after margins/clearances), it MUST be **omitted** and surfaced as a warning (never overlap).
-- Window definitions are building-owned and reusable across bays; bays reference definitions by id.
+- Opening definitions come from Window Fabrication Catalog and MAY be overridden by building-owned definitions with matching ids.
 - Bay window authoring is per-bay and includes:
+  - `window.assetType` (`window` / `door` / `garage`),
   - `window.size.widthMeters`,
   - `window.size.heightMeters`,
+  - `window.heightMode` (`fixed` / `full`),
+  - `window.verticalOffsetMeters` (offset from floor bottom),
+  - `window.repeat.count` (window-only side-by-side repeat),
   - `window.padding.leftMeters` / `window.padding.rightMeters` (linked by default).
+  - `window.muntins.bottomEnabled` / `window.muntins.topEnabled`,
+  - optional stacked top opening (`window.top.*`) with top frame-width override.
 - The effective bay minimum width MUST be clamped by bay-window requirements:
-  - `effectiveBayMin = max(bayMin, windowWidth + leftPadding + rightPadding)`.
+  - `effectiveBayMin = max(bayMin, windowWidth * repeatCount + leftPadding + rightPadding)`.
 - Runtime placement clamps:
-  - width clamps to resolved usable bay width (`baySpan - leftPadding - rightPadding`),
-  - height clamps to floor segment bounds for the target layer.
+  - width clamps to resolved usable repeat slot width (`(baySpan - leftPadding - rightPadding) / repeatCount`),
+  - height clamps to floor segment bounds for the target layer,
+  - bottom/main `heightMode = full` uses the maximum available segment height from opening bottom offset while reserving enabled top-opening gap/height constraints,
+  - `heightMode = full` behavior applies to the main/bottom opening only (not the top opening control),
+  - stacked top opening width follows bottom opening width.
+- Top opening behavior:
+  - enabled for window and door assets,
+  - top opening asset type is fixed to `window`,
+  - disabled for garage assets.
+- Repeat behavior:
+  - `window` asset allows repeat `1..5`,
+  - `door` and `garage` force repeat `1`.
+- Wall-cut consistency:
+  - facade wall cutouts MUST be generated from the same resolved per-floor opening placements used for rendered window/door meshes,
+  - each repeated opening slot and each enabled stacked top opening MUST contribute its own wall cutout.
 - Backward compatibility:
   - legacy `window.width.minMeters` / `window.width.maxMeters` MAY still be read for older configs,
   - when both legacy width range and `window.size.widthMeters` exist, `window.size.widthMeters` takes precedence.

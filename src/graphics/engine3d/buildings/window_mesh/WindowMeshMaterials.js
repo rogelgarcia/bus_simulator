@@ -3,7 +3,11 @@
 // @ts-check
 
 import * as THREE from 'three';
-import { sanitizeWindowMeshSettings, WINDOW_SHADE_DIRECTION } from '../../../../app/buildings/window_mesh/WindowMeshSettings.js';
+import {
+    sanitizeWindowMeshSettings,
+    WINDOW_SHADE_DIRECTION,
+    WINDOW_HANDLE_MATERIAL_MODE
+} from '../../../../app/buildings/window_mesh/WindowMeshSettings.js';
 import { getWindowInteriorAtlasById } from '../../../content3d/catalogs/WindowInteriorAtlasCatalog.js';
 
 const QUANT = 1000;
@@ -37,6 +41,26 @@ function disableIblOnMaterial(mat) {
     mat.userData.iblNoAutoEnvMapIntensity = true;
     mat.envMapIntensity = 0;
     mat.needsUpdate = true;
+}
+
+function getFrameWidths(frame) {
+    const src = frame && typeof frame === 'object' ? frame : {};
+    const legacy = Math.max(0, Number(src.width) || 0);
+    const vertical = Number(src.verticalWidth);
+    const horizontal = Number(src.horizontalWidth);
+    return {
+        vertical: Number.isFinite(vertical) ? Math.max(0, vertical) : legacy,
+        horizontal: Number.isFinite(horizontal) ? Math.max(0, horizontal) : legacy
+    };
+}
+
+function hasFrameBottomPiece(frame) {
+    const src = frame && typeof frame === 'object' ? frame : {};
+    if (!src.openBottom) return true;
+    const bottom = src.doorBottomFrame && typeof src.doorBottomFrame === 'object' ? src.doorBottomFrame : null;
+    if (!bottom) return false;
+    const mode = typeof bottom.mode === 'string' ? bottom.mode.trim().toLowerCase() : '';
+    return !!bottom.enabled && mode === 'match';
 }
 
 function makeNoiseTexture({ size = 64, seed = 1 } = {}) {
@@ -455,9 +479,11 @@ diffuseColor *= texelColor;
 
 export function createWindowMeshMaterials(settings, { renderer = null } = {}) {
     const s = sanitizeWindowMeshSettings(settings);
+    const { vertical: frameVerticalWidth, horizontal: frameHorizontalWidth } = getFrameWidths(s.frame);
+    const bottomFrameEnabled = hasFrameBottomPiece(s.frame);
 
-    const openingWidth = Math.max(0.01, s.width - s.frame.width * 2);
-    const openingHeight = Math.max(0.01, s.height - s.frame.width * 2);
+    const openingWidth = Math.max(0.01, s.width - frameVerticalWidth * 2);
+    const openingHeight = Math.max(0.01, s.height - frameHorizontalWidth - (bottomFrameEnabled ? frameHorizontalWidth : 0));
     const openingAspect = openingWidth / openingHeight;
 
     const frameBevel = s.frame.bevel;
@@ -478,6 +504,34 @@ export function createWindowMeshMaterials(settings, { renderer = null } = {}) {
         frameMat.userData.iblEnvMapIntensity = frameEnvMapIntensity;
     }
     if (frameNormalMap && frameMat.normalScale) frameMat.normalScale.set(frameNormalStrength, frameNormalStrength);
+
+    const handleMaterialModeRaw = typeof s?.frame?.handleMaterialMode === 'string'
+        ? s.frame.handleMaterialMode.trim().toLowerCase()
+        : '';
+    const handleMaterialMode = handleMaterialModeRaw === WINDOW_HANDLE_MATERIAL_MODE.METAL
+        ? WINDOW_HANDLE_MATERIAL_MODE.METAL
+        : WINDOW_HANDLE_MATERIAL_MODE.MATCH;
+    let handlesMat = null;
+    if (handleMaterialMode === WINDOW_HANDLE_MATERIAL_MODE.METAL) {
+        handlesMat = new THREE.MeshStandardMaterial({
+            color: 0xc7ccd4,
+            roughness: 0.18,
+            metalness: 0.92
+        });
+        handlesMat.userData = handlesMat.userData ?? {};
+        handlesMat.userData.iblEnvMapIntensity = 2.25;
+    } else {
+        handlesMat = new THREE.MeshStandardMaterial({
+            color: s.frame.colorHex,
+            roughness: clamp(framePbr.roughness, 0.0, 1.0),
+            metalness: clamp(framePbr.metalness, 0.0, 1.0)
+        });
+        if (frameEnvMapIntensity <= 1e-6) disableIblOnMaterial(handlesMat);
+        else {
+            handlesMat.userData = handlesMat.userData ?? {};
+            handlesMat.userData.iblEnvMapIntensity = frameEnvMapIntensity;
+        }
+    }
 
     let muntinMat = frameMat;
     if (s.muntins.enabled) {
@@ -583,6 +637,7 @@ export function createWindowMeshMaterials(settings, { renderer = null } = {}) {
 
     return {
         frameMat,
+        handlesMat,
         muntinMat,
         glassMat,
         shadeMat,

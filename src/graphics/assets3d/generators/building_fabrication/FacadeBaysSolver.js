@@ -5,6 +5,30 @@
 const EPS = 1e-6;
 const BAY_MIN_WIDTH_M = 0.1;
 const MAX_EXPANDED_BAYS = 1200;
+const BAY_SIZE_MODE = Object.freeze({
+    FIXED: 'fixed',
+    RANGE: 'range',
+    WINDOW_FIXED: 'window_fixed'
+});
+const OPENING_ASSET_TYPE = Object.freeze({
+    WINDOW: 'window',
+    DOOR: 'door',
+    GARAGE: 'garage'
+});
+const OPENING_HEIGHT_MODE = Object.freeze({
+    FIXED: 'fixed',
+    FULL: 'full'
+});
+const OPENING_REPEAT_MIN = 1;
+const OPENING_REPEAT_MAX = 5;
+const GARAGE_FACADE_STATE = Object.freeze({
+    OPEN: 'open',
+    CLOSED: 'closed'
+});
+const GARAGE_FACADE_ROTATION_DEGREES = Object.freeze({
+    DEG_0: 0,
+    DEG_90: 90
+});
 
 function clamp(value, min, max) {
     const num = Number(value);
@@ -109,6 +133,67 @@ function normalizeExpandPreference(value) {
     return null;
 }
 
+function normalizeBaySizeMode(value, fallback = BAY_SIZE_MODE.RANGE) {
+    const typed = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (typed === BAY_SIZE_MODE.FIXED) return BAY_SIZE_MODE.FIXED;
+    if (typed === BAY_SIZE_MODE.WINDOW_FIXED) return BAY_SIZE_MODE.WINDOW_FIXED;
+    if (typed === BAY_SIZE_MODE.RANGE) return BAY_SIZE_MODE.RANGE;
+    return fallback;
+}
+
+function normalizeOpeningAssetType(value, fallback = OPENING_ASSET_TYPE.WINDOW) {
+    const typed = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (typed === OPENING_ASSET_TYPE.WINDOW) return OPENING_ASSET_TYPE.WINDOW;
+    if (typed === OPENING_ASSET_TYPE.DOOR) return OPENING_ASSET_TYPE.DOOR;
+    if (typed === OPENING_ASSET_TYPE.GARAGE) return OPENING_ASSET_TYPE.GARAGE;
+    return fallback;
+}
+
+function normalizeOpeningHeightMode(value, fallback = OPENING_HEIGHT_MODE.FIXED) {
+    const typed = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (typed === OPENING_HEIGHT_MODE.FULL) return OPENING_HEIGHT_MODE.FULL;
+    if (typed === OPENING_HEIGHT_MODE.FIXED) return OPENING_HEIGHT_MODE.FIXED;
+    return fallback;
+}
+
+function normalizeOpeningRepeatCount(value, fallback = OPENING_REPEAT_MIN) {
+    const raw = Number(value);
+    if (!Number.isFinite(raw)) return clampInt(fallback, OPENING_REPEAT_MIN, OPENING_REPEAT_MAX);
+    return clampInt(raw, OPENING_REPEAT_MIN, OPENING_REPEAT_MAX);
+}
+
+function normalizeGarageFacadeState(value, fallback = GARAGE_FACADE_STATE.CLOSED) {
+    const typed = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (typed === GARAGE_FACADE_STATE.OPEN) return GARAGE_FACADE_STATE.OPEN;
+    if (typed === GARAGE_FACADE_STATE.CLOSED) return GARAGE_FACADE_STATE.CLOSED;
+    return fallback;
+}
+
+function normalizeGarageFacadeRotationDegrees(value, fallback = GARAGE_FACADE_ROTATION_DEGREES.DEG_0) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return fallback;
+    if (Math.abs(num - GARAGE_FACADE_ROTATION_DEGREES.DEG_90) < 0.5) return GARAGE_FACADE_ROTATION_DEGREES.DEG_90;
+    return GARAGE_FACADE_ROTATION_DEGREES.DEG_0;
+}
+
+function normalizeGarageFacadeConfig(value, fallback = null) {
+    const src = value && typeof value === 'object' ? value : null;
+    const fb = fallback && typeof fallback === 'object' ? fallback : null;
+    if (!src && !fb) return null;
+    const resolved = src ?? fb ?? {};
+    return {
+        state: normalizeGarageFacadeState(
+            resolved?.state,
+            normalizeGarageFacadeState(fb?.state, GARAGE_FACADE_STATE.CLOSED)
+        ),
+        closedMaterialId: String(resolved?.closedMaterialId ?? fb?.closedMaterialId ?? ''),
+        rotationDegrees: normalizeGarageFacadeRotationDegrees(
+            resolved?.rotationDegrees,
+            normalizeGarageFacadeRotationDegrees(fb?.rotationDegrees, GARAGE_FACADE_ROTATION_DEGREES.DEG_0)
+        )
+    };
+}
+
 function normalizeGroupRepeatSpec(value) {
     const src = value && typeof value === 'object' ? value : null;
     const minRepeats = clampInt(src?.minRepeats ?? 1, 1, 9999);
@@ -135,15 +220,35 @@ function normalizeBayWindowSpec(value) {
     if (src.enabled === false) return null;
 
     const defId = typeof src.defId === 'string' ? src.defId : '';
+    const assetType = normalizeOpeningAssetType(
+        src.assetType ?? src.openingType,
+        OPENING_ASSET_TYPE.WINDOW
+    );
 
     const widthSrc = src.width && typeof src.width === 'object' ? src.width : null;
-    const minRaw = Number(widthSrc?.minMeters ?? src.minWidthMeters ?? src.widthMeters);
-    const minMeters = Number.isFinite(minRaw) ? clamp(minRaw, BAY_MIN_WIDTH_M, 9999) : BAY_MIN_WIDTH_M;
+    const minRaw = Number(widthSrc?.minMeters ?? src.minWidthMeters);
+    const legacyMinMeters = Number.isFinite(minRaw) ? clamp(minRaw, BAY_MIN_WIDTH_M, 9999) : BAY_MIN_WIDTH_M;
+    const sizeSrc = src.size && typeof src.size === 'object' ? src.size : null;
+    const sizeWidthRaw = Number(sizeSrc?.widthMeters ?? src.widthMeters);
+    const sizeHeightRaw = Number(sizeSrc?.heightMeters ?? src.heightMeters);
+    const sizeWidthMeters = Number.isFinite(sizeWidthRaw)
+        ? clamp(sizeWidthRaw, BAY_MIN_WIDTH_M, 9999)
+        : legacyMinMeters;
+    const sizeHeightMeters = Number.isFinite(sizeHeightRaw)
+        ? clamp(sizeHeightRaw, 0.1, 9999)
+        : 1.6;
+    const minMeters = Math.max(legacyMinMeters, sizeWidthMeters);
 
     const maxRaw = widthSrc?.maxMeters ?? src.maxWidthMeters;
     const maxMeters = (maxRaw === null || maxRaw === undefined)
         ? null
         : clamp(maxRaw, minMeters, 9999);
+
+    const heightMode = normalizeOpeningHeightMode(src.heightMode, OPENING_HEIGHT_MODE.FIXED);
+    const verticalOffsetRaw = Number(src.verticalOffsetMeters ?? src.yOffsetMeters ?? src.offsetFromFloorMeters);
+    const verticalOffsetMeters = Number.isFinite(verticalOffsetRaw)
+        ? clamp(verticalOffsetRaw, 0, 9999)
+        : null;
 
     const paddingSrc = src.padding && typeof src.padding === 'object' ? src.padding : null;
     const linked = (paddingSrc?.linked ?? true) !== false;
@@ -151,13 +256,78 @@ function normalizeBayWindowSpec(value) {
     const rightRaw = Number(paddingSrc?.rightMeters ?? src.paddingRightMeters);
     const rightMeters = clamp(Number.isFinite(rightRaw) ? rightRaw : (linked ? leftMeters : 0), 0, 9999);
 
+    let repeatCount = normalizeOpeningRepeatCount(src?.repeat?.count ?? src?.repeatCount, OPENING_REPEAT_MIN);
+    if (assetType !== OPENING_ASSET_TYPE.WINDOW) repeatCount = OPENING_REPEAT_MIN;
+
+    const muntinsSrc = src.muntins && typeof src.muntins === 'object' ? src.muntins : null;
+    const bottomMuntinsEnabled = muntinsSrc?.bottomEnabled !== undefined
+        ? !!muntinsSrc.bottomEnabled
+        : (src.muntinsBottomEnabled !== undefined ? !!src.muntinsBottomEnabled : true);
+    const topMuntinsEnabled = muntinsSrc?.topEnabled !== undefined
+        ? !!muntinsSrc.topEnabled
+        : (src.muntinsTopEnabled !== undefined ? !!src.muntinsTopEnabled : true);
+
+    const topSrc = src.top && typeof src.top === 'object' ? src.top : null;
+    const topEnabledRaw = topSrc?.enabled ?? src.topEnabled ?? src.secondEnabled ?? src.topWindowEnabled;
+    const topHeightMode = normalizeOpeningHeightMode(
+        topSrc?.heightMode ?? topSrc?.mode ?? src.topHeightMode,
+        OPENING_HEIGHT_MODE.FIXED
+    );
+    const topHeightRaw = Number(topSrc?.heightMeters ?? topSrc?.height ?? src.topHeightMeters);
+    const topHeightMeters = Number.isFinite(topHeightRaw)
+        ? clamp(topHeightRaw, 0.1, 9999)
+        : sizeHeightMeters;
+    const topGapRaw = Number(topSrc?.verticalGapMeters ?? topSrc?.gapMeters ?? src.topGapMeters);
+    const topGapMeters = Number.isFinite(topGapRaw)
+        ? clamp(topGapRaw, 0.0, 9999)
+        : 0.1;
+    const topFrameWidthRaw = Number(topSrc?.frameWidthMeters ?? topSrc?.frameWidth ?? src.topFrameWidthMeters);
+    const topFrameWidthMeters = Number.isFinite(topFrameWidthRaw)
+        ? clamp(topFrameWidthRaw, 0.002, 3.0)
+        : null;
+    const topEnabled = !!topEnabledRaw && assetType !== OPENING_ASSET_TYPE.GARAGE;
+    const visualSrc = src.visual && typeof src.visual === 'object' ? src.visual : null;
+    const visualDisableShadesRaw = visualSrc?.disableShades ?? src.disableShades ?? src.shadesDisabled;
+    const visualInteriorRaw = visualSrc?.interior ?? visualSrc?.interiorMode ?? src.interiorPreset ?? src.interiorMode;
+    const hasVisual = visualDisableShadesRaw !== undefined || visualInteriorRaw !== undefined;
+    const visual = hasVisual
+        ? {
+            ...(visualDisableShadesRaw !== undefined ? { disableShades: !!visualDisableShadesRaw } : {}),
+            ...(typeof visualInteriorRaw === 'string' && visualInteriorRaw.trim()
+                ? { interior: visualInteriorRaw.trim().toLowerCase() }
+            : {})
+        }
+        : null;
+    const garageFacade = normalizeGarageFacadeConfig(src?.garageFacade ?? null, null);
+
     return {
         enabled: true,
         defId,
+        assetType,
+        size: {
+            widthMeters: sizeWidthMeters,
+            heightMeters: sizeHeightMeters
+        },
+        heightMode,
+        verticalOffsetMeters,
         width: {
             minMeters,
             maxMeters
         },
+        repeat: { count: repeatCount },
+        muntins: {
+            bottomEnabled: bottomMuntinsEnabled,
+            topEnabled: topMuntinsEnabled
+        },
+        top: {
+            enabled: topEnabled,
+            heightMode: topHeightMode,
+            heightMeters: topHeightMeters,
+            verticalGapMeters: topGapMeters,
+            frameWidthMeters: topFrameWidthMeters
+        },
+        ...(visual ? { visual } : {}),
+        ...(garageFacade ? { garageFacade } : {}),
         padding: linked
             ? { leftMeters, rightMeters }
             : { leftMeters, rightMeters, linked: false }
@@ -237,11 +407,11 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
         const id = typeof entry?.id === 'string' ? entry.id : '';
         if (!id) continue;
         const size = entry?.size && typeof entry.size === 'object' ? entry.size : null;
-        const mode = size?.mode === 'fixed' ? 'fixed' : 'range';
+        const mode = normalizeBaySizeMode(size?.mode, BAY_SIZE_MODE.RANGE);
 
         let minWidth = BAY_MIN_WIDTH_M;
         let maxWidth = Infinity;
-        if (mode === 'fixed') {
+        if (mode === BAY_SIZE_MODE.FIXED || mode === BAY_SIZE_MODE.WINDOW_FIXED) {
             const width = clamp(size?.widthMeters ?? 1.0, BAY_MIN_WIDTH_M, 9999);
             minWidth = width;
             maxWidth = width;
@@ -260,10 +430,15 @@ export function solveFacadeBaysLayout({ bays, groups = null, faceLengthMeters, w
             : null;
         const window = normalizeBayWindowSpec(entry?.window ?? windowLegacy ?? null);
         if (window) {
-            const windowMin = clamp(window?.width?.minMeters ?? BAY_MIN_WIDTH_M, BAY_MIN_WIDTH_M, 9999);
+            const windowWidth = clamp(
+                window?.size?.widthMeters ?? window?.width?.minMeters ?? BAY_MIN_WIDTH_M,
+                BAY_MIN_WIDTH_M,
+                9999
+            );
+            const repeatCount = normalizeOpeningRepeatCount(window?.repeat?.count, OPENING_REPEAT_MIN);
             const leftPad = clamp(window?.padding?.leftMeters ?? 0, 0, 9999);
             const rightPad = clamp(window?.padding?.rightMeters ?? 0, 0, 9999);
-            minWidth = Math.max(minWidth, windowMin + leftPad + rightPad);
+            minWidth = Math.max(minWidth, windowWidth * repeatCount + leftPad + rightPad);
             if (Number.isFinite(maxWidth) && maxWidth < minWidth) maxWidth = minWidth;
         }
 

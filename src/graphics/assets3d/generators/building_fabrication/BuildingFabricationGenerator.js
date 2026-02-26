@@ -8,7 +8,17 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { ROOF_COLOR, resolveRoofColorHex } from '../../../../app/buildings/RoofColor.js';
 import { resolveBeltCourseColorHex } from '../../../../app/buildings/BeltCourseColor.js';
 import { BUILDING_STYLE } from '../../../../app/buildings/BuildingStyle.js';
-import { sanitizeWindowMeshSettings } from '../../../../app/buildings/window_mesh/index.js';
+import {
+    getWindowFabricationCatalogEntries,
+    normalizeWindowFabricationAssetType,
+    PARALLAX_INTERIOR_PRESET_ID,
+    resolveWindowDecorationState,
+    sanitizeWindowMeshSettings,
+    WINDOW_DECORATION_MATERIAL_MODE,
+    WINDOW_DECORATION_PART,
+    WINDOW_DECORATION_STYLE,
+    WINDOW_FABRICATION_ASSET_TYPE
+} from '../../../../app/buildings/window_mesh/index.js';
 import {
     WINDOW_TYPE,
     getDefaultWindowParams,
@@ -34,12 +44,43 @@ const WEDGE_ANGLE_STEP_DEG = 15;
 const WEDGE_ANGLE_MAX_DEG = 75;
 const FACADE_DEPTH_MIN_M = -2.0;
 const FACADE_DEPTH_MAX_M = 2.0;
-const STREET_FLOOR_INTERIOR_TOP_CLEARANCE_M = 0.10;
-const STREET_FLOOR_INTERIOR_MATERIALS = Object.freeze({
-    walls: Object.freeze({ kind: 'texture', id: 'pbr.plastered_wall_02' }),
-    floor: Object.freeze({ kind: 'texture', id: 'pbr.plastered_wall_04' }),
-    ceiling: Object.freeze({ kind: 'texture', id: 'pbr.concrete_layers_02' })
+const FLOOR_INTERIOR_MATERIAL_SPEC = Object.freeze({ kind: 'texture', id: 'pbr.painted_plaster_wall' });
+const FLOOR_INTERIOR_TILE_METERS = 1.0;
+const OPENING_HEIGHT_MODE = Object.freeze({
+    FIXED: 'fixed',
+    FULL: 'full'
 });
+const OPENING_REPEAT_MIN = 1;
+const OPENING_REPEAT_MAX = 5;
+const OPENING_INTERIOR_MODE = Object.freeze({
+    NONE: 'none',
+    RES: 'res',
+    OFFICE: 'office'
+});
+const GARAGE_INTERIOR_MATERIAL_ID = 'pbr.concrete_layers_02';
+const GARAGE_FACADE_STATE = Object.freeze({
+    OPEN: 'open',
+    CLOSED: 'closed'
+});
+const GARAGE_FACADE_ROTATION_DEGREES = Object.freeze({
+    DEG_0: 0,
+    DEG_90: 90
+});
+
+function normalizeHexColor(value, fallback = 0xffffff) {
+    if (Number.isFinite(value)) return (Number(value) >>> 0) & 0xffffff;
+    const raw = typeof value === 'string' ? value.trim() : '';
+    if (!raw) return (Number(fallback) >>> 0) & 0xffffff;
+    const hex = raw.startsWith('#') ? raw.slice(1) : (raw.toLowerCase().startsWith('0x') ? raw.slice(2) : raw);
+    if (/^[0-9a-f]{6}$/i.test(hex)) return parseInt(hex, 16) & 0xffffff;
+    if (/^[0-9a-f]{3}$/i.test(hex)) {
+        const r = hex[0];
+        const g = hex[1];
+        const b = hex[2];
+        return parseInt(`${r}${r}${g}${g}${b}${b}`, 16) & 0xffffff;
+    }
+    return (Number(fallback) >>> 0) & 0xffffff;
+}
 
 function deepClone(value) {
     if (value === null || typeof value !== 'object') return value;
@@ -60,6 +101,203 @@ function clampInt(value, min, max) {
     if (!Number.isFinite(num)) return min;
     const rounded = Math.round(num);
     return Math.max(min, Math.min(max, rounded));
+}
+
+function normalizeOpeningHeightMode(value, fallback = OPENING_HEIGHT_MODE.FIXED) {
+    const typed = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (typed === OPENING_HEIGHT_MODE.FULL) return OPENING_HEIGHT_MODE.FULL;
+    if (typed === OPENING_HEIGHT_MODE.FIXED) return OPENING_HEIGHT_MODE.FIXED;
+    return fallback;
+}
+
+function normalizeOpeningRepeatCount(value, fallback = OPENING_REPEAT_MIN) {
+    const raw = Number(value);
+    if (!Number.isFinite(raw)) return clampInt(fallback, OPENING_REPEAT_MIN, OPENING_REPEAT_MAX);
+    return clampInt(raw, OPENING_REPEAT_MIN, OPENING_REPEAT_MAX);
+}
+
+function isFloorLayerInteriorEnabled(layer) {
+    const src = layer && typeof layer === 'object' ? layer : null;
+    const interior = src?.interior && typeof src.interior === 'object' ? src.interior : null;
+    const enabledRaw = interior?.enabled ?? src?.interiorEnabled;
+    return !!enabledRaw;
+}
+
+function normalizeOpeningInteriorMode(value, fallback = OPENING_INTERIOR_MODE.RES) {
+    const typed = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (!typed) return fallback;
+    if (typed === OPENING_INTERIOR_MODE.NONE || typed === 'off' || typed === 'disabled') return OPENING_INTERIOR_MODE.NONE;
+    if (typed === OPENING_INTERIOR_MODE.OFFICE) return OPENING_INTERIOR_MODE.OFFICE;
+    if (typed === OPENING_INTERIOR_MODE.RES || typed === 'residential') return OPENING_INTERIOR_MODE.RES;
+    return fallback;
+}
+
+function resolveOpeningInteriorModeFromSettings(settings, fallback = OPENING_INTERIOR_MODE.RES) {
+    const interior = settings?.interior;
+    if (!interior || typeof interior !== 'object') return fallback;
+    if (interior.enabled === false) return OPENING_INTERIOR_MODE.NONE;
+
+    const presetId = typeof interior.parallaxInteriorPresetId === 'string'
+        ? interior.parallaxInteriorPresetId.toLowerCase()
+        : '';
+    if (presetId.includes('office')) return OPENING_INTERIOR_MODE.OFFICE;
+    if (presetId.includes('residential')) return OPENING_INTERIOR_MODE.RES;
+
+    const atlasId = typeof interior.atlasId === 'string' ? interior.atlasId.toLowerCase() : '';
+    if (atlasId.includes('office')) return OPENING_INTERIOR_MODE.OFFICE;
+    if (atlasId.includes('residential')) return OPENING_INTERIOR_MODE.RES;
+
+    return interior.enabled === false ? OPENING_INTERIOR_MODE.NONE : OPENING_INTERIOR_MODE.RES;
+}
+
+function resolveOpeningVisualConfig(windowCfg, definitionSettings) {
+    const visualSrc = windowCfg?.visual && typeof windowCfg.visual === 'object' ? windowCfg.visual : null;
+    const shadeEnabledRaw = definitionSettings?.shade?.enabled;
+    const disableShadesFallback = shadeEnabledRaw === undefined ? false : !shadeEnabledRaw;
+    const disableShades = !!(
+        visualSrc?.disableShades
+        ?? windowCfg?.disableShades
+        ?? windowCfg?.shadesDisabled
+        ?? disableShadesFallback
+    );
+    const interiorFallback = resolveOpeningInteriorModeFromSettings(definitionSettings, OPENING_INTERIOR_MODE.RES);
+    const interiorMode = normalizeOpeningInteriorMode(
+        visualSrc?.interior
+        ?? visualSrc?.interiorMode
+        ?? windowCfg?.interiorPreset
+        ?? windowCfg?.interiorMode,
+        interiorFallback
+    );
+    return {
+        disableShades,
+        interior: interiorMode
+    };
+}
+
+function applyOpeningVisualOverridesToSettings(settings, visual) {
+    const base = settings && typeof settings === 'object' ? settings : {};
+    let next = base;
+
+    if (visual?.disableShades) {
+        next = {
+            ...next,
+            shade: {
+                ...(next?.shade ?? {}),
+                enabled: false
+            }
+        };
+    }
+
+    const interiorMode = normalizeOpeningInteriorMode(
+        visual?.interior,
+        resolveOpeningInteriorModeFromSettings(next, OPENING_INTERIOR_MODE.RES)
+    );
+    if (interiorMode === OPENING_INTERIOR_MODE.NONE) {
+        next = {
+            ...next,
+            interior: {
+                ...(next?.interior ?? {}),
+                enabled: false
+            }
+        };
+    } else {
+        const presetId = interiorMode === OPENING_INTERIOR_MODE.OFFICE
+            ? PARALLAX_INTERIOR_PRESET_ID.OFFICE
+            : PARALLAX_INTERIOR_PRESET_ID.RESIDENTIAL;
+        next = {
+            ...next,
+            interior: {
+                ...(next?.interior ?? {}),
+                enabled: true,
+                parallaxInteriorPresetId: presetId
+            }
+        };
+    }
+
+    return next;
+}
+
+function normalizeGarageFacadeState(value, fallback = GARAGE_FACADE_STATE.CLOSED) {
+    const typed = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (typed === GARAGE_FACADE_STATE.OPEN) return GARAGE_FACADE_STATE.OPEN;
+    if (typed === GARAGE_FACADE_STATE.CLOSED) return GARAGE_FACADE_STATE.CLOSED;
+    return fallback;
+}
+
+function normalizeGarageFacadeRotationDegrees(value, fallback = GARAGE_FACADE_ROTATION_DEGREES.DEG_0) {
+    const raw = Number(value);
+    if (!Number.isFinite(raw)) return fallback;
+    if (Math.abs(raw - GARAGE_FACADE_ROTATION_DEGREES.DEG_90) < 0.5) return GARAGE_FACADE_ROTATION_DEGREES.DEG_90;
+    return GARAGE_FACADE_ROTATION_DEGREES.DEG_0;
+}
+
+function normalizeGarageFacadeConfig(value, fallback = null) {
+    const src = value && typeof value === 'object' ? value : null;
+    const fb = fallback && typeof fallback === 'object' ? fallback : null;
+    if (!src && !fb) return null;
+    const resolved = src ?? fb ?? {};
+    return {
+        state: normalizeGarageFacadeState(
+            resolved?.state,
+            normalizeGarageFacadeState(fb?.state, GARAGE_FACADE_STATE.CLOSED)
+        ),
+        closedMaterialId: String(resolved?.closedMaterialId ?? fb?.closedMaterialId ?? ''),
+        rotationDegrees: normalizeGarageFacadeRotationDegrees(
+            resolved?.rotationDegrees,
+            normalizeGarageFacadeRotationDegrees(fb?.rotationDegrees, GARAGE_FACADE_ROTATION_DEGREES.DEG_0)
+        )
+    };
+}
+
+function getFrameWidths(settings) {
+    const frame = settings?.frame && typeof settings.frame === 'object' ? settings.frame : {};
+    const legacy = Math.max(0, Number(frame.width) || 0);
+    const verticalRaw = Number(frame.verticalWidth);
+    const horizontalRaw = Number(frame.horizontalWidth);
+    return {
+        vertical: Number.isFinite(verticalRaw) ? Math.max(0, verticalRaw) : legacy,
+        horizontal: Number.isFinite(horizontalRaw) ? Math.max(0, horizontalRaw) : legacy
+    };
+}
+
+function hasFrameBottomPiece(settings) {
+    const frame = settings?.frame && typeof settings.frame === 'object' ? settings.frame : {};
+    if (!frame.openBottom) return true;
+    const bottom = frame.doorBottomFrame && typeof frame.doorBottomFrame === 'object' ? frame.doorBottomFrame : null;
+    if (!bottom) return false;
+    const mode = typeof bottom.mode === 'string' ? bottom.mode.trim().toLowerCase() : '';
+    return !!bottom.enabled && mode === 'match';
+}
+
+function resolveOpeningCutMetrics(settings, { cutX = 0, cutY = 0 } = {}) {
+    const safeSettings = settings && typeof settings === 'object' ? settings : {};
+    const frameWidths = getFrameWidths(safeSettings);
+    const frameOpenBottom = !hasFrameBottomPiece(safeSettings);
+    const width = Math.max(EPS, Number(safeSettings?.width) || 0);
+    const height = Math.max(EPS, Number(safeSettings?.height) || 0);
+    const xRatio = clamp(cutX, -1.0, 1.0);
+    const yRatio = clamp(cutY, -1.0, 1.0);
+    const xMargin = frameWidths.vertical * xRatio;
+    const topMargin = frameWidths.horizontal * yRatio;
+    const bottomMargin = frameOpenBottom ? 0 : topMargin;
+    const cutCenterYOffset = (bottomMargin - topMargin) * 0.5;
+    const cutWidth = Math.max(EPS, width - xMargin * 2);
+    const cutHeight = Math.max(EPS, height - topMargin - bottomMargin);
+    return {
+        frameVerticalWidth: frameWidths.vertical,
+        frameHorizontalWidth: frameWidths.horizontal,
+        frameOpenBottom,
+        baseWidth: width,
+        baseHeight: height,
+        xMargin,
+        topMargin,
+        bottomMargin,
+        cutCenterYOffset,
+        cutWidth,
+        cutHeight,
+        cutX: xRatio,
+        cutY: yRatio
+    };
 }
 
 function clampFacadeDepthMeters(value) {
@@ -132,6 +370,20 @@ function computeUvTilingParams({ tiling, urls, styleId } = {}) {
         || Math.abs(scaleV - 1.0) > 1e-6;
 
     return { apply, scaleU, scaleV, offsetU, offsetV, rotationDegrees };
+}
+
+function applyFixedTileMetersToMaterial(material, { materialSpec, tileMeters = 1.0 } = {}) {
+    const mat = material && typeof material === 'object' ? material : null;
+    if (!mat) return;
+    const spec = materialSpec && typeof materialSpec === 'object' ? materialSpec : null;
+    const styleId = spec?.kind === 'texture' ? spec.id : '';
+    if (!styleId) return;
+
+    const urls = resolveBuildingStyleWallMaterialUrls(styleId);
+    const baseTileMeters = resolvePbrTileMetersFromUrls(urls, styleId);
+    const targetTileMeters = clamp(tileMeters, 0.1, 100.0);
+    const scale = baseTileMeters / targetTileMeters;
+    applyUvTilingToMeshStandardMaterial(mat, { scaleU: scale, scaleV: scale });
 }
 
 function resolveBuildingWindowReflectiveConfig(windowVisuals) {
@@ -1881,6 +2133,137 @@ function makeBeltLikeMaterialFromSpec({ material, baseColorHex, textureCache }) 
     return mat;
 }
 
+function createCustomOpeningSillDecorationMesh({
+    bucket,
+    layerMaterial,
+    layerWallBase,
+    baseColorHex,
+    textureCache
+} = {}) {
+    const src = bucket && typeof bucket === 'object' ? bucket : null;
+    if (!src) return null;
+
+    const assetType = normalizeWindowFabricationAssetType(src?.assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW);
+    if (assetType === WINDOW_FABRICATION_ASSET_TYPE.GARAGE) return null;
+
+    const instances = Array.isArray(src?.instances) ? src.instances : [];
+    if (!instances.length) return null;
+
+    const settings = sanitizeWindowMeshSettings(src?.settings ?? null);
+    const wallMaterialId = layerMaterial?.kind === 'texture' && typeof layerMaterial?.id === 'string'
+        ? layerMaterial.id
+        : '';
+    const resolvedDecoration = resolveWindowDecorationState(src?.decoration ?? null, { wallMaterialId });
+    const sill = resolvedDecoration?.[WINDOW_DECORATION_PART.SILL] ?? null;
+    if (!sill?.enabled) return null;
+
+    const style = String(sill?.type ?? WINDOW_DECORATION_STYLE.SIMPLE).toLowerCase();
+    if (style !== WINDOW_DECORATION_STYLE.SIMPLE && style !== WINDOW_DECORATION_STYLE.BOTTOM_COVER) return null;
+
+    const widthScaleRaw = Number(sill?.widthScale);
+    const widthScale = Number.isFinite(widthScaleRaw) ? Math.max(0.01, widthScaleRaw) : 1.0;
+    const template = sill?.template && typeof sill.template === 'object' ? sill.template : {};
+    const width = Math.max(0.01, (Number(settings?.width) || 1.0) * widthScale);
+    const height = Math.max(0.005, Number(template?.height) || 0.08);
+    const depth = Math.max(0.001, Number(template?.depth) || 0.08);
+    const gap = Number.isFinite(Number(template?.gap)) ? Number(template.gap) : 0.0;
+    const offset = template?.offset && typeof template.offset === 'object' ? template.offset : {};
+    const offsetX = Number(offset?.x) || 0.0;
+    const offsetY = Number(offset?.y) || 0.0;
+    const offsetZ = Number(offset?.z) || 0.0;
+    const frameDepth = Math.max(0.0, Number(settings?.frame?.depth) || 0.0);
+    const windowHeight = Math.max(0.01, Number(settings?.height) || 1.0);
+    const yBase = style === WINDOW_DECORATION_STYLE.BOTTOM_COVER
+        ? (-windowHeight * 0.5 + gap + height * 0.5)
+        : (-windowHeight * 0.5 - gap - height * 0.5);
+
+    const geo = new THREE.BoxGeometry(width, height, depth);
+    geo.translate(0, 0, depth * 0.5);
+    geo.computeVertexNormals();
+
+    const materialMode = String(sill?.material?.mode ?? WINDOW_DECORATION_MATERIAL_MODE.MATCH_FRAME);
+    const decorationMaterialId = typeof sill?.material?.materialId === 'string'
+        ? sill.material.materialId.trim()
+        : '';
+
+    let mat = null;
+    if (materialMode === WINDOW_DECORATION_MATERIAL_MODE.MATCH_WALL) {
+        mat = makeWallMaterialFromSpec({
+            material: layerMaterial ?? null,
+            baseColorHex,
+            textureCache,
+            wallBase: layerWallBase ?? null
+        });
+    } else if (materialMode === WINDOW_DECORATION_MATERIAL_MODE.PBR && decorationMaterialId) {
+        mat = makeBeltLikeMaterialFromSpec({
+            material: { kind: 'texture', id: decorationMaterialId },
+            baseColorHex,
+            textureCache
+        });
+    }
+
+    if (!mat) {
+        const frame = settings?.frame && typeof settings.frame === 'object' ? settings.frame : {};
+        const frameMat = frame?.material && typeof frame.material === 'object' ? frame.material : {};
+        const frameColor = normalizeHexColor(frame?.colorHex, 0xffffff);
+        const frameRoughness = Number.isFinite(Number(frameMat?.roughness)) ? clamp(frameMat.roughness, 0.0, 1.0) : 0.72;
+        const frameMetalness = Number.isFinite(Number(frameMat?.metalness)) ? clamp(frameMat.metalness, 0.0, 1.0) : 0.0;
+        const frameEnvMapIntensity = Number.isFinite(Number(frameMat?.envMapIntensity)) ? clamp(frameMat.envMapIntensity, 0.0, 8.0) : 0.0;
+        const frameNormalStrength = Number.isFinite(Number(frameMat?.normalStrength)) ? clamp(frameMat.normalStrength, 0.0, 5.0) : 1.0;
+        mat = new THREE.MeshStandardMaterial({
+            color: frameColor,
+            roughness: frameRoughness,
+            metalness: frameMetalness
+        });
+        mat.envMapIntensity = frameEnvMapIntensity;
+        if (mat.normalScale) {
+            mat.normalScale.set(frameNormalStrength, frameNormalStrength);
+        }
+    }
+
+    const mesh = new THREE.InstancedMesh(geo, mat, instances.length);
+    mesh.name = 'bf2_window_decoration_sill';
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+
+    const dummy = new THREE.Object3D();
+    for (let i = 0; i < instances.length; i++) {
+        const instance = instances[i] && typeof instances[i] === 'object' ? instances[i] : {};
+        const p = instance?.position && typeof instance.position === 'object' ? instance.position : instance;
+        const px = Number(p?.x) || 0.0;
+        const py = Number(p?.y) || 0.0;
+        const pz = Number(p?.z) || 0.0;
+        const yaw = Number(instance?.yaw) || 0.0;
+        const sinYaw = Math.sin(yaw);
+        const cosYaw = Math.cos(yaw);
+        const rightX = cosYaw;
+        const rightZ = -sinYaw;
+        const forwardX = sinYaw;
+        const forwardZ = cosYaw;
+        const forwardOffset = frameDepth + offsetZ;
+
+        dummy.position.set(
+            px + rightX * offsetX + forwardX * forwardOffset,
+            py + yBase + offsetY,
+            pz + rightZ * offsetX + forwardZ * forwardOffset
+        );
+        dummy.rotation.set(0, yaw, 0);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(i, dummy.matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+
+    mesh.userData = mesh.userData ?? {};
+    mesh.userData.buildingWindowSource = 'bf2_window_decoration';
+    mesh.userData.windowDefinitionId = typeof src?.defId === 'string' ? src.defId : null;
+    mesh.userData.windowAssetType = assetType;
+    mesh.userData.windowDecorationPart = WINDOW_DECORATION_PART.SILL;
+    mesh.userData.windowDecorationStyle = style;
+
+    return mesh;
+}
+
 function makeRoofSurfaceMaterialFromSpec({ material, baseColorHex, textureCache }) {
     if (material?.kind === 'texture') {
         return makeTextureMaterialFromBuildingStyle({
@@ -3020,22 +3403,48 @@ export function buildBuildingFabricationVisualParts({
     windowsGroup.userData = windowsGroup.userData ?? {};
     const baseReflectiveCfg = resolveBuildingWindowReflectiveConfig(windowVisuals);
     const baseVisualsOverride = !!windowVisualsIsOverride;
-    const windowDefinitionItems = Array.isArray(windowDefinitions?.items) ? windowDefinitions.items : [];
     const windowDefinitionById = new Map();
-    for (const entry of windowDefinitionItems) {
+    const registerWindowDefinition = (entry, { fallbackAssetType = WINDOW_FABRICATION_ASSET_TYPE.WINDOW } = {}) => {
         const id = typeof entry?.id === 'string' ? entry.id : '';
-        if (!id) continue;
+        if (!id) return;
         const settings = sanitizeWindowMeshSettings(entry?.settings ?? null);
         const widthMetersRaw = Number(settings?.width);
         const heightMetersRaw = Number(settings?.height);
         const widthMeters = Number.isFinite(widthMetersRaw) ? clamp(widthMetersRaw, 0.1, 20.0) : null;
         const heightMeters = Number.isFinite(heightMetersRaw) ? clamp(heightMetersRaw, 0.1, 20.0) : null;
+        const assetType = normalizeWindowFabricationAssetType(
+            entry?.assetType ?? entry?.openingType,
+            fallbackAssetType
+        );
+        const garageFacade = normalizeGarageFacadeConfig(entry?.garageFacade ?? null, null);
+        const decoration = deepClone(entry?.decoration ?? null);
         windowDefinitionById.set(id, {
             id,
+            assetType,
             settings,
+            garageFacade,
+            decoration,
             widthMeters,
             heightMeters
         });
+    };
+    const catalogDefinitions = getWindowFabricationCatalogEntries();
+    for (const entry of catalogDefinitions) {
+        registerWindowDefinition(entry, { fallbackAssetType: WINDOW_FABRICATION_ASSET_TYPE.WINDOW });
+    }
+    const windowDefinitionItems = Array.isArray(windowDefinitions?.items) ? windowDefinitions.items : [];
+    for (const entry of windowDefinitionItems) {
+        registerWindowDefinition(entry, { fallbackAssetType: WINDOW_FABRICATION_ASSET_TYPE.WINDOW });
+    }
+    const defaultWindowDefinitionByAssetType = new Map();
+    for (const entry of windowDefinitionById.values()) {
+        const assetType = normalizeWindowFabricationAssetType(
+            entry?.assetType,
+            WINDOW_FABRICATION_ASSET_TYPE.WINDOW
+        );
+        if (!defaultWindowDefinitionByAssetType.has(assetType)) {
+            defaultWindowDefinitionByAssetType.set(assetType, entry);
+        }
     }
     const windowMeshGenerator = new WindowMeshGenerator({ renderer, curveSegments: 28 });
 
@@ -3141,6 +3550,7 @@ export function buildBuildingFabricationVisualParts({
     const wantsFacadePatterns = !!globalFacadeSpec && ['A', 'B', 'C', 'D'].some((id) => !!globalFacadeSpec?.[id]?.layout?.pattern);
 
     const facadePatternTopologyByFaceId = new Map();
+    const bayHighlightDataByLayerId = {};
     if (wantsFacadePatterns) {
         const minFaceLengthByFaceId = { A: Infinity, B: Infinity, C: Infinity, D: Infinity };
         let probeLoops = sourceFootprintLoops;
@@ -3373,6 +3783,47 @@ export function buildBuildingFabricationVisualParts({
                 const window = strip?.window && typeof strip.window === 'object' ? strip.window : null;
                 return !!window && window.enabled !== false;
             });
+            if (layerId && facadeFrames && Array.isArray(facadeStrips) && facadeStrips.length) {
+                const entries = [];
+                for (const strip of facadeStrips) {
+                    const type = typeof strip?.type === 'string' ? strip.type : '';
+                    if (type !== 'bay') continue;
+                    const faceId = strip?.faceId;
+                    if (faceId !== 'A' && faceId !== 'B' && faceId !== 'C' && faceId !== 'D') continue;
+                    const frame = facadeFrames?.[faceId] ?? null;
+                    if (!frame) continue;
+                    const bayId = (typeof strip?.sourceBayId === 'string' && strip.sourceBayId)
+                        ? strip.sourceBayId
+                        : (typeof strip?.id === 'string' ? strip.id : '');
+                    if (!bayId) continue;
+
+                    const rawU0 = Number(strip?.frontU0);
+                    const rawU1 = Number(strip?.frontU1);
+                    const u0 = Number.isFinite(rawU0) ? rawU0 : (Number(strip?.u0) || 0);
+                    const u1 = Number.isFinite(rawU1) ? rawU1 : (Number(strip?.u1) || 0);
+                    if (!(u1 > u0 + EPS)) continue;
+
+                    const depthRaw = Number(strip?.depth);
+                    const depthFallback = Number.isFinite(depthRaw) ? depthRaw : 0;
+                    const depth0Raw = Number(strip?.depth0);
+                    const depth1Raw = Number(strip?.depth1);
+                    const depth0 = Number.isFinite(depth0Raw) ? depth0Raw : depthFallback;
+                    const depth1 = Number.isFinite(depth1Raw) ? depth1Raw : depthFallback;
+
+                    const a = pointOnFacadeFrame({ frame, u: u0, depth: depth0 });
+                    const b = pointOnFacadeFrame({ frame, u: u1, depth: depth1 });
+                    if (!a || !b) continue;
+                    entries.push({
+                        faceId,
+                        bayId,
+                        x0: Number(a.x) || 0,
+                        z0: Number(a.z) || 0,
+                        x1: Number(b.x) || 0,
+                        z1: Number(b.z) || 0
+                    });
+                }
+                if (entries.length) bayHighlightDataByLayerId[layerId] = entries;
+            }
             const winWidth = clamp(winCfg?.width, 0.3, 12.0);
             const winSpacing = clamp(winCfg?.spacing, 0.0, 24.0);
             const winDesiredHeight = clamp(winCfg?.height, 0.3, 10.0);
@@ -3518,10 +3969,33 @@ export function buildBuildingFabricationVisualParts({
                         continue;
                     }
 
-                    const defId = typeof windowCfg?.defId === 'string' ? windowCfg.defId : '';
-                    const def = defId ? (windowDefinitionById.get(defId) ?? null) : null;
+                    const requestedAssetType = normalizeWindowFabricationAssetType(
+                        windowCfg?.assetType ?? windowCfg?.openingType,
+                        WINDOW_FABRICATION_ASSET_TYPE.WINDOW
+                    );
+                    const requestedDefId = typeof windowCfg?.defId === 'string' ? windowCfg.defId : '';
+                    const defById = requestedDefId ? (windowDefinitionById.get(requestedDefId) ?? null) : null;
+                    const def = defById
+                        ?? defaultWindowDefinitionByAssetType.get(requestedAssetType)
+                        ?? defaultWindowDefinitionByAssetType.get(WINDOW_FABRICATION_ASSET_TYPE.WINDOW)
+                        ?? null;
+                    const defId = defById?.id ?? def?.id ?? requestedDefId;
                     if (!def) {
-                        warnings.push(`${faceId}:${strip?.id || 'bay'}: window definition "${defId || '(missing)'}" not found.`);
+                        warnings.push(`${faceId}:${strip?.id || 'bay'}: window definition "${requestedDefId || '(missing)'}" not found.`);
+                        continue;
+                    }
+                    const assetType = normalizeWindowFabricationAssetType(
+                        windowCfg?.assetType ?? windowCfg?.openingType,
+                        normalizeWindowFabricationAssetType(def?.assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW)
+                    );
+                    const topDefId = defId;
+                    const topDefSettings = def.settings;
+                    const topDefDecoration = def.decoration;
+                    let repeatCount = normalizeOpeningRepeatCount(windowCfg?.repeat?.count ?? windowCfg?.repeatCount, OPENING_REPEAT_MIN);
+                    if (assetType !== WINDOW_FABRICATION_ASSET_TYPE.WINDOW) repeatCount = OPENING_REPEAT_MIN;
+                    const slotWidth = usable / Math.max(OPENING_REPEAT_MIN, repeatCount);
+                    if (!(slotWidth > EPS)) {
+                        warnings.push(`${faceId}:${strip?.id || 'bay'}: opening repeat leaves no usable slot width.`);
                         continue;
                     }
 
@@ -3530,8 +4004,8 @@ export function buildBuildingFabricationVisualParts({
                     let width = null;
                     if (Number.isFinite(requestedWidthRaw)) {
                         width = clamp(requestedWidthRaw, 0.1, 9999);
-                        if (usable + 1e-6 < width) {
-                            warnings.push(`${faceId}:${strip?.id || 'bay'}: usable width ${usable.toFixed(2)}m clamps requested width ${width.toFixed(2)}m.`);
+                        if (slotWidth + 1e-6 < width) {
+                            warnings.push(`${faceId}:${strip?.id || 'bay'}: slot width ${slotWidth.toFixed(2)}m clamps requested width ${width.toFixed(2)}m.`);
                         }
                     } else {
                         const widthSpec = windowCfg?.width && typeof windowCfg.width === 'object' ? windowCfg.width : null;
@@ -3541,17 +4015,23 @@ export function buildBuildingFabricationVisualParts({
                             : (Number.isFinite(def.widthMeters) ? def.widthMeters : 0.1);
                         const maxRaw = widthSpec?.maxMeters;
                         const maxWidth = (maxRaw === null || maxRaw === undefined) ? Infinity : clamp(maxRaw, minWidth, 9999);
-                        if (usable + 1e-6 < minWidth) {
-                            warnings.push(`${faceId}:${strip?.id || 'bay'}: usable width ${usable.toFixed(2)}m is below window min ${minWidth.toFixed(2)}m.`);
+                        if (slotWidth + 1e-6 < minWidth) {
+                            warnings.push(`${faceId}:${strip?.id || 'bay'}: slot width ${slotWidth.toFixed(2)}m is below opening min ${minWidth.toFixed(2)}m.`);
                             continue;
                         }
                         width = Number.isFinite(def.widthMeters) ? def.widthMeters : minWidth;
                         width = clamp(width, minWidth, Number.isFinite(maxWidth) ? maxWidth : 9999);
                     }
-                    width = Math.min(width, usable);
+                    width = Math.min(width, slotWidth);
                     if (!(width > EPS)) continue;
 
-                    const centerU = u0 + leftPad + usable * 0.5;
+                    const repeatCentersU = [];
+                    const startU = u0 + leftPad;
+                    for (let repeatIndex = 0; repeatIndex < repeatCount; repeatIndex++) {
+                        const centerU = startU + slotWidth * (repeatIndex + 0.5);
+                        repeatCentersU.push(centerU);
+                    }
+
                     const depth0Raw = Number(strip?.depth0);
                     const depth1Raw = Number(strip?.depth1);
                     const depthRaw = Number(strip?.depth);
@@ -3559,29 +4039,143 @@ export function buildBuildingFabricationVisualParts({
                         ? ((depth0Raw + depth1Raw) * 0.5)
                         : (Number.isFinite(depthRaw) ? depthRaw : 0);
 
-                    const center = pointOnFacadeFrame({ frame, u: centerU, depth });
                     const nx = Number(frame?.n?.x) || 0;
                     const nz = Number(frame?.n?.z) || 0;
                     const yaw = Math.atan2(nx, nz);
+                    const points = repeatCentersU.map((centerU) => pointOnFacadeFrame({ frame, u: centerU, depth }));
                     const requestedHeightRaw = Number(sizeSpec?.heightMeters ?? windowCfg?.heightMeters);
                     const height = Number.isFinite(requestedHeightRaw)
                         ? clamp(requestedHeightRaw, 0.1, 9999)
                         : (Number.isFinite(def.heightMeters) ? def.heightMeters : winDesiredHeight);
+                    const heightMode = normalizeOpeningHeightMode(windowCfg?.heightMode, OPENING_HEIGHT_MODE.FIXED);
+                    const verticalOffsetRaw = Number(windowCfg?.verticalOffsetMeters ?? windowCfg?.yOffsetMeters ?? windowCfg?.offsetFromFloorMeters);
+                    const verticalOffsetMeters = Number.isFinite(verticalOffsetRaw)
+                        ? clamp(verticalOffsetRaw, 0.0, 9999.0)
+                        : null;
+
+                    const muntinsSrc = windowCfg?.muntins && typeof windowCfg.muntins === 'object' ? windowCfg.muntins : null;
+                    const muntinsBottomEnabled = muntinsSrc?.bottomEnabled !== undefined
+                        ? !!muntinsSrc.bottomEnabled
+                        : (windowCfg?.muntinsBottomEnabled !== undefined ? !!windowCfg.muntinsBottomEnabled : true);
+                    const muntinsTopEnabled = muntinsSrc?.topEnabled !== undefined
+                        ? !!muntinsSrc.topEnabled
+                        : (windowCfg?.muntinsTopEnabled !== undefined ? !!windowCfg.muntinsTopEnabled : true);
+
+                    const topSrc = windowCfg?.top && typeof windowCfg.top === 'object' ? windowCfg.top : null;
+                    const topEnabledRaw = topSrc?.enabled ?? windowCfg?.topEnabled ?? windowCfg?.secondEnabled ?? windowCfg?.topWindowEnabled;
+                    const topHeightMode = normalizeOpeningHeightMode(
+                        topSrc?.heightMode ?? topSrc?.mode ?? windowCfg?.topHeightMode,
+                        OPENING_HEIGHT_MODE.FIXED
+                    );
+                    const topHeightRaw = Number(topSrc?.heightMeters ?? topSrc?.height ?? windowCfg?.topHeightMeters);
+                    const topHeight = Number.isFinite(topHeightRaw)
+                        ? clamp(topHeightRaw, 0.1, 9999)
+                        : height;
+                    const topGapRaw = Number(topSrc?.verticalGapMeters ?? topSrc?.gapMeters ?? windowCfg?.topGapMeters);
+                    const topGap = Number.isFinite(topGapRaw)
+                        ? clamp(topGapRaw, 0.0, 9999)
+                        : 0.1;
+                    const topFrameWidthRaw = Number(topSrc?.frameWidthMeters ?? topSrc?.frameWidth ?? windowCfg?.topFrameWidthMeters);
+                    const topFrameWidth = Number.isFinite(topFrameWidthRaw)
+                        ? clamp(topFrameWidthRaw, 0.002, 3.0)
+                        : null;
+                    const topEnabled = !!topEnabledRaw && assetType !== WINDOW_FABRICATION_ASSET_TYPE.GARAGE;
+                    const visual = resolveOpeningVisualConfig(windowCfg, def.settings);
+                    const garageFacade = normalizeGarageFacadeConfig(
+                        windowCfg?.garageFacade ?? null,
+                        def?.garageFacade ?? null
+                    );
 
                     bayWindowPlacements.push({
                         faceId,
+                        bayId: typeof strip?.id === 'string' ? strip.id : '',
                         defId,
+                        assetType,
                         settings: def.settings,
-                        x: center.x,
-                        z: center.z,
+                        decoration: deepClone(def?.decoration ?? null),
+                        points,
                         yaw,
                         nx,
                         nz,
                         width,
-                        height
+                        height,
+                        heightMode,
+                        verticalOffsetMeters,
+                        repeatCount,
+                        visual,
+                        muntins: {
+                            bottomEnabled: muntinsBottomEnabled,
+                            topEnabled: muntinsTopEnabled
+                        },
+                        top: {
+                            enabled: topEnabled,
+                            assetType,
+                            defId: topDefId,
+                            settings: topDefSettings,
+                            decoration: deepClone(topDefDecoration ?? null),
+                            heightMode: topHeightMode,
+                            height: topHeight,
+                            gap: topGap,
+                            frameWidthMeters: topFrameWidth
+                        },
+                        garageFacade
                     });
                 }
             }
+
+            const resolveBayOpeningPlacementInSegment = ({
+                segmentHeight,
+                requestedHeight,
+                heightMode,
+                verticalOffsetMeters,
+                top = null
+            }) => {
+                const hSeg = Math.max(0.1, Number(segmentHeight) || 0.1);
+                const reqBottom = clamp(Number(requestedHeight) || 0.1, 0.1, 9999);
+                const mode = normalizeOpeningHeightMode(heightMode, OPENING_HEIGHT_MODE.FIXED);
+                const offsetRaw = Number(verticalOffsetMeters);
+                const hasOffset = Number.isFinite(offsetRaw);
+
+                const topCfg = top && typeof top === 'object' ? top : null;
+                const topEnabled = !!topCfg?.enabled;
+                const topGap = topEnabled && Number.isFinite(Number(topCfg?.gap))
+                    ? clamp(topCfg.gap, 0.0, 9999)
+                    : 0.0;
+                const topMode = normalizeOpeningHeightMode(topCfg?.heightMode, OPENING_HEIGHT_MODE.FIXED);
+                const topRequestedHeight = Number.isFinite(Number(topCfg?.height))
+                    ? clamp(topCfg.height, 0.1, 9999)
+                    : reqBottom;
+                const topMinHeight = topEnabled
+                    ? (topMode === OPENING_HEIGHT_MODE.FULL ? 0.1 : topRequestedHeight)
+                    : 0.0;
+
+                let yBottom = hasOffset
+                    ? clamp(offsetRaw, 0.0, hSeg)
+                    : (mode === OPENING_HEIGHT_MODE.FULL ? 0.0 : Math.max(0, (hSeg - reqBottom) * 0.5));
+                const reservedTop = topEnabled ? (topGap + topMinHeight) : 0.0;
+                const maxBottomY = Math.max(0, hSeg - reservedTop - 0.1);
+                yBottom = clamp(yBottom, 0.0, maxBottomY);
+
+                const availableBottom = Math.max(0.1, hSeg - yBottom - reservedTop);
+                const bottomHeight = mode === OPENING_HEIGHT_MODE.FULL
+                    ? availableBottom
+                    : Math.min(reqBottom, availableBottom);
+
+                const topStart = yBottom + bottomHeight + topGap;
+                const availableTop = topEnabled ? Math.max(0.0, hSeg - topStart) : 0.0;
+                const topHeight = (topEnabled && availableTop > EPS)
+                    ? (topMode === OPENING_HEIGHT_MODE.FULL ? availableTop : Math.min(topRequestedHeight, availableTop))
+                    : 0.0;
+
+                return {
+                    bottom: { yBottom, height: bottomHeight },
+                    top: {
+                        enabled: topEnabled && topHeight > EPS,
+                        yBottom: topStart,
+                        height: topHeight
+                    }
+                };
+            };
 
             const hadSolidMeshesBeforeLayer = solidMeshes.length;
             const layerStartY = yCursor;
@@ -3590,11 +4184,16 @@ export function buildBuildingFabricationVisualParts({
             if (continuousWalls) {
                 let totalWallHeight = 0.0;
                 let pendingExtra = firstFloorPendingExtra;
+                const floorSegments = [];
+                let floorCursorY = 0.0;
                 for (let floor = 0; floor < floors; floor++) {
                     const segHeight = floorHeight + (floor === 0 ? pendingExtra : 0);
                     if (floor === 0) pendingExtra = 0;
+                    floorSegments.push({ yBottom: floorCursorY, height: segHeight });
                     totalWallHeight += segHeight;
+                    floorCursorY += segHeight;
                     if (beltEnabled && beltHeight > EPS) totalWallHeight += beltHeight;
+                    if (beltEnabled && beltHeight > EPS) floorCursorY += beltHeight;
                 }
 
                 if (totalWallHeight > EPS) {
@@ -3798,7 +4397,6 @@ export function buildBuildingFabricationVisualParts({
 
                     let facadeWallCutouts = null;
                     let facadeWallYSlices = null;
-                    let streetFloorInteriorPass = null;
                     if (wantsFacadeWall && facadeFrames && (bayWindowPlacements.length || windowRuns.length)) {
                         facadeWallCutouts = [];
                         facadeWallYSlices = [];
@@ -3816,11 +4414,10 @@ export function buildBuildingFabricationVisualParts({
                             D: Number(facadeDepthMinsByFaceId?.D)
                         };
 
-                        let yCursorLocal = 0.0;
-                        let pendingExtra = firstFloorPendingExtra;
-                        for (let floor = 0; floor < floors; floor++) {
-                            const segHeight = floorHeight + (floor === 0 ? pendingExtra : 0);
-                            if (floor === 0) pendingExtra = 0;
+                        for (let floor = 0; floor < floorSegments.length; floor++) {
+                            const seg = floorSegments[floor];
+                            const segHeight = Number(seg?.height) || 0;
+                            const yCursorLocal = Number(seg?.yBottom) || 0;
                             const isStreetFloor = floor === 0;
                             facadeWallYSlices.push({ y0: yCursorLocal, y1: yCursorLocal + segHeight });
 
@@ -3830,54 +4427,116 @@ export function buildBuildingFabricationVisualParts({
                                 if (faceId !== 'A' && faceId !== 'B' && faceId !== 'C' && faceId !== 'D') continue;
                                 const frame = facadeFrames?.[faceId] ?? null;
                                 if (!frame) continue;
+                                const placementAssetType = normalizeWindowFabricationAssetType(
+                                    placement?.assetType,
+                                    WINDOW_FABRICATION_ASSET_TYPE.WINDOW
+                                );
 
                                 const width = Math.max(0.1, Number(placement?.width) || 0.1);
-                                const desiredHeight = Math.max(0.1, Number(placement?.height) || 0.1);
-                                const windowHeight = Math.min(desiredHeight, Math.max(0.3, segHeight * 0.95));
-                                const y = yCursorLocal + (segHeight - windowHeight) * 0.5 + windowHeight * 0.5;
-
                                 const defSettings = placement?.settings && typeof placement.settings === 'object' ? placement.settings : null;
                                 if (!defSettings) continue;
+                                const points = Array.isArray(placement?.points) ? placement.points : [];
+                                if (!points.length) continue;
 
-                                const mergedSettings = sanitizeWindowMeshSettings({
+                                const placementInSegment = resolveBayOpeningPlacementInSegment({
+                                    segmentHeight: segHeight,
+                                    requestedHeight: Number(placement?.height) || 0.1,
+                                    heightMode: placement?.heightMode,
+                                    verticalOffsetMeters: placement?.verticalOffsetMeters,
+                                    top: placement?.top
+                                });
+                                const bottomHeight = Math.max(0.1, Number(placementInSegment?.bottom?.height) || 0.1);
+                                const bottomYBottom = clamp(Number(placementInSegment?.bottom?.yBottom) || 0, 0, Math.max(0, segHeight - bottomHeight));
+                                const bottomY = yCursorLocal + bottomYBottom + bottomHeight * 0.5;
+
+                                const topCfg = placement?.top && typeof placement.top === 'object' ? placement.top : null;
+                                const topHeight = Math.max(0, Number(placementInSegment?.top?.height) || 0);
+                                const topYBottom = Math.max(0, Number(placementInSegment?.top?.yBottom) || 0);
+                                const topY = yCursorLocal + topYBottom + topHeight * 0.5;
+                                const topFrameWidth = Number(topCfg?.frameWidthMeters);
+                                const hasTopFrameWidthOverride = Number.isFinite(topFrameWidth);
+                                const topPlacementAssetType = normalizeWindowFabricationAssetType(
+                                    topCfg?.assetType,
+                                    placementAssetType
+                                );
+
+                                const bottomSettings = sanitizeWindowMeshSettings(applyOpeningVisualOverridesToSettings({
                                     ...defSettings,
                                     width,
-                                    height: windowHeight
-                                });
-                                const frameWidth = Math.max(0, Number(mergedSettings?.frame?.width) || 0);
-                                const cutWidth = width - frameWidth * 2;
-                                const cutHeight = windowHeight - frameWidth * 2;
-                                if (!(cutWidth > 0.02) || !(cutHeight > 0.02)) continue;
+                                    height: bottomHeight
+                                }, placement?.visual));
+                                const topSettingsSource = bottomSettings;
+                                const topFrameSettings = hasTopFrameWidthOverride
+                                    ? {
+                                        ...(topSettingsSource?.frame ?? {}),
+                                        width: topFrameWidth,
+                                        verticalWidth: topFrameWidth,
+                                        horizontalWidth: topFrameWidth
+                                    }
+                                    : (topSettingsSource?.frame ?? {});
+                                if (topPlacementAssetType === WINDOW_FABRICATION_ASSET_TYPE.DOOR) {
+                                    topFrameSettings.addHandles = false;
+                                    topFrameSettings.doorStyle = 'single';
+                                }
+                                const topSettings = topHeight > EPS
+                                    ? sanitizeWindowMeshSettings({
+                                        ...topSettingsSource,
+                                        frame: topFrameSettings,
+                                        width,
+                                        height: topHeight
+                                    })
+                                    : null;
 
-                                const wantsArch = !!mergedSettings?.arch?.enabled;
-                                const archRatio = Number(mergedSettings?.arch?.heightRatio) || 0;
-                                const outerArchRise = wantsArch ? (archRatio * width) : 0;
-                                const innerWantsArch = wantsArch && outerArchRise > EPS;
-                                const archRiseCandidate = innerWantsArch ? (archRatio * cutWidth) : 0;
-                                const archRise = Math.min(archRiseCandidate, Math.max(0, cutHeight - frameWidth));
-                                const cutWantsArch = innerWantsArch && archRise > EPS;
-                                const frameInset = Math.max(0, Number(mergedSettings?.frame?.inset) || 0);
-                                const px = Number(placement?.x) || 0;
-                                const pz = Number(placement?.z) || 0;
-                                const outerDepth = Number(projectPointToFacadeFrame({ frame, x: px, z: pz })?.depth) || 0;
-                                const openingDepth = outerDepth - frameInset;
+                                // Bay openings carve facade cutouts only; they do not drive the legacy interior-shell pass.
+                                const appendCutoutsFromSettings = ({ settings, openingHeight, openingY }) => {
+                                    const cutMetrics = resolveOpeningCutMetrics(settings, { cutX: 1.0, cutY: 1.0 });
+                                    const cutWidth = Number(cutMetrics?.cutWidth) || 0;
+                                    const cutHeight = Number(cutMetrics?.cutHeight) || 0;
+                                    if (!(cutWidth > 0.02) || !(cutHeight > 0.02)) return;
 
-                                const cutout = {
-                                    faceId,
-                                    x: px,
-                                    y,
-                                    z: pz,
-                                    width: cutWidth,
-                                    height: cutHeight,
-                                    wantsArch: cutWantsArch,
-                                    archRise,
-                                    revealDepth: frameInset
+                                    const wantsArch = !!settings?.arch?.enabled;
+                                    const archRatio = Number(settings?.arch?.heightRatio) || 0;
+                                    const outerArchRise = wantsArch ? (archRatio * (Number(cutMetrics?.baseWidth) || width)) : 0;
+                                    const innerWantsArch = wantsArch && outerArchRise > EPS;
+                                    const archRiseCandidate = innerWantsArch ? (archRatio * cutWidth) : 0;
+                                    const archRise = Math.min(
+                                        archRiseCandidate,
+                                        Math.max(0, cutHeight - Math.max(0, Number(cutMetrics?.frameHorizontalWidth) || 0))
+                                    );
+                                    const cutWantsArch = innerWantsArch && archRise > EPS;
+                                    const frameInset = Math.max(0, Number(settings?.frame?.inset) || 0);
+                                    const cutCenterY = openingY + (Number(cutMetrics?.cutCenterYOffset) || 0);
+
+                                    for (let pointIndex = 0; pointIndex < points.length; pointIndex++) {
+                                        const point = points[pointIndex] && typeof points[pointIndex] === 'object' ? points[pointIndex] : null;
+                                        const px = Number(point?.x) || 0;
+                                        const pz = Number(point?.z) || 0;
+                                        const cutout = {
+                                            faceId,
+                                            x: px,
+                                            y: cutCenterY,
+                                            z: pz,
+                                            width: cutWidth,
+                                            height: cutHeight,
+                                            wantsArch: cutWantsArch,
+                                            archRise,
+                                            revealDepth: frameInset
+                                        };
+                                        facadeWallCutouts.push(cutout);
+                                    }
                                 };
-                                facadeWallCutouts.push(cutout);
 
-                                if (isStreetFloor) {
-                                    streetFloorOpeningsByFaceId[faceId].push(openingDepth);
-                                    streetFloorCutoutEntries.push({ cutout, faceId, outerDepth });
+                                appendCutoutsFromSettings({
+                                    settings: bottomSettings,
+                                    openingHeight: bottomHeight,
+                                    openingY: bottomY
+                                });
+                                if (topSettings && topHeight > EPS) {
+                                    appendCutoutsFromSettings({
+                                        settings: topSettings,
+                                        openingHeight: topHeight,
+                                        openingY: topY
+                                    });
                                 }
                             }
 
@@ -3931,10 +4590,9 @@ export function buildBuildingFabricationVisualParts({
                                 }
                             }
 
-                            yCursorLocal += segHeight;
                             if (beltEnabled && beltHeight > EPS) {
-                                facadeWallYSlices.push({ y0: yCursorLocal, y1: yCursorLocal + beltHeight });
-                                yCursorLocal += beltHeight;
+                                const beltY0 = yCursorLocal + segHeight;
+                                facadeWallYSlices.push({ y0: beltY0, y1: beltY0 + beltHeight });
                             }
                         }
 
@@ -3965,14 +4623,6 @@ export function buildBuildingFabricationVisualParts({
                                 const targetDepth = Number(interiorDepthByFaceId[faceId]) || 0;
                                 const outerDepth = Number(entry?.outerDepth) || 0;
                                 cutout.revealDepth = Math.max(0, outerDepth - targetDepth);
-                            }
-
-                            const interiorHeight = floorHeight - STREET_FLOOR_INTERIOR_TOP_CLEARANCE_M;
-                            if (interiorHeight > EPS) {
-                                streetFloorInteriorPass = {
-                                    interiorDepthByFaceId,
-                                    height: interiorHeight
-                                };
                             }
                         }
 
@@ -4016,38 +4666,54 @@ export function buildBuildingFabricationVisualParts({
                             ? facadeDepthMinsByFaceId
                             : null;
 
-                        if (streetFloorInteriorPass && frames) {
-                            const interiorDepthByFaceId = streetFloorInteriorPass?.interiorDepthByFaceId ?? null;
-                            const interiorHeight = Math.min(totalWallHeight, Number(streetFloorInteriorPass?.height) || 0);
-                            if (interiorDepthByFaceId && interiorHeight > EPS) {
-                                const interiorJoinByCornerId = {
-                                    AB: cornerJoinPointWithDepths(frames.A, interiorDepthByFaceId.A ?? 0, frames.B, interiorDepthByFaceId.B ?? 0, frames.A.end),
-                                    BC: cornerJoinPointWithDepths(frames.B, interiorDepthByFaceId.B ?? 0, frames.C, interiorDepthByFaceId.C ?? 0, frames.B.end),
-                                    CD: cornerJoinPointWithDepths(frames.C, interiorDepthByFaceId.C ?? 0, frames.D, interiorDepthByFaceId.D ?? 0, frames.C.end),
-                                    DA: cornerJoinPointWithDepths(frames.D, interiorDepthByFaceId.D ?? 0, frames.A, interiorDepthByFaceId.A ?? 0, frames.D.end)
+                        if (isFloorLayerInteriorEnabled(layer) && frames && depthMins && floorSegments.length) {
+                            const interiorJoinByCornerId = {
+                                AB: cornerJoinPointWithDepths(frames.A, depthMins.A ?? 0, frames.B, depthMins.B ?? 0, frames.A.end),
+                                BC: cornerJoinPointWithDepths(frames.B, depthMins.B ?? 0, frames.C, depthMins.C ?? 0, frames.B.end),
+                                CD: cornerJoinPointWithDepths(frames.C, depthMins.C ?? 0, frames.D, depthMins.D ?? 0, frames.C.end),
+                                DA: cornerJoinPointWithDepths(frames.D, depthMins.D ?? 0, frames.A, depthMins.A ?? 0, frames.D.end)
+                            };
+                            const interiorLoopRaw = [
+                                interiorJoinByCornerId.AB,
+                                interiorJoinByCornerId.BC,
+                                interiorJoinByCornerId.CD,
+                                interiorJoinByCornerId.DA
+                            ];
+                            const interiorLoop = simplifyLoopConsecutiveCollinearXZ(interiorLoopRaw, { tol: 1e-4, minEdge: 1e-3 });
+                            if (interiorLoop && interiorLoop.length >= 3) {
+                                const interiorArea = signedArea(interiorLoop);
+                                const interiorLoopCcw = interiorArea < 0 ? interiorLoop.slice().reverse() : interiorLoop;
+                                const interiorShape = buildShapeFromLoops({ outerLoop: interiorLoopCcw, holeLoops: [] });
+                                const createInteriorMaterial = () => {
+                                    const mat = makeWallMaterialFromSpec({
+                                        material: FLOOR_INTERIOR_MATERIAL_SPEC,
+                                        baseColorHex,
+                                        textureCache
+                                    });
+                                    applyFixedTileMetersToMaterial(mat, {
+                                        materialSpec: FLOOR_INTERIOR_MATERIAL_SPEC,
+                                        tileMeters: FLOOR_INTERIOR_TILE_METERS
+                                    });
+                                    return mat;
                                 };
-                                const interiorLoopRaw = [
-                                    interiorJoinByCornerId.AB,
-                                    interiorJoinByCornerId.BC,
-                                    interiorJoinByCornerId.CD,
-                                    interiorJoinByCornerId.DA
-                                ];
-                                const interiorLoop = simplifyLoopConsecutiveCollinearXZ(interiorLoopRaw, { tol: 1e-4, minEdge: 1e-3 });
-                                if (interiorLoop && interiorLoop.length >= 3) {
+
+                                for (let segIndex = 0; segIndex < floorSegments.length; segIndex++) {
+                                    const seg = floorSegments[segIndex];
+                                    const interiorHeight = Math.max(0, Number(seg?.height) || 0);
+                                    if (!(interiorHeight > EPS)) continue;
+                                    const segmentYBottom = Number(seg?.yBottom) || 0;
+                                    const segmentBaseY = layerStartY + segmentYBottom;
+
                                     const interiorWallGeo = buildWallSidesGeometryFromLoopXZ(interiorLoop, {
                                         height: interiorHeight,
-                                        uvBaseV: yOffset
+                                        uvBaseV: yOffset + segmentYBottom
                                     });
                                     if (interiorWallGeo) {
-                                        const interiorWallMat = makeWallMaterialFromSpec({
-                                            material: STREET_FLOOR_INTERIOR_MATERIALS.walls,
-                                            baseColorHex,
-                                            textureCache
-                                        });
+                                        const interiorWallMat = createInteriorMaterial();
                                         const interiorWallMesh = new THREE.Mesh(interiorWallGeo, interiorWallMat);
                                         interiorWallMesh.castShadow = true;
                                         interiorWallMesh.receiveShadow = true;
-                                        interiorWallMesh.position.y = layerStartY;
+                                        interiorWallMesh.position.y = segmentBaseY;
                                         interiorWallMesh.userData = interiorWallMesh.userData ?? {};
                                         interiorWallMesh.userData.buildingFab2Role = 'interior';
                                         interiorWallMesh.userData.buildingFab2InteriorKind = 'wall';
@@ -4055,27 +4721,19 @@ export function buildBuildingFabricationVisualParts({
 
                                         if (showWire) {
                                             const edgeGeo = new THREE.EdgesGeometry(interiorWallGeo, 1);
-                                            appendWirePositions(wirePositions, edgeGeo, layerStartY);
+                                            appendWirePositions(wirePositions, edgeGeo, segmentBaseY);
                                             edgeGeo.dispose();
                                         }
                                     }
 
-                                    const interiorArea = signedArea(interiorLoop);
-                                    const interiorLoopCcw = interiorArea < 0 ? interiorLoop.slice().reverse() : interiorLoop;
-                                    const interiorShape = buildShapeFromLoops({ outerLoop: interiorLoopCcw, holeLoops: [] });
-
                                     const interiorFloorGeo = new THREE.ShapeGeometry(interiorShape);
                                     interiorFloorGeo.rotateX(-Math.PI / 2);
                                     interiorFloorGeo.computeVertexNormals();
-                                    const interiorFloorMat = makeWallMaterialFromSpec({
-                                        material: STREET_FLOOR_INTERIOR_MATERIALS.floor,
-                                        baseColorHex,
-                                        textureCache
-                                    });
+                                    const interiorFloorMat = createInteriorMaterial();
                                     const interiorFloorMesh = new THREE.Mesh(interiorFloorGeo, interiorFloorMat);
                                     interiorFloorMesh.castShadow = true;
                                     interiorFloorMesh.receiveShadow = true;
-                                    interiorFloorMesh.position.y = layerStartY;
+                                    interiorFloorMesh.position.y = segmentBaseY;
                                     interiorFloorMesh.userData = interiorFloorMesh.userData ?? {};
                                     interiorFloorMesh.userData.buildingFab2Role = 'interior';
                                     interiorFloorMesh.userData.buildingFab2InteriorKind = 'floor';
@@ -4083,22 +4741,18 @@ export function buildBuildingFabricationVisualParts({
 
                                     if (showWire) {
                                         const edgeGeo = new THREE.EdgesGeometry(interiorFloorGeo, 1);
-                                        appendWirePositions(wirePositions, edgeGeo, layerStartY);
+                                        appendWirePositions(wirePositions, edgeGeo, segmentBaseY);
                                         edgeGeo.dispose();
                                     }
 
                                     const interiorCeilingGeo = new THREE.ShapeGeometry(interiorShape);
                                     interiorCeilingGeo.rotateX(Math.PI / 2);
                                     interiorCeilingGeo.computeVertexNormals();
-                                    const interiorCeilingMat = makeWallMaterialFromSpec({
-                                        material: STREET_FLOOR_INTERIOR_MATERIALS.ceiling,
-                                        baseColorHex,
-                                        textureCache
-                                    });
+                                    const interiorCeilingMat = createInteriorMaterial();
                                     const interiorCeilingMesh = new THREE.Mesh(interiorCeilingGeo, interiorCeilingMat);
                                     interiorCeilingMesh.castShadow = true;
                                     interiorCeilingMesh.receiveShadow = true;
-                                    interiorCeilingMesh.position.y = layerStartY + interiorHeight;
+                                    interiorCeilingMesh.position.y = segmentBaseY + interiorHeight;
                                     interiorCeilingMesh.userData = interiorCeilingMesh.userData ?? {};
                                     interiorCeilingMesh.userData.buildingFab2Role = 'interior';
                                     interiorCeilingMesh.userData.buildingFab2InteriorKind = 'ceiling';
@@ -4106,7 +4760,7 @@ export function buildBuildingFabricationVisualParts({
 
                                     if (showWire) {
                                         const edgeGeo = new THREE.EdgesGeometry(interiorCeilingGeo, 1);
-                                        appendWirePositions(wirePositions, edgeGeo, layerStartY + interiorHeight);
+                                        appendWirePositions(wirePositions, edgeGeo, segmentBaseY + interiorHeight);
                                         edgeGeo.dispose();
                                     }
                                 }
@@ -4535,14 +5189,23 @@ export function buildBuildingFabricationVisualParts({
 
                 if (bayWindowPlacements.length) {
                     const customBuckets = new Map();
-                    const addCustomInstance = ({ defId, settings, x, y, z, yaw, instanceId }) => {
+                    const addCustomInstance = ({ defId, assetType, settings, decoration, x, y, z, yaw, instanceId }) => {
+                        const safeAssetType = normalizeWindowFabricationAssetType(assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW);
                         const safeSettings = sanitizeWindowMeshSettings(settings ?? null);
-                        const key = JSON.stringify(safeSettings);
+                        const safeDecoration = deepClone(decoration ?? null);
+                        const key = JSON.stringify({
+                            defId: typeof defId === 'string' ? defId : '',
+                            assetType: safeAssetType,
+                            settings: safeSettings,
+                            decoration: safeDecoration
+                        });
                         let bucket = customBuckets.get(key);
                         if (!bucket) {
                             bucket = {
                                 defId: typeof defId === 'string' ? defId : '',
+                                assetType: safeAssetType,
                                 settings: safeSettings,
+                                decoration: safeDecoration,
                                 instances: []
                             };
                             customBuckets.set(key, bucket);
@@ -4553,62 +5216,280 @@ export function buildBuildingFabricationVisualParts({
                             yaw
                         });
                     };
+                    const addGarageFacadeGeometry = ({
+                        point,
+                        openingY,
+                        openingHeight,
+                        settings,
+                        nx,
+                        nz,
+                        yaw,
+                        garageFacade
+                    }) => {
+                        const pointObj = point && typeof point === 'object' ? point : null;
+                        const safeSettings = settings && typeof settings === 'object' ? settings : null;
+                        if (!pointObj || !safeSettings) return;
+
+                        const metrics = resolveOpeningCutMetrics(safeSettings, { cutX: 1.0, cutY: 1.0 });
+                        const openingWidth = Number(metrics?.cutWidth) || 0;
+                        const openingCutHeight = Number(metrics?.cutHeight) || 0;
+                        if (!(openingWidth > EPS) || !(openingCutHeight > EPS)) return;
+
+                        const facade = normalizeGarageFacadeConfig(garageFacade, null);
+                        const facadeState = normalizeGarageFacadeState(facade?.state, GARAGE_FACADE_STATE.CLOSED);
+                        const facadeRotationDegrees = normalizeGarageFacadeRotationDegrees(
+                            facade?.rotationDegrees,
+                            GARAGE_FACADE_ROTATION_DEGREES.DEG_0
+                        );
+                        const centerY = openingY + (Number(metrics?.cutCenterYOffset) || 0);
+                        const x = Number(pointObj?.x) || 0;
+                        const z = Number(pointObj?.z) || 0;
+                        const frameInset = Math.max(0, Number(safeSettings?.frame?.inset) || 0);
+
+                        if (facadeState === GARAGE_FACADE_STATE.CLOSED) {
+                            const panelGeo = new THREE.PlaneGeometry(openingWidth, openingCutHeight);
+                            const closedMaterialId = String(facade?.closedMaterialId ?? '').trim() || GARAGE_INTERIOR_MATERIAL_ID;
+                            const panelMat = makeBeltLikeMaterialFromSpec({
+                                material: { kind: 'texture', id: closedMaterialId },
+                                baseColorHex,
+                                textureCache
+                            });
+                            panelMat.roughness = 0.48;
+                            panelMat.metalness = 0.92;
+                            if (panelMat.normalScale) panelMat.normalScale.set(1.0, 1.0);
+                            applyUvTilingToMeshStandardMaterial(panelMat, {
+                                scaleU: Math.max(1.0, openingWidth / 0.75),
+                                scaleV: Math.max(1.0, openingCutHeight / 0.75),
+                                rotationDegrees: facadeRotationDegrees
+                            });
+
+                            const panelInset = Math.max(0.01, frameInset + 0.01);
+                            const panelMesh = new THREE.Mesh(panelGeo, panelMat);
+                            panelMesh.position.set(
+                                x + nx * (windowOffset - panelInset),
+                                centerY,
+                                z + nz * (windowOffset - panelInset)
+                            );
+                            panelMesh.rotation.set(0, yaw, 0);
+                            panelMesh.castShadow = true;
+                            panelMesh.receiveShadow = true;
+                            panelMesh.userData = panelMesh.userData ?? {};
+                            panelMesh.userData.buildingWindowSource = 'bf2_garage_facade';
+                            panelMesh.userData.garageFacadeState = GARAGE_FACADE_STATE.CLOSED;
+                            windowsGroup.add(panelMesh);
+                            return;
+                        }
+
+                        const roomWidth = Math.max(openingWidth + 0.8, openingWidth * 1.28);
+                        const roomHeight = Math.max(openingCutHeight + 0.7, openingCutHeight * 1.22);
+                        const roomDepth = Math.max(0.1, Math.min(6.0, Math.max(0.1, Number(openingHeight) || openingCutHeight) * 0.5));
+                        const roomGeo = new THREE.BoxGeometry(roomWidth, roomHeight, roomDepth);
+                        const roomMat = makeBeltLikeMaterialFromSpec({
+                            material: { kind: 'texture', id: GARAGE_INTERIOR_MATERIAL_ID },
+                            baseColorHex,
+                            textureCache
+                        });
+                        roomMat.roughness = 0.92;
+                        roomMat.metalness = 0.0;
+                        roomMat.side = THREE.BackSide;
+                        applyUvTilingToMeshStandardMaterial(roomMat, {
+                            scaleU: Math.max(1.0, roomWidth / 1.6),
+                            scaleV: Math.max(1.0, roomHeight / 1.6)
+                        });
+                        const roomMesh = new THREE.Mesh(roomGeo, roomMat);
+                        roomMesh.position.set(
+                            x + nx * (windowOffset - frameInset - roomDepth * 0.5 - 0.02),
+                            centerY,
+                            z + nz * (windowOffset - frameInset - roomDepth * 0.5 - 0.02)
+                        );
+                        roomMesh.rotation.set(0, yaw, 0);
+                        roomMesh.castShadow = true;
+                        roomMesh.receiveShadow = true;
+                        roomMesh.userData = roomMesh.userData ?? {};
+                        roomMesh.userData.buildingWindowSource = 'bf2_garage_facade';
+                        roomMesh.userData.garageFacadeState = GARAGE_FACADE_STATE.OPEN;
+                        windowsGroup.add(roomMesh);
+                    };
 
                     for (let i = 0; i < bayWindowPlacements.length; i++) {
                         const placement = bayWindowPlacements[i];
+                        const placementAssetType = normalizeWindowFabricationAssetType(
+                            placement?.assetType,
+                            WINDOW_FABRICATION_ASSET_TYPE.WINDOW
+                        );
                         const width = Math.max(0.1, Number(placement?.width) || 0.1);
-                        const desiredHeight = Math.max(0.1, Number(placement?.height) || 0.1);
-                        const windowHeight = Math.min(desiredHeight, Math.max(0.3, segHeight * 0.95));
-                        const y = yCursor + (segHeight - windowHeight) * 0.5 + windowHeight * 0.5;
-                        const x = Number(placement?.x) || 0;
-                        const z = Number(placement?.z) || 0;
                         const yaw = Number(placement?.yaw) || 0;
                         const nx = Number(placement?.nx) || 0;
                         const nz = Number(placement?.nz) || 0;
                         const defId = typeof placement?.defId === 'string' ? placement.defId : '';
                         const defSettings = placement?.settings && typeof placement.settings === 'object' ? placement.settings : null;
+                        const points = Array.isArray(placement?.points) ? placement.points : [];
+                        if (!points.length) continue;
+
+                        const resolvedPlacement = resolveBayOpeningPlacementInSegment({
+                            segmentHeight: segHeight,
+                            requestedHeight: Number(placement?.height) || 0.1,
+                            heightMode: placement?.heightMode,
+                            verticalOffsetMeters: placement?.verticalOffsetMeters,
+                            top: placement?.top
+                        });
+                        const bottomHeight = Math.max(0.1, Number(resolvedPlacement?.bottom?.height) || 0.1);
+                        const bottomYBottom = clamp(Number(resolvedPlacement?.bottom?.yBottom) || 0, 0, Math.max(0, segHeight - bottomHeight));
+                        const bottomY = yCursor + bottomYBottom + bottomHeight * 0.5;
+
+                        const topCfg = placement?.top && typeof placement.top === 'object' ? placement.top : null;
+                        const topHeight = Math.max(0, Number(resolvedPlacement?.top?.height) || 0);
+                        const topYBottom = Math.max(0, Number(resolvedPlacement?.top?.yBottom) || 0);
+                        const topY = yCursor + topYBottom + topHeight * 0.5;
+
+                        const bottomMuntinsEnabled = placement?.muntins?.bottomEnabled !== false;
+                        const topMuntinsEnabled = placement?.muntins?.topEnabled !== false;
+                        const topFrameWidth = Number(topCfg?.frameWidthMeters);
+                        const hasTopFrameWidthOverride = Number.isFinite(topFrameWidth);
+                        const topDefId = typeof topCfg?.defId === 'string' ? topCfg.defId : defId;
+                        const topAssetType = normalizeWindowFabricationAssetType(
+                            topCfg?.assetType,
+                            normalizeWindowFabricationAssetType(placement?.assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW)
+                        );
 
                         if (defSettings) {
-                            const mergedSettings = sanitizeWindowMeshSettings({
+                            const bottomSettings = sanitizeWindowMeshSettings(applyOpeningVisualOverridesToSettings({
                                 ...defSettings,
                                 width,
-                                height: windowHeight
-                            });
-                            const frameDepth = Math.max(0, Number(mergedSettings?.frame?.depth) || 0);
-                            const frameInset = Math.max(0, frameDepth - 0.001);
-                            addCustomInstance({
-                                defId,
-                                settings: mergedSettings,
-                                x: x + nx * (windowOffset - frameInset),
-                                y,
-                                z: z + nz * (windowOffset - frameInset),
-                                yaw,
-                                instanceId: `${layerId || 'layer'}:${floor}:${i}:${defId || 'window'}`
-                            });
+                                height: bottomHeight,
+                                muntins: {
+                                    ...(defSettings?.muntins ?? {}),
+                                    enabled: bottomMuntinsEnabled
+                                }
+                            }, placement?.visual));
+                            const topSettingsSource = bottomSettings;
+                            const topFrameSettings = hasTopFrameWidthOverride
+                                ? {
+                                    ...(topSettingsSource?.frame ?? {}),
+                                    width: topFrameWidth,
+                                    verticalWidth: topFrameWidth,
+                                    horizontalWidth: topFrameWidth
+                                }
+                                : {
+                                    ...(topSettingsSource?.frame ?? {})
+                                };
+                            if (placementAssetType === WINDOW_FABRICATION_ASSET_TYPE.DOOR
+                                || topAssetType === WINDOW_FABRICATION_ASSET_TYPE.DOOR) {
+                                topFrameSettings.addHandles = false;
+                                topFrameSettings.doorStyle = 'single';
+                            }
+                            const topSettings = (topHeight > EPS)
+                                ? sanitizeWindowMeshSettings({
+                                    ...topSettingsSource,
+                                    frame: topFrameSettings,
+                                    width,
+                                    height: topHeight,
+                                    muntins: {
+                                        ...(topSettingsSource?.muntins ?? {}),
+                                        enabled: topMuntinsEnabled
+                                    }
+                                })
+                                : null;
+                            const bottomDecoration = placement?.decoration ?? null;
+                            const topDecoration = topCfg?.decoration ?? bottomDecoration;
+
+                            const bottomFrameDepth = Math.max(0, Number(bottomSettings?.frame?.depth) || 0);
+                            const bottomFrameInset = Math.max(0, bottomFrameDepth - 0.001);
+                            const topPlacementInset = bottomFrameInset;
+
+                            for (let pointIndex = 0; pointIndex < points.length; pointIndex++) {
+                                const point = points[pointIndex] && typeof points[pointIndex] === 'object' ? points[pointIndex] : null;
+                                const x = Number(point?.x) || 0;
+                                const z = Number(point?.z) || 0;
+                                const baseInstanceId = points.length > 1
+                                    ? `${layerId || 'layer'}:${floor}:${i}:${defId || 'opening'}:${pointIndex}`
+                                    : `${layerId || 'layer'}:${floor}:${i}:${defId || 'opening'}`;
+                                addCustomInstance({
+                                    defId,
+                                    assetType: placementAssetType,
+                                    settings: bottomSettings,
+                                    decoration: bottomDecoration,
+                                    x: x + nx * (windowOffset - bottomFrameInset),
+                                    y: bottomY,
+                                    z: z + nz * (windowOffset - bottomFrameInset),
+                                    yaw,
+                                    instanceId: (topSettings && topHeight > EPS)
+                                        ? `${baseInstanceId}:bottom`
+                                        : baseInstanceId
+                                });
+                                if (placementAssetType === WINDOW_FABRICATION_ASSET_TYPE.GARAGE) {
+                                    addGarageFacadeGeometry({
+                                        point,
+                                        openingY: bottomY,
+                                        openingHeight: bottomHeight,
+                                        settings: bottomSettings,
+                                        nx,
+                                        nz,
+                                        yaw,
+                                        garageFacade: placement?.garageFacade ?? null
+                                    });
+                                }
+                                if (topSettings && topHeight > EPS) {
+                                    addCustomInstance({
+                                        defId: topDefId,
+                                        assetType: topAssetType,
+                                        settings: topSettings,
+                                        decoration: topDecoration,
+                                        x: x + nx * (windowOffset - topPlacementInset),
+                                        y: topY,
+                                        z: z + nz * (windowOffset - topPlacementInset),
+                                        yaw,
+                                        instanceId: `${baseInstanceId}:top`
+                                    });
+                                }
+                            }
                             continue;
                         }
 
                         if (!windowMat) continue;
-                        const geo = getPlaneGeometry(width, windowHeight);
-                        const px = x + nx * windowOffset;
-                        const pz = z + nz * windowOffset;
-                        addWindowInstance({ geometry: geo, material: windowMat, x: px, y, z: pz, yaw, renderOrder: 0 });
-
-                        if (windowGlassMat) {
-                            addWindowInstance({
-                                geometry: geo,
-                                material: windowGlassMat,
-                                x: px + nx * glassLift,
-                                y,
-                                z: pz + nz * glassLift,
-                                yaw,
-                                renderOrder: 1
-                            });
+                        const bottomGeo = getPlaneGeometry(width, bottomHeight);
+                        const topGeo = topHeight > EPS ? getPlaneGeometry(width, topHeight) : null;
+                        for (let pointIndex = 0; pointIndex < points.length; pointIndex++) {
+                            const point = points[pointIndex] && typeof points[pointIndex] === 'object' ? points[pointIndex] : null;
+                            const x = Number(point?.x) || 0;
+                            const z = Number(point?.z) || 0;
+                            const px = x + nx * windowOffset;
+                            const pz = z + nz * windowOffset;
+                            addWindowInstance({ geometry: bottomGeo, material: windowMat, x: px, y: bottomY, z: pz, yaw, renderOrder: 0 });
+                            if (windowGlassMat) {
+                                addWindowInstance({
+                                    geometry: bottomGeo,
+                                    material: windowGlassMat,
+                                    x: px + nx * glassLift,
+                                    y: bottomY,
+                                    z: pz + nz * glassLift,
+                                    yaw,
+                                    renderOrder: 1
+                                });
+                            }
+                            if (topGeo && topHeight > EPS) {
+                                addWindowInstance({ geometry: topGeo, material: windowMat, x: px, y: topY, z: pz, yaw, renderOrder: 0 });
+                                if (windowGlassMat) {
+                                    addWindowInstance({
+                                        geometry: topGeo,
+                                        material: windowGlassMat,
+                                        x: px + nx * glassLift,
+                                        y: topY,
+                                        z: pz + nz * glassLift,
+                                        yaw,
+                                        renderOrder: 1
+                                    });
+                                }
+                            }
                         }
                     }
 
                     for (const bucket of customBuckets.values()) {
                         if (!bucket?.instances?.length) continue;
+                        const bucketAssetType = normalizeWindowFabricationAssetType(
+                            bucket?.assetType,
+                            WINDOW_FABRICATION_ASSET_TYPE.WINDOW
+                        );
                         const group = windowMeshGenerator.createWindowGroup({
                             settings: bucket.settings,
                             seed: bucket.defId || 'bf2_window',
@@ -4618,7 +5499,26 @@ export function buildBuildingFabricationVisualParts({
                         group.userData = group.userData ?? {};
                         group.userData.buildingWindowSource = 'bf2_window_definition';
                         group.userData.windowDefinitionId = bucket.defId || null;
+                        group.userData.windowAssetType = bucketAssetType;
+                        if (bucketAssetType === WINDOW_FABRICATION_ASSET_TYPE.GARAGE) {
+                            const layerRefs = group.userData?.layers ?? null;
+                            if (layerRefs?.muntins) layerRefs.muntins.visible = false;
+                            if (layerRefs?.glass) layerRefs.glass.visible = false;
+                            if (layerRefs?.shade) layerRefs.shade.visible = false;
+                            if (layerRefs?.interior) layerRefs.interior.visible = false;
+                        }
                         windowsGroup.add(group);
+
+                        const sillDecoration = createCustomOpeningSillDecorationMesh({
+                            bucket,
+                            layerMaterial: layer?.material ?? null,
+                            layerWallBase: layer?.wallBase ?? null,
+                            baseColorHex,
+                            textureCache
+                        });
+                        if (sillDecoration) {
+                            windowsGroup.add(sillDecoration);
+                        }
                     }
                 }
 
@@ -5167,6 +6067,7 @@ export function buildBuildingFabricationVisualParts({
         warnings: warnings.length ? warnings.slice() : null,
         facadeSolverDebug: Object.keys(facadeSolverDebug).length ? facadeSolverDebug : null,
         facadeCornerDebug: facadeCornerDebugByLayerId && Object.keys(facadeCornerDebugByLayerId).length ? facadeCornerDebugByLayerId : null,
+        bayHighlightDataByLayerId: Object.keys(bayHighlightDataByLayerId).length ? bayHighlightDataByLayerId : null,
         wire,
         plan,
         border,
@@ -5180,5 +6081,6 @@ export function buildBuildingFabricationVisualParts({
 export const __testOnly = Object.freeze({
     computeQuadFacadeFramesFromLoop,
     computeQuadFacadeSilhouette,
-    buildWallSidesGeometryFromLoopDetailXZ
+    buildWallSidesGeometryFromLoopDetailXZ,
+    resolveOpeningCutMetrics
 });

@@ -42,6 +42,8 @@ Rules:
 - `openingKind` MAY be provided by the caller (e.g., a “Create Door” tool) and applied as the initial preset.
 - The UI MUST also expose an “Opening kind” control (first pass) so users can switch between `window`, `door`, and `garage`.
 - Switching `openingKind` MUST NOT implicitly apply/load a catalog entry; catalog loading is explicit via the Load action.
+- Catalog content used by Window Builder/BF2 MUST come from project-managed catalog sources; `downloads/` JSON files are import-time sources only and MUST NOT be read directly at runtime.
+- The asset `Catalog Name` control MUST use text-input styling (not numeric-input styling) and expand to available row width for readable/editable names.
 
 When `openingKind = door`:
 - Tabs and controls that are not relevant MUST be hidden (see §2.4).

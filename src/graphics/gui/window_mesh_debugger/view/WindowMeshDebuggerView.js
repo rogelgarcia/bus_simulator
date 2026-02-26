@@ -36,6 +36,7 @@ const GARAGE_FACADE_ROTATION_DEGREES = Object.freeze({
     DEG_90: 90
 });
 const EPS = 1e-6;
+const MIN_PREVIEW_FLOOR_HEIGHT_METERS = 3.2;
 
 function clamp(value, min, max, fallback) {
     const num = Number(value);
@@ -82,23 +83,45 @@ function normalizeGarageFacadeRotationDegrees(value) {
     return GARAGE_FACADE_ROTATION_DEGREES.DEG_0;
 }
 
+function getFrameWidths(settings) {
+    const frame = settings?.frame && typeof settings.frame === 'object' ? settings.frame : {};
+    const legacy = Math.max(0, Number(frame.width) || 0);
+    const vertical = Number(frame.verticalWidth);
+    const horizontal = Number(frame.horizontalWidth);
+    return {
+        vertical: Number.isFinite(vertical) ? Math.max(0, vertical) : legacy,
+        horizontal: Number.isFinite(horizontal) ? Math.max(0, horizontal) : legacy
+    };
+}
+
+function hasFrameBottomPiece(settings) {
+    const frame = settings?.frame && typeof settings.frame === 'object' ? settings.frame : {};
+    if (!frame.openBottom) return true;
+    const bottom = frame.doorBottomFrame && typeof frame.doorBottomFrame === 'object' ? frame.doorBottomFrame : null;
+    if (!bottom) return false;
+    const mode = typeof bottom.mode === 'string' ? bottom.mode.trim().toLowerCase() : '';
+    return !!bottom.enabled && mode === 'match';
+}
+
 function resolveOpeningCutMetrics(settings, wallCut) {
     const s = settings ?? null;
     const cutSrc = wallCut && typeof wallCut === 'object' ? wallCut : {};
-    const fw = Number(s?.frame?.width) || 0;
-    const frameOpenBottom = !!s?.frame?.openBottom;
+    const { vertical: frameVerticalWidth, horizontal: frameHorizontalWidth } = getFrameWidths(s);
+    const frameOpenBottom = !hasFrameBottomPiece(s);
     const cutX = clamp(cutSrc.x, -1.0, 1.0, 0.0);
     const cutY = clamp(cutSrc.y, -1.0, 1.0, 0.0);
     const baseWidth = Number(s?.width) || 0;
     const baseHeight = Number(s?.height) || 0;
-    const xMargin = fw * cutX;
-    const topMargin = fw * cutY;
+    const xMargin = frameVerticalWidth * cutX;
+    const topMargin = frameHorizontalWidth * cutY;
     const bottomMargin = frameOpenBottom ? 0 : topMargin;
     const cutCenterYOffset = (bottomMargin - topMargin) * 0.5;
     const cutWidth = Math.max(EPS, baseWidth - xMargin * 2);
     const cutHeight = Math.max(EPS, baseHeight - topMargin - bottomMargin);
     return {
-        frameWidth: fw,
+        frameWidth: frameVerticalWidth,
+        frameVerticalWidth,
+        frameHorizontalWidth,
         frameOpenBottom,
         baseWidth,
         baseHeight,
@@ -300,20 +323,12 @@ function buildWallMaterialGeometryWithHoles({ width, height, depth, settings, in
     const s = settings ?? null;
     const list = Array.isArray(instances) ? instances : [];
     if (s && list.length) {
-        const fw = Number(s?.frame?.width) || 0;
-        const frameOpenBottom = !!s?.frame?.openBottom;
-        const cutSrc = wallCut && typeof wallCut === 'object' ? wallCut : {};
-        const cutX = clamp(cutSrc.x, -1.0, 1.0, 0.0);
-        const cutY = clamp(cutSrc.y, -1.0, 1.0, 0.0);
-
-        const baseWidth = Number(s?.width) || 0;
-        const baseHeight = Number(s?.height) || 0;
-        const xMargin = fw * cutX;
-        const topMargin = fw * cutY;
-        const bottomMargin = frameOpenBottom ? 0 : topMargin;
-        const cutCenterYOffset = (bottomMargin - topMargin) * 0.5;
-        const cutWidth = Math.max(EPS, baseWidth - xMargin * 2);
-        const cutHeight = Math.max(EPS, baseHeight - topMargin - bottomMargin);
+        const cutMetrics = resolveOpeningCutMetrics(s, wallCut);
+        const cutCenterYOffset = cutMetrics.cutCenterYOffset;
+        const cutWidth = cutMetrics.cutWidth;
+        const cutHeight = cutMetrics.cutHeight;
+        const topMargin = cutMetrics.topMargin;
+        const baseWidth = cutMetrics.baseWidth;
 
         const wantsArch = !!s?.arch?.enabled;
         const archRatio = Number(s?.arch?.heightRatio) || 0;
@@ -370,23 +385,17 @@ function buildWallCutFillGeometries({ width, height, depth, settings, instances,
     const list = Array.isArray(instances) ? instances : [];
     if (!s || !list.length) return [];
 
-    const fw = Number(s?.frame?.width) || 0;
     const frameInset = Math.max(0, Number(s?.frame?.inset) || 0);
-    const frameOpenBottom = !!s?.frame?.openBottom;
-    const cutSrc = wallCut && typeof wallCut === 'object' ? wallCut : {};
-    const cutX = clamp(cutSrc.x, -1.0, 1.0, 0.0);
-    const cutY = clamp(cutSrc.y, -1.0, 1.0, 0.0);
-
-    const baseWidth = Number(s?.width) || 0;
-    const baseHeight = Number(s?.height) || 0;
+    const cutMetrics = resolveOpeningCutMetrics(s, wallCut);
+    const frameOpenBottom = cutMetrics.frameOpenBottom;
+    const baseWidth = cutMetrics.baseWidth;
+    const baseHeight = cutMetrics.baseHeight;
     if (!(baseWidth > EPS) || !(baseHeight > EPS)) return [];
 
-    const xMargin = fw * cutX;
-    const topMargin = fw * cutY;
-    const bottomMargin = frameOpenBottom ? 0 : topMargin;
-    const cutCenterYOffset = (bottomMargin - topMargin) * 0.5;
-    const cutWidth = Math.max(EPS, baseWidth - xMargin * 2);
-    const cutHeight = Math.max(EPS, baseHeight - topMargin - bottomMargin);
+    const topMargin = cutMetrics.topMargin;
+    const cutCenterYOffset = cutMetrics.cutCenterYOffset;
+    const cutWidth = cutMetrics.cutWidth;
+    const cutHeight = cutMetrics.cutHeight;
 
     const wantsArch = !!s?.arch?.enabled;
     const archRatio = Number(s?.arch?.heightRatio) || 0;
@@ -939,6 +948,27 @@ export class WindowMeshDebuggerView {
         }
     }
 
+    _resolvePreviewFloorHeightMeters(settings, floorDistanceMeters = 0.0) {
+        const openingHeight = Math.max(0.25, Number(settings?.height) || 0.0);
+        const floorOffset = clamp(floorDistanceMeters, 0.0, 32.0, 0.0);
+        const requiredFloorHeight = openingHeight + floorOffset;
+        return Math.max(MIN_PREVIEW_FLOOR_HEIGHT_METERS, requiredFloorHeight);
+    }
+
+    _syncPreviewWallFromSettings(settings, { floorDistanceMeters = 0.0 } = {}) {
+        const rows = Math.max(1, this._previewGrid?.rows | 0);
+        const floorHeight = this._resolvePreviewFloorHeightMeters(settings, floorDistanceMeters);
+        const nextWallHeight = clamp(rows * floorHeight, 0.5, 64.0, WALL_SPEC.height);
+        const currentHeight = Number(this._wallSpec?.height);
+        if (!Number.isFinite(currentHeight) || Math.abs(currentHeight - nextWallHeight) > 1e-6) {
+            this._wallSpec = {
+                ...this._wallSpec,
+                height: nextWallHeight
+            };
+        }
+        return floorHeight;
+    }
+
     _applyUiState(state) {
         if (!this._windowGenerator || !this.scene) return;
         const baseSettings = state?.settings && typeof state.settings === 'object'
@@ -948,6 +978,7 @@ export class WindowMeshDebuggerView {
         const assetType = normalizeDebuggerAssetType(state?.assetType);
         const renderMode = String(state?.renderMode ?? 'solid');
         const wallCut = { x: state?.wallCutWidthLerp, y: state?.wallCutHeightLerp };
+        const floorDistanceMeters = clamp(state?.floorDistanceMeters, 0.0, 32.0, 0.0);
 
         let s = sanitizeWindowMeshSettings(baseSettings);
         let layers = state?.layers && typeof state.layers === 'object' ? { ...state.layers } : {};
@@ -956,6 +987,7 @@ export class WindowMeshDebuggerView {
                 ...s,
                 arch: { ...s.arch, enabled: false },
                 frame: { ...s.frame, openBottom: true },
+                shade: { ...s.shade, enabled: false },
                 interior: {
                     ...s.interior,
                     enabled: false,
@@ -964,12 +996,19 @@ export class WindowMeshDebuggerView {
                     parallaxScale: { x: 0.0, y: 0.0 }
                 }
             });
-            layers = { ...layers, interior: false };
+            layers = { ...layers, shade: false, interior: false };
         } else if (assetType === WINDOW_FABRICATION_ASSET_TYPE.GARAGE) {
             s = sanitizeWindowMeshSettings({
                 ...s,
                 arch: { ...s.arch, enabled: false },
-                frame: { ...s.frame, openBottom: true, addHandles: false },
+                frame: {
+                    ...s.frame,
+                    openBottom: true,
+                    addHandles: false,
+                    doorStyle: 'single',
+                    doorBottomFrame: { ...s.frame.doorBottomFrame, enabled: false, mode: 'none' },
+                    doorCenterFrame: { ...s.frame.doorCenterFrame, leftMode: 'none', rightMode: 'none' }
+                },
                 muntins: { ...s.muntins, enabled: false, columns: 1, rows: 1 },
                 shade: { ...s.shade, enabled: false },
                 interior: {
@@ -1002,9 +1041,10 @@ export class WindowMeshDebuggerView {
             closedMaterialId: String(garageFacade.closedMaterialId ?? ''),
             rotationDegrees: normalizeGarageFacadeRotationDegrees(garageFacade.rotationDegrees)
         };
+        const previewFloorHeight = this._syncPreviewWallFromSettings(s, { floorDistanceMeters });
 
         this._disposeWindowGroup();
-        const instances = this._makeDemoInstances(s, { assetType });
+        const instances = this._makeDemoInstances(s, { assetType, floorDistanceMeters, previewFloorHeight });
         this._rebuildWallGeometry({
             settings: s,
             instances,
@@ -1078,7 +1118,8 @@ export class WindowMeshDebuggerView {
         const wall = this._wall;
         if (!wall) return;
 
-        const { width, height, depth } = this._wallSpec;
+        const { width, height, depth, frontZ } = this._wallSpec;
+        wall.position.set(0, height * 0.5, frontZ - depth * 0.5);
         const fw = Number(settings?.frame?.width) || 0;
         const w = Number(settings?.width) || 0;
         const h = Number(settings?.height) || 0;
@@ -1088,7 +1129,21 @@ export class WindowMeshDebuggerView {
         const cutX = clamp(cutSrc.x, -1.0, 1.0, 0.0);
         const cutY = clamp(cutSrc.y, -1.0, 1.0, 0.0);
         const mode = normalizeDebuggerAssetType(layoutMode);
+        const instanceKey = Array.isArray(instances)
+            ? instances.map((entry) => {
+                const p = entry?.position && typeof entry.position === 'object' ? entry.position : entry;
+                const x = Math.round((Number(p?.x) || 0) * 1000);
+                const y = Math.round((Number(p?.y) || 0) * 1000);
+                const z = Math.round((Number(p?.z) || 0) * 1000);
+                const yaw = Math.round((Number(entry?.yaw) || 0) * 1000);
+                return `${x},${y},${z},${yaw}`;
+            }).join(';')
+            : '';
         const key = [
+            `sw:${Math.round(width * 1000)}`,
+            `sh:${Math.round(height * 1000)}`,
+            `sd:${Math.round(depth * 1000)}`,
+            `sfz:${Math.round(frontZ * 1000)}`,
             `ww:${Math.round(w * 1000)}`,
             `wh:${Math.round(h * 1000)}`,
             `fw:${Math.round(fw * 1000)}`,
@@ -1097,7 +1152,8 @@ export class WindowMeshDebuggerView {
             `cx:${Math.round(cutX * 1000)}`,
             `cy:${Math.round(cutY * 1000)}`,
             `lm:${mode === WINDOW_FABRICATION_ASSET_TYPE.DOOR ? 'd' : (mode === WINDOW_FABRICATION_ASSET_TYPE.GARAGE ? 'g' : 'w')}`,
-            `n:${Array.isArray(instances) ? instances.length : 0}`
+            `n:${Array.isArray(instances) ? instances.length : 0}`,
+            `ik:${instanceKey}`
         ].join('|');
         if (key !== this._wallHoleKey) {
             this._wallHoleKey = key;
@@ -1357,8 +1413,10 @@ export class WindowMeshDebuggerView {
 
         for (const m of meshList) {
             const name = String(m?.parent?.name ?? '');
+            const meshName = String(m?.name ?? '');
             if (!mats) continue;
-            if (name === 'frame') m.material = mats.frameMat;
+            if (meshName === 'handles') m.material = mats.handlesMat ?? mats.frameMat;
+            else if (name === 'frame') m.material = mats.frameMat;
             else if (name === 'muntins') m.material = mats.muntinMat;
             else if (name === 'glass') m.material = mats.glassMat;
             else if (name === 'shade') m.material = mats.shadeMat;
@@ -1375,18 +1433,19 @@ export class WindowMeshDebuggerView {
         }
     }
 
-    _makeDemoInstances(settings, { assetType = 'window' } = {}) {
+    _makeDemoInstances(settings, { assetType = 'window', floorDistanceMeters = 0.0, previewFloorHeight = null } = {}) {
         const kind = normalizeDebuggerAssetType(assetType);
         const { frontZ: wallFrontZ } = this._wallSpec;
         const frameDepth = Number(settings?.frame?.depth) || 0;
         const zFace = wallFrontZ - frameDepth + 0.001;
+        const floorOffset = clamp(floorDistanceMeters, 0.0, 32.0, 0.0);
 
         if (kind === WINDOW_FABRICATION_ASSET_TYPE.DOOR || kind === WINDOW_FABRICATION_ASSET_TYPE.GARAGE) {
             const openingHeight = Math.max(0.4, Number(settings?.height) || 2.2);
             const idPrefix = kind === WINDOW_FABRICATION_ASSET_TYPE.GARAGE ? 'garage' : 'door';
             return [{
                 id: `${idPrefix}_0`,
-                position: { x: 0, y: openingHeight * 0.5, z: zFace + 0.001 },
+                position: { x: 0, y: floorOffset + openingHeight * 0.5, z: zFace + 0.001 },
                 yaw: 0
             }];
         }
@@ -1394,16 +1453,22 @@ export class WindowMeshDebuggerView {
         const floorCount = Math.max(1, this._previewGrid?.rows | 0);
         const windowsPerFloor = Math.max(1, this._previewGrid?.cols | 0);
         const wallWidth = Math.max(0.5, Number(this._wallSpec?.width) || WALL_SPEC.width);
-        const wallHeight = Math.max(0.5, Number(this._wallSpec?.height) || WALL_SPEC.height);
-        const floorHeight = windowsPerFloor > 1 ? Math.max(0.8, wallHeight / Math.max(2, floorCount + 1)) : Math.max(0.8, wallHeight * 0.33);
+        const openingHeight = Math.max(0.25, Number(settings?.height) || 1.0);
+        const fallbackFloorHeight = Math.max(MIN_PREVIEW_FLOOR_HEIGHT_METERS, openingHeight + floorOffset);
+        const floorHeight = Number.isFinite(previewFloorHeight)
+            ? Math.max(MIN_PREVIEW_FLOOR_HEIGHT_METERS, previewFloorHeight)
+            : (typeof this._resolvePreviewFloorHeightMeters === 'function'
+                ? this._resolvePreviewFloorHeightMeters(settings, floorOffset)
+                : fallbackFloorHeight);
         const spanX = Math.max(0.5, wallWidth * 0.66);
-        const baseY = Math.max(0.35, wallHeight * 0.12);
 
         const out = [];
         for (let floor = 0; floor < floorCount; floor++) {
             for (let col = 0; col < windowsPerFloor; col++) {
-                const x = (col - (windowsPerFloor - 1) * 0.5) * (spanX / (windowsPerFloor - 1));
-                const y = floor * floorHeight + baseY + floorHeight * 0.35;
+                const x = windowsPerFloor > 1
+                    ? (col - (windowsPerFloor - 1) * 0.5) * (spanX / (windowsPerFloor - 1))
+                    : 0;
+                const y = floor * floorHeight + floorOffset + openingHeight * 0.5;
                 out.push({
                     id: `f${floor}_c${col}`,
                     position: { x, y, z: zFace + 0.001 },
@@ -1430,6 +1495,7 @@ export class WindowMeshDebuggerView {
                 ...settings,
                 arch: { ...settings.arch, enabled: false },
                 frame: { ...settings.frame, openBottom: true },
+                shade: { ...settings.shade, enabled: false },
                 interior: {
                     ...settings.interior,
                     enabled: false,
@@ -1442,7 +1508,14 @@ export class WindowMeshDebuggerView {
             settings = sanitizeWindowMeshSettings({
                 ...settings,
                 arch: { ...settings.arch, enabled: false },
-                frame: { ...settings.frame, openBottom: true, addHandles: false },
+                frame: {
+                    ...settings.frame,
+                    openBottom: true,
+                    addHandles: false,
+                    doorStyle: 'single',
+                    doorBottomFrame: { ...settings.frame.doorBottomFrame, enabled: false, mode: 'none' },
+                    doorCenterFrame: { ...settings.frame.doorCenterFrame, leftMode: 'none', rightMode: 'none' }
+                },
                 muntins: { ...settings.muntins, enabled: false, columns: 1, rows: 1 },
                 shade: { ...settings.shade, enabled: false },
                 interior: {
@@ -1476,6 +1549,7 @@ export class WindowMeshDebuggerView {
         const wallNormalIntensity = clamp(wallReq.normalIntensity, 0.0, 5.0, Number(uiState?.wallNormalIntensity) || 1.0);
         const wallCutX = clamp(wallReq.cutWidthLerp, -1.0, 1.0, 0.0);
         const wallCutY = clamp(wallReq.cutHeightLerp, -1.0, 1.0, 0.0);
+        const floorDistanceMeters = clamp(wallReq.floorDistanceMeters, 0.0, 32.0, clamp(uiState?.floorDistanceMeters, 0.0, 32.0, 0.0));
         const seed = typeof req.seed === 'string' ? req.seed : String(uiState?.seed ?? 'window-thumb');
         const reason = String(req.reason ?? '');
         const isCatalogPickerThumb = reason === 'catalog_picker_entry_thumbnail';
@@ -1505,8 +1579,8 @@ export class WindowMeshDebuggerView {
         const wallH = winH * wallScale;
         const wallDepth = Math.max(0.1, Math.min(0.7, Math.max(wallW, wallH) * 0.12));
         const wallFrontZ = 0.0;
-        const windowCenterY = wallH * 0.5;
-        const doorCenterY = winH * 0.5;
+        const windowCenterY = floorDistanceMeters + wallH * 0.5;
+        const doorCenterY = floorDistanceMeters + winH * 0.5;
         const openingCenterY = assetType === WINDOW_FABRICATION_ASSET_TYPE.WINDOW ? windowCenterY : doorCenterY;
         const holeInstances = [{
             id: 'thumb_hole_0',

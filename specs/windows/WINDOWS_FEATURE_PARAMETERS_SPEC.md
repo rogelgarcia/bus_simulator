@@ -127,6 +127,8 @@ First-pass `simple` template defaults:
 Sill `bottom_cover` metadata/suggestion rules:
 - On selecting `bottom_cover`, UI auto-applies: `widthMode = match_window`, `depthMeters = 0.08`, `material.mode = match_frame`.
 - `bottom_cover` template defaults: `height = 0.5`, `offset.z = -depth` (depth-relative).
+- `bottom_cover` vertical placement is opening-relative: it anchors at the opening bottom and rises upward to cover the lower opening zone.
+- For `openingKind = door` with `frameDoorStyle = double`, sill decoration is split into left/right pieces using the same center gap rule as the door leaves.
 
 ---
 
@@ -136,26 +138,43 @@ Frame sizing/arch/depth are defined in `specs/windows/WINDOWS_SIZE_AND_POSITIONI
 
 Frame materials + bevel/roundness “finish” are defined in `specs/windows/WINDOWS_MATERIALS_AND_FINISH_SPEC.md` and MUST be present in the first pass (Frame tab and Materials/Finish tab reuse the same control section).
 
-### 3.1 Door handles (debugger-first rule set)
+### 3.1 Door style + handles (debugger-first rule set)
 
-Door handle generation is controlled from the Frame tab:
+Door style controls live under a `Style` group in the Frame tab and are shown only when `openingKind = door`.
+
+Canonical controls:
+- `frameDoorStyle` (enum): `single | double`
+- `doorBottomFrameEnabled` (bool)
+- `doorBottomFrameMode` (enum): `match | none`
+- `doorCenterFrameLeftMode` (enum): `match | none` (double only)
+- `doorCenterFrameRightMode` (enum): `match | none` (double only)
 - `frameAddHandles` (bool, default `false`)
-- The `Add handles` toggle is shown only when `openingKind = door`.
-- The `Add handles` toggle MUST be hidden when `openingKind = garage`.
+- `frameHandleMaterialMode` (enum): `match | metal`
 
-When `frameAddHandles = true` and `openingKind = door`:
-- Handle material inherits the frame material.
-- Each handle uses low-poly cylinders (`radialSegments = 6`) with main handle diameter `0.05m`.
-- Each main handle includes two horizontal connector cylinders from handle body to the door surface.
+Door frame style behavior:
+- `single`: one door leaf across the full opening width.
+- `double`: two leaves (left/right), each based on half-width with stable total size.
+- `double` MUST keep total width stable by introducing a fixed `0.6cm` center gap (implemented as `0.3cm` trim per leaf).
+- In `double`, center-side frame generation is controlled per leaf by `doorCenterFrameLeftMode` / `doorCenterFrameRightMode`:
+  - `match`: use standard vertical frame thickness on that center side.
+  - `none`: remove that center-side frame piece on that leaf.
 
-Handle placement is driven by vertical muntin/panel layout:
-- `0` vertical muntins (single panel): one handle on the right side at `1.0m` from door bottom.
-- `1` vertical muntin (two panels): two handles on the meeting sides (right side of left panel, left side of right panel).
-- `2+` vertical muntins (three+ panels): exactly two handles on the center-most panel pair.
-- For odd panel counts in the `2+` case, implementation picks one valid center-area pair deterministically.
+Door bottom frame behavior:
+- Bottom frame rendering is controlled by `doorBottomFrameEnabled` plus `doorBottomFrameMode`.
+- `match` means bottom frame uses the same horizontal frame configuration.
+- `none` means no bottom frame geometry.
+
+Handle behavior:
+- Handles are generated only when `frameAddHandles = true` and door mode is active.
+- Handle placement uses a fixed border offset of `0.15m` from the relevant door-leaf edge (not size-relative).
+- In `single`, one handle is placed on the right side.
+- In `double`, one handle is placed per leaf (meeting-side placement).
+- Handle connector cylinders are `50%` thinner than the main handle body.
+- Handle material mode:
+  - `match`: match frame appearance (with handle normal strength fixed at `0`).
+  - `metal`: light gray, high metalness, low roughness, higher env-map intensity.
 
 Runtime behavior:
-- Handle placement MUST update when muntin column/layout changes.
 - Disabling `frameAddHandles` MUST remove/hide generated handles without leftover geometry.
 
 ---
@@ -166,6 +185,8 @@ Muntin layout and dimensions are defined in `specs/windows/WINDOWS_SIZE_AND_POSI
 
 Finish rule:
 - Muntins MUST inherit the frame bevel/roundness settings in first pass (no separate muntin bevel controls).
+- First-pass defaults MUST use color inherit + material inherit from frame.
+- For `frameDoorStyle = double`, muntin layout applies per leaf face (window-like behavior on each leaf).
 
 ---
 
@@ -263,6 +284,10 @@ Manual glass controls remain available for art-direction tuning and may diverge 
 - `glassTransmission` (0..1)
 - `glassIor` (1.0..2.5)
 - `glassEnvMapIntensity` (0..8)
+
+Default/precision rule:
+- `glassZOffset` default is `-0.04m`.
+- UI/model clamp/display precision for `glassZOffset` is `2` decimal places.
 
 ---
 

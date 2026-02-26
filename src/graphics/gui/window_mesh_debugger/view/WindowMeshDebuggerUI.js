@@ -192,7 +192,7 @@ function makeTextRow({ label, value = '', placeholder = '', onChange }) {
 
     const input = document.createElement('input');
     input.type = 'text';
-    input.className = 'options-number';
+    input.className = 'options-text-input';
     input.value = String(value ?? '');
     input.placeholder = String(placeholder ?? '');
     input.addEventListener('change', () => onChange?.(String(input.value)));
@@ -385,7 +385,11 @@ function buildCatalogEntryThumbnailDataUrl(entry) {
     const isDoorMode = mode === WINDOW_FABRICATION_ASSET_TYPE.DOOR;
     const isGarageMode = mode === WINDOW_FABRICATION_ASSET_TYPE.GARAGE;
     const hasArch = !!settings?.arch?.enabled && !isDoorMode && !isGarageMode;
-    const frameOpenBottom = isDoorMode || isGarageMode || !!frame.openBottom;
+    const doorBottomMode = typeof frame?.doorBottomFrame?.mode === 'string' ? frame.doorBottomFrame.mode.trim().toLowerCase() : '';
+    const hasDoorBottomFrame = !!frame?.doorBottomFrame?.enabled && doorBottomMode === 'match';
+    const frameOpenBottom = isGarageMode
+        ? true
+        : ((isDoorMode || !!frame.openBottom) && !hasDoorBottomFrame);
     const gridCols = Math.max(1, Math.round(Number(muntins.columns) || 1));
     const gridRows = Math.max(1, Math.round(Number(muntins.rows) || 1));
     const hasGrid = !!muntins.enabled && (gridCols > 1 || gridRows > 1);
@@ -447,6 +451,7 @@ export class WindowMeshDebuggerUI {
         const defaults = getDefaultWindowMeshSettings();
         const initial = sanitizeWindowMeshSettings({ ...defaults, ...(initialSettings ?? {}) });
         const initialLinkMuntinThickness = Math.abs(Number(initial.muntins.verticalWidth) - Number(initial.muntins.horizontalWidth)) < 1e-6;
+        const initialLinkFrameThickness = Math.abs(Number(initial.frame.verticalWidth ?? initial.frame.width) - Number(initial.frame.horizontalWidth ?? initial.frame.width)) < 1e-6;
         const windowCatalogEntries = getWindowFabricationCatalogEntries({ assetType: WINDOW_FABRICATION_ASSET_TYPE.WINDOW });
         const doorCatalogEntries = getWindowFabricationCatalogEntries({ assetType: WINDOW_FABRICATION_ASSET_TYPE.DOOR });
         const garageCatalogEntries = getWindowFabricationCatalogEntries({ assetType: WINDOW_FABRICATION_ASSET_TYPE.GARAGE });
@@ -499,6 +504,7 @@ export class WindowMeshDebuggerUI {
             wallNormalIntensity: 1.0,
             wallCutWidthLerp: 0.0,
             wallCutHeightLerp: 0.0,
+            floorDistanceMeters: 0.0,
             ibl: {
                 enabled: true,
                 envMapIntensity: 0.25,
@@ -513,7 +519,11 @@ export class WindowMeshDebuggerUI {
                 closedMaterialId: defaultGarageClosedMaterialId,
                 rotationDegrees: GARAGE_FACADE_ROTATION_DEGREES.DEG_0
             },
-            debug: { bevelExaggerate: false, linkMuntinThickness: initialLinkMuntinThickness },
+            debug: {
+                bevelExaggerate: false,
+                linkFrameThickness: initialLinkFrameThickness,
+                linkMuntinThickness: initialLinkMuntinThickness
+            },
             settings: initial
         };
         this._defaultDecoration = deepClone(this._state.decoration);
@@ -559,23 +569,7 @@ export class WindowMeshDebuggerUI {
         this._interiorOverlayData = null;
         this._interiorOverlayPre = null;
 
-        this._buildGlobalAssetModeControl();
-        this._buildAssetSection({ parent: this.globalControls, showTitle: false });
-        this._buildTabs();
-
-        this._buildSceneSection({ wallOptions, parent: this._tabBodies.scene, showTitle: true });
-        this._buildLayersSection({ parent: this._tabBodies.scene, showTitle: true });
-        this._buildSizeSection({ parent: this._tabBodies.size, showTitle: false });
-        this._buildFrameSection({ parent: this._tabBodies.frame, showTitle: true });
-        this._buildFacadeSection({ parent: this._tabBodies.facade, showTitle: false });
-        this._buildArchSection({ parent: this._tabBodies.frame, showTitle: true });
-        this._buildMuntinsSection({ parent: this._tabBodies.frame, showTitle: true });
-        this._buildGlassSection({ parent: this._tabBodies.glass, showTitle: false });
-        this._buildShadeSection({ parent: this._tabBodies.shade, showTitle: false });
-        this._buildDecorationSection({ wallOptions, parent: this._tabBodies.decoration, showTitle: false });
-        this._buildInteriorSection({ parent: this._tabBodies.interior, showTitle: false });
-        this._setActiveTab(this._tab);
-        this._syncAssetModeUi();
+        this._rebuildControlsFromState({ keepActiveTab: false, wallOptions });
 
         this._onKeyDown = (e) => {
             if (!e) return;
@@ -706,6 +700,39 @@ export class WindowMeshDebuggerUI {
         }
     }
 
+    _rebuildControlsFromState({ keepActiveTab = true, wallOptions = null } = {}) {
+        const desiredTab = keepActiveTab ? this._tab : 'scene';
+        const resolvedWallOptions = Array.isArray(wallOptions) ? wallOptions : getPbrMaterialOptionsForBuildings();
+
+        this._controls = {};
+        this._tabButtons = {};
+        this._tabBodies = {};
+        this._interiorOverlayPre = null;
+
+        this.globalControls?.replaceChildren?.();
+        this.tabs?.replaceChildren?.();
+        this.body?.replaceChildren?.();
+
+        this._buildGlobalAssetModeControl();
+        this._buildAssetSection({ parent: this.globalControls, showTitle: false });
+        this._buildTabs();
+
+        this._buildSceneSection({ wallOptions: resolvedWallOptions, parent: this._tabBodies.scene, showTitle: true });
+        this._buildLayersSection({ parent: this._tabBodies.scene, showTitle: true });
+        this._buildSizeSection({ parent: this._tabBodies.size, showTitle: false });
+        this._buildFrameSection({ parent: this._tabBodies.frame, showTitle: true });
+        this._buildFacadeSection({ parent: this._tabBodies.facade, showTitle: false });
+        this._buildArchSection({ parent: this._tabBodies.frame, showTitle: true });
+        this._buildMuntinsSection({ parent: this._tabBodies.frame, showTitle: true });
+        this._buildGlassSection({ parent: this._tabBodies.glass, showTitle: false });
+        this._buildShadeSection({ parent: this._tabBodies.shade, showTitle: false });
+        this._buildDecorationSection({ wallOptions: resolvedWallOptions, parent: this._tabBodies.decoration, showTitle: false });
+        this._buildInteriorSection({ parent: this._tabBodies.interior, showTitle: false });
+        this._setActiveTab(desiredTab);
+        this._syncAssetModeUi();
+        this._renderInteriorOverlay();
+    }
+
     _setActiveTab(tabId) {
         const next = Object.prototype.hasOwnProperty.call(this._tabBodies, tabId) ? tabId : 'scene';
         this._tab = next;
@@ -804,10 +831,11 @@ export class WindowMeshDebuggerUI {
         const wallN = Number(this._state.wallNormalIntensity) || 0;
         const cutX = Number(this._state.wallCutWidthLerp) || 0;
         const cutY = Number(this._state.wallCutHeightLerp) || 0;
+        const floorDistanceMeters = clamp(this._state.floorDistanceMeters, 0.0, 32.0, 0.0);
         const garagePreviewToken = assetType === WINDOW_FABRICATION_ASSET_TYPE.GARAGE
             ? `|gs:${garageFacadeForPreview.state}|gm:${garageFacadeForPreview.closedMaterialId}|gr:${garageFacadeForPreview.rotationDegrees}`
             : '';
-        const cacheKey = `${String(item.id ?? '')}|${wallHintId}|wr:${wallR.toFixed(3)}|wn:${wallN.toFixed(3)}|cx:${cutX.toFixed(3)}|cy:${cutY.toFixed(3)}${garagePreviewToken}`;
+        const cacheKey = `${String(item.id ?? '')}|${wallHintId}|wr:${wallR.toFixed(3)}|wn:${wallN.toFixed(3)}|cx:${cutX.toFixed(3)}|cy:${cutY.toFixed(3)}|fd:${floorDistanceMeters.toFixed(3)}${garagePreviewToken}`;
         const cached = this._catalogPreviewCache?.get?.(cacheKey);
         if (typeof cached === 'string' && cached.startsWith('data:image/')) return cached;
 
@@ -826,7 +854,8 @@ export class WindowMeshDebuggerUI {
                         roughness: Number(this._state.wallRoughness),
                         normalIntensity: Number(this._state.wallNormalIntensity),
                         cutWidthLerp: Number(this._state.wallCutWidthLerp),
-                        cutHeightLerp: Number(this._state.wallCutHeightLerp)
+                        cutHeightLerp: Number(this._state.wallCutHeightLerp),
+                        floorDistanceMeters
                     }
                 }));
                 if (typeof captured === 'string' && captured.startsWith('data:image/')) generated = captured;
@@ -874,7 +903,9 @@ export class WindowMeshDebuggerUI {
         this._controls.assetCatalogNameLabel = nameRow.row.querySelector('.options-row-label');
         if (nameRow?.input) nameRow.input.classList.add('options-input-grow');
 
-        const actionsRow = makeEl('div', 'options-row options-row-wide options-action-row');
+        const actionsRow = makeEl('div', 'options-row options-row-wide');
+        const actionsLabel = makeEl('div', 'options-row-label');
+        actionsLabel.setAttribute('aria-hidden', 'true');
         const actionsControl = makeEl('div', 'options-row-control options-row-control-wide');
         const actionsButtons = makeEl('div', 'options-action-buttons');
 
@@ -889,6 +920,7 @@ export class WindowMeshDebuggerUI {
         actionsButtons.appendChild(loadBtn);
         actionsButtons.appendChild(exportBtn);
         actionsControl.appendChild(actionsButtons);
+        actionsRow.appendChild(actionsLabel);
         actionsRow.appendChild(actionsControl);
         section.appendChild(actionsRow);
 
@@ -899,34 +931,85 @@ export class WindowMeshDebuggerUI {
 
     async _openCatalogLoadPicker() {
         const mode = normalizeWindowFabricationAssetType(this._state.assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW);
-        const entries = this._getCatalogEntries(mode);
-        if (!entries.length) return;
+        const assetTypeOptions = Array.isArray(getWindowFabricationAssetTypeOptions())
+            ? getWindowFabricationAssetTypeOptions()
+            : [];
+        const modeLabels = new Map();
+        const orderedModes = [];
+        for (const opt of assetTypeOptions) {
+            const optMode = normalizeWindowFabricationAssetType(opt?.id, WINDOW_FABRICATION_ASSET_TYPE.WINDOW);
+            if (modeLabels.has(optMode)) continue;
+            const label = typeof opt?.label === 'string' && opt.label.trim()
+                ? opt.label.trim()
+                : getAssetCatalogFallbackName(optMode).replace(/\s+Entry$/i, '');
+            modeLabels.set(optMode, label);
+            orderedModes.push(optMode);
+        }
+        if (!orderedModes.includes(mode)) orderedModes.unshift(mode);
+        const prioritizedModes = [mode, ...orderedModes.filter((entryMode) => entryMode !== mode)];
+        const pickerOptionIdPrefix = 'asset';
+        const makePickerOptionId = (entryMode, entryId) => {
+            const resolvedMode = normalizeWindowFabricationAssetType(entryMode, WINDOW_FABRICATION_ASSET_TYPE.WINDOW);
+            const resolvedId = String(entryId ?? '').trim();
+            if (!resolvedId) return '';
+            return `${pickerOptionIdPrefix}:${resolvedMode}:${resolvedId}`;
+        };
+        const parsePickerOptionId = (value) => {
+            const raw = typeof value === 'string' ? value.trim() : '';
+            const prefix = `${pickerOptionIdPrefix}:`;
+            if (!raw.startsWith(prefix)) return null;
+            const remainder = raw.slice(prefix.length);
+            const splitIdx = remainder.indexOf(':');
+            if (splitIdx <= 0) return null;
+            const parsedMode = normalizeWindowFabricationAssetType(remainder.slice(0, splitIdx), WINDOW_FABRICATION_ASSET_TYPE.WINDOW);
+            const parsedCatalogId = remainder.slice(splitIdx + 1).trim();
+            if (!parsedCatalogId) return null;
+            return { assetType: parsedMode, catalogId: parsedCatalogId };
+        };
+        const hasAnyEntries = prioritizedModes.some((entryMode) => this._getCatalogEntries(entryMode).length > 0);
+        if (!hasAnyEntries) return;
 
         if (this._controls.assetLoadBtn) this._controls.assetLoadBtn.disabled = true;
 
-        const selectedId = this._resolveCatalogId(mode, this._state.assetCatalogId);
+        const selectedCatalogId = this._resolveCatalogId(mode, this._state.assetCatalogId);
+        const selectedId = makePickerOptionId(mode, selectedCatalogId);
         try {
-            const options = (await Promise.all(entries.map(async (entry) => ({
-                id: String(entry?.id ?? ''),
-                label: normalizeCatalogEntryNameInput(entry?.name ?? entry?.label ?? entry?.id, getAssetCatalogFallbackName(mode)),
-                kind: 'texture',
-                previewUrl: await this._getCatalogPickerPreviewUrl(entry)
-            })))).filter((opt) => !!opt.id);
+            const sections = [];
+            for (const sectionMode of prioritizedModes) {
+                const entries = this._getCatalogEntries(sectionMode);
+                const options = (await Promise.all(entries.map(async (entry) => {
+                    const entryId = String(entry?.id ?? '').trim();
+                    return {
+                        id: makePickerOptionId(sectionMode, entryId),
+                        label: normalizeCatalogEntryNameInput(entry?.name ?? entry?.label ?? entryId, getAssetCatalogFallbackName(sectionMode)),
+                        kind: 'texture',
+                        previewUrl: await this._getCatalogPickerPreviewUrl(entry)
+                    };
+                }))).filter((opt) => !!opt.id);
+                if (!options.length) continue;
+                sections.push({
+                    label: modeLabels.get(sectionMode) ?? getAssetCatalogFallbackName(sectionMode).replace(/\s+Entry$/i, ''),
+                    options
+                });
+            }
+            if (!sections.length) return;
 
             this._catalogPicker?.open?.({
-                title: mode === WINDOW_FABRICATION_ASSET_TYPE.DOOR
-                    ? 'Load Door Entry'
-                    : (mode === WINDOW_FABRICATION_ASSET_TYPE.GARAGE ? 'Load Garage Entry' : 'Load Window Entry'),
+                title: 'Load Catalog Entry',
                 selectedId,
                 thumbHeightPx: 168,
                 optionMinWidthPx: 192,
                 thumbImageScale: 1.0,
                 thumbImageFit: 'contain',
-                sections: [{ label: 'Catalog', options }],
+                sections,
                 onSelect: (option) => {
-                    const nextId = typeof option?.id === 'string' ? option.id : '';
-                    if (!nextId) return;
-                    this._applyCatalogPreset({ assetType: mode, catalogId: nextId, emit: true });
+                    const parsed = parsePickerOptionId(option?.id);
+                    if (!parsed) return;
+                    this._applyCatalogPreset({
+                        assetType: parsed.assetType,
+                        catalogId: parsed.catalogId,
+                        emit: true
+                    });
                 }
             });
         } finally {
@@ -961,26 +1044,18 @@ export class WindowMeshDebuggerUI {
             wallMaterialId: String(this._state.wallMaterialId ?? '')
         });
 
-        if (assetMode === WINDOW_FABRICATION_ASSET_TYPE.DOOR) {
+        if (assetMode === WINDOW_FABRICATION_ASSET_TYPE.GARAGE) {
             nextSettings = sanitizeWindowMeshSettings({
                 ...nextSettings,
                 arch: { ...nextSettings.arch, enabled: false },
-                frame: { ...nextSettings.frame, openBottom: true },
-                shade: { ...nextSettings.shade, enabled: false },
-                interior: {
-                    ...nextSettings.interior,
-                    enabled: false,
-                    parallaxInteriorPresetId: null,
-                    parallaxDepthMeters: 0.0,
-                    parallaxScale: { x: 0.0, y: 0.0 }
-                }
-            });
-            nextLayers = { ...nextLayers, shade: false, interior: false };
-        } else if (assetMode === WINDOW_FABRICATION_ASSET_TYPE.GARAGE) {
-            nextSettings = sanitizeWindowMeshSettings({
-                ...nextSettings,
-                arch: { ...nextSettings.arch, enabled: false },
-                frame: { ...nextSettings.frame, openBottom: true, addHandles: false },
+                frame: {
+                    ...nextSettings.frame,
+                    openBottom: true,
+                    addHandles: false,
+                    doorStyle: 'single',
+                    doorBottomFrame: { ...nextSettings.frame.doorBottomFrame, enabled: false, mode: 'none' },
+                    doorCenterFrame: { ...nextSettings.frame.doorCenterFrame, leftMode: 'none', rightMode: 'none' }
+                },
                 muntins: { ...nextSettings.muntins, enabled: false, columns: 1, rows: 1 },
                 shade: { ...nextSettings.shade, enabled: false },
                 interior: {
@@ -999,11 +1074,6 @@ export class WindowMeshDebuggerUI {
                 interior: false
             };
             nextDecoration = this._forceDecorationDisabled(nextDecoration);
-        } else {
-            nextSettings = sanitizeWindowMeshSettings({
-                ...nextSettings,
-                frame: { ...nextSettings.frame, openBottom: false }
-            });
         }
 
         return { settings: nextSettings, layers: nextLayers, decoration: nextDecoration };
@@ -1071,12 +1141,21 @@ export class WindowMeshDebuggerUI {
         if (layerPresetGlassOnlyBtn) layerPresetGlassOnlyBtn.disabled = isGarageMode;
         if (layerPresetInteriorOnlyBtn) layerPresetInteriorOnlyBtn.disabled = isDoorMode || isGarageMode;
 
-        const addHandles = this._controls.frameAddHandles;
-        if (addHandles?.row?.style) addHandles.row.style.display = isDoorMode ? '' : 'none';
-        if (addHandles?.toggle) {
-            addHandles.toggle.disabled = !isDoorMode;
-            addHandles.toggle.checked = !!this._state.settings?.frame?.addHandles;
+        const frameSettings = this._state.settings?.frame ?? {};
+        if (this._controls.frameDoorStyle?.setValue) this._controls.frameDoorStyle.setValue(String(frameSettings.doorStyle ?? 'single'));
+        if (this._controls.frameDoorBottomMode?.setValue) this._controls.frameDoorBottomMode.setValue(String(frameSettings.doorBottomFrame?.mode ?? 'match'));
+        if (this._controls.frameDoorCenterLeft?.setValue) this._controls.frameDoorCenterLeft.setValue(String(frameSettings.doorCenterFrame?.leftMode ?? 'match'));
+        if (this._controls.frameDoorCenterRight?.setValue) this._controls.frameDoorCenterRight.setValue(String(frameSettings.doorCenterFrame?.rightMode ?? 'match'));
+        if (this._controls.frameHandleMaterialMode?.setValue) this._controls.frameHandleMaterialMode.setValue(String(frameSettings.handleMaterialMode ?? 'match'));
+        if (this._controls.frameDoorBottomEnabled?.toggle) {
+            this._controls.frameDoorBottomEnabled.toggle.checked = !!frameSettings.doorBottomFrame?.enabled;
+            this._controls.frameDoorBottomEnabled.toggle.disabled = !isDoorMode;
         }
+        if (this._controls.frameAddHandles?.toggle) {
+            this._controls.frameAddHandles.toggle.checked = !!frameSettings.addHandles;
+            this._controls.frameAddHandles.toggle.disabled = !isDoorMode;
+        }
+        this._controls.syncFrameStyleRows?.();
 
         const archSection = this._controls.sectionArch;
         if (archSection?.style) archSection.style.display = isGarageMode ? 'none' : '';
@@ -1120,7 +1199,7 @@ export class WindowMeshDebuggerUI {
         const modeNote = this._controls.assetModeNote;
         if (modeNote) {
             modeNote.textContent = isDoorMode
-                ? 'Door mode renders one base-aligned door, disables shade + interior parallax, and uses door entries in the thumbnail loader.'
+                ? 'Door mode renders a base-aligned door (single or double style), disables shade + interior parallax, and uses door entries in the thumbnail loader.'
                 : (isGarageMode
                     ? 'Garage mode renders one base-aligned opening, hides glass/shade/decoration workflows, and uses the Facade tab for open/closed + metal panel control.'
                     : 'Window mode renders the preview grid and uses window entries in the thumbnail loader.');
@@ -1202,6 +1281,7 @@ export class WindowMeshDebuggerUI {
             if (Number.isFinite(wall.normalIntensity)) this._state.wallNormalIntensity = Number(wall.normalIntensity);
             if (Number.isFinite(wall.cutWidthLerp)) this._state.wallCutWidthLerp = clamp(wall.cutWidthLerp, -1.0, 1.0, 0.0);
             if (Number.isFinite(wall.cutHeightLerp)) this._state.wallCutHeightLerp = clamp(wall.cutHeightLerp, -1.0, 1.0, 0.0);
+            if (Number.isFinite(wall.floorDistanceMeters)) this._state.floorDistanceMeters = clamp(wall.floorDistanceMeters, 0.0, 32.0, 0.0);
         }
         this._syncWallControlsFromState();
 
@@ -1213,7 +1293,7 @@ export class WindowMeshDebuggerUI {
             };
         }
 
-        this._syncAssetModeUi();
+        this._rebuildControlsFromState({ keepActiveTab: true });
         if (emit) this._emit();
     }
 
@@ -1244,7 +1324,8 @@ export class WindowMeshDebuggerUI {
         const wallConfig = {
             materialId: wallMaterialId,
             roughness: Number(this._state.wallRoughness) || 0,
-            normalIntensity: Number(this._state.wallNormalIntensity) || 0
+            normalIntensity: Number(this._state.wallNormalIntensity) || 0,
+            floorDistanceMeters: clamp(this._state.floorDistanceMeters, 0.0, 32.0, 0.0)
         };
         let thumbnailDataUrl = null;
         if (this._captureThumbnail) {
@@ -1283,7 +1364,8 @@ export class WindowMeshDebuggerUI {
                 roughness: Number(this._state.wallRoughness) || 0,
                 normalIntensity: Number(this._state.wallNormalIntensity) || 0,
                 cutWidthLerp: clamp(this._state.wallCutWidthLerp, -1.0, 1.0, 0.0),
-                cutHeightLerp: clamp(this._state.wallCutHeightLerp, -1.0, 1.0, 0.0)
+                cutHeightLerp: clamp(this._state.wallCutHeightLerp, -1.0, 1.0, 0.0),
+                floorDistanceMeters: clamp(this._state.floorDistanceMeters, 0.0, 32.0, 0.0)
             },
             ibl: deepClone(this._state.ibl),
             thumbnail: {
@@ -1520,6 +1602,7 @@ export class WindowMeshDebuggerUI {
         this._syncSliderControlValue(this._controls?.wallNormalIntensity, this._state?.wallNormalIntensity, { digits: 2 });
         this._syncSliderControlValue(this._controls?.wallCutWidth, this._state?.wallCutWidthLerp, { digits: 2 });
         this._syncSliderControlValue(this._controls?.wallCutHeight, this._state?.wallCutHeightLerp, { digits: 2 });
+        this._syncSliderControlValue(this._controls?.floorDistanceMeters, this._state?.floorDistanceMeters, { digits: 2 });
     }
 
     _openWallMaterialPicker() {
@@ -1684,6 +1767,21 @@ export class WindowMeshDebuggerUI {
         });
         section.appendChild(height.row);
 
+        const floorDistanceRow = makeNumberSliderRow({
+            label: 'Distance from Floor (m)',
+            value: this._state.floorDistanceMeters,
+            min: 0.0,
+            max: 32.0,
+            step: 0.01,
+            digits: 2,
+            onChange: (v) => {
+                this._state.floorDistanceMeters = clamp(v, 0.0, 32.0, 0.0);
+                this._emit();
+            }
+        });
+        section.appendChild(floorDistanceRow.row);
+        this._controls.floorDistanceMeters = floorDistanceRow;
+
         section.appendChild(makeNumberSliderRow({
             label: 'Inset (m)',
             value: s0.frame.inset,
@@ -1731,6 +1829,8 @@ export class WindowMeshDebuggerUI {
     _buildFrameSection({ parent = this.body, showTitle = true } = {}) {
         const section = this._buildSection('Frame', { parent, showTitle });
         const s0 = this._state.settings;
+        const frameVerticalWidth0 = Number(s0.frame.verticalWidth ?? s0.frame.width);
+        const frameHorizontalWidth0 = Number(s0.frame.horizontalWidth ?? s0.frame.width);
 
         section.appendChild(makeToggleRow({
             label: 'Bevel Exaggerate',
@@ -1741,18 +1841,87 @@ export class WindowMeshDebuggerUI {
             }
         }).row);
 
-        section.appendChild(makeNumberSliderRow({
-            label: 'Frame Width (m)',
-            value: s0.frame.width,
+        section.appendChild(makeToggleRow({
+            label: 'Link Widths',
+            value: this._state.debug.linkFrameThickness,
+            onChange: (v) => {
+                this._state.debug.linkFrameThickness = !!v;
+                if (!this._state.debug.linkFrameThickness) return;
+                const s = this._state.settings;
+                const next = clamp(s.frame.verticalWidth ?? s.frame.width, 0.005, 0.35);
+                this._setSettings({
+                    frame: {
+                        ...s.frame,
+                        width: next,
+                        verticalWidth: next,
+                        horizontalWidth: next
+                    }
+                });
+                verticalWidthRow.range.value = String(next);
+                verticalWidthRow.number.value = String(next.toFixed(3));
+                horizontalWidthRow.range.value = String(next);
+                horizontalWidthRow.number.value = String(next.toFixed(3));
+            }
+        }).row);
+
+        let horizontalWidthRow = null;
+        const verticalWidthRow = makeNumberSliderRow({
+            label: 'Vertical Width (m)',
+            value: frameVerticalWidth0,
             min: 0.005,
             max: 0.35,
             step: 0.001,
             digits: 3,
             onChange: (v) => {
                 const s = this._state.settings;
-                this._setSettings({ frame: { ...s.frame, width: v } });
+                if (this._state.debug.linkFrameThickness) {
+                    this._setSettings({
+                        frame: {
+                            ...s.frame,
+                            width: v,
+                            verticalWidth: v,
+                            horizontalWidth: v
+                        }
+                    });
+                    if (horizontalWidthRow) {
+                        const next = clamp(v, 0.005, 0.35);
+                        horizontalWidthRow.range.value = String(next);
+                        horizontalWidthRow.number.value = String(next.toFixed(3));
+                    }
+                    return;
+                }
+                this._setSettings({ frame: { ...s.frame, width: v, verticalWidth: v } });
             }
-        }).row);
+        });
+        section.appendChild(verticalWidthRow.row);
+
+        horizontalWidthRow = makeNumberSliderRow({
+            label: 'Horizontal Width (m)',
+            value: frameHorizontalWidth0,
+            min: 0.005,
+            max: 0.35,
+            step: 0.001,
+            digits: 3,
+            onChange: (v) => {
+                const s = this._state.settings;
+                if (this._state.debug.linkFrameThickness) {
+                    this._setSettings({
+                        frame: {
+                            ...s.frame,
+                            width: v,
+                            verticalWidth: v,
+                            horizontalWidth: v
+                        }
+                    });
+                    const next = clamp(v, 0.005, 0.35);
+                    verticalWidthRow.range.value = String(next);
+                    verticalWidthRow.number.value = String(next.toFixed(3));
+                    return;
+                }
+                this._setSettings({ frame: { ...s.frame, horizontalWidth: v } });
+            }
+        });
+        section.appendChild(horizontalWidthRow.row);
 
         section.appendChild(makeNumberSliderRow({
             label: 'Frame Depth (m)',
@@ -1767,6 +1936,103 @@ export class WindowMeshDebuggerUI {
             }
         }).row);
 
+        const styleTitle = makeEl('div', 'options-section-title', 'Style');
+        section.appendChild(styleTitle);
+
+        const doorStyle = makeChoiceRow({
+            label: 'Door Frame Style',
+            value: String(s0.frame.doorStyle ?? 'single'),
+            options: [
+                { id: 'single', label: 'Single' },
+                { id: 'double', label: 'Double' }
+            ],
+            onChange: (id) => {
+                const s = this._state.settings;
+                this._setSettings({ frame: { ...s.frame, doorStyle: String(id ?? 'single') } });
+                syncDoorStyleControls();
+            }
+        });
+        section.appendChild(doorStyle.row);
+        this._controls.frameDoorStyle = doorStyle;
+
+        const doorBottomEnabled = makeToggleRow({
+            label: 'Bottom Frame',
+            value: !!s0.frame.doorBottomFrame?.enabled,
+            onChange: (v) => {
+                const s = this._state.settings;
+                this._setSettings({
+                    frame: {
+                        ...s.frame,
+                        doorBottomFrame: { ...(s.frame.doorBottomFrame ?? {}), enabled: !!v }
+                    }
+                });
+                syncDoorStyleControls();
+            }
+        });
+        section.appendChild(doorBottomEnabled.row);
+        this._controls.frameDoorBottomEnabled = doorBottomEnabled;
+
+        const doorBottomMode = makeChoiceRow({
+            label: 'Bottom Frame Mode',
+            value: String(s0.frame.doorBottomFrame?.mode ?? 'match'),
+            options: [
+                { id: 'match', label: 'Match' },
+                { id: 'none', label: 'None' }
+            ],
+            onChange: (id) => {
+                const s = this._state.settings;
+                this._setSettings({
+                    frame: {
+                        ...s.frame,
+                        doorBottomFrame: { ...(s.frame.doorBottomFrame ?? {}), mode: String(id ?? 'match') }
+                    }
+                });
+                syncDoorStyleControls();
+            }
+        });
+        section.appendChild(doorBottomMode.row);
+        this._controls.frameDoorBottomMode = doorBottomMode;
+
+        const doorCenterLeft = makeChoiceRow({
+            label: 'Left Leaf Center Side',
+            value: String(s0.frame.doorCenterFrame?.leftMode ?? 'match'),
+            options: [
+                { id: 'match', label: 'Match' },
+                { id: 'none', label: 'None' }
+            ],
+            onChange: (id) => {
+                const s = this._state.settings;
+                this._setSettings({
+                    frame: {
+                        ...s.frame,
+                        doorCenterFrame: { ...(s.frame.doorCenterFrame ?? {}), leftMode: String(id ?? 'match') }
+                    }
+                });
+            }
+        });
+        section.appendChild(doorCenterLeft.row);
+        this._controls.frameDoorCenterLeft = doorCenterLeft;
+
+        const doorCenterRight = makeChoiceRow({
+            label: 'Right Leaf Center Side',
+            value: String(s0.frame.doorCenterFrame?.rightMode ?? 'match'),
+            options: [
+                { id: 'match', label: 'Match' },
+                { id: 'none', label: 'None' }
+            ],
+            onChange: (id) => {
+                const s = this._state.settings;
+                this._setSettings({
+                    frame: {
+                        ...s.frame,
+                        doorCenterFrame: { ...(s.frame.doorCenterFrame ?? {}), rightMode: String(id ?? 'match') }
+                    }
+                });
+            }
+        });
+        section.appendChild(doorCenterRight.row);
+        this._controls.frameDoorCenterRight = doorCenterRight;
+
         const addHandles = makeToggleRow({
             label: 'Add handles',
             value: !!s0.frame.addHandles,
@@ -1777,6 +2043,47 @@ export class WindowMeshDebuggerUI {
         });
         section.appendChild(addHandles.row);
         this._controls.frameAddHandles = addHandles;
+
+        const handleMaterialMode = makeChoiceRow({
+            label: 'Handle Material',
+            value: String(s0.frame.handleMaterialMode ?? 'match'),
+            options: [
+                { id: 'match', label: 'Match' },
+                { id: 'metal', label: 'Metal' }
+            ],
+            onChange: (id) => {
+                const s = this._state.settings;
+                this._setSettings({ frame: { ...s.frame, handleMaterialMode: String(id ?? 'match') } });
+            }
+        });
+        section.appendChild(handleMaterialMode.row);
+        this._controls.frameHandleMaterialMode = handleMaterialMode;
+
+        const syncDoorStyleControls = () => {
+            const mode = normalizeWindowFabricationAssetType(this._state.assetType, WINDOW_FABRICATION_ASSET_TYPE.WINDOW);
+            const isDoorMode = mode === WINDOW_FABRICATION_ASSET_TYPE.DOOR;
+            const frame = this._state.settings?.frame ?? {};
+            const isDouble = String(frame?.doorStyle ?? 'single') === 'double';
+            const bottomEnabled = !!frame?.doorBottomFrame?.enabled;
+
+            if (styleTitle?.style) styleTitle.style.display = isDoorMode ? '' : 'none';
+            if (doorStyle?.row?.style) doorStyle.row.style.display = isDoorMode ? '' : 'none';
+            if (doorBottomEnabled?.row?.style) doorBottomEnabled.row.style.display = isDoorMode ? '' : 'none';
+            if (doorBottomMode?.row?.style) doorBottomMode.row.style.display = isDoorMode ? '' : 'none';
+            if (addHandles?.row?.style) addHandles.row.style.display = isDoorMode ? '' : 'none';
+            if (handleMaterialMode?.row?.style) handleMaterialMode.row.style.display = isDoorMode ? '' : 'none';
+            if (doorCenterLeft?.row?.style) doorCenterLeft.row.style.display = (isDoorMode && isDouble) ? '' : 'none';
+            if (doorCenterRight?.row?.style) doorCenterRight.row.style.display = (isDoorMode && isDouble) ? '' : 'none';
+
+            doorStyle.setDisabled(!isDoorMode);
+            doorBottomMode.setDisabled(!isDoorMode || !bottomEnabled);
+            doorCenterLeft.setDisabled(!isDoorMode || !isDouble);
+            doorCenterRight.setDisabled(!isDoorMode || !isDouble);
+            handleMaterialMode.setDisabled(!isDoorMode);
+            if (addHandles?.toggle) addHandles.toggle.disabled = !isDoorMode;
+        };
+        this._controls.syncFrameStyleRows = syncDoorStyleControls;
+        syncDoorStyleControls();
 
         section.appendChild(makeColorRow({
             label: 'Frame Color',
@@ -2398,7 +2705,7 @@ export class WindowMeshDebuggerUI {
             if (!glass || typeof glass !== 'object') return;
             syncSliderRow(opacityRow, glass.opacity, 2);
             syncColorControlRow(tintRow, glass.tintHex);
-            syncSliderRow(zOffsetRow, glass.zOffset, 3);
+            syncSliderRow(zOffsetRow, glass.zOffset, 2);
             syncSliderRow(metalnessRow, glass.reflection?.metalness, 2);
             syncSliderRow(roughnessRow, glass.reflection?.roughness, 2);
             syncSliderRow(transmissionRow, glass.reflection?.transmission, 2);
@@ -2465,8 +2772,8 @@ export class WindowMeshDebuggerUI {
             value: s0.glass.zOffset,
             min: -0.25,
             max: 0.25,
-            step: 0.001,
-            digits: 3,
+            step: 0.01,
+            digits: 2,
             onChange: (v) => {
                 const s = this._state.settings;
                 this._setSettings({ glass: { ...s.glass, zOffset: v } });
@@ -2721,19 +3028,39 @@ export class WindowMeshDebuggerUI {
 
             const typeOptions = getWindowDecorationTypeOptions(partId);
             const fallbackTypeId = String(typeOptions[0]?.id ?? WINDOW_DECORATION_STYLE.SIMPLE);
-            const typeRow = makeSelectRow({
-                label: `${title} Type`,
-                value: String(part.type ?? fallbackTypeId),
-                options: typeOptions,
-                onChange: (typeId) => {
-                    const nextPart = updatePart(partId, (next) => {
-                        const withType = { ...next, type: String(typeId ?? fallbackTypeId) };
-                        return applyTypeSuggestions(partId, typeId, withType);
-                    });
-                    syncPartControls(nextPart);
-                }
-            });
-            section.appendChild(typeRow.row);
+            const onTypeChange = (typeId) => {
+                const nextPart = updatePart(partId, (next) => {
+                    const withType = { ...next, type: String(typeId ?? fallbackTypeId) };
+                    return applyTypeSuggestions(partId, typeId, withType);
+                });
+                syncPartControls(nextPart);
+            };
+            let typeControl = null;
+            if (partId === WINDOW_DECORATION_PART.SILL) {
+                const typeRow = makeChoiceRow({
+                    label: 'Set Type',
+                    value: String(part.type ?? fallbackTypeId),
+                    options: typeOptions,
+                    onChange: onTypeChange
+                });
+                section.appendChild(typeRow.row);
+                typeControl = {
+                    setValue: (id) => typeRow.setValue(String(id ?? fallbackTypeId)),
+                    hasValue: (id) => typeOptions.some((opt) => String(opt?.id ?? '') === String(id ?? ''))
+                };
+            } else {
+                const typeRow = makeSelectRow({
+                    label: `${title} Type`,
+                    value: String(part.type ?? fallbackTypeId),
+                    options: typeOptions,
+                    onChange: onTypeChange
+                });
+                section.appendChild(typeRow.row);
+                typeControl = {
+                    setValue: (id) => { typeRow.select.value = String(id ?? fallbackTypeId); },
+                    hasValue: (id) => Array.from(typeRow.select.options).some((opt) => opt.value === String(id ?? ''))
+                };
+            }
 
             const widthRow = makeChoiceRow({
                 label: `${title} Width`,
@@ -2784,8 +3111,8 @@ export class WindowMeshDebuggerUI {
             const syncPartControls = (partState) => {
                 const next = partState && typeof partState === 'object' ? partState : {};
                 const typeValue = String(next.type ?? fallbackTypeId);
-                const hasTypeValue = Array.from(typeRow.select.options).some((opt) => opt.value === typeValue);
-                typeRow.select.value = hasTypeValue ? typeValue : fallbackTypeId;
+                const hasTypeValue = typeControl?.hasValue?.(typeValue) === true;
+                typeControl?.setValue?.(hasTypeValue ? typeValue : fallbackTypeId);
                 widthRow.setValue(String(next.widthMode ?? WINDOW_DECORATION_WIDTH_MODE.MATCH_WINDOW));
 
                 const nextDepth = Number(next.depthMeters);

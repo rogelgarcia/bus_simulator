@@ -60,6 +60,21 @@ export const WINDOW_SHADE_DIRECTION = Object.freeze({
     RANDOM_LR: 'random_lr'
 });
 
+export const WINDOW_FRAME_DOOR_STYLE = Object.freeze({
+    SINGLE: 'single',
+    DOUBLE: 'double'
+});
+
+export const WINDOW_FRAME_MATCH_MODE = Object.freeze({
+    MATCH: 'match',
+    NONE: 'none'
+});
+
+export const WINDOW_HANDLE_MATERIAL_MODE = Object.freeze({
+    MATCH: 'match',
+    METAL: 'metal'
+});
+
 const COVERAGE_VALUES = Object.freeze([
     WINDOW_SHADE_COVERAGE.NONE,
     WINDOW_SHADE_COVERAGE.PCT_20,
@@ -110,6 +125,27 @@ function normalizeShadeDirection(value, fallback) {
     if (raw === 'random' || raw === 'random-lr' || raw === 'random_lr') {
         return WINDOW_SHADE_DIRECTION.RANDOM_LR;
     }
+    return fallback;
+}
+
+function normalizeFrameDoorStyle(value, fallback) {
+    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (raw === WINDOW_FRAME_DOOR_STYLE.DOUBLE) return WINDOW_FRAME_DOOR_STYLE.DOUBLE;
+    if (raw === WINDOW_FRAME_DOOR_STYLE.SINGLE) return WINDOW_FRAME_DOOR_STYLE.SINGLE;
+    return fallback;
+}
+
+function normalizeFrameMatchMode(value, fallback) {
+    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (raw === WINDOW_FRAME_MATCH_MODE.NONE) return WINDOW_FRAME_MATCH_MODE.NONE;
+    if (raw === WINDOW_FRAME_MATCH_MODE.MATCH) return WINDOW_FRAME_MATCH_MODE.MATCH;
+    return fallback;
+}
+
+function normalizeHandleMaterialMode(value, fallback) {
+    const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (raw === WINDOW_HANDLE_MATERIAL_MODE.METAL) return WINDOW_HANDLE_MATERIAL_MODE.METAL;
+    if (raw === WINDOW_HANDLE_MATERIAL_MODE.MATCH) return WINDOW_HANDLE_MATERIAL_MODE.MATCH;
     return fallback;
 }
 
@@ -288,12 +324,30 @@ export function detectWindowGlassPresetId(glass, { epsilon = 1e-6 } = {}) {
  */
 
 /**
+ * @typedef {Object} WindowMeshDoorBottomFrameSettings
+ * @property {boolean} enabled
+ * @property {'match'|'none'} mode
+ */
+
+/**
+ * @typedef {Object} WindowMeshDoorCenterFrameSettings
+ * @property {'match'|'none'} leftMode
+ * @property {'match'|'none'} rightMode
+ */
+
+/**
  * @typedef {Object} WindowMeshFrameSettings
  * @property {number} width
+ * @property {number} verticalWidth
+ * @property {number} horizontalWidth
  * @property {number} depth
  * @property {number} inset
  * @property {boolean} openBottom
  * @property {boolean} addHandles
+ * @property {'match'|'metal'} handleMaterialMode
+ * @property {'single'|'double'} doorStyle
+ * @property {WindowMeshDoorBottomFrameSettings} doorBottomFrame
+ * @property {WindowMeshDoorCenterFrameSettings} doorCenterFrame
  * @property {number} colorHex
  * @property {WindowMeshBevelSettings} bevel
  * @property {WindowMeshPbrSettings} material
@@ -406,10 +460,22 @@ export const WINDOW_MESH_DEFAULTS = Object.freeze({
     }),
     frame: Object.freeze({
         width: 0.085,
+        verticalWidth: 0.085,
+        horizontalWidth: 0.085,
         depth: 0.12,
         inset: 0.0,
         openBottom: false,
         addHandles: false,
+        handleMaterialMode: WINDOW_HANDLE_MATERIAL_MODE.MATCH,
+        doorStyle: WINDOW_FRAME_DOOR_STYLE.SINGLE,
+        doorBottomFrame: Object.freeze({
+            enabled: false,
+            mode: WINDOW_FRAME_MATCH_MODE.MATCH
+        }),
+        doorCenterFrame: Object.freeze({
+            leftMode: WINDOW_FRAME_MATCH_MODE.MATCH,
+            rightMode: WINDOW_FRAME_MATCH_MODE.MATCH
+        }),
         colorHex: 0xe9eef7,
         bevel: Object.freeze({
             size: 0.3,
@@ -440,7 +506,7 @@ export const WINDOW_MESH_DEFAULTS = Object.freeze({
             })
         }),
         material: Object.freeze({
-            inheritFromFrame: false,
+            inheritFromFrame: true,
             pbr: Object.freeze({
                 roughness: 0.72,
                 metalness: 0.0,
@@ -459,7 +525,7 @@ export const WINDOW_MESH_DEFAULTS = Object.freeze({
             ior: 1.5,
             envMapIntensity: 2.5
         }),
-        zOffset: 0.0
+        zOffset: -0.04
     }),
     shade: Object.freeze({
         enabled: true,
@@ -517,7 +583,21 @@ export function sanitizeWindowMeshSettings(input) {
         : WINDOW_MESH_DEFAULTS.arch.clipVerticalMuntinsToRectWhenNoTopPiece;
 
     const frameSrc = src.frame && typeof src.frame === 'object' ? src.frame : {};
-    const frameWidth = clamp(frameSrc.width, 0.005, Math.min(0.5, width * 0.45), WINDOW_MESH_DEFAULTS.frame.width);
+    const maxFrameVerticalWidth = Math.min(0.5, width * 0.45);
+    const maxFrameHorizontalWidth = Math.min(0.5, height * 0.45);
+    const frameLegacyWidth = clamp(frameSrc.width, 0.005, maxFrameVerticalWidth, WINDOW_MESH_DEFAULTS.frame.width);
+    const frameVerticalWidth = clamp(
+        frameSrc.verticalWidth ?? frameSrc.widthX ?? frameSrc.sideWidth,
+        0.005,
+        maxFrameVerticalWidth,
+        frameLegacyWidth
+    );
+    const frameHorizontalWidth = clamp(
+        frameSrc.horizontalWidth ?? frameSrc.widthY ?? frameSrc.topWidth ?? frameSrc.bottomWidth,
+        0.005,
+        maxFrameHorizontalWidth,
+        frameLegacyWidth
+    );
     const frameDepth = clamp(frameSrc.depth, 0.001, 1.0, WINDOW_MESH_DEFAULTS.frame.depth);
     const frameInset = clamp(frameSrc.inset, -1.0, 1.0, WINDOW_MESH_DEFAULTS.frame.inset);
     const frameOpenBottom = frameSrc.openBottom !== undefined
@@ -535,6 +615,35 @@ export function sanitizeWindowMeshSettings(input) {
     const frameMetalness = clamp(frameMatSrc.metalness, 0.0, 1.0, WINDOW_MESH_DEFAULTS.frame.material.metalness);
     const frameEnvMapIntensity = clamp(frameMatSrc.envMapIntensity, 0.0, 8.0, WINDOW_MESH_DEFAULTS.frame.material.envMapIntensity);
     const frameNormalStrength = clamp(frameMatSrc.normalStrength, 0.0, 5.0, WINDOW_MESH_DEFAULTS.frame.material.normalStrength);
+    const frameHandleMaterialMode = normalizeHandleMaterialMode(
+        frameSrc.handleMaterialMode,
+        WINDOW_MESH_DEFAULTS.frame.handleMaterialMode
+    );
+    const frameDoorStyle = normalizeFrameDoorStyle(
+        frameSrc.doorStyle ?? frameSrc.style,
+        WINDOW_MESH_DEFAULTS.frame.doorStyle
+    );
+    const frameDoorBottomSrc = frameSrc.doorBottomFrame && typeof frameSrc.doorBottomFrame === 'object'
+        ? frameSrc.doorBottomFrame
+        : {};
+    const frameDoorBottomEnabled = frameDoorBottomSrc.enabled !== undefined
+        ? !!frameDoorBottomSrc.enabled
+        : WINDOW_MESH_DEFAULTS.frame.doorBottomFrame.enabled;
+    const frameDoorBottomMode = normalizeFrameMatchMode(
+        frameDoorBottomSrc.mode ?? frameSrc.doorBottomFrameMode,
+        WINDOW_MESH_DEFAULTS.frame.doorBottomFrame.mode
+    );
+    const frameDoorCenterSrc = frameSrc.doorCenterFrame && typeof frameSrc.doorCenterFrame === 'object'
+        ? frameSrc.doorCenterFrame
+        : {};
+    const frameDoorCenterLeftMode = normalizeFrameMatchMode(
+        frameDoorCenterSrc.leftMode ?? frameSrc.doorCenterFrameLeftMode,
+        WINDOW_MESH_DEFAULTS.frame.doorCenterFrame.leftMode
+    );
+    const frameDoorCenterRightMode = normalizeFrameMatchMode(
+        frameDoorCenterSrc.rightMode ?? frameSrc.doorCenterFrameRightMode,
+        WINDOW_MESH_DEFAULTS.frame.doorCenterFrame.rightMode
+    );
 
     const muntinSrc = src.muntins && typeof src.muntins === 'object' ? src.muntins : {};
     const muntinsEnabled = muntinSrc.enabled !== undefined ? !!muntinSrc.enabled : WINDOW_MESH_DEFAULTS.muntins.enabled;
@@ -558,7 +667,7 @@ export function sanitizeWindowMeshSettings(input) {
     const uvOffSrc = muntinSrc.uvOffset && typeof muntinSrc.uvOffset === 'object' ? muntinSrc.uvOffset : muntinSrc;
     const uvOffsetX = clamp(uvOffSrc.x ?? uvOffSrc.uvOffsetX, -25.0, 25.0, WINDOW_MESH_DEFAULTS.muntins.uvOffset.x);
     const uvOffsetY = clamp(uvOffSrc.y ?? uvOffSrc.uvOffsetY, -25.0, 25.0, WINDOW_MESH_DEFAULTS.muntins.uvOffset.y);
-    const muntinColorHexRaw = muntinSrc.colorHex ?? muntinSrc.color;
+    const muntinColorHexRaw = muntinSrc.colorHex ?? muntinSrc.color ?? WINDOW_MESH_DEFAULTS.muntins.colorHex;
     const muntinColorHex = muntinColorHexRaw === null
         ? null
         : normalizeHexColor(muntinColorHexRaw, WINDOW_MESH_DEFAULTS.muntins.colorHex ?? frameColorHex);
@@ -587,7 +696,7 @@ export function sanitizeWindowMeshSettings(input) {
     const transmission = clamp(reflSrc.transmission, 0.0, 1.0, WINDOW_MESH_DEFAULTS.glass.reflection.transmission);
     const ior = clamp(reflSrc.ior ?? reflSrc.indexOfRefraction, 1.0, 2.5, WINDOW_MESH_DEFAULTS.glass.reflection.ior);
     const envMapIntensity = clamp(reflSrc.envMapIntensity, 0.0, 8.0, WINDOW_MESH_DEFAULTS.glass.reflection.envMapIntensity);
-    const zOffset = clamp(glassSrc.zOffset, -0.25, 0.25, WINDOW_MESH_DEFAULTS.glass.zOffset);
+    const zOffset = Math.round(clamp(glassSrc.zOffset, -0.25, 0.25, WINDOW_MESH_DEFAULTS.glass.zOffset) * 100) / 100;
 
     const shadeSrc = src.shade && typeof src.shade === 'object' ? src.shade : {};
     const shadeEnabled = shadeSrc.enabled !== undefined ? !!shadeSrc.enabled : WINDOW_MESH_DEFAULTS.shade.enabled;
@@ -661,8 +770,9 @@ export function sanitizeWindowMeshSettings(input) {
 
     const wantsArch = archEnabled && archHeightRatio > 0.001;
     const archRise = wantsArch ? archHeightRatio * width : 0.0;
-    const minRectHeight = Math.max(frameWidth * 2.0, 0.05);
-    const archOk = !frameOpenBottom && wantsArch && height - archRise >= minRectHeight;
+    const frameHasBottomPiece = !frameOpenBottom || (frameDoorBottomEnabled && frameDoorBottomMode === WINDOW_FRAME_MATCH_MODE.MATCH);
+    const minRectHeight = Math.max(frameHorizontalWidth * 2.0, 0.05);
+    const archOk = frameHasBottomPiece && wantsArch && height - archRise >= minRectHeight;
 
     return {
         version: VERSION,
@@ -676,11 +786,23 @@ export function sanitizeWindowMeshSettings(input) {
             clipVerticalMuntinsToRectWhenNoTopPiece
         },
         frame: {
-            width: frameWidth,
+            width: frameVerticalWidth,
+            verticalWidth: frameVerticalWidth,
+            horizontalWidth: frameHorizontalWidth,
             depth: frameDepth,
             inset: frameInset,
             openBottom: frameOpenBottom,
             addHandles: frameAddHandles,
+            handleMaterialMode: frameHandleMaterialMode,
+            doorStyle: frameDoorStyle,
+            doorBottomFrame: {
+                enabled: frameDoorBottomEnabled,
+                mode: frameDoorBottomMode
+            },
+            doorCenterFrame: {
+                leftMode: frameDoorCenterLeftMode,
+                rightMode: frameDoorCenterRightMode
+            },
             colorHex: frameColorHex,
             bevel: { size: frameBevelSize, roundness: frameRoundness },
             material: {

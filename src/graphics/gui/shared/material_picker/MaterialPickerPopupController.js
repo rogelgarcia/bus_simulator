@@ -39,12 +39,27 @@ export class MaterialPickerPopupController {
         return this._popup.isOpen();
     }
 
-    open({ title = 'Select', sections = [], selectedId = null, onSelect = null } = {}) {
+    open({
+        title = 'Select',
+        sections = [],
+        selectedId = null,
+        onSelect = null,
+        panelClassName = '',
+        thumbHeightPx = null,
+        optionMinWidthPx = null,
+        thumbImageScale = null,
+        thumbImageFit = null
+    } = {}) {
         this._popup.open({
             title,
             sections: normalizeSections(sections),
             selectedId,
-            onSelect
+            onSelect,
+            panelClassName,
+            thumbHeightPx,
+            optionMinWidthPx,
+            thumbImageScale,
+            thumbImageFit
         });
     }
 
@@ -56,4 +71,3 @@ export class MaterialPickerPopupController {
         this._popup.dispose();
     }
 }
-

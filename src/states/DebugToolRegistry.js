@@ -38,6 +38,13 @@ export const DEBUG_TOOL_REGISTRY = Object.freeze([
         href: 'debug_tools/window_mesh_debug.html'
     }),
     Object.freeze({
+        id: 'wall_decoration_mesh_debug',
+        key: 'Y',
+        label: 'Wall Decoration',
+        description: 'Procedural wall decorator catalog + placement/material debugger',
+        href: 'debug_tools/wall_decoration_mesh_debug.html'
+    }),
+    Object.freeze({
         id: 'terrain_debug',
         key: 'E',
         label: 'Terrain',

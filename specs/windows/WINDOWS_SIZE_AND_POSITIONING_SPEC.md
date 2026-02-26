@@ -57,7 +57,7 @@ These define the overall window footprint size used for:
 ### 2.2 Door note (opening kind)
 
 When `openingKind = door`, sizing remains compatible with the same controls; however:
-- Door presets typically set `frameBottomWidth = 0` (no bottom frame piece).
+- Door style controls may disable bottom frame rendering (`doorBottomFrameEnabled = false` or `doorBottomFrameMode = none`).
 - Any future “snap to floor” behavior is out of scope for this spec and can be introduced later as a separate positioning rule.
 
 ---
@@ -66,23 +66,15 @@ When `openingKind = door`, sizing remains compatible with the same controls; how
 
 ### 3.1 Frame edge widths
 
-Frame edge widths are specified per side:
-- `frameLeftWidth`
-- `frameRightWidth`
-- `frameTopWidth`
-- `frameBottomWidth`
+Frame widths are specified by axis:
+- `frameVerticalWidth` (left/right side frame thickness)
+- `frameHorizontalWidth` (top/bottom frame thickness)
 
-#### Link behavior (two-level)
-
-Frame widths MUST support a two-level link system:
-- **Link Level 1 (axis link)**:
-  - Horizontal link: left == right
-  - Vertical link: top == bottom
-- **Link Level 2 (all link)**:
-  - left == right == top == bottom
+Link behavior:
+- `frameWidthLink` (bool) links `frameVerticalWidth == frameHorizontalWidth`.
 
 Defaults:
-- All link enabled by default.
+- `frameWidthLink = true` in first-pass UI behavior.
 
 ### 3.2 Frame arch
 

@@ -2209,6 +2209,993 @@ async function runTests() {
         }
     });
 
+    test('BuildingFabrication2UI: material panel uses flat base/tiling sections with tint sliders', () => {
+        const ui = new BuildingFabrication2UI();
+        ui.mount(document.body);
+        try {
+            ui.setBuildingState({ hasBuilding: true, buildingName: 'Test', buildingType: 'business' });
+            const layer = {
+                id: 'floor_1',
+                type: 'floor',
+                style: 'pbr.brick_wall_11',
+                material: { kind: 'texture', id: 'pbr.brick_wall_11' },
+                tiling: {
+                    enabled: true,
+                    tileMeters: 4,
+                    tileMetersU: 4,
+                    tileMetersV: 4,
+                    uvEnabled: false,
+                    offsetU: 0,
+                    offsetV: 0,
+                    rotationDegrees: 0
+                }
+            };
+            const faceConfig = {
+                material: { kind: 'texture', id: 'pbr.brick_wall_11' },
+                wallBase: { tintHex: 0xffffff, roughness: 0.85, normalStrength: 0.9 },
+                tiling: {
+                    enabled: true,
+                    tileMeters: 4,
+                    tileMetersU: 4,
+                    tileMetersV: 4,
+                    uvEnabled: false,
+                    offsetU: 0,
+                    offsetV: 0,
+                    rotationDegrees: 0
+                }
+            };
+
+            ui.setMaterialConfigContext({
+                target: 'face',
+                layerId: 'floor_1',
+                faceId: 'A',
+                masterFaceId: 'A',
+                layer,
+                config: faceConfig
+            });
+            ui.openMaterialConfigPanel();
+
+            const sectionTitles = Array.from(ui.materialBody.querySelectorAll('.building-fab2-material-flat-title'))
+                .map((el) => String(el.textContent || '').trim())
+                .filter(Boolean);
+            assertTrue(sectionTitles.includes('Base material'), 'Expected Base material flat section.');
+            assertTrue(sectionTitles.includes('Texture tiling'), 'Expected Texture tiling flat section.');
+            assertEqual(ui.materialBody.querySelectorAll('details.building-fab-details').length, 0, 'Expected no collapsible boxed details in BF2 material panel.');
+            assertFalse((ui.materialBody.textContent || '').toLowerCase().includes('material variation'), 'Expected Material variation section removed from BF2 material panel.');
+
+            const labels = Array.from(ui.materialBody.querySelectorAll('.building-fab-row-label'))
+                .map((el) => String(el.textContent || '').trim());
+            assertTrue(labels.includes('Tint hue'), 'Expected Tint hue slider row.');
+            assertTrue(labels.includes('Tint saturation'), 'Expected Tint saturation slider row.');
+            assertTrue(labels.includes('Tint value'), 'Expected Tint value slider row.');
+            assertTrue(labels.includes('Tint intensity'), 'Expected Tint intensity slider row.');
+        } finally {
+            ui.unmount();
+        }
+    });
+
+    test('BuildingFabrication2UI: material picker keeps main options panel open across apply', () => {
+        const ui = new BuildingFabrication2UI();
+        ui.mount(document.body);
+        const originalOpen = ui._materialPickerPopup?.open?.bind?.(ui._materialPickerPopup) ?? null;
+        try {
+            ui.setBuildingState({ hasBuilding: true, buildingName: 'Test', buildingType: 'business' });
+            const layer = {
+                id: 'floor_1',
+                type: 'floor',
+                style: 'pbr.brick_wall_11',
+                material: { kind: 'texture', id: 'pbr.brick_wall_11' },
+                tiling: {
+                    enabled: true,
+                    tileMeters: 4,
+                    tileMetersU: 4,
+                    tileMetersV: 4,
+                    uvEnabled: false,
+                    offsetU: 0,
+                    offsetV: 0,
+                    rotationDegrees: 0
+                }
+            };
+            const faceConfig = {
+                material: { kind: 'texture', id: 'pbr.brick_wall_11' },
+                wallBase: { tintHex: 0xffffff, roughness: 0.85, normalStrength: 0.9 },
+                tiling: {
+                    enabled: true,
+                    tileMeters: 4,
+                    tileMetersU: 4,
+                    tileMetersV: 4,
+                    uvEnabled: false,
+                    offsetU: 0,
+                    offsetV: 0,
+                    rotationDegrees: 0
+                }
+            };
+
+            ui.setMaterialConfigContext({
+                target: 'face',
+                layerId: 'floor_1',
+                faceId: 'A',
+                masterFaceId: 'A',
+                layer,
+                config: faceConfig
+            });
+            ui.openMaterialConfigPanel();
+
+            assertTrue(ui.isSidePanelOpen(), 'Expected material side panel to open.');
+            assertFalse(ui.rightPanel.classList.contains('hidden'), 'Expected main options panel to stay visible when opening material panel.');
+            assertTrue(ui._buildingPanelExpanded, 'Expected building panel expansion state to stay expanded on material panel open.');
+
+            let selectedId = null;
+            let didSelect = false;
+            ui._materialPickerPopup.open = (payload = {}) => {
+                selectedId = payload?.selectedId ?? null;
+                payload?.onSelect?.({
+                    id: 'texture:pbr.plastered_wall_02',
+                    kind: 'texture',
+                    label: 'Plastered wall 02'
+                });
+                didSelect = true;
+            };
+
+            const pickerBtn = ui.materialBody.querySelector('.building-fab-material-button');
+            assertTrue(!!pickerBtn, 'Expected face wall material picker button in material panel.');
+            pickerBtn.click();
+
+            assertTrue(didSelect, 'Expected material picker select flow to run.');
+            assertEqual(selectedId, 'texture:pbr.brick_wall_11', 'Expected picker selected id to start from active wall material.');
+            assertEqual(faceConfig?.material?.kind, 'texture', 'Expected selected wall material kind to persist as texture.');
+            assertEqual(faceConfig?.material?.id, 'pbr.plastered_wall_02', 'Expected selected wall material id to apply.');
+            assertTrue(ui.isSidePanelOpen(), 'Expected material side panel to remain open after material apply.');
+            assertFalse(ui.rightPanel.classList.contains('hidden'), 'Expected main options panel to remain visible after material apply.');
+            assertTrue(ui._buildingPanelExpanded, 'Expected main options panel expansion state to persist after material apply.');
+        } finally {
+            if (originalOpen) ui._materialPickerPopup.open = originalOpen;
+            ui.unmount();
+        }
+    });
+
+    test('BuildingFabrication2UI: texture tiling is tracked per selected wall material', () => {
+        const ui = new BuildingFabrication2UI();
+        ui.mount(document.body);
+        try {
+            ui.setBuildingState({ hasBuilding: true, buildingName: 'Test', buildingType: 'business' });
+            const layer = {
+                id: 'floor_1',
+                type: 'floor',
+                style: 'pbr.brick_wall_11',
+                material: { kind: 'texture', id: 'pbr.brick_wall_11' },
+                tiling: {
+                    enabled: true,
+                    tileMeters: 4,
+                    tileMetersU: 4,
+                    tileMetersV: 4,
+                    uvEnabled: false,
+                    offsetU: 0,
+                    offsetV: 0,
+                    rotationDegrees: 0
+                }
+            };
+            const faceConfig = {
+                material: { kind: 'texture', id: 'pbr.brick_wall_11' },
+                wallBase: { tintHex: 0xffffff, roughness: 0.85, normalStrength: 0.9 },
+                tiling: {
+                    enabled: true,
+                    tileMeters: 4,
+                    tileMetersU: 4,
+                    tileMetersV: 4,
+                    uvEnabled: false,
+                    offsetU: 0,
+                    offsetV: 0,
+                    rotationDegrees: 0
+                }
+            };
+            const context = {
+                target: 'face',
+                layerId: 'floor_1',
+                faceId: 'A',
+                masterFaceId: 'A',
+                layer,
+                config: faceConfig
+            };
+
+            ui.setMaterialConfigContext(context);
+            ui.openMaterialConfigPanel();
+
+            const getTileMetersUInput = () => {
+                const label = Array.from(ui.materialBody.querySelectorAll('.building-fab-row-label'))
+                    .find((el) => String(el.textContent || '').trim() === 'Tile meters U');
+                const row = label?.closest('.building-fab-row') ?? null;
+                return row?.querySelector('input[type="number"]') ?? null;
+            };
+
+            const tileUInputA = getTileMetersUInput();
+            assertTrue(!!tileUInputA, 'Expected Tile meters U number input.');
+            tileUInputA.value = '2.5';
+            tileUInputA.dispatchEvent(new Event('change'));
+            assertNear(faceConfig?.tilingByMaterial?.['texture:pbr.brick_wall_11']?.tileMetersU, 2.5, 1e-6, 'Expected material A tiling override.');
+
+            faceConfig.material = { kind: 'texture', id: 'pbr.plastered_wall_02' };
+            ui.setMaterialConfigContext(context);
+
+            const tileUInputB = getTileMetersUInput();
+            assertTrue(!!tileUInputB, 'Expected Tile meters U number input after material switch.');
+            assertNear(Number(tileUInputB.value), 4, 1e-6, 'Expected material B to start from default tiling (not material A override).');
+            tileUInputB.value = '6.5';
+            tileUInputB.dispatchEvent(new Event('change'));
+            assertNear(faceConfig?.tilingByMaterial?.['texture:pbr.plastered_wall_02']?.tileMetersU, 6.5, 1e-6, 'Expected material B tiling override.');
+            assertNear(faceConfig?.tilingByMaterial?.['texture:pbr.brick_wall_11']?.tileMetersU, 2.5, 1e-6, 'Expected material A tiling override preserved.');
+
+            faceConfig.material = { kind: 'texture', id: 'pbr.brick_wall_11' };
+            ui.setMaterialConfigContext(context);
+            const tileUInputA2 = getTileMetersUInput();
+            assertTrue(!!tileUInputA2, 'Expected Tile meters U input when switching back to material A.');
+            assertNear(Number(tileUInputA2.value), 2.5, 1e-6, 'Expected material A tiling override restored.');
+        } finally {
+            ui.unmount();
+        }
+    });
+
+    test('BuildingFabrication2UI: opening editor separates main and top window controls', () => {
+        const ui = new BuildingFabrication2UI();
+        ui.mount(document.body);
+        try {
+            ui.setBuildingState({ hasBuilding: true, buildingName: 'BF2', buildingType: 'business' });
+            ui.setLayers([{
+                id: 'floor_1',
+                type: 'floor',
+                floors: 1,
+                floorHeight: 3.2,
+                style: 'default',
+                material: { kind: 'texture', id: 'default' },
+                belt: { enabled: false },
+                windows: { enabled: false }
+            }]);
+            ui.setFloorLayerFaceStates(new Map([[
+                'floor_1',
+                {
+                    selectedFaceId: 'A',
+                    lockedToByFace: new Map([
+                        ['A', null],
+                        ['B', null],
+                        ['C', null],
+                        ['D', null]
+                    ])
+                }
+            ]]));
+            ui.setWindowDefinitions({
+                nextWindowIndex: 2,
+                items: [{
+                    id: 'win_1',
+                    label: 'Window 1',
+                    assetType: 'window',
+                    settings: {
+                        width: 1.2,
+                        height: 1.8,
+                        frame: { width: 0.08 }
+                    }
+                }]
+            });
+            ui.setFacadesByLayerId({
+                floor_1: {
+                    A: {
+                        layout: {
+                            bays: {
+                                nextBayIndex: 2,
+                                items: [{
+                                    id: 'bay_1',
+                                    size: { mode: 'range', minMeters: 4, maxMeters: null },
+                                    expandPreference: 'prefer_expand',
+                                    window: {
+                                        enabled: true,
+                                        defId: 'win_1',
+                                        assetType: 'window',
+                                        size: { widthMeters: 1.2, heightMeters: 1.8 },
+                                        heightMode: 'fixed',
+                                        verticalOffsetMeters: 0.3,
+                                        repeat: { count: 4 },
+                                        padding: { leftMeters: 0.2, rightMeters: 0.2 },
+                                        muntins: { bottomEnabled: true, topEnabled: true },
+                                        top: {
+                                            enabled: true,
+                                            heightMode: 'fixed',
+                                            heightMeters: 0.7,
+                                            verticalGapMeters: 0.2,
+                                            frameWidthMeters: 0.07
+                                        }
+                                    }
+                                }]
+                            }
+                        }
+                    }
+                }
+            });
+
+            const subtitles = Array.from(ui.root.querySelectorAll('.building-fab2-subtitle'))
+                .map((el) => String(el.textContent || '').trim());
+            assertTrue(subtitles.includes('Windows/Doors'), 'Expected opening section title renamed to Windows/Doors.');
+
+            const getSubsection = (title) => (
+                Array.from(ui.root.querySelectorAll('.building-fab2-bay-opening-subsection'))
+                    .find((section) => (
+                        String(section?.querySelector?.('.building-fab2-bay-opening-subtitle')?.textContent || '').trim() === title
+                    )) ?? null
+            );
+
+            const mainSection = getSubsection('Main window');
+            const topSection = getSubsection('Top window');
+            assertTrue(!!mainSection, 'Expected Main window subsection.');
+            assertTrue(!!topSection, 'Expected Top window subsection.');
+
+            const mainRowLabels = Array.from(mainSection?.querySelectorAll('.building-fab-row-label') ?? [])
+                .map((el) => String(el.textContent || '').trim());
+            const topRowLabels = Array.from(topSection?.querySelectorAll('.building-fab-row-label') ?? [])
+                .map((el) => String(el.textContent || '').trim());
+            assertTrue(mainRowLabels.includes('Bottom muntins'), 'Expected bottom muntins control in Main window section.');
+            assertTrue(mainRowLabels.includes('Shades'), 'Expected shades control in Main window section.');
+            assertFalse(mainRowLabels.includes('Top muntins'), 'Top muntins should not be in Main window section.');
+            assertTrue(topRowLabels.includes('Enable'), 'Expected top-window Enable control in Top window section.');
+            assertTrue(topRowLabels.includes('Top muntins'), 'Expected top muntins control in Top window section.');
+            assertFalse(topRowLabels.includes('Bottom muntins'), 'Bottom muntins should not be in Top window section.');
+            assertFalse(topRowLabels.includes('Shades'), 'Shades should not be in Top window section.');
+            assertFalse(topRowLabels.includes('Enable top window'), 'Legacy top-window enable label should be removed.');
+
+            const openingPickerButton = mainSection?.querySelector('.building-fab2-bay-window-picker .building-fab-material-button') ?? null;
+            const openingPickerRow = openingPickerButton?.closest('.building-fab-row') ?? null;
+            const openingPickerLabel = String(openingPickerRow?.querySelector('.building-fab-row-label')?.textContent || '').trim();
+            assertEqual(openingPickerLabel, 'Window', 'Expected picker row label to be contextual Window label.');
+            const selectedOpeningValue = mainSection?.querySelector('.building-fab-row.building-fab2-no-label .building-fab2-bay-readonly-value') ?? null;
+            assertTrue(!!selectedOpeningValue, 'Expected selected opening value row below picker.');
+            assertEqual(String(selectedOpeningValue.textContent || '').trim(), 'Window 1', 'Expected selected opening row to show selected item name.');
+            const clearOpeningBtn = mainSection?.querySelector('.building-fab2-bay-window-clear-btn') ?? null;
+            assertTrue(!!clearOpeningBtn, 'Expected clear opening action next to selected opening name.');
+
+            const interiorLabel = Array.from(mainSection?.querySelectorAll('.building-fab-row-label') ?? [])
+                .find((el) => String(el.textContent || '').trim() === 'Interior');
+            assertTrue(!!interiorLabel, 'Expected Interior grouped buttons in Main window section.');
+            const interiorRow = interiorLabel?.closest('.building-fab-row') ?? null;
+            const interiorButtons = Array.from(interiorRow?.querySelectorAll('button') ?? [])
+                .map((btn) => String(btn.textContent || '').trim().toLowerCase());
+            assertTrue(interiorButtons.includes('none'), 'Expected None interior option.');
+            assertTrue(interiorButtons.includes('res'), 'Expected Res interior option.');
+            assertTrue(interiorButtons.includes('office'), 'Expected Office interior option.');
+
+            const labels = Array.from(ui.root.querySelectorAll('.building-fab-row-label'))
+                .map((el) => String(el.textContent || '').trim());
+            assertFalse(labels.includes('Selected'), 'Expected legacy Selected row removed from opening editor.');
+            assertFalse(labels.includes('Type'), 'Expected opening type select row removed.');
+            assertFalse(labels.includes('Enable window'), 'Expected legacy Enable window row removed.');
+
+            const repeatLabel = Array.from(ui.root.querySelectorAll('.building-fab-row-label'))
+                .find((el) => String(el.textContent || '').trim() === 'Window repeat');
+            assertTrue(!!repeatLabel, 'Expected Window repeat slider row.');
+            const repeatRow = repeatLabel?.closest('.building-fab-row') ?? null;
+            const repeatRange = repeatRow?.querySelector('input[type=\"range\"]') ?? null;
+            assertTrue(!!repeatRange, 'Expected repeat control to use a range slider.');
+            assertEqual(repeatRange.max, '5', 'Expected repeat slider max to be 5.');
+
+            const heightModeLabel = Array.from(ui.root.querySelectorAll('.building-fab-row-label'))
+                .find((el) => String(el.textContent || '').trim() === 'Window height mode');
+            assertTrue(!!heightModeLabel, 'Expected grouped height-mode control row for the main window.');
+            const heightModeRow = heightModeLabel?.closest('.building-fab-row') ?? null;
+            const modeButtons = Array.from(heightModeRow?.querySelectorAll('button') ?? [])
+                .map((btn) => String(btn.textContent || '').trim());
+            assertTrue(modeButtons.includes('Fixed'), 'Expected Fixed height-mode button.');
+            assertTrue(modeButtons.includes('Full Height'), 'Expected Full Height mode button.');
+
+            const topFrameLabel = Array.from(ui.root.querySelectorAll('.building-fab-row-label'))
+                .find((el) => String(el.textContent || '').trim() === 'Top frame width');
+            assertTrue(!!topFrameLabel, 'Expected top frame width override row.');
+            const topFrameRow = topFrameLabel?.closest('.building-fab-row') ?? null;
+            const topFrameButtons = Array.from(topFrameRow?.querySelectorAll('button') ?? [])
+                .map((btn) => String(btn.textContent || '').trim());
+            assertTrue(topFrameButtons.includes('Inherit'), 'Expected top frame override Inherit button.');
+            assertTrue(topFrameButtons.includes('Override'), 'Expected top frame override Override button.');
+            const topFrameInput = topFrameRow?.querySelector('input[type=\"number\"]') ?? null;
+            assertTrue(!!topFrameInput, 'Expected top frame override numeric input.');
+            assertEqual(topFrameInput.value, '0.07', 'Expected top frame override value to keep two-decimal precision.');
+
+            ui.setFacadesByLayerId({
+                floor_1: {
+                    A: {
+                        layout: {
+                            bays: {
+                                nextBayIndex: 2,
+                                items: [{
+                                    id: 'bay_1',
+                                    size: { mode: 'range', minMeters: 4, maxMeters: null },
+                                    expandPreference: 'prefer_expand',
+                                    window: {
+                                        enabled: true,
+                                        defId: 'win_1',
+                                        assetType: 'window',
+                                        size: { widthMeters: 1.2, heightMeters: 1.8 },
+                                        heightMode: 'fixed',
+                                        verticalOffsetMeters: 0.3,
+                                        repeat: { count: 4 },
+                                        padding: { leftMeters: 0.2, rightMeters: 0.2 },
+                                        muntins: { bottomEnabled: true, topEnabled: true },
+                                        top: {
+                                            enabled: true,
+                                            heightMode: 'fixed',
+                                            heightMeters: 0.7,
+                                            verticalGapMeters: 0.2,
+                                            frameWidthMeters: null
+                                        }
+                                    }
+                                }]
+                            }
+                        }
+                    }
+                }
+            });
+
+            const topFrameLabelInherit = Array.from(ui.root.querySelectorAll('.building-fab-row-label'))
+                .find((el) => String(el.textContent || '').trim() === 'Top frame width');
+            const topFrameRowInherit = topFrameLabelInherit?.closest('.building-fab-row') ?? null;
+            const topFrameInputInherit = topFrameRowInherit?.querySelector('input[type=\"number\"]') ?? null;
+            assertTrue(!!topFrameInputInherit, 'Expected top frame numeric input in inherit mode.');
+            assertTrue(!!topFrameInputInherit.disabled, 'Expected top frame input to be disabled while inheriting.');
+            assertEqual(topFrameInputInherit.value, '0.08', 'Expected inherit mode to show bottom frame width.');
+            const topFrameButtonsInherit = Array.from(topFrameRowInherit?.querySelectorAll('button') ?? []);
+            const inheritBtn = topFrameButtonsInherit.find((btn) => String(btn.textContent || '').trim() === 'Inherit') ?? null;
+            const overrideBtn = topFrameButtonsInherit.find((btn) => String(btn.textContent || '').trim() === 'Override') ?? null;
+            assertTrue(!!inheritBtn?.classList?.contains('is-active'), 'Expected Inherit button active in inherit mode.');
+            assertFalse(!!overrideBtn?.classList?.contains('is-active'), 'Expected Override button inactive in inherit mode.');
+
+            ui.setWindowDefinitions({
+                nextWindowIndex: 3,
+                items: [
+                    {
+                        id: 'win_1',
+                        label: 'Window 1',
+                        assetType: 'window',
+                        settings: {
+                            width: 1.2,
+                            height: 1.8,
+                            frame: { width: 0.08 }
+                        }
+                    },
+                    {
+                        id: 'door_1',
+                        label: 'Door 1',
+                        assetType: 'door',
+                        settings: {
+                            width: 1.1,
+                            height: 2.2,
+                            frame: { width: 0.09, openBottom: true }
+                        }
+                    }
+                ]
+            });
+            ui.setFacadesByLayerId({
+                floor_1: {
+                    A: {
+                        layout: {
+                            bays: {
+                                nextBayIndex: 2,
+                                items: [{
+                                    id: 'bay_1',
+                                    size: { mode: 'range', minMeters: 4, maxMeters: null },
+                                    expandPreference: 'prefer_expand',
+                                    window: {
+                                        enabled: true,
+                                        defId: 'door_1',
+                                        assetType: 'door',
+                                        size: { widthMeters: 1.1, heightMeters: 2.2 },
+                                        heightMode: 'fixed',
+                                        verticalOffsetMeters: 0.3,
+                                        repeat: { count: 1 },
+                                        padding: { leftMeters: 0.2, rightMeters: 0.2 },
+                                        muntins: { bottomEnabled: false, topEnabled: false },
+                                        top: {
+                                            enabled: false,
+                                            heightMode: 'fixed',
+                                            heightMeters: 0.6,
+                                            verticalGapMeters: 0.2,
+                                            frameWidthMeters: null
+                                        }
+                                    }
+                                }]
+                            }
+                        }
+                    }
+                }
+            });
+            const openingPickerButtonDoor = ui.root.querySelector('.building-fab2-bay-window-picker .building-fab-material-button');
+            const openingPickerRowDoor = openingPickerButtonDoor?.closest('.building-fab-row') ?? null;
+            const openingPickerLabelDoor = String(openingPickerRowDoor?.querySelector('.building-fab-row-label')?.textContent || '').trim();
+            assertEqual(openingPickerLabelDoor, 'Door', 'Expected picker row label to update contextually for door selection.');
+            const topSectionDoor = getSubsection('Top window');
+            assertTrue(!!topSectionDoor, 'Expected Top window subsection for door selection.');
+            const topWindowDetailsDoor = topSectionDoor?.querySelector('.building-fab2-bay-window-details') ?? null;
+            assertTrue(!!topWindowDetailsDoor?.classList?.contains('is-hidden'), 'Expected top window details hidden while top window is Off.');
+            const topMuntinsLabelDoor = Array.from(topSectionDoor?.querySelectorAll('.building-fab-row-label') ?? [])
+                .find((el) => String(el.textContent || '').trim() === 'Top muntins');
+            const topMuntinsDetailsDoor = topMuntinsLabelDoor?.closest('.building-fab2-bay-window-details') ?? null;
+            assertTrue(!!topMuntinsDetailsDoor?.classList?.contains('is-hidden'), 'Expected top muntins controls hidden until top window is enabled.');
+
+            let hoverBayPayload = '__unset__';
+            ui.onHoverBay = (payload) => { hoverBayPayload = payload ?? null; };
+            const bayButtons = Array.from(ui.root.querySelectorAll('.building-fab2-bay-btn'));
+            const bay1Button = bayButtons.find((btn) => (
+                String(btn?.querySelector?.('.building-fab2-bay-btn-label')?.textContent || '').trim() === '1'
+            )) ?? null;
+            assertTrue(!!bay1Button, 'Expected bay selector button for Bay 1.');
+
+            bay1Button.dispatchEvent(new Event('pointerenter', { bubbles: true }));
+            assertEqual(hoverBayPayload?.layerId, 'floor_1', 'Expected bay hover payload to include layer id.');
+            assertEqual(hoverBayPayload?.faceId, 'A', 'Expected bay hover payload to include face id.');
+            assertEqual(hoverBayPayload?.bayId, 'bay_1', 'Expected bay hover payload to include bay id.');
+
+            bay1Button.dispatchEvent(new Event('pointerleave', { bubbles: true }));
+            assertEqual(hoverBayPayload, null, 'Expected bay hover payload to clear on leave.');
+        } finally {
+            ui.unmount();
+        }
+    });
+
+    test('BuildingFabrication2View: reducing opening padding can shrink auto-managed bay min width', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const view = new BuildingFabrication2View(engine);
+        view._syncUiState = () => {};
+        view._requestRebuild = () => {};
+
+        view._currentConfig = {
+            layers: [{
+                id: 'floor_1',
+                type: 'floor',
+                floors: 1,
+                floorHeight: 3.2
+            }],
+            facades: {
+                floor_1: {
+                    A: {
+                        layout: {
+                            bays: {
+                                nextBayIndex: 2,
+                                items: [{
+                                    id: 'bay_1',
+                                    size: { mode: 'range', minMeters: 1.4, maxMeters: null },
+                                    expandPreference: 'prefer_expand',
+                                    window: {
+                                        enabled: true,
+                                        defId: 'window_black_6_panels_tall',
+                                        assetType: 'window',
+                                        size: { widthMeters: 1.0, heightMeters: 1.8 },
+                                        width: { minMeters: 1.0, maxMeters: null },
+                                        padding: { leftMeters: 0.2, rightMeters: 0.2 },
+                                        repeat: { count: 1 }
+                                    }
+                                }]
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        const initialCtx = view._resolveBaySpec({ layerId: 'floor_1', faceId: 'A', bayId: 'bay_1' });
+        const bay = initialCtx?.bay ?? null;
+        assertTrue(!!bay, 'Expected bay for padding shrink test.');
+        view._enforceBaySizeAgainstWindow(bay);
+        assertNear(Number(bay?.size?.minMeters), 1.4, 1e-6, 'Expected initial bay minimum width to match opening+padding requirement.');
+
+        view._setBayWindowPadding('floor_1', 'A', 'bay_1', 'left', 0);
+        assertNear(Number(bay?.window?.padding?.leftMeters), 0, 1e-6, 'Expected left opening padding to be zero.');
+        assertNear(Number(bay?.window?.padding?.rightMeters), 0, 1e-6, 'Expected linked right opening padding to match zero.');
+        assertNear(Number(bay?.size?.minMeters), 1.0, 1e-6, 'Expected bay minimum width to shrink with reduced opening padding.');
+    });
+
+    test('BuildingFabrication2View: top frame width mode toggle syncs UI state and preserves override editing', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const view = new BuildingFabrication2View(engine);
+        let syncCalls = 0;
+        let rebuildCalls = 0;
+        view._syncUiState = () => { syncCalls += 1; };
+        view._requestRebuild = () => { rebuildCalls += 1; };
+
+        view._currentConfig = {
+            layers: [{
+                id: 'floor_1',
+                type: 'floor',
+                floors: 1,
+                floorHeight: 3.2
+            }],
+            facades: {
+                floor_1: {
+                    A: {
+                        layout: {
+                            bays: {
+                                nextBayIndex: 2,
+                                items: [{
+                                    id: 'bay_1',
+                                    size: { mode: 'range', minMeters: 1.4, maxMeters: null },
+                                    expandPreference: 'prefer_expand',
+                                    window: {
+                                        enabled: true,
+                                        defId: 'window_black_6_panels_tall',
+                                        assetType: 'window',
+                                        size: { widthMeters: 1.0, heightMeters: 1.8 },
+                                        width: { minMeters: 1.0, maxMeters: null },
+                                        padding: { leftMeters: 0.2, rightMeters: 0.2 },
+                                        repeat: { count: 1 },
+                                        top: {
+                                            enabled: true,
+                                            frameWidthMeters: 0.07
+                                        }
+                                    }
+                                }]
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        const initialCtx = view._resolveBaySpec({ layerId: 'floor_1', faceId: 'A', bayId: 'bay_1' });
+        const bay = initialCtx?.bay ?? null;
+        assertTrue(!!bay, 'Expected bay for top-frame mode toggle test.');
+
+        view._setBayTopWindowFrameWidth('floor_1', 'A', 'bay_1', Number.NaN);
+        assertEqual(bay?.window?.top?.frameWidthMeters ?? null, null, 'Expected inherit mode to clear top frame width override.');
+        assertEqual(syncCalls, 1, 'Expected UI sync when switching override to inherit mode.');
+        assertEqual(rebuildCalls, 1, 'Expected rebuild when switching to inherit mode.');
+
+        view._setBayTopWindowFrameWidth('floor_1', 'A', 'bay_1', 0.08);
+        assertNear(Number(bay?.window?.top?.frameWidthMeters) || 0, 0.08, 1e-6, 'Expected override mode to set explicit top frame width.');
+        assertEqual(syncCalls, 2, 'Expected UI sync when switching inherit to override mode.');
+        assertEqual(rebuildCalls, 2, 'Expected rebuild when switching to override mode.');
+
+        view._setBayTopWindowFrameWidth('floor_1', 'A', 'bay_1', 0.09);
+        assertNear(Number(bay?.window?.top?.frameWidthMeters) || 0, 0.09, 1e-6, 'Expected override mode edits to update top frame width.');
+        assertEqual(syncCalls, 2, 'Expected no extra UI sync while staying in override mode.');
+        assertEqual(rebuildCalls, 3, 'Expected rebuild for in-mode override width edits.');
+    });
+
+    test('BuildingFabrication2View: opening picker can be opened when bay has no selected opening', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const view = new BuildingFabrication2View(engine);
+        try {
+            let openPayload = null;
+            let selectedCall = null;
+            view._windowPickerPopup = {
+                open: (payload) => { openPayload = payload; },
+                close: () => {}
+            };
+            view._setBayWindowDefinition = (...args) => { selectedCall = args; };
+            view._currentConfig = {
+                layers: [{ id: 'floor_1', type: 'floor', floors: 1, floorHeight: 3.2 }],
+                facades: {
+                    floor_1: {
+                        A: {
+                            layout: {
+                                bays: {
+                                    nextBayIndex: 2,
+                                    items: [{
+                                        id: 'bay_1',
+                                        size: { mode: 'range', minMeters: 3.0, maxMeters: null },
+                                        expandPreference: 'prefer_expand'
+                                    }]
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+
+            view._openBayWindowPicker('floor_1', 'A', 'bay_1');
+            assertTrue(!!openPayload, 'Expected opening picker popup to open without an existing opening selection.');
+            assertEqual(openPayload?.selectedId ?? null, null, 'Expected no selected picker id when opening selection is empty.');
+
+            openPayload?.onSelect?.({ id: 'opening:window:window_black_6_panels_tall' });
+            assertTrue(Array.isArray(selectedCall), 'Expected picker selection to route through definition setter.');
+            assertEqual(selectedCall?.[0], 'floor_1', 'Expected picker selection to preserve layer id.');
+            assertEqual(selectedCall?.[1], 'A', 'Expected picker selection to preserve face id.');
+            assertEqual(selectedCall?.[2], 'bay_1', 'Expected picker selection to preserve bay id.');
+            assertEqual(selectedCall?.[3], 'window_black_6_panels_tall', 'Expected picker selection to pass selected definition id.');
+        } finally {
+            view.exit?.();
+        }
+    });
+
+    test('BuildingFabrication2View: selecting default window definition enables opening after clear', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const view = new BuildingFabrication2View(engine);
+        try {
+            let syncCalls = 0;
+            let rebuildCalls = 0;
+            view._syncUiState = () => { syncCalls += 1; };
+            view._requestRebuild = () => { rebuildCalls += 1; };
+            view._currentConfig = {
+                layers: [{ id: 'floor_1', type: 'floor', floors: 1, floorHeight: 3.2 }],
+                facades: {
+                    floor_1: {
+                        A: {
+                            layout: {
+                                bays: {
+                                    nextBayIndex: 2,
+                                    items: [{
+                                        id: 'bay_1',
+                                        size: { mode: 'range', minMeters: 3.0, maxMeters: null },
+                                        expandPreference: 'prefer_expand'
+                                    }]
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+
+            const bayCtx = view._resolveBaySpec({ layerId: 'floor_1', faceId: 'A', bayId: 'bay_1' });
+            const bay = bayCtx?.bay ?? null;
+            assertTrue(!!bay, 'Expected bay config.');
+            assertFalse(!!bay?.window, 'Expected no initial opening selection.');
+
+            view._setBayWindowDefinition('floor_1', 'A', 'bay_1', 'window_black_6_panels_tall');
+            assertTrue(!!bay?.window, 'Expected selecting default definition to create opening.');
+            assertEqual(bay?.window?.defId, 'window_black_6_panels_tall', 'Expected selected definition id to apply.');
+            assertTrue(bay?.window?.enabled !== false, 'Expected created opening to be enabled.');
+            assertEqual(syncCalls, 1, 'Expected UI sync after selecting default definition on empty bay.');
+            assertEqual(rebuildCalls, 1, 'Expected rebuild after selecting default definition on empty bay.');
+
+            view._setBayWindowEnabled('floor_1', 'A', 'bay_1', false);
+            assertFalse(!!bay?.window, 'Expected opening to clear when disabled.');
+
+            syncCalls = 0;
+            rebuildCalls = 0;
+            view._setBayWindowDefinition('floor_1', 'A', 'bay_1', 'window_black_6_panels_tall');
+            assertTrue(!!bay?.window, 'Expected selecting default definition to recreate opening after clear.');
+            assertEqual(bay?.window?.defId, 'window_black_6_panels_tall', 'Expected default definition id to remain selected.');
+            assertTrue(bay?.window?.enabled !== false, 'Expected recreated opening to be enabled.');
+            assertEqual(syncCalls, 1, 'Expected UI sync when recreating default definition after clear.');
+            assertEqual(rebuildCalls, 1, 'Expected rebuild when recreating default definition after clear.');
+        } finally {
+            view.exit?.();
+        }
+    });
+
+    test('BuildingFabrication2View: floor layer interior toggle updates config and rebuilds', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const view = new BuildingFabrication2View(engine);
+        let rebuildCalls = 0;
+        view._requestRebuild = () => { rebuildCalls += 1; };
+        view._currentConfig = {
+            layers: [{
+                id: 'floor_1',
+                type: 'floor',
+                floors: 1,
+                floorHeight: 3.2
+            }]
+        };
+
+        view._setFloorLayerInteriorEnabled('floor_1', true);
+        const floorLayer = view._currentConfig.layers[0];
+        assertTrue(!!floorLayer?.interior?.enabled, 'Expected floor interior to enable.');
+        assertEqual(rebuildCalls, 1, 'Expected rebuild when interior toggle changes.');
+
+        view._setFloorLayerInteriorEnabled('floor_1', true);
+        assertEqual(rebuildCalls, 1, 'Expected no extra rebuild when interior toggle is unchanged.');
+
+        view._setFloorLayerInteriorEnabled('floor_1', false);
+        assertFalse(!!floorLayer?.interior?.enabled, 'Expected floor interior to disable.');
+        assertEqual(rebuildCalls, 2, 'Expected rebuild when interior toggle changes back.');
+    });
+
+    test('BuildingFabrication2UI: floor layout exposes Interior Off/On toggle after floor height', () => {
+        const ui = new BuildingFabrication2UI();
+        ui.mount(document.body);
+        try {
+            ui.setBuildingState({ hasBuilding: true, buildingName: 'BF2', buildingType: 'business' });
+            ui.setLayers([{
+                id: 'floor_1',
+                type: 'floor',
+                floors: 2,
+                floorHeight: 3.4,
+                interior: { enabled: false },
+                style: 'default',
+                material: { kind: 'texture', id: 'default' },
+                belt: { enabled: false },
+                windows: { enabled: false }
+            }]);
+
+            const floorHeightLabel = Array.from(ui.root.querySelectorAll('.building-fab2-row-label'))
+                .find((el) => String(el.textContent || '').trim() === 'Floor height');
+            assertTrue(!!floorHeightLabel, 'Expected floor height row.');
+
+            const interiorLabel = Array.from(ui.root.querySelectorAll('.building-fab-row-label'))
+                .find((el) => String(el.textContent || '').trim() === 'Interior');
+            assertTrue(!!interiorLabel, 'Expected Interior toggle row.');
+            const interiorRow = interiorLabel?.closest('.building-fab-row') ?? null;
+            const buttons = Array.from(interiorRow?.querySelectorAll('button') ?? []);
+            const onBtn = buttons.find((btn) => String(btn.textContent || '').trim() === 'On') ?? null;
+            const offBtn = buttons.find((btn) => String(btn.textContent || '').trim() === 'Off') ?? null;
+            assertTrue(!!onBtn && !!offBtn, 'Expected Off/On interior toggle buttons.');
+            const offIdx = buttons.indexOf(offBtn);
+            const onIdx = buttons.indexOf(onBtn);
+            assertTrue(offIdx >= 0 && onIdx >= 0 && offIdx < onIdx, 'Expected Off/On button order.');
+            assertFalse(!!onBtn?.classList?.contains('is-active'), 'Expected On inactive by default.');
+            assertTrue(!!offBtn?.classList?.contains('is-active'), 'Expected Off active by default.');
+
+            let payload = null;
+            ui.onSetFloorLayerInteriorEnabled = (layerId, enabled) => { payload = { layerId, enabled }; };
+            onBtn?.dispatchEvent(new Event('click', { bubbles: true }));
+            assertEqual(payload?.layerId, 'floor_1', 'Expected interior toggle callback layer id.');
+            assertEqual(payload?.enabled, true, 'Expected interior toggle callback to request On.');
+        } finally {
+            ui.unmount();
+        }
+    });
+
+    test('BuildingFabrication2View: create building defaults to 1 tile, 1 floor, and 3.5m', () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const view = new BuildingFabrication2View(engine);
+        try {
+            let loadedConfig = null;
+            view.scene = {
+                tileSize: 24,
+                setSelectedFaceId: () => {},
+                loadBuildingConfig: (cfg) => {
+                    loadedConfig = cfg;
+                    return true;
+                }
+            };
+            view._syncUiState = () => {};
+            view._createBuilding();
+
+            const layer = loadedConfig?.layers?.[0] ?? null;
+            assertTrue(!!layer, 'Expected created building floor layer.');
+            assertEqual(layer?.floors, 1, 'Expected create-building default floor count to be 1.');
+            assertNear(Number(layer?.floorHeight) || 0, 3.5, 1e-6, 'Expected create-building default floor height to be 3.5m.');
+
+            const loop = loadedConfig?.footprintLoops?.[0] ?? [];
+            assertEqual(loop.length, 4, 'Expected default footprint loop to be a quad.');
+            const xs = loop.map((p) => Number(p?.x) || 0);
+            const zs = loop.map((p) => Number(p?.z) || 0);
+            const width = Math.max(...xs) - Math.min(...xs);
+            const depth = Math.max(...zs) - Math.min(...zs);
+            assertNear(width, 24, 1e-6, 'Expected default footprint width to match one tile.');
+            assertNear(depth, 24, 1e-6, 'Expected default footprint depth to match one tile.');
+        } finally {
+            view.exit?.();
+        }
+    });
+
+    test('BuildingFabrication2UI: garage openings expose garage state controls only', () => {
+        const ui = new BuildingFabrication2UI();
+        ui.mount(document.body);
+        try {
+            ui.setBuildingState({ hasBuilding: true, buildingName: 'BF2', buildingType: 'business' });
+            ui.setLayers([{
+                id: 'floor_1',
+                type: 'floor',
+                floors: 1,
+                floorHeight: 3.2,
+                style: 'default',
+                material: { kind: 'texture', id: 'default' },
+                belt: { enabled: false },
+                windows: { enabled: false }
+            }]);
+            ui.setFloorLayerFaceStates(new Map([[
+                'floor_1',
+                {
+                    selectedFaceId: 'A',
+                    lockedToByFace: new Map([
+                        ['A', null],
+                        ['B', null],
+                        ['C', null],
+                        ['D', null]
+                    ])
+                }
+            ]]));
+            ui.setWindowDefinitions({
+                nextWindowIndex: 2,
+                items: [{
+                    id: 'garage_1',
+                    label: 'Garage 1',
+                    assetType: 'garage',
+                    settings: {
+                        width: 2.8,
+                        height: 2.2,
+                        frame: { width: 0.09, depth: 0.12, inset: 0.02, openBottom: true }
+                    },
+                    garageFacade: {
+                        state: 'closed',
+                        closedMaterialId: 'pbr.brick_wall_11',
+                        rotationDegrees: 90
+                    }
+                }]
+            });
+
+            let garageStatePayload = null;
+            ui.onSetBayGarageFacadeState = (layerId, faceId, bayId, state) => {
+                garageStatePayload = { layerId, faceId, bayId, state };
+            };
+
+            ui.setFacadesByLayerId({
+                floor_1: {
+                    A: {
+                        layout: {
+                            bays: {
+                                nextBayIndex: 2,
+                                items: [{
+                                    id: 'bay_1',
+                                    size: { mode: 'range', minMeters: 4, maxMeters: null },
+                                    expandPreference: 'prefer_expand',
+                                    window: {
+                                        enabled: true,
+                                        defId: 'garage_1',
+                                        assetType: 'garage',
+                                        size: { widthMeters: 2.8, heightMeters: 2.2 },
+                                        padding: { leftMeters: 0.2, rightMeters: 0.2 },
+                                        garageFacade: {
+                                            state: 'closed',
+                                            closedMaterialId: 'pbr.brick_wall_11',
+                                            rotationDegrees: 90
+                                        }
+                                    }
+                                }]
+                            }
+                        }
+                    }
+                }
+            });
+
+            const openingSubsections = Array.from(ui.root.querySelectorAll('.building-fab2-bay-opening-subsection'));
+            const getSubsection = (title) => openingSubsections.find((section) => (
+                String(section?.querySelector?.('.building-fab2-bay-opening-subtitle')?.textContent || '').trim() === title
+            )) ?? null;
+            const mainSection = getSubsection('Main garage');
+            const topSection = getSubsection('Top window');
+            assertTrue(!!mainSection, 'Expected Main garage subsection.');
+            assertTrue(!!topSection, 'Expected Top window subsection.');
+
+            const garageStateLabel = Array.from(mainSection?.querySelectorAll('.building-fab-row-label') ?? [])
+                .find((el) => String(el.textContent || '').trim() === 'Garage state');
+            assertTrue(!!garageStateLabel, 'Expected garage-only Garage state row.');
+            const garageStateRow = garageStateLabel?.closest('.building-fab-row') ?? null;
+            const garageStateButtons = Array.from(garageStateRow?.querySelectorAll('button') ?? []);
+            const closedBtn = garageStateButtons.find((btn) => String(btn.textContent || '').trim() === 'Closed') ?? null;
+            const openBtn = garageStateButtons.find((btn) => String(btn.textContent || '').trim() === 'Open') ?? null;
+            assertTrue(!!closedBtn && !!openBtn, 'Expected Closed/Open garage state buttons.');
+            assertTrue(!!closedBtn?.classList?.contains('is-active'), 'Expected Closed state active by default.');
+
+            openBtn?.dispatchEvent(new Event('click', { bubbles: true }));
+            assertEqual(garageStatePayload?.layerId, 'floor_1', 'Expected garage state callback to include layer id.');
+            assertEqual(garageStatePayload?.faceId, 'A', 'Expected garage state callback to include face id.');
+            assertEqual(garageStatePayload?.bayId, 'bay_1', 'Expected garage state callback to include bay id.');
+            assertEqual(garageStatePayload?.state, 'open', 'Expected garage state callback to request Open mode.');
+
+            const topHintText = String(topSection?.textContent || '').toLowerCase();
+            assertTrue(topHintText.includes('garage openings do not support stacked top windows'), 'Expected garage top-window unsupported hint.');
+        } finally {
+            ui.unmount();
+        }
+    });
+
     test('BuildingFabrication2Scene: camera maps left-look, middle-pan, and right-orbit', () => {
         const engine = {
             scene: new THREE.Scene(),
@@ -2351,6 +3338,146 @@ async function runTests() {
             reference: farCandidate
         });
         assertEqual(noSnap, null, 'Expected far candidate to remain unsnapped.');
+    });
+
+    test('BuildingFabrication2View: selecting door definition applies catalog size/muntins and top inherits main type', async () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const view = new BuildingFabrication2View(engine);
+        try {
+            const { getWindowFabricationCatalogEntryById } = await import('/src/app/buildings/window_mesh/index.js');
+            const doorEntry = getWindowFabricationCatalogEntryById('door_black_tall');
+            assertTrue(!!doorEntry, 'Expected door_black_tall catalog entry.');
+            const expectedWidth = Number(doorEntry?.settings?.width) || 0;
+            const expectedHeight = Number(doorEntry?.settings?.height) || 0;
+            assertTrue(expectedWidth > 0 && expectedHeight > 0, 'Expected valid door catalog size.');
+
+            const bay = {
+                id: 'bay_1',
+                size: { mode: 'range', minMeters: 3.0, maxMeters: null },
+                window: {
+                    enabled: true,
+                    defId: 'window_clear_modern',
+                    assetType: 'window',
+                    width: { minMeters: 1.2, maxMeters: null },
+                    size: { widthMeters: 1.2, heightMeters: 1.7 },
+                    muntins: { bottomEnabled: true, topEnabled: true },
+                    repeat: { count: 2 },
+                    top: {
+                        enabled: true,
+                        assetType: 'window',
+                        heightMode: 'fixed',
+                        heightMeters: 0.6,
+                        verticalGapMeters: 0.2
+                    }
+                }
+            };
+
+            view._currentConfig = {
+                layers: [{ id: 'floor_1', type: 'floor' }],
+                facades: {
+                    floor_1: {
+                        A: {
+                            layout: {
+                                bays: {
+                                    nextBayIndex: 2,
+                                    items: [bay]
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+            view._syncUiState = () => {};
+            view._requestRebuild = () => {};
+
+            view._setBayWindowDefinition('floor_1', 'A', 'bay_1', 'door_black_tall');
+            const cfg = bay.window;
+            assertEqual(cfg?.defId, 'door_black_tall', 'Expected selected door definition to be applied.');
+            assertEqual(cfg?.assetType, 'door', 'Expected selected door asset type.');
+            assertNear(Number(cfg?.size?.widthMeters) || 0, expectedWidth, 1e-6, 'Expected placement width from door catalog.');
+            assertNear(Number(cfg?.size?.heightMeters) || 0, expectedHeight, 1e-6, 'Expected placement height from door catalog.');
+            assertNear(Number(cfg?.width?.minMeters) || 0, expectedWidth, 1e-6, 'Expected width min to match door catalog width.');
+            assertEqual(cfg?.width?.maxMeters ?? null, null, 'Expected width max reset when definition changes.');
+            assertEqual(cfg?.repeat?.count ?? 0, 1, 'Door openings should clamp repeat to 1.');
+            assertFalse(!!cfg?.muntins?.bottomEnabled, 'Expected bottom muntins to follow door catalog (disabled).');
+            assertFalse(!!cfg?.muntins?.topEnabled, 'Expected top muntins to follow door catalog (disabled).');
+            assertEqual(cfg?.top?.assetType, 'door', 'Expected top opening to inherit main door asset type.');
+            assertTrue(!!cfg?.visual?.disableShades, 'Expected disable shades default to follow door catalog.');
+            assertEqual(cfg?.visual?.interior, 'none', 'Expected interior mode default to follow door catalog.');
+
+            view._setBayWindowShadesDisabled('floor_1', 'A', 'bay_1', false);
+            assertFalse(!!cfg?.visual?.disableShades, 'Expected disable shades toggle to update bay visual config.');
+            view._setBayWindowInteriorPreset('floor_1', 'A', 'bay_1', 'office');
+            assertEqual(cfg?.visual?.interior, 'office', 'Expected interior mode toggle to update bay visual config.');
+        } finally {
+            view.exit?.();
+        }
+    });
+
+    test('BuildingFabrication2View: selecting garage definition copies garage facade metadata', async () => {
+        const engine = {
+            scene: new THREE.Scene(),
+            camera: new THREE.PerspectiveCamera(55, 1, 0.1, 500),
+            canvas: document.createElement('canvas')
+        };
+        const view = new BuildingFabrication2View(engine);
+        try {
+            const { getWindowFabricationCatalogEntryById } = await import('/src/app/buildings/window_mesh/index.js');
+            const garageEntry = getWindowFabricationCatalogEntryById('garage_black_panel_wide');
+            assertTrue(!!garageEntry, 'Expected garage_black_panel_wide catalog entry.');
+            const expectedGarageFacade = garageEntry?.garageFacade ?? {};
+
+            const bay = {
+                id: 'bay_1',
+                size: { mode: 'range', minMeters: 4.0, maxMeters: null },
+                window: {
+                    enabled: true,
+                    defId: 'window_clear_modern',
+                    assetType: 'window',
+                    width: { minMeters: 1.2, maxMeters: null },
+                    size: { widthMeters: 1.2, heightMeters: 1.7 },
+                    repeat: { count: 1 }
+                }
+            };
+
+            view._currentConfig = {
+                layers: [{ id: 'floor_1', type: 'floor' }],
+                facades: {
+                    floor_1: {
+                        A: {
+                            layout: {
+                                bays: {
+                                    nextBayIndex: 2,
+                                    items: [bay]
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+            view._syncUiState = () => {};
+            view._requestRebuild = () => {};
+
+            view._setBayWindowDefinition('floor_1', 'A', 'bay_1', 'garage_black_panel_wide');
+            const cfg = bay.window;
+            assertEqual(cfg?.defId, 'garage_black_panel_wide', 'Expected selected garage definition to be applied.');
+            assertEqual(cfg?.assetType, 'garage', 'Expected selected garage asset type.');
+            assertFalse(!!cfg?.top?.enabled, 'Expected stacked top opening disabled for garage mode.');
+            assertEqual(cfg?.garageFacade?.state, expectedGarageFacade?.state, 'Expected garage facade state to copy from catalog.');
+            assertEqual(cfg?.garageFacade?.closedMaterialId, expectedGarageFacade?.closedMaterialId, 'Expected garage closed material to copy from catalog.');
+            assertEqual(cfg?.garageFacade?.rotationDegrees, expectedGarageFacade?.rotationDegrees, 'Expected garage facade rotation to copy from catalog.');
+
+            view._setBayGarageFacadeState('floor_1', 'A', 'bay_1', 'open');
+            assertEqual(cfg?.garageFacade?.state, 'open', 'Expected garage facade state to switch to open.');
+            view._setBayGarageFacadeState('floor_1', 'A', 'bay_1', 'closed');
+            assertEqual(cfg?.garageFacade?.state, 'closed', 'Expected garage facade state to switch back to closed.');
+        } finally {
+            view.exit?.();
+        }
     });
 
     test('BuildingGenerator: offsetOrthogonalLoopXZ offsets collinear points', () => {
@@ -2570,7 +3697,32 @@ async function runTests() {
     });
 
     const { createWindowMeshMaterials } = await import('/src/graphics/engine3d/buildings/window_mesh/WindowMeshMaterials.js');
-    const { getDefaultWindowMeshSettings } = await import('/src/app/buildings/window_mesh/index.js');
+    const {
+        buildWindowMeshGeometryBundle,
+        WINDOW_MESH_DOUBLE_DOOR_CENTER_GAP_METERS
+    } = await import('/src/graphics/engine3d/buildings/window_mesh/WindowMeshGeometry.js');
+    const {
+        getDefaultWindowMeshSettings,
+        sanitizeWindowDecorationState,
+        sanitizeWindowMeshSettings,
+        WINDOW_DECORATION_PART,
+        WINDOW_DECORATION_STYLE,
+        WINDOW_DECORATION_WIDTH_MODE,
+        WINDOW_DECORATION_MATERIAL_MODE
+    } = await import('/src/app/buildings/window_mesh/index.js');
+    const { WindowMeshDecorationsRig } = await import('/src/graphics/gui/window_mesh_debugger/view/WindowMeshDecorationsRig.js');
+    const { WindowMeshDebuggerUI } = await import('/src/graphics/gui/window_mesh_debugger/view/WindowMeshDebuggerUI.js');
+    const { WindowMeshDebuggerView } = await import('/src/graphics/gui/window_mesh_debugger/view/WindowMeshDebuggerView.js');
+    const {
+        getDefaultWallDecoratorDebuggerState,
+        getWallDecoratorCatalogEntryById,
+        WALL_DECORATOR_ID,
+        WALL_DECORATOR_MODE,
+        WALL_DECORATOR_POSITION,
+        WALL_DECORATOR_WHERE_TO_APPLY
+    } = await import('/src/app/buildings/wall_decorators/index.js');
+    const { WallDecorationMeshDebuggerUI } = await import('/src/graphics/gui/wall_decoration_mesh_debugger/view/WallDecorationMeshDebuggerUI.js');
+    const { WallDecorationMeshDebuggerView } = await import('/src/graphics/gui/wall_decoration_mesh_debugger/view/WallDecorationMeshDebuggerView.js');
 
     test('WindowMeshMaterials: interior shader avoids mapTexelToLinear', () => {
         const mats = createWindowMeshMaterials(getDefaultWindowMeshSettings());
@@ -2586,6 +3738,643 @@ async function runTests() {
         assertFalse(shader.fragmentShader.includes('mapTexelToLinear'), 'Interior shader should not reference mapTexelToLinear.');
         assertTrue(shader.fragmentShader.includes('winSrgbToLinear'), 'Expected interior shader to define winSrgbToLinear.');
         assertTrue(shader.fragmentShader.includes('uInteriorParallax'), 'Expected interior shader to reference uInteriorParallax.');
+    });
+
+    test('WindowMeshMaterials: metal handle mode uses dedicated metallic handle material', () => {
+        const defaults = getDefaultWindowMeshSettings();
+        const mats = createWindowMeshMaterials({
+            ...defaults,
+            frame: {
+                ...defaults.frame,
+                openBottom: true,
+                addHandles: true,
+                handleMaterialMode: 'metal'
+            }
+        });
+
+        assertTrue(!!mats?.handlesMat, 'Expected handles material to be generated.');
+        assertTrue(mats.handlesMat !== mats.frameMat, 'Expected metal handles to use a dedicated material.');
+        assertNear(Number(mats.handlesMat.metalness) || 0, 0.92, 1e-6, 'Expected high metalness for metal handles.');
+        assertNear(Number(mats.handlesMat.roughness) || 0, 0.18, 1e-6, 'Expected low roughness for metal handles.');
+        assertTrue(!mats.handlesMat.normalMap, 'Expected handle normal map strength/value to remain zero.');
+    });
+
+    test('WindowMeshGeometry: double door style keeps overall width stable and adds a second handle set', () => {
+        assertNear(WINDOW_MESH_DOUBLE_DOOR_CENTER_GAP_METERS, 0.006, 1e-9, 'Expected double-door center gap to be 0.6cm.');
+
+        const defaults = getDefaultWindowMeshSettings();
+        const baseDoor = {
+            ...defaults,
+            width: 1.6,
+            height: 2.2,
+            arch: { ...defaults.arch, enabled: false },
+            frame: {
+                ...defaults.frame,
+                openBottom: true,
+                addHandles: true,
+                verticalWidth: 0.08,
+                horizontalWidth: 0.08,
+                doorBottomFrame: { enabled: true, mode: 'match' }
+            },
+            muntins: { ...defaults.muntins, enabled: true, columns: 2, rows: 2 }
+        };
+
+        const singleBundle = buildWindowMeshGeometryBundle({
+            ...baseDoor,
+            frame: {
+                ...baseDoor.frame,
+                doorStyle: 'single'
+            }
+        });
+        const doubleBundle = buildWindowMeshGeometryBundle({
+            ...baseDoor,
+            frame: {
+                ...baseDoor.frame,
+                doorStyle: 'double',
+                doorCenterFrame: { leftMode: 'match', rightMode: 'match' }
+            }
+        });
+
+        singleBundle.frame.computeBoundingBox();
+        doubleBundle.frame.computeBoundingBox();
+        const singleW = (singleBundle.frame.boundingBox?.max.x ?? 0) - (singleBundle.frame.boundingBox?.min.x ?? 0);
+        const doubleW = (doubleBundle.frame.boundingBox?.max.x ?? 0) - (doubleBundle.frame.boundingBox?.min.x ?? 0);
+        assertNear(doubleW, singleW, 1e-6, 'Expected double-door frame width to preserve original overall width.');
+
+        const singleHandleVerts = singleBundle.handles?.attributes?.position?.count ?? 0;
+        const doubleHandleVerts = doubleBundle.handles?.attributes?.position?.count ?? 0;
+        assertTrue(singleHandleVerts > 0, 'Expected single-door handles geometry.');
+        assertTrue(doubleHandleVerts > singleHandleVerts, 'Expected double-door mode to generate handles on both leaves.');
+    });
+
+    test('WindowMeshDecorationsRig: double-door sill splits and rejoins with style changes', () => {
+        const rig = new WindowMeshDecorationsRig();
+        try {
+            const defaults = getDefaultWindowMeshSettings();
+            const baseSettings = sanitizeWindowMeshSettings({
+                ...defaults,
+                width: 1.6,
+                height: 2.2,
+                arch: { ...defaults.arch, enabled: false },
+                frame: {
+                    ...defaults.frame,
+                    openBottom: true
+                }
+            });
+            const decoration = sanitizeWindowDecorationState({
+                sill: {
+                    enabled: true,
+                    type: WINDOW_DECORATION_STYLE.BOTTOM_COVER,
+                    widthMode: WINDOW_DECORATION_WIDTH_MODE.MATCH_WINDOW,
+                    depthMeters: 0.08,
+                    material: { mode: WINDOW_DECORATION_MATERIAL_MODE.MATCH_FRAME }
+                }
+            }, {
+                wallMaterialId: 'pbr.brick_wall_11'
+            });
+            const instances = [{
+                id: 'door_0',
+                position: { x: 0, y: 1.1, z: 0 },
+                yaw: 0
+            }];
+
+            const doubleDoorSettings = sanitizeWindowMeshSettings({
+                ...baseSettings,
+                frame: { ...baseSettings.frame, doorStyle: 'double' }
+            });
+            rig.update({
+                wallFrontZ: 0,
+                windowSettings: doubleDoorSettings,
+                instances
+            }, decoration);
+
+            const sillDouble = rig._meshes?.[WINDOW_DECORATION_PART.SILL] ?? null;
+            assertTrue(!!sillDouble?.isInstancedMesh, 'Expected sill mesh in double-door mode.');
+            assertEqual(sillDouble.count, 2, 'Expected split sill instances for double-door mode.');
+
+            const m0 = new THREE.Matrix4();
+            const m1 = new THREE.Matrix4();
+            sillDouble.getMatrixAt(0, m0);
+            sillDouble.getMatrixAt(1, m1);
+            const p0 = new THREE.Vector3().setFromMatrixPosition(m0);
+            const p1 = new THREE.Vector3().setFromMatrixPosition(m1);
+            const xs = [p0.x, p1.x].sort((a, b) => a - b);
+            const leafWidth = (doubleDoorSettings.width - WINDOW_MESH_DOUBLE_DOOR_CENTER_GAP_METERS) * 0.5;
+            const leafOffset = WINDOW_MESH_DOUBLE_DOOR_CENTER_GAP_METERS * 0.5 + leafWidth * 0.5;
+            assertNear(xs[0], -leafOffset, 1e-6, 'Expected left sill split to follow double-door offset.');
+            assertNear(xs[1], leafOffset, 1e-6, 'Expected right sill split to follow double-door offset.');
+            assertNear(p0.y, 0.25, 1e-6, 'Expected bottom-cover sill to rise from door base into opening.');
+            assertNear(p1.y, 0.25, 1e-6, 'Expected bottom-cover sill to rise from door base into opening.');
+
+            const singleDoorSettings = sanitizeWindowMeshSettings({
+                ...baseSettings,
+                frame: { ...baseSettings.frame, doorStyle: 'single' }
+            });
+            rig.update({
+                wallFrontZ: 0,
+                windowSettings: singleDoorSettings,
+                instances
+            }, decoration);
+
+            const sillSingle = rig._meshes?.[WINDOW_DECORATION_PART.SILL] ?? null;
+            assertTrue(!!sillSingle?.isInstancedMesh, 'Expected sill mesh in single-door mode.');
+            assertEqual(sillSingle.count, 1, 'Expected single sill instance for single-door mode.');
+            const ms = new THREE.Matrix4();
+            sillSingle.getMatrixAt(0, ms);
+            const ps = new THREE.Vector3().setFromMatrixPosition(ms);
+            assertNear(ps.x, 0.0, 1e-6, 'Expected single-door sill to remain centered.');
+        } finally {
+            rig.dispose();
+        }
+    });
+
+    test('WindowMeshDecorationsRig: match-frame material tracks frame PBR changes', () => {
+        const rig = new WindowMeshDecorationsRig();
+        try {
+            const defaults = getDefaultWindowMeshSettings();
+            const decoration = sanitizeWindowDecorationState({
+                sill: {
+                    enabled: true,
+                    type: WINDOW_DECORATION_STYLE.SIMPLE,
+                    material: { mode: WINDOW_DECORATION_MATERIAL_MODE.MATCH_FRAME }
+                }
+            }, {
+                wallMaterialId: 'pbr.brick_wall_11'
+            });
+            const instances = [{
+                id: 'w0',
+                position: { x: 0, y: 1.0, z: 0 },
+                yaw: 0
+            }];
+
+            const settingsA = sanitizeWindowMeshSettings({
+                ...defaults,
+                frame: {
+                    ...defaults.frame,
+                    colorHex: 0x224466,
+                    material: {
+                        ...defaults.frame.material,
+                        roughness: 0.21,
+                        metalness: 0.67,
+                        envMapIntensity: 1.7,
+                        normalStrength: 1.35
+                    }
+                }
+            });
+            rig.update({
+                wallFrontZ: 0,
+                windowSettings: settingsA,
+                instances
+            }, decoration);
+
+            const matA = rig._materials?.[WINDOW_DECORATION_PART.SILL] ?? null;
+            assertTrue(!!matA, 'Expected sill decoration material.');
+            assertEqual(matA.color.getHex(), 0x224466, 'Expected sill color to match frame color.');
+            assertNear(matA.roughness, 0.21, 1e-6, 'Expected sill roughness to match frame roughness.');
+            assertNear(matA.metalness, 0.67, 1e-6, 'Expected sill metalness to match frame metalness.');
+            assertNear(matA.envMapIntensity, 1.7, 1e-6, 'Expected sill envMapIntensity to match frame envMapIntensity.');
+            assertNear(matA.normalScale?.x ?? 0, 1.35, 1e-6, 'Expected sill normal strength to match frame normal strength.');
+
+            const settingsB = sanitizeWindowMeshSettings({
+                ...settingsA,
+                frame: {
+                    ...settingsA.frame,
+                    colorHex: 0x335577,
+                    material: {
+                        ...settingsA.frame.material,
+                        roughness: 0.58,
+                        metalness: 0.12,
+                        envMapIntensity: 0.45,
+                        normalStrength: 0.42
+                    }
+                }
+            });
+            rig.update({
+                wallFrontZ: 0,
+                windowSettings: settingsB,
+                instances
+            }, decoration);
+
+            const matB = rig._materials?.[WINDOW_DECORATION_PART.SILL] ?? null;
+            assertTrue(!!matB, 'Expected sill decoration material after frame update.');
+            assertEqual(matB.color.getHex(), 0x335577, 'Expected sill color to refresh with frame color changes.');
+            assertNear(matB.roughness, 0.58, 1e-6, 'Expected sill roughness to refresh with frame changes.');
+            assertNear(matB.metalness, 0.12, 1e-6, 'Expected sill metalness to refresh with frame changes.');
+            assertNear(matB.envMapIntensity, 0.45, 1e-6, 'Expected sill envMapIntensity to refresh with frame changes.');
+            assertNear(matB.normalScale?.x ?? 0, 0.42, 1e-6, 'Expected sill normal strength to refresh with frame changes.');
+        } finally {
+            rig.dispose();
+        }
+    });
+
+    test('WindowMeshDebuggerUI: catalog name uses text-input styling and grow layout', () => {
+        const ui = new WindowMeshDebuggerUI();
+        try {
+            const input = ui?._controls?.assetCatalogName?.input ?? null;
+            assertTrue(!!input, 'Expected Catalog Name input to exist.');
+            assertTrue(input.classList.contains('options-text-input'), 'Expected Catalog Name to use text-input class.');
+            assertFalse(input.classList.contains('options-number'), 'Catalog Name must not use numeric input class.');
+            assertTrue(input.classList.contains('options-input-grow'), 'Expected Catalog Name to expand to available width.');
+        } finally {
+            ui.unmount();
+        }
+    });
+
+    test('WindowMeshDebuggerUI: load/export actions stay inside input column', () => {
+        const ui = new WindowMeshDebuggerUI();
+        try {
+            const loadBtn = ui?._controls?.assetLoadBtn ?? null;
+            const exportBtn = ui?._controls?.assetExportBtn ?? null;
+            assertTrue(!!loadBtn && !!exportBtn, 'Expected Load and Export buttons.');
+
+            const actionsRow = loadBtn?.closest?.('.options-row') ?? null;
+            assertTrue(!!actionsRow, 'Expected actions row for Load/Export controls.');
+            assertFalse(actionsRow.classList.contains('options-action-row'), 'Expected actions row to keep the two-column layout.');
+
+            const children = Array.from(actionsRow.children ?? []);
+            assertEqual(children.length, 2, 'Expected actions row to have label spacer and control column.');
+            assertTrue(children[0]?.classList?.contains('options-row-label') ?? false, 'Expected first column to be a label spacer.');
+            assertTrue(children[1]?.classList?.contains('options-row-control') ?? false, 'Expected second column to host action buttons.');
+        } finally {
+            ui.unmount();
+        }
+    });
+
+    test('WindowMeshDebuggerUI: load picker shows all asset-type tabs with full catalog', async () => {
+        const ui = new WindowMeshDebuggerUI();
+        const originalOpen = ui._catalogPicker?.open?.bind?.(ui._catalogPicker) ?? null;
+        try {
+            let openPayload = null;
+            if (ui._catalogPicker) {
+                ui._catalogPicker.open = (payload = {}) => {
+                    openPayload = payload;
+                };
+            }
+
+            await ui._openCatalogLoadPicker();
+            assertTrue(!!openPayload, 'Expected load picker to open.');
+
+            const sections = Array.isArray(openPayload?.sections) ? openPayload.sections : [];
+            assertEqual(sections.length, 3, 'Expected Window, Door, and Garage tabs.');
+
+            const flattenOptions = sections.flatMap((section) => Array.isArray(section?.options) ? section.options : []);
+            const expectedPerType = {
+                window: ui._getCatalogEntries('window').length,
+                door: ui._getCatalogEntries('door').length,
+                garage: ui._getCatalogEntries('garage').length
+            };
+            const actualPerType = { window: 0, door: 0, garage: 0 };
+            for (const opt of flattenOptions) {
+                const rawId = typeof opt?.id === 'string' ? opt.id : '';
+                const match = rawId.match(/^asset:(window|door|garage):/);
+                if (!match) continue;
+                actualPerType[match[1]] += 1;
+            }
+            assertEqual(actualPerType.window, expectedPerType.window, 'Expected full window catalog in picker.');
+            assertEqual(actualPerType.door, expectedPerType.door, 'Expected full door catalog in picker.');
+            assertEqual(actualPerType.garage, expectedPerType.garage, 'Expected full garage catalog in picker.');
+
+            const doorFirstId = String(ui._getCatalogEntries('door')?.[0]?.id ?? '');
+            assertTrue(!!doorFirstId, 'Expected at least one door catalog entry.');
+            openPayload?.onSelect?.({ id: `asset:door:${doorFirstId}` });
+            assertEqual(ui._state.assetType, 'door', 'Expected selecting a door option to switch asset type.');
+            assertEqual(ui._state.assetCatalogId, doorFirstId, 'Expected selecting a door option to apply the selected catalog id.');
+        } finally {
+            if (ui._catalogPicker && originalOpen) ui._catalogPicker.open = originalOpen;
+            ui.unmount();
+        }
+    });
+
+    test('WindowMeshDebuggerUI: loading a door syncs all inputs including hidden tab controls', () => {
+        const ui = new WindowMeshDebuggerUI();
+        const originalGetCatalogEntries = ui._getCatalogEntries?.bind?.(ui) ?? null;
+        const originalGetCatalogEntryById = ui._getCatalogEntryById?.bind?.(ui) ?? null;
+        try {
+            const defaults = getDefaultWindowMeshSettings();
+            const customDoorId = 'door_hidden_controls_sync';
+            const customSettings = sanitizeWindowMeshSettings({
+                ...defaults,
+                width: 1.47,
+                height: 2.31,
+                frame: {
+                    ...defaults.frame,
+                    openBottom: true,
+                    doorStyle: 'double'
+                },
+                shade: {
+                    ...defaults.shade,
+                    enabled: true,
+                    coverage: 0.5,
+                    randomizeCoverage: false
+                },
+                interior: {
+                    ...defaults.interior,
+                    enabled: true,
+                    parallaxInteriorPresetId: null,
+                    parallaxDepthMeters: 4.2,
+                    parallaxScale: { x: 1.2, y: 0.9 }
+                }
+            });
+            const customEntry = {
+                id: customDoorId,
+                assetType: 'door',
+                name: 'Door Hidden Sync',
+                settings: customSettings,
+                decoration: null,
+                layers: { frame: true, muntins: true, glass: true, shade: true, interior: true },
+                wall: {
+                    materialId: 'pbr.brick_wall_11',
+                    roughness: 0.85,
+                    normalIntensity: 1.0,
+                    cutWidthLerp: 0.0,
+                    cutHeightLerp: 0.0
+                },
+                ibl: null,
+                seed: 'door-hidden-sync'
+            };
+
+            ui._getCatalogEntries = (assetType) => {
+                const mode = String(assetType ?? '');
+                if (mode === 'door') {
+                    return [{ id: customDoorId, assetType: 'door', name: customEntry.name, label: customEntry.name }];
+                }
+                return originalGetCatalogEntries ? originalGetCatalogEntries(assetType) : [];
+            };
+            ui._getCatalogEntryById = (assetType, catalogId) => {
+                const mode = String(assetType ?? '');
+                const id = String(catalogId ?? '');
+                if (mode === 'door' && id === customDoorId) return customEntry;
+                return originalGetCatalogEntryById ? originalGetCatalogEntryById(assetType, catalogId) : null;
+            };
+
+            ui._applyCatalogPreset({
+                assetType: 'door',
+                catalogId: customDoorId,
+                emit: false,
+                applyEntry: true
+            });
+
+            assertEqual(ui._state.assetType, 'door', 'Expected loaded asset mode to be door.');
+            assertNear(ui._state.settings.width, customSettings.width, 1e-6, 'Expected loaded width to be applied.');
+            assertNear(ui._state.settings.height, customSettings.height, 1e-6, 'Expected loaded height to be applied.');
+            assertEqual(ui._state.settings.shade.enabled, true, 'Expected hidden shade state to remain from loaded asset.');
+            assertEqual(ui._state.settings.interior.enabled, true, 'Expected hidden interior state to remain from loaded asset.');
+
+            const findRowByLabel = (root, labelText) => (
+                Array.from(root?.querySelectorAll?.('.options-row') ?? []).find((row) => {
+                    const label = row.querySelector('.options-row-label');
+                    return (label?.textContent ?? '').trim() === labelText;
+                }) ?? null
+            );
+
+            const sizePane = ui._tabBodies?.size ?? null;
+            const widthRow = findRowByLabel(sizePane, 'Width (m)');
+            const widthNumber = widthRow?.querySelector?.('input[type="number"]') ?? null;
+            assertTrue(!!widthNumber, 'Expected Width numeric input.');
+            assertNear(Number(widthNumber.value), customSettings.width, 1e-6, 'Expected Width input to sync from loaded door.');
+
+            const shadePane = ui._tabBodies?.shade ?? null;
+            assertTrue(!!shadePane, 'Expected Shade tab body.');
+            assertEqual(shadePane.style.display, 'none', 'Expected Shade tab hidden in door mode.');
+            const shadeEnabledRow = findRowByLabel(shadePane, 'Enabled');
+            const shadeEnabledToggle = shadeEnabledRow?.querySelector?.('input[type="checkbox"]') ?? null;
+            assertTrue(!!shadeEnabledToggle, 'Expected hidden Shade Enabled input.');
+            assertEqual(!!shadeEnabledToggle.checked, true, 'Expected hidden Shade Enabled input to match loaded value.');
+
+            const interiorPane = ui._tabBodies?.interior ?? null;
+            assertTrue(!!interiorPane, 'Expected Interior tab body.');
+            assertEqual(interiorPane.style.display, 'none', 'Expected Interior tab hidden in door mode.');
+            const interiorEnabledRow = findRowByLabel(interiorPane, 'Enabled');
+            const interiorEnabledToggle = interiorEnabledRow?.querySelector?.('input[type="checkbox"]') ?? null;
+            assertTrue(!!interiorEnabledToggle, 'Expected hidden Interior Enabled input.');
+            assertEqual(!!interiorEnabledToggle.checked, true, 'Expected hidden Interior Enabled input to match loaded value.');
+        } finally {
+            if (originalGetCatalogEntries) ui._getCatalogEntries = originalGetCatalogEntries;
+            if (originalGetCatalogEntryById) ui._getCatalogEntryById = originalGetCatalogEntryById;
+            ui.unmount();
+        }
+    });
+
+    test('WindowMeshDebuggerUI/View: size tab floor distance control updates preview placement', () => {
+        const ui = new WindowMeshDebuggerUI();
+        try {
+            const floorDistanceRow = ui?._controls?.floorDistanceMeters ?? null;
+            assertTrue(!!floorDistanceRow?.row, 'Expected Distance from Floor control in Size tab.');
+            const label = (floorDistanceRow.row.querySelector('.options-row-label')?.textContent ?? '').trim();
+            assertEqual(label, 'Distance from Floor (m)', 'Expected floor distance label.');
+
+            floorDistanceRow.range.value = '1.25';
+            floorDistanceRow.range.dispatchEvent(new Event('input', { bubbles: true }));
+            assertNear(ui?._state?.floorDistanceMeters ?? 0, 1.25, 1e-6, 'Expected floor distance to update state.');
+
+            const viewStub = {
+                _wallSpec: { frontZ: 5, width: 12, height: 9 },
+                _previewGrid: { rows: 2, cols: 2 }
+            };
+            const defaults = getDefaultWindowMeshSettings();
+            const windowBase = WindowMeshDebuggerView.prototype._makeDemoInstances.call(viewStub, defaults, {
+                assetType: 'window',
+                floorDistanceMeters: 0
+            });
+            const windowRaised = WindowMeshDebuggerView.prototype._makeDemoInstances.call(viewStub, defaults, {
+                assetType: 'window',
+                floorDistanceMeters: 1.25
+            });
+            assertTrue(windowBase.length > 0 && windowRaised.length === windowBase.length, 'Expected window demo instances.');
+            assertNear(
+                (windowRaised[0]?.position?.y ?? 0) - (windowBase[0]?.position?.y ?? 0),
+                1.25,
+                1e-6,
+                'Expected floor distance to offset window placement Y.'
+            );
+
+            const doorBase = WindowMeshDebuggerView.prototype._makeDemoInstances.call(viewStub, defaults, {
+                assetType: 'door',
+                floorDistanceMeters: 0
+            });
+            const doorRaised = WindowMeshDebuggerView.prototype._makeDemoInstances.call(viewStub, defaults, {
+                assetType: 'door',
+                floorDistanceMeters: 0.8
+            });
+            assertNear(
+                (doorRaised[0]?.position?.y ?? 0) - (doorBase[0]?.position?.y ?? 0),
+                0.8,
+                1e-6,
+                'Expected floor distance to offset door placement Y.'
+            );
+        } finally {
+            ui.unmount();
+        }
+    });
+
+    test('WindowMeshDebuggerView: preview floor height follows window height with 3.2m minimum', () => {
+        const viewStub = {
+            _previewGrid: { rows: 3, cols: 2 },
+            _wallSpec: { width: 12, height: 9, depth: 1.6, frontZ: 5.0 },
+            _resolvePreviewFloorHeightMeters: WindowMeshDebuggerView.prototype._resolvePreviewFloorHeightMeters
+        };
+
+        const defaults = getDefaultWindowMeshSettings();
+        const shortSettings = sanitizeWindowMeshSettings({
+            ...defaults,
+            height: 2.1
+        });
+        const shortFloorHeight = WindowMeshDebuggerView.prototype._syncPreviewWallFromSettings.call(viewStub, shortSettings, {
+            floorDistanceMeters: 0
+        });
+        assertNear(shortFloorHeight, 3.2, 1e-6, 'Expected minimum preview floor height to be 3.2m.');
+        assertNear(viewStub._wallSpec.height, 9.6, 1e-6, 'Expected wall height to open at 3 floors * 3.2m.');
+
+        const tallSettings = sanitizeWindowMeshSettings({
+            ...defaults,
+            height: 4.4
+        });
+        const tallFloorHeight = WindowMeshDebuggerView.prototype._syncPreviewWallFromSettings.call(viewStub, tallSettings, {
+            floorDistanceMeters: 0
+        });
+        assertNear(tallFloorHeight, 4.4, 1e-6, 'Expected floor height to increase when window height exceeds floor.');
+        assertNear(viewStub._wallSpec.height, 13.2, 1e-6, 'Expected wall height to track increased floor height.');
+
+        const reducedSettings = sanitizeWindowMeshSettings({
+            ...defaults,
+            height: 2.4
+        });
+        const reducedFloorHeight = WindowMeshDebuggerView.prototype._syncPreviewWallFromSettings.call(viewStub, reducedSettings, {
+            floorDistanceMeters: 0
+        });
+        assertNear(reducedFloorHeight, 3.2, 1e-6, 'Expected floor height to reduce but stay at minimum 3.2m.');
+        assertNear(viewStub._wallSpec.height, 9.6, 1e-6, 'Expected wall height to reduce back to minimum floor height.');
+    });
+
+    test('WallDecorationMeshDebuggerUI: exposes catalog, placement, configuration, and direct material controls', () => {
+        const simpleSkirtEntry = getWallDecoratorCatalogEntryById(WALL_DECORATOR_ID.SIMPLE_SKIRT);
+        let selectedWallMaterialId = null;
+        const ui = new WallDecorationMeshDebuggerUI({
+            initialState: getDefaultWallDecoratorDebuggerState(),
+            typeEntries: simpleSkirtEntry ? [simpleSkirtEntry] : [],
+            onWallMaterialChange: (id) => {
+                selectedWallMaterialId = String(id ?? '');
+            }
+        });
+        try {
+            const leftPanelTitles = Array.from(ui.leftStack?.querySelectorAll('.wall-decoration-left-title') ?? [])
+                .map((el) => String(el.textContent || '').trim());
+            assertEqual(leftPanelTitles[0], 'Wall Material', 'Expected Wall Material panel above View panel on the left.');
+            assertEqual(leftPanelTitles[1], 'View', 'Expected View panel below Wall Material panel.');
+
+            const wallMaterialButtons = Array.from(ui.leftStack?.querySelectorAll('.wall-decoration-wall-material-btn') ?? []);
+            assertEqual(wallMaterialButtons.length, 3, 'Expected 3 wall-material choices in left panel.');
+            const wallMaterialLabels = wallMaterialButtons
+                .map((btn) => String(btn.querySelector('.wall-decoration-wall-material-label')?.textContent || '').trim());
+            assertTrue(wallMaterialLabels.includes('None'), 'Expected None wall-material option.');
+            assertTrue(wallMaterialLabels.includes('Painted plaster wall'), 'Expected painted plaster wall option.');
+            assertTrue(wallMaterialLabels.includes('Brick Wall 11'), 'Expected brick wall option.');
+            const activeWallMaterialButton = ui.leftStack?.querySelector('.wall-decoration-wall-material-btn.is-active');
+            assertEqual(
+                String(activeWallMaterialButton?.querySelector('.wall-decoration-wall-material-label')?.textContent || '').trim(),
+                'None',
+                'Expected None to be selected by default for wall material.'
+            );
+            const brickWallButton = wallMaterialButtons.find((btn) => (
+                String(btn.querySelector('.wall-decoration-wall-material-label')?.textContent || '').trim() === 'Brick Wall 11'
+            )) ?? null;
+            assertTrue(!!brickWallButton, 'Expected Brick Wall 11 button.');
+            brickWallButton.click();
+            assertEqual(selectedWallMaterialId, 'pbr.brick_wall_11', 'Expected wall material callback on top selector click.');
+
+            const tabLabels = Array.from(ui.root.querySelectorAll('.options-tab'))
+                .map((el) => (el.textContent || '').trim());
+            assertTrue(tabLabels.includes('Catalog'), 'Expected Catalog tab.');
+            assertTrue(tabLabels.includes('Placement'), 'Expected Placement tab.');
+            assertTrue(tabLabels.includes('Configuration'), 'Expected Configuration tab.');
+            assertTrue(tabLabels.includes('Materials'), 'Expected Materials tab.');
+            assertFalse(tabLabels.includes('Position'), 'Expected Position tab merged into Placement.');
+
+            const sectionTitles = Array.from(ui.root.querySelectorAll('.options-section-title'))
+                .map((el) => (el.textContent || '').trim());
+            assertTrue(sectionTitles.includes('Types'), 'Expected Types section in catalog tab.');
+            assertTrue(sectionTitles.includes('Catalog'), 'Expected Catalog section in catalog tab.');
+            assertTrue(sectionTitles.includes('Facade Placement'), 'Expected merged placement section.');
+            assertTrue(sectionTitles.includes('Type Configuration'), 'Expected type-driven configuration section.');
+
+            const labels = Array.from(ui.root.querySelectorAll('.options-row-label'))
+                .map((el) => (el.textContent || '').trim());
+            assertTrue(labels.includes('Where to apply'), 'Expected Where to apply control.');
+            assertTrue(labels.includes('Mode'), 'Expected Mode control.');
+            assertTrue(labels.includes('Placement'), 'Expected Position control row.');
+            assertTrue(labels.includes('Material kind'), 'Expected material kind control.');
+            assertTrue(labels.includes('Material'), 'Expected material select control.');
+            assertTrue(labels.includes('Tint hue'), 'Expected tint hue slider.');
+            assertTrue(labels.includes('Tint saturation'), 'Expected tint saturation slider.');
+            assertTrue(labels.includes('Tint value'), 'Expected tint value slider.');
+            assertTrue(labels.includes('Tint intensity'), 'Expected tint intensity slider.');
+            assertFalse(labels.includes('Type'), 'Expected no legend label for type picker blocks.');
+            assertFalse(labels.includes('Preset'), 'Expected no legend label for preset picker blocks.');
+
+            const decoratorButtons = Array.from(ui.root.querySelectorAll('.wall-decoration-catalog-btn'));
+            assertTrue(decoratorButtons.length > 0, 'Expected catalog decorator block buttons.');
+            const selectedCatalogButtons = ui.root.querySelectorAll('.wall-decoration-catalog-btn.is-active');
+            assertEqual(selectedCatalogButtons.length, 0, 'Expected no default selected type/preset button on open.');
+            const loadDecoratorButton = Array.from(ui.root.querySelectorAll('button'))
+                .find((el) => (el.textContent || '').trim() === 'Load selected decorator');
+            assertFalse(!!loadDecoratorButton, 'Expected no separate load decorator button.');
+            const emptyCatalogHint = Array.from(ui.root.querySelectorAll('.options-note'))
+                .find((el) => (el.textContent || '').includes('No saved decoration presets yet.'));
+            assertTrue(!!emptyCatalogHint, 'Expected empty decoration preset catalog hint.');
+            const emptyConfigurationHint = Array.from(ui.root.querySelectorAll('.options-note'))
+                .find((el) => (el.textContent || '').includes('Select a decoration type to edit configuration properties.'));
+            assertTrue(!!emptyConfigurationHint, 'Expected configuration hint when no type is selected.');
+
+            const viewButtons = Array.from(ui.leftStack?.querySelectorAll('button') ?? [])
+                .map((el) => (el.textContent || '').trim());
+            assertTrue(viewButtons.includes('Mesh'), 'Expected Mesh view toggle on left panel.');
+            assertTrue(viewButtons.includes('Wireframe'), 'Expected Wireframe view toggle on left panel.');
+
+            const whereChoice = ui?._controls?.whereToApply?.getValue?.() ?? '';
+            const modeChoice = ui?._controls?.mode?.getValue?.() ?? '';
+            const posChoice = ui?._controls?.position?.getValue?.() ?? '';
+            assertEqual(whereChoice, WALL_DECORATOR_WHERE_TO_APPLY.ENTIRE_FACADE, 'Expected default where-to-apply value.');
+            assertEqual(modeChoice, WALL_DECORATOR_MODE.FACE, 'Expected default mode value.');
+            assertEqual(posChoice, WALL_DECORATOR_POSITION.BOTTOM, 'Expected default position value.');
+
+            ui.setState({
+                ...getDefaultWallDecoratorDebuggerState({ decoratorId: WALL_DECORATOR_ID.SIMPLE_SKIRT })
+            });
+            const configLabels = Array.from(ui.root.querySelectorAll('.wall-decoration-configuration-host .options-row-label'))
+                .map((el) => (el.textContent || '').trim());
+            assertTrue(configLabels.includes('Height (m)'), 'Expected float property control from type metadata.');
+            assertTrue(configLabels.includes('Edge cap thickness (cm)'), 'Expected int property control from type metadata.');
+            assertTrue(configLabels.includes('Edge cap'), 'Expected enum property control from type metadata.');
+            assertTrue(configLabels.includes('Corner connector'), 'Expected bool property control from type metadata.');
+
+            const wallSizeText = ui?._controls?.fixedWallSize?.text?.textContent ?? '';
+            assertTrue(wallSizeText.includes('10.0m × 3.5m'), 'Expected fixed wall size to be shown.');
+        } finally {
+            ui.destroy();
+        }
+    });
+
+    test('WallDecorationMeshDebuggerView: sample wall uses one corner mesh without overlap', () => {
+        const view = new WallDecorationMeshDebuggerView();
+        try {
+            view.scene = new THREE.Scene();
+            view._buildWalls();
+
+            const wallMeshes = Array.from(view.scene.children ?? [])
+                .filter((obj) => obj?.isMesh && String(obj?.name ?? '').startsWith('wall_'));
+            assertEqual(wallMeshes.length, 1, 'Expected a single sample wall mesh.');
+            assertEqual(wallMeshes[0]?.name, 'wall_corner', 'Expected merged corner wall mesh name.');
+            assertTrue(!!view._wallMesh?.isMesh, 'Expected merged wall mesh handle.');
+
+            const box = new THREE.Box3().setFromObject(wallMeshes[0]);
+            const size = box.getSize(new THREE.Vector3());
+            assertNear(size.x, 10.0, 1e-6, 'Expected wall corner to span full facade width on X.');
+            assertNear(size.y, 3.5, 1e-6, 'Expected wall corner to match facade height.');
+            assertNear(size.z, 10.0, 1e-6, 'Expected wall corner to span both faces on Z.');
+        } finally {
+            view._disposeSceneResources();
+            view.scene = null;
+        }
     });
 
     test('BuildingFabricationGenerator: belt extrusion can extend beyond footprint', () => {
@@ -2729,6 +4518,15 @@ async function runTests() {
             walls: { inset: 0.0 }
         });
         assertTrue(!!bayParts, 'Expected bay visual parts.');
+        const bayLayerId = typeof layers?.[0]?.id === 'string' ? layers[0].id : '';
+        const bayHighlightEntries = Array.isArray(bayParts?.bayHighlightDataByLayerId?.[bayLayerId])
+            ? bayParts.bayHighlightDataByLayerId[bayLayerId]
+            : [];
+        assertTrue(bayHighlightEntries.length > 0, 'Expected bay highlight metadata for hovered bay overlays.');
+        assertTrue(
+            bayHighlightEntries.some((entry) => entry?.faceId === 'A' && entry?.bayId === 'bay_1'),
+            'Expected bay highlight metadata to include face A / bay_1.'
+        );
 
         const findWallMesh = (parts) => (parts?.solidMeshes ?? []).find((m) => (
             m?.isMesh && m?.userData?.buildingFab2Role === 'wall'
@@ -2961,7 +4759,7 @@ async function runTests() {
         }
     });
 
-    test('BuildingFabricationGenerator: street-floor interior pass includes legacy run windows on facade walls', () => {
+    test('BuildingFabricationGenerator: floor interior toggle enables interior shell meshes on floor layers', () => {
         const tileSize = 10;
         const map = {
             tileSize,
@@ -2983,6 +4781,7 @@ async function runTests() {
             createDefaultFloorLayer({
                 floors: 1,
                 floorHeight: 3.0,
+                interior: { enabled: true },
                 belt: { enabled: false },
                 windows: {
                     enabled: true,
@@ -3028,10 +4827,305 @@ async function runTests() {
         assertTrue(!!parts, 'Expected visual parts.');
 
         const interiorMeshes = (parts.solidMeshes ?? []).filter((m) => m?.userData?.buildingFab2Role === 'interior');
-        assertTrue(interiorMeshes.length >= 3, 'Expected street-floor interior shell meshes from run-window carve pass.');
+        assertTrue(interiorMeshes.length >= 3, 'Expected floor interior wall/floor/ceiling meshes when interior is enabled.');
     });
 
-    test('BuildingFabricationGenerator: street-floor interior shell uses fixed materials and floorHeight-0.10 span', () => {
+    test('BuildingFabricationGenerator: bay openings render without generating interior shell meshes', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+        const layers = [
+            createDefaultFloorLayer({
+                floors: 1,
+                floorHeight: 5.0,
+                belt: { enabled: false },
+                windows: { enabled: false }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+        const baseMat = layers[0]?.material ?? { kind: 'texture', id: 'pbr.brick_wall_11' };
+        const windowDefinitions = {
+            items: [
+                {
+                    id: 'case_window',
+                    assetType: 'window',
+                    settings: {
+                        width: 1.2,
+                        height: 1.3,
+                        frame: { width: 0.08, depth: 0.12, inset: 0.02 }
+                    }
+                },
+                {
+                    id: 'case_door',
+                    assetType: 'door',
+                    settings: {
+                        width: 1.1,
+                        height: 2.2,
+                        frame: { width: 0.08, depth: 0.12, inset: 0.02, openBottom: true }
+                    }
+                },
+                {
+                    id: 'case_garage',
+                    assetType: 'garage',
+                    settings: {
+                        width: 2.4,
+                        height: 2.3,
+                        frame: { width: 0.09, depth: 0.12, inset: 0.02, openBottom: true }
+                    }
+                }
+            ]
+        };
+
+        const cases = [
+            { assetType: 'window', defId: 'case_window', size: { widthMeters: 1.2, heightMeters: 1.3 } },
+            { assetType: 'door', defId: 'case_door', size: { widthMeters: 1.1, heightMeters: 2.2 } },
+            { assetType: 'garage', defId: 'case_garage', size: { widthMeters: 2.4, heightMeters: 2.3 } }
+        ];
+
+        const makeFacades = ({ assetType, defId, size }) => ({
+            A: {
+                wallMaterial: baseMat,
+                depthOffset: 0.0,
+                layout: {
+                    bays: {
+                        nextBayIndex: 2,
+                        items: [{
+                            id: `bay_${assetType}`,
+                            size: { mode: 'range', minMeters: 4.0, maxMeters: null },
+                            expandPreference: 'prefer_expand',
+                            window: {
+                                enabled: true,
+                                assetType,
+                                defId,
+                                size,
+                                padding: { leftMeters: 0.2, rightMeters: 0.2 }
+                            }
+                        }]
+                    }
+                }
+            }
+        });
+
+        for (const entry of cases) {
+            const parts = buildBuildingFabricationVisualParts({
+                map,
+                tiles: [[0, 0]],
+                generatorConfig,
+                tileSize,
+                occupyRatio: 1.0,
+                layers,
+                facades: makeFacades(entry),
+                windowDefinitions,
+                overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+                walls: { inset: 0.0 }
+            });
+            assertTrue(!!parts && !!parts.windows, `Expected windows group for ${entry.assetType} bay opening.`);
+
+            const interiorMeshes = (parts.solidMeshes ?? []).filter((m) => m?.userData?.buildingFab2Role === 'interior');
+            assertEqual(interiorMeshes.length, 0, `Expected no interior shell meshes for bay ${entry.assetType} opening.`);
+
+            const customGroups = (parts.windows?.children ?? [])
+                .filter((group) => group?.userData?.buildingWindowSource === 'bf2_window_definition');
+            const hasCaseGroup = customGroups.some((group) => group?.userData?.windowDefinitionId === entry.defId);
+            assertTrue(hasCaseGroup, `Expected ${entry.assetType} bay opening to render using ${entry.defId}.`);
+        }
+    });
+
+    test('BuildingFabricationGenerator: garage facade copies closed material + rotation and supports open override', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+        const layers = [
+            createDefaultFloorLayer({
+                floors: 1,
+                floorHeight: 4.8,
+                belt: { enabled: false },
+                windows: { enabled: false }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+        const baseMat = layers[0]?.material ?? { kind: 'texture', id: 'pbr.brick_wall_11' };
+        const closedMaterialId = 'pbr.brick_wall_11';
+        const windowDefinitions = {
+            items: [{
+                id: 'garage_case',
+                assetType: 'garage',
+                settings: {
+                    width: 2.8,
+                    height: 2.4,
+                    frame: { width: 0.09, depth: 0.12, inset: 0.03, openBottom: true },
+                    arch: { enabled: false }
+                },
+                garageFacade: {
+                    state: 'closed',
+                    closedMaterialId,
+                    rotationDegrees: 90
+                }
+            }]
+        };
+        const makeFacades = (garageFacadeOverride = null) => ({
+            A: {
+                wallMaterial: baseMat,
+                depthOffset: 0.0,
+                layout: {
+                    bays: {
+                        nextBayIndex: 2,
+                        items: [{
+                            id: 'bay_1',
+                            size: { mode: 'range', minMeters: 4.2, maxMeters: null },
+                            expandPreference: 'prefer_expand',
+                            window: {
+                                enabled: true,
+                                assetType: 'garage',
+                                defId: 'garage_case',
+                                size: { widthMeters: 2.8, heightMeters: 2.4 },
+                                padding: { leftMeters: 0.2, rightMeters: 0.2 },
+                                ...(garageFacadeOverride ? { garageFacade: garageFacadeOverride } : {})
+                            }
+                        }]
+                    }
+                }
+            }
+        });
+
+        const resolvedMaterialIds = [];
+        const textureCache = {
+            resolveMaterial: (id) => {
+                resolvedMaterialIds.push(String(id ?? ''));
+                return { id };
+            },
+            applyResolvedMaterial: (mat, payload) => {
+                mat.userData = mat.userData ?? {};
+                mat.userData.testResolvedMaterialId = String(payload?.id ?? '');
+            },
+            trackMaterial: () => null
+        };
+
+        const closedParts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            facades: makeFacades(),
+            windowDefinitions,
+            textureCache,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!closedParts && !!closedParts.windows, 'Expected windows group for closed garage case.');
+        const closedOverlayMesh = (closedParts.windows.children ?? []).find((obj) => (
+            obj?.isMesh
+            && obj?.userData?.buildingWindowSource === 'bf2_garage_facade'
+            && obj?.userData?.garageFacadeState === 'closed'
+        )) ?? null;
+        assertTrue(!!closedOverlayMesh, 'Expected closed garage facade mesh.');
+        assertTrue(
+            resolvedMaterialIds.includes(closedMaterialId),
+            'Expected closed garage material id to be resolved from copied metadata.'
+        );
+        const panelRotation = Number(closedOverlayMesh?.material?.userData?.uvTilingConfig?.rotation);
+        assertNear(panelRotation, Math.PI * 0.5, 1e-6, 'Expected closed garage facade texture rotation copied from metadata.');
+
+        const closedGarageGroup = (closedParts.windows.children ?? []).find((obj) => (
+            obj?.isGroup
+            && obj?.userData?.buildingWindowSource === 'bf2_window_definition'
+            && obj?.userData?.windowAssetType === 'garage'
+        )) ?? null;
+        assertTrue(!!closedGarageGroup, 'Expected garage window-definition group.');
+        const garageLayers = closedGarageGroup?.userData?.layers ?? null;
+        assertFalse(!!garageLayers?.glass?.visible, 'Expected garage glass layer hidden.');
+        assertFalse(!!garageLayers?.muntins?.visible, 'Expected garage muntins layer hidden.');
+        assertFalse(!!garageLayers?.shade?.visible, 'Expected garage shade layer hidden.');
+
+        const openParts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            facades: makeFacades({ state: 'open' }),
+            windowDefinitions,
+            textureCache,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!openParts && !!openParts.windows, 'Expected windows group for open garage case.');
+        const openOverlayMesh = (openParts.windows.children ?? []).find((obj) => (
+            obj?.isMesh
+            && obj?.userData?.buildingWindowSource === 'bf2_garage_facade'
+            && obj?.userData?.garageFacadeState === 'open'
+        )) ?? null;
+        assertTrue(!!openOverlayMesh, 'Expected open garage facade interior mesh.');
+        const hasClosedMesh = (openParts.windows.children ?? []).some((obj) => (
+            obj?.isMesh
+            && obj?.userData?.buildingWindowSource === 'bf2_garage_facade'
+            && obj?.userData?.garageFacadeState === 'closed'
+        ));
+        assertFalse(hasClosedMesh, 'Expected open override to suppress closed garage panel mesh.');
+    });
+
+    test('BuildingFabricationGenerator: opening cut metrics keep open-bottom cutouts aligned to floor', () => {
+        const resolveCutMetrics = buildingFabricationGeneratorTestOnly?.resolveOpeningCutMetrics;
+        assertTrue(typeof resolveCutMetrics === 'function', 'Expected opening cut metrics helper.');
+
+        const withoutBottomFrame = resolveCutMetrics({
+            width: 2.0,
+            height: 2.0,
+            frame: {
+                verticalWidth: 0.1,
+                horizontalWidth: 0.1,
+                openBottom: true,
+                doorBottomFrame: { enabled: false, mode: 'none' }
+            }
+        }, { cutX: 1.0, cutY: 1.0 });
+        assertNear(withoutBottomFrame.cutWidth, 1.8, 1e-6, 'Expected vertical frame widths to carve side margins.');
+        assertNear(withoutBottomFrame.cutHeight, 1.9, 1e-6, 'Expected open-bottom frame to avoid bottom cut margin.');
+        assertNear(withoutBottomFrame.cutCenterYOffset, -0.05, 1e-6, 'Expected open-bottom cut center to shift down by half top margin.');
+
+        const withBottomFrame = resolveCutMetrics({
+            width: 2.0,
+            height: 2.0,
+            frame: {
+                verticalWidth: 0.1,
+                horizontalWidth: 0.1,
+                openBottom: true,
+                doorBottomFrame: { enabled: true, mode: 'match' }
+            }
+        }, { cutX: 1.0, cutY: 1.0 });
+        assertNear(withBottomFrame.cutHeight, 1.8, 1e-6, 'Expected matched door bottom frame to restore bottom margin cut.');
+        assertNear(withBottomFrame.cutCenterYOffset, 0.0, 1e-6, 'Expected centered cut when top and bottom margins match.');
+    });
+
+    test('BuildingFabricationGenerator: floor interior uses painted plaster material with fixed 1m tiling', async () => {
         const tileSize = 10;
         const map = {
             tileSize,
@@ -3054,6 +5148,7 @@ async function runTests() {
             createDefaultFloorLayer({
                 floors: 2,
                 floorHeight,
+                interior: { enabled: true },
                 belt: { enabled: false },
                 windows: {
                     enabled: true,
@@ -3140,6 +5235,7 @@ async function runTests() {
         assertTrue(!!parts, 'Expected visual parts.');
 
         const interiorMeshes = (parts.solidMeshes ?? []).filter((m) => m?.userData?.buildingFab2Role === 'interior');
+        assertTrue(interiorMeshes.length >= 6, 'Expected interior meshes on each enabled floor segment.');
         const interiorWall = interiorMeshes.find((m) => m?.userData?.buildingFab2InteriorKind === 'wall') ?? null;
         const interiorFloor = interiorMeshes.find((m) => m?.userData?.buildingFab2InteriorKind === 'floor') ?? null;
         const interiorCeiling = interiorMeshes.find((m) => m?.userData?.buildingFab2InteriorKind === 'ceiling') ?? null;
@@ -3149,13 +5245,21 @@ async function runTests() {
 
         const box = new THREE.Box3().setFromObject(interiorWall);
         const interiorHeight = box.max.y - box.min.y;
-        assertNear(interiorHeight, floorHeight - 0.10, 1e-3, 'Expected interior wall span to be floorHeight - 0.10m.');
+        assertNear(interiorHeight, floorHeight, 1e-3, 'Expected interior wall span to match floor height.');
         assertNear(interiorFloor.position.y, box.min.y, 1e-6, 'Expected interior floor to start at street-floor base.');
         assertNear(interiorCeiling.position.y, box.max.y, 1e-6, 'Expected interior ceiling to align with interior wall top.');
 
-        const requiredMaterialIds = ['pbr.plastered_wall_02', 'pbr.plastered_wall_04', 'pbr.concrete_layers_02'];
-        for (const materialId of requiredMaterialIds) {
-            assertTrue(resolvedMaterialIds.includes(materialId), `Expected interior material resolve: ${materialId}.`);
+        const requiredMaterialId = 'pbr.painted_plaster_wall';
+        assertTrue(resolvedMaterialIds.includes(requiredMaterialId), `Expected interior material resolve: ${requiredMaterialId}.`);
+
+        const { getPbrMaterialTileMeters } = await import('/src/graphics/assets3d/materials/PbrMaterialCatalog.js');
+        const expectedTileScale = Number(getPbrMaterialTileMeters(requiredMaterialId)) || 1.0;
+        const materials = [interiorWall.material, interiorFloor.material, interiorCeiling.material];
+        for (const mat of materials) {
+            const tiling = mat?.userData?.uvTilingConfig?.tiling ?? null;
+            assertTrue(!!tiling, 'Expected interior material UV tiling config.');
+            assertNear(Number(tiling.x) || 0, expectedTileScale, 1e-6, 'Expected 1m interior tile width override.');
+            assertNear(Number(tiling.y) || 0, expectedTileScale, 1e-6, 'Expected 1m interior tile height override.');
         }
     });
 
@@ -3243,6 +5347,489 @@ async function runTests() {
         const size = box.getSize(new THREE.Vector3());
         assertNear(size.x, 1.7, 0.2, 'Expected bay opening width to follow window.size.widthMeters.');
         assertNear(size.y, 2.5, 0.2, 'Expected bay opening height to follow window.size.heightMeters.');
+    });
+
+    test('BuildingFabricationGenerator: bay opening repeat and stacked top opening create multiple instances', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+        const layers = [
+            createDefaultFloorLayer({
+                floors: 1,
+                floorHeight: 3.2,
+                belt: { enabled: false },
+                windows: { enabled: false }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+        const baseMat = layers[0]?.material ?? { kind: 'texture', id: 'pbr.brick_wall_11' };
+        const facades = {
+            A: {
+                wallMaterial: baseMat,
+                depthOffset: 0.0,
+                layout: {
+                    bays: {
+                        nextBayIndex: 2,
+                        items: [{
+                            id: 'bay_1',
+                            size: { mode: 'window_fixed', widthMeters: 4.0 },
+                            expandPreference: 'prefer_expand',
+                            window: {
+                                enabled: true,
+                                defId: 'window_black_6_panels_tall',
+                                assetType: 'window',
+                                size: { widthMeters: 1.0, heightMeters: 1.0 },
+                                heightMode: 'fixed',
+                                verticalOffsetMeters: 0.2,
+                                repeat: { count: 2 },
+                                muntins: { bottomEnabled: true, topEnabled: true },
+                                top: {
+                                    enabled: true,
+                                    heightMode: 'fixed',
+                                    heightMeters: 0.6,
+                                    verticalGapMeters: 0.2,
+                                    frameWidthMeters: 0.05
+                                },
+                                padding: { leftMeters: 0.2, rightMeters: 0.2 }
+                            }
+                        }]
+                    }
+                }
+            }
+        };
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            facades,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!parts && !!parts.windows, 'Expected windows group.');
+
+        const customGroups = (parts.windows?.children ?? [])
+            .filter((entry) => entry?.userData?.buildingWindowSource === 'bf2_window_definition');
+        assertTrue(customGroups.length >= 2, 'Expected separate bottom/top opening groups.');
+        const instanceCount = customGroups.reduce((sum, group) => (
+            sum + (Array.isArray(group?.userData?.instanceVariations) ? group.userData.instanceVariations.length : 0)
+        ), 0);
+        assertEqual(instanceCount, 4, 'Expected 2 bottom + 2 top opening instances.');
+
+        const allBox = new THREE.Box3();
+        for (const group of customGroups) allBox.union(new THREE.Box3().setFromObject(group));
+        assertTrue(allBox.min.y >= 0.1, 'Expected vertical offset from floor bottom to raise opening start.');
+    });
+
+    test('BuildingFabricationGenerator: opening height mode full uses available floor segment height', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+        const floorHeight = 3.2;
+        const layers = [
+            createDefaultFloorLayer({
+                floors: 1,
+                floorHeight,
+                belt: { enabled: false },
+                windows: { enabled: false }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+        const baseMat = layers[0]?.material ?? { kind: 'texture', id: 'pbr.brick_wall_11' };
+        const facades = {
+            A: {
+                wallMaterial: baseMat,
+                depthOffset: 0.0,
+                layout: {
+                    bays: {
+                        nextBayIndex: 2,
+                        items: [{
+                            id: 'bay_1',
+                            size: { mode: 'window_fixed', widthMeters: 3.2 },
+                            expandPreference: 'prefer_expand',
+                            window: {
+                                enabled: true,
+                                defId: 'window_black_6_panels_tall',
+                                assetType: 'window',
+                                size: { widthMeters: 1.0, heightMeters: 1.0 },
+                                heightMode: 'full',
+                                verticalOffsetMeters: 0.3,
+                                repeat: { count: 1 },
+                                padding: { leftMeters: 0.2, rightMeters: 0.2 }
+                            }
+                        }]
+                    }
+                }
+            }
+        };
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            facades,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!parts && !!parts.windows, 'Expected windows group.');
+
+        const customGroups = (parts.windows?.children ?? [])
+            .filter((entry) => entry?.userData?.buildingWindowSource === 'bf2_window_definition');
+        assertTrue(customGroups.length > 0, 'Expected full-height opening group.');
+
+        const box = new THREE.Box3().setFromObject(customGroups[0]);
+        const size = box.getSize(new THREE.Vector3());
+        assertNear(size.y, floorHeight - 0.3, 0.3, 'Expected full mode to use segment height minus vertical offset.');
+    });
+
+    test('BuildingFabricationGenerator: full-height bottom opening reserves configured top opening space', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+        const floorHeight = 3.2;
+        const layers = [
+            createDefaultFloorLayer({
+                floors: 1,
+                floorHeight,
+                belt: { enabled: false },
+                windows: { enabled: false }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+        const baseMat = layers[0]?.material ?? { kind: 'texture', id: 'pbr.brick_wall_11' };
+        const facades = {
+            A: {
+                wallMaterial: baseMat,
+                depthOffset: 0.0,
+                layout: {
+                    bays: {
+                        nextBayIndex: 2,
+                        items: [{
+                            id: 'bay_1',
+                            size: { mode: 'window_fixed', widthMeters: 3.2 },
+                            expandPreference: 'prefer_expand',
+                            window: {
+                                enabled: true,
+                                defId: 'window_black_6_panels_tall',
+                                assetType: 'window',
+                                size: { widthMeters: 1.0, heightMeters: 1.0 },
+                                heightMode: 'full',
+                                verticalOffsetMeters: 0.2,
+                                repeat: { count: 1 },
+                                visual: { disableShades: true, interior: 'office' },
+                                top: {
+                                    enabled: true,
+                                    heightMode: 'fixed',
+                                    heightMeters: 0.6,
+                                    verticalGapMeters: 0.2
+                                },
+                                padding: { leftMeters: 0.2, rightMeters: 0.2 }
+                            }
+                        }]
+                    }
+                }
+            }
+        };
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            facades,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!parts && !!parts.windows, 'Expected windows group.');
+
+        const customGroups = (parts.windows?.children ?? [])
+            .filter((entry) => entry?.userData?.buildingWindowSource === 'bf2_window_definition');
+        assertTrue(customGroups.length >= 2, 'Expected separate bottom/top custom opening groups.');
+
+        let bottomGroup = null;
+        let topGroup = null;
+        for (const group of customGroups) {
+            const vars = Array.isArray(group?.userData?.instanceVariations) ? group.userData.instanceVariations : [];
+            if (!bottomGroup && vars.some((v) => String(v?.id || '').includes(':bottom'))) bottomGroup = group;
+            if (!topGroup && vars.some((v) => String(v?.id || '').includes(':top'))) topGroup = group;
+        }
+        assertTrue(!!bottomGroup, 'Expected full-height bottom opening instances.');
+        assertTrue(!!topGroup, 'Expected top opening instances.');
+
+        const bottomBox = new THREE.Box3().setFromObject(bottomGroup);
+        const topBox = new THREE.Box3().setFromObject(topGroup);
+        const bottomSize = bottomBox.getSize(new THREE.Vector3());
+        const topSize = topBox.getSize(new THREE.Vector3());
+        const bottomCenter = bottomBox.getCenter(new THREE.Vector3());
+        const topCenter = topBox.getCenter(new THREE.Vector3());
+        const bottomSettings = bottomGroup?.userData?.settings ?? null;
+        const topSettings = topGroup?.userData?.settings ?? null;
+        const expectedBottomHeight = floorHeight - 0.2 - 0.2 - 0.6;
+        assertNear(bottomSize.y, expectedBottomHeight, 0.35, 'Expected bottom full-height opening to reserve top opening + gap.');
+        assertNear(topSize.y, 0.6, 0.25, 'Expected top opening fixed-height size preserved.');
+        assertNear(topCenter.x, bottomCenter.x, 1e-6, 'Expected top opening X inset to match bottom opening.');
+        assertNear(topCenter.z, bottomCenter.z, 1e-6, 'Expected top opening Z inset to match bottom opening.');
+        assertTrue(topBox.min.y > bottomBox.max.y, 'Expected top opening to sit above the bottom opening with no overlap.');
+        assertFalse(!!bottomSettings?.shade?.enabled, 'Expected main opening disable shades override to apply.');
+        assertFalse(!!topSettings?.shade?.enabled, 'Expected top opening to follow main disable shades override.');
+        assertTrue(!!bottomSettings?.interior?.enabled, 'Expected main opening interior to remain enabled with preset override.');
+        assertEqual(bottomSettings?.interior?.parallaxInteriorPresetId, 'parallax_interior.office', 'Expected main opening interior preset override.');
+        assertEqual(topSettings?.interior?.parallaxInteriorPresetId, 'parallax_interior.office', 'Expected top opening to follow main interior preset override.');
+    });
+
+    test('BuildingFabricationGenerator: top opening inherits door definition id', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+        const layers = [
+            createDefaultFloorLayer({
+                floors: 1,
+                floorHeight: 3.2,
+                belt: { enabled: false },
+                windows: { enabled: false }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+        const baseMat = layers[0]?.material ?? { kind: 'texture', id: 'pbr.brick_wall_11' };
+        const facades = {
+            A: {
+                wallMaterial: baseMat,
+                depthOffset: 0.0,
+                layout: {
+                    bays: {
+                        nextBayIndex: 2,
+                        items: [{
+                            id: 'bay_1',
+                            size: { mode: 'window_fixed', widthMeters: 4.5 },
+                            expandPreference: 'prefer_expand',
+                            window: {
+                                enabled: true,
+                                defId: 'door_black_tall',
+                                assetType: 'door',
+                                size: { widthMeters: 2.0, heightMeters: 1.9 },
+                                heightMode: 'fixed',
+                                verticalOffsetMeters: 0.0,
+                                repeat: { count: 1 },
+                                muntins: { bottomEnabled: false, topEnabled: false },
+                                top: {
+                                    enabled: true,
+                                    heightMode: 'fixed',
+                                    heightMeters: 0.5,
+                                    verticalGapMeters: 0.2
+                                },
+                                padding: { leftMeters: 0.2, rightMeters: 0.2 }
+                            }
+                        }]
+                    }
+                }
+            }
+        };
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            facades,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!parts && !!parts.windows, 'Expected windows group.');
+
+        const customGroups = (parts.windows?.children ?? [])
+            .filter((entry) => entry?.userData?.buildingWindowSource === 'bf2_window_definition');
+        assertTrue(customGroups.length >= 2, 'Expected bottom/top custom opening groups.');
+
+        const definitionIds = new Set(customGroups.map((group) => String(group?.userData?.windowDefinitionId ?? '')));
+        assertEqual(definitionIds.size, 1, 'Expected top and bottom groups to use the same definition id.');
+        assertTrue(definitionIds.has('door_black_tall'), 'Expected top opening to inherit door_black_tall definition id.');
+
+        let bottomGroup = null;
+        let topGroup = null;
+        for (const group of customGroups) {
+            const vars = Array.isArray(group?.userData?.instanceVariations) ? group.userData.instanceVariations : [];
+            if (!bottomGroup && vars.some((v) => String(v?.id || '').includes(':bottom'))) bottomGroup = group;
+            if (!topGroup && vars.some((v) => String(v?.id || '').includes(':top'))) topGroup = group;
+        }
+        assertTrue(!!bottomGroup, 'Expected bottom opening custom group.');
+        assertTrue(!!topGroup, 'Expected top opening custom group.');
+
+        const bottomSettings = bottomGroup?.userData?.settings ?? null;
+        const topSettings = topGroup?.userData?.settings ?? null;
+        assertTrue(!!bottomSettings, 'Expected bottom opening settings.');
+        assertTrue(!!topSettings, 'Expected top opening settings.');
+        assertTrue(!!bottomSettings?.frame?.addHandles, 'Expected bottom door opening to keep handles from catalog.');
+        assertFalse(!!topSettings?.frame?.addHandles, 'Expected top opening generated from a door to disable copied handles.');
+        assertEqual(topSettings?.frame?.doorStyle, 'single', 'Expected top opening generated from a door to force single style.');
+        assertNear(
+            Number(topSettings?.frame?.inset) || 0,
+            Number(bottomSettings?.frame?.inset) || 0,
+            1e-6,
+            'Expected top opening frame inset (z placement basis) to match bottom.'
+        );
+        assertNear(
+            Number(topSettings?.frame?.depth) || 0,
+            Number(bottomSettings?.frame?.depth) || 0,
+            1e-6,
+            'Expected top opening frame depth to match bottom.'
+        );
+        assertNear(
+            Number(topSettings?.glass?.zOffset) || 0,
+            Number(bottomSettings?.glass?.zOffset) || 0,
+            1e-6,
+            'Expected top opening glass z-offset to match bottom.'
+        );
+    });
+
+    test('BuildingFabricationGenerator: BF2 loading window-with-cover adds sill decoration mesh', () => {
+        const tileSize = 10;
+        const map = {
+            tileSize,
+            kind: new Uint8Array([0]),
+            inBounds: (x, y) => x === 0 && y === 0,
+            index: () => 0,
+            tileToWorldCenter: () => ({ x: 0, z: 0 })
+        };
+        const generatorConfig = {
+            road: {
+                surfaceY: 0,
+                curb: { height: 0, extraHeight: 0, thickness: 0 },
+                sidewalk: { extraWidth: 0, lift: 0 }
+            },
+            ground: { surfaceY: 0 }
+        };
+        const layers = [
+            createDefaultFloorLayer({
+                floors: 1,
+                floorHeight: 3.2,
+                belt: { enabled: false },
+                windows: { enabled: false }
+            }),
+            createDefaultRoofLayer({ ring: { enabled: false } })
+        ];
+        const baseMat = layers[0]?.material ?? { kind: 'texture', id: 'pbr.brick_wall_11' };
+        const facades = {
+            A: {
+                wallMaterial: baseMat,
+                depthOffset: 0.0,
+                layout: {
+                    bays: {
+                        nextBayIndex: 2,
+                        items: [{
+                            id: 'bay_cover',
+                            size: { mode: 'window_fixed', widthMeters: 4.0 },
+                            expandPreference: 'prefer_expand',
+                            window: {
+                                enabled: true,
+                                defId: 'window_street_black_with_cover',
+                                assetType: 'window',
+                                size: { widthMeters: 1.7, heightMeters: 2.5 },
+                                padding: { leftMeters: 0.2, rightMeters: 0.2 }
+                            }
+                        }]
+                    }
+                }
+            }
+        };
+
+        const parts = buildBuildingFabricationVisualParts({
+            map,
+            tiles: [[0, 0]],
+            generatorConfig,
+            tileSize,
+            occupyRatio: 1.0,
+            layers,
+            facades,
+            overlays: { wire: false, floorplan: false, border: false, floorDivisions: false },
+            walls: { inset: 0.0 }
+        });
+        assertTrue(!!parts && !!parts.windows, 'Expected windows group.');
+
+        const customGroups = (parts.windows?.children ?? [])
+            .filter((entry) => entry?.userData?.buildingWindowSource === 'bf2_window_definition')
+            .filter((entry) => entry?.userData?.windowDefinitionId === 'window_street_black_with_cover');
+        assertTrue(customGroups.length > 0, 'Expected with-cover definition group to be created.');
+
+        const sillMesh = (parts.windows?.children ?? []).find((entry) => (
+            !!entry?.isInstancedMesh
+            && entry?.userData?.buildingWindowSource === 'bf2_window_decoration'
+            && entry?.userData?.windowDefinitionId === 'window_street_black_with_cover'
+            && entry?.userData?.windowDecorationPart === 'sill'
+        )) ?? null;
+        assertTrue(!!sillMesh, 'Expected BF2 to generate a sill decoration mesh for with-cover entries.');
+        assertEqual(sillMesh.userData?.windowDecorationStyle, 'bottom_cover', 'Expected bottom-cover style on loaded sill decoration.');
+        assertTrue((sillMesh?.count ?? 0) > 0, 'Expected sill decoration instancing to match window instances.');
+
+        const sillBox = new THREE.Box3().setFromObject(sillMesh);
+        const sillSize = sillBox.getSize(new THREE.Vector3());
+        assertNear(sillSize.y, 0.5, 0.05, 'Expected bottom-cover sill height to be 50cm.');
+
+        const sillMat = sillMesh?.material ?? null;
+        assertEqual(sillMat?.color?.getHex?.(), 3487286, 'Expected sill color to match frame color.');
+        assertNear(Number(sillMat?.roughness) || 0, 0.54, 1e-6, 'Expected sill roughness to match frame roughness.');
+        assertNear(Number(sillMat?.metalness) || 0, 0.07, 1e-6, 'Expected sill metalness to match frame metalness.');
     });
 
     const buildFacadeBoundaryLoopDetailForMaterialOwnership = ({ leftDepth = 0.2, rightDepth = 0.8 } = {}) => ([
@@ -9749,6 +12336,8 @@ async function runTests() {
 
     test('BuildingFabricationTypes: default layers include mat-var and tiling sections', () => {
         const floor = createDefaultFloorLayer();
+        assertTrue(!!floor.interior && typeof floor.interior === 'object', 'Expected floor interior config.');
+        assertFalse(!!floor.interior.enabled, 'Expected floor interior disabled by default.');
         assertTrue(!!floor.tiling, 'Expected floor tiling config.');
         assertFalse(floor.tiling.enabled, 'Expected floor tiling disabled by default.');
         assertTrue(Number.isFinite(floor.tiling.tileMeters), 'Expected floor tileMeters to be a number.');
@@ -9847,6 +12436,7 @@ async function runTests() {
     test('BuildingFabricationTypes: cloneBuildingLayers deep clones mat-var and tiling', () => {
         const original = [
             createDefaultFloorLayer({
+                interior: { enabled: true },
                 tiling: { enabled: true, tileMeters: 3.5, uvEnabled: true, offsetU: 0.25, offsetV: -0.15, rotationDegrees: 45 },
                 materialVariation: { enabled: true, seedOffset: 7, macro: { enabled: true, intensity: 1.2 } },
                 belt: { tiling: { enabled: true, tileMetersU: 2.0, tileMetersV: 5.0 } },
@@ -9862,6 +12452,7 @@ async function runTests() {
         ];
 
         const cloned = cloneBuildingLayers(original);
+        cloned[0].interior.enabled = false;
         cloned[0].tiling.tileMeters = 9.0;
         cloned[0].tiling.offsetU = 0.99;
         cloned[0].materialVariation.seedOffset = 123;
@@ -9872,6 +12463,7 @@ async function runTests() {
         cloned[1].roof.materialVariation.seedOffset = 456;
         cloned[1].ring.tiling.tileMetersV = 9.0;
 
+        assertTrue(!!original[0].interior.enabled, 'Expected floor interior config to be cloned (no shared refs).');
         assertEqual(original[0].tiling.tileMeters, 3.5, 'Expected floor tiling to be cloned (no shared refs).');
         assertEqual(original[0].tiling.offsetU, 0.25, 'Expected floor tiling UV fields to be cloned (no shared refs).');
         assertEqual(original[0].materialVariation.seedOffset, 7, 'Expected floor materialVariation to be cloned (no shared refs).');

@@ -2,7 +2,7 @@
 // Controlled scene for side-by-side PBR material calibration.
 import * as THREE from 'three';
 import { createToolCameraController } from '../../engine3d/camera/ToolCameraPrefab.js';
-import { getPbrMaterialTileMeters } from '../../content3d/catalogs/PbrMaterialCatalog.js';
+import { getPbrMaterialMeta, getPbrMaterialTileMeters } from '../../content3d/catalogs/PbrMaterialCatalog.js';
 import { PbrTextureLoaderService } from '../../content3d/materials/PbrTexturePipeline.js';
 import { getResolvedCalibrationPresetLightingSettings, getResolvedDefaultLightingSettings, LIGHTING_RESOLUTION_MODES } from '../../lighting/LightingSettings.js';
 import { getMaterialCalibrationIlluminationPresetById, isMaterialCalibrationLightingSnapshotComplete } from './MaterialCalibrationIlluminationPresets.js';
@@ -1069,12 +1069,18 @@ export class MaterialCalibrationScene {
             : ((Number.isFinite(resolvedTileMeters) && resolvedTileMeters > EPS) ? resolvedTileMeters : getPbrMaterialTileMeters(id));
         const safeTile = Math.max(EPS, Number(tileMeters) || 1.0);
         const rep = this._tilingMultiplier / safeTile;
+        const materialMeta = getPbrMaterialMeta(id);
+        const uvRotationRaw = Number(materialMeta?.calibration?.uvRotationDegrees);
+        const uvRotationDegrees = Number.isFinite(uvRotationRaw) ? uvRotationRaw : 0.0;
+        const uvRotationRadians = THREE.MathUtils.degToRad(uvRotationDegrees);
 
         for (const tex of Object.values(set.textures ?? {})) {
             if (!tex) continue;
             tex.wrapS = THREE.RepeatWrapping;
             tex.wrapT = THREE.RepeatWrapping;
             tex.repeat.set(rep, rep);
+            tex.center.set(0.5, 0.5);
+            tex.rotation = uvRotationRadians;
             tex.needsUpdate = true;
         }
     }

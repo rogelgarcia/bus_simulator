@@ -149,6 +149,33 @@
     pointer-events: none;
 }
 
+.building-fab2-material-flat-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 10px;
+}
+
+.building-fab2-material-flat-section + .building-fab2-material-flat-section {
+    margin-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.14);
+    padding-top: 12px;
+}
+
+.building-fab2-material-flat-title {
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    opacity: 0.9;
+}
+
+.building-fab2-material-flat-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
 .building-fab2-side-handle {
     width: 44px;
     max-width: 44px;
@@ -1105,12 +1132,41 @@
     gap: 8px;
 }
 
+.building-fab2-bay-opening-subsection {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.building-fab2-bay-opening-subsection + .building-fab2-bay-opening-subsection {
+    padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,0.12);
+}
+
+.building-fab2-bay-opening-subtitle {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    opacity: 0.82;
+}
+
+.building-fab2-bay-window-details .building-fab-row {
+    margin-top: 4px;
+}
+
 .building-fab2-bay-window-details.is-hidden {
     display: none;
 }
 
 .building-fab2-bay-window-picker .building-fab-material-thumb {
-    height: 76px;
+    width: 100%;
+    height: 94px;
+}
+
+.building-fab2-bay-window-picker .building-fab-material-button {
+    width: min(160px, 100%);
+    justify-self: start;
 }
 
 .building-fab2-bay-window-padding-controls {
@@ -1127,6 +1183,34 @@
 .building-fab2-bay-window-min-hint,
 .building-fab2-bay-window-details-hint {
     margin-top: 0;
+}
+
+.building-fab2-bay-readonly-value {
+    min-width: 220px;
+    box-sizing: border-box;
+    padding: 6px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.16);
+    background: rgba(0,0,0,0.2);
+    color: rgba(233, 242, 255, 0.9);
+    text-align: left;
+}
+
+.building-fab2-bay-window-mode-row .building-fab2-bay-row-controls {
+    justify-content: flex-start;
+}
+
+.building-fab2-bay-window-mode-toggle .building-fab2-width-mode-btn {
+    min-width: 86px;
+}
+
+.building-fab2-bay-top-frame-controls {
+    justify-content: flex-start;
+    gap: 8px;
+}
+
+.building-fab2-bay-top-frame-toggle .building-fab2-width-mode-btn {
+    min-width: 70px;
 }
 
 .building-fab-window-fab-panel.building-fab2-window-fab-popup {

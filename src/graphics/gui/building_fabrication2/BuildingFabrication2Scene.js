@@ -23,6 +23,8 @@ const FACE_HIGHLIGHT_Y_LIFT = 0.08;
 const LAYER_HIGHLIGHT_COLOR = FACE_HIGHLIGHT_COLOR;
 const LAYER_HIGHLIGHT_LINEWIDTH = 3;
 const LAYER_HIGHLIGHT_OPACITY = 0.28;
+const BAY_HIGHLIGHT_COLOR = 0x49adff;
+const BAY_HIGHLIGHT_OPACITY = 0.28;
 const RULER_LINE_COLOR = 0xfff1a6;
 const RULER_LINEWIDTH = 3;
 const RULER_LINE_OPACITY = 0.92;
@@ -194,6 +196,9 @@ export class BuildingFabrication2Scene {
         this._hoveredFloorLayerId = null;
         this._hoverHighlightLine = null;
         this._floorLayerYRangeById = new Map();
+        this._bayHighlightDataByLayerId = null;
+        this._hoveredBay = null;
+        this._hoveredBayOverlay = null;
         this._lineResolution = new THREE.Vector2(1, 1);
 
         this._backgroundColor = new THREE.Color(BACKGROUND_COLOR);
@@ -329,6 +334,28 @@ export class BuildingFabrication2Scene {
         if (next === this._hoveredFloorLayerId) return;
         this._hoveredFloorLayerId = next;
         this._syncHoverHighlight();
+    }
+
+    setHoveredBay({ layerId = null, faceId = null, bayId = null } = {}) {
+        const nextLayerId = typeof layerId === 'string' && layerId ? layerId : null;
+        const nextFaceId = isFaceId(faceId) ? faceId : null;
+        const nextBayId = typeof bayId === 'string' && bayId ? bayId : null;
+        const next = (nextLayerId && nextFaceId && nextBayId)
+            ? { layerId: nextLayerId, faceId: nextFaceId, bayId: nextBayId }
+            : null;
+
+        const prev = this._hoveredBay;
+        if ((prev?.layerId ?? null) === (next?.layerId ?? null)
+            && (prev?.faceId ?? null) === (next?.faceId ?? null)
+            && (prev?.bayId ?? null) === (next?.bayId ?? null)) return;
+        this._hoveredBay = next;
+        this._syncHoveredBayOverlay();
+    }
+
+    clearHoveredBay() {
+        if (!this._hoveredBay) return;
+        this._hoveredBay = null;
+        this._syncHoveredBayOverlay();
     }
 
     setShowDummy(enabled) {
@@ -485,7 +512,7 @@ export class BuildingFabrication2Scene {
         const cameraPos = keepCamera ? this.camera.position.clone() : null;
         const cameraTarget = keepCamera ? this.controls.target.clone() : null;
 
-        this._clearBuilding();
+        this._clearBuilding({ preserveHoveredBay: true });
 
         const group = new THREE.Group();
         group.name = 'building_fabrication2_building';
@@ -555,6 +582,9 @@ export class BuildingFabrication2Scene {
         group.userData.facadeCornerDebug = parts.facadeCornerDebug ?? null;
 
         this._building = { group, solidGroup, featuresGroup, wireGroup, floorsGroup, planGroup, windowsGroup };
+        this._bayHighlightDataByLayerId = (parts.bayHighlightDataByLayerId && typeof parts.bayHighlightDataByLayerId === 'object')
+            ? parts.bayHighlightDataByLayerId
+            : null;
         this._syncBuildingRenderMode();
         this._syncSceneWireframe();
         this._updateFocusBoxFromObject(group);
@@ -562,6 +592,7 @@ export class BuildingFabrication2Scene {
 
         this._floorLayerYRangeById = this._computeFloorLayerYRangeById(layers);
         this._syncHoverHighlight();
+        this._syncHoveredBayOverlay();
         this._syncFaceHighlight();
         this._syncLayoutEditOverlays();
 
@@ -654,6 +685,13 @@ export class BuildingFabrication2Scene {
         this._hoverHighlightLine.removeFromParent();
         disposeObject3D(this._hoverHighlightLine);
         this._hoverHighlightLine = null;
+    }
+
+    _clearHoveredBayOverlay() {
+        if (!this._hoveredBayOverlay) return;
+        this._hoveredBayOverlay.removeFromParent();
+        disposeObject3D(this._hoveredBayOverlay);
+        this._hoveredBayOverlay = null;
     }
 
     _clearRulerLine() {
@@ -972,6 +1010,83 @@ export class BuildingFabrication2Scene {
         this._hoverHighlightLine = line;
     }
 
+    _syncHoveredBayOverlay() {
+        this._clearHoveredBayOverlay();
+
+        if (!this.root || !this._building) return;
+        const hovered = this._hoveredBay && typeof this._hoveredBay === 'object' ? this._hoveredBay : null;
+        if (!hovered) return;
+        const layerId = typeof hovered.layerId === 'string' ? hovered.layerId : '';
+        const faceId = isFaceId(hovered.faceId) ? hovered.faceId : null;
+        const bayId = typeof hovered.bayId === 'string' ? hovered.bayId : '';
+        if (!layerId || !faceId || !bayId) return;
+
+        const byLayerId = this._bayHighlightDataByLayerId && typeof this._bayHighlightDataByLayerId === 'object'
+            ? this._bayHighlightDataByLayerId
+            : null;
+        const entries = Array.isArray(byLayerId?.[layerId]) ? byLayerId[layerId] : null;
+        if (!entries || !entries.length) return;
+
+        const range = this._floorLayerYRangeById.get(layerId) ?? null;
+        const y0 = Number(range?.startY);
+        const y1 = Number(range?.endY);
+        if (!Number.isFinite(y0) || !Number.isFinite(y1) || !(y1 > y0 + EPS)) return;
+
+        const positions = [];
+        const indices = [];
+        let vCursor = 0;
+        for (const entry of entries) {
+            if (!entry || typeof entry !== 'object') continue;
+            if ((entry.faceId ?? null) !== faceId) continue;
+            if ((entry.bayId ?? null) !== bayId) continue;
+
+            const x0 = Number(entry.x0);
+            const z0 = Number(entry.z0);
+            const x1 = Number(entry.x1);
+            const z1 = Number(entry.z1);
+            if (!Number.isFinite(x0) || !Number.isFinite(z0) || !Number.isFinite(x1) || !Number.isFinite(z1)) continue;
+            if (Math.hypot(x1 - x0, z1 - z0) <= EPS) continue;
+
+            positions.push(
+                x0, y0, z0,
+                x1, y0, z1,
+                x1, y1, z1,
+                x0, y1, z0
+            );
+            indices.push(
+                vCursor, vCursor + 1, vCursor + 2,
+                vCursor, vCursor + 2, vCursor + 3
+            );
+            vCursor += 4;
+        }
+        if (!positions.length || !indices.length) return;
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+        geo.setIndex(indices);
+        geo.computeVertexNormals();
+
+        const mat = new THREE.MeshBasicMaterial({
+            color: BAY_HIGHLIGHT_COLOR,
+            transparent: true,
+            opacity: BAY_HIGHLIGHT_OPACITY,
+            depthTest: true,
+            depthWrite: false,
+            polygonOffset: true,
+            polygonOffsetFactor: -2,
+            polygonOffsetUnits: -2,
+            side: THREE.DoubleSide
+        });
+
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.name = 'bf2_bay_hover_overlay';
+        mesh.renderOrder = 175;
+        mesh.frustumCulled = false;
+        mesh.raycast = () => {};
+        this.root.add(mesh);
+        this._hoveredBayOverlay = mesh;
+    }
+
     _computeFloorLayerYRangeById(layers) {
         const list = Array.isArray(layers) ? layers : [];
         const floorLayers = list.filter((l) => l?.type === 'floor');
@@ -1100,9 +1215,12 @@ export class BuildingFabrication2Scene {
         this.resetCamera();
     }
 
-    _clearBuilding() {
+    _clearBuilding({ preserveHoveredBay = false } = {}) {
         if (!this._building) {
             this._clearLayoutOverlays();
+            this._clearHoveredBayOverlay();
+            this._bayHighlightDataByLayerId = null;
+            if (!preserveHoveredBay) this._hoveredBay = null;
             this._layoutLoop = null;
             this._layoutHoverFaceId = null;
             this._layoutHoverVertexIndex = null;
@@ -1116,7 +1234,10 @@ export class BuildingFabrication2Scene {
         this._floorLayerYRangeById.clear();
         this._hoveredFloorLayerId = null;
         this._activeFaceLayerId = null;
+        this._bayHighlightDataByLayerId = null;
+        if (!preserveHoveredBay) this._hoveredBay = null;
         this._clearHoverHighlight();
+        this._clearHoveredBayOverlay();
         this._clearLayoutOverlays();
         this._layoutLoop = null;
         this._layoutHoverFaceId = null;

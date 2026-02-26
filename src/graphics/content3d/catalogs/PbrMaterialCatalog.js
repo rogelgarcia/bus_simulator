@@ -127,6 +127,19 @@ function normalizeNormalizationMeta(value) {
     return Object.freeze({ notes, albedoNotes, roughnessIntent });
 }
 
+function normalizeCalibrationMeta(value) {
+    const src = value && typeof value === 'object' ? value : null;
+    if (!src) return null;
+
+    const uvRotationRaw = Number(src.uvRotationDegrees);
+    const uvRotationDegrees = Number.isFinite(uvRotationRaw)
+        ? Math.max(-360, Math.min(360, uvRotationRaw))
+        : null;
+    if (!Number.isFinite(uvRotationDegrees)) return null;
+
+    return Object.freeze({ uvRotationDegrees });
+}
+
 function makePreviewUrl({ id, label }) {
     if (typeof document === 'undefined') return null;
     const slug = String(id || '').startsWith(PBR_ID_PREFIX) ? String(id).slice(PBR_ID_PREFIX.length) : String(id || '');
@@ -215,6 +228,7 @@ function normalizeCatalogEntry(entry) {
         groundEligible,
         tileMeters,
         mapFiles,
+        calibration: normalizeCalibrationMeta(src.calibration),
         normalization: normalizeNormalizationMeta(src.normalization)
     });
 }
@@ -280,6 +294,7 @@ export function getPbrMaterialMeta(materialId) {
         buildingEligible: !!def.buildingEligible,
         groundEligible: !!def.groundEligible,
         tileMeters,
+        calibration: def.calibration ?? null,
         preferredVariant,
         variants,
         maps
